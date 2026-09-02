@@ -1,0 +1,14 @@
+{
+  "name": "@sideagent/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.8",
+    "esbuild": "0.28.2"
+  }
+}
