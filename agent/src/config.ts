@@ -3,7 +3,7 @@
  * native messaging 模式下 Chrome 拉起的命令行是固定的，model/proxy 只能从配置文件来。
  * 优先级：CLI 参数 > 配置文件 > 内置默认。
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -40,4 +40,22 @@ export function loadConfig(path = configPath()): AgentConfig {
 /** CLI 参数优先于配置文件。 */
 export function resolveConfig(cli: AgentConfig, file: AgentConfig): AgentConfig {
   return { model: cli.model ?? file.model, proxy: cli.proxy ?? file.proxy };
+}
+
+/**
+ * 把面板选择的模型写回配置文件（保留其他字段）。
+ * 文件不存在/解析失败时按空对象处理；写入失败抛错由调用方记录。
+ */
+export function saveConfigModel(model: string, path = configPath()): void {
+  let json: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      json = parsed as Record<string, unknown>;
+    }
+  } catch {
+    /* 文件不存在或损坏：按空配置重建 */
+  }
+  json.model = model;
+  writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`, "utf8");
 }

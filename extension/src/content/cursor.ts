@@ -11,6 +11,8 @@
  * 视觉参考：tldraw 协作光标（彩色填充 + 白描边 + 名牌 pill）、ChatGPT Agent（点击波纹）。
  * 箭头形状取自 lucide MousePointer2（ISC）。
  */
+import { markLabelPlacement } from "../shared/mark-label.js";
+
 (function () {
   const ns = (window.__sideagent ??= {});
   if (ns.cursor) return;
@@ -149,6 +151,7 @@
         letter-spacing: .02em; white-space: nowrap;
         box-shadow: 0 2px 6px rgba(15,23,42,.25);
       }
+      .mark-label.below { top: calc(100% + 6px); }
     `;
     marksShadow.appendChild(style);
     marksLayer = document.createElement("div");
@@ -254,7 +257,12 @@
       `<path d="M2 12h17m-6-6 6 6-6 6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` +
       `</svg>` +
       (label ? `<div class="mark-label"></div>` : "");
-    if (label) el.querySelector(".mark-label")!.textContent = label;
+    if (label) {
+      const labelEl = el.querySelector(".mark-label")!;
+      labelEl.textContent = label;
+      // 元素贴视口顶部时名牌翻到框下方，避免出屏被裁（箭头/边框不变）
+      if (markLabelPlacement(rect.y) === "below") labelEl.classList.add("below");
+    }
     marksLayer!.appendChild(el);
   }
 

@@ -3,7 +3,7 @@
  * 与 shared/protocol.ts（扩展 ⇆ 伴随进程）不同，本文件只是 panel 与 background 之间的
  * 转发约定，走 chrome.runtime Port。
  */
-import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
+import type { AgentMode, ClientMessage, ServerMessage } from "../../shared/protocol.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
 
@@ -25,4 +25,6 @@ export type BgToPanel =
   /** 来自伴随进程的协议消息（tool_call 不经面板，由 background 直接执行）。 */
   | { kind: "server"; msg: ServerMessage }
   /** 连接状态变化。 */
-  | { kind: "conn"; state: ConnState; transport?: TransportKind; detail?: string };
+  | { kind: "conn"; state: ConnState; transport?: TransportKind; detail?: string }
+  /** 当前 Agent 运行模式（教学模式开关状态同步）。 */
+  | { kind: "mode"; mode: AgentMode };

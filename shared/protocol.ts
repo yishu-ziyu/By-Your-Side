@@ -9,6 +9,9 @@ export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 7758;
 export const DEFAULT_HOST = "127.0.0.1";
 
+/** Agent 运行模式：act = 直接操作页面；teach = 教学倾向增强（默认引导用户手动操作，能力不裁剪）。 */
+export type AgentMode = "act" | "teach";
+
 // ── 客户端（扩展）→ 服务端（伴随进程） ──────────────────────────────
 
 export type ClientMessage =
@@ -16,13 +19,27 @@ export type ClientMessage =
   | { type: "user_message"; text: string }
   | { type: "steer"; text: string }
   | { type: "abort" }
+  | { type: "set_mode"; mode: AgentMode }
+  | { type: "set_model"; model: string }
+  | { type: "page_event"; event: "url_changed"; url: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string };
 
 // ── 服务端 → 客户端 ────────────────────────────────────────────────
 
+/** 可供选择的模型（已配置凭据的 provider 下），面板按 provider 分组展示。 */
+export interface ModelOption {
+  /** "provider/modelId" 形式，set_model 的取值 */
+  id: string;
+  provider: string;
+  modelId: string;
+  /** 展示名（SDK 目录里的 name） */
+  name: string;
+}
+
 export type ServerMessage =
-  | { type: "hello_ok"; version: number; model?: string }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[] }
   | { type: "hello_error"; error: string }
+  | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: "idle" | "running" }
   | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown> }
   | { type: "agent_event"; event: AgentUiEvent };
@@ -113,8 +130,11 @@ export interface ToolContract {
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
     const msg = JSON.parse(raw) as ClientMessage;
-    if (msg && typeof msg === "object" && typeof msg.type === "string") return msg;
-    return null;
+    if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
+    if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
+    if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
+    if (msg.type === "page_event" && (msg.event !== "url_changed" || typeof msg.url !== "string")) return null;
+    return msg;
   } catch {
     return null;
   }

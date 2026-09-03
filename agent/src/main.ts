@@ -9,7 +9,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ProxyAgent, setGlobalDispatcher } from "undici";
+import { Agent, ProxyAgent, setGlobalDispatcher, type Dispatcher } from "undici";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   DEFAULT_HOST,
@@ -19,7 +19,7 @@ import {
   type ClientMessage,
   type ServerMessage,
 } from "../../shared/protocol.js";
-import { loadConfig, resolveConfig } from "./config.js";
+import { loadConfig, resolveConfig, saveConfigModel } from "./config.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession } from "./session.js";
 import { createStdioTransport } from "./transport/stdio.js";
@@ -66,8 +66,23 @@ function parseCliArgs(argv: string[]): CliArgs {
   return { ws, port, token, model, proxy };
 }
 
-// ── 日志 ───────────────────────────────────────────────────────────
-// stderr 总是可写；stdio 模式下 Chrome 会吞掉 host 的 stderr，所以同时落一份文件。
+/**
+ * 全局代理 dispatcher：回环地址（127.0.0.1/localhost/::1，如 CLIProxyAPI 本地池）直连，
+ * 其余 origin 走代理。实测 undici ProxyAgent 经本地代理转发回环地址的流式 POST 会失败
+ * （GET /models 正常），池子请求必须绕过代理。
+ */
+function createProxyDispatcher(proxyUrl: string): Dispatcher {
+  const proxyAgent = new ProxyAgent(proxyUrl);
+  const directAgent = new Agent();
+  return new Agent({
+    factory: (origin) => {
+      const hostname = typeof origin === "string" ? new URL(origin).hostname : origin.hostname;
+      return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1" ? directAgent : proxyAgent;
+    },
+  });
+}
+
+// ── 日志 ───────────────────────────────────────────────────────────// stderr 总是可写；stdio 模式下 Chrome 会吞掉 host 的 stderr，所以同时落一份文件。
 
 let logFile: string | null = null;
 
@@ -107,7 +122,7 @@ async function main(): Promise<void> {
   // 只有显式配置 proxy 时才挂 ProxyAgent（openai-codex 等需代理的 provider 场景）。
   // 不要默认读取代理环境变量：挂全局 dispatcher 会干扰部分 provider（如 kimi-coding）的传输。
   if (proxy) {
-    setGlobalDispatcher(new ProxyAgent(proxy));
+    setGlobalDispatcher(createProxyDispatcher(proxy));
   }
   if (!cli.ws) enableFileLog();
 
@@ -140,6 +155,32 @@ async function main(): Promise<void> {
     rpc.setSend((frame) => conn.send(frame));
   };
 
+  /** hello_ok 携带当前模型与可选模型列表（面板模型选择器的数据源）。 */
+  const sendHelloOk = (conn: ClientConn): void => {
+    void session.availableModels().then((models) => {
+      conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models });
+    });
+  };
+
+  /** 切换会话模型：热切换（见 session.setModel 注释），成功后写回配置文件并广播 model_info。 */
+  const handleSetModel = async (model: string): Promise<void> => {
+    try {
+      await session.setModel(model);
+      try {
+        saveConfigModel(model);
+      } catch (err) {
+        log(`模型选择写回配置文件失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+      const models = await session.availableModels();
+      log(`模型已切换：${session.modelName() ?? model}`);
+      sendCurrent({ type: "model_info", model: session.modelName() ?? model, models });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`切换模型失败（${model}）：${message}`);
+      sendCurrent({ type: "agent_event", event: { kind: "error", message: `切换模型失败：${message}` } });
+    }
+  };
+
   /** 当前客户端断开：reject pending 工具调用并中止流式任务。返回是否确为当前客户端。 */
   const onClientGone = (conn: ClientConn): boolean => {
     if (conn !== current) return false;
@@ -160,6 +201,15 @@ async function main(): Promise<void> {
       case "abort":
         session.abort();
         break;
+      case "set_mode":
+        void session.setMode(msg.mode);
+        break;
+      case "set_model":
+        void handleSetModel(msg.model);
+        break;
+      case "page_event":
+        session.notifyPageEvent(msg.url);
+        break;
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error);
         break;
@@ -169,9 +219,9 @@ async function main(): Promise<void> {
   };
 
   if (cli.ws) {
-    runWsMode(cli, session, { adoptClient, onClientGone, handleMessage, proxy });
+    runWsMode(cli, session, { adoptClient, onClientGone, handleMessage, sendHelloOk, proxy });
   } else {
-    runStdioMode(session, { adoptClient, onClientGone, handleMessage, proxy });
+    runStdioMode(session, { adoptClient, onClientGone, handleMessage, sendHelloOk, proxy });
   }
 }
 
@@ -179,6 +229,7 @@ interface ModeHooks {
   adoptClient(conn: ClientConn): void;
   onClientGone(conn: ClientConn): boolean;
   handleMessage(msg: ClientMessage): void;
+  sendHelloOk(conn: ClientConn): void;
   proxy?: string;
 }
 
@@ -215,7 +266,7 @@ function runStdioMode(
       }
       authed = true;
       hooks.adoptClient(conn);
-      conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName() });
+      hooks.sendHelloOk(conn);
       log("面板已连接（native messaging）");
       return;
     }
@@ -302,7 +353,7 @@ function runWsMode(
         }
         authed = true;
         hooks.adoptClient(conn);
-        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName() });
+        hooks.sendHelloOk(conn);
         log(`面板已连接（origin: ${origin}）`);
         return;
       }

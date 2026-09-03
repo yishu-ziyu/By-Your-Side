@@ -104,6 +104,38 @@ body {
   white-space: nowrap;
 }
 
+/* 教学模式开关：status-pill 左侧的圆形 toggle */
+#teach-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+#teach-toggle:hover {
+  color: var(--text-2);
+  border-color: var(--text-3);
+}
+
+#teach-toggle.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+#teach-toggle + #status-pill {
+  margin-left: 0;
+}
+
 .dot {
   width: 7px;
   height: 7px;
@@ -128,6 +160,113 @@ body {
   }
 }
 
+/* ── 模型选择器 ──────────────────────────────────────────────────── */
+/* status-pill 内的模型名按钮：与 pill 融为一体，hover 才显出可点 */
+#model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: -3px -6px -3px 2px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  max-width: 180px;
+}
+
+#model-btn:hover,
+#model-btn[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+#model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#model-btn .lucide {
+  width: 11px;
+  height: 11px;
+  color: var(--text-3);
+}
+
+#model-popover {
+  position: absolute;
+  top: 44px;
+  right: 10px;
+  z-index: 20;
+  min-width: 220px;
+  max-width: 300px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-composer);
+}
+
+.model-group {
+  padding: 6px 8px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-item:hover {
+  background: var(--surface-2);
+}
+
+.model-item.current {
+  color: var(--accent);
+}
+
+.model-check {
+  width: 14px;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.model-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-id {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
 /* ── 消息流 ──────────────────────────────────────────────────────── */
 #messages {
   flex: 1;
@@ -141,8 +280,9 @@ body {
 
 /* 新元素入场：轻微上浮淡入 */
 .msg,
-.tool-card,
-details.thinking {
+.chip-group,
+details.thinking,
+details.run-steps {
   animation: rise 0.18s ease-out;
 }
 
@@ -321,26 +461,6 @@ details.thinking summary::-webkit-details-marker {
   display: none;
 }
 
-/* 思考进行中：summary 文案微光流动 */
-details.thinking.streaming summary span {
-  background: linear-gradient(90deg, var(--text-2) 25%, #c3ccd9 50%, var(--text-2) 75%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 1.5s linear infinite;
-}
-
-details.thinking.streaming summary .lucide {
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
 details.thinking pre {
   white-space: pre-wrap;
   word-break: break-word;
@@ -349,81 +469,183 @@ details.thinking pre {
   color: var(--text-3);
 }
 
-/* ── 工具卡片 ────────────────────────────────────────────────────── */
-.tool-card {
+/* ── 执行步骤聚合块 ────────────────────────────────────── */
+details.run-steps {
   align-self: stretch;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 12px;
   background: var(--surface);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.tool-card.error {
-  border-color: color-mix(in srgb, var(--err) 40%, transparent);
-  background: var(--err-soft);
-}
-
-.tool-card .head {
+details.run-steps summary {
   display: flex;
   align-items: center;
   gap: 7px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 12px;
 }
 
-.tool-card {
-  transition: box-shadow 0.15s ease;
+details.run-steps summary::-webkit-details-marker {
+  display: none;
 }
 
-.tool-card:hover {
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+.run-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-2);
 }
 
-.tool-card .tool-icon {
+details.run-steps.done .run-icon {
+  color: var(--ok);
+}
+
+.run-title {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* 步骤链："思考 → 读取页面结构 → 点击"，超出省略 */
+.run-chain {
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.run-time {
+  margin-left: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.run-chevron {
+  display: inline-flex;
+  color: var(--text-3);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+details.run-steps[open] .run-chevron {
+  transform: rotate(180deg);
+}
+
+.run-chevron .lucide {
+  width: 13px;
+  height: 13px;
+}
+
+.run-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 10px 10px;
+}
+
+/* ── Tool Chips ────────────────────────────────────────────── */
+/* 一段连续工具调用：chips 行（可换行）+ 共享详情区，点 chip 就地展开 */
+.chip-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.chip:hover {
+  border-color: var(--text-3);
+}
+
+/* 选中（详情展开中）：accent 描边 + accent-soft 底 */
+.chip.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chip.error {
+  border-color: color-mix(in srgb, var(--err) 40%, transparent);
+}
+
+/* 状态点：运行中 accent 脉动，完成绿，失败红 */
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chip-dot.running {
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.chip-dot.done {
+  background: var(--ok);
+}
+
+.chip-dot.error {
+  background: var(--err);
+}
+
+.chip-icon {
   display: inline-flex;
   color: var(--text-2);
 }
 
-.tool-card .tool-name {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 600;
+.chip-icon .lucide {
+  width: 13px;
+  height: 13px;
 }
 
-.tool-card .pill {
-  margin-left: auto;
+.chip .dur {
   font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  flex-shrink: 0;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
-.tool-card .pill.running {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.tool-card .pill.done {
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
-  color: var(--ok);
-}
-
-.tool-card .pill.error {
-  background: var(--err-soft);
-  color: var(--err);
-}
-
-.tool-card details.params {
-  margin-top: 6px;
+.chip-detail {
   font-size: 11.5px;
   color: var(--text-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
 }
 
-.tool-card details.params summary {
-  cursor: pointer;
-  user-select: none;
+/* 原始工具名：弱化显示 */
+.chip-detail .raw {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-bottom: 4px;
 }
 
-.tool-card pre {
+.chip-detail pre {
   margin: 4px 0 0;
   font-family: var(--mono);
   font-size: 11px;
@@ -435,19 +657,87 @@ details.thinking pre {
   overflow-y: auto;
 }
 
-.spinner {
-  width: 11px;
-  height: 11px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+/* ── 像素格 loader ─────────────────────────────────────────── */
+/* 5×5 相位波纹 + 实时耗时 + 当前动作副标题；run 运行中常驻 body 底部 */
+.px-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.px-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 7px);
+  grid-auto-rows: 7px;
+  gap: 3px;
   flex-shrink: 0;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+.px-grid i {
+  background: var(--accent);
+  border-radius: 1.5px;
+  opacity: 0.15;
+  animation: pxwave 1.6s ease-in-out infinite;
+}
+
+@keyframes pxwave {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.px-meta {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.px-elapsed {
+  font-family: var(--mono);
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.px-sub {
+  color: var(--text-3);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* 回到底部悬浮圆钮：内容超出一屏且用户上翻时出现 */
+#to-bottom {
+  position: absolute;
+  right: 16px;
+  bottom: 78px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+}
+
+#to-bottom:hover {
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  #to-bottom {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -600,15 +890,25 @@ details.thinking pre {
 /* ── 减弱动态偏好 ────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .msg,
-  .tool-card,
-  details.thinking {
+  .chip-group,
+  details.thinking,
+  details.run-steps {
     animation: none;
   }
 
   .msg.assistant.streaming::after,
-  details.thinking.streaming summary span,
-  details.thinking.streaming summary .lucide,
-  .dot.retry {
+  .dot.retry,
+  .chip-dot.running {
     animation: none;
+  }
+
+  /* 像素格静止（读数由 JS 驱动，不受影响照常刷新） */
+  .px-grid i {
+    animation: none;
+    opacity: 0.45;
+  }
+
+  .run-chevron {
+    transition: none;
   }
 }

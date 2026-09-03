@@ -16,8 +16,10 @@ import {
   type AgentToolResult,
   type CreateAgentSessionOptions,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentUiEvent } from "../../shared/protocol.js";
-import { SYSTEM_PROMPT } from "./prompt.js";
+import type { AgentMode, AgentUiEvent, ModelOption } from "../../shared/protocol.js";
+import { registerCliproxyProvider } from "./cliproxy.js";
+import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
+import { getMode, setMode as setModeRef } from "./mode.js";
 import { createBrowserTools } from "./tools.js";
 import type { ToolRpc } from "./rpc.js";
 
@@ -39,6 +41,8 @@ export class BrowserAgentSession {
     private readonly session: AgentSession | null,
     private readonly initError: string | null,
     private readonly callbacks: SessionCallbacks,
+    private readonly resourceLoader: DefaultResourceLoader | null,
+    private readonly modelRuntime: ModelRuntime | null,
   ) {}
 
   static async create(
@@ -48,6 +52,8 @@ export class BrowserAgentSession {
   ): Promise<BrowserAgentSession> {
     try {
       const modelRuntime = await ModelRuntime.create();
+      // 本地 CLIProxyAPI 池：key 运行时从 client.env 读取，端口不通时自动跳过，不影响启动
+      await registerCliproxyProvider(modelRuntime);
       const settingsManager = SettingsManager.inMemory({ compaction: { enabled: true } });
       const resourceLoader = new DefaultResourceLoader({
         cwd: process.cwd(),
@@ -56,7 +62,8 @@ export class BrowserAgentSession {
         noExtensions: true,
         systemPromptOverride: () => SYSTEM_PROMPT,
         skillsOverride: () => ({ skills: [], diagnostics: [] }),
-        appendSystemPromptOverride: () => [],
+        // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
+        appendSystemPromptOverride: (base) => appendPromptForMode(getMode(), base),
       });
       await resourceLoader.reload();
       const createOptions: CreateAgentSessionOptions = {
@@ -82,11 +89,11 @@ export class BrowserAgentSession {
         if (resolved.thinkingLevel) createOptions.thinkingLevel = resolved.thinkingLevel;
       }
       const { session } = await createAgentSession(createOptions);
-      const wrapper = new BrowserAgentSession(session, null, callbacks);
+      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime);
       wrapper.subscribeEvents();
       return wrapper;
     } catch (err) {
-      return new BrowserAgentSession(null, err instanceof Error ? err.message : String(err), callbacks);
+      return new BrowserAgentSession(null, err instanceof Error ? err.message : String(err), callbacks, null, null);
     }
   }
 
@@ -97,6 +104,42 @@ export class BrowserAgentSession {
   modelName(): string | undefined {
     const model = this.session?.model;
     return model ? `${model.provider}/${model.id}` : undefined;
+  }
+
+  /** 已配置凭据的 provider 下的可选模型（SDK ModelRuntime.getAvailable，含 OAuth 自动刷新）。 */
+  async availableModels(): Promise<ModelOption[]> {
+    if (!this.modelRuntime) return [];
+    try {
+      const models = await this.modelRuntime.getAvailable();
+      return models.map((m) => ({
+        id: `${m.provider}/${m.id}`,
+        provider: m.provider,
+        modelId: m.id,
+        name: m.name,
+      }));
+    } catch (err) {
+      console.error(`[sideagent] 枚举可用模型失败：${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
+  /**
+   * 切换会话模型（"provider/id" 格式）。SDK 0.84.4 的 AgentSession.setModel 支持
+   * 热切换（不重建会话，校验凭据后换 model 引用），失败抛错由调用方转成 error 事件。
+   */
+  async setModel(modelId: string): Promise<void> {
+    if (!this.session || !this.modelRuntime) {
+      throw new Error("会话不可用（模型凭据未配置），无法切换模型");
+    }
+    const slash = modelId.indexOf("/");
+    if (slash <= 0 || slash === modelId.length - 1) {
+      throw new Error(`模型标识无效：${modelId}（需要 provider/id 格式）`);
+    }
+    const model = this.modelRuntime.getModel(modelId.slice(0, slash), modelId.slice(slash + 1));
+    if (!model) {
+      throw new Error(`模型不存在或未配置凭据：${modelId}`);
+    }
+    await this.session.setModel(model);
   }
 
   isStreaming(): boolean {
@@ -139,6 +182,36 @@ export class BrowserAgentSession {
   abort(): void {
     if (!this.session) return;
     void this.session.abort().catch(() => {});
+  }
+
+  /**
+   * 页面事件通知（扩展侦到 working tab URL 变化）：仅 teach 模式注入会话，
+   * 走现有 steer/prompt 通道（运行中插话、空闲则发起新一轮），不发明新协议层。
+   * 会话不可用（无模型凭据）时静默丢弃，避免面板刷错误提示。
+   */
+  notifyPageEvent(url: string): void {
+    if (getMode() !== "teach") return;
+    if (!this.session || !this.session.model) return;
+    this.steer(`[页面事件] URL 已变为 ${url}，用户可能已完成上一步，请 snapshot 确认后自动推进下一步`);
+  }
+
+  /**
+   * 切换运行模式（act/teach）：写 mode ref 并重建系统 prompt。
+   * Pi SDK 事实（0.84.4，dist/core/resource-loader.js + agent-session.js）：
+   * appendSystemPromptOverride 只在 resourceLoader.reload() 时求值并缓存结果数组，
+   * 系统 prompt 在 AgentSession._rebuildSystemPrompt 时组装（会话创建 / setActiveToolsByName /
+   * reload），不是每次请求都重评。因此切模式必须 reload() 让闭包重评，
+   * 再借 setActiveToolsByName(同名集合)（工具不变）触发 prompt 重建并写入 agent.state.systemPrompt。
+   */
+  async setMode(mode: AgentMode): Promise<void> {
+    setModeRef(mode);
+    if (!this.session || !this.resourceLoader) return;
+    try {
+      await this.resourceLoader.reload();
+      this.session.setActiveToolsByName(this.session.getActiveToolNames());
+    } catch (err) {
+      console.error(`[sideagent] 切换模式后重建系统 prompt 失败：${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   dispose(): void {
@@ -205,7 +278,7 @@ export class BrowserAgentSession {
               // 模型 200 但空响应（实测见于 kimi-coding/k3 被限流时），面板不能装死
               emit({
                 kind: "notice",
-                message: "模型返回了空响应：可能触发了限流或该模型当前不可用，建议用 --model 换一个模型（如 kimi-coding/kimi-for-coding）后重试",
+                message: "模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试",
               });
             }
           }

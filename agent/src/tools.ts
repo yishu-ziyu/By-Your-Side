@@ -2,6 +2,7 @@
  * 15 个浏览器工具的 defineTool 封装。
  * 每个 execute 只做一件事：rpc.call 转发给扩展，再把结果转成模型友好的 content。
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
+ * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
  */
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";

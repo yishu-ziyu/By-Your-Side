@@ -5,7 +5,9 @@
 
 ## 当前状态
 
-操作前元素高亮已实现（卡：`docs/evals/20260903-element-highlight.md`）：click/fill 执行前通过 cursor overlay 在目标元素周围绘制呼吸高亮框（500ms 两轮脉动，描边+半透明填色+双重光晕），await 结束后按序驱动光标/填充。多实例支持专属调色板着色，动画结束及 hide() 自动清理无残影；注入失败静默兜底。修复了 closed shadow DOM 下 host.shadowRoot 为 null 导致子元素挂载失败的遗留 bug。机器项全绿（60 tests / typecheck / build），无头 Chrome CDP 双底色截图自检通过。扩展已通过 `npm run reload:ext` 热重载生效。待用户实测：click/fill 高亮与点击节奏手感。
+教学模式已按实测反馈重设计（卡：`docs/evals/20260903-teach-revamp.md`，详见文末「2026-09-03 教学模式重设计」节）：硬闸门与软拒全拆（教学=倾向增强，能力全集保留），prompt 改教学倾向，teach 模式下有待完成标注时 URL 变化（含 SPA pushState）自动清 mark 并推 page_event 让 agent 主动推进，mark label 贴顶自动翻到框下方。侧边栏完成"执行步骤"信息流重设计（卡：`docs/evals/20260903-panel-steps-design.md`，详见文末同名节）：run 聚合块（步骤链+耗时+完成折叠）、工具行中文化+耗时、回到底部圆钮。机器项全绿（88 tests / typecheck / build），无头截图自检通过，扩展已热重载。待人评：GitHub SPA 教学复测自动推进手感、执行步骤块观感。
+
+上一项（操作前元素高亮，卡：`docs/evals/20260903-element-highlight.md`）：click/fill 执行前呼吸高亮框，机器项全绿，待用户实测手感。
 
 ## 关键结论与决策（CDP AX 快照）
 
@@ -132,3 +134,82 @@
 - 协作事故记录：与 Gemini 并发改同一工作区，protocol.ts 编辑被其 git 操作 revert；教训=多 agent 派工需按 commit 划界，协议类共享文件同一时间只许一方改
 - 验收卡 docs/evals/20260903-mark-tool.md；typecheck/build/test(60) 全绿；标注样式截图自检通过
 - 待人评：真实页面 mark 后滚动的跟随效果；与 Gemini 高亮的衔接节奏
+
+## 2026-09-03 教学模式（软引导 + 硬闸门双层）
+- 验收卡 `docs/evals/20260903-teach-mode.md`。开关打开后 agent 不操作页面，用 mark 标注（描边框+箭头+"Step N: …" pill）一步步教用户自己点
+- **协议**：`shared/protocol.ts` 加 `AgentMode = "act" | "teach"` + ClientMessage `{type:"set_mode",mode}`；`parseClientMessage` 对 set_mode 校验 mode 枚举，其余帧守卫不变
+- **扩展硬闸门**：新模块 `extension/src/background/mode.ts`（照 state.ts 模式：模块缓存 + chrome.storage.session 键 `agentMode`，模块顶层不碰 chrome API 故可单测）；`isBlockedInTeachMode(name, mode)` 纯函数拦 click/fill/type_text/press_key/js；`executeToolCall` 入口命中即回 `{ok:false, error:"教学模式已开启：请改用 mark 标注引导用户手动操作"}`
+- **链路**：background 的 kind:"client" 处理器先 `setMode` 落本地再照常转发（relay.ts 未改）；`onServerMessage` 收到 hello_ok 时补发当前 set_mode（agent 重启/重连不丢模式）；`relay.ts` BgToPanel 加 `{kind:"mode",mode}`，面板接入/sync 时 postMode，set_mode 后 broadcast 收敛多面板
+- **面板**：topbar 在 status-pill 左侧加 `#teach-toggle` 圆形按钮（lucide GraduationCap 已确认存在），开关态存 `chrome.storage.local["sideagent_teach_mode"]`，background 推来的 kind:"mode" 反向收敛本地存储；styles.css 加 `.on` 态（accent 描边+accent-soft 底），`#teach-toggle{margin-left:auto}` + 相邻选择器 `#teach-toggle + #status-pill{margin-left:0}` 保持右对齐成组
+- **agent 侧**：`agent/src/mode.ts` 模块级 mode ref；`prompt.ts` 加 TEACH_MODE_PROMPT（英文，禁 5 工具/一步一 mark/label 写 "Step N"/用户说"好了/下一步"再推进/换步先 clear_marks）+ 纯函数 `appendPromptForMode(mode, base)`；tools.ts 5 个被拦工具 execute 开头 `teachModeReject()` 软拒（不发 rpc.call，回英文引导文本）
+- **SDK 求值时机结论（0.84.4，dist 源码实读）**：`appendSystemPromptOverride` 只在 `DefaultResourceLoader.reload()` 时求值并把结果数组缓存；系统 prompt 在 `AgentSession._rebuildSystemPrompt` 组装（会话创建/setActiveToolsByName/reload），**不是每次请求重评**；每次 prompt 开始时还会把 `agent.state.systemPrompt` 重置回 `_baseSystemPrompt`（无 extension 时）。因此切模式不能只改闭包，`session.setMode()` 的做法 = `setModeRef` + `resourceLoader.reload()`（重评闭包）+ `session.setActiveToolsByName(getActiveToolNames())`（同名集合工具不变，借它触发 prompt 重建）
+- **测试**：protocol.test.ts 加 set_mode 正/反例（mode 非枚举值→null）；extension/test/teach-mode.test.ts（teach 拦 5 放行 5、act 全放行）；agent/test/teach-prompt.test.ts（appendPromptForMode 两态 + mode ref 往返）。`npm run typecheck` / `npm test`（70）/ `npm run build` 全绿
+- **无头自检**（playwright 取自 `~/tools/gstack/node_modules`，匹配本机 chromium-1234 缓存；全局 @playwright/cli 的 1.61 alpha 要 chromium-1226 不匹配）：脚本 `/tmp/teach-mode-check.mjs`，从 SW 内部 `chrome.tabs.create` 开 sidepanel（外部直开 chrome-extension:// 会被拦）。断言：开关 off→on 后 `aria-pressed=true`、`storage.local.sideagent_teach_mode=true`、**background 的 `storage.session.agentMode="teach"`**（面板→background set_mode 链路端到端实证）。截图：`/tmp/teach-toggle-off.png`、`/tmp/teach-toggle-on.png`、`/tmp/teach-mark-steps.png`
+- **遗留/待人评**：① mark label pill 定位在元素上方 26px，目标贴页面顶部时会出屏被裁（截图中可见；缓解=agent 先 scroll 把目标带下来，prompt 已允许 scroll）——是否给 mark label 加"上方没空间就放到下方"的翻转逻辑，待人评后另开任务；② 教学模式真实对话手感（步骤粒度、label 文案语言）待人评；③ 切模式后重建 prompt 对进行中的会话在下一 turn 生效，未做真机验证
+
+## 2026-09-03 教学模式实测反馈（用户人评，先记不改）
+场景：GitHub 仓库"新建 Issue 但不提交"教学（red-herring-and-gun 仓库）。
+1. **应自动感知用户已完成步骤**：用户点了 Issues 但回复"好了"之前，Agent 不会主动发现步骤已完成。实测形态：页面已进 All issues 列表，Agent 还在原地等"好了"，第 1 步 mark 也还挂着。根因线索：GitHub 是 SPA 软跳转（turbo），不触发整页导航，"导航即清 mark/作废 ref"机制不生效，Agent 收不到任何页面已变信号。期望：教学模式应有智能——检测到页面变化（URL/DOM）即判断用户已点击，自动推进到下一步。候选方向（待评估）：教学模式下 mark 后 background 监听 tab URL 变化/DOM mutation 主动通知 agent；或 agent 轮询 snapshot。与路线图「页面哨兵」项有交集。
+2. **模式不应二分，教学是增强不是剥夺**：用户让 Agent 打开 X 并讲解页面值得探索的区域，Agent 回"教学模式下我不能替你打开页面，请关闭教学模式"。用户观点：开标签页/导航是基础能力，教学模式下很多任务依然需要；学位帽应该是"教学性更强"（多解释、多标注、等确认），而非砍掉通用能力；反过来通用模式下也不排斥教学行为（该解释时解释）。另发现**软/硬两层不一致**：硬闸门只拦 click/fill/type_text/press_key/js，open_tab/navigate 本不在拦截名单，是 TEACH_MODE_PROMPT 把禁令写宽导致模型过度自我设限。改造方向（待设计）：从"模式开关"转向"教学倾向增强"——保留全部工具，prompt 侧重引导式讲解+关键动作前征得同意；硬闸门是否保留/拦什么需重新定（也许只拦"不可逆/危险动作"，与路线图「危险操作确认」合并考虑）。
+
+## 2026-09-03 教学模式重设计（去闸门 + 自动感知 + label 翻转）
+- 卡 `docs/evals/20260903-teach-revamp.md`。设计转向：学位帽=教学倾向增强，不再剥夺能力（用户实测反馈第 2 条）；软硬双层闸门全拆——删 `isBlockedInTeachMode`/executeToolCall 拦截/tools.ts `teachModeReject()`；mode 状态保留（prompt 切换+自动感知用）
+- TEACH_MODE_PROMPT 改倾向式：默认一步一 mark 引导+等确认，但 "You keep your FULL toolset"，任务需要或用户要求时直接动手并解释；危险/不可逆动作前自然语言征得明确同意（与路线图「危险操作确认」prompt 约定合流）
+- **步骤完成自动感知**：background 追踪"有待完成教学标注"（mark 成功置 true，clear_marks/整页导航置 false，`mode.ts` 纯逻辑可单测）；SW 顶层 `chrome.tabs.onUpdated` 的 `changeInfo.url`（SPA pushState 也触发）在 teach+pending 时命中→content 侧 clearMarks + 经 uplink 发 page_event。协议加 ClientMessage `{type:"page_event",event:"url_changed",url}`。agent 侧 `session.notifyPageEvent(url)` 复用 steer() 通道注入：运行中=插话，空闲=sendUserMessage 起新 turn 做 snapshot 确认并推进。限制：空闲时无法"追加进当前 turn"，只能起新一轮；act 模式忽略
+- **mark label 翻转**：`extension/src/shared/mark-label.ts` 纯函数 `markLabelPlacement(viewportTop)`，阈值 34px，不足时 pill 加 `.below` class 渲染到框下方；cursor.ts spawnMark 接入
+- 测试：teach-mode.test.ts 改写为标注追踪 4 例；protocol.test.ts 加 page_event 1 正 4 反；mark-label.test.ts 4 例。76→88 测试全绿（含并行侧边栏任务新增 12 例）
+- 无头截图 `/tmp/mark-label-flip.png`：贴顶（rect.y=4）pill 翻下方完整可见，中部正常在上方。已 `reload:ext`
+- 待人评：GitHub SPA 场景复测自动推进；教学对话手感；已知边界=URL 不变的 reload 不发 page_event（标注随页面销毁）
+
+## 2026-09-03 侧边栏执行步骤信息流重设计（参考 ChatGPT/Kimi）
+- 卡 `docs/evals/20260903-panel-steps-design.md`。参考：Kimi "执行步骤 思考→读取页面→思考"聚合链+完成绿勾、"思考过程 1.4s"耗时；ChatGPT "Worked for 2m 28s"、人性化动作描述
+- **run 聚合块**（main.ts ensureRun/finishRun）：用户发消息→agent_end 算一个 run，期间 thinking 块+工具卡收进 `details.run-steps`；运行中 summary=spinner+步骤链（相邻去重、只留最近 3 步加 "… → " 前缀），完成后绿勾+"耗时 Xs"+自动折叠。steer 不触发 agent_end 故自然落同一 run；空 run 壳 finishRun 时移除；status:idle/断连/Port 重连三处兜底 finishRun。计时面板侧本地记（事件流无时间戳）
+- **纯逻辑抽离** `extension/src/sidepanel/steps.ts`：describeTool（ToolName 全集 15 个中文动作映射，navigate/open_tab 带域名、click/mark 带「label」、press_key 带键名）、StepChain、formatDuration（<10s 一位小数/<60s 整数/≥60s "2m 28s"）；extension/test/steps.test.ts 12 例
+- 工具卡头改 图标+中文描述+弱化 mono 原名+耗时+状态 pill；思考块落定带耗时；新增 pinned 跟随滚动 + `#to-bottom` 回到底部圆钮（上翻不强拉、点击回底后隐藏）
+- 无头自检 `/tmp/run-steps-check.mjs`（stub chrome.runtime.connect 注入合成事件序列）：截图 runsteps-{running,done,expanded,dark,tobottom}.png 全过；暗色/reduced-motion 无回归
+- 待人评：真实 run 的观感（步骤链信息密度、折叠时机、正文是否被稀释）
+
+## 2026-09-03 开发日志与设计取向成文
+- 首篇开发日志 `docs/devlog/20260903-01-教学模式为什么做错了.md`（阮一峰风格：短句短段/事实先行/克制判断/编号小节，参考 https://2aran.com/skill-center/ruanyifeng-weekly-style 的风格拆解）
+- AGENTS.md 新增两节：「开发日志」（docs/devlog/ 约定+文风）与「设计取向」（克制简约+安全可依赖；参考优质开源项目消化不照搬；克制=信息分层默认只露摘要，可依赖=动作有名字/耗时/状态）
+- 用户对本日交付的整体评价：没什么大问题；后续侧边栏设计迭代继续遵循该取向
+
+## 2026-09-03 模型选择器 + 默认模型换 MiniMax
+- 卡 `docs/evals/20260903-model-picker.md`。背景：openai-codex/gpt-5.6-luna 全量报 "Not Found"——用户确认是 ChatGPT 官方故障（已恢复），不查根因；同时定方向：主力换 MiniMax（套餐额度有余），备选阶跃星辰
+- **凭据盘点**（~/.pi/agent/auth.json，只看 key）：openai-codex / xiaomi-token-plan-cn / google-antigravity / minimax-cn / xai / kimi-coding / opencode-go 共 7 个 provider。**阶跃不可用**：auth.json 无凭据且 0.84.4 SDK 无 stepfun provider（只在 openrouter 等聚合网关间接出现），要用需另开任务（自定义 provider）
+- **默认模型改 minimax-cn/MiniMax-M3**：M3 是目录旗舰（1M 上下文、图像输入、reasoning，价格同 M2.7）；实测最短请求 850ms 正常返回；config.json 只改 model 字段 proxy 保留
+- **协议**：ClientMessage 加 set_model{model}；hello_ok 加可选 models（ModelOption{id,provider,modelId,name} 数组）；新增 ServerMessage model_info{model?,models}（切换成功后回推）
+- **agent 侧**：SDK 0.84.4 `AgentSession.setModel()` 原生热切换（不重建会话不丢上下文）；`ModelRuntime.getAvailable()` 枚举有凭据 provider 的模型（52 个/7 组）；config.ts 加 saveConfigModel() 写回选择
+- **面板**：status-pill 模型名变 #model-btn，点开 popover 按 provider 分组+当前项打勾+点外部/Esc 关闭；以 agent 回推为准不本地持久化；断连隐藏；老 agent 无 models 字段回退内联显示；404 类错误人话化（"模型不可用…请在顶栏切换模型"）
+- 测试 98 全绿（新增 protocol set_model/config saveConfigModel/models 分组+错误人话化共 9 例）；无头截图 model-picker-{collapsed,expanded}.png；ws 模式真进程 e2e 过（hello_ok 带模型列表、热切 kimi-coding/k3、config 写回、反例报错）
+- 已 `reload:ext`。待人评：选择器暗色观感、52 模型的滚动手感、真机切换体感
+- 排障副产品：tsx 的 SIGTERM 只杀父进程会留孤儿占端口，ws 调试 e2e 脚本后要 `pkill -f "port <n>"` 清理
+
+## 2026-09-04 CLIProxyAPI 本地订阅池接入模型选择器
+- 卡 `docs/evals/20260904-cliproxy-integration.md`。池子 `http://127.0.0.1:8317/v1`（OpenAI 兼容，LaunchAgent 保活，auths 池：antigravity/codex-pro/kimi/xai×2）
+- **探测结论**：/v1/models ~40 个；实测 Codex 全系（gpt-5.4-mini、gpt-5.6-luna）/ kimi-k2 / grok-3-mini / claude-sonnet-4-6 正常；**gemini 全系区域限制不可用**（"User location is not supported"，两型号复测一致）；图像/视频模型不适合对话
+- **接入机制**：SDK 0.84.4 `ModelRuntime.registerProvider()` 运行时注册（`agent/src/cliproxy.ts`），`getAvailable()` 自动枚举→选择器零改动出现"本地池"分组（providerLabel 映射）；key 从 `~/.cli-proxy-api/client.env` 运行时读取，不落盘不进仓库；注册前 2s 超时探测 /models，池子挂了跳过不拖垮启动
+- **静态清单 19 个**（∩ /models 通告）：Codex 7 + Kimi 5 + xAI 5 + Claude 2；排除 gemini（区域限制）/图像视频/未实测型号
+- **排障发现（重要）**：undici ProxyAgent 经本地代理（7897）转发**回环地址的流式 POST 必败**（GET 正常）——`agent/src/main.ts` 的 proxy dispatcher 改为按 origin 分流：127.0.0.1/localhost/::1 直连，其余走代理
+- e2e 8/8 PASS（热切 cliproxy/gpt-5.4-mini 真实往返 ~3s，切回 MiniMax-M3 默认不变）；112 tests/typecheck/build 全绿；已 reload:ext（native host 旧进程需重连拉起才生效）
+- **密钥外泄事件**：探测时 cat config.yaml 的红action sed 正则没覆盖 `api-keys:` 下的裸列表项，导致本地池 key 进入会话记录。影响面=仅本机回环端点；教训=敏感配置一律用 `grep 键名` 或先 jq/yq 摘字段，不整文件过 sed。建议用户择机在管理面板轮换该 key（http://127.0.0.1:8317/management.html，密钥为 remote-management.secret-key）
+- 遗留：池子注册后"组出现但池子刚挂"的窗口期请求会失败，走现有错误透传，可接受
+
+## 2026-09-04 Gemini 恢复可用，补入本地池清单
+- 用户提示后最小探针复测：gemini-3.1-flash-lite / gemini-3-flash / gemini-3.1-pro-low 全部返回 ok（前一日为区域限制 FAILED_PRECONDITION）
+- `agent/src/cliproxy.ts` 清单 +3（注释注明曾为区域限制）；cliproxy.test.ts 相应断言反转（排除项只剩图像/视频与未实测型号）。112 tests / typecheck / build 全绿，已 reload:ext。本地池现 22 个模型
+
+## 2026-09-04 Gemini 快型号补入 + beautifului.dev 组件评估
+- 池内无 3.5/3.7 的 Lite 型号；probe gemini-3.7/3.8-flash-high 均 ~5s 返回 ok，已注册进 `cliproxy.ts`（本地池 24 个模型）。快速 Gemini 选择现状：3.1-flash-lite（最快最轻）/ 3.7-flash-high、3.8-flash-high（新且带推理）
+- beautifului.dev（AI 原生界面组件库，21 个组件）评估结论，分三档：
+  - 现在可用：01 Loading State（像素格 loader+耗时，可升级我们的流式占位）、02 Thinking（可展开 trace，对照我们的思考块）、05 Tool Chips（工具调用更紧凑的形态）、08 Prompt Bar（@ 来源 / 命令 + 模型选择器，composer 演进方向）
+  - 路线图对齐（做到对应项时参考）：04 Approval Card（危险操作确认，注意路线图已定调纯对话，此卡仅作视觉参考）、06 Task Rows（并行 session 状态）、20 Selection Actions（选中即问）、21 Agent Screen（轨迹回放/技能录制）
+  - 不适用：表格类（Diff/Records/Filter）、Search、Flowchart、Insight/Context/Recommendation Cards（数据型应用场景）
+
+## 2026-09-04 Tool Chips + 像素格 Loading（A/B 用户双选 B）
+- 卡 `docs/evals/20260904-chips-pixel-loading.md`；视觉规范稿 `/tmp/sideagent-ab-compare.html`（B 侧即 beautifului.dev 风格的消化版）
+- **Tool Chips**：run 块内连续工具调用收进 `.chip-group`（可换行 flex + 共享详情区），chip = 6px 状态点（running accent 脉动/绿/红）+ lucide 图标 + describeTool 中文名 + 灰耗时；点击就地展开参数/结果，每组最多展开一个；思考块插入会另起 chip 组保持事件交错序。旧 .tool-card/.spinner/思考 shimmer 样式已删
+- **像素格 loader**：5×5、7px 格/3px 间距、accent 相位波纹（(x+y)*0.12s），旁"处理中 · N.Ns"（等宽 100ms 刷新）+ 当前动作副标题（最近工具中文名，无则"思考"）；运行中常驻 run body 底部。run 摘要行 spinner 移除（运行态由像素格表达），摘要链与"绿勾+耗时"终态不变
+- **interval 清理**：耗时读数 timer 挂 currentRun，finishRun() 统一 clearInterval+移除节点，agent_end/idle/断连/重连/空 run 全汇此出口；连续多 run 实测无残留
+- 纯逻辑进 steps.ts（chipState/loaderSubtitle/pixelDelay，+8 断言）；117 tests / typecheck / build 全绿；截图 chips-{running,collapsed,expanded,failed,dark,reduced-motion}.png 全过（reduced-motion 下格子静止、读数照刷）
+- 已 reload:ext。待人评：chips 手感（点开展开/收起）、像素格观感、思考流式期不再用 shimmer 是否习惯
