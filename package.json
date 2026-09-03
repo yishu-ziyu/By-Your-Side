@@ -7,9 +7,11 @@
   ],
   "scripts": {
     "build": "npm run build -w @sideagent/extension",
-    "dev:agent": "tsx agent/src/main.ts",
+    "dev:agent": "tsx agent/src/main.ts --ws",
     "typecheck": "npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent",
-    "test": "vitest run"
+    "test": "vitest run",
+    "install:host": "node scripts/install-host.mjs",
+    "reload:ext": "node scripts/reload-ext.mjs"
   },
   "devDependencies": {
     "typescript": "7.0.2",

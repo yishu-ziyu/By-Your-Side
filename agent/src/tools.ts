@@ -102,10 +102,10 @@ export function createBrowserTools(rpc: ToolRpc): ToolDefinition[] {
       name: "snapshot",
       label: "Snapshot",
       description:
-        "Get an accessibility-tree text snapshot of the working tab. Interactive elements are listed as [ref=N] with stable loc=css:... locators. This is your primary way to observe the page.",
+        "Get the real accessibility tree of the working tab as indented text (via CDP: covers shadow DOM and virtualized content). Interactive elements are listed as [ref=N]. This is your primary way to observe the page.",
       promptGuidelines: [
         "Take a snapshot after every navigation and after actions that change the page.",
-        "ref=N handles are only valid until the next snapshot or page change; prefer loc=css:... for reuse.",
+        "@N refs stay valid across snapshots while the node persists; navigation invalidates them.",
       ],
       parameters: Type.Object({
         scope: Type.Optional(

@@ -3,8 +3,9 @@
   "name": "SideAgent",
   "version": "0.1.0",
   "description": "侧边栏 Agent：连接本地伴随进程，替你操作浏览器。",
-  "permissions": ["debugger", "tabs", "scripting", "sidePanel", "storage"],
+  "permissions": ["debugger", "tabs", "scripting", "sidePanel", "storage", "nativeMessaging"],
   "host_permissions": ["<all_urls>"],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA68Syf34PL9MwoxoTcRkYPNzmIT6dSCKyiwrykaWuCH2/87z0tdVhsr8pGPJun4/qnx3bw9iAgWNOKsUp7HgS1lgV4eTdnWcIDPCYSa+jFGEGzhlbEmsEruym2rmtwug53mELkTYQe+KosEjtFn2OzVcf1KN0GS8AYURaTa5Z9dlvMg7VPR+a1kXLWjV1qQQwhM62KEZLP5w+gwqEH3ym83zZx9ZHHL9vaSeLNtmEFmGu9CkQXZqoACmznhC8mGfVdsLj+1O1kif166cH0Z5T22L8WRdVaczrxkm39eUfhG+K6Hq1DsjSQEFOVpzxGIFRimG4ZhARJVCyAz+NfLtcRQIDAQAB",
   "background": {
     "service_worker": "background.js",
     "type": "module"

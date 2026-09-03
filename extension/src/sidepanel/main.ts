@@ -1,9 +1,11 @@
 /**
  * side panel 入口：原生 TS + DOM，无框架。
- * 连接 ws://127.0.0.1:7758，渲染对话流，转发 tool_call 到 background 执行。
+ * 经 chrome.runtime Port 接入 background（background 持有到伴随进程的连接并执行工具）；
+ * 本层只负责渲染对话流与转发用户输入。token 设置 UI 仅在 ws 调试回退下出现。
  */
-import { DEFAULT_HOST, DEFAULT_PORT, parseServerMessage } from "../../../shared/protocol.js";
+import { parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentUiEvent, ClientMessage } from "../../../shared/protocol.js";
+import { PANEL_PORT_NAME, type BgToPanel, type PanelToBg } from "../relay.js";
 
 const TOKEN_KEY = "sideagent_token";
 
@@ -18,7 +20,7 @@ app.innerHTML = `
   </div>
   <div id="setup" hidden>
     <h2>SideAgent 设置</h2>
-    <p class="hint">在伴随进程终端里找到 token，粘贴到下面（只需设置一次）。</p>
+    <p class="hint">native host 未安装时的调试通道：先跑 <code>npm run dev:agent</code>，把终端里的 token 粘贴到下面（只需设置一次）。正常用法：<code>npm run install:host</code> 后无需本页。</p>
     <input id="token-input" type="text" placeholder="token" autocomplete="off" />
     <div id="setup-err" class="err"></div>
     <button id="setup-save" type="button">保存并连接</button>
@@ -36,10 +38,9 @@ const tokenInput = document.getElementById("token-input") as HTMLInputElement;
 const setupErr = document.getElementById("setup-err")!;
 const setupSave = document.getElementById("setup-save") as HTMLButtonElement;
 
-let ws: WebSocket | null = null;
-let token = "";
+let port: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
-let suppressReconnect = false;
+let lastDisconnectDetail = "";
 let running = false;
 let currentAssistant: HTMLElement | null = null;
 let currentThinking: HTMLElement | null = null;
@@ -170,50 +171,26 @@ function handleAgentEvent(ev: AgentUiEvent): void {
   }
 }
 
-// ── 工具调用转发 ───────────────────────────────────────────────────
-
-interface ToolResponse {
-  ok: boolean;
-  data?: unknown;
-  error?: string;
-}
-
-function handleToolCall(id: string, name: string, params: Record<string, unknown>): void {
-  chrome.runtime.sendMessage({ channel: "sideagent-tool", id, name, params }, (resp?: ToolResponse) => {
-    const err = chrome.runtime.lastError;
-    if (err) {
-      send({ type: "tool_result", id, ok: false, error: (err.message ?? "后台执行失败").split("\n")[0] });
-      return;
-    }
-    if (resp?.ok) send({ type: "tool_result", id, ok: true, data: resp.data });
-    else send({ type: "tool_result", id, ok: false, error: resp?.error ?? "工具执行失败" });
-  });
-}
-
-// ── 连接管理 ───────────────────────────────────────────────────────
+// ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
 function send(msg: ClientMessage): void {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  const envelope: PanelToBg = { kind: "client", msg };
+  try {
+    port?.postMessage(envelope);
+  } catch {
+    /* 端口刚好断开，下一轮重连恢复 */
+  }
 }
 
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
   if (!msg) return;
   switch (msg.type) {
-    case "hello_ok": {
-      const wasReconnect = reconnectAttempt > 0;
-      reconnectAttempt = 0;
+    case "hello_ok":
       setStatus("on", msg.model ? `已连接 · ${msg.model}` : "已连接");
-      if (wasReconnect) addMsg("msg notice", "连接已恢复，之前的任务可能已中止");
+      setupEl.hidden = true;
       break;
-    }
     case "hello_error":
-      suppressReconnect = true;
-      try {
-        ws?.close();
-      } catch {
-        /* 忽略 */
-      }
       showSetup(msg.error);
       break;
     case "status":
@@ -221,43 +198,59 @@ function handleServerMessage(raw: string): void {
       abortBtn.hidden = !running;
       if (!running) closeBlocks();
       break;
-    case "tool_call":
-      handleToolCall(msg.id, msg.name, msg.params);
-      break;
     case "agent_event":
       handleAgentEvent(msg.event);
+      break;
+    default:
       break;
   }
 }
 
-function connect(): void {
-  suppressReconnect = false;
-  setStatus(reconnectAttempt > 0 ? "retry" : "off", reconnectAttempt > 0 ? "重连中…" : "连接中…");
-  const socket = new WebSocket(`ws://${DEFAULT_HOST}:${DEFAULT_PORT}`);
-  ws = socket;
-
-  socket.onopen = () => {
-    send({ type: "hello", token, client: "sidepanel" });
-  };
-  socket.onmessage = (e) => {
-    if (typeof e.data === "string") handleServerMessage(e.data);
-  };
-  socket.onclose = () => {
-    if (ws === socket) ws = null;
+function handleBgMessage(envelope: BgToPanel): void {
+  if (envelope.kind === "server") {
+    handleServerMessage(JSON.stringify(envelope.msg));
+    return;
+  }
+  // 连接状态
+  if (envelope.state === "connected") {
+    // 等 hello_ok 带模型名到达；先亮绿灯
+    setStatus("on", "已连接");
+  } else if (envelope.state === "connecting") {
+    setStatus("retry", "连接中…");
+  } else {
     closeBlocks();
-    if (suppressReconnect) return;
-    setStatus("retry", "重连中…");
-    const delay = Math.min(15_000, 1000 * 2 ** reconnectAttempt);
-    reconnectAttempt += 1;
-    setTimeout(connect, delay);
-  };
-  socket.onerror = () => {
-    try {
-      socket.close();
-    } catch {
-      /* 忽略 */
+    setStatus("off", "未连接");
+    // 同一失败原因只提示一次，重试循环不刷屏
+    if (envelope.detail && envelope.detail !== lastDisconnectDetail) {
+      lastDisconnectDetail = envelope.detail;
+      addMsg("msg notice", envelope.detail);
     }
-  };
+    if (envelope.detail?.includes("token")) showSetup(envelope.detail);
+  }
+}
+
+function connect(): void {
+  let p: chrome.runtime.Port;
+  try {
+    p = chrome.runtime.connect({ name: PANEL_PORT_NAME });
+  } catch {
+    scheduleReconnect();
+    return;
+  }
+  port = p;
+  p.onMessage.addListener((msg: BgToPanel) => handleBgMessage(msg));
+  p.onDisconnect.addListener(() => {
+    if (port === p) port = null;
+    scheduleReconnect();
+  });
+}
+
+function scheduleReconnect(): void {
+  closeBlocks();
+  setStatus("retry", "重连中…");
+  const delay = Math.min(5_000, 500 * 2 ** reconnectAttempt);
+  reconnectAttempt += 1;
+  setTimeout(connect, delay);
 }
 
 // ── 设置界面与输入区 ───────────────────────────────────────────────
@@ -265,7 +258,10 @@ function connect(): void {
 function showSetup(error?: string): void {
   setupEl.hidden = false;
   setupErr.textContent = error ?? "";
-  tokenInput.value = token;
+  void chrome.storage.local.get(TOKEN_KEY).then((stored) => {
+    const saved = stored[TOKEN_KEY];
+    tokenInput.value = typeof saved === "string" ? saved : "";
+  });
   setStatus("off", "未连接");
 }
 
@@ -275,11 +271,10 @@ setupSave.onclick = () => {
     setupErr.textContent = "请输入 token";
     return;
   }
-  token = t;
   void chrome.storage.local.set({ [TOKEN_KEY]: t });
   setupEl.hidden = true;
-  reconnectAttempt = 0;
-  connect();
+  const retry: PanelToBg = { kind: "retry" };
+  port?.postMessage(retry);
 };
 
 function sendInput(): void {
@@ -299,15 +294,4 @@ inputEl.addEventListener("keydown", (e) => {
 });
 abortBtn.onclick = () => send({ type: "abort" });
 
-async function init(): Promise<void> {
-  const stored = await chrome.storage.local.get(TOKEN_KEY);
-  const saved = stored[TOKEN_KEY];
-  token = typeof saved === "string" ? saved : "";
-  if (!token) {
-    showSetup();
-    return;
-  }
-  connect();
-}
-
-void init();
+connect();
