@@ -1,5 +1,5 @@
 /**
- * 13 个浏览器工具的 defineTool 封装。
+ * 15 个浏览器工具的 defineTool 封装。
  * 每个 execute 只做一件事：rpc.call 转发给扩展，再把结果转成模型友好的 content。
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
  */
@@ -211,6 +211,32 @@ export function createBrowserTools(rpc: ToolRpc): ToolDefinition[] {
         const rendered =
           typeof data.value === "string" ? data.value : truncate(JSON.stringify(data.value, null, 2) ?? "undefined", MAX_JS_RESULT_CHARS);
         return textResult(rendered, data);
+      },
+    }),
+
+    defineTool({
+      name: "mark",
+      label: "Mark element",
+      description:
+        "Draw a persistent annotation on an element in the working tab: outline box + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation.",
+      parameters: Type.Object({
+        target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
+        label: Type.Optional(Type.String({ description: "Short label shown next to the mark" })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("mark", params)) as ToolContract["mark"]["data"];
+        return textResult(`Marked ${params.target}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "clear_marks",
+      label: "Clear marks",
+      description: "Remove all annotation marks previously drawn with mark.",
+      parameters: Type.Object({}),
+      execute: async () => {
+        const data = (await call("clear_marks", {})) as ToolContract["clear_marks"]["data"];
+        return textResult("All marks cleared.", data);
       },
     }),
 

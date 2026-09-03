@@ -47,8 +47,8 @@ async function callOnBackendNode<T>(
   return result.result?.value as T;
 }
 
-/** AX ref → 元素中心视口坐标（scrollIntoView + getBoundingClientRect，与 domops 同语义）。 */
-async function centerOfBackendNode(tabId: number, backendNodeId: number): Promise<[number, number]> {
+/** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
+async function rectOfBackendNode(tabId: number, backendNodeId: number): Promise<DomRect> {
   const rect = await callOnBackendNode<DomRect | undefined>(
     tabId,
     backendNodeId,
@@ -62,6 +62,12 @@ async function centerOfBackendNode(tabId: number, backendNodeId: number): Promis
     }`,
   );
   if (!rect) throw new Error("无法获取元素位置");
+  return rect;
+}
+
+/** AX ref → 元素中心视口坐标（scrollIntoView + getBoundingClientRect，与 domops 同语义）。 */
+async function centerOfBackendNode(tabId: number, backendNodeId: number): Promise<[number, number]> {
+  const rect = await rectOfBackendNode(tabId, backendNodeId);
   return [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)];
 }
 
@@ -139,15 +145,20 @@ export async function click(params: {
   let point = params.point;
   if (!point && !target) throw new Error("click 需要 target 或 point 参数");
 
+  let targetRect: DomRect | undefined;
+
   if (target) {
-    // target → 元素中心视口坐标。@N 若来自 AX 快照（ref 即 backendDOMNodeId）走 CDP；
+    // target → 元素中心视口坐标与包围盒。@N 若来自 AX 快照（ref 即 backendDOMNodeId）走 CDP；
     // 否则（DOM 回退快照的 ref 或 CSS/loc 形式）或 debugger 被占用时走 domops 页面内解析。
     const ref = parseRef(target);
     const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
     let resolvedViaCdp = false;
     if (backendNodeId !== undefined) {
       try {
-        if (!point) point = await centerOfBackendNode(tabId, backendNodeId);
+        targetRect = await rectOfBackendNode(tabId, backendNodeId);
+        if (!point) {
+          point = [Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2)];
+        }
         resolvedViaCdp = true;
       } catch (e) {
         if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
@@ -159,7 +170,7 @@ export async function click(params: {
     }
     if (!resolvedViaCdp && !point) {
       await ensureDomOps(tabId);
-      const rect = await callDom(
+      targetRect = await callDom(
         tabId,
         (t: string): DomRect => {
           const dom = window.__sideagent?.dom;
@@ -168,13 +179,28 @@ export async function click(params: {
         },
         [target],
       );
-      point = [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)];
+      point = [Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2)];
     }
   }
 
   await activateTab(tab);
 
-  // 虚拟鼠标可视化：先平滑移动到目标点、播点击波纹，再真实派发点击。
+  // 1. 操作前元素高亮：如果解析到了目标元素包围盒，先展示呼吸高亮框（静默兜底）
+  if (targetRect) {
+    try {
+      await ensureCursor(tabId);
+      await callDom(
+        tabId,
+        (r: DomRect) => window.__sideagent?.cursor?.highlight(r),
+        [targetRect],
+      );
+      await new Promise((r) => setTimeout(r, 500));
+    } catch {
+      // 页面禁止注入（如 chrome:// 页面）等场景静默跳过
+    }
+  }
+
+  // 2. 虚拟鼠标可视化：先平滑移动到目标点、播点击波纹，再真实派发点击。
   // 坐标取 scrollIntoView 之后算出的视口 point；光标驱动失败静默，不影响主流程。
   {
     const [vx, vy] = point!;
@@ -237,12 +263,63 @@ export async function click(params: {
 export async function fill(params: { target: string; value: string }): Promise<{ filled: true }> {
   const tab = await resolveWorkingTab();
   if (tab.id == null) throw new Error("工作标签页无效");
+  const tabId = tab.id;
+  await activateTab(tab);
+
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
-  const backendNodeId = ref !== null && isAxRef(tab.id, ref) ? ref : undefined;
+  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+
+  // 1. 操作前元素高亮：必须在 scrollIntoView 之后取包围盒并展示呼吸框（静默兜底）
+  let targetRect: DomRect | undefined;
   if (backendNodeId !== undefined) {
     try {
-      await fillBackendNode(tab.id, backendNodeId, params.value);
+      targetRect = await rectOfBackendNode(tabId, backendNodeId);
+    } catch (e) {
+      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+        throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
+      }
+      // debugger 不可用时落到 domops
+    }
+  }
+
+  if (!targetRect) {
+    try {
+      await ensureDomOps(tabId);
+      targetRect = await callDom(
+        tabId,
+        (t: string): DomRect => {
+          const dom = window.__sideagent?.dom;
+          if (!dom) throw new Error("domops 未注入");
+          return dom.rectOf(t);
+        },
+        [params.target],
+      );
+    } catch (e) {
+      if (backendNodeId === undefined) {
+        throw e;
+      }
+    }
+  }
+
+  if (targetRect) {
+    try {
+      await ensureCursor(tabId);
+      await callDom(
+        tabId,
+        (r: DomRect) => window.__sideagent?.cursor?.highlight(r),
+        [targetRect],
+      );
+      await new Promise((r) => setTimeout(r, 500));
+    } catch {
+      // 页面禁止注入等场景静默跳过
+    }
+  }
+
+  // 2. 真实填充操作
+  if (backendNodeId !== undefined) {
+    try {
+      await fillBackendNode(tabId, backendNodeId, params.value);
       return { filled: true };
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
@@ -251,9 +328,9 @@ export async function fill(params: { target: string; value: string }): Promise<{
       // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
     }
   }
-  await ensureDomOps(tab.id);
+  await ensureDomOps(tabId);
   await callDom(
-    tab.id,
+    tabId,
     (t: string, v: string) => {
       const dom = window.__sideagent?.dom;
       if (!dom) throw new Error("domops 未注入");
@@ -322,4 +399,66 @@ export async function scroll(params: { dy?: number; toBottom?: boolean }): Promi
     [params.dy ?? null],
   );
   return { atBottom: res.atBottom };
+}
+
+/**
+ * mark 工具：在目标元素处画持久标注（描边框+箭头+名牌）。
+ * 标注锚定文档坐标（cursor.ts 内部加滚动偏移），用户滚动页面时跟随内容不漂移。
+ * target 定位串与 click 同语义；注入失败如实报错（标注是显式动作，需要反馈）。
+ */
+export async function mark(params: { target: string; label?: string }): Promise<{ marked: true }> {
+  const tab = await resolveWorkingTab();
+  if (tab.id == null) throw new Error("工作标签页无效");
+  const tabId = tab.id;
+
+  // 与 click 同样的解析策略：AX 快照 ref 走 CDP，其余走 domops 页面内解析
+  const ref = parseRef(params.target);
+  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  let rect: DomRect | undefined;
+  if (backendNodeId !== undefined) {
+    try {
+      rect = await rectOfBackendNode(tabId, backendNodeId);
+    } catch (e) {
+      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+        throw new Error(`ref @${ref} 已失效，请重新 snapshot（${oneLine(e)}）`);
+      }
+    }
+  }
+  if (!rect) {
+    await ensureDomOps(tabId);
+    rect = await callDom(
+      tabId,
+      (t: string): DomRect => {
+        const dom = window.__sideagent?.dom;
+        if (!dom) throw new Error("domops 未注入");
+        return dom.rectOf(t);
+      },
+      [params.target],
+    );
+  }
+
+  await ensureCursor(tabId);
+  await callDom(
+    tabId,
+    (r: DomRect, l: string | null) => {
+      const cursor = window.__sideagent?.cursor;
+      if (!cursor?.mark) throw new Error("cursor 未注入");
+      cursor.mark(r, l ?? undefined);
+    },
+    [rect, params.label ?? null],
+  );
+  return { marked: true };
+}
+
+/** clear_marks 工具：清除全部 mark 标注。受限页面本来就画不上标注，静默成功。 */
+export async function clearMarks(): Promise<{ cleared: true }> {
+  const tab = await resolveWorkingTab();
+  if (tab.id == null) throw new Error("工作标签页无效");
+  try {
+    await ensureCursor(tab.id);
+    await callDom(tab.id, () => window.__sideagent?.cursor?.clearMarks?.(), []);
+  } catch {
+    /* 页面禁止注入（如 chrome://）时没有标注可清，静默 */
+  }
+  return { cleared: true };
 }

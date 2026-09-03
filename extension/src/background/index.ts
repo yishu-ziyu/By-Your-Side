@@ -12,7 +12,7 @@ import { Uplink } from "./uplink.js";
 import { closeTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
 import { navigate } from "./exec/navigate.js";
 import { snapshot } from "./exec/snapshot.js";
-import { click, fill, pressKey, scroll, typeText } from "./exec/input.js";
+import { click, clearMarks, fill, mark, pressKey, scroll, typeText } from "./exec/input.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
@@ -33,6 +33,8 @@ const handlers: Record<ToolName, Handler> = {
   scroll: (p) => scroll(p),
   js: (p) => evaluateJs(p),
   screenshot: () => screenshot(),
+  mark: (p) => mark(p),
+  clear_marks: () => clearMarks(),
 };
 
 // ── 面板端口管理 ───────────────────────────────────────────────────

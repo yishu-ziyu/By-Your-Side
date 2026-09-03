@@ -5,7 +5,7 @@
 
 ## 当前状态
 
-CDP AX 快照升级已实现完（卡：`docs/evals/20260903-cdp-ax-snapshot.md`），并按 ego-browser 做法对齐一轮：ref 直接用 backendDOMNodeId（废掉自编号，跨快照天然保号）、link/iframe 带 url= 注解、截断 12K→50K、prompt 补了写入探测（write-probe）和视觉工作流约定。机器项全绿（56 tests / typecheck / build）；真实 B站 AX 树（2584 节点）转换验证：180 个 ref、151 条带 url= 链接、27K 字符不截断。扩展已用 `npm run reload:ext` 热重载生效。待用户实测：YouTube/B站/知乎复杂任务、shadow DOM 页、target 回归。
+操作前元素高亮已实现（卡：`docs/evals/20260903-element-highlight.md`）：click/fill 执行前通过 cursor overlay 在目标元素周围绘制呼吸高亮框（500ms 两轮脉动，描边+半透明填色+双重光晕），await 结束后按序驱动光标/填充。多实例支持专属调色板着色，动画结束及 hide() 自动清理无残影；注入失败静默兜底。修复了 closed shadow DOM 下 host.shadowRoot 为 null 导致子元素挂载失败的遗留 bug。机器项全绿（60 tests / typecheck / build），无头 Chrome CDP 双底色截图自检通过。扩展已通过 `npm run reload:ext` 热重载生效。待用户实测：click/fill 高亮与点击节奏手感。
 
 ## 关键结论与决策（CDP AX 快照）
 
@@ -98,3 +98,37 @@ CDP AX 快照升级已实现完（卡：`docs/evals/20260903-cdp-ax-snapshot.md`
 - 技巧：svg 负偏移让箭头尖端对齐 translate 原点（overflow:visible）
 - 验收卡 docs/evals/20260903-cursor-restyle.md；typecheck/build/test 全绿；无头截图双底色自检通过
 - 后台日志说明：项目无落盘日志，background 日志只能在 chrome://extensions 的 Service Worker 控制台查看
+
+## 2026-09-03 高交互性：steer 提示 + 多实例光标
+- 新增 docs/ROADMAP.md：操作前高亮/教学模式/轨迹回放/确认卡/接管/并行任务/技能录制/页面哨兵/多标签编排
+- steer 链路确认已通（sidepanel running→steer → agent session.steer Pi SDK）；补 UX：运行中输入框 placeholder 变"插话：调整 Agent 的方向…"
+- cursor.ts 重构多实例：ns.cursor.for(id) 返回实例专属光标，PALETTE 5 色按序着色，名牌显示 id；默认 main/SideAgent 蓝色不变；颜色经 CSS var(--c) 下发
+- 验收卡 docs/evals/20260903-interactivity.md；typecheck/build/test 全绿；双光标截图自检通过
+- 待做（路线图）：agent 侧多 session 并行编排需协议加 session 路由
+
+## 2026-09-03 操作前元素高亮（呼吸高亮框）
+- 需求来源：让用户看清"Agent 找对地方了"，在 click/fill 执行前圈出目标元素，避免误触与黑盒感
+- overlay 渲染层 (`cursor.ts`)：
+  - 扩展 `window.__sideagent.cursor.highlight(rect)`，复用 cursor overlay 的 closed shadow DOM
+  - 样式：`border: 2px solid var(--c)` + `background: color-mix(in srgb, var(--c) 12%, transparent)` + 外反差白边与实例色双重光晕，在深浅色背景均具有清晰边界
+  - 动效：`highlight-breathe` 500ms 脉动 2 次（0% -> 20% -> 45% -> 70% -> 100%），结束后触发 `animationend` 自动 `remove()`，带 650ms 超时兜底与 `hide()` 清除，不留残影
+  - 多实例支持：按实例 `inst.highlightEl` 独立管理，着色跟随实例调色板（默认 #2f6fed 蓝，worker-red #e2554f 红等）
+  - **重要排障**：修复了 `host.attachShadow({ mode: 'closed' })` 导致 `host.shadowRoot` 外部访问为 null 的问题，模块内持久保留 `shadow` 根引用供动态实例挂载
+- 执行层集成 (`input.ts`)：
+  - 新增 `rectOfBackendNode(tabId, backendNodeId)`：在 AX 快照路径下以 `scrollIntoView` 后通过 `getBoundingClientRect()` 取精确视口包围盒
+  - `click`：解析出 `targetRect` 后优先调用 `cursor.highlight` 并 await 500ms，随后驱动光标 `move` (300ms) + `click` 波纹 (150ms) + 真实派发点击
+  - `fill`：在原生/domops 填充前解析 `targetRect`，调用 `cursor.highlight` 并 await 500ms，随后派发填值
+  - 健壮性：高亮及光标注入均在 `try/catch` 保护下，受限页面（如 chrome://）静默跳过，主流程不受阻
+- 验证：
+  - 验收卡 `docs/evals/20260903-element-highlight.md`，新增测试 `extension/test/highlight.test.ts`
+  - `npm run typecheck` + `npm test`（60 tests）+ `npm run build` 全绿
+  - 无头 Chrome CDP 运行自检截获峰值帧（`element-highlight-peak.png`）与结束清理帧（`element-highlight-finished.png`），深浅底色与多实例均完美通过
+  - `npm run reload:ext` 热重载生效；待用户实测人评点击/输入手感
+
+
+## 2026-09-03 mark/clear_marks 标注工具（修标注漂移 bug）
+- 根因：agent 用 js 工具在 main world 手写 position:fixed 覆盖层画标注，用户滚动后标注脱离目标；且 main world 访问不到 ISOLATED world 的 overlay API
+- 修复（收编为正式工具）：协议加 mark{target,label?}/clear_marks；cursor.ts 新增独立 absolute host（文档坐标，随内容滚动）承载标注层，spawnMark=描边框+左箭头+名牌，实例色跟随；input.ts mark 复用 click 的 AX/CDP+domops 双路解析；agent tools.ts 注册；prompt.ts 加标注指引（禁止手写 fixed 覆盖层）
+- 协作事故记录：与 Gemini 并发改同一工作区，protocol.ts 编辑被其 git 操作 revert；教训=多 agent 派工需按 commit 划界，协议类共享文件同一时间只许一方改
+- 验收卡 docs/evals/20260903-mark-tool.md；typecheck/build/test(60) 全绿；标注样式截图自检通过
+- 待人评：真实页面 mark 后滚动的跟随效果；与 Gemini 高亮的衔接节奏

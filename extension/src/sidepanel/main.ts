@@ -22,6 +22,8 @@ import type { AgentUiEvent, ClientMessage } from "../../../shared/protocol.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelToBg } from "../relay.js";
 
 const TOKEN_KEY = "sideagent_token";
+const PLACEHOLDER_IDLE = "给 SideAgent 发消息，Enter 发送，Shift+Enter 换行";
+const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -46,7 +48,7 @@ app.innerHTML = `
   </header>
   <div id="messages"></div>
   <div id="composer">
-    <textarea id="input" rows="1" placeholder="给 SideAgent 发消息，Enter 发送，Shift+Enter 换行"></textarea>
+    <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
     <button id="abort-btn" type="button" title="中止" hidden></button>
     <button id="send-btn" type="button" title="发送"></button>
   </div>
@@ -277,6 +279,7 @@ function handleServerMessage(raw: string): void {
       running = msg.state === "running";
       abortBtn.hidden = !running;
       sendBtn.hidden = running;
+      inputEl.placeholder = running ? PLACEHOLDER_RUNNING : PLACEHOLDER_IDLE;
       if (!running) closeBlocks();
       break;
     case "agent_event":

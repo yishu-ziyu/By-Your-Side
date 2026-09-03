@@ -27,6 +27,14 @@ interface SideAgentCursor {
   /** 在视口坐标 (x,y) 播放点击波纹 */
   click(x: number, y: number): void;
   hide(): void;
+  /** 在目标元素周围绘制呼吸高亮框（透明度脉动，结束后自动销毁） */
+  highlight(rect: SideAgentRect): void;
+  /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌），锚定文档坐标随内容滚动 */
+  mark?(rect: SideAgentRect, label?: string): void;
+  /** 清除全部 mark 标注 */
+  clearMarks?(): void;
+  /** 取某个 Agent 实例的专属光标（调色板着色，名牌为 id），供并行任务区分 */
+  for(instanceId: string): SideAgentCursor;
 }
 
 interface SideAgentNamespace {

@@ -56,6 +56,8 @@ export const TOOL_NAMES = [
   "scroll",
   "js",
   "screenshot",
+  "mark",
+  "clear_marks",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -100,6 +102,10 @@ export interface ToolContract {
     params: Record<string, never>;
     data: { imageBase64: string; mediaType: "image/png"; width: number; height: number };
   };
+  /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */
+  mark: { params: { target: string; label?: string }; data: { marked: true } };
+  /** 清除全部 mark 标注 */
+  clear_marks: { params: Record<string, never>; data: { cleared: true } };
 }
 
 // ── 编解码守卫 ─────────────────────────────────────────────────────
