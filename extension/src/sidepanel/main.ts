@@ -2,21 +2,53 @@
  * side panel 入口：原生 TS + DOM，无框架。
  * 经 chrome.runtime Port 接入 background（background 持有到伴随进程的连接并执行工具）；
  * 本层只负责渲染对话流与转发用户输入。token 设置 UI 仅在 ws 调试回退下出现。
+ *
+ * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+import { createElement as icon, ArrowUp, Square, Wrench, Brain } from "lucide";
+import {
+  MousePointerClick,
+  PenLine,
+  Keyboard,
+  ArrowDownUp,
+  ScanSearch,
+  Camera,
+  CodeXml,
+} from "lucide";
 import { parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentUiEvent, ClientMessage } from "../../../shared/protocol.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelToBg } from "../relay.js";
 
 const TOKEN_KEY = "sideagent_token";
 
+marked.setOptions({ breaks: true, gfm: true });
+
+// 渲染出的链接一律新开标签页
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName === "A") {
+    node.setAttribute("target", "_blank");
+    node.setAttribute("rel", "noopener noreferrer");
+  }
+});
+
+function renderMarkdown(text: string): string {
+  return DOMPurify.sanitize(marked.parse(text, { async: false }));
+}
+
 const app = document.getElementById("app")!;
 app.innerHTML = `
-  <div id="status-bar"><span id="status-dot" class="dot"></span><span id="status-text">未连接</span></div>
+  <header id="topbar">
+    <img id="logo" src="icons/icon-48.png" alt="" />
+    <span id="brand">SideAgent</span>
+    <span id="status-pill"><span id="status-dot" class="dot"></span><span id="status-text">未连接</span></span>
+  </header>
   <div id="messages"></div>
-  <div id="input-row">
-    <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
-    <button id="send-btn" type="button">发送</button>
-    <button id="abort-btn" type="button" hidden>中止</button>
+  <div id="composer">
+    <textarea id="input" rows="1" placeholder="给 SideAgent 发消息，Enter 发送，Shift+Enter 换行"></textarea>
+    <button id="abort-btn" type="button" title="中止" hidden></button>
+    <button id="send-btn" type="button" title="发送"></button>
   </div>
   <div id="setup" hidden>
     <h2>SideAgent 设置</h2>
@@ -38,13 +70,30 @@ const tokenInput = document.getElementById("token-input") as HTMLInputElement;
 const setupErr = document.getElementById("setup-err")!;
 const setupSave = document.getElementById("setup-save") as HTMLButtonElement;
 
+sendBtn.appendChild(icon(ArrowUp));
+abortBtn.appendChild(icon(Square));
+
 let port: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
 let lastDisconnectDetail = "";
 let running = false;
 let currentAssistant: HTMLElement | null = null;
+let currentAssistantText = "";
 let currentThinking: HTMLElement | null = null;
+let currentThinkingDetails: HTMLDetailsElement | null = null;
 const toolCards = new Map<string, { card: HTMLElement; state: HTMLElement; result: HTMLElement }>();
+
+/** 工具名 → 图标；未知名称回退扳手。 */
+const TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
+  ["click", MousePointerClick],
+  ["fill", PenLine],
+  ["type_text", Keyboard],
+  ["press_key", Keyboard],
+  ["scroll", ArrowDownUp],
+  ["snapshot", ScanSearch],
+  ["screenshot", Camera],
+  ["js", CodeXml],
+]);
 
 // ── 渲染 ───────────────────────────────────────────────────────────
 
@@ -67,24 +116,41 @@ function addMsg(cls: string, text: string): HTMLElement {
 }
 
 function closeBlocks(): void {
+  // 流式光标移除；进行中的思考块折叠并落定文案
+  document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
+  if (currentThinkingDetails) {
+    currentThinkingDetails.classList.remove("streaming");
+    currentThinkingDetails.open = false;
+    const label = currentThinkingDetails.querySelector("summary span");
+    if (label) label.textContent = "思考过程";
+  }
   currentAssistant = null;
+  currentAssistantText = "";
   currentThinking = null;
+  currentThinkingDetails = null;
 }
 
 function appendDelta(kind: "assistant" | "thinking", delta: string): void {
   if (kind === "assistant") {
-    if (!currentAssistant) currentAssistant = addMsg("msg assistant", "");
-    currentAssistant.appendChild(document.createTextNode(delta));
+    // 流式 Markdown：累积原文，每个 delta 重渲染（marked 为同步解析，量小无压力）
+    if (!currentAssistant) currentAssistant = addMsg("msg assistant markdown streaming", "");
+    currentAssistantText += delta;
+    currentAssistant.innerHTML = renderMarkdown(currentAssistantText);
   } else {
     if (!currentThinking) {
       const details = document.createElement("details");
-      details.className = "thinking";
+      details.className = "thinking streaming";
+      details.open = true;
       const summary = document.createElement("summary");
-      summary.textContent = "思考过程";
+      summary.appendChild(icon(Brain));
+      const label = document.createElement("span");
+      label.textContent = "正在思考…";
+      summary.appendChild(label);
       const pre = document.createElement("pre");
       details.append(summary, pre);
       messagesEl.appendChild(details);
       currentThinking = pre;
+      currentThinkingDetails = details;
     }
     currentThinking.appendChild(document.createTextNode(delta));
   }
@@ -106,21 +172,34 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   card.className = "tool-card";
   const head = document.createElement("div");
   head.className = "head";
+  const toolIcon = document.createElement("span");
+  toolIcon.className = "tool-icon";
+  toolIcon.appendChild(icon(TOOL_ICONS.get(ev.name) ?? Wrench));
   const spinner = document.createElement("span");
   spinner.className = "spinner";
   const name = document.createElement("span");
+  name.className = "tool-name";
   name.textContent = ev.name;
   const state = document.createElement("span");
-  state.className = "state";
+  state.className = "state pill running";
   state.textContent = "运行中";
-  head.append(spinner, name, state);
-  const params = document.createElement("div");
-  params.className = "params";
-  params.textContent = shortParams(ev.params);
-  const result = document.createElement("div");
+  head.append(toolIcon, name, spinner, state);
+  card.appendChild(head);
+  const paramsText = shortParams(ev.params);
+  if (paramsText) {
+    const params = document.createElement("details");
+    params.className = "params";
+    const summary = document.createElement("summary");
+    summary.textContent = "参数";
+    const pre = document.createElement("pre");
+    pre.textContent = paramsText;
+    params.append(summary, pre);
+    card.appendChild(params);
+  }
+  const result = document.createElement("pre");
   result.className = "result";
   result.hidden = true;
-  card.append(head, params, result);
+  card.appendChild(result);
   messagesEl.appendChild(card);
   toolCards.set(ev.toolCallId, { card, state, result });
   scrollToEnd();
@@ -132,6 +211,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (!entry) return;
   entry.card.querySelector(".spinner")?.remove();
   entry.state.textContent = ev.isError ? "失败" : "完成";
+  entry.state.className = `state pill ${ev.isError ? "error" : "done"}`;
   if (ev.isError) entry.card.classList.add("error");
   const text = ev.resultText ?? "";
   if (text) {
@@ -196,6 +276,7 @@ function handleServerMessage(raw: string): void {
     case "status":
       running = msg.state === "running";
       abortBtn.hidden = !running;
+      sendBtn.hidden = running;
       if (!running) closeBlocks();
       break;
     case "agent_event":
@@ -277,15 +358,22 @@ setupSave.onclick = () => {
   port?.postMessage(retry);
 };
 
+function autoResize(): void {
+  inputEl.style.height = "auto";
+  inputEl.style.height = `${Math.min(inputEl.scrollHeight, 140)}px`;
+}
+
 function sendInput(): void {
   const text = inputEl.value.trim();
   if (!text) return;
   addMsg("msg user", text);
   send(running ? { type: "steer", text } : { type: "user_message", text });
   inputEl.value = "";
+  autoResize();
 }
 
 sendBtn.onclick = sendInput;
+inputEl.addEventListener("input", autoResize);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();

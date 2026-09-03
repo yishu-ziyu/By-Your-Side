@@ -102,6 +102,14 @@ async function ensureDomOps(tabId: number): Promise<void> {
   });
 }
 
+async function ensureCursor(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content-cursor.js"],
+    world: "ISOLATED",
+  });
+}
+
 /** 在页面 ISOLATED world 里执行 func 并取回结果。 */
 async function callDom<Args extends unknown[], Result>(
   tabId: number,
@@ -165,6 +173,29 @@ export async function click(params: {
   }
 
   await activateTab(tab);
+
+  // 虚拟鼠标可视化：先平滑移动到目标点、播点击波纹，再真实派发点击。
+  // 坐标取 scrollIntoView 之后算出的视口 point；光标驱动失败静默，不影响主流程。
+  {
+    const [vx, vy] = point!;
+    try {
+      await ensureCursor(tabId);
+      await callDom(
+        tabId,
+        (x: number, y: number) => window.__sideagent?.cursor?.move(x, y),
+        [vx, vy],
+      );
+      await new Promise((r) => setTimeout(r, 300));
+      await callDom(
+        tabId,
+        (x: number, y: number) => window.__sideagent?.cursor?.click(x, y),
+        [vx, vy],
+      );
+      await new Promise((r) => setTimeout(r, 150));
+    } catch {
+      // 页面禁止注入（如 chrome:// 页面）等场景：跳过可视化
+    }
+  }
 
   try {
     const [x, y] = point!;

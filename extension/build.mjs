@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,6 +35,7 @@ await esbuild.build({
   entryPoints: {
     "content-snapshot": "src/content/snapshot.ts",
     "content-domops": "src/content/domops.ts",
+    "content-cursor": "src/content/cursor.ts",
   },
 });
 
@@ -45,5 +46,8 @@ for (const [from, to] of [
 ]) {
   await copyFile(path.join(root, from), path.join(dist, to));
 }
+
+// 图标：manifest 里以 icons/ 前缀引用，保持目录结构拷入 dist
+await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
 
 console.log("dist/ 构建完成");

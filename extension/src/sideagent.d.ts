@@ -21,10 +21,19 @@ interface SideAgentDomOps {
   scrollToBottom(maxSteps?: number): Promise<{ atBottom: boolean }>;
 }
 
+interface SideAgentCursor {
+  /** 平滑移动到视口坐标 (x,y)；从隐藏状态首次出现时直接落位 */
+  move(x: number, y: number): void;
+  /** 在视口坐标 (x,y) 播放点击波纹 */
+  click(x: number, y: number): void;
+  hide(): void;
+}
+
 interface SideAgentNamespace {
   refs?: Map<number, Element>;
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
+  cursor?: SideAgentCursor;
 }
 
 interface Window {
