@@ -5,7 +5,15 @@
 
 ## 当前状态
 
-教学模式已按实测反馈重设计（卡：`docs/evals/20260903-teach-revamp.md`，详见文末「2026-09-03 教学模式重设计」节）：硬闸门与软拒全拆（教学=倾向增强，能力全集保留），prompt 改教学倾向，teach 模式下有待完成标注时 URL 变化（含 SPA pushState）自动清 mark 并推 page_event 让 agent 主动推进，mark label 贴顶自动翻到框下方。侧边栏完成"执行步骤"信息流重设计（卡：`docs/evals/20260903-panel-steps-design.md`，详见文末同名节）：run 聚合块（步骤链+耗时+完成折叠）、工具行中文化+耗时、回到底部圆钮。机器项全绿（88 tests / typecheck / build），无头截图自检通过，扩展已热重载。待人评：GitHub SPA 教学复测自动推进手感、执行步骤块观感。
+2026-09-04 点击不再拽 macOS Space（卡：`docs/evals/20260904-no-space-steal.md`）。根因是 Lead 在 click/type/press/screenshot 前 `windows.update({focused:true})`。现：窗口未聚焦则不切 tab、不抢窗口；截图先 CDP。已 rsync 到 `Desktop/ego/extension/dist` 并 reload。需再开一次面板。
+
+上一项：2026-09-04 真机：维基+飞书任务 Lead（MiniMax-M3）没有 spawn_worker，面板只有一条串行执行步骤。底座在（Fleet/邮箱/工人行），但模型把两站自己做完了。已加硬性 prompt + spawn 工具描述 + 每条 user_message 的 Coordinator 提醒。native host 是 tsx 源码，关开面板即加载。当前这一轮飞书确认仍走串行，不中途强拆。
+
+上一项：2026-09-04 模型选择改到输入区（卡：`docs/evals/20260904-model-picker-composer.md`）。用户原件板选 1+2+3：顶栏只留绿点「已连接」，composer 左下短名 chip（MiniMax-M3），点开上弹搜索 + 按厂商分组。机器项全绿（150 tests / typecheck / build）；无头截图 `/tmp/model-picker-shots/{light-closed,light-open,light-search,dark-closed,dark-open}.png`。待人评真机手感。需 `npm run reload:ext` 或手动重载扩展。
+
+上一项：2026-09-04 并行工人底座已落地（卡：`docs/evals/20260904-parallel-workers.md`）。拓扑：Lead 拥有图 + 进程内邮箱 + 工人各绑 tab/光标。机器项 3/4/6 绿（143 tests / typecheck / build）。待人评：维基+飞书硬场景、同构图通用性、面板工人行观感。短任务仍走单 session，不 spawn。已 `npm run build`；native host 需重连才拉到新伴随进程。
+
+上一项：教学模式已按实测反馈重设计（卡：`docs/evals/20260903-teach-revamp.md`，详见文末「2026-09-03 教学模式重设计」节）：硬闸门与软拒全拆（教学=倾向增强，能力全集保留），prompt 改教学倾向，teach 模式下有待完成标注时 URL 变化（含 SPA pushState）自动清 mark 并推 page_event 让 agent 主动推进，mark label 贴顶自动翻到框下方。侧边栏完成"执行步骤"信息流重设计（卡：`docs/evals/20260903-panel-steps-design.md`，详见文末同名节）：run 聚合块（步骤链+耗时+完成折叠）、工具行中文化+耗时、回到底部圆钮。机器项全绿（88 tests / typecheck / build），无头截图自检通过，扩展已热重载。待人评：GitHub SPA 教学复测自动推进手感、执行步骤块观感。
 
 上一项（操作前元素高亮，卡：`docs/evals/20260903-element-highlight.md`）：click/fill 执行前呼吸高亮框，机器项全绿，待用户实测手感。
 
@@ -213,3 +221,24 @@
 - **interval 清理**：耗时读数 timer 挂 currentRun，finishRun() 统一 clearInterval+移除节点，agent_end/idle/断连/重连/空 run 全汇此出口；连续多 run 实测无残留
 - 纯逻辑进 steps.ts（chipState/loaderSubtitle/pixelDelay，+8 断言）；117 tests / typecheck / build 全绿；截图 chips-{running,collapsed,expanded,failed,dark,reduced-motion}.png 全过（reduced-motion 下格子静止、读数照刷）
 - 已 reload:ext。待人评：chips 手感（点开展开/收起）、像素格观感、思考流式期不再用 shimmer 是否习惯
+
+## 2026-09-04 并行工人底座（设计，未实现）
+
+- 卡：`docs/evals/20260904-parallel-workers.md`。路线图原文：「多个 Agent session 各绑标签页并行执行，页面光标按实例着色区分（光标渲染层已支持 for(id)，agent 侧多 session 编排待做）」
+- **现状（代码）**：`main.ts` 只 `create` 一次 `BrowserAgentSession`；`state.ts` 一个 `workingTabId`；`input.ts` 光标一律 `cursor.move/click`（默认 `"main"`）；`prompt.ts` 写死 "one working tab at a time"。`ToolRpc` 已能多 pending，AX 已按 tab 分桶，CDP 能同时 attach 多 tab——缺的是 session 路由，不是点击能力。
+- **X / 论文对照**：
+  - gdb（2026-05）：Codex 一条 prompt 拆出多个并行浏览器 subagent（机票/Airbnb 各开会话）
+  - @ctatedev agent-browser `--pin-tab`：一 agent 一 tab，跨命令保持
+  - Hermes / Claude 风格：Lead 只看摘要，工人干净上下文；**不该**把两人的点击轨迹灌回 Lead
+  - nicobailon pi-subagents + pi-intercom：spawn + 1:1 消息（Unix socket broker）。我们 `noExtensions: true`，**不装插件**，在伴随进程里做同等原语（工人是浏览器工具不是文件系统）
+  - Scale AI Spine-Branch（arXiv:2608.22077）：活状态不能 merge。spine 持有持续页面（飞书文档），branch 搜集后交工件、丢弃。工件直送依赖节点，不靠 manager 当邮差
+  - 反面：纯 P2P 群聊（AutoGen GroupChat）O(n²)、难调试；纯 Orchestrator 转发每条工人消息会多一跳延迟、污染 Lead 上下文
+- **选定拓扑**：Lead 拥有 DAG；工人 `post`/`await_message` 进程内邮箱；用户只跟 Lead 说话；v1 最多 2 工人、禁止递归 spawn
+- **已实现**：
+  - 协议：`status` / `tool_call` / `agent_event` / `page_event` 可选 `sessionId`（省略=Lead `main`）
+  - 执行层：`workingTabs` 按 session 认领；工人 `open_tab` 不抢前台；click/fill/mark 走 `cursor.for(id)`；工人截图优先 CDP `Page.captureScreenshot`
+  - agent：`Mailbox` + `Fleet.spawn`（非阻塞，最多 2）；Lead 工具 spawn_worker / list_workers / stop_worker / post / await_message；工人只有浏览器工具 + post/await
+  - 面板：一条对话；工人行色条+名字+chips（弱化，对照 Will's S「先弱化次要」）；abort 停整图
+  - 光标颜色：`cursorColor(id)` 稳定散列，工人跳过品牌蓝，与面板 `--worker-c` 一致
+- **待人评**：硬场景（维基搜集 ∥ 飞书建档再交接）、同构图无特判、短任务不 spawn、工人行观感
+- **注意**：改的是伴随进程，Chrome 需重载扩展且 native host 重连（关侧边栏/重载扩展）才跑到新代码

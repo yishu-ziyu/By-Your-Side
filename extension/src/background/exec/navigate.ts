@@ -1,3 +1,4 @@
+import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 
 /**
@@ -28,11 +29,14 @@ export async function waitForLoad(tabId: number, timeoutMs: number): Promise<boo
   });
 }
 
-export async function navigate(params: {
-  url: string;
-  timeout?: number;
-}): Promise<{ url: string; title: string; note?: string }> {
-  const tab = await resolveWorkingTab();
+export async function navigate(
+  params: {
+    url: string;
+    timeout?: number;
+  },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ url: string; title: string; note?: string }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const timeoutMs = Math.max(1, params.timeout ?? 30) * 1000;
 

@@ -1,5 +1,6 @@
+import { LEAD_SESSION_ID, isLeadSession } from "../../../../shared/protocol.js";
 import { sendCommand } from "../debugger.js";
-import { activateTab, resolveWorkingTab } from "../state.js";
+import { maybeActivateTab, resolveWorkingTab } from "../state.js";
 import { resolveKey } from "../../shared/keymap.js";
 import { isAxRef } from "../axstate.js";
 import { oneLine } from "../util.js";
@@ -133,14 +134,22 @@ async function callDom<Args extends unknown[], Result>(
   return first.result as Awaited<Result>;
 }
 
-export async function click(params: {
-  target?: string;
-  point?: [number, number];
-  label?: string;
-}): Promise<{ clicked: true }> {
-  const tab = await resolveWorkingTab();
+function cursorId(sessionId: string): string {
+  return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId;
+}
+
+export async function click(
+  params: {
+    target?: string;
+    point?: [number, number];
+    label?: string;
+  },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ clicked: true }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const tabId = tab.id;
+  const cid = cursorId(sessionId);
   const target = params.target;
   let point = params.point;
   if (!point && !target) throw new Error("click 需要 target 或 point 参数");
@@ -183,7 +192,7 @@ export async function click(params: {
     }
   }
 
-  await activateTab(tab);
+  await maybeActivateTab(tab, sessionId);
 
   // 1. 操作前元素高亮：如果解析到了目标元素包围盒，先展示呼吸高亮框（静默兜底）
   if (targetRect) {
@@ -191,8 +200,8 @@ export async function click(params: {
       await ensureCursor(tabId);
       await callDom(
         tabId,
-        (r: DomRect) => window.__sideagent?.cursor?.highlight(r),
-        [targetRect],
+        (r: DomRect, id: string) => window.__sideagent?.cursor?.for(id)?.highlight(r),
+        [targetRect, cid],
       );
       await new Promise((r) => setTimeout(r, 500));
     } catch {
@@ -208,14 +217,14 @@ export async function click(params: {
       await ensureCursor(tabId);
       await callDom(
         tabId,
-        (x: number, y: number) => window.__sideagent?.cursor?.move(x, y),
-        [vx, vy],
+        (x: number, y: number, id: string) => window.__sideagent?.cursor?.for(id)?.move(x, y),
+        [vx, vy, cid],
       );
       await new Promise((r) => setTimeout(r, 300));
       await callDom(
         tabId,
-        (x: number, y: number) => window.__sideagent?.cursor?.click(x, y),
-        [vx, vy],
+        (x: number, y: number, id: string) => window.__sideagent?.cursor?.for(id)?.click(x, y),
+        [vx, vy, cid],
       );
       await new Promise((r) => setTimeout(r, 150));
     } catch {
@@ -260,11 +269,15 @@ export async function click(params: {
   return { clicked: true };
 }
 
-export async function fill(params: { target: string; value: string }): Promise<{ filled: true }> {
-  const tab = await resolveWorkingTab();
+export async function fill(
+  params: { target: string; value: string },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ filled: true }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const tabId = tab.id;
-  await activateTab(tab);
+  const cid = cursorId(sessionId);
+  await maybeActivateTab(tab, sessionId);
 
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
@@ -307,8 +320,8 @@ export async function fill(params: { target: string; value: string }): Promise<{
       await ensureCursor(tabId);
       await callDom(
         tabId,
-        (r: DomRect) => window.__sideagent?.cursor?.highlight(r),
-        [targetRect],
+        (r: DomRect, id: string) => window.__sideagent?.cursor?.for(id)?.highlight(r),
+        [targetRect, cid],
       );
       await new Promise((r) => setTimeout(r, 500));
     } catch {
@@ -341,20 +354,26 @@ export async function fill(params: { target: string; value: string }): Promise<{
   return { filled: true };
 }
 
-export async function typeText(params: { text: string }): Promise<{ typed: true }> {
-  const tab = await resolveWorkingTab();
+export async function typeText(
+  params: { text: string },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ typed: true }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
-  await activateTab(tab);
+  await maybeActivateTab(tab, sessionId);
   await sendCommand(tab.id, "Input.insertText", { text: params.text });
   return { typed: true };
 }
 
-export async function pressKey(params: { key: string }): Promise<{ pressed: true }> {
+export async function pressKey(
+  params: { key: string },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ pressed: true }> {
   const info = resolveKey(params.key);
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
-  const tab = await resolveWorkingTab();
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
-  await activateTab(tab);
+  await maybeActivateTab(tab, sessionId);
 
   const base = {
     key: info.key,
@@ -371,8 +390,11 @@ export async function pressKey(params: { key: string }): Promise<{ pressed: true
   return { pressed: true };
 }
 
-export async function scroll(params: { dy?: number; toBottom?: boolean }): Promise<{ atBottom: boolean }> {
-  const tab = await resolveWorkingTab();
+export async function scroll(
+  params: { dy?: number; toBottom?: boolean },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ atBottom: boolean }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await ensureDomOps(tab.id);
 
@@ -406,10 +428,14 @@ export async function scroll(params: { dy?: number; toBottom?: boolean }): Promi
  * 标注锚定文档坐标（cursor.ts 内部加滚动偏移），用户滚动页面时跟随内容不漂移。
  * target 定位串与 click 同语义；注入失败如实报错（标注是显式动作，需要反馈）。
  */
-export async function mark(params: { target: string; label?: string }): Promise<{ marked: true }> {
-  const tab = await resolveWorkingTab();
+export async function mark(
+  params: { target: string; label?: string },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ marked: true }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const tabId = tab.id;
+  const cid = cursorId(sessionId);
 
   // 与 click 同样的解析策略：AX 快照 ref 走 CDP，其余走 domops 页面内解析
   const ref = parseRef(params.target);
@@ -440,19 +466,19 @@ export async function mark(params: { target: string; label?: string }): Promise<
   await ensureCursor(tabId);
   await callDom(
     tabId,
-    (r: DomRect, l: string | null) => {
-      const cursor = window.__sideagent?.cursor;
+    (r: DomRect, l: string | null, id: string) => {
+      const cursor = window.__sideagent?.cursor?.for(id);
       if (!cursor?.mark) throw new Error("cursor 未注入");
       cursor.mark(r, l ?? undefined);
     },
-    [rect, params.label ?? null],
+    [rect, params.label ?? null, cid],
   );
   return { marked: true };
 }
 
 /** clear_marks 工具：清除全部 mark 标注。受限页面本来就画不上标注，静默成功。 */
-export async function clearMarks(): Promise<{ cleared: true }> {
-  const tab = await resolveWorkingTab();
+export async function clearMarks(sessionId: string = LEAD_SESSION_ID): Promise<{ cleared: true }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   try {
     await ensureCursor(tab.id);

@@ -27,6 +27,11 @@ const ACTION_NAMES: Record<string, string> = {
   screenshot: "截图",
   mark: "标注元素",
   clear_marks: "清除标注",
+  spawn_worker: "派出工人",
+  list_workers: "列出工人",
+  stop_worker: "停止工人",
+  post: "投递工件",
+  await_message: "等待工件",
 };
 
 function clip(text: string, max = 16): string {
@@ -70,6 +75,20 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     case "mark": {
       const label = str(params.label);
       return { short, full: label ? `标注「${clip(label)}」` : short };
+    }
+    case "spawn_worker": {
+      const id = str(params.id);
+      return { short, full: id ? `派出工人 ${clip(id)}` : short };
+    }
+    case "post": {
+      const kind = str(params.kind);
+      const to = str(params.to);
+      if (kind && to) return { short, full: `投递 ${clip(kind)} → ${clip(to, 12)}` };
+      return { short, full: short };
+    }
+    case "await_message": {
+      const kind = str(params.kind);
+      return { short, full: kind ? `等待「${clip(kind)}」` : short };
     }
     default:
       return { short, full: short };

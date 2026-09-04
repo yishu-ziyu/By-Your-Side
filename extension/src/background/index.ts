@@ -6,7 +6,7 @@
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
 import type { ClientMessage, ServerMessage, ToolName } from "../../../shared/protocol.js";
-import { PROTOCOL_VERSION } from "../../../shared/protocol.js";
+import { LEAD_SESSION_ID, PROTOCOL_VERSION, normalizeSessionId } from "../../../shared/protocol.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import { Uplink } from "./uplink.js";
 import { closeTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
@@ -17,26 +17,26 @@ import { evaluateJs } from "./exec/evaluate.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
-import { getWorkingTabId } from "./state.js";
+import { findSessionForTab } from "./state.js";
 
-type Handler = (params: any) => Promise<unknown>;
+type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
-  list_tabs: () => listTabs(),
-  open_tab: (p) => openTab(p),
-  switch_tab: (p) => switchTab(p),
-  close_tab: (p) => closeTab(p),
-  navigate: (p) => navigate(p),
-  snapshot: (p) => snapshot(p),
-  click: (p) => click(p),
-  fill: (p) => fill(p),
-  type_text: (p) => typeText(p),
-  press_key: (p) => pressKey(p),
-  scroll: (p) => scroll(p),
-  js: (p) => evaluateJs(p),
-  screenshot: () => screenshot(),
-  mark: (p) => mark(p),
-  clear_marks: () => clearMarks(),
+  list_tabs: (_p, sid) => listTabs(sid),
+  open_tab: (p, sid) => openTab(p, sid),
+  switch_tab: (p, sid) => switchTab(p, sid),
+  close_tab: (p, sid) => closeTab(p, sid),
+  navigate: (p, sid) => navigate(p, sid),
+  snapshot: (p, sid) => snapshot(p, sid),
+  click: (p, sid) => click(p, sid),
+  fill: (p, sid) => fill(p, sid),
+  type_text: (p, sid) => typeText(p, sid),
+  press_key: (p, sid) => pressKey(p, sid),
+  scroll: (p, sid) => scroll(p, sid),
+  js: (p, sid) => evaluateJs(p, sid),
+  screenshot: (_p, sid) => screenshot({}, sid),
+  mark: (p, sid) => mark(p, sid),
+  clear_marks: (_p, sid) => clearMarks(sid),
 };
 
 // ── 面板端口管理 ───────────────────────────────────────────────────
@@ -47,6 +47,7 @@ const panels = new Set<chrome.runtime.Port>();
 let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } = { state: "connecting" };
 let lastHelloOk: { version: number; model?: string } | null = null;
 let lastStatus: "idle" | "running" = "idle";
+const statusBySession = new Map<string, "idle" | "running">();
 /** 最近一次模型信息（hello_ok 或 set_model 后的 model_info），面板重开后回放。 */
 let lastModelInfo: Extract<ServerMessage, { type: "model_info" }> | null = null;
 
@@ -83,10 +84,12 @@ const uplink = new Uplink({
     } else if (msg.type === "model_info") {
       lastModelInfo = msg;
     } else if (msg.type === "status") {
-      lastStatus = msg.state;
+      const sid = msg.sessionId ?? LEAD_SESSION_ID;
+      statusBySession.set(sid, msg.state);
+      lastStatus = [...statusBySession.values()].some((s) => s === "running") ? "running" : "idle";
     }
     if (msg.type === "tool_call") {
-      void executeToolCall(msg.id, msg.name, msg.params);
+      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId);
       return; // tool_call 不转发面板
     }
     broadcast({ kind: "server", msg });
@@ -96,17 +99,25 @@ const uplink = new Uplink({
     if (state !== "connected") {
       lastHelloOk = null;
       lastModelInfo = null;
+      statusBySession.clear();
+      lastStatus = "idle";
     }
     broadcast({ kind: "conn", state, transport, detail });
   },
 });
 
-async function executeToolCall(id: string, name: ToolName, params: Record<string, unknown>): Promise<void> {
+async function executeToolCall(
+  id: string,
+  name: ToolName,
+  params: Record<string, unknown>,
+  sessionId?: string,
+): Promise<void> {
   let result: Extract<ClientMessage, { type: "tool_result" }>;
+  const sid = normalizeSessionId(sessionId);
   try {
     const handler = handlers[name];
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
-    const data = await handler(params);
+    const data = await handler(params, sid);
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
     if (name === "mark") noteMarkDrawn();
     else if (name === "clear_marks") noteMarksCleared();
@@ -125,16 +136,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (!changeInfo.url) return;
   const url = changeInfo.url;
   void (async () => {
-    const workingId = await getWorkingTabId();
-    if (workingId !== tabId) return;
+    const sid = await findSessionForTab(tabId);
+    if (!sid) return;
     const mode = await getMode();
     if (!consumeTeachUrlChange(mode)) return;
     try {
-      await clearMarks();
+      await clearMarks(sid);
     } catch {
       /* 页面禁止注入等场景静默 */
     }
-    uplink.sendClientMessage({ type: "page_event", event: "url_changed", url });
+    uplink.sendClientMessage({
+      type: "page_event",
+      event: "url_changed",
+      url,
+      ...(sid !== LEAD_SESSION_ID ? { sessionId: sid } : {}),
+    });
   })();
 });
 

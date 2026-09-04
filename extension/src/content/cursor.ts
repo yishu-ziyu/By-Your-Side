@@ -12,6 +12,7 @@
  * 箭头形状取自 lucide MousePointer2（ISC）。
  */
 import { markLabelPlacement } from "../shared/mark-label.js";
+import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
@@ -21,10 +22,8 @@ import { markLabelPlacement } from "../shared/mark-label.js";
   const SVG_SIZE = 27; // svg 显示尺寸（lucide 图标为 24 网格）
   const SCALE = SVG_SIZE / 24;
   const TIP = { x: 4.037, y: 4.688 }; // 箭头尖端在 24 网格中的位置
-  const DEFAULT_ID = "main";
+  const DEFAULT_ID = LEAD_CURSOR_ID;
   const DEFAULT_LABEL = "SideAgent";
-  /** 并行实例调色板，按 for(id) 首次出现的顺序取色 */
-  const PALETTE = ["#2f6fed", "#e2554f", "#16a34a", "#9333ea", "#d97706"];
 
   const ARROW_PATH =
     "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z";
@@ -171,8 +170,7 @@ import { markLabelPlacement } from "../shared/mark-label.js";
       `<path d="${ARROW_PATH}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>` +
       `</svg></div>` +
       `<div class="label">${id === DEFAULT_ID ? DEFAULT_LABEL : id}</div>`;
-    const color =
-      (id === DEFAULT_ID ? PALETTE[0] : PALETTE[instances.size % PALETTE.length]) ?? "#2f6fed";
+    const color = cursorColor(id);
     el.style.setProperty("--c", color);
     shadow!.appendChild(el);
     const inst: Instance = { el, color, visible: false };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { CURSOR_PALETTE, cursorColor } from "../src/shared/palette.js";
 
 describe("element highlight geometry & palette", () => {
-  const PALETTE = ["#2f6fed", "#e2554f", "#16a34a", "#9333ea", "#d97706"] as const;
 
   function computeHighlightBounds(rect: { x: number; y: number; width: number; height: number }, pad = 3) {
     if (rect.width <= 0 || rect.height <= 0) return null;
@@ -17,9 +17,8 @@ describe("element highlight geometry & palette", () => {
     return [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)];
   }
 
-  function resolveColor(id: string, existingCount: number): string {
-    if (id === "main") return PALETTE[0];
-    return (PALETTE[existingCount % PALETTE.length] as string) ?? "#2f6fed";
+  function resolveColor(id: string, _existingCount: number): string {
+    return cursorColor(id);
   }
 
   it("计算高亮外扩包围盒（含 pad 边界与取整）", () => {
@@ -44,13 +43,10 @@ describe("element highlight geometry & palette", () => {
     expect(computeCenter({ x: 0, y: 0, width: 15, height: 15 })).toEqual([8, 8]);
   });
 
-  it("多实例调色板按序着色且主实例恒为品牌蓝", () => {
-    expect(resolveColor("main", 0)).toBe("#2f6fed");
-    expect(resolveColor("worker-1", 1)).toBe("#e2554f");
-    expect(resolveColor("worker-2", 2)).toBe("#16a34a");
-    expect(resolveColor("worker-3", 3)).toBe("#9333ea");
-    expect(resolveColor("worker-4", 4)).toBe("#d97706");
-    // 调色板循环
-    expect(resolveColor("worker-5", 5)).toBe("#2f6fed");
+  it("多实例调色板：主实例恒为品牌蓝，工人跳过蓝色且对同一 id 稳定", () => {
+    expect(resolveColor("main", 0)).toBe(CURSOR_PALETTE[0]);
+    expect(cursorColor("wiki")).not.toBe(CURSOR_PALETTE[0]);
+    expect(cursorColor("wiki")).toBe(cursorColor("wiki"));
+    expect(cursorColor("feishu")).not.toBe(cursorColor("wiki"));
   });
 });

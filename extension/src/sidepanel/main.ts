@@ -7,7 +7,7 @@
  */
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Wrench, Brain, GraduationCap } from "lucide";
+import { createElement as icon, ArrowUp, Square, Wrench, Brain, GraduationCap, Search } from "lucide";
 import {
   MousePointerClick,
   PenLine,
@@ -24,10 +24,22 @@ import {
   ChevronDown,
   ArrowDown,
   Check,
+  Users,
+  Send,
+  Inbox,
 } from "lucide";
 import { StepChain, chipState, describeTool, formatDuration, loaderSubtitle, pixelDelay } from "./steps.js";
-import { groupModelsByProvider, humanizeModelError, providerLabel } from "./models.js";
-import { parseServerMessage } from "../../../shared/protocol.js";
+import { cursorColor } from "../shared/palette.js";
+import {
+  chipLabel,
+  displayName,
+  filterModels,
+  groupModelsByProvider,
+  humanizeModelError,
+  providerLabel,
+  providerMark,
+} from "./models.js";
+import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentUiEvent, ClientMessage, ModelOption } from "../../../shared/protocol.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelToBg } from "../relay.js";
 
@@ -56,15 +68,22 @@ app.innerHTML = `
     <img id="logo" src="icons/icon-48.png" alt="" />
     <span id="brand">SideAgent</span>
     <button id="teach-toggle" type="button" title="教学模式：Agent 只标注引导，由你手动操作" aria-pressed="false"></button>
-    <span id="status-pill"><span id="status-dot" class="dot"></span><span id="status-text">未连接</span><button id="model-btn" type="button" title="切换模型" hidden><span id="model-name"></span></button></span>
+    <span id="status-pill"><span id="status-dot" class="dot"></span><span id="status-text">未连接</span></span>
   </header>
-  <div id="model-popover" hidden></div>
   <div id="messages"></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
-    <button id="abort-btn" type="button" title="中止" hidden></button>
-    <button id="send-btn" type="button" title="发送"></button>
+    <div id="composer-bar">
+      <button id="model-btn" type="button" title="切换模型" hidden aria-haspopup="listbox" aria-expanded="false">
+        <span id="model-mark" class="model-mark" hidden></span>
+        <span id="model-name"></span>
+      </button>
+      <span id="composer-spacer"></span>
+      <button id="abort-btn" type="button" title="中止" hidden></button>
+      <button id="send-btn" type="button" title="发送"></button>
+    </div>
   </div>
+  <div id="model-popover" hidden></div>
   <div id="setup" hidden>
     <h2>SideAgent 设置</h2>
     <p class="hint">native host 未安装时的调试通道：先跑 <code>npm run dev:agent</code>，把终端里的 token 粘贴到下面（只需设置一次）。正常用法：<code>npm run install:host</code> 后无需本页。</p>
@@ -82,6 +101,7 @@ const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const abortBtn = document.getElementById("abort-btn") as HTMLButtonElement;
 const teachToggle = document.getElementById("teach-toggle") as HTMLButtonElement;
 const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
+const modelMark = document.getElementById("model-mark") as HTMLElement;
 const modelName = document.getElementById("model-name")!;
 const modelPopover = document.getElementById("model-popover")!;
 const setupEl = document.getElementById("setup")!;
@@ -123,56 +143,154 @@ teachToggle.onclick = () => {
 };
 
 // ── 模型选择器 ─────────────────────────────────────────────────────
-// 数据源是 agent 下发的 hello_ok.models / model_info（agent 为权威，面板不持久化）；
-// 选择后发 set_model，等 agent 回 model_info 再更新显示（切换失败会有 error 事件）。
+// 芯片在输入区左下；数据源是 agent 下发的 hello_ok.models / model_info。
+// 选择后发 set_model，等 agent 回 model_info 再更新显示。
 
 /** 当前模型信息：model = "provider/id"，models = 可选列表（已配置凭据的 provider）。 */
 let modelState: { model?: string; models: ModelOption[] } | null = null;
+let modelQuery = "";
 
 function closeModelPopover(): void {
   modelPopover.hidden = true;
   modelBtn.setAttribute("aria-expanded", "false");
 }
 
-function renderModelPicker(): void {
-  const models = modelState?.models ?? [];
-  modelBtn.hidden = models.length === 0;
-  modelName.textContent = modelState?.model ?? "选择模型";
-  if (models.length === 0) {
-    closeModelPopover();
+function paintMark(el: HTMLElement, provider: string | undefined): void {
+  if (!provider) {
+    el.hidden = true;
     return;
   }
-  modelPopover.replaceChildren();
+  const { letter, hue } = providerMark(provider);
+  el.hidden = false;
+  el.textContent = letter;
+  el.style.background = `hsl(${hue} 42% 44%)`;
+}
+
+function currentProvider(): string | undefined {
+  const id = modelState?.model;
+  if (!id) return undefined;
+  return modelState?.models.find((m) => m.id === id)?.provider ?? id.split("/")[0];
+}
+
+function positionModelPopover(): void {
+  const composer = document.getElementById("composer")!;
+  const appBox = app.getBoundingClientRect();
+  const box = composer.getBoundingClientRect();
+  modelPopover.style.bottom = `${appBox.bottom - box.top + 8}px`;
+}
+
+function modelSearchInput(): HTMLInputElement | null {
+  return modelPopover.querySelector(".model-search-input");
+}
+
+function ensurePopoverChrome(): HTMLElement {
+  let list = modelPopover.querySelector(".model-list") as HTMLElement | null;
+  if (list) return list;
+  const search = document.createElement("div");
+  search.className = "model-search";
+  const searchIcon = document.createElement("span");
+  searchIcon.className = "model-search-icon";
+  searchIcon.appendChild(icon(Search));
+  const input = document.createElement("input");
+  input.type = "search";
+  input.className = "model-search-input";
+  input.placeholder = "搜索模型…";
+  input.setAttribute("aria-label", "搜索模型");
+  input.autocomplete = "off";
+  input.addEventListener("input", () => {
+    modelQuery = input.value;
+    renderModelList();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      moveModelHighlight(e.key === "ArrowDown" ? 1 : -1);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const cur = modelPopover.querySelector(".model-item.current-nav") as HTMLButtonElement | null;
+      cur?.click();
+    }
+  });
+  search.append(searchIcon, input);
+  list = document.createElement("div");
+  list.className = "model-list";
+  list.setAttribute("role", "listbox");
+  modelPopover.replaceChildren(search, list);
+  return list;
+}
+
+function visibleModelButtons(): HTMLButtonElement[] {
+  return [...modelPopover.querySelectorAll<HTMLButtonElement>(".model-item")];
+}
+
+function moveModelHighlight(delta: number): void {
+  const items = visibleModelButtons();
+  if (items.length === 0) return;
+  const idx = items.findIndex((el) => el.classList.contains("current-nav"));
+  const next = items[(idx < 0 ? (delta > 0 ? 0 : items.length - 1) : idx + delta + items.length) % items.length]!;
+  items.forEach((el) => el.classList.toggle("current-nav", el === next));
+  next.scrollIntoView({ block: "nearest" });
+}
+
+function renderModelList(): void {
+  const list = ensurePopoverChrome();
+  const models = filterModels(modelState?.models ?? [], modelQuery);
+  list.replaceChildren();
+  if (models.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "model-empty";
+    empty.textContent = modelQuery.trim() ? "无匹配模型" : "暂无可用模型";
+    list.appendChild(empty);
+    return;
+  }
   for (const group of groupModelsByProvider(models)) {
     const header = document.createElement("div");
     header.className = "model-group";
     header.textContent = providerLabel(group.provider);
-    modelPopover.appendChild(header);
+    list.appendChild(header);
     for (const m of group.models) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "model-item";
       item.dataset.model = m.id;
-      const check = document.createElement("span");
-      check.className = "model-check";
-      if (m.id === modelState?.model) {
-        item.classList.add("current");
-        check.appendChild(icon(Check));
-      }
+      item.title = m.id;
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(m.id === modelState?.model));
+      if (m.id === modelState?.model) item.classList.add("current");
+      const mark = document.createElement("span");
+      mark.className = "model-mark";
+      paintMark(mark, m.provider);
       const label = document.createElement("span");
       label.className = "model-label";
-      label.textContent = m.name;
-      const raw = document.createElement("span");
-      raw.className = "model-id";
-      raw.textContent = m.modelId;
-      item.append(check, label, raw);
+      label.textContent = displayName(m);
+      const check = document.createElement("span");
+      check.className = "model-check";
+      if (m.id === modelState?.model) check.appendChild(icon(Check));
+      item.append(mark, label, check);
       item.onclick = () => {
         closeModelPopover();
         if (m.id !== modelState?.model) send({ type: "set_model", model: m.id });
       };
-      modelPopover.appendChild(item);
+      list.appendChild(item);
     }
   }
+  const current = list.querySelector(".model-item.current") ?? list.querySelector(".model-item");
+  current?.classList.add("current-nav");
+}
+
+function renderModelPicker(): void {
+  const models = modelState?.models ?? [];
+  const model = modelState?.model;
+  modelBtn.hidden = !model && models.length === 0;
+  modelBtn.disabled = models.length === 0;
+  modelName.textContent = chipLabel(model, models);
+  modelBtn.title = model ? `切换模型（${model}）` : "切换模型";
+  paintMark(modelMark, currentProvider());
+  if (models.length === 0) {
+    closeModelPopover();
+    return;
+  }
+  if (!modelPopover.hidden) renderModelList();
 }
 
 function applyModelInfo(model: string | undefined, models: ModelOption[] | undefined): void {
@@ -181,12 +299,20 @@ function applyModelInfo(model: string | undefined, models: ModelOption[] | undef
 }
 
 modelBtn.appendChild(icon(ChevronDown));
-modelBtn.setAttribute("aria-expanded", "false");
 modelBtn.onclick = () => {
   const opening = modelPopover.hidden;
-  if (opening) renderModelPicker();
-  modelPopover.hidden = !opening;
-  modelBtn.setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    modelQuery = "";
+    const input = modelSearchInput();
+    if (input) input.value = "";
+    renderModelList();
+    positionModelPopover();
+    modelPopover.hidden = false;
+    modelBtn.setAttribute("aria-expanded", "true");
+    queueMicrotask(() => modelSearchInput()?.focus());
+  } else {
+    closeModelPopover();
+  }
 };
 document.addEventListener("click", (e) => {
   if (!modelPopover.hidden && !modelPopover.contains(e.target as Node) && !modelBtn.contains(e.target as Node)) {
@@ -194,7 +320,16 @@ document.addEventListener("click", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeModelPopover();
+  if (e.key !== "Escape" || modelPopover.hidden) return;
+  const input = modelSearchInput();
+  if (input && input.value) {
+    input.value = "";
+    modelQuery = "";
+    renderModelList();
+    input.focus();
+    return;
+  }
+  closeModelPopover();
 });
 
 let port: chrome.runtime.Port | null = null;
@@ -227,7 +362,17 @@ let currentRun: {
   lastToolShort: string | null;
   /** 当前 chip 分组；思考块插入后另起一组。 */
   chipGroup: ChipGroup | null;
+  workers: Map<string, WorkerLane>;
 } | null = null;
+
+interface WorkerLane {
+  root: HTMLDetailsElement;
+  body: HTMLElement;
+  chainEl: HTMLElement;
+  chain: StepChain;
+  chipGroup: ChipGroup | null;
+  lastLine: HTMLElement;
+}
 
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
@@ -267,6 +412,11 @@ const TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
   ["close_tab", List],
   ["mark", Tag],
   ["clear_marks", Eraser],
+  ["spawn_worker", Users],
+  ["list_workers", Users],
+  ["stop_worker", Square],
+  ["post", Send],
+  ["await_message", Inbox],
 ]);
 
 // ── 渲染 ───────────────────────────────────────────────────────────
@@ -392,8 +542,62 @@ function ensureRun(): NonNullable<typeof currentRun> {
     timer,
     lastToolShort: null,
     chipGroup: null,
+    workers: new Map(),
   };
   return currentRun;
+}
+
+function ensureWorkerLane(id: string): WorkerLane {
+  const run = ensureRun();
+  const existing = run.workers.get(id);
+  if (existing) return existing;
+  const root = document.createElement("details");
+  root.className = "worker-lane";
+  root.open = true;
+  root.style.setProperty("--worker-c", cursorColor(id));
+  const summary = document.createElement("summary");
+  const dot = document.createElement("span");
+  dot.className = "worker-dot";
+  const name = document.createElement("span");
+  name.className = "worker-name";
+  name.textContent = id;
+  const chainEl = document.createElement("span");
+  chainEl.className = "worker-chain";
+  summary.append(dot, name, chainEl);
+  const body = document.createElement("div");
+  body.className = "worker-body";
+  const lastLine = document.createElement("div");
+  lastLine.className = "worker-last";
+  lastLine.hidden = true;
+  body.appendChild(lastLine);
+  root.append(summary, body);
+  run.body.insertBefore(root, run.loader);
+  const lane: WorkerLane = {
+    root,
+    body,
+    chainEl,
+    chain: new StepChain(),
+    chipGroup: null,
+    lastLine,
+  };
+  run.workers.set(id, lane);
+  return lane;
+}
+
+const sessionRun = new Map<string, "idle" | "running">();
+
+function setSessionState(sessionId: string, state: "idle" | "running"): void {
+  sessionRun.set(sessionId, state);
+  const any = [...sessionRun.values()].some((s) => s === "running");
+  running = any;
+  abortBtn.hidden = !running;
+  sendBtn.hidden = running;
+  inputEl.placeholder = running ? PLACEHOLDER_RUNNING : PLACEHOLDER_IDLE;
+  if (!running) {
+    closeBlocks();
+    finishRun();
+    sessionRun.clear();
+  }
 }
 
 function addChainStep(label: string): void {
@@ -494,7 +698,7 @@ function shortParams(params: Record<string, unknown>): string {
 // 一段连续的工具调用收进一个 chip 组：chips 行（可换行）+ 共享详情区。
 // 点击 chip 就地展开参数/结果，再点收起；一组内最多展开一个。
 
-function buildChipGroup(run: NonNullable<typeof currentRun>): ChipGroup {
+function buildChipGroup(host: HTMLElement, before?: HTMLElement | null): ChipGroup {
   const root = document.createElement("div");
   root.className = "chip-group";
   const row = document.createElement("div");
@@ -503,7 +707,8 @@ function buildChipGroup(run: NonNullable<typeof currentRun>): ChipGroup {
   detail.className = "chip-detail";
   detail.hidden = true;
   root.append(row, detail);
-  run.body.appendChild(root);
+  if (before) host.insertBefore(root, before);
+  else host.appendChild(root);
   return { root, row, detail, expanded: null };
 }
 
@@ -544,15 +749,28 @@ function toggleChipDetail(entry: ToolChipEntry): void {
   scrollToEnd();
 }
 
-function onToolStart(ev: { toolCallId: string; name: string; params: Record<string, unknown> }): void {
-  closeBlocks();
+function onToolStart(
+  ev: { toolCallId: string; name: string; params: Record<string, unknown> },
+  sessionId?: string,
+): void {
   const action = describeTool(ev.name, ev.params);
-  addChainStep(action.short);
   const run = ensureRun();
-  run.lastToolShort = action.short;
+  let group: ChipGroup;
+  if (sessionId && !isLeadSession(sessionId)) {
+    const lane = ensureWorkerLane(sessionId);
+    lane.chain.push(action.short);
+    lane.chainEl.textContent = lane.chain.render();
+    if (!lane.chipGroup) lane.chipGroup = buildChipGroup(lane.body, lane.lastLine);
+    group = lane.chipGroup;
+    run.lastToolShort = `${sessionId} · ${action.short}`;
+  } else {
+    closeBlocks();
+    addChainStep(action.short);
+    run.lastToolShort = action.short;
+    if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
+    group = run.chipGroup;
+  }
   run.loaderSub.textContent = loaderSubtitle(run.lastToolShort);
-  if (!run.chipGroup) run.chipGroup = buildChipGroup(run);
-  const group = run.chipGroup;
 
   const chip = document.createElement("button");
   chip.type = "button";
@@ -602,7 +820,42 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   scrollToEnd();
 }
 
-function handleAgentEvent(ev: AgentUiEvent): void {
+function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
+  const lane = ensureWorkerLane(sessionId);
+  switch (ev.kind) {
+    case "text_delta": {
+      lane.lastLine.hidden = false;
+      lane.lastLine.textContent = ((lane.lastLine.textContent ?? "") + ev.delta).slice(-280);
+      break;
+    }
+    case "thinking_delta":
+      break;
+    case "tool_start":
+      onToolStart(ev, sessionId);
+      break;
+    case "tool_end":
+      onToolEnd(ev);
+      break;
+    case "agent_end":
+      lane.root.open = false;
+      lane.root.classList.add("done");
+      break;
+    case "notice":
+    case "error":
+      lane.lastLine.hidden = false;
+      lane.lastLine.textContent = ev.kind === "error" ? humanizeModelError(ev.message) : ev.message;
+      break;
+    default:
+      break;
+  }
+  scrollToEnd();
+}
+
+function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
+  if (sessionId && !isLeadSession(sessionId)) {
+    handleWorkerEvent(sessionId, ev);
+    return;
+  }
   switch (ev.kind) {
     case "text_delta":
       appendDelta("assistant", ev.delta);
@@ -622,7 +875,6 @@ function handleAgentEvent(ev: AgentUiEvent): void {
       break;
     case "agent_end":
       closeBlocks();
-      finishRun();
       break;
     case "turn_start":
       break;
@@ -651,9 +903,8 @@ function handleServerMessage(raw: string): void {
   if (!msg) return;
   switch (msg.type) {
     case "hello_ok":
-      // 带可选模型列表时模型名进选择器；老版本 agent 无 models 字段则维持 pill 内联显示
-      setStatus("on", msg.models ? "已连接" : msg.model ? `已连接 · ${msg.model}` : "已连接");
-      if (msg.models) applyModelInfo(msg.model, msg.models);
+      setStatus("on", "已连接");
+      applyModelInfo(msg.model, msg.models ?? []);
       setupEl.hidden = true;
       break;
     case "model_info":
@@ -663,17 +914,10 @@ function handleServerMessage(raw: string): void {
       showSetup(msg.error);
       break;
     case "status":
-      running = msg.state === "running";
-      abortBtn.hidden = !running;
-      sendBtn.hidden = running;
-      inputEl.placeholder = running ? PLACEHOLDER_RUNNING : PLACEHOLDER_IDLE;
-      if (!running) {
-        closeBlocks();
-        finishRun();
-      }
+      setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
       break;
     case "agent_event":
-      handleAgentEvent(msg.event);
+      handleAgentEvent(msg.event, msg.sessionId);
       break;
     default:
       break;
@@ -699,6 +943,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   } else {
     closeBlocks();
     finishRun();
+    sessionRun.clear();
     modelState = null;
     renderModelPicker();
     setStatus("off", "未连接");
@@ -730,6 +975,7 @@ function connect(): void {
 function scheduleReconnect(): void {
   closeBlocks();
   finishRun();
+  sessionRun.clear();
   setStatus("retry", "重连中…");
   const delay = Math.min(5_000, 500 * 2 ** reconnectAttempt);
   reconnectAttempt += 1;
@@ -763,6 +1009,7 @@ setupSave.onclick = () => {
 function autoResize(): void {
   inputEl.style.height = "auto";
   inputEl.style.height = `${Math.min(inputEl.scrollHeight, 140)}px`;
+  if (!modelPopover.hidden) positionModelPopover();
 }
 
 function sendInput(): void {

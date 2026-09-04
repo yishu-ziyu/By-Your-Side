@@ -160,27 +160,32 @@ body {
   }
 }
 
-/* ── 模型选择器 ──────────────────────────────────────────────────── */
-/* status-pill 内的模型名按钮：与 pill 融为一体，hover 才显出可点 */
+/* ── 模型选择器（输入区芯片 + 上弹搜索菜单） ─────────────────────── */
 #model-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  margin: -3px -6px -3px 2px;
-  padding: 3px 6px;
-  border: none;
+  gap: 5px;
+  max-width: min(62%, 220px);
+  height: 26px;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: transparent;
-  color: var(--text-2);
+  background: var(--surface-2);
+  color: var(--text);
   font: inherit;
+  font-size: 12px;
   cursor: pointer;
-  max-width: 180px;
 }
 
 #model-btn:hover,
 #model-btn[aria-expanded="true"] {
-  background: var(--surface-2);
-  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface);
+}
+
+#model-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 #model-name {
@@ -193,26 +198,83 @@ body {
   width: 11px;
   height: 11px;
   color: var(--text-3);
+  margin-left: 1px;
+}
+
+.model-mark {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #fff;
+  line-height: 1;
 }
 
 #model-popover {
   position: absolute;
-  top: 44px;
-  right: 10px;
+  left: 12px;
+  right: 12px;
   z-index: 20;
-  min-width: 220px;
-  max-width: 300px;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding: 4px;
+  max-height: min(52vh, 360px);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 6px 6px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow-composer);
 }
 
+.model-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.model-search-icon {
+  display: inline-flex;
+  color: var(--text-3);
+}
+
+.model-search-icon .lucide {
+  width: 13px;
+  height: 13px;
+}
+
+.model-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.model-search-input::placeholder {
+  color: var(--text-3);
+}
+
+.model-list {
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .model-group {
-  padding: 6px 8px 2px;
+  padding: 8px 10px 3px;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -223,11 +285,11 @@ body {
 .model-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 5px 8px;
+  padding: 6px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -236,18 +298,21 @@ body {
   cursor: pointer;
 }
 
-.model-item:hover {
+.model-item:hover,
+.model-item.current-nav {
   background: var(--surface-2);
 }
 
-.model-item.current {
-  color: var(--accent);
+.model-item.current .model-label {
+  font-weight: 600;
 }
 
 .model-check {
   width: 14px;
   flex-shrink: 0;
   display: inline-flex;
+  color: var(--accent);
+  margin-left: auto;
 }
 
 .model-label {
@@ -257,14 +322,11 @@ body {
   white-space: nowrap;
 }
 
-.model-id {
-  font-size: 10.5px;
+.model-empty {
+  padding: 18px 10px;
+  text-align: center;
   color: var(--text-3);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 40%;
+  font-size: 12px;
 }
 
 /* ── 消息流 ──────────────────────────────────────────────────────── */
@@ -547,6 +609,68 @@ details.run-steps[open] .run-chevron {
   padding: 2px 10px 10px;
 }
 
+/* 工人行：弱化次要内容（Will's S / Emphasize by de-emphasizing）。
+   主对话保持全文对比；工人只用色条 + 名字，不另铺底、不加标签。 */
+.worker-lane {
+  border-left: 2px solid var(--worker-c, var(--text-3));
+  padding: 2px 0 4px 8px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.worker-lane summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.worker-lane summary::-webkit-details-marker {
+  display: none;
+}
+
+.worker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--worker-c);
+  flex-shrink: 0;
+}
+
+.worker-name {
+  color: var(--worker-c);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.worker-chain {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 0;
+}
+
+.worker-last {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: pre-wrap;
+}
+
+.worker-lane.done .worker-dot {
+  opacity: 0.55;
+}
+
 /* ── Tool Chips ────────────────────────────────────────────── */
 /* 一段连续工具调用：chips 行（可换行）+ 共享详情区，点 chip 就地展开 */
 .chip-group {
@@ -744,10 +868,11 @@ details.run-steps[open] .run-chevron {
 /* ── 输入区（浮动 composer） ─────────────────────────────────────── */
 #composer {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   margin: 6px 12px 12px;
-  padding: 8px 8px 8px 14px;
+  padding: 10px 10px 8px 12px;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--surface);
@@ -769,7 +894,7 @@ details.run-steps[open] .run-chevron {
   color: var(--text);
   font: inherit;
   line-height: 1.5;
-  padding: 4px 0;
+  padding: 2px 2px 0 0;
   max-height: 140px;
 }
 
@@ -777,7 +902,18 @@ details.run-steps[open] .run-chevron {
   color: var(--text-3);
 }
 
-#composer button {
+#composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#composer-spacer {
+  flex: 1;
+}
+
+#send-btn,
+#abort-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -795,15 +931,18 @@ details.run-steps[open] .run-chevron {
     opacity 0.15s ease;
 }
 
-#composer button:hover {
+#send-btn:hover,
+#abort-btn:hover {
   transform: scale(1.06);
 }
 
-#composer button:active {
+#send-btn:active,
+#abort-btn:active {
   transform: scale(0.96);
 }
 
-#composer button .lucide {
+#send-btn .lucide,
+#abort-btn .lucide {
   width: 15px;
   height: 15px;
 }

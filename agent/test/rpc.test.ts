@@ -20,6 +20,7 @@ describe("ToolRpc", () => {
     expect(frame.type).toBe("tool_call");
     expect(frame.name).toBe("list_tabs");
     expect(frame.params).toEqual({});
+    expect(frame.sessionId).toBeUndefined();
 
     const data = { tabs: [] };
     expect(rpc.handleResult(frame.id, true, data)).toBe(true);
@@ -78,6 +79,18 @@ describe("ToolRpc", () => {
   it("rejects new calls immediately while disconnected", async () => {
     const rpc = new ToolRpc();
     await expect(rpc.call("list_tabs", {})).rejects.toThrow(/not connected/);
+  });
+
+  it("stamps sessionId on worker tool_call frames", () => {
+    const { rpc, sent } = makeRpc();
+    void rpc.call("click", { target: "@1" }, undefined, "wiki");
+    expect(sent[0]!.sessionId).toBe("wiki");
+  });
+
+  it("omits sessionId for lead/main", () => {
+    const { rpc, sent } = makeRpc();
+    void rpc.call("snapshot", {}, undefined, "main");
+    expect(sent[0]!.sessionId).toBeUndefined();
   });
 
   it("returns false for unknown tool_result ids", () => {

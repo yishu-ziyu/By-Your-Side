@@ -1,4 +1,5 @@
 import { sendCommand } from "../debugger.js";
+import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
 
@@ -8,8 +9,11 @@ interface CdpEvalResult {
 }
 
 /** js 工具只走 CDP Runtime.evaluate，避免 MAIN world eval 被页面 CSP 拦截。 */
-export async function evaluateJs(params: { code: string }): Promise<{ value: unknown }> {
-  const tab = await resolveWorkingTab();
+export async function evaluateJs(
+  params: { code: string },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ value: unknown }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const res = await sendCommand<CdpEvalResult>(tab.id, "Runtime.evaluate", {
     expression: params.code,

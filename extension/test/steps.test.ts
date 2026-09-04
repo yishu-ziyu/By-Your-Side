@@ -29,6 +29,11 @@ describe("describeTool 人性化动作描述", () => {
     expect(describeTool("clear_marks", {}).full).toBe("清除标注");
     expect(describeTool("mystery_tool", {}).full).toBe("mystery_tool");
   });
+  it("并行工人工具中文名", () => {
+    expect(describeTool("spawn_worker", { id: "wiki" }).full).toBe("派出工人 wiki");
+    expect(describeTool("post", { to: "feishu", kind: "notes" }).full).toBe("投递 notes → feishu");
+    expect(describeTool("await_message", { kind: "notes" }).full).toBe("等待「notes」");
+  });
   it("超长 label 截断", () => {
     const long = "这是一个非常非常非常长的按钮标签文字";
     expect(describeTool("click", { label: long }).full.length).toBeLessThan(long.length + 4);

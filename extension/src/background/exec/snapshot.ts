@@ -1,4 +1,5 @@
 import { sendCommand } from "../debugger.js";
+import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { axTreeToText, type AxNodeLite } from "../axtree.js";
@@ -9,8 +10,11 @@ import { recordAxSnapshot } from "../axstate.js";
  * backendDOMNodeId）；debugger 不可用（如被 DevTools 占用）或 AX 命令失败时，
  * 回退 content script 的简化 DOM 快照，并在输出首行标注回退原因。
  */
-export async function snapshot(params: { scope?: "full_page" | "viewport" }): Promise<{ text: string }> {
-  const tab = await resolveWorkingTab();
+export async function snapshot(
+  params: { scope?: "full_page" | "viewport" },
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ text: string }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
 
   try {

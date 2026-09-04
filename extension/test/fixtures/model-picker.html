@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>model picker fixture</title>
+  <link rel="stylesheet" href="../../src/sidepanel/styles.css" />
+  <style>
+    html, body { width: 360px; height: 640px; }
+    body.dark { color-scheme: dark; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <img id="logo" src="../../icons/icon-48.png" alt="" />
+      <span id="brand">SideAgent</span>
+      <button id="teach-toggle" type="button" title="教学模式" aria-pressed="false">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>
+      </button>
+      <span id="status-pill"><span id="status-dot" class="dot on"></span><span id="status-text">已连接</span></span>
+    </header>
+    <div id="messages">
+      <div class="msg user">请取页面结构</div>
+      <div class="msg assistant markdown"><p>好，我先看当前页。</p></div>
+    </div>
+    <div id="composer">
+      <textarea id="input" rows="1" placeholder="给 SideAgent 发消息，Enter 发送，Shift+Enter 换行"></textarea>
+      <div id="composer-bar">
+        <button id="model-btn" type="button" title="切换模型（minimax-cn/MiniMax-M3）" aria-haspopup="listbox" aria-expanded="false">
+          <span id="model-mark" class="model-mark" style="background: hsl(118 42% 44%)">M</span>
+          <span id="model-name">MiniMax-M3</span>
+          <svg class="lucide" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <span id="composer-spacer"></span>
+        <button id="send-btn" type="button" title="发送">
+          <svg class="lucide" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="model-popover" hidden>
+      <div class="model-search">
+        <span class="model-search-icon">
+          <svg class="lucide" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </span>
+        <input class="model-search-input" type="search" placeholder="搜索模型…" value="" />
+      </div>
+      <div class="model-list" role="listbox">
+        <div class="model-group">MiniMax</div>
+        <button type="button" class="model-item current current-nav" data-model="minimax-cn/MiniMax-M3" aria-selected="true">
+          <span class="model-mark" style="background: hsl(118 42% 44%)">M</span>
+          <span class="model-label">MiniMax-M3</span>
+          <span class="model-check">
+            <svg class="lucide" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg>
+          </span>
+        </button>
+        <div class="model-group">Kimi</div>
+        <button type="button" class="model-item" data-model="kimi-coding/kimi-for-coding">
+          <span class="model-mark" style="background: hsl(40 42% 44%)">K</span>
+          <span class="model-label">kimi-for-coding</span>
+          <span class="model-check"></span>
+        </button>
+        <div class="model-group">Codex</div>
+        <button type="button" class="model-item" data-model="openai-codex/gpt-5.6-luna">
+          <span class="model-mark" style="background: hsl(210 42% 44%)">C</span>
+          <span class="model-label">gpt-5.6-luna</span>
+          <span class="model-check"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    if (params.get("theme") === "dark") document.body.classList.add("dark");
+    const pop = document.getElementById("model-popover");
+    const btn = document.getElementById("model-btn");
+    const input = document.querySelector(".model-search-input");
+    if (params.get("open") === "1") {
+      pop.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      const app = document.getElementById("app").getBoundingClientRect();
+      const composer = document.getElementById("composer").getBoundingClientRect();
+      pop.style.bottom = (app.bottom - composer.top + 8) + "px";
+    }
+    if (params.get("q")) {
+      input.value = params.get("q");
+      const q = params.get("q").toLowerCase();
+      for (const item of document.querySelectorAll(".model-item")) {
+        const hit = (item.dataset.model + item.textContent).toLowerCase().includes(q);
+        item.hidden = !hit;
+        const prev = item.previousElementSibling;
+        if (prev && prev.classList.contains("model-group")) prev.hidden = !hit;
+      }
+    }
+  </script>
+</body>
+</html>

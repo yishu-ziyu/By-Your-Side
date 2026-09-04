@@ -6,7 +6,7 @@
  */
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { TabInfo, ToolContract, ToolName } from "../../shared/protocol.js";
+import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import type { ToolRpc } from "./rpc.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
@@ -29,8 +29,9 @@ function formatTabs(tabs: TabInfo[]): string {
     .join("\n");
 }
 
-export function createBrowserTools(rpc: ToolRpc): ToolDefinition[] {
-  const call = (name: ToolName, params: Record<string, unknown>) => rpc.call(name, params);
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefinition[] {
+  const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
+  const call = (name: ToolName, params: Record<string, unknown>) => rpc.call(name, params, undefined, sid);
 
   return [
     defineTool({

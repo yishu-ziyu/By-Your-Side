@@ -14,14 +14,18 @@ import { WebSocket, WebSocketServer } from "ws";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  LEAD_SESSION_ID,
   PROTOCOL_VERSION,
+  isLeadSession,
   parseClientMessage,
   type ClientMessage,
   type ServerMessage,
 } from "../../shared/protocol.js";
 import { loadConfig, resolveConfig, saveConfigModel } from "./config.js";
+import { createFleetTools, Fleet } from "./fleet.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession } from "./session.js";
+import { createBrowserTools } from "./tools.js";
 import { createStdioTransport } from "./transport/stdio.js";
 
 interface CliArgs {
@@ -130,14 +134,37 @@ async function main(): Promise<void> {
   let current: ClientConn | null = null;
   const sendCurrent = (msg: ServerMessage): void => current?.send(msg);
 
+  const fleet = new Fleet({
+    rpc,
+    modelPattern,
+    sink: {
+      emit: (event, sessionId) =>
+        sendCurrent({
+          type: "agent_event",
+          event,
+          ...(sessionId && !isLeadSession(sessionId) ? { sessionId } : {}),
+        }),
+      setStatus: (state, sessionId) =>
+        sendCurrent({
+          type: "status",
+          state,
+          ...(sessionId && !isLeadSession(sessionId) ? { sessionId } : {}),
+        }),
+    },
+  });
+
   const session = await BrowserAgentSession.create(
     rpc,
     {
       emit: (event) => sendCurrent({ type: "agent_event", event }),
       setStatus: (state) => sendCurrent({ type: "status", state }),
     },
-    { modelPattern },
+    {
+      modelPattern,
+      customTools: [...createBrowserTools(rpc), ...createFleetTools(fleet, LEAD_SESSION_ID)],
+    },
   );
+  fleet.attachLead(session);
   if (!session.available) {
     log("模型凭据未配置，会话暂不可用（连接面板后会收到设置指引）");
   }
@@ -187,19 +214,30 @@ async function main(): Promise<void> {
     current = null;
     rpc.setSend(null);
     if (session.isStreaming()) session.abort();
+    fleet.abortAll();
     return true;
+  };
+
+  const disposeAll = (): void => {
+    fleet.dispose();
+    session.dispose();
   };
 
   const handleMessage = (msg: ClientMessage): void => {
     switch (msg.type) {
       case "user_message":
-        session.sendUserMessage(msg.text);
+        if (!session.isStreaming()) fleet.reset();
+        // 每条用户消息带一句拆分提醒：MiniMax 等模型会忽略 system 里的并行段，自己把两站串行做完。
+        session.sendUserMessage(
+          `${msg.text}\n\n[Coordinator: if this request has independent work on two live pages, call spawn_worker for each NOW — before snapshot/navigate/click yourself.]`,
+        );
         break;
       case "steer":
         session.steer(msg.text);
         break;
       case "abort":
         session.abort();
+        fleet.abortAll();
         break;
       case "set_mode":
         void session.setMode(msg.mode);
@@ -207,9 +245,12 @@ async function main(): Promise<void> {
       case "set_model":
         void handleSetModel(msg.model);
         break;
-      case "page_event":
-        session.notifyPageEvent(msg.url);
+      case "page_event": {
+        const target =
+          msg.sessionId && fleet.has(msg.sessionId) ? fleet.get(msg.sessionId) : session;
+        target?.notifyPageEvent(msg.url);
         break;
+      }
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error);
         break;
@@ -219,9 +260,9 @@ async function main(): Promise<void> {
   };
 
   if (cli.ws) {
-    runWsMode(cli, session, { adoptClient, onClientGone, handleMessage, sendHelloOk, proxy });
+    runWsMode(cli, session, { adoptClient, onClientGone, handleMessage, sendHelloOk, disposeAll, proxy });
   } else {
-    runStdioMode(session, { adoptClient, onClientGone, handleMessage, sendHelloOk, proxy });
+    runStdioMode(session, { adoptClient, onClientGone, handleMessage, sendHelloOk, disposeAll, proxy });
   }
 }
 
@@ -230,6 +271,7 @@ interface ModeHooks {
   onClientGone(conn: ClientConn): boolean;
   handleMessage(msg: ClientMessage): void;
   sendHelloOk(conn: ClientConn): void;
+  disposeAll(): void;
   proxy?: string;
 }
 
@@ -284,7 +326,7 @@ function runStdioMode(
     shuttingDown = true;
     clearTimeout(helloTimer);
     hooks.onClientGone(conn);
-    session.dispose();
+    hooks.disposeAll();
     log("正在退出…");
     // 等 stdout 缓冲 flush 后退出
     setTimeout(() => process.exit(code), 50).unref();
@@ -390,7 +432,7 @@ function runWsMode(
     if (shuttingDown) return;
     shuttingDown = true;
     log("正在退出…");
-    session.dispose();
+    hooks.disposeAll();
     for (const client of wss.clients) client.close();
     wss.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1000).unref();

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseClientMessage, parseServerMessage } from "../../shared/protocol.js";
+import {
+  LEAD_SESSION_ID,
+  isLeadSession,
+  parseClientMessage,
+  parseServerMessage,
+} from "../../shared/protocol.js";
 
 describe("parseClientMessage", () => {
   it("parses a valid hello frame", () => {
@@ -57,6 +62,22 @@ describe("parseClientMessage", () => {
     });
   });
 
+  it("parses page_event with optional sessionId", () => {
+    expect(
+      parseClientMessage(
+        JSON.stringify({ type: "page_event", event: "url_changed", url: "https://a.b", sessionId: "wiki" }),
+      ),
+    ).toEqual({ type: "page_event", event: "url_changed", url: "https://a.b", sessionId: "wiki" });
+  });
+
+  it("rejects page_event with empty sessionId", () => {
+    expect(
+      parseClientMessage(
+        JSON.stringify({ type: "page_event", event: "url_changed", url: "https://a.b", sessionId: "" }),
+      ),
+    ).toBeNull();
+  });
+
   it("rejects malformed page_event frames", () => {
     expect(parseClientMessage(JSON.stringify({ type: "page_event" }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: "page_event", event: "dom_changed", url: "https://a.b" }))).toBeNull();
@@ -84,5 +105,40 @@ describe("parseServerMessage", () => {
     expect(parseServerMessage("nope")).toBeNull();
     expect(parseServerMessage("{}")).toBeNull();
     expect(parseServerMessage("null")).toBeNull();
+  });
+
+  it("parses tool_call / agent_event / status with sessionId", () => {
+    expect(
+      parseServerMessage(JSON.stringify({ type: "status", state: "running", sessionId: "wiki" })),
+    ).toEqual({ type: "status", state: "running", sessionId: "wiki" });
+    expect(
+      parseServerMessage(
+        JSON.stringify({ type: "tool_call", id: "1", name: "click", params: {}, sessionId: "wiki" }),
+      ),
+    ).toMatchObject({ type: "tool_call", sessionId: "wiki" });
+    expect(
+      parseServerMessage(
+        JSON.stringify({ type: "agent_event", event: { kind: "agent_end" }, sessionId: "wiki" }),
+      ),
+    ).toMatchObject({ type: "agent_event", sessionId: "wiki" });
+  });
+
+  it("rejects empty sessionId on server frames", () => {
+    expect(parseServerMessage(JSON.stringify({ type: "status", state: "idle", sessionId: "" }))).toBeNull();
+  });
+
+  it("omitted sessionId still parses (Lead 路径)", () => {
+    expect(parseServerMessage(JSON.stringify({ type: "status", state: "idle" }))).toEqual({
+      type: "status",
+      state: "idle",
+    });
+  });
+});
+
+describe("session id helpers", () => {
+  it("Lead 为空、main 或省略", () => {
+    expect(isLeadSession(undefined)).toBe(true);
+    expect(isLeadSession(LEAD_SESSION_ID)).toBe(true);
+    expect(isLeadSession("wiki")).toBe(false);
   });
 });

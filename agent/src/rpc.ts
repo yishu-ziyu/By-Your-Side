@@ -4,7 +4,7 @@
  * send 函数可注入，测试无需真实 WebSocket。
  */
 import { randomUUID } from "node:crypto";
-import type { ToolName } from "../../shared/protocol.js";
+import { LEAD_SESSION_ID, isLeadSession, type ToolName } from "../../shared/protocol.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 export const SLOW_TOOL_TIMEOUT_MS = 60_000;
@@ -16,6 +16,7 @@ export interface ToolCallFrame {
   id: string;
   name: ToolName;
   params: Record<string, unknown>;
+  sessionId?: string;
 }
 export type RpcSend = (frame: ToolCallFrame) => void;
 
@@ -23,6 +24,9 @@ interface Pending {
   resolve: (data: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  name: string;
+  startedAt: number;
+  sessionId?: string;
 }
 
 export class ToolRpc {
@@ -41,8 +45,8 @@ export class ToolRpc {
     }
   }
 
-  /** 发起一次工具调用；超时或断连时 reject。 */
-  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
+  /** 发起一次工具调用；超时或断连时 reject。工人调用传入 sessionId，扩展按 session 绑 tab/光标。 */
+  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string): Promise<unknown> {
     const send = this.sendFn;
     if (!send) {
       return Promise.reject(new Error("Extension is not connected"));
@@ -54,9 +58,13 @@ export class ToolRpc {
         this.pending.delete(id);
         reject(new Error(`Tool call "${name}" timed out after ${timeout}ms`));
       }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId });
       try {
-        send({ type: "tool_call", id, name, params });
+        const frame: ToolCallFrame = { type: "tool_call", id, name, params };
+        if (sessionId && !isLeadSession(sessionId) && sessionId !== LEAD_SESSION_ID) {
+          frame.sessionId = sessionId;
+        }
+        send(frame);
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -71,6 +79,9 @@ export class ToolRpc {
     if (!entry) return false;
     clearTimeout(entry.timer);
     this.pending.delete(id);
+    const ms = Date.now() - entry.startedAt;
+    const who = entry.sessionId ?? "main";
+    console.error(`[sideagent] tool ${entry.name} session=${who} ${ok ? "ok" : "err"} ${ms}ms${error ? ` ${error}` : ""}`);
     if (ok) {
       entry.resolve(data);
     } else {

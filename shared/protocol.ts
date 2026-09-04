@@ -8,6 +8,16 @@
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 7758;
 export const DEFAULT_HOST = "127.0.0.1";
+/** Lead / 单会话路径的 sessionId；省略该字段即视为 Lead。 */
+export const LEAD_SESSION_ID = "main";
+
+export function isLeadSession(sessionId?: string | null): boolean {
+  return sessionId == null || sessionId === "" || sessionId === LEAD_SESSION_ID;
+}
+
+export function normalizeSessionId(sessionId?: string | null): string {
+  return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId!;
+}
 
 /** Agent 运行模式：act = 直接操作页面；teach = 教学倾向增强（默认引导用户手动操作，能力不裁剪）。 */
 export type AgentMode = "act" | "teach";
@@ -21,7 +31,7 @@ export type ClientMessage =
   | { type: "abort" }
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
-  | { type: "page_event"; event: "url_changed"; url: string }
+  | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string };
 
 // ── 服务端 → 客户端 ────────────────────────────────────────────────
@@ -40,9 +50,9 @@ export type ServerMessage =
   | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[] }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
-  | { type: "status"; state: "idle" | "running" }
-  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown> }
-  | { type: "agent_event"; event: AgentUiEvent };
+  | { type: "status"; state: "idle" | "running"; sessionId?: string }
+  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string }
+  | { type: "agent_event"; event: AgentUiEvent; sessionId?: string };
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
@@ -133,7 +143,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
-    if (msg.type === "page_event" && (msg.event !== "url_changed" || typeof msg.url !== "string")) return null;
+    if (msg.type === "page_event") {
+      if (msg.event !== "url_changed" || typeof msg.url !== "string") return null;
+      if (!validOptionalSessionId(msg.sessionId)) return null;
+    }
     return msg;
   } catch {
     return null;
@@ -143,9 +156,15 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 export function parseServerMessage(raw: string): ServerMessage | null {
   try {
     const msg = JSON.parse(raw) as ServerMessage;
-    if (msg && typeof msg === "object" && typeof msg.type === "string") return msg;
-    return null;
+    if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
+    if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
+    return msg;
   } catch {
     return null;
   }
+}
+
+function validOptionalSessionId(value: unknown): boolean {
+  if (value === undefined) return true;
+  return typeof value === "string" && value.length > 0 && value.length <= 32;
 }

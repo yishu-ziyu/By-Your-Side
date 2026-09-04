@@ -15,6 +15,7 @@ import {
   type AgentSession,
   type AgentToolResult,
   type CreateAgentSessionOptions,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMode, AgentUiEvent, ModelOption } from "../../shared/protocol.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
@@ -22,6 +23,15 @@ import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { getMode, setMode as setModeRef } from "./mode.js";
 import { createBrowserTools } from "./tools.js";
 import type { ToolRpc } from "./rpc.js";
+
+export interface SessionCreateOptions {
+  modelPattern?: string;
+  /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
+  modelRuntime?: ModelRuntime;
+  customTools?: ToolDefinition[];
+  systemPrompt?: string;
+  appendPrompt?: (base: string[]) => string[];
+}
 
 const RESULT_TEXT_MAX = 500;
 
@@ -45,31 +55,40 @@ export class BrowserAgentSession {
     private readonly modelRuntime: ModelRuntime | null,
   ) {}
 
+  get runtime(): ModelRuntime | null {
+    return this.modelRuntime;
+  }
+
   static async create(
     rpc: ToolRpc,
     callbacks: SessionCallbacks,
-    options?: { modelPattern?: string },
+    options?: SessionCreateOptions,
   ): Promise<BrowserAgentSession> {
     try {
-      const modelRuntime = await ModelRuntime.create();
-      // 本地 CLIProxyAPI 池：key 运行时从 client.env 读取，端口不通时自动跳过，不影响启动
-      await registerCliproxyProvider(modelRuntime);
+      let modelRuntime = options?.modelRuntime ?? null;
+      if (!modelRuntime) {
+        modelRuntime = await ModelRuntime.create();
+        // 本地 CLIProxyAPI 池：key 运行时从 client.env 读取，端口不通时自动跳过，不影响启动
+        await registerCliproxyProvider(modelRuntime);
+      }
       const settingsManager = SettingsManager.inMemory({ compaction: { enabled: true } });
+      const systemPrompt = options?.systemPrompt ?? SYSTEM_PROMPT;
+      const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(getMode(), base));
       const resourceLoader = new DefaultResourceLoader({
         cwd: process.cwd(),
         agentDir: getAgentDir(),
         settingsManager,
         noExtensions: true,
-        systemPromptOverride: () => SYSTEM_PROMPT,
+        systemPromptOverride: () => systemPrompt,
         skillsOverride: () => ({ skills: [], diagnostics: [] }),
         // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
-        appendSystemPromptOverride: (base) => appendPromptForMode(getMode(), base),
+        appendSystemPromptOverride: (base) => appendPrompt(base),
       });
       await resourceLoader.reload();
       const createOptions: CreateAgentSessionOptions = {
         modelRuntime,
         noTools: "builtin",
-        customTools: createBrowserTools(rpc),
+        customTools: options?.customTools ?? createBrowserTools(rpc),
         resourceLoader,
         sessionManager: SessionManager.inMemory(process.cwd()),
         settingsManager,

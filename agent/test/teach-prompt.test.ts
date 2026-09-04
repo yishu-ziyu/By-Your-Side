@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TEACH_MODE_PROMPT, appendPromptForMode } from "../src/prompt.js";
+import { SYSTEM_PROMPT, TEACH_MODE_PROMPT, appendPromptForMode, workerSystemPrompt } from "../src/prompt.js";
 import { getMode, setMode } from "../src/mode.js";
 
 describe("appendPromptForMode（teach prompt 选择逻辑）", () => {
@@ -24,6 +24,26 @@ describe("appendPromptForMode（teach prompt 选择逻辑）", () => {
     expect(TEACH_MODE_PROMPT).toContain("explicit consent");
     // 不再含执行层拦截的禁令表述
     expect(TEACH_MODE_PROMPT).not.toContain("blocked by the execution layer");
+  });
+});
+
+describe("parallel worker prompts", () => {
+  it("Lead prompt 讲清拆/不拆，不含站点特判", () => {
+    expect(SYSTEM_PROMPT).toContain("spawn_worker");
+    expect(SYSTEM_PROMPT).toContain("independent prefixes");
+    expect(SYSTEM_PROMPT).toContain("MUST spawn");
+    expect(SYSTEM_PROMPT).toContain("Doing both sites yourself");
+    expect(SYSTEM_PROMPT).not.toMatch(/wikipedia|feishu|维基|飞书/i);
+  });
+
+  it("工人 prompt 含邮箱与 need_confirm，不含 spawn", () => {
+    const p = workerSystemPrompt({ id: "wiki", peers: ["feishu"], tabId: 3 });
+    expect(p).toContain('named "wiki"');
+    expect(p).toContain("feishu");
+    expect(p).toContain("post");
+    expect(p).toContain("await_message");
+    expect(p).toContain("need_confirm");
+    expect(p).not.toContain("spawn_worker");
   });
 });
 

@@ -20,18 +20,20 @@ side panel（扩展页面）与本地伴随进程（Node + Pi SDK）之间的 We
 client → user_message{text}        # 空闲时发起新任务
 client → steer{text}               # 运行中插话（映射 session.steer）
 client → abort                     # 中止当前运行
-server → status{state:"running"|"idle"}
-server → agent_event{...}          # 流式渲染：text_delta / thinking_delta /
+server → status{state:"running"|"idle", sessionId?}
+server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_delta /
                                    #   tool_start / tool_end / turn_* / agent_* /
                                    #   notice / error
 ```
+
+省略 `sessionId` 或值为 `main` = Lead（用户对话那条会话）。工人事件带自己的 id；面板把工人收进彩色步骤行，不另开聊天线程。`abort` 中止整张图（Lead + 全部工人）。
 
 `text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。
 
 ### 工具调用（RPC）
 
 ```
-server → tool_call{id, name, params}     # name ∈ TOOL_NAMES
+server → tool_call{id, name, params, sessionId?}     # name ∈ TOOL_NAMES；工人调用带 sessionId
 client → tool_result{id, ok:true, data}  # data 形状见 ToolContract
        | tool_result{id, ok:false, error}
 ```
@@ -42,9 +44,11 @@ client → tool_result{id, ok:true, data}  # data 形状见 ToolContract
 
 ## 工作标签页语义
 
-- Agent 认领一个「工作标签页」：`open_tab`/`switch_tab` 显式指定；未指定时首个需要标签页的工具采用当前活动页。
-- 所有省略 tabId 的工具默认作用于工作标签页。
-- 涉及真实输入/截图的操作（click、type_text、press_key、screenshot）执行前先 activate 工作标签页。
+- 每个 session（Lead 或工人）认领自己的工作标签页：`open_tab`/`switch_tab` 显式指定；未指定时采用该 session 已认领页，否则认领一个未被其他 session 占用的标签页。
+- 所有省略 tabId 的工具默认作用于**该 session** 的工作标签页。
+- click / type_text / press_key：仅当工作窗口**已经在前台**时才把该标签页切到窗口内前台。绝不 `windows.update({focused:true})`（会拽走 macOS Space）。工人本来就不抢前台。
+- screenshot 一律先 CDP `Page.captureScreenshot`，失败再 `captureVisibleTab`。
+- 工人之间不传活页面状态，只经伴随进程内邮箱传可搬工件（post / await_message，不进入本协议帧）。
 
 ## target 定位串
 
