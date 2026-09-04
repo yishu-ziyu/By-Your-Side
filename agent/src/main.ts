@@ -230,10 +230,11 @@ async function main(): Promise<void> {
         // 每条用户消息带一句拆分提醒：MiniMax 等模型会忽略 system 里的并行段，自己把两站串行做完。
         session.sendUserMessage(
           `${msg.text}\n\n[Coordinator: if this request has independent work on two live pages, call spawn_worker for each NOW — before snapshot/navigate/click yourself.]`,
+          msg.context,
         );
         break;
       case "steer":
-        session.steer(msg.text);
+        session.steer(msg.text, msg.context);
         break;
       case "abort":
         session.abort();

@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 光标待在角落</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --tertiary: rgba(60,60,67,.3);
+    --blue: #007aff;
+    --agent: #2f6fed;
+    --font: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 640px; margin: 0 0 28px; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 28px; max-width: 980px; margin-bottom: 36px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: 1100px; }
+  @media (max-width: 980px) { .row, .asks { grid-template-columns: 1fr; } }
+  .col { cursor: pointer; }
+  .col.pick .phone { outline: 2px solid var(--blue); outline-offset: 3px; }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 10px; }
+  .kicker strong { color: var(--label); }
+  .phone {
+    background: var(--cell); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .stage {
+    position: relative; height: 420px; background: #f7f7f8; overflow: hidden;
+  }
+  .chrome {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 8px; background: #fff;
+    border-bottom: .5px solid var(--sep);
+  }
+  .pocket { width: 40px; height: 28px; flex: none; }
+  .search {
+    flex: 1; height: 28px; border-radius: 8px;
+    background: rgba(120,120,128,.12);
+    font: 500 12px/28px var(--font); color: var(--secondary);
+    padding: 0 10px;
+  }
+  .search.hot { background: color-mix(in srgb, var(--agent) 14%, #fff); color: var(--label); }
+  .list { padding: 8px 0; }
+  .note {
+    margin: 0 10px 6px; padding: 10px 12px; border-radius: 10px;
+    background: #fff; box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .note.hot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent) 55%, transparent); }
+  .note b { display: block; font-size: 13px; font-weight: 600; }
+  .note span { font-size: 12px; color: var(--secondary); }
+  .cursor {
+    position: absolute; top: 0; left: 0; z-index: 4;
+    transition: transform 420ms var(--ease), opacity 160ms ease;
+    will-change: transform;
+    pointer-events: none;
+  }
+  .cursor.no-anim { transition: none; }
+  .cursor.gone { opacity: 0; }
+  .cursor.rest { opacity: .86; }
+  .cursor.rest .label { opacity: 0; transform: scale(.8); }
+  .svg-wrap {
+    position: absolute; left: 0; top: 0;
+    transition: transform 130ms ease;
+    transform-origin: 6.1px 7px;
+  }
+  .cursor.pressing .svg-wrap { transform: scale(.8); }
+  .cursor svg {
+    position: absolute; display: block; overflow: visible;
+    left: -6.1px; top: -7px;
+    filter: drop-shadow(0 0 1px #fff) drop-shadow(0 2px 6px rgba(15,23,42,.55));
+  }
+  .cursor path.fill { fill: var(--agent); }
+  .label {
+    position: absolute; left: 22px; top: 24px;
+    padding: 2px 9px; border-radius: 999px;
+    background: var(--agent); color: #fff;
+    font: 600 12px/1.7 var(--font);
+    letter-spacing: .02em; white-space: nowrap;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.7), 0 2px 8px rgba(15,23,42,.35);
+    transform-origin: left center;
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+  .cursor.flip .label { left: auto; right: 18px; transform-origin: right center; }
+  .ripple {
+    position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+    border-radius: 50%; border: 2px solid var(--agent); z-index: 3;
+    animation: rip 480ms var(--ease) forwards; pointer-events: none;
+  }
+  .ripple.r2 { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-width: 1.5px; animation-delay: 90ms; }
+  @keyframes rip {
+    from { transform: scale(.5); opacity: .95; }
+    to { transform: scale(4.2); opacity: 0; }
+  }
+  .beat {
+    margin: 0; padding: 10px 14px 12px;
+    font-size: 12px; color: var(--secondary); min-height: 40px;
+  }
+  .beat em { font-style: normal; color: var(--label); }
+  .why { font-size: 12px; color: var(--secondary); margin: 8px 2px 0; line-height: 1.5; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--cell) 78%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-top: .5px solid var(--sep);
+    padding: 14px 40px 18px;
+    font-size: 13px; color: var(--secondary);
+  }
+</style>
+</head>
+<body>
+  <h1>不点就待在角上，要点再飞过去</h1>
+  <p class="lede">
+    现在光标点完大约三秒就隐掉，页面上像没人。
+    这一页只比节奏：闲着停在固定角落，还看得见；要点就沿路飞过去点，点完回家。
+    产品没改。点一列。
+  </p>
+
+  <div class="asks">
+    <p>
+      <b>为什么飞过去，而不是在目标上突然出现</b>
+      NNGroup《动画与动效》：动效用空间隐喻讲清「从哪到哪」；周边视野对运动敏感，路径本身就是反馈。
+      同页 Cuisinart 例子：远处一小点状态变了，人看不见。所以点击必须让光标走过去，不能只在按钮上闪一下。
+    </p>
+    <p>
+      <b>为什么闲着还要在，而且必须静止</b>
+      Apple Live Activity：正在发生的事要一眼可扫，不是做完就撤。
+      Apple Motion：给一个稳定参考点；禁止约 0.2Hz 的持续振荡。
+      NNGroup：无关运动是干扰。所以角落待命不呼吸、不漂、不转圈。
+    </p>
+    <p>
+      <b>为什么角上只留箭头，点的时候才出名牌</b>
+      Refactoring UI《想要突出重点，先弱化次要内容》；《能不用标签就不用标签》。
+      角落位置已经说明「人还在」。待命把名牌收掉，免得压住页面；飞起来再挂名牌，点击才按下 + 波纹。
+    </p>
+    <p>
+      <b>为什么飞得短，点完就回去</b>
+      Apple Motion：目的性动效，简短精准，少让人等动画结束。
+      NNGroup：动效用在状态切换。角落 = 在想 / 在读；按钮上 = 在点这个。
+      想的时候还停在上次点的地方，状态没切干净。
+    </p>
+  </div>
+
+  <div class="row">
+    <div class="col" data-pick="hide">
+      <p class="kicker"><strong>现在</strong> · 点完消失</p>
+      <div class="phone" id="hide"></div>
+      <p class="why">对照。存在感靠「刚刚闪过」，闲下来页面空了。不算加强。</p>
+    </div>
+    <div class="col" data-pick="tl">
+      <p class="kicker"><strong>左上待命</strong> · 飞过去点，再回家</p>
+      <div class="phone" id="tl"></div>
+      <p class="why">停在左上口袋，不压搜索。侧栏在右时，跟面板错开。</p>
+    </div>
+    <div class="col" data-pick="tr">
+      <p class="kicker"><strong>右上待命</strong> · 同一套节奏</p>
+      <div class="phone" id="tr"></div>
+      <p class="why">靠近侧栏，人和页上的光标同一侧。名牌翻到左边，避免出屏。</p>
+    </div>
+  </div>
+
+  <div class="bar">点一列。还没改产品。闲着晃、放大光标、点完仍停在按钮上，这页都不算。</div>
+
+<script>
+const PATH = "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z";
+
+function mount(id) {
+  const root = document.getElementById(id);
+  root.innerHTML = `
+    <div class="stage">
+      <div class="chrome">
+        <div class="pocket" aria-hidden="true"></div>
+        <div class="search" data-hit="search">搜索笔记</div>
+        <div class="pocket" aria-hidden="true"></div>
+      </div>
+      <div class="list">
+        <div class="note" data-hit="n1"><b>MiroFish 项目</b><span>回收站还留着</span></div>
+        <div class="note" data-hit="n2"><b>Formal · 评论摘录</b><span>今天 18:02</span></div>
+        <div class="note" data-hit="n3"><b>B 站这条怎么写</b><span>草稿</span></div>
+      </div>
+      <div class="cursor${id === "tr" ? " flip" : ""} gone">
+        <div class="svg-wrap">
+          <svg width="36" height="36" viewBox="0 0 24 24">
+            <path class="halo" d="${PATH}" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/>
+            <path class="fill" d="${PATH}" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="label">SideAgent</div>
+      </div>
+    </div>
+    <p class="beat"></p>`;
+  return root;
+}
+
+function sleep(ms, gen) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    const stop = () => { clearTimeout(t); reject("stop"); };
+    gen.stops.push(stop);
+  });
+}
+
+function xy(stage, el, mode) {
+  if (mode === "rest-tl") return { x: 22, y: 24 };
+  if (mode === "rest-tr") return { x: stage.clientWidth - 22, y: 24 };
+  const r = el.getBoundingClientRect();
+  const s = stage.getBoundingClientRect();
+  return { x: r.left - s.left + r.width * 0.62, y: r.top - s.top + r.height * 0.55 };
+}
+
+function put(cur, p, anim) {
+  let ms = 0;
+  if (!anim) {
+    cur.classList.add("no-anim");
+    cur.style.transitionDuration = "";
+  } else {
+    const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(cur.style.transform);
+    const dx = m ? p.x - Number(m[1]) : 0;
+    const dy = m ? p.y - Number(m[2]) : 0;
+    ms = Math.max(240, Math.min(520, Math.hypot(dx, dy) * 0.85));
+    cur.style.transitionDuration = `${ms}ms`;
+  }
+  cur.dataset.ms = String(ms);
+  cur.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  if (!anim) { void cur.offsetWidth; cur.classList.remove("no-anim"); }
+}
+function travelMs(cur) {
+  return Number(cur.dataset.ms || 420);
+}
+
+function ripple(stage, p) {
+  for (const cls of ["ripple", "ripple r2"]) {
+    const n = document.createElement("div");
+    n.className = cls;
+    n.style.left = p.x + "px";
+    n.style.top = p.y + "px";
+    n.addEventListener("animationend", () => n.remove(), { once: true });
+    stage.appendChild(n);
+  }
+}
+
+async function clickAt(cur, stage, p, gen) {
+  cur.classList.remove("rest", "gone");
+  put(cur, p, true);
+  cur.classList.add("pressing");
+  ripple(stage, p);
+  await sleep(160, gen);
+  cur.classList.remove("pressing");
+}
+
+function beat(root, text) {
+  root.querySelector(".beat").innerHTML = text;
+}
+
+function hot(root, sel, on) {
+  root.querySelector(sel).classList.toggle("hot", on);
+}
+
+async function loopHide(root, gen) {
+  const stage = root.querySelector(".stage");
+  const cur = root.querySelector(".cursor");
+  while (!gen.dead) {
+    beat(root, "闲着：<em>没有光标</em>。页面像没人在操作。");
+    cur.classList.add("gone");
+    await sleep(1100, gen);
+    const a = xy(stage, root.querySelector("[data-hit=search]"));
+    cur.classList.remove("gone", "rest");
+    put(cur, a, false);
+    beat(root, "突然出现在搜索上，点一下。");
+    hot(root, "[data-hit=search]", true);
+    await clickAt(cur, stage, a, gen);
+    await sleep(400, gen);
+    hot(root, "[data-hit=search]", false);
+    cur.classList.add("gone");
+    beat(root, "三秒后隐掉（这里压成一秒）。存在感断了。");
+    await sleep(1000, gen);
+    const b = xy(stage, root.querySelector("[data-hit=n2]"));
+    cur.classList.remove("gone");
+    put(cur, b, false);
+    beat(root, "下一次点击又从虚空里冒出来。");
+    hot(root, "[data-hit=n2]", true);
+    await clickAt(cur, stage, b, gen);
+    await sleep(400, gen);
+    hot(root, "[data-hit=n2]", false);
+    cur.classList.add("gone");
+    await sleep(1400, gen);
+  }
+}
+
+async function loopPerch(root, corner, gen) {
+  const stage = root.querySelector(".stage");
+  const cur = root.querySelector(".cursor");
+  const restMode = corner === "tl" ? "rest-tl" : "rest-tr";
+  const home = () => xy(stage, null, restMode);
+  const perch = (on) => {
+    cur.classList.toggle("rest", on);
+    cur.classList.toggle("flip", on && corner === "tr");
+  };
+  cur.classList.remove("gone");
+  perch(true);
+  put(cur, home(), false);
+  while (!gen.dead) {
+    beat(root, "待命：<em>停在角上，不晃</em>。人还在，没挡内容。");
+    perch(true);
+    put(cur, home(), true);
+    await sleep(1200, gen);
+    const a = xy(stage, root.querySelector("[data-hit=search]"));
+    beat(root, "要点了：<em>沿路飞到搜索</em>。");
+    perch(false);
+    put(cur, a, true);
+    await sleep(travelMs(cur), gen);
+    hot(root, "[data-hit=search]", true);
+    await clickAt(cur, stage, a, gen);
+    await sleep(280, gen);
+    hot(root, "[data-hit=search]", false);
+    beat(root, "点完回家。状态切回「在想」。");
+    perch(true);
+    put(cur, home(), true);
+    await sleep(travelMs(cur) + 800, gen);
+    const b = xy(stage, root.querySelector("[data-hit=n2]"));
+    beat(root, "再要点：<em>飞到这条笔记</em>。");
+    perch(false);
+    put(cur, b, true);
+    await sleep(travelMs(cur), gen);
+    hot(root, "[data-hit=n2]", true);
+    await clickAt(cur, stage, b, gen);
+    await sleep(280, gen);
+    hot(root, "[data-hit=n2]", false);
+    perch(true);
+    put(cur, home(), true);
+    await sleep(travelMs(cur) + 900, gen);
+  }
+}
+
+const gens = {};
+function start(id, fn) {
+  if (gens[id]) gens[id].dead = true, gens[id].stops.forEach((s) => s());
+  const gen = { dead: false, stops: [] };
+  gens[id] = gen;
+  fn(gen).catch(() => {});
+}
+
+const hideRoot = mount("hide");
+const tlRoot = mount("tl");
+const trRoot = mount("tr");
+start("hide", (g) => loopHide(hideRoot, g));
+start("tl", (g) => loopPerch(tlRoot, "tl", g));
+start("tr", (g) => loopPerch(trRoot, "tr", g));
+
+document.querySelectorAll(".col").forEach((col) => {
+  col.addEventListener("click", () => {
+    document.querySelectorAll(".col").forEach((c) => c.classList.remove("pick"));
+    col.classList.add("pick");
+  });
+});
+</script>
+</body>
+</html>

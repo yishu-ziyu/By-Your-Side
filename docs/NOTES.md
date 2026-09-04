@@ -5,15 +5,33 @@
 
 ## 当前状态
 
-2026-09-04 点击不再拽 macOS Space（卡：`docs/evals/20260904-no-space-steal.md`）。根因是 Lead 在 click/type/press/screenshot 前 `windows.update({focused:true})`。现：窗口未聚焦则不切 tab、不抢窗口；截图先 CDP。已 rsync 到 `Desktop/ego/extension/dist` 并 reload。需再开一次面板。
+2026-09-04 就地确认人评未过（卡：`docs/evals/20260904-on-page-confirm.md`）。flomo 删「MiroFish 项目」：页面无框外双键；14 次 `mark` 全无 `actions`，目标是走查页 h2（`❌ 立案后空壳帧` 等），切到 flomo 后只点站点「更多 → 删除」并在侧栏等「确认」。扩展 overlay 这轮没被调用。下一步：收紧 prompt（危险确认必须对当前目标 `mark`+`actions`，禁止打开站点删除菜单冒充就地确认），必要时补当前页感知。
 
-上一项：2026-09-04 真机：维基+飞书任务 Lead（MiniMax-M3）没有 spawn_worker，面板只有一条串行执行步骤。底座在（Fleet/邮箱/工人行），但模型把两站自己做完了。已加硬性 prompt + spawn 工具描述 + 每条 user_message 的 Coordinator 提醒。native host 是 tsx 源码，关开面板即加载。当前这一轮飞书确认仍走串行，不中途强拆。
+2026-09-04 光标轨迹人评浅弧（截图 `20260904-cursor-path.html` 中列）。落地：`cursor-path.ts` Fitts 220–480ms + easeInOutCubic + 一侧弧 spread clamp(12%D,8,36)；闲着停角落（Lead 左上、第二人右上），点/填完 `park`；去掉 3s 隐掉。产品改 `cursor.ts` / `input.ts`。不采用随机、过冲、拖尾、perfect-cursors。
 
-上一项：2026-09-04 模型选择改到输入区（卡：`docs/evals/20260904-model-picker-composer.md`）。用户原件板选 1+2+3：顶栏只留绿点「已连接」，composer 左下短名 chip（MiniMax-M3），点开上弹搜索 + 按厂商分组。机器项全绿（150 tests / typecheck / build）；无头截图 `/tmp/model-picker-shots/{light-closed,light-open,light-search,dark-closed,dark-open}.png`。待人评真机手感。需 `npm run reload:ext` 或手动重载扩展。
+2026-09-04 光标存在感：用户要闲着待左上/右上、要点再飞过去点。先 HTML，不改产品。卡 `docs/evals/20260904-cursor-perch.md`，页 `docs/evals/20260904-cursor-perch.html`（8766）。对照 Apple Motion / NNGroup 动效 / Live Activity / Emphasize by de-emphasizing。现状仍是点完 3s `opacity:0`。
 
-上一项：2026-09-04 并行工人底座已落地（卡：`docs/evals/20260904-parallel-workers.md`）。拓扑：Lead 拥有图 + 进程内邮箱 + 工人各绑 tab/光标。机器项 3/4/6 绿（143 tests / typecheck / build）。待人评：维基+飞书硬场景、同构图通用性、面板工人行观感。短任务仍走单 session，不 spawn。已 `npm run build`；native host 需重连才拉到新伴随进程。
+2026-09-04 feat/small 已 fast-forward 进 main（`dd7eb39`：输入区模型选择 + 并行工人底座 + 点击不抢 Space）。主线上仍有未提交 WIP：当前页感知 / overlay / steer 光标残留 / METHODOLOGY / mark 内部滚动跟随。Chrome 加载 `Desktop/ego/extension/dist`；native-host 需 `npm run install:host` 指回 ego。
 
-上一项：教学模式已按实测反馈重设计（卡：`docs/evals/20260903-teach-revamp.md`，详见文末「2026-09-03 教学模式重设计」节）：硬闸门与软拒全拆（教学=倾向增强，能力全集保留），prompt 改教学倾向，teach 模式下有待完成标注时 URL 变化（含 SPA pushState）自动清 mark 并推 page_event 让 agent 主动推进，mark label 贴顶自动翻到框下方。侧边栏完成"执行步骤"信息流重设计（卡：`docs/evals/20260903-panel-steps-design.md`，详见文末同名节）：run 聚合块（步骤链+耗时+完成折叠）、工具行中文化+耗时、回到底部圆钮。机器项全绿（88 tests / typecheck / build），无头截图自检通过，扩展已热重载。待人评：GitHub SPA 教学复测自动推进手感、执行步骤块观感。
+上一项：2026-09-04 mark 圈画在内部滚动容器里漂移（卡：`docs/evals/20260904-mark-nested-scroll.md`）。机器项已过，待人评 flomo 笔记列表拖动。
+
+上一项：2026-09-04 点击不再拽 macOS Space（卡：`docs/evals/20260904-no-space-steal.md`）。
+
+上一项：2026-09-04 真机维基+飞书 Lead 未 spawn，已加硬性 prompt + Coordinator 提醒。
+
+上一项：2026-09-04 模型选择改到输入区（卡：`docs/evals/20260904-model-picker-composer.md`）。
+
+下一件：就地确认（卡：`docs/evals/20260904-on-page-confirm.md`）。人选框外双键。机器项已绿（183 tests + overlay-check）。待人评：flomo 删笔记时框外点删除/取消，侧栏打确认仍可用。伴随进程需重连才吃到新 prompt。
+
+接管/交接用户确认按 B（`docs/evals/20260904-takeover-handoff.md`）：运行中随时拿过来，还回去读当前页接着干。现在不实现。下一件：就地确认。
+
+上一项：2026-09-04 危险操作确认人评过（卡：`docs/evals/20260904-dangerous-confirm.md`）。场景：flomo 删「MiroFish 项目」笔记，Agent 说清对象+回收站后果后停住。路线图该项已勾；硬闸门不做。
+
+上一项：2026-09-04 并行工人底座人评过（卡：`docs/evals/20260904-parallel-workers.md`）。场景：B 站抓视频评论 ∥ 写入 Formal 笔记，两页同时干活。原维基+飞书未再跑，同构任务替代。路线图「多任务并行」已勾。设计另开卡 `docs/evals/20260904-cast-and-wit.md`。点击不抢 Space、输入区模型选择均已人评通过。
+
+**WIP 未提交（原 main 工作区）**：`docs/evals/20260904-steer-cursor-residue.md`、当前页感知、`docs/METHODOLOGY.md`。详见文末对应节。
+
+教学模式已按实测反馈重设计（卡：`docs/evals/20260903-teach-revamp.md`）。侧边栏执行步骤信息流重设计（卡：`docs/evals/20260903-panel-steps-design.md`）。
 
 上一项（操作前元素高亮，卡：`docs/evals/20260903-element-highlight.md`）：click/fill 执行前呼吸高亮框，机器项全绿，待用户实测手感。
 
@@ -222,23 +240,77 @@
 - 纯逻辑进 steps.ts（chipState/loaderSubtitle/pixelDelay，+8 断言）；117 tests / typecheck / build 全绿；截图 chips-{running,collapsed,expanded,failed,dark,reduced-motion}.png 全过（reduced-motion 下格子静止、读数照刷）
 - 已 reload:ext。待人评：chips 手感（点开展开/收起）、像素格观感、思考流式期不再用 shimmer 是否习惯
 
-## 2026-09-04 并行工人底座（设计，未实现）
+## 2026-09-04 并行工人底座
 
-- 卡：`docs/evals/20260904-parallel-workers.md`。路线图原文：「多个 Agent session 各绑标签页并行执行，页面光标按实例着色区分（光标渲染层已支持 for(id)，agent 侧多 session 编排待做）」
-- **现状（代码）**：`main.ts` 只 `create` 一次 `BrowserAgentSession`；`state.ts` 一个 `workingTabId`；`input.ts` 光标一律 `cursor.move/click`（默认 `"main"`）；`prompt.ts` 写死 "one working tab at a time"。`ToolRpc` 已能多 pending，AX 已按 tab 分桶，CDP 能同时 attach 多 tab——缺的是 session 路由，不是点击能力。
-- **X / 论文对照**：
-  - gdb（2026-05）：Codex 一条 prompt 拆出多个并行浏览器 subagent（机票/Airbnb 各开会话）
-  - @ctatedev agent-browser `--pin-tab`：一 agent 一 tab，跨命令保持
-  - Hermes / Claude 风格：Lead 只看摘要，工人干净上下文；**不该**把两人的点击轨迹灌回 Lead
-  - nicobailon pi-subagents + pi-intercom：spawn + 1:1 消息（Unix socket broker）。我们 `noExtensions: true`，**不装插件**，在伴随进程里做同等原语（工人是浏览器工具不是文件系统）
-  - Scale AI Spine-Branch（arXiv:2608.22077）：活状态不能 merge。spine 持有持续页面（飞书文档），branch 搜集后交工件、丢弃。工件直送依赖节点，不靠 manager 当邮差
-  - 反面：纯 P2P 群聊（AutoGen GroupChat）O(n²)、难调试；纯 Orchestrator 转发每条工人消息会多一跳延迟、污染 Lead 上下文
-- **选定拓扑**：Lead 拥有 DAG；工人 `post`/`await_message` 进程内邮箱；用户只跟 Lead 说话；v1 最多 2 工人、禁止递归 spawn
-- **已实现**：
-  - 协议：`status` / `tool_call` / `agent_event` / `page_event` 可选 `sessionId`（省略=Lead `main`）
-  - 执行层：`workingTabs` 按 session 认领；工人 `open_tab` 不抢前台；click/fill/mark 走 `cursor.for(id)`；工人截图优先 CDP `Page.captureScreenshot`
-  - agent：`Mailbox` + `Fleet.spawn`（非阻塞，最多 2）；Lead 工具 spawn_worker / list_workers / stop_worker / post / await_message；工人只有浏览器工具 + post/await
-  - 面板：一条对话；工人行色条+名字+chips（弱化，对照 Will's S「先弱化次要」）；abort 停整图
-  - 光标颜色：`cursorColor(id)` 稳定散列，工人跳过品牌蓝，与面板 `--worker-c` 一致
-- **待人评**：硬场景（维基搜集 ∥ 飞书建档再交接）、同构图无特判、短任务不 spawn、工人行观感
-- **注意**：改的是伴随进程，Chrome 需重载扩展且 native host 重连（关侧边栏/重载扩展）才跑到新代码
+- 卡：`docs/evals/20260904-parallel-workers.md`。已实现：协议 sessionId、按 session 认领 tab、Mailbox + Fleet.spawn、面板工人行、光标稳定散列。待人评：维基∥飞书硬场景（真机 Lead 曾未 spawn）。
+- **注意**：伴随进程改动需 native host 重连。
+
+## 2026-09-04 当前页面感知（user_message 上下文 + get_active_tab）
+- 卡 `docs/evals/20260904-当前页面感知.md`。起因：用户问"这页面是关于什么"，agent 列 16 个标签反问"指哪一个"。根因：user_message 只有 text，无任何"用户正在看哪页"的信号；工具集也无查询活动标签的能力
+- **协议**：`user_message` 加可选 `context{tabId,title,url}`（PageContext，parseClientMessage 校验、malformed 拒收）；TOOL_NAMES 加 `get_active_tab`（16 个工具），data = {tab: TabInfo|null}（null = 无活动标签）
+- **注入点在 background 不在面板**：`background/index.ts` attachPageContext 在转发 user_message 前 chrome.tabs.query({active,lastFocusedWindow}) 附上下文，失败/无活动页原样发送不阻塞；面板零改动
+- **agent 侧**：session.withPageContext 把 `[User's current page: tab N "title" — url]` 前缀拼进 prompt/steer 文本（标题换行折叠）；SYSTEM_PROMPT Working tab 段明确"这页面"= 该行所指 tab，无此行则调 get_active_tab，不再反问
+- **get_active_tab 是纯查询不认领**（exec/tabs.ts getActiveTab），认领仍走 resolveWorkingTab 既有逻辑；steps.ts 中文映射"定位当前页"
+- 测试 124 全绿（protocol +3、session-helpers withPageContext +4）；typecheck/build 全绿
+- 待人评：真机问"这页面是关于什么"应直接读当前页；面板聊天输入框聚焦时 lastFocusedWindow 活动页仍指向页面标签（侧栏不改变 tab active 态）
+- 另发现未修：模型选择按钮可发现性低（styles.css hover 才显可点），用户没找到模型切换入口即因此
+
+## 2026-09-04 被中断任务找回（steer 失忆 / 光标可见性 / 刷新残留）
+- 上一会话（session_a5d1ce67）在「当前页面感知」交付后，用户提三问题：① steer 打断后 agent 丢上下文（不认得之前定位的标签页）；② 虚拟光标可见性低；③ 扩展刷新后上一轮 overlay/mark/光标残留 + 侧栏关闭后位置偏移
+- 断点：主代理发出两个排查子代理（steer 链路、cursor/mark 残留链路）后等待返回时被中断，**零代码改动、无验收卡**，根因排查未完成
+- 线索：steer 失忆查 sidepanel main.ts:775 的 steer 发送 + pi-coding-agent SDK agent-session.js；残留问题查 extension/src/content/cursor.ts 的 host 清理路径（SW 重载后 content script 无清理）
+- 找回方式：wire.jsonl 尾部回放（~/.kimi-code/sessions/wd_ego_ed8cb56eefd3/session_a5d1ce67.../agents/main/wire.jsonl）
+- **已固化为验收卡 `docs/evals/20260904-steer-cursor-residue.md`，已领任务并完成机器项（见下节）**
+
+## 2026-09-04 steer 失忆 / 光标可见性 / 刷新残留
+
+- **steer 失忆根因**：Pi SDK 0.84.4 `steer()` 是往当前 turn 插入一条 user 消息，**不重置**对话历史。真正缺口是协议 `steer{text}` 没有 `context`，background `attachPageContext` 只处理 `user_message`，`BrowserAgentSession.steer` 也不走 `withPageContext`。运行中面板发的是 `steer` 不是 `user_message`，所以插话没有当前页锚点；prompt 又写「没有 current-page 行就去查/别猜」，模型容易改口问「哪个标签页」。
+- **修复**：`steer` 与 `user_message` 同样可选 `context`；background 转发前附活动标签；`session.steer(text, context)` 走同一 `withPageContext` 前缀；SYSTEM_PROMPT 明确插话延续已认领 working tab，不重新询问。
+- **光标**：36px（原 27）、白描边 2.2 + 深色外晕 3.8、白描边名牌。调色板不变。截图 `/tmp/sideagent-overlay/cursors-three-bg.png` 浅/深/花哨三底均压得住。
+- **残留**：host 打 `data-sideagent-overlay`；新 isolated world 启动时 `sweepStaleOverlayHosts`；`pagehide` teardown。MV3 reload 不会触发 pagehide，所以启动清扫是主路径。
+- **偏移**：mark 锚定目标元素（`mark(rect, label, target)` + `elementFromPoint` 兜底），`resize` / `visualViewport.resize` 用最新 `getBoundingClientRect` 重算文档坐标；光标/高亮是瞬时层，viewport 变化时收起。自检 mark 40→240 位移 200px。
+- **验证**：139 tests / typecheck / build 全绿；`node extension/test/overlay-check.mjs` PASS；`npm run reload:ext` 已重载 `fnbjglhppbkgmjeehablkfilmmefjolo`。待人评条目 2、8（及 3/5/6 的真机观感）。
+
+## 2026-09-04 协作协议可移植化
+
+- 用户要求：把本仓库的开发规范、依据、人机协作、长期维护抽象出来，去掉产品私有信息，迁到别的仓库也能用；然后当面讲清楚。
+- 产物：`docs/METHODOLOGY.md`。最小内核 = 验收卡 + NOTES + 开发日志 + 现象即信号；WikiSkill / 设计取向标成可选。
+- 理论锚点不变：ContextPilot（单次任务上下文，规则必须写成习惯）+ WikiSkill（轨迹 / wiki / skill 三层，wiki 不回滚、推理期不注入 wiki）。
+- 给目标仓库的粘贴引导和 `AGENTS.md` 模板在该文件第 6 节。
+
+## 2026-09-04 并行呈现：人评功能 OK，设计另开
+
+- 人评：点击不抢 Space OK；输入区模型选择 OK；并行功能 OK。不喜欢「工人」；要颜色+命名；等待/思考可有一点插科打诨。
+- 任务时间线（`~/.sideagent/wrapper-err.log`）：`open_tab` flomo/bilibili 各 21.6s → `spawn worker=flomo/bilibili` 并行成立。热路径几乎全是 js（bilibili 14、flomo 17），所以面板是一墙「执行脚本 0.0s」。stderr 停在 flomo 最后一次 js，`post`/`await` 的 ok 还没落——阻塞中的 await 本来就不先打 ok。截图 2 的「处理中 226.3s」= Lead 写完「完成」后工人事件又 `ensureRun()` 开空壳。
+- 卡：`docs/evals/20260904-cast-and-wit.md`。三案 HTML：`docs/evals/20260904-cast-compare.html`（已 `open`）。建议 B + 色名（青/棠/翠），等人挑再落地。
+- 词表写死，不让模型编段子。完成/失败那一帧必须立刻停转（Claude Code spinner 残留坑）。
+- 不做：假百分比、三个聊天线程、全局把「工人」搜替换当完成。
+
+## 2026-09-04 完成后空转 loader（处理中 226s / 488s）
+
+- 人评截图：Lead 已写出「完成」，底部仍有 flomo「处理中 · 488.8s」。任务早已结束，是面板空转。
+- 根因：Pi `agent_end` 先 `setStatus("idle")` 再 emit。全员 idle → 面板 `finishRun()` 清掉 currentRun 和计时器；随后 `agent_end` 走 `ensureWorkerLane` → `ensureRun()`，新块带新的 100ms interval，再也没有 idle 帧来关。
+- 修：`workerEventRunPolicy`（idle 后 reuse-last / drop，禁止新开）；`laneForWorker` 图已停只复用刚收掉的块。卡 `docs/evals/20260904-ghost-loader.md`。177 tests / typecheck / build 全绿；已 reload:ext。
+- 侧栏若还挂着旧会话，关掉重开。已经转着的那块 488s 不会自己消失，是旧实例。
+
+## 2026-09-04 名册 HTML（未落地）
+
+- 用户把「先判断 → Will's S → 并排 HTML → 人挑再落地」收成长期习惯，已写入 `AGENTS.md`。
+- 这一屏要判断：名是不是人；能不能分清谁在干活；动效帮不帮忙。对照：Labels last resort、Hick（三选）、从过多留白开始。
+- 名册三列并排（不再点了再看）：律师 Kim/Mike/Lalo/Gus（建议）、Nacho 更冷、火线。页：`docs/evals/20260904-cast-names.html`。产品未改。
+- 用户两册都喜欢，风格要靠苹果。新页 `docs/evals/20260904-apple-cast.html`：律师 ∥ 火线，同一套分组列表 + 语义灰 + 顶栏毛玻璃 + 等待用小转圈（名牌不闪）。对照 Color / Materials / Motion / Design Principles。产品仍未改。
+- 字母圆头像不好看；「门口等着」太呆。对照图未收到。新页 `docs/evals/20260904-mark-and-wait.html`：名牌 / 小光标 / 色点 × 等待短句（还没到 / 等 Lalo / 笔记没过来 / 还在等）。产品未改。
+- 按性格做人：参考 Peng Zheng / Grok Bot（persistent roles，扫一眼认出，状态在 avatar 上）。页 `docs/evals/20260904-character-roster.html`。律师 Kim 眼镜 / Mike 眯眼 / Lalo 圆笑会歪 / Gus 方正；火线 Kima 直视 / Omar 帽檐 / Bunk 眯眼 / Lester 圆眼镜。不画脸谱。产品未改。
+- 人评否掉手写几何脸：「质量跟人家不是一个水平线；不要自己设计；开源库（游戏库，也指 Grok Bot 形象库）」。xAI 未放官方几何。开源复刻：`zhulin025/LaoA-GrokBot` MIT、`jeremy-prt/bloub` MIT；游戏：Kenney Shape Characters CC0。新页 `docs/evals/20260904-open-cast.html`，vendor 在 `docs/evals/vendor/`。
+- 人评续：Grok Bot 律师/火线「这一块都行」，要能动；Mike 可用 Kenney 黄球皱眉（人设）；Omar 可用 Kenney 紫菱；不要局限，Mike 可以两种。页改为两列动起来 + 混用。
+- **已落地（点头「对的」）**：律师班 Kim/Mike/Lalo/Gus（`shared/cast.ts` 纯函数，面板和光标同一套）。Grok Bot 弹簧在侧栏头像（LaoA `grok-original.js`，不改 path）。Mike 等待切 Kenney 黄球皱眉（`await_message` 期间）。chip/名牌/色条用短名和人的色。界面文案去掉「工人」（`请了 Kim`）。
+- 人评：「律师和火线都可以。」名册扩成 8 人：律师 + 火线（Kima/Omar/Bunk/Lester）。Omar 常驻 Kenney 紫菱。散列仍按 worker id。待人评真机。
+- 人评执行块布局挤、chip 跟人一个量级。对照 Hierarchy / 模糊间距 / 尺寸系统。人改成分组底 + 32 头像 + 名在上链在下；chip 缩进对齐名字、更小更淡；组间 12 组内 8/4。卡 `docs/evals/20260904-run-layout.md`。
+
+## 2026-09-04 mark 内部滚动漂移
+
+- 人评：flomo 圈住「第一条非置顶笔记」后拖动列表，框停在视口原处，笔记从底下溜走。
+- 根因：`20260903-mark-tool` 假定「absolute 文档坐标天然跟随，不必听 scroll」。只对 window 滚动成立。笔记列表是内部 overflow 容器，`window.scrollY` 恒为 0；resize 会按元素重算，scroll 没听。
+- 修：`cursor.ts` 在 window 捕获期听 scroll（scroll 不冒泡），按锚定元素最新 `getBoundingClientRect` 重算文档坐标。滚动只重锚 mark，不收光标/不拆高亮。锚点断开先藏圈，target 还能 resolve 再贴回去。
+- 卡：`docs/evals/20260904-mark-nested-scroll.md`。`overlay-check.mjs` nested-scroll dy=90、四边误差 0；window-scroll 文档 y 74→74。178 tests / typecheck / build 全绿。已 reload `fnbjglhppbkgmjeehablkfilmmefjolo`。
+- 人评：轻拖「基本上 ok」。压力测试任务：多圈同时在、从置顶翻到 9 月 1–2 日再让用户从顶拖到底。

@@ -9,7 +9,7 @@ import type { ClientMessage, ServerMessage, ToolName } from "../../../shared/pro
 import { LEAD_SESSION_ID, PROTOCOL_VERSION, normalizeSessionId } from "../../../shared/protocol.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import { Uplink } from "./uplink.js";
-import { closeTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
+import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
 import { navigate } from "./exec/navigate.js";
 import { snapshot } from "./exec/snapshot.js";
 import { click, clearMarks, fill, mark, pressKey, scroll, typeText } from "./exec/input.js";
@@ -17,12 +17,14 @@ import { evaluateJs } from "./exec/evaluate.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
+import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { findSessionForTab } from "./state.js";
 
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
   list_tabs: (_p, sid) => listTabs(sid),
+  get_active_tab: () => getActiveTab(),
   open_tab: (p, sid) => openTab(p, sid),
   switch_tab: (p, sid) => switchTab(p, sid),
   close_tab: (p, sid) => closeTab(p, sid),
@@ -128,6 +130,22 @@ async function executeToolCall(
   uplink.sendClientMessage(result);
 }
 
+/**
+ * user_message / steer 转发前附上发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。
+ * 查询失败或无活动标签时原样发送，不阻塞主流程。
+ */
+async function attachPageContext<T extends Extract<ClientMessage, { type: "user_message" | "steer" }>>(
+  msg: T,
+): Promise<T> {
+  try {
+    const { tab } = await getActiveTab();
+    if (!tab) return msg;
+    return { ...msg, context: { tabId: tab.id, title: tab.title, url: tab.url } };
+  } catch {
+    return msg;
+  }
+}
+
 // 步骤完成自动感知：teach 模式 + 有待完成标注时，working tab 的 URL 变化
 // （chrome.tabs.onUpdated 的 changeInfo.url，SPA pushState 也会触发）视为
 // 用户可能已完成当前步骤 → 清标注 + 通知 agent。agent 未连接时 sendClientMessage 静默丢弃。
@@ -182,6 +200,11 @@ chrome.runtime.onConnect.addListener((port) => {
           const mode = msg.msg.mode;
           void setMode(mode).then(() => broadcast({ kind: "mode", mode }));
         }
+        // user_message / steer 先附页面上下文再上行（异步，失败时原样发送）
+        if (msg.msg.type === "user_message" || msg.msg.type === "steer") {
+          void attachPageContext(msg.msg).then((enriched) => uplink.sendClientMessage(enriched));
+          break;
+        }
         uplink.sendClientMessage(msg.msg);
         break;
       case "sync": {
@@ -208,6 +231,28 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     panels.delete(port);
   });
+});
+
+/** 页面标注框外按钮：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */
+chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+  if (!raw || typeof raw !== "object") return;
+  const msg = raw as { type?: unknown; action?: unknown };
+  if (msg.type !== "mark_action" || !isMarkActionId(msg.action)) return;
+  const action = msg.action;
+  void (async () => {
+    if (action === "cancel") {
+      try {
+        await clearMarks(LEAD_SESSION_ID);
+      } catch {
+        /* 没有标注可清 */
+      }
+    }
+    const text = markActionUserText(action);
+    const outgoing = await attachPageContext({ type: "user_message", text });
+    uplink.sendClientMessage(outgoing);
+    sendResponse({ ok: true });
+  })();
+  return true;
 });
 
 uplink.start();

@@ -28,8 +28,18 @@ import {
   Send,
   Inbox,
 } from "lucide";
-import { StepChain, chipState, describeTool, formatDuration, loaderSubtitle, pixelDelay } from "./steps.js";
+import {
+  StepChain,
+  chipState,
+  describeTool,
+  formatDuration,
+  loaderSubtitle,
+  pixelDelay,
+  workerEventRunPolicy,
+} from "./steps.js";
 import { cursorColor } from "../shared/palette.js";
+import { personFor, displayNameFor } from "../../../shared/cast.js";
+import { mountGrok, mountKenney, type GrokHandle } from "../shared/grok-bot.js";
 import {
   chipLabel,
   displayName,
@@ -343,8 +353,22 @@ let currentThinkingDetails: HTMLDetailsElement | null = null;
 let currentThinkingStart = 0;
 /** 用户发消息时刻：run 计时的起点（块体懒创建，先记时间戳）。 */
 let runStartAt = 0;
-/** 当前 run 的"执行步骤"聚合块；run 外为 null。 */
-let currentRun: {
+interface WorkerLane {
+  root: HTMLDetailsElement;
+  body: HTMLElement;
+  chainEl: HTMLElement;
+  chain: StepChain;
+  chipGroup: ChipGroup | null;
+  lastLine: HTMLElement;
+  face: HTMLElement;
+  status: HTMLElement;
+  waiting: boolean;
+  grok: GrokHandle | null;
+  awaiting: Set<string>;
+}
+
+/** 当前 run 的"执行步骤"聚合块。 */
+interface RunHost {
   root: HTMLDetailsElement;
   body: HTMLElement;
   iconBox: HTMLElement;
@@ -363,16 +387,12 @@ let currentRun: {
   /** 当前 chip 分组；思考块插入后另起一组。 */
   chipGroup: ChipGroup | null;
   workers: Map<string, WorkerLane>;
-} | null = null;
-
-interface WorkerLane {
-  root: HTMLDetailsElement;
-  body: HTMLElement;
-  chainEl: HTMLElement;
-  chain: StepChain;
-  chipGroup: ChipGroup | null;
-  lastLine: HTMLElement;
 }
+
+/** 当前 run；run 外为 null。 */
+let currentRun: RunHost | null = null;
+/** finishRun 刚收掉的那一块。全员 idle 后到达的 agent_end 复用它，禁止再开 loader。 */
+let lastRun: RunHost | null = null;
 
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
@@ -547,23 +567,61 @@ function ensureRun(): NonNullable<typeof currentRun> {
   return currentRun;
 }
 
-function ensureWorkerLane(id: string): WorkerLane {
-  const run = ensureRun();
+function castAsset(file: string): string {
+  return typeof chrome !== "undefined" && chrome.runtime?.getURL
+    ? chrome.runtime.getURL(`cast/${file}`)
+    : `cast/${file}`;
+}
+
+function paintLaneFace(lane: WorkerLane, id: string): void {
+  const person = personFor(id);
+  if (!person) return;
+  lane.grok?.destroy();
+  lane.grok = null;
+  const kenney = (lane.waiting && person.kenneyWait) || person.kenney;
+  if (kenney) {
+    mountKenney(lane.face, castAsset(kenney.body), castAsset(kenney.face), 32);
+    return;
+  }
+  lane.grok = mountGrok(lane.face, person, 32);
+  lane.grok.setWaiting(lane.waiting);
+}
+
+function setLaneWaiting(lane: WorkerLane, id: string, waiting: boolean): void {
+  if (lane.waiting === waiting) return;
+  lane.waiting = waiting;
+  const person = personFor(id);
+  lane.status.textContent = waiting ? (person?.waitLine ?? "") : "";
+  lane.status.hidden = !waiting;
+  paintLaneFace(lane, id);
+}
+
+function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
   const existing = run.workers.get(id);
   if (existing) return existing;
+  const person = personFor(id);
   const root = document.createElement("details");
   root.className = "worker-lane";
   root.open = true;
   root.style.setProperty("--worker-c", cursorColor(id));
   const summary = document.createElement("summary");
-  const dot = document.createElement("span");
-  dot.className = "worker-dot";
+  const face = document.createElement("span");
+  face.className = "worker-face";
+  const meta = document.createElement("div");
+  meta.className = "worker-meta";
+  const idrow = document.createElement("div");
+  idrow.className = "worker-idrow";
   const name = document.createElement("span");
   name.className = "worker-name";
-  name.textContent = id;
+  name.textContent = displayNameFor(id);
+  const status = document.createElement("span");
+  status.className = "worker-status";
+  status.hidden = true;
+  idrow.append(name, status);
   const chainEl = document.createElement("span");
   chainEl.className = "worker-chain";
-  summary.append(dot, name, chainEl);
+  meta.append(idrow, chainEl);
+  summary.append(face, meta);
   const body = document.createElement("div");
   body.className = "worker-body";
   const lastLine = document.createElement("div");
@@ -571,7 +629,11 @@ function ensureWorkerLane(id: string): WorkerLane {
   lastLine.hidden = true;
   body.appendChild(lastLine);
   root.append(summary, body);
-  run.body.insertBefore(root, run.loader);
+  if (run.loader.isConnected && run.loader.parentElement === run.body) {
+    run.body.insertBefore(root, run.loader);
+  } else {
+    run.body.appendChild(root);
+  }
   const lane: WorkerLane = {
     root,
     body,
@@ -579,9 +641,35 @@ function ensureWorkerLane(id: string): WorkerLane {
     chain: new StepChain(),
     chipGroup: null,
     lastLine,
+    face,
+    status,
+    waiting: false,
+    grok: null,
+    awaiting: new Set(),
   };
+  if (person) paintLaneFace(lane, id);
   run.workers.set(id, lane);
   return lane;
+}
+
+/**
+ * 工人事件进哪条车道。图已 idle 时只复用刚收掉的块，绝不 ensureRun（否则「处理中」空转）。
+ */
+function laneForWorker(id: string): { lane: WorkerLane; run: RunHost; live: boolean } | null {
+  const policy = workerEventRunPolicy({
+    hasCurrentRun: currentRun != null,
+    graphRunning: running,
+    hasLastRun: lastRun != null,
+  });
+  if (policy === "drop") return null;
+  if (policy === "reuse-last") {
+    const run = lastRun;
+    if (!run) return null;
+    const lane = run.workers.get(id);
+    return lane ? { lane, run, live: false } : null;
+  }
+  const run = policy === "current" && currentRun ? currentRun : ensureRun();
+  return { lane: ensureWorkerLane(id, run), run, live: true };
 }
 
 const sessionRun = new Map<string, "idle" | "running">();
@@ -611,12 +699,14 @@ function finishRun(): void {
   currentRun = null;
   runStartAt = 0;
   if (!run) return;
+  lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
   run.loader.remove();
   // 空 run（纯文本回复，无思考/工具步骤）不留壳
   if (run.body.childElementCount === 0) {
     run.root.remove();
+    if (lastRun === run) lastRun = null;
     return;
   }
   run.root.classList.add("done");
@@ -754,23 +844,35 @@ function onToolStart(
   sessionId?: string,
 ): void {
   const action = describeTool(ev.name, ev.params);
-  const run = ensureRun();
+  let run: RunHost;
   let group: ChipGroup;
+  let live = true;
   if (sessionId && !isLeadSession(sessionId)) {
-    const lane = ensureWorkerLane(sessionId);
-    lane.chain.push(action.short);
-    lane.chainEl.textContent = lane.chain.render();
-    if (!lane.chipGroup) lane.chipGroup = buildChipGroup(lane.body, lane.lastLine);
-    group = lane.chipGroup;
-    run.lastToolShort = `${sessionId} · ${action.short}`;
+    const found = laneForWorker(sessionId);
+    if (!found) return;
+    found.lane.chain.push(action.short);
+    found.lane.chainEl.textContent = found.lane.chain.render();
+    if (!found.lane.chipGroup) found.lane.chipGroup = buildChipGroup(found.lane.body, found.lane.lastLine);
+    group = found.lane.chipGroup;
+    run = found.run;
+    live = found.live;
+    if (live) run.lastToolShort = `${displayNameFor(sessionId)} · ${action.short}`;
+    if (ev.name === "await_message") {
+      found.lane.awaiting.add(ev.toolCallId);
+      setLaneWaiting(found.lane, sessionId, true);
+    }
   } else {
+    run = ensureRun();
     closeBlocks();
     addChainStep(action.short);
     run.lastToolShort = action.short;
     if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
     group = run.chipGroup;
   }
-  run.loaderSub.textContent = loaderSubtitle(run.lastToolShort);
+  if (live) {
+    run.loaderSub.textContent = loaderSubtitle(run.lastToolShort);
+    run.body.appendChild(run.loader);
+  }
 
   const chip = document.createElement("button");
   chip.type = "button";
@@ -800,12 +902,18 @@ function onToolStart(
   chip.onclick = () => toggleChipDetail(entry);
   group.row.appendChild(chip);
   toolChips.set(ev.toolCallId, entry);
-  // loader 保持在 body 底部
-  run.body.appendChild(run.loader);
   scrollToEnd();
 }
 
 function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string }): void {
+  for (const run of [currentRun, lastRun]) {
+    if (!run) continue;
+    for (const [id, lane] of run.workers) {
+      if (lane.awaiting.delete(ev.toolCallId)) {
+        setLaneWaiting(lane, id, lane.awaiting.size > 0);
+      }
+    }
+  }
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
   if (!entry) return;
@@ -821,7 +929,9 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 }
 
 function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
-  const lane = ensureWorkerLane(sessionId);
+  const found = laneForWorker(sessionId);
+  if (!found) return;
+  const { lane } = found;
   switch (ev.kind) {
     case "text_delta": {
       lane.lastLine.hidden = false;

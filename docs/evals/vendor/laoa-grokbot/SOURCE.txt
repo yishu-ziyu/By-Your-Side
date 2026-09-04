@@ -1,0 +1,5 @@
+LaoA-GrokBot — https://github.com/zhulin025/LaoA-GrokBot
+Live: https://grokbot.liuwa.xyz
+License: MIT (Copyright 2026 老A玩AI)
+Also see bloub — https://github.com/jeremy-prt/bloub  (MIT; code, not xAI's design)
+xAI has not published the official Grok Bot geometry. These are community recreations.

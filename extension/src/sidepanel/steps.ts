@@ -2,6 +2,7 @@
  * "执行步骤"聚合块的纯逻辑：工具人性化描述、步骤链、耗时格式化。
  * 与 DOM 解耦，便于单测；main.ts 负责渲染。
  */
+import { displayNameFor, personFor } from "../../../shared/cast.js";
 
 export interface ToolAction {
   /** 步骤链里用的短动作名，如 "读取页面结构"。 */
@@ -13,6 +14,7 @@ export interface ToolAction {
 /** 工具名 → 中文动作；未知名称回退原始名。 */
 const ACTION_NAMES: Record<string, string> = {
   list_tabs: "列出标签页",
+  get_active_tab: "定位当前页",
   open_tab: "打开标签页",
   switch_tab: "切换标签页",
   close_tab: "关闭标签页",
@@ -27,9 +29,9 @@ const ACTION_NAMES: Record<string, string> = {
   screenshot: "截图",
   mark: "标注元素",
   clear_marks: "清除标注",
-  spawn_worker: "派出工人",
-  list_workers: "列出工人",
-  stop_worker: "停止工人",
+  spawn_worker: "请了人",
+  list_workers: "名册",
+  stop_worker: "停下",
   post: "投递工件",
   await_message: "等待工件",
 };
@@ -78,11 +80,19 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     }
     case "spawn_worker": {
       const id = str(params.id);
-      return { short, full: id ? `派出工人 ${clip(id)}` : short };
+      const name = id ? personFor(id)?.name : null;
+      return { short, full: name ? `请了 ${name}` : short };
+    }
+    case "stop_worker": {
+      const id = str(params.id);
+      const name = id ? personFor(id)?.name : null;
+      return { short, full: name ? `让 ${name} 停下` : short };
     }
     case "post": {
       const kind = str(params.kind);
       const to = str(params.to);
+      const who = to ? displayNameFor(to) : null;
+      if (kind && who && who !== to) return { short, full: `投递 ${clip(kind)} → ${who}` };
       if (kind && to) return { short, full: `投递 ${clip(kind)} → ${clip(to, 12)}` };
       return { short, full: short };
     }
@@ -142,4 +152,22 @@ export function formatDuration(ms: number): string {
   if (s < 59.5) return `${Math.round(s)}s`;
   const m = Math.floor(s / 60);
   return `${m}m ${Math.round(s % 60)}s`;
+}
+
+/**
+ * 工人事件该进哪一块执行步骤。
+ * 全员 idle 时 finishRun 会清掉 currentRun；Pi 的 agent_end 紧随 idle 到达，
+ * 若再 ensureRun 就会留下一块没人关掉的「处理中」。
+ */
+export type WorkerEventRunPolicy = "current" | "new" | "reuse-last" | "drop";
+
+export function workerEventRunPolicy(input: {
+  hasCurrentRun: boolean;
+  graphRunning: boolean;
+  hasLastRun: boolean;
+}): WorkerEventRunPolicy {
+  if (input.hasCurrentRun) return "current";
+  if (input.graphRunning) return "new";
+  if (input.hasLastRun) return "reuse-last";
+  return "drop";
 }

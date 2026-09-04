@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 光标轨迹抄谁的</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --agent: #2f6fed;
+    --red: #ff3b30;
+    --font: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 680px; margin: 0 0 28px; }
+  .lede a { color: var(--agent); text-decoration: none; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 28px; max-width: 980px; margin-bottom: 36px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: 1100px; }
+  @media (max-width: 980px) { .row, .asks { grid-template-columns: 1fr; } }
+  .col { cursor: pointer; }
+  .col.pick .phone { outline: 2px solid var(--agent); outline-offset: 3px; }
+  .col.no .phone { outline-color: var(--red); }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 10px; }
+  .kicker strong { color: var(--label); }
+  .phone {
+    background: var(--cell); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .stage { position: relative; height: 420px; background: #f7f7f8; overflow: hidden; }
+  .chrome {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 8px; background: #fff;
+    border-bottom: .5px solid var(--sep);
+  }
+  .pocket { width: 40px; height: 28px; flex: none; }
+  .search {
+    flex: 1; height: 28px; border-radius: 8px;
+    background: rgba(120,120,128,.12);
+    font: 500 12px/28px var(--font); color: var(--secondary);
+    padding: 0 10px;
+  }
+  .search.hot { background: color-mix(in srgb, var(--agent) 14%, #fff); color: var(--label); }
+  .list { padding: 8px 0; }
+  .note {
+    margin: 0 10px 6px; padding: 10px 12px; border-radius: 10px;
+    background: #fff; box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .note.hot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent) 55%, transparent); }
+  .note b { display: block; font-size: 13px; font-weight: 600; }
+  .note span { font-size: 12px; color: var(--secondary); }
+  .trace {
+    position: absolute; inset: 0; pointer-events: none; z-index: 3;
+  }
+  .cursor {
+    position: absolute; top: 0; left: 0; z-index: 4;
+    will-change: transform; pointer-events: none;
+  }
+  .cursor.rest { opacity: .86; }
+  .cursor.rest .label { opacity: 0; }
+  .svg-wrap {
+    position: absolute; left: 0; top: 0;
+    transition: transform 130ms ease;
+    transform-origin: 6.1px 7px;
+  }
+  .cursor.pressing .svg-wrap { transform: scale(.8); }
+  .cursor svg {
+    position: absolute; display: block; overflow: visible;
+    left: -6.1px; top: -7px;
+    filter: drop-shadow(0 0 1px #fff) drop-shadow(0 2px 6px rgba(15,23,42,.55));
+  }
+  .cursor path.fill { fill: var(--agent); }
+  .label {
+    position: absolute; left: 22px; top: 24px;
+    padding: 2px 9px; border-radius: 999px;
+    background: var(--agent); color: #fff;
+    font: 600 12px/1.7 var(--font);
+    letter-spacing: .02em; white-space: nowrap;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.7), 0 2px 8px rgba(15,23,42,.35);
+  }
+  .ripple {
+    position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+    border-radius: 50%; border: 2px solid var(--agent); z-index: 3;
+    animation: rip 480ms cubic-bezier(.22,1,.36,1) forwards; pointer-events: none;
+  }
+  .ripple.r2 { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-width: 1.5px; animation-delay: 90ms; }
+  @keyframes rip {
+    from { transform: scale(.5); opacity: .95; }
+    to { transform: scale(4.2); opacity: 0; }
+  }
+  .beat {
+    margin: 0; padding: 10px 14px 12px;
+    font-size: 12px; color: var(--secondary); min-height: 40px;
+  }
+  .beat em { font-style: normal; color: var(--label); }
+  .why { font-size: 12px; color: var(--secondary); margin: 8px 2px 0; line-height: 1.5; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--cell) 78%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-top: .5px solid var(--sep);
+    padding: 14px 40px 18px;
+    font-size: 13px; color: var(--secondary);
+  }
+</style>
+</head>
+<body>
+  <h1>轨迹先抄谁的，再按我们改</h1>
+  <p class="lede">
+    世界上做光标的其实是三摊：给人看的 Agent 光标、协作光标插值、躲检测的拟人鼠标。
+    我们是第一摊——人看着自己的页，终点已知。
+    飞的时候留下淡线，才能看见弯不弯。点一列。
+    <a href="20260904-cursor-perch.html">上一页是停哪一角</a>，这一页只比怎么飞。
+  </p>
+
+  <div class="asks">
+    <p>
+      <b>直线：GitHub Copilot Browser + tldraw 自主移动</b>
+      Copilot 侧栏 Agent 对当前页：已知终点，RAF + cubic easing。
+      tldraw 文档：easeInOut 给自主移动（镜头），easeOut 才是回应用户。
+      Fitts 定律定时长（ghost-cursor / agentcursor / HCI 1954），卡在 220–480ms。
+    </p>
+    <p>
+      <b>浅弧：ghost-cursor / CursorBuddy，去掉随机</b>
+      ghost-cursor：贝塞尔控制点只放在线段一侧，否则像乱晃。
+      CursorBuddy：沿二次弧飞到元素。
+      我们把 spread 写成距离的 12%、8–36px，方向固定。看起来像手，不像在躲机器。
+    </p>
+    <p>
+      <b>右列不算：WindMouse / 全套 stealth</b>
+      随机三次贝塞尔、过冲、拖尾。agentcursor 自己写明是为了 DataDome。
+      cdpilot 把这类「占帧的假光标」默认关了，说像外行在开车。
+      X：Bézier+Fitts 早被检测文献当签名。我们不需要躲，抄了是花活。
+    </p>
+    <p>
+      <b>不抄 perfect-cursors 的原因</b>
+      Steve Ruiz / tldraw：那是远端每 80ms 一个点，用样条补中间。
+      我们点击坐标一次就有，不是协作光标。能用的只有「新动作取消旧动画」。
+    </p>
+  </div>
+
+  <div class="row">
+    <div class="col" data-pick="line">
+      <p class="kicker"><strong>直线</strong> · Copilot / tldraw easeInOut + Fitts</p>
+      <div class="phone" id="line"></div>
+      <p class="why">终点已知，走最短路。像一个会办事的人，不像在模仿你的手。</p>
+    </div>
+    <div class="col" data-pick="arc">
+      <p class="kicker"><strong>浅弧</strong> · ghost-cursor 一侧弧，去掉随机</p>
+      <div class="phone" id="arc"></div>
+      <p class="why">同一套 Fitts + easeInOut，路微弯。仍看得到它去点哪。</p>
+    </div>
+    <div class="col no" data-pick="stealth">
+      <p class="kicker"><strong>不算</strong> · 随机弧 + 过冲 + 拖尾</p>
+      <div class="phone" id="stealth"></div>
+      <p class="why">ghost-cursor / WindMouse / AgentBrowser 拖尾的合集。人看着像没点准。</p>
+    </div>
+  </div>
+
+  <div class="bar">点一列。产品没改。随机、过冲、拖尾、把箭头再放大，这页都不算。</div>
+
+<script>
+const PATH = "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z";
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+function fittsMs(dist, width) {
+  const id = Math.log2(dist / (width || 44) + 1);
+  return Math.max(220, Math.min(480, 90 + 160 * id));
+}
+function lerp(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+function mag(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+function perp(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, n = Math.hypot(dx, dy) || 1;
+  return { x: -dy / n, y: dx / n };
+}
+function qbez(p0, p1, p2, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+    y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+  };
+}
+function cubic(p0, p1, p2, p3, t) {
+  const u = 1 - t;
+  return {
+    x: u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x,
+    y: u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y,
+  };
+}
+
+function mount(id) {
+  const root = document.getElementById(id);
+  root.innerHTML = `
+    <div class="stage">
+      <svg class="trace"></svg>
+      <div class="chrome">
+        <div class="pocket"></div>
+        <div class="search" data-hit="search">搜索笔记</div>
+        <div class="pocket"></div>
+      </div>
+      <div class="list">
+        <div class="note" data-hit="n1"><b>MiroFish 项目</b><span>回收站还留着</span></div>
+        <div class="note" data-hit="n2"><b>Formal · 评论摘录</b><span>今天 18:02</span></div>
+        <div class="note" data-hit="n3"><b>B 站这条怎么写</b><span>草稿</span></div>
+      </div>
+      <div class="cursor rest">
+        <div class="svg-wrap">
+          <svg width="36" height="36" viewBox="0 0 24 24">
+            <path class="halo" d="${PATH}" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linejoin="round"/>
+            <path class="fill" d="${PATH}" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="label">SideAgent</div>
+      </div>
+    </div>
+    <p class="beat"></p>`;
+  return root;
+}
+
+function sleep(ms, gen) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    gen.stops.push(() => { clearTimeout(t); reject("stop"); });
+  });
+}
+function xy(stage, el, rest) {
+  if (rest) return { x: 22, y: 24 };
+  const r = el.getBoundingClientRect();
+  const s = stage.getBoundingClientRect();
+  return { x: r.left - s.left + r.width * 0.62, y: r.top - s.top + r.height * 0.55 };
+}
+function put(cur, p) {
+  cur.style.transform = `translate(${p.x}px, ${p.y}px)`;
+}
+function posOf(cur) {
+  const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(cur.style.transform);
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: 22, y: 24 };
+}
+function beat(root, html) {
+  root.querySelector(".beat").innerHTML = html;
+}
+function hot(root, sel, on) {
+  root.querySelector(sel).classList.toggle("hot", on);
+}
+function drawTrace(svg, pts, fading) {
+  svg.replaceChildren();
+  if (pts.length < 2) return;
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  el.setAttribute("d", d);
+  el.setAttribute("fill", "none");
+  el.setAttribute("stroke", fading ? "rgba(47,111,237,.18)" : "rgba(47,111,237,.45)");
+  el.setAttribute("stroke-width", "1.6");
+  el.setAttribute("stroke-linecap", "round");
+  el.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(el);
+}
+
+function stealthCtrl(from, to) {
+  const n = perp(from, to);
+  const side = Math.random() < 0.5 ? 1 : -1;
+  const d = mag(from, to);
+  const spread = Math.min(200, Math.max(24, d * 0.35));
+  const mid1 = lerp(from, to, 0.28 + Math.random() * 0.12);
+  const mid2 = lerp(from, to, 0.62 + Math.random() * 0.12);
+  return [
+    { x: mid1.x + n.x * spread * side * (0.6 + Math.random() * 0.6), y: mid1.y + n.y * spread * side * (0.6 + Math.random() * 0.6) },
+    { x: mid2.x + n.x * spread * side * (0.4 + Math.random() * 0.8), y: mid2.y + n.y * spread * side * (0.4 + Math.random() * 0.8) },
+  ];
+}
+
+function pointOn(kind, from, to, c1, c2, end, t) {
+  if (kind === "line") return lerp(from, to, t);
+  if (kind === "arc") return qbez(from, c1, to, t);
+  return cubic(from, c1, c2, end, t);
+}
+
+async function fly(kind, cur, svg, from, to, gen) {
+  const dist = mag(from, to);
+  const ms = kind === "stealth" ? fittsMs(dist) + 180 : fittsMs(dist);
+  let c1, c2, end = to;
+  if (kind === "arc") {
+    const n = perp(from, to);
+    const spread = Math.max(8, Math.min(36, dist * 0.12));
+    c1 = { x: (from.x + to.x) / 2 + n.x * spread, y: (from.y + to.y) / 2 + n.y * spread };
+  }
+  if (kind === "stealth") {
+    const over = dist > 140;
+    const n = perp(from, to);
+    end = over
+      ? { x: to.x + n.x * 22 + (to.x - from.x) * 0.08, y: to.y + n.y * 22 + (to.y - from.y) * 0.08 }
+      : to;
+    [c1, c2] = stealthCtrl(from, end);
+  }
+  const preview = [];
+  for (let i = 0; i <= 28; i++) preview.push(pointOn(kind, from, to, c1, c2, end, i / 28));
+  if (kind === "stealth") preview.push(to);
+  drawTrace(svg, preview, false);
+  const t0 = performance.now();
+  await new Promise((resolve, reject) => {
+    let id = 0;
+    const stop = () => { cancelAnimationFrame(id); reject("stop"); };
+    gen.stops.push(stop);
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / ms);
+      put(cur, pointOn(kind, from, to, c1, c2, end, easeInOutCubic(t)));
+      if (t < 1) id = requestAnimationFrame(step);
+      else resolve();
+    };
+    id = requestAnimationFrame(step);
+  });
+  if (kind === "stealth" && mag(end, to) > 4) {
+    const t1 = performance.now();
+    await new Promise((resolve, reject) => {
+      let id = 0;
+      const stop = () => { cancelAnimationFrame(id); reject("stop"); };
+      gen.stops.push(stop);
+      const step = (now) => {
+        const t = Math.min(1, (now - t1) / 160);
+        put(cur, lerp(end, to, easeInOutCubic(t)));
+        if (t < 1) id = requestAnimationFrame(step);
+        else resolve();
+      };
+      id = requestAnimationFrame(step);
+    });
+  }
+}
+
+function ripple(stage, p) {
+  for (const cls of ["ripple", "ripple r2"]) {
+    const n = document.createElement("div");
+    n.className = cls;
+    n.style.left = p.x + "px";
+    n.style.top = p.y + "px";
+    n.addEventListener("animationend", () => n.remove(), { once: true });
+    stage.appendChild(n);
+  }
+}
+
+async function clickAt(cur, stage, p, gen) {
+  cur.classList.remove("rest");
+  put(cur, p);
+  cur.classList.add("pressing");
+  ripple(stage, p);
+  await sleep(160, gen);
+  cur.classList.remove("pressing");
+}
+
+async function loop(root, kind, gen) {
+  const stage = root.querySelector(".stage");
+  const cur = root.querySelector(".cursor");
+  const svg = root.querySelector(".trace");
+  const home = () => xy(stage, null, true);
+  put(cur, home());
+  while (!gen.dead) {
+    beat(root, "待命：<em>停左上，不晃</em>。");
+    cur.classList.add("rest");
+    drawTrace(svg, [], true);
+    put(cur, home());
+    await sleep(1100, gen);
+    const a = xy(stage, root.querySelector("[data-hit=search]"));
+    beat(root, "去点搜索。淡线是轨迹。");
+    cur.classList.remove("rest");
+    await fly(kind, cur, svg, posOf(cur), a, gen);
+    hot(root, "[data-hit=search]", true);
+    await clickAt(cur, stage, a, gen);
+    await sleep(240, gen);
+    hot(root, "[data-hit=search]", false);
+    beat(root, "回家。");
+    cur.classList.add("rest");
+    await fly(kind, cur, svg, posOf(cur), home(), gen);
+    await sleep(700, gen);
+    const b = xy(stage, root.querySelector("[data-hit=n2]"));
+    beat(root, "去点这条笔记。");
+    cur.classList.remove("rest");
+    await fly(kind, cur, svg, posOf(cur), b, gen);
+    hot(root, "[data-hit=n2]", true);
+    await clickAt(cur, stage, b, gen);
+    await sleep(240, gen);
+    hot(root, "[data-hit=n2]", false);
+    cur.classList.add("rest");
+    await fly(kind, cur, svg, posOf(cur), home(), gen);
+    drawTrace(svg, [], true);
+    await sleep(900, gen);
+  }
+}
+
+const gens = {};
+function start(id, kind, root) {
+  if (gens[id]) gens[id].dead = true, gens[id].stops.forEach((s) => s());
+  const gen = { dead: false, stops: [] };
+  gens[id] = gen;
+  loop(root, kind, gen).catch(() => {});
+}
+
+const lineRoot = mount("line");
+const arcRoot = mount("arc");
+const stealthRoot = mount("stealth");
+start("line", "line", lineRoot);
+start("arc", "arc", arcRoot);
+start("stealth", "stealth", stealthRoot);
+
+document.querySelectorAll(".col").forEach((col) => {
+  col.addEventListener("click", () => {
+    document.querySelectorAll(".col").forEach((c) => c.classList.remove("pick"));
+    col.classList.add("pick");
+  });
+});
+</script>
+</body>
+</html>

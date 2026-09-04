@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 看这一屏再挑</title>
+<style>
+  :root {
+    --bg: #eef0f3;
+    --paper: #f6f7f9;
+    --surface: #fff;
+    --surface-2: #f0f1f4;
+    --text: #1c1f24;
+    --text-2: #6b7280;
+    --text-3: #9aa1ab;
+    --border: rgba(15, 23, 42, .09);
+    --accent: #2f6fed;
+    --ok: #16a34a;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --ease: cubic-bezier(.2, 0, 0, 1);
+    --red: #e2554f;
+    --green: #16a34a;
+    --purple: #9333ea;
+    --amber: #d97706;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: var(--font); color: var(--text); background: var(--bg); }
+  body { padding: 40px 32px 128px; }
+  h1 { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 8px; }
+  .lede { color: var(--text-2); font-size: 14px; line-height: 1.6; max-width: 640px; margin: 0 0 28px; }
+  .asks {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    max-width: 1100px; margin-bottom: 40px;
+  }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+  .asks b { color: var(--text); font-weight: 600; display: block; margin-bottom: 4px; }
+  .row {
+    display: grid; grid-template-columns: repeat(3, minmax(300px, 1fr)); gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 1080px) { .asks, .row, .refs { grid-template-columns: 1fr; } }
+  .col { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .col.pick { outline: 2px solid var(--accent); box-shadow: 0 10px 32px rgba(47,111,237,.12); }
+  .head { padding: 20px 20px 14px; }
+  .head .tag { font-size: 11px; color: var(--text-3); letter-spacing: .04em; }
+  .head h2 { margin: 4px 0 0; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+  .head .hint { margin: 8px 0 0; font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
+  .pick-btn {
+    margin-top: 14px; border: 1px solid var(--border); background: var(--surface-2);
+    border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .col.pick .pick-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .panel { background: var(--paper); padding: 12px 12px 16px; }
+  .phone { background: var(--paper); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .topbar {
+    display: flex; align-items: center; padding: 8px 12px; background: #fff;
+    border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600;
+  }
+  .on { margin-left: auto; font-size: 11px; color: var(--ok); font-weight: 500; }
+  .stream { padding: 12px; }
+  .run { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .sum { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+  .lane { margin-top: 14px; padding-left: 10px; border-left: 2px solid var(--who); animation: in 220ms var(--ease) both; }
+  .lane.d2 { animation-delay: 80ms; }
+  .who { display: flex; align-items: center; gap: 8px; }
+  .plate {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--who); color: #fff;
+    border-radius: 999px; padding: 2px 10px 2px 5px; font-size: 12px; font-weight: 650;
+    box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0,0,0,.16);
+  }
+  .plate i { width: 8px; height: 8px; border-radius: 50%; background: #fff; display: block; }
+  .plate.wait { animation: breathe 1.8s ease-in-out infinite; }
+  .site { font-size: 12px; color: var(--text-3); }
+  .live { margin-top: 6px; font-size: 12.5px; color: var(--text); }
+  .live span { color: var(--text-3); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2);
+    font-size: 11.5px; color: var(--text-2); animation: in 180ms var(--ease) both;
+    transition: transform 120ms var(--ease);
+  }
+  .chip:nth-child(2) { animation-delay: 40ms; }
+  .chip:active { transform: scale(.96); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .page {
+    margin-top: 12px; height: 88px; border-radius: 10px; position: relative; overflow: hidden;
+    background: linear-gradient(180deg, #f4f1ea, #e7e2d6); border: 1px solid var(--border);
+  }
+  .cur { position: absolute; }
+  .cur .nm {
+    position: absolute; left: 16px; top: 18px; white-space: nowrap;
+    background: var(--who); color: #fff; font-size: 10.5px; font-weight: 650;
+    padding: 2px 7px; border-radius: 999px; border: 1.5px solid #fff;
+  }
+  h3 { font-size: 13px; font-weight: 650; margin: 48px 0 14px; color: var(--text-3); }
+  .refs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; max-width: 1100px; }
+  .refs p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-3); }
+  .refs b { color: var(--text-2); font-weight: 600; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,.92); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border); padding: 14px 32px; font-size: 13px;
+  }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes breathe { 50% { filter: brightness(1.1); } }
+  @media (prefers-reduced-motion: reduce) {
+    .lane, .chip, .plate.wait { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>这一屏只判断三件事</h1>
+  <p class="lede">同一条任务，三册名字并排。先看名牌和光标，再看侧栏里谁在等。点一列就行。</p>
+
+  <div class="asks">
+    <p><b>名是不是人</b>不读介绍，四个名牌看起来像一伙人，还是一排标签。</p>
+    <p><b>能不能分清谁在干活</b>Lalo 在翻页、Mike 在等的时候，眼睛会先落到谁身上。</p>
+    <p><b>动效帮不帮忙</b>入场错开、等的人名牌在呼吸。是在说「还活着」，还是在抢你。</p>
+  </div>
+
+  <div class="row" id="row"></div>
+
+  <h3>参考了谁</h3>
+  <div class="refs">
+    <p><b>tldraw</b>彩色箭头，白边名牌。形状已经在用，只换字。</p>
+    <p><b>Claude Code</b>等的时候换短词。词写死。结束立刻停。</p>
+    <p><b>ui-skills</b>错落入场，按下 0.96。不为动而动。</p>
+    <p><b>律师 / 火线</b>只借个性差。不画脸，不引台词。Lead 仍是 SideAgent。</p>
+  </div>
+
+  <div class="bar">现在选的是：<b id="sel">律师 · Kim / Mike / Lalo / Gus</b></div>
+
+<script>
+  const arrow = (fill) =>
+    `<svg width="28" height="28" viewBox="0 0 24 24"><path fill="${fill}" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>`;
+
+  const casts = [
+    {
+      key: "bcs", rec: true, tag: "建议",
+      title: "Kim  Mike  Lalo  Gus",
+      hint: "严谨、等、玩、控场",
+      label: "律师 · Kim / Mike / Lalo / Gus",
+      a: { name: "Lalo", color: "var(--purple)", hex: "#9333ea", site: "bilibili", live: "在页面里找", wait: false, chips: ["在页面里找了 14 次", "把 10 条递给 Mike"] },
+      b: { name: "Mike", color: "var(--green)", hex: "#16a34a", site: "flomo", live: "门口等着", wait: true, chips: ["等 Lalo 把笔记递过来", "点开新笔记"] },
+    },
+    {
+      key: "nacho", rec: false, tag: "更冷",
+      title: "Kim  Mike  Nacho  Gus",
+      hint: "把 Lalo 换成 Nacho，少一点嬉",
+      label: "律师 · Kim / Mike / Nacho / Gus",
+      a: { name: "Nacho", color: "var(--purple)", hex: "#9333ea", site: "bilibili", live: "在页面里找", wait: false, chips: ["在页面里找了 14 次", "把 10 条递给 Mike"] },
+      b: { name: "Mike", color: "var(--green)", hex: "#16a34a", site: "flomo", live: "门口等着", wait: true, chips: ["等 Nacho 把笔记递过来", "点开新笔记"] },
+    },
+    {
+      key: "wire", rec: false, tag: "办案",
+      title: "Kima  Omar  Bunk  Lester",
+      hint: "上手、认得、一句、拼图",
+      label: "火线 · Kima / Omar / Bunk / Lester",
+      a: { name: "Kima", color: "var(--red)", hex: "#e2554f", site: "bilibili", live: "在页面里找", wait: false, chips: ["在页面里找了 14 次", "把 10 条递给 Lester"] },
+      b: { name: "Lester", color: "var(--amber)", hex: "#d97706", site: "flomo", live: "门口等着", wait: true, chips: ["等 Kima 把笔记递过来", "点开新笔记"] },
+    },
+  ];
+
+  let pick = "bcs";
+
+  function plate(p, wait) {
+    return `<span class="plate${wait && p.wait ? " wait" : ""}" style="--who:${p.color}"><i></i>${p.name}</span>`;
+  }
+
+  function lane(p, delay) {
+    return `
+      <div class="lane${delay ? " d2" : ""}" style="--who:${p.color}">
+        <div class="who">${plate(p, true)} <span class="site">${p.site}</span></div>
+        <div class="live">${p.live}${p.wait ? " <span>· 等笔记</span>" : ""}</div>
+        <div class="chips">
+          ${p.chips.map((t) => `<span class="chip"><span class="dot"></span>${t}</span>`).join("")}
+        </div>
+      </div>`;
+  }
+
+  function render() {
+    document.getElementById("row").innerHTML = casts.map((c) => `
+      <article class="col${c.key === pick ? " pick" : ""}" data-key="${c.key}">
+        <div class="head">
+          <div class="tag">${c.tag}</div>
+          <h2>${c.title}</h2>
+          <p class="hint">${c.hint}</p>
+          <button class="pick-btn" type="button">选这个</button>
+        </div>
+        <div class="panel">
+          <div class="phone">
+            <div class="topbar">SideAgent <span class="on">已连接</span></div>
+            <div class="stream">
+              <div class="run">
+                <div class="sum">请了 ${c.a.name} 和 ${c.b.name}</div>
+                ${lane(c.a, false)}
+                ${lane(c.b, true)}
+              </div>
+            </div>
+          </div>
+          <div class="page">
+            <div class="cur" style="left:40px;top:26px;--who:${c.b.color}">${arrow(c.b.hex)}<div class="nm">${c.b.name}</div></div>
+            <div class="cur" style="left:150px;top:42px;--who:${c.a.color}">${arrow(c.a.hex)}<div class="nm">${c.a.name}</div></div>
+          </div>
+        </div>
+      </article>
+    `).join("");
+    document.getElementById("sel").textContent = casts.find((c) => c.key === pick).label;
+    document.querySelectorAll("[data-key]").forEach((el) => {
+      el.querySelector(".pick-btn").onclick = () => { pick = el.dataset.key; render(); };
+    });
+  }
+  render();
+</script>
+</body>
+</html>

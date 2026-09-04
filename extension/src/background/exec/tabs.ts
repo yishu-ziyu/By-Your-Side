@@ -19,6 +19,24 @@ export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ t
   };
 }
 
+/** 用户此刻正盯着的标签页（纯查询，不认领为工作标签页）；无活动标签时返回 null。 */
+export async function getActiveTab(): Promise<{ tab: TabInfo | null }> {
+  const workingId = await getWorkingTabId();
+  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tab = active ?? (await chrome.tabs.query({ active: true }))[0];
+  if (!tab || tab.id == null) return { tab: null };
+  return {
+    tab: {
+      id: tab.id,
+      title: tab.title ?? "",
+      url: tab.url ?? "",
+      active: true,
+      windowId: tab.windowId,
+      working: tab.id === workingId,
+    },
+  };
+}
+
 export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 人怎么标，等怎么说</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --fill: rgba(120,120,128,.12);
+    --blue: #007aff;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --green: #34c759;
+    --purple: #af52de;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; color: var(--secondary); max-width: 560px; line-height: 1.47; margin: 0 0 36px; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 980px; margin-bottom: 36px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; max-width: 1100px; }
+  @media (max-width: 980px) { .row, .asks { grid-template-columns: 1fr; } }
+  .col { cursor: pointer; }
+  .col.pick .phone { outline: 2px solid var(--blue); outline-offset: 3px; }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 8px; }
+  .kicker strong { color: var(--label); }
+  .phone { background: var(--bg); border-radius: 18px; box-shadow: 0 0 0 1px var(--sep); overflow: hidden; }
+  .nav {
+    display: flex; justify-content: space-between; padding: 12px 16px 10px;
+    background: color-mix(in srgb, var(--cell) 72%, transparent);
+    backdrop-filter: blur(20px); border-bottom: .5px solid var(--sep);
+    font-size: 17px; font-weight: 600;
+  }
+  .nav span { font-size: 13px; font-weight: 500; color: var(--green); }
+  .body { padding: 16px; }
+  .group { background: var(--cell); border-radius: 12px; overflow: hidden; }
+  .caption { font-size: 12px; color: var(--secondary); padding: 12px 16px 6px; }
+  .person { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
+  .person + .person { border-top: .5px solid var(--sep); }
+  .mid { flex: 1; min-width: 0; }
+  .name { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+  .meta { font-size: 13px; color: var(--secondary); }
+  .status { font-size: 13px; color: var(--secondary); text-align: right; white-space: nowrap; }
+  .status em { font-style: normal; color: var(--label); }
+  .spin {
+    display: inline-block; width: 12px; height: 12px; margin-right: 6px;
+    border: 1.6px solid var(--fill); border-top-color: var(--secondary);
+    border-radius: 50%; vertical-align: -1px; animation: spin .7s linear infinite;
+  }
+  .plate {
+    display: inline-flex; align-items: center; background: var(--who); color: #fff;
+    border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 600;
+    box-shadow: 0 0 0 1.5px #fff, 0 1px 4px rgba(0,0,0,.12);
+  }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--who); color: #fff;
+    display: grid; place-items: center; font-size: 13px; font-weight: 600; flex-shrink: 0;
+  }
+  .cur-mini { width: 22px; height: 22px; flex-shrink: 0; }
+  h3 { font-size: 13px; font-weight: 600; color: var(--secondary); margin: 44px 0 12px; }
+  .waits { display: flex; flex-wrap: wrap; gap: 8px; max-width: 980px; }
+  .waits button {
+    border: .5px solid var(--sep); background: var(--cell); border-radius: 999px;
+    padding: 7px 14px; font: inherit; font-size: 15px; cursor: pointer; color: var(--label);
+  }
+  .waits button.on { background: var(--label); color: #fff; border-color: var(--label); }
+  .waits button.old { color: var(--secondary); text-decoration: line-through; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--cell) 78%, transparent);
+    backdrop-filter: blur(20px); border-top: .5px solid var(--sep);
+    padding: 14px 40px; font-size: 13px; color: var(--secondary);
+  }
+  .bar b { color: var(--label); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+</style>
+</head>
+<body>
+  <h1>人怎么标，等怎么说</h1>
+  <p class="lede">对照图这边没收到。头像按「名字已经在了，就别再贴一个字母圆」拆了三案。等待那句去掉「门口等着」，换成能换的短句。</p>
+
+  <div class="asks">
+    <p><b>头像</b>字母圆是把名字又说了一遍。下面三个：名牌、小光标、只留色点。</p>
+    <p><b>等待</b>别用比喻。点一句，三列右边那行一起换。</p>
+  </div>
+
+  <div class="row" id="marks"></div>
+
+  <h3>等的时候说什么</h3>
+  <div class="waits" id="waits"></div>
+
+  <div class="bar">现在：<b id="sel">名牌 · 还没到</b></div>
+
+<script>
+  const waits = [
+    { id: "old", text: "门口等着", dead: true },
+    { id: "a", text: "还没到" },
+    { id: "b", text: "等 Lalo" },
+    { id: "c", text: "笔记没过来" },
+    { id: "d", text: "还在等" },
+  ];
+  let wait = "a";
+  let mark = "plate";
+
+  const marks = [
+    { key: "plate", title: "名牌", hint: "你之前喜欢的那种。名字就是人。" },
+    { key: "cursor", title: "小光标", hint: "页面上那只鼠标缩到这一行。" },
+    { key: "dot", title: "色点", hint: "最省。颜色在，字母圆不要了。" },
+  ];
+
+  const arrow = (fill) =>
+    `<svg class="cur-mini" viewBox="0 0 24 24"><path fill="${fill}" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>`;
+
+  function lead(kind, who, color, hex) {
+    if (kind === "plate") return `<span class="plate" style="--who:${color}">${who}</span>`;
+    if (kind === "cursor") return arrow(hex);
+    return `<span style="width:8px;height:8px;border-radius:50%;background:${color};display:block;flex-shrink:0"></span>`;
+  }
+
+  function line(kind, who, site, color, hex, waiting) {
+    const w = waits.find((x) => x.id === wait);
+    const right = waiting
+      ? `<div class="status"><i class="spin"></i><em>${w.text}</em></div>`
+      : `<div class="status">在页面里找</div>`;
+    const title = kind === "plate"
+      ? `<div class="meta">${site}</div>`
+      : `<div class="name">${who}</div><div class="meta">${site}</div>`;
+    return `<div class="person">
+      ${lead(kind, who, color, hex)}
+      <div class="mid">${title}</div>
+      ${right}
+    </div>`;
+  }
+
+  function render() {
+    document.getElementById("marks").innerHTML = marks.map((m) => `
+      <div class="col${m.key === mark ? " pick" : ""}" data-mark="${m.key}">
+        <p class="kicker"><strong>${m.title}</strong> · ${m.hint}</p>
+        <div class="phone">
+          <div class="nav">SideAgent <span>已连接</span></div>
+          <div class="body"><div class="group">
+            <div class="caption">请了 Lalo 和 Mike</div>
+            ${line(m.key, "Lalo", "bilibili", "var(--purple)", "#af52de", false)}
+            ${line(m.key, "Mike", "flomo", "var(--green)", "#34c759", true)}
+          </div></div>
+        </div>
+      </div>
+    `).join("");
+    document.querySelectorAll("[data-mark]").forEach((el) => {
+      el.onclick = () => { mark = el.dataset.mark; render(); };
+    });
+    const w = waits.find((x) => x.id === wait);
+    const m = marks.find((x) => x.key === mark);
+    document.getElementById("sel").textContent = `${m.title} · ${w.text}`;
+  }
+
+  document.getElementById("waits").innerHTML = waits.map((w) =>
+    `<button type="button" class="${w.dead ? "old" : ""}" data-w="${w.id}">${w.text}</button>`
+  ).join("");
+  document.querySelectorAll("[data-w]").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      if (waits.find((x) => x.id === el.dataset.w).dead) return;
+      wait = el.dataset.w;
+      document.querySelectorAll("[data-w]").forEach((b) => b.classList.toggle("on", b.dataset.w === wait && !b.classList.contains("old")));
+      render();
+    };
+  });
+  document.querySelector('[data-w="a"]').classList.add("on");
+  render();
+</script>
+</body>
+</html>

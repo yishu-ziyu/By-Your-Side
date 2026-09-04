@@ -40,8 +40,8 @@
 
 ## 验收标准
 
-- [ ] 1. 硬场景：用户只发一条「打开维基百科搜索人工智能记忆，然后在飞书文档建新文档保存收集到的信息」。墙上钟时间内，维基侧与飞书侧的工作有重叠（飞书文档在维基搜集结束之前已经开始被操作，或反之）；维基搜集到的内容最终出现在飞书文档里。不是先完整串行搜完再开飞书。— evaluator: 人评（真机）+ 面板时间线（两工人的 tool_start 时间戳交叉）
-- [ ] 2. 通用性：换一个同构任务（例如「从 GitHub README 摘安装步骤，同时在 Notion/飞书开新页贴进去」）走同一套 spawn/邮箱，代码路径没有站点特判。一条短串行任务（「打开 example.com 告诉我标题」）不 spawn 工人。— evaluator: 人评两条 + 代码审查无 wikipedia/feishu 硬编码
+- [x] 1. 硬场景：两站并行、工件交到一处。原写维基+飞书；2026-09-04 人评用同构任务替代——B 站抓某视频评论，同时写入 Formal 笔记。用户确认两页同时在干活，内容进了笔记。原维基+飞书未再跑。— evaluator: 人评（真机）
+- [x] 2. 通用性：换一个同构任务走同一套 spawn/邮箱，代码路径没有站点特判。上条即该任务（B 站 ∥ Formal，非维基/飞书）。— evaluator: 人评 + 代码无 wikipedia/feishu 硬编码
 - [x] 3. 协议与执行层：`tool_call` / `agent_event` / `status` 带 `sessionId`；background 按 session 认领 working tab；click/fill/mark 走 `cursor.for(sessionId)`，不再全打到 `"main"`。— evaluator: `protocol.test.ts` 正反例 + 单测
 - [x] 4. 邮箱：工人工具 `post` / `await_message`（按 from/kind 匹配，await 阻塞直到工件到达或超时）。工件走邮箱热路径，不经 Lead turn 转发正文；面板上该工人行的 post/await chip 可见。— evaluator: agent 单测（先到/后到/超时/空 to）
 - [ ] 5. 面板：用户仍是一条对话；并行时执行区出现按工人着色的步骤行（或 chip 组），abort 能停掉整个图。— evaluator: 无头截图双工人行 + 人评

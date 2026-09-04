@@ -49,5 +49,6 @@ for (const [from, to] of [
 
 // 图标：manifest 里以 icons/ 前缀引用，保持目录结构拷入 dist
 await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
+await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: true });
 
 console.log("dist/ 构建完成");

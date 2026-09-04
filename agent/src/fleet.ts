@@ -5,6 +5,7 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { LEAD_SESSION_ID, isLeadSession, type AgentUiEvent } from "../../shared/protocol.js";
+import { displayNameFor } from "../../shared/cast.js";
 import { Mailbox, DEFAULT_AWAIT_MS } from "./mailbox.js";
 import { workerSystemPrompt } from "./prompt.js";
 import type { ToolRpc } from "./rpc.js";
@@ -28,7 +29,7 @@ export function sanitizeWorkerId(raw: string | undefined, taken: Iterable<string
 
 export function assertCanSpawn(liveCount: number, max = MAX_WORKERS): void {
   if (liveCount >= max) {
-    throw new Error(`最多同时派出 ${max} 个工人；先等现有工人结束，或 stop_worker。`);
+    throw new Error(`最多同时请 ${max} 个人；先等他们结束，或 stop_worker。`);
   }
 }
 
@@ -97,7 +98,7 @@ export class Fleet {
     assertCanSpawn(this.workers.size);
     const goal = opts.goal.trim();
     if (!goal) throw new Error("spawn_worker 需要 goal");
-    if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法派出工人");
+    if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
 
     const id = sanitizeWorkerId(opts.id, this.workers.keys());
     const peers = (opts.peers ?? []).map((p) => p.trim()).filter(Boolean);
@@ -112,7 +113,7 @@ export class Fleet {
       )) as { tabId: number };
       tabId = opened.tabId;
     } catch (err) {
-      throw new Error(`为工人 ${id} 打开标签页失败：${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`为 ${displayNameFor(id)} 打开标签页失败：${err instanceof Error ? err.message : String(err)}`);
     }
 
     let started = false;
@@ -137,7 +138,7 @@ export class Fleet {
       },
     );
     if (!session.available) {
-      throw new Error(`工人 ${id} 会话创建失败`);
+      throw new Error(`${displayNameFor(id)} 会话创建失败`);
     }
     this.workers.set(id, session);
     console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);

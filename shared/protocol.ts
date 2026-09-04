@@ -24,10 +24,17 @@ export type AgentMode = "act" | "teach";
 
 // ── 客户端（扩展）→ 服务端（伴随进程） ──────────────────────────────
 
+/** 用户消息附带的页面上下文：发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。 */
+export interface PageContext {
+  tabId: number;
+  title: string;
+  url: string;
+}
+
 export type ClientMessage =
   | { type: "hello"; token: string; client: "sidepanel" }
-  | { type: "user_message"; text: string }
-  | { type: "steer"; text: string }
+  | { type: "user_message"; text: string; context?: PageContext }
+  | { type: "steer"; text: string; context?: PageContext }
   | { type: "abort" }
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
@@ -71,6 +78,7 @@ export type AgentUiEvent =
 
 export const TOOL_NAMES = [
   "list_tabs",
+  "get_active_tab",
   "open_tab",
   "switch_tab",
   "close_tab",
@@ -88,6 +96,14 @@ export const TOOL_NAMES = [
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+/** 标注框外的就地确认按钮。id 决定点下去发给 Agent 的文本（confirm→确认，cancel→取消）。 */
+export type MarkActionId = "confirm" | "cancel";
+export interface MarkAction {
+  id: MarkActionId;
+  /** 按钮上的短文案，如「删除」「取消」 */
+  label: string;
+}
 
 export interface TabInfo {
   id: number;
@@ -111,6 +127,8 @@ export interface TabInfo {
  */
 export interface ToolContract {
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
+  /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
+  get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
   open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string } };
   switch_tab: { params: { tabId: number }; data: { tabId: number } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
@@ -130,7 +148,7 @@ export interface ToolContract {
     data: { imageBase64: string; mediaType: "image/png"; width: number; height: number };
   };
   /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */
-  mark: { params: { target: string; label?: string }; data: { marked: true } };
+  mark: { params: { target: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
   /** 清除全部 mark 标注 */
   clear_marks: { params: Record<string, never>; data: { cleared: true } };
 }
@@ -147,10 +165,23 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if (msg.event !== "url_changed" || typeof msg.url !== "string") return null;
       if (!validOptionalSessionId(msg.sessionId)) return null;
     }
+    if (
+      (msg.type === "user_message" || msg.type === "steer") &&
+      msg.context !== undefined &&
+      !isPageContext(msg.context)
+    ) {
+      return null;
+    }
     return msg;
   } catch {
     return null;
   }
+}
+
+function isPageContext(v: unknown): v is PageContext {
+  if (typeof v !== "object" || v === null) return false;
+  const c = v as PageContext;
+  return typeof c.tabId === "number" && typeof c.title === "string" && typeof c.url === "string";
 }
 
 export function parseServerMessage(raw: string): ServerMessage | null {

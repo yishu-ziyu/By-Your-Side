@@ -28,6 +28,6 @@ describe("assertCanSpawn", () => {
   it("未满员放行，满员抛错", () => {
     expect(() => assertCanSpawn(0)).not.toThrow();
     expect(() => assertCanSpawn(MAX_WORKERS - 1)).not.toThrow();
-    expect(() => assertCanSpawn(MAX_WORKERS)).toThrow(/最多同时派出 2/);
+    expect(() => assertCanSpawn(MAX_WORKERS)).toThrow(/最多同时请 2/);
   });
 });

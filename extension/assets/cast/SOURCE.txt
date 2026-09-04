@@ -1,0 +1,4 @@
+Kenney Shape Characters (CC0) — https://kenney.nl/assets/shape-characters
+yellow_body_circle.png + face_b.png — Mike waiting
+purple_body_rhombus.png + face_h.png — Omar
+LaoA-GrokBot MIT — extension/src/shared/grok-original.js

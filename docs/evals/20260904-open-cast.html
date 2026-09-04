@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 开源库动起来</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --tertiary: rgba(60,60,67,.3);
+    --blue: #007aff;
+    --font: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --green: #34c759;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 640px; margin: 0 0 28px; }
+  .lede a { color: var(--blue); text-decoration: none; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: 980px; margin-bottom: 36px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 980px; }
+  @media (max-width: 900px) { .asks, .row { grid-template-columns: 1fr; } }
+  .col { cursor: pointer; }
+  .col.pick .roster, .col.pick .phone { outline: 2px solid var(--blue); outline-offset: 3px; }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 10px; }
+  .kicker strong { color: var(--label); }
+  .roster { background: var(--cell); border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 .5px var(--sep); }
+  .person {
+    display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center;
+    padding: 11px 16px;
+  }
+  .person.wide { grid-template-columns: 76px 1fr auto; }
+  .person + .person { border-top: .5px solid var(--sep); }
+  .name { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+  .job { font-size: 13px; color: var(--secondary); }
+  .line { font-size: 13px; color: var(--secondary); text-align: right; }
+  .line em { font-style: normal; color: var(--label); }
+  .pair { display: flex; gap: 4px; align-items: center; }
+  .gb { display: block; overflow: visible; }
+  .kn {
+    width: 36px; height: 36px; position: relative; display: block; flex: none;
+    background: var(--body) center / contain no-repeat;
+  }
+  .kn.sm { width: 32px; height: 32px; }
+  .kn i {
+    position: absolute; left: 18%; right: 18%; top: 24%; bottom: 30%;
+    background: var(--face) center / contain no-repeat;
+    transform-origin: 50% 45%;
+  }
+  .kn.live i { animation: knblink 5.2s var(--ease) infinite; }
+  .kn.d2 i { animation-delay: 1.6s; }
+  .phone {
+    margin-top: 12px; background: var(--bg); border-radius: 14px;
+    box-shadow: 0 0 0 .5px var(--sep); overflow: hidden;
+  }
+  .nav {
+    display: flex; justify-content: space-between; padding: 12px 16px;
+    background: color-mix(in srgb, var(--cell) 74%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    font-size: 17px; font-weight: 600; border-bottom: .5px solid var(--sep);
+  }
+  .nav span { font-size: 13px; font-weight: 500; color: var(--green); }
+  .group { margin: 14px; background: var(--cell); border-radius: 12px; overflow: hidden; }
+  .caption { font-size: 12px; color: var(--secondary); padding: 12px 16px 4px; }
+  h3 { font-size: 13px; font-weight: 600; color: var(--secondary); margin: 48px 0 12px; }
+  .refs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; max-width: 980px; }
+  .refs p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .refs b { color: var(--label); }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--cell) 78%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-top: .5px solid var(--sep);
+    padding: 14px 40px; font-size: 13px; color: var(--secondary);
+  }
+  .bar b { color: var(--label); }
+  @keyframes knblink {
+    0%, 88%, 100% { transform: scaleY(1); }
+    91% { transform: scaleY(.08); }
+  }
+  @keyframes tilt-once {
+    0%, 100% { transform: rotate(0); }
+    40% { transform: rotate(6deg); }
+    70% { transform: rotate(-3deg); }
+  }
+  .gb.tilt-once { animation: tilt-once .8s var(--ease); }
+  @media (prefers-reduced-motion: reduce) {
+    .kn.live i, .gb.tilt-once { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>Grok Bot 那块动起来。人可以混用。</h1>
+  <p class="lede">
+    律师、火线两列都留。动的是库里的弹簧：眨眼、眼神、表情过渡，不是转圈。
+    Mike 两种都行——库里的 pebble，和 Kenney 黄球皱眉。
+    Omar 用 Kenney 紫菱。不绑死一套库。
+  </p>
+
+  <div class="asks">
+    <p><b>动得对不对</b>活着的人眨眼、换眼神；等着的人自己停。不是名牌闪，也不是转圈。</p>
+    <p><b>混用行不行</b>Mike 两种并排；Omar 紫菱。其他人仍是 Grok Bot 库。</p>
+    <p><b>还是哪一伙</b>律师或火线。点一列。</p>
+  </div>
+
+  <div class="row">
+    <div class="col pick" data-key="bcs">
+      <p class="kicker"><strong>律师</strong> · Kim / Mike 两种 / Lalo / Gus</p>
+      <div class="roster" id="roster-bcs"></div>
+      <div class="phone">
+        <div class="nav">SideAgent <span>已连接</span></div>
+        <div class="group">
+          <div class="caption">请了 Lalo 和 Mike · 等着用皱眉黄球</div>
+          <div id="phone-bcs"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col" data-key="wire">
+      <p class="kicker"><strong>火线</strong> · Kima / Omar 紫菱 / Bunk / Lester</p>
+      <div class="roster" id="roster-wire"></div>
+      <div class="phone">
+        <div class="nav">SideAgent <span>已连接</span></div>
+        <div class="group">
+          <div class="caption">请了 Kima 和 Lester · Omar 在名册里</div>
+          <div id="phone-wire"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>对照过的正文</h3>
+  <div class="refs">
+    <p><b>Apple Motion</b>动效要有目的、短、可关。休息时生命在眨眼和眼神，身体不漂。避免 0.2Hz 一直晃。</p>
+    <p><b>NNGroup</b>动效用在状态：等、上手、闲。无关的运动会抢注意力。</p>
+    <p><b>bloub</b>静止时不漂浮。活着 = 视线漂移 + 眨眼。表情用库里的弹簧过渡。</p>
+    <p><b>来源</b>LaoA-GrokBot 眼与弹簧；Kenney face_b / 紫菱 face_h。产品未改。</p>
+  </div>
+
+  <div class="bar">点一列。<b>Grok Bot 在动</b>。Mike 两种、Omar 紫菱。点了再谈落地。</div>
+
+<script src="vendor/laoa-grokbot/original-data.js"></script>
+<script>
+const SHAPES = {
+  blob: 'M228.541 114.228C228.541 130.133 225.184 145.994 218.738 160.534C212.674 174.217 203.904 186.669 193.065 196.988C155.933 232.34 99.497 238.596 55.5255 212.24C45.097 205.99 35.6851 198.072 27.7451 188.866C19.1926 178.953 12.3686 167.569 7.65781 155.351C2.60712 142.264 0 128.257 0 114.228C0 98.3219 3.35751 82.4611 9.80315 67.9215C15.8672 54.2382 24.6377 41.7862 35.4767 31.4668C72.6081 -3.88483 129.044 -10.1413 173.016 16.2153C183.444 22.4653 192.856 30.3829 200.796 39.5896C209.349 49.5018 216.173 60.8859 220.883 73.1037C225.934 86.1906 228.541 100.198 228.541 114.228Z',
+  pebble: 'M114 8C177 8 217 45 217 109C217 178 181 219 112 219C43 219 12 181 12 113C12 48 51 8 114 8Z',
+  squircle: 'M55 10H174Q219 10 219 55V174Q219 219 174 219H55Q10 219 10 174V55Q10 10 55 10Z',
+  capsule: 'M61 31H168C202 31 220 65 220 114C220 163 202 197 168 197H61C27 197 9 163 9 114C9 65 27 31 61 31Z',
+  hex: 'M114 5L207 58Q218 64 218 78V153Q218 167 207 173L128 218Q114 226 100 218L21 173Q10 167 10 153V78Q10 64 21 58L100 12Q114 5 114 5Z'
+};
+const K = 'vendor/kenney-shape-characters';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DATA = window.GROKBOT_ORIGINAL;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const path = ring => 'M' + ring.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join('L') + 'Z';
+const centroid = ring => ring.reduce((a, p) => [a[0] + p[0] / ring.length, a[1] + p[1] / ring.length], [0, 0]);
+const clone = expr => expr.map(r => r.map(p => [p[0], p[1]]));
+let clip = 0;
+const bots = [];
+
+function kenney(body, face, cls = '') {
+  return `<span class="kn live ${cls}" style="--body:url('${K}/${body}');--face:url('${K}/${face}')"><i></i></span>`;
+}
+
+function mountSvg(el, { shape, color, size }) {
+  const id = 'c' + (++clip);
+  const d = SHAPES[shape];
+  el.innerHTML = `<svg class="gb" width="${size}" height="${size}" viewBox="0 0 229 229" aria-hidden="true">
+    <defs><clipPath id="${id}"><path d="${d}"/></clipPath></defs>
+    <path fill="${color}" d="${d}"/>
+    <g class="eyes" clip-path="url(#${id})">
+      <path class="e0" fill="#fff"/>
+      <path class="e1" fill="#fff"/>
+    </g>
+  </svg>`;
+  return el.querySelector('svg');
+}
+
+function Bot(svg, { expr, pool, mood }) {
+  this.svg = svg;
+  this.eye0 = svg.querySelector('.e0');
+  this.eye1 = svg.querySelector('.e1');
+  this.pool = pool;
+  this.mood = mood;
+  this.expr = expr;
+  this.current = clone(DATA.EXPRESSIONS[expr]);
+  this.target = DATA.EXPRESSIONS[expr];
+  this.morph = 1;
+  this.vel = 0;
+  this.blink = 1;
+  this.blinkStart = 0;
+  this.gazeX = 0; this.gazeY = 0;
+  this.gx = 0; this.gy = 0;
+  this.nextBlink = performance.now() + 800 + Math.random() * 2400;
+  this.nextExpr = performance.now() + 1100 + Math.random() * 1800;
+  this.nextGaze = performance.now();
+  this.nextTilt = performance.now() + 1800 + Math.random() * 2000;
+}
+Bot.prototype.choose = function (i) {
+  const t = clamp(this.morph, 0, 1);
+  this.current = this.current.map((ring, e) => ring.map((p, j) => [
+    p[0] + (this.target[e][j][0] - p[0]) * t,
+    p[1] + (this.target[e][j][1] - p[1]) * t
+  ]));
+  this.target = DATA.EXPRESSIONS[i];
+  this.expr = i;
+  this.morph = 0;
+  this.vel = 0;
+};
+Bot.prototype.tick = function (now, dt) {
+  if (reduce) { this.morph = 1; this.blink = 1; this.draw(); return; }
+  this.vel += (-14 * this.vel - 49 * (this.morph - 1)) * dt;
+  this.morph += this.vel * dt;
+  if (!Number.isFinite(this.morph)) { this.morph = 1; this.vel = 0; }
+  if (now > this.nextBlink) {
+    this.blinkStart = now;
+    this.nextBlink = now + 2600 + Math.random() * 3400;
+  }
+  if (this.blinkStart) {
+    const t = (now - this.blinkStart) / 320;
+    if (t >= 1) { this.blinkStart = 0; this.blink = 1; }
+    else this.blink = Math.max(t < .42 ? 1 - t / .42 : (t - .42) / .58, .04);
+  }
+  if (this.pool.length > 1 && now > this.nextExpr) {
+    const next = this.pool.find(i => i !== this.expr) ?? this.pool[0];
+    this.choose(next);
+    this.nextExpr = now + (this.mood === 'wait' ? 2800 : 1500) + Math.random() * 1800;
+  }
+  if (now > this.nextGaze) {
+    const amp = this.mood === 'wait' ? 6 : 16;
+    this.gx = (Math.random() - .5) * amp;
+    this.gy = (Math.random() - .5) * (amp * .6);
+    this.nextGaze = now + 800 + Math.random() * 1400;
+  }
+  this.gazeX += (this.gx - this.gazeX) * Math.min(1, dt * 3);
+  this.gazeY += (this.gy - this.gazeY) * Math.min(1, dt * 3);
+  if (this.mood === 'play' && now > this.nextTilt) {
+    this.svg.classList.remove('tilt-once');
+    void this.svg.offsetWidth;
+    this.svg.classList.add('tilt-once');
+    this.nextTilt = now + 3800 + Math.random() * 3200;
+  }
+  this.draw();
+};
+Bot.prototype.draw = function () {
+  const t = clamp(this.morph, 0, 1);
+  const shown = this.current.map((ring, e) => ring.map((p, j) => [
+    p[0] + (this.target[e][j][0] - p[0]) * t,
+    p[1] + (this.target[e][j][1] - p[1]) * t
+  ]));
+  [this.eye0, this.eye1].forEach((el, i) => {
+    const ring = shown[i];
+    const c = centroid(ring);
+    const x = c[0] + this.gazeX;
+    const y = c[1] + this.gazeY;
+    el.setAttribute('d', path(ring));
+    el.setAttribute('transform', `translate(${x} ${y}) scale(1 ${this.blink}) translate(${-c[0]} ${-c[1]})`);
+  });
+};
+
+function liveAv(host, spec, size) {
+  const svg = mountSvg(host, { shape: spec.shape, color: spec.color, size });
+  const bot = new Bot(svg, spec);
+  bots.push(bot);
+  bot.draw();
+}
+
+function rowHtml({ wide, av, name, job, line }) {
+  return `<div class="person${wide ? ' wide' : ''}">${av}<div><div class="name">${name}</div><div class="job">${job}</div></div><div class="line">${line}</div></div>`;
+}
+
+if (!DATA) {
+  document.body.insertAdjacentHTML('afterbegin', '<p style="color:#c00">original-data.js 没载上。</p>');
+} else {
+  const bcs = [
+    { name: 'Kim', job: '把事做干净', line: '<em>在对齐</em>', grok: { shape: 'squircle', color: '#000', expr: 0, pool: [0, 8], mood: 'idle' } },
+    { name: 'Mike', job: '到点才动手', line: '<em>还没到</em>', wide: true, grok: { shape: 'pebble', color: '#9a6737', expr: 4, pool: [4, 22], mood: 'wait' }, kenney: ['yellow_body_circle.png', 'face_b.png'] },
+    { name: 'Lalo', job: '闲，但准', line: '<em>我先看看</em>', grok: { shape: 'blob', color: '#ff6a00', expr: 2, pool: [2, 11, 17], mood: 'play' } },
+    { name: 'Gus', job: '脸上不动', line: '<em>两边都在</em>', grok: { shape: 'hex', color: '#000', expr: 14, pool: [14, 0], mood: 'idle' } }
+  ];
+  const wire = [
+    { name: 'Kima', job: '直接上手', line: '<em>上手了</em>', grok: { shape: 'capsule', color: '#ff3347', expr: 7, pool: [7, 16, 10], mood: 'work' } },
+    { name: 'Omar', job: '一出场就认得', line: '<em>来了</em>', kenney: ['purple_body_rhombus.png', 'face_h.png'] },
+    { name: 'Bunk', job: '一句就够', line: '<em>成了</em>', grok: { shape: 'pebble', color: '#9a6737', expr: 11, pool: [11, 2], mood: 'idle' } },
+    { name: 'Lester', job: '慢慢拼图', line: '<em>拼上了</em>', grok: { shape: 'squircle', color: '#ff9800', expr: 8, pool: [8, 16, 5], mood: 'idle' } }
+  ];
+
+  function paintRoster(el, people) {
+    el.innerHTML = people.map(p => {
+      let av;
+      if (p.grok && p.kenney) {
+        av = `<div class="pair"><span class="slot"></span>${kenney(p.kenney[0], p.kenney[1])}</div>`;
+      } else if (p.kenney) {
+        av = kenney(p.kenney[0], p.kenney[1]);
+      } else {
+        av = `<span class="slot"></span>`;
+      }
+      return rowHtml({ wide: p.wide, av, name: p.name, job: p.job, line: p.line });
+    }).join('');
+    const slots = [...el.querySelectorAll('.slot')];
+    let i = 0;
+    people.forEach(p => {
+      if (!p.grok) return;
+      liveAv(slots[i++], p.grok, 36);
+    });
+  }
+
+  function paintPhone(el, a, b, sites) {
+    const items = [
+      { p: a, site: sites[0] },
+      { p: b, site: sites[1] }
+    ];
+    el.innerHTML = items.map(({ p, site }, idx) => {
+      const av = p.kenney && (p.name === 'Mike' || !p.grok)
+        ? kenney(p.kenney[0], p.kenney[1], idx ? 'sm d2' : 'sm')
+        : `<span class="slot"></span>`;
+      return rowHtml({ av, name: p.name, job: site, line: p.line });
+    }).join('');
+    const slots = [...el.querySelectorAll('.slot')];
+    let i = 0;
+    items.forEach(({ p }) => {
+      if (p.kenney && (p.name === 'Mike' || !p.grok)) return;
+      liveAv(slots[i++], p.grok, 32);
+    });
+  }
+
+  paintRoster(document.getElementById('roster-bcs'), bcs);
+  paintRoster(document.getElementById('roster-wire'), wire);
+  paintPhone(document.getElementById('phone-bcs'), bcs[2], bcs[1], ['bilibili', 'flomo']);
+  paintPhone(document.getElementById('phone-wire'), wire[0], wire[3], ['bilibili', 'flomo']);
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, .1);
+    last = now;
+    bots.forEach(b => b.tick(now, dt));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('.col').forEach(col => {
+  col.addEventListener('click', () => {
+    document.querySelectorAll('.col').forEach(c => c.classList.remove('pick'));
+    col.classList.add('pick');
+  });
+});
+</script>
+</body>
+</html>

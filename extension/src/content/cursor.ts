@@ -1,52 +1,102 @@
 /**
  * Agent 虚拟鼠标 overlay content script（ISOLATED world，重复注入幂等）。
  * 暴露 window.__sideagent.cursor = { move, click, hide, highlight, mark, clearMarks, for(id) }。
- * mark 标注挂在独立的 absolute host（文档坐标，随内容滚动）；其余在 fixed host（视口坐标）。
- * 默认实例（名牌 "SideAgent"）供单任务使用；for(id) 返回实例专属光标（调色板按序着色），
- * 为多任务并行准备的渲染层——每个并行 Agent 一个颜色。
+ * mark 标注挂在独立的 absolute host（文档坐标）。window 滚动靠文档坐标天然跟随；
+ * 内部滚动容器不会改 window.scroll，必须在 scroll 捕获期按锚定元素的最新
+ * getBoundingClientRect 重算。resize / visualViewport 同路径重算 mark；光标/高亮
+ * 只在 viewport 尺寸变化时收起（滚动不拆瞬时层）。
+ * 默认实例（名牌 "SideAgent"）供单任务使用；for(id) 返回实例专属光标（名册上的人），
+ * 为多任务并行准备的渲染层——每个并行 Agent 一个名字和颜色。
  *
  * shadow DOM（closed）隔离页面样式；host pointer-events:none + 最高 z-index，不干扰页面交互。
  * 坐标均为视口坐标系（与 Input.dispatchMouseEvent / getBoundingClientRect 一致）。
  *
- * 视觉参考：tldraw 协作光标（彩色填充 + 白描边 + 名牌 pill）、ChatGPT Agent（点击波纹）。
+ * 视觉参考：tldraw 协作光标（彩色填充 + 白描边 + 深色外晕 + 名牌 pill）、ChatGPT Agent（点击波纹）。
+ * 轨迹：浅弧（ghost-cursor 一侧弧去掉随机）+ Fitts 时长 + easeInOutCubic。
+ * 闲着停角落，要点再飞过去；不 3 秒隐掉。
  * 箭头形状取自 lucide MousePointer2（ISC）。
+ *
+ * 生命周期：MV3 扩展 reload 会销毁 isolated world 但留下 DOM host。启动时若本 world
+ * 还没有 cursor API，按 data-sideagent-overlay 清掉旧 host 再创建。
  */
+import { isMarkActionId, parseMarkActions } from "../shared/mark-actions.js";
 import { markLabelPlacement } from "../shared/mark-label.js";
+import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
+import { displayNameFor } from "../../../shared/cast.js";
+import {
+  CURSOR_ARROW_PATH,
+  CURSOR_STROKE_HALO,
+  CURSOR_STROKE_WHITE,
+  CURSOR_SVG_SIZE,
+  CURSOR_TIP,
+} from "../shared/cursor-visual.js";
+import {
+  PARK_AFTER_MS,
+  easeInOutCubic,
+  flightMs,
+  pointOnArc,
+  restOnRight,
+  restPoint,
+} from "../shared/cursor-path.js";
+import {
+  HIGHLIGHT_PAD,
+  MARK_PAD,
+  OVERLAY_ATTR,
+  OVERLAY_KIND_CURSOR,
+  OVERLAY_KIND_MARKS,
+  highlightBounds,
+  sweepStaleOverlayHosts,
+  viewportRectToDocumentBox,
+} from "../shared/overlay.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
+  // 同一 world 重复注入：保留现有实例。新 world（扩展 reload）先清旧 DOM 再挂。
+  if (!ns.cursor) sweepStaleOverlayHosts(document);
   if (ns.cursor) return;
 
-  const IDLE_HIDE_MS = 3000;
-  const SVG_SIZE = 27; // svg 显示尺寸（lucide 图标为 24 网格）
-  const SCALE = SVG_SIZE / 24;
-  const TIP = { x: 4.037, y: 4.688 }; // 箭头尖端在 24 网格中的位置
+  const SCALE = CURSOR_SVG_SIZE / 24;
   const DEFAULT_ID = LEAD_CURSOR_ID;
   const DEFAULT_LABEL = "SideAgent";
-
-  const ARROW_PATH =
-    "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z";
 
   interface Instance {
     el: HTMLDivElement;
     color: string;
     visible: boolean;
-    hideTimer?: ReturnType<typeof setTimeout>;
+    restIndex: number;
+    pos: { x: number; y: number };
+    resting: boolean;
+    raf?: number;
+    parkTimer?: ReturnType<typeof setTimeout>;
     pressTimer?: ReturnType<typeof setTimeout>;
     highlightEl?: HTMLDivElement;
   }
 
+  interface LiveMark {
+    el: HTMLDivElement;
+    anchor: Element | null;
+    target?: string;
+    pad: number;
+    label?: string;
+    actions?: MarkAction[];
+  }
+
   let host: HTMLDivElement | null = null;
+  let marksHost: HTMLDivElement | null = null;
   let shadow: ShadowRoot | null = null;
   let highlightLayer: HTMLDivElement | null = null;
   let rippleLayer: HTMLDivElement | null = null;
-  let marksLayer: HTMLDivElement | null = null; // 文档坐标标注层（独立 absolute host，随页面滚动）
+  let marksLayer: HTMLDivElement | null = null;
+  let viewportHooked = false;
   const instances = new Map<string, Instance>();
+  const liveMarks: LiveMark[] = [];
 
   function ensureDom(): void {
     if (host) return;
     host = document.createElement("div");
+    host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CURSOR);
+    host.setAttribute("aria-hidden", "true");
     host.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
     shadow = host.attachShadow({ mode: "closed" });
 
@@ -54,30 +104,35 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
     style.textContent = `
       .cursor {
         position: absolute; top: 0; left: 0;
-        transition: transform 280ms cubic-bezier(.22,1,.36,1), opacity 160ms ease;
+        transition: opacity 160ms ease;
         will-change: transform;
       }
-      .cursor.no-anim { transition: none; }
-      .cursor.hidden { opacity: 0; transition: opacity 160ms ease; }
+      .cursor.hidden { opacity: 0; }
+      .cursor.rest { opacity: .86; }
+      .cursor.rest .label { opacity: 0; }
+      .cursor.flip .label { left: auto; right: 18px; }
       .svg-wrap {
         position: absolute; left: 0; top: 0;
         transition: transform 130ms ease;
-        transform-origin: ${(TIP.x * SCALE).toFixed(1)}px ${(TIP.y * SCALE).toFixed(1)}px;
+        transform-origin: ${(CURSOR_TIP.x * SCALE).toFixed(1)}px ${(CURSOR_TIP.y * SCALE).toFixed(1)}px;
       }
       .cursor.pressing .svg-wrap { transform: scale(.8); }
       .cursor svg {
         position: absolute; display: block; overflow: visible;
-        left: ${(-TIP.x * SCALE).toFixed(1)}px; top: ${(-TIP.y * SCALE).toFixed(1)}px;
-        filter: drop-shadow(0 1.5px 3px rgba(15,23,42,.4));
+        left: ${(-CURSOR_TIP.x * SCALE).toFixed(1)}px; top: ${(-CURSOR_TIP.y * SCALE).toFixed(1)}px;
+        filter: drop-shadow(0 0 1px #fff) drop-shadow(0 2px 6px rgba(15,23,42,.55));
       }
-      .cursor path { fill: var(--c); }
+      .cursor path.fill { fill: var(--c); }
+      .cursor path.halo { fill: none; }
       .label {
-        position: absolute; left: 17px; top: 19px;
-        padding: 2px 8px; border-radius: 999px;
+        position: absolute; left: 22px; top: 24px;
+        padding: 2px 9px; border-radius: 999px;
         background: var(--c); color: #fff;
-        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        font: 600 12px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
         letter-spacing: .02em; white-space: nowrap;
-        box-shadow: 0 2px 6px rgba(15,23,42,.25);
+        box-shadow: 0 0 0 1px rgba(255,255,255,.7), 0 2px 8px rgba(15,23,42,.35);
+        text-shadow: 0 1px 1px rgba(15,23,42,.35);
+        transition: opacity 160ms ease;
       }
       .ripple {
         position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
@@ -119,12 +174,14 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
     rippleLayer = document.createElement("div");
     shadow.appendChild(rippleLayer);
     (document.documentElement ?? document.body).appendChild(host);
+    hookViewport();
   }
 
   function ensureMarksDom(): void {
     if (marksLayer) return;
-    // 与 fixed 的 cursor host 不同：absolute + 文档坐标，标注随内容滚动（修"滚动后标注漂移"问题）
-    const marksHost = document.createElement("div");
+    marksHost = document.createElement("div");
+    marksHost.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_MARKS);
+    marksHost.setAttribute("aria-hidden", "true");
     marksHost.style.cssText =
       "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none;";
     const marksShadow = marksHost.attachShadow({ mode: "closed" });
@@ -151,11 +208,89 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
         box-shadow: 0 2px 6px rgba(15,23,42,.25);
       }
       .mark-label.below { top: calc(100% + 6px); }
+      .mark-actions {
+        position: absolute; left: 0; top: calc(100% + 10px);
+        display: flex; gap: 8px; pointer-events: none;
+      }
+      .mark-action {
+        pointer-events: auto; cursor: pointer;
+        font: 600 13px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        padding: 6px 12px; border-radius: 8px;
+      }
+      .mark-action.confirm {
+        background: #c43c32; color: #fff; border: 0;
+      }
+      .mark-action.cancel {
+        background: #fff; color: #1c1916;
+        border: 1px solid rgba(15, 23, 42, .18);
+      }
+      .mark-action:disabled { opacity: .45; cursor: default; }
     `;
     marksShadow.appendChild(style);
     marksLayer = document.createElement("div");
     marksShadow.appendChild(marksLayer);
     (document.documentElement ?? document.body).appendChild(marksHost);
+    hookViewport();
+  }
+
+  function hookViewport(): void {
+    if (viewportHooked) return;
+    viewportHooked = true;
+    window.addEventListener("resize", onViewportResize);
+    window.visualViewport?.addEventListener("resize", onViewportResize);
+    // scroll 不冒泡；捕获才能听到内部 overflow 容器。滚动只重锚 mark，不收光标。
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.visualViewport?.addEventListener("scroll", onScroll, { passive: true });
+  }
+
+  function onViewportResize(): void {
+    for (const inst of instances.values()) {
+      if (inst.highlightEl) {
+        inst.highlightEl.remove();
+        inst.highlightEl = undefined;
+      }
+      cancelFly(inst);
+      if (inst.visible) {
+        const home = restPoint(inst.restIndex, window.innerWidth);
+        setPos(inst, home);
+        setResting(inst, true);
+      }
+    }
+    relayoutMarks();
+  }
+
+  function onScroll(): void {
+    relayoutMarks();
+  }
+
+  function liveAnchor(mark: LiveMark): Element | null {
+    if (mark.anchor?.isConnected) return mark.anchor;
+    if (mark.target) {
+      const el = window.__sideagent?.dom?.resolve?.(mark.target) ?? null;
+      if (el) mark.anchor = el;
+      return el;
+    }
+    return null;
+  }
+
+  function relayoutMarks(): void {
+    if (liveMarks.length === 0) return;
+    for (const mark of liveMarks) {
+      const anchor = liveAnchor(mark);
+      if (!anchor) {
+        mark.el.style.visibility = "hidden";
+        continue;
+      }
+      mark.el.style.visibility = "";
+      const r = anchor.getBoundingClientRect();
+      applyMarkBox(
+        mark.el,
+        { x: r.x, y: r.y, width: r.width, height: r.height },
+        mark.pad,
+        mark.label,
+        Boolean(mark.actions?.length),
+      );
+    }
   }
 
   function getInstance(id: string): Instance {
@@ -164,37 +299,85 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
     ensureDom();
     const el = document.createElement("div");
     el.className = "cursor hidden";
-    // 箭头尖端对齐 translate 原点（svg 负偏移 + overflow:visible）
     el.innerHTML =
-      `<div class="svg-wrap"><svg width="${SVG_SIZE}" height="${SVG_SIZE}" viewBox="0 0 24 24">` +
-      `<path d="${ARROW_PATH}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>` +
+      `<div class="svg-wrap"><svg width="${CURSOR_SVG_SIZE}" height="${CURSOR_SVG_SIZE}" viewBox="0 0 24 24">` +
+      `<path class="halo" d="${CURSOR_ARROW_PATH}" fill="none" stroke="#0f172a" stroke-width="${CURSOR_STROKE_HALO}" stroke-linejoin="round"/>` +
+      `<path class="fill" d="${CURSOR_ARROW_PATH}" stroke="#ffffff" stroke-width="${CURSOR_STROKE_WHITE}" stroke-linejoin="round"/>` +
       `</svg></div>` +
-      `<div class="label">${id === DEFAULT_ID ? DEFAULT_LABEL : id}</div>`;
+      `<div class="label">${id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id)}</div>`;
     const color = cursorColor(id);
     el.style.setProperty("--c", color);
     shadow!.appendChild(el);
-    const inst: Instance = { el, color, visible: false };
+    const restIndex = instances.size;
+    const home = restPoint(restIndex, window.innerWidth);
+    const inst: Instance = {
+      el,
+      color,
+      visible: false,
+      restIndex,
+      pos: home,
+      resting: true,
+    };
     instances.set(id, inst);
     return inst;
   }
 
-  function scheduleHide(inst: Instance): void {
-    clearTimeout(inst.hideTimer);
-    inst.hideTimer = setTimeout(() => hide(inst), IDLE_HIDE_MS);
+  function setPos(inst: Instance, p: { x: number; y: number }): void {
+    inst.pos = p;
+    inst.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
   }
 
-  function place(inst: Instance, x: number, y: number, animate: boolean): void {
-    const el = inst.el;
-    if (!animate) el.classList.add("no-anim");
-    el.classList.remove("hidden");
-    el.style.transform = `translate(${x}px, ${y}px)`;
-    if (!animate) {
-      // 强制 reflow，让无动画定位先生效，再恢复过渡供后续移动使用
-      void el.offsetWidth;
-      el.classList.remove("no-anim");
+  function setResting(inst: Instance, on: boolean): void {
+    inst.resting = on;
+    inst.el.classList.toggle("rest", on);
+    inst.el.classList.toggle("flip", on && restOnRight(inst.restIndex));
+  }
+
+  function cancelFly(inst: Instance): void {
+    if (inst.raf !== undefined) {
+      cancelAnimationFrame(inst.raf);
+      inst.raf = undefined;
     }
+  }
+
+  function showAtRest(inst: Instance): void {
+    const home = restPoint(inst.restIndex, window.innerWidth);
+    setPos(inst, home);
+    setResting(inst, true);
+    inst.el.classList.remove("hidden");
     inst.visible = true;
-    scheduleHide(inst);
+  }
+
+  function flyTo(inst: Instance, to: { x: number; y: number }): number {
+    cancelFly(inst);
+    const from = inst.pos;
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (dist < 2) {
+      setPos(inst, to);
+      return 0;
+    }
+    const ms = flightMs(from, to);
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - t0) / ms);
+      setPos(inst, pointOnArc(from, to, easeInOutCubic(t)));
+      if (t < 1) inst.raf = requestAnimationFrame(tick);
+      else {
+        inst.raf = undefined;
+        setPos(inst, to);
+      }
+    };
+    inst.raf = requestAnimationFrame(tick);
+    return ms;
+  }
+
+  function schedulePark(inst: Instance): void {
+    clearTimeout(inst.parkTimer);
+    inst.parkTimer = setTimeout(() => {
+      const home = restPoint(inst.restIndex, window.innerWidth);
+      setResting(inst, true);
+      flyTo(inst, home);
+    }, PARK_AFTER_MS);
   }
 
   function spawnRipple(x: number, y: number, cls: string, color: string): void {
@@ -208,20 +391,20 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
   }
 
   function spawnHighlight(inst: Instance, rect: SideAgentRect): void {
-    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const bounds = highlightBounds(rect, HIGHLIGHT_PAD);
+    if (!bounds) return;
     ensureDom();
     if (inst.highlightEl) {
       inst.highlightEl.remove();
       inst.highlightEl = undefined;
     }
-    const pad = 3;
     const el = document.createElement("div");
     el.className = "highlight";
     el.style.setProperty("--c", inst.color);
-    el.style.left = `${Math.round(rect.x - pad)}px`;
-    el.style.top = `${Math.round(rect.y - pad)}px`;
-    el.style.width = `${Math.round(rect.width + pad * 2)}px`;
-    el.style.height = `${Math.round(rect.height + pad * 2)}px`;
+    el.style.left = `${bounds.left}px`;
+    el.style.top = `${bounds.top}px`;
+    el.style.width = `${bounds.width}px`;
+    el.style.height = `${bounds.height}px`;
 
     const remove = () => {
       el.remove();
@@ -230,26 +413,83 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
       }
     };
     el.addEventListener("animationend", remove, { once: true });
-    // 超时兜底防残影
     setTimeout(remove, 650);
     inst.highlightEl = el;
     highlightLayer!.appendChild(el);
   }
 
-  function spawnMark(inst: Instance, rect: SideAgentRect, label?: string): void {
-    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+  function resolveAnchor(rect: SideAgentRect, target?: string): Element | null {
+    if (target) {
+      const el = window.__sideagent?.dom?.resolve?.(target);
+      if (el) return el;
+    }
+    const cx = rect.x + rect.width / 2;
+    const cy = rect.y + rect.height / 2;
+    return document.elementFromPoint(cx, cy);
+  }
+
+  function applyMarkBox(
+    el: HTMLDivElement,
+    rect: SideAgentRect,
+    pad: number,
+    label?: string,
+    hasActions?: boolean,
+  ): void {
+    const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
+    if (!box) return;
+    el.style.left = `${box.x}px`;
+    el.style.top = `${box.y}px`;
+    el.style.width = `${box.width}px`;
+    el.style.height = `${box.height}px`;
+    const labelEl = el.querySelector(".mark-label");
+    if (labelEl && label) {
+      // 框外已有双键时名牌不再翻到下方，避免和按钮叠在一起。
+      const below = !hasActions && markLabelPlacement(rect.y) === "below";
+      labelEl.classList.toggle("below", below);
+    }
+  }
+
+  function armMarkActions(el: HTMLDivElement, actions: MarkAction[]): void {
+    const row = document.createElement("div");
+    row.className = "mark-actions";
+    for (const action of actions) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `mark-action ${action.id}`;
+      btn.dataset.action = action.id;
+      btn.textContent = action.label;
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (el.dataset.armed === "0") return;
+        el.dataset.armed = "0";
+        for (const b of row.querySelectorAll("button")) b.disabled = true;
+        try {
+          chrome.runtime.sendMessage({ type: "mark_action", action: action.id }, () => {
+            void chrome.runtime.lastError;
+          });
+        } catch {
+          /* 无扩展运行时（自检页）忽略 */
+        }
+      });
+      row.appendChild(btn);
+    }
+    el.appendChild(row);
+  }
+
+  function spawnMark(
+    inst: Instance,
+    rect: SideAgentRect,
+    label?: string,
+    target?: string,
+    actions?: MarkAction[],
+  ): void {
+    const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, MARK_PAD);
+    if (!box) return;
     ensureMarksDom();
-    const pad = 6;
-    // rect 是视口坐标，转成文档坐标，标注随内容滚动
-    const x = Math.round(rect.x + window.scrollX) - pad;
-    const y = Math.round(rect.y + window.scrollY) - pad;
     const el = document.createElement("div");
     el.className = "mark";
     el.style.setProperty("--c", inst.color);
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-    el.style.width = `${Math.round(rect.width) + pad * 2}px`;
-    el.style.height = `${Math.round(rect.height) + pad * 2}px`;
     el.innerHTML =
       `<svg class="mark-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">` +
       `<path d="M2 12h17m-6-6 6 6-6 6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` +
@@ -258,32 +498,70 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
     if (label) {
       const labelEl = el.querySelector(".mark-label")!;
       labelEl.textContent = label;
-      // 元素贴视口顶部时名牌翻到框下方，避免出屏被裁（箭头/边框不变）
-      if (markLabelPlacement(rect.y) === "below") labelEl.classList.add("below");
     }
+    const parsed = parseMarkActions(actions);
+    if (parsed) armMarkActions(el, parsed);
+    applyMarkBox(el, rect, MARK_PAD, label, Boolean(parsed?.length));
     marksLayer!.appendChild(el);
+    liveMarks.push({
+      el,
+      anchor: resolveAnchor(rect, target),
+      target,
+      pad: MARK_PAD,
+      label,
+      actions: parsed,
+    });
   }
 
   function hide(inst: Instance): void {
+    cancelFly(inst);
+    clearTimeout(inst.parkTimer);
     inst.el.classList.add("hidden");
-    inst.el.classList.remove("pressing");
+    inst.el.classList.remove("pressing", "rest", "flip");
     inst.visible = false;
-    clearTimeout(inst.hideTimer);
+    inst.resting = true;
     if (inst.highlightEl) {
       inst.highlightEl.remove();
       inst.highlightEl = undefined;
     }
   }
 
+  function teardown(): void {
+    for (const inst of instances.values()) {
+      cancelFly(inst);
+      clearTimeout(inst.parkTimer);
+      clearTimeout(inst.pressTimer);
+    }
+    instances.clear();
+    liveMarks.length = 0;
+    host?.remove();
+    marksHost?.remove();
+    host = null;
+    marksHost = null;
+    shadow = null;
+    highlightLayer = null;
+    rippleLayer = null;
+    marksLayer = null;
+    ns.cursor = undefined;
+    ns.markLayout = undefined;
+    ns.markActionLabels = undefined;
+    ns.clickMarkAction = undefined;
+  }
+
+  window.addEventListener("pagehide", teardown);
+
   function api(id: string): SideAgentCursor {
     return {
-      /** 平滑移动到 (x,y)（从隐藏状态首次出现时直接落位，不做长距离滑动）。 */
-      move(x: number, y: number): void {
+      move(x: number, y: number): number {
         const inst = getInstance(id);
-        place(inst, x, y, inst.visible);
+        clearTimeout(inst.parkTimer);
+        if (!inst.visible) showAtRest(inst);
+        setResting(inst, false);
+        inst.el.classList.remove("hidden");
+        inst.visible = true;
+        return flyTo(inst, { x, y });
       },
 
-      /** 在 (x,y) 播放点击反馈：光标按下缩放 + 双层交错波纹（通常跟在 move 之后）。 */
       click(x: number, y: number): void {
         const inst = getInstance(id);
         clearTimeout(inst.pressTimer);
@@ -291,7 +569,16 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
         inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
         spawnRipple(x, y, "ripple", inst.color);
         spawnRipple(x, y, "ripple r2", inst.color);
-        scheduleHide(inst);
+        schedulePark(inst);
+      },
+
+      park(): void {
+        const inst = getInstance(id);
+        if (!inst.visible) {
+          showAtRest(inst);
+          return;
+        }
+        schedulePark(inst);
       },
 
       hide(): void {
@@ -299,24 +586,21 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
         if (inst) hide(inst);
       },
 
-      /** 在目标元素周围绘制呼吸高亮框（透明度脉动，结束后自动销毁）。 */
       highlight(rect: SideAgentRect): void {
         const inst = getInstance(id);
         spawnHighlight(inst, rect);
       },
 
-      /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌），锚定文档坐标随内容滚动。 */
-      mark(rect: SideAgentRect, label?: string): void {
+      mark(rect: SideAgentRect, label?: string, target?: string, actions?: MarkAction[]): void {
         const inst = getInstance(id);
-        spawnMark(inst, rect, label);
+        spawnMark(inst, rect, label, target, actions);
       },
 
-      /** 清除全部 mark 标注。 */
       clearMarks(): void {
+        liveMarks.length = 0;
         marksLayer?.replaceChildren();
       },
 
-      /** 取某个 Agent 实例的专属光标（调色板着色，名牌为 id），供并行任务区分。 */
       for(instanceId: string): SideAgentCursor {
         return api(instanceId);
       },
@@ -324,4 +608,27 @@ import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
   }
 
   ns.cursor = api(DEFAULT_ID);
+  ns.markActionLabels = () =>
+    liveMarks.flatMap((m) =>
+      [...m.el.querySelectorAll<HTMLButtonElement>(".mark-action")].map((b) => ({
+        id: b.dataset.action ?? "",
+        label: b.textContent ?? "",
+      })),
+    );
+  ns.clickMarkAction = (id: string) => {
+    if (!isMarkActionId(id)) return false;
+    const btn = liveMarks
+      .flatMap((m) => [...m.el.querySelectorAll<HTMLButtonElement>(".mark-action")])
+      .find((b) => b.dataset.action === id);
+    if (!btn) return false;
+    btn.click();
+    return true;
+  };
+  ns.markLayout = () =>
+    liveMarks.map((m) => ({
+      x: parseFloat(m.el.style.left) || 0,
+      y: parseFloat(m.el.style.top) || 0,
+      width: parseFloat(m.el.style.width) || 0,
+      height: parseFloat(m.el.style.height) || 0,
+    }));
 })();

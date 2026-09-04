@@ -1,6 +1,6 @@
 /**
  * Pi SDK 会话的创建与包装：
- * - ModelRuntime → createAgentSession（禁用内置工具，仅注册 13 个浏览器工具）
+ * - ModelRuntime → createAgentSession（禁用内置工具，仅注册 16 个浏览器工具）
  * - subscribe SDK 事件并映射为协议 AgentUiEvent 吐出
  * - sendUserMessage / steer / abort 均异步不阻塞调用方，错误转成 error 事件
  */
@@ -17,7 +17,7 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentMode, AgentUiEvent, ModelOption } from "../../shared/protocol.js";
+import type { AgentMode, AgentUiEvent, ModelOption, PageContext } from "../../shared/protocol.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { getMode, setMode as setModeRef } from "./mode.js";
@@ -166,7 +166,7 @@ export class BrowserAgentSession {
   }
 
   /** 空闲时发起新任务；运行中自动转为插话。异步不阻塞，错误捕获为 error 事件。 */
-  sendUserMessage(text: string): void {
+  sendUserMessage(text: string, context?: PageContext): void {
     const session = this.session;
     if (!session) {
       this.callbacks.emit({ kind: "error", message: this.guidanceMessage() });
@@ -176,25 +176,27 @@ export class BrowserAgentSession {
       this.callbacks.emit({ kind: "error", message: SETUP_GUIDANCE });
       return;
     }
+    const finalText = withPageContext(text, context);
     if (session.isStreaming) {
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
-      void session.steer(text).catch((err: unknown) => this.emitError(err));
+      void session.steer(finalText).catch((err: unknown) => this.emitError(err));
       return;
     }
-    void session.prompt(text).catch((err: unknown) => this.emitError(err));
+    void session.prompt(finalText).catch((err: unknown) => this.emitError(err));
   }
 
-  /** 运行中插话；若空闲则按普通消息处理。 */
-  steer(text: string): void {
+  /** 运行中插话；若空闲则按普通消息处理。与 prompt 一样带上当前页锚点，避免打断后丢工作标签。 */
+  steer(text: string, context?: PageContext): void {
     const session = this.session;
     if (!session) {
       this.callbacks.emit({ kind: "error", message: this.guidanceMessage() });
       return;
     }
     if (session.isStreaming) {
-      void session.steer(text).catch((err: unknown) => this.emitError(err));
+      const finalText = withPageContext(text, context);
+      void session.steer(finalText).catch((err: unknown) => this.emitError(err));
     } else {
-      this.sendUserMessage(text);
+      this.sendUserMessage(text, context);
     }
   }
 
@@ -318,6 +320,16 @@ export class BrowserAgentSession {
 
 function asParams(args: unknown): Record<string, unknown> {
   return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+/**
+ * 把页面上下文（发送那一刻用户正在看的标签页）拼到用户消息前，
+ * 作为"这页面"类指代的锚点；无上下文时原文返回。
+ */
+export function withPageContext(text: string, context?: PageContext): string {
+  if (!context) return text;
+  const title = (context.title || "(untitled)").replace(/\s+/g, " ");
+  return `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]\n${text}`;
 }
 
 export function lastAssistantError(messages: unknown): string | null {

@@ -17,8 +17,10 @@ side panel（扩展页面）与本地伴随进程（Node + Pi SDK）之间的 We
 ### 对话
 
 ```
-client → user_message{text}        # 空闲时发起新任务
-client → steer{text}               # 运行中插话（映射 session.steer）
+client → user_message{text, context?}  # 空闲时发起新任务；context = 发送时用户正在看的
+                                       #   标签页{tabId,title,url}（background 转发前自动附上）
+client → steer{text, context?}     # 运行中插话（映射 session.steer）；同样附当前页锚点，
+                                   #   避免打断后丢工作标签
 client → abort                     # 中止当前运行
 server → status{state:"running"|"idle", sessionId?}
 server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_delta /
@@ -49,10 +51,13 @@ client → tool_result{id, ok:true, data}  # data 形状见 ToolContract
 - click / type_text / press_key：仅当工作窗口**已经在前台**时才把该标签页切到窗口内前台。绝不 `windows.update({focused:true})`（会拽走 macOS Space）。工人本来就不抢前台。
 - screenshot 一律先 CDP `Page.captureScreenshot`，失败再 `captureVisibleTab`。
 - 工人之间不传活页面状态，只经伴随进程内邮箱传可搬工件（post / await_message，不进入本协议帧）。
+- `get_active_tab` 返回用户此刻正盯着的标签页（纯查询，不认领）；配合 `user_message.context` / `steer.context` 解析「这页面」类指代。插话延续当前工作标签页，不重新询问。
 
 ## target 定位串
 
 `click`/`fill` 的 `target` 接受：`"@N"`（最近 snapshot 的 ref）、`"loc=css:..."`（snapshot 给出的稳定定位串）、原始 CSS 选择器；`click` 另接受 `point:[x,y]` 视口坐标。
+
+`mark` 可选 `actions: [{id:"confirm"|"cancel", label}]`：在标注框外画删除/取消一类按钮。用户点按钮时，content script 发内部 `mark_action`，background 转成 `user_message` 文本「确认」或「取消」（与侧栏打字同一条路）。点取消会先 `clear_marks`。
 
 ## 安全
 

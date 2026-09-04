@@ -4,6 +4,7 @@ import { maybeActivateTab, resolveWorkingTab } from "../state.js";
 import { resolveKey } from "../../shared/keymap.js";
 import { isAxRef } from "../axstate.js";
 import { oneLine } from "../util.js";
+import { parseMarkActions } from "../../shared/mark-actions.js";
 
 interface DomRect {
   x: number;
@@ -138,6 +139,34 @@ function cursorId(sessionId: string): string {
   return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId;
 }
 
+async function cursorMove(tabId: number, x: number, y: number, id: string): Promise<void> {
+  try {
+    await ensureCursor(tabId);
+    const ms = await callDom(
+      tabId,
+      (px: number, py: number, cid: string) => window.__sideagent?.cursor?.for(cid)?.move(px, py) ?? 0,
+      [x, y, id],
+    );
+    if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+  } catch {
+    /* 页面禁止注入则跳过可视化 */
+  }
+}
+
+async function cursorPark(tabId: number, id: string): Promise<void> {
+  try {
+    await callDom(
+      tabId,
+      (cid: string) => {
+        window.__sideagent?.cursor?.for(cid)?.park?.();
+      },
+      [id],
+    );
+  } catch {
+    /* 同上 */
+  }
+}
+
 export async function click(
   params: {
     target?: string;
@@ -209,18 +238,11 @@ export async function click(
     }
   }
 
-  // 2. 虚拟鼠标可视化：先平滑移动到目标点、播点击波纹，再真实派发点击。
-  // 坐标取 scrollIntoView 之后算出的视口 point；光标驱动失败静默，不影响主流程。
+  // 2. 虚拟鼠标：沿浅弧飞到目标、播点击波纹，再真实派发。飞完才点，避免波纹落在半路。
   {
     const [vx, vy] = point!;
+    await cursorMove(tabId, vx, vy, cid);
     try {
-      await ensureCursor(tabId);
-      await callDom(
-        tabId,
-        (x: number, y: number, id: string) => window.__sideagent?.cursor?.for(id)?.move(x, y),
-        [vx, vy, cid],
-      );
-      await new Promise((r) => setTimeout(r, 300));
       await callDom(
         tabId,
         (x: number, y: number, id: string) => window.__sideagent?.cursor?.for(id)?.click(x, y),
@@ -327,12 +349,16 @@ export async function fill(
     } catch {
       // 页面禁止注入等场景静默跳过
     }
+    const cx = Math.round(targetRect.x + targetRect.width / 2);
+    const cy = Math.round(targetRect.y + targetRect.height / 2);
+    await cursorMove(tabId, cx, cy, cid);
   }
 
   // 2. 真实填充操作
   if (backendNodeId !== undefined) {
     try {
       await fillBackendNode(tabId, backendNodeId, params.value);
+      if (targetRect) await cursorPark(tabId, cid);
       return { filled: true };
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
@@ -351,6 +377,7 @@ export async function fill(
     },
     [params.target, params.value],
   );
+  if (targetRect) await cursorPark(tabId, cid);
   return { filled: true };
 }
 
@@ -425,11 +452,11 @@ export async function scroll(
 
 /**
  * mark 工具：在目标元素处画持久标注（描边框+箭头+名牌）。
- * 标注锚定文档坐标（cursor.ts 内部加滚动偏移），用户滚动页面时跟随内容不漂移。
+ * 标注锚定目标元素：window 滚动走文档坐标，内部滚动容器在 scroll 捕获期按包围盒重算。
  * target 定位串与 click 同语义；注入失败如实报错（标注是显式动作，需要反馈）。
  */
 export async function mark(
-  params: { target: string; label?: string },
+  params: { target: string; label?: string; actions?: unknown },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ marked: true }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
@@ -464,14 +491,21 @@ export async function mark(
   }
 
   await ensureCursor(tabId);
+  const actions = parseMarkActions(params.actions) ?? null;
   await callDom(
     tabId,
-    (r: DomRect, l: string | null, id: string) => {
+    (
+      r: DomRect,
+      l: string | null,
+      t: string,
+      id: string,
+      a: Array<{ id: "confirm" | "cancel"; label: string }> | null,
+    ) => {
       const cursor = window.__sideagent?.cursor?.for(id);
       if (!cursor?.mark) throw new Error("cursor 未注入");
-      cursor.mark(r, l ?? undefined);
+      cursor.mark(r, l ?? undefined, t, a ?? undefined);
     },
-    [rect, params.label ?? null, cid],
+    [rect, params.label ?? null, params.target, cid, actions],
   );
   return { marked: true };
 }

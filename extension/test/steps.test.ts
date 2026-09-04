@@ -6,6 +6,7 @@ import {
   formatDuration,
   loaderSubtitle,
   pixelDelay,
+  workerEventRunPolicy,
 } from "../src/sidepanel/steps.js";
 
 describe("describeTool 人性化动作描述", () => {
@@ -29,10 +30,14 @@ describe("describeTool 人性化动作描述", () => {
     expect(describeTool("clear_marks", {}).full).toBe("清除标注");
     expect(describeTool("mystery_tool", {}).full).toBe("mystery_tool");
   });
-  it("并行工人工具中文名", () => {
-    expect(describeTool("spawn_worker", { id: "wiki" }).full).toBe("派出工人 wiki");
-    expect(describeTool("post", { to: "feishu", kind: "notes" }).full).toBe("投递 notes → feishu");
+  it("并行请人：chip 用名册短名，不出现「工人」", () => {
+    const spawn = describeTool("spawn_worker", { id: "wiki" }).full;
+    expect(spawn.startsWith("请了 ")).toBe(true);
+    expect(spawn).not.toMatch(/工人/);
+    expect(describeTool("post", { to: "feishu", kind: "notes" }).full).toMatch(/^投递 notes → /);
+    expect(describeTool("post", { to: "feishu", kind: "notes" }).full).not.toMatch(/工人/);
     expect(describeTool("await_message", { kind: "notes" }).full).toBe("等待「notes」");
+    expect(describeTool("stop_worker", { id: "wiki" }).full).toMatch(/^让 .+ 停下$/);
   });
   it("超长 label 截断", () => {
     const long = "这是一个非常非常非常长的按钮标签文字";
@@ -101,5 +106,21 @@ describe("pixelDelay 像素格相位波纹", () => {
     expect(pixelDelay(1)).toBeCloseTo(0.12);
     expect(pixelDelay(5)).toBeCloseTo(0.12); // 第二行第一列 x=0,y=1
     expect(pixelDelay(24)).toBeCloseTo(0.96); // 右下角 x=4,y=4
+  });
+});
+
+describe("workerEventRunPolicy 结束后不得开新处理中块", () => {
+  it("当前 run 还在，工人事件进当前块", () => {
+    expect(workerEventRunPolicy({ hasCurrentRun: true, graphRunning: true, hasLastRun: false })).toBe("current");
+    expect(workerEventRunPolicy({ hasCurrentRun: true, graphRunning: false, hasLastRun: true })).toBe("current");
+  });
+  it("图还在跑但 currentRun 被收掉了，允许新建", () => {
+    expect(workerEventRunPolicy({ hasCurrentRun: false, graphRunning: true, hasLastRun: true })).toBe("new");
+  });
+  it("全员 idle 后的 agent_end 复用刚收掉的块，不开新 loader", () => {
+    expect(workerEventRunPolicy({ hasCurrentRun: false, graphRunning: false, hasLastRun: true })).toBe("reuse-last");
+  });
+  it("没有 run 也没有图，丢弃", () => {
+    expect(workerEventRunPolicy({ hasCurrentRun: false, graphRunning: false, hasLastRun: false })).toBe("drop");
   });
 });

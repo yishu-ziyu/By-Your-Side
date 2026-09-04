@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 靠向苹果</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --grouped: #f2f2f7;
+    --cell: #ffffff;
+    --sep: rgba(60, 60, 67, .12);
+    --label: #000;
+    --secondary: rgba(60, 60, 67, .6);
+    --tertiary: rgba(60, 60, 67, .3);
+    --blue: #007aff;
+    --fill: rgba(120, 120, 128, .12);
+    --font: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --red: #ff3b30;
+    --green: #34c759;
+    --purple: #af52de;
+    --orange: #ff9500;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--grouped); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 560px; margin: 0 0 36px; }
+  .asks {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 28px;
+    max-width: 980px; margin-bottom: 44px;
+  }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); font-weight: 600; margin-bottom: 4px; font-size: 13px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 980px; }
+  @media (max-width: 900px) { .asks, .row { grid-template-columns: 1fr; } }
+  .col { cursor: pointer; }
+  .col.pick .phone { outline: 2px solid var(--blue); outline-offset: 3px; }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 8px; padding-left: 4px; }
+  .kicker strong { color: var(--label); font-weight: 600; }
+  .phone {
+    background: var(--grouped); border-radius: 18px; overflow: hidden;
+    box-shadow: 0 0 0 1px var(--sep);
+  }
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px 10px;
+    background: color-mix(in srgb, var(--cell) 72%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: .5px solid var(--sep);
+  }
+  .nav .title { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+  .nav .live { font-size: 13px; color: var(--green); font-weight: 500; }
+  .body { padding: 16px 16px 20px; }
+  .group {
+    background: var(--cell); border-radius: 12px; overflow: hidden;
+  }
+  .caption {
+    font-size: 12px; font-weight: 400; color: var(--secondary);
+    padding: 12px 16px 8px; letter-spacing: -.01em;
+  }
+  .person {
+    display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center;
+    padding: 10px 16px; animation: rise .42s var(--ease) both;
+  }
+  .person + .person { border-top: .5px solid var(--sep); }
+  .person.late { animation-delay: .08s; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--who); color: #fff;
+    display: grid; place-items: center;
+    font-size: 13px; font-weight: 600; letter-spacing: -.02em;
+  }
+  .name { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+  .meta { font-size: 13px; color: var(--secondary); margin-top: 1px; }
+  .status { font-size: 13px; color: var(--secondary); text-align: right; font-variant-numeric: tabular-nums; }
+  .status em { font-style: normal; color: var(--label); }
+  .spin {
+    display: inline-block; width: 12px; height: 12px; margin-right: 6px;
+    border: 1.6px solid var(--fill); border-top-color: var(--secondary);
+    border-radius: 50%; vertical-align: -1px;
+    animation: spin .7s linear infinite;
+  }
+  .chips { padding: 0 16px 12px 58px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 12px; color: var(--secondary); background: var(--fill);
+    border-radius: 8px; padding: 4px 8px;
+    animation: rise .35s var(--ease) both;
+  }
+  .page {
+    margin-top: 14px; height: 92px; border-radius: 12px; position: relative; overflow: hidden;
+    background: #e8e8ed;
+  }
+  .cur { position: absolute; filter: drop-shadow(0 1px 2px rgba(0,0,0,.18)); }
+  .nm {
+    position: absolute; left: 16px; top: 18px; white-space: nowrap;
+    background: var(--who); color: #fff; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; border: 1.5px solid #fff;
+  }
+  h3 { font-size: 13px; font-weight: 600; color: var(--secondary); margin: 48px 0 12px; }
+  .refs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; max-width: 980px; }
+  .refs p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .refs b { color: var(--label); font-weight: 600; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--cell) 78%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-top: .5px solid var(--sep);
+    padding: 14px 40px; font-size: 13px; color: var(--secondary);
+  }
+  .bar b { color: var(--label); }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .person, .chip, .spin { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>靠向苹果，两册名字都在</h1>
+  <p class="lede">不是做成假 iPhone。借的是分组列表、语义灰、毛玻璃只在顶栏，动效只说状态。颜色只留给人。</p>
+
+  <div class="asks">
+    <p><b>还像不像苹果</b>是 Reminders / 信息那种克制，还是套了一层玻璃。</p>
+    <p><b>等的时候怎么动</b>小转圈加一行字，不让名牌自己闪。</p>
+    <p><b>还是哪一伙人</b>律师和火线都留着。点一列。</p>
+  </div>
+
+  <div class="row">
+    <div class="col pick" data-key="bcs">
+      <p class="kicker"><strong>律师</strong> · Kim Mike Lalo Gus</p>
+      <div class="phone">
+        <div class="nav"><span class="title">SideAgent</span><span class="live">已连接</span></div>
+        <div class="body">
+          <div class="group">
+            <div class="caption">请了 Lalo 和 Mike</div>
+            <div class="person" style="--who:var(--purple)">
+              <div class="avatar">L</div>
+              <div>
+                <div class="name">Lalo</div>
+                <div class="meta">bilibili</div>
+              </div>
+              <div class="status">在页面里找</div>
+            </div>
+            <div class="chips">
+              <span class="chip">找了 14 次</span>
+              <span class="chip">10 条递给 Mike</span>
+            </div>
+            <div class="person late" style="--who:var(--green)">
+              <div class="avatar">M</div>
+              <div>
+                <div class="name">Mike</div>
+                <div class="meta">flomo</div>
+              </div>
+              <div class="status"><i class="spin"></i><em>门口等着</em></div>
+            </div>
+            <div class="chips">
+              <span class="chip">等 Lalo 把笔记递过来</span>
+              <span class="chip">点开新笔记</span>
+            </div>
+          </div>
+          <div class="page">
+            <div class="cur" style="left:44px;top:28px;--who:var(--green)">
+              <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#34c759" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+              <div class="nm">Mike</div>
+            </div>
+            <div class="cur" style="left:158px;top:44px;--who:var(--purple)">
+              <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#af52de" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+              <div class="nm">Lalo</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" data-key="wire">
+      <p class="kicker"><strong>火线</strong> · Kima Omar Bunk Lester</p>
+      <div class="phone">
+        <div class="nav"><span class="title">SideAgent</span><span class="live">已连接</span></div>
+        <div class="body">
+          <div class="group">
+            <div class="caption">请了 Kima 和 Lester</div>
+            <div class="person" style="--who:var(--red)">
+              <div class="avatar">K</div>
+              <div>
+                <div class="name">Kima</div>
+                <div class="meta">bilibili</div>
+              </div>
+              <div class="status">在页面里找</div>
+            </div>
+            <div class="chips">
+              <span class="chip">找了 14 次</span>
+              <span class="chip">10 条递给 Lester</span>
+            </div>
+            <div class="person late" style="--who:var(--orange)">
+              <div class="avatar">L</div>
+              <div>
+                <div class="name">Lester</div>
+                <div class="meta">flomo</div>
+              </div>
+              <div class="status"><i class="spin"></i><em>门口等着</em></div>
+            </div>
+            <div class="chips">
+              <span class="chip">等 Kima 把笔记递过来</span>
+              <span class="chip">点开新笔记</span>
+            </div>
+          </div>
+          <div class="page">
+            <div class="cur" style="left:44px;top:28px;--who:var(--orange)">
+              <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#ff9500" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+              <div class="nm">Lester</div>
+            </div>
+            <div class="cur" style="left:158px;top:44px;--who:var(--red)">
+              <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#ff3b30" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+              <div class="nm">Kima</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>靠过去的时候拿了什么</h3>
+  <div class="refs">
+    <p><b>分组列表</b>白底圆角，发丝分隔。人是一行，不是一堆 chip 墙。</p>
+    <p><b>语义灰</b>标题 / 次要 / 占位三层。颜色只在头像和光标上。</p>
+    <p><b>毛玻璃只在顶栏</b>内容层不铺玻璃。苹果自己也这么说。</p>
+    <p><b>等 = 小转圈</b>不让名牌呼吸。动效可关。ease 用 iOS 那条 .22 1 .36 1。</p>
+  </div>
+
+  <div class="bar">现在选的是：<b id="sel">律师 · Kim / Mike / Lalo / Gus</b> · 表面按这一页的苹果靠法。</div>
+<script>
+  const labels = {
+    bcs: "律师 · Kim / Mike / Lalo / Gus",
+    wire: "火线 · Kima / Omar / Bunk / Lester",
+  };
+  document.querySelectorAll(".col").forEach((el) => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll(".col").forEach((c) => c.classList.remove("pick"));
+      el.classList.add("pick");
+      document.getElementById("sel").textContent = labels[el.dataset.key];
+    });
+  });
+</script>
+</body>
+</html>

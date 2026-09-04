@@ -1,5 +1,5 @@
 /**
- * 15 个浏览器工具的 defineTool 封装。
+ * 16 个浏览器工具的 defineTool 封装。
  * 每个 execute 只做一件事：rpc.call 转发给扩展，再把结果转成模型友好的 content。
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
  * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
@@ -43,6 +43,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       execute: async () => {
         const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
         return textResult(formatTabs(data.tabs), data);
+      },
+    }),
+
+    defineTool({
+      name: "get_active_tab",
+      label: "Get active tab",
+      description:
+        'Get the tab the user is currently looking at (the browser\'s focused tab), or null if there is none. Use it to resolve references like "this page" when the user message carries no page context. Pure query — does not claim the tab; call switch_tab to work on it.',
+      parameters: Type.Object({}),
+      execute: async () => {
+        const data = (await call("get_active_tab", {})) as ToolContract["get_active_tab"]["data"];
+        if (!data.tab) return textResult("No active tab found.", data);
+        return textResult(formatTabs([data.tab]), data);
       },
     }),
 
@@ -220,10 +233,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "mark",
       label: "Mark element",
       description:
-        "Draw a persistent annotation on an element in the working tab: outline box + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation.",
+        "Draw a persistent annotation on an element in the working tab: outline box + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). For irreversible confirmation, pass actions so the user can click 删除/取消 on the page (outside the box) instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
-        label: Type.Optional(Type.String({ description: "Short label shown next to the mark" })),
+        label: Type.Optional(Type.String({ description: "Short label shown next to the mark, e.g. 待删除" })),
+        actions: Type.Optional(
+          Type.Array(
+            Type.Object({
+              id: Type.Union([Type.Literal("confirm"), Type.Literal("cancel")]),
+              label: Type.String({ description: "Button text, e.g. 删除 / 取消" }),
+            }),
+            { maxItems: 2, description: "On-page confirm/cancel buttons rendered outside the mark box" },
+          ),
+        ),
       }),
       execute: async (_id, params) => {
         const data = (await call("mark", params)) as ToolContract["mark"]["data"];

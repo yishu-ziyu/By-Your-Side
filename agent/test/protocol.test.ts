@@ -85,6 +85,64 @@ describe("parseClientMessage", () => {
     expect(parseClientMessage(JSON.stringify({ type: "page_event", event: "url_changed", url: 42 }))).toBeNull();
   });
 
+  it("parses a valid user_message frame with page context", () => {
+    const raw = JSON.stringify({
+      type: "user_message",
+      text: "这页面是关于什么内容的？",
+      context: { tabId: 12, title: "历史正在发生的地方", url: "https://zhuanlan.zhihu.com/p/1" },
+    });
+    expect(parseClientMessage(raw)).toEqual({
+      type: "user_message",
+      text: "这页面是关于什么内容的？",
+      context: { tabId: 12, title: "历史正在发生的地方", url: "https://zhuanlan.zhihu.com/p/1" },
+    });
+  });
+
+  it("accepts user_message without context (backward compatible)", () => {
+    expect(parseClientMessage(JSON.stringify({ type: "user_message", text: "hi" }))).toEqual({
+      type: "user_message",
+      text: "hi",
+    });
+  });
+
+  it("rejects user_message with malformed context", () => {
+    expect(
+      parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: { tabId: "12", title: "t", url: "u" } })),
+    ).toBeNull();
+    expect(
+      parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: { tabId: 12, title: "t" } })),
+    ).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: null }))).toBeNull();
+  });
+
+  it("parses a valid steer frame with page context", () => {
+    const raw = JSON.stringify({
+      type: "steer",
+      text: "先点登录",
+      context: { tabId: 7, title: "Locked", url: "https://example.com/a" },
+    });
+    expect(parseClientMessage(raw)).toEqual({
+      type: "steer",
+      text: "先点登录",
+      context: { tabId: 7, title: "Locked", url: "https://example.com/a" },
+    });
+  });
+
+  it("accepts steer without context (backward compatible)", () => {
+    expect(parseClientMessage(JSON.stringify({ type: "steer", text: "停一下" }))).toEqual({
+      type: "steer",
+      text: "停一下",
+    });
+  });
+
+  it("rejects steer with malformed context", () => {
+    expect(
+      parseClientMessage(JSON.stringify({ type: "steer", text: "hi", context: { tabId: "7", title: "t", url: "u" } })),
+    ).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: "steer", text: "hi", context: { tabId: 7, title: "t" } }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: "steer", text: "hi", context: null }))).toBeNull();
+  });
+
   it("returns null for JSON without a string type field", () => {
     expect(parseClientMessage("{}")).toBeNull();
     expect(parseClientMessage('{"type":1}')).toBeNull();

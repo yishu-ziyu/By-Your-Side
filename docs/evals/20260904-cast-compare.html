@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 并行呈现三案</title>
+<style>
+  :root {
+    --bg: #eef0f3;
+    --paper: #f6f7f9;
+    --surface: #fff;
+    --surface-2: #f0f1f4;
+    --text: #1c1f24;
+    --text-2: #6b7280;
+    --text-3: #9aa1ab;
+    --border: rgba(15, 23, 42, .09);
+    --accent: #2f6fed;
+    --ok: #16a34a;
+    --err: #dc2626;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --c-qing: #2f6fed;
+    --c-tang: #e2554f;
+    --c-cui: #16a34a;
+    --c-zi: #9333ea;
+    --c-ju: #d97706;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: var(--font); color: var(--text); background: var(--bg); }
+  body { padding: 28px 24px 120px; }
+  h1 { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 6px; }
+  .lede { color: var(--text-2); font-size: 14px; line-height: 1.55; max-width: 720px; margin: 0 0 22px; }
+  .notes {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 1100px; margin-bottom: 28px;
+  }
+  .note { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+  .note b { color: var(--text); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .grid, .notes { grid-template-columns: 1fr; } }
+  .col { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .col.pick { outline: 2px solid var(--accent); box-shadow: 0 8px 28px rgba(47,111,237,.12); }
+  .col-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+  .col-head .tag { font-size: 11px; letter-spacing: .04em; color: var(--text-3); text-transform: uppercase; }
+  .col-head h2 { margin: 2px 0 4px; font-size: 16px; }
+  .col-head p { margin: 0; font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+  .pick-btn {
+    margin-top: 10px; border: 1px solid var(--border); background: var(--surface-2);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .col.pick .pick-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* fake sidepanel */
+  .panel { background: var(--paper); padding: 10px; }
+  .phone {
+    background: var(--paper); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; font-size: 12.5px; line-height: 1.45;
+  }
+  .topbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: color-mix(in srgb, var(--paper) 82%, transparent); border-bottom: 1px solid var(--border); font-weight: 600; }
+  .pill { margin-left: auto; font-size: 11px; color: var(--ok); background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-weight: 500; }
+  .stream { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 520px; }
+  .run {
+    background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  }
+  .run-sum { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; }
+  .run-sum .ok { color: var(--ok); }
+  .chain { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); font-size: 11.5px;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+  .dot.run { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .dur { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .lane { margin-top: 10px; padding-left: 8px; border-left: 2px solid var(--who); }
+  .who { color: var(--who); font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .who .sub { color: var(--text-3); font-weight: 500; }
+  .plate {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--who); color: #fff;
+    border-radius: 999px; padding: 1px 8px 1px 3px; font-size: 11px; font-weight: 650;
+    box-shadow: 0 0 0 1.5px #fff, 0 2px 8px rgba(0,0,0,.18);
+  }
+  .plate i { width: 8px; height: 8px; border-radius: 50%; background: #fff; display: block; }
+  .live { margin-top: 6px; color: var(--text-2); font-size: 12px; }
+  .live em { font-style: normal; color: var(--text); }
+  .loader {
+    margin-top: 10px; display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: 12px;
+  }
+  .px { display: grid; grid-template-columns: repeat(5, 6px); gap: 2px; }
+  .px span { width: 6px; height: 6px; background: var(--accent); opacity: .25; border-radius: 1px; animation: wave 1.2s ease-in-out infinite; }
+  .px span:nth-child(1){animation-delay:0s} .px span:nth-child(2){animation-delay:.12s}
+  .px span:nth-child(3){animation-delay:.24s} .px span:nth-child(7){animation-delay:.24s}
+  .px span:nth-child(8){animation-delay:.36s} .px span:nth-child(9){animation-delay:.48s}
+  .msg { font-size: 13px; color: var(--text); padding: 2px 2px 6px; line-height: 1.55; }
+  .msg li { margin: 2px 0; }
+  .ghost { opacity: .55; }
+  .page {
+    margin-top: 10px; height: 92px; border-radius: 10px; position: relative; overflow: hidden;
+    background: linear-gradient(180deg, #f4f1ea, #e7e2d6);
+    border: 1px solid var(--border);
+  }
+  .page.dark { background: linear-gradient(180deg, #1b2430, #11151c); }
+  .cur { position: absolute; filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+  .cur svg { display: block; }
+  .cur .name {
+    position: absolute; left: 16px; top: 18px; white-space: nowrap;
+    background: var(--who); color: #fff; font-size: 10.5px; font-weight: 650;
+    padding: 2px 7px; border-radius: 999px; border: 1.5px solid #fff;
+  }
+  .section { margin: 36px 0 12px; font-size: 15px; font-weight: 650; }
+  .names { display: flex; flex-wrap: wrap; gap: 8px; }
+  .name-opt {
+    background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+    cursor: pointer; font-size: 13px; min-width: 180px;
+  }
+  .name-opt.pick { outline: 2px solid var(--accent); }
+  .name-opt small { display: block; color: var(--text-2); margin-top: 3px; }
+  .verbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .verbs span { background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.92);
+    backdrop-filter: blur(12px); border-top: 1px solid var(--border);
+    padding: 12px 24px; display: flex; gap: 16px; align-items: center; font-size: 13px;
+  }
+  .bar b { font-weight: 650; }
+  @keyframes pulse { 50% { opacity: .35 } }
+  @keyframes wave { 0%,100% { opacity: .2 } 50% { opacity: 1 } }
+</style>
+</head>
+<body>
+  <h1>并行的时候，侧栏长什么样</h1>
+  <p class="lede">
+    用刚才那条任务（bilibili 抓评论 ∥ flomo 填笔记）摆了三案。功能已经通了，这一页只改「看起来像谁在干活」。点一案、再点一种命名。词是写死的，不是模型现场编的。
+  </p>
+
+  <div class="notes">
+    <div class="note">
+      <b>日志里实际发生了什么</b><br>
+      两个标签页几乎同时打开（各 21.6s），然后并行。bilibili 打了 14 次 js，flomo 17 次。所以你看见一墙「执行脚本 0.0s」——不是模型话痨，是呈现把探针全摊开了。
+    </div>
+    <div class="note">
+      <b>第二张截图为什么还在「处理中 226s」</b><br>
+      Lead 已经写出「完成」，工人事件又新开了一块执行壳。长任务不该造假百分比；但结束那一帧必须立刻停转。Claude Code 的 spinner 动词也踩过这个坑。
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- A -->
+    <article class="col" data-col="A">
+      <div class="col-head">
+        <div class="tag">A · 现在</div>
+        <h2>工人 + 工具墙</h2>
+        <p>每个 js 一颗 chip。名字是站点 id。类名是「工人」。颜色只有左边一条线。</p>
+        <button class="pick-btn" type="button">选这个</button>
+      </div>
+      <div class="panel">
+        <div class="phone">
+          <div class="topbar">SideAgent <span class="pill">已连接</span></div>
+          <div class="stream">
+            <div class="run">
+              <div class="run-sum"><span class="ok">✓</span> 执行步骤 <span class="chain">… → 思考 → 等待工件</span> · 4m 43s</div>
+              <div class="chips">
+                <span class="chip"><span class="dot"></span>派出工人 bilibili <span class="dur">22s</span></span>
+                <span class="chip"><span class="dot"></span>派出工人 flomo <span class="dur">22s</span></span>
+              </div>
+              <div class="lane" style="--who:var(--c-tang)">
+                <div class="who">flomo <span class="sub">… → 截图 → 执行脚本 → 投递工件</span></div>
+                <div class="chips">
+                  <span class="chip"><span class="dot"></span>等待「notes」 <span class="dur">1m 21s</span></span>
+                  <span class="chip"><span class="dot"></span>执行脚本 <span class="dur">0.0s</span></span>
+                  <span class="chip"><span class="dot"></span>执行脚本 <span class="dur">0.0s</span></span>
+                  <span class="chip"><span class="dot"></span>执行脚本 <span class="dur">0.0s</span></span>
+                  <span class="chip"><span class="dot"></span>执行脚本 <span class="dur">0.0s</span></span>
+                  <span class="chip"><span class="dot"></span>点击「Click flomo new…」 <span class="dur">6.3s</span></span>
+                  <span class="chip"><span class="dot"></span>执行脚本 <span class="dur">0.0s</span></span>
+                  <span class="chip"><span class="dot"></span>执行脚本 <span class="dur">0.1s</span></span>
+                  <span class="chip"><span class="dot"></span>截图 <span class="dur">1.6s</span></span>
+                  <span class="chip"><span class="dot"></span>投递 done → main <span class="dur">0.0s</span></span>
+                </div>
+              </div>
+            </div>
+            <div class="msg">完成。bilibili 抓了 10 条，flomo 填进去了，没点保存。</div>
+            <div class="run ghost">
+              <div class="run-sum">执行步骤</div>
+              <div class="lane" style="--who:var(--c-tang)">
+                <div class="who">flomo</div>
+                <div class="loader">
+                  <div class="px"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                  <div>处理中 · 226.3s<br><span class="dur">思考</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="page">
+              <div class="cur" style="left:40px;top:28px;--who:var(--c-tang)">
+                <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#e2554f" stroke="#fff" stroke-width="1.6" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+                <div class="name">flomo</div>
+              </div>
+              <div class="cur" style="left:160px;top:44px;--who:var(--c-cui)">
+                <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#16a34a" stroke="#fff" stroke-width="1.6" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+                <div class="name">bilibili</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- B -->
+    <article class="col pick" data-col="B">
+      <div class="col-head">
+        <div class="tag">B · 建议</div>
+        <h2>有名字的人</h2>
+        <p>tldraw 那种名牌。连续 js 收成一条。等待时换短词。完成后 loader 没了。</p>
+        <button class="pick-btn" type="button">选这个</button>
+      </div>
+      <div class="panel">
+        <div class="phone">
+          <div class="topbar">SideAgent <span class="pill">已连接</span></div>
+          <div class="stream">
+            <div class="run">
+              <div class="run-sum"><span class="ok">✓</span> 4m 43s · 青请了棠和翠</div>
+              <div class="lane" style="--who:var(--c-cui)">
+                <div class="who"><span class="plate"><i></i>翠</span> <span class="sub">bilibili · 最热评论</span></div>
+                <div class="chips">
+                  <span class="chip"><span class="dot"></span>在页面里找了 14 次 <span class="dur">3.1s</span></span>
+                  <span class="chip"><span class="dot"></span>把 10 条笔记递给棠 <span class="dur">0.0s</span></span>
+                  <span class="chip"><span class="dot"></span>等过两回 <span class="dur">3m 39s</span></span>
+                </div>
+              </div>
+              <div class="lane" style="--who:var(--c-tang)">
+                <div class="who"><span class="plate"><i></i>棠</span> <span class="sub">flomo · 新笔记，不保存</span></div>
+                <div class="chips">
+                  <span class="chip"><span class="dot"></span>等翠把笔记递过来 <span class="dur">1m 21s</span></span>
+                  <span class="chip"><span class="dot"></span>点开新笔记 <span class="dur">6.3s</span></span>
+                  <span class="chip"><span class="dot"></span>在输入框写了 10 条 <span class="dur">0.6s</span></span>
+                </div>
+              </div>
+            </div>
+            <div class="msg">
+              两边都做完了。
+              <ul>
+                <li>翠从 BV…「最热」里抓了前 10 条，递给棠。</li>
+                <li>棠写进新笔记（1035 字），没点保存。条数还是 692。</li>
+              </ul>
+            </div>
+            <div class="page">
+              <div class="cur" style="left:48px;top:24px;--who:var(--c-tang)">
+                <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#e2554f" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+                <div class="name">棠</div>
+              </div>
+              <div class="cur" style="left:168px;top:48px;--who:var(--c-cui)">
+                <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#16a34a" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+                <div class="name">翠</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- C -->
+    <article class="col" data-col="C">
+      <div class="col-head">
+        <div class="tag">C · 更安静</div>
+        <h2>只留正在发生的</h2>
+        <p>默认一行一个人。历史折进「做过」。插科打诨只出现在等的时候。</p>
+        <button class="pick-btn" type="button">选这个</button>
+      </div>
+      <div class="panel">
+        <div class="phone">
+          <div class="topbar">SideAgent <span class="pill">已连接</span></div>
+          <div class="stream">
+            <div class="run">
+              <div class="lane" style="--who:var(--c-cui)">
+                <div class="who"><span class="plate"><i></i>翠</span> <span class="sub">bilibili</span></div>
+                <div class="live">做完了 · 抓了 10 条 · 3m 12s</div>
+              </div>
+              <div class="lane" style="--who:var(--c-tang)">
+                <div class="who"><span class="plate"><i></i>棠</span> <span class="sub">flomo</span></div>
+                <div class="live"><em class="wit-wait">门口等着</em> · 等翠把笔记递过来 · 1m 08s</div>
+              </div>
+              <div class="lane" style="--who:var(--c-qing)">
+                <div class="who"><span class="plate"><i></i>青</span> <span class="sub">看着</span></div>
+                <div class="live"><em class="wit-think">把线头捻一捻</em></div>
+              </div>
+            </div>
+            <div class="page dark">
+              <div class="cur" style="left:52px;top:30px;--who:var(--c-tang)">
+                <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#e2554f" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+                <div class="name">棠</div>
+              </div>
+              <div class="cur" style="left:150px;top:18px;--who:var(--c-cui)">
+                <svg width="28" height="28" viewBox="0 0 24 24"><path fill="#16a34a" stroke="#fff" stroke-width="1.8" d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>
+                <div class="name">翠</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <h2 class="section">名字怎么叫（和上面三案分开选）</h2>
+  <div class="names">
+    <button class="name-opt pick" data-name="color" type="button">
+      色名：青 / 棠 / 翠 / 橘 / 紫
+      <small>Lead 永远是青。站点写在副标。光标名牌也是这两个字。建议。</small>
+    </button>
+    <button class="name-opt" data-name="site" type="button">
+      站点即名：flomo / bilibili
+      <small>现在的 id，只去掉「工人」。两个都去 GitHub 时会撞名。</small>
+    </button>
+    <button class="name-opt" data-name="latin" type="button">
+      小名：Maple / Ivy / Amber
+      <small>更 tldraw。中文界面里会有点漂。</small>
+    </button>
+  </div>
+
+  <h2 class="section">等待时转的词（产品写死，约 20 个）</h2>
+  <p class="lede" style="margin-bottom:8px">Claude Code 是 Pondering / Booping / Flibbertigibbeting 那种英文动词，约 185 个硬编码。我们走短中文，不油、不加油、不「魔法」。错误和完成改回直说。</p>
+  <div class="verbs">
+    <span>琢磨</span><span>翻一翻</span><span>对对齐</span><span>理理头绪</span>
+    <span>再看一眼</span><span>把线头捻一捻</span><span>门口等着</span>
+    <span>还在路上</span><span>等棠把东西递过来</span><span>青看着</span>
+  </div>
+
+  <h2 class="section">从别人那儿拿什么、不拿什么</h2>
+  <div class="notes">
+    <div class="note"><b>Claude Code</b><br>好玩的是「还活着」这句话本身。词表写死，不让模型编。结束必须立刻停——有人被残留的 Perambulating 骗得以为还在跑。</div>
+    <div class="note"><b>tldraw</b><br>彩色箭头 + 白边名牌。我们已经在用这个形状。缺的是名，不是再画一个光标。</div>
+    <div class="note"><b>ChatGPT Atlas / Operator</b><br>并行标签是真的，人设是一个 ChatGPT。不适合我们这种「两个人同时在两个站点」。</div>
+    <div class="note"><b>X 上的方向</b><br>有人给 agent 上色、上名字（「灰度的任务看起来都一样」）。也有人把 spinner 玩成段子生成器。后者不跟。</div>
+  </div>
+
+  <div class="bar">
+    现在选的是：<b id="sel-col">B 有名字的人</b> · <b id="sel-name">色名 青/棠/翠</b>
+    <span style="color:var(--text-3)">回我「B + 色名」即可，我按这个改产品。</span>
+  </div>
+
+<script>
+  const thinks = ["琢磨", "翻一翻", "对对齐", "理理头绪", "再看一眼", "把线头捻一捻"];
+  const waits = ["门口等着", "还在路上", "把杯子转一圈"];
+  let ti = 0, wi = 0;
+  setInterval(() => {
+    ti = (ti + 1) % thinks.length;
+    wi = (wi + 1) % waits.length;
+    document.querySelectorAll(".wit-think").forEach(el => el.textContent = thinks[ti]);
+    document.querySelectorAll(".wit-wait").forEach(el => el.textContent = waits[wi]);
+  }, 1600);
+
+  let col = "B", name = "color";
+  const colLabel = { A: "A 现在", B: "B 有名字的人", C: "C 更安静" };
+  const nameLabel = { color: "色名 青/棠/翠", site: "站点即名", latin: "小名 Maple/Ivy" };
+  function sync() {
+    document.getElementById("sel-col").textContent = colLabel[col];
+    document.getElementById("sel-name").textContent = nameLabel[name];
+  }
+  document.querySelectorAll("[data-col]").forEach(el => {
+    el.querySelector(".pick-btn").addEventListener("click", () => {
+      document.querySelectorAll("[data-col]").forEach(x => x.classList.remove("pick"));
+      el.classList.add("pick");
+      col = el.dataset.col;
+      sync();
+    });
+  });
+  document.querySelectorAll("[data-name]").forEach(el => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll("[data-name]").forEach(x => x.classList.remove("pick"));
+      el.classList.add("pick");
+      name = el.dataset.name;
+      sync();
+    });
+  });
+</script>
+</body>
+</html>

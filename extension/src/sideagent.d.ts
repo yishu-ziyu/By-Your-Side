@@ -22,15 +22,22 @@ interface SideAgentDomOps {
 }
 
 interface SideAgentCursor {
-  /** 平滑移动到视口坐标 (x,y)；从隐藏状态首次出现时直接落位 */
-  move(x: number, y: number): void;
-  /** 在视口坐标 (x,y) 播放点击波纹 */
+  /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
+  move(x: number, y: number): number;
+  /** 在视口坐标 (x,y) 播放点击波纹，随后飞回角落 */
   click(x: number, y: number): void;
+  /** 飞回待命角落（不点、不填的时候） */
+  park?(): void;
   hide(): void;
   /** 在目标元素周围绘制呼吸高亮框（透明度脉动，结束后自动销毁） */
   highlight(rect: SideAgentRect): void;
-  /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌），锚定文档坐标随内容滚动 */
-  mark?(rect: SideAgentRect, label?: string): void;
+  /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌）；target 用于滚动/resize 时按元素重算；actions 为框外确认/取消 */
+  mark?(
+    rect: SideAgentRect,
+    label?: string,
+    target?: string,
+    actions?: Array<{ id: "confirm" | "cancel"; label: string }>,
+  ): void;
   /** 清除全部 mark 标注 */
   clearMarks?(): void;
   /** 取某个 Agent 实例的专属光标（调色板着色，名牌为 id），供并行任务区分 */
@@ -42,6 +49,11 @@ interface SideAgentNamespace {
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
   cursor?: SideAgentCursor;
+  /** overlay 自检：当前 mark 的文档坐标盒（生产路径不用） */
+  markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
+  /** overlay 自检：框外确认按钮 */
+  markActionLabels?: () => Array<{ id: string; label: string }>;
+  clickMarkAction?: (id: string) => boolean;
 }
 
 interface Window {
