@@ -21,7 +21,7 @@
  * 生命周期：MV3 扩展 reload 会销毁 isolated world 但留下 DOM host。启动时若本 world
  * 还没有 cursor API，按 data-sideagent-overlay 清掉旧 host 再创建。
  */
-import { isMarkActionId, parseMarkActions } from "../shared/mark-actions.js";
+import { isMarkActionId, parseMarkActions, resolveImplicitMarkActions } from "../shared/mark-actions.js";
 import { markLabelPlacement } from "../shared/mark-label.js";
 import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
@@ -301,19 +301,17 @@ import {
     }
   }
 
-  /** 拿住期间手跟目标走：与 relayoutMarks 同一套锚点语义（anchor 断开先藏，可恢复再贴回）。 */
+  /** 拿住期间手跟目标走：若锚点有效则跟随目标最新位置；若锚点暂不可解（如 AX ref 或外部滚动），保持当前拿住点不误隐藏。 */
   function relayoutHolds(): void {
     for (const inst of instances.values()) {
       const hold = inst.hold;
       if (!hold) continue;
       const anchor = liveAnchor(hold);
-      if (!anchor) {
-        inst.el.classList.add("hidden");
-        continue;
+      if (anchor) {
+        const r = anchor.getBoundingClientRect();
+        hold.point = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
       }
       if (inst.visible) inst.el.classList.remove("hidden");
-      const r = anchor.getBoundingClientRect();
-      hold.point = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
       cancelFly(inst);
       setPos(inst, hold.point);
     }
@@ -881,7 +879,7 @@ import {
         const inst = getInstance(id);
         spawnMark(inst, rect, label, target, actions);
         // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
-        const parsed = parseMarkActions(actions);
+        const parsed = resolveImplicitMarkActions(label, actions);
         if (parsed) {
           holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target);
         }

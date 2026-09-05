@@ -33,10 +33,10 @@ export function isMarkActionId(value: unknown): value is MarkActionId {
   return value === "confirm" || value === "cancel";
 }
 
-const DESTRUCTIVE_ZH = /^(删除|清空|支付|发送)/;
-const DESTRUCTIVE_EN = /^(delete|remove|pay|send)(\s|$)/i;
+const DESTRUCTIVE_ZH = /^(删除|清空|支付|发送|归档)/;
+const DESTRUCTIVE_EN = /^(delete|remove|pay|send|archive)(\s|$)/i;
 
-/** 要点的控件文案是否属于删除 / 清空 / 支付 / 发送。普通「分享」「编辑」「更多」不是。 */
+/** 要点的控件文案是否属于删除 / 清空 / 支付 / 发送 / 归档。普通「分享」「编辑」「更多」不是。 */
 export function isDestructiveLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
   if (!t) return false;
@@ -50,8 +50,36 @@ export function confirmLabelForDestructive(text: string): string {
   if (/^清空/.test(t) || /^clear/i.test(t)) return "清空";
   if (/^支付/.test(t) || /^pay/i.test(t)) return "支付";
   if (/^发送/.test(t) || /^send/i.test(t)) return "发送";
+  if (/^归档/.test(t) || /^archive/i.test(t)) return "归档";
   if (/^(delete|remove)\b/i.test(t)) return "Delete";
   return "删除";
+}
+
+/**
+ * 若模型调用 mark 时未显式提供 actions，但 label 表达了确认意图（如「待归档」「待删除」「待确认」或命中危险词），
+ * 兜底推导 confirm/cancel 双键并在名牌上拿住，防止模型幻觉“光标停在上面”而页面光标未就地拿住。
+ */
+export function resolveImplicitMarkActions(label?: string, actions?: unknown): MarkAction[] | undefined {
+  const parsed = parseMarkActions(actions);
+  if (parsed) return parsed;
+  if (!label) return undefined;
+  const t = label.trim();
+  if (!t) return undefined;
+  if (t.startsWith("待")) {
+    const actionName = t.slice(1).trim() || "确认";
+    return [
+      { id: "confirm", label: actionName.slice(0, 16) },
+      { id: "cancel", label: "取消" },
+    ];
+  }
+  if (isDestructiveLabel(t)) {
+    const actionName = confirmLabelForDestructive(t);
+    return [
+      { id: "confirm", label: actionName },
+      { id: "cancel", label: "取消" },
+    ];
+  }
+  return undefined;
 }
 
 /** 侧栏里这句话算放行刚才拦住的那一下。 */

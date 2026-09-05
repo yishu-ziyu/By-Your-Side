@@ -234,6 +234,28 @@ if (released.holding || released.pressing) fail(`releaseHold 后仍在拿住 ${J
 const labelsAfterRelease = await page.evaluate(() => window.__sideagent.holdActionLabels());
 if (labelsAfterRelease.length !== 0) fail(`releaseHold 后名牌双键应消失 ${JSON.stringify(labelsAfterRelease)}`);
 
+// 待归档语义兜底测试：未显式传 actions 但 label 包含「待归档」时自动拿住并出双键
+await page.evaluate(() => {
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  window.__sideagent.cursor.mark(
+    { x: r.x, y: r.y, width: r.width, height: r.height },
+    "待归档",
+    "#box",
+  );
+});
+await page.waitForTimeout(40);
+const implicitActions = await page.evaluate(() => window.__sideagent.holdActionLabels());
+if (!implicitActions || implicitActions.length !== 2 || implicitActions[0].label !== "归档") {
+  fail(`待归档隐式推导拿住失败 ${JSON.stringify(implicitActions)}`);
+}
+const implicitHoldState = await page.evaluate(() => window.__sideagent.holdState());
+if (!implicitHoldState.holding || implicitHoldState.hidden) {
+  fail(`待归档未能激活持久拿住态 ${JSON.stringify(implicitHoldState)}`);
+}
+await page.evaluate(() => window.__sideagent.cursor.releaseHold());
+
+
 await page.evaluate(() => {
   const c = window.__sideagent.cursor;
   c.move(80, 110);

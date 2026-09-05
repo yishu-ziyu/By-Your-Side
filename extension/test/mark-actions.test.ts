@@ -7,6 +7,7 @@ import {
   isMarkActionId,
   markActionUserText,
   parseMarkActions,
+  resolveImplicitMarkActions,
 } from "../src/shared/mark-actions.js";
 
 describe("parseMarkActions", () => {
@@ -54,8 +55,8 @@ describe("markActionUserText", () => {
 });
 
 describe("isDestructiveLabel", () => {
-  it("删除 / 清空 / 支付 / 发送 及对应英文要拦", () => {
-    for (const t of ["删除", "删除笔记", "清空", "清空回收站", "支付", "发送", "Delete", "Remove item", "Pay now", "Send"]) {
+  it("删除 / 清空 / 支付 / 发送 / 归档 及对应英文要拦", () => {
+    for (const t of ["删除", "删除笔记", "清空", "清空回收站", "支付", "发送", "归档", "归档会话", "Delete", "Remove item", "Pay now", "Send", "Archive"]) {
       expect(isDestructiveLabel(t), t).toBe(true);
     }
   });
@@ -73,7 +74,50 @@ describe("confirmLabelForDestructive", () => {
     expect(confirmLabelForDestructive("清空回收站")).toBe("清空");
     expect(confirmLabelForDestructive("支付")).toBe("支付");
     expect(confirmLabelForDestructive("发送")).toBe("发送");
+    expect(confirmLabelForDestructive("归档会话")).toBe("归档");
+    expect(confirmLabelForDestructive("Archive")).toBe("归档");
     expect(confirmLabelForDestructive("Delete file")).toBe("Delete");
+  });
+});
+
+describe("resolveImplicitMarkActions", () => {
+  it("已有显式 actions 时优先保留显式 actions", () => {
+    expect(
+      resolveImplicitMarkActions("待删除", [{ id: "cancel", label: "返回" }]),
+    ).toEqual([{ id: "cancel", label: "返回" }]);
+  });
+
+  it("以「待」开头自动推导确认词与取消键", () => {
+    expect(resolveImplicitMarkActions("待归档")).toEqual([
+      { id: "confirm", label: "归档" },
+      { id: "cancel", label: "取消" },
+    ]);
+    expect(resolveImplicitMarkActions("待删除")).toEqual([
+      { id: "confirm", label: "删除" },
+      { id: "cancel", label: "取消" },
+    ]);
+    expect(resolveImplicitMarkActions("待确认")).toEqual([
+      { id: "confirm", label: "确认" },
+      { id: "cancel", label: "取消" },
+    ]);
+  });
+
+  it("命中危险词时自动推导对应确认动作", () => {
+    expect(resolveImplicitMarkActions("Archive")).toEqual([
+      { id: "confirm", label: "归档" },
+      { id: "cancel", label: "取消" },
+    ]);
+    expect(resolveImplicitMarkActions("删除笔记")).toEqual([
+      { id: "confirm", label: "删除" },
+      { id: "cancel", label: "取消" },
+    ]);
+  });
+
+  it("普通 label 不生成 actions", () => {
+    expect(resolveImplicitMarkActions("看这里")).toBeUndefined();
+    expect(resolveImplicitMarkActions("更多")).toBeUndefined();
+    expect(resolveImplicitMarkActions("")).toBeUndefined();
+    expect(resolveImplicitMarkActions(undefined)).toBeUndefined();
   });
 });
 

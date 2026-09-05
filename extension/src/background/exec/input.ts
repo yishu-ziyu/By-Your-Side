@@ -10,6 +10,7 @@ import {
   confirmLabelForDestructive,
   isDestructiveLabel,
   parseMarkActions,
+  resolveImplicitMarkActions,
 } from "../../shared/mark-actions.js";
 import { HeldClicks } from "../../shared/held-clicks.js";
 
@@ -471,6 +472,9 @@ export async function click(
     if (backendNodeId !== undefined) {
       try {
         targetRect = await rectOfBackendNode(tabId, backendNodeId);
+        if (!targetRect || typeof targetRect.x !== "number") {
+          throw new Error("无法获取元素位置");
+        }
         if (!point) {
           point = [Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2)];
         }
@@ -485,17 +489,32 @@ export async function click(
     }
     if (!resolvedViaCdp && !point) {
       await ensureDomOps(tabId);
-      targetRect = await callDom(
+      const res = await callDom(
         tabId,
-        (t: string): DomRect => {
+        (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
           const dom = window.__sideagent?.dom;
-          if (!dom) throw new Error("domops 未注入");
-          return dom.rectOf(t);
+          if (!dom) return { ok: false, error: "domops 未注入" };
+          try {
+            return { ok: true, rect: dom.rectOf(t) };
+          } catch (e: any) {
+            return { ok: false, error: e?.message ?? String(e) };
+          }
         },
         [target],
       );
+      if (!res || !res.ok) {
+        throw new Error(res?.ok === false ? res.error : `未找到目标元素：${target}`);
+      }
+      if (!res.rect || typeof res.rect.x !== "number") {
+        throw new Error(`未找到目标元素：${target}`);
+      }
+      targetRect = res.rect;
       point = [Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2)];
     }
+  }
+
+  if (!point || typeof point[0] !== "number" || typeof point[1] !== "number") {
+    throw new Error(`无法获取点击坐标：target=${target ?? "none"}`);
   }
 
   const name = await nameOfClickTarget(tabId, params);
@@ -653,15 +672,24 @@ export async function fill(
   if (!targetRect) {
     try {
       await ensureDomOps(tabId);
-      targetRect = await callDom(
+      const res = await callDom(
         tabId,
-        (t: string): DomRect => {
+        (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
           const dom = window.__sideagent?.dom;
-          if (!dom) throw new Error("domops 未注入");
-          return dom.rectOf(t);
+          if (!dom) return { ok: false, error: "domops 未注入" };
+          try {
+            return { ok: true, rect: dom.rectOf(t) };
+          } catch (e: any) {
+            return { ok: false, error: e?.message ?? String(e) };
+          }
         },
         [params.target],
       );
+      if (res?.ok && res.rect && typeof res.rect.x === "number") {
+        targetRect = res.rect;
+      } else if (backendNodeId === undefined) {
+        throw new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`);
+      }
     } catch (e) {
       if (backendNodeId === undefined) {
         throw e;
@@ -830,19 +858,30 @@ export async function mark(
   }
   if (!rect) {
     await ensureDomOps(tabId);
-    rect = await callDom(
+    const res = await callDom(
       tabId,
-      (t: string): DomRect => {
+      (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
         const dom = window.__sideagent?.dom;
-        if (!dom) throw new Error("domops 未注入");
-        return dom.rectOf(t);
+        if (!dom) return { ok: false, error: "domops 未注入" };
+        try {
+          return { ok: true, rect: dom.rectOf(t) };
+        } catch (e: any) {
+          return { ok: false, error: e?.message ?? String(e) };
+        }
       },
       [params.target],
     );
+    if (!res || !res.ok) {
+      throw new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`);
+    }
+    if (!res.rect || typeof res.rect.x !== "number") {
+      throw new Error(`未找到目标元素：${params.target}`);
+    }
+    rect = res.rect;
   }
 
   await ensureCursor(tabId);
-  const actions = parseMarkActions(params.actions) ?? null;
+  const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
   await callDom(
     tabId,
     (

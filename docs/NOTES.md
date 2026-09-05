@@ -5,6 +5,22 @@
 
 ## 当前状态
 
+2026-09-05 真实 ChatGPT 任务后台日志排障与修复完成：**点击健壮性防御 + 就地确认拿住兜底**（标准 `docs/evals/20260905-click-robustness-and-hold-fallback.md`）。
+1. **彻底消除 `reading 'x'` 崩溃**：排查实测中 Chrome `chrome.scripting.executeScript` 吞没 content script 异常返回 `{ result: null }` 的深层坑，在 `input.ts` 的 `click`/`fill`/`mark` 中采用安全的页面执行结果包裹与多重断言，页面未找到目标元素时直接向外报明确业务错误，绝不裸抛 `Cannot read properties of null (reading 'x')`。
+2. **危险操作词表扩充**：`isDestructiveLabel` 与 `confirmLabelForDestructive` 正式支持 `归档` / `archive`，伴随进程 `prompt.ts` 同步纳入 `archive` / `归档` 引导。
+3. **`mark` 语义兜底拿住**：针对模型调用 `mark` 未显式带 `actions` 但称“光标已停在上面”的幻觉，新增 `resolveImplicitMarkActions`。当 label 包含确认意图（以 `待` 开头如 `待归档`、`待删除` 或命中危险词）时，自动推导确认与取消双键并触发 `holdInst` 就地拿住，杜绝页面光标留在原位。
+4. **拿住态锚点容错**：`relayoutHolds` 去除因 AX ref 无法反解而将光标直接置为 `hidden` 的缺陷，无锚点时保持在 `hold.point` 维持可见拿住姿态。
+5. **回归状态**：全量 366 tests / typecheck / build / overlay-check / git diff --check 全绿。
+
+2026-09-05 像素伴侣「lil pix」深度演进：**真实物理弹簧手感 + 边框爬行游走系统**（标准 `docs/evals/20260905-lil-pix-composer.md`，页面 `docs/evals/20260905-lil-pix-composer.html`）。
+1. **自然感根源落实**：深入剖析 Rauno Freiberg《Invisible Details of Interaction Design》的 Kinetic Physics 动能物理与 Direct Manipulation。手套光标与小人形成直接接触下压（Mousedown 60ms 刚性压扁 `scale(1.35, 0.58)` + 手套同步下沉 + 眯眼 `- -`）；松手释放积蓄势能，触发真正的 Spring Overshoot 弹簧过冲（`translateY(-22px)` 离地浮空起跳 + 天线星光眼 `✦ ✦`），再经重力与阻尼残余反弹落地，消除塑料假滑感。
+2. **边框爬行与绝不遮挡文字**：把输入框顶沿与各消息气泡的外轮廓（Outer Rim / Border Rail）连接成专属跑道。用户发送消息时小人快步跑动护航；Agent 生成时小人趴在气泡顶沿探头关注流式输出；生成完成在拐角欢呼小跳。严格通过 Safe Boundary 红线约束：全身位于外部轨道（`-28px ~ -32px`），内部文本区遮挡率为 0%。
+3. **并排三方案已出，等人评挑选**：
+   - 方案 1【全轨自由游走型 · 推荐】（全连通跑道，顶沿小跑 + 侧沿攀爬 + 拐角探头）
+   - 方案 2【单卡顶沿巡逻型】（仅在当前活跃卡片水平顶沿横向来回踱步，更克制）
+   - 方案 3【磁吸四角守卫型】（常驻角点，事件触发时弹簧小跳飞跃吸附新气泡角点）
+4. **守规状态**：生产代码 `extension/src/` 保持干净零污染，机器走查（资源、深浅色、Playwright 截图）全过。
+
 2026-09-05 用户判定：**轨迹回放不重要，降优先级**（ROADMAP 已标）。就地确认走「一体」方向：人选 **C 案（手拿住目标，双键在光标名牌上）**，判断页 `docs/evals/20260905-one-hand-confirm.html`。C 案已实现（`04a950d`）：held 拦阻与模型 mark 两条路径同一形态、两轮确认断点已修、侧栏「取消」收敛、拿住跟滚动；357 tests / typecheck / build / overlay-check 全绿，校验已独立复跑。待人评：flomo 删「MiroFish 项目」真机（标准 9），需 reload 扩展 + 伴随进程重连。未决：拿住态名牌保持成员色 vs HTML C 列 pill 整体变红，人评裁决。
 
 2026-09-05 最新：交还恢复可靠性子任务机器项全绿（标准 `docs/evals/20260905-handback-restore-reliability.md`，341 tests / typecheck / build / overlay-check 全过，独立校验复跑确认）。待人评：面板失败文案真机观感 + 双 Wikipedia 交还回归（需 reload 扩展）。下一步候选：就地确认/轨迹回放人评，或路线图「选中即问」。
@@ -489,3 +505,25 @@
 - 测试：`extension/test/held-clicks.test.ts` +7（pending 存取、dispatch/armOnce/cancelled、成员 session、注入失败兜底语义）、`mark-actions.test.ts` +3（isCancelReply）、`agent/test/safety-prompt.test.ts` +4（契约：直接 click/拿住/禁冒充/无 "outside the box"）、teach-prompt 标题同步。overlay-check.mjs：拿住姿态+名牌双键+去重（两套 mark 仍一套键）+resize/window/内部容器滚动跟随+点名牌 confirm 发 mark_action+releaseHold 恢复，截图确认 C 案视觉（手按住目标、名牌成员色内嵌红/灰双键）。
 - 验证：357 tests 全绿（38 files）、typecheck、build、overlay-check、`git diff --check` 全绿。未 reload 扩展、未 commit。
 - 未决：标准 9 人评（flomo 删「MiroFish 项目」真机）未做；伴随进程需重连才吃到新 prompt；拿住态的颜色细节（确认红 #c43c32 / 取消浅灰 #eceef1）与 HTML C 列（pill 整体变红、键反白）有出入——按标准第 1 条「名牌保持成员色，确认键红、取消键灰」落地，待人评裁决。
+
+## 2026-09-05 点击健壮性防御与就地确认拿住兜底
+
+- 完成标准：`docs/evals/20260905-click-robustness-and-hold-fallback.md`。来源：实测 ChatGPT 归档操作中暴露的后台失败链路。
+- 根因与修复：
+  1. Chrome MV3 `executeScript` 吞错陷阱：页面内部抛错时 Chrome 不 reject 而是返回 `[{ frameId: 0, result: null }]`，导致 `targetRect` 变为 `null` 并崩溃于 `targetRect.x`。修复：在 `callDom` 注入函数内包裹 `{ ok: true, rect }` / `{ ok: false, error }` 结果信封，对外抛出精确业务错误；`input.ts` 的 `click` / `fill` / `mark` 增加针对 `targetRect` 的非空断言保护。
+  2. 危险词表与就地确认：`mark-actions.ts` 扩充 `DESTRUCTIVE_ZH` / `DESTRUCTIVE_EN` 与 `confirmLabelForDestructive`，支持 `归档` / `archive`。
+  3. `mark` 语义兜底推导 actions：模型调用 `mark` 时若未显式传 actions，但 label 命中确认意图（以「待」开头如「待归档」「待删除」或命中危险词），自动推导出 confirm/cancel 并在名牌上拿住，防止模型声称“光标停在按钮上”而实际光标未就地拿住。
+  4. AX ref 拿住态重布局容错：AX 树快照的 backendNodeId 无法通过 `dom.resolve` 反解，修复 `cursor.ts` 在 `relayoutHolds` 中无 liveAnchor 时误将光标设为 `hidden` 的问题，改为保持在 `hold.point`。
+  5. 提示词同步：`agent/src/prompt.ts` 明确将 `archive` / `归档` 纳入危险操作与直接点击就地确认。
+- 改动文件清单：
+  - `extension/src/background/exec/input.ts`
+  - `extension/src/content/cursor.ts`
+  - `extension/src/shared/mark-actions.ts`
+  - `agent/src/prompt.ts`
+  - `extension/test/click-robustness.test.ts`
+  - `extension/test/mark-actions.test.ts`
+  - `agent/test/safety-prompt.test.ts`
+  - `extension/test/overlay-check.mjs`
+  - `docs/evals/20260905-click-robustness-and-hold-fallback.md`
+- 验证：39 files 366 tests 全绿、`npm run typecheck` 全绿、`npm run build` 全绿、`node extension/test/overlay-check.mjs` 全绿、`git diff --check` 全绿。
+- 未决/待人评：需真机 reload:ext 后在真实站点（如 ChatGPT 归档会话、flomo 删笔记）实测确认双键与手势观感。

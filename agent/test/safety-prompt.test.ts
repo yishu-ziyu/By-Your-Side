@@ -23,4 +23,9 @@ describe("Safety 段：一只手拿住（C 案）契约", () => {
     expect(SYSTEM_PROMPT).toContain('id:"confirm"');
     expect(SYSTEM_PROMPT).toContain('id:"cancel"');
   });
+
+  it("包含 archive 与 归档 危险词提示", () => {
+    expect(SYSTEM_PROMPT).toMatch(/archive/i);
+    expect(SYSTEM_PROMPT).toContain("归档");
+  });
 });
