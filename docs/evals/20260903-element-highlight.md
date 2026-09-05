@@ -17,7 +17,7 @@ Agent 对元素执行 click/fill **之前**，在目标元素周围画一个呼�
 
 建议做法（可按实际情况调整）：cursor.ts 加一个 `highlight(rect: {x,y,width,height})` 方法（与 cursor 同一 overlay host，新元素类型）；input.ts 在 click 已有 `point` 处、fill 在拿到 rect 处调用，await 高亮时长后走原逻辑。**注意坐标必须在 scrollIntoView 之后取**，失败必须静默兜底不阻塞主流程（参照现有 cursor 驱动的 try/catch 写法）。
 
-## 验收标准
+## 完成标准
 - [ ] 1. click 前目标元素出现呼吸高亮框，随后光标移动 + 波纹 + 真实点击按序发生 — evaluator: 人评（等待用户真实操作体验裁决）
 - [ ] 2. fill 前同样有高亮 — evaluator: 人评（等待用户真实操作体验裁决）
 - [x] 3. 高亮层不拦截页面事件、不留残影；多实例（for(id)）下高亮颜色跟随实例色 — evaluator: 代码审查 + 机器（host 与 .highlight 均设 pointer-events:none；动画结束 animationend 及 650ms 超时均调用 el.remove() 清理；多实例颜色跟随 inst.color 调色板并通过独立 highlightEl 管理；实测截图 630ms 后高亮框完全销毁无残影）

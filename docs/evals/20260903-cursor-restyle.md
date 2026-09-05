@@ -6,7 +6,7 @@
 - cdpilot（MIT）：fake cursor + click ripples 方案印证
 - 箭头形状：lucide MousePointer2（ISC，项目已有依赖）
 
-## 验收标准
+## 完成标准
 - [ ] 1. 光标在浅色/深色页面背景下都清晰可读（白描边 + drop-shadow） — evaluator: 机器（无头截图自检双底色）
 - [ ] 2. 光标旁有 "SideAgent" 名牌 pill，一眼识别是 Agent 操作 — evaluator: 人评
 - [ ] 3. 点击反馈：光标按下缩放（scale .8, 160ms）+ 双层交错波纹（品牌蓝） — evaluator: 人评

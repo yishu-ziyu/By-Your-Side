@@ -11,7 +11,7 @@ Evaluator:  无头 Chrome：内部 overflow 容器 scrollTop 变化后，mark �
 Evidence:   `node extension/test/overlay-check.mjs` PASS + 滚动前后截图；本卡。
 ```
 
-## 验收标准
+## 完成标准
 
 - [x] 1. 内部滚动容器（`overflow:auto`，window.scroll 不变）滚动后，mark 仍箍住锚定元素，位移等于内容位移，误差 ≤2px — evaluator: `node extension/test/overlay-check.mjs`（2026-09-04：nested-scroll dy=90，markOff 四边 0）
 - [x] 2. window 级滚动不回归：文档坐标在 window.scroll 后保持（absolute 天然跟随，或重算后与 `rect + scroll` 一致）— evaluator: 同上脚本（docY 74 → 74，箍住误差 0）

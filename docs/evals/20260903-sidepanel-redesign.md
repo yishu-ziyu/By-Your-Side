@@ -7,7 +7,7 @@
 
 不引入框架：保持现有 vanilla TS + DOM 架构，最小侵入。
 
-## 验收标准
+## 完成标准
 - [ ] 1. assistant 消息以 Markdown 渲染（标题/列表/代码块/加粗），经 DOMPurify 消毒，流式增量更新不丢字 — evaluator: 人评 + 机器审查 main.ts
 - [ ] 2. 工具卡片重构：图标+工具名+状态 pill（运行中/完成/失败），参数折叠，结果等宽字体截断 — evaluator: 人评
 - [ ] 3. 输入区改为浮动圆角 composer：自适应高度 textarea、圆形发送/停止图标按钮 — evaluator: 人评

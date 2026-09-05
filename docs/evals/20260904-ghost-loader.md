@@ -9,7 +9,7 @@ Evaluator:  workerEventRunPolicy 单测覆盖「idle 后的 agent_end 不得开�
 Evidence:   本卡 + 单测 + 对照截图路径。
 ```
 
-## 验收标准
+## 完成标准
 
 - [x] 1. 全部 session idle 之后到达的工人 `agent_end` / `text_delta` / `tool_start`，不得再 `ensureRun` 出新的「处理中」块 — evaluator: `workerEventRunPolicy` 单测
 - [x] 2. 无工人的普通一轮：Lead idle 仍收起执行块、去掉 loader（不回归） — evaluator: 现有步骤测试 + 单测

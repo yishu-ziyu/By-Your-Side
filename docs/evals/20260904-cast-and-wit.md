@@ -9,7 +9,7 @@ Evaluator:  人评：打开 HTML 三案挑一向。落地后同一类并行任�
 Evidence:   本卡 + docs/evals/20260904-cast-compare.html + wrapper-err 时间线。
 ```
 
-## 验收标准
+## 完成标准
 
 - [x] 1. HTML 三案（现在 / 有名字的人 / 更安静）摆在同一任务时间线上，用户能指出要做哪一案 — evaluator: 人评（2026-09-04：选 B+C；不要色名；小名要设计；词表 OK；执行块加动效，参考 ui-skills.com）
 - [x] 2. 落地后界面文案与光标名牌不再出现「工人」「派出工人」——类名取消，人有自己的短名 — evaluator: 文案扫描（steps/cast 单测 + dist 无「工人」）+ 人评

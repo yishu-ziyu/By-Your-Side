@@ -23,7 +23,7 @@ Evidence:   本卡 + 改过的 run-steps / worker-lane CSS 与 summary 结构。
 - Spacing system：4 / 8 / 12 / 16 / 32。
 - Start with too much white space：人用分组底，不要再把所有东西贴成一墙。
 
-## 验收标准
+## 完成标准
 
 - [ ] 1. 人的行：32 头像 + 名在上、步骤链在下、等待句在右 — evaluator: 人评
 - [ ] 2. 工具 chip 缩进到名字列，比 Lead 的 chip 更小更淡 — evaluator: 人评

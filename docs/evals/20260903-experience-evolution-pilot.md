@@ -2,7 +2,7 @@
 
 日期：2026-09-03
 
-## 验收标准
+## 完成标准
 
 - [x] 1. wiki 骨架、consolidator agent、三个 hook 脚本落盘 — evaluator: 文件存在 + `bash -n` 语法检查 ✅（全部通过）
 - [x] 2. hook 脚本按 cwd 门控：非 ego 项目触发时零副作用退出 — evaluator: 模拟 payload 测试 ✅（三个脚本均 exit=0、无输出、无副作用）

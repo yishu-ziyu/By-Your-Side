@@ -2,7 +2,7 @@
 
 来源：docs/ROADMAP.md「看得见」层第 2 项（2026-09-03 继续推路线图）。
 
-## 验收标准
+## 完成标准
 - [ ] 1. sidepanel 顶栏有教学模式开关，状态持久化（chrome.storage.local），面板重开后显示正确 — evaluator: 人评 + 无头截图
 - [ ] 2. 教学模式下 click/fill/type_text/press_key/js 被扩展执行层硬拒，返回明确错误；snapshot/screenshot/scroll/mark/clear_marks 不受影响 — evaluator: npm test（isBlockedInTeachMode 单测）
 - [ ] 3. set_mode 协议帧解析正确，panel→background→agent 全链路透传；agent 重连后 background 补发当前模式 — evaluator: npm test（protocol 解析测试）

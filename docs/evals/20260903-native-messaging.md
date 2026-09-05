@@ -8,7 +8,7 @@
 - **保留 `--ws` 调试模式**：手动启动仍走原 WS+token 通道，便于看日志排障；native stdio 为默认。
 - **model/proxy 走配置文件**（如 `~/.sideagent/config.json`），CLI 参数优先于配置文件，为后续「模型选择 UI」铺路。
 
-## 验收标准
+## 完成标准
 
 - [ ] 1. 真机端到端：加载扩展后打开面板，零手动启动、零 token，直接「已连接」，并完成一次完整任务（导航 + 读页面 + 回答）— evaluator: 人评
 - [ ] 2. 伴随进程生命周期：由 Chrome 拉起（ps 确认父进程链），Chrome 退出后进程退出 — evaluator: 人评

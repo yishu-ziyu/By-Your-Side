@@ -1,6 +1,6 @@
 # 任务: 高交互性 — steer 提示 + 多实例光标
 
-## 验收标准
+## 完成标准
 - [ ] 1. 运行中输入框 placeholder 变为"插话：调整 Agent 的方向…"，空闲时恢复 — evaluator: 机器审查 main.ts + 人评
 - [ ] 2. cursor overlay 支持 `for(id)` 取实例专属光标：调色板按序着色，名牌显示 id；原有 move/click/hide（默认实例）行为不变 — evaluator: 机器（无头截图双光标自检）
 - [ ] 3. `npm run typecheck` / `npm run build` / `npm test` 全绿 — evaluator: 机器

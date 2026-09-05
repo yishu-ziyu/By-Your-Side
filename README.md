@@ -88,4 +88,4 @@ npm install --save-dev -W @rolldown/binding-darwin-arm64
 
 未做（按优先级）：CDP Accessibility 快照升级（深层 iframe）、站点经验工具包、模型选择 UI、交互/视觉反馈优化、商店发布。
 
-已完成：native messaging 自启动伴随进程 + background 持连接（关面板任务不断，验收卡 `docs/evals/20260903-native-messaging.md`）。
+已完成：native messaging 自启动伴随进程 + background 持连接（关面板任务不断，完成标准 `docs/evals/20260903-native-messaging.md`）。

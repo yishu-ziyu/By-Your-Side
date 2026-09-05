@@ -9,7 +9,7 @@
 2. **虚拟光标可见性低**：用户希望光标更醒目。现状：`extension/src/content/cursor.ts`，27px 品牌蓝箭头+白描边+"SideAgent" 名牌（20260903-cursor-restyle 定稿）。方向：放大/加粗描边/提高对比，具体形态先出方案。
 3. **扩展刷新后残留 + 侧栏关闭后偏移**：`reload:ext` 后页面残留旧光标/高亮/mark 不消失；侧边栏关闭（viewport 变宽）后残留 overlay 位置偏移。线索：cursor.ts 三类 overlay（光标 fixed / 高亮 fixed / mark absolute 文档坐标）的 host 生命周期；MV3 reload 后旧 content script 上下文销毁但 DOM 残留，新实例无清理旧 host 的逻辑；fixed+坐标快照在 reflow 后失效。
 
-## 验收标准
+## 完成标准
 
 ### 问题 1：steer 失忆
 - [x] 1. steer 路径与普通 user_message 一样携带 page context 前缀（或证明 SDK steer 丢上下文另有根因并修复）— evaluator: 针对 session  steer/prompt 组装纯函数的单测（agent/test/session-helpers.test.ts 增补）

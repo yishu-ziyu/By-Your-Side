@@ -2,7 +2,7 @@
 
 日期：2026-09-03
 
-## 验收标准
+## 完成标准
 
 - [x] 1. 双包 typecheck 零错误 — evaluator: `npm run typecheck`（机器）
 - [x] 2. 扩展构建产物完整（dist/ 七件：background.js、sidepanel.js、content-snapshot.js、content-domops.js、manifest.json、sidepanel.html、styles.css）— evaluator: `npm run build`（机器）

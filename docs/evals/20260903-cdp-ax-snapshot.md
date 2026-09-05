@@ -10,7 +10,7 @@ snapshot 工具从「content script 手搓 DOM 遍历」升级为「chrome.debug
 - debugger 被占用（DevTools 开着）时回退旧 DOM 快照，输出首行标注回退原因。
 - ax→text 转换做成纯函数，vitest 覆盖。
 
-## 验收标准
+## 完成标准
 
 - [ ] 1. 复杂页面真机任务（通用性验证，不针对单一站点）：YouTube、B站（或知乎）各完成一个「找到首屏某个条目并点进其作者主页」类任务，模型全程用快照 ref 点击，不退回 screenshot 试探；步数明显少于改造前（改造前 YouTube：viewport 快照→全页快照→截图 3 步还没点上）— evaluator: 人评
 - [ ] 2. shadow DOM 页面（如 shoelace 组件文档页）快照能看到 shadow 内元素并能点击成功 — evaluator: 人评
