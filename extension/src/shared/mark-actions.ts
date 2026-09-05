@@ -1,6 +1,6 @@
 /**
- * 就地确认按钮：解析 mark.actions、点下去对应的用户文本。
- * 纯函数，可单测。视觉是框外双键（不挡正文）。
+ * 就地确认按钮：解析 mark.actions、点下去对应的用户文本、危险词判定。
+ * 纯函数，可单测。视觉是光标名牌上的双键（手拿住目标，键跟手走）。
  */
 import type { MarkAction, MarkActionId } from "../../../shared/protocol.js";
 
@@ -57,4 +57,9 @@ export function confirmLabelForDestructive(text: string): string {
 /** 侧栏里这句话算放行刚才拦住的那一下。 */
 export function isAffirmativeReply(text: string): boolean {
   return /^(确认|是的?|继续|好的?|yes|ok|okay|confirm)\s*[。.!！]?$/i.test(text.trim());
+}
+
+/** 侧栏里这句话算撤销刚才拦住的那一下（与点名牌「取消」同效）。 */
+export function isCancelReply(text: string): boolean {
+  return /^(取消|算了|不用了?|不要|别|否|no|nope|cancel)\s*[。.!！]?$/i.test(text.trim());
 }

@@ -11,6 +11,7 @@ import {
   isDestructiveLabel,
   parseMarkActions,
 } from "../../shared/mark-actions.js";
+import { HeldClicks } from "../../shared/held-clicks.js";
 
 interface DomRect {
   x: number;
@@ -230,6 +231,24 @@ async function cursorPark(tabId: number, id: string): Promise<void> {
   }
 }
 
+/** 松开拿住态：摘按住姿态、名牌恢复成员名、照常 park。注入失败静默跳过。 */
+async function releaseHold(sessionId: string): Promise<void> {
+  const tabId = await resolveOverlayTabId(sessionId);
+  if (tabId == null) return;
+  try {
+    await ensureCursor(tabId);
+    await callDom(
+      tabId,
+      (id: string) => {
+        window.__sideagent?.cursor?.for(id)?.releaseHold?.();
+      },
+      [cursorId(sessionId)],
+    );
+  } catch {
+    /* 页面禁止注入则跳过 */
+  }
+}
+
 type ClickParams = {
   target?: string;
   point?: [number, number];
@@ -238,25 +257,23 @@ type ClickParams = {
 
 type ClickResult = { clicked: true } | { clicked: false; held: true };
 
-const pendingBySession = new Map<string, ClickParams>();
-const armedSessions = new Set<string>();
+/** held/arm 台账抽成纯数据层（shared/held-clicks.ts），决策逻辑可单测。 */
+const heldClicks = new HeldClicks<ClickParams>(LEAD_SESSION_ID);
 
 export function armDestructiveClick(sessionId: string = LEAD_SESSION_ID): void {
-  armedSessions.add(sessionId);
+  heldClicks.arm(sessionId);
 }
 
 export function hasPendingDestructiveClick(sessionId: string = LEAD_SESSION_ID): boolean {
-  return pendingBySession.has(sessionId);
+  return heldClicks.hasPending(sessionId);
 }
 
 export function dropPendingClicks(sessionId: string = LEAD_SESSION_ID): void {
-  pendingBySession.delete(sessionId);
-  armedSessions.delete(sessionId);
+  heldClicks.drop(sessionId);
 }
 
 export function dropAllPendingClicks(): void {
-  pendingBySession.clear();
-  armedSessions.clear();
+  heldClicks.dropAll();
 }
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
@@ -365,46 +382,32 @@ export async function hideUserControlBanners(tabId?: number): Promise<void> {
   await Promise.all([...ids].map((id) => paintControlBanner(id, false)));
 }
 
-function pendingSession(preferred: string): string | undefined {
-  if (pendingBySession.has(preferred)) return preferred;
-  if (pendingBySession.has(LEAD_SESSION_ID)) return LEAD_SESSION_ID;
-  return pendingBySession.keys().next().value;
-}
-
 export async function resolveHeldClick(
   action: "confirm" | "cancel",
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ clicked: boolean }> {
-  const sid = pendingSession(sessionId);
-  if (!sid) {
-    if (action === "cancel") {
-      try {
-        await clearMarks(sessionId);
-      } catch {
-        /* 没有标注可清 */
-      }
-    }
-    return { clicked: false };
-  }
-  const pending = pendingBySession.get(sid);
-  pendingBySession.delete(sid);
-  if (action === "cancel") {
-    armedSessions.delete(sid);
+  const decision = heldClicks.resolve(action, sessionId);
+  if (decision.kind === "cancelled") {
+    const sid = decision.sessionId ?? sessionId;
     try {
       await clearMarks(sid);
     } catch {
       /* 没有标注可清 */
     }
+    await releaseHold(sid);
     return { clicked: false };
   }
-  if (!pending) return { clicked: false };
-  armedSessions.add(sid);
+  if (decision.kind === "armOnce") {
+    // 模型自绘 mark 路径：pending 无记录，点「确认」直接 arm，模型重试 click 一次通过
+    return { clicked: false };
+  }
+  // 确认：先松开拿住态，再由同一只手在目标点播波纹并真实派发
+  await releaseHold(decision.sessionId);
   try {
-    await click(pending, sid);
+    await click(decision.params, decision.sessionId);
     return { clicked: true };
   } finally {
-    armedSessions.delete(sid);
-    pendingBySession.delete(sid);
+    heldClicks.drop(decision.sessionId);
   }
 }
 
@@ -496,15 +499,17 @@ export async function click(
   }
 
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = armedSessions.has(sessionId);
+  const wasArmed = heldClicks.isArmed(sessionId);
   if (isDestructiveLabel(name) && !wasArmed) {
-    pendingBySession.set(sessionId, { ...params });
+    heldClicks.hold(sessionId, { ...params });
     await maybeActivateTab(tab, sessionId);
     const confirmLabel = confirmLabelForDestructive(name);
     const actions = [
       { id: "confirm" as const, label: confirmLabel },
       { id: "cancel" as const, label: "取消" },
     ];
+    // C 案：框（mark）留作视觉锚；键不在框外——cursor.mark 带 actions 时
+    // 光标自己飞到目标拿住，双键长在名牌上（与模型自绘 mark 同一形态，只有一套键）。
     try {
       if (params.target) {
         await mark({ target: params.target, label: "待确认", actions }, sessionId);
@@ -524,15 +529,26 @@ export async function click(
           },
           [targetRect, "待确认", cid, actions],
         );
+      } else if (point) {
+        // 只有坐标没有元素：画不出框，手仍飞过去拿住（锚点取该位置的元素）
+        await ensureCursor(tabId);
+        await callDom(
+          tabId,
+          (x: number, y: number, id: string, a: Array<{ id: "confirm" | "cancel"; label: string }>) => {
+            const cursor = window.__sideagent?.cursor?.for(id);
+            if (!cursor?.hold) throw new Error("cursor 未注入");
+            cursor.hold(x, y, a);
+          },
+          [point[0], point[1], cid, actions],
+        );
       }
     } catch {
-      /* 画不出按钮也先不点：侧栏打「确认」仍可放行 */
+      /* 画不出标注也先不点：侧栏打「确认」仍可放行 */
     }
     return { clicked: false, held: true };
   }
   if (isDestructiveLabel(name) && wasArmed) {
-    armedSessions.delete(sessionId);
-    pendingBySession.delete(sessionId);
+    heldClicks.drop(sessionId);
   }
 
   await maybeActivateTab(tab, sessionId);
@@ -787,6 +803,7 @@ export async function scroll(
 /**
  * mark 工具：在目标元素处画持久标注（描边框+箭头+名牌）。
  * 标注锚定目标元素：window 滚动走文档坐标，内部滚动容器在 scroll 捕获期按包围盒重算。
+ * 带 actions 时光标飞到目标拿住，确认/取消双键长在光标名牌上（不在框外）。
  * target 定位串与 click 同语义；注入失败如实报错（标注是显式动作，需要反馈）。
  */
 export async function mark(

@@ -40,7 +40,7 @@ import { evaluateJs } from "./exec/evaluate.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
-import { isAffirmativeReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
+import { isAffirmativeReply, isCancelReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { findSessionForTab, getWorkingTabMap, getWorkingTabId, setSessionClaimBlocked } from "./state.js";
 import { PendingControlTimeout } from "./control-pending.js";
 
@@ -851,6 +851,12 @@ chrome.runtime.onConnect.addListener((port) => {
           }
           void stopTrailReplay();
           if (isAffirmativeReply(msg.msg.text)) armDestructiveClick();
+          else if (isCancelReply(msg.msg.text)) {
+            // 侧栏打「取消」与点名牌「取消」同效：清 pending、松开拿住的手、收起标注
+            void resolveHeldClick("cancel").catch(() => {
+              /* 清理失败不挡住把「取消」送进对话 */
+            });
+          }
           void attachPageContext(msg.msg).then((enriched) => uplink.sendClientMessage(enriched));
           break;
         }
@@ -891,7 +897,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-/** 页面标注框外按钮：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */
+/** 光标名牌上的确认/取消键：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */
 chrome.tabs.onActivated.addListener((info) => {
   void controlReady.then(() => {
     if (!gate.isUser()) return;

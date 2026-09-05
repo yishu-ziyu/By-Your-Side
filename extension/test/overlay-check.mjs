@@ -129,7 +129,7 @@ if (Math.abs(after.x - before.x - expectedShift) > 2) {
 
 await page.screenshot({ path: path.join(outDir, "mark-after-resize.png") });
 
-// 就地确认：框外双键，点下去发 mark_action（不挡正文）
+// 就地确认（C 案）：mark 带 actions → 光标飞到目标拿住，双键长在名牌上（不在框外）
 await page.evaluate(() => {
   window.__sideagent.cursor.clearMarks();
   const box = document.getElementById("box");
@@ -144,17 +144,72 @@ await page.evaluate(() => {
     ],
   );
 });
-const actionLabels = await page.evaluate(() => window.__sideagent.markActionLabels());
+await page.waitForTimeout(600); // 等飞行到位 + 超过 pressing 自动摘除的 160ms
+const hold0 = await page.evaluate(() => {
+  const box = document.getElementById("box").getBoundingClientRect();
+  return {
+    state: window.__sideagent.holdState(),
+    cx: Math.round(box.x + box.width / 2),
+    cy: Math.round(box.y + box.height / 2),
+  };
+});
+if (!hold0.state) fail("holdState 为空（光标实例不存在）");
+if (!hold0.state.holding) fail("mark 带 actions 后光标未进入拿住态");
+if (!hold0.state.pressing) fail("拿住态未保持按下（pressing 被自动摘掉）");
+if (hold0.state.hidden) fail("拿住态光标被隐藏");
+if (Math.abs(hold0.state.x - hold0.cx) > 2 || Math.abs(hold0.state.y - hold0.cy) > 2) {
+  fail(`拿住位置应落在目标中心 (${hold0.cx},${hold0.cy})，实际 (${hold0.state.x},${hold0.state.y})`);
+}
+const actionLabels = await page.evaluate(() => window.__sideagent.holdActionLabels());
 if (
   !actionLabels ||
   actionLabels.length !== 2 ||
   actionLabels[0].id !== "confirm" ||
   actionLabels[0].label !== "删除" ||
-  actionLabels[1].id !== "cancel"
+  actionLabels[1].id !== "cancel" ||
+  actionLabels[1].label !== "取消"
 ) {
-  fail(`就地确认按钮不对 ${JSON.stringify(actionLabels)}`);
+  fail(`名牌双键不对 ${JSON.stringify(actionLabels)}`);
 }
-await page.screenshot({ path: path.join(outDir, "on-page-confirm.png") });
+await page.screenshot({ path: path.join(outDir, "one-hand-holding.png") });
+
+// 去重：模型再画一次带 actions 的 mark，名牌上仍只有一套键
+await page.evaluate(() => {
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  window.__sideagent.cursor.mark(
+    { x: r.x, y: r.y, width: r.width, height: r.height },
+    "待删除",
+    "#box",
+    [
+      { id: "confirm", label: "删除" },
+      { id: "cancel", label: "取消" },
+    ],
+  );
+});
+await page.waitForTimeout(40);
+const dedup = await page.evaluate(() => window.__sideagent.holdActionLabels());
+if (!dedup || dedup.length !== 2) fail(`两套 mark 叠加后名牌键应为 2 个，实际 ${JSON.stringify(dedup)}`);
+
+// resize 跟随：盒子右移后 dispatch resize，拿住的手应跟到目标最新位置
+const holdBeforeResize = await page.evaluate(() => window.__sideagent.holdState());
+await page.evaluate(() => {
+  const box = document.getElementById("box");
+  box.style.left = "440px";
+  window.dispatchEvent(new Event("resize"));
+});
+await page.waitForTimeout(40);
+const holdAfterResize = await page.evaluate(() => {
+  const box = document.getElementById("box").getBoundingClientRect();
+  return { state: window.__sideagent.holdState(), cx: Math.round(box.x + box.width / 2) };
+});
+if (!holdAfterResize.state.holding || holdAfterResize.state.hidden) {
+  fail(`resize 后拿住态丢失 ${JSON.stringify(holdAfterResize.state)}`);
+}
+if (Math.abs(holdAfterResize.state.x - holdAfterResize.cx) > 2) {
+  fail(`resize 后光标未跟随目标 before=${holdBeforeResize.x} after=${holdAfterResize.state.x} 期望=${holdAfterResize.cx}`);
+}
+
 await page.evaluate(() => {
   window.__markMsgs = [];
   globalThis.chrome = {
@@ -165,12 +220,19 @@ await page.evaluate(() => {
     },
   };
 });
-const clicked = await page.evaluate(() => window.__sideagent.clickMarkAction("confirm"));
+const clicked = await page.evaluate(() => window.__sideagent.clickHoldAction("confirm"));
 const msgs = await page.evaluate(() => window.__markMsgs);
-if (!clicked) fail("clickMarkAction(confirm) 未点到按钮");
+if (!clicked) fail("clickHoldAction(confirm) 未点到名牌按钮");
 if (!msgs || msgs.length !== 1 || msgs[0].type !== "mark_action" || msgs[0].action !== "confirm") {
-  fail(`点删除未发 mark_action ${JSON.stringify(msgs)}`);
+  fail(`点名牌「删除」未发 mark_action ${JSON.stringify(msgs)}`);
 }
+
+// 取消路径：松开后名牌恢复成员名、不再是拿住态
+await page.evaluate(() => window.__sideagent.cursor.releaseHold());
+const released = await page.evaluate(() => window.__sideagent.holdState());
+if (released.holding || released.pressing) fail(`releaseHold 后仍在拿住 ${JSON.stringify(released)}`);
+const labelsAfterRelease = await page.evaluate(() => window.__sideagent.holdActionLabels());
+if (labelsAfterRelease.length !== 0) fail(`releaseHold 后名牌双键应消失 ${JSON.stringify(labelsAfterRelease)}`);
 
 await page.evaluate(() => {
   const c = window.__sideagent.cursor;
@@ -354,6 +416,44 @@ if (Math.abs(nestedOff.dx) > 2 || Math.abs(nestedOff.dy) > 2) {
   fail(`内部滚动后 mark 未箍住目标 dx=${nestedOff.dx} dy=${nestedOff.dy} layout=${JSON.stringify(nestedAfter.layout)} box=${JSON.stringify(nestedAfter.box)}`);
 }
 
+// 拿住跟随（内部容器）：fixed 光标层必须在 scroll 捕获期按锚点重算，手跟目标走
+await nested.evaluate(() => {
+  window.__sideagent.cursor.clearMarks();
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  window.__sideagent.cursor.mark(
+    { x: r.x, y: r.y, width: r.width, height: r.height },
+    "待删除",
+    "#box",
+    [
+      { id: "confirm", label: "删除" },
+      { id: "cancel", label: "取消" },
+    ],
+  );
+});
+await nested.waitForTimeout(600); // 等飞行到位
+const holdScrollBefore = await nested.evaluate(() => window.__sideagent.holdState());
+if (!holdScrollBefore || !holdScrollBefore.holding) fail("nested 页拿住态未建立");
+const HOLD_NESTED_DELTA = 60;
+await nested.evaluate((dy) => {
+  document.getElementById("scroller").scrollTop += dy;
+}, HOLD_NESTED_DELTA);
+await nested.waitForTimeout(60);
+const holdScrollAfter = await nested.evaluate(() => {
+  const box = document.getElementById("box").getBoundingClientRect();
+  return { state: window.__sideagent.holdState(), cy: Math.round(box.y + box.height / 2) };
+});
+if (!holdScrollAfter.state.holding || holdScrollAfter.state.hidden) {
+  fail(`内部滚动后拿住态丢失 ${JSON.stringify(holdScrollAfter.state)}`);
+}
+if (Math.abs(holdScrollAfter.state.y - holdScrollAfter.cy) > 2) {
+  fail(`内部滚动后光标未箍住目标 y=${holdScrollAfter.state.y} 期望=${holdScrollAfter.cy}`);
+}
+if (Math.abs(holdScrollBefore.y - holdScrollAfter.state.y - HOLD_NESTED_DELTA) > 2) {
+  fail(`内部滚动后光标位移应≈${HOLD_NESTED_DELTA} before=${holdScrollBefore.y} after=${holdScrollAfter.state.y}`);
+}
+await nested.screenshot({ path: path.join(outDir, "hold-nested-scroll.png") });
+
 // window 滚动：文档坐标应保持（absolute 跟随或重算后与 rect+scroll 一致）
 const win = await browser.newPage({ viewport: { width: 720, height: 360 } });
 await win.setContent(`<!doctype html>
@@ -396,6 +496,40 @@ if (Math.abs(winOff.dx) > 2 || Math.abs(winOff.dy) > 2) {
 }
 if (Math.abs(winAfter.layout.y - winBefore.y) > 2) {
   fail(`window 滚动后文档坐标不应漂 before=${winBefore.y} after=${winAfter.layout.y}`);
+}
+
+// 拿住跟随（window 滚动）：手跟目标走，不停在视口原处
+await win.evaluate(() => {
+  window.__sideagent.cursor.clearMarks();
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  window.__sideagent.cursor.mark(
+    { x: r.x, y: r.y, width: r.width, height: r.height },
+    "待删除",
+    "#box",
+    [
+      { id: "confirm", label: "删除" },
+      { id: "cancel", label: "取消" },
+    ],
+  );
+});
+await win.waitForTimeout(600);
+const winHoldBefore = await win.evaluate(() => window.__sideagent.holdState());
+if (!winHoldBefore || !winHoldBefore.holding) fail("win 页拿住态未建立");
+await win.evaluate(() => window.scrollTo(0, 180));
+await win.waitForTimeout(60);
+const winHoldAfter = await win.evaluate(() => {
+  const box = document.getElementById("box").getBoundingClientRect();
+  return { state: window.__sideagent.holdState(), cy: Math.round(box.y + box.height / 2) };
+});
+if (!winHoldAfter.state.holding || winHoldAfter.state.hidden) {
+  fail(`window 滚动后拿住态丢失 ${JSON.stringify(winHoldAfter.state)}`);
+}
+if (Math.abs(winHoldAfter.state.y - winHoldAfter.cy) > 2) {
+  fail(`window 滚动后光标未箍住目标 y=${winHoldAfter.state.y} 期望=${winHoldAfter.cy}`);
+}
+if (Math.abs(winHoldBefore.y - winHoldAfter.state.y - 60) > 2) {
+  fail(`window 滚动 60px 后光标位移不符 before=${winHoldBefore.y} after=${winHoldAfter.state.y}`);
 }
 
 await nested.close();

@@ -5,6 +5,8 @@
 
 ## 当前状态
 
+2026-09-05 用户判定：**轨迹回放不重要，降优先级**（ROADMAP 已标）。就地确认不做机械拼接，先想「一体」：圈画/笔记/确认能否和光标统一成一只手的连续动作。判断页 `docs/evals/20260905-one-hand-confirm.html`（三案：A 拿住 / B 圈完退开 / C 键在名牌上，推荐 A），等人挑后再落地。产品未改。
+
 2026-09-05 最新：交还恢复可靠性子任务机器项全绿（标准 `docs/evals/20260905-handback-restore-reliability.md`，341 tests / typecheck / build / overlay-check 全过，独立校验复跑确认）。待人评：面板失败文案真机观感 + 双 Wikipedia 交还回归（需 reload 扩展）。下一步候选：就地确认/轨迹回放人评，或路线图「选中即问」。
 
 2026-09-04 第二个 Grok 开始独立任务：建设真实浏览器任务验收跑道，只能改 `scripts/acceptance/**`、本地 fixture、聚焦测试，必要时只给根 `package.json` 加一个命令；禁止碰 `extension/src/**`、`agent/src/**`、`shared/protocol.ts`。标准：`docs/evals/20260904-real-browser-acceptance-lane.md`。Codex 独立重跑并验收。
@@ -459,3 +461,31 @@
 - 面板：shared/control.ts 新增纯函数 `memberStatusLabel(m)`（paused_tab_closed / paused_snapshot_failed 有 reason 显示 reason，否则回退 `memberPhaseLabel`），main.ts:722 名册行改用它。protocol.ts 未动。
 - 测试：session-helpers +5（含默认常量 ≥30s、超时失败、迟到 agent_start、超时前接管/中止清 timer）、fleet +1（超时 reason 透传 + team_status 更新）、extension/test/team-member-label.test.ts +4。全量 36 files / 341 tests PASS；typecheck、build、overlay-check、diff-check 全绿。未 reload 扩展、未 commit。
 - 独立校验（Kimi，2026-09-05）：复跑 341 tests / typecheck / build / overlay-check / diff-check 全绿；抽查 diff 与测试断言真实（fake timers、`vi.getTimerCount()===0`、迟到 agent_start 走 stale 分支）。机器项 1/2/4 已勾；剩标准 3 的面板文案真机观感与标准 5 的真机回归，需 reload 扩展后由人评。
+
+## 2026-09-05 聊天框像素伴侣（Rauno lil pix）设计定位与原型
+
+- 需求定位：用户提议将 Rauno Freiberg 的 "lil pix" 像素伴侣设计引入侧栏输入框。
+- 代码定位：侧栏输入区核心在 `extension/src/sidepanel/main.ts`（#composer、#input、#composer-bar、#model-btn、#send-btn），样式在 `extension/src/sidepanel/styles.css`（第 971-1016 行），宿主为 `extension/sidepanel.html`。
+- 原作要素解析：
+  1. 像素小机器人（复古麦金塔/终端机身、双竖条眼神、手脚）；
+  2. 拟物白手套光标（Hover 变手套指针）；
+  3. 摸头微交互（按压 squash-and-stretch 压扁眯眼微笑、松手阻尼回弹、冒小心心）；
+  4. 状态联动（打字侧身托腮思考、闲时站立眨眼、快捷键胶囊切换）。
+- 对照 Will's S：Refactoring UI《Emphasize by de-emphasizing》与《Start with too much white space》——侧边栏仅约 360px，输入框必须保持高效清爽，不能让玩偶遮挡文字输入区；Apple Motion 弹性按压与阻尼（非无休止摇摆）；Shape of AI · Personality 赋予 Agent 陪伴感。
+- 三案并排 HTML 原型：`docs/evals/20260905-lil-pix-composer.html`（已抽取并内嵌高清透明像素资产：站立/摸头/思考/白手套）：
+  - 方案 A（胶囊收拢式）：原汁原味 Rauno 胶囊，空闲 36px 药丸，点击平滑展开为多行卡片；
+  - 方案 B（卡片顶沿趴宠式·推荐）：保持现有输入卡片的多行与模型选择体验不变，小机器人趴在卡片顶沿左侧探头，随时可摸头，完全不侵占文字输入与按钮区；
+  - 方案 C（底栏内嵌伴侣式）：嵌在输入区底部操作条与模型选择 chip 并排，紧凑度最高。
+- 验收卡建立：`docs/evals/20260905-lil-pix-composer.md`。
+- 遵循《AGENTS.md》协议：生产代码 `extension/src/` 未做任何改动，等待用户裁决挑选方案后再落地。
+
+## 2026-09-05 一只手拿住：就地确认改光标名牌双键（C 案，实现侧记录）
+
+- 完成标准：`docs/evals/20260905-one-hand-confirm.md`（未改）。视觉权威：`docs/evals/20260905-one-hand-confirm.html` C 列。
+- 光标层（`extension/src/content/cursor.ts`）：新增 `hold(x,y,actions,target?)` / `releaseHold()` API。拿住 = 持久 pressing（不自动摘）+ holding class、禁 park、setResting(false) 保证 rest/flip 不藏名牌；名牌保持成员色 var(--c)，内嵌 `.hold-action.confirm`（红 #c43c32）/`.cancel`（灰 #eceef1）双键，pointer-events:auto，点击发既有 `mark_action`（协议未动）。`mark()` 带 actions 时自动 hold——held 拦阻与模型自绘 mark 两条路径同一形态，键永远只有一套（去重由构造保证）。scroll（含内部容器捕获期）/resize 走 `relayoutHolds()`，按锚定元素最新 getBoundingClientRect 重定位，anchor 断开先藏、恢复再贴回（与 relayoutMarks 同语义，`liveAnchor` 泛化共用）。`move`/`click`/`hide` 自动松开 hold。框外双键渲染（`armMarkActions`、`.mark-actions`/`.mark-action` 样式、LiveMark.actions、ns.markActionLabels/clickMarkAction）全删，无死代码。
+- 执行层（`extension/src/background/exec/input.ts`）：pending/arm 台账抽成纯数据层 `extension/src/shared/held-clicks.ts`（HeldClicks 类，决策返回 dispatch/armOnce/cancelled）。held 分支改为存 pending + 画「待确认」mark（框保留作视觉锚）+ 光标拿住；point-only 点击画不出框时手仍飞过去拿住。`resolveHeldClick` 重写：confirm 有 pending → 先 releaseHold 再由同一只手播波纹真实派发；无 pending → armOnce 直接 arm（修两轮断点）；cancel → 清 pending + clearMarks + releaseHold。
+- background（`index.ts`）：侧栏打「取消/算了/不要/no…」（新 `isCancelReply`，mark-actions.ts）→ 与页面取消同效（resolveHeldClick cancel）后照常上行；「确认/是/继续」维持 armDestructiveClick。
+- 文案：`agent/src/prompt.ts` Safety 段改为「危险控件直接 click，执行层拿住等确认；禁止打开站点菜单冒充就地确认、禁止只圈不点；mark 圈当前目标，键在名牌上」（英文）；`tools.ts` mark description 与 held 提示语同步；`shared/protocol.ts:243`、`docs/protocol.md:68` 注释同步。
+- 测试：`extension/test/held-clicks.test.ts` +7（pending 存取、dispatch/armOnce/cancelled、成员 session、注入失败兜底语义）、`mark-actions.test.ts` +3（isCancelReply）、`agent/test/safety-prompt.test.ts` +4（契约：直接 click/拿住/禁冒充/无 "outside the box"）、teach-prompt 标题同步。overlay-check.mjs：拿住姿态+名牌双键+去重（两套 mark 仍一套键）+resize/window/内部容器滚动跟随+点名牌 confirm 发 mark_action+releaseHold 恢复，截图确认 C 案视觉（手按住目标、名牌成员色内嵌红/灰双键）。
+- 验证：357 tests 全绿（38 files）、typecheck、build、overlay-check、`git diff --check` 全绿。未 reload 扩展、未 commit。
+- 未决：标准 9 人评（flomo 删「MiroFish 项目」真机）未做；伴随进程需重连才吃到新 prompt；拿住态的颜色细节（确认红 #c43c32 / 取消浅灰 #eceef1）与 HTML C 列（pill 整体变红、键反白）有出入——按标准第 1 条「名牌保持成员色，确认键红、取消键灰」落地，待人评裁决。

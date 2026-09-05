@@ -240,7 +240,7 @@ export const TOOL_NAMES = [
 
 export type ToolName = (typeof TOOL_NAMES)[number];
 
-/** 标注框外的就地确认按钮。id 决定点下去发给 Agent 的文本（confirm→确认，cancel→取消）。 */
+/** 就地确认按钮（长在拿住目标的光标名牌上）。id 决定点下去发给 Agent 的文本（confirm→确认，cancel→取消）。 */
 export type MarkActionId = "confirm" | "cancel";
 export interface MarkAction {
   id: MarkActionId;

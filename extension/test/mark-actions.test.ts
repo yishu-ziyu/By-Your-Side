@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   confirmLabelForDestructive,
   isAffirmativeReply,
+  isCancelReply,
   isDestructiveLabel,
   isMarkActionId,
   markActionUserText,
@@ -88,5 +89,24 @@ describe("isAffirmativeReply", () => {
     expect(isAffirmativeReply("嗯")).toBe(false);
     expect(isAffirmativeReply("好吧")).toBe(false);
     expect(isAffirmativeReply("取消")).toBe(false);
+  });
+});
+
+describe("isCancelReply", () => {
+  it("取消 / 算了 / 不要 / no 算撤销", () => {
+    for (const t of ["取消", "取消。", "算了", "不用了", "不要", "别", "否", "no", "nope", "cancel"]) {
+      expect(isCancelReply(t), t).toBe(true);
+    }
+  });
+
+  it("放行词与普通句子不算撤销", () => {
+    for (const t of ["确认", "继续", "yes", "取消掉那个红色按钮", "好的", ""]) {
+      expect(isCancelReply(t), t).toBe(false);
+    }
+  });
+
+  it("取消与确认互不重叠", () => {
+    expect(isAffirmativeReply("取消")).toBe(false);
+    expect(isCancelReply("确认")).toBe(false);
   });
 });

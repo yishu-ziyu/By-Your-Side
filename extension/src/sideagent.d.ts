@@ -43,13 +43,17 @@ interface SideAgentCursor {
   hideUserControl?(): void;
   /** 在目标元素周围绘制呼吸高亮框（透明度脉动，结束后自动销毁） */
   highlight(rect: SideAgentRect): void;
-  /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌）；target 用于滚动/resize 时按元素重算；actions 为框外确认/取消 */
+  /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌）；target 用于滚动/resize 时按元素重算；带 actions 时光标飞到目标拿住，确认/取消双键长在光标名牌上 */
   mark?(
     rect: SideAgentRect,
     label?: string,
     target?: string,
     actions?: Array<{ id: "confirm" | "cancel"; label: string }>,
   ): void;
+  /** 拿住目标：飞到 (x,y) 进入持久按住态（不弹回、不 park），名牌变双键；scroll/resize 按 target 锚点跟随 */
+  hold?(x: number, y: number, actions: Array<{ id: "confirm" | "cancel"; label: string }>, target?: string): void;
+  /** 松开：摘掉按住姿态、名牌恢复成员名，随后照常 park */
+  releaseHold?(): void;
   /** 清除全部 mark 标注 */
   clearMarks?(): void;
   /** 取某个 Agent 实例的专属光标（调色板着色，名牌为 id），供并行任务区分 */
@@ -65,9 +69,16 @@ interface SideAgentNamespace {
   cursorHidden?: () => boolean;
   /** overlay 自检：当前 mark 的文档坐标盒（生产路径不用） */
   markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
-  /** overlay 自检：框外确认按钮 */
-  markActionLabels?: () => Array<{ id: string; label: string }>;
-  clickMarkAction?: (id: string) => boolean;
+  /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */
+  holdState?: (instanceId?: string) => {
+    holding: boolean;
+    pressing: boolean;
+    hidden: boolean;
+    x: number;
+    y: number;
+  } | null;
+  holdActionLabels?: () => Array<{ id: string; label: string }>;
+  clickHoldAction?: (id: string) => boolean;
   /** overlay 自检：页顶接管条 */
   controlBanner?: () => { status: string; action: string } | null;
   clickHandback?: () => boolean;

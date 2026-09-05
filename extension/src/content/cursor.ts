@@ -1,10 +1,12 @@
 /**
  * Agent 虚拟鼠标 overlay content script（ISOLATED world，重复注入幂等）。
- * 暴露 window.__sideagent.cursor = { move, click, hide, highlight, mark, clearMarks, for(id) }。
+ * 暴露 window.__sideagent.cursor = { move, click, hold, releaseHold, hide, highlight, mark, clearMarks, for(id) }。
  * mark 标注挂在独立的 absolute host（文档坐标）。window 滚动靠文档坐标天然跟随；
  * 内部滚动容器不会改 window.scroll，必须在 scroll 捕获期按锚定元素的最新
- * getBoundingClientRect 重算。resize / visualViewport 同路径重算 mark；光标/高亮
- * 只在 viewport 尺寸变化时收起（滚动不拆瞬时层）。
+ * getBoundingClientRect 重算。resize / visualViewport 同路径重算 mark 与拿住态光标；
+ * 高亮只在 viewport 尺寸变化时收起（滚动不拆瞬时层）。
+ * 就地确认（C 案）：危险 click 被拦或 mark 带 actions 时，光标飞到目标拿住（hold），
+ * 持久按住不 park，名牌保持成员色并内嵌「确认红 / 取消灰」双键；松开走 releaseHold。
  * 默认实例（名牌 "SideAgent"）供单任务使用；for(id) 返回实例专属光标（名册上的人），
  * 为多任务并行准备的渲染层——每个并行 Agent 一个名字和颜色。
  *
@@ -74,6 +76,8 @@ import {
     replayTimer?: ReturnType<typeof setTimeout>;
     replayGen?: number;
     highlightEl?: HTMLDivElement;
+    /** 拿住态：就地确认期间光标按住目标不放，名牌变双键；scroll/resize 按 anchor 重定位 */
+    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string };
   }
 
   interface LiveMark {
@@ -82,7 +86,6 @@ import {
     target?: string;
     pad: number;
     label?: string;
-    actions?: MarkAction[];
   }
 
   let host: HTMLDivElement | null = null;
@@ -138,7 +141,23 @@ import {
         box-shadow: 0 0 0 1px rgba(255,255,255,.7), 0 2px 8px rgba(15,23,42,.35);
         text-shadow: 0 1px 1px rgba(15,23,42,.35);
         transition: opacity 160ms ease;
+        pointer-events: none;
       }
+      /* 拿住：名牌保持成员色，内嵌确认红 / 取消灰双键（C 案） */
+      .cursor.holding .label {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 3px 4px; pointer-events: auto;
+        text-shadow: none;
+      }
+      .hold-action {
+        pointer-events: auto; cursor: pointer; border: 0; border-radius: 999px;
+        padding: 2px 10px;
+        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        letter-spacing: .02em; white-space: nowrap;
+      }
+      .hold-action.confirm { background: #c43c32; color: #fff; }
+      .hold-action.cancel { background: #eceef1; color: #1c1f24; }
+      .hold-action:disabled { opacity: .5; cursor: default; }
       .ripple {
         position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
         border-radius: 50%; border: 2px solid;
@@ -213,23 +232,6 @@ import {
         box-shadow: 0 2px 6px rgba(15,23,42,.25);
       }
       .mark-label.below { top: calc(100% + 6px); }
-      .mark-actions {
-        position: absolute; left: 0; top: calc(100% + 10px);
-        display: flex; gap: 8px; pointer-events: none;
-      }
-      .mark-action {
-        pointer-events: auto; cursor: pointer;
-        font: 600 13px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        padding: 6px 12px; border-radius: 8px;
-      }
-      .mark-action.confirm {
-        background: #c43c32; color: #fff; border: 0;
-      }
-      .mark-action.cancel {
-        background: #fff; color: #1c1916;
-        border: 1px solid rgba(15, 23, 42, .18);
-      }
-      .mark-action:disabled { opacity: .45; cursor: default; }
     `;
     marksShadow.appendChild(style);
     marksLayer = document.createElement("div");
@@ -243,7 +245,7 @@ import {
     viewportHooked = true;
     window.addEventListener("resize", onViewportResize);
     window.visualViewport?.addEventListener("resize", onViewportResize);
-    // scroll 不冒泡；捕获才能听到内部 overflow 容器。滚动只重锚 mark，不收光标。
+    // scroll 不冒泡；捕获才能听到内部 overflow 容器。滚动重锚 mark 与拿住态光标，不收光标。
     window.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.visualViewport?.addEventListener("scroll", onScroll, { passive: true });
   }
@@ -255,24 +257,26 @@ import {
         inst.highlightEl = undefined;
       }
       cancelFly(inst);
-      if (inst.visible) {
+      if (inst.visible && !inst.hold) {
         const home = restPoint(inst.restIndex, window.innerWidth);
         setPos(inst, home);
         setResting(inst, true);
       }
     }
     relayoutMarks();
+    relayoutHolds();
   }
 
   function onScroll(): void {
     relayoutMarks();
+    relayoutHolds();
   }
 
-  function liveAnchor(mark: LiveMark): Element | null {
-    if (mark.anchor?.isConnected) return mark.anchor;
-    if (mark.target) {
-      const el = window.__sideagent?.dom?.resolve?.(mark.target) ?? null;
-      if (el) mark.anchor = el;
+  function liveAnchor(holder: { anchor: Element | null; target?: string }): Element | null {
+    if (holder.anchor?.isConnected) return holder.anchor;
+    if (holder.target) {
+      const el = window.__sideagent?.dom?.resolve?.(holder.target) ?? null;
+      if (el) holder.anchor = el;
       return el;
     }
     return null;
@@ -293,8 +297,25 @@ import {
         { x: r.x, y: r.y, width: r.width, height: r.height },
         mark.pad,
         mark.label,
-        Boolean(mark.actions?.length),
       );
+    }
+  }
+
+  /** 拿住期间手跟目标走：与 relayoutMarks 同一套锚点语义（anchor 断开先藏，可恢复再贴回）。 */
+  function relayoutHolds(): void {
+    for (const inst of instances.values()) {
+      const hold = inst.hold;
+      if (!hold) continue;
+      const anchor = liveAnchor(hold);
+      if (!anchor) {
+        inst.el.classList.add("hidden");
+        continue;
+      }
+      if (inst.visible) inst.el.classList.remove("hidden");
+      const r = anchor.getBoundingClientRect();
+      hold.point = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      cancelFly(inst);
+      setPos(inst, hold.point);
     }
   }
 
@@ -438,7 +459,6 @@ import {
     rect: SideAgentRect,
     pad: number,
     label?: string,
-    hasActions?: boolean,
   ): void {
     const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
     if (!box) return;
@@ -448,27 +468,28 @@ import {
     el.style.height = `${box.height}px`;
     const labelEl = el.querySelector(".mark-label");
     if (labelEl && label) {
-      // 框外已有双键时名牌不再翻到下方，避免和按钮叠在一起。
-      const below = !hasActions && markLabelPlacement(rect.y) === "below";
-      labelEl.classList.toggle("below", below);
+      labelEl.classList.toggle("below", markLabelPlacement(rect.y) === "below");
     }
   }
 
-  function armMarkActions(el: HTMLDivElement, actions: MarkAction[]): void {
-    const row = document.createElement("div");
-    row.className = "mark-actions";
+  /** 拿住态名牌：成员色 pill 内嵌确认红 / 取消灰双键；点下去发 mark_action（与侧栏打字同一条路）。 */
+  function armHoldLabel(inst: Instance, actions: MarkAction[]): void {
+    const labelEl = inst.el.querySelector<HTMLDivElement>(".label");
+    if (!labelEl) return;
+    labelEl.replaceChildren();
+    inst.el.dataset.armed = "1";
     for (const action of actions) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = `mark-action ${action.id}`;
+      btn.className = `hold-action ${action.id}`;
       btn.dataset.action = action.id;
       btn.textContent = action.label;
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        if (el.dataset.armed === "0") return;
-        el.dataset.armed = "0";
-        for (const b of row.querySelectorAll("button")) b.disabled = true;
+        if (inst.el.dataset.armed === "0") return;
+        inst.el.dataset.armed = "0";
+        for (const b of labelEl.querySelectorAll("button")) b.disabled = true;
         try {
           chrome.runtime.sendMessage({ type: "mark_action", action: action.id }, () => {
             void chrome.runtime.lastError;
@@ -477,9 +498,41 @@ import {
           /* 无扩展运行时（自检页）忽略 */
         }
       });
-      row.appendChild(btn);
+      labelEl.appendChild(btn);
     }
-    el.appendChild(row);
+  }
+
+  /** 松开：摘掉按住姿态、名牌恢复成员名、清锚点。不动可见性。 */
+  function releaseHoldInst(inst: Instance): void {
+    const hold = inst.hold;
+    if (!hold) return;
+    inst.hold = undefined;
+    clearTimeout(inst.pressTimer);
+    inst.el.classList.remove("pressing", "holding");
+    delete inst.el.dataset.armed;
+    const labelEl = inst.el.querySelector(".label");
+    if (labelEl) labelEl.textContent = hold.name;
+  }
+
+  /** 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌），名牌变双键。 */
+  function holdInst(inst: Instance, x: number, y: number, actions: MarkAction[], target?: string): void {
+    releaseHoldInst(inst);
+    clearTimeout(inst.parkTimer);
+    clearTimeout(inst.pressTimer);
+    if (!inst.visible) showAtRest(inst);
+    setResting(inst, false);
+    inst.el.classList.remove("hidden");
+    inst.visible = true;
+    const name = inst.el.querySelector(".label")?.textContent ?? "";
+    inst.hold = {
+      point: { x, y },
+      target,
+      anchor: resolveAnchor({ x: x - 1, y: y - 1, width: 2, height: 2 }, target),
+      name,
+    };
+    armHoldLabel(inst, actions);
+    inst.el.classList.add("pressing", "holding");
+    flyTo(inst, { x, y });
   }
 
   function spawnMark(
@@ -504,9 +557,7 @@ import {
       const labelEl = el.querySelector(".mark-label")!;
       labelEl.textContent = label;
     }
-    const parsed = parseMarkActions(actions);
-    if (parsed) armMarkActions(el, parsed);
-    applyMarkBox(el, rect, MARK_PAD, label, Boolean(parsed?.length));
+    applyMarkBox(el, rect, MARK_PAD, label);
     marksLayer!.appendChild(el);
     liveMarks.push({
       el,
@@ -514,7 +565,6 @@ import {
       target,
       pad: MARK_PAD,
       label,
-      actions: parsed,
     });
   }
 
@@ -705,6 +755,7 @@ import {
     stopReplayInst(inst);
     cancelFly(inst);
     clearTimeout(inst.parkTimer);
+    releaseHoldInst(inst);
     inst.el.classList.add("hidden");
     inst.el.classList.remove("pressing", "rest", "flip");
     inst.visible = false;
@@ -738,8 +789,9 @@ import {
     ns.cursor = undefined;
     ns.cursorHidden = undefined;
     ns.markLayout = undefined;
-    ns.markActionLabels = undefined;
-    ns.clickMarkAction = undefined;
+    ns.holdState = undefined;
+    ns.holdActionLabels = undefined;
+    ns.clickHoldAction = undefined;
     ns.controlBanner = undefined;
     ns.clickHandback = undefined;
   }
@@ -750,6 +802,7 @@ import {
     return {
       move(x: number, y: number): number {
         const inst = getInstance(id);
+        releaseHoldInst(inst);
         clearTimeout(inst.parkTimer);
         if (!inst.visible) showAtRest(inst);
         setResting(inst, false);
@@ -760,12 +813,26 @@ import {
 
       click(x: number, y: number): void {
         const inst = getInstance(id);
+        releaseHoldInst(inst);
         clearTimeout(inst.pressTimer);
         inst.el.classList.add("pressing");
         inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
         spawnRipple(x, y, "ripple", inst.color);
         spawnRipple(x, y, "ripple r2", inst.color);
         schedulePark(inst);
+      },
+
+      hold(x: number, y: number, actions: MarkAction[], target?: string): void {
+        const parsed = parseMarkActions(actions);
+        if (!parsed) return;
+        holdInst(getInstance(id), x, y, parsed, target);
+      },
+
+      releaseHold(): void {
+        const inst = instances.get(id);
+        if (!inst) return;
+        releaseHoldInst(inst);
+        if (inst.visible) schedulePark(inst);
       },
 
       park(): void {
@@ -813,6 +880,11 @@ import {
       mark(rect: SideAgentRect, label?: string, target?: string, actions?: MarkAction[]): void {
         const inst = getInstance(id);
         spawnMark(inst, rect, label, target, actions);
+        // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
+        const parsed = parseMarkActions(actions);
+        if (parsed) {
+          holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target);
+        }
       },
 
       clearMarks(): void {
@@ -854,21 +926,35 @@ import {
     btn.click();
     return true;
   };
-  ns.markActionLabels = () =>
-    liveMarks.flatMap((m) =>
-      [...m.el.querySelectorAll<HTMLButtonElement>(".mark-action")].map((b) => ({
-        id: b.dataset.action ?? "",
-        label: b.textContent ?? "",
-      })),
-    );
-  ns.clickMarkAction = (id: string) => {
-    if (!isMarkActionId(id)) return false;
-    const btn = liveMarks
-      .flatMap((m) => [...m.el.querySelectorAll<HTMLButtonElement>(".mark-action")])
-      .find((b) => b.dataset.action === id);
+  ns.holdActionLabels = () =>
+    [...instances.values()]
+      .filter((inst) => inst.hold)
+      .flatMap((inst) =>
+        [...inst.el.querySelectorAll<HTMLButtonElement>(".hold-action")].map((b) => ({
+          id: b.dataset.action ?? "",
+          label: b.textContent ?? "",
+        })),
+      );
+  ns.clickHoldAction = (actionId: string) => {
+    if (!isMarkActionId(actionId)) return false;
+    const btn = [...instances.values()]
+      .filter((inst) => inst.hold)
+      .flatMap((inst) => [...inst.el.querySelectorAll<HTMLButtonElement>(".hold-action")])
+      .find((b) => b.dataset.action === actionId);
     if (!btn) return false;
     btn.click();
     return true;
+  };
+  ns.holdState = (instanceId?: string) => {
+    const inst = instances.get(instanceId ?? DEFAULT_ID);
+    if (!inst) return null;
+    return {
+      holding: Boolean(inst.hold),
+      pressing: inst.el.classList.contains("pressing"),
+      hidden: inst.el.classList.contains("hidden") || !inst.visible,
+      x: inst.pos.x,
+      y: inst.pos.y,
+    };
   };
   ns.markLayout = () =>
     liveMarks.map((m) => ({

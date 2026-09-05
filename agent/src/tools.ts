@@ -154,7 +154,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
         if ("held" in data && data.held) {
           return textResult(
-            `Held click on ${what}. On-page 删除/取消 are showing. Wait for the user. Do not click the site's own delete control again, and do not claim you already marked it.`,
+            `Held click on ${what}. The cursor is holding the target with confirm/cancel buttons on its name pill. Wait for the user. Do not click the site's own delete control again, and do not claim you already marked it.`,
             data,
           );
         }
@@ -239,7 +239,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "mark",
       label: "Mark element",
       description:
-        "Draw a persistent annotation on an element in the working tab: outline box + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). For irreversible confirmation, pass actions so the user can click 删除/取消 on the page (outside the box) instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation.",
+        "Draw a persistent annotation on an element in the working tab: outline box + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         label: Type.Optional(Type.String({ description: "Short label shown next to the mark, e.g. 待删除" })),
@@ -249,7 +249,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
               id: Type.Union([Type.Literal("confirm"), Type.Literal("cancel")]),
               label: Type.String({ description: "Button text, e.g. 删除 / 取消" }),
             }),
-            { maxItems: 2, description: "On-page confirm/cancel buttons rendered outside the mark box" },
+            { maxItems: 2, description: "Confirm/cancel buttons shown on the cursor's name pill while it holds the marked element" },
           ),
         ),
       }),

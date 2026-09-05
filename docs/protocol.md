@@ -65,7 +65,7 @@ client → tool_result{id, ok:true, data}  # data 形状见 ToolContract
 
 `click`/`fill` 的 `target` 接受：`"@N"`（最近 snapshot 的 ref）、`"loc=css:..."`（snapshot 给出的稳定定位串）、原始 CSS 选择器；`click` 另接受 `point:[x,y]` 视口坐标。
 
-`mark` 可选 `actions: [{id:"confirm"|"cancel", label}]`：在标注框外画删除/取消一类按钮。用户点按钮时，content script 发内部 `mark_action`，background 转成 `user_message` 文本「确认」或「取消」（与侧栏打字同一条路）。点取消会先 `clear_marks`。
+`mark` 可选 `actions: [{id:"confirm"|"cancel", label}]`：就地确认。带 actions 时光标飞到目标拿住，删除/取消一类按钮长在光标名牌上（不在框外）。用户点按钮时，content script 发内部 `mark_action`，background 转成 `user_message` 文本「确认」或「取消」（与侧栏打字同一条路）。点取消会先 `clear_marks`。
 
 ## 安全
 

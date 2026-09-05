@@ -16,7 +16,7 @@ describe("appendPromptForMode（teach prompt 选择逻辑）", () => {
     expect(appendPromptForMode("act", [])).toEqual([]);
   });
 
-  it("危险确认要求 mark 带框外 confirm/cancel 按钮，click held 后停手", () => {
+  it("危险确认要求 mark 带 confirm/cancel actions（键在光标名牌上），click held 后停手", () => {
     expect(SYSTEM_PROMPT).toContain('id:"confirm"');
     expect(SYSTEM_PROMPT).toContain('id:"cancel"');
     expect(SYSTEM_PROMPT).toContain("actions");
