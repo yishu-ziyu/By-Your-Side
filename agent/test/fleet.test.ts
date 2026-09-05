@@ -187,6 +187,41 @@ describe("Fleet 全队接管只接受真实会话", () => {
     expect(updates.some((update) => update.includes("main:restored") && update.includes("wiki:restoring"))).toBe(true);
   });
 
+  it("session 报恢复超时时 reason 透传超时语义，不再笼统显示恢复失败", async () => {
+    const fleet = testFleet();
+    const lead = deferredSession();
+    fleet.attachLead(lead.session);
+    const held = fleet.holdActiveGroup(
+      [{ sessionId: LEAD_SESSION_ID, role: "lead", activity: "running", tabId: 11 }],
+      { groupId: "restore-timeout", generation: 5 },
+    );
+
+    const updates: string[][] = [];
+    const continuing = fleet.continueMembers(
+      [
+        {
+          ok: true,
+          sessionId: LEAD_SESSION_ID,
+          context: { tabId: 11, title: "Lead", url: "https://example.com/lead" },
+          snapshot: "lead fresh",
+          capturedAt: 1,
+        },
+      ],
+      { groupId: held.groupId, generation: held.generation },
+      (team) => updates.push(team.members.map((member) => `${member.sessionId}:${member.phase}`)),
+    ) as unknown as Promise<{ ok: boolean; team: { phase: string; members: Array<{ sessionId: string; phase: string; reason?: string }> } }>;
+
+    expect(fleet.teamView()?.members[0]?.phase).toBe("restoring");
+    (lead.session as unknown as { handbackFailureReason: string }).handbackFailureReason = "恢复超时，原会话仍归你。";
+    lead.resolveContinue(false);
+    const result = await continuing;
+    const failed = result.team.members.find((member) => member.sessionId === LEAD_SESSION_ID);
+    expect(failed?.phase).toBe("paused_snapshot_failed");
+    expect(failed?.reason).toMatch(/超时/);
+    expect(failed?.reason).not.toBe("恢复失败，原会话仍归你。");
+    expect(updates.some((update) => update.includes(`${LEAD_SESSION_ID}:paused_snapshot_failed`))).toBe(true);
+  });
+
   it("恢复 epoch 被团队中止后，迟到结果不得把成员标成 restored", async () => {
     const fleet = testFleet();
     const lead = deferredSession();

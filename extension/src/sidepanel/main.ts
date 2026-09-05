@@ -51,7 +51,7 @@ import {
 } from "./models.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, ClientMessage, ModelOption, TeamView } from "../../../shared/protocol.js";
-import { memberBoundPageLabel, memberPhaseLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
+import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 
 const TOKEN_KEY = "sideagent_token";
@@ -719,7 +719,7 @@ function renderTeamCard(): void {
     const name = document.createElement("span");
     name.textContent = `${m.role === "lead" ? "Lead" : displayNameFor(m.sessionId)} · ${memberBoundPageLabel(m)}`;
     const st = document.createElement("em");
-    st.textContent = memberPhaseLabel(m.phase);
+    st.textContent = memberStatusLabel(m);
     if (m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed" || m.phase === "aborted") {
       st.classList.add("warn");
     }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AcceptanceContinuity,
   BrowserAgentSession,
+  HANDBACK_RESTORE_TIMEOUT_MS,
   lastAssistantError,
   runProducedNothing,
   shouldSurfaceAgentEndIssue,
@@ -9,7 +10,11 @@ import {
 } from "../src/session.js";
 import { handbackContinueText } from "../../shared/control.js";
 
-function controlledBrowserSession(streaming = true) {
+async function flushMicrotasks(rounds = 10) {
+  for (let i = 0; i < rounds; i++) await Promise.resolve();
+}
+
+function controlledBrowserSession(streaming = true, handbackRestoreTimeoutMs?: number) {
   let isStreaming = streaming;
   let subscriber: ((event: any) => void) | null = null;
   let settleAbort!: () => void;
@@ -41,7 +46,7 @@ function controlledBrowserSession(streaming = true) {
   };
   const Session = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
   const callbacks = { emit: vi.fn(), setStatus: vi.fn() };
-  const wrapped = new Session(raw, null, callbacks, null, null);
+  const wrapped = new Session(raw, null, callbacks, null, null, handbackRestoreTimeoutMs);
   (wrapped as any).subscribeEvents();
   return {
     wrapped,
@@ -195,6 +200,110 @@ describe("BrowserAgentSession handback serialization", () => {
 
     expect(raw.abort).not.toHaveBeenCalled();
     expect(raw.steer).not.toHaveBeenCalled();
+  });
+});
+
+describe("BrowserAgentSession 交还恢复超时", () => {
+  const ctx = { tabId: 21, title: "Worker", url: "https://example.com/worker" };
+
+  it("默认恢复超时常量不低于 30s", () => {
+    expect(HANDBACK_RESTORE_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
+  });
+
+  it("provider 永不响应：恢复超时后交还失败、hold 归还 user、reason 表达超时语义", async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapped, raw, settleAbort } = controlledBrowserSession(true, 1_000);
+      wrapped.holdForUser();
+      const started = wrapped.continueAfterHandback(ctx, "fresh worker page");
+
+      settleAbort();
+      await flushMicrotasks();
+      expect(raw.prompt).toHaveBeenCalledTimes(1);
+      expect(wrapped.isHeld()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(started).resolves.toBe(false);
+      expect(wrapped.isHeld()).toBe(true);
+      expect(wrapped.handbackFailureReason).toMatch(/超时/);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("超时后迟到的 agent_start 不得标 restored：按 stale 处理停掉旧流，仍归 user", async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapped, raw, settleAbort, setStreaming, agentStart, callbacks } = controlledBrowserSession(true, 1_000);
+      wrapped.holdForUser();
+      const started = wrapped.continueAfterHandback(ctx, "fresh worker page");
+
+      settleAbort();
+      await flushMicrotasks();
+      expect(raw.prompt).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(started).resolves.toBe(false);
+
+      setStreaming(true);
+      agentStart();
+
+      expect(wrapped.isHeld()).toBe(true);
+      expect(callbacks.setStatus).toHaveBeenCalledWith("user");
+      expect(callbacks.setStatus).not.toHaveBeenCalledWith("running");
+      expect(raw.abort).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("超时未触发前再次接管：清理恢复定时器，推进时间不误报超时", async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapped, raw, settleAbort, callbacks } = controlledBrowserSession(true, 1_000);
+      wrapped.holdForUser();
+      const started = wrapped.continueAfterHandback(ctx, "fresh worker page");
+
+      settleAbort();
+      await flushMicrotasks();
+      expect(raw.prompt).toHaveBeenCalledTimes(1);
+
+      wrapped.holdForUser();
+      await expect(started).resolves.toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(wrapped.isHeld()).toBe(true);
+      expect(wrapped.handbackFailureReason).toBeNull();
+      expect(raw.prompt).toHaveBeenCalledTimes(1);
+      expect(callbacks.emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "error" }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("超时未触发前中止：清理恢复定时器，不误报超时", async () => {
+    vi.useFakeTimers();
+    try {
+      const { wrapped, raw, settleAbort } = controlledBrowserSession(true, 1_000);
+      wrapped.holdForUser();
+      const started = wrapped.continueAfterHandback(ctx, "fresh worker page");
+
+      settleAbort();
+      await flushMicrotasks();
+      expect(raw.prompt).toHaveBeenCalledTimes(1);
+
+      wrapped.abort();
+      await expect(started).resolves.toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(wrapped.isHeld()).toBe(false);
+      expect(wrapped.handbackFailureReason).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

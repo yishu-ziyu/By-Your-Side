@@ -74,6 +74,10 @@ export interface SessionCreateOptions {
 
 const RESULT_TEXT_MAX = 500;
 
+/** 交还 prompt 发出后等待同 epoch agent_start 的窗口；超时按恢复失败处理，hold 归还 user。 */
+export const HANDBACK_RESTORE_TIMEOUT_MS = 30_000;
+const HANDBACK_RESTORE_TIMEOUT_REASON = "恢复超时，原会话仍归你。";
+
 const SETUP_GUIDANCE =
   "Agent 会话不可用：未找到可用的模型凭据。请运行 `npx @earendil-works/pi-coding-agent` 并执行 /login 完成登录，" +
   "或设置 ANTHROPIC_API_KEY / OPENAI_API_KEY 等环境变量后重启伴随进程。";
@@ -92,6 +96,7 @@ export class BrowserAgentSession {
     private readonly callbacks: SessionCallbacks,
     private readonly resourceLoader: DefaultResourceLoader | null,
     private readonly modelRuntime: ModelRuntime | null,
+    private readonly handbackRestoreTimeoutMs = HANDBACK_RESTORE_TIMEOUT_MS,
   ) {}
 
   private readonly hold = new SessionHold();
@@ -99,8 +104,15 @@ export class BrowserAgentSession {
   private acceptanceTrace: SessionAcceptanceContinuityEvidence | null = null;
   private controlEpoch = 0;
   private pendingStop: Promise<void> | null = null;
-  private pendingHandback: { epoch: number; promise: Promise<boolean>; resolve: (started: boolean) => void } | null = null;
+  private pendingHandback: {
+    epoch: number;
+    promise: Promise<boolean>;
+    resolve: (started: boolean) => void;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null = null;
   private handbackPromptEpoch: number | null = null;
+  /** 最近一次交还续跑失败的用户可读原因；无则 fleet 用通用「恢复失败」文案。 */
+  handbackFailureReason: string | null = null;
   /** 用户主动停止的那一轮仍会收到 agent_end；只吞掉这一轮的 abort/空响应尾声。 */
   private expectedStoppedAgentEnd = false;
 
@@ -285,6 +297,7 @@ export class BrowserAgentSession {
    * 交还：同一会话继续，带上用户当前页的 snapshot。不是新开一轮任务。
    */
   continueAfterHandback(context: PageContext, snapshot: string): Promise<boolean> {
+    this.handbackFailureReason = null;
     if (!this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在不是你在操作页面，不用交还。" });
       return Promise.resolve(false);
@@ -309,7 +322,7 @@ export class BrowserAgentSession {
     const started = new Promise<boolean>((resolve) => {
       resolveStarted = resolve;
     });
-    this.pendingHandback = { epoch, promise: started, resolve: resolveStarted };
+    this.pendingHandback = { epoch, promise: started, resolve: resolveStarted, timer: null };
     const finalText = withPageContext(text, context);
     void this.promptHandbackAfterStop(epoch, finalText);
     return started;
@@ -438,6 +451,7 @@ export class BrowserAgentSession {
       if (epoch !== this.controlEpoch || this.pendingHandback?.epoch !== epoch) return;
       this.hold.releaseToAgent();
       this.handbackPromptEpoch = epoch;
+      this.armHandbackRestoreTimer(epoch);
       await session.prompt(text);
       if (this.handbackPromptEpoch === epoch) this.failPendingHandback(epoch);
     } catch (err) {
@@ -448,10 +462,21 @@ export class BrowserAgentSession {
     }
   }
 
+  /** handback prompt 已发出：等同 epoch agent_start 的窗口开始计时，超时走与 prompt reject 相同的失败链。 */
+  private armHandbackRestoreTimer(epoch: number): void {
+    const pending = this.pendingHandback;
+    if (!pending || pending.epoch !== epoch) return;
+    pending.timer = setTimeout(() => {
+      pending.timer = null;
+      this.failPendingHandback(epoch, HANDBACK_RESTORE_TIMEOUT_REASON);
+    }, this.handbackRestoreTimeoutMs);
+  }
+
   private settlePendingHandback(epoch: number, started: boolean): void {
     const pending = this.pendingHandback;
     if (!pending || pending.epoch !== epoch) return;
     this.pendingHandback = null;
+    if (pending.timer) clearTimeout(pending.timer);
     pending.resolve(started);
   }
 
@@ -459,10 +484,12 @@ export class BrowserAgentSession {
     const pending = this.pendingHandback;
     if (!pending) return;
     this.pendingHandback = null;
+    if (pending.timer) clearTimeout(pending.timer);
     pending.resolve(false);
   }
 
-  private failPendingHandback(epoch: number): void {
+  private failPendingHandback(epoch: number, reason?: string): void {
+    if (reason) this.handbackFailureReason = reason;
     if (epoch === this.controlEpoch) this.hold.holdForUser();
     this.settlePendingHandback(epoch, false);
   }

@@ -5,6 +5,8 @@
 
 ## 当前状态
 
+2026-09-05 最新：交还恢复可靠性子任务机器项全绿（标准 `docs/evals/20260905-handback-restore-reliability.md`，341 tests / typecheck / build / overlay-check 全过，独立校验复跑确认）。待人评：面板失败文案真机观感 + 双 Wikipedia 交还回归（需 reload 扩展）。下一步候选：就地确认/轨迹回放人评，或路线图「选中即问」。
+
 2026-09-04 第二个 Grok 开始独立任务：建设真实浏览器任务验收跑道，只能改 `scripts/acceptance/**`、本地 fixture、聚焦测试，必要时只给根 `package.json` 加一个命令；禁止碰 `extension/src/**`、`agent/src/**`、`shared/protocol.ts`。标准：`docs/evals/20260904-real-browser-acceptance-lane.md`。Codex 独立重跑并验收。
 
 2026-09-04 接管/交接开始。角色已锁：Codex 写标准并独立校验，Grok 只实现，用户做人评。v1 只做单 Agent、单标签页：接管后执行层硬停；交还时读取当前活动页和新 snapshot，同一会话继续。标准：`docs/evals/20260904-takeover-handoff-v1.md`。实现不得修改标准；生产界面先过 Will's S + 临时 HTML 人选。
@@ -447,3 +449,13 @@
 - 一次交还后，界面先显示 `1 个已恢复 · 1 个仍暂停`；第二人真正 `agent_start` 后才显示“全队已恢复”。Lead 和 worker 最终各自读回自己的值，并各完成 12 次续跑，无串页、无重开。
 - 机器检查为 35 files / 331 tests、typecheck、build、overlay-check、diff-check 全绿。完成标准 13/13 现可勾选。
 - 独立校验复跑 session/fleet 33 项并审查端到端状态链，最终判定 PASS，无 blocker。非阻断风险是 provider 永久挂起时缺恢复超时，以及 prompt 启动失败时复用 `paused_snapshot_failed` 文案；建议作为下一个可靠性子任务先写新标准再实现。
+
+## 2026-09-05 交还恢复超时与失败文案说真话（实现侧记录）
+
+- 完成标准：`docs/evals/20260905-handback-restore-reliability.md`（标准文件未改）。
+- session.ts：`HANDBACK_RESTORE_TIMEOUT_MS = 30_000`（构造器第 6 参可注入短超时）。handback prompt 发出后 `armHandbackRestoreTimer(epoch)` 开始计时，挂在 `pendingHandback.timer` 上；settle/cancel 统一 clearTimeout，接管/中止经 `cancelPendingHandback` 清理。超时走 `failPendingHandback(epoch, reason)` 同一条失败链，新增公开字段 `handbackFailureReason` 供 fleet 读原因（超时：「恢复超时，原会话仍归你。」；prompt reject 不传 reason，fleet 回退原「恢复失败」文案）。
+- 竞态保持现有 epoch 语义：超时后 `pendingHandback` 已空，迟到 `agent_start` 落进既有 stale 分支（停旧流、状态归 user），不会标 restored。
+- fleet.ts:189：reason 优先取 `session.handbackFailureReason`，缺省维持原字符串。
+- 面板：shared/control.ts 新增纯函数 `memberStatusLabel(m)`（paused_tab_closed / paused_snapshot_failed 有 reason 显示 reason，否则回退 `memberPhaseLabel`），main.ts:722 名册行改用它。protocol.ts 未动。
+- 测试：session-helpers +5（含默认常量 ≥30s、超时失败、迟到 agent_start、超时前接管/中止清 timer）、fleet +1（超时 reason 透传 + team_status 更新）、extension/test/team-member-label.test.ts +4。全量 36 files / 341 tests PASS；typecheck、build、overlay-check、diff-check 全绿。未 reload 扩展、未 commit。
+- 独立校验（Kimi，2026-09-05）：复跑 341 tests / typecheck / build / overlay-check / diff-check 全绿；抽查 diff 与测试断言真实（fake timers、`vi.getTimerCount()===0`、迟到 agent_start 走 stale 分支）。机器项 1/2/4 已勾；剩标准 3 的面板文案真机观感与标准 5 的真机回归，需 reload 扩展后由人评。

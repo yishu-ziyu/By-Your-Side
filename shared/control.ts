@@ -801,6 +801,18 @@ export function memberPhaseLabel(phase: TeamMemberPhase): string {
   }
 }
 
+/** 名册行状态文案：暂停态带真实原因时说真话（恢复超时 ≠ 没读到新状态），无原因回退 phase 文案。 */
+export function memberStatusLabel(m: Pick<TeamMemberView, "phase" | "reason">): string {
+  if (
+    (m.phase === "paused_snapshot_failed" || m.phase === "paused_tab_closed") &&
+    typeof m.reason === "string" &&
+    m.reason.trim()
+  ) {
+    return m.reason;
+  }
+  return memberPhaseLabel(m.phase);
+}
+
 export function shouldShowTeamCard(phase: TeamPhase | undefined | null): boolean {
   return phase != null && phase !== "idle";
 }

@@ -186,7 +186,9 @@ export class Fleet {
           ok = false;
         }
         if (!ok) {
-          const reason = session ? "恢复失败，原会话仍归你。" : "恢复失败：原会话已不存在，仍归你。";
+          const reason = session
+            ? (session.handbackFailureReason ?? "恢复失败，原会话仍归你。")
+            : "恢复失败：原会话已不存在，仍归你。";
           const next = this.team.markRestoreFailed(page.sessionId, reason, expected);
           onTeamUpdate?.(next);
           return false;
