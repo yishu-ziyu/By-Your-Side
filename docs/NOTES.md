@@ -5,7 +5,7 @@
 
 ## 当前状态
 
-2026-09-05 用户判定：**轨迹回放不重要，降优先级**（ROADMAP 已标）。就地确认不做机械拼接，先想「一体」：圈画/笔记/确认能否和光标统一成一只手的连续动作。判断页 `docs/evals/20260905-one-hand-confirm.html`（三案：A 拿住 / B 圈完退开 / C 键在名牌上，推荐 A），等人挑后再落地。产品未改。
+2026-09-05 用户判定：**轨迹回放不重要，降优先级**（ROADMAP 已标）。就地确认走「一体」方向：人选 **C 案（手拿住目标，双键在光标名牌上）**，判断页 `docs/evals/20260905-one-hand-confirm.html`。C 案已实现（`04a950d`）：held 拦阻与模型 mark 两条路径同一形态、两轮确认断点已修、侧栏「取消」收敛、拿住跟滚动；357 tests / typecheck / build / overlay-check 全绿，校验已独立复跑。待人评：flomo 删「MiroFish 项目」真机（标准 9），需 reload 扩展 + 伴随进程重连。未决：拿住态名牌保持成员色 vs HTML C 列 pill 整体变红，人评裁决。
 
 2026-09-05 最新：交还恢复可靠性子任务机器项全绿（标准 `docs/evals/20260905-handback-restore-reliability.md`，341 tests / typecheck / build / overlay-check 全过，独立校验复跑确认）。待人评：面板失败文案真机观感 + 双 Wikipedia 交还回归（需 reload 扩展）。下一步候选：就地确认/轨迹回放人评，或路线图「选中即问」。
 
