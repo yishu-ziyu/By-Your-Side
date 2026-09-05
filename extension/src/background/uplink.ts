@@ -45,13 +45,21 @@ export class Uplink {
     void this.connectNative();
   }
 
-  /** 已建立连接时向伴随进程发送协议消息；未连接时静默丢弃（面板侧有连接状态提示）。 */
-  sendClientMessage(msg: ClientMessage): void {
-    if (this.transport === "native" && this.nativePort) {
-      this.nativePort.postMessage(msg);
-    } else if (this.transport === "ws" && this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+  /** 已建立连接时发送并返回 true；控制权事务用 false 阻止本地提前提交。 */
+  sendClientMessage(msg: ClientMessage): boolean {
+    try {
+      if (this.transport === "native" && this.nativePort) {
+        this.nativePort.postMessage(msg);
+        return true;
+      }
+      if (this.transport === "ws" && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify(msg));
+        return true;
+      }
+    } catch {
+      return false;
     }
+    return false;
   }
 
   private teardown(): void {

@@ -16,10 +16,12 @@ describe("appendPromptForMode（teach prompt 选择逻辑）", () => {
     expect(appendPromptForMode("act", [])).toEqual([]);
   });
 
-  it("危险确认要求 mark 带框外 confirm/cancel 按钮", () => {
+  it("危险确认要求 mark 带框外 confirm/cancel 按钮，click held 后停手", () => {
     expect(SYSTEM_PROMPT).toContain('id:"confirm"');
     expect(SYSTEM_PROMPT).toContain('id:"cancel"');
     expect(SYSTEM_PROMPT).toContain("actions");
+    expect(SYSTEM_PROMPT).toContain("held");
+    expect(SYSTEM_PROMPT).toContain("Do not click the site's own delete control again");
   });
 
   it("教学段落是教学倾向而非禁令：引导步骤 + 保留全工具能力 + 危险动作前征得同意", () => {

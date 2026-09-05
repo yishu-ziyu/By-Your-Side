@@ -97,6 +97,10 @@ export class Mailbox {
     return this.waiters.length;
   }
 
+  waitingSessionIds(): string[] {
+    return [...new Set(this.waiters.map((w) => w.self))];
+  }
+
   clear(): void {
     for (const w of this.waiters) {
       clearTimeout(w.timer);

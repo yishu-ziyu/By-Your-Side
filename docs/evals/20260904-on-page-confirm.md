@@ -11,12 +11,18 @@ Evaluator:  人评。场景沿用 flomo：定位一条笔记 →「把这个笔�
 Evidence:   真机路径 + 标注上控件的截图。观感由用户裁决。
 ```
 
-## 验收标准
-- [ ] 1. 危险动作停住后，被圈住的目标框外出现「删除」「取消」（2026-09-04 人选第 1 案：框外双键，不挡正文）— evaluator: 人评
-- [ ] 2. 点确认 = 执行；点取消 = 不执行，标注收起 — evaluator: 人评（flomo 删笔记）
-- [ ] 3. 侧栏打「确认」/「是」仍能放行，不强迫必须点页面 — evaluator: 人评
-- [ ] 4. 控件跟目标走（滚动不漂），不挡住笔记正文到无法辨认 — evaluator: 人评
-- [x] 5. typecheck / test / build 绿 — evaluator: `npm run typecheck && npm test && npm run build`（2026-09-04：183 tests 全绿；`node extension/test/overlay-check.mjs` PASS，含点删除发 mark_action）
+画面：`docs/evals/20260904-on-page-confirm-done.html` 右边。左边是没做好。人已认右边。产品没长成右边，就还没好。
+
+## 完成标准
+
+完成标准由校验写于实现之前。实现不能改判定条件。对照以 HTML 为准，不以口头描述为准。
+
+- [ ] 1. 要点「删除 / 清空 / 支付 / 发送」（及 Delete / Remove / Pay / Send）时，程序先不真点。目标旁画出框外「删除」「取消」。谁检查: `npm test`（`isDestructiveLabel` + click 在未放行时返回 held、不派发）+ 人评
+- [ ] 2. 点页面「删除」，或侧栏打「确认 / 是 / 继续」，刚才那一下才发生。谁检查: `npm test`（放行后 click 返回 clicked）+ 人评（flomo 删笔记进回收站）
+- [ ] 3. 点「取消」，或侧栏打「取消」，不执行，标注收起。谁检查: 人评
+- [x] 4. 普通点击、填字不拦。谁检查: `npm test`（「分享」「编辑」「更多」不是危险词；2026-09-04：isDestructiveLabel 单测）
+- [ ] 5. 控件跟目标走，不挡住笔记正文到无法辨认。谁检查: 人
+- [x] 6. `npm run typecheck` / `npm test` / `npm run build` 全绿。谁检查: 机器（2026-09-04：201 tests）
 
 ## 人评 2026-09-04（未过）
 
@@ -31,7 +37,8 @@ Evidence:   真机路径 + 标注上控件的截图。观感由用户裁决。
 
 ## 边界与不做
 - 视觉已定：框外双键（`docs/evals/20260904-on-page-confirm-compare.html` 第 1 案）。不做角上插件、不做整框即删除
-- 不做执行层对所有 click 的硬闸门；本卡只覆盖 Agent 已经提出、正在等确认的那一下
-- 不做站点专用插件（flomo 删除按钮只是验收场景）
-- 不做接管/交接（路线图另一项）
+- 不拦所有 click。只拦文案是删除 / 清空 / 支付 / 发送（及对应英文）的那一下
+- 本轮不拦 `js` 里直接调删除接口
+- 不做站点专用插件（flomo 只是用来走真实路径）
+- 不做接管/交接
 - 不改教学模式开关

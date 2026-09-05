@@ -11,7 +11,9 @@
     "typecheck": "npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent",
     "test": "vitest run",
     "install:host": "node scripts/install-host.mjs",
-    "reload:ext": "node scripts/reload-ext.mjs"
+    "reload:ext": "node scripts/reload-ext.mjs",
+    "accept:browser": "node scripts/acceptance/run.mjs",
+    "accept:team": "node scripts/acceptance/team-run.mjs"
   },
   "devDependencies": {
     "typescript": "7.0.2",

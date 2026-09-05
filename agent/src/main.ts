@@ -20,13 +20,18 @@ import {
   parseClientMessage,
   type ClientMessage,
   type ServerMessage,
+  type TeamMemberHandback,
+  type TeamView,
 } from "../../shared/protocol.js";
 import { loadConfig, resolveConfig, saveConfigModel } from "./config.js";
 import { createFleetTools, Fleet } from "./fleet.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession } from "./session.js";
 import { createBrowserTools } from "./tools.js";
+import { clientGoneWhileHeld, fromTeamMemberHandback } from "../../shared/control.js";
 import { createStdioTransport } from "./transport/stdio.js";
+import { consumeAcceptanceCapability } from "./acceptance-capability.js";
+import { frozenMembersFromTakeover } from "./team-handoff.js";
 
 interface CliArgs {
   ws: boolean;
@@ -186,6 +191,19 @@ async function main(): Promise<void> {
   const sendHelloOk = (conn: ClientConn): void => {
     void session.availableModels().then((models) => {
       conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models });
+      const team = fleet.teamView();
+      if (team && (team.phase === "user" || team.phase === "partial" || team.phase === "restoring" || team.phase === "draining")) {
+        conn.send({ type: "team_status", team });
+        for (const member of team.members) {
+          conn.send({
+            type: "status",
+            state: member.phase === "restored" ? "running" : member.phase === "aborted" ? "idle" : "user",
+            ...(isLeadSession(member.sessionId) ? {} : { sessionId: member.sessionId }),
+          });
+        }
+      } else if (session.isHeld()) {
+        conn.send({ type: "status", state: "user" });
+      }
     });
   };
 
@@ -213,8 +231,12 @@ async function main(): Promise<void> {
     if (conn !== current) return false;
     current = null;
     rpc.setSend(null);
-    if (session.isStreaming()) session.abort();
-    fleet.abortAll();
+    const gone = clientGoneWhileHeld(session.isHeld() || fleet.isGroupHeld());
+    if (!gone.clearHold) {
+      return true;
+    }
+    if (gone.abortStream && session.isStreaming()) session.abort();
+    fleet.abortTeam();
     return true;
   };
 
@@ -226,6 +248,10 @@ async function main(): Promise<void> {
   const handleMessage = (msg: ClientMessage): void => {
     switch (msg.type) {
       case "user_message":
+        if (session.isHeld()) {
+          session.sendUserMessage(msg.text, msg.context);
+          break;
+        }
         if (!session.isStreaming()) fleet.reset();
         // 每条用户消息带一句拆分提醒：MiniMax 等模型会忽略 system 里的并行段，自己把两站串行做完。
         session.sendUserMessage(
@@ -238,7 +264,181 @@ async function main(): Promise<void> {
         break;
       case "abort":
         session.abort();
-        fleet.abortAll();
+        fleet.abortTeam();
+        sendCurrent({ type: "status", state: "idle" });
+        {
+          const aborted = fleet.teamView();
+          if (aborted) sendCurrent({ type: "team_status", team: aborted });
+        }
+        break;
+      case "takeover": {
+        const frozen = frozenMembersFromTakeover(msg);
+        if (frozen.length === 0 && !session.isHeld() && !fleet.isGroupHeld()) {
+          sendCurrent({
+            type: "control_result",
+            requestId: msg.requestId,
+            action: "takeover",
+            ok: false,
+            state: "idle",
+            reason: "当前没有运行中的任务，不用接管。",
+          });
+          break;
+        }
+        let team;
+        try {
+          team = fleet.holdActiveGroup(frozen.length > 0 ? frozen : undefined, {
+            groupId: msg.groupId,
+            generation: msg.generation,
+          });
+        } catch (err) {
+          sendCurrent({
+            type: "control_result",
+            requestId: msg.requestId,
+            action: "takeover",
+            ok: false,
+            state: session.isStreaming() ? "running" : "idle",
+            reason: err instanceof Error ? err.message : String(err),
+          });
+          break;
+        }
+        sendCurrent({
+          type: "control_result",
+          requestId: msg.requestId,
+          action: "takeover",
+          ok: true,
+          state: "user",
+          team,
+        });
+        sendCurrent({ type: "team_status", team });
+        for (const member of team.members) {
+          sendCurrent({
+            type: "status",
+            state: "user",
+            ...(isLeadSession(member.sessionId) ? {} : { sessionId: member.sessionId }),
+          });
+        }
+        break;
+      }
+      case "handback": {
+        const held = session.isHeld() || fleet.isGroupHeld();
+        if (!held) {
+          sendCurrent({
+            type: "control_result",
+            requestId: msg.requestId,
+            action: "handback",
+            ok: false,
+            state: session.isStreaming() ? "running" : "idle",
+            reason: "Agent 没有保持原任务，不能把这次操作算作交还。",
+          });
+          break;
+        }
+        const pages = handbackPagesFromMessage(msg);
+        if (pages.length === 0) {
+          sendCurrent({
+            type: "control_result",
+            requestId: msg.requestId,
+            action: "handback",
+            ok: false,
+            state: "user",
+            reason: "没有可用的交还页面。",
+            team: fleet.teamView() ?? undefined,
+          });
+          break;
+        }
+        let acknowledged = false;
+        const publishProgress = (team: TeamView): void => {
+          if (!acknowledged) {
+            acknowledged = true;
+            sendCurrent({
+              type: "control_result",
+              requestId: msg.requestId,
+              action: "handback",
+              ok: true,
+              state: "user",
+              team,
+            });
+          }
+          sendCurrent({ type: "team_status", team });
+          for (const member of team.members) {
+            sendCurrent({
+              type: "status",
+              state: member.phase === "restored" ? "running" : member.phase === "aborted" ? "idle" : "user",
+              ...(isLeadSession(member.sessionId) ? {} : { sessionId: member.sessionId }),
+            });
+          }
+        };
+        void fleet
+          .continueMembers(pages, { groupId: msg.groupId, generation: msg.generation }, publishProgress)
+          .then((result) => {
+            if (!acknowledged) {
+              sendCurrent({
+                type: "control_result",
+                requestId: msg.requestId,
+                action: "handback",
+                ok: false,
+                state: "user",
+                reason: "原会话当前不可用，控制权仍归你。",
+                team: result.team,
+              });
+              return;
+            }
+            if (!result.team.members.some((member) => member.phase === "restored")) return;
+            void fleet.waitForAcceptanceContinuity().then(
+              (continuity) => {
+                if (continuity.length > 0) {
+                  sendCurrent({ type: "acceptance_team_evidence", requestId: msg.requestId, continuity });
+                }
+              },
+              (err: unknown) => {
+                sendCurrent({
+                  type: "acceptance_team_evidence",
+                  requestId: msg.requestId,
+                  continuity: fleet.acceptanceContinuityEvidence().map((entry) => ({ ...entry, active: false })),
+                });
+                log(`验收续跑证据失败：${err instanceof Error ? err.message : String(err)}`);
+              },
+            );
+          });
+        break;
+      }
+      case "acceptance_prepare_team":
+        if (!consumeAcceptanceCapability(msg.capability)) {
+          sendCurrent({
+            type: "acceptance_team_ready",
+            requestId: msg.requestId,
+            ok: false,
+            members: [],
+            continuity: [],
+            reason: "本地验收能力令牌无效或已使用",
+          });
+          break;
+        }
+        void fleet.prepareAcceptanceWorker({
+          id: msg.worker.sessionId,
+          tabId: msg.worker.tabId,
+          leadTask: msg.tasks.lead,
+          workerTask: msg.tasks.worker,
+        }).then(
+          (continuity) => {
+            sendCurrent({
+              type: "acceptance_team_ready",
+              requestId: msg.requestId,
+              ok: true,
+              members: [LEAD_SESSION_ID, msg.worker.sessionId],
+              continuity,
+            });
+          },
+          (err: unknown) => {
+            sendCurrent({
+              type: "acceptance_team_ready",
+              requestId: msg.requestId,
+              ok: false,
+              members: [LEAD_SESSION_ID],
+              continuity: [],
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          },
+        );
         break;
       case "set_mode":
         void session.setMode(msg.mode);
@@ -440,6 +640,22 @@ function runWsMode(
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+function handbackPagesFromMessage(msg: Extract<ClientMessage, { type: "handback" }>) {
+  if (msg.members && msg.members.length > 0) {
+    return msg.members.map((m: TeamMemberHandback) => fromTeamMemberHandback(m));
+  }
+  if (msg.context && typeof msg.snapshot === "string") {
+    return [
+      fromTeamMemberHandback({
+        sessionId: LEAD_SESSION_ID,
+        context: msg.context,
+        snapshot: msg.snapshot,
+      }),
+    ];
+  }
+  return [];
 }
 
 main().catch((err) => {

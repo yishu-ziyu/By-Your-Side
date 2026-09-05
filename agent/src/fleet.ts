@@ -4,13 +4,28 @@
  */
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { LEAD_SESSION_ID, isLeadSession, type AgentUiEvent } from "../../shared/protocol.js";
+import {
+  LEAD_SESSION_ID,
+  isLeadSession,
+  type AgentRunState,
+  type AgentUiEvent,
+  type AcceptanceContinuityEvidence,
+  type TeamView,
+} from "../../shared/protocol.js";
+import {
+  TeamControl,
+  holdFrozenGroup,
+  snapshotActiveGroup,
+  type ActiveMemberInput,
+  type MemberHandbackPage,
+} from "../../shared/control.js";
 import { displayNameFor } from "../../shared/cast.js";
 import { Mailbox, DEFAULT_AWAIT_MS } from "./mailbox.js";
 import { workerSystemPrompt } from "./prompt.js";
 import type { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession } from "./session.js";
 import { createBrowserTools } from "./tools.js";
+import { registerAcceptanceModel } from "./acceptance-model.js";
 
 export const MAX_WORKERS = 2;
 
@@ -39,7 +54,7 @@ function textResult(text: string, details: unknown) {
 
 export interface FleetSink {
   emit(event: AgentUiEvent, sessionId?: string): void;
-  setStatus(state: "idle" | "running", sessionId?: string): void;
+  setStatus(state: AgentRunState, sessionId?: string): void;
 }
 
 export class Fleet {
@@ -49,6 +64,8 @@ export class Fleet {
   private readonly rpc: ToolRpc;
   private readonly sink: FleetSink;
   private readonly modelPattern?: string;
+  private readonly team = new TeamControl();
+  private readonly lastContinue = new Map<string, { tabId: number; url: string; snapshot: string }>();
 
   constructor(opts: { rpc: ToolRpc; sink: FleetSink; modelPattern?: string }) {
     this.rpc = opts.rpc;
@@ -90,6 +107,118 @@ export class Fleet {
     }
   }
 
+  teamView(): TeamView | null {
+    return this.team.view();
+  }
+
+  isGroupHeld(): boolean {
+    const phase = this.team.view()?.phase;
+    return phase === "user" || phase === "draining" || phase === "restoring" || phase === "partial";
+  }
+
+  snapshotActive(): ActiveMemberInput[] {
+    const waitingMsg = new Set(this.mailbox.waitingSessionIds());
+    const waitingTool = new Set(this.rpc.pendingSessionIds());
+    return snapshotActiveGroup({
+      lead: {
+        sessionId: LEAD_SESSION_ID,
+        streaming: this.lead?.isStreaming() ?? false,
+        held: this.lead?.isHeld() ?? false,
+        waitingTool: waitingTool.has(LEAD_SESSION_ID),
+        waitingMessage: waitingMsg.has(LEAD_SESSION_ID),
+      },
+      workers: [...this.workers.entries()].map(([id, session]) => ({
+        sessionId: id,
+        streaming: session.isStreaming(),
+        held: session.isHeld(),
+        waitingTool: waitingTool.has(id),
+        waitingMessage: waitingMsg.has(id),
+      })),
+    });
+  }
+
+  holdActiveGroup(
+    frozen?: ActiveMemberInput[],
+    group?: { groupId?: string; generation?: number },
+  ): TeamView {
+    const members = frozen && frozen.length > 0 ? frozen : this.snapshotActive();
+    const missing = members.find((member) => !this.get(member.sessionId));
+    if (missing) {
+      throw new Error(`接管组成员 ${missing.sessionId} 的原会话不存在`);
+    }
+    return holdFrozenGroup({
+      team: this.team,
+      frozen: members,
+      group,
+      holdMember: (id, abortStream) => {
+        this.get(id)!.holdForUser({ abortStream });
+      },
+    });
+  }
+
+  continuedSnapshot(sessionId: string): { tabId: number; url: string; snapshot: string } | undefined {
+    return this.lastContinue.get(sessionId);
+  }
+
+  async continueMembers(
+    pages: MemberHandbackPage[],
+    meta?: { groupId?: string; generation?: number },
+    onTeamUpdate?: (team: TeamView) => void,
+  ): Promise<{ ok: boolean; team: TeamView }> {
+    const current = this.team.view();
+    if (!current || current.phase === "aborted") {
+      return { ok: false, team: current ?? this.team.abort() };
+    }
+    if (current.phase === "user") this.team.beginRestore();
+    if (!this.team.applyHandback(pages, meta)) {
+      return { ok: false, team: this.team.view()! };
+    }
+    onTeamUpdate?.(this.team.view()!);
+    const expected = this.team.view()!;
+    const results = await Promise.all(
+      pages.map(async (page) => {
+        if (!page.ok) return false;
+        const session = this.get(page.sessionId);
+        let ok = false;
+        try {
+          ok = session ? await session.continueAfterHandback(page.context, page.snapshot) : false;
+        } catch {
+          ok = false;
+        }
+        if (!ok) {
+          const reason = session ? "恢复失败，原会话仍归你。" : "恢复失败：原会话已不存在，仍归你。";
+          const next = this.team.markRestoreFailed(page.sessionId, reason, expected);
+          onTeamUpdate?.(next);
+          return false;
+        }
+        const next = this.team.markRestored(page.sessionId, expected);
+        if (next.members.find((member) => member.sessionId === page.sessionId)?.phase !== "restored") {
+          onTeamUpdate?.(next);
+          return false;
+        }
+        this.lastContinue.set(page.sessionId, {
+          tabId: page.context.tabId,
+          url: page.context.url,
+          snapshot: page.snapshot,
+        });
+        onTeamUpdate?.(next);
+        return true;
+      }),
+    );
+    const team = this.team.view()!;
+    const paused = team.members.some(
+      (m) => m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed",
+    );
+    return { ok: results.some(Boolean) || paused, team };
+  }
+
+  abortTeam(): TeamView {
+    this.mailbox.clear();
+    this.abortAll();
+    this.lastContinue.clear();
+    return this.team.abort();
+  }
+
   dispose(): void {
     this.reset();
   }
@@ -116,6 +245,73 @@ export class Fleet {
       throw new Error(`为 ${displayNameFor(id)} 打开标签页失败：${err instanceof Error ? err.message : String(err)}`);
     }
 
+    const session = await this.createWorkerSession({ id, peers, tabId });
+    console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
+    session.sendUserMessage(goal);
+    return { id, tabId };
+  }
+
+  /** 本地验收装配：复用生产 worker 注册路径，但不发模型任务。 */
+  async prepareAcceptanceWorker(opts: {
+    id: string;
+    tabId: number;
+    leadTask: { taskId: string; expectedSnapshotMarker: string };
+    workerTask: { taskId: string; expectedSnapshotMarker: string };
+  }): Promise<AcceptanceContinuityEvidence[]> {
+    const { id, tabId } = opts;
+    if (!this.workers.has(id)) {
+      assertCanSpawn(this.workers.size);
+      if (sanitizeWorkerId(id, []) !== id) throw new Error(`验收 worker id 无效：${id}`);
+      await this.createWorkerSession({ id, peers: [], tabId });
+    }
+    const lead = this.lead;
+    const worker = this.workers.get(id);
+    if (!lead || !worker) throw new Error("验收会话装配不完整");
+    if (!lead.runtime) throw new Error("Lead runtime 不可用，无法注册本地验收模型");
+    const acceptanceModel = registerAcceptanceModel(lead.runtime);
+    await Promise.all([lead.setModel(acceptanceModel), worker.setModel(acceptanceModel)]);
+    const evidence: AcceptanceContinuityEvidence[] = [
+      { sessionId: LEAD_SESSION_ID, ...(await lead.beginAcceptanceTask(opts.leadTask.taskId, opts.leadTask.expectedSnapshotMarker)) },
+      { sessionId: id, ...(await worker.beginAcceptanceTask(opts.workerTask.taskId, opts.workerTask.expectedSnapshotMarker)) },
+    ];
+    console.error(`[sideagent] acceptance worker=${id} tab=${tabId}`);
+    return evidence;
+  }
+
+  acceptanceContinuityEvidence(): AcceptanceContinuityEvidence[] {
+    const out: AcceptanceContinuityEvidence[] = [];
+    const lead = this.lead?.acceptanceContinuityEvidence();
+    if (lead) out.push({ sessionId: LEAD_SESSION_ID, ...lead });
+    for (const [sessionId, session] of this.workers) {
+      const evidence = session.acceptanceContinuityEvidence();
+      if (evidence) out.push({ sessionId, ...evidence });
+    }
+    return out;
+  }
+
+  async waitForAcceptanceContinuity(timeoutMs = 15_000): Promise<AcceptanceContinuityEvidence[]> {
+    const traced: Array<[string, BrowserAgentSession]> = [];
+    if (this.lead?.acceptanceContinuityEvidence()) traced.push([LEAD_SESSION_ID, this.lead]);
+    for (const [sessionId, session] of this.workers) {
+      if (session.acceptanceContinuityEvidence()) traced.push([sessionId, session]);
+    }
+    if (traced.length === 0) return [];
+    return Promise.all(
+      traced.map(async ([sessionId, session]) => {
+        const evidence = await session.waitForAcceptanceResume(timeoutMs);
+        if (!evidence) throw new Error(`验收会话 ${sessionId} 没有续跑证据`);
+        return { sessionId, ...evidence };
+      }),
+    );
+  }
+
+  private async createWorkerSession(opts: {
+    id: string;
+    peers: string[];
+    tabId?: number;
+  }): Promise<BrowserAgentSession> {
+    if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
+    const { id, peers, tabId } = opts;
     let started = false;
     const session = await BrowserAgentSession.create(
       this.rpc,
@@ -125,7 +321,10 @@ export class Fleet {
           this.sink.setStatus(state, id);
           if (state === "running") started = true;
           if (state === "idle" && started) {
-            queueMicrotask(() => this.stop(id));
+            queueMicrotask(() => {
+              if (this.workers.get(id)?.isHeld()) return;
+              this.stop(id);
+            });
           }
         },
       },
@@ -141,9 +340,7 @@ export class Fleet {
       throw new Error(`${displayNameFor(id)} 会话创建失败`);
     }
     this.workers.set(id, session);
-    console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
-    session.sendUserMessage(goal);
-    return { id, tabId };
+    return session;
   }
 
   stop(id: string): boolean {

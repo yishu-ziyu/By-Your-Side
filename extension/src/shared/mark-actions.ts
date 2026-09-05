@@ -32,3 +32,29 @@ export function markActionUserText(id: MarkActionId): "确认" | "取消" {
 export function isMarkActionId(value: unknown): value is MarkActionId {
   return value === "confirm" || value === "cancel";
 }
+
+const DESTRUCTIVE_ZH = /^(删除|清空|支付|发送)/;
+const DESTRUCTIVE_EN = /^(delete|remove|pay|send)(\s|$)/i;
+
+/** 要点的控件文案是否属于删除 / 清空 / 支付 / 发送。普通「分享」「编辑」「更多」不是。 */
+export function isDestructiveLabel(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (!t) return false;
+  if (DESTRUCTIVE_ZH.test(t)) return true;
+  if (DESTRUCTIVE_EN.test(t)) return true;
+  return false;
+}
+
+export function confirmLabelForDestructive(text: string): string {
+  const t = text.trim();
+  if (/^清空/.test(t) || /^clear/i.test(t)) return "清空";
+  if (/^支付/.test(t) || /^pay/i.test(t)) return "支付";
+  if (/^发送/.test(t) || /^send/i.test(t)) return "发送";
+  if (/^(delete|remove)\b/i.test(t)) return "Delete";
+  return "删除";
+}
+
+/** 侧栏里这句话算放行刚才拦住的那一下。 */
+export function isAffirmativeReply(text: string): boolean {
+  return /^(确认|是的?|继续|好的?|yes|ok|okay|confirm)\s*[。.!！]?$/i.test(text.trim());
+}

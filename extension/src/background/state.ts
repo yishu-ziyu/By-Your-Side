@@ -4,12 +4,20 @@
  */
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
 import { mayActivateTabInWindow } from "./foreground.js";
-import { applyTabBinding, boundTabIds, sessionForTab, type TabBindingMap } from "./tab-bindings.js";
+import { CLAIM_BLOCKED_ERROR } from "../../../shared/control.js";
+import { applyTabBinding, boundTabIds, mayClaimReplacementTab, sessionForTab, type TabBindingMap } from "./tab-bindings.js";
 
 const STORAGE_KEY = "workingTabs";
 
 /** undefined = 尚未从 storage 加载 */
 let cached: TabBindingMap | undefined;
+const claimBlocked = new Set<string>();
+
+export function setSessionClaimBlocked(sessionId: string, blocked: boolean): void {
+  const sid = normalizeSessionId(sessionId);
+  if (blocked) claimBlocked.add(sid);
+  else claimBlocked.delete(sid);
+}
 
 async function loadMap(): Promise<TabBindingMap> {
   if (cached !== undefined) return cached;
@@ -38,6 +46,10 @@ export async function getWorkingTabId(sessionId: string = LEAD_SESSION_ID): Prom
   return typeof id === "number" ? id : null;
 }
 
+export async function getWorkingTabMap(): Promise<TabBindingMap> {
+  return { ...(await loadMap()) };
+}
+
 export async function setWorkingTab(id: number | null, sessionId: string = LEAD_SESSION_ID): Promise<void> {
   const map = applyTabBinding(await loadMap(), normalizeSessionId(sessionId), id);
   await persist(map);
@@ -55,9 +67,14 @@ export async function resolveWorkingTab(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<chrome.tabs.Tab> {
   const sid = normalizeSessionId(sessionId);
+  const blocked = claimBlocked.has(sid);
   if (preferredTabId != null) {
+    if (blocked) {
+      const claimed = await getWorkingTabId(sid);
+      if (claimed !== preferredTabId) throw new Error(CLAIM_BLOCKED_ERROR);
+    }
     const tab = await chrome.tabs.get(preferredTabId);
-    await setWorkingTab(preferredTabId, sid);
+    if (!blocked) await setWorkingTab(preferredTabId, sid);
     return tab;
   }
 
@@ -68,6 +85,10 @@ export async function resolveWorkingTab(
     } catch {
       await setWorkingTab(null, sid);
     }
+  }
+
+  if (!mayClaimReplacementTab({ blocked, boundMissing: true })) {
+    throw new Error(CLAIM_BLOCKED_ERROR);
   }
 
   const map = await loadMap();

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>接管 / 交还 · 三案对照</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --agent: #2f6fed;
+    --danger: #c43c32;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 760px; margin: 0 0 12px; }
+  .why { font-size: 13px; line-height: 1.5; color: var(--secondary); max-width: 760px; margin: 0 0 28px; }
+  .why b { color: var(--label); font-weight: 600; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: 1120px; }
+  @media (max-width: 980px) { .row { grid-template-columns: 1fr; } }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 10px; }
+  .kicker strong { color: var(--label); }
+  .phone {
+    background: var(--cell); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 .5px var(--sep);
+    display: grid; grid-template-columns: 1.35fr .95fr; min-height: 460px;
+  }
+  .page { position: relative; background: #f7f7f8; padding: 10px 8px 14px; }
+  .note {
+    margin: 0 0 6px; padding: 9px 11px; border-radius: 10px;
+    background: #fff; box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .note b { display: block; font-size: 13px; font-weight: 600; }
+  .note span { font-size: 12px; color: var(--secondary); }
+  .note.hot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent) 50%, transparent); }
+  .cursor {
+    position: absolute; width: 16px; height: 16px; pointer-events: none; z-index: 4;
+    transition: opacity 160ms ease;
+  }
+  .cursor.gone { opacity: 0; }
+  .cursor svg { display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+  .banner {
+    position: absolute; left: 8px; right: 8px; top: 8px;
+    display: none; align-items: center; justify-content: space-between; gap: 8px;
+    background: #fff; border-radius: 10px; padding: 8px 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.08), 0 0 0 .5px var(--sep);
+    z-index: 6;
+  }
+  .phone.user .c3-banner { display: flex; }
+  .side { border-left: .5px solid var(--sep); padding: 10px 10px 12px; background: #fff; display: flex; flex-direction: column; }
+  .top {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; margin-bottom: 8px;
+  }
+  .pill {
+    margin-left: auto; display: flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 500; color: var(--secondary);
+    border: 0; background: transparent; padding: 0; font-family: inherit;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #34c759; }
+  .c2-pill {
+    cursor: pointer;
+    border: .5px solid var(--sep);
+    background: #f2f2f7;
+    border-radius: 999px;
+    padding: 4px 8px 4px 7px;
+    color: var(--label);
+    font-weight: 600;
+  }
+  .phone.user .c2-pill { background: var(--label); color: #fff; border-color: var(--label); }
+  .phone.user .c2-pill .dot { background: #fff; }
+  .steps { margin: 0 0 10px; padding: 0; list-style: none; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .steps li { margin: 0 0 4px; }
+  .steps b { color: var(--label); font-weight: 600; }
+  .run {
+    flex: 1; border-radius: 10px; background: #f2f2f7; padding: 8px 9px;
+    font-size: 12px; line-height: 1.45; color: var(--secondary);
+  }
+  .run strong { color: var(--label); font-weight: 600; }
+  .phone.user .run { color: rgba(60,60,67,.38); }
+  .phone.user .run strong { color: rgba(60,60,67,.45); }
+  .loader { display: flex; gap: 3px; margin-top: 8px; }
+  .loader i { width: 6px; height: 6px; border-radius: 1px; background: var(--agent); animation: pulse 900ms ease-in-out infinite; }
+  .loader i:nth-child(2) { animation-delay: 120ms; }
+  .loader i:nth-child(3) { animation-delay: 240ms; }
+  .phone.user .loader { display: none; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .who { font-size: 13px; font-weight: 600; color: var(--label); min-height: 1.3em; margin: 8px 1px 0; }
+  .phone.running .who { color: transparent; }
+  .bar { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+  .bar button {
+    font: 600 12px/1 var(--font); border-radius: 8px; padding: 7px 10px; cursor: pointer;
+  }
+  .abort { background: #fff; border: .5px solid var(--sep); color: var(--danger); }
+  .take { background: var(--agent); color: #fff; border: 0; }
+  .back { background: var(--label); color: #fff; border: 0; }
+  .ghost { background: transparent; border: 0; color: var(--secondary); padding: 7px 4px; }
+  .phone.running .only-user { display: none; }
+  .phone.user .only-run { display: none; }
+  .cap { font-size: 13px; line-height: 1.5; color: var(--secondary); margin: 10px 2px 0; }
+  .play {
+    margin-top: 10px; font: 600 13px/1 var(--font); border: 0; background: var(--agent);
+    color: #fff; border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <h1>接管 / 交还，做好了长这样</h1>
+  <p class="lede">协议和执行闸门已经接上。生产界面还没落。对照 Will’s S：状态只显示你能据此行动的那一句；接管是看得见的出口，不是中止；「现在归你」本身就是状态，不另贴「控制权」标签。</p>
+  <p class="why">每列都可以点「接管 / 交还」看切换。中止在三案里都还在，而且和接管不是同一颗键。选一列告诉我，再落进侧栏。</p>
+
+  <div class="row">
+    <div>
+      <p class="kicker"><strong>1 · 输入区旁边</strong></p>
+      <div class="phone running" data-col="1">
+        <div class="page">
+          <div class="note hot"><b>今天的会议</b><span>待整理</span></div>
+          <div class="note"><b>另一条笔记</b><span>刚改过</span></div>
+          <div class="cursor" style="left:92px;top:48px">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#2f6fed" stroke="#fff" stroke-width="1.4" d="M4 4l16 7.5-7.2 2.2L10.5 21z"/></svg>
+          </div>
+        </div>
+        <div class="side">
+          <div class="top">SideAgent <button class="pill" type="button"><span class="dot"></span>已连接</button></div>
+          <div class="run"><strong>执行步骤</strong><br>打开 flomo · 点第一条<div class="loader"><i></i><i></i><i></i></div></div>
+          <div class="who only-user">现在归你</div>
+          <div class="bar">
+            <button class="abort" type="button">中止</button>
+            <button class="take only-run" type="button" data-act="take">接管</button>
+            <button class="back only-user" type="button" data-act="back">交还</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">运行中，中止左边多一颗「接管」。确认后同一位置变成「交还」，上面那句「现在归你」就是状态。Loader 收掉，光标隐掉。紧急出口仍是中止。</p>
+    </div>
+
+    <div>
+      <p class="kicker"><strong>2 · 开关放在顶栏</strong></p>
+      <ul class="steps">
+        <li><b>运行中：</b>点顶栏右侧「拿回页面」。下面只有「中止」。 </li>
+        <li><b>拿回来后：</b>同一处改成「现在归你」，再点就交还。</li>
+      </ul>
+      <div class="phone running" data-col="2">
+        <div class="page">
+          <div class="note hot"><b>今天的会议</b><span>待整理</span></div>
+          <div class="note"><b>另一条笔记</b><span>刚改过</span></div>
+          <div class="cursor" style="left:92px;top:48px">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#2f6fed" stroke="#fff" stroke-width="1.4" d="M4 4l16 7.5-7.2 2.2L10.5 21z"/></svg>
+          </div>
+        </div>
+        <div class="side">
+          <div class="top">SideAgent
+            <button class="pill c2-pill" type="button" data-act="toggle">
+              <span class="dot"></span>
+              <span class="pill-text">拿回页面</span>
+            </button>
+          </div>
+          <div class="run"><strong>执行步骤</strong><br>打开 flomo · 点第一条<div class="loader"><i></i><i></i><i></i></div></div>
+          <div class="bar">
+            <button class="abort" type="button">中止</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">不在输入区加键。顶栏那一颗既是状态也是开关：运行中写「拿回页面」，拿过来后写「现在归你」。中止仍在下面，结束任务，不是交还。</p>
+    </div>
+
+    <div>
+      <p class="kicker"><strong>3 · 写在页面上（已选）</strong></p>
+      <div class="phone running" data-col="3">
+        <div class="page">
+          <div class="banner c3-banner">
+            <b style="font-size:13px">现在归你</b>
+            <button class="back" type="button" data-act="back">交还</button>
+          </div>
+          <div class="note hot"><b>今天的会议</b><span>待整理</span></div>
+          <div class="note"><b>另一条笔记</b><span>刚改过</span></div>
+          <div class="cursor" style="left:92px;top:48px">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#2f6fed" stroke="#fff" stroke-width="1.4" d="M4 4l16 7.5-7.2 2.2L10.5 21z"/></svg>
+          </div>
+        </div>
+        <div class="side">
+          <div class="top">SideAgent <button class="pill" type="button"><span class="dot"></span>已连接</button></div>
+          <div class="run"><strong>执行步骤</strong><br>打开 flomo · 点第一条<div class="loader"><i></i><i></i><i></i></div></div>
+          <div class="bar">
+            <button class="abort" type="button">中止</button>
+            <button class="take only-run" type="button" data-act="take">接管</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">控制权写在页面上：你正在点的地方告诉你「现在归你」。侧栏只负责拿过来和中止。交还也在页面上。</p>
+    </div>
+  </div>
+  <button class="play" type="button" id="reset">三列都回到运行中</button>
+
+<script>
+  function setUser(phone, on) {
+    phone.classList.toggle("user", on);
+    phone.classList.toggle("running", !on);
+    phone.querySelectorAll(".cursor").forEach((c) => c.classList.toggle("gone", on));
+    const pill = phone.querySelector(".pill-text");
+    if (pill) pill.textContent = on ? "现在归你" : "拿回页面";
+  }
+  document.querySelectorAll(".phone").forEach((phone) => {
+    phone.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+      const act = btn.getAttribute("data-act");
+      if (act === "take" || (act === "toggle" && phone.classList.contains("running"))) setUser(phone, true);
+      else if (act === "back" || (act === "toggle" && phone.classList.contains("user"))) setUser(phone, false);
+    });
+  });
+  document.getElementById("reset").onclick = () => {
+    document.querySelectorAll(".phone").forEach((p) => setUser(p, false));
+  };
+</script>
+</body>
+</html>

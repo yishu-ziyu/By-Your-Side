@@ -6,6 +6,7 @@
 export const OVERLAY_ATTR = "data-sideagent-overlay";
 export const OVERLAY_KIND_CURSOR = "cursor";
 export const OVERLAY_KIND_MARKS = "marks";
+export const OVERLAY_KIND_CONTROL = "control";
 
 export const HIGHLIGHT_PAD = 3;
 export const MARK_PAD = 6;

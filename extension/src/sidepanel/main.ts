@@ -38,7 +38,7 @@ import {
   workerEventRunPolicy,
 } from "./steps.js";
 import { cursorColor } from "../shared/palette.js";
-import { personFor, displayNameFor } from "../../../shared/cast.js";
+import { LEAD_COLOR, displayColor, displayNameFor, personFor } from "../../../shared/cast.js";
 import { mountGrok, mountKenney, type GrokHandle } from "../shared/grok-bot.js";
 import {
   chipLabel,
@@ -50,13 +50,17 @@ import {
   providerMark,
 } from "./models.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentMode, AgentUiEvent, ClientMessage, ModelOption } from "../../../shared/protocol.js";
-import { PANEL_PORT_NAME, type BgToPanel, type PanelToBg } from "../relay.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, ClientMessage, ModelOption, TeamView } from "../../../shared/protocol.js";
+import { memberBoundPageLabel, memberPhaseLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
+import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 
 const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
 const PLACEHOLDER_IDLE = "给 SideAgent 发消息，Enter 发送，Shift+Enter 换行";
 const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
+const PLACEHOLDER_USER = "现在归你。点页面上的「交还」让 Agent 继续";
+const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
+const PLACEHOLDER_PARTIAL = "部分成员已恢复。未续跑的人仍归你。";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -81,6 +85,7 @@ app.innerHTML = `
     <span id="status-pill"><span id="status-dot" class="dot"></span><span id="status-text">未连接</span></span>
   </header>
   <div id="messages"></div>
+  <div id="team-card" hidden></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
     <div id="composer-bar">
@@ -89,6 +94,7 @@ app.innerHTML = `
         <span id="model-name"></span>
       </button>
       <span id="composer-spacer"></span>
+      <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
       <button id="abort-btn" type="button" title="中止" hidden></button>
       <button id="send-btn" type="button" title="发送"></button>
     </div>
@@ -108,6 +114,7 @@ const statusText = document.getElementById("status-text")!;
 const messagesEl = document.getElementById("messages")!;
 const inputEl = document.getElementById("input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 const abortBtn = document.getElementById("abort-btn") as HTMLButtonElement;
 const teachToggle = document.getElementById("teach-toggle") as HTMLButtonElement;
 const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
@@ -672,19 +679,86 @@ function laneForWorker(id: string): { lane: WorkerLane; run: RunHost; live: bool
   return { lane: ensureWorkerLane(id, run), run, live: true };
 }
 
-const sessionRun = new Map<string, "idle" | "running">();
+const sessionRun = new Map<string, AgentRunState>();
+let teamView: TeamView | null = null;
 
-function setSessionState(sessionId: string, state: "idle" | "running"): void {
+function setTeamView(next: TeamView | null): void {
+  teamView = next;
+  renderTeamCard();
+  setSessionState(LEAD_SESSION_ID, sessionRun.get(LEAD_SESSION_ID) ?? (next ? "user" : "idle"));
+}
+
+function renderTeamCard(): void {
+  const el = document.getElementById("team-card");
+  if (!el) return;
+  const view = teamView;
+  if (!shouldShowTeamCard(view?.phase)) {
+    el.hidden = true;
+    el.replaceChildren();
+    return;
+  }
+  el.hidden = false;
+  const summary = document.createElement("div");
+  summary.className = "team-summary";
+  const title = document.createElement("strong");
+  title.textContent = teamSummaryLabel(view!);
+  const detail = document.createElement("button");
+  detail.type = "button";
+  detail.className = "team-detail";
+  detail.textContent = "详情";
+  summary.append(title, detail);
+  const roster = document.createElement("div");
+  roster.className = "team-roster";
+  roster.hidden = true;
+  for (const m of view!.members) {
+    const row = document.createElement("div");
+    row.className = "team-member";
+    const dot = document.createElement("i");
+    dot.className = "team-dot";
+    dot.style.background = m.role === "lead" ? LEAD_COLOR : displayColor(m.sessionId);
+    const name = document.createElement("span");
+    name.textContent = `${m.role === "lead" ? "Lead" : displayNameFor(m.sessionId)} · ${memberBoundPageLabel(m)}`;
+    const st = document.createElement("em");
+    st.textContent = memberPhaseLabel(m.phase);
+    if (m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed" || m.phase === "aborted") {
+      st.classList.add("warn");
+    }
+    row.append(dot, name, st);
+    roster.appendChild(row);
+  }
+  detail.onclick = () => {
+    roster.hidden = !roster.hidden;
+    detail.textContent = roster.hidden ? "详情" : "收起";
+  };
+  el.replaceChildren(summary, roster);
+}
+
+function setSessionState(sessionId: string, state: AgentRunState): void {
   sessionRun.set(sessionId, state);
-  const any = [...sessionRun.values()].some((s) => s === "running");
-  running = any;
-  abortBtn.hidden = !running;
-  sendBtn.hidden = running;
-  inputEl.placeholder = running ? PLACEHOLDER_RUNNING : PLACEHOLDER_IDLE;
-  if (!running) {
+  const flags = panelLive(sessionRun.values(), teamView);
+  running = flags.running;
+  takeoverBtn.hidden = !flags.takeoverVisible;
+  abortBtn.hidden = !flags.abortVisible;
+  sendBtn.hidden = !flags.sendVisible;
+  inputEl.placeholder =
+    teamView?.phase === "draining"
+      ? PLACEHOLDER_DRAINING
+      : teamView?.phase === "partial" || teamView?.phase === "restoring"
+        ? PLACEHOLDER_PARTIAL
+        : flags.composer === "user"
+          ? PLACEHOLDER_USER
+          : flags.composer === "running"
+            ? PLACEHOLDER_RUNNING
+            : PLACEHOLDER_IDLE;
+  if (flags.userHasPage && currentRun) {
+    clearInterval(currentRun.timer);
+    currentRun.loader.remove();
+  }
+  if (flags.finishRun) {
     closeBlocks();
     finishRun();
     sessionRun.clear();
+    renderTeamCard();
   }
 }
 
@@ -1026,6 +1100,9 @@ function handleServerMessage(raw: string): void {
     case "status":
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
       break;
+    case "team_status":
+      setTeamView(msg.team);
+      break;
     case "agent_event":
       handleAgentEvent(msg.event, msg.sessionId);
       break;
@@ -1037,6 +1114,10 @@ function handleServerMessage(raw: string): void {
 function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "server") {
     handleServerMessage(JSON.stringify(envelope.msg));
+    return;
+  }
+  if (envelope.kind === "history") {
+    applyHistory(envelope.entries);
     return;
   }
   if (envelope.kind === "mode") {
@@ -1051,9 +1132,12 @@ function handleBgMessage(envelope: BgToPanel): void {
   } else if (envelope.state === "connecting") {
     setStatus("retry", "连接中…");
   } else {
-    closeBlocks();
-    finishRun();
-    sessionRun.clear();
+    if (shouldFinishRunOnDisconnect(panelLive(sessionRun.values(), teamView).userHasPage)) {
+      closeBlocks();
+      finishRun();
+      sessionRun.clear();
+      setTeamView(null);
+    }
     modelState = null;
     renderModelPicker();
     setStatus("off", "未连接");
@@ -1064,6 +1148,18 @@ function handleBgMessage(envelope: BgToPanel): void {
     }
     if (envelope.detail?.includes("token")) showSetup(envelope.detail);
   }
+}
+
+let lastHistorySeq = 0;
+
+function applyHistory(entries: PanelHistoryEntry[]): void {
+  for (const entry of entries) {
+    if (entry.seq <= lastHistorySeq) continue;
+    if (entry.item.kind === "user") addMsg("msg user", entry.item.text);
+    else handleServerMessage(JSON.stringify(entry.item.msg));
+    lastHistorySeq = entry.seq;
+  }
+  scrollToEnd(false);
 }
 
 function connect(): void {
@@ -1080,12 +1176,10 @@ function connect(): void {
     if (port === p) port = null;
     scheduleReconnect();
   });
+  p.postMessage({ kind: "sync", afterSeq: lastHistorySeq } satisfies PanelToBg);
 }
 
 function scheduleReconnect(): void {
-  closeBlocks();
-  finishRun();
-  sessionRun.clear();
   setStatus("retry", "重连中…");
   const delay = Math.min(5_000, 500 * 2 ** reconnectAttempt);
   reconnectAttempt += 1;
@@ -1123,10 +1217,9 @@ function autoResize(): void {
 }
 
 function sendInput(): void {
+  if (panelLive(sessionRun.values(), teamView).userHasPage) return;
   const text = inputEl.value.trim();
   if (!text) return;
-  addMsg("msg user", text);
-  scrollToEnd(true);
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
   if (!running) runStartAt = Date.now();
   send(running ? { type: "steer", text } : { type: "user_message", text });
@@ -1142,6 +1235,9 @@ inputEl.addEventListener("keydown", (e) => {
     sendInput();
   }
 });
+takeoverBtn.onclick = () => {
+  port?.postMessage({ kind: "control", action: "takeover" } satisfies PanelToBg);
+};
 abortBtn.onclick = () => send({ type: "abort" });
 
 connect();

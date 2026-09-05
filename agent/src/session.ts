@@ -17,12 +17,51 @@ import {
   type CreateAgentSessionOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentMode, AgentUiEvent, ModelOption, PageContext } from "../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, ModelOption, PageContext } from "../../shared/protocol.js";
+import { SessionHold, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { getMode, setMode as setModeRef } from "./mode.js";
 import { createBrowserTools } from "./tools.js";
 import type { ToolRpc } from "./rpc.js";
+
+export interface SessionAcceptanceContinuityEvidence {
+  instanceId: string;
+  taskId: string;
+  step: "before" | "continued";
+  active: boolean;
+  expectedSnapshotMarker: string;
+  resumedTabId?: number;
+  snapshotMarkerFound?: boolean;
+  preTaskPrompted: boolean;
+  preTaskAgentStarted: boolean;
+  contextTaskFound: boolean;
+  resumeRequested: boolean;
+  resumeAgentStarted: boolean;
+  resumeSnapshotToolCalled: boolean;
+  resumeSnapshotMarkerFound: boolean;
+  resumeContinuationMarkerFound: boolean;
+}
+
+/** @deprecated 旧的纯状态测试夹具；生产验收不再调用，续跑必须经过底层 AgentSession。 */
+export class AcceptanceContinuity {
+  private task: Omit<SessionAcceptanceContinuityEvidence, "preTaskPrompted" | "preTaskAgentStarted" | "contextTaskFound" | "resumeRequested" | "resumeAgentStarted" | "resumeSnapshotToolCalled" | "resumeSnapshotMarkerFound" | "resumeContinuationMarkerFound"> | null = null;
+
+  constructor(private readonly instanceId: string) {}
+
+  seed(taskId: string, expectedSnapshotMarker: string) {
+    this.task = { instanceId: this.instanceId, taskId, step: "before", active: true, expectedSnapshotMarker };
+    return { ...this.task };
+  }
+
+  continue(context: PageContext, snapshot: string) {
+    if (!this.task) return null;
+    this.task.resumedTabId = context.tabId;
+    this.task.snapshotMarkerFound = snapshot.includes(this.task.expectedSnapshotMarker);
+    if (this.task.snapshotMarkerFound) this.task.step = "continued";
+    return { ...this.task };
+  }
+}
 
 export interface SessionCreateOptions {
   modelPattern?: string;
@@ -42,8 +81,8 @@ const SETUP_GUIDANCE =
 export interface SessionCallbacks {
   /** 映射后的 UI 事件（对应 WS agent_event 帧的 event 负载）。 */
   emit(event: AgentUiEvent): void;
-  /** 运行状态变化（对应 WS status 帧）。 */
-  setStatus(state: "idle" | "running"): void;
+  /** 运行状态变化（对应 WS status 帧）。idle / running / user（现在归你）。 */
+  setStatus(state: AgentRunState): void;
 }
 
 export class BrowserAgentSession {
@@ -54,6 +93,20 @@ export class BrowserAgentSession {
     private readonly resourceLoader: DefaultResourceLoader | null,
     private readonly modelRuntime: ModelRuntime | null,
   ) {}
+
+  private readonly hold = new SessionHold();
+  private readonly instanceId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  private acceptanceTrace: SessionAcceptanceContinuityEvidence | null = null;
+  private controlEpoch = 0;
+  private pendingStop: Promise<void> | null = null;
+  private pendingHandback: { epoch: number; promise: Promise<boolean>; resolve: (started: boolean) => void } | null = null;
+  private handbackPromptEpoch: number | null = null;
+  /** 用户主动停止的那一轮仍会收到 agent_end；只吞掉这一轮的 abort/空响应尾声。 */
+  private expectedStoppedAgentEnd = false;
+
+  isHeld(): boolean {
+    return this.hold.isHeld();
+  }
 
   get runtime(): ModelRuntime | null {
     return this.modelRuntime;
@@ -167,6 +220,10 @@ export class BrowserAgentSession {
 
   /** 空闲时发起新任务；运行中自动转为插话。异步不阻塞，错误捕获为 error 事件。 */
   sendUserMessage(text: string, context?: PageContext): void {
+    if (this.hold.isHeld()) {
+      this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
+      return;
+    }
     const session = this.session;
     if (!session) {
       this.callbacks.emit({ kind: "error", message: this.guidanceMessage() });
@@ -187,6 +244,10 @@ export class BrowserAgentSession {
 
   /** 运行中插话；若空闲则按普通消息处理。与 prompt 一样带上当前页锚点，避免打断后丢工作标签。 */
   steer(text: string, context?: PageContext): void {
+    if (this.hold.isHeld()) {
+      this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
+      return;
+    }
     const session = this.session;
     if (!session) {
       this.callbacks.emit({ kind: "error", message: this.guidanceMessage() });
@@ -201,8 +262,110 @@ export class BrowserAgentSession {
   }
 
   abort(): void {
-    if (!this.session) return;
-    void this.session.abort().catch(() => {});
+    this.controlEpoch += 1;
+    this.cancelPendingHandback();
+    this.hold.abort();
+    this.acceptanceTrace = null;
+    void this.stopCurrentRun().catch(() => {});
+  }
+
+  /**
+   * 用户拿回页面：停当前生成，但会话、对话、工作标签都还在。
+   * 不把 status 打成 idle（那是中止）。
+   */
+  holdForUser(opts?: { abortStream?: boolean }): AgentRunState {
+    this.controlEpoch += 1;
+    this.cancelPendingHandback();
+    const state = this.hold.holdForUser();
+    if (opts?.abortStream ?? true) void this.stopCurrentRun().catch(() => {});
+    return state;
+  }
+
+  /**
+   * 交还：同一会话继续，带上用户当前页的 snapshot。不是新开一轮任务。
+   */
+  continueAfterHandback(context: PageContext, snapshot: string): Promise<boolean> {
+    if (!this.hold.isHeld()) {
+      this.callbacks.emit({ kind: "notice", message: "现在不是你在操作页面，不用交还。" });
+      return Promise.resolve(false);
+    }
+    const text = handbackContinueText(context, snapshot);
+    const session = this.session;
+    if (!session || !session.model) {
+      this.callbacks.emit({ kind: "error", message: this.guidanceMessage() });
+      return Promise.resolve(false);
+    }
+    if (this.pendingHandback) {
+      this.callbacks.emit({ kind: "notice", message: "正在恢复原任务，请稍候。" });
+      return Promise.resolve(false);
+    }
+    if (this.acceptanceTrace) {
+      this.acceptanceTrace.resumeRequested = true;
+      this.acceptanceTrace.resumedTabId = context.tabId;
+      this.acceptanceTrace.snapshotMarkerFound = snapshot.includes(this.acceptanceTrace.expectedSnapshotMarker);
+    }
+    const epoch = ++this.controlEpoch;
+    let resolveStarted!: (started: boolean) => void;
+    const started = new Promise<boolean>((resolve) => {
+      resolveStarted = resolve;
+    });
+    this.pendingHandback = { epoch, promise: started, resolve: resolveStarted };
+    const finalText = withPageContext(text, context);
+    void this.promptHandbackAfterStop(epoch, finalText);
+    return started;
+  }
+
+  async beginAcceptanceTask(taskId: string, expectedSnapshotMarker: string): Promise<SessionAcceptanceContinuityEvidence> {
+    const session = this.session;
+    if (!session?.model) throw new Error("验收会话不可用");
+    await session.agent.waitForIdle();
+    this.acceptanceTrace = {
+      instanceId: this.instanceId,
+      taskId,
+      step: "before",
+      active: false,
+      expectedSnapshotMarker,
+      preTaskPrompted: true,
+      preTaskAgentStarted: false,
+      contextTaskFound: false,
+      resumeRequested: false,
+      resumeAgentStarted: false,
+      resumeSnapshotToolCalled: false,
+      resumeSnapshotMarkerFound: false,
+      resumeContinuationMarkerFound: false,
+    };
+    void session
+      .prompt(
+        [
+          "[SIDEAGENT ACCEPTANCE ORIGINAL TASK]",
+          `SIDEAGENT_ACCEPTANCE_TASK:${taskId}`,
+          "Keep this original task active until the user takes over. Resume it only after handback.",
+        ].join("\n"),
+      )
+      .catch((err: unknown) => this.emitError(err));
+    await this.waitForAcceptance((trace) => trace.preTaskAgentStarted && trace.contextTaskFound && trace.active);
+    return this.acceptanceContinuityEvidence()!;
+  }
+
+  acceptanceContinuityEvidence(): SessionAcceptanceContinuityEvidence | null {
+    if (!this.acceptanceTrace) return null;
+    this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
+    return { ...this.acceptanceTrace };
+  }
+
+  async waitForAcceptanceResume(timeoutMs = 15_000): Promise<SessionAcceptanceContinuityEvidence | null> {
+    if (!this.acceptanceTrace) return null;
+    await this.waitForAcceptance(
+      (trace) =>
+        trace.step === "continued" &&
+        trace.resumeAgentStarted &&
+        trace.resumeSnapshotToolCalled &&
+        trace.resumeSnapshotMarkerFound &&
+        trace.resumeContinuationMarkerFound &&
+        trace.contextTaskFound,
+      timeoutMs,
+    );
+    return this.acceptanceContinuityEvidence();
   }
 
   /**
@@ -244,7 +407,84 @@ export class BrowserAgentSession {
   }
 
   private emitError(err: unknown): void {
+    if ((this.hold.isHeld() || this.expectedStoppedAgentEnd) && isAbortLike(err)) return;
     this.callbacks.emit({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+  }
+
+  /** 同一次 stop 只调用一次 SDK abort；其 Promise resolve 即 SDK 已 waitForIdle。 */
+  private stopCurrentRun(): Promise<void> {
+    if (this.pendingStop) return this.pendingStop;
+    const session = this.session;
+    if (!session?.isStreaming) return Promise.resolve();
+    this.expectedStoppedAgentEnd = true;
+    let stopping: Promise<void>;
+    try {
+      stopping = session.abort();
+    } catch (err) {
+      stopping = Promise.reject(err);
+    }
+    const tracked = stopping.finally(() => {
+      if (this.pendingStop === tracked) this.pendingStop = null;
+    });
+    this.pendingStop = tracked;
+    return tracked;
+  }
+
+  private async promptHandbackAfterStop(epoch: number, text: string): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    try {
+      await this.stopCurrentRun();
+      if (epoch !== this.controlEpoch || this.pendingHandback?.epoch !== epoch) return;
+      this.hold.releaseToAgent();
+      this.handbackPromptEpoch = epoch;
+      await session.prompt(text);
+      if (this.handbackPromptEpoch === epoch) this.failPendingHandback(epoch);
+    } catch (err) {
+      this.failPendingHandback(epoch);
+      this.emitError(err);
+    } finally {
+      if (this.handbackPromptEpoch === epoch) this.handbackPromptEpoch = null;
+    }
+  }
+
+  private settlePendingHandback(epoch: number, started: boolean): void {
+    const pending = this.pendingHandback;
+    if (!pending || pending.epoch !== epoch) return;
+    this.pendingHandback = null;
+    pending.resolve(started);
+  }
+
+  private cancelPendingHandback(): void {
+    const pending = this.pendingHandback;
+    if (!pending) return;
+    this.pendingHandback = null;
+    pending.resolve(false);
+  }
+
+  private failPendingHandback(epoch: number): void {
+    if (epoch === this.controlEpoch) this.hold.holdForUser();
+    this.settlePendingHandback(epoch, false);
+  }
+
+  private acceptanceContextContainsTask(): boolean {
+    const taskId = this.acceptanceTrace?.taskId;
+    if (!taskId || !this.session) return false;
+    return JSON.stringify(this.session.agent.state.messages).includes(`SIDEAGENT_ACCEPTANCE_TASK:${taskId}`);
+  }
+
+  private async waitForAcceptance(
+    predicate: (trace: SessionAcceptanceContinuityEvidence) => boolean,
+    timeoutMs = 10_000,
+  ): Promise<void> {
+    const started = Date.now();
+    while (this.acceptanceTrace) {
+      this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
+      if (predicate(this.acceptanceTrace)) return;
+      if (Date.now() - started >= timeoutMs) throw new Error(`等待真实 AgentSession 验收事件超时 task=${this.acceptanceTrace.taskId}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error("验收任务已被中止");
   }
 
   private subscribeEvents(): void {
@@ -255,11 +495,22 @@ export class BrowserAgentSession {
       switch (event.type) {
         case "message_update": {
           const ev = event.assistantMessageEvent;
-          if (ev.type === "text_delta") emit({ kind: "text_delta", delta: ev.delta });
+          if (ev.type === "text_delta") {
+            if (
+              this.acceptanceTrace?.resumeRequested &&
+              ev.delta.includes(`SIDEAGENT_ACCEPTANCE_CONTINUED:${this.acceptanceTrace.taskId}`)
+            ) {
+              this.acceptanceTrace.resumeContinuationMarkerFound = true;
+            }
+            emit({ kind: "text_delta", delta: ev.delta });
+          }
           else if (ev.type === "thinking_delta") emit({ kind: "thinking_delta", delta: ev.delta });
           break;
         }
         case "tool_execution_start":
+          if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot") {
+            this.acceptanceTrace.resumeSnapshotToolCalled = true;
+          }
           emit({
             kind: "tool_start",
             toolCallId: event.toolCallId,
@@ -268,6 +519,16 @@ export class BrowserAgentSession {
           });
           break;
         case "tool_execution_end":
+          if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot" && !event.isError) {
+            this.acceptanceTrace.resumeSnapshotMarkerFound = firstText(event.result).includes(
+              this.acceptanceTrace.expectedSnapshotMarker,
+            );
+            this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
+            if (this.acceptanceTrace.resumeSnapshotMarkerFound && this.acceptanceTrace.contextTaskFound) {
+              this.acceptanceTrace.step = "continued";
+              this.acceptanceTrace.active = true;
+            }
+          }
           emit({
             kind: "tool_end",
             toolCallId: event.toolCallId,
@@ -283,14 +544,39 @@ export class BrowserAgentSession {
           emit({ kind: "turn_end" });
           break;
         case "agent_start":
-          setStatus("running");
+          if (
+            this.handbackPromptEpoch !== null &&
+            (this.handbackPromptEpoch !== this.controlEpoch || this.pendingHandback?.epoch !== this.handbackPromptEpoch)
+          ) {
+            this.handbackPromptEpoch = null;
+            void this.stopCurrentRun().catch(() => {});
+            setStatus(this.hold.isHeld() ? "user" : "idle");
+            emit({ kind: "agent_start" });
+            break;
+          }
+          if (this.handbackPromptEpoch !== null) {
+            const epoch = this.handbackPromptEpoch;
+            this.handbackPromptEpoch = null;
+            this.settlePendingHandback(epoch, true);
+          }
+          if (this.acceptanceTrace) {
+            if (this.acceptanceTrace.resumeRequested) this.acceptanceTrace.resumeAgentStarted = true;
+            else this.acceptanceTrace.preTaskAgentStarted = true;
+            this.acceptanceTrace.active = true;
+            this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
+          }
+          setStatus(this.hold.statusAfterAgentStart());
           emit({ kind: "agent_start" });
           break;
         case "agent_end": {
+          const stoppedByUser = this.expectedStoppedAgentEnd;
+          this.expectedStoppedAgentEnd = false;
           // willRetry=true 时自动重试紧随其后，状态保持 running
-          if (!event.willRetry) setStatus("idle");
+          // 接管期间 agent_end 不得变成 idle（那会和中止/完成混淆）
+          const next = this.hold.statusAfterAgentEnd(event.willRetry);
+          if (next) setStatus(next);
           emit({ kind: "agent_end" });
-          if (!event.willRetry) {
+          if (shouldSurfaceAgentEndIssue(this.hold.isHeld(), event.willRetry, stoppedByUser)) {
             const errText = lastAssistantError(event.messages);
             if (errText) {
               console.error(`[sideagent] 模型请求最终失败：${errText}`);
@@ -341,6 +627,20 @@ export function lastAssistantError(messages: unknown): string | null {
     }
   }
   return null;
+}
+
+/** 接管/中止会主动 abort 当前生成；这不是模型失败，也不该在面板留下错误或空响应提示。 */
+export function shouldSurfaceAgentEndIssue(
+  isHeld: boolean,
+  willRetry: boolean,
+  stoppedByUser = false,
+): boolean {
+  return !isHeld && !willRetry && !stoppedByUser;
+}
+
+function isAbortLike(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /abort/i.test(message);
 }
 
 /** 整轮运行没有任何可见输出（无文本、无工具调用）时视为空响应。 */

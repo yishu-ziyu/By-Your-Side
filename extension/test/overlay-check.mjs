@@ -172,6 +172,88 @@ if (!msgs || msgs.length !== 1 || msgs[0].type !== "mark_action" || msgs[0].acti
   fail(`点删除未发 mark_action ${JSON.stringify(msgs)}`);
 }
 
+await page.evaluate(() => {
+  const c = window.__sideagent.cursor;
+  c.move(80, 110);
+  c.hide();
+});
+const hiddenAfterHide = await page.evaluate(() => window.__sideagent.cursorHidden?.());
+if (!hiddenAfterHide) fail("hide() 后光标仍可见");
+
+await page.evaluate(() => {
+  window.__handbackMsgs = [];
+  globalThis.chrome = {
+    runtime: {
+      sendMessage(msg) {
+        window.__handbackMsgs.push(msg);
+      },
+    },
+  };
+  window.__sideagent.cursor.showUserControl();
+});
+const banner = await page.evaluate(() => window.__sideagent.controlBanner?.());
+if (!banner || banner.status !== "现在归你" || banner.action !== "交还") {
+  fail(`页顶接管条不对 ${JSON.stringify(banner)}`);
+}
+if (banner.barWidth > 240) {
+  fail(`接管条应为左侧紧凑 action cluster，实际宽 ${banner.barWidth}`);
+}
+if (banner.actionLeft - banner.statusRight > 16) {
+  fail(`状态与交还按钮必须相邻，实际间距 ${banner.actionLeft - banner.statusRight}`);
+}
+if (banner.actionRight > banner.viewportWidth / 2) {
+  fail(`交还按钮不得锚到右侧侧栏覆盖区 ${JSON.stringify(banner)}`);
+}
+await page.waitForTimeout(180);
+await page.screenshot({ path: path.join(outDir, "control-cluster.png") });
+const handed = await page.evaluate(() => window.__sideagent.clickHandback?.());
+const handMsgs = await page.evaluate(() => window.__handbackMsgs);
+if (!handed) fail("clickHandback 未点到交还");
+if (!handMsgs || handMsgs.length !== 1 || handMsgs[0].type !== "handback_click") {
+  fail(`点交还未发 handback_click ${JSON.stringify(handMsgs)}`);
+}
+await page.evaluate(() => window.__sideagent.cursor.hideUserControl());
+const bannerGone = await page.evaluate(() => window.__sideagent.controlBanner?.());
+if (bannerGone) fail(`hideUserControl 后条还在 ${JSON.stringify(bannerGone)}`);
+
+await page.evaluate(() => window.__sideagent.cursor.showUserControl());
+await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+const afterPagehide = await page.evaluate(() => ({
+  api: Boolean(window.__sideagent?.cursor?.showUserControl),
+  banner: window.__sideagent?.controlBanner?.() ?? null,
+}));
+if (afterPagehide.api || afterPagehide.banner) {
+  fail(`pagehide 后 overlay 应 teardown ${JSON.stringify(afterPagehide)}`);
+}
+await page.addScriptTag({ path: cursorJs });
+const afterReloadBare = await page.evaluate(() => window.__sideagent.controlBanner?.());
+if (afterReloadBare) fail(`重注后不应自己出现条 ${JSON.stringify(afterReloadBare)}`);
+await page.evaluate(() => {
+  globalThis.chrome = {
+    runtime: {
+      sendMessage() {},
+    },
+  };
+  window.__sideagent.cursor.showUserControl();
+});
+const restoredBanner = await page.evaluate(() => window.__sideagent.controlBanner?.());
+if (!restoredBanner || restoredBanner.status !== "现在归你" || restoredBanner.action !== "交还") {
+  fail(`load complete 后应恢复现在归你/交还 ${JSON.stringify(restoredBanner)}`);
+}
+
+const replayApi = await page.evaluate(() => {
+  const c = window.__sideagent.cursor;
+  return Boolean(c.replay) && Boolean(c.stopReplay);
+});
+if (!replayApi) fail("cursor.replay / stopReplay 未挂上");
+await page.evaluate(() => {
+  window.__sideagent.cursor.replay([
+    { x: 40, y: 40, click: false },
+    { x: 80, y: 110, click: true },
+  ]);
+  window.__sideagent.cursor.stopReplay();
+});
+
 // 内部滚动容器：window.scroll 不变，内容在 overflow:auto 里走。
 // 不监听 scroll 的话，absolute 文档坐标会停在视口原处。
 const nested = await browser.newPage({ viewport: { width: 720, height: 360 } });

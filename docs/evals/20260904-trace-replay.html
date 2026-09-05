@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>操作轨迹回放 · 做好了长这样</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --agent: #2f6fed;
+    --red: #ff3b30;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 140px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 760px; margin: 0 0 12px; }
+  .lede a { color: var(--agent); text-decoration: none; }
+  .why { font-size: 13px; line-height: 1.5; color: var(--secondary); max-width: 760px; margin: 0 0 28px; }
+  .why b { color: var(--label); font-weight: 600; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 28px; max-width: 980px; margin-bottom: 32px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: 1100px; }
+  @media (max-width: 980px) { .row, .asks { grid-template-columns: 1fr; } }
+  .col { cursor: pointer; }
+  .col.pick .phone { outline: 2px solid var(--agent); outline-offset: 3px; }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 10px; }
+  .kicker strong { color: var(--label); }
+  .phone {
+    background: var(--cell); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .stage { position: relative; height: 380px; background: #f7f7f8; overflow: hidden; }
+  .chrome {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 8px; background: #fff;
+    border-bottom: .5px solid var(--sep);
+  }
+  .search {
+    flex: 1; height: 28px; border-radius: 8px;
+    background: rgba(120,120,128,.12);
+    font: 500 12px/28px var(--font); color: var(--secondary);
+    padding: 0 10px;
+  }
+  .list { padding: 8px 0; }
+  .note {
+    margin: 0 10px 6px; padding: 10px 12px; border-radius: 10px;
+    background: #fff; box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .note.hot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent) 55%, transparent); }
+  .note b { display: block; font-size: 13px; font-weight: 600; }
+  .note span { font-size: 12px; color: var(--secondary); }
+  .cursor {
+    position: absolute; width: 18px; height: 18px; pointer-events: none; z-index: 5;
+    transform: translate(-2px, -2px);
+  }
+  .cursor svg { display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+  .name {
+    position: absolute; left: 16px; top: 2px;
+    background: var(--agent); color: #fff; font: 600 10px/1 var(--font);
+    padding: 3px 6px; border-radius: 6px; white-space: nowrap;
+  }
+  .ripple {
+    position: absolute; width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--agent); pointer-events: none;
+    animation: pop .45s ease-out forwards;
+  }
+  @keyframes pop { to { transform: scale(2.2); opacity: 0; } }
+  .bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-top: .5px solid var(--sep);
+    background: #fff; font-size: 12px; color: var(--secondary);
+  }
+  .bar button {
+    font: 600 12px/1 var(--font); border: 0; background: var(--agent);
+    color: #fff; border-radius: 7px; padding: 6px 10px; cursor: pointer;
+  }
+  .film { display: flex; gap: 4px; padding: 8px 10px; background: #fff; border-top: .5px solid var(--sep); overflow: hidden; }
+  .frame {
+    width: 52px; height: 36px; border-radius: 4px; flex: none;
+    background: #eee; box-shadow: 0 0 0 .5px var(--sep);
+    position: relative; overflow: hidden;
+  }
+  .frame.on { outline: 2px solid var(--agent); outline-offset: 1px; }
+  .frame i { position: absolute; width: 6px; height: 6px; background: var(--agent); border-radius: 50%; }
+  .acts { padding: 8px 12px; font-size: 12px; color: var(--secondary); line-height: 1.7; }
+  .acts .now { color: var(--label); font-weight: 600; }
+  .trail {
+    position: absolute; inset: 0; pointer-events: none;
+    stroke: var(--agent); fill: none; stroke-width: 2; opacity: .45;
+  }
+  .cap { font-size: 13px; line-height: 1.5; color: var(--secondary); margin: 10px 2px 0; }
+  .picked { margin-top: 28px; font-size: 14px; color: var(--secondary); }
+</style>
+</head>
+<body>
+  <h1>操作轨迹回放 · 做好了长这样</h1>
+  <p class="lede">任务结束后，你能看见它刚才点过哪里。世界做得最好的是 <a href="https://playwright.dev/docs/trace-viewer">Playwright Trace Viewer</a>：时间轴胶片 + 每次点击落在页面哪一点。我们要的不是它的调试器，是同一件事用我们已经有的浅弧光标演一遍。</p>
+  <p class="why">对照 Will’s S：<b>Apple Motion</b> — 动效有目的、短、可跳过。<b>NNGroup 动效</b> — 空间隐喻（光标还在它点过的地方飞），周边视野对运动敏感，所以不要常驻拖尾。<b>Live Activity</b> — 一眼能扫：三步、一个播放，不要做成控制台。</p>
+
+  <div class="asks">
+    <p><b>做好了</b>任务跑完，点「回放」，光标按刚才的浅弧再飞一遍：搜索 → 那条笔记 → 删除。你能指给别人看「它点的是这个」。</p>
+    <p><b>没做好</b>只有侧栏步骤列表；或整页永远画着一条线；或打开一个像 DevTools 的胶片工作台。</p>
+  </div>
+
+  <div class="row">
+    <div class="col" data-pick="page">
+      <p class="kicker"><strong>1 · 页上重演</strong> · 推荐</p>
+      <div class="phone">
+        <div class="stage" id="s1">
+          <div class="chrome"><div class="search">搜索</div></div>
+          <div class="list">
+            <div class="note" data-n="a"><span>置顶</span><b>claude skip</b></div>
+            <div class="note" data-n="b"><span>02:14</span><b>MiroFish 项目</b></div>
+            <div class="note" data-n="c"><span>19:53</span><b>proma 项目</b></div>
+          </div>
+          <div class="cursor" id="c1" style="left:24px;top:24px">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#2f6fed" stroke="#fff" stroke-width="1.4" d="M5 3.5 19 12.2l-6.4 1.3 2.6 6.7-2.7 1.1-2.6-6.6L5 17.8z"/></svg>
+            <div class="name">Kim</div>
+          </div>
+        </div>
+        <div class="bar"><button type="button" id="play1">回放</button><span id="t1">任务已结束 · 3 步</span></div>
+      </div>
+      <p class="cap">抄 Playwright 的「点落在哪」，用我们的光标。页面还在，空间没断。侧栏只留一句「回放」。点这列表示选它。</p>
+    </div>
+
+    <div class="col" data-pick="film">
+      <p class="kicker"><strong>2 · 侧栏胶片</strong> · Playwright 原样</p>
+      <div class="phone">
+        <div class="stage">
+          <div class="chrome"><div class="search">搜索</div></div>
+          <div class="list">
+            <div class="note"><span>02:14</span><b>MiroFish 项目</b></div>
+            <div class="note"><span>19:53</span><b>proma 项目</b></div>
+          </div>
+        </div>
+        <div class="film">
+          <div class="frame on"><i style="left:8px;top:6px"></i></div>
+          <div class="frame"><i style="left:28px;top:18px"></i></div>
+          <div class="frame"><i style="left:22px;top:24px"></i></div>
+          <div class="frame"><i style="left:40px;top:20px"></i></div>
+        </div>
+        <div class="acts">
+          <div class="now">点击「MiroFish 项目」</div>
+          <div>点击「更多」</div>
+          <div>点击「删除」</div>
+        </div>
+      </div>
+      <p class="cap">能对每一帧。离开了页面，像调试器。Live Activity 说一眼可扫；这个要盯侧栏。</p>
+    </div>
+
+    <div class="col" data-pick="trail">
+      <p class="kicker"><strong>3 · 线一直留着</strong> · 不要</p>
+      <div class="phone">
+        <div class="stage">
+          <div class="chrome"><div class="search">搜索</div></div>
+          <div class="list">
+            <div class="note"><span>02:14</span><b>MiroFish 项目</b></div>
+            <div class="note"><span>19:53</span><b>proma 项目</b></div>
+          </div>
+          <svg class="trail" viewBox="0 0 360 380" preserveAspectRatio="none">
+            <path d="M28 28 C 80 40, 120 90, 90 120 C 70 160, 140 180, 160 200 C 200 230, 240 210, 250 240" />
+          </svg>
+        </div>
+        <div class="bar"><span>轨迹已绘制</span></div>
+      </div>
+      <p class="cap">周边视野会被这条线占住。NNGroup：无关运动是干扰。Apple：不要为了动效而动效。</p>
+    </div>
+  </div>
+  <p class="picked" id="picked">点一列，记下你要哪一种。</p>
+
+<script>
+  const notes = { a: [90, 92], b: [90, 148], c: [90, 204] };
+  const path = [[24, 24], [220, 36], [90, 148], [250, 148]];
+  const c1 = document.getElementById("c1");
+  const t1 = document.getElementById("t1");
+  function ease(t) { return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2; }
+  function moveTo(el, x, y, ms) {
+    const x0 = parseFloat(el.style.left), y0 = parseFloat(el.style.top);
+    return new Promise(res => {
+      const t0 = performance.now();
+      const tick = now => {
+        const p = Math.min(1, (now - t0) / ms);
+        const e = ease(p);
+        el.style.left = (x0 + (x - x0) * e) + "px";
+        el.style.top = (y0 + (y - y0) * e) + "px";
+        if (p < 1) requestAnimationFrame(tick); else res();
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+  async function replay() {
+    c1.style.left = "24px"; c1.style.top = "24px";
+    const stage = document.getElementById("s1");
+    t1.textContent = "回放中";
+    document.querySelectorAll("#s1 .note").forEach(n => n.classList.remove("hot"));
+    await moveTo(c1, 220, 36, 380);
+    await moveTo(c1, 90, 148, 420);
+    document.querySelector('#s1 .note[data-n="b"]').classList.add("hot");
+    const r = document.createElement("div");
+    r.className = "ripple";
+    r.style.left = "82px"; r.style.top = "140px";
+    stage.appendChild(r);
+    setTimeout(() => r.remove(), 450);
+    await new Promise(r => setTimeout(r, 280));
+    await moveTo(c1, 250, 148, 360);
+    t1.textContent = "任务已结束 · 3 步";
+  }
+  document.getElementById("play1").onclick = e => { e.stopPropagation(); replay(); };
+  document.querySelectorAll(".col").forEach(col => {
+    col.onclick = () => {
+      document.querySelectorAll(".col").forEach(c => c.classList.remove("pick"));
+      col.classList.add("pick");
+      const map = {
+        page: "记下：页上重演。任务完后光标按浅弧再飞一遍。",
+        film: "记下：侧栏胶片。能对帧，但离开页面。",
+        trail: "记下：常驻线。按笔记不应做。",
+      };
+      document.getElementById("picked").textContent = map[col.dataset.pick];
+    };
+  });
+</script>
+</body>
+</html>

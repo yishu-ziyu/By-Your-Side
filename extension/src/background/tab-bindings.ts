@@ -23,3 +23,9 @@ export function sessionForTab(map: TabBindingMap, tabId: number): string | undef
 export function boundTabIds(map: TabBindingMap): Set<number> {
   return new Set(Object.values(map));
 }
+
+/** paused_tab_closed 等硬闸门下，丢绑定页也不得认领活动页或空闲页。 */
+export function mayClaimReplacementTab(opts: { blocked: boolean; boundMissing: boolean }): boolean {
+  if (opts.blocked) return false;
+  return opts.boundMissing;
+}

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>就地确认 · 做好了长这样</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #000;
+    --secondary: rgba(60,60,67,.6);
+    --agent: #2f6fed;
+    --danger: #c43c32;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 48px 40px 120px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; line-height: 1.47; color: var(--secondary); max-width: 720px; margin: 0 0 12px; }
+  .why { font-size: 13px; line-height: 1.5; color: var(--secondary); max-width: 720px; margin: 0 0 36px; }
+  .why b { color: var(--label); font-weight: 600; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 1100px; }
+  @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 10px; }
+  .kicker strong { color: var(--label); }
+  .phone {
+    background: var(--cell); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 .5px var(--sep);
+    display: grid; grid-template-columns: 1.4fr .9fr; min-height: 420px;
+  }
+  .page { position: relative; background: #f7f7f8; padding: 12px 10px 16px; }
+  .note {
+    margin: 0 0 8px; padding: 10px 12px; border-radius: 10px;
+    background: #fff; box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .note b { display: block; font-size: 13px; font-weight: 600; }
+  .note span { font-size: 12px; color: var(--secondary); }
+  .note.gone { opacity: .28; filter: grayscale(.4); }
+  .mark {
+    position: absolute; border: 2px solid var(--agent); border-radius: 12px;
+    pointer-events: none;
+  }
+  .pill {
+    position: absolute; left: 8px; top: -22px;
+    background: var(--agent); color: #fff; font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 999px;
+  }
+  .btns { position: absolute; display: flex; gap: 6px; }
+  .btns button {
+    font: 600 12px/1 var(--font); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  .del { background: var(--danger); color: #fff; border: 0; }
+  .can { background: #fff; border: .5px solid var(--sep); color: var(--label); }
+  .menu {
+    position: absolute; right: 18px; top: 88px; width: 148px;
+    background: #fff; border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.12), 0 0 0 .5px var(--sep);
+    padding: 6px 0; font-size: 13px;
+  }
+  .menu div { padding: 7px 14px; color: var(--label); }
+  .menu .danger { color: var(--danger); }
+  .side { border-left: .5px solid var(--sep); padding: 12px 12px 16px; background: #fff; }
+  .side .who { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+  .bubble {
+    background: #f2f2f7; border-radius: 10px; padding: 8px 10px;
+    font-size: 12px; line-height: 1.45; color: var(--label);
+  }
+  .composer {
+    margin-top: 12px; border: .5px solid var(--sep); border-radius: 10px;
+    padding: 8px 10px; font-size: 12px; color: var(--secondary);
+  }
+  .cap { font-size: 13px; line-height: 1.5; color: var(--secondary); margin: 10px 2px 0; }
+  .play {
+    margin-top: 10px; font: 600 13px/1 var(--font); border: 0; background: var(--agent);
+    color: #fff; border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  }
+  .hint { font-size: 12px; color: var(--secondary); margin-top: 8px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+  <h1>就地确认 · 做好了长这样</h1>
+  <p class="lede">同一条路：让它删「MiroFish 项目」。做好了，是你在页面上点我们的红「删除」，笔记才走。侧栏里那句「请回复确认」可以还在，但不能是唯一出口。</p>
+  <p class="why">对照：<b>Emphasize by de-emphasizing</b> — 正文仍是笔记，按钮贴在框外，不挡字。<b>Labels are a last resort</b> — 按钮自己写「删除 / 取消」，不要再加一层「确认动作」。复验时：产品没长成右边，就还没好。</p>
+
+  <div class="row">
+    <div>
+      <p class="kicker"><strong>没做好</strong> · 上次真机</p>
+      <div class="phone">
+        <div class="page">
+          <div class="note"><span>2026-09-04 02:14</span><b>MiroFish 项目</b></div>
+          <div class="note"><span>2026-03-02</span><b>一个很有意思的项目</b></div>
+          <div class="menu">
+            <div>分享</div>
+            <div>编辑</div>
+            <div>复制</div>
+            <div class="danger">删除</div>
+          </div>
+        </div>
+        <div class="side">
+          <div class="who">SideAgent</div>
+          <div class="bubble">我已经在页面上把要删的那条笔记标红了。请回复「确认」让我执行删除，或「取消」中止。</div>
+          <div class="composer">给 SideAgent 发消息…</div>
+        </div>
+      </div>
+      <p class="cap">看见的红「删除」是网站自己的菜单。页面上没有我们的两个按钮。侧栏在等你打字。</p>
+    </div>
+
+    <div>
+      <p class="kicker"><strong>做好了</strong> · 点下面按钮走一遍</p>
+      <div class="phone" id="ok">
+        <div class="page" id="stage">
+          <div class="note" id="target"><span>2026-09-04 02:14</span><b>MiroFish 项目</b></div>
+          <div class="note"><span>2026-03-02</span><b>一个很有意思的项目</b></div>
+        </div>
+        <div class="side">
+          <div class="who">SideAgent</div>
+          <div class="bubble" id="say">定位到「MiroFish 项目」。要点删除时先停住，等你在页面上点。</div>
+          <div class="composer">给 SideAgent 发消息… 也可以打「确认」</div>
+        </div>
+      </div>
+      <button class="play" id="go" type="button">它去点删除</button>
+      <p class="hint" id="hint">先点「它去点删除」。会出现框外双键，笔记还在。</p>
+    </div>
+  </div>
+
+<script>
+  const stage = document.getElementById("stage");
+  const target = document.getElementById("target");
+  const say = document.getElementById("say");
+  const hint = document.getElementById("hint");
+  const go = document.getElementById("go");
+  let markEl, pill, btns;
+
+  function clearOverlay() {
+    markEl?.remove(); pill?.remove(); btns?.remove();
+    markEl = pill = btns = null;
+  }
+
+  function placeOverlay() {
+    clearOverlay();
+    const r = target.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    markEl = document.createElement("div");
+    markEl.className = "mark";
+    markEl.style.left = (r.left - s.left - 6) + "px";
+    markEl.style.top = (r.top - s.top - 6) + "px";
+    markEl.style.width = (r.width + 12) + "px";
+    markEl.style.height = (r.height + 12) + "px";
+    pill = document.createElement("div");
+    pill.className = "pill";
+    pill.textContent = "待确认";
+    pill.style.left = (r.left - s.left) + "px";
+    pill.style.top = (r.top - s.top - 28) + "px";
+    btns = document.createElement("div");
+    btns.className = "btns";
+    btns.style.left = (r.left - s.left) + "px";
+    btns.style.top = (r.bottom - s.top + 8) + "px";
+    btns.innerHTML = '<button class="del" type="button">删除</button><button class="can" type="button">取消</button>';
+    stage.append(markEl, pill, btns);
+    btns.querySelector(".del").onclick = () => {
+      target.classList.add("gone");
+      clearOverlay();
+      say.textContent = "已删除。笔记进回收站。";
+      hint.textContent = "点了红「删除」，笔记才走。这才算做好了。";
+      go.textContent = "再来一次";
+    };
+    btns.querySelector(".can").onclick = () => {
+      target.classList.remove("gone");
+      clearOverlay();
+      say.textContent = "已取消。笔记还在。";
+      hint.textContent = "点了「取消」，不删。也可以。";
+      go.textContent = "再来一次";
+    };
+  }
+
+  go.onclick = () => {
+    target.classList.remove("gone");
+    placeOverlay();
+    say.textContent = "要点删除。先不真点。等你在框外点。";
+    hint.textContent = "现在点红「删除」或「取消」。不要去点网站自己的菜单。";
+    go.textContent = "它去点删除";
+  };
+</script>
+</body>
+</html>

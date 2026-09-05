@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SideAgent acceptance fixture</title>
+  <style>
+    body { font: 16px/1.4 sans-serif; margin: 32px; max-width: 40rem; }
+    #unique-title { font-size: 1.25rem; }
+    button, input { font: inherit; padding: 6px 10px; }
+    #note-input { width: 16rem; }
+  </style>
+</head>
+<body>
+  <h1 id="unique-title">SIDEAGENT_ACCEPTANCE_UNIQUE_TEXT_20260904</h1>
+  <p id="page-mark">page-mark-default</p>
+  <p id="counter-line">count-is-0</p>
+  <p>
+    <button id="inc-btn" type="button">Add one</button>
+  </p>
+  <p>
+    <label for="note-input">Note field</label>
+    <input id="note-input" type="text" value="" autocomplete="off">
+  </p>
+  <p id="fill-line">fill-is-empty</p>
+  <p id="phase">phase-idle</p>
+  <script>
+    const counterLine = document.getElementById("counter-line");
+    const fillLine = document.getElementById("fill-line");
+    const phase = document.getElementById("phase");
+    const input = document.getElementById("note-input");
+    const pageMark = document.getElementById("page-mark");
+    const mark = new URLSearchParams(location.search).get("mark") || "default";
+    pageMark.textContent = "page-mark-" + mark;
+    let n = 0;
+
+    document.getElementById("inc-btn").addEventListener("click", () => {
+      n += 1;
+      counterLine.textContent = "count-is-" + n;
+      if (phase.textContent === "phase-idle") phase.textContent = "phase-clicked";
+      else if (phase.textContent === "phase-filled") phase.textContent = "phase-changed";
+    });
+
+    function syncFill() {
+      const v = input.value === "" ? "empty" : input.value;
+      fillLine.textContent = "fill-is-" + v;
+      if (phase.textContent === "phase-clicked") phase.textContent = "phase-changed";
+      else if (phase.textContent === "phase-idle") phase.textContent = "phase-filled";
+    }
+
+    input.addEventListener("input", syncFill);
+    input.addEventListener("change", syncFill);
+  </script>
+</body>
+</html>

@@ -43,6 +43,7 @@ import {
   HIGHLIGHT_PAD,
   MARK_PAD,
   OVERLAY_ATTR,
+  OVERLAY_KIND_CONTROL,
   OVERLAY_KIND_CURSOR,
   OVERLAY_KIND_MARKS,
   highlightBounds,
@@ -70,6 +71,8 @@ import {
     raf?: number;
     parkTimer?: ReturnType<typeof setTimeout>;
     pressTimer?: ReturnType<typeof setTimeout>;
+    replayTimer?: ReturnType<typeof setTimeout>;
+    replayGen?: number;
     highlightEl?: HTMLDivElement;
   }
 
@@ -84,6 +87,8 @@ import {
 
   let host: HTMLDivElement | null = null;
   let marksHost: HTMLDivElement | null = null;
+  let controlHost: HTMLDivElement | null = null;
+  let controlBar: HTMLDivElement | null = null;
   let shadow: ShadowRoot | null = null;
   let highlightLayer: HTMLDivElement | null = null;
   let rippleLayer: HTMLDivElement | null = null;
@@ -513,7 +518,191 @@ import {
     });
   }
 
+  function stopReplayInst(inst: Instance): void {
+    inst.replayGen = (inst.replayGen ?? 0) + 1;
+    cancelFly(inst);
+    clearTimeout(inst.replayTimer);
+  }
+
+  function waitReplay(inst: Instance, gen: number, ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      clearTimeout(inst.replayTimer);
+      inst.replayTimer = setTimeout(resolve, Math.max(0, ms));
+    });
+  }
+
+  async function runReplay(
+    inst: Instance,
+    points: Array<{ x: number; y: number; click: boolean }>,
+  ): Promise<void> {
+    const gen = (inst.replayGen ?? 0) + 1;
+    inst.replayGen = gen;
+    cancelFly(inst);
+    clearTimeout(inst.parkTimer);
+    if (!inst.visible) showAtRest(inst);
+    setResting(inst, false);
+    inst.el.classList.remove("hidden");
+    inst.visible = true;
+    for (const p of points) {
+      if (inst.replayGen !== gen) return;
+      if (
+        p.x - window.scrollX < 8 ||
+        p.y - window.scrollY < 8 ||
+        p.x - window.scrollX > window.innerWidth - 8 ||
+        p.y - window.scrollY > window.innerHeight - 8
+      ) {
+        window.scrollTo(Math.max(0, p.x - window.innerWidth / 2), Math.max(0, p.y - window.innerHeight / 2));
+      }
+      const to = { x: p.x - window.scrollX, y: p.y - window.scrollY };
+      const ms = flyTo(inst, to);
+      await waitReplay(inst, gen, ms);
+      if (inst.replayGen !== gen) return;
+      if (p.click) {
+        spawnRipple(to.x, to.y, "ripple", inst.color);
+        spawnRipple(to.x, to.y, "ripple r2", inst.color);
+        inst.el.classList.add("pressing");
+        clearTimeout(inst.pressTimer);
+        inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
+        await waitReplay(inst, gen, 180);
+      }
+    }
+    if (inst.replayGen === gen) schedulePark(inst);
+  }
+
+  function ensureControlDom(): HTMLDivElement {
+    if (controlBar) return controlBar;
+    controlHost = document.createElement("div");
+    controlHost.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CONTROL);
+    controlHost.style.cssText =
+      "position:fixed;inset:0;z-index:2147483645;pointer-events:none;";
+    const controlShadow = controlHost.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = `
+      .bar {
+        position: absolute; left: 12px; top: 12px;
+        display: inline-flex; align-items: center; gap: 10px;
+        width: max-content; max-width: calc(100vw - 24px);
+        pointer-events: auto;
+        background: #fff; color: #1c1f24;
+        border-radius: 10px; padding: 8px 10px;
+        box-shadow: 0 8px 24px rgba(15,23,42,.12), 0 0 0 .5px rgba(15,23,42,.12);
+        font: 600 13px/1.3 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        opacity: 0; transform: translateY(-6px);
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+      .bar.on { opacity: 1; transform: none; }
+      .bar b { font-weight: 600; white-space: nowrap; }
+      .bar .sub { color: #7c828b; font: 500 11px/1.2 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; white-space: nowrap; }
+      .bar .stack { display: flex; margin-left: 1px; }
+      .bar .avatar {
+        width: 16px; height: 16px; margin-left: -4px;
+        border: 2px solid #fff; border-radius: 50%;
+        display: grid; place-items: center; color: #fff;
+        font: 700 8px/1 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        background: #56667d;
+      }
+      .bar .avatar:first-child { margin-left: 0; }
+      .bar button {
+        font: 600 12px/1 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        border: 0; border-radius: 8px; padding: 7px 10px;
+        background: #1c1f24; color: #fff; cursor: pointer;
+      }
+      .bar button:disabled { opacity: .55; cursor: default; }
+    `;
+    controlBar = document.createElement("div");
+    controlBar.className = "bar";
+    const status = document.createElement("b");
+    status.textContent = "现在归你";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "交还";
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (btn.disabled) return;
+      try {
+        chrome.runtime.sendMessage({ type: "handback_click" }, () => {
+          void chrome.runtime.lastError;
+        });
+      } catch {
+        /* 无扩展运行时（自检页）忽略 */
+      }
+    });
+    controlBar.append(status, btn);
+    controlShadow.append(style, controlBar);
+    (document.documentElement ?? document.body).appendChild(controlHost);
+    return controlBar;
+  }
+
+  function applyControlView(view?: {
+    status?: string;
+    sub?: string;
+    action?: string;
+    actionEnabled?: boolean;
+    members?: Array<{ id: string; initial: string; color: string }>;
+  }): void {
+    const bar = ensureControlDom();
+    const status = bar.querySelector("b");
+    const btn = bar.querySelector("button");
+    let sub = bar.querySelector<HTMLElement>(".sub");
+    let stack = bar.querySelector<HTMLElement>(".stack");
+    if (status) status.textContent = view?.status || "现在归你";
+    const subText = view?.sub?.trim() ?? "";
+    if (subText) {
+      if (!sub) {
+        sub = document.createElement("span");
+        sub.className = "sub";
+        status?.after(sub);
+      }
+      sub.textContent = subText;
+    } else {
+      sub?.remove();
+    }
+    const members = view?.members ?? [];
+    if (members.length > 0) {
+      if (!stack) {
+        stack = document.createElement("div");
+        stack.className = "stack";
+        (bar.querySelector(".sub") ?? status)?.after(stack);
+      }
+      stack.replaceChildren();
+      for (const m of members) {
+        const av = document.createElement("i");
+        av.className = "avatar";
+        av.textContent = m.initial || "?";
+        if (m.color) av.style.background = m.color;
+        stack.appendChild(av);
+      }
+    } else {
+      stack?.remove();
+    }
+    if (btn) {
+      const action = view?.action ?? "交还";
+      btn.textContent = action;
+      btn.hidden = !action;
+      btn.disabled = view?.actionEnabled === false;
+    }
+  }
+
+  function showUserControl(view?: {
+    status?: string;
+    sub?: string;
+    action?: string;
+    actionEnabled?: boolean;
+    members?: Array<{ id: string; initial: string; color: string }>;
+  }): void {
+    applyControlView(view);
+    const bar = ensureControlDom();
+    bar.classList.add("on");
+  }
+
+  function hideUserControl(): void {
+    if (!controlBar) return;
+    controlBar.classList.remove("on");
+  }
+
   function hide(inst: Instance): void {
+    stopReplayInst(inst);
     cancelFly(inst);
     clearTimeout(inst.parkTimer);
     inst.el.classList.add("hidden");
@@ -528,6 +717,7 @@ import {
 
   function teardown(): void {
     for (const inst of instances.values()) {
+      stopReplayInst(inst);
       cancelFly(inst);
       clearTimeout(inst.parkTimer);
       clearTimeout(inst.pressTimer);
@@ -536,16 +726,22 @@ import {
     liveMarks.length = 0;
     host?.remove();
     marksHost?.remove();
+    controlHost?.remove();
     host = null;
     marksHost = null;
+    controlHost = null;
+    controlBar = null;
     shadow = null;
     highlightLayer = null;
     rippleLayer = null;
     marksLayer = null;
     ns.cursor = undefined;
+    ns.cursorHidden = undefined;
     ns.markLayout = undefined;
     ns.markActionLabels = undefined;
     ns.clickMarkAction = undefined;
+    ns.controlBanner = undefined;
+    ns.clickHandback = undefined;
   }
 
   window.addEventListener("pagehide", teardown);
@@ -581,9 +777,32 @@ import {
         schedulePark(inst);
       },
 
+      replay(points: Array<{ x: number; y: number; click: boolean }>): void {
+        void runReplay(getInstance(id), points);
+      },
+
+      stopReplay(): void {
+        const inst = instances.get(id);
+        if (inst) stopReplayInst(inst);
+      },
+
       hide(): void {
         const inst = instances.get(id);
         if (inst) hide(inst);
+      },
+
+      showUserControl(view?: {
+        status?: string;
+        sub?: string;
+        action?: string;
+        actionEnabled?: boolean;
+        members?: Array<{ id: string; initial: string; color: string }>;
+      }): void {
+        showUserControl(view);
+      },
+
+      hideUserControl(): void {
+        hideUserControl();
       },
 
       highlight(rect: SideAgentRect): void {
@@ -608,6 +827,33 @@ import {
   }
 
   ns.cursor = api(DEFAULT_ID);
+  ns.cursorHidden = () => {
+    const inst = instances.get(DEFAULT_ID);
+    return !inst || !inst.visible;
+  };
+  ns.controlBanner = () => {
+    if (!controlBar || !controlBar.classList.contains("on")) return null;
+    const statusEl = controlBar.querySelector("b");
+    const actionEl = controlBar.querySelector("button");
+    const barRect = controlBar.getBoundingClientRect();
+    const statusRect = statusEl?.getBoundingClientRect();
+    const actionRect = actionEl?.getBoundingClientRect();
+    return {
+      status: statusEl?.textContent ?? "",
+      action: actionEl?.textContent ?? "",
+      barWidth: barRect.width,
+      statusRight: statusRect?.right ?? 0,
+      actionLeft: actionRect?.left ?? 0,
+      actionRight: actionRect?.right ?? 0,
+      viewportWidth: window.innerWidth,
+    };
+  };
+  ns.clickHandback = () => {
+    const btn = controlBar?.querySelector("button");
+    if (!btn || !controlBar?.classList.contains("on")) return false;
+    btn.click();
+    return true;
+  };
   ns.markActionLabels = () =>
     liveMarks.flatMap((m) =>
       [...m.el.querySelectorAll<HTMLButtonElement>(".mark-action")].map((b) => ({

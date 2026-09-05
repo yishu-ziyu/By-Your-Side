@@ -28,7 +28,19 @@ interface SideAgentCursor {
   click(x: number, y: number): void;
   /** 飞回待命角落（不点、不填的时候） */
   park?(): void;
+  /** 按文档坐标再飞一遍刚才的点；click 为真时播波纹。不点真页面。可随时 stopReplay。 */
+  replay?(points: Array<{ x: number; y: number; click: boolean }>): void;
+  stopReplay?(): void;
   hide(): void;
+  /** 页顶「现在归你 / 交还」条。接管确认后显示，交还或中止后收掉。 */
+  showUserControl?(view?: {
+    status?: string;
+    sub?: string;
+    action?: string;
+    actionEnabled?: boolean;
+    members?: Array<{ id: string; initial: string; color: string }>;
+  }): void;
+  hideUserControl?(): void;
   /** 在目标元素周围绘制呼吸高亮框（透明度脉动，结束后自动销毁） */
   highlight(rect: SideAgentRect): void;
   /** 在 (rect 视口坐标) 处画持久标注（描边框+箭头+名牌）；target 用于滚动/resize 时按元素重算；actions 为框外确认/取消 */
@@ -49,11 +61,16 @@ interface SideAgentNamespace {
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
   cursor?: SideAgentCursor;
+  /** overlay 自检：默认光标是否已 hide（生产路径不用） */
+  cursorHidden?: () => boolean;
   /** overlay 自检：当前 mark 的文档坐标盒（生产路径不用） */
   markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
   /** overlay 自检：框外确认按钮 */
   markActionLabels?: () => Array<{ id: string; label: string }>;
   clickMarkAction?: (id: string) => boolean;
+  /** overlay 自检：页顶接管条 */
+  controlBanner?: () => { status: string; action: string } | null;
+  clickHandback?: () => boolean;
 }
 
 interface Window {

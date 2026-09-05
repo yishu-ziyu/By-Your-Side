@@ -152,6 +152,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       execute: async (_id, params) => {
         const data = (await call("click", params)) as ToolContract["click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
+        if ("held" in data && data.held) {
+          return textResult(
+            `Held click on ${what}. On-page 删除/取消 are showing. Wait for the user. Do not click the site's own delete control again, and do not claim you already marked it.`,
+            data,
+          );
+        }
         return textResult(`Clicked ${what}.`, data);
       },
     }),

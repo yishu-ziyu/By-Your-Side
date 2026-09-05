@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTabBinding, boundTabIds, sessionForTab } from "../src/background/tab-bindings.js";
+import { applyTabBinding, boundTabIds, mayClaimReplacementTab, sessionForTab } from "../src/background/tab-bindings.js";
 import { LEAD_SESSION_ID } from "../../shared/protocol.js";
 
 describe("tab bindings", () => {
@@ -17,5 +17,11 @@ describe("tab bindings", () => {
     const map = applyTabBinding(applyTabBinding({}, "wiki", 10), "feishu", 20);
     expect(sessionForTab(map, 20)).toBe("feishu");
     expect([...boundTabIds(map)].sort()).toEqual([10, 20]);
+  });
+
+  it("paused session 丢绑定页时不得认领别页", () => {
+    expect(mayClaimReplacementTab({ blocked: true, boundMissing: true })).toBe(false);
+    expect(mayClaimReplacementTab({ blocked: true, boundMissing: false })).toBe(false);
+    expect(mayClaimReplacementTab({ blocked: false, boundMissing: true })).toBe(true);
   });
 });

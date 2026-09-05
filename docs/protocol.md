@@ -21,14 +21,22 @@ client → user_message{text, context?}  # 空闲时发起新任务；context = 
                                        #   标签页{tabId,title,url}（background 转发前自动附上）
 client → steer{text, context?}     # 运行中插话（映射 session.steer）；同样附当前页锚点，
                                    #   避免打断后丢工作标签
-client → abort                     # 中止当前运行
-server → status{state:"running"|"idle", sessionId?}
+client → abort                     # 中止当前运行（任务结束）
+client → takeover                  # 运行中拿回当时完整活跃组（Lead + 活跃 worker）。不结束会话。
+client → handback{context?, snapshot?, members?}  # 一次交还。members 按成员绑定页给
+                                       #   各自 tabId/title/url/snapshot；某页已关则 closed。
+                                       #   不得把当前活动标签复制给其他成员。
+server → status{state:"running"|"idle"|"user", sessionId?}
+                                       # user = 现在归你，≠ idle，≠ 中止
+server → team_status{team}            # 组相位：draining / user / restoring / partial /
+                                       #   restored / aborted。部分失败不得写成全队已恢复。
+server → control_result{..., team?}   # 接管/交还确认，可带组成员结果
 server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_delta /
                                    #   tool_start / tool_end / turn_* / agent_* /
                                    #   notice / error
 ```
 
-省略 `sessionId` 或值为 `main` = Lead（用户对话那条会话）。工人事件带自己的 id；面板把工人收进彩色步骤行，不另开聊天线程。`abort` 中止整张图（Lead + 全部工人）。
+省略 `sessionId` 或值为 `main` = Lead（用户对话那条会话）。工人事件带自己的 id；面板把工人收进彩色步骤行，不另开聊天线程。`abort` 中止整张图（Lead + 全部工人）。`takeover` / `handback` 是控制权，不是 abort：会话、对话、工作标签都还在。v2 一次接管冻结发起时的活跃组；交还按成员绑定页续跑，关闭的绑定页保持暂停且不阻断其他人。
 
 `text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。
 

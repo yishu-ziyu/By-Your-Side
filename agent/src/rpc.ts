@@ -101,4 +101,12 @@ export class ToolRpc {
   get pendingCount(): number {
     return this.pending.size;
   }
+
+  pendingSessionIds(): string[] {
+    const ids = new Set<string>();
+    for (const entry of this.pending.values()) {
+      ids.add(entry.sessionId && !isLeadSession(entry.sessionId) ? entry.sessionId : LEAD_SESSION_ID);
+    }
+    return [...ids];
+  }
 }
