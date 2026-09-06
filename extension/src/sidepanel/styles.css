@@ -1,43 +1,127 @@
-/* ── 设计 tokens ─────────────────────────────────────────────────── */
+/* ── 设计 tokens (Apple Sequoia Liquid Glass & Motion) ─────────────── */
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f0f1f4;
-  --text: #1c1f24;
-  --text-2: #6b7280;
-  --text-3: #9aa1ab;
-  --border: rgba(15, 23, 42, 0.09);
-  --accent: #2f6fed;
-  --accent-soft: rgba(47, 111, 237, 0.1);
-  --ok: #16a34a;
-  --warn: #d97706;
-  --err: #dc2626;
-  --err-soft: rgba(220, 38, 38, 0.07);
+  /* 苹果晨曦微光底色 (供毛玻璃与折射滤镜实时采样) */
+  --wallpaper: radial-gradient(at 15% 15%, rgba(255, 182, 140, 0.35) 0px, transparent 55%),
+               radial-gradient(at 85% 20%, rgba(135, 195, 255, 0.35) 0px, transparent 55%),
+               radial-gradient(at 50% 85%, rgba(180, 160, 240, 0.3) 0px, transparent 55%),
+               #f2f4f8;
+
+  /* 1. 顶层 Chrome 级 Liquid Glass 材质 (用于 Topbar / Composer Dock / Popover) */
+  --glass-surface: rgba(255, 255, 255, 0.65);
+  --glass-surface-elevated: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-border-subtle: rgba(0, 0, 0, 0.07);
+  --glass-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 12px 36px -4px rgba(31, 38, 135, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --glass-blur: blur(24px) saturate(190%);
+
+  /* 2. 消息流与内容主体：坚实实体材质 (Solid Surface，保证 100% 清晰阅读) */
+  --content-bg: #ffffff;
+  --content-subtle: #f7f8fa;
+  --content-subtle-hover: #eef1f5;
+  --content-border: rgba(0, 0, 0, 0.06);
+
+  /* 文字色彩层级 (Apple HIG) */
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-tertiary: #9ca3af;
+  --text-quaternary: #d1d5db;
+
+  /* 兼容既有 token */
+  --bg: var(--wallpaper);
+  --surface: var(--content-bg);
+  --surface-2: var(--content-subtle);
+  --text: var(--text-primary);
+  --text-2: var(--text-secondary);
+  --text-3: var(--text-tertiary);
+  --border: var(--content-border);
+
+  /* Apple 状态强调色 */
+  --apple-blue: #0071e3;
+  --apple-blue-soft: rgba(0, 113, 227, 0.08);
+  --apple-green: #34c759;
+  --apple-green-soft: rgba(52, 199, 89, 0.12);
+  --apple-orange: #ff9500;
+  --apple-red: #ff3b30;
+  --apple-red-soft: rgba(255, 59, 48, 0.08);
+
+  --accent: var(--apple-blue);
+  --accent-soft: var(--apple-blue-soft);
+  --ok: var(--apple-green);
+  --warn: var(--apple-orange);
+  --err: var(--apple-red);
+  --err-soft: var(--apple-red-soft);
+
+  /* 思考标签与选择器 (亮色高对比度清晰紫/灰/蓝，杜绝泛白泥浆) */
+  --tag-native-bg: rgba(124, 58, 237, 0.09);
+  --tag-native-color: #6d28d9;
+  --tag-direct-bg: rgba(0, 0, 0, 0.05);
+  --tag-direct-color: #4b5563;
+  --tag-slider-bg: rgba(0, 113, 227, 0.08);
+  --tag-slider-color: #0071e3;
+  --chip-active-bg: #ffffff;
+  --btn-border-hover: rgba(0, 0, 0, 0.14);
+  --popover-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+
+  /* 弹簧动力学参数 */
+  --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius-dock: 22px;
+  --radius-card: 14px;
+  --radius-pill: 9999px;
   --radius: 14px;
   --radius-sm: 8px;
-  --shadow-composer: 0 4px 24px rgba(15, 23, 42, 0.1);
-  --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --shadow-composer: var(--glass-shadow);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+  --mono: "SF Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16181c;
-    --surface: #1e2126;
-    --surface-2: #272b31;
-    --text: #e6e8eb;
-    --text-2: #9aa1ab;
-    --text-3: #6b7280;
-    --border: rgba(255, 255, 255, 0.1);
-    --accent: #5b8cff;
-    --accent-soft: rgba(91, 140, 255, 0.16);
-    --err-soft: rgba(248, 113, 113, 0.12);
-    --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.45);
+    --wallpaper: radial-gradient(at 15% 15%, rgba(35, 55, 95, 0.55) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(70, 35, 90, 0.5) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(20, 75, 70, 0.45) 0px, transparent 55%),
+                 #080a0f;
+
+    --glass-surface: rgba(24, 26, 32, 0.68);
+    --glass-surface-elevated: rgba(32, 35, 43, 0.88);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-border-subtle: rgba(255, 255, 255, 0.08);
+    --glass-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.25);
+    --glass-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+    --glass-blur: blur(28px) saturate(200%);
+
+    --content-bg: #15171d;
+    --content-subtle: #1c1f26;
+    --content-subtle-hover: #242933;
+    --content-border: rgba(255, 255, 255, 0.08);
+
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+    --text-quaternary: #374151;
+
+    --apple-blue: #2997ff;
+    --apple-blue-soft: rgba(41, 151, 255, 0.16);
+    --apple-green: #30d158;
+    --apple-red: #ff453a;
+
+    /* 思考标签与选择器 (暗色高对比，杜绝死硬纯黑) */
+    --tag-native-bg: rgba(168, 85, 247, 0.16);
+    --tag-native-color: #d8b4fe;
+    --tag-direct-bg: rgba(255, 255, 255, 0.08);
+    --tag-direct-color: #9ca3af;
+    --tag-slider-bg: rgba(41, 151, 255, 0.14);
+    --tag-slider-color: #60a5fa;
+    --chip-active-bg: rgba(41, 151, 255, 0.12);
+    --btn-border-hover: rgba(255, 255, 255, 0.2);
+    --popover-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
   }
 }
 
 * {
   box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
 }
 
 html,
@@ -47,8 +131,10 @@ body {
   font-family: var(--font);
   font-size: 13px;
   line-height: 1.6;
-  color: var(--text);
-  background: var(--bg);
+  color: var(--text-primary);
+  background: var(--wallpaper);
+  background-attachment: fixed;
+  background-size: cover;
 }
 
 #app {
@@ -61,47 +147,112 @@ body {
 .lucide {
   width: 14px;
   height: 14px;
-  stroke-width: 2.2;
+  stroke-width: 2;
   flex-shrink: 0;
 }
 
-/* ── 顶栏 ────────────────────────────────────────────────────────── */
+/* ── 顶栏 (Liquid Glass Chrome) ─────────────────────────────────── */
 #topbar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(12px);
+  border-bottom: 0.5px solid var(--glass-border-subtle);
+  background: var(--glass-surface);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-specular);
   flex-shrink: 0;
-  z-index: 1;
+  z-index: 10;
+}
+
+.brand-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 #logo {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 #brand {
-  font-weight: 650;
+  font-weight: 600;
   font-size: 13px;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 
-#status-pill {
+/* 灵动状态胶囊 (Dynamic Activity Island) */
+#status-pill.activity-island {
   margin-left: auto;
+  background: #111318;
+  color: #f9fafb;
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: 11.5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: all 0.35s var(--spring-bounce);
   white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  #status-pill.activity-island {
+    background: rgba(36, 40, 50, 0.85);
+    color: #f9fafb;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  }
+}
+
+#status-pill.activity-island.running {
+  background: var(--apple-blue);
+  box-shadow: 0 2px 12px var(--apple-blue-soft);
+}
+
+#status-pill.activity-island.status-retry {
+  background: var(--apple-orange);
+}
+
+#status-pill.activity-island.status-off {
+  background: var(--content-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--content-border);
+  box-shadow: none;
+}
+
+.island-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: background 0.3s ease;
+}
+
+.island-pulse-dot.on {
+  background: var(--apple-green);
+  box-shadow: 0 0 6px var(--apple-green);
+  animation: beadBreathe 2s ease-in-out infinite;
+}
+
+.island-pulse-dot.retry {
+  background: var(--apple-orange);
+  box-shadow: 0 0 6px var(--apple-orange);
+  animation: beadBreathe 1.2s ease-in-out infinite;
+}
+
+@keyframes beadBreathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.8); opacity: 0.55; }
 }
 
 /* 教学模式开关：status-pill 左侧的圆形 toggle */
@@ -113,85 +264,85 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-3);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-surface-elevated);
+  backdrop-filter: blur(12px);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  box-shadow: var(--glass-specular);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.15s var(--spring-bounce);
 }
 
 #teach-toggle:hover {
-  color: var(--text-2);
-  border-color: var(--text-3);
+  color: var(--text-primary);
+  border-color: var(--apple-blue);
+  transform: translateY(-0.5px);
+}
+
+#teach-toggle:active {
+  transform: scale(0.94);
 }
 
 #teach-toggle.on {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--apple-blue);
+  border-color: var(--apple-blue);
+  background: var(--apple-blue-soft);
 }
 
 #teach-toggle + #status-pill {
   margin-left: 0;
 }
 
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-3);
-  flex-shrink: 0;
-}
-
-.dot.on {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
-}
-
-.dot.retry {
-  background: var(--warn);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-/* ── 模型选择器（输入区芯片 + 上弹搜索菜单） ─────────────────────── */
+/* ── 模型选择器（输入区芯片 + 弹簧生长菜单） ─────────────────────── */
 #model-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: min(62%, 220px);
-  height: 26px;
-  padding: 0 8px 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text);
+  gap: 6px;
+  max-width: min(78%, 280px);
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--content-border);
+  border-radius: var(--radius-pill);
+  background: var(--content-bg);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: all 0.22s var(--spring-fluid);
+  user-select: none;
+  position: relative;
 }
 
-#model-btn:hover,
+#model-btn:hover {
+  border-color: var(--btn-border-hover);
+  background: var(--content-subtle);
+  color: var(--text-primary);
+}
+
 #model-btn[aria-expanded="true"] {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  background: var(--surface);
+  border-color: var(--apple-blue);
+  color: var(--text-primary);
+  background: var(--chip-active-bg);
+  box-shadow: 0 0 0 1px var(--apple-blue);
+}
+
+#model-btn:active {
+  transform: scale(0.96);
 }
 
 #model-btn:disabled {
   cursor: default;
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 #model-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 }
 
 #model-btn .lucide {
@@ -199,6 +350,46 @@ body {
   height: 11px;
   color: var(--text-3);
   margin-left: 1px;
+  flex-shrink: 0;
+  transition: transform 0.25s var(--spring-fluid), color 0.2s ease;
+}
+
+#model-btn[aria-expanded="true"] .lucide {
+  transform: rotate(180deg);
+  color: var(--apple-blue);
+}
+
+/* 思考强度标签 (忠于真实接入模型支持) */
+.reasoning-tag {
+  font-size: 10px;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.reasoning-tag.tag-native {
+  background: var(--tag-native-bg);
+  color: var(--tag-native-color);
+}
+
+.reasoning-tag.tag-direct {
+  background: var(--tag-direct-bg);
+  color: var(--tag-direct-color);
+}
+
+.reasoning-tag.tag-effort,
+.reasoning-tag.tag-slider {
+  background: var(--tag-slider-bg);
+  color: var(--tag-slider-color);
+}
+
+#model-btn .reasoning-tag {
+  font-size: 9.5px;
+  padding: 1px 5px;
 }
 
 .model-mark {
@@ -225,10 +416,24 @@ body {
   display: flex;
   flex-direction: column;
   padding: 8px 6px 6px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-composer);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background: var(--glass-surface-elevated);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-specular), var(--popover-shadow, var(--glass-shadow));
+  transform-origin: bottom left;
+  animation: popoverSpringIn 0.26s var(--spring-bounce);
+}
+
+@keyframes popoverSpringIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .model-search {
@@ -236,10 +441,10 @@ body {
   align-items: center;
   gap: 6px;
   margin: 0 4px 6px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
+  padding: 6px 9px;
+  border: 1px solid var(--content-border);
+  border-radius: 9px;
+  background: var(--content-subtle);
   flex-shrink: 0;
 }
 
@@ -296,6 +501,7 @@ body {
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
 .model-item:hover,
@@ -303,16 +509,27 @@ body {
   background: var(--surface-2);
 }
 
+.model-item.current {
+  background: var(--apple-blue-soft);
+}
+
 .model-item.current .model-label {
   font-weight: 600;
 }
 
+.model-item .reasoning-tag {
+  margin-left: auto;
+}
+
 .model-check {
   width: 14px;
+  height: 14px;
   flex-shrink: 0;
   display: inline-flex;
-  color: var(--accent);
-  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--apple-blue);
+  margin-left: 4px;
 }
 
 .model-label {
@@ -362,18 +579,26 @@ details.run-steps {
 
 .msg.user {
   align-self: flex-end;
-  max-width: 86%;
-  background: linear-gradient(135deg, #4a86ff 0%, var(--accent) 100%);
-  color: #fff;
-  padding: 7px 13px;
-  border-radius: var(--radius) var(--radius) 4px var(--radius);
+  max-width: 88%;
+  background: var(--content-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--content-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 9px 13px;
+  border-radius: 18px 18px 4px 18px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 450;
   white-space: pre-wrap;
-  box-shadow: 0 2px 8px rgba(47, 111, 237, 0.28);
+  word-break: break-word;
+  transition: transform 0.15s ease;
 }
 
 @media (prefers-color-scheme: dark) {
   .msg.user {
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    background: var(--content-bg);
+    border-color: var(--content-border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   }
 }
 
@@ -531,20 +756,26 @@ details.thinking pre {
   color: var(--text-3);
 }
 
-/* ── 执行步骤聚合块 ────────────────────────────────────── */
+/* ── 执行步骤聚合块 (Apple Solid Surface & Spring Layout) ────── */
 details.run-steps {
   align-self: stretch;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  border: 1px solid var(--content-border);
+  border-radius: var(--radius-card);
+  background: var(--content-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+  transition: transform 0.2s var(--spring-fluid), box-shadow 0.2s;
+}
+
+details.run-steps:hover {
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
 }
 
 details.run-steps summary {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 9px 12px;
   cursor: pointer;
   user-select: none;
   list-style: none;
@@ -558,39 +789,42 @@ details.run-steps summary::-webkit-details-marker {
 .run-icon {
   display: inline-flex;
   flex-shrink: 0;
-  color: var(--text-2);
+  color: var(--text-secondary);
 }
 
 details.run-steps.done .run-icon {
-  color: var(--ok);
+  color: var(--apple-green);
 }
 
 .run-title {
   font-weight: 600;
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
 /* 步骤链："思考 → 读取页面结构 → 点击"，超出省略 */
 .run-chain {
-  color: var(--text-2);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  font-size: 11.5px;
 }
 
 .run-time {
   margin-left: auto;
-  color: var(--text-2);
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  font-size: 11px;
   flex-shrink: 0;
 }
 
 .run-chevron {
   display: inline-flex;
-  color: var(--text-3);
+  color: var(--text-tertiary);
   flex-shrink: 0;
-  transition: transform 0.15s ease;
+  transition: transform 0.28s var(--spring-bounce);
 }
 
 details.run-steps[open] .run-chevron {
@@ -792,31 +1026,38 @@ details.run-steps[open] .run-chevron {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text);
+  padding: 4px 10px;
+  border: 1px solid var(--content-border);
+  border-radius: var(--radius-pill);
+  background: var(--content-subtle);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 450;
   cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+  transition: all 0.2s var(--spring-fluid);
 }
 
 .chip:hover {
-  border-color: var(--text-3);
+  border-color: var(--apple-blue);
+  background: var(--content-subtle-hover);
+  transform: translateY(-0.5px);
 }
 
-/* 选中（详情展开中）：accent 描边 + accent-soft 底 */
+.chip:active {
+  transform: scale(0.96);
+}
+
+/* 选中（详情展开中）：apple-blue 描边 + soft 底 */
 .chip.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--apple-blue);
+  background: var(--apple-blue-soft);
+  color: var(--apple-blue);
 }
 
 .chip.error {
-  border-color: color-mix(in srgb, var(--err) 40%, transparent);
+  border-color: color-mix(in srgb, var(--apple-red) 40%, transparent);
+  background: var(--apple-red-soft);
 }
 
 /* 状态点：运行中 accent 脉动，完成绿，失败红 */
@@ -828,21 +1069,21 @@ details.run-steps[open] .run-chevron {
 }
 
 .chip-dot.running {
-  background: var(--accent);
+  background: var(--apple-blue);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .chip-dot.done {
-  background: var(--ok);
+  background: var(--apple-green);
 }
 
 .chip-dot.error {
-  background: var(--err);
+  background: var(--apple-red);
 }
 
 .chip-icon {
   display: inline-flex;
-  color: var(--text-2);
+  color: var(--text-secondary);
 }
 
 .chip-icon .lucide {
@@ -851,17 +1092,24 @@ details.run-steps[open] .run-chevron {
 }
 
 .chip .dur {
-  font-size: 11px;
-  color: var(--text-3);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
 .chip-detail {
   font-size: 11.5px;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border-radius: var(--radius-sm);
-  padding: 8px 11px;
+  color: var(--text-secondary);
+  background: var(--content-subtle);
+  border: 1px solid var(--content-border);
+  border-radius: var(--radius-card);
+  padding: 10px 12px;
+  animation: drawerSlide 0.25s var(--spring-fluid);
+}
+
+@keyframes drawerSlide {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* 原始工具名：弱化显示 */
@@ -968,24 +1216,195 @@ details.run-steps[open] .run-chevron {
   }
 }
 
-/* ── 输入区（浮动 composer） ─────────────────────────────────────── */
+/* ── 输入区（浮动 Liquid Glass Composer Dock） ─────────────────────── */
+.composer-dock-wrap {
+  margin: 6px 12px 14px;
+  position: relative;
+  flex-shrink: 0;
+  z-index: 6;
+}
+
 #composer {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  margin: 6px 12px 12px;
-  padding: 10px 10px 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--surface);
-  box-shadow: var(--shadow-composer);
+  gap: 7px;
+  padding: 10px 12px 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-dock);
+  background: var(--glass-surface-elevated);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-specular), var(--glass-shadow);
   flex-shrink: 0;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 #composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-color: var(--apple-blue);
+  box-shadow: var(--glass-specular), 0 0 0 3px var(--apple-blue-soft), var(--glass-shadow);
+}
+
+/* 页面感知胶囊 (Page Context Pill) */
+.morphing-page-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--content-bg);
+  border: 1px solid var(--content-border);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.25s var(--spring-bounce);
+  user-select: none;
+}
+
+.morphing-page-pill:hover {
+  color: var(--text-primary);
+  border-color: var(--apple-blue);
+  transform: translateY(-0.5px);
+}
+
+.morphing-page-pill:active {
+  transform: scale(0.96);
+}
+
+.tab-icon-sq {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: var(--text-primary);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 1;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tab-title-text {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--apple-green);
+  box-shadow: 0 0 6px var(--apple-green);
+  flex-shrink: 0;
+}
+
+#ask-cite {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 12px;
+  background: var(--content-subtle);
+  border: 1px solid var(--content-border);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+#ask-cite[hidden] { display: none; }
+#ask-cite-host {
+  flex-shrink: 0;
+  font-weight: 650;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+#ask-cite-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+#ask-cite-close {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+#ask-cite-close:hover { color: var(--text-primary); }
+
+/* 检查器浮层 (Morphing Dialog Sheet) */
+.page-morph-sheet {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--glass-surface-elevated);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  box-shadow: var(--glass-specular), var(--glass-shadow);
+  padding: 13px 15px;
+  flex-direction: column;
+  gap: 8px;
+  transform-origin: bottom left;
+  animation: morphSpringIn 0.32s var(--spring-bounce);
+  z-index: 15;
+}
+
+@keyframes morphSpringIn {
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.morph-sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sheet-close-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.sheet-close-btn:hover {
+  color: var(--text-primary);
+}
+
+.morph-sheet-body {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--content-subtle);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-family: var(--mono);
+  line-height: 1.55;
+  word-break: break-all;
 }
 
 #input {
@@ -994,7 +1413,7 @@ details.run-steps[open] .run-chevron {
   border: none;
   outline: none;
   background: transparent;
-  color: var(--text);
+  color: var(--text-primary);
   font: inherit;
   line-height: 1.5;
   padding: 2px 2px 0 0;
@@ -1002,7 +1421,7 @@ details.run-steps[open] .run-chevron {
 }
 
 #input::placeholder {
-  color: var(--text-3);
+  color: var(--text-tertiary);
 }
 
 #composer-bar {
@@ -1018,9 +1437,9 @@ details.run-steps[open] .run-chevron {
 #team-card {
   margin: 0 12px 8px;
   padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface);
+  border: 1px solid var(--content-border);
+  border-radius: 12px;
+  background: var(--content-bg);
   flex-shrink: 0;
 }
 
@@ -1089,68 +1508,165 @@ details.run-steps[open] .run-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 11px;
   border: none;
-  border-radius: 8px;
-  background: var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--apple-blue);
   color: #fff;
   cursor: pointer;
   flex-shrink: 0;
-  font: 600 12px/1 var(--font);
+  font: 500 12px/1 var(--font);
+  box-shadow: 0 2px 6px var(--apple-blue-soft);
+  transition: transform 0.15s var(--spring-bounce), opacity 0.15s ease;
 }
 
 #takeover-btn:hover {
-  opacity: 0.92;
+  opacity: 0.94;
+  transform: translateY(-0.5px);
 }
 
 #takeover-btn:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
 }
 
-#send-btn,
-#abort-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* 位置 1：Send ↑ / Stop ■ 原位形变按钮 (Motion In-Place Morphing Button) */
+#send-btn.kinetic-morph-button {
   width: 30px;
   height: 30px;
-  padding: 0;
-  border: none;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--text-primary);
   color: #fff;
+  border: 0;
+  display: grid;
+  place-items: center;
   cursor: pointer;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   flex-shrink: 0;
-  transition:
-    transform 0.1s ease,
-    opacity 0.15s ease;
+  transition: border-radius 0.35s var(--spring-bounce),
+              background 0.3s ease,
+              transform 0.18s var(--spring-bounce);
 }
 
-#send-btn:hover,
-#abort-btn:hover {
-  transform: scale(1.06);
+#send-btn.kinetic-morph-button:hover {
+  transform: scale(1.08);
+  background: var(--apple-blue);
+  color: #fff;
 }
 
-#send-btn:active,
-#abort-btn:active {
-  transform: scale(0.96);
+#send-btn.kinetic-morph-button:active {
+  transform: scale(0.86);
 }
 
-#send-btn .lucide,
-#abort-btn .lucide {
-  width: 15px;
-  height: 15px;
+#send-btn.kinetic-morph-button.stopping {
+  border-radius: 9px;
+  background: var(--apple-red) !important;
+  color: #fff !important;
+}
+
+.morph-icon-send {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  transition: opacity 0.2s ease, transform 0.32s var(--spring-bounce);
+}
+
+#send-btn.kinetic-morph-button.stopping .morph-icon-send {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.3);
+}
+
+.morph-icon-stop {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.3) rotate(-90deg);
+  transition: opacity 0.2s ease, transform 0.32s var(--spring-bounce);
+}
+
+#send-btn.kinetic-morph-button.stopping .morph-icon-stop {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
 }
 
 #abort-btn {
-  background: var(--surface-2);
-  color: var(--text);
-  border: 1px solid var(--border) !important;
+  display: none !important;
 }
 
-#abort-btn .lucide {
-  fill: currentColor;
+/* 危险操作拦阻卡 (macOS Alert Sheet 触感物理) */
+.danger-hold-sheet {
+  background: var(--content-bg);
+  border: 1.5px solid var(--apple-red);
+  border-radius: var(--radius-card);
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 18px rgba(255, 59, 48, 0.12);
+  animation: alertRise 0.25s var(--spring-bounce);
+}
+
+@keyframes alertRise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.danger-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--apple-red);
+}
+
+.danger-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.danger-desc mark {
+  background: transparent;
+  color: var(--apple-red);
+  font-weight: 600;
+}
+
+.danger-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.danger-confirm-btn {
+  flex: 1;
+  background: var(--apple-red);
+  color: #fff;
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(255, 59, 48, 0.3);
+  transition: transform 0.15s var(--spring-bounce);
+}
+
+.danger-confirm-btn:active {
+  transform: scale(0.95);
+}
+
+.danger-cancel-btn {
+  flex: 1;
+  background: var(--content-subtle);
+  border: 1px solid var(--content-border);
+  color: var(--text-primary);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 [hidden] {
@@ -1222,6 +1738,97 @@ details.run-steps[open] .run-chevron {
   cursor: pointer;
 }
 
+/* ── Reicon M 伴侣（Composer / 气泡外沿） ───────────────────────── */
+.pix-actor-host {
+  position: absolute;
+  z-index: 15;
+  width: 36px;
+  height: 36px;
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  color: #9b8afb;
+  touch-action: none;
+  will-change: top, left;
+  filter: drop-shadow(0 2px 2px rgba(91, 70, 180, 0.22));
+  transform-origin: 50% 92%;
+}
+.pix-actor-host:active,
+.pix-actor-host.pressing {
+  cursor: grabbing;
+}
+
+.pix-squash {
+  width: 36px;
+  height: 36px;
+  transform-origin: 50% 92%;
+  animation: pixBreathe 3.9s ease-in-out infinite;
+}
+.pix-squash svg {
+  display: block;
+  width: 36px;
+  height: 36px;
+  overflow: visible;
+  pointer-events: none;
+}
+.pix-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pixBlink 7.2s infinite;
+}
+
+.pix-actor-host.pressing .pix-squash {
+  animation: none;
+  transform: scale(1.24, 0.62);
+}
+.pix-actor-host.rebounding .pix-squash {
+  animation: pixHop 0.62s var(--spring-bounce);
+}
+.pix-actor-host.walking .pix-squash {
+  animation: pixStep 0.53s ease-in-out infinite;
+}
+.pix-actor-host.surprise {
+  transform: rotate(-9deg) translate(3px, -5px);
+}
+.pix-actor-host.surprise .pix-squash {
+  animation: none;
+  transform: scale(0.9, 1.14);
+}
+.pix-actor-host.surprise .pix-eye {
+  animation: none;
+  transform: scale(1.38, 1.18);
+}
+.pix-actor-host.pressing .pix-eye {
+  animation: none;
+  transform: scaleY(0.14);
+}
+.pix-actor-host.nod .pix-squash {
+  animation: pixNod 0.7s var(--spring-bounce);
+}
+
+@keyframes pixBreathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.04, 0.96); }
+}
+@keyframes pixHop {
+  0% { transform: scale(1.24, 0.62); }
+  42% { transform: translateY(-11px) scale(0.9, 1.12); }
+  70% { transform: translateY(2px) scale(1.08, 0.92); }
+  100% { transform: none; }
+}
+@keyframes pixStep {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-4px) scale(0.96, 1.05); }
+}
+@keyframes pixNod {
+  0%, 100% { transform: none; }
+  40% { transform: rotate(10deg) scale(1.06, 0.92); }
+}
+@keyframes pixBlink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  93% { transform: scaleY(0.12); }
+}
+
 /* ── 减弱动态偏好 ────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .msg,
@@ -1245,5 +1852,12 @@ details.run-steps[open] .run-chevron {
 
   .run-chevron {
     transition: none;
+  }
+
+  .pix-actor-host.rebounding .pix-squash,
+  .pix-actor-host.walking .pix-squash,
+  .pix-squash,
+  .pix-eye {
+    animation: none;
   }
 }

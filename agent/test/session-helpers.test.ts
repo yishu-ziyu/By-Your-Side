@@ -371,11 +371,35 @@ describe("withPageContext", () => {
     expect(wrapped).toContain("do not redo it");
   });
 
+  it("有选区时在页面锚点后附上划词正文", () => {
+    const out = withPageContext("这是什么", {
+      tabId: 3,
+      title: "MiroFish",
+      url: "https://en.wikipedia.org/wiki/MiroFish",
+      selection: { text: "MiroFish is a made-up term." },
+    });
+    expect(out).toBe(
+      '[User\'s current page: tab 3 "MiroFish" — https://en.wikipedia.org/wiki/MiroFish]\n[User\'s selected text]\nMiroFish is a made-up term.\n这是什么',
+    );
+  });
+
   it("steer 插话与 prompt 走同一前缀（打断后仍带当前页锚点）", () => {
     const ctx = { tabId: 7, title: "Locked", url: "https://example.com/a" };
     expect(withPageContext("先点登录", ctx)).toBe(
       '[User\'s current page: tab 7 "Locked" — https://example.com/a]\n先点登录',
     );
+  });
+
+  it("有选区时附上 selected text 块", () => {
+    const out = withPageContext("解释这段选中的文字。", {
+      tabId: 3,
+      title: "Methods",
+      url: "https://nature.com/x",
+      selection: { text: "  contamination\nfraction  " },
+    });
+    expect(out).toContain("[User's selected text]");
+    expect(out).toContain("contamination fraction");
+    expect(out.endsWith("解释这段选中的文字。")).toBe(true);
   });
 });
 

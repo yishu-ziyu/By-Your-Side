@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 更圆的 M</title>
+<style>
+  :root {
+    --bg: #f2f4f8;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #111827;
+    --secondary: rgba(60,60,67,.62);
+    --blue: #0071e3;
+    --m: #9B8AFB;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --glass: rgba(255,255,255,.86);
+    --glass-border: rgba(255,255,255,.55);
+    --content-border: rgba(0,0,0,.06);
+    --text-2: #4b5563;
+    --text-3: #9ca3af;
+  }
+  body.dark {
+    --bg: #0c0d12;
+    --cell: #1a1c22;
+    --sep: rgba(255,255,255,.1);
+    --label: #e8eaed;
+    --secondary: rgba(232,234,237,.58);
+    --glass: rgba(32,35,43,.9);
+    --glass-border: rgba(255,255,255,.14);
+    --content-border: rgba(255,255,255,.08);
+    --text-2: #9aa1ab;
+    --text-3: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 36px 28px 100px; }
+  h1 { font-size: 24px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; color: var(--secondary); max-width: 640px; line-height: 1.5; margin: 0 0 20px; }
+  .lede b { color: var(--label); font-weight: 650; }
+  .toolbar { display: flex; gap: 8px; margin: 0 0 22px; }
+  .toolbar button {
+    border: 0; background: var(--cell); color: var(--label);
+    box-shadow: 0 0 0 1px var(--sep); border-radius: 999px;
+    padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .asks { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; max-width: 1080px; margin-bottom: 16px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  .research {
+    max-width: 1080px; margin: 0 0 22px; padding: 12px 14px;
+    background: var(--cell); border-radius: 14px; box-shadow: 0 0 0 1px var(--sep);
+    font-size: 13px; color: var(--secondary); line-height: 1.5;
+  }
+  .research b { color: var(--label); }
+  .research ul { margin: 6px 0 0; padding-left: 18px; }
+  .research li { margin: 3px 0; }
+  .layout { display: grid; grid-template-columns: minmax(280px, 1fr) 360px; gap: 28px; max-width: 1080px; align-items: start; }
+  @media (max-width: 860px) { .layout, .asks { grid-template-columns: 1fr; } }
+  .ref {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; margin-bottom: 16px;
+    background: var(--cell); border-radius: 14px; box-shadow: 0 0 0 1px var(--sep);
+  }
+  .ref svg { width: 40px; height: 40px; display: block; }
+  .ref p { margin: 0; font-size: 13px; color: var(--secondary); line-height: 1.4; }
+  .ref b { color: var(--label); }
+  .group { margin-bottom: 16px; }
+  .group h2 { font-size: 12px; font-weight: 650; margin: 0 0 8px; color: var(--secondary); }
+  .picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .picks.eyes { grid-template-columns: repeat(5, 1fr); }
+  .pick {
+    border: 0; background: var(--cell); color: var(--label);
+    box-shadow: 0 0 0 1px var(--sep); border-radius: 14px;
+    padding: 10px 8px 8px; cursor: pointer; text-align: center;
+    font: inherit; font-size: 11px;
+  }
+  .pick svg { width: 52px; height: 52px; display: block; margin: 0 auto 6px; color: var(--m); }
+  .pick.on { box-shadow: 0 0 0 2px var(--blue); }
+  .pick .rec { color: var(--blue); font-weight: 650; }
+  .now { font-size: 13px; color: var(--secondary); margin: 8px 0 0; }
+  .now b { color: var(--label); }
+
+  .phone {
+    background: var(--cell); border-radius: 18px;
+    box-shadow: 0 0 0 1px var(--sep); overflow: hidden;
+  }
+  .nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 11px 14px 9px; border-bottom: .5px solid var(--sep);
+    font-size: 13px; font-weight: 650;
+  }
+  .nav span { font-size: 11px; font-weight: 500; color: var(--secondary); }
+  .stage {
+    position: relative; height: 520px;
+    display: flex; flex-direction: column;
+    background:
+      radial-gradient(at 15% 15%, rgba(255,182,140,.28) 0px, transparent 55%),
+      radial-gradient(at 85% 20%, rgba(135,195,255,.28) 0px, transparent 55%),
+      var(--bg);
+  }
+  body.dark .stage {
+    background:
+      radial-gradient(at 15% 15%, rgba(35,55,95,.55) 0px, transparent 55%),
+      radial-gradient(at 50% 85%, rgba(20,75,70,.4) 0px, transparent 55%),
+      #080a0f;
+  }
+  .msgs { flex: 1; overflow: hidden; padding: 12px 12px 8px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 86%; padding: 8px 11px; border-radius: 14px; font-size: 13px; line-height: 1.45; }
+  .msg.user { align-self: flex-end; background: var(--cell); box-shadow: 0 0 0 1px var(--content-border); }
+  .msg.agent { align-self: flex-start; background: color-mix(in srgb, var(--cell) 70%, transparent); box-shadow: 0 0 0 1px var(--content-border); }
+  .msg .who { font-size: 10px; color: var(--text-3); margin-bottom: 3px; }
+  .composer-wrap { position: relative; padding: 8px 10px 12px; }
+  .composer {
+    display: flex; flex-direction: column; gap: 7px; padding: 10px 12px;
+    border: 1px solid var(--glass-border); border-radius: 22px; background: var(--glass);
+    box-shadow: inset 0 1px 0.5px rgba(255,255,255,.85), 0 12px 28px -8px rgba(31,38,135,.1);
+  }
+  body.dark .composer { box-shadow: inset 0 1px 0.5px rgba(255,255,255,.2), 0 12px 28px rgba(0,0,0,.4); }
+  .pill {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    background: color-mix(in srgb, var(--bg) 80%, var(--cell));
+    border: 1px solid var(--content-border); font-size: 11px; color: var(--text-2);
+  }
+  .pill i { width: 5px; height: 5px; border-radius: 50%; background: #34c759; }
+  textarea { border: 0; resize: none; outline: none; background: transparent; font: inherit; font-size: 13px; color: var(--label); min-height: 36px; }
+  textarea::placeholder { color: var(--text-3); }
+  .bar { display: flex; align-items: center; gap: 6px; }
+  .chip { height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--content-border); background: transparent; font: inherit; font-size: 11px; color: var(--text-2); }
+  .spacer { flex: 1; }
+  .send { width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--blue); color: #fff; cursor: pointer; display: grid; place-items: center; }
+  .send:active { transform: scale(.96); }
+  .actions { display: flex; gap: 6px; padding: 10px 12px 12px; }
+  .actions button {
+    flex: 1; border: 0; background: color-mix(in srgb, var(--bg) 70%, var(--cell));
+    color: var(--label); border-radius: 9px; padding: 7px 8px; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .m-actor {
+    position: absolute; width: 36px; height: 36px; transform-origin: 50% 92%;
+    cursor: grab; z-index: 6; touch-action: none; color: var(--m);
+    filter: drop-shadow(0 2px 2px rgba(91,70,180,.22));
+    transition: transform .7s var(--spring);
+  }
+  .m-actor:active, .m-actor.pressing { cursor: grabbing; }
+  .m-squash { width: 100%; height: 100%; transform-origin: 50% 92%; transition: transform 90ms linear; animation: breathe 3.9s ease-in-out infinite; }
+  .m-actor.pressing .m-squash { animation: none; transform: scale(1.24, .62); }
+  .m-actor.rebounding .m-squash { animation: hop .62s var(--spring); }
+  .m-actor.walking .m-squash { animation: step .53s ease-in-out infinite; }
+  .m-actor.surprise { transform: rotate(-9deg) translate(3px, -5px); }
+  .m-actor.surprise .m-squash { animation: none; transform: scale(.9, 1.14); }
+  .m-actor.surprise .eye { animation: none; transform: scale(1.38, 1.18); }
+  .m-actor.nod .m-squash { animation: nod .7s var(--spring); }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1, 1); }
+    50% { transform: scale(1.04, 0.96); }
+  }
+  @keyframes hop {
+    0% { transform: scale(1.24, .62); }
+    42% { transform: translateY(-11px) scale(.9, 1.12); }
+    70% { transform: translateY(2px) scale(1.08, .92); }
+    100% { transform: none; }
+  }
+  @keyframes step {
+    0%, 100% { transform: translateY(0) scale(1, 1); }
+    50% { transform: translateY(-4px) scale(.96, 1.05); }
+  }
+  @keyframes nod {
+    0%, 100% { transform: none; }
+    40% { transform: rotate(10deg) scale(1.06, .92); }
+  }
+  .m-actor svg, .pick svg { overflow: visible; }
+  .m-actor svg { width: 36px; height: 36px; display: block; }
+  .eye { transform-box: fill-box; transform-origin: center; animation: blink 7.2s infinite; }
+  .m-actor.pressing .eye { animation: none; transform: scaleY(.14); }
+  @keyframes blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(.12); } }
+  .safe .composer, .safe .msg { outline: 1px dashed rgba(220,38,38,.45); outline-offset: -1px; }
+  .safe .m-actor::after { content: ""; position: absolute; inset: -2px; border: 1px dashed rgba(22,163,74,.7); border-radius: 4px; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .m-actor, .m-squash { transition: none; animation: none !important; }
+    .eye { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>更圆一点的 M</h1>
+  <p class="lede">
+    跳慢了约 40%，沿边是走不是瞬移。长消息会愣一下。闲着多半在歇，偶尔自己张望。
+  </p>
+  <div class="toolbar">
+    <button type="button" id="tog-dark">深 / 浅</button>
+    <button type="button" id="tog-safe">显示安全区</button>
+  </div>
+  <div class="asks">
+    <p><b>1. 圆了之后还是不是 M？</b>太圆会变成 n。36px 仍要读成字母。</p>
+    <p><b>2. 哪一档眼睛像 R？</b>官网是竖胶囊，不是圆点。</p>
+    <p><b>3. 换皮后趴框还对不对？</b>脚还在输入框顶沿，不挡字。</p>
+  </div>
+  <div class="research">
+    <b>这种边框生物最好怎么动</b>
+    <ul>
+      <li><b>Shimeji</b>：脚贴着窗口顶沿走，到拐角坐下。跑太躁，被关掉了。</li>
+      <li><b>桌面猫 / oneko</b>：休息远多于走，同一动作不连做，落地先蹲。</li>
+      <li><b>Disney</b>：跳之前先蹲 100–200ms，落地压扁。没有预备的跳像传送。</li>
+      <li><b>Rauno / 弹簧</b>：有质量才会过冲再停。线性一次到位会假。</li>
+    </ul>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="ref">
+        <svg viewBox="0 0 150 150" aria-hidden="true">
+          <path fill="#9B8AFB" fill-rule="evenodd" d="M44.28 144.73C32.14 143.33 22.02 136.15 16.33 124.97C13.63 119.67 12.28 114.61 11.85 108.33C11.72 106.31 11.68 95.26 11.74 74.69C11.82 41.47 11.76 42.97 12.83 37.97C14.63 29.56 18.33 22.65 23.92 17.25C26.16 15.06 27.93 13.68 30.34 12.16C34.84 9.37 40.36 7.36 46.25 6.39C48.14 6.09 50.24 6.05 70.79 5.98C86 5.94 94.09 5.98 95.79 6.13C105.05 6.88 113.33 9.87 119.96 14.89C121.8 16.28 125.09 19.48 126.8 21.51C131.71 27.37 134.93 34.86 136.37 43.72C136.78 46.2 136.95 54.98 136.63 57.96C135.15 72.67 128.6 83.83 116.83 91.68C113.1 94.17 111.9 95.52 111.34 97.86C111.06 99.1 111.4 100.41 112.41 101.93C112.8 102.49 116.5 106.42 120.62 110.67C128.95 119.26 130.1 120.51 130.98 121.95C132.32 124.18 133 127.33 132.83 130.7C132.68 133.36 132.34 134.84 131.39 136.79C129.1 141.44 124.74 144.08 118.12 144.77C116.83 144.9 113.44 144.94 108.53 144.88C100.57 144.79 100.05 144.75 97.42 143.83C94.69 142.88 92.57 141.19 87.38 135.83C85.88 134.3 80.79 129.11 76.05 124.31C66.85 115.02 66.48 114.7 64.53 114.46C62.75 114.25 60.61 115.4 59.49 117.16C58.33 118.99 58.33 119.05 58.33 130.4C58.33 136.58 58.25 140.98 58.14 141.38C57.79 142.71 56.94 143.74 55.76 144.3C54.68 144.84 54.68 144.84 50.18 144.88C47.71 144.88 45.05 144.82 44.28 144.73Z M55.22 73.47C61.1 72.24 65.41 66.75 66.87 58.67C67.34 56.07 67.34 51.14 66.87 48.46C65.71 41.81 62.88 36.91 58.82 34.45C55.65 32.52 52.05 32.37 48.77 34.04C47.09 34.9 45.61 36.1 44.37 37.65C38.88 44.51 37.89 57.12 42.16 65.6C44.24 69.73 47.71 72.65 51.43 73.47C52.97 73.81 53.66 73.81 55.22 73.47Z M91 73.38C96.75 71.92 101.1 66.18 102.37 58.39C102.75 56.11 102.69 50.56 102.28 48.18C100.8 39.85 96.41 34.19 90.47 32.97C89.11 32.71 88.86 32.71 87.38 32.99C84.46 33.57 81.91 35.14 79.93 37.6C75.41 43.22 73.84 53.45 76.24 61.86C77.92 67.78 81.84 72.12 86.65 73.38C88.41 73.83 89.22 73.83 91 73.38Z"/>
+        </svg>
+        <p><b>官网 R。</b>连续胖剪影，竖胶囊眼。M 要对这个圆度，不要尖 V。</p>
+      </div>
+
+      <div class="group">
+        <h2>形体</h2>
+        <div class="picks" id="body-picks"></div>
+      </div>
+      <div class="group">
+        <h2>眼睛</h2>
+        <div class="picks eyes" id="eye-picks"></div>
+      </div>
+      <p class="now">当前：<b id="now-label"></b></p>
+    </div>
+
+    <div class="phone" id="phone"></div>
+  </div>
+
+<script>
+const BODIES = {
+  now: {
+    label: "现在这版",
+    rec: false,
+    body: "M 30 128 L 30 22 L 75 86 L 120 22 L 120 128",
+    sw: 44,
+  },
+  fillet: {
+    label: "圆角 V",
+    rec: true,
+    body: "M 30 128 L 30 22 L 66 72 C 70 84 80 84 84 72 L 120 22 L 120 128",
+    sw: 46,
+  },
+  fat: {
+    label: "再胖一点",
+    rec: false,
+    body: "M 32 126 L 32 24 L 75 84 L 118 24 L 118 126",
+    sw: 50,
+  },
+};
+const EYES = {
+  capsule: { label: "胶囊", rec: false, pair: [[46,48,8.5,17],[104,48,8.5,17]] },
+  reicon:  { label: "官网眼", rec: true,  pair: [[50,50,9.5,19],[100,50,9.5,19]] },
+  tall:    { label: "细长", rec: false, pair: [[46,46,7,19],[104,46,7,19]] },
+  close:   { label: "靠拢", rec: false, pair: [[52,48,8.5,17],[98,48,8.5,17]] },
+  round:   { label: "圆点", rec: false, pair: [[46,50,11,13],[104,50,11,13]] },
+};
+
+let bodyKey = "fillet";
+let eyeKey = "reicon";
+let maskN = 0;
+
+function svgFor(bKey, eKey, sizeClass) {
+  const b = BODIES[bKey], e = EYES[eKey];
+  const id = "m" + (++maskN);
+  const eyes = e.pair.map(([cx,cy,rx,ry]) =>
+    `<ellipse class="eye" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="#000"/>`
+  ).join("");
+  return `<svg viewBox="0 0 150 150" aria-hidden="true">
+    <defs><mask id="${id}" maskUnits="userSpaceOnUse">
+      <rect width="150" height="150" fill="#fff"/>${eyes}
+    </mask></defs>
+    <g mask="url(#${id})">
+      <path d="${b.body}" fill="none" stroke="currentColor" stroke-width="${b.sw}"
+        stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </svg>`;
+}
+
+function paintPicks() {
+  const bp = document.getElementById("body-picks");
+  bp.innerHTML = Object.entries(BODIES).map(([k, v]) => `
+    <button type="button" class="pick ${k===bodyKey?"on":""}" data-body="${k}">
+      ${svgFor(k, eyeKey)}
+      ${v.label}${v.rec ? ' <span class="rec">推荐</span>' : ""}
+    </button>`).join("");
+  const ep = document.getElementById("eye-picks");
+  ep.innerHTML = Object.entries(EYES).map(([k, v]) => `
+    <button type="button" class="pick ${k===eyeKey?"on":""}" data-eye="${k}">
+      ${svgFor(bodyKey, k)}
+      ${v.label}${v.rec ? ' <span class="rec">荐</span>' : ""}
+    </button>`).join("");
+  document.getElementById("now-label").textContent =
+    BODIES[bodyKey].label + " · " + EYES[eyeKey].label;
+}
+
+function applySkin() {
+  const squash = document.querySelector("#actor .m-squash");
+  if (squash) squash.innerHTML = svgFor(bodyKey, eyeKey);
+  paintPicks();
+}
+
+function mountPhone() {
+  const host = document.getElementById("phone");
+  host.innerHTML = `
+    <div class="nav">SideAgent <span>Gemini 2.5</span></div>
+    <div class="stage" id="stage">
+      <div class="msgs" id="msgs">
+        <div class="msg agent"><div class="who">SideAgent</div>先看日历，再把今天下午空出来的两段标给你。</div>
+      </div>
+      <div class="composer-wrap">
+        <div class="composer" id="composer">
+          <div class="pill"><span>日历</span><i></i></div>
+          <textarea rows="1" placeholder="给 SideAgent 发消息"></textarea>
+          <div class="bar">
+            <span class="chip">Gemini 2.5</span>
+            <span class="spacer"></span>
+            <button class="send" type="button" title="发送">↑</button>
+          </div>
+        </div>
+      </div>
+      <div class="m-actor" id="actor" title="按住摸摸">
+        <div class="m-squash">${svgFor(bodyKey, eyeKey)}</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" data-act="pet">摸头</button>
+      <button type="button" data-act="walk">沿边走</button>
+      <button type="button" data-act="send">短消息</button>
+      <button type="button" data-act="long">长消息</button>
+    </div>
+  `;
+  const stage = host.querySelector(".stage");
+  const actor = host.querySelector(".m-actor");
+  const composer = host.querySelector(".composer");
+  const sendBtn = host.querySelector(".send");
+  const input = host.querySelector("textarea");
+  const msgs = host.querySelector(".msgs");
+  let seq = 0;
+  let lastFidget = "";
+  const timers = [];
+  const later = (fn, ms) => { const id = setTimeout(fn, ms); timers.push(id); return id; };
+  const bump = () => { seq += 1; while (timers.length) clearTimeout(timers.pop()); actor.classList.remove("walking", "surprise", "nod"); return seq; };
+  const alive = (token) => token === seq;
+
+  function rim(el, t, side) {
+    const sr = stage.getBoundingClientRect();
+    const tr = el.getBoundingClientRect();
+    const w = actor.offsetWidth, h = actor.offsetHeight;
+    if (side === "top") {
+      return { left: tr.left - sr.left + 14 + t * Math.max(24, tr.width - w - 28), top: tr.top - sr.top - h + 8, rot: 0 };
+    }
+    if (side === "right") {
+      return { left: tr.right - sr.left - 8, top: tr.top - sr.top + 8 + t * 28, rot: 11 };
+    }
+    return { left: tr.left - sr.left - w + 8, top: tr.top - sr.top + 8, rot: -11 };
+  }
+
+  function current() {
+    return { left: parseFloat(actor.style.left) || 0, top: parseFloat(actor.style.top) || 0 };
+  }
+  function rotNow() {
+    const m = /rotate\(([-\d.]+)/.exec(actor.style.transform || "");
+    return m ? parseFloat(m[1]) : 0;
+  }
+  function put(p) {
+    actor.style.left = p.left + "px";
+    actor.style.top = p.top + "px";
+    actor.style.transform = p.rot ? `rotate(${p.rot}deg)` : "none";
+  }
+  function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+  async function animateTo(dest, token, extraMs) {
+    const start = current();
+    const sRot = rotNow();
+    const dist = Math.hypot(dest.left - start.left, dest.top - start.top);
+    const dur = Math.max(extraMs || 0, dist * 3.4); // ~40% slower than the old ~500px/s hops
+    const t0 = performance.now();
+    await new Promise((resolve) => {
+      const tick = (now) => {
+        if (!alive(token)) return resolve();
+        const p = Math.min(1, (now - t0) / dur);
+        const e = ease(p);
+        put({
+          left: start.left + (dest.left - start.left) * e,
+          top: start.top + (dest.top - start.top) * e,
+          rot: sRot + (dest.rot - sRot) * e,
+        });
+        if (p < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  async function anticipate(token) {
+    actor.classList.add("pressing");
+    await wait(180);
+    if (!alive(token)) return;
+    actor.classList.remove("pressing");
+  }
+
+  async function alongTop(el, fromT, toT, token) {
+    const steps = 3;
+    for (let i = 1; i <= steps; i++) {
+      if (!alive(token)) return;
+      const t = fromT + (toT - fromT) * (i / steps);
+      await animateTo(rim(el, t, "top"), token, 280);
+    }
+  }
+
+  function perch(target, where) {
+    const map = { "top-left": [0, "top"], "top-right": [1, "top"], right: [0.4, "right"], left: [0, "left"] };
+    const [t, side] = map[where] || [0, "top"];
+    put(rim(target, t, side));
+  }
+
+  function pet() {
+    actor.classList.remove("rebounding");
+    actor.classList.add("pressing");
+    later(() => {
+      actor.classList.remove("pressing");
+      actor.classList.add("rebounding");
+      later(() => actor.classList.remove("rebounding"), 640);
+    }, 220);
+  }
+
+  async function walk() {
+    const token = bump();
+    actor.classList.add("walking");
+    await anticipate(token);
+    if (!alive(token)) return;
+    await alongTop(composer, 0.05, 0.95, token);
+    if (!alive(token)) return;
+    await wait(380);
+    if (!alive(token)) return;
+    await animateTo(rim(composer, 0.35, "right"), token, 420);
+    await wait(320);
+    const user = msgs.querySelector(".msg.user");
+    const agent = [...msgs.querySelectorAll(".msg.agent")].at(-1);
+    if (user && alive(token)) {
+      await anticipate(token);
+      await alongTop(user, 0.2, 0.85, token);
+      await wait(280);
+    }
+    if (agent && alive(token)) {
+      await alongTop(agent, 0.1, 0.55, token);
+      await wait(420);
+    }
+    if (!alive(token)) return;
+    await alongTop(composer, 0.9, 0.12, token);
+    if (alive(token)) actor.classList.remove("walking");
+  }
+
+  async function reactTo(el, long, token) {
+    if (long) {
+      actor.classList.add("surprise");
+      await wait(720);
+      if (!alive(token)) return;
+      actor.classList.remove("surprise");
+      actor.classList.add("walking");
+      await alongTop(el, 0.15, 0.7, token);
+      actor.classList.remove("walking");
+    } else {
+      actor.classList.add("nod");
+      await wait(400);
+      if (!alive(token)) return;
+      actor.classList.remove("nod");
+      await animateTo(rim(el, 0.8, "top"), token, 360);
+    }
+  }
+
+  function send(preset) {
+    const token = bump();
+    const fallback = preset === "long"
+      ? "帮我把今天下午到晚上的安排理一遍：两点的评审、四点的电话、晚上可能要改一版日历说明。哪几段是真的空的，哪几段只能挤？"
+      : "今天下午有空吗？";
+    const text = (input.value || fallback).trim();
+    input.value = "";
+    const long = text.length >= 40 || text.split("\n").length >= 3;
+    const el = document.createElement("div");
+    el.className = "msg user";
+    el.innerHTML = `<div class="who">你</div>${text}`;
+    msgs.appendChild(el);
+    reactTo(el, long, token).then(() => {
+      if (!alive(token)) return;
+      later(() => {
+        if (!alive(token)) return;
+        const reply = document.createElement("div");
+        reply.className = "msg agent";
+        reply.innerHTML = `<div class="who">SideAgent</div>${long ? "这么长…我先标空档。14:00–15:30，16:40 之后也空。" : "有。14:00–15:30 空。"}`;
+        msgs.appendChild(reply);
+        alongTop(reply, 0.1, 0.5, token).then(() => {
+          if (!alive(token)) return;
+          later(() => { if (alive(token)) animateTo(rim(composer, 0.12, "top"), token, 500); }, 1100);
+        });
+      }, 900);
+    });
+  }
+
+  async function fidget() {
+    if (seq !== idleSeq) return;
+    const token = seq;
+    const pool = ["rest", "rest", "look", "look", "hop", "peek", "wander"];
+    let pick = pool[Math.floor(Math.random() * pool.length)];
+    if (pick === lastFidget) pick = "rest";
+    lastFidget = pick;
+    if (pick === "look") {
+      put({ ...current(), rot: -12 });
+      await wait(480); if (!alive(token)) return;
+      put({ ...current(), rot: 10 });
+      await wait(480); if (!alive(token)) return;
+      put({ ...current(), rot: 0 });
+    } else if (pick === "hop") {
+      actor.classList.add("rebounding");
+      await wait(640);
+      actor.classList.remove("rebounding");
+    } else if (pick === "peek") {
+      actor.classList.add("walking");
+      await animateTo(rim(composer, 0, "left"), token, 500);
+      await wait(520);
+      if (alive(token)) await animateTo(rim(composer, 0.12, "top"), token, 500);
+      actor.classList.remove("walking");
+    } else if (pick === "wander") {
+      actor.classList.add("walking");
+      await alongTop(composer, 0.12, 0.55, token);
+      if (alive(token)) await alongTop(composer, 0.55, 0.18, token);
+      actor.classList.remove("walking");
+    }
+  }
+
+  let idleSeq = 0;
+  function scheduleIdle() {
+    setTimeout(async () => {
+      if (seq === idleSeq) await fidget();
+      idleSeq = seq;
+      scheduleIdle();
+    }, 4200 + Math.random() * 3200);
+  }
+
+  actor.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    bump();
+    actor.classList.remove("rebounding");
+    actor.classList.add("pressing");
+  });
+  window.addEventListener("pointerup", () => {
+    if (!actor.classList.contains("pressing")) return;
+    actor.classList.remove("pressing");
+    actor.classList.add("rebounding");
+    setTimeout(() => actor.classList.remove("rebounding"), 640);
+  });
+  sendBtn.addEventListener("click", () => send());
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  input.addEventListener("input", () => {
+    if (input.value.length >= 40) actor.classList.add("surprise");
+    else actor.classList.remove("surprise");
+  });
+  input.addEventListener("focus", () => {
+    const token = seq;
+    animateTo(rim(composer, 0, "left"), token, 500);
+  });
+  input.addEventListener("blur", () => {
+    actor.classList.remove("surprise");
+    const token = seq;
+    animateTo(rim(composer, 0.12, "top"), token, 500);
+  });
+  host.querySelectorAll("[data-act]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const act = btn.getAttribute("data-act");
+      if (act === "pet") { bump(); pet(); }
+      if (act === "walk") walk();
+      if (act === "send") send("short");
+      if (act === "long") send("long");
+    });
+  });
+  requestAnimationFrame(() => perch(composer, "top-left"));
+  later(() => { if (seq === 0) walk(); }, 1100);
+  scheduleIdle();
+  return { perch, composer };
+}
+
+function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+mountPhone();
+paintPicks();
+
+document.getElementById("body-picks").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-body]");
+  if (!btn) return;
+  bodyKey = btn.getAttribute("data-body");
+  applySkin();
+});
+document.getElementById("eye-picks").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-eye]");
+  if (!btn) return;
+  eyeKey = btn.getAttribute("data-eye");
+  applySkin();
+});
+document.getElementById("tog-dark").onclick = () => document.body.classList.toggle("dark");
+document.getElementById("tog-safe").onclick = () => document.body.classList.toggle("safe");
+</script>
+</body>
+</html>

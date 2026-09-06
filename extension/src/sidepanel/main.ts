@@ -40,12 +40,14 @@ import {
 import { cursorColor } from "../shared/palette.js";
 import { LEAD_COLOR, displayColor, displayNameFor, personFor } from "../../../shared/cast.js";
 import { mountGrok, mountKenney, type GrokHandle } from "../shared/grok-bot.js";
+import { mountCompanion } from "./companion.js";
 import {
   chipLabel,
   displayName,
   filterModels,
   groupModelsByProvider,
   humanizeModelError,
+  modelReasoningMeta,
   providerLabel,
   providerMark,
 } from "./models.js";
@@ -53,6 +55,7 @@ import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../sha
 import type { AgentMode, AgentRunState, AgentUiEvent, ClientMessage, ModelOption, TeamView } from "../../../shared/protocol.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
+import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 
 const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
@@ -79,24 +82,56 @@ function renderMarkdown(text: string): string {
 const app = document.getElementById("app")!;
 app.innerHTML = `
   <header id="topbar">
-    <img id="logo" src="icons/icon-48.png" alt="" />
-    <span id="brand">SideAgent</span>
+    <div class="brand-cluster">
+      <img id="logo" src="icons/icon-48.png" alt="" />
+      <span id="brand">SideAgent</span>
+    </div>
     <button id="teach-toggle" type="button" title="教学模式：Agent 只标注引导，由你手动操作" aria-pressed="false"></button>
-    <span id="status-pill"><span id="status-dot" class="dot"></span><span id="status-text">未连接</span></span>
+    <div id="status-pill" class="activity-island" title="当前连接与执行状态">
+      <span id="status-dot" class="dot island-pulse-dot"></span>
+      <span id="status-text">未连接</span>
+    </div>
   </header>
   <div id="messages"></div>
   <div id="team-card" hidden></div>
-  <div id="composer">
-    <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
-    <div id="composer-bar">
-      <button id="model-btn" type="button" title="切换模型" hidden aria-haspopup="listbox" aria-expanded="false">
-        <span id="model-mark" class="model-mark" hidden></span>
-        <span id="model-name"></span>
-      </button>
-      <span id="composer-spacer"></span>
-      <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
-      <button id="abort-btn" type="button" title="中止" hidden></button>
-      <button id="send-btn" type="button" title="发送"></button>
+  <div class="composer-dock-wrap">
+    <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
+      <div class="morph-sheet-head">
+        <span>当前活动标签页检查器</span>
+        <button type="button" id="close-morph-sheet" class="sheet-close-btn" title="关闭">✕</button>
+      </div>
+      <div class="morph-sheet-body" id="morph-sheet-body">
+        <div id="morph-sheet-title">标题：检测中…</div>
+        <div id="morph-sheet-url">URL：-</div>
+        <div id="morph-sheet-status">状态：活跃连接已就绪</div>
+      </div>
+    </div>
+    <div id="composer" class="composer-glass-dock">
+      <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
+        <span id="tab-icon-sq" class="tab-icon-sq"></span>
+        <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
+        <i class="tab-live-dot"></i>
+      </div>
+      <div id="ask-cite" hidden>
+        <span id="ask-cite-host"></span>
+        <span id="ask-cite-text"></span>
+        <button type="button" id="ask-cite-close" title="去掉这段引用">×</button>
+      </div>
+      <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
+      <div id="composer-bar">
+        <button id="model-btn" type="button" title="切换模型" hidden aria-haspopup="listbox" aria-expanded="false">
+          <span id="model-mark" class="model-mark" hidden></span>
+          <span id="model-name"></span>
+          <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
+        </button>
+        <span id="composer-spacer"></span>
+        <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
+        <button id="abort-btn" type="button" title="中止" hidden></button>
+        <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
+          <span class="morph-icon-send"></span>
+          <span class="morph-icon-stop"></span>
+        </button>
+      </div>
     </div>
   </div>
   <div id="model-popover" hidden></div>
@@ -112,6 +147,7 @@ app.innerHTML = `
 const statusDot = document.getElementById("status-dot") as HTMLElement;
 const statusText = document.getElementById("status-text")!;
 const messagesEl = document.getElementById("messages")!;
+const composerEl = document.getElementById("composer") as HTMLElement;
 const inputEl = document.getElementById("input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
@@ -120,15 +156,113 @@ const teachToggle = document.getElementById("teach-toggle") as HTMLButtonElement
 const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
 const modelMark = document.getElementById("model-mark") as HTMLElement;
 const modelName = document.getElementById("model-name")!;
+const modelReasoningTag = document.getElementById("model-reasoning-tag") as HTMLElement;
 const modelPopover = document.getElementById("model-popover")!;
 const setupEl = document.getElementById("setup")!;
 const tokenInput = document.getElementById("token-input") as HTMLInputElement;
 const setupErr = document.getElementById("setup-err")!;
 const setupSave = document.getElementById("setup-save") as HTMLButtonElement;
 
-sendBtn.appendChild(icon(ArrowUp));
+// 页面感知胶囊与检查器 DOM
+const pagePill = document.getElementById("page-pill") as HTMLElement | null;
+const askCiteEl = document.getElementById("ask-cite") as HTMLElement | null;
+const askCiteHost = document.getElementById("ask-cite-host") as HTMLElement | null;
+const askCiteText = document.getElementById("ask-cite-text") as HTMLElement | null;
+const askCiteClose = document.getElementById("ask-cite-close") as HTMLButtonElement | null;
+let pendingAsk: PendingAsk | null = null;
+const morphSheet = document.getElementById("morph-sheet") as HTMLElement | null;
+const closeMorphSheetBtn = document.getElementById("close-morph-sheet") as HTMLButtonElement | null;
+const tabIconSq = document.getElementById("tab-icon-sq") as HTMLElement | null;
+const tabTitleText = document.getElementById("tab-title-text") as HTMLElement | null;
+const morphSheetTitle = document.getElementById("morph-sheet-title") as HTMLElement | null;
+const morphSheetUrl = document.getElementById("morph-sheet-url") as HTMLElement | null;
+const morphSheetStatus = document.getElementById("morph-sheet-status") as HTMLElement | null;
+
+const morphSend = sendBtn.querySelector(".morph-icon-send");
+const morphStop = sendBtn.querySelector(".morph-icon-stop");
+if (morphSend) morphSend.appendChild(icon(ArrowUp));
+if (morphStop) morphStop.appendChild(icon(Square));
 abortBtn.appendChild(icon(Square));
 teachToggle.appendChild(icon(GraduationCap));
+
+function clipTitle(text: string, max = 16): string {
+  const t = text.trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+async function refreshActiveTabPill(): Promise<void> {
+  if (typeof chrome === "undefined" || !chrome.tabs?.query) {
+    if (tabTitleText) tabTitleText.textContent = "浏览器活动标签页";
+    return;
+  }
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
+    const title = tab.title || tab.url || "未知页面";
+    let host = "";
+    try {
+      if (tab.url) host = new URL(tab.url).host;
+    } catch {
+      // ignore
+    }
+    const displayLabel = host ? `${host} · ${clipTitle(title, 14)}` : clipTitle(title, 20);
+    if (tabTitleText) tabTitleText.textContent = displayLabel;
+    if (tabIconSq) {
+      if (tab.favIconUrl && tab.favIconUrl.startsWith("http")) {
+        tabIconSq.innerHTML = `<img src="${DOMPurify.sanitize(tab.favIconUrl)}" style="width:12px;height:12px;border-radius:2px;object-fit:cover;" alt="" />`;
+      } else {
+        const letter = (host || title || "W").replace(/^www\./, "").charAt(0).toUpperCase();
+        tabIconSq.textContent = letter;
+      }
+    }
+    if (morphSheetTitle) morphSheetTitle.textContent = `标题：${title}`;
+    if (morphSheetUrl) morphSheetUrl.textContent = `URL：${tab.url || "-"}`;
+    if (morphSheetStatus) morphSheetStatus.textContent = `状态：${tab.status === "complete" ? "已就绪 (complete)" : "加载中 (loading)"}`;
+  } catch {
+    if (tabTitleText) tabTitleText.textContent = "活动标签页就绪";
+  }
+}
+
+function toggleMorphSheet(open?: boolean): void {
+  if (!morphSheet) return;
+  const willOpen = open !== undefined ? open : morphSheet.style.display === "none" || !morphSheet.style.display;
+  morphSheet.style.display = willOpen ? "flex" : "none";
+  if (willOpen) void refreshActiveTabPill();
+}
+
+pagePill?.addEventListener("click", () => toggleMorphSheet());
+closeMorphSheetBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleMorphSheet(false);
+});
+document.addEventListener("click", (e) => {
+  if (
+    morphSheet &&
+    morphSheet.style.display === "flex" &&
+    !morphSheet.contains(e.target as Node) &&
+    !pagePill?.contains(e.target as Node)
+  ) {
+    toggleMorphSheet(false);
+  }
+});
+
+if (typeof chrome !== "undefined" && chrome.tabs) {
+  chrome.tabs.onActivated?.addListener(() => void refreshActiveTabPill());
+  chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
+    if (changeInfo.status || changeInfo.title || changeInfo.url) {
+      void refreshActiveTabPill();
+    }
+  });
+}
+void refreshActiveTabPill();
+
+const companion = mountCompanion({
+  appEl: app,
+  composerEl,
+  inputEl,
+  messagesEl,
+  pagePillEl: pagePill,
+});
 
 // ── 教学模式开关 ───────────────────────────────────────────────────
 // 开关状态存 chrome.storage.local（面板重开恢复显示）；运行时权威在 background
@@ -280,10 +414,14 @@ function renderModelList(): void {
       const label = document.createElement("span");
       label.className = "model-label";
       label.textContent = displayName(m);
+      const meta = modelReasoningMeta(m.provider, m.modelId);
+      const tag = document.createElement("span");
+      tag.className = `reasoning-tag tag-${meta.tier}`;
+      tag.textContent = meta.tag;
       const check = document.createElement("span");
       check.className = "model-check";
       if (m.id === modelState?.model) check.appendChild(icon(Check));
-      item.append(mark, label, check);
+      item.append(mark, label, tag, check);
       item.onclick = () => {
         closeModelPopover();
         if (m.id !== modelState?.model) send({ type: "set_model", model: m.id });
@@ -302,7 +440,23 @@ function renderModelPicker(): void {
   modelBtn.disabled = models.length === 0;
   modelName.textContent = chipLabel(model, models);
   modelBtn.title = model ? `切换模型（${model}）` : "切换模型";
-  paintMark(modelMark, currentProvider());
+  const provider = currentProvider();
+  paintMark(modelMark, provider);
+
+  if (modelReasoningTag) {
+    if (model) {
+      const found = models.find((m) => m.id === model);
+      const prov = found?.provider ?? provider ?? "";
+      const modelId = found?.modelId ?? (model.includes("/") ? model.split("/")[1]! : model);
+      const meta = modelReasoningMeta(prov, modelId);
+      modelReasoningTag.hidden = false;
+      modelReasoningTag.textContent = meta.tag;
+      modelReasoningTag.className = `reasoning-tag tag-${meta.tier}`;
+    } else {
+      modelReasoningTag.hidden = true;
+    }
+  }
+
   if (models.length === 0) {
     closeModelPopover();
     return;
@@ -353,6 +507,9 @@ let port: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
 let lastDisconnectDetail = "";
 let running = false;
+let applyingHistory = false;
+let historyPrimed = false;
+let lastUserHasPage = false;
 let currentAssistant: HTMLElement | null = null;
 let currentAssistantText = "";
 let currentThinking: HTMLElement | null = null;
@@ -449,8 +606,14 @@ const TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
 // ── 渲染 ───────────────────────────────────────────────────────────
 
 function setStatus(mode: "off" | "on" | "retry", text: string): void {
-  statusDot.className = `dot${mode === "on" ? " on" : mode === "retry" ? " retry" : ""}`;
+  statusDot.className = `dot island-pulse-dot${mode === "on" ? " on" : mode === "retry" ? " retry" : ""}`;
   statusText.textContent = text;
+  const pill = document.getElementById("status-pill");
+  if (pill) {
+    pill.classList.toggle("status-on", mode === "on");
+    pill.classList.toggle("status-retry", mode === "retry");
+    pill.classList.toggle("status-off", mode === "off");
+  }
 }
 
 // 跟随滚动：用户上翻后不再强拉到底，右下角浮出"回到底部"圆钮
@@ -489,6 +652,9 @@ function addMsg(cls: string, text: string): HTMLElement {
   div.className = cls;
   div.textContent = text;
   messagesEl.appendChild(div);
+  if (!applyingHistory && cls.split(/\s+/).includes("user")) {
+    companion.onSend(div);
+  }
   scrollToEnd();
   return div;
 }
@@ -571,6 +737,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     chipGroup: null,
     workers: new Map(),
   };
+  if (!applyingHistory) companion.onStepStart(root);
   return currentRun;
 }
 
@@ -737,9 +904,26 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   sessionRun.set(sessionId, state);
   const flags = panelLive(sessionRun.values(), teamView);
   running = flags.running;
+  if (flags.userHasPage !== lastUserHasPage) {
+    lastUserHasPage = flags.userHasPage;
+    companion.onTakeover(flags.userHasPage);
+  }
   takeoverBtn.hidden = !flags.takeoverVisible;
   abortBtn.hidden = !flags.abortVisible;
-  sendBtn.hidden = !flags.sendVisible;
+  // Send / Stop in-place morphing
+  if (flags.abortVisible) {
+    sendBtn.classList.add("stopping");
+    sendBtn.title = "中止";
+    sendBtn.hidden = false;
+  } else {
+    sendBtn.classList.remove("stopping");
+    sendBtn.title = "发送";
+    sendBtn.hidden = !flags.sendVisible;
+  }
+  const statusPill = document.getElementById("status-pill");
+  if (statusPill) {
+    statusPill.classList.toggle("running", flags.live);
+  }
   inputEl.placeholder =
     teamView?.phase === "draining"
       ? PLACEHOLDER_DRAINING
@@ -781,12 +965,14 @@ function finishRun(): void {
   if (run.body.childElementCount === 0) {
     run.root.remove();
     if (lastRun === run) lastRun = null;
+    if (!applyingHistory) companion.onRunFinish();
     return;
   }
   run.root.classList.add("done");
   run.iconBox.replaceChildren(icon(CircleCheck));
   run.timeEl.textContent = `耗时 ${formatDuration(Date.now() - run.start)}`;
   run.root.open = false;
+  if (!applyingHistory) companion.onRunFinish();
   scrollToEnd();
 }
 
@@ -999,6 +1185,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;
   // 详情正展开着这个 chip 时实时补上结果
   if (entry.group.expanded === entry) renderChipDetail(entry);
+  if (!applyingHistory) companion.onStepDone();
   scrollToEnd();
 }
 
@@ -1125,6 +1312,11 @@ function handleBgMessage(envelope: BgToPanel): void {
     applyMode(envelope.mode, true);
     return;
   }
+  if (envelope.kind === "ask_selection") {
+    applyPendingAsk(envelope.ask);
+    return;
+  }
+  if (envelope.kind !== "conn") return;
   // 连接状态
   if (envelope.state === "connected") {
     // 等 hello_ok 带模型名到达；先亮绿灯
@@ -1153,11 +1345,27 @@ function handleBgMessage(envelope: BgToPanel): void {
 let lastHistorySeq = 0;
 
 function applyHistory(entries: PanelHistoryEntry[]): void {
-  for (const entry of entries) {
-    if (entry.seq <= lastHistorySeq) continue;
-    if (entry.item.kind === "user") addMsg("msg user", entry.item.text);
-    else handleServerMessage(JSON.stringify(entry.item.msg));
-    lastHistorySeq = entry.seq;
+  const fresh: PanelHistoryEntry[] = [];
+  applyingHistory = true;
+  try {
+    for (const entry of entries) {
+      if (entry.seq <= lastHistorySeq) continue;
+      fresh.push(entry);
+      if (entry.item.kind === "user") addMsg("msg user", entry.item.text);
+      else handleServerMessage(JSON.stringify(entry.item.msg));
+      lastHistorySeq = entry.seq;
+    }
+  } finally {
+    applyingHistory = false;
+  }
+  const replay = !historyPrimed && fresh.length > 1;
+  historyPrimed = true;
+  if (!replay) {
+    const lastUser = [...fresh].reverse().find((e) => e.item.kind === "user");
+    if (lastUser) {
+      const bubble = messagesEl.querySelector(".msg.user:last-of-type");
+      if (bubble) companion.onSend(bubble as HTMLElement);
+    }
   }
   scrollToEnd(false);
 }
@@ -1216,18 +1424,59 @@ function autoResize(): void {
   if (!modelPopover.hidden) positionModelPopover();
 }
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+function applyPendingAsk(ask: PendingAsk): void {
+  pendingAsk = ask;
+  if (!askCiteEl || !askCiteHost || !askCiteText) return;
+  askCiteHost.textContent = hostOf(ask.url);
+  askCiteText.textContent = ask.text;
+  askCiteEl.hidden = false;
+  inputEl.focus();
+}
+
+function clearPendingAsk(): void {
+  pendingAsk = null;
+  if (askCiteEl) askCiteEl.hidden = true;
+  if (askCiteText) askCiteText.textContent = "";
+  void chrome.storage?.session?.remove(ASK_STORE);
+}
+
+askCiteClose?.addEventListener("click", () => clearPendingAsk());
+
 function sendInput(): void {
   if (panelLive(sessionRun.values(), teamView).userHasPage) return;
   const text = inputEl.value.trim();
   if (!text) return;
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
   if (!running) runStartAt = Date.now();
-  send(running ? { type: "steer", text } : { type: "user_message", text });
+  const context = pendingAsk
+    ? {
+        tabId: pendingAsk.tabId,
+        title: pendingAsk.title,
+        url: pendingAsk.url,
+        selection: { text: pendingAsk.text },
+      }
+    : undefined;
+  send(running ? { type: "steer", text, context } : { type: "user_message", text, context });
   inputEl.value = "";
+  clearPendingAsk();
   autoResize();
 }
 
-sendBtn.onclick = sendInput;
+sendBtn.onclick = () => {
+  if (sendBtn.classList.contains("stopping")) {
+    send({ type: "abort" });
+  } else {
+    sendInput();
+  }
+};
 inputEl.addEventListener("input", autoResize);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

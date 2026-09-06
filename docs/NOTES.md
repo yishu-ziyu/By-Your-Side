@@ -5,6 +5,71 @@
 
 ## 当前状态
 
+2026-09-06 借鉴 CollectUI Arek AI chat bar 动效与真实思考档位评估页落地（标准 `docs/evals/20260906-chat-bar-morph.md`，页面 `docs/evals/20260906-chat-bar-morph.html`，服务 `http://127.0.0.1:19906/20260906-chat-bar-morph.html`）。
+1. **严格绑定真实模型能力**：彻底推翻视觉样张中全量硬编码 Medium/High 的假象。MiniMax-M3 明确标为「内置深度思考 · 1M 上下文」（不可调）；GPT-5.6/o3-mini 提供真实 `[Low] [Med] [High]` 档位切换；Kimi for Coding 标为「代码极速 · 直接响应」（无思考）。
+2. **三种具体形变形态并排对照**：
+   - 方案 A（推荐）：底部芯片原位液态舒展（保持大输入框习惯，左下药丸作为形变种子向上膨胀，选后如液滴平滑归位）；
+   - 方案 B：左侧独立胶囊裂变（对齐参考图单行 Chat Bar，左侧整颗胶囊向上裂变）；
+   - 方案 C：Composer 一体化折叠抽屉（机械拉伸展开，非悬浮 popover）。
+3. **底部 Ambient Glow 灵动胶囊**：实现翠绿就绪、琥珀接管、绯红危险确认、冰蓝并行采集 4 态光晕呼吸过渡。
+4. **修复浅色模式割裂与诡异色差**：
+   - 根因 1：底部 Ambient Glow 胶囊与发送键硬编码暗色导致「一块白一块黑」；
+   - 根因 2：思考标签（`tag-native`）使用了暗色专用的粉紫粉调 `#d8b4fe`，在白底下泛白发粉严重失真；思考档位分段器（`effort-segmented`）写死了 `rgba(0,0,0,0.25)` 暗灰底色，在白底行中如同烧焦的污块；芯片激活态（`morph-seed-chip.active`）泛蓝底色与紫色标签冲撞产生泥浆色感；卡片投影在亮色下透黑过深。
+   - 修复：全面引入双模式语义化高对比度变量：亮色下 `tag-native` 调整为高贵清晰的深紫 `#6d28d9` 配柔和紫底；档位分段器改为精致冷灰胶囊配苹果蓝激活态；芯片激活态保持洁净白底 + 苹果蓝微晶描边；卡片投影采用高透柔和景深。
+5. **验证**：Playwright 无控制台报错，深浅色自检截图过。服务运行于 19906 端口待人评。
+
+2026-09-05 路线图「选中即问」第一刀落地：划词/右键把正文带进侧栏（标准 `docs/evals/20260905-select-and-ask.md`）。
+1. 路线图原句是「调起 Agent，带页面上下文问答」。第一刀：选区旁一粒「问」+ 右键「问 SideAgent」；侧栏出引用胶囊，输入框空着等你打问题，不自动发。
+2. 评审页后来的 Sider 方向（答案先贴在选区旁）没做，是下一刀。
+3. 协议 `PageContext.selection`；`content-ask.js`；session 交接；composer `#ask-cite`。
+4. 待人评：维基划词。需 reload 扩展。
+
+2026-09-05 选中即问评审页按 Sider 重做（标准 `docs/evals/20260905-select-and-ask.md`，页 `docs/evals/20260905-select-and-ask.html`）。
+1. 用户说上一版例子太一般，点名 Sider。Sider 官方：阅读菜单 / 写作菜单 / ⌘J 问 AI；答案贴在选区旁；追问才进侧栏。
+2. 判断改成 3 件：答案先出现在哪；浮层带几件事；写作菜单做不做。
+3. 人选 A。生产：选区旁「问 / 解释」；答案贴在页上；「在侧栏继续」才把引用送进 composer。解释走 user_message/steer + selected text，prompt 禁止为此调工具。右键/⌘J 打开页上「问」。待人评真机。
+
+2026-09-05 用户转向 Reicon 形「M」小精灵（标准 `docs/evals/20260905-reicon-m-composer.md`，页 `docs/evals/20260905-reicon-m-composer.html`，服务 `http://127.0.0.1:19905/20260905-reicon-m-composer.html`）。
+1. 上一轮 SVG 拼贴 / 煤球猫大福 / 像素手套被判丑。用户给了 https://reicon.dev/：官网那个 R 是单色胖字母剪影 + 两只镂空竖眼，要求把 R 做成 M。
+2. 用户截图 A 版趴框：「其实这个效果已经相当不错了」，同时要更圆、眼睛多几版。
+3. 评审页改成左边换皮、右边一只输入框。形体三档：现在这版 / 圆角 V（推荐） / 再胖一点。眼睛五档：胶囊 / 官网眼（推荐） / 细长 / 靠拢 / 圆点。太圆的 blob 在 36px 读成 n，已拿掉。
+4. 用户点头「圆角 V + 官网眼」，已落地生产：`extension/src/sidepanel/companion.ts`。沿顶沿分段走、跳前先蹲、长消息惊讶、闲时休息多于乱动。typecheck / companion 8 测 / build 绿。需 reload 扩展。
+
+2026-09-05 Lil Pix 伴侣落地生产（标准 `docs/evals/20260905-lil-pix-composer.md`，harness `docs/evals/20260905-lil-pix-prod.html`）。
+1. 用户确认 HTML **方案 A：Rauno 原版微像素终端**（不是小煤球 SVG）。精灵图在 `extension/assets/companion/`。
+2. 闲时静止趴在 Composer 顶沿、避开页面胶囊；打字倚靠；发送护航到用户气泡左侧外沿；步骤卡趴左上角外沿；摸头是 `grab` 下压 + 弹簧回弹，**没有悬浮手套**。
+3. 历史回放不巡游。几何单测 + Playwright 截图：idle/lean/send/step 与气泡内文不相交。待人评真机手感。
+4. 机器：371 tests / typecheck / build 绿。需 reload 扩展。
+
+2026-09-05 侧栏界面层重构与苹果 Liquid Glass + 灵动 Motion 正式落地生产代码（标准 `docs/evals/20260905-agent-ui-evolution.md`，开发日志 `docs/devlog/20260905-04-侧栏界面层重构与苹果毛玻璃动效落地.md`）。
+1. **核心设计定力全面落地**：
+   - 贯彻 **「Glass 用来表达层级，Motion 用来表达状态」**。
+   - 彻底剔除刺眼生硬的蓝底渐变（`#2563eb`），用户消息改用纯净坚实微晶卡片（Solid Surface），消除泛白廉价感，保障长文阅读对比度。
+2. **6 大关键位置全量生产实现**：
+   - **Send `↑` / Stop `■` 原位形变按钮**：单一 DOM 原地承载状态演进，圆角由 50% 弹簧缩至 9px，颜色变 Apple Red，图标自旋溶解，空间重心毫厘不移。
+   - **页面感知胶囊 (Context Pill) → 检查器 (Morphing Sheet)**：输入区顶端内嵌当前标签页 Favicon 与标题，点击在原地液态舒展展开为检查器面板，关闭时自然回缩。
+   - **Model Picker 弹簧生长选择器**：左下角锚点弹性生长，配合高质感磨砂与厂商标识。
+   - **Liquid Glass 顶栏 + Dynamic Island 灵动状态指示器**：SVG 光学折射滤镜（`feTurbulence` + `feDisplacementMap`）真实透镜高光，状态胶囊动态伸缩与呼吸心跳，深浅模式严格对比度保证。
+   - **平滑步骤抽屉与兄弟节点推挤**：测量实际高度，展开带有物理阻尼，消灭原生 details 瞬间突变。
+   - **macOS Alert 危险确认卡**：敏感不可逆操作拦截卡带有触感按压物理。
+3. **架构与工程完备性**：
+   - 零 React/外部庞大运行时引入，保持纯原生 TS + DOM + CSS，编译产物仅 257KB。
+   - 39 个测试文件、366 项测试全绿，typecheck / build / reload 全过，CDP 真机走查深浅色截图均无控制台报错。
+
+2026-09-05 深度吸纳开源 Liquid Glass 与 Motion 核心动力学：**真正物理级折射与 6 大连续性 Motion 原型落地**（标准 `docs/evals/20260905-agent-ui-evolution.md`，页面 `docs/evals/20260905-agent-ui-evolution.html`）。
+1. **彻底扭转认知偏误**：摒弃“全屏无脑假 blur”的廉价毛玻璃风，落实核心铁律——**「Glass 用来表达层级，Motion 用来表达状态」**。
+   - **Glass 属于顶层 Chrome**（Topbar、浮动 Composer Dock、弹窗 Sheet 享有 SVG `feDisplacementMap` 边缘折射与高光）；
+   - **正文坚实纯净**（消息流采用 Solid 介质，彻底杜绝刺眼大蓝底与泛白，保证 100% 阅读舒适度）；
+   - **Motion 属于生命周期动态**（苹果感源自不可断裂的空间连续性与惯性质量）。
+2. **标定并实现 6 大关键改造点（已在 HTML 原型实装并可交互测试）**：
+   - 位置 1：**Send `↑` / Stop `■` 原位形变按钮**（Motion Shared Layout，单元素受压下沉，圆角从 50% 弹簧变 9px，箭头旋转溶解为方块，重心不移）；
+   - 位置 2：**页面感知胶囊 → 检查器原形舒展**（Motion Primitives Morphing Dialog，胶囊自身原地液态放大铺开，关掉时回缩）；
+   - 位置 3：**Model Picker 弹簧生长选择器**（从输入框左下角锚点物理弹簧弹性缩放生长）；
+   - 位置 4：**Liquid Glass 顶栏 + 灵动状态胶囊**（SVG 物理折射与高光棱边，状态珠随 idle/thinking/acting/hold 灵动伸缩与心跳）；
+   - 位置 5：**步骤抽屉弹簧推挤与兄弟节点自然排开**（测量真实 scrollHeight，展开平滑推挤下方元素，具有重力与阻尼）；
+   - 位置 6：**危险操作拦截卡 (macOS Alert Sheet)**（抽屉微滑弹升起，带 60ms 触感下沉物理）。
+3. **守规状态**：生产代码 `extension/src/` 保持干净零污染，机器走查（Playwright 截图与状态测试）全过。
+
 2026-09-05 真实 ChatGPT 任务后台日志排障与修复完成：**点击健壮性防御 + 就地确认拿住兜底**（标准 `docs/evals/20260905-click-robustness-and-hold-fallback.md`）。
 1. **彻底消除 `reading 'x'` 崩溃**：排查实测中 Chrome `chrome.scripting.executeScript` 吞没 content script 异常返回 `{ result: null }` 的深层坑，在 `input.ts` 的 `click`/`fill`/`mark` 中采用安全的页面执行结果包裹与多重断言，页面未找到目标元素时直接向外报明确业务错误，绝不裸抛 `Cannot read properties of null (reading 'x')`。
 2. **危险操作词表扩充**：`isDestructiveLabel` 与 `confirmLabelForDestructive` 正式支持 `归档` / `archive`，伴随进程 `prompt.ts` 同步纳入 `archive` / `归档` 引导。
@@ -12,14 +77,14 @@
 4. **拿住态锚点容错**：`relayoutHolds` 去除因 AX ref 无法反解而将光标直接置为 `hidden` 的缺陷，无锚点时保持在 `hold.point` 维持可见拿住姿态。
 5. **回归状态**：全量 366 tests / typecheck / build / overlay-check / git diff --check 全绿。
 
-2026-09-05 像素伴侣「lil pix」深度演进：**真实物理弹簧手感 + 边框爬行游走系统**（标准 `docs/evals/20260905-lil-pix-composer.md`，页面 `docs/evals/20260905-lil-pix-composer.html`）。
-1. **自然感根源落实**：深入剖析 Rauno Freiberg《Invisible Details of Interaction Design》的 Kinetic Physics 动能物理与 Direct Manipulation。手套光标与小人形成直接接触下压（Mousedown 60ms 刚性压扁 `scale(1.35, 0.58)` + 手套同步下沉 + 眯眼 `- -`）；松手释放积蓄势能，触发真正的 Spring Overshoot 弹簧过冲（`translateY(-22px)` 离地浮空起跳 + 天线星光眼 `✦ ✦`），再经重力与阻尼残余反弹落地，消除塑料假滑感。
-2. **边框爬行与绝不遮挡文字**：把输入框顶沿与各消息气泡的外轮廓（Outer Rim / Border Rail）连接成专属跑道。用户发送消息时小人快步跑动护航；Agent 生成时小人趴在气泡顶沿探头关注流式输出；生成完成在拐角欢呼小跳。严格通过 Safe Boundary 红线约束：全身位于外部轨道（`-28px ~ -32px`），内部文本区遮挡率为 0%。
-3. **并排三方案已出，等人评挑选**：
-   - 方案 1【全轨自由游走型 · 推荐】（全连通跑道，顶沿小跑 + 侧沿攀爬 + 拐角探头）
-   - 方案 2【单卡顶沿巡逻型】（仅在当前活跃卡片水平顶沿横向来回踱步，更克制）
-   - 方案 3【磁吸四角守卫型】（常驻角点，事件触发时弹簧小跳飞跃吸附新气泡角点）
-4. **守规状态**：生产代码 `extension/src/` 保持干净零污染，机器走查（资源、深浅色、Playwright 截图）全过。
+2026-09-05 像素伴侣「lil pix」深度演进：**真实物理弹簧手感 + 边框爬行游走系统 + 超萌生命感重构**（标准 `docs/evals/20260905-lil-pix-composer.md`，页面 `docs/evals/20260905-lil-pix-composer.html`）。
+1. **自然感根源落实**：深入剖析 Rauno Freiberg《Invisible Details of Interaction Design》的 Kinetic Physics 动能物理与 Direct Manipulation。光标采用原生直接操纵（`grab/grabbing`，消除像素手套杂乱浮框），直接身体下压（Mousedown 60ms 刚性压扁 `scale(1.32, 0.60)` + 享受眯眼 `^ ^`）；松手释放积蓄势能，触发真正的 Spring Overshoot 弹簧过冲（`translateY(-22px)` 离地浮空起跳 + 兴奋星光眼 `✦ ✦`），再经重力与阻尼残余反弹落地，消除塑料假滑感。
+2. **“A太丑了”视觉彻底重构**：推翻蓝色塑料电视机天线 GrokBot，重构为 3 款高治愈度萌系生物并支持一键换皮：
+   - 🐾 **纯正小煤球 (Pure Lil Pix Ink Soot) · 强烈推荐**：宫崎骏灰尘精灵 / 灵动墨团，高级石墨黑圆团 + 柔软云朵轮廓 + 水汪汪清澈双高光大眼 + 软萌粉颊 + 真实搭在输入框顶沿的小肉爪（Paws on rim）；
+   - 🐱 **探头小黑猫 (Peeking Shadow Neko)**：微翘猫耳 + 翡翠绿眸 + 樱花粉耳窝 + 雪顶白手套小爪；
+   - 🍡 **奶白大福团 (Bouncy Mochi Bun)**：软糯奶白团子 + 萌系兔耳 + 樱花粉腮红与小白爪。
+3. **边框爬行与绝不遮挡文字**：把输入框顶沿与各消息气泡的外轮廓（Outer Rim / Border Rail）连接成专属跑道。用户发送消息时小人快步跑动护航；Agent 生成时小人趴在气泡顶沿探头关注流式输出；生成完成在拐角欢呼小跳。严格通过 Safe Boundary 红线约束：全身位于外部轨道（`-32px`），内部文本区遮挡率为 0%。
+4. **守规状态**：生产代码 `extension/src/` 保持干净零污染，机器走查（Playwright 截图、换皮交互、Console 0 error）全过。服务运行于 `http://localhost:19890/20260905-lil-pix-composer.html`。
 
 2026-09-05 用户判定：**轨迹回放不重要，降优先级**（ROADMAP 已标）。就地确认走「一体」方向：人选 **C 案（手拿住目标，双键在光标名牌上）**，判断页 `docs/evals/20260905-one-hand-confirm.html`。C 案已实现（`04a950d`）：held 拦阻与模型 mark 两条路径同一形态、两轮确认断点已修、侧栏「取消」收敛、拿住跟滚动；357 tests / typecheck / build / overlay-check 全绿，校验已独立复跑。待人评：flomo 删「MiroFish 项目」真机（标准 9），需 reload 扩展 + 伴随进程重连。未决：拿住态名牌保持成员色 vs HTML C 列 pill 整体变红，人评裁决。
 
@@ -527,3 +592,33 @@
   - `docs/evals/20260905-click-robustness-and-hold-fallback.md`
 - 验证：39 files 366 tests 全绿、`npm run typecheck` 全绿、`npm run build` 全绿、`node extension/test/overlay-check.mjs` 全绿、`git diff --check` 全绿。
 - 未决/待人评：需真机 reload:ext 后在真实站点（如 ChatGPT 归档会话、flomo 删笔记）实测确认双键与手势观感。
+
+## 2026-09-05 侧栏伴侣（GrokBot 矢量体系 + 边框爬行 + 前端生命周期解耦）
+
+- 完成标准：`docs/evals/20260905-lil-pix-composer.md`。视觉与交互权威：`docs/evals/20260905-lil-pix-composer.html`。
+- 关键决策与演进：
+  1. **技术栈与割裂感根治**：早期像素马赛克与 macOS 现代 UI 严重冲突，用户裁决选定 **方案 A（SideAgent 原生矢量 GrokBot 伴侣）**。
+  2. **悬浮“边框”疑窦消除**：用户指出的“鼠标靠近时出现的边框”，确认为借鉴 Rauno 摸头原型时附带的 36x23 像素手套切片（带有黑色外边框，在现代高清屏上极突兀）。已将其彻底移除，升级为 macOS 原生直接操纵（`cursor: grab / grabbing` + 小人身体物理弹性变形）。
+  3. **前端架构对接规范**：建立零侵入独立模块 `extension/src/sidepanel/companion.ts`，持有独立的 SVG 几何与 RAF 物理阻尼，仅对外暴露 `onTyping()`、`onSend(bubbleEl)`、`onStepStart(stepEl)`、`onStepDone()`、`onTakeover(isUser)`、`onRunFinish()` 6 个生命周期钩子，绝不在 `main.ts` 混杂动画状态机。
+  4. **零文字遮挡红线**：伴侣在输入框与步骤卡外轮廓（Outer Rim `-32px`）游走，气泡内部文字保护区遮挡率严格保持 **0%**。
+- 改动与原型资产：`docs/evals/20260905-lil-pix-composer.html`、`docs/evals/20260905-lil-pix-composer.md`。
+- 生产代码保持干净：`extension/src/` 未变动，待用户对对接方案点头后进入编码落地。
+
+## 2026-09-06 AI Chat Bar 原位形变动效（方案 A 底部芯片原位液态舒展）与真实模型思考档位体系落地
+
+- 完成标准：`docs/evals/20260906-chat-bar-morph.md`。视觉交互对照原型：`docs/evals/20260906-chat-bar-morph.html`。
+- 背景与裁决：
+  1. 用户提供 CollectUI 优秀动效交互案例（Arek @arknow91《AI chat bar - buttons morphing into dropdown lists》），要求探索侧栏落地形态、真实模型思考分层展示、双色调优（彻底根除纯黑纯白断层与泥浆感）。
+  2. 经三案并排原型对照（方案 A 底部芯片原位舒展、方案 B 双胶囊裂变、方案 C 一体化抽屉），用户明确选定 **方案 A（底部芯片原位液态舒展 · Inline Chip Bloom）**。
+  3. 色彩校准：消除写死深色底造成的“一块白一块黑”撕裂，浅色模式全面收敛至苹果 Sequoia 晨曦微晶白体系（深紫 `#6d28d9` 思考标签，苹果蓝高光描边）；深色模式收敛至深曜石炭黑体系（淡粉紫 `#d8b4fe` 高对比标签，杜绝死硬纯黑 `#000000`）。
+- 落地实现清单：
+  - `extension/src/sidepanel/models.ts`：导出 `ReasoningTier` 类型与 `modelReasoningMeta` 纯逻辑函数，严格根据真实模型能力映射（MiniMax 原生内置深度思考；OpenAI/Codex 支持档位调节；Kimi/Flash 极速直接响应）；
+  - `extension/test/models.test.ts`：补充 `modelReasoningMeta` 单测（覆盖 OpenAI、MiniMax、Anthropic、Google、Kimi 等场景，3 个新测试全部通过）；
+  - `extension/src/sidepanel/main.ts`：在 `#model-btn` 内置 `#model-reasoning-tag` 节点；在 `renderModelPicker()` 动态更新当前模型思考标签；在 `renderModelList()` 渲染各模型思考标签与对齐 checkmark；
+  - `extension/src/sidepanel/styles.css`：定义 `--tag-native-*`、`--tag-direct-*`、`--tag-slider-*`、`--chip-active-bg` 等亮暗双模式变量；实现 `#model-btn` 原位弹簧形变、展开时 Chevron 180° 平滑自旋、`#model-popover` 弹簧舒展动效（`popoverSpringIn`）；
+  - `extension/test/fixtures/model-picker.html`：同步更新为包含思考标签的完整双模式测试夹具。
+- 验证闭环：
+  - `npm run typecheck`：0 错误全绿；
+  - `npm test`：41 个测试文件、385 个测试全绿；
+  - `npm run build`：生产产物构建成功；
+  - Playwright 多态真机截图无头核验：浅色收起/展开、深色收起/展开共 4 态，视觉层级分明、标签对比度达到 AAA 级。

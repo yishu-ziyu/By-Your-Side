@@ -642,7 +642,12 @@ function asParams(args: unknown): Record<string, unknown> {
 export function withPageContext(text: string, context?: PageContext): string {
   if (!context) return text;
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
-  return `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]\n${text}`;
+  let out = `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]\n`;
+  if (context.selection?.text) {
+    const sel = context.selection.text.replace(/\s+/g, " ").trim();
+    if (sel) out += `[User's selected text]\n${sel}\n`;
+  }
+  return `${out}${text}`;
 }
 
 export function lastAssistantError(messages: unknown): string | null {

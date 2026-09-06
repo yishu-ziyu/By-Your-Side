@@ -29,6 +29,8 @@ export interface PageContext {
   tabId: number;
   title: string;
   url: string;
+  /** 选中即问：用户划出来交给 Agent 的那段正文。缺省则行为与现在一样。 */
+  selection?: { text: string };
 }
 
 /** idle = 无任务；running = Agent 在操作页面；user = 现在归你（任务还在，不是中止）。 */
@@ -356,7 +358,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 function isPageContext(v: unknown): v is PageContext {
   if (typeof v !== "object" || v === null) return false;
   const c = v as PageContext;
-  return typeof c.tabId === "number" && typeof c.title === "string" && typeof c.url === "string";
+  if (typeof c.tabId !== "number" || typeof c.title !== "string" || typeof c.url !== "string") return false;
+  if (c.selection === undefined) return true;
+  if (typeof c.selection !== "object" || c.selection === null) return false;
+  const text = c.selection.text;
+  return typeof text === "string" && text.length >= 1 && text.length <= 2000;
 }
 
 export function parseServerMessage(raw: string): ServerMessage | null {

@@ -98,6 +98,41 @@ describe("parseClientMessage", () => {
     });
   });
 
+  it("parses user_message with selected text", () => {
+    const raw = JSON.stringify({
+      type: "user_message",
+      text: "这是什么",
+      context: {
+        tabId: 3,
+        title: "MiroFish",
+        url: "https://en.wikipedia.org/wiki/MiroFish",
+        selection: { text: "MiroFish is a made-up term." },
+      },
+    });
+    expect(parseClientMessage(raw)).toEqual({
+      type: "user_message",
+      text: "这是什么",
+      context: {
+        tabId: 3,
+        title: "MiroFish",
+        url: "https://en.wikipedia.org/wiki/MiroFish",
+        selection: { text: "MiroFish is a made-up term." },
+      },
+    });
+  });
+
+  it("rejects user_message whose selection is empty or too long", () => {
+    const ctx = { tabId: 1, title: "t", url: "https://a.b" };
+    expect(
+      parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: { ...ctx, selection: { text: "" } } })),
+    ).toBeNull();
+    expect(
+      parseClientMessage(
+        JSON.stringify({ type: "user_message", text: "hi", context: { ...ctx, selection: { text: "x".repeat(2001) } } }),
+      ),
+    ).toBeNull();
+  });
+
   it("accepts user_message without context (backward compatible)", () => {
     expect(parseClientMessage(JSON.stringify({ type: "user_message", text: "hi" }))).toEqual({
       type: "user_message",

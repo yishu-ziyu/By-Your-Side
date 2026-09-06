@@ -6,6 +6,7 @@ import {
   filterModels,
   groupModelsByProvider,
   humanizeModelError,
+  modelReasoningMeta,
   providerLabel,
   providerMark,
 } from "../src/sidepanel/models.js";
@@ -116,5 +117,68 @@ describe("humanizeModelError", () => {
       "切换模型失败：模型不存在或未配置凭据：foo/bar",
     );
     expect(humanizeModelError("Not Found")).toBe("Not Found");
+  });
+});
+
+describe("modelReasoningMeta", () => {
+  it("identifies OpenAI/Codex effort-supported models", () => {
+    expect(modelReasoningMeta("openai", "gpt-5.6-luna")).toEqual({
+      tier: "effort",
+      tag: "支持档位调节",
+    });
+    expect(modelReasoningMeta("openai-codex", "gpt-5.5")).toEqual({
+      tier: "effort",
+      tag: "支持档位调节",
+    });
+    expect(modelReasoningMeta("cliproxy", "o1-mini")).toEqual({
+      tier: "effort",
+      tag: "支持档位调节",
+    });
+    expect(modelReasoningMeta("cliproxy", "o3")).toEqual({
+      tier: "effort",
+      tag: "支持档位调节",
+    });
+  });
+
+  it("identifies native reasoning models (MiniMax, thinking, high)", () => {
+    expect(modelReasoningMeta("minimax-cn", "MiniMax-M3")).toEqual({
+      tier: "native",
+      tag: "内置深度思考",
+    });
+    expect(modelReasoningMeta("minimax", "MiniMax-Text-01")).toEqual({
+      tier: "native",
+      tag: "内置深度思考",
+    });
+    expect(modelReasoningMeta("anthropic", "claude-opus-4-6-thinking")).toEqual({
+      tier: "native",
+      tag: "内置深度思考",
+    });
+    expect(modelReasoningMeta("google", "gemini-3.7-flash-high")).toEqual({
+      tier: "native",
+      tag: "内置深度思考",
+    });
+    expect(modelReasoningMeta("google", "gemini-3.1-pro-low")).toEqual({
+      tier: "native",
+      tag: "内置深度思考",
+    });
+  });
+
+  it("identifies direct response models (Kimi, standard Flash, Claude Sonnet)", () => {
+    expect(modelReasoningMeta("kimi-coding", "kimi-for-coding")).toEqual({
+      tier: "direct",
+      tag: "极速直接响应",
+    });
+    expect(modelReasoningMeta("kimi-coding", "k3")).toEqual({
+      tier: "direct",
+      tag: "极速直接响应",
+    });
+    expect(modelReasoningMeta("google", "gemini-3-flash")).toEqual({
+      tier: "direct",
+      tag: "极速直接响应",
+    });
+    expect(modelReasoningMeta("anthropic", "claude-sonnet-4-6")).toEqual({
+      tier: "direct",
+      tag: "极速直接响应",
+    });
   });
 });

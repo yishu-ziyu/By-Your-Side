@@ -4,6 +4,7 @@
  * 转发约定，走 chrome.runtime Port。
  */
 import type { AgentMode, ClientMessage, ServerMessage } from "../../shared/protocol.js";
+import type { PendingAsk } from "./shared/ask-selection.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
 
@@ -45,4 +46,6 @@ export type BgToPanel =
   /** 当前 Agent 运行模式（教学模式开关状态同步）。 */
   | { kind: "mode"; mode: AgentMode }
   /** 面板关闭期间积累的、按 seq 排序的可见历史。 */
-  | { kind: "history"; entries: PanelHistoryEntry[] };
+  | { kind: "history"; entries: PanelHistoryEntry[] }
+  /** 选中即问：划词或右键把一段正文交给侧栏，不自动发送。 */
+  | { kind: "ask_selection"; ask: PendingAsk };

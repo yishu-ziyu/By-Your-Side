@@ -1,0 +1,1437 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · AI Chat Bar 原位形变与真实思考档位落地评估</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+
+    /* ── 暗色模式 (Dark Mode · 严格对齐 SideAgent 生产 Obsidian Slate 体系，杜绝死硬纯黑) ── */
+    --bg-mesh: radial-gradient(at 15% 15%, rgba(35, 55, 95, 0.55) 0px, transparent 55%),
+               radial-gradient(at 85% 20%, rgba(70, 35, 90, 0.5) 0px, transparent 55%),
+               radial-gradient(at 50% 85%, rgba(20, 75, 70, 0.45) 0px, transparent 55%),
+               #080a0f;
+
+    /* 浮动容器与半透明层级 */
+    --panel-bg: rgba(24, 26, 32, 0.72);
+    --panel-border: rgba(255, 255, 255, 0.12);
+    --panel-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.22);
+    --panel-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+
+    /* 输入区 Composer Dock */
+    --composer-bg: rgba(28, 31, 38, 0.90);
+    --composer-border: rgba(255, 255, 255, 0.13);
+    --composer-focus-border: rgba(41, 151, 255, 0.55);
+
+    /* 交互按钮 */
+    --btn-surface: rgba(255, 255, 255, 0.07);
+    --btn-surface-hover: rgba(255, 255, 255, 0.13);
+    --btn-surface-active: rgba(255, 255, 255, 0.18);
+    --btn-border: rgba(255, 255, 255, 0.11);
+
+    /* 原位舒展下拉面板 (Elevated Glass Surface，深曜石炭黑) */
+    --dropdown-bg: #181a20;
+    --dropdown-border: rgba(255, 255, 255, 0.14);
+    --dropdown-item-hover: rgba(255, 255, 255, 0.08);
+    --dropdown-item-selected: rgba(41, 151, 255, 0.15);
+
+    /* 文字层次 (Apple HIG Dark) */
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+    --text-quaternary: #374151;
+
+    /* 状态与强调色 */
+    --accent-blue: #2997ff;
+    --accent-blue-soft: rgba(41, 151, 255, 0.16);
+    --accent-emerald: #30d158;
+    --accent-amber: #ff9f0a;
+    --accent-rose: #ff453a;
+    --accent-cyan: #00c7be;
+
+    /* 模拟舞台与底部环境胶囊 (暗色自适应) */
+    --mock-stage-bg: rgba(0, 0, 0, 0.22);
+    --mock-stage-border: rgba(255, 255, 255, 0.06);
+    --banner-pill-bg: rgba(24, 26, 32, 0.88);
+    --banner-pill-border: rgba(255, 255, 255, 0.12);
+    --banner-pill-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.12);
+    --banner-pill-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --banner-pill-text: #f9fafb;
+
+    /* 思考标签与选择器 (暗色高对比) */
+    --tag-native-bg: rgba(168, 85, 247, 0.16);
+    --tag-native-color: #d8b4fe;
+    --tag-direct-bg: rgba(255, 255, 255, 0.08);
+    --tag-direct-color: #9ca3af;
+    --effort-bg: rgba(255, 255, 255, 0.06);
+    --effort-border: rgba(255, 255, 255, 0.1);
+    --effort-text: #9ca3af;
+    --effort-active-bg: #2997ff;
+    --effort-active-text: #ffffff;
+    --popover-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+    --popover-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.15);
+    --chip-active-bg: rgba(41, 151, 255, 0.12);
+
+    --spring-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+    --spring-bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
+    --radius-dock: 22px;
+    --radius-pill: 9999px;
+  }
+
+  body.light {
+    /* ── 亮色模式 (Light Mode · 苹果 Sequoia 晨曦微晶白体系) ── */
+    --bg-mesh: radial-gradient(at 15% 15%, rgba(255, 182, 140, 0.35) 0px, transparent 55%),
+               radial-gradient(at 85% 20%, rgba(135, 195, 255, 0.35) 0px, transparent 55%),
+               radial-gradient(at 50% 85%, rgba(180, 160, 240, 0.3) 0px, transparent 55%),
+               #f2f4f8;
+
+    --panel-bg: rgba(255, 255, 255, 0.75);
+    --panel-border: rgba(0, 0, 0, 0.07);
+    --panel-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.95);
+    --panel-shadow: 0 12px 36px -4px rgba(31, 38, 135, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+
+    --composer-bg: rgba(255, 255, 255, 0.92);
+    --composer-border: rgba(0, 0, 0, 0.08);
+    --composer-focus-border: rgba(0, 113, 227, 0.45);
+
+    --btn-surface: rgba(0, 0, 0, 0.04);
+    --btn-surface-hover: rgba(0, 0, 0, 0.08);
+    --btn-surface-active: rgba(0, 0, 0, 0.12);
+    --btn-border: rgba(0, 0, 0, 0.07);
+
+    --dropdown-bg: #ffffff;
+    --dropdown-border: rgba(0, 0, 0, 0.09);
+    --dropdown-item-hover: #f7f8fa;
+    --dropdown-item-selected: rgba(0, 113, 227, 0.08);
+
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-tertiary: #9ca3af;
+    --text-quaternary: #d1d5db;
+
+    --accent-blue: #0071e3;
+    --accent-blue-soft: rgba(0, 113, 227, 0.08);
+    --accent-emerald: #34c759;
+    --accent-amber: #ff9500;
+    --accent-rose: #ff3b30;
+    --accent-cyan: #00a0dc;
+
+    /* 模拟舞台与底部环境胶囊 (亮色纯净微晶自适应) */
+    --mock-stage-bg: rgba(0, 0, 0, 0.025);
+    --mock-stage-border: rgba(0, 0, 0, 0.06);
+    --banner-pill-bg: rgba(255, 255, 255, 0.90);
+    --banner-pill-border: rgba(0, 0, 0, 0.08);
+    --banner-pill-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.95);
+    --banner-pill-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    --banner-pill-text: #111827;
+
+    /* 思考标签与选择器 (亮色高对比度清晰紫/灰/蓝，杜绝泛白泥浆) */
+    --tag-native-bg: rgba(124, 58, 237, 0.09);
+    --tag-native-color: #6d28d9;
+    --tag-direct-bg: rgba(0, 0, 0, 0.05);
+    --tag-direct-color: #4b5563;
+    --effort-bg: rgba(0, 0, 0, 0.04);
+    --effort-border: rgba(0, 0, 0, 0.08);
+    --effort-text: #64748b;
+    --effort-active-bg: #0071e3;
+    --effort-active-text: #ffffff;
+    --popover-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+    --popover-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.95);
+    --chip-active-bg: #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  
+  body {
+    font-family: var(--font);
+    background: var(--bg-mesh);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 32px 24px 80px;
+    background-attachment: fixed;
+    transition: background 0.3s ease, color 0.3s ease;
+  }
+
+  /* 顶栏控制 */
+  header.masthead {
+    max-width: 1360px;
+    margin: 0 auto 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 22px;
+    border-radius: var(--radius-pill);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(20px);
+    box-shadow: var(--panel-specular), var(--panel-shadow);
+  }
+
+  .masthead-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .masthead-title h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .tag-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent-blue);
+    font-weight: 500;
+  }
+  .theme-toggle-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: var(--radius-pill);
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s var(--spring-fluid);
+  }
+  .theme-toggle-btn:hover {
+    background: var(--btn-surface-hover);
+  }
+
+  /* 主容器 */
+  .container {
+    max-width: 1360px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  /* 核心铁律卡片：真实模型思考档位规范 */
+  .callout-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 20px 24px;
+    backdrop-filter: blur(20px);
+    box-shadow: var(--panel-specular), 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+  .callout-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .callout-head h2 {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .callout-head .truth-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-emerald);
+    font-weight: 600;
+  }
+  .callout-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 16px;
+  }
+  .model-matrix-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .matrix-item {
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .matrix-item-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .matrix-model-name {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .matrix-tier-badge {
+    font-size: 10.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .tier-native { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+  .tier-slider { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+  .tier-direct { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+
+  .matrix-item-detail {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  /* 并排方案对比区 */
+  .comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: -16px;
+  }
+  .comparison-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .comparison-header p {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+
+  .columns-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  @media (max-width: 1180px) {
+    .columns-grid { grid-template-columns: 1fr; }
+  }
+
+  .column-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    padding: 24px 20px;
+    backdrop-filter: blur(24px);
+    box-shadow: var(--panel-specular), var(--panel-shadow);
+    display: flex;
+    flex-direction: column;
+    min-height: 600px;
+    position: relative;
+    overflow: visible;
+  }
+  .column-badge-rec {
+    position: absolute;
+    top: -10px;
+    right: 24px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  }
+  .column-meta {
+    margin-bottom: 20px;
+  }
+  .column-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .column-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* 模拟宿主容器 (Side panel 聊天底栏环境，自适应深浅色) */
+  .sidepanel-mock-stage {
+    flex: 1;
+    background: var(--mock-stage-bg);
+    border-radius: 18px;
+    border: 1px solid var(--mock-stage-border);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+    min-height: 480px;
+    transition: background 0.3s ease, border-color 0.3s ease;
+  }
+
+  /* 顶部活动页感知胶囊 */
+  .page-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    align-self: flex-start;
+    user-select: none;
+  }
+  .page-pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-emerald);
+    box-shadow: 0 0 6px var(--accent-emerald);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     方案 A：底部芯片原生液态舒展 (Inline Chip Bloom · 推荐)
+     ══════════════════════════════════════════════════════════ */
+  .composer-box-a {
+    background: var(--composer-bg);
+    border: 1px solid var(--composer-border);
+    border-radius: var(--radius-dock);
+    padding: 12px 14px;
+    position: relative;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .composer-input-area {
+    width: 100%;
+    min-height: 44px;
+    font-size: 13.5px;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: inherit;
+    line-height: 1.5;
+  }
+  .composer-input-area::placeholder {
+    color: var(--text-tertiary);
+  }
+  .composer-bar-a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+  }
+
+  /* 芯片按钮 (物理形变种子) */
+  .morph-seed-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 10px 0 6px;
+    border-radius: var(--radius-pill);
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.25s var(--spring-fluid);
+    position: relative;
+    z-index: 2;
+  }
+  .morph-seed-chip:hover {
+    background: var(--btn-surface-hover);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .morph-seed-chip:active {
+    transform: scale(0.96);
+  }
+  .morph-seed-chip.active {
+    border-color: var(--accent-blue);
+    background: var(--chip-active-bg);
+    box-shadow: 0 0 0 1px var(--accent-blue);
+  }
+
+  .chip-logo {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #222;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .chip-logo.minimax { background: linear-gradient(135deg, #ec4899, #8b5cf6); }
+  .chip-logo.openai { background: #10a37f; }
+  .chip-logo.kimi { background: #1e293b; border: 1px solid #475569; }
+  .chip-logo.google { background: linear-gradient(135deg, #4285f4, #ea4335); }
+
+  .chip-chevron {
+    width: 10px;
+    height: 10px;
+    opacity: 0.6;
+    transition: transform 0.25s var(--spring-fluid);
+  }
+  .morph-seed-chip.active .chip-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* 方案 A 原位液态舒展面板 (Morphing Dropdown Panel) */
+  .morph-panel-a {
+    position: absolute;
+    bottom: 38px;
+    left: 0;
+    width: 290px;
+    background: var(--dropdown-bg);
+    border: 1px solid var(--dropdown-border);
+    border-radius: 18px;
+    box-shadow: var(--popover-shadow), var(--popover-specular);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+    transform-origin: bottom left;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.88) translateY(10px);
+    transition: opacity 0.22s var(--spring-fluid), transform 0.26s var(--spring-bounce);
+  }
+  .morph-panel-a.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1) translateY(0);
+  }
+
+  /* 模型项与真实思考档位展示 */
+  .model-option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    user-select: none;
+  }
+  .model-option-row:hover {
+    background: var(--dropdown-item-hover);
+  }
+  .model-option-row.selected {
+    background: var(--dropdown-item-selected);
+  }
+  .option-left {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .option-name {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .option-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* 思考强度标签 (严格忠于真实支持) */
+  .reasoning-tag {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .tag-native {
+    background: var(--tag-native-bg);
+    color: var(--tag-native-color);
+  }
+  .tag-direct {
+    background: var(--tag-direct-bg);
+    color: var(--tag-direct-color);
+  }
+  .tag-slider {
+    background: rgba(41, 151, 255, 0.12);
+    color: var(--accent-blue);
+  }
+  /* 支持切换的档位段选择器 (Segmented Effort Pill) */
+  .effort-segmented {
+    display: inline-flex;
+    padding: 2px;
+    background: var(--effort-bg);
+    border: 1px solid var(--effort-border);
+    border-radius: 6px;
+    gap: 2px;
+  }
+  .effort-btn {
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--effort-text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .effort-btn.active {
+    background: var(--effort-active-bg);
+    color: var(--effort-active-text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+  .check-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--accent-blue);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.2s var(--spring-bounce);
+    transform: scale(0.6);
+  }
+  .model-option-row.selected .check-icon {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* 方案 A 右侧发送键 (苹果蓝高质感胶囊) */
+  .btn-send {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    color: #ffffff;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s var(--spring-bounce);
+  }
+  .btn-send:hover {
+    transform: scale(1.06);
+  }
+  .btn-send:active {
+    transform: scale(0.92);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     方案 B：输入条左侧独立胶囊裂变 (Dual Capsule Morphing)
+     ══════════════════════════════════════════════════════════ */
+  .composer-bar-b {
+    background: var(--composer-bg);
+    border: 1px solid var(--composer-border);
+    border-radius: var(--radius-pill);
+    height: 48px;
+    padding: 4px 6px 4px 6px;
+    display: flex;
+    align-items: center;
+    position: relative;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  .capsule-btn-b {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 38px;
+    padding: 0 12px 0 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.25s var(--spring-fluid);
+  }
+  .capsule-btn-b:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
+  .capsule-btn-b.active {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: var(--accent-blue);
+  }
+  .input-b {
+    flex: 1;
+    height: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 0 12px;
+    font-family: inherit;
+  }
+  .action-icons-b {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 4px;
+  }
+  .icon-btn-b {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--btn-surface);
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .icon-btn-b:hover {
+    color: var(--text-primary);
+    background: var(--btn-surface-hover);
+  }
+  .send-btn-b {
+    background: var(--accent-blue);
+    color: #ffffff;
+  }
+
+  .morph-panel-b {
+    position: absolute;
+    bottom: 56px;
+    left: 6px;
+    width: 290px;
+    background: var(--dropdown-bg);
+    border: 1px solid var(--dropdown-border);
+    border-radius: 20px;
+    box-shadow: var(--popover-shadow), var(--popover-specular);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+    transform-origin: bottom left;
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.85) translateY(12px);
+    transition: opacity 0.22s var(--spring-fluid), transform 0.28s var(--spring-bounce);
+  }
+  .morph-panel-b.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1) translateY(0);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     方案 C：Composer 一体化抽屉扩展 (Drawer Unfold)
+     ══════════════════════════════════════════════════════════ */
+  .composer-box-c {
+    background: var(--composer-bg);
+    border: 1px solid var(--composer-border);
+    border-radius: var(--radius-dock);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.35s var(--spring-fluid);
+  }
+  .drawer-tray-c {
+    max-height: 0;
+    opacity: 0;
+    padding: 0 14px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid transparent;
+    transition: max-height 0.32s var(--spring-fluid), opacity 0.25s ease, padding 0.3s ease;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .composer-box-c.open .drawer-tray-c {
+    max-height: 240px;
+    opacity: 1;
+    padding: 12px 14px;
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+  .composer-body-c {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     底部灵动环境微光胶囊 (Ambient Glow Banner)
+     ══════════════════════════════════════════════════════════ */
+  .ambient-banner-wrap {
+    margin-top: 14px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* 真实环境背光溢出层 (Ambient Glow Bleed) */
+  .ambient-glow-aura {
+    position: absolute;
+    inset: -6px 12px;
+    border-radius: var(--radius-pill);
+    filter: blur(18px);
+    opacity: 0.45;
+    pointer-events: none;
+    transition: background 0.4s ease, opacity 0.4s ease;
+    z-index: 1;
+  }
+  .state-ready .ambient-glow-aura { background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.6), transparent 70%); }
+  .state-takeover .ambient-glow-aura { background: radial-gradient(ellipse at center, rgba(245, 158, 11, 0.65), transparent 70%); }
+  .state-confirm .ambient-glow-aura { background: radial-gradient(ellipse at center, rgba(244, 63, 94, 0.7), transparent 70%); }
+  .state-workers .ambient-glow-aura { background: radial-gradient(ellipse at center, rgba(6, 182, 212, 0.65), transparent 70%); }
+
+  body.light .ambient-glow-aura {
+    opacity: 0.28;
+    filter: blur(14px);
+  }
+
+  .ambient-banner-pill {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 12px 8px 14px;
+    border-radius: var(--radius-pill);
+    background: var(--banner-pill-bg);
+    border: 1px solid var(--banner-pill-border);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--banner-pill-shadow), var(--banner-pill-specular);
+    transition: border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
+  }
+  .state-ready .ambient-banner-pill { border-color: rgba(16, 185, 129, 0.35); }
+  .state-takeover .ambient-banner-pill { border-color: rgba(245, 158, 11, 0.4); }
+  .state-confirm .ambient-banner-pill { border-color: rgba(244, 63, 94, 0.45); }
+  .state-workers .ambient-banner-pill { border-color: rgba(6, 182, 212, 0.4); }
+
+  .banner-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    color: var(--banner-pill-text);
+  }
+  .banner-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+  .state-ready .banner-status-dot { background: var(--accent-emerald); box-shadow: 0 0 6px var(--accent-emerald); }
+  .state-takeover .banner-status-dot { background: var(--accent-amber); box-shadow: 0 0 6px var(--accent-amber); }
+  .state-confirm .banner-status-dot { background: var(--accent-rose); box-shadow: 0 0 8px var(--accent-rose); animation: pulseDot 1.4s infinite; }
+  .state-workers .banner-status-dot { background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan); }
+
+  @keyframes pulseDot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.7; }
+  }
+
+  .banner-btn-action {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--btn-border);
+    cursor: pointer;
+    background: var(--btn-surface);
+    color: var(--banner-pill-text);
+    transition: all 0.2s ease;
+  }
+  .banner-btn-action:hover {
+    background: var(--btn-surface-hover);
+    transform: scale(1.02);
+  }
+
+  /* 状态切换控制条 */
+  .state-switcher-dock {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .state-tab-btn {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .state-tab-btn.active {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* 底部评估决策小结 */
+  .footer-summary {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 22px 26px;
+    backdrop-filter: blur(20px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .footer-summary h3 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .footer-summary ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .footer-summary li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    line-height: 1.5;
+  }
+  .footer-summary li strong {
+    color: var(--text-primary);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 顶栏 -->
+  <header class="masthead">
+    <div class="masthead-title">
+      <h1>SideAgent · 界面动效演进与真实模型档位评估</h1>
+      <span class="tag-badge">Docs/Evals/20260906</span>
+    </div>
+    <button id="theme-btn" class="theme-toggle-btn" type="button">切换为浅色模式</button>
+  </header>
+
+  <!-- 核心铁律卡片：真实模型思考档位规范 -->
+  <section class="callout-card">
+    <div class="callout-head">
+      <h2>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07L19.07 4.93"/></svg>
+        思考强度真实性原则：严禁全量硬编码 Medium / High
+      </h2>
+      <span class="truth-tag">严格绑定真实能力</span>
+    </div>
+    <p class="callout-desc">
+      参考图中每个模型粗暴挂着 <code>Medium / High</code> 仅为视觉样张。在生产落地中，<strong>思考强度直接取决于当前底层模型是否具备分档能力</strong>。我们项目当前接入的模型分为三类，原型中已严格对齐：
+    </p>
+    <div class="model-matrix-grid">
+      <div class="matrix-item">
+        <div class="matrix-item-head">
+          <span class="matrix-model-name"><span class="chip-logo minimax">M</span> MiniMax-M3 (默认)</span>
+          <span class="matrix-tier-badge tier-native">原生内置思考</span>
+        </div>
+        <div class="matrix-item-detail">
+          拥有极强推理链与 1M 上下文，但推理强度为原生内置，<strong>不支持外部手动分档</strong>。界面如实标为 <code>内置深度思考 · 1M 上下文</code>。
+        </div>
+      </div>
+      <div class="matrix-item">
+        <div class="matrix-item-head">
+          <span class="matrix-model-name"><span class="chip-logo openai">O</span> GPT-5.6 / o3-mini</span>
+          <span class="matrix-tier-badge tier-slider">支持 Reasoning Effort</span>
+        </div>
+        <div class="matrix-item-detail">
+          API 官方支持 <code>reasoning_effort: low | medium | high</code>。原型中提供<strong>真实三档就地切换</strong>，选择后动态回传。
+        </div>
+      </div>
+      <div class="matrix-item">
+        <div class="matrix-item-head">
+          <span class="matrix-model-name"><span class="chip-logo kimi">K</span> Kimi for Coding</span>
+          <span class="matrix-tier-badge tier-direct">极速直接响应</span>
+        </div>
+        <div class="matrix-item-detail">
+          针对编程高吞吐优化，<strong>无思考链阶段</strong>。不应伪造档位，如实标注 <code>代码极速 · 直接响应</code>，用户所见即所得。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 三方案并排对比区 -->
+  <div class="comparison-header">
+    <div>
+      <h2>原位形变三种形态对比 (Morphing Forms)</h2>
+      <p>点击每个输入框左侧/底部的模型胶囊，亲手测试舒展手感与真实模型切换</p>
+    </div>
+  </div>
+
+  <div class="columns-grid">
+
+    <!-- 方案 A (推荐) -->
+    <div class="column-card">
+      <span class="column-badge-rec">推荐 · 方案 A</span>
+      <div class="column-meta">
+        <div class="column-title">
+          <span>底部芯片原位液态舒展 (Inline Chip Bloom)</span>
+        </div>
+        <div class="column-desc">
+          继承当前 SideAgent 双层 Composer。左下角模型药丸作为<strong>形变种子</strong>，点击后原地向上膨胀成半透明卡片，连线与圆角自如收放。
+        </div>
+      </div>
+
+      <div class="sidepanel-mock-stage">
+        <!-- 活动标签页胶囊 -->
+        <div class="page-pill">
+          <span class="page-pill-dot"></span>
+          <span>Apple Developer Documentation</span>
+        </div>
+
+        <!-- Composer 容器 -->
+        <div class="composer-box-a" id="composer-a">
+          <textarea class="composer-input-area" placeholder="给 SideAgent 下达任务…"></textarea>
+          
+          <div class="composer-bar-a">
+            <!-- 激活形变的种子芯片 -->
+            <button class="morph-seed-chip" id="chip-btn-a" type="button">
+              <span class="chip-logo minimax" id="chip-logo-a">M</span>
+              <span id="chip-name-a">MiniMax-M3</span>
+              <span class="reasoning-tag tag-native" id="chip-tag-a">内置深度思考</span>
+              <svg class="chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+
+            <!-- 原位舒展出来的下拉菜单 -->
+            <div class="morph-panel-a" id="morph-panel-a">
+              <!-- 项 1: MiniMax-M3 -->
+              <div class="model-option-row selected" data-model="minimax" data-name="MiniMax-M3" data-tier="native" data-tag="内置深度思考">
+                <div class="option-left">
+                  <span class="chip-logo minimax">M</span>
+                  <span class="option-name">MiniMax-M3</span>
+                </div>
+                <div class="option-right">
+                  <span class="reasoning-tag tag-native">内置深度思考</span>
+                  <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+              </div>
+
+              <!-- 项 2: GPT-5.6 Luna (带真实 Low / Medium / High 档位) -->
+              <div class="model-option-row" data-model="openai" data-name="GPT-5.6 Luna" data-tier="effort" data-tag="Effort: Med">
+                <div class="option-left">
+                  <span class="chip-logo openai">O</span>
+                  <span class="option-name">GPT-5.6 Luna</span>
+                </div>
+                <div class="option-right">
+                  <div class="effort-segmented" onclick="event.stopPropagation()">
+                    <button class="effort-btn" data-effort="Low" onclick="setEffort(this, 'Low')">Low</button>
+                    <button class="effort-btn active" data-effort="Med" onclick="setEffort(this, 'Med')">Med</button>
+                    <button class="effort-btn" data-effort="High" onclick="setEffort(this, 'High')">High</button>
+                  </div>
+                  <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+              </div>
+
+              <!-- 项 3: Kimi for Coding (无思考，极速) -->
+              <div class="model-option-row" data-model="kimi" data-name="Kimi for Coding" data-tier="direct" data-tag="极速响应">
+                <div class="option-left">
+                  <span class="chip-logo kimi">K</span>
+                  <span class="option-name">Kimi for Coding</span>
+                </div>
+                <div class="option-right">
+                  <span class="reasoning-tag tag-direct">极速响应</span>
+                  <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- 发送键 -->
+            <button class="btn-send" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 底部环境光胶囊 -->
+        <div class="ambient-banner-wrap state-ready" id="banner-wrap-a">
+          <div class="ambient-glow-aura"></div>
+          <div class="ambient-banner-pill">
+            <div class="banner-left">
+              <span class="banner-status-dot"></span>
+              <span id="banner-text-a">当前标签页已就绪 · ⌘J 唤起问答</span>
+            </div>
+            <button class="banner-btn-action" id="banner-btn-a" type="button">检查</button>
+          </div>
+        </div>
+
+        <!-- 状态模拟切换器 -->
+        <div class="state-switcher-dock">
+          <button class="state-tab-btn active" onclick="switchBannerState('ready')">就绪 (Emerald)</button>
+          <button class="state-tab-btn" onclick="switchBannerState('takeover')">接管 (Amber)</button>
+          <button class="state-tab-btn" onclick="switchBannerState('confirm')">确认 (Crimson)</button>
+          <button class="state-tab-btn" onclick="switchBannerState('workers')">后台 (Cyan)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 B -->
+    <div class="column-card">
+      <div class="column-meta">
+        <div class="column-title">
+          <span>左侧独立胶囊裂变 (Dual Capsule Morphing)</span>
+        </div>
+        <div class="column-desc">
+          完全对标 CollectUI 原生结构：单行 Chat Bar，左侧整颗独立胶囊向上裂变，右侧集约化排列语音与发送按钮。
+        </div>
+      </div>
+
+      <div class="sidepanel-mock-stage">
+        <div class="page-pill">
+          <span class="page-pill-dot"></span>
+          <span>Apple Developer Documentation</span>
+        </div>
+
+        <div style="flex: 1;"></div>
+
+        <!-- 单行 Chat Bar -->
+        <div class="composer-bar-b" id="composer-b">
+          <!-- 胶囊按钮 -->
+          <button class="capsule-btn-b" id="capsule-btn-b" type="button">
+            <span class="chip-logo minimax" id="chip-logo-b">M</span>
+            <span id="capsule-text-b">MiniMax-M3</span>
+            <svg class="chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+
+          <!-- 裂变上浮面板 -->
+          <div class="morph-panel-b" id="morph-panel-b">
+            <div class="model-option-row selected" data-model="minimax" data-name="MiniMax-M3" data-tier="native" data-tag="内置深度思考">
+              <div class="option-left">
+                <span class="chip-logo minimax">M</span>
+                <span class="option-name">MiniMax-M3</span>
+              </div>
+              <div class="option-right">
+                <span class="reasoning-tag tag-native">内置思考</span>
+                <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+            <div class="model-option-row" data-model="openai" data-name="GPT-5.6 Luna" data-tier="effort" data-tag="Effort: Med">
+              <div class="option-left">
+                <span class="chip-logo openai">O</span>
+                <span class="option-name">GPT-5.6 Luna</span>
+              </div>
+              <div class="option-right">
+                <span class="reasoning-tag tag-slider">Med Effort</span>
+                <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+            <div class="model-option-row" data-model="kimi" data-name="Kimi for Coding" data-tier="direct" data-tag="极速响应">
+              <div class="option-left">
+                <span class="chip-logo kimi">K</span>
+                <span class="option-name">Kimi for Coding</span>
+              </div>
+              <div class="option-right">
+                <span class="reasoning-tag tag-direct">极速</span>
+                <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- 输入区 -->
+          <input class="input-b" type="text" placeholder="Plan, Build, Automate..." />
+
+          <!-- 工具区 -->
+          <div class="action-icons-b">
+            <button class="icon-btn-b" type="button" title="语音输入">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </button>
+            <button class="icon-btn-b send-btn-b" type="button" title="发送">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 底部微光胶囊 -->
+        <div class="ambient-banner-wrap state-ready">
+          <div class="ambient-glow-aura"></div>
+          <div class="ambient-banner-pill">
+            <div class="banner-left">
+              <span class="banner-status-dot"></span>
+              <span>SideAgent Pro 已激活</span>
+            </div>
+            <button class="banner-btn-action" type="button">管理</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 C -->
+    <div class="column-card">
+      <div class="column-meta">
+        <div class="column-title">
+          <span>Composer 一体化折叠抽屉 (Drawer Unfold)</span>
+        </div>
+        <div class="column-desc">
+          放弃悬浮 Popover，点击后输入框整体<strong>向上机械伸展</strong>，内部抽屉平滑展开，模型与思考控制融为一体。
+        </div>
+      </div>
+
+      <div class="sidepanel-mock-stage">
+        <div class="page-pill">
+          <span class="page-pill-dot"></span>
+          <span>Apple Developer Documentation</span>
+        </div>
+
+        <div style="flex: 1;"></div>
+
+        <!-- 一体化抽屉 Composer -->
+        <div class="composer-box-c" id="composer-c">
+          <!-- 隐藏抽屉层 -->
+          <div class="drawer-tray-c" id="drawer-tray-c">
+            <div style="font-size: 11px; color: var(--text-tertiary); font-weight: 600; margin-bottom: 4px;">切换运行模型与思考策略</div>
+            <div class="model-option-row selected" data-model="minimax" data-name="MiniMax-M3">
+              <div class="option-left">
+                <span class="chip-logo minimax">M</span>
+                <span class="option-name">MiniMax-M3</span>
+              </div>
+              <div class="option-right">
+                <span class="reasoning-tag tag-native">内置深度思考</span>
+                <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+            <div class="model-option-row" data-model="openai" data-name="GPT-5.6 Luna">
+              <div class="option-left">
+                <span class="chip-logo openai">O</span>
+                <span class="option-name">GPT-5.6 Luna</span>
+              </div>
+              <div class="option-right">
+                <span class="reasoning-tag tag-slider">Effort: Med</span>
+                <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer-body-c">
+            <textarea class="composer-input-area" placeholder="下达指令，或点击下方抽屉配置…"></textarea>
+            <div class="composer-bar-a">
+              <button class="morph-seed-chip" id="chip-btn-c" type="button">
+                <span class="chip-logo minimax">M</span>
+                <span id="chip-text-c">MiniMax-M3</span>
+                <svg class="chip-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <button class="btn-send" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部微光胶囊 -->
+        <div class="ambient-banner-wrap state-ready">
+          <div class="ambient-glow-aura"></div>
+          <div class="ambient-banner-pill">
+            <div class="banner-left">
+              <span class="banner-status-dot"></span>
+              <span>抽屉一体化架构</span>
+            </div>
+            <button class="banner-btn-action" type="button">查看</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 底部关键总结 -->
+  <footer class="footer-summary">
+    <h3>核心裁决点 (待人评确认)</h3>
+    <ul>
+      <li>
+        <strong>1. 形态选择</strong>：方案 A 保持了现有 SideAgent 的大文本输入习惯与顶栏信息排布，形变只在芯片局部绽放，最克制高效；方案 B 单行式适合轻量 Prompt 场景。
+      </li>
+      <li>
+        <strong>2. 思考强度严谨性</strong>：已将「真实现存模型」与「思考档位开关」严格绑定——对可调模型提供 <code>Low / Med / High</code> 切换；对 MiniMax-M3 保留内置深度标签；绝不无中生有。
+      </li>
+      <li>
+        <strong>3. Ambient Glow 职能</strong>：用于连接用户与系统状态（就绪绿、接管橙、确认红、并行蓝），提供了极高的高级工具触感。
+      </li>
+    </ul>
+  </footer>
+
+</div>
+
+<script>
+  // ── 1. 深浅主题切换 ──────────────────────────────────────────────
+  const themeBtn = document.getElementById('theme-btn');
+  themeBtn.addEventListener('click', () => {
+    document.body.classList.toggle('light');
+    themeBtn.textContent = document.body.classList.contains('light') ? '切换为深色模式' : '切换为浅色模式';
+  });
+
+  // ── 2. 方案 A 交互逻辑 ────────────────────────────────────────────
+  const chipBtnA = document.getElementById('chip-btn-a');
+  const morphPanelA = document.getElementById('morph-panel-a');
+  const chipNameA = document.getElementById('chip-name-a');
+  const chipTagA = document.getElementById('chip-tag-a');
+  const chipLogoA = document.getElementById('chip-logo-a');
+
+  chipBtnA.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = morphPanelA.classList.contains('open');
+    morphPanelA.classList.toggle('open', !isOpen);
+    chipBtnA.classList.toggle('active', !isOpen);
+  });
+
+  document.querySelectorAll('#morph-panel-a .model-option-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('#morph-panel-a .model-option-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const model = row.dataset.model;
+      const name = row.dataset.name;
+      const tag = row.dataset.tag;
+      const tier = row.dataset.tier;
+
+      chipNameA.textContent = name;
+      chipTagA.textContent = tag;
+      chipTagA.className = 'reasoning-tag ' + (tier === 'native' ? 'tag-native' : tier === 'effort' ? 'tag-slider' : 'tag-direct');
+
+      chipLogoA.className = 'chip-logo ' + model;
+      chipLogoA.textContent = model === 'minimax' ? 'M' : model === 'openai' ? 'O' : 'K';
+
+      // 选完平滑回缩收拢
+      setTimeout(() => {
+        morphPanelA.classList.remove('open');
+        chipBtnA.classList.remove('active');
+      }, 140);
+    });
+  });
+
+  // 调节推理档位 (Low / Med / High)
+  window.setEffort = function(btn, level) {
+    const parent = btn.parentElement;
+    parent.querySelectorAll('.effort-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const row = btn.closest('.model-option-row');
+    row.dataset.tag = 'Effort: ' + level;
+    if (row.classList.contains('selected')) {
+      chipTagA.textContent = 'Effort: ' + level;
+    }
+  };
+
+  // ── 3. 方案 B 交互逻辑 ────────────────────────────────────────────
+  const capsuleBtnB = document.getElementById('capsule-btn-b');
+  const morphPanelB = document.getElementById('morph-panel-b');
+  const capsuleTextB = document.getElementById('capsule-text-b');
+  const chipLogoB = document.getElementById('chip-logo-b');
+
+  capsuleBtnB.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = morphPanelB.classList.contains('open');
+    morphPanelB.classList.toggle('open', !isOpen);
+    capsuleBtnB.classList.toggle('active', !isOpen);
+  });
+
+  document.querySelectorAll('#morph-panel-b .model-option-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('#morph-panel-b .model-option-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      const model = row.dataset.model;
+      capsuleTextB.textContent = row.dataset.name;
+      chipLogoB.className = 'chip-logo ' + model;
+      chipLogoB.textContent = model === 'minimax' ? 'M' : model === 'openai' ? 'O' : 'K';
+
+      setTimeout(() => {
+        morphPanelB.classList.remove('open');
+        capsuleBtnB.classList.remove('active');
+      }, 140);
+    });
+  });
+
+  // ── 4. 方案 C 抽屉交互逻辑 ─────────────────────────────────────────
+  const composerC = document.getElementById('composer-c');
+  const chipBtnC = document.getElementById('chip-btn-c');
+  const chipTextC = document.getElementById('chip-text-c');
+
+  chipBtnC.addEventListener('click', (e) => {
+    e.stopPropagation();
+    composerC.classList.toggle('open');
+    chipBtnC.classList.toggle('active');
+  });
+
+  document.querySelectorAll('#drawer-tray-c .model-option-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('#drawer-tray-c .model-option-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+      chipTextC.textContent = row.dataset.name;
+
+      setTimeout(() => {
+        composerC.classList.remove('open');
+        chipBtnC.classList.remove('active');
+      }, 180);
+    });
+  });
+
+  // 全局点击空白收起
+  window.addEventListener('click', () => {
+    morphPanelA.classList.remove('open');
+    chipBtnA.classList.remove('active');
+    morphPanelB.classList.remove('open');
+    capsuleBtnB.classList.remove('active');
+  });
+
+  // ── 5. Ambient Glow 状态切换 ──────────────────────────────────────
+  const bannerWrapA = document.getElementById('banner-wrap-a');
+  const bannerTextA = document.getElementById('banner-text-a');
+  const bannerBtnA = document.getElementById('banner-btn-a');
+
+  const STATES = {
+    ready: {
+      text: '当前标签页已就绪 · ⌘J 唤起问答',
+      btn: '检查',
+      actionClass: 'state-ready'
+    },
+    takeover: {
+      text: '你已接管当前标签页 · Agent 暂停中',
+      btn: '交还继续',
+      actionClass: 'state-takeover'
+    },
+    confirm: {
+      text: '就地危险确认：准备执行删除操作',
+      btn: '确认执行',
+      actionClass: 'state-confirm'
+    },
+    workers: {
+      text: '后台 2 个标签页采集中 · 耗时 8.4s',
+      btn: '查看进度',
+      actionClass: 'state-workers'
+    }
+  };
+
+  window.switchBannerState = function(key) {
+    document.querySelectorAll('.state-tab-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+
+    const s = STATES[key];
+    bannerWrapA.className = 'ambient-banner-wrap ' + s.actionClass;
+    bannerTextA.textContent = s.text;
+    bannerBtnA.textContent = s.btn;
+  };
+</script>
+
+</body>
+</html>

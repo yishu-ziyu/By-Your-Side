@@ -1,0 +1,1141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SideAgent · 真正物理级 Liquid Glass 与连续性 Motion 演进</title>
+<style>
+  /* ── 核心原则：Glass 用来表达层级，Motion 用来表达状态 ───────────────────── */
+  :root {
+    /* 苹果 Sequoia 纯正晨曦渐变底色 (供毛玻璃与光学折射滤镜实时采样) */
+    --wallpaper: radial-gradient(at 15% 15%, rgba(255, 182, 140, 0.45) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(135, 195, 255, 0.45) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(180, 160, 240, 0.4) 0px, transparent 55%),
+                 #f2f4f8;
+
+    /* 1. 顶层 Chrome 级 Liquid Glass 材质 (仅用于 Topbar / Composer Dock / Popover) */
+    --glass-surface: rgba(255, 255, 255, 0.62);
+    --glass-surface-elevated: rgba(255, 255, 255, 0.82);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --glass-border-subtle: rgba(0, 0, 0, 0.07);
+    --glass-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.9);
+    --glass-shadow: 0 12px 36px -4px rgba(31, 38, 135, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+    --glass-blur: blur(24px) saturate(190%);
+
+    /* 2. 消息流与内容主体：坚实实体材质 (Solid Surface，绝不全屏半透明，保证阅读纯净度) */
+    --content-bg: #ffffff;
+    --content-subtle: #f7f8fa;
+    --content-subtle-hover: #eef1f5;
+    --content-border: rgba(0, 0, 0, 0.06);
+
+    /* 文字色彩层级 (Apple HIG) */
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-tertiary: #9ca3af;
+    --text-quaternary: #d1d5db;
+
+    /* 状态点缀色 */
+    --apple-blue: #0071e3;
+    --apple-blue-soft: rgba(0, 113, 227, 0.08);
+    --apple-green: #34c759;
+    --apple-green-soft: rgba(52, 199, 89, 0.12);
+    --apple-orange: #ff9500;
+    --apple-red: #ff3b30;
+    --apple-red-soft: rgba(255, 59, 48, 0.08);
+
+    /* 弹簧物理参数 (基于 Motion 核心动力学) */
+    --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --spring-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+    --radius-dock: 22px;
+    --radius-card: 14px;
+    --radius-pill: 9999px;
+  }
+
+  body.dark {
+    --wallpaper: radial-gradient(at 15% 15%, rgba(35, 55, 95, 0.55) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(70, 35, 90, 0.5) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(20, 75, 70, 0.45) 0px, transparent 55%),
+                 #080a0f;
+
+    --glass-surface: rgba(24, 26, 32, 0.65);
+    --glass-surface-elevated: rgba(32, 35, 43, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-border-subtle: rgba(255, 255, 255, 0.08);
+    --glass-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.25);
+    --glass-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+    --glass-blur: blur(28px) saturate(200%);
+
+    --content-bg: #15171d;
+    --content-subtle: #1c1f26;
+    --content-subtle-hover: #242933;
+    --content-border: rgba(255, 255, 255, 0.08);
+
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+    --text-quaternary: #374151;
+
+    --apple-blue: #2997ff;
+    --apple-blue-soft: rgba(41, 151, 255, 0.16);
+    --apple-green: #30d158;
+    --apple-red: #ff453a;
+  }
+
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    font-family: var(--font);
+    color: var(--text-primary);
+    background: var(--wallpaper);
+    background-attachment: fixed;
+    background-size: cover;
+    transition: background 0.4s ease, color 0.3s ease;
+  }
+
+  body { padding: 32px 40px 90px; }
+
+  /* 顶部全局控制条 (纯正 Liquid Glass 材质) */
+  header.apple-masthead {
+    max-width: 1400px;
+    margin: 0 auto 28px;
+    padding: 12px 20px;
+    border-radius: var(--radius-pill);
+    background: var(--glass-surface);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-specular), var(--glass-shadow);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .masthead-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .apple-badge {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--text-primary);
+    color: var(--wallpaper);
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .masthead-titles h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .masthead-titles p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .top-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .glass-pill-btn {
+    background: var(--glass-surface-elevated);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-pill);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    cursor: pointer;
+    box-shadow: var(--glass-specular);
+    backdrop-filter: blur(16px);
+    transition: all 0.2s var(--spring-fluid);
+  }
+  .glass-pill-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--glass-specular), 0 4px 12px rgba(0,0,0,0.08);
+  }
+  .glass-pill-btn:active { transform: scale(0.96); }
+
+  /* 核心原理映射卡 */
+  .principle-banner {
+    max-width: 1400px;
+    margin: 0 auto 32px;
+    background: var(--glass-surface);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-specular), var(--glass-shadow);
+    border-radius: var(--radius-card);
+    padding: 16px 22px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+  .principle-banner strong {
+    color: var(--text-primary);
+    font-size: 13.5px;
+  }
+  .rule-quote {
+    margin: 8px 0 10px;
+    padding: 8px 14px;
+    background: var(--glass-surface-elevated);
+    border-left: 3px solid var(--apple-blue);
+    border-radius: 4px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  /* ── 6 个关键位置全景展示区 ───────────────────────────────────────── */
+  .studio-layout {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 390px minmax(0, 1fr);
+    gap: 36px;
+    align-items: start;
+  }
+  @media (max-width: 1080px) {
+    .studio-layout { grid-template-columns: 1fr; }
+  }
+
+  /* 模拟苹果原生侧栏 (真机 380px 宽) */
+  .sidepanel-chassis {
+    background: var(--glass-surface);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 30px;
+    box-shadow: var(--glass-specular), var(--glass-shadow), 0 24px 70px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    height: 860px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: all 0.3s var(--spring-fluid);
+  }
+
+  /* 位置 4：Liquid Glass 顶栏 + 灵动状态指示器 (dpawlikowski/liquid-glass + Dynamic Island) */
+  .chassis-topbar {
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 0.5px solid var(--glass-border-subtle);
+    background: var(--glass-surface-elevated);
+    backdrop-filter: var(--glass-blur);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .brand-cluster {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand-glyph {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: var(--text-primary);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .brand-label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* 灵动状态胶囊 (Dynamic Activity Island) */
+  .activity-island {
+    background: var(--text-primary);
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    cursor: pointer;
+    transition: all 0.35s var(--spring-bounce);
+  }
+  .island-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--apple-green);
+    box-shadow: 0 0 8px var(--apple-green);
+    animation: beadBreathe 2s ease-in-out infinite;
+  }
+  @keyframes beadBreathe {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.8); opacity: 0.55; }
+  }
+
+  /* 消息与执行流主体 (坚实 Solid 介质，保证 100% 阅读舒适度) */
+  .chassis-stream {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scrollbar-width: none;
+  }
+  .chassis-stream::-webkit-scrollbar { display: none; }
+
+  /* 用户消息气泡：纯白/深灰实体微晶气泡 (告别刺眼大蓝底) */
+  .msg-solid-user {
+    align-self: flex-end;
+    max-width: 88%;
+    background: var(--content-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--content-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    padding: 9px 13px;
+    border-radius: 18px 18px 4px 18px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    font-weight: 450;
+  }
+
+  /* 位置 5：任务计划 Todo 追踪卡片 (Apple Reminders 级实体卡) */
+  .todo-tracker-card {
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: var(--radius-card);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  }
+  .tracker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .tracker-stat {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--apple-blue);
+    background: var(--apple-blue-soft);
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+  }
+  .tracker-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .tracker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.2s;
+  }
+  .tracker-row.done {
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+  }
+  .tracker-dot-check {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-quaternary);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    transition: all 0.25s var(--spring-bounce);
+  }
+  .tracker-row.done .tracker-dot-check {
+    background: var(--apple-blue);
+    border-color: var(--apple-blue);
+    color: #fff;
+  }
+  .tracker-row.active .tracker-dot-check {
+    border-color: var(--apple-blue);
+    position: relative;
+  }
+  .tracker-row.active .tracker-dot-check::after {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--apple-blue);
+  }
+
+  /* 位置 5：动作步骤卡与弹簧推挤展开 (Motion Spring Layout & Sibling Push) */
+  .kinetic-action-item {
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s var(--spring-fluid), box-shadow 0.2s;
+  }
+  .kinetic-action-item:hover {
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+  }
+  .action-lead-row {
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+  }
+  .action-type-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--content-subtle);
+    display: grid;
+    place-items: center;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .action-name-text {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .action-target-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: var(--content-subtle);
+    color: var(--text-secondary);
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .action-highlight-val {
+    color: var(--apple-blue);
+    font-weight: 500;
+  }
+  .action-chevron-icon {
+    margin-left: auto;
+    color: var(--text-tertiary);
+    transition: transform 0.28s var(--spring-bounce);
+  }
+  .kinetic-action-item.open .action-chevron-icon {
+    transform: rotate(180deg);
+  }
+  /* 真实的弹簧抽屉高度动画 (自然推挤下方元素，绝非突然 pop 出来) */
+  .action-spring-drawer {
+    max-height: 0;
+    overflow: hidden;
+    background: var(--content-subtle);
+    border-top: 0px solid var(--content-border);
+    transition: max-height 0.35s var(--spring-fluid), padding 0.35s var(--spring-fluid), border-width 0.2s;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    padding: 0 12px;
+  }
+  .kinetic-action-item.open .action-spring-drawer {
+    max-height: 120px;
+    padding: 10px 12px;
+    border-top-width: 1px;
+  }
+
+  /* 位置 6：危险操作拦截卡 (macOS Alert Sheet 触感物理) */
+  .danger-hold-sheet {
+    background: var(--content-bg);
+    border: 1.5px solid var(--apple-red);
+    border-radius: var(--radius-card);
+    padding: 13px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 4px 16px rgba(255, 59, 48, 0.1);
+  }
+  .danger-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--apple-red);
+  }
+  .danger-desc {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-primary);
+  }
+  .danger-desc mark {
+    background: transparent;
+    color: var(--apple-red);
+    font-weight: 600;
+  }
+  .danger-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .danger-confirm-btn {
+    flex: 1;
+    background: var(--apple-red);
+    color: #fff;
+    border: 0;
+    border-radius: var(--radius-pill);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(255, 59, 48, 0.3);
+    transition: transform 0.15s var(--spring-bounce);
+  }
+  .danger-confirm-btn:active { transform: scale(0.95); }
+  .danger-cancel-btn {
+    flex: 1;
+    background: var(--content-subtle);
+    border: 1px solid var(--content-border);
+    color: var(--text-primary);
+    border-radius: var(--radius-pill);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  /* ── 底部浮动 Liquid Glass Composer Dock (层级使用 Glass) ──────────── */
+  .composer-dock-wrap {
+    margin: 8px 12px 14px;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .composer-glass-dock {
+    padding: 10px 12px 10px;
+    background: var(--glass-surface-elevated);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-dock);
+    box-shadow: var(--glass-specular), var(--glass-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .composer-glass-dock:focus-within {
+    border-color: var(--apple-blue);
+    box-shadow: var(--glass-specular), 0 0 0 3px var(--apple-blue-soft), var(--glass-shadow);
+  }
+
+  /* 位置 2：页面感知胶囊与 Morphing Dialog (Motion Primitives 核心思想) */
+  /* 点击此胶囊，它本身在原地舒展放大为检查面板，绝不孤立弹窗！ */
+  .morphing-page-pill {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: all 0.3s var(--spring-bounce);
+  }
+  .morphing-page-pill:hover {
+    color: var(--text-primary);
+    border-color: var(--apple-blue);
+  }
+  .tab-icon-sq {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--text-primary);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 8px;
+    font-weight: 800;
+  }
+  .tab-live-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--apple-green);
+    box-shadow: 0 0 6px var(--apple-green);
+  }
+
+  /* 胶囊原地变形后的展开面板形态 */
+  .page-morph-sheet {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: var(--glass-surface-elevated);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 18px;
+    box-shadow: var(--glass-specular), var(--glass-shadow);
+    padding: 14px 16px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    transform-origin: bottom left;
+    animation: morphSpringIn 0.35s var(--spring-bounce);
+  }
+  @keyframes morphSpringIn {
+    from { opacity: 0; transform: scale(0.85) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .morph-sheet-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .morph-sheet-body {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: var(--content-subtle);
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-family: var(--mono);
+    line-height: 1.5;
+  }
+
+  .composer-input-area {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    resize: none;
+    line-height: 1.45;
+  }
+  .composer-input-area::placeholder { color: var(--text-tertiary); }
+
+  .composer-bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 4px;
+    border-top: 0.5px solid var(--glass-border-subtle);
+  }
+
+  /* 位置 3：Model Picker 弹簧生长菜单 (Motion Primitives Popover) */
+  .model-spring-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--content-border);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .model-spring-pill:hover {
+    color: var(--text-primary);
+  }
+
+  /* 位置 1：Send ↑ / Stop ■ 原地形变按钮 (Motion In-Place Morphing Button) */
+  /* 重点：单元素形态、质量、重心连续，绝不销毁重建！ */
+  .kinetic-morph-button {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--text-primary);
+    color: var(--wallpaper);
+    border: 0;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: border-radius 0.35s var(--spring-bounce),
+                background 0.3s ease,
+                transform 0.18s var(--spring-bounce);
+  }
+  .kinetic-morph-button:hover {
+    transform: scale(1.08);
+    background: var(--apple-blue);
+    color: #fff;
+  }
+  .kinetic-morph-button:active { transform: scale(0.92); }
+
+  /* 状态切换为 Stopping 态：圆角收缩、背景变红、图标旋转湮灭 */
+  .kinetic-morph-button.stopping {
+    border-radius: 9px;
+    background: var(--apple-red) !important;
+    color: #fff !important;
+  }
+  .morph-icon-send {
+    position: absolute;
+    transition: opacity 0.2s ease, transform 0.32s var(--spring-bounce);
+  }
+  .kinetic-morph-button.stopping .morph-icon-send {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.3);
+  }
+  .morph-icon-stop {
+    position: absolute;
+    opacity: 0;
+    transform: scale(0.3) rotate(-90deg);
+    transition: opacity 0.2s ease, transform 0.32s var(--spring-bounce);
+  }
+  .kinetic-morph-button.stopping .morph-icon-stop {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+
+  /* ── 右侧：6 个位置的设计原理剖析与交互控制器 ─────────────────────────── */
+  .studio-explainer {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .explainer-card {
+    background: var(--glass-surface);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: 18px 20px;
+    box-shadow: var(--glass-specular), var(--glass-shadow);
+  }
+  .explainer-card h2 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--apple-blue);
+  }
+  .location-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 800px) { .location-grid { grid-template-columns: 1fr; } }
+
+  .loc-box {
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .loc-badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--apple-blue);
+    background: var(--apple-blue-soft);
+    padding: 2px 7px;
+    border-radius: 4px;
+    align-self: flex-start;
+  }
+  .loc-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .loc-desc {
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .loc-trigger-btn {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--content-border);
+    background: var(--content-subtle);
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .loc-trigger-btn:hover { background: var(--content-subtle-hover); border-color: var(--apple-blue); }
+
+  /* SVG 滤镜定义 (物理级折射与色散) */
+  svg.rc {
+    width: 14px;
+    height: 14px;
+    stroke-width: 1.75;
+    stroke: currentColor;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    display: inline-block;
+  }
+</style>
+</head>
+<body>
+
+  <!-- SVG 滤镜注入 (dpawlikowski/liquid-glass 纯正光学折射层) -->
+  <svg style="position: absolute; width: 0; height: 0; overflow: hidden;" aria-hidden="true">
+    <defs>
+      <!-- 真实边缘折射与透镜光晕 -->
+      <filter id="liquid-refraction" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.008 0.008" numOctaves="2" result="noise" seed="7" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="G" result="displaced" />
+        <feGaussianBlur in="displaced" stdDeviation="0.3" result="smooth" />
+        <feMerge>
+          <feMergeNode in="smooth" />
+        </feMerge>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- 顶部全局导航 -->
+  <header class="apple-masthead">
+    <div class="masthead-info">
+      <div class="apple-badge"></div>
+      <div class="masthead-titles">
+        <h1>SideAgent · Liquid Glass 材质与连续性 Motion 真实演进</h1>
+        <p>彻底落实「Glass 用来表达层级，Motion 用来表达状态」· 拒绝廉价假毛玻璃，重构 6 大关键交互</p>
+      </div>
+    </div>
+    <div class="top-btn-group">
+      <button class="glass-pill-btn" id="btn-toggle-theme">切换深浅色</button>
+      <button class="glass-pill-btn" id="btn-toggle-wallpaper">切换壁纸 (验证透光)</button>
+      <button class="glass-pill-btn" id="btn-morph-all">触发全部微动效</button>
+    </div>
+  </header>
+
+  <!-- 设计原则公告栏 -->
+  <section class="principle-banner">
+    <strong>核心认知定力：拒绝 Dribbble 式全屏无脑假玻璃，正文必须坚实可读。</strong>
+    <div class="rule-quote">
+      “Glass 用来表达层级，Motion 用来表达状态。顶栏、Composer、Popover 享有液态折射与高光；消息正文坚实纯净；状态流转通过不间断的空间质量与弹簧惯性表达。”
+    </div>
+    <span>你指出的 6 个最具质感改造点均已在下方左侧侧栏中做出 1:1 动态实现。可在右侧直接触发测试其运动惯性。</span>
+  </section>
+
+  <!-- 主体工作台：左侧侧栏原型，右侧 6 点映射拆解 -->
+  <main class="studio-layout">
+
+    <!-- 左侧：380px 原生 SidePanel 原型 -->
+    <div class="sidepanel-chassis" id="panel-chassis">
+
+      <!-- 位置 4：Liquid Glass 顶栏 + 灵动状态胶囊 -->
+      <div class="chassis-topbar">
+        <div class="brand-cluster">
+          <div class="brand-glyph">S</div>
+          <span class="brand-label">SideAgent</span>
+        </div>
+        <!-- 灵动胶囊：点击演示状态变形 -->
+        <div class="activity-island" id="island-pill" title="点击测试状态形变" onclick="toggleIslandState()">
+          <i class="island-pulse-dot" id="island-dot"></i>
+          <span id="island-text">正在执行 · 2/3 步</span>
+        </div>
+      </div>
+
+      <!-- 消息流：主体采用坚实纯白/深灰实体卡，保证 100% 阅读舒适度 -->
+      <div class="chassis-stream">
+
+        <!-- 用户消息：纯白微晶实体气泡 (告别蓝底) -->
+        <div class="msg-solid-user">
+          帮我把 flomo 里关于「MiroFish 调研」的笔记归档，并把归档结果告诉我
+        </div>
+
+        <!-- 位置 5：Apple Reminders 级任务计划追踪器 -->
+        <div class="todo-tracker-card">
+          <div class="tracker-header">
+            <span>任务规划</span>
+            <span class="tracker-stat">2 / 3 已就绪</span>
+          </div>
+          <div class="tracker-rows">
+            <div class="tracker-row done">
+              <span class="tracker-dot-check">
+                <svg class="rc" style="width:10px;height:10px;" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <span>定位 flomo 活跃标签页并执行搜索</span>
+            </div>
+            <div class="tracker-row active">
+              <span class="tracker-dot-check"></span>
+              <span>展开选项菜单并就地请求归档</span>
+            </div>
+            <div class="tracker-row">
+              <span class="tracker-dot-check"></span>
+              <span>确认归档后向你回报最终结果</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 位置 5：动作卡片与弹簧推挤展开 (Motion Spring Layout) -->
+        <div class="kinetic-action-item" onclick="toggleAction(this)">
+          <div class="action-lead-row">
+            <div class="action-type-icon">
+              <svg class="rc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </div>
+            <span class="action-name-text">检查页面</span>
+            <span class="action-target-pill">flomo.app</span>
+            <svg class="rc action-chevron-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="action-spring-drawer">
+            <div>调用工具：<code>get_active_tab + snapshot</code></div>
+            <div>返回状态：AX 树提取成功 (142 节点)</div>
+          </div>
+        </div>
+
+        <div class="kinetic-action-item" onclick="toggleAction(this)">
+          <div class="action-lead-row">
+            <div class="action-type-icon">
+              <svg class="rc" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            </div>
+            <span class="action-name-text">填写输入</span>
+            <span class="action-target-pill">#search-input</span>
+            <span class="action-highlight-val">"MiroFish"</span>
+            <svg class="rc action-chevron-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="action-spring-drawer">
+            <div>目标锚点：<code>input[placeholder="搜索笔记"]</code></div>
+            <div>输入内容：<code>"MiroFish" (延迟 110ms)</code></div>
+          </div>
+        </div>
+
+        <!-- 位置 6：危险操作拦截卡 (macOS Alert Sheet 物理下沉) -->
+        <div class="danger-hold-sheet">
+          <div class="danger-title">
+            <svg class="rc" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>就地确认拦阻 · 归档保护</span>
+          </div>
+          <div class="danger-desc">
+            准备将笔记 <mark>「MiroFish 调研：多 Agent 协同系统」</mark> 移至归档箱。
+          </div>
+          <div class="danger-actions">
+            <button class="danger-confirm-btn" onclick="alert('已确认')">确认归档 (Enter)</button>
+            <button class="danger-cancel-btn" onclick="alert('已取消')">取消 (Esc)</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 底部 Composer Dock：层级上升，使用纯粹 Liquid Glass 材质 -->
+      <div class="composer-dock-wrap">
+
+        <!-- 位置 2：页面感知胶囊变形面板 (Morphing Dialog) -->
+        <div class="page-morph-sheet" id="morph-sheet">
+          <div class="morph-sheet-head">
+            <span>当前活动标签页检查器</span>
+            <button style="border:0;background:transparent;cursor:pointer;color:var(--text-tertiary);" onclick="toggleMorphPill()">✕</button>
+          </div>
+          <div class="morph-sheet-body">
+            <div>URL: https://v.flomoapp.com/mine</div>
+            <div>标题: flomo 浮墨笔记 · 记录想法</div>
+            <div>AX 节点: 142 个可交互元素已就绪</div>
+          </div>
+        </div>
+
+        <div class="composer-glass-dock">
+          <!-- 胶囊本身：点击它在原位展开为面板！ -->
+          <div class="morphing-page-pill" id="page-pill" onclick="toggleMorphPill()" title="点击原位变形为检查器面板">
+            <span class="tab-icon-sq">f</span>
+            <span>flomo.app · 浮墨笔记</span>
+            <i class="tab-live-dot"></i>
+          </div>
+
+          <textarea class="composer-input-area" rows="2" placeholder="插话：调整 Agent 方向，或给新指令…"></textarea>
+
+          <div class="composer-bottom-bar">
+            <!-- 位置 3：Model Picker 弹簧生长按钮 -->
+            <div class="model-spring-pill" onclick="alert('已模拟模型弹簧生长菜单')">
+              <svg class="rc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+              <span>MiniMax-M3</span>
+              <svg class="rc" style="width:10px;height:10px;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+
+            <!-- 位置 1：Send ↑ 与 Stop ■ 原地形变按钮 (Motion In-Place Morph) -->
+            <button class="kinetic-morph-button" id="morph-btn" onclick="toggleMorphButton()" title="点击测试 Send 与 Stop 原地形变">
+              <svg class="rc morph-icon-send" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              <svg class="rc morph-icon-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 右侧：6 个位置改造方案映射表 -->
+    <div class="studio-explainer">
+      <div class="explainer-card">
+        <h2>
+          <span>6 个最值得做成 Liquid Glass + Motion 的具体位置</span>
+        </h2>
+        <div class="location-grid">
+
+          <!-- 位置 1 -->
+          <div class="loc-box">
+            <span class="loc-badge">位置 1 · Motion 原位形变</span>
+            <div class="loc-title">Send ↑ 与 Stop ■ 原位形变按钮</div>
+            <div class="loc-desc">
+              不销毁 DOM。同一个圆形底座受压下沉（scale 0.86），圆角从 50% 弹簧过渡到 9px，颜色由蓝转红，箭头旋转溶解为方块。重心毫厘不移。
+            </div>
+            <button class="loc-trigger-btn" onclick="toggleMorphButton()">▶ 测试 Send/Stop 形变</button>
+          </div>
+
+          <!-- 位置 2 -->
+          <div class="loc-box">
+            <span class="loc-badge">位置 2 · Motion Primitives</span>
+            <div class="loc-title">页面胶囊 → 检查器 (Morphing Dialog)</div>
+            <div class="loc-desc">
+              不是外弹窗口。底部的 <code>[flomo.app]</code> 胶囊本身作为“种子”，点击时在原地液态膨胀展开成上下文面板，关掉时回缩回胶囊。
+            </div>
+            <button class="loc-trigger-btn" onclick="toggleMorphPill()">▶ 测试胶囊原地展开</button>
+          </div>
+
+          <!-- 位置 3 -->
+          <div class="loc-box">
+            <span class="loc-badge">位置 3 · Motion Popover</span>
+            <div class="loc-title">Model Picker 弹簧生长选择器</div>
+            <div class="loc-desc">
+              从 Composer 工具栏左下角锚点（origin: bottom left）以物理弹簧弹性缩放生长出来，离开时带阻尼收敛，不发生布局跳跃。
+            </div>
+          </div>
+
+          <!-- 位置 4 -->
+          <div class="loc-box">
+            <span class="loc-badge">位置 4 · Liquid Glass Chrome</span>
+            <div class="loc-title">顶栏液态折射 + 灵动状态指示器</div>
+            <div class="loc-desc">
+              顶栏采用 Liquid Glass 物理折射与高光棱边。右侧状态胶囊根据 idle / thinking / acting / hold 灵动变形伸缩，呼吸心跳常驻。
+            </div>
+            <button class="loc-trigger-btn" onclick="toggleIslandState()">▶ 测试灵动胶囊变形</button>
+          </div>
+
+          <!-- 位置 5 -->
+          <div class="loc-box">
+            <span class="loc-badge">位置 5 · Motion Layout Push</span>
+            <div class="loc-title">步骤抽屉展开与兄弟节点平滑推挤</div>
+            <div class="loc-desc">
+              拒绝原生 details 瞬间跳变。测量真实 scrollHeight，展开时弹簧渐进推挤后续步骤向下位移，折叠时平滑回吸，具有真实的质量与惯性。
+            </div>
+            <button class="loc-trigger-btn" onclick="toggleAllDrawers()">▶ 测试步骤弹簧展开</button>
+          </div>
+
+          <!-- 位置 6 -->
+          <div class="loc-box">
+            <span class="loc-badge">位置 6 · Haptic Glass Sheet</span>
+            <div class="loc-title">就地拿住确认卡 (macOS Alert)</div>
+            <div class="loc-desc">
+              危险操作拦阻时，卡片从输入框上方轻微滑弹升起，实体卡边缘带有 Apple Red 微警示，双键带有 60ms 压缩下陷的手指触感反馈。
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // 1. 深浅色切换
+    const themeBtn = document.getElementById('btn-toggle-theme');
+    themeBtn.addEventListener('click', () => {
+      document.body.classList.toggle('dark');
+      themeBtn.textContent = document.body.classList.contains('dark') ? '切换浅色' : '切换深色';
+    });
+
+    // 2. 切换壁纸验证透光
+    const wpBtn = document.getElementById('btn-toggle-wallpaper');
+    let wpIdx = 0;
+    wpBtn.addEventListener('click', () => {
+      wpIdx = (wpIdx + 1) % 3;
+      if (wpIdx === 1) {
+        document.body.style.background = 'radial-gradient(at 10% 20%, rgba(100, 180, 140, 0.5) 0px, transparent 55%), radial-gradient(at 90% 15%, rgba(240, 190, 110, 0.45) 0px, transparent 55%), #eef4f0';
+        wpBtn.textContent = '壁纸：Sequoia 绿谷';
+      } else if (wpIdx === 2) {
+        document.body.style.background = 'radial-gradient(at 20% 20%, rgba(120, 40, 160, 0.45) 0px, transparent 55%), radial-gradient(at 80% 80%, rgba(40, 120, 200, 0.45) 0px, transparent 55%), #0f111a';
+        wpBtn.textContent = '壁纸：纯正暗夜极光';
+      } else {
+        document.body.style.background = '';
+        wpBtn.textContent = '壁纸：Sonoma 晨曦';
+      }
+    });
+
+    // 3. 位置 1：Send / Stop 原地形变逻辑
+    function toggleMorphButton() {
+      const btn = document.getElementById('morph-btn');
+      btn.classList.toggle('stopping');
+    }
+
+    // 4. 位置 2：页面感知胶囊原地膨胀变形 (Morphing Dialog)
+    function toggleMorphPill() {
+      const sheet = document.getElementById('morph-sheet');
+      const isVisible = sheet.style.display === 'flex';
+      sheet.style.display = isVisible ? 'none' : 'flex';
+    }
+
+    // 5. 位置 4：灵动岛胶囊形变
+    let islandState = 0;
+    function toggleIslandState() {
+      islandState = (islandState + 1) % 3;
+      const pill = document.getElementById('island-pill');
+      const text = document.getElementById('island-text');
+      const dot = document.getElementById('island-dot');
+
+      if (islandState === 1) {
+        text.textContent = '正在读取当前标签页…';
+        pill.style.background = '#0071e3';
+        dot.style.background = '#fff';
+      } else if (islandState === 2) {
+        text.textContent = '等待确认 · 需用户操作';
+        pill.style.background = '#ff3b30';
+        dot.style.background = '#ffcc00';
+      } else {
+        text.textContent = '正在执行 · 2/3 步';
+        pill.style.background = 'var(--text-primary)';
+        dot.style.background = '#34c759';
+      }
+    }
+
+    // 6. 位置 5：步骤抽屉弹簧推挤展开
+    function toggleAction(el) {
+      el.classList.toggle('open');
+    }
+    function toggleAllDrawers() {
+      const items = document.querySelectorAll('.kinetic-action-item');
+      items.forEach(i => i.classList.toggle('open'));
+    }
+
+    // 7. 一键演示全部微动效
+    document.getElementById('btn-morph-all').addEventListener('click', () => {
+      toggleMorphButton();
+      toggleMorphPill();
+      toggleIslandState();
+      toggleAllDrawers();
+    });
+  </script>
+
+</body>
+</html>

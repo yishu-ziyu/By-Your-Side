@@ -36,6 +36,7 @@ await esbuild.build({
     "content-snapshot": "src/content/snapshot.ts",
     "content-domops": "src/content/domops.ts",
     "content-cursor": "src/content/cursor.ts",
+    "content-ask": "src/content/ask.ts",
   },
 });
 
@@ -50,5 +51,6 @@ for (const [from, to] of [
 // 图标：manifest 里以 icons/ 前缀引用，保持目录结构拷入 dist
 await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
 await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: true });
+await cp(path.join(root, "assets/companion"), path.join(dist, "companion"), { recursive: true });
 
 console.log("dist/ 构建完成");

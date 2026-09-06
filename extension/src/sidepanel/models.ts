@@ -95,3 +95,50 @@ export function humanizeModelError(message: string): string {
   }
   return message;
 }
+
+export type ReasoningTier = "native" | "effort" | "direct";
+
+export interface ModelReasoningMeta {
+  tier: ReasoningTier;
+  tag: string;
+}
+
+/**
+ * 识别真实模型的思考能力机制（与真实后端严格对齐）：
+ * - native: 原生内置深度思考（如 MiniMax-M3、Thinking 衍生模型，不可外部调档）
+ * - effort: 支持档位调节（如 OpenAI o1/o3/gpt-5.6）
+ * - direct: 标准极速直接响应（无思考链延迟，如 Kimi Coding、标准 Flash）
+ */
+export function modelReasoningMeta(provider: string, modelId: string): ModelReasoningMeta {
+  const p = (provider || "").toLowerCase();
+  const m = (modelId || "").toLowerCase();
+
+  // 1. OpenAI 系列推理模型（支持 effort 档位调节）
+  if (
+    p === "openai" ||
+    p === "openai-codex" ||
+    m.startsWith("o1") ||
+    m.startsWith("o3") ||
+    m.startsWith("gpt-5.6") ||
+    m.includes("gpt-5.6")
+  ) {
+    return { tier: "effort", tag: "支持档位调节" };
+  }
+
+  // 2. MiniMax 原生内置深度思考
+  if (p === "minimax-cn" || p === "minimax" || m.includes("minimax")) {
+    return { tier: "native", tag: "内置深度思考" };
+  }
+
+  // 3. 含 thinking 关键字或指定高推理模型
+  if (
+    m.includes("thinking") ||
+    m.includes("flash-high") ||
+    m.includes("pro-low")
+  ) {
+    return { tier: "native", tag: "内置深度思考" };
+  }
+
+  // 4. 其余默认为极速直接响应（如 Kimi Coding、Gemini Flash、Claude Sonnet）
+  return { tier: "direct", tag: "极速直接响应" };
+}

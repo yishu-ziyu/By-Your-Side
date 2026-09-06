@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:,">
+<title>SideAgent · 选中即问（对照 Sider）</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --cell: #fff;
+    --sep: rgba(60,60,67,.12);
+    --label: #111;
+    --secondary: rgba(60,60,67,.62);
+    --blue: #2f6fed;
+    --purple: #6d5efc;
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font); }
+  body { padding: 44px 36px 120px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; }
+  .lede { font-size: 15px; color: var(--secondary); max-width: 680px; line-height: 1.5; margin: 0 0 28px; }
+  .asks { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; max-width: 1180px; margin-bottom: 28px; }
+  .asks p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+  .asks b { display: block; color: var(--label); margin-bottom: 4px; }
+  h3 { font-size: 13px; font-weight: 600; color: var(--secondary); margin: 36px 0 10px; }
+  .ref {
+    max-width: 1180px; background: var(--cell); border-radius: 16px;
+    box-shadow: 0 0 0 1px var(--sep); padding: 16px 18px 18px; margin-bottom: 28px;
+  }
+  .ref h2 { font-size: 15px; margin: 0 0 6px; }
+  .ref .note { font-size: 12.5px; color: var(--secondary); line-height: 1.5; margin: 0 0 12px; }
+  .sider-demo { display: grid; grid-template-columns: 1.2fr .8fr; gap: 14px; }
+  @media (max-width: 900px) { .sider-demo, .asks, .row { grid-template-columns: 1fr !important; } }
+  .paper {
+    position: relative; background: #f7f7fa; border-radius: 12px; padding: 14px 16px;
+    font-size: 13px; line-height: 1.55; user-select: text;
+  }
+  .paper .meta { font-size: 11px; color: var(--secondary); margin-bottom: 8px; }
+  .paper h4 { margin: 0 0 8px; font-size: 15px; }
+  .paper p { margin: 0 0 8px; }
+  .paper p::selection { background: color-mix(in srgb, var(--purple) 26%, transparent); }
+  .sbar {
+    position: absolute; display: none; z-index: 5;
+    background: #fff; border-radius: 10px; padding: 4px;
+    box-shadow: 0 0 0 .5px var(--sep), 0 10px 28px rgba(0,0,0,.14);
+    display: none; gap: 2px; align-items: center;
+  }
+  .sbar button, .mini button {
+    border: 0; background: transparent; font: 11.5px/1 var(--font); font-weight: 600;
+    padding: 6px 8px; border-radius: 7px; cursor: pointer;
+  }
+  .sbar button:hover, .mini button:hover { background: #f2f2f7; }
+  .sbar .pri { background: #111; color: #fff; }
+  .sbar .pri:hover { background: #333; }
+  .inline {
+    display: none; margin-top: 10px; background: #fff; border-radius: 12px;
+    box-shadow: 0 0 0 .5px var(--sep), 0 8px 24px rgba(0,0,0,.08); padding: 10px 12px;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  .inline .k { font-size: 10.5px; color: var(--secondary); font-weight: 600; margin-bottom: 4px; }
+  .inline .askbox { display: flex; gap: 6px; margin-top: 8px; }
+  .inline input {
+    flex: 1; border: .5px solid var(--sep); border-radius: 8px; padding: 6px 8px; font: inherit;
+  }
+  .inline .go { background: #111; color: #fff; border: 0; border-radius: 8px; padding: 6px 10px; font: 12px/1 var(--font); font-weight: 600; cursor: pointer; }
+  .inline .cont { margin-top: 8px; font-size: 12px; color: var(--blue); background: none; border: 0; padding: 0; cursor: pointer; font-weight: 600; }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; max-width: 1180px; }
+  .kicker { font-size: 12px; color: var(--secondary); margin: 0 0 8px; }
+  .kicker strong { color: var(--label); }
+  .kicker .rec { color: var(--blue); font-weight: 600; }
+  .phone {
+    background: var(--cell); border-radius: 16px; box-shadow: 0 0 0 1px var(--sep);
+    overflow: hidden; min-height: 620px; display: flex; flex-direction: column;
+  }
+  .col.pick .phone { outline: 2px solid var(--blue); outline-offset: 3px; }
+  .split { display: grid; grid-template-rows: 1fr 210px; flex: 1; min-height: 0; }
+  .page { position: relative; padding: 12px 14px 16px; background: #f7f7fa; overflow: hidden; user-select: text; }
+  .page .url { font-size: 11px; color: var(--secondary); margin: 0 0 8px; }
+  .page h2 { font-size: 14px; margin: 0 0 6px; }
+  .page p { font-size: 12.5px; line-height: 1.5; margin: 0 0 7px; }
+  .page p::selection { background: color-mix(in srgb, var(--blue) 28%, transparent); }
+  .chip {
+    position: absolute; display: none; z-index: 4; background: #111; color: #fff;
+    border: 0; border-radius: 999px; padding: 5px 12px; font: 12px/1 var(--font);
+    font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  }
+  .ctx {
+    position: absolute; display: none; z-index: 6; background: #fff; border-radius: 10px;
+    min-width: 168px; box-shadow: 0 0 0 .5px var(--sep), 0 12px 32px rgba(0,0,0,.16);
+    padding: 4px; font-size: 12px;
+  }
+  .ctx button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 7px; font: inherit; cursor: pointer; }
+  .ctx button:hover { background: #f2f2f7; }
+  .panel { border-top: .5px solid var(--sep); background: linear-gradient(180deg,#fbfbfd,#f4f4f8); display: flex; flex-direction: column; }
+  .ptop { display: flex; justify-content: space-between; padding: 8px 12px; font-size: 12px; font-weight: 600; }
+  .ptop span { font-weight: 500; color: var(--secondary); font-size: 11px; }
+  .msgs { flex: 1; padding: 4px 12px 6px; font-size: 12px; line-height: 1.45; }
+  .msgs .empty { color: var(--secondary); }
+  .quote {
+    display: none; margin: 0 12px 6px; padding: 6px 10px; border-left: 2px solid #111;
+    background: #fff; border-radius: 0 8px 8px 0; font-size: 11.5px;
+    box-shadow: 0 0 0 .5px var(--sep);
+  }
+  .composer { margin: 0 10px 10px; background: #fff; border-radius: 14px; box-shadow: 0 0 0 .5px var(--sep); padding: 8px 10px; }
+  .pillpage { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; background: #f2f2f7; border-radius: 999px; padding: 2px 8px; margin-bottom: 6px; }
+  .composer textarea { width: 100%; border: 0; resize: none; outline: none; font: 12.5px/1.4 var(--font); min-height: 26px; background: transparent; }
+  .hint { font-size: 10.5px; color: var(--secondary); margin: 0 12px 8px; min-height: 14px; }
+  .block { max-width: 760px; font-size: 13px; color: var(--secondary); line-height: 1.55; }
+  .block b { color: var(--label); }
+  .block ul { margin: 6px 0 0; padding-left: 18px; }
+  .block li { margin: 4px 0; }
+  table { border-collapse: collapse; font-size: 12.5px; margin-top: 8px; max-width: 760px; }
+  td, th { text-align: left; padding: 6px 10px 6px 0; vertical-align: top; border-bottom: .5px solid var(--sep); color: var(--secondary); }
+  th { color: var(--label); font-weight: 600; }
+  .barfix {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--cell) 78%, transparent);
+    backdrop-filter: blur(20px); border-top: .5px solid var(--sep);
+    padding: 14px 36px; font-size: 13px; color: var(--secondary);
+  }
+  .barfix b { color: var(--label); }
+  .tag { display: inline-block; font-size: 10px; font-weight: 600; color: var(--purple); background: color-mix(in srgb, var(--purple) 10%, #fff); border-radius: 999px; padding: 1px 7px; margin-right: 4px; }
+</style>
+</head>
+<body>
+  <h1>选中即问，按 Sider 的用法来想</h1>
+  <p class="lede">上一版例子是词典查询：维基划个词，问「这是什么」。Sider 用户真正在干的是：读论文时划一段难句、看报错时划日志、写邮件时划自己的句子。答案先出现在选区旁边，要追问才进侧栏。</p>
+
+  <div class="asks">
+    <p><b>答案先出现在哪</b>贴在选区旁边（Sider），还是直接跳进侧栏等你打字。</p>
+    <p><b>浮层带几件事</b>问 + 解释就够，还是连翻译、改写、语法一起上。</p>
+    <p><b>写作菜单做不做</b>输入框里划自己的字，Sider 会改写。SideAgent 第一刀要不要碰。</p>
+  </div>
+
+  <div class="ref">
+    <h2>Sider 实际怎么做 <span class="tag">原件</span></h2>
+    <p class="note">对照官方《上下文菜单》：划词出现阅读菜单；输入框里划自己的字出现写作菜单；⌘/Ctrl+J 打开「问 AI」。答案生成在选区旁边，可复制、朗读、固定、拖动；要追问点「在侧栏继续对话」。可按站点关掉。下面这一段可以划。</p>
+    <div class="sider-demo">
+      <div class="paper" id="sider-paper">
+        <div class="meta">nature.com · Methods · 可划字</div>
+        <h4>Spatial transcriptomics of the tumor margin</h4>
+        <p>We performed visium HD profiling on FFPE sections spanning the invasive front. <b>Spots with mixed epithelial–stromal barcodes were discarded if the contamination fraction exceeded 0.18</b>, a threshold chosen to keep clonal CNV calls stable across serial sections.</p>
+        <p>This is the sentence a Sider user actually highlights: not a dictionary word, a dense claim they need unpacked without leaving the paper.</p>
+        <div class="sbar" id="sider-bar">
+          <button class="pri" data-act="ask" type="button">问 AI</button>
+          <button data-act="explain" type="button">解释</button>
+          <button data-act="copy" type="button">复制</button>
+          <button data-act="more" type="button">更多</button>
+        </div>
+        <div class="inline" id="sider-inline"></div>
+      </div>
+      <div>
+        <p class="note" style="margin:0 0 8px"><b style="color:var(--label)">阅读菜单</b>　问 AI · 解释 · 复制 · 高亮 · 更多（翻译 / 总结 / 固定提示）</p>
+        <p class="note" style="margin:0 0 8px"><b style="color:var(--label)">写作菜单</b>　Gmail / Docs 输入框里划自己的字：改写、语法、更短。第一刀建议 SideAgent 不做。</p>
+        <p class="note" style="margin:0"><b style="color:var(--label)">为什么好用</b>　不离开正在读的那段。追问才进侧栏。快捷键是「问」，不是「发出去」。</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>做完之后 SideAgent 大概长什么样（同一段论文，三案）</h3>
+  <div class="row" id="row"></div>
+
+  <h3>从 Sider 偷什么，不偷什么</h3>
+  <div class="block">
+    <b>偷：</b>答案先贴在选区旁；「问」是一个输入框（⌘J），不是默默发出「解释这段」；追问才进侧栏；可按站点关掉浮层。<br>
+    <b>不偷：</b>翻译插件、写作改写、朗读、多模型切换、提示市场。那些是 Sider 的阅读/写作产品。SideAgent 是会操作浏览器的 Agent——解释完可以接着点、填、归档。
+  </div>
+
+  <h3>真实用例（替换上一版的词典查询）</h3>
+  <div class="block">
+    <ul>
+      <li><b>读论文</b>　Nature 方法段划一句门槛条件，点解释。答案贴在旁边。再「在侧栏继续」问「我们的数据也能这么滤吗」。</li>
+      <li><b>看 CI 红了</b>　GitHub Actions 划一段 error log，问 AI「这是什么错」。SideAgent 特有的下一步：可以接着去翻文件、改配置。</li>
+      <li><b>危险操作前</b>　ChatGPT 设置划「Archive this chat」，问「点了会怎样」。可以接到已经在做的就地确认，而不是只聊天。</li>
+      <li><b>读条款</b>　结账页划「non-refundable after 24 hours」，问「我现在取消能退吗」。</li>
+      <li><b>不做（交给 Sider）</b>　Gmail 草稿划「Please find attached」点改写；整页翻译；PDF 对照翻译。</li>
+    </ul>
+  </div>
+
+  <h3>第一刀边界（按 Sider 对照改过）</h3>
+  <table>
+    <tr><th></th><th>做</th><th>不做</th></tr>
+    <tr><td>对象</td><td>网页正文划出来的句子/段落（2–2000 字）</td><td>图片、视频、没划到字的链接</td></tr>
+    <tr><td>浮层</td><td>问 AI + 解释；答案贴在选区旁</td><td>翻译 / 总结 / 改写 / 语法 / 朗读作为主按钮</td></tr>
+    <tr><td>侧栏</td><td>「在侧栏继续」才带上引用追问；Agent 在跑则当插话</td><td>划完立刻跳侧栏空等；另开一条会话</td></tr>
+    <tr><td>写作</td><td>—</td><td>输入框、Docs、Gmail 里改自己的句子</td></tr>
+    <tr><td>站点</td><td>普通 http(s)；可按站点关掉浮层</td><td>chrome://、扩展页、PDF 阅读器浮层</td></tr>
+  </table>
+
+  <h3>怎么做（点头后才写代码）</h3>
+  <div class="block">
+    和上一版相同的工程底座：<b>contextMenus</b>、<b>storage.session</b> 交接侧栏、content script 用 Range 包围盒贴浮层。<br>
+    多出来的一层：解释/提问的<strong>第一段回答画在页面 overlay</strong>（跟光标 overlay 同一套隔离），不要先拆侧栏。侧栏只接「继续」。<br>
+    协议仍是 <code>PageContext.selection</code>。⌘J 打开问 AI 输入框。
+  </div>
+
+  <div class="barfix">对照 Sider 官方上下文菜单。推荐 <b>A · 答案贴在选区旁，追问进侧栏</b>。标准：<b>docs/evals/20260905-select-and-ask.md</b></div>
+
+<script>
+  const PAPER = {
+    url: "nature.com / methods",
+    title: "Spatial transcriptomics of the tumor margin",
+    html: `<h2>Spatial transcriptomics of the tumor margin</h2>
+      <p>We performed visium HD profiling on FFPE sections spanning the invasive front.</p>
+      <p><b>Spots with mixed epithelial–stromal barcodes were discarded if the contamination fraction exceeded 0.18</b>, a threshold chosen to keep clonal CNV calls stable across serial sections.</p>
+      <p>划上面加粗那句。这不是查词，是把门槛条件拆开。</p>`
+  };
+  const EXPLAIN = "这句话是在说：一个测序点如果同时混进了上皮和基质的细胞条码，而且污染超过 18%，就丢掉。目的是后面看染色体拷贝数时，前后切片的结论还能对得上。";
+
+  function place(el, rect, page) {
+    const pr = page.getBoundingClientRect();
+    el.style.left = Math.min(Math.max(rect.left - pr.left, 8), pr.width - 120) + "px";
+    el.style.top = Math.max(rect.top - pr.top - 40, 8) + "px";
+    el.style.display = el.classList.contains("sbar") || el.classList.contains("bar4") ? "flex" : "block";
+  }
+
+  function selectedText(root) {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !root.contains(sel.anchorNode)) return "";
+    const t = sel.toString().replace(/\s+/g, " ").trim();
+    return t.length >= 2 ? t : "";
+  }
+
+  /* —— Sider 原件演示 —— */
+  const sp = document.getElementById("sider-paper");
+  const sbar = document.getElementById("sider-bar");
+  const sinline = document.getElementById("sider-inline");
+  sp.addEventListener("mouseup", () => {
+    setTimeout(() => {
+      const t = selectedText(sp);
+      if (!t) { sbar.style.display = "none"; return; }
+      const r = window.getSelection().getRangeAt(0).getBoundingClientRect();
+      place(sbar, r, sp);
+    }, 10);
+  });
+  sbar.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const act = b.dataset.act;
+    sinline.style.display = "block";
+    if (act === "explain") {
+      sinline.innerHTML = `<div class="k">解释 · 贴在选区旁</div>${EXPLAIN}<button class="cont" type="button" id="sider-cont">在侧栏继续对话</button>`;
+    } else if (act === "ask") {
+      sinline.innerHTML = `<div class="k">问 AI · ⌘J</div><div class="askbox"><input id="sider-q" placeholder="例如：这个 0.18 是怎么定的？"><button class="go" type="button" id="sider-go">发送</button></div>`;
+      document.getElementById("sider-go").onclick = () => {
+        const q = document.getElementById("sider-q").value.trim() || "这个 0.18 是怎么定的？";
+        sinline.innerHTML = `<div class="k">问 AI</div><b>${q}</b><br>文中没给推导，只说是为了让连续切片的 CNV 稳定。要核对原始补充材料。<button class="cont" type="button" id="sider-cont">在侧栏继续对话</button>`;
+      };
+    } else if (act === "more") {
+      sinline.innerHTML = `<div class="k">更多（Sider 有，SideAgent 第一刀不做）</div>翻译 · 总结 · 改写 · 固定提示 · 对本站关闭`;
+    }
+    sbar.style.display = "none";
+  });
+
+  function shell(id, kicker, rec) {
+    return `<div class="col ${rec ? "pick" : ""}" data-id="${id}">
+      <p class="kicker">${kicker}</p>
+      <div class="phone"><div class="split">
+        <div class="page" id="page-${id}">
+          <div class="url">${PAPER.url}</div>
+          ${PAPER.html}
+          <div class="sbar" id="bar-${id}"></div>
+          <button class="chip" id="chip-${id}" type="button">问</button>
+          <div class="inline" id="pop-${id}"></div>
+          <div class="ctx" id="ctx-${id}">
+            <button type="button" data-act="copy">拷贝</button>
+            <button type="button" data-act="ask">问 SideAgent</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="ptop">SideAgent <span>已连接</span></div>
+          <div class="msgs" id="msgs-${id}"><div class="empty">还在读论文。先划加粗那句。</div></div>
+          <div class="quote" id="quote-${id}"></div>
+          <div class="composer">
+            <div class="pillpage">nature.com · Methods</div>
+            <textarea id="ta-${id}" rows="1" placeholder="给 SideAgent 发消息"></textarea>
+          </div>
+          <div class="hint" id="hint-${id}"></div>
+        </div>
+      </div></div>
+    </div>`;
+  }
+
+  document.getElementById("row").innerHTML =
+    shell(1, `<strong>A · 答案贴在旁边</strong>　问 + 解释。追问进侧栏。<span class="rec">推荐 · 偷 Sider 骨架</span>`, true) +
+    shell(2, `<strong>B · 直接进侧栏</strong>　一粒「问」，composer 等你打字。上一版推荐项。`, false) +
+    shell(3, `<strong>C · 整套 Sider</strong>　解释 / 翻译 / 总结 / 改写。阅读+写作全抄。`, false);
+
+  document.getElementById("bar-1").innerHTML = `<button class="pri" data-act="ask" type="button">问</button><button data-act="explain" type="button">解释</button>`;
+  document.getElementById("bar-3").innerHTML = `<button class="pri" data-act="explain" type="button">解释</button><button data-act="tr" type="button">翻译</button><button data-act="sum" type="button">总结</button><button data-act="rw" type="button">改写</button>`;
+
+  const sel = { 1: "", 2: "", 3: "" };
+
+  function hide(id) {
+    document.getElementById(`bar-${id}`).style.display = "none";
+    document.getElementById(`chip-${id}`).style.display = "none";
+    document.getElementById(`ctx-${id}`).style.display = "none";
+  }
+
+  function toSidebar(id, text, autoText) {
+    const q = document.getElementById(`quote-${id}`);
+    q.style.display = "block";
+    q.textContent = text.slice(0, 90);
+    document.getElementById(`msgs-${id}`).innerHTML = autoText
+      ? `<div><b>你</b><br>${autoText}</div>`
+      : `<div class="empty">引用已带上。侧栏等你追问。</div>`;
+    document.getElementById(`hint-${id}`).textContent = autoText
+      ? "已经替你发出去了。"
+      : "发送时带上：当前页 + 这段选区 + 你打的字。";
+    document.getElementById(`ta-${id}`).focus();
+  }
+
+  function showPop(id, html) {
+    const pop = document.getElementById(`pop-${id}`);
+    pop.style.display = "block";
+    pop.innerHTML = html;
+  }
+
+  for (const id of [1, 2, 3]) {
+    const page = document.getElementById(`page-${id}`);
+    page.addEventListener("mouseup", () => setTimeout(() => {
+      const t = selectedText(page);
+      sel[id] = t;
+      if (!t) { hide(id); return; }
+      const r = window.getSelection().getRangeAt(0).getBoundingClientRect();
+      if (id === 2) {
+        const chip = document.getElementById("chip-2");
+        place(chip, r, page);
+      } else {
+        place(document.getElementById(`bar-${id}`), r, page);
+      }
+    }, 10));
+    page.addEventListener("contextmenu", (e) => {
+      if (id !== 2) return;
+      const t = selectedText(page) || sel[id];
+      if (!t) return;
+      e.preventDefault();
+      const ctx = document.getElementById("ctx-2");
+      const pr = page.getBoundingClientRect();
+      ctx.style.display = "block";
+      ctx.style.left = Math.min(e.clientX - pr.left, pr.width - 180) + "px";
+      ctx.style.top = (e.clientY - pr.top) + "px";
+    });
+  }
+
+  document.getElementById("bar-1").onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const t = sel[1] || "contamination fraction exceeded 0.18";
+    hide(1);
+    if (b.dataset.act === "explain") {
+      showPop(1, `<div class="k">解释 · 不离开论文</div>${EXPLAIN}<button class="cont" type="button" id="c1">在侧栏继续</button>`);
+      document.getElementById("c1").onclick = () => toSidebar(1, t, null);
+    } else {
+      showPop(1, `<div class="k">问 · ⌘J</div><div class="askbox"><input id="q1" placeholder="例如：点了会怎样 / 这跟我们实验有关吗"><button class="go" type="button" id="g1">发送</button></div>`);
+      document.getElementById("g1").onclick = () => {
+        const q = document.getElementById("q1").value.trim() || "这跟我们实验有关吗";
+        showPop(1, `<div class="k">问</div><b>${q}</b><br>文中只给了阈值，没给你们队列的对照。要核，得去补充材料。<button class="cont" type="button" id="c1b">在侧栏继续</button>`);
+        document.getElementById("c1b").onclick = () => toSidebar(1, t, null);
+      };
+    }
+  };
+
+  document.getElementById("chip-2").onclick = () => {
+    toSidebar(2, sel[2] || "contamination fraction exceeded 0.18", null);
+    hide(2);
+  };
+  document.getElementById("ctx-2").onclick = (e) => {
+    if (e.target.dataset.act !== "ask") return;
+    toSidebar(2, sel[2] || "contamination fraction exceeded 0.18", null);
+    hide(2);
+  };
+
+  document.getElementById("bar-3").onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    hide(3);
+    const map = {
+      explain: EXPLAIN,
+      tr: "混有上皮–基质条码的点，若污染比例超过 0.18 则丢弃……",
+      sum: "过滤混杂测序点，保证拷贝数在连续切片上稳定。",
+      rw: "Drop mixed spots above 18% contamination so CNV stays stable."
+    };
+    showPop(3, `<div class="k">${b.textContent} · Sider 全套</div>${map[b.dataset.act]}<div class="k" style="margin-top:8px">写作菜单（输入框）第一刀不做</div>`);
+  };
+
+  document.addEventListener("mousedown", (e) => {
+    if (!e.target.closest(".sbar, .chip, .ctx, .inline")) {
+      document.querySelectorAll(".ctx").forEach((n) => n.style.display = "none");
+    }
+  });
+</script>
+</body>
+</html>

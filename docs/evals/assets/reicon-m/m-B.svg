@@ -1,0 +1,10 @@
+<svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="eyes">
+      <rect width="150" height="150" fill="#fff"/>
+      <ellipse cx="44" cy="46" rx="7.5" ry="16" fill="#000"/>
+      <ellipse cx="106" cy="46" rx="7.5" ry="16" fill="#000"/>
+    </mask>
+  </defs>
+  <path d="M 28 130 L 28 18 L 75 78 L 122 18 L 122 130" fill="none" stroke="#9B8AFB" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" mask="url(#eyes)"/>
+</svg>

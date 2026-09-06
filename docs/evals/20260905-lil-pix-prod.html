@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" href="data:," />
+  <title>Lil Pix production harness</title>
+  <link rel="stylesheet" href="../../extension/src/sidepanel/styles.css" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; justify-content: center; background: #e8eaef; }
+    #app {
+      width: 360px;
+      height: 720px;
+      background: var(--wallpaper);
+      box-shadow: 0 18px 50px rgba(0,0,0,.18);
+    }
+    #controls {
+      position: fixed; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 8px;
+    }
+    #controls button {
+      font: 12px/1.3 -apple-system, sans-serif;
+      padding: 6px 10px; border-radius: 8px; border: 1px solid #d0d5dd; background: #fff; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="btn-type">打字倚靠</button>
+    <button id="btn-send">发送护航</button>
+    <button id="btn-step">挂靠步骤卡</button>
+    <button id="btn-done">步骤完成</button>
+    <button id="btn-finish">运行结束</button>
+    <button id="btn-pet">摸头</button>
+    <button id="btn-home">归位</button>
+  </div>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand-cluster">
+        <span id="brand">SideAgent</span>
+      </div>
+      <div id="status-pill" class="activity-island">
+        <span id="status-dot" class="dot island-pulse-dot"></span>
+        <span id="status-text">已连接</span>
+      </div>
+    </header>
+    <div id="messages">
+      <div class="msg user">帮我把当前页面的表格导出为 Excel。</div>
+      <details class="run-steps" open>
+        <summary>
+          <span class="run-icon"></span>
+          <span class="run-title">执行步骤</span>
+          <span class="run-chain">读取表格 → 格式转换</span>
+          <span class="run-time">0.8s</span>
+        </summary>
+        <div class="run-body"></div>
+      </details>
+      <div class="msg assistant">已提取到 38 行数据。</div>
+    </div>
+    <div class="composer-dock-wrap">
+      <div id="composer" class="composer-glass-dock">
+        <div id="page-pill" class="morphing-page-pill">
+          <span class="tab-icon-sq">f</span>
+          <span class="tab-title-text">flomo.app · 浮墨</span>
+          <i class="tab-live-dot"></i>
+        </div>
+        <textarea id="input" rows="1" placeholder="给 SideAgent 发消息"></textarea>
+        <div id="composer-bar">
+          <button id="model-btn" type="button">Kimi</button>
+          <span id="composer-spacer"></span>
+          <button id="send-btn" class="kinetic-morph-button" type="button">↑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./lil-pix-prod.js"></script>
+</body>
+</html>

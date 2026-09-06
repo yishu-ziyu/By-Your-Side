@@ -5,3 +5,4 @@ dist/
 .kimi-code/local.toml
 .kimi-code/wiki/fold-archive/
 .kimi-code/wiki/consolidate.lock
+.playwright-mcp/

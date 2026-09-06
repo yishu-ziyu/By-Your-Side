@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👾</text></svg>">
+<title>SideAgent · 1:1 还原 Rauno「lil pix」原版微像素伴侣与边框爬行物理</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f0f1f4;
+    --text: #1c1f24;
+    --text-2: #6b7280;
+    --text-3: #9aa1ab;
+    --border: rgba(15, 23, 42, 0.09);
+    --border-hover: rgba(15, 23, 42, 0.18);
+    --accent: #2f6fed;
+    --accent-soft: rgba(47, 111, 237, 0.1);
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --shadow-composer: 0 4px 24px rgba(15, 23, 42, 0.08);
+    --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  body.dark {
+    --bg: #16181c;
+    --surface: #1e2126;
+    --surface-2: #272b31;
+    --text: #e6e8eb;
+    --text-2: #9aa1ab;
+    --text-3: #6b7280;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-hover: rgba(255, 255, 255, 0.22);
+    --accent: #5b8cff;
+    --accent-soft: rgba(91, 140, 255, 0.16);
+    --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.45);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    transition: background 0.3s, color 0.3s;
+  }
+  body { padding: 28px 24px 80px; }
+
+  header.eval-header {
+    max-width: 1360px;
+    margin: 0 auto 24px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 18px;
+  }
+  .title-group h1 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .title-group p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+  .badge-tag {
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .btn-pill {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.18s var(--ease-out);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .btn-pill:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+  }
+  .btn-pill.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* Deep Analysis Callout */
+  .design-note {
+    max-width: 1360px;
+    margin: 0 auto 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 14px;
+    padding: 18px 22px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-2);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+  }
+  .design-note strong { color: var(--text); }
+  .design-note ul { margin: 8px 0 0 18px; padding: 0; }
+  .design-note li { margin-bottom: 6px; }
+
+  /* 3-Column Compare Grid */
+  .compare-grid {
+    max-width: 1360px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.08fr;
+    gap: 24px;
+  }
+  @media (max-width: 1100px) {
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+
+  .col-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 18px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: visible;
+  }
+  .col-card.recommended {
+    border-color: var(--accent);
+    box-shadow: 0 6px 28px var(--accent-soft);
+  }
+  .col-header {
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .col-tag-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .col-title {
+    font-size: 15px;
+    font-weight: 650;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .col-desc {
+    font-size: 12px;
+    color: var(--text-2);
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  /* SidePanel Simulation Frame */
+  .sidepanel-frame {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 520px;
+    position: relative;
+    user-select: none;
+    overflow: visible;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+  }
+
+  .sim-topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(12px);
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    flex-shrink: 0;
+  }
+  .sim-topbar .brand {
+    font-weight: 650;
+    font-size: 13px;
+  }
+  .sim-topbar .status-pill {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: 11.5px;
+  }
+  .sim-topbar .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+
+  .sim-messages {
+    flex: 1;
+    overflow: visible;
+    padding: 14px 14px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+  }
+
+  .msg-user {
+    align-self: flex-end;
+    max-width: 86%;
+    background: linear-gradient(135deg, #4a86ff 0%, var(--accent) 100%);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: var(--radius) var(--radius) 4px var(--radius);
+    word-break: break-word;
+    box-shadow: 0 2px 8px rgba(47, 111, 237, 0.28);
+    position: relative;
+    font-size: 13px;
+  }
+
+  .run-steps-card {
+    align-self: stretch;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    position: relative;
+    overflow: visible;
+  }
+  .run-steps-summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+  .run-steps-card .run-icon { color: var(--ok); font-weight: bold; }
+  .run-steps-card .run-title { font-weight: 650; }
+  .run-steps-card .run-chain {
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .run-steps-card .run-time {
+    margin-left: auto;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .msg-assistant {
+    align-self: stretch;
+    max-width: 100%;
+    padding: 2px 4px;
+    position: relative;
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .sim-composer {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    margin: 6px 12px 12px;
+    padding: 10px 10px 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    box-shadow: var(--shadow-composer);
+    flex-shrink: 0;
+    transition: border-color 0.15s ease;
+    position: relative;
+    overflow: visible;
+  }
+  .sim-composer:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  }
+  .sim-composer textarea {
+    flex: 1;
+    resize: none;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    line-height: 1.5;
+    padding: 2px 2px 0 0;
+    max-height: 80px;
+    min-height: 28px;
+  }
+  .sim-composer textarea::placeholder { color: var(--text-3); }
+  .sim-composer-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+  .chip-model {
+    font-size: 11.5px;
+    color: var(--text-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .chip-model .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #ea580c;
+  }
+  .btn-send-real {
+    background: var(--accent);
+    color: white;
+    border: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: auto;
+    transition: transform 0.15s;
+  }
+  .btn-send-real:hover { transform: scale(1.08); }
+
+  /* ── 1:1 AUTHENTIC LIL PIX ENGINE (MICRO-PIXEL) ── */
+  .pix-actor-host {
+    position: absolute;
+    z-index: 100;
+    pointer-events: auto;
+    cursor: grab;
+    user-select: none;
+    transition: all 0.35s var(--ease-spring);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .pix-actor-host:active { cursor: grabbing; }
+
+  /* The actual pixel sprite */
+  .pix-sprite-img {
+    display: block;
+    width: 34px;
+    height: auto;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.18));
+    transform-origin: bottom center;
+    transition: transform 0.1s ease;
+  }
+
+  /* The authentic white cartoon glove overlay */
+  .pix-glove-overlay {
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 32px;
+    height: auto;
+    image-rendering: pixelated;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.12s ease;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+  }
+  .pix-actor-host:hover .pix-glove-overlay {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px);
+  }
+  .pix-actor-host.pressing .pix-glove-overlay {
+    opacity: 1;
+    transform: translateX(-50%) translateY(9px);
+  }
+
+  /* Petting squash & bliss */
+  .pix-actor-host.pressing .pix-sprite-img {
+    transform: scale(1.22, 0.72) translateY(5px);
+  }
+  .pix-actor-host.rebounding .pix-sprite-img {
+    animation: pixSpringJump 0.48s var(--ease-spring) forwards;
+  }
+  @keyframes pixSpringJump {
+    0% { transform: scale(1.22, 0.72) translateY(5px); }
+    30% { transform: scale(0.85, 1.25) translateY(-20px); }
+    65% { transform: scale(1.12, 0.94) translateY(2px); }
+    85% { transform: scale(0.98, 1.03) translateY(-3px); }
+    100% { transform: scale(1, 1) translateY(0); }
+  }
+
+  /* Walking step animation */
+  .pix-actor-host.walking .pix-sprite-img {
+    animation: pixWalkBob 0.18s infinite alternate ease-in-out;
+  }
+  @keyframes pixWalkBob {
+    0% { transform: translateY(0) rotate(-4deg); }
+    100% { transform: translateY(-4px) rotate(4deg); }
+  }
+
+  /* Floating Heart & Sparkle on petting */
+  .sparkle-pop {
+    position: absolute;
+    font-size: 13px;
+    pointer-events: none;
+    animation: floatLove 0.7s var(--ease-out) forwards;
+    z-index: 120;
+  }
+  @keyframes floatLove {
+    0% { opacity: 0; transform: scale(0.4) translate(0, 0); }
+    30% { opacity: 1; transform: scale(1.2) translate(-2px, -14px); }
+    100% { opacity: 0; transform: scale(0.8) translate(4px, -30px); }
+  }
+
+  /* Column 3: Video Reference Card */
+  .video-ref-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .video-ref-wrap {
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    border: 1px solid var(--border);
+  }
+  .video-ref-wrap video {
+    width: 100%;
+    display: block;
+  }
+  .keyframe-breakdown {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .keyframe-title {
+    font-size: 12px;
+    font-weight: 650;
+    margin: 0 0 8px;
+    color: var(--text);
+  }
+  .keyframe-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .keyframe-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-2);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+  .keyframe-item:hover {
+    background: var(--surface);
+    color: var(--text);
+  }
+  .keyframe-time {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* Actions Bar */
+  .sim-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .btn-sim-action {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-sim-action:hover {
+    color: var(--text);
+    border-color: var(--border-hover);
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+
+<header class="eval-header">
+  <div class="title-group">
+    <h1>
+      SideAgent · 1:1 还原 Rauno「lil pix」原版微像素伴侣
+      <span class="badge-tag">告别 SVG 拼贴生硬感 · 原作技术揭秘</span>
+    </h1>
+    <p>
+      深度复盘反馈：为什么之前感觉“SVG拼贴拼在一起极其生硬”？因为技术路线走错了！原作者 Rauno 的「lil pix」本质是<b>高精微像素艺术（Micro-Pixel Art）</b>，不是矢量几何图元拼接！
+    </p>
+  </div>
+  <div class="controls">
+    <button class="btn-pill" onclick="toggleTheme()"><span>🌗</span> 切换深/浅色</button>
+    <button class="btn-pill" onclick="toggleSlowMo()"><span>⏱️</span> 0.25x 慢放审查</button>
+    <button class="btn-pill active" onclick="simulateAllColumns()"><span>▶️</span> 一键全案演示打字与倚靠</button>
+  </div>
+</header>
+
+<div class="design-note">
+  <strong>为什么之前“无论怎么改都依然觉得丑、生硬、像拼贴”？一语道破天机：</strong>
+  <ul>
+    <li>
+      <strong>核心根因（技术选型错误）</strong>：
+      之前一直试图用代码拼贴矢量 SVG 基础图元（几个 <code>&lt;circle&gt;</code>、<code>&lt;ellipse&gt;</code>、<code>&lt;polygon&gt;</code>），在 30px 的极小尺寸下，数学贝塞尔曲线没有任何转折与微观细节，完全就是僵硬冰冷的“PPT 简笔贴纸”，缺乏生命力，极其让人生厌！
+    </li>
+    <li>
+      <strong>Rauno 原版技术解密（为什么原作者的作品极其可爱）</strong>：
+      推文原文叫 <i>"we call it lil pix"</i>，<b>"pix" 就是 Pixel（微像素）</b>！
+      我们直接抓取了原推文 57fps 高清录像逐帧拆解：<br>
+      1. <b>真实形象</b>：它是一个 24×28px 的拟人化 Mac 窗口小终端（带 3 点窗口灯、黑色 CRT 屏幕与双白色矩形像素眸 <code>||</code>、小靴子与机械手）；<br>
+      2. <b>招牌神态（Lean on Rim）</b>：当你在输入框打字时，它会走到输入框左侧，<b>把左手肘舒服地搭在输入框的圆角边框上（Leaning），歪着头侧视着光标打字</b>！绝不遮挡文字！<br>
+      3. <b>白手套抚摸（Glove Petting）</b>：鼠标靠近时出现原版经典像素白手套，按住抚摸时手套在头顶揉动，小人受压微晃，眼睛瞬间变成极度治愈的月牙弯弧 <code>^^</code>！
+    </li>
+    <li>
+      <strong>本次彻底重构</strong>：彻底丢弃所有手工 SVG 拼贴代码！直接以从原版录像 1:1 提取的高清透明微像素精灵序列帧（<code>image-rendering: pixelated</code>）为核心，完整复刻原作的打字倚靠、白手套摸头笑眼与外沿跑道巡逻！
+    </li>
+  </ul>
+</div>
+
+<main class="compare-grid">
+
+  <!-- ====================================================
+       COLUMN 1: 1:1 纯正 Rauno 原版 Lil Pix (RECOMMENDED)
+       ==================================================== -->
+  <section class="col-card recommended" id="col-1">
+    <div class="col-header">
+      <div class="col-tag-row">
+        <span class="badge-tag">方案 A · 1:1 原作复刻</span>
+        <span style="font-size: 11px; color: var(--accent); font-weight: 600;">微像素艺术 · 告别拼贴</span>
+      </div>
+      <h2 class="col-title">1:1 纯正 Rauno 原版小微终端 (Authentic Lil Pix)</h2>
+      <p class="col-desc">
+        从原作者视频 1:1 逐帧提取的微像素序列！打字时手肘搭在输入框左侧圆角边框上侧视光标；摸头时白手套揉头、眼睛笑成 <code>^^</code>。
+      </p>
+    </div>
+
+    <div class="sidepanel-frame" id="sim-1">
+      <div class="sim-topbar">
+        <span class="brand">SideAgent</span>
+        <div class="status-pill"><span class="dot"></span>待命 · 伴侣在线</div>
+      </div>
+
+      <div class="sim-messages" id="msgs-1">
+        <div class="msg-user" id="c1-b1">
+          帮我把当前页面的表格导出为 Excel 并下载。
+        </div>
+
+        <div class="run-steps-card" id="c1-steps">
+          <div class="run-steps-summary">
+            <span class="run-icon">✓</span>
+            <span class="run-title">执行步骤</span>
+            <span class="run-chain">读取表格 → 格式转换 → 下载本地</span>
+            <span class="run-time">0.8s</span>
+          </div>
+        </div>
+
+        <div class="msg-assistant" id="c1-b2">
+          已提取到 38 行数据，Excel 文件已成功生成并下载。
+        </div>
+      </div>
+
+      <!-- Authentic Lil Pix Actor -->
+      <div class="pix-actor-host" id="actor-1" title="摸摸我！移入显现白手套，按住揉头享受笑眼">
+        <img class="pix-glove-overlay" id="glove-1" src="data:image/png;base64,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" alt="Glove" />
+        <img class="pix-sprite-img" id="sprite-1" src="data:image/png;base64,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" alt="Lil Pix" />
+      </div>
+
+      <!-- Real Composer -->
+      <div class="sim-composer" id="comp-1">
+        <textarea id="input-1" placeholder="点击输入内容，看小精灵走到左侧倚靠边框…" onfocus="onComposerFocus(1)" onblur="onComposerBlur(1)" oninput="onComposerInput(1)"></textarea>
+        <div class="sim-composer-bar">
+          <div class="chip-model"><span class="dot"></span>Claude 3.5 Sonnet</div>
+          <button class="btn-send-real" onclick="sendMessage(1)">↑</button>
+        </div>
+      </div>
+    </div>
+
+        <div class="sim-actions">
+      <button class="btn-sim-action" onclick="petMascot(1)"><span>👋</span> 白手套揉头 (笑眼 ^^)</button>
+      <button class="btn-sim-action" onclick="triggerLean(1)"><span>🛋️</span> 手肘搭在左边框 (打字陪伴)</button>
+      <button class="btn-sim-action" onclick="goToSteps(1)"><span>🪜</span> 爬到执行步骤卡 (监控状态)</button>
+      <button class="btn-sim-action" onclick="goToBubble(1)"><span>💬</span> 爬到用户气泡顶</button>
+      <button class="btn-sim-action" onclick="resetToComposer(1)"><span>🏠</span> 优雅归位</button>
+    </div>
+  </section>
+
+  <!-- ====================================================
+       COLUMN 2: 方案 B (现代暗黑高对比微像素)
+       ==================================================== -->
+  <section class="col-card" id="col-2">
+    <div class="col-header">
+      <div class="col-tag-row">
+        <span class="badge-tag" style="background: var(--surface-2); color: var(--text-2);">方案 B</span>
+        <span style="font-size: 11px; color: var(--text-2);">暗黑现代高对比</span>
+      </div>
+      <h2 class="col-title">深邃暗调微像素 (Dark Obsidian Pix)</h2>
+      <p class="col-desc">
+        同一套微像素骨架，采用深炭黑黑曜石外壳 + 极客荧光绿瞳。更适合喜欢高对比度、深色开发者工具界面的用户。
+      </p>
+    </div>
+
+    <div class="sidepanel-frame" id="sim-2">
+      <div class="sim-topbar">
+        <span class="brand">SideAgent</span>
+        <div class="status-pill"><span class="dot"></span>就绪 · 待命</div>
+      </div>
+
+      <div class="sim-messages" id="msgs-2">
+        <div class="msg-user" id="c2-b1">
+          帮我把当前页面的表格导出为 Excel 并下载。
+        </div>
+
+        <div class="run-steps-card" id="c2-steps">
+          <div class="run-steps-summary">
+            <span class="run-icon">✓</span>
+            <span class="run-title">执行步骤</span>
+            <span class="run-chain">读取表格 → 格式转换 → 下载本地</span>
+            <span class="run-time">0.8s</span>
+          </div>
+        </div>
+
+        <div class="msg-assistant" id="c2-b2">
+          已提取到 38 行数据，Excel 文件已成功生成并下载。
+        </div>
+      </div>
+
+      <div class="pix-actor-host" id="actor-2" title="摸摸我！">
+        <img class="pix-glove-overlay" id="glove-2" src="data:image/png;base64,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" alt="Glove" />
+        <img class="pix-sprite-img" id="sprite-2" src="data:image/png;base64,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" style="filter: drop-shadow(0 2px 6px rgba(16, 185, 129, 0.25));" alt="Lil Pix Dark" />
+      </div>
+
+      <div class="sim-composer" id="comp-2">
+        <textarea id="input-2" placeholder="输入需求…" onfocus="onComposerFocus(2)" onblur="onComposerBlur(2)"></textarea>
+        <div class="sim-composer-bar">
+          <div class="chip-model"><span class="dot"></span>Claude 3.5 Sonnet</div>
+          <button class="btn-send-real" onclick="sendMessage(2)">↑</button>
+        </div>
+      </div>
+    </div>
+
+        <div class="sim-actions">
+      <button class="btn-sim-action" onclick="petMascot(2)"><span>👋</span> 白手套揉头</button>
+      <button class="btn-sim-action" onclick="triggerLean(2)"><span>🛋️</span> 手肘搭在左边框</button>
+      <button class="btn-sim-action" onclick="goToSteps(2)"><span>🪜</span> 爬到步骤卡</button>
+      <button class="btn-sim-action" onclick="goToBubble(2)"><span>💬</span> 爬到气泡顶</button>
+      <button class="btn-sim-action" onclick="resetToComposer(2)"><span>🏠</span> 优雅归位</button>
+    </div>
+  </section>
+
+  <!-- ====================================================
+       COLUMN 3: Rauno 原作推文高清录像 1:1 逐帧对照屏
+       ==================================================== -->
+  <section class="col-card" id="col-3">
+    <div class="col-header">
+      <div class="col-tag-row">
+        <span class="badge-tag" style="background: rgba(245, 158, 11, 0.12); color: #d97706;">原作 1:1 真机录像对照</span>
+        <span style="font-size: 11px; color: var(--text-2);">Rauno Freiberg 原作推文</span>
+      </div>
+      <h2 class="col-title">原作视频与核心交互帧拆解 (Rauno Reference)</h2>
+      <p class="col-desc">
+        推文视频 1:1 直播播放与帧拆解。请点击下方时间戳直达原作动作，对照左侧复刻效果：
+      </p>
+    </div>
+
+    <div class="video-ref-card">
+      <div class="video-ref-wrap">
+        <video id="rauno-video" controls autoplay loop muted playsinline src="assets/rauno_video.mp4"></video>
+      </div>
+
+      <div class="keyframe-breakdown">
+        <div class="keyframe-title">🎬 原版核心动作时间戳（点击自动跳转到该帧）：</div>
+        <div class="keyframe-list">
+          <div class="keyframe-item" onclick="seekVideo(2.0)">
+            <span class="keyframe-time">00:02</span>
+            <span><b>待命指引</b>：小人单手插腰，右手指向输入框文字</span>
+          </div>
+          <div class="keyframe-item" onclick="seekVideo(5.0)">
+            <span class="keyframe-time">00:05</span>
+            <span><b>白手套摸头</b>：光标化作手套揉动头顶，眼睛瞬间笑成 <code>^^</code></span>
+          </div>
+          <div class="keyframe-item" onclick="seekVideo(8.0)">
+            <span class="keyframe-time">00:08</span>
+            <span><b>招牌倚靠</b>：打字时光标落在输入框，小人走到左圆角手肘搭框探头侧视！</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size: 12px; color: var(--text-2); line-height: 1.5; background: var(--surface-2); padding: 10px 12px; border-radius: 10px;">
+        📌 <b>观察要点</b>：<br>
+        1. 看小人站在输入框上时的比例（24×28px），极其小巧灵动，绝非大块几何贴纸；<br>
+        2. 看手肘搭在输入框左侧（00:08）的姿态，不仅不遮挡输入文字，反而产生极强的“陪伴你打字”的互动感！
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  const SPRITES = {"pix_idle": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAC0AAAAmCAYAAABQ3RJZAAAIZklEQVR4nK2ZSWgVTxfFq2JHjUOcjSPOOKNBshJcKCqYjcNKUZCICSoKKrhxJxhciCsFp41kobgRRFERZwQVXD0VhahxNs6zMSbpj9/lnaZe8wb/8F3odL/uGs69de5QFf/792+XlrKyMtfV1WXP3OM4Tq6/f/8mz957V0gKfYvjOLnThrn69u2bzKV+nZ2dBceOXAkpLy9PJjl48KA7c+ZMzDvAF5NiCmk8QM6ePdtt377dDxkyxEVR5Do6Ogxwsf55QcvKCAP8+fPHnTp1yp08eTJ+8uSJWacUKNoUEu99Avrjx4/c461bt/qRI0cmbYqtZFRsQqjz5csXd+3aNXfkyJH48+fPburUqWaNbt265ShXCHC+iX32HcC+f//uzp07x3jxunXr/MSJE0tauqA5AAQF3r1755qamuIPHz64gQMHGmBdgJPFBIIJ+c2dK2zfkb3a29ttbJ579uzpevfu7Y4fP+4ePXpUcgWLclpOgUV//Pjh2traXPfu3Q0IE8mhaCOHQmifb+I42z4cX3169Ohh/eA0938GnY4YAshkffr0sQGxDlbCEfUtXOpiIBG1TSuFz2D1fH3+c/RQ2OGOpd+8eWMcRCmFwjBEoTgXz7KYnM4Hq4GIQv369bOQh5H+VRLQ+ZxK8Rj5+vWrWRz+YenQauoLUMVyPWvssixg0YnvjPPr1y/39OlTo5yMVIrXJeO0RIC/fftmHB81apRRhmeWd/Dgwfbt58+fZrX+/fsbV0Pux8EzgiIVFRXWR04cUqRQ2IuKfQwHADDy6tUrowqAePf69WsDzRK3trZatAEIlqMNXI2iKGclBZD3tB06dKiF1lDJUNE0NgNdCLCcU5GEQbEg1sWampR2LDfAoQa/aStrxkHaD6MNY+DYCMoVokUYJBLQxUTaAgrLTp48OYnNTDRmzJiEo8OHD7crVFxlgESg01yXD+i37swR/i4Y8iQahKXEgtCC39CB5Vc6D/uGIZCLSbuC5BOCZaV0MX4YldQunzMXTOMMlM52XNQepPc0OK1IWhGFwjigh+bo1auXOTTPrIiAqR0UQxlRLsfS4aSKrzzTCd5hVU326dMnA/3/kKqqKgOr6KFYrYwrZ+U9K6YAkIBGVKgAHM2eP3/u9uzZEz9+/DhRhgFC0LSfN2+ecf306dPu7du3yTdqleXLl9vzxYsX3bNnzxIrY1VFFcXrQ4cOxZcvX07Gz5c75s6d6yOZnU5EAi0n4evw4cMxQACKVVREpWXRokVu2bJl7u7duzmgKTUbGhrMciQQgc6X8gGKYjdv3kxoIiPyG6NRxra2tsZRmM1ogJPdunXL3blzJz5x4oSVosTiUMJEEe5o0oKyyp5dqTgdWlK7IZQcMWJE4oBacSiBUvfv3891RCbA2jdu3HA7d+6MAU84E22scRQZAHl7CCINTGDUriMbutIW1rgAYwx4q7JXRRsXz1Im0oR8OH/+vNu7d29MBwoZ4jI1hzxabfNZVb6QfidwPbLJJi2iAULSYgyoSV9Wid9kzMrKSisluJeJP+we2J0oJQOaig4ukmKLbbH0TdktfK/lbWtry3kvZRReybR1dXWusbHR49i8w49IVhiPYDB//ny3efNmX4YmgDp79mxMXQFgOSIgNm3aZB1RJrReKExAnzQFWBFRqluwCuEYyoS0q66u9tQuKsgwHN95t2TJErdt2zZfXV3tIpaA2PvgwQMLUQKMrFixwq6rV68mUSHJStmdMwKtXr58aeOE1nz//j2rZ7/5LgmrPVV2Uu7SpUvxvXv33PTp061qZI6amhpXX1/vZ86caYY0Tms3ouXFU1FgypQpyfJyF5fTVr1y5Yopli78sdCBAwdyHDddLvCe9swJHXnm3tzcbPxlo7tlyxY/a9YsCxSWbfnDmQP1MB1JrePGjTM6HD161N2+fducUdZVfZB2OtUZeg7T+9/AcdMRJszAzA3IGTNmuLFjx0IXt2vXLj9t2rSc7ViEdQcNGgTJfXNzs+26+T1gwADjemNjo+PdsGHDbCnRXsDDOkG7lVDE5fb29py6Q3fCmMbQznzDhg1+6dKlFin4DbfpL0MZlbSfW7VqlVm0qanJHAG6oDmN4ari8+jRo00BJqFNmN1UK3DX5jfcZnUFmY6LqEB/7fT5RoLhUsJSutcqGQ4NimZr1671eOzu3btjUjqdGRilCH2qn2mbrxwVN8MjBhmlHQfKVo4hTTgAos3GjRvdnDlzEiqFFWZaEtAAIojX1tbSwWcymfjChQs2KAMQcqjG4DgUER+1AnyTRcIIIW6XZzcD+IpWhP6k7dWrV/v6+nr7rdUpBDgHtKyFAxCbM5mM56gKMFiWgTlCqKqqigGRyWTcw4cPbSWILlBr4cKFBoJQR+HDsqv0rKmpcRMmTEh2PPTjO062fv36pCyVvxQTz3JKMzlTWL+GKVihjD47duywMhKF6NPS0uKOHTvmFy9ebMdbDQ0NpjAWffHiha3UypUrPQUY0UrFWRhS5ZD/dIQgzULCKwSFYBUBCP4oqHNlUQSrwmc9Mw5jVFRUuOvXr+MXcV1dnV+wYIE5NN90aqU8IAcuCToxe3AKFG4+Q+fBOvv3748pXwmLWFrpWk6kkpJLYauzs9My3L59++LKykoPjbR/1AmstmWlJOfUVB4roGF0UIhCcE6yk4ARz7UtCi2vMcuzTghIYr6SVRjOJKX4bJZOW1bxVJqH1BHfuAAq5QCBRcOsRaxnp0KM78zGZS4opfifPsT5V8nhtAJ/WOPKErI2VqutrcWh4tCqWHn8+PEGmoy6Zs0a39LSEmvpo+xRAe0nTZqUk0FL/f8mLV4lp0CG6TldQ4hz4QFMeEgpxZVg0sfAuocH8v8FrOR/KlabOUd9FH0AAAAASUVORK5CYII=", "pix_point": "data:image/png;base64,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", "pix_lean": "data:image/png;base64,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", "pix_pet_happy": "data:image/png;base64,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", "pix_walk": "data:image/png;base64,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", "pix_glove": "data:image/png;base64,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"};
+
+  const state = {
+    1: { mode: 'idle', pos: 'composer' },
+    2: { mode: 'idle', pos: 'composer' }
+  };
+
+  function getRelativePos(targetEl, simEl) {
+    const tRect = targetEl.getBoundingClientRect();
+    const sRect = simEl.getBoundingClientRect();
+    return {
+      top: tRect.top - sRect.top,
+      left: tRect.left - sRect.left,
+      right: tRect.right - sRect.left,
+      bottom: tRect.bottom - sRect.top,
+      width: tRect.width,
+      height: tRect.height
+    };
+  }
+
+  function setPose(id, poseName) {
+    const sprite = document.getElementById(`sprite-${id}`);
+    if (!sprite) return;
+    if (poseName === 'idle') {
+      sprite.src = SPRITES.pix_idle;
+    } else if (poseName === 'point') {
+      sprite.src = SPRITES.pix_point;
+    } else if (poseName === 'lean') {
+      sprite.src = SPRITES.pix_lean;
+    } else if (poseName === 'happy') {
+      sprite.src = SPRITES.pix_pet_happy;
+    } else if (poseName === 'walk') {
+      sprite.src = SPRITES.pix_walk;
+    }
+  }
+
+  // 1. Reset / Idle state at composer top rim
+  function resetToComposer(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    const comp = document.getElementById(`comp-${id}`);
+    const sim = document.getElementById(`sim-${id}`);
+    if (!actor || !comp || !sim) return;
+
+    const rel = getRelativePos(comp, sim);
+    actor.style.transition = 'all 0.4s var(--ease-spring)';
+    actor.style.top = (rel.top - 28) + 'px';
+    actor.style.left = (rel.left + 24) + 'px';
+    setPose(id, 'idle');
+    state[id].pos = 'composer';
+  }
+
+  // 2. Signature Rim Lean (When typing / focusing)
+  function triggerLean(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    const comp = document.getElementById(`comp-${id}`);
+    const sim = document.getElementById(`sim-${id}`);
+    if (!actor || !comp || !sim) return;
+
+    const rel = getRelativePos(comp, sim);
+    actor.classList.add('walking');
+    setPose(id, 'walk');
+
+    // Walk to the left corner
+    actor.style.transition = 'all 0.38s var(--ease-out)';
+    actor.style.top = (rel.top - 24) + 'px';
+    actor.style.left = (rel.left + 8) + 'px';
+
+    setTimeout(() => {
+      actor.classList.remove('walking');
+      // Set to authentic leaning sprite (left elbow on rim, head tilted watching cursor)
+      setPose(id, 'lean');
+      spawnLove(actor, '👀');
+    }, 400);
+  }
+
+  function onComposerFocus(id) {
+    triggerLean(id);
+  }
+
+  function onComposerBlur(id) {
+    setTimeout(() => {
+      resetToComposer(id);
+    }, 600);
+  }
+
+  function onComposerInput(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    if (!actor) return;
+    actor.style.transform = 'scale(1.08, 1.08)';
+    setTimeout(() => {
+      actor.style.transform = 'scale(1, 1)';
+    }, 120);
+  }
+
+  // 3. Petting interaction with white glove
+  function petMascot(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    if (!actor) return;
+
+    actor.classList.add('pressing');
+    setPose(id, 'happy');
+    spawnLove(actor, '❤️');
+
+    setTimeout(() => {
+      actor.classList.remove('pressing');
+      actor.classList.add('rebounding');
+      spawnLove(actor, '✨');
+      setTimeout(() => {
+        actor.classList.remove('rebounding');
+        setPose(id, 'idle');
+      }, 500);
+    }, 650);
+  }
+
+  function setupPetGesture(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    if (!actor) return;
+
+    actor.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      actor.classList.add('pressing');
+      setPose(id, 'happy');
+      spawnLove(actor, '❤️');
+
+      const onMouseUp = () => {
+        actor.classList.remove('pressing');
+        actor.classList.add('rebounding');
+        spawnLove(actor, '✨');
+        setTimeout(() => {
+          actor.classList.remove('rebounding');
+          setPose(id, 'idle');
+        }, 500);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
+      window.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
+  // 4. Perimeter Border Patrol
+  function walkAroundPerimeter(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    const sim = document.getElementById(`sim-${id}`);
+    const msgs = document.getElementById(`msgs-${id}`);
+    const comp = document.getElementById(`comp-${id}`);
+    const steps = document.getElementById(`c${id}-steps`);
+    if (!actor || !sim || !msgs || !comp) return;
+
+    const userBubbles = msgs.querySelectorAll('.msg-user');
+    const targetUser = userBubbles[userBubbles.length - 1];
+
+    actor.classList.add('walking');
+    setPose(id, 'walk');
+
+    const compRel = getRelativePos(comp, sim);
+    const userRel = targetUser ? getRelativePos(targetUser, sim) : compRel;
+    const stepsRel = steps ? getRelativePos(steps, sim) : compRel;
+
+    // 1. Run across composer top ridge
+    actor.style.transition = 'left 0.4s var(--ease-out)';
+    actor.style.left = (compRel.right - 44) + 'px';
+
+    // 2. Climb up along right side to User Bubble
+    setTimeout(() => {
+      actor.style.transition = 'all 0.55s var(--ease-spring)';
+      actor.style.top = (userRel.top - 28) + 'px';
+      actor.style.left = (userRel.right - 36) + 'px';
+    }, 420);
+
+    // 3. Trot along User Bubble top outer rim
+    setTimeout(() => {
+      actor.style.transition = 'left 0.45s var(--ease-out)';
+      actor.style.left = (userRel.left + 8) + 'px';
+    }, 1000);
+
+    // 4. Leap over to the run-steps execution card top rim
+    setTimeout(() => {
+      actor.style.transition = 'all 0.45s var(--ease-spring)';
+      actor.style.top = (stepsRel.top - 28) + 'px';
+      actor.style.left = (stepsRel.left + 24) + 'px';
+    }, 1500);
+
+    // 5. Peek down at execution steps
+    setTimeout(() => {
+      actor.classList.remove('walking');
+      setPose(id, 'lean');
+      spawnLove(actor, '💡');
+    }, 2000);
+
+    // 6. Slide back home to composer
+    setTimeout(() => {
+      actor.classList.add('walking');
+      setPose(id, 'walk');
+      resetToComposer(id);
+      setTimeout(() => {
+        actor.classList.remove('walking');
+        setPose(id, 'idle');
+      }, 550);
+    }, 2800);
+  }
+
+  
+  // Climb to user bubble top rim
+  function goToBubble(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    const sim = document.getElementById(`sim-${id}`);
+    const msgs = document.getElementById(`msgs-${id}`);
+    if (!actor || !sim || !msgs) return;
+
+    const userBubbles = msgs.querySelectorAll('.msg-user');
+    const target = userBubbles[userBubbles.length - 1];
+    if (!target) return;
+
+    const uRel = getRelativePos(target, sim);
+    actor.classList.add('walking');
+    setPose(id, 'walk');
+    actor.style.transition = 'all 0.5s var(--ease-spring)';
+    actor.style.top = (uRel.top - 28) + 'px';
+    actor.style.left = (uRel.right - 44) + 'px';
+
+    setTimeout(() => {
+      actor.classList.remove('walking');
+      setPose(id, 'lean');
+      spawnLove(actor, '💬');
+    }, 520);
+  }
+
+  // Climb to execution steps card
+  function goToSteps(id) {
+    const actor = document.getElementById(`actor-${id}`);
+    const sim = document.getElementById(`sim-${id}`);
+    const steps = document.getElementById(`c${id}-steps`);
+    if (!actor || !sim || !steps) return;
+
+    const sRel = getRelativePos(steps, sim);
+    actor.classList.add('walking');
+    setPose(id, 'walk');
+    actor.style.transition = 'all 0.45s var(--ease-spring)';
+    actor.style.top = (sRel.top - 28) + 'px';
+    actor.style.left = (sRel.left + 22) + 'px';
+
+    setTimeout(() => {
+      actor.classList.remove('walking');
+      setPose(id, 'lean');
+      spawnLove(actor, '⚡');
+    }, 480);
+  }
+
+  // Send message simulation: types -> sends -> companion watches steps -> celebrates
+  function sendMessage(id) {
+    const input = document.getElementById(`input-${id}`);
+    const text = input ? input.value.trim() : '';
+    if (input) input.value = '';
+
+    const actor = document.getElementById(`actor-${id}`);
+    goToSteps(id);
+
+    // Simulate task completion in 1.8s
+    setTimeout(() => {
+      setPose(id, 'happy');
+      spawnLove(actor, '🎉');
+      setTimeout(() => {
+        resetToComposer(id);
+      }, 1200);
+    }, 1800);
+  }
+
+  function _oldSendMessage(id) {
+    const input = document.getElementById(`input-${id}`);
+    const val = input ? input.value.trim() : '';
+    if (val && input) input.value = '';
+    walkAroundPerimeter(id);
+  }
+
+  function spawnLove(actor, char) {
+    const p = document.createElement('div');
+    p.className = 'sparkle-pop';
+    p.textContent = char;
+    p.style.top = '-10px';
+    p.style.left = (Math.random() * 20 + 6) + 'px';
+    actor.appendChild(p);
+    setTimeout(() => p.remove(), 700);
+  }
+
+  function seekVideo(seconds) {
+    const vid = document.getElementById('rauno-video');
+    if (vid) {
+      vid.currentTime = seconds;
+      vid.play();
+    }
+  }
+
+  function toggleTheme() {
+    document.body.classList.toggle('dark');
+  }
+
+  function toggleSlowMo() {
+    document.body.classList.toggle('slow-motion');
+  }
+
+  function simulateAllColumns() {
+    [1, 2].forEach(id => {
+      const input = document.getElementById(`input-${id}`);
+      if (input) {
+        input.value = '对比查找页面上所有折扣商品…';
+        triggerLean(id);
+      }
+    });
+  }
+
+  // Initialize
+  window.addEventListener('DOMContentLoaded', () => {
+    [1, 2].forEach(id => {
+      resetToComposer(id);
+      setupPetGesture(id);
+    });
+  });
+
+  window.addEventListener('resize', () => {
+    [1, 2].forEach(id => resetToComposer(id));
+  });
+
+  setTimeout(() => {
+    [1, 2].forEach(id => resetToComposer(id));
+  }, 100);
+</script>
+</body>
+</html>

@@ -43,6 +43,7 @@ import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMod
 import { isAffirmativeReply, isCancelReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { findSessionForTab, getWorkingTabMap, getWorkingTabId, setSessionClaimBlocked } from "./state.js";
 import { PendingControlTimeout } from "./control-pending.js";
+import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
@@ -69,6 +70,8 @@ const handlers: Record<ToolName, Handler> = {
 
 const panels = new Set<chrome.runtime.Port>();
 const panelHistory = new PanelHistory();
+/** 选中即问：把 text_delta 回推到划词所在页。 */
+let overlayAskTabId: number | undefined;
 
 /** 缓存的连接上下文，用于面板重开后的状态同步。 */
 let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } = { state: "connecting" };
@@ -529,6 +532,21 @@ const uplink = new Uplink({
       } else if (msg.event.kind === "tool_end") {
         activityBySession.set(sid, "running");
       }
+      if (overlayAskTabId != null) {
+        const kind = msg.event.kind;
+        if (
+          kind === "text_delta" ||
+          kind === "turn_end" ||
+          kind === "agent_end" ||
+          kind === "error" ||
+          kind === "notice" ||
+          kind === "tool_start"
+        ) {
+          void chrome.tabs.sendMessage(overlayAskTabId, { type: "ask-event", event: msg.event }).catch(() => {
+            /* 页已关 */
+          });
+        }
+      }
     }
     if (msg.type === "tool_call") {
       void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId);
@@ -772,11 +790,71 @@ async function attachPageContext<T extends Extract<ClientMessage, { type: "user_
 ): Promise<T> {
   try {
     const { tab } = await getActiveTab();
-    if (!tab) return msg;
-    return { ...msg, context: { tabId: tab.id, title: tab.title, url: tab.url } };
+    const selection = msg.context?.selection;
+    const page = tab
+      ? { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }
+      : msg.context
+        ? { tabId: msg.context.tabId, title: msg.context.title, url: msg.context.url }
+        : null;
+    if (!page) return msg;
+    return {
+      ...msg,
+      context: selection ? { ...page, selection } : page,
+    };
   } catch {
     return msg;
   }
+}
+
+function ensureAskMenu(): void {
+  if (!chrome.contextMenus?.removeAll) return;
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: ASK_MENU_ID,
+      title: "问 SideAgent",
+      contexts: ["selection"],
+    });
+  });
+}
+
+async function deliverAsk(ask: PendingAsk): Promise<void> {
+  await chrome.storage.session.set({ [ASK_STORE]: ask });
+  broadcast({ kind: "ask_selection", ask } satisfies BgToPanel);
+}
+
+if (chrome.runtime?.onInstalled) chrome.runtime.onInstalled.addListener(() => ensureAskMenu());
+ensureAskMenu();
+
+chrome.contextMenus?.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== ASK_MENU_ID || !tab?.id) return;
+  const tabId = tab.id;
+  const text = clipSelection(String(info.selectionText ?? ""));
+  if (!text) return;
+  const ask: PendingAsk = {
+    text,
+    tabId,
+    title: tab.title ?? "",
+    url: tab.url ?? "",
+  };
+  void chrome.tabs.sendMessage(tabId, { type: "ask-open", text }).catch(() => {
+    void chrome.sidePanel.open({ tabId }).catch(() => {
+      /* 面板可能已经开着 */
+    });
+    void deliverAsk(ask);
+  });
+});
+
+if (chrome.commands?.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (command !== "ask-selection") return;
+    void chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const tab = tabs[0];
+      if (!tab?.id) return;
+      void chrome.tabs.sendMessage(tab.id, { type: "ask-hotkey" }).catch(() => {
+        /* 无可注入页 */
+      });
+    });
+  });
 }
 
 // 步骤完成自动感知：teach 模式 + 有待完成标注时，working tab 的 URL 变化
@@ -868,6 +946,12 @@ chrome.runtime.onConnect.addListener((port) => {
         break;
       case "sync": {
         port.postMessage({ kind: "conn", ...lastConn } satisfies BgToPanel);
+        void chrome.storage.session.get(ASK_STORE).then((stored) => {
+          const ask = stored[ASK_STORE] as PendingAsk | undefined;
+          if (ask && typeof ask.text === "string") {
+            port.postMessage({ kind: "ask_selection", ask } satisfies BgToPanel);
+          }
+        });
         postMode(port);
         if (lastHelloOk) {
           port.postMessage({
@@ -905,9 +989,63 @@ chrome.tabs.onActivated.addListener((info) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
-  const msg = raw as { type?: unknown; action?: unknown };
+  const msg = raw as { type?: unknown; action?: unknown; text?: unknown };
+  if (msg.type === "ask-selection") {
+    const tab = sender.tab;
+    const text = typeof msg.text === "string" ? clipSelection(msg.text) : null;
+    const mode = (msg as { mode?: unknown }).mode;
+    if (tab?.id && text) {
+      const tabId = tab.id;
+      const ask: PendingAsk = {
+        text,
+        tabId,
+        title: tab.title ?? "",
+        url: tab.url ?? "",
+      };
+      if (mode === "continue") {
+        void chrome.sidePanel.open({ tabId }).catch(() => {
+          /* 面板可能已经开着 */
+        });
+        void deliverAsk(ask);
+      } else {
+        overlayAskTabId = tabId;
+        const question =
+          mode === "explain"
+            ? EXPLAIN_PROMPT
+            : typeof (msg as { question?: unknown }).question === "string" && (msg as { question: string }).question.trim()
+              ? (msg as { question: string }).question.trim()
+              : "这段是什么意思？";
+        const outgoing = {
+          type: lastStatus === "idle" ? ("user_message" as const) : ("steer" as const),
+          text: question,
+          context: {
+            tabId,
+            title: tab.title ?? "",
+            url: tab.url ?? "",
+            selection: { text },
+          },
+        };
+        if (outgoing.type === "user_message" && lastStatus === "idle") panelHistory.clear();
+        recordAndBroadcastHistory({ kind: "user", text: question });
+        void attachPageContext(outgoing).then((enriched) => {
+          if (!uplink.sendClientMessage(enriched)) {
+            void chrome.tabs
+              .sendMessage(tabId, {
+                type: "ask-event",
+                event: { kind: "error", message: "没连上 Agent。打开侧栏看连接状态。" },
+              })
+              .catch(() => {
+                /* 页已关 */
+              });
+          }
+        });
+      }
+    }
+    sendResponse({ ok: true });
+    return;
+  }
   if (msg.type === "handback_click") {
     void handleHandback().then(() => sendResponse({ ok: true }));
     return true;
