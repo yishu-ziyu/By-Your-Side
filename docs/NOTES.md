@@ -5,6 +5,11 @@
 
 ## 当前状态
 
+2026-09-07 稳定化首轮开工（标准 `docs/evals/20260907-stability-foundation.md`，追踪 issue #1，首修 issue #2）。分支 `fix/stability-issue2-model-capability-labels`，base 2cd23a1。
+1. 基线当次实测全绿：typecheck / test 385 / build / overlay-check / accept:browser / accept:team（ChromeMain 152.0.7977.82，扩展 fnbjglh… 在线）。
+2. **模型能力标签纠偏（issue #2 / B1–B6）**：`modelReasoningMeta` 旧实现凭供应商与名称片段猜测能力——openai/openai-codex 一律「支持档位调节」、未匹配模型默认「极速直接响应」。9 月 6 日条目所称「真实档位体系」实为无证据推断，与本轮事实区分开：当前实现一律保守中性（`tag=null` 不渲染任何能力标签），反例矩阵 12 断言旧码全失败、新码全过；生产 bundle 三个捏造文案 0 次出现。能力标签待协议携带真实 runtime/SDK 元数据后再恢复，`tag-native/effort/direct` 样式类保留复用。
+3. 真机证据：生产侧栏当前模型 MiniMax-M3（旧实现必显示「内置深度思考」）下芯片 tag `hidden=true`、全页无可见能力标签。切换失败状态未在真机主动触发（避免扰动用户会话），由 modelState 仅随 `model_info` 更新的机制保证；亮暗/窄宽目测待人评。
+
 2026-09-06 借鉴 CollectUI Arek AI chat bar 动效与真实思考档位评估页落地（标准 `docs/evals/20260906-chat-bar-morph.md`，页面 `docs/evals/20260906-chat-bar-morph.html`，服务 `http://127.0.0.1:19906/20260906-chat-bar-morph.html`）。
 1. **严格绑定真实模型能力**：彻底推翻视觉样张中全量硬编码 Medium/High 的假象。MiniMax-M3 明确标为「内置深度思考 · 1M 上下文」（不可调）；GPT-5.6/o3-mini 提供真实 `[Low] [Med] [High]` 档位切换；Kimi for Coding 标为「代码极速 · 直接响应」（无思考）。
 2. **三种具体形变形态并排对照**：

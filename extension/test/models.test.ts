@@ -120,65 +120,44 @@ describe("humanizeModelError", () => {
   });
 });
 
-describe("modelReasoningMeta", () => {
-  it("identifies OpenAI/Codex effort-supported models", () => {
-    expect(modelReasoningMeta("openai", "gpt-5.6-luna")).toEqual({
-      tier: "effort",
-      tag: "支持档位调节",
-    });
-    expect(modelReasoningMeta("openai-codex", "gpt-5.5")).toEqual({
-      tier: "effort",
-      tag: "支持档位调节",
-    });
-    expect(modelReasoningMeta("cliproxy", "o1-mini")).toEqual({
-      tier: "effort",
-      tag: "支持档位调节",
-    });
-    expect(modelReasoningMeta("cliproxy", "o3")).toEqual({
-      tier: "effort",
-      tag: "支持档位调节",
-    });
+// issue #2 / 验收 B1：能力标签不得凭 provider/modelId 字符串猜测。
+// 下面的反例在旧实现里分别会被判成「支持档位调节」「内置深度思考」「极速直接响应」；
+// 没有可信能力证据来源（ModelOption 不携带能力字段，协议无调档链路）时必须一律中性。
+describe("modelReasoningMeta 不凭名称/供应商输出肯定能力结论", () => {
+  const cases: ReadonlyArray<{ provider: string; modelId: string; why: string }> = [
+    { provider: "unknown-provider", modelId: "unseen-model", why: "未知供应商 + 未知模型" },
+    { provider: "openai", modelId: "unseen-model", why: "已知供应商不足以推出档位能力" },
+    { provider: "openai-codex", modelId: "totally-new-model-v9", why: "codex 供应商同样无能力证据" },
+    { provider: "cliproxy", modelId: "vendor-proxy-alias-x", why: "本地池代理别名不携带能力语义" },
+    { provider: "cliproxy", modelId: "o1-mini", why: "供应商名也不得兜底为档位能力" },
+    { provider: "minimax-cn", modelId: "brand-new-series", why: "供应商名不足以推出内置思考" },
+    { provider: "anthropic", modelId: "claude-x-thinking", why: "名称含 thinking 关键字无证据" },
+    { provider: "google", modelId: "gemini-9-flash-high", why: "名称含档位样式后缀无证据" },
+    { provider: "minimax-o1-thinking-pro", modelId: "", why: "多类特征混杂 + 缺省字段也不输出肯定结论" },
+    { provider: "", modelId: "", why: "空字段（旧服务端缺省）不崩溃且保持中性" },
+  ];
+
+  it.each(cases)("$why：$provider/$modelId → 无肯定标签", ({ provider, modelId }) => {
+    const meta = modelReasoningMeta(provider, modelId);
+    expect(meta.tag).toBeNull();
   });
 
-  it("identifies native reasoning models (MiniMax, thinking, high)", () => {
-    expect(modelReasoningMeta("minimax-cn", "MiniMax-M3")).toEqual({
-      tier: "native",
-      tag: "内置深度思考",
-    });
-    expect(modelReasoningMeta("minimax", "MiniMax-Text-01")).toEqual({
-      tier: "native",
-      tag: "内置深度思考",
-    });
-    expect(modelReasoningMeta("anthropic", "claude-opus-4-6-thinking")).toEqual({
-      tier: "native",
-      tag: "内置深度思考",
-    });
-    expect(modelReasoningMeta("google", "gemini-3.7-flash-high")).toEqual({
-      tier: "native",
-      tag: "内置深度思考",
-    });
-    expect(modelReasoningMeta("google", "gemini-3.1-pro-low")).toEqual({
-      tier: "native",
-      tag: "内置深度思考",
-    });
+  it("无状态：任何查询序列下同一输入的结果一致，不残留上一模型的标签", () => {
+    const first = modelReasoningMeta("minimax-cn", "MiniMax-M3");
+    const second = modelReasoningMeta("openai", "unseen-model");
+    expect(second).toEqual(first);
+    expect(modelReasoningMeta("openai", "unseen-model")).toEqual(second);
   });
 
-  it("identifies direct response models (Kimi, standard Flash, Claude Sonnet)", () => {
-    expect(modelReasoningMeta("kimi-coding", "kimi-for-coding")).toEqual({
-      tier: "direct",
-      tag: "极速直接响应",
-    });
-    expect(modelReasoningMeta("kimi-coding", "k3")).toEqual({
-      tier: "direct",
-      tag: "极速直接响应",
-    });
-    expect(modelReasoningMeta("google", "gemini-3-flash")).toEqual({
-      tier: "direct",
-      tag: "极速直接响应",
-    });
-    expect(modelReasoningMeta("anthropic", "claude-sonnet-4-6")).toEqual({
-      tier: "direct",
-      tag: "极速直接响应",
-    });
+  it("协议未携带能力字段（ModelOption 四字段）的目录模型查询也一律中性", () => {
+    const directory: ReadonlyArray<ModelOption> = [
+      m("openai", "gpt-5.6-luna"),
+      m("minimax-cn", "MiniMax-M3"),
+      m("kimi-coding", "kimi-for-coding"),
+    ];
+    for (const option of directory) {
+      const meta = modelReasoningMeta(option.provider, option.modelId);
+      expect(meta.tag).toBeNull();
+    }
   });
 });

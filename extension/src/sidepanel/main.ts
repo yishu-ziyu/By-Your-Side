@@ -414,14 +414,19 @@ function renderModelList(): void {
       const label = document.createElement("span");
       label.className = "model-label";
       label.textContent = displayName(m);
+      item.append(mark, label);
+      // 无可信能力证据时不渲染能力标签（issue #2 / 验收 B2）
       const meta = modelReasoningMeta(m.provider, m.modelId);
-      const tag = document.createElement("span");
-      tag.className = `reasoning-tag tag-${meta.tier}`;
-      tag.textContent = meta.tag;
+      if (meta.tag) {
+        const tag = document.createElement("span");
+        tag.className = `reasoning-tag tag-${meta.tier}`;
+        tag.textContent = meta.tag;
+        item.append(tag);
+      }
       const check = document.createElement("span");
       check.className = "model-check";
       if (m.id === modelState?.model) check.appendChild(icon(Check));
-      item.append(mark, label, tag, check);
+      item.append(check);
       item.onclick = () => {
         closeModelPopover();
         if (m.id !== modelState?.model) send({ type: "set_model", model: m.id });
@@ -449,9 +454,12 @@ function renderModelPicker(): void {
       const prov = found?.provider ?? provider ?? "";
       const modelId = found?.modelId ?? (model.includes("/") ? model.split("/")[1]! : model);
       const meta = modelReasoningMeta(prov, modelId);
-      modelReasoningTag.hidden = false;
-      modelReasoningTag.textContent = meta.tag;
-      modelReasoningTag.className = `reasoning-tag tag-${meta.tier}`;
+      // 无可信能力证据时芯片同样不显示能力标签（issue #2 / 验收 B2）
+      modelReasoningTag.hidden = !meta.tag;
+      if (meta.tag) {
+        modelReasoningTag.textContent = meta.tag;
+        modelReasoningTag.className = `reasoning-tag tag-${meta.tier}`;
+      }
     } else {
       modelReasoningTag.hidden = true;
     }
