@@ -627,3 +627,11 @@
   - `npm test`：41 个测试文件、385 个测试全绿；
   - `npm run build`：生产产物构建成功；
   - Playwright 多态真机截图无头核验：浅色收起/展开、深色收起/展开共 4 态，视觉层级分明、标签对比度达到 AAA 级。
+
+## 2026-09-07（下午）PR #3 R1/R2 补证（fix/stability-issue2-model-capability-labels）
+
+- 新增 extension/test/panel-states-check.mjs（真实构建扩展+标签页加载生产 sidepanel.html，仅 Port 边界注入真实格式信封）：R1 四组状态（旧四字段目录/未知模型、切换未回执不假更新并断言 set_model 信封、model_info 回执后芯片与选中项、真实格式 error 保留旧模型+错误可见）+ R2 五组几何（320/360/400×亮暗：模型入口/输入/发送/菜单可见不重叠可操作），9 场景全过，exit 0；HEAD 6606e81，dist sha256 e4e00429…。
+- 新增 panel-container-probe.mjs：ChromeMain 真实容器只读探针（仅 /json/list + Runtime.evaluate）；本轮侧栏未打开 → no-target(exit 2) 如实记录，未代用户打开（不打扰前台）。
+- 提交 961e86c 已推送；PR #3 描述已修订：三层证据区分、「切换失败由机制+单测证明」改为实际覆盖表述、未验证项按实更新；附审阅回应评论。
+- 机器复跑：typecheck 绿、npm test 394/394。issue #4 修复在 PR #5，两交付独立，main.ts 改动区不相交。
+- ChromeMain 当前：磁盘 dist 为本分支（#3）构建；会话期间 reload 过两次（先 #4 构建跑验收，后重建回 #3 构建），SW 下次重启自然拾取磁盘版本。
