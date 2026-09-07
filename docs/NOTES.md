@@ -5,6 +5,32 @@
 
 ## 当前状态
 
+2026-09-07 教学模式手绘圈点勾画与通透批注正式落地（标准 `docs/evals/20260907-hand-drawn-teach-marks.md`，原型 `docs/evals/20260907-hand-drawn-teach-marks.html`，日志 `docs/devlog/20260907-08-教学模式手绘圈点勾画与通透批注落地.md`）。
+1. **核心算法与模块实现**：
+   - 0 依赖轻量自研 PRNG 与几何算法（`extension/src/shared/rough/`：`prng.ts`, `geometry.ts`, `index.ts`），提供 `mulberry32`、`roughEllipse`、`roughArrow`、`chiselWash` 与 3 帧微动 `variants`；
+   - 算法单测覆盖：`extension/test/rough.test.ts`（6 项测试通过）。
+2. **动效设置与状态持久化**：
+   - `extension/src/background/mode.ts`：增加 `MarkMotion` 类型（`"grow"` | `"boil"`）、`getMarkMotion()`、`setMarkMotion()`，单测在 `teach-mode.test.ts` 中通过；
+   - `extension/src/background/exec/input.ts`：`toolMark` 自动感知当前运行模式（teach 模式默认 `style: "sketch"`，act 模式保持矩形框）；
+   - `extension/src/sidepanel/main.ts`：在 `#teach-toggle` 按钮支持右键快捷切换动效偏好（持续微抖 vs 生长定格），并通过 tooltip 提示当前状态。
+3. **页面 Content Overlay 渲染落地**：
+   - `extension/src/content/cursor.ts`：升级 `spawnMark`，支持手绘椭圆、引导箭头、CSS 3 帧微颤动与生长动画，滚动和 resize 时复用固定 seed 坐标平移（零闪烁）；
+   - 修复荧光笔遮挡字迹：`.highlight` 增加 `mix-blend-mode: multiply`，文字 100% 锐利透出不被遮挡。
+4. **自动化验证与自检闭环**：
+   - `npm run typecheck`、`npm test`（52 files, 489 tests）、`npm run build` 全绿；
+   - `node extension/test/overlay-check.mjs` 截图并通过无头 Chromium 断言。
+5. **待人检裁决**：
+   - 真机教学模式引导圈注的笔触质感与动效流畅度，以及长文本高亮透出度。
+
+2026-09-07 Kit Langton 风格克制 SVG 微动效数据流（Subtly Animated SVGs）概念探索与素材库归档（原型 `docs/evals/20260907-runtime-pipeline-viz.html`，规格 `docs/evals/20260907-runtime-pipeline-viz.md`，素材归档 `docs/research/20260907-subtly-animated-svg-pipeline-inspiration.md`）。
+1. **概念与设计验证**：
+   - 深入拆解 Kit Langton 演示精髓：事件驱动的贝塞尔微光连线 + 沿线减速微粒 + 接收端数字弹跳回弹，极具克制美感与安全感；
+   - 制作包含 3 套形态（空状态全景装配看板、顶部收纳 HUD 胶囊、步骤 DAG 流）的高保真交互原型；
+2. **决策与裁决（不强行落地）**：
+   - 用户与执行者深度达成共识：当前 By-Your-Side 扩展尚未构建动态 Skills 插件市场或开放配置总线，现有工具集固定写死在协议层；
+   - 坚决杜绝“为了动效而编造不存在的虚假产品概念（Vaporware UI）”；
+   - **结论**：本设计完整保存入素材库（包含完整可运行 SVG/CSS 源码与动效参数），暂不落地进产品，待未来插件架构或多 Agent 拓扑成熟时再行唤醒。
+
 2026-09-07 侧边栏执行步骤聚合卡片垂直压缩变形 bug 根治修复（标准 `docs/evals/20260907-fix-run-steps-squash.md`）。
 1. **根本原因（Root Cause）**：
    - `#messages` 为纵向 Flex 容器（`display: flex; flex-direction: column`），当会话消息变长超出视口高度时，浏览器 Flexbox 计算负空间（negative space）；
@@ -760,3 +786,38 @@
 ## 2026-09-07 剩余完整性实机验收
 
 Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault-run.mjs（窗口装配与截图间隔）及 scripts/acceptance/handback-new-task-run.mjs（旁路点击/加载标识及错误描述），未改产品代码。A2/B1 首轮 2/6，前置条件修正后 6/6，故障包装已恢复。B3 首轮交还后计数由 1 归零，原因未定；第二轮同 MiniMax-M3 会话 A 保持 1、B 点击 1，19.079s，无会话重启。不能以重跑成功覆盖首轮失败。详见 docs/evals/20260907-integrity-remaining-results.md。浏览器测试标签及 CDP 已由脚本清理释放。
+
+## 2026-09-07 教学模式手绘圈点勾画与通透批注落地
+
+- 完成标准：`docs/evals/20260907-hand-drawn-teach-marks.md`。视觉原型：`docs/evals/20260907-hand-drawn-teach-marks.html`。开发日志：`docs/devlog/20260907-08-教学模式手绘圈点勾画与通透批注落地.md`。
+- 关键决策与实现：
+  1. 借鉴 Danilaa1/drawably 风格，零外部依赖自研轻量几何库（`mulberry32` PRNG、双偏置 `roughEllipse`、引导弯曲线 `roughArrow`、3 帧微动变体 `variants`）。
+  2. 动效偏好：默认方案 A（420ms 生长定格），支持切换方案 B（1200ms 3 帧微抖动）；侧栏 `#teach-toggle` 右键快捷切换动效档位，持久化至 `chrome.storage.local`；`prefers-reduced-motion` 自动定格。
+  3. 荧光笔全面重构：采用 `mix-blend-mode: multiply`（正片叠底）+ 高明度底色，黑色文字 100% 锐利透出，根治遮挡发污。
+  4. 模式自动感知：`teach` 模式自动采用 `sketch` 手绘风格，普通 `act` 执行模式保持精确实线矩形框；页面滚动与 resize 仅位移容器，固定 seed 确保路径不抖动重算。
+- 改动文件清单：
+  - `docs/evals/20260907-hand-drawn-teach-marks.md`（完成标准与裁决表）
+  - `docs/evals/20260907-hand-drawn-teach-marks.html`（三案并排与荧光笔修复交互对照原型）
+  - `docs/devlog/20260907-08-教学模式手绘圈点勾画与通透批注落地.md`（开发日志）
+  - `extension/src/shared/rough/prng.ts`（确定性 32 位 PRNG）
+  - `extension/src/shared/rough/geometry.ts`（手绘椭圆、弯箭头、马克笔平刷几何生成）
+  - `extension/src/shared/rough/index.ts`（算法模块统一入口）
+  - `extension/src/background/mode.ts`（动效偏好 MarkMotion 状态与持久化）
+  - `extension/src/background/exec/input.ts`（toolMark 自动感知模式与动效）
+  - `extension/src/sidepanel/main.ts`（教学按钮右键切换动效交互）
+  - `extension/src/content/cursor.ts`（overlay 手绘渲染、CSS 动效、正片叠底与 test helper 暴露）
+  - `extension/src/sideagent.d.ts`（MarkOptions 与 test helpers 类型契约）
+  - `extension/test/rough.test.ts`（算法核心单测）
+  - `extension/test/teach-mode.test.ts`（动效模式设置单测）
+  - `extension/test/overlay-check.mjs`（无头 Chromium 端到端渲染与滚动断言）
+  - `docs/NOTES.md`（会话工作笔记）
+- 验证闭环：
+  - `npm run typecheck`：全量零错误；
+  - `npm test`：52 files / 489 tests 100% 通过；
+  - `npm run build`：扩展构建成功；
+  - `node extension/test/overlay-check.mjs`：端到端断言与截图全通过；
+  - `npm run reload:ext`：Chrome 真实环境热重载生效；
+  - `git diff --check`：无空白符与格式问题。
+- 未决/待人评：
+  - 标准 4：真机长文本高亮与深浅背景下的文字通透度；
+  - 标准 6：真机教学模式下引导圈注的笔触质感与动效流畅度。

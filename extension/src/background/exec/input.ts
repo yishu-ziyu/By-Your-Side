@@ -13,6 +13,7 @@ import {
   resolveImplicitMarkActions,
 } from "../../shared/mark-actions.js";
 import { HeldClicks } from "../../shared/held-clicks.js";
+import { getMarkMotion, getMode } from "../mode.js";
 
 interface DomRect {
   x: number;
@@ -1088,7 +1089,13 @@ export async function scroll(
  * target 定位串与 click 同语义；注入失败如实报错（标注是显式动作，需要反馈）。
  */
 export async function mark(
-  params: { target: string; label?: string; actions?: unknown },
+  params: {
+    target: string;
+    label?: string;
+    actions?: unknown;
+    style?: "rect" | "sketch";
+    motion?: "grow" | "boil";
+  },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ marked: true }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
@@ -1135,6 +1142,9 @@ export async function mark(
 
   await ensureCursor(tabId);
   const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
+  const mode = await getMode();
+  const motion = await getMarkMotion();
+  const style = params.style ?? (mode === "teach" ? "sketch" : "rect");
   await callDom(
     tabId,
     (
@@ -1143,12 +1153,13 @@ export async function mark(
       t: string,
       id: string,
       a: Array<{ id: "confirm" | "cancel"; label: string }> | null,
+      opts: { style?: "rect" | "sketch"; motion?: "grow" | "boil" },
     ) => {
       const cursor = window.__sideagent?.cursor?.for(id);
       if (!cursor?.mark) throw new Error("cursor 未注入");
-      cursor.mark(r, l ?? undefined, t, a ?? undefined);
+      cursor.mark(r, l ?? undefined, t, a ?? undefined, opts);
     },
-    [rect, params.label ?? null, params.target, cid, actions],
+    [rect, params.label ?? null, params.target, cid, actions, { style, motion }],
   );
   return { marked: true };
 }

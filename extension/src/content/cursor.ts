@@ -52,6 +52,7 @@ import {
   sweepStaleOverlayHosts,
   viewportRectToDocumentBox,
 } from "../shared/overlay.js";
+import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
@@ -80,13 +81,23 @@ import {
     hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string };
   }
 
+  interface MarkOptions {
+    style?: "rect" | "sketch";
+    motion?: "grow" | "boil";
+    seed?: number;
+  }
+
   interface LiveMark {
     el: HTMLDivElement;
     anchor: Element | null;
     target?: string;
     pad: number;
     label?: string;
+    options?: MarkOptions;
+    seed?: number;
   }
+
+  let defaultMarkOptions: MarkOptions = { style: "rect", motion: "grow" };
 
   let host: HTMLDivElement | null = null;
   let marksHost: HTMLDivElement | null = null;
@@ -177,8 +188,9 @@ import {
         pointer-events: none;
         border-radius: 6px;
         border: 2px solid var(--c);
-        background: color-mix(in srgb, var(--c) 12%, transparent);
-        box-shadow: 0 0 0 1px rgba(255,255,255,0.4), 0 0 14px color-mix(in srgb, var(--c) 45%, transparent);
+        background: color-mix(in srgb, var(--c) 14%, transparent);
+        mix-blend-mode: multiply;
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.4), 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
         animation: highlight-breathe 500ms cubic-bezier(.25, 1, .5, 1) forwards;
         will-change: opacity, transform;
       }
@@ -232,6 +244,66 @@ import {
         box-shadow: 0 2px 6px rgba(15,23,42,.25);
       }
       .mark-label.below { top: calc(100% + 6px); }
+      .mark.sketch {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .sketch-svg {
+        position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+        overflow: visible; pointer-events: none;
+      }
+      .sketch-svg path {
+        fill: none;
+        stroke: var(--c);
+        stroke-width: 2.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .mark.sketch.grow path {
+        stroke-dasharray: 1200;
+        stroke-dashoffset: 1200;
+        animation: markStrokeGrow 420ms cubic-bezier(.16, 1, .3, 1) forwards;
+      }
+      @keyframes markStrokeGrow {
+        to { stroke-dashoffset: 0; }
+      }
+      @property --mark-boil-frame {
+        syntax: "<integer>";
+        inherits: true;
+        initial-value: 0;
+      }
+      .mark.sketch.boil .sketch-svg {
+        --mark-boil-frame: 0;
+        animation: markBoilFrames 1200ms step-end infinite;
+      }
+      @keyframes markBoilFrames {
+        0% { --mark-boil-frame: 0; }
+        33.33% { --mark-boil-frame: 1; }
+        66.67% { --mark-boil-frame: 2; }
+      }
+      .mark.sketch.boil .boil-path {
+        --path-i: 0;
+        opacity: clamp(0, 1 - (var(--mark-boil-frame) - var(--path-i)) * (var(--mark-boil-frame) - var(--path-i)), 1);
+      }
+      .mark.sketch.boil .boil-path[data-i="1"] { --path-i: 1; }
+      .mark.sketch.boil .boil-path[data-i="2"] { --path-i: 2; }
+
+      .mark-label.sketch-label {
+        position: absolute;
+        padding: 3px 10px; border-radius: 999px;
+        background: var(--c); color: #fff;
+        font: 600 11px/1.7 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        box-shadow: 0 0 0 1.5px #fff, 0 3px 10px rgba(15,23,42,.28);
+        white-space: nowrap;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .mark.sketch.grow path { animation: none !important; stroke-dashoffset: 0 !important; }
+        .mark.sketch.boil .sketch-svg { animation: none !important; }
+        .mark.sketch.boil .boil-path { opacity: 1 !important; }
+        .mark.sketch.boil .boil-path:not([data-i="0"]) { display: none !important; }
+      }
     `;
     marksShadow.appendChild(style);
     marksLayer = document.createElement("div");
@@ -539,30 +611,86 @@ import {
     label?: string,
     target?: string,
     actions?: MarkAction[],
+    options?: MarkOptions,
   ): void {
-    const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, MARK_PAD);
+    const opts = { ...defaultMarkOptions, ...options };
+    const isSketch = opts.style === "sketch";
+    const motion = opts.motion ?? "grow";
+    const pad = isSketch ? 10 : MARK_PAD;
+    const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
     if (!box) return;
     ensureMarksDom();
     const el = document.createElement("div");
-    el.className = "mark";
+    el.className = isSketch ? `mark sketch ${motion === "boil" ? "boil" : "grow"}` : "mark";
     el.style.setProperty("--c", inst.color);
-    el.innerHTML =
-      `<svg class="mark-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">` +
-      `<path d="M2 12h17m-6-6 6 6-6 6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` +
-      `</svg>` +
-      (label ? `<div class="mark-label"></div>` : "");
-    if (label) {
-      const labelEl = el.querySelector(".mark-label")!;
-      labelEl.textContent = label;
+
+    const seed = opts.seed ?? (Math.floor(Math.random() * 1000000) + 1);
+
+    if (isSketch) {
+      const cx = box.width / 2;
+      const cy = box.height / 2;
+      const rx = box.width / 2 + 8;
+      const ry = box.height / 2 + 6;
+
+      const arrowX1 = cx - rx - 36;
+      const arrowY1 = cy - ry - 14;
+      const arrowX2 = cx - rx + 3;
+      const arrowY2 = cy - 4;
+
+      if (motion === "boil") {
+        const frames = [0, 1, 2].map((i) => {
+          const o = { seed, roughness: 1.1, boil: 0.45, boilSeed: seed + (i + 1) * 7919 };
+          const e = roughEllipse(cx, cy, rx, ry, o);
+          const a = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { ...o, seed: seed + 7 });
+          return `${e} ${a}`;
+        });
+        el.innerHTML =
+          `<svg class="sketch-svg" style="left:0;top:0;width:100%;height:100%;">` +
+          frames.map((f, i) => `<path class="boil-path frame-${i}" data-i="${i}" d="${f}"/>`).join("") +
+          `</svg>` +
+          (label ? `<div class="mark-label sketch-label"></div>` : "");
+      } else {
+        const ellipsePath = roughEllipse(cx, cy, rx, ry, { seed, roughness: 1.1 });
+        const arrowPath = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { seed: seed + 7, roughness: 1.0 });
+        el.innerHTML =
+          `<svg class="sketch-svg anim-stroke-grow" style="left:0;top:0;width:100%;height:100%;">` +
+          `<path class="rough-ellipse-path" d="${ellipsePath}"/>` +
+          `<path class="sketch-arrow-path" d="${arrowPath}"/>` +
+          `</svg>` +
+          (label ? `<div class="mark-label sketch-label"></div>` : "");
+      }
+    } else {
+      el.innerHTML =
+        `<svg class="mark-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">` +
+        `<path d="M2 12h17m-6-6 6 6-6 6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `</svg>` +
+        (label ? `<div class="mark-label"></div>` : "");
     }
-    applyMarkBox(el, rect, MARK_PAD, label);
+
+    if (label) {
+      const labelEl = el.querySelector<HTMLElement>(".mark-label")!;
+      labelEl.textContent = label;
+      if (isSketch) {
+        const cx = box.width / 2;
+        const cy = box.height / 2;
+        const rx = box.width / 2 + 8;
+        const ry = box.height / 2 + 6;
+        const arrowX1 = cx - rx - 36;
+        const arrowY1 = cy - ry - 14;
+        labelEl.style.left = `${arrowX1 - 70}px`;
+        labelEl.style.top = `${arrowY1 - 16}px`;
+      }
+    }
+    applyMarkBox(el, rect, pad, label);
     marksLayer!.appendChild(el);
     liveMarks.push({
       el,
       anchor: resolveAnchor(rect, target),
       target,
-      pad: MARK_PAD,
+      pad,
       label,
+      options: opts,
+      seed,
     });
   }
 
@@ -792,6 +920,9 @@ import {
     ns.clickHoldAction = undefined;
     ns.controlBanner = undefined;
     ns.clickHandback = undefined;
+    ns.setMarkConfig = undefined;
+    ns.getMarkConfig = undefined;
+    ns.markDetails = undefined;
   }
 
   window.addEventListener("pagehide", teardown);
@@ -875,9 +1006,15 @@ import {
         spawnHighlight(inst, rect);
       },
 
-      mark(rect: SideAgentRect, label?: string, target?: string, actions?: MarkAction[]): void {
+      mark(
+        rect: SideAgentRect,
+        label?: string,
+        target?: string,
+        actions?: MarkAction[],
+        options?: MarkOptions,
+      ): void {
         const inst = getInstance(id);
-        spawnMark(inst, rect, label, target, actions);
+        spawnMark(inst, rect, label, target, actions, options);
         // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
         if (parsed) {
@@ -961,4 +1098,27 @@ import {
       width: parseFloat(m.el.style.width) || 0,
       height: parseFloat(m.el.style.height) || 0,
     }));
+  ns.setMarkConfig = (opts: MarkOptions) => {
+    defaultMarkOptions = { ...defaultMarkOptions, ...opts };
+  };
+  ns.getMarkConfig = () => ({ ...defaultMarkOptions });
+  ns.markDetails = () =>
+    liveMarks.map((m) => {
+      const svg = m.el.querySelector("svg.sketch-svg");
+      const boilPaths = svg ? [...svg.querySelectorAll(".boil-path")] : [];
+      const ellipsePath = svg?.querySelector(".rough-ellipse-path");
+      const arrowPath = svg?.querySelector(".sketch-arrow-path");
+      const labelEl = m.el.querySelector(".sketch-label") ?? m.el.querySelector(".mark-label");
+      return {
+        className: m.el.className,
+        hasSvg: Boolean(svg),
+        isGrow: m.el.classList.contains("grow"),
+        isBoil: m.el.classList.contains("boil"),
+        isSketch: m.el.classList.contains("sketch"),
+        hasEllipse: Boolean(ellipsePath),
+        hasArrow: Boolean(arrowPath),
+        boilFrameCount: boilPaths.length,
+        labelText: labelEl?.textContent ?? "",
+      };
+    });
 })();

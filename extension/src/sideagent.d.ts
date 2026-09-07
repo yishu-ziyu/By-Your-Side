@@ -29,6 +29,12 @@ interface SideAgentDomOps {
   scrollToBottom(maxSteps?: number): Promise<{ atBottom: boolean }>;
 }
 
+interface MarkOptions {
+  style?: "rect" | "sketch";
+  motion?: "grow" | "boil";
+  seed?: number;
+}
+
 interface SideAgentCursor {
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
@@ -57,6 +63,7 @@ interface SideAgentCursor {
     label?: string,
     target?: string,
     actions?: Array<{ id: "confirm" | "cancel"; label: string }>,
+    options?: MarkOptions,
   ): void;
   /** 拿住目标：飞到 (x,y) 进入持久按住态（不弹回、不 park），名牌变双键；scroll/resize 按 target 锚点跟随 */
   hold?(x: number, y: number, actions: Array<{ id: "confirm" | "cancel"; label: string }>, target?: string): void;
@@ -90,6 +97,20 @@ interface SideAgentNamespace {
   /** overlay 自检：页顶接管条 */
   controlBanner?: () => { status: string; action: string } | null;
   clickHandback?: () => boolean;
+  /** 手绘批注配置与动效偏好 */
+  setMarkConfig?: (opts: MarkOptions) => void;
+  getMarkConfig?: () => MarkOptions;
+  markDetails?: () => Array<{
+    className: string;
+    hasSvg: boolean;
+    isGrow: boolean;
+    isBoil: boolean;
+    isSketch: boolean;
+    hasEllipse: boolean;
+    hasArrow: boolean;
+    boilFrameCount: number;
+    labelText: string;
+  }>;
 }
 
 interface Window {

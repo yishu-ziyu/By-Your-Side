@@ -289,14 +289,18 @@ const companion = mountCompanion({
 // 开关状态存 chrome.storage.local（面板重开恢复显示）；运行时权威在 background
 // （chrome.storage.session），background 推来的 mode 消息会反向收敛本地存储。
 
+const MARK_MOTION_KEY = "sideagent_mark_motion";
+type MarkMotion = "grow" | "boil";
+let markMotion: MarkMotion = "grow";
 let teachMode = false;
 
 function renderTeachToggle(): void {
   teachToggle.classList.toggle("on", teachMode);
   teachToggle.setAttribute("aria-pressed", String(teachMode));
+  const motionLabel = markMotion === "boil" ? "持续微抖" : "生长定格";
   teachToggle.title = teachMode
-    ? "教学模式已开启：Agent 只标注引导，由你手动操作（点击关闭）"
-    : "教学模式：Agent 只标注引导，由你手动操作（点击开启）";
+    ? `教学模式已开启（手绘动效：${motionLabel}，右击切换）：Agent 只标注引导，由你手动操作（点击关闭）`
+    : `教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：${motionLabel}）`;
 }
 
 function applyMode(mode: AgentMode, persist: boolean): void {
@@ -305,13 +309,23 @@ function applyMode(mode: AgentMode, persist: boolean): void {
   if (persist) void chrome.storage.local.set({ [TEACH_MODE_KEY]: teachMode });
 }
 
-void chrome.storage.local.get(TEACH_MODE_KEY).then((stored) => {
+void chrome.storage.local.get([TEACH_MODE_KEY, MARK_MOTION_KEY]).then((stored) => {
+  if (stored[MARK_MOTION_KEY] === "boil" || stored[MARK_MOTION_KEY] === "grow") {
+    markMotion = stored[MARK_MOTION_KEY];
+  }
   applyMode(stored[TEACH_MODE_KEY] === true ? "teach" : "act", false);
 });
 
 teachToggle.onclick = () => {
   applyMode(teachMode ? "act" : "teach", true);
   send({ type: "set_mode", mode: teachMode ? "teach" : "act" });
+};
+
+teachToggle.oncontextmenu = (ev) => {
+  ev.preventDefault();
+  markMotion = markMotion === "grow" ? "boil" : "grow";
+  void chrome.storage.local.set({ [MARK_MOTION_KEY]: markMotion });
+  renderTeachToggle();
 };
 
 // ── 模型选择器 ─────────────────────────────────────────────────────

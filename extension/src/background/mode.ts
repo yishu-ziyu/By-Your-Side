@@ -31,6 +31,32 @@ export async function setMode(mode: AgentMode): Promise<void> {
   }
 }
 
+// ── 手绘标注动效偏好（grow = 420ms 生长后定格；boil = 1200ms 持续微动） ──
+export type MarkMotion = "grow" | "boil";
+export const MARK_MOTION_KEY = "sideagent_mark_motion";
+
+let cachedMotion: MarkMotion | undefined;
+
+export async function getMarkMotion(): Promise<MarkMotion> {
+  if (cachedMotion !== undefined) return cachedMotion;
+  try {
+    const got = await chrome.storage.local.get(MARK_MOTION_KEY);
+    cachedMotion = got[MARK_MOTION_KEY] === "boil" ? "boil" : "grow";
+  } catch {
+    cachedMotion = "grow";
+  }
+  return cachedMotion;
+}
+
+export async function setMarkMotion(motion: MarkMotion): Promise<void> {
+  cachedMotion = motion;
+  try {
+    await chrome.storage.local.set({ [MARK_MOTION_KEY]: motion });
+  } catch {
+    /* 存储失败不阻塞主流程 */
+  }
+}
+
 // ── 有待完成教学标注追踪 ────────────────────────────────────────────
 // mark 工具成功置 true；clear_marks / URL 变化（整页导航或 SPA pushState）置 false。
 // 仅 teach 模式且有待完成标注时，URL 变化才视为"用户可能已完成步骤"并通知 agent。

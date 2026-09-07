@@ -554,6 +554,70 @@ if (Math.abs(winHoldBefore.y - winHoldAfter.state.y - 60) > 2) {
   fail(`window 滚动 60px 后光标位移不符 before=${winHoldBefore.y} after=${winHoldAfter.state.y}`);
 }
 
+// 教学模式手绘圈注与动效测试（完成标准 2 & 3 & 4）
+await win.evaluate(() => {
+  window.scrollTo(0, 0);
+  window.__sideagent.cursor.releaseHold?.();
+  window.__sideagent.cursor.hide();
+});
+await win.waitForTimeout(40);
+await win.evaluate(() => {
+  window.__sideagent.cursor.clearMarks();
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  // 1. 默认 grow 动效
+  window.__sideagent.cursor.mark(
+    { x: r.x, y: r.y, width: r.width, height: r.height },
+    "点击确认",
+    "#box",
+    undefined,
+    { style: "sketch", motion: "grow", seed: 42 },
+  );
+});
+await win.waitForTimeout(60);
+
+const sketchGrowInfo = await win.evaluate(() => {
+  const list = window.__sideagent.markDetails?.() ?? [];
+  return list[0] ?? null;
+});
+if (!sketchGrowInfo || !sketchGrowInfo.isSketch || !sketchGrowInfo.isGrow) {
+  fail(`手绘 mark.sketch.grow 元素未渲染: ${JSON.stringify(sketchGrowInfo)}`);
+}
+if (!sketchGrowInfo.hasSvg || !sketchGrowInfo.hasEllipse || !sketchGrowInfo.hasArrow) {
+  fail(`手绘 SVG 路径缺失: ${JSON.stringify(sketchGrowInfo)}`);
+}
+if (sketchGrowInfo.labelText !== "点击确认") {
+  fail(`手绘 label 文字不对: ${sketchGrowInfo.labelText}`);
+}
+
+// 2. boil 动效测试（3 帧微抖动 path）
+await win.evaluate(() => {
+  window.__sideagent.cursor.clearMarks();
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  window.__sideagent.cursor.mark(
+    { x: r.x, y: r.y, width: r.width, height: r.height },
+    "微抖动教学",
+    "#box",
+    undefined,
+    { style: "sketch", motion: "boil", seed: 99 },
+  );
+});
+await win.waitForTimeout(60);
+
+const sketchBoilInfo = await win.evaluate(() => {
+  const list = window.__sideagent.markDetails?.() ?? [];
+  return list[0] ?? null;
+});
+if (!sketchBoilInfo || !sketchBoilInfo.isSketch || !sketchBoilInfo.isBoil) {
+  fail(`手绘 mark.sketch.boil 元素未渲染: ${JSON.stringify(sketchBoilInfo)}`);
+}
+if (sketchBoilInfo.boilFrameCount !== 3) {
+  fail(`boil 动效应包含 3 帧微动路径，实际 ${sketchBoilInfo.boilFrameCount}`);
+}
+
+await win.screenshot({ path: path.join(outDir, "teach-sketch-mark.png") });
+
 await nested.close();
 await win.close();
 await browser.close();

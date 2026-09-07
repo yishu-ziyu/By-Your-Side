@@ -34,4 +34,21 @@ describe("有待完成教学标注追踪（步骤完成自动感知）", () => {
     noteMarksCleared();
     expect(consumeTeachUrlChange("teach")).toBe(false);
   });
+
+  it("getMarkMotion / setMarkMotion: 支持读取与切换 grow / boil 动效", async () => {
+    const storage: Record<string, any> = {};
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async (key: string) => ({ [key]: storage[key] }),
+          set: async (obj: Record<string, any>) => Object.assign(storage, obj),
+        },
+      },
+    };
+    const { getMarkMotion, setMarkMotion } = await import("../src/background/mode.js");
+    await setMarkMotion("boil");
+    expect(await getMarkMotion()).toBe("boil");
+    await setMarkMotion("grow");
+    expect(await getMarkMotion()).toBe("grow");
+  });
 });
