@@ -622,3 +622,13 @@
   - `npm test`：41 个测试文件、385 个测试全绿；
   - `npm run build`：生产产物构建成功；
   - Playwright 多态真机截图无头核验：浅色收起/展开、深色收起/展开共 4 态，视觉层级分明、标签对比度达到 AAA 级。
+
+## 2026-09-07（下午）issue #4 断线发送保留正文与引用（fix/stability-issue4-send-delivery）
+
+- 标准文件：docs/evals/20260907-send-delivery-reliability.md（C1–C7 校验方原文 + 实现笔记含全部命令/退出码/剩余边界）。
+- 改动：relay.ts 新增 `{kind:"delivery",seq,ok:false,original}` 最小回执；background client 分支畸形守卫 + 上行不可用回执（额外修复 C1 发现的畸形信封 TypeError）；main.ts send()→boolean、sendInput 失败保留正文/引用/存储 + 未发送提示、回执按 seq 标记气泡 + 原文重试（绝不碰输入框）；styles.css 未送达样式。
+- 测试资产：extension/test/panel-delivery-check.mjs（生产 UI + Port 边界注入，8 场景 46 断言）、panel-delivery-e2e.mjs（真实扩展 + CDP 真实杀 SW，11 项）、delivery-receipt.test.ts（真实 background 路由，5 例）。Playwright 一律 headless（用户要求不抢前台）。
+- 结果：旧代码 4+4 失败 → 修复后全绿；npm test 390 全过；overlay/browser/team 验收在新构建复跑 PASS（reload:ext 后再各一轮）。
+- 证据（本地，按惯例不入库）：docs/evidence/20260907-send-delivery/（前后回归 log、e2e 三截图 + result.json 含 SHA）。
+- 剩余边界：瞬死毫秒竞态、native 接受后 agent 崩溃的"已接受未知处理"、idle 态 steer 重试语义、真实 side panel 容器观感待人评——详见标准文件。
+- ChromeMain 已 reload 到本分支构建；PR 开向 fix/takeover-handoff-closure，不自动合并，#1 保持开放。

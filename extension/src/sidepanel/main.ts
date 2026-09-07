@@ -1260,12 +1260,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
-function send(msg: ClientMessage): void {
+/** Panel→background 层投递；true 只代表 Port 接受，不代表伴随进程已收到。 */
+function send(msg: ClientMessage): boolean {
   const envelope: PanelToBg = { kind: "client", msg };
+  if (!port) return false;
   try {
-    port?.postMessage(envelope);
+    port.postMessage(envelope);
+    return true;
   } catch {
-    /* 端口刚好断开，下一轮重连恢复 */
+    return false;
   }
 }
 
@@ -1316,6 +1319,10 @@ function handleBgMessage(envelope: BgToPanel): void {
     applyPendingAsk(envelope.ask);
     return;
   }
+  if (envelope.kind === "delivery") {
+    handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original);
+    return;
+  }
   if (envelope.kind !== "conn") return;
   // 连接状态
   if (envelope.state === "connected") {
@@ -1343,6 +1350,36 @@ function handleBgMessage(envelope: BgToPanel): void {
 }
 
 let lastHistorySeq = 0;
+/** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
+const userBubbles = new Map<number, HTMLElement>();
+
+/** background→agent 上行确定失败的回执：标记未送达并提供原文重试；迟到/重复/未知 seq 忽略。 */
+function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage): void {
+  if (ok) return;
+  if (!Number.isInteger(seq)) return;
+  const bubble = userBubbles.get(seq);
+  if (!bubble || bubble.dataset.failed === "true") return;
+  bubble.dataset.failed = "true";
+  bubble.classList.add("undelivered");
+  const tag = document.createElement("span");
+  tag.className = "delivery-tag";
+  tag.textContent = "未送达";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.dataset.retry = "";
+  retry.textContent = "重试";
+  retry.title = "重新发送这条消息";
+  retry.onclick = () => {
+    if (!send(original)) {
+      noticeSendFailed();
+      return;
+    }
+    bubble.dataset.retried = "true";
+    retry.disabled = true;
+    retry.textContent = "已重试";
+  };
+  bubble.append(tag, retry);
+}
 
 function applyHistory(entries: PanelHistoryEntry[]): void {
   const fresh: PanelHistoryEntry[] = [];
@@ -1351,8 +1388,11 @@ function applyHistory(entries: PanelHistoryEntry[]): void {
     for (const entry of entries) {
       if (entry.seq <= lastHistorySeq) continue;
       fresh.push(entry);
-      if (entry.item.kind === "user") addMsg("msg user", entry.item.text);
-      else handleServerMessage(JSON.stringify(entry.item.msg));
+      if (entry.item.kind === "user") {
+        const bubble = addMsg("msg user", entry.item.text);
+        bubble.dataset.seq = String(entry.seq);
+        userBubbles.set(entry.seq, bubble);
+      } else handleServerMessage(JSON.stringify(entry.item.msg));
       lastHistorySeq = entry.seq;
     }
   } finally {
@@ -1450,12 +1490,19 @@ function clearPendingAsk(): void {
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
 
+/** 断线发送失败提示：同一轮只提示一次，成功发送后复位。 */
+let sendFailNotified = false;
+
+function noticeSendFailed(): void {
+  if (sendFailNotified) return;
+  sendFailNotified = true;
+  addMsg("msg notice", "这条没有发出去：与后台的连接断了。正文和引用都还在，恢复连接后重新发送即可。");
+}
+
 function sendInput(): void {
   if (panelLive(sessionRun.values(), teamView).userHasPage) return;
   const text = inputEl.value.trim();
   if (!text) return;
-  // steer 归入进行中的 run，不动计时起点；新消息重开计时
-  if (!running) runStartAt = Date.now();
   const context = pendingAsk
     ? {
         tabId: pendingAsk.tabId,
@@ -1464,7 +1511,17 @@ function sendInput(): void {
         selection: { text: pendingAsk.text },
       }
     : undefined;
-  send(running ? { type: "steer", text, context } : { type: "user_message", text, context });
+  const msg = running
+    ? ({ type: "steer", text, context } as const)
+    : ({ type: "user_message", text, context } as const);
+  // Panel→background 投递失败 = 确定未送达：正文、选区引用与存储全部原样保留，不伪造已发送
+  if (!send(msg)) {
+    noticeSendFailed();
+    return;
+  }
+  sendFailNotified = false;
+  // steer 归入进行中的 run，不动计时起点；新消息重开计时
+  if (!running) runStartAt = Date.now();
   inputEl.value = "";
   clearPendingAsk();
   autoResize();

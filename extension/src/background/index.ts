@@ -307,9 +307,10 @@ function broadcast(msg: BgToPanel): void {
   }
 }
 
-function recordAndBroadcastHistory(item: Parameters<PanelHistory["record"]>[0]): void {
+function recordAndBroadcastHistory(item: Parameters<PanelHistory["record"]>[0]): ReturnType<PanelHistory["record"]> {
   const entry = panelHistory.record(item);
   broadcast({ kind: "history", entries: [entry] });
+  return entry;
 }
 
 function broadcastVisibleServer(msg: PanelHistoryServerMessage): void {
@@ -897,21 +898,23 @@ chrome.runtime.onConnect.addListener((port) => {
     const msg = raw as PanelToBg;
     if (!msg || typeof msg !== "object" || typeof msg.kind !== "string") return;
     switch (msg.kind) {
-      case "client":
+      case "client": {
+        const client = msg.msg;
+        if (!client || typeof client.type !== "string") break;
         // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent
-        if (msg.msg.type === "set_mode") {
-          const mode = msg.msg.mode;
+        if (client.type === "set_mode") {
+          const mode = client.mode;
           void setMode(mode).then(() => broadcast({ kind: "mode", mode }));
         }
         // user_message / steer 先附页面上下文再上行（异步，失败时原样发送）
-        if (msg.msg.type === "abort") {
+        if (client.type === "abort") {
           handleAbort();
           break;
         }
-        if (msg.msg.type === "user_message" || msg.msg.type === "steer") {
-          if (msg.msg.type === "user_message" && lastStatus === "idle") panelHistory.clear();
-          recordAndBroadcastHistory({ kind: "user", text: msg.msg.text });
-          if (lastStatus === "idle" && isReplayRequest(msg.msg.text)) {
+        if (client.type === "user_message" || client.type === "steer") {
+          if (client.type === "user_message" && lastStatus === "idle") panelHistory.clear();
+          const entry = recordAndBroadcastHistory({ kind: "user", text: client.text });
+          if (lastStatus === "idle" && isReplayRequest(client.text)) {
             void (async () => {
               const result = await playLastTrail();
               const message =
@@ -928,18 +931,25 @@ chrome.runtime.onConnect.addListener((port) => {
             break;
           }
           void stopTrailReplay();
-          if (isAffirmativeReply(msg.msg.text)) armDestructiveClick();
-          else if (isCancelReply(msg.msg.text)) {
+          if (isAffirmativeReply(client.text)) armDestructiveClick();
+          else if (isCancelReply(client.text)) {
             // 侧栏打「取消」与点名牌「取消」同效：清 pending、松开拿住的手、收起标注
             void resolveHeldClick("cancel").catch(() => {
               /* 清理失败不挡住把「取消」送进对话 */
             });
           }
-          void attachPageContext(msg.msg).then((enriched) => uplink.sendClientMessage(enriched));
+          void attachPageContext(client).then((enriched) => {
+            // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，
+            // original 保留原始消息（含选区上下文）供用户明确重试。
+            if (!uplink.sendClientMessage(enriched)) {
+              broadcast({ kind: "delivery", seq: entry.seq, ok: false, original: client } satisfies BgToPanel);
+            }
+          });
           break;
         }
-        uplink.sendClientMessage(msg.msg);
+        uplink.sendClientMessage(client);
         break;
+      }
       case "control":
         if (msg.action === "takeover") void handleTakeover();
         else void handleHandback();
