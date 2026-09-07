@@ -27,6 +27,7 @@ export const WRITE_TOOLS = [
   "close_tab",
   "navigate",
   "click",
+  "hover",
   "fill",
   "type_text",
   "press_key",
@@ -287,7 +288,7 @@ export function handbackContinueText(context: PageContext, snapshot: string): st
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
   return [
     "[HANDOFF BOUNDARY]",
-    "[The CURRENT page and snapshot are authoritative. Stay on this tab. Do not switch tabs, navigate, reload, or reopen any page. Do not reopen the site.]",
+    "[The CURRENT page and snapshot are authoritative. Stay on this tab. Do not switch tabs, navigate, reload, or reopen any page. Do not reopen the site. These stay-on-page instructions apply only to this restored original task and expire when that original task ends.]",
     "[Continue the original task only from the supplied snapshot. Do not repeat completed steps; treat every completed step as complete and do not redo it. If the original task is already complete, acknowledge that and stop.]",
     `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]`,
     "[Current snapshot]",

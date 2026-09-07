@@ -68,4 +68,28 @@ describe("panel history relay contract", () => {
     expect(sync).toEqual({ kind: "sync", afterSeq: 41 });
     expect(history).toEqual({ kind: "history", entries: [{ seq: 42, item }] });
   });
+
+  it("retains attachments on user history items", () => {
+    const history = new PanelHistory();
+    const entry = history.record({
+      kind: "user",
+      text: "请分析这张截图",
+      attachments: [
+        {
+          id: "att-1",
+          type: "image",
+          name: "screenshot.png",
+          dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          mimeType: "image/png",
+        },
+      ],
+    });
+
+    expect(entry.seq).toBe(1);
+    expect(entry.item.kind).toBe("user");
+    if (entry.item.kind === "user") {
+      expect(entry.item.attachments).toHaveLength(1);
+      expect(entry.item.attachments?.[0]?.name).toBe("screenshot.png");
+    }
+  });
 });

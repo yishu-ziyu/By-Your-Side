@@ -5,6 +5,64 @@
 
 ## 当前状态
 
+2026-09-07 侧边栏执行步骤聚合卡片垂直压缩变形 bug 根治修复（标准 `docs/evals/20260907-fix-run-steps-squash.md`）。
+1. **根本原因（Root Cause）**：
+   - `#messages` 为纵向 Flex 容器（`display: flex; flex-direction: column`），当会话消息变长超出视口高度时，浏览器 Flexbox 计算负空间（negative space）；
+   - 普通消息气泡（`.msg`）为 `overflow: visible`，拥有隐式 `min-height: auto`（基于其内容高度，不会被压缩）；
+   - `details.run-steps` 声明了 `overflow: hidden;`，按 CSS Flexbox 规范，带有 `overflow: hidden` 的 flex item 其自动最小高度为 0（`min-height: 0`）；
+   - 导致整个消息流超高时，Chrome 弹性盒算法将所有的负空间压缩完全施加在 `details.run-steps` 上，卡片高度被挤压至 ~20px 乃至 2px，summary 顶部或底部严重裁切。
+2. **根治方案与防线**：
+   - `extension/src/sidepanel/styles.css`：
+     - `#messages > *` 全局声明 `flex-shrink: 0;`：确立整个聊天消息流只能随内容自然伸展并滚动（`overflow-y: auto`），绝不允许被 flexbox 压扁；
+     - `details.run-steps` 声明 `flex-shrink: 0; min-height: min-content;`，`.run-body > *` 声明 `flex-shrink: 0;`；
+     - `details.run-steps summary` 显式增加 `min-height: 38px; line-height: 1.5; box-sizing: border-box;`；
+     - `details.thinking`、`.chip-group`、`.msg` 同样补全 `flex-shrink: 0;` 双重防御。
+3. **测试与真机验证**：
+   - 新增 `extension/test/steps.test.ts` 布局契约测试（全量 42 模块、404 测试 100% 绿）；
+   - 在真实 Chrome 环境注入长对话与超高消息流，实测 `detailsHeight` 稳定保持 40px（未展开）/ 3400+px（展开），截图确认图标、文字垂直居中且零裁切（截图存 `run-steps-overflow-verification.png`）。
+
+2026-09-07 扩展与产品名称对齐 GitHub 仓库名重命名为「By Your Side」（标准 `docs/evals/20260907-rename-by-your-side.md`）。
+1. **统一品牌与可见名称**：
+   - `extension/manifest.json`：`name` 与 `action.default_title` 更新为 `"By Your Side"`。
+   - `extension/sidepanel.html`：页面 title 更新为 `"By Your Side"`。
+   - `extension/src/sidepanel/main.ts`：顶栏品牌文本与设置面板标题更新为 `"By Your Side"`，输入框 placeholder 更新为 `"给 By Your Side 发消息，Enter 发送，Shift+Enter 换行"`。
+   - `extension/src/background/index.ts`：划词上下文菜单更新为 `"问 By Your Side"`。
+   - `shared/cast.ts` & `extension/src/content/cursor.ts`：默认 Lead 名称与光标名牌更新为 `"By Your Side"`。
+   - `agent/src/prompt.ts`：系统提示词身份声明对齐 `"By Your Side"`。
+   - `scripts/install-host.mjs`：伴随进程原生清单描述对齐 `"By Your Side 伴随进程"`。
+2. **构建与真机验收**：
+   - 全量 42 个测试文件、403 项测试通过，`npm run typecheck` 与 `npm run build` 绿。
+   - `npm run reload:ext` 热重载成功；CDP 检查与截图确认 `chrome://extensions` 中扩展名称已直接显示为 **By Your Side 0.1.0**（截图存 `by-your-side-extension-card.png`）。
+
+2026-09-07 Composer 附件瓷贴（方案 A · 复合上下文分层流 Context Ribbon）与多模态图片闭环落地（标准 `docs/evals/20260907-composer-attachments-v1.md`）。
+1. **闭环架构落地**：
+   - **协议层（shared/protocol.ts）**：定义 `ImageAttachment` 契约（`id`, `type: "image"`, `name`, `dataBase64`, `mimeType`）；扩充 `ClientMessage` (`user_message` / `steer`) 增加可选 `attachments?: Attachment[]` 校验；更新 `extension/src/relay.ts` 使 `PanelHistoryItem` 保留用户附件。
+   - **伴随进程（agent/src/session.ts & main.ts）**：编写 `extractImages` 转换器，将消息附件转化为 Pi SDK 原生 `ImageContent[]`（`{ type: "image", data, mimeType }`），无缝传递给 `session.prompt(text, { images })` 与 `session.steer(text, images)`，打通多模态投喂闭环。
+   - **后台服务（extension/src/background/index.ts）**：监听 `sidepanel_capture_tab` 消息，基于 `chrome.tabs.captureVisibleTab` 实现当前激活页安全视口截屏并返回 DataURL；用户消息投递历史中完整持久化 `attachments`。
+   - **侧栏界面（extension/src/sidepanel/）**：
+     - 落地方案 A 布局：顶部常驻 `PagePill` 与 `ask-cite`，下方紧随 `#attachments-strip`；
+     - 1:1 精准复刻 Board UI 动效：56px Squircle 瓷贴、顺时针 SVG Accent Ring 进度描边（周长 194px）、右上角 9px 百分比数字、100% 达成时刻 9px 文字与关闭 ✕ 的原位 Blur Cross-Fade（Zero Layout Shift）；
+     - 交互源完备支持：左下角 `+` 弹出 Action Sheet（📸 截取当前网页视口、📁 上传本地图片）、输入框 `Cmd+V` 粘贴图片、拖拽到 Composer 区域自动加入瓷贴；
+     - 消息流渲染：用户消息气泡展示已发送附件缩略图，点击可直接查看原图。
+2. **测试与质量状态**：
+   - 42 个测试文件、403 项测试全部通过（通过率 100%）；
+   - `npm run typecheck` 与 `npm run build` 全部零错误、零警告通过。
+
+2026-09-07 借鉴 Board UI（Mertcan @sitenley）AI Composer 附件瓷贴动效（Composer Attachments）评估页落地（标准 `docs/evals/20260907-composer-attachments.md`，页面 `docs/evals/20260907-composer-attachments.html`，服务 `http://127.0.0.1:19907/20260907-composer-attachments.html`）。
+1. **1:1 精准复刻推文 4 大灵魂动效**：
+   - 56px Squircle 瓷贴（图片 cover 缩略图、文档类型彩色图标 + 9px 截断文件名）；
+   - 顺时针 SVG Accent Ring 进度描边（沿 56px 圆角矩形边缘自 12 点钟平滑追踪）；
+   - 右上角 9px 百分比实时非线性计数（0% → 100%）；
+   - 100% 达成瞬间：数字原地 blur-out，关闭按钮 ✕ 同一精确坐标原地 blur-in（零位移 Zero Layout Shift）；
+   - 多文件排队交错入场（Staggered queued landing）。
+2. **结合 SideAgent 360px 侧栏环境的三种落地形态并排人选**：
+   - 方案 A（推荐 · 复合上下文分层流 Context Ribbon）：顶部常驻活动页 PagePill 与划词引用，下方紧随 56px 附件流，输入框左下角 `+` 提供快速截取当前页/选择本地文件/粘贴板导入，层级职责最清晰；
+   - 方案 B（全合一 56px 对象流 Unified Tile Stream）：将活动标签页与划词全部压缩为 56px 瓷贴并列，视觉极统但严重削弱侧栏当前页感知；
+   - 方案 C（紧凑折叠抽屉 Compact Accordion）：平时仅一行微晶药丸计数（`📎 3 项附件`），点击或拖入时弹性向下展开。
+3. **验证与状态机**：
+   - 真实支持本地文件选择、拖拽（Drag & Drop）到任意输入框生成 56px 瓷贴、一键模拟截屏、重播动效、清空附件；
+   - Playwright 无头自检通过（0 console errors），深色（Obsidian Slate）与浅色（Sequoia 晨曦微晶白）截图通过，服务运行于 19907 端口待人评。
+
 2026-09-07 稳定化首轮开工（标准 `docs/evals/20260907-stability-foundation.md`，追踪 issue #1，首修 issue #2）。分支 `fix/stability-issue2-model-capability-labels`，base 2cd23a1。
 1. 基线当次实测全绿：typecheck / test 385 / build / overlay-check / accept:browser / accept:team（ChromeMain 152.0.7977.82，扩展 fnbjglh… 在线）。
 2. **模型能力标签纠偏（issue #2 / B1–B6）**：`modelReasoningMeta` 旧实现凭供应商与名称片段猜测能力——openai/openai-codex 一律「支持档位调节」、未匹配模型默认「极速直接响应」。9 月 6 日条目所称「真实档位体系」实为无证据推断，与本轮事实区分开：当前实现一律保守中性（`tag=null` 不渲染任何能力标签），反例矩阵 12 断言旧码全失败、新码全过；生产 bundle 三个捏造文案 0 次出现。能力标签待协议携带真实 runtime/SDK 元数据后再恢复，`tag-native/effort/direct` 样式类保留复用。
@@ -635,3 +693,70 @@
 - 提交 961e86c 已推送；PR #3 描述已修订：三层证据区分、「切换失败由机制+单测证明」改为实际覆盖表述、未验证项按实更新；附审阅回应评论。
 - 机器复跑：typecheck 绿、npm test 394/394。issue #4 修复在 PR #5，两交付独立，main.ts 改动区不相交。
 - ChromeMain 当前：磁盘 dist 为本分支（#3）构建；会话期间 reload 过两次（先 #4 构建跑验收，后重建回 #3 构建），SW 下次重启自然拾取磁盘版本。
+
+## 2026-09-07 BOSS 项目经历任务日志诊断
+
+- 诊断：`docs/evals/20260907-boss-project-task-log-analysis.md`。
+- `~/.sideagent/wrapper-err.log:1736-1780`：45 次工具调用、30 次 JS、4 次 click 中 3 次错误；工具合计 7159ms。两次无效 loc 选择器，一次 ref 失效。
+- 进程窗口北京时间 18:50:59-18:59:16，不能当精确任务耗时。click ok 不证明编辑器打开；当前循环无业务进展停止条件。
+- 未决：无持久化模型轨迹、JS 参数与结果、每轮模型耗时；无法确认每次 JS 具体效果和断连发起者。
+- 仅新增诊断文档并追加本记录，未改产品、未跑测试、未操作用户页面。
+
+## 2026-09-07 Browser recovery: persistent run trace
+
+- Added `agent/src/run-trace.ts`, `agent/test/run-trace.test.ts`; connected SDK events and existing user/control entry points in `agent/src/session.ts`, preserving existing attachment handling.
+- Trace path: `~/.sideagent/traces/<timestamp>-<session UUID>.jsonl`. Session/run/turn/toolCallId identify user goals, SDK tool args/results/errors/timings, first response and turn/run elapsed time, takeover/handback/abort/dispose. Handback and steering keep the original runId.
+- No runtime/stop policy changes. Text is retained up to 64k per field with explicit truncation; images reduced to metadata. Private permissions, bounded queue and session bytes, retention cleanup; trace failures do not reject tool/session work.
+- Credential redaction covers sensitive keys, password-target fill args, common labelled free-text credentials, bearer tokens and URL credentials. It is best-effort, not reliable classification of arbitrary unlabelled secrets. Disconnects are recorded when SDK tool errors expose them; idle connection state is not observed.
+- Focused checks passed: `npm test -- agent/test/run-trace.test.ts agent/test/session-helpers.test.ts` (36 tests); `npm run typecheck -w @sideagent/agent` passed. Full checks and real-browser evidence remain owned by orchestration.
+- Independent review follow-up: input payloads for `fill` and `type_text` are now omitted by default even for ref/point targets, including assistant toolCall arguments. Sanitization shares a 96k-character/1024-node budget across the entire record, slices before regex, and marks object/array truncation; screenshot `imageBase64` is summarized. Updated focused trace suite: 6/6 passed.
+
+## 2026-09-07 浏览器恢复本地验收（独立执行代理）
+
+- 新增 scripts/acceptance/recovery-run.mjs、extension/test/fixtures/recovery.html。真实 MiniMax-M3 + 生产 BrowserAgentSession/ToolRpc + 生产 SW 工具；仅本地 fixture。没有改产品代码。
+- hover/selector/stale/noop 四场景均实际打开编辑器、fill 草稿、submit=0，人工介入均0；耗时42.825/46.614/77.195/58.770秒，模型工具8/9/12/11次。
+- 详情与taskId、工件目录：docs/evals/20260907-browser-recovery-local-results.md。after.png均已查看。错误为校验者真实预置并明确交给真实模型，不是模型自主产生错误；页面自带hover提示，因此不是陌生站点成功率基准。
+- 原BOSS路径与接管/交还UI仍由主编排接手；已释放浏览器。未提交git。
+
+## 2026-09-07 浏览器恢复收尾
+
+- 结果报告：`docs/evals/20260907-browser-recovery-results.md`；开发日志：`docs/devlog/20260907-05-browser-recovery.md`。
+- 已接入真实hover、准确ref/定位反馈、多匹配拒绝、工具结果验证提示、本地有界脱敏轨迹。保留所有既有附件/侧栏等他人修改，未提交git。
+- 最新检查：45文件422测试、typecheck、build通过，扩展已重载。最终相关改动diff检查通过。
+- BOSS原页新会话：MiniMax-M3，69.198s/16工具/0人工，打开新增项目表单，字段为空未填写未提交。run=0ff74a5c-f25d-4aa8-ace4-a253209a0f89；工件 `out/acceptance/boss-recovery-2026-09-07T11-33-21-470Z/`。
+- 原生接管第一轮：同run 07120d50-0586-459f-8530-13df6581e7a2，原目标→接管→模拟人工开编辑器→交还→fill/readback，28.457s，提交0。见原生轨迹及 `out/acceptance/handback-2026-09-07T11-19-38-268Z/native-timeline.json`。
+- 验收采集脚本曾失败，产品结果由持久化轨迹/截图/现场状态复核；严格区分，不声称脚本命令通过。
+- 未决：HANDOFF BOUNDARY污染新任务已实见，未修；AX viewport scope、截图0x0尺寸另需处理。BOSS只验证打开入口，未做完整填写保存。
+
+## 2026-09-07 浏览器组合执行
+
+- 独立标准：`docs/evals/20260907-browser-program.md`。实现与验收由主代理完成，只复用一位校验代理写标准。
+- 新增 `agent/src/browser-program.ts`（QuickJS 0.32.0，browser方法组合、waitFor/sleep、资源边界、不可catch绕过控制）；tools/session/rpc/protocol/background/steps接入子步骤与programId。输入/源码/图片继续脱敏。
+- 扩展执行链未另建；17个操作仍可独立调用，browser_run为本地可选工具。没有开放宿主Node权限或任意CDP。
+- 结果：`docs/evals/20260907-browser-program-results.md`；用法：`docs/browser-program.md`；开发日志：`docs/devlog/20260907-06-browser-program.md`。
+- 三个明确指定组合方式的真实MiniMax-M3任务均完成，但无稳定提速：隐藏入口32.332→54.470秒，延迟入口模型调用10→8但耗时29.800→47.862秒。撤回试验中的默认强引导，保留可选能力。
+- 原生接管实机通过：一次程序，接管确认后10.5秒无新子动作、草稿为空；工件 `out/acceptance/program-control-2026-09-07T12-24-05-351Z/`。
+- 全量439项测试、typecheck/build通过；最后策略回撤与测试日志隔离后定向61项通过。保留他人既有修改，未提交git。`out/acceptance/`已忽略，现场工件不默认提交。
+- 已知未决：M3程序选择/分段不稳定；原HANDOFF跨任务约束、AX viewport、截图0x0问题仍未处理。下一步优先验证定位与分段，不能宣称整体成功率已提高。
+
+## 2026-09-07 源码对照与产品路线判断
+
+- 报告：`docs/research/20260907-browser-intelligence-source-comparison.md`。本轮主代理自行研究，未派子代理、未改产品/正式路线图、未跑新验收。
+- 路线权威为docs/ROADMAP.md：阶段0稳定现有能力先行，后续会话/任务→明确示范纠正→记忆与语音/主动性按前提推进。
+- 当前实际分支fix/stability-issue2-model-capability-labels，HEAD8c3fca3...+未提交工作树，和路线图页首集成分支不同；已区分。
+- 对照固定源码：ego-lite5ca3c36(MIT)、Playwright312030c(Apache-2.0)、Stagehandd4f16a9(MIT)。重点：目标身份/帧与错误分类、输入探针、actionability/命中检查、观察ID转确定性动作、缓存失败回推理。
+- 本地新增静态发现：screenshot CDP成功分支返回0x0，fallback可能拍到不同前台页；domops回退同一调用既dispatch click又HTMLElement.click，有双触发风险；坐标解析后等视觉效果再输入但无同等级稳定/命中检查。未冒称本轮真实事故复现。
+- 已知补充：AX scope被忽略、ref仅数字Set/缺帧身份、HANDOFF约束串任务；点击源码固定650ms+最多480ms飞行仍解释不了前轮约6s，需要分阶段计时。
+- 推荐下一步：观察与单次点击可信的小修复，随后小型模型×接口交叉对照。保留Pi/控制闸门/browser_run，不整体替换驱动，不借机启动全量记忆/语音。产品长期衡量是重复解释/接管减少且误操作不增加。
+
+## 2026-09-07 cmux 三执行者开始可靠性修复
+
+- 用户授权Codex为编排，同窗口OpenCode/Grok/Antigravity为执行者，完成后必须回应Codex。
+- 已现场确认workspace:8：Codex surface:11；OpenCode surface:12（Muse Spark 1.3 Contributor/xhigh）；Grok surface:13（Grok4.6/high）；Antigravity surface:9（Gemini3.8Flash/medium），均在Desktop/ego。
+- 编排先锁定 `docs/evals/20260907-observation-click-integrity.md`。任务合同位于 `docs/work/20260907-*-task.md`，已通过cmux send+enter发出。
+- OpenCode拥有截图/快照/相关协议元数据；Grok拥有单次点击/目标重新确认/交还约束；Antigravity仅拥有前端干扰夹具和独立验收脚本。共享文件边界已明确，不互改、不开更多子代理、不自行build/reload/提交。
+- 各自专属report.md记录进度，完成/阻塞后用cmux向surface:11发送执行回报；Codex负责完整检查、浏览器独占调度与最终验收。
+
+## 2026-09-07 剩余完整性实机验收
+
+Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault-run.mjs（窗口装配与截图间隔）及 scripts/acceptance/handback-new-task-run.mjs（旁路点击/加载标识及错误描述），未改产品代码。A2/B1 首轮 2/6，前置条件修正后 6/6，故障包装已恢复。B3 首轮交还后计数由 1 归零，原因未定；第二轮同 MiniMax-M3 会话 A 保持 1、B 点击 1，19.079s，无会话重启。不能以重跑成功覆盖首轮失败。详见 docs/evals/20260907-integrity-remaining-results.md。浏览器测试标签及 CDP 已由脚本清理释放。

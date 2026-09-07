@@ -236,6 +236,13 @@
 
       if (tag === "iframe") {
         const src = clean(el.getAttribute("src") ?? "about:blank", 120);
+        if (viewportOnly) {
+          // 视口快照不做子文档坐标换算：视口外整行丢弃；视口内仅占位、不递归。
+          // 不声称已覆盖 frame 内容。
+          if (!inViewport(el)) return;
+          lines.push(`${pad(depth)}[iframe src=${src} not-expanded]`);
+          return;
+        }
         lines.push(`${pad(depth)}[iframe src=${src}]`);
         let doc: Document | null = null;
         try {

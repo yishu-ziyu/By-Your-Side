@@ -35,7 +35,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, clearMarks, dropAllPendingClicks, fill, hideCursorsForSessions, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { armDestructiveClick, click, hover, clearMarks, dropAllPendingClicks, fill, hideCursorsForSessions, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
@@ -56,6 +56,7 @@ const handlers: Record<ToolName, Handler> = {
   navigate: (p, sid) => navigate(p, sid),
   snapshot: (p, sid) => snapshot(p, sid),
   click: (p, sid) => click(p, sid),
+  hover: (p, sid) => hover(p, sid),
   fill: (p, sid) => fill(p, sid),
   type_text: (p, sid) => typeText(p, sid),
   press_key: (p, sid) => pressKey(p, sid),
@@ -549,7 +550,7 @@ const uplink = new Uplink({
       }
     }
     if (msg.type === "tool_call") {
-      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId);
+      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId);
       return; // tool_call 不转发面板
     }
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
@@ -568,6 +569,7 @@ async function executeToolCall(
   name: ToolName,
   params: Record<string, unknown>,
   sessionId?: string,
+  programId?: string,
 ): Promise<void> {
   await controlReady;
   let result: Extract<ClientMessage, { type: "tool_result" }>;
@@ -575,6 +577,7 @@ async function executeToolCall(
   try {
     const handler = handlers[name];
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
+    if (programId && gate.isSessionBlocked(sid)) throw new Error("页面现在归你，操作未执行");
     setSessionClaimBlocked(sid, gate.isSessionBlocked(sid));
     const data = await gate.run(id, name, () => handler(params, sid), sid);
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
@@ -811,7 +814,7 @@ function ensureAskMenu(): void {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: ASK_MENU_ID,
-      title: "问 SideAgent",
+      title: "问 By Your Side",
       contexts: ["selection"],
     });
   });
@@ -910,7 +913,11 @@ chrome.runtime.onConnect.addListener((port) => {
         }
         if (msg.msg.type === "user_message" || msg.msg.type === "steer") {
           if (msg.msg.type === "user_message" && lastStatus === "idle") panelHistory.clear();
-          recordAndBroadcastHistory({ kind: "user", text: msg.msg.text });
+          recordAndBroadcastHistory({
+            kind: "user",
+            text: msg.msg.text,
+            attachments: msg.msg.attachments,
+          });
           if (lastStatus === "idle" && isReplayRequest(msg.msg.text)) {
             void (async () => {
               const result = await playLastTrail();
@@ -1045,6 +1052,28 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     }
     sendResponse({ ok: true });
     return;
+  }
+  if (msg.type === "sidepanel_capture_tab") {
+    void (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const tab = tabs[0] ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+        if (!tab?.id || tab.windowId == null) {
+          sendResponse({ ok: false, error: "未找到当前激活的标签页" });
+          return;
+        }
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+        sendResponse({
+          ok: true,
+          dataUrl,
+          title: tab.title ?? "网页截屏",
+          url: tab.url ?? "",
+        });
+      } catch (err) {
+        sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
+    })();
+    return true;
   }
   if (msg.type === "handback_click") {
     void handleHandback().then(() => sendResponse({ ok: true }));

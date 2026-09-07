@@ -1,5 +1,5 @@
 /**
- * 16 个浏览器工具的 defineTool 封装。
+ * 浏览器工具的 defineTool 封装。
  * 每个 execute 只做一件事：rpc.call 转发给扩展，再把结果转成模型友好的 content。
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
  * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
@@ -8,6 +8,7 @@ import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent
 import { Type } from "typebox";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import type { ToolRpc } from "./rpc.js";
+import { runBrowserProgram } from "./browser-program.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
@@ -34,6 +35,23 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
   const call = (name: ToolName, params: Record<string, unknown>) => rpc.call(name, params, undefined, sid);
 
   return [
+    defineTool({
+      name: "browser_run",
+      label: "Browser program",
+      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled native-CSS target; browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS.',
+      parameters: Type.Object({
+        code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
+        label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
+      }),
+      execute: async (id, params, signal, onUpdate) => {
+        const result = await runBrowserProgram({ code: params.code,
+          call: (name, args) => rpc.call(name, args, undefined, sid, id), signal, id,
+          onStep: programStep => onUpdate?.({ content: [], details: { programStep } }),
+        });
+        return { content: [{ type: "text" as const, text: truncate(JSON.stringify({ value: result.value, steps: result.steps }), MAX_JS_RESULT_CHARS) }, ...result.images], details: { value: result.value, steps: result.steps } };
+      },
+    }),
+
     defineTool({
       name: "list_tabs",
       label: "List tabs",
@@ -117,10 +135,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "snapshot",
       label: "Snapshot",
       description:
-        "Get the real accessibility tree of the working tab as indented text (via CDP: covers shadow DOM and virtualized content). Interactive elements are listed as [ref=N]. This is your primary way to observe the page.",
+        "Get a snapshot of the working tab as indented text. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); interactive elements are [ref=N] (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
         "Take a snapshot after every navigation and after actions that change the page.",
-        "@N refs stay valid across snapshots while the node persists; navigation invalidates them.",
+        "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
+        "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],
       parameters: Type.Object({
         scope: Type.Optional(
@@ -132,6 +151,23 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       execute: async (_id, params) => {
         const data = (await call("snapshot", params)) as ToolContract["snapshot"]["data"];
         return textResult(data.text, data);
+      },
+    }),
+
+    defineTool({
+      name: "hover",
+      label: "Hover",
+      description:
+        'Move the real browser mouse over an element to reveal hover-only controls, menus or tooltips. Provide target ("@N" from the latest snapshot, "loc=css:...", or native CSS) or viewport point [x,y]. Then observe which controls appeared before clicking. JavaScript-dispatched mouse events do not activate CSS :hover.',
+      parameters: Type.Object({
+        target: Type.Optional(Type.String({ description: '"@N" from the latest snapshot, "loc=css:...", or native CSS; no :has-text()' })),
+        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+        label: Type.Optional(Type.String({ description: "Short description of the hover target" })),
+      }),
+      execute: async (_id, params) => {
+        const data = await call("hover", params);
+        const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
+        return textResult(`Mouse moved over ${what}. Observe the page to check whether the intended control appeared.`, data);
       },
     }),
 
@@ -158,7 +194,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
             data,
           );
         }
-        return textResult(`Clicked ${what}.`, data);
+        return textResult(`Clicked ${what}. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.`, data);
       },
     }),
 
@@ -229,8 +265,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       }),
       execute: async (_id, params) => {
         const data = (await call("js", params)) as ToolContract["js"]["data"];
-        const rendered =
-          typeof data.value === "string" ? data.value : truncate(JSON.stringify(data.value, null, 2) ?? "undefined", MAX_JS_RESULT_CHARS);
+        const rendered = data.value === undefined
+          ? "JavaScript returned undefined. No observable value was returned; this does not confirm a page change. For extraction, use one IIFE with an explicit return of JSON-serializable findings. For hover-only controls, use hover, then observe the page."
+          : truncate(typeof data.value === "string" ? data.value : JSON.stringify(data.value, null, 2), MAX_JS_RESULT_CHARS);
         return textResult(rendered, data);
       },
     }),
@@ -274,13 +311,20 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "screenshot",
       label: "Screenshot",
       description:
-        "Capture a screenshot of the working tab. Fallback perception for canvas, complex visuals, or when a snapshot is not informative enough; prefer snapshot otherwise (cheaper).",
+        "Capture a screenshot of the working tab. The result states the tab id/URL, the capture source, image pixels and the CSS viewport with DPR: click/point coordinates use CSS pixels (image_px / DPR ≈ css_px when the page fills the viewport). Fallback perception for canvas, complex visuals, or when a snapshot is not informative enough; prefer snapshot otherwise (cheaper).",
       parameters: Type.Object({}),
       execute: async () => {
         const data = (await call("screenshot", {})) as ToolContract["screenshot"]["data"];
+        const geometry =
+          data.cssWidth > 0
+            ? ` Image pixels ${data.pixelWidth}x${data.pixelHeight}; CSS viewport ${data.cssWidth}x${data.cssHeight} @ DPR ${data.devicePixelRatio} — click/point coordinates use CSS pixels.`
+            : ` Image pixels ${data.pixelWidth}x${data.pixelHeight} (CSS viewport unknown; do not convert coordinates from this image).`;
         return {
           content: [
-            { type: "text" as const, text: `Screenshot of the working tab (${data.width}x${data.height}).` },
+            {
+              type: "text" as const,
+              text: `Screenshot of working tab ${data.tabId} (${data.title || "(untitled)"} — ${data.url}) via ${data.source}.${geometry}`,
+            },
             { type: "image" as const, data: data.imageBase64, mimeType: data.mediaType },
           ],
           details: data,

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>浏览器恢复验收 · 本地项目草稿</title>
+<style>
+  body { margin: 64px auto; max-width: 760px; padding: 0 32px; background: #f4f3ef; color: #242824; font: 18px/1.7 Georgia, serif; }
+  article { position: relative; padding: 28px; border: 1px solid #bbbfb6; background: white; border-radius: 12px; }
+  h1 { font-size: 28px; } h2 { margin: 0 0 12px; }
+  button { font: inherit; padding: 8px 16px; cursor: pointer; }
+  #edit-project { visibility: hidden; position: absolute; right: 20px; top: 20px; }
+  #project:hover #edit-project { visibility: visible; }
+  #editor { margin-top: 24px; padding: 24px; background: #e8eee4; }
+  textarea { display: block; box-sizing: border-box; width: 100%; min-height: 150px; font: inherit; }
+  [hidden] { display: none !important; }
+  .muted { color: #667064; font-size: 15px; }
+</style>
+<h1>项目经历</h1>
+<p class="muted">本地验收页面。编辑入口在鼠标悬停项目卡片时显示。仅填写草稿，不提交。</p>
+<article id="project" aria-label="红鲱鱼与枪项目卡片">
+  <h2>红鲱鱼与枪</h2>
+  <p>事实核查助手 · 2026</p>
+  <button id="edit-project" type="button">编辑项目</button>
+</article>
+<p><button id="noop" type="button">查看项目标题</button> <button id="replace-project" type="button">刷新项目卡片</button></p>
+<section id="editor" hidden aria-label="项目编辑器">
+  <h2>编辑项目经历</h2>
+  <label for="project-description">项目描述</label>
+  <textarea id="project-description"></textarea>
+  <p id="draft-status" aria-live="polite">草稿为空</p>
+  <button id="submit-project" type="button">提交项目</button>
+</section>
+<p id="submit-status">提交次数：0</p>
+<script>
+  let submitted = 0;
+  let hoverCount = 0;
+  let editorOpens = 0;
+  function bindProject() {
+    document.querySelector('#project').addEventListener('mouseenter', (event) => {
+      if (event.isTrusted) hoverCount++;
+    });
+    document.querySelector('#edit-project').addEventListener('click', (event) => {
+      if (!event.isTrusted || getComputedStyle(event.currentTarget).visibility !== 'visible') return;
+      document.querySelector('#editor').hidden = false;
+      editorOpens++;
+    });
+  }
+  bindProject();
+  document.querySelector('#replace-project').addEventListener('click', () => {
+    const previous = document.querySelector('#project');
+    previous.replaceWith(previous.cloneNode(true));
+    bindProject();
+  });
+  document.querySelector('#project-description').addEventListener('input', (event) => {
+    document.querySelector('#draft-status').textContent = '草稿内容：' + event.target.value;
+  });
+  document.querySelector('#submit-project').addEventListener('click', () => {
+    document.querySelector('#submit-status').textContent = '提交次数：' + ++submitted;
+  });
+  window.readRecoveryEvidence = () => ({
+    editorVisible: !document.querySelector('#editor').hidden,
+    draft: document.querySelector('#project-description').value,
+    submitted, hoverCount, editorOpens,
+    entryVisible: getComputedStyle(document.querySelector('#edit-project')).visibility === 'visible'
+  });
+</script>
+</html>

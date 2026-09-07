@@ -557,6 +557,10 @@ body {
   scrollbar-width: thin;
 }
 
+#messages > * {
+  flex-shrink: 0;
+}
+
 /* 新元素入场：轻微上浮淡入 */
 .msg,
 .chip-group,
@@ -574,6 +578,7 @@ details.run-steps {
 
 .msg {
   max-width: 94%;
+  flex-shrink: 0;
   word-break: break-word;
 }
 
@@ -727,6 +732,7 @@ details.run-steps {
 /* ── 思考过程 ────────────────────────────────────────────────────── */
 details.thinking {
   align-self: stretch;
+  flex-shrink: 0;
   color: var(--text-2);
   font-size: 12px;
   border-left: 2px solid var(--border);
@@ -759,6 +765,8 @@ details.thinking pre {
 /* ── 执行步骤聚合块 (Apple Solid Surface & Spring Layout) ────── */
 details.run-steps {
   align-self: stretch;
+  flex-shrink: 0;
+  min-height: min-content;
   border: 1px solid var(--content-border);
   border-radius: var(--radius-card);
   background: var(--content-bg);
@@ -775,7 +783,10 @@ details.run-steps summary {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 38px;
+  box-sizing: border-box;
   padding: 9px 12px;
+  line-height: 1.5;
   cursor: pointer;
   user-select: none;
   list-style: none;
@@ -841,6 +852,10 @@ details.run-steps[open] .run-chevron {
   flex-direction: column;
   gap: 12px;
   padding: 8px 12px 12px;
+}
+
+.run-body > * {
+  flex-shrink: 0;
 }
 
 /* 人是一组：组间 12、组内 8。chip 缩进对齐名字，不跟人抢。 */
@@ -1014,6 +1029,7 @@ details.run-steps[open] .run-chevron {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .chip-row {
@@ -1432,6 +1448,257 @@ details.run-steps[open] .run-chevron {
 
 #composer-spacer {
   flex: 1;
+}
+
+#composer.drag-over {
+  border-color: var(--apple-blue);
+  box-shadow: var(--glass-specular), 0 0 0 3px var(--apple-blue-soft), var(--glass-shadow);
+  background: var(--apple-blue-soft);
+}
+
+/* ── Composer 附件瓷贴 (Attachments Strip & 56px Tiles) ─────────────── */
+.attachments-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  position: relative;
+}
+.attachments-strip::-webkit-scrollbar { display: none; }
+.attachments-strip[hidden] { display: none !important; }
+
+.tile-56 {
+  width: 56px;
+  height: 56px;
+  border-radius: 13px;
+  background: var(--content-bg);
+  border: 1px solid var(--glass-border);
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s,
+              box-shadow 0.2s,
+              margin 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              width 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tile-56:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-2px);
+}
+.tile-56.removing {
+  transform: scale(0.5) translateY(10px);
+  opacity: 0;
+  width: 0;
+  margin-left: -8px;
+  pointer-events: none;
+}
+
+.tile-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 56px;
+  height: 56px;
+  pointer-events: none;
+  z-index: 10;
+  transform: rotate(-90deg);
+}
+.tile-ring-path {
+  fill: none;
+  stroke: var(--apple-blue);
+  stroke-width: 2.2px;
+  stroke-dasharray: 194;
+  stroke-dashoffset: 194;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.12s linear, opacity 0.3s ease, stroke 0.3s ease;
+}
+.tile-56.complete .tile-ring-path {
+  stroke-dashoffset: 0;
+  opacity: 0;
+}
+
+.tile-progress-text {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  z-index: 15;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.6);
+  line-height: 1;
+  pointer-events: none;
+  transition: filter 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tile-56.complete .tile-progress-text {
+  filter: blur(6px);
+  opacity: 0;
+  transform: scale(0.7);
+  pointer-events: none;
+}
+
+.tile-dismiss-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 16;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8.5px;
+  font-weight: bold;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  filter: blur(6px);
+  opacity: 0;
+  transform: scale(0.7);
+  pointer-events: none;
+  transition: filter 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.15s ease;
+}
+.tile-56.complete .tile-dismiss-btn {
+  filter: blur(0);
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+.tile-dismiss-btn:hover {
+  background: var(--apple-red);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
+}
+
+.tile-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+@keyframes tileLand {
+  0% { opacity: 0; transform: scale(0.7) translateY(10px); }
+  70% { transform: scale(1.05) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.tile-landing {
+  animation: tileLand 0.38s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+#attach-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--content-bg);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+#attach-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--apple-blue);
+  transform: scale(1.06);
+}
+#attach-btn.active {
+  color: var(--apple-blue);
+  border-color: var(--apple-blue);
+  background: var(--apple-blue-soft);
+}
+
+.action-menu-popover {
+  position: absolute;
+  bottom: 46px;
+  left: 12px;
+  width: 190px;
+  background: var(--glass-surface-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 5px;
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-specular), var(--glass-shadow);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.action-menu-popover[hidden] {
+  display: none !important;
+}
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+.action-menu-item:hover {
+  background: var(--glass-border);
+}
+.action-menu-item-icon {
+  font-size: 13px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.user-msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.user-msg-img-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.user-msg-img-thumb:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 #team-card {

@@ -5,7 +5,7 @@
  */
 
 export const LEAD_COLOR = "#2f6fed";
-export const LEAD_NAME = "SideAgent";
+export const LEAD_NAME = "By Your Side";
 
 export type CastShape = "blob" | "pebble" | "squircle" | "capsule" | "hex" | "triangle";
 

@@ -15,6 +15,15 @@ export function isAxRef(tabId: number, ref: number): boolean {
   return byTab.get(tabId)?.has(ref) ?? false;
 }
 
+/**
+ * DOM 回退/视口快照后调用：旧 AX ref 不再适用，必须作废。
+ * DOM 快照的 ref 是自增小编号，与 backendDOMNodeId 同处一个数字空间；
+ * 不清表会导致 click/fill 经 isAxRef 误判、把 DOM ref 当旧 AX ref 走 CDP。
+ */
+export function clearAxSnapshot(tabId: number): void {
+  byTab.delete(tabId);
+}
+
 // 导航后 backendDOMNodeId 全部失效，整表作废
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === "loading") byTab.delete(tabId);

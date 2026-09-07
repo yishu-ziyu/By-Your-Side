@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.4",
+    "quickjs-emscripten": "0.32.0",
     "typebox": "1.3.25",
     "undici": "8.10.1",
     "ws": "8.21.3"

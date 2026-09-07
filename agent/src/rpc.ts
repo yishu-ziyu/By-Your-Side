@@ -17,6 +17,7 @@ export interface ToolCallFrame {
   name: ToolName;
   params: Record<string, unknown>;
   sessionId?: string;
+  programId?: string;
 }
 export type RpcSend = (frame: ToolCallFrame) => void;
 
@@ -46,7 +47,7 @@ export class ToolRpc {
   }
 
   /** 发起一次工具调用；超时或断连时 reject。工人调用传入 sessionId，扩展按 session 绑 tab/光标。 */
-  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string): Promise<unknown> {
+  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string): Promise<unknown> {
     const send = this.sendFn;
     if (!send) {
       return Promise.reject(new Error("Extension is not connected"));
@@ -61,6 +62,7 @@ export class ToolRpc {
       this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId });
       try {
         const frame: ToolCallFrame = { type: "tool_call", id, name, params };
+        if (programId) frame.programId = programId;
         if (sessionId && !isLeadSession(sessionId) && sessionId !== LEAD_SESSION_ID) {
           frame.sessionId = sessionId;
         }

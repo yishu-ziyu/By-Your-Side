@@ -163,7 +163,7 @@ export function axTreeToText(nodes: AxNodeLite[]): AxTextResult {
   for (const root of roots) walk(root, 0);
 
   if (truncated) {
-    lines.push(`... [truncated，输出超过 ${MAX_OUTPUT_CHARS} 字符，请用 js 工具精确提取或先滚动到目标区域再 snapshot]`);
+    lines.push(`... [truncated，输出超过 ${MAX_OUTPUT_CHARS} 字符；有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)（视口快照真做范围过滤），或用 js 工具精确提取]`);
   }
   return { text: lines.join("\n"), backendIds, truncated };
 }

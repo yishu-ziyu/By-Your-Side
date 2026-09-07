@@ -158,7 +158,7 @@ export const HOOK_EXPRESSION = `(() => {
     return orig(msg);
   };
   globalThis.__saClientWrap = true;
-  globalThis.__saCall = function (id, name, params, sessionId) {
+  globalThis.__saCall = function (id, name, params, sessionId, programId) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(function () {
         waiters.delete(id);
@@ -173,7 +173,8 @@ export const HOOK_EXPRESSION = `(() => {
         id: id,
         name: name,
         params: params || {},
-        sessionId: sessionId
+        sessionId: sessionId,
+        ...(programId ? { programId: programId } : {})
       });
     });
   };

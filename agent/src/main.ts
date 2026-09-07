@@ -249,7 +249,7 @@ async function main(): Promise<void> {
     switch (msg.type) {
       case "user_message":
         if (session.isHeld()) {
-          session.sendUserMessage(msg.text, msg.context);
+          session.sendUserMessage(msg.text, msg.context, msg.attachments);
           break;
         }
         if (!session.isStreaming()) fleet.reset();
@@ -257,10 +257,11 @@ async function main(): Promise<void> {
         session.sendUserMessage(
           `${msg.text}\n\n[Coordinator: if this request has independent work on two live pages, call spawn_worker for each NOW — before snapshot/navigate/click yourself.]`,
           msg.context,
+          msg.attachments,
         );
         break;
       case "steer":
-        session.steer(msg.text, msg.context);
+        session.steer(msg.text, msg.context, msg.attachments);
         break;
       case "abort":
         session.abort();

@@ -85,7 +85,7 @@ for (const dir of runningChromeUserDataDirs()) userDataDirs.add(dir);
 const hostManifest = JSON.stringify(
   {
     name: HOST_NAME,
-    description: "SideAgent 伴随进程",
+    description: "By Your Side 伴随进程",
     path: wrapperPath,
     type: "stdio",
     allowed_origins: [`chrome-extension://${extensionId}/`],

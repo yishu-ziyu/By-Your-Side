@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>观测与点击完整性校验 · 干扰活动页 BETA</title>
+  <style>
+    :root {
+      --bg-other: #450a0a;
+      --card-other: #7f1d1d;
+      --border-other: #dc2626;
+      --text-other: #fef2f2;
+      --accent-yellow: #fde047;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-other);
+      color: var(--text-other);
+      border-top: 10px solid #ef4444;
+      min-height: 100vh;
+    }
+    header {
+      max-width: 900px;
+      margin: 0 auto 24px;
+      padding: 24px;
+      background: var(--card-other);
+      border: 2px solid var(--border-other);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+    .badge-beta {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: #dc2626;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+    h1 { margin: 8px 0 12px; font-size: 26px; color: #fecaca; }
+    .subtitle { color: #fca5a5; font-size: 15px; margin: 0 0 16px; }
+    .calibration-box {
+      width: 500px;
+      height: 100px;
+      background: #991b1b;
+      border: 3px dashed var(--accent-yellow);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #fef08a;
+    }
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .card {
+      background: var(--card-other);
+      border: 1px solid var(--border-other);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .marker-other {
+      padding: 14px 18px;
+      background: rgba(254, 240, 138, 0.15);
+      border: 2px solid var(--accent-yellow);
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--accent-yellow);
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 8px;
+      border: none;
+      background: #b91c1c;
+      color: #ffffff;
+      cursor: pointer;
+    }
+    button:hover { background: #991b1b; }
+  </style>
+</head>
+<body data-page-role="OTHER_PAGE_BETA">
+  <header>
+    <div class="badge-beta" id="page-role-badge">PAGE_ROLE: OTHER_PAGE_BETA</div>
+    <h1 id="page-title">观测与点击完整性校验 · 干扰活动页 BETA</h1>
+    <p class="subtitle">
+      此页面为非工作标签页（干扰页）。如果 Agent 正在工作标签页 A 上工作，但在截屏或操作时错误落入此标签页，验收应判定失败。
+    </p>
+    <div class="calibration-box" id="calibration-box" aria-label="BETA视口校准盒">
+      <div>[BETA CALIBRATION] CSS W: 500px | H: 100px</div>
+      <div id="metrics-summary">DPR: calculating...</div>
+      <div id="viewport-summary">Viewport: calculating...</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="marker-other" id="marker-other-page" aria-label="干扰页唯一标记">
+        MARKER_OTHER_PAGE_BETA_9931
+      </div>
+      <p style="margin-top: 16px;">
+        <button type="button" id="btn-other-action">
+          干扰页操作按钮 (点击次数: <span id="other-clicks">0</span>)
+        </button>
+      </p>
+    </section>
+  </main>
+
+  <script>
+    let otherClicks = 0;
+    const btn = document.getElementById('btn-other-action');
+    const clicksSpan = document.getElementById('other-clicks');
+
+    btn.addEventListener('click', () => {
+      otherClicks++;
+      clicksSpan.textContent = String(otherClicks);
+    });
+
+    function updateMetrics() {
+      const dpr = window.devicePixelRatio;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      document.getElementById('metrics-summary').textContent = `DPR: ${dpr}`;
+      document.getElementById('viewport-summary').textContent = `CSS Viewport: ${w}x${h} | Physical: ${Math.round(w * dpr)}x${Math.round(h * dpr)}`;
+    }
+    window.addEventListener('resize', updateMetrics);
+    updateMetrics();
+
+    window.readViewportMetrics = () => {
+      const box = document.getElementById('calibration-box').getBoundingClientRect();
+      return {
+        pageRole: 'OTHER_PAGE_BETA',
+        title: document.title,
+        url: window.location.href,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        dpr: window.devicePixelRatio,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        scrollHeight: document.documentElement.scrollHeight,
+        calibrationBox: {
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height
+        }
+      };
+    };
+
+    window.readClickEvidence = () => ({
+      pageRole: 'OTHER_PAGE_BETA',
+      otherClicks
+    });
+  </script>
+</body>
+</html>

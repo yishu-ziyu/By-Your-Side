@@ -3,7 +3,7 @@
  * 与 shared/protocol.ts（扩展 ⇆ 伴随进程）不同，本文件只是 panel 与 background 之间的
  * 转发约定，走 chrome.runtime Port。
  */
-import type { AgentMode, ClientMessage, ServerMessage } from "../../shared/protocol.js";
+import type { AgentMode, Attachment, ClientMessage, ServerMessage } from "../../shared/protocol.js";
 import type { PendingAsk } from "./shared/ask-selection.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
@@ -19,7 +19,7 @@ export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" 
 
 /** 关闭侧栏后仍需要恢复的可见内容。 */
 export type PanelHistoryItem =
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; attachments?: Attachment[] }
   | { kind: "server"; msg: PanelHistoryServerMessage };
 
 /** background 分配的单调序号是增量同步游标。 */

@@ -51,15 +51,16 @@ import {
   providerLabel,
   providerMark,
 } from "./models.js";
+import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, ClientMessage, ModelOption, TeamView } from "../../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ModelOption, TeamView } from "../../../shared/protocol.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 
 const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
-const PLACEHOLDER_IDLE = "给 SideAgent 发消息，Enter 发送，Shift+Enter 换行";
+const PLACEHOLDER_IDLE = "给 By Your Side 发消息，Enter 发送，Shift+Enter 换行";
 const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
 const PLACEHOLDER_USER = "现在归你。点页面上的「交还」让 Agent 继续";
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
@@ -84,7 +85,7 @@ app.innerHTML = `
   <header id="topbar">
     <div class="brand-cluster">
       <img id="logo" src="icons/icon-48.png" alt="" />
-      <span id="brand">SideAgent</span>
+      <span id="brand">By Your Side</span>
     </div>
     <button id="teach-toggle" type="button" title="教学模式：Agent 只标注引导，由你手动操作" aria-pressed="false"></button>
     <div id="status-pill" class="activity-island" title="当前连接与执行状态">
@@ -106,6 +107,17 @@ app.innerHTML = `
         <div id="morph-sheet-status">状态：活跃连接已就绪</div>
       </div>
     </div>
+    <div id="attach-menu" class="action-menu-popover" hidden>
+      <div class="action-menu-item" id="menu-action-screenshot">
+        <span class="action-menu-item-icon">📸</span>
+        <span class="action-menu-item-label">截取当前网页视口</span>
+      </div>
+      <div class="action-menu-item" id="menu-action-upload">
+        <span class="action-menu-item-icon">📁</span>
+        <span class="action-menu-item-label">上传本地图片</span>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept="image/*" multiple hidden />
     <div id="composer" class="composer-glass-dock">
       <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
         <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -117,8 +129,10 @@ app.innerHTML = `
         <span id="ask-cite-text"></span>
         <button type="button" id="ask-cite-close" title="去掉这段引用">×</button>
       </div>
+      <div id="attachments-strip" class="attachments-strip" hidden></div>
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
+        <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
         <button id="model-btn" type="button" title="切换模型" hidden aria-haspopup="listbox" aria-expanded="false">
           <span id="model-mark" class="model-mark" hidden></span>
           <span id="model-name"></span>
@@ -136,7 +150,7 @@ app.innerHTML = `
   </div>
   <div id="model-popover" hidden></div>
   <div id="setup" hidden>
-    <h2>SideAgent 设置</h2>
+    <h2>By Your Side 设置</h2>
     <p class="hint">native host 未安装时的调试通道：先跑 <code>npm run dev:agent</code>，把终端里的 token 粘贴到下面（只需设置一次）。正常用法：<code>npm run install:host</code> 后无需本页。</p>
     <input id="token-input" type="text" placeholder="token" autocomplete="off" />
     <div id="setup-err" class="err"></div>
@@ -162,6 +176,13 @@ const setupEl = document.getElementById("setup")!;
 const tokenInput = document.getElementById("token-input") as HTMLInputElement;
 const setupErr = document.getElementById("setup-err")!;
 const setupSave = document.getElementById("setup-save") as HTMLButtonElement;
+
+// 附件瓷贴与动作菜单 DOM
+const attachmentsStrip = document.getElementById("attachments-strip") as HTMLElement;
+const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
+const attachMenu = document.getElementById("attach-menu") as HTMLElement;
+const fileInput = document.getElementById("file-input") as HTMLInputElement;
+let attachments!: AttachmentsManager;
 
 // 页面感知胶囊与检查器 DOM
 const pagePill = document.getElementById("page-pill") as HTMLElement | null;
@@ -655,14 +676,52 @@ toBottomBtn.onclick = () => {
   toBottomBtn.hidden = true;
 };
 
+function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
+  const div = document.createElement("div");
+  div.className = "msg user";
+  if (atts && atts.length > 0) {
+    const thumbs = document.createElement("div");
+    thumbs.className = "user-msg-attachments";
+    for (const att of atts) {
+      if (att.type === "image") {
+        const img = document.createElement("img");
+        img.className = "user-msg-img-thumb";
+        img.src = `data:${att.mimeType};base64,${att.dataBase64}`;
+        img.alt = att.name || "图片附件";
+        img.title = att.name || "点击查看原图";
+        img.onclick = (e) => {
+          e.stopPropagation();
+          window.open(img.src, "_blank");
+        };
+        thumbs.appendChild(img);
+      }
+    }
+    div.appendChild(thumbs);
+  }
+  if (text) {
+    const textEl = document.createElement("div");
+    textEl.className = "user-msg-text";
+    textEl.textContent = text;
+    div.appendChild(textEl);
+  } else if (!atts || atts.length === 0) {
+    div.textContent = "";
+  }
+  messagesEl.appendChild(div);
+  if (!applyingHistory) {
+    companion.onSend(div);
+  }
+  scrollToEnd();
+  return div;
+}
+
 function addMsg(cls: string, text: string): HTMLElement {
+  if (cls.split(/\s+/).includes("user")) {
+    return addUserMsg(text);
+  }
   const div = document.createElement("div");
   div.className = cls;
   div.textContent = text;
   messagesEl.appendChild(div);
-  if (!applyingHistory && cls.split(/\s+/).includes("user")) {
-    companion.onSend(div);
-  }
   scrollToEnd();
   return div;
 }
@@ -1359,7 +1418,7 @@ function applyHistory(entries: PanelHistoryEntry[]): void {
     for (const entry of entries) {
       if (entry.seq <= lastHistorySeq) continue;
       fresh.push(entry);
-      if (entry.item.kind === "user") addMsg("msg user", entry.item.text);
+      if (entry.item.kind === "user") addUserMsg(entry.item.text, entry.item.attachments);
       else handleServerMessage(JSON.stringify(entry.item.msg));
       lastHistorySeq = entry.seq;
     }
@@ -1432,6 +1491,21 @@ function autoResize(): void {
   if (!modelPopover.hidden) positionModelPopover();
 }
 
+attachments = new AttachmentsManager({
+  composerEl,
+  stripEl: attachmentsStrip,
+  inputEl,
+  attachBtn,
+  menuEl: attachMenu,
+  fileInputEl: fileInput,
+  onChanged: () => {
+    autoResize();
+  },
+  onError: (errMsg) => {
+    addMsg("msg error", errMsg);
+  },
+});
+
 function hostOf(url: string): string {
   try {
     return new URL(url).host || url;
@@ -1461,7 +1535,8 @@ askCiteClose?.addEventListener("click", () => clearPendingAsk());
 function sendInput(): void {
   if (panelLive(sessionRun.values(), teamView).userHasPage) return;
   const text = inputEl.value.trim();
-  if (!text) return;
+  const pendingAtts = attachments.getAttachments();
+  if (!text && pendingAtts.length === 0) return;
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
   if (!running) runStartAt = Date.now();
   const context = pendingAsk
@@ -1472,9 +1547,15 @@ function sendInput(): void {
         selection: { text: pendingAsk.text },
       }
     : undefined;
-  send(running ? { type: "steer", text, context } : { type: "user_message", text, context });
+  const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
+  send(
+    running
+      ? { type: "steer", text, context, attachments: clientAttachments }
+      : { type: "user_message", text, context, attachments: clientAttachments },
+  );
   inputEl.value = "";
   clearPendingAsk();
+  attachments.clear();
   autoResize();
 }
 

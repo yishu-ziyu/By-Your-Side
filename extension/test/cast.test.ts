@@ -8,7 +8,7 @@ import { describeTool } from "../src/sidepanel/steps.js";
 describe("名册", () => {
   it("Lead 不是名册上的人", () => {
     expect(personFor("main")).toBeNull();
-    expect(displayNameFor("main")).toBe("SideAgent");
+    expect(displayNameFor("main")).toBe("By Your Side");
     expect(displayColor("main")).toBe("#2f6fed");
     expect(cursorColor("main")).toBe("#2f6fed");
   });

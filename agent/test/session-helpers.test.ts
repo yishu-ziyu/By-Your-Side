@@ -3,12 +3,21 @@ import {
   AcceptanceContinuity,
   BrowserAgentSession,
   HANDBACK_RESTORE_TIMEOUT_MS,
+  extractImages,
   lastAssistantError,
   runProducedNothing,
   shouldSurfaceAgentEndIssue,
   withPageContext,
 } from "../src/session.js";
 import { handbackContinueText } from "../../shared/control.js";
+
+// These tests use synthetic sessions; keep their events out of the user's retained traces.
+// Actual persistence/redaction is covered by run-trace.test.ts.
+vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
+  begin() {}
+  record() {}
+  event() {}
+} }));
 
 async function flushMicrotasks(rounds = 10) {
   for (let i = 0; i < rounds; i++) await Promise.resolve();
@@ -447,5 +456,40 @@ describe("runProducedNothing", () => {
 
   it("非数组输入不算空（不误报）", () => {
     expect(runProducedNothing(undefined)).toBe(false);
+  });
+});
+
+describe("extractImages & attachments integration", () => {
+  it("extracts images from attachment array", () => {
+    expect(extractImages(undefined)).toEqual([]);
+    expect(extractImages([])).toEqual([]);
+    expect(
+      extractImages([
+        {
+          id: "1",
+          type: "image",
+          name: "a.png",
+          dataBase64: "AAAA",
+          mimeType: "image/png",
+        },
+      ]),
+    ).toEqual([{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+  });
+
+  it("passes images to prompt when sending user message", () => {
+    const { wrapped, raw, setStreaming } = controlledBrowserSession(false);
+    setStreaming(false);
+    wrapped.sendUserMessage("see this", undefined, [
+      {
+        id: "1",
+        type: "image",
+        name: "a.png",
+        dataBase64: "AAAA",
+        mimeType: "image/png",
+      },
+    ]);
+    expect(raw.prompt).toHaveBeenCalledWith("see this", {
+      images: [{ type: "image", data: "AAAA", mimeType: "image/png" }],
+    });
   });
 });

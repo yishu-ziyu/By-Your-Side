@@ -15,6 +15,14 @@ interface SideAgentDomOps {
   resolve(target: string): Element | null;
   /** 解析并滚动到可见，返回视口坐标系下的包围盒；失败抛一行信息的 Error */
   rectOf(target: string): SideAgentRect;
+  /** 点击前确认目标仍连接、可见、未被其他元素挡住；返回当前包围盒 */
+  confirmForClick(target: string): SideAgentRect;
+  /** 在指定视口坐标确认仍命中同一目标；不滚动 */
+  hitTestAt(target: string, x: number, y: number): { hit: true };
+  /** 纯坐标：记录点下当前对象，供按下前核对是否被替换 */
+  rememberPoint(x: number, y: number): { remembered: true; tag: string };
+  /** 纯坐标：按下前确认仍是记住的同一节点（canvas 只认元素身份，不认画布内部） */
+  confirmPoint(x: number, y: number): { same: true };
   click(target: string): { clicked: true };
   fill(target: string, value: string): { filled: true };
   scrollBy(dy: number | null): { atBottom: boolean };

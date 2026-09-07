@@ -61,7 +61,7 @@ import {
 
   const SCALE = CURSOR_SVG_SIZE / 24;
   const DEFAULT_ID = LEAD_CURSOR_ID;
-  const DEFAULT_LABEL = "SideAgent";
+  const DEFAULT_LABEL = "By Your Side";
 
   interface Instance {
     el: HTMLDivElement;

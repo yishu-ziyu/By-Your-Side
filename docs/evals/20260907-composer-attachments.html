@@ -1,0 +1,1484 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>SideAgent · AI Composer 附件瓷贴微动效与落地评估 (Board UI 对照)</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+
+    /* ── 暗色模式 (Dark Mode · Obsidian Slate 体系，杜绝死硬纯黑) ── */
+    --bg-mesh: radial-gradient(at 15% 15%, rgba(35, 55, 95, 0.55) 0px, transparent 55%),
+               radial-gradient(at 85% 20%, rgba(70, 35, 90, 0.5) 0px, transparent 55%),
+               radial-gradient(at 50% 85%, rgba(20, 75, 70, 0.45) 0px, transparent 55%),
+               #080a0f;
+
+    --panel-bg: rgba(24, 26, 32, 0.76);
+    --panel-border: rgba(255, 255, 255, 0.12);
+    --panel-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.22);
+    --panel-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
+
+    --composer-bg: rgba(28, 31, 38, 0.92);
+    --composer-border: rgba(255, 255, 255, 0.13);
+    --composer-focus-border: rgba(41, 151, 255, 0.55);
+
+    --btn-surface: rgba(255, 255, 255, 0.07);
+    --btn-surface-hover: rgba(255, 255, 255, 0.13);
+    --btn-surface-active: rgba(255, 255, 255, 0.18);
+    --btn-border: rgba(255, 255, 255, 0.11);
+
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+
+    --accent-blue: #2997ff;
+    --accent-blue-soft: rgba(41, 151, 255, 0.16);
+    --accent-emerald: #30d158;
+    --accent-amber: #ff9f0a;
+    --accent-purple: #af52de;
+    --accent-rose: #ff453a;
+
+    --tile-bg: rgba(255, 255, 255, 0.06);
+    --tile-border: rgba(255, 255, 255, 0.12);
+    --tile-hover-border: rgba(255, 255, 255, 0.24);
+    --tile-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+
+    --spring-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+    --spring-bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
+    --radius-dock: 22px;
+    --radius-pill: 9999px;
+    --radius-tile: 13px;
+  }
+
+  body.light {
+    /* ── 亮色模式 (Light Mode · Sequoia 晨曦微晶白体系) ── */
+    --bg-mesh: radial-gradient(at 15% 15%, rgba(255, 182, 140, 0.35) 0px, transparent 55%),
+               radial-gradient(at 85% 20%, rgba(135, 195, 255, 0.35) 0px, transparent 55%),
+               radial-gradient(at 50% 85%, rgba(180, 160, 240, 0.3) 0px, transparent 55%),
+               #f2f4f8;
+
+    --panel-bg: rgba(255, 255, 255, 0.78);
+    --panel-border: rgba(0, 0, 0, 0.08);
+    --panel-specular: inset 0 1px 0.5px rgba(255, 255, 255, 0.95);
+    --panel-shadow: 0 12px 36px -4px rgba(31, 38, 135, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+
+    --composer-bg: rgba(255, 255, 255, 0.94);
+    --composer-border: rgba(0, 0, 0, 0.09);
+    --composer-focus-border: rgba(0, 113, 227, 0.45);
+
+    --btn-surface: rgba(0, 0, 0, 0.04);
+    --btn-surface-hover: rgba(0, 0, 0, 0.08);
+    --btn-surface-active: rgba(0, 0, 0, 0.12);
+    --btn-border: rgba(0, 0, 0, 0.08);
+
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-tertiary: #9ca3af;
+
+    --accent-blue: #0071e3;
+    --accent-blue-soft: rgba(0, 113, 227, 0.08);
+    --accent-emerald: #34c759;
+    --accent-amber: #ff9500;
+    --accent-purple: #8944ab;
+    --accent-rose: #ff3b30;
+
+    --tile-bg: rgba(0, 0, 0, 0.035);
+    --tile-border: rgba(0, 0, 0, 0.09);
+    --tile-hover-border: rgba(0, 0, 0, 0.18);
+    --tile-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg-mesh);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 32px 24px 80px;
+    background-attachment: fixed;
+    transition: background 0.3s ease, color 0.3s ease;
+  }
+
+  /* 顶栏控制 */
+  header.masthead {
+    max-width: 1360px;
+    margin: 0 auto 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 22px;
+    border-radius: var(--radius-pill);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(20px);
+    box-shadow: var(--panel-specular), var(--panel-shadow);
+  }
+
+  .masthead-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .masthead-title h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .tag-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(41, 151, 255, 0.15);
+    color: var(--accent-blue);
+    font-weight: 500;
+  }
+  .masthead-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .masthead-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: var(--radius-pill);
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s var(--spring-fluid);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .masthead-btn:hover {
+    background: var(--btn-surface-hover);
+    transform: translateY(-1px);
+  }
+  .masthead-btn:active {
+    transform: translateY(0);
+  }
+
+  /* 主容器 */
+  .container {
+    max-width: 1360px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  /* 核心规范速览卡片 */
+  .spec-banner {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 22px 26px;
+    backdrop-filter: blur(20px);
+    box-shadow: var(--panel-specular), 0 8px 24px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .spec-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .spec-head h2 {
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .spec-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(48, 209, 88, 0.15);
+    color: var(--accent-emerald);
+    font-weight: 600;
+  }
+  .spec-quote {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    background: var(--btn-surface);
+    border-left: 3px solid var(--accent-blue);
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+  }
+  .spec-points {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .spec-point-item {
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .point-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .point-text strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  /* 交互控制台 */
+  .control-ribbon {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 14px 20px;
+    border-radius: 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(20px);
+  }
+  .ribbon-label {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ribbon-buttons {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .action-btn {
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s var(--spring-fluid);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .action-btn:hover {
+    background: var(--btn-surface-hover);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  .action-btn.primary {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+    box-shadow: 0 2px 10px rgba(41, 151, 255, 0.35);
+  }
+  .action-btn.primary:hover {
+    background: #1a88ff;
+  }
+
+  /* 并排方案网格 */
+  .comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: -16px;
+  }
+  .comparison-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .comparison-header p {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+
+  .columns-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  @media (max-width: 1180px) {
+    .columns-grid { grid-template-columns: 1fr; }
+  }
+
+  .column-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    padding: 24px 20px;
+    backdrop-filter: blur(24px);
+    box-shadow: var(--panel-specular), var(--panel-shadow);
+    display: flex;
+    flex-direction: column;
+    min-height: 640px;
+    position: relative;
+    overflow: visible;
+  }
+  .column-badge-rec {
+    position: absolute;
+    top: -10px;
+    right: 24px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  }
+  .column-meta {
+    margin-bottom: 18px;
+  }
+  .column-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .column-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* 模拟 360px 侧栏宿主 */
+  .sidepanel-mock-stage {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.22);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+    min-height: 520px;
+    transition: background 0.3s ease;
+  }
+  body.light .sidepanel-mock-stage {
+    background: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.06);
+  }
+
+  /* 模拟消息流占位 */
+  .mock-chat-stream {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-bottom: 14px;
+    pointer-events: none;
+    user-select: none;
+  }
+  .mock-bubble-ai {
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    border-radius: 12px 12px 12px 4px;
+    padding: 10px 12px;
+    max-width: 85%;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     CORE TILE DESIGN SYSTEM (56px 瓷贴与核心动效规范)
+     ══════════════════════════════════════════════════════════ */
+  .attachments-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 6px 2px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    position: relative;
+  }
+  .attachments-strip::-webkit-scrollbar { display: none; }
+
+  /* 56px 瓷贴卡片 */
+  .tile-56 {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-tile);
+    background: var(--tile-bg);
+    border: 1px solid var(--tile-border);
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+    box-shadow: var(--tile-shadow);
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.25s var(--spring-fluid), border-color 0.2s, box-shadow 0.2s, margin 0.25s var(--spring-fluid), width 0.25s var(--spring-fluid), opacity 0.25s var(--spring-fluid);
+  }
+  .tile-56:hover {
+    border-color: var(--tile-hover-border);
+    transform: translateY(-2px);
+  }
+  .tile-56.removing {
+    transform: scale(0.5) translateY(10px);
+    opacity: 0;
+    width: 0;
+    margin-left: -8px;
+    pointer-events: none;
+  }
+
+  /* 顺时针 Accent Ring 描边 SVG */
+  .tile-ring-svg {
+    position: absolute;
+    inset: 0;
+    width: 56px;
+    height: 56px;
+    pointer-events: none;
+    z-index: 10;
+    transform: rotate(-90deg); /* 从顶部 12 点钟顺时针开始 */
+  }
+  .tile-ring-path {
+    fill: none;
+    stroke: var(--accent-blue);
+    stroke-width: 2.2px;
+    /* 周长: 56x56 圆角 r=12.5 真实周长约为 194px */
+    stroke-dasharray: 194;
+    stroke-dashoffset: 194;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.12s linear, opacity 0.3s ease, stroke 0.3s ease;
+  }
+  .tile-56.complete .tile-ring-path {
+    stroke-dashoffset: 0;
+    opacity: 0; /* 100% 达成后微光描边淡化融入普通边框 */
+  }
+
+  /* 右上角 9px 百分比数字 */
+  .tile-progress-text {
+    position: absolute;
+    top: 4px;
+    right: 5px;
+    z-index: 15;
+    font-size: 9px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.6);
+    line-height: 1;
+    pointer-events: none;
+    transition: filter 0.28s var(--spring-fluid), opacity 0.28s var(--spring-fluid), transform 0.28s var(--spring-fluid);
+  }
+  /* 100% 达成时数字原地 blur-out */
+  .tile-56.complete .tile-progress-text {
+    filter: blur(6px);
+    opacity: 0;
+    transform: scale(0.7);
+    pointer-events: none;
+  }
+
+  /* 右上角同一坐标原位 blur-in 的关闭按钮 ✕ */
+  .tile-dismiss-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 16;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8.5px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    /* 初始 blur-out */
+    filter: blur(6px);
+    opacity: 0;
+    transform: scale(0.7);
+    pointer-events: none;
+    transition: filter 0.28s var(--spring-fluid), opacity 0.28s var(--spring-fluid), transform 0.28s var(--spring-fluid), background 0.15s ease;
+  }
+  /* 100% 达成时关闭按钮原位 blur-in */
+  .tile-56.complete .tile-dismiss-btn {
+    filter: blur(0);
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
+  .tile-dismiss-btn:hover {
+    background: var(--accent-rose);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: scale(1.1);
+  }
+
+  /* 瓷贴内部内容：图片 (Full-bleed cover) */
+  .tile-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+  }
+
+  /* 瓷贴内部内容：文档 / 表格 / 演示文稿 / 代码 */
+  .tile-doc-body {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px 4px;
+    gap: 4px;
+    pointer-events: none;
+  }
+  .tile-doc-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .tile-doc-icon.sheet { background: rgba(41, 151, 255, 0.18); color: var(--accent-blue); }
+  .tile-doc-icon.pdf { background: rgba(255, 69, 58, 0.18); color: var(--accent-rose); }
+  .tile-doc-icon.slide { background: rgba(175, 82, 222, 0.18); color: var(--accent-purple); }
+  .tile-doc-icon.code { background: rgba(48, 209, 88, 0.18); color: var(--accent-emerald); }
+  .tile-doc-icon.video { background: rgba(99, 102, 241, 0.18); color: #818cf8; }
+
+  .tile-doc-name {
+    font-size: 8.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-align: center;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.1;
+  }
+
+  /* 入场排队落地弹性动效 (Stagger landing) */
+  @keyframes tileLand {
+    0% { opacity: 0; transform: scale(0.7) translateY(10px); }
+    70% { transform: scale(1.05) translateY(-2px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .tile-landing {
+    animation: tileLand 0.38s var(--spring-bounce) backwards;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     方案 A：复合上下文分层流 (Context Ribbon · 推荐)
+     ══════════════════════════════════════════════════════════ */
+  .composer-box-a {
+    background: var(--composer-bg);
+    border: 1px solid var(--composer-border);
+    border-radius: var(--radius-dock);
+    padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .composer-box-a:focus-within {
+    border-color: var(--composer-focus-border);
+    box-shadow: 0 0 0 1px var(--composer-focus-border), 0 8px 28px rgba(0, 0, 0, 0.3);
+  }
+
+  /* 顶部环境胶囊行 (活动标签页 + 划词引用) */
+  .context-head-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+  .page-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    color: var(--text-secondary);
+    user-select: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    max-width: 80%;
+  }
+  .page-pill:hover {
+    background: var(--btn-surface-hover);
+    color: var(--text-primary);
+  }
+  .page-pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-emerald);
+    box-shadow: 0 0 6px var(--accent-emerald);
+  }
+  .page-pill-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ask-cite-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(41, 151, 255, 0.12);
+    border: 1px solid rgba(41, 151, 255, 0.25);
+    border-radius: var(--radius-pill);
+    font-size: 10px;
+    color: var(--accent-blue);
+  }
+
+  /* 输入文本区 */
+  .composer-input-area {
+    width: 100%;
+    min-height: 42px;
+    font-size: 13.5px;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: inherit;
+    line-height: 1.45;
+  }
+  .composer-input-area::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  /* 底栏控件 */
+  .composer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 4px;
+  }
+  .bar-left-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .add-attachment-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .add-attachment-btn:hover {
+    background: var(--btn-surface-hover);
+    transform: scale(1.05);
+  }
+
+  /* 上传动作弹出菜单 (Action Sheet) */
+  .action-menu-popover {
+    position: absolute;
+    bottom: 46px;
+    left: 10px;
+    width: 210px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 6px;
+    backdrop-filter: blur(24px);
+    box-shadow: var(--panel-shadow);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    animation: menuFadeIn 0.2s var(--spring-fluid);
+  }
+  @keyframes menuFadeIn {
+    from { opacity: 0; transform: translateY(6px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .action-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .action-menu-item:hover {
+    background: var(--btn-surface-hover);
+  }
+  .action-menu-item-icon {
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+  }
+
+  .model-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px 0 8px;
+    border-radius: var(--radius-pill);
+    background: var(--btn-surface);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+  }
+  .send-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    border: none;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    transition: transform 0.2s, background 0.2s;
+  }
+  .send-btn:hover {
+    transform: scale(1.08);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     方案 B：全合一 56px 对象流 (Unified Tile Stream)
+     ══════════════════════════════════════════════════════════ */
+  .tile-56.tile-page-context {
+    border-color: rgba(48, 209, 88, 0.35);
+    background: rgba(48, 209, 88, 0.08);
+  }
+  .tile-56.tile-quote-context {
+    border-color: rgba(41, 151, 255, 0.35);
+    background: rgba(41, 151, 255, 0.08);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     方案 C：紧凑折叠抽屉 (Compact Accordion Ribbon)
+     ══════════════════════════════════════════════════════════ */
+  .accordion-trigger-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    background: rgba(41, 151, 255, 0.12);
+    border: 1px solid rgba(41, 151, 255, 0.22);
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    color: var(--accent-blue);
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+    align-self: flex-start;
+  }
+  .accordion-trigger-pill:hover {
+    background: rgba(41, 151, 255, 0.2);
+  }
+  .accordion-drawer {
+    overflow: hidden;
+    transition: max-height 0.3s var(--spring-fluid), opacity 0.25s ease;
+  }
+  .accordion-drawer.collapsed {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .accordion-drawer.expanded {
+    max-height: 80px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* 拖拽高亮遮罩 */
+  .drop-zone-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-dock);
+    background: rgba(41, 151, 255, 0.18);
+    border: 2px dashed var(--accent-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    backdrop-filter: blur(4px);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .drop-zone-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 顶栏 Masthead -->
+  <header class="masthead">
+    <div class="masthead-title">
+      <h1>SideAgent · Composer Attachments 附件瓷贴落地评估</h1>
+      <span class="tag-badge">Board UI 对照</span>
+    </div>
+    <div class="masthead-actions">
+      <button type="button" class="masthead-btn" id="theme-toggle" title="切换深浅主题">
+        <span id="theme-icon">☀️</span> 晨曦微晶白
+      </button>
+    </div>
+  </header>
+
+  <!-- 核心动效规范卡片 -->
+  <section class="spec-banner">
+    <div class="spec-head">
+      <h2>✨ 官方动效核心规范复刻（Mertcan @sitenley for @boardui）</h2>
+      <span class="spec-badge">100% 物理守恒</span>
+    </div>
+    <div class="spec-quote">
+      “The Composer Panel carrying attachments: a strip of 56px tiles above the prompt, the thumbnail for images and the plugin document icon with the file name for everything else, each with its dismiss in the corner. Queued files land one after another, the accent ring drawing clockwise around the tile the way the File Upload block traces its drop zone while a 9px percentage counts up in the corner, then at 100 the percentage blurs out and the dismiss blurs in on the same spot.”
+    </div>
+    <div class="spec-points">
+      <div class="spec-point-item">
+        <span class="point-icon">⏱</span>
+        <div class="point-text"><strong>9px 原位高斯模糊 Cross-Fade</strong>：100% 完成时刻，右上角 9px 百分比与关闭 ✕ 在<strong>同一精确坐标</strong>零位移淡入淡出。</div>
+      </div>
+      <div class="spec-point-item">
+        <span class="point-icon">⭕️</span>
+        <div class="point-text"><strong>顺时针 Accent Ring 描边</strong>：沿 56px Squircle 边缘顺时针追踪行进，达 100% 时静默隐退为普通精致描边。</div>
+      </div>
+      <div class="spec-point-item">
+        <span class="point-icon">📸</span>
+        <div class="point-text"><strong>SideAgent 浏览器特性拓展</strong>：支持「截取当前网页 Viewport」、「选择本地材料」及「剪贴板粘贴」一键压制成 56px 瓷贴。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 交互控制台 -->
+  <section class="control-ribbon">
+    <div class="ribbon-label">
+      <span>🎛 交互测试控制台：</span>
+    </div>
+    <div class="ribbon-buttons">
+      <button type="button" class="action-btn primary" id="btn-batch-upload">
+        <span>🚀 模拟批量入场 (4 类材料渐次降落)</span>
+      </button>
+      <button type="button" class="action-btn" id="btn-mock-screenshot">
+        <span>📸 截取当前活动网页 (生图瓷贴)</span>
+      </button>
+      <button type="button" class="action-btn" id="btn-replay-progress">
+        <span>🔄 重播当前上传动效</span>
+      </button>
+      <button type="button" class="action-btn" id="btn-clear-all">
+        <span>🗑 清空全部附件</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 并排方案对比区 -->
+  <div class="comparison-header">
+    <h2>三种融入 SideAgent 侧栏架构的落地形态并排人选</h2>
+    <p>同一条用户路径：查看当前页 → 投喂多项附件资料 → 观察 56px 动效 → 输入 Prompt</p>
+  </div>
+
+  <main class="columns-grid">
+    <!-- 方案 A：复合上下文分层流 (推荐) -->
+    <article class="column-card" id="card-option-a">
+      <div class="column-badge-rec">推荐方案</div>
+      <div class="column-meta">
+        <h3 class="column-title">
+          <span>方案 A：复合上下文分层流</span>
+          <span style="font-size:12px; color:var(--accent-blue);">Context Ribbon</span>
+        </h3>
+        <p class="column-desc">
+          <strong>顶层常驻活动页与划词引用，下方紧随 56px 附件流。</strong><br>
+          职责严格划分：PagePill 负责“浏览器正在看哪”，Attachments 负责“用户喂了什么数据”。两者垂直分层互不干扰，支持横向平滑滚动。
+        </p>
+      </div>
+
+      <div class="sidepanel-mock-stage" id="stage-a">
+        <div class="mock-chat-stream">
+          <div class="mock-bubble-ai">
+            你好！我是你的浏览器助理。你可以随时截取当前网页，或把 PDF、数据表格拖给我。
+          </div>
+        </div>
+
+        <!-- 方案 A Composer -->
+        <div class="composer-box-a" id="composer-a">
+          <div class="drop-zone-overlay" id="drop-overlay-a">松开文件即可添加为 56px 瓷贴</div>
+          <!-- 顶部上下文胶囊 -->
+          <div class="context-head-bar">
+            <div class="page-pill" title="当前活动标签页（点击展开检查面板）">
+              <i class="page-pill-dot"></i>
+              <span class="page-pill-text"> GitHub - yishu-ziyu/By-Your-Side</span>
+            </div>
+            <div class="ask-cite-chip" title="网页划词上下文">
+              <span>引 “contamination fraction...”</span>
+            </div>
+          </div>
+
+          <!-- 56px 附件瓷贴流 -->
+          <div class="attachments-strip" id="strip-a">
+            <!-- 初始示例卡片 -->
+          </div>
+
+          <!-- Prompt 输入文本框 -->
+          <textarea class="composer-input-area" placeholder="给 Agent 下达指令，或追问这些材料…" rows="1">分析这个表里的指标并和当前网页对比</textarea>
+
+          <!-- 底栏动作栏 -->
+          <div class="composer-bar">
+            <div class="bar-left-actions">
+              <button type="button" class="add-attachment-btn" id="add-btn-a" title="添加附件或截取当前页">+</button>
+              <div class="model-chip">
+                <span>GPT-5.6 Mini</span>
+                <span style="opacity:0.5; font-size:10px;">▾</span>
+              </div>
+            </div>
+            <button type="button" class="send-btn" title="发送">↑</button>
+          </div>
+
+          <!-- 上传动作菜单 -->
+          <div class="action-menu-popover" id="menu-a" hidden>
+            <div class="action-menu-item" id="menu-act-snap-a">
+              <span class="action-menu-item-icon">📸</span>
+              <span>截取当前网页视口</span>
+            </div>
+            <div class="action-menu-item" id="menu-act-file-a">
+              <span class="action-menu-item-icon">📁</span>
+              <span>上传本地文档 / 数据</span>
+            </div>
+            <div class="action-menu-item" id="menu-act-paste-a">
+              <span class="action-menu-item-icon">📋</span>
+              <span>粘贴剪贴板图片</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 方案 B：全合一 56px 对象流 -->
+    <article class="column-card" id="card-option-b">
+      <div class="column-meta">
+        <h3 class="column-title">
+          <span>方案 B：全合一 56px 对象流</span>
+          <span style="font-size:12px; color:var(--text-tertiary);">Unified Tile Stream</span>
+        </h3>
+        <p class="column-desc">
+          <strong>将活动标签页、划词片段全部折算为 56px 瓷贴并列。</strong><br>
+          视觉极度统一。但活动标签页长标题被完全截断，削弱了侧栏“当前页感知锚点”的核心心智，容易让用户遗忘当前连接的页面。
+        </p>
+      </div>
+
+      <div class="sidepanel-mock-stage" id="stage-b">
+        <div class="mock-chat-stream">
+          <div class="mock-bubble-ai">
+            方案 B 将活动标签页也作为一枚绿色瓷贴加入队伍。
+          </div>
+        </div>
+
+        <div class="composer-box-a" id="composer-b">
+          <div class="drop-zone-overlay" id="drop-overlay-b">松开文件即可添加为 56px 瓷贴</div>
+          <!-- 56px 瓷贴流（含标签页瓷贴） -->
+          <div class="attachments-strip" id="strip-b">
+            <!-- 标签页专用瓷贴 -->
+            <div class="tile-56 tile-page-context complete" title="当前活动标签页：GitHub">
+              <div class="tile-doc-body">
+                <div class="tile-doc-icon code" style="font-size:12px;"></div>
+                <div class="tile-doc-name">github...</div>
+              </div>
+            </div>
+          </div>
+
+          <textarea class="composer-input-area" placeholder="所有对象均在上方瓷贴中呈现…" rows="1">解释这个项目的架构</textarea>
+
+          <div class="composer-bar">
+            <div class="bar-left-actions">
+              <button type="button" class="add-attachment-btn" id="add-btn-b">+</button>
+              <div class="model-chip">
+                <span>MiniMax-M3</span>
+                <span style="opacity:0.5; font-size:10px;">▾</span>
+              </div>
+            </div>
+            <button type="button" class="send-btn">↑</button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- 方案 C：紧凑折叠抽屉 -->
+    <article class="column-card" id="card-option-c">
+      <div class="column-meta">
+        <h3 class="column-title">
+          <span>方案 C：紧凑轻量折叠抽屉</span>
+          <span style="font-size:12px; color:var(--text-tertiary);">Compact Accordion</span>
+        </h3>
+        <p class="column-desc">
+          <strong>默认仅一行微晶药丸计数，点击或拖入时弹性向下展开。</strong><br>
+          在 360px 窄宽侧栏下极为克制、高度占用极小。但用户无法随时一眼扫视上传进度与材料细节，少了一定即时感。
+        </p>
+      </div>
+
+      <div class="sidepanel-mock-stage" id="stage-c">
+        <div class="mock-chat-stream">
+          <div class="mock-bubble-ai">
+            方案 C 点击药丸展开/折叠瓷贴抽屉，平时保持轻巧。
+          </div>
+        </div>
+
+        <div class="composer-box-a" id="composer-c">
+          <div class="drop-zone-overlay" id="drop-overlay-c">松开文件即可添加为 56px 瓷贴</div>
+          <div class="context-head-bar">
+            <div class="page-pill">
+              <i class="page-pill-dot"></i>
+              <span class="page-pill-text"> GitHub - By-Your-Side</span>
+            </div>
+            <div class="accordion-trigger-pill" id="accordion-toggle-c" title="点击折叠或展开附件">
+              <span>📎 <span id="count-c">3</span> 项附件</span>
+              <span id="accordion-arrow-c" style="font-size:9px;">▲</span>
+            </div>
+          </div>
+
+          <!-- 抽屉容器 -->
+          <div class="accordion-drawer expanded" id="drawer-c">
+            <div class="attachments-strip" id="strip-c">
+              <!-- 瓷贴列表 -->
+            </div>
+          </div>
+
+          <textarea class="composer-input-area" placeholder="抽屉式展开瓷贴…" rows="1">帮我总结这些资料</textarea>
+
+          <div class="composer-bar">
+            <div class="bar-left-actions">
+              <button type="button" class="add-attachment-btn" id="add-btn-c">+</button>
+              <div class="model-chip">
+                <span>Kimi Coding</span>
+                <span style="opacity:0.5; font-size:10px;">▾</span>
+              </div>
+            </div>
+            <button type="button" class="send-btn">↑</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </main>
+</div>
+
+<!-- 隐藏的原生文件上传控件用于真实测试 -->
+<input type="file" id="real-file-input" multiple style="display: none;" />
+
+<script>
+  // ── 样本数据定义 ──
+  const SAMPLE_FILES = [
+    {
+      id: "img_cat",
+      type: "image",
+      name: "screen_cat.jpg",
+      // 高质感猫咪/网页缩略图（SVG data-uri 避免外链失效）
+      url: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23ea580c'/><circle cx='50' cy='55' r='30' fill='%23fed7aa'/><polygon points='30,35 40,15 50,35' fill='%23ea580c'/><polygon points='50,35 60,15 70,35' fill='%23ea580c'/><circle cx='40' cy='50' r='4' fill='%23431407'/><circle cx='60' cy='50' r='4' fill='%23431407'/><ellipse cx='50' cy='60' rx='4' ry='3' fill='%23be123c'/></svg>"
+    },
+    {
+      id: "doc_sheet",
+      type: "sheet",
+      name: "timetab...",
+      label: "田"
+    },
+    {
+      id: "doc_pdf",
+      type: "pdf",
+      name: "payrollz...",
+      label: "📄"
+    },
+    {
+      id: "doc_slide",
+      type: "slide",
+      name: "present...",
+      label: "◫"
+    },
+    {
+      id: "doc_code",
+      type: "code",
+      name: "reactyp...",
+      label: "⟨⟩"
+    }
+  ];
+
+  // 瓷贴周长定义 (56px 容器，SVG rect 53x53, rx=10.5)
+  const PERIMETER = 194;
+
+  /**
+   * 创建一枚 56px 瓷贴 DOM
+   */
+  function createTileElement(file, initialPercent = 0, isLanding = true) {
+    const tile = document.createElement("div");
+    tile.className = "tile-56" + (isLanding ? " tile-landing" : "");
+    tile.dataset.id = file.id || ("file_" + Math.random().toString(36).slice(2, 7));
+
+    // 1. 内部展示
+    if (file.type === "image") {
+      const img = document.createElement("img");
+      img.className = "tile-img";
+      img.src = file.url;
+      img.alt = file.name;
+      tile.appendChild(img);
+    } else {
+      const docBody = document.createElement("div");
+      docBody.className = "tile-doc-body";
+      const icon = document.createElement("div");
+      icon.className = `tile-doc-icon ${file.type}`;
+      icon.textContent = file.label || "📄";
+      const name = document.createElement("div");
+      name.className = "tile-doc-name";
+      name.textContent = file.name;
+      docBody.appendChild(icon);
+      docBody.appendChild(name);
+      tile.appendChild(docBody);
+    }
+
+    // 2. 顺时针 Accent Ring 描边
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "tile-ring-svg");
+    svg.setAttribute("viewBox", "0 0 56 56");
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("class", "tile-ring-path");
+    rect.setAttribute("x", "1.5");
+    rect.setAttribute("y", "1.5");
+    rect.setAttribute("width", "53");
+    rect.setAttribute("height", "53");
+    rect.setAttribute("rx", "11");
+    svg.appendChild(rect);
+    tile.appendChild(svg);
+
+    // 3. 右上角 9px 百分比
+    const pText = document.createElement("span");
+    pText.className = "tile-progress-text";
+    pText.textContent = `${initialPercent}%`;
+    tile.appendChild(pText);
+
+    // 4. 同坐标右上角关闭按钮
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "tile-dismiss-btn";
+    dismissBtn.innerHTML = "✕";
+    dismissBtn.title = "移除该附件";
+    dismissBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeTile(tile);
+    });
+    tile.appendChild(dismissBtn);
+
+    return { tile, rect, pText, dismissBtn };
+  }
+
+  /**
+   * 驱动单个瓷贴从 currentPercent 跑到 100%
+   */
+  function animateTileProgress(tileObj, durationMs = 1800, callback) {
+    const { tile, rect, pText } = tileObj;
+    let start = null;
+
+    function step(timestamp) {
+      if (!start) start = timestamp;
+      const elapsed = timestamp - start;
+      const progress = Math.min(elapsed / durationMs, 1);
+      
+      // 非线性贝塞尔感知节奏 (先快后微顿再冲刺)
+      const eased = Math.sin((progress * Math.PI) / 2);
+      const percent = Math.round(eased * 100);
+
+      // 更新数字
+      pText.textContent = `${percent}%`;
+
+      // 顺时针描边: offset 从 PERIMETER 降到 0
+      const offset = PERIMETER - (PERIMETER * percent) / 100;
+      rect.style.strokeDashoffset = offset;
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        // 达成 100%时刻：触发原位 blur-out 与 blur-in
+        tile.classList.add("complete");
+        pText.textContent = "100%";
+        if (callback) callback();
+      }
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  /**
+   * 移除瓷贴动效
+   */
+  function removeTile(tile) {
+    tile.classList.add("removing");
+    setTimeout(() => {
+      tile.remove();
+      updateAccordionCount();
+    }, 260);
+  }
+
+  /**
+   * 更新方案 C 统计计数
+   */
+  function updateAccordionCount() {
+    const stripC = document.getElementById("strip-c");
+    const countEl = document.getElementById("count-c");
+    if (stripC && countEl) {
+      countEl.textContent = stripC.querySelectorAll(".tile-56").length;
+    }
+  }
+
+  /**
+   * 将一批文件排队弹性滑入某个 strip (Staggered Entrance)
+   */
+  function appendFilesToStrip(stripEl, files, staggerMs = 90) {
+    files.forEach((file, index) => {
+      setTimeout(() => {
+        const tileObj = createTileElement(file, 0, true);
+        stripEl.appendChild(tileObj.tile);
+        // 开始上传动效
+        const duration = 1400 + Math.random() * 800;
+        animateTileProgress(tileObj, duration);
+        updateAccordionCount();
+        // 自动平滑滚至最右
+        stripEl.scrollTo({ left: stripEl.scrollWidth, behavior: "smooth" });
+      }, index * staggerMs);
+    });
+  }
+
+  // ── 全局批量入场 ──
+  function triggerGlobalBatch() {
+    const strips = [
+      document.getElementById("strip-a"),
+      document.getElementById("strip-b"),
+      document.getElementById("strip-c")
+    ];
+    strips.forEach(strip => {
+      if (strip) {
+        appendFilesToStrip(strip, SAMPLE_FILES.slice(0, 4), 100);
+      }
+    });
+  }
+
+  // ── 模拟截屏 ──
+  function triggerMockScreenshot() {
+    const mockSnap = {
+      id: "snap_" + Date.now(),
+      type: "image",
+      name: "viewport_snap.png",
+      url: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' fill='%230284c7'/><rect x='10' y='15' width='80' height='12' rx='3' fill='%2338bdf8'/><rect x='10' y='35' width='55' height='8' rx='2' fill='%23bae6fd'/><rect x='10' y='48' width='75' height='6' rx='2' fill='%23e0f2fe'/><rect x='10' y='58' width='65' height='6' rx='2' fill='%23e0f2fe'/><circle cx='80' cy='75' r='10' fill='%2338bdf8'/></svg>"
+    };
+    [document.getElementById("strip-a"), document.getElementById("strip-b"), document.getElementById("strip-c")].forEach(strip => {
+      if (strip) appendFilesToStrip(strip, [mockSnap], 0);
+    });
+  }
+
+  // ── 重播所有瓷贴动效 ──
+  function replayAllProgress() {
+    document.querySelectorAll(".tile-56:not(.tile-page-context)").forEach(tile => {
+      tile.classList.remove("complete");
+      const rect = tile.querySelector(".tile-ring-path");
+      const pText = tile.querySelector(".tile-progress-text");
+      const dismissBtn = tile.querySelector(".tile-dismiss-btn");
+      if (rect && pText && dismissBtn) {
+        rect.style.strokeDashoffset = PERIMETER;
+        animateTileProgress({ tile, rect, pText, dismissBtn }, 1500 + Math.random() * 600);
+      }
+    });
+  }
+
+  // ── 清空全部瓷贴 ──
+  function clearAllTiles() {
+    document.querySelectorAll(".tile-56:not(.tile-page-context)").forEach(tile => {
+      removeTile(tile);
+    });
+  }
+
+  // ── 方案 C 抽屉折叠展开 ──
+  const accordionToggleC = document.getElementById("accordion-toggle-c");
+  const drawerC = document.getElementById("drawer-c");
+  const arrowC = document.getElementById("accordion-arrow-c");
+  if (accordionToggleC && drawerC && arrowC) {
+    accordionToggleC.addEventListener("click", () => {
+      const isExpanded = drawerC.classList.contains("expanded");
+      if (isExpanded) {
+        drawerC.classList.remove("expanded");
+        drawerC.classList.add("collapsed");
+        arrowC.textContent = "▼";
+      } else {
+        drawerC.classList.remove("collapsed");
+        drawerC.classList.add("expanded");
+        arrowC.textContent = "▲";
+      }
+    });
+  }
+
+  // ── 方案 A 弹出式 Action Menu ──
+  const addBtnA = document.getElementById("add-btn-a");
+  const menuA = document.getElementById("menu-a");
+  if (addBtnA && menuA) {
+    addBtnA.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menuA.hidden = !menuA.hidden;
+    });
+    document.addEventListener("click", (e) => {
+      if (!menuA.contains(e.target) && e.target !== addBtnA) {
+        menuA.hidden = true;
+      }
+    });
+    document.getElementById("menu-act-snap-a").addEventListener("click", () => {
+      menuA.hidden = true;
+      triggerMockScreenshot();
+    });
+    document.getElementById("menu-act-file-a").addEventListener("click", () => {
+      menuA.hidden = true;
+      document.getElementById("real-file-input").click();
+    });
+    document.getElementById("menu-act-paste-a").addEventListener("click", () => {
+      menuA.hidden = true;
+      triggerMockScreenshot();
+    });
+  }
+
+  // 真实本地文件选择响应
+  const realFileInput = document.getElementById("real-file-input");
+  realFileInput.addEventListener("change", (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const mapped = files.map(f => {
+      const isImg = f.type.startsWith("image/");
+      return {
+        id: "local_" + Math.random().toString(36).slice(2),
+        type: isImg ? "image" : "pdf",
+        name: f.name.length > 8 ? f.name.slice(0, 7) + "..." : f.name,
+        url: isImg ? URL.createObjectURL(f) : "",
+        label: isImg ? "" : "📄"
+      };
+    });
+    const stripA = document.getElementById("strip-a");
+    if (stripA) appendFilesToStrip(stripA, mapped, 100);
+  });
+
+  // ── 拖拽上传支持 (Drag & Drop) ──
+  ["composer-a", "composer-b", "composer-c"].forEach((id, idx) => {
+    const composer = document.getElementById(id);
+    const suffix = ["a", "b", "c"][idx];
+    const overlay = document.getElementById(`drop-overlay-${suffix}`);
+    const strip = document.getElementById(`strip-${suffix}`);
+    if (!composer || !overlay || !strip) return;
+
+    composer.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      overlay.classList.add("active");
+    });
+    composer.addEventListener("dragleave", (e) => {
+      if (!composer.contains(e.relatedTarget)) {
+        overlay.classList.remove("active");
+      }
+    });
+    composer.addEventListener("drop", (e) => {
+      e.preventDefault();
+      overlay.classList.remove("active");
+      const dtFiles = Array.from(e.dataTransfer.files);
+      if (dtFiles.length > 0) {
+        const mapped = dtFiles.map(f => ({
+          id: "drop_" + Math.random().toString(36).slice(2),
+          type: f.type.startsWith("image/") ? "image" : "sheet",
+          name: f.name.length > 8 ? f.name.slice(0, 7) + "..." : f.name,
+          url: f.type.startsWith("image/") ? URL.createObjectURL(f) : "",
+          label: "📁"
+        }));
+        appendFilesToStrip(strip, mapped, 90);
+      } else {
+        // 如果拖的不是文件，模拟添加两项
+        appendFilesToStrip(strip, SAMPLE_FILES.slice(1, 3), 90);
+      }
+    });
+  });
+
+  // ── 顶栏控制按钮事件绑定 ──
+  document.getElementById("btn-batch-upload").addEventListener("click", triggerGlobalBatch);
+  document.getElementById("btn-mock-screenshot").addEventListener("click", triggerMockScreenshot);
+  document.getElementById("btn-replay-progress").addEventListener("click", replayAllProgress);
+  document.getElementById("btn-clear-all").addEventListener("click", clearAllTiles);
+
+  // ── 深浅色主题切换 ──
+  const themeToggleBtn = document.getElementById("theme-toggle");
+  const themeIcon = document.getElementById("theme-icon");
+  themeToggleBtn.addEventListener("click", () => {
+    const isLight = document.body.classList.toggle("light");
+    if (isLight) {
+      themeIcon.textContent = "🌙";
+      themeToggleBtn.innerHTML = '<span>🌙</span> 深曜石炭黑';
+    } else {
+      themeIcon.textContent = "☀️";
+      themeToggleBtn.innerHTML = '<span>☀️</span> 晨曦微晶白';
+    }
+  });
+
+  // ── 页面就绪自动初始填充样例瓷贴 ──
+  function initSamples() {
+    const stripA = document.getElementById("strip-a");
+    const stripB = document.getElementById("strip-b");
+    const stripC = document.getElementById("strip-c");
+    if (stripA) appendFilesToStrip(stripA, SAMPLE_FILES.slice(0, 3), 120);
+    if (stripB) appendFilesToStrip(stripB, SAMPLE_FILES.slice(0, 2), 120);
+    if (stripC) appendFilesToStrip(stripC, SAMPLE_FILES.slice(0, 3), 120);
+  }
+  if (document.readyState === "loading") {
+    window.addEventListener("DOMContentLoaded", initSamples);
+  } else {
+    initSamples();
+  }
+</script>
+</body>
+</html>

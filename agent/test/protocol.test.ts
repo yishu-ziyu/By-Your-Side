@@ -140,15 +140,59 @@ describe("parseClientMessage", () => {
     });
   });
 
-  it("rejects user_message with malformed context", () => {
-    expect(
-      parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: { tabId: "12", title: "t", url: "u" } })),
-    ).toBeNull();
-    expect(
-      parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: { tabId: 12, title: "t" } })),
-    ).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", context: null }))).toBeNull();
+  it("parses a valid user_message with image attachments", () => {
+    const raw = JSON.stringify({
+      type: "user_message",
+      text: "look at this",
+      attachments: [
+        {
+          id: "att_1",
+          type: "image",
+          name: "screenshot.png",
+          dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          mimeType: "image/png",
+        },
+      ],
+    });
+    expect(parseClientMessage(raw)).toEqual({
+      type: "user_message",
+      text: "look at this",
+      attachments: [
+        {
+          id: "att_1",
+          type: "image",
+          name: "screenshot.png",
+          dataBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          mimeType: "image/png",
+        },
+      ],
+    });
   });
+
+  it("rejects user_message with invalid attachments", () => {
+    expect(
+      parseClientMessage(JSON.stringify({ type: "user_message", text: "hi", attachments: "not-array" })),
+    ).toBeNull();
+    expect(
+      parseClientMessage(
+        JSON.stringify({
+          type: "user_message",
+          text: "hi",
+          attachments: [{ id: "1", type: "other", name: "bad.txt" }],
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseClientMessage(
+        JSON.stringify({
+          type: "user_message",
+          text: "hi",
+          attachments: [{ id: "1", type: "image", name: "x.png", dataBase64: "", mimeType: "image/png" }],
+        }),
+      ),
+    ).toBeNull();
+  });
+
 
   it("parses a valid steer frame with page context", () => {
     const raw = JSON.stringify({

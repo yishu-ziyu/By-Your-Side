@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>浏览器程序验收</title>
+<style>
+body{font:18px Georgia,serif;background:#f5f4ef;color:#242724;max-width:820px;margin:60px auto;padding:24px}article,form,table{background:white;border:1px solid #d5d7cc;border-radius:12px;padding:28px;margin:24px 0}button,input,textarea{font:inherit;padding:12px}textarea{display:block;width:90%;height:120px;margin:16px 0}[hidden]{display:none!important}body[data-task=hover] #edit{visibility:hidden}body[data-task=hover] #project:hover #edit{visibility:visible}td,th{padding:14px 36px;text-align:left}output{display:block;margin:20px 0}
+</style>
+<h1>项目工作台</h1><p>本地验收页面，填写仅留草稿。</p>
+<button id="load" hidden>加载项目编辑入口</button>
+<article id="project" aria-label="星图项目"><h2>星图项目</h2><p>项目经历</p><button id="edit">编辑项目</button></article>
+<form id="editor" aria-label="项目编辑器" hidden><label for="draft">项目描述</label><textarea id="draft"></textarea><output id="preview">草稿为空</output><button type="button" id="submit">提交项目</button></form>
+<table id="records" hidden><caption>项目清单</caption><thead><tr><th>项目名称</th><th>数量</th><th>状态</th></tr></thead><tbody><tr><td>星图</td><td>3</td><td>已完成</td></tr><tr><td>灯塔</td><td>5</td><td>进行中</td></tr><tr><td>北辰</td><td>8</td><td>已完成</td></tr></tbody></table>
+<output id="submits">提交次数：0</output>
+<script>
+const task=new URLSearchParams(location.search).get('task')||'hover';document.body.dataset.task=task;
+let submitted=0,hoverEvents=0,loadStarted=false;
+const project=document.getElementById('project'),edit=document.getElementById('edit'),editor=document.getElementById('editor'),draft=document.getElementById('draft');
+if(task==='delay'){document.getElementById('load').hidden=false;edit.hidden=true;}
+if(task==='extract'){project.hidden=true;document.getElementById('records').hidden=false;}
+project.addEventListener('mouseenter',e=>{if(e.isTrusted)hoverEvents++;});
+document.getElementById('load').onclick=e=>{if(!e.isTrusted)return;loadStarted=true;e.currentTarget.disabled=true;setTimeout(()=>{edit.hidden=false;},1000);};
+edit.onclick=e=>{if(!e.isTrusted||getComputedStyle(edit).visibility==='hidden'||edit.hidden)return;editor.hidden=false;};
+draft.oninput=()=>document.getElementById('preview').textContent='草稿内容：'+draft.value;
+document.getElementById('submit').onclick=()=>document.getElementById('submits').textContent='提交次数：'+(++submitted);
+window.readProgramEvidence=()=>({task,editorVisible:!editor.hidden,draft:draft.value,submitted,hoverEvents,loadStarted,rows:[...document.querySelectorAll('tbody tr')].map(r=>({name:r.cells[0].textContent,qty:Number(r.cells[1].textContent),status:r.cells[2].textContent}))});
+</script></html>

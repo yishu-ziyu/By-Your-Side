@@ -15,15 +15,18 @@ import {
   type AgentSession,
   type AgentToolResult,
   type CreateAgentSessionOptions,
+  type PromptOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentMode, AgentRunState, AgentUiEvent, ModelOption, PageContext } from "../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { getMode, setMode as setModeRef } from "./mode.js";
 import { createBrowserTools } from "./tools.js";
 import type { ToolRpc } from "./rpc.js";
+import { RunTrace } from "./run-trace.js";
+import type { ProgramStep } from "./browser-program.js";
 
 export interface SessionAcceptanceContinuityEvidence {
   instanceId: string;
@@ -100,6 +103,7 @@ export class BrowserAgentSession {
   ) {}
 
   private readonly hold = new SessionHold();
+  private readonly runTrace = new RunTrace();
   private readonly instanceId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   private acceptanceTrace: SessionAcceptanceContinuityEvidence | null = null;
   private controlEpoch = 0;
@@ -231,7 +235,7 @@ export class BrowserAgentSession {
   }
 
   /** 空闲时发起新任务；运行中自动转为插话。异步不阻塞，错误捕获为 error 事件。 */
-  sendUserMessage(text: string, context?: PageContext): void {
+  sendUserMessage(text: string, context?: PageContext, attachments?: Attachment[]): void {
     if (this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
       return;
@@ -246,16 +250,19 @@ export class BrowserAgentSession {
       return;
     }
     const finalText = withPageContext(text, context);
+    const images = extractImages(attachments);
+    if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
+    else this.runTrace.begin(text, context, this.modelName());
     if (session.isStreaming) {
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
-      void session.steer(finalText).catch((err: unknown) => this.emitError(err));
+      void session.steer(finalText, images.length > 0 ? images : undefined).catch((err: unknown) => this.emitError(err));
       return;
     }
-    void session.prompt(finalText).catch((err: unknown) => this.emitError(err));
+    void session.prompt(finalText, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
   }
 
   /** 运行中插话；若空闲则按普通消息处理。与 prompt 一样带上当前页锚点，避免打断后丢工作标签。 */
-  steer(text: string, context?: PageContext): void {
+  steer(text: string, context?: PageContext, attachments?: Attachment[]): void {
     if (this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
       return;
@@ -267,13 +274,16 @@ export class BrowserAgentSession {
     }
     if (session.isStreaming) {
       const finalText = withPageContext(text, context);
-      void session.steer(finalText).catch((err: unknown) => this.emitError(err));
+      const images = extractImages(attachments);
+      this.runTrace.record("steer", { text, context, attachments });
+      void session.steer(finalText, images.length > 0 ? images : undefined).catch((err: unknown) => this.emitError(err));
     } else {
-      this.sendUserMessage(text, context);
+      this.sendUserMessage(text, context, attachments);
     }
   }
 
   abort(): void {
+    this.runTrace.record("abort");
     this.controlEpoch += 1;
     this.cancelPendingHandback();
     this.hold.abort();
@@ -286,6 +296,7 @@ export class BrowserAgentSession {
    * 不把 status 打成 idle（那是中止）。
    */
   holdForUser(opts?: { abortStream?: boolean }): AgentRunState {
+    this.runTrace.record("takeover", { abortStream: opts?.abortStream });
     this.controlEpoch += 1;
     this.cancelPendingHandback();
     const state = this.hold.holdForUser();
@@ -318,6 +329,7 @@ export class BrowserAgentSession {
       this.acceptanceTrace.snapshotMarkerFound = snapshot.includes(this.acceptanceTrace.expectedSnapshotMarker);
     }
     const epoch = ++this.controlEpoch;
+    this.runTrace.record("handback", { context, snapshot });
     let resolveStarted!: (started: boolean) => void;
     const started = new Promise<boolean>((resolve) => {
       resolveStarted = resolve;
@@ -412,6 +424,7 @@ export class BrowserAgentSession {
   }
 
   dispose(): void {
+    this.runTrace.record("dispose");
     this.session?.dispose();
   }
 
@@ -420,6 +433,7 @@ export class BrowserAgentSession {
   }
 
   private emitError(err: unknown): void {
+    this.runTrace.record("session_error", { error: err });
     if ((this.hold.isHeld() || this.expectedStoppedAgentEnd) && isAbortLike(err)) return;
     this.callbacks.emit({ kind: "error", message: err instanceof Error ? err.message : String(err) });
   }
@@ -519,6 +533,7 @@ export class BrowserAgentSession {
     if (!session) return;
     const { emit, setStatus } = this.callbacks;
     session.subscribe((event) => {
+      this.runTrace.event(event);
       switch (event.type) {
         case "message_update": {
           const ev = event.assistantMessageEvent;
@@ -532,6 +547,14 @@ export class BrowserAgentSession {
             emit({ kind: "text_delta", delta: ev.delta });
           }
           else if (ev.type === "thinking_delta") emit({ kind: "thinking_delta", delta: ev.delta });
+          break;
+        }
+        case "tool_execution_update": {
+          const step = event.partialResult?.details?.programStep as ProgramStep | undefined;
+          if (event.toolName !== "browser_run" || !step) break;
+          if (step.phase === "start") emit({ kind: "tool_start", toolCallId: step.id, name: step.name, params: step.params });
+          else emit({ kind: "tool_end", toolCallId: step.id, name: step.name, isError: !!step.error,
+            resultText: step.error ?? (step.name === "screenshot" ? "Screenshot captured; image attached to program result." : (JSON.stringify(step.result) ?? "undefined").slice(0, RESULT_TEXT_MAX)) });
           break;
         }
         case "tool_execution_start":
@@ -633,6 +656,23 @@ export class BrowserAgentSession {
 
 function asParams(args: unknown): Record<string, unknown> {
   return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+}
+
+type SessionImageContent = NonNullable<PromptOptions["images"]>[number];
+
+export function extractImages(attachments?: Attachment[]): SessionImageContent[] {
+  if (!attachments || attachments.length === 0) return [];
+  const images: SessionImageContent[] = [];
+  for (const att of attachments) {
+    if (att.type === "image" && att.dataBase64) {
+      images.push({
+        type: "image",
+        data: att.dataBase64,
+        mimeType: att.mimeType,
+      });
+    }
+  }
+  return images;
 }
 
 /**

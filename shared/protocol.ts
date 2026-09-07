@@ -33,6 +33,35 @@ export interface PageContext {
   selection?: { text: string };
 }
 
+/** 用户消息附带的附件材料（截图、粘贴图或上传图片）。 */
+export interface ImageAttachment {
+  id: string;
+  type: "image";
+  name: string;
+  dataBase64: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+}
+
+export type Attachment = ImageAttachment;
+
+export function isAttachment(v: unknown): v is Attachment {
+  if (!v || typeof v !== "object") return false;
+  const a = v as Record<string, unknown>;
+  if (typeof a.id !== "string" || !a.id || a.id.length > 128) return false;
+  if (a.type !== "image") return false;
+  if (typeof a.name !== "string" || a.name.length > 256) return false;
+  if (typeof a.dataBase64 !== "string" || !a.dataBase64) return false;
+  if (
+    a.mimeType !== "image/png" &&
+    a.mimeType !== "image/jpeg" &&
+    a.mimeType !== "image/webp" &&
+    a.mimeType !== "image/gif"
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /** idle = 无任务；running = Agent 在操作页面；user = 现在归你（任务还在，不是中止）。 */
 export type AgentRunState = "idle" | "running" | "user";
 
@@ -128,8 +157,8 @@ export type TeamMemberHandback =
 
 export type ClientMessage =
   | { type: "hello"; token: string; client: "sidepanel" }
-  | { type: "user_message"; text: string; context?: PageContext }
-  | { type: "steer"; text: string; context?: PageContext }
+  | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
+  | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[] }
   | { type: "abort" }
   | {
       type: "takeover";
@@ -203,7 +232,7 @@ export type ServerMessage =
       requestId: string;
       continuity: AcceptanceContinuityEvidence[];
     }
-  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string }
+  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string };
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
@@ -230,6 +259,7 @@ export const TOOL_NAMES = [
   "navigate",
   "snapshot",
   "click",
+  "hover",
   "fill",
   "type_text",
   "press_key",
@@ -283,6 +313,11 @@ export interface ToolContract {
     params: { target?: string; point?: [number, number]; label?: string };
     data: { clicked: true } | { clicked: false; held: true };
   };
+  /** 真实鼠标移动；hovered 仅表示事件已派发，页面变化需另行观察。 */
+  hover: {
+    params: { target?: string; point?: [number, number]; label?: string };
+    data: { hovered: true };
+  };
   fill: { params: { target: string; value: string }; data: { filled: true } };
   type_text: { params: { text: string }; data: { typed: true } };
   press_key: { params: { key: string }; data: { pressed: true } };
@@ -290,7 +325,26 @@ export interface ToolContract {
   js: { params: { code: string }; data: { value: unknown } };
   screenshot: {
     params: Record<string, never>;
-    data: { imageBase64: string; mediaType: "image/png"; width: number; height: number };
+    data: {
+      imageBase64: string;
+      mediaType: "image/png";
+      /** 图像像素宽/高（PNG 解码实测；解码失败为 0）。点击坐标系见 cssWidth/cssHeight。 */
+      width: number;
+      height: number;
+      pixelWidth: number;
+      pixelHeight: number;
+      /** CSS 视口宽/高，即 click point 坐标系；查不到为 0。 */
+      cssWidth: number;
+      cssHeight: number;
+      /** 查不到为 0。 */
+      devicePixelRatio: number;
+      tabId: number;
+      url: string;
+      title: string;
+      capturedAt: number;
+      /** cdp = 后台页直接捕获；visible-tab = 已核对工作页在前台后的可见捕获。 */
+      source: "cdp" | "visible-tab";
+    };
   };
   /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */
   mark: { params: { target: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
@@ -314,6 +368,13 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       (msg.type === "user_message" || msg.type === "steer") &&
       msg.context !== undefined &&
       !isPageContext(msg.context)
+    ) {
+      return null;
+    }
+    if (
+      (msg.type === "user_message" || msg.type === "steer") &&
+      msg.attachments !== undefined &&
+      (!Array.isArray(msg.attachments) || !msg.attachments.every(isAttachment))
     ) {
       return null;
     }
@@ -370,6 +431,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     const msg = JSON.parse(raw) as ServerMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
+    if (msg.type === "tool_call" && msg.programId !== undefined && !validRequestId(msg.programId)) return null;
     if (msg.type === "status" && !isAgentRunState(msg.state)) return null;
     if (msg.type === "control_result") {
       if (!validRequestId(msg.requestId)) return null;

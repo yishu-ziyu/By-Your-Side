@@ -8,7 +8,7 @@ Chrome 侧边栏 Agent：在 Chrome 侧边栏里嵌入一个对话式 Agent，�
 ┌─ Chrome 扩展 (MV3) ──────────────────┐       ┌─ 本地伴随进程 (Node.js) ─────────┐
 │ side panel：聊天 UI（仅渲染/输入）      │       │ Pi SDK：createAgentSession       │
 │ background：持上行连接 + 工具执行层     │ native│   noTools:"builtin"              │
-│   ├─ chrome.debugger (CDP 输入)       │◄─────►│   customTools：13 个浏览器工具    │
+│   ├─ chrome.debugger (CDP 输入)       │◄─────►│   customTools：17 个浏览器工具    │
 │   └─ content script（快照/填表）       │ stdio │   模型：继承 ~/.pi 登录态          │
 └──────────────────────────────────────┘       └──────────────────────────────────┘
 ```
@@ -49,9 +49,11 @@ npm run install:host   # 安装 native messaging host（只需一次）
 npm run dev:agent    # = tsx agent/src/main.ts --ws，终端可见日志，打印一次性 token
 ```
 
-native host 不可用时扩展自动回退到 WS 通道（`127.0.0.1:7758`），面板会提示粘贴 token。调试模式下 CLI 参数 `--model/--proxy/--port/--token` 可用且优先于配置文件。native 模式的运行日志见 `~/.sideagent/agent.log`。
+native host 不可用时扩展自动回退到 WS 通道（`127.0.0.1:7758`），面板会提示粘贴 token。调试模式下 CLI 参数 `--model/--proxy/--port/--token` 可用且优先于配置文件。native 模式的运行日志见 `~/.sideagent/agent.log`；按任务关联的工具参数、结果、错误与耗时见 `~/.sideagent/traces/*.jsonl`，保留与脱敏边界见 `docs/protocol.md`。
 
 ## 使用
+
+Agent 还可以通过 `browser_run` 把观察、条件判断、等待和操作组合为一段程序。内部动作继续显示在现有步骤中，并受接管与确认控制。能力边界和开发用法见 [浏览器组合执行](docs/browser-program.md)。
 
 直接用自然语言下达任务，例如：
 
@@ -59,12 +61,12 @@ native host 不可用时扩展自动回退到 WS 通道（`127.0.0.1:7758`），
 - 「在当前页搜索 XXX，把前 10 条结果的标题和链接整理给我」
 - 「帮我把这个表单填了：姓名……」
 
-运行中可以继续发消息插话（steer），或点「中止」打断。Agent 操作 `click`/`type_text`/`press_key`/`js`/`screenshot` 时会通过 `chrome.debugger` 挂载调试会话，标签页顶部出现「正在调试」提示条属正常现象，闲置 15 秒后自动卸载。
+运行中可以继续发消息插话（steer），或点「中止」打断。Agent 操作 `click`/`hover`/`type_text`/`press_key`/`js`/`screenshot` 时会通过 `chrome.debugger` 挂载调试会话，标签页顶部出现「正在调试」提示条属正常现象，闲置 15 秒后自动卸载。
 
 ## 安全说明
 
 - 伴随进程由 Chrome 经 native messaging 拉起，仅接受 host manifest `allowed_origins` 白名单里的扩展；ws 调试通道只监听 `127.0.0.1`，握手校验 token + `chrome-extension://` Origin。
-- Agent 被剥掉了全部内置工具（`noTools:"builtin"`），它的世界只有你扩展提供的 13 个浏览器工具。
+- Agent 被剥掉了全部内置工具（`noTools:"builtin"`），浏览器操作由扩展提供的 17 个工具完成。
 - 不可逆操作（下单、发布、删除等）由系统提示词约束必须先经你文字确认。
 
 ## 开发

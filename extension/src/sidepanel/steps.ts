@@ -21,6 +21,10 @@ const ACTION_NAMES: Record<string, string> = {
   navigate: "打开页面",
   snapshot: "读取页面结构",
   click: "点击",
+  hover: "悬停",
+  browser_run: "连续操作",
+  wait_for: "等待元素",
+  sleep: "等待",
   fill: "填写文本",
   type_text: "输入文本",
   press_key: "按键",
@@ -58,9 +62,14 @@ function str(v: unknown): string | null {
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
   const short = ACTION_NAMES[name] ?? name;
   switch (name) {
-    case "click": {
+    case "browser_run": {
       const label = str(params.label);
-      return { short, full: label ? `点击「${clip(label)}」` : "点击元素" };
+      return { short, full: label ? clip(label, 32) : short };
+    }
+    case "click":
+    case "hover": {
+      const label = str(params.label);
+      return { short, full: label ? `${short}「${clip(label)}」` : `${short}元素` };
     }
     case "navigate": {
       const host = hostOf(params.url);

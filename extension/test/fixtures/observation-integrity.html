@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>观测与点击完整性校验 · 工作页 ALPHA</title>
+  <style>
+    :root {
+      --bg-main: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-green: #4ade80;
+      --accent-red: #f87171;
+      --accent-amber: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 24px 80px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg-main);
+      color: var(--text-main);
+      min-height: 3800px; /* 保证超长页面以检验视口过滤 */
+    }
+    header {
+      max-width: 900px;
+      margin: 0 auto 24px;
+      padding: 24px;
+      background: var(--card-bg);
+      border: 2px solid var(--accent-blue);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    .badge-alpha {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: #0284c7;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+    h1 { margin: 8px 0 12px; font-size: 26px; }
+    .subtitle { color: var(--text-muted); font-size: 15px; margin: 0 0 16px; }
+    .calibration-box {
+      width: 400px;
+      height: 120px;
+      background: #0369a1;
+      border: 3px dashed #38bdf8;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #e0f2fe;
+    }
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 16px;
+      color: var(--accent-blue);
+    }
+    .marker-box {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+    .marker-in {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--accent-blue);
+      color: var(--accent-blue);
+    }
+    .marker-off {
+      background: rgba(251, 191, 36, 0.15);
+      border: 1px solid var(--accent-amber);
+      color: var(--accent-amber);
+    }
+    .marker-bottom {
+      background: rgba(74, 222, 128, 0.15);
+      border: 1px solid var(--accent-green);
+      color: var(--accent-green);
+    }
+    .ctrl-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+    button {
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-ctrl {
+      background: #334155;
+      color: #f1f5f9;
+      border: 1px solid #475569;
+    }
+    .btn-ctrl:hover { background: #475569; }
+    .btn-ctrl.active {
+      background: #0284c7;
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+    .arena {
+      position: relative;
+      min-height: 180px;
+      padding: 24px;
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .arena-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: relative;
+    }
+    .btn-target {
+      background: #2563eb;
+      color: #ffffff;
+      min-width: 170px;
+      height: 48px;
+      font-size: 15px;
+      z-index: 10;
+      position: relative;
+      transition: none;
+    }
+    .btn-target:hover { background: #1d4ed8; }
+    .btn-target.moved {
+      transform: translate(220px, 60px);
+    }
+    .btn-trap {
+      position: absolute;
+      left: 0;
+      top: 0;
+      background: #7f1d1d;
+      color: #fca5a5;
+      min-width: 170px;
+      height: 48px;
+      border: 2px dashed #ef4444;
+      z-index: 1;
+      opacity: 0.85;
+    }
+    .btn-decoy {
+      background: #475569;
+      color: #cbd5e1;
+      min-width: 170px;
+      height: 48px;
+      font-size: 15px;
+      z-index: 10;
+    }
+    .btn-decoy:hover { background: #334155; }
+    .btn-duplicate {
+      background: #2563eb;
+      color: #ffffff;
+      min-width: 170px;
+      height: 48px;
+      font-size: 15px;
+      z-index: 10;
+      border: 2px solid #60a5fa;
+    }
+    .occlusion-shield {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 170px;
+      height: 48px;
+      background: rgba(220, 38, 38, 0.85);
+      backdrop-filter: blur(2px);
+      color: #ffffff;
+      border: 2px solid #f87171;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 25;
+      cursor: not-allowed;
+      pointer-events: auto;
+    }
+    .status-panel {
+      margin-top: 16px;
+      padding: 16px;
+      background: #0f172a;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+    .spacer-ladder {
+      position: relative;
+      height: 2800px;
+      margin: 32px 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(51, 65, 85, 0.15),
+        rgba(51, 65, 85, 0.15) 1px,
+        transparent 1px,
+        transparent 200px
+      );
+      border-left: 2px dashed #334155;
+      padding-left: 16px;
+    }
+    .depth-marker {
+      position: absolute;
+      font-family: monospace;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .off-viewport-section {
+      position: relative;
+      top: 2400px;
+      background: var(--card-bg);
+      border: 2px solid var(--accent-amber);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .page-bottom-section {
+      position: relative;
+      top: 2600px;
+      background: var(--card-bg);
+      border: 2px solid var(--accent-green);
+      border-radius: 12px;
+      padding: 24px;
+    }
+  </style>
+</head>
+<body data-page-role="WORK_PAGE_ALPHA">
+  <header>
+    <div class="badge-alpha" id="page-role-badge">PAGE_ROLE: WORK_PAGE_ALPHA</div>
+    <h1 id="page-title">观测与点击完整性校验 · 工作页 ALPHA</h1>
+    <p class="subtitle">
+      用于核实 Agent 视口快照、工作标签页定位、真实点击计数与动态干扰响应。
+    </p>
+    <div class="calibration-box" id="calibration-box" aria-label="视口校准盒">
+      <div>[CALIBRATION BOX] CSS W: 400px | H: 120px</div>
+      <div id="metrics-summary">DPR: calculating...</div>
+      <div id="viewport-summary">Viewport: calculating...</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 视口内标记 (首屏必定可见) -->
+    <section class="section-card" id="section-in-viewport">
+      <div class="section-title">1. 首屏视口标记区</div>
+      <div class="marker-box marker-in" id="marker-in-viewport" aria-label="首屏视口唯一标记">
+        MARKER_IN_VIEWPORT_PRIMARY_8819
+      </div>
+      <p class="subtitle" style="margin-top: 8px;">
+        仅在首屏视口快照 scope=viewport 时应当出现。
+      </p>
+    </section>
+
+    <!-- 交互与干扰区 -->
+    <section class="section-card" id="section-interactive">
+      <div class="section-title">2. 计数按钮与动态干扰测试区</div>
+      
+      <!-- 显式测试控件 -->
+      <div class="ctrl-row" aria-label="测试干扰控制栏">
+        <button type="button" class="btn-ctrl" id="ctrl-move-now">触发位移 (Move)</button>
+        <button type="button" class="btn-ctrl" id="ctrl-move-on-hover">悬停时自动位移 (Move on Hover: OFF)</button>
+        <button type="button" class="btn-ctrl" id="ctrl-occlude-now">触发遮挡 (Occlude)</button>
+        <button type="button" class="btn-ctrl" id="ctrl-duplicate-now">插入同名按钮 (Duplicate)</button>
+        <button type="button" class="btn-ctrl" id="ctrl-reset">重置干扰与计数</button>
+      </div>
+
+      <!-- 交互竞技场 -->
+      <div class="arena" id="interactive-arena">
+        <div class="arena-row" id="arena-row">
+          <!-- 陷阱按钮 (位于原坐标底层) -->
+          <button type="button" class="btn-trap" id="trap-counter" tabindex="-1">
+            原位陷阱 (命中: 0)
+          </button>
+          
+          <!-- 主待测目标 -->
+          <button type="button" class="btn-target" id="target-counter" aria-label="主计数按钮">
+            主计数按钮 (+1)
+          </button>
+
+          <!-- 遮挡蒙层 (动态激活) -->
+          <div class="occlusion-shield" id="occlusion-shield" style="display: none;" aria-label="干扰遮挡层">
+            遮挡阻断 (Shield)
+          </div>
+
+          <!-- 旁边放置的防误点目标 -->
+          <button type="button" class="btn-decoy" id="decoy-counter" aria-label="干扰计数按钮">
+            防误点干扰按钮 (+1)
+          </button>
+        </div>
+      </div>
+
+      <!-- 状态显示面板 -->
+      <div class="status-panel" id="status-panel" aria-live="polite">
+        <div>主计数器 (targetCount): <span id="val-target-count" style="color:var(--accent-blue);font-weight:bold;">0</span></div>
+        <div>防误点干扰 (decoyCount): <span id="val-decoy-count" style="color:var(--accent-amber);">0</span></div>
+        <div>原位陷阱命中 (trapCount): <span id="val-trap-count" style="color:var(--accent-red);">0</span></div>
+        <div>遮挡阻断拦截 (shieldCount): <span id="val-shield-count" style="color:var(--accent-red);">0</span></div>
+        <div>同名按钮命中 (duplicateCount): <span id="val-duplicate-count">0</span></div>
+        <div>当前状态: <span id="val-state-desc">正常待命</span></div>
+      </div>
+    </section>
+
+    <!-- 超长间隔标尺 (2800px) -->
+    <div class="spacer-ladder" id="spacer-ladder">
+      <div class="depth-marker" style="top: 400px;">Y: 400px (视口下边缘外)</div>
+      <div class="depth-marker" style="top: 1000px;">Y: 1000px</div>
+      <div class="depth-marker" style="top: 1800px;">Y: 1800px</div>
+      <div class="depth-marker" style="top: 2400px;">Y: 2400px (深层区域)</div>
+
+      <!-- 视口外标记与交互区 (Y > 2400px) -->
+      <section class="off-viewport-section" id="section-off-viewport">
+        <div class="section-title" style="color: var(--accent-amber);">3. 视口外深层标记区 (Y &gt; 2400px)</div>
+        <div class="marker-box marker-off" id="marker-off-viewport" aria-label="视口外深层唯一标记">
+          MARKER_OFF_VIEWPORT_OMEGA_9942
+        </div>
+        <p class="subtitle" style="margin-top: 8px;">
+          在未滚动时 scope=viewport 的快照中绝不应当包含此文本；scope=full_page 时必须包含。
+        </p>
+        <button type="button" class="btn-ctrl" id="off-viewport-btn" style="background:#78350f;color:#fef3c7;border-color:#b45309;">
+          视口外计数按钮 (offViewportCount: <span id="val-off-count">0</span>)
+        </button>
+      </section>
+
+      <!-- 页面底端标记区 (Y > 2600px) -->
+      <section class="page-bottom-section" id="section-page-bottom">
+        <div class="section-title" style="color: var(--accent-green);">4. 页面底端完结标记</div>
+        <div class="marker-box marker-bottom" id="marker-page-bottom">
+          PAGE_BOTTOM_MARKER_FINISH_3301
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // 状态与事件证据记录
+    let targetCount = 0;
+    let decoyCount = 0;
+    let trapCount = 0;
+    let shieldCount = 0;
+    let duplicateCount = 0;
+    let offViewportCount = 0;
+
+    let moveOnHover = false;
+    let isMoved = false;
+    let isOccluded = false;
+    let hasDuplicate = false;
+
+    const targetEvents = [];
+    const decoyEvents = [];
+    const trapEvents = [];
+    const shieldEvents = [];
+    const duplicateEvents = [];
+
+    // DOM 元素引用
+    const elTarget = document.getElementById('target-counter');
+    const elDecoy = document.getElementById('decoy-counter');
+    const elTrap = document.getElementById('trap-counter');
+    const elShield = document.getElementById('occlusion-shield');
+    const elArenaRow = document.getElementById('arena-row');
+    const elOffBtn = document.getElementById('off-viewport-btn');
+
+    const valTarget = document.getElementById('val-target-count');
+    const valDecoy = document.getElementById('val-decoy-count');
+    const valTrap = document.getElementById('val-trap-count');
+    const valShield = document.getElementById('val-shield-count');
+    const valDuplicate = document.getElementById('val-duplicate-count');
+    const valOff = document.getElementById('val-off-count');
+    const valState = document.getElementById('val-state-desc');
+
+    function updateDisplay() {
+      valTarget.textContent = String(targetCount);
+      valDecoy.textContent = String(decoyCount);
+      valTrap.textContent = String(trapCount);
+      valShield.textContent = String(shieldCount);
+      valDuplicate.textContent = String(duplicateCount);
+      valOff.textContent = String(offViewportCount);
+
+      const states = [];
+      if (isMoved) states.push('已位移(220px,60px)');
+      if (moveOnHover) states.push('悬停自动位移');
+      if (isOccluded) states.push('已遮挡阻断');
+      if (hasDuplicate) states.push('已注入同名按钮');
+      valState.textContent = states.length > 0 ? states.join(' | ') : '正常待命';
+    }
+
+    function recordEvent(arr, e) {
+      arr.push({
+        type: e.type,
+        isTrusted: !!e.isTrusted,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        timestamp: Date.now()
+      });
+    }
+
+    // 主按钮事件
+    elTarget.addEventListener('click', (e) => {
+      targetCount++;
+      recordEvent(targetEvents, e);
+      elTarget.textContent = `主计数按钮 (+1, 当前:${targetCount})`;
+      updateDisplay();
+    });
+
+    elTarget.addEventListener('mouseenter', (e) => {
+      if (moveOnHover && !isMoved) {
+        doMove(true);
+      }
+    });
+
+    // 干扰防误点按钮
+    elDecoy.addEventListener('click', (e) => {
+      decoyCount++;
+      recordEvent(decoyEvents, e);
+      elDecoy.textContent = `防误点干扰按钮 (+1, 当前:${decoyCount})`;
+      updateDisplay();
+    });
+
+    // 原位陷阱按钮
+    elTrap.addEventListener('click', (e) => {
+      trapCount++;
+      recordEvent(trapEvents, e);
+      elTrap.textContent = `原位陷阱 (命中: ${trapCount})`;
+      updateDisplay();
+    });
+
+    // 遮挡层
+    elShield.addEventListener('click', (e) => {
+      shieldCount++;
+      recordEvent(shieldEvents, e);
+      updateDisplay();
+    });
+
+    // 视口外按钮
+    elOffBtn.addEventListener('click', (e) => {
+      offViewportCount++;
+      updateDisplay();
+    });
+
+    // 位移动作
+    function doMove(moved) {
+      isMoved = moved;
+      if (moved) {
+        elTarget.classList.add('moved');
+        // 将陷阱放置在原位
+        elTrap.style.display = 'block';
+      } else {
+        elTarget.classList.remove('moved');
+      }
+      updateDisplay();
+    }
+
+    // 遮挡动作
+    function doOcclude(occluded) {
+      isOccluded = occluded;
+      if (occluded) {
+        elShield.style.display = 'flex';
+        // 同步位置与大小到 target-counter 当前位置
+        const rect = elTarget.getBoundingClientRect();
+        const rowRect = elArenaRow.getBoundingClientRect();
+        elShield.style.left = (rect.left - rowRect.left) + 'px';
+        elShield.style.top = (rect.top - rowRect.top) + 'px';
+        elShield.style.width = rect.width + 'px';
+        elShield.style.height = rect.height + 'px';
+      } else {
+        elShield.style.display = 'none';
+      }
+      updateDisplay();
+    }
+
+    // 同名按钮注入
+    let duplicateEl = null;
+    function doDuplicate(spawn) {
+      hasDuplicate = spawn;
+      if (spawn && !duplicateEl) {
+        duplicateEl = document.createElement('button');
+        duplicateEl.type = 'button';
+        duplicateEl.className = 'btn-duplicate';
+        duplicateEl.id = 'duplicate-target-counter';
+        // 故意采用与主按钮完全一致的文字和无障碍标签
+        duplicateEl.textContent = '主计数按钮 (+1)';
+        duplicateEl.setAttribute('aria-label', '主计数按钮');
+        duplicateEl.addEventListener('click', (e) => {
+          duplicateCount++;
+          recordEvent(duplicateEvents, e);
+          updateDisplay();
+        });
+        elArenaRow.insertBefore(duplicateEl, elTarget);
+      } else if (!spawn && duplicateEl) {
+        duplicateEl.remove();
+        duplicateEl = null;
+      }
+      updateDisplay();
+    }
+
+    // 测试控制器交互
+    document.getElementById('ctrl-move-now').addEventListener('click', () => {
+      doMove(!isMoved);
+    });
+
+    const btnMoveHover = document.getElementById('ctrl-move-on-hover');
+    btnMoveHover.addEventListener('click', () => {
+      moveOnHover = !moveOnHover;
+      btnMoveHover.classList.toggle('active', moveOnHover);
+      btnMoveHover.textContent = `悬停时自动位移 (Move on Hover: ${moveOnHover ? 'ON' : 'OFF'})`;
+      updateDisplay();
+    });
+
+    document.getElementById('ctrl-occlude-now').addEventListener('click', () => {
+      doOcclude(!isOccluded);
+    });
+
+    document.getElementById('ctrl-duplicate-now').addEventListener('click', () => {
+      doDuplicate(!hasDuplicate);
+    });
+
+    document.getElementById('ctrl-reset').addEventListener('click', () => {
+      resetAll();
+    });
+
+    function resetAll() {
+      targetCount = 0;
+      decoyCount = 0;
+      trapCount = 0;
+      shieldCount = 0;
+      duplicateCount = 0;
+      offViewportCount = 0;
+      moveOnHover = false;
+      targetEvents.length = 0;
+      decoyEvents.length = 0;
+      trapEvents.length = 0;
+      shieldEvents.length = 0;
+      duplicateEvents.length = 0;
+      btnMoveHover.classList.remove('active');
+      btnMoveHover.textContent = '悬停时自动位移 (Move on Hover: OFF)';
+      doMove(false);
+      doOcclude(false);
+      doDuplicate(false);
+      elTarget.textContent = '主计数按钮 (+1)';
+      elDecoy.textContent = '防误点干扰按钮 (+1)';
+      elTrap.textContent = '原位陷阱 (命中: 0)';
+      updateDisplay();
+    }
+
+    // 更新校准参数
+    function updateMetricsSummary() {
+      const dpr = window.devicePixelRatio;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const dprText = `DPR: ${dpr}`;
+      const vpText = `CSS Viewport: ${w}x${h} | Physical: ${Math.round(w * dpr)}x${Math.round(h * dpr)}`;
+      document.getElementById('metrics-summary').textContent = dprText;
+      document.getElementById('viewport-summary').textContent = vpText;
+    }
+    window.addEventListener('resize', updateMetricsSummary);
+    updateMetricsSummary();
+
+    // 暴露给验收驱动的证据与控制接口
+    window.readClickEvidence = () => ({
+      targetCount,
+      decoyCount,
+      trapCount,
+      shieldCount,
+      duplicateCount,
+      offViewportCount,
+      isMoved,
+      isOccluded,
+      hasDuplicate,
+      moveOnHover,
+      targetEvents: [...targetEvents],
+      decoyEvents: [...decoyEvents],
+      trapEvents: [...trapEvents],
+      shieldEvents: [...shieldEvents],
+      duplicateEvents: [...duplicateEvents],
+    });
+
+    window.readViewportMetrics = () => {
+      const box = document.getElementById('calibration-box').getBoundingClientRect();
+      const targetRect = document.getElementById('target-counter').getBoundingClientRect();
+      return {
+        pageRole: 'WORK_PAGE_ALPHA',
+        title: document.title,
+        url: window.location.href,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        dpr: window.devicePixelRatio,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        scrollHeight: document.documentElement.scrollHeight,
+        calibrationBox: {
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height
+        },
+        targetRect: {
+          x: targetRect.x,
+          y: targetRect.y,
+          width: targetRect.width,
+          height: targetRect.height
+        }
+      };
+    };
+
+    window.triggerInterference = (action, val) => {
+      if (action === 'move') doMove(val !== false);
+      else if (action === 'moveOnHover') {
+        moveOnHover = (val !== false);
+        btnMoveHover.classList.toggle('active', moveOnHover);
+        btnMoveHover.textContent = `悬停时自动位移 (Move on Hover: ${moveOnHover ? 'ON' : 'OFF'})`;
+        updateDisplay();
+      }
+      else if (action === 'occlude') doOcclude(val !== false);
+      else if (action === 'duplicate') doDuplicate(val !== false);
+      else if (action === 'reset') resetAll();
+      return window.readClickEvidence();
+    };
+  </script>
+</body>
+</html>

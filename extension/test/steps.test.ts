@@ -124,3 +124,27 @@ describe("workerEventRunPolicy 结束后不得开新处理中块", () => {
     expect(workerEventRunPolicy({ hasCurrentRun: false, graphRunning: false, hasLastRun: false })).toBe("drop");
   });
 });
+
+describe("run-steps 布局防压缩与最小尺寸契约", () => {
+  it("styles.css 显式声明 flex-shrink: 0 与 min-height，杜绝被消息列表纵向挤压", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const cssPath = resolve(__dirname, "../src/sidepanel/styles.css");
+    const css = readFileSync(cssPath, "utf-8");
+
+    // 1. #messages > * 必须声明 flex-shrink: 0，确保整个 feed 不会压缩任何消息或步骤卡片
+    expect(css).toMatch(/#messages\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0/);
+
+    // 2. details.run-steps 必须显式具备 flex-shrink: 0 与 min-height: min-content
+    expect(css).toMatch(/details\.run-steps\s*\{[^}]*flex-shrink:\s*0/);
+    expect(css).toMatch(/details\.run-steps\s*\{[^}]*min-height:\s*min-content/);
+
+    // 3. summary 必须具备 min-height 保底与 box-sizing
+    expect(css).toMatch(/details\.run-steps\s+summary\s*\{[^}]*min-height:\s*38px/);
+    expect(css).toMatch(/details\.run-steps\s+summary\s*\{[^}]*box-sizing:\s*border-box/);
+
+    // 4. .run-body 子元素不压缩
+    expect(css).toMatch(/\.run-body\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0/);
+  });
+});
+

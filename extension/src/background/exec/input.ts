@@ -449,17 +449,13 @@ async function nameOfClickTarget(
   }
 }
 
-export async function click(
+async function resolvePointerTarget(
+  tabId: number,
   params: ClickParams,
-  sessionId: string = LEAD_SESSION_ID,
-): Promise<ClickResult> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
-  if (tab.id == null) throw new Error("工作标签页无效");
-  const tabId = tab.id;
-  const cid = cursorId(sessionId);
+): Promise<{ point: [number, number]; targetRect?: DomRect }> {
   const target = params.target;
   let point = params.point;
-  if (!point && !target) throw new Error("click 需要 target 或 point 参数");
+  if (!point && !target) throw new Error("需要 target 或 point 参数");
 
   let targetRect: DomRect | undefined;
 
@@ -481,7 +477,7 @@ export async function click(
         resolvedViaCdp = true;
       } catch (e) {
         if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
-          throw new Error(`ref @${ref} 已失效，请重新 snapshot（${oneLine(e)}）`);
+          throw new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`);
         }
         // debugger 不可用：落到 domops 路径（注意此时 @N 依赖 DOM 快照的 refs，
         // 若上次快照是 AX 版会解析不到——属边缘情况，让 domops 报「已失效」即可）
@@ -513,9 +509,231 @@ export async function click(
     }
   }
 
-  if (!point || typeof point[0] !== "number" || typeof point[1] !== "number") {
-    throw new Error(`无法获取点击坐标：target=${target ?? "none"}`);
+  if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) {
+    throw new Error(`无法获取操作坐标：target=${target ?? "none"}`);
   }
+
+  return { point, targetRect };
+}
+
+const TARGET_OWNS_HIT_JS = `function ownsUpward(el, hit) {
+  if (!el || !hit) return false;
+  if (el === hit) return true;
+  if (el.contains && el.contains(hit)) return true;
+  var n = hit;
+  var seen = [];
+  while (n) {
+    if (n === el) return true;
+    if (seen.indexOf(n) >= 0) break;
+    seen.push(n);
+    var root = n.getRootNode && n.getRootNode();
+    if (root && root.host && root.host !== n) { n = root.host; continue; }
+    n = n.parentElement;
+  }
+  return false;
+}
+function targetOwnsHit(el, top, x, y) {
+  if (ownsUpward(el, top)) return true;
+  var node = el;
+  var seen = [];
+  while (node) {
+    if (seen.indexOf(node) >= 0) break;
+    seen.push(node);
+    var root = node.getRootNode && node.getRootNode();
+    var host = root && root.host;
+    if (host && root && typeof root.elementFromPoint === "function") {
+      if (top === host) {
+        var inner = root.elementFromPoint(x, y);
+        if (!inner || inner === top) return false;
+        if (ownsUpward(el, inner)) return true;
+        return targetOwnsHit(el, inner, x, y);
+      }
+      node = host;
+      continue;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}`;
+
+const CONFIRM_CLICK_JS = `function() {
+  ${TARGET_OWNS_HIT_JS}
+  const el = this;
+  if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
+  if (typeof el.scrollIntoViewIfNeeded === "function") el.scrollIntoViewIfNeeded({ block: "center", inline: "center" });
+  else el.scrollIntoView({ block: "center", inline: "center" });
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) throw new Error("元素不可见（零尺寸）");
+  const x = r.x + r.width / 2;
+  const y = r.y + r.height / 2;
+  const top = document.elementFromPoint(x, y);
+  if (!top) throw new Error("目标处没有可命中的元素，操作未执行。请重新 snapshot 确认当前目标。");
+  if (!targetOwnsHit(el, top, x, y)) {
+    throw new Error("目标被其他元素覆盖，操作未执行。请重新 snapshot 确认当前可点击目标，不要点击原坐标处的其他对象。");
+  }
+  return { x: r.x, y: r.y, width: r.width, height: r.height };
+}`;
+
+const HIT_TEST_AT_JS = `function(x, y) {
+  ${TARGET_OWNS_HIT_JS}
+  const el = this;
+  if (!el || !el.isConnected) throw new Error("ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。");
+  const top = document.elementFromPoint(x, y);
+  if (!top) throw new Error("目标处没有可命中的元素，操作未执行。请重新 snapshot 确认当前目标。");
+  if (!targetOwnsHit(el, top, x, y)) {
+    throw new Error("目标被其他元素覆盖，操作未执行。请重新 snapshot 确认当前可点击目标，不要点击原坐标处的其他对象。");
+  }
+  return true;
+}`;
+
+function isPrePressTargetError(e: unknown): boolean {
+  return /覆盖|已失效|可命中|不可见|不稳定|未找到目标|视口|坐标|替换/.test(oneLine(e));
+}
+
+/** 视觉等待后再次确认同一目标仍存在且可命中；失败则停，不点原坐标处的其他对象。 */
+async function confirmPointerTarget(
+  tabId: number,
+  target: string,
+): Promise<{ point: [number, number]; targetRect: DomRect }> {
+  const ref = parseRef(target);
+  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  if (backendNodeId !== undefined) {
+    try {
+      const rect = await callOnBackendNode<DomRect | undefined>(tabId, backendNodeId, CONFIRM_CLICK_JS);
+      if (!rect || typeof rect.x !== "number") throw new Error("无法确认目标位置");
+      return {
+        targetRect: rect,
+        point: [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)],
+      };
+    } catch (e) {
+      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+        const msg = oneLine(e);
+        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw new Error(msg);
+        throw new Error(
+          `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${msg}）`,
+        );
+      }
+    }
+  }
+  await ensureDomOps(tabId);
+  const res = await callDom(
+    tabId,
+    (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
+      const dom = window.__sideagent?.dom;
+      if (!dom) return { ok: false, error: "domops 未注入" };
+      try {
+        return { ok: true, rect: dom.confirmForClick(t) };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+    [target],
+  );
+  if (!res || !res.ok) {
+    throw new Error(res?.ok === false ? res.error : `未找到目标元素：${target}`);
+  }
+  if (!res.rect || typeof res.rect.x !== "number") {
+    throw new Error(`未找到目标元素：${target}`);
+  }
+  return {
+    targetRect: res.rect,
+    point: [Math.round(res.rect.x + res.rect.width / 2), Math.round(res.rect.y + res.rect.height / 2)],
+  };
+}
+
+/** 在即将按下的坐标确认仍是同一目标。不滚动，避免把命中检查做成另一次布局扰动。 */
+async function hitTestPointerTarget(tabId: number, target: string, x: number, y: number): Promise<void> {
+  const ref = parseRef(target);
+  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  if (backendNodeId !== undefined) {
+    try {
+      await callOnBackendNode<boolean>(tabId, backendNodeId, HIT_TEST_AT_JS, [x, y]);
+      return;
+    } catch (e) {
+      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+        const msg = oneLine(e);
+        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw new Error(msg);
+        throw new Error(
+          `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${msg}）`,
+        );
+      }
+    }
+  }
+  await ensureDomOps(tabId);
+  const res = await callDom(
+    tabId,
+    (t: string, px: number, py: number): { ok: true } | { ok: false; error: string } => {
+      const dom = window.__sideagent?.dom;
+      if (!dom) return { ok: false, error: "domops 未注入" };
+      try {
+        dom.hitTestAt(t, px, py);
+        return { ok: true };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+    [target, x, y],
+  );
+  if (!res || !res.ok) {
+    throw new Error(res?.ok === false ? res.error : `未找到目标元素：${target}`);
+  }
+}
+
+async function callPointGuard(
+  tabId: number,
+  x: number,
+  y: number,
+  kind: "remember" | "confirm",
+): Promise<void> {
+  await ensureDomOps(tabId);
+  const res = await callDom(
+    tabId,
+    (px: number, py: number, mode: "remember" | "confirm"): { ok: true } | { ok: false; error: string } => {
+      const dom = window.__sideagent?.dom;
+      if (!dom) return { ok: false, error: "domops 未注入" };
+      try {
+        if (mode === "remember") dom.rememberPoint(px, py);
+        else dom.confirmPoint(px, py);
+        return { ok: true };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: message };
+      }
+    },
+    [x, y, kind],
+  );
+  if (!res || !res.ok) {
+    throw new Error(res?.ok === false ? res.error : "无法确认该坐标操作");
+  }
+}
+
+/** 只派发真实鼠标移动；虚拟光标不是页面的 CSS :hover 状态。 */
+export async function hover(
+  params: ClickParams,
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<{ hovered: true }> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
+  if (tab.id == null) throw new Error("工作标签页无效");
+  const { point: [x, y] } = await resolvePointerTarget(tab.id, params);
+  await maybeActivateTab(tab, sessionId);
+  await cursorMove(tab.id, x, y, cursorId(sessionId));
+  await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  await recordCursorTrail(tab.id, sessionId, x, y, false);
+  return { hovered: true };
+}
+
+export async function click(
+  params: ClickParams,
+  sessionId: string = LEAD_SESSION_ID,
+): Promise<ClickResult> {
+  const tab = await resolveWorkingTab(undefined, sessionId);
+  if (tab.id == null) throw new Error("工作标签页无效");
+  const tabId = tab.id;
+  const cid = cursorId(sessionId);
+  const target = params.target;
+  const { point, targetRect } = await resolvePointerTarget(tabId, params);
 
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = heldClicks.isArmed(sessionId);
@@ -572,6 +790,11 @@ export async function click(
 
   await maybeActivateTab(tab, sessionId);
 
+  let [x, y] = point!;
+  if (!target) {
+    await callPointGuard(tabId, x, y, "remember");
+  }
+
   // 1. 操作前元素高亮：如果解析到了目标元素包围盒，先展示呼吸高亮框（静默兜底）
   if (targetRect) {
     try {
@@ -603,9 +826,27 @@ export async function click(
     }
   }
 
+  if (target) {
+    const confirmed = await confirmPointerTarget(tabId, target);
+    x = confirmed.point[0];
+    y = confirmed.point[1];
+    if (x !== point[0] || y !== point[1]) {
+      await cursorMove(tabId, x, y, cid);
+    }
+  }
+
+  let cdpMouseMoved = false;
+  let cdpMousePressed = false;
   try {
-    const [x, y] = point!;
     await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    cdpMouseMoved = true;
+    // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
+    // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
+    if (target) {
+      await hitTestPointerTarget(tabId, target, x, y);
+    } else {
+      await callPointGuard(tabId, x, y, "confirm");
+    }
     await sendCommand(tabId, "Input.dispatchMouseEvent", {
       type: "mousePressed",
       x,
@@ -613,6 +854,7 @@ export async function click(
       button: "left",
       clickCount: 1,
     });
+    cdpMousePressed = true;
     await sendCommand(tabId, "Input.dispatchMouseEvent", {
       type: "mouseReleased",
       x,
@@ -621,7 +863,18 @@ export async function click(
       clickCount: 1,
     });
   } catch (e) {
-    // debugger 不可用（如被 DevTools 占用）时退到 domops 合成事件
+    if (cdpMousePressed) {
+      throw new Error(
+        `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
+      );
+    }
+    if (cdpMouseMoved) {
+      if (isPrePressTargetError(e)) throw e;
+      throw new Error(
+        `点击是否送达无法确认，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
+      );
+    }
+    // 尚未向页面派发任何 CDP 输入（如 DevTools 占用）时，才允许 DOM 回退一次
     if (target) {
       await ensureDomOps(tabId);
       await callDom(
@@ -633,12 +886,12 @@ export async function click(
         },
         [target],
       );
-      if (point) await recordCursorTrail(tabId, sessionId, point[0], point[1], true);
+      await recordCursorTrail(tabId, sessionId, x, y, true);
       return { clicked: true };
     }
     throw e;
   }
-  if (point) await recordCursorTrail(tabId, sessionId, point[0], point[1], true);
+  await recordCursorTrail(tabId, sessionId, x, y, true);
   return { clicked: true };
 }
 
@@ -852,7 +1105,7 @@ export async function mark(
       rect = await rectOfBackendNode(tabId, backendNodeId);
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
-        throw new Error(`ref @${ref} 已失效，请重新 snapshot（${oneLine(e)}）`);
+        throw new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`);
       }
     }
   }
