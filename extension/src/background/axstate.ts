@@ -6,9 +6,11 @@
  */
 
 const byTab = new Map<number, Set<number>>();
+const latestKind = new Map<number, "ax" | "dom">();
 
 export function recordAxSnapshot(tabId: number, backendIds: number[]): void {
   byTab.set(tabId, new Set(backendIds));
+  latestKind.set(tabId, "ax");
 }
 
 export function isAxRef(tabId: number, ref: number): boolean {
@@ -22,12 +24,18 @@ export function isAxRef(tabId: number, ref: number): boolean {
  */
 export function clearAxSnapshot(tabId: number): void {
   byTab.delete(tabId);
+  latestKind.set(tabId, "dom");
+}
+
+export function snapshotRefKind(tabId: number): "ax" | "dom" | undefined {
+  return latestKind.get(tabId);
 }
 
 // 导航后 backendDOMNodeId 全部失效，整表作废
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === "loading") byTab.delete(tabId);
+  if (info.status === "loading") { byTab.delete(tabId); latestKind.delete(tabId); }
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   byTab.delete(tabId);
+  latestKind.delete(tabId);
 });

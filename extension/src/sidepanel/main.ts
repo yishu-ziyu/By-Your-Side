@@ -33,6 +33,8 @@ import {
   chipState,
   describeTool,
   formatDuration,
+  historyEventTime,
+  recordedDuration,
   loaderSubtitle,
   pixelDelay,
   workerEventRunPolicy,
@@ -53,7 +55,7 @@ import {
 } from "./models.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ModelOption, TeamView } from "../../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, TeamView } from "../../../shared/protocol.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
@@ -93,6 +95,12 @@ app.innerHTML = `
       <span id="status-text">未连接</span>
     </div>
   </header>
+  <div id="conversation-bar">
+    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
+    <button id="conversation-new" type="button">＋ 新会话</button>
+  </div>
+  <button id="conversation-background" type="button" hidden></button>
+  <div id="conversation-menu" role="menu" hidden></div>
   <div id="messages"></div>
   <div id="team-card" hidden></div>
   <div class="composer-dock-wrap">
@@ -191,6 +199,172 @@ const askCiteHost = document.getElementById("ask-cite-host") as HTMLElement | nu
 const askCiteText = document.getElementById("ask-cite-text") as HTMLElement | null;
 const askCiteClose = document.getElementById("ask-cite-close") as HTMLButtonElement | null;
 let pendingAsk: PendingAsk | null = null;
+let selectedConversationId = "default";
+let conversationReady = false;
+let transportConnected = false;
+const completedConversations = new Set<string>();
+let conversationRequest: string | null = null;
+const conversations = new Map<string, ConversationSummary>();
+const conversationSwitcher = document.getElementById("conversation-switcher") as HTMLButtonElement;
+const conversationNew = document.getElementById("conversation-new") as HTMLButtonElement;
+const conversationMenu = document.getElementById("conversation-menu")!;
+const conversationBackground = document.getElementById("conversation-background") as HTMLButtonElement;
+type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null };
+const conversationDrafts = new Map<string, ConversationDraft>();
+const draftFingerprints = new Map<string, string>();
+let restoringDraft = false;
+let draftRevision = 0;
+let draftWrites = Promise.resolve();
+const DRAFT_KEY = "sideagent_conversation_draft:";
+
+function saveDraft(): void {
+  if (restoringDraft || !attachments) return;
+  const id = selectedConversationId;
+  const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk };
+  const fingerprint = JSON.stringify(draft);
+  if (draftFingerprints.get(id) === fingerprint) return;
+  draftRevision += 1;
+  draftFingerprints.set(id, fingerprint);
+  conversationDrafts.set(id, draft);
+  draftWrites = draftWrites.catch(() => {}).then(() => chrome.storage.local.set({ [DRAFT_KEY + id]: draft }));
+}
+
+async function restoreDraft(id: string): Promise<void> {
+  const revision = draftRevision;
+  let draft = conversationDrafts.get(id);
+  if (!draft) {
+    const stored = await chrome.storage.local.get(DRAFT_KEY + id);
+    if (revision !== draftRevision || selectedConversationId !== id) return;
+    draft = stored[DRAFT_KEY + id] as ConversationDraft | undefined;
+  }
+  if (selectedConversationId !== id) return;
+  restoringDraft = true;
+  try {
+    inputEl.value = typeof draft?.text === "string" ? draft.text : "";
+    attachments.restore(draft?.attachments ?? [], id);
+    pendingAsk = draft?.ask ?? null;
+    if (pendingAsk) applyPendingAsk(pendingAsk);
+    else if (askCiteEl) askCiteEl.hidden = true;
+    autoResize();
+    draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk }));
+  } finally { restoringDraft = false; }
+}
+
+function upsertConversation(c: ConversationSummary): void {
+  if (conversations.get(c.id)?.state === "running" && c.state === "idle" && c.id !== selectedConversationId) completedConversations.add(c.id);
+  conversations.set(c.id, c);
+}
+
+function conversationStateLabel(c: ConversationSummary): string {
+  return c.state === "running" ? "运行中" : c.state === "user" ? "现在归你" : "空闲";
+}
+
+function renderConversations(): void {
+  const current = conversations.get(selectedConversationId);
+  const currentTitle = document.createElement("span");
+  currentTitle.className = "conversation-title";
+  currentTitle.textContent = current?.title || "新会话";
+  conversationSwitcher.replaceChildren(currentTitle, icon(ChevronDown));
+  conversationSwitcher.title = current?.title || "切换会话";
+  conversationNew.disabled = !conversationReady || !transportConnected || conversationRequest !== null;
+  conversationNew.textContent = conversationRequest ? "正在新建…" : "＋ 新会话";
+  const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  const rows = list.map((c) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitemradio");
+    button.setAttribute("aria-checked", String(c.id === selectedConversationId));
+    button.dataset.conversationId = c.id;
+    const title = document.createElement("span");
+    title.textContent = c.title || "新会话";
+    const state = document.createElement("small");
+    state.textContent = conversationStateLabel(c);
+    button.append(title, state);
+    button.onclick = () => selectConversation(c.id);
+    return button;
+  });
+  conversationMenu.replaceChildren(...rows);
+  const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
+    ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
+    ?? list.find((c) => c.id !== selectedConversationId && completedConversations.has(c.id));
+  conversationBackground.hidden = !other;
+  if (other) {
+    conversationBackground.textContent = `${other.title} · ${other.state === "running" ? "后台运行中" : other.state === "user" ? "现在归你" : "已结束"} ↗`;
+    conversationBackground.onclick = () => selectConversation(other.id);
+  }
+}
+
+function resetConversationRender(): void {
+  if (currentRun) clearInterval(currentRun.timer);
+  closeBlocks();
+  currentRun = null;
+  lastRun = null;
+  runStartAt = 0;
+  toolChips.clear();
+  sessionRun.clear();
+  teamView = null;
+  running = false;
+  lastUserHasPage = false;
+  lastHistorySeq = 0;
+  historyPrimed = false;
+  messagesEl.replaceChildren();
+  renderTeamCard();
+  setSessionState(LEAD_SESSION_ID, "idle");
+  companion.onTakeover(false);
+}
+
+function selectConversation(id: string, notify = true): void {
+  completedConversations.delete(id);
+  conversationMenu.hidden = true;
+  conversationSwitcher.setAttribute("aria-expanded", "false");
+  if (id !== selectedConversationId || !conversationReady) {
+    if (conversationReady) saveDraft();
+    selectedConversationId = id;
+    conversationReady = true;
+    draftRevision += 1;
+    resetConversationRender();
+    restoringDraft = true;
+    inputEl.value = "";
+    pendingAsk = null;
+    if (askCiteEl) askCiteEl.hidden = true;
+    attachments.restore([], id);
+    restoringDraft = false;
+    const summary = conversations.get(id);
+    if (summary) applyMode(summary.mode, false);
+    closeModelPopover();
+    modelState = null;
+    renderModelPicker();
+    void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
+  }
+  renderConversations();
+  if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
+  port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
+}
+
+conversationSwitcher.onclick = () => {
+  conversationMenu.hidden = !conversationMenu.hidden;
+  conversationSwitcher.setAttribute("aria-expanded", String(!conversationMenu.hidden));
+};
+conversationNew.onclick = () => {
+  if (!conversationReady || conversationRequest) return;
+  saveDraft();
+  conversationRequest = crypto.randomUUID();
+  renderConversations();
+  send({ type: "conversation_create", requestId: conversationRequest });
+};
+document.addEventListener("click", (e) => {
+  if (!conversationMenu.contains(e.target as Node) && !conversationSwitcher.contains(e.target as Node)) {
+    conversationMenu.hidden = true;
+    conversationSwitcher.setAttribute("aria-expanded", "false");
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !conversationMenu.hidden) {
+    conversationMenu.hidden = true;
+    conversationSwitcher.setAttribute("aria-expanded", "false");
+    conversationSwitcher.focus();
+  }
+});
 const morphSheet = document.getElementById("morph-sheet") as HTMLElement | null;
 const closeMorphSheetBtn = document.getElementById("close-morph-sheet") as HTMLButtonElement | null;
 const tabIconSq = document.getElementById("tab-icon-sq") as HTMLElement | null;
@@ -626,10 +800,13 @@ const toolChips = new Map<string, ToolChipEntry>();
 const TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
   ["click", MousePointerClick],
   ["fill", PenLine],
+  ["page_operation", PenLine],
+  ["share_tab", Users],
   ["type_text", Keyboard],
   ["press_key", Keyboard],
   ["scroll", ArrowDownUp],
   ["snapshot", ScanSearch],
+  ["read_element", ScanSearch],
   ["screenshot", Camera],
   ["js", CodeXml],
   ["navigate", Globe],
@@ -795,12 +972,13 @@ function ensureRun(): NonNullable<typeof currentRun> {
   body.className = "run-body";
   root.append(summary, body);
   messagesEl.appendChild(root);
-  const start = runStartAt || Date.now();
+  const start = runStartAt || eventTime();
   const { root: loader, elapsed: loaderElapsed, sub: loaderSub } = buildPixelLoader();
+  loaderElapsed.textContent = recordedDuration(start, eventTime()) ?? "";
   body.appendChild(loader);
   // 耗时读数 100ms 刷新；reduced-motion 只停格子动画，读数照常
   const timer = window.setInterval(() => {
-    loaderElapsed.textContent = `${((Date.now() - start) / 1000).toFixed(1)}s`;
+    loaderElapsed.textContent = recordedDuration(start, Date.now()) ?? "";
   }, 100);
   currentRun = {
     root,
@@ -1051,7 +1229,8 @@ function finishRun(): void {
   }
   run.root.classList.add("done");
   run.iconBox.replaceChildren(icon(CircleCheck));
-  run.timeEl.textContent = `耗时 ${formatDuration(Date.now() - run.start)}`;
+  const duration = recordedDuration(run.start, eventTime());
+  run.timeEl.textContent = duration ? `耗时 ${duration}` : "";
   run.root.open = false;
   if (!applyingHistory) companion.onRunFinish();
   scrollToEnd();
@@ -1071,7 +1250,7 @@ function closeBlocks(): void {
     const label = currentThinkingDetails.querySelector("summary span");
     if (label) {
       label.textContent = currentThinkingStart
-        ? `思考过程 ${formatDuration(Date.now() - currentThinkingStart)}`
+        ? `思考过程${recordedDuration(currentThinkingStart, eventTime()) ? ` ${recordedDuration(currentThinkingStart, eventTime())}` : ""}`
         : "思考过程";
     }
   }
@@ -1091,7 +1270,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
   } else {
     if (!currentThinking) {
       addChainStep("思考");
-      currentThinkingStart = Date.now();
+      currentThinkingStart = eventTime();
       const details = document.createElement("details");
       details.className = "thinking streaming";
       details.open = true;
@@ -1234,7 +1413,7 @@ function onToolStart(
     chip,
     dot,
     dur,
-    start: Date.now(),
+    start: eventTime(),
     name: ev.name,
     paramsText: shortParams(ev.params),
     resultText: "",
@@ -1259,8 +1438,9 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   toolChips.delete(ev.toolCallId);
   if (!entry) return;
   entry.dot.className = `chip-dot ${chipState(true, ev.isError)}`;
-  entry.dur.hidden = false;
-  entry.dur.textContent = formatDuration(Date.now() - entry.start);
+  const duration = recordedDuration(entry.start, eventTime());
+  entry.dur.hidden = duration === null;
+  entry.dur.textContent = duration ?? "";
   if (ev.isError) entry.chip.classList.add("error");
   const text = ev.resultText ?? "";
   if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;
@@ -1341,18 +1521,35 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
-function send(msg: ClientMessage): void {
-  const envelope: PanelToBg = { kind: "client", msg };
+function send(msg: ClientMessage): boolean {
+  if (!port || !transportConnected) return false;
+  const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: selectedConversationId } };
   try {
-    port?.postMessage(envelope);
+    port.postMessage(envelope);
+    return true;
   } catch {
-    /* 端口刚好断开，下一轮重连恢复 */
+    return false;
   }
 }
 
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
   if (!msg) return;
+  if (msg.type === "conversation_created" || msg.type === "conversation_updated") {
+    upsertConversation(msg.conversation);
+    if (msg.type === "conversation_created" && msg.requestId === conversationRequest) {
+      conversationRequest = null;
+      selectConversation(msg.conversation.id);
+    }
+    renderConversations();
+    return;
+  }
+  if (msg.type === "conversation_list") {
+    for (const c of msg.conversations) upsertConversation(c);
+    renderConversations();
+    return;
+  }
+  if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
   switch (msg.type) {
     case "hello_ok":
       setStatus("on", "已连接");
@@ -1380,25 +1577,40 @@ function handleServerMessage(raw: string): void {
 }
 
 function handleBgMessage(envelope: BgToPanel): void {
+  if (envelope.kind === "conversations") {
+    for (const c of envelope.conversations) upsertConversation(c);
+    if (envelope.selectedConversationId !== selectedConversationId || !conversationReady) {
+      selectConversation(envelope.selectedConversationId, false);
+    }
+    renderConversations();
+    return;
+  }
   if (envelope.kind === "server") {
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId
+      && !envelope.msg.type.startsWith("conversation_")) return;
     handleServerMessage(JSON.stringify(envelope.msg));
     return;
   }
   if (envelope.kind === "history") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     applyHistory(envelope.entries);
     return;
   }
   if (envelope.kind === "mode") {
     // background 是运行时权威：以其为准并收敛本地存储
-    applyMode(envelope.mode, true);
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
+    applyMode(envelope.mode, false);
     return;
   }
   if (envelope.kind === "ask_selection") {
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     applyPendingAsk(envelope.ask);
     return;
   }
   if (envelope.kind !== "conn") return;
   // 连接状态
+  transportConnected = envelope.state === "connected";
+  renderConversations();
   if (envelope.state === "connected") {
     // 等 hello_ok 带模型名到达；先亮绿灯
     setStatus("on", "已连接");
@@ -1411,6 +1623,8 @@ function handleBgMessage(envelope: BgToPanel): void {
       sessionRun.clear();
       setTeamView(null);
     }
+    conversationRequest = null;
+    renderConversations();
     modelState = null;
     renderModelPicker();
     setStatus("off", "未连接");
@@ -1424,6 +1638,8 @@ function handleBgMessage(envelope: BgToPanel): void {
 }
 
 let lastHistorySeq = 0;
+let historyOccurredAt: number | undefined;
+function eventTime(): number { return historyEventTime(applyingHistory, historyOccurredAt); }
 
 function applyHistory(entries: PanelHistoryEntry[]): void {
   const fresh: PanelHistoryEntry[] = [];
@@ -1432,12 +1648,17 @@ function applyHistory(entries: PanelHistoryEntry[]): void {
     for (const entry of entries) {
       if (entry.seq <= lastHistorySeq) continue;
       fresh.push(entry);
-      if (entry.item.kind === "user") addUserMsg(entry.item.text, entry.item.attachments);
+      historyOccurredAt = entry.occurredAt;
+      if (entry.item.kind === "user") {
+        if (!running) runStartAt = eventTime();
+        addUserMsg(entry.item.text, entry.item.attachments);
+      }
       else handleServerMessage(JSON.stringify(entry.item.msg));
       lastHistorySeq = entry.seq;
     }
   } finally {
     applyingHistory = false;
+    historyOccurredAt = undefined;
   }
   const replay = !historyPrimed && fresh.length > 1;
   historyPrimed = true;
@@ -1465,7 +1686,7 @@ function connect(): void {
     if (port === p) port = null;
     scheduleReconnect();
   });
-  p.postMessage({ kind: "sync", afterSeq: lastHistorySeq } satisfies PanelToBg);
+  p.postMessage({ kind: "sync", ...(conversationReady ? { conversationId: selectedConversationId } : {}), afterSeq: lastHistorySeq } satisfies PanelToBg);
 }
 
 function scheduleReconnect(): void {
@@ -1512,8 +1733,16 @@ attachments = new AttachmentsManager({
   attachBtn,
   menuEl: attachMenu,
   fileInputEl: fileInput,
-  onChanged: () => {
-    autoResize();
+  onChanged: (count, scope) => {
+    if (!scope || scope === selectedConversationId) {
+      autoResize();
+      saveDraft();
+    } else {
+      const draft = conversationDrafts.get(scope) ?? { text: "", attachments: [], ask: null };
+      draft.attachments = attachments.getAttachments(scope);
+      conversationDrafts.set(scope, draft);
+      draftWrites = draftWrites.catch(() => {}).then(() => chrome.storage.local.set({ [DRAFT_KEY + scope]: draft }));
+    }
   },
   onError: (errMsg) => {
     addMsg("msg error", errMsg);
@@ -1535,6 +1764,7 @@ function applyPendingAsk(ask: PendingAsk): void {
   askCiteText.textContent = ask.text;
   askCiteEl.hidden = false;
   inputEl.focus();
+  saveDraft();
 }
 
 function clearPendingAsk(): void {
@@ -1542,12 +1772,13 @@ function clearPendingAsk(): void {
   if (askCiteEl) askCiteEl.hidden = true;
   if (askCiteText) askCiteText.textContent = "";
   void chrome.storage?.session?.remove(ASK_STORE);
+  saveDraft();
 }
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
 
 function sendInput(): void {
-  if (panelLive(sessionRun.values(), teamView).userHasPage) return;
+  if (!conversationReady || !port || panelLive(sessionRun.values(), teamView).userHasPage) return;
   const text = inputEl.value.trim();
   const pendingAtts = attachments.getAttachments();
   if (!text && pendingAtts.length === 0) return;
@@ -1562,15 +1793,17 @@ function sendInput(): void {
       }
     : undefined;
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
-  send(
+  const sent = send(
     running
       ? { type: "steer", text, context, attachments: clientAttachments }
       : { type: "user_message", text, context, attachments: clientAttachments },
   );
+  if (!sent) return;
   inputEl.value = "";
   clearPendingAsk();
   attachments.clear();
   autoResize();
+  saveDraft();
 }
 
 sendBtn.onclick = () => {
@@ -1580,7 +1813,8 @@ sendBtn.onclick = () => {
     sendInput();
   }
 };
-inputEl.addEventListener("input", autoResize);
+inputEl.addEventListener("input", () => { autoResize(); saveDraft(); });
+window.addEventListener("pagehide", saveDraft);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -1588,7 +1822,7 @@ inputEl.addEventListener("keydown", (e) => {
   }
 });
 takeoverBtn.onclick = () => {
-  port?.postMessage({ kind: "control", action: "takeover" } satisfies PanelToBg);
+  port?.postMessage({ kind: "control", action: "takeover", conversationId: selectedConversationId } satisfies PanelToBg);
 };
 abortBtn.onclick = () => send({ type: "abort" });
 

@@ -38,8 +38,8 @@ describe("PanelHistory", () => {
 
     expect(latest.seq).toBe(3);
     expect(history.since()).toEqual([
-      { seq: 2, item: { kind: "user", text: "two" } },
-      { seq: 3, item: { kind: "user", text: "three" } },
+      { seq: 2, item: { kind: "user", text: "two" }, occurredAt: expect.any(Number) },
+      { seq: 3, item: { kind: "user", text: "three" }, occurredAt: expect.any(Number) },
     ]);
     expect(history.since(0).map((entry) => entry.seq)).toEqual([2, 3]);
   });

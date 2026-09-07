@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LEAD_SESSION_ID,
+  TOOL_NAMES,
   isLeadSession,
   parseClientMessage,
   parseServerMessage,
@@ -499,6 +500,20 @@ describe("parseServerMessage", () => {
     ).toMatchObject({ type: "agent_event", sessionId: "wiki" });
   });
 
+  it("read_element 是协议内只读工具并保留 conversation/session 路由", () => {
+    expect(TOOL_NAMES).toContain("read_element");
+    expect(
+      parseServerMessage(JSON.stringify({
+        type: "tool_call",
+        id: "read-1",
+        name: "read_element",
+        params: { tabId: 12, target: "#field" },
+        conversationId: "conversation-A",
+        sessionId: "writer",
+      })),
+    ).toMatchObject({ type: "tool_call", name: "read_element", conversationId: "conversation-A", sessionId: "writer" });
+  });
+
   it("rejects empty sessionId on server frames", () => {
     expect(parseServerMessage(JSON.stringify({ type: "status", state: "idle", sessionId: "" }))).toBeNull();
   });
@@ -622,5 +637,24 @@ describe("session id helpers", () => {
     expect(isLeadSession(undefined)).toBe(true);
     expect(isLeadSession(LEAD_SESSION_ID)).toBe(true);
     expect(isLeadSession("wiki")).toBe(false);
+  });
+});
+
+describe("conversation envelope", () => {
+  it("accepts a stable conversation id and legacy omission", () => {
+    expect(parseClientMessage(JSON.stringify({ type: "abort", conversationId: "conversation-a" }))).toMatchObject({ conversationId: "conversation-a" });
+    expect(parseClientMessage(JSON.stringify({ type: "abort" }))).toEqual({ type: "abort" });
+    expect(parseServerMessage(JSON.stringify({ type: "status", state: "running", conversationId: "conversation-a" }))).toMatchObject({ conversationId: "conversation-a" });
+  });
+  it("rejects wrong, empty, path-like and overlong ids in both directions", () => {
+    for (const conversationId of [null, 8, {}, "", "../escape", "a".repeat(65)]) {
+      expect(parseClientMessage(JSON.stringify({ type: "abort", conversationId }))).toBeNull();
+      expect(parseServerMessage(JSON.stringify({ type: "status", state: "idle", conversationId }))).toBeNull();
+    }
+  });
+  it("validates creation and server summaries", () => {
+    expect(parseClientMessage(JSON.stringify({ type: "conversation_create", requestId: "request-a", title: "A" }))).not.toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: "conversation_create", requestId: 4 }))).toBeNull();
+    expect(parseServerMessage(JSON.stringify({ type: "conversation_list", conversations: [{ id: 4 }] }))).toBeNull();
   });
 });

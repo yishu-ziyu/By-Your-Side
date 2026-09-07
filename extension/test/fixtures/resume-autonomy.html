@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>林晓的简历草稿 · 本地验收样本</title>
+<style>
+body{margin:0;background:#f5f6f8;color:#263141;font:15px/1.8 system-ui}main{max-width:780px;margin:36px auto;padding:0 24px}h1{font-size:27px;margin:0}h2{font-size:18px}section{margin:22px 0;padding:24px;background:white;border:1px solid #dde3ea;border-radius:12px}p{color:#647185}textarea{display:block;box-sizing:border-box;width:100%;min-height:150px;font:inherit;padding:12px;border:1px solid #b4c1d1;border-radius:8px}button{font:inherit;border:0;background:#263141;color:white;padding:8px 20px;border-radius:7px}small{color:#8893a1}output{display:block;margin-top:16px}
+</style>
+<main>
+<small>本地测试样本，人物与经历均为虚构。草稿只保存在当前页面。</small>
+<h1>林晓 · 产品经理</h1><p>目标岗位：B2B 产品经理。根据以下原始材料整理简历，用简短条目突出行动与结果，不添加材料中没有的数字。</p>
+<section><h2>工作经历</h2>
+<p>原始材料：2023 年 7 月至今，在青禾软件负责企业知识库产品。起初销售人员需要跨三个系统查询客户资料，林晓访谈了 12 位销售与 4 位交付同事，梳理出重复录入和查找不到最新版本两个主要问题。协调设计和研发建立统一客户资料页，分两批迁移原有资料，保留旧链接跳转以减少使用中断。上线后跟进两周工单，根据反馈补充最近修改人和更新时间。另一个项目是知识库权限改造：把管理员口头解释的访问规则梳理成权限矩阵，组织交付团队验证，补齐离职交接流程。材料没有提供转化率、收入或效率提升百分比。2022 年 6 月至 2023 年 6 月，在南岸科技担任产品实习生，整理客服反馈、绘制注册流程、参与首次登录引导改版。希望工作经历分成两段，每段不超过三条。</p>
+<label for="work-experience">整理后的工作经历</label><textarea id="work-experience" name="work" placeholder="待整理"></textarea>
+</section>
+<section><h2>教育经历</h2>
+<p>原始材料：2019 年 9 月至 2023 年 6 月，在明川大学学习信息管理与信息系统，本科学位。课程包括数据库、统计学、人机交互和管理信息系统。毕业项目研究图书馆自助借阅流程，与三位同学完成观察、访谈和交互原型，林晓负责调研方案和可用性测试。访谈对象为 8 位学生，项目成果是借阅流程原型与改进报告，没有上线记录。2021 年参加校内无障碍工作坊，负责梳理网页表单键盘操作中的障碍并提出修改建议。2022 年在课程中完成一项公开数据分析作业，用 SQL 清洗数据、用图表解释季节性变化。没有奖学金、排名或论文发表信息，不要补写。希望保留学校、专业、学位和时间；项目与课程只选与目标岗位相关的内容，写成两到三条。</p>
+<label for="education">整理后的教育经历</label><textarea id="education" name="education" placeholder="待整理"></textarea>
+</section>
+<section><h2>一句话摘要</h2><label for="summary">摘要</label><textarea id="summary" placeholder="可选"></textarea></section>
+<button id="submit" type="button">提交简历</button><output id="state">尚未提交</output>
+</main>
+<script>
+let submitCount=0;
+document.querySelector('#submit').onclick=()=>{document.querySelector('#state').textContent=`已提交 ${++submitCount} 次`};
+</script>
+</html>

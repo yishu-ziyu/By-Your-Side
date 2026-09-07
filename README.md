@@ -8,7 +8,7 @@ Chrome 侧边栏 Agent：在 Chrome 侧边栏里嵌入一个对话式 Agent，�
 ┌─ Chrome 扩展 (MV3) ──────────────────┐       ┌─ 本地伴随进程 (Node.js) ─────────┐
 │ side panel：聊天 UI（仅渲染/输入）      │       │ Pi SDK：createAgentSession       │
 │ background：持上行连接 + 工具执行层     │ native│   noTools:"builtin"              │
-│   ├─ chrome.debugger (CDP 输入)       │◄─────►│   customTools：17 个浏览器工具    │
+│   ├─ chrome.debugger (CDP 输入)       │◄─────►│   customTools：浏览器执行工具      │
 │   └─ content script（快照/填表）       │ stdio │   模型：继承 ~/.pi 登录态          │
 └──────────────────────────────────────┘       └──────────────────────────────────┘
 ```
@@ -61,12 +61,20 @@ Agent 还可以通过 `browser_run` 把观察、条件判断、等待和操作�
 - 「在当前页搜索 XXX，把前 10 条结果的标题和链接整理给我」
 - 「帮我把这个表单填了：姓名……」
 
+可以新建多个用户会话。A 运行时进入 B，A 会继续执行；各会话分别保留聊天、目标、草稿与附件、团队和控制状态。中止 B 不会中止 A。关闭再打开侧栏会恢复选中的会话与内容。
+
+每个会话首次使用页面时创建自己的 Chrome 标签组。同一 URL 在两个会话中分别打开；一个会话不能用 `tabId` 抢走另一个会话的页面。当前尚未归属的活动页可以明确借入。
+
+同一会话的 worker 可以通过运行时登记共用一张未保存表单。共享页上的原生 input/textarea 字段使用完整短动作轮流写入：核对原值、focus、输入、读回。彩色光标表示不同成员，实际输入焦点仍只有一个。接管共享页会停止该页全部协作者，其他会话的独立页继续。M3 已跑通主动分工与单字段不分工两条真实路径；当前短表单样本尚未表现出总耗时收益。
+
+Pi 对话上下文持久化在 `~/.sideagent/conversations/`，伴随进程重启后可以继续对话，不会自动重放旧页面动作。当前不支持跨会话共享页面或合并会话。协议与边界见 [桥接协议](docs/protocol.md)。
+
 运行中可以继续发消息插话（steer），或点「中止」打断。Agent 操作 `click`/`hover`/`type_text`/`press_key`/`js`/`screenshot` 时会通过 `chrome.debugger` 挂载调试会话，标签页顶部出现「正在调试」提示条属正常现象，闲置 15 秒后自动卸载。
 
 ## 安全说明
 
 - 伴随进程由 Chrome 经 native messaging 拉起，仅接受 host manifest `allowed_origins` 白名单里的扩展；ws 调试通道只监听 `127.0.0.1`，握手校验 token + `chrome-extension://` Origin。
-- Agent 被剥掉了全部内置工具（`noTools:"builtin"`），浏览器操作由扩展提供的 17 个工具完成。
+- Agent 被剥掉了全部内置工具（`noTools:"builtin"`），浏览器操作由扩展提供的工具完成，具体契约见 `shared/protocol.ts`。
 - 不可逆操作（下单、发布、删除等）由系统提示词约束必须先经你文字确认。
 
 ## 开发

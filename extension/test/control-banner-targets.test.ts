@@ -39,7 +39,7 @@ describe("hideUserControlBanners", () => {
     );
   });
 
-  it("显式当前页与内存追踪页一起清理", async () => {
+  it("显式页只清理该页，不影响其他会话的内存追踪页", async () => {
     const executeScript = installChrome();
     const { hideUserControlBanners, showUserControlBanner } = await import(
       "../src/background/exec/input.js"
@@ -53,6 +53,6 @@ describe("hideUserControlBanners", () => {
       .filter(([details]) => details.args?.[0] === false)
       .map(([details]) => details.target.tabId)
       .sort((a, b) => a - b);
-    expect(hiddenTabIds).toEqual([41, 73]);
+    expect(hiddenTabIds).toEqual([73]);
   });
 });

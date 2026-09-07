@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SideAgent 会话与共享页验收</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, -apple-system, sans-serif; }
+      body { margin: 0; background: #f4f5f7; color: #17191c; }
+      main { width: min(720px, calc(100% - 40px)); margin: 40px auto; }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      p { color: #62676f; }
+      section { margin-top: 20px; padding: 20px; border: 1px solid #d9dce1; border-radius: 16px; background: white; }
+      label { display: grid; gap: 7px; margin-top: 16px; font-weight: 650; }
+      input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #bcc1c9; border-radius: 10px; padding: 10px 12px; font: inherit; }
+      textarea { min-height: 110px; resize: vertical; }
+      input:focus, textarea:focus { outline: 3px solid rgba(69, 113, 255, .22); border-color: #4571ff; }
+      button { margin-top: 18px; border: 0; border-radius: 10px; padding: 10px 14px; background: #17191c; color: white; font: inherit; }
+      output, pre { display: block; margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: #f0f2f5; white-space: pre-wrap; }
+      .marker { font-family: ui-monospace, SFMono-Regular, monospace; color: #304fd1; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>会话与共享页验收</h1>
+      <p id="fixture-marker" class="marker">SIDEAGENT_SESSION_MANAGEMENT_FIXTURE_20260908</p>
+
+      <section aria-labelledby="session-heading">
+        <h2 id="session-heading">标签内独立草稿</h2>
+        <p>相同 URL 在两个会话中打开时，这里的未保存值必须各自保留。</p>
+        <label for="session-draft">
+          会话草稿
+          <input id="session-draft" name="sessionDraft" autocomplete="off" placeholder="尚未填写" />
+        </label>
+        <output id="session-state" aria-live="polite">session-draft-is-empty</output>
+      </section>
+
+      <section aria-labelledby="resume-heading">
+        <h2 id="resume-heading">未保存简历</h2>
+        <p>两个协作者在这一张页面内分别完善字段。页面不会自动保存，也不能提交。</p>
+        <label for="work-experience">
+          工作经历
+          <textarea id="work-experience" name="workExperience" placeholder="待完善"></textarea>
+        </label>
+        <label for="education">
+          教育经历
+          <textarea id="education" name="education" placeholder="待完善"></textarea>
+        </label>
+        <label for="summary">
+          简短摘要
+          <input id="summary" name="summary" autocomplete="off" placeholder="单字段反例" />
+        </label>
+        <button id="submit-resume" type="button">提交简历</button>
+        <output id="resume-state" aria-live="polite">work-is-empty education-is-empty summary-is-empty submit-count-is-0</output>
+        <output id="transaction-proof" aria-live="polite">transaction-order-is-empty</output>
+        <pre id="event-log" aria-label="字段事件时间线">event-log-is-empty</pre>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const draft = document.getElementById("session-draft");
+        const sessionState = document.getElementById("session-state");
+        const work = document.getElementById("work-experience");
+        const education = document.getElementById("education");
+        const summary = document.getElementById("summary");
+        const resumeState = document.getElementById("resume-state");
+        const transactionProof = document.getElementById("transaction-proof");
+        const eventLog = document.getElementById("event-log");
+        const submit = document.getElementById("submit-resume");
+        let submitCount = 0;
+        let sequence = 0;
+        const events = [];
+
+        const token = (name, value) => `${name}-is-${value ? value : "empty"}`;
+        const render = () => {
+          sessionState.textContent = token("session-draft", draft.value);
+          resumeState.textContent = [
+            token("work", work.value),
+            token("education", education.value),
+            token("summary", summary.value),
+            `submit-count-is-${submitCount}`,
+          ].join(" ");
+          eventLog.textContent = events.length
+            ? events.map((event) => `${event.seq}:${event.type}:${event.field}:${event.value}`).join("\n")
+            : "event-log-is-empty";
+          const transactionEvents = events
+            .filter((event) => event.field === "work-experience" || event.field === "education")
+            .map((event) => `${event.type}-${event.field}`);
+          transactionProof.textContent = transactionEvents.length
+            ? `transaction-order-is-${transactionEvents.join(">")}`
+            : "transaction-order-is-empty";
+        };
+        const record = (type, element) => {
+          events.push({ seq: ++sequence, type, field: element.id, value: element.value });
+          render();
+        };
+
+        for (const field of [draft, work, education, summary]) {
+          field.addEventListener("focus", () => record("focus", field));
+          field.addEventListener("input", () => record(document.activeElement === field ? "focused-input" : "blurred-input", field));
+          field.addEventListener("change", () => record("change", field));
+        }
+        submit.addEventListener("click", () => {
+          submitCount += 1;
+          events.push({ seq: ++sequence, type: "submit", field: submit.id, value: String(submitCount) });
+          render();
+        });
+        render();
+      })();
+    </script>
+  </body>
+</html>

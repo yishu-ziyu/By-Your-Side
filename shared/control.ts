@@ -22,6 +22,7 @@ export type ControlOwner = "agent" | "user";
 
 /** 接管期间禁止落地的浏览器写操作。至少覆盖完成标准列出的那些。 */
 export const WRITE_TOOLS = [
+  "page_operation",
   "open_tab",
   "switch_tab",
   "close_tab",

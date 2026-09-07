@@ -20,12 +20,15 @@ const ACTION_NAMES: Record<string, string> = {
   close_tab: "关闭标签页",
   navigate: "打开页面",
   snapshot: "读取页面结构",
+  read_element: "读取完整内容",
   click: "点击",
   hover: "悬停",
   browser_run: "连续操作",
   wait_for: "等待元素",
   sleep: "等待",
   fill: "填写文本",
+  page_operation: "填写并核对",
+  share_tab: "安排同页协作",
   type_text: "输入文本",
   press_key: "按键",
   scroll: "滚动页面",
@@ -179,4 +182,12 @@ export function workerEventRunPolicy(input: {
   if (input.graphRunning) return "new";
   if (input.hasLastRun) return "reuse-last";
   return "drop";
+}
+
+/** Legacy history has no reliable clock; never use replay wall time for it. */
+export function historyEventTime(applyingHistory: boolean, occurredAt?: number): number {
+  return applyingHistory ? (typeof occurredAt === "number" && Number.isFinite(occurredAt) ? occurredAt : Number.NaN) : Date.now();
+}
+export function recordedDuration(start: number, end: number): string | null {
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }

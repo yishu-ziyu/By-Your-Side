@@ -821,3 +821,130 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - 未决/待人评：
   - 标准 4：真机长文本高亮与深浅背景下的文字通透度；
   - 标准 6：真机教学模式下引导圈注的笔触质感与动效流畅度。
+
+## 2026-09-08 会话管理现状核查
+
+- 当前分支 `fix/stability-issue2-model-capability-labels`。静态代码核查：无用户新建/切换历史会话协议与入口；主进程创建单个 Lead，模型会话使用 `SessionManager.inMemory`。
+- 空闲后新消息会重置面板回放缓存，但仍进入同一模型会话；界面记录清空不等于上下文重置。证据：`shared/protocol.ts:158-193`、`agent/src/main.ts:161`、`agent/src/session.ts:162`、`extension/src/background/index.ts:915,1037`。
+- 产品讨论：新会话用于隔离不同事项的临时上下文并保留回头接续的入口；多任务同时执行另涉及浏览器资源与控制权。尚未确定方案或授权实现。
+- 改动文件仅本笔记；未运行浏览器验收或测试。未决：新建时旧任务的运行语义、历史持久化范围。
+
+## 2026-09-08 会话 Space 与同页多 Agent 调研
+
+- 用户确认新建 B 不暂停 A；不同会话默认独立任务和页面。共同填写一份未保存简历时允许同页分工，期望各 Agent 使用不同颜色光标。
+- 主源结论：ego-lite 的核心是任务身份/页面集合/控制权；Kimi WebBridge 1.11.5 是 session 标签组与默认仅搜索本会话页面。插件可用 Chrome tabs/tabGroups 实现分组，不能以分组代替执行范围检查。
+- Luna Max 静态核查：已有 worker 新开 tab、session 路由、多色 cursor；没有 Chrome 原生标签组。显式 switch_tab 可双绑而 sessionForTab 只返回一个归属；ControlGate 是门禁/在途计数，不是页内输入互斥。尚未复现故障，不当作已实测 bug。
+- 建议：跨会话默认独立标签；同页协作显式登记参与者，并行准备内容，按短动作协调定位/聚焦/输入/验证。新标签不保证未保存状态同步，也不隔离同一服务端对象。
+- 改动文件：本笔记、docs/research/20260908-session-spaces-and-shared-tab.md、docs/devlog/20260908-01-会话独立运行与同页协作.md。无产品代码改动；未运行浏览器实验或测试。
+- 未决：同页协作真实网站兼容性、调度粒度、共享页接管边界。研究文档含后续最小实验建议，尚非实施授权或冻结验收卡。
+
+## 2026-09-08 开发前可点击前后对照
+
+- 用户已授权开发，但随后明确要求：改动前和过程中先用临时 HTML 展示改前/改后使用方式；用户认可后才推进产品代码。当前只完成标准和原型，不开工产品。
+- 独立校验使用 GPT-5.6 Sol medium，产物 docs/evals/20260908-session-management.md，锁定会话身份/上下文/标签/控制隔离与同页完整短动作协调；实现前人评待定。
+- 原型 docs/evals/20260908-session-management-preview.html：改前按当前代码重绘，改后模拟“新建B/A继续/切回A”与“同份简历两位Agent分工/接管/交还”。顶部和页尾明确模拟数据；不调用模型或操作真实网站。
+- 已读取 Will’s S 原文：Sidebars 217886bc60ff81b48be5da15f05d5d0e、Progressive Disclosure 20f886bc60ff816b86e1c9ce8dbfc3ea、Wayfinding/Feedback 20f886bc60ff81b980f7f60210dfebea。具体采用：当前会话标题常显，历史按需展开，后台任务状态不隐藏；沿用产品色彩，不新增另一套设计。living INDEX 的 inline 标本仅参考减少导航说明层级，不复制视觉资产。
+- 原型本地 http://127.0.0.1:8878/docs/evals/20260908-session-management-preview.html；ego task space 92。浏览器已点通新建、切换、草稿保留、新会话尚未执行时不创建标签组、同页两光标、接管等待不写入、交还后完成；390px 无横向溢出。均为原型验证，不是产品验收。
+- 产品代码改动为0。待用户裁决使用路径后才能开始实现。
+
+## 2026-09-08 原型修订：Agent 主动判断分工
+
+- 用户指出不应要求提示词写“请两位 Agent”。用户只给目标，产品自己判断并主动说明有益的分工；若拆分不划算则无需拆分。
+- 临时 HTML 已将同页场景改前/改后统一为“帮我完善这份简历，先填内容，暂不提交”；改后由 Agent 说明工作经历与教育经历可同时准备并安排林/禾。演示播放按钮不是用户派工审批，亦不要求用户选择人数。
+- 独立校验角色同步修订标准：共享页显式登记是运行时责任，不是要求用户点名子 Agent；增加主动派工与简单任务不强制拆分的正反例。
+- 仅修改原型与文档，仍未改产品代码；用户已看过原型并提出这一修订，尚未将这句话记为完整实现批准。
+
+## 2026-09-08 会话管理实现启动
+
+- 用户在修订主动分工原型后明确“好的，没问题。那接下来就可以开始了”。独立评估卡的人评门由校验者更新；本轮已开始产品实现。
+- 分工：conversation_runtime（GPT-6 low）负责agent/protocol/Pi持久化；conversation_extension（GPT-6 low）负责BG会话控制与relay；page_resources（Sol medium）负责页面归属/原生组/共享页短动作；主线程负责sidepanel和集成；session_evaluator（Sol medium）独立验收。
+- 主线程侧栏已接会话标题菜单、新建、后台状态和cid筛选、切换后历史重放；草稿/附件按cid存储。附件异步读取在切会话后仍回原cid；focused attachment测试6项通过。全量类型检查等待后台page_operation/share_tab接口合并，目前不算通过。
+- Pi最小持久化证明由runtime执行通过：两个独立Node进程使用原生SessionManager.create/open，真实SDK prompt marker，本地确定性provider收到恢复上下文；初始化0次请求，追问1次，未重放旧动作。它证明SDK上下文恢复，不是远端模型任务验收。实现将使用~/.sideagent/conversations索引。
+- ChromeMain已实测发现：专用wrapper local.yishu.chrome-main 对应独立ChromeMain数据目录，CDP9222。禁止操作默认profile；后续只用仓库受限验收跑道。
+
+### 2026-09-08 会话后台隔离实现（extension worker）
+- `extension/src/background/index.ts` 将原 ControlGate/TeamControl/状态/历史/控制事务置于每 conversationId 的闭包实例；唯一 Uplink 以稳定 cid 分发。工具资源使用 `executionKey(cid,sid)`，控制门保留局部 sessionId。异步面板消息捕获接收时身份。
+- `relay.ts` 新增 `select_conversation`、`conversations` 与各 envelope 的 conversationId；sync 按 cid 回放。选中 cid 用 storage.session 保存，历史用 storage.local 每 cid 保存（delta 100ms 合并，用户消息/idle 即刻落盘）；不再新一轮清空历史。草稿由主线程 UI 持久化。
+- `mode.ts` 的模式与待教学标记按 cid 隔离；Chrome storage 不可用时保留原 fallback。`panel-history.ts` 支持恢复单调 seq。
+- 页接管取该 tab 所有 collaborators，先阻止其门和页队列，等待短动作结束；其他会话和同会话其他独立页的成员不一起冻结。页上交还按钮按发送页归属找会话。完整 page_operation 传入 gate generation 检查，阻止 abort 后 queued 操作落地。
+- 验证：extension typecheck 通过；session-management/history/teach-mode/click-robustness 20 项通过。新增 background 实际路由测试覆盖晚到事件、A/B 历史隔离、B abort 不改变 A、侧栏与 Service Worker 重建后历史恢复。
+- 未执行扩展 reload/commit；真实验收由主线程与 evaluator 继续。资源 worker 仍在补 revoked collaborator 的锁后检查及队列接管 epoch。
+
+## 2026-09-08 真实浏览器底层验收通过
+
+- 独立校验 npm run accept:sessions 在专用ChromeMain上15/15 PASS：A运行中建B、列表、同URL独立tab与组、草稿隔离、共享writer登记与verified、输入事务顺序、未提交、接管共享页全部writer、迟到写阻断、B继续、中止隔离、持久状态、测试后恢复原模型。
+- 证据目录 /var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-accept-sessions-2026-09-07T17-19-46-745Z。真实自然语言主动分工与侧栏关闭重开尚未通过，不将确定性验收模型结果冒充。
+- 真实路径修复：hook改为捕获controller作用域而非旧module；Chrome组最后页关闭后的失效cache重建；同cid并发开页分组串行；共享spawn去掉被共享门拒绝的多余switch；最后worker退出收敛exclusive；工作指针离开不释放旧tab归属；组名取会话标题、颜色稳定；只有当前会话Lead激活tab。
+- 主线程接着用生产sidepanel+真实模型验证上下文/草稿隔离。通用CUA工具不暴露chrome-extension页面，使用仓库限定ChromeMain的CDP测试方式触发生产UI的点击/输入，不修改后台业务状态。
+
+## 2026-09-08 验收模型限定
+
+- 真实sidepanel+M3上下文隔离和草稿恢复smoke 5/5通过，证据 /tmp/sideagent-session-ui-evidence/result.json。
+- 主动派工第一次M3返回529 overload，无工具执行；临时尝试Kimi K3返回403周额度耗尽，也无工具执行。随后启动Sol验收时用户明确“就用M3来测试就可以”。已停止该Sol验收脚本，对唯一Sol验收会话131ea979-2305-4d15-aafa-a91c7e2512b2发出中止并切回M3；后续真实模型验收只使用minimax-cn/MiniMax-M3。
+- 独立校验裁决主动分工人数：无需固定2children；至少一次成功spawn和至少两位实际writer（可含Lead），同一tab双字段正确且未提交。单字段反例不派工。判定在下一轮实际行为结果前修订，不以失败结果倒改断言。
+
+## 2026-09-08 M3主动派工真实路径未过后的修正
+
+- M3恢复可用后，原始材料简历任务完成了工作/教育两个字段且未提交，但全程只有Lead，无成功spawn。因此主动派工判定失败，不将表单正确当成这一项通过。原始证据 /tmp/sideagent-autonomy-evidence/attempt-m3-no-delegation.json。
+- 最小修正仅agent/src/prompt.ts：在起草前按输出结构判断；多个需要独立分析/起草的实质内容先启动有用的并行准备，不把同页误当同一步骤；简单直接填值和依赖前一步结果的链仍单Agent。无关键词分支、无固定两worker。
+- 已通过planning focused测试，已重载，再以相同用户请求/相同页面/M3复验；标准不改。用户明确真实模型只用M3，持续遵守。
+- 通过真实Chrome点击临时验收入口已打开原生sidePanel，得到原生页面target与截图 /tmp/sideagent-session-ui-evidence/native-panel.png；该入口只用于触发Chrome要求的user gesture，不修改生产界面或业务状态。
+
+## 2026-09-08 会话页面发现范围独立复核
+
+- 独立校验复核 `extension/src/background/exec/tabs.ts`、`state.ts` 与 `conversation-tabs.test.ts`：`list_tabs` 只返回 `TabResource.conversationId` 等于当前会话的页面，不暴露未归属页或其他会话页面。
+- 执行成员没有工作页时，`resolveWorkingTab` 只检查当前活动页，不扫描其他空闲标签。活动页属于其他会话或未向该成员共享时明确拒绝并要求 `open_tab`；活动页未归属时通过 `setWorkingTab` 同时写入 workingTabs 与 exclusive tabResources，成为当前会话的稳定资源。
+- 该行为满足既定标准：同 URL 在其他会话存在时不能静默借走；普通查找限定在当前会话页面集合。`get_active_tab` 仍是纯查询，后续认领和写入继续经过 `resolveWorkingTab` 的归属检查。
+- 完整验证：`npm run typecheck` 通过；`npm test` 为 59 files / 533 tests 全绿。未运行 `accept:sessions`，因为主线程正在重建并独占真实浏览器验收。
+
+## 2026-09-08 read_element 与最终机器证据复核
+
+- 独立校验确认 `read_element` 满足 eval 14a–14f：受 conversation/tab/collaborator 归属约束；完整返回 textContent/value；超 1,000,000 字符明确失败而不截断；AX/DOM ref 代际隔离；CSS 定位缺失、多匹配、非法均明确失败；读取函数不 focus、scroll、写 DOM 或派事件，也不接受任意 JavaScript。
+- `read_element` 在 ControlGate 中为只读，用户接管时可读取，写工具仍阻断；browser program 仍经过既有顺序、取消与迟到结果检查。真实 Chrome shared/takeover 读取属于 14g，等待 build/reload 后跑道补证。
+- mode 摘要恢复测试覆盖 default/B 独立恢复和晚到旧存储不覆盖新 mode。M3 真实伴随重启证据 `/tmp/sideagent-restart-evidence/result.json` 通过；UI 证据 `/tmp/sideagent-session-ui-evidence/result.json` 为 5/5。
+- M3 最新自主分工证据 `/tmp/sideagent-autonomy-evidence/attempt-m3-complete-tools-no-spawn.json` 仍失败：字段正确但 spawns=0、writers=[]，不满足主动派工标准。
+- 修正 `agent/test/session-planning.test.ts` 的段落截取：只检查 `# Parallel workers` 到下一标题，继续禁止任务关键词，没有放宽断言。最终验证日志 `/tmp/sideagent-session-final-verification.log`：`npm run typecheck` 通过；`npm test` 为 61 files / 550 tests 全绿；build/reload exit 0。
+
+## 2026-09-08 M3 主动分工正例独立复核
+
+- 独立逐项读取 fixture 与两份事件流，不只采用脚本 `ok`。`attempt-m3-first-pass-slow.json` 和最新版 `result.json` 均在一张未保存简历页成功 spawn 两名 worker；work/education 各自真实执行 `page_operation`，结果 `verified:true`，并有完整 `read_element` 读回与 done 工件。最终两个字段与原始材料一致，summary 空，状态“尚未提交”。eval 第 17 条据此通过。
+- 最新一次 conversation `37ab2ace-43e3-4e77-ab9b-37cfab5b4f62` 耗时 59 秒。Lead 先 `read_element body` 获取完整材料，在可见回复中说明分工，并把对应原始材料交给 work/edu；不是只口头派工或失败后由 Lead 独做。
+- 第 7a 条仍等待单字段简单任务负例，不因正例通过而提前勾选。
+- `/tmp/sideagent-shared-read-evidence/result.json` 实际为 3/4、overall false。read 使用已被 stop_worker 撤销登记的旧 worker id，归属门正确拒绝；它不能证明 14g。等待通过生产 share_tab 登记测试成员后重跑。
+- 后续 `/tmp/sideagent-shared-read-live-evidence/result.json` 用真实存活 M3 worker 验证了接管后 main/worker 完整读取同一 `main` 正文、两者 page_operation 阻断和页面状态不变；但两个字段当时为空，且没有逐项实测 fill/js。脚本自身 4/4 只是部分证据，eval 14g 保持未通过。
+- 最后一次在相同证据路径重跑补齐 14g：M3 conversation `17147416-0ea6-4abb-b3c1-1395befb7a0d` 成功 spawn 存活 worker `reader`，共享 tab `29955618`。接管前 main/worker 用生产 page_operation 分别写入两个超过 150 字字段并逐字读回；接管后两人各读完整 main/work/education，共 6 次一致；两人各试 fill/js/page_operation，共 6 次全拒绝；正文、字段、focus、scroll、未提交状态不变。5/5 通过，随后 abort 并释放浏览器。原先旧 worker 被拒与空字段覆盖不足的失败记录保留。
+- prompt/read_element 聚焦回归 3 files / 14 tests 全绿；未操作浏览器。
+
+## 2026-09-08 原生历史耗时复核
+
+- `PanelHistoryEntry.occurredAt` 保存 background 收到事件的原始时间；侧栏回放用原时间计算任务/思考/工具耗时。旧记录缺时间时隐藏耗时，不使用回放墙钟伪造。当前运行仍用 Date.now，各 conversation 的历史与起点独立。
+- 独立聚焦测试 `history-timing/panel-history/session-management/steps` 为 4 files / 41 tests 全绿。
+- 真实证据 `/tmp/sideagent-history-timing-evidence/result.json`：M3 conversation `795c5b74-9970-4da4-b1c8-3ec69e7b1acf` 首显 1.9s，关闭重开仍 1.9s；旧 `37ab...` 无可靠时间，回放耗时为空。两张截图位于同目录。eval 23/24 通过。
+
+## 2026-09-08 M3 空白页复验与共享读取补齐
+
+- 只清理本轮 local resume-autonomy.html 测试页后复测，cid436bba0c-e629-4cf9-be6b-d3412dcd77c7成功spawn edu，但goal明确只草稿不写，最终writer仅main，标准失败。证据/tmp/sideagent-autonomy-evidence/attempt-m3-draft-only.json。
+- 实测shared snapshot正文200字/值60字截断，任意js读取被共享门拒绝。独立evaluator先写read_element标准14a–14g，resource实现受归属约束、无副作用的完整定位读取，禁止用任意JS补洞。
+- 主线程更新结构性分工提示：shared字段负责人负责准备、填写和验证，Lead不重复接回全部填写；用户说明避免工具标识符。没有按简历关键词派工。
+- 真实M3重启上下文验收通过：伴随进程53922于01:58启动后，旧01:20会话0358c113-860c-43c3-89d5-073a17915a5a仍正确回复原代号；证据/tmp/sideagent-restart-evidence/result.json。未重放任何浏览器动作。
+
+### 2026-09-08 会话模式恢复修复
+- 先用真实 background 路由 focused test 复现：扩展 mode storage 为空时，hello 会向 runtime 回写默认 act，且列表内持久 teach 没有同步到本地。
+- 删除 hello 的 set_mode 回写；conversation_list/created/updated 的 summary.mode 恢复对应 controller 本地缓存和面板。只有用户显式 set_mode 才上行修改模式。
+- getMode 在异步 storage 读取返回后再次检查缓存，避免晚到的空存储覆盖刚恢复的 teach。A/B 模式仍独立。
+- 验证：extension typecheck 通过，session-management/teach-mode/click-robustness 15 tests 通过；补充晚到读取用例后，mode-focused 3 项通过。未 reload。
+
+## 2026-09-08 M3 最终正反例与收尾时限
+
+- prompt分工章节前置后，cid7498f8bb-3b27-4700-8c75-db45ac8936ea自主2spawn/education+work各自page_operation verified，同tab29955547未提交；首次通过但重复定位较多。
+- 给read_element补充target=body的完整读取用法，并要求Lead把已读材料交给worker后，cid37ab2ace-43e3-4e77-ab9b-37cfab5b4f62再次2spawn/edu+work各自verified，同tab29955557；59秒。证据/tmp/sideagent-autonomy-evidence/result.json。不要把一次通过外推为普遍效率收益，早期单Lead同样例约24秒。
+- 单字段反例cidb1248101-3c88-4050-970f-34cdca4f57d7：M3，8.2秒，0spawn，summary准确填写、work/education仍空、未提交；证据/tmp/sideagent-simple-evidence/result.json。
+- 14g追加验收第一次误用已被stop_worker撤销的成员，读取被正确拒绝；第二次仅恢复浏览器登记后，runtime正确拒绝不存在的worker接管。均不能当作14g通过。独立evaluator用仍存活M3协作者补验，结果待回。
+- 用户02:18要求总耗时≤2小时；截图当时1h33m26s，最终汇报须在约02:44前。主线程明确停止新增实现，仅收尾检查/证据/人评说明。
+
+## 2026-09-08 最终收尾验证
+
+- 14g由独立evaluator补齐全部条件：M3存活worker，接管前后完整长字段读取，main/worker各fill/js/page_operation共6次拒绝，页面状态逐字段不变；/tmp/sideagent-shared-read-live-evidence/result.json 5/5。
+- 原生截图发现旧历史耗时59s被误算1.4s，编排先追加23/24，extension worker修复occurredAt+回放时钟；旧无时间数据隐藏耗时。真实M3 cid795c5b74-9970-4da4-b1c8-3ec69e7b1acf首显/重开均1.9s，旧37ab run-time为空，/tmp/sideagent-history-timing-evidence/result.json通过。
+- 最终02:33全量typecheck/test/build通过，61files/550tests；扩展已重载最新产物。原生sidebar实际尺寸419x934，截图/tmp/sideagent-session-ui-evidence/native-panel.png；人工观感仍未替用户批准。
+- 不再新增实现。明确短样本双Agent59s，早期单Agent约24s，当前不宣称总耗时收益；模型分工文字仍偏技术化。

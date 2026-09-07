@@ -204,8 +204,9 @@ describe("chrome-main discovery guards", () => {
 });
 
 describe("executeToolCall path (no copied handlers)", () => {
-  it("hook injects uplink.handleRaw tool_call and requires executeToolCall", () => {
-    expect(HOOK_EXPRESSION).toContain("uplink.handleRaw");
+  it("hook injects through the live transport raw path and requires executeToolCall", () => {
+    expect(HOOK_EXPRESSION).toContain("rawTransport.handleRaw");
+    expect(HOOK_EXPRESSION).toContain("incoming({");
     expect(HOOK_EXPRESSION).toContain('type: "tool_call"');
     expect(HOOK_EXPRESSION).toContain("executeToolCall");
     expect(HOOK_EXPRESSION).not.toContain("Input.dispatchMouseEvent");

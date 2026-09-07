@@ -2128,3 +2128,24 @@ details.run-steps[open] .run-chevron {
     animation: none;
   }
 }
+
+/* 会话入口：沿用现有侧栏材质，历史按需展开。 */
+#conversation-bar { display:flex; align-items:center; gap:6px; padding:7px 10px; flex-shrink:0; }
+#conversation-switcher, #conversation-new { border:0; background:transparent; color:var(--text-primary); border-radius:7px; padding:7px 6px; font:inherit; cursor:pointer; }
+#conversation-switcher { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-weight:550; }
+#conversation-new { color:var(--text-secondary); font-size:11px; white-space:nowrap; }
+#conversation-new:disabled { opacity:.45; cursor:default; }
+#conversation-switcher:hover, #conversation-new:hover:not(:disabled) { background:var(--content-subtle-hover); }
+#conversation-background { display:block; width:calc(100% - 28px); margin:0 14px 4px; padding:7px 0; text-align:left; border:0; border-bottom:1px solid var(--content-border); background:none; color:var(--text-secondary); font:inherit; font-size:11px; cursor:pointer; }
+#conversation-background[hidden], #conversation-menu[hidden] { display:none; }
+#conversation-menu { position:absolute; top:91px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius:11px; box-shadow:var(--popover-shadow); }
+#conversation-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:11px 9px; border:0; border-radius:6px; font:inherit; color:var(--text-primary); background:none; text-align:left; cursor:pointer; }
+#conversation-menu button span { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#conversation-menu button small { color:var(--text-secondary); font-size:10px; white-space:nowrap; }
+#conversation-menu button:hover { background:var(--content-subtle-hover); }
+#conversation-menu button[aria-checked=true] { background:var(--accent-soft); }
+#conversation-bar button:focus-visible, #conversation-menu button:focus-visible, #conversation-background:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+#conversation-switcher { display:flex; align-items:center; gap:7px; }
+#conversation-switcher .conversation-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#conversation-switcher .lucide { flex-shrink:0; width:12px; height:12px; }

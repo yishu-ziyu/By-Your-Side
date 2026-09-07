@@ -32,6 +32,14 @@ describe("browser programs", () => {
     expect(steps.every(s => s.parentId === "program-1")).toBe(true);
   });
 
+  it("exposes read_element through the browser program's normal ordered RPC path", async () => {
+    const full = { tabId: 12, target: "loc=css:#field", tagName: "textarea", textContent: "material", value: "complete-value" };
+    const call = vi.fn(async () => full);
+    const result = await runBrowserProgram({ code: 'return await browser.read_element({tabId:12,target:"#field"});', call });
+    expect(result.value).toEqual(full);
+    expect(call).toHaveBeenCalledWith("read_element", { tabId: 12, target: "#field" });
+  });
+
   it("polls a real browser condition before continuing and reports a bounded timeout", async () => {
     const call = vi.fn().mockResolvedValueOnce({ value: { ready: false, count: 0 } }).mockResolvedValue({ value: { ready: true, count: 1 } });
     const result = await runBrowserProgram({ code: 'await browser.waitFor({selector:"#edit",timeoutMs:1000}); return "ready";', call });

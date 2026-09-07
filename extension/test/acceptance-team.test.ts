@@ -26,7 +26,8 @@ describe("team acceptance fixture / hook", () => {
     expect(HOOK_EXPRESSION).toContain("handleTakeover");
     expect(HOOK_EXPRESSION).toContain("handleHandback");
     expect(HOOK_EXPRESSION).toContain("executeToolCall");
-    expect(HOOK_EXPRESSION).toContain("uplink.handleRaw");
+    expect(HOOK_EXPRESSION).toContain("rawTransport.handleRaw");
+    expect(HOOK_EXPRESSION).toContain("incoming({");
     expect(HOOK_EXPRESSION).not.toContain("class ControlGate");
     expect(HOOK_EXPRESSION).not.toContain("USER_BLOCKED_ERROR");
     expect(HOOK_EXPRESSION).not.toContain("Input.dispatchMouseEvent");

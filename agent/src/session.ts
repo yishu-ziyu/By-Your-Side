@@ -22,7 +22,6 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, P
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
-import { getMode, setMode as setModeRef } from "./mode.js";
 import { createBrowserTools } from "./tools.js";
 import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
@@ -68,6 +67,8 @@ export class AcceptanceContinuity {
 
 export interface SessionCreateOptions {
   modelPattern?: string;
+  mode?: AgentMode;
+  sessionManager?: SessionManager;
   /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
   modelRuntime?: ModelRuntime;
   customTools?: ToolDefinition[];
@@ -102,6 +103,7 @@ export class BrowserAgentSession {
     private readonly handbackRestoreTimeoutMs = HANDBACK_RESTORE_TIMEOUT_MS,
   ) {}
 
+  private modeState: { value: AgentMode } = { value: "act" };
   private readonly hold = new SessionHold();
   private readonly runTrace = new RunTrace();
   private readonly instanceId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -142,7 +144,8 @@ export class BrowserAgentSession {
       }
       const settingsManager = SettingsManager.inMemory({ compaction: { enabled: true } });
       const systemPrompt = options?.systemPrompt ?? SYSTEM_PROMPT;
-      const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(getMode(), base));
+      const modeState: { value: AgentMode } = { value: options?.mode ?? "act" };
+      const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(modeState.value, base));
       const resourceLoader = new DefaultResourceLoader({
         cwd: process.cwd(),
         agentDir: getAgentDir(),
@@ -159,7 +162,7 @@ export class BrowserAgentSession {
         noTools: "builtin",
         customTools: options?.customTools ?? createBrowserTools(rpc),
         resourceLoader,
-        sessionManager: SessionManager.inMemory(process.cwd()),
+        sessionManager: options?.sessionManager ?? SessionManager.inMemory(process.cwd()),
         settingsManager,
       };
       if (options?.modelPattern) {
@@ -178,6 +181,7 @@ export class BrowserAgentSession {
       }
       const { session } = await createAgentSession(createOptions);
       const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime);
+      wrapper.modeState = modeState;
       wrapper.subscribeEvents();
       return wrapper;
     } catch (err) {
@@ -399,7 +403,7 @@ export class BrowserAgentSession {
    * 会话不可用（无模型凭据）时静默丢弃，避免面板刷错误提示。
    */
   notifyPageEvent(url: string): void {
-    if (getMode() !== "teach") return;
+    if (this.modeState.value !== "teach") return;
     if (!this.session || !this.session.model) return;
     this.steer(`[页面事件] URL 已变为 ${url}，用户可能已完成上一步，请 snapshot 确认后自动推进下一步`);
   }
@@ -413,7 +417,7 @@ export class BrowserAgentSession {
    * 再借 setActiveToolsByName(同名集合)（工具不变）触发 prompt 重建并写入 agent.state.systemPrompt。
    */
   async setMode(mode: AgentMode): Promise<void> {
-    setModeRef(mode);
+    this.modeState.value = mode;
     if (!this.session || !this.resourceLoader) return;
     try {
       await this.resourceLoader.reload();

@@ -68,6 +68,7 @@ describe("AttachmentsManager DOM & state management", () => {
         children.push(child);
         return child;
       },
+      replaceChildren: (...next: any[]) => { children.splice(0, children.length, ...next); },
       removeChild: (child: any) => {
         const idx = children.indexOf(child);
         if (idx !== -1) children.splice(idx, 1);
@@ -193,4 +194,50 @@ describe("AttachmentsManager DOM & state management", () => {
       (globalThis as any).requestAnimationFrame = origRaf;
     }
   });
+  it("keeps an in-flight attachment in its original conversation when the user switches", async () => {
+    const previous = { document: globalThis.document, Image: globalThis.Image, raf: globalThis.requestAnimationFrame };
+    let finishImage: (() => void) | undefined;
+    try {
+      (globalThis as any).document = {
+        createElement: createMockElement,
+        createElementNS: (_ns: string, tag: string) => createMockElement(tag),
+        addEventListener: () => {},
+      };
+      (globalThis as any).Image = class {
+        onload?: () => void;
+        naturalWidth = 1;
+        naturalHeight = 1;
+        set src(_value: string) { finishImage = () => this.onload?.(); }
+      };
+      (globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) => { cb(performance.now() + 1000); return 1; };
+      const stripEl = createMockElement();
+      const changes: string[] = [];
+      const manager = new AttachmentsManager({
+        composerEl: createMockElement(), stripEl, inputEl: createMockElement("textarea"),
+        attachBtn: createMockElement("button"), menuEl: createMockElement(), fileInputEl: createMockElement("input"),
+        onChanged: (_count, scope) => { if (scope) changes.push(scope); },
+      });
+      manager.restore([], "A");
+      const pending = manager.addFromDataUrl("data:image/png;base64,AQID", "A.png");
+      manager.restore([], "B");
+      finishImage?.();
+      await pending;
+      expect(manager.getAttachments()).toEqual([]);
+      expect(stripEl.children).toHaveLength(0);
+      expect(manager.getAttachments("A").map(a => a.name)).toEqual(["A.png"]);
+      expect(changes.at(-1)).toBe("A");
+      const saved = manager.getAttachments("A");
+      manager.restore(saved, "A");
+      expect(manager.getAttachments()).toEqual(saved);
+      expect(stripEl.children).toHaveLength(1);
+      manager.restore([], "B");
+      manager.clear();
+      expect(manager.getAttachments("A")).toEqual(saved);
+    } finally {
+      globalThis.document = previous.document;
+      globalThis.Image = previous.Image;
+      globalThis.requestAnimationFrame = previous.raf;
+    }
+  });
+
 });

@@ -1,0 +1,35 @@
+import { SessionManager, ModelRuntime, createAgentSession, SettingsManager, DefaultResourceLoader, defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+const [phase, dir] = process.argv.slice(2) as [string, string];
+const marker = "PERSISTENCE_MARKER_20260908_ef45b19";
+const model = { id: "probe", name: "Persistence probe", api: "persistence-probe", provider: "persistence-probe", baseUrl: "http://127.0.0.1", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32000, maxTokens: 1024 };
+let calls = 0;
+let contextFound = false;
+const stream = (_model: unknown, context: any) => {
+  calls += 1;
+  contextFound = JSON.stringify(context.messages).includes(marker);
+  const text = contextFound ? "marker remembered" : "marker absent";
+  const invokeTool = phase === "write" && context.messages.at(-1)?.role === "user";
+  const message = { role: "assistant", content: invokeTool ? [{ type: "toolCall", id: "marker-action", name: "marker_action", arguments: {} }] : [{ type: "text", text }], api: model.api, provider: model.provider, model: model.id, stopReason: invokeTool ? "toolUse" : "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+  return { async *[Symbol.asyncIterator]() { yield { type: "start", partial: message }; if (invokeTool) { yield { type: "toolcall_start", contentIndex: 0, partial: message }; yield { type: "toolcall_delta", contentIndex: 0, delta: "{}", partial: message }; yield { type: "toolcall_end", contentIndex: 0, toolCall: message.content[0], partial: message }; } yield { type: "done", reason: invokeTool ? "toolUse" : "stop", message }; }, result: async () => message };
+};
+const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+runtime.registerNativeProvider({ id: model.provider, name: "Persistence probe", auth: { apiKey: { name: "Local", resolve: async () => ({ auth: {} }) } }, getModels: () => [model], stream, streamSimple: stream } as never);
+const manager = phase === "write" ? SessionManager.create(dir, join(dir, "sessions")) : SessionManager.open(readFileSync(join(dir, "path.txt"), "utf8"));
+const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+const resourceLoader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, settingsManager, noExtensions: true, systemPromptOverride: () => "Remember the marker.", skillsOverride: () => ({ skills: [], diagnostics: [] }) });
+await resourceLoader.reload();
+const actionFile = join(dir, "actions.txt");
+const actionCount = () => existsSync(actionFile) ? Number(readFileSync(actionFile, "utf8")) : 0;
+const action = defineTool({ name: "marker_action", label: "Marker action", description: "Record one local external action", parameters: Type.Object({}), execute: async () => { writeFileSync(actionFile, String(actionCount() + 1)); return { content: [{ type: "text", text: "action complete" }], details: {} }; } });
+const { session } = await createAgentSession({ cwd: dir, agentDir: dir, modelRuntime: runtime, model: model as never, sessionManager: manager, resourceLoader, settingsManager, noTools: "builtin", customTools: [action] });
+if (calls !== 0) throw new Error("Session initialization replayed a model call");
+await session.prompt(phase === "write" ? `Remember ${marker}` : "Is the previously supplied marker still in context?");
+if (!contextFound || Number(calls) !== (phase === "write" ? 2 : 1)) throw new Error("Context lost or historical prompt replayed");
+if (actionCount() !== 1) throw new Error("External action was replayed or missing");
+if (phase === "write") writeFileSync(join(dir, "path.txt"), manager.getSessionFile()!);
+console.log(JSON.stringify({ phase, contextFound, calls, actions: actionCount(), sessionFile: manager.getSessionFile(), messages: manager.buildSessionContext().messages.length }));
+session.dispose();

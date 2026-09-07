@@ -9,7 +9,7 @@
  *   4. 拖拽图片至输入区域
  */
 
-import type { ImageAttachment } from "../../../shared/protocol.js";
+import { isAttachment, type Attachment, type ImageAttachment } from "../../../shared/protocol.js";
 
 export const TILE_PERIMETER = 194;
 
@@ -22,7 +22,7 @@ export interface AttachmentsManagerOptions {
   attachBtn: HTMLButtonElement;
   menuEl: HTMLElement;
   fileInputEl: HTMLInputElement;
-  onChanged?: (count: number) => void;
+  onChanged?: (count: number, scope?: string) => void;
   onError?: (errMessage: string) => void;
 }
 
@@ -74,14 +74,38 @@ export async function getImageDimensions(dataUrl: string): Promise<{ width: numb
 }
 
 export class AttachmentsManager {
-  private items: AttachmentItem[] = [];
+  private readonly itemsByScope = new Map<string, AttachmentItem[]>();
+  private scopeId = "default";
+  private get items(): AttachmentItem[] { return this.scopeItems(this.scopeId); }
+  private set items(items: AttachmentItem[]) { this.itemsByScope.set(this.scopeId, items); }
+  private scopeItems(scope: string): AttachmentItem[] {
+    let items = this.itemsByScope.get(scope);
+    if (!items) { items = []; this.itemsByScope.set(scope, items); }
+    return items;
+  }
+
+  public restore(attachments: Attachment[], scope: string): void {
+    this.scopeId = scope;
+    this.closeMenu();
+    this.stripEl.replaceChildren();
+    this.items = (Array.isArray(attachments) ? attachments : []).filter(isAttachment).map((att) => {
+      const dataUrl = `data:${att.mimeType};base64,${att.dataBase64}`;
+      const dom = this.createTileDom(att.id, att.name, dataUrl, scope);
+      dom.tile.classList.add("complete");
+      dom.pText.textContent = "100%";
+      dom.path.style.strokeDashoffset = "0";
+      this.stripEl.appendChild(dom.tile);
+      return { ...att, dataUrl, dom };
+    });
+    this.updateVisibility();
+  }
   private readonly composerEl: HTMLElement;
   private readonly stripEl: HTMLElement;
   private readonly inputEl: HTMLTextAreaElement;
   private readonly attachBtn: HTMLButtonElement;
   private readonly menuEl: HTMLElement;
   private readonly fileInputEl: HTMLInputElement;
-  private readonly onChanged?: (count: number) => void;
+  private readonly onChanged?: (count: number, scope?: string) => void;
   private readonly onError?: (errMessage: string) => void;
 
   constructor(opts: AttachmentsManagerOptions) {
@@ -202,6 +226,7 @@ export class AttachmentsManager {
    * 截取当前激活网页视口
    */
   public async captureActiveTab(): Promise<void> {
+    const scope = this.scopeId;
     try {
       if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
         throw new Error("Chrome 运行环境不可用");
@@ -221,7 +246,7 @@ export class AttachmentsManager {
       }
 
       const name = `${(res.title || "网页截屏").replace(/[/\\?%*:|"<>]/g, "_")}.png`;
-      await this.addFromDataUrl(res.dataUrl, name);
+      await this.addFromDataUrl(res.dataUrl, name, scope);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (this.onError) this.onError(`截屏失败: ${msg}`);
@@ -233,6 +258,7 @@ export class AttachmentsManager {
    * 批量加入文件对象（带入场错峰 stagger）
    */
   public async addFiles(files: File[], staggerMs = 80): Promise<void> {
+    const scope = this.scopeId;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file) continue;
@@ -241,7 +267,7 @@ export class AttachmentsManager {
       }
       try {
         const dataUrl = await readFileAsDataUrl(file);
-        await this.addFromDataUrl(dataUrl, file.name);
+        await this.addFromDataUrl(dataUrl, file.name, scope);
       } catch (err) {
         console.error("[sideagent-attachments] addFile failed:", file.name, err);
       }
@@ -251,13 +277,13 @@ export class AttachmentsManager {
   /**
    * 从 dataUrl 加入单枚瓷贴
    */
-  public async addFromDataUrl(dataUrl: string, name?: string): Promise<AttachmentItem> {
+  public async addFromDataUrl(dataUrl: string, name?: string, scope = this.scopeId): Promise<AttachmentItem> {
     const { mimeType, dataBase64 } = parseDataUrl(dataUrl);
     const { width, height } = await getImageDimensions(dataUrl);
     const id = "att_" + Math.random().toString(36).slice(2, 9);
     const safeName = name || `image_${Date.now()}.png`;
 
-    const dom = this.createTileDom(id, safeName, dataUrl);
+    const dom = this.createTileDom(id, safeName, dataUrl, scope);
     const item: AttachmentItem = {
       id,
       name: safeName,
@@ -269,12 +295,12 @@ export class AttachmentsManager {
       dom,
     };
 
-    this.items.push(item);
-    this.stripEl.appendChild(dom.tile);
-    this.updateVisibility();
-
-    // 顺滑滚到最新一项
-    this.stripEl.scrollTo({ left: this.stripEl.scrollWidth, behavior: "smooth" });
+    this.scopeItems(scope).push(item);
+    if (scope === this.scopeId) {
+      this.stripEl.appendChild(dom.tile);
+      this.stripEl.scrollTo({ left: this.stripEl.scrollWidth, behavior: "smooth" });
+    }
+    this.updateVisibility(scope);
 
     // 运行 0% -> 100% 顺时针 Ring 描边与数字动效 (380ms 顺畅感知)
     this.animateTileProgress(item, 380);
@@ -282,7 +308,7 @@ export class AttachmentsManager {
     return item;
   }
 
-  private createTileDom(id: string, name: string, dataUrl: string): AttachmentItem["dom"] {
+  private createTileDom(id: string, name: string, dataUrl: string, scope = this.scopeId): AttachmentItem["dom"] {
     const tile = document.createElement("div");
     tile.className = "tile-56 tile-landing";
     tile.dataset.id = id;
@@ -322,7 +348,7 @@ export class AttachmentsManager {
     dismissBtn.title = "移除该附件";
     dismissBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.removeItem(id);
+      this.removeItem(id, scope);
     });
     tile.appendChild(dismissBtn);
 
@@ -355,17 +381,16 @@ export class AttachmentsManager {
     requestAnimationFrame(step);
   }
 
-  public removeItem(id: string): void {
-    const index = this.items.findIndex((item) => item.id === id);
+  public removeItem(id: string, scope = this.scopeId): void {
+    const items = this.scopeItems(scope);
+    const index = items.findIndex((item) => item.id === id);
     if (index === -1) return;
-    const removed = this.items.splice(index, 1);
+    const removed = items.splice(index, 1);
     const item = removed[0];
     if (!item) return;
     item.dom.tile.classList.add("removing");
-    setTimeout(() => {
-      item.dom.tile.remove();
-      this.updateVisibility();
-    }, 250);
+    this.updateVisibility(scope);
+    setTimeout(() => { item.dom.tile.remove(); }, 250);
   }
 
   public clear(): void {
@@ -376,8 +401,8 @@ export class AttachmentsManager {
     this.updateVisibility();
   }
 
-  public getAttachments(): ImageAttachment[] {
-    return this.items.map((item) => ({
+  public getAttachments(scope = this.scopeId): ImageAttachment[] {
+    return this.scopeItems(scope).map((item) => ({
       type: "image",
       id: item.id,
       name: item.name,
@@ -390,9 +415,9 @@ export class AttachmentsManager {
     return this.items.length > 0;
   }
 
-  private updateVisibility(): void {
-    const hasItems = this.items.length > 0;
-    this.stripEl.hidden = !hasItems;
-    if (this.onChanged) this.onChanged(this.items.length);
+  private updateVisibility(scope = this.scopeId): void {
+    const items = this.scopeItems(scope);
+    if (scope === this.scopeId) this.stripEl.hidden = items.length === 0;
+    if (this.onChanged) this.onChanged(items.length, scope);
   }
 }

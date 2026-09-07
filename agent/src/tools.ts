@@ -36,6 +36,31 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
 
   return [
     defineTool({
+      name: "page_operation",
+      label: "Write and verify field",
+      description: "Safely edit a field on a shared page. The executor serializes the complete re-locate, expected-value check, focus, fill and readback. Use a stable CSS target from a fresh snapshot, never old coordinates. Read expectedValue first. Failure reports any mutation; never assume rollback. Do not hold the page while thinking or waiting for messages.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number()), target: Type.String(), expectedValue: Type.String(), value: Type.String(),
+      }),
+      execute: async (_id, params) => {
+        const result = await call("page_operation", params);
+        return textResult(JSON.stringify(result), result);
+      },
+    }),
+    defineTool({
+      name: "read_element",
+      label: "Read complete element",
+      description: "Read an element's complete current textContent and, for form fields, its complete value without focusing, scrolling or changing the page. To read the full page text when snapshot abbreviates source paragraphs, use target:'body'. For one field use its current snapshot @ref or a unique observed CSS selector. Do not guess chains of selectors to find plain source text. This is a constrained read, not JavaScript evaluation. It works on pages assigned to this conversation, including a registered shared page while the user has control.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
+        target: Type.String({ description: 'Current "@N" snapshot ref, "loc=css:...", or unique native CSS selector' }),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
+        return textResult(JSON.stringify(data), data);
+      },
+    }),
+    defineTool({
       name: "browser_run",
       label: "Browser program",
       description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled native-CSS target; browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS.',
@@ -56,7 +81,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "list_tabs",
       label: "List tabs",
       description:
-        "List all open browser tabs with id, title and url. Marks the active tab and your current working tab.",
+        "List browser tabs owned by THIS conversation, with id, title and url. Does not search other conversations or unclaimed user tabs. Use get_active_tab when the user explicitly refers to their currently viewed page; open_tab for a new URL. Marks your current working tab.",
       parameters: Type.Object({}),
       execute: async () => {
         const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];

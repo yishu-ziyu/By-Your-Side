@@ -61,6 +61,9 @@ export class Fleet {
   readonly mailbox = new Mailbox();
   private readonly workers = new Map<string, BrowserAgentSession>();
   private lead: BrowserAgentSession | null = null;
+  private readonly sharedTabs = new Map<string, number>();
+  private readonly spawning = new Set<string>();
+  private generation = 0;
   private readonly rpc: ToolRpc;
   private readonly sink: FleetSink;
   private readonly modelPattern?: string;
@@ -100,11 +103,8 @@ export class Fleet {
   }
 
   abortAll(): void {
-    for (const [id, session] of this.workers) {
-      session.abort();
-      session.dispose();
-      this.workers.delete(id);
-    }
+    this.generation += 1;
+    for (const id of this.workers.keys()) this.stop(id);
   }
 
   teamView(): TeamView | null {
@@ -225,17 +225,24 @@ export class Fleet {
     this.reset();
   }
 
-  async spawn(opts: { id?: string; goal: string; url?: string; peers?: string[] }): Promise<{ id: string; tabId?: number }> {
-    assertCanSpawn(this.workers.size);
+  async spawn(opts: { id?: string; goal: string; url?: string; peers?: string[]; sharedTabId?: number }): Promise<{ id: string; tabId?: number }> {
+    assertCanSpawn(this.workers.size + this.spawning.size);
     const goal = opts.goal.trim();
     if (!goal) throw new Error("spawn_worker 需要 goal");
     if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
 
-    const id = sanitizeWorkerId(opts.id, this.workers.keys());
+    const id = sanitizeWorkerId(opts.id, [...this.workers.keys(), ...this.spawning]);
+    this.spawning.add(id);
+    const generation = this.generation;
     const peers = (opts.peers ?? []).map((p) => p.trim()).filter(Boolean);
 
     let tabId: number | undefined;
     try {
+      if (opts.sharedTabId !== undefined) {
+        await this.rpc.call("share_tab", { tabId: opts.sharedTabId, collaborators: [LEAD_SESSION_ID, id] });
+        tabId = opts.sharedTabId;
+        this.sharedTabs.set(id, tabId);
+      } else {
       const opened = (await this.rpc.call(
         "open_tab",
         { url: opts.url },
@@ -243,11 +250,21 @@ export class Fleet {
         id,
       )) as { tabId: number };
       tabId = opened.tabId;
+      }
     } catch (err) {
+      this.spawning.delete(id);
       throw new Error(`为 ${displayNameFor(id)} 打开标签页失败：${err instanceof Error ? err.message : String(err)}`);
     }
 
-    const session = await this.createWorkerSession({ id, peers, tabId });
+    let session: BrowserAgentSession;
+    try {
+      if (generation !== this.generation) throw new Error("Worker start cancelled");
+      session = await this.createWorkerSession({ id, peers, tabId });
+      if (generation !== this.generation) { this.stop(id); throw new Error("Worker start cancelled"); }
+    } finally {
+      this.spawning.delete(id);
+      if (!this.workers.has(id)) this.releaseSharedWorker(id);
+    }
     console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
     session.sendUserMessage(goal);
     return { id, tabId };
@@ -351,7 +368,15 @@ export class Fleet {
     session.abort();
     session.dispose();
     this.workers.delete(id);
+    this.sink.setStatus("idle", id);
+    this.releaseSharedWorker(id);
     return true;
+  }
+
+  private releaseSharedWorker(id: string): void {
+    const tabId = this.sharedTabs.get(id);
+    this.sharedTabs.delete(id);
+    if (tabId !== undefined) void this.rpc.call("share_tab", { tabId, collaborators: [], remove: [id] }).catch(() => {});
   }
 
 }
@@ -410,12 +435,13 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     name: "spawn_worker",
     label: "Spawn worker",
     description:
-      "REQUIRED first action when the user asks for work on two independent sites/apps in one message. Starts a parallel browser worker on its own tab. Non-blocking: returns the worker id immediately. Max 2 live workers. Give a complete goal, optional start url, and peer ids so they can post/await artifacts. Do not browse both sites yourself.",
+      "Start an independent part when parallel preparation reduces waiting. Explain the reason and responsibilities to the user before spawning. Use sharedTabId to collaborate on the SAME unsaved page; shared writes must use page_operation. Otherwise opens a separate tab. Non-blocking, max 2 live workers. Do not split short or sequential tasks.",
     parameters: Type.Object({
       goal: Type.String({ description: "Complete instructions for the worker; it has no other memory" }),
       id: Type.Optional(Type.String({ description: "Short id, e.g. wiki or feishu" })),
       url: Type.Optional(Type.String({ description: "Optional URL to open as the worker's tab" })),
       peers: Type.Optional(Type.Array(Type.String(), { description: "Other worker ids in this job" })),
+      sharedTabId: Type.Optional(Type.Number({ description: "Existing tab in this conversation to share without cloning its unsaved state" })),
     }),
     execute: async (_id, params) => {
       const result = await fleet.spawn({
@@ -423,6 +449,7 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
         goal: String(params.goal),
         url: typeof params.url === "string" ? params.url : undefined,
         peers: Array.isArray(params.peers) ? params.peers.map(String) : undefined,
+        sharedTabId: typeof params.sharedTabId === "number" ? params.sharedTabId : undefined,
       });
       return textResult(
         `Spawned worker ${result.id}${result.tabId != null ? ` on tab ${result.tabId}` : ""}. It is running in parallel.`,

@@ -46,6 +46,7 @@ describe("WRITE_TOOLS", () => {
     expect(isWriteTool("get_active_tab")).toBe(false);
     expect(isWriteTool("snapshot")).toBe(false);
     expect(isWriteTool("screenshot")).toBe(false);
+    expect(isWriteTool("read_element")).toBe(false);
   });
 
   it("写名单都是协议里的工具名", () => {

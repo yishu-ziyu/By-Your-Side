@@ -291,3 +291,29 @@ describe("Fleet 全队接管只接受真实会话", () => {
     expect(fleet.continuedSnapshot("wiki")).toBeUndefined();
   });
 });
+
+describe("shared page worker registration", () => {
+  it("registers each worker before binding the same tab without cloning it", async () => {
+    const { BrowserAgentSession: Session } = await import("../src/session.js");
+    const call = vi.fn(async (name: string) => {
+      if (name !== "share_tab") throw new Error("SHARED_PAGE_REQUIRES_TRANSACTION");
+      return { tabId: 42, collaborators: ["main", "writer"] };
+    });
+    const fleet = new Fleet({ rpc: { call } as never, sink: { emit: vi.fn(), setStatus: vi.fn() } });
+    fleet.attachLead({ runtime: {}, modelName: () => "model" } as never);
+    const worker = { available: true, sendUserMessage: vi.fn(), abort: vi.fn(), dispose: vi.fn() };
+    const create = vi.spyOn(Session, "create").mockResolvedValue(worker as never);
+    try {
+      const result = await fleet.spawn({ id: "writer", goal: "prepare one independent field", sharedTabId: 42 });
+      expect(result).toEqual({ id: "writer", tabId: 42 });
+      expect(call.mock.calls[0]).toEqual(["share_tab", { tabId: 42, collaborators: ["main", "writer"] }]);
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(call.mock.calls.some(([name]) => name === "switch_tab")).toBe(false);
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(call.mock.calls.some(([name]) => name === "open_tab")).toBe(false);
+      expect(worker.sendUserMessage).toHaveBeenCalledWith("prepare one independent field");
+      fleet.stop("writer");
+      expect(call).toHaveBeenLastCalledWith("share_tab", { tabId: 42, collaborators: [], remove: ["writer"] });
+    } finally { create.mockRestore(); }
+  });
+});

@@ -19,7 +19,7 @@ export class PanelHistory {
   }
 
   record(item: PanelHistoryItem): PanelHistoryEntry {
-    const entry = { seq: this.nextSeq++, item };
+    const entry = { seq: this.nextSeq++, item, occurredAt: Date.now() };
     this.entries.push(entry);
     if (this.entries.length > this.limit) {
       this.entries.splice(0, this.entries.length - this.limit);
@@ -29,6 +29,16 @@ export class PanelHistory {
 
   since(afterSeq = 0): PanelHistoryEntry[] {
     return this.entries.filter((entry) => entry.seq > afterSeq);
+  }
+
+  restore(value: unknown): void {
+    if (!Array.isArray(value)) return;
+    for (const entry of value) {
+      if (!entry || !Number.isInteger(entry.seq) || !entry.item || entry.seq < this.nextSeq) continue;
+      this.entries.push(entry);
+      this.nextSeq = entry.seq + 1;
+    }
+    if (this.entries.length > this.limit) this.entries.splice(0, this.entries.length - this.limit);
   }
 
   clear(): void {

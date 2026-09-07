@@ -1,11 +1,13 @@
 # SideAgent 桥接协议
 
-side panel（扩展页面）与本地伴随进程（Node + Pi SDK）之间的 WebSocket 协议。
+background service worker 与本地伴随进程（Node + Pi SDK）之间的协议；默认走 native messaging，WebSocket 用于调试回退。侧栏通过扩展内部 Port 连接 background。
 权威类型定义见 `shared/protocol.ts`，本文档描述流程与语义。
 
 ## 传输与握手
 
-- 伴随进程监听 `ws://127.0.0.1:7758`（仅回环地址）。
+以下 token、Origin 与单客户端握手规则适用于 WebSocket 回退通道。native messaging 由 Chrome 拉起伴随进程，通过 host 的扩展白名单限制访问。
+
+- WebSocket 模式监听 `ws://127.0.0.1:7758`（仅回环地址）。
 - 启动时生成随机 token 并打印到终端；用户在面板首次设置中粘贴一次，存 `chrome.storage.local`。
 - 连接后客户端第一帧必须是 `hello{token, client:"sidepanel"}`。
 - 服务端校验：token 匹配 + WS 握手的 `Origin` 头以 `chrome-extension://` 开头。
@@ -14,15 +16,32 @@ side panel（扩展页面）与本地伴随进程（Node + Pi SDK）之间的 We
 
 ## 消息流
 
+### 用户会话身份
+
+`conversationId` 标识顶层用户会话；`sessionId` 标识该会话内的 Lead 或 worker。所有客户端和服务端帧都支持 `conversationId`；兼容旧客户端时，缺失值归入 `default`。`sessionId` 缺失或为 `main` 表示该会话的 Lead。状态、工具调用、结果及控制确认始终按原会话路由，切换侧栏不改变事件归属。
+
+```text
+client → conversation_create{requestId, title?}
+server → conversation_created{requestId, conversation}
+client → conversation_list{requestId?}
+server → conversation_list{requestId?, conversations}
+server → conversation_updated{conversation}
+```
+
+摘要包含 `id/title/createdAt/updatedAt/state/model?/mode`。每个用户会话拥有独立 Pi AgentSession、Fleet、任务上下文、控制门和历史。新建 B 不停止 A；切换只改变当前显示项。`conversation_list` 还重发各会话的运行状态、团队与模型信息，用于后台重新连接后的同步。
+
 ### 对话
+
+以下帧均可携带 `conversationId`。
 
 ```
 client → user_message{text, context?}  # 空闲时发起新任务；context = 发送时用户正在看的
                                        #   标签页{tabId,title,url}（background 转发前自动附上）
 client → steer{text, context?}     # 运行中插话（映射 session.steer）；同样附当前页锚点，
                                    #   避免打断后丢工作标签
-client → abort                     # 中止当前运行（任务结束）
-client → takeover                  # 运行中拿回当时完整活跃组（Lead + 活跃 worker）。不结束会话。
+client → abort                     # 中止该 conversation 的 Lead 与 workers
+client → takeover{requestId, members?, groupId?, generation?}
+                                   # background 按目标页冻结该页全部协作者，不结束会话。
 client → handback{context?, snapshot?, members?}  # 一次交还。members 按成员绑定页给
                                        #   各自 tabId/title/url/snapshot；某页已关则 closed。
                                        #   不得把当前活动标签复制给其他成员。
@@ -36,19 +55,20 @@ server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_
                                    #   notice / error
 ```
 
-省略 `sessionId` 或值为 `main` = Lead（用户对话那条会话）。工人事件带自己的 id；面板把工人收进彩色步骤行，不另开聊天线程。`abort` 中止整张图（Lead + 全部工人）。`takeover` / `handback` 是控制权，不是 abort：会话、对话、工作标签都还在。v2 一次接管冻结发起时的活跃组；交还按成员绑定页续跑，关闭的绑定页保持暂停且不阻断其他人。
+worker 事件带自己的 `sessionId`，面板把它们显示在所属用户会话的团队状态中。`abort` 只中止指定用户会话；停止单个 worker 只撤销该成员。`takeover` / `handback` 保留会话与标签绑定：接管先阻止目标页新写入，等待已在途短动作到安全停止点，再暂停该页全部协作者。其他会话的独立页继续。交还为各成员读取绑定页的新快照；关闭或读取失败的页面保持暂停，不把当前活动页替代进去。
+
 
 `text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。
 
 ### 工具调用（RPC）
 
 ```
-server → tool_call{id, name, params, sessionId?}     # name ∈ TOOL_NAMES；工人调用带 sessionId
-client → tool_result{id, ok:true, data}  # data 形状见 ToolContract
-       | tool_result{id, ok:false, error}
+server → tool_call{conversationId, id, name, params, sessionId?}     # name ∈ TOOL_NAMES；工人调用带 sessionId
+client → tool_result{conversationId, id, ok:true, data}  # data 形状见 ToolContract
+       | tool_result{conversationId, id, ok:false, error}
 ```
 
-- sidepanel 收到 `tool_call` 后经 `chrome.runtime.sendMessage` 转 background 执行，结果原路回传。
+- background 从上行连接直接接收和执行 `tool_call`，结果原路回传；工具执行不经过侧栏，关闭侧栏不会停止任务。
 - 伴随进程侧 RPC 默认超时 30s（`navigate`/`screenshot` 60s），超时/断连即以错误结果结束该工具调用。
 - 扩展侧任何异常都必须回 `ok:false` + 一行人类可读 error，不允许挂断不回。
 
@@ -56,12 +76,28 @@ client → tool_result{id, ok:true, data}  # data 形状见 ToolContract
 
 ## 工作标签页语义
 
-- 每个 session（Lead 或工人）认领自己的工作标签页：`open_tab`/`switch_tab` 显式指定；未指定时采用该 session 已认领页，否则认领一个未被其他 session 占用的标签页。
-- 所有省略 tabId 的工具默认作用于**该 session** 的工作标签页。
-- click / hover / type_text / press_key：仅当工作窗口**已经在前台**时才把该标签页切到窗口内前台。绝不 `windows.update({focused:true})`（会拽走 macOS Space）。工人本来就不抢前台。
-- screenshot 一律先 CDP `Page.captureScreenshot`，失败再 `captureVisibleTab`。
-- 工人之间不传活页面状态，只经伴随进程内邮箱传可搬工件（post / await_message，不进入本协议帧）。
-- `get_active_tab` 返回用户此刻正盯着的标签页（纯查询，不认领）；配合 `user_message.context` / `steer.context` 解析「这页面」类指代。插话延续当前工作标签页，不重新询问。
+- 页资源记录 `tabId + conversationId + mode + collaborators`。普通页独占；共享页只能由同一用户会话内显式登记的成员访问。`sessionId` 的工作页绑定不取代页资源归属检查。
+- 首次认领页面时才创建该会话的 Chrome 原生标签组，标题跟随会话名；纯聊天不创建空组。`groupId` 只用于展示，持久身份仍是 `conversationId`。
+- `list_tabs` 只返回当前用户会话拥有的页面。A/B 请求同一 URL 时分别新建页面；`switch_tab`、直接传入 `tabId`、隐式认领或共享登记均不能抢走另一用户会话的页面，失败返回可识别的归属错误。
+- 用户当前未归属的活动页可以明确借入当前会话。`get_active_tab` 只读活动页信息，不自动认领；它与用户消息的 `context` 为「这页面」提供锚点。
+- 省略 `tabId` 时使用该执行成员已绑定的工作页；没有绑定时只能选择未归属页面。只有当前显示会话的 Lead 可以在已在前台的窗口中激活自己的标签；后台会话和 worker 不抢标签焦点，也不调用 `windows.update({focused:true})`。
+- screenshot 优先使用 CDP `Page.captureScreenshot`，失败再尝试 `captureVisibleTab`。
+
+### 同页协作
+
+运行时通过 `spawn_worker` 的 `sharedTabId` 指定共享页，并调用 `share_tab{tabId, collaborators, remove?}` 登记成员；未登记成员不能操作该页。撤销 worker 时移除其写入资格。材料与文案可以通过邮箱并行准备，页面上的写动作串行执行。
+
+共享表单写入使用 `page_operation{tabId?, target, expectedValue, value}`。当前支持原生 `input` / `textarea` 字段，定位为 CSS 或当前 snapshot 的有效引用。队列覆盖完整短事务：获锁后重新定位和核对原值 → 滚动与 focus → 输入 → 读回核对。过期目标、原值冲突、协作资格撤销或用户接管都会拒绝写入；失败包含操作者、目标、是否发生修改及读回信息。共享页其他通用写工具安全拒绝，不能绕过该事务直接使用 click/fill/js 等命令。
+
+彩色光标表示成员身份与位置，页面仍只有一套输入焦点。当前不支持跨用户会话共享页面，也不提供 A/B 会话合并。
+
+`read_element{tabId?, target}` 按当前 ref 或唯一 CSS 定位返回完整 `textContent` 与表单 `value`，用于补读快照缩略的材料和填写前的原值。读取不滚动、不聚焦、不修改页面，不接受任意脚本；归属和协作者检查仍生效。超过安全上限时明确报错，不把截断值用于原值核对。独立读取可在用户接管时进行，已停止的 browser program 不能借此继续执行。
+
+## 面板恢复与 Pi 持久化
+
+扩展内部 relay 使用 `select_conversation{conversationId}` 切换显示，`sync{conversationId, afterSeq?}` 按会话同步历史；历史和状态 envelope 带 `conversationId`。选择项保存在 `chrome.storage.session`，聊天历史与各会话的输入草稿、待发送附件保存在 `chrome.storage.local`。历史序号单调递增，新一轮用户消息不会清空前面的轮次。
+
+Pi 上下文保存在 `~/.sideagent/conversations/{conversationId}/` 下的会话文件及索引中。伴随进程重启后可恢复对话上下文；重建实例不会自动重放旧任务或继续原页面动作。前端历史只负责展示，不能替代 Pi 的原生上下文恢复。
 
 ## target 定位串
 

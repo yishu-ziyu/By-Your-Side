@@ -1,4 +1,4 @@
-import { LEAD_SESSION_ID, isLeadSession } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
@@ -14,6 +14,7 @@ import {
 } from "../../shared/mark-actions.js";
 import { HeldClicks } from "../../shared/held-clicks.js";
 import { getMarkMotion, getMode } from "../mode.js";
+import { parseExecutionKey } from "../tab-bindings.js";
 
 interface DomRect {
   x: number;
@@ -145,7 +146,7 @@ async function callDom<Args extends unknown[], Result>(
 }
 
 function cursorId(sessionId: string): string {
-  return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId;
+  return parseExecutionKey(sessionId).sessionId;
 }
 
 async function cursorMove(tabId: number, x: number, y: number, id: string): Promise<void> {
@@ -183,6 +184,7 @@ export async function playLastTrail(
 ): Promise<{ steps: number; reason?: string }> {
   const trail = trailForReplay();
   if (!trail) return { steps: 0, reason: "empty" };
+  if (trail.sessionId !== sessionId) return { steps: 0, reason: "empty" };
   const pts = pointsOnTab(trail, trail.tabId);
   if (pts.length === 0) return { steps: 0, reason: "empty" };
   try {
@@ -203,9 +205,10 @@ export async function playLastTrail(
   return { steps: pts.length };
 }
 
-export async function stopTrailReplay(): Promise<void> {
+export async function stopTrailReplay(sessionId?: string): Promise<void> {
   const trail = trailForReplay();
   if (!trail) return;
+  if (sessionId != null && trail.sessionId !== sessionId) return;
   try {
     await callDom(
       trail.tabId,
@@ -347,7 +350,11 @@ export async function showUserControlBanner(
   view?: ControlBannerView | null,
 ): Promise<void> {
   const ids = new Set<number>();
-  if (tabId != null) ids.add(tabId);
+  if (tabId != null) {
+    ids.add(tabId);
+    await Promise.all([...ids].map((id) => paintControlBanner(id, true, view)));
+    return;
+  }
   const fallback = await resolveOverlayTabId(sessionId);
   if (fallback != null) ids.add(fallback);
   try {
@@ -378,9 +385,9 @@ export async function hideCursorsForSessions(sessionIds: Iterable<string>): Prom
 }
 
 export async function hideUserControlBanners(tabId?: number): Promise<void> {
-  const ids = new Set(controlBannerTabs);
-  if (tabId != null) ids.add(tabId);
-  controlBannerTabs.clear();
+  const ids = tabId == null ? new Set(controlBannerTabs) : new Set([tabId]);
+  if (tabId == null) controlBannerTabs.clear();
+  else controlBannerTabs.delete(tabId);
   await Promise.all([...ids].map((id) => paintControlBanner(id, false)));
 }
 

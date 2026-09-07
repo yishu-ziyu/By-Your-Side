@@ -10,6 +10,12 @@ export const DEFAULT_PORT = 7758;
 export const DEFAULT_HOST = "127.0.0.1";
 /** Lead / 单会话路径的 sessionId；省略该字段即视为 Lead。 */
 export const LEAD_SESSION_ID = "main";
+export const DEFAULT_CONVERSATION_ID = "default";
+export function normalizeConversationId(id?: string | null): string { return id ?? DEFAULT_CONVERSATION_ID; }
+export interface ConversationSummary {
+  id: string; title: string; createdAt: number; updatedAt: number;
+  state: AgentRunState; model?: string; mode: AgentMode;
+}
 
 export function isLeadSession(sessionId?: string | null): boolean {
   return sessionId == null || sessionId === "" || sessionId === LEAD_SESSION_ID;
@@ -155,7 +161,9 @@ export type TeamMemberHandback =
       capturedAt?: number;
     };
 
-export type ClientMessage =
+export type ClientMessage = ConversationEnvelope & (
+  | { type: "conversation_create"; requestId: string; title?: string }
+  | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel" }
   | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
   | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[] }
@@ -190,7 +198,9 @@ export type ClientMessage =
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
   | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
-  | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string };
+  | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string });
+
+export interface ConversationEnvelope { conversationId?: string }
 
 // ── 服务端 → 客户端 ────────────────────────────────────────────────
 
@@ -204,7 +214,10 @@ export interface ModelOption {
   name: string;
 }
 
-export type ServerMessage =
+export type ServerMessage = ConversationEnvelope & (
+  | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
+  | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
+  | { type: "conversation_updated"; conversation: ConversationSummary }
   | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[] }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
@@ -233,7 +246,7 @@ export type ServerMessage =
       continuity: AcceptanceContinuityEvidence[];
     }
   | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string }
-  | { type: "agent_event"; event: AgentUiEvent; sessionId?: string };
+  | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
@@ -251,6 +264,9 @@ export type AgentUiEvent =
 // ── 工具契约 ───────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
+  "share_tab",
+  "page_operation",
+  "read_element",
   "list_tabs",
   "get_active_tab",
   "open_tab",
@@ -301,6 +317,12 @@ export interface TabInfo {
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
 export interface ToolContract {
+  share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
+  page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
+  read_element: {
+    params: { tabId?: number; target: string };
+    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string };
+  };
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
@@ -358,6 +380,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   try {
     const msg = JSON.parse(raw) as ClientMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
+    if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
+    if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
     if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
     if (msg.type === "page_event") {
@@ -430,7 +455,11 @@ export function parseServerMessage(raw: string): ServerMessage | null {
   try {
     const msg = JSON.parse(raw) as ServerMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
+    if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
+    if ((msg.type === "conversation_created" || msg.type === "conversation_updated") && !isConversationSummary(msg.conversation)) return null;
+    if (msg.type === "conversation_created" && !validRequestId(msg.requestId)) return null;
+    if (msg.type === "conversation_list" && (!Array.isArray(msg.conversations) || !msg.conversations.every(isConversationSummary))) return null;
     if (msg.type === "tool_call" && msg.programId !== undefined && !validRequestId(msg.programId)) return null;
     if (msg.type === "status" && !isAgentRunState(msg.state)) return null;
     if (msg.type === "control_result") {
@@ -585,4 +614,14 @@ function isTeamMemberHandback(v: unknown): v is TeamMemberHandback {
   if (typeof open.snapshot !== "string") return false;
   if (open.capturedAt !== undefined && typeof open.capturedAt !== "number") return false;
   return true;
+}
+
+export function validConversationId(value: unknown): value is string { return typeof value === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(value); }
+
+function isConversationSummary(value: unknown): value is ConversationSummary {
+  if (!value || typeof value !== "object") return false;
+  const item = value as ConversationSummary;
+  return validConversationId(item.id) && typeof item.title === "string" && item.title.length <= 120 &&
+    Number.isFinite(item.createdAt) && Number.isFinite(item.updatedAt) && isAgentRunState(item.state) &&
+    (item.mode === "act" || item.mode === "teach") && (item.model === undefined || typeof item.model === "string");
 }

@@ -25,20 +25,26 @@ export type PanelHistoryItem =
 /** background 分配的单调序号是增量同步游标。 */
 export interface PanelHistoryEntry {
   seq: number;
+  /** Original background receipt time; absent on legacy records. */
+  occurredAt?: number;
   item: PanelHistoryItem;
 }
 
 export type PanelToBg =
+  | { kind: "select_conversation"; conversationId: string }
   /** 转发一条协议消息给伴随进程（user_message / steer / abort）。 */
   | { kind: "client"; msg: ClientMessage }
   /** 控制权动作由 background 补 requestId 与当前页面快照后再上行。 */
-  | { kind: "control"; action: "takeover" | "handback" }
+  | { kind: "control"; action: "takeover" | "handback"; conversationId?: string; tabId?: number }
   /** 面板（重）打开，请求同步状态；afterSeq 存在时只补发更新的可见历史。 */
-  | { kind: "sync"; afterSeq?: number }
+  | { kind: "sync"; afterSeq?: number; conversationId?: string }
   /** 连接配置已变更（如 ws 调试模式更新了 token），请重连。 */
   | { kind: "retry" };
 
-export type BgToPanel =
+export type BgToPanel = BgToPanelPayload & { conversationId?: string };
+
+type BgToPanelPayload =
+  | { kind: "conversations"; conversations: import("../../shared/protocol.js").ConversationSummary[]; selectedConversationId: string }
   /** 来自伴随进程的协议消息（tool_call 不经面板，由 background 直接执行）。 */
   | { kind: "server"; msg: ServerMessage }
   /** 连接状态变化。 */

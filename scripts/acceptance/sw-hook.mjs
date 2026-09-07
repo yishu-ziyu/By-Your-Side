@@ -7,18 +7,34 @@
  * 触发用无副作用的 runtime.sendMessage（不是 mark_action / handback_click）。
  */
 export const HOOK_EXPRESSION = `(() => {
-  if (typeof uplink === "undefined" || typeof uplink.handleRaw !== "function") {
-    return { ok: false, error: "module scope missing uplink.handleRaw" };
+  const rawTransport = typeof transport !== "undefined" && transport ? transport : null;
+  const scopedUplink = typeof uplink !== "undefined" && uplink ? uplink : null;
+  const incoming = rawTransport && typeof rawTransport.handleRaw === "function"
+    ? rawTransport.handleRaw.bind(rawTransport)
+    : scopedUplink && typeof scopedUplink.handleRaw === "function"
+      ? scopedUplink.handleRaw.bind(scopedUplink)
+      : null;
+  const outgoing = rawTransport && typeof rawTransport.sendClientMessage === "function"
+    ? rawTransport
+    : scopedUplink;
+  if (!incoming || !outgoing || typeof outgoing.sendClientMessage !== "function") {
+    return { ok: false, error: "module scope missing transport/uplink raw path" };
   }
   if (typeof executeToolCall !== "function") {
     return { ok: false, error: "module scope missing executeToolCall" };
+  }
+  function recordServer(msg) {
+    if (!msg || typeof msg.type !== "string") return;
+    globalThis.__saLastServer = msg;
+    if (!Array.isArray(globalThis.__saServerEvents)) globalThis.__saServerEvents = [];
+    globalThis.__saServerEvents.push(msg);
   }
   function installTeam() {
     if (typeof handleTakeover === "function") globalThis.__saTakeover = handleTakeover;
     if (typeof handleHandback === "function") globalThis.__saHandback = handleHandback;
     if (!globalThis.__saClientWrap) {
-      const current = uplink.sendClientMessage.bind(uplink);
-      uplink.sendClientMessage = function (msg) {
+      const current = outgoing.sendClientMessage.bind(outgoing);
+      outgoing.sendClientMessage = function (msg) {
         if (msg && (msg.type === "takeover" || msg.type === "handback")) {
           globalThis.__saLastClient = clipControlFrame(msg);
         }
@@ -27,18 +43,19 @@ export const HOOK_EXPRESSION = `(() => {
       globalThis.__saClientWrap = true;
     }
     if (!globalThis.__saServerWrap) {
-      const raw = uplink.handleRaw.bind(uplink);
-      uplink.handleRaw = function (incoming) {
-        try {
-          const msg = typeof incoming === "string" ? JSON.parse(incoming) : incoming;
-          if (msg && (msg.type === "control_result" || msg.type === "team_status" || msg.type === "acceptance_team_ready" || msg.type === "acceptance_team_evidence")) {
-            globalThis.__saLastServer = msg;
-            if (!Array.isArray(globalThis.__saServerEvents)) globalThis.__saServerEvents = [];
-            globalThis.__saServerEvents.push(msg);
-          }
-        } catch (e) {}
-        return raw(incoming);
-      };
+      if (rawTransport && rawTransport.handlers && typeof rawTransport.handlers.onServerMessage === "function") {
+        const onServerMessage = rawTransport.handlers.onServerMessage.bind(rawTransport.handlers);
+        rawTransport.handlers.onServerMessage = function (msg) {
+          recordServer(msg);
+          return onServerMessage(msg);
+        };
+      } else if (scopedUplink && typeof scopedUplink.handleRaw === "function") {
+        const raw = scopedUplink.handleRaw.bind(scopedUplink);
+        scopedUplink.handleRaw = function (value) {
+          try { recordServer(typeof value === "string" ? JSON.parse(value) : value); } catch (e) {}
+          return raw(value);
+        };
+      }
       globalThis.__saServerWrap = true;
     }
     globalThis.__saGate = function () {
@@ -64,12 +81,13 @@ export const HOOK_EXPRESSION = `(() => {
       const requestId = "accept-team-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
       globalThis.__saLastServer = null;
       globalThis.__saServerEvents = [];
-      if (!uplink.sendClientMessage({
+      if (!outgoing.sendClientMessage({
         type: "acceptance_prepare_team",
         requestId: requestId,
         capability: capability,
         worker: { sessionId: workerId, tabId: tabId },
-        tasks: { lead: leadTask, worker: workerTask }
+        tasks: { lead: leadTask, worker: workerTask },
+        ...(globalThis.__saAcceptanceConversationId ? { conversationId: globalThis.__saAcceptanceConversationId } : {})
       })) return Promise.reject(new Error("验收装配消息没有发给 Agent"));
       return new Promise(function (resolve, reject) {
         const started = Date.now();
@@ -91,6 +109,7 @@ export const HOOK_EXPRESSION = `(() => {
       });
     };
     if (typeof handleAbort === "function") globalThis.__saAbortTeam = handleAbort;
+    globalThis.__saSendClient = function (msg) { return outgoing.sendClientMessage(msg); };
   }
   if (typeof globalThis.__saCall === "function") {
     installTeam();
@@ -144,9 +163,9 @@ export const HOOK_EXPRESSION = `(() => {
         : [],
     };
   }
-  const orig = uplink.sendClientMessage.bind(uplink);
+  const orig = outgoing.sendClientMessage.bind(outgoing);
   const waiters = new Map();
-  uplink.sendClientMessage = function (msg) {
+  outgoing.sendClientMessage = function (msg) {
     if (msg && (msg.type === "takeover" || msg.type === "handback")) {
       globalThis.__saLastClient = clipControlFrame(msg);
     }
@@ -158,7 +177,7 @@ export const HOOK_EXPRESSION = `(() => {
     return orig(msg);
   };
   globalThis.__saClientWrap = true;
-  globalThis.__saCall = function (id, name, params, sessionId, programId) {
+  globalThis.__saCall = function (id, name, params, sessionId, programId, conversationId) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(function () {
         waiters.delete(id);
@@ -168,13 +187,14 @@ export const HOOK_EXPRESSION = `(() => {
         clearTimeout(timer);
         resolve(msg);
       });
-      uplink.handleRaw({
+      incoming({
         type: "tool_call",
         id: id,
         name: name,
         params: params || {},
         sessionId: sessionId,
-        ...(programId ? { programId: programId } : {})
+        ...(programId ? { programId: programId } : {}),
+        ...(conversationId ? { conversationId: conversationId } : {})
       });
     });
   };
@@ -223,8 +243,9 @@ async function listenerBodyLines(cdp, sessionId, scriptId) {
   const needles = ["chrome.runtime.onMessage.addListener", "chrome.runtime.onConnect.addListener"];
   const out = [];
   for (const needle of needles) {
-    const idx = lines.findIndex((l) => l.includes(needle));
-    if (idx >= 0) out.push(idx + 1);
+    for (let idx = 0; idx < lines.length; idx += 1) {
+      if (lines[idx].includes(needle)) out.push(idx + 1);
+    }
   }
   if (out.length === 0) throw new Error("background.js 里找不到 onMessage/onConnect listener");
   return out;
@@ -298,7 +319,7 @@ export async function installExecuteToolCallHook(cdp, sessionId, extensionId, pr
   if (breakpointIds.length === 0) throw new Error("setBreakpoint 未返回 breakpointId");
 
   try {
-    const pausedP = cdp.waitForEvent("Debugger.paused", 12_000);
+    let pausedP = cdp.waitForEvent("Debugger.paused", 12_000);
     await cdp.send(
       "Runtime.evaluate",
       { expression: triggerExpression(probeUrl), awaitPromise: false, returnByValue: true },
@@ -314,7 +335,26 @@ export async function installExecuteToolCallHook(cdp, sessionId, extensionId, pr
           "SW 自己发 sendMessage 进不了本进程 listener；需要已加载扩展对 127.0.0.1 fixture 注入 content script。",
       );
     }
-    const hooked = await hookOnPausedFrame(cdp, sessionId, paused);
+    let hooked = null;
+    let lastScopeError = "no matching controller frame";
+    for (let attempt = 0; attempt < Math.max(2, lines.length + 1); attempt += 1) {
+      try {
+        hooked = await hookOnPausedFrame(cdp, sessionId, paused);
+        break;
+      } catch (error) {
+        lastScopeError = error instanceof Error ? error.message : String(error);
+        pausedP = cdp.waitForEvent("Debugger.paused", 4_000);
+        await cdp.send("Debugger.resume", {}, sessionId);
+        try {
+          paused = await pausedP;
+        } catch {
+          break;
+        }
+      }
+    }
+    if (!hooked) {
+      throw new Error(`触发消息经过 listener，但没有停进 conversation controller 作用域：${lastScopeError}`);
+    }
     await cdp.send("Debugger.resume", {}, sessionId);
     const kind = await cdp.send(
       "Runtime.evaluate",
