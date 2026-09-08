@@ -6,6 +6,8 @@ import {
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
+import { TaskProgress } from "./task-progress.js";
+import type { TaskProgressSnapshot } from "../../shared/voice.js";
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
@@ -15,6 +17,7 @@ export class ConversationManager {
   private readonly entries = new Map<string, ConversationEntry>();
   private readonly pending = new Map<string, Promise<ConversationEntry>>();
   private readonly requests = new Map<string, Promise<ConversationEntry>>();
+  private readonly progress = new Map<string, TaskProgress>();
   constructor(
     private readonly factory: (id: string, emit: (message: ServerMessage) => void, summary?: ConversationSummary) => Promise<Runtime>,
     private readonly emit: (message: ServerMessage) => void,
@@ -27,6 +30,27 @@ export class ConversationManager {
     return this.create(DEFAULT_CONVERSATION_ID, "新会话");
   }
   get(id: string): ConversationEntry | undefined { return this.entries.get(id); }
+  getTaskProgress(id: string): TaskProgressSnapshot | null { return this.progress.get(id)?.snapshot() ?? null; }
+  async routeVoiceInput(id: string, text: string, startedAt: number | null, stillCurrent: () => boolean) {
+    const session = this.entries.get(id)?.runtime.session;
+    if (!session || !text.trim() || text.length > 2000) throw new Error("这句话没有听清或过长，请重新说。");
+    if (!await session.classifyVoiceEdit(text)) return { kind: "none" as const };
+    if (!stillCurrent()) throw new Error("语音已结束或你正在说新指令，本句未发送。");
+    try {
+      await this.steerFromVoice(id, text, startedAt);
+      return { kind: "steer" as const, ok: true, message: "修改原话已送达正在执行的任务；不等于页面修改已完成。" };
+    } catch (error) { return { kind: "steer" as const, ok: false, message: error instanceof Error ? error.message : "修改未送达。" }; }
+  }
+  async steerFromVoice(id: string, text: string, expectedStartedAt: number | null): Promise<void> {
+    const entry = this.entries.get(id);
+    const snapshot = this.getTaskProgress(id);
+    if (!entry || !snapshot || snapshot.state !== "running" || expectedStartedAt === null || snapshot.startedAt !== expectedStartedAt) {
+      throw new Error("原任务已停止或发生变化，修改未发送。");
+    }
+    if (!text.trim() || text.length > 2000) throw new Error("这段修改没有听清或过长，请简短重说。");
+    await entry.runtime.session.steerCurrentTask(text);
+    this.emit({ type: "agent_event", conversationId: id, event: { kind: "notice", message: `语音修改已送达当前任务：${text}` } });
+  }
   list(): ConversationSummary[] { return [...this.entries.values()].map(({ summary }) => ({ ...summary })); }
 
   private create(id: string, title: string, restored?: ConversationSummary): Promise<ConversationEntry> {
@@ -36,7 +60,10 @@ export class ConversationManager {
     if (pending) return pending;
     const summary: ConversationSummary = { id, title, createdAt: Date.now(), updatedAt: Date.now(), state: "idle", mode: "act", ...restored };
     const states = new Map<string, "idle" | "running" | "user">();
+    const progress = new TaskProgress(id);
+    this.progress.set(id, progress);
     const promise = this.factory(id, (message) => {
+      progress.observe(message);
       const scoped = { ...message, conversationId: id };
       this.emit(scoped);
       if (message.type === "status") {
@@ -96,6 +123,8 @@ export class ConversationManager {
     }
     if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话";
     if (message.type === "set_mode") entry.summary.mode = message.mode;
+    if (message.type === "user_message") this.progress.get(id)?.request(message.text);
+    if (message.type === "abort") this.progress.get(id)?.abort();
     entry.runtime.handleMessage(message);
     if (message.type === "user_message" || message.type === "set_mode") {
       entry.summary.updatedAt = Date.now();

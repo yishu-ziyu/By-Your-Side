@@ -94,3 +94,35 @@ it('主 Agent 跨会话接手只停止页面成员，保留其他 worker；用�
   await expect(take('default',['main','reviewer'])).rejects.toThrow(/页面现在归你/);
   expect(sessions.get('default').fleet.stopAndRelease).toHaveBeenCalledOnce();
 });
+
+
+it("voice edits require the same running task and only acknowledge after acceptance", async () => {
+  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get("default")!;
+  a.emit({type:"agent_event",event:{kind:"agent_start"}});
+  const startedAt=h.manager.getTaskProgress("default")!.startedAt;
+  let resolve!:()=>void;
+  a.runtime.session.steerCurrentTask=vi.fn(()=>new Promise<void>(r=>{resolve=r;}));
+  const n=h.emitted.length;
+  const pending=h.manager.steerFromVoice("default","预算改成八百",startedAt);
+  expect(h.emitted).toHaveLength(n);
+  resolve();await pending;
+  expect(h.emitted.at(-1)).toMatchObject({conversationId:"default",event:{kind:"notice",message:"语音修改已送达当前任务：预算改成八百"}});
+  expect(a.runtime.handleMessage).not.toHaveBeenCalled();expect(a.runtime.session.abort).not.toHaveBeenCalled();
+  await expect(h.manager.steerFromVoice("default","预算改成八百",0)).rejects.toThrow("原任务");
+  a.emit({type:"status",state:"user"});
+  await expect(h.manager.steerFromVoice("default","预算改成八百",startedAt)).rejects.toThrow("原任务");
+  a.emit({type:"status",state:"idle"});
+  await expect(h.manager.steerFromVoice("default","预算改成八百",startedAt)).rejects.toThrow("原任务");
+});
+
+
+it("the app routes only explicit edits and rejects superseded intentions", async()=>{
+ const h=harness();await h.manager.ensureDefault();const runtime=h.runtimes.get("default")!.runtime;
+ runtime.session.classifyVoiceEdit=vi.fn(async()=>false);runtime.session.steerCurrentTask=vi.fn();
+ expect(await h.manager.routeVoiceInput("default","现在做到哪了",null,()=>true)).toEqual({kind:"none"});
+ expect(runtime.session.steerCurrentTask).not.toHaveBeenCalled();
+ runtime.session.classifyVoiceEdit.mockResolvedValue(true);
+ await expect(h.manager.routeVoiceInput("default","预算改成八百",null,()=>false)).rejects.toThrow("新指令");
+ expect(runtime.session.steerCurrentTask).not.toHaveBeenCalled();
+ expect(await h.manager.routeVoiceInput("default","预算改成八百",null,()=>true)).toMatchObject({kind:"steer",ok:false});
+});

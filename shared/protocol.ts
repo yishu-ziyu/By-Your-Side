@@ -6,6 +6,7 @@
  */
 
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+import { isVoiceClientMessage, isVoiceServerMessage, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 7758;
@@ -164,6 +165,7 @@ export type TeamMemberHandback =
     };
 
 export type ClientMessage = ConversationEnvelope & (
+  | VoiceClientMessage
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
@@ -220,6 +222,7 @@ export interface ModelOption {
 }
 
 export type ServerMessage = ConversationEnvelope & (
+  | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
@@ -390,6 +393,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     const msg = JSON.parse(raw) as ClientMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if (msg.type === "voice") return isVoiceClientMessage(msg) ? msg : null;
     if (msg.type.startsWith("memory_")) {
       if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget") return null;
       if (!validRequestId(msg.requestId)) return null;
@@ -471,6 +475,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     const msg = JSON.parse(raw) as ServerMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
     if (msg.type === "memory_result") {
       if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget"].includes(msg.action)) return null;
       if (msg.entries !== undefined && (!Array.isArray(msg.entries) || !msg.entries.every(isMemoryEntry))) return null;

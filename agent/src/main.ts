@@ -27,6 +27,7 @@ import { ConversationManager } from "./conversation-manager.js";
 import { createConversationRuntime } from "./conversation-runtime.js";
 import { ExperienceStore } from "./experience.js";
 import { MemoryStore } from "./memory-store.js";
+import { VoiceService } from "./voice-service.js";
 
 interface CliArgs {
   ws: boolean;
@@ -141,9 +142,10 @@ async function main(): Promise<void> {
     memoryStore,
   );
   const initial = await conversations.ensureDefault();
+  const voice = new VoiceService(id => conversations.getTaskProgress(id), msg => current?.send(msg), undefined, undefined, undefined, (id, text, startedAt, stillCurrent) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`));
   const session = initial.runtime.session;
   const adoptClient = (conn: ClientConn): void => {
-    if (current && current !== conn) current.close();
+    if (current && current !== conn) { voice.close(); current.close(); }
     current = conn;
   };
   const sendHelloOk = (conn: ClientConn): void => {
@@ -156,11 +158,13 @@ async function main(): Promise<void> {
   const onClientGone = (conn: ClientConn): boolean => {
     if (conn !== current) return false;
     current = null;
+    voice.close();
     conversations.disconnect();
     return true;
   };
-  const disposeAll = (): void => conversations.dispose();
+  const disposeAll = (): void => { voice.close(); conversations.dispose(); };
   const handleMessage = (msg: ClientMessage): void => {
+    if (msg.type === "voice") { void voice.handle(msg.conversationId ?? "default", msg); return; }
     void conversations.handleMessage(msg).catch((err: unknown) => current?.send({
       type: "agent_event", conversationId: msg.conversationId,
       event: { kind: "error", message: err instanceof Error ? err.message : String(err) },
