@@ -178,9 +178,9 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
     let connectingPhase = 0;
     const angleX = 0.32;
     let levelS = 0;
-    
-    
-    
+
+
+
 
     const render = (dt: number, isStatic = false) => {
       const st = stateRef.current;
