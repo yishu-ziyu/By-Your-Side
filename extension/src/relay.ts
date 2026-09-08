@@ -19,7 +19,7 @@ export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" 
 
 /** 关闭侧栏后仍需要恢复的可见内容。 */
 export type PanelHistoryItem =
-  | { kind: "user"; text: string; attachments?: Attachment[] }
+  | { kind: "user"; text: string; attachments?: Attachment[]; undelivered?: { original: ClientMessage } }
   | { kind: "server"; msg: PanelHistoryServerMessage };
 
 /** background 分配的单调序号是增量同步游标。 */
@@ -54,4 +54,11 @@ type BgToPanelPayload =
   /** 面板关闭期间积累的、按 seq 排序的可见历史。 */
   | { kind: "history"; entries: PanelHistoryEntry[] }
   /** 选中即问：划词或右键把一段正文交给侧栏，不自动发送。 */
-  | { kind: "ask_selection"; ask: PendingAsk };
+  | { kind: "ask_selection"; ask: PendingAsk }
+  /**
+   * 送达回执（issue #4）：只覆盖 background→agent 上行传输层。
+   * ok=false 表示上行传输不可用，确定未发给伴随进程；original 为未经页面
+   * 附加上文的原始消息，供面板原样重试。没有回执 = background 层已接受并
+   * 已交给传输层，不表示伴随进程已处理或任务已完成。
+   */
+  | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage };

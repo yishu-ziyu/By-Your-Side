@@ -27,6 +27,11 @@ export class PanelHistory {
     return entry;
   }
 
+  markUndelivered(seq: number, original: import("../../../shared/protocol.js").ClientMessage): void {
+    const entry = this.entries.find(item => item.seq === seq);
+    if (entry?.item.kind === "user") entry.item.undelivered = { original };
+  }
+
   since(afterSeq = 0): PanelHistoryEntry[] {
     return this.entries.filter((entry) => entry.seq > afterSeq);
   }

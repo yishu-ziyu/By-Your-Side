@@ -607,6 +607,39 @@ details.run-steps {
   }
 }
 
+/* 断线确定未送达的用户消息（issue #4）：弱化边框 + 原文重试，不隐藏内容 */
+.msg.user.undelivered {
+  border-style: dashed;
+  opacity: 0.88;
+}
+
+.msg.user .delivery-tag {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.msg.user button[data-retry] {
+  margin-left: 8px;
+  border: 1px solid var(--content-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.msg.user button[data-retry]:hover:not(:disabled) {
+  background: var(--content-subtle);
+}
+
+.msg.user button[data-retry]:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .msg.assistant {
   align-self: stretch;
   max-width: 100%;

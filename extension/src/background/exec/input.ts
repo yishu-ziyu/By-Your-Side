@@ -1149,7 +1149,7 @@ export async function mark(
 
   await ensureCursor(tabId);
   const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
-  const mode = await getMode();
+  const mode = await getMode(parseExecutionKey(sessionId).conversationId);
   const motion = await getMarkMotion();
   const style = params.style ?? (mode === "teach" ? "sketch" : "rect");
   await callDom(

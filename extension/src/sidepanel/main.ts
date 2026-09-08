@@ -326,6 +326,7 @@ function resetConversationRender(): void {
   running = false;
   lastUserHasPage = false;
   lastHistorySeq = 0;
+  userBubbles.clear();
   historyPrimed = false;
   messagesEl.replaceChildren();
   renderTeamCard();
@@ -2032,7 +2033,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
 
 function send(msg: ClientMessage): boolean {
   if (!port || !transportConnected) return false;
-  const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: selectedConversationId } };
+  const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
   try {
     port.postMessage(envelope);
     return true;
@@ -2125,6 +2126,11 @@ function handleBgMessage(envelope: BgToPanel): void {
     applyPendingAsk(envelope.ask);
     return;
   }
+  if (envelope.kind === "delivery") {
+    if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
+    handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original);
+    return;
+  }
   if (envelope.kind !== "conn") return;
   // 连接状态
   transportConnected = envelope.state === "connected";
@@ -2158,6 +2164,36 @@ function handleBgMessage(envelope: BgToPanel): void {
 let lastHistorySeq = 0;
 let historyOccurredAt: number | undefined;
 function eventTime(): number { return historyEventTime(applyingHistory, historyOccurredAt); }
+/** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
+const userBubbles = new Map<number, HTMLElement>();
+
+/** background→agent 上行确定失败的回执：标记未送达并提供原文重试；迟到/重复/未知 seq 忽略。 */
+function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage): void {
+  if (ok) return;
+  if (!Number.isInteger(seq)) return;
+  const bubble = userBubbles.get(seq);
+  if (!bubble || bubble.dataset.failed === "true") return;
+  bubble.dataset.failed = "true";
+  bubble.classList.add("undelivered");
+  const tag = document.createElement("span");
+  tag.className = "delivery-tag";
+  tag.textContent = "未送达";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.dataset.retry = "";
+  retry.textContent = "重试";
+  retry.title = "重新发送这条消息";
+  retry.onclick = () => {
+    if (!send(original)) {
+      noticeSendFailed();
+      return;
+    }
+    bubble.dataset.retried = "true";
+    retry.disabled = true;
+    retry.textContent = "已重试";
+  };
+  bubble.append(tag, retry);
+}
 
 function applyHistory(entries: PanelHistoryEntry[]): void {
   const fresh: PanelHistoryEntry[] = [];
@@ -2169,7 +2205,10 @@ function applyHistory(entries: PanelHistoryEntry[]): void {
       historyOccurredAt = entry.occurredAt;
       if (entry.item.kind === "user") {
         if (!running) runStartAt = eventTime();
-        addUserMsg(entry.item.text, entry.item.attachments);
+        const bubble = addUserMsg(entry.item.text, entry.item.attachments);
+        bubble.dataset.seq = String(entry.seq);
+        userBubbles.set(entry.seq, bubble);
+        if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }
       else handleServerMessage(JSON.stringify(entry.item.msg));
       lastHistorySeq = entry.seq;
@@ -2295,8 +2334,17 @@ function clearPendingAsk(): void {
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
 
+/** 断线发送失败提示：同一轮只提示一次，成功发送后复位。 */
+let sendFailNotified = false;
+
+function noticeSendFailed(): void {
+  if (sendFailNotified) return;
+  sendFailNotified = true;
+  addMsg("msg notice", "这条没有发出去：与后台的连接断了。正文和引用都还在，恢复连接后重新发送即可。");
+}
+
 function sendInput(): void {
-  if (!conversationReady || !port || panelLive(sessionRun.values(), teamView).userHasPage) return;
+  if (!conversationReady || panelLive(sessionRun.values(), teamView).userHasPage) return;
   const text = inputEl.value.trim();
   const pendingAtts = attachments.getAttachments();
   if (!text && pendingAtts.length === 0) return;
@@ -2316,7 +2364,8 @@ function sendInput(): void {
       ? { type: "steer", text, context, attachments: clientAttachments }
       : { type: "user_message", text, context, attachments: clientAttachments },
   );
-  if (!sent) return;
+  if (!sent) { noticeSendFailed(); return; }
+  sendFailNotified = false;
   inputEl.value = "";
   clearPendingAsk();
   attachments.clear();

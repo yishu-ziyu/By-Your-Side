@@ -1065,3 +1065,21 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - 全局能力最终：相关6组43项与补充5组46项测试通过（有重叠，不汇总），类型/构建/diff检查通过。按用户要求未跑全量测试。
 - 真实Chrome生产ConversationManager→Fleet→RPC→controller验证10项通过，`/tmp/sideagent-lead-global-evidence/result.json`。全局查看和只读不移交；操作前等旧调用完成，实际关闭接手页，无关worker可继续读取。
 - 扩展已重载。无commit/push。新标准明确替代上一轮对主Agent的跨会话拒绝边界，子Agent和用户接管约束保留。
+
+## 2026-09-07（下午）issue #4 断线发送保留正文与引用（fix/stability-issue4-send-delivery）
+
+- 标准文件：docs/evals/20260907-send-delivery-reliability.md（C1–C7 校验方原文 + 实现笔记含全部命令/退出码/剩余边界）。
+- 改动：relay.ts 新增 `{kind:"delivery",seq,ok:false,original}` 最小回执；background client 分支畸形守卫 + 上行不可用回执（额外修复 C1 发现的畸形信封 TypeError）；main.ts send()→boolean、sendInput 失败保留正文/引用/存储 + 未发送提示、回执按 seq 标记气泡 + 原文重试（绝不碰输入框）；styles.css 未送达样式。
+- 测试资产：extension/test/panel-delivery-check.mjs（生产 UI + Port 边界注入，8 场景 46 断言）、panel-delivery-e2e.mjs（真实扩展 + CDP 真实杀 SW，11 项）、delivery-receipt.test.ts（真实 background 路由，5 例）。Playwright 一律 headless（用户要求不抢前台）。
+- 结果：旧代码 4+4 失败 → 修复后全绿；npm test 390 全过；overlay/browser/team 验收在新构建复跑 PASS（reload:ext 后再各一轮）。
+- 证据（本地，按惯例不入库）：docs/evidence/20260907-send-delivery/（前后回归 log、e2e 三截图 + result.json 含 SHA）。
+- 剩余边界：瞬死毫秒竞态、native 接受后 agent 崩溃的"已接受未知处理"、idle 态 steer 重试语义、真实 side panel 容器观感待人评——详见标准文件。
+- ChromeMain 已 reload 到本分支构建；PR 开向 fix/takeover-handoff-closure，不自动合并，#1 保持开放。
+
+## 2026-09-08 分支收拢
+
+- 用户选择清单除本地工具记录外全部保留，最终仅main与feat/session-management并保持一致。先提交原有排版/研究记录，合入issue4真实分支，保留原提交祖先链。
+- 合并适配现有多会话、附件与历史耗时：上行失败回执带原conversationId，失败状态随用户历史持久保存；重新打开可恢复重试入口，不重复气泡、不清空新输入。修复畸形Port消息守卫。
+- mark默认样式改为读取执行成员所属conversationId的模式。真实Chrome teach绘手绘、act绘矩形通过。
+- 针对性4文件30测试通过；浏览器8项通过（2个真实mark路径、6个生产sidepanel界面+Port故障注入场景），证据 `/tmp/sideagent-consolidation-browser/result.json`。后台回执另以生产controller测试，未把UI故障替身称为网络端到端。无全量测试。
+- 首轮浏览器挂钩超时是重载后旧SW上下文chrome不可用，重新重载恢复；失败未算产品通过。
