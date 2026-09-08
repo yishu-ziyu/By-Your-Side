@@ -9,7 +9,13 @@ import { MemoryRuntime } from "../src/memory-runtime.js";
 
 const roots: string[] = [];
 const runtimes: ExperienceRuntime[] = [];
-afterEach(async () => { runtimes.splice(0).forEach(r => r.dispose()); await Promise.all(roots.splice(0).map(r => rm(r, { recursive: true, force: true }))); });
+afterEach(async () => {
+  const finished = runtimes.splice(0);
+  finished.forEach(r => r.dispose());
+  // dispose records an interrupted active task; drain that write before removing fixtures.
+  await Promise.all(finished.map(r => r.flush()));
+  await Promise.all(roots.splice(0).map(r => rm(r, { recursive: true, force: true })));
+});
 const page = { tabId: 1, title: "客户", url: "https://crm.example/customers" };
 const correction = "不对，你只导出了当前页20条，我要全部200条客户。";
 const complete: ExperienceComplete = async (_system, raw) => {
