@@ -1,7 +1,7 @@
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { isAxRef, snapshotRefKind } from "../axstate.js";
 import { sendCommand } from "../debugger.js";
-import { getWorkingTabId, resolveWorkingTab } from "../state.js";
+import { getWorkingTabId, resolveReadableTab } from "../state.js";
 
 const MAX_ELEMENT_CHARS = 1_000_000;
 
@@ -106,8 +106,8 @@ export async function readElement(
   executionKey: string = LEAD_SESSION_ID,
 ): Promise<ReadElementResult> {
   const tabId = params.tabId ?? await getWorkingTabId(executionKey);
-  if (tabId == null) throw new Error("当前执行成员没有工作标签页；请显式提供本会话拥有的 tabId");
-  const tab = await resolveWorkingTab(tabId, executionKey);
+  if (tabId == null) throw new Error("当前执行成员没有工作标签页；请提供需要读取的 tabId");
+  const tab = await resolveReadableTab(tabId, executionKey);
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
   const target = parseTarget(params.target);
   let data: ElementData;

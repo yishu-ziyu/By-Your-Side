@@ -1015,3 +1015,28 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 
 - 用户要求先看改后效果。新增 docs/evals/20260908-apple-ui-preview.html，左右同任务：现有结构示意/推荐方案，发起/执行/结果三个阶段，可点接管、交还、记忆和依据。全是模拟，不接模型。
 - 应用内浏览器实际截图及主路径已检查，交付用户判断；不继续打磨原型，不改正式产品。标准与检查见同名 md。
+
+## 2026-09-08 父 Agent 管理 worker 页面
+
+- 用户批准同会话父 Agent 可接管/关闭 worker 页，结束后回收全部历史页，跨会话继续隔离。冻结标准 `docs/evals/20260908-parent-tab-control.md`。
+- 原因：页面授权名单没有父级管理语义；stop 只回收显式 sharedTab，独立页面没有移交。现新增生产管理 RPC、停止调用闸门和持久停止标记；页面移交前排空完整调用。
+- 主代理独立实现。运行期间已有记忆工作被提交为 checkpoint；当前在最新 HEAD 上保留该成果，未回滚。
+- 改动集中 fleet/tools、background state/worker-tab-control/controller、协议和聚焦测试。待全量检查与真实浏览器/模型清理路径验证。
+
+- 父页面控制首轮真实 Chrome 生产链10项通过：跨会话/普通worker管理拒绝、旧操作结束后移交、迟到操作拒绝、两个页面全部关闭；证据 `/tmp/sideagent-parent-tab-evidence/result.json`。
+- 新增共享页队列停写条件，防止已排队但未开始的动作在停止后执行。移交测试26项通过；类型检查/构建通过并重载。
+- 模型验收第一次桥接遗漏原RPC id，修复脚本；第二次模型多开空白页导致两页条件失败，保留 `/tmp/sideagent-parent-model-evidence/attempt-extra-blank-tab.json`，不放宽标准，明确spawn初始URL再跑。
+
+- 父页面控制最终：真实 M3 worker 两页保留 → 自然请求父 Agent 清理 → Chrome 两页消失 4项通过（生产Fleet固定派工初始条件，未伪造模型输出），`/tmp/sideagent-parent-model-evidence/result.json`。
+- 最终typecheck/test/build/diff检查通过（最新全量71files/616tests），权限真实Chrome10项、现有会话/共享页/接管回归全通过。扩展重载成功；清理了中断脚本遗留的本轮测试页，未关闭用户页面。没有commit/push。
+- 尚无人评提示文案。自主派工失败/超时记录保留，未作为本权限修复的成功证据；最终标准与边界见 `docs/evals/20260908-parent-tab-control.md`。
+
+## 2026-09-08 主 Agent 全局浏览器能力
+
+- 用户进一步明确：主 Agent 代表用户全局查看/操作，隔离约束用于子 Agent 和执行冲突。要求最小有效改动，不跑全量测试。新标准 `docs/evals/20260908-lead-global-browser.md` 替代旧标准的跨会话主Agent拒绝项。
+- 定点修改现有list/snapshot/read路径（全局只读不认领），复用worker_tabs检查/移交与ConversationManager运行时索引协调旧成员，不新增消息协议或合并会话上下文。
+- 新增4条目标用例先红，正在跑权限/读取/协调相关文件和真实浏览器检查；不运行全量测试。原有侧栏和上一轮权限改动均保留。
+
+- 全局能力最终：相关6组43项与补充5组46项测试通过（有重叠，不汇总），类型/构建/diff检查通过。按用户要求未跑全量测试。
+- 真实Chrome生产ConversationManager→Fleet→RPC→controller验证10项通过，`/tmp/sideagent-lead-global-evidence/result.json`。全局查看和只读不移交；操作前等旧调用完成，实际关闭接手页，无关worker可继续读取。
+- 扩展已重载。无commit/push。新标准明确替代上一轮对主Agent的跨会话拒绝边界，子Agent和用户接管约束保留。

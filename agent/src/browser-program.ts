@@ -22,7 +22,7 @@ interface ProgramOptions {
   onStep?(step: ProgramStep): void;
 }
 
-const METHODS = [...TOOL_NAMES, "waitFor", "sleep"];
+const METHODS = [...TOOL_NAMES.filter(name => name !== "worker_tabs"), "waitFor", "sleep"];
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 

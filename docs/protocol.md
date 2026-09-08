@@ -78,7 +78,7 @@ client → tool_result{conversationId, id, ok:true, data}  # data 形状见 Tool
 
 - 页资源记录 `tabId + conversationId + mode + collaborators`。普通页独占；共享页只能由同一用户会话内显式登记的成员访问。`sessionId` 的工作页绑定不取代页资源归属检查。
 - 首次认领页面时才创建该会话的 Chrome 原生标签组，标题跟随会话名；纯聊天不创建空组。`groupId` 只用于展示，持久身份仍是 `conversationId`。
-- `list_tabs` 只返回当前用户会话拥有的页面。A/B 请求同一 URL 时分别新建页面；`switch_tab`、直接传入 `tabId`、隐式认领或共享登记均不能抢走另一用户会话的页面，失败返回可识别的归属错误。
+- 主 Agent 的 `list_tabs` 返回全局标签；worker 只返回分配给自己的页面。主 Agent 可用 `snapshot({tabId})` / `read_element({tabId,target})` 跨会话只读，不认领页面。操作其他会话的页面先经 `take_tab` 协调；普通 `switch_tab` / `close_tab` 自动走此流程。A/B 会话内容保持独立。
 - 用户当前未归属的活动页可以明确借入当前会话。`get_active_tab` 只读活动页信息，不自动认领；它与用户消息的 `context` 为「这页面」提供锚点。
 - 省略 `tabId` 时使用该执行成员已绑定的工作页；没有绑定时只能选择未归属页面。只有当前显示会话的 Lead 可以在已在前台的窗口中激活自己的标签；后台会话和 worker 不抢标签焦点，也不调用 `windows.update({focused:true})`。
 - screenshot 优先使用 CDP `Page.captureScreenshot`，失败再尝试 `captureVisibleTab`。
@@ -142,3 +142,11 @@ ExperienceRuntime 只观察 Lead；由用户消息开始、浏览器 tool_execut
 记忆首次发布按 topic 检索，避免“核对结果”等模板词把无关任务召回；用户编辑后按新文本选择。适用范围默认当前 hostname。来源 runId 保证发布幂等，不覆盖用户更新；forget 把 runId 记入 memories.json 的 forgottenExperiences，使后台重试不能复活。发生新的明确纠正时，只废止原任务实际使用且版本仍未变的经验，用户后来的修改优先。
 
 当前页面若因另一会话占用而被既有隔离规则移除，不凭旧页面信息注入站点记忆。新会话应使用自己的页面；用户消息含唯一明确网址时，用该目标地址选择经验；否则需要起始 PageContext，本轮不会在中途导航后补入经验。EverOS 服务和语义检索未接入。
+
+### 主 Agent 全局查看与页面调度
+
+- `take_tab` 是主 Agent 的编排工具。普通 `switch_tab` / `close_tab` 自动协调页面：通过 ConversationManager 找到原成员，停止相关成员并等待扩展旧调用结束，再继续原操作。主 Agent 已离开的旧页面不要求停止它现在另一页面的任务。
+- 内部 `worker_tabs` RPC 支持 `inspect` / `release` / `claim`。仅父 Agent 可调用，受用户接管写闸门约束；不暴露给 `browser_run`。`release` 只能释放本会话的 worker，不接受跨会话复合身份。
+- worker 完成、失败、取消或启动失败后，Fleet 请求移交该成员的全部历史页面。保留页面及内容、父 Agent 当前工作指针和其他协作者；最后一个 worker 离开后页面恢复为父 Agent 独占。
+- 扩展在移交前封住该 worker 的新调用，并排空完整的已开始调用。尚未开始的共享页队列写入取消。停止标记保存在 `storage.session`；worker 每次启动使用唯一身份，防止旧请求借复用身份继续操作。
+- 子 Agent 仍不能跨越分配范围。主 Agent 接手时使用检查到的 conversationId 防止覆盖并发归属变更；原会话和请求方的用户接管闸门都必须允许操作。读取不需要接手。

@@ -102,15 +102,15 @@ describe("conversation tab ownership", () => {
     expect(await state.getWorkingTabId(a)).toBe(1);
   });
 
-  it("list_tabs只返回当前会话已拥有页面", async () => {
+  it("主 Agent 的 list_tabs 返回全局页面", async () => {
     const state = await import("../src/background/state.js");
     const execTabs = await import("../src/background/exec/tabs.js");
     const a = state.executionKey("A", "main");
     const b = state.executionKey("B", "main");
     await state.setWorkingTab(1, a);
     await state.setWorkingTab(2, b);
-    expect((await execTabs.listTabs(a)).tabs.map((tab) => tab.id)).toEqual([1]);
-    expect((await execTabs.listTabs(b)).tabs.map((tab) => tab.id)).toEqual([2]);
+    expect((await execTabs.listTabs(a)).tabs.map((tab) => tab.id)).toEqual([1, 2, 3]);
+    expect((await execTabs.listTabs(b)).tabs.map((tab) => tab.id)).toEqual([1, 2, 3]);
   });
 
   it("显式共享登记全部同会话成员，关闭页时清理全部绑定", async () => {

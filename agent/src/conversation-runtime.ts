@@ -46,7 +46,7 @@ export async function createConversationRuntime(
       modelPattern,
       ...options,
       conversationId,
-      customTools: [...createBrowserTools(rpc), ...createFleetTools(fleet, LEAD_SESSION_ID)],
+      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId)), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },
   );
   fleet.attachLead(session);

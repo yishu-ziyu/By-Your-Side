@@ -52,6 +52,15 @@ export class ConversationManager {
       if (message.type === "status" || message.type === "model_info") this.store?.save(this.list());
     }, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
+      runtime.fleet.setTabCoordinator?.(async (owner, members) => {
+        const source = this.entries.get(owner)?.runtime;
+        if (!source) return; // 已结束的运行时：扩展仍会检查归属并排空旧操作。
+        const sessions = members.map(member => member === "main" ? source.session : source.fleet.get(member));
+        if (sessions.some(session => session?.isHeld())) throw new Error("页面现在归你，操作未执行");
+        await Promise.all(members.map(member => member === "main"
+          ? source.session.yieldTab()
+          : source.fleet.stopAndRelease(member)));
+      });
       const entry = { summary, runtime };
       this.entries.set(id, entry);
       this.store?.save(this.list());

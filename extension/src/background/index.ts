@@ -47,9 +47,14 @@ import { readElement } from "./exec/read-element.js";
 import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
+import { workerTabControl } from "./worker-tab-control.js";
+
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
+  worker_tabs: (p, sid) => workerTabControl.manage(p, sid, dropPendingClicks, async keys => {
+    for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready; if (owner.isUserHeld(who.sessionId)) throw new Error("页面现在归你，操作未执行"); }
+  }),
   share_tab: (p, sid) => shareTab(p, sid),
   page_operation: (p, sid) => pageOperation(p, sid),
   read_element: (p, sid) => readElement(p, sid),
@@ -686,10 +691,14 @@ async function executeToolCall(
     if (programId && gate.isSessionBlocked(sid)) throw new Error("页面现在归你，操作未执行");
     setSessionClaimBlocked(sid, gate.isSessionBlocked(sid));
     const operationGeneration = gate.gen;
-    await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
-    const data = await gate.run(id, name, () => name === "page_operation"
-      ? pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid)})
-      : handler(params, key(sid)), sid);
+    const execute = async () => {
+      await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
+      if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
+      return gate.run(id, name, () => name === "page_operation"
+        ? pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))})
+        : handler(params, key(sid)), sid);
+    };
+    const data = name === "worker_tabs" ? await execute() : await workerTabControl.run(key(sid), execute);
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
     if (name === "mark") noteMarkDrawn(conversationId);
     else if (name === "clear_marks") noteMarksCleared(conversationId);
@@ -918,8 +927,6 @@ async function attachPageContext<T extends Extract<ClientMessage, { type: "user_
 ): Promise<T> {
   try {
     const { tab } = msg.context ? {tab:{id:msg.context.tabId,title:msg.context.title,url:msg.context.url}} : await getActiveTab();
-    const selectedBinding = tab?.id == null ? undefined : await findSessionForTab(tab.id);
-    if (selectedBinding && parseExecutionKey(selectedBinding).conversationId !== conversationId) return {...msg, context: undefined};
     const selection = msg.context?.selection;
     const page = tab
       ? { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }
@@ -1227,7 +1234,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   return true;
 });
 
-return { callbacks, attachPanel, handback: handleHandback, restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {
+return { isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: handleHandback, restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {
   void setMode(mode, conversationId).then(() => broadcast({kind:"mode",mode}));
 }, ready: Promise.all([controlReady, historyReady]) };
 

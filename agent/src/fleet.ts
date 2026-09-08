@@ -2,6 +2,7 @@
  * 并行工人：Lead 拥有图，工人各绑一个 Pi session + 标签页 + 光标 id。
  * spawn 非阻塞；工人之间经 Mailbox 传工件。工人无 spawn 工具。
  */
+import { randomUUID } from "node:crypto";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
@@ -61,9 +62,11 @@ export class Fleet {
   readonly mailbox = new Mailbox();
   private readonly workers = new Map<string, BrowserAgentSession>();
   private lead: BrowserAgentSession | null = null;
-  private readonly sharedTabs = new Map<string, number>();
+  private readonly releases = new Map<string, Promise<unknown>>();
   private readonly spawning = new Set<string>();
   private generation = 0;
+  private coordinateTab?: (owner: string, members: string[]) => Promise<void>;
+  setTabCoordinator(coordinate: (owner: string, members: string[]) => Promise<void>): void { this.coordinateTab = coordinate; }
   private readonly rpc: ToolRpc;
   private readonly sink: FleetSink;
   private readonly modelPattern?: string;
@@ -231,7 +234,7 @@ export class Fleet {
     if (!goal) throw new Error("spawn_worker 需要 goal");
     if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
 
-    const id = sanitizeWorkerId(opts.id, [...this.workers.keys(), ...this.spawning]);
+    const id = `${sanitizeWorkerId(opts.id, [...this.workers.keys(), ...this.spawning])}-${randomUUID().slice(0, 8)}`;
     this.spawning.add(id);
     const generation = this.generation;
     const peers = (opts.peers ?? []).map((p) => p.trim()).filter(Boolean);
@@ -241,7 +244,6 @@ export class Fleet {
       if (opts.sharedTabId !== undefined) {
         await this.rpc.call("share_tab", { tabId: opts.sharedTabId, collaborators: [LEAD_SESSION_ID, id] });
         tabId = opts.sharedTabId;
-        this.sharedTabs.set(id, tabId);
       } else {
       const opened = (await this.rpc.call(
         "open_tab",
@@ -253,6 +255,7 @@ export class Fleet {
       }
     } catch (err) {
       this.spawning.delete(id);
+      this.releaseWorker(id);
       throw new Error(`为 ${displayNameFor(id)} 打开标签页失败：${err instanceof Error ? err.message : String(err)}`);
     }
 
@@ -263,7 +266,7 @@ export class Fleet {
       if (generation !== this.generation) { this.stop(id); throw new Error("Worker start cancelled"); }
     } finally {
       this.spawning.delete(id);
-      if (!this.workers.has(id)) this.releaseSharedWorker(id);
+      if (!this.workers.has(id)) this.releaseWorker(id);
     }
     console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
     session.sendUserMessage(goal);
@@ -369,14 +372,43 @@ export class Fleet {
     session.dispose();
     this.workers.delete(id);
     this.sink.setStatus("idle", id);
-    this.releaseSharedWorker(id);
+    this.releaseWorker(id);
     return true;
   }
 
-  private releaseSharedWorker(id: string): void {
-    const tabId = this.sharedTabs.get(id);
-    this.sharedTabs.delete(id);
-    if (tabId !== undefined) void this.rpc.call("share_tab", { tabId, collaborators: [], remove: [id] }).catch(() => {});
+  private releaseWorker(id: string): Promise<unknown> {
+    const pending = this.releases.get(id);
+    if (pending) return pending;
+    const release = this.rpc.call("worker_tabs", { action: "release", workerId: id });
+    this.releases.set(id, release);
+    void release.then(() => { this.releases.delete(id); }, (error) => {
+      this.releases.delete(id);
+      this.sink.emit({ kind: "notice", message: `worker 已停止，页面移交尚未完成：${error instanceof Error ? error.message : String(error)}。可再次 take_tab 重试。` });
+    });
+    return release;
+  }
+
+  /** 先确认同会话归属，再停止相关成员；扩展确认旧调用排空后才允许父 Agent 继续。 */
+  async takeTab(tabId?: number): Promise<{ tabId: number; stopped: string[] }> {
+    const info = await this.rpc.call("worker_tabs", { action: "inspect", ...(tabId != null ? { tabId } : {}) }) as { tabId: number; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] };
+    if (info.foreign) {
+      if (!this.coordinateTab) throw new Error("页面协调器尚未就绪，请重连后再试");
+      await this.coordinateTab(info.conversationId!, info.members ?? info.workers);
+    } else {
+      for (const id of info.workers) this.stop(id);
+      await Promise.all(info.workers.map(id => this.releaseWorker(id)));
+    }
+    if (info.owned !== false || info.conversationId !== undefined) await this.rpc.call("worker_tabs", {
+      action: "claim", tabId: info.tabId,
+      ...(info.conversationId !== undefined ? { expectedConversationId: info.conversationId } : {}),
+    });
+    return { tabId: info.tabId, stopped: info.workers };
+  }
+
+  async stopAndRelease(id: string): Promise<boolean> {
+    const stopped = this.stop(id);
+    await this.releaseWorker(id);
+    return stopped;
   }
 
 }
@@ -480,10 +512,20 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     }),
     execute: async (_id, params) => {
       const id = String(params.id);
-      const ok = fleet.stop(id);
+      const ok = await fleet.stopAndRelease(id);
       return textResult(ok ? `Stopped worker ${id}.` : `No live worker named ${id}.`, { stopped: ok });
     },
   });
 
-  return [spawnTool, listTool, stopTool, postTool, awaitTool];
+  const takeTool = defineTool({
+    name: "take_tab",
+    label: "接管 worker 页面",
+    description: "Take control of any browser tab. Coordinates with its current conversation, stops only the members using this tab and waits for pending operations before handing it over. User control remains protected. For reading alone use snapshot or read_element with tabId; no takeover is needed.",
+    parameters: Type.Object({ tabId: Type.Number() }),
+    execute: async (_id, params) => {
+      const result = await fleet.takeTab(params.tabId);
+      return textResult(`页面 ${result.tabId} 已交回父 Agent。`, result);
+    },
+  });
+  return [spawnTool, listTool, stopTool, takeTool, postTool, awaitTool];
 }

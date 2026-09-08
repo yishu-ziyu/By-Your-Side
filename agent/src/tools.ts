@@ -30,9 +30,14 @@ function formatTabs(tabs: TabInfo[]): string {
     .join("\n");
 }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
-  const call = (name: ToolName, params: Record<string, unknown>) => rpc.call(name, params, undefined, sid);
+  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string) => {
+    if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
+      await takeTab(typeof params.tabId === "number" ? params.tabId : undefined);
+    }
+    return programId ? rpc.call(name, params, undefined, sid, programId) : rpc.call(name, params, undefined, sid);
+  };
 
   return [
     defineTool({
@@ -50,7 +55,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
     defineTool({
       name: "read_element",
       label: "Read complete element",
-      description: "Read an element's complete current textContent and, for form fields, its complete value without focusing, scrolling or changing the page. To read the full page text when snapshot abbreviates source paragraphs, use target:'body'. For one field use its current snapshot @ref or a unique observed CSS selector. Do not guess chains of selectors to find plain source text. This is a constrained read, not JavaScript evaluation. It works on pages assigned to this conversation, including a registered shared page while the user has control.",
+      description: "Read an element's complete current textContent and, for form fields, its complete value without focusing, scrolling or changing the page. To read the full page text when snapshot abbreviates source paragraphs, use target:'body'. For one field use its current snapshot @ref or a unique observed CSS selector. Do not guess chains of selectors to find plain source text. This is a constrained read, not JavaScript evaluation. The main agent can read any tab by tabId without claiming it; workers can read only assigned tabs.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
         target: Type.String({ description: 'Current "@N" snapshot ref, "loc=css:...", or unique native CSS selector' }),
@@ -70,7 +75,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       }),
       execute: async (id, params, signal, onUpdate) => {
         const result = await runBrowserProgram({ code: params.code,
-          call: (name, args) => rpc.call(name, args, undefined, sid, id), signal, id,
+          call: (name, args) => call(name, args, id), signal, id,
           onStep: programStep => onUpdate?.({ content: [], details: { programStep } }),
         });
         return { content: [{ type: "text" as const, text: truncate(JSON.stringify({ value: result.value, steps: result.steps }), MAX_JS_RESULT_CHARS) }, ...result.images], details: { value: result.value, steps: result.steps } };
@@ -81,7 +86,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "list_tabs",
       label: "List tabs",
       description:
-        "List browser tabs owned by THIS conversation, with id, title and url. Does not search other conversations or unclaimed user tabs. Use get_active_tab when the user explicitly refers to their currently viewed page; open_tab for a new URL. Marks your current working tab.",
+        sid ? "List only tabs assigned to you. Other members and user tabs are not available to workers." : "List ALL browser tabs, including user-opened tabs and other conversations, with id, title and URL. Filter this list to answer requests about existing tabs. Reading does not claim them. Use snapshot or read_element with tabId to read any tab.",
       parameters: Type.Object({}),
       execute: async () => {
         const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
@@ -160,13 +165,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string): ToolDefini
       name: "snapshot",
       label: "Snapshot",
       description:
-        "Get a snapshot of the working tab as indented text. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); interactive elements are [ref=N] (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
+        "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); interactive elements are [ref=N] (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
         "Take a snapshot after every navigation and after actions that change the page.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
         "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],
       parameters: Type.Object({
+        tabId: Type.Optional(Type.Number({ description: "Tab to read without claiming or switching it" })),
         scope: Type.Optional(
           Type.Union([Type.Literal("full_page"), Type.Literal("viewport")], {
             description: "full_page (default) or viewport only",

@@ -30,6 +30,7 @@ const ACTION_NAMES: Record<string, string> = {
   fill: "填写文本",
   page_operation: "填写并核对",
   share_tab: "安排同页协作",
+  take_tab: "接管页面",
   type_text: "输入文本",
   press_key: "按键",
   scroll: "滚动页面",

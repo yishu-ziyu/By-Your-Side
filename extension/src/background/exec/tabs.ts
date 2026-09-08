@@ -1,4 +1,4 @@
-import { LEAD_SESSION_ID, type TabInfo } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID, isLeadSession, type TabInfo } from "../../../../shared/protocol.js";
 import { getTabResource, getWorkingTabId, maybeActivateTab, resolveWorkingTab, setWorkingTab, shouldActivateForKey } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { waitForLoad } from "./navigate.js";
@@ -6,11 +6,10 @@ import { waitForLoad } from "./navigate.js";
 export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ tabs: TabInfo[] }> {
   const workingId = await getWorkingTabId(sessionId);
   const tabs = await chrome.tabs.query({});
-  const conversationId = parseExecutionKey(sessionId).conversationId;
   const resources = await Promise.all(tabs.map((tab) => tab.id == null ? undefined : getTabResource(tab.id)));
   return {
     tabs: tabs
-      .filter((t, index) => t.id != null && resources[index]?.conversationId === conversationId)
+      .filter((t, index) => t.id != null && (isLeadSession(parseExecutionKey(sessionId).sessionId) || resources[index]?.collaborators.includes(sessionId)))
       .map((t) => ({
         id: t.id!,
         title: t.title ?? "",

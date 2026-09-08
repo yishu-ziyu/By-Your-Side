@@ -336,6 +336,11 @@ export class BrowserAgentSession {
     void this.stopCurrentRun().catch(() => {});
   }
 
+  async yieldTab(): Promise<void> {
+    this.abort();
+    await this.stopCurrentRun();
+  }
+
   /**
    * 用户拿回页面：停当前生成，但会话、对话、工作标签都还在。
    * 不把 status 打成 idle（那是中止）。

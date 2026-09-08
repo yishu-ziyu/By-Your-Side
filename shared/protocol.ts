@@ -271,6 +271,7 @@ export type AgentUiEvent =
 // ── 工具契约 ───────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
+  "worker_tabs",
   "share_tab",
   "page_operation",
   "read_element",
@@ -324,6 +325,7 @@ export interface TabInfo {
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
 export interface ToolContract {
+  worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
   share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
@@ -337,7 +339,7 @@ export interface ToolContract {
   switch_tab: { params: { tabId: number }; data: { tabId: number } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { url: string; timeout?: number }; data: { url: string; title: string } };
-  snapshot: { params: { scope?: "full_page" | "viewport" }; data: { text: string } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string } };
   click: {
     params: { target?: string; point?: [number, number]; label?: string };
     data: { clicked: true } | { clicked: false; held: true };

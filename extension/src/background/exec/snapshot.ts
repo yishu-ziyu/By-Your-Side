@@ -1,6 +1,6 @@
 import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
-import { resolveWorkingTab } from "../state.js";
+import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { axTreeToText, type AxNodeLite } from "../axtree.js";
 import { clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
@@ -13,10 +13,10 @@ import { withTimeout } from "../timeout.js";
  * 同处数字空间，不清会导致后续 @N 经 isAxRef 误走 CDP。
  */
 export async function snapshot(
-  params: { scope?: "full_page" | "viewport" },
+  params: { tabId?: number; scope?: "full_page" | "viewport" },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ text: string }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveReadableTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   return snapshotTab(tab.id, params.scope);
 }

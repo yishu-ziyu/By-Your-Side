@@ -70,3 +70,27 @@ describe("independent conversation runtimes", () => {
     expect(messages[0]?.conversationId).toBe("default");
   });
 });
+
+it('主 Agent 跨会话接手只停止页面成员，保留其他 worker；用户接管优先', async () => {
+  const coordinators = new Map<string, (owner: string, members: string[]) => Promise<void>>();
+  const sessions = new Map<string, any>();
+  let held = false;
+  const factory = async (id: string) => {
+    const session = { modelName: () => 'test', yieldTab: vi.fn(async () => {}), isHeld: () => held };
+    const fleet = { setTabCoordinator: (fn: any) => coordinators.set(id, fn), get: () => ({isHeld:()=>held}), stopAndRelease: vi.fn(async () => true) };
+    const runtime = { session, fleet }; sessions.set(id,runtime); return runtime;
+  };
+  const manager = new ConversationManager(factory as never, () => {});
+  await manager.ensureDefault();
+  await manager.handleMessage({type:'conversation_create',requestId:'global-control'});
+  const b = manager.list().find(c=>c.id!=='default')!.id;
+  const take = coordinators.get(b)!;
+  await take('default',['writer']);
+  expect(sessions.get('default').fleet.stopAndRelease.mock.calls).toEqual([['writer']]);
+  expect(sessions.get('default').session.yieldTab).not.toHaveBeenCalled();
+  await take('default',['main']);
+  expect(sessions.get('default').session.yieldTab).toHaveBeenCalledOnce();
+  held = true;
+  await expect(take('default',['main','reviewer'])).rejects.toThrow(/页面现在归你/);
+  expect(sessions.get('default').fleet.stopAndRelease).toHaveBeenCalledOnce();
+});

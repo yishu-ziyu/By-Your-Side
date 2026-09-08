@@ -14,7 +14,7 @@ async function loadReadElement(options: {
     : vi.fn(async (tabId: number) => ({ id: tabId }));
   vi.doMock("../src/background/state.js", () => ({
     getWorkingTabId: vi.fn(async () => 12),
-    resolveWorkingTab,
+    resolveReadableTab: resolveWorkingTab,
   }));
   vi.doMock("../src/background/axstate.js", () => ({
     isAxRef: () => options.ax === true,
