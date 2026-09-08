@@ -1,0 +1,156 @@
+{
+  "ok": true,
+  "emptyKeptOpen": true,
+  "routeCalls": 1,
+  "events": [
+    {
+      "kind": "state",
+      "state": "connecting"
+    },
+    {
+      "kind": "state",
+      "state": "ready"
+    },
+    {
+      "kind": "state",
+      "state": "ready",
+      "detail": "没听清这句话，请再说一次。"
+    },
+    {
+      "kind": "text",
+      "role": "user",
+      "turn": 2,
+      "text": "你好，10+7等于几？"
+    },
+    {
+      "kind": "facts",
+      "turn": 2,
+      "snapshot": {
+        "conversationId": "empty-probe",
+        "observedAt": 1788870603533,
+        "state": "none",
+        "goal": null,
+        "startedAt": null,
+        "active": [],
+        "lastAction": null,
+        "successVerified": false
+      }
+    },
+    {
+      "kind": "state",
+      "state": "answering"
+    },
+    {
+      "kind": "text",
+      "turn": 2,
+      "role": "assistant",
+      "text": "17。"
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 8192
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 8192
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 4736
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 8192
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 8192
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 8192
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 8192
+    },
+    {
+      "kind": "audio",
+      "turn": 2,
+      "bytes": 3712
+    },
+    {
+      "kind": "response_end",
+      "turn": 2,
+      "responseId": "401a2879-9eb5-4fcf-872c-7e41b7793eb4"
+    },
+    {
+      "kind": "state",
+      "state": "ready"
+    }
+  ],
+  "diagnostics": [
+    {
+      "at": 1788870598680,
+      "event": "connection_start",
+      "turn": 0
+    },
+    {
+      "at": 1788870598938,
+      "event": "session_ready",
+      "turn": 0
+    },
+    {
+      "at": 1788870598992,
+      "event": "input_commit",
+      "turn": 1,
+      "pcmBytes": 48000
+    },
+    {
+      "at": 1788870599577,
+      "event": "transcription",
+      "turn": 1,
+      "characters": 0,
+      "empty": true
+    },
+    {
+      "at": 1788870599577,
+      "event": "input_empty",
+      "turn": 1
+    },
+    {
+      "at": 1788870602810,
+      "event": "input_commit",
+      "turn": 2,
+      "pcmBytes": 144976
+    },
+    {
+      "at": 1788870603533,
+      "event": "transcription",
+      "turn": 2,
+      "characters": 11,
+      "empty": false
+    },
+    {
+      "at": 1788870603533,
+      "event": "route_start",
+      "turn": 2,
+      "characters": 11
+    },
+    {
+      "at": 1788870603533,
+      "event": "route_result",
+      "turn": 2,
+      "kind": "none",
+      "accepted": false,
+      "elapsedMs": 0
+    }
+  ]
+}

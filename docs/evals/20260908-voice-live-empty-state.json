@@ -1,0 +1,241 @@
+{
+  "scope": "production StepVoiceSession, real empty TaskProgress, synthesized input; no browser task or microphone acceptance",
+  "cases": [
+    {
+      "phrase": "现在做到哪了？",
+      "error": "",
+      "done": true,
+      "audioBytes": 174720,
+      "events": [
+        {
+          "kind": "state",
+          "state": "connecting"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "facts",
+          "turn": 1,
+          "snapshot": {
+            "conversationId": "voice-probe",
+            "observedAt": 1788864829662,
+            "state": "none",
+            "goal": null,
+            "startedAt": null,
+            "active": [],
+            "lastAction": null,
+            "successVerified": false
+          }
+        },
+        {
+          "kind": "state",
+          "state": "answering"
+        },
+        {
+          "kind": "text",
+          "turn": 1,
+          "role": "assistant",
+          "text": "当前没有正在运行的任务，所以还没开始做任何事。"
+        },
+        {
+          "kind": "text",
+          "role": "user",
+          "turn": 1,
+          "text": "现在做到哪了？"
+        },
+        {
+          "kind": "response_end",
+          "turn": 1,
+          "responseId": "f5509ac3-8aba-4008-ab03-3204318fca99"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "state",
+          "state": "closed"
+        }
+      ]
+    },
+    {
+      "phrase": "现在卡在哪？",
+      "error": "",
+      "done": true,
+      "audioBytes": 184320,
+      "events": [
+        {
+          "kind": "state",
+          "state": "connecting"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "facts",
+          "turn": 1,
+          "snapshot": {
+            "conversationId": "voice-probe",
+            "observedAt": 1788864835816,
+            "state": "none",
+            "goal": null,
+            "startedAt": null,
+            "active": [],
+            "lastAction": null,
+            "successVerified": false
+          }
+        },
+        {
+          "kind": "state",
+          "state": "answering"
+        },
+        {
+          "kind": "text",
+          "turn": 1,
+          "role": "assistant",
+          "text": "当前没有正在执行的任务，所以不存在卡住的情况。"
+        },
+        {
+          "kind": "text",
+          "role": "user",
+          "turn": 1,
+          "text": "现在卡在哪？"
+        },
+        {
+          "kind": "response_end",
+          "turn": 1,
+          "responseId": "a09dc47a-65a4-40c8-be64-b91f8748fb50"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "state",
+          "state": "closed"
+        }
+      ]
+    },
+    {
+      "phrase": "还在做吗？",
+      "error": "",
+      "done": true,
+      "audioBytes": 105600,
+      "events": [
+        {
+          "kind": "state",
+          "state": "connecting"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "facts",
+          "turn": 1,
+          "snapshot": {
+            "conversationId": "voice-probe",
+            "observedAt": 1788864841627,
+            "state": "none",
+            "goal": null,
+            "startedAt": null,
+            "active": [],
+            "lastAction": null,
+            "successVerified": false
+          }
+        },
+        {
+          "kind": "state",
+          "state": "answering"
+        },
+        {
+          "kind": "text",
+          "turn": 1,
+          "role": "assistant",
+          "text": "当前没有正在执行的任务。"
+        },
+        {
+          "kind": "text",
+          "role": "user",
+          "turn": 1,
+          "text": "还在做吗？"
+        },
+        {
+          "kind": "response_end",
+          "turn": 1,
+          "responseId": "c28b1a73-50d6-40c4-a989-36ae16d4721e"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "state",
+          "state": "closed"
+        }
+      ]
+    },
+    {
+      "phrase": "你好，十加七等于几？",
+      "error": "",
+      "done": true,
+      "audioBytes": 92160,
+      "events": [
+        {
+          "kind": "state",
+          "state": "connecting"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "facts",
+          "turn": 1,
+          "snapshot": {
+            "conversationId": "voice-probe",
+            "observedAt": 1788864848393,
+            "state": "none",
+            "goal": null,
+            "startedAt": null,
+            "active": [],
+            "lastAction": null,
+            "successVerified": false
+          }
+        },
+        {
+          "kind": "state",
+          "state": "answering"
+        },
+        {
+          "kind": "text",
+          "turn": 1,
+          "role": "assistant",
+          "text": "10加7等于17。"
+        },
+        {
+          "kind": "text",
+          "role": "user",
+          "turn": 1,
+          "text": "你好，10+7等于几？"
+        },
+        {
+          "kind": "response_end",
+          "turn": 1,
+          "responseId": "67e7ec12-57dd-4635-86e9-02231fc2c5d8"
+        },
+        {
+          "kind": "state",
+          "state": "ready"
+        },
+        {
+          "kind": "state",
+          "state": "closed"
+        }
+      ]
+    }
+  ]
+}

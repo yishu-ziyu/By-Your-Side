@@ -1085,3 +1085,70 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - 首轮浏览器挂钩超时是重载后旧SW上下文chrome不可用，重新重载恢复；失败未算产品通过。
 
 - 分支收拢完成：用户选中成果均已提交，main与feat/session-management已同步推送；三个旧fix分支在确认其全部本地/远端提交都是main祖先后删除。当前切到main。本地三个工具目录保留且忽略，工作区干净。完成标准 `docs/evals/20260908-consolidate-main.md` 已更新。
+
+## 2026-09-08 全双工工程下一步讨论
+
+- 当前 main 已核对。Pi SDK 的 steer 在当前工具批次结束后消费，held 仍拒绝普通消息；因此仅接转写不能满足“工具忙时继续聊、接管期间继续问”。
+- 建议首个真实路径：选定会话开语音→发起网页任务→任务忙时追问/纠正→停播报/接管→交还继续。语音通过小接口交任务，执行层即时确认接收，随后推送真实进度结果；保持现有网页写入闸门。
+- 本机候选音频资产已找到 `/Users/mahaoxuan/Developer/yishu-toolbox/toolbox/realtime-voice-probe/`，采集、播放、speech_started 处理存在；本轮未调用真实上游，未决定供应商。
+- 细节追加在 `docs/research/20260908-full-duplex-video-study.md` 第 8 节与当日日志。只记录建议，未改产品代码、未启动实现。
+
+## 2026-09-08 Step Plan 全双工官方调研与真实探针
+
+- 用户确认“complain”指 Step Plan，并随后提供 Key。仅在隐藏输入的探针进程内存使用，未读取其他现存凭据、未落产品配置；包装进程已退出。供应商固定阶跃星辰，端点固定 `/step_plan/v1/realtime?model=stepaudio-2.5-realtime`。
+- 官方模型/API/开发指南与 Step-Realtime-Console 源码已核对。音色“我的音色 03”实测接受。24 kHz PCM 流式输入、server_vad、ASR 和音频返回有成功样本；未开麦/播放/操作网页。
+- P3 真实协议闭环通过：accepted/task_id → 后台延迟30秒 → 约3.1秒时完成独立问答 → 完成后回读新的随机词。system 角色注入返回400，仅 user/assistant 被支持；最终采用有应用数据标记的 user 消息，产品内仍需保留 task_result 来源。
+- 自定义工具确能调用并回读随机结果，但 P2 重复/变体与 P6 自然语音出现未调用；自动与手动提交都曾成败，不能只凭单次成功选择模式。下一步建议先做语音查询真实任务进度与可见回执，再扩大网页操作。
+- response.cancel 后收到 incomplete，严格终态检查失败；2个残留音频块需要播放器代次拒绝。conversation.item.truncate 两次获得确认，尽管当前API目录未列。不要整块照搬旧 OpenAI 派生示例或旧音频探针。
+- 交付：`docs/research/20260908-step-plan-full-duplex-integration.md`；标准：`docs/evals/20260908-step-plan-full-duplex-research.md`；日志：`docs/devlog/20260908-08-StepPlan语音接通与任务回灌.md`。证据索引 `/tmp/ego-step-plan-research/results-index.json`，保留6轮全部结果。无产品代码改动、无commit/push。
+
+
+## 2026-09-08 语音光球参考：用户调整设计方向
+- 用户已认可输入区语音问进度入口，随后要求先参考 GitHub / 开源设计库中的光球式语音 Agent；暂停正式入口 UI 实现，保留已写的语音后端、协议、relay、音频基础文件。
+- 已有生产进度观察与 Step 会话测试，上一阶段 3 个文件 12 项通过、typecheck 通过；新 relay/player/worklet 尚未完成集成与重新验证，不能称为已交付。
+- 本轮在线核实参考：VoiceOrbs https://voiceorbs.vercel.app （14 种，可切换状态）；ElevenLabs UI https://github.com/elevenlabs/ui ；Agus Ruiz voiceorb https://github.com/aguscruiz/voiceorb （四种状态、音频响应的概念验证）。
+- 首先让用户看 VoiceOrbs 中 Plasma / Glass / Nebula。尚未选定光球样式，未把参考搬进产品。CUA 打开图库超时，不能声称已观察实际动效。
+
+## 2026-09-08 粒子球输入区预览
+- 用户选中 VoiceOrbs Particles Orb，授权放入输入区动态预览。新增 docs/evals/20260908-particles-voice-preview.html 和 voice-orb-assets/particles.js、LICENSE。保留旧对照。
+- 粒子算法从 MIT 来源改编为独立 Canvas 模块；原型仅模拟状态，不采集、不发声。入口 36px，展开 Canvas 160px；切换连接、聆听、思考、回答、插话、失败和结束。
+- 浏览器已打开验证入口、展开和回答状态；粒子布局仍待用户主观认可，未接入正式 UI。
+
+## 2026-09-08 正式语音入口实现，等待启用扩展验收
+- 用户认可粒子球预览后，新增 voice-client.ts / voice-ui.ts / voice-orb.ts，main.ts 挂载输入区入口；build 拷贝 worklet 与 MIT 授权。保留原有任务入口。
+- VoiceClient 等配置 ready 后才发 PCM；播放器返回实际播放位置用于 truncate；插话换代丢弃旧音频，stop/切会话/pagehide 释放麦克风与 AudioContext。语音路由绕过任务历史与 Pi 写入口。
+- 修复实测发现的用户转写晚到覆盖助手回答（分两块展示）。修复错误事件后 idle 覆盖 error（保留 error 至新任务）。替换 native 客户端前关闭旧语音，避免串连接。
+- Key 仅写入 ~/.sideagent/step-plan.key，0600；不进入仓库、前端或日志。
+- 15 项语音聚焦测试、typecheck、build 已通过；上次全量 642 项通过，新增两项后的全量待收尾。
+- 真实 Step 服务四轮：三个问题如实回答无任务、计算回答17。生产会话/观察器 + 本机合成音频。证据 docs/evals/20260908-voice-live-empty-state.json。运行中任务和真实麦克风均未验收。
+- 正式 ChromeMain 扩展当前 DISABLED，reload:ext 返回找不到重载按钮。用户启用问题异步待回复。不要用默认 Chrome 代替，也不要把合成音频当作运行中真实网页任务验收。
+
+- 收尾：77 文件 / 644 项测试、typecheck、build、diff --check、仓库和 dist 凭据扫描通过。顺带修复 experience.test.ts 清理竞态（dispose 后等待 flush，未改断言）。当前唯一外部阻塞是扩展 DISABLED，真实浏览器与真人听感待启用后验收。
+
+## 2026-09-08 麦克风首次授权修复
+- 用户真实截图 NotAllowedError。ChromeMain 原侧栏实时读取 permission=prompt、secure=true，定位为侧栏无法弹首次授权框；不等于用户明确拒绝。
+- 新增独立扩展授权页，侧栏失败提供“开启麦克风”；用户点击后 getUserMedia(audio only)，立即 stop 所有轨道，回侧栏手动重试；不自动监听。授权失败给 Chrome/macOS 设置指引。
+- 文件：extension/voice-permission.html，sidepanel/voice-permission.ts、voice-permission-page.ts，voice-client.ts、voice-ui.ts，build.mjs；voice-permission.test.ts。
+- 8 个相关测试/typecheck/build/diff-check 通过，正式 ChromeMain 扩展重载成功。真实“允许→返回→听说”仍需用户选择授权后验证。CUA wrapper AX 超时，不能称整条真人路径已通过。
+
+## 2026-09-08 语音调整任务：初版被实测推翻，应用路由已修正
+- 用户正常语音对话测试通过，授权下一步语音操作；本轮首条路径仅调整运行中任务条件，暂停/继续、新建任务随后做。
+- 新增 BrowserAgentSession.steerCurrentTask（await Pi队列，不idle fallback）、ConversationManager.steerFromVoice（同一startedAt运行校验、成功后notice持久回执）。
+- 原生Step工具初版失败：口头说800但无工具回执，实际Chrome筛选仍1000/含899。证据 docs/evals/20260908-voice-steer-native-failure.json。不可称通过。
+- 生产改为Step最终ASR→当前Pi模型无工具EDIT/NONE意图判断→应用await steer→回执→Step语音。只提交本轮原始转写；query/chat/quoted/pause不改任务；旧轮在分类后再次检验stillCurrent。
+- 真实MiniMax-M3分类5/5通过，1.2–1.7s；真实Step无任务修改拒绝正确，确认ASR可以先于response.create得到，不需要先播放一次未确认回答。
+- 新路由实测脚本 scripts/acceptance/voice-steer-run.mts：真实Pi+Step原生合成音频+Chrome本地表单（budget1000→800，单次agent_start）。复测时ChromeMain page count=0，No current window，待用户打开原Chrome窗口；未改默认Chrome。
+- 49项相关测试已通过，最终typecheck/build/fulltests收尾中。仍不得标完整网页操作/真人体验通过。
+
+- 最终655项测试、typecheck、build、diff-check与凭据扫描通过。新编译包未在无窗口的ChromeMain中重载，等用户开窗后重载并跑 voice-steer-run.mts；该脚本新增无窗口前置检查，避免模型无意义重试。
+
+## 2026-09-08 用户两次语音失败，空转写恢复与日志补全
+- 用户截图“你：”空白+通用操作意图错误。agent.log只有连接生命周期，wrapper-err.log只有provider启动，没有逐轮语音错误，不能追溯两次原始原因。
+- 已复现确定缺陷：空ASR进入route，manager抛错，VoiceSession统一fail关闭连接。改为不发空转写事件、不route、不回答，ready提示“没听清这句话，请再说一次”，VoiceClient在thinking也能恢复listening。
+- 真实Step静音→空ASR→原连接下一句合成问10+7→回答17通过；docs/evals/20260908-voice-empty-recovery.json。仍不声称真实用户采音正常，用户两次说了什么/球是否起伏的异步问题待回复。
+- 新diagnostic经VoiceService接main.log，带voiceId/cid/turn和PCM量/RMS/峰值、ASR长度、route开始结果失败耗时；不记录录音、转写内容或凭据。VoiceIntentError区分模型不可用、超时、失败、格式无效。
+- 657测试、typecheck/build/diffcheck通过，插件正在重载。预算操作的完整真实网页验收仍是未完成项，勿漏。
+
+## 2026-09-08 分批提交与推送
+- 用户明确授权将当前全部改动分批commit并push。按文档/测试清理/语音后台/前端接入拆分，目标分支codex/voice-task-progress。
+- 提交前diff检查和凭据扫描通过；最近全量657项测试、typecheck和build通过。真实空输入恢复通过，预算800网页完整验收仍未通过，提交不改变这一结论。
