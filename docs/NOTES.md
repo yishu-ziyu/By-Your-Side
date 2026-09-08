@@ -1083,3 +1083,5 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - mark默认样式改为读取执行成员所属conversationId的模式。真实Chrome teach绘手绘、act绘矩形通过。
 - 针对性4文件30测试通过；浏览器8项通过（2个真实mark路径、6个生产sidepanel界面+Port故障注入场景），证据 `/tmp/sideagent-consolidation-browser/result.json`。后台回执另以生产controller测试，未把UI故障替身称为网络端到端。无全量测试。
 - 首轮浏览器挂钩超时是重载后旧SW上下文chrome不可用，重新重载恢复；失败未算产品通过。
+
+- 分支收拢完成：用户选中成果均已提交，main与feat/session-management已同步推送；三个旧fix分支在确认其全部本地/远端提交都是main祖先后删除。当前切到main。本地三个工具目录保留且忽略，工作区干净。完成标准 `docs/evals/20260908-consolidate-main.md` 已更新。
