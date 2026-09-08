@@ -23,5 +23,8 @@ export async function evaluateJs(
   if (res.exceptionDetails) {
     throw new Error(oneLine(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text ?? "JS 执行异常"));
   }
+  if (res.result?.type === 'function') {
+    throw new Error('返回的是尚未调用的函数，函数体没有执行。请使用立即调用表达式，例如 (() => { return document.title; })()，不要只传 () => { ... }。');
+  }
   return { value: res.result?.value };
 }

@@ -15,12 +15,12 @@ class Socket extends EventEmitter {
   close = vi.fn();
   server(event: object) { this.emit("message", Buffer.from(JSON.stringify(event))); }
 }
-function setup(steer?: (text: string, startedAt: number | null) => Promise<void>, route?: ConstructorParameters<typeof StepVoiceSession>[0]["route"], diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"]) {
+function setup(steer?: (text: string, startedAt: number | null) => Promise<void>, route?: ConstructorParameters<typeof StepVoiceSession>[0]["route"], diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"], extra?:Pick<ConstructorParameters<typeof StepVoiceSession>[0],"getTargets">) {
   const socket = new Socket();
   const events: VoiceEvent[] = [];
   let state: TaskProgressSnapshot["state"] = "running";
   const snapshot = vi.fn((): TaskProgressSnapshot => ({ conversationId: "A", observedAt: Date.now(), state, goal: "找书桌", startedAt: 1, active: [], lastAction: null, successVerified: false }));
-  const session = new StepVoiceSession({ steer, route, diagnostic, getSnapshot: snapshot, emit: e => events.push(e), connect: () => socket as unknown as WebSocket });
+  const session = new StepVoiceSession({ ...extra,steer, route, diagnostic, getSnapshot: snapshot, emit: e => events.push(e), connect: () => socket as unknown as WebSocket });
   sessions.push(session); session.start("synthetic-secret");
   socket.server({ type: "session.created", session: { model: "stepaudio-2.5-realtime" } });
   socket.server({ type: "session.updated", session: { voice: STEP_VOICE, input_audio_format: "pcm16", turn_detection: { type: "" } } });
@@ -30,8 +30,9 @@ function setup(steer?: (text: string, startedAt: number | null) => Promise<void>
     session.command({ kind: "commit", turn });
   };
   const committed = (itemId = "u1") => socket.server({ type: "input_audio_buffer.committed", item_id: itemId });
-  const response = (id = "r1") => socket.server({ type: "response.created", response: { id } });
-  return { socket, events, snapshot, session, input, committed, response, setState: (s: typeof state) => { state = s; } };
+  const configure=()=>{const update=socket.sent.filter(e=>e.type==='session.update').at(-1);if(update?.session.instructions)socket.server({type:'session.updated',session:{instructions:update.session.instructions}});};
+  const response = (id = "r1") => {configure();socket.server({ type: "response.created", response: { id } });};
+  return { socket, events, snapshot, session, input, committed, response, configure, setState: (s: typeof state) => { state = s; } };
 }
 describe("read-only Step voice session", () => {
   it("supplies fresh facts before every response even when the model makes no tool call", () => {
@@ -146,6 +147,7 @@ it("application routing finishes before generating any spoken response", async (
   expect(route).toHaveBeenCalledTimes(1);
   expect(h.socket.sent.some(e=>e.type==="response.create")).toBe(false);
   finish({kind:"steer",ok:true,message:"已送达当前任务"});await Promise.resolve();await Promise.resolve();
+  h.configure();
   expect(h.socket.sent.find(e=>e.item?.content?.[0]?.text)?.item.content[0].text).toContain('"ok":true');
   expect(h.socket.sent.at(-1).type).toBe("response.create");
 });
@@ -177,4 +179,84 @@ it("voice diagnostics record stage and lengths, never credentials or transcript 
  const log=JSON.stringify(diagnostic.mock.calls);
  expect(log).toContain('input_commit');expect(log).toContain('transcription');expect(log).toContain('route_result');
  expect(log).not.toContain('private transcript sentinel');expect(log).not.toContain('synthetic-secret');
+});
+
+it('silence intent ends only this response and unknown receipts remain explicitly uncertain',async()=>{
+ const h=setup(undefined,async()=>({kind:'silent'}));h.input();h.committed();
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'别说了'});
+ await Promise.resolve();await Promise.resolve();expect(h.socket.sent.some(e=>e.type==='response.create')).toBe(false);
+ expect(h.events.at(-1)).toMatchObject({kind:'state',state:'ready'});expect(h.socket.close).not.toHaveBeenCalled();
+ const u=setup(undefined,async()=>({kind:'steer',ok:false,status:'unknown',message:'执行结果未知'}));u.input();u.committed();
+ u.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'预算800'});
+ await Promise.resolve();await Promise.resolve();u.configure();expect(JSON.stringify(u.socket.sent)).toContain('unknown');
+});
+
+it('buffers action audio and drops premature completion claims before any sound is released',async()=>{
+ const h=setup(undefined,async()=>({kind:'action',ok:true,status:'accepted',message:'已接收新任务'}));h.input();h.committed();
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'帮我筛选商品'});
+ await Promise.resolve();await Promise.resolve();h.response();
+ h.socket.server({type:'response.audio.delta',response_id:'r1',item_id:'a1',delta:'AQABAA=='});
+ h.socket.server({type:'response.audio_transcript.done',response_id:'r1',transcript:'筛选已经完成。'});
+ expect(h.events.some(e=>e.kind==='audio')).toBe(false);
+ h.socket.server({type:'response.done',response:{id:'r1',status:'completed'}});
+ expect(h.events.some(e=>e.kind==='audio')).toBe(false);expect(h.events.some(e=>e.kind==='text'&&e.role==='assistant')).toBe(false);
+ h.response('r2');h.socket.server({type:'response.audio.delta',response_id:'r2',item_id:'a2',delta:'AQABAA=='});
+ h.socket.server({type:'response.audio_transcript.done',response_id:'r2',transcript:'任务已收到。'});
+ h.socket.server({type:'response.done',response:{id:'r2',status:'completed'}});
+ expect(h.events.filter(e=>e.kind==='audio')).toHaveLength(1);
+ expect(h.events.find(e=>e.kind==='text'&&e.role==='assistant')).toMatchObject({text:'任务已收到。'});
+});
+
+it('recovers a connection during routing without routing the same instruction twice',async()=>{
+ vi.useFakeTimers();
+ const a=new Socket(),b=new Socket();let count=0,finish!:(v:any)=>void;
+ const route=vi.fn(()=>new Promise<any>(r=>finish=r)),events:VoiceEvent[]=[];
+ const session=new StepVoiceSession({voiceId:'recovery',getSnapshot:()=>({conversationId:'A',runId:'run',observedAt:1,state:'running',goal:'task',startedAt:1,active:[],lastAction:null,successVerified:false}),route,emit:e=>events.push(e),connect:()=>[a,b][count++] as unknown as WebSocket});
+ const ready=(s:Socket)=>{s.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});s.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:null}});};
+ try{
+  session.start('synthetic-secret');ready(a);session.command({kind:'interrupt',turn:1});session.command({kind:'audio',turn:1,data:'AQABAA=='});session.command({kind:'commit',turn:1});
+  a.server({type:'input_audio_buffer.committed',item_id:'u1'});a.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'预算800'});
+  expect(route).toHaveBeenCalledTimes(1);a.emit('close');await vi.advanceTimersByTimeAsync(250);ready(b);
+  finish({kind:'steer',ok:true,message:'已送达'});await Promise.resolve();await Promise.resolve();
+  const update=b.sent.filter(e=>e.type==='session.update').at(-1);b.server({type:'session.updated',session:{instructions:update.session.instructions}});
+  expect(route).toHaveBeenCalledTimes(1);expect(b.sent.some(e=>e.type==='input_audio_buffer.commit')).toBe(false);
+  b.server({type:'response.created',response:{id:'new'}});b.server({type:'response.audio.delta',response_id:'new',item_id:'a',delta:'AQABAA=='});b.server({type:'response.audio_transcript.done',response_id:'new',transcript:'修改已送达当前任务。'});b.server({type:'response.done',response:{id:'new',status:'completed'}});
+  a.server({type:'response.audio.delta',response_id:'old',item_id:'old',delta:'AQABAA=='});
+  expect(events.filter(e=>e.kind==='audio')).toHaveLength(1);expect(events.some(e=>e.kind==='state'&&e.state==='error')).toBe(false);
+ }finally{session.close();vi.useRealTimers();}
+});
+
+it('keeps newer speech during reconnect and invalidates the older route before reconnect completes',async()=>{
+ vi.useFakeTimers();const a=new Socket(),b=new Socket();let count=0,current!:()=>boolean,finish!:(r:any)=>void;
+ const route=vi.fn((_text:string,_at:number|null,valid:()=>boolean)=>{current=valid;return new Promise<any>(r=>finish=r);});
+ const session=new StepVoiceSession({getSnapshot:()=>({conversationId:'A',runId:'run',observedAt:1,state:'running',goal:null,startedAt:1,active:[],lastAction:null,successVerified:false}),route,emit:()=>{},connect:()=>[a,b][count++] as unknown as WebSocket});
+ const ready=(s:Socket)=>{s.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});s.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:null}});};
+ try{
+  session.start('synthetic-secret');ready(a);session.command({kind:'interrupt',turn:1});session.command({kind:'audio',turn:1,data:'AQABAA=='});session.command({kind:'commit',turn:1});a.server({type:'input_audio_buffer.committed',item_id:'u1'});a.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'预算800'});
+  a.emit('close');session.command({kind:'interrupt',turn:2});session.command({kind:'audio',turn:2,data:'AgACAA=='});session.command({kind:'commit',turn:2});expect(current()).toBe(false);
+  finish({kind:'none'});await vi.advanceTimersByTimeAsync(250);ready(b);
+  expect(b.sent.filter(e=>e.type==='input_audio_buffer.append').map(e=>e.audio)).toEqual(['AgACAA==']);expect(b.sent.filter(e=>e.type==='input_audio_buffer.commit')).toHaveLength(1);
+ }finally{session.close();vi.useRealTimers();}
+});
+
+it('captures the target catalog at speech start rather than after recognition',async()=>{
+ let targets=[{id:'B',title:'春日旅行',runId:'old-run'}];
+ const route=vi.fn(async()=>({kind:'none' as const}));const h=setup(undefined,route,undefined,{getTargets:()=>targets});
+ h.input();targets=[{id:'B',title:'春日旅行',runId:'new-run'}];h.committed();
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'暂停春日旅行会话'});
+ await Promise.resolve();
+ expect(route).toHaveBeenCalledWith('暂停春日旅行会话',1,expect.any(Function),expect.objectContaining({targets:[{id:'B',title:'春日旅行',runId:'old-run'}]}));
+});
+
+it('stops after three failed reconnects even when the last healthy connection was over a minute ago',async()=>{
+ vi.useFakeTimers();const sockets:Socket[]=[],events:VoiceEvent[]=[];
+ const session=new StepVoiceSession({getSnapshot:()=>null,emit:e=>events.push(e),connect:()=>{const s=new Socket();sockets.push(s);return s as unknown as WebSocket;}});
+ try{
+  session.start('synthetic-secret');const first=sockets[0]!;
+  first.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});first.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:null}});
+  await vi.advanceTimersByTimeAsync(61000);first.emit('close');
+  for(let i=0;i<3;i++){await vi.advanceTimersByTimeAsync(1000);sockets.at(-1)!.emit('error',new Error('offline'));}
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sockets).toHaveLength(4);expect(events.at(-1)).toMatchObject({kind:'state',state:'error'});
+ }finally{session.close();vi.useRealTimers();}
 });

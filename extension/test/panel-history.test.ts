@@ -3,6 +3,16 @@ import { PanelHistory } from "../src/background/panel-history.js";
 import type { BgToPanel, PanelHistoryItem, PanelToBg } from "../src/relay.js";
 
 describe("PanelHistory", () => {
+  it('does not duplicate replayed task receipts and replaces an updated receipt',()=>{
+    const history=new PanelHistory();
+    const receipt={requestId:'r1',conversationId:'A',source:'voice' as const,action:'steer' as const,runId:'run',text:'预算800',targetTitle:'比价',status:'unknown' as const,message:'结果未知',updatedAt:1};
+    const item:PanelHistoryItem={kind:'server',msg:{type:'agent_event',conversationId:'A',event:{kind:'notice',message:receipt.message,receipt}}};
+    const first=history.record(item);expect(history.record(item).seq).toBe(first.seq);expect(history.since()).toHaveLength(1);
+    const updated={...receipt,status:'accepted' as const,message:'已送达',updatedAt:2};
+    const next=history.record({kind:'server',msg:{type:'agent_event',conversationId:'A',event:{kind:'notice',message:updated.message,receipt:updated}}});
+    expect(next.seq).toBeGreaterThan(first.seq);expect(history.since()).toHaveLength(1);
+    const restored=new PanelHistory();restored.restore(history.since());restored.record(item);expect(restored.since()).toHaveLength(1);
+  });
   it("records user and visible server items with strictly increasing sequence numbers", () => {
     const history = new PanelHistory();
 

@@ -19,6 +19,18 @@ export class PanelHistory {
   }
 
   record(item: PanelHistoryItem): PanelHistoryEntry {
+    const receipt = taskReceipt(item);
+    if (receipt) {
+      const index = this.entries.findIndex(e=>{
+        const old=taskReceipt(e.item);
+        return old?.requestId===receipt.requestId && old.conversationId===receipt.conversationId;
+      });
+      if (index>=0) {
+        const existing=this.entries[index]!, old=taskReceipt(existing.item)!;
+        if (old.updatedAt>=receipt.updatedAt) return existing;
+        this.entries.splice(index,1);
+      }
+    }
     const entry = { seq: this.nextSeq++, item, occurredAt: Date.now() };
     this.entries.push(entry);
     if (this.entries.length > this.limit) {
@@ -49,4 +61,8 @@ export class PanelHistory {
   clear(): void {
     this.entries.length = 0;
   }
+}
+
+function taskReceipt(item:PanelHistoryItem) {
+  return item.kind==='server' && item.msg.type==='agent_event' && item.msg.event.kind==='notice' ? item.msg.event.receipt : undefined;
 }

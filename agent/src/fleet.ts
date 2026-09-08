@@ -1,3 +1,4 @@
+import type {PageContext} from '../../shared/protocol.js';
 /**
  * 并行工人：Lead 拥有图，工人各绑一个 Pi session + 标签页 + 光标 id。
  * spawn 非阻塞；工人之间经 Mailbox 传工件。工人无 spawn 工具。
@@ -279,6 +280,7 @@ export class Fleet {
     tabId: number;
     leadTask: { taskId: string; expectedSnapshotMarker: string };
     workerTask: { taskId: string; expectedSnapshotMarker: string };
+    live?:{leadGoal:string;workerGoal:string;leadContext?:PageContext;workerContext?:PageContext};
   }): Promise<AcceptanceContinuityEvidence[]> {
     const { id, tabId } = opts;
     if (!this.workers.has(id)) {
@@ -290,6 +292,10 @@ export class Fleet {
     const worker = this.workers.get(id);
     if (!lead || !worker) throw new Error("验收会话装配不完整");
     if (!lead.runtime) throw new Error("Lead runtime 不可用，无法注册本地验收模型");
+    if(opts.live){
+      lead.startTask(opts.live.leadGoal,opts.live.leadContext);worker.startTask(opts.live.workerGoal,opts.live.workerContext);
+      return []; // Real configured provider, no acceptance-model substitution.
+    }
     const acceptanceModel = registerAcceptanceModel(lead.runtime);
     await Promise.all([lead.setModel(acceptanceModel), worker.setModel(acceptanceModel)]);
     const evidence: AcceptanceContinuityEvidence[] = [

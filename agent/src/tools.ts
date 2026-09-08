@@ -289,7 +289,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "js",
       label: "Run JavaScript",
       description:
-        "Run JavaScript in the working tab and get the returned value. Prefer one IIFE that extracts everything you need over multiple round trips.",
+        "Evaluate a JavaScript expression in the working tab and get its value. Invoke functions explicitly: (() => { return document.title; })(). A bare () => {...} only creates a function and does not execute its body. Prefer one invoked IIFE that extracts everything you need over multiple round trips.",
       promptGuidelines: ["Wrap code in a single IIFE that returns a JSON-serializable value."],
       parameters: Type.Object({
         code: Type.String({ description: "JavaScript to evaluate; use an IIFE with a return value" }),

@@ -67,7 +67,7 @@ const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
 const PLACEHOLDER_IDLE = "给 By Your Side 发消息，Enter 发送，Shift+Enter 换行";
 const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
-const PLACEHOLDER_USER = "现在归你。点页面上的「交还」让 Agent 继续";
+const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；交还后生效";
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
 const PLACEHOLDER_PARTIAL = "部分成员已恢复。未续跑的人仍归你。";
 
@@ -220,6 +220,7 @@ let transportConnected = false;
 const completedConversations = new Set<string>();
 let conversationRequest: string | null = null;
 const conversations = new Map<string, ConversationSummary>();
+const receiptMessages = new Map<string, HTMLElement>();
 const conversationSwitcher = document.getElementById("conversation-switcher") as HTMLButtonElement;
 const conversationNew = document.getElementById("conversation-new") as HTMLButtonElement;
 const conversationMenu = document.getElementById("conversation-menu")!;
@@ -328,6 +329,7 @@ function resetConversationRender(): void {
   lastUserHasPage = false;
   lastHistorySeq = 0;
   userBubbles.clear();
+  receiptMessages.clear();
   historyPrimed = false;
   messagesEl.replaceChildren();
   renderTeamCard();
@@ -2023,7 +2025,13 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
     case "turn_start":
       break;
     case "notice":
-      addMsg("msg notice", ev.message);
+      if (ev.receipt) {
+        const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
+        const text=`${ev.receipt.targetTitle} · ${ev.message}${ev.receipt.text&&!ev.message.includes(ev.receipt.text)?`\n原话：${ev.receipt.text}`:''}`;
+        const previous=receiptMessages.get(key);
+        if (previous) previous.textContent=text;
+        else receiptMessages.set(key,addMsg('msg notice',text));
+      } else addMsg("msg notice", ev.message);
       break;
     case "error":
       addMsg("msg error", humanizeModelError(ev.message));
@@ -2049,7 +2057,10 @@ function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" 
   processMemoryOutcome(outcome);
 }
 
-const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send);
+const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send,()=>({
+  ...(pendingAsk?{context:{tabId:pendingAsk.tabId,title:pendingAsk.title,url:pendingAsk.url,selection:{text:pendingAsk.text}}}:{}),
+  attachments:attachments?.getAttachments()??[],
+}));
 
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
@@ -2350,12 +2361,13 @@ function noticeSendFailed(): void {
 }
 
 function sendInput(): void {
-  if (!conversationReady || panelLive(sessionRun.values(), teamView).userHasPage) return;
+  if (!conversationReady) return;
+  const held=panelLive(sessionRun.values(), teamView).userHasPage;
   const text = inputEl.value.trim();
   const pendingAtts = attachments.getAttachments();
   if (!text && pendingAtts.length === 0) return;
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
-  if (!running) runStartAt = Date.now();
+  if (!running&&!held) runStartAt = Date.now();
   const context = pendingAsk
     ? {
         tabId: pendingAsk.tabId,
@@ -2366,9 +2378,9 @@ function sendInput(): void {
     : undefined;
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const sent = send(
-    running
-      ? { type: "steer", text, context, attachments: clientAttachments }
-      : { type: "user_message", text, context, attachments: clientAttachments },
+    running||held
+      ? { type: "task_action", request:{requestId:crypto.randomUUID(),conversationId:selectedConversationId,source:'text',action:'steer',expectedRunId:conversations.get(selectedConversationId)?.runId??null,text,context,attachments:clientAttachments} }
+      : { type: "task_action", request:{requestId:crypto.randomUUID(),conversationId:selectedConversationId,source:'text',action:'start',expectedRunId:conversations.get(selectedConversationId)?.runId??null,text,context,attachments:clientAttachments} },
   );
   if (!sent) { noticeSendFailed(); return; }
   sendFailNotified = false;

@@ -1,0 +1,160 @@
+{
+  "status": "passed",
+  "commit": "2d1d5f770527803dd61e322a9ba174cd8fafd680",
+  "environment": {
+    "windows": 1,
+    "extensionVersion": "0.1.0",
+    "browser": "Chrome/152.0.7977.82",
+    "backgroundSha256": "ae540963c6406d0be839dff0a7f137f7f74e3979892f4e7b91cb9fde6457db2f"
+  },
+  "source": "production modules in harness; extension tools; synthetic PCM, not sidepanel UI",
+  "rawEvidenceDirectory": "/tmp/ego-voice-p0-2026-09-08T13-47-32-153Z",
+  "runs": [
+    {
+      "mode": "text",
+      "model": "minimax-cn/MiniMax-M3",
+      "cid": "08f309c7-8de5-466e-8ef0-541a17518710",
+      "ok": true,
+      "checks": {
+        "baseline": true,
+        "budget": true,
+        "prices": true,
+        "sort": true,
+        "singleStart": true,
+        "receipt": true,
+        "receiptBeforeAudio": true
+      },
+      "baseline": {
+        "at": 1788875285112,
+        "budget": 1000,
+        "sort": "original",
+        "prices": [
+          899,
+          699,
+          799
+        ]
+      },
+      "page": {
+        "budget": 800,
+        "prices": [
+          699,
+          799
+        ],
+        "sort": "asc"
+      },
+      "starts": 1,
+      "missingContracts": [
+        "formal runId/requestId and persistent structured receipt",
+        "sidepanel UI and real microphone acceptance"
+      ],
+      "toolCalls": 20,
+      "voiceReceipts": 0,
+      "transcript": [],
+      "diagnostics": [],
+      "receiptAt": null,
+      "firstAudioAt": null
+    },
+    {
+      "mode": "voice",
+      "model": "minimax-cn/MiniMax-M3",
+      "cid": "f3c7f67a-629a-4fa6-b2c4-fc36030bd811",
+      "ok": true,
+      "checks": {
+        "baseline": true,
+        "budget": true,
+        "prices": true,
+        "sort": true,
+        "singleStart": true,
+        "receipt": true,
+        "receiptBeforeAudio": true
+      },
+      "baseline": {
+        "at": 1788875407175,
+        "budget": 1000,
+        "sort": "original",
+        "prices": [
+          899,
+          699,
+          799
+        ]
+      },
+      "page": {
+        "budget": 800,
+        "prices": [
+          699,
+          799
+        ],
+        "sort": "asc"
+      },
+      "starts": 1,
+      "missingContracts": [
+        "formal runId/requestId and persistent structured receipt",
+        "sidepanel UI and real microphone acceptance"
+      ],
+      "toolCalls": 42,
+      "voiceReceipts": 1,
+      "transcript": [
+        "预算改成800，只看800元以内的书桌，再按价格从低到高排序。"
+      ],
+      "diagnostics": [
+        {
+          "at": 1788875355016,
+          "event": "connection_start",
+          "turn": 0
+        },
+        {
+          "at": 1788875355234,
+          "event": "session_ready",
+          "turn": 0
+        },
+        {
+          "at": 1788875419183,
+          "event": "input_commit",
+          "turn": 1,
+          "pcmBytes": 283482,
+          "rms": 0.1203,
+          "peak": 0.69928
+        },
+        {
+          "at": 1788875420465,
+          "event": "transcription",
+          "turn": 1,
+          "characters": 31,
+          "empty": false
+        },
+        {
+          "at": 1788875420466,
+          "event": "route_start",
+          "turn": 1,
+          "characters": 31
+        },
+        {
+          "at": 1788875421616,
+          "event": "route_result",
+          "turn": 1,
+          "kind": "steer",
+          "accepted": true,
+          "elapsedMs": 1150
+        }
+      ],
+      "receiptAt": 1788875421616,
+      "firstAudioAt": 1788875422606,
+      "commitToFirstAudioMs": 3423
+    }
+  ],
+  "harnessSha256": {
+    "scripts/acceptance/voice-steer-run.mts": "eba6edb51813614d41efcfbc264511f8b1cfabdcc0b480dd08431fdfc477936f",
+    "scripts/acceptance/voice-steer-oracle.mjs": "42f49c457c2d99ade6cf88c22aa2bf309b3d1308e75883fe7eb8032b1ae10bc1"
+  },
+  "excludedAttempt": {
+    "rawEvidenceDirectory": "/tmp/ego-voice-p0-2026-09-08T13-43-28-276Z",
+    "text": "blocked by MiniMax HTTP 529, zero tool calls",
+    "voice": "invalid running-task fixture: gate returned synchronously; task ended before recognition. Correctly rejected edit; budget stayed 1000."
+  },
+  "preflightFault": {
+    "injected": true,
+    "status": "blocked",
+    "exitCode": 1,
+    "rawEvidenceDirectory": "/tmp/ego-voice-p0-2026-09-08T13-50-45-006Z"
+  }
+}

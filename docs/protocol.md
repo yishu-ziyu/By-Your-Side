@@ -1,7 +1,7 @@
 # SideAgent 桥接协议
 
 background service worker 与本地伴随进程（Node + Pi SDK）之间的协议；默认走 native messaging，WebSocket 用于调试回退。侧栏通过扩展内部 Port 连接 background。
-权威类型定义见 `shared/protocol.ts`，本文档描述流程与语义。
+权威类型定义见 `shared/protocol.ts`，本文档描述流程与语义。任务身份、持久回执、语音连接及只读页面问答另见[语音与任务调度](voice-dispatch.md)，对应类型也包括`shared/task-actions.ts`与`shared/voice.ts`。
 
 ## 传输与握手
 

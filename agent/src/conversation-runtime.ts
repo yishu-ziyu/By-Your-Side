@@ -241,6 +241,7 @@ export async function createConversationRuntime(
           tabId: msg.worker.tabId,
           leadTask: msg.tasks.lead,
           workerTask: msg.tasks.worker,
+          live:msg.live,
         }).then(
           (continuity) => {
             sendCurrent({

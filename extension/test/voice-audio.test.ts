@@ -55,6 +55,8 @@ it('streams only after ready, rejects foreign and old turns, and releases captur
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
  for(let i=0;i<4;i++)frame(.1);expect(sent[1].command).toMatchObject({kind:'interrupt',turn:1});
  for(let i=0;i<35;i++)frame(0);expect(sent.at(-1).command).toEqual({kind:'commit',turn:1});
+ c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
+ expect(change).toHaveBeenLastCalledWith('listening',undefined);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready',detail:'没听清这句话，请再说一次。'}});
  expect(change).toHaveBeenLastCalledWith('listening','没听清这句话，请再说一次。');expect(c.active).toBe(true);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'audio',turn:1,itemId:'i1',responseId:'r1',data:Buffer.alloc(48000).toString('base64')}});expect(nodes).toHaveLength(1);

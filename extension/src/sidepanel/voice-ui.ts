@@ -2,8 +2,9 @@ import { microphonePermissionState } from "./voice-permission.js";
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
 import { mountOrb } from './voice-orb.js';
+import type {VoiceInputContext} from '../../../shared/voice.js';
 
-export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, send:(m:ClientMessage)=>boolean) {
+export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, send:(m:ClientMessage)=>boolean,getInput:()=>VoiceInputContext=()=>({})) {
   const region=document.createElement('section');region.className='voice-progress';region.hidden=true;
   region.setAttribute('aria-label','语音问进度');
   region.innerHTML='<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div>';
@@ -25,7 +26,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
     if ('turn' in event && event.turn !== shownTurn) { shownTurn=event.turn; transcript.textContent='';question.textContent=''; }
     if(event.kind==='text') { if(event.role==='user')question.textContent='你：'+event.text;else transcript.textContent=event.text; }
     if(event.kind==='facts')facts.textContent='依据当前任务状态 · '+new Date(event.snapshot.observedAt).toLocaleTimeString('zh-CN',{hour12:false});
-  });
+  },getInput);
   const start=()=>{shownTurn=0;question.textContent='';transcript.textContent='';facts.textContent='';void client.start(getConversation());};
   const retry=async()=>{
     if(client.needsMicrophonePermission && await microphonePermissionState()!=='granted'){

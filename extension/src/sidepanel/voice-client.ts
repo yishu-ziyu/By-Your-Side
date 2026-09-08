@@ -1,4 +1,4 @@
-import type { VoiceClientMessage, VoiceCommand, VoiceServerMessage, VoiceEvent } from '../../../shared/voice.js';
+import type { VoiceClientMessage, VoiceCommand, VoiceServerMessage, VoiceEvent,VoiceInputContext } from '../../../shared/voice.js';
 import { VoicePlayer } from './voice-player.js';
 import { VoiceTurnDetector, pcmBase64 } from './voice-signal.js';
 export type VoicePhase = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error';
@@ -20,7 +20,8 @@ export class VoiceClient {
   private meter = new Float32Array(256);
   constructor(private readonly send: (msg: VoiceClientMessage & {conversationId: string}) => boolean,
     private readonly change: (phase: VoicePhase, detail?: string) => void,
-    private readonly event: (event: VoiceEvent) => void) {}
+    private readonly event: (event: VoiceEvent) => void,
+    private readonly getInput:()=>VoiceInputContext=()=>({})) {}
   get active(): boolean { return this.id !== null; }
   get level(): number {
     if (this.phase === 'speaking' && this.analyser) {
@@ -55,7 +56,7 @@ export class VoiceClient {
       const detector=new VoiceTurnDetector({
         start:turn=>{this.turn=turn;this.speaking=true;const played=this.player?.begin(turn);this.command({kind:'interrupt',turn,...(played?{played}:{})});if(this.id===id)this.setPhase('listening');},
         audio:(turn,pcm)=>this.command({kind:'audio',turn,data:pcmBase64(pcm)}),
-        end:turn=>{this.speaking=false;this.command({kind:'commit',turn});if(this.id===id)this.setPhase('thinking');},
+        end:turn=>{this.speaking=false;const input=this.getInput();this.command({kind:'commit',turn,...(input.context||input.attachments?.length?{input}:{})});if(this.id===id)this.setPhase('thinking');},
       });
       const worklet=new AudioWorkletNode(context,'voice-capture');this.worklet=worklet;
       worklet.port.onmessage=({data})=>{if(this.id!==id||!this.ready)return;this.inputLevel=data.rms;detector.push(new Int16Array(data.pcm),data.rms);};
@@ -72,13 +73,14 @@ export class VoiceClient {
     if(e.kind==='state'){
       if(e.state==='error'){this.fail(e.detail??'语音连接失败，请重试。');return;}
       if(e.state==='closed'){this.stop(false);return;}
-      if(e.state==='ready'){if(this.connectTimer)clearTimeout(this.connectTimer);this.ready=true;if(e.detail || (this.phase!=='speaking'&&this.phase!=='thinking'))this.setPhase('listening',e.detail);}
+      if(e.state==='ready'){if(this.connectTimer)clearTimeout(this.connectTimer);this.ready=true;if(!this.speaking&&this.phase!=='speaking')this.setPhase('listening',e.detail);}
       if(e.state==='answering')this.setPhase('thinking');
       if(e.state==='connecting')this.setPhase('connecting','正在连接语音');
       return;
     }
     if(e.turn!==this.turn)return;
-    if(e.kind==='audio'){this.player?.enqueue(e);this.setPhase('speaking');}
+    if(e.kind==='reset_output'){this.player?.stop();this.player?.begin(this.turn);}
+    else if(e.kind==='audio'){this.player?.enqueue(e);this.setPhase('speaking');}
     else if(e.kind==='response_end')this.player?.responseEnd(e.responseId);
     else this.event(e);
   }

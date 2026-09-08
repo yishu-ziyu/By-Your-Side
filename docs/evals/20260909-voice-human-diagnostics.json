@@ -1,0 +1,507 @@
+{
+  "scope": "Selected stage timings from local diagnostics; no raw audio, credentials, page content, or full conversations",
+  "source": "local agent diagnostics",
+  "events": [
+    {
+      "turn": 0,
+      "time": "2026-09-08T17:20:38.626Z",
+      "event": "connection_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 0,
+      "time": "2026-09-08T17:20:38.863Z",
+      "event": "session_ready",
+      "session": "dialogue"
+    },
+    {
+      "turn": 1,
+      "pcmBytes": 82560,
+      "rms": 0.04798,
+      "peak": 0.35669,
+      "time": "2026-09-08T17:20:41.692Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 1,
+      "characters": 6,
+      "empty": false,
+      "time": "2026-09-08T17:20:42.394Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 1,
+      "characters": 6,
+      "time": "2026-09-08T17:20:42.395Z",
+      "event": "route_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 1,
+      "elapsedMs": 1503,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:20:43.898Z",
+      "event": "route_result",
+      "session": "dialogue"
+    },
+    {
+      "turn": 2,
+      "pcmBytes": 113280,
+      "rms": 0.04137,
+      "peak": 0.29736,
+      "time": "2026-09-08T17:20:50.808Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 2,
+      "characters": 14,
+      "empty": false,
+      "time": "2026-09-08T17:20:51.598Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 2,
+      "characters": 14,
+      "time": "2026-09-08T17:20:51.598Z",
+      "event": "route_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 3,
+      "elapsedMs": 1774,
+      "code": "route_failed",
+      "time": "2026-09-08T17:20:53.373Z",
+      "event": "route_error",
+      "session": "dialogue"
+    },
+    {
+      "turn": 3,
+      "pcmBytes": 43200,
+      "rms": 0.04603,
+      "peak": 0.56662,
+      "time": "2026-09-08T17:20:54.031Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 3,
+      "characters": 0,
+      "empty": true,
+      "time": "2026-09-08T17:20:54.501Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 3,
+      "time": "2026-09-08T17:20:54.501Z",
+      "event": "input_empty",
+      "session": "dialogue"
+    },
+    {
+      "turn": 3,
+      "time": "2026-09-08T17:20:58.814Z",
+      "event": "idle_refresh",
+      "session": "dialogue"
+    },
+    {
+      "turn": 4,
+      "pcmBytes": 133440,
+      "rms": 0.04469,
+      "peak": 0.3187,
+      "time": "2026-09-08T17:21:03.362Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 4,
+      "characters": 17,
+      "empty": false,
+      "time": "2026-09-08T17:21:04.066Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 4,
+      "characters": 17,
+      "time": "2026-09-08T17:21:04.066Z",
+      "event": "route_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 4,
+      "elapsedMs": 1641,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:21:05.707Z",
+      "event": "route_result",
+      "session": "dialogue"
+    },
+    {
+      "turn": 5,
+      "pcmBytes": 50880,
+      "rms": 0.05394,
+      "peak": 0.61664,
+      "time": "2026-09-08T17:21:12.942Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 5,
+      "characters": 3,
+      "empty": false,
+      "time": "2026-09-08T17:21:13.526Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 5,
+      "characters": 3,
+      "time": "2026-09-08T17:21:13.526Z",
+      "event": "route_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 5,
+      "elapsedMs": 3516,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:21:17.042Z",
+      "event": "route_result",
+      "session": "dialogue"
+    },
+    {
+      "turn": 6,
+      "pcmBytes": 108480,
+      "rms": 0.04746,
+      "peak": 0.46405,
+      "time": "2026-09-08T17:21:28.140Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 6,
+      "characters": 11,
+      "empty": false,
+      "time": "2026-09-08T17:21:28.773Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 6,
+      "characters": 11,
+      "time": "2026-09-08T17:21:28.773Z",
+      "event": "route_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 6,
+      "elapsedMs": 1958,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:21:30.732Z",
+      "event": "route_result",
+      "session": "dialogue"
+    },
+    {
+      "turn": 7,
+      "pcmBytes": 77760,
+      "rms": 0.04659,
+      "peak": 0.48038,
+      "time": "2026-09-08T17:21:39.148Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 7,
+      "characters": 9,
+      "empty": false,
+      "time": "2026-09-08T17:21:39.835Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 7,
+      "characters": 9,
+      "time": "2026-09-08T17:21:39.835Z",
+      "event": "route_start",
+      "session": "dialogue"
+    },
+    {
+      "turn": 7,
+      "elapsedMs": 1619,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:21:41.454Z",
+      "event": "route_result",
+      "session": "dialogue"
+    },
+    {
+      "turn": 8,
+      "pcmBytes": 46080,
+      "rms": 0.00851,
+      "peak": 0.129,
+      "time": "2026-09-08T17:21:55.153Z",
+      "event": "input_commit",
+      "session": "dialogue"
+    },
+    {
+      "turn": 8,
+      "characters": 0,
+      "empty": true,
+      "time": "2026-09-08T17:21:55.778Z",
+      "event": "transcription",
+      "session": "dialogue"
+    },
+    {
+      "turn": 8,
+      "time": "2026-09-08T17:21:55.779Z",
+      "event": "input_empty",
+      "session": "dialogue"
+    },
+    {
+      "turn": 8,
+      "time": "2026-09-08T17:21:58.816Z",
+      "event": "idle_refresh",
+      "session": "dialogue"
+    },
+    {
+      "turn": 0,
+      "time": "2026-09-08T17:26:02.589Z",
+      "event": "connection_start",
+      "session": "reconnect"
+    },
+    {
+      "turn": 0,
+      "time": "2026-09-08T17:26:02.833Z",
+      "event": "session_ready",
+      "session": "reconnect"
+    },
+    {
+      "turn": 1,
+      "pcmBytes": 159360,
+      "rms": 0.04844,
+      "peak": 0.41489,
+      "time": "2026-09-08T17:26:07.248Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 1,
+      "characters": 16,
+      "empty": false,
+      "time": "2026-09-08T17:26:08.229Z",
+      "event": "transcription",
+      "session": "reconnect"
+    },
+    {
+      "turn": 1,
+      "characters": 16,
+      "time": "2026-09-08T17:26:08.230Z",
+      "event": "route_start",
+      "session": "reconnect"
+    },
+    {
+      "turn": 1,
+      "elapsedMs": 2828,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:26:11.058Z",
+      "event": "route_result",
+      "session": "reconnect"
+    },
+    {
+      "turn": 2,
+      "pcmBytes": 100800,
+      "rms": 0.04822,
+      "peak": 0.34677,
+      "time": "2026-09-08T17:26:16.730Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 2,
+      "characters": 8,
+      "empty": false,
+      "time": "2026-09-08T17:26:17.446Z",
+      "event": "transcription",
+      "session": "reconnect"
+    },
+    {
+      "turn": 2,
+      "characters": 8,
+      "time": "2026-09-08T17:26:17.446Z",
+      "event": "route_start",
+      "session": "reconnect"
+    },
+    {
+      "turn": 2,
+      "elapsedMs": 2068,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:26:19.514Z",
+      "event": "route_result",
+      "session": "reconnect"
+    },
+    {
+      "turn": 3,
+      "pcmBytes": 104640,
+      "rms": 0.04153,
+      "peak": 0.33722,
+      "time": "2026-09-08T17:26:26.569Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 3,
+      "characters": 12,
+      "empty": false,
+      "time": "2026-09-08T17:26:27.334Z",
+      "event": "transcription",
+      "session": "reconnect"
+    },
+    {
+      "turn": 3,
+      "characters": 12,
+      "time": "2026-09-08T17:26:27.335Z",
+      "event": "route_start",
+      "session": "reconnect"
+    },
+    {
+      "turn": 3,
+      "elapsedMs": 1940,
+      "kind": "none",
+      "accepted": false,
+      "time": "2026-09-08T17:26:29.275Z",
+      "event": "route_result",
+      "session": "reconnect"
+    },
+    {
+      "turn": 4,
+      "pcmBytes": 130560,
+      "rms": 0.0418,
+      "peak": 0.34381,
+      "time": "2026-09-08T17:26:38.671Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 4,
+      "characters": 21,
+      "empty": false,
+      "time": "2026-09-08T17:26:39.550Z",
+      "event": "transcription",
+      "session": "reconnect"
+    },
+    {
+      "turn": 4,
+      "characters": 21,
+      "time": "2026-09-08T17:26:39.551Z",
+      "event": "route_start",
+      "session": "reconnect"
+    },
+    {
+      "turn": 4,
+      "elapsedMs": 2409,
+      "kind": "action",
+      "accepted": true,
+      "time": "2026-09-08T17:26:41.960Z",
+      "event": "route_result",
+      "session": "reconnect"
+    },
+    {
+      "turn": 5,
+      "pcmBytes": 107520,
+      "rms": 0.04599,
+      "peak": 0.39691,
+      "time": "2026-09-08T17:26:58.631Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 5,
+      "time": "2026-09-08T17:27:01.397Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 5,
+      "time": "2026-09-08T17:27:06.662Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 6,
+      "pcmBytes": 54720,
+      "rms": 0.05882,
+      "peak": 0.58734,
+      "time": "2026-09-08T17:27:10.788Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 6,
+      "time": "2026-09-08T17:27:11.921Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 7,
+      "pcmBytes": 49920,
+      "rms": 0.01141,
+      "peak": 0.22552,
+      "time": "2026-09-08T17:27:15.565Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 7,
+      "time": "2026-09-08T17:27:17.181Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 7,
+      "time": "2026-09-08T17:27:22.442Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 7,
+      "time": "2026-09-08T17:27:27.704Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 7,
+      "time": "2026-09-08T17:27:32.968Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 8,
+      "time": "2026-09-08T17:27:38.234Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    },
+    {
+      "turn": 8,
+      "pcmBytes": 208320,
+      "rms": 0.02899,
+      "peak": 0.90567,
+      "time": "2026-09-08T17:27:40.526Z",
+      "event": "input_commit",
+      "session": "reconnect"
+    },
+    {
+      "turn": 8,
+      "time": "2026-09-08T17:27:43.499Z",
+      "event": "connection_reconnect",
+      "session": "reconnect"
+    }
+  ]
+}

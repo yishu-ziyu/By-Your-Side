@@ -1,0 +1,443 @@
+[
+  {
+    "id": "start-01",
+    "group": "start",
+    "state": "idle",
+    "text": "帮我找一张一千元以内的书桌。",
+    "expected": [
+      "start"
+    ]
+  },
+  {
+    "id": "start-02",
+    "group": "start",
+    "state": "idle",
+    "text": "打开测试页，筛出价格低于800的商品。",
+    "expected": [
+      "start"
+    ]
+  },
+  {
+    "id": "start-03",
+    "group": "start",
+    "state": "idle",
+    "text": "请把这段选中文字整理成三点。",
+    "expected": [
+      "start"
+    ]
+  },
+  {
+    "id": "start-04",
+    "group": "start",
+    "state": "idle",
+    "text": "根据我选的截图查找同款。",
+    "expected": [
+      "start"
+    ]
+  },
+  {
+    "id": "start-05",
+    "group": "start",
+    "state": "idle",
+    "text": "帮我比较这两款椅子。",
+    "expected": [
+      "start"
+    ]
+  },
+  {
+    "id": "start-06",
+    "group": "start",
+    "state": "idle",
+    "text": "新建一个任务，查找广州明天的天气。",
+    "expected": [
+      "start"
+    ]
+  },
+  {
+    "id": "steer-01",
+    "group": "steer",
+    "state": "running",
+    "text": "预算改成800。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-02",
+    "group": "steer",
+    "state": "running",
+    "text": "再按价格从低到高排列。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-03",
+    "group": "steer",
+    "state": "running",
+    "text": "不要黑色了，改成白色。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-04",
+    "group": "steer",
+    "state": "running",
+    "text": "把搜索范围扩大到全国。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-05",
+    "group": "steer",
+    "state": "running",
+    "text": "再加一条，必须是实木。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-06",
+    "group": "steer",
+    "state": "running",
+    "text": "改成只看有货的。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-07",
+    "group": "steer",
+    "state": "running",
+    "text": "刚才说错了，预算是600。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "steer-08",
+    "group": "steer",
+    "state": "running",
+    "text": "请把结果整理成表格再给我。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "status-01",
+    "group": "status",
+    "state": "running",
+    "text": "现在做到哪了？",
+    "expected": [
+      "status"
+    ]
+  },
+  {
+    "id": "status-02",
+    "group": "status",
+    "state": "running",
+    "text": "卡在哪一步？",
+    "expected": [
+      "status"
+    ]
+  },
+  {
+    "id": "status-03",
+    "group": "status",
+    "state": "running",
+    "text": "还在做吗？",
+    "expected": [
+      "status"
+    ]
+  },
+  {
+    "id": "status-04",
+    "group": "status",
+    "state": "running",
+    "text": "任务目前是什么状态？",
+    "expected": [
+      "status"
+    ]
+  },
+  {
+    "id": "control-01",
+    "group": "control",
+    "state": "running",
+    "text": "暂停任务，我来操作。",
+    "expected": [
+      "pause"
+    ]
+  },
+  {
+    "id": "control-02",
+    "group": "control",
+    "state": "running",
+    "text": "先停一下。",
+    "expected": [
+      "pause"
+    ]
+  },
+  {
+    "id": "control-03",
+    "group": "control",
+    "state": "paused",
+    "text": "继续原任务。",
+    "expected": [
+      "resume"
+    ]
+  },
+  {
+    "id": "control-04",
+    "group": "control",
+    "state": "paused",
+    "text": "页面我改好了，交还给你继续。",
+    "expected": [
+      "resume"
+    ]
+  },
+  {
+    "id": "control-05",
+    "group": "control",
+    "state": "running",
+    "text": "终止当前任务。",
+    "expected": [
+      "abort"
+    ]
+  },
+  {
+    "id": "control-06",
+    "group": "control",
+    "state": "running",
+    "text": "取消这个任务。",
+    "expected": [
+      "abort"
+    ]
+  },
+  {
+    "id": "control-07",
+    "group": "control",
+    "state": "running",
+    "text": "停止。",
+    "expected": [
+      "clarify"
+    ]
+  },
+  {
+    "id": "control-08",
+    "group": "control",
+    "state": "running",
+    "text": "别说了。",
+    "expected": [
+      "silence"
+    ]
+  },
+  {
+    "id": "negative-01",
+    "group": "negative",
+    "state": "running",
+    "text": "你好。",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-02",
+    "group": "negative",
+    "state": "running",
+    "text": "十加七等于多少？",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-03",
+    "group": "negative",
+    "state": "running",
+    "text": "如果预算改成800会怎样？",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-04",
+    "group": "negative",
+    "state": "running",
+    "text": "你能不能修改预算？",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-05",
+    "group": "negative",
+    "state": "running",
+    "text": "他刚才说预算改成800。",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-06",
+    "group": "negative",
+    "state": "running",
+    "text": "我昨天让别人把预算改成800了。",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-07",
+    "group": "negative",
+    "state": "running",
+    "text": "解释一下暂停和终止的区别。",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "negative-08",
+    "group": "negative",
+    "state": "running",
+    "text": "请读出这句话：“终止当前任务”。",
+    "expected": [
+      "chat"
+    ]
+  },
+  {
+    "id": "target-01",
+    "group": "target",
+    "state": "running",
+    "text": "把比价会话的预算改成800。",
+    "expected": [
+      "steer"
+    ],
+    "target": "比价"
+  },
+  {
+    "id": "target-02",
+    "group": "target",
+    "state": "running",
+    "text": "暂停查天气会话。",
+    "expected": [
+      "pause"
+    ],
+    "target": "查天气"
+  },
+  {
+    "id": "target-03",
+    "group": "target",
+    "state": "running",
+    "text": "继续订酒店会话。",
+    "expected": [
+      "resume"
+    ],
+    "target": "订酒店"
+  },
+  {
+    "id": "target-04",
+    "group": "target",
+    "state": "running",
+    "text": "终止整理资料会话。",
+    "expected": [
+      "abort"
+    ],
+    "target": "整理资料"
+  },
+  {
+    "id": "target-05",
+    "group": "target",
+    "state": "running",
+    "text": "购物会话做到哪了？",
+    "expected": [
+      "status"
+    ],
+    "target": "购物"
+  },
+  {
+    "id": "target-06",
+    "group": "target",
+    "state": "running",
+    "text": "把另一个会话改成600。",
+    "expected": [
+      "clarify"
+    ]
+  },
+  {
+    "id": "compound-01",
+    "group": "compound",
+    "state": "running",
+    "text": "预算改800，不，改600。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "compound-02",
+    "group": "compound",
+    "state": "running",
+    "text": "先暂停任务，再把预算改600，等我说继续。",
+    "expected": [
+      "pause",
+      "steer"
+    ]
+  },
+  {
+    "id": "compound-03",
+    "group": "compound",
+    "state": "paused",
+    "text": "把预算改600，然后继续原任务。",
+    "expected": [
+      "steer",
+      "resume"
+    ]
+  },
+  {
+    "id": "compound-04",
+    "group": "compound",
+    "state": "running",
+    "text": "把预算改800，再按升序排列。",
+    "expected": [
+      "steer"
+    ]
+  },
+  {
+    "id": "compound-05",
+    "group": "compound",
+    "state": "running",
+    "text": "暂停任务，告诉我做到哪了。",
+    "expected": [
+      "pause",
+      "status"
+    ]
+  },
+  {
+    "id": "compound-06",
+    "group": "compound",
+    "state": "running",
+    "text": "先查询进度，然后暂停任务。",
+    "expected": [
+      "status",
+      "pause"
+    ]
+  },
+  {
+    "id": "compound-07",
+    "group": "compound",
+    "state": "running",
+    "text": "不要终止任务，只暂停。",
+    "expected": [
+      "pause"
+    ]
+  },
+  {
+    "id": "compound-08",
+    "group": "compound",
+    "state": "running",
+    "text": "另开一个任务查天气。",
+    "expected": [
+      "start"
+    ]
+  }
+]

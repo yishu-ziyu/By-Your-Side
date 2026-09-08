@@ -3,6 +3,13 @@ import { TaskProgress } from "../src/task-progress.js";
 import { parseClientMessage, parseServerMessage } from "../../shared/protocol.js";
 
 describe("task progress facts", () => {
+  it('uses unique run identities even within one millisecond and preserves identity across pause',()=>{
+    const p=new TaskProgress('A',()=>123);
+    p.request('first');p.observe({type:'agent_event',event:{kind:'agent_start'}});const first=p.snapshot().runId;
+    p.observe({type:'status',state:'user'});p.observe({type:'status',state:'running'});expect(p.snapshot().runId).toBe(first);
+    p.observe({type:'agent_event',event:{kind:'agent_end'}});p.request('second');p.observe({type:'agent_event',event:{kind:'agent_start'}});
+    expect(p.snapshot().startedAt).toBe(123);expect(p.snapshot().runId).not.toBe(first);
+  });
   it("records actual tool state and never promotes idle/agent_end to verified success", () => {
     let now = 100;
     const p = new TaskProgress("A", () => now);

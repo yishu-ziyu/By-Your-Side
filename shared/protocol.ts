@@ -7,6 +7,7 @@
 
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isVoiceClientMessage, isVoiceServerMessage, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
+import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 7758;
@@ -17,7 +18,7 @@ export const DEFAULT_CONVERSATION_ID = "default";
 export function normalizeConversationId(id?: string | null): string { return id ?? DEFAULT_CONVERSATION_ID; }
 export interface ConversationSummary {
   id: string; title: string; createdAt: number; updatedAt: number;
-  state: AgentRunState; model?: string; mode: AgentMode;
+  state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
 }
 
 export function isLeadSession(sessionId?: string | null): boolean {
@@ -173,11 +174,15 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel" }
   | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
+  | { type: "task_action"; request: TaskActionRequest }
+  | { type: "task_receipt_query"; requestId: string }
   | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[] }
-  | { type: "abort" }
+  | { type: "abort"; taskRequestId?:string }
+  | { type:'task_control_result';requestId:string;action:'pause'|'resume'|'abort';runId:string;ok:boolean;reason?:string;uncertain?:boolean;partial?:boolean }
   | {
       type: "takeover";
       requestId: string;
+      taskRequestId?: string;
       groupId?: string;
       generation?: number;
       members?: TeamFrozenMember[];
@@ -185,6 +190,7 @@ export type ClientMessage = ConversationEnvelope & (
   | {
       type: "handback";
       requestId: string;
+      taskRequestId?: string;
       context?: PageContext;
       snapshot?: string;
       members?: TeamMemberHandback[];
@@ -196,6 +202,7 @@ export type ClientMessage = ConversationEnvelope & (
       type: "acceptance_prepare_team";
       requestId: string;
       capability: string;
+      live?:{leadGoal:string;workerGoal:string;leadContext?:PageContext;workerContext?:PageContext};
       worker: { sessionId: string; tabId: number };
       tasks: {
         lead: { taskId: string; expectedSnapshotMarker: string };
@@ -221,7 +228,9 @@ export interface ModelOption {
   name: string;
 }
 
-export type ServerMessage = ConversationEnvelope & (
+export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
+  | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
+  | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
@@ -268,7 +277,7 @@ export type AgentUiEvent =
   | { kind: "turn_end" }
   | { kind: "agent_start" }
   | { kind: "agent_end" }
-  | { kind: "notice"; message: string }
+  | { kind: "notice"; message: string; receipt?: TaskReceipt }
   | { kind: "error"; message: string };
 
 // ── 工具契约 ───────────────────────────────────────────────────────
@@ -393,7 +402,24 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     const msg = JSON.parse(raw) as ClientMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
-    if (msg.type === "voice") return isVoiceClientMessage(msg) ? msg : null;
+    if (msg.type === "voice") {
+      if(!isVoiceClientMessage(msg))return null;
+      if(msg.command.kind==='commit'&&msg.command.input!==undefined){
+        const input=msg.command.input;
+        if(!input||typeof input!=='object'||Array.isArray(input)||(input.context!==undefined&&!isPageContext(input.context))||(input.attachments!==undefined&&(!Array.isArray(input.attachments)||!input.attachments.every(isAttachment))))return null;
+      }
+      return msg;
+    }
+    if (msg.type === "task_action") {
+      const r = msg.request;
+      return isTaskActionRequest(r) && r.conversationId === msg.conversationId
+        && (r.context === undefined || isPageContext(r.context))
+        && (r.attachments === undefined || Array.isArray(r.attachments) && r.attachments.every(isAttachment)) ? msg : null;
+    }
+    if (msg.type === "task_receipt_query") return validRequestId(msg.requestId) ? msg : null;
+    if(msg.type==='task_control_result')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&typeof msg.ok==='boolean'
+      &&(msg.reason===undefined||typeof msg.reason==='string'&&msg.reason.length<=1000)&&(msg.uncertain===undefined||typeof msg.uncertain==='boolean')&&(msg.partial===undefined||typeof msg.partial==='boolean')?msg:null;
+    if((msg.type==='takeover'||msg.type==='handback'||msg.type==='abort')&&msg.taskRequestId!==undefined&&!validRequestId(msg.taskRequestId))return null;
     if (msg.type.startsWith("memory_")) {
       if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget") return null;
       if (!validRequestId(msg.requestId)) return null;
@@ -453,6 +479,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if (!validOptionalSessionId(msg.worker.sessionId) || msg.worker.sessionId === undefined) return null;
       if (typeof msg.worker.tabId !== "number" || !Number.isFinite(msg.worker.tabId)) return null;
       if (!isAcceptanceTask(msg.tasks?.lead) || !isAcceptanceTask(msg.tasks?.worker)) return null;
+      if(msg.live!==undefined&&(!msg.live||typeof msg.live.leadGoal!=='string'||!msg.live.leadGoal.trim()||msg.live.leadGoal.length>12000||typeof msg.live.workerGoal!=='string'||!msg.live.workerGoal.trim()||msg.live.workerGoal.length>12000||(msg.live.leadContext!==undefined&&!isPageContext(msg.live.leadContext))||(msg.live.workerContext!==undefined&&!isPageContext(msg.live.workerContext))))return null;
     }
     return msg;
   } catch {
@@ -475,7 +502,13 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     const msg = JSON.parse(raw) as ServerMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if(msg.runId!==undefined&&msg.runId!==null&&!taskId(msg.runId))return null;
+    if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return null;
+    if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
+    if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
     if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
+    if (msg.type === "agent_event" && msg.event?.kind === "notice" && msg.event.receipt !== undefined
+      && (!isTaskReceipt(msg.event.receipt) || (msg.event.receipt.conversationId !== msg.conversationId && msg.event.receipt.originConversationId !== msg.conversationId))) return null;
     if (msg.type === "memory_result") {
       if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget"].includes(msg.action)) return null;
       if (msg.entries !== undefined && (!Array.isArray(msg.entries) || !msg.entries.every(isMemoryEntry))) return null;
@@ -657,5 +690,6 @@ function isConversationSummary(value: unknown): value is ConversationSummary {
   const item = value as ConversationSummary;
   return validConversationId(item.id) && typeof item.title === "string" && item.title.length <= 120 &&
     Number.isFinite(item.createdAt) && Number.isFinite(item.updatedAt) && isAgentRunState(item.state) &&
-    (item.mode === "act" || item.mode === "teach") && (item.model === undefined || typeof item.model === "string");
+    (item.mode === "act" || item.mode === "teach") && (item.model === undefined || typeof item.model === "string")
+    && (item.runId === undefined || item.runId === null || taskId(item.runId));
 }

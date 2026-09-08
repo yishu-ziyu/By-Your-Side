@@ -72,6 +72,16 @@ function controlledBrowserSession(streaming = true, handbackRestoreTimeoutMs?: n
 }
 
 describe("BrowserAgentSession handback serialization", () => {
+  it('holds paused changes until real handback and includes fresh context without starting early',async()=>{
+    const {wrapped,raw,settleAbort,agentStart}=controlledBrowserSession();
+    wrapped.holdForUser();wrapped.queueSteerForResume('预算改600');
+    expect(raw.prompt).not.toHaveBeenCalled();expect(raw.steer).not.toHaveBeenCalled();
+    const context={tabId:123,title:'fresh',url:'https://example.com/fresh'};
+    const resumed=wrapped.continueAfterHandback(context,'fresh-user-marker');settleAbort();await flushMicrotasks();
+    expect(raw.prompt).toHaveBeenCalledTimes(1);
+    expect(raw.prompt.mock.calls[0]![0]).toContain('预算改600');expect(raw.prompt.mock.calls[0]![0]).toContain('fresh-user-marker');
+    agentStart();expect(await resumed).toBe(true);
+  });
   it("abort 尚未 settle 时不 steer 旧流；等 idle 后只 prompt 一次", async () => {
     const { wrapped, raw, settleAbort, agentStart } = controlledBrowserSession();
     wrapped.holdForUser();

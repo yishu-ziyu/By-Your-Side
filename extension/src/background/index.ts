@@ -103,7 +103,9 @@ const transport = new Uplink({
  },
  onConnState(...args) { connectionSnapshot = args; if (args[0] !== "connected") voiceRelay.disconnected(); if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"}); for (const c of controllers.values()) c.callbacks.onConnState(...args); },
 });
-const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), () => selectedConversationId);
+const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), () => selectedConversationId,async(id,input)=>{
+  const enriched=await controller(id).voiceInput(input);return enriched;
+});
 function controller(id: string) {
  let c = controllers.get(id);
  if (!c) { c = createConversationController(id); controllers.set(id,c); c.callbacks.onConnState(...connectionSnapshot); if (helloSnapshot) { const instance = c; void c.ready.then(() => instance.callbacks.onServerMessage(helloSnapshot!)); } for (const port of connectedPanels) c.attachPanel(port); }
@@ -170,6 +172,11 @@ let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } =
 let lastHelloOk: { version: number; model?: string } | null = null;
 let lastStatus: AgentRunState = "idle";
 const statusBySession = new Map<string, AgentRunState>();
+const executionEpochs=new Map<string,number>();
+let epochRunId:string|null|undefined;
+const abortedRuns=new Set<string>();
+let abortDrain:Promise<void>=Promise.resolve();
+let remoteControl:{request:Extract<ServerMessage,{type:'task_control'}>;timer:ReturnType<typeof setTimeout>;abortAck?:(ok:boolean)=>void}|null=null;
 const activityBySession = new Map<string, TeamMemberActivity>();
 const gate = new ControlGate();
 const team = new TeamControl();
@@ -325,6 +332,7 @@ const controlReady = hydrateControl();
 
 function handleConnState(state: ConnState, transport: TransportKind | undefined, detail?: string): void {
   lastConn = { state, transport, detail };
+  if(state!=='connected'&&remoteControl)finishRemoteControl(false,'连接中断，页面控制结果尚无法确认。',true);
   if (state !== "connected" && teamHeld() && !gate.isUser() && !pendingControl) {
     persistControl();
     broadcast({kind:"conn",state,transport,detail});
@@ -585,6 +593,11 @@ function postMode(port: chrome.runtime.Port): void {
 
 const callbacks: UplinkHandlers = {
   onServerMessage(msg) {
+    const knownRun=conversationSummaries.find(c=>c.id===conversationId)?.runId;
+    if(knownRun!==epochRunId){executionEpochs.clear();epochRunId=knownRun;}
+    if(!msg.runId||msg.runId===knownRun)for(const [id,epoch] of Object.entries(msg.epochs??{}))executionEpochs.set(id,Math.max(epoch,executionEpochs.get(id)??0));
+    if(msg.type==='task_control'){void runRemoteControl(msg);return;}
+    if(msg.type==='task_control_ack'){if(remoteControl?.request.requestId===msg.requestId)remoteControl.abortAck?.(msg.ok);return;}
     if (msg.type === "hello_ok") {
       lastHelloOk = { version: msg.version, model: conversationId === "default" ? msg.model : lastModelInfo?.model };
       if (msg.models && conversationId === "default" && !lastModelInfo) lastModelInfo = { type: "model_info", model: msg.model, models: msg.models };
@@ -620,8 +633,20 @@ const callbacks: UplinkHandlers = {
         else void showUserControlGuarded();
         emitTeam();
       }
+      if(remoteControl?.request.action==='resume'){
+        const current=team.view();
+        if(current?.phase==='restored')finishRemoteControl(true);
+        else if(current?.phase==='partial'&&!current.members.some(m=>m.phase==='restoring'))finishRemoteControl(false,'部分成员未能恢复，请查看仍然暂停的页面。',false,current.members.some(m=>m.phase==='restored'));
+      }
     } else if (msg.type === "control_result") {
       handleControlResult(msg);
+      if(remoteControl?.request.requestId===msg.requestId){
+        const view=team.view();
+        if(remoteControl.request.action==='resume'&&msg.ok&&view?.members.some(m=>m.phase==='restoring'))return;
+        const pauseApplied=remoteControl.request.scope==='page'?view?.phase==='user'&&view.members.every(m=>gate.isSessionBlocked(m.sessionId)):gate.isUser()&&view?.phase==='user';
+        const ok=msg.ok&&(remoteControl.request.action==='pause'?pauseApplied:view?.phase==='restored'&&!gate.isUser());
+        finishRemoteControl(ok,msg.reason??(ok?undefined:'页面控制尚未完整生效。'),false,!ok&&!!view?.members.some(m=>m.phase==='restored'));
+      }
       return;
     } else if (msg.type === "status") {
       if (pendingControl && (msg.sessionId == null || msg.sessionId === LEAD_SESSION_ID)) {
@@ -663,7 +688,7 @@ const callbacks: UplinkHandlers = {
       }
     }
     if (msg.type === "tool_call") {
-      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId);
+      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId,msg.runId,msg.epochs?.[normalizeSessionId(msg.sessionId)]);
       return; // tool_call 不转发面板
     }
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
@@ -687,18 +712,30 @@ async function executeToolCall(
   params: Record<string, unknown>,
   sessionId?: string,
   programId?: string,
+  runId?:string|null,
+  epoch?:number,
 ): Promise<void> {
   await controlReady;
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   const sid = normalizeSessionId(sessionId);
+  const checkIdentity=()=>{
+    const current=conversationSummaries.find(c=>c.id===conversationId)?.runId;
+    if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
+    if(epoch!==undefined&&epoch<(executionEpochs.get(sid)??0))throw new Error('操作所属控制轮次已失效，操作未执行。');
+  };
   try {
+    checkIdentity();
     const handler = handlers[name];
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
     if (programId && gate.isSessionBlocked(sid)) throw new Error("页面现在归你，操作未执行");
     setSessionClaimBlocked(sid, gate.isSessionBlocked(sid));
     const operationGeneration = gate.gen;
     const execute = async () => {
+      checkIdentity();
+      if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
+      checkIdentity();
+      if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
       return gate.run(id, name, () => name === "page_operation"
         ? pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))})
@@ -722,7 +759,7 @@ function emitLocalStatus(state: AgentRunState): void {
   broadcastVisibleServer({ type: "status", state });
 }
 
-async function handleTakeover(requestedTabId?: number): Promise<void> {
+async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false): Promise<void> {
   await controlReady;
   if (pendingControl) {
     emitNotice(`正在${pendingControl.action === "takeover" ? "接管" : "交还"}，请稍候。`);
@@ -734,7 +771,7 @@ async function handleTakeover(requestedTabId?: number): Promise<void> {
     emitTeam();
     return;
   }
-  const targetTabId = requestedTabId ?? await getWorkingTabId() ?? undefined;
+  const targetTabId = wholeTask ? undefined : requestedTabId ?? await getWorkingTabId() ?? undefined;
   const allMembers = await localActiveMembers();
   let members = allMembers;
   if (targetTabId != null) {
@@ -757,13 +794,15 @@ async function handleTakeover(requestedTabId?: number): Promise<void> {
   team.beginDrain();
   emitTeam();
   void showUserControlGuarded();
-  const result = targetTabId != null ? {generation:gate.gen, superseded:false} : await gate.beginTakeover();
+  const draining=targetTabId != null ? Promise.resolve({generation:gate.gen, superseded:false}) : gate.beginTakeover();
+  if(wholeTask)await Promise.all([...new Set(members.flatMap(m=>m.tabId==null?[]:[m.tabId]))].map(tabId=>takeoverTab(tabId)));
+  const result = await draining;
   if (result.superseded) {
     team.clear();
     return;
   }
   await hideCursorsForSessions(members.map((m) => key(m.sessionId)));
-  const requestId = nextControlRequestId("takeover");
+  const requestId = remoteRequestId ?? nextControlRequestId("takeover");
   const frozen = team.view();
   pendingControl = {
     action: "takeover",
@@ -781,6 +820,7 @@ async function handleTakeover(requestedTabId?: number): Promise<void> {
     !uplink.sendClientMessage({
       type: "takeover",
       requestId,
+      ...(remoteRequestId?{taskRequestId:remoteRequestId}:{}),
       ...(frozen
         ? {
             groupId: frozen.groupId,
@@ -801,7 +841,7 @@ async function handleTakeover(requestedTabId?: number): Promise<void> {
   }
 }
 
-async function handleHandback(): Promise<void> {
+async function handleHandback(remoteRequestId?:string): Promise<void> {
   await controlReady;
   if (handbackCapture) {
     emitNotice("正在读取绑定页，请稍候。");
@@ -873,7 +913,7 @@ async function handleHandback(): Promise<void> {
   handbackCapture = null;
   const leadPage = pages.find((p) => isLeadSession(p.sessionId) && p.ok);
   const members = pages.map(toTeamMemberHandback);
-  const requestId = nextControlRequestId("handback");
+  const requestId = remoteRequestId ?? nextControlRequestId("handback");
   pendingControl = {
     action: "handback",
     requestId,
@@ -887,6 +927,7 @@ async function handleHandback(): Promise<void> {
   const payload = {
     type: "handback" as const,
     requestId,
+    ...(remoteRequestId?{taskRequestId:remoteRequestId}:{}),
     members,
     ...(teamViewNow ? { groupId: teamViewNow.groupId, generation: teamViewNow.generation } : {}),
     ...(leadPage && leadPage.ok ? { context: leadPage.context, snapshot: leadPage.snapshot } : {}),
@@ -896,7 +937,9 @@ async function handleHandback(): Promise<void> {
   }
 }
 
-function handleAbort(): void {
+async function handleAbort(taskRequestId?:string): Promise<void> {
+  const runId=conversationSummaries.find(c=>c.id===conversationId)?.runId;
+  if(runId)abortedRuns.add(runId);
   cancelHandbackCapture();
   if (pendingControl) {
     const pending = clearPendingControl(pendingControl.requestId);
@@ -914,14 +957,50 @@ function handleAbort(): void {
   void hideCursorsForSessions(sessions.map(key));
   void memberTabIds().then(ids => Promise.all(ids.map(id => hideUserControlBanners(id))));
   void stopTrailReplay(key());
-  uplink.sendClientMessage({ type: "abort" });
-  void aborted.settled.then(async () => {
+  const completion=Promise.all([abortDrain,aborted.settled]).then(async () => {
     if (gate.gen !== aborted.generation) return;
     for (const tabId of await abortedTabs) handbackTab(tabId);
     await hideCursorsForSessions(sessions.map(key));
     await Promise.all((await memberTabIds()).map(id => hideUserControlBanners(id)));
     await stopTrailReplay(key());
   });
+  abortDrain=completion.catch(()=>{});
+  const sent=uplink.sendClientMessage({ type: "abort",...(taskRequestId?{taskRequestId}:{}) });
+  if(taskRequestId&&!sent)throw new Error('终止请求未送达Agent。');
+  await completion;
+}
+
+function finishRemoteControl(ok:boolean,reason?:string,uncertain=false,partial=false):void{
+  const current=remoteControl;if(!current)return;remoteControl=null;clearTimeout(current.timer);current.abortAck?.(false);
+  uplink.sendClientMessage({type:'task_control_result',requestId:current.request.requestId,action:current.request.action,runId:current.request.runId,ok,reason:reason?.slice(0,1000),uncertain,partial});
+}
+async function runRemoteControl(request:Extract<ServerMessage,{type:'task_control'}>):Promise<void>{
+  if(remoteControl){uplink.sendClientMessage({type:'task_control_result',requestId:request.requestId,action:request.action,runId:request.runId,ok:false,reason:'另一项页面控制还在进行，请稍后重试。'});return;}
+  if(conversationSummaries.find(c=>c.id===conversationId)?.runId!==request.runId){uplink.sendClientMessage({type:'task_control_result',requestId:request.requestId,action:request.action,runId:request.runId,ok:false,reason:'目标任务已变化，页面控制未执行。'});return;}
+  const current={request,timer:setTimeout(()=>finishRemoteControl(false,'页面控制结果尚无法确认。',true),45000),abortAck:undefined as ((ok:boolean)=>void)|undefined};remoteControl=current;
+  try{
+    if(request.action==='abort'){
+      const backend=new Promise<boolean>(resolve=>current.abortAck=resolve);
+      await handleAbort(request.requestId);const stopped=await backend;
+      if(remoteControl===current)finishRemoteControl(stopped,stopped?undefined:'Agent停止状态未能确认。',!stopped);
+      return;
+    }
+    if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page');else await handleHandback(request.requestId);
+    if(remoteControl===current&&pendingControl?.requestId!==request.requestId){
+      if(request.action==='pause'&&gate.isUser())finishRemoteControl(true);
+      else if(request.action==='resume'&&team.view()?.members.some(m=>m.phase==='restoring'))return;
+      else if(request.action==='resume'&&team.view()?.phase==='restored')finishRemoteControl(true);
+      else finishRemoteControl(false,'页面控制没有启动，原有控制权保持不变。');
+    }
+  }catch(error){if(remoteControl===current)finishRemoteControl(false,oneLine(error),true);}
+}
+
+function requestPanelControl(action:'pause'|'resume'|'abort',tabId?:number):void{
+  const runId=conversationSummaries.find(c=>c.id===conversationId)?.runId??null;
+  if(action==='abort'&&runId===null&&(gate.isUser()||teamHeld())){
+    void handleAbort().then(()=>emitNotice('旧任务没有恢复，已清除本地控制状态。')).catch(error=>emitNotice(oneLine(error),'error'));return;
+  }
+  if(!uplink.sendClientMessage({type:'task_action',request:{requestId:crypto.randomUUID(),conversationId,source:'text',action,expectedRunId:runId,scope:action==='pause'?'page':'task',...(tabId?{tabId}:{})}}))emitNotice('连接已断开，控制请求没有发送。','error');
 }
 
 /**
@@ -1045,7 +1124,10 @@ function attachPanel(port: chrome.runtime.Port) {
     if ((requested ?? selectedAtReceipt) !== conversationId) return;
     switch (msg.kind) {
       case "client": {
-        const client = msg.msg;
+        const wireClient = msg.msg;
+        const client = wireClient?.type==='task_action' && ['start','steer'].includes(wireClient.request.action)
+          ? {type:wireClient.request.action==='start'?'user_message' as const:'steer' as const,text:wireClient.request.text!,context:wireClient.request.context,attachments:wireClient.request.attachments,conversationId}
+          : wireClient;
         if (!client || typeof client.type !== "string") break;
         // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent
         if (client.type === "set_mode") {
@@ -1054,7 +1136,7 @@ function attachPanel(port: chrome.runtime.Port) {
         }
         // user_message / steer 先附页面上下文再上行（异步，失败时原样发送）
         if (client.type === "abort") {
-          handleAbort();
+          requestPanelControl('abort');
           break;
         }
         if (client.type === "user_message" || client.type === "steer") {
@@ -1091,8 +1173,10 @@ function attachPanel(port: chrome.runtime.Port) {
           void attachPageContext(client).then((enriched) => {
             // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，
             // original 保留原始消息（含选区上下文）供用户明确重试。
-            if (!uplink.sendClientMessage(enriched)) {
-              const original = { ...client, conversationId };
+            const original:ClientMessage = wireClient.type==='task_action'
+              ? {...wireClient,conversationId,request:{...wireClient.request,context:enriched.context,attachments:enriched.attachments}}
+              : { ...enriched, conversationId };
+            if (!uplink.sendClientMessage(original)) {
               panelHistory.markUndelivered(entry.seq, original);
               flushHistory();
               broadcast({ kind: "delivery", seq: entry.seq, ok: false, original } satisfies BgToPanel);
@@ -1104,8 +1188,8 @@ function attachPanel(port: chrome.runtime.Port) {
         break;
       }
       case "control":
-        if (msg.action === "takeover") void handleTakeover(msg.tabId);
-        else void handleHandback();
+        if (msg.action === "takeover") requestPanelControl('pause',msg.tabId);
+        else requestPanelControl('resume');
         break;
       case "sync": {
         void historyReady.then(() => syncPanel(port, msg.afterSeq));
@@ -1253,7 +1337,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   return true;
 });
 
-return { isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: handleHandback, restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {
+return { isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
+voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});return {context:enriched.context,attachments:enriched.attachments};},
+restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {
   void setMode(mode, conversationId).then(() => broadcast({kind:"mode",mode}));
 }, ready: Promise.all([controlReady, historyReady]) };
 

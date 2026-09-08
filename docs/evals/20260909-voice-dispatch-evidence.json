@@ -1,0 +1,241 @@
+{
+  "recordedOn": "2026-09-09",
+  "scope": "Selected historical evidence, not a new test run or current-version certification",
+  "runs": [
+    {
+      "stage": "P3",
+      "source": "/tmp/ego-voice-control-1788886790121/result.json",
+      "sourceSha256": "082fd993b6952ec37b52dabb76d928dffa119b053f87747f69ca53ebd3b11f8a",
+      "ok": true,
+      "sourceRevision": "not recorded for this run; do not infer from current HEAD",
+      "checks": [
+        {
+          "name": "real lead and worker both wrote",
+          "ok": true
+        },
+        {
+          "name": "pause acknowledged",
+          "ok": true
+        },
+        {
+          "name": "zero writes during pause",
+          "ok": true
+        },
+        {
+          "name": "steer acknowledged",
+          "ok": true
+        },
+        {
+          "name": "paused edit does not resume",
+          "ok": true
+        },
+        {
+          "name": "resume acknowledged",
+          "ok": true
+        },
+        {
+          "name": "fresh human markers and new budget used",
+          "ok": true
+        },
+        {
+          "name": "same task identity after handback",
+          "ok": true
+        },
+        {
+          "name": "abort acknowledged",
+          "ok": true
+        },
+        {
+          "name": "zero writes after abort",
+          "ok": true
+        },
+        {
+          "name": "old task write rejected",
+          "ok": true
+        },
+        {
+          "name": "stale write made no page change",
+          "ok": true
+        }
+      ],
+      "initial": [
+        {
+          "tabId": 29956857,
+          "budget": 1000,
+          "count": 3,
+          "marker": "initial-lead",
+          "seen": "initial-lead:1000",
+          "side": "lead"
+        },
+        {
+          "tabId": 29956860,
+          "budget": 1000,
+          "count": 1,
+          "marker": "initial-worker",
+          "seen": "initial-worker:1000",
+          "side": "worker"
+        }
+      ],
+      "paused": [
+        {
+          "tabId": 29956857,
+          "budget": 1000,
+          "count": 4,
+          "marker": "initial-lead",
+          "seen": "initial-lead:1000",
+          "side": "lead"
+        },
+        {
+          "tabId": 29956860,
+          "budget": 1000,
+          "count": 2,
+          "marker": "initial-worker",
+          "seen": "initial-worker:1000",
+          "side": "worker"
+        }
+      ],
+      "resumed": [
+        {
+          "tabId": 29956857,
+          "budget": 600,
+          "count": 7,
+          "marker": "page-mark-user-lead",
+          "seen": "page-mark-user-lead:600",
+          "side": "lead"
+        },
+        {
+          "tabId": 29956860,
+          "budget": 1000,
+          "count": 3,
+          "marker": "page-mark-user-wiki",
+          "seen": "page-mark-user-wiki:1000",
+          "side": "worker"
+        }
+      ]
+    },
+    {
+      "stage": "P4",
+      "source": "/tmp/ego-voice-context-1788886954229/result.json",
+      "sourceSha256": "28146d874b285fc5cb1af00f8e7e67ecf64b24b533ea7a1960d7f870460619b8",
+      "ok": true,
+      "sourceRevision": "not recorded for this run; do not infer from current HEAD",
+      "checks": [
+        {
+          "name": "image-only digits and removed selected text reached real form",
+          "ok": true
+        },
+        {
+          "name": "unsolicited end report did not claim verified success",
+          "ok": true
+        }
+      ],
+      "values": {
+        "digits": "7391",
+        "password": "海风",
+        "source": false
+      }
+    },
+    {
+      "stage": "P5",
+      "source": "/tmp/ego-voice-target-1788887465193/result.json",
+      "sourceSha256": "d6b03485867085b23299e1297d55aea1de476197ade832b0bc578a757b0438bb",
+      "ok": false,
+      "sourceRevision": "not recorded for this run; do not infer from current HEAD",
+      "checks": [
+        {
+          "name": "named compound pause and edit ordered",
+          "ok": true
+        },
+        {
+          "name": "compound waits for explicit resume",
+          "ok": true
+        }
+      ],
+      "error": "Error: Timed out: chrome.scripting.executeScript({target:{tabId:29956911},func:()=>({budget:Number(document.querySelec"
+    },
+    {
+      "stage": "classifier-a",
+      "source": "/tmp/ego-voice-intents-1788886956308/result.json",
+      "sourceSha256": "c5a40baccaed9783850153fb500f6acba3483153176f61fe37e1ce97a6d3235c",
+      "ok": false,
+      "sourceRevision": "not recorded for this run; do not infer from current HEAD",
+      "total": 144,
+      "passed": 140,
+      "failures": [
+        {
+          "id": "compound-02",
+          "repeat": 2,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_invalid_reply",
+          "elapsedMs": 6377
+        },
+        {
+          "id": "compound-07",
+          "repeat": 1,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_timeout",
+          "elapsedMs": 15010
+        },
+        {
+          "id": "compound-07",
+          "repeat": 2,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_timeout",
+          "elapsedMs": 15002
+        },
+        {
+          "id": "compound-07",
+          "repeat": 3,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_timeout",
+          "elapsedMs": 15000
+        }
+      ],
+      "model": "minimax-cn/MiniMax-M3",
+      "datasetSha256": "82ddc35669d1bd3d27ef94a7a3d5940754fb990319dd221fb5f204a80d6de19b",
+      "promptSha256": "6cd906311fef2744568b7278ae0ee492f6073b9c4829602e10acc356013aa193"
+    },
+    {
+      "stage": "classifier-b",
+      "source": "/tmp/ego-voice-intents-1788887119715/result.json",
+      "sourceSha256": "1169354769c0880cd18b1545f84d6bcb333f40f8f41ff21ed649a95c1759a176",
+      "ok": false,
+      "sourceRevision": "not recorded for this run; do not infer from current HEAD",
+      "total": 144,
+      "passed": 140,
+      "failures": [
+        {
+          "id": "control-04",
+          "repeat": 3,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_invalid_reply",
+          "elapsedMs": 4458
+        },
+        {
+          "id": "compound-04",
+          "repeat": 1,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_timeout",
+          "elapsedMs": 15004
+        },
+        {
+          "id": "compound-04",
+          "repeat": 2,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_timeout",
+          "elapsedMs": 15003
+        },
+        {
+          "id": "compound-04",
+          "repeat": 3,
+          "ok": false,
+          "error": "VoiceIntentError: classifier_timeout",
+          "elapsedMs": 15002
+        }
+      ],
+      "model": "minimax-cn/MiniMax-M3",
+      "datasetSha256": "82ddc35669d1bd3d27ef94a7a3d5940754fb990319dd221fb5f204a80d6de19b",
+      "promptSha256": "d4fddc297c9813815a88a7276e98dcb698df05971c9cdbf627bc07940ad8c9a0"
+    }
+  ]
+}

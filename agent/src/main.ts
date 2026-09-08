@@ -28,6 +28,7 @@ import { createConversationRuntime } from "./conversation-runtime.js";
 import { ExperienceStore } from "./experience.js";
 import { MemoryStore } from "./memory-store.js";
 import { VoiceService } from "./voice-service.js";
+import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
 
 interface CliArgs {
   ws: boolean;
@@ -135,14 +136,16 @@ async function main(): Promise<void> {
   const store = new ConversationStore(join(homedir(), ".sideagent", "conversations"));
   const memoryStore = new MemoryStore(join(homedir(), ".sideagent", "memory"));
   const experienceStore = new ExperienceStore(join(homedir(), ".sideagent", "experiences"));
+  let voice:VoiceService;
   const conversations = new ConversationManager(
     (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore }),
-    (msg) => current?.send(msg),
+    (msg) => {voice?.observe(msg);current?.send(msg);},
     store,
     memoryStore,
+    new TaskDispatcher(new TaskReceiptStore(join(homedir(), '.sideagent', 'task-receipts'))),
   );
   const initial = await conversations.ensureDefault();
-  const voice = new VoiceService(id => conversations.getTaskProgress(id), msg => current?.send(msg), undefined, undefined, undefined, (id, text, startedAt, stillCurrent) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`));
+  voice = new VoiceService(id => conversations.getTaskProgress(id), msg => current?.send(msg), undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets());
   const session = initial.runtime.session;
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }
