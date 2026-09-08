@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>By-Your-Side · 运行时数据流与微动效评估 (Kit Langton SVG 对照)</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, Monaco, monospace;
+
+    /* ── 暗色模式 (Obsidian Slate 深曜石体系) ── */
+    --bg-main: #080a0f;
+    --bg-card: rgba(18, 22, 31, 0.78);
+    --bg-card-subtle: rgba(255, 255, 255, 0.035);
+    --border-card: rgba(255, 255, 255, 0.08);
+    --border-card-hover: rgba(255, 255, 255, 0.18);
+    --border-accent: rgba(56, 189, 248, 0.4);
+
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+
+    --accent-sky: #38bdf8;
+    --accent-emerald: #34d399;
+    --accent-amber: #fbbf24;
+    --accent-indigo: #818cf8;
+
+    --svg-line: rgba(255, 255, 255, 0.12);
+    --svg-pulse: #38bdf8;
+    --svg-glow: rgba(56, 189, 248, 0.45);
+
+    --radius-lg: 14px;
+    --radius-md: 10px;
+    --radius-sm: 6px;
+    --radius-pill: 9999px;
+
+    --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --spring-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  body.light {
+    /* ── 浅色模式 (Sequoia 晨曦微晶白体系) ── */
+    --bg-main: #f5f7fb;
+    --bg-card: rgba(255, 255, 255, 0.88);
+    --bg-card-subtle: rgba(0, 0, 0, 0.025);
+    --border-card: rgba(0, 0, 0, 0.09);
+    --border-card-hover: rgba(0, 0, 0, 0.18);
+    --border-accent: rgba(2, 132, 199, 0.4);
+
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --text-dim: #94a3b8;
+
+    --accent-sky: #0284c7;
+    --accent-emerald: #059669;
+    --accent-amber: #d97706;
+    --accent-indigo: #4f46e5;
+
+    --svg-line: rgba(0, 0, 0, 0.12);
+    --svg-pulse: #0284c7;
+    --svg-glow: rgba(2, 132, 199, 0.35);
+
+    --shadow-soft: 0 10px 28px rgba(30, 41, 59, 0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: var(--bg-main);
+    color: var(--text-main);
+    min-height: 100vh;
+    padding: 32px 24px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 顶部全局导航与评测栏 */
+  header.eval-header {
+    max-width: 1320px;
+    margin: 0 auto 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-card);
+  }
+  .eval-title h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .eval-title p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .badge-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--accent-sky);
+    font-family: var(--mono);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+  }
+
+  .ctrl-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  button.action-btn {
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-card);
+    background: var(--bg-card);
+    color: var(--text-main);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  button.action-btn:hover {
+    border-color: var(--border-card-hover);
+    background: var(--bg-card-subtle);
+  }
+  button.action-btn.primary {
+    background: var(--accent-sky);
+    color: #ffffff;
+    border-color: transparent;
+  }
+  button.action-btn.primary:hover {
+    opacity: 0.92;
+  }
+
+  /* 并排容器 */
+  .comparison-grid {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  @media (max-width: 1120px) {
+    .comparison-grid { grid-template-columns: 1fr; }
+  }
+
+  /* 方案外框卡片（代表 380px 侧边栏真机视口） */
+  .panel-column {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--shadow-soft);
+    position: relative;
+    backdrop-filter: blur(16px);
+  }
+  .panel-column.recommended {
+    border-color: var(--border-accent);
+  }
+  .panel-column-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-card);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .col-title {
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .col-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    padding: 0 20px 16px;
+    margin-top: -6px;
+    border-bottom: 1px dashed var(--border-card);
+  }
+
+  /* 模拟 380px 侧边栏内部容器 */
+  .sidepanel-screen {
+    padding: 20px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 520px;
+  }
+
+  /* ── 方案 A：空状态能力装配拓扑图 (Kit Langton 1:1 精髓落地) ── */
+  .topology-container {
+    position: relative;
+    width: 100%;
+    margin: auto 0;
+  }
+  .topology-layout {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* 左侧汇聚卡片：Runtime State */
+  .shared-state-box {
+    width: 160px;
+    background: rgba(10, 14, 22, 0.85);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: relative;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .shared-state-box.pulse-active {
+    border-color: var(--accent-sky);
+    box-shadow: 0 0 16px var(--svg-glow);
+  }
+  .shared-state-title {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .state-slot {
+    background: var(--bg-card-subtle);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+  }
+  .state-slot-name {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+  .state-slot-val {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-top: 2px;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease;
+  }
+  .state-slot-val.bump {
+    transform: scale(1.12);
+    color: var(--accent-sky);
+  }
+
+  /* 右侧来源节点列表 */
+  .source-nodes-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 168px;
+  }
+  .source-card {
+    background: rgba(10, 14, 22, 0.85);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .source-card:hover {
+    border-color: var(--border-card-hover);
+    transform: translateX(2px);
+  }
+  .source-card.active-flow {
+    border-color: var(--accent-sky);
+  }
+  .source-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .source-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--mono);
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .source-card-sub {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .source-card-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  /* 中间连线 SVG 图层 */
+  .svg-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .bus-path {
+    fill: none;
+    stroke: var(--svg-line);
+    stroke-width: 1.5;
+    transition: stroke 0.3s ease;
+  }
+  .bus-path.highlight {
+    stroke: var(--accent-sky);
+    opacity: 0.8;
+  }
+
+  /* 沿贝塞尔曲线滑动的脉冲小球 */
+  .pulse-bead {
+    fill: var(--accent-sky);
+    filter: drop-shadow(0 0 5px var(--accent-sky));
+    opacity: 0;
+  }
+  .pulse-bead.flying {
+    opacity: 1;
+  }
+
+  /* 方案 B：顶部折叠心跳 HUD 胶囊 */
+  .hud-wrapper {
+    margin-bottom: 20px;
+  }
+  .hud-pill {
+    background: rgba(10, 14, 22, 0.92);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-pill);
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .hud-pill:hover {
+    border-color: var(--border-accent);
+  }
+  .hud-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .dot-ping {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-emerald);
+    box-shadow: 0 0 8px var(--accent-emerald);
+    position: relative;
+  }
+  .hud-metrics {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+  }
+  .hud-expanded-content {
+    margin-top: 12px;
+    background: rgba(10, 14, 22, 0.6);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: none;
+  }
+  .hud-expanded-content.open {
+    display: block;
+    animation: fadeIn 0.2s var(--spring-ease);
+  }
+
+  /* 方案 C：步骤卡片内嵌依赖流 (DAG) */
+  .step-dag-card {
+    background: rgba(10, 14, 22, 0.85);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    margin-top: 20px;
+    position: relative;
+  }
+  .dag-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .dag-step-node {
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 2;
+  }
+  .dag-step-node:last-child {
+    margin-bottom: 0;
+  }
+  .dag-step-node.active {
+    border-color: var(--accent-sky);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+  }
+
+  /* 模拟聊天消息气泡，制造真实宿主氛围 */
+  .mock-chat-bubble {
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-top: auto;
+  }
+  .mock-input-box {
+    margin-top: 14px;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<header class="eval-header">
+  <div class="eval-title">
+    <h1>
+      By-Your-Side · 运行时数据流微动效评估
+      <span class="badge-tag">Kit Langton SVG 落地对照</span>
+    </h1>
+    <p>克制、可依赖、信息透明：让 Agent 的后台装配与流转以自然物理微动效呈现，杜绝无意义跑马灯。</p>
+  </div>
+  <div class="ctrl-bar">
+    <button class="action-btn" id="btn-theme-toggle">🌓 切换明暗色</button>
+    <button class="action-btn primary" id="btn-trigger-pulse">⚡ 模拟技能发现流入</button>
+    <button class="action-btn" id="btn-trigger-model">🔄 切换模型流转</button>
+    <button class="action-btn" id="btn-trigger-all">✨ 完整管线装配动画</button>
+  </div>
+</header>
+
+<main class="comparison-grid">
+
+  <!-- ── 方案 A (推荐)：侧边栏首屏 / 空状态能力装配看板 ── -->
+  <section class="panel-column recommended">
+    <div class="panel-column-header">
+      <span class="col-title">方案 A【能力装配看板】<span class="badge-tag">推荐首选</span></span>
+      <span style="font-size:11px;color:var(--accent-emerald);">● 首屏建立信任</span>
+    </div>
+    <div class="col-desc">
+      用户刚进入或切换模型时，左侧聚合 Agent 核心状态，右侧连接模型、Skills、浏览器工作标签。数据流入时沿贝塞尔微光连线滑入，数字轻弹递增。
+    </div>
+
+    <div class="sidepanel-screen">
+      <div class="topology-container" id="topo-container-a">
+        <svg class="svg-layer" id="svg-layer-a">
+          <!-- 贝塞尔总线与连线由 JS 动态精准挂接 -->
+        </svg>
+
+        <div class="topology-layout">
+          <!-- 左侧汇聚核心 -->
+          <div class="shared-state-box" id="state-box-a">
+            <div class="shared-state-title">Agent Runtime</div>
+            <div class="state-slot">
+              <div class="state-slot-name">Active Model</div>
+              <div class="state-slot-val" id="val-model-a">MiniMax-M3</div>
+            </div>
+            <div class="state-slot">
+              <div class="state-slot-name">Skills Mounted</div>
+              <div class="state-slot-val" id="val-skills-a">14 discovered</div>
+            </div>
+            <div class="state-slot">
+              <div class="state-slot-name">Browser Tools</div>
+              <div class="state-slot-val" id="val-tools-a">8 available</div>
+            </div>
+            <div class="state-slot">
+              <div class="state-slot-name">Working Tab</div>
+              <div class="state-slot-val" id="val-tab-a">#29955294 (ALPHA)</div>
+            </div>
+          </div>
+
+          <!-- 右侧配置来源分支 -->
+          <div class="source-nodes-col">
+            <div class="source-card" id="src-skills-a" data-target="val-skills-a">
+              <div class="source-card-info">
+                <div class="source-card-title">Skills Registry</div>
+                <div class="source-card-sub">Local .gemini/plugins</div>
+              </div>
+              <div class="source-card-icon">🧩</div>
+            </div>
+
+            <div class="source-card" id="src-model-a" data-target="val-model-a">
+              <div class="source-card-info">
+                <div class="source-card-title">models.dev</div>
+                <div class="source-card-sub">OpenCode / Grok Bus</div>
+              </div>
+              <div class="source-card-icon">⚡</div>
+            </div>
+
+            <div class="source-card" id="src-policy-a" data-target="val-tools-a">
+              <div class="source-card-info">
+                <div class="source-card-title">CDP & DOMOps</div>
+                <div class="source-card-sub">Chrome Automation</div>
+              </div>
+              <div class="source-card-icon">🌐</div>
+            </div>
+
+            <div class="source-card" id="src-tab-a" data-target="val-tab-a">
+              <div class="source-card-info">
+                <div class="source-card-title">Active Browser Tab</div>
+                <div class="source-card-sub">ALPHA Integrity Work</div>
+              </div>
+              <div class="source-card-icon">📑</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 模拟输入区域 -->
+      <div class="mock-input-box" style="margin-top: auto;">
+        <span>询问关于当前页面或交代任务...</span>
+        <span>⏎</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── 方案 B：顶部可折叠心跳状态栏 (Collapsible HUD) ── -->
+  <section class="panel-column">
+    <div class="panel-column-header">
+      <span class="col-title">方案 B【顶部心跳胶囊】</span>
+      <span style="font-size:11px;color:var(--text-muted);">● 对话全周期常驻</span>
+    </div>
+    <div class="col-desc">
+      侧边栏顶部常驻 32px 极简胶囊，不侵占垂直聊天空间。点击展开精简管线，显示实时的 Token 预算与工具流动。
+    </div>
+
+    <div class="sidepanel-screen">
+      <div class="hud-wrapper">
+        <div class="hud-pill" id="hud-toggle-b">
+          <div class="hud-status-indicator">
+            <span class="dot-ping"></span>
+            <span>Runtime 就绪</span>
+          </div>
+          <div class="hud-metrics">
+            <span>MiniMax-M3 · 14 Skills · Tab #ALPHA</span>
+            <span style="margin-left:6px;">▾</span>
+          </div>
+        </div>
+
+        <div class="hud-expanded-content" id="hud-content-b">
+          <div style="font-size:11px;font-family:var(--mono);color:var(--text-dim);margin-bottom:8px;">PIPELINE CONDUIT</div>
+          <svg style="width:100%;height:60px;" id="svg-hud-b">
+            <!-- 紧凑微型横向总线 -->
+            <path d="M 20 30 C 70 30, 90 30, 140 30 S 210 30, 260 30" fill="none" stroke="var(--svg-line)" stroke-width="1.5"></path>
+            <circle cx="20" cy="30" r="4" fill="var(--accent-sky)"></circle>
+            <circle cx="140" cy="30" r="4" fill="var(--accent-emerald)"></circle>
+            <circle cx="260" cy="30" r="4" fill="var(--accent-amber)"></circle>
+          </svg>
+          <div style="display:flex;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--text-muted);">
+            <span>PROMPT</span>
+            <span>MODEL ROUTER</span>
+            <span>DOM ACTION</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-chat-bubble">
+        <strong>Agent:</strong> 观测与点击完整性校验已就绪，已成功连接 ALPHA 工作标签页，等待你的下一步指令。
+      </div>
+
+      <div class="mock-input-box">
+        <span>输入指令...</span>
+        <span>⏎</span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── 方案 C：步骤执行卡片内嵌数据流 (Step DAG Pipeline) ── -->
+  <section class="panel-column">
+    <div class="panel-column-header">
+      <span class="col-title">方案 C【步骤卡片内嵌流】</span>
+      <span style="font-size:11px;color:var(--text-muted);">● 复杂工具链可视化</span>
+    </div>
+    <div class="col-desc">
+      在折叠展开的步骤卡片（Run Steps）中，用微动效贝塞尔曲线展现上一步的产出（如 Snapshot AX 树）如何精准输送到下一步（Click 目标）。
+    </div>
+
+    <div class="sidepanel-screen">
+      <div class="step-dag-card" id="dag-card-c">
+        <div class="dag-header">
+          <span style="font-size:12px;font-weight:700;">Task: 点击主计数按钮</span>
+          <span class="badge-tag">3 步骤执行中</span>
+        </div>
+
+        <svg class="svg-layer" id="svg-layer-c">
+          <!-- 垂直连线 -->
+        </svg>
+
+        <div class="dag-step-node" id="step-c-1">
+          <div style="font-size:11px;font-weight:600;color:var(--accent-sky);">1. snapshotTab(ALPHA)</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">获取视口 AX 树与坐标，产生 128 个可交互节点</div>
+        </div>
+
+        <div class="dag-step-node" id="step-c-2">
+          <div style="font-size:11px;font-weight:600;color:var(--accent-emerald);">2. matchSelector(#target-counter)</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">排查防误点 decoy 与遮挡层，锁定 ref=307</div>
+        </div>
+
+        <div class="dag-step-node active" id="step-c-3">
+          <div style="font-size:11px;font-weight:600;color:var(--accent-amber);">3. clickUi(point: {411, 514})</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">派发 CDP trusted 点击，断言 targetCount: 1</div>
+        </div>
+      </div>
+
+      <div class="mock-input-box" style="margin-top:auto;">
+        <span>任务执行中...</span>
+        <span>⏸</span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // ── 主题切换 ──
+  const btnTheme = document.getElementById('btn-theme-toggle');
+  btnTheme.addEventListener('click', () => {
+    document.body.classList.toggle('light');
+    redrawAll();
+  });
+
+  // ── 方案 B 展开折叠 ──
+  const hudToggle = document.getElementById('hud-toggle-b');
+  const hudContent = document.getElementById('hud-content-b');
+  hudToggle.addEventListener('click', () => {
+    hudContent.classList.toggle('open');
+  });
+
+  // ── 方案 A 动态贝塞尔连线绘制 ──
+  const containerA = document.getElementById('topo-container-a');
+  const svgA = document.getElementById('svg-layer-a');
+  const stateBoxA = document.getElementById('state-box-a');
+  const sourcesA = document.querySelectorAll('.source-card');
+
+  function drawConnectionsA() {
+    svgA.innerHTML = '';
+    const contRect = containerA.getBoundingClientRect();
+    const destRect = stateBoxA.getBoundingClientRect();
+
+    // 终点位于左侧容器右侧边缘中心
+    const endX = destRect.right - contRect.left;
+    const endY = (destRect.top + destRect.bottom) / 2 - contRect.top;
+
+    sourcesA.forEach((src, idx) => {
+      const srcRect = src.getBoundingClientRect();
+      const startX = srcRect.left - contRect.left;
+      const startY = (srcRect.top + srcRect.bottom) / 2 - contRect.top;
+
+      // 贝塞尔控制点平滑曲线
+      const dx = Math.abs(startX - endX) * 0.55;
+      const d = `M ${startX} ${startY} C ${startX - dx} ${startY}, ${endX + dx} ${endY}, ${endX} ${endY}`;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('class', 'bus-path');
+      path.setAttribute('id', `path-a-${idx}`);
+      svgA.appendChild(path);
+
+      // 起点与终点小圆端点
+      const cStart = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      cStart.setAttribute('cx', startX);
+      cStart.setAttribute('cy', startY);
+      cStart.setAttribute('r', '3');
+      cStart.setAttribute('fill', 'var(--svg-line)');
+      svgA.appendChild(cStart);
+    });
+
+    const cEnd = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    cEnd.setAttribute('cx', endX);
+    cEnd.setAttribute('cy', endY);
+    cEnd.setAttribute('r', '3.5');
+    cEnd.setAttribute('fill', 'var(--accent-sky)');
+    svgA.appendChild(cEnd);
+  }
+
+  // ── 方案 C 垂直连线绘制 ──
+  const dagCardC = document.getElementById('dag-card-c');
+  const svgC = document.getElementById('svg-layer-c');
+  const stepsC = [
+    document.getElementById('step-c-1'),
+    document.getElementById('step-c-2'),
+    document.getElementById('step-c-3')
+  ];
+
+  function drawConnectionsC() {
+    svgC.innerHTML = '';
+    const cardRect = dagCardC.getBoundingClientRect();
+
+    for (let i = 0; i < stepsC.length - 1; i++) {
+      const r1 = stepsC[i].getBoundingClientRect();
+      const r2 = stepsC[i+1].getBoundingClientRect();
+
+      const x = (r1.left + 24) - cardRect.left;
+      const y1 = r1.bottom - cardRect.top;
+      const y2 = r2.top - cardRect.top;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${x} ${y1} L ${x} ${y2}`);
+      path.setAttribute('class', 'bus-path');
+      path.setAttribute('stroke-dasharray', '2 3');
+      svgC.appendChild(path);
+    }
+  }
+
+  function redrawAll() {
+    drawConnectionsA();
+    drawConnectionsC();
+  }
+  window.addEventListener('resize', redrawAll);
+  setTimeout(redrawAll, 50);
+
+  // ── 单线微光脉冲触发函数 ──
+  function triggerPulseA(index, callback) {
+    const path = document.getElementById(`path-a-${index}`);
+    if (!path) return;
+
+    path.classList.add('highlight');
+
+    // 创建沿路径运动的微粒小球
+    const bead = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    bead.setAttribute('r', '3.5');
+    bead.setAttribute('class', 'pulse-bead flying');
+    svgA.appendChild(bead);
+
+    const pathLength = path.getTotalLength();
+    const startTime = performance.now();
+    const duration = 650; // ms
+
+    function animate(currentTime) {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Apple 物理减速缓动
+      const ease = 1 - Math.pow(1 - progress, 3);
+      const point = path.getPointAtLength(pathLength * (1 - ease)); // 从右往左流向左侧
+
+      bead.setAttribute('cx', point.x);
+      bead.setAttribute('cy', point.y);
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        bead.remove();
+        path.classList.remove('highlight');
+        stateBoxA.classList.add('pulse-active');
+        setTimeout(() => stateBoxA.classList.remove('pulse-active'), 250);
+        if (callback) callback();
+      }
+    }
+    requestAnimationFrame(animate);
+  }
+
+  // ── 交互事件 ──
+  let skillCount = 14;
+  const valSkillsA = document.getElementById('val-skills-a');
+  document.getElementById('btn-trigger-pulse').addEventListener('click', () => {
+    triggerPulseA(0, () => {
+      skillCount += 3;
+      valSkillsA.textContent = `${skillCount} discovered`;
+      valSkillsA.classList.add('bump');
+      setTimeout(() => valSkillsA.classList.remove('bump'), 300);
+    });
+  });
+
+  const models = ['MiniMax-M3', 'Kimi K3', 'GPT-5.4 mini', 'Qwen 3.8'];
+  let modelIdx = 0;
+  const valModelA = document.getElementById('val-model-a');
+  document.getElementById('btn-trigger-model').addEventListener('click', () => {
+    triggerPulseA(1, () => {
+      modelIdx = (modelIdx + 1) % models.length;
+      valModelA.textContent = models[modelIdx];
+      valModelA.classList.add('bump');
+      setTimeout(() => valModelA.classList.remove('bump'), 300);
+    });
+  });
+
+  // 一键完整装配序列
+  document.getElementById('btn-trigger-all').addEventListener('click', () => {
+    [0, 1, 2, 3].forEach((idx, delay) => {
+      setTimeout(() => {
+        triggerPulseA(idx);
+      }, delay * 200);
+    });
+  });
+
+  // 点击卡片直接触发该路脉冲
+  sourcesA.forEach((card, idx) => {
+    card.addEventListener('click', () => {
+      triggerPulseA(idx);
+    });
+  });
+</script>
+
+</body>
+</html>

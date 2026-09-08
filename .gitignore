@@ -7,3 +7,8 @@ dist/
 .kimi-code/wiki/consolidate.lock
 .playwright-mcp/
 /out/acceptance/
+
+# Local tool state (not product source)
+/.omo/
+/.statamcp/
+/.video_agent/

@@ -1027,15 +1027,40 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - 新增共享页队列停写条件，防止已排队但未开始的动作在停止后执行。移交测试26项通过；类型检查/构建通过并重载。
 - 模型验收第一次桥接遗漏原RPC id，修复脚本；第二次模型多开空白页导致两页条件失败，保留 `/tmp/sideagent-parent-model-evidence/attempt-extra-blank-tab.json`，不放宽标准，明确spawn初始URL再跑。
 
+
+## 2026-09-08 用户收窄界面改动范围
+
+- 用户只认可输出文字结构、排版和加粗，不认可更换原有界面设计。已按7a92d5f恢复main.ts及所有周边UI改动，仅保留assistant正文CSS和final reply格式提示。未回退另一组父级页面接管改动。
+- 回退节点已提交；当前文字排版修改暂不提交，待用户判断。旧广泛改动差异存/tmp/sideagent-ui-scope-correction.patch仅供追溯，不作为实施方案。
+
+- 用户随后认可截图中的“查看执行过程”，要求保持在正式回答上方。只保留该标题/列表图标，恢复原本先过程后回答的位置；不移动到回答末尾，不改变其他控件与配色。
+
 - 父页面控制最终：真实 M3 worker 两页保留 → 自然请求父 Agent 清理 → Chrome 两页消失 4项通过（生产Fleet固定派工初始条件，未伪造模型输出），`/tmp/sideagent-parent-model-evidence/result.json`。
 - 最终typecheck/test/build/diff检查通过（最新全量71files/616tests），权限真实Chrome10项、现有会话/共享页/接管回归全通过。扩展重载成功；清理了中断脚本遗留的本轮测试页，未关闭用户页面。没有commit/push。
 - 尚无人评提示文案。自主派工失败/超时记录保留，未作为本权限修复的成功证据；最终标准与边界见 `docs/evals/20260908-parent-tab-control.md`。
+
+## 2026-09-08 全双工视频学习与讨论准备
+
+- 已完整读取 Google Cloud Tech / Annie Wang 的 `YGgErBnx6po` 英文字幕，并查官方 Live API 的异步工具调用和打断文档；视频画面下载 403、专用 Chrome 打开超时，未核对听感或测延迟。简介章节时间有误，笔记按实际字幕定位。
+- 研究：`docs/research/20260908-full-duplex-video-study.md`；标准：`docs/evals/20260908-full-duplex-video-study.md`；日志：`docs/devlog/20260908-06-全双工先围绕持续纠正来讨论.md`。
+- 当前源码有文字 steer、takeover/handback/abort 和会话隔离；未找到生产音频采集/播放入口。held 状态拒绝普通消息，因此后续“用户自己操作、同时问它”不能只接语音转写到现有消息入口。
+- 待用户讨论的候选路径：Agent 操作网页时，用户口头改条件、询问进度、打断播报、拿回页面，再交还继续。停嘴、改任务、停手需要分别定义。未选择服务商、数值阈值或界面，未启动产品实现。
+- 本轮只新增上述 3 份文档并追加本节；其他未提交改动保留。原字幕与元数据在 `/tmp/ego-YGgErBnx6po*`，不进入仓库。
 
 ## 2026-09-08 主 Agent 全局浏览器能力
 
 - 用户进一步明确：主 Agent 代表用户全局查看/操作，隔离约束用于子 Agent 和执行冲突。要求最小有效改动，不跑全量测试。新标准 `docs/evals/20260908-lead-global-browser.md` 替代旧标准的跨会话主Agent拒绝项。
 - 定点修改现有list/snapshot/read路径（全局只读不认领），复用worker_tabs检查/移交与ConversationManager运行时索引协调旧成员，不新增消息协议或合并会话上下文。
 - 新增4条目标用例先红，正在跑权限/读取/协调相关文件和真实浏览器检查；不运行全量测试。原有侧栏和上一轮权限改动均保留。
+
+
+## 2026-09-08 圈画手绘样式未出现的只读排查
+
+- 当前工作区为 `/Users/mahaoxuan/Desktop/ego`，分支 `feat/session-management`，仅一个 worktree；手绘提交 `3d65fcb` 已在当前 HEAD `7a92d5f` 的祖先链中。五个本地分支并未造成此次手绘代码缺失。
+- 经仓库 `discoverChromeMain` 校验，只连接 `local.yishu.chrome-main` 对应 ChromeMain（端口 9222）。读取实际运行的扩展 service worker 脚本，SHA-256 与当前 `extension/dist/background.js` 一致：`ecfc45e2e5821dca3fc99353991a49e308570651d4302d44a6e841dd9c9c9dce`；运行脚本已包含手绘选择逻辑。未重载扩展、未修改浏览器状态。
+- `extension/src/background/exec/input.ts` 的 mark 默认规则为 teach → sketch、act → rect，与原手绘 eval 标准 2 一致。实读运行时存储的全局及所有会话模式均为 act，与用户截图的蓝色矩形相符。
+- 另发现多会话接线遗漏：`background/index.ts` 已按 conversationId 写模式，`mode.ts` 已按 conversationId 存取；但 `input.ts:1152` 仍调用无参数 `getMode()`，固定读取 default，全局模式可能覆盖当前会话的教学选择。此项来自当前源码与实际运行脚本检查，尚未切换教学模式复现或修复。
+- 本轮只作诊断，未改产品代码。待决：修复 mark 读取当前会话模式；若普通模式圈画也应手绘，需要更新原先仅教学模式采用手绘的产品范围。
 
 - 全局能力最终：相关6组43项与补充5组46项测试通过（有重叠，不汇总），类型/构建/diff检查通过。按用户要求未跑全量测试。
 - 真实Chrome生产ConversationManager→Fleet→RPC→controller验证10项通过，`/tmp/sideagent-lead-global-evidence/result.json`。全局查看和只读不移交；操作前等旧调用完成，实际关闭接手页，无关worker可继续读取。

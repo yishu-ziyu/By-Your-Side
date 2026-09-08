@@ -2205,3 +2205,19 @@ details.run-steps[open] .run-chevron {
 .memory-receipt button:hover { text-decoration:underline; }
 @media (max-height: 560px) { #memory-drawer { top:92px; } }
 @media (prefers-reduced-motion: reduce) { #memory-drawer { animation:none; } }
+
+
+/* 2026-09-08: reply typography only. All surrounding product design is unchanged. */
+.msg.assistant.markdown { font-size:14px; line-height:1.85; }
+.msg.assistant.markdown h1,
+.msg.assistant.markdown h2 { font-size:20px; line-height:1.5; letter-spacing:-.025em; font-weight:600; margin:10px 0 13px; }
+.msg.assistant.markdown h3 { font-size:15px; line-height:1.65; font-weight:600; margin:20px 0 8px; }
+.msg.assistant.markdown p { margin:9px 0 15px; }
+.msg.assistant.markdown strong { font-weight:600; }
+.msg.assistant.markdown ul,
+.msg.assistant.markdown ol { padding-left:21px; }
+.msg.assistant.markdown li { margin:5px 0; }
+.msg.assistant.markdown table { display:block; max-width:100%; overflow-x:auto; font-size:12px; border-collapse:collapse; }
+.msg.assistant.markdown th,
+.msg.assistant.markdown td { padding:9px 10px; line-height:1.7; }
+.msg.assistant.markdown pre { max-width:100%; overflow:auto; }

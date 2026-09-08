@@ -1731,7 +1731,10 @@ function finishRun(): void {
     return;
   }
   run.root.classList.add("done");
-  run.iconBox.replaceChildren(icon(CircleCheck));
+  run.iconBox.replaceChildren(icon(List));
+  const title = run.root.querySelector(".run-title");
+  if (title) title.textContent = "查看执行过程";
+  // Keep the process in its original position above the final response.
   const duration = recordedDuration(run.start, eventTime());
   run.timeEl.textContent = duration ? `耗时 ${duration}` : "";
   run.root.open = false;
