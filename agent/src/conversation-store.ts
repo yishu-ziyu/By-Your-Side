@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { validConversationId, type ConversationSummary } from "../../shared/protocol.js";
@@ -16,8 +17,13 @@ export class ConversationStore {
   }
   save(summaries: ConversationSummary[]): void {
     const file = join(this.directory, "index.json");
-    writeFileSync(`${file}.tmp`, JSON.stringify(summaries), { mode: 0o600 });
-    renameSync(`${file}.tmp`, file);
+    // During extension reload, the retiring host can briefly overlap its successor.
+    // A private staging file prevents either process from consuming the other's rename.
+    const staged = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(staged, JSON.stringify(summaries), { mode: 0o600 });
+      renameSync(staged, file);
+    } finally { rmSync(staged, { force: true }); }
   }
   sessionManager(id: string): SessionManager {
     if (!validConversationId(id)) throw new Error("Invalid conversation id");

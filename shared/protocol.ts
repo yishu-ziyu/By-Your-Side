@@ -5,6 +5,8 @@
  * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
  */
 
+import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 7758;
 export const DEFAULT_HOST = "127.0.0.1";
@@ -162,6 +164,9 @@ export type TeamMemberHandback =
     };
 
 export type ClientMessage = ConversationEnvelope & (
+  | { type: "memory_list"; requestId: string }
+  | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
+  | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
   | { type: "conversation_create"; requestId: string; title?: string }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel" }
@@ -215,6 +220,7 @@ export interface ModelOption {
 }
 
 export type ServerMessage = ConversationEnvelope & (
+  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
@@ -250,6 +256,7 @@ export type ServerMessage = ConversationEnvelope & (
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
+  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown> }
@@ -381,6 +388,12 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     const msg = JSON.parse(raw) as ClientMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if (msg.type.startsWith("memory_")) {
+      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget") return null;
+      if (!validRequestId(msg.requestId)) return null;
+      if (msg.type !== "memory_list" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
+      if (msg.type === "memory_update" && (!validMemoryText(msg.text) || !isMemoryScope(msg.scope))) return null;
+    }
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
     if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
     if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
@@ -456,6 +469,20 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     const msg = JSON.parse(raw) as ServerMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if (msg.type === "memory_result") {
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget"].includes(msg.action)) return null;
+      if (msg.entries !== undefined && (!Array.isArray(msg.entries) || !msg.entries.every(isMemoryEntry))) return null;
+      if (msg.entry !== undefined && !isMemoryEntry(msg.entry)) return null;
+      if (msg.deletedId !== undefined && !validMemoryId(msg.deletedId)) return null;
+      if (msg.error !== undefined && typeof msg.error !== "string") return null;
+      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId))) return null;
+      if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
+    }
+    if (msg.type === "agent_event" && msg.event?.kind === "memory") {
+      const event = msg.event;
+      if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !Array.isArray(event.entries) || !event.entries.every(isMemoryEntry)) return null;
+      if (event.message !== undefined && typeof event.message !== "string") return null;
+    }
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
     if ((msg.type === "conversation_created" || msg.type === "conversation_updated") && !isConversationSummary(msg.conversation)) return null;
     if (msg.type === "conversation_created" && !validRequestId(msg.requestId)) return null;

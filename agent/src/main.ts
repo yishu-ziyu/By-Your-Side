@@ -25,6 +25,8 @@ import { createStdioTransport } from "./transport/stdio.js";
 import { ConversationStore } from "./conversation-store.js";
 import { ConversationManager } from "./conversation-manager.js";
 import { createConversationRuntime } from "./conversation-runtime.js";
+import { ExperienceStore } from "./experience.js";
+import { MemoryStore } from "./memory-store.js";
 
 interface CliArgs {
   ws: boolean;
@@ -130,10 +132,13 @@ async function main(): Promise<void> {
 
   let current: ClientConn | null = null;
   const store = new ConversationStore(join(homedir(), ".sideagent", "conversations"));
+  const memoryStore = new MemoryStore(join(homedir(), ".sideagent", "memory"));
+  const experienceStore = new ExperienceStore(join(homedir(), ".sideagent", "experiences"));
   const conversations = new ConversationManager(
-    (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode }),
+    (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore }),
     (msg) => current?.send(msg),
     store,
+    memoryStore,
   );
   const initial = await conversations.ensureDefault();
   const session = initial.runtime.session;

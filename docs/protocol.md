@@ -99,6 +99,16 @@ client → tool_result{conversationId, id, ok:true, data}  # data 形状见 Tool
 
 Pi 上下文保存在 `~/.sideagent/conversations/{conversationId}/` 下的会话文件及索引中。伴随进程重启后可恢复对话上下文；重建实例不会自动重放旧任务或继续原页面动作。前端历史只负责展示，不能替代 Pi 的原生上下文恢复。
 
+## 跨会话记忆
+
+`memory_list{conversationId,requestId}` 读取个人记忆；`memory_update{conversationId,requestId,id,expectedVersion,text,scope}` 纠正内容与范围；`memory_forget{conversationId,requestId,id,expectedVersion}` 忘记。响应为 `memory_result{conversationId,requestId,action,ok,entries?,entry?,deletedId?,error?}`，回到请求所属会话。修改和忘记须匹配当前版本，失败不能呈现成功回执。
+
+`scope` 为 `{kind:"all"}` 或 `{kind:"site",hostname}`。站点范围只约束使用，个人管理列表仍展示全部条目。条目包含 id、version、text、scope、sourceConversationId、createdAt、updatedAt；内容最多 2000 字符。
+
+只有 Lead 的 `remember_user_preference` 工具能新增，且当前用户消息须明确要求保留。网页、附件、工具输出及 worker 无权自动保存。每轮按主题词与精确 hostname 选择记忆，再重新核对条目版本，通过 Pi 单轮提示使用。`agent_event` 中的 `memory` 事件记录 saved/used 及条目快照，历史回执不随之后的修改而重写。
+
+数据当前存于操作系统用户目录 `~/.sideagent/memory/memories.json`；原子替换与写锁保护并发修改。忘记会移除有效条目，后续新轮次不再读取它；原聊天仍保留。当前没有按 Chrome 配置分别选择存储目录，不能宣称已实现浏览器配置隔离。
+
 ## target 定位串
 
 `click`/`hover`/`fill` 的 `target` 接受：`"@N"`（最近 snapshot 的 ref）、`"loc=css:..."`（snapshot 给出的稳定定位串）、原生 CSS 选择器；`click`/`hover` 另接受 `point:[x,y]` 视口坐标。
@@ -119,3 +129,16 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 `~/.sideagent/traces/*.jsonl` 按会话、任务、轮次与工具调用标识记录目标、模型、参数、返回、错误和耗时，以及接管/交还事件。日志写入失败不改变任务结果。输入工具的填写值默认隐藏；图片只留元数据，其他文本按敏感字段与模式脱敏。任务和页面文本仍属于本地私密数据。
 
 目录权限 0700、文件权限 0600；每会话最多约 8 MiB，创建文件时清理到最近约 20 份。单条记录限制总字符和节点数，达到上限明确标记截断。日志是诊断证据，不作为自动停止任务或判定业务成功的条件。
+
+
+## 网页经历与纠正（第一轮）
+
+`MemoryEntry.experience?` 包含 `runId`、`evidence`（最多8条、每条最多600字符）及 `topic?`（最多200字符）。缺省仍表示现有显式记忆。经验使用同一 memory_list/update/forget 协议与 memory 事件，前端通过来源标记显示“已整理这次纠正”，不增加独立操作入口。
+
+ExperienceRuntime 只观察 Lead；由用户消息开始、浏览器 tool_execution_end 收集有限文本、agent_end 封存，abort/takeover 标记 interrupted。结束、工具成功和模型自述均不证明任务成功，本轮任务结果默认 unknown；逐条观察另存工具是否失败。仅直接用户纠正且有同会话同网站的任务观察时进入整理，未启用成功轨迹自动提炼。
+
+每个任务独立原子写入 `~/.sideagent/experiences/{id}.json`。本地落盘队列与后台普通模型调用分开；任务有 pending/done/failed 状态，最多3次尝试，可恢复 pending。模型输出必须包含与输入逐字一致的纠正和观察引用；整理只能生成待验证文本建议，无工具、无执行权限。
+
+记忆首次发布按 topic 检索，避免“核对结果”等模板词把无关任务召回；用户编辑后按新文本选择。适用范围默认当前 hostname。来源 runId 保证发布幂等，不覆盖用户更新；forget 把 runId 记入 memories.json 的 forgottenExperiences，使后台重试不能复活。发生新的明确纠正时，只废止原任务实际使用且版本仍未变的经验，用户后来的修改优先。
+
+当前页面若因另一会话占用而被既有隔离规则移除，不凭旧页面信息注入站点记忆。新会话应使用自己的页面；用户消息含唯一明确网址时，用该目标地址选择经验；否则需要起始 PageContext，本轮不会在中途导航后补入经验。EverOS 服务和语义检索未接入。

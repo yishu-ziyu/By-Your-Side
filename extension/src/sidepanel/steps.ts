@@ -23,6 +23,7 @@ const ACTION_NAMES: Record<string, string> = {
   read_element: "读取完整内容",
   click: "点击",
   hover: "悬停",
+  remember_user_preference: "记住偏好",
   browser_run: "连续操作",
   wait_for: "等待元素",
   sleep: "等待",

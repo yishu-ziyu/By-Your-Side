@@ -5,6 +5,10 @@
 
 ## 当前状态
 
+2026-09-08 跨会话记忆 A 版正式实现已获用户批准。保留 Pi；仅显式记忆，默认全会话、明确网站则 hostname 限定；个人抽屉可管理全部记忆。独立校验负责 eval 与固定测试，memory_runtime（Sol/high）负责存储和 Pi，memory_ui（Sol/high）负责正式抽屉，主线程负责共享协议、进程注入与真实扩展验收。当前代码开发中，未 build/reload。
+
+2026-09-08 跨会话记忆进入独立标准与原型阶段。用户已明确功能拓展优先，效率优化暂存待办；保留 Pi。当前仅授权标准与 HTML，产品实现等待原型人评。标准由 memory_evaluator（GPT-6 Astra / high，独立上下文）负责；主线程负责设计依据和原型。入口：`docs/evals/20260908-cross-session-memory-design.md`；eval 和 preview 已完成；原型浏览器事件路径20项与独立反例7项通过，真实点击主路径和窄屏/深色已检查。P6及真实产品全部待评/待实施。
+
 2026-09-07 教学模式手绘圈点勾画与通透批注正式落地（标准 `docs/evals/20260907-hand-drawn-teach-marks.md`，原型 `docs/evals/20260907-hand-drawn-teach-marks.html`，日志 `docs/devlog/20260907-08-教学模式手绘圈点勾画与通透批注落地.md`）。
 1. **核心算法与模块实现**：
    - 0 依赖轻量自研 PRNG 与几何算法（`extension/src/shared/rough/`：`prng.ts`, `geometry.ts`, `index.ts`），提供 `mulberry32`、`roughEllipse`、`roughArrow`、`chiselWash` 与 3 帧微动 `variants`；
@@ -948,3 +952,66 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - 原生截图发现旧历史耗时59s被误算1.4s，编排先追加23/24，extension worker修复occurredAt+回放时钟；旧无时间数据隐藏耗时。真实M3 cid795c5b74-9970-4da4-b1c8-3ec69e7b1acf首显/重开均1.9s，旧37ab run-time为空，/tmp/sideagent-history-timing-evidence/result.json通过。
 - 最终02:33全量typecheck/test/build通过，61files/550tests；扩展已重载最新产物。原生sidebar实际尺寸419x934，截图/tmp/sideagent-session-ui-evidence/native-panel.png；人工观感仍未替用户批准。
 - 不再新增实现。明确短样本双Agent59s，早期单Agent约24s，当前不宣称总耗时收益；模型分工文字仍偏技术化。
+
+## 2026-09-08 跨会话记忆原型准备
+
+- 用户批准先交付独立完成标准和“记住—使用—管理”的可点击原型，未批准产品实现。
+- 已读取 Will’s S 原文：渐进式揭示、指引与反馈、用户控制与自由；本地 living/inline 仅借文字层级，沿用现有侧栏视觉。
+- 两个判断点：保存回执是否清楚；管理入口使用会话内抽屉还是独立视图。候选范围“所有会话/当前站点”保留人评。
+- 本阶段不接真实模型、不保存正式记忆、不修改产品代码。待完成原型浏览器路径检查并交付人评。
+
+## 2026-09-08 跨会话记忆原型交付
+
+- 产物：`docs/evals/20260908-cross-session-memory.md`（独立标准）、`20260908-cross-session-memory-preview.html`（双方案）、同目录 design/results 文档；开发日志 `docs/devlog/20260908-02-跨会话记忆先看使用路径.md`。
+- 原型浏览器事件链20项、独立脚本反例7项通过；原生点击主路径、390px深色/1440px浅色已检查。证据 `/tmp/sideagent-memory-prototype-evidence/`。测试初次误点遮罩的失败与纠正保存在results中。
+- 只模拟显式记忆与会议材料；修正任意任务伪造使用、历史版本错显、删除后失败重试复活、来源会话不准确等问题。
+- 产品代码0改动，未跑产品测试，未接真实Pi记忆。待用户选择A抽屉/B独立管理、第一版显式记忆及范围规则。
+
+## 2026-09-08 跨会话记忆正式实现启动
+
+- 用户选 A 并明确“开始吧”，不再优化原型。独立校验在实现前更新范围语义：site是适用范围，不是单用户管理权限边界；固定11项行为测试先红。
+- 共享协议 `shared/memory.ts` 与 memory_list/update/forget、memory_result、memory事件已增加，协议聚焦5项通过。main将共享本地MemoryStore传入会话工厂与管理器。
+- 工作区原有未跟踪目录和原型/研究文件保留。产品浏览器确认是local.yishu.chrome-main、ChromeMain profile、9222；未启动默认Chrome、未操作用户网页。
+- 下一步等runtime/UI完成聚焦检查后集成，通过实际正式sidepanel与M3验证保存、相关使用、修改忘记和重启。
+
+## 2026-09-08 记忆存储与M3首条链路通过
+
+- 独立存储11项通过；7个独立Node进程中的5项持久化/版本失效检查通过，证据 `/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-memory-persistence-QEIdiG/result.json`。
+- 全仓typecheck通过，首轮全量65files/579tests通过（13:57），前端仍补CSS，不作为最终构建。
+- M3真实模型用产品BrowserAgentSession+隔离临时MemoryStore验证：自然请求保存一条偏好；新建独立Pi会话仅给会议记录，出现used事件并输出3条。证据 `/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-memory-model-FAet2j/result.json`。这不是浏览器UI验收。
+- 主线程准备 `scripts/acceptance/memory-browser-run.mjs`，只用ChromeMain实际sidepanel原生Input与M3，不注入回复/内部状态，测试结束清理本轮合成记忆。
+- 已修shared守卫hostname反斜线与sourceConversationId长度；运行时继续补自然句末“请记住”、明确域名范围和取消等待写入的检查。
+
+
+## 2026-09-08 A 版记忆主路径落地
+
+- 用户改为今后不再派子代理；已派出的完成后不再追加。用户要求按“点击/输入/看到”的产品语言沟通，已写项目 AGENTS.md。
+- 正式侧栏真实 M3 保存→新会话使用→查看→修改→忘记 8/8；扩展和伴随进程重连后同路径 9/9，证据 `/tmp/sideagent-memory-reopen-evidence/result.json`。本轮测试记忆已清理，原有数据保留。
+- 主要文件：shared/memory.ts、shared/protocol.ts、agent/src/memory-{store,runtime}.ts、session/conversation-{manager,runtime}/main、extension/src/sidepanel/{main,memory,styles,steps}；协议说明见 docs/protocol.md。
+- 主线程修复中文数字标题相关性、通用词误选、句末明确记住授权、会话索引临时文件重连碰撞；noContextFiles:true 保留，产品不加载开发规范作为用户记忆。
+- 14:39 typecheck/build 与 68files/586tests 通过；原有真实浏览器 accept:sessions 17项通过。新增两项可控的删除/接管晚到测试，运行时专项 8/8 通过。
+- 尚缺完整 Chrome 重启、Chrome 配置隔离实现、本轮相反格式与接管交错的真实组合验收。不要宣称全部 R 项通过；标准和现有证据见 docs/evals/20260908-cross-session-memory.md。
+
+## 2026-09-08 网页经验第一轮实现
+
+- 用户授权执行“纠正一次默认当前页导出，下次参考并核对全量结果”的竖切；完成标准先写于 docs/evals/20260908-browser-experience-memory.md。无子代理。
+- 已增加 ExperienceStore/Runtime：独立持久记录、纠正关联、后台普通模型提炼（无工具）、来源短引用校验、恢复重试。普通网页任务只留事实，第一轮仅从直接纠正提炼待验证做法，不自动升级技能或宣称任务成功。
+- 通过 MemoryStore.createExperience 幂等发布到已有管理抽屉，按任务主题和网站选择，用户修改优先，忘记留下 runId 抑制记录防后台复活。MemoryRuntime 仍在单轮前重读版本和接管状态。
+- 首轮真实 M3 导出已产生20/200的默认结果；提炼引用合并了不同原文片段，严格校验拒绝，未发布经验。失败在 /tmp/sideagent-experience-live-evidence/attempt1.json。改为短连续引用后相同材料真实模型来源检查通过，正在重新跑完整网页路径。
+- 曾把后台模型调用和任务落盘排同一队列，已分开，模型等待时新任务记录仍可落盘；专项9项通过。14:39基线后最新全量69files/597tests通过（15:12，后续少量修正仍需最终检查）。
+- EverOS 本轮尚未接入。已在开工前说明：先复用当前模型完成行为链路，独立服务接入留后续，不声称已有语义搜索。
+
+
+## 2026-09-08 网页经验第一轮收尾
+
+- 最终正式扩展sidepanel标签+真实M3，主路径7项通过，另实际CSV347条逐条核对通过，证据 /tmp/sideagent-experience-live-evidence/result.json；截图 experience-source.png / next-task.png，导出 exported-customers.csv。
+- 实测场景为先按默认导出20/200，再明确纠正范围；B新任务改为347条和改版按钮，检索到了经验并完成全部导出。无关任务、忘记后新任务均未带入该经验。不要把这称为有对照的可靠性收益。
+- 支持用户消息唯一明确网址优先于旁边活动页；不改变页面归属/接管权限。没有目标网址或起始PageContext时不在中途自动补入站点经验。
+- 最终typecheck/build、69files/601tests通过；accept:sessions17项通过，证据 /var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-accept-sessions-2026-09-08T07-40-44-812Z/。
+- 已检查final diff，未commit/push，原工作区变化保留。人评待验证文案清楚程度；EverOS/自动成功经验/技能升级未做。
+
+
+## 2026-09-08 Apple UI 简易预览
+
+- 用户要求先看改后效果。新增 docs/evals/20260908-apple-ui-preview.html，左右同任务：现有结构示意/推荐方案，发起/执行/结果三个阶段，可点接管、交还、记忆和依据。全是模拟，不接模型。
+- 应用内浏览器实际截图及主路径已检查，交付用户判断；不继续打磨原型，不改正式产品。标准与检查见同名 md。

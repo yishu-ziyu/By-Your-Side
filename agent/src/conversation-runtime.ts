@@ -6,8 +6,15 @@ import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
 import { consumeAcceptanceCapability } from "./acceptance-capability.js";
 import { frozenMembersFromTakeover } from "./team-handoff.js";
+import type { ExperienceStore } from "./experience.js";
+import type { MemoryStore } from "./memory-store.js";
 const log = (message: string) => console.error(`[sideagent] ${message}`);
-export async function createConversationRuntime(conversationId: string, emit: (msg: ServerMessage) => void, modelPattern?: string, options?: Pick<SessionCreateOptions, "sessionManager" | "mode">) {
+export async function createConversationRuntime(
+  conversationId: string,
+  emit: (msg: ServerMessage) => void,
+  modelPattern?: string,
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore },
+) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
   const fleet = new Fleet({
@@ -38,6 +45,7 @@ export async function createConversationRuntime(conversationId: string, emit: (m
     {
       modelPattern,
       ...options,
+      conversationId,
       customTools: [...createBrowserTools(rpc), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },
   );

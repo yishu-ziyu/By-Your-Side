@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>客户名单 · 经验验收</title>
+<style>body{font:16px system-ui;max-width:800px;margin:48px auto;color:#182133}button,select{font:inherit;padding:10px;margin:8px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid #ddd}aside{padding:20px;background:#f0f5fa;margin-top:24px}#result{white-space:pre-wrap}</style>
+<h1>客户名单</h1><p id="summary"></p><p>默认导出当前页。需要更多范围时，可打开“导出设置”。</p>
+<button id="settings">导出设置</button><div id="options" hidden><label>导出范围 <select id="scope"><option value="page">当前页</option><option value="all">全部客户</option></select></label></div>
+<button id="export">导出客户</button>
+<table><thead><tr><th>客户</th><th>类型</th></tr></thead><tbody><tr><td>合成客户甲</td><td>测试</td></tr><tr><td>合成客户乙</td><td>测试</td></tr></tbody></table>
+<aside><strong>导出结果</strong><div id="result">尚未导出</div></aside>
+<script>
+const q=new URLSearchParams(location.search);const total=Number(q.get('total')||200);const page=20;const redesign=q.get('layout')==='new';
+document.querySelector('#summary').textContent=`当前页 ${page} 条，共 ${total} 条客户。表格仅展示两条合成示例。`;
+const settings=document.querySelector('#settings'), options=document.querySelector('#options'), scope=document.querySelector('#scope'), exportButton=document.querySelector('#export');
+if(redesign){settings.textContent='范围与格式';exportButton.textContent='下载名单';document.body.insertBefore(exportButton,settings);}
+settings.onclick=()=>options.hidden=!options.hidden;
+globalThis.exportEvidence=[];
+exportButton.onclick=()=>{const count=scope.value==='all'?total:page;const text=`导出完成：${count} 条客户；范围：${scope.value==='all'?'全部客户':'当前页'}；页面总数：${total} 条。`;document.querySelector('#result').textContent=text;globalThis.exportEvidence.push({scope:scope.value,count,total,time:Date.now()});const blob=new Blob(['客户编号\n'+Array.from({length:count},(_,i)=>`synthetic-${i+1}`).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`experience-synthetic-${q.get("run")||"local"}-${count}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
+</script></html>

@@ -26,6 +26,9 @@ import { createBrowserTools } from "./tools.js";
 import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
 import type { ProgramStep } from "./browser-program.js";
+import type { MemoryStore } from "./memory-store.js";
+import { MemoryRuntime } from "./memory-runtime.js";
+import { ExperienceRuntime, type ExperienceStore } from "./experience.js";
 
 export interface SessionAcceptanceContinuityEvidence {
   instanceId: string;
@@ -74,6 +77,10 @@ export interface SessionCreateOptions {
   customTools?: ToolDefinition[];
   systemPrompt?: string;
   appendPrompt?: (base: string[]) => string[];
+  /** Product-owned personal memory. Omit for workers and synthetic sessions. */
+  memoryStore?: MemoryStore;
+  experienceStore?: ExperienceStore;
+  conversationId?: string;
 }
 
 const RESULT_TEXT_MAX = 500;
@@ -101,7 +108,10 @@ export class BrowserAgentSession {
     private readonly resourceLoader: DefaultResourceLoader | null,
     private readonly modelRuntime: ModelRuntime | null,
     private readonly handbackRestoreTimeoutMs = HANDBACK_RESTORE_TIMEOUT_MS,
+    private readonly memoryRuntime: MemoryRuntime | null = null,
   ) {}
+
+  private experience: ExperienceRuntime | null = null;
 
   private modeState: { value: AgentMode } = { value: "act" };
   private readonly hold = new SessionHold();
@@ -146,11 +156,18 @@ export class BrowserAgentSession {
       const systemPrompt = options?.systemPrompt ?? SYSTEM_PROMPT;
       const modeState: { value: AgentMode } = { value: options?.mode ?? "act" };
       const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(modeState.value, base));
+      const memoryRuntime = options?.memoryStore && options.conversationId
+        ? new MemoryRuntime(options.memoryStore, options.conversationId, callbacks.emit)
+        : null;
       const resourceLoader = new DefaultResourceLoader({
         cwd: process.cwd(),
         agentDir: getAgentDir(),
         settingsManager,
         noExtensions: true,
+        noContextFiles: true,
+        extensionFactories: memoryRuntime
+          ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }]
+          : [],
         systemPromptOverride: () => systemPrompt,
         skillsOverride: () => ({ skills: [], diagnostics: [] }),
         // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
@@ -160,7 +177,10 @@ export class BrowserAgentSession {
       const createOptions: CreateAgentSessionOptions = {
         modelRuntime,
         noTools: "builtin",
-        customTools: options?.customTools ?? createBrowserTools(rpc),
+        customTools: [
+          ...(options?.customTools ?? createBrowserTools(rpc)),
+          ...(memoryRuntime?.tools() ?? []),
+        ],
         resourceLoader,
         sessionManager: options?.sessionManager ?? SessionManager.inMemory(process.cwd()),
         settingsManager,
@@ -180,7 +200,20 @@ export class BrowserAgentSession {
         if (resolved.thinkingLevel) createOptions.thinkingLevel = resolved.thinkingLevel;
       }
       const { session } = await createAgentSession(createOptions);
-      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime);
+      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime);
+      if (options?.experienceStore && options.memoryStore && options.conversationId) {
+        wrapper.experience = new ExperienceRuntime(options.experienceStore, options.memoryStore, options.conversationId,
+          async (systemPrompt, input, signal) => {
+            if (!session.model) throw new Error("Model unavailable");
+            const reply = await modelRuntime!.completeSimple(session.model, {
+              systemPrompt,
+              messages: [{ role: "user", content: input, timestamp: Date.now() }],
+            }, { signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]), maxTokens: 2200 });
+            if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("Experience extraction failed");
+            return reply.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+          }, callbacks.emit);
+        if (memoryRuntime) memoryRuntime.onUsed = entries => wrapper.experience?.used(entries);
+      }
       wrapper.modeState = modeState;
       wrapper.subscribeEvents();
       return wrapper;
@@ -258,10 +291,14 @@ export class BrowserAgentSession {
     if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
     else this.runTrace.begin(text, context, this.modelName());
     if (session.isStreaming) {
+      this.experience?.feedback(text);
+      this.memoryRuntime?.invalidateUserTurn();
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
       void session.steer(finalText, images.length > 0 ? images : undefined).catch((err: unknown) => this.emitError(err));
       return;
     }
+    this.experience?.begin(text, context);
+    this.memoryRuntime?.beginUserTurn(text, context);
     void session.prompt(finalText, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
   }
 
@@ -277,6 +314,8 @@ export class BrowserAgentSession {
       return;
     }
     if (session.isStreaming) {
+      this.experience?.feedback(text);
+      this.memoryRuntime?.invalidateUserTurn();
       const finalText = withPageContext(text, context);
       const images = extractImages(attachments);
       this.runTrace.record("steer", { text, context, attachments });
@@ -290,8 +329,10 @@ export class BrowserAgentSession {
     this.runTrace.record("abort");
     this.controlEpoch += 1;
     this.cancelPendingHandback();
+    this.experience?.interrupt();
     this.hold.abort();
     this.acceptanceTrace = null;
+    this.memoryRuntime?.invalidateUserTurn();
     void this.stopCurrentRun().catch(() => {});
   }
 
@@ -300,9 +341,11 @@ export class BrowserAgentSession {
    * 不把 status 打成 idle（那是中止）。
    */
   holdForUser(opts?: { abortStream?: boolean }): AgentRunState {
+    this.experience?.interrupt();
     this.runTrace.record("takeover", { abortStream: opts?.abortStream });
     this.controlEpoch += 1;
     this.cancelPendingHandback();
+    this.memoryRuntime?.invalidateUserTurn();
     const state = this.hold.holdForUser();
     if (opts?.abortStream ?? true) void this.stopCurrentRun().catch(() => {});
     return state;
@@ -313,6 +356,7 @@ export class BrowserAgentSession {
    */
   continueAfterHandback(context: PageContext, snapshot: string): Promise<boolean> {
     this.handbackFailureReason = null;
+    this.memoryRuntime?.invalidateUserTurn();
     if (!this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在不是你在操作页面，不用交还。" });
       return Promise.resolve(false);
@@ -348,6 +392,7 @@ export class BrowserAgentSession {
     const session = this.session;
     if (!session?.model) throw new Error("验收会话不可用");
     await session.agent.waitForIdle();
+    this.memoryRuntime?.invalidateUserTurn();
     this.acceptanceTrace = {
       instanceId: this.instanceId,
       taskId,
@@ -428,6 +473,7 @@ export class BrowserAgentSession {
   }
 
   dispose(): void {
+    this.experience?.dispose();
     this.runTrace.record("dispose");
     this.session?.dispose();
   }
@@ -538,6 +584,7 @@ export class BrowserAgentSession {
     const { emit, setStatus } = this.callbacks;
     session.subscribe((event) => {
       this.runTrace.event(event);
+      this.experience?.observe(event);
       switch (event.type) {
         case "message_update": {
           const ev = event.assistantMessageEvent;
@@ -623,6 +670,7 @@ export class BrowserAgentSession {
           emit({ kind: "agent_start" });
           break;
         case "agent_end": {
+          if (!event.willRetry) this.experience?.finish();
           const stoppedByUser = this.expectedStoppedAgentEnd;
           this.expectedStoppedAgentEnd = false;
           // willRetry=true 时自动重试紧随其后，状态保持 running

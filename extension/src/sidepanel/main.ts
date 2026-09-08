@@ -55,10 +55,12 @@ import {
 } from "./models.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, TeamView } from "../../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
+import { MemoryManagementState, memoryScopeLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 
 const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
@@ -97,10 +99,22 @@ app.innerHTML = `
   </header>
   <div id="conversation-bar">
     <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
+    <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false">记忆</button>
     <button id="conversation-new" type="button">＋ 新会话</button>
   </div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="conversation-menu" role="menu" hidden></div>
+  <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
+  <section id="memory-drawer" role="dialog" aria-label="记忆管理" aria-modal="false" hidden>
+    <div class="memory-drawer-head">
+      <div>
+        <h2 id="memory-title">记忆</h2>
+        <p>当前保存的个人记忆</p>
+      </div>
+      <button id="memory-close" type="button">关闭</button>
+    </div>
+    <div id="memory-body"></div>
+  </section>
   <div id="messages"></div>
   <div id="team-card" hidden></div>
   <div class="composer-dock-wrap">
@@ -209,6 +223,12 @@ const conversationSwitcher = document.getElementById("conversation-switcher") as
 const conversationNew = document.getElementById("conversation-new") as HTMLButtonElement;
 const conversationMenu = document.getElementById("conversation-menu")!;
 const conversationBackground = document.getElementById("conversation-background") as HTMLButtonElement;
+const memoryOpen = document.getElementById("memory-open") as HTMLButtonElement;
+const memoryShade = document.getElementById("memory-shade") as HTMLButtonElement;
+const memoryDrawer = document.getElementById("memory-drawer") as HTMLElement;
+const memoryClose = document.getElementById("memory-close") as HTMLButtonElement;
+const memoryTitle = document.getElementById("memory-title") as HTMLElement;
+const memoryBody = document.getElementById("memory-body") as HTMLElement;
 type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null };
 const conversationDrafts = new Map<string, ConversationDraft>();
 const draftFingerprints = new Map<string, string>();
@@ -365,6 +385,455 @@ document.addEventListener("keydown", (e) => {
     conversationSwitcher.focus();
   }
 });
+
+type MemoryInspection = {
+  action: Extract<AgentUiEvent, { kind: "memory" }>["action"];
+  entries: MemoryEntry[];
+  message?: string;
+};
+type MemoryEdit = {
+  id: string;
+  text: string;
+  scopeKind: MemoryScope["kind"];
+  hostname: string;
+  pendingRequestId: string | null;
+  error: string;
+};
+type MemoryForget = { id: string; pendingRequestId: string | null; error: string };
+type MemoryUiRequest = { action: "list" | "update" | "forget"; entryId?: string };
+
+const memoryState = new MemoryManagementState();
+const memoryUiRequests = new Map<string, MemoryUiRequest>();
+let memoryLoaded = false;
+let memoryListRequestId: string | null = null;
+let memoryListError = "";
+let memoryInspection: MemoryInspection | null = null;
+let memoryEdit: MemoryEdit | null = null;
+let memoryForget: MemoryForget | null = null;
+let currentMemoryHostname = "";
+
+function memoryButton(label: string, action: string, id?: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.memoryAction = action;
+  if (id) button.dataset.memoryId = id;
+  button.textContent = label;
+  return button;
+}
+
+function memorySourceLabel(entry: MemoryEntry): string {
+  const conversation = conversations.get(entry.sourceConversationId);
+  return conversation?.title || "原会话";
+}
+
+function formatMemoryTime(timestamp: number): string {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(timestamp);
+  } catch {
+    return "";
+  }
+}
+
+function renderMemoryInspection(): HTMLElement | null {
+  const inspection = memoryInspection;
+  if (!inspection) return null;
+  const section = document.createElement("section");
+  section.className = "memory-inspection";
+  const title = document.createElement("strong");
+  title.textContent = inspection.action === "used"
+    ? `这次回复使用了 ${inspection.entries.length} 条记忆`
+    : inspection.action === "forgotten"
+      ? "忘记记录"
+      : inspection.action === "updated"
+        ? "更新的记忆"
+        : "保存的记忆";
+  section.appendChild(title);
+  if (inspection.message) {
+    const message = document.createElement("p");
+    message.textContent = inspection.message;
+    section.appendChild(message);
+  } else if (inspection.action === "forgotten") {
+    const message = document.createElement("p");
+    message.textContent = "这条记忆不再用于新请求。旧聊天仍然保留。";
+    section.appendChild(message);
+  }
+  for (const snapshot of inspection.entries) {
+    const item = document.createElement("div");
+    item.className = "memory-inspection-item";
+    const text = document.createElement("p");
+    text.textContent = snapshot.text;
+    const meta = document.createElement("small");
+    meta.textContent = `${memoryScopeLabel(snapshot.scope)} · 版本 ${snapshot.version}`;
+    item.append(text, meta);
+    const current = memoryState.get(snapshot.id);
+    if (!current) {
+      const changed = document.createElement("small");
+      changed.className = "memory-inspection-changed";
+      changed.textContent = "这条记忆现已忘记。这里保留的是旧回复的使用记录。";
+      item.appendChild(changed);
+    } else if (!sameMemorySnapshot(snapshot, current)) {
+      const changed = document.createElement("small");
+      changed.className = "memory-inspection-changed";
+      changed.textContent = "此后已更新。下方列表显示当前版本。";
+      item.appendChild(changed);
+    }
+    section.appendChild(item);
+  }
+  return section;
+}
+
+function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
+  const edit = memoryEdit!;
+  const form = document.createElement("div");
+  form.className = "memory-edit";
+
+  const textLabel = document.createElement("label");
+  textLabel.textContent = "记忆内容";
+  const textarea = document.createElement("textarea");
+  textarea.dataset.memoryField = "text";
+  textarea.dataset.memoryId = entry.id;
+  textarea.maxLength = MEMORY_TEXT_MAX;
+  textarea.value = edit.text;
+  textarea.disabled = edit.pendingRequestId !== null;
+  textarea.oninput = () => { edit.text = textarea.value; edit.error = ""; };
+  textLabel.appendChild(textarea);
+
+  const scopeLabel = document.createElement("label");
+  scopeLabel.textContent = "适用范围";
+  const select = document.createElement("select");
+  select.dataset.memoryField = "scope";
+  select.dataset.memoryId = entry.id;
+  select.disabled = edit.pendingRequestId !== null;
+  for (const [value, label] of [["all", "所有会话"], ["site", "指定站点"]] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = edit.scopeKind === value;
+    select.appendChild(option);
+  }
+  select.onchange = () => {
+    edit.scopeKind = select.value as MemoryScope["kind"];
+    if (edit.scopeKind === "site" && !edit.hostname) edit.hostname = currentMemoryHostname;
+    edit.error = "";
+    renderMemoryDrawer();
+  };
+  scopeLabel.appendChild(select);
+
+  const hostnameLabel = document.createElement("label");
+  hostnameLabel.textContent = "网站域名";
+  hostnameLabel.hidden = edit.scopeKind !== "site";
+  const hostname = document.createElement("input");
+  hostname.type = "text";
+  hostname.dataset.memoryField = "hostname";
+  hostname.dataset.memoryId = entry.id;
+  hostname.placeholder = "example.com";
+  hostname.value = edit.hostname;
+  hostname.disabled = edit.pendingRequestId !== null;
+  hostname.oninput = () => { edit.hostname = hostname.value; edit.error = ""; };
+  hostnameLabel.appendChild(hostname);
+
+  const hint = document.createElement("p");
+  hint.className = "memory-quiet";
+  hint.textContent = `跨会话保留，只在相关任务中使用。${edit.text.length}/${MEMORY_TEXT_MAX}`;
+  const error = document.createElement("p");
+  error.className = "memory-error";
+  error.hidden = !edit.error;
+  error.textContent = edit.error;
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+  const cancel = memoryButton("取消", "cancel-edit", entry.id);
+  cancel.disabled = edit.pendingRequestId !== null;
+  const save = memoryButton(edit.pendingRequestId ? "正在保存…" : edit.error ? "重试保存" : "保存修改", "save", entry.id);
+  save.className = "memory-primary";
+  save.disabled = edit.pendingRequestId !== null;
+  actions.append(cancel, save);
+  form.append(textLabel, scopeLabel, hostnameLabel, hint, error, actions);
+  return form;
+}
+
+function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
+  const card = document.createElement("article");
+  card.className = "memory-row";
+  card.dataset.memoryId = entry.id;
+  if (memoryEdit?.id === entry.id) {
+    card.appendChild(renderMemoryEdit(entry));
+    return card;
+  }
+
+  const text = document.createElement("p");
+  text.className = "memory-row-text";
+  text.textContent = entry.text;
+  const meta = document.createElement("div");
+  meta.className = "memory-row-meta";
+  const scope = document.createElement("span");
+  scope.className = "memory-scope";
+  scope.textContent = memoryScopeLabel(entry.scope);
+  const actions = document.createElement("div");
+  actions.append(
+    memoryButton(card.classList.contains("show-source") ? "收起来源" : "查看来源", "source", entry.id),
+    memoryButton("修改", "edit", entry.id),
+    memoryButton("忘记", "forget", entry.id),
+  );
+  actions.lastElementChild?.classList.add("memory-danger");
+  meta.append(scope, actions);
+  card.append(text, meta);
+
+  const source = document.createElement("details");
+  source.className = "memory-source";
+  source.dataset.memorySource = entry.id;
+  const summary = document.createElement("summary");
+  summary.textContent = "来源";
+  const detail = document.createElement("p");
+  detail.textContent = `会话：${memorySourceLabel(entry)}\n保存于 ${formatMemoryTime(entry.createdAt)} · 当前版本 ${entry.version}`;
+  if (entry.experience) detail.textContent += `\n来自这次纠正的待验证做法；再次使用仍需检查。\n${entry.experience.evidence.map(line => line.replace(/^feedback-\d+：/, "你的纠正：").replace(/^(?:previous-)?observation-\d+：/, "网页结果：")).join("\n")}`;
+  source.append(summary, detail);
+  card.appendChild(source);
+
+  if (memoryForget?.id === entry.id) {
+    const confirm = document.createElement("div");
+    confirm.className = "memory-forget-confirm";
+    const heading = document.createElement("strong");
+    heading.textContent = "忘记这条记忆？";
+    const explanation = document.createElement("p");
+    explanation.textContent = "以后不再从记忆中使用它。旧聊天和已经生成的回复仍会保留。";
+    const error = document.createElement("p");
+    error.className = "memory-error";
+    error.hidden = !memoryForget.error;
+    error.textContent = memoryForget.error;
+    const confirmActions = document.createElement("div");
+    confirmActions.className = "memory-actions";
+    const cancel = memoryButton("取消", "cancel-forget", entry.id);
+    cancel.disabled = memoryForget.pendingRequestId !== null;
+    const forget = memoryButton(
+      memoryForget.pendingRequestId ? "正在忘记…" : memoryForget.error ? "重试忘记" : "确认忘记",
+      "confirm-forget",
+      entry.id,
+    );
+    forget.className = "memory-danger memory-forget-submit";
+    forget.disabled = memoryForget.pendingRequestId !== null;
+    confirmActions.append(cancel, forget);
+    confirm.append(heading, explanation, error, confirmActions);
+    card.appendChild(confirm);
+  }
+  return card;
+}
+
+function renderMemoryDrawer(): void {
+  const entries = memoryState.getEntries();
+  memoryTitle.textContent = entries.length ? `记忆 · ${entries.length}` : "记忆";
+  memoryBody.replaceChildren();
+  const inspection = renderMemoryInspection();
+  if (inspection) memoryBody.appendChild(inspection);
+
+  const intro = document.createElement("p");
+  intro.className = "memory-quiet memory-intro";
+  intro.textContent = "你可以查看、纠正或忘记自己的全部记忆。站点范围只决定何时使用。";
+  memoryBody.appendChild(intro);
+
+  if (memoryListError) {
+    const failure = document.createElement("div");
+    failure.className = "memory-load-error";
+    const text = document.createElement("span");
+    text.textContent = memoryListError;
+    failure.append(text, memoryButton("重试", "reload"));
+    memoryBody.appendChild(failure);
+  }
+  if (!memoryLoaded && memoryListRequestId) {
+    const loading = document.createElement("div");
+    loading.className = "memory-empty";
+    loading.textContent = "正在读取记忆…";
+    memoryBody.appendChild(loading);
+    return;
+  }
+  if (!memoryLoaded && !memoryListRequestId) {
+    const unavailable = document.createElement("div");
+    unavailable.className = "memory-empty";
+    unavailable.append("还不能读取记忆。", memoryButton("重试", "reload"));
+    memoryBody.appendChild(unavailable);
+    return;
+  }
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "memory-empty";
+    const heading = document.createElement("strong");
+    heading.textContent = "还没有保存的记忆";
+    const text = document.createElement("p");
+    text.textContent = "在聊天里明确说「请记住」，保存成功后会出现在这里。";
+    empty.append(heading, text);
+    memoryBody.appendChild(empty);
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "memory-list";
+  for (const entry of entries) list.appendChild(renderMemoryEntry(entry));
+  memoryBody.appendChild(list);
+}
+
+function processMemoryOutcome(outcome: MemoryApplyResult): void {
+  if (outcome.kind === "ignored") return;
+  const uiRequest = memoryUiRequests.get(outcome.requestId);
+  memoryUiRequests.delete(outcome.requestId);
+  if (outcome.action === "list") {
+    if (memoryListRequestId !== outcome.requestId) return;
+    memoryListRequestId = null;
+    if (outcome.kind === "success") {
+      memoryLoaded = true;
+      memoryListError = "";
+      if (memoryEdit && !memoryState.get(memoryEdit.id)) memoryEdit = null;
+      if (memoryForget && !memoryState.get(memoryForget.id)) memoryForget = null;
+    } else {
+      memoryListError = `未能读取记忆：${outcome.error}`;
+    }
+  } else if (outcome.action === "update" && uiRequest?.entryId) {
+    if (memoryEdit?.id === uiRequest.entryId && memoryEdit.pendingRequestId === outcome.requestId) {
+      memoryEdit.pendingRequestId = null;
+      if (outcome.kind === "success") memoryEdit = null;
+      else memoryEdit.error = `修改未保存：${outcome.error}`;
+    }
+  } else if (outcome.action === "forget" && uiRequest?.entryId) {
+    if (memoryForget?.id === uiRequest.entryId && memoryForget.pendingRequestId === outcome.requestId) {
+      memoryForget.pendingRequestId = null;
+      if (outcome.kind === "success") memoryForget = null;
+      else memoryForget.error = `没有忘记这条记忆：${outcome.error}`;
+    }
+  }
+  if (!memoryDrawer.hidden) renderMemoryDrawer();
+}
+
+function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>, ui: MemoryUiRequest): void {
+  memoryUiRequests.set(message.requestId, ui);
+  if (send(message)) return;
+  processMemoryOutcome(memoryState.rejectLocally(message.requestId, "连接不可用，请重试"));
+}
+
+function requestMemoryList(): void {
+  const message = memoryState.beginList(selectedConversationId);
+  memoryListRequestId = message.requestId;
+  memoryListError = "";
+  renderMemoryDrawer();
+  dispatchMemoryRequest(message, { action: "list" });
+}
+
+function openMemoryDrawer(inspection: MemoryInspection | null = null): void {
+  memoryInspection = inspection;
+  memoryEdit = null;
+  memoryForget = null;
+  memoryDrawer.hidden = false;
+  memoryShade.hidden = false;
+  memoryOpen.setAttribute("aria-expanded", "true");
+  renderMemoryDrawer();
+  requestMemoryList();
+}
+
+function closeMemoryDrawer(): void {
+  memoryDrawer.hidden = true;
+  memoryShade.hidden = true;
+  memoryOpen.setAttribute("aria-expanded", "false");
+  memoryEdit = null;
+  memoryForget = null;
+  memoryInspection = null;
+  memoryOpen.focus();
+}
+
+memoryOpen.onclick = () => memoryDrawer.hidden ? openMemoryDrawer() : closeMemoryDrawer();
+memoryClose.onclick = closeMemoryDrawer;
+memoryShade.onclick = closeMemoryDrawer;
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !memoryDrawer.hidden) {
+    event.preventDefault();
+    closeMemoryDrawer();
+  }
+});
+
+memoryBody.addEventListener("click", (event) => {
+  const target = (event.target as Element).closest<HTMLButtonElement>("button[data-memory-action]");
+  if (!target) return;
+  const action = target.dataset.memoryAction;
+  const id = target.dataset.memoryId;
+  if (action === "reload") {
+    requestMemoryList();
+    return;
+  }
+  if (!id) return;
+  const entry = memoryState.get(id);
+  if (!entry) {
+    requestMemoryList();
+    return;
+  }
+  if (action === "source") {
+    const details = memoryBody.querySelector<HTMLDetailsElement>(`details[data-memory-source="${CSS.escape(id)}"]`);
+    if (details) details.open = !details.open;
+    return;
+  }
+  if (action === "edit") {
+    memoryForget = null;
+    memoryEdit = {
+      id,
+      text: entry.text,
+      scopeKind: entry.scope.kind,
+      hostname: entry.scope.kind === "site" ? entry.scope.hostname : currentMemoryHostname,
+      pendingRequestId: null,
+      error: "",
+    };
+    renderMemoryDrawer();
+    memoryBody.querySelector<HTMLTextAreaElement>(`textarea[data-memory-id="${CSS.escape(id)}"]`)?.focus();
+    return;
+  }
+  if (action === "cancel-edit") {
+    memoryEdit = null;
+    renderMemoryDrawer();
+    return;
+  }
+  if (action === "save" && memoryEdit?.id === id) {
+    const text = memoryEdit.text.trim();
+    if (!text) {
+      memoryEdit.error = "记忆内容不能为空。";
+      renderMemoryDrawer();
+      return;
+    }
+    if (text.length > MEMORY_TEXT_MAX) {
+      memoryEdit.error = `记忆内容最多 ${MEMORY_TEXT_MAX} 个字符。`;
+      renderMemoryDrawer();
+      return;
+    }
+    let scope: MemoryScope = { kind: "all" };
+    if (memoryEdit.scopeKind === "site") {
+      const hostname = normalizeMemoryHostname(memoryEdit.hostname);
+      if (!hostname) {
+        memoryEdit.error = "请输入网站域名，例如 example.com。";
+        renderMemoryDrawer();
+        return;
+      }
+      memoryEdit.hostname = hostname;
+      scope = { kind: "site", hostname };
+    }
+    const message = memoryState.beginUpdate(selectedConversationId, entry, text, scope);
+    memoryEdit.pendingRequestId = message.requestId;
+    memoryEdit.error = "";
+    renderMemoryDrawer();
+    dispatchMemoryRequest(message, { action: "update", entryId: id });
+    return;
+  }
+  if (action === "forget") {
+    memoryEdit = null;
+    memoryForget = { id, pendingRequestId: null, error: "" };
+    renderMemoryDrawer();
+    return;
+  }
+  if (action === "cancel-forget") {
+    memoryForget = null;
+    renderMemoryDrawer();
+    return;
+  }
+  if (action === "confirm-forget" && memoryForget?.id === id) {
+    const message = memoryState.beginForget(selectedConversationId, entry);
+    memoryForget.pendingRequestId = message.requestId;
+    memoryForget.error = "";
+    renderMemoryDrawer();
+    dispatchMemoryRequest(message, { action: "forget", entryId: id });
+  }
+});
+
 const morphSheet = document.getElementById("morph-sheet") as HTMLElement | null;
 const closeMorphSheetBtn = document.getElementById("close-morph-sheet") as HTMLButtonElement | null;
 const tabIconSq = document.getElementById("tab-icon-sq") as HTMLElement | null;
@@ -396,9 +865,13 @@ async function refreshActiveTabPill(): Promise<void> {
     const title = tab.title || tab.url || "未知页面";
     let host = "";
     try {
-      if (tab.url) host = new URL(tab.url).host;
+      if (tab.url) {
+        const pageUrl = new URL(tab.url);
+        host = pageUrl.host;
+        currentMemoryHostname = normalizeMemoryHostname(pageUrl.hostname) ?? "";
+      }
     } catch {
-      // ignore
+      currentMemoryHostname = "";
     }
     const displayLabel = host ? `${host} · ${clipTitle(title, 14)}` : clipTitle(title, 20);
     if (tabTitleText) tabTitleText.textContent = displayLabel;
@@ -915,6 +1388,36 @@ function addMsg(cls: string, text: string): HTMLElement {
   messagesEl.appendChild(div);
   scrollToEnd();
   return div;
+}
+
+function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): HTMLElement {
+  const receipt = document.createElement("div");
+  receipt.className = `memory-receipt memory-receipt-${event.action}`;
+  const mark = document.createElement("span");
+  mark.className = "memory-receipt-mark";
+  mark.textContent = "✓";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.memoryReceipt = event.action;
+  button.textContent = event.action === "used"
+    ? `使用了 ${event.entries.length} 条记忆 · 查看`
+    : event.action === "forgotten"
+      ? event.entries.some(entry => entry.experience) ? "旧做法已停用 · 查看" : "已忘记 · 查看"
+      : event.action === "updated"
+        ? "记忆已更新 · 查看"
+        : event.entries.some(entry => entry.experience) ? "已整理这次纠正 · 查看" : "已记住 · 查看";
+  const snapshots = event.entries.map((entry) => ({ ...entry, scope: { ...entry.scope } }));
+  button.onclick = () => openMemoryDrawer({ action: event.action, entries: snapshots, message: event.message });
+  receipt.append(mark, button);
+  if (event.entries.length === 1) {
+    const scope = document.createElement("span");
+    scope.className = "memory-receipt-scope";
+    scope.textContent = memoryScopeLabel(event.entries[0]!.scope);
+    receipt.appendChild(scope);
+  }
+  messagesEl.appendChild(receipt);
+  scrollToEnd();
+  return receipt;
 }
 
 // ── 执行步骤聚合块 ──────────────────────────────────────────
@@ -1489,6 +1992,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
     return;
   }
   switch (ev.kind) {
+    case "memory":
+      renderMemoryReceipt(ev);
+      break;
     case "text_delta":
       appendDelta("assistant", ev.delta);
       break;
@@ -1532,9 +2038,18 @@ function send(msg: ClientMessage): boolean {
   }
 }
 
+function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {
+  const outcome = memoryState.receive(msg.conversationId, msg);
+  processMemoryOutcome(outcome);
+}
+
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
   if (!msg) return;
+  if (msg.type === "memory_result") {
+    handleMemoryResult(msg);
+    return;
+  }
   if (msg.type === "conversation_created" || msg.type === "conversation_updated") {
     upsertConversation(msg.conversation);
     if (msg.type === "conversation_created" && msg.requestId === conversationRequest) {
@@ -1587,7 +2102,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_")) return;
+      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result") return;
     handleServerMessage(JSON.stringify(envelope.msg));
     return;
   }

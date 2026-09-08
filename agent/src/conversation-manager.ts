@@ -5,6 +5,7 @@ import {
 } from "../../shared/protocol.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
+import type { MemoryStore } from "./memory-store.js";
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
@@ -18,6 +19,7 @@ export class ConversationManager {
     private readonly factory: (id: string, emit: (message: ServerMessage) => void, summary?: ConversationSummary) => Promise<Runtime>,
     private readonly emit: (message: ServerMessage) => void,
     private readonly store?: ConversationStore,
+    private readonly memoryStore?: MemoryStore,
   ) {}
 
   async ensureDefault(): Promise<ConversationEntry> {
@@ -79,6 +81,10 @@ export class ConversationManager {
     const id = normalizeConversationId(message.conversationId);
     const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
     if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
+    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget") {
+      await this.handleMemoryMessage(message, id);
+      return;
+    }
     if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话";
     if (message.type === "set_mode") entry.summary.mode = message.mode;
     entry.runtime.handleMessage(message);
@@ -86,6 +92,42 @@ export class ConversationManager {
       entry.summary.updatedAt = Date.now();
       this.store?.save(this.list());
       this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...entry.summary } });
+    }
+  }
+
+  private async handleMemoryMessage(
+    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>,
+    conversationId: string,
+  ): Promise<void> {
+    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : "forget";
+    try {
+      if (!this.memoryStore) throw new Error("记忆存储不可用");
+      if (message.type === "memory_list") {
+        const entries = await this.memoryStore.list();
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries });
+        return;
+      }
+      if (message.type === "memory_update") {
+        const changed = await this.memoryStore.update({
+          id: message.id,
+          expectedVersion: message.expectedVersion,
+          text: message.text,
+          scope: message.scope,
+        });
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entry: changed });
+        return;
+      }
+      await this.memoryStore.forget({ id: message.id, expectedVersion: message.expectedVersion });
+      this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id });
+    } catch (error) {
+      this.emit({
+        type: "memory_result",
+        conversationId,
+        requestId: message.requestId,
+        action,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

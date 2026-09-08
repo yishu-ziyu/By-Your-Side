@@ -112,3 +112,22 @@ describe("mode hydration ordering", () => {
   session.get = originalGet;
  });
 });
+
+describe("memory receipts and management routing", () => {
+ it("keeps delayed memory receipts in their source history and management replies out of history", async () => {
+  const p = panel();
+  wire.callbacks.onServerMessage({type:"conversation_created",requestId:"b",conversation:summary("B")}); await settle();
+  p.onMessage.emit({kind:"client",msg:{type:"memory_list",requestId:"memory-b",conversationId:"B"}}); await settle();
+  p.onMessage.emit({kind:"select_conversation",conversationId:"default"}); await settle();
+  const entry = {id:"memory-1",version:1,text:"会议摘要三条",scope:{kind:"all"},sourceConversationId:"B",createdAt:1,updatedAt:1};
+  wire.callbacks.onServerMessage({type:"agent_event",conversationId:"B",event:{kind:"memory",action:"used",entries:[entry]}});
+  wire.callbacks.onServerMessage({type:"memory_result",conversationId:"B",requestId:"memory-b",action:"list",ok:true,entries:[entry]});
+  await settle();
+  expect(wire.sent.filter(m=>m.type==="memory_list")).toEqual([{type:"memory_list",requestId:"memory-b",conversationId:"B"}]);
+  expect(JSON.stringify(storage["history:B"])).toContain('"action":"used"');
+  expect(JSON.stringify(storage["history:B"])).not.toContain("memory_result");
+  expect(JSON.stringify(storage["history:default"]??[])).not.toContain("会议摘要三条");
+  expect(p.postMessage.mock.calls.some(([m])=>m.kind==="server"&&m.msg.type==="memory_result"&&m.conversationId==="B")).toBe(true);
+  expect(wire.sent.some(m=>m.type==="abort")).toBe(false);
+ });
+});
