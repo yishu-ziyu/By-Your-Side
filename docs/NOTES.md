@@ -1152,3 +1152,8 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 ## 2026-09-08 分批提交与推送
 - 用户明确授权将当前全部改动分批commit并push。按文档/测试清理/语音后台/前端接入拆分，目标分支codex/voice-task-progress。
 - 提交前diff检查和凭据扫描通过；最近全量657项测试、typecheck和build通过。真实空输入恢复通过，预算800网页完整验收仍未通过，提交不改变这一结论。
+
+## 2026-09-08 统一到 main
+- 用户明确授权各分支统一到 main。fetch 后核对全部本地/远端分支：feat/session-management 已在 main；codex/voice-task-progress 仅领先5个提交，无分叉冲突。
+- main 已快进吸收语音分支，工作目录切回 main。整合后78文件/657测试、typecheck、build、diff检查通过。
+- 保留功能分支历史，不删除分支。语音预算调整的真实网页验收仍未完成，合入主干不等于该项验收通过。
