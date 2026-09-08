@@ -30,6 +30,7 @@ import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type T
 import type { PanelHistoryServerMessage } from "../relay.js";
 import { PanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
+import { VoiceRelay } from "./voice-relay.js";
 import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
 import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
@@ -86,10 +87,11 @@ let connectionSnapshot: [ConnState, TransportKind | undefined, string?] = ["conn
 let helloSnapshot: Extract<ServerMessage, {type:"hello_ok"}> | null = null;
 const transport = new Uplink({
  onServerMessage(msg) {
+   if (msg.type === "voice") { voiceRelay.server(msg); return; }
    if (msg.type === "hello_ok") helloSnapshot = msg;
    if (msg.type === "conversation_list") { conversationSummaries = msg.conversations; for (const conversation of msg.conversations) { void setConversationTitle(conversation.id, conversation.title); controller(conversation.id).restoreMode(conversation.mode); } }
    if (msg.type === "conversation_updated" || msg.type === "conversation_created") { conversationSummaries = [...conversationSummaries.filter(c => c.id !== msg.conversation.id), msg.conversation]; void setConversationTitle(msg.conversation.id, msg.conversation.title); controller(msg.conversation.id).restoreMode(msg.conversation.mode); }
-   if (msg.type === "conversation_created") { selectedConversationId = msg.conversation.id; setVisibleConversationId(selectedConversationId); void chrome.storage.session.set({ selectedConversationId }); controller(msg.conversation.id); }
+   if (msg.type === "conversation_created") { voiceRelay.selectionChanged(msg.conversation.id); selectedConversationId = msg.conversation.id; setVisibleConversationId(selectedConversationId); void chrome.storage.session.set({ selectedConversationId }); controller(msg.conversation.id); }
    if (msg.type === "conversation_list") for (const c of msg.conversations) controller(c.id);
    if (msg.type.startsWith("conversation_")) broadcastConversations();
    if (msg.type === "hello_ok") {
@@ -99,8 +101,9 @@ const transport = new Uplink({
      void c.ready.then(() => c.callbacks.onServerMessage(msg));
    }
  },
- onConnState(...args) { connectionSnapshot = args; if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"}); for (const c of controllers.values()) c.callbacks.onConnState(...args); },
+ onConnState(...args) { connectionSnapshot = args; if (args[0] !== "connected") voiceRelay.disconnected(); if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"}); for (const c of controllers.values()) c.callbacks.onConnState(...args); },
 });
+const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), () => selectedConversationId);
 function controller(id: string) {
  let c = controllers.get(id);
  if (!c) { c = createConversationController(id); controllers.set(id,c); c.callbacks.onConnState(...connectionSnapshot); if (helloSnapshot) { const instance = c; void c.ready.then(() => instance.callbacks.onServerMessage(helloSnapshot!)); } for (const port of connectedPanels) c.attachPanel(port); }
@@ -108,12 +111,13 @@ function controller(id: string) {
 }
 chrome.runtime.onConnect.addListener(port => {
  if (port.name !== PANEL_PORT_NAME) return;
+ voiceRelay.attach(port);
  connectedPanels.add(port);
  for (const c of controllers.values()) c.attachPanel(port);
  port.onDisconnect.addListener(() => connectedPanels.delete(port));
  port.onMessage.addListener((msg: PanelToBg) => {
   if (!msg || typeof msg !== "object") return;
-  if (msg.kind === "select_conversation") { selectedConversationId = msg.conversationId; setVisibleConversationId(selectedConversationId); controller(selectedConversationId); void chrome.storage.session.set({selectedConversationId}); broadcastConversations(); }
+  if (msg.kind === "select_conversation") { voiceRelay.selectionChanged(msg.conversationId); selectedConversationId = msg.conversationId; setVisibleConversationId(selectedConversationId); controller(selectedConversationId); void chrome.storage.session.set({selectedConversationId}); broadcastConversations(); }
   if (msg.kind === "sync") { broadcastConversations(); transport.sendClientMessage({type:"conversation_list"}); }
  });
 });
@@ -1030,6 +1034,7 @@ function attachPanel(port: chrome.runtime.Port) {
   if (conversationId === selectedConversationId) void Promise.all([controlReady, historyReady]).then(() => syncPanel(port));
 
   port.onMessage.addListener((raw: unknown) => {
+    if ((raw as PanelToBg)?.kind === "client" && (raw as Extract<PanelToBg, {kind:"client"}>).msg?.type === "voice") return;
     const selectedAtReceipt = selectedConversationId;
     void Promise.all([controlReady, historyReady]).then(() => handlePanelMessage(raw, selectedAtReceipt));
   });

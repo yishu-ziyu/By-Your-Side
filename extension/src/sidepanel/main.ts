@@ -1,3 +1,4 @@
+import { mountVoiceUI } from "./voice-ui.js";
 /**
  * side panel 入口：原生 TS + DOM，无框架。
  * 经 chrome.runtime Port 接入 background（background 持有到伴随进程的连接并执行工具）；
@@ -335,6 +336,7 @@ function resetConversationRender(): void {
 }
 
 function selectConversation(id: string, notify = true): void {
+  if (id !== selectedConversationId) voiceUI.stop();
   completedConversations.delete(id);
   conversationMenu.hidden = true;
   conversationSwitcher.setAttribute("aria-expanded", "false");
@@ -2047,9 +2049,12 @@ function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" 
   processMemoryOutcome(outcome);
 }
 
+const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send);
+
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
   if (!msg) return;
+  if (msg.type === "voice") { voiceUI.receive(msg); return; }
   if (msg.type === "memory_result") {
     handleMemoryResult(msg);
     return;
@@ -2240,6 +2245,7 @@ function connect(): void {
   port = p;
   p.onMessage.addListener((msg: BgToPanel) => handleBgMessage(msg));
   p.onDisconnect.addListener(() => {
+    voiceUI.disconnect();
     if (port === p) port = null;
     scheduleReconnect();
   });

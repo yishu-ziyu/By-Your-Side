@@ -25,6 +25,7 @@ await esbuild.build({
   entryPoints: {
     background: "src/background/index.ts",
     sidepanel: "src/sidepanel/main.ts",
+    "voice-permission": "src/sidepanel/voice-permission-page.ts",
   },
 });
 
@@ -42,7 +43,10 @@ await esbuild.build({
 
 for (const [from, to] of [
   ["manifest.json", "manifest.json"],
+  ["src/sidepanel/voice-worklet.js", "voice-worklet.js"],
+  ["licenses/voiceorbs-MIT.txt", "voiceorbs-MIT.txt"],
   ["sidepanel.html", "sidepanel.html"],
+  ["voice-permission.html", "voice-permission.html"],
   ["src/sidepanel/styles.css", "styles.css"],
 ]) {
   await copyFile(path.join(root, from), path.join(dist, to));
