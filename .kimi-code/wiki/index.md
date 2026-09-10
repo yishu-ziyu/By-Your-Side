@@ -14,3 +14,5 @@
 | [chrome-secure-preferences-default-dir](patterns/chrome-secure-preferences-default-dir.md) | 先确定实际 profile，再读取 Secure Preferences；本例为 Default，扩展消失根因仍未决 | session_236968c3（复盘 f0b4980d） | 2026-09-09 |
 | [acceptance-entry-mismatch](patterns/acceptance-entry-mismatch.md) | 在旧宿主验收成功不等于用户当前入口可用；先把实际入口写清再定方案 | Codex 本轮目的纠正与收尾验收 | 2026-09-09 |
 | [production-wiring-lowest-shared-module](patterns/production-wiring-lowest-shared-module.md) | 共享行为要接在所有入口都会构造的最低层生产模块，否则最小生产组合与验收驱动会漏掉 | 写入回执丢失 R1–R4 返工 | 2026-09-09 |
+| [quota-limited-storage-silent-failure](patterns/quota-limited-storage-silent-failure.md) | 配额写满后所有写入静默失败；按会话分键会被广播状态批量放大；预算要按 UTF-8 字节算 | 侧栏「未连接」排查与修复 | 2026-09-11 |
+| [observation-identity-mismatch](patterns/observation-identity-mismatch.md) | 按名字匹配命中别的扩展、共享 stderr 没有时间轴、并发工作区造出假回归；下结论前先钉死观测对象 | 同上 | 2026-09-11 |
