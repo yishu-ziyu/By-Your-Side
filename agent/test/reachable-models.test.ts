@@ -8,33 +8,40 @@ function option(id: string): ModelOption {
 }
 
 describe("filterReachableModels", () => {
-  it("keeps probed-reachable MiniMax, xAI, pool, and Xiaomi models in catalog order", () => {
+  it("keeps only the five selected models in catalog order", () => {
     const listed = [
-      option("anthropic/claude-opus-4-6"),
+      option("minimax-cn/MiniMax-M2.7"),
       option("minimax-cn/MiniMax-M3"),
-      option("kimi-coding/kimi-for-coding"),
       option("cliproxy/grok-4.6"),
-      option("cliproxy/gpt-5.6-luna"),
+      option("cli-proxy/gemini-3.8-flash-high"),
+      option("xai/grok-4.3"),
+      option("xai/grok-4.6"),
       option("xiaomi-token-plan-cn/mimo-v2.5-pro"),
-      option("openai-codex/gpt-5.4"),
-      option("opencode-go/big-pickle"),
+      option("xiaomi-token-plan-cn/mimo-v2.5"),
+      option("opencode-go/deepseek-flash"),
     ];
     expect(filterReachableModels(listed).map((m) => m.id)).toEqual([
       "minimax-cn/MiniMax-M3",
-      "cliproxy/grok-4.6",
+      "xai/grok-4.6",
       "xiaomi-token-plan-cn/mimo-v2.5-pro",
+      "xiaomi-token-plan-cn/mimo-v2.5",
+      "opencode-go/deepseek-flash",
     ]);
   });
 
-  it("hides providers that did not answer the probe", () => {
+  it("hides the dropped models and providers that did not answer the probe", () => {
     const hidden = [
+      "minimax-cn/MiniMax-M2.7",
+      "minimax-cn/MiniMax-M2.7-highspeed",
+      "xai/grok-4.3",
+      "xai/grok-4.5",
+      "cliproxy/grok-4.6",
+      "cliproxy/gemini-3.1-pro-low",
+      "cli-proxy/claude-sonnet-4-6",
       "anthropic/claude-haiku-4-5",
       "antigravity/gemini-3.5-flash-high",
       "kimi-coding/kimi-for-coding",
       "openai-codex/gpt-5.6-luna",
-      "opencode-go/minimax-m2.5",
-      "cliproxy/kimi-k2.7-code",
-      "cliproxy/gpt-5.5",
     ];
     expect(filterReachableModels(hidden.map(option))).toEqual([]);
     for (const id of hidden) expect(REACHABLE_MODEL_IDS.has(id)).toBe(false);
