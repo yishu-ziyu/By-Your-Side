@@ -172,6 +172,19 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
+  /** 示范录制编译成技能；steps 是示范期间用户自己的动作记录。
+   *  updateId 存在时是"重新示范同一个技能"：内容替换、版本 +1，旧版本归档。 */
+  | { type: "skill_compile"; requestId: string; intent: string; hostname: string; demoId: string; steps: import('./demo-record.js').DemoStep[]; updateId?: string; expectedVersion?: number }
+  /** 忘记一份技能：删掉之后不再被检索到 */
+  | { type: "skill_forget"; requestId: string; id: string }
+  /** 列出某个站点上的技能（hostname 为空则列全部） */
+  | { type: "skill_list"; requestId: string; hostname?: string }
+  /** 按技能跑一遍：不叫模型，跑完写运行记录 */
+  | { type: "skill_run"; requestId: string; id: string; expectedVersion?: number }
+  /** 记一条修订线索（"这次不太对"），不改做法，下次重新示范时提醒 */
+  | { type: "skill_note"; requestId: string; id: string; note: string }
+  /** 回到上一版 */
+  | { type: "skill_rollback"; requestId: string; id: string; expectedVersion?: number }
   | { type: "conversation_create"; requestId: string; title?: string }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel" }
@@ -235,6 +248,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
+  | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
@@ -292,6 +306,8 @@ export type AgentUiEvent =
 // ── 工具契约 ───────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
+  "fetch",
+  "network",
   "worker_tabs",
   "share_tab",
   "page_operation",
@@ -347,6 +363,16 @@ export interface TabInfo {
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
 export interface ToolContract {
+  /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回伴随进程，不回侧栏。 */
+  fetch: {
+    params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
+    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string };
+  };
+  /** 被动看当前工作页真实发出过哪些请求（CDP Network 域环形缓冲）；只读，不改页面。 */
+  network: {
+    params: { tabId?: number; urlContains?: string; types?: string[] | "all"; limit?: number; clear?: boolean };
+    data: { text: string; tabId: number; total: number; matched: number; shown: number; dropped: number };
+  };
   worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
   share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
@@ -364,7 +390,8 @@ export interface ToolContract {
   snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string; tabId: number } };
   click: {
     params: { target?: string; point?: [number, number]; label?: string };
-    data: { clicked: true } | { clicked: false; held: true };
+    /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。 */
+    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
   };
   /** 真实鼠标移动；hovered 仅表示事件已派发，页面变化需另行观察。 */
   hover: {
@@ -437,6 +464,25 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if (!validRequestId(msg.requestId)) return null;
       if (msg.type !== "memory_list" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
       if (msg.type === "memory_update" && (!validMemoryText(msg.text) || !isMemoryScope(msg.scope))) return null;
+    }
+    if (msg.type === "skill_compile") {
+      if (!validRequestId(msg.requestId) || typeof msg.intent !== "string" || msg.intent.length > 500) return null;
+      if (typeof msg.hostname !== "string" || typeof msg.demoId !== "string") return null;
+      if (!Array.isArray(msg.steps) || msg.steps.length < 1 || msg.steps.length > 200) return null;
+    }
+    if (msg.type === "skill_forget" && (!validRequestId(msg.requestId) || typeof msg.id !== "string")) return null;
+    if (msg.type === "skill_list" && (!validRequestId(msg.requestId) || (msg.hostname !== undefined && typeof msg.hostname !== "string"))) return null;
+    if (msg.type === "skill_run") {
+      if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
+      if (msg.expectedVersion !== undefined && !Number.isInteger(msg.expectedVersion)) return null;
+    }
+    if (msg.type === "skill_note") {
+      if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
+      if (typeof msg.note !== "string" || !msg.note.trim() || msg.note.length > 300) return null;
+    }
+    if (msg.type === "skill_rollback") {
+      if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
+      if (msg.expectedVersion !== undefined && !Number.isInteger(msg.expectedVersion)) return null;
     }
     if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
     if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
@@ -542,6 +588,13 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (msg.deletedId !== undefined && !validMemoryId(msg.deletedId)) return null;
       if (msg.error !== undefined && typeof msg.error !== "string") return null;
       if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId))) return null;
+      if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
+    }
+    if (msg.type === "skill_result") {
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["compile", "forget", "list", "run", "note", "rollback"].includes(msg.action)) return null;
+      if (msg.ok && (msg.action === "compile" || msg.action === "run" || msg.action === "note" || msg.action === "rollback") && (!msg.skill || typeof msg.skill.program !== "string" || !Array.isArray(msg.skill.steps))) return null;
+      if (msg.ok && msg.action === "forget" && typeof msg.deletedId !== "string") return null;
+      if (msg.ok && msg.action === "list" && (!Array.isArray(msg.skills) || (msg.runs !== undefined && typeof msg.runs !== "object"))) return null;
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {

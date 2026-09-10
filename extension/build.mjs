@@ -37,8 +37,11 @@ await esbuild.build({
   entryPoints: {
     "content-snapshot": "src/content/snapshot.ts",
     "content-domops": "src/content/domops.ts",
+    "content-effect": "src/content/effect.ts",
     "content-cursor": "src/content/cursor.ts",
     "content-ask": "src/content/ask.ts",
+    "content-record": "src/content/record.ts",
+    "content-observe": "src/content/observe.ts",
   },
 });
 

@@ -78,15 +78,17 @@ async function paintPill(
   state: CursorStatusState,
   title: string,
   sessionId: string,
+  targetTabId: number | null,
 ): Promise<void> {
+  if (targetTabId == null) return;
   try {
     await ensureCursor(tabId);
     await callDom(
       tabId,
-      (id: string, view: { state: CursorStatusState; title: string; sessionId: string }) => {
+      (id: string, view: { state: CursorStatusState; title: string; sessionId: string; tabId: number }) => {
         window.__sideagent?.cursor?.for(id)?.showCrossPage?.(view);
       },
-      [instanceIdFor(key), { state, title, sessionId }],
+      [instanceIdFor(key), { state, title, sessionId, tabId: targetTabId }],
     );
   } catch {
     /* 页面禁止注入 */
@@ -143,7 +145,8 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   const previous = entry.pillTabId;
   entry.pillTabId = active;
   if (previous != null && previous !== active) await hidePill(previous);
-  await paintPill(active, entry.key, entry.state, title, entry.sessionId);
+  // 目标标签页随胶囊一起下发：点击时不必再查内存状态（service worker 可能已经重启过）
+  await paintPill(active, entry.key, entry.state, title, entry.sessionId, entry.tabId);
 }
 
 async function resyncPills(): Promise<void> {

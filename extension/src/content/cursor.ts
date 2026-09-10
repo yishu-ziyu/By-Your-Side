@@ -1227,6 +1227,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
   let crossPill: HTMLDivElement | null = null;
   let crossPillSession = "";
+  /** 胶囊指向的标签页；点击时随消息带上去，不依赖后台内存状态 */
+  let crossPillTabId: number | null = null;
 
   function ensureCrossPill(): HTMLDivElement {
     ensureDom();
@@ -1240,9 +1242,13 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       ev.preventDefault();
       ev.stopPropagation();
       try {
-        chrome.runtime.sendMessage({ type: "cross_page_click", sessionId: crossPillSession }, () => {
-          void chrome.runtime.lastError;
-        });
+        // 目标标签页来自胶囊本身：service worker 重启过也能跳对地方
+        chrome.runtime.sendMessage(
+          { type: "cross_page_click", sessionId: crossPillSession, tabId: crossPillTabId },
+          (res: { ok?: boolean } | undefined) => {
+            if (chrome.runtime.lastError || res?.ok !== true) hideCrossPill();
+          },
+        );
       } catch {
         /* 无扩展运行时（自检页）忽略 */
       }
@@ -1251,9 +1257,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     return crossPill;
   }
 
-  function showCrossPill(view: { sessionId?: string; title?: string; state?: CursorStatusState }): void {
+  function showCrossPill(view: { sessionId?: string; title?: string; state?: CursorStatusState; tabId?: number }): void {
     const el = ensureCrossPill();
     crossPillSession = view.sessionId ?? "";
+    crossPillTabId = typeof view.tabId === "number" ? view.tabId : null;
     const copy = STATUS_COPY[view.state ?? "waiting"];
     el.querySelector<HTMLSpanElement>(".xdot")!.style.background = copy?.color ?? "#2f6fed";
     el.querySelector<HTMLSpanElement>(".xmain")!.textContent = "正在另一个标签页工作";
@@ -1282,6 +1289,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     controlHost?.remove();
     crossPill = null;
     crossPillSession = "";
+    crossPillTabId = null;
     host = null;
     marksHost = null;
     controlHost = null;

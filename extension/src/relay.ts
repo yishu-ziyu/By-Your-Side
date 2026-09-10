@@ -5,6 +5,7 @@
  */
 import type { AgentMode, Attachment, ClientMessage, ServerMessage } from "../../shared/protocol.js";
 import type { PendingAsk } from "./shared/ask-selection.js";
+import type { DemoStep } from "../../shared/demo-record.js";
 
 export const PANEL_PORT_NAME = "sideagent-panel";
 
@@ -39,7 +40,11 @@ export type PanelToBg =
   /** 面板（重）打开，请求同步状态；afterSeq 存在时只补发更新的可见历史。 */
   | { kind: "sync"; afterSeq?: number; conversationId?: string }
   /** 连接配置已变更（如 ws 调试模式更新了 token），请重连。 */
-  | { kind: "retry" };
+  | { kind: "retry" }
+  /** 示范录制开关；录制在 background 进行，面板只发指令、收结果。 */
+  | { kind: "demo"; action: "start" | "stop" | "dismiss"; conversationId?: string }
+  /** 观察开关与候选处置；默认关，打开才采（只采骨架）。 */
+  | { kind: "observe"; action: "on" | "off" | "list" | "dismiss" | "accept"; conversationId?: string; signature?: string; hostname?: string };
 
 export type BgToPanel = BgToPanelPayload & { conversationId?: string };
 
@@ -61,4 +66,8 @@ type BgToPanelPayload =
    * 附加上文的原始消息，供面板原样重试。没有回执 = background 层已接受并
    * 已交给传输层，不表示伴随进程已处理或任务已完成。
    */
-  | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage };
+  | { kind: "delivery"; seq: number; ok: boolean; original: ClientMessage }
+  /** 示范录制状态与已记步骤（步骤只在这里可见，不写历史、不落盘）。 */
+  | { kind: "demo"; recording: boolean; tabId?: number; steps: DemoStep[]; truncated: boolean }
+  /** 观察状态与候选：候选是"你常这样做"的证据，是否生成技能由用户点头。 */
+  | { kind: "observe"; observing: boolean; candidates: import("../../shared/observe.js").ObservedPattern[]; patterns: number };

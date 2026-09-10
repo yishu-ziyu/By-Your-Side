@@ -29,6 +29,14 @@ interface SideAgentDomOps {
   scrollToBottom(maxSteps?: number): Promise<{ atBottom: boolean }>;
 }
 
+interface SideAgentEffect {
+  /** 取基线（含 60ms 页面活跃度采样）；token 由调用方生成 */
+  begin(input: { token: string; point?: [number, number]; selector?: string }): Promise<{ ok: true }>;
+  /** 与基线比对；会话不存在（换文档/过期）返回 null */
+  diff(token: string): import("../../shared/effect.js").EffectReport | null;
+  end(token: string): { ok: true };
+}
+
 interface MarkOptions {
   style?: "rect" | "sketch";
   motion?: "grow" | "boil";
@@ -43,7 +51,7 @@ interface SideAgentCursor {
   setStatus?(view?: { state: "waiting" | "reading" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
   clearStatus?(): void;
   /** 跨页：它在别的标签页干活时，当前页右上角显示可点胶囊（点了切过去） */
-  showCrossPage?(view?: { sessionId?: string; title?: string; state?: "waiting" | "reading" | "done" | "failed" }): void;
+  showCrossPage?(view?: { sessionId?: string; title?: string; state?: "waiting" | "reading" | "done" | "failed"; tabId?: number }): void;
   hideCrossPage?(): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
@@ -91,6 +99,12 @@ interface SideAgentNamespace {
   refs?: Map<number, Element>;
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
+  /** 动作效果证据（按需注入 content-effect.js 后可用） */
+  effect?: SideAgentEffect;
+  /** 示范录制（按需注入 content-record.js 后可用） */
+  record?: SideAgentRecord;
+  /** 被动观察（按需注入 content-observe.js 后可用）；只记骨架，不加任何可见痕迹 */
+  observe?: { start(): { ok: true }; stop(): { ok: true }; active(): boolean };
   cursor?: SideAgentCursor;
   /** overlay 自检：默认光标是否已 hide（生产路径不用） */
   cursorHidden?: () => boolean;
@@ -154,6 +168,16 @@ interface SideAgentNamespace {
     boilFrameCount: number;
     labelText: string;
   }>;
+}
+
+interface SideAgentRecord {
+  /** 开始记录用户自己的页面动作；重复调用无副作用。seed 用于导航后接着记 */
+  start(seed?: { steps?: import("../../shared/demo-record.js").DemoStep[]; elapsedMs?: number }): { ok: true };
+  /** 停止记录并上行最后一批步骤；count 为页面侧真实记下的步数 */
+  stop(): { ok: true; count: number };
+  recording(): boolean;
+  /** 自检：只读的录制状态，验收脚本用；不影响录制 */
+  selfCheck(): { recording: boolean; count: number; truncated: boolean; lastKind: string | null };
 }
 
 interface Window {

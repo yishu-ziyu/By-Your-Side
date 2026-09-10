@@ -215,4 +215,27 @@ describe("光标状态层", () => {
       .map(([details]) => (details as ScriptDetails).target.tabId);
     expect(byTab).toEqual([21]);
   });
+
+  it("跨页胶囊带着目标标签页一起下发：service worker 重启后点它仍然跳得对", async () => {
+    const env = installChrome({ titles: { 21: "opencode" }, activeId: 7 });
+    const { showCursorStatus } = await import("../src/background/cursor-status.js");
+
+    // 它在 21 号标签页干活，用户当前看的是 7 号 → 胶囊画在 7 号上，指向 21
+    await showCursorStatus({ key: "main", state: "waiting", tabId: 21 });
+
+    const pill = pillCalls(env.executeScript).at(-1);
+    expect(pill?.[0].target).toEqual({ tabId: 7 });
+    expect((pill?.[0].args?.[1] as { tabId?: number })?.tabId).toBe(21);
+  });
+
+  it("正在干活的就是当前页时不画胶囊（用户已经看着它了）", async () => {
+    const env = installChrome({ titles: { 21: "同一个页面" }, activeId: 21 });
+    const { showCursorStatus } = await import("../src/background/cursor-status.js");
+
+    await showCursorStatus({ key: "main", state: "waiting", tabId: 21 });
+
+    const painted = pillCalls(env.executeScript).filter(([details]) => (details as ScriptDetails).args?.[1] !== undefined);
+    expect(painted.every(([details]) => (details as ScriptDetails).target.tabId === 21)).toBe(true);
+    expect((painted.at(-1)?.[0].args?.[1] as { tabId?: number } | undefined)?.tabId).toBeUndefined();
+  });
 });

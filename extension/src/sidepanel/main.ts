@@ -9,7 +9,11 @@ import { createOrb, type OrbHandle } from "./orb.js";
  */
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Wrench, Brain, GraduationCap, Search } from "lucide";
+import { createElement as icon, ArrowUp, Square, Wrench, Brain, GraduationCap, Search, Hand } from "lucide";
+import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
+import { skillHealth, skillRunSummary, skillStepsText, type Skill, type SkillRun } from "../../../shared/skill.js";
+import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
+import { describeAnchor } from "../../../shared/skill.js";
 import {
   MousePointerClick,
   PenLine,
@@ -97,6 +101,7 @@ app.innerHTML = `
       <span id="brand">By Your Side</span>
     </div>
     <button id="teach-toggle" type="button" title="教学模式：Agent 只标注引导，由你手动操作" aria-pressed="false"></button>
+    <button id="record-toggle" type="button" title="看我做一次：你亲手做一遍，我先只看不动手" aria-pressed="false"></button>
     <div id="status-pill" class="activity-island" title="当前连接与执行状态">
       <span id="status-dot" class="dot island-pulse-dot"></span>
       <span id="status-text">未连接</span>
@@ -104,21 +109,33 @@ app.innerHTML = `
   </header>
   <div id="conversation-bar">
     <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
-    <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false">记忆</button>
+    <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false">知识</button>
     <button id="conversation-new" type="button">＋ 新会话</button>
   </div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="conversation-menu" role="menu" hidden></div>
   <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
-  <section id="memory-drawer" role="dialog" aria-label="记忆管理" aria-modal="false" hidden>
+  <section id="memory-drawer" role="dialog" aria-label="知识与记忆" aria-modal="false" hidden>
     <div class="memory-drawer-head">
       <div>
-        <h2 id="memory-title">记忆</h2>
-        <p>当前保存的个人记忆</p>
+        <h2 id="memory-title">知识</h2>
+        <p id="knowledge-sub">技能与记忆，都在这儿</p>
       </div>
       <button id="memory-close" type="button">关闭</button>
     </div>
-    <div id="memory-body"></div>
+    <div id="knowledge-seg" role="tablist">
+      <button type="button" id="seg-skills" role="tab" aria-selected="true">技能</button>
+      <button type="button" id="seg-memory" role="tab" aria-selected="false">记忆</button>
+      <button type="button" id="observe-toggle" aria-pressed="false" title="观察：只记骨架，不记你输入的内容"></button>
+      <span id="observe-hint"></span>
+    </div>
+    <div id="knowledge-body">
+      <div id="skill-pane" hidden>
+        <div id="observe-candidates"></div>
+        <div id="skill-list"></div>
+      </div>
+      <div id="memory-body" hidden></div>
+    </div>
   </section>
   <div id="messages"></div>
   <div id="team-card" hidden></div>
@@ -145,6 +162,18 @@ app.innerHTML = `
       </div>
     </div>
     <input type="file" id="file-input" accept="image/*" multiple hidden />
+    <div id="demo-strip" hidden>
+      <div id="demo-head">
+        <span id="demo-title"></span>
+        <button type="button" id="demo-close" title="收起这份示范记录">✕</button>
+      </div>
+      <ol id="demo-steps"></ol>
+      <div id="demo-actions">
+        <input id="demo-intent" type="text" maxlength="200" placeholder="一句话说明你要的是什么，例如：把未跟进的客户整理成表" />
+        <button type="button" id="demo-compile">编译成脚本</button>
+      </div>
+      <div id="demo-skill" hidden></div>
+    </div>
     <div id="composer" class="composer-glass-dock">
       <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
         <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -194,6 +223,15 @@ const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 const abortBtn = document.getElementById("abort-btn") as HTMLButtonElement;
 const teachToggle = document.getElementById("teach-toggle") as HTMLButtonElement;
+const recordToggle = document.getElementById("record-toggle") as HTMLButtonElement;
+const demoStrip = document.getElementById("demo-strip") as HTMLDivElement;
+const demoTitle = document.getElementById("demo-title") as HTMLSpanElement;
+const demoSteps = document.getElementById("demo-steps") as HTMLOListElement;
+const demoClose = document.getElementById("demo-close") as HTMLButtonElement;
+const demoActions = document.getElementById("demo-actions") as HTMLDivElement;
+const demoIntent = document.getElementById("demo-intent") as HTMLInputElement;
+const demoCompile = document.getElementById("demo-compile") as HTMLButtonElement;
+const demoSkill = document.getElementById("demo-skill") as HTMLDivElement;
 const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
 const modelMark = document.getElementById("model-mark") as HTMLElement;
 const modelName = document.getElementById("model-name")!;
@@ -364,6 +402,7 @@ function selectConversation(id: string, notify = true): void {
     restoringDraft = false;
     const summary = conversations.get(id);
     if (summary) applyMode(summary.mode, false);
+    clearDemoView();
     closeModelPopover();
     modelState = null;
     renderModelPicker();
@@ -748,7 +787,7 @@ function closeMemoryDrawer(): void {
   memoryOpen.focus();
 }
 
-memoryOpen.onclick = () => memoryDrawer.hidden ? openMemoryDrawer() : closeMemoryDrawer();
+memoryOpen.onclick = () => memoryDrawer.hidden ? void openKnowledge(knowledgeSegment) : closeMemoryDrawer();
 memoryClose.onclick = closeMemoryDrawer;
 memoryShade.onclick = closeMemoryDrawer;
 document.addEventListener("keydown", (event) => {
@@ -861,6 +900,7 @@ if (morphSend) morphSend.appendChild(icon(ArrowUp));
 if (morphStop) morphStop.appendChild(icon(Square));
 abortBtn.appendChild(icon(Square));
 teachToggle.appendChild(icon(GraduationCap));
+recordToggle.appendChild(icon(Hand));
 
 function clipTitle(text: string, max = 16): string {
   const t = text.trim();
@@ -986,6 +1026,402 @@ teachToggle.oncontextmenu = (ev) => {
   markMotion = markMotion === "grow" ? "boil" : "grow";
   void chrome.storage.local.set({ [MARK_MOTION_KEY]: markMotion });
   renderTeachToggle();
+};
+
+const knowledgeDrawer = document.getElementById("memory-drawer") as HTMLElement;
+const segSkills = document.getElementById("seg-skills") as HTMLButtonElement;
+const segMemory = document.getElementById("seg-memory") as HTMLButtonElement;
+const skillPane = document.getElementById("skill-pane") as HTMLDivElement;
+const skillList = document.getElementById("skill-list") as HTMLDivElement;
+const observeToggle = document.getElementById("observe-toggle") as HTMLButtonElement;
+const observeHint = document.getElementById("observe-hint") as HTMLSpanElement;
+const observeCandidates = document.getElementById("observe-candidates") as HTMLDivElement;
+let knowledgeSegment: "skills" | "memory" = "skills";
+let observing = false;
+let observedPatterns = 0;
+let observedCandidates: ObservedPattern[] = [];
+let redoSkillId: string | null = null;
+let redoSkillVersion: number | null = null;
+let skillRequest = "";
+let skillEntries: Array<{ skill: Skill; runs: SkillRun[] }> = [];
+
+// ── 知识抽屉：技能与记忆一个入口（方案一：摘要 + 展开） ──────────────
+// 默认只露「名字 + 事实行 + 一个主按钮」；凭证、步骤、脚本、其余动作收进一次展开。
+
+/** 打开抽屉：分段决定看哪一半；两边各自按需拉数据。 */
+async function openKnowledge(segment: "skills" | "memory"): Promise<void> {
+  memoryDrawer.hidden = false;
+  memoryShade.hidden = false;
+  memoryOpen.setAttribute("aria-expanded", "true");
+  setKnowledgeSegment(segment);
+}
+
+function setKnowledgeSegment(segment: "skills" | "memory"): void {
+  knowledgeSegment = segment;
+  segSkills.setAttribute("aria-selected", String(segment === "skills"));
+  segMemory.setAttribute("aria-selected", String(segment === "memory"));
+  skillPane.hidden = segment !== "skills";
+  memoryBody.hidden = segment !== "memory";
+  if (segment === "skills") {
+    // 先按手上的数据画一次（多半是空态），别让抽屉在等到回复前是一片空白
+    renderObserve();
+    renderSkills();
+    void refreshSkills();
+    return;
+  }
+  renderMemoryDrawer();
+  requestMemoryList();
+}
+
+async function refreshSkills(): Promise<void> {
+  const hostname = await currentHostname();
+  skillRequest = crypto.randomUUID();
+  send({ type: "skill_list", requestId: skillRequest, ...(hostname ? { hostname } : {}) });
+  port?.postMessage({ kind: "observe", action: "list", conversationId: selectedConversationId } satisfies PanelToBg);
+}
+
+/** 当前活动页的站点：技能按站点列，不看别的站。 */
+async function currentHostname(): Promise<string> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab?.url ? new URL(tab.url).hostname : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderObserve(): void {
+  observeToggle.textContent = observing ? `观察：开 · 已记 ${observedPatterns} 段` : "观察：关";
+  observeToggle.setAttribute("aria-pressed", String(observing));
+  observeToggle.title = observing
+    ? "只记骨架：点了哪些对象、同一站点的一串动作。不记你输入的内容；敏感站点与密码字段直接跳过。"
+    : "打开后我才会观察你的操作，从中找出你可能常做的事，再问你要不要以后替你跑。";
+  observeHint.textContent = observing ? "只记骨架" : "打开后才会看你常做的事";
+  observeCandidates.replaceChildren();
+  for (const pattern of observedCandidates) {
+    const card = document.createElement("div");
+    card.className = "observe-card";
+    const text = document.createElement("p");
+    text.textContent = describePattern(pattern, anchor => describeAnchor(anchor));
+    const detail = document.createElement("details");
+    detail.className = "disc";
+    const summary = document.createElement("summary");
+    summary.textContent = "看它记下的这几步";
+    const body = document.createElement("div");
+    body.className = "disc-body";
+    const list = document.createElement("ol");
+    for (const anchor of pattern.anchors) {
+      const li = document.createElement("li");
+      li.textContent = describeAnchor(anchor);
+      list.appendChild(li);
+    }
+    body.appendChild(list);
+    detail.append(summary, body);
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.className = "btn primary";
+    accept.textContent = "以后替我跑";
+    accept.onclick = () => {
+      accept.disabled = true;
+      skillRequestId = crypto.randomUUID();
+      send({
+        type: "skill_compile",
+        requestId: skillRequestId,
+        intent: defaultIntent(pattern, anchor => describeAnchor(anchor)),
+        hostname: pattern.hostname,
+        demoId: `observed-${pattern.hostname}-${pattern.signature.slice(0, 24)}`,
+        steps: pattern.anchors.map((anchor, index) => ({ at: index * 1000, kind: "click" as const, anchor, page: `https://${pattern.hostname}/` })),
+      });
+      port?.postMessage({ kind: "observe", action: "accept", conversationId: selectedConversationId, signature: pattern.signature, hostname: pattern.hostname } satisfies PanelToBg);
+    };
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "btn ghost";
+    dismiss.textContent = "不用";
+    dismiss.onclick = () => {
+      port?.postMessage({ kind: "observe", action: "dismiss", conversationId: selectedConversationId, signature: pattern.signature, hostname: pattern.hostname } satisfies PanelToBg);
+      observedCandidates = observedCandidates.filter(p => !(p.signature === pattern.signature && p.hostname === pattern.hostname));
+      renderObserve();
+    };
+    actions.append(accept, dismiss);
+    card.append(text, detail, actions);
+    observeCandidates.appendChild(card);
+  }
+}
+
+/** 技能行：摘要 + 展开。过期的技能主按钮变短，点下去先就地确认。 */
+function renderSkills(): void {
+  skillList.replaceChildren();
+  if (skillEntries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "memory-quiet";
+    empty.textContent = transportConnected
+      ? "这一页还没有技能。亲手做一遍再填一句话编译；或者打开观察，让它自己看出你常做的事。"
+      : "还没连上伴随进程，技能与观察暂时读不到。";
+    skillList.appendChild(empty);
+    return;
+  }
+  for (const { skill, runs } of skillEntries) {
+    const health = skillHealth(runs);
+    const row = document.createElement("div");
+    row.className = "row";
+    const head = document.createElement("div");
+    head.className = "row-head";
+    const name = document.createElement("span");
+    name.className = "row-name";
+    name.textContent = skill.name;
+    const facts = document.createElement("span");
+    facts.className = health.stale ? "row-facts stale" : "row-facts";
+    facts.textContent = [skillRunSummary(runs), skill.version > 1 ? `第 ${skill.version} 版` : ""].filter(Boolean).join(" · ");
+    head.append(name, facts);
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const runBtn = document.createElement("button");
+    runBtn.type = "button";
+    runBtn.className = "btn primary";
+    runBtn.textContent = "照上次那样跑";
+    runBtn.onclick = () => {
+      if (!health.stale) { startSkillRun(skill, runBtn); return; }
+      // 可能过期：不直接跑，先就地确认，不弹原生对话框（那会卡住整个面板）
+      runBtn.textContent = "可能过期，仍然要跑？";
+      if (!row.querySelector(".stale-confirm")) {
+        const confirmRow = document.createElement("div");
+        confirmRow.className = "row-actions stale-confirm";
+        const yes = document.createElement("button");
+        yes.type = "button";
+        yes.className = "btn";
+        yes.textContent = "确认跑一次";
+        yes.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; startSkillRun(skill, runBtn); };
+        const no = document.createElement("button");
+        no.type = "button";
+        no.className = "btn ghost";
+        no.textContent = "算了";
+        no.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; };
+        confirmRow.append(yes, no);
+        row.appendChild(confirmRow);
+      }
+    };
+    actions.appendChild(runBtn);
+
+    const detail = document.createElement("details");
+    detail.className = "disc";
+    const summary = document.createElement("summary");
+    summary.textContent = "凭证、步骤与其余动作";
+    const body = document.createElement("div");
+    body.className = "disc-body";
+    if (skill.notes?.length) {
+      const notes = document.createElement("p");
+      notes.className = "check";
+      notes.textContent = `你说过不对的地方：${skill.notes.map((note: { text: string }) => note.text).join("；")}`;
+      body.appendChild(notes);
+    }
+    if (skill.check.text) {
+      const check = document.createElement("p");
+      check.className = "check";
+      check.textContent = `完成凭证：${skill.check.text}`;
+      body.appendChild(check);
+    }
+    if (skill.weakSteps || skill.droppedSteps) {
+      const weak = document.createElement("p");
+      weak.className = "check";
+      weak.textContent = skill.weakSteps
+        ? `有 ${skill.weakSteps} 步没记到对象名：跑的时候认不出来就跳过，不会因此停下。`
+        : `有 ${skill.droppedSteps} 步没记到对象名，已跳过。`;
+      body.appendChild(weak);
+    }
+    const steps = document.createElement("ol");
+    for (const line of skillStepsText(skill)) {
+      const li = document.createElement("li");
+      li.textContent = line;
+      steps.appendChild(li);
+    }
+    const script = document.createElement("pre");
+    script.textContent = skill.program;
+    body.append(steps, script);
+
+    const secondary = document.createElement("div");
+    secondary.className = "row-actions";
+    const redo = document.createElement("button");
+    redo.type = "button";
+    redo.className = "btn";
+    redo.textContent = "重新示范";
+    redo.title = "就按新做法再做一遍：内容替换、版本加一，旧版本留着可回退";
+    redo.onclick = () => {
+      redoSkillId = skill.id;
+      redoSkillVersion = skill.version;
+      knowledgeDrawer.hidden = true;
+      port?.postMessage({ kind: "demo", action: "start", conversationId: selectedConversationId } satisfies PanelToBg);
+      addMsg("msg", `重新示范：现在你亲手做一遍（会覆盖「${skill.name}」，旧版本留着）。做完点「做完了」，再点「编译成脚本」。`);
+    };
+    const noteBox = document.createElement("div");
+    noteBox.className = "skill-note-box";
+    noteBox.hidden = true;
+    const noteInput = document.createElement("input");
+    noteInput.type = "text";
+    noteInput.maxLength = 200;
+    noteInput.placeholder = "哪里不对？一句话，下次重新示范时提醒你";
+    const noteSend = document.createElement("button");
+    noteSend.type = "button";
+    noteSend.className = "btn";
+    noteSend.textContent = "记下";
+    noteSend.onclick = () => {
+      const text = noteInput.value.trim();
+      if (!text) return;
+      noteBox.hidden = true;
+      noteInput.value = "";
+      addMsg("msg", `记下了：下次重新示范「${skill.name}」时会提醒你这条。`);
+      skillRequest = crypto.randomUUID();
+      send({ type: "skill_note", requestId: skillRequest, id: skill.id, note: text });
+      window.setTimeout(() => void refreshSkills(), 700);
+    };
+    noteBox.append(noteInput, noteSend);
+    const noteBtn = document.createElement("button");
+    noteBtn.type = "button";
+    noteBtn.className = "btn ghost";
+    noteBtn.textContent = "这次不太对";
+    noteBtn.onclick = () => { noteBox.hidden = !noteBox.hidden; if (!noteBox.hidden) noteInput.focus(); };
+    const rollback = document.createElement("button");
+    rollback.type = "button";
+    rollback.className = "btn ghost";
+    rollback.textContent = "回到上一版";
+    rollback.disabled = skill.version <= 1;
+    rollback.onclick = () => {
+      rollback.disabled = true;
+      addMsg("msg", `正在回到「${skill.name}」的上一版…`);
+      skillRequest = crypto.randomUUID();
+      send({ type: "skill_rollback", requestId: skillRequest, id: skill.id, expectedVersion: skill.version });
+      window.setTimeout(() => void refreshSkills(), 700);
+    };
+    const forget = document.createElement("button");
+    forget.type = "button";
+    forget.className = "btn ghost";
+    forget.textContent = "忘掉";
+    forget.onclick = () => {
+      skillRequest = crypto.randomUUID();
+      send({ type: "skill_forget", requestId: skillRequest, id: skill.id });
+    };
+    secondary.append(redo, noteBtn, rollback, forget);
+    body.append(secondary, noteBox);
+    detail.append(summary, body);
+    row.append(head, actions, detail);
+    skillList.appendChild(row);
+  }
+}
+
+function startSkillRun(skill: Skill, button: HTMLButtonElement): void {
+  button.disabled = true;
+  button.textContent = "跑着…";
+  skillRequest = crypto.randomUUID();
+  send({ type: "skill_run", requestId: skillRequest, id: skill.id, expectedVersion: skill.version });
+}
+
+segSkills.onclick = () => setKnowledgeSegment("skills");
+segMemory.onclick = () => setKnowledgeSegment("memory");
+observeToggle.onclick = () => {
+  port?.postMessage({ kind: "observe", action: observing ? "off" : "on", conversationId: selectedConversationId } satisfies PanelToBg);
+};
+
+// ── 示范录制（看我做） ─────────────────────────────────────────────
+// 记录在 background 进行；面板只发开关指令、把已记步骤讲清楚。
+// 默认只显示步骤与完成情况，脚本代码以后折叠在「代码」里，不铺在脸上。
+
+let demoState: { recording: boolean; steps: DemoStep[]; truncated: boolean } = { recording: false, steps: [], truncated: false };
+let skillRequestId = "";
+
+function renderDemo(): void {
+  const { recording, steps, truncated } = demoState;
+  recordToggle.classList.toggle("on", recording);
+  recordToggle.classList.toggle("recording", recording);
+  recordToggle.setAttribute("aria-pressed", String(recording));
+  recordToggle.title = recording
+    ? `${recordingHint(steps, truncated)}；做完点这里结束`
+    : "看我做一次：你亲手做一遍，我先只看不动手";
+  demoStrip.hidden = !recording && steps.length === 0;
+  if (demoStrip.hidden) return;
+  demoTitle.textContent = recording ? recordingHint(steps, truncated) : `示范结束：记下 ${steps.length} 步${truncated ? "（中途已达上限）" : ""}`;
+  demoSteps.replaceChildren(...describeSteps(steps).map((line) => {
+    const li = document.createElement("li");
+    li.textContent = line;
+    return li;
+  }));
+  demoSteps.lastElementChild?.scrollIntoView({ block: "nearest" });
+  demoActions.hidden = recording;
+}
+
+/** 编译入口：把这一份示范 + 你的一句话交给伴随进程编译成技能。 */
+demoCompile.onclick = () => {
+  const steps = demoState.steps;
+  if (!steps.length) return;
+  const host = hostnameOf(steps);
+  if (!host) { addMsg("msg error", "这份示范没有可用的站点信息，换个普通网页再试。"); return; }
+  demoCompile.disabled = true;
+  demoCompile.textContent = "编译中…";
+  skillRequestId = crypto.randomUUID();
+  send({
+    type: "skill_compile",
+    requestId: skillRequestId,
+    intent: demoIntent.value,
+    hostname: host,
+    demoId: `${selectedConversationId}-${steps.length}-${steps[0]?.at ?? 0}`,
+    steps,
+    ...(redoSkillId ? { updateId: redoSkillId, ...(redoSkillVersion === null ? {} : { expectedVersion: redoSkillVersion }) } : {}),
+  });
+};
+
+function hostnameOf(steps: DemoStep[]): string | null {
+  for (const step of steps) {
+    if (!step.page) continue;
+    try { return new URL(step.page).hostname; } catch { /* 跳过坏地址 */ }
+  }
+  return null;
+}
+
+/** 编译结果卡：默认只讲步骤与完成凭证，脚本折起来。 */
+function renderSkillResult(skill: Skill): void {
+  demoSkill.hidden = false;
+  demoSkill.replaceChildren();
+  const title = document.createElement("div");
+  title.className = "demo-skill-title";
+  title.textContent = skill.version > 1 ? `已更新：${skill.name}（第 ${skill.version} 版）` : `已编译：${skill.name}`;
+  const list = document.createElement("ol");
+  for (const line of skillStepsText(skill)) {
+    const li = document.createElement("li");
+    li.textContent = line;
+    list.appendChild(li);
+  }
+  const check = document.createElement("p");
+  check.className = "demo-skill-check";
+  check.textContent = `完成凭证：${skill.check.text}`;
+  const note = document.createElement("p");
+  note.className = "demo-skill-check";
+  note.textContent = skill.weakSteps
+    ? `示范里有 ${skill.weakSteps} 步没记到对象名：跑的时候认不出来就跳过，不会因此停下。`
+    : skill.droppedSteps ? `示范里有 ${skill.droppedSteps} 步没记到对象名，已跳过。` : "";
+  note.hidden = !skill.weakSteps && !skill.droppedSteps;
+  const detail = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "看脚本";
+  const pre = document.createElement("pre");
+  pre.textContent = skill.program;
+  detail.append(summary, pre);
+  demoSkill.append(title, list, note, check, detail);
+}
+
+recordToggle.onclick = () => {
+  const action = demoState.recording ? "stop" : "start";
+  port?.postMessage({ kind: "demo", action, conversationId: selectedConversationId } satisfies PanelToBg);
+};
+
+demoClose.onclick = () => {
+  port?.postMessage({ kind: "demo", action: "dismiss", conversationId: selectedConversationId } satisfies PanelToBg);
+  demoState = { recording: false, steps: [], truncated: false };
+  demoIntent.value = "";
+  demoSkill.hidden = true;
+  demoSkill.replaceChildren();
+  renderDemo();
 };
 
 // ── 模型选择器 ─────────────────────────────────────────────────────
@@ -2263,6 +2699,11 @@ function handleUserDelivery(delivery: UserDelivery): void {
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
 
+function clearDemoView(): void {
+  demoState = { recording: false, steps: [], truncated: false };
+  renderDemo();
+}
+
 function send(msg: ClientMessage): boolean {
   if (!port || !transportConnected) return false;
   const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
@@ -2290,6 +2731,37 @@ function handleServerMessage(raw: string): void {
   if (msg.type === "voice") { voiceUI.receive(msg); return; }
   if (msg.type === "memory_result") {
     handleMemoryResult(msg);
+    return;
+  }
+  if (msg.type === "skill_result") {
+    if (msg.action === "list" && msg.ok) {
+      skillEntries = (msg.skills ?? []).map(skill => ({ skill, runs: msg.runs?.[skill.id] ?? [] }));
+      renderSkills();
+      return;
+    }
+    if (msg.action === "run" && msg.requestId === skillRequest) {
+      if (!msg.ok || !msg.run) { addMsg("msg error", `这次没跑成：${msg.error ?? "未知原因"}`); return; }
+      const outcome = msg.run;
+      addMsg(outcome.ok ? "msg" : "msg error", outcome.ok
+        ? `照上次那样跑完了：${outcome.steps} 步 · ${Math.max(0.1, outcome.elapsedMs / 1000).toFixed(1)} 秒。`
+          + (outcome.skipped?.length ? `第 ${outcome.skipped.join("、")} 步没认出来，已跳过。` : "")
+        : `跑到第 ${outcome.failedStep ?? "?"} 步停下了：${outcome.error ?? ""}`);
+      void refreshSkills(); // 刷新事实行：跑过几次、上次结果
+      return;
+    }
+    if ((msg.action === "note" || msg.action === "rollback") && msg.requestId === skillRequest) {
+      if (!msg.ok) { addMsg("msg error", `没做成：${msg.error ?? "未知原因"}`); return; }
+      addMsg("msg", msg.action === "note"
+        ? `已确认记下：下次重新示范「${msg.skill?.name ?? "这份技能"}」时会提醒你。`
+        : `已回到上一版：${msg.skill?.name ?? ""}（现在是第 ${msg.skill?.version ?? "?"} 版）`);
+      void refreshSkills();
+      return;
+    }
+    if (msg.action === "forget" && msg.ok) { void refreshSkills(); return; }
+    demoCompile.disabled = false;
+    demoCompile.textContent = "编译成脚本";
+    if (msg.ok && msg.skill) { renderSkillResult(msg.skill); redoSkillId = null; redoSkillVersion = null; }
+    else if (msg.requestId === skillRequestId) addMsg("msg error", `编译没成：${msg.error ?? "未知原因"}`);
     return;
   }
   if (msg.type === "conversation_created" || msg.type === "conversation_updated") {
@@ -2357,6 +2829,20 @@ function handleBgMessage(envelope: BgToPanel): void {
     // background 是运行时权威：以其为准并收敛本地存储
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     applyMode(envelope.mode, false);
+    return;
+  }
+  if (envelope.kind === "observe") {
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
+    observing = envelope.observing;
+    observedCandidates = envelope.candidates;
+    observedPatterns = envelope.patterns;
+    renderObserve();
+    return;
+  }
+  if (envelope.kind === "demo") {
+    if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
+    demoState = { recording: envelope.recording, steps: envelope.steps, truncated: envelope.truncated };
+    renderDemo();
     return;
   }
   if (envelope.kind === "ask_selection") {

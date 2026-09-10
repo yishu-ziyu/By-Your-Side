@@ -39,6 +39,8 @@ import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
 import { armDestructiveClick, click, hover, clearMarks, dropPendingClicks, fill, hideCursorsForSessions, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { evaluateJs } from "./exec/evaluate.js";
+import { fetchUrl } from "./exec/fetch-url.js";
+import { network } from "./exec/network.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
@@ -51,6 +53,8 @@ import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 import { workerTabControl } from "./worker-tab-control.js";
+import { conversationForRecordingTab, demoSession, dismissDemo, isRecording, receiveSteps, resumeDemoIfRecording, startDemo, stopDemo, type DemoSession } from "./demo.js";
+import { dismissCandidate, injectObserver, isObserving, listCandidates, patternCount, recordRun, setObserving, stopObserver, consumeCandidate } from "./observe.js";
 import {
   clearCursorStatus,
   clearAmbientCursorStatus,
@@ -64,6 +68,8 @@ import {
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
+  fetch: (p) => fetchUrl(p),
+  network: (p, sid) => network(p, sid),
   worker_tabs: (p, sid) => workerTabControl.manage(p, sid, dropPendingClicks, async keys => {
     for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready; if (owner.isUserHeld(who.sessionId)) throw new Error("页面现在归你，操作未执行"); }
   }),
@@ -148,11 +154,16 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  })();
  return true;
 });
-/** 点头上跨页胶囊：切到它正在干活的那个标签页。 */
+/**
+ * 点头上跨页胶囊：切到它正在干活的那个标签页。
+ * 目标标签页跟着胶囊一起下发（msg.tabId），所以 service worker 重启过、内存状态表空了也照样能跳；
+ * 兜底才回落到内存状态表。跳不过去时如实回报，让页面把胶囊收掉而不是点着没反应。
+ */
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "cross_page_click") return;
- const target = workingTabBehindPill(sender.tab?.id);
- if (target == null) { sendResponse({ok:false,error:"NO_WORKING_TAB"}); return; }
+ const asked = (raw as { tabId?: unknown }).tabId;
+ const target = (typeof asked === "number" && Number.isInteger(asked) ? asked : null) ?? workingTabBehindPill(sender.tab?.id);
+ if (target == null || target === sender.tab?.id) { sendResponse({ok:false,error:"NO_WORKING_TAB"}); return; }
  void (async () => {
    try {
      const tab = await chrome.tabs.get(target);
@@ -223,7 +234,7 @@ async function statusTabId(sid: string, explicit?: unknown): Promise<number | nu
 }
 
 /** 读页面的工具：光标显示「正在读这个页面」。 */
-const READ_TOOLS = new Set(["snapshot", "read_element", "screenshot", "observe_page"]);
+const READ_TOOLS = new Set(["snapshot", "read_element", "screenshot", "observe_page", "network"]);
 
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
   await showCursorStatus({
@@ -573,6 +584,96 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
   broadcastVisibleServer({ type: "agent_event", event: { kind, message } });
 }
 
+// ── 示范录制：用户亲手做一遍，系统只看不做 ──────────────────────────
+
+function demoStatus() {
+  const s = demoSession(conversationId);
+  if (!s) return { recording: false as const, steps: [] as DemoSession["steps"], truncated: false };
+  return { recording: !s.stopped, tabId: s.tabId, steps: s.steps, truncated: s.truncated };
+}
+
+function emitDemo(): void {
+  broadcast({ kind: "demo", ...demoStatus() } satisfies BgToPanel);
+}
+
+/** 示范进行中，写类工具一律拒绝：这段时间页面归用户。 */
+function demoRefusal(name: ToolName): string | undefined {
+  if (!isRecording(conversationId)) return undefined;
+  if (!WRITE_TOOL_SET.has(name)) return undefined;
+  return "示范录制中：现在由你操作页面，Agent 未执行这次操作。";
+}
+
+/**
+ * 观察开关与候选处置。默认关：打开才注入，关掉立刻停并清掉未成的片断。
+ * 「以后替我跑」的兑现路径在这里：把候选的骨架交给编译（走 skill_compile 同一条路），
+ * 生成技能后把候选消费掉，同一件事不再问第二遍。
+ */
+async function handleObserveControl(action: "on" | "off" | "list" | "dismiss" | "accept", signature?: string, hostname?: string): Promise<void> {
+  if (action === "on") { await setObserving(true); emitObserve(); return; }
+  if (action === "off") {
+    for (const tabId of (await chrome.tabs.query({ active: true }))) if (tabId.id != null) await stopObserver(tabId.id);
+    await setObserving(false);
+    emitObserve();
+    return;
+  }
+  if (action === "dismiss" && signature && hostname) { await dismissCandidate(signature, hostname); emitObserve(); return; }
+  emitObserve();
+}
+
+async function emitObserve(): Promise<void> {
+  const observing = await isObserving();
+  const list = await listCandidates();
+  // patterns 是"手上攒了多少段骨架"：刚开始观察时用户看不到候选（门槛是三次跨两天），
+  // 但这个数字能让他确认真的在记，而不是以为坏了。
+  broadcast({ kind: "observe", observing, candidates: list, patterns: await patternCount() } satisfies BgToPanel);
+}
+
+async function handleDemoControl(action: "start" | "stop" | "dismiss"): Promise<void> {
+  if (action === "dismiss") { dismissDemo(conversationId); emitDemo(); return; }
+  if (action === "start") {
+    if (isRecording(conversationId)) { emitDemo(); return; }
+    // 示范的是"用户此刻在看的这一页"：有任务绑定就用绑定页，没有就用当前活动页。
+    const tabId = (await getWorkingTabId()) ?? (await getActiveTab()).tab?.id ?? undefined;
+    if (tabId == null) { emitNotice("没有可示范的页面：先打开你要操作的网页。", "error"); return; }
+    const page = await chrome.tabs.get(tabId).catch(() => null);
+    if (!page || !/^https?:/i.test(page.url ?? "")) { emitNotice("这一页不能示范：请切到普通的 http/https 网页再点「看我做」。", "error"); return; }
+    const title = page.title ?? "";
+    const started = await startDemo(conversationId, tabId);
+    if (!started.ok) { emitNotice(`示范没能开始：${started.error ?? "页面不可注入"}`, "error"); return; }
+    emitNotice(`示范开始：现在你亲手做一遍，做完点「做完了」。正在记录这一页${title ? `（${title}）` : ""}。`);
+    emitDemo();
+    return;
+  }
+  const session = await stopDemo(conversationId);
+  if (!session) { emitDemo(); return; }
+  if (!session.steps.length) emitNotice("示范结束：这一步都没记到。若你操作的是另一个标签页或另一个窗口，换个页面再试。");
+  else emitNotice(`示范结束：记下 ${session.steps.length} 步。${session.truncated ? "（中途已达上限，后面的动作没记）" : ""}`);
+  emitDemo();
+}
+
+/** 观察：页面侧上行的一次 run（只有骨架）。不记输入值，敏感站点与敏感字段在页面侧已经丢掉。 */
+chrome.runtime.onMessage.addListener((raw: unknown, sender) => {
+  if (!raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "sideagent:observed-run") return;
+  const run = (raw as { run?: unknown }).run;
+  if (!run || typeof run !== "object") return;
+  const { hostname, anchors, at } = run as { hostname?: unknown; anchors?: unknown; at?: unknown };
+  if (typeof hostname !== "string" || !Array.isArray(anchors) || typeof at !== "number") return;
+  void recordRun({ hostname, anchors: anchors as never, at });
+});
+
+/** 示范录制：页面侧上行的一批步骤，只认属于本会话的那一页。 */
+chrome.runtime.onMessage.addListener((raw: unknown, sender) => {
+  if (!raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "sideagent:demo-step") return;
+  const tabId = sender.tab?.id;
+  if (tabId == null) return;
+  // 示范页未必有任务绑定，按"谁在录这个标签页"归属，不查 tab→session 绑定。
+  if (conversationForRecordingTab(tabId) !== conversationId) return;
+  const msg = raw as { steps?: unknown; truncated?: unknown };
+  if (!Array.isArray(msg.steps)) return;
+  receiveSteps(conversationId, msg.steps as Parameters<typeof receiveSteps>[1], msg.truncated === true);
+  emitDemo();
+});
+
 function teamHeld(): boolean {
   const phase = team.view()?.phase;
   return (
@@ -890,6 +991,8 @@ async function executeToolCall(
     const operationGeneration = gate.gen;
     const execute = async () => {
       checkIdentity();
+      const refusedByDemo = demoRefusal(name);
+      if (refusedByDemo) throw new Error(refusedByDemo);
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
       checkIdentity();
@@ -1275,7 +1378,18 @@ if (chrome.commands?.onCommand) {
 // （chrome.tabs.onUpdated 的 changeInfo.url，SPA pushState 也会触发）视为
 // 用户可能已完成当前步骤 → 清标注 + 通知 agent。agent 未连接时 sendClientMessage 静默丢弃。
 // 必须在 SW 顶层注册，SW 重启后依然生效。
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  // 观察只跟"用户正在看的那一页"：换页就把观察脚本带过去，换走就把上一个停掉。
+  void (async () => { if (await isObserving()) await injectObserver(tabId); })();
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  // 观察：导航完成后在新页继续；关着就什么都不做。
+  if (changeInfo.status === "complete") void (async () => { if (await isObserving()) await injectObserver(tabId); })();
+  // 示范跨页时要续录：内容脚本随导航消失，页面加载完成后把它喂回去接着记。
+  if (changeInfo.status === "complete" && conversationForRecordingTab(tabId) === conversationId) {
+    void resumeDemoIfRecording(tabId);
+  }
   void (async () => {
     await controlReady;
     if (!(await memberTabIds()).includes(tabId)) return;
@@ -1314,6 +1428,8 @@ function attachPanel(port: chrome.runtime.Port) {
     const requested = msg.kind === "client" ? msg.msg?.conversationId : "conversationId" in msg ? msg.conversationId : undefined;
     if ((requested ?? selectedAtReceipt) !== conversationId) return;
     switch (msg.kind) {
+      case "demo": void handleDemoControl(msg.action); break;
+      case "observe": void handleObserveControl(msg.action, msg.signature, msg.hostname); break;
       case "client": {
         const wireClient = msg.msg;
         const client = wireClient?.type==='task_action' && ['start','steer'].includes(wireClient.request.action)
@@ -1420,6 +1536,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         if (team.view()) {
           port.postMessage({ kind: "server", msg: { type: "team_status", team: team.view()! } } satisfies BgToPanel);
         }
+        port.postMessage({kind:"demo", ...demoStatus()} satisfies BgToPanel);
 }
 
 /** 光标名牌上的确认/取消键：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */

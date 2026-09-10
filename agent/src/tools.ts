@@ -8,6 +8,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
+import { formatEffectReport } from "../../shared/effect.js";
+import { formatFetchReply, type FetchReply } from "./fetch-result.js";
+import { fetchPages } from "./fetch-batch.js";
+import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import { WRITE_TOOLS, isWriteTool } from "../../shared/control.js";
 import type { ToolRpc } from "./rpc.js";
@@ -120,7 +124,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
         // A state query does not need the element's entire descendant text in the model context.
         const projected = params.properties?.length || params.expect ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check } : data;
-        return textResult(JSON.stringify(projected), data);
+        return textResult(wrapPageContent(redactCredentialText(JSON.stringify(projected)), { tabId: data.tabId }), data);
       },
     }),
     defineTool({
@@ -243,7 +247,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("snapshot", params)) as ToolContract["snapshot"]["data"];
-        return textResult(data.text, data);
+        return textResult(wrapPageContent(redactCredentialText(data.text), { tabId: data.tabId }), data);
       },
     }),
 
@@ -268,7 +272,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "click",
       label: "Click",
       description:
-        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates.',
+        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.',
       parameters: Type.Object({
         target: Type.Optional(
           Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
@@ -287,7 +291,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             data,
           );
         }
-        return textResult(`Clicked ${what}. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.`, data);
+        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        const opened = "newTab" in data ? data.newTab : undefined;
+        const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
+        if (effectText) {
+          return textResult(`Clicked ${what}. Event dispatch confirmed.${effectText}${newTabText}`, data);
+        }
+        return textResult(`Clicked ${what}. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
       },
     }),
 
@@ -348,6 +358,54 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }),
 
     defineTool({
+      name: "fetch",
+      label: "Fetch URL with the browser's login state",
+      description:
+        "Fetch a URL with the browser's logged-in state (cookies), without touching the page. Only GET and POST; local/private addresses are refused. Use it to read structured data through the site's own API instead of scraping a snapshot: fields keep the site's real names. Large responses (>4000 chars) are saved under ~/.sideagent/downloads/ and only a status line plus a short preview enters the context; pass savePath to choose the file name. For a numeric page range use pages:{from,to,step?} with a {page} placeholder in the url (or POST body): one call fetches the pages in order, saves one file per page, and returns a compact receipt with only the first page's preview. pages is a companion-process feature of this tool only; inside browser_run, call browser.fetch once per page and combine the results in the program. The saved file is the user's own data and is not redacted; anything shown in context is treated as untrusted page content.",
+      parameters: Type.Object({
+        url: Type.String({ description: "Full http(s) URL, including query parameters; use {page} as the page placeholder" }),
+        method: Type.Optional(Type.Union([Type.Literal("GET"), Type.Literal("POST")], { description: "Default GET" })),
+        headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: "Extra request headers; Cookie is set by the browser" })),
+        body: Type.Optional(Type.String({ description: "POST body (string); {page} is substituted here too" })),
+        savePath: Type.Optional(Type.String({ description: "File name under ~/.sideagent/downloads/ (no directories); with pages it is the base name and -p<page> is inserted before the extension" })),
+        pages: Type.Optional(Type.Object({
+          from: Type.Integer({ description: "First page number" }),
+          to: Type.Integer({ description: "Last page number (inclusive)" }),
+          step: Type.Optional(Type.Integer({ description: "Page step, default 1; at most 20 pages per call" })),
+        }, { description: "Fetch a numeric page range in one call; requires {page} in url or body" })),
+      }),
+      execute: async (_id, params) => {
+        if (params.pages) {
+          const batch = await fetchPages(
+            { url: params.url, method: params.method, headers: params.headers, body: params.body, savePath: params.savePath, pages: params.pages },
+            (request) => call("fetch", request) as Promise<FetchReply>,
+          );
+          return textResult(wrapPageContent(batch.text, { url: params.url }), batch.data);
+        }
+        const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
+        return textResult(formatFetchReply(data as FetchReply, params.savePath), data);
+      },
+    }),
+
+    defineTool({
+      name: "network",
+      label: "Observed network requests",
+      description:
+        "List the recent network requests the working tab actually made (passive CDP recording while the extension observes the tab): method, URL, status, resource type, size and duration. Use it to find the site's own JSON API before scraping the DOM, then call fetch on that URL with the browser's login state. Defaults to API-like requests (xhr/fetch); pass types:\"all\" for documents, scripts, images and the rest. Recorded per tab, survives navigation and keeps going while the debugger is attached; the buffer is memory-only and empty after the extension restarts. No bodies, headers or cookies are recorded. Use clear:true before triggering the action you want to observe, then read again.",
+      parameters: Type.Object({
+        urlContains: Type.Optional(Type.String({ description: "Only show URLs containing this text (case-insensitive)" })),
+        types: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Literal("all")], { description: "Resource types to show; default xhr/fetch, 'all' for everything" })),
+        limit: Type.Optional(Type.Number({ description: "Show at most the last N matches (default 40, max 200)" })),
+        tabId: Type.Optional(Type.Number({ description: "Tab to read without claiming or switching it" })),
+        clear: Type.Optional(Type.Boolean({ description: "Empty this tab's buffer first, then report the clear" })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("network", params)) as ToolContract["network"]["data"];
+        return textResult(wrapPageContent(redactCredentialText(data.text), { tabId: data.tabId }), data);
+      },
+    }),
+
+    defineTool({
       name: "js",
       label: "Run JavaScript",
       description:
@@ -360,7 +418,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("js", params)) as ToolContract["js"]["data"];
         const rendered = data.value === undefined
           ? "JavaScript returned undefined. No observable value was returned; this does not confirm a page change. For extraction, use one IIFE with an explicit return of JSON-serializable findings. For hover-only controls, use hover, then observe the page."
-          : truncate(typeof data.value === "string" ? data.value : JSON.stringify(data.value, null, 2), MAX_JS_RESULT_CHARS);
+          : wrapPageContent(redactCredentialText(truncate(typeof data.value === "string" ? data.value : JSON.stringify(data.value, null, 2), MAX_JS_RESULT_CHARS)));
         return textResult(rendered, data);
       },
     }),
