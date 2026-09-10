@@ -27,6 +27,7 @@ import { ConversationManager } from "./conversation-manager.js";
 import { createConversationRuntime } from "./conversation-runtime.js";
 import { ExperienceStore } from "./experience.js";
 import { MemoryStore } from "./memory-store.js";
+import { SkillStore } from "./skill-store.js";
 import { VoiceService } from "./voice-service.js";
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
   const store = new ConversationStore(join(homedir(), ".sideagent", "conversations"));
   const memoryStore = new MemoryStore(join(homedir(), ".sideagent", "memory"));
   const experienceStore = new ExperienceStore(join(homedir(), ".sideagent", "experiences"));
+  const skillStore = new SkillStore(join(homedir(), ".sideagent", "skills"));
   let voice:VoiceService;
   // Normal-use capture: the session's send-path evidence and the extension's own facts land in
   // ~/.sideagent/voice-capture/. Recording never gates anything the voice session does.
@@ -149,6 +151,7 @@ async function main(): Promise<void> {
     (msg) => {keepVoiceEvent(msg);voice?.observe(msg);current?.send(msg);},
     store,
     memoryStore,
+    skillStore,
     new TaskDispatcher(new TaskReceiptStore(join(homedir(), '.sideagent', 'task-receipts'))),
   );
   const initial = await conversations.ensureDefault();

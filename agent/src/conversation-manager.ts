@@ -10,6 +10,10 @@ import { createUserDelivery } from "./user-delivery.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
+import type { SkillStore } from "./skill-store.js";
+import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
+import { normalizeSkillHost } from "../../shared/skill.js";
+import { runSkill } from "./skill-runner.js";
 import { TaskProgress } from "./task-progress.js";
 import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult,VoiceInputContext } from "../../shared/voice.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
@@ -37,6 +41,7 @@ export class ConversationManager {
     private readonly emit: (message: ServerMessage) => void,
     private readonly store?: ConversationStore,
     private readonly memoryStore?: MemoryStore,
+    private readonly skillStore?: SkillStore,
     readonly dispatcher = new TaskDispatcher(),
   ) {this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);}
 
@@ -500,6 +505,11 @@ export class ConversationManager {
       await this.handleMemoryMessage(message, id);
       return;
     }
+    if (message.type === "skill_compile" || message.type === "skill_forget" || message.type === "skill_list"
+      || message.type === "skill_run" || message.type === "skill_note" || message.type === "skill_rollback") {
+      await this.handleSkillMessage(message, id);
+      return;
+    }
     if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话";
     if (message.type === "set_mode") entry.summary.mode = message.mode;
     if (message.type === "user_message") this.progress.get(id)?.request(message.text);
@@ -539,6 +549,99 @@ export class ConversationManager {
     } catch (error) {
       this.emit({
         type: "memory_result",
+        conversationId,
+        requestId: message.requestId,
+        action,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * 示范编译：确定性编译 + 校验，落一份技能。
+   * 失败如实回报（编译不出来就说清楚），不产出半成品。
+   */
+  private async handleSkillMessage(
+    message: Extract<ClientMessage, { type: "skill_compile" | "skill_forget" | "skill_list" | "skill_run" | "skill_note" | "skill_rollback" }>,
+    conversationId: string,
+  ): Promise<void> {
+    const action = message.type === "skill_compile" ? "compile"
+      : message.type === "skill_forget" ? "forget"
+      : message.type === "skill_list" ? "list"
+      : message.type === "skill_note" ? "note"
+      : message.type === "skill_rollback" ? "rollback"
+      : "run";
+    try {
+      if (!this.skillStore) throw new Error("技能存储不可用");
+      if (message.type === "skill_list") {
+        // 技能只在同一站点复用；面板问"这一页有什么技能"时按 hostname 过滤。
+        const skills = message.hostname ? await this.skillStore.findByHost(message.hostname) : await this.skillStore.list();
+        const runs: Record<string, import("../../shared/skill.js").SkillRun[]> = {};
+        for (const skill of skills) runs[skill.id] = await this.skillStore.listRuns(skill.id);
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skills, runs });
+        return;
+      }
+      if (message.type === "skill_note") {
+        const updated = await this.skillStore.addNote(message.id, message.note);
+        if (!updated) throw new Error("没有这份技能");
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill: updated });
+        return;
+      }
+      if (message.type === "skill_rollback") {
+        const current = await this.skillStore.get(message.id);
+        if (!current) throw new Error("没有这份技能");
+        if (message.expectedVersion !== undefined && message.expectedVersion !== current.version) throw new Error("这份技能刚被改过，先看一眼再回退。");
+        const restored = await this.skillStore.rollback(message.id);
+        if (!restored) throw new Error("没有可回退的上一版");
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill: restored });
+        return;
+      }
+      if (message.type === "skill_run") {
+        const skill = await this.skillStore.get(message.id);
+        if (!skill) throw new Error("没有这份技能");
+        if (message.expectedVersion !== undefined && message.expectedVersion !== skill.version) throw new Error("这份技能刚被改过，先看一眼再跑。");
+        const entry = this.entries.get(conversationId);
+        if (!entry) throw new Error("会话还没准备好");
+        if (entry.runtime.session.isStreaming()) throw new Error("现在有任务在跑，等它结束再跑技能。");
+        const outcome = await runSkill({ skill, rpc: entry.runtime.rpc });
+        await this.skillStore.appendRun(skill.id, outcome);
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill, run: outcome });
+        return;
+      }
+      if (message.type === "skill_forget") {
+        const removed = await this.skillStore.forget(message.id);
+        if (!removed) throw new Error("没有这份技能");
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id });
+        return;
+      }
+      let redo = message.updateId ? await this.skillStore.get(message.updateId) : undefined;
+      if (message.updateId && !redo) throw new Error("要更新的技能已经不在了");
+      if (redo && message.expectedVersion !== undefined && redo.version !== message.expectedVersion) throw new Error("这份技能刚被改过，先看一眼再重新示范。");
+      // 技能按站点作用域；在别的站点重新示范不能覆盖它，那就新建一份。
+      if (redo && redo.hostname !== normalizeSkillHost(message.hostname)) redo = undefined;
+      const compiled = compileSkill({
+        id: redo?.id ?? `skill-${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+        demoId: message.demoId,
+        intent: message.intent,
+        hostname: message.hostname,
+        steps: message.steps,
+      });
+      const invalid = validateCompiledSkill(compiled);
+      if (invalid) throw new Error(invalid);
+      // 重新示范同一个技能：内容替换、版本 +1，旧版本进归档（回退用），线索继续挂在身上。
+      const skill = redo
+        ? await this.skillStore.update(redo.id, {
+            steps: compiled.steps, inputs: compiled.inputs, check: compiled.check,
+            program: compiled.program, name: compiled.name, intent: compiled.intent,
+          })
+        : compiled;
+      if (!skill) throw new Error("技能更新失败");
+      if (!redo) await this.skillStore.put(skill);
+      this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill });
+    } catch (error) {
+      this.emit({
+        type: "skill_result",
         conversationId,
         requestId: message.requestId,
         action,
