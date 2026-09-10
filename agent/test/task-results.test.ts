@@ -33,8 +33,12 @@ describe('task result registry', () => {
   it('does not complete a write result with a null target wildcard', () => {
     const p = progress();
     p.reviseResults();
+    // 契约修订（2026-09-11）：同工具唯一的未定位项会在执行时改绑；歧义（两项 null）不得当成通配符。
+    p.registerResults([{id: 'mark-x2', description: '标出另一个对象', tool: 'mark', target: null}]);
     call(p, 'wild', 'mark', {target: '#x'});
     expect(p.snapshot().results!.find(r => r.id === 'mark-x')).toMatchObject({status: 'pending', target: null});
+    expect(p.snapshot().results!.find(r => r.id === 'mark-x2')).toMatchObject({status: 'pending', target: null});
+    expect(p.snapshot().results!.find(r => r.id.startsWith('auto-'))).toMatchObject({status: 'satisfied', target: '#x'});
     expect(p.snapshot().resultState).toBe('pending');
   });
 

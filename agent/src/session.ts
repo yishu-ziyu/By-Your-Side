@@ -173,15 +173,16 @@ export class BrowserAgentSession {
     if (!entry || entry.type !== "custom" || !isTaskProgressSnapshot(entry.data) || !entry.data.results) return null;
     return entry.data;
   }
-  assertTaskResultExecution(name: string, params: Record<string, unknown>, toolCallId?: string): void {
+  /**
+   * 写操作的执行闸门：只拦真正的执行风险（未决写入、重复执行、任务已取消）。
+   * 登记与目标绑定由账本在真实执行事实到达时完成（见 TaskResultBook.resolveStartItem），
+   * 不再要求模型先登记，也不再用登记项精确匹配本次 target。
+   */
+  assertTaskResultExecution(name: string, params: Record<string, unknown>, _toolCallId?: string): void {
     const snapshot = this.conversationSnapshot();
-    if (snapshot?.runId && snapshot.state !== 'none' && snapshot.state !== 'aborted' && !snapshot.results?.length && !['get_active_tab','list_tabs','worker_tabs','switch_tab','resolve_unknown_result'].includes(name)) {
-      throw new Error('先用 record_task_results 登记本次委托的结果项，再执行这一步。观察与后续操作分开登记；目标尚未定位时先填null，观察后更新。');
-    }
-    if (!isWriteTool(name)) return;
-    if (snapshot?.state === 'aborted') throw new Error('原任务已取消，操作未执行。');
+    const write = isWriteTool(name);
+    if (write && snapshot?.state === 'aborted') throw new Error('原任务已取消，操作未执行。');
     const target = extractResultTarget(params);
-    const matchingPending = snapshot?.results?.some(item => item.tool === name && item.status === "pending" && item.target === target && (!toolCallId || item.evidence?.toolCallId === toolCallId || item.evidence?.toolCallId.startsWith(toolCallId + "/")));
     for (const item of snapshot?.results ?? []) {
       if (item.status === "unknown") {
         if (item.tool === name && (item.target === null || item.target === target)) {
@@ -191,12 +192,8 @@ export class BrowserAgentSession {
           throw new Error(`任务中存在尚未确认结果的操作「${item.description}」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
         }
       }
-      if (item.tool !== name) continue;
+      if (!write || item.tool !== name) continue;
       if (item.status === "satisfied" && item.target !== null && item.target === target) throw new Error(`「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
-      if (item.status === "pending" && item.target === null && typeof params.target === "string" && !matchingPending) throw new Error(`「${item.description}」尚未绑定当前目标，请先观察并更新结果登记。`);
-    }
-    if (snapshot?.runId && typeof params.target === "string" && !matchingPending) {
-      throw new Error('这次操作的target与待办登记不一致，操作未执行。请先用record_task_results更新原结果id的target，使它与即将调用的target完全相同；不要填写status或伪造evidence。');
     }
   }
   private constructor(

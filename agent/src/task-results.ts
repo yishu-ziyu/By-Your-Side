@@ -4,8 +4,11 @@ import { defineTool, type AgentToolResult, type ToolDefinition } from "@earendil
 import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import {
+  AUTO_RESULT_ID_PREFIX,
+  MAX_TASK_RESULTS,
   RESULT_OBSERVATION_KEEP,
   RESULT_VERIFY_READ_TOOLS,
+  deriveResultDescription,
   extractResultTarget,
   isResultMetaTool,
   isTaskResultItem,
@@ -14,6 +17,7 @@ import {
   normalizeTaskResultRegistration,
   resultCanUseExecution,
   resultStateOf,
+  selectResultBinding,
   type ResultPageObservation,
   type TaskResultItem,
   type TaskResultRegistration,
@@ -23,14 +27,23 @@ import type { TaskProgressSnapshot } from "../../shared/voice.js";
 
 export type { TaskResultItem, TaskResultRegistration, TaskResultState } from "../../shared/task-results.js";
 
+/** 协调、探针与位置类动作不产生用户可见结果，不自动建项；需要时模型仍可显式登记。 */
+export const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover"]);
+
 export class TaskResultBook {
   private items: TaskResultItem[] = [];
   /** 最近的真实只读读数（含完整文本）；只在内存，不随快照持久化页面内容。 */
   private observations: ResultPageObservation[] = [];
   /** 每个未决写入项在写入开始前冻结的基线；页面身份变化或会话恢复后清空。 */
   private readonly baselines = new Map<string, ResultPageObservation>();
+  private autoSeq = 0;
 
   constructor(private readonly clock: () => number = Date.now) {}
+
+  private nextAutoId(): string {
+    this.autoSeq += 1;
+    return `${AUTO_RESULT_ID_PREFIX}${this.autoSeq.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  }
 
   clear(): void { this.items = []; this.observations = []; this.baselines.clear(); }
 
@@ -48,7 +61,14 @@ export class TaskResultBook {
     if (this.items.length + additions.size > 64) throw new Error("结果登记最多64项，不能丢弃未完成项");
     for (const intent of normalized as TaskResultRegistration[]) {
       const existing = this.items.find(item => item.id === intent.id);
-      if (!existing) { this.items.push({ ...intent, status: "pending", evidence: null }); continue; }
+      if (!existing) {
+        // 吸收同工具同目标的自动项：模型补登记时账本里不留两条同名待办。
+        const auto = this.items.find(item => item.id.startsWith(AUTO_RESULT_ID_PREFIX) && item.tool === intent.tool
+          && (item.target === intent.target || (intent.target === null && item.status === "pending" && item.evidence === null)));
+        if (auto) { auto.id = intent.id; auto.description = intent.description; continue; }
+        this.items.push({ ...intent, status: "pending", evidence: null });
+        continue;
+      }
       if (existing.status === "satisfied" || existing.status === "unknown") continue;
       if (existing.status === "pending" && existing.evidence) continue; // A running call owns its binding until its receipt.
       Object.assign(existing, intent, { status: "pending", evidence: null });
@@ -96,9 +116,9 @@ export class TaskResultBook {
   /** 页面/文档可能已经改变：之前的读数不能再当作前后对比基线。 */
   notePageChange(): void { this.observations = []; this.baselines.clear(); }
 
-  noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null }): void {
+  noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; description?: string }): void {
     if (!input.runId) return;
-    const item = this.items.find(candidate => (!candidate.evidence || candidate.status === "blocked") && resultCanUseExecution(candidate.status === "blocked" ? {...candidate,status:"pending"} : candidate, input.name, input.target));
+    const item = this.resolveStartItem(input);
     if (!item) return;
     if (isWriteTool(input.name)) {
       // 写入只作用于工作页：只有写入前的工作页读数能作为前后对比基线。
@@ -108,6 +128,33 @@ export class TaskResultBook {
     }
     item.status = "pending";
     item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
+  }
+
+  /**
+   * 执行事实 → 账本项。先按实际调用复用已有待办（同工具唯一的未定位/无证据项直接改绑实际目标），
+   * 没有可复用的写操作才自动建项。只读工具不自动建项：观察不是用户可见待办。
+   * 复用规则见 selectResultBinding：在途、已满足、未决项都不参与改绑。
+   */
+  private resolveStartItem(input: { name: string; target: string | null; description?: string }): TaskResultItem | null {
+    const binding = selectResultBinding(this.items, input.name, input.target);
+    if (binding.kind === "exact" || binding.kind === "rebind") {
+      const item = this.items.find(candidate => candidate.id === binding.itemId);
+      if (!item) return null;
+      if (binding.kind === "rebind") item.target = input.target;
+      return item;
+    }
+    if (binding.kind !== "create") return null;
+    if (!isWriteTool(input.name) || AUTO_RESULT_EXCLUDED_TOOLS.has(input.name) || this.items.length >= MAX_TASK_RESULTS) return null;
+    const item: TaskResultItem = {
+      id: this.nextAutoId(),
+      description: input.description ?? deriveResultDescription(input.name, undefined, input.target),
+      tool: input.name,
+      target: input.target,
+      status: "pending",
+      evidence: null,
+    };
+    this.items.push(item);
+    return item;
   }
 
   noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact }): void {
@@ -204,7 +251,7 @@ export function createTaskResultsTool(opts: {
     name: "record_task_results",
     label: "Record remaining task results",
     description:
-      "Before a multi-step page task, declare its results with this tool, then wait for this tool result before observing or operating. On a user correction, UPDATE the existing pending item using its SAME id and new description/target. IDs are opaque: even an id containing the old object name must be reused. A new id ADDS an obligation and cannot replace an old one. If you change the implementation method, update the SAME still-pending id with the new tool/target BEFORE executing it (for example click to browser_run); do not leave an obsolete click obligation behind. These entries track execution receipts, not independent business success; verify the actual requested state with read_element expect or a relevant page observation. Declare intent only. Each item names an existing executable tool and, once located, its selector. Description is the human outcome, target is the locator. For tools with a target parameter, use target null until observation binds it. For tools without a target parameter, target null represents the tool invocation itself. This tool does not write the page or mark results complete. Do not register this tool or send_user_message as evidence.",
+      "Declare the results of a multi-step page task when an explicit plan helps. This is optional: observing and acting do not require registration, and executed actions are recorded automatically from their real receipts. With one unlocated pending item per tool, the actual target binds to it at execution time; use this tool to name the plan, not to unlock actions. On a user correction, UPDATE the existing pending item using its SAME id and new description/target. IDs are opaque: even an id containing the old object name must be reused. A new id ADDS an obligation and cannot replace an old one. If you change the implementation method, update the SAME still-pending id with the new tool/target BEFORE executing it (for example click to browser_run); do not leave an obsolete click obligation behind. These entries track execution receipts, not independent business success; verify the actual requested state with read_element expect or a relevant page observation. Declare intent only. Each item names an existing executable tool and, once located, its selector. Description is the human outcome, target is the locator. For tools with a target parameter, use target null until observation binds it. For tools without a target parameter, target null represents the tool invocation itself. This tool does not write the page or mark results complete. Do not register this tool or send_user_message as evidence.",
     parameters: Type.Object({
       results: Type.Array(Type.Object({
         id: Type.String({ description: "Stable opaque id. On correction reuse the existing id, even when its wording mentions the old target." }),

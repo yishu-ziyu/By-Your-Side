@@ -1,6 +1,6 @@
 import type { ServerMessage } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, VoiceConversationContext } from "../../shared/voice.js";
-import { extractResultTarget, isPageIdentityTool, type TaskResultRegistration } from "../../shared/task-results.js";
+import { deriveResultDescription, extractResultTarget, isPageIdentityTool, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "./run-trace.js";
@@ -139,7 +139,7 @@ export class TaskProgress {
       const target = extractResultTarget(e.params);
       if (!this.aborted && this.tools.size < 100) this.tools.set(`${member}:${e.toolCallId}`, { member, name: e.name, action: label(e.name), since: this.clock(), target });
       if (!this.aborted) {
-        this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId });
+        this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId, description: deriveResultDescription(e.name, e.params, target) });
         // 页面/文档可能改变：旧读数不能再当作后续写入的前后对比基线。
         if (isPageIdentityTool(e.name)) this.results.notePageChange();
       }
