@@ -1,4 +1,5 @@
 import type { VoiceClientMessage, VoiceCommand, VoiceServerMessage, VoiceEvent,VoiceInputContext } from '../../../shared/voice.js';
+import { SpeechClassifier } from './voice-speech.js';
 import { VoicePlayer } from './voice-player.js';
 import { VoiceTurnDetector, pcmBase64 } from './voice-signal.js';
 export type VoicePhase = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error';
@@ -8,6 +9,7 @@ export class VoiceClient {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private worklet: AudioWorkletNode | null = null;
+  private speechClassifier: SpeechClassifier | null = null;
   private player: VoicePlayer | null = null;
   private ready = false;
   private turn = 0;
@@ -116,12 +118,15 @@ export class VoiceClient {
             if (this.id === id) this.setPhase('thinking', '正在识别');
           },
         });
+        // Reconnect transport immediately while the new local classifier initializes.
+        // The old capture callback is session-bound and cannot submit into this turn.
+        this.command({ kind: 'start' });
+        if (!await this.prepareSpeech(id, detector)) return;
         this.worklet.port.onmessage = ({ data }) => {
           if (this.id !== id || !this.ready) return;
           this.inputLevel = data.rms;
-          detector.push(new Int16Array(data.pcm), data.rms);
+          this.speechClassifier?.push(new Int16Array(data.pcm));
         };
-        this.command({ kind: 'start' });
         return;
       } catch {
         // Fall back to full initialization if reuse fails: release failing resources first
@@ -151,14 +156,30 @@ export class VoiceClient {
         audio:(turn,pcm)=>this.command({kind:'audio',turn,data:pcmBase64(pcm)}),
         end:turn=>{this.speaking=false;const input=this.getInput();this.command({kind:'commit',turn,...(input.context||input.attachments?.length?{input}:{})});if(this.id===id)this.setPhase('thinking','正在识别');},
       });
+      if (!await this.prepareSpeech(id, detector)) return;
       const worklet=new AudioWorkletNode(context,'voice-capture');this.worklet=worklet;
-      worklet.port.onmessage=({data})=>{if(this.id!==id||!this.ready)return;this.inputLevel=data.rms;detector.push(new Int16Array(data.pcm),data.rms);};
+      worklet.port.onmessage=({data})=>{if(this.id!==id||!this.ready)return;this.inputLevel=data.rms;this.speechClassifier?.push(new Int16Array(data.pcm));};
       context.createMediaStreamSource(stream).connect(worklet);worklet.connect(context.destination);
       this.command({kind:'start'});
     } catch(error) {
       if(this.id===id)this.needsMicrophonePermission=error instanceof DOMException && error.name==='NotAllowedError';
       if(this.id===id)this.fail(error instanceof DOMException && error.name==='NotAllowedError'?'未获得麦克风权限，请允许后重试。':'麦克风未能启动，请检查设备后重试。');
     }
+  }
+
+  private async prepareSpeech(id: string, detector: VoiceTurnDetector): Promise<boolean> {
+    this.speechClassifier?.close(); this.speechClassifier = null;
+    let classifier: SpeechClassifier;
+    try { classifier = await SpeechClassifier.create((pcm, probability) => {
+      if (this.id === id && this.ready) detector.push(pcm, probability);
+    }, () => { if (this.id === id) this.fail('人声检测未能运行，请重新开启语音。'); });
+    } catch {
+      if (this.id === id) this.fail('人声检测未能加载，请重新开启语音。');
+      return false;
+    }
+    if (this.id !== id) { classifier.close(); return false; }
+    this.speechClassifier = classifier;
+    return true;
   }
 
   scheduleRecovery(detail = '语音连接已断开，正在恢复…'): void {
@@ -278,6 +299,7 @@ export class VoiceClient {
     if(this.connectTimer)clearTimeout(this.connectTimer);this.connectTimer=null;
     const id=this.id;this.id=null;this.ready=false;this.speaking=false;this.inputLevel=0;
     if(id&&notify)this.send({type:'voice',voiceId:id,conversationId:this.conversationId,command:{kind:'stop'}});
+    this.speechClassifier?.close();this.speechClassifier=null;
     if(this.worklet){this.worklet.port.onmessage=null;this.worklet.disconnect();this.worklet=null;}
     this.stream?.getTracks().forEach(t=>{t.onended=null;t.stop();});this.stream=null;
     this.player?.stop();this.player=null;this.analyser?.disconnect();this.analyser=null;

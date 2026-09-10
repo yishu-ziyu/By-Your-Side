@@ -72,22 +72,29 @@ export class ConversationManager {
     const session = this.entries.get(id)?.runtime.session;
     if (!session || !text.trim() || text.length > 2000) throw new Error("这句话没有听清或过长，请重新说。");
     const before=this.getTaskProgress(id)!;
+    if(route?.recentTurns?.length)before.conversationContext={latestResult:null,...before.conversationContext,recentTurns:[...(before.conversationContext?.recentTurns??[]),...route.recentTurns].slice(-12)};
     const catalog=route?.targets??this.voiceTargets();
     const pending=route?.resumeReadOnly?undefined:this.voiceConfirmations.get(id)??(route?this.voicePlans.proposal(id,route.voiceId,route.turn-1):undefined);
     if(!route?.resumeReadOnly){this.voiceConfirmations.delete(id);if(pending)this.voicePlans.update(id,pending.id,{proposal:{...pending,expiresAt:0}});}
     const short=text.replace(/[\p{P}\p{Z}\s]/gu,'');
     if(pending&&route&&pending.voiceId===route.voiceId&&route.turn===pending.turn+1&&Date.now()<pending.expiresAt){
       if(/^(好|好的|可以|是的|确认|同意|另开|开吧|好另开会话|另开会话|确认另开会话)$/.test(short)){
+        route.onInputDecision?.(false);
         if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
         const entry=await this.create(pending.conversationId,pending.text.slice(0,36));
         this.emit({type:'conversation_updated',conversationId:entry.summary.id,conversation:{...entry.summary}});
         const receipt=await this.dispatchTaskAction({requestId:route.requestId,conversationId:entry.summary.id,originConversationId:id,source:'voice',action:'start',expectedRunId:null,text:pending.text,...pending.input},stillCurrent);
         return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt]};
       }
-      if(/^(不|不要|不用|算了|取消|不另开|不要另开会话)$/.test(short))return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
+      if(/^(不|不要|不用|算了|取消|不另开|不要另开会话)$/.test(short)){route.onInputDecision?.(false);return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};}
     }
     route?.reportStage?.('classifying');
     const plan=route?.resumeReadOnly?{steps:[{action:route.resumeReadOnly,target:null,text}]}:await session.classifyVoiceInput(text,before.state,catalog.filter(c=>text.includes(c.title)).map(c=>c.title),{goal:before.goal,requestId:route?.requestId},before.conversationContext);
+    const single=plan.steps.length===1?plan.steps[0]:undefined;
+    const willStart=!route?.resumeReadOnly&&!route?.pendingDelegation&&single?.target===null&&['none','idle'].includes(before.state)
+      &&['observe','chat','steer'].includes(single.action)&&!session.isHeld()&&!session.isStreaming();
+    route?.onInputDecision?.(!willStart&&plan.steps.every(step=>['chat','status','observe','silence'].includes(step.action)));
+    await route?.awaitInputDecision?.();
     if (!stillCurrent()) {
       const action=plan.steps.length===1?plan.steps[0]?.action:undefined;
       if(action==='observe'&&plan.steps[0]?.target!==null)return {kind:'clarify',message:'页面问答只读取当前页面，请先切到要看的页面。'};
@@ -109,11 +116,11 @@ export class ConversationManager {
     expected.set(id,route?route.runId:before.runId??null);
     const requestId=route?.requestId??randomUUID();
     const only=plan.steps.length===1?plan.steps[0]:undefined;
+    if(only?.action==='chat'&&route?.pendingDelegation)return {kind:'none',resumeReadOnly:'chat'};
     if(route?.resumeReadOnly==='status'){const targetId=route.resumeTargetId??id,target=this.getTaskProgress(targetId);return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snapshot:target,spokenText:(targetId===id?'':'指定会话：')+progressSpeech(target)}:{kind:'clarify',message:'原目标会话已不可用，请重新询问。'};}
     // Idle conversational requests use the same capable session as typed input.
     // Classification still resolves controls, but cannot strip tools from ordinary content.
-    if (!route?.resumeReadOnly && only?.target === null && ['none','idle'].includes(before.state)
-      && ['observe','chat','steer'].includes(only.action) && !session.isHeld() && !session.isStreaming()) {
+    if (willStart) {
       const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent);
       return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt],awaitDelivery:receipt.status==='accepted'};
     }
@@ -139,7 +146,7 @@ export class ConversationManager {
         return {kind:'none',resumeReadOnly:'observe',snapshot:published??now,spokenText:delivery?.text??answer};
       }catch{return {kind:'none',resumeReadOnly:'observe',spokenText:'这次没有完成当前页面的读取，请稍后再试。'};}
     }
-    if(only?.action==='chat')return this.answerSourcedChat(id,text,before,stillCurrent,session);
+    if(only?.action==='chat')return this.answerSourcedChat(id,text,before,stillCurrent,session,route?.turn);
     if(only?.action==='silence')return {kind:'silent'};
     // Resolve the entire plan before side effects; an ambiguous later target cannot cause a partial command.
     let previousTarget=id;
@@ -217,22 +224,22 @@ export class ConversationManager {
       return null;
     }
   }
-  private beginDeliveryStream(conversationId:string,kind:UserDeliveryKind,before:TaskProgressSnapshot,stillCurrent:()=>boolean){
+  private beginDeliveryStream(conversationId:string,kind:UserDeliveryKind,before:TaskProgressSnapshot,stillCurrent:()=>boolean,voiceTurn?:number){
     const id=randomUUID(),runId=before.runId??null,control=this.controlVersions.get(conversationId)??0;
     let sent=false;
     return {id,onText:(text:string)=>{
       const now=this.getTaskProgress(conversationId);
       if(!stillCurrent()||!now||now.runId!==runId||(this.controlVersions.get(conversationId)??0)!==control||['paused','aborted','error'].includes(now.state))return false;
-      sent=true;this.emit({type:'agent_event',conversationId,event:{kind:'user_delivery_stream',stream:{id,runId,kind,text,phase:'streaming'}}});return true;
+      sent=true;this.emit({type:'agent_event',conversationId,event:{kind:'user_delivery_stream',stream:{id,runId,kind,text,phase:'streaming',...(voiceTurn!==undefined?{voiceTurn}:{})}}});return true;
     },cancel:()=>{if(sent)this.emit({type:'agent_event',conversationId,event:{kind:'user_delivery_stream',stream:{id,runId,kind,text:'',phase:'cancelled'}}});}};
   }
-  private async answerSourcedChat(id: string, text: string, before: TaskProgressSnapshot, stillCurrent: () => boolean, session: Runtime["session"]): Promise<VoiceRouteResult> {
+  private async answerSourcedChat(id: string, text: string, before: TaskProgressSnapshot, stillCurrent: () => boolean, session: Runtime["session"],voiceTurn?:number): Promise<VoiceRouteResult> {
     const facts = before.conversationContext?.latestResult?.text;
     if (!facts) return { kind: "none", resumeReadOnly: "chat" };
     if (typeof session.composeUserDelivery !== "function") return { kind: "none", resumeReadOnly: "chat" };
     const originRun = before.runId ?? null;
     const originControl = this.controlVersions.get(id) ?? 0;
-    const streaming=this.beginDeliveryStream(id,'reply',before,stillCurrent);
+    const streaming=this.beginDeliveryStream(id,'reply',before,stillCurrent,voiceTurn);
     try {
       const spoken = await session.composeUserDelivery({
         question: text,

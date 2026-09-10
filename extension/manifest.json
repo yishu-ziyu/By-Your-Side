@@ -6,6 +6,9 @@
   "permissions": ["debugger", "tabs", "tabGroups", "scripting", "sidePanel", "storage", "nativeMessaging", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA68Syf34PL9MwoxoTcRkYPNzmIT6dSCKyiwrykaWuCH2/87z0tdVhsr8pGPJun4/qnx3bw9iAgWNOKsUp7HgS1lgV4eTdnWcIDPCYSa+jFGEGzhlbEmsEruym2rmtwug53mELkTYQe+KosEjtFn2OzVcf1KN0GS8AYURaTa5Z9dlvMg7VPR+a1kXLWjV1qQQwhM62KEZLP5w+gwqEH3ym83zZx9ZHHL9vaSeLNtmEFmGu9CkQXZqoACmznhC8mGfVdsLj+1O1kif166cH0Z5T22L8WRdVaczrxkm39eUfhG+K6Hq1DsjSQEFOVpzxGIFRimG4ZhARJVCyAz+NfLtcRQIDAQAB",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

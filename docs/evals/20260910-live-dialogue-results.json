@@ -1,0 +1,289 @@
+{
+  "scope": "Real Step input/output + current MiniMax task model + isolated production sidepanel/player. Synthetic microphone; muted playback, not human listening. Final live verification pending.",
+  "runs": [
+    {
+      "path": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-uFtLyq/result.json",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: live dialogue: 帮我等测试资料准备好，再读一下当前页面，告诉我两种模型的有效期。",
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        }
+      ],
+      "dialogue": null,
+      "liveResult": null,
+      "browserExited": true
+    },
+    {
+      "path": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-sOeBCf/result.json",
+      "ok": true,
+      "error": null,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "turn 1 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "first response acknowledges this request without claiming a result",
+          "ok": true
+        },
+        {
+          "name": "turn 2 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "turn 3 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "two conversational responses contain no false completion",
+          "ok": true
+        },
+        {
+          "name": "chat did not dispatch a task change",
+          "ok": true
+        },
+        {
+          "name": "turn 4 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "correction stays on the original running task",
+          "ok": true
+        },
+        {
+          "name": "correction is accepted exactly once",
+          "ok": true
+        },
+        {
+          "name": "only one task was started",
+          "ok": true
+        },
+        {
+          "name": "real corrected browser result is spoken",
+          "ok": true
+        },
+        {
+          "name": "no page pause was dispatched for ordinary speech",
+          "ok": true
+        }
+      ],
+      "dialogue": [
+        {
+          "question": "帮我等测试资料准备好，再读一下当前页面，告诉我两种模型的有效期。",
+          "answers": [
+            "收到，这就去帮你等测试资料准备好，再读一下当前页面，看看那两种模型的有效期。"
+          ],
+          "runId": "864d677d-9ff1-4f76-aee3-781a53d83a91",
+          "state": "running",
+          "commitAt": 1789023730673,
+          "firstAudioAt": 1789023737676,
+          "commitToAudioMs": 7003
+        },
+        {
+          "question": "等的时候聊两句，我今天脑子有点乱。",
+          "answers": [
+            "脑子乱的时候确实容易卡壳。没事，资料还没准备好，咱们就先歇会儿。你要是想吐槽或者随便聊聊，我都在这儿听着呢。"
+          ],
+          "runId": "864d677d-9ff1-4f76-aee3-781a53d83a91",
+          "state": "running",
+          "commitAt": 1789023752615,
+          "firstAudioAt": 1789023755639,
+          "commitToAudioMs": 3024
+        },
+        {
+          "question": "就是事情太多了，一时不知道从哪件开始。",
+          "answers": [
+            "这种感觉我懂，就像电脑后台开了太多程序，CPU都快烧了。要不你先跟我说说都有哪几件？我帮你理理，看看能不能先挑个最简单的开个头。"
+          ],
+          "runId": "864d677d-9ff1-4f76-aee3-781a53d83a91",
+          "state": "running",
+          "commitAt": 1789023769691,
+          "firstAudioAt": 1789023773194,
+          "commitToAudioMs": 3503
+        },
+        {
+          "question": "改一下，只告诉我标准模型的有效期，临时模型先不看。",
+          "answers": [
+            "修改已送达当前任务。"
+          ],
+          "runId": "864d677d-9ff1-4f76-aee3-781a53d83a91",
+          "state": "running",
+          "commitAt": 1789023790214,
+          "firstAudioAt": 1789023793290,
+          "commitToAudioMs": 3076
+        }
+      ],
+      "liveResult": {
+        "delivery": {
+          "conversationId": "default",
+          "id": "delivery-715a3e098e28b24a3b3e066bd8592106",
+          "runId": "864d677d-9ff1-4f76-aee3-781a53d83a91",
+          "kind": "finding",
+          "text": "标准模型 river-flash-1686 长期有效。",
+          "composedAt": 1789023808368,
+          "status": "composed"
+        },
+        "runId": "864d677d-9ff1-4f76-aee3-781a53d83a91",
+        "completedAt": 1789023815576
+      },
+      "browserExited": true
+    },
+    {
+      "path": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-u0oHyq/result.json",
+      "ok": true,
+      "error": null,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "turn 1 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "first response acknowledges this request without claiming a result",
+          "ok": true
+        },
+        {
+          "name": "turn 2 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "turn 3 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "two conversational responses contain no false completion",
+          "ok": true
+        },
+        {
+          "name": "chat did not dispatch a task change",
+          "ok": true
+        },
+        {
+          "name": "turn 4 has actual audio before task completion",
+          "ok": true
+        },
+        {
+          "name": "correction stays on the original running task",
+          "ok": true
+        },
+        {
+          "name": "correction is accepted exactly once",
+          "ok": true
+        },
+        {
+          "name": "only one task was started",
+          "ok": true
+        },
+        {
+          "name": "real corrected browser result is spoken",
+          "ok": true
+        },
+        {
+          "name": "no page pause was dispatched for ordinary speech",
+          "ok": true
+        }
+      ],
+      "dialogue": [
+        {
+          "question": "帮我等测试资料准备好，再读一下当前页面，告诉我两种模型的有效期。",
+          "answers": [
+            "好，我这就去读页面，看看那两个模型的有效期。"
+          ],
+          "runId": "0f6163e9-97af-44dc-8280-58d6fe658ee1",
+          "state": "running",
+          "commitAt": 1789023922365,
+          "firstAudioAt": 1789023925529,
+          "commitToAudioMs": 3164
+        },
+        {
+          "question": "等的时候聊两句，我今天脑子有点乱。",
+          "answers": [
+            "脑子乱的时候就先别想那些复杂的了，喝口水缓一缓。我这儿正盯着页面呢，等资料一好我就读给你听。"
+          ],
+          "runId": "0f6163e9-97af-44dc-8280-58d6fe658ee1",
+          "state": "running",
+          "commitAt": 1789023932812,
+          "firstAudioAt": 1789023935659,
+          "commitToAudioMs": 2847
+        },
+        {
+          "question": "就是事情太多了，一时不知道从哪件开始。",
+          "answers": [
+            "这种时候最容易卡壳了。要不你先跟我说说都有哪几件？我帮你理理，咱们一件件来。"
+          ],
+          "runId": "0f6163e9-97af-44dc-8280-58d6fe658ee1",
+          "state": "running",
+          "commitAt": 1789023948074,
+          "firstAudioAt": 1789023951047,
+          "commitToAudioMs": 2973
+        },
+        {
+          "question": "改一下，只告诉我标准模型的有效期，临时模型先不看。",
+          "answers": [
+            "修改已送达当前任务。"
+          ],
+          "runId": "0f6163e9-97af-44dc-8280-58d6fe658ee1",
+          "state": "running",
+          "commitAt": 1789023964435,
+          "firstAudioAt": 1789023967418,
+          "commitToAudioMs": 2983
+        }
+      ],
+      "liveResult": {
+        "delivery": {
+          "conversationId": "default",
+          "id": "delivery-db3dc354eac21d8d1894eff448f87c67",
+          "runId": "0f6163e9-97af-44dc-8280-58d6fe658ee1",
+          "kind": "finding",
+          "text": "标准模型（river-flash-4888）的有效期是：长期有效。",
+          "composedAt": 1789023974837,
+          "status": "composed"
+        },
+        "runId": "0f6163e9-97af-44dc-8280-58d6fe658ee1",
+        "completedAt": 1789023998791
+      },
+      "browserExited": true
+    }
+  ],
+  "finalSourceSha256": {
+    "agent/src/voice-session.ts": "3f53f55f0ea945a4b7828be0744e30f96c25919de9c262bdb5eda63f2ed1f095",
+    "agent/src/voice-intent.ts": "f258f0e0a2a2b9ac7ed6d499ffd3cb0c28117c7298a7b54c66f6940882271f93",
+    "agent/src/conversation-manager.ts": "4db8109d3eda072cd8465a4c1c93588200441f97da174390792a34aecd2166ad",
+    "agent/src/voice-personality.ts": "042932f2b185494ce08190dc89f884cea00b8d6e01fd0e57b2eeb4f0048302eb",
+    "agent/src/prompt.ts": "b37ae15af053bfb64f7d2e9fffbcfa8b8859539e8a208b0e13624e641a1bd1fd",
+    "agent/src/user-delivery.ts": "c7ce28a65517b218facf669a967b775cf4e6715220b54413f61c4c4d418a1755",
+    "shared/voice.ts": "00d7ab633cc51441ebf16c5b93688761cefe17a8e5de5392f810f1c80aef30d9"
+  },
+  "verification": {
+    "tests": {
+      "files": 129,
+      "passed": 1037
+    },
+    "focusedAfterFinalPrompt": 58,
+    "typecheck": "pending final",
+    "build": "passed",
+    "humanListening": "not_run",
+    "userExtensionReload": "not_run"
+  },
+  "status": "human_experience_failed_handed_off",
+  "latestVerification": {
+    "testFiles": 129,
+    "tests": 1044,
+    "typecheck": "passed",
+    "build": "passed",
+    "diffCheck": "passed",
+    "realBrowser": "extension reloaded; sidePanel.open rejected for missing user gesture; complete voice path not run",
+    "humanListening": "pending"
+  },
+  "sourceHashScopeNote": "Earlier source hashes identify their recorded runs, not the final current source.",
+  "latestUserFeedback": "User reports recognition regression after live use; implementation stopped for GPT 6 Pro guidance."
+}

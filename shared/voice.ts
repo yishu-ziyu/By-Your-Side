@@ -27,6 +27,8 @@ export interface UserDeliveryStream {
   kind: UserDeliveryKind;
   text: string;
   phase: 'streaming' | 'cancelled';
+  /** Present only for the reply to this live voice turn; background task findings omit it. */
+  voiceTurn?: number;
 }
 
 /** Recent same-conversation dialogue and the latest final assistant report, for voice follow-ups. */
@@ -59,6 +61,12 @@ export interface TaskProgressSnapshot {
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}
 export interface VoiceRouteContext {
+  /** Keep pending delegation through conversational interjections, never through a new command. */
+  awaitInputDecision?: () => Promise<void>;
+  onInputDecision?: (readOnly: boolean) => void;
+  pendingDelegation?: boolean;
+  /** In-session spoken dialogue, including replies that were not task findings. */
+  recentTurns?: VoiceConversationContext['recentTurns'];
   reportStage?:(stage:'classifying'|'observing'|'controlling')=>void;
   controlVersion?:number;
   resumeTargetId?:string;

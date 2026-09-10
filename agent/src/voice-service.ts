@@ -48,6 +48,7 @@ export class VoiceService {
       const announcedDeliveries=new Set<string>(initialDelivery?.id?[initialDelivery.id]:[]);
       const active = { id: message.voiceId, conversationId,observed:`${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id??'none'}`,startedAt:Date.now(),controls:new Set<string>(),notifiedControls:new Set<string>(),announcedDeliveries,streamedDeliveries:new Set<string>(),session: this.createSession({
         voiceId:message.voiceId,
+        earlyReplies:true,
         getSnapshot: () => this.snapshot(conversationId),
         getTargets:this.targets,
         receiptAudioCache:this.receiptAudioCache,

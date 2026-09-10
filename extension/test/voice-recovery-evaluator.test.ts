@@ -41,3 +41,11 @@ it('explicit stop cancels delayed recovery and does not replay commands',async()
 it.each(['权限拒绝','未配置凭据','模型不匹配'])('permanent %s failure does not restart',async(detail)=>{
  const f=fixture();await f.client.start('same');f.ready();f.client.receive({...f.starts()[0],event:{kind:'state',state:'error',detail,recoverable:false}});f.client.onTransportReady();await vi.advanceTimersByTimeAsync(60_000);expect(f.client.active).toBe(false);expect(f.starts()).toHaveLength(1);
 });
+
+
+// Capture/transport fixtures provide speech probabilities; real model audio is checked separately.
+vi.mock('../src/sidepanel/voice-speech.js', () => ({ SpeechClassifier: {
+ create: async (onFrame: (pcm: Int16Array, probability: number) => void) => ({
+  push: (pcm: Int16Array) => onFrame(pcm, pcm[0] ? 0.9 : 0), close: vi.fn(),
+ }),
+} }));

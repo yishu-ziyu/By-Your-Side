@@ -4,9 +4,9 @@ import {VoicePlayer} from '../src/sidepanel/voice-player.js';
 import {VoiceClient} from '../src/sidepanel/voice-client.js';
 afterEach(()=>vi.unstubAllGlobals());
 it('ignores brief noise, streams preroll and commits once after silence',()=>{
- const start=vi.fn(),audio=vi.fn(),end=vi.fn();const d=new VoiceTurnDetector({start,audio,end});const pcm=new Int16Array(480);
- for(let i=0;i<3;i++)d.push(pcm,.1);d.push(pcm,0);expect(start).not.toHaveBeenCalled();
- for(let i=0;i<4;i++)d.push(pcm,.1);expect(start).toHaveBeenCalledExactlyOnceWith(1);expect(audio).toHaveBeenCalledTimes(8);
+ const start=vi.fn(),audio=vi.fn(),end=vi.fn();const d=new VoiceTurnDetector({start,audio,end});const pcm=new Int16Array(480).fill(50);
+ for(let i=0;i<3;i++)d.push(pcm,.9);d.push(pcm,0);expect(start).not.toHaveBeenCalled();
+ for(let i=0;i<5;i++)d.push(pcm,.9);expect(start).toHaveBeenCalledExactlyOnceWith(1);expect(audio).toHaveBeenCalledTimes(9);
  for(let i=0;i<35;i++)d.push(pcm,0);expect(end).toHaveBeenCalledExactlyOnceWith(1);
  for(let i=0;i<50;i++)d.push(pcm,0);expect(end).toHaveBeenCalledTimes(1);
 });
@@ -48,12 +48,12 @@ it('streams only after ready, rejects foreign and old turns, and releases captur
  vi.stubGlobal('AudioWorkletNode',function(){return worklet;});
  const sent:any[]=[];const change=vi.fn(),event=vi.fn();const c=new VoiceClient(m=>{sent.push(m);return true;},change,event);
  await c.start('A');await c.start('A');expect(sent.filter(m=>m.command.kind==='start')).toHaveLength(1);
- const voiceId=sent[0].voiceId;const frame=(rms:number)=>worklet.port.onmessage?.({data:{pcm:new Int16Array(480).buffer,rms}});
+ const voiceId=sent[0].voiceId;const frame=(rms:number)=>worklet.port.onmessage?.({data:{pcm:new Int16Array(480).fill(rms ? 100 : 0).buffer,rms}});
  for(let i=0;i<5;i++)frame(.1);expect(sent).toHaveLength(1);
  c.receive({type:'voice',voiceId,conversationId:'B',event:{kind:'state',state:'ready'}});
  for(let i=0;i<5;i++)frame(.1);expect(sent).toHaveLength(1);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
- for(let i=0;i<4;i++)frame(.1);expect(sent[1].command).toMatchObject({kind:'interrupt',turn:1});
+ for(let i=0;i<5;i++)frame(.1);expect(sent[1].command).toMatchObject({kind:'interrupt',turn:1});
  for(let i=0;i<35;i++)frame(0);expect(sent.at(-1).command).toEqual({kind:'commit',turn:1});
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
  expect(change).toHaveBeenLastCalledWith('listening',undefined);
@@ -63,8 +63,16 @@ it('streams only after ready, rejects foreign and old turns, and releases captur
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready',detail:'这句没有判断清楚，未执行。可以继续说。'}});
  expect(track.stop).not.toHaveBeenCalled();expect(raw.close).not.toHaveBeenCalled();expect(c.active).toBe(true);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'audio',turn:1,itemId:'i1',responseId:'r1',data:Buffer.alloc(48000).toString('base64')}});expect(nodes).toHaveLength(1);
- for(let i=0;i<4;i++)frame(.1);expect(nodes[0].stop).toHaveBeenCalledTimes(1);
+ for(let i=0;i<5;i++)frame(.1);expect(nodes[0].stop).toHaveBeenCalledTimes(1);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'audio',turn:1,itemId:'i1',responseId:'r1',data:'AQABAA=='}});expect(nodes).toHaveLength(1);
  c.stop();expect(track.stop).toHaveBeenCalledTimes(1);expect(worklet.port.onmessage).toBeNull();expect(raw.close).toHaveBeenCalledTimes(1);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});expect(change).toHaveBeenLastCalledWith('idle',undefined);
 });
+
+
+// Capture/transport fixtures provide speech probabilities; real model audio is checked separately.
+vi.mock('../src/sidepanel/voice-speech.js', () => ({ SpeechClassifier: {
+ create: async (onFrame: (pcm: Int16Array, probability: number) => void) => ({
+  push: (pcm: Int16Array) => onFrame(pcm, pcm[0] ? 0.9 : 0), close: vi.fn(),
+ }),
+} }));

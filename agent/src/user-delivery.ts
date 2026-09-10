@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
+import { VOICE_PERSONALITY } from './voice-personality.js';
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";
@@ -113,7 +114,7 @@ export function createSendUserMessageTool(opts: {
 }
 
 export const COMPOSE_USER_DELIVERY_PROMPT =
-  "你根据来源事实组织一句给用户的正式回答。通常1至3句自然中文口语。先说具体发现，保留读取范围与未确认部分。来源是助手报告，不是独立核验成功。不要改写来源里的实体关系。不要Markdown、内部ID或工具名。只输出要对人说的正文。";
+  "你根据来源事实组织一句给用户的正式回答。通常1至3句自然中文口语。先说具体发现，保留读取范围与未确认部分。来源是助手报告，不是独立核验成功。不要改写来源里的实体关系。不要Markdown、内部ID或工具名。只输出要对人说的正文。" + VOICE_PERSONALITY;
 
 export function composeUserDeliveryInput(input: {
   question?: string | null;

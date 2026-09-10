@@ -19,6 +19,7 @@ import type {VoiceInputContext} from '../../shared/voice.js';
 import {createCdp} from './cdp.mjs';
 import {deliveryMetrics} from '../../agent/src/user-delivery.js';
 import {voiceEvidence} from './voice-evidence.mts';
+import {runLiveDialogue} from './live-dialogue-case.mts';
 
 
 if (!process.argv.some(a=>a.startsWith('--case='))) {
@@ -69,7 +70,7 @@ const server=createServer(async(req,res)=>{
  res.end(`<!doctype html><meta charset="utf-8"><title>模型说明测试页</title><style>body{font:22px sans-serif;line-height:1.6;padding:36px;max-width:820px}section{padding:20px;border:1px solid #ccc;margin:24px 0}code{font-size:24px}footer{height:1700px}</style><h1>接口说明</h1>${order.map(([id,code])=>`<section id="${id}"><h2>${id==='target'?'临时模型':'标准模型'}</h2><code>${code}</code><p>${id==='target'?'临时模型的有效期为明天。':'标准模型长期有效。'}</p></section>`).join('')}<button id="expand" onclick="document.querySelector('#detail').hidden=false">展开说明</button><p id="detail" hidden>额外说明：松风海岸</p><footer></footer>`);
 
 });
-let releaseObservation=()=>{};let observationHeld=false;let holdObservation=!['streaming_voice','state_environment','state_tools'].includes(caseName);const observationBarrier=new Promise<void>(r=>releaseObservation=r);
+let releaseObservation=()=>{};let observationHeld=false;let holdObservation=!['streaming_voice','live_dialogue','state_environment','state_tools'].includes(caseName);const observationBarrier=new Promise<void>(r=>releaseObservation=r);
 let child:ReturnType<typeof spawn>|undefined,cdp:ReturnType<typeof createCdp>|undefined,manager:ConversationManager|undefined,voice:VoiceService|undefined;
 let panelReady=false;const bufferedPanel:any[]=[];let panelEval:((text:string)=>Promise<any>)|undefined;let panelQueue=Promise.resolve();let pendingInput=Promise.resolve();let uiSid='';let voiceId='',turn=0;const messages:any[]=[];const audio=new Map<string,Buffer[]>();
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
@@ -110,7 +111,7 @@ try{
  const postPanel=(m:any)=>{if(!panelReady){bufferedPanel.push(m);return;}panelQueue=panelQueue.then(()=>panelEval!(`uiEmit(${JSON.stringify({kind:'server',msg:m})})`)).catch(error=>{report.transportError=String(error);});};
  cdp.onEvent('Runtime.bindingCalled',(event:any)=>{if(event.sessionId!==uiSid||event.params.name!=='hostSend')return;const envelope=JSON.parse(event.params.payload);if(envelope.kind!=='client')return;pendingInput=pendingInput.then(async()=>{const m=envelope.msg;if(m.type==='voice'&&['commit','playback_done'].includes(m.command.kind))(report.clientTiming??=[]).push({voiceId:m.voiceId,command:m.command.kind,turn:m.command.turn,responseId:m.command.responseId,at:Date.now()});if(m.type==='voice'){voiceId=m.voiceId;if(m.command.kind==='interrupt')turn=m.command.turn;if(m.command.kind==='commit'){const observation=await evaluate('probe.issue()');if(observation){const tab=await evaluate(`chrome.tabs.get(${observation.tabId})`);m.command={...m.command,input:{...m.command.input,context:{tabId:tab.id,url:tab.url,title:tab.title},observation}};}}await voice!.handle(m.conversationId??'default',m);}else await manager!.handleMessage(m);}).catch(error=>{report.transportError=String(error);});});
  const store=new ConversationStore(join(out,'conversations'));
- manager=new ConversationManager((id,emit,summary)=>createConversationRuntime(id,emit,'minimax-cn/MiniMax-M3',{sessionManager:store.sessionManager(id),mode:summary?.mode,customTools:caseName.startsWith('extra_tool')?[defineTool({name:'fixture_meter',label:'测试仪表',description:'Read the current reading of the test instrument. The number is available only from this tool, not the page or prior conversation.',parameters:Type.Object({}),execute:async()=>({content:[{type:'text',text:String(meterValue)}],details:{reading:meterValue}})})]:[]}),message=>{
+ manager=new ConversationManager((id,emit,summary)=>createConversationRuntime(id,emit,'minimax-cn/MiniMax-M3',{sessionManager:store.sessionManager(id),mode:summary?.mode,customTools:caseName==='live_dialogue'?[defineTool({name:'wait_for_fixture',label:'等待测试资料',description:'Wait until the local test fixture is ready, then read the current page with browser tools.',parameters:Type.Object({}),execute:async()=>{observationHeld=true;report.observationBarrierAt=Date.now();await observationBarrier;return {content:[{type:'text',text:'测试资料已就绪，请读取当前页面。'}],details:{ready:true}};}})]:caseName.startsWith('extra_tool')?[defineTool({name:'fixture_meter',label:'测试仪表',description:'Read the current reading of the test instrument. The number is available only from this tool, not the page or prior conversation.',parameters:Type.Object({}),execute:async()=>({content:[{type:'text',text:String(meterValue)}],details:{reading:meterValue}})})]:[]}),message=>{
   messages.push(message);voice?.observe(message);postPanel(message);if(message.type==='agent_event'&&['tool_end','agent_end','user_delivery','user_delivery_stream'].includes(message.event.kind))(report.progressEvents??=[]).push({event:message.event,at:Date.now(),snapshot:manager?.getTaskProgress('default')});
   if(message.type==='tool_call'){
    const record:any={name:message.name,params:message.params,conversationId:message.conversationId,at:Date.now()};report.tools.push(record);
@@ -121,7 +122,7 @@ try{
   messages.push(message);postPanel(message);if(message.type!=='voice')return;
   const e=message.event;if(e.kind==='audio'){if(!audio.has(e.responseId))(report.audioTiming??=[]).push({voiceId:message.voiceId,turn:e.turn,responseId:e.responseId,firstAudioAt:Date.now()});const chunks=audio.get(e.responseId)??[];chunks.push(Buffer.from(e.data,'base64'));audio.set(e.responseId,chunks);}else report.voice.push({voiceId:message.voiceId,event:e,at:Date.now()});
   // Playback acknowledgement is emitted by the production browser VoicePlayer.
- },undefined,undefined,undefined,(id,text,startedAt,current,context)=>manager!.routeVoiceInput(id,text,startedAt,current,context),(event,fields)=>{report.stages.push({event,...fields});},()=>manager!.voiceTargets(),(id,deliveryId,status)=>manager!.markDeliveryPlayback(id,deliveryId,status),(id,text,runId)=>manager!.recordSpokenAck(id,text,runId));
+ },undefined,undefined,undefined,(id,text,startedAt,current,context)=>manager!.routeVoiceInput(id,text,startedAt,current,context),(event,fields)=>{report.stages.push({event,...fields,at:Date.now()});},()=>manager!.voiceTargets(),(id,deliveryId,status)=>manager!.markDeliveryPlayback(id,deliveryId,status),(id,text,runId)=>manager!.recordSpokenAck(id,text,runId));
  await manager.ensureDefault();check('actual task model initialized',manager.get('default')!.runtime.session.available);
  await cdp.send('Page.navigate',{url:url+'sidepanel.html'},uiSid);await until(async()=>await panelEval!('globalThis.uiListeners?.length>0')||undefined);
  await panelEval!(`uiEmit({kind:'conversations',selectedConversationId:'default',conversations:[{id:'default',title:'受控收件箱',createdAt:1,updatedAt:1,state:'idle',mode:'act'}]});uiEmit({kind:'conn',state:'connected'});uiEmit({kind:'server',msg:{type:'hello_ok',version:1,model:'minimax-cn/MiniMax-M3',models:[{id:'minimax-cn/MiniMax-M3',provider:'minimax-cn',modelId:'MiniMax-M3',name:'MiniMax-M3'}]}});`);
@@ -192,6 +193,9 @@ try{
   report.environmentMetrics={modelTurns:messages.slice(from).filter(m=>m.type==='agent_event'&&m.event.kind==='turn_start').length,jsCalls:report.tools.filter(t=>t.name==='js').length,readCalls:report.tools.filter(t=>t.name==='read_element').length,pauseMs:report.media.events[0]-report.requestAt,totalMs:report.finishedAt-report.requestAt};
   check('real media is paused',report.media.paused&&report.media.events.length===1);
   check('all three actual comment values are in official answer',[targetCode,otherCode,bodyMarker].every(v=>text.includes(v)));
+  report.ok=true;
+ }else if(caseName==='live_dialogue'){
+  await runLiveDialogue({out,report,messages,manager,panelEval:panelEval!,listen,until,check,release:releaseObservation,isHeld:()=>observationHeld,targetCode,otherCode});
   report.ok=true;
  }else if(caseName==='streaming_voice'){
   report.stage='streaming voice input readiness';

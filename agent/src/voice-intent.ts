@@ -87,7 +87,7 @@ export function parseVoiceDecision(raw:string,text:string,conversationTitles:rea
   const invalid=()=>new VoiceIntentError('classifier_invalid_reply','partition');
   if(!value||typeof value!=='object'||Object.keys(value).some(k=>k!=='steps')||!Array.isArray(value.steps)||!value.steps.length||value.steps.length>3)throw invalid();
   const clauses=voiceDecisionClauses(text);let start=0,sourceStart=0;
-  const steps=value.steps.map((s:any,i:number)=>{
+  const steps:Array<{action:VoiceIntentAction;target:string|null;parts:number[]}>=value.steps.map((s:any,i:number)=>{
     if(!s||typeof s!=='object'||Object.keys(s).some(k=>!['action','through','target'].includes(k)))throw invalid();
     const last=i===value.steps.length-1;
     const end=last?clauses.length-1:s.through;
@@ -96,6 +96,13 @@ export function parseVoiceDecision(raw:string,text:string,conversationTitles:rea
     const parts=Array.from({length:count},(_,offset)=>sourceStart+offset);sourceStart+=count;start=end+1;
     return {action:s.action,target:s.target,parts};
   });
+  // Reading is part of a new browser task, not a separate voice-only action.
+  // Preserve the complete delegation when the classifier splits that one task.
+  if(steps.length>1&&steps.some(s=>s.action==='start')&&steps.some(s=>s.action==='observe')
+    &&steps.every(s=>['start','observe'].includes(s.action)&&s.target===null)
+    &&!/(另开|新建|独立|单独).{0,8}(任务|会话)/.test(text)){
+    return parseVoiceIntent(JSON.stringify({steps:[{action:'start',target:null,parts:steps.flatMap(s=>s.parts)}]}),text,conversationTitles);
+  }
   let parsed:VoiceIntentPlan;
   try{parsed=parseVoiceIntent(JSON.stringify({steps}),text,conversationTitles);}
   catch(error){

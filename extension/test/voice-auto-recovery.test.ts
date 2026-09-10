@@ -506,3 +506,11 @@ it('records recovery diagnostics with event, attempt and timestamp without sensi
 });
 
 
+
+
+// Capture/transport fixtures provide speech probabilities; real model audio is checked separately.
+vi.mock('../src/sidepanel/voice-speech.js', () => ({ SpeechClassifier: {
+ create: async (onFrame: (pcm: Int16Array, probability: number) => void) => ({
+  push: (pcm: Int16Array) => onFrame(pcm, pcm[0] ? 0.9 : 0), close: vi.fn(),
+ }),
+} }));
