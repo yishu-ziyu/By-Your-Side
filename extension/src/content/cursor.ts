@@ -229,7 +229,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       .ripple {
         position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
         border-radius: 50%; border: 2px solid;
-        animation: rip 480ms cubic-bezier(.22,1,.36,1) forwards;
+        animation: rip 360ms cubic-bezier(.16,1,.3,1) forwards;
       }
       .ripple.r2 {
         width: 6px; height: 6px; margin: -3px 0 0 -3px;
@@ -267,7 +267,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         background: color-mix(in srgb, var(--c) 14%, transparent);
         mix-blend-mode: multiply;
         box-shadow: 0 0 0 1px rgba(255,255,255,0.4), 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
-        animation: highlight-breathe 500ms cubic-bezier(.25, 1, .5, 1) forwards;
+        /* 三段：出现 ~125ms → 保持 → 消退 ~250ms。旧版 500ms 内连消失一起播完，看不清标了哪。 */
+        animation: highlightTrace 1800ms cubic-bezier(.16,1,.3,1) forwards;
         will-change: opacity, transform;
       }
       .highlight.action-target {
@@ -275,18 +276,27 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         border-width: 3px;
         box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px #172033;
       }
+      /* 操作完成：先留一小会儿让人看清点了哪，再消退 */
+      .highlight.action-target.fading {
+        animation: targetFade 400ms cubic-bezier(.16,1,.3,1) 500ms forwards;
+      }
       @media (prefers-reduced-motion: reduce) {
         .cursor, .label, .svg-wrap { transition: none; }
         .cursor.pressing .svg-wrap { transform: none; }
         .ripple, .ripple.r2 { animation: rip-reduced 200ms ease-out forwards; }
+        .highlight { animation: highlight-reduced 1600ms linear forwards; }
         @keyframes rip-reduced { from { opacity: .95; } to { opacity: 0; } }
+        @keyframes highlight-reduced { 0% { opacity: 0; } 8% { opacity: 1; } 84% { opacity: 1; } 100% { opacity: 0; } }
       }
-      @keyframes highlight-breathe {
-        0% { opacity: 0; transform: scale(0.97); }
-        20% { opacity: 1; transform: scale(1); }
-        45% { opacity: 0.35; transform: scale(1); }
-        70% { opacity: 0.95; transform: scale(1); }
-        100% { opacity: 0; transform: scale(1.01); }
+      @keyframes highlightTrace {
+        0%   { opacity: 0; transform: scale(0.985); }
+        7%   { opacity: 1; transform: scale(1); }
+        86%  { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: scale(1.012); }
+      }
+      @keyframes targetFade {
+        from { opacity: 1; }
+        to { opacity: 0; }
       }
     `;
     shadow.appendChild(style);
@@ -807,7 +817,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       }
     };
     el.addEventListener("animationend", remove, { once: true });
-    setTimeout(remove, 650);
+    setTimeout(remove, 1900);
     inst.highlightEl = el;
     highlightLayer!.appendChild(el);
   }
@@ -1335,6 +1345,13 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         if (outcome !== "done") {
           inst.highlightEl?.remove();
           inst.highlightEl = undefined;
+        } else if (inst.highlightEl) {
+          // 操作完成：标记先留一下让人看清点了哪，再消退（06 trace），不是原地长留
+          const el = inst.highlightEl;
+          inst.highlightEl = undefined;
+          el.classList.add("fading");
+          el.addEventListener("animationend", () => el.remove(), { once: true });
+          window.setTimeout(() => el.remove(), 1200);
         }
         renderActionLabel(inst);
         schedulePark(inst);

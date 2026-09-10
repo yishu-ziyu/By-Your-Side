@@ -1,4 +1,5 @@
 import { mountVoiceUI } from "./voice-ui.js";
+import { createOrb, type OrbHandle } from "./orb.js";
 /**
  * side panel 入口：原生 TS + DOM，无框架。
  * 经 chrome.runtime Port 接入 background（background 持有到伴随进程的连接并执行工具）；
@@ -1024,6 +1025,29 @@ function positionModelPopover(): void {
   modelPopover.style.bottom = `${appBox.bottom - box.top + 8}px`;
 }
 
+/**
+ * 面板要从触发它的那颗按钮长出来：把缩放原点对齐到按钮中点。
+ * 不能读面板自己的 rect —— 展开动画的 transform 会污染测量，所以用 offsetLeft 换算布局位置。
+ */
+function alignModelPopoverOrigin(): void {
+  const parent = modelPopover.offsetParent as HTMLElement | null;
+  if (!parent) return;
+  const popLeft = parent.getBoundingClientRect().left + modelPopover.offsetLeft;
+  const btn = modelBtn.getBoundingClientRect();
+  const x = Math.round(btn.left - popLeft + btn.width / 2);
+  if (x > 0 && x < modelPopover.offsetWidth) {
+    modelPopover.style.transformOrigin = `${x}px bottom`;
+  }
+}
+
+/** 展开只有这一次：列表项依次落位。搜索会重渲染列表，靠一次性 class 避免每次输入都重播。 */
+function playPopoverOpening(): void {
+  modelPopover.classList.remove("opening");
+  void modelPopover.offsetWidth;
+  modelPopover.classList.add("opening");
+  window.setTimeout(() => modelPopover.classList.remove("opening"), 600);
+}
+
 function modelSearchInput(): HTMLInputElement | null {
   return modelPopover.querySelector(".model-search-input");
 }
@@ -1181,6 +1205,8 @@ modelBtn.onclick = () => {
     renderModelList();
     positionModelPopover();
     modelPopover.hidden = false;
+    alignModelPopoverOrigin();
+    playPopoverOpening();
     modelBtn.setAttribute("aria-expanded", "true");
     queueMicrotask(() => modelSearchInput()?.focus());
   } else {
@@ -1217,6 +1243,16 @@ let currentAssistantText = "";
 let currentThinking: HTMLElement | null = null;
 let currentThinkingDetails: HTMLDetailsElement | null = null;
 let currentThinkingStart = 0;
+
+/**
+ * 光球显示尺寸。比它替换掉的图标略大一点：球是细线，实心图标同尺寸会显得球单薄。
+ * 三处各自跟着那行的字号走，不强行统一成一个数。
+ */
+const ORB_BOX_THINKING = 18;
+const ORB_BOX_CHIP = 16;
+const ORB_BOX_RECEIPT = 15;
+/** 球句柄按宿主元素找回：折叠、结束时要把对应那个定格。 */
+const orbByHost = new WeakMap<HTMLElement, OrbHandle>();
 /** 用户发消息时刻：run 计时的起点（块体懒创建，先记时间戳）。 */
 let runStartAt = 0;
 interface WorkerLane {
@@ -1278,6 +1314,8 @@ interface ChipGroup {
 interface ToolChipEntry {
   chip: HTMLButtonElement;
   dot: HTMLElement;
+  /** 工具在跑时转，结束定格——完成是收束，不是把球换成图标 */
+  orb: OrbHandle;
   dur: HTMLElement;
   start: number;
   name: string;
@@ -1289,6 +1327,11 @@ interface ToolChipEntry {
 const toolChips = new Map<string, ToolChipEntry>();
 
 /** 工具名 → 图标；未知名称回退扳手。 */
+/**
+ * 工具名 → 图标。
+ * 05 之后 chip 的图标位换成了光球，这里暂时没有调用方；留着是因为"chip 要不要同时保留
+ * 工具图标"还没最终定，回退时直接接回 onToolStart 即可。
+ */
 const TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
   ["click", MousePointerClick],
   ["fill", PenLine],
@@ -1436,7 +1479,8 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
   receipt.className = `memory-receipt memory-receipt-${event.action}`;
   const mark = document.createElement("span");
   mark.className = "memory-receipt-mark";
-  mark.textContent = "✓";
+  // 记忆的身份标记：connecting 球（星座接线），替代原来的文字勾。记录已落定，球定格不转。
+  mark.appendChild(createOrb("connecting", ORB_BOX_RECEIPT).el);
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.memoryReceipt = event.action;
@@ -1466,15 +1510,16 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
 // 块懒创建于首个步骤事件，运行中展开，结束后折叠并标注总耗时。
 // 运行中的等待态用像素格 loader（相位波纹 + 实时耗时 + 当前动作副标题）。
 
-/** 5×5 像素格 loader：相位波纹动画 + 0.1s 精度耗时 + 当前动作副标题。 */
+/** 3×3 像素格 loader：相位波纹动画 + 0.1s 精度耗时 + 当前动作副标题。 */
 function buildPixelLoader(): { root: HTMLElement; elapsed: HTMLElement; sub: HTMLElement } {
   const root = document.createElement("div");
   root.className = "px-wrap";
   const grid = document.createElement("div");
   grid.className = "px-grid";
-  for (let i = 0; i < 25; i++) {
+  // 3×3：光球上线后这里退成背景，只负责"整体还在跑"，视觉重量让给球
+  for (let i = 0; i < 9; i++) {
     const cell = document.createElement("i");
-    cell.style.animationDelay = `${pixelDelay(i)}s`;
+    cell.style.animationDelay = `${pixelDelay(i, 3)}s`;
     grid.appendChild(cell);
   }
   const meta = document.createElement("div");
@@ -1759,6 +1804,23 @@ function addChainStep(label: string): void {
   run.chainEl.textContent = run.chain.render();
 }
 
+/** 收束退场：让元素把退出动画走完再摘除，避免"啪"地消失。animationend 与超时双保险。 */
+function settleOut(el: HTMLElement): void {
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    el.remove();
+  };
+  if (!el.isConnected) {
+    finish();
+    return;
+  }
+  el.classList.add("leaving");
+  el.addEventListener("animationend", finish, { once: true });
+  window.setTimeout(finish, 500);
+}
+
 function finishRun(): void {
   const run = currentRun;
   currentRun = null;
@@ -1767,9 +1829,10 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
-  run.loader.remove();
-  // 空 run（纯文本回复，无思考/工具步骤）不留壳
-  if (run.body.childElementCount === 0) {
+  // 空 run（纯文本回复，无思考/工具步骤）不留壳：等待态之外没有别的内容就整块撤掉
+  const hasSteps = [...run.body.children].some((el) => el !== run.loader);
+  if (!hasSteps) {
+    run.loader.remove();
     run.root.remove();
     if (lastRun === run) lastRun = null;
     if (!applyingHistory) companion.onRunFinish();
@@ -1777,6 +1840,13 @@ function finishRun(): void {
   }
   run.root.classList.add("done");
   run.iconBox.replaceChildren(icon(List));
+  if (applyingHistory) {
+    run.loader.remove();
+  } else {
+    // 等待态收束退出，完成图标从同一点展开——不是"啪"地换一个（04 settle）
+    settleOut(run.loader);
+    run.iconBox.classList.add("settling");
+  }
   const title = run.root.querySelector(".run-title");
   if (title) title.textContent = "查看执行过程";
   // Keep the process in its original position above the final response.
@@ -1796,6 +1866,7 @@ function closeBlocks(): void {
   // 流式光标移除；进行中的思考块折叠并落定文案（带耗时）
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
   if (currentThinkingDetails) {
+    orbByHost.get(currentThinkingDetails)?.setRunning(false);
     currentThinkingDetails.classList.remove("streaming");
     currentThinkingDetails.open = false;
     const label = currentThinkingDetails.querySelector("summary span");
@@ -1811,6 +1882,7 @@ function closeBlocks(): void {
   currentThinkingDetails = null;
   currentThinkingStart = 0;
   if (currentLeadDraftDetails) {
+    orbByHost.get(currentLeadDraftDetails)?.setRunning(false);
     currentLeadDraftDetails.classList.remove("streaming");
     currentLeadDraftDetails.open = false;
   }
@@ -1825,7 +1897,10 @@ function appendLeadDelta(delta: string): void {
     details.className = "thinking streaming";
     details.open = false;
     const summary = document.createElement("summary");
-    summary.appendChild(icon(Brain));
+    const orb = createOrb("composing", ORB_BOX_THINKING);
+    if (!applyingHistory) orb.setRunning(true);
+    orbByHost.set(details, orb);
+    summary.appendChild(orb.el);
     const label = document.createElement("span");
     label.textContent = "执行过程";
     summary.appendChild(label);
@@ -1853,7 +1928,10 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       details.className = "thinking streaming";
       details.open = true;
       const summary = document.createElement("summary");
-      summary.appendChild(icon(Brain));
+      const orb = createOrb("composing", ORB_BOX_THINKING);
+      if (!applyingHistory) orb.setRunning(true);
+      orbByHost.set(details, orb);
+      summary.appendChild(orb.el);
       const label = document.createElement("span");
       label.textContent = "正在思考…";
       summary.appendChild(label);
@@ -1983,7 +2061,10 @@ function onToolStart(
   dot.className = `chip-dot ${chipState(false, false)}`;
   const iconBox = document.createElement("span");
   iconBox.className = "chip-icon";
-  iconBox.appendChild(icon(TOOL_ICONS.get(ev.name) ?? Wrench));
+  // 工具在跑时用光球（solving = 色带归位）；跑完定格在同一颗球上，不换成别的图标
+  const chipOrb = createOrb("solving", ORB_BOX_CHIP);
+  if (!applyingHistory) chipOrb.setRunning(true);
+  iconBox.appendChild(chipOrb.el);
   const label = document.createElement("span");
   label.className = "chip-label";
   label.textContent = action.full;
@@ -1994,6 +2075,7 @@ function onToolStart(
   const entry: ToolChipEntry = {
     chip,
     dot,
+    orb: chipOrb,
     dur,
     start: eventTime(),
     name: ev.name,
@@ -2020,6 +2102,13 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   toolChips.delete(ev.toolCallId);
   if (!entry) return;
   entry.dot.className = `chip-dot ${chipState(true, ev.isError)}`;
+  // 球停下并定格：完成是收束，不是把球换掉
+  entry.orb.setRunning(false);
+  // 完成不是变色，是收束：点从放大处缩回原位（04 settle）
+  if (!applyingHistory) {
+    entry.dot.classList.add("settling");
+    window.setTimeout(() => entry.dot.classList.remove("settling"), 500);
+  }
   const duration = recordedDuration(entry.start, eventTime());
   entry.dur.hidden = duration === null;
   entry.dur.textContent = duration ?? "";

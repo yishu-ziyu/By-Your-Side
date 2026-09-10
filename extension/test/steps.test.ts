@@ -109,6 +109,14 @@ describe("pixelDelay 像素格相位波纹", () => {
     expect(pixelDelay(5)).toBeCloseTo(0.12); // 第二行第一列 x=0,y=1
     expect(pixelDelay(24)).toBeCloseTo(0.96); // 右下角 x=4,y=4
   });
+
+  it("阵列缩成 3×3 时坐标跟着换", () => {
+    // 等待态只剩 3×3，光球上线后它从主角退成背景
+    expect(pixelDelay(0, 3)).toBe(0);
+    expect(pixelDelay(1, 3)).toBeCloseTo(0.12); // x=1,y=0
+    expect(pixelDelay(3, 3)).toBeCloseTo(0.12); // x=0,y=1
+    expect(pixelDelay(8, 3)).toBeCloseTo(0.48); // 右下角 x=2,y=2
+  });
 });
 
 describe("workerEventRunPolicy 结束后不得开新处理中块", () => {
@@ -169,4 +177,3 @@ describe("执行中过程视窗限高", () => {
     expect(css).not.toMatch(/details\.run-steps\.done[^{]*\.run-body\s*\{[^}]*max-height:\s*320px/);
   });
 });
-

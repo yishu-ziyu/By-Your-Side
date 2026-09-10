@@ -26,6 +26,8 @@
   --text-secondary: #4b5563;
   --text-tertiary: #9ca3af;
   --text-quaternary: #d1d5db;
+  /* 光球专用墨色：比 text-secondary 深一档。球是细线，用次要色会被 alpha 稀释到看不清。 */
+  --orb-ink: #374151;
 
   /* 兼容既有 token */
   --bg: var(--wallpaper);
@@ -63,9 +65,22 @@
   --btn-border-hover: rgba(0, 0, 0, 0.14);
   --popover-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
 
-  /* 弹簧动力学参数 */
-  --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --spring-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+  /* ── Motion Language：3 个时长 + 3 条曲线 ──────────────────────────
+     quick  手指一碰就该有反应（按下 / 悬停 / 开关）
+     move   结构变化（展开 / 收束 / 位移）
+     morph  身份变化（一个控件变成另一个）
+     swift  快起慢停，不过冲 —— 位移与形变默认
+     spring 带回弹，只用于按压回复
+     glide  首尾都缓，可进可出的场合 */
+  --m-quick: 120ms;
+  --m-move: 240ms;
+  --m-morph: 360ms;
+  --e-swift: cubic-bezier(0.16, 1, 0.3, 1);
+  --e-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --e-glide: cubic-bezier(0.4, 0, 0.2, 1);
+  /* 兼容既有引用（值统一到上面的曲线，不再各写各的） */
+  --spring-bounce: var(--e-spring);
+  --spring-fluid: var(--e-swift);
   --radius-dock: 22px;
   --radius-card: 14px;
   --radius-pill: 9999px;
@@ -100,6 +115,8 @@
     --text-secondary: #9ca3af;
     --text-tertiary: #6b7280;
     --text-quaternary: #374151;
+    /* 深色下同理往亮的一侧挪一档，否则球会糊进背景 */
+    --orb-ink: #d1d5db;
 
     --apple-blue: #2997ff;
     --apple-blue-soft: rgba(41, 151, 255, 0.16);
@@ -271,7 +288,8 @@ body {
   cursor: pointer;
   padding: 0;
   box-shadow: var(--glass-specular);
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.15s var(--spring-bounce);
+  transition: color var(--m-quick) ease, border-color var(--m-quick) ease,
+              background var(--m-quick) ease, transform var(--m-move) var(--e-spring);
 }
 
 #teach-toggle:hover {
@@ -281,7 +299,8 @@ body {
 }
 
 #teach-toggle:active {
-  transform: scale(0.94);
+  transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 #teach-toggle.on {
@@ -313,7 +332,9 @@ body {
   font-weight: 500;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
-  transition: all 0.22s var(--spring-fluid);
+  transition: border-color var(--m-move) var(--e-swift), background var(--m-move) var(--e-swift),
+              color var(--m-move) var(--e-swift), box-shadow var(--m-move) var(--e-swift),
+              transform var(--m-move) var(--e-spring);
   user-select: none;
   position: relative;
 }
@@ -332,7 +353,8 @@ body {
 }
 
 #model-btn:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 #model-btn:disabled {
@@ -425,18 +447,39 @@ body {
   background: var(--glass-surface-elevated);
   backdrop-filter: var(--glass-blur);
   box-shadow: var(--glass-specular), var(--popover-shadow, var(--glass-shadow));
-  transform-origin: bottom left;
-  animation: popoverSpringIn 0.26s var(--spring-bounce);
+  /* 缩放原点由 alignModelPopoverOrigin() 对齐到触发按钮中点；这个值只是兜底 */
+  transform-origin: 46px bottom;
+  animation: modelPopoverIn var(--m-move) var(--e-swift);
 }
 
-@keyframes popoverSpringIn {
+@keyframes modelPopoverIn {
   from {
     opacity: 0;
-    transform: scale(0.94) translateY(6px);
+    transform: scale(0.72);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: scale(1);
+  }
+}
+
+/* 只在展开那一瞬给一次依次落位；搜索重渲染列表不重播（靠 .opening 一次性 class） */
+#model-popover.opening .model-list > * {
+  animation: modelItemIn 200ms var(--e-swift) backwards;
+}
+#model-popover.opening .model-list > *:nth-child(n+2) { animation-delay: 18ms; }
+#model-popover.opening .model-list > *:nth-child(n+3) { animation-delay: 36ms; }
+#model-popover.opening .model-list > *:nth-child(n+4) { animation-delay: 54ms; }
+#model-popover.opening .model-list > *:nth-child(n+5) { animation-delay: 72ms; }
+
+@keyframes modelItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -849,10 +892,43 @@ details.run-steps summary::-webkit-details-marker {
   display: inline-flex;
   flex-shrink: 0;
   color: var(--text-secondary);
+  transition: color var(--m-move) var(--e-swift);
 }
 
 details.run-steps.done .run-icon {
   color: var(--apple-green);
+}
+
+/* 04 settle：等待态收束退出，完成图标从同一点旋转展开——不是"啪"地换一个 */
+.px-wrap.leaving {
+  animation: pxSettleOut var(--m-move) var(--e-swift) forwards;
+  pointer-events: none;
+}
+
+@keyframes pxSettleOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96) translateY(-3px);
+  }
+}
+
+details.run-steps .run-icon.settling {
+  animation: runIconSettle var(--m-morph) var(--e-swift) both;
+}
+
+@keyframes runIconSettle {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-70deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .run-title {
@@ -1110,7 +1186,8 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   font-size: 11.5px;
   font-weight: 450;
   cursor: pointer;
-  transition: all 0.2s var(--spring-fluid);
+  transition: border-color var(--m-move) var(--e-swift), background var(--m-move) var(--e-swift),
+              transform var(--m-move) var(--e-spring);
 }
 
 .chip:hover {
@@ -1120,7 +1197,8 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 }
 
 .chip:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 /* 选中（详情展开中）：apple-blue 描边 + soft 底 */
@@ -1156,6 +1234,20 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   background: var(--apple-red);
 }
 
+/* 04 settle：完成不是变色，是收束——点从放大处缩回原位 */
+.chip-dot.settling {
+  animation: dotSettle var(--m-morph) var(--e-spring);
+}
+
+@keyframes dotSettle {
+  from {
+    transform: scale(1.7);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
 .chip-icon {
   display: inline-flex;
   color: var(--text-secondary);
@@ -1170,6 +1262,19 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   font-size: 10.5px;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  /* 耗时读数推入（hidden 摘掉时才播，见 onToolEnd） */
+  animation: durIn var(--m-move) var(--e-swift) both;
+}
+
+@keyframes durIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .chip-detail {
@@ -1208,7 +1313,7 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 }
 
 /* ── 像素格 loader ─────────────────────────────────────────── */
-/* 5×5 相位波纹 + 实时耗时 + 当前动作副标题；run 运行中常驻 body 底部 */
+/* 3×3 相位波纹 + 实时耗时 + 当前动作副标题；run 运行中常驻 body 底部 */
 .px-wrap {
   display: flex;
   align-items: center;
@@ -1218,15 +1323,16 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 
 .px-grid {
   display: grid;
-  grid-template-columns: repeat(5, 7px);
-  grid-auto-rows: 7px;
-  gap: 3px;
+  /* 3×3 / 16px：等待态从主角退成背景，47px 的方阵会跟光球抢视线 */
+  grid-template-columns: repeat(3, 4px);
+  grid-auto-rows: 4px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
 .px-grid i {
   background: var(--accent);
-  border-radius: 1.5px;
+  border-radius: 1px;
   opacity: 0.15;
   animation: pxwave 1.6s ease-in-out infinite;
 }
@@ -1333,7 +1439,7 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   color: var(--text-secondary);
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.25s var(--spring-bounce);
+  transition: all var(--m-move) var(--e-swift);
   user-select: none;
 }
 
@@ -1344,7 +1450,8 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 }
 
 .morphing-page-pill:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 .tab-icon-sq {
@@ -1846,7 +1953,7 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   flex-shrink: 0;
   font: 500 12px/1 var(--font);
   box-shadow: 0 2px 6px var(--apple-blue-soft);
-  transition: transform 0.15s var(--spring-bounce), opacity 0.15s ease;
+  transition: transform var(--m-move) var(--e-spring), opacity var(--m-quick) ease;
 }
 
 #takeover-btn:hover {
@@ -1856,6 +1963,7 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 
 #takeover-btn:active {
   transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 /* 位置 1：Send ↑ / Stop ■ 原位形变按钮 (Motion In-Place Morphing Button) */
@@ -1864,7 +1972,8 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   height: 30px;
   border-radius: 50%;
   background: var(--text-primary);
-  color: #fff;
+  /* 跟着底色反相：深色模式下 --text-primary 是浅色，写死 #fff 会让箭头看不见 */
+  color: var(--content-bg);
   border: 0;
   display: grid;
   place-items: center;
@@ -1872,9 +1981,10 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   position: relative;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   flex-shrink: 0;
-  transition: border-radius 0.35s var(--spring-bounce),
-              background 0.3s ease,
-              transform 0.18s var(--spring-bounce);
+  /* 形变走 morph，底色走 move，松手回弹走 spring */
+  transition: border-radius var(--m-morph) var(--e-spring),
+              background var(--m-move) var(--e-swift),
+              transform var(--m-move) var(--e-spring);
 }
 
 #send-btn.kinetic-morph-button:hover {
@@ -1884,7 +1994,8 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 }
 
 #send-btn.kinetic-morph-button:active {
-  transform: scale(0.86);
+  transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 #send-btn.kinetic-morph-button.stopping {
@@ -1978,11 +2089,12 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   font-weight: 500;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(255, 59, 48, 0.3);
-  transition: transform 0.15s var(--spring-bounce);
+  transition: transform var(--m-move) var(--e-spring);
 }
 
 .danger-confirm-btn:active {
   transform: scale(0.95);
+  transition: transform var(--m-quick) var(--e-swift);
 }
 
 .danger-cancel-btn {
@@ -2267,7 +2379,7 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 .memory-empty strong { color:var(--text-secondary); font-size:13px; font-weight:560; }
 .memory-empty p { max-width:260px; margin:7px 0 0; line-height:1.7; }
 .memory-receipt { display:flex; align-items:center; gap:6px; margin:-8px 0 14px; color:var(--text-secondary); font-size:10.5px; }
-.memory-receipt-mark { color:var(--ok); font-size:11px; }
+.memory-receipt-mark { color:var(--ok); font-size:11px; display:inline-flex; align-items:center; flex-shrink:0; }
 .memory-receipt button { border:0; border-radius:5px; background:transparent; color:var(--accent); padding:2px 1px; font:inherit; font-size:11px; cursor:pointer; }
 .memory-receipt button:hover { text-decoration:underline; }
 @media (max-height: 560px) { #memory-drawer { top:92px; } }

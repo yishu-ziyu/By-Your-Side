@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>执行过程面板 × 光球（改前 / 方案A / 方案B）</title>
+<style>
+  /* ── 面板真实 tokens（抄自 extension/src/sidepanel/styles.css） ── */
+  :root{
+    --wallpaper: radial-gradient(at 15% 15%, rgba(255,182,140,.35) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(135,195,255,.35) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(180,160,240,.3) 0px, transparent 55%), #f2f4f8;
+    --content-bg:#ffffff; --content-subtle:#f7f8fa; --content-subtle-hover:#eef1f5;
+    --content-border:rgba(0,0,0,.06);
+    --text-primary:#111827; --text-secondary:#4b5563; --text-tertiary:#9ca3af;
+    --apple-blue:#0071e3; --apple-blue-soft:rgba(0,113,227,.08);
+    --apple-green:#34c759; --apple-red:#ff3b30;
+    --radius-card:10px; --radius-pill:999px;
+    --spring-fluid:cubic-bezier(.22,1,.36,1);
+    --anim-ink:#4b5563;
+  }
+  html[data-theme="dark"]{
+    --wallpaper:#0b0c10; --content-bg:#15171d; --content-subtle:#1c1f26; --content-subtle-hover:#242933;
+    --content-border:rgba(255,255,255,.08);
+    --text-primary:#f9fafb; --text-secondary:#9ca3af; --text-tertiary:#6b7280;
+    --apple-blue:#2997ff; --apple-blue-soft:rgba(41,151,255,.16);
+    --apple-green:#30d158; --apple-red:#ff453a;
+    --anim-ink:#9ca3af;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:24px 28px 60px; background:var(--wallpaper); color:var(--text-primary);
+    font:13px/1.6 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif; -webkit-font-smoothing:antialiased}
+  h1{margin:0 0 6px; font-size:17px; font-weight:600}
+  .page-sub{margin:0 0 16px; max-width:1080px; color:var(--text-secondary)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+    background:rgba(127,127,127,.12); padding:1px 4px; border-radius:4px}
+  .controls{display:flex; gap:16px; align-items:center; padding:9px 12px; margin-bottom:18px;
+    background:rgba(127,127,127,.08); border-radius:8px; font-size:12px}
+  .controls button{font:inherit; font-size:12px; padding:4px 10px; border:1px solid var(--content-border);
+    border-radius:6px; background:var(--content-bg); color:var(--text-primary); cursor:pointer}
+  .controls button.on{background:var(--text-primary); color:var(--content-bg); border-color:var(--text-primary)}
+  .cols{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap}
+  .col{width:372px; flex:none}
+  .col>h2{margin:0 0 4px; font-size:13px; font-weight:600}
+  .col>p{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary); min-height:32px}
+  .stage{background:var(--content-bg); border-radius:14px; padding:12px; box-shadow:0 8px 30px -8px rgba(31,38,135,.12)}
+
+  /* ── 面板本体（抄自 styles.css 的 run-steps / thinking / chip） ── */
+  .lucide{width:14px; height:14px; stroke-width:2; flex-shrink:0}
+  details.thinking{align-self:stretch; flex-shrink:0; color:var(--text-secondary); font-size:12px;
+    border-left:2px solid var(--content-border); padding-left:10px}
+  details.thinking summary{display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;
+    color:var(--text-secondary); font-size:12px; list-style:none}
+  details.thinking summary::-webkit-details-marker{display:none}
+  details.thinking pre{white-space:pre-wrap; word-break:break-word; margin:6px 0 0;
+    font-family:inherit; color:var(--text-tertiary); font-size:11.5px}
+  details.run-steps{align-self:stretch; flex-shrink:0; min-height:min-content; border:1px solid var(--content-border);
+    border-radius:var(--radius-card); background:var(--content-bg); box-shadow:0 1px 4px rgba(0,0,0,.03); overflow:hidden}
+  details.run-steps summary{display:flex; align-items:center; gap:8px; min-height:38px; padding:9px 12px;
+    line-height:1.5; cursor:pointer; user-select:none; list-style:none; font-size:12px}
+  details.run-steps summary::-webkit-details-marker{display:none}
+  .run-icon{display:inline-flex; flex-shrink:0; color:var(--text-secondary)}
+  details.run-steps.done .run-icon{color:var(--apple-green)}
+  .run-title{font-weight:600; color:var(--text-primary); flex-shrink:0}
+  .run-chain{color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:11.5px}
+  .run-time{margin-left:auto; color:var(--text-tertiary); font-variant-numeric:tabular-nums; font-size:11px; flex-shrink:0}
+  .run-chevron{display:inline-flex; color:var(--text-tertiary); flex-shrink:0}
+  .run-chevron .lucide{width:13px; height:13px}
+  .run-body{display:flex; flex-direction:column; gap:12px; padding:8px 12px 12px}
+  .chip-group{display:flex; flex-direction:column; gap:8px; flex-shrink:0}
+  .chip-row{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border:1px solid var(--content-border);
+    border-radius:var(--radius-pill); background:var(--content-subtle); color:var(--text-primary);
+    font:inherit; font-size:11.5px; font-weight:450; cursor:pointer}
+  .chip.error{border-color:color-mix(in srgb, var(--apple-red) 40%, transparent)}
+  .chip-dot{width:6px; height:6px; border-radius:50%; flex-shrink:0}
+  .chip-dot.running{background:var(--apple-blue); animation:pulse 1.2s ease-in-out infinite}
+  .chip-dot.done{background:var(--apple-green)}
+  .chip-dot.error{background:var(--apple-red)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .chip-icon{display:inline-flex; color:var(--text-secondary)}
+  .chip .dur{font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums}
+  .memory-line{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; font-size:11.5px;
+    color:var(--text-secondary); border:1px dashed var(--content-border); border-radius:var(--radius-pill)}
+  .orb{display:inline-grid; place-items:center; flex-shrink:0}
+  .orb canvas{display:block}
+  .foot{margin-top:22px; max-width:1080px; color:var(--text-secondary); font-size:12px}
+  .foot b{color:var(--text-primary)}
+</style>
+</head>
+<body>
+
+<h1>执行过程面板 × 光球</h1>
+<p class="page-sub">
+  三列：<b>改之前</b>（现在线上：脑图 + 工具图标 + 状态点）、<b>方案 A</b>（只把「思考过程 / 执行过程」的脑图换成球）、
+  <b>方案 B</b>（三态都上球：思考 <code>composing</code> / 工具 <code>solving</code> / 记忆 <code>connecting</code>）。
+  规则：<b>只有正在跑的那一行在动，跑完的行定格成静止帧</b>。球是 Open Design 同一个引擎（原码内联）。
+</p>
+
+<div class="controls">
+  <div>主题
+    <button data-theme-btn="light" class="on">浅色</button>
+    <button data-theme-btn="dark">深色</button>
+  </div>
+  <div><button id="pause">暂停动画</button></div>
+  <div><button id="reduce">模拟 prefers-reduced-motion</button></div>
+  <div>球大小
+    <button data-size="16">16</button>
+    <button data-size="18">18</button>
+    <button data-size="20" class="on">20</button>
+  </div>
+</div>
+
+<div class="cols" id="cols"></div>
+
+<p class="foot">
+  <b>说明。</b>面板壳头（「查看执行过程」那一行）我三列都保持现在的图标；要不要也换成球（像 Open Design 壳头那样）你说了算。
+  记忆行现在面板里没有，方案 B 里那条「本轮使用了 3 条记忆」是按 agent 已有的事件（<code>kind:"memory"</code>）新加的。
+</p>
+
+<script>
+// ===== thinking-orbs v0.3.1 engine（MIT © Jakub Antalik）原码内联，仅去掉 export =====
+function U(n, s, t) {
+  return n + (s - n) * t;
+}
+function nt(n) {
+  return n - Math.floor(n);
+}
+function G(n, s) {
+  const t = Math.floor(n), r = Math.floor(s);
+  let a = n - t, o = s - r;
+  a = a * a * (3 - 2 * a), o = o * o * (3 - 2 * o);
+  const c = E(t, r), M = E(t + 1, r), h = E(t, r + 1), m = E(t + 1, r + 1);
+  return c + (M - c) * a + (h - c) * o + (c - M - h + m) * a * o;
+}
+function E(n, s) {
+  const t = Math.sin(n * 12.9898 + s * 78.233) * 43758.5453;
+  return t - Math.floor(t);
+}
+function J(n, s) {
+  const t = Math.PI * (3 - Math.sqrt(5)), r = 1 - 2 * (n + 0.5) / s, a = Math.sqrt(1 - r * r), o = n * t;
+  return [a * Math.cos(o), r, a * Math.sin(o)];
+}
+function et(n, s) {
+  return Math.atan2(Math.sin(n - s), Math.cos(n - s));
+}
+function _(n, s, t, r, a) {
+  const o = Math.sin(s), c = Math.cos(s), M = Math.sin(n), h = Math.cos(n);
+  return (m, D, p) => {
+    const e = m * h + p * M, l = -m * M + p * h, R = D * c - l * o, w = D * o + l * c;
+    return [t + e * a, r - R * a, w];
+  };
+}
+function rt(n, s, t, r = 0.3) {
+  for (const a of s) {
+    const o = a.a ?? 1, c = Math.min(1, Math.max(0, a.white)), M = Math.round((t ? 1 - c : c) * 255);
+    n.fillStyle = `rgba(${M},${M},${M},${o})`, n.beginPath(), n.arc(a.x, a.y, a.r, 0, Math.PI * 2), n.fill();
+  }
+}
+function it(n, s, t) {
+  for (const r of s) {
+    const a = r.a ?? 1, o = Math.min(1, Math.max(0, r.white)), c = Math.round((t ? 1 - o : o) * 255);
+    n.strokeStyle = `rgba(${c},${c},${c},${a})`, n.lineWidth = r.w, n.beginPath(), n.moveTo(r.x1, r.y1), n.lineTo(r.x2, r.y2), n.stroke();
+  }
+}
+function L(n, s, t = 0.3) {
+  const r = [];
+  for (const a of n)
+    (a.a ?? 1) < 0.02 || (a.r = Math.max(t, a.r), r.push(a));
+  return r.sort((a, o) => a.z - o.z), { dots: r, lines: s.filter((a) => (a.a ?? 1) >= 0.02) };
+}
+function ht(n, s, t) {
+  s.lines.length && it(n, s.lines, t), rt(n, s.dots, t);
+}
+function $(n, s) {
+  return (n / 300) ** s;
+}
+const Mt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.76, c = _(s * 0.4, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.ghostN ?? 150;
+  for (let e = 0; e < m; e++) {
+    const l = J(e, m), [R, w, i] = c(l[0] * o, l[1] * o, l[2] * o), u = (i / o + 1) / 2;
+    h.push({ x: R, y: w, z: i, r: 0.8 * M, white: 0.78, a: 0.1 + 0.22 * u });
+  }
+  const D = t.strandN ?? 52, p = t.turns ?? 3;
+  for (let e = 0; e < 3; e++) {
+    const l = e / 3 * 2 * Math.PI;
+    for (let R = 0; R < D; R++) {
+      const w = (nt(R / D + s * 0.045) * 2 - 1) * 0.96, i = Math.sqrt(Math.max(0, 1 - w * w)), u = Math.min(1, (1 - Math.abs(w)) / 0.1), y = w * Math.PI * p + l, b = 1 + 0.075 * Math.sin(w * Math.PI * p * 2 + l * 2 + s * 0.8), f = i * o * b, [P, x, g] = c(Math.cos(y) * f, w * o * b, Math.sin(y) * f), d = (g / o + 1) / 2;
+      h.push({
+        x: P,
+        y: x,
+        z: g,
+        r: ((t.rBase ?? 1.2) + (t.rDepth ?? 1.8) * d) * M,
+        white: 0.55 - 0.45 * d,
+        a: u * (0.45 + 0.55 * d)
+      });
+    }
+  }
+  return L(h, [], t.rMin);
+};
+function lt(n, s, t, r) {
+  const a = 2 * s * t + r, o = n % a, c = new Array(s).fill(0);
+  let M = -1;
+  if (o < 2 * s * t) {
+    const h = Math.floor(o / t), m = (o - h * t) / t, p = 1 - (1 - Math.min(1, m / 0.7)) ** 3;
+    if (h < s) {
+      for (let e = 0; e < h; e++) c[e] = 1;
+      c[h] = p, M = h;
+    } else {
+      const e = 2 * s - 1 - h;
+      for (let l = 0; l < e; l++) c[l] = 1;
+      c[e] = 1 - p, M = e;
+    }
+  }
+  return { amount: c, active: M };
+}
+function pt(n, s, t) {
+  let [r, a, o] = n, c = !1;
+  for (let M = 0; M < s.length; M++) {
+    if (t.amount[M] <= 0) continue;
+    const h = s[M], m = h.axis === 0 ? r : h.axis === 1 ? a : o;
+    if (m < h.lo || m >= h.hi) continue;
+    M === t.active && (c = !0);
+    const D = h.ang * t.amount[M], p = Math.cos(D), e = Math.sin(D);
+    if (h.axis === 0) {
+      const l = a * p - o * e;
+      o = a * e + o * p, a = l;
+    } else if (h.axis === 1) {
+      const l = r * p + o * e;
+      o = -r * e + o * p, r = l;
+    } else {
+      const l = r * p - a * e;
+      a = r * e + a * p, r = l;
+    }
+  }
+  return [r, a, o, c];
+}
+function ut(n) {
+  const s = [];
+  for (let t = 0; t < n; t++) {
+    const r = Math.min(2, Math.floor(E(t, 2.3) * 3)), a = -1 + 0.5 * Math.min(3, Math.floor(E(t, 5.9) * 4)), o = E(t, 7.7) < 0.5 ? 1 : -1;
+    s.push({ axis: r, lo: a, hi: a + 0.5, ang: o * Math.PI / 2 });
+  }
+  return s;
+}
+const ft = (n, s, t) => {
+  const a = n / 2, o = n / 2, c = n / 2 * 0.82, M = 0.4 + 0.06 * Math.sin(s * 0.35), h = _(s * 0.5, M, a, o, c), m = s * (0.5 + (1.7 - 0.5) * (t.scanMul ?? 1)), D = $(n, t.rsPow ?? 0.6), p = t.dimBase ?? 1, e = [], l = t.latRings ?? 17, R = t.lonDensity ?? 44;
+  for (let w = 0; w <= l; w++) {
+    const i = -Math.PI / 2 + w / l * Math.PI, u = Math.cos(i), y = Math.sin(i), b = Math.max(1, Math.round(Math.abs(u) * R));
+    for (let f = 0; f < b; f++) {
+      const P = f / b * 2 * Math.PI, [x, g, d] = h(u * Math.cos(P), y, u * Math.sin(P)), v = (d + 1) / 2, k = et(P + s * 0.5, m), N = Math.exp(-(k * k) / 0.18) * Math.max(0, d);
+      e.push({
+        x,
+        y: g,
+        z: d,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * v + (t.rBoost ?? 1) * N) * D,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * v,
+        // dimBase < 1 fades un-scanned dots so the meridian reads clearly
+        a: p + (1 - p) * Math.min(1, N)
+      });
+    }
+  }
+  return L(e, [], t.rMin);
+}, dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.55, 0.35 + 0.1 * Math.sin(s * 0.9), r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.moveCount ?? 14, m = ut(h), D = lt(s, h, 0.42, 1.2), p = [], e = t.latRings ?? 15, l = t.lonDensity ?? 40;
+  for (let R = 0; R <= e; R++) {
+    const w = -Math.PI / 2 + R / e * Math.PI, i = Math.cos(w), u = Math.sin(w), y = Math.max(1, Math.round(Math.abs(i) * l));
+    for (let b = 0; b < y; b++) {
+      const f = b / y * 2 * Math.PI, [P, x, g, d] = pt([i * Math.cos(f), u, i * Math.sin(f)], m, D), [v, k, N] = c(P, x, g), z = (N + 1) / 2;
+      p.push({
+        x: v,
+        y: k,
+        z: N,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * z + (d ? t.rActive ?? 0.3 : 0)) * M,
+        white: (t.inkFar ?? 0.62) - (t.inkSpan ?? 0.54) * z - (d ? 0.14 : 0)
+      });
+    }
+  }
+  return L(p, [], t.rMin);
+}, bt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.874, c = _(s * 0.18, 0.38, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.rings ?? 15, D = t.lonDensity ?? 40;
+  for (let p = 0; p <= m; p++) {
+    const e = -Math.PI / 2 + p / m * Math.PI, l = Math.cos(e), R = Math.sin(e), w = 0.62 * Math.sin(s * 2.1 - p * 0.52) + 0.38 * Math.sin(s * 1.27 + p * 0.83), i = o * (0.88 + 0.105 * w), u = Math.max(1, Math.round(Math.abs(l) * D));
+    for (let y = 0; y < u; y++) {
+      const b = y / u * 2 * Math.PI, [f, P, x] = c(l * Math.cos(b) * i, R * i, l * Math.sin(b) * i), g = (x / o + 1) / 2, d = Math.max(0, w);
+      h.push({
+        x: f,
+        y: P,
+        z: x,
+        r: ((t.rBase ?? 0.6) + (t.rDepth ?? 1.7) * g) * (1 + 0.4 * d) * M,
+        white: 0.66 - 0.56 * g - 0.1 * d
+      });
+    }
+  }
+  return L(h, [], t.rMin);
+};
+function xt(n) {
+  return n * n * (3 - 2 * n);
+}
+function st(n) {
+  const s = n.length, t = [];
+  let r = 0;
+  for (let a = 0; a < s; a++) {
+    const o = n[a], c = n[(a + 1) % s], M = Math.hypot(c[0] - o[0], c[1] - o[1]);
+    t.push(M), r += M;
+  }
+  return (a) => {
+    let o = a * r, c = 0;
+    for (; o > t[c] && c < s - 1; )
+      o -= t[c], c++;
+    const M = n[c], h = n[(c + 1) % s], m = t[c] ? Math.min(1, o / t[c]) : 0;
+    return [M[0] + (h[0] - M[0]) * m, M[1] + (h[1] - M[1]) * m];
+  };
+}
+const yt = (n) => {
+  const s = -Math.PI / 2 + n * 2 * Math.PI;
+  return [Math.cos(s) * 0.24, Math.sin(s) * 0.24];
+}, gt = st([
+  [0, -0.26],
+  [0.24, 0.16],
+  [-0.24, 0.16]
+]), mt = st([
+  [0, -0.2],
+  [0.2, -0.2],
+  [0.2, 0.2],
+  [-0.2, 0.2],
+  [-0.2, -0.2]
+]), H = [yt, gt, mt];
+function wt(n) {
+  return Math.max(6, Math.round(34 * n));
+}
+const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
+  const r = H.length, a = s % (Q * r), o = Math.floor(a / Q), c = a - o * Q, M = c > V ? xt((c - V) / ot) : 0, h = t.spread ?? 1, m = H[o], D = H[(o + 1) % r], p = 160, e = [];
+  for (let x = 0; x < p; x++) {
+    const g = x / p, d = m(g), v = D(g);
+    e.push([(d[0] + (v[0] - d[0]) * M) * h, (d[1] + (v[1] - d[1]) * M) * h]);
+  }
+  const l = [];
+  let R = 0;
+  for (let x = 0; x < p; x++) {
+    const g = e[x], d = e[(x + 1) % p], v = Math.hypot(d[0] - g[0], d[1] - g[1]);
+    l.push(v), R += v;
+  }
+  const w = wt(t.iconD ?? 1), i = (t.rDot ?? 0.021) * 1.35 * h, u = 1 + 0.02 * Math.sin(c * 3.1), y = [], b = n / 2;
+  let f = 0, P = 0;
+  for (let x = 0; x < w; x++) {
+    const g = x / w * R;
+    for (; P + l[f] < g && f < p - 1; )
+      P += l[f], f++;
+    const d = e[f], v = e[(f + 1) % p], k = l[f] ? Math.min(1, (g - P) / l[f]) : 0, N = (d[0] + (v[0] - d[0]) * k) * u, z = (d[1] + (v[1] - d[1]) * k) * u;
+    y.push({
+      x: b + N * n,
+      y: b + z * n,
+      z: 0,
+      r: Math.max(0.35, i * n),
+      white: 0.1
+    });
+  }
+  return L(y, [], t.rMin);
+}, Rt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.82, c = _(s * 0.12, 0.3, r, a, 1), M = $(n, t.rsPow ?? 0.6), h = [], m = t.orbitN ?? 12, D = t.ghostN ?? 40, p = t.particles ?? 3;
+  for (let e = 0; e < m; e++) {
+    const l = E(e, 1.7), R = E(e, 5.2), w = E(e, 8.9), i = o * (0.45 + 0.52 * l), u = l * 2 * Math.PI, y = Math.acos(2 * R - 1), b = Math.sin(y) * Math.cos(u), f = Math.cos(y), P = Math.sin(y) * Math.sin(u);
+    let x = -f, g = b;
+    const d = 0, v = Math.max(1e-6, Math.sqrt(x * x + g * g));
+    x /= v, g /= v;
+    const k = f * d - P * g, N = P * x - b * d, z = b * g - f * x, O = (0.25 + 0.55 * w) * (w > 0.5 ? 1 : -1);
+    for (let B = 0; B < D; B++) {
+      const I = B / D * 2 * Math.PI, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: (t.ghostR ?? 0.9) * M,
+        white: 0.72,
+        a: (t.ghostA ?? 0.5) * (0.4 + 0.6 * C)
+      });
+    }
+    for (let B = 0; B < p; B++) {
+      const I = s * O + B / p * 2 * Math.PI + R * 6, [S, A, T] = c(
+        (x * Math.cos(I) + k * Math.sin(I)) * i,
+        (g * Math.cos(I) + N * Math.sin(I)) * i,
+        (d * Math.cos(I) + z * Math.sin(I)) * i
+      ), C = (T / i + 1) / 2;
+      h.push({
+        x: S,
+        y: A,
+        z: T,
+        r: ((t.partR ?? 1.2) + (t.partRDepth ?? 1.6) * C) * M,
+        white: 0.3 - 0.22 * C
+      });
+    }
+  }
+  return L(h, [], t.rMin);
+}, Z = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.78, c = t.spin ?? 1, M = 0.3, h = _(s * 0.1 * c, M, r, a, 1), m = $(n, t.rsPow ?? 0.6), D = [], p = t.ghostN ?? 150;
+  for (let z = 0; z < p; z++) {
+    const O = J(z, p), [B, I, S] = h(O[0] * o, O[1] * o, O[2] * o), A = (S / o + 1) / 2;
+    D.push({ x: B, y: I, z: S, r: 0.8 * m, white: 0.78, a: 0.1 + 0.22 * A });
+  }
+  const e = s * 0.24 * c, l = t.faceOn ? -M : 0.55 + 0.3 * Math.sin(s * 0.18) * c, R = Math.cos(e), w = 0, i = Math.sin(e), u = -i * Math.sin(l), y = Math.cos(l), b = R * Math.sin(l), f = w * b - i * y, P = i * u - R * b, x = R * y - w * u, g = 0.23 * (t.wobMul ?? 1), d = t.faceOn ? o / (1 + 0.85 * g) : o, v = t.lanes ?? 5, k = t.segs ?? 88, N = Math.max(1, Math.round(v * (t.bandMul ?? 1)));
+  for (let z = 0; z < N; z++) {
+    const O = (z - (N - 1) / 2) * 0.075, B = Math.abs(z - (N - 1) / 2) / Math.max(1, (N - 1) / 2);
+    for (let I = 0; I < k; I++) {
+      const S = I / k * 2 * Math.PI, A = (0.16 * Math.sin(S * 3 - s * 1.7 + z * 0.22) + 0.07 * Math.sin(S * 5 + s * 1.1)) * (t.wobMul ?? 1), T = t.faceOn ? 1 + A : 1, C = t.faceOn ? O : O + A, q = R * Math.cos(S) + u * Math.sin(S) + f * C, F = w * Math.cos(S) + y * Math.sin(S) + P * C, j = i * Math.cos(S) + b * Math.sin(S) + x * C, W = Math.sqrt(q * q + F * F + j * j), Y = d * T, [ct, at, X] = h(q / W * Y, F / W * Y, j / W * Y), K = (X / o + 1) / 2;
+      D.push({
+        x: ct,
+        y: at,
+        z: X,
+        r: ((t.rBase ?? 1.1) + (t.rDepth ?? 1.7) * K) * (1 - 0.25 * B) * m,
+        white: 0.52 - 0.44 * K + 0.18 * B,
+        a: 0.4 + 0.6 * K
+      });
+    }
+  }
+  return L(D, [], t.rMin);
+}, Dt = (n, s, t) => {
+  const r = n / 2, a = n / 2, o = n / 2 * 0.8 * (t.spread ?? 1), c = _(s * 0.12, 0.32, r, a, o), M = $(n, t.rsPow ?? 0.6), h = t.nodeN ?? 30, m = t.thr ?? 0.72, D = t.nodeR ?? 1.4, p = t.nodeRDepth ?? 1.8, e = [];
+  for (let i = 0; i < h; i++) {
+    const u = J(i, h), y = u[0] + 0.3 * (G(i * 0.31 + 9, s * 0.24) - 0.5) * 2, b = u[1] + 0.3 * (G(i * 0.53 + 27, s * 0.21) - 0.5) * 2, f = u[2] + 0.3 * (G(i * 0.77 + 55, s * 0.27) - 0.5) * 2, P = Math.sqrt(y * y + b * b + f * f);
+    e.push([y / P, b / P, f / P]);
+  }
+  const l = [], R = [];
+  for (let i = 0; i < h; i++)
+    for (let u = i + 1; u < h; u++) {
+      const y = e[i][0] - e[u][0], b = e[i][1] - e[u][1], f = e[i][2] - e[u][2], P = Math.sqrt(y * y + b * b + f * f);
+      if (P >= m) continue;
+      const [x, g, d] = c(e[i][0], e[i][1], e[i][2]), [v, k, N] = c(e[u][0], e[u][1], e[u][2]), z = ((d + N) / 2 + 1) / 2;
+      l.push({
+        x1: x,
+        y1: g,
+        x2: v,
+        y2: k,
+        white: 0.42,
+        a: (1 - P / m) * (0.3 + 0.55 * z),
+        w: Math.max(0.6, (t.lineW ?? 0.8) * M)
+      });
+    }
+  for (let i = 0; i < h; i++) {
+    const [u, y, b] = c(e[i][0], e[i][1], e[i][2]), f = (b + 1) / 2, P = 1 + 0.25 * Math.sin(s * 1.4 + i * 2.7);
+    R.push({
+      x: u,
+      y,
+      z: b,
+      r: (D + p * f) * P * M,
+      white: 0.55 - 0.45 * f
+    });
+  }
+  const w = t.signals ?? 5;
+  for (let i = 0; i < w; i++) {
+    const u = Math.floor(s * 0.55 + i * 7.31), y = Math.floor(E(u, i * 3.1 + 1.7) * h), b = Math.floor(E(u, i * 5.7 + 4.2) * h);
+    if (y === b) continue;
+    const f = nt(s * 0.55 + i * 7.31), P = U(e[y][0], e[b][0], f), x = U(e[y][1], e[b][1], f), g = U(e[y][2], e[b][2], f), d = Math.max(1e-6, Math.sqrt(P * P + x * x + g * g)), [v, k, N] = c(P / d, x / d, g / d), z = (N + 1) / 2;
+    R.push({
+      x: v,
+      y: k,
+      z: N,
+      r: (D * 1.5 + p * z) * M,
+      white: 0.05,
+      a: 0.5 + 0.5 * z
+    });
+  }
+  return L(R, l, t.rMin);
+}, vt = {
+  orbits: Rt,
+  globe: ft,
+  rubik: dt,
+  wave: bt,
+  web: Dt,
+  braid: Mt,
+  ribbon: Z,
+  // ring shares ribbon's geometry — the `faceOn` profile flag switches it
+  ring: Z,
+  morph: Pt
+}, Ct = Object.fromEntries(
+  Object.entries(vt).map(([n, s]) => [
+    n,
+    (t, r, a, o, c) => ht(t, s(r, a, c), o)
+  ])
+), zt = [
+  ["latRings", "lonDensity"],
+  ["rings", "lonDensity"],
+  ["lanes", "segs"]
+], Nt = ["orbitN", "ghostN", "nodeN", "strandN", "signals"], It = ["iconD"], kt = [
+  "rBase",
+  "rDepth",
+  "rActive",
+  "rDot",
+  "ghostR",
+  "partR",
+  "partRDepth",
+  "nodeR",
+  "nodeRDepth"
+];
+function St(n, s) {
+  const t = { ...n }, r = /* @__PURE__ */ new Set(), a = Math.sqrt(s);
+  for (const [o, c] of zt) {
+    const M = t[o], h = t[c];
+    M != null && h != null && !r.has(o) && !r.has(c) && (t[o] = Math.max(2, Math.round(M * a)), t[c] = Math.max(2, Math.round(h * a)), r.add(o), r.add(c));
+  }
+  for (const o of Nt) {
+    const c = t[o];
+    c != null && c !== 0 && !r.has(o) && (t[o] = Math.max(1, Math.round(c * s)));
+  }
+  for (const o of It) {
+    const c = t[o];
+    c != null && (t[o] = Math.max(0.02, c * s));
+  }
+  return t;
+}
+function Bt(n, s) {
+  const t = { ...n };
+  for (const r of kt) {
+    const a = t[r];
+    a != null && (t[r] = a * s);
+  }
+  return t.rSizeMul = (t.rSizeMul ?? 1) * s, t;
+}
+const Et = {
+  globe: {
+    latRings: 17,
+    lonDensity: 44,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rBoost: 1,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  orbits: {
+    orbitN: 12,
+    ghostN: 40,
+    ghostR: 0.9,
+    ghostA: 0.5,
+    particles: 3,
+    partR: 1.2,
+    partRDepth: 1.6,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  rubik: {
+    latRings: 15,
+    lonDensity: 40,
+    moveCount: 14,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rActive: 0.3,
+    inkFar: 0.62,
+    inkSpan: 0.54,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  wave: {
+    rings: 15,
+    lonDensity: 40,
+    rBase: 0.6,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  web: {
+    nodeN: 30,
+    thr: 0.72,
+    signals: 5,
+    nodeR: 1.4,
+    nodeRDepth: 1.8,
+    lineW: 0.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  braid: {
+    strandN: 52,
+    turns: 3,
+    ghostN: 150,
+    rBase: 1.2,
+    rDepth: 1.8,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  ribbon: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 150,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  // ring shares ribbon's painter; faceOn cancels the camera tilt and moves
+  // the undulation onto the radius, and there is no ghost sphere behind it
+  ring: {
+    lanes: 5,
+    segs: 88,
+    ghostN: 0,
+    faceOn: 1,
+    rBase: 1.1,
+    rDepth: 1.7,
+    rsPow: 0.6,
+    rMin: 0.3
+  },
+  morph: {
+    rDot: 0.021,
+    iconD: 1,
+    rMin: 0.25
+  }
+}, Ot = {
+  working: "orbits",
+  searching: "globe",
+  solving: "rubik",
+  listening: "wave",
+  connecting: "web",
+  weaving: "braid",
+  composing: "ribbon",
+  breathing: "ring",
+  shaping: "morph"
+}, At = {
+  orbits: {
+    64: { speed: 1.885, count: 1, size: 1 },
+    20: { speed: 3.9, count: 0.238, size: 2.4 }
+  },
+  globe: {
+    64: { speed: 2.015, count: 0.42, size: 1.15, extra: { scanMul: 4.08, dimBase: 0.45 } },
+    20: { speed: 2.665, count: 0.105, size: 1.75, extra: { scanMul: 4.335, dimBase: 0.45 } }
+  },
+  rubik: {
+    64: { speed: 1.82, count: 0.35, size: 1.05 },
+    20: { speed: 1.95, count: 0.088, size: 1.9 }
+  },
+  wave: {
+    64: { speed: 4.388, count: 0.341, size: 1 },
+    20: { speed: 3.998, count: 0.105, size: 1.6 }
+  },
+  web: {
+    64: { speed: 3.315, count: 1.35, size: 0.95 },
+    20: { speed: 6.63, count: 0.25, size: 1.52 }
+  },
+  braid: {
+    64: { speed: 1.625, count: 0.5, size: 1 },
+    20: { speed: 2.75, count: 0.1125, size: 1.36 }
+  },
+  ribbon: {
+    64: { speed: 2.34, count: 0.25, size: 0.85, extra: { spin: 0, bandMul: 3.9, wobMul: 1 } },
+    20: { speed: 3.12, count: 0.051, size: 1.073, extra: { spin: 0, bandMul: 4.94, wobMul: 1 } }
+  },
+  ring: {
+    64: { speed: 3.24, count: 0.25, size: 0.956, extra: { spin: 0, bandMul: 3.627, wobMul: 0.368 } },
+    20: { speed: 3.78, count: 0.028, size: 1.622, extra: { spin: 0, bandMul: 3.968, wobMul: 0.565 } }
+  },
+  morph: {
+    64: { speed: 2.405, count: 0.702, size: 0.395, extra: { spread: 1.45 } },
+    20: { speed: 2.08, count: 0.53, size: 1.011, extra: { spread: 1.45 } }
+  }
+}, tt = /* @__PURE__ */ new Map();
+function Lt(n, s) {
+  const t = `${n}-${s}`, r = tt.get(t);
+  if (r) return r;
+  const a = Ot[n], o = At[a][s];
+  let c = { ...Et[a] };
+  o.count !== 1 && (c = St(c, o.count)), o.size !== 1 && (c = Bt(c, o.size)), o.extra && (c = { ...c, ...o.extra });
+  const M = { mode: a, speed: o.speed, opts: c };
+  return tt.set(t, M), M;
+}
+
+window.__thinkingOrbs = { MODE_FRAMES: vt, MODE_DRAWS: Ct, resolvePreset: Lt, STATE_TO_MODE: Ot };
+
+
+const { MODE_FRAMES, resolvePreset } = window.__thinkingOrbs;
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+const STILL_T = 0.6;
+const orbs = [];
+let paused = false;
+let reduce = false;
+let frozenDone = false;
+/** 球的显示尺寸：引擎的 20 档是"行内文字档"原生设计，默认就用它；16/18 是缩小后是否还读得清的对照 */
+let orbBox = 20;
+
+const ICONS = {
+  list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
+  brain: '<path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>',
+  scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/>',
+  cursor: '<path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+};
+function svg(name, cls) {
+  return `<svg class="lucide ${cls || ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+}
+
+function readInk() {
+  const raw = getComputedStyle(document.body).getPropertyValue('--anim-ink').trim();
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) return null;
+  probe.fillStyle = '#000'; probe.fillStyle = raw;
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(probe.fillStyle);
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+}
+function shade(ink, white, alpha, dark) {
+  const v = dark ? 1 - white : white;
+  if (!ink) { const l = Math.round((dark ? 1 - v : v) * 255); return `rgba(${l},${l},${l},${alpha})`; }
+  return `rgba(${ink[0]},${ink[1]},${ink[2]},${(alpha * (1 - v)).toFixed(3)})`;
+}
+function paint(o, seconds, ink, dark) {
+  const t = o.live ? seconds * o.preset.speed : STILL_T;
+  const frame = MODE_FRAMES[o.preset.mode](o.geom, t, o.preset.opts);
+  const k = (o.dpr * o.box) / o.geom;
+  const ctx = o.ctx;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.clearRect(0, 0, o.geom, o.geom);
+  for (const line of frame.lines) {
+    ctx.strokeStyle = shade(ink, line.white, line.a ?? 1, dark); ctx.lineWidth = line.w;
+    ctx.beginPath(); ctx.moveTo(line.x1, line.y1); ctx.lineTo(line.x2, line.y2); ctx.stroke();
+  }
+  for (const dot of frame.dots) {
+    ctx.fillStyle = shade(ink, dot.white, dot.a ?? 1, dark);
+    ctx.beginPath(); ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+/** 占位符：先出 HTML 字符串，插进 DOM 后再 hydrate 成真 canvas */
+function orb(state, box, live) {
+  return `<span class="orb-slot" data-state="${state}" data-box="${box}" data-live="${live ? 1 : 0}"></span>`;
+}
+
+/** 把占位符换成真球：state 是引擎状态名，geom 固定 20 档，live 决定动不动 */
+function hydrate(root) {
+  for (const slot of root.querySelectorAll('.orb-slot')) {
+    const box = Number(slot.dataset.box);
+    const live = slot.dataset.live === '1';
+    const host = document.createElement('span');
+    host.className = 'orb';
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(box * dpr); canvas.height = Math.round(box * dpr);
+    canvas.style.width = box + 'px'; canvas.style.height = box + 'px';
+    host.appendChild(canvas);
+    const o = { host, geom: 20, box, dpr, live, ctx: canvas.getContext('2d'), preset: resolvePreset(slot.dataset.state, 20) };
+    orbs.push(o);
+    slot.replaceWith(host);
+  }
+}
+
+function thinkingRow(variant, label, live) {
+  // 思考与「执行过程」(模型自己在写的那段) 同属"模型在说"，都用 composing；工具行才是 solving
+  const icon = variant === 'before' ? svg('brain') : orb('composing', orbBox, live);
+  const body = live
+    ? `<pre>先摸清这份用量页的结构：找到展开按钮、读出五小时窗口的数字，再回话。</pre>`
+    : '';
+  return `<details class="thinking${live ? ' streaming' : ''}"${live ? ' open' : ''}>
+    <summary>${icon}<span>${label}</span></summary>${body}</details>`;
+}
+function chip(variant, kind, label) {
+  const inner = variant === 'b'
+    ? orb('solving', Math.max(14, orbBox - 2), kind === 'running')
+    : svg(kind === 'cursor' ? 'cursor' : kind === 'wrench' ? 'wrench' : 'scan', 'chip-lucide');
+  return `<button class="chip${kind === 'error' ? ' error' : ''}">
+    <span class="chip-dot ${kind === 'running' ? 'running' : kind === 'error' ? 'error' : 'done'}"></span>
+    <span class="chip-icon">${inner}</span>
+    <span class="chip-label">${label}</span><span class="dur">0.0s</span></button>`;
+}
+function memoryLine(variant) {
+  if (variant !== 'b') return '';
+  return `<div class="chip-group"><div class="chip-row"><span class="memory-line">${orb('connecting', Math.max(14, orbBox - 2), false)}本轮使用了 3 条记忆</span></div></div>`;
+}
+
+function panel(variant) {
+  return `<div class="stage"><details class="run-steps done" open>
+    <summary>
+      <span class="run-icon">${variant === 'b' ? orb('composing', orbBox, false) : svg('list')}</span>
+      <span class="run-title">查看执行过程</span>
+      <span class="run-chain">… → 思考 → 读取页面结构 → …</span>
+      <span class="run-time">耗时 32s</span>
+      <span class="run-chevron">${svg('chevron')}</span>
+    </summary>
+    <div class="run-body">
+      ${thinkingRow(variant, '思考过程 6.1s', false)}
+      ${thinkingRow(variant, '执行过程', false)}
+      <div class="chip-group"><div class="chip-row">
+        ${chip(variant, 'scan', '读取页面结构')}
+        ${chip(variant, 'wrench', 'record_task_results')}
+        ${chip(variant, 'error', '点击「展开 5 小时用量详情」')}
+      </div></div>
+      ${memoryLine(variant)}
+      ${thinkingRow(variant, '思考过程 2.3s', true)}
+      <div class="chip-group"><div class="chip-row">
+        ${chip(variant, 'running', '读取页面结构')}
+      </div></div>
+    </div>
+  </details></div>`;
+}
+
+const COLUMNS = [
+  { v: 'before', h: '改之前（现在线上）', p: '脑图 = 思考，工具图标 + 状态点 = 工具调用；记忆不在时间线里。' },
+  { v: 'a', h: '方案 A：只换思考行', p: '「思考过程 / 执行过程」的脑图换成 composing 球；工具 chips 完全不动（图标 + 绿/红点保留）。' },
+  { v: 'b', h: '方案 B：三态都上球', p: '思考 composing / 工具 solving（替掉工具图标，状态点保留）/ 记忆 connecting（新加一行）。壳头也换成了球。' },
+];
+
+const cols = document.getElementById('cols');
+function renderColumns() {
+  orbs.length = 0;
+  cols.replaceChildren();
+  for (const c of COLUMNS) {
+    const sec = document.createElement('section');
+    sec.className = 'col';
+    sec.innerHTML = `<h2>${c.h}</h2><p>${c.p}</p>${panel(c.v)}`;
+    hydrate(sec);
+    cols.appendChild(sec);
+  }
+  frozenDone = false;
+}
+renderColumns();
+
+const startAt = performance.now();
+function frame() {
+  const seconds = (performance.now() - startAt) / 1000;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const ink = readInk();
+  const frozen = reduce || paused;
+  if (!frozen) for (const o of orbs) paint(o, seconds, ink, dark);
+  else if (!frozenDone) { for (const o of orbs) paint(o, seconds, ink, dark); frozenDone = true; }
+  if (!frozen) frozenDone = false;
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.documentElement.dataset.theme = btn.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach((b) => b.classList.toggle('on', b === btn));
+    frozenDone = false;
+  });
+});
+document.getElementById('pause').addEventListener('click', (e) => {
+  paused = !paused; e.currentTarget.classList.toggle('on', paused);
+  e.currentTarget.textContent = paused ? '继续动画' : '暂停动画';
+});
+document.getElementById('reduce').addEventListener('click', (e) => {
+  reduce = !reduce; e.currentTarget.classList.toggle('on', reduce);
+});
+document.querySelectorAll('[data-size]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    orbBox = Number(btn.dataset.size);
+    document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('on', b === btn));
+    renderColumns();
+  });
+});
+
+frame();
+</script>
+</body>
+</html>
