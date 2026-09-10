@@ -1,4 +1,5 @@
 import { LEAD_SESSION_ID, isLeadSession, type TabInfo } from "../../../../shared/protocol.js";
+import { ensureAttached } from "../debugger.js";
 import { getTabResource, getWorkingTabId, maybeActivateTab, resolveWorkingTab, setWorkingTab, shouldActivateForKey } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { waitForInteractive, type PageReadiness } from "./page-readiness.js";
@@ -46,6 +47,8 @@ export async function openTab(
   const tab = await chrome.tabs.create({ url: params.url, active: shouldActivateForKey(sessionId) });
   if (tab.id == null) throw new Error("创建标签页失败");
   await setWorkingTab(tab.id, sessionId);
+  // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
+  try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
   const ready=params.url?await waitForInteractive(tab.id,10_000):undefined;
   const after = await chrome.tabs.get(tab.id);
   return { tabId: tab.id, url: after.pendingUrl ?? after.url ?? params.url ?? "", title: after.title ?? "", ...ready };

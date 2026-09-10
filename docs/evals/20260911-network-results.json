@@ -1,0 +1,90 @@
+{
+  "ok": true,
+  "page": "https://www.bilibili.com/video/BV1GJ411x7h7/",
+  "outDir": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-isolated-JQ8r1M",
+  "checks": [
+    {
+      "name": "open_tab about:blank",
+      "ok": true,
+      "detail": "tabId 1494982228"
+    },
+    {
+      "name": "navigate 真实页面（navigate 内部先 attach 再改地址）",
+      "ok": true,
+      "detail": "【官方 MV】Never Gonna Give You Up - Rick Astley_哔哩哔哩_bilibili（interactive）"
+    },
+    {
+      "name": "snapshot 正常（观察页面不影响记录）",
+      "ok": true
+    },
+    {
+      "name": "network 返回记录（被动采集生效）",
+      "ok": true,
+      "detail": "total 101, matched 101, shown 60"
+    },
+    {
+      "name": "记录里有页面自己的 api.bilibili.com 调用",
+      "ok": true,
+      "detail": "找到 api.bilibili.com"
+    },
+    {
+      "name": "记录带请求方法/状态/类型/耗时结构",
+      "ok": true
+    },
+    {
+      "name": "默认过滤只看 xhr/fetch",
+      "ok": true,
+      "detail": "types: xhr,fetch"
+    },
+    {
+      "name": "urlContains 过滤",
+      "ok": true,
+      "detail": "shown 20"
+    },
+    {
+      "name": "fetch 页面自己调用过的接口能取到数据",
+      "ok": true,
+      "detail": "https://api.bilibili.com/x/note/is_forbid?aid=80433022&web_location=333.788 → HTTP 200，71B，code 0"
+    },
+    {
+      "name": "clear 清空缓冲并写清回执",
+      "ok": true,
+      "detail": "Network buffer cleared (101 requests dropped). Do the action you want to observe, then call network again."
+    },
+    {
+      "name": "clear 后读到的是空/新记录，不混旧条目",
+      "ok": true,
+      "detail": "total 0"
+    }
+  ],
+  "network": {
+    "ok": true,
+    "total": 101,
+    "matched": 101,
+    "shown": 60,
+    "dropped": 0
+  },
+  "fetch": {
+    "candidates": [
+      "https://api.bilibili.com/x/kv-frontend/namespace/data?appKey=333.788&nscode=0&versionId=1787744168843",
+      "https://api.bilibili.com/x/note/is_forbid?aid=80433022&web_location=333.788",
+      "https://api.bilibili.com/x/web-interface/view/cards?bvid=BV1GJ411x7h7&aid=80433022&cid=137649199&platform=web&web_location=333.788",
+      "https://api.bilibili.com/x/web-interface/view/conclusion/judge?bvid=BV1GJ411x7h7&cid=137649199&up_mid=486906719&web_location=333.788&w_rid=46672e8ec9fce7f9d79bb6b8d2e1e869&wts=1789072661"
+    ],
+    "attempted": "https://api.bilibili.com/x/note/is_forbid?aid=80433022&web_location=333.788",
+    "ok": true,
+    "status": 200,
+    "bytes": 71,
+    "parsedCode": 0
+  },
+  "filter": {
+    "total": 101,
+    "matched": 43,
+    "shown": 43
+  },
+  "clear": {
+    "clearedText": "Network buffer cleared (101 requests dropped). Do the action you want to observe, then call network again.",
+    "afterTotal": 0,
+    "afterText": "No network requests recorded for this tab yet. Recording only happens while the extension holds the debugger on the tab (around navigate, snapshot, click and ot"
+  }
+}

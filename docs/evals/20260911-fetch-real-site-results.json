@@ -1,0 +1,165 @@
+{
+  "ok": true,
+  "outDir": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-fetch-realsite-ZuzO0N",
+  "cases": [
+    {
+      "name": "bilibili-video",
+      "page": "https://www.bilibili.com/video/BV1GJ411x7h7/",
+      "api": "https://api.bilibili.com/x/web-interface/view?bvid=BV1GJ411x7h7",
+      "openTab": {
+        "tabId": 150343997,
+        "readiness": "interactive",
+        "waitMs": 558
+      },
+      "fetch": {
+        "ms": 112,
+        "status": 200,
+        "contentType": "application/json; charset=utf-8",
+        "bytes": 7507,
+        "truncated": false,
+        "rawChars": 7217,
+        "contextChars": 538
+      },
+      "wanted": [
+        "【官方 MV】Never Gonna Give You Up - Rick Astley",
+        "索尼音乐中国"
+      ],
+      "snapshot": {
+        "ms": 296,
+        "attempts": 1,
+        "rawChars": 12006,
+        "contextChars": 11541,
+        "matches": {
+          "matched": [
+            "【官方 MV】Never Gonna Give You Up - Rick Astley",
+            "索尼音乐中国"
+          ],
+          "missing": []
+        }
+      },
+      "compare": {
+        "fetchContextChars": 538,
+        "snapshotContextChars": 11541,
+        "savedChars": 11003,
+        "ratio": 21.45,
+        "fetchMs": 112,
+        "snapshotMs": 296
+      }
+    },
+    {
+      "name": "hacker-news",
+      "page": "https://news.ycombinator.com/",
+      "api": "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=10",
+      "openTab": {
+        "tabId": 150343998,
+        "readiness": "interactive",
+        "waitMs": 1243
+      },
+      "fetch": {
+        "ms": 753,
+        "status": 200,
+        "contentType": "application/json",
+        "bytes": 17624,
+        "truncated": false,
+        "rawChars": 17624,
+        "contextChars": 527
+      },
+      "wanted": [
+        "iPhone Duo",
+        "DeepSeek v4.1 Flash",
+        "Shopify moves back to Native from React Native",
+        "Rust is tier-1 language at Microsoft",
+        "More questions about whether researchers can trust OpenAI with unpublished math"
+      ],
+      "snapshot": {
+        "ms": 46,
+        "attempts": 1,
+        "rawChars": 24101,
+        "contextChars": 23786,
+        "matches": {
+          "matched": [
+            "DeepSeek v4.1 Flash",
+            "Shopify moves back to Native from React Native",
+            "Rust is tier-1 language at Microsoft"
+          ],
+          "missing": [
+            "iPhone Duo",
+            "More questions about whether researchers can trust OpenAI with unpublished math"
+          ]
+        }
+      },
+      "compare": {
+        "fetchContextChars": 527,
+        "snapshotContextChars": 23786,
+        "savedChars": 23259,
+        "ratio": 45.13,
+        "fetchMs": 753,
+        "snapshotMs": 46
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "生产 executeToolCall 路径可达（__saCall 已挂上真实 uplink.handleRaw）",
+      "ok": true,
+      "detail": "{\"ok\":true,\"already\":false,\"team\":true}"
+    },
+    {
+      "name": "bilibili-video: 打开真实页面",
+      "ok": true,
+      "detail": "https://www.bilibili.com/video/BV1GJ411x7h7/"
+    },
+    {
+      "name": "bilibili-video: fetch 公开接口",
+      "ok": true,
+      "detail": "HTTP 200 7507B、请求 112ms、进上下文 538 字符"
+    },
+    {
+      "name": "bilibili-video: 同页 snapshot 含 fetch 的字段（同一份数据）",
+      "ok": true,
+      "detail": "匹配 2/2"
+    },
+    {
+      "name": "bilibili-video: fetch 上下文占用低于 snapshot",
+      "ok": true,
+      "detail": "fetch 538 vs snapshot 11541 字符（原始 7217 vs 12006，snapshot 第 1 次）"
+    },
+    {
+      "name": "hacker-news: 打开真实页面",
+      "ok": true,
+      "detail": "https://news.ycombinator.com/"
+    },
+    {
+      "name": "hacker-news: fetch 公开接口",
+      "ok": true,
+      "detail": "HTTP 200 17624B、请求 753ms、进上下文 527 字符"
+    },
+    {
+      "name": "hacker-news: 同页 snapshot 含 fetch 的字段（同一份数据）",
+      "ok": true,
+      "detail": "匹配 3/5，缺：iPhone Duo | More questions about whether researchers can trust OpenAI with unpublished math"
+    },
+    {
+      "name": "hacker-news: fetch 上下文占用低于 snapshot",
+      "ok": true,
+      "detail": "fetch 527 vs snapshot 23786 字符（原始 17624 vs 24101，snapshot 第 1 次）"
+    },
+    {
+      "name": "真实扩展路径拒绝回环地址",
+      "ok": true,
+      "detail": "fetch 拒绝本地/私网地址（127.0.0.1）：带着登录态的请求不能指向本机服务。操作未执行。"
+    },
+    {
+      "name": "拒绝前没有向回环地址发出请求",
+      "ok": true,
+      "detail": "hits 2 → 2"
+    }
+  ],
+  "guard": {
+    "ok": false,
+    "error": "fetch 拒绝本地/私网地址（127.0.0.1）：带着登录态的请求不能指向本机服务。操作未执行。",
+    "hitsBefore": 2,
+    "hitsAfter": 2
+  },
+  "downloadsDir": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-fetch-realsite-ZuzO0N/downloads"
+}

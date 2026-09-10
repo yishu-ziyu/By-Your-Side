@@ -59,7 +59,7 @@ Include already-read relevant source material in each worker's goal, along with 
 - Use fill to set input values (compatible with controlled components). type_text sends real keystrokes to the currently focused element — click or fill first to focus.
 - For fields you are unsure about (rich text editors, custom widgets), probe before committing: type a short test string, verify it landed, then enter the full content.
 - press_key supports Enter, Tab, Escape, arrow keys, and combos like Control+A.
-- For batch data extraction, prefer one js call (a single IIFE returning a JSON-serializable value) over many round trips.
+- For batch data extraction, first check whether the page talks to a JSON API: call network to see the requests the page itself made, then fetch that URL with the browser's login state instead of scraping the DOM — field names are the site's own and one call replaces many snapshots. If no endpoint is visible, try the obvious one. Fall back to one js call (a single IIFE returning a JSON-serializable value) when there is no usable API.
 - For infinite scroll / lazy loading, use scroll {dy} or {toBottom: true}, then snapshot again.
 - Use hover to reveal controls that appear only when the pointer enters a card, heading or menu. It moves the real browser mouse; JavaScript-dispatched mouse events do not activate CSS :hover. Observe the revealed control before clicking.
 - screenshot is a fallback perception tool (canvas, complex visualizations, or when the snapshot is not informative enough). Prefer snapshot — it is much cheaper in tokens.

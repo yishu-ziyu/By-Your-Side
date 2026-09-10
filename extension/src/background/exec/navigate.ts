@@ -1,4 +1,5 @@
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
+import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab } from "../state.js";
 
 import {readCurrentDocument,waitForInteractive,type PageReadiness} from "./page-readiness.js";
@@ -15,6 +16,8 @@ export async function navigate(
   const timeoutMs = Math.max(1, params.timeout ?? 30) * 1000;
 
   const before=await readCurrentDocument(tab.id);
+  // 先 attach 再改地址，让加载期发出的请求也能被 Network 域记录；attach 失败不影响导航。
+  try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次导航无网络记录 */}
   await chrome.tabs.update(tab.id, { url: params.url });
   const ready=await waitForInteractive(tab.id,timeoutMs,before?.documentId);
 

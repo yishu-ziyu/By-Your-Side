@@ -3,6 +3,7 @@
  * （缩短页面顶部"正在调试"黄条的停留时间）。
  */
 import { oneLine } from "./util.js";
+import { enableNetworkCapture } from "./network-log.js";
 
 const PROTOCOL_VERSION = "1.3";
 const IDLE_MS = 15_000;
@@ -33,12 +34,15 @@ export async function ensureAttached(tabId: number): Promise<void> {
       // SW 重启后 Chrome 侧仍挂着：视为已 attach
       attached.add(tabId);
       scheduleIdleDetach();
+      void enableNetworkCapture(tabId);
       return;
     }
     throw new Error(msg);
   }
   attached.add(tabId);
   scheduleIdleDetach();
+  // 被动观测：只要持有调试器就采 Network（不额外 attach、不注入页面）。
+  void enableNetworkCapture(tabId);
 }
 
 export async function sendCommand<T = unknown>(
@@ -70,7 +74,7 @@ export async function detachAll(): Promise<void> {
   await Promise.all([...attached].map((id) => detach(id)));
 }
 
-// 用户打开 DevTools 或其他原因导致分离时，同步内部状态
-chrome.debugger.onDetach.addListener((source) => {
+// 用户打开 DevTools 或其他原因导致分离时，同步内部状态；受限环境（测试 stub、无 debugger 权限）静默跳过。
+chrome.debugger?.onDetach?.addListener((source) => {
   if (source.tabId != null) attached.delete(source.tabId);
 });
