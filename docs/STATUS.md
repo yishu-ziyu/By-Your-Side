@@ -12,6 +12,10 @@
 
 下一步：`download`（浏览器原生下载）→ 声明式批处理 `act` → offscreen 连接。本轮未提交、未推送、未重载扩展。
 
+## 并行：仓库复查与死代码清理
+
+2026-09-11。全仓库复查：修掉四个真缺陷——观察候选 accept 不消费（反复问同一件事）、`fetch.pages` 超大范围页码循环无上限（挂死伴随进程）、`network` 的 `limit` 非数值时筛选失控、`ExperienceStore` 单个坏 JSON 拖垮全部经验读取；另按编译器 TS6133/6196 删死代码与未用形参（+11/−30），保留 `TOOL_ICONS` 等未决项。151 文件 1330 项、typecheck、build 全过；fetch/network/批量翻页三条真实路径 harness 复跑通过，数字同量级。见[验收](evals/20260911-repo-hardening.md)。
+
 ## 前一步：数据层第二步 `network`（被动看页面调了哪些接口）
 
 2026-09-11。新只读工具 `network{urlContains?, types?, limit?, tabId?, clear?}`：扩展一旦持有调试器就开启 CDP Network 域，按标签页环形缓冲（容量 300，跨导航保留，内存态）；默认只看 xhr/fetch，可按 URL 子串过滤、取最近 N 条、清空重录；展示前隐去 URL 凭据（user:pass@、敏感查询值），回执过不可信边界。`navigate` / `open_tab` 现在先 attach 再加载，加载期的接口调用也进缓冲；attach 失败（DevTools 占用）不影响导航本身。提示词把「先 network 看页面自己的接口，再 fetch 取」写成一条。
