@@ -5,7 +5,7 @@ import type {UserDelivery, UserDeliveryStream} from '../../shared/voice.js';
 import { VoiceIntentError } from "./voice-errors.js";
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
-import {normalizeSpeech,receiptSpeech,progressSpeech,contextualStartAck,type VoiceConversationContext} from './voice-receipt.js';
+import {normalizeSpeech,receiptSpeech,progressSpeech,contextualStartAck} from './voice-receipt.js';
 import {VoiceDiagnosticTrace} from "./voice-diagnostic.js";
 import type { TaskProgressSnapshot, VoiceCommand, VoiceEvent, VoiceRouteContext, VoiceRouteResult,VoiceInputContext,VoiceTarget } from "../../shared/voice.js";
 

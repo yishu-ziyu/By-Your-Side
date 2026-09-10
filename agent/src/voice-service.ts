@@ -5,7 +5,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
-import type { TaskProgressSnapshot, VoiceClientMessage, VoiceConversationContext, VoiceRouteContext,VoiceTarget } from "../../shared/voice.js";
+import type { TaskProgressSnapshot, VoiceClientMessage, VoiceRouteContext,VoiceTarget } from "../../shared/voice.js";
 import { StepVoiceSession,STEP_VOICE } from "./voice-session.js";
 
 export async function readStepVoiceKey(): Promise<string> {

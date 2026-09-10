@@ -12,7 +12,6 @@ import { oneLine } from "../util.js";
 import {
   confirmLabelForDestructive,
   isDestructiveLabel,
-  parseMarkActions,
   resolveImplicitMarkActions,
 } from "../../shared/mark-actions.js";
 import { HeldClicks } from "../../shared/held-clicks.js";
@@ -77,12 +76,6 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
   );
   if (!rect) throw new Error("无法获取元素位置");
   return rect;
-}
-
-/** AX ref → 元素中心视口坐标（scrollIntoView + getBoundingClientRect，与 domops 同语义）。 */
-async function centerOfBackendNode(tabId: number, backendNodeId: number): Promise<[number, number]> {
-  const rect = await rectOfBackendNode(tabId, backendNodeId);
-  return [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)];
 }
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */

@@ -491,8 +491,6 @@ export class BrowserAgentSession {
       this.failurePolicy?.reset();
       this.experience?.feedback(text);
       this.memoryRuntime?.invalidateUserTurn();
-      const finalText = withPageContext(text, context);
-      const images = extractImages(attachments);
       this.runTrace.record("steer", { text, context, attachments });
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
     } else {

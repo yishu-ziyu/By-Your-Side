@@ -929,7 +929,6 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     rect: SideAgentRect,
     label?: string,
     target?: string,
-    actions?: MarkAction[],
     options?: MarkOptions,
     observedNode?: Node,
   ): HTMLDivElement | null {
@@ -1029,7 +1028,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     clearTimeout(inst.replayTimer);
   }
 
-  function waitReplay(inst: Instance, gen: number, ms: number): Promise<void> {
+  function waitReplay(inst: Instance, ms: number): Promise<void> {
     return new Promise((resolve) => {
       clearTimeout(inst.replayTimer);
       inst.replayTimer = setTimeout(resolve, Math.max(0, ms));
@@ -1060,7 +1059,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       }
       const to = { x: p.x - window.scrollX, y: p.y - window.scrollY };
       const ms = flyTo(inst, to);
-      await waitReplay(inst, gen, ms);
+      await waitReplay(inst, ms);
       if (inst.replayGen !== gen) return;
       if (p.click) {
         spawnRipple(to.x, to.y, "ripple", inst.color);
@@ -1068,7 +1067,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         inst.el.classList.add("pressing");
         clearTimeout(inst.pressTimer);
         inst.pressTimer = setTimeout(() => inst.el.classList.remove("pressing"), 160);
-        await waitReplay(inst, gen, 180);
+        await waitReplay(inst, 180);
       }
     }
     if (inst.replayGen === gen) schedulePark(inst);
@@ -1475,7 +1474,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         observedNode?: Node,
       ): void {
         const inst = getInstance(id);
-        const mark = spawnMark(inst, rect, label, target, actions, options, observedNode);
+        const mark = spawnMark(inst, rect, label, target, options, observedNode);
         // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
         if (parsed) {

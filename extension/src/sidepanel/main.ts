@@ -9,7 +9,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
  */
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Wrench, Brain, GraduationCap, Search, Hand } from "lucide";
+import { createElement as icon, ArrowUp, Square, GraduationCap, Search, Hand } from "lucide";
 import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
 import { skillHealth, skillRunSummary, skillStepsText, type Skill, type SkillRun } from "../../../shared/skill.js";
 import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
@@ -26,7 +26,6 @@ import {
   List,
   Tag,
   Eraser,
-  CircleCheck,
   ChevronDown,
   ArrowDown,
   Check,
@@ -38,7 +37,6 @@ import {
   StepChain,
   chipState,
   describeTool,
-  formatDuration,
   historyEventTime,
   recordedDuration,
   loaderSubtitle,
@@ -3016,7 +3014,7 @@ attachments = new AttachmentsManager({
   attachBtn,
   menuEl: attachMenu,
   fileInputEl: fileInput,
-  onChanged: (count, scope) => {
+  onChanged: (_count, scope) => {
     if (!scope || scope === selectedConversationId) {
       autoResize();
       saveDraft();

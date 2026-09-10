@@ -77,7 +77,3 @@ export function redactCredentialText(text: string): string {
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
   return body.replace(/\n{3,}/g, "\n\n");
 }
-
-function hasWhitespace(text: string): boolean {
-  return /\s/.test(text);
-}

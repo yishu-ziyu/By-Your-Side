@@ -134,8 +134,6 @@ const mixRgb = (a: Rgb, b: Rgb, m: number): Rgb => [
   a[2] + (b[2] - a[2]) * m,
 ];
 
-const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
-
 interface SpherePoint {
   x: number;
   y: number;

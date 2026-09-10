@@ -148,7 +148,6 @@ export class SideCompanion {
   private squashEl: HTMLElement;
 
   private seq = 0;
-  private idleToken = 0;
   private lastFidget = "";
   private isPressing = false;
   private isVisiting = false;

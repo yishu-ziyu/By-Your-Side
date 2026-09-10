@@ -15,7 +15,7 @@ import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
 import { normalizeSkillHost } from "../../shared/skill.js";
 import { runSkill } from "./skill-runner.js";
 import { TaskProgress } from "./task-progress.js";
-import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult,VoiceInputContext } from "../../shared/voice.js";
+import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult } from "../../shared/voice.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
 import { TaskDispatcher, TaskActionRejected, TaskActionFailed, TaskReceiptError } from "./task-dispatcher.js";
 import {progressSpeech} from './voice-receipt.js';

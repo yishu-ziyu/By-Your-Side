@@ -6,7 +6,7 @@
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
 import type { AgentRunState, ClientMessage, ServerMessage, TeamMemberPhase, ToolName } from "../../../shared/protocol.js";
-import { LEAD_SESSION_ID, PROTOCOL_VERSION, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
+import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import {
   ControlGate,
@@ -643,7 +643,7 @@ async function handleDemoControl(action: "start" | "stop" | "dismiss"): Promise<
 }
 
 /** 观察：页面侧上行的一次 run（只有骨架）。不记输入值，敏感站点与敏感字段在页面侧已经丢掉。 */
-chrome.runtime.onMessage.addListener((raw: unknown, sender) => {
+chrome.runtime.onMessage.addListener((raw: unknown) => {
   if (!raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "sideagent:observed-run") return;
   const run = (raw as { run?: unknown }).run;
   if (!run || typeof run !== "object") return;
