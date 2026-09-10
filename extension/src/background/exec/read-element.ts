@@ -31,11 +31,15 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     const tagName = element.nodeType === 3 ? '#text' : String(element.tagName || '').toLowerCase();
     const textContent = String(element.textContent ?? '');
     const hasValue = ['input', 'textarea', 'select', 'option'].includes(tagName);
+    // 密码/验证码字段的**值**不进模型上下文，也只报位数：这类字段读回来没有正当用途。
+    const secretField = tagName === 'input' && (el.type === 'password'
+      || /one-time-code|cc-(number|csc|exp)/i.test(String(el.getAttribute?.('autocomplete') ?? '')));
+    const maskValue = (raw: string): string => (secretField ? (raw ? `<${raw.length} chars>` : '') : raw);
     const values: Partial<Record<ElementProperty, ElementValue>> = {};
     for (const property of properties) {
       let value: ElementValue | undefined;
       if (property === 'textContent') value = textContent;
-      else if (property === 'value' && hasValue) value = String(el.value ?? '');
+      else if (property === 'value' && hasValue) value = maskValue(String(el.value ?? ''));
       else if (property === 'visible' && element.nodeType !== 3) {
         const style = getComputedStyle(element);
         value = element.getClientRects().length > 0 && style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.display !== 'none';
@@ -50,7 +54,7 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`当前${tagName}目标不支持或尚无有效的 ${property} 属性；请观察实际目标状态。`);
       values[property] = value;
     }
-    return {ok:true,data:{tagName,textContent,...(hasValue ? {value:String(el.value ?? '')} : {}),...(properties.length ? {properties:values} : {})}};
+    return {ok:true,data:{tagName,textContent,...(hasValue ? {value:maskValue(String(el.value ?? ''))} : {}),...(properties.length ? {properties:values} : {})}};
   } catch (error) { return {ok:false,error:error instanceof Error ? error.message : String(error)}; }
 }
 
