@@ -18,6 +18,9 @@ import {
 import { HeldClicks } from "../../shared/held-clicks.js";
 import { getMarkMotion } from "../mode.js";
 import { parseExecutionKey } from "../tab-bindings.js";
+import { beginEffect, collectEffect } from "./effect.js";
+import { switchTab } from "./tabs.js";
+import type { EffectReport } from "../../../../shared/effect.js";
 
 interface DomRect {
   x: number;
@@ -287,7 +290,7 @@ type ClickParams = {
   label?: string;
 };
 
-type ClickResult = { clicked: true } | { clicked: false; held: true };
+type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
 
 /** held/arm 台账抽成纯数据层（shared/held-clicks.ts），决策逻辑可单测。 */
 const heldClicks = new HeldClicks<ClickParams>(LEAD_SESSION_ID);
@@ -716,6 +719,28 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
   }
 }
 
+/**
+ * 点开新标签页时跟随：`target="_blank"` / `window.open` 会把结果放在隔壁——
+ * 不跟的话 agent 会对着「什么都没变」的原页反复重试。归属校验失败（被别人占）只报告不跟随。
+ */
+async function followOpenedTab(before: ReadonlySet<number>, targetTabId: number, sessionId: string): Promise<{ tabId: number; url?: string } | undefined> {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const opened = tabs.find((tab) => tab.id !== undefined && tab.id !== targetTabId && !before.has(tab.id)
+      && (tab.openerTabId === undefined || tab.openerTabId === targetTabId)
+      && tab.id > (before.size ? Math.max(...before) : 0));
+    if (opened?.id === undefined) return undefined;
+    try {
+      await switchTab({ tabId: opened.id }, sessionId);
+    } catch {
+      /* 新页归别人/坐不上就只报告，不抢 */
+    }
+    return { tabId: opened.id, ...(opened.url ? { url: opened.url } : {}) };
+  } catch {
+    return undefined;
+  }
+}
+
 async function callPointGuard(
   tabId: number,
   x: number,
@@ -778,6 +803,15 @@ export async function click(
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   const target = params.target;
+  // 点开新页检测用：记下点击前的标签集合（拿不到就跳过跟随，不影响点击）。
+  const tabsBefore = new Set<number>(await (async () => {
+    try {
+      const tabs = await chrome.tabs.query({});
+      return tabs.map((tab) => tab.id).filter((id): id is number => id !== undefined);
+    } catch {
+      return [];
+    }
+  })());
   const { point, targetRect } = await resolvePointerTarget(tabId, params);
 
   const name = await nameOfClickTarget(tabId, params);
@@ -856,9 +890,12 @@ export async function click(
 
     let cdpMouseMoved = false;
     let cdpMousePressed = false;
+    let effect: EffectReport | undefined;
     try {
       await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
       cdpMouseMoved = true;
+      // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
+      const effectPending = beginEffect(tabId, { point: [x, y] });
       // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
       // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
       if (target) {
@@ -866,6 +903,7 @@ export async function click(
       } else {
         await callPointGuard(tabId, x, y, "confirm");
       }
+      const effectToken = await effectPending;
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed",
         x,
@@ -881,6 +919,7 @@ export async function click(
         button: "left",
         clickCount: 1,
       });
+      effect = await collectEffect(tabId, effectToken);
     } catch (e) {
       if (cdpMousePressed) {
         throw new Error(
@@ -896,6 +935,7 @@ export async function click(
       // 尚未向页面派发任何 CDP 输入（如 DevTools 占用）时，才允许 DOM 回退一次
       if (target) {
         await ensureDomOps(tabId);
+        const fallbackToken = await beginEffect(tabId, { point: [x, y] });
         await callDom(
           tabId,
           (t: string) => {
@@ -905,15 +945,17 @@ export async function click(
           },
           [target],
         );
+        const fallbackEffect = await collectEffect(tabId, fallbackToken);
         await endCursorAction(tabId, cid, actionId, "done", [x, y]);
         await recordCursorTrail(tabId, sessionId, x, y, true);
-        return { clicked: true };
+        return { clicked: true, ...(fallbackEffect ? { effect: fallbackEffect } : {}) };
       }
       throw e;
     }
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
-    return { clicked: true };
+    const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, tabId, sessionId) : undefined;
+    return { clicked: true, ...(effect ? { effect } : {}), ...(newTab ? { newTab } : {}) };
   } catch (error) {
     const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
     await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");

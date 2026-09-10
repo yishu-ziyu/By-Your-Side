@@ -1,4 +1,5 @@
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
+import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import { sendCommand } from "../debugger.js";
 import { maybeActivateTab, resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
@@ -22,6 +23,40 @@ export interface ScreenshotResult {
   capturedAt: number;
   /** cdp = 指定工作页直接捕获；visible-tab = 捕获前后均核对工作页在前台后的可见捕获。 */
   source: "cdp" | "visible-tab";
+}
+
+/**
+ * 截图幕帘：拍之前把产品自己画的一切（光标、标注、控制条）藏起来，拍完放下。
+ * 不藏的话 agent 会在自己的截图里看到一个页面上并不存在的发光箭头，把它当页面元素去理解甚至去点。
+ * 幕帘失败（页面禁止注入、导航换文档）绝不能弄失败截图本身。
+ */
+async function curtain(tabId: number, hidden: boolean): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "ISOLATED",
+      func: async (attr: string, mark: string, hide: boolean) => {
+        const nodes = document.querySelectorAll(`[${attr}]`);
+        for (const node of nodes) {
+          const el = node as HTMLElement;
+          if (hide) {
+            if (!el.hasAttribute(mark)) {
+              el.setAttribute(mark, el.style.visibility || "");
+              el.style.visibility = "hidden";
+            }
+          } else if (el.hasAttribute(mark)) {
+            el.style.visibility = el.getAttribute(mark) || "";
+            el.removeAttribute(mark);
+          }
+        }
+        // 合成器要到下一帧才用上新样式；不等这一帧会拍到幕帘生效前的画面。
+        if (hide) await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      },
+      args: [OVERLAY_ATTR, "data-sideagent-curtain", hidden],
+    });
+  } catch {
+    /* 幕帘失败不能弄失败截图本身 */
+  }
 }
 
 /** PNG 解码失败即抛错：A1 要求像素尺寸真实正数，不允许 0 尺寸成功回包。 */
@@ -179,6 +214,7 @@ export async function screenshot(
 
   let dataUrl: string;
   let source: ScreenshotResult["source"];
+  await curtain(tab.id, true);
   try {
     const captured = await sendCommand<{ data?: string }>(tab.id, "Page.captureScreenshot", { format: "png" });
     if (!captured.data) throw new Error("Page.captureScreenshot 返回空数据");
@@ -188,6 +224,8 @@ export async function screenshot(
     // 只有 CDP 捕获本身失败才进回退；buildResult 的导航/切页丢弃错误不在此捕获，直接上抛。
     dataUrl = await visibleFallback(tab, e);
     source = "visible-tab";
+  } finally {
+    await curtain(tab.id, false);
   }
   return await buildResult({
     tabId: tab.id,
