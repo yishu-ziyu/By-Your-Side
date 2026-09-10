@@ -1,0 +1,302 @@
+{
+  "status": "S1 machine checks complete; human acceptance pending",
+  "scope": "isolated Chrome production handlers + production sidepanel/voice path + synthetic microphone + real M3; no native-loaded user extension or human listening claim",
+  "broker": {
+    "route": "deepseek-v4-1",
+    "provider": "deepseek",
+    "model": "deepseek-v4.1-flash-expires-on-0910",
+    "userConfirmed": true,
+    "implementationFiles": [
+      "agent/src/tools.ts",
+      "agent/src/conversation-runtime.ts"
+    ],
+    "independentEvaluator": "primary agent"
+  },
+  "originalSuite": {
+    "trials": 19,
+    "validOriginalPasses": 14,
+    "failed": 4,
+    "invalidPasses": 1,
+    "results": [
+      {
+        "index": 0,
+        "case": "mark_voice",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-AYED3K",
+        "reportedOk": false,
+        "acceptedOriginal": false,
+        "error": "Error: Timeout waiting for evaluator stage: speech 找到当前页面的临时模型ID，然后圈出来。",
+        "note": null
+      },
+      {
+        "index": 1,
+        "case": "mark_text",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-AxtBlM",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 2,
+        "case": "correction",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-nk75FZ",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 3,
+        "case": "explicit_correction",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-UqXAE1",
+        "reportedOk": false,
+        "acceptedOriginal": false,
+        "error": "Error: boiling motion actually changes frames unless reduced motion is requested",
+        "note": null
+      },
+      {
+        "index": 4,
+        "case": "readonly",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-PUqdTk",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 5,
+        "case": "polite",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-TdhdoA",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 6,
+        "case": "mark_voice",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-GuTMv2",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 7,
+        "case": "mark_text",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-qBtXKR",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 8,
+        "case": "correction",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-LWJD4e",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 9,
+        "case": "explicit_correction",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-R4flv3",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 10,
+        "case": "readonly",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-QbzT91",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 11,
+        "case": "polite",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-RQZZcL",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 12,
+        "case": "capability",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-gyXgNV",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 13,
+        "case": "missing",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-yN8A27",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 14,
+        "case": "disabled",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-sp1Bw8",
+        "reportedOk": true,
+        "acceptedOriginal": false,
+        "error": null,
+        "note": "旧oracle假阳性：JS手写红框，正式mark DOM漏检"
+      },
+      {
+        "index": 15,
+        "case": "mark_failure",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-aFDHPi",
+        "reportedOk": false,
+        "acceptedOriginal": false,
+        "error": "Error: the injected failure reached the real execution boundary",
+        "note": null
+      },
+      {
+        "index": 16,
+        "case": "takeover",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-JnS4dc",
+        "reportedOk": false,
+        "acceptedOriginal": false,
+        "error": "Error: Timeout waiting for evaluator stage: speech 请把临时模型ID圈出来。",
+        "note": null
+      },
+      {
+        "index": 17,
+        "case": "extra_tool_voice",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-hbMsl4",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      },
+      {
+        "index": 18,
+        "case": "extra_tool_text",
+        "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-BTxwpa",
+        "reportedOk": true,
+        "acceptedOriginal": true,
+        "error": null,
+        "note": null
+      }
+    ]
+  },
+  "priorFocusedRepairs": [
+    {
+      "case": "mark_voice",
+      "ok": true,
+      "sourceSha256": "f3661c796a85f2309b7d009a464d49b16f561a44e92dead8bbad13f176212f39",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-e6h04f",
+      "checks": 11
+    },
+    {
+      "case": "explicit_correction",
+      "ok": true,
+      "sourceSha256": "f3661c796a85f2309b7d009a464d49b16f561a44e92dead8bbad13f176212f39",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-JutS3n",
+      "checks": 11
+    },
+    {
+      "case": "takeover",
+      "ok": true,
+      "sourceSha256": "f3661c796a85f2309b7d009a464d49b16f561a44e92dead8bbad13f176212f39",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-cZ0Q43",
+      "checks": 5
+    },
+    {
+      "case": "mark_failure",
+      "ok": true,
+      "sourceSha256": "563a6bd115f1df454f7deb02628ff4749ba145b2ea12d3f397f24d080b62f6e2",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-bQGW1H",
+      "checks": 5
+    },
+    {
+      "case": "heldout",
+      "ok": true,
+      "sourceSha256": "92dc6ac07d0e48d637fbfcd4ce111a0242e517f8ba9df1dd43d043fd5ab94ede",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-Amon2f",
+      "checks": 11
+    },
+    {
+      "case": "root_target",
+      "ok": true,
+      "sourceSha256": "f3661c796a85f2309b7d009a464d49b16f561a44e92dead8bbad13f176212f39",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-CnR9zv",
+      "checks": 4
+    }
+  ],
+  "resumeFailures": [
+    {
+      "name": "js-harness-idle",
+      "ok": false,
+      "reason": "JS读写已过，无任务场景错误等待idle；修装置后重新验证",
+      "artifact": "docs/diagnostics/20260909-s1-final/js-harness-idle-failed.json"
+    },
+    {
+      "name": "normal-js-blocked",
+      "ok": false,
+      "reason": "第一版错误依赖未注册的worker_tabs；修实际take_tab映射",
+      "artifact": "docs/diagnostics/20260909-s1-final/normal-js-blocked-failed.json"
+    },
+    {
+      "name": "disabled-unrelated-page-change",
+      "ok": false,
+      "reason": "ID误识为Y后模型点展开并插入cursor host，DOM oracle正确判失败；保留不计通过",
+      "artifact": "docs/diagnostics/20260909-s1-final/disabled-unrelated-page-change-failed.json"
+    }
+  ],
+  "finalFocused": {
+    "disabled": {
+      "ok": true,
+      "checks": 9,
+      "sourceSha256": "3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace",
+      "artifact": "docs/diagnostics/20260909-s1-final/disabled-result.json",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-r7Otpo",
+      "browserExited": true
+    },
+    "js_enabled": {
+      "ok": true,
+      "checks": 11,
+      "sourceSha256": "3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace",
+      "artifact": "docs/diagnostics/20260909-s1-final/js_enabled-result.json",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-zyEvpz",
+      "browserExited": true
+    },
+    "heldout": {
+      "ok": true,
+      "checks": 11,
+      "sourceSha256": "3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace",
+      "artifact": "docs/diagnostics/20260909-s1-final/heldout-result.json",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-68ocqY",
+      "browserExited": true
+    }
+  },
+  "unifiedChecks": {
+    "testFiles": 115,
+    "tests": 938,
+    "typecheck": true,
+    "build": true,
+    "diffCheck": true,
+    "logs": [
+      "/tmp/ego-s1-resume-typecheck.log",
+      "/tmp/ego-s1-resume-tests.log",
+      "/tmp/ego-s1-resume-build.log"
+    ]
+  },
+  "limitations": [
+    "未重跑同一最终hash的完整19场景；保留分阶段证据，不将历史结果伪装为最终hash结果",
+    "disabled答复中的重载启用工具/截图框选建议未经验证，不能视为支持承诺",
+    "S2生命周期、流式TTS与时延不在本切片",
+    "未重载用户扩展、提交或推送"
+  ]
+}

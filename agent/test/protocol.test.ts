@@ -658,3 +658,11 @@ describe("conversation envelope", () => {
     expect(parseServerMessage(JSON.stringify({ type: "conversation_list", conversations: [{ id: 4 }] }))).toBeNull();
   });
 });
+
+it('validates source-side plan receipts including unexecuted steps',()=>{
+ const plan={id:'plan1',conversationId:'A',updatedAt:1,steps:[{action:'pause',text:'暂停B',targetId:'B',targetTitle:'阅读',status:'unexecuted'}]};
+ const message={type:'agent_event',conversationId:'A',event:{kind:'notice',message:'语音计划',plan}};
+ expect(parseServerMessage(JSON.stringify(message))).not.toBeNull();
+ expect(parseServerMessage(JSON.stringify({...message,conversationId:'B'}))).toBeNull();
+ expect(parseServerMessage(JSON.stringify({...message,event:{...message.event,plan:{...plan,steps:[{...plan.steps[0],status:'success-guessed'}]}}}))).toBeNull();
+});

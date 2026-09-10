@@ -2,9 +2,9 @@ import { microphonePermissionState } from "./voice-permission.js";
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
 import { mountOrb } from './voice-orb.js';
-import type {VoiceInputContext} from '../../../shared/voice.js';
+import type { UserDelivery, VoiceInputContext } from '../../../shared/voice.js';
 
-export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, send:(m:ClientMessage)=>boolean,getInput:()=>VoiceInputContext=()=>({})) {
+export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, send:(m:ClientMessage)=>boolean,getInput:()=>VoiceInputContext=()=>({}),diagnostic?:(event:string,fields:Record<string,string|number|boolean|null|undefined>)=>void) {
   const region=document.createElement('section');region.className='voice-progress';region.hidden=true;
   region.setAttribute('aria-label','语音问进度');
   region.innerHTML='<canvas class="voice-orb" aria-label="语音粒子球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div>';
@@ -16,18 +16,24 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   const transcript=region.querySelector<HTMLElement>('.voice-answer')!,question=region.querySelector<HTMLElement>('.voice-question')!,facts=region.querySelector<HTMLElement>('.voice-facts')!;
   let phase:VoicePhase='idle';
   let shownTurn=0;
+  let currentDeliveryKind: UserDelivery['kind'] | null = null;
   const client=new VoiceClient(send,(next,detail)=>{
     phase=next;region.hidden=next==='idle';button.setAttribute('aria-expanded',String(next!=='idle'));
     button.setAttribute('aria-label',next==='idle'?'打开语音问进度':'结束语音问进度');
-    status.textContent=detail??({idle:'',connecting:'正在连接',listening:'正在听你说',thinking:'正在查看任务进度',speaking:'正在回答',error:'连接失败'}[next]);
+    status.textContent=detail??({idle:'',connecting:'正在连接',listening:'正在听你说',thinking:'正在处理这句话',speaking:'正在回答',error:'连接失败'}[next]);
     if(next==='error' && client.needsMicrophonePermission)status.textContent='请在授权页开启麦克风，再回到这里重试。';
     end.textContent=next==='error'?(client.needsMicrophonePermission?'开启麦克风':'重试'):'结束';region.dataset.state=next;
   },event=>{
-    if ('turn' in event && event.turn !== shownTurn) { shownTurn=event.turn; transcript.textContent='';question.textContent=''; }
+    if ('turn' in event && event.turn !== shownTurn) { shownTurn=event.turn; transcript.textContent='';question.textContent='';currentDeliveryKind=null; }
     if(event.kind==='text') { if(event.role==='user')question.textContent='你：'+event.text;else transcript.textContent=event.text; }
     if(event.kind==='facts')facts.textContent='依据当前任务状态 · '+new Date(event.snapshot.observedAt).toLocaleTimeString('zh-CN',{hour12:false});
-  },getInput);
-  const start=()=>{shownTurn=0;question.textContent='';transcript.textContent='';facts.textContent='';void client.start(getConversation());};
+  },getInput,(event,fields)=>{
+    if (event.startsWith('voice_recover') || event === 'voice_reconnect_attempt') {
+      console.info(`[voice] ${event}`, { event, turn: fields.turn, attempt: fields.attempt, at: fields.at });
+    }
+    diagnostic?.(event, fields);
+  });
+  const start=()=>{shownTurn=0;question.textContent='';transcript.textContent='';facts.textContent='';currentDeliveryKind=null;void client.start(getConversation());};
   const retry=async()=>{
     if(client.needsMicrophonePermission && await microphonePermissionState()!=='granted'){
       try { await chrome.tabs.create({url:chrome.runtime.getURL('voice-permission.html')}); }
@@ -46,5 +52,17 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   const disposeSmall=mountOrb(button.querySelector('canvas')!,160,()=> 'idle');
   const disposeLarge=mountOrb(region.querySelector('canvas')!,160,()=>phase,()=>client.level);
   window.addEventListener('pagehide',()=>{client.stop();disposeSmall();disposeLarge();},{once:true});
-  return {stop:()=>client.stop(), disconnect:()=>{if(client.active)client.fail('语音连接已断开，请重试。');}, receive:(m:Extract<ServerMessage,{type:'voice'}>)=>client.receive(m)};
+  return {
+    stop: () => client.stop(),
+    disconnect: () => { if (client.active) client.onTransportDisconnected(); },
+    reconnected: () => { client.onTransportReady(); },
+    receive: (m: Extract<ServerMessage, { type: 'voice' }>) => client.receive(m),
+    deliver: (delivery: { kind?: UserDelivery['kind']; text: string }) => {
+      if (currentDeliveryKind === 'finding' || currentDeliveryKind === 'reply') {
+        if (delivery.kind === 'ack') return;
+      }
+      if (delivery.kind) currentDeliveryKind = delivery.kind;
+      transcript.textContent = delivery.text;
+    }
+  };
 }

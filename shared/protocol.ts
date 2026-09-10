@@ -6,7 +6,7 @@
  */
 
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
-import { isVoiceClientMessage, isVoiceServerMessage, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
+import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 
 export const PROTOCOL_VERSION = 1;
@@ -165,6 +165,8 @@ export type TeamMemberHandback =
       capturedAt?: number;
     };
 
+export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
+
 export type ClientMessage = ConversationEnvelope & (
   | VoiceClientMessage
   | { type: "memory_list"; requestId: string }
@@ -212,7 +214,7 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
   | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
-  | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string });
+  | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
 
 export interface ConversationEnvelope { conversationId?: string }
 
@@ -255,6 +257,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
       requestId: string;
       ok: boolean;
       members: string[];
+      models?:Record<string,string>;
       continuity: AcceptanceContinuityEvidence[];
       reason?: string;
     }
@@ -272,12 +275,18 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown> }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact }
+  /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
+  | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean }
+  /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
+  | { kind: "tool_late_result"; toolCallId: string; name: string; ok: boolean; executionFact: ToolExecutionFact }
   | { kind: "turn_start" }
   | { kind: "turn_end" }
-  | { kind: "agent_start" }
+  | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
-  | { kind: "notice"; message: string; receipt?: TaskReceipt }
+  | { kind: "user_delivery"; delivery: UserDelivery }
+  | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
+  | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary }
   | { kind: "error"; message: string };
 
 // ── 工具契约 ───────────────────────────────────────────────────────
@@ -302,6 +311,7 @@ export const TOOL_NAMES = [
   "scroll",
   "js",
   "screenshot",
+  "observe_page",
   "mark",
   "clear_marks",
 ] as const;
@@ -341,17 +351,17 @@ export interface ToolContract {
   share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
-    params: { tabId?: number; target: string };
-    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string };
+    params: { tabId?: number; target: string } & import('./element-state.js').ElementReadOptions;
+    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
-  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string } };
+  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
   switch_tab: { params: { tabId: number }; data: { tabId: number } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
-  navigate: { params: { url: string; timeout?: number }; data: { url: string; title: string } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string } };
+  navigate: { params: { url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string; tabId: number } };
   click: {
     params: { target?: string; point?: [number, number]; label?: string };
     data: { clicked: true } | { clicked: false; held: true };
@@ -366,6 +376,7 @@ export interface ToolContract {
   press_key: { params: { key: string }; data: { pressed: true } };
   scroll: { params: { dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { code: string }; data: { value: unknown } };
+  observe_page: {params:{token:string};data:unknown};
   screenshot: {
     params: Record<string, never>;
     data: {
@@ -406,6 +417,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if(!isVoiceClientMessage(msg))return null;
       if(msg.command.kind==='commit'&&msg.command.input!==undefined){
         const input=msg.command.input;
+        if(input?.observation!==undefined&&(!input.observation||!validRequestId(input.observation.token)||!Number.isSafeInteger(input.observation.tabId)))return null;
         if(!input||typeof input!=='object'||Array.isArray(input)||(input.context!==undefined&&!isPageContext(input.context))||(input.attachments!==undefined&&(!Array.isArray(input.attachments)||!input.attachments.every(isAttachment))))return null;
       }
       return msg;
@@ -507,6 +519,20 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
     if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
+    if(msg.type==='agent_event'&&msg.event?.kind==='notice'&&msg.event.plan!==undefined){
+      const p=msg.event.plan;
+      if(!p||!validRequestId(p.id)||p.conversationId!==msg.conversationId||!Number.isFinite(p.updatedAt)||!Array.isArray(p.steps)||p.steps.length<1||p.steps.length>3||!p.steps.every(s=>s&&typeof s.action==='string'&&typeof s.text==='string'&&s.text.length<=12000&&validConversationId(s.targetId)&&(s.targetTitle===undefined||typeof s.targetTitle==='string'&&s.targetTitle.length<=120)&&['pending','complete','unexecuted'].includes(s.status)&&(s.receipt===undefined||isTaskReceipt(s.receipt)&&s.receipt.conversationId===s.targetId)))return null;
+    }
+    if (msg.type === "agent_event" && msg.event?.kind === "user_delivery") {
+      if (!isUserDelivery(msg.event.delivery)) return null;
+      if (msg.conversationId === undefined || msg.event.delivery.conversationId !== msg.conversationId) return null;
+    }
+    if (msg.type === 'agent_event' && msg.event?.kind === 'user_delivery_stream') {
+      const s = msg.event.stream;
+      if (!msg.conversationId || !s || !validRequestId(s.id) || (s.runId !== null && !validRequestId(s.runId))
+        || !['ack','finding','reply'].includes(s.kind) || !['streaming','cancelled'].includes(s.phase)
+        || typeof s.text !== 'string' || s.text.length > 2000) return null;
+    }
     if (msg.type === "agent_event" && msg.event?.kind === "notice" && msg.event.receipt !== undefined
       && (!isTaskReceipt(msg.event.receipt) || (msg.event.receipt.conversationId !== msg.conversationId && msg.event.receipt.originConversationId !== msg.conversationId))) return null;
     if (msg.type === "memory_result") {
@@ -540,6 +566,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!isTeamView(msg.team)) return null;
     }
     if (msg.type === "acceptance_team_ready") {
+      if(msg.models!==undefined&&(!msg.models||typeof msg.models!=="object"||Array.isArray(msg.models)||!Object.entries(msg.models).every(([id,model])=>validOptionalSessionId(id)&&typeof model==="string"&&model.length<=200)))return null;
       if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean") return null;
       if (!Array.isArray(msg.members) || !msg.members.every((id) => validOptionalSessionId(id) && id !== undefined)) return null;
       if (!Array.isArray(msg.continuity) || !msg.continuity.every(isAcceptanceContinuityEvidence)) return null;

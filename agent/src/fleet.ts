@@ -59,6 +59,16 @@ export interface FleetSink {
   setStatus(state: AgentRunState, sessionId?: string): void;
 }
 
+/** Worker 工具的执行约束：与 Lead 共用同一会话进度，但只拦未决写入，不代替 Lead 登记结果。 */
+export function workerExecution(getSession: () => BrowserAgentSession | undefined) {
+  return {
+    epoch: () => getSession()?.executionEpoch() ?? 0,
+    canWrite: () => getSession()?.canWriteCurrentInput() ?? false,
+    assertCall: (name: string, params: Record<string, unknown>) => getSession()?.assertWorkerWriteAllowed(name, params),
+    onStep: (step: import('./browser-program.js').ProgramStep) => getSession()?.observeProgramStep(step),
+  };
+}
+
 export class Fleet {
   readonly mailbox = new Mailbox();
   private readonly workers = new Map<string, BrowserAgentSession>();
@@ -73,11 +83,18 @@ export class Fleet {
   private readonly modelPattern?: string;
   private readonly team = new TeamControl();
   private readonly lastContinue = new Map<string, { tabId: number; url: string; snapshot: string }>();
+  private conversationSnapshot: (() => import("../../shared/voice.js").TaskProgressSnapshot | null) | null = null;
 
   constructor(opts: { rpc: ToolRpc; sink: FleetSink; modelPattern?: string }) {
     this.rpc = opts.rpc;
     this.sink = opts.sink;
     this.modelPattern = opts.modelPattern;
+  }
+
+  /** 与 Lead 共享同一会话进度；worker 写操作据此看到同一未决写入。 */
+  bindConversationContext(snapshot: () => import("../../shared/voice.js").TaskProgressSnapshot | null): void {
+    this.conversationSnapshot = snapshot;
+    for (const session of this.workers.values()) session.bindConversationContext(snapshot);
   }
 
   attachLead(session: BrowserAgentSession): void {
@@ -263,7 +280,7 @@ export class Fleet {
     let session: BrowserAgentSession;
     try {
       if (generation !== this.generation) throw new Error("Worker start cancelled");
-      session = await this.createWorkerSession({ id, peers, tabId });
+      session = await this.createWorkerSession({ id, peers, tabId,shared:opts.sharedTabId!==undefined });
       if (generation !== this.generation) { this.stop(id); throw new Error("Worker start cancelled"); }
     } finally {
       this.spawning.delete(id);
@@ -334,6 +351,7 @@ export class Fleet {
   }
 
   private async createWorkerSession(opts: {
+    shared?:boolean;
     id: string;
     peers: string[];
     tabId?: number;
@@ -341,6 +359,7 @@ export class Fleet {
     if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
     const { id, peers, tabId } = opts;
     let started = false;
+    let workerSession: BrowserAgentSession | undefined;
     const session = await BrowserAgentSession.create(
       this.rpc,
       {
@@ -359,14 +378,20 @@ export class Fleet {
       {
         modelRuntime: this.lead.runtime,
         modelPattern: this.lead.modelName() ?? this.modelPattern,
-        systemPrompt: workerSystemPrompt({ id, peers, tabId }),
+        systemPrompt: workerSystemPrompt({ id, peers, tabId,shared:opts.shared }),
         appendPrompt: () => [],
-        customTools: [...createBrowserTools(this.rpc, id), ...createFleetTools(this, id)],
+        memberId: id,
+        customTools: [
+          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession)),
+          ...createFleetTools(this, id),
+        ],
       },
     );
     if (!session.available) {
       throw new Error(`${displayNameFor(id)} 会话创建失败`);
     }
+    workerSession = session;
+    if (this.conversationSnapshot) session.bindConversationContext(this.conversationSnapshot);
     this.workers.set(id, session);
     return session;
   }

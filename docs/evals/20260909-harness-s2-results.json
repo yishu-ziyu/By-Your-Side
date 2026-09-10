@@ -1,0 +1,313 @@
+{
+  "status": "machine_checks_complete_human_pending",
+  "originalSuite": {
+    "passed": 3,
+    "total": 5,
+    "artifact": "docs/diagnostics/20260909-s2/original-suite.json"
+  },
+  "runs": [
+    {
+      "name": "driver-receipt-format",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-HztYPV",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "sourceSha256": "3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace",
+      "checks": 2,
+      "artifact": "docs/diagnostics/20260909-s2/driver-receipt-format.json"
+    },
+    {
+      "name": "driver-enter-path",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-p9S229",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "sourceSha256": "f97561376327ab002d5fd20f77b75e8be0b0c4c0af5b363af536825743f9d7f2",
+      "checks": 2,
+      "artifact": "docs/diagnostics/20260909-s2/driver-enter-path.json"
+    },
+    {
+      "name": "early-correction",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-KgnT3m",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "f97561376327ab002d5fd20f77b75e8be0b0c4c0af5b363af536825743f9d7f2",
+      "checks": 5,
+      "artifact": "docs/diagnostics/20260909-s2/early-correction.json"
+    },
+    {
+      "name": "early-pause",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-h81gqq",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "f97561376327ab002d5fd20f77b75e8be0b0c4c0af5b363af536825743f9d7f2",
+      "checks": 10,
+      "artifact": "docs/diagnostics/20260909-s2/early-pause.json"
+    },
+    {
+      "name": "navigation-wrong-target",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-akCb04",
+      "ok": false,
+      "error": "Error: no successful mark against stale document",
+      "sourceSha256": "4de29c6932bcf06d0b19f87b7318c04bc7cb2f426d7a9bc2ed2234a5d40e4647",
+      "checks": 4,
+      "artifact": "docs/diagnostics/20260909-s2/navigation-wrong-target.json"
+    },
+    {
+      "name": "navigation-guard",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-Av3VH8",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "b47b6d68b2d104a88aa13bfd938f6782acb1b65a133d60f2a0fde0a0bd32a7b2",
+      "checks": 4,
+      "artifact": "docs/diagnostics/20260909-s2/navigation-guard.json"
+    },
+    {
+      "name": "early-cancel",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-ExMgG1",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "b47b6d68b2d104a88aa13bfd938f6782acb1b65a133d60f2a0fde0a0bd32a7b2",
+      "checks": 5,
+      "artifact": "docs/diagnostics/20260909-s2/early-cancel.json"
+    },
+    {
+      "name": "early-voice",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-cqRcmg",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "a03c0185306b77263d5c3d7339a4d222453c2522e6b6d0fd1d29ee85202022e1",
+      "checks": 5,
+      "artifact": "docs/diagnostics/20260909-s2/early-voice.json"
+    },
+    {
+      "name": "results-not-registered",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-fPdrrh",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "d3ecdfcc2a06887f8bb4a7915435781e2487fd1a56bf8d48ab6049bfa952f18c",
+      "checks": 6,
+      "artifact": "docs/diagnostics/20260909-s2/results-not-registered.json"
+    },
+    {
+      "name": "result-id-hang",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-R5w3qL",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: correction accepted",
+      "sourceSha256": "85693168420ff9afb4385c153b6bd42245c23e85e90bc647321ff80aeda09b0b",
+      "checks": 3,
+      "artifact": "docs/diagnostics/20260909-s2/result-id-hang.json"
+    },
+    {
+      "name": "observation-unmatched",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-OV2hZD",
+      "ok": false,
+      "error": "Error: observation leaves the registered annotation outstanding",
+      "sourceSha256": "8c36d8122034115b0e071b4820a878922a2872323052c912e110768b55c2d9b8",
+      "checks": 8,
+      "artifact": "docs/diagnostics/20260909-s2/observation-unmatched.json"
+    },
+    {
+      "name": "result-target-hang",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-IWK4Q5",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: correction accepted",
+      "sourceSha256": "c0ed82ca54be2338b64a8e19c8b96e3c5ef7678777b645867e7bb12145777513",
+      "checks": 3,
+      "artifact": "docs/diagnostics/20260909-s2/result-target-hang.json"
+    },
+    {
+      "name": "null-target-hang",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-g5jZSc",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "sourceSha256": "788983e54c4c81acf1fa1b26b51f6b5b6fee84f92ab814fe7e264bee9e88cc0e",
+      "checks": 1,
+      "artifact": "docs/diagnostics/20260909-s2/null-target-hang.json"
+    },
+    {
+      "name": "result-binding-pass",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-mwudct",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/result-binding-pass.json"
+    },
+    {
+      "name": "suite-correction",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-frtH4R",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/suite-correction.json"
+    },
+    {
+      "name": "suite-voice",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-vQfnMT",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/suite-voice.json"
+    },
+    {
+      "name": "suite-pause-failed",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-Byr4sn",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "sourceSha256": "12e7fe82a6be6488c41e837b075e0b30c5ff2874fc94e348c2802793b9cfeb3e",
+      "checks": 7,
+      "artifact": "docs/diagnostics/20260909-s2/suite-pause-failed.json"
+    },
+    {
+      "name": "suite-navigation-failed",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-o4dQQV",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "sourceSha256": "a736b5ca40a09bd3ccf2cf107842545a41c17333c0345ddb82a57a511ee21e6b",
+      "checks": 2,
+      "artifact": "docs/diagnostics/20260909-s2/suite-navigation-failed.json"
+    },
+    {
+      "name": "suite-cancel",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-h12JvP",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "a736b5ca40a09bd3ccf2cf107842545a41c17333c0345ddb82a57a511ee21e6b",
+      "checks": 5,
+      "artifact": "docs/diagnostics/20260909-s2/suite-cancel.json"
+    },
+    {
+      "name": "completion-context-hang",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-XsDtwu",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: correction accepted",
+      "sourceSha256": "a736b5ca40a09bd3ccf2cf107842545a41c17333c0345ddb82a57a511ee21e6b",
+      "checks": 3,
+      "artifact": "docs/diagnostics/20260909-s2/completion-context-hang.json"
+    },
+    {
+      "name": "voice-regression",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-G7tgDw",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "a736b5ca40a09bd3ccf2cf107842545a41c17333c0345ddb82a57a511ee21e6b",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/voice-regression.json"
+    },
+    {
+      "name": "pause-observation-missing",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-iufSAy",
+      "ok": false,
+      "error": "Error: observation leaves the registered annotation outstanding",
+      "sourceSha256": "708bb5c1b11225312754e31dda185bc2e1bd252f5e989310f11b75412531abca",
+      "checks": 13,
+      "artifact": "docs/diagnostics/20260909-s2/pause-observation-missing.json"
+    },
+    {
+      "name": "navigation-final",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-u0W90J",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "708bb5c1b11225312754e31dda185bc2e1bd252f5e989310f11b75412531abca",
+      "checks": 4,
+      "artifact": "docs/diagnostics/20260909-s2/navigation-final.json"
+    },
+    {
+      "name": "provider-request-failed",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-pdpM20",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "sourceSha256": "708bb5c1b11225312754e31dda185bc2e1bd252f5e989310f11b75412531abca",
+      "checks": 1,
+      "artifact": "docs/diagnostics/20260909-s2/provider-request-failed.json"
+    },
+    {
+      "name": "pause-final",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-1blklj",
+      "ok": true,
+      "error": null,
+      "sourceSha256": "b546bab8b162608355ba45857d0f82424c56ebd36ee83cab92ef802a8d237ff2",
+      "checks": 16,
+      "artifact": "docs/diagnostics/20260909-s2/pause-final.json"
+    },
+    {
+      "name": "s1-disabled",
+      "ok": true,
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-4oGTJL",
+      "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+      "checks": 9,
+      "artifact": "docs/diagnostics/20260909-s2/s1-disabled.json"
+    },
+    {
+      "name": "s1-js",
+      "ok": true,
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-GKUvro",
+      "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/s1-js.json"
+    },
+    {
+      "name": "s1-heldout",
+      "ok": true,
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-capability-P1HPAu",
+      "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/s1-heldout.json"
+    },
+    {
+      "name": "correction-final",
+      "originalOutput": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-m1Cn6l",
+      "ok": true,
+      "sourceSha256": "67fe51e3ce1ec3689d01226f853e478c19efb9162c4ae50d6d4bcf3443a855e0",
+      "checks": 11,
+      "artifact": "docs/diagnostics/20260909-s2/correction-final.json"
+    }
+  ],
+  "interpretation": [
+    "各阶段源码与证据分开；不是同一最终源码一次性全套通过。",
+    "early和results-not-registered仅验证其当时的可见操作，不视为结果登记已验收。",
+    "失败与超时全部保留，不做重试成功率或统计可靠性宣称。"
+  ],
+  "limitations": [
+    "隔离Chrome，生产侧栏/执行器与真实M3；CDP桥接、合成语音，不代称用户已加载扩展或真人麦克风验收。",
+    "机器验收结束前未重载；用户随后明确授权，已重载并确认background与构建一致。未提交推送，未进入TTS。",
+    "真实路径按受影响切片复验；文字纠正和暂停恢复使用最终源码，其他场景保留对应阶段hash；没有声称最终源码重新抽测整套5/5。",
+    "结果登记增加了内部步骤，本轮未承诺提速，速度与自然程度仍由用户实际试用判断。"
+  ],
+  "finalSourceSha256": "67fe51e3ce1ec3689d01226f853e478c19efb9162c4ae50d6d4bcf3443a855e0",
+  "acceptedFocused": {
+    "textCorrection": "correction-final",
+    "voiceCorrection": "voice-regression",
+    "pauseResume": "pause-final",
+    "navigation": "navigation-final",
+    "cancelThenCapability": "suite-cancel",
+    "s1Disabled": "s1-disabled",
+    "s1NormalJs": "s1-js",
+    "s1Heldout": "s1-heldout"
+  },
+  "unifiedChecks": {
+    "testFiles": 124,
+    "tests": 989,
+    "typecheck": true,
+    "build": true,
+    "diffCheck": true,
+    "logs": [
+      "/tmp/ego-s2-delivery-tests.log",
+      "/tmp/ego-s2-delivery-typecheck.log",
+      "/tmp/ego-s2-delivery-build.log"
+    ]
+  },
+  "deployment": {
+    "userAuthorized": true,
+    "extensionReloaded": true,
+    "loadedBackgroundMatchesBuild": true,
+    "loadedBackgroundSha256": "57a45ecc9641a0122bed1570369adbc7840cc2104f2996143c40a9e5e9f6085a",
+    "newNativeHostPids": [
+      55547,
+      55548
+    ],
+    "testPage": "http://127.0.0.1:61344/",
+    "humanResult": "pending"
+  }
+}

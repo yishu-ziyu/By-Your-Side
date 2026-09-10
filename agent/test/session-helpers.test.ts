@@ -514,3 +514,10 @@ it('voice steering waits for queue acceptance and cannot restart an idle task', 
   setStreaming(false);await expect(wrapped.steerCurrentTask('预算改成六百')).rejects.toThrow('当前没有正在执行');
   expect(raw.prompt).not.toHaveBeenCalled();
 });
+
+it('keeps the original task goal when resuming after a saved parameter change',async()=>{
+ const {wrapped,raw,setStreaming,settleAbort,agentStart}=controlledBrowserSession(false);
+ const goal='持续统计新增记录，直到用户暂停或终止。';wrapped.startTask(goal);setStreaming(true);wrapped.holdForUser();wrapped.queueSteerForResume('预算改600');
+ const resumed=wrapped.continueAfterHandback({tabId:1,title:'current',url:'https://example.com'},'fresh marker');settleAbort();await flushMicrotasks();
+ expect(raw.prompt.mock.calls.at(-1)![0]).toContain(goal);expect(raw.prompt.mock.calls.at(-1)![0]).toContain('预算改600');expect(raw.prompt).toHaveBeenCalledTimes(2);agentStart();expect(await resumed).toBe(true);
+});

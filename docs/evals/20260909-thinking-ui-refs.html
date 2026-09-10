@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>搜到的思考界面</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f5f5f3; color: #222; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+  main { max-width: 1120px; margin: 36px auto 56px; padding: 0 24px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  .lead { color: #8a8a85; margin: 0 0 16px; font-size: 13.5px; }
+  .toolbar { margin: 0 0 22px; }
+  .toolbar button {
+    font: inherit; font-size: 12.5px; border: 1px solid #ddd; background: #fff;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+  article { min-width: 0; }
+  .name { font-size: 12.5px; color: #666; margin: 0 0 8px; min-height: 36px; }
+  .name strong { color: #111; font-weight: 600; display: block; }
+  .stage {
+    height: 280px; border: 1px solid #dedede; border-radius: 14px;
+    background: #fff; padding: 22px 18px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage.dark { background: #0b0b0c; border-color: #222; }
+  .hint { font-size: 12px; color: #9a9a94; margin: 8px 0 0; }
+  pre.stream {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+    font-family: inherit; font-size: 13px; line-height: 1.55; color: #737373;
+  }
+
+  /* AICSS Thinking State */
+  .aicss-shimmer {
+    font-size: 15px; font-weight: 500;
+    background: linear-gradient(90deg, #a3a3a3 0%, #e5e5e5 40%, #a3a3a3 80%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 1.6s linear infinite;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* Orbs */
+  .orb-pill {
+    display: inline-flex; align-items: center; gap: 12px;
+    height: 64px; padding: 0 22px 0 10px; border-radius: 999px;
+    background: rgba(29,29,29,.72);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .orb {
+    width: 44px; height: 44px; border-radius: 50%;
+    background:
+      radial-gradient(circle at 35% 32%, #fff 0 6%, transparent 7%),
+      radial-gradient(circle at 50% 50%, #7dd3fc 0 18%, #6366f1 42%, #111 72%);
+    animation: orb 2.4s ease-in-out infinite;
+  }
+  @keyframes orb {
+    50% { transform: scale(1.06); filter: saturate(1.2); }
+  }
+  .orb-pill span { color: rgba(251,251,251,.5); font-size: 16px; }
+
+  /* Agent Elements */
+  .ae { width: 100%; align-self: stretch; }
+  .ae-row { font-size: 13px; color: #525252; display: flex; align-items: center; gap: 6px; }
+  .ae-dot { width: 6px; height: 6px; border-radius: 50%; background: #a3a3a3; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .ae-box {
+    margin-top: 8px; max-height: 175px; overflow: hidden;
+    mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+  }
+  .ae-box pre { font-size: 12.5px; }
+
+  /* AI Elements Reasoning */
+  .air { width: 100%; align-self: stretch; }
+  .air-trig { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #525252; }
+  .air-trig b { font-weight: 500; color: #171717; }
+  .air-body { margin-top: 8px; max-height: 140px; overflow: hidden; }
+  .air-body pre { font-size: 13px; color: #737373; }
+
+  /* prompt-kit Steps */
+  .pk { width: 100%; align-self: stretch; font-size: 13px; color: #404040; }
+  .pk-step { display: flex; gap: 10px; }
+  .pk-rail { width: 10px; display: flex; flex-direction: column; align-items: center; }
+  .pk-rail i { width: 7px; height: 7px; border-radius: 50%; background: #d4d4d4; flex-shrink: 0; margin-top: 5px; }
+  .pk-rail i.on { background: #171717; }
+  .pk-rail span { width: 1px; flex: 1; background: #e5e5e5; margin: 4px 0; }
+  .pk-step p { margin: 0 0 12px; }
+  .pk-live { color: #737373; font-size: 12.5px; max-height: 4.6em; overflow: hidden; }
+
+  /* Zed */
+  .zed { width: 100%; align-self: stretch; }
+  .zed-h { font-size: 12px; color: #737373; margin-bottom: 6px; }
+  .zed-box {
+    max-height: 168px; overflow: hidden;
+    mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+  }
+  .zed-box pre { font-size: 12.5px; color: #a3a3a3; }
+
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) {
+    .aicss-shimmer, .orb, .ae-dot { animation: none; }
+    .ae-box, .zed-box { mask-image: none; }
+  }
+</style>
+<main>
+  <h1>搜到的思考界面</h1>
+  <p class="lead">原站截图没跑出来。这里按各家自己的样子摊开，扫一眼就行。产品已经按你点的结合档改过了，这页只看审美。</p>
+  <div class="toolbar"><button type="button" id="replay">重放思考流</button></div>
+  <div class="grid">
+    <article>
+      <div class="name"><strong>AICSS · Thinking State</strong>一行字，几乎没有过程</div>
+      <div class="stage"><span class="aicss-shimmer">Thinking</span></div>
+      <p class="hint">看不见在干什么。</p>
+    </article>
+    <article>
+      <div class="name"><strong>Thinking Orbs</strong>状态球，不摊文字</div>
+      <div class="stage dark"><div class="orb-pill"><i class="orb"></i><span>Solving…</span></div></div>
+      <p class="hint">好看，但不适合执行过程。</p>
+    </article>
+    <article>
+      <div class="name"><strong>Agent Elements</strong>思考正文锁 175px</div>
+      <div class="stage"><div class="ae">
+        <div class="ae-row"><i class="ae-dot"></i> Thinking</div>
+        <div class="ae-box"><pre class="stream" data-stream></pre></div>
+      </div></div>
+      <p class="hint">限高跟最新，和结合档最近。</p>
+    </article>
+    <article>
+      <div class="name"><strong>AI Elements / prompt-kit</strong>流时展开，写完收起</div>
+      <div class="stage"><div class="air">
+        <div class="air-trig">▾ <b data-air>Thought for a few seconds</b></div>
+        <div class="air-body"><pre class="stream" data-stream></pre></div>
+      </div></div>
+      <p class="hint">过程会消失，只留耗时。</p>
+    </article>
+    <article>
+      <div class="name"><strong>prompt-kit · Steps</strong>步骤一条条，思考附在当前步</div>
+      <div class="stage"><div class="pk">
+        <div class="pk-step"><div class="pk-rail"><i></i><span></span></div><p>读取页面结构</p></div>
+        <div class="pk-step"><div class="pk-rail"><i></i><span></span></div><p>切换标签页</p></div>
+        <div class="pk-step"><div class="pk-rail"><i class="on"></i></div>
+          <div><p>思考</p><pre class="stream pk-live" data-stream></pre></div>
+        </div>
+      </div></div>
+      <p class="hint">步骤清楚，思考仍会变长。</p>
+    </article>
+    <article>
+      <div class="name"><strong>Zed Agent</strong>思考块限高，跟到底，不撑版面</div>
+      <div class="stage dark"><div class="zed">
+        <div class="zed-h">Thinking</div>
+        <div class="zed-box"><pre class="stream" data-stream></pre></div>
+      </div></div>
+      <p class="hint">和结合档同一动作，皮肤更暗。</p>
+    </article>
+  </div>
+</main>
+<script>
+const TEXT = [
+  '用户要把这句话发到当前对话里。',
+  '先确认现在停在哪一页，是不是目标会话。',
+  '看起来还不在对话页，先切过去再读结构。',
+  '页面已经打开。输入框在底部，正文可以原样放进去。',
+  '发送前再看一眼，确认还是同一条对话，不要改措辞。',
+  '输入框是空的，光标已经在里面。',
+  '把整段话一次放进去，不要拆开。',
+  '发送之后等页面回执，不要连点。',
+  '可以发了。',
+].join('\n');
+
+const streams = [...document.querySelectorAll('[data-stream]')];
+const air = document.querySelector('[data-air]');
+let timer = 0;
+function play() {
+  clearInterval(timer);
+  streams.forEach(el => { el.textContent = ''; });
+  if (air) air.textContent = 'Thinking…';
+  let i = 0;
+  timer = setInterval(() => {
+    i += 3;
+    const slice = TEXT.slice(0, i);
+    streams.forEach(el => {
+      el.textContent = slice;
+      const box = el.parentElement;
+      if (box) box.scrollTop = box.scrollHeight;
+    });
+    if (i >= TEXT.length) {
+      clearInterval(timer);
+      if (air) air.textContent = 'Thought for 8 seconds';
+    }
+  }, 24);
+}
+document.getElementById('replay').onclick = play;
+play();
+</script>
+</html>

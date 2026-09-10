@@ -1,4 +1,5 @@
 /** Real Step PCM -> production manager -> real Pi -> Chrome. No microphone/UI claim. */
+import {voiceEvidence} from './voice-evidence.mts';
 import {createServer} from 'node:http';
 import {execFileSync,spawn} from 'node:child_process';
 import WebSocket from 'ws';
@@ -19,7 +20,7 @@ if(suite==='extensions'){
 }
 if(suite==='faults')await child(['node_modules/vitest/vitest.mjs','run','agent/test/voice-session.test.ts','agent/test/voice-intent.test.ts','agent/test/task-dispatcher.test.ts','agent/test/task-control.test.ts','extension/test/voice-audio.test.ts','extension/test/voice-relay.test.ts','extension/test/session-management.test.ts']);
 const out=`/tmp/ego-voice-dispatch-${Date.now()}`;await mkdir(out,{recursive:true});
-const report:any={suite,ok:false,source:'production modules + real Step/Pi/Chrome; synthetic audio',checks:[],events:[],voiceEvents:[],diagnostics:[]};
+const report:any={evidence:voiceEvidence(),suite,ok:false,source:'production modules + real Step/Pi/Chrome; synthetic audio',checks:[],events:[],voiceEvents:[],diagnostics:[]};
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 async function until(test:()=>boolean,ms=150000){const end=Date.now()+ms;while(!test()){if(report.voiceFailure)throw Error(report.voiceFailure);if(Date.now()>end)throw Error('Acceptance timeout');await sleep(100);}}
 let connection:Awaited<ReturnType<typeof connectParentAcceptance>>|undefined;
@@ -71,6 +72,11 @@ finally{
  voice?.close();manager?.dispose();await Promise.allSettled([...jobs]);
  if(connection){for(const id of tabs)await evaluateInWorker(connection.cdp,connection.sid,`chrome.tabs.remove(${id}).catch(()=>{})`).catch(()=>{});await connection.close();}
  server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await writeFile(`${out}/result.json`,JSON.stringify(report,null,2));console.log(JSON.stringify({out,ok:report.ok,checks:report.checks,error:report.error}));
+}
+if(suite==='faults'&&report.ok){
+ try{await child(['--import','tsx','scripts/acceptance/voice-restart-run.mts']);report.restartPassed=true;}
+ catch(error){report.ok=false;report.error=String(error);process.exitCode=1;}
+ await writeFile(`${out}/result.json`,JSON.stringify(report,null,2));console.log(JSON.stringify({out,ok:report.ok,restartPassed:report.restartPassed,error:report.error}));
 }
 async function speak(text:string){
  const n=++turn;done=false;execFileSync('/usr/bin/say',['-v','Tingting','-r','185','-o',`${out}/${n}.aiff`,text]);

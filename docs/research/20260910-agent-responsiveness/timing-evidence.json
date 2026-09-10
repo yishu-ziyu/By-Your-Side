@@ -1,0 +1,175 @@
+{
+  "scope": "One production user run; metadata and tool receipts only. Not P95, not network-only time. Source transcript remains private locally.",
+  "timezone": "UTC; report displays Asia/Shanghai",
+  "model": "minimax-cn/MiniMax-M3",
+  "thinkingLevel": "medium",
+  "sdkVersion": "0.84.4",
+  "turns": [
+    {
+      "startedAt": "2026-09-10T03:24:46.497Z",
+      "firstResponseMs": 1784,
+      "endedAt": "2026-09-10T03:25:11.202Z",
+      "modelIntervalMs": 24705,
+      "reasoningTokens": 1088,
+      "outputTokens": 1261,
+      "uncachedInputTokens": 24823,
+      "cachedInputTokens": 8448,
+      "nextTools": [
+        "record_task_results"
+      ]
+    },
+    {
+      "startedAt": "2026-09-10T03:25:11.206Z",
+      "firstResponseMs": 1313,
+      "endedAt": "2026-09-10T03:25:14.903Z",
+      "modelIntervalMs": 3697,
+      "reasoningTokens": 129,
+      "outputTokens": 146,
+      "uncachedInputTokens": 1918,
+      "cachedInputTokens": 33024,
+      "nextTools": [
+        "snapshot"
+      ]
+    },
+    {
+      "startedAt": "2026-09-10T03:25:14.997Z",
+      "firstResponseMs": 1541,
+      "endedAt": "2026-09-10T03:25:30.935Z",
+      "modelIntervalMs": 15938,
+      "reasoningTokens": 796,
+      "outputTokens": 911,
+      "uncachedInputTokens": 10486,
+      "cachedInputTokens": 34560,
+      "nextTools": [
+        "js"
+      ]
+    },
+    {
+      "startedAt": "2026-09-10T03:25:30.943Z",
+      "firstResponseMs": 1475,
+      "endedAt": "2026-09-10T03:25:35.491Z",
+      "modelIntervalMs": 4548,
+      "reasoningTokens": 161,
+      "outputTokens": 248,
+      "uncachedInputTokens": 1511,
+      "cachedInputTokens": 44544,
+      "nextTools": [
+        "js"
+      ]
+    },
+    {
+      "startedAt": "2026-09-10T03:25:35.496Z",
+      "firstResponseMs": 1601,
+      "endedAt": "2026-09-10T03:25:39.842Z",
+      "modelIntervalMs": 4346,
+      "reasoningTokens": 111,
+      "outputTokens": 201,
+      "uncachedInputTokens": 774,
+      "cachedInputTokens": 45568,
+      "nextTools": [
+        "js"
+      ]
+    },
+    {
+      "startedAt": "2026-09-10T03:25:39.845Z",
+      "firstResponseMs": 1716,
+      "endedAt": "2026-09-10T03:25:46.404Z",
+      "modelIntervalMs": 6559,
+      "reasoningTokens": 320,
+      "outputTokens": 337,
+      "uncachedInputTokens": 774,
+      "cachedInputTokens": 45824,
+      "nextTools": [
+        "snapshot"
+      ]
+    },
+    {
+      "startedAt": "2026-09-10T03:25:46.487Z",
+      "firstResponseMs": 2168,
+      "endedAt": "2026-09-10T03:26:52.714Z",
+      "modelIntervalMs": 66227,
+      "reasoningTokens": 3824,
+      "outputTokens": 3880,
+      "uncachedInputTokens": 10813,
+      "cachedInputTokens": 46080,
+      "nextTools": [
+        "send_user_message"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "record_task_results",
+      "startedAt": "2026-09-10T03:25:11.204Z",
+      "endedAt": "2026-09-10T03:25:11.205Z",
+      "elapsedMs": 1,
+      "failed": false
+    },
+    {
+      "name": "snapshot",
+      "startedAt": "2026-09-10T03:25:14.903Z",
+      "endedAt": "2026-09-10T03:25:14.994Z",
+      "elapsedMs": 91,
+      "failed": false
+    },
+    {
+      "name": "js",
+      "startedAt": "2026-09-10T03:25:30.936Z",
+      "endedAt": "2026-09-10T03:25:30.943Z",
+      "elapsedMs": 7,
+      "failed": false
+    },
+    {
+      "name": "js",
+      "startedAt": "2026-09-10T03:25:35.491Z",
+      "endedAt": "2026-09-10T03:25:35.495Z",
+      "elapsedMs": 4,
+      "failed": false
+    },
+    {
+      "name": "js",
+      "startedAt": "2026-09-10T03:25:39.842Z",
+      "endedAt": "2026-09-10T03:25:39.844Z",
+      "elapsedMs": 2,
+      "failed": false
+    },
+    {
+      "name": "snapshot",
+      "startedAt": "2026-09-10T03:25:46.404Z",
+      "endedAt": "2026-09-10T03:25:46.483Z",
+      "elapsedMs": 79,
+      "failed": false
+    },
+    {
+      "name": "send_user_message",
+      "startedAt": "2026-09-10T03:26:52.716Z",
+      "endedAt": "2026-09-10T03:26:52.717Z",
+      "elapsedMs": 1,
+      "failed": false
+    }
+  ],
+  "sumToolMs": 185,
+  "sumReasoningTokens": 6429,
+  "timing": {
+    "voiceCommit": "2026-09-10T03:24:44.518Z",
+    "transcribed": "2026-09-10T03:24:45.278Z",
+    "taskStarted": "2026-09-10T03:24:46.492Z",
+    "paused": "2026-09-10T03:25:35.496Z",
+    "verified": "2026-09-10T03:25:39.845Z",
+    "newRequestAccepted": "2026-09-10T03:25:49.343Z",
+    "newRequestConsumed": "2026-09-10T03:26:52.718Z",
+    "oldFinding": "2026-09-10T03:26:52.714Z",
+    "firstOldAudio": "2026-09-10T03:26:53.058Z"
+  },
+  "sourceSha256": "44a7afc401669e0c5e8be9ad51aa99cecb0fe7c79027b2a974b9cbc468e61992",
+  "productSha256": {
+    "agent/src/session.ts": "ff11044a9445f87e1c09197bb0370968a818b98001c48080c3de5deb762057cb",
+    "agent/src/conversation-manager.ts": "6c6067851fb4c7dc540c07336cd4f0367def9e47ed6a4798877b6bd86c6a293f",
+    "agent/src/task-results.ts": "14a64f0a5f0d839771f03cf0acf502b2f541850b1662ae08834a0f15fb218f4a",
+    "agent/src/product-context.ts": "c3bc09bed05ada1508bf6bf095d01ba1176c3411ef817058fc5b0eb0e929a0f0",
+    "agent/src/voice-service.ts": "ab23a9a1afa6c918ebf48759226f7d62766af7a40df84e124b5e7a34027e31fe",
+    "agent/src/voice-session.ts": "9d5e4ce6446d7c2236635e8faa82a993884307612397ae3ac8302ee93babc8ad",
+    "shared/task-results.ts": "96fde1fdcf368a4cf03deb8c65fed2001d82acbc39d1343428666d2c15f87872",
+    "agent/src/tools.ts": "98590accdb73c02e09a7613a0e7c2cd9b0ac8508e2cd8366545d8dbf64e28260"
+  }
+}

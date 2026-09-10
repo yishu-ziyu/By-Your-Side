@@ -110,7 +110,7 @@ describe("read_element", () => {
     vi.stubGlobal("chrome", { scripting: { executeScript: vi.fn() } });
     const result = await readElement({ tabId: 12, target: "@42" }, KEY);
     expect(result).toMatchObject({ textContent, value });
-    expect(calls).toEqual(["DOM.resolveNode", "Runtime.callFunctionOn"]);
+    expect(calls).toEqual(["DOM.resolveNode", "Runtime.callFunctionOn", "Runtime.releaseObject"]);
     expect(calls).not.toContain("Runtime.evaluate");
   });
 
@@ -120,5 +120,37 @@ describe("read_element", () => {
     await expect(readElement({ target: "loc=h3:has-text('x')" }, KEY)).rejects.toThrow(/只支持当前 @ref/);
     vi.stubGlobal("document", { querySelectorAll: () => [{ tagName: "DIV", textContent: "x".repeat(1_000_001), isConnected: true }] });
     await expect(readElement({ target: "#huge" }, KEY)).rejects.toThrow(/超过安全上限.*未返回部分内容/);
+  });
+});
+
+describe('read_element state and bounded verification', () => {
+  it('reads actual media state and waits in one read-only call for the requested state', async () => {
+    let reads = 0;
+    const media = { tagName: 'VIDEO', textContent: '', isConnected: true, get paused() { return ++reads >= 2; }, currentTime: 12 };
+    vi.stubGlobal('document', { querySelectorAll: () => [media] });
+    installScriptExecution();
+    const { readElement } = await loadReadElement();
+    const result = await readElement({ target: 'video', properties: ['currentTime'], expect: { property: 'paused', equals: true }, timeoutMs: 200 } as any, KEY);
+    expect(result).toMatchObject({ properties: { paused: true, currentTime: 12 }, check: { matched: true, property: 'paused' } });
+    expect(reads).toBe(2);
+  });
+  it('does not confuse a successful read with a satisfied expectation', async () => {
+    const media = { tagName: 'VIDEO', textContent: '', isConnected: true, paused: false };
+    vi.stubGlobal('document', { querySelectorAll: () => [media] });
+    installScriptExecution();
+    const { readElement } = await loadReadElement();
+    await expect(readElement({ target: 'video', expect: { property: 'paused', equals: true } } as any, KEY)).rejects.toThrow(/条件未满足/);
+  });
+  it('rejects unavailable state, unknown properties and ambiguous targets without polling a different object', async () => {
+    const query = vi.fn(() => [{ tagName: 'DIV', textContent: 'ready', isConnected: true }]);
+    vi.stubGlobal('document', { querySelectorAll: query });
+    installScriptExecution();
+    const { readElement } = await loadReadElement();
+    await expect(readElement({ target: '#x', expect: { property: 'paused', equals: true }, timeoutMs: 200 } as any, KEY)).rejects.toThrow(/不支持.*paused/);
+    expect(query).toHaveBeenCalledTimes(1);
+    await expect(readElement({ target: '#x', expect: { property: 'paused', equals: 'true' }, timeoutMs: 200 } as any, KEY)).rejects.toThrow(/boolean.*不能加引号/);
+    expect(query).toHaveBeenCalledTimes(1);
+    await expect(readElement({ target: '#x', properties: ['arbitrary'] } as any, KEY)).rejects.toThrow(/属性/);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

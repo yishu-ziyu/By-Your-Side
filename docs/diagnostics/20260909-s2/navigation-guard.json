@@ -1,0 +1,173 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "b47b6d68b2d104a88aa13bfd938f6782acb1b65a133d60f2a0fde0a0bd32a7b2",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "f46bd44a7cec4a5644b5c4d7719c8a37e90046e7c64f89ae9543dfcf83c18b89",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "navigation",
+  "targetCode": "cedar-flash-3152",
+  "otherCode": "river-flash-8750",
+  "marker": "3ab234",
+  "activityOrg": "橙湾工作坊",
+  "interviewOrg": "星浦研究",
+  "eventName": "橙湾工作坊活动邀请",
+  "interviewName": "星浦研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥3357",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "no successful mark against stale document",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954891665,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":1766069371,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:50990/\",\"active\":true,\"windowId\":1766069368,\"working\":false}}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954893537,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-8750\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-3152\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "loc=css:p:has-text(\"cedar-flash-3152\")",
+        "label": "临时模型ID：cedar-flash-3152"
+      },
+      "conversationId": "default",
+      "at": 1788954897931,
+      "ok": false,
+      "error": "Error: Error: 页面文档已变化，旧目标未执行。请重新 snapshot 或 read_element 核对当前页面和目标。\n    at stale (chrome-extension://hjjemjckhemiejjeldiljdjkmljmdakc/background.js:599:19)\n    at assertObservedDocument (chrome-extension://hjjemjckhemiejjeldiljdjkmljmdakc/background.js:614:60)\n    at async mark (chrome-extension://hjjemjckhemiejjeldiljdjkmljmdakc/background.js:1973:28)\n    at async ControlGate.run (chrome-extension://hjjemjckhemiejjeldiljdjkmljmdakc/background.js:103:14)"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954899798,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-8750\\n  text: 标准模型长期有效。\\n  text: 新文档，临时模型已经移除。\\n  [ref=43] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "first observation held before returning to model",
+  "observationBarrierAt": 1788954893559,
+  "originalRun": "1a5feec2-ef0b-47f9-97d4-4112c7781143",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954893590,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954889476,
+    "runId": "1a5feec2-ef0b-47f9-97d4-4112c7781143",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954893536
+      }
+    ],
+    "lastAction": {
+      "action": "确认当前页面",
+      "failed": false,
+      "at": 1788954891668
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "navigationAt": 1788954894343,
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788954916988,
+    "state": "idle",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954889476,
+    "runId": "1a5feec2-ef0b-47f9-97d4-4112c7781143",
+    "active": [],
+    "lastAction": {
+      "action": "send_user_message",
+      "failed": false,
+      "at": 1788954914148
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        },
+        {
+          "role": "assistant",
+          "text": "首次快照里确实看到了临时模型 ID「cedar-flash-3152」（在「临时模型」标题下）。但在我准备圈它时，页面已经更新成新文档，现在正文显示「新文档，临时模型已经移除。」，原页面里已看不到这个 ID 了。\n\n由于您要求「只处理当前页」，我未尝试恢复旧状态。当前页上已经没有临时模型 ID 可以圈出。需要的话，您可以刷新或切回旧版本，我再帮您圈。"
+        }
+      ],
+      "latestResult": {
+        "runId": "1a5feec2-ef0b-47f9-97d4-4112c7781143",
+        "text": "当前页面上临时模型已被移除（正文显示「新文档，临时模型已经移除。」），原 ID `cedar-flash-3152` 在新版本中已不存在。如果您能刷新或切回旧版本，我可以立即圈出。",
+        "observedAt": 1788954916879,
+        "source": "assistant_output"
+      },
+      "latestDelivery": {
+        "conversationId": "default",
+        "id": "b9fe8b9a-238d-4784-aa8b-40b9eec6fc0b",
+        "runId": "1a5feec2-ef0b-47f9-97d4-4112c7781143",
+        "kind": "finding",
+        "text": "首次快照里确实看到了临时模型 ID「cedar-flash-3152」（在「临时模型」标题下）。但在我准备圈它时，页面已经更新成新文档，现在正文显示「新文档，临时模型已经移除。」，原页面里已看不到这个 ID 了。\n\n由于您要求「只处理当前页」，我未尝试恢复旧状态。当前页上已经没有临时模型 ID 可以圈出。需要的话，您可以刷新或切回旧版本，我再帮您圈。",
+        "composedAt": 1788954914148,
+        "status": "composed"
+      }
+    },
+    "controlVersion": 0
+  },
+  "deliveries": [
+    {
+      "conversationId": "default",
+      "id": "b9fe8b9a-238d-4784-aa8b-40b9eec6fc0b",
+      "runId": "1a5feec2-ef0b-47f9-97d4-4112c7781143",
+      "kind": "finding",
+      "text": "首次快照里确实看到了临时模型 ID「cedar-flash-3152」（在「临时模型」标题下）。但在我准备圈它时，页面已经更新成新文档，现在正文显示「新文档，临时模型已经移除。」，原页面里已看不到这个 ID 了。\n\n由于您要求「只处理当前页」，我未尝试恢复旧状态。当前页上已经没有临时模型 ID 可以圈出。需要的话，您可以刷新或切回旧版本，我再帮您圈。",
+      "composedAt": 1788954914148,
+      "status": "composed"
+    }
+  ],
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

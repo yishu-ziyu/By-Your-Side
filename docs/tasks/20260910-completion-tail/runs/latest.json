@@ -1,0 +1,61 @@
+{
+  "batchId": "20260910T135858-49711",
+  "batchDir": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-completion-tail/runs/20260910T135858-49711",
+  "mode": "repro-a",
+  "generatedAt": "2026-09-10T05:59:02.465Z",
+  "totals": {
+    "runs": 3,
+    "ok": 0,
+    "productFailure": 3,
+    "infraFailure": 0,
+    "harnessSetupFailure": 0,
+    "harnessMeasurementFailure": 0,
+    "timeout": 0
+  },
+  "perCandidate": {
+    "A": {
+      "runs": 3,
+      "successes": 0,
+      "maxTailWaitMs": null,
+      "allOk": false,
+      "allFinite": false,
+      "qualified": false,
+      "tailWaits": [
+        {
+          "index": 1,
+          "scenario": "state_environment",
+          "repeat": 0,
+          "qualified": null,
+          "tailWaitMs": null,
+          "bucket": "product_failure"
+        },
+        {
+          "index": 2,
+          "scenario": "pick_target",
+          "repeat": 0,
+          "qualified": null,
+          "tailWaitMs": null,
+          "bucket": "product_failure"
+        },
+        {
+          "index": 3,
+          "scenario": "delay_ready",
+          "repeat": 0,
+          "qualified": null,
+          "tailWaitMs": null,
+          "bucket": "product_failure"
+        }
+      ]
+    },
+    "candidate": {
+      "runs": 0,
+      "successes": 0,
+      "maxTailWaitMs": null,
+      "allOk": false,
+      "allFinite": false,
+      "qualified": false,
+      "tailWaits": []
+    }
+  },
+  "aborted": null
+}

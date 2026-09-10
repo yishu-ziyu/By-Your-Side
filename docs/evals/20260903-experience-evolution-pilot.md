@@ -20,3 +20,7 @@
 
 - 项目内：`.kimi-code/wiki/`（patterns/ proposals/ index.md logs.md fold-archive/）、`.kimi-code/agents/consolidator.md`、`.kimi-code/hooks/{consolidate,precompact-archive,pending-proposals}.sh`、`docs/NOTES.md`、AGENTS.md 新增两节、.gitignore 追加
 - 项目外（唯一）：`~/.kimi-code/config.toml` 追加三条 hooks（标记块 `ego 项目经验沉淀试点 hooks START/END`）
+
+## 后续实测
+
+2026-09-09 修复启动参数后，Kimi 交互会话 `/exit` 已真实触发后台复盘并产出经验与待审提案。原试点记录保持原样；新证据、候选纠错和 `-p` 不触发 SessionEnd 的边界见 [复盘修复验收](20260909-wiki-consolidation-repair.md)。

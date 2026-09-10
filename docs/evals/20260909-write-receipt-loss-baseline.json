@@ -1,0 +1,562 @@
+{
+  "scope": "isolated Chromium, production tool/RPC/session projection, deterministic caller; not model/native messaging",
+  "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-write-receipt-loss-qy07jG",
+  "checks": [
+    {
+      "name": "normal first actual write is exactly one",
+      "ok": true
+    },
+    {
+      "name": "normal returns success",
+      "ok": true
+    },
+    {
+      "name": "normal final server and DOM count remain one",
+      "ok": true
+    },
+    {
+      "name": "timeout first actual write is exactly one",
+      "ok": true
+    },
+    {
+      "name": "timeout injected after committed write",
+      "ok": true
+    },
+    {
+      "name": "timeout preserves unknown result",
+      "ok": false
+    },
+    {
+      "name": "timeout read-only remains available",
+      "ok": true
+    },
+    {
+      "name": "timeout retry never reaches browser",
+      "ok": false
+    },
+    {
+      "name": "timeout final server and DOM count remain one",
+      "ok": false
+    },
+    {
+      "name": "disconnect first actual write is exactly one",
+      "ok": true
+    },
+    {
+      "name": "disconnect injected after committed write",
+      "ok": true
+    },
+    {
+      "name": "disconnect preserves unknown result",
+      "ok": false
+    },
+    {
+      "name": "disconnect read-only remains available",
+      "ok": true
+    },
+    {
+      "name": "disconnect retry never reaches browser",
+      "ok": false
+    },
+    {
+      "name": "disconnect final server and DOM count remain one",
+      "ok": false
+    }
+  ],
+  "cases": [
+    {
+      "fault": "normal",
+      "events": [
+        {
+          "kind": "tool_start",
+          "toolCallId": "normal-observe",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "normal-observe",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=8] heading \"隔离记录页\" level=1\n    [ref=13] text: 隔离记录页\n  [ref=9] button \"新增一条记录\"\n    [ref=14] text: 新增一条记录\n  [ref=15] text: 0"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "normal-first",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "normal-first",
+          "name": "click",
+          "isError": false,
+          "resultText": "Clicked #append. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success."
+        }
+      ],
+      "dispatches": [
+        {
+          "id": "e6ba330b-fa96-4c45-a32f-439f1b0de3e5",
+          "name": "snapshot",
+          "at": 1788963683102
+        },
+        {
+          "id": "312dbadd-3aee-460d-8ce9-648d6473c85e",
+          "name": "click",
+          "at": 1788963683122
+        }
+      ],
+      "first": {
+        "ok": true
+      },
+      "afterFirst": {
+        "conversationId": "default",
+        "observedAt": 1788963684295,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "13cb309b-57af-4669-ba11-e083882e896e",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": false,
+          "at": 1788963684295
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "satisfied",
+            "evidence": {
+              "toolCallId": "normal-first",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "13cb309b-57af-4669-ba11-e083882e896e"
+            }
+          }
+        ],
+        "resultState": "satisfied"
+      },
+      "serverAfterFirst": 1,
+      "serverRecords": [
+        {
+          "id": 1,
+          "at": 1788963684294
+        }
+      ],
+      "domCount": 1
+    },
+    {
+      "fault": "timeout",
+      "events": [
+        {
+          "kind": "tool_start",
+          "toolCallId": "timeout-observe",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "timeout-observe",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=43] heading \"隔离记录页\" level=1\n    [ref=48] text: 隔离记录页\n  [ref=44] button \"新增一条记录\"\n    [ref=49] text: 新增一条记录\n  [ref=50] text: 0"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "timeout-first",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "timeout-first",
+          "name": "click",
+          "isError": true,
+          "resultText": "Error: Tool call \"click\" timed out after 30000ms"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "timeout-reobserve",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "timeout-reobserve",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=43] heading \"隔离记录页\" level=1\n    [ref=48] text: 隔离记录页\n  [ref=44] button \"新增一条记录\" focused\n    [ref=49] text: 新增一条记录\n  [ref=67] text: 1\n  [ref=66] ListMarker \"•\"\n  [ref=68] text: 记录 1"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "timeout-retry",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "timeout-retry",
+          "name": "click",
+          "isError": false,
+          "resultText": "Clicked #append. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success."
+        }
+      ],
+      "dispatches": [
+        {
+          "id": "1525719d-ad3c-417d-a864-f0a2ad12d999",
+          "name": "snapshot",
+          "at": 1788963684511
+        },
+        {
+          "id": "e5d6f5f2-e0f7-44fc-9067-aa48cdb1284c",
+          "name": "click",
+          "at": 1788963684513
+        },
+        {
+          "id": "230c127f-ce69-46df-aa58-40785428db7e",
+          "name": "snapshot",
+          "at": 1788963714514
+        },
+        {
+          "id": "78164bf5-cbea-4449-a1ec-f984de0ed06b",
+          "name": "click",
+          "at": 1788963714519
+        }
+      ],
+      "firstWriteAt": 1788963685673,
+      "faultAt": 1788963685673,
+      "first": {
+        "ok": false,
+        "error": "Error: Tool call \"click\" timed out after 30000ms"
+      },
+      "afterFirst": {
+        "conversationId": "default",
+        "observedAt": 1788963714514,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "4c85e66a-aee9-4e49-b156-3cf3aa87e1f9",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": true,
+          "at": 1788963714513
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "blocked",
+            "evidence": {
+              "toolCallId": "timeout-first",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "4c85e66a-aee9-4e49-b156-3cf3aa87e1f9"
+            }
+          }
+        ],
+        "resultState": "blocked"
+      },
+      "serverAfterFirst": 1,
+      "observation": {
+        "ok": true
+      },
+      "retry": {
+        "ok": true
+      },
+      "lateMatched": false,
+      "afterLate": {
+        "conversationId": "default",
+        "observedAt": 1788963715671,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "4c85e66a-aee9-4e49-b156-3cf3aa87e1f9",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": false,
+          "at": 1788963715671
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "satisfied",
+            "evidence": {
+              "toolCallId": "timeout-retry",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "4c85e66a-aee9-4e49-b156-3cf3aa87e1f9"
+            }
+          }
+        ],
+        "resultState": "satisfied"
+      },
+      "serverRecords": [
+        {
+          "id": 1,
+          "at": 1788963685673
+        },
+        {
+          "id": 2,
+          "at": 1788963715670
+        }
+      ],
+      "domCount": 2
+    },
+    {
+      "fault": "disconnect",
+      "events": [
+        {
+          "kind": "tool_start",
+          "toolCallId": "disconnect-observe",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "disconnect-observe",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=88] heading \"隔离记录页\" level=1\n    [ref=93] text: 隔离记录页\n  [ref=89] button \"新增一条记录\"\n    [ref=94] text: 新增一条记录\n  [ref=95] text: 0"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "disconnect-first",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "disconnect-first",
+          "name": "click",
+          "isError": true,
+          "resultText": "Error: Extension disconnected"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "disconnect-reobserve",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "disconnect-reobserve",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=88] heading \"隔离记录页\" level=1\n    [ref=93] text: 隔离记录页\n  [ref=89] button \"新增一条记录\" focused\n    [ref=94] text: 新增一条记录\n  [ref=95] text: 0"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "disconnect-retry",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "disconnect-retry",
+          "name": "click",
+          "isError": false,
+          "resultText": "Clicked #append. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success."
+        }
+      ],
+      "dispatches": [
+        {
+          "id": "c2b093b8-4171-42cf-87a4-f2f867b65fae",
+          "name": "snapshot",
+          "at": 1788963715866
+        },
+        {
+          "id": "a8d31926-9e90-4fdc-b30a-b73d73ad4d0c",
+          "name": "click",
+          "at": 1788963715876
+        },
+        {
+          "id": "5f0a87a1-d63f-4caf-9cf9-8afc9625edb1",
+          "name": "snapshot",
+          "at": 1788963717042
+        },
+        {
+          "id": "082843b5-a030-412c-a87e-b122263e903b",
+          "name": "click",
+          "at": 1788963717044
+        }
+      ],
+      "firstWriteAt": 1788963717041,
+      "faultAt": 1788963717042,
+      "first": {
+        "ok": false,
+        "error": "Error: Extension disconnected"
+      },
+      "afterFirst": {
+        "conversationId": "default",
+        "observedAt": 1788963717042,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "b30f972d-7e09-4975-b768-bdf2bd5f55a6",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": true,
+          "at": 1788963717042
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "blocked",
+            "evidence": {
+              "toolCallId": "disconnect-first",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "b30f972d-7e09-4975-b768-bdf2bd5f55a6"
+            }
+          }
+        ],
+        "resultState": "blocked"
+      },
+      "serverAfterFirst": 1,
+      "observation": {
+        "ok": true
+      },
+      "retry": {
+        "ok": true
+      },
+      "lateMatched": false,
+      "afterLate": {
+        "conversationId": "default",
+        "observedAt": 1788963718203,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "b30f972d-7e09-4975-b768-bdf2bd5f55a6",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": false,
+          "at": 1788963718203
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "satisfied",
+            "evidence": {
+              "toolCallId": "disconnect-retry",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "b30f972d-7e09-4975-b768-bdf2bd5f55a6"
+            }
+          }
+        ],
+        "resultState": "satisfied"
+      },
+      "serverRecords": [
+        {
+          "id": 1,
+          "at": 1788963717041
+        },
+        {
+          "id": 2,
+          "at": 1788963718203
+        }
+      ],
+      "domCount": 2
+    }
+  ],
+  "sourceHashes": {
+    "agent/src/rpc.ts": "34844473ab699cb7987040d0993e97c726934abaeb25fcf06f459c9c2353274e",
+    "agent/src/tools.ts": "c53ac87360068887f739a34f993f4a551ea23fb9fcf6fa9e8e159cd6efe1ba14",
+    "agent/src/session.ts": "4658757e284eafe46b808069899a85b5fb018cf7aedc39c560a01f09cdc09197",
+    "agent/src/task-progress.ts": "54cdf5679895f71935fd6e997daf3dc7007dd1ac236af5785bda06eb43187916",
+    "agent/src/task-results.ts": "6d68b4d4257a1a34c3fe131ec77fc2227619d9a70c0c0883f8c197b1d9c0657b",
+    "shared/task-results.ts": "389210e4dd55069d25628cb5d3c8887850db250b176d27f1296068d9e710ef48",
+    "shared/control.ts": "1a90aec3a7e8cb644ca29e6f369417d32cedb76def2cba985ae1e07f49571e5e",
+    "extension/src/background/exec/input.ts": "6692f7f51875005582b165b705a4399f3ac97cadf6af74991bbfa9720f33923d",
+    "scripts/acceptance/write-receipt-loss-run.mts": "702e1f592035796b72e1e20c53e8303cd49cc3483d111b74ef78509203e9cc27"
+  },
+  "exitCode": 1
+}

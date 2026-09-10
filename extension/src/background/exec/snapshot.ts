@@ -1,3 +1,4 @@
+import {withObservedDocument} from "../observation-document.js";
 import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
@@ -15,31 +16,35 @@ import { withTimeout } from "../timeout.js";
 export async function snapshot(
   params: { tabId?: number; scope?: "full_page" | "viewport" },
   sessionId: string = LEAD_SESSION_ID,
-): Promise<{ text: string }> {
+): Promise<{ text: string; tabId: number }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
-  return snapshotTab(tab.id, params.scope);
+  const result = await withObservedDocument(tab.id, sessionId, () => snapshotTab(tab.id!, params.scope));
+  return { ...result, tabId: tab.id };
 }
 
 /** 对指定标签做 snapshot，不改工作标签认领。交还时读用户当前页用。 */
 export async function snapshotTab(
   tabId: number,
   scope: "full_page" | "viewport" = "full_page",
-): Promise<{ text: string }> {
+): Promise<{ text: string; tabId: number }> {
   if (scope === "viewport") {
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
     return {
       text: `[说明：scope=viewport 当前为简化 DOM 视口快照降级（仅覆盖当前视口，非全量 AX 树；视口内 iframe 仅占位未展开，不覆盖其内容）；以下 ref 为本次 DOM 快照编号，仅 domops 路径有效，旧 AX ref 已失效、请勿混用。如需全页 AX 树请用 scope=full_page]\n${dom.text}`,
+      tabId,
     };
   }
   try {
-    return await axSnapshot(tabId);
+    const ax = await axSnapshot(tabId);
+    return { ...ax, tabId };
   } catch (e) {
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
     return {
       text: `[回退：CDP 无障碍树快照不可用（${oneLine(e)}），以下为简化 DOM 快照；旧 AX ref 已失效，请用本次 ref]\n${dom.text}`,
+      tabId,
     };
   }
 }

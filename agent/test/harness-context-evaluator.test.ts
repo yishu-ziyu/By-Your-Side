@@ -1,0 +1,11 @@
+import {expect,it} from 'vitest';
+const path=new URL('../src/product-context.ts',import.meta.url).href;
+it('registered active capabilities are authoritative; an earlier assistant refusal stays transcript',async()=>{
+ const {ProductContext}=await import(path);const bridge=new ProductContext();let handler:any;
+ bridge.bind(()=>({conversationId:'A',state:'none',runId:null,goal:null,observedAt:1,startedAt:null,active:[],lastAction:null,successVerified:false,conversationContext:{recentTurns:[{role:'user',text:'圈出X'},{role:'assistant',text:'我不能圈画'}],latestResult:null,latestDelivery:null}}));
+ bridge.extension()({on:(name:string,fn:any)=>{if(name==='before_agent_start')handler=fn;},getActiveTools:()=>['mark','new_fixture_capability'],getAllTools:()=>[{name:'mark',description:'Mark a target'},{name:'new_fixture_capability',description:'New capability',promptGuidelines:['Use this tool for the requested test operation']},{name:'disabled_capability',description:'Unavailable'}]});
+ const result=await handler({systemPrompt:'base'});expect(result.systemPrompt).toContain('new_fixture_capability');expect(result.systemPrompt).toContain('Use this tool for the requested test operation');expect(result.systemPrompt).not.toContain('disabled_capability');expect(result.systemPrompt).toContain('我不能圈画');expect(result.systemPrompt).toContain('conversationHistory');expect(result.systemPrompt).not.toContain('"facts":"我不能圈画"');expect(result.systemPrompt).toContain('不是能力事实');
+});
+it('task reports are identified as assistant reports rather than environment verification',async()=>{
+ const {ProductContext}=await import(path);const bridge=new ProductContext();let handler:any;bridge.bind(()=>({conversationId:'A',state:'idle',runId:'r',goal:'圈X',observedAt:1,startedAt:1,active:[],lastAction:null,successVerified:false,conversationContext:{recentTurns:[],latestResult:{runId:'r',text:'我找到了X',observedAt:1,source:'assistant_output'},latestDelivery:null}}));bridge.extension()({on:(_n:string,fn:any)=>handler=fn,getActiveTools:()=>[],getAllTools:()=>[]});const result=await handler({systemPrompt:'base'});expect(result.systemPrompt).toContain('assistant_output');expect(result.systemPrompt).toContain('successVerified');expect(result.systemPrompt).not.toContain('"successVerified":true');
+});

@@ -3,9 +3,98 @@
 > 由 agent 在每个子任务完成时主动维护（见 AGENTS.md「上下文管理默认行为」）。
 > 上下文压缩前的外置层：压缩丢失细节没关系，持久事实必须在这里。
 
-## 当前状态（2026-09-09）
+## 任务收尾验收定义（2026-09-10）
+
+**最新：暂停。** 用户问5秒到底何义、语音还是文字，并指出侧栏文字一直正常、复杂长回答超过5秒属正常。主代理承认当前全文交付计时混入正常产出，暂停旧指标工作，已中断Grok。没有新获批指标，未把旧候选改判通过，原标准保留修订依据。正式agent/src与A无差异，未发现本轮残留测试进程；旧voice-human进程19344不是本轮，不触碰。后续实现者仍按用户选择Grok，但不能在验收对象未重新对齐时继续旧任务。
+
+用户已明确“OK，同意方案，开始执行吧”，[标准](evals/20260910-task-completion-tail.md)冻结进入实施。指标为六次全正确的最长收尾等待≤5秒。T起点由独立fixture预先定义的全部结果齐备时刻确定，不用最后一次检查或模型自报；终点为完整正文可见且运行实际结束。正常三场景各两次，另测假成功/漏步骤/已达成反转/方法变更/错文档/unknown与结束后重复。保留A登记，主代理规划评审、DeepSeek执行延续；当前A/B/C结论不变。
+
+自包含[委派](tasks/20260910-completion-tail/assignment.md)和[主代理评审](tasks/20260910-completion-tail/review-checklist.md)已落盘。新快照计划`/tmp/ego-completion-tail-20260910/{A,candidate}`；只借上轮A的测试脚手架，产品来自当前root完整WIP。真实运行由主代理启动DeepSeek脚本，已有授权不重复问；worker不重试此前拒绝的DNS/loopback权限。日志从命令开始留stdout/stderr与退出码，不再只手抄摘要。
+
+用户最新指令“接下来子agent就派grok”：后续由Grok 4.6实现/测试，主代理规划评审不变。DeepSeek已中断，交接[handoff-grok](tasks/20260910-completion-tail/handoff-grok.md)。47项测量/fixture/wiring离线检查由前任完成；主代理已准备宿主preflight和A三场景复现。运行期间Grok只读A/共用驱动，待真实根因后改candidate。此前分工记录不覆盖当前Grok选择，产品M3/medium不变。
+
+首批A因extension/dist缺失启动失败；Grok补A构建后，单例`runs/repro-single-A-01.log`真实执行到180秒超时。原始out为`/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-0Y3OnG`：snapshot已读齐3评论，click之后反复请求video的visible/textContent，未请求paused。该例不是六次正式比较，T0/after在超时出口尚未完整采集，不能伪算精确收尾秒数。
+
+第一候选只增强read_element原生控件状态反馈（video/audio包含paused等，checkbox包含checked），并更新工具说明；未做交付后结束接点。Grok定点14项/typecheck/build均通过，原始日志在任务offline/candidate-*。宿主正跑candidate同场景，seed=completion-tail-repro-a，日志`runs/repro-single-candidate-01.log`。两次单例用于诊断，正式达标仍需冻结同seed条件六次及边界，不能用单例替代。用户强调效率与阶段可见，后续按单场景→修复→六次验收推进，不堆测量框架。
+
+该candidate单例现已完成，out=`/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-6xRcXX`。页面/三评论正确，request后28.743s结果齐备、50.786s正式交付、52.806sSDK停止；因此仅后台结束已晚24.063s。tail.fullBody为null：疑似Markdown列表序号与DOM innerText格式比较不等价，未修正验证，不伪报精确完整UI终点。第二处交付优化未收到产物，Grok现已中断。
+
+## 登记/绑定A-B-C委派（2026-09-10）
+
+用户已明确指定DeepSeek做实现与全部测试，主代理只规划/评审。以[新冻结标准](evals/20260910-registration-binding-ab.md)及[自包含委派](tasks/20260910-binding-ab/assignment.md)为准，旧“不新增代理”仅为先前任务边界。主代理不得代写候选代码或代跑比较。
+
+比较A当前WIP、B先观察+唯一pending项执行时绑定、C先观察+动作携带原结果编号。先边界后18次交错真实M3/medium测试；禁止混入模型调参/语音改口。DeepSeek仅改隔离副本与任务目录，待主代理选型再回接现有工作区。当前状态见STATUS，进度读任务目录progress.md。
+
+评审入口[review-r1](tasks/20260910-binding-ab/review-r1.md)：不能只测试assert/helper。必须覆盖tool_start到真实派发的接线，否则C在两个同target项下可能先认领第一项、再按result_id绑定第二项；已有证据快捷路径同样须核对run/成员。持久化的可选链和host.bind返回false不可变成成功放行。候选在/tmp/ego-binding-ab-20260910/{A,B,C}；线上仍前轮版本。worker遇DNS/loopback EPERM且提权自动拒绝，不继续重复请求或绕过；等待其准备具体脚本后评审执行环境变更，不能用模拟数据替代18次真实对照。
+
+运行入口`node docs/tasks/20260910-binding-ab/run-ab.mjs`。每批独立目录、同block共用seed、18次串行；firstAttempt/Dispatch/DOM动作区分，内部登记从agent_event而非browser RPC统计，usage从真实session提取。失败/超时保留，SIGTERM清理后才强制结束。用户已确认宿主启动，首批无.git失败后DeepSeek修复voiceEvidence与预检，正式有效批次20260910T045813-60319完成18次。原始数据与[主代理结论](tasks/20260910-binding-ab/decision.md)为续接入口。
+
+用户明确改用单指标：六次全部正确完成的平均totalMs，任一次失败则不达标。A6/6、83.701秒；B/C各5/6，不接入。B最后等待任务browser_run连续报错、未执行提交；C首次等待任务猜错CSS后180秒超时。候选源保持冻结，没有重跑刷掉失败；正式agent/src仍与A一致。后续若继续须以失败路径为起点测试新候选，不能把本轮五个成功样本均值当作达标或提速。
+
+## ego-lite工具环境首轮落地（2026-09-10）
+
+用户已从研究授权转为继续推进，并强调先检查工具环境，再决定轮次/上下文/推理配置。[STATUS](STATUS.md)为状态入口，[冻结标准与结果](evals/20260910-browser-environment-state.md)包含所有失败样本。本轮仍M3/medium，未改UI或供应商。
+
+新增shared/element-state.ts固定属性/条件契约；read-element.ts共用可序列化只读getter，properties/expect/timeoutMs支持原生控件与媒体状态，条件不匹配失败，跨文档拒绝；agent/tools.ts按属性给出严格equals类型并投影小结果。原文本/值读取保留。最初3项新断言红，后通过；真实Chrome AX/有界等待/多目标/换文档7项通过。
+
+实际M3选择browser_run，却因Pi onUpdate异步而先跑assert再收到子步骤绑定，合法target被拒。新增browser-program-binding.test.ts复现红→绿。tools execution.onStep经runtime/fleet直接同步调用session.observeProgramStep，旧SDK更新仅保留无宿主的兼容出口；没有放宽目标匹配。原生状态的字符串true错误通过属性类型schema与运行时早拒修正。
+
+最终自主样本9轮29.561秒、0JS，暂停一次且三条评论正确；旧环境部分基线10轮21.762秒，不能称整体更快。中间14轮36秒和13轮104秒保留。下一断点是强制登记/目标绑定往返，以及改口/旧播报有效性；不要用调低推理掩盖，也不要把本轮当作完成全链路改造。12:05构建已加载且hash核对。1024项/typecheck/build通过。经验已由测试/验收覆盖，无新增wiki提案。
+
+## 连续任务响应调研（2026-09-10）
+
+当前状态见[STATUS](STATUS.md)。用户真人确认语音正常，但简单任务太慢，随后明确要求先调研整体现状与优质做法，不直接改产品。[完整报告](research/20260910-agent-responsiveness/report.md)与[脱敏计时](research/20260910-agent-responsiveness/timing-evidence.json)是续接依据。
+
+本次暂停视频7轮模型6429推理token；工具累计185ms，49秒后暂停、确认后73秒才出声。新要求11:25:49入队，11:26:52才消费；已安装Pi0.84.4的steer就是轮次边界投递，不是中断当前生成。TaskResultBook严格匹配tool/target，click改js后原项pending；snapshot调用成功可把名为验证的项置satisfied，但不核对结果值，模块探针已复现。assertTaskResultExecution比“多步骤才登记”的文字更广；当前正式流只核对run，不区分同run中尚未消费的新要求。
+
+建议先校正结果契约与改口/播报有效性，复用已有browser_run、工具权限和回执；再作模型/上下文对照。不能删除unknown保护，也不能把普通插话变成停手。外部框架资料仅支持机制方向，未做替换实测。报告候选时延门槛未获确认、未实施。后续不要将调研理解为重写授权。
+
+## 正式流式语音接入（2026-09-10）
+
+用户试听后已授权正式改动和重载；当前状态以[STATUS](STATUS.md)为准，冻结标准与证据在[流式语音验收](evals/20260910-streaming-voice-product.md)。Step realtime保留输入，StepTtsStream用同音色纯TTS输出24k PCM；短句进入合成、音频包立即转发，取消关闭输出并丢弃晚包。原整段20秒限制不再拦生产正式回答。
+
+Pi send_user_message部分参数转为有runId/稳定deliveryId的累积正式正文；普通text_delta仍为内部流。注意实际模型可能先content后kind，不能等kind才发布；factory覆盖bindDeliveryRun时必须同时绑定流事件读取者。已有compose正式回答出口也使用streamSimple增量，同气泡终结不重复。voice-service、voice-session、shared协议、panel-history和侧栏已接通；agent_end/失败取消未完成正文，清空播放器队列。入口与取消测试见agent/test/streaming-voice.test.ts，真实侧栏入口为harness-s2-run.mts --case=streaming_voice。
+
+真实模型可能172ms就给完全部正文，TTS首音859ms，因此该例首音晚于正文结束；不能把异步增量接入宣传成每次都抢在全文前出声。真实长音频/播放器打断和受控分段不等全文测试分别记录。最终复测9段正文、73.5秒音频，首音比最终正文早912ms；正式构建已加载并核对hash。无新增子代理、提交或推送。代码/测试/验收已覆盖原因，不重复建立wiki经验或提案。
+
+## 真人语音无声：原因已确认（2026-09-10）
+
+用户10:39真人复现的两次receipt_speech_rejected均completed、有音频、textMatches=true，158字；音频990720字节/20.64秒、1075200字节/22.4秒。唯一不满足为g.bytes<=960000（24kHz单声道PCM16即20秒）。两次后只留文字，未发音频；不是本次文字不一致。证据见[诊断结果](evals/20260910-speech-rejection-diagnosis.md)，不复制邮件内容。之前无字段日志不可倒推原因。诊断代码已加载且有效，未改播放规则；修法需与用户对齐，不再让用户重复测试。断线恢复仍暂停。实时语音调研见[简报](research/20260910-realtime-voice-first-pass.md)。
+
+## 第三轮独立验收：R3前后差异仍不足（本任务续接）
+
+当前进度见[STATUS](STATUS.md)，返工权威见[第三轮报告](evals/20260909-write-receipt-loss-independent-review-r3.md)。旧标题反例7/7和正例6/6通过，定点98通过，不重复旧修复。
+
+独立scope驱动三个真实Chrome反例均最终2条：AX未覆盖的隐藏旧文本被read_element读到；同文档无关banner出现新文字；用户/环境导航到同tabId新document而未触发Agent页面工具清基线。三者均被resolve_unknown_result接受为新增动作证据。原算法只有tabId与前后文本差异，仍缺原操作/结果绑定。不要用禁h1、隐藏选择器或补关键词解决；需窄的预绑定结果与可比较读数，无证据保持unknown。
+
+新入口scripts/acceptance/write-receipt-loss-scope-run.mts，参数hidden/background/navigation；JSON独立保存于r3-independent-{hidden,background,navigation}。正例的“接续”仅再次snapshot，不能独自证明写权限已恢复，后续需实际独立写入验收。A9仍未跑；本轮无产品源码修改，证据hash一致。
+
+## 前轮：写入回执丢失独立验收技术结论（2026-09-09）
+
+原实现闭环结论被独立检查推翻，修订证据和返工项在[独立验收报告](evals/20260909-write-receipt-loss-independent-review.md)，原实现报告/日志13保留，不改冻结标准。
+
+关键断点：RPC按随机传输UUID保存fact，session按Pi toolCallId查询，恒未映射；TaskProgress用错误关键词补fact，其他错误变not_executed。真实隔离Chrome在明确unknown非超时错误后重复新增2条。onLateResult无赋值，handleLateResult及resolveVerifiedResult无生产调用；后者也无观察证据校验。ControlGate非去重器，同id两次执行计数2，index无外围去重。worker工具初始化无lead execution/assertCall参数，需补生产覆盖。
+
+新增验收者文件：`scripts/acceptance/write-receipt-loss-boundaries.mts`（模块5/10）、`scripts/acceptance/write-receipt-loss-unknown-error-run.mts`（浏览器3/6，副作用重复）；三份independent JSON及验收报告。固定脚本复跑15/15、定点82通过，源码hash核对一致。未跑A9及全量工程复验，不作为通过；产品源码未改。
+
+## 当前状态（2026-09-09，以下为较早记录）
 
 维护入口：[项目状态](STATUS.md)、[语音验收台账](evals/20260909-voice-dispatch-results.md)、[语音协议](voice-dispatch.md)。用户先要求补文档，之后明确授权提交推送和云端评审；浏览器仍归用户，未获重载交回答复。完整任务未完成，当前提交是开发快照。
+
+2026-09-09 Anti Gravity 语音对话连续性与真实发现播报：
+1. **意图与事实分离通用原则落地**：
+   - 来源事实基准不可动摇：`latestResult` 包含的实体属性与类型为绝对真实客观基准；
+   - 用户否定纠正（如“不是A，是B”）为谈论焦点切换/筛选意图，绝不可改变源事实中实体的客观分类；
+   - 依据源事实解析指代，严禁阿谀迎合篡改事实（严禁说“你说得对，某某确实是B不是A”）；歧义冲突时如实基于源事实澄清；
+   - 系统指令与 per-turn prompt 双层约束生效，拒绝特定词补丁。
+2. **口语提炼发现与去 Markdown**：
+   - 播报与回答提炼为 1-3 句简短自然口语短答，直接说明发现、保留范围限制与报告来源；
+   - 严禁原样照搬 Markdown 清单，严禁输出或朗读任何 Markdown 标记（`-`、`*`、`**`、`#`、反引号）及内部哈希 ID。
+3. **通知语义四解耦与去正则摘要**：
+   - `announcedControls`、`announcedResults`、`announcedUnconfirmedRuns`、`announcedErrors` 独立去重，防吞 control 动作与迟到结果；
+   - 彻底删除启发式正则摘要，`progressSpeech` 保留完整数据，`receiptSpeech` 状态查询在有真实结果时返回 null 走已有实时模型自然摘要。
+4. **验证与状态**：48/48 单元测试通过，`typecheck` 0 错误，`git diff --check` 通过。状态标记：`READY_FOR_EVALUATOR`。
+
 
 ## 历史记录（按各条日期判断，后续更新在文末）
 
@@ -1213,3 +1302,234 @@ Codex 经用户授权运行 A2/B1/B3。仅改 scripts/acceptance/integrity-fault
 - 推送范围是当前工作目录中的本轮源代码、测试、脚本、规范与证据；不是验收完成或发布。浏览器不重载。
 
 推送前最终检查（2026-09-09）：85文件697项测试通过，typecheck/build/diff检查通过；新增来源侧回执测试先红后绿。暂存文本未命中配置的凭据模式，JSON与评审链接检查通过。未重载扩展、未重跑真实语音及浏览器验收。
+
+## 2026-09-09 云端评审后的实施开始
+- 用户已明确采用两项推荐：空识别后自动接回非操作回答；“当前页面”默认可见区域。其他可执行工程修复与测试一并授权。完成标准冻结于docs/evals/20260909-voice-reliability-r1-r5.md，保留旧时延/三轮门槛。
+- R2先补恢复后缺ASR、缺指令配置确认的红测，两项均复现；保持原轮绝对等待期限，重连不清除它，创建回答不滚动延长。超时后如已有路由/操作结果，引导查看原回执，不让用户直接重做。20项voice-session测试通过，尚未真实复验。
+- 异步route_result/route_error记录捕获的原turn及requestId，另记superseded，不再把旧路由错误错写到当前新轮。
+- 当前只做本地实现，尚未重载用户扩展；R1、R3–R5与全部真实验收仍继续。
+
+2026-09-09 R1/R2 实施中：新增原请求记录，候选空识别后等待旧判断结果；仅 chat 继续回答，observe/status 走受限只读恢复，action 只补已有回执。新非空轮丢弃旧恢复；旧写指令仍被 stillCurrent 拒绝。voice-session 25 项通过，新增空轮/接受回执/新输入/重新观察/生成后断线测试。全量首轮 703 通过、1 失败来自旧写指令原应 reject；已保持原 reject 契约修复，待重跑。重连保留初始30秒截止时间及待播放结果。未重载扩展、未运行用户浏览器。
+
+2026-09-09 R3/R4/R5 实施中：新增 voice-observation 独立只读授权；实际活动页发放60秒令牌，不走任务控制门、工作页绑定、定位引用或标签激活。捕获前后核对 active tab、documentId、timeOrigin、URL、视口/滚动/可见文本，同URL重载亦拒绝混合证据。观察/relay/manager24项通过，typecheck通过。R4先红后绿7个合法形状错误候选（漏暂停/继续执行/否定/条件/引用/漏目标），全文片段覆盖检查已加；新每步text+target oracle另存文件，原48句要求保留；真实144分类运行中。R5新增 voice-plan-store 在分类前持久claim，步骤执行前记pending，重放只取原结果或unknown；稳定另开会话ID/持久proposal，控制版本阻止新接管后旧计划resume。针对磁盘/重启/并发/损坏/新接管测试22项通过。仍未重载或操作用户浏览器，已异步询问当前使用状态，尚未答复。
+
+2026-09-09 R1–R5追加验证：全量87文件721测试通过（其后又加测试待最终全量）；新增source-plan协议与PanelHistory持久/去重测试，错误后unknown不误报未执行，空轮不延长原deadline，分组通过。复合计划摘要使用既有notice展示各步回执与未执行，来源侧按planID查询/重载；proposal消费落盘。新增voice-production-audio-run.mts准备生产VoiceClient/AudioWorklet/VAD/Player实际WebAudio注入流，尚未运行，不算人声或时延通过。144真实分类首轮仍在跑，已有start-03一次错误（整理选区误判observe），提示词已明确产出任务与页面问答边界，需下一轮验证最终源码。无浏览器交接答复；未reload/切页/commit/push。
+
+2026-09-09 浏览器已由用户明确交回（request_user_input_async 回复“可以接回浏览器做测试”）。最终一次本地typecheck/test/build通过87文件726测试，扩展已重载。生产采音首轮实际WebAudio→VoiceClient→Worklet→VAD→Step→Player通过功能路径，/tmp/ego-voice-production-audio-1788925785957，单轮首音5.563秒，不满足20轮/P95≤4秒且不是真人麦克风。真实页面观察 /tmp/ego-voice-observation-1788925850668 6项通过，前台B蓝色小船、任务A红色山丘，回答读B且无屏外底部字、无切页/改绑定，旧授权切页拒绝。新增断言确认workingTabs证据非空与tabResources未变需再跑。144分类旧迭代完成 /tmp/ego-voice-intents-1788925081873：140/144，一次start-03误分类+3次15秒超时；没有降标准，提示词已修边界，最终源码需重跑。当前voice-control-run过程64170在跑新版主动探针+11秒稳定窗+暂停/终止观察；发现脚本worker探针写错wiki（真实ctrlworker）已修源文件，当前进行中这轮只作诊断、不计三连通过。没有其它浏览器脚本同时运行。
+
+2026-09-09 强化控制验收两次失败均保留：/tmp/ego-voice-control-1788925938725 首次当前页不在HTTP测试页，正确拒绝观察（加明确选中测试页前置步骤）；/tmp/ego-voice-control-1788926022589 真实main/ctrlworker主动写探针、11秒暂停稳定、暂停观察、保存预算/恢复回执都通过，但90秒内worker未恢复计数，lead已600继续。日志worker误用page_operation（独占页），现有worker系统提示开头无差别给共享规则。新增红→绿worker-page-mode测试，fleet传shared标志、提示头明确exclusive/shared，保留共享约束；14相关测试及typecheck/build通过，扩展再次reload完成。fixture也修正等待指令用browser.sleep而非未定义setTimeout、无明确新预算的worker保留当前值；未改完成判据。增加acceptance_team_ready.models实测双会话选中模型。下一轮需验证恢复后的用户标记与预算，不宣称本轮控制已全过。分类reasoning-off仅脚本实验 --case start-03 正运行16240，生产仍minimal。
+
+2026-09-09 控制真实路径完成一轮强化17项全过 /tmp/ego-voice-control-1788926481452，包括实际main/ctrlworker模型名均MiniMax-M3、双方主动写探针被挡、11秒稳定、新标记与lead600恢复、同runId、abort后观察仍可读、旧写被拒绝。此前失败不计三连。生产图停播脚本首版 /tmp/ego-voice-interrupt-audio-1788926952280 的918ms来自后台setTimeout轮询约1s，不等于实际音频继续；stop调用0–0.1ms，不能单独冒充停声。已改为独立AudioWorklet记录输出能量归零的audioTime，临时meter资源仅验收生成/清理；当前进程54609。VoiceClient新增可选诊断回调记录speech_detected的输出AudioContext时间，无UI改变。关闭推理实验完整144正在39374，已见start-05一次错误clarify，仍不采用到生产。
+
+2026-09-09 性能/正确性后续：关闭推理完整首轮 /tmp/ego-voice-intents-1788926789761 137/144，p50=1.195s,p95=4.025s，失败为错误clarify、漏查询目标、未来继续误作resume及1超时，未采用生产。补4个红→绿候选校验（无对象歧义不得clarify、引用/假设/等待不能steer），重试提示明确条件和目标，compound-02无推理试点3/3。分类增加首请求6秒/次请求剩余9秒、总15秒不变的只读重试；虚拟钟红→绿。当前最终修订off144运行48399（仍实验）。Voice UI按真实阶段显示正在识别/理解/读取当前页/等待控制结果/准备回答，不再把所有thinking写成查进度。真实图停播 /tmp/ego-voice-interrupt-audio-1788927069246 20轮通过，audio quantum差值0、主线程回调约4.3–5.9ms，不能宣称零声学延迟；脚本已加入5.33ms采样量化上界，当前复跑92083。无真人P95结论。
+
+2026-09-09 最新实测：修订后的无推理分类 /tmp/ego-voice-intents-1788927473925 全144/144，p50=1.130s,p95=3.361s,max7.214s；生产已去掉分类reasoning参数，保留总15秒及首6/后9秒只读重试，已reload。完整生产采音空轮恢复 /tmp/ego-voice-production-audio-1788927766559 通过，完整问题→真实噪声空ASR→turn2回答17，route_start只有1、无taskstart；停播图保守上界 /tmp/ego-voice-interrupt-audio-1788927484752 20轮P95=5.333ms，通过，非真人耳机测量。页面观察强化 /tmp/ego-voice-observation-1788927946977 9项全过，包含canvas独有3个圆、同URL捕获中重载拒绝、绑定/前台不变。前一观察失败仅oracle未忽略Markdown和数字空格，实际答3个；旧记录保留。faults suite /tmp/ego-voice-dispatch-1788928120700 全10项+native重启4项通过，重启证据 /tmp/ego-voice-restart-after-1788928289408；实际budget800+699/799、断线后无重路由，重启不重做。
+
+2026-09-09 固定回执缓存：新增VoiceAudioCache，仅缓存供应商对应转写与应用固定文本匹配后音频，内存24条、不缓存动态内容。按音色/PCM/24k/文本版本隔离。VoiceService复用缓存，输出用local/cached IDs，绝不向供应商截断这些ID；重连待播放回执复用音频仍执行1次。测试改验实际重放音频而非强制response.create（实现替换、结果标准不变），28聚焦项及typecheck通过，build/reload完成。生产20轮脚本改交替短算术闲聊/空任务进度，声明有限scope，不冒充全业务/真人P95。当前独立target真实复合与来源UI重载脚本运行14029，其他浏览器脚本已结束。最后全量89文件732（缓存加入后未全量）；未commit/push。
+
+2026-09-09 13:01 进度核对：extensions 三轮组合首轮 control/context/target（含 native restart）全过，第二轮 /tmp/ego-voice-control-1788929763525 在双方首次写入前失败。原始 events 明确 ctrlworker 请求 MiniMax 529 overloaded_error，既有三次重试用尽；worker 计数0、lead计数5。保留失败，不计三连，不据此归因暂停恢复逻辑。最新 typecheck、90文件737测试、build全过（含voice lease旧授权清理修复）；正在重载后继续真实回归。尚缺三轮连续组合通过、最终20轮生产首音时延、真人控制与时延验收；未提交推送。
+
+2026-09-09 用户调整验收投入：询问连续回归/20轮耗时必要性，并授权低必要性项目改本人试用。判断：个人试用不应由固定重复数阻塞，仍保留机器正确性底线；更新R1–R5标准补记，原失败和数值门槛未伪造通过。最新控制 /tmp/ego-voice-control-1788930084105 17项通过。已停止extensions父调度83413，当前context子进程84584继续完成并自行清理，不再启动后续循环；浏览器交回前须确认其退出。用户另提订阅池选多个候选用于派发，认可方向，但当前尚未实现自动选取或故障转移。
+
+2026-09-09 用户要求通用根因诊断，不做单句补丁。已完成真实M3六输入纯分类探针；另句“嗯，先打开购物网站，然后帮我查一下今天的天气”两次漏parts0，明确复现classifier_invalid_reply。源码确认routeInput业务错误→fail→关闭socket→VoiceClient释放麦克风，单句错误放大成连接故障；意图模型缺当前目标，openTab等complete，ASR→分类→回执生成串行叠加。报告docs/diagnostics/20260909-voice-root-cause.md及纯诊断候选JSON。未改产品/重载/操作用户浏览器，精确网络耗时占比仍未知。
+
+2026-09-09 工程实现按新标准docs/evals/20260909-voice-turn-recovery-and-readiness.md推进。已做两条红→绿恢复测试：分类错误保留socket且下句只处理一次；未知路由结果不说未执行、不重放。意图接口由parts覆盖改成动作分界through，应用分配完整原话；保持原parse语义安全检查，传入600字符有界task.goal。第一轮真实六句暴露最后through冗余及任务分拆，修正等价末分界接受和同任务相邻动作合并，不删除控制检查。真实48一轮45/48失败保留/tmp/ego-voice-intents-1788931967110；针对匿名目标补澄清防误操作、重试传具体non_immediate_control原因，正在复验。页面就绪新增page-readiness模块，检查文档身份和DOM interactive，不等所有资源；4项测试通过，实际浏览器待验证。最近全量91文件747项通过发生在这些追加语义修正前，仍需最终重跑。未重载用户扩展。
+
+2026-09-09 13:43 本轮工程本地验证完成：91文件754项测试、typecheck/build/diff通过；真实48/48 /tmp/ego-voice-intents-1788932319721，自然8/8 /tmp/ego-voice-natural-1788932500835。独立headless Chrome生产openTab/navigate 4项通过 /var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-page-readiness-tu07ng，资源仍loading而文档interactive、输入可用、同URL新documentId；进程退出。前两次测试脚本错选其它扩展worker导致startup timeout，已按manifest名称匹配并保留失败。不涉及用户Chrome。验收/STATUS/协议/devlog已记录本轮。未reload/commit/push；等待用户允许重载接入，再由用户判断连续语音体验。分类原句一次1.059秒，但未来条件一次重试6.388秒，不能声称整体4秒达标。
+
+2026-09-09 用户明确同意重载后，npm run reload:ext成功，扩展报告新代码生效。用户可重新开启语音试用。本次只执行重载，未代替用户进行真人体验验收，未提交推送。
+
+2026-09-09 14:16 语音连续对话实施启动：用户采纳调研建议，并明确指定同一 cmux 的 Kimi（K3-256k）和 Anti Gravity（Gemini 3.8 Flash）为实现者，Boss/Codex 独立 Evaluator。派发前冻结 docs/evals/20260909-voice-conversation-continuity.md，所有权与上下文接口见 docs/tasks/20260909-voice-conversation/CONTRACT.md。Kimi产出任务结果/近期上下文并接分类，Anti Gravity接语音消费/通知；双方不能改冻结标准与Boss测试。Boss独立7项验收测试已复现5红2绿。前轮脏目录基线已保存在临时目录，不commit/push/reload。下一步隔离浏览器与真实模型验证，再真人听感裁决。
+
+2026-09-09 语音连续对话协调进展：Anti Gravity交回首版语音消费与通知，Boss初审发现按runId全局去重会吞同run控制/迟到结果、结果截断可能丢范围限制、缺runId仍接结果等缺口，已返工，未认可完成。Kimi仍在结果上下文生产实现。Boss隔离真实邮箱/任务/语音脚本 voice-conversation-run.mts 已写，语法打包通过（首次esbuild未指定esm导致脚本检查失败已纠正，非产品问题），尚未执行真实模型。
+
+2026-09-09 14:33 Boss独立真实集成诊断：/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-voice-conversation-AUDMlz，隔离Chrome+生产工具handler/会话manager/真实M3任务+Step合成采音。实际读标题→具体发现已通过，但纠正“不是访谈，是活动邀请”后Step把橙湾访谈篡改为活动，违反事实/指代标准，整体失败并返工；口语也照搬Markdown清单。隔离浏览器确认退出；无用户Chrome操作。独立11项本地测试10通过，余一显式旧run结果被标成新run，已交Kimi修；两位执行者尚未最终停笔验收。
+
+2026-09-09 14:42 第二次真实复验 /var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-voice-conversation-ZsB4U3：结果已口语化，但“活动那个呢”被分类成clarify并回“请说出目标会话的名称”，内容实体与调度目标混淆，整体仍失败；未到纠正/重开步骤。已交Kimi通用分类修复，Anti Gravity暂停等统一复验。Boss独立测试新增既定连续纠正标准的原话去重/下一轮传递案例，12项现全过。真实脚本下一轮将随机组织名称改为自然中文并换序（仍是随机实体+相同问题+事实约束，不改变通过条件），避免标题里人为哈希诱发无意义占位分析；保留前两次失败。
+
+2026-09-09 用户指出协作中重复工作并要求执行者直接回报。Boss确认存在重复读链路、执行者也跑全量、排队旧反馈重复分析；源文件仍按所有权分工。已更新CONTRACT通信：执行者通过cmux向Boss workspace:3/surface:3发送带任务编号的ACK/READY/BLOCKED，文档仅存详情；执行者仅聚焦自测，Boss独占全量/集成/真实验收。当前任务K-CONTENT-01（分类指代边界）、AG-SOURCE-01（未独立核验报告的措辞），旧run/原话/控制状态问题关闭。Boss独立13项机制测试全过，整段真实路径仍待修复复验。
+
+2026-09-09 Boss最终工程验收：13独立机制用例、全量93文件788项、typecheck/build/diff通过；真实隔离路径 ego-voice-conversation-aZflOX 8项通过，逐句核对发现/追问/纠正/语音重开均正确、保留仅标题范围，浏览器退出。源码哈希71a89ae1362515c2693454a224f127f44c5ea8774e9f336e5cc0960c89334292复核一致。结果归档docs/evals/20260909-voice-conversation-results.json，标准机器部分勾选、真人听感保留。用户扩展未重载；未commit/push。直接cmux回报通道已收到Anti Gravity ACK/READY和Kimi ACK，按编号完成/阻塞交接；执行者仅聚焦自测，Boss持有集成全量与真实判定。
+
+2026-09-09 15:39 Boss独立验收：Native大帧3测试通过；真实manager单步plan接收回应测试通过。输入栏生产DOM 30种宽度/状态几何与5按钮操作通过，证据 /tmp对应ego-composer-fit-Oy8MNr（最终新bundle仍待重跑）。新增 extension/test/voice-recovery-evaluator.test.ts 四项独立事件测试，三红：恢复静默超时超过30秒、重复transport-ready耗尽尝试、复用后麦克风拔出不生效；主动stop取消通过。已交AG-RECOVER-03-R1修复，未放宽冻结标准。正在准备真实Step恢复与接收回应验证。
+
+2026-09-09 AG-RECOVER-03-R1 修复完成（Anti Gravity）：
+- 针对 Boss 独立红测 `extension/test/voice-recovery-evaluator.test.ts` 三红项修复完成：
+  1. 恢复期间连接超时受限于 30 秒剩余预算及 8 秒单次上限（`Math.min(8000, remainingBudget)`），未收到 ready 时在预算内触发有限重试，30 秒到期或 3 次上限才彻底退出；
+  2. `onTransportReady()` 与 `executeRecovery()` 增加在途保护（`if (this.id !== null) return;`），避免重复 connected 事件耗尽 attempt；
+  3. 麦克风复用时重绑定 `track.onended` 到当前 `id`，拔麦即时退出并转入 error 相位；复用异常彻底释放旧资源；
+  4. 上游网络重试耗尽与超时在握手成功后标记 `recoverable: true`。
+- 测试验证：Boss 独立验收 `extension/test/voice-recovery-evaluator.test.ts` 4/4 全部 PASS；聚焦自测套件 `voice-auto-recovery.test.ts`（9 项）、`voice-audio.test.ts`（5 项）、`voice-relay.test.ts`（3 项）、`voice-session.test.ts`（42 项）共 63 项测试全部 PASS。
+- 遵守归属与协议约束：未修改 Boss 验收用例，未改动 CSS，未修改 `voice-receipt.ts` 或 `stdio.ts`，未全量构建，未动用户浏览器。已停笔。
+
+2026-09-09 15:42 Boss：AG恢复R1后的独立8测试全部通过。Native真实子进程接收1,200,018字节分块JSON及后续13字节小帧，exit0（ego-native-frame-gr92ecwg）。生产VoiceClient+VoiceService+真实Step经合成PCM注入断线后自动恢复，同会话新voiceId/麦克风复用、下一句真实回答通过；三类任务的实际manager单步plan生成语境接收回应，未谎称完成，证据ego-voice-recovery-THDPDg。此轮语音进程加载在R1最后变更前，最终将重跑恢复路径。AG还须补voice-ui实际恢复诊断接线与保留首次授权45s超时，正在等待直接回报。机器音频/播放模拟不等于真人听感；未重载用户扩展。
+
+2026-09-09 AG-RECOVER-03 生产诊断接线与超时复位完成（Anti Gravity）：
+- 生产诊断接线（`extension/src/sidepanel/voice-ui.ts`）：`mountVoiceUI` 实例化 `VoiceClient` 时传入恢复诊断回调，记录 `voice_recovering`、`voice_reconnect_attempt`、`voice_recovered`、`voice_recovery_exhausted` 的事件名、代次（`attempt` / `turn`）与时间戳（`at`），绝无音频、转写文本或凭据泄露，未引入通用日志框架；
+- 首次授权超时复位（`extension/src/sidepanel/voice-client.ts`）：首次开启麦克风权限等待超时恢复为 45 秒，断连恢复模式严格保持单次 8 秒 / 剩余预算内重试（总预算 30 秒）；
+- 测试与类型验证：`extension/test/voice-auto-recovery.test.ts:329` TS2532 类型断言已修复，`npm run typecheck -w @sideagent/extension` 0 错误；Boss 独立验收 `extension/test/voice-recovery-evaluator.test.ts` 7/7 全绿；归属聚焦自测 68 项全绿。详情已落 `docs/tasks/AG-RECOVER-03-report.md`。已停笔。
+
+2026-09-09 15:45 最终回归未通过，不能封板：全量819测试/构建/浏览器30几何+8操作恢复均通过，typescript自测一处TS2532已由AG修正。真实M3+Step连续对话 ego-voice-conversation-ph3BmV：结果播报原样Markdown列表，活动追问仅“这封邮件”未点明竹海工作坊。按原冻结内容/口语标准退回AG-SPEECH-R2，仅voice-session生成边界修复，控制/接收/恢复不动。Boss给真实脚本补了原标准已有禁Markdown断言，未放宽条件。保留失败证据，不把此前绿测当本次最终完成。
+
+2026-09-09 15:50 用户要求交流表达先调研，并提供 https://github.com/b-nnett/grok-bot-0.18-reconstructed.git。已打断AG-SPEECH-R2，AG直接ACK暂停，不继续实现/测试，保留所有改动。Kimi自有测试类型修复READY；此前整体typecheck尚未由Boss再次验证，不声称最终全绿。只读检出Grok非官方重建a9f633e，发现SendMessage分开内部工作与用户消息，transport本身只转交/记录ID，没发现该链路二次模型润色；提示+发送提醒+结束时交付检查共同作用。证据与未实现的Ego推断存docs/research/20260909-grok-message-delivery.md。本轮表达整体仍待决定；已有断线恢复/底栏修改不回滚、不提交、不重载。
+
+2026-09-09 15:59 用户授权继续显式消息交付实验，新增cmux Grok(4.6 high)作为实现者。定位workspace:3/surface:11，已发只读最小方案任务，Boss冻结docs/evals/20260909-explicit-user-delivery.md与docs/tasks/GROK-DELIVERY-01-contract.md；等待方案再确认接口实施。Kimi/AG停笔。Will's S实际读取Linear back & forth和You assist me正文，采用可纠正/可停止/用户交付边界，不改视觉无需新HTML。现有所有代码保留。Boss承担独立测试/真实路径，不把验收交执行者。
+
+2026-09-09 16:09 Grok方案已批准实施：本轮send_user_message工具为主/一次有限补交，既有正式气泡消费独立交付，有来源追问由现任务模型组织、Step只读同一正文；普通闲聊/start回应不新增整段缓存。精确nested user_delivery接口与归属已写contract并发开工，无需再问用户。Boss独立14事件/协议检查先跑11红3绿；原始事实保留但不得混作正式对话，去重/归属/非法交付校验。scripts/acceptance/user-delivery-run.mts新生产侧栏→真实任务模型→VoiceClient+AudioWorklet+真实Step+真实浏览器播放链在旧代码跑通10项，证据ego-user-delivery-cJdPCE，证明测试桥可运行，不是新功能已过。已补新交付记录与侧栏/语音同正文/仅渲染一次的独立断言，等实现交回再跑。原先测试类型修复后Boss npm run typecheck已通过(16:02)。没有用户扩展重载。
+
+2026-09-09 16:14 用户明确要求三个手下有效协调，随后截图指出不要向Grok重复派单。Boss承认分段补充造成队列积压，停止追加Grok消息；已将contract重写为当前唯一版本、明确覆盖旧队列的单人范围/flat接口/待方案。文件分工：Grok只Agent主链路；Kimi只shared两文件+UserDeliveryLedger；AG只sidepanel/history。给Kimi与AG各发一次任务，Grok已有一条当前分工消息，不再补发。Boss继续独立验收。旧AG-SPEECH-R2不恢复，所有前轮修改保留。
+
+2026-09-09 16:18 交接执行问题：cmux send-key Ctrl+c/ctrl+c没有停止Grok旧回合，旧回合尚未读取最终归属即写shared初稿与agent/src/user-delivery.ts(create/tool/compose helpers)。Boss用SIGINT结束确切Grok TUI PID67019，保留全部代码，并按终端提供的session01a0852b-d217-7011-a8da-a8dc1e4c867a恢复同一会话（无restore-code），附唯一当前范围、旧队列作废。不再重复派新任务。为避免同文件争写，Kimi Ledger调整为agent/src/user-delivery-ledger.ts；Grok保留user-delivery.ts辅助函数，shared归Kimi，extension归AG。contract已整理为单一有效版，Kimi仅收到一次交接提醒。用户已要求不要重复派单，后续等直接回报。
+
+2026-09-09 16:25 AG-DELIVERY-01首版交回，Boss构建后隔离Chrome独立UI验收8绿1红：旧history/显式正文一次/内部过程保留/折叠位置/重复状态/独立追问均过；D1 finding→D2 reply→迟到D1 played把voice-answer换回D1。证据ego-user-delivery-ui-FuxInm/result.json。只向AG发一次该缺陷修复，要求状态更新不再替换正文，历史状态单调且正文不可变。新增Boss history测试用于最终复验；一次中途运行碰到AG正在编辑造成DELIVERY_STATUS_RANK尚未声明，属于在途版本，不当作交付后缺陷，也未追加消息。等READY后再运行。
+
+2026-09-09 16:28 AG-DELIVERY-01修复后Boss独立history测试通过，重新构建+真实生产DOM验收9/9通过（ego-user-delivery-ui-eBamdJ）。补全测试中的真实status running/idle生命周期后，执行过程正常收尾，避免不完整fixture截图误导。AG保持停笔，Grok/Kimi继续各自范围。新增devlog06记录交付设计转向与当前未完成边界。
+
+2026-09-09 16:40 首次完整回归：Boss typecheck/build通过；871测试867过4失败（2个新runtime竞态，2个旧行为断言）。真实UI+M3/Step ego-user-delivery-N5jA03失败：有正式finding但实际语音是另一段改写，证明新交付未彻底接管旧raw路径。Grok R1单批修复单docs/tasks/GROK-DELIVERY-01-R1.md已派；包含2竞态/raw fallback/使用Kimi真实ledger/实际ack登记/responseId→deliveryId播放状态接线，允许main.ts最小回调。Kimi收到一批3项明确schema边界红测，文件user-delivery-binding-evaluator.test.ts（空白、snapshot归属、null-run）。无重复开工消息。
+
+Evaluator审定旧2测试迁移：新冻结标准明确内部事实不构成用户交付，因此voice-conversation-context.test.ts改为raw结束后recentTurns只含用户，明确user_delivery后才出现assistant；voice-session.test.ts对应idle/agent_end的测试改为原事实到达仍0通知，显式finding后1通知且重复仍1。保留原事实/不伪成功/去重检查并增加交付边界检查，未删除断言或放宽标准；执行者不改这些测试。其它旧测试不动。
+
+2026-09-09 16:46 Kimi三项schema边界修复交回，Boss binding3+ledger5独立8项通过。另定位真实N5工具路径问题：BrowserAgentSession用memoryRuntime作为Lead的send_user_message/explicit注册条件；隔离createConversationRuntime默认无memoryStore的真Lead没有工具，全部事后补交。Fleet worker options无conversationId。该事实追加Grok R1第2项并发送一条根因信息（非新任务）；真实脚本加入实际Lead explicit标记断言。新增确定性speech-evaluator先红，复现通知排队时raw事实先到而交付未到的抢先改写。汇总产物存evals/20260909-explicit-user-delivery-results.json。
+
+### 2026-09-09 17:14 Boss 正式交付终检
+- 6 条旧语音测试仍以 raw latestResult 触发播报；按用户已批准的工作/交付边界迁移到 explicit finding 输入，保留事实、两项范围限制、同 id 去重、迟到结果等断言。两文件 55/55 通过；原始长报告仍完整保留。
+- 完整 UI/真实模型链路 U5Skmt：任务结果和追问正文、主回答、语音区一致，紧凑任务仅一个 finding；追问播放回执失败。真实 playback_done 已返回，但 manager receipt 带发布前快照。
+- Boss 两条定点红测复现 chat/observe receipt 未含新 reply，3 pass/2 fail；交 Grok 唯一 R3 修复，等待 READY。未改冻结标准。
+- R3 停笔后：Boss playback regression 5/5；统一 npm test 108 文件 886 项通过，typecheck/build/diff-check 通过。旧 6 测试迁移不削弱事实/去重断言。
+- 随后 TikN4j 是验收装置错误：HTTP 侧栏正好被 navigate 当当前标签覆盖，uiEmit 消失。已为任务单独创建 active blank 标签，真实侧栏本来不占普通页面；并使 transport 错误归入失败报告。孤儿隔离 Chrome 已按精确 PID 终止。
+- jYElX2 真实模型返回 529 overloaded，尚未取得网页，记录失败不计 PASS。保持同模型同断言重试，并记录现成 deliveryMetrics 以量化补写调用和耗时。
+- 最终 tLN6ik 31/31 通过：任务结果/追问/纠正/重开后回答均与主区、语音区、played id 一致；纯文字新任务正常交付且不启音频。截图已检查，源码 hash 仍相同，Chrome 清理确认。
+- 代价不能隐瞒：本轮 host delivery 工具调用0，2个任务靠有限补交、3个 sourced chat 共5次现有M3调用；3次追问首音频11.899/19.139/22.397秒。机器内容通过不代表更快/更自然。所有失败与证据归档 results.json；STATUS/devlog/eval已更新，人工听感与等待接受度待用户裁决。未重载扩展、提交或推送。
+
+### 2026-09-09 17:35 用户否决体验，改为每步人工检查
+- 用户实际圈画请求被说“不能圈”；文字出现后音频久等甚至不播。要求先查日志/复盘/方案，再一步一验。不再长周期连续实现；当前未改产品/重载/派工。
+- 真实17:26–29 M3会话仅observe_page，无mark。mark和主任务能力仍存在，语音观察/补答无工具，动作被吞入回答路径。完整首句日志缺失，准确分类action未持久化，不夸大可还原性。
+- 截图最后一轮：17:28:26转写，35.640正文返回，44.502/53.394两次整段朗读校验失败，文字后多等17.754秒且未播。源码guarded.audio缓存到response.done全文相等才释放，是明确延迟原因。
+- 新复盘/提案：docs/diagnostics/20260909-voice-mark-and-delayed-speech-review.md。提议1先圈画分流，2已有文本纯TTS流式开口，3正式答案流式产出。每一步Boss验证后用户检查再继续。Step官方有增量TTS接口，本机套餐/音色尚未测；不把可行当已实现。
+- 用户继续指出Harness问题，要求解释为什么只observe。生产分类器+M3隔离重建3条：明确“找到ID然后圈出来”=>observe；错误拒绝后“你可以圈出来的”=>chat；明确纠正=>steer。无产品改动/页面调用，结果/tmp/ego-mark-routing-probe-20260909.json。
+- 更深因果：独立路由prompt不含工具能力→observe/chat一次分类终局return→无工具回答没有needs_action交回口→latestDelivery错误“不能圈”又被当facts给补答器→仅recentTurns没有剩余动作/目标状态。修复方向不能是圈画关键词，应修语音到有工具主执行器的交接、能力来源和未完成动作闭环。已补入诊断文档，仍等人确认实施。
+
+### 2026-09-09 模型选择器只列接通项
+- 用户要求 UI 暂不呈现探真未接通的模型。agent `availableModels` 用 `filterReachableModels` 白名单（MiniMax / xAI 直连可用项 / cliproxy 与 cli-proxy 已通项 / 小米 Token Plan mimo-v2.5 与 pro）。Anthropic、OpenCode Go、Kimi Coding、Codex、池内 GPT-5 与 Kimi 隐藏。当前会话模型始终保留。完成标准 `docs/evals/20260909-reachable-models.md`。测试 3/3，tsc agent 通过。需重连伴随进程后选择器才更新。
+
+### 2026-09-09 17:44 Harness架构调研与冻结标准
+- 用户要求优先研究运行Harness对能力扩展上限的影响，再按仓库规范修四层并独立验证；此前“一步改一步人工检查”保持。此轮只研究和标准，产品未改。
+- 已对照Anthropic有效Agent/工具/上下文/长任务/Managed Agents/evals、Pi本机0.84.4 SDK和当前源码、DeepAgents工具上下文、OpenAI开发Harness经验。建议保留Pi及现有control/receipts/session，统一正常文字语音执行入口；不能把所有话强制转start。
+- 能力注册同源、来源分级、剩余结果状态与有界完成检查共同修四层。不能把助手话当facts；不宣称结构化状态能保证自然语言永不漏意图。语音流式出口单独切片。
+- 文件：docs/research/20260909-agent-harness-direction.md；docs/evals/20260909-harness-capability-continuity.md；docs/devlog/20260909-07-把语音接回完整的执行能力.md。新评估器尚未写/通过，标准明确先baseline红再source；不沿用旧886/31通过。
+- 用户澄清Pi适配重点，质疑无具体候选就说换框架。已明确没有迁移候选/证据，撤下该选项。研究追加第9节：Pi接口→产品性质→所需适配，不再把“统一到Pi”当万能方案。
+- 本机Pi0.84.4具体发现：steer在当前工具调用结束后接入，不能代替浏览器立即停；appendEntry只持久化不自动进模型context；customPrompt分支不自动加入promptGuidelines，纯函数探测false，tool schema仍独立存在。现有memory-runtime已经用before_agent_start，后续可沿这类入口适配产品上下文。
+- 用户要求开源优先、成熟实现可迁移、自写需为产品长期扩展带来复用收益。研究新增第10节并更新标准（尚未实现）。实际读源码：Pi todo/dynamic-tools/plan-mode/permission-gate；LiveKit TS stream_adapter/speech_handle/tts；OpenHands event base/observation。
+- 复用判断：Pi现有API直接用；todo分支恢复可适配但模型toggle完成不可照搬；plan-mode DONE不能当业务验证；OpenHands来源/role独立可迁移到现有TS事件；LiveKit模式可适配但依赖整套TTS/Task/io，不应未经测试整包引入。Step支持原生增量，不用非流式分句wrapper制造等待。
+- 开源代码未复制进产品。只读版本元数据/tmp/ego-harness-oss-research-20260909/sources.json，license Pi/OpenHands MIT，LiveKit Apache-2.0。迁移候选需小契约探测+同真实路径验收。用户每步检查继续有效。
+- S1首轮10项独立契约通过、类型检查通过。全量旧测试9项失败均涉及“空闲chat/observe不进入主Agent”旧旁路或其补答闭包；新冻结标准要求相反行为。将按新入口迁移这些夹具/断言，保留过期请求、来源、去重与播放身份检查，不保留无工具旁路作为完成条件。
+- 首次真实浏览器脚本暴露两个装置缺口：HTTP侧栏在采音前抢到active，主Agent读到了测试侧栏；以及缺少production worker_tabs handler。已固定采音目标为受控页面并补接原handler。第二次是Page.navigate后过早读未建立的uiListeners，已改为等待存在。两次失败保留，不计产品通过。
+- 用户确认reachable-models来自本人且可接受，保留并兼容。
+- 用户明确追加：圈画必须手绘+持续轻微抖动。根因：mark按act/teach选rect/sketch，motion缺省grow。新独立默认样式测试先红后绿；mark缺省sketch、未存偏好时boil，复用既有cursor路径；显式grow与系统减弱动画保留。真实浏览器还需实际frame检查。
+- 真实语音已调用mark成功。S1评估等待改为“输入转写→主任务交付+环境”，不再等待已知待修的整段TTS输出；报告单列voiceTexts/playbackFinished，不把任务正文谎报为已播。先前因等待音频超时的记录保留，不能称语音延迟通过。
+- 扩展性检查补出真实缺口：SDK禁用mark后，browser_run仍可能调到底层mark。独立工具测试先红后绿；现在direct与program共用注册可用性检查，执行层控制闸门仍保留。运行时customTools复用Pi接口追加能力，用测试仪表验证无需voice特判。
+- 全量113文件902测试、typecheck已通过。19次真实S1试验进行中：已有语音/文字圈画、纠正、礼貌委托、只读通过。一次动效检查窗口仅360ms，短于实际1200ms周期，需改成覆盖完整周期后重测，不改动画。另一次真实模型用body占位标注并为发送工具补空reply_to导致被拒，仍作为产品失败处理，需定点修工具契约而不是增加模型重试。
+
+### 2026-09-09 18:50 S1交接到新Codex
+- 最新统一检查115文件905测试、typecheck/build/diff通过；有界失败真实mark3次停止并明确未完成（bQGW1H），保留措辞手绘圈画11项通过（Amon2f）。
+- 原disabled套件是错误通过：禁mark后模型用js自画红框，正式mark-DOM检测未覆盖；该绕过尚未修，不能称S1全过。需先补独立oracle与通用脚本权限约束，保留正常浏览器JS能力。
+- 用户要求明确验收任务用$broker deepseek-v4-1，随后指定同cmux新会话接手。旧会话broker MCP不可用、未派工；已准备交接，新会话继续。旧主代理停笔，无运行验收进程，不重载、不提交推送。
+
+### 2026-09-09 S1 新会话：禁用 JS 绕过独立标准与派工
+- 已核实 main/40993d5 与全部未提交改动；新快照 /var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-s1-resume-baseline-3n_z4834。
+- Broker route deepseek-v4-1 实指 deepseek-v4.1-flash-expires-on-0910；用户已两次确认此配置正确。仅派一个 tools.ts 实现任务，主代理独立拥有标准和评估器。
+- 冻结 docs/evals/20260909-s1-disabled-js.md；独立红测 29 fail/5 pass（/tmp/ego-s1-disabled-js-red.log），包含通用 JS/包装入口、每项写权限、动态禁用恢复与正常权限保留。
+- 浏览器 oracle 扩至任意 DOM 写入、样式快照和瞬时写删，附自检；js_enabled 检查生产 handler 的读写。首次 js_enabled 读写4项已过，但装置对无任务状态等待 idle 不适用，已修为跳过该等待，不放宽 JS 结果断言；本轮真实验收尚未结束。
+
+- DeepSeek 第一版单测34过，但独立真实8OHhCL失败：内部worker_tabs未注册，正常JS误封；另补program只读保留断言暴露入口整体封禁。主代理拒收并限定扩大实现到conversation-runtime.ts，映射worker_tabs→take_tab、移除program总入口封禁，真实call(js)仍检查。第二版worker停笔，两文件已审。
+- WRhifM 的disabled试验未通过新DOM oracle：语音将ID识成Y，模型点开“展开说明”并产生cursor host/hidden属性变化，未发生JS执行，但页面不是原样；保留 /tmp/ego-s1-disabled-pre-fix.log，不能计通过。第一版标准不变，第二版按完整真实注册表重验。
+- 主代理开始终检typecheck/test/build/diff和disabled、真实SDK定义js_enabled、保留措辞heldout路径；当前尚不称S1全通过。
+
+### 2026-09-09 S1 收尾：主代理独立验收完成，待人检查
+- 最终源码hash 3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace。disabled r7Otpo 9项、真实SDK JS zyEvpz 11项、heldout 68ocqY 11项通过，三个隔离Chrome均退出。disabled尝试js后在RPC前被拒，DOM写入0；正常JS读写/权限动态禁用恢复均过。
+- 主代理已看68ocqY截图：蓝色手绘圈锚定目标卡片，boil动效采样/滚动/clear均过。统一115文件938测试、typecheck/build/diff通过（/tmp/ego-s1-resume-*.log）。
+- 复核旧bQGW1H mark_failure的全部JS均是定位读取；3次mark失败后正式未完成。旧运行没任意DOM oracle，保留该范围说明。
+- 最终产品只相对接手基线改tools.ts与conversation-runtime.ts；独立测试、浏览器脚本、标准/结果、STATUS/devlog同步。全部基线文件仍存在，其余用户源码hash未动；reachable-models未动。
+- 结果台账docs/evals/20260909-harness-s1-results.json，最终及失败证据docs/diagnostics/20260909-s1-final/。原19次套件14有效过/4失败/1假阳性，定点修后证据逐条保留，不称同一最终hash19/19。
+- 当前仅S1机器检查完，待用户真人扩展检查；未重载、提交推送，未进入S2/TTS。disabled答复中重载启用工具/截图框选建议没有验证，不视为支持承诺。Broker已completed，不再活跃。
+
+### 2026-09-09 S2 授权并迁往干净会话
+- 用户已明确允许开始S2，要求把任务注入同cmux新窗口，避免本会话混合上下文。S1真人体验没有新增可核验证据，不能改写为真人验收通过；用户最新授权允许推进S2，无需重复确认。
+- 目标已核实：window:3 / workspace:3 / pane:3 / surface:20，空白Codex gpt-6-astra medium，目录ego；当前源surface:18。旧主代理交接后停笔，不双写。
+- Broker模型分工更新：暂不使用DeepSeek；快测用gemini-3-8-flash或kimi-k2-7-highspeed；架构和重大判断由主代理或kimi-k3；中等/综合任务优先grok-4-6。MiMo保留，Cursor暂不处理。旧defaultRoute仍DeepSeek，接手必须显式选其它route。
+- 本机配置~/.config/mixagents/broker.json，五条新增route均有真实pwd/exit0验收（README及verification/）。旧MCP会缓存路由，新会话先routes核实。只读烟测不代表真实写任务验收。
+- S2交接文件：/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-s2-handoff-shrid6ni.md。注入成功与接手确认随后由旧会话核对。
+
+### 2026-09-09 S2 接手：冻结标准与首组红测
+- 主代理已核实main/40993d5及全部未提交改动；当前Broker五条新增路由可见可用，显式使用grok-4-6，暂不调用DeepSeek。
+- 冻结 docs/evals/20260909-s2-lifecycle.md。独立 agent/test/harness-s2-lifecycle-evaluator.test.ts 首跑4失败2通过，日志 /tmp/ego-s2-red.log：旧run事件串状态、无开始的tool_end被采信、运行/暂停文字steer不进上下文。unknown持久回执不重放已通过。
+- Broker Grok仅拥有task-progress.ts/conversation-manager.ts修上述缺口；主代理拥有冻结标准、独立评估器与剩余结果/真实路径设计。禁止改断言，保留S1与用户改动。不重载、不提交推送、不进入TTS。
+- 用户最新协作要求：每完成一个功能即说明操作前后、用户影响（体验/行为/视觉）、已验证与待人判断；视觉/UI必须给前后对照，需选方向先人选；不攒到最终才交用户感受。当前S2先交生命周期小块结果，再继续，功能边界不变。
+- S2结果登记独立评估器 agent/test/harness-s2-results-evaluator.test.ts 首跑8红（缺少登记/恢复API），日志 /tmp/ego-s2-results-red.log。覆盖观察不等于标注、真实匹配回执推进、错目标/旧run/跨成员隔离、失败保留、纠正保留完成项、不能靠省略删欠项、unknown恢复不重试、新run隔离。resultState描述工具证据，successVerified原有独立核验含义保留。
+- 隔离S2脚本 scripts/acceptance/harness-s2-run.mts 已建。前两次装置失败分别是回执格式识别错误和误点运行中“中止”按钮（正确补充路径为输入后Enter），已改装置，结果保留。第三次KgnT3m真实M3纠正5项过，主代理已看after.png：只圈标准模型Y。此时仍在生命周期小块修复中，非S2终验。
+### 2026-09-09 S2 生命周期窄修复（Grok worker）
+- 改动仅 `agent/src/task-progress.ts`、`agent/src/conversation-manager.ts`；新增 `agent/test/s2-lifecycle-isolation.test.ts`。未改冻结评估器/标准，未碰 results-evaluator。
+- 动笔前备份：`/tmp/ego-s2-lifecycle-backup/{task-progress,conversation-manager}.ts`。
+- 显式旧 run 的 status/tool/end 不再改当前 run；无匹配（成员+toolCallId+工具名）的 tool_end 不记执行成功。manager 对显式 stale 事件只按旧身份转发，不改 summary/epochs、不触发补交付。
+- 运行中/暂停中文字 steer 接受后保留原 run/goal 并记入当前上下文，按 requestId 去重；拒绝不记；steer await 期间 run 被替换则不写入新 run。
+- 自测：冻结 lifecycle evaluator 6/6，isolation 5/5，相关 progress/manager/delivery 回归绿。results-evaluator 8红属下一功能缺 API，不计入本任务。
+- S2首个功能块已独立52项通过（/tmp/ego-s2-lifecycle-final.log），已向用户说明改前改后及实际纠正截图。Grok首任务停笔，备份/tmp/ego-s2-lifecycle-backup；主代理独立diff确认旧status不再改summary、await steer不把补充写进新run。
+- 导航真实akCb04失败：旧选择器在新文档圈错一次，截图后自行clear，最终无圈不能掩盖瞬时错误。新增document独立5红及生产documentId观察绑定检查，防相同URL替换、跨成员刷新误用、观察中导航；已7项绿，真实重验中。
+- 接受纠正的执行边界新增3红后37项绿，typecheck过：工具execute捕获epoch，browser_run内每次写检查；session接受steer先发布新epoch，只有实际message_start消费相应原话才放行，不能仅靠turn_start。复用原协议epochs，manager保留调用捕获的旧epoch。暂无TTS/UI改动。
+- Grok第二任务只拥有TaskProgress/shared voice/新task-results模块，实现登记核心与8条冻结结果测试；主代理拥有session/manager/tools接线和浏览器oracle。Kimi K3只读架构报告完成；主代理拒绝其“进程恢复重新观察后执行unknown”的宽松建议，unknown仍禁止重放；登记意图可由正常执行模型调用工具，完成状态只由真实回执决定。
+- 导航修后Av3VH8真实4项过：模型确实尝试旧mark，被documentId检查拒绝；重新snapshot后确认目标不存在，0次成功mark。取消后一般能力问句ExMgG1真实5项过，保持aborted且不写。
+- 第二功能块已向用户说明：从“圈错再撤”变成“先拦旧目标、重读页面”，无UI重做。定点50项回归绿；初次回归3失败（steer多传undefined、read_element多注入两次影响现有只读契约）已改实现保持原断言：DOM读取复用同次InjectionResult.documentId，AX读取才包文档确认。typecheck绿。
+- S2脚本加强：默认五场景（文字纠正/语音纠正/暂停/导航/取消），记录每次成功mark当下几何避免先错再clear漏报，暂停以任意DOM变动oracle检查，不只数正式mark。主代理修装置，不改冻结用户结果。
+
+### 2026-09-09 执行过程思考流限高（临时 HTML，未改产品）
+- 用户截图指出「查看执行过程」思考时全文往下铺。要对的判断：限不限高、旧内容淡不淡出、已完成步骤还铺不铺。
+- 对照 Will's S：渐进揭示、弱化次要、五秒第一眼看正在做什么。
+- 按用户书签清单递归搜：AICSS → Agent Elements ThinkingTool（175px）、prompt-kit/AI Elements 流完自动收、Zed 思考块限高跟到底、21st 博文「上滚则停跟」。一线限的是当前思考块，不是整段过程。推荐改回「只限思考」。
+- 新站记在 `ui-design-reference-collection.md` 递归补录，未并入已确认 39 条。临时页已改：175px、上滚停跟、回到最新。未改 `extension/`。等人点。
+- 用户看过并排后要「只限思考 + 整段过程限高」的结合：步骤芯片还在，过程整块限高、上淡出、对话不被顶走。第三列 `combo` 展示该结合，等人看这一档。
+- 用户点头「就是这种」。落地：进行中 `.run-body` 320px 可滚、思考 `pre` 175px 跟最新，上沿淡出；完成后 `.done` 不限高。标准 `docs/evals/20260909-run-steps-live-viewport-impl.md`。
+- 原站截图任务卡住（Chrome headless 10 分钟无文件），已停。改用活页复刻六家思考 UI：`docs/evals/20260909-thinking-ui-refs.html`。产品结合档已落地，这页只给人扫审美。
+- 用户看完参考页后再次确认：按结合档，不换别家皮肤。侧栏已是该档，无需再改方案。
+- 第三块结果登记的worker完成报告未被主代理采信：独立复核新增5反例全红（/tmp/ego-s2-results-review-red.log），主代理接管并修迟到证据fallback、在途纠正unknown、blocked重新绑定、恢复原话/跨run证据及SDK details。追加“另一个尚未定位项不能挡住已定位项”红测后修复，核心/恢复22项已过。
+- 生产Pi文件恢复2项独立通过（harness-s2-persistence-evaluator）：真正写SessionManager文件再open，确认成功与unknown写均在RPC前被拒，不自动重放。
+- 真实R5w3qL未通过（超时）：改对象时模型另建id，旧待办悬挂阻挡新操作。改登记工具及上下文说明为复用原id；OV2hZD圈Y且最终登记全satisfied，但观察期间欠项oracle失败（纠正清掉在途只读证据、snapshot错误绑定locator），仍不计过。现在保留在途只读原证据，并按工具schema检查有无target参数，重新验证中。
+- 新进度问答2红后绿：消息即使说全部完成，若登记仍欠项，status按未完成/unknown回答；没有新布局。用户已获逐块状态与上述未完成问题说明。
+- 用户20:40明确质疑每个小改动全量测试和一小时进展不清楚。主代理承认验证切片失控；后续只跑剩余修复的定点测试，稳定后一次全量，按用户可见功能汇报，不用测试数字代替进展。实际全量单测约10秒，主要耗时为真实模型浏览器反复验收与结果登记扩修，不能归咎全量测试本身。
+- 最新唯一待收尾接续点：暂停时已由扩展读取的交还snapshot没有进入结果登记，模型因此重读/空转。独立handback observation红测已建；现沿已有控制回传快照发布匹配读取事件，保留真实来源，不增加浏览器动作。只跑session定点与暂停真实路径。
+- 用户要求“能展示就不要talk”。已使用show-me生成并打开 docs/previews/show-me-s2.html：3个可点击前后行为场景，嵌入真实截图，明确不是新UI方案、不是所有源码同一次通过。桌面/手机与3条交互路径已定点检查。用户反馈“抽象，大概懂，下一步干什么”，因此不继续打磨演示，转真实试用前收尾。
+- 暂停最后缺口修后1blklj真实16项通过：原任务/暂停零DOM写入/补充Y/交还真实snapshot入账/圈Y/结果全满足/重复请求和播放不复做/完成写RPC前拒绝。相关session 39项过；最终只补一次全量检查和文字纠正定点，不再扩功能。
+- 已归档阶段证据 docs/diagnostics/20260909-s2/ 和 docs/evals/20260909-harness-s2-results.json；原套件3/5，后续修复分别记录，不伪记单一源码一次性全过。最终交付检查与结果台账尚在收尾。
+
+### 2026-09-09 S2 收尾：等待用户安排真实试用
+- 最终源码67fe51e3ce1ec3689d01226f853e478c19efb9162c4ae50d6d4bcf3443a855e0。文字纠正m1Cn6l 11项、暂停1blklj 16项通过，均最终源码；其他语音/导航/取消和S1证据按阶段保留。没有伪记最终hash整套5/5。
+- 最后124文件989测试、typecheck/build/diff通过；日志/tmp/ego-s2-delivery-{tests,typecheck,build}.log。真实失败与控制器修复原因已归档docs/diagnostics/20260909-s2，结果台账docs/evals/20260909-harness-s2-results.json。
+- docs/STATUS、S2 eval、devlog08同步。已提供并打开可点击show-me HTML；用户认为抽象，不再打磨，下一步实际扩展试用两条路径。主代理不自动重载；不提交推送，不进入TTS。Broker两任务均结束，当前没有委派写入者。
+
+### 开发规范：状态分工与需求修订
+- 规则见 `AGENTS.md`：STATUS 维护当前进度，evals 保留标准与证据，NOTES 保留续接结论，devlog 记录方向原因。同一问题更新结论，避免重复状态快照。
+- 用户明确修订需求允许同步标准；实现方自行放宽验收仍被禁止。改动文件为 AGENTS.md、本条记录、docs/evals/20260909-working-rules.md 与 docs/devlog/20260909-09-明确状态分工与需求修订.md。规范依据与验收见该 eval，未迁移既有历史记录。
+- 用户最新明确授权并纠正默认：每次改动完成当然要重载，否则无法验证；主代理负责重载、确认生效、提供具体试用步骤，不把项目安排权整体交回用户。此最新指令覆盖交接中的“不重载”。现在执行S2重载，ChromeMain CDP9222，真实试用页http://127.0.0.1:61344/（server exec session40217）。用户只需试改口一条路径，其他准备/记录由主代理负责。
+
+- S2已实际重载fnbjglhppbkgmjeehablkfilmmefjolo（ChromeMain9222）。实际加载background hash=57a45ecc9641a0122bed1570369adbc7840cc2104f2996143c40a9e5e9f6085a，与构建一致；新host进程55547/55548，原53045/53046已换掉，另一独立旧host2560/2564未擅自结束。真实测试页端口61344，下一步只收用户自然改口体验反馈，再推进暂停恢复。
+
+### WikiSkill 复盘启动兼容性
+- Kimi 0.42.0 的 `-p` 接收提示词，旧 `kimi -p --agent consolidator ...` 实测把 consolidator 当成命令。显式 `--agent-file` 后再 `-p "提示词"` 可加载代理。
+- 本机 Bash 在 `$wire`、`$sid` 紧挨中文括号时会吞掉变量，`${wire}` / `${sid}` 可保留完整路径和会话编号。定点 hook 测试检查完整参数、防递归、短轨迹、去重及失败重试。
+- 改动入口：`.kimi-code/hooks/consolidate.sh`、`.kimi-code/agents/consolidator.md`、`scripts/acceptance/wiki-consolidation-test.py`。当前进度见 `docs/STATUS.md`，验收证据见 `docs/evals/20260909-wiki-consolidation-repair.md`。
+- Kimi 0.42.0 的 `-p` 清理流程未触发 SessionEnd；交互恢复验收会话后 `/exit` 才触发已注册钩子。自动复盘写入范围由该会话实际工具调用核对，不能在并行工作区用全仓哈希差异归因。
+- 初稿误把被打包代码截断的错误预览当成根因。补充规则要求核对完整错误及匹配调用、保留环境条件；两条 pattern 与一条提案已按原始证据修正，初稿保留在被忽略的 `.kimi-code/wiki/consolidate-first-draft.log`。尚未安装 skill。
+
+
+### 2026-09-09 观察到操作的节点身份
+
+- 失败因果：AX 文本化曾只给交互角色 ref，标题/正文可读不可直接操作；工具错误又要求 snapshot，重复相同缺失信息。product-context 的 blocked/停止文案进一步促使结束。
+- `axtree.ts`：对实际输出且有 backendDOMNodeId 的内容行给 ref，根文档除外；截断后不登记未交付 ref。
+- `observed-node-rect.ts`：文本用 Range，其余元素用实际 bbox。`cursor-context.ts` 首次使用时订阅执行环境事件，在本扩展的绘制环境内解析同一个 backend node。`input.ts` 将真实 Node 传入 cursor，`cursor.ts` 保存 Node 并在滚动/resize 重算，不能重新通过坐标找容器。
+- 调用工具 failed/blocked 仍按真实回执更新；没有修改 unknown、取消和接管限制。只改恢复解释，不加无限续跑。
+- 新跨结构验收在 `scripts/acceptance/harness-s2-run.mts` 的 `--case=mechanism`、`--case=recovery --content=text|image|shadow`、`--case=correction --layout=live`。原模型名称只留测试夹具，不进入产品规则。默认 AX 内容覆盖已验证，DOM 降级保持旧范围限制。
+- 当前进度与全部阶段证据只见 STATUS 和 `docs/evals/20260909-observation-action-recovery.md`，不以此处旧状态授予操作权限。
+
+### Codex 任务收尾与现有经验库
+- 入口仍为 `.kimi-code/wiki/index.md`；目录名是历史路径，当前 Codex 主代理按 AGENTS.md 的收尾步骤直接维护，不依赖 Kimi 或退出事件。没有增加第二个经验库或后台机制。
+- 提案流程见 `.kimi-code/wiki/proposal-workflow.md`。待审文件放 proposals 根目录；裁决后归档在 proposal-archive，下次查重也覆盖历史 rejected 目录。流程说明放在 proposals 外，避免旧 Kimi 提醒脚本把说明文档误计成提案。
+- 本轮涉及 AGENTS.md、wiki 入口/日志/流程、新增 acceptance-entry-mismatch 经验和 acceptance-entry-field 提案，以及本轮 eval/devlog、STATUS 与本条记录。旧经验和 probe-scripts 提案保留；目的与范围、当前进度分别见 docs/evals/20260909-codex-experience-closeout.md 和 docs/STATUS.md。

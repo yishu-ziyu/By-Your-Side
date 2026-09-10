@@ -1,0 +1,973 @@
+{
+  "classifier": {
+    "reasoning": "off-production",
+    "sourceFingerprints": {
+      "agent/src/voice-intent.ts": "88f32488df40fbf7e9c6227a8399673c597abaea8a7130795c1324f66cb267d6",
+      "agent/src/session.ts": "ecae767be0283199a906e4e477427fb5a17aee0def1bef0063e7c2f64c63be55"
+    },
+    "oracleSha256": "06ba4819f9050b90069e5ccbbc16bb1e681c55feb509fee7865393f33d592f05",
+    "scope": "all",
+    "model": "minimax-cn/MiniMax-M3",
+    "datasetSha256": "82ddc35669d1bd3d27ef94a7a3d5940754fb990319dd221fb5f204a80d6de19b",
+    "promptSha256": "7be31381d5d22a42b158ce77f56ba6976c80f54dbdc2681f67940813686e832f",
+    "results": [
+      {
+        "id": "start-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1160,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "帮我找一张一千元以内的书桌。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "start-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1124,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "打开测试页，筛出价格低于800的商品。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "start-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1257,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "请把这段选中文字整理成三点。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "start-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 816,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "根据我选的截图查找同款。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "start-05",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1292,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "帮我比较这两款椅子。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "start-06",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1285,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "新建一个任务，查找广州明天的天气。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 956,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "预算改成800。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 4594,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "再按价格从低到高排列。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1448,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "不要黑色了，改成白色。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1389,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "把搜索范围扩大到全国。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-05",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 961,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "再加一条，必须是实木。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-06",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1885,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "改成只看有货的。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-07",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 848,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "刚才说错了，预算是600。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "steer-08",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2672,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "请把结果整理成表格再给我。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "status-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1308,
+        "result": {
+          "steps": [
+            {
+              "action": "status",
+              "text": "现在做到哪了？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "status-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1316,
+        "result": {
+          "steps": [
+            {
+              "action": "status",
+              "text": "卡在哪一步？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "status-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1274,
+        "result": {
+          "steps": [
+            {
+              "action": "status",
+              "text": "还在做吗？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "status-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1216,
+        "result": {
+          "steps": [
+            {
+              "action": "status",
+              "text": "任务目前是什么状态？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 3495,
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "暂停任务，我来操作。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 830,
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "先停一下。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 7249,
+        "result": {
+          "steps": [
+            {
+              "action": "resume",
+              "text": "继续原任务。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2450,
+        "result": {
+          "steps": [
+            {
+              "action": "resume",
+              "text": "页面我改好了，交还给你继续。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-05",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2137,
+        "result": {
+          "steps": [
+            {
+              "action": "abort",
+              "text": "终止当前任务。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-06",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 3899,
+        "result": {
+          "steps": [
+            {
+              "action": "abort",
+              "text": "取消这个任务。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-07",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2351,
+        "result": {
+          "steps": [
+            {
+              "action": "clarify",
+              "text": "停止。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "control-08",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1847,
+        "result": {
+          "steps": [
+            {
+              "action": "silence",
+              "text": "别说了。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2092,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "你好。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1055,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "十加七等于多少？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2051,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "如果预算改成800会怎样？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 848,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "你能不能修改预算？",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-05",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 5094,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "他刚才说预算改成800。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-06",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1694,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "我昨天让别人把预算改成800了。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-07",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2545,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "解释一下暂停和终止的区别。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "negative-08",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2172,
+        "result": {
+          "steps": [
+            {
+              "action": "chat",
+              "text": "请读出这句话：“终止当前任务”。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "target-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 844,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "把比价会话的预算改成800。",
+              "target": "比价"
+            }
+          ]
+        }
+      },
+      {
+        "id": "target-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1167,
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "暂停查天气会话。",
+              "target": "查天气"
+            }
+          ]
+        }
+      },
+      {
+        "id": "target-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1640,
+        "result": {
+          "steps": [
+            {
+              "action": "resume",
+              "text": "继续订酒店会话。",
+              "target": "订酒店"
+            }
+          ]
+        }
+      },
+      {
+        "id": "target-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2820,
+        "result": {
+          "steps": [
+            {
+              "action": "abort",
+              "text": "终止整理资料会话。",
+              "target": "整理资料"
+            }
+          ]
+        }
+      },
+      {
+        "id": "target-05",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2651,
+        "result": {
+          "steps": [
+            {
+              "action": "status",
+              "text": "购物会话做到哪了？",
+              "target": "购物"
+            }
+          ]
+        }
+      },
+      {
+        "id": "target-06",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 5188,
+        "result": {
+          "steps": [
+            {
+              "action": "clarify",
+              "text": "把另一个会话改成600。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-01",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2512,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "预算改800，不，改600。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-02",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2459,
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "先暂停任务，",
+              "target": null
+            },
+            {
+              "action": "steer",
+              "text": "再把预算改600，等我说继续。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-03",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2617,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "把预算改600，",
+              "target": null
+            },
+            {
+              "action": "resume",
+              "text": "然后继续原任务。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-04",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 820,
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "把预算改800，再按升序排列。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-05",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 2537,
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "暂停任务，",
+              "target": null
+            },
+            {
+              "action": "status",
+              "text": "告诉我做到哪了。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-06",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 4790,
+        "result": {
+          "steps": [
+            {
+              "action": "status",
+              "text": "先查询进度，",
+              "target": null
+            },
+            {
+              "action": "pause",
+              "text": "然后暂停任务。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-07",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 850,
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "不要终止任务，只暂停。",
+              "target": null
+            }
+          ]
+        }
+      },
+      {
+        "id": "compound-08",
+        "repeat": 1,
+        "ok": true,
+        "elapsedMs": 1261,
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "另开一个任务查天气。",
+              "target": null
+            }
+          ]
+        }
+      }
+    ],
+    "ok": true
+  },
+  "natural": {
+    "evidence": {
+      "sourceSha256": "90191d38a2a4dec1a3da8faf3e1577af736d78b22744674c283889a3128bd26a",
+      "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+      "scriptSha256": "dd36e02b2d46055687dc855d5be1faaa846a7f86940258eac0143642c281c400",
+      "backgroundSha256": "e8cf6b7e892374c45110ae737ab064cfdc06a818d237d00ea96d53dc4ce12ac8",
+      "sidepanelSha256": "329a34bc62d5b97d238658f09f75d0673593bc1576ef2bda5c4b29182613ea3f",
+      "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+    },
+    "model": "minimax-cn/MiniMax-M3",
+    "results": [
+      {
+        "state": "running",
+        "goal": "打开地图",
+        "text": "呃，其实我想打开的是YouTube，然后还需要你帮我检查一下最近的这个邮箱。",
+        "actions": [
+          "steer"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "呃，其实我想打开的是YouTube，然后还需要你帮我检查一下最近的这个邮箱。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 1059
+      },
+      {
+        "state": "running",
+        "goal": "打开地图",
+        "text": "把当前任务改为打开YouTube，然后检查最近的邮件。",
+        "actions": [
+          "steer"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "把当前任务改为打开YouTube，然后检查最近的邮件。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 1191
+      },
+      {
+        "state": "paused",
+        "goal": "打开地图",
+        "text": "不看地图了，改为打开YouTube。",
+        "actions": [
+          "steer"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "steer",
+              "text": "不看地图了，改为打开YouTube。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 1043
+      },
+      {
+        "state": "idle",
+        "goal": null,
+        "text": "嗯，先打开购物网站，然后帮我查一下今天的天气。",
+        "actions": [
+          "start"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "嗯，先打开购物网站，然后帮我查一下今天的天气。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 2019
+      },
+      {
+        "state": "idle",
+        "goal": null,
+        "text": "呃，帮我打开一下YouTube。",
+        "actions": [
+          "start"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "呃，帮我打开一下YouTube。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 1835
+      },
+      {
+        "state": "running",
+        "goal": "查商品",
+        "text": "另开一个任务检查邮箱。",
+        "actions": [
+          "start"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "start",
+              "text": "另开一个任务检查邮箱。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 1734
+      },
+      {
+        "state": "running",
+        "goal": "查商品",
+        "text": "先暂停任务，再把预算改600，等我说继续。",
+        "actions": [
+          "pause",
+          "steer"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "pause",
+              "text": "先暂停任务，",
+              "target": null
+            },
+            {
+              "action": "steer",
+              "text": "再把预算改600，等我说继续。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 6388
+      },
+      {
+        "state": "running",
+        "goal": "查商品",
+        "text": "我想了一下，把另一个会话改成600。",
+        "actions": [
+          "clarify"
+        ],
+        "result": {
+          "steps": [
+            {
+              "action": "clarify",
+              "text": "我想了一下，把另一个会话改成600。",
+              "target": null
+            }
+          ]
+        },
+        "ok": true,
+        "elapsedMs": 1794
+      }
+    ],
+    "ok": true
+  },
+  "page": {
+    "ok": true,
+    "checks": [
+      {
+        "name": "open returns an interactive document before the held image completes",
+        "ok": true
+      },
+      {
+        "name": "Chrome still reports loading at tool return",
+        "ok": true
+      },
+      {
+        "name": "the returned document contains the actual usable input",
+        "ok": true
+      },
+      {
+        "name": "same URL navigation waits for a different document",
+        "ok": true
+      }
+    ],
+    "source": "production openTab/navigate in isolated headless Chrome, no user profile",
+    "stage": "probe-ready",
+    "open": {
+      "tabId": 1829276314,
+      "url": "http://127.0.0.1:51422/",
+      "title": "Readiness 1",
+      "readiness": "interactive",
+      "documentId": "343F6EA48A4D440E8DDD1CBEDD4E5A02",
+      "waitMs": 13
+    },
+    "tab": {
+      "status": "loading",
+      "url": "http://127.0.0.1:51422/"
+    },
+    "input": "ready",
+    "navigate": {
+      "url": "http://127.0.0.1:51422/",
+      "title": "Readiness 2",
+      "readiness": "interactive",
+      "documentId": "3464B891CB71B0A18AF08DC18ED4A228",
+      "waitMs": 143
+    },
+    "browserExited": true
+  }
+}

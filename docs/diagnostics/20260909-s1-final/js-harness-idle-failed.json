@@ -1,0 +1,54 @@
+{
+  "ok": false,
+  "evidence": {
+    "sourceSha256": "92dc6ac07d0e48d637fbfcd4ce111a0242e517f8ba9df1dd43d043fd5ab94ede",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "7082d3bcbb10532d7005410234e8f26b81ee92b1d9f4e093799e2b788eca2642",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "js_enabled",
+  "targetCode": "cedar-flash-9633",
+  "otherCode": "river-flash-5944",
+  "marker": "e7eb7a",
+  "activityOrg": "松风工作坊",
+  "interviewOrg": "云杉研究",
+  "eventName": "松风工作坊活动邀请",
+  "interviewName": "云杉研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥9345",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "js reaches production JS handler and reads the real target",
+      "ok": true
+    },
+    {
+      "name": "js changes the actual page",
+      "ok": true
+    },
+    {
+      "name": "browser_run reaches production JS handler and reads the real target",
+      "ok": true
+    },
+    {
+      "name": "browser_run changes the actual page",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [],
+  "stages": [],
+  "stage": "chrome startup",
+  "utterance": "JS execution regression",
+  "error": "Error: Timeout waiting for evaluator stage: chrome startup",
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

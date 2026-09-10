@@ -19,6 +19,20 @@ export class PanelHistory {
   }
 
   record(item: PanelHistoryItem): PanelHistoryEntry {
+    const stream=item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='user_delivery_stream'?item.msg.event.stream:null;
+    const completed=item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='user_delivery'?item.msg.event.delivery:null;
+    if(stream||completed){
+      const id=stream?.id??completed!.id;
+      for(let i=this.entries.length-1;i>=0;i--){
+        const old=this.entries[i]!.item;
+        if(old.kind==='server'&&old.msg.type==='agent_event'&&old.msg.event.kind==='user_delivery_stream'&&old.msg.event.stream.id===id&&item.kind==='server'&&old.msg.conversationId===item.msg.conversationId)this.entries.splice(i,1);
+      }
+    }
+    const plan=taskPlan(item);
+    if(plan){
+      const index=this.entries.findIndex(e=>{const old=taskPlan(e.item);return old?.id===plan.id&&old.conversationId===plan.conversationId;});
+      if(index>=0){const old=this.entries[index]!;if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(index,1);}
+    }
     const receipt = taskReceipt(item);
     if (receipt) {
       const index = this.entries.findIndex(e=>{
@@ -29,6 +43,33 @@ export class PanelHistory {
         const existing=this.entries[index]!, old=taskReceipt(existing.item)!;
         if (old.updatedAt>=receipt.updatedAt) return existing;
         this.entries.splice(index,1);
+      }
+    }
+    const delivery = userDelivery(item);
+    if (delivery) {
+      const index = this.entries.findIndex(e => {
+        const old = userDelivery(e.item);
+        return old?.id === delivery.id && old.conversationId === delivery.conversationId;
+      });
+      if (index >= 0) {
+        const existing = this.entries[index]!;
+        const old = userDelivery(existing.item)!;
+        const oldRank = DELIVERY_STATUS_RANK[old.status] ?? -1;
+        const newRank = DELIVERY_STATUS_RANK[delivery.status] ?? -1;
+        if (newRank > oldRank && existing.item.kind === 'server' && existing.item.msg.type === 'agent_event') {
+          const updated = { ...old, status: delivery.status };
+          existing.item = {
+            ...existing.item,
+            msg: {
+              ...existing.item.msg,
+              event: {
+                ...existing.item.msg.event,
+                delivery: updated,
+              } as any,
+            },
+          };
+        }
+        return existing;
       }
     }
     const entry = { seq: this.nextSeq++, item, occurredAt: Date.now() };
@@ -66,3 +107,17 @@ export class PanelHistory {
 function taskReceipt(item:PanelHistoryItem) {
   return item.kind==='server' && item.msg.type==='agent_event' && item.msg.event.kind==='notice' ? item.msg.event.receipt : undefined;
 }
+
+function taskPlan(item:PanelHistoryItem){return item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='notice'?item.msg.event.plan:undefined;}
+
+function userDelivery(item: PanelHistoryItem): { id: string; conversationId: string; status: string; text: string } | undefined {
+  return item.kind === 'server' && item.msg.type === 'agent_event' && item.msg.event.kind === 'user_delivery'
+    ? (item.msg.event as any).delivery
+    : undefined;
+}
+
+const DELIVERY_STATUS_RANK: Record<string, number> = {
+  composed: 0,
+  speaking: 1,
+  played: 2,
+};

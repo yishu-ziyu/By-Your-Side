@@ -1,0 +1,11 @@
+{
+  "batchId": "20260910T045505-55523",
+  "originalBucket": "product_failure",
+  "reclassifiedBucket": "harness_setup_failure",
+  "reason": "voice-evidence.mts 在隔离副本（无 .git）执行 git rev-parse HEAD 失败；18/18 在模型/Chrome 之前退出，属脚手架/环境启动失败，不是产品淘汰。",
+  "signature": "not a git repository",
+  "appliesTo": "all 18 rows",
+  "productElimination": false,
+  "note": "原始 index.json/每条 json/log 保持不变，本文件为事后分类更正；修复见 run-ab.mjs 的 preflight 与 harness_setup_failure 分桶。",
+  "at": "2026-09-10T04:58:00.000Z"
+}

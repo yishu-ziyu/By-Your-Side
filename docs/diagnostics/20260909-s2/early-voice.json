@@ -1,0 +1,458 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "a03c0185306b77263d5c3d7339a4d222453c2522e6b6d0fd1d29ee85202022e1",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "c2c99a95a40992a5fb50ab595ebdf79a2f8d1b60c1d84c76c9912df9c45dc3e4",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "correction_voice",
+  "targetCode": "cedar-flash-9710",
+  "otherCode": "river-flash-1728",
+  "marker": "e24e4e",
+  "activityOrg": "橙湾工作坊",
+  "interviewOrg": "白榆研究",
+  "eventName": "橙湾工作坊活动邀请",
+  "interviewName": "白榆研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥8832",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "correction preserves original run",
+      "ok": true
+    },
+    {
+      "name": "annotation is visible",
+      "ok": true
+    },
+    {
+      "name": "all annotations belong to corrected Y, never X",
+      "ok": true
+    }
+  ],
+  "voice": [
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "state",
+        "state": "connecting"
+      },
+      "at": 1788955119995
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "state",
+        "state": "ready"
+      },
+      "at": 1788955120242
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "text",
+        "role": "user",
+        "turn": 1,
+        "text": "对象改成标准模型，其他要求保留。"
+      },
+      "at": 1788955130454
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在理解这句话"
+      },
+      "at": 1788955130457
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "facts",
+        "turn": 1,
+        "snapshot": {
+          "conversationId": "default",
+          "observedAt": 1788955132407,
+          "state": "running",
+          "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+          "startedAt": 1788955120319,
+          "runId": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+          "active": [
+            {
+              "member": "main",
+              "action": "读取页面",
+              "since": 1788955124733
+            }
+          ],
+          "lastAction": {
+            "action": "确认当前页面",
+            "failed": false,
+            "at": 1788955122906
+          },
+          "successVerified": false,
+          "conversationContext": {
+            "recentTurns": [
+              {
+                "role": "user",
+                "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+              },
+              {
+                "role": "user",
+                "text": "对象改成标准模型，其他要求保留。"
+              }
+            ],
+            "latestResult": null,
+            "latestDelivery": null
+          },
+          "controlVersion": 0
+        }
+      },
+      "at": 1788955132407
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在准备回答"
+      },
+      "at": 1788955132407
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "text",
+        "turn": 1,
+        "role": "assistant",
+        "text": "修改已送达当前任务。"
+      },
+      "at": 1788955134176
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "response_end",
+        "turn": 1,
+        "responseId": "999986e0-d1c7-4b60-b69e-8a312e619263"
+      },
+      "at": 1788955134176
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "state",
+        "state": "ready"
+      },
+      "at": 1788955135832
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "event": {
+        "kind": "state",
+        "state": "closed"
+      },
+      "at": 1788955154686
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788955122903,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":818193869,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:51699/\",\"active\":true,\"windowId\":818193866,\"working\":false}}"
+    },
+    {
+      "name": "snapshot",
+      "params": {
+        "tabId": 818193869
+      },
+      "conversationId": "default",
+      "at": 1788955124734,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-1728\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-9710\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const all = document.querySelectorAll('*');\n  const results = [];\n  for (const el of all) {\n    if (el.children.length === 0 && el.textContent.trim() === 'river-flash-1728') {\n      const parent = el.parentElement;\n      results.push({\n        tag: el.tagName,\n        text: el.textContent,\n        parentTag: parent ? parent.tagName : null,\n        parentClass: parent ? parent.className : null,\n        selector: el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className ? '.' + el.className.split(' ').join('.') : ''),\n        path: (() => { let p = el; let path = []; while (p && p.tagName) { path.unshift(p.tagName.toLowerCase() + (p.className ? '.' + (typeof p.className === 'string' ? p.className.split(' ').join('.') : '') : '')); p = p.parentElement; if (path.length > 6) break; } return path.join(' > '); })()\n      });\n    }\n  }\n  return results;\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788955140378,
+      "ok": true,
+      "result": "{\"value\":[{\"parentClass\":\"\",\"parentTag\":\"SECTION\",\"path\":\"html > body > section > code\",\"selector\":\"code\",\"tag\":\"CODE\",\"text\":\"river-flash-1728\"}]}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "loc=css:code",
+        "label": "标准模型ID"
+      },
+      "conversationId": "default",
+      "at": 1788955142513,
+      "ok": false,
+      "error": "Error: Error: 选择器匹配 2 个元素: code。操作未执行。请 snapshot 确认目标，使用目标 ref 或更具体的唯一 CSS；不会自动选择第一个匹配。\n    at mark (chrome-extension://olabpogppihhgbkedmpigifdfkkggdnk/background.js:2007:13)\n    at async ControlGate.run (chrome-extension://olabpogppihhgbkedmpigifdfkkggdnk/background.js:103:14)"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const codes = document.querySelectorAll('code');\n  const results = [];\n  for (let i = 0; i < codes.length; i++) {\n    const c = codes[i];\n    const section = c.closest('section');\n    results.push({\n      index: i,\n      text: c.textContent,\n      sectionIndex: section ? Array.from(document.querySelectorAll('section')).indexOf(section) : -1,\n      sectionHTML: section ? section.outerHTML.substring(0, 200) : null\n    });\n  }\n  return results;\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788955146814,
+      "ok": true,
+      "result": "{\"value\":[{\"index\":0,\"sectionHTML\":\"<section id=\\\"other\\\"><h2>标准模型</h2><code>river-flash-1728</code><p>标准模型长期有效。</p></section>\",\"sectionIndex\":0,\"text\":\"river-flash-1728\"},{\"index\":1,\"sectionHTML\":\"<section id=\\\"target\\\"><h2>临时模型</h2><code>cedar-flash-9710</code><p>临时模型的有效期为明天。</p></section>\",\"sectionIndex\":1,\"text\":\"cedar-flash-9710\"}]}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "loc=css:section#other code",
+        "label": "标准模型ID"
+      },
+      "conversationId": "default",
+      "at": 1788955149993,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    }
+  ],
+  "stages": [
+    {
+      "event": "connection_start",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 0
+    },
+    {
+      "event": "session_ready",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 0
+    },
+    {
+      "event": "input_interrupt",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "input_commit",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1,
+      "pcmBytes": 194880,
+      "rms": 0.11337,
+      "peak": 0.65262
+    },
+    {
+      "event": "transcription",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1,
+      "characters": 16,
+      "empty": false
+    },
+    {
+      "event": "route_start",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1,
+      "requestId": "164859bb-d23e-40a6-9ad0-4d34ec68d810-1",
+      "characters": 16
+    },
+    {
+      "event": "route_result",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1,
+      "requestId": "164859bb-d23e-40a6-9ad0-4d34ec68d810-1",
+      "kind": "steer",
+      "accepted": true,
+      "elapsedMs": 1881
+    },
+    {
+      "event": "receipt_speech_verified",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1,
+      "characters": 10,
+      "attempt": 1
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "conversationId": "default",
+      "turn": 1
+    }
+  ],
+  "stage": "speech 对象改成标准模型ID，其他要求保留。",
+  "observationBarrierAt": 1788955124754,
+  "originalRun": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788955124812,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788955120319,
+    "runId": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788955124733
+      }
+    ],
+    "lastAction": {
+      "action": "确认当前页面",
+      "failed": false,
+      "at": 1788955122906
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "clientTiming": [
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "command": "commit",
+      "turn": 1,
+      "at": 1788955129729
+    },
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "command": "playback_done",
+      "responseId": "999986e0-d1c7-4b60-b69e-8a312e619263",
+      "at": 1788955135831
+    }
+  ],
+  "correctionAcceptedAt": 1788955132412,
+  "audioTiming": [
+    {
+      "voiceId": "164859bb-d23e-40a6-9ad0-4d34ec68d810",
+      "turn": 1,
+      "responseId": "999986e0-d1c7-4b60-b69e-8a312e619263",
+      "firstAudioAt": 1788955134176
+    }
+  ],
+  "speechInputResult": {
+    "deliveredText": [
+      "已在页面中找到并圈出标准模型ID：**river-flash-1728**（位于\"标准模型\"章节下，section#other 中的 code 元素）。未改动临时模型ID。"
+    ],
+    "voiceTexts": [
+      "修改已送达当前任务。"
+    ],
+    "playbackFinished": true
+  },
+  "boxes": [
+    {
+      "x": 55,
+      "y": 297,
+      "width": 251,
+      "height": 48
+    }
+  ],
+  "pageState": {
+    "detailVisible": false,
+    "hasHost": true,
+    "other": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 173.328125
+    },
+    "scrollY": 0,
+    "target": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 464.453125
+    },
+    "viewportHeight": 413,
+    "viewportWidth": 756
+  },
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788955154684,
+    "state": "idle",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788955120319,
+    "runId": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+    "active": [],
+    "lastAction": {
+      "action": "send_user_message",
+      "failed": false,
+      "at": 1788955152829
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        },
+        {
+          "role": "user",
+          "text": "对象改成标准模型，其他要求保留。"
+        },
+        {
+          "role": "assistant",
+          "text": "已在页面中找到并圈出标准模型ID：**river-flash-1728**（位于\"标准模型\"章节下，section#other 中的 code 元素）。未改动临时模型ID。"
+        }
+      ],
+      "latestResult": {
+        "runId": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+        "text": "已在页面中找到并圈出标准模型ID：**river-flash-1728**（位于\"标准模型\"章节下的 `section#other > code` 元素）。临时模型ID未做处理。",
+        "observedAt": 1788955154651,
+        "source": "assistant_output"
+      },
+      "latestDelivery": {
+        "conversationId": "default",
+        "id": "21425ec8-efca-4398-a252-a82a2fa5dde2",
+        "runId": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+        "kind": "finding",
+        "text": "已在页面中找到并圈出标准模型ID：**river-flash-1728**（位于\"标准模型\"章节下，section#other 中的 code 元素）。未改动临时模型ID。",
+        "composedAt": 1788955152828,
+        "status": "composed",
+        "replyTo": "对象改成标准模型，其他要求保留。"
+      }
+    },
+    "controlVersion": 0
+  },
+  "deliveries": [
+    {
+      "conversationId": "default",
+      "id": "21425ec8-efca-4398-a252-a82a2fa5dde2",
+      "runId": "74247ed5-9eb9-49cd-be3b-bb66c7659dfb",
+      "kind": "finding",
+      "text": "已在页面中找到并圈出标准模型ID：**river-flash-1728**（位于\"标准模型\"章节下，section#other 中的 code 元素）。未改动临时模型ID。",
+      "composedAt": 1788955152828,
+      "status": "composed",
+      "replyTo": "对象改成标准模型，其他要求保留。"
+    }
+  ],
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

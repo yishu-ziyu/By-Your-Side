@@ -1,0 +1,236 @@
+{
+  "scope": "isolated Chromium, production tool/RPC/session projection, deterministic caller; not model/native messaging",
+  "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-write-receipt-unknown-error-UJG1Zq",
+  "checks": [
+    {
+      "name": "unknown_error first actual write is exactly one",
+      "ok": true
+    },
+    {
+      "name": "unknown_error injected after committed write",
+      "ok": true
+    },
+    {
+      "name": "unknown_error preserves unknown result",
+      "ok": false
+    },
+    {
+      "name": "unknown_error read-only remains available",
+      "ok": true
+    },
+    {
+      "name": "unknown_error retry never reaches browser",
+      "ok": false
+    },
+    {
+      "name": "unknown_error final server and DOM count remain one",
+      "ok": false
+    }
+  ],
+  "cases": [
+    {
+      "fault": "unknown_error",
+      "events": [
+        {
+          "kind": "tool_start",
+          "toolCallId": "unknown_error-observe",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "unknown_error-observe",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=8] heading \"隔离记录页\" level=1\n    [ref=13] text: 隔离记录页\n  [ref=9] button \"新增一条记录\"\n    [ref=14] text: 新增一条记录\n  [ref=15] text: 0"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "unknown_error-first",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "unknown_error-first",
+          "name": "click",
+          "isError": true,
+          "resultText": "Error: Execution context destroyed after write"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "unknown_error-reobserve",
+          "name": "snapshot",
+          "params": {}
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "unknown_error-reobserve",
+          "name": "snapshot",
+          "isError": false,
+          "resultText": "RootWebArea \"回执丢失验收\" focused\n  [ref=8] heading \"隔离记录页\" level=1\n    [ref=13] text: 隔离记录页\n  [ref=9] button \"新增一条记录\" focused\n    [ref=14] text: 新增一条记录\n  [ref=32] text: 1\n  [ref=31] ListMarker \"•\"\n  [ref=33] text: 记录 1"
+        },
+        {
+          "kind": "tool_start",
+          "toolCallId": "unknown_error-retry",
+          "name": "click",
+          "params": {
+            "target": "#append"
+          }
+        },
+        {
+          "kind": "tool_end",
+          "toolCallId": "unknown_error-retry",
+          "name": "click",
+          "isError": false,
+          "resultText": "Clicked #append. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success."
+        }
+      ],
+      "dispatches": [
+        {
+          "id": "bc1a3a61-e564-46fc-b47e-dbd1d2703408",
+          "name": "snapshot",
+          "at": 1788966194251
+        },
+        {
+          "id": "01657aca-1780-4db9-9c53-27556b8660b1",
+          "name": "click",
+          "at": 1788966194297
+        },
+        {
+          "id": "01cf9817-19a4-4475-9479-91a004ffd304",
+          "name": "snapshot",
+          "at": 1788966195510
+        },
+        {
+          "id": "544001e3-d621-4a6e-877d-bb93c094752b",
+          "name": "click",
+          "at": 1788966195522
+        }
+      ],
+      "firstWriteAt": 1788966195499,
+      "faultAt": 1788966195509,
+      "first": {
+        "ok": false,
+        "error": "Error: Execution context destroyed after write"
+      },
+      "afterFirst": {
+        "conversationId": "default",
+        "observedAt": 1788966195509,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "ec252e44-50fb-448b-b510-cdfbcb650498",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": true,
+          "at": 1788966195509
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "blocked",
+            "evidence": {
+              "toolCallId": "unknown_error-first",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "ec252e44-50fb-448b-b510-cdfbcb650498"
+            }
+          }
+        ],
+        "resultState": "blocked"
+      },
+      "serverAfterFirst": 1,
+      "observation": {
+        "ok": true
+      },
+      "retry": {
+        "ok": true
+      },
+      "lateMatched": false,
+      "afterLate": {
+        "conversationId": "default",
+        "observedAt": 1788966196697,
+        "state": "none",
+        "goal": "新增一条记录",
+        "startedAt": null,
+        "runId": "ec252e44-50fb-448b-b510-cdfbcb650498",
+        "active": [],
+        "lastAction": {
+          "action": "点击页面",
+          "failed": false,
+          "at": 1788966196697
+        },
+        "successVerified": false,
+        "conversationContext": {
+          "recentTurns": [
+            {
+              "role": "user",
+              "text": "新增一条记录"
+            }
+          ],
+          "latestResult": null,
+          "latestDelivery": null
+        },
+        "results": [
+          {
+            "id": "append-once",
+            "description": "新增一条记录",
+            "tool": "click",
+            "target": "#append",
+            "status": "satisfied",
+            "evidence": {
+              "toolCallId": "unknown_error-retry",
+              "tool": "click",
+              "target": "#append",
+              "member": "main",
+              "runId": "ec252e44-50fb-448b-b510-cdfbcb650498"
+            }
+          }
+        ],
+        "resultState": "satisfied"
+      },
+      "serverRecords": [
+        {
+          "id": 1,
+          "at": 1788966195499
+        },
+        {
+          "id": 2,
+          "at": 1788966196695
+        }
+      ],
+      "domCount": 2
+    }
+  ],
+  "sourceHashes": {
+    "agent/src/rpc.ts": "b11848b4e32d0a70ae858a01ef9f8e6961fa6774dc2175a0c38322f4357d6ec8",
+    "agent/src/tools.ts": "c53ac87360068887f739a34f993f4a551ea23fb9fcf6fa9e8e159cd6efe1ba14",
+    "agent/src/session.ts": "3af64012f4ee24c5f1d4b3b7027230a0caeaebee9a2105dd585ff31a2f2a4978",
+    "agent/src/task-progress.ts": "ff169a976c45fd002dc3532d24c41c22ccf3326ec830b9f85ff20cfbcd6e346b",
+    "agent/src/task-results.ts": "d98bb3aa16ccf8ee5c02e5247414d6f27bb4c75755a6a3dc855a0961d3c46185",
+    "shared/task-results.ts": "389210e4dd55069d25628cb5d3c8887850db250b176d27f1296068d9e710ef48",
+    "shared/control.ts": "030baa8798bc3c594d66fe06d5dff2a9e966e0f654629c2c41453d8c3d2d19b4",
+    "extension/src/background/exec/input.ts": "6692f7f51875005582b165b705a4399f3ac97cadf6af74991bbfa9720f33923d",
+    "scripts/acceptance/write-receipt-loss-unknown-error-run.mts": "690dee50dc3aa10e09a9288491d80a85f294532ff16da6e1c049ca60b6b38f2c"
+  },
+  "exitCode": 1
+}

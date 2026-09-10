@@ -1,0 +1,289 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "f97561376327ab002d5fd20f77b75e8be0b0c4c0af5b363af536825743f9d7f2",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "f46bd44a7cec4a5644b5c4d7719c8a37e90046e7c64f89ae9543dfcf83c18b89",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "pause",
+  "targetCode": "cedar-flash-1578",
+  "otherCode": "river-flash-2707",
+  "marker": "e92bd9",
+  "activityOrg": "青鹭工作坊",
+  "interviewOrg": "海棠研究",
+  "eventName": "青鹭工作坊活动邀请",
+  "interviewName": "海棠研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥7632",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "paused supplement does not write page",
+      "ok": true
+    },
+    {
+      "name": "paused supplement retains run",
+      "ok": true
+    },
+    {
+      "name": "production control gate rejects paused write",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "resume preserves original task identity",
+      "ok": true
+    },
+    {
+      "name": "annotation is visible",
+      "ok": true
+    },
+    {
+      "name": "all annotations belong to corrected Y, never X",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954423427,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":1951634669,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:49734/\",\"active\":true,\"windowId\":1951634666,\"working\":false}}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "inspect",
+        "tabId": 1951634669
+      },
+      "conversationId": "default",
+      "at": 1788954426102,
+      "ok": true,
+      "result": "{\"tabId\":1951634669,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "claim",
+        "tabId": 1951634669,
+        "expectedConversationId": null
+      },
+      "conversationId": "default",
+      "at": 1788954426106,
+      "ok": true,
+      "result": "{\"tabId\":1951634669,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "switch_tab",
+      "params": {
+        "tabId": 1951634669
+      },
+      "conversationId": "default",
+      "at": 1788954426118,
+      "ok": true,
+      "result": "{\"tabId\":1951634669}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954428642,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-2707\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-1578\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const all = document.querySelectorAll('*');\n  for (const el of all) {\n    if (el.children.length === 0 && el.textContent.trim() === 'river-flash-2707') {\n      const r = el.getBoundingClientRect();\n      return { tag: el.tagName, x: r.x, y: r.y, w: r.width, h: r.height };\n    }\n  }\n  return null;\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788954436289,
+      "ok": true,
+      "result": "{\"value\":{\"h\":28,\"tag\":\"CODE\",\"w\":231.1875,\"x\":65,\"y\":306.875}}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "code:contains(\"river-flash-2707\")",
+        "label": "标准模型ID"
+      },
+      "conversationId": "default",
+      "at": 1788954438436,
+      "ok": false,
+      "error": "Error: Error: 无效的选择器: code:contains(\"river-flash-2707\")。操作未执行。target 支持 @N、loc=css:原生CSS 或原生 CSS；不支持 loc=h3...、:has-text() 等 Playwright 定位语法。请先 snapshot，从当前结果选择目标 ref 或 loc=css: 定位串后重试。\n    at mark (chrome-extension://fjmnegeeakdgmapfmfnioddebbbfidlh/background.js:1974:13)\n    at async ControlGate.run (chrome-extension://fjmnegeeakdgmapfmfnioddebbbfidlh/background.js:103:14)"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => document.querySelectorAll('code').length)()"
+      },
+      "conversationId": "default",
+      "at": 1788954441779,
+      "ok": true,
+      "result": "{\"value\":2}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const codes = document.querySelectorAll('code');\n  return Array.from(codes).map((el, i) => ({\n    i, text: el.textContent,\n    className: el.className,\n    id: el.id,\n    parentTag: el.parentElement?.tagName,\n    parentClass: el.parentElement?.className,\n    previousHeading: (() => {\n      let p = el.parentElement;\n      while (p) {\n        const h = p.querySelector(':scope > h1, :scope > h2, :scope > h3');\n        if (h) return h.textContent;\n        p = p.parentElement;\n      }\n      return null;\n    })()\n  }));\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788954444787,
+      "ok": true,
+      "result": "{\"value\":[{\"className\":\"\",\"i\":0,\"id\":\"\",\"parentClass\":\"\",\"parentTag\":\"SECTION\",\"previousHeading\":\"标准模型\",\"text\":\"river-flash-2707\"},{\"className\":\"\",\"i\":1,\"id\":\"\",\"parentClass\":\"\",\"parentTag\":\"SECTION\",\"previousHeading\":\"临时模型\",\"text\":\"cedar-flash-1578\"}]}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  return {\n    bodyChildren: Array.from(document.body.children).map(el => el.tagName + (el.id ? '#'+el.id : '') + (el.className ? '.'+el.className : '')),\n    firstSectionCode: !!document.querySelector('section:nth-of-type(1) code'),\n    codeFirst: document.querySelectorAll('code')[0]?.textContent,\n    codeNth1: document.querySelector('code:nth-of-type(1)')?.textContent\n  };\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788954449419,
+      "ok": true,
+      "result": "{\"value\":{\"bodyChildren\":[\"H1\",\"SECTION#other\",\"SECTION#target\",\"BUTTON#expand\",\"P#detail\",\"FOOTER\"],\"codeFirst\":\"river-flash-2707\",\"codeNth1\":\"river-flash-2707\",\"firstSectionCode\":true}}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "#other code",
+        "label": "标准模型ID"
+      },
+      "conversationId": "default",
+      "at": 1788954453265,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954455043,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":1951634669,\"url\":\"http://127.0.0.1:49734/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788954455089,\"source\":\"cdp\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "first observation held before returning to model",
+  "observationBarrierAt": 1788954428659,
+  "originalRun": "cba1dc40-66b1-434f-a2b3-23f72341dcbd",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954428671,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954421324,
+    "runId": "cba1dc40-66b1-434f-a2b3-23f72341dcbd",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954428640
+      }
+    ],
+    "lastAction": {
+      "action": "switch_tab",
+      "failed": false,
+      "at": 1788954426122
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "boxes": [
+    {
+      "x": 55,
+      "y": 297,
+      "width": 251,
+      "height": 48
+    }
+  ],
+  "pageState": {
+    "detailVisible": false,
+    "hasHost": true,
+    "other": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 173.328125
+    },
+    "scrollY": 0,
+    "target": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 464.453125
+    },
+    "viewportHeight": 413,
+    "viewportWidth": 756
+  },
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788954458063,
+    "state": "idle",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954421324,
+    "runId": "cba1dc40-66b1-434f-a2b3-23f72341dcbd",
+    "active": [],
+    "lastAction": {
+      "action": "查看页面截图",
+      "failed": false,
+      "at": 1788954455187
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        },
+        {
+          "role": "user",
+          "text": "对象改成标准模型ID，其他要求保留。"
+        }
+      ],
+      "latestResult": {
+        "runId": "cba1dc40-66b1-434f-a2b3-23f72341dcbd",
+        "text": "已在当前页面上找到并圈出标准模型ID **river-flash-2707**，标注为\"标准模型ID\"。",
+        "observedAt": 1788954457947,
+        "source": "assistant_output"
+      },
+      "latestDelivery": null
+    },
+    "controlVersion": 2
+  },
+  "deliveries": [],
+  "deliveryMetrics": {
+    "composeCalls": 1,
+    "composeMs": []
+  },
+  "browserExited": true
+}

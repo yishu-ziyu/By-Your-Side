@@ -1,0 +1,626 @@
+{
+  "ego-user-delivery-cJdPCE": {
+    "ok": true,
+    "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, actual browser audio playback, not human listening",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": true
+      },
+      {
+        "name": "no body-only marker is invented before a detail page is opened",
+        "ok": true
+      },
+      {
+        "name": "spoken result is natural prose without Markdown list or formatting markers",
+        "ok": true
+      },
+      {
+        "name": "follow-up identifies the actual activity object, not just the generic word activity",
+        "ok": true
+      },
+      {
+        "name": "correction returns to the activity invitation with its known name",
+        "ok": true
+      },
+      {
+        "name": "any spoken body detail has a preceding actual page-read result",
+        "ok": true
+      },
+      {
+        "name": "reopening voice does not replay old result",
+        "ok": true
+      },
+      {
+        "name": "reopened voice can refer to the same activity result",
+        "ok": true
+      },
+      {
+        "name": "actual production sidepanel displays a task answer identifying the activity",
+        "ok": true
+      }
+    ],
+    "resultSpeech": "已经帮你打开了本地收件箱页面，最近三封邮件的标题分别是：青鹭工作坊活动邀请、海棠研究访谈邀请，还有河岸周刊：本周阅读清单。页面提示目前只显示标题，还没进入正文。",
+    "followup": "你说的是“青鹭工作坊活动邀请”吧？这封邮件的标题已经告诉你它是个活动邀请了，不过目前页面只显示了标题，正文内容还没打开呢。",
+    "correction": "你说得对，我刚才确实记混了。那封“青鹭工作坊活动邀请”才是你要找的活动，另外那封是访谈邀请。目前页面只显示了标题，正文内容还没打开呢",
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-cJdPCE/result.json"
+  },
+  "ego-user-delivery-ui-WU5q9h": {
+    "ok": false,
+    "source": "production sidepanel.js and styles.css; background transport and microphone stream are test doubles",
+    "clicks": [
+      {
+        "name": "legacy history remains visible",
+        "ok": true
+      },
+      {
+        "name": "explicit delivery is visible once",
+        "ok": false
+      },
+      {
+        "name": "internal output is not a formal answer",
+        "ok": false
+      },
+      {
+        "name": "internal output remains available in execution details",
+        "ok": false
+      },
+      {
+        "name": "execution details precede the formal answer",
+        "ok": false
+      },
+      {
+        "name": "status changes and replay do not duplicate the answer",
+        "ok": false
+      },
+      {
+        "name": "a follow-up receives a separate complete answer",
+        "ok": false
+      },
+      {
+        "name": "the earlier finding stays intact",
+        "ok": false
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-ui-WU5q9h/result.json"
+  },
+  "ego-user-delivery-ui-FuxInm": {
+    "ok": false,
+    "source": "production sidepanel.js and styles.css; background transport and microphone stream are test doubles",
+    "clicks": [
+      {
+        "name": "legacy history remains visible",
+        "ok": true
+      },
+      {
+        "name": "explicit delivery is visible once",
+        "ok": true
+      },
+      {
+        "name": "internal output is not a formal answer",
+        "ok": true
+      },
+      {
+        "name": "internal output remains available in execution details",
+        "ok": true
+      },
+      {
+        "name": "execution details precede the formal answer",
+        "ok": true
+      },
+      {
+        "name": "status changes and replay do not duplicate the answer",
+        "ok": true
+      },
+      {
+        "name": "a follow-up receives a separate complete answer",
+        "ok": true
+      },
+      {
+        "name": "the earlier finding stays intact",
+        "ok": true
+      },
+      {
+        "name": "late playback status cannot replace the newer voice answer",
+        "ok": false
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-ui-FuxInm/result.json"
+  },
+  "ego-user-delivery-ui-eBamdJ": {
+    "ok": true,
+    "source": "production sidepanel.js and styles.css; background transport and microphone stream are test doubles",
+    "clicks": [
+      {
+        "name": "legacy history remains visible",
+        "ok": true
+      },
+      {
+        "name": "explicit delivery is visible once",
+        "ok": true
+      },
+      {
+        "name": "internal output is not a formal answer",
+        "ok": true
+      },
+      {
+        "name": "internal output remains available in execution details",
+        "ok": true
+      },
+      {
+        "name": "execution details precede the formal answer",
+        "ok": true
+      },
+      {
+        "name": "status changes and replay do not duplicate the answer",
+        "ok": true
+      },
+      {
+        "name": "a follow-up receives a separate complete answer",
+        "ok": true
+      },
+      {
+        "name": "the earlier finding stays intact",
+        "ok": true
+      },
+      {
+        "name": "late playback status cannot replace the newer voice answer",
+        "ok": true
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-ui-eBamdJ/result.json"
+  },
+  "ego-user-delivery-N5jA03": {
+    "ok": false,
+    "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, actual browser audio playback, not human listening",
+    "error": "Error: task result has an explicit delivery matching spoken content",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": true
+      },
+      {
+        "name": "no body-only marker is invented before a detail page is opened",
+        "ok": true
+      },
+      {
+        "name": "spoken result is natural prose without Markdown list or formatting markers",
+        "ok": true
+      },
+      {
+        "name": "task result has an explicit delivery matching spoken content",
+        "ok": false
+      }
+    ],
+    "resultSpeech": "好的，我帮你看了下，最近三封邮件的标题分别是：竹海研究访谈邀请、岚川工作坊活动邀请，还有河岸周刊：本周阅读清单。正文我还没打开。",
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-N5jA03/result.json"
+  },
+  "ego-user-delivery-zqzDpa": {
+    "ok": false,
+    "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, actual browser audio playback, not human listening",
+    "error": "Error: follow-up identifies the actual activity object, not just the generic word activity",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "production lead marks this run as explicit delivery without depending on memory",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": true
+      },
+      {
+        "name": "no body-only marker is invented before a detail page is opened",
+        "ok": true
+      },
+      {
+        "name": "spoken result is natural prose without Markdown list or formatting markers",
+        "ok": true
+      },
+      {
+        "name": "task result has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "task result renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "task result voice panel uses the same delivered text",
+        "ok": true
+      },
+      {
+        "name": "task result playback acknowledgement updates that same delivery",
+        "ok": true
+      },
+      {
+        "name": "follow-up identifies the actual activity object, not just the generic word activity",
+        "ok": false
+      }
+    ],
+    "resultSpeech": "页面打开后看到\"收件箱：最近三封邮件\"列表，只有标题，没看正文。依次是竹海研究访谈邀请、岚川工作坊活动邀请、河岸周刊：本周阅读清单，一份像是研究访谈邀请，一份是工作坊活动邀请，还有一份是阅读清单类的周刊。",
+    "followup": "还没有取得当前浏览器页面，请先打开要看的标签页。",
+    "deliveryMatches": [
+      {
+        "label": "task result",
+        "id": "8d17380c-77de-43eb-bb97-acc9f636ded7",
+        "text": "页面打开后看到\"收件箱：最近三封邮件\"列表，只有标题，没看正文。依次是竹海研究访谈邀请、岚川工作坊活动邀请、河岸周刊：本周阅读清单，一份像是研究访谈邀请，一份是工作坊活动邀请，还有一份是阅读清单类的周刊。"
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-zqzDpa/result.json"
+  },
+  "ego-user-delivery-U5Skmt": {
+    "ok": false,
+    "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+    "error": "Error: Timeout waiting for evaluator stage: speech 活动那个呢？",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "production lead marks this run as explicit delivery without depending on memory",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": true
+      },
+      {
+        "name": "no body-only marker is invented before a detail page is opened",
+        "ok": true
+      },
+      {
+        "name": "spoken result is natural prose without Markdown list or formatting markers",
+        "ok": true
+      },
+      {
+        "name": "task result has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "task result renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "task result voice panel uses the same delivered text",
+        "ok": true
+      },
+      {
+        "name": "task result playback acknowledgement updates that same delivery",
+        "ok": true
+      },
+      {
+        "name": "this compact task delivers one result instead of a second makeup copy",
+        "ok": true
+      },
+      {
+        "name": "follow-up identifies the actual activity object, not just the generic word activity",
+        "ok": true
+      },
+      {
+        "name": "follow-up has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "follow-up renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "follow-up voice panel uses the same delivered text",
+        "ok": true
+      }
+    ],
+    "resultSpeech": "最近三封邮件的标题分别是：青鹭工作坊活动邀请、云杉研究访谈邀请，以及河岸周刊的本周阅读清单。整体看是一封活动邀请、一封研究邀请加一份定期阅读推荐的组合。目前只是标题层面，还没打开正文内容。",
+    "followup": "活动那封标题是\"青鹭工作坊活动邀请\"，但目前只看到了标题，正文还没打开，所以具体的时间、地点这些细节还确认不了。",
+    "deliveryMatches": [
+      {
+        "label": "task result",
+        "id": "e1b41a4d-13be-4d50-9a73-f4c9c3a0ed5b",
+        "text": "最近三封邮件的标题分别是：青鹭工作坊活动邀请、云杉研究访谈邀请，以及河岸周刊的本周阅读清单。整体看是一封活动邀请、一封研究邀请加一份定期阅读推荐的组合。目前只是标题层面，还没打开正文内容。"
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-U5Skmt/result.json"
+  },
+  "ego-user-delivery-jYElX2": {
+    "ok": false,
+    "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+    "error": "Error: real webpage result traverses task manager and produces a specific spoken finding",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "production lead marks this run as explicit delivery without depending on memory",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": false
+      }
+    ],
+    "resultSpeech": "任务遇到了问题，请查看侧栏的错误记录。",
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-jYElX2/result.json"
+  },
+  "ego-user-delivery-TikN4j": {
+    "ok": false,
+    "error": "HTTP test sidepanel was the active tab and task navigate replaced it; uiEmit disappeared. Harness now creates a separate active blank tab before the task, matching a real sidepanel being outside page navigation.",
+    "log": "/tmp/ego-delivery-real-final.log"
+  },
+  "machine_final": {
+    "testFiles": 108,
+    "testsPassed": 886,
+    "testLog": "/tmp/ego-delivery-final-all-tests.log",
+    "typecheck": "passed",
+    "build": "passed",
+    "diffCheck": "passed",
+    "playbackRegression": "3 passed / 2 failed before R3; 5 passed after R3"
+  },
+  "ego-user-delivery-tLN6ik": {
+    "ok": true,
+    "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "production lead marks this run as explicit delivery without depending on memory",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": true
+      },
+      {
+        "name": "no body-only marker is invented before a detail page is opened",
+        "ok": true
+      },
+      {
+        "name": "spoken result is natural prose without Markdown list or formatting markers",
+        "ok": true
+      },
+      {
+        "name": "task result has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "task result renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "task result voice panel uses the same delivered text",
+        "ok": true
+      },
+      {
+        "name": "task result playback acknowledgement updates that same delivery",
+        "ok": true
+      },
+      {
+        "name": "this compact task delivers one result instead of a second makeup copy",
+        "ok": true
+      },
+      {
+        "name": "follow-up identifies the actual activity object, not just the generic word activity",
+        "ok": true
+      },
+      {
+        "name": "follow-up has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "follow-up renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "follow-up voice panel uses the same delivered text",
+        "ok": true
+      },
+      {
+        "name": "follow-up playback acknowledgement updates that same delivery",
+        "ok": true
+      },
+      {
+        "name": "correction returns to the activity invitation with its known name",
+        "ok": true
+      },
+      {
+        "name": "correction has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "correction renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "correction voice panel uses the same delivered text",
+        "ok": true
+      },
+      {
+        "name": "correction playback acknowledgement updates that same delivery",
+        "ok": true
+      },
+      {
+        "name": "any spoken body detail has a preceding actual page-read result",
+        "ok": true
+      },
+      {
+        "name": "reopening voice does not replay old result",
+        "ok": true
+      },
+      {
+        "name": "reopened voice can refer to the same activity result",
+        "ok": true
+      },
+      {
+        "name": "reopened answer has an explicit delivery matching spoken content",
+        "ok": true
+      },
+      {
+        "name": "reopened answer renders that delivery once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "reopened answer voice panel uses the same delivered text",
+        "ok": true
+      },
+      {
+        "name": "reopened answer playback acknowledgement updates that same delivery",
+        "ok": true
+      },
+      {
+        "name": "voice-off task produces a fresh explicit result",
+        "ok": true
+      },
+      {
+        "name": "voice-off task does not silently restart or synthesize voice",
+        "ok": true
+      },
+      {
+        "name": "voice-off result appears once in the existing answer area",
+        "ok": true
+      },
+      {
+        "name": "actual production sidepanel displays a task answer identifying the activity",
+        "ok": true
+      }
+    ],
+    "evidence": {
+      "sourceSha256": "41d4f1cd1a3bd36f92af3fc846e533f5e4c9b58d9d4a3d50deb40845e8195b58",
+      "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+      "scriptSha256": "789de0c50541eff964630d63a7ceda948fe367fc3d2f04bd3b0d999c2014eb26",
+      "backgroundSha256": "b8f9c68623edeff5e43a7faf8f020d2972e565f1c6e9c71f0cb843c0bd10a34e",
+      "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+      "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+    },
+    "resultSpeech": "最近三封邮件的标题是\"白榆研究访谈邀请\"、\"松风工作坊活动邀请\"和\"河岸周刊：本周阅读清单\"，分别属于访谈、活动和阅读资讯三类，暂时没有点开正文内容。",
+    "followup": "活动那封是\"松风工作坊活动邀请\"，但目前还没点开正文，所以具体的时间、地点、内容安排这些细节还不清楚，需要我打开看一下吗？",
+    "correction": "明白，您说的是\"松风工作坊活动邀请\"那封，不是白榆研究的访谈。需要我现在打开它的正文，把时间、地点这些信息整理出来吗？",
+    "reopenedAnswer": "叫\"松风工作坊活动邀请\"，就是最近三封邮件里那封活动类的，正文还没打开，具体时间和内容待确认。",
+    "textOnlyDelivery": {
+      "conversationId": "default",
+      "id": "bec0f2ad-43a1-4e03-bc0f-7babfa290735",
+      "runId": "46963832-2449-41d5-8783-8fed29241071",
+      "kind": "finding",
+      "text": "访谈时间还没有确定，邮件里写的是\"访谈时间尚未确定，请回复可用时间\"，对方希望我方先给出可选时段，再敲定具体安排。",
+      "composedAt": 1788945632065,
+      "status": "composed"
+    },
+    "deliveryMetrics": {
+      "composeCalls": 5,
+      "composeMs": [
+        5165,
+        3874,
+        10881,
+        14002,
+        2984
+      ]
+    },
+    "deliveryToolCalls": 0,
+    "clientTiming": [
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "commit",
+        "turn": 1,
+        "at": 1788945487971
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "playback_done",
+        "responseId": "6834a815-cd60-40fb-bf52-2e7d03a930dc",
+        "at": 1788945494923
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "playback_done",
+        "responseId": "34599046-5f24-4d60-bb27-fd82aaaea3fe",
+        "at": 1788945532349
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "commit",
+        "turn": 2,
+        "at": 1788945534464
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "playback_done",
+        "responseId": "177b4363-93f2-47fc-b7e4-850120494487",
+        "at": 1788945556704
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "commit",
+        "turn": 3,
+        "at": 1788945560148
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "command": "playback_done",
+        "responseId": "46137fc0-b800-4fd2-b0df-4161a3157b1c",
+        "at": 1788945589123
+      },
+      {
+        "voiceId": "8602760a-3f2c-4d1b-b213-b95ab043c760",
+        "command": "commit",
+        "turn": 1,
+        "at": 1788945593871
+      },
+      {
+        "voiceId": "8602760a-3f2c-4d1b-b213-b95ab043c760",
+        "command": "playback_done",
+        "responseId": "26815283-04ea-451d-985b-86463897e9e2",
+        "at": 1788945624526
+      }
+    ],
+    "audioTiming": [
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "turn": 1,
+        "responseId": "6834a815-cd60-40fb-bf52-2e7d03a930dc",
+        "firstAudioAt": 1788945490743
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "turn": 1,
+        "responseId": "34599046-5f24-4d60-bb27-fd82aaaea3fe",
+        "firstAudioAt": 1788945519571
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "turn": 2,
+        "responseId": "177b4363-93f2-47fc-b7e4-850120494487",
+        "firstAudioAt": 1788945546363
+      },
+      {
+        "voiceId": "857cd0a7-e1fd-4c59-a4bb-96b63f16b60e",
+        "turn": 3,
+        "responseId": "46137fc0-b800-4fd2-b0df-4161a3157b1c",
+        "firstAudioAt": 1788945579287
+      },
+      {
+        "voiceId": "8602760a-3f2c-4d1b-b213-b95ab043c760",
+        "turn": 1,
+        "responseId": "26815283-04ea-451d-985b-86463897e9e2",
+        "firstAudioAt": 1788945616268
+      }
+    ],
+    "browserExited": true,
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-tLN6ik/result.json",
+    "screenshot": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-user-delivery-tLN6ik/sidepanel.png",
+    "sourceStillMatches": true,
+    "tradeoff": "This run used 0 host send_user_message calls, 2 bounded missing-finding compose calls and 3 sourced-chat compose calls: 5 extra calls to the existing task model. Follow-up/correction/reopen commit-to-first-audio: 11.899s, 19.139s, 22.397s. Not evidence of improved conversational speed."
+  }
+}

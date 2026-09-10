@@ -31,10 +31,10 @@ describe("axTreeToText", () => {
     expect(lines.some((l) => l.includes("[ref=30]") && l.includes('textbox "搜索"') && l.includes('value="已填内容"'))).toBe(true);
     expect(lines.some((l) => l.includes('heading "标题"') && l.includes("level=1"))).toBe(true);
     expect(lines.some((l) => l.includes("text: 一段说明文字"))).toBe(true);
-    // heading / StaticText 等非交互角色不分配 ref
+    // 内容定位修订：heading / StaticText 也必须可引用。
     const heading = lines.find((l) => l.includes("heading"));
-    expect(heading).not.toContain("[ref=");
-    expect(backendIds.sort((a, b) => a - b)).toEqual([10, 20, 30, 50]);
+    expect(heading).toContain("[ref=4]");
+    expect(backendIds.sort((a, b) => a - b)).toEqual([4, 10, 20, 30, 40, 50]);
   });
 
   it("ref 即 backendDOMNodeId：跨快照天然保号（ego 约定）", () => {

@@ -1,0 +1,196 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "f97561376327ab002d5fd20f77b75e8be0b0c4c0af5b363af536825743f9d7f2",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "f46bd44a7cec4a5644b5c4d7719c8a37e90046e7c64f89ae9543dfcf83c18b89",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "correction",
+  "targetCode": "cedar-flash-3834",
+  "otherCode": "river-flash-9475",
+  "marker": "4967f0",
+  "activityOrg": "青鹭工作坊",
+  "interviewOrg": "橙湾研究",
+  "eventName": "青鹭工作坊活动邀请",
+  "interviewName": "橙湾研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥8601",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "correction preserves original run",
+      "ok": true
+    },
+    {
+      "name": "annotation is visible",
+      "ok": true
+    },
+    {
+      "name": "all annotations belong to corrected Y, never X",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954372858,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":589101967,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:49537/\",\"active\":true,\"windowId\":589101964,\"working\":false}}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954378127,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-9475\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-3834\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const all = document.body.innerText;\n  const idx = all.indexOf('river-flash-9475');\n  if (idx < 0) return { found: false };\n  // Locate the actual DOM node containing the model id text\n  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);\n  let node;\n  while ((node = walker.nextNode())) {\n    if (node.nodeValue && node.nodeValue.includes('river-flash-9475')) {\n      const el = node.parentElement;\n      const rect = el.getBoundingClientRect();\n      return {\n        found: true,\n        tagName: el.tagName,\n        className: el.className,\n        id: el.id,\n        text: el.textContent.trim().slice(0, 80),\n        rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },\n        parentTag: el.parentElement && el.parentElement.tagName,\n        parentClass: el.parentElement && el.parentElement.className\n      };\n    }\n  }\n  return { found: false };\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788954384666,
+      "ok": true,
+      "result": "{\"value\":{\"className\":\"\",\"found\":true,\"id\":\"\",\"parentClass\":\"\",\"parentTag\":\"SECTION\",\"rect\":{\"h\":28,\"w\":231.1875,\"x\":65,\"y\":306.875},\"tagName\":\"CODE\",\"text\":\"river-flash-9475\"}}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "section:nth-of-type(1) code",
+        "label": "标准模型ID"
+      },
+      "conversationId": "default",
+      "at": 1788954389507,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954390858,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":589101967,\"url\":\"http://127.0.0.1:49537/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788954390908,\"source\":\"cdp\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "correction accepted",
+  "observationBarrierAt": 1788954378153,
+  "originalRun": "2faddf1b-90d2-4043-8a68-0a60ea9efe94",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954378215,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954370577,
+    "runId": "2faddf1b-90d2-4043-8a68-0a60ea9efe94",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954378126
+      }
+    ],
+    "lastAction": {
+      "action": "确认当前页面",
+      "failed": false,
+      "at": 1788954372862
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "correctionAcceptedAt": 1788954378234,
+  "boxes": [
+    {
+      "x": 55,
+      "y": 297,
+      "width": 251,
+      "height": 48
+    }
+  ],
+  "pageState": {
+    "detailVisible": false,
+    "hasHost": true,
+    "other": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 173.328125
+    },
+    "scrollY": 0,
+    "target": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 464.453125
+    },
+    "viewportHeight": 413,
+    "viewportWidth": 756
+  },
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788954394023,
+    "state": "idle",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954370577,
+    "runId": "2faddf1b-90d2-4043-8a68-0a60ea9efe94",
+    "active": [],
+    "lastAction": {
+      "action": "查看页面截图",
+      "failed": false,
+      "at": 1788954391000
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        },
+        {
+          "role": "user",
+          "text": "对象改成标准模型ID，其他要求保留。"
+        }
+      ],
+      "latestResult": {
+        "runId": "2faddf1b-90d2-4043-8a68-0a60ea9efe94",
+        "text": "已圈出标准模型ID `river-flash-9475`，标记位于\"标准模型\"段落下的 `<code>` 元素上，附带\"标准模型ID\"标签。仅处理当前页面，未做其他改动。",
+        "observedAt": 1788954393925,
+        "source": "assistant_output"
+      },
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "deliveries": [],
+  "deliveryMetrics": {
+    "composeCalls": 1,
+    "composeMs": []
+  },
+  "browserExited": true
+}

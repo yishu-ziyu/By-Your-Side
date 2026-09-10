@@ -1,5 +1,8 @@
 # Wiki 演化日志
 
-每轮复盘追加一行：日期 | 会话 id | 新建/更新的 pattern | 产出的提案。
+有知识或提案变化时记录：日期 | 来源任务或会话 | 新建/更新的 pattern | 提案或裁决结果。Codex 收尾可直接引用项目验收文件，不要求 Kimi 会话编号。
 
-（暂无记录）
+- 2026-09-09 | session_f0b4980d-5078-4b2d-9712-034c6553c988 | 新建 patterns/tsx-adhoc-probe-scripts.md、patterns/chrome-secure-preferences-default-dir.md；更新 index.md | 提案 proposals/20260909-probe-script-convention-skill.md（新建 skill 固化探针脚本惯例）
+- 2026-09-09 | 主代理验收上述自动复盘 | 原始 1546 报错为指定模块未找到；本机内联 import 反例成功。修正 tsx pattern、index 中的语法禁令和过宽成功结论，明确 Chrome profile 适用范围；初稿留在本地 consolidate-first-draft.log | 同步修订 probe-scripts 提案，仍待用户裁决，未安装 skill
+- 2026-09-09 | [Codex 任务收尾验收](../../docs/evals/20260909-codex-experience-closeout.md) | 当前主代理提炼并核对 [验收入口错位](patterns/acceptance-entry-mismatch.md)，复用原经验库；项目规范与提案流程按已确认范围更新 | 新增 [验收模板入口字段提案](proposals/20260909-acceptance-entry-field.md)，状态待审；没有修改模板或安装 skill，原 probe-scripts 提案保留
+- 2026-09-09 | [写入回执丢失 R1–R4 返工](../../docs/evals/20260909-write-receipt-loss-r1-r4-rework.md) | 新建 patterns/production-wiring-lowest-shared-module.md，更新 index.md；核对 acceptance-entry-mismatch 与现有提案，不重复 | 无新提案；行为放置属于已生效规范的执行细节，不修改规则或安装 skill

@@ -444,3 +444,62 @@ describe("SessionHold", () => {
     expect(hold.statusAfterAgentEnd(false)).toBe("idle");
   });
 });
+
+describe("R4 执行器按操作身份去重", () => {
+  it("相同 id 的重复投递只执行一次并回传原结果", async () => {
+    const gate = new ControlGate();
+    let writes = 0;
+    const first = await gate.run("dup-1", "click", async () => { writes += 1; return { clicked: writes }; }, "main");
+    const second = await gate.run("dup-1", "click", async () => { writes += 1; return { clicked: writes }; }, "main");
+    expect(first).toEqual({ clicked: 1 });
+    expect(second).toEqual({ clicked: 1 });
+    expect(writes).toBe(1);
+  });
+
+  it("并发重复投递等待原操作并共享同一个结果", async () => {
+    const gate = new ControlGate();
+    let writes = 0;
+    let release!: () => void;
+    const blocker = new Promise<void>(resolve => { release = resolve; });
+    const first = gate.run("dup-2", "click", async () => { writes += 1; await blocker; return { clicked: true }; }, "main");
+    await Promise.resolve();
+    const second = gate.run("dup-2", "click", async () => { writes += 1; return { clicked: false }; }, "main");
+    release();
+    expect(await first).toEqual({ clicked: true });
+    expect(await second).toEqual({ clicked: true });
+    expect(writes).toBe(1);
+  });
+
+  it("原操作失败时重复投递回传同一个错误，不再执行", async () => {
+    const gate = new ControlGate();
+    let writes = 0;
+    await expect(gate.run("dup-3", "click", async () => { writes += 1; throw new Error("动作后未知"); }, "main")).rejects.toThrow("动作后未知");
+    await expect(gate.run("dup-3", "click", async () => { writes += 1; return {}; }, "main")).rejects.toThrow("动作后未知");
+    expect(writes).toBe(1);
+  });
+
+  it("SW 重启后持久快照仍能识别重复投递", async () => {
+    const live = new ControlGate();
+    let writes = 0;
+    await live.run("dup-4", "click", async () => { writes += 1; return { clicked: true }; }, "main");
+    const stored = snapshotControl(live, "idle");
+    const restarted = new ControlGate();
+    applyControlSnapshot(restarted, stored);
+    const replay = await restarted.run("dup-4", "click", async () => { writes += 1; return { clicked: true }; }, "main").then(() => null, (e: any) => e);
+    expect(String(replay?.message)).toMatch(/重复执行/);
+    expect(replay?.executionFact).toBe("unknown");
+    expect(writes).toBe(1);
+  });
+
+  it("只读工具不去重，写工具按 session 与 id 区分", async () => {
+    const gate = new ControlGate();
+    let reads = 0;
+    await gate.run("read-1", "snapshot", async () => { reads += 1; return reads; }, "main");
+    await gate.run("read-1", "snapshot", async () => { reads += 1; return reads; }, "main");
+    expect(reads).toBe(2);
+    let writes = 0;
+    await gate.run("same-id", "click", async () => { writes += 1; }, "main");
+    await gate.run("same-id", "click", async () => { writes += 1; }, "worker");
+    expect(writes).toBe(2);
+  });
+});

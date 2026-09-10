@@ -1,0 +1,108 @@
+{
+  "index": 18,
+  "block": 5,
+  "seed": "bindingab-20260910-b5",
+  "candidate": "B",
+  "scenario": "delay_ready",
+  "repeat": 1,
+  "model": "minimax-cn/MiniMax-M3",
+  "reasoning": "medium",
+  "exitCode": 1,
+  "settleReason": "exit",
+  "timedOut": false,
+  "slow": false,
+  "ok": false,
+  "bucket": "product_failure",
+  "infraFailure": null,
+  "spawnError": null,
+  "setupFailure": null,
+  "productFailure": true,
+  "note": null,
+  "elapsedMs": 31132,
+  "totalMs": 25335,
+  "modelTurns": 7,
+  "registrationOnlyTurns": 1,
+  "turnsWithRegistration": 1,
+  "registrationCalls": 1,
+  "topLevelToolCalls": 6,
+  "browserRunCalls": 3,
+  "browserRunSubsteps": 0,
+  "writeCalls": 0,
+  "failedWrites": 0,
+  "jsCalls": 0,
+  "readCalls": 0,
+  "firstObservationMs": 5397,
+  "firstObservationTool": "snapshot",
+  "firstAttemptMs": null,
+  "firstAttemptTool": null,
+  "firstDispatchMs": null,
+  "firstDispatchTool": null,
+  "firstDispatchOk": null,
+  "firstDomActionMs": null,
+  "firstDomActionSource": "MAIN world confirm click event",
+  "pauseMs": null,
+  "usage": {
+    "input": 12879,
+    "output": 1705,
+    "cacheRead": 48512,
+    "cacheWrite": 0,
+    "cost": 0.017640839999999998
+  },
+  "usageAvailable": true,
+  "usageSource": "session_entries",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "the control was still disabled before the model acted",
+      "ok": true
+    },
+    {
+      "name": "readiness was armed by the first real observation, not before it",
+      "ok": true
+    },
+    {
+      "name": "the click happened only after the control became usable",
+      "ok": false
+    }
+  ],
+  "sideEffects": {
+    "realActivationEvents": 0,
+    "armedAt": 1789017454849,
+    "readyAt": 1789017455751,
+    "firstClickAt": 0,
+    "finalStatus": "等待就绪",
+    "disabled": false
+  },
+  "wordingObservations": {
+    "confirmed": []
+  },
+  "answer": "工具「browser_run」连续三次返回相同错误，已停止重试。这一步没有完成。",
+  "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-O7NdzL",
+  "logPath": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-binding-ab/runs/20260910T045813-60319/18-B-delay_ready-r1.log",
+  "stdoutTail": {
+    "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-O7NdzL",
+    "ok": false,
+    "error": "Error: the click happened only after the control became usable",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "the control was still disabled before the model acted",
+        "ok": true
+      },
+      {
+        "name": "readiness was armed by the first real observation, not before it",
+        "ok": true
+      },
+      {
+        "name": "the click happened only after the control became usable",
+        "ok": false
+      }
+    ]
+  }
+}

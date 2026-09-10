@@ -39,6 +39,8 @@ import {
   loaderSubtitle,
   pixelDelay,
   workerEventRunPolicy,
+  isLiveViewportPinned,
+  liveViewportOverflows,
 } from "./steps.js";
 import { cursorColor } from "../shared/palette.js";
 import { LEAD_COLOR, displayColor, displayNameFor, personFor } from "../../../shared/cast.js";
@@ -57,6 +59,7 @@ import {
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { UserDelivery } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
@@ -329,7 +332,11 @@ function resetConversationRender(): void {
   lastUserHasPage = false;
   lastHistorySeq = 0;
   userBubbles.clear();
+  deliveredBubbles.clear();
   receiptMessages.clear();
+  leadDeliveryMode = null;
+  currentLeadDraft = null;
+  currentLeadDraftDetails = null;
   historyPrimed = false;
   messagesEl.replaceChildren();
   renderTeamCard();
@@ -1253,6 +1260,13 @@ let currentRun: RunHost | null = null;
 /** finishRun 刚收掉的那一块。全员 idle 后到达的 agent_end 复用它，禁止再开 loader。 */
 let lastRun: RunHost | null = null;
 
+/** 显式交付气泡：按 delivery.id 只渲染一次，状态更新不重复生成。 */
+const deliveredBubbles = new Map<string, HTMLElement>();
+/** Lead 当前 run 是否启用了 explicit deliveryMode。 */
+let leadDeliveryMode: "explicit" | null = null;
+let currentLeadDraft: HTMLElement | null = null;
+let currentLeadDraftDetails: HTMLDetailsElement | null = null;
+
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
   root: HTMLElement;
@@ -1324,9 +1338,29 @@ toBottomBtn.appendChild(icon(ArrowDown));
 app.appendChild(toBottomBtn);
 
 let pinned = true;
+let runBodyPinned = true;
+let thinkPinned = true;
+let followingLive = false;
 
 function nearBottom(): boolean {
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+}
+
+function followLive(el: HTMLElement | null, stick: boolean): void {
+  if (!el) return;
+  if (stick) {
+    followingLive = true;
+    el.scrollTop = el.scrollHeight;
+    followingLive = false;
+  }
+  el.classList.toggle("overflowing", liveViewportOverflows(el.scrollHeight, el.clientHeight));
+}
+
+function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): void {
+  el.addEventListener("scroll", () => {
+    if (followingLive) return;
+    setPinned(isLiveViewportPinned(el.scrollTop, el.scrollHeight, el.clientHeight));
+  });
 }
 
 messagesEl.addEventListener("scroll", () => {
@@ -1335,6 +1369,8 @@ messagesEl.addEventListener("scroll", () => {
 });
 
 function scrollToEnd(force = false): void {
+  followLive(currentRun?.body ?? null, force || runBodyPinned);
+  followLive(currentThinking, force || thinkPinned);
   if (force || pinned) messagesEl.scrollTop = messagesEl.scrollHeight;
   toBottomBtn.hidden = nearBottom();
 }
@@ -1478,6 +1514,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
   summary.append(iconBox, title, chainEl, timeEl, chevron);
   const body = document.createElement("div");
   body.className = "run-body";
+  runBodyPinned = true;
+  bindLiveViewport(body, (next) => {
+    runBodyPinned = next;
+  });
   root.append(summary, body);
   messagesEl.appendChild(root);
   const start = runStartAt || eventTime();
@@ -1770,6 +1810,33 @@ function closeBlocks(): void {
   currentThinking = null;
   currentThinkingDetails = null;
   currentThinkingStart = 0;
+  if (currentLeadDraftDetails) {
+    currentLeadDraftDetails.classList.remove("streaming");
+    currentLeadDraftDetails.open = false;
+  }
+  currentLeadDraft = null;
+  currentLeadDraftDetails = null;
+}
+
+function appendLeadDelta(delta: string): void {
+  const run = ensureRun();
+  if (!currentLeadDraft) {
+    const details = document.createElement("details");
+    details.className = "thinking streaming";
+    details.open = false;
+    const summary = document.createElement("summary");
+    summary.appendChild(icon(Brain));
+    const label = document.createElement("span");
+    label.textContent = "执行过程";
+    summary.appendChild(label);
+    const pre = document.createElement("pre");
+    details.append(summary, pre);
+    run.body.insertBefore(details, run.loader);
+    currentLeadDraft = pre;
+    currentLeadDraftDetails = details;
+  }
+  currentLeadDraft.appendChild(document.createTextNode(delta));
+  scrollToEnd();
 }
 
 function appendDelta(kind: "assistant" | "thinking", delta: string): void {
@@ -1791,6 +1858,10 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       label.textContent = "正在思考…";
       summary.appendChild(label);
       const pre = document.createElement("pre");
+      thinkPinned = true;
+      bindLiveViewport(pre, (next) => {
+        thinkPinned = next;
+      });
       details.append(summary, pre);
       stepsContainer().appendChild(details);
       // 新思考块隔开前后工具调用：另起 chip 分组；loader 保持在 body 底部
@@ -2004,7 +2075,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
       renderMemoryReceipt(ev);
       break;
     case "text_delta":
-      appendDelta("assistant", ev.delta);
+      if (leadDeliveryMode === "explicit") {
+        appendLeadDelta(ev.delta);
+      } else {
+        appendDelta("assistant", ev.delta);
+      }
       break;
     case "thinking_delta":
       appendDelta("thinking", ev.delta);
@@ -2016,16 +2091,38 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
       onToolEnd(ev);
       break;
     case "agent_start":
+      leadDeliveryMode = (ev as { deliveryMode?: "explicit" }).deliveryMode ?? null;
+      closeBlocks();
+      break;
     case "turn_end":
       closeBlocks();
       break;
     case "agent_end":
       closeBlocks();
+      leadDeliveryMode = null;
       break;
+    case "user_delivery":
+      handleUserDelivery(ev.delivery);
+      break;
+    case 'user_delivery_stream': {
+      const s=ev.stream;
+      let bubble=deliveredBubbles.get(s.id);
+      if(s.phase==='cancelled'){
+        if(bubble?.dataset.streaming==='true'){bubble.dataset.streaming='cancelled';bubble.title='这次回答未完成';}
+        break;
+      }
+      if(bubble&&bubble.dataset.streaming!=='true')break;
+      if(!bubble){bubble=addMsg('msg assistant markdown','');bubble.dataset.deliveryId=s.id;bubble.dataset.deliveryKind=s.kind;bubble.dataset.streaming='true';deliveredBubbles.set(s.id,bubble);}
+      bubble.innerHTML=renderMarkdown(s.text);scrollToEnd();break;
+    }
     case "turn_start":
       break;
     case "notice":
-      if (ev.receipt) {
+      if(ev.plan){
+        const key=`plan:${ev.plan.conversationId}:${ev.plan.id}`;
+        const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果待确认':'未执行')}\n${s.text}`).join('\n');
+        const previous=receiptMessages.get(key);if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
+      }else if (ev.receipt) {
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
         const text=`${ev.receipt.targetTitle} · ${ev.message}${ev.receipt.text&&!ev.message.includes(ev.receipt.text)?`\n原话：${ev.receipt.text}`:''}`;
         const previous=receiptMessages.get(key);
@@ -2037,6 +2134,42 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
       addMsg("msg error", humanizeModelError(ev.message));
       break;
   }
+}
+
+const DELIVERY_STATUS_RANK: Record<string, number> = {
+  composed: 0,
+  speaking: 1,
+  played: 2,
+};
+
+function handleUserDelivery(delivery: UserDelivery): void {
+  if (!delivery || typeof delivery.id !== "string" || !delivery.id) return;
+
+  const existing = deliveredBubbles.get(delivery.id);
+  if (existing) {
+    if(existing.dataset.streaming==='true'){
+      existing.innerHTML=renderMarkdown(delivery.text);delete existing.dataset.streaming;
+      existing.dataset.deliveryKind=delivery.kind;
+      existing.dataset.deliveryStatus=delivery.status;voiceUI.deliver?.(delivery);scrollToEnd();return;
+    }
+    const oldStatus = existing.dataset.deliveryStatus ?? "";
+    const oldRank = DELIVERY_STATUS_RANK[oldStatus] ?? -1;
+    const newRank = DELIVERY_STATUS_RANK[delivery.status] ?? -1;
+    if (newRank > oldRank) {
+      existing.dataset.deliveryStatus = delivery.status;
+    }
+    return;
+  }
+
+  voiceUI.deliver?.(delivery);
+
+  const bubble = addMsg("msg assistant markdown", "");
+  bubble.innerHTML = renderMarkdown(delivery.text);
+  bubble.dataset.deliveryId = delivery.id;
+  bubble.dataset.deliveryKind = delivery.kind;
+  bubble.dataset.deliveryStatus = delivery.status;
+  deliveredBubbles.set(delivery.id, bubble);
+  scrollToEnd();
 }
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
@@ -2154,6 +2287,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.state === "connected") {
     // 等 hello_ok 带模型名到达；先亮绿灯
     setStatus("on", "已连接");
+    voiceUI.reconnected();
   } else if (envelope.state === "connecting") {
     setStatus("retry", "连接中…");
   } else {

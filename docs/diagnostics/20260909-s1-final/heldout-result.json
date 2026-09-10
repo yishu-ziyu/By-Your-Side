@@ -1,0 +1,618 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "42a08fa98eb98c40dff28a3c4b07f60639b6a8a59e49748be2869c04528bf43d",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "heldout",
+  "targetCode": "cedar-flash-6994",
+  "otherCode": "river-flash-9318",
+  "marker": "6d7cb3",
+  "activityOrg": "鹤鸣工作坊",
+  "interviewOrg": "海棠研究",
+  "eventName": "鹤鸣工作坊活动邀请",
+  "interviewName": "海棠研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥5605",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "actual mark tool succeeds",
+      "ok": true
+    },
+    {
+      "name": "page contains a visible annotation",
+      "ok": true
+    },
+    {
+      "name": "the actual annotation uses hand-drawn boiling frames",
+      "ok": true
+    },
+    {
+      "name": "boiling motion actually changes frames unless reduced motion is requested",
+      "ok": true
+    },
+    {
+      "name": "annotation is in the visible viewport",
+      "ok": true
+    },
+    {
+      "name": "annotation belongs to target card rather than its distractor",
+      "ok": true
+    },
+    {
+      "name": "annotation follows the target when the page scrolls",
+      "ok": true
+    },
+    {
+      "name": "existing clear-marks removes the annotation",
+      "ok": true
+    },
+    {
+      "name": "one current formal answer is retained",
+      "ok": true
+    },
+    {
+      "name": "delivery/playback cannot claim independently verified task success",
+      "ok": true
+    }
+  ],
+  "voice": [
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "connecting"
+      },
+      "at": 1788951481549
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "ready"
+      },
+      "at": 1788951482405
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "text",
+        "role": "user",
+        "turn": 1,
+        "text": "帮我在这页给临时模型at做个醒目的圈主。"
+      },
+      "at": 1788951489683
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在理解这句话"
+      },
+      "at": 1788951489684
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "facts",
+        "turn": 1,
+        "snapshot": {
+          "conversationId": "default",
+          "observedAt": 1788951490823,
+          "state": "running",
+          "goal": "帮我在这页给临时模型at做个醒目的圈主。",
+          "startedAt": 1788951490823,
+          "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+          "active": [],
+          "lastAction": null,
+          "successVerified": false,
+          "conversationContext": {
+            "recentTurns": [
+              {
+                "role": "user",
+                "text": "帮我在这页给临时模型at做个醒目的圈主。"
+              }
+            ],
+            "latestResult": null,
+            "latestDelivery": null
+          },
+          "controlVersion": 0
+        }
+      },
+      "at": 1788951490823
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在准备回答"
+      },
+      "at": 1788951490824
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "text",
+        "turn": 1,
+        "role": "assistant",
+        "text": "收到，这就去帮你给临时模型at做个醒目的圈主。"
+      },
+      "at": 1788951491192
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "response_end",
+        "turn": 1,
+        "responseId": "49a162c1-f776-4db9-9582-66c955b989f4"
+      },
+      "at": 1788951492927
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "ready"
+      },
+      "at": 1788951495704
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "facts",
+        "turn": 1,
+        "snapshot": {
+          "conversationId": "default",
+          "observedAt": 1788951537193,
+          "state": "idle",
+          "goal": "帮我在这页给临时模型at做个醒目的圈主。",
+          "startedAt": 1788951490823,
+          "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+          "active": [],
+          "lastAction": {
+            "action": "send_user_message",
+            "failed": false,
+            "at": 1788951535507
+          },
+          "successVerified": false,
+          "conversationContext": {
+            "recentTurns": [
+              {
+                "role": "user",
+                "text": "帮我在这页给临时模型at做个醒目的圈主。"
+              },
+              {
+                "role": "assistant",
+                "text": "收到，这就去帮你给临时模型at做个醒目的圈主。"
+              },
+              {
+                "role": "assistant",
+                "text": "已经在临时模型区块（cedar-flash-6994 那张卡片）上加了一个手绘的醒目蓝圈和\"临时模型 at\"标签，圈注会随页面滚动一起跟着这张卡片。如果想换文字或去掉，告诉我即可。"
+              }
+            ],
+            "latestResult": {
+              "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+              "text": "已在临时模型区块（cedar-flash-6994卡片）加上醒目的手绘蓝圈和「临时模型 at」标签，圈注会随滚动跟着这张卡片。",
+              "observedAt": 1788951536892,
+              "source": "assistant_output"
+            },
+            "latestDelivery": {
+              "conversationId": "default",
+              "id": "ff3f49c9-5368-4f2a-8d39-872986848b87",
+              "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+              "kind": "finding",
+              "text": "已经在临时模型区块（cedar-flash-6994 那张卡片）上加了一个手绘的醒目蓝圈和\"临时模型 at\"标签，圈注会随页面滚动一起跟着这张卡片。如果想换文字或去掉，告诉我即可。",
+              "composedAt": 1788951535507,
+              "status": "composed"
+            }
+          },
+          "controlVersion": 0
+        }
+      },
+      "at": 1788951537239
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在准备回答"
+      },
+      "at": 1788951537240
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "event": {
+        "kind": "state",
+        "state": "closed"
+      },
+      "at": 1788951538784
+    }
+  ],
+  "tools": [
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951492403,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-9318\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-6994\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951502387,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":1831473044,\"url\":\"http://127.0.0.1:58453/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788951502453,\"source\":\"cdp\"}"
+    },
+    {
+      "name": "scroll",
+      "params": {
+        "dy": 300
+      },
+      "conversationId": "default",
+      "at": 1788951504935,
+      "ok": true,
+      "result": "{\"atBottom\":false}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951506132,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":1831473044,\"url\":\"http://127.0.0.1:58453/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788951506158,\"source\":\"cdp\"}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951509444,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-9318\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-6994\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const headings = document.querySelectorAll('h2');\n  const result = [];\n  headings.forEach((h, i) => {\n    const parent = h.parentElement;\n    result.push({\n      index: i,\n      headingText: h.textContent.trim(),\n      parentTag: parent ? parent.tagName : null,\n      parentClass: parent ? parent.className : null,\n      parentHTML: parent ? parent.outerHTML.substring(0, 500) : null\n    });\n  });\n  return result;\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788951518689,
+      "ok": true,
+      "result": "{\"value\":[{\"headingText\":\"标准模型\",\"index\":0,\"parentClass\":\"\",\"parentHTML\":\"<section id=\\\"other\\\"><h2>标准模型</h2><code>river-flash-9318</code><p>标准模型长期有效。</p></section>\",\"parentTag\":\"SECTION\"},{\"headingText\":\"临时模型\",\"index\":1,\"parentClass\":\"\",\"parentHTML\":\"<section id=\\\"target\\\"><h2>临时模型</h2><code>cedar-flash-6994</code><p>临时模型的有效期为明天。</p></section>\",\"parentTag\":\"SECTION\"}]}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "loc=css:#target",
+        "label": "临时模型 at"
+      },
+      "conversationId": "default",
+      "at": 1788951523265,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951524317,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":1831473044,\"url\":\"http://127.0.0.1:58453/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788951524361,\"source\":\"cdp\"}"
+    },
+    {
+      "name": "scroll",
+      "params": {
+        "dy": 50
+      },
+      "conversationId": "default",
+      "at": 1788951527199,
+      "ok": true,
+      "result": "{\"atBottom\":false}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951528289,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":1831473044,\"url\":\"http://127.0.0.1:58453/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788951528322,\"source\":\"cdp\"}"
+    },
+    {
+      "name": "scroll",
+      "params": {
+        "dy": -50
+      },
+      "conversationId": "default",
+      "at": 1788951530867,
+      "ok": true,
+      "result": "{\"atBottom\":false}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788951531977,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":1831473044,\"url\":\"http://127.0.0.1:58453/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788951532023,\"source\":\"cdp\"}"
+    }
+  ],
+  "stages": [
+    {
+      "event": "connection_start",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 0
+    },
+    {
+      "event": "session_ready",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 0
+    },
+    {
+      "event": "input_interrupt",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "input_commit",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1,
+      "pcmBytes": 195840,
+      "rms": 0.12044,
+      "peak": 0.62915
+    },
+    {
+      "event": "transcription",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1,
+      "characters": 20,
+      "empty": false
+    },
+    {
+      "event": "route_start",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1,
+      "requestId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7-1",
+      "characters": 20
+    },
+    {
+      "event": "route_result",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1,
+      "requestId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7-1",
+      "kind": "action",
+      "accepted": true,
+      "elapsedMs": 1140
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "conversationId": "default",
+      "turn": 1
+    }
+  ],
+  "stage": "speech 帮我在这页给临时模型ID做个醒目的圈注。",
+  "utterance": "帮我在这页给临时模型ID做个醒目的圈注。",
+  "clientTiming": [
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "command": "commit",
+      "turn": 1,
+      "at": 1788951488081
+    },
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "command": "playback_done",
+      "responseId": "49a162c1-f776-4db9-9582-66c955b989f4",
+      "at": 1788951495704
+    }
+  ],
+  "audioTiming": [
+    {
+      "voiceId": "66cd866e-c6cf-4cb3-9eac-cb6d394a82c7",
+      "turn": 1,
+      "responseId": "49a162c1-f776-4db9-9582-66c955b989f4",
+      "firstAudioAt": 1788951491650
+    }
+  ],
+  "speechInputResult": {
+    "deliveredText": [
+      "已经在临时模型区块（cedar-flash-6994 那张卡片）上加了一个手绘的醒目蓝圈和\"临时模型 at\"标签，圈注会随页面滚动一起跟着这张卡片。如果想换文字或去掉，告诉我即可。"
+    ],
+    "voiceTexts": [
+      "收到，这就去帮你给临时模型at做个醒目的圈主。"
+    ],
+    "playbackFinished": true
+  },
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788951536950,
+    "state": "idle",
+    "goal": "帮我在这页给临时模型at做个醒目的圈主。",
+    "startedAt": 1788951490823,
+    "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+    "active": [],
+    "lastAction": {
+      "action": "send_user_message",
+      "failed": false,
+      "at": 1788951535507
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "帮我在这页给临时模型at做个醒目的圈主。"
+        },
+        {
+          "role": "assistant",
+          "text": "收到，这就去帮你给临时模型at做个醒目的圈主。"
+        },
+        {
+          "role": "assistant",
+          "text": "已经在临时模型区块（cedar-flash-6994 那张卡片）上加了一个手绘的醒目蓝圈和\"临时模型 at\"标签，圈注会随页面滚动一起跟着这张卡片。如果想换文字或去掉，告诉我即可。"
+        }
+      ],
+      "latestResult": {
+        "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+        "text": "已在临时模型区块（cedar-flash-6994卡片）加上醒目的手绘蓝圈和「临时模型 at」标签，圈注会随滚动跟着这张卡片。",
+        "observedAt": 1788951536892,
+        "source": "assistant_output"
+      },
+      "latestDelivery": {
+        "conversationId": "default",
+        "id": "ff3f49c9-5368-4f2a-8d39-872986848b87",
+        "runId": "70d58711-e0b4-4c66-9604-b3de2e5b053e",
+        "kind": "finding",
+        "text": "已经在临时模型区块（cedar-flash-6994 那张卡片）上加了一个手绘的醒目蓝圈和\"临时模型 at\"标签，圈注会随页面滚动一起跟着这张卡片。如果想换文字或去掉，告诉我即可。",
+        "composedAt": 1788951535507,
+        "status": "composed"
+      }
+    },
+    "controlVersion": 0
+  },
+  "markCalls": [
+    {
+      "name": "mark",
+      "params": {
+        "target": "loc=css:#target",
+        "label": "临时模型 at"
+      },
+      "conversationId": "default",
+      "at": 1788951523265,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    }
+  ],
+  "boxes": [
+    {
+      "x": 34,
+      "y": 135,
+      "width": 673,
+      "height": 287
+    }
+  ],
+  "markDetails": [
+    {
+      "boilFrameCount": 3,
+      "className": "mark sketch boil",
+      "hasArrow": false,
+      "hasEllipse": false,
+      "hasSvg": true,
+      "isBoil": true,
+      "isGrow": false,
+      "isSketch": true,
+      "labelText": "临时模型 at"
+    }
+  ],
+  "motionSamples": [
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "2",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "2",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "2",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    }
+  ],
+  "pageState": {
+    "detailVisible": false,
+    "hasHost": true,
+    "other": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": -145.671875
+    },
+    "scrollY": 319,
+    "target": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 145.453125
+    },
+    "viewportHeight": 413,
+    "viewportWidth": 756
+  },
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

@@ -90,6 +90,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   interface LiveMark {
     el: HTMLDivElement;
     anchor: Element | null;
+    observedNode?: Node;
     target?: string;
     pad: number;
     label?: string;
@@ -357,6 +358,17 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   function relayoutMarks(): void {
     if (liveMarks.length === 0) return;
     for (const mark of liveMarks) {
+      if (mark.observedNode) {
+        const node = mark.observedNode;
+        if (!node.isConnected) {mark.el.style.visibility = "hidden";continue;}
+        let rect: DOMRect;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const range = document.createRange();range.selectNodeContents(node);rect = range.getBoundingClientRect();
+        } else rect = (node as Element).getBoundingClientRect();
+        mark.el.style.visibility = rect.width && rect.height ? "" : "hidden";
+        applyMarkBox(mark.el, rect, mark.pad, mark.label);
+        continue;
+      }
       const anchor = liveAnchor(mark);
       if (!anchor) {
         mark.el.style.visibility = "hidden";
@@ -612,6 +624,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     target?: string,
     actions?: MarkAction[],
     options?: MarkOptions,
+    observedNode?: Node,
   ): void {
     const opts = { ...defaultMarkOptions, ...options };
     const isSketch = opts.style === "sketch";
@@ -685,7 +698,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     marksLayer!.appendChild(el);
     liveMarks.push({
       el,
-      anchor: resolveAnchor(rect, target),
+      anchor: observedNode ? null : resolveAnchor(rect, target),
+      observedNode,
       target,
       pad,
       label,
@@ -1012,9 +1026,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         target?: string,
         actions?: MarkAction[],
         options?: MarkOptions,
+        observedNode?: Node,
       ): void {
         const inst = getInstance(id);
-        spawnMark(inst, rect, label, target, actions, options);
+        spawnMark(inst, rect, label, target, actions, options, observedNode);
         // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
         if (parsed) {

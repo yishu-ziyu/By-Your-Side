@@ -1,0 +1,94 @@
+{
+  "ok": false,
+  "evidence": {
+    "sourceSha256": "f97561376327ab002d5fd20f77b75e8be0b0c4c0af5b363af536825743f9d7f2",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "31f9ea009eb382d93b3a6a1125aa39e731aa69dc522833a0fc3ba46900c85ece",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "correction",
+  "targetCode": "cedar-flash-6597",
+  "otherCode": "river-flash-7022",
+  "marker": "7f7794",
+  "activityOrg": "鹤鸣工作坊",
+  "interviewOrg": "海棠研究",
+  "eventName": "鹤鸣工作坊活动邀请",
+  "interviewName": "海棠研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥3071",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954306269,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":56753332,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:49272/\",\"active\":true,\"windowId\":56753329,\"working\":false}}"
+    },
+    {
+      "name": "snapshot",
+      "params": {
+        "tabId": 56753332
+      },
+      "conversationId": "default",
+      "at": 1788954310235,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-7022\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-6597\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "first observation held before returning to model",
+  "observationBarrierAt": 1788954310249,
+  "originalRun": "8b41c7aa-2d24-4523-a613-e28ea0bfb4d6",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954310328,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954302183,
+    "runId": "8b41c7aa-2d24-4523-a613-e28ea0bfb4d6",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954310235
+      }
+    ],
+    "lastAction": {
+      "action": "确认当前页面",
+      "failed": false,
+      "at": 1788954306272
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

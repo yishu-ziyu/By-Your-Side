@@ -193,3 +193,19 @@ export function historyEventTime(applyingHistory: boolean, occurredAt?: number):
 export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }
+
+/** 执行中过程窗是否钉在底部；程序滚动不要走这条，只认人滚。 */
+export const LIVE_VIEWPORT_SLOP_PX = 12;
+
+export function isLiveViewportPinned(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  slop = LIVE_VIEWPORT_SLOP_PX,
+): boolean {
+  return scrollHeight - scrollTop - clientHeight < slop;
+}
+
+export function liveViewportOverflows(scrollHeight: number, clientHeight: number): boolean {
+  return scrollHeight > clientHeight + 1;
+}

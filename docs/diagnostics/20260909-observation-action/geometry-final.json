@@ -1,0 +1,157 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "c0f5453a989d9ab6b264f8cf360fd5395b7fb2668c27c00282511831756b6e46",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "cf653f2ff426c96af02ad4e242c5a037fa2626acd7c6d138f925488006475e80",
+    "backgroundSha256": "b1252367ffda7c072a3f57ec49cc670c8336d86146ab2120ffb059119a1cab63",
+    "sidepanelSha256": "91e17b480adcf0bd0f1d9d72d7386046f995a37512ac643f007c698a14b9658b",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "mechanism",
+  "layout": "cards",
+  "contentKind": "text",
+  "targetCode": "cedar-flash-8766",
+  "otherCode": "river-flash-4831",
+  "marker": "84f9c8",
+  "activityOrg": "星浦工作坊",
+  "interviewOrg": "云杉研究",
+  "eventName": "星浦工作坊活动邀请",
+  "interviewName": "云杉研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥5056",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "image fixture is actually loaded",
+      "ok": true
+    },
+    {
+      "name": "same-tag same-name headings retain distinct actionable identities",
+      "ok": true
+    },
+    {
+      "name": "heading, text, image and shadow text have snapshot refs",
+      "ok": true
+    },
+    {
+      "name": "observed ref 0 resolves to expected content",
+      "ok": true
+    },
+    {
+      "name": "observed ref 0 produces precise visible annotation",
+      "ok": true
+    },
+    {
+      "name": "observed ref 1 resolves to expected content",
+      "ok": true
+    },
+    {
+      "name": "observed ref 1 produces precise visible annotation",
+      "ok": true
+    },
+    {
+      "name": "observed ref 2 resolves to expected content",
+      "ok": true
+    },
+    {
+      "name": "observed ref 2 produces precise visible annotation",
+      "ok": true
+    },
+    {
+      "name": "observed ref 3 resolves to expected content",
+      "ok": true
+    },
+    {
+      "name": "observed ref 3 produces precise visible annotation",
+      "ok": true
+    },
+    {
+      "name": "removed observed node cannot silently retarget another heading",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [],
+  "stages": [],
+  "stage": "chrome startup",
+  "directSnapshot": "RootWebArea \"模型说明测试页\" focused\n  [ref=12] heading \"相同标题\" level=2\n    [ref=18] text: 相同标题\n  [ref=13] heading \"相同标题\" level=2\n    [ref=19] text: 相同标题\n  [ref=20] text: 独立正文锚点\n  [ref=15] image \"图像锚点\"\n  [ref=21] text: 嵌套文字锚点",
+  "directGeometry": [
+    {
+      "i": 0,
+      "boxes": [
+        {
+          "x": 55,
+          "y": 255,
+          "width": 631,
+          "height": 73
+        }
+      ],
+      "expected": {
+        "height": 52.796875,
+        "width": 611,
+        "x": 65,
+        "y": 264.921875
+      }
+    },
+    {
+      "i": 1,
+      "boxes": [
+        {
+          "x": 34,
+          "y": 345,
+          "width": 152,
+          "height": 50
+        }
+      ],
+      "expected": {
+        "height": 30,
+        "width": 132,
+        "x": 44,
+        "y": 355.09375
+      }
+    },
+    {
+      "i": 2,
+      "boxes": [
+        {
+          "x": 34,
+          "y": 278,
+          "width": 210,
+          "height": 120
+        }
+      ],
+      "expected": {
+        "height": 100,
+        "width": 190,
+        "x": 44,
+        "y": 288.28125
+      }
+    },
+    {
+      "i": 3,
+      "boxes": [
+        {
+          "x": 34,
+          "y": 303,
+          "width": 152,
+          "height": 50
+        }
+      ],
+      "expected": {
+        "height": 30,
+        "width": 132,
+        "x": 44,
+        "y": 313.46875
+      }
+    }
+  ],
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

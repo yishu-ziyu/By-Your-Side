@@ -1,0 +1,177 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "b47b6d68b2d104a88aa13bfd938f6782acb1b65a133d60f2a0fde0a0bd32a7b2",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "f46bd44a7cec4a5644b5c4d7719c8a37e90046e7c64f89ae9543dfcf83c18b89",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "cancel",
+  "targetCode": "cedar-flash-9484",
+  "otherCode": "river-flash-7633",
+  "marker": "68ea0c",
+  "activityOrg": "岚川工作坊",
+  "interviewOrg": "星浦研究",
+  "eventName": "岚川工作坊活动邀请",
+  "interviewName": "星浦研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥9998",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "general capability question does not replay cancelled action",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "cancelled run remains cancelled",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954893048,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":518528199,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:51005/\",\"active\":true,\"windowId\":518528196,\"working\":false}}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "inspect",
+        "tabId": 518528199
+      },
+      "conversationId": "default",
+      "at": 1788954894341,
+      "ok": true,
+      "result": "{\"tabId\":518528199,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "claim",
+        "tabId": 518528199,
+        "expectedConversationId": null
+      },
+      "conversationId": "default",
+      "at": 1788954894342,
+      "ok": true,
+      "result": "{\"tabId\":518528199,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "switch_tab",
+      "params": {
+        "tabId": 518528199
+      },
+      "conversationId": "default",
+      "at": 1788954894361,
+      "ok": true,
+      "result": "{\"tabId\":518528199}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954895772,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-9484\\n  text: 临时模型的有效期为明天。\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-7633\\n  text: 标准模型长期有效。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "first observation held before returning to model",
+  "observationBarrierAt": 1788954895783,
+  "originalRun": "6f4540d8-6afa-4206-a8f3-fa7a39f1ee5d",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954895882,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954889996,
+    "runId": "6f4540d8-6afa-4206-a8f3-fa7a39f1ee5d",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954895772
+      }
+    ],
+    "lastAction": {
+      "action": "switch_tab",
+      "failed": false,
+      "at": 1788954894364
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "capabilityReply": {
+    "kind": "none",
+    "resumeReadOnly": "chat",
+    "plan": {
+      "id": "capability-after-cancel",
+      "conversationId": "default",
+      "updatedAt": 1788954898023,
+      "steps": []
+    }
+  },
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788954899238,
+    "state": "aborted",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954889996,
+    "runId": "6f4540d8-6afa-4206-a8f3-fa7a39f1ee5d",
+    "active": [],
+    "lastAction": {
+      "action": "switch_tab",
+      "failed": false,
+      "at": 1788954894364
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        },
+        {
+          "role": "user",
+          "text": "我只是问你有没有标注能力，不要操作页面。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 1
+  },
+  "deliveries": [],
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

@@ -141,16 +141,16 @@ export function axTreeToText(nodes: AxNodeLite[]): AxTextResult {
     if (line !== null) {
       let prefix = "";
       const backendId = node.backendDOMNodeId;
-      if (backendId !== undefined && REF_ROLES.has(node.role?.value ?? "")) {
+      if (backendId !== undefined && role !== "RootWebArea" && role !== "WebArea") {
         prefix = `[ref=${backendId}] `;
-        backendIds.push(backendId);
       }
-      totalChars += line.length + prefix.length + 1;
+      totalChars += depth * 2 + line.length + prefix.length + 1;
       if (totalChars > MAX_OUTPUT_CHARS) {
         truncated = true;
         return;
       }
       lines.push(`${"  ".repeat(depth)}${prefix}${line}`);
+      if (prefix) backendIds.push(backendId!);
       childDepth = depth + 1;
     }
 

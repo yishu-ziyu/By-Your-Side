@@ -22,7 +22,7 @@ export class TaskReceiptError extends Error {
 /** One private file per request. Never prune automatically: an old ID must not execute again. */
 export class TaskReceiptStore {
   private readonly memory = new Map<string, RecordEntry>();
-  constructor(private readonly directory?: string) { if (directory) mkdirSync(directory,{recursive:true,mode:0o700}); }
+  constructor(readonly directory?: string) { if (directory) mkdirSync(directory,{recursive:true,mode:0o700}); }
   private file(key: string): string { return join(this.directory!, `${hash(key)}.json`); }
   read(key: string): RecordEntry | undefined {
     if (!this.directory) return this.memory.get(key);

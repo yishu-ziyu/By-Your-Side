@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>执行过程 · 思考流占多大地方</title>
+<style>
+  :root {
+    --content-bg: #fff;
+    --content-subtle: #f7f8fa;
+    --content-border: rgba(0,0,0,.06);
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-tertiary: #9ca3af;
+    --apple-green: #34c759;
+    --apple-blue: #0071e3;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f5f3;
+    color: #222;
+    font: 14px/1.55 var(--font);
+  }
+  main { max-width: 1180px; margin: 36px auto 48px; padding: 0 24px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  .lead { color: #8a8a85; margin: 0 0 18px; font-size: 13.5px; }
+  .toolbar { display: flex; gap: 8px; margin: 0 0 22px; }
+  .toolbar button {
+    font: inherit; font-size: 12.5px;
+    border: 1px solid #ddd; background: #fff; border-radius: 8px;
+    padding: 6px 12px; cursor: pointer; color: #333;
+  }
+  .toolbar button:hover { background: #fafafa; }
+  .compare {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 22px;
+    align-items: start;
+  }
+  .col .label { font-size: 12.5px; color: #666; margin: 0 0 8px; min-height: 38px; }
+  .col .label strong { color: #111; font-weight: 600; }
+  .col .label em { font-style: normal; color: #0071e3; font-weight: 600; margin-left: 6px; }
+  .col .hint { font-size: 12px; color: #9a9a94; margin: 8px 0 0; }
+  .panel {
+    width: 100%;
+    height: 680px;
+    border: 1px solid #dedede;
+    border-radius: 16px;
+    overflow: hidden;
+    background:
+      radial-gradient(at 15% 15%, #ffdfce70, transparent 55%),
+      radial-gradient(at 85% 20%, #c8e2ff80, transparent 55%),
+      #f2f4f8;
+    display: flex;
+    flex-direction: column;
+  }
+  .top {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 14px 12px;
+    font-size: 13px; font-weight: 600;
+    border-bottom: 1px solid #ddd7;
+  }
+  .connected { margin-left: auto; color: #777; font-size: 11px; font-weight: 400; }
+  .dot { display: inline-block; width: 6px; height: 6px; background: #34c759; border-radius: 50%; margin-right: 5px; }
+  .messages { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .messages > * { flex-shrink: 0; }
+  .user {
+    align-self: flex-end; max-width: 88%;
+    background: #fff; border: 1px solid var(--content-border);
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    padding: 9px 13px; border-radius: 18px 18px 4px 18px;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  .run {
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.03);
+    overflow: hidden;
+  }
+  .run-sum {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 38px; padding: 9px 12px; font-size: 12px;
+  }
+  .run-title { font-weight: 600; flex-shrink: 0; }
+  .run-chain {
+    color: var(--text-secondary); font-size: 11.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .run-time { margin-left: auto; color: var(--text-tertiary); font-size: 11px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .run-sum svg:last-child { transform: rotate(180deg); }
+  .run-body { display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 12px; }
+  .think {
+    color: var(--text-secondary); font-size: 12px;
+    border-left: 2px solid var(--content-border); padding-left: 10px;
+  }
+  .think .row { display: flex; align-items: center; gap: 5px; }
+  .think.live .row { color: var(--text-secondary); }
+  .think pre {
+    margin: 6px 0 0; white-space: pre-wrap; word-break: break-word;
+    font-family: var(--font); color: var(--text-tertiary); font-size: 12px; line-height: 1.55;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border: 1px solid var(--content-border);
+    border-radius: 999px; background: var(--content-subtle);
+    font-size: 11.5px; color: var(--text-primary);
+  }
+  .chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--apple-green); flex-shrink: 0; }
+  .chip .dur { font-size: 10.5px; color: var(--text-tertiary); }
+  .composer {
+    margin: 10px 12px 12px; padding: 10px 12px;
+    background: #fffc; backdrop-filter: blur(18px);
+    border: 1px solid #fff; border-radius: 18px;
+    box-shadow: 0 4px 18px #00000007;
+    color: #aaa; font-size: 12.5px;
+  }
+  svg.ico { width: 14px; height: 14px; flex-shrink: 0; color: #6b7280; }
+  svg.sm { width: 13px; height: 13px; }
+
+  /* B：只限当前思考 */
+  .think-live {
+    max-height: 175px;
+    overflow: auto;
+    scrollbar-width: none;
+  }
+  .jump {
+    display: none;
+    margin: 6px 0 0;
+    border: 0;
+    background: transparent;
+    color: var(--apple-blue);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .jump.show { display: inline-flex; }
+  .think-live.overflowing {
+    mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  }
+  .think-live pre { margin-top: 2px; }
+
+  /* C：整段过程限高 */
+  .run-body.viewport {
+    max-height: 232px;
+    overflow: auto;
+    scrollbar-width: none;
+  }
+  .run-body.viewport.overflowing {
+    mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  }
+  /* 结合：整块过程限高，里面仍是步骤 + 思考窗口 */
+  .run-body.viewport.combo { max-height: 308px; }
+
+  @media (max-width: 980px) {
+    .compare { grid-template-columns: 1fr; }
+    .panel { height: 640px; }
+    main { margin-top: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .think-live, .run-body.viewport { mask-image: none; -webkit-mask-image: none; }
+  }
+</style>
+<main>
+  <h1>步骤还在，过程不再把对话顶走</h1>
+  <p class="lead">左边两档是你刚看的。右边是结合：做过的步骤还在，整块过程限高，上面淡出，底下钉住正在写的思考。</p>
+  <div class="toolbar">
+    <button type="button" id="replay">重放思考流</button>
+  </div>
+  <div class="compare">
+    <section class="col">
+      <div class="label"><strong>只限思考</strong><br>步骤都在，卡片仍会变长</div>
+      <div class="panel" data-mode="think"></div>
+      <p class="hint">你说的话会被顶走。</p>
+    </section>
+    <section class="col">
+      <div class="label"><strong>整段过程限高</strong><br>对话还在，步骤被顶出画面</div>
+      <div class="panel" data-mode="all"></div>
+      <p class="hint">只剩思考字，看不出刚做了哪一步。</p>
+    </section>
+    <section class="col">
+      <div class="label"><strong>结合</strong><em>推荐</em><br>步骤还在，过程锁在一块，对话不被顶走</div>
+      <div class="panel" data-mode="combo"></div>
+      <p class="hint">上面淡出的是更早的步骤，底下是芯片和正在写的思考。</p>
+    </section>
+  </div>
+</main>
+<script>
+const I = {
+  list: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  brain: '<svg class="ico sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>',
+  chev: '<svg class="ico sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>',
+  tabs: '<svg class="ico sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg>',
+  scan: '<svg class="ico sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+};
+
+const TEXT = [
+  '用户要把这句话发到当前对话里。',
+  '先确认现在停在哪一页，是不是目标会话。',
+  '看起来还不在对话页，先切过去再读结构。',
+  '页面已经打开。输入框在底部，正文可以原样放进去。',
+  '发送前再看一眼，确认还是同一条对话，不要改措辞。',
+  '输入框是空的，光标已经在里面。',
+  '把整段话一次放进去，不要拆开。',
+  '发送之后等页面回执，不要连点。',
+  '如果发送按钮还是灰的，说明正文没有落进去，再读一次结构。',
+  '标题栏还是当前会话，没有切走。',
+  '正文已经在输入框里，长度和用户给的一致。',
+  '可以发了。',
+].join('\n');
+
+function chips(items) {
+  return `<div class="chips">${items.map(([name, dur, icon]) =>
+    `<span class="chip"><i></i>${icon}<span>${name}</span><span class="dur">${dur}</span></span>`
+  ).join('')}</div>`;
+}
+
+function pastBlock() {
+  return `
+    <div class="think"><div class="row">${I.brain}<span>思考过程 4.2s</span></div></div>
+    <div class="think"><div class="row">${I.brain}<span>执行过程</span></div></div>
+    ${chips([['切换标签页','0.0s', I.tabs],['读取页面结构','0.1s', I.scan]])}
+    <div class="think"><div class="row">${I.brain}<span>思考过程 10s</span></div></div>
+    <div class="think"><div class="row">${I.brain}<span>执行过程</span></div></div>
+    ${chips([['列出标签页','0.0s', I.tabs]])}
+    <div class="think"><div class="row">${I.brain}<span>思考过程 0.7s</span></div></div>
+    <div class="think"><div class="row">${I.brain}<span>执行过程</span></div></div>
+    ${chips([['读取页面结构','0.0s', I.scan]])}
+  `;
+}
+
+function panelHTML(mode) {
+  const liveClass = (mode === 'think' || mode === 'combo') ? ' think-live' : '';
+  const bodyClass = mode === 'combo' ? ' viewport combo' : mode === 'all' ? ' viewport' : '';
+  return `
+    <div class="top"><span>◈</span> By Your Side <span class="connected"><i class="dot"></i>执行中</span></div>
+    <div class="messages">
+      <div class="user">把这段话发给 Grok：先别改产品，用临时页把执行过程摊开给我看。</div>
+      <div class="run">
+        <div class="run-sum">
+          ${I.list}
+          <span class="run-title">查看执行过程</span>
+          <span class="run-chain">… → 思考 → 发送消息</span>
+          <span class="run-time">耗时 35s</span>
+          ${I.chev}
+        </div>
+        <div class="run-body${bodyClass}" data-body>
+          ${pastBlock()}
+          <div class="think live">
+            <div class="row">${I.brain}<span data-label>正在思考…</span></div>
+            <div class="${liveClass.trim()}" data-window><pre data-stream></pre></div>
+            <button type="button" class="jump" data-jump>回到最新</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="composer">插话：调整 Agent 的方向…</div>
+  `;
+}
+
+const panels = [...document.querySelectorAll('.panel')];
+panels.forEach(p => { p.innerHTML = panelHTML(p.dataset.mode); });
+
+function pinned(el) {
+  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 10;
+}
+function stick(el, follow) {
+  if (!el) return;
+  if (follow !== false) el.scrollTop = el.scrollHeight;
+  el.classList.toggle('overflowing', el.scrollHeight > el.clientHeight + 1);
+}
+
+const streams = panels.map(p => {
+  const s = {
+    mode: p.dataset.mode,
+    pre: p.querySelector('[data-stream]'),
+    label: p.querySelector('[data-label]'),
+    window: p.querySelector('[data-window]'),
+    body: p.querySelector('[data-body]'),
+    messages: p.querySelector('.messages'),
+    jump: p.querySelector('[data-jump]'),
+    followWin: true,
+    followBody: true,
+  };
+  const watch = (el, key) => {
+    if (!el) return;
+    el.addEventListener('wheel', () => {
+      s[key] = pinned(el);
+      s.jump?.classList.toggle('show', key === 'followWin' ? !s.followWin : !s.followBody);
+    }, { passive: true });
+  };
+  watch(s.window, 'followWin');
+  watch(s.body, 'followBody');
+  s.jump?.addEventListener('click', () => {
+    s.followWin = true;
+    s.followBody = true;
+    stick(s.window, true);
+    stick(s.body, true);
+    s.jump.classList.remove('show');
+  });
+  return s;
+});
+
+let timer = 0;
+function play() {
+  clearInterval(timer);
+  streams.forEach(s => {
+    s.pre.textContent = '';
+    s.label.textContent = '正在思考…';
+    s.followWin = true;
+    s.followBody = true;
+    s.jump?.classList.remove('show');
+  });
+  let i = 0;
+  timer = setInterval(() => {
+    i += 2;
+    const slice = TEXT.slice(0, i);
+    streams.forEach(s => {
+      s.pre.textContent = slice;
+      stick(s.window, s.followWin);
+      stick(s.body, s.followBody);
+      stick(s.messages, true);
+    });
+    if (i >= TEXT.length) {
+      clearInterval(timer);
+      streams.forEach(s => { s.label.textContent = '正在思考… 8.4s'; });
+    }
+  }, 28);
+}
+
+document.getElementById('replay').onclick = play;
+play();
+</script>
+</html>

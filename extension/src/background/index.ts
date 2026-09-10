@@ -25,6 +25,7 @@ import {
   type TeamMemberActivity,
   toTeamMemberHandback,
   uplinkLostWhileHeld,
+  WRITE_TOOL_SET,
 } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryServerMessage } from "../relay.js";
@@ -43,7 +44,7 @@ import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
 import { isAffirmativeReply, isCancelReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { findSessionForTab, getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
-import { pageOperation, takeoverTab, handbackTab } from "./exec/page-operation.js";
+import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
 import { readElement } from "./exec/read-element.js";
 import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
@@ -73,6 +74,7 @@ const handlers: Record<ToolName, Handler> = {
   press_key: (p, sid) => pressKey(p, sid),
   scroll: (p, sid) => scroll(p, sid),
   js: (p, sid) => evaluateJs(p, sid),
+  observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
   screenshot: (_p, sid) => screenshot({}, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (_p, sid) => clearMarks(sid),
@@ -715,13 +717,29 @@ async function executeToolCall(
   runId?:string|null,
   epoch?:number,
 ): Promise<void> {
+  if(name==='observe_page'){
+    try{const data=await voiceRelay.observe(conversationId,params.token);uplink.sendClientMessage({type:'tool_result',id,ok:true,data});}
+    catch(e){uplink.sendClientMessage({type:'tool_result',id,ok:false,error:oneLine(e)});}
+    return;
+  }
   await controlReady;
   let result: Extract<ClientMessage, { type: "tool_result" }>;
+  let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
   const checkIdentity=()=>{
     const current=conversationSummaries.find(c=>c.id===conversationId)?.runId;
     if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
     if(epoch!==undefined&&epoch<(executionEpochs.get(sid)??0))throw new Error('操作所属控制轮次已失效，操作未执行。');
+  };
+  const rememberFact = (error: unknown): void => {
+    if (error && typeof error === "object" && "executionFact" in error) {
+      const reported = (error as { executionFact?: import("../../../shared/protocol.js").ToolExecutionFact }).executionFact;
+      if (reported) executionFact = reported;
+    }
+  };
+  const attachFact = (error: unknown): void => {
+    if (!error || typeof error !== "object") return;
+    try { (error as { executionFact?: string }).executionFact = executionFact; } catch { /* 原始错误优先 */ }
   };
   try {
     checkIdentity();
@@ -737,18 +755,42 @@ async function executeToolCall(
       checkIdentity();
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
-      return gate.run(id, name, () => name === "page_operation"
-        ? pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))})
-        : handler(params, key(sid)), sid);
+      return gate.run(id, name, async () => {
+        if (name === "page_operation") {
+          try {
+            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))});
+            executionFact = "executed";
+            return r;
+          } catch (error) {
+            // 结构化事实：page_operation 自带 changed 标志，未改页即可重试，改过一律未知。
+            executionFact = pageOperationExecutionFact(error);
+            attachFact(error);
+            throw error;
+          }
+        }
+        // 进入具体动作执行，后续异常可能产生副作用
+        executionFact = "unknown";
+        try {
+          const r = await handler(params, key(sid));
+          executionFact = "executed";
+          return r;
+        } catch (error) {
+          attachFact(error);
+          throw error;
+        }
+      }, sid);
     };
     const data = name === "worker_tabs" ? await execute() : await workerTabControl.run(key(sid), execute);
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
     if (name === "mark") noteMarkDrawn(conversationId);
     else if (name === "clear_marks") noteMarksCleared(conversationId);
-    result = { type: "tool_result", id, ok: true, data };
+    result = { type: "tool_result", id, ok: true, data, executionFact: "executed" };
   } catch (e) {
-    result = { type: "tool_result", id, ok: false, error: oneLine(e) };
+    rememberFact(e);
+    result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
   }
+  // 已完成写操作的身份跨 SW 重启保留，重复投递不会二次落地。
+  if (WRITE_TOOL_SET.has(name)) persistControl();
   uplink.sendClientMessage(result);
 }
 

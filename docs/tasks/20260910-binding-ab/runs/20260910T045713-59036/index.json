@@ -1,0 +1,104 @@
+{
+  "batchId": "20260910T045713-59036",
+  "batchDir": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-binding-ab/runs/20260910T045713-59036",
+  "copyRoot": "/tmp/ego-binding-ab-20260910",
+  "model": "minimax-cn/MiniMax-M3",
+  "reasoning": "medium",
+  "generatedAt": "2026-09-10T04:57:13.976Z",
+  "baseline": {
+    "A": {
+      "source": {
+        "agent/src/session.ts": "9de1244763648c9289fb59987573fdfdf6727026828b4af7af10b5c6d6d04550",
+        "agent/src/task-results.ts": "c9d276b993aceba551d6a259bc2215d01f6f66467f2ee4cc25a8895485360155",
+        "agent/src/task-progress.ts": "d11630beb1a1641de141a463ff9f14e0cb88211911ea202a58c20d6699c8519c",
+        "agent/src/tools.ts": "70d9cce6e6fda30fd7a8e08dab520676fbaa3f4eaf75699269bd99a3bfb074e5",
+        "agent/src/conversation-manager.ts": "6c6067851fb4c7dc540c07336cd4f0367def9e47ed6a4798877b6bd86c6a293f",
+        "agent/src/conversation-runtime.ts": "31749efd8d4dcf9ef34f643bb8aa6d055f90afb8d1ddf2884ecefde5b586e519",
+        "shared/task-results.ts": "96fde1fdcf368a4cf03deb8c65fed2001d82acbc39d1343428666d2c15f87872"
+      },
+      "artifacts": {
+        "harness": "bb8bbd315268aa7bc77c3131f046933faeb0f595d9b7457303589e18e26e9cc7",
+        "fixtures": "ae9704a788a68b40ff9dbe09c0a13ec5ace2e398e178db167493dda86ab6d09d",
+        "metrics": "10fae9bb3bd08bf22a6992c24b4d6bb42ace83b1e2814c88088459ce41c68e66",
+        "evidence": "29b7783f74691dd6e9d360db3a9d7ba15a75e78f55d9e08d56be30a4f4849f4e"
+      }
+    },
+    "B": {
+      "source": {
+        "agent/src/session.ts": "c3d5e1f12baeff609a066e050339a9a5bc8f038f3c09d82d1921ad5444b01078",
+        "agent/src/task-results.ts": "356c74c00b5780d866b3e1ed12bfcda8dc5a1fabfec0de56955a58bd71bb087b",
+        "agent/src/task-progress.ts": "89987b0c0e1c81c71b504da3b92f0159f76c53a29fb82ac3a6719e82ed45d1cc",
+        "agent/src/tools.ts": "70d9cce6e6fda30fd7a8e08dab520676fbaa3f4eaf75699269bd99a3bfb074e5",
+        "agent/src/conversation-manager.ts": "da34dd3e415a34327a01dcb0b8c820c82a5e0aa285c2e434c09076709f032a87",
+        "agent/src/conversation-runtime.ts": "31749efd8d4dcf9ef34f643bb8aa6d055f90afb8d1ddf2884ecefde5b586e519",
+        "shared/task-results.ts": "96fde1fdcf368a4cf03deb8c65fed2001d82acbc39d1343428666d2c15f87872"
+      },
+      "artifacts": {
+        "harness": "bb8bbd315268aa7bc77c3131f046933faeb0f595d9b7457303589e18e26e9cc7",
+        "fixtures": "ae9704a788a68b40ff9dbe09c0a13ec5ace2e398e178db167493dda86ab6d09d",
+        "metrics": "10fae9bb3bd08bf22a6992c24b4d6bb42ace83b1e2814c88088459ce41c68e66",
+        "evidence": "29b7783f74691dd6e9d360db3a9d7ba15a75e78f55d9e08d56be30a4f4849f4e"
+      }
+    },
+    "C": {
+      "source": {
+        "agent/src/session.ts": "db25a8b113b57ae6971b78d5d8a420e783ec7d7b0b52c3875136beb157d1d16e",
+        "agent/src/task-results.ts": "356c74c00b5780d866b3e1ed12bfcda8dc5a1fabfec0de56955a58bd71bb087b",
+        "agent/src/task-progress.ts": "89987b0c0e1c81c71b504da3b92f0159f76c53a29fb82ac3a6719e82ed45d1cc",
+        "agent/src/tools.ts": "f87ca821be45867df764475bddbaedfb9c3ead152d64af6f2e565dcf45643ee6",
+        "agent/src/conversation-manager.ts": "da34dd3e415a34327a01dcb0b8c820c82a5e0aa285c2e434c09076709f032a87",
+        "agent/src/conversation-runtime.ts": "3e72f732be4fe76b1ce0b0de8c8b3efe4798c18030171bec96f572608a9252cf",
+        "shared/task-results.ts": "96fde1fdcf368a4cf03deb8c65fed2001d82acbc39d1343428666d2c15f87872"
+      },
+      "artifacts": {
+        "harness": "bb8bbd315268aa7bc77c3131f046933faeb0f595d9b7457303589e18e26e9cc7",
+        "fixtures": "ae9704a788a68b40ff9dbe09c0a13ec5ace2e398e178db167493dda86ab6d09d",
+        "metrics": "10fae9bb3bd08bf22a6992c24b4d6bb42ace83b1e2814c88088459ce41c68e66",
+        "evidence": "29b7783f74691dd6e9d360db3a9d7ba15a75e78f55d9e08d56be30a4f4849f4e"
+      }
+    }
+  },
+  "preflight": {
+    "A": {
+      "ok": false,
+      "error": "} |  | Node.js v22.23.1",
+      "elapsedMs": 43
+    },
+    "B": {
+      "ok": false,
+      "error": "} |  | Node.js v22.23.1",
+      "elapsedMs": 37
+    },
+    "C": {
+      "ok": false,
+      "error": "} |  | Node.js v22.23.1",
+      "elapsedMs": 41
+    }
+  },
+  "aborted": {
+    "reason": "preflight_failed",
+    "at": "2026-09-10T04:57:13.975Z",
+    "candidates": [
+      "A",
+      "B",
+      "C"
+    ]
+  },
+  "interleaving": "block = repeat*3 + scenarioIndex；候选按 block%3 轮转；同 block 共用 seed/文案/fixture",
+  "sourceDriftDuringRun": {
+    "A": false,
+    "B": false,
+    "C": false
+  },
+  "totals": {
+    "runs": 0,
+    "ok": 0,
+    "productFailure": 0,
+    "infraFailure": 0,
+    "harnessSetupFailure": 0,
+    "timeout": 0,
+    "slow": 0,
+    "aborted": 1
+  },
+  "rows": []
+}

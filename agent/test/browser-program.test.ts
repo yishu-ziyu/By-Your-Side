@@ -37,7 +37,7 @@ describe("browser programs", () => {
     const call = vi.fn(async () => full);
     const result = await runBrowserProgram({ code: 'return await browser.read_element({tabId:12,target:"#field"});', call });
     expect(result.value).toEqual(full);
-    expect(call).toHaveBeenCalledWith("read_element", { tabId: 12, target: "#field" });
+    expect(call).toHaveBeenCalledWith("read_element", { tabId: 12, target: "#field" }, "program/1");
   });
 
   it("polls a real browser condition before continuing and reports a bounded timeout", async () => {

@@ -1,4 +1,5 @@
 /** Shared real native-host harness; only test setup and observation use CDP. */
+import {voiceEvidence} from './voice-evidence.mts';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {randomUUID,createHash} from 'node:crypto';
@@ -8,8 +9,11 @@ import {sideagentExtensionId} from './constants.mjs';
 import type {VoiceInputContext} from '../../shared/voice.js';
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 export class NativeVoiceHarness {
+  readonly evidence=voiceEvidence();
   readonly ids:string[]=[];readonly tabs=new Set<number>();readonly checks:Array<{name:string;ok:boolean}>=[];
   voiceId='';turn=0;originConversation='';
+  private closed=false;
+  private lastReport:Record<string,any>|null=null;
   private targetId='';private pageSid='';private original='default';
   private constructor(readonly out:string,readonly connection:Awaited<ReturnType<typeof connectParentAcceptance>>){}
   static async open(title:string):Promise<NativeVoiceHarness>{
@@ -25,7 +29,7 @@ export class NativeVoiceHarness {
     }catch(error){await h.close();throw error;}
   }
   async w(expression:string):Promise<any>{new Function(expression);return evaluateInWorker(this.connection.cdp,this.connection.sid,expression);}
-  async p(expression:string):Promise<any>{new Function(expression);const r=await this.connection.cdp.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},this.pageSid);if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result?.value;}
+  async p(expression:string,timeoutMs=30000):Promise<any>{new Function(expression);const r=await this.connection.cdp.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},this.pageSid,timeoutMs);if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result?.value;}
   send(message:unknown){return this.w(`globalThis.__saSendClient(${JSON.stringify(message)})`);}
   async wait(expression:string,ms=60000):Promise<any>{const end=Date.now()+ms;while(Date.now()<end){const result=await this.w(expression);if(result)return result;await sleep(100);}throw Error(`Timed out: ${expression.slice(0,100)}`);}
   events(id:string){return `(globalThis.__saServerEvents||[]).filter(e=>e.conversationId===${JSON.stringify(id)})`;}
@@ -56,19 +60,23 @@ export class NativeVoiceHarness {
   async openTab(id:string,url:string,worker='main'){
     const r=await this.connection.tool(id,worker,'open_tab',{url});if(!r.ok)throw Error(r.error);this.tabs.add(r.data.tabId);return r.data;
   }
-  async finishReport(data:unknown){await writeFile(`${this.out}/result.json`,JSON.stringify({checks:this.checks,...data as any},null,2));}
+  async finishReport(data:unknown){this.lastReport=data&&typeof data==='object'?data as Record<string,any>:null;await writeFile(`${this.out}/result.json`,JSON.stringify({evidence:this.evidence,checks:this.checks,...data as any},null,2));}
   async close(){
+    if(this.closed)return;this.closed=true;
+    const cleanup:{ok:boolean;errors:string[];removedTabs:number[];probeClosed:boolean}={ok:true,errors:[],removedTabs:[],probeClosed:false};
     if(this.voiceId)await this.voice({kind:'stop'}).catch(()=>{});
     for(const id of this.ids){
       const current=await this.w(`${this.events(id)}.filter(e=>e.type==='conversation_updated').at(-1)?.conversation`).catch(()=>null);
       if(current?.runId&&['running','user'].includes(current.state)){
         const requestId=randomUUID();await this.send({type:'task_action',conversationId:id,request:{requestId,conversationId:id,source:'text',action:'abort',expectedRunId:current.runId}}).catch(()=>{});
-        await this.wait(`${this.receipts(id)}.find(r=>r.requestId===${JSON.stringify(requestId)})`,50000).catch(()=>{});
+        const receipt=await this.wait(`${this.receipts(id)}.find(r=>r.requestId===${JSON.stringify(requestId)})`,50000).catch(()=>null);if(receipt?.status!=='applied')cleanup.errors.push(`Task cleanup not confirmed: ${id}`);
       }
     }
-    if(this.pageSid)await this.p(`testPort.postMessage(${JSON.stringify({kind:'select_conversation',conversationId:this.original})})`).catch(()=>{});
-    for(const id of this.tabs)await this.w(`chrome.tabs.remove(${id}).catch(()=>{})`).catch(()=>{});
-    if(this.targetId)await this.connection.cdp.send('Target.closeTarget',{targetId:this.targetId}).catch(()=>{});
-    await this.connection.close();
+    if(this.pageSid){await this.p(`testPort.postMessage(${JSON.stringify({kind:'select_conversation',conversationId:this.original})})`).catch(()=>{});const restored=await this.wait(`chrome.storage.session.get('selectedConversationId').then(s=>s.selectedConversationId===${JSON.stringify(this.original)})`,5000).catch(()=>false);if(!restored)cleanup.errors.push('Original conversation selection not restored');}
+    for(const id of this.tabs){const removed=await this.w(`chrome.tabs.remove(${id}).then(()=>true).catch(()=>chrome.tabs.get(${id}).then(()=>false).catch(()=>true))`).catch(()=>false);if(removed)cleanup.removedTabs.push(id);else cleanup.errors.push(`Tab cleanup not confirmed: ${id}`);}
+    if(this.targetId){const closed=await this.connection.cdp.send('Target.closeTarget',{targetId:this.targetId}).catch(()=>null);cleanup.probeClosed=closed?.success===true;if(!cleanup.probeClosed)cleanup.errors.push('Probe cleanup not confirmed');}else cleanup.probeClosed=true;
+    await this.connection.close().catch(()=>cleanup.errors.push('CDP cleanup failed'));cleanup.ok=cleanup.errors.length===0;if(!cleanup.ok){if(this.lastReport)this.lastReport.ok=false;process.exitCode=1;}
+    await writeFile(`${this.out}/cleanup.json`,JSON.stringify(cleanup,null,2));
+    try{const report=JSON.parse(await readFile(`${this.out}/result.json`,'utf8'));await writeFile(`${this.out}/result.json`,JSON.stringify({...report,cleanup,ok:report.ok&&cleanup.ok},null,2));}catch{/* setup failure may have no result yet */}
   }
 }

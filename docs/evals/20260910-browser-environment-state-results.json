@@ -1,0 +1,332 @@
+{
+  "scope": "First approved browser-environment increment. No end-to-end latency acceptance; no model/reasoning change.",
+  "reference": {
+    "repository": "https://github.com/citrolabs/ego-lite",
+    "commit": "5ca3c36cba2240b8df2e22ba32127747029039d5",
+    "files": [
+      "package/ego-browser/src/helpers.ts",
+      "package/ego-browser/src/driver/locator.ts",
+      "package/ego-browser/src/driver/waits.ts",
+      "package/ego-browser/src/driver/observe.ts"
+    ],
+    "copiedImplementation": false
+  },
+  "checks": {
+    "typecheck": "passed",
+    "tests": 1024,
+    "testFiles": 128,
+    "build": "passed",
+    "diff": "passed",
+    "stateRedTests": 3,
+    "bindingRedTest": 1,
+    "pendingMethodUpdate": "passed"
+  },
+  "runs": [
+    {
+      "source": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-1auJa4",
+      "case": "state_environment",
+      "ok": false,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        }
+      ],
+      "error": "TypeError: Cannot read properties of undefined (reading '0')",
+      "evidence": {
+        "sourceSha256": "4b8410fdbcce00f3b55f41c7a7073ae1cb0d573f55dc78efbfa3f009d12d3ed3",
+        "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+        "scriptSha256": "39bd86f0703ae44222b1a7c813fd6cd5d2b334d9333c9c2d15940182e440f98c",
+        "backgroundSha256": "c9a83cbc44075509dac112370a9b347984c2b40f3b33dcdf87031e6a4a48190d",
+        "sidepanelSha256": "00377cd482404991009d64c0e071db10db54520282a5edd1d4662b4cb5148437",
+        "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+      },
+      "metrics": null,
+      "media": {
+        "paused": true,
+        "time": 11.286782
+      },
+      "toolErrors": [],
+      "typedReads": [],
+      "partialBaseline": {
+        "totalMs": 21762,
+        "modelTurns": 10,
+        "jsCalls": 1,
+        "paused": true,
+        "answerContainsActualComments": true,
+        "unverified": "pause event count; harness read event history in wrong JS world"
+      }
+    },
+    {
+      "source": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-amz7KR",
+      "case": "state_environment",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "real media is paused",
+          "ok": true
+        },
+        {
+          "name": "all three actual comment values are in official answer",
+          "ok": true
+        }
+      ],
+      "error": null,
+      "evidence": {
+        "sourceSha256": "20b17221b4372796dad19b6a93df91accf2f0049bfc4fd8696c7b8825fb926ce",
+        "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+        "scriptSha256": "ccf96bcddb51b8fee38179d544d9c32338d7ae87a0edb2a80ed0dbfa7f9d817e",
+        "backgroundSha256": "14ea79d63e315cea5e63c99be61fedebe5132db5f78f80229cd916a8cc4a501a",
+        "sidepanelSha256": "00377cd482404991009d64c0e071db10db54520282a5edd1d4662b4cb5148437",
+        "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+      },
+      "metrics": {
+        "modelTurns": 14,
+        "jsCalls": 0,
+        "readCalls": 2,
+        "pauseMs": 27242,
+        "totalMs": 36136
+      },
+      "media": {
+        "events": [
+          1789012402992
+        ],
+        "paused": true,
+        "time": 27.286068
+      },
+      "toolErrors": [],
+      "typedReads": [
+        {
+          "target": "@3",
+          "properties": [
+            "paused",
+            "currentTime"
+          ],
+          "expect": {
+            "property": "paused",
+            "equals": true
+          },
+          "timeoutMs": 3000
+        }
+      ]
+    },
+    {
+      "source": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-zL32zp",
+      "case": "state_environment",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "real media is paused",
+          "ok": true
+        },
+        {
+          "name": "all three actual comment values are in official answer",
+          "ok": true
+        }
+      ],
+      "error": null,
+      "evidence": {
+        "sourceSha256": "222ac8100d510fd53b15019693d8f2bf0da2010e6cb4f55fac482a63ba269e65",
+        "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+        "scriptSha256": "1d7192620c5fd1a8a9eccf4b829e59edd953bae304cab1328b71e1d60206464d",
+        "backgroundSha256": "14ea79d63e315cea5e63c99be61fedebe5132db5f78f80229cd916a8cc4a501a",
+        "sidepanelSha256": "00377cd482404991009d64c0e071db10db54520282a5edd1d4662b4cb5148437",
+        "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+      },
+      "metrics": {
+        "modelTurns": 13,
+        "jsCalls": 0,
+        "readCalls": 12,
+        "pauseMs": 46083,
+        "totalMs": 104298
+      },
+      "media": {
+        "events": [
+          1789012719305
+        ],
+        "paused": true,
+        "time": 46.014648
+      },
+      "toolErrors": [
+        {
+          "name": "read_element",
+          "error": "Error: Error: 条件未满足：@3 的 paused 当前为 true，期望 {\"property\":\"paused\",\"equals\":\"true\"}；页面未被修改，未验证成功。\n    at chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:2312:33\n    at async withObservedDocument (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:647:18)"
+        },
+        {
+          "name": "read_element",
+          "error": "Error: Error: 条件未满足：@3 的 paused 当前为 true，期望 {\"property\":\"paused\",\"equals\":\"true\"}；页面未被修改，未验证成功。\n    at chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:2312:33\n    at async withObservedDocument (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:647:18)"
+        },
+        {
+          "name": "read_element",
+          "error": "Error: Error: 该标签页正被 DevTools 或其他调试器占用\n    at ensureAttached (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:695:13)\n    at async sendCommand (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:708:3)\n    at async readAxRef (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:2252:20)\n    at async withObservedDocument (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:647:18)\n    at async readElement (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:2300:72)"
+        },
+        {
+          "name": "read_element",
+          "error": "Error: Error: 该标签页正被 DevTools 或其他调试器占用\n    at ensureAttached (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:695:13)\n    at async sendCommand (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:708:3)\n    at async readAxRef (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:2252:20)\n    at async withObservedDocument (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:647:18)\n    at async readElement (chrome-extension://gkklidhdohfpkmajioahogkmckjidfai/background.js:2300:72)"
+        }
+      ],
+      "typedReads": [
+        {
+          "target": "@3",
+          "properties": [
+            "paused",
+            "currentTime"
+          ],
+          "expect": {
+            "property": "paused",
+            "equals": "true"
+          },
+          "timeoutMs": 2000
+        },
+        {
+          "target": "@3",
+          "properties": [
+            "paused"
+          ],
+          "expect": {
+            "property": "paused",
+            "equals": "true"
+          },
+          "timeoutMs": 2000
+        },
+        {
+          "target": "@3",
+          "properties": [
+            "paused",
+            "currentTime"
+          ]
+        }
+      ]
+    },
+    {
+      "source": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-ROGDWj",
+      "case": "state_environment",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "real media is paused",
+          "ok": true
+        },
+        {
+          "name": "all three actual comment values are in official answer",
+          "ok": true
+        }
+      ],
+      "error": null,
+      "evidence": {
+        "sourceSha256": "cbe3ab28596c46e7bb1d47741bc24914290eddf42087cd57626fbe86c61741d8",
+        "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+        "scriptSha256": "1d7192620c5fd1a8a9eccf4b829e59edd953bae304cab1328b71e1d60206464d",
+        "backgroundSha256": "e5b925f47e9af2812445c3f12097c4155520d79db9acefea76700812bf46238c",
+        "sidepanelSha256": "00377cd482404991009d64c0e071db10db54520282a5edd1d4662b4cb5148437",
+        "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+      },
+      "metrics": {
+        "modelTurns": 9,
+        "jsCalls": 0,
+        "readCalls": 1,
+        "pauseMs": 23514,
+        "totalMs": 29561
+      },
+      "media": {
+        "events": [
+          1789012859054
+        ],
+        "paused": true,
+        "time": 23.523038
+      },
+      "toolErrors": [],
+      "typedReads": [
+        {
+          "target": "@3",
+          "properties": [
+            "paused",
+            "currentTime"
+          ],
+          "expect": {
+            "property": "paused",
+            "equals": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-QOEBdH",
+      "case": "state_tools",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "native media has an observed AX ref",
+          "ok": true
+        },
+        {
+          "name": "AX state reading returns actual media values",
+          "ok": true
+        },
+        {
+          "name": "unmet state cannot produce verified success",
+          "ok": true
+        },
+        {
+          "name": "native condition becomes true within one bounded call",
+          "ok": true
+        },
+        {
+          "name": "ambiguous targets remain rejected",
+          "ok": true
+        },
+        {
+          "name": "navigation while waiting invalidates result even when replacement state matches",
+          "ok": true
+        }
+      ],
+      "error": null,
+      "evidence": {
+        "sourceSha256": "cbe3ab28596c46e7bb1d47741bc24914290eddf42087cd57626fbe86c61741d8",
+        "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+        "scriptSha256": "1d7192620c5fd1a8a9eccf4b829e59edd953bae304cab1328b71e1d60206464d",
+        "backgroundSha256": "e5b925f47e9af2812445c3f12097c4155520d79db9acefea76700812bf46238c",
+        "sidepanelSha256": "00377cd482404991009d64c0e071db10db54520282a5edd1d4662b4cb5148437",
+        "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+      },
+      "metrics": null,
+      "media": null,
+      "toolErrors": [],
+      "typedReads": []
+    }
+  ],
+  "productSha256": {
+    "agent/src/tools.ts": "70d9cce6e6fda30fd7a8e08dab520676fbaa3f4eaf75699269bd99a3bfb074e5",
+    "agent/src/session.ts": "9de1244763648c9289fb59987573fdfdf6727026828b4af7af10b5c6d6d04550",
+    "agent/src/fleet.ts": "d66cd5c74536479a53db9be50af890a9172cc964ae152f466e29d2e13184ea9a",
+    "agent/src/conversation-runtime.ts": "31749efd8d4dcf9ef34f643bb8aa6d055f90afb8d1ddf2884ecefde5b586e519",
+    "agent/src/product-context.ts": "53e9a62d41b0ed2a5b5644ad9eac077ef641f3d461fe8d88a938669ea63863bc",
+    "agent/src/task-results.ts": "c9d276b993aceba551d6a259bc2215d01f6f66467f2ee4cc25a8895485360155",
+    "agent/src/prompt.ts": "30a63edd06e15aed91895ddec9099adfe18349a8f84f60318f964fd20d856ff2",
+    "extension/src/background/exec/read-element.ts": "28abbc9c511dc98d2388d47c0624c3b1a6b0b44618f6da1db7c65ff9c09eaf31",
+    "shared/element-state.ts": "f42539eef262267c4aea47b28cf31a1c8d6102b9b70f567f6bd1dc97166bf0b5",
+    "shared/protocol.ts": "c04dabbf8d59f59e866db45703ee7d56d7c0e5c5122fb07949c453e9a565b6cc"
+  },
+  "reload": {
+    "localTime": "2026-09-10 12:05",
+    "backgroundMatches": true,
+    "sidepanelMatches": true,
+    "nativeConnected": true
+  }
+}

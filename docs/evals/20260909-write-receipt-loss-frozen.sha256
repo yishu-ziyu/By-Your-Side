@@ -1,0 +1,4 @@
+4bc19b32cb71002b65b70890ba3a5acdc79e2da9487adb7000c5ed907816bf75  docs/evals/20260909-write-receipt-loss.md
+702e1f592035796b72e1e20c53e8303cd49cc3483d111b74ef78509203e9cc27  scripts/acceptance/write-receipt-loss-run.mts
+066431246987ef6b172ff7c9912191e387feeb41b888dc7b805124666413cde2  docs/evals/20260909-write-receipt-loss-baseline.json
+a50557ed2e14111b4d4605d416165b62cd80ce171230a4979bf085f31f0c3d0e  docs/tasks/20260909-write-receipt-loss-implementation.md

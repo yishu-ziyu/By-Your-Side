@@ -1,0 +1,43 @@
+{
+  "ok": false,
+  "evidence": {
+    "sourceSha256": "4498a610896b5da2a315ed801d0996e0688fe5680bdb926b6e57b5c409ced579",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "2c830b434722323c2c1947a3838f8dbbafa08d4ff1b5c5770af65f52a01f89c2",
+    "backgroundSha256": "9933458268b8565d4dad2d1faa74920008ab4c95a40f31ff37343fdc88dab4d4",
+    "sidepanelSha256": "91e17b480adcf0bd0f1d9d72d7386046f995a37512ac643f007c698a14b9658b",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "mechanism",
+  "layout": "cards",
+  "contentKind": "text",
+  "targetCode": "cedar-flash-1686",
+  "otherCode": "river-flash-5962",
+  "marker": "88087a",
+  "activityOrg": "白榆工作坊",
+  "interviewOrg": "云杉研究",
+  "eventName": "白榆工作坊活动邀请",
+  "interviewName": "云杉研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥7379",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "image fixture is actually loaded",
+      "ok": null
+    }
+  ],
+  "voice": [],
+  "tools": [],
+  "stages": [],
+  "stage": "chrome startup",
+  "error": "Error: image fixture is actually loaded",
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

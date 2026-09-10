@@ -1,4 +1,5 @@
 /** Installed native host + real Step audio + real M3 team + real Chrome controls. */
+import {voiceEvidence} from './voice-evidence.mts';
 import {createServer} from 'node:http';
 import {mkdir,readFile,writeFile,unlink} from 'node:fs/promises';
 import {homedir} from 'node:os';
@@ -9,8 +10,8 @@ import {connectParentAcceptance} from './parent-tab-control-run.mjs';
 import {evaluateInWorker} from './cdp.mjs';
 import {sideagentExtensionId} from './constants.mjs';
 const out=`/tmp/ego-voice-control-${Date.now()}`;await mkdir(out,{recursive:true});
-const report:any={ok:false,checks:[],source:'installed native host + Step PCM + M3 lead/worker + Chrome; synthetic human page edits'};
-const phrases=['暂停整个任务，我来操作。','预算改成六百。','继续原任务。','终止当前任务。'];
+const report:any={evidence:voiceEvidence(),ok:false,checks:[],source:'installed native host + Step PCM + M3 lead/worker + Chrome; synthetic human page edits'};
+const phrases=['暂停整个任务，我来操作。','预算改成六百。','继续原任务。','终止当前任务。','请看当前页面，读出页面标题和可见的预算数字。'];
 const audios:Buffer[]=[];
 for(const [i,text] of phrases.entries()){
  execFileSync('/usr/bin/say',['-v','Tingting','-r','190','-o',`${out}/${i}.aiff`,text]);
@@ -20,7 +21,7 @@ for(const [i,text] of phrases.entries()){
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 let connection:Awaited<ReturnType<typeof connectParentAcceptance>>|undefined;
 let targetId:string|undefined,pageSid:string|undefined,cid:string|undefined,runId:string|undefined,original='default';
-const voiceId=randomUUID();let origin='';
+const voiceId=randomUUID();let voiceTurn=0;let origin='';
 const capPath=join(homedir(),'.sideagent','acceptance-team-capability.json');let capabilityCreated=false;let ownedCapability:string|null=null;
 const server=createServer((req,res)=>{
  const side=req.url?.startsWith('/worker')?'worker':'lead';res.setHeader('Content-Type','text/html;charset=utf-8');
@@ -36,10 +37,15 @@ const receipts=()=>`${ownEvents()}.filter(e=>e.type==='agent_event'&&e.event.kin
 async function state(){return w(`chrome.tabs.query({}).then(ts=>Promise.all(ts.filter(t=>t.url?.startsWith(${JSON.stringify(origin+'/')})).map(t=>chrome.scripting.executeScript({target:{tabId:t.id},func:()=>({side:document.title.includes('worker')?'worker':'lead',count:Number(document.querySelector('#count').textContent),budget:Number(document.querySelector('#budget').value),marker:document.querySelector('#marker').textContent,seen:document.querySelector('#seen').textContent})}).then(r=>({tabId:t.id,...r[0].result})))))`);}
 const sendVoice=(command:unknown)=>page(`globalThis.vport.postMessage(${JSON.stringify({kind:'client',msg:{type:'voice',voiceId,conversationId:cid,command}})})`);
 async function speak(index:number,action:string){
- const turn=index+1,pcm=audios[index]!;
+ const turn=++voiceTurn,pcm=audios[index]!;const eventStart=await w(`${ownEvents()}.length`);
  await sendVoice({kind:'interrupt',turn});
  for(let i=0;i<pcm.length;i+=4800){await sendVoice({kind:'audio',turn,data:pcm.subarray(i,i+4800).toString('base64')});await sleep(100);}
  await sendVoice({kind:'commit',turn});
+ if(action==='observe'){
+   await wait(`${ownEvents()}.some(e=>e.type==='voice'&&e.voiceId===${JSON.stringify(voiceId)}&&e.event.kind==='response_end'&&e.event.turn===${turn})`,55000);
+   const calls=await w(`${ownEvents()}.slice(${eventStart}).filter(e=>e.type==='tool_call'&&e.name==='observe_page')`);
+   const answered=await w(`${ownEvents()}.slice(${eventStart}).some(e=>e.type==='agent_event'&&e.event.kind==='notice'&&e.event.message.startsWith('已查看当前页面：'))`);check('read-only page observation while controlled',calls.length>0&&answered);return;
+ }
  const receipt=await wait(`${receipts()}.find(r=>r.requestId===${JSON.stringify(`${voiceId}-${turn}`)}&&r.action===${JSON.stringify(action)})`,55000);
  report[`receipt${turn}`]=receipt;check(`${action} acknowledged`,['accepted','applied'].includes(receipt.status));
  await wait(`${ownEvents()}.some(e=>e.type==='voice'&&e.voiceId===${JSON.stringify(voiceId)}&&e.event.kind==='response_end'&&e.event.turn===${turn})`,15000);
@@ -64,23 +70,25 @@ try{
  const workerTab=await connection.tool(cid,'ctrlworker','open_tab',{url:origin+'/worker'});
  if(!leadTab.ok||!workerTab.ok)throw Error('Could not create isolated control fixtures');
  const cap=randomUUID()+randomUUID();await writeFile(capPath,JSON.stringify({expiresAt:Date.now()+300000,tokens:[cap]}),{flag:'wx',mode:0o600});capabilityCreated=true;ownedCapability=cap;
- const common="这是控制验收，你的工作页已经打开并提供了页面锚点。不要open_tab或navigate。每轮只调用一次js执行 (() => { document.querySelector('#inc').click(); return document.querySelector('#count').textContent; })()，再调用js表达式 new Promise(r=>setTimeout(r,10000)) 等待，然后继续下一轮。一直重复直到用户暂停或终止。每次browser_run最多一轮，不要长循环、不要批量执行、不要设置循环定时器。收到交还后先读取新标记，先把用户指定的新预算填入budget，再继续计数。不要创建协作者。";
+ const common="这是控制验收。你独占自己的工作页，不是共享页，页面锚点已提供。不要open_tab、navigate或page_operation。每轮调用browser_run完成：先await browser.js({code:\"(() => { document.querySelector('#inc').click(); return document.querySelector('#count').textContent; })()\"})，然后await browser.sleep({ms:10000})，返回计数。一直重复直到用户暂停或终止。每次browser_run最多一轮，不要长循环、批量执行或定时器。收到交还后先读新标记；只有明确收到新预算数字时才修改budget，否则保留页面当前预算，然后继续上述计数循环。不要创建协作者。";
  const prepared=randomUUID();
  await native({type:'acceptance_prepare_team',conversationId:cid,requestId:prepared,capability:cap,worker:{sessionId:'ctrlworker',tabId:workerTab.data.tabId},tasks:{lead:{taskId:'live-lead',expectedSnapshotMarker:'page-mark-user-lead'},worker:{taskId:'live-worker',expectedSnapshotMarker:'page-mark-user-wiki'}},live:{leadGoal:common,workerGoal:common,leadContext:{tabId:leadTab.data.tabId,title:'Control lead',url:origin+'/lead'},workerContext:{tabId:workerTab.data.tabId,title:'Control worker',url:origin+'/worker'}}});
- const assembly=await wait(`${ownEvents()}.find(e=>e.type==='acceptance_team_ready'&&e.requestId===${JSON.stringify(prepared)})`);if(!assembly.ok)throw Error(assembly.reason);
+ const assembly=await wait(`${ownEvents()}.find(e=>e.type==='acceptance_team_ready'&&e.requestId===${JSON.stringify(prepared)})`);if(!assembly.ok)throw Error(assembly.reason);report.models=assembly.models;check('both real sessions use the selected model',assembly.models?.main==='minimax-cn/MiniMax-M3'&&assembly.models?.ctrlworker==='minimax-cn/MiniMax-M3');
  runId=(await wait(`${ownEvents()}.find(e=>e.type==='agent_event'&&e.event.kind==='agent_start'&&!e.sessionId&&e.runId)`)).runId;report.runId=runId;report.liveAssembly=assembly;
  const until=Date.now()+240000;let initial:any[]=[];
  while(Date.now()<until){initial=await state();if(initial.length===2&&initial.every(t=>t.count>0))break;await sleep(300);}
  report.initial=initial;check('real lead and worker both wrote',initial.length===2&&initial.every(t=>t.count>0));
- await speak(0,'pause');const paused=await state();await sleep(5000);check('zero writes during pause',JSON.stringify(await state())===JSON.stringify(paused));report.paused=paused;
+ await speak(0,'pause');const paused=await state();
+ for(const sid of ['main','ctrlworker']){const epochs=await w(`${ownEvents()}.filter(e=>e.epochs).at(-1)?.epochs||{}`);const probe=await w(`globalThis.__saCall('paused-probe-'+Date.now(),'js',{code:'document.querySelector("#count").textContent="999"'},${JSON.stringify(sid)},undefined,${JSON.stringify(cid)},{runId:${JSON.stringify(runId)},epochs:${JSON.stringify(epochs)}})`);check(`active ${sid} write probe rejected while paused`,!probe.ok);}
+ await w(`chrome.tabs.update(${leadTab.data.tabId},{active:true})`);await speak(4,'observe');await sleep(11000);check('zero writes during pause',JSON.stringify(await state())===JSON.stringify(paused));report.paused=paused;
  for(const t of paused)await w(`chrome.scripting.executeScript({target:{tabId:${t.tabId}},func:()=>{document.querySelector('#marker').textContent=${JSON.stringify(t.side==='lead'?'page-mark-user-lead':'page-mark-user-wiki')};}})`);
  await speak(1,'steer');check('paused edit does not resume',(await state()).every((t:any)=>t.budget===1000));
  await speak(2,'resume');
  const resumedUntil=Date.now()+90000;let resumed:any[]=[];
  while(Date.now()<resumedUntil){resumed=await state();if(resumed.length===2&&resumed.every(t=>t.seen.includes('page-mark-user-'))&&resumed.find(t=>t.side==='lead')?.budget===600)break;await sleep(200);}
- check('fresh human markers and new budget used',resumed.length===2&&resumed.every(t=>t.seen.includes('page-mark-user-'))&&resumed.find(t=>t.side==='lead')?.budget===600);report.resumed=resumed;
+ report.resumed=resumed;check('fresh human markers and new budget used',resumed.length===2&&resumed.every(t=>t.seen.includes('page-mark-user-'))&&resumed.find(t=>t.side==='lead')?.budget===600);report.resumed=resumed;
  check('same task identity after handback',await w(`${receipts()}.filter(r=>r.action==='pause'||r.action==='resume'||r.action==='steer').every(r=>r.runId===${JSON.stringify(runId)})`));
- await speak(3,'abort');const stopped=await state();await sleep(5000);check('zero writes after abort',JSON.stringify(await state())===JSON.stringify(stopped));
+ await speak(3,'abort');const stopped=await state();await w(`chrome.tabs.update(${leadTab.data.tabId},{active:true})`);await speak(4,'observe');await sleep(11000);check('zero writes after abort',JSON.stringify(await state())===JSON.stringify(stopped));
  const stale=await w(`globalThis.__saCall('stale-write-'+Date.now(),'js',{code:'document.querySelector("#count").textContent="999"'},'main',undefined,${JSON.stringify(cid)},{runId:${JSON.stringify(runId)},epochs:{main:0}})`);
  check('old task write rejected',!stale.ok);report.stale=stale;check('stale write made no page change',JSON.stringify(await state())===JSON.stringify(stopped));
  report.ok=true;
@@ -92,6 +100,7 @@ finally{
   report.events=await w(`${ownEvents()}.filter(e=>e.type!=='tool_call').map(e=>e.type==='voice'&&e.event.kind==='audio'?{type:'voice',event:{kind:'audio',turn:e.event.turn,bytes:e.event.data.length}}:e)`).catch(()=>[]);
   const owned=await w(`chrome.tabs.query({}).then(ts=>ts.filter(t=>t.url?.startsWith(${JSON.stringify(origin+'/')})).map(t=>t.id))`).catch(()=>[]);
   for(const id of owned)await w(`chrome.tabs.remove(${id}).catch(()=>{})`).catch(()=>{});
+  report.cleanup={ownedTabs:owned,tabsRemoved:await w(`chrome.tabs.query({}).then(ts=>!ts.some(t=>${JSON.stringify(owned)}.includes(t.id)))`).catch(()=>false)};if(!report.cleanup.tabsRemoved)report.ok=false;
   if(pageSid)await page(`vport.postMessage({kind:'select_conversation',conversationId:${JSON.stringify(original)}})`).catch(()=>{});
  }
  if(connection&&targetId)await connection.cdp.send('Target.closeTarget',{targetId}).catch(()=>{});

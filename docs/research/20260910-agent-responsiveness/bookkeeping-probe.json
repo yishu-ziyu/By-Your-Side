@@ -1,0 +1,46 @@
+{
+  "scope": "Current TaskResultBook only; no live browser, no claim of actual paused state",
+  "alternativeToolLeavesPending": true,
+  "successfulSnapshotAloneSatisfiesNamedVerification": true,
+  "state": "pending",
+  "results": [
+    {
+      "id": "observe",
+      "description": "观察播放器",
+      "tool": "snapshot",
+      "target": null,
+      "status": "satisfied",
+      "evidence": {
+        "toolCallId": "read-1",
+        "tool": "snapshot",
+        "target": null,
+        "member": "main",
+        "runId": "research",
+        "observedAt": 1
+      }
+    },
+    {
+      "id": "pause",
+      "description": "视频暂停",
+      "tool": "click",
+      "target": "@pause",
+      "status": "pending",
+      "evidence": null
+    },
+    {
+      "id": "verify",
+      "description": "确认视频暂停",
+      "tool": "snapshot",
+      "target": null,
+      "status": "satisfied",
+      "evidence": {
+        "toolCallId": "read-2",
+        "tool": "snapshot",
+        "target": null,
+        "member": "main",
+        "runId": "research",
+        "observedAt": 1
+      }
+    }
+  ]
+}

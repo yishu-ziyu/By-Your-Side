@@ -51,28 +51,28 @@ server → team_status{team}            # 组相位：draining / user / restorin
                                        #   restored / aborted。部分失败不得写成全队已恢复。
 server → control_result{..., team?}   # 接管/交还确认，可带组成员结果
 server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_delta /
-                                   #   tool_start / tool_end / turn_* / agent_* /
-                                   #   notice / error
+                                   #   tool_start / tool_end / tool_late_result /
+                                   #   turn_* / agent_* / notice / error
 ```
 
 worker 事件带自己的 `sessionId`，面板把它们显示在所属用户会话的团队状态中。`abort` 只中止指定用户会话；停止单个 worker 只撤销该成员。`takeover` / `handback` 保留会话与标签绑定：接管先阻止目标页新写入，等待已在途短动作到安全停止点，再暂停该页全部协作者。其他会话的独立页继续。交还为各成员读取绑定页的新快照；关闭或读取失败的页面保持暂停，不把当前活动页替代进去。
 
 
-`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。
+`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。
 
 ### 工具调用（RPC）
 
 ```
 server → tool_call{conversationId, id, name, params, sessionId?}     # name ∈ TOOL_NAMES；工人调用带 sessionId
-client → tool_result{conversationId, id, ok:true, data}  # data 形状见 ToolContract
-       | tool_result{conversationId, id, ok:false, error}
+client → tool_result{conversationId, id, ok:true, data, executionFact:"executed"}  # data 形状见 ToolContract
+       | tool_result{conversationId, id, ok:false, error, executionFact}  # executionFact ∈ not_executed | unknown | executed
 ```
 
 - background 从上行连接直接接收和执行 `tool_call`，结果原路回传；工具执行不经过侧栏，关闭侧栏不会停止任务。
 - 伴随进程侧 RPC 默认超时 30s（`navigate`/`screenshot` 60s），超时/断连即以错误结果结束该工具调用。
 - 扩展侧任何异常都必须回 `ok:false` + 一行人类可读 error，不允许挂断不回。
 
-`browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。内部开始/结束通过 SDK 工具更新事件转成既有步骤事件，使用 `父调用ID/序号` 关联。详见 `docs/browser-program.md`。
+`browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。生产装配中，内部开始/结束直接同步转成既有步骤事件，先登记子调用再执行权限检查，使用 `父调用ID/序号` 关联；独立工具包装器仍可回传SDK进度，但不能把异步进度队列当作权限登记前置。详见 `docs/browser-program.md`。
 
 ## 工作标签页语义
 
@@ -150,3 +150,11 @@ ExperienceRuntime 只观察 Lead；由用户消息开始、浏览器 tool_execut
 - worker 完成、失败、取消或启动失败后，Fleet 请求移交该成员的全部历史页面。保留页面及内容、父 Agent 当前工作指针和其他协作者；最后一个 worker 离开后页面恢复为父 Agent 独占。
 - 扩展在移交前封住该 worker 的新调用，并排空完整的已开始调用。尚未开始的共享页队列写入取消。停止标记保存在 `storage.session`；worker 每次启动使用唯一身份，防止旧请求借复用身份继续操作。
 - 子 Agent 仍不能跨越分配范围。主 Agent 接手时使用检查到的 conversationId 防止覆盖并发归属变更；原会话和请求方的用户接管闸门都必须允许操作。读取不需要接手。
+
+## 元素状态与条件读取
+
+`read_element`默认仍返回完整textContent和字段value。可选properties读取textContent/value/visible/enabled/checked/selected/expanded/pressed，以及audio/video的paused/ended/currentTime/duration。
+
+`expect:{property:"paused",equals:true}`检查指定属性；文字可用contains。equals按属性区分布尔、数字和文字，布尔值不接受字符串。timeoutMs默认0，仅检查一次；最多5000ms在同一只读调用中有界等待。不匹配明确失败，匹配才返回`check:{matched:true,property,elapsedMs}`。这只是该目标该条件成立，不能单独推导整项任务成功。
+
+原@ref、唯一CSS、标签权限仍生效。多个匹配、过期ref、无效属性立即失败；等待跨文档时拒绝结果。状态查询的模型正文只返回所请求属性与检查证据，默认全文读取不截断。browser_run可直接await browser.read_element使用同一参数和权限路径。

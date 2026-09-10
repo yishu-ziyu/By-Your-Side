@@ -1,0 +1,215 @@
+{
+  "ok": false,
+  "evidence": {
+    "sourceSha256": "4de29c6932bcf06d0b19f87b7318c04bc7cb2f426d7a9bc2ed2234a5d40e4647",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "f46bd44a7cec4a5644b5c4d7719c8a37e90046e7c64f89ae9543dfcf83c18b89",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "navigation",
+  "targetCode": "cedar-flash-4925",
+  "otherCode": "river-flash-8843",
+  "marker": "925178",
+  "activityOrg": "岚川工作坊",
+  "interviewOrg": "松风研究",
+  "eventName": "岚川工作坊活动邀请",
+  "interviewName": "松风研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥3760",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    },
+    {
+      "name": "no successful mark against stale document",
+      "ok": false
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954523537,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":67608043,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:50013/\",\"active\":true,\"windowId\":67608040,\"working\":false}}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "inspect",
+        "tabId": 67608043
+      },
+      "conversationId": "default",
+      "at": 1788954525299,
+      "ok": true,
+      "result": "{\"tabId\":67608043,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "claim",
+        "tabId": 67608043,
+        "expectedConversationId": null
+      },
+      "conversationId": "default",
+      "at": 1788954525304,
+      "ok": true,
+      "result": "{\"tabId\":67608043,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "switch_tab",
+      "params": {
+        "tabId": 67608043
+      },
+      "conversationId": "default",
+      "at": 1788954525323,
+      "ok": true,
+      "result": "{\"tabId\":67608043}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954526938,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-4925\\n  text: 临时模型的有效期为明天。\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-8843\\n  text: 标准模型长期有效。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "h2:nth-of-type(1) + *",
+        "label": "临时模型ID"
+      },
+      "conversationId": "default",
+      "at": 1788954535440,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954537185,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":67608043,\"url\":\"http://127.0.0.1:50013/changed\",\"title\":\"模型说明测试页\",\"capturedAt\":1788954537231,\"source\":\"cdp\"}"
+    },
+    {
+      "name": "clear_marks",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954543633,
+      "ok": true,
+      "result": "{\"cleared\":true}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => {\n  const els = Array.from(document.querySelectorAll('*'));\n  const target = els.find(el => el.textContent.trim() === 'cedar-flash-4925');\n  if (!target) return { found: false };\n  const path = [];\n  let n = target;\n  while (n && n !== document.body) {\n    let sel = n.tagName.toLowerCase();\n    if (n.id) sel += '#' + n.id;\n    if (n.className && typeof n.className === 'string') sel += '.' + n.className.split(' ').join('.');\n    path.unshift(sel);\n    n = n.parentElement;\n  }\n  return { found: true, selector: path[0], tag: target.tagName, classes: target.className };\n})()"
+      },
+      "conversationId": "default",
+      "at": 1788954546859,
+      "ok": true,
+      "result": "{\"value\":{\"found\":false}}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954548490,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-8843\\n  text: 标准模型长期有效。\\n  text: 新文档，临时模型已经移除。\\n  [ref=43] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "scroll",
+      "params": {
+        "dy": -500
+      },
+      "conversationId": "default",
+      "at": 1788954551046,
+      "ok": true,
+      "result": "{\"atBottom\":false}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954553170,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-8843\\n  text: 标准模型长期有效。\\n  text: 新文档，临时模型已经移除。\\n  [ref=43] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "list_tabs",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954555077,
+      "ok": true,
+      "result": "{\"tabs\":[{\"id\":67608041,\"title\":\"about:blank\",\"url\":\"about:blank\",\"active\":false,\"windowId\":67608040,\"working\":false},{\"id\":67608042,\"title\":\"By Your Side\",\"url\":\"http://127.0.0.1:50013/sidepanel.html\",\"active\":false,\"windowId\":67608040,\"working\":false},{\"id\":67608043,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:50013/changed\",\"active\":true,\"windowId\":67608040,\"working\":true}]}"
+    },
+    {
+      "name": "read_element",
+      "params": {
+        "target": "body"
+      },
+      "conversationId": "default",
+      "at": 1788954556842,
+      "ok": true,
+      "result": "{\"tabId\":67608043,\"target\":\"loc=css:body\",\"tagName\":\"body\",\"textContent\":\"接口说明标准模型river-flash-8843标准模型长期有效。新文档，临时模型已经移除。展开说明额外说明：松风海岸\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "first observation held before returning to model",
+  "observationBarrierAt": 1788954526966,
+  "originalRun": "18ebc812-9583-463d-8324-5987d5d879ed",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954526987,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954519760,
+    "runId": "18ebc812-9583-463d-8324-5987d5d879ed",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954526936
+      }
+    ],
+    "lastAction": {
+      "action": "switch_tab",
+      "failed": false,
+      "at": 1788954525327
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "navigationAt": 1788954527758,
+  "error": "Error: no successful mark against stale document",
+  "deliveryMetrics": {
+    "composeCalls": 1,
+    "composeMs": []
+  },
+  "browserExited": true
+}

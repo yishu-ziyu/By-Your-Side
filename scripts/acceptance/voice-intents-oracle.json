@@ -1,0 +1,358 @@
+{
+  "start-01": [
+    {
+      "action": "start",
+      "text": "帮我找一张一千元以内的书桌。",
+      "target": null
+    }
+  ],
+  "start-02": [
+    {
+      "action": "start",
+      "text": "打开测试页，筛出价格低于800的商品。",
+      "target": null
+    }
+  ],
+  "start-03": [
+    {
+      "action": "start",
+      "text": "请把这段选中文字整理成三点。",
+      "target": null
+    }
+  ],
+  "start-04": [
+    {
+      "action": "start",
+      "text": "根据我选的截图查找同款。",
+      "target": null
+    }
+  ],
+  "start-05": [
+    {
+      "action": "start",
+      "text": "帮我比较这两款椅子。",
+      "target": null
+    }
+  ],
+  "start-06": [
+    {
+      "action": "start",
+      "text": "新建一个任务，查找广州明天的天气。",
+      "target": null
+    }
+  ],
+  "steer-01": [
+    {
+      "action": "steer",
+      "text": "预算改成800。",
+      "target": null
+    }
+  ],
+  "steer-02": [
+    {
+      "action": "steer",
+      "text": "再按价格从低到高排列。",
+      "target": null
+    }
+  ],
+  "steer-03": [
+    {
+      "action": "steer",
+      "text": "不要黑色了，改成白色。",
+      "target": null
+    }
+  ],
+  "steer-04": [
+    {
+      "action": "steer",
+      "text": "把搜索范围扩大到全国。",
+      "target": null
+    }
+  ],
+  "steer-05": [
+    {
+      "action": "steer",
+      "text": "再加一条，必须是实木。",
+      "target": null
+    }
+  ],
+  "steer-06": [
+    {
+      "action": "steer",
+      "text": "改成只看有货的。",
+      "target": null
+    }
+  ],
+  "steer-07": [
+    {
+      "action": "steer",
+      "text": "刚才说错了，预算是600。",
+      "target": null
+    }
+  ],
+  "steer-08": [
+    {
+      "action": "steer",
+      "text": "请把结果整理成表格再给我。",
+      "target": null
+    }
+  ],
+  "status-01": [
+    {
+      "action": "status",
+      "text": "现在做到哪了？",
+      "target": null
+    }
+  ],
+  "status-02": [
+    {
+      "action": "status",
+      "text": "卡在哪一步？",
+      "target": null
+    }
+  ],
+  "status-03": [
+    {
+      "action": "status",
+      "text": "还在做吗？",
+      "target": null
+    }
+  ],
+  "status-04": [
+    {
+      "action": "status",
+      "text": "任务目前是什么状态？",
+      "target": null
+    }
+  ],
+  "control-01": [
+    {
+      "action": "pause",
+      "text": "暂停任务，我来操作。",
+      "target": null
+    }
+  ],
+  "control-02": [
+    {
+      "action": "pause",
+      "text": "先停一下。",
+      "target": null
+    }
+  ],
+  "control-03": [
+    {
+      "action": "resume",
+      "text": "继续原任务。",
+      "target": null
+    }
+  ],
+  "control-04": [
+    {
+      "action": "resume",
+      "text": "页面我改好了，交还给你继续。",
+      "target": null
+    }
+  ],
+  "control-05": [
+    {
+      "action": "abort",
+      "text": "终止当前任务。",
+      "target": null
+    }
+  ],
+  "control-06": [
+    {
+      "action": "abort",
+      "text": "取消这个任务。",
+      "target": null
+    }
+  ],
+  "control-07": [
+    {
+      "action": "clarify",
+      "text": "停止。",
+      "target": null
+    }
+  ],
+  "control-08": [
+    {
+      "action": "silence",
+      "text": "别说了。",
+      "target": null
+    }
+  ],
+  "negative-01": [
+    {
+      "action": "chat",
+      "text": "你好。",
+      "target": null
+    }
+  ],
+  "negative-02": [
+    {
+      "action": "chat",
+      "text": "十加七等于多少？",
+      "target": null
+    }
+  ],
+  "negative-03": [
+    {
+      "action": "chat",
+      "text": "如果预算改成800会怎样？",
+      "target": null
+    }
+  ],
+  "negative-04": [
+    {
+      "action": "chat",
+      "text": "你能不能修改预算？",
+      "target": null
+    }
+  ],
+  "negative-05": [
+    {
+      "action": "chat",
+      "text": "他刚才说预算改成800。",
+      "target": null
+    }
+  ],
+  "negative-06": [
+    {
+      "action": "chat",
+      "text": "我昨天让别人把预算改成800了。",
+      "target": null
+    }
+  ],
+  "negative-07": [
+    {
+      "action": "chat",
+      "text": "解释一下暂停和终止的区别。",
+      "target": null
+    }
+  ],
+  "negative-08": [
+    {
+      "action": "chat",
+      "text": "请读出这句话：“终止当前任务”。",
+      "target": null
+    }
+  ],
+  "target-01": [
+    {
+      "action": "steer",
+      "text": "把比价会话的预算改成800。",
+      "target": "比价"
+    }
+  ],
+  "target-02": [
+    {
+      "action": "pause",
+      "text": "暂停查天气会话。",
+      "target": "查天气"
+    }
+  ],
+  "target-03": [
+    {
+      "action": "resume",
+      "text": "继续订酒店会话。",
+      "target": "订酒店"
+    }
+  ],
+  "target-04": [
+    {
+      "action": "abort",
+      "text": "终止整理资料会话。",
+      "target": "整理资料"
+    }
+  ],
+  "target-05": [
+    {
+      "action": "status",
+      "text": "购物会话做到哪了？",
+      "target": "购物"
+    }
+  ],
+  "target-06": [
+    {
+      "action": "clarify",
+      "text": "把另一个会话改成600。",
+      "target": null
+    }
+  ],
+  "compound-01": [
+    {
+      "action": "steer",
+      "text": "预算改800，不，改600。",
+      "target": null
+    }
+  ],
+  "compound-02": [
+    {
+      "action": "pause",
+      "text": "先暂停任务，",
+      "target": null
+    },
+    {
+      "action": "steer",
+      "text": "再把预算改600，等我说继续。",
+      "target": null
+    }
+  ],
+  "compound-03": [
+    {
+      "action": "steer",
+      "text": "把预算改600，",
+      "target": null
+    },
+    {
+      "action": "resume",
+      "text": "然后继续原任务。",
+      "target": null
+    }
+  ],
+  "compound-04": [
+    {
+      "action": "steer",
+      "text": "把预算改800，再按升序排列。",
+      "target": null
+    }
+  ],
+  "compound-05": [
+    {
+      "action": "pause",
+      "text": "暂停任务，",
+      "target": null
+    },
+    {
+      "action": "status",
+      "text": "告诉我做到哪了。",
+      "target": null
+    }
+  ],
+  "compound-06": [
+    {
+      "action": "status",
+      "text": "先查询进度，",
+      "target": null
+    },
+    {
+      "action": "pause",
+      "text": "然后暂停任务。",
+      "target": null
+    }
+  ],
+  "compound-07": [
+    {
+      "action": "pause",
+      "text": "不要终止任务，只暂停。",
+      "target": null
+    }
+  ],
+  "compound-08": [
+    {
+      "action": "start",
+      "text": "另开一个任务查天气。",
+      "target": null
+    }
+  ]
+}

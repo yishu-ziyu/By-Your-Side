@@ -38,9 +38,9 @@ export async function getMarkMotion(): Promise<MarkMotion> {
   if (cachedMotion !== undefined) return cachedMotion;
   try {
     const got = await chrome.storage.local.get(MARK_MOTION_KEY);
-    cachedMotion = got[MARK_MOTION_KEY] === "boil" ? "boil" : "grow";
+    cachedMotion = got[MARK_MOTION_KEY] === "grow" ? "grow" : "boil";
   } catch {
-    cachedMotion = "grow";
+    cachedMotion = "boil";
   }
   return cachedMotion;
 }

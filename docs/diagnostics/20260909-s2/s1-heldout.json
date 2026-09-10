@@ -1,0 +1,697 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "42a08fa98eb98c40dff28a3c4b07f60639b6a8a59e49748be2869c04528bf43d",
+    "backgroundSha256": "35e73d099ffaa8a4337285622b3fa25a6004cc35beeb4cbbc790688bf22ba60d",
+    "sidepanelSha256": "fb9133bd409605b5b0b1de46eaff91a78ed93bbcb7ec6935cf2973b8b744517f",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "heldout",
+  "targetCode": "cedar-flash-4930",
+  "otherCode": "river-flash-3100",
+  "marker": "9f0c30",
+  "activityOrg": "橙湾工作坊",
+  "interviewOrg": "竹海研究",
+  "eventName": "橙湾工作坊活动邀请",
+  "interviewName": "竹海研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥1792",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "actual mark tool succeeds",
+      "ok": true
+    },
+    {
+      "name": "page contains a visible annotation",
+      "ok": true
+    },
+    {
+      "name": "the actual annotation uses hand-drawn boiling frames",
+      "ok": true
+    },
+    {
+      "name": "boiling motion actually changes frames unless reduced motion is requested",
+      "ok": true
+    },
+    {
+      "name": "annotation is in the visible viewport",
+      "ok": true
+    },
+    {
+      "name": "annotation belongs to target card rather than its distractor",
+      "ok": true
+    },
+    {
+      "name": "annotation follows the target when the page scrolls",
+      "ok": true
+    },
+    {
+      "name": "existing clear-marks removes the annotation",
+      "ok": true
+    },
+    {
+      "name": "one current formal answer is retained",
+      "ok": true
+    },
+    {
+      "name": "delivery/playback cannot claim independently verified task success",
+      "ok": true
+    }
+  ],
+  "voice": [
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "connecting"
+      },
+      "at": 1788956702812
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "ready"
+      },
+      "at": 1788956703035
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "text",
+        "role": "user",
+        "turn": 1,
+        "text": "帮我在这页给临时模型at做个醒目的圈主。"
+      },
+      "at": 1788956709706
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在理解这句话"
+      },
+      "at": 1788956709710
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "facts",
+        "turn": 1,
+        "snapshot": {
+          "conversationId": "default",
+          "observedAt": 1788956710923,
+          "state": "running",
+          "goal": "帮我在这页给临时模型at做个醒目的圈主。",
+          "startedAt": 1788956710922,
+          "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+          "active": [],
+          "lastAction": null,
+          "successVerified": false,
+          "conversationContext": {
+            "recentTurns": [
+              {
+                "role": "user",
+                "text": "帮我在这页给临时模型at做个醒目的圈主。"
+              }
+            ],
+            "latestResult": null,
+            "latestDelivery": null
+          },
+          "results": [],
+          "resultState": "unregistered",
+          "controlVersion": 0
+        }
+      },
+      "at": 1788956710923
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在准备回答"
+      },
+      "at": 1788956710923
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "text",
+        "turn": 1,
+        "role": "assistant",
+        "text": "收到，这就去帮你给临时模型at做个醒目的圈注。"
+      },
+      "at": 1788956711330
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "response_end",
+        "turn": 1,
+        "responseId": "6fcef7c7-530d-4949-a797-5ec94886b258"
+      },
+      "at": 1788956713385
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "ready"
+      },
+      "at": 1788956715962
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "facts",
+        "turn": 1,
+        "snapshot": {
+          "conversationId": "default",
+          "observedAt": 1788956800017,
+          "state": "idle",
+          "goal": "帮我在这页给临时模型at做个醒目的圈主。",
+          "startedAt": 1788956710922,
+          "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+          "active": [],
+          "lastAction": {
+            "action": "send_user_message",
+            "failed": false,
+            "at": 1788956795667
+          },
+          "successVerified": false,
+          "conversationContext": {
+            "recentTurns": [
+              {
+                "role": "user",
+                "text": "帮我在这页给临时模型at做个醒目的圈主。"
+              },
+              {
+                "role": "assistant",
+                "text": "收到，这就去帮你给临时模型at做个醒目的圈注。"
+              },
+              {
+                "role": "assistant",
+                "text": "已在\"临时模型\"标题处画好醒目的圈注，鼠标移过去就能看到。"
+              }
+            ],
+            "latestResult": {
+              "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+              "text": "任务已完成——\"临时模型\"标题上的醒目圈注已经画好了。",
+              "observedAt": 1788956799717,
+              "source": "assistant_output"
+            },
+            "latestDelivery": {
+              "conversationId": "default",
+              "id": "3af1656e-b3d4-49e9-bcbb-0c59a3cc466f",
+              "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+              "kind": "finding",
+              "text": "已在\"临时模型\"标题处画好醒目的圈注，鼠标移过去就能看到。",
+              "composedAt": 1788956795667,
+              "status": "composed"
+            }
+          },
+          "results": [
+            {
+              "id": "find-at",
+              "description": "定位页面上的\"临时模型at\"元素",
+              "tool": "snapshot",
+              "target": null,
+              "status": "satisfied",
+              "evidence": {
+                "toolCallId": "call_491ee2e5c95a470799362768",
+                "tool": "snapshot",
+                "target": null,
+                "member": "main",
+                "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3"
+              }
+            },
+            {
+              "id": "mark-at",
+              "description": "给\"临时模型at\"画一个醒目的圈注",
+              "tool": "mark",
+              "target": "[data-at-marker=\"1\"]",
+              "status": "satisfied",
+              "evidence": {
+                "toolCallId": "call_3002645dc12e4592b5fe1279",
+                "tool": "mark",
+                "target": "[data-at-marker=\"1\"]",
+                "member": "main",
+                "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3"
+              }
+            }
+          ],
+          "resultState": "satisfied",
+          "controlVersion": 0
+        }
+      },
+      "at": 1788956800072
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "answering",
+        "detail": "正在准备回答"
+      },
+      "at": 1788956800072
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "event": {
+        "kind": "state",
+        "state": "closed"
+      },
+      "at": 1788956801595
+    }
+  ],
+  "tools": [
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "inspect",
+        "tabId": 3789061
+      },
+      "conversationId": "default",
+      "at": 1788956712840,
+      "ok": true,
+      "result": "{\"tabId\":3789061,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "worker_tabs",
+      "params": {
+        "action": "claim",
+        "tabId": 3789061,
+        "expectedConversationId": null
+      },
+      "conversationId": "default",
+      "at": 1788956712849,
+      "ok": true,
+      "result": "{\"tabId\":3789061,\"workers\":[],\"conversationId\":null,\"owned\":false,\"foreign\":false,\"members\":[]}"
+    },
+    {
+      "name": "switch_tab",
+      "params": {
+        "tabId": 3789061
+      },
+      "conversationId": "default",
+      "at": 1788956712858,
+      "ok": true,
+      "result": "{\"tabId\":3789061}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788956721791,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-3100\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-4930\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "h2:nth-of-type(2)",
+        "label": "临时模型at"
+      },
+      "conversationId": "default",
+      "at": 1788956762496,
+      "ok": false,
+      "error": "Error: Error: 未找到元素: h2:nth-of-type(2)。操作未执行。请 snapshot 确认当前页面中的目标，使用新的 ref 或有效 CSS；隐藏入口可先 hover 已确认的容器，再 snapshot。\n    at mark (chrome-extension://fmpnbnahhdopimbngennffonlgkccfae/background.js:2007:13)\n    at async ControlGate.run (chrome-extension://fmpnbnahhdopimbngennffonlgkccfae/background.js:103:14)"
+    },
+    {
+      "name": "screenshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788956769616,
+      "ok": true,
+      "result": "{\"imageBase64\":\"[image omitted]\",\"mediaType\":\"image/png\",\"width\":756,\"height\":413,\"pixelWidth\":756,\"pixelHeight\":413,\"cssWidth\":756,\"cssHeight\":413,\"devicePixelRatio\":1,\"tabId\":3789061,\"url\":\"http://127.0.0.1:55256/\",\"title\":\"模型说明测试页\",\"capturedAt\":1788956769654,\"source\":\"cdp\"}"
+    },
+    {
+      "name": "scroll",
+      "params": {
+        "dy": 300
+      },
+      "conversationId": "default",
+      "at": 1788956772654,
+      "ok": true,
+      "result": "{\"atBottom\":false}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788956779001,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-3100\\n  text: 标准模型长期有效。\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-4930\\n  text: 临时模型的有效期为明天。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(() => { const hs = Array.from(document.querySelectorAll('h2')); const t = hs.find(h => h.textContent.includes('临时模型')); if (!t) return 'not found'; t.setAttribute('data-at-marker', '1'); return t.outerHTML; })()"
+      },
+      "conversationId": "default",
+      "at": 1788956786167,
+      "ok": true,
+      "result": "{\"value\":\"<h2 data-at-marker=\\\"1\\\">临时模型</h2>\"}"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "[data-at-marker=\"1\"]",
+        "label": "临时模型at"
+      },
+      "conversationId": "default",
+      "at": 1788956792414,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    }
+  ],
+  "stages": [
+    {
+      "event": "connection_start",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 0
+    },
+    {
+      "event": "session_ready",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 0
+    },
+    {
+      "event": "input_interrupt",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "input_commit",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1,
+      "pcmBytes": 195840,
+      "rms": 0.12044,
+      "peak": 0.62915
+    },
+    {
+      "event": "transcription",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1,
+      "characters": 20,
+      "empty": false
+    },
+    {
+      "event": "route_start",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1,
+      "requestId": "a06d8211-ece9-46a6-be2a-02a197d36f68-1",
+      "characters": 20
+    },
+    {
+      "event": "route_result",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1,
+      "requestId": "a06d8211-ece9-46a6-be2a-02a197d36f68-1",
+      "kind": "action",
+      "accepted": true,
+      "elapsedMs": 1215
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1
+    },
+    {
+      "event": "idle_refresh",
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "conversationId": "default",
+      "turn": 1
+    }
+  ],
+  "stage": "speech 帮我在这页给临时模型ID做个醒目的圈注。",
+  "utterance": "帮我在这页给临时模型ID做个醒目的圈注。",
+  "clientTiming": [
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "command": "commit",
+      "turn": 1,
+      "at": 1788956708579
+    },
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "command": "playback_done",
+      "responseId": "6fcef7c7-530d-4949-a797-5ec94886b258",
+      "at": 1788956715962
+    }
+  ],
+  "audioTiming": [
+    {
+      "voiceId": "a06d8211-ece9-46a6-be2a-02a197d36f68",
+      "turn": 1,
+      "responseId": "6fcef7c7-530d-4949-a797-5ec94886b258",
+      "firstAudioAt": 1788956711788
+    }
+  ],
+  "speechInputResult": {
+    "deliveredText": [
+      "已在\"临时模型\"标题处画好醒目的圈注，鼠标移过去就能看到。"
+    ],
+    "voiceTexts": [
+      "收到，这就去帮你给临时模型at做个醒目的圈注。"
+    ],
+    "playbackFinished": true
+  },
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788956799750,
+    "state": "idle",
+    "goal": "帮我在这页给临时模型at做个醒目的圈主。",
+    "startedAt": 1788956710922,
+    "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+    "active": [],
+    "lastAction": {
+      "action": "send_user_message",
+      "failed": false,
+      "at": 1788956795667
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "帮我在这页给临时模型at做个醒目的圈主。"
+        },
+        {
+          "role": "assistant",
+          "text": "收到，这就去帮你给临时模型at做个醒目的圈注。"
+        },
+        {
+          "role": "assistant",
+          "text": "已在\"临时模型\"标题处画好醒目的圈注，鼠标移过去就能看到。"
+        }
+      ],
+      "latestResult": {
+        "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+        "text": "任务已完成——\"临时模型\"标题上的醒目圈注已经画好了。",
+        "observedAt": 1788956799717,
+        "source": "assistant_output"
+      },
+      "latestDelivery": {
+        "conversationId": "default",
+        "id": "3af1656e-b3d4-49e9-bcbb-0c59a3cc466f",
+        "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3",
+        "kind": "finding",
+        "text": "已在\"临时模型\"标题处画好醒目的圈注，鼠标移过去就能看到。",
+        "composedAt": 1788956795667,
+        "status": "composed"
+      }
+    },
+    "results": [
+      {
+        "id": "find-at",
+        "description": "定位页面上的\"临时模型at\"元素",
+        "tool": "snapshot",
+        "target": null,
+        "status": "satisfied",
+        "evidence": {
+          "toolCallId": "call_491ee2e5c95a470799362768",
+          "tool": "snapshot",
+          "target": null,
+          "member": "main",
+          "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3"
+        }
+      },
+      {
+        "id": "mark-at",
+        "description": "给\"临时模型at\"画一个醒目的圈注",
+        "tool": "mark",
+        "target": "[data-at-marker=\"1\"]",
+        "status": "satisfied",
+        "evidence": {
+          "toolCallId": "call_3002645dc12e4592b5fe1279",
+          "tool": "mark",
+          "target": "[data-at-marker=\"1\"]",
+          "member": "main",
+          "runId": "7711c22c-e911-4fbf-bb0e-e55469a968c3"
+        }
+      }
+    ],
+    "resultState": "satisfied",
+    "controlVersion": 0
+  },
+  "markCalls": [
+    {
+      "name": "mark",
+      "params": {
+        "target": "h2:nth-of-type(2)",
+        "label": "临时模型at"
+      },
+      "conversationId": "default",
+      "at": 1788956762496,
+      "ok": false,
+      "error": "Error: Error: 未找到元素: h2:nth-of-type(2)。操作未执行。请 snapshot 确认当前页面中的目标，使用新的 ref 或有效 CSS；隐藏入口可先 hover 已确认的容器，再 snapshot。\n    at mark (chrome-extension://fmpnbnahhdopimbngennffonlgkccfae/background.js:2007:13)\n    at async ControlGate.run (chrome-extension://fmpnbnahhdopimbngennffonlgkccfae/background.js:103:14)"
+    },
+    {
+      "name": "mark",
+      "params": {
+        "target": "[data-at-marker=\"1\"]",
+        "label": "临时模型at"
+      },
+      "conversationId": "default",
+      "at": 1788956792414,
+      "ok": true,
+      "result": "{\"marked\":true}"
+    }
+  ],
+  "boxes": [
+    {
+      "x": 55,
+      "y": 203,
+      "width": 631,
+      "height": 73
+    }
+  ],
+  "markDetails": [
+    {
+      "boilFrameCount": 3,
+      "className": "mark sketch boil",
+      "hasArrow": false,
+      "hasEllipse": false,
+      "hasSvg": true,
+      "isBoil": true,
+      "isGrow": false,
+      "isSketch": true,
+      "labelText": "临时模型at"
+    }
+  ],
+  "motionSamples": [
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "1",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "2",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "2",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "2",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    },
+    {
+      "animation": "markBoilFrames",
+      "frame": "0",
+      "reduced": false
+    }
+  ],
+  "pageState": {
+    "detailVisible": false,
+    "hasHost": true,
+    "other": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": -126.671875
+    },
+    "scrollY": 300,
+    "target": {
+      "height": 267.125,
+      "width": 653,
+      "x": 44,
+      "y": 164.453125
+    },
+    "viewportHeight": 413,
+    "viewportWidth": 756
+  },
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

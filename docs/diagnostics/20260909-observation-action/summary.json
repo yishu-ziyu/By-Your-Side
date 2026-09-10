@@ -1,0 +1,72 @@
+{
+  "runs": [
+    {
+      "name": "live-before-renderer",
+      "ok": true,
+      "error": null,
+      "checks": 11
+    },
+    {
+      "name": "text-recovery-before-renderer",
+      "ok": true,
+      "error": null,
+      "checks": 7
+    },
+    {
+      "name": "geometry-failure",
+      "ok": false,
+      "error": "Error: observed ref 1 produces precise visible annotation",
+      "checks": 7
+    },
+    {
+      "name": "capture-quota-failure",
+      "ok": false,
+      "error": "Error: Error: This request exceeds the MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota.",
+      "checks": 7
+    },
+    {
+      "name": "geometry-initial-pass",
+      "ok": true,
+      "error": null,
+      "checks": 12
+    },
+    {
+      "name": "image-fixture-failure",
+      "ok": false,
+      "error": "Error: image fixture is actually loaded",
+      "checks": 2
+    },
+    {
+      "name": "geometry-final",
+      "ok": true,
+      "error": null,
+      "checks": 13
+    },
+    {
+      "name": "live-final",
+      "ok": true,
+      "error": null,
+      "checks": 11
+    },
+    {
+      "name": "image-recovery",
+      "ok": true,
+      "error": null,
+      "checks": 7
+    },
+    {
+      "name": "shadow-recovery",
+      "ok": true,
+      "error": null,
+      "checks": 7
+    }
+  ],
+  "finalChecks": {
+    "tests": "125 files, 991 passed",
+    "typecheck": "passed",
+    "build": "passed",
+    "diff": "passed"
+  },
+  "loadedBackgroundSha256": "b1252367ffda7c072a3f57ec49cc670c8336d86146ab2120ffb059119a1cab63",
+  "scope": "Real M3 and production handlers in isolated Chrome via CDP transport, not human voice or native messaging acceptance. Text recovery preceded node-preserving renderer; live/image/shadow use renderer. Final geometry uses lazy context initialization. No single identical-source full-suite claim."
+}

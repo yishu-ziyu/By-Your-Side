@@ -1,0 +1,5 @@
+import {expect,it} from 'vitest';
+import {progressSpeech} from '../src/voice-receipt.js';
+const snapshot:any={conversationId:'default',runId:'run',state:'idle',observedAt:1,startedAt:1,goal:'先找再圈',active:[],lastAction:null,successVerified:false,results:[{id:'mark',description:'圈出Y',tool:'mark',target:'#y',status:'pending',evidence:null}],resultState:'pending',conversationContext:{recentTurns:[],latestResult:null,latestDelivery:{id:'d',conversationId:'default',runId:'run',kind:'finding',status:'played',composedAt:1,text:'全部完成了。'}}};
+it('progress answers outstanding results instead of repeating a conflicting displayed completion claim',()=>{const text=progressSpeech(snapshot);expect(text).toContain('圈出Y');expect(text).toMatch(/未完成|没有.*完成|尚未/);expect(text).not.toContain('全部完成了');});
+it('unknown execution is reported as unknown without inviting an automatic repeat',()=>{const text=progressSpeech({...snapshot,resultState:'unknown',results:[{...snapshot.results[0],status:'unknown'}]});expect(text).toMatch(/未知|无法确认/);expect(text).toMatch(/不会.*重做|不.*重放/);});

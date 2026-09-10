@@ -64,6 +64,7 @@ interface SideAgentCursor {
     target?: string,
     actions?: Array<{ id: "confirm" | "cancel"; label: string }>,
     options?: MarkOptions,
+    observedNode?: Node,
   ): void;
   /** 拿住目标：飞到 (x,y) 进入持久按住态（不弹回、不 park），名牌变双键；scroll/resize 按 target 锚点跟随 */
   hold?(x: number, y: number, actions: Array<{ id: "confirm" | "cancel"; label: string }>, target?: string): void;

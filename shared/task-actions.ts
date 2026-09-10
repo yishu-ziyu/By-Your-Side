@@ -9,6 +9,7 @@ export interface TaskActionRequest {
   source: 'text' | 'voice';
   action: TaskAction;
   expectedRunId: string | null;
+  expectedControlVersion?:number;
   scope?:'task'|'page';
   tabId?:number;
   text?: string;
@@ -34,6 +35,7 @@ export function isTaskActionRequest(v: unknown): v is TaskActionRequest {
   const a = v as TaskActionRequest;
   return taskId(a.requestId) && taskId(a.conversationId) && ['text','voice'].includes(a.source)
     && (a.originConversationId===undefined||a.source==='voice'&&taskId(a.originConversationId))
+    && (a.expectedControlVersion===undefined||Number.isSafeInteger(a.expectedControlVersion)&&a.expectedControlVersion>=0)
     && TASK_ACTIONS.includes(a.action) && (a.expectedRunId === null || taskId(a.expectedRunId))
     && (a.scope===undefined||a.scope==='task'||a.scope==='page') && (a.tabId===undefined||Number.isSafeInteger(a.tabId)&&a.tabId>0)
     && (a.text === undefined || typeof a.text === 'string' && a.text.length <= 12000)

@@ -300,6 +300,8 @@ body {
   align-items: center;
   gap: 6px;
   max-width: min(78%, 280px);
+  min-width: 0;
+  flex-shrink: 1;
   height: 28px;
   padding: 0 10px 0 6px;
   border: 1px solid var(--content-border);
@@ -343,6 +345,8 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 #model-btn .lucide {
@@ -795,6 +799,17 @@ details.thinking pre {
   color: var(--text-3);
 }
 
+details.thinking.streaming pre {
+  max-height: 175px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+details.thinking.streaming pre.overflowing {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+}
+
 /* ── 执行步骤聚合块 (Apple Solid Surface & Spring Layout) ────── */
 details.run-steps {
   align-self: stretch;
@@ -889,6 +904,17 @@ details.run-steps[open] .run-chevron {
 
 .run-body > * {
   flex-shrink: 0;
+}
+
+details.run-steps:not(.done)[open] .run-body {
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+details.run-steps:not(.done)[open] .run-body.overflowing {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
 }
 
 /* 人是一组：组间 12、组内 8。chip 缩进对齐名字，不跟人抢。 */
@@ -1477,10 +1503,12 @@ details.run-steps[open] .run-chevron {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 #composer-spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 #composer.drag-over {
@@ -2154,6 +2182,12 @@ details.run-steps[open] .run-chevron {
     transition: none;
   }
 
+  details.run-steps:not(.done)[open] .run-body.overflowing,
+  details.thinking.streaming pre.overflowing {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
   .pix-actor-host.rebounding .pix-squash,
   .pix-actor-host.walking .pix-squash,
   .pix-squash,
@@ -2268,4 +2302,10 @@ details.run-steps[open] .run-chevron {
 .voice-progress:not([hidden]){animation:voice-reveal 200ms cubic-bezier(.23,1,.32,1)}
 @keyframes voice-reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.voice-progress:not([hidden]){animation:none}}
-@media(max-width:360px){.voice-start span{display:none}.voice-start{padding:0}}
+@media (max-width: 360px) {
+  .voice-start span { display: none; }
+  .voice-start { padding: 0; }
+  #composer-bar { gap: 4px; }
+  #model-btn { gap: 4px; padding: 0 8px 0 6px; }
+  #takeover-btn { padding: 0 8px; }
+}

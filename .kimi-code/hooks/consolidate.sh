@@ -17,17 +17,36 @@ sid=$(printf '%s' "$input" | sed -n 's/.*"session_id": *"\([^"]*\)".*/\1/p' | he
 wire=$(find "$HOME/.kimi-code/sessions" -path "*${sid}/agents/main/wire.jsonl" 2>/dev/null | head -1)
 [ -f "$wire" ] || exit 0
 
+mkdir -p "$WIKI"
+log="$WIKI/consolidate.log"
+printf '[%s] session=%s event=SessionEnd\n' "$(date -u +%FT%TZ)" "$sid" >> "$log"
+
 # 短会话不值得复盘（省 token）
-[ "$(wc -l < "$wire" | tr -d ' ')" -lt 50 ] && exit 0
+if [ "$(wc -l < "$wire" | tr -d ' ')" -lt 50 ]; then
+  printf 'session=%s skipped=short-trace\n' "$sid" >> "$log"
+  exit 0
+fi
 
 # 10 分钟内不重复跑（避免 archive/exit 双触发或崩溃重启连发）
 lock="$WIKI/consolidate.lock"
 now=$(date +%s)
-if [ -f "$lock" ] && [ $(( now - $(stat -f %m "$lock") )) -lt 600 ]; then exit 0; fi
+if [ -f "$lock" ] && [ $(( now - $(stat -f %m "$lock") )) -lt 600 ]; then
+  printf 'session=%s skipped=cooldown\n' "$sid" >> "$log"
+  exit 0
+fi
 touch "$lock"
 
-mkdir -p "$WIKI"
-cd "$PROJECT" && KIMI_CONSOLIDATE_CHILD=1 nohup kimi -p --agent consolidator \
-  "复盘会话轨迹：$wire（来源会话 id: $sid）。按你的职责流程执行。" \
-  >> "$WIKI/consolidate.log" 2>&1 &
+# -p 接收一个完整提示词参数；显式文件路径避免同名全局 profile 遮蔽。
+(
+  cd "$PROJECT" || exit 1
+  printf '[%s] session=%s started\n' "$(date -u +%FT%TZ)" "$sid"
+  KIMI_CONSOLIDATE_CHILD=1 nohup kimi --agent-file "$PROJECT/.kimi-code/agents/consolidator.md" \
+    -p "复盘会话轨迹：${wire}（来源会话 id: ${sid}）。按你的职责流程执行。"
+  result=$?
+  printf '[%s] session=%s finished exit=%s\n' "$(date -u +%FT%TZ)" "$sid" "$result"
+  # 失败不能占住十分钟冷却期；成功才保留去重标记。
+  if [ "$result" -ne 0 ]; then
+    touch -t 197001020000 "$lock"
+  fi
+) </dev/null >> "$log" 2>&1 &
 exit 0

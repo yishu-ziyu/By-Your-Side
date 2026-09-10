@@ -1,0 +1,92 @@
+{
+  "ok": false,
+  "evidence": {
+    "sourceSha256": "3cb780d95364cbc6d8b9cd6cae2dd5c88451cafc156823b37f6c713d05355ace",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "b3185c158f164aef1d3f205d91128e8898a2f6ad573b620b77e0186a207f4cfe",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "correction",
+  "targetCode": "cedar-flash-3753",
+  "otherCode": "river-flash-2793",
+  "marker": "e29b56",
+  "activityOrg": "岚川工作坊",
+  "interviewOrg": "白榆研究",
+  "eventName": "岚川工作坊活动邀请",
+  "interviewName": "白榆研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥1135",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "no old target annotation before continuation",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "get_active_tab",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954247572,
+      "ok": true,
+      "result": "{\"tab\":{\"id\":332973390,\"title\":\"模型说明测试页\",\"url\":\"http://127.0.0.1:65448/\",\"active\":true,\"windowId\":332973387,\"working\":false}}"
+    },
+    {
+      "name": "snapshot",
+      "params": {},
+      "conversationId": "default",
+      "at": 1788954249202,
+      "ok": true,
+      "result": "{\"text\":\"RootWebArea \\\"模型说明测试页\\\" focused\\n  heading \\\"接口说明\\\" level=1\\n    text: 接口说明\\n  heading \\\"临时模型\\\" level=2\\n    text: 临时模型\\n  text: cedar-flash-3753\\n  text: 临时模型的有效期为明天。\\n  heading \\\"标准模型\\\" level=2\\n    text: 标准模型\\n  text: river-flash-2793\\n  text: 标准模型长期有效。\\n  [ref=16] button \\\"展开说明\\\"\\n    text: 展开说明\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "first observation held before returning to model",
+  "observationBarrierAt": 1788954249226,
+  "originalRun": "9741ca79-61ad-4a1a-9ee5-06f4a8483922",
+  "afterObservation": {
+    "conversationId": "default",
+    "observedAt": 1788954249259,
+    "state": "running",
+    "goal": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。",
+    "startedAt": 1788954245367,
+    "runId": "9741ca79-61ad-4a1a-9ee5-06f4a8483922",
+    "active": [
+      {
+        "member": "main",
+        "action": "读取页面",
+        "since": 1788954249200
+      }
+    ],
+    "lastAction": {
+      "action": "确认当前页面",
+      "failed": false,
+      "at": 1788954247577
+    },
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [
+        {
+          "role": "user",
+          "text": "请先用页面快照找到临时模型ID，然后把它圈出来。只处理当前页。"
+        }
+      ],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "controlVersion": 0
+  },
+  "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

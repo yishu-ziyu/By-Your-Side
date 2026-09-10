@@ -1,0 +1,196 @@
+{
+  "scope": "implementer module-integration probes for R1-R4 and the worker path; deterministic SDK events, not live model/browser",
+  "checks": [
+    {
+      "name": "R1 SDK id and transport id share one unknown fact",
+      "ok": true,
+      "actual": {
+        "sdk": "unknown",
+        "transport": "unknown"
+      }
+    },
+    {
+      "name": "R1 never-sent call is not_executed on the SDK id",
+      "ok": true,
+      "actual": {
+        "fact": "not_executed"
+      }
+    },
+    {
+      "name": "R1 browser_run step fact reaches the registered result",
+      "ok": true,
+      "actual": {
+        "stepFact": "unknown",
+        "state": "unknown"
+      }
+    },
+    {
+      "name": "R1 browser_run pre-dispatch rejection is not_executed and never dispatched",
+      "ok": true,
+      "actual": {
+        "stepFact": "not_executed",
+        "dispatches": 0
+      }
+    },
+    {
+      "name": "R2 late receipt resolves the original run through production wiring",
+      "ok": true,
+      "actual": {
+        "before": "unknown",
+        "matched": true,
+        "after": "satisfied",
+        "handlerInstalled": true
+      }
+    },
+    {
+      "name": "R2 cross-run late receipt cannot resolve the current run",
+      "ok": true,
+      "actual": {
+        "stale": false,
+        "state": "pending"
+      }
+    },
+    {
+      "name": "R3 fresh page change resolves unknown; missing or pre-existing text keeps it",
+      "ok": true,
+      "actual": {
+        "afterMissing": "unknown",
+        "preExisting": {
+          "ok": false,
+          "reason": "这段文字在写入前就存在，不能证明本次写入"
+        },
+        "matched": {
+          "ok": true,
+          "resolved": "append"
+        },
+        "after": "satisfied"
+      }
+    },
+    {
+      "name": "R3 recovery without a pre-write read stays unknown",
+      "ok": true,
+      "actual": {
+        "details": {
+          "ok": false,
+          "reason": "写入前没有可用的页面读数，无法建立前后对比"
+        },
+        "state": "unknown"
+      }
+    },
+    {
+      "name": "R3 evidence from another page cannot resolve unknown",
+      "ok": true,
+      "actual": {
+        "details": {
+          "ok": false,
+          "reason": "核查读数的页面与写入前读数不同，不能解除未知"
+        },
+        "state": "unknown"
+      }
+    },
+    {
+      "name": "R3 non-unknown result is refused",
+      "ok": true,
+      "actual": {
+        "details": {
+          "ok": false,
+          "reason": "not_unknown"
+        },
+        "state": "pending"
+      }
+    },
+    {
+      "name": "R4 duplicate operation id replays the original result",
+      "ok": true,
+      "actual": {
+        "writes": 1,
+        "first": {
+          "clicked": 1
+        },
+        "second": {
+          "clicked": 1
+        }
+      }
+    },
+    {
+      "name": "R4 duplicate of a failed operation replays the error without re-executing",
+      "ok": true,
+      "actual": {
+        "writes": 1,
+        "replay": "动作后未知"
+      }
+    },
+    {
+      "name": "R4 SW restart keeps the completed identity and refuses re-execution",
+      "ok": true,
+      "actual": {
+        "writes": 1,
+        "replay": "该操作已在之前的扩展进程中执行过，本次未重复执行；结果以原回执为准。"
+      }
+    },
+    {
+      "name": "R4 eviction boundary keeps the newest bounded identities",
+      "ok": true,
+      "actual": {
+        "count": 256,
+        "newest": true,
+        "oldest": false
+      }
+    },
+    {
+      "name": "worker path blocks writes on the lead unknown but keeps reads",
+      "ok": true,
+      "actual": {
+        "blocked": {
+          "ok": false,
+          "error": "Error: 任务中存在尚未确认结果的操作「新增一条记录」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。"
+        },
+        "read": {
+          "ok": true
+        },
+        "workerDispatches": 1
+      }
+    },
+    {
+      "name": "worker write proceeds after the lead unknown is resolved",
+      "ok": true,
+      "actual": {
+        "resolved": true,
+        "after": {
+          "ok": true
+        },
+        "workerDispatches": 2
+      }
+    },
+    {
+      "name": "worker session receives its own late receipt as a progress event",
+      "ok": true,
+      "actual": {
+        "emitted": [
+          "tool_late_result"
+        ]
+      }
+    },
+    {
+      "name": "production worker creation uses memberId, workerExecution and shared conversation context",
+      "ok": true,
+      "actual": {}
+    }
+  ],
+  "sourceHashes": {
+    "agent/src/rpc.ts": "09ade709db241ddfb270b5a6e11bb4e0379c06baf9fb2df2477a5f34ef47cfa6",
+    "agent/src/tools.ts": "98590accdb73c02e09a7613a0e7c2cd9b0ac8508e2cd8366545d8dbf64e28260",
+    "agent/src/browser-program.ts": "a960d31adfd03788f38d45505c7a61e23750987397212bd456751d830780e061",
+    "agent/src/session.ts": "e282385a9d15d2009d2b44e16f3b21fb9f64b07d24c1a29f36a48dbc99f8e65c",
+    "agent/src/task-progress.ts": "d11630beb1a1641de141a463ff9f14e0cb88211911ea202a58c20d6699c8519c",
+    "agent/src/task-results.ts": "14a64f0a5f0d839771f03cf0acf502b2f541850b1662ae08834a0f15fb218f4a",
+    "agent/src/fleet.ts": "98b3f89c265bf4a073736882f56678325fae0ea121ad6ede476d02466ea9b130",
+    "agent/src/conversation-manager.ts": "37ca89a29d62d124b28b44751f0ce4e71baa174ad4d09a4a26ca6324f998a681",
+    "shared/control.ts": "f758b6038cd3f2d5ea8ac509b47425b8c7f3c6d0f5536aaf488a58365078c6a6",
+    "shared/task-results.ts": "96fde1fdcf368a4cf03deb8c65fed2001d82acbc39d1343428666d2c15f87872",
+    "extension/src/background/index.ts": "8819e569faa7d2007a192e291b1f89f4b3dcf3d624baffc210d03fd1cbd6f93f",
+    "extension/src/background/exec/page-operation.ts": "603e6c1384d1d2ffa5d34a24fd44dad7f26629734a23c1fd8a0a39251f6c0668"
+  },
+  "passed": 18,
+  "total": 18
+}

@@ -1,0 +1,17 @@
+{
+  "batchId": "20260910T045813-60319",
+  "batchDir": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-binding-ab/runs/20260910T045813-60319",
+  "generatedAt": "2026-09-10T05:17:54.906Z",
+  "totals": {
+    "runs": 18,
+    "ok": 16,
+    "productFailure": 2,
+    "infraFailure": 0,
+    "harnessSetupFailure": 0,
+    "timeout": 0,
+    "slow": 2,
+    "aborted": 0
+  },
+  "aborted": null,
+  "index": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-binding-ab/runs/20260910T045813-60319/index.json"
+}

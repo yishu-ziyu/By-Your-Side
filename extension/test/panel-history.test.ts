@@ -103,3 +103,10 @@ describe("panel history relay contract", () => {
     }
   });
 });
+
+it('persists one source plan with pending and unexecuted steps across history restore',()=>{
+ const history=new PanelHistory(),plan={id:'p1',conversationId:'A',updatedAt:1,steps:[{action:'pause',text:'暂停B',targetId:'B',status:'pending' as const},{action:'resume',text:'继续B',targetId:'B',status:'unexecuted' as const}]};
+ const item:PanelHistoryItem={kind:'server',msg:{type:'agent_event',conversationId:'A',event:{kind:'notice',message:'语音计划',plan}}};
+ history.record(item);history.record(item);const restored=new PanelHistory();restored.restore(JSON.parse(JSON.stringify(history.since())));restored.record(item);
+ expect(restored.since()).toHaveLength(1);expect(restored.since()[0]!.item).toEqual(item);
+});

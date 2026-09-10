@@ -1,0 +1,118 @@
+{
+  "index": 17,
+  "block": 5,
+  "seed": "bindingab-20260910-b5",
+  "candidate": "A",
+  "scenario": "delay_ready",
+  "repeat": 1,
+  "model": "minimax-cn/MiniMax-M3",
+  "reasoning": "medium",
+  "exitCode": 0,
+  "settleReason": "exit",
+  "timedOut": false,
+  "slow": false,
+  "ok": true,
+  "bucket": "ok",
+  "infraFailure": null,
+  "spawnError": null,
+  "setupFailure": null,
+  "productFailure": false,
+  "note": null,
+  "elapsedMs": 65631,
+  "totalMs": 60441,
+  "modelTurns": 15,
+  "registrationOnlyTurns": 3,
+  "turnsWithRegistration": 3,
+  "registrationCalls": 3,
+  "topLevelToolCalls": 14,
+  "browserRunCalls": 4,
+  "browserRunSubsteps": 4,
+  "writeCalls": 4,
+  "failedWrites": 0,
+  "jsCalls": 0,
+  "readCalls": 3,
+  "firstObservationMs": 6196,
+  "firstObservationTool": "snapshot",
+  "firstAttemptMs": 27178,
+  "firstAttemptTool": "switch_tab",
+  "firstDispatchMs": 27179,
+  "firstDispatchTool": "worker_tabs",
+  "firstDispatchOk": true,
+  "firstDomActionMs": 51225,
+  "firstDomActionSource": "MAIN world confirm click event",
+  "pauseMs": null,
+  "usage": {
+    "input": 22617,
+    "output": 5773,
+    "cacheRead": 172551,
+    "cacheWrite": 0,
+    "cost": 0.048131520000000004
+  },
+  "usageAvailable": true,
+  "usageSource": "session_entries",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "the control was still disabled before the model acted",
+      "ok": true
+    },
+    {
+      "name": "readiness was armed by the first real observation, not before it",
+      "ok": true
+    },
+    {
+      "name": "the click happened only after the control became usable",
+      "ok": true
+    },
+    {
+      "name": "the page really changed exactly once",
+      "ok": true
+    }
+  ],
+  "sideEffects": {
+    "realActivationEvents": 1,
+    "armedAt": 1789017394693,
+    "readyAt": 1789017395594,
+    "firstClickAt": 1789017434196,
+    "finalStatus": "已确认提交",
+    "disabled": false
+  },
+  "wordingObservations": {
+    "confirmed": [
+      "已确认提交",
+      "确认提交"
+    ]
+  },
+  "answer": "按钮从\"确认提交\"（disabled）变为\"确认提交（可用）\"（可点）后，我对它点了一次。点击后页面状态变为\"已确认提交\"，按钮获得焦点。提交已完成。",
+  "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-PLkay8",
+  "logPath": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-binding-ab/runs/20260910T045813-60319/17-A-delay_ready-r1.log",
+  "stdoutTail": {
+    "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-PLkay8",
+    "ok": true,
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "the control was still disabled before the model acted",
+        "ok": true
+      },
+      {
+        "name": "readiness was armed by the first real observation, not before it",
+        "ok": true
+      },
+      {
+        "name": "the click happened only after the control became usable",
+        "ok": true
+      },
+      {
+        "name": "the page really changed exactly once",
+        "ok": true
+      }
+    ]
+  }
+}

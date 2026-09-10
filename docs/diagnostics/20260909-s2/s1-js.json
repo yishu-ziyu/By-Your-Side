@@ -1,0 +1,139 @@
+{
+  "ok": true,
+  "evidence": {
+    "sourceSha256": "7fe0882e9a8eb35ee548a5a8a522daef1e29e626f9797ca6e8c047e4b2ab044e",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "42a08fa98eb98c40dff28a3c4b07f60639b6a8a59e49748be2869c04528bf43d",
+    "backgroundSha256": "35e73d099ffaa8a4337285622b3fa25a6004cc35beeb4cbbc790688bf22ba60d",
+    "sidepanelSha256": "fb9133bd409605b5b0b1de46eaff91a78ed93bbcb7ec6935cf2973b8b744517f",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "js_enabled",
+  "targetCode": "cedar-flash-2681",
+  "otherCode": "river-flash-5770",
+  "marker": "edd703",
+  "activityOrg": "橙湾工作坊",
+  "interviewOrg": "青鹭研究",
+  "eventName": "橙湾工作坊活动邀请",
+  "interviewName": "青鹭研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥3541",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    },
+    {
+      "name": "js reaches production JS handler and reads the real target",
+      "ok": true
+    },
+    {
+      "name": "js changes the actual page",
+      "ok": true
+    },
+    {
+      "name": "js respects disabled registered tab control before RPC",
+      "ok": true
+    },
+    {
+      "name": "js resumes after actual registry restoration",
+      "ok": true
+    },
+    {
+      "name": "browser_run reaches production JS handler and reads the real target",
+      "ok": true
+    },
+    {
+      "name": "browser_run changes the actual page",
+      "ok": true
+    },
+    {
+      "name": "browser_run respects disabled registered tab control before RPC",
+      "ok": true
+    },
+    {
+      "name": "browser_run resumes after actual registry restoration",
+      "ok": true
+    },
+    {
+      "name": "no annotation appeared",
+      "ok": true
+    },
+    {
+      "name": "delivery/playback cannot claim independently verified task success",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [
+    {
+      "name": "js",
+      "params": {
+        "code": "(()=>{document.querySelector('#target').dataset.s1Js=\"js\";return document.querySelector('#target code').textContent;})()"
+      },
+      "conversationId": "default",
+      "at": 1788956701549,
+      "ok": true,
+      "result": "{\"value\":\"cedar-flash-2681\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(()=>{document.querySelector('#target').dataset.s1Js=\"js\";return document.querySelector('#target code').textContent;})()"
+      },
+      "conversationId": "default",
+      "at": 1788956701649,
+      "ok": true,
+      "result": "{\"value\":\"cedar-flash-2681\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(()=>{document.querySelector('#target').dataset.s1Js=\"browser_run\";return document.querySelector('#target code').textContent;})()"
+      },
+      "conversationId": "default",
+      "at": 1788956701692,
+      "ok": true,
+      "result": "{\"value\":\"cedar-flash-2681\"}"
+    },
+    {
+      "name": "js",
+      "params": {
+        "code": "(()=>{document.querySelector('#target').dataset.s1Js=\"browser_run\";return document.querySelector('#target code').textContent;})()"
+      },
+      "conversationId": "default",
+      "at": 1788956701720,
+      "ok": true,
+      "result": "{\"value\":\"cedar-flash-2681\"}"
+    }
+  ],
+  "stages": [],
+  "stage": "chrome startup",
+  "utterance": "JS execution regression",
+  "finalSnapshot": {
+    "conversationId": "default",
+    "observedAt": 1788956701732,
+    "state": "none",
+    "goal": null,
+    "startedAt": null,
+    "runId": null,
+    "active": [],
+    "lastAction": null,
+    "successVerified": false,
+    "conversationContext": {
+      "recentTurns": [],
+      "latestResult": null,
+      "latestDelivery": null
+    },
+    "results": [],
+    "resultState": "unregistered",
+    "controlVersion": 0
+  },
+  "markCalls": [],
+  "boxes": [],
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

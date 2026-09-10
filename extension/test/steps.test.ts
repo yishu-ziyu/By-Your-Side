@@ -7,6 +7,8 @@ import {
   loaderSubtitle,
   pixelDelay,
   workerEventRunPolicy,
+  isLiveViewportPinned,
+  liveViewportOverflows,
 } from "../src/sidepanel/steps.js";
 
 describe("describeTool 人性化动作描述", () => {
@@ -145,6 +147,26 @@ describe("run-steps 布局防压缩与最小尺寸契约", () => {
 
     // 4. .run-body 子元素不压缩
     expect(css).toMatch(/\.run-body\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0/);
+  });
+});
+
+describe("执行中过程视窗限高", () => {
+  it("钉在底部才跟，离开底部则停", () => {
+    expect(isLiveViewportPinned(400, 500, 100)).toBe(true);
+    expect(isLiveViewportPinned(200, 500, 100)).toBe(false);
+    expect(liveViewportOverflows(400, 320)).toBe(true);
+    expect(liveViewportOverflows(200, 320)).toBe(false);
+  });
+
+  it("进行中展开的过程体 320px，流式思考 175px；完成后不限高", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const css = readFileSync(resolve(__dirname, "../src/sidepanel/styles.css"), "utf-8");
+    expect(css).toMatch(
+      /details\.run-steps:not\(\.done\)\[open\]\s+\.run-body\s*\{[^}]*max-height:\s*320px/,
+    );
+    expect(css).toMatch(/details\.thinking\.streaming\s+pre\s*\{[^}]*max-height:\s*175px/);
+    expect(css).not.toMatch(/details\.run-steps\.done[^{]*\.run-body\s*\{[^}]*max-height:\s*320px/);
   });
 });
 

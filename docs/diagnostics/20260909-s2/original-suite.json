@@ -1,0 +1,192 @@
+{
+  "suiteOut": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-suite-IvZ6B8",
+  "ok": false,
+  "results": [
+    {
+      "name": "correction",
+      "exitCode": 0,
+      "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-frtH4R",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        },
+        {
+          "name": "correction preserves original run",
+          "ok": true
+        },
+        {
+          "name": "annotation is visible",
+          "ok": true
+        },
+        {
+          "name": "every successful annotation, including transient ones, belongs to Y",
+          "ok": true
+        },
+        {
+          "name": "all annotations belong to corrected Y, never X",
+          "ok": true
+        },
+        {
+          "name": "the real model registers separate observation and operation results",
+          "ok": true
+        },
+        {
+          "name": "observation leaves the registered annotation outstanding",
+          "ok": true
+        },
+        {
+          "name": "real matching receipts satisfy the registered remaining task",
+          "ok": true
+        },
+        {
+          "name": "duplicate request and playback do not execute another browser action",
+          "ok": true
+        },
+        {
+          "name": "completed write is blocked before browser RPC",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "correction_voice",
+      "exitCode": 0,
+      "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-vQfnMT",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        },
+        {
+          "name": "correction preserves original run",
+          "ok": true
+        },
+        {
+          "name": "annotation is visible",
+          "ok": true
+        },
+        {
+          "name": "every successful annotation, including transient ones, belongs to Y",
+          "ok": true
+        },
+        {
+          "name": "all annotations belong to corrected Y, never X",
+          "ok": true
+        },
+        {
+          "name": "the real model registers separate observation and operation results",
+          "ok": true
+        },
+        {
+          "name": "observation leaves the registered annotation outstanding",
+          "ok": true
+        },
+        {
+          "name": "real matching receipts satisfy the registered remaining task",
+          "ok": true
+        },
+        {
+          "name": "duplicate request and playback do not execute another browser action",
+          "ok": true
+        },
+        {
+          "name": "completed write is blocked before browser RPC",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "pause",
+      "exitCode": 1,
+      "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-Byr4sn",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        },
+        {
+          "name": "paused supplement does not write page",
+          "ok": true
+        },
+        {
+          "name": "paused supplement retains run",
+          "ok": true
+        },
+        {
+          "name": "production control gate rejects paused write",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "navigation",
+      "exitCode": 1,
+      "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-o4dQQV",
+      "ok": false,
+      "error": "Error: Timeout waiting for evaluator stage: first observation held before returning to model",
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "cancel",
+      "exitCode": 0,
+      "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-h12JvP",
+      "ok": true,
+      "checks": [
+        {
+          "name": "actual task model initialized",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        },
+        {
+          "name": "general capability question does not replay cancelled action",
+          "ok": true
+        },
+        {
+          "name": "no old target annotation before continuation",
+          "ok": true
+        },
+        {
+          "name": "cancelled run remains cancelled",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

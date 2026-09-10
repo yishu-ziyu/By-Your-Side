@@ -125,7 +125,7 @@ it("voice edits require the same running task and only acknowledge after accepta
 });
 
 
-it("the app routes only explicit edits and rejects superseded intentions", async()=>{
+it("rejects superseded intentions and sends idle corrections to the capable session", async()=>{
  const h=harness();await h.manager.ensureDefault();const runtime=h.runtimes.get("default")!.runtime;
  runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'status',text:'现在做到哪了',target:null}]}));runtime.session.steerCurrentTask=vi.fn();
  expect(await h.manager.routeVoiceInput("default","现在做到哪了",null,()=>true)).toMatchObject({kind:"none",spokenText:expect.any(String)});
@@ -133,7 +133,8 @@ it("the app routes only explicit edits and rejects superseded intentions", async
  runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'steer',text:'预算改成八百',target:null}]});
  await expect(h.manager.routeVoiceInput("default","预算改成八百",null,()=>false)).rejects.toThrow("新指令");
  expect(runtime.session.steerCurrentTask).not.toHaveBeenCalled();
- expect(await h.manager.routeVoiceInput("default","预算改成八百",null,()=>true)).toMatchObject({kind:"steer",ok:false});
+ expect(await h.manager.routeVoiceInput("default","预算改成八百",null,()=>true)).toMatchObject({kind:"action",ok:true,awaitDelivery:true});
+ expect(runtime.session.startTask).toHaveBeenCalledWith("预算改成八百",undefined,undefined);
 });
 
 it('starts voice tasks once, separates chat/status/silence and asks before replacing a running task',async()=>{
@@ -166,14 +167,15 @@ it('confirms control only after the extension applies it and saves paused edits 
  await h.manager.handleMessage({type:'takeover',conversationId:'default',requestId:'expired',taskRequestId:'expired'});
  expect(h.emitted.at(-1)).toMatchObject({type:'control_result',ok:false});
 });
-it('passes only selected input context to task actions and keeps it out of chat',async()=>{
+it('passes the selected input to the shared idle conversation entry',async()=>{
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
  const input={context:{tabId:7,title:'form',url:'https://example.com',selection:{text:'海风'}},attachments:[{id:'i',type:'image' as const,name:'fixture.png',mimeType:'image/png' as const,dataBase64:'AQID'}]};
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'chat',text:'你好',target:null}]}));
  const ctx={requestId:'q',voiceId:'v',turn:1,runId:null,input};
- await h.manager.routeVoiceInput('default','你好',null,()=>true,ctx);expect(a.runtime.session.startTask).not.toHaveBeenCalled();
+ await h.manager.routeVoiceInput('default','你好',null,()=>true,ctx);expect(a.runtime.session.startTask).toHaveBeenCalledWith('你好',input.context,input.attachments);
+ a.emit({type:'agent_event',event:{kind:'agent_end'}});
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'start',text:'按图片和选区填写',target:null}]});
- await h.manager.routeVoiceInput('default','按图片和选区填写',null,()=>true,{...ctx,requestId:'q2'});
+ await h.manager.routeVoiceInput('default','按图片和选区填写',null,()=>true,{...ctx,requestId:'q2',runId:h.manager.getTaskProgress('default')!.runId??null});
  expect(a.runtime.session.startTask).toHaveBeenCalledWith('按图片和选区填写',input.context,input.attachments);
 });
 
@@ -262,18 +264,60 @@ it.each(['denial','different','expired'])('cancels a pending proposal after %s',
  }finally{clock?.mockRestore();}
 });
 
-it('answers page questions from fresh read-only snapshot and screenshot without dispatching a task',async()=>{
+it('keeps read-only page observation available during an active task',async()=>{
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
+ a.emit({type:'agent_event',event:{kind:'agent_start'}});
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'observe',text:'看看这是什么',target:null}]}));
- a.runtime.rpc.call=vi.fn(async(name:string)=>name==='snapshot'?{text:'a canvas'}:{imageBase64:'AQID'});
+ const evidence={tabId:7,title:'Canvas',url:'https://page.test',text:'a canvas',imageBase64:'AQID',documentId:'doc1',capturedAt:Date.now(),scope:'viewport'};
+ a.runtime.rpc.call=vi.fn(async()=>evidence);
  a.runtime.session.answerVoiceObservation=vi.fn(async()=> '我看到三个蓝色圆形。');
- const route={requestId:'observe',voiceId:'v',turn:1,runId:null,input:{context:{tabId:7,title:'Canvas',url:'https://page.test'}}};
+ const route={requestId:'observe',voiceId:'v',turn:1,runId:h.manager.getTaskProgress('default')!.runId??null,input:{observation:{token:'grant1',tabId:7},context:{tabId:7,title:'Canvas',url:'https://page.test'}}};
  expect(await h.manager.routeVoiceInput('default','看看这是什么',null,()=>true,route)).toMatchObject({kind:'none',spokenText:'我看到三个蓝色圆形。'});
- expect(a.runtime.rpc.call.mock.calls.map((c:any)=>c[0])).toEqual(['snapshot','screenshot']);
- expect(a.runtime.rpc.call.mock.calls.every((c:any)=>c[1].tabId===7)).toBe(true);
- expect(a.runtime.session.answerVoiceObservation).toHaveBeenCalledWith('看看这是什么',{tabId:7,title:'Canvas',url:'https://page.test',text:'a canvas',imageBase64:'AQID'},expect.any(Function));
+ expect(a.runtime.rpc.call.mock.calls.map((c:any)=>c[0])).toEqual(['observe_page']);
+ expect(a.runtime.rpc.call.mock.calls.every((c:any)=>c[1].token==='grant1')).toBe(true);
+ expect(a.runtime.session.answerVoiceObservation).toHaveBeenCalledWith('看看这是什么',evidence,expect.any(Function));
  expect(a.runtime.session.startTask).not.toHaveBeenCalled();expect(h.manager.dispatcher.store.list('default')).toEqual([]);
  let current=true;a.runtime.rpc.call.mockImplementation(async()=>{current=false;return {text:'old page'};});a.runtime.session.answerVoiceObservation.mockClear();
  await h.manager.routeVoiceInput('default','看看这是什么',null,()=>current,{...route,requestId:'stale'});
  expect(a.runtime.session.answerVoiceObservation).not.toHaveBeenCalled();
+});
+
+it('does not reclassify or execute a replayed voice plan',async()=>{
+ const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
+ a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'start',text:'找书桌',target:null}]}));
+ const ctx={requestId:'plan-once',voiceId:'v',turn:1,runId:null};
+ const first=await h.manager.routeVoiceInput('default','找书桌',null,()=>true,ctx);
+ a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'abort',text:'找书桌',target:null}]});
+ expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,ctx)).toEqual(first);
+ expect(a.runtime.session.classifyVoiceInput).toHaveBeenCalledTimes(1);expect(a.runtime.session.startTask).toHaveBeenCalledTimes(1);
+});
+it('a new manual takeover invalidates the resume remaining in an older voice plan',async()=>{
+ const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;a.emit({type:'agent_event',event:{kind:'agent_start'}});a.emit({type:'status',state:'user'});a.runtime.session.isHeld=()=>true;
+ a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'steer',text:'预算600',target:null},{action:'resume',text:'继续',target:null}]}));
+ a.runtime.session.queueSteerForResume=vi.fn(()=>{void h.manager.handleMessage({type:'takeover',conversationId:'default',requestId:'new-human-control'});});
+ const result=await h.manager.routeVoiceInput('default','预算600，继续',null,()=>true,{requestId:'old-plan',voiceId:'v',turn:1,runId:h.manager.getTaskProgress('default')!.runId!,controlVersion:0});
+ expect(result).toMatchObject({ok:false,message:expect.stringContaining('控制权')});
+ expect(h.emitted.some(e=>e.type==='task_control'&&e.action==='resume')).toBe(false);
+ expect(result.plan?.steps.map(s=>s.receipt?.status)).toEqual(['accepted','rejected']);
+});
+it('resumes a named status query against the same target after an empty interruption',async()=>{
+ const h=harness();await h.manager.ensureDefault();await h.manager.handleMessage({type:'conversation_create',requestId:'target-status',title:'阅读'});
+ const b=h.manager.list().find(c=>c.title==='阅读')!.id,a=h.runtimes.get('default')!;h.runtimes.get(b)!.emit({type:'status',state:'user'});
+ a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'status',text:'阅读会话做到哪了',target:'阅读'}]}));
+ const context={requestId:'interrupted-status',voiceId:'v',turn:1,runId:null,targets:h.manager.voiceTargets()};
+ const pending=await h.manager.routeVoiceInput('default','阅读会话做到哪了',null,()=>false,context);
+ expect(pending).toMatchObject({kind:'none',resumeReadOnly:'status',resumeTargetId:b});
+ const result=await h.manager.routeVoiceInput('default','阅读会话做到哪了',null,()=>true,{...context,resumeReadOnly:'status',resumeTargetId:b});
+ expect(result).toMatchObject({kind:'none',snapshot:{conversationId:b,state:'paused'}});
+ expect(h.manager.dispatcher.store.list('default')).toEqual([]);
+});
+
+it('routes a correction with the actual current task goal, not another conversation history',async()=>{
+ const h=harness();await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'user_message',text:'打开地图'});
+ const session=h.runtimes.get('default')!.runtime.session;
+ session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'chat',text:'其实我要换一下',target:null}]}));
+ await h.manager.routeVoiceInput('default','其实我要换一下',null,()=>true);
+ expect(session.classifyVoiceInput).toHaveBeenCalledWith('其实我要换一下','running',expect.any(Array),expect.objectContaining({goal:'打开地图'}),expect.objectContaining({recentTurns:expect.any(Array),latestResult:null}));
+ h.manager.dispose();
 });

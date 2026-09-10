@@ -15,7 +15,7 @@ export interface ProgramStep {
 
 interface ProgramOptions {
   code: string;
-  call(name: ToolName, params: Record<string, unknown>): Promise<unknown>;
+  call(name: ToolName, params: Record<string, unknown>, stepId?: string): Promise<unknown>;
   signal?: AbortSignal;
   id?: string;
   timeoutMs?: number;
@@ -68,7 +68,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     return { waitedMs: ms };
   }
 
-  async function waitFor(params: Record<string, unknown>) {
+  async function waitFor(params: Record<string, unknown>, stepId: string) {
     if (typeof params.selector !== "string" || !params.selector) throw new Error("wait_for requires a native CSS selector");
     const timeout = Number(params.timeoutMs ?? 5000);
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 30_000) throw new Error("wait_for.timeoutMs must be between 1 and 30000");
@@ -78,7 +78,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const code = `(() => {const es=document.querySelectorAll(${JSON.stringify(params.selector)}); if(es.length>1) throw Error('wait_for matched multiple elements; use a unique selector'); const e=es[0]; if(!e)return {ready:false,count:0}; const r=e.getBoundingClientRect(),s=getComputedStyle(e); return {ready:r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&!e.disabled,count:1};})()`;
     do {
       guard();
-      const data = await options.call("js", { code }) as { value?: { ready?: boolean } };
+      const data = await options.call("js", { code }, stepId) as { value?: { ready?: boolean } };
       last = data.value;
       polls++;
       guard();
@@ -108,8 +108,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       try {
         guard();
         const result = actualResult = name === "sleep" ? await sleep(Number(params.ms ?? 0))
-          : name === "waitFor" ? await waitFor(params)
-          : await options.call(name as ToolName, params);
+          : name === "waitFor" ? await waitFor(params, id)
+          : await options.call(name as ToolName, params, id);
         if (result && typeof result === "object" && "held" in result && result.held) {
           throw stop("Held click: waiting for user confirmation. This program is stopped; do not issue further actions");
         }

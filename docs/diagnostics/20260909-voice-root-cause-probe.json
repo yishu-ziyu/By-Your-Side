@@ -1,0 +1,226 @@
+{
+  "at": "2026-09-09T05:18:11.684Z",
+  "results": [
+    {
+      "id": "original",
+      "text": "呃，其实我想打开的是YouTube，然后还需要你帮我检查一下最近的这个邮箱。",
+      "clauses": [
+        "呃，",
+        "其实我想打开的是YouTube，",
+        "然后还需要你帮我检查一下最近的这个邮箱。"
+      ],
+      "result": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "呃，其实我想打开的是YouTube，",
+            "target": null
+          },
+          {
+            "action": "start",
+            "text": "然后还需要你帮我检查一下最近的这个邮箱。",
+            "target": null
+          }
+        ]
+      },
+      "ms": 2505,
+      "calls": [
+        {
+          "ms": 1238,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[1],\"target\":\"YouTube\"},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+          "thinkingChars": 0
+        },
+        {
+          "ms": 1266,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[0,1],\"target\":null},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+          "thinkingChars": 0
+        }
+      ]
+    },
+    {
+      "id": "no-filler",
+      "text": "把当前任务改为打开YouTube，然后检查最近的邮件。",
+      "clauses": [
+        "把当前任务改为打开YouTube，",
+        "然后检查最近的邮件。"
+      ],
+      "result": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "把当前任务改为打开YouTube，",
+            "target": null
+          },
+          {
+            "action": "start",
+            "text": "然后检查最近的邮件。",
+            "target": null
+          }
+        ]
+      },
+      "ms": 2977,
+      "calls": [
+        {
+          "ms": 2976,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"steer\",\"parts\":[0],\"target\":null},{\"action\":\"start\",\"parts\":[1],\"target\":null}]}",
+          "thinkingChars": 0
+        }
+      ]
+    },
+    {
+      "id": "filler-only",
+      "text": "呃，帮我打开一下YouTube。",
+      "clauses": [
+        "呃，",
+        "帮我打开一下YouTube。"
+      ],
+      "result": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "呃，帮我打开一下YouTube。",
+            "target": null
+          }
+        ]
+      },
+      "ms": 2954,
+      "calls": [
+        {
+          "ms": 2953,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[0,1],\"target\":null}]}",
+          "thinkingChars": 0
+        }
+      ]
+    },
+    {
+      "id": "correction",
+      "text": "不看地图了，改为打开YouTube。",
+      "clauses": [
+        "不看地图了，",
+        "改为打开YouTube。"
+      ],
+      "result": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "不看地图了，改为打开YouTube。",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1191,
+      "calls": [
+        {
+          "ms": 1191,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"steer\",\"parts\":[0,1],\"target\":null}]}",
+          "thinkingChars": 0
+        }
+      ]
+    },
+    {
+      "id": "other-composite",
+      "text": "嗯，先打开购物网站，然后帮我查一下今天的天气。",
+      "clauses": [
+        "嗯，",
+        "先打开购物网站，",
+        "然后帮我查一下今天的天气。"
+      ],
+      "error": "VoiceIntentError: classifier_invalid_reply",
+      "ms": 3467,
+      "calls": [
+        {
+          "ms": 1188,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[1],\"target\":null},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+          "thinkingChars": 0
+        },
+        {
+          "ms": 2278,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[1],\"target\":null},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+          "thinkingChars": 0
+        }
+      ]
+    },
+    {
+      "id": "simple",
+      "text": "打开YouTube。",
+      "clauses": [
+        "打开YouTube。"
+      ],
+      "result": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "打开YouTube。",
+            "target": null
+          }
+        ]
+      },
+      "ms": 898,
+      "calls": [
+        {
+          "ms": 896,
+          "stop": "stop",
+          "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[0],\"target\":null}]}",
+          "thinkingChars": 0
+        }
+      ]
+    }
+  ],
+  "calls": [
+    {
+      "ms": 1238,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[1],\"target\":\"YouTube\"},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 1266,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[0,1],\"target\":null},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 2976,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"steer\",\"parts\":[0],\"target\":null},{\"action\":\"start\",\"parts\":[1],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 2953,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[0,1],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 1191,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"steer\",\"parts\":[0,1],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 1188,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[1],\"target\":null},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 2278,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[1],\"target\":null},{\"action\":\"start\",\"parts\":[2],\"target\":null}]}",
+      "thinkingChars": 0
+    },
+    {
+      "ms": 896,
+      "stop": "stop",
+      "text": "{\"steps\":[{\"action\":\"start\",\"parts\":[0],\"target\":null}]}",
+      "thinkingChars": 0
+    }
+  ]
+}

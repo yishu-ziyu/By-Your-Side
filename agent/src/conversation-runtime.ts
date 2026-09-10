@@ -13,7 +13,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore },
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -36,6 +36,7 @@ export async function createConversationRuntime(
     },
   });
 
+  let toolSession: BrowserAgentSession | undefined;
   const session = await BrowserAgentSession.create(
     rpc,
     {
@@ -46,9 +47,10 @@ export async function createConversationRuntime(
       modelPattern,
       ...options,
       conversationId,
-      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId)), ...createFleetTools(fleet, LEAD_SESSION_ID)],
+      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: () => toolSession?.canWriteCurrentInput() ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step) }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },
   );
+  toolSession = session;
   fleet.attachLead(session);
   if (!session.available) {
     log("模型凭据未配置，会话暂不可用（连接面板后会收到设置指引）");
@@ -249,6 +251,7 @@ export async function createConversationRuntime(
               requestId: msg.requestId,
               ok: true,
               members: [LEAD_SESSION_ID, msg.worker.sessionId],
+              models:{[LEAD_SESSION_ID]:session.modelName()??"unknown",[msg.worker.sessionId]:fleet.get(msg.worker.sessionId)?.modelName()??"unknown"},
               continuity,
             });
           },
@@ -277,7 +280,7 @@ export async function createConversationRuntime(
         break;
       }
       case "tool_result":
-        rpc.handleResult(msg.id, msg.ok, msg.data, msg.error);
+        rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);
         break;
       default:
         break;

@@ -141,6 +141,8 @@ export type ControlSnapshot = {
   lastStatus: AgentRunState;
   team?: TeamView;
   sessions?: Record<string, ControlOwner>;
+  /** 已完成的写操作身份，SW 重启后仍能识别重复投递；不保存结果正文。 */
+  completed?: string[];
 };
 
 export function parseControlSnapshot(raw: unknown): ControlSnapshot | null {
@@ -158,12 +160,17 @@ export function parseControlSnapshot(raw: unknown): ControlSnapshot | null {
       if (v === "agent" || v === "user") sessions[k] = v;
     }
   }
+  const completedRaw = (o as { completed?: unknown }).completed;
+  const completed = Array.isArray(completedRaw)
+    ? completedRaw.filter((k): k is string => typeof k === "string" && k.length >= 1 && k.length <= 160).slice(-CONTROL_COMPLETED_MAX)
+    : undefined;
   return {
     owner: o.owner,
     generation: o.generation,
     lastStatus: o.lastStatus,
     ...(team ? { team } : {}),
     ...(sessions && Object.keys(sessions).length > 0 ? { sessions } : {}),
+    ...(completed && completed.length > 0 ? { completed } : {}),
   };
 }
 
@@ -173,12 +180,14 @@ export function snapshotControl(
   team?: TeamView | null,
 ): ControlSnapshot {
   const sessions = gate.sessionOwners();
+  const completed = gate.completedIds();
   return {
     owner: gate.control,
     generation: gate.gen,
     lastStatus,
     ...(team ? { team } : {}),
     ...(Object.keys(sessions).length > 0 ? { sessions } : {}),
+    ...(completed.length > 0 ? { completed } : {}),
   };
 }
 
@@ -189,7 +198,7 @@ export function applyControlSnapshot(
 ): { restoredUser: boolean; lastStatus: AgentRunState } {
   const snap = parseControlSnapshot(raw);
   if (!snap) return { restoredUser: false, lastStatus: "idle" };
-  gate.hydrate(snap.owner, snap.generation, snap.sessions);
+  gate.hydrate(snap.owner, snap.generation, snap.sessions, snap.completed);
   if (team && snap.team) team.hydrate(snap.team);
   if (snap.owner === "user") return { restoredUser: true, lastStatus: "user" };
   return { restoredUser: false, lastStatus: snap.lastStatus === "running" ? "running" : "idle" };
@@ -286,12 +295,14 @@ export function prepareHandback(
   };
 }
 
-export function handbackContinueText(context: PageContext, snapshot: string): string {
+export function handbackContinueText(context: PageContext, snapshot: string,originalGoal?:string): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
   return [
     "[HANDOFF BOUNDARY]",
     "[The CURRENT page and snapshot are authoritative. Stay on this tab. Do not switch tabs, navigate, reload, or reopen any page. Do not reopen the site. These stay-on-page instructions apply only to this restored original task and expire when that original task ends.]",
     "[Continue the original task only from the supplied snapshot. Do not repeat completed steps; treat every completed step as complete and do not redo it. If the original task is already complete, acknowledge that and stop.]",
+    ...(originalGoal?["[Original user goal; apply subsequent amendments as constraints]",originalGoal]:[]),
+    "[Applying an amendment does not by itself finish the original goal. If authorized work remains, perform its next step now; do not end with a promise to continue in another reply. Continue bounded tool calls until the requested result or explicit stop condition is reached. Never redo completed steps.]",
     `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]`,
     "[Current snapshot]",
     snapshot,
@@ -306,11 +317,21 @@ function sessionKey(sessionId?: string | null): string {
   return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId!;
 }
 
+/** 已完成写操作的保留上限；超出后按完成先后淘汰，SW 重启由持久快照补回。 */
+export const CONTROL_COMPLETED_MAX = 256;
+
+type CompletedOutcome =
+  | { status: "resolved"; name: ToolName; value: unknown }
+  | { status: "rejected"; name: ToolName; error: unknown }
+  /** 只从持久快照恢复：知道已执行，但拿不到原结果。 */
+  | { status: "replayed"; name: ToolName | null };
+
 export class ControlGate {
   private owner: ControlOwner = "agent";
   private generation = 0;
   private draining = false;
   private inflight = new Map<string, { settled: Promise<unknown>; sessionId: string }>();
+  private completed = new Map<string, CompletedOutcome>();
   /** true = 该 session 仍归用户，写操作与认领别页都禁止。 */
   private sessionBlocked = new Map<string, boolean>();
 
@@ -340,6 +361,11 @@ export class ControlGate {
     return [...new Set([...this.inflight.values()].map((entry) => entry.sessionId))];
   }
 
+  /** 已完成的操作身份（session::id），供持久快照跨 SW 重启去重。 */
+  completedIds(): string[] {
+    return [...this.completed.keys()].slice(-CONTROL_COMPLETED_MAX);
+  }
+
   isSessionBlocked(sessionId?: string | null): boolean {
     if (this.draining) return true;
     if (sessionId != null && this.sessionBlocked.has(sessionKey(sessionId))) {
@@ -366,27 +392,65 @@ export class ControlGate {
   }
 
   async run<T>(id: string, name: ToolName, fn: () => Promise<T>, sessionId?: string | null): Promise<T> {
+    if (!WRITE_TOOL_SET.has(name)) {
+      if (!this.canLand(name, sessionId)) throw new Error(USER_BLOCKED_ERROR);
+      return fn();
+    }
+    const key = `${sessionKey(sessionId)}::${id}`;
+    // 重复投递先于控制权检查：已完成的回执原样回传，绝不二次落地。
+    const done = this.completed.get(key);
+    if (done) return this.replayCompleted<T>(done, name);
+    const active = this.inflight.get(key);
+    if (active) {
+      await active.settled.catch(() => {});
+      const settled = this.completed.get(key);
+      if (settled) return this.replayCompleted<T>(settled, name);
+    }
     if (!this.canLand(name, sessionId)) {
       throw new Error(USER_BLOCKED_ERROR);
-    }
-    if (!WRITE_TOOL_SET.has(name)) {
-      return fn();
     }
     let release: () => void = () => {};
     const sentinel = new Promise<void>((resolve) => {
       release = resolve;
     });
-    this.inflight.set(id, { settled: sentinel, sessionId: sessionKey(sessionId) });
+    this.inflight.set(key, { settled: sentinel, sessionId: sessionKey(sessionId) });
     if (!this.canLand(name, sessionId)) {
-      this.inflight.delete(id);
+      this.inflight.delete(key);
       release();
       throw new Error(USER_BLOCKED_ERROR);
     }
     try {
-      return await fn();
+      const value = await fn();
+      this.rememberCompleted(key, { status: "resolved", name, value });
+      return value;
+    } catch (error) {
+      this.rememberCompleted(key, { status: "rejected", name, error });
+      throw error;
     } finally {
-      this.inflight.delete(id);
+      this.inflight.delete(key);
       release();
+    }
+  }
+
+  private replayCompleted<T>(done: CompletedOutcome, name: ToolName): T {
+    if (done.name !== null && done.name !== name) {
+      throw new Error("操作编号已用于其他操作，本次未执行。");
+    }
+    if (done.status === "resolved") return done.value as T;
+    if (done.status === "rejected") throw done.error;
+    const error = new Error("该操作已在之前的扩展进程中执行过，本次未重复执行；结果以原回执为准。");
+    // 跨进程只能证明“执行过”，不能证明结果；沿错误对象携带结构化事实。
+    (error as Error & { executionFact?: string }).executionFact = "unknown";
+    throw error;
+  }
+
+  private rememberCompleted(key: string, outcome: CompletedOutcome): void {
+    this.completed.delete(key);
+    this.completed.set(key, outcome);
+    while (this.completed.size > CONTROL_COMPLETED_MAX) {
+      const oldest = this.completed.keys().next().value;
+      if (oldest === undefined) break;
+      this.completed.delete(oldest);
     }
   }
 
@@ -453,7 +517,7 @@ export class ControlGate {
   }
 
   /** SW 重启后从 session storage 灌回。不等待 inflight（进程已空）。 */
-  hydrate(owner: ControlOwner, generation: number, sessions?: Record<string, ControlOwner>): void {
+  hydrate(owner: ControlOwner, generation: number, sessions?: Record<string, ControlOwner>, completed?: string[]): void {
     this.owner = owner;
     this.generation = generation;
     this.draining = false;
@@ -463,6 +527,10 @@ export class ControlGate {
       for (const [id, who] of Object.entries(sessions)) {
         this.sessionBlocked.set(sessionKey(id), who === "user");
       }
+    }
+    if (completed) {
+      this.completed.clear();
+      for (const key of completed.slice(-CONTROL_COMPLETED_MAX)) this.completed.set(key, { status: "replayed", name: null });
     }
   }
 }

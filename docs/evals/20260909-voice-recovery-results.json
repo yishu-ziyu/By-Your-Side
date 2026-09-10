@@ -1,0 +1,163 @@
+{
+  "ego-native-frame-gr92ecwg": {
+    "ok": true,
+    "frames": [
+      {
+        "n": 1,
+        "bytes": 1200018
+      },
+      {
+        "n": 2,
+        "bytes": 13
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-native-frame-gr92ecwg/result.json"
+  },
+  "ego-composer-fit-hdjuXy": {
+    "ok": true,
+    "source": "production sidepanel.js and styles.css; background transport and microphone stream are test doubles",
+    "clicks": [
+      {
+        "name": "Port loss shows automatic recovery",
+        "ok": true
+      },
+      {
+        "name": "Port reconnect resumes voice with same microphone and fresh lease",
+        "ok": true
+      },
+      {
+        "name": "explicit end stays ended after reconnect",
+        "ok": true
+      },
+      {
+        "name": "attachment menu opens",
+        "ok": true
+      },
+      {
+        "name": "model picker opens",
+        "ok": true
+      },
+      {
+        "name": "takeover dispatches",
+        "ok": true
+      },
+      {
+        "name": "stop dispatches",
+        "ok": true
+      },
+      {
+        "name": "send dispatches",
+        "ok": true
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-composer-fit-hdjuXy/result.json"
+  },
+  "ego-voice-recovery-THDPDg": {
+    "ok": true,
+    "scope": "production client/service; real Step; synthetic microphone and playback; fake task runtime executes no webpage actions",
+    "checks": [
+      {
+        "name": "real voice response before fault",
+        "ok": true
+      },
+      {
+        "name": "disconnect enters visible recovery phase",
+        "ok": true
+      },
+      {
+        "name": "same conversation fresh voice lease and microphone reused",
+        "ok": true
+      },
+      {
+        "name": "next actual speech gets real answer after automatic recovery",
+        "ok": true
+      },
+      {
+        "name": "contextual accepted acknowledgement 1",
+        "ok": true
+      },
+      {
+        "name": "contextual accepted acknowledgement 2",
+        "ok": true
+      },
+      {
+        "name": "contextual accepted acknowledgement 3",
+        "ok": true
+      },
+      {
+        "name": "actual acknowledgements came from single-step accepted production plans",
+        "ok": true
+      }
+    ],
+    "before": "你好！我是 By Your Side 的语音助手，有什么可以帮你的吗？",
+    "after": "好的，随时可以继续。",
+    "acks": [
+      {
+        "text": "帮我检查这个图像工具能在网页使用，还是只能通过API使用。",
+        "answer": "收到，这就去帮你查查这个图像工具到底能不能在网页上直接用，还是只能走API调用。"
+      },
+      {
+        "text": "帮我找一下周末活动邀请，只看标题，先不要打开正文。",
+        "answer": "收到，这就去帮你找周末活动邀请的标题。"
+      },
+      {
+        "text": "帮我整理这篇文章的主要观点，先不要发布。",
+        "answer": "收到，这就去帮你整理这篇文章的主要观点，先不发布。"
+      }
+    ],
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-voice-recovery-THDPDg/result.json"
+  },
+  "ego-voice-recovery-NKkvJ7": {
+    "ok": true,
+    "scope": "production client/service; real Step; synthetic microphone and playback; fake task runtime executes no webpage actions",
+    "checks": [
+      {
+        "name": "real voice response before fault",
+        "ok": true
+      },
+      {
+        "name": "disconnect enters visible recovery phase",
+        "ok": true
+      },
+      {
+        "name": "same conversation fresh voice lease and microphone reused",
+        "ok": true
+      },
+      {
+        "name": "next actual speech gets real answer after automatic recovery",
+        "ok": true
+      }
+    ],
+    "before": "你好！我是 By Your Side 的语音助手，有什么可以帮你的吗？",
+    "after": "好的，随时可以继续聊。",
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-voice-recovery-NKkvJ7/result.json"
+  },
+  "ego-voice-conversation-ph3BmV": {
+    "ok": false,
+    "scope": "isolated Chrome production tool handlers via test CDP bridge; production task runtime and voice; synthetic speech; output audio recorded, not human listening",
+    "activityOrg": "竹海工作坊",
+    "interviewOrg": "星浦研究",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      },
+      {
+        "name": "real webpage result traverses task manager and produces a specific spoken finding",
+        "ok": true
+      },
+      {
+        "name": "no body-only marker is invented before a detail page is opened",
+        "ok": true
+      },
+      {
+        "name": "follow-up identifies the actual activity object, not just the generic word activity",
+        "ok": false
+      }
+    ],
+    "resultSpeech": "收件箱里最近三封：\n\n- **星浦研究访谈邀请**\n- **竹海工作坊活动邀请**\n- **河岸周刊：本周阅读清单**\n\n一封访谈、一封活动、一份阅读清单，正文都还没动。需要打开哪封就告诉我。",
+    "followup": "还没点开正文呢，我这儿只看到标题。需要我帮你把这封邮件的内容读出来吗？",
+    "error": "Error: follow-up identifies the actual activity object, not just the generic word activity",
+    "artifact": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-voice-conversation-ph3BmV/result.json"
+  }
+}

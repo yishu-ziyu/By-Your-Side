@@ -1,5 +1,13 @@
+import {createTaskResultsTool, createVerifyUnknownResultTool} from "./task-results.js";
+import {extractResultTarget, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
+import {isTaskProgressSnapshot} from "../../shared/voice.js";
+import {isWriteTool} from "../../shared/control.js";
+import {LEAD_SESSION_ID} from "../../shared/protocol.js";
+import {randomUUID} from "node:crypto";
+import {ProductContext} from "./product-context.js";
+import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
-import {VOICE_INTENT_PROMPT,parseVoiceIntent,voiceClauses,type VoiceIntentPlan} from './voice-intent.js';
+import {VOICE_INTENT_PROMPT,parseVoiceDecision,voiceDecisionClauses,type VoiceIntentPlan} from './voice-intent.js';
 /**
  * Pi SDK 会话的创建与包装：
  * - ModelRuntime → createAgentSession（禁用内置工具，仅注册 16 个浏览器工具）
@@ -21,6 +29,9 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
+import { filterReachableModels } from "./reachable-models.js";
+import type { UserDelivery, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId } from "./user-delivery.js";
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
@@ -83,6 +94,8 @@ export interface SessionCreateOptions {
   memoryStore?: MemoryStore;
   experienceStore?: ExperienceStore;
   conversationId?: string;
+  /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
+  memberId?: string;
 }
 
 const RESULT_TEXT_MAX = 500;
@@ -103,7 +116,73 @@ export interface SessionCallbacks {
 }
 
 export class BrowserAgentSession {
+  private activeGoal:string|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[]}>=[];
+  private deliveryRunId: () => string | null = () => null;
+  private explicitDelivery = false;
+  private readonly deliveryPrefixes = new Map<string,string>();
+  private productContext: ProductContext | null = null;
+  private failurePolicy: RepeatedToolFailurePolicy | null = null;
+  private pendingToolFailure: UserDelivery | null = null;
+  private conversationSnapshot: () => TaskProgressSnapshot | null = () => null;
+  private taskResultsHost: {
+    getSnapshot: () => TaskProgressSnapshot;
+    register: (items: TaskResultRegistration[]) => void;
+    verify: (input: {id: string; expect: string; observation: {toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null}}) => {ok: boolean; reason?: string};
+  } | null = null;
+  private persistedResults = "";
+  /** 直接工具调用的参数暂存，用于只读读数事件（tool_execution_end 不带 args）。 */
+  private readonly toolArgs = new Map<string, Record<string, unknown>>();
+  bindConversationContext(snapshot:()=>TaskProgressSnapshot|null):void { this.conversationSnapshot = snapshot; this.productContext?.bind(snapshot); }
+  observeProgramStep(step: ProgramStep): void {
+    if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
+    else {
+      this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
+        executionFact:this.rpc?.getExecutionFact(step.id),
+        resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX))});
+      this.emitReadObservation(step.id,step.name,step.params,step.result,!!step.error);
+    }
+  }
+  bindTaskResults(host: BrowserAgentSession["taskResultsHost"]): void { this.taskResultsHost = host; }
+  persistTaskResults(snapshot: TaskProgressSnapshot): void {
+    if (!this.session?.sessionManager || !snapshot.results) return;
+    const data = { ...snapshot, observedAt: 0, active: [], lastAction: null };
+    const fingerprint = JSON.stringify(data);
+    if (fingerprint === this.persistedResults) return;
+    this.session.sessionManager.appendCustomEntry("sideagent-task-results-v1", data);
+    this.persistedResults = fingerprint;
+  }
+  readPersistedTaskResults(): TaskProgressSnapshot | null {
+    const entry = this.session?.sessionManager?.getBranch().slice().reverse().find(e => e.type === "custom" && e.customType === "sideagent-task-results-v1");
+    if (!entry || entry.type !== "custom" || !isTaskProgressSnapshot(entry.data) || !entry.data.results) return null;
+    return entry.data;
+  }
+  assertTaskResultExecution(name: string, params: Record<string, unknown>, toolCallId?: string): void {
+    const snapshot = this.conversationSnapshot();
+    if (snapshot?.runId && snapshot.state !== 'none' && snapshot.state !== 'aborted' && !snapshot.results?.length && !['get_active_tab','list_tabs','worker_tabs','switch_tab','resolve_unknown_result'].includes(name)) {
+      throw new Error('先用 record_task_results 登记本次委托的结果项，再执行这一步。观察与后续操作分开登记；目标尚未定位时先填null，观察后更新。');
+    }
+    if (!isWriteTool(name)) return;
+    if (snapshot?.state === 'aborted') throw new Error('原任务已取消，操作未执行。');
+    const target = extractResultTarget(params);
+    const matchingPending = snapshot?.results?.some(item => item.tool === name && item.status === "pending" && item.target === target && (!toolCallId || item.evidence?.toolCallId === toolCallId || item.evidence?.toolCallId.startsWith(toolCallId + "/")));
+    for (const item of snapshot?.results ?? []) {
+      if (item.status === "unknown") {
+        if (item.tool === name && (item.target === null || item.target === target)) {
+          throw new Error(`「${item.description}」的执行结果未知，不能自动重做；请先查询结果或由用户决定。`);
+        }
+        if (isWriteTool(item.tool)) {
+          throw new Error(`任务中存在尚未确认结果的操作「${item.description}」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
+        }
+      }
+      if (item.tool !== name) continue;
+      if (item.status === "satisfied" && item.target !== null && item.target === target) throw new Error(`「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
+      if (item.status === "pending" && item.target === null && typeof params.target === "string" && !matchingPending) throw new Error(`「${item.description}」尚未绑定当前目标，请先观察并更新结果登记。`);
+    }
+    if (snapshot?.runId && typeof params.target === "string" && !matchingPending) {
+      throw new Error('这次操作的target与待办登记不一致，操作未执行。请先用record_task_results更新原结果id的target，使它与即将调用的target完全相同；不要填写status或伪造evidence。');
+    }
+  }
   private constructor(
     private readonly session: AgentSession | null,
     private readonly initError: string | null,
@@ -112,7 +191,39 @@ export class BrowserAgentSession {
     private readonly modelRuntime: ModelRuntime | null,
     private readonly handbackRestoreTimeoutMs = HANDBACK_RESTORE_TIMEOUT_MS,
     private readonly memoryRuntime: MemoryRuntime | null = null,
-  ) {}
+    private readonly rpc: ToolRpc | null = null,
+    private readonly memberId?: string,
+  ) {
+    const lateHandler = (info: Parameters<NonNullable<ToolRpc["onLateResult"]>>[0]) => {
+      // 共享 RPC 的每个会话只处理自己的晚到回执；带原 SDK 调用身份回到真实进度事件。
+      if ((info.sessionId ?? LEAD_SESSION_ID) !== (this.memberId ?? LEAD_SESSION_ID)) return;
+      this.callbacks.emit({
+        kind: "tool_late_result",
+        toolCallId: info.toolCallId ?? info.id,
+        name: info.name,
+        ok: info.ok,
+        executionFact: info.executionFact,
+      });
+    };
+    if (this.rpc && !this.memberId && !this.rpc.onLateResult) this.rpc.onLateResult = lateHandler;
+    else this.rpc?.addLateResultListener(lateHandler);
+  }
+  /** 工人只受同一任务未决写入约束：不重做，也不替 Lead 登记结果。 */
+  assertWorkerWriteAllowed(name: string, _params?: Record<string, unknown>): void {
+    if (!isWriteTool(name)) return;
+    const snapshot = this.conversationSnapshot();
+    if (!snapshot) return;
+    if (snapshot.state === 'aborted') throw new Error('原任务已取消，操作未执行。');
+    const unknownWrite = snapshot.results?.find(item => item.status === 'unknown' && isWriteTool(item.tool));
+    if (unknownWrite) {
+      throw new Error(`任务中存在尚未确认结果的操作「${unknownWrite.description}」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
+    }
+  }
+
+  bindDeliveryRun(getRunId: () => string | null): void { this.deliveryRunId = getRunId; }
+  private startEvent(): Extract<AgentUiEvent, { kind: "agent_start" }> {
+    return this.explicitDelivery ? { kind: "agent_start", deliveryMode: "explicit" } : { kind: "agent_start" };
+  }
 
   private experience: ExperienceRuntime | null = null;
 
@@ -122,6 +233,8 @@ export class BrowserAgentSession {
   private readonly instanceId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   private acceptanceTrace: SessionAcceptanceContinuityEvidence | null = null;
   private controlEpoch = 0;
+  private readonly pendingCorrections = new Set<string>();
+  canWriteCurrentInput(): boolean { return !this.hold.isHeld() && this.pendingCorrections.size === 0; }
   private pendingStop: Promise<void> | null = null;
   private pendingHandback: {
     epoch: number;
@@ -162,27 +275,55 @@ export class BrowserAgentSession {
       const memoryRuntime = options?.memoryStore && options.conversationId
         ? new MemoryRuntime(options.memoryStore, options.conversationId, callbacks.emit)
         : null;
+      const productContext = options?.conversationId ? new ProductContext() : null;
+      let onRepeatedFailure: ConstructorParameters<typeof RepeatedToolFailurePolicy>[0] = () => {};
+      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure));
       const resourceLoader = new DefaultResourceLoader({
         cwd: process.cwd(),
         agentDir: getAgentDir(),
         settingsManager,
         noExtensions: true,
         noContextFiles: true,
-        extensionFactories: memoryRuntime
-          ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }]
-          : [],
+        extensionFactories: [
+          { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
+          ...(memoryRuntime ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }] : []),
+          ...(productContext ? [{ name: "sideagent-product-context", hidden: true, factory: productContext.extension() }] : []),
+        ],
         systemPromptOverride: () => systemPrompt,
         skillsOverride: () => ({ skills: [], diagnostics: [] }),
         // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
         appendSystemPromptOverride: (base) => appendPrompt(base),
       });
       await resourceLoader.reload();
+      let resultHost: BrowserAgentSession | null = null;
+      const runIdSlot: { current: () => string | null } = { current: () => null };
+      const leadConversationId = isLeadDeliveryHost(options?.conversationId) ? options!.conversationId : undefined;
       const createOptions: CreateAgentSessionOptions = {
         modelRuntime,
         noTools: "builtin",
         customTools: [
           ...(options?.customTools ?? createBrowserTools(rpc)),
           ...(memoryRuntime?.tools() ?? []),
+          ...(leadConversationId ? [createTaskResultsTool({
+            getSnapshot: () => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线"); return resultHost.taskResultsHost.getSnapshot(); },
+            register: items => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线"); resultHost.taskResultsHost.register(items); },
+            isToolActive: name => resultHost?.isToolActive(name) ?? false,
+            toolHasTarget: name => { const schema = resultHost?.session?.getToolDefinition(name)?.parameters as {properties?: Record<string, unknown>} | undefined; return !!schema?.properties?.target; },
+          }), createVerifyUnknownResultTool({
+            getSnapshot: () => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线"); return resultHost.taskResultsHost.getSnapshot(); },
+            read: async input => {
+              if (!resultHost?.isToolActive("read_element")) throw new Error("read_element 当前不可用，无法核查。");
+              return rpc.call("read_element", input.tabId === undefined ? { target: input.target } : { target: input.target, tabId: input.tabId }) as Promise<{ textContent?: string; value?: string }>;
+            },
+            verify: input => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线"); return resultHost.taskResultsHost.verify(input); },
+            persist: () => { if (resultHost?.taskResultsHost) resultHost.persistTaskResults?.(resultHost.taskResultsHost.getSnapshot()); },
+            emit: callbacks.emit,
+          })] : []),
+          ...(leadConversationId ? [createSendUserMessageTool({
+            conversationId: leadConversationId,
+            getRunId: () => runIdSlot.current(),
+            emit: callbacks.emit,
+          })] : []),
         ],
         resourceLoader,
         sessionManager: options?.sessionManager ?? SessionManager.inMemory(process.cwd()),
@@ -203,7 +344,19 @@ export class BrowserAgentSession {
         if (resolved.thinkingLevel) createOptions.thinkingLevel = resolved.thinkingLevel;
       }
       const { session } = await createAgentSession(createOptions);
-      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime);
+      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
+      resultHost = wrapper;
+      wrapper.explicitDelivery = !!leadConversationId;
+      wrapper.productContext = productContext;
+      wrapper.failurePolicy = failurePolicy;
+      onRepeatedFailure = failure => {
+        wrapper.runTrace.record("repeated_tool_failure", {...failure});
+        const text = `工具「${failure.toolName}」连续三次返回相同错误，已停止重试。这一步没有完成。`;
+        if (leadConversationId) wrapper.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text});
+        else callbacks.emit({kind:"error",message:text});
+      };
+      if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
+      wrapper.bindDeliveryRun = (getRunId) => { runIdSlot.current = getRunId; wrapper.deliveryRunId = getRunId; };
       if (options?.experienceStore && options.memoryStore && options.conversationId) {
         wrapper.experience = new ExperienceRuntime(options.experienceStore, options.memoryStore, options.conversationId,
           async (systemPrompt, input, signal) => {
@@ -221,13 +374,15 @@ export class BrowserAgentSession {
       wrapper.subscribeEvents();
       return wrapper;
     } catch (err) {
-      return new BrowserAgentSession(null, err instanceof Error ? err.message : String(err), callbacks, null, null);
+      return new BrowserAgentSession(null, err instanceof Error ? err.message : String(err), callbacks, null, null, undefined, null, rpc, options?.memberId);
     }
   }
 
   get available(): boolean {
     return this.session !== null && this.session.model !== undefined;
   }
+
+  isToolActive(name: string): boolean { return this.session?.getActiveToolNames().includes(name) ?? true; }
 
   modelName(): string | undefined {
     const model = this.session?.model;
@@ -239,12 +394,12 @@ export class BrowserAgentSession {
     if (!this.modelRuntime) return [];
     try {
       const models = await this.modelRuntime.getAvailable();
-      return models.map((m) => ({
+      return filterReachableModels(models.map((m) => ({
         id: `${m.provider}/${m.id}`,
         provider: m.provider,
         modelId: m.id,
         name: m.name,
-      }));
+      })), this.modelName());
     } catch (err) {
       console.error(`[sideagent] 枚举可用模型失败：${err instanceof Error ? err.message : String(err)}`);
       return [];
@@ -292,14 +447,15 @@ export class BrowserAgentSession {
       return;
     }
     const finalText = withPageContext(text, context);
+    this.failurePolicy?.reset();
     const images = extractImages(attachments);
     if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
-    else this.runTrace.begin(text, context, this.modelName());
+    else {this.activeGoal=text;this.runTrace.begin(text, context, this.modelName());}
     if (session.isStreaming) {
       this.experience?.feedback(text);
       this.memoryRuntime?.invalidateUserTurn();
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
-      void session.steer(finalText, images.length > 0 ? images : undefined).catch((err: unknown) => this.emitError(err));
+      void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
       return;
     }
     this.experience?.begin(text, context);
@@ -319,12 +475,13 @@ export class BrowserAgentSession {
       return;
     }
     if (session.isStreaming) {
+      this.failurePolicy?.reset();
       this.experience?.feedback(text);
       this.memoryRuntime?.invalidateUserTurn();
       const finalText = withPageContext(text, context);
       const images = extractImages(attachments);
       this.runTrace.record("steer", { text, context, attachments });
-      void session.steer(finalText, images.length > 0 ? images : undefined).catch((err: unknown) => this.emitError(err));
+      void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
     } else {
       this.sendUserMessage(text, context, attachments);
     }
@@ -343,17 +500,24 @@ export class BrowserAgentSession {
     return decision === "EDIT";
   }
 
-  async classifyVoiceInput(text:string,state:string,conversationTitles?:string[]):Promise<VoiceIntentPlan> {
+  async classifyVoiceInput(text:string,state:string,conversationTitles?:string[],task?:{goal:string|null;requestId?:string},conversation?:VoiceConversationContext):Promise<VoiceIntentPlan> {
     if(!this.session?.model || !this.modelRuntime)throw new VoiceIntentError('model_unavailable');
     const signal=AbortSignal.timeout(15000);
+    let rejection:string|undefined;
+    const requestId=task?.requestId??randomUUID();
     for(let attempt=0;attempt<2;attempt++){
-      const reply=await this.modelRuntime.completeSimple(this.session.model,{
-        systemPrompt:VOICE_INTENT_PROMPT+(attempt?'\n上次返回不符合格式约束，请重新判断整句话：chat/clarify/silence不得与任务动作混用；背景说明和未来条件并入邻近动作的parts；只返回合法JSON。':''),
-        messages:[{role:'user',content:JSON.stringify({state,text,clauses:voiceClauses(text),...(conversationTitles?{conversationTitles}:{})}),timestamp:Date.now()}],
-      },{maxTokens:1400,reasoning:'minimal',temperature:0,signal}).catch(()=>{throw new VoiceIntentError(signal.aborted?'classifier_timeout':'classifier_failed');});
-      if(reply.stopReason==='error'||reply.stopReason==='aborted')throw new VoiceIntentError(signal.aborted?'classifier_timeout':'classifier_failed');
-      try{return parseVoiceIntent(reply.content.filter(p=>p.type==='text').map(p=>p.text).join('').trim(),text);}
-      catch(error){if(attempt||signal.aborted)throw error;}
+      const attemptSignal=AbortSignal.any([signal,AbortSignal.timeout(attempt===0?6000:9000)]);
+      const callAt=Date.now();
+      const diagnose=(outcome:string,reason?:string,actions?:string[])=>console.error(`[voice-classifier] ${JSON.stringify({requestId,attempt:attempt+1,elapsedMs:Date.now()-callAt,outcome,...(reason?{reason}:{}),...(actions?{actions}:{})})}`);
+      let reply:Awaited<ReturnType<ModelRuntime['completeSimple']>>;
+      try{reply=await this.modelRuntime.completeSimple(this.session.model,{
+        systemPrompt:VOICE_INTENT_PROMPT+(rejection?`\n上次拒绝原因：${rejection}。non_immediate_control表示把否定、引用或未来条件当作现在控制；必须并入前一步或作为非操作。`: '')+(attempt?'\n上次候选或请求没有通过应用校验，请重新判断整句。查询也必须提取明确的会话名称。等我说继续属于未来条件，不能立即resume，放入前一步的分界内。缺少图片或比较对象仍是start，不是clarify。chat/clarify/silence不得与任务动作混用；最后一步不填through，单一步骤不需要分界，应用会保留全部原话。纠正原任务要结合task.goal，不能另作start。对上文事项的内容追问或指代（如“那个呢”）归chat，不是clarify；clarify只用于未命名的“那个/另一个会话”或裸“停止”。只返回JSON。':''),
+        messages:[{role:'user',content:JSON.stringify({state,text,clauses:voiceDecisionClauses(text),...(conversationTitles?{conversationTitles}:{}),...(task?{task:{goal:task.goal?.slice(0,600)??null}}:{}),...(conversation?{conversation}:{})}),timestamp:Date.now()}],
+      },{maxTokens:1400,temperature:0,signal:attemptSignal});}
+      catch{diagnose(attemptSignal.aborted?'timeout':'request_failed');if(!attempt&&!signal.aborted)continue;throw new VoiceIntentError(signal.aborted||attemptSignal.aborted?'classifier_timeout':'classifier_failed');}
+      if(reply.stopReason==='error'||reply.stopReason==='aborted'){diagnose('provider_failed');if(!attempt&&!signal.aborted)continue;throw new VoiceIntentError(signal.aborted||attemptSignal.aborted?'classifier_timeout':'classifier_failed');}
+      try{const plan=parseVoiceDecision(reply.content.filter(p=>p.type==='text').map(p=>p.text).join('').trim(),text,conversationTitles);diagnose('accepted',undefined,plan.steps.map(step=>step.action));return plan;}
+      catch(error){rejection=error instanceof VoiceIntentError?error.reason??"semantics":"unknown";diagnose('candidate_rejected',rejection);if(attempt||signal.aborted)throw error;}
     }
     throw new VoiceIntentError('classifier_invalid_reply');
   }
@@ -372,10 +536,42 @@ export class BrowserAgentSession {
     return answer;
   }
 
+  async composeUserDelivery(input: {
+    question?: string | null;
+    facts: string;
+    recentTurns: VoiceConversationContext["recentTurns"];
+    latestDelivery?: UserDelivery | null;
+  }, onText?: (text:string)=>boolean|void): Promise<string> {
+    if (!this.session?.model || !this.modelRuntime) throw new Error("当前执行模型不可用。");
+    deliveryMetrics.composeCalls += 1;
+    const started = Date.now();
+    const inputContext = {
+      systemPrompt: COMPOSE_USER_DELIVERY_PROMPT,
+      messages: [{ role: "user" as const, content: composeUserDeliveryInput(input), timestamp: Date.now() }],
+    };
+    const controller=new AbortController();
+    const options={maxTokens:400,reasoning:'minimal' as const,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])};
+    let reply;
+    if(onText){
+      const stream=this.modelRuntime.streamSimple(this.session.model,inputContext,options);let text='';
+      for await(const event of stream){
+        if(event.type==='text_delta'){
+          text+=event.delta;
+          if(text.length>2000||onText(text)===false){controller.abort();throw new Error('正式回答已取消或过长。');}
+        }
+      }
+      reply=await stream.result();
+    }else reply=await this.modelRuntime.completeSimple(this.session.model,inputContext,options);
+    deliveryMetrics.composeMs.push(Date.now() - started);
+    if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("正式回答没有完成。");
+    return assertDeliveryText(reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim());
+  }
+
   startTask(text:string,context?:PageContext,attachments?:Attachment[]):void {
     if(this.hold.isHeld())throw new Error('页面现在归你，请先交还。');
     if(!this.session?.model)throw new Error(this.guidanceMessage());
     if(this.session.isStreaming)throw new Error('当前任务还在执行，请修改当前任务或另开会话。');
+    this.pendingCorrections.clear();
     this.deferredSteers=[];this.sendUserMessage(text,context,attachments);
   }
   queueSteerForResume(text:string,context?:PageContext,attachments?:Attachment[]):void{
@@ -388,15 +584,22 @@ export class BrowserAgentSession {
     const session = this.session;
     if (this.hold.isHeld()) throw new Error("页面现在归你，请先用侧栏交还。");
     if (!session?.isStreaming) throw new Error("当前没有正在执行的主任务，修改未发送。");
+    this.failurePolicy?.reset();
     this.runTrace.record("steer", { text, context, attachments });
     this.experience?.feedback(text);
     this.memoryRuntime?.invalidateUserTurn();
     const images = extractImages(attachments);
-    if (images.length) await session.steer(withPageContext(text, context), images);
-    else await session.steer(withPageContext(text, context));
+    const input = withPageContext(text, context);
+    this.pendingCorrections.add(input);
+    this.controlEpoch += 1;
+    // Ordered before the acceptance receipt: invalidate writes already queued at the extension.
+    this.callbacks.setStatus("running");
+    try { if (images.length) await session.steer(input, images); else await session.steer(input); }
+    catch (error) { this.pendingCorrections.delete(input); throw error; }
   }
 
   abort(): void {
+    this.pendingCorrections.clear();
     this.deferredSteers=[];
     this.runTrace.record("abort");
     this.controlEpoch += 1;
@@ -439,7 +642,8 @@ export class BrowserAgentSession {
       return Promise.resolve(false);
     }
     const queued=this.deferredSteers.slice();
-    const text = handbackContinueText(context, snapshot)+(queued.length?`\n用户暂停时补充了以下要求：\n${queued.map(q=>withPageContext(q.text,q.context)).join('\n')}\n用户现在已明确要求继续，先前等待继续的条件已经满足。按以上最新要求继续原任务。`:'');
+    const unconsumed = [...this.pendingCorrections];
+    const text = handbackContinueText(context, snapshot,this.activeGoal??undefined)+(unconsumed.length?`\n用户已经接受但尚未消费的补充：\n${unconsumed.join('\n')}`:'')+(queued.length?`\n用户暂停时补充了以下要求：\n${queued.map(q=>withPageContext(q.text,q.context)).join('\n')}\n用户现在已明确要求继续，先前等待继续的条件已经满足。按以上最新要求继续原任务。`:'');
     const session = this.session;
     if (!session || !session.model) {
       this.callbacks.emit({ kind: "error", message: this.guidanceMessage() });
@@ -454,6 +658,11 @@ export class BrowserAgentSession {
       this.acceptanceTrace.resumedTabId = context.tabId;
       this.acceptanceTrace.snapshotMarkerFound = snapshot.includes(this.acceptanceTrace.expectedSnapshotMarker);
     }
+    // The extension already read this page for handback; retain that actual observation
+    // instead of making the resumed model repeat it only to repair the progress ledger.
+    const observationId = `handback-${randomUUID()}`;
+    this.callbacks.emit({ kind: "tool_start", toolCallId: observationId, name: "snapshot", params: { tabId: context.tabId } });
+    this.callbacks.emit({ kind: "tool_end", toolCallId: observationId, name: "snapshot", isError: false, resultText: snapshot.slice(0, RESULT_TEXT_MAX) });
     const epoch = ++this.controlEpoch;
     this.runTrace.record("handback", { context, snapshot });
     let resolveStarted!: (started: boolean) => void;
@@ -665,6 +874,14 @@ export class BrowserAgentSession {
       this.runTrace.event(event);
       this.experience?.observe(event);
       switch (event.type) {
+        case "message_start": {
+          if (event.message.role === "user") {
+            const content = event.message.content;
+            const text = typeof content === "string" ? content : content.filter(p => p.type === "text").map(p => p.text).join("\n");
+            for (const pending of this.pendingCorrections) if (text === pending || text.includes(pending)) this.pendingCorrections.delete(pending);
+          }
+          break;
+        }
         case "message_update": {
           const ev = event.assistantMessageEvent;
           if (ev.type === "text_delta") {
@@ -677,20 +894,33 @@ export class BrowserAgentSession {
             emit({ kind: "text_delta", delta: ev.delta });
           }
           else if (ev.type === "thinking_delta") emit({ kind: "thinking_delta", delta: ev.delta });
+          else if((ev.type==='toolcall_delta'||ev.type==='toolcall_end')&&this.explicitDelivery){
+            const part=ev.partial.content[ev.contentIndex];
+            if(part?.type==='toolCall'&&part.name==='send_user_message'){
+              const args=part.arguments as {kind?:string;content?:string};
+              if((args.kind===undefined||args.kind==='finding'||args.kind==='ack')&&typeof args.content==='string'&&args.content.length<=2000){
+                const previous=this.deliveryPrefixes.get(part.id)??'';
+                if(args.content!==previous){
+                  emit({kind:'user_delivery_stream',stream:{id:toolDeliveryId(part.id),runId:this.deliveryRunId(),kind:args.kind??'reply',text:args.content,phase:args.content.startsWith(previous)?'streaming':'cancelled'}});
+                  this.deliveryPrefixes.set(part.id,args.content);
+                }
+              }
+            }
+          }
           break;
         }
         case "tool_execution_update": {
           const step = event.partialResult?.details?.programStep as ProgramStep | undefined;
           if (event.toolName !== "browser_run" || !step) break;
-          if (step.phase === "start") emit({ kind: "tool_start", toolCallId: step.id, name: step.name, params: step.params });
-          else emit({ kind: "tool_end", toolCallId: step.id, name: step.name, isError: !!step.error,
-            resultText: step.error ?? (step.name === "screenshot" ? "Screenshot captured; image attached to program result." : (JSON.stringify(step.result) ?? "undefined").slice(0, RESULT_TEXT_MAX)) });
+          this.observeProgramStep(step);
           break;
         }
         case "tool_execution_start":
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot") {
             this.acceptanceTrace.resumeSnapshotToolCalled = true;
           }
+          if (this.toolArgs.size > 200) this.toolArgs.clear();
+          this.toolArgs.set(event.toolCallId, asParams(event.args));
           emit({
             kind: "tool_start",
             toolCallId: event.toolCallId,
@@ -699,6 +929,8 @@ export class BrowserAgentSession {
           });
           break;
         case "tool_execution_end":
+          if(event.toolName==='send_user_message'&&event.isError)emit({kind:'user_delivery_stream',stream:{id:toolDeliveryId(event.toolCallId),runId:this.deliveryRunId(),kind:'finding',text:'',phase:'cancelled'}});
+          if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot" && !event.isError) {
             this.acceptanceTrace.resumeSnapshotMarkerFound = firstText(event.result).includes(
               this.acceptanceTrace.expectedSnapshotMarker,
@@ -715,7 +947,10 @@ export class BrowserAgentSession {
             name: event.toolName,
             isError: event.isError,
             resultText: firstText(event.result),
+            executionFact: this.rpc?.getExecutionFact(event.toolCallId),
           });
+          this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
+          this.toolArgs.delete(event.toolCallId);
           break;
         case "turn_start":
           emit({ kind: "turn_start" });
@@ -731,7 +966,7 @@ export class BrowserAgentSession {
             this.handbackPromptEpoch = null;
             void this.stopCurrentRun().catch(() => {});
             setStatus(this.hold.isHeld() ? "user" : "idle");
-            emit({ kind: "agent_start" });
+            emit(this.startEvent());
             break;
           }
           if (this.handbackPromptEpoch !== null) {
@@ -746,18 +981,25 @@ export class BrowserAgentSession {
             this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
           }
           setStatus(this.hold.statusAfterAgentStart());
-          emit({ kind: "agent_start" });
+          emit(this.startEvent());
           break;
         case "agent_end": {
-          if (!event.willRetry) this.experience?.finish();
+          for(const id of this.deliveryPrefixes.keys())emit({kind:'user_delivery_stream',stream:{id:toolDeliveryId(id),runId:this.deliveryRunId(),kind:'reply',text:'',phase:'cancelled'}});
+          this.deliveryPrefixes.clear();
+          // willRetry=true 时自动重试紧随其后，本轮并未结束：不下发 agent_end，
+          // 避免进度状态与结果被误当作最终（状态保持 running）。
+          if (event.willRetry) break;
+          this.experience?.finish();
           const stoppedByUser = this.expectedStoppedAgentEnd;
           this.expectedStoppedAgentEnd = false;
-          // willRetry=true 时自动重试紧随其后，状态保持 running
+          const toolFailure = this.pendingToolFailure;
+          this.pendingToolFailure = null;
           // 接管期间 agent_end 不得变成 idle（那会和中止/完成混淆）
           const next = this.hold.statusAfterAgentEnd(event.willRetry);
           if (next) setStatus(next);
+          if (toolFailure && !this.hold.isHeld() && !stoppedByUser) emit({kind:"user_delivery",delivery:toolFailure});
           emit({ kind: "agent_end" });
-          if (shouldSurfaceAgentEndIssue(this.hold.isHeld(), event.willRetry, stoppedByUser)) {
+          if (!toolFailure && shouldSurfaceAgentEndIssue(this.hold.isHeld(), event.willRetry, stoppedByUser)) {
             const errText = lastAssistantError(event.messages);
             if (errText) {
               console.error(`[sideagent] 模型请求最终失败：${errText}`);
@@ -783,6 +1025,48 @@ export class BrowserAgentSession {
       }
     });
   }
+
+  /** 只读工具成功回执产生一条页面读数，供结果账本建立写入前基线；截断的超长读数不可用作基线。 */
+  private emitReadObservation(
+    toolCallId: string,
+    name: string,
+    params: Record<string, unknown> | undefined,
+    result: unknown,
+    isError: boolean,
+  ): void {
+    if (isError || !(RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(name)) return;
+    const read = readObservationOf(name, result);
+    if (!read) return;
+    const rawTarget = typeof params?.target === "string" && params.target.trim() ? params.target : read.target;
+    const truncated = read.text.length > RESULT_OBSERVATION_TEXT_MAX;
+    this.callbacks.emit({
+      kind: "tool_observation",
+      toolCallId,
+      name,
+      target: rawTarget ? normalizeResultTarget(rawTarget) : null,
+      tabId: read.tabId ?? (typeof params?.tabId === "number" ? params.tabId : null),
+      workingTab: params?.tabId === undefined,
+      text: truncated ? read.text.slice(0, RESULT_OBSERVATION_TEXT_MAX) : read.text,
+      truncated,
+    });
+  }
+}
+
+/** 从工具回执（AgentToolResult 或 browser_run 子步骤原始数据）提取页面读数。 */
+function readObservationOf(tool: string, result: unknown): { text: string; tabId: number | null; target: string | null } | null {
+  const details = result && typeof result === "object" && "details" in result
+    ? (result as { details?: unknown }).details
+    : result;
+  const data = details && typeof details === "object" ? details as Record<string, unknown> : {};
+  const text = tool === "snapshot"
+    ? (typeof data.text === "string" ? data.text : "")
+    : [data.textContent, data.value].filter((part): part is string => typeof part === "string" && part.length > 0).join("\n");
+  if (!text) return null;
+  return {
+    text,
+    tabId: typeof data.tabId === "number" ? data.tabId : null,
+    target: typeof data.target === "string" && data.target.trim() ? data.target : null,
+  };
 }
 
 function asParams(args: unknown): Record<string, unknown> {

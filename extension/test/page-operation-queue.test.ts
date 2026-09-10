@@ -179,3 +179,19 @@ describe("page_operation executor", () => {
     await expect(pageOperation({ tabId: 15, target: "#name", expectedValue: "old", value: "new" }, key)).rejects.toThrow(/changed=true.*字段已被替换/);
   });
 });
+
+describe("page operation execution fact", () => {
+  it("未改页的明确拒绝可重试，改过或不明一律未知", async () => {
+    vi.resetModules();
+    vi.doMock("../src/background/state.js", () => ({
+      resolveWorkingTab: vi.fn(async () => ({ id: 15 })),
+      getTabResource: vi.fn(async () => ({ tabId: 15, conversationId: "conversation-A", mode: "shared", collaborators: ["conversation-A::writer"] })),
+    }));
+    vi.doMock("../src/background/axstate.js", () => ({ isAxRef: () => false }));
+    vi.doMock("../src/background/debugger.js", () => ({ sendCommand: vi.fn() }));
+    const { PageOperationError, pageOperationExecutionFact } = await import("../src/background/exec/page-operation.js");
+    expect(pageOperationExecutionFact(new PageOperationError({ operator: "w", target: "#a", changed: false, readBack: null, reason: "原值冲突" }))).toBe("not_executed");
+    expect(pageOperationExecutionFact(new PageOperationError({ operator: "w", target: "#a", changed: true, readBack: "x", reason: "读回不一致" }))).toBe("unknown");
+    expect(pageOperationExecutionFact(new Error("页面已变化"))).toBe("unknown");
+  });
+});

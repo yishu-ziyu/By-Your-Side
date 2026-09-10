@@ -4,11 +4,14 @@
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
  * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
+import { WRITE_TOOLS, isWriteTool } from "../../shared/control.js";
 import type { ToolRpc } from "./rpc.js";
-import { runBrowserProgram } from "./browser-program.js";
+import { runBrowserProgram, type ProgramStep } from "./browser-program.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
@@ -30,16 +33,60 @@ function formatTabs(tabs: TabInfo[]): string {
     .join("\n");
 }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: () => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void }): ToolDefinition[] {
+  const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
-  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string) => {
+  // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
+  // 依赖集合复用 WRITE_TOOLS；每次都问真实 canExecute，不看 JS 内容或提示词。
+  const unavailableWriteTools = (): ToolName[] =>
+    canExecute ? WRITE_TOOLS.filter((name) => !canExecute(name)) : [];
+  const assertGenericJsAllowed = () => {
+    const missing = unavailableWriteTools();
+    if (missing.length === 0) return;
+    throw new Error(
+      `通用页面 JS 不可用：工具 ${missing.join("、")} 当前未启用，操作未执行。请改用 snapshot 或 read_element 观察页面。`,
+    );
+  };
+  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string) => {
+    const scope = executionScope.getStore();
+    const epoch = scope?.epoch;
+    // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
+    const sdkId = execution ? (stepId ?? scope?.toolCallId) : undefined;
+    if (sdkId) rpc.ensureToolCall?.(sdkId, name, sid);
+    if (execution && isWriteTool(name) && (!execution.canWrite() || epoch !== execution.epoch())) {
+      if (sdkId) rpc.markCallRejected?.(sdkId);
+      throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续。");
+    }
+    try {
+      execution?.assertCall?.(name, params, sdkId);
+    } catch (error) {
+      if (sdkId) rpc.markCallRejected?.(sdkId);
+      throw error;
+    }
+    if (name === "js") {
+      try { assertGenericJsAllowed(); }
+      catch (error) { if (sdkId) rpc.markCallRejected?.(sdkId); throw error; }
+    }
+    if (canExecute && !canExecute(name)) {
+      if (sdkId) rpc.markCallRejected?.(sdkId);
+      throw new Error(`工具 ${name} 当前未启用，操作未执行`);
+    }
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
       await takeTab(typeof params.tabId === "number" ? params.tabId : undefined);
     }
-    return programId ? rpc.call(name, params, undefined, sid, programId) : rpc.call(name, params, undefined, sid);
+    const invoke = (executionEpoch?: number) => {
+      // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
+      if (sdkId === undefined) {
+        if (executionEpoch !== undefined) return rpc.call(name, params, undefined, sid, programId, executionEpoch);
+        return programId ? rpc.call(name, params, undefined, sid, programId) : rpc.call(name, params, undefined, sid);
+      }
+      return rpc.call(name, params, undefined, sid, programId, executionEpoch, sdkId);
+    };
+    if (execution && isWriteTool(name)) return invoke(epoch);
+    return invoke(undefined);
   };
 
-  return [
+  const definitions = [
     defineTool({
       name: "page_operation",
       label: "Write and verify field",
@@ -55,14 +102,25 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "read_element",
       label: "Read complete element",
-      description: "Read an element's complete current textContent and, for form fields, its complete value without focusing, scrolling or changing the page. To read the full page text when snapshot abbreviates source paragraphs, use target:'body'. For one field use its current snapshot @ref or a unique observed CSS selector. Do not guess chains of selectors to find plain source text. This is a constrained read, not JavaScript evaluation. The main agent can read any tab by tabId without claiming it; workers can read only assigned tabs.",
+      description: "Read a unique current element without changing the page. By default return complete textContent and field value; use target:'body' for full source text. For controls/media use properties (paused, currentTime, checked, enabled, visible, expanded, pressed, value), not handwritten JS probes. To verify or wait, use expect:{property:'paused',equals:true} or expect:{property:'textContent',contains:'Saved'}, with timeoutMs up to 5000. Returns check.matched only when that exact condition holds; timeout is a failure, never success. Use a current snapshot @ref or unique observed native CSS; ambiguity/stale refs fail without switching targets. Works inside browser_run with the same parameters. Main may read any tab; workers only assigned tabs.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
         target: Type.String({ description: 'Current "@N" snapshot ref, "loc=css:...", or unique native CSS selector' }),
+        properties: Type.Optional(Type.Array(Type.Union(ELEMENT_PROPERTIES.map(p => Type.Literal(p))), { maxItems: ELEMENT_PROPERTIES.length, description: 'Read these state properties; omit for complete text/value. Unsupported properties fail explicitly.' })),
+        expect: Type.Optional(Type.Union([
+          Type.Object({ property: Type.Union(['visible','enabled','checked','selected','paused','ended'].map(p => Type.Literal(p))), equals: Type.Boolean({description:'Boolean true/false, never a quoted string.'}) }),
+          Type.Object({ property: Type.Union([Type.Literal('expanded'),Type.Literal('pressed')]), equals: Type.Union([Type.Boolean(),Type.Literal('mixed')]) }),
+          Type.Object({ property: Type.Union([Type.Literal('currentTime'),Type.Literal('duration')]), equals: Type.Number() }),
+          Type.Object({ property: Type.Union([Type.Literal('textContent'),Type.Literal('value')]), equals: Type.String() }),
+          Type.Object({ property: Type.Union([Type.Literal('textContent'), Type.Literal('value')]), contains: Type.String({ minLength: 1 }) }),
+        ])),
+        timeoutMs: Type.Optional(Type.Number({ minimum: 0, maximum: 5000, description: 'Optional bounded wait for expect; default 0 checks once. No model round trips while waiting.' })),
       }),
       execute: async (_id, params) => {
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
-        return textResult(JSON.stringify(data), data);
+        // A state query does not need the element's entire descendant text in the model context.
+        const projected = params.properties?.length || params.expect ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check } : data;
+        return textResult(JSON.stringify(projected), data);
       },
     }),
     defineTool({
@@ -74,10 +132,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
       }),
       execute: async (id, params, signal, onUpdate) => {
+        // 组合调用一旦开始，整体结果就不再是“确定未执行”。
+        rpc.noteToolFact?.(id, "unknown");
         const result = await runBrowserProgram({ code: params.code,
-          call: (name, args) => call(name, args, id), signal, id,
-          onStep: programStep => onUpdate?.({ content: [], details: { programStep } }),
+          call: (name, args, stepId) => call(name, args, id, stepId), signal, id,
+          // Preflight needs the substep binding now, not after Pi's async progress queue drains.
+          onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
         });
+        rpc.noteToolFact?.(id, "executed");
         return { content: [{ type: "text" as const, text: truncate(JSON.stringify({ value: result.value, steps: result.steps }), MAX_JS_RESULT_CHARS) }, ...result.images], details: { value: result.value, steps: result.steps } };
       },
     }),
@@ -111,13 +173,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "open_tab",
       label: "Open tab",
       description:
-        "Open a new tab and claim it as the working tab. Omit url for a blank tab, then use navigate.",
+        "Open a new tab and claim it as the working tab. Omit url for a blank tab, then use navigate. Returns when the document is interactive, not when all resources finish. On readiness timeout, creation succeeded but the document is not confirmed ready; inspect the current URL and snapshot before acting.",
       parameters: Type.Object({
         url: Type.Optional(Type.String({ description: "URL to open" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("open_tab", params)) as ToolContract["open_tab"]["data"];
-        return textResult(`Opened tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}`, data);
+        return textResult(`Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}; document: ${data.readiness ?? "not checked"}`, data);
       },
     }),
 
@@ -150,14 +212,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "navigate",
       label: "Navigate",
-      description: "Navigate the working tab to a URL and wait for load. Take a snapshot afterwards.",
+      description: "Navigate the working tab to a URL and wait for the new document to be interactive. Readiness timeout is not confirmed navigation success; verify the URL and take a snapshot before acting.",
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
-        return textResult(`Navigated to ${data.url} — ${data.title}`, data);
+        return textResult(`Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`, data);
       },
     }),
 
@@ -165,7 +227,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "snapshot",
       label: "Snapshot",
       description:
-        "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); interactive elements are [ref=N] (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
+        "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
         "Take a snapshot after every navigation and after actions that change the page.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
@@ -307,7 +369,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "mark",
       label: "Mark element",
       description:
-        "Draw a persistent annotation on an element in the working tab: outline box + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation.",
+        "Draw a persistent hand-drawn annotation on an element in the working tab: gently animated outline + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation. Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         label: Type.Optional(Type.String({ description: "Short label shown next to the mark, e.g. 待删除" })),
@@ -363,4 +425,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
   ];
+  return execution ? definitions.map(tool => ({ ...tool, execute: (...args: Parameters<ToolDefinition["execute"]>) => executionScope.run({epoch: execution.epoch(), toolCallId: args[0]}, async () => {
+    const rpcWithFacts = rpc as Partial<Pick<ToolRpc, "ensureToolCall" | "markCallRejected">>;
+    rpcWithFacts.ensureToolCall?.(args[0], tool.name as ToolName, sid);
+    try {
+      return await (tool as ToolDefinition).execute(...args);
+    } catch (error) {
+      rpcWithFacts.markCallRejected?.(args[0]);
+      throw error;
+    }
+  }) })) : definitions;
 }

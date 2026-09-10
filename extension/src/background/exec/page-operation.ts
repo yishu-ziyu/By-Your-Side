@@ -1,4 +1,5 @@
 import { USER_BLOCKED_ERROR } from "../../../../shared/control.js";
+import type { ToolExecutionFact } from "../../../../shared/protocol.js";
 import { isAxRef } from "../axstate.js";
 import { sendCommand } from "../debugger.js";
 import { getTabResource, resolveWorkingTab } from "../state.js";
@@ -28,6 +29,11 @@ export class PageOperationError extends Error {
     super(`page_operation 失败：operator=${details.operator} target=${details.target} changed=${details.changed} readBack=${JSON.stringify(details.readBack)} reason=${details.reason}`);
     this.name = "PageOperationError";
   }
+}
+
+/** 执行事实只由结构化 changed 决定：未改页 = 动作前拒绝可重试，改过或不明 = 未知。 */
+export function pageOperationExecutionFact(error: unknown): ToolExecutionFact {
+  return error instanceof PageOperationError && !error.details.changed ? "not_executed" : "unknown";
 }
 
 type FieldState = { value: string; rect: { x: number; y: number; width: number; height: number } };
@@ -169,16 +175,16 @@ export async function pageOperation(
   options: { canWrite?: () => boolean } = {},
 ): Promise<PageOperationResult> {
   const operator = parseExecutionKey(key).sessionId;
-  const tab = await resolveWorkingTab(params.tabId, key);
-  if (tab.id == null) throw new Error("工作标签页无效");
-  const tabId = tab.id;
-  const resource = await getTabResource(tabId);
-  if (resource?.mode !== "shared" || !resource.collaborators.includes(key)) throw new Error("page_operation 只允许已登记的共享页协作者使用");
+  let changed = false;
+  let readBack: string | null = null;
+  try {
+    const tab = await resolveWorkingTab(params.tabId, key);
+    if (tab.id == null) throw new Error("工作标签页无效");
+    const tabId = tab.id;
+    const resource = await getTabResource(tabId);
+    if (resource?.mode !== "shared" || !resource.collaborators.includes(key)) throw new Error("page_operation 只允许已登记的共享页协作者使用");
 
-  return pageOperationQueue.run(tabId, async () => {
-    let changed = false;
-    let readBack: string | null = null;
-    try {
+    return await pageOperationQueue.run(tabId, async () => {
       if (options.canWrite && !options.canWrite()) throw new Error(USER_BLOCKED_ERROR);
       const currentResource = await getTabResource(tabId);
       if (currentResource?.mode !== "shared" || !currentResource.collaborators.includes(key)) {
@@ -201,12 +207,12 @@ export async function pageOperation(
       readBack = outcome.readBack;
       if (readBack !== params.value) throw new Error(`读回不一致：expected=${JSON.stringify(params.value)} actual=${JSON.stringify(readBack)}`);
       return { tabId, target: params.target, previousValue: outcome.previousValue, value: params.value, verified: true as const, operator, changed, readBack };
-    } catch (error) {
-      if (error instanceof PageOperationError) throw error;
-      if (error instanceof MutationFailure) { changed = error.changed; readBack = error.readBack; }
-      throw new PageOperationError({ operator, target: params.target, changed, readBack, reason: error instanceof Error ? error.message : String(error) });
-    }
-  }, options.canWrite);
+    }, options.canWrite);
+  } catch (error) {
+    if (error instanceof PageOperationError) throw error;
+    if (error instanceof MutationFailure) { changed = error.changed; readBack = error.readBack; }
+    throw new PageOperationError({ operator, target: params.target, changed, readBack, reason: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 export { takeoverTab, handbackTab } from "../page-operation-queue.js";

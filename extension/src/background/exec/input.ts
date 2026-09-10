@@ -1,3 +1,4 @@
+import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
@@ -5,6 +6,8 @@ import { sendCommand } from "../debugger.js";
 import { getWorkingTabId, maybeActivateTab, resolveWorkingTab } from "../state.js";
 import { resolveKey } from "../../shared/keymap.js";
 import { isAxRef } from "../axstate.js";
+import { observedNodeRect } from "../observed-node-rect.js";
+import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
 import {
   confirmLabelForDestructive,
@@ -13,7 +16,7 @@ import {
   resolveImplicitMarkActions,
 } from "../../shared/mark-actions.js";
 import { HeldClicks } from "../../shared/held-clicks.js";
-import { getMarkMotion, getMode } from "../mode.js";
+import { getMarkMotion } from "../mode.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 
 interface DomRect {
@@ -36,9 +39,11 @@ async function callOnBackendNode<T>(
   backendNodeId: number,
   functionDeclaration: string,
   args?: unknown[],
+  executionContextId?: number,
 ): Promise<T> {
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", {
     backendNodeId,
+    ...(executionContextId !== undefined ? {executionContextId} : {}),
   });
   const objectId = resolved.object?.objectId;
   if (!objectId) throw new Error("节点无法解析（页面可能已变化）");
@@ -60,18 +65,12 @@ async function callOnBackendNode<T>(
 }
 
 /** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
-async function rectOfBackendNode(tabId: number, backendNodeId: number): Promise<DomRect> {
+async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false): Promise<DomRect> {
   const rect = await callOnBackendNode<DomRect | undefined>(
     tabId,
     backendNodeId,
-    `function() {
-      const el = this;
-      if (typeof el.scrollIntoViewIfNeeded === "function") el.scrollIntoViewIfNeeded({ block: "center", inline: "center" });
-      else el.scrollIntoView({ block: "center", inline: "center" });
-      const r = el.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) throw new Error("元素不可见（零尺寸）");
-      return { x: r.x, y: r.y, width: r.width, height: r.height };
-    }`,
+    observedNodeRect.toString(),
+    [contentOnly],
   );
   if (!rect) throw new Error("无法获取元素位置");
   return rect;
@@ -724,6 +723,7 @@ export async function hover(
 ): Promise<{ hovered: true }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  await assertObservedDocument(tab.id, sessionId);
   const { point: [x, y] } = await resolvePointerTarget(tab.id, params);
   await maybeActivateTab(tab, sessionId);
   await cursorMove(tab.id, x, y, cursorId(sessionId));
@@ -738,6 +738,7 @@ export async function click(
 ): Promise<ClickResult> {
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   const target = params.target;
@@ -909,6 +910,7 @@ export async function fill(
 ): Promise<{ filled: true }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   await maybeActivateTab(tab, sessionId);
@@ -1026,6 +1028,7 @@ export async function typeText(
 ): Promise<{ typed: true }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  await assertObservedDocument(tab.id, sessionId);
   await maybeActivateTab(tab, sessionId);
   await sendCommand(tab.id, "Input.insertText", { text: params.text });
   return { typed: true };
@@ -1039,6 +1042,7 @@ export async function pressKey(
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  await assertObservedDocument(tab.id, sessionId);
   await maybeActivateTab(tab, sessionId);
 
   const base = {
@@ -1062,6 +1066,7 @@ export async function scroll(
 ): Promise<{ atBottom: boolean }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  await assertObservedDocument(tab.id, sessionId);
   await ensureDomOps(tab.id);
 
   if (params.toBottom) {
@@ -1107,6 +1112,7 @@ export async function mark(
 ): Promise<{ marked: true }> {
   const tab = await resolveWorkingTab(undefined, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  const observedDocument = await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
 
@@ -1116,7 +1122,7 @@ export async function mark(
   let rect: DomRect | undefined;
   if (backendNodeId !== undefined) {
     try {
-      rect = await rectOfBackendNode(tabId, backendNodeId);
+      rect = await rectOfBackendNode(tabId, backendNodeId, true);
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
         throw new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`);
@@ -1131,6 +1137,8 @@ export async function mark(
         const dom = window.__sideagent?.dom;
         if (!dom) return { ok: false, error: "domops 未注入" };
         try {
+          const element = dom.resolve(t);
+          if (element === document.body || element === document.documentElement) throw new Error("请定位具体内容元素，不能用整页作为标注目标");
           return { ok: true, rect: dom.rectOf(t) };
         } catch (e: any) {
           return { ok: false, error: e?.message ?? String(e) };
@@ -1149,9 +1157,18 @@ export async function mark(
 
   await ensureCursor(tabId);
   const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
-  const mode = await getMode(parseExecutionKey(sessionId).conversationId);
   const motion = await getMarkMotion();
-  const style = params.style ?? (mode === "teach" ? "sketch" : "rect");
+  const style = params.style ?? "sketch";
+  await assertSameDocument(tabId, observedDocument);
+  if (backendNodeId !== undefined) {
+    const contextId = await cursorContext(tabId);
+    await assertSameDocument(tabId, observedDocument);
+    await callOnBackendNode(tabId, backendNodeId, `function(label,target,id,actions,options) {
+      const rect = (${observedNodeRect.toString()}).call(this,true);
+      window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,this);
+    }`, [params.label ?? null,params.target,cid,actions,{style,motion}], contextId);
+    return {marked:true};
+  }
   await callDom(
     tabId,
     (

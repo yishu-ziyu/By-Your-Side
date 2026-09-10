@@ -1,0 +1,38 @@
+{
+  "ok": false,
+  "evidence": {
+    "sourceSha256": "011ffc594ce695029c46d8570d029452aaf1ccfbdb1e567cdf398a4edbdfa65d",
+    "head": "40993d590f34216cc57e5d3eb34d2f7ace8d626b",
+    "scriptSha256": "0bd78bfa257ee3faeda277cf303b998832d259c9698f8c2c59bdfea2bb8562bf",
+    "backgroundSha256": "92ef4c663a659ef268853bbd95f96534ae78de1d9a8ce64aa404ee0bbdc54a60",
+    "sidepanelSha256": "53fae1c5b651b9af12a19e4a521a3dc560a53b93c8977fa810e07492da6d3230",
+    "lockSha256": "61417867ad0b6cfb3ed9ef1132c7a9f7f1ddfe78d153e72045d0571f6c2fc2ef"
+  },
+  "scope": "production sidepanel DOM/client/worklet/player + task runtime + real models; isolated tools via CDP; synthetic microphone stream, muted browser audio playback; test transport supplies production VoiceObservation grant at commit; not human listening",
+  "caseName": "js_enabled",
+  "targetCode": "cedar-flash-7527",
+  "otherCode": "river-flash-5617",
+  "marker": "dc0ffb",
+  "activityOrg": "白榆工作坊",
+  "interviewOrg": "海棠研究",
+  "eventName": "白榆工作坊活动邀请",
+  "interviewName": "海棠研究访谈邀请",
+  "bodyMarker": "纸鹤橙桥2941",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    }
+  ],
+  "voice": [],
+  "tools": [],
+  "stages": [],
+  "stage": "chrome startup",
+  "utterance": "JS execution regression",
+  "error": "Error: 通用页面 JS 不可用：工具 worker_tabs 当前未启用，操作未执行。请改用 snapshot 或 read_element 观察页面。",
+  "deliveryMetrics": {
+    "composeCalls": 0,
+    "composeMs": []
+  },
+  "browserExited": true
+}

@@ -1,0 +1,107 @@
+{
+  "scope": "independent production-module integration probes, deterministic SDK event driver; not full model/browser",
+  "checks": [
+    {
+      "name": "explicit unknown fact survives transport id to SDK id mapping",
+      "ok": true,
+      "actual": {
+        "transportId": "c215d122-f4df-4fa9-a186-6ebdb2f257f8",
+        "sdkId": "model-call-1",
+        "transportFact": "unknown",
+        "sdkLookup": "unknown",
+        "projectedFact": "unknown",
+        "afterFirst": "unknown"
+      }
+    },
+    {
+      "name": "post-write non-timeout error cannot be retried",
+      "ok": true,
+      "actual": {
+        "dispatches": 1
+      }
+    },
+    {
+      "name": "untyped sent write failure stays unknown",
+      "ok": true,
+      "actual": "unknown"
+    },
+    {
+      "name": "matching late receipt resolves original progress through production wiring",
+      "ok": true,
+      "actual": {
+        "before": "unknown",
+        "matched": true,
+        "after": "satisfied",
+        "handlerInstalled": true
+      }
+    },
+    {
+      "name": "unknown guard blocks click",
+      "ok": true,
+      "actual": {
+        "result": {
+          "ok": false,
+          "error": "Error: 任务中存在尚未确认结果的操作「新增一条记录」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。"
+        },
+        "writes": 0
+      }
+    },
+    {
+      "name": "unknown guard blocks js",
+      "ok": true,
+      "actual": {
+        "result": {
+          "ok": false,
+          "error": "Error: 任务中存在尚未确认结果的操作「新增一条记录」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。"
+        },
+        "writes": 0
+      }
+    },
+    {
+      "name": "unknown guard blocks browser_run",
+      "ok": true,
+      "actual": {
+        "result": {
+          "ok": false,
+          "error": "Error: click: 「新增一条记录」的执行结果未知，不能自动重做；请先查询结果或由用户决定。"
+        },
+        "writes": 0
+      }
+    },
+    {
+      "name": "unknown guard preserves direct snapshot",
+      "ok": true,
+      "actual": {
+        "read": {
+          "ok": true
+        },
+        "writes": 0
+      }
+    },
+    {
+      "name": "restore preserves unknown",
+      "ok": true,
+      "actual": "unknown"
+    },
+    {
+      "name": "executor gate deduplicates repeated operation id",
+      "ok": true,
+      "actual": {
+        "writes": 1,
+        "scope": "ControlGate module; index dispatcher separately inspected"
+      }
+    }
+  ],
+  "cases": [],
+  "sourceHashes": {
+    "agent/src/rpc.ts": "09ade709db241ddfb270b5a6e11bb4e0379c06baf9fb2df2477a5f34ef47cfa6",
+    "agent/src/session.ts": "0468d63a7164b1fe84b3c9e9c01f84191fa4b5756f8c5a6a044941a42f676908",
+    "agent/src/task-progress.ts": "fba6b937ccec79db5fac93fa8651beb5a6a702aae0a948d20c3ddeeec6fbe297",
+    "agent/src/task-results.ts": "fa7156938f8146dbf52b55c1a1a3dc7b178d5ecb8b8120741dc91b5dd3c18b8e",
+    "agent/src/conversation-runtime.ts": "af01db4dcbfc9f3232315e22e645047b111e7c2515c3190b0c121d5479e941bb",
+    "extension/src/background/index.ts": "8819e569faa7d2007a192e291b1f89f4b3dcf3d624baffc210d03fd1cbd6f93f",
+    "shared/control.ts": "f758b6038cd3f2d5ea8ac509b47425b8c7f3c6d0f5536aaf488a58365078c6a6"
+  },
+  "passed": 10,
+  "total": 10
+}

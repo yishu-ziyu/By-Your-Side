@@ -1,0 +1,69 @@
+{
+  "index": 7,
+  "block": 2,
+  "seed": "bindingab-20260910-b2",
+  "candidate": "C",
+  "scenario": "delay_ready",
+  "repeat": 0,
+  "model": "minimax-cn/MiniMax-M3",
+  "reasoning": "medium",
+  "exitCode": 1,
+  "settleReason": "exit",
+  "timedOut": false,
+  "slow": true,
+  "ok": false,
+  "bucket": "product_failure",
+  "infraFailure": null,
+  "spawnError": null,
+  "setupFailure": null,
+  "productFailure": true,
+  "note": null,
+  "elapsedMs": 183525,
+  "totalMs": null,
+  "modelTurns": null,
+  "registrationOnlyTurns": null,
+  "turnsWithRegistration": null,
+  "registrationCalls": null,
+  "topLevelToolCalls": null,
+  "browserRunCalls": null,
+  "browserRunSubsteps": null,
+  "writeCalls": null,
+  "failedWrites": null,
+  "jsCalls": null,
+  "readCalls": null,
+  "firstObservationMs": null,
+  "firstObservationTool": null,
+  "firstAttemptMs": null,
+  "firstAttemptTool": null,
+  "firstDispatchMs": null,
+  "firstDispatchTool": null,
+  "firstDispatchOk": null,
+  "firstDomActionMs": null,
+  "firstDomActionSource": null,
+  "pauseMs": null,
+  "usage": null,
+  "usageAvailable": false,
+  "usageSource": "not_available",
+  "checks": [
+    {
+      "name": "actual task model initialized",
+      "ok": true
+    }
+  ],
+  "sideEffects": null,
+  "wordingObservations": null,
+  "answer": null,
+  "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-lxtctk",
+  "logPath": "/Users/mahaoxuan/Desktop/ego/docs/tasks/20260910-binding-ab/runs/20260910T045813-60319/07-C-delay_ready-r0.log",
+  "stdoutTail": {
+    "out": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/ego-harness-s2-lxtctk",
+    "ok": false,
+    "error": "Error: Timeout waiting for evaluator stage: autonomous scenario: delay_ready",
+    "checks": [
+      {
+        "name": "actual task model initialized",
+        "ok": true
+      }
+    ]
+  }
+}
