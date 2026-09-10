@@ -92,3 +92,48 @@ describe("axTreeToText", () => {
     expect(backendIds).toEqual([]);
   });
 });
+
+describe("快照预算治理", () => {
+  it("超预算时优先保住全部 ref 行，先丢纯文本行", () => {
+    const textNodes: AxNodeLite[] = [];
+    const rootChildren: string[] = [];
+    for (let i = 0; i < 400; i += 1) {
+      const id = `t${i}`;
+      rootChildren.push(id);
+      textNodes.push(node({ nodeId: id, parentId: "root", role: { value: "StaticText" }, name: { value: `大段说明文字第 ${i} 段，` + "很长的正文内容".repeat(6) }, backendDOMNodeId: 1000 + i }));
+    }
+    const nodes: AxNodeLite[] = [
+      node({ nodeId: "root", role: { value: "RootWebArea" }, childIds: ["btn", ...rootChildren], backendDOMNodeId: 1 }),
+      node({ nodeId: "btn", parentId: "root", role: { value: "button" }, name: { value: "提交" }, backendDOMNodeId: 20 }),
+      ...textNodes,
+    ];
+    const { text, truncated, backendIds } = axTreeToText(nodes, 3_000);
+    expect(truncated).toBe(true);
+    expect(backendIds).toContain(20);
+    expect(text).toContain('[ref=20] button "提交"');
+    expect(text.length).toBeLessThan(3_200);
+    expect(text).toContain("[truncated");
+  });
+
+  it("父节点名字与子静态文本重复时只出一行", () => {
+    const nodes: AxNodeLite[] = [
+      node({ nodeId: "r", role: { value: "RootWebArea" }, childIds: ["b"], backendDOMNodeId: 1 }),
+      node({ nodeId: "b", parentId: "r", role: { value: "button" }, name: { value: "暂停" }, childIds: ["t"], backendDOMNodeId: 2 }),
+      node({ nodeId: "t", parentId: "b", role: { value: "StaticText" }, name: { value: "暂停" }, backendDOMNodeId: 3 }),
+    ];
+    const { text } = axTreeToText(nodes);
+    expect(text.match(/暂停/g)).toHaveLength(1);
+  });
+
+  it("不同文字的静态文本保留", () => {
+    const nodes: AxNodeLite[] = [
+      node({ nodeId: "r", role: { value: "RootWebArea" }, childIds: ["b", "t1", "t2"], backendDOMNodeId: 1 }),
+      node({ nodeId: "b", parentId: "r", role: { value: "button" }, name: { value: "提交" }, backendDOMNodeId: 2 }),
+      node({ nodeId: "t1", parentId: "r", role: { value: "StaticText" }, name: { value: "提交订单后不可撤销" }, backendDOMNodeId: 3 }),
+      node({ nodeId: "t2", parentId: "r", role: { value: "StaticText" }, name: { value: "另一段说明" }, backendDOMNodeId: 4 }),
+    ];
+    const { text } = axTreeToText(nodes);
+    expect(text).toContain("提交订单后不可撤销");
+    expect(text).toContain("另一段说明");
+  });
+});

@@ -24,9 +24,10 @@ export interface AxNodeLite {
 
 /**
  * 输出字符预算。ego 的做法是不截断（380KB 照吐，靠 scope 控范围）；
- * 我们要照顾 LLM 上下文，取平衡值 50K（约一页复杂站点的主要交互区）。
+ * 我们要照顾 LLM 上下文：24K 字符约 6k token，已覆盖一页复杂站点的主要交互区。
+ * 超预算时优先保留可交互/可引用行（ref），先丢纯文本行，见 renderBudgeted。
  */
-export const MAX_OUTPUT_CHARS = 50_000;
+export const MAX_OUTPUT_CHARS = 24_000;
 const MAX_LINE_TEXT = 200;
 const MAX_NAME = 60;
 
@@ -72,6 +73,11 @@ function propValue(node: AxNodeLite, name: string): unknown {
   return p?.value?.value;
 }
 
+/** 静态文本节点说的话；其它角色返回 null。用于折叠「父节点名字 + 子静态文本」的重复。 */
+function staticTextOf(node: AxNodeLite): string | null {
+  return (node.role?.value ?? "") === "StaticText" ? String(node.name?.value ?? "") : null;
+}
+
 /** 节点自身是否值得占一行（不含 ref 前缀）。 */
 function describe(node: AxNodeLite): string | null {
   const role = node.role?.value ?? "";
@@ -112,19 +118,67 @@ export interface AxTextResult {
   truncated: boolean;
 }
 
-/** 把一整棵 AX 树转成文本快照。 */
-export function axTreeToText(nodes: AxNodeLite[]): AxTextResult {
+interface AxLine {
+  text: string;
+  /** 可交互/可引用（ref）行：超预算时不会被丢。 */
+  interactive: boolean;
+  ref?: number;
+}
+
+/**
+ * 按预算渲染：先保下全部 ref 行的空间，再按文档顺序填文本行。
+ * 文档顺序不变（模型靠缩进理解结构），只是文本行先被丢弃。
+ */
+function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[] } {
+  const interactiveCost = entries.reduce((sum, entry) => sum + (entry.interactive ? entry.text.length + 1 : 0), 0);
+  // 极端情况：页面可交互节点本身就超预算（巨型表格/列表）。此时连 ref 也只能按文档顺序截。
+  if (interactiveCost > budget) {
+    const kept: string[] = [];
+    const keptRefs: number[] = [];
+    let used = 0;
+    let cut = false;
+    for (const entry of entries) {
+      const cost = entry.text.length + 1;
+      if (used + cost > budget) { cut = true; continue; }
+      used += cost;
+      kept.push(entry.text);
+      if (entry.ref !== undefined) keptRefs.push(entry.ref);
+    }
+    return { text: kept.join("\n"), truncated: cut, keptRefs };
+  }
+  let left = budget - interactiveCost;
+  const kept: string[] = [];
+  const keptRefs: number[] = [];
+  let dropped = false;
+  for (const entry of entries) {
+    if (entry.interactive) {
+      kept.push(entry.text);
+      if (entry.ref !== undefined) keptRefs.push(entry.ref);
+      continue;
+    }
+    if (entry.text.length + 1 > left) { dropped = true; continue; }
+    left -= entry.text.length + 1;
+    kept.push(entry.text);
+  }
+  return { text: kept.join("\n"), truncated: dropped, keptRefs };
+}
+
+/** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS): AxTextResult {
   const byId = new Map<string, AxNodeLite>();
   for (const n of nodes) byId.set(n.nodeId, n);
   const roots = nodes.filter((n) => !n.parentId || !byId.has(n.parentId));
 
-  const lines: string[] = [];
-  const backendIds: number[] = [];
-  let totalChars = 0;
-  let truncated = false;
+  const entries: AxLine[] = [];
+  // 沿当前路径已经说过的文字（名字/静态文本）：子节点重复同一句话时不再占一行。
+  const spoken = new Map<string, number>();
+  const say = (text: string): void => { spoken.set(text, (spoken.get(text) ?? 0) + 1); };
+  const unsay = (text: string): void => {
+    const next = (spoken.get(text) ?? 0) - 1;
+    if (next > 0) spoken.set(text, next); else spoken.delete(text);
+  };
 
   const walk = (node: AxNodeLite, depth: number): void => {
-    if (truncated) return;
     const role = node.role?.value ?? "";
     if (DROP_SUBTREE_ROLES.has(role)) return;
     if (node.ignored) {
@@ -136,34 +190,39 @@ export function axTreeToText(nodes: AxNodeLite[]): AxTextResult {
       return;
     }
 
-    const line = describe(node);
+    const described = describe(node);
+    const name = String(node.name?.value ?? "");
+    const textPayload = staticTextOf(node);
     let childDepth = depth;
-    if (line !== null) {
-      let prefix = "";
+    const words: string[] = [];
+    if (described !== null) {
       const backendId = node.backendDOMNodeId;
-      if (backendId !== undefined && role !== "RootWebArea" && role !== "WebArea") {
-        prefix = `[ref=${backendId}] `;
+      const hasRef = backendId !== undefined && role !== "RootWebArea" && role !== "WebArea";
+      // 同一个字符串在同一路径上已经出现过（父节点名字与子静态文本重复）就不再输出。
+      const repeatedText = textPayload !== null && textPayload.length > 0 && (spoken.get(textPayload) ?? 0) > 0;
+      if (!repeatedText) {
+        const prefix = hasRef ? `[ref=${backendId}] ` : "";
+        entries.push({ text: `${"  ".repeat(depth)}${prefix}${described}`, interactive: hasRef, ...(hasRef ? { ref: backendId } : {}) });
+        if (name) { say(name); words.push(name); }
+        if (textPayload && textPayload !== name) { say(textPayload); words.push(textPayload); }
+        childDepth = depth + 1;
+      } else {
+        childDepth = depth;
       }
-      totalChars += depth * 2 + line.length + prefix.length + 1;
-      if (totalChars > MAX_OUTPUT_CHARS) {
-        truncated = true;
-        return;
-      }
-      lines.push(`${"  ".repeat(depth)}${prefix}${line}`);
-      if (prefix) backendIds.push(backendId!);
-      childDepth = depth + 1;
     }
 
     for (const id of node.childIds ?? []) {
       const child = byId.get(id);
       if (child) walk(child, childDepth);
     }
+    for (const word of words) unsay(word);
   };
 
   for (const root of roots) walk(root, 0);
 
-  if (truncated) {
-    lines.push(`... [truncated，输出超过 ${MAX_OUTPUT_CHARS} 字符；有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)（视口快照真做范围过滤），或用 js 工具精确提取]`);
-  }
-  return { text: lines.join("\n"), backendIds, truncated };
+  const { text, truncated, keptRefs } = renderBudgeted(entries, budget);
+  const finalText = truncated
+    ? `${text}\n... [truncated，优先保住了全部可交互 ref；文本行超出 ${budget} 字符预算。有效恢复方式：先滚动目标进入视口再 snapshot(scope=viewport)，或用 read_element / js 精确提取]`
+    : text;
+  return { text: finalText, backendIds: keptRefs, truncated };
 }
