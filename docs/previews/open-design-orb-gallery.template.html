@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>thinking-orbs · 9 种状态全览（Open Design 实机同款）</title>
+<style>
+  :root{
+    --bg:#fff; --fg:#202020; --muted:#848484; --line:#dbdbdb; --card:#fafafa;
+    --anim-ink:#353535;
+  }
+  html[data-theme="dark"]{
+    --bg:#111112; --fg:#f2f2f2; --muted:#8f8f8f; --line:#2c2c2e; --card:#171718;
+    --anim-ink:#dbdbdb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 32px 56px; background:var(--bg); color:var(--fg);
+    font:13px/1.6 "Albert Sans",-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1{margin:0 0 8px; font-size:17px; font-weight:600; letter-spacing:.2px}
+  .sub{margin:0 0 18px; max-width:1000px; color:var(--muted)}
+  code{font-family:"JiduMono Pro",ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+    background:color-mix(in oklab, var(--fg) 6%, transparent); padding:1px 4px; border-radius:4px}
+  .controls{display:flex; flex-wrap:wrap; gap:18px; align-items:center; padding:10px 12px; margin-bottom:20px;
+    border:1px solid var(--line); border-radius:8px; background:var(--card)}
+  .group{display:flex; align-items:center; gap:6px}
+  .group>span{color:var(--muted); margin-right:2px}
+  button{
+    font:inherit; font-size:12px; padding:4px 10px; border:1px solid var(--line); border-radius:6px;
+    background:var(--bg); color:var(--fg); cursor:pointer;
+  }
+  button:hover{border-color:var(--fg)}
+  button.on{background:var(--fg); color:var(--bg); border-color:var(--fg)}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:14px}
+  .card{border:1px solid var(--line); border-radius:8px; background:var(--card); padding:12px 14px 10px}
+  .card h2{margin:0 0 2px; font-size:13px; font-weight:600; display:flex; align-items:baseline; gap:8px}
+  .card h2 em{font-style:normal; color:var(--muted); font-weight:400; font-size:12px}
+  .badge{font-size:11px; line-height:1.5; padding:0 6px; border-radius:999px; border:1px solid var(--line);
+    color:var(--muted); white-space:nowrap}
+  .badge.used{border-color:var(--fg); color:var(--fg)}
+  .orbs{display:flex; align-items:flex-end; gap:18px; padding:14px 0 10px}
+  figure{margin:0; display:flex; flex-direction:column; align-items:center; gap:6px}
+  figcaption{color:var(--muted); font-size:11px; text-align:center; white-space:nowrap}
+  .orb{display:inline-grid; place-items:center}
+  .orb canvas{display:block}
+  .meta{margin-top:6px; padding-top:8px; border-top:1px dashed var(--line); color:var(--muted); font-size:11px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .legend{margin-top:26px; border:1px solid var(--line); border-radius:8px; overflow:auto}
+  table{border-collapse:collapse; width:100%; font-size:12px}
+  th,td{padding:6px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap}
+  th{color:var(--muted); font-weight:500; background:var(--card)}
+  td.num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .foot{margin-top:14px; color:var(--muted); font-size:12px}
+  #zoom{position:fixed; inset:0; display:none; place-items:center; background:color-mix(in oklab, var(--bg) 88%, transparent);
+    backdrop-filter:blur(2px); cursor:zoom-out}
+  #zoom.open{display:grid}
+  #zoom .box{display:flex; flex-direction:column; align-items:center; gap:10px;
+    border:1px solid var(--line); border-radius:10px; background:var(--card); padding:22px 30px}
+  #zoom .name{font-size:13px; font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>thinking-orbs · 9 种状态全览（Open Design 实机同款）</h1>
+<p class="sub">
+  真实来源：npm <code>thinking-orbs@0.3.1</code>（MIT © Jakub Antalik）。Open Design v0.22.0 的
+  <code>Orb.tsx</code> 直接调它的几何 <code>MODE_FRAMES[mode](size, t, opts)</code>，再用自家墨色
+  <code>--chat-anim-ink</code>（亮色 <code>#353535</code> / 暗色 <code>#dbdbdb</code>）重画。
+  本页内联的就是这份引擎原码，没有手写近似；点任意一颗球可放大看。
+  <br/>Open Design v0.22.0 实际只用了其中两种：壳头 <code>connecting</code>（24px）、步骤行 <code>composing</code>（20px）。
+  带黑框标记的就是它正在用的；其余 7 种是同一个包里可选、但它没用上的。
+</p>
+
+<div class="controls">
+  <div class="group"><span>主题</span>
+    <button data-theme-btn="light" class="on">浅色</button>
+    <button data-theme-btn="dark">深色</button>
+  </div>
+  <div class="group"><span>速度</span>
+    <button data-speed="0.5">0.5×</button>
+    <button data-speed="1" class="on">1×</button>
+    <button data-speed="2">2×</button>
+  </div>
+  <div class="group"><span>着色</span>
+    <button id="inkToggle" class="on">Open Design 墨色</button>
+  </div>
+  <div class="group"><button id="pause">暂停</button></div>
+</div>
+
+<main id="grid" class="grid"></main>
+
+<section class="legend">
+  <table>
+    <thead><tr><th>状态</th><th>模式</th><th>中文</th><th>64 档 speed / count / size</th><th>20 档 speed / count / size</th></tr></thead>
+    <tbody id="paramBody"></tbody>
+  </table>
+</section>
+<p class="foot">
+  尺寸是两套独立调过的设计，不是缩放：<b>64</b> 给聊天头像，<b>20</b> 给行内文字。Open Design 壳头用的是
+  <b>24</b> 的盒子 + 20 档几何（按 box/20 等比放大，backing store 一起放大）。几何档位只有 64 和 20 两个合法值。
+</p>
+
+<div id="zoom"><div class="box"><span class="name"></span><span class="orb" id="zoomOrb"></span></div></div>
+
+<script>
+/*__ENGINE__*/
+
+// ===== 画笔：照 Open Design Orb.tsx 的 paint / shade 原样搬，只去掉 React =====
+const { MODE_FRAMES, resolvePreset } = window.__thinkingOrbs;
+
+const STATES = [
+  { id: 'working',    cn: '粒子在倾斜轨道上转',            mode: 'orbits' },
+  { id: 'searching',  cn: '扫描经线扫过点阵球',            mode: 'globe'  },
+  { id: 'solving',    cn: '色带打乱后咔哒归位',            mode: 'rubik'  },
+  { id: 'listening',  cn: '波形滚过一圈圈纬线',            mode: 'wave'   },
+  { id: 'connecting', cn: '星座自己接线、光点沿边走',      mode: 'web',    used: '壳头在用 · 24px' },
+  { id: 'weaving',    cn: '三股线绕着球编',                mode: 'braid'  },
+  { id: 'composing',  cn: '起伏的多层飘带',                mode: 'ribbon', used: '步骤行在用 · 20px' },
+  { id: 'breathing',  cn: '正对镜头的圆环缓慢变形',        mode: 'ring'   },
+  { id: 'shaping',    cn: '点阵轮廓：圆 → 三角 → 方',      mode: 'morph'  },
+];
+
+const SIZES = [
+  { box: 64, geom: 64, note: '64 · 头像档' },
+  { box: 24, geom: 20, note: '24 · 壳头' },
+  { box: 20, geom: 20, note: '20 · 行内档' },
+];
+
+const PRESET_NUMBERS = {
+  orbits:    { 64: [1.885, 1,     1    ], 20: [3.9,   0.238,  2.4  ] },
+  globe:     { 64: [2.015, 0.42,  1.15 ], 20: [2.665, 0.105,  1.75 ] },
+  rubik:     { 64: [1.82,  0.35,  1.05 ], 20: [1.95,  0.088,  1.9  ] },
+  wave:      { 64: [4.388, 0.341, 1    ], 20: [3.998, 0.105,  1.6  ] },
+  web:       { 64: [3.315, 1.35,  0.95 ], 20: [6.63,  0.25,   1.52 ] },
+  braid:     { 64: [1.625, 0.5,   1    ], 20: [2.75,  0.1125, 1.36 ] },
+  ribbon:    { 64: [2.34,  0.25,  0.85 ], 20: [3.12,  0.051,  1.073] },
+  ring:      { 64: [3.24,  0.25,  0.956], 20: [3.78,  0.028,  1.622] },
+  morph:     { 64: [2.405, 0.702, 0.395], 20: [2.08,  0.53,   1.011] },
+};
+
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+const orbs = [];
+let speedMul = 1;
+let paused = false;
+let useInk = true;
+
+/** `--anim-ink` → rgb（照 Orb.tsx 的 readInk；解析不了就返回 null，退回上游灰） */
+function readInk() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--anim-ink').trim();
+  if (!raw) return null;
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) return null;
+  probe.fillStyle = '#000';
+  probe.fillStyle = raw;
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(probe.fillStyle);
+  if (!m) return null;
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+/** 墨值 → 颜色（照 Orb.tsx 的 shade：white 越小墨越重） */
+function shade(ink, white, alpha, dark) {
+  const v = dark ? 1 - white : white;
+  if (!ink) {
+    const level = Math.round((dark ? 1 - v : v) * 255);
+    return `rgba(${level},${level},${level},${alpha})`;
+  }
+  const strength = 1 - v;
+  return `rgba(${ink[0]},${ink[1]},${ink[2]},${(alpha * strength).toFixed(3)})`;
+}
+
+function paint(orb, seconds, dark, ink) {
+  const t = seconds * orb.preset.speed;
+  const frame = MODE_FRAMES[orb.mode](orb.geom, t, orb.preset.opts);
+  const k = (orb.dpr * orb.box) / orb.geom;
+  const ctx = orb.ctx;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.clearRect(0, 0, orb.geom, orb.geom);
+  for (const line of frame.lines) {
+    ctx.strokeStyle = shade(ink, line.white, line.a ?? 1, dark);
+    ctx.lineWidth = line.w;
+    ctx.beginPath();
+    ctx.moveTo(line.x1, line.y1);
+    ctx.lineTo(line.x2, line.y2);
+    ctx.stroke();
+  }
+  for (const dot of frame.dots) {
+    ctx.fillStyle = shade(ink, dot.white, dot.a ?? 1, dark);
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function makeOrb(state, size) {
+  const host = document.createElement('span');
+  host.className = 'orb';
+  const canvas = document.createElement('canvas');
+  canvas.style.width = size.box + 'px';
+  canvas.style.height = size.box + 'px';
+  canvas.width = Math.round(size.box * dpr);
+  canvas.height = Math.round(size.box * dpr);
+  host.appendChild(canvas);
+  const orb = {
+    state, mode: state.mode, geom: size.geom, box: size.box, dpr,
+    ctx: canvas.getContext('2d'),
+    preset: resolvePreset(state.id, size.geom),
+  };
+  orbs.push(orb);
+  return { host, orb };
+}
+
+function build() {
+  const grid = document.getElementById('grid');
+  for (const state of STATES) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const h2 = document.createElement('h2');
+    h2.innerHTML = `<span>${state.id}</span><em>${state.cn}</em>`;
+    if (state.used) {
+      const badge = document.createElement('span');
+      badge.className = 'badge used';
+      badge.textContent = state.used;
+      h2.appendChild(badge);
+    }
+    card.appendChild(h2);
+
+    const row = document.createElement('div');
+    row.className = 'orbs';
+    for (const size of SIZES) {
+      const fig = document.createElement('figure');
+      const { host, orb } = makeOrb(state, size);
+      host.addEventListener('click', () => openZoom(state, orb));
+      fig.appendChild(host);
+      const cap = document.createElement('figcaption');
+      cap.textContent = size.note;
+      fig.appendChild(cap);
+      row.appendChild(fig);
+    }
+    card.appendChild(row);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const p = PRESET_NUMBERS[state.mode];
+    meta.textContent = `mode=${state.mode} · 64: speed ${p[64][0]} / count ${p[64][1]} / size ${p[64][2]} · 20: speed ${p[20][0]} / count ${p[20][1]} / size ${p[20][2]}`;
+    card.appendChild(meta);
+    grid.appendChild(card);
+  }
+
+  const body = document.getElementById('paramBody');
+  for (const state of STATES) {
+    const p = PRESET_NUMBERS[state.mode];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${state.id}</td><td>${state.mode}</td><td>${state.cn}</td>`
+      + `<td class="num">${p[64].join(' / ')}</td><td class="num">${p[20].join(' / ')}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+// 放大：64 档画到 160 的盒子里（同一份几何，等比放大，和 Open Design 处理 24 的做法一致）
+let zoomOrb = null;
+function openZoom(state, source) {
+  const overlay = document.getElementById('zoom');
+  const slot = document.getElementById('zoomOrb');
+  overlay.querySelector('.name').textContent = `${state.id} · ${state.cn} · mode=${state.mode}`;
+  slot.replaceChildren();
+  const canvas = document.createElement('canvas');
+  const box = 160;
+  canvas.style.width = box + 'px';
+  canvas.style.height = box + 'px';
+  canvas.width = Math.round(box * dpr);
+  canvas.height = Math.round(box * dpr);
+  slot.appendChild(canvas);
+  zoomOrb = { mode: state.mode, geom: 64, box, dpr, ctx: canvas.getContext('2d'), preset: resolvePreset(state.id, 64) };
+  overlay.classList.add('open');
+}
+document.getElementById('zoom').addEventListener('click', (e) => {
+  e.currentTarget.classList.remove('open');
+  zoomOrb = null;
+});
+
+const start = performance.now();
+function frame() {
+  const seconds = performance.now() / 1000 - start / 1000;
+  if (!paused) {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const ink = useInk ? readInk() : null;
+    for (const orb of orbs) paint(orb, seconds * speedMul, dark, ink);
+    if (zoomOrb) paint(zoomOrb, seconds * speedMul, dark, ink);
+  }
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.documentElement.dataset.theme = btn.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach((b) => b.classList.toggle('on', b === btn));
+  });
+});
+document.querySelectorAll('[data-speed]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    speedMul = Number(btn.dataset.speed);
+    document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', b === btn));
+  });
+});
+document.getElementById('inkToggle').addEventListener('click', (e) => {
+  useInk = !useInk;
+  e.currentTarget.classList.toggle('on', useInk);
+  e.currentTarget.textContent = useInk ? 'Open Design 墨色' : '上游灰';
+});
+document.getElementById('pause').addEventListener('click', (e) => {
+  paused = !paused;
+  e.currentTarget.textContent = paused ? '继续' : '暂停';
+});
+
+build();
+frame();
+</script>
+</body>
+</html>

@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>我们产品的三态 × 光球候选（引擎同源 Open Design）</title>
+<style>
+  :root{
+    --bg:#fff; --fg:#202020; --muted:#848484; --line:#dbdbdb; --card:#fafafa;
+    --anim-ink:#353535; --pick:#2f6fed;
+  }
+  html[data-theme="dark"]{
+    --bg:#111112; --fg:#f2f2f2; --muted:#8f8f8f; --line:#2c2c2e; --card:#171718;
+    --anim-ink:#dbdbdb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:26px 30px 60px; background:var(--bg); color:var(--fg);
+    font:13px/1.65 "Albert Sans",-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1{margin:0 0 6px; font-size:17px; font-weight:600}
+  .sub{margin:0 0 16px; max-width:1040px; color:var(--muted)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+    background:color-mix(in oklab, var(--fg) 6%, transparent); padding:1px 4px; border-radius:4px}
+  a{color:inherit}
+  .controls{display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:9px 12px; margin-bottom:20px;
+    border:1px solid var(--line); border-radius:8px; background:var(--card)}
+  .controls span.lbl{color:var(--muted); margin-right:4px}
+  button{font:inherit; font-size:12px; padding:4px 10px; border:1px solid var(--line); border-radius:6px;
+    background:var(--bg); color:var(--fg); cursor:pointer}
+  button:hover{border-color:var(--fg)}
+  button.on{background:var(--fg); color:var(--bg); border-color:var(--fg)}
+  .state{border:1px solid var(--line); border-radius:8px; background:var(--card); padding:14px 16px 12px; margin-bottom:14px}
+  .state h2{margin:0; font-size:14px; font-weight:600; display:flex; align-items:baseline; gap:10px}
+  .state h2 em{font-style:normal; font-size:12px; color:var(--muted); font-weight:400}
+  .why{margin:6px 0 12px; color:var(--muted); font-size:12px; max-width:900px}
+  .cands{display:flex; gap:26px; flex-wrap:wrap}
+  .cand{display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 12px 6px; border-radius:8px;
+    border:1px dashed transparent; cursor:pointer}
+  .cand.rec{border-style:solid; border-color:var(--fg)}
+  .cand .tag{font-size:11px; color:var(--muted)}
+  .cand.rec .tag{color:var(--fg); font-weight:600}
+  .cand .sizes{display:flex; align-items:flex-end; gap:12px; padding-top:4px}
+  .cand figure{margin:0; display:flex; flex-direction:column; align-items:center; gap:4px}
+  .cand figcaption{font-size:10px; color:var(--muted)}
+  .orb{display:inline-grid; place-items:center}
+  .orb canvas{display:block}
+  .strip{margin-top:22px; border:1px solid var(--line); border-radius:8px; background:var(--card); padding:14px 16px}
+  .strip h3{margin:0 0 10px; font-size:13px; font-weight:600}
+  .capsules{display:flex; gap:10px; flex-wrap:wrap}
+  .cap{display:inline-flex; align-items:center; gap:7px; padding:4px 9px 4px 6px; border-radius:999px;
+    border:1px solid var(--line); background:var(--bg)}
+  .cap .txt{font-size:11px; letter-spacing:.1px}
+  .cap .num{font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums}
+  .note{margin-top:18px; padding:12px 14px; border-left:2px solid var(--line); color:var(--muted); font-size:12px}
+  .note b{color:var(--fg)}
+</style>
+</head>
+<body>
+
+<h1>我们产品的三态 × 光球候选</h1>
+<p class="sub">
+  球用的是 <b>Open Design 源码里同一个引擎</b>（<code>thinking-orbs@0.3.1</code>，MIT，原码内联）。
+  Open Design 自己只用了两种：壳头「进行中」<code>connecting</code>(24px)、思考行「思考中」<code>composing</code>(20px)——
+  这两条来自它 <code>ExecutionShell.tsx</code> 的第 252 / 737 行。下面是给我们三态各配的三个候选，黑框是推荐。
+  点候选可切换，右侧组合条会跟着变。
+</p>
+
+<div class="controls">
+  <div><span class="lbl">主题</span>
+    <button data-theme-btn="light" class="on">浅色</button>
+    <button data-theme-btn="dark">深色</button>
+  </div>
+  <div><span class="lbl">暂停</span><button id="pause">暂停动画</button></div>
+  <div><span class="lbl">减少动态</span><button id="reduce">模拟 prefers-reduced-motion</button></div>
+  <div><span class="lbl">全部 9 种</span>
+    <a href="./open-design-orb-gallery.html"><button type="button">打开全览页</button></a>
+  </div>
+</div>
+
+<div id="states"></div>
+
+<section class="strip">
+  <h3>组合预览（推荐组合长这样）</h3>
+  <div class="capsules" id="capsules"></div>
+</section>
+
+<p class="note">
+  <b>两个要你拍板的点。</b>
+  一、上一轮定过「状态不加持续动画」，球本身是持续动画——要上球就等于改这条边界，我用引擎自带的减少动态静止帧做兜底（点上面的按钮能看到）。
+  二、完成 / 失败我建议<b>不挂球</b>：终态继续转会读成"还没完"，沿用现在的 ✓ / 停留处理。你要是想给终态也配，说一声。
+</p>
+
+<script>
+/*__ENGINE__*/
+
+const { MODE_FRAMES, resolvePreset } = window.__thinkingOrbs;
+
+const MAPPING = [
+  {
+    key: 'thinking',
+    label: '思考中',
+    sub: '模型在推理 / 等模型响应（现有 waiting）',
+    rec: 'composing',
+    why: 'Open Design 的「思考中」用的就是它；飘带一层层往外起伏，读作"话正在长出来"，不是空转。',
+    cands: [
+      { id: 'composing', cn: '飘带' },
+      { id: 'breathing', cn: '圆环' },
+      { id: 'working',   cn: '粒子轨道' },
+    ],
+    capsule: { text: '正在等模型响应', num: '12s' },
+  },
+  {
+    key: 'tool',
+    label: '调用工具',
+    sub: '搜索 / 读取 / 点击 / 填表 等页面动作（现有 reading 是其中一类）',
+    rec: 'solving',
+    why: '色带先打乱、再咔哒归位，天然读作"一件事在做、且会做完"；working 更中性但像"一直在忙"，searching 只对搜索。',
+    cands: [
+      { id: 'solving',   cn: '色带归位' },
+      { id: 'working',   cn: '粒子轨道' },
+      { id: 'searching', cn: '扫描球' },
+    ],
+    capsule: { text: '正在读这个页面', num: '' },
+  },
+  {
+    key: 'memory',
+    label: '记忆',
+    sub: '查记忆 / 写记忆（现在没有单独状态）',
+    rec: 'connecting',
+    why: '星座自己接线、光点沿边走 = 把已有的东西连起来，最像"查/用记忆"；weaving 更像在编新记忆，breathing 太安静、看不出在查东西。',
+    cands: [
+      { id: 'connecting', cn: '星座接线' },
+      { id: 'weaving',    cn: '编三股线' },
+      { id: 'breathing',  cn: '圆环' },
+    ],
+    capsule: { text: '正在查记忆', num: '' },
+  },
+];
+
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+const selection = Object.fromEntries(MAPPING.map((m) => [m.key, m.rec]));
+const orbs = [];
+let paused = false;
+let reduce = false;
+
+function readInk() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--anim-ink').trim();
+  if (!raw) return null;
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) return null;
+  probe.fillStyle = '#000';
+  probe.fillStyle = raw;
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(probe.fillStyle);
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+}
+
+function shade(ink, white, alpha, dark) {
+  const v = dark ? 1 - white : white;
+  if (!ink) {
+    const level = Math.round((dark ? 1 - v : v) * 255);
+    return `rgba(${level},${level},${level},${alpha})`;
+  }
+  const strength = 1 - v;
+  return `rgba(${ink[0]},${ink[1]},${ink[2]},${(alpha * strength).toFixed(3)})`;
+}
+
+function paint(orb, seconds, dark, ink) {
+  const t = seconds * orb.preset.speed;
+  const frame = MODE_FRAMES[orb.mode](orb.geom, t, orb.preset.opts);
+  const k = (orb.dpr * orb.box) / orb.geom;
+  const ctx = orb.ctx;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.clearRect(0, 0, orb.geom, orb.geom);
+  for (const line of frame.lines) {
+    ctx.strokeStyle = shade(ink, line.white, line.a ?? 1, dark);
+    ctx.lineWidth = line.w;
+    ctx.beginPath(); ctx.moveTo(line.x1, line.y1); ctx.lineTo(line.x2, line.y2); ctx.stroke();
+  }
+  for (const dot of frame.dots) {
+    ctx.fillStyle = shade(ink, dot.white, dot.a ?? 1, dark);
+    ctx.beginPath(); ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/** box: 显示盒子；geom: 引擎档位（只有 64 / 20 合法） */
+function makeOrb(stateId, box, geom) {
+  const host = document.createElement('span');
+  host.className = 'orb';
+  const canvas = document.createElement('canvas');
+  canvas.style.width = box + 'px';
+  canvas.style.height = box + 'px';
+  canvas.width = Math.round(box * dpr);
+  canvas.height = Math.round(box * dpr);
+  host.appendChild(canvas);
+  const preset = resolvePreset(stateId, geom);
+  const orb = {
+    host, stateId, geom, box, dpr, ctx: canvas.getContext('2d'),
+    mode: preset.mode, preset,
+  };
+  orbs.push(orb);
+  return orb;
+}
+
+function render() {
+  const wrap = document.getElementById('states');
+  wrap.replaceChildren();
+  orbs.length = 0;
+
+  for (const m of MAPPING) {
+    const box = document.createElement('section');
+    box.className = 'state';
+    box.innerHTML = `<h2><span>${m.label}</span><em>${m.sub}</em></h2><p class="why">${m.why}</p>`;
+
+    const row = document.createElement('div');
+    row.className = 'cands';
+    for (const c of m.cands) {
+      const cell = document.createElement('div');
+      cell.className = 'cand' + (c.id === selection[m.key] ? ' rec' : '');
+      const tag = document.createElement('div');
+      tag.className = 'tag';
+      tag.textContent = `${c.id} · ${c.cn}` + (c.id === m.rec ? ' · 推荐' : '');
+      cell.appendChild(tag);
+
+      const sizes = document.createElement('div');
+      sizes.className = 'sizes';
+      for (const size of [{ box: 24, geom: 20, cap: '24 壳头' }, { box: 20, geom: 20, cap: '20 行内' }]) {
+        const fig = document.createElement('figure');
+        const orb = makeOrb(c.id, size.box, size.geom);
+        fig.appendChild(orb.host);
+        const cap = document.createElement('figcaption');
+        cap.textContent = size.cap;
+        fig.appendChild(cap);
+        sizes.appendChild(fig);
+      }
+      cell.appendChild(sizes);
+      cell.addEventListener('click', () => { selection[m.key] = c.id; render(); });
+      row.appendChild(cell);
+    }
+    box.appendChild(row);
+    wrap.appendChild(box);
+  }
+
+  const caps = document.getElementById('capsules');
+  caps.replaceChildren();
+  for (const m of MAPPING) {
+    const cap = document.createElement('span');
+    cap.className = 'cap';
+    const orb = makeOrb(selection[m.key], 20, 20);
+    cap.appendChild(orb.host);
+    const txt = document.createElement('span');
+    txt.className = 'txt';
+    txt.textContent = m.capsule.text;
+    txt.style.fontSize = '11px';
+    cap.appendChild(txt);
+    if (m.capsule.num) {
+      const num = document.createElement('span');
+      num.className = 'num';
+      num.textContent = m.capsule.num;
+      cap.appendChild(num);
+    }
+    caps.appendChild(cap);
+  }
+}
+
+const STILL_T = 0.6;   // 引擎自带的减少动态定格帧
+const startAt = performance.now();
+function frame() {
+  const seconds = (performance.now() - startAt) / 1000;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const ink = readInk();
+  if (reduce) {
+    if (!frame.frozen) { for (const o of orbs) paint(o, STILL_T, dark, ink); frame.frozen = true; }
+  } else {
+    frame.frozen = false;
+    if (!paused) for (const o of orbs) paint(o, seconds, dark, ink);
+  }
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.documentElement.dataset.theme = btn.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach((b) => b.classList.toggle('on', b === btn));
+    frame.frozen = false;
+  });
+});
+document.getElementById('pause').addEventListener('click', (e) => {
+  paused = !paused;
+  e.currentTarget.textContent = paused ? '继续动画' : '暂停动画';
+  e.currentTarget.classList.toggle('on', paused);
+});
+document.getElementById('reduce').addEventListener('click', (e) => {
+  reduce = !reduce;
+  e.currentTarget.classList.toggle('on', reduce);
+  frame.frozen = false;
+});
+
+render();
+frame();
+</script>
+</body>
+</html>

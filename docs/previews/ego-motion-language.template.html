@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>By-Your-Side · Motion Language</title>
+<style>
+  /* ── 产品真实 tokens（抄自 extension/src/sidepanel/styles.css） ── */
+  :root{
+    --wallpaper: radial-gradient(at 15% 15%, rgba(255,182,140,.35) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(135,195,255,.35) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(180,160,240,.3) 0px, transparent 55%), #f2f4f8;
+    --content-bg:#ffffff; --content-subtle:#f7f8fa; --content-subtle-hover:#eef1f5;
+    --content-border:rgba(0,0,0,.06);
+    --text-primary:#111827; --text-secondary:#4b5563; --text-tertiary:#9ca3af;
+    --apple-blue:#0071e3; --apple-blue-soft:rgba(0,113,227,.08);
+    --apple-green:#34c759; --apple-red:#ff3b30;
+    --radius-card:10px;
+    --anim-ink:#4b5563;
+
+    /* ── 本方案：3 个时长 + 3 条曲线 ── */
+    --m-quick:120ms;   /* 手指一碰就该有反应 */
+    --m-move:240ms;    /* 结构变化：展开、收束、位移 */
+    --m-morph:360ms;   /* 身份变化：一个控件变成另一个 */
+    --e-swift:cubic-bezier(.16,1,.3,1);     /* 快起慢停，不过冲 */
+    --e-spring:cubic-bezier(.34,1.4,.64,1); /* 带回弹，只用于按压回复 */
+    --e-glide:cubic-bezier(.4,0,.2,1);      /* 双向对称，可进可出 */
+  }
+  html[data-theme="dark"]{
+    --wallpaper:#0b0c10; --content-bg:#15171d; --content-subtle:#1c1f26; --content-subtle-hover:#242933;
+    --content-border:rgba(255,255,255,.08);
+    --text-primary:#f9fafb; --text-secondary:#9ca3af; --text-tertiary:#6b7280;
+    --apple-blue:#2997ff; --apple-blue-soft:rgba(41,151,255,.16);
+    --apple-green:#30d158; --apple-red:#ff453a;
+    --anim-ink:#9ca3af;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:26px 30px 80px; background:var(--wallpaper); color:var(--text-primary);
+    font:13px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  h1{margin:0 0 5px; font-size:18px; font-weight:650; letter-spacing:-.01em}
+  .lede{margin:0 0 18px; max-width:940px; color:var(--text-secondary)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+    background:rgba(127,127,127,.13); padding:1px 5px; border-radius:4px}
+  b{font-weight:600}
+
+  .topbar{display:flex; gap:14px; align-items:center; margin-bottom:18px; flex-wrap:wrap}
+  .topbar button{font:inherit; font-size:12px; padding:5px 11px; border:1px solid var(--content-border);
+    border-radius:7px; background:var(--content-bg); color:var(--text-primary); cursor:pointer}
+  .topbar button:active{transform:scale(.96)}
+  .topbar .hint{color:var(--text-tertiary); font-size:11.5px}
+
+  /* ── 常数条 ── */
+  .tokens{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px}
+  .tok{background:var(--content-bg); border:1px solid var(--content-border); border-radius:11px;
+    padding:10px 13px; display:flex; align-items:center; gap:11px; box-shadow:0 1px 4px rgba(0,0,0,.03)}
+  .tok .k{font-weight:600; font-size:12.5px}
+  .tok .v{color:var(--text-secondary); font-family:ui-monospace,Menlo,monospace; font-size:11px; line-height:1.45}
+  .tok.curve{gap:9px}
+  .tok .curvewrap{width:44px; height:44px; flex:none}
+  .tok .curvewrap path{fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round}
+  .tok .overshoot{color:var(--apple-blue); font-variant-numeric:tabular-nums}
+
+  /* ── 卡片 ── */
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:16px; max-width:1180px}
+  .card{background:var(--content-bg); border:1px solid var(--content-border); border-radius:14px;
+    padding:14px 15px 13px; box-shadow:0 8px 30px -12px rgba(31,38,135,.14)}
+  .card>header{display:flex; align-items:baseline; gap:8px; margin-bottom:2px}
+  .card .idx{font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--text-tertiary)}
+  .card h2{margin:0; font-size:14px; font-weight:650; letter-spacing:-.01em}
+  .card .where{color:var(--text-tertiary); font-size:11.5px}
+  .card .sentence{margin:3px 0 11px; color:var(--text-secondary); font-size:12px}
+  .stage{background:var(--content-subtle); border-radius:10px; padding:16px 14px; min-height:110px;
+    display:flex; flex-direction:column; justify-content:center; align-items:center; gap:9px;
+    position:relative; overflow:hidden}
+  .seg{display:inline-flex; margin:12px 0 7px; border:1px solid var(--content-border); border-radius:8px; overflow:hidden}
+  .seg button{font:inherit; font-size:11.5px; padding:4px 12px; border:0; background:transparent;
+    color:var(--text-secondary); cursor:pointer}
+  .seg button.on{background:var(--text-primary); color:var(--content-bg)}
+  .spec{margin:0; font-family:ui-monospace,Menlo,monospace; font-size:11px; color:var(--text-tertiary); line-height:1.55}
+  .spec b{color:var(--text-secondary); font-weight:600; font-family:-apple-system,sans-serif}
+  .card[data-mode="now"] .when-after,
+  .card[data-mode="after"] .when-now{display:none}
+  .verdict{margin:7px 0 0; font-size:11.5px; color:var(--text-secondary)}
+
+  /* ── 01 press ── */
+  .btn-demo{width:30px; height:30px; border-radius:50%; border:0; background:var(--text-primary); color:var(--content-bg);
+    display:grid; place-items:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .btn-demo svg{width:15px; height:15px}
+  .btn-wide{width:auto; height:28px; border-radius:8px; padding:0 12px; font:inherit; font-size:12px;
+    background:var(--content-bg); color:var(--text-primary); border:1px solid var(--content-border); cursor:pointer}
+  .press-row{display:flex; gap:12px; align-items:center}
+  /* 现在：三种控件三种力度，最深 0.86 */
+  .card[data-mode="now"] .p-send,
+  .card[data-mode="now"] .p-take{transition:transform 180ms var(--e-spring)}
+  .card[data-mode="now"] .p-send.pressed{transform:scale(.86)}
+  .card[data-mode="now"] .p-take.pressed{transform:scale(.95)}
+  /* 改后：统一 0.94，120ms 压下 */
+  .card[data-mode="after"] .p-send,
+  .card[data-mode="after"] .p-take{transition:transform var(--m-quick) var(--e-swift)}
+  .card[data-mode="after"] .p-send.pressed,
+  .card[data-mode="after"] .p-take.pressed{transform:scale(.94)}
+  .card[data-mode="after"] .p-send.releasing,
+  .card[data-mode="after"] .p-take.releasing{transition:transform var(--m-move) var(--e-spring)}
+
+  /* ── 02 morph ── */
+  .morphbtn{width:30px; height:30px; border-radius:50%; border:0; background:var(--text-primary); color:var(--content-bg);
+    display:grid; place-items:center; cursor:pointer; position:relative;
+    box-shadow:0 2px 8px rgba(0,0,0,.15);
+    transition:border-radius 350ms var(--e-spring), background 300ms ease, transform 180ms var(--e-spring)}
+  .morphbtn.stop{border-radius:9px; background:var(--apple-red)}
+  .morphbtn .ic{position:absolute; display:grid; place-items:center;
+    transition:opacity 200ms ease, transform 320ms var(--e-spring)}
+  .morphbtn .ic svg{width:15px; height:15px}
+  .morphbtn .go{opacity:1; transform:none}
+  .morphbtn .halt{opacity:0; transform:scale(.3) rotate(-90deg)}
+  .morphbtn.stop .go{opacity:0; transform:rotate(90deg) scale(.3)}
+  .morphbtn.stop .halt{opacity:1; transform:scale(1) rotate(0deg)}
+
+  /* ── 03 reveal ── */
+  .reveal-wrap{position:relative; display:flex; flex-direction:column; align-items:center; padding-top:118px}
+  .modelbtn{font:inherit; font-size:12px; padding:5px 11px; border-radius:8px; border:1px solid var(--content-border);
+    background:var(--content-bg); color:var(--text-primary); cursor:pointer;
+    display:inline-flex; gap:6px; align-items:center}
+  .modelbtn .mark{width:7px; height:7px; border-radius:50%; background:var(--apple-blue)}
+  .pop{position:absolute; top:0; left:0; width:190px; border-radius:12px;
+    background:var(--content-bg); border:1px solid var(--content-border);
+    box-shadow:0 14px 34px -8px rgba(31,38,135,.22); padding:5px; display:none}
+  .pop.show{display:block}
+  .pop .row{display:flex; align-items:center; gap:7px; padding:6px 8px; border-radius:7px; font-size:12px}
+  .pop .row .mark{width:7px; height:7px; border-radius:50%; background:var(--apple-blue); flex:none}
+  .pop .row.cur{background:var(--content-subtle-hover)}
+  /* 现在：缩放入场 + 左下角为准，0.26s 回弹 */
+  .card[data-mode="now"] .pop.show{transform-origin:bottom left; animation:popNow 260ms var(--e-spring)}
+  @keyframes popNow{from{opacity:0; transform:scale(.94)} to{opacity:1; transform:none}}
+  /* 改后：从按钮那一点长出来，240ms swift */
+  .card[data-mode="after"] .pop.show{transform-origin:var(--ox,20px) bottom; animation:popAfter var(--m-move) var(--e-swift)}
+  @keyframes popAfter{from{opacity:0; transform:scale(.72)} to{opacity:1; transform:scale(1)}}
+  .card[data-mode="after"] .pop.show .row{animation:rowIn var(--m-move) var(--e-swift) backwards}
+  .card[data-mode="after"] .pop.show .row:nth-child(1){animation-delay:20ms}
+  .card[data-mode="after"] .pop.show .row:nth-child(2){animation-delay:45ms}
+  .card[data-mode="after"] .pop.show .row:nth-child(3){animation-delay:70ms}
+  @keyframes rowIn{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
+
+  /* ── 04 settle ── */
+  .stepline{display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:9px;
+    background:var(--content-bg); border:1px solid var(--content-border); font-size:12px;
+    width:100%; max-width:250px; cursor:pointer}
+  .stepline .slot{width:18px; height:18px; display:grid; place-items:center; flex:none; position:relative}
+  .stepline .txt{font-weight:600}
+  .stepline .dur{margin-left:auto; color:var(--text-tertiary); font-size:11px; font-variant-numeric:tabular-nums}
+  .stepline .dot{width:7px; height:7px; border-radius:50%; background:var(--apple-blue);
+    animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1} 50%{opacity:.35}}
+  .stepline .check{color:var(--apple-green)}
+  .stepline .check svg{width:15px; height:15px; display:block}
+  .stepline .dotwrap,.stepline .check{position:absolute; inset:0; display:grid; place-items:center}
+  /* 现在：一帧直接替换 */
+  .card[data-mode="now"] .stepline .dotwrap{opacity:1}
+  .card[data-mode="now"] .stepline .check{opacity:0}
+  .card[data-mode="now"] .stepline .dur{opacity:0}
+  .card[data-mode="now"] .stepline.done .dotwrap{opacity:0}
+  .card[data-mode="now"] .stepline.done .check{opacity:1}
+  .card[data-mode="now"] .stepline.done .dur{opacity:1}
+  /* 改后：旧的收束退出，新的从同一位置展开进来 */
+  .card[data-mode="after"] .stepline .dotwrap,
+  .card[data-mode="after"] .stepline .check{transition:opacity 160ms ease, transform var(--m-move) var(--e-swift)}
+  .card[data-mode="after"] .stepline.done .dotwrap{opacity:0; transform:scale(.4)}
+  .card[data-mode="after"] .stepline .check{opacity:0; transform:scale(.3) rotate(-70deg)}
+  .card[data-mode="after"] .stepline.done .check{opacity:1; transform:scale(1) rotate(0deg);
+    transition-delay:90ms; transition-duration:var(--m-morph)}
+  .card[data-mode="after"] .stepline .dur{opacity:0; transform:translateX(-4px);
+    transition:opacity var(--m-move) var(--e-swift) 130ms, transform var(--m-move) var(--e-swift) 130ms}
+  .card[data-mode="after"] .stepline.done .dur{opacity:1; transform:none}
+  .card[data-mode="after"] .stepline .txt{transition:color var(--m-move) ease}
+  .card[data-mode="after"] .stepline.done .txt{color:var(--text-secondary)}
+
+  /* ── 05 breathe ── */
+  .breathe{width:100%; max-width:270px; display:flex; flex-direction:column; gap:9px}
+  .brow{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text-secondary)}
+  .brow .slot{width:20px; height:20px; display:grid; place-items:center; flex:none}
+  .orb{display:inline-flex}
+  .orb canvas{display:block}
+
+  /* ── 06 trace ── */
+  .page-mock{position:relative; width:100%; max-width:250px; background:var(--content-bg);
+    border:1px solid var(--content-border); border-radius:9px; padding:12px 13px; cursor:pointer}
+  .page-mock .h{height:8px; width:66%; border-radius:4px; background:var(--content-subtle-hover); margin-bottom:9px}
+  .page-mock .l{height:6px; border-radius:3px; background:var(--content-subtle); margin-bottom:6px}
+  .page-mock .l.s{width:74%}
+  .page-mock .target{margin-top:11px; display:inline-block; font-size:11.5px; padding:5px 11px; border-radius:7px;
+    border:1px solid var(--content-border); background:var(--content-subtle); position:relative; z-index:2}
+  .halo{position:absolute; border-radius:9px; pointer-events:none; z-index:1;
+    box-shadow:0 0 0 1.5px var(--apple-blue), 0 0 0 4px var(--apple-blue-soft); opacity:0}
+  .halo.on{opacity:1}
+  .card[data-mode="now"] .halo{transition:opacity 160ms ease}
+  .card[data-mode="now"] .halo.on{animation:breatheNow 500ms cubic-bezier(.25,1,.5,1) forwards}
+  @keyframes breatheNow{from{opacity:.55; transform:scale(1.04)} to{opacity:1; transform:scale(1)}}
+  .card[data-mode="after"] .halo{transform:scale(.97);
+    transition:opacity var(--m-quick) var(--e-swift), transform var(--m-quick) var(--e-swift)}
+  .card[data-mode="after"] .halo.on{transform:scale(1)}
+  .card[data-mode="after"] .halo.settling{opacity:0; transform:scale(1.03);
+    transition:opacity var(--m-move) var(--e-swift), transform var(--m-move) var(--e-swift)}
+  .ripple{position:absolute; border-radius:50%; background:var(--apple-blue-soft); pointer-events:none; z-index:0;
+    width:12px; height:12px; left:50%; top:50%; margin:-6px 0 0 -6px; opacity:0}
+  .ripple.go{animation:rip 480ms var(--e-swift) forwards}
+  @keyframes rip{0%{opacity:.9; transform:scale(.4)} 100%{opacity:0; transform:scale(3.4)}}
+</style>
+</head>
+<body>
+
+<h1>By-Your-Side · Motion Language</h1>
+<p class="lede">一套动效语法：<b>3 个时长 + 3 条曲线</b>，配 <b>6 个动作动词</b>。目标不是"多加动画"，而是让控件像有物理性的东西——按下去有反馈，状态之间是<b>变成</b>而不是消失又出现。每张卡都能点，卡里可切"现在 / 改后"。</p>
+
+<div class="topbar">
+  <button id="theme-btn">深色</button>
+  <button id="replay-all">全部重放</button>
+  <span class="hint">按钮类要按住才看得到按压；其余点一下播放。</span>
+</div>
+
+<div class="tokens" id="tokens"></div>
+
+<div class="grid">
+
+  <article class="card" data-mode="after" data-demo="press">
+    <header><span class="idx">01</span><h2>press</h2><span class="where">所有可点控件</span></header>
+    <p class="sentence">按下去要有"按到了实心东西"的反馈，松手回弹。力度必须一致，否则整个产品的手感是散的。</p>
+    <div class="stage">
+      <div class="press-row">
+        <button class="btn-demo p-send" title="发送">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+        </button>
+        <button class="btn-wide p-take">接管</button>
+      </div>
+    </div>
+    <div class="seg"><button data-set="now">现在</button><button class="on" data-set="after">改后</button></div>
+    <p class="spec when-now"><b>现在</b> scale(.86) / 180ms / spring-bounce<br>另一个按钮是 .95，第三个没有反馈</p>
+    <p class="spec when-after"><b>改后</b> 统一 scale(.94) · 压下 120ms swift，回弹 240ms spring</p>
+    <p class="verdict when-now">问题：0.86 在 30px 的圆上像被捏扁；三个控件三种力度，用户说不出哪里怪，只觉得不精致。</p>
+    <p class="verdict when-after">收益：所有按钮同一种手感，像同一台机器上的按键。</p>
+  </article>
+
+  <article class="card" data-mode="after" data-demo="morph">
+    <header><span class="idx">02</span><h2>morph</h2><span class="where">发送 ↔ 停止</span></header>
+    <p class="sentence">同一个按钮，两个身份之间连续变化。这是产品里唯一已经做对的动作，我把它定成范式。</p>
+    <div class="stage">
+      <button class="morphbtn" id="morphbtn">
+        <span class="ic go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span>
+        <span class="ic halt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span>
+      </button>
+    </div>
+    <div class="seg"><button data-set="now">现在</button><button class="on" data-set="after">改后</button></div>
+    <p class="spec"><b>已是</b> 圆→圆角方 / 黑→红 / ↑ 转 90° 退出、■ 反向转入 · morph 350ms spring</p>
+    <p class="verdict">形状、颜色、图标同时在变，用户读到的是"它变成了停止键"，而不是"图标换了"。这一条不需要改动。</p>
+  </article>
+
+  <article class="card" data-mode="now" data-demo="reveal">
+    <header><span class="idx">03</span><h2>reveal</h2><span class="where">模型选择器</span></header>
+    <p class="sentence">面板要从触发它的那颗按钮"长出来"，而不是在别处淡入。用户的眼睛在按钮上，动效得接住它。</p>
+    <div class="stage">
+      <div class="reveal-wrap">
+        <div class="pop" id="pop">
+          <div class="row cur"><span class="mark"></span>DeepSeek V4 Flash</div>
+          <div class="row"><span class="mark" style="background:var(--apple-green)"></span>GPT-5.6 Luna</div>
+          <div class="row"><span class="mark" style="background:var(--apple-red)"></span>MiniMax M2.7</div>
+        </div>
+        <button class="modelbtn" id="modelbtn"><span class="mark"></span>DeepSeek V4 Flash</button>
+      </div>
+    </div>
+    <div class="seg"><button class="on" data-set="now">现在</button><button data-set="after">改后</button></div>
+    <p class="spec when-now"><b>现在</b> 缩放 .94 + 上移 6px 淡入 · 260ms spring-bounce（9.7% 回弹）<br>origin 固定在左下角</p>
+    <p class="spec when-after"><b>改后</b> 从按钮中点长出 · 240ms swift · 列表项 20/45/70ms 依次落位</p>
+    <p class="verdict when-now">问题：回弹曲线用在"展开面板"上太活泼，像弹窗；origin 和按钮的实际位置无关。</p>
+    <p class="verdict when-after">收益：面板和被点的东西有空间关系，眼睛不用重新找。</p>
+  </article>
+
+  <article class="card" data-mode="now" data-demo="settle">
+    <header><span class="idx">04</span><h2>settle</h2><span class="where">工具步骤完成</span></header>
+    <p class="sentence">步骤跑完时，图标不该"啪"地换一个，而是从"正在跑"收束成"完成了"。</p>
+    <div class="stage">
+      <div class="stepline" id="stepline">
+        <span class="slot">
+          <span class="dotwrap"><span class="dot"></span></span>
+          <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        </span>
+        <span class="txt">读取页面结构</span>
+        <span class="dur">1.2s</span>
+      </div>
+    </div>
+    <div class="seg"><button class="on" data-set="now">现在</button><button data-set="after">改后</button></div>
+    <p class="spec when-now"><b>现在</b> <code>replaceChildren(icon(List))</code> —— 一帧内直接替换，没有任何过渡</p>
+    <p class="spec when-after"><b>改后</b> 转动的点先收束退出（240ms），勾从同一点旋转展开（延迟 90ms，360ms），耗时数字随后推入</p>
+    <p class="verdict when-now">问题：动作完成是用户唯一会"被奖励"的时刻，现在这里是最生硬的一帧。</p>
+    <p class="verdict when-after">收益：完成有交代，用户能感到这一步真的结束了。</p>
+  </article>
+
+  <article class="card" data-mode="after" data-demo="breathe">
+    <header><span class="idx">05</span><h2>breathe</h2><span class="where">Agent 正在工作</span></header>
+    <p class="sentence">持续进行中的状态（不是一瞬间的动作）。已定稿的方案 B：三件事各有自己的球。</p>
+    <div class="stage">
+      <div class="breathe" id="breathe"></div>
+    </div>
+    <p class="spec"><b>映射</b> 思考 → composing（飘带）· 调用工具 → solving（色带归位）· 记忆 → connecting（星座接线）<br>尺寸 20px 行内档，深色自动换 ink</p>
+    <p class="verdict">收益：跑起来的时候，面板里一直有个活着的东西在转，用户不用读文字就知道 Agent 没死。</p>
+  </article>
+
+  <article class="card" data-mode="now" data-demo="trace">
+    <header><span class="idx">06</span><h2>trace</h2><span class="where">网页元素被定位</span></header>
+    <p class="sentence">Agent 在页面上找到目标、点它、收起标记。三个阶段各自该多快，现在没有规定。</p>
+    <div class="stage">
+      <div class="page-mock" id="pagemock">
+        <div class="h"></div><div class="l"></div><div class="l s"></div>
+        <span class="target" id="target">展开 5 小时用量详情</span>
+        <span class="halo" id="halo"></span>
+      </div>
+    </div>
+    <div class="seg"><button class="on" data-set="now">现在</button><button data-set="after">改后</button></div>
+    <p class="spec when-now"><b>现在</b> 出现 <code>160ms ease</code>，再加一段 500ms 呼吸<br>另一处涟漪用 <code>480ms cubic-bezier(.22,1,.36,1)</code></p>
+    <p class="spec when-after"><b>改后</b> 出现 120ms swift → 保持原位 → 点击涟漪 240ms → 消退 240ms swift</p>
+    <p class="verdict when-now">问题：出现、停留、消失三段的时长各写各的，页面上看到的节奏和侧栏对不上。</p>
+    <p class="verdict when-after">收益：页面上发生的事和侧栏里发生的事，是同一个节奏。</p>
+  </article>
+
+</div>
+
+<script>
+/*__ENGINE__*/
+
+/* ══════════ 常数条：曲线图 + 实测过冲 ══════════ */
+const CURVES = {
+  swift:  { pts: [.16, 1, .3, 1],    note: '快起慢停 · 位移与形变默认用它' },
+  spring: { pts: [.34, 1.4, .64, 1], note: '带回弹 · 只用于按压回复' },
+  glide:  { pts: [.4, 0, .2, 1],     note: '首尾都缓 · 可进可出的场合' },
+};
+function bezY(pts, t) {
+  const [x1, y1, x2, y2] = pts, mt = 1 - t;
+  return 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t;
+}
+function peakOvershoot(pts) {
+  let max = 1;
+  for (let i = 0; i <= 400; i++) max = Math.max(max, bezY(pts, i / 400));
+  return (max - 1) * 100;
+}
+const CV_W = 44, CV_H = 44, CV_PAD = 4, CV_YMIN = -.14, CV_YMAX = 1.18;
+const cvX = t => CV_PAD + t * (CV_W - 2 * CV_PAD);
+const cvY = v => (CV_H - CV_PAD) - ((v - CV_YMIN) / (CV_YMAX - CV_YMIN)) * (CV_H - 2 * CV_PAD);
+function curvePath(pts) {
+  const [x1, y1, x2, y2] = pts;
+  return `M${cvX(0).toFixed(1)},${cvY(0).toFixed(1)} C${cvX(x1).toFixed(1)},${cvY(y1).toFixed(1)} `
+       + `${cvX(x2).toFixed(1)},${cvY(y2).toFixed(1)} ${cvX(1).toFixed(1)},${cvY(1).toFixed(1)}`;
+}
+document.getElementById('tokens').innerHTML = `
+  <div class="tok"><div><div class="k">quick · 120ms</div><div class="v">按下 / 悬停 / 开关</div></div></div>
+  <div class="tok"><div><div class="k">move · 240ms</div><div class="v">展开 / 收束 / 位移</div></div></div>
+  <div class="tok"><div><div class="k">morph · 360ms</div><div class="v">形变 / 状态切换</div></div></div>
+  ${Object.entries(CURVES).map(([name, c]) => {
+    const over = peakOvershoot(c.pts);
+    return `
+    <div class="tok curve">
+      <div class="curvewrap"><svg viewBox="0 0 44 44" style="color:var(--text-secondary)">
+        <line x1="4" y1="${cvY(1).toFixed(1)}" x2="40" y2="${cvY(1).toFixed(1)}"
+          stroke="currentColor" stroke-opacity=".22" stroke-width="1" stroke-dasharray="2 2.5"/>
+        <path d="${curvePath(c.pts)}"/>
+      </svg></div>
+      <div>
+        <div class="k">${name}${over > 0.2 ? ` <span class="overshoot">+${over.toFixed(1)}%</span>` : ''}</div>
+        <div class="v">${c.note}</div>
+      </div>
+    </div>`;
+  }).join('')}
+`;
+
+/* ══════════ 卡片通用：现在 / 改后 切换 ══════════ */
+for (const card of document.querySelectorAll('.card')) {
+  for (const b of card.querySelectorAll('.seg button')) {
+    b.onclick = () => {
+      card.dataset.mode = b.dataset.set;
+      for (const s of card.querySelectorAll('.seg button')) s.classList.toggle('on', s === b);
+      replay(card);
+    };
+  }
+}
+
+/* ══════════ 01 press ══════════ */
+for (const el of document.querySelectorAll('.p-send, .p-take')) {
+  el.addEventListener('pointerdown', () => {
+    el.classList.remove('releasing');
+    el.classList.add('pressed');
+  });
+  const up = () => {
+    if (!el.classList.contains('pressed')) return;
+    el.classList.remove('pressed');
+    el.classList.add('releasing');
+    setTimeout(() => el.classList.remove('releasing'), 320);
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointerleave', up);
+}
+
+/* ══════════ 02 morph ══════════ */
+const morphbtn = document.getElementById('morphbtn');
+morphbtn.onclick = () => morphbtn.classList.toggle('stop');
+
+/* ══════════ 03 reveal ══════════ */
+const pop = document.getElementById('pop');
+const modelbtn = document.getElementById('modelbtn');
+modelbtn.onclick = (e) => {
+  e.stopPropagation();
+  const wrap = modelbtn.parentElement;
+  const wb = modelbtn.getBoundingClientRect(), ww = wrap.getBoundingClientRect();
+  pop.style.setProperty('--ox', `${(wb.left - ww.left + 14).toFixed(1)}px`);
+  pop.classList.toggle('show');
+};
+
+/* ══════════ 04 settle ══════════ */
+const stepline = document.getElementById('stepline');
+function playSettle() {
+  stepline.classList.remove('done');
+  void stepline.offsetWidth;
+  setTimeout(() => stepline.classList.add('done'), 700);
+}
+stepline.onclick = playSettle;
+
+/* ══════════ 05 breathe：真光球（引擎几何） ══════════ */
+const { MODE_FRAMES, resolvePreset } = window.__thinkingOrbs;
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+const orbs = [];
+function readInk() {
+  const raw = getComputedStyle(document.body).getPropertyValue('--anim-ink').trim();
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) return null;
+  probe.fillStyle = '#000'; probe.fillStyle = raw;
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(probe.fillStyle);
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+}
+function shade(ink, white, alpha, dark) {
+  const v = dark ? 1 - white : white;
+  if (!ink) { const l = Math.round((dark ? 1 - v : v) * 255); return `rgba(${l},${l},${l},${alpha})`; }
+  return `rgba(${ink[0]},${ink[1]},${ink[2]},${(alpha * (1 - v)).toFixed(3)})`;
+}
+function paint(o, seconds, ink, dark) {
+  const t = seconds * o.preset.speed;
+  const frame = MODE_FRAMES[o.preset.mode](o.geom, t, o.preset.opts);
+  const k = (o.dpr * o.box) / o.geom;
+  const ctx = o.ctx;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.clearRect(0, 0, o.geom, o.geom);
+  for (const line of frame.lines) {
+    ctx.strokeStyle = shade(ink, line.white, line.a ?? 1, dark); ctx.lineWidth = line.w;
+    ctx.beginPath(); ctx.moveTo(line.x1, line.y1); ctx.lineTo(line.x2, line.y2); ctx.stroke();
+  }
+  for (const dot of frame.dots) {
+    ctx.fillStyle = shade(ink, dot.white, dot.a ?? 1, dark);
+    ctx.beginPath(); ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+const BROWS = [
+  ['composing',  '思考'],
+  ['solving',    '读取页面结构'],
+  ['connecting', '本轮使用了 3 条记忆'],
+];
+const breatheEl = document.getElementById('breathe');
+breatheEl.innerHTML = BROWS.map(([st, label]) =>
+  `<div class="brow"><span class="slot" data-state="${st}"></span><span>${label}</span></div>`).join('');
+for (const slot of breatheEl.querySelectorAll('.slot')) {
+  const box = 20, host = document.createElement('span');
+  host.className = 'orb';
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(box * dpr); canvas.height = Math.round(box * dpr);
+  canvas.style.width = box + 'px'; canvas.style.height = box + 'px';
+  host.appendChild(canvas);
+  slot.replaceWith(host);
+  orbs.push({ host, geom: 20, box, dpr, ctx: canvas.getContext('2d'),
+    preset: resolvePreset(slot.dataset.state, 20) });
+}
+const t0 = performance.now();
+function tick(now) {
+  const ink = readInk(), dark = document.documentElement.dataset.theme === 'dark';
+  const s = (now - t0) / 1000;
+  for (const o of orbs) paint(o, s, ink, dark);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ══════════ 06 trace：定位 → 操作 → 消退 ══════════ */
+const halo = document.getElementById('halo');
+const target = document.getElementById('target');
+const pagemock = document.getElementById('pagemock');
+const traceRipple = document.createElement('span');
+traceRipple.className = 'ripple';
+target.appendChild(traceRipple);
+function playTrace() {
+  const mb = pagemock.getBoundingClientRect(), tb = target.getBoundingClientRect();
+  halo.style.left = `${(tb.left - mb.left - 4).toFixed(1)}px`;
+  halo.style.top = `${(tb.top - mb.top - 4).toFixed(1)}px`;
+  halo.style.width = `${(tb.width + 8).toFixed(1)}px`;
+  halo.style.height = `${(tb.height + 8).toFixed(1)}px`;
+  halo.classList.remove('on', 'settling');
+  traceRipple.classList.remove('go');
+  void halo.offsetWidth;
+  halo.classList.add('on');
+  setTimeout(() => traceRipple.classList.add('go'), 700);
+  setTimeout(() => {
+    halo.classList.remove('on');
+    halo.classList.add('settling');
+    setTimeout(() => halo.classList.remove('settling'), 300);
+  }, 1150);
+}
+target.onclick = (e) => { e.stopPropagation(); playTrace(); };
+
+/* ══════════ 重放 / 主题 ══════════ */
+function replay(card) {
+  if (card.dataset.demo === 'settle') playSettle();
+  if (card.dataset.demo === 'trace') playTrace();
+  if (card.dataset.demo === 'reveal') { pop.classList.remove('show'); setTimeout(() => pop.classList.add('show'), 60); }
+  if (card.dataset.demo === 'morph') { morphbtn.classList.remove('stop'); setTimeout(() => morphbtn.classList.add('stop'), 260); }
+}
+document.getElementById('replay-all').onclick = () => {
+  morphbtn.classList.remove('stop');
+  setTimeout(() => morphbtn.classList.add('stop'), 320);
+  playSettle();
+  playTrace();
+  pop.classList.remove('show');
+  setTimeout(() => pop.classList.add('show'), 80);
+};
+const themeBtn = document.getElementById('theme-btn');
+themeBtn.onclick = () => {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  themeBtn.textContent = dark ? '深色' : '浅色';
+};
+document.addEventListener('click', (e) => {
+  if (!pop.contains(e.target) && !modelbtn.contains(e.target)) pop.classList.remove('show');
+});
+setTimeout(playTrace, 700);
+</script>
+</body>
+</html>

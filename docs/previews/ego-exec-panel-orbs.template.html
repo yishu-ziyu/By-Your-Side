@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>执行过程面板 × 光球（改前 / 方案A / 方案B）</title>
+<style>
+  /* ── 面板真实 tokens（抄自 extension/src/sidepanel/styles.css） ── */
+  :root{
+    --wallpaper: radial-gradient(at 15% 15%, rgba(255,182,140,.35) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(135,195,255,.35) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(180,160,240,.3) 0px, transparent 55%), #f2f4f8;
+    --content-bg:#ffffff; --content-subtle:#f7f8fa; --content-subtle-hover:#eef1f5;
+    --content-border:rgba(0,0,0,.06);
+    --text-primary:#111827; --text-secondary:#4b5563; --text-tertiary:#9ca3af;
+    --apple-blue:#0071e3; --apple-blue-soft:rgba(0,113,227,.08);
+    --apple-green:#34c759; --apple-red:#ff3b30;
+    --radius-card:10px; --radius-pill:999px;
+    --spring-fluid:cubic-bezier(.22,1,.36,1);
+    --anim-ink:#4b5563;
+  }
+  html[data-theme="dark"]{
+    --wallpaper:#0b0c10; --content-bg:#15171d; --content-subtle:#1c1f26; --content-subtle-hover:#242933;
+    --content-border:rgba(255,255,255,.08);
+    --text-primary:#f9fafb; --text-secondary:#9ca3af; --text-tertiary:#6b7280;
+    --apple-blue:#2997ff; --apple-blue-soft:rgba(41,151,255,.16);
+    --apple-green:#30d158; --apple-red:#ff453a;
+    --anim-ink:#9ca3af;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:24px 28px 60px; background:var(--wallpaper); color:var(--text-primary);
+    font:13px/1.6 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif; -webkit-font-smoothing:antialiased}
+  h1{margin:0 0 6px; font-size:17px; font-weight:600}
+  .page-sub{margin:0 0 16px; max-width:1080px; color:var(--text-secondary)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+    background:rgba(127,127,127,.12); padding:1px 4px; border-radius:4px}
+  .controls{display:flex; gap:16px; align-items:center; padding:9px 12px; margin-bottom:18px;
+    background:rgba(127,127,127,.08); border-radius:8px; font-size:12px}
+  .controls button{font:inherit; font-size:12px; padding:4px 10px; border:1px solid var(--content-border);
+    border-radius:6px; background:var(--content-bg); color:var(--text-primary); cursor:pointer}
+  .controls button.on{background:var(--text-primary); color:var(--content-bg); border-color:var(--text-primary)}
+  .cols{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap}
+  .col{width:372px; flex:none}
+  .col>h2{margin:0 0 4px; font-size:13px; font-weight:600}
+  .col>p{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary); min-height:32px}
+  .stage{background:var(--content-bg); border-radius:14px; padding:12px; box-shadow:0 8px 30px -8px rgba(31,38,135,.12)}
+
+  /* ── 面板本体（抄自 styles.css 的 run-steps / thinking / chip） ── */
+  .lucide{width:14px; height:14px; stroke-width:2; flex-shrink:0}
+  details.thinking{align-self:stretch; flex-shrink:0; color:var(--text-secondary); font-size:12px;
+    border-left:2px solid var(--content-border); padding-left:10px}
+  details.thinking summary{display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;
+    color:var(--text-secondary); font-size:12px; list-style:none}
+  details.thinking summary::-webkit-details-marker{display:none}
+  details.thinking pre{white-space:pre-wrap; word-break:break-word; margin:6px 0 0;
+    font-family:inherit; color:var(--text-tertiary); font-size:11.5px}
+  details.run-steps{align-self:stretch; flex-shrink:0; min-height:min-content; border:1px solid var(--content-border);
+    border-radius:var(--radius-card); background:var(--content-bg); box-shadow:0 1px 4px rgba(0,0,0,.03); overflow:hidden}
+  details.run-steps summary{display:flex; align-items:center; gap:8px; min-height:38px; padding:9px 12px;
+    line-height:1.5; cursor:pointer; user-select:none; list-style:none; font-size:12px}
+  details.run-steps summary::-webkit-details-marker{display:none}
+  .run-icon{display:inline-flex; flex-shrink:0; color:var(--text-secondary)}
+  details.run-steps.done .run-icon{color:var(--apple-green)}
+  .run-title{font-weight:600; color:var(--text-primary); flex-shrink:0}
+  .run-chain{color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; font-size:11.5px}
+  .run-time{margin-left:auto; color:var(--text-tertiary); font-variant-numeric:tabular-nums; font-size:11px; flex-shrink:0}
+  .run-chevron{display:inline-flex; color:var(--text-tertiary); flex-shrink:0}
+  .run-chevron .lucide{width:13px; height:13px}
+  .run-body{display:flex; flex-direction:column; gap:12px; padding:8px 12px 12px}
+  .chip-group{display:flex; flex-direction:column; gap:8px; flex-shrink:0}
+  .chip-row{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border:1px solid var(--content-border);
+    border-radius:var(--radius-pill); background:var(--content-subtle); color:var(--text-primary);
+    font:inherit; font-size:11.5px; font-weight:450; cursor:pointer}
+  .chip.error{border-color:color-mix(in srgb, var(--apple-red) 40%, transparent)}
+  .chip-dot{width:6px; height:6px; border-radius:50%; flex-shrink:0}
+  .chip-dot.running{background:var(--apple-blue); animation:pulse 1.2s ease-in-out infinite}
+  .chip-dot.done{background:var(--apple-green)}
+  .chip-dot.error{background:var(--apple-red)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .chip-icon{display:inline-flex; color:var(--text-secondary)}
+  .chip .dur{font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums}
+  .memory-line{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; font-size:11.5px;
+    color:var(--text-secondary); border:1px dashed var(--content-border); border-radius:var(--radius-pill)}
+  .orb{display:inline-grid; place-items:center; flex-shrink:0}
+  .orb canvas{display:block}
+  .foot{margin-top:22px; max-width:1080px; color:var(--text-secondary); font-size:12px}
+  .foot b{color:var(--text-primary)}
+</style>
+</head>
+<body>
+
+<h1>执行过程面板 × 光球</h1>
+<p class="page-sub">
+  三列：<b>改之前</b>（现在线上：脑图 + 工具图标 + 状态点）、<b>方案 A</b>（只把「思考过程 / 执行过程」的脑图换成球）、
+  <b>方案 B</b>（三态都上球：思考 <code>composing</code> / 工具 <code>solving</code> / 记忆 <code>connecting</code>）。
+  规则：<b>只有正在跑的那一行在动，跑完的行定格成静止帧</b>。球是 Open Design 同一个引擎（原码内联）。
+</p>
+
+<div class="controls">
+  <div>主题
+    <button data-theme-btn="light" class="on">浅色</button>
+    <button data-theme-btn="dark">深色</button>
+  </div>
+  <div><button id="pause">暂停动画</button></div>
+  <div><button id="reduce">模拟 prefers-reduced-motion</button></div>
+  <div>球大小
+    <button data-size="16">16</button>
+    <button data-size="18">18</button>
+    <button data-size="20" class="on">20</button>
+  </div>
+</div>
+
+<div class="cols" id="cols"></div>
+
+<p class="foot">
+  <b>说明。</b>面板壳头（「查看执行过程」那一行）我三列都保持现在的图标；要不要也换成球（像 Open Design 壳头那样）你说了算。
+  记忆行现在面板里没有，方案 B 里那条「本轮使用了 3 条记忆」是按 agent 已有的事件（<code>kind:"memory"</code>）新加的。
+</p>
+
+<script>
+/*__ENGINE__*/
+
+const { MODE_FRAMES, resolvePreset } = window.__thinkingOrbs;
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+const STILL_T = 0.6;
+const orbs = [];
+let paused = false;
+let reduce = false;
+let frozenDone = false;
+/** 球的显示尺寸：引擎的 20 档是"行内文字档"原生设计，默认就用它；16/18 是缩小后是否还读得清的对照 */
+let orbBox = 20;
+
+const ICONS = {
+  list: '<path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/>',
+  brain: '<path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>',
+  scan: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/>',
+  cursor: '<path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+};
+function svg(name, cls) {
+  return `<svg class="lucide ${cls || ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+}
+
+function readInk() {
+  const raw = getComputedStyle(document.body).getPropertyValue('--anim-ink').trim();
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) return null;
+  probe.fillStyle = '#000'; probe.fillStyle = raw;
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(probe.fillStyle);
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+}
+function shade(ink, white, alpha, dark) {
+  const v = dark ? 1 - white : white;
+  if (!ink) { const l = Math.round((dark ? 1 - v : v) * 255); return `rgba(${l},${l},${l},${alpha})`; }
+  return `rgba(${ink[0]},${ink[1]},${ink[2]},${(alpha * (1 - v)).toFixed(3)})`;
+}
+function paint(o, seconds, ink, dark) {
+  const t = o.live ? seconds * o.preset.speed : STILL_T;
+  const frame = MODE_FRAMES[o.preset.mode](o.geom, t, o.preset.opts);
+  const k = (o.dpr * o.box) / o.geom;
+  const ctx = o.ctx;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.clearRect(0, 0, o.geom, o.geom);
+  for (const line of frame.lines) {
+    ctx.strokeStyle = shade(ink, line.white, line.a ?? 1, dark); ctx.lineWidth = line.w;
+    ctx.beginPath(); ctx.moveTo(line.x1, line.y1); ctx.lineTo(line.x2, line.y2); ctx.stroke();
+  }
+  for (const dot of frame.dots) {
+    ctx.fillStyle = shade(ink, dot.white, dot.a ?? 1, dark);
+    ctx.beginPath(); ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+/** 占位符：先出 HTML 字符串，插进 DOM 后再 hydrate 成真 canvas */
+function orb(state, box, live) {
+  return `<span class="orb-slot" data-state="${state}" data-box="${box}" data-live="${live ? 1 : 0}"></span>`;
+}
+
+/** 把占位符换成真球：state 是引擎状态名，geom 固定 20 档，live 决定动不动 */
+function hydrate(root) {
+  for (const slot of root.querySelectorAll('.orb-slot')) {
+    const box = Number(slot.dataset.box);
+    const live = slot.dataset.live === '1';
+    const host = document.createElement('span');
+    host.className = 'orb';
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(box * dpr); canvas.height = Math.round(box * dpr);
+    canvas.style.width = box + 'px'; canvas.style.height = box + 'px';
+    host.appendChild(canvas);
+    const o = { host, geom: 20, box, dpr, live, ctx: canvas.getContext('2d'), preset: resolvePreset(slot.dataset.state, 20) };
+    orbs.push(o);
+    slot.replaceWith(host);
+  }
+}
+
+function thinkingRow(variant, label, live) {
+  // 思考与「执行过程」(模型自己在写的那段) 同属"模型在说"，都用 composing；工具行才是 solving
+  const icon = variant === 'before' ? svg('brain') : orb('composing', orbBox, live);
+  const body = live
+    ? `<pre>先摸清这份用量页的结构：找到展开按钮、读出五小时窗口的数字，再回话。</pre>`
+    : '';
+  return `<details class="thinking${live ? ' streaming' : ''}"${live ? ' open' : ''}>
+    <summary>${icon}<span>${label}</span></summary>${body}</details>`;
+}
+function chip(variant, kind, label) {
+  const inner = variant === 'b'
+    ? orb('solving', Math.max(14, orbBox - 2), kind === 'running')
+    : svg(kind === 'cursor' ? 'cursor' : kind === 'wrench' ? 'wrench' : 'scan', 'chip-lucide');
+  return `<button class="chip${kind === 'error' ? ' error' : ''}">
+    <span class="chip-dot ${kind === 'running' ? 'running' : kind === 'error' ? 'error' : 'done'}"></span>
+    <span class="chip-icon">${inner}</span>
+    <span class="chip-label">${label}</span><span class="dur">0.0s</span></button>`;
+}
+function memoryLine(variant) {
+  if (variant !== 'b') return '';
+  return `<div class="chip-group"><div class="chip-row"><span class="memory-line">${orb('connecting', Math.max(14, orbBox - 2), false)}本轮使用了 3 条记忆</span></div></div>`;
+}
+
+function panel(variant) {
+  return `<div class="stage"><details class="run-steps done" open>
+    <summary>
+      <span class="run-icon">${variant === 'b' ? orb('composing', orbBox, false) : svg('list')}</span>
+      <span class="run-title">查看执行过程</span>
+      <span class="run-chain">… → 思考 → 读取页面结构 → …</span>
+      <span class="run-time">耗时 32s</span>
+      <span class="run-chevron">${svg('chevron')}</span>
+    </summary>
+    <div class="run-body">
+      ${thinkingRow(variant, '思考过程 6.1s', false)}
+      ${thinkingRow(variant, '执行过程', false)}
+      <div class="chip-group"><div class="chip-row">
+        ${chip(variant, 'scan', '读取页面结构')}
+        ${chip(variant, 'wrench', 'record_task_results')}
+        ${chip(variant, 'error', '点击「展开 5 小时用量详情」')}
+      </div></div>
+      ${memoryLine(variant)}
+      ${thinkingRow(variant, '思考过程 2.3s', true)}
+      <div class="chip-group"><div class="chip-row">
+        ${chip(variant, 'running', '读取页面结构')}
+      </div></div>
+    </div>
+  </details></div>`;
+}
+
+const COLUMNS = [
+  { v: 'before', h: '改之前（现在线上）', p: '脑图 = 思考，工具图标 + 状态点 = 工具调用；记忆不在时间线里。' },
+  { v: 'a', h: '方案 A：只换思考行', p: '「思考过程 / 执行过程」的脑图换成 composing 球；工具 chips 完全不动（图标 + 绿/红点保留）。' },
+  { v: 'b', h: '方案 B：三态都上球', p: '思考 composing / 工具 solving（替掉工具图标，状态点保留）/ 记忆 connecting（新加一行）。壳头也换成了球。' },
+];
+
+const cols = document.getElementById('cols');
+function renderColumns() {
+  orbs.length = 0;
+  cols.replaceChildren();
+  for (const c of COLUMNS) {
+    const sec = document.createElement('section');
+    sec.className = 'col';
+    sec.innerHTML = `<h2>${c.h}</h2><p>${c.p}</p>${panel(c.v)}`;
+    hydrate(sec);
+    cols.appendChild(sec);
+  }
+  frozenDone = false;
+}
+renderColumns();
+
+const startAt = performance.now();
+function frame() {
+  const seconds = (performance.now() - startAt) / 1000;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const ink = readInk();
+  const frozen = reduce || paused;
+  if (!frozen) for (const o of orbs) paint(o, seconds, ink, dark);
+  else if (!frozenDone) { for (const o of orbs) paint(o, seconds, ink, dark); frozenDone = true; }
+  if (!frozen) frozenDone = false;
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.documentElement.dataset.theme = btn.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach((b) => b.classList.toggle('on', b === btn));
+    frozenDone = false;
+  });
+});
+document.getElementById('pause').addEventListener('click', (e) => {
+  paused = !paused; e.currentTarget.classList.toggle('on', paused);
+  e.currentTarget.textContent = paused ? '继续动画' : '暂停动画';
+});
+document.getElementById('reduce').addEventListener('click', (e) => {
+  reduce = !reduce; e.currentTarget.classList.toggle('on', reduce);
+});
+document.querySelectorAll('[data-size]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    orbBox = Number(btn.dataset.size);
+    document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('on', b === btn));
+    renderColumns();
+  });
+});
+
+frame();
+</script>
+</body>
+</html>

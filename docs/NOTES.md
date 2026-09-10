@@ -1,5 +1,32 @@
 # 会话工作笔记
 
+## 隔离真实站点 harness 与两个易踩的接缝（2026-09-11）
+
+- `scripts/acceptance/isolated-extension.mts` 是共用隔离运行器：复制 `extension/dist` 后**删掉 manifest 的 `key`**（Chrome 给随机扩展 ID），因此隔离实例连不上用户正在跑的 `com.sideagent.host` 伴随进程；再用 `sw-hook` 挂 `__saCall` 走生产 `executeToolCall`。真实站点 harness（fetch 对比、network、批量翻页）都用它，不要另起一套启动代码。
+- `browser_run` 里的 `browser.fetch` 是对扩展的**裸 RPC**，不过 agent 侧 `fetch` 工具的格式化/落盘逻辑，也不认识 `pages`；它在程序里一次只取一页。分页批量是顶层 `fetch({pages})` 的能力。
+- 隔离 harness/单测要写盘时把 `SIDEAGENT_DOWNLOADS_DIR` 指向临时目录（`fetch-result.ts` 的 `fetchDownloadsDir()` 会读它），不要往用户的 `~/.sideagent/downloads/` 里塞测试文件。
+- `redactCredentialText` 的词级 token 字符集含 `/` 会把 URL/路径拼成长串误隐（已修）；判凭据前先想“这段到底是 token 还是路径”。
+
+## 账本下沉后：交付不能绑定 resultState（2026-09-11）
+
+P0 第一步把结果账本改成由执行事实派生后，`resultState` 的含义变了：它只表示「已记录的动作都完成了」，**不再表示模型计划或用户目标完成**。只读收尾（读评论、整理结论）不产生账本项，所以 `satisfied` 会在任务还没做完时提前到达。
+
+真实运行里踩了两次（隔离 harness 的 `state_environment`，MiniMax-M3）：
+- 投影里「仅当 resultState=satisfied：没有 finding 则交付一次」被模型理解成已经交付过，整轮没调 `send_user_message`，答案只留在正文 → 去掉这层绑定，改成「交付与 resultState 无关，账本不等于交付」。
+- 改那句话时连带删掉了终止规则，模型连调 8 次 `send_user_message`（每次都返回成功）→ 恢复「已交付过 finding 就结束本轮，不重复交付」。
+
+续接要求：任何「交付/结束/继续」的判断不要以 `resultState` 为条件；账本是执行回执，交付走 `send_user_message` + `fulfillOwedDelivery` 兜底。证据见[本轮验收](evals/20260911-turn-economy-ledger.md)。
+
+## 示范录制第一刀：先搞清 background/index.ts 的作用域（2026-09-11）
+
+`extension/src/background/index.ts` 看起来是一堆顶层函数，其实 **266 行之后几乎全部在 `createConversationController(conversationId)` 里面**：`conversationId`、`broadcast`、`emitNotice`、`executeToolCall`、面板 `switch (msg.kind)` 都是这个控制器作用域里的东西。只有 130 行左右注册的 `chrome.runtime.onConnect` / `chrome.runtime.onMessage` 在真正的模块作用域。
+
+后果与做法：
+- 模块作用域的监听器**不能**调用控制器里的函数（`TS2304: Cannot find name`，不是类型问题，是作用域真的不通）。示范录制的面板指令因此走控制器 `attachPanel` 里的 `case "demo"`，页面侧步骤监听也注册在控制器内、用 `findSessionForTab` 判是不是本会话。
+- 反过来，控制器里可以前向引用后面声明的函数（例如 `handleTakeover`），TS 7.0.2 的 hoisting 正常。别把「找不到名字」当成编译器的毛病，先看是不是跨了 266 行这道边界。
+- 排查这类问题别用数括号的土办法（模板字符串里的 `${}` 会把计数带偏）。直接找 `function createConversationController` 的行号，比什么都快。
+
+
 ## 侧栏显示「未连接」：真因是扩展存储写满（2026-09-11 凌晨）
 
 用户报侧栏「未连接」。**先分清两条线**：面板 ⇆ 后台 service worker 的重连是好的（实测停掉后台 10 秒内自己恢复），坏的是后台根本没起来，因此没有进程去拉伴随进程。以后先看后台在不在，再谈网络。

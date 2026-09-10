@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>知识抽屉（记忆 + 技能）× 信息分层：改前 / 方案一 / 方案二</title>
+<style>
+  /* ── 面板真实 tokens（抄自 extension/src/sidepanel/styles.css） ── */
+  :root{
+    --wallpaper: radial-gradient(at 15% 15%, rgba(255,182,140,.35) 0px, transparent 55%),
+                 radial-gradient(at 85% 20%, rgba(135,195,255,.35) 0px, transparent 55%),
+                 radial-gradient(at 50% 85%, rgba(180,160,240,.3) 0px, transparent 55%), #f2f4f8;
+    --content-bg:#ffffff; --content-subtle:#f7f8fa; --content-subtle-hover:#eef1f5;
+    --content-border:rgba(0,0,0,.06); --glass-border-subtle:rgba(0,0,0,.05);
+    --text-primary:#111827; --text-secondary:#4b5563; --text-tertiary:#9ca3af;
+    --accent:#0071e3; --accent-soft:rgba(0,113,227,.08); --amber:#b45309;
+    --radius-card:10px; --radius-pill:999px; --spring-fluid:cubic-bezier(.22,1,.36,1);
+    --glass-specular:inset 0 1px 0 rgba(255,255,255,.6);
+  }
+  html[data-theme="dark"]{
+    --wallpaper:#0b0c10; --content-bg:#15171d; --content-subtle:#1c1f26; --content-subtle-hover:#242933;
+    --content-border:rgba(255,255,255,.08); --glass-border-subtle:rgba(255,255,255,.06);
+    --text-primary:#f9fafb; --text-secondary:#9ca3af; --text-tertiary:#6b7280;
+    --accent:#2997ff; --accent-soft:rgba(41,151,255,.16); --amber:#fbbf24;
+    --glass-specular:inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:20px 22px 48px; background:var(--wallpaper); color:var(--text-primary);
+    font:13px/1.6 -apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif; -webkit-font-smoothing:antialiased}
+  h1{margin:0 0 6px; font-size:17px; font-weight:600; letter-spacing:-.015em}
+  .page-sub{margin:0 0 14px; color:var(--text-secondary); max-width:1180px}
+  .toolbar{display:flex; gap:8px; margin-bottom:18px}
+  .toolbar button{font:inherit; font-size:12px; padding:5px 10px; border-radius:8px; cursor:pointer;
+    border:1px solid var(--content-border); background:var(--content-bg); color:inherit}
+  .cols{display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap}
+  .col{width:368px}
+  .col > h2{margin:0 0 4px; font-size:13px; font-weight:620}
+  .col > .note{margin:0 0 10px; font-size:11px; color:var(--text-tertiary); line-height:1.6; min-height:34px}
+
+  /* 面板与抽屉（真实样式） */
+  .panel{height:620px; border-radius:18px; background:var(--wallpaper); border:1px solid var(--glass-border-subtle);
+    box-shadow:0 12px 34px rgba(31,42,60,.14); overflow:hidden; position:relative; display:flex; flex-direction:column}
+  .panel-bar{height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 12px;
+    font-size:12px; color:var(--text-secondary); background:var(--content-bg); border-bottom:1px solid var(--content-border)}
+  .pill{border-radius:var(--radius-pill); padding:2px 9px; font-size:10.5px; background:var(--accent-soft); color:var(--accent)}
+  .drawer{margin:10px 0 0; flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;
+    border:1px solid var(--glass-border-subtle); border-bottom:0; border-radius:20px 20px 0 0; background:var(--content-bg);
+    box-shadow:0 -10px 34px rgba(31,42,60,.12),var(--glass-specular)}
+  .drawer-head{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:17px 18px 11px;
+    border-bottom:1px solid var(--content-border)}
+  .drawer-head h3{margin:0; font-size:16px; font-weight:620; letter-spacing:-.015em}
+  .drawer-head p{margin:2px 0 0; color:var(--text-tertiary); font-size:10.5px}
+  .drawer-head button{border:0; background:transparent; color:var(--text-secondary); font:inherit; font-size:11px; cursor:pointer; padding:4px 6px; border-radius:7px}
+  .drawer-body{flex:1; min-height:0; overflow:auto; padding:0 18px 24px}
+
+  /* 分段控件（一个入口两个分区） */
+  .seg{display:flex; gap:2px; margin:12px 0 2px; padding:2px; border-radius:var(--radius-pill);
+    background:var(--content-subtle); width:max-content}
+  .seg button{border:0; background:transparent; color:var(--text-secondary); font:inherit; font-size:11.5px;
+    padding:4px 12px; border-radius:var(--radius-pill); cursor:pointer}
+  .seg button[aria-selected="true"]{background:var(--content-bg); color:var(--text-primary); box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+  /* 观察行 */
+  .observe{display:flex; align-items:center; gap:8px; margin:12px 0 2px; padding:9px 10px; border-radius:var(--radius-card);
+    background:var(--content-subtle); font-size:11px; color:var(--text-secondary)}
+  .switch{width:30px; height:18px; border-radius:var(--radius-pill); background:var(--accent); position:relative; flex-shrink:0}
+  .switch i{position:absolute; top:2px; left:14px; width:14px; height:14px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .switch.off{background:var(--content-subtle-hover)}
+  .switch.off i{left:2px}
+  .observe .count{margin-left:auto; color:var(--text-tertiary); font-variant-numeric:tabular-nums}
+
+  /* 候选卡（可展开看它记下了哪几步） */
+  .cand{margin-top:10px; padding:11px 12px; border-radius:var(--radius-card); border:1px solid var(--content-border);
+    background:var(--content-bg)}
+  .cand p{margin:0 0 8px; font-size:12px; line-height:1.6}
+  .cand .why{color:var(--text-tertiary); font-size:10.5px; margin:-4px 0 8px}
+
+  /* 行：默认摘要 */
+  .row{padding:13px 0; border-bottom:1px solid var(--content-border)}
+  .row-head{display:flex; align-items:baseline; gap:8px}
+  .row-name{font-size:12.5px; font-weight:560; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .row-facts{font-size:10.5px; color:var(--text-tertiary); white-space:nowrap; font-variant-numeric:tabular-nums}
+  .row-facts.stale{color:var(--amber)}
+  .row-actions{display:flex; align-items:center; gap:6px; margin-top:9px}
+  .btn{font:inherit; font-size:11px; padding:4px 10px; border-radius:var(--radius-pill); cursor:pointer;
+    border:1px solid var(--content-border); background:var(--content-bg); color:inherit}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  .btn.ghost{border-color:transparent; color:var(--text-secondary); padding:4px 6px}
+  .btn.more{padding:4px 8px; color:var(--text-secondary)}
+  .badge{font-size:9.5px; padding:1px 6px; border-radius:var(--radius-pill); background:var(--content-subtle); color:var(--text-tertiary)}
+
+  /* 展开区 */
+  details.disc{margin-top:8px}
+  details.disc > summary{list-style:none; cursor:pointer; color:var(--text-secondary); font-size:11px;
+    display:flex; align-items:center; gap:5px; padding:3px 0}
+  details.disc > summary::-webkit-details-marker{display:none}
+  details.disc > summary::before{content:"▸"; font-size:9px; color:var(--text-tertiary); transition:transform 140ms var(--spring-fluid)}
+  details.disc[open] > summary::before{transform:rotate(90deg)}
+  .disc-body{padding:6px 0 0 14px}
+  .disc-body ol{margin:0 0 8px; padding-left:16px; font-size:11.5px; line-height:1.75; color:var(--text-secondary)}
+  .check{margin:0 0 8px; font-size:10.5px; color:var(--text-tertiary); line-height:1.6}
+  pre{margin:0; padding:9px; border-radius:8px; background:var(--content-subtle); font-size:10.5px; line-height:1.5;
+    overflow:auto; max-height:150px; color:var(--text-secondary)}
+
+  /* 记忆分区 */
+  .mem{padding:13px 0; border-bottom:1px solid var(--content-border)}
+  .mem p{margin:0; font-size:12.5px; line-height:1.7}
+  .mem .meta{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px;
+    font-size:10.5px; color:var(--text-tertiary)}
+  .mem .meta div{display:flex; gap:2px}
+
+  /* 改前：一条 strip 塞在消息区上方 */
+  .v0-strip{margin:10px; padding:8px 10px; border-radius:12px; background:var(--content-subtle); border:1px solid var(--content-border); font-size:12px}
+  .v0-strip .t{display:flex; justify-content:space-between; font-weight:600}
+  .v0-strip ol{margin:6px 0 0; padding-left:18px; max-height:96px; overflow:auto; line-height:1.6}
+  .v0-strip .actions{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+</style>
+</head>
+<body>
+<h1>知识抽屉（记忆 + 技能）× 信息分层</h1>
+<p class="page-sub">A：记忆与技能合成一个入口（分段控件两个分区）。C：观察开关留在技能分区顶部。B：技能行的信息分层，给了两种做法，请挑一个。所有颜色与圆角抄自面板真实 tokens。</p>
+<div class="toolbar"><button id="theme">切换深色</button></div>
+
+<div class="cols">
+
+  <!-- 改前 -->
+  <section class="col">
+    <h2>改前（v0）</h2>
+    <p class="note">技能是消息区上方的一条 strip，五种信息挤在一起；记忆在另一个抽屉里。同一个东西两套形态。</p>
+    <div class="panel">
+      <div class="panel-bar"><span>会话</span><span class="pill">已连接</span></div>
+      <div class="v0-strip">
+        <div class="t"><span>示范结束：记下 3 步</span><span>✕</span></div>
+        <ol><li>点击div</li><li>点击div</li><li>点击div</li></ol>
+        <div class="actions">
+          <button class="btn">照上次那样跑</button><button class="btn">重新示范</button><button class="btn">这次不太对</button><button class="btn">回到上一版</button><button class="btn">忘掉</button>
+        </div>
+      </div>
+      <div class="drawer" style="margin-top:6px">
+        <div class="drawer-head"><div><h3>技能</h3><p>这一页的技能</p></div><button>关闭</button></div>
+        <div class="drawer-body">
+          <div class="observe"><span class="switch off"><i></i></span> 观察：关 <span class="count">关着：完全不记录</span></div>
+          <div class="row">
+            <div class="row-head"><span class="row-name">看看这个仓库的 Issues 和 Labels 两个页面</span><span class="row-facts">跑过 1 次 · 上次 1.4 秒</span></div>
+            <div class="row-actions">
+              <button class="btn">照上次那样跑</button><button class="btn">重新示范</button><button class="btn">这次不太对</button><button class="btn">回到上一版</button><button class="btn">忘掉</button>
+            </div>
+            <p class="check">完成凭证：跑完后页面上必须还能找到「Labels」；找不到就说明这一页已经和示范时不一样，不算跑完。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 方案一 -->
+  <section class="col">
+    <h2>方案一：摘要 + 展开</h2>
+    <p class="note">默认只有「名字 + 事实行 + 一个主按钮」。凭证、步骤、脚本、其余动作全部收进一次展开。最简单，认知负担最低。</p>
+    <div class="panel">
+      <div class="panel-bar"><span>会话</span><span class="pill">已连接</span></div>
+      <div class="drawer">
+        <div class="drawer-head">
+          <div><h3>知识</h3><p>技能与记忆，都在这儿</p></div>
+          <button>关闭</button>
+        </div>
+        <div class="drawer-body">
+          <div class="seg"><button aria-selected="true">技能 3</button><button>记忆 12</button></div>
+
+          <div class="observe">
+            <span class="switch"><i></i></span> 观察：开
+            <span class="count">已记下 7 段</span>
+          </div>
+
+          <div class="cand">
+            <p>你在 bilibili.com 这样做了 3 次（跨 3 天）</p>
+            <p class="why">只看你点了哪些对象，不看你输入了什么</p>
+            <details class="disc">
+              <summary>看它记下的三步</summary>
+              <div class="disc-body"><ol><li>点击链接「首页」</li><li>点击「明日方舟 · 主线剧情合集」</li><li>点击按钮「返回」</li></ol></div>
+            </details>
+            <div class="row-actions" style="margin-top:10px">
+              <button class="btn primary">以后替我跑</button>
+              <button class="btn ghost">不用</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="row-head">
+              <span class="row-name">看看这个仓库的 Issues 和 Labels</span>
+              <span class="row-facts">1 次 · 1.4 秒</span>
+            </div>
+            <div class="row-actions">
+              <button class="btn primary">照上次那样跑</button>
+            </div>
+            <details class="disc">
+              <summary>凭证、步骤与其余动作</summary>
+              <div class="disc-body">
+                <p class="check">完成凭证：跑完后页面上必须还能找到「Labels」；找不到就说明这一页已经和示范时不一样，不算跑完。</p>
+                <ol><li>点击链接「Issues」</li><li>点击链接「Labels」</li></ol>
+                <pre>// 由示范编译（github.com）
+const inputs = {};
+const s0 = await resolve("a|Issues");
+await browser.click({ target: s0 });</pre>
+                <div class="row-actions">
+                  <button class="btn">重新示范</button><button class="btn">这次不太对</button><button class="btn">回到上一版</button><button class="btn ghost">忘掉</button>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="row">
+            <div class="row-head">
+              <span class="row-name">在 B 站按分类翻列表</span>
+              <span class="row-facts stale">2 次 · 上次失败 · 2 次因为页面变了停下</span>
+            </div>
+            <div class="row-actions">
+              <button class="btn">仍然照跑（可能过期）</button>
+            </div>
+            <details class="disc">
+              <summary>为什么它现在不肯直接跑</summary>
+              <div class="disc-body">
+                <p class="check">最近 2 次都因为「对象找不到」停下：页面上那个卡片可能改版了。你可以重新示范一次，或者先忽略。</p>
+                <div class="row-actions"><button class="btn">重新示范</button><button class="btn">不用了</button></div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 方案二 -->
+  <section class="col">
+    <h2>方案二：摘要 + 主按钮 + ⋯ 菜单</h2>
+    <p class="note">行内只有主按钮，其余动作收进「⋯」；细节仍走展开。适合技能多、动作也想常按的时候；代价是多一个菜单层级。</p>
+    <div class="panel">
+      <div class="panel-bar"><span>会话</span><span class="pill">已连接</span></div>
+      <div class="drawer">
+        <div class="drawer-head">
+          <div><h3>知识</h3><p>技能与记忆，都在这儿</p></div>
+          <button>关闭</button>
+        </div>
+        <div class="drawer-body">
+          <div class="seg"><button aria-selected="true">技能 3</button><button>记忆 12</button></div>
+
+          <div class="observe"><span class="switch"><i></i></span> 观察：开 <span class="count">已记下 7 段</span></div>
+
+          <div class="cand">
+            <p>你在 bilibili.com 这样做了 3 次（跨 3 天）</p>
+            <details class="disc"><summary>看它记下的三步</summary>
+              <div class="disc-body"><ol><li>点击链接「首页」</li><li>点击「明日方舟 · 主线剧情合集」</li><li>点击按钮「返回」</li></ol></div>
+            </details>
+            <div class="row-actions" style="margin-top:10px"><button class="btn primary">以后替我跑</button><button class="btn ghost">不用</button></div>
+          </div>
+
+          <div class="row">
+            <div class="row-head">
+              <span class="row-name">看看这个仓库的 Issues 和 Labels</span>
+              <span class="row-facts">1 次 · 1.4 秒</span>
+            </div>
+            <div class="row-actions">
+              <button class="btn primary">照上次那样跑</button>
+              <button class="btn more">⋯</button>
+              <span class="badge">第 2 版</span>
+            </div>
+            <details class="disc">
+              <summary>凭证与步骤</summary>
+              <div class="disc-body">
+                <p class="check">完成凭证：跑完后页面上必须还能找到「Labels」。</p>
+                <ol><li>点击链接「Issues」</li><li>点击链接「Labels」</li></ol>
+              </div>
+            </details>
+          </div>
+
+          <div class="row">
+            <div class="row-head">
+              <span class="row-name">在 B 站按分类翻列表</span>
+              <span class="row-facts stale">2 次 · 上次失败</span>
+            </div>
+            <div class="row-actions">
+              <button class="btn">仍然照跑（可能过期）</button>
+              <button class="btn more">⋯</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="row-head"><span class="row-name">打开客户列表并复制第一条</span><span class="row-facts">还没跑过</span></div>
+            <div class="row-actions"><button class="btn primary">照上次那样跑</button><button class="btn more">⋯</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- 记忆分区：同一个抽屉的另一个分区 -->
+  <section class="col">
+    <h2>记忆分区（同一个抽屉）</h2>
+    <p class="note">A 的兑现：不再有第二个抽屉。记忆保持现在的行样式与「来源／范围／修改／忘记」，只是换了入口。</p>
+    <div class="panel">
+      <div class="panel-bar"><span>会话</span><span class="pill">已连接</span></div>
+      <div class="drawer">
+        <div class="drawer-head">
+          <div><h3>知识</h3><p>技能与记忆，都在这儿</p></div>
+          <button>关闭</button>
+        </div>
+        <div class="drawer-body">
+          <div class="seg"><button>技能 3</button><button aria-selected="true">记忆 12</button></div>
+          <p class="note" style="margin:10px 0 0">当前保存的个人记忆 · 只说一次就够的东西</p>
+          <div class="mem">
+            <p>汇报金额统一用含税数字，不要写估算。</p>
+            <div class="meta"><span>来源：你 2026-09-08 的纠正 · 范围：全部会话</span><div><button class="btn ghost">修改</button><button class="btn ghost">忘记</button></div></div>
+          </div>
+          <div class="mem">
+            <p>导出客户名单时连标签一起导出。</p>
+            <div class="meta"><span>来源：你 2026-09-10 的纠正 · 范围：crm.example.com</span><div><button class="btn ghost">修改</button><button class="btn ghost">忘记</button></div></div>
+          </div>
+          <div class="mem">
+            <p>不要自动点保存或提交，先让我确认。</p>
+            <div class="meta"><span>来源：你 2026-09-05 的纠正 · 范围：全部会话</span><div><button class="btn ghost">修改</button><button class="btn ghost">忘记</button></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  document.getElementById("theme").onclick = () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme === "dark";
+    root.dataset.theme = dark ? "light" : "dark";
+    document.getElementById("theme").textContent = dark ? "切换深色" : "切换浅色";
+  };
+</script>
+</body>
+</html>

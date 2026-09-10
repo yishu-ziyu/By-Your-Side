@@ -19,6 +19,7 @@
 
 - 按影响范围先跑定点检查；通过后只为新改动、失败或未决风险扩大验证。完整工程检查为 `npm run typecheck`、`npm test`、`npm run build`；修改 `shared/protocol.ts` 时覆盖受影响的契约。
 - 浏览器验收入口为 `npm run accept:browser`、`npm run accept:team`、`npm run accept:sessions`，按任务选择。隔离检查、合成输入与用户日常入口分别留证，不互相冒充；环境操作仍遵循有效授权。
+- 浏览器验收默认无头运行（`--headless=new`，不创建窗口），脚本在没有无头参数时拒绝运行；涉及可见运动/动效的检查单独安排并先取得用户同意，不得靠 `--window-position` 之类方式隐藏窗口。
 - 纯文档修改检查差异与引用，不运行产品测试或构建。
 
 ### 完成标准格式
