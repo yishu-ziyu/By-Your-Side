@@ -44,3 +44,11 @@ export function pcmBase64(pcm: Int16Array): string {
   for (let i = 0; i < pcm.length; i++) view.setInt16(i * 2, pcm[i]!, true);
   return btoa(String.fromCharCode(...bytes));
 }
+
+/** Same encoding, but chunked: a whole captured turn is far past the argument-count limit of the spread above. */
+export function pcmBase64Large(pcm: Int16Array): string {
+  const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.length * 2);
+  let binary = '';
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(binary);
+}

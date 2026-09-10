@@ -1,0 +1,95 @@
+{
+  "ok": true,
+  "startedAt": 1789029403373,
+  "elapsedMs": 8575,
+  "runs": [
+    {
+      "steps": [
+        {
+          "name": "snapshot",
+          "ok": true,
+          "expected": {
+            "unique": "SIDEAGENT_ACCEPTANCE_UNIQUE_TEXT_20260904",
+            "counter": "count-is-0",
+            "fill": "fill-is-empty",
+            "phase": "phase-idle"
+          },
+          "actual": {
+            "unique": true,
+            "counter": true,
+            "fill": true,
+            "phase": true
+          },
+          "durationMs": 361
+        },
+        {
+          "name": "click",
+          "ok": true,
+          "expected": {
+            "counter": "count-is-1",
+            "phase": "phase-clicked"
+          },
+          "actual": {
+            "counter": true,
+            "phase": true
+          },
+          "durationMs": 5858
+        },
+        {
+          "name": "fill",
+          "ok": true,
+          "expected": {
+            "fill": "fill-is-acceptance-fill-ok"
+          },
+          "actual": {
+            "fill": true
+          },
+          "durationMs": 489
+        },
+        {
+          "name": "resnapshot",
+          "ok": true,
+          "expected": {
+            "unique": "SIDEAGENT_ACCEPTANCE_UNIQUE_TEXT_20260904",
+            "counter": "count-is-1",
+            "fill": "fill-is-acceptance-fill-ok",
+            "phase": "phase-changed"
+          },
+          "actual": {
+            "unique": true,
+            "counter": true,
+            "fill": true,
+            "phase": true
+          },
+          "durationMs": 8
+        }
+      ],
+      "failureCategory": null,
+      "failureStage": null
+    }
+  ],
+  "connection": {
+    "wrapperBundleId": "local.yishu.chrome-main",
+    "wrapperApp": "/Users/mahaoxuan/Applications/Chrome.app",
+    "pid": 57475,
+    "port": 9222,
+    "userDataDir": "/Users/mahaoxuan/Library/Application Support/Google/ChromeMain",
+    "command": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=9222 --remote-allow-origins=* --enable-unsafe-extension-debugging --keep-alive-for-test --user-data-dir=/Users/mahaoxuan/Library/Application Support/Google/ChromeMain --no-first-run --no-default-browser-check --restore-last-session",
+    "refusedDefaultChromePids": []
+  },
+  "execution": {
+    "via": "uplink.handleRaw → onServerMessage → executeToolCall → gate.run → handlers",
+    "snapshot": "handlers.snapshot",
+    "click": "handlers.click",
+    "fill": "handlers.fill",
+    "screenshot": "handlers.screenshot"
+  },
+  "failureCategory": null,
+  "failureStage": null,
+  "evidenceDir": "/tmp/ego-cursor-after-20260910/run-1",
+  "screenshots": [
+    "before.png",
+    "afterClick.png",
+    "afterFill.png"
+  ]
+}

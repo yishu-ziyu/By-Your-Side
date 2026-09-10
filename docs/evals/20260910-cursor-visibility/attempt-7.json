@@ -1,0 +1,23 @@
+{
+  "ok": false,
+  "records": [
+    {
+      "type": "check",
+      "name": "loaded cursor matches build",
+      "passed": true
+    },
+    {
+      "type": "tool",
+      "name": "open_tab",
+      "ok": true,
+      "elapsedMs": 1452
+    },
+    {
+      "type": "failure",
+      "error": "Error: 可视状态等待超时\n    at wait (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:35:180)\n    at async file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:93:3",
+      "diagnostic": {
+        "visibility": "hidden"
+      }
+    }
+  ]
+}

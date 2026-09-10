@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "records": [
+    {
+      "type": "failure",
+      "error": "Error: 无法把 SW 停在生产 onMessage 里以进入 executeToolCall 闭包（CDP event Debugger.paused timed out after 12000ms）。SW 自己发 sendMessage 进不了本进程 listener；需要已加载扩展对 127.0.0.1 fixture 注入 content script。\n    at installExecuteToolCallHook (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/sw-hook.mjs:334:13)\n    at async file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:53:3"
+    }
+  ]
+}

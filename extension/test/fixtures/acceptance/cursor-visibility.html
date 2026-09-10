@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>光标可见性 · 操作验收</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef0f3;color:#172033;font:16px/1.6 system-ui,"PingFang SC",sans-serif}
+header{padding:32px 40px}h1{font-size:28px;margin:0 0 4px}header p{margin:0;color:#596477}
+main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;padding:0 40px 40px}.panel{padding:26px;border-radius:16px;min-height:420px;background:#fff}
+.dark{background:#172033;color:#fff}.busy{background:repeating-linear-gradient(145deg,#2359b8 0 24px,#b77115 24px 48px,#8f315b 48px 72px);color:#fff}
+h2{font-size:18px;margin:0 0 40px}label{display:block;font-size:14px;margin-bottom:8px}input{width:100%;height:46px;border:1px solid #9ba6b5;border-radius:7px;background:#fff;color:#172033;padding:0 12px;font-size:16px}button{margin-top:32px;background:#285cd0;color:white;border:0;border-radius:8px;padding:12px 22px;font:600 15px system-ui;cursor:pointer}.dark button,.busy button{background:white;color:#172033}
+.result{margin-top:30px;min-height:24px;font-size:14px}.scroll{height:190px;overflow:auto;margin:0 40px 40px;background:#fff;border-radius:12px;padding:16px}.space{height:180px}
+</style>
+<header><h1>填写联系信息</h1><p>本地验收页：光标应指出当前字段和按钮，并清楚显示正在执行的动作。</p></header>
+<main>
+<section class="panel"><h2>浅色页面</h2><label for="email">联系邮箱</label><input id="email" type="email" placeholder="name@example.com"><button id="next">下一步</button><p class="result" id="result">尚未提交</p></section>
+<section class="panel dark"><h2>深色页面</h2><label for="name">联系人姓名</label><input id="name" placeholder="姓名"><button id="dark-next">核对信息</button></section>
+<section class="panel busy"><h2>复杂背景</h2><label for="topic">任务主题</label><input id="topic" placeholder="任务主题"><button id="busy-next">查看详情</button></section>
+</main>
+<div class="scroll" id="scroll"><p>内部滚动测试</p><button id="nested">滚动中的目标</button><div class="space"></div></div>
+<script>
+window.clickCount=0;document.querySelector('#next').onclick=()=>{window.clickCount++;document.querySelector('#result').textContent='已接收：'+document.querySelector('#email').value+' · '+window.clickCount+'次'};
+</script></html>

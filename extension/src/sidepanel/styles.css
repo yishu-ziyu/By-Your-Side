@@ -2309,3 +2309,31 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   #model-btn { gap: 4px; padding: 0 8px 0 6px; }
   #takeover-btn { padding: 0 8px; }
 }
+
+/* Voice diagnostics: small manual capture block, not a console. */
+.voice-diag{border-top:1px solid #e3dfed;padding:2px 0 0;flex-shrink:0;font-size:11px;color:#6c6577}
+.voice-diag summary{cursor:pointer;font-size:10px;color:#8a8394;padding:2px 0}
+.voice-diag-body{padding:4px 0 8px}
+.voice-diag-state{color:#655784;margin-bottom:4px;line-height:1.5}
+.voice-diag-actions{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px}
+.voice-diag-actions button{border:1px solid #e5dff0;border-radius:12px;background:#fff;color:#655784;font-size:10px;padding:2px 8px;cursor:pointer}
+.voice-diag-actions button:disabled{opacity:.45;cursor:default}
+.voice-diag-list{max-height:66px;overflow:auto;margin-bottom:4px}
+.voice-diag-item{overflow-wrap:anywhere;line-height:1.5;color:#6c6577}
+.voice-diag-empty{color:#a49dae}
+.voice-diag-detail{display:grid;gap:2px}
+.voice-diag-row{display:flex;gap:6px;line-height:1.5}
+.voice-diag-label{flex:0 0 82px;color:#98929e}
+.voice-diag-value{flex:1;overflow-wrap:anywhere;color:#4f4a58;max-height:48px;overflow:auto}
+.voice-diag-audio{display:grid;gap:4px;margin-top:5px}
+.voice-diag-audio button{justify-self:start;border:1px solid #e5dff0;border-radius:12px;background:#fff;color:#655784;font-size:10px;padding:2px 8px;cursor:pointer}
+.voice-diag-audio button:disabled{opacity:.45;cursor:default}
+.voice-diag-player-c0,.voice-diag-player-c1{width:100%;height:28px}
+.voice-diag-player-c0:not([src]),.voice-diag-player-c1:not([src]){display:none}
+.voice-diag-actions button:focus-visible,.voice-diag-audio button:focus-visible,.voice-diag summary:focus-visible{outline:2px solid #8975b2;outline-offset:1px}
+
+.voice-record{flex-shrink:0}
+.voice-record-head{display:flex;align-items:center;gap:6px;padding:2px 0 0}
+.voice-diag-mark{border:1px solid #e5dff0;border-radius:12px;background:#fff;color:#655784;font-size:10px;padding:2px 8px;cursor:pointer}
+.voice-diag-mark:focus-visible{outline:2px solid #8975b2;outline-offset:1px}
+.voice-diag-mark-note{font-size:10px;color:#8a8394;overflow-wrap:anywhere}

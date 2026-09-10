@@ -36,8 +36,13 @@ interface MarkOptions {
 }
 
 interface SideAgentCursor {
+  /** 绑定这次真实操作与同一个 DOM 元素；id 隔离晚到的结束消息。 */
+  beginAction(id: string, kind: "click" | "fill" | "hover", rect?: SideAgentRect, anchor?: Element, label?: string): void;
+  endAction(id: string, outcome: "done" | "failed" | "unknown", point?: [number, number]): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
+  /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
+  arrive(x: number, y: number): void;
   /** 在视口坐标 (x,y) 播放点击波纹，随后飞回角落 */
   click(x: number, y: number): void;
   /** 飞回待命角落（不点、不填的时候） */
@@ -83,6 +88,11 @@ interface SideAgentNamespace {
   cursor?: SideAgentCursor;
   /** overlay 自检：默认光标是否已 hide（生产路径不用） */
   cursorHidden?: () => boolean;
+  /** 只读的可视状态自检，不代表页面操作结果。 */
+  cursorState?: (id?: string) => {
+    action: string | null; phase: string | null; label: string; labelRect: SideAgentRect | null;
+    targetRect: SideAgentRect | null; hidden: boolean; resting: boolean; x: number; y: number; size: number;
+  } | null;
   /** overlay 自检：当前 mark 的文档坐标盒（生产路径不用） */
   markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
   /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */

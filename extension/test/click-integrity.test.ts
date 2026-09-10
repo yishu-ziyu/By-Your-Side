@@ -131,6 +131,8 @@ function installPage(opts?: { overlayAt?: FakeEl | null }) {
   const cursor = {
     move: vi.fn(() => 0),
     highlight: vi.fn(),
+    beginAction: vi.fn(),
+    endAction: vi.fn(),
     click: vi.fn(),
   };
   const elementFromPoint = vi.fn((x: number, y: number): FakeEl | null => {
@@ -204,6 +206,44 @@ function mouseEvents(): Array<{ type: string; x: number; y: number }> {
 }
 
 describe("B1 DOM 回退一次点击只送达一次", () => {
+  it("真实 release 返回后才显示已点击，且没有高亮或波纹固定等待", async () => {
+    const { cursor } = installPage();
+    const order: string[] = [];
+    mocks.sendCommand.mockImplementation(async (_tab, method, params) => {
+      if (method === "Input.dispatchMouseEvent") order.push(params.type);
+      return {};
+    });
+    cursor.endAction.mockImplementation((_id, outcome) => order.push(outcome));
+    const { click } = await import("../src/background/exec/input.js");
+    vi.useFakeTimers();
+    // move 返回 0 时无需推进计时器，输入仍须真正送达。
+    await expect(click({ target: "#counter" })).resolves.toEqual({ clicked: true });
+    expect(order).toEqual(["mouseMoved", "mousePressed", "mouseReleased", "done"]);
+    expect(cursor.beginAction).toHaveBeenCalledWith(expect.any(String), "click", expect.any(Object), expect.any(Object), "");
+    expect(cursor.click).not.toHaveBeenCalled();
+  });
+
+  it("目标被覆盖时结束为失败，不播放已点击反馈", async () => {
+    const { cursor, overlay, elementFromPoint } = installPage();
+    elementFromPoint.mockReturnValue(overlay);
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "#counter" })).rejects.toThrow(/覆盖/);
+    expect(cursor.endAction).toHaveBeenCalledWith(expect.any(String), "failed", undefined);
+    expect(cursor.click).not.toHaveBeenCalled();
+  });
+
+  it("release 回执失败只能显示结果待确认，不能显示已点击", async () => {
+    const { cursor } = installPage();
+    mocks.sendCommand.mockImplementation(async (_tab, method, params) => {
+      if (method === "Input.dispatchMouseEvent" && params.type === "mouseReleased") throw new Error("timeout");
+      return {};
+    });
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "#counter" })).rejects.toThrow(/可能已送达/);
+    expect(cursor.endAction).toHaveBeenCalledWith(expect.any(String), "unknown", undefined);
+    expect(cursor.click).not.toHaveBeenCalled();
+  });
+
   it("计数按钮一次 click 调用只触发一次处理器，不能 dispatchEvent(click)+HTMLElement.click 双发", async () => {
     const { counter, dom } = installPage();
     counter.addEventListener("click", () => {
@@ -263,7 +303,8 @@ describe("B1 DOM 回退一次点击只送达一次", () => {
 
 describe("B2 视觉等待后重新确认目标", () => {
   it("目标移动后点击新坐标，不点原坐标处的另一个按钮", async () => {
-    const { mover, neighbor } = installPage();
+    const { mover, neighbor, cursor } = installPage();
+    cursor.move.mockReturnValueOnce(300);
     const { click } = await import("../src/background/exec/input.js");
     vi.useFakeTimers();
     const pending = click({ target: "#mover" });
@@ -321,7 +362,8 @@ describe("B2 视觉等待后重新确认目标", () => {
   });
 
   it("目标重渲染失效后拒绝，不默选同名按钮", async () => {
-    const { twinA, twinB, dom } = installPage();
+    const { twinA, twinB, dom, cursor } = installPage();
+    cursor.move.mockReturnValueOnce(300);
     const { click } = await import("../src/background/exec/input.js");
     vi.useFakeTimers();
     const pending = click({ target: "@7" });

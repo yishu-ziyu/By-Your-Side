@@ -5,7 +5,7 @@ import type {VoiceInputContext} from '../../../shared/voice.js';
 /** Audio bypasses persisted task history and is delivered only to its owning panel. */
 export class VoiceRelay {
   private readonly observation=new VoiceObservation();
-  private lease: { port: chrome.runtime.Port; voiceId: string; conversationId: string;turn:number } | null = null;
+  private lease: { port: chrome.runtime.Port; voiceId: string; conversationId: string;turn:number;diagnostic:boolean } | null = null;
   constructor(private readonly send: (message: ClientMessage) => boolean, private readonly selected: () => string,
     private readonly enrich?:(conversationId:string,input:VoiceInputContext)=>Promise<VoiceInputContext>) {}
   attach(port: chrome.runtime.Port): void {
@@ -19,7 +19,7 @@ export class VoiceRelay {
         if (message.conversationId !== this.selected()) return;
         if (this.lease?.port === port && this.lease.voiceId === message.voiceId) return;
         this.stop();this.observation.clear();
-        this.lease = { port, voiceId: message.voiceId, conversationId: message.conversationId,turn:0 };
+        this.lease = { port, voiceId: message.voiceId, conversationId: message.conversationId,turn:0,diagnostic:message.command.diagnostic===true };
       }
       const lease = this.lease;
       if (!lease || lease.port !== port || lease.voiceId !== message.voiceId || lease.conversationId !== message.conversationId) return;
@@ -27,7 +27,8 @@ export class VoiceRelay {
         if(message.command.turn<=lease.turn)return;lease.turn=message.command.turn;
       }
       if((message.command.kind==='audio'||message.command.kind==='commit')&&message.command.turn!==lease.turn)return;
-      if(message.command.kind==='commit'&&this.enrich){
+      // A diagnostic take never reads the page: its commit carries no observation or ask context.
+      if(message.command.kind==='commit'&&this.enrich&&!lease.diagnostic){
         const command=message.command;
         void this.enrich(lease.conversationId,command.input??{}).then(async input=>{
           const observation=await this.observation.issue().catch(()=>undefined);

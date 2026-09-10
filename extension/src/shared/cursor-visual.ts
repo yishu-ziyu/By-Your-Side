@@ -3,7 +3,7 @@
  * 从 27px/1.6 描边加大，保证浅色、深色、花哨背景上都压得住。
  */
 
-export const CURSOR_SVG_SIZE = 36;
+export const CURSOR_SVG_SIZE = 44;
 export const CURSOR_STROKE_WHITE = 2.2;
 export const CURSOR_STROKE_HALO = 3.8;
 export const CURSOR_TIP = { x: 4.037, y: 4.688 };

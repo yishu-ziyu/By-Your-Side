@@ -1,0 +1,386 @@
+{
+  "ok": true,
+  "records": [
+    {
+      "type": "check",
+      "name": "loaded cursor matches build",
+      "passed": true
+    },
+    {
+      "type": "tool",
+      "name": "open_tab",
+      "ok": true,
+      "elapsedMs": 2075
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 42
+    },
+    {
+      "type": "check",
+      "name": "fill shows actual action label",
+      "passed": true,
+      "data": {
+        "action": "9a3583a0-3bd3-4965-b833-b00f793694c4",
+        "hidden": false,
+        "label": "正在填写 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 51.99479293823242,
+          "y": 51.99479293823242
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 24,
+        "y": 24
+      }
+    },
+    {
+      "type": "tool",
+      "name": "fill",
+      "ok": true,
+      "elapsedMs": 731
+    },
+    {
+      "type": "check",
+      "name": "fill ends from execution receipt",
+      "passed": true,
+      "data": {
+        "action": "9a3583a0-3bd3-4965-b833-b00f793694c4",
+        "hidden": false,
+        "label": "填写结束 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 598.5850830078125,
+          "y": 261.5668640136719
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 326.2934341430664,
+        "y": 286.56685066223145
+      }
+    },
+    {
+      "type": "check",
+      "name": "field name present and value absent",
+      "passed": true,
+      "data": {
+        "action": "9a3583a0-3bd3-4965-b833-b00f793694c4",
+        "hidden": false,
+        "label": "填写结束 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 598.5850830078125,
+          "y": 261.5668640136719
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 326.2934341430664,
+        "y": 286.56685066223145
+      }
+    },
+    {
+      "type": "check",
+      "name": "click shows actual action label",
+      "passed": true,
+      "data": {
+        "action": "515e42da-0d8c-4da6-8dba-0f3fb4c5811b",
+        "hidden": false,
+        "label": "正在点击 · 下一步Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 133.53298950195312,
+          "x": 353.8412170410156,
+          "y": 314.6067199707031
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 41.770835876464844,
+          "width": 87.13542175292969,
+          "x": 65.9982681274414,
+          "y": 341.5625305175781
+        },
+        "x": 325.84642246291367,
+        "y": 286.61190554896166
+      }
+    },
+    {
+      "type": "tool",
+      "name": "click",
+      "ok": true,
+      "elapsedMs": 519
+    },
+    {
+      "type": "check",
+      "name": "click ends from execution receipt",
+      "passed": true,
+      "data": {
+        "action": "515e42da-0d8c-4da6-8dba-0f3fb4c5811b",
+        "hidden": false,
+        "label": "已点击 · 下一步Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 120.27778625488281,
+          "x": 137.9947967529297,
+          "y": 389.9947814941406
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 41.770835876464844,
+          "width": 87.13542175292969,
+          "x": 65.9982681274414,
+          "y": 341.5625305175781
+        },
+        "x": 110,
+        "y": 362
+      }
+    },
+    {
+      "type": "check",
+      "name": "actual fill and exactly one click",
+      "passed": true,
+      "data": {
+        "count": 1,
+        "text": "已接收：cursor-test@example.com · 1次"
+      }
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 8
+    },
+    {
+      "type": "check",
+      "name": "snapshot exposes field AX ref",
+      "passed": true,
+      "data": "  [ref=2] textbox \"联系人姓名\""
+    },
+    {
+      "type": "tool",
+      "name": "fill",
+      "ok": true,
+      "elapsedMs": 564
+    },
+    {
+      "type": "check",
+      "name": "AX action labels and anchors same node",
+      "passed": true,
+      "data": {
+        "action": "b5ac525c-2507-4c76-8cd2-dc12e39fcd90",
+        "hidden": false,
+        "label": "填写结束 · 联系人姓名Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 160.06077575683594,
+          "x": 1191.17626953125,
+          "y": 261.5668640136719
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.5989990234375,
+          "x": 658.5850830078125,
+          "y": 263.5677185058594
+        },
+        "x": 918.8845825195312,
+        "y": 286.56685066223145
+      }
+    },
+    {
+      "type": "check",
+      "name": "04-light label avoids target and edges",
+      "passed": true,
+      "data": {
+        "action": "visual",
+        "hidden": false,
+        "label": "正在填写 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 598.5848388671875,
+          "y": 261.54473876953125
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 326.47539666208627,
+        "y": 286.5447489509809
+      }
+    },
+    {
+      "type": "check",
+      "name": "04-light cursor size",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "05-dark label avoids target and edges",
+      "passed": true,
+      "data": {
+        "action": "visual",
+        "hidden": false,
+        "label": "正在填写 · 联系人姓名Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 160.06077575683594,
+          "x": 1191.1773681640625,
+          "y": 261.56781005859375
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.5989990234375,
+          "x": 658.5850830078125,
+          "y": 263.5677185058594
+        },
+        "x": 918.8769112634028,
+        "y": 286.5677827100568
+      }
+    },
+    {
+      "type": "check",
+      "name": "05-dark cursor size",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "06-busy label avoids target and edges",
+      "passed": true,
+      "data": {
+        "action": "visual",
+        "hidden": false,
+        "label": "正在填写 · 任务主题Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 1437.90380859375,
+          "y": 321.5584411621094
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 1251.1806640625,
+          "y": 263.5677185058594
+        },
+        "x": 1511.4020358569894,
+        "y": 286.5758155639294
+      }
+    },
+    {
+      "type": "check",
+      "name": "06-busy cursor size",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "active action survives old park/highlight deadlines",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "late receipt cannot replace new action",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "hide prevents late feedback resurrection",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "nested scrolling tracks same target",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "replacement never inherits old target indicator",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "reduced motion preserves label without travel",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "uncertain result never says clicked or success",
+      "passed": true,
+      "data": {
+        "action": "reduce",
+        "hidden": false,
+        "label": "结果待确认 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 160.06077575683594,
+          "x": 598.5850830078125,
+          "y": 261.5668640136719
+        },
+        "phase": "unknown",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 326.2934341430664,
+        "y": 286.56685066223145
+      }
+    },
+    {
+      "type": "check",
+      "name": "duplicate terminal receipt cannot overwrite unknown",
+      "passed": true
+    },
+    {
+      "type": "check",
+      "name": "completed action clears and parks",
+      "passed": true
+    }
+  ]
+}

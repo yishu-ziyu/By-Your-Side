@@ -11,7 +11,8 @@ export type CursorPt = { x: number; y: number };
 export const CURSOR_REST_INSET = 24;
 export const FITTS_MIN_MS = 220;
 export const FITTS_MAX_MS = 480;
-export const PARK_AFTER_MS = 320;
+// 让刚发生的动作可读；这是非阻塞收起计时，新操作会取消它。
+export const PARK_AFTER_MS = 1200;
 
 export function easeInOutCubic(t: number): number {
   const x = t < 0 ? 0 : t > 1 ? 1 : t;

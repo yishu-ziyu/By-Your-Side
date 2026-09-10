@@ -54,7 +54,15 @@ it('streams only after ready, rejects foreign and old turns, and releases captur
  for(let i=0;i<5;i++)frame(.1);expect(sent).toHaveLength(1);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
  for(let i=0;i<5;i++)frame(.1);expect(sent[1].command).toMatchObject({kind:'interrupt',turn:1});
- for(let i=0;i<35;i++)frame(0);expect(sent.at(-1).command).toEqual({kind:'commit',turn:1});
+ for(let i=0;i<35;i++)frame(0);
+ // 正常使用采集会在这轮 commit 之后追加恰好一条 capture（只把本地连续收音交给 agent 落盘），
+ // 它排在 commit 之后、不改变任何语音状态；除它之外不允许再追加别的命令。
+ const commands=sent.map((m:any)=>m.command);
+ expect(commands[0]).toEqual({kind:'start',capture:true});
+ expect(commands.filter((c:any)=>c.kind==='commit')).toEqual([{kind:'commit',turn:1}]);
+ expect(commands.at(-2)).toEqual({kind:'commit',turn:1});
+ expect(commands.at(-1)).toEqual(expect.objectContaining({kind:'capture',turn:1,sampleRate:24000}));
+ expect(commands.filter((c:any)=>c.kind==='capture')).toHaveLength(1);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
  expect(change).toHaveBeenLastCalledWith('listening',undefined);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready',detail:'没听清这句话，请再说一次。'}});

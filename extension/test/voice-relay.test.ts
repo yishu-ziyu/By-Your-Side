@@ -24,6 +24,18 @@ it("binds one panel and conversation; selection/disconnect stop only voice, neve
   a.close(); expect(send).toHaveBeenCalledTimes(2);
 });
 
+it('never reads page context for a diagnostic take',async()=>{
+ const send=vi.fn((_message:unknown)=>true);const enrich=vi.fn(async()=>({context:{tabId:1,title:'x',url:'https://example.com'}}));
+ const relay=new VoiceRelay(send,()=> 'A',enrich),p=panel();relay.attach(p.port);
+ const command=(cmd:any)=>p.send({kind:'client',msg:{type:'voice',voiceId:'v1',conversationId:'A',command:cmd}});
+ command({kind:'start',diagnostic:true});
+ expect(send).toHaveBeenCalledWith(expect.objectContaining({command:{kind:'start',diagnostic:true}}));
+ command({kind:'interrupt',turn:1});command({kind:'commit',turn:1});await new Promise(r=>setTimeout(r,0));
+ expect(enrich).not.toHaveBeenCalled();
+ const commit=send.mock.calls.map(([m]:any[])=>m).find((m:any)=>m.command.kind==='commit');
+ expect(commit.command.input).toBeUndefined();
+});
+
 it('snapshots committed context and drops a late commit after a new turn or selection',async()=>{
  vi.stubGlobal('chrome',{tabs:{query:vi.fn(async()=>[])}});
  const send=vi.fn((_message:unknown)=>true);let finish!:(v:any)=>void;

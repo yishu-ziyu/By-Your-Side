@@ -157,9 +157,51 @@ async function cursorMove(tabId: number, x: number, y: number, id: string): Prom
       [x, y, id],
     );
     if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+    await callDom(tabId, (x: number, y: number, cid: string) => {
+      window.__sideagent?.cursor?.for(cid)?.arrive?.(x, y);
+    }, [x, y, id]);
   } catch {
     /* 页面禁止注入则跳过可视化 */
   }
+}
+
+async function beginCursorAction(
+  tabId: number, cid: string, kind: "click" | "fill" | "hover", target?: string, label?: string,
+): Promise<string> {
+  const actionId = crypto.randomUUID();
+  try {
+    await ensureCursor(tabId);
+    const ref = target ? parseRef(target) : null;
+    if (ref !== null && isAxRef(tabId, ref)) {
+      const contextId = await cursorContext(tabId);
+      await callOnBackendNode(tabId, ref, `function(cid, id, kind, label) {
+        const r = this.getBoundingClientRect();
+        window.__sideagent?.cursor?.for(cid)?.beginAction(id, kind,
+          { x:r.x, y:r.y, width:r.width, height:r.height }, this, label);
+      }`, [cid, actionId, kind, label ?? ""], contextId);
+    } else {
+      if (target) await ensureDomOps(tabId);
+      await callDom(tabId, (cid: string, id: string, kind: "click" | "fill" | "hover", target: string | null, label: string) => {
+        const anchor = target ? window.__sideagent?.dom?.resolve(target) ?? undefined : undefined;
+        const r = anchor?.getBoundingClientRect();
+        window.__sideagent?.cursor?.for(cid)?.beginAction(id, kind,
+          r ? { x:r.x, y:r.y, width:r.width, height:r.height } : undefined, anchor, label);
+      }, [cid, actionId, kind, target ?? null, label ?? ""]);
+    }
+  } catch {
+    // 可视化不可用不改变执行判定；不凭坐标猜另一个元素来画框。
+  }
+  return actionId;
+}
+
+async function endCursorAction(
+  tabId: number, cid: string, actionId: string, outcome: "done" | "failed" | "unknown", point?: [number, number],
+): Promise<void> {
+  try {
+    await callDom(tabId, (cid: string, id: string, outcome: "done" | "failed" | "unknown", point: [number, number] | null) => {
+      window.__sideagent?.cursor?.for(cid)?.endAction(id, outcome, point ?? undefined);
+    }, [cid, actionId, outcome, point ?? null]);
+  } catch { /* 导航或退出后的旧动作不能重建提示 */ }
 }
 
 async function recordCursorTrail(
@@ -218,20 +260,6 @@ export async function stopTrailReplay(sessionId?: string): Promise<void> {
     );
   } catch {
     /* 标签关了 */
-  }
-}
-
-async function cursorPark(tabId: number, id: string): Promise<void> {
-  try {
-    await callDom(
-      tabId,
-      (cid: string) => {
-        window.__sideagent?.cursor?.for(cid)?.park?.();
-      },
-      [id],
-    );
-  } catch {
-    /* 同上 */
   }
 }
 
@@ -726,8 +754,16 @@ export async function hover(
   await assertObservedDocument(tab.id, sessionId);
   const { point: [x, y] } = await resolvePointerTarget(tab.id, params);
   await maybeActivateTab(tab, sessionId);
-  await cursorMove(tab.id, x, y, cursorId(sessionId));
-  await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  const cid = cursorId(sessionId);
+  const actionId = await beginCursorAction(tab.id, cid, "hover", params.target, params.label);
+  try {
+    await cursorMove(tab.id, x, y, cid);
+    await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await endCursorAction(tab.id, cid, actionId, "done");
+  } catch (error) {
+    await endCursorAction(tab.id, cid, actionId, "failed");
+    throw error;
+  }
   await recordCursorTrail(tab.id, sessionId, x, y, false);
   return { hovered: true };
 }
@@ -804,104 +840,85 @@ export async function click(
     await callPointGuard(tabId, x, y, "remember");
   }
 
-  // 1. 操作前元素高亮：如果解析到了目标元素包围盒，先展示呼吸高亮框（静默兜底）
-  if (targetRect) {
-    try {
-      await ensureCursor(tabId);
-      await callDom(
-        tabId,
-        (r: DomRect, id: string) => window.__sideagent?.cursor?.for(id)?.highlight(r),
-        [targetRect, cid],
-      );
-      await new Promise((r) => setTimeout(r, 500));
-    } catch {
-      // 页面禁止注入（如 chrome:// 页面）等场景静默跳过
-    }
-  }
-
-  // 2. 虚拟鼠标：沿浅弧飞到目标、播点击波纹，再真实派发。飞完才点，避免波纹落在半路。
-  {
-    const [vx, vy] = point!;
-    await cursorMove(tabId, vx, vy, cid);
-    try {
-      await callDom(
-        tabId,
-        (x: number, y: number, id: string) => window.__sideagent?.cursor?.for(id)?.click(x, y),
-        [vx, vy, cid],
-      );
-      await new Promise((r) => setTimeout(r, 150));
-    } catch {
-      // 页面禁止注入（如 chrome:// 页面）等场景：跳过可视化
-    }
-  }
-
-  if (target) {
-    const confirmed = await confirmPointerTarget(tabId, target);
-    x = confirmed.point[0];
-    y = confirmed.point[1];
-    if (x !== point[0] || y !== point[1]) {
-      await cursorMove(tabId, x, y, cid);
-    }
-  }
-
-  let cdpMouseMoved = false;
-  let cdpMousePressed = false;
+  const actionId = await beginCursorAction(tabId, cid, "click", target, name);
   try {
-    await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-    cdpMouseMoved = true;
-    // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
-    // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
+    // 目标边框与浅弧移动并行；不再为高亮和预播放波纹额外等待。
+    await cursorMove(tabId, x, y, cid);
+
     if (target) {
-      await hitTestPointerTarget(tabId, target, x, y);
-    } else {
-      await callPointGuard(tabId, x, y, "confirm");
+      const confirmed = await confirmPointerTarget(tabId, target);
+      x = confirmed.point[0];
+      y = confirmed.point[1];
+      if (x !== point[0] || y !== point[1]) {
+        await cursorMove(tabId, x, y, cid);
+      }
     }
-    await sendCommand(tabId, "Input.dispatchMouseEvent", {
-      type: "mousePressed",
-      x,
-      y,
-      button: "left",
-      clickCount: 1,
-    });
-    cdpMousePressed = true;
-    await sendCommand(tabId, "Input.dispatchMouseEvent", {
-      type: "mouseReleased",
-      x,
-      y,
-      button: "left",
-      clickCount: 1,
-    });
-  } catch (e) {
-    if (cdpMousePressed) {
-      throw new Error(
-        `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
-      );
+
+    let cdpMouseMoved = false;
+    let cdpMousePressed = false;
+    try {
+      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+      cdpMouseMoved = true;
+      // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
+      // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
+      if (target) {
+        await hitTestPointerTarget(tabId, target, x, y);
+      } else {
+        await callPointGuard(tabId, x, y, "confirm");
+      }
+      await sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x,
+        y,
+        button: "left",
+        clickCount: 1,
+      });
+      cdpMousePressed = true;
+      await sendCommand(tabId, "Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x,
+        y,
+        button: "left",
+        clickCount: 1,
+      });
+    } catch (e) {
+      if (cdpMousePressed) {
+        throw new Error(
+          `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
+        );
+      }
+      if (cdpMouseMoved) {
+        if (isPrePressTargetError(e)) throw e;
+        throw new Error(
+          `点击是否送达无法确认，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
+        );
+      }
+      // 尚未向页面派发任何 CDP 输入（如 DevTools 占用）时，才允许 DOM 回退一次
+      if (target) {
+        await ensureDomOps(tabId);
+        await callDom(
+          tabId,
+          (t: string) => {
+            const dom = window.__sideagent?.dom;
+            if (!dom) throw new Error("domops 未注入");
+            return dom.click(t);
+          },
+          [target],
+        );
+        await endCursorAction(tabId, cid, actionId, "done", [x, y]);
+        await recordCursorTrail(tabId, sessionId, x, y, true);
+        return { clicked: true };
+      }
+      throw e;
     }
-    if (cdpMouseMoved) {
-      if (isPrePressTargetError(e)) throw e;
-      throw new Error(
-        `点击是否送达无法确认，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
-      );
-    }
-    // 尚未向页面派发任何 CDP 输入（如 DevTools 占用）时，才允许 DOM 回退一次
-    if (target) {
-      await ensureDomOps(tabId);
-      await callDom(
-        tabId,
-        (t: string) => {
-          const dom = window.__sideagent?.dom;
-          if (!dom) throw new Error("domops 未注入");
-          return dom.click(t);
-        },
-        [target],
-      );
-      await recordCursorTrail(tabId, sessionId, x, y, true);
-      return { clicked: true };
-    }
-    throw e;
+    await endCursorAction(tabId, cid, actionId, "done", [x, y]);
+    await recordCursorTrail(tabId, sessionId, x, y, true);
+    return { clicked: true };
+  } catch (error) {
+    const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
+    await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");
+    throw error;
   }
-  await recordCursorTrail(tabId, sessionId, x, y, true);
-  return { clicked: true };
 }
 
 export async function fill(
@@ -919,7 +936,7 @@ export async function fill(
   const ref = parseRef(params.target);
   const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
 
-  // 1. 操作前元素高亮：必须在 scrollIntoView 之后取包围盒并展示呼吸框（静默兜底）
+  // 操作前在 scrollIntoView 之后取目标包围盒，动作边框持续到操作返回。
   let targetRect: DomRect | undefined;
   if (backendNodeId !== undefined) {
     try {
@@ -960,66 +977,59 @@ export async function fill(
     }
   }
 
-  if (targetRect) {
-    try {
-      await ensureCursor(tabId);
-      await callDom(
-        tabId,
-        (r: DomRect, id: string) => window.__sideagent?.cursor?.for(id)?.highlight(r),
-        [targetRect, cid],
-      );
-      await new Promise((r) => setTimeout(r, 500));
-    } catch {
-      // 页面禁止注入等场景静默跳过
+  const actionId = await beginCursorAction(tabId, cid, "fill", params.target);
+  try {
+    if (targetRect) {
+      await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
-    const cx = Math.round(targetRect.x + targetRect.width / 2);
-    const cy = Math.round(targetRect.y + targetRect.height / 2);
-    await cursorMove(tabId, cx, cy, cid);
-  }
 
-  // 2. 真实填充操作
-  if (backendNodeId !== undefined) {
-    try {
-      await fillBackendNode(tabId, backendNodeId, params.value);
-      if (targetRect) {
-        await cursorPark(tabId, cid);
-        await recordCursorTrail(
-          tabId,
-          sessionId,
-          Math.round(targetRect.x + targetRect.width / 2),
-          Math.round(targetRect.y + targetRect.height / 2),
-          false,
-        );
+    // 2. 真实填充操作
+    if (backendNodeId !== undefined) {
+      try {
+        await fillBackendNode(tabId, backendNodeId, params.value);
+        if (targetRect) {
+          await recordCursorTrail(
+            tabId,
+            sessionId,
+            Math.round(targetRect.x + targetRect.width / 2),
+            Math.round(targetRect.y + targetRect.height / 2),
+            false,
+          );
+        }
+        await endCursorAction(tabId, cid, actionId, "done");
+        return { filled: true };
+      } catch (e) {
+        if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+          throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
+        }
+        // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
       }
-      return { filled: true };
-    } catch (e) {
-      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
-        throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
-      }
-      // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
     }
-  }
-  await ensureDomOps(tabId);
-  await callDom(
-    tabId,
-    (t: string, v: string) => {
-      const dom = window.__sideagent?.dom;
-      if (!dom) throw new Error("domops 未注入");
-      return dom.fill(t, v);
-    },
-    [params.target, params.value],
-  );
-  if (targetRect) {
-    await cursorPark(tabId, cid);
-    await recordCursorTrail(
+    await ensureDomOps(tabId);
+    await callDom(
       tabId,
-      sessionId,
-      Math.round(targetRect.x + targetRect.width / 2),
-      Math.round(targetRect.y + targetRect.height / 2),
-      false,
+      (t: string, v: string) => {
+        const dom = window.__sideagent?.dom;
+        if (!dom) throw new Error("domops 未注入");
+        return dom.fill(t, v);
+      },
+      [params.target, params.value],
     );
+    if (targetRect) {
+      await recordCursorTrail(
+        tabId,
+        sessionId,
+        Math.round(targetRect.x + targetRect.width / 2),
+        Math.round(targetRect.y + targetRect.height / 2),
+        false,
+      );
+    }
+    await endCursorAction(tabId, cid, actionId, "done");
+    return { filled: true };
+  } catch (error) {
+    await endCursorAction(tabId, cid, actionId, "unknown");
+    throw error;
   }
-  return { filled: true };
 }
 
 export async function typeText(

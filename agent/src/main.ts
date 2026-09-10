@@ -28,6 +28,7 @@ import { createConversationRuntime } from "./conversation-runtime.js";
 import { ExperienceStore } from "./experience.js";
 import { MemoryStore } from "./memory-store.js";
 import { VoiceService } from "./voice-service.js";
+import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
 
 interface CliArgs {
@@ -137,15 +138,23 @@ async function main(): Promise<void> {
   const memoryStore = new MemoryStore(join(homedir(), ".sideagent", "memory"));
   const experienceStore = new ExperienceStore(join(homedir(), ".sideagent", "experiences"));
   let voice:VoiceService;
+  // Normal-use capture: the session's send-path evidence and the extension's own facts land in
+  // ~/.sideagent/voice-capture/. Recording never gates anything the voice session does.
+  const voiceCapture = new VoiceCaptureStore({log: message => log(message)});
+  const keepVoiceEvent = (msg: ServerMessage): void => {
+    if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record);
+  };
   const conversations = new ConversationManager(
     (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore }),
-    (msg) => {voice?.observe(msg);current?.send(msg);},
+    (msg) => {keepVoiceEvent(msg);voice?.observe(msg);current?.send(msg);},
     store,
     memoryStore,
     new TaskDispatcher(new TaskReceiptStore(join(homedir(), '.sideagent', 'task-receipts'))),
   );
   const initial = await conversations.ensureDefault();
-  voice = new VoiceService(id => conversations.getTaskProgress(id), msg => current?.send(msg), undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId));
+  // The voice session emits its own messages (including `diag` evidence), so this path must also
+  // reach the capture store; otherwise normal-use recording would silently write nothing.
+  voice = new VoiceService(id => conversations.getTaskProgress(id), msg => {keepVoiceEvent(msg);current?.send(msg);}, undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId));
   const session = initial.runtime.session;
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }
@@ -167,7 +176,14 @@ async function main(): Promise<void> {
   };
   const disposeAll = (): void => { voice.close(); conversations.dispose(); };
   const handleMessage = (msg: ClientMessage): void => {
-    if (msg.type === "voice") { void voice.handle(msg.conversationId ?? "default", msg); return; }
+    if (msg.type === "voice") {
+      const conversationId = msg.conversationId ?? "default";
+      // Extension-side capture facts never reach the upstream voice session.
+      if (msg.command.kind === "capture") { voiceCapture.command(msg.voiceId, conversationId, msg.command); return; }
+      if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId);
+      void voice.handle(conversationId, msg);
+      return;
+    }
     void conversations.handleMessage(msg).catch((err: unknown) => current?.send({
       type: "agent_event", conversationId: msg.conversationId,
       event: { kind: "error", message: err instanceof Error ? err.message : String(err) },

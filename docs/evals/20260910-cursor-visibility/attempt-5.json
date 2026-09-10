@@ -1,0 +1,252 @@
+{
+  "ok": false,
+  "records": [
+    {
+      "type": "check",
+      "name": "loaded cursor matches build",
+      "passed": true
+    },
+    {
+      "type": "tool",
+      "name": "open_tab",
+      "ok": true,
+      "elapsedMs": 1618
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 405
+    },
+    {
+      "type": "check",
+      "name": "fill shows actual action label",
+      "passed": true,
+      "data": {
+        "action": "d64a12c1-ca37-4a7c-b6ce-7bed25fd0b16",
+        "hidden": false,
+        "label": "正在填写 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 51.99479293823242,
+          "y": 51.99479293823242
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 24,
+        "y": 24
+      }
+    },
+    {
+      "type": "tool",
+      "name": "fill",
+      "ok": true,
+      "elapsedMs": 1249
+    },
+    {
+      "type": "check",
+      "name": "fill ends from execution receipt",
+      "passed": true,
+      "data": {
+        "action": "d64a12c1-ca37-4a7c-b6ce-7bed25fd0b16",
+        "hidden": false,
+        "label": "填写结束 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 598.5868530273438,
+          "y": 262
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 326,
+        "y": 287
+      }
+    },
+    {
+      "type": "check",
+      "name": "field name present and value absent",
+      "passed": true,
+      "data": {
+        "action": "d64a12c1-ca37-4a7c-b6ce-7bed25fd0b16",
+        "hidden": false,
+        "label": "填写结束 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 598.5868530273438,
+          "y": 262
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 326,
+        "y": 287
+      }
+    },
+    {
+      "type": "check",
+      "name": "click shows actual action label",
+      "passed": true,
+      "data": {
+        "action": "f2fa22b8-539e-48fe-87b7-1ec4299ee12f",
+        "hidden": false,
+        "label": "正在点击 · 下一步Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 133.53298950195312,
+          "x": 353.99481201171875,
+          "y": 314.9947814941406
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 41.770835876464844,
+          "width": 87.13542175292969,
+          "x": 65.9982681274414,
+          "y": 341.5625305175781
+        },
+        "x": 326,
+        "y": 287
+      }
+    },
+    {
+      "type": "tool",
+      "name": "click",
+      "ok": true,
+      "elapsedMs": 5542
+    },
+    {
+      "type": "check",
+      "name": "click ends from execution receipt",
+      "passed": true,
+      "data": {
+        "action": "f2fa22b8-539e-48fe-87b7-1ec4299ee12f",
+        "hidden": false,
+        "label": "已点击 · 下一步Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 120.27778625488281,
+          "x": 137.9947967529297,
+          "y": 389.9947814941406
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 41.770835876464844,
+          "width": 87.13542175292969,
+          "x": 65.9982681274414,
+          "y": 341.5625305175781
+        },
+        "x": 110,
+        "y": 362
+      }
+    },
+    {
+      "type": "check",
+      "name": "actual fill and exactly one click",
+      "passed": true,
+      "data": {
+        "count": 1,
+        "text": "已接收：cursor-test@example.com · 1次"
+      }
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 14
+    },
+    {
+      "type": "check",
+      "name": "snapshot exposes field AX ref",
+      "passed": true,
+      "data": "  [ref=2] textbox \"联系人姓名\""
+    },
+    {
+      "type": "tool",
+      "name": "fill",
+      "ok": true,
+      "elapsedMs": 502
+    },
+    {
+      "type": "check",
+      "name": "AX action labels and anchors same node",
+      "passed": true,
+      "data": {
+        "action": "37ef91b0-6f98-4d20-b74d-7be626041cce",
+        "hidden": false,
+        "label": "填写结束 · 联系人姓名Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 160.06077575683594,
+          "x": 1191.1788330078125,
+          "y": 262
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.5989990234375,
+          "x": 658.5850830078125,
+          "y": 263.5677185058594
+        },
+        "x": 919,
+        "y": 287
+      }
+    },
+    {
+      "type": "failure",
+      "error": "Error: 可视状态等待超时\n    at wait (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:34:180)\n    at async file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:77:5",
+      "diagnostic": {
+        "state": {
+          "action": "visual",
+          "hidden": false,
+          "label": "正在填写 · 联系邮箱Bunk",
+          "labelRect": {
+            "height": 49.9913215637207,
+            "width": 146.796875,
+            "x": 946.9948120117188,
+            "y": 314.9947814941406
+          },
+          "phase": "active",
+          "resting": false,
+          "size": 44,
+          "targetRect": {
+            "height": 45.99826431274414,
+            "width": 520.59033203125,
+            "x": 65.9982681274414,
+            "y": 263.5677185058594
+          },
+          "x": 919,
+          "y": 287
+        },
+        "visibility": "hidden"
+      }
+    }
+  ]
+}

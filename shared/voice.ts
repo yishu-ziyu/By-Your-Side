@@ -87,27 +87,83 @@ export type VoiceRouteResult = {plan?:VoicePlanSummary} & (
   | {kind:'steer'|'action';awaitDelivery?:boolean;ok:boolean;status?:TaskReceipt['status'];message:string;receipts?:TaskReceipt[];snapshot?:TaskProgressSnapshot});
 
 export type VoiceCommand =
-  | { kind: "start" }
+  /** Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio. */
+  | { kind: "start"; diagnostic?: true; capture?: true }
   | { kind: "stop" }
-  | { kind: "audio"; turn: number; data: string }
+  | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext }
   | { kind: "interrupt"; turn: number; played?: { itemId: string; ms: number } }
-  | { kind: "playback_done"; responseId: string };
+  | { kind: "playback_done"; responseId: string }
+  /**
+   * Facts only the extension can observe for one turn: the continuous PCM it captured, the text the
+   * panel rendered, or a user mark. One turn may arrive as several commands; the agent merges them by
+   * voiceId+turn, and nothing here changes what the voice session does.
+   */
+  | { kind: "capture"; turn: number; data?: string; sampleRate?: number; serverText?: string; displayText?: string; mark?: true; note?: string };
 export interface VoiceClientMessage { type: "voice"; voiceId: string; command: VoiceCommand }
+
+export const VOICE_DIAG_SAMPLE_RATE = 24000;
+/** One diagnostic take is bounded; longer speech is truncated, never silently claimed complete. */
+export const VOICE_DIAG_MAX_SECONDS = 60;
+export const VOICE_DIAG_TEXT_MAX = 12000;
+/** A normal-use capture carries a whole turn (60s at 24k ≈ 3.8M base64 chars); frames stay under `validPCM`. */
+export const VOICE_CAPTURE_MAX_BASE64 = 8_000_000;
+export const VOICE_CAPTURE_NOTE_MAX = 200;
+/** Raw ASR seen before the old-turn filter; `current` is this turn, `filtered` was dropped as an old turn. */
+export type VoiceDiagAsrOutcome = 'current' | 'filtered' | 'empty' | 'unknown';
+export type VoiceDiagGapCode = 'reconnect' | 'send_failed' | 'truncated' | 'closed';
+
+/**
+ * Upstream capture evidence, produced by the session on the real send path only.
+ * C1 is the concatenation of the `audio` payloads of the `append` records, i.e. exactly what the
+ * socket accepted; `frame` only aligns those bytes with the client's continuous 24k capture (C0).
+ */
+export type VoiceDiagRecord =
+  | { type: 'ready'; sampleRate: number; maxSeconds: number }
+  | { type: 'append'; seq: number; eventId: string; turn: number; frame: number | null; samples: number; audio: string }
+  | { type: 'commit'; seq: number; eventId: string; turn: number }
+  | { type: 'item'; turn: number; itemId: string }
+  | { type: 'asr'; turn: number | null; itemId: string; outcome: VoiceDiagAsrOutcome; text: string }
+  | { type: 'forward'; turn: number; itemId: string; text: string }
+  | { type: 'gap'; code: VoiceDiagGapCode; turn: number | null; detail?: string };
+
 export type VoiceEvent =
   | {kind:'reset_output';turn:number}
   | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean }
   | { kind: "audio"; turn: number; data: string; itemId: string; responseId: string }
   | { kind: "text"; turn: number; role: "user" | "assistant"; text: string }
   | { kind: "facts"; turn: number; snapshot: TaskProgressSnapshot }
-  | { kind: "response_end"; turn: number; responseId: string };
+  | { kind: "response_end"; turn: number; responseId: string }
+  | { kind: "diag"; record: VoiceDiagRecord };
 export interface VoiceServerMessage { type: "voice"; voiceId: string; event: VoiceEvent }
 
 const id = (v: unknown): v is string => typeof v === "string" && /^[\w-]{1,128}$/.test(v);
 const turn = (v: unknown) => Number.isSafeInteger(v) && Number(v) > 0;
 const serverTurn = (v:unknown)=>Number.isSafeInteger(v)&&Number(v)>=0;
+const diagTurn=(v:unknown)=>v===null||turn(v);
+const diagItemId=(v:unknown)=>typeof v==="string"&&v.length>=1&&v.length<=128;
+const diagTextField=(v:unknown)=>typeof v==="string"&&v.length<=VOICE_DIAG_TEXT_MAX;
+export function isVoiceDiagRecord(v: unknown): v is VoiceDiagRecord {
+  if (!v || typeof v !== "object") return false;
+  const r = v as Record<string, unknown>;
+  const seq = Number.isSafeInteger(r.seq) && Number(r.seq) > 0;
+  switch (r.type) {
+    case "ready": return Number.isFinite(r.sampleRate) && Number(r.sampleRate) > 0 && Number(r.sampleRate) <= 192000 && Number.isFinite(r.maxSeconds) && Number(r.maxSeconds) > 0 && Number(r.maxSeconds) <= 900;
+    case "append": return seq && id(r.eventId) && turn(r.turn) && (r.frame === null || Number.isSafeInteger(r.frame) && Number(r.frame) >= 0) && Number.isSafeInteger(r.samples) && Number(r.samples) > 0 && validPCM(r.audio);
+    case "commit": return seq && id(r.eventId) && turn(r.turn);
+    case "item": return turn(r.turn) && diagItemId(r.itemId);
+    case "asr": return diagTurn(r.turn) && diagItemId(r.itemId) && ["current", "filtered", "empty", "unknown"].includes(r.outcome as string) && diagTextField(r.text);
+    case "forward": return turn(r.turn) && diagItemId(r.itemId) && diagTextField(r.text);
+    case "gap": return ["reconnect", "send_failed", "truncated", "closed"].includes(r.code as string) && diagTurn(r.turn) && (r.detail === undefined || typeof r.detail === "string" && r.detail.length <= 200);
+    default: return false;
+  }
+}
 export function validPCM(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= 65536 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
+}
+/** Same rules as `validPCM`, but a capture command may carry a whole turn instead of one frame. */
+export function validCapturePCM(v: unknown): v is string {
+  return typeof v === "string" && v.length > 0 && v.length <= VOICE_CAPTURE_MAX_BASE64 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 }
 export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   if (!v || typeof v !== "object") return false;
@@ -115,11 +171,21 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   if (m.type !== "voice" || !id(m.voiceId) || !m.command || typeof m.command !== "object") return false;
   const c = m.command;
   switch (c.kind) {
-    case "start": case "stop": return true;
-    case "audio": return turn(c.turn) && validPCM(c.data);
+    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true);
+    case "stop": return true;
+    case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
     case "commit": return turn(c.turn);
     case "interrupt": return turn(c.turn) && (c.played === undefined || !!c.played && id(c.played.itemId) && Number.isFinite(c.played.ms) && c.played.ms >= 0);
     case "playback_done": return id(c.responseId);
+    /** A capture must carry at least one real fact; `note` alone is not evidence and is always optional. */
+    case "capture": return turn(c.turn)
+      && (c.data !== undefined || c.mark === true || c.serverText !== undefined || c.displayText !== undefined)
+      && (c.data === undefined || validCapturePCM(c.data))
+      && (c.sampleRate === undefined || typeof c.sampleRate === "number" && Number.isFinite(c.sampleRate) && Number(c.sampleRate) > 0 && Number(c.sampleRate) <= 192000)
+      && (c.serverText === undefined || diagTextField(c.serverText))
+      && (c.displayText === undefined || diagTextField(c.displayText))
+      && (c.mark === undefined || c.mark === true)
+      && (c.note === undefined || typeof c.note === "string" && c.note.length <= VOICE_CAPTURE_NOTE_MAX);
     default: return false;
   }
 }
@@ -174,6 +240,7 @@ export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {
     case "text": return serverTurn(e.turn) && ["user", "assistant"].includes(e.role) && typeof e.text === "string" && e.text.length <= 12000;
     case "facts": return serverTurn(e.turn) && isTaskProgressSnapshot(e.snapshot);
     case "response_end": return serverTurn(e.turn) && id(e.responseId);
+    case "diag": return isVoiceDiagRecord(e.record);
     default: return false;
   }
 }

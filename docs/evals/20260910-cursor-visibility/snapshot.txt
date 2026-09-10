@@ -1,0 +1,30 @@
+RootWebArea "光标可见性 · 操作验收" focused
+  [ref=15] heading "填写联系信息" level=1
+    [ref=59] text: 填写联系信息
+  [ref=60] text: 本地验收页：光标应指出当前字段和按钮，并清楚显示正在执行的动作。
+  [ref=19] heading "浅色页面" level=2
+    [ref=61] text: 浅色页面
+  [ref=62] text: 联系邮箱
+  [ref=1] textbox "联系邮箱" value="cursor-test@example.com"
+    [ref=335] text: cursor-test@example.com
+  [ref=23] button "下一步" focused
+    [ref=63] text: 下一步
+  [ref=346] text: 已接收：cursor-test@example.com · 1次
+  [ref=26] heading "深色页面" level=2
+    [ref=65] text: 深色页面
+  [ref=66] text: 联系人姓名
+  [ref=2] textbox "联系人姓名"
+  [ref=30] button "核对信息"
+    [ref=67] text: 核对信息
+  [ref=32] heading "复杂背景" level=2
+    [ref=68] text: 复杂背景
+  [ref=69] text: 任务主题
+  [ref=3] textbox "任务主题"
+  [ref=36] button "查看详情"
+    [ref=70] text: 查看详情
+  [ref=71] text: 内部滚动测试
+  [ref=39] button "滚动中的目标"
+    [ref=72] text: 滚动中的目标
+  [ref=196] button "logo icon"
+    [ref=194] image "logo icon"
+  [ref=236] button

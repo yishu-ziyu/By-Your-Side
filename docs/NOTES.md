@@ -1,8 +1,14 @@
 # 会话工作笔记
 
-## 最新交接（2026-09-10 15:51）
+使用方式：当前进度以 [STATUS](STATUS.md) 为准；关键决策、阶段完成、受阻或交接时更新续接结论，不重复抄验收证据。下文旧任务描述保留为历史记录，不能覆盖当前指令和状态入口。规范修订依据见[本轮验收](evals/20260910-working-rules-simplification.md)。
 
-用户真人反馈识别变差并要求全部commit/push后交给GPT 6 Pro，停止当前实施。最终收音变化没有通过真人验收；9类样本只验证人声触发，未验证真实ASR字词准确率。完整入口：[交接](tasks/20260910-voice-review/handoff-gpt6-pro.md)，截图与当前会话日志已随仓库保存。不得沿用此前“待试用”或机器通过为产品成功结论。
+## 光标可见性第一轮（2026-09-10）
+
+用户批准先做 P0。续接先看 [本轮验收](evals/20260910-cursor-visibility.md)及 STATUS；体验待用户判断后再进入 P1。页面可见性与操作成功分开检查：ChromeMain 工具可以在后台完成，但后台 RAF 不推进，截图和动作回执不能代替可见窗口中的运动检查。当前测试脚本使用唯一 request id、真实窗口可见性并恢复原前台，失败记录保留在验收文件。
+
+## 语音交接入口（2026-09-10）
+
+[交接与失败证据](tasks/20260910-voice-review/handoff-gpt6-pro.md) 保存识别退化反馈、截图、会话日志及验证边界；当前裁决见 STATUS。
 
 ## 人声检测第一处实施（2026-09-10）
 
@@ -28,9 +34,6 @@
 
 用户要求看得见测试：录音页已在日常Chrome打开；正式扩展已重载，但sidePanel.open被Chrome用户手势限制拒绝，待用户点击工具栏图标。没有偷偷切回无头验收。下一步从日常侧栏完成真实可见语音验证，明确区分合成输入与真人听感。CDP实际可连127.0.0.1:9222；chrome-devtools默认profile自动发现失败不代表浏览器不可连。
 
-
-> 由 agent 在每个子任务完成时主动维护（见 AGENTS.md「上下文管理默认行为」）。
-> 上下文压缩前的外置层：压缩丢失细节没关系，持久事实必须在这里。
 
 ## 任务收尾验收定义（2026-09-10）
 
@@ -1562,3 +1565,10 @@ Evaluator审定旧2测试迁移：新冻结标准明确内部事实不构成用�
 - 入口仍为 `.kimi-code/wiki/index.md`；目录名是历史路径，当前 Codex 主代理按 AGENTS.md 的收尾步骤直接维护，不依赖 Kimi 或退出事件。没有增加第二个经验库或后台机制。
 - 提案流程见 `.kimi-code/wiki/proposal-workflow.md`。待审文件放 proposals 根目录；裁决后归档在 proposal-archive，下次查重也覆盖历史 rejected 目录。流程说明放在 proposals 外，避免旧 Kimi 提醒脚本把说明文档误计成提案。
 - 本轮涉及 AGENTS.md、wiki 入口/日志/流程、新增 acceptance-entry-mismatch 经验和 acceptance-entry-field 提案，以及本轮 eval/devlog、STATUS 与本条记录。旧经验和 probe-scripts 提案保留；目的与范围、当前进度分别见 docs/evals/20260909-codex-experience-closeout.md 和 docs/STATUS.md。
+
+### 语音采集搬到正常使用路径（2026-09-10 晚）
+
+- 用户改方向：不再依赖手动诊断，改为他日常使用语音时自动采集，再据此分析识别问题。判定用的分层是：实际发给识别服务的字节（C1）、服务原始转写（旧轮过滤前）、实际转发文字、界面最终文字、连续收音（C0）。
+- 采集写在 agent 侧：`VoiceDiagnosticTrace` 把“记录”和“改变行为”拆成 `capture` / `blocking` 两个量，正常会话只 capture；`VoiceCaptureStore` 落 `~/.sideagent/voice-capture/`（JSONL + 每轮 c0/c1 WAV）。扩展只补 agent 看不到的事实：C0 一轮一次、界面文字、一键标记（`capture` 命令）。
+- 关键教训：语音消息有自己的发送通道（VoiceService 的 send 回调），挂在 ConversationManager emit 上的落盘钩子根本收不到 `diag`——加接线后必须顺着真实发送路径核一遍，模块内单测测不到这类组装错误。
+- 仍待真人验收：第一次实际使用后目录里是否真有记录、两份音频能否试听、标记是否一秒完成。识别退化未定位。

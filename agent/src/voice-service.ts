@@ -37,6 +37,11 @@ export class VoiceService {
     private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void) {}
   async handle(conversationId: string, message: VoiceClientMessage): Promise<void> {
     if (message.command.kind === "start") {
+      // Diagnostic capture is an explicit, server-confirmed mode; it is built without
+      // any route or steer callable, so a diagnostic session cannot touch tasks or pages.
+      // `capture` alone only turns recording on: the session still answers, routes and steers as usual.
+      const diag=message.command.diagnostic===true;
+      const capture=diag||message.command.capture===true;
       if (this.active?.id === message.voiceId && this.active.conversationId === conversationId) return;
       this.close();
       if (!this.snapshot(conversationId)) { this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail: "当前会话不可用，请重新选择会话。" } }); return; }
@@ -48,14 +53,16 @@ export class VoiceService {
       const announcedDeliveries=new Set<string>(initialDelivery?.id?[initialDelivery.id]:[]);
       const active = { id: message.voiceId, conversationId,observed:`${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id??'none'}`,startedAt:Date.now(),controls:new Set<string>(),notifiedControls:new Set<string>(),announcedDeliveries,streamedDeliveries:new Set<string>(),session: this.createSession({
         voiceId:message.voiceId,
-        earlyReplies:true,
+        earlyReplies:!diag,
+        ...(diag?{diagnosticMode:true}:{}),
+        ...(capture?{captureMode:true}:{}),
         getSnapshot: () => this.snapshot(conversationId),
         getTargets:this.targets,
         receiptAudioCache:this.receiptAudioCache,
         createSpeech:(key,callbacks)=>new StepTtsStream(key,STEP_VOICE,callbacks),
         diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),
-        ...(this.route ? {route: (text: string, startedAt: number | null, stillCurrent: () => boolean, context:VoiceRouteContext) => this.route!(conversationId, text, startedAt, () => this.active?.id === message.voiceId && stillCurrent(), context)} : {}),
-        ...(this.steer ? { steer: async (text: string, startedAt: number | null) => {
+        ...(this.route && !diag ? {route: (text: string, startedAt: number | null, stillCurrent: () => boolean, context:VoiceRouteContext) => this.route!(conversationId, text, startedAt, () => this.active?.id === message.voiceId && stillCurrent(), context)} : {}),
+        ...(this.steer && !diag ? { steer: async (text: string, startedAt: number | null) => {
           if (this.active?.id !== message.voiceId || this.active.conversationId !== conversationId) throw new Error("语音会话已结束，修改未发送。");
           await this.steer!(conversationId, text, startedAt);
         } } : {}),

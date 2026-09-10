@@ -26,6 +26,7 @@ import { markLabelPlacement } from "../shared/mark-label.js";
 import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
 import { displayNameFor } from "../../../shared/cast.js";
+import { cursorLabelPosition } from "../shared/cursor-label.js";
 import {
   CURSOR_ARROW_PATH,
   CURSOR_STROKE_HALO,
@@ -77,6 +78,9 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     replayTimer?: ReturnType<typeof setTimeout>;
     replayGen?: number;
     highlightEl?: HTMLDivElement;
+    action?: { id: string; kind: "click" | "fill" | "hover"; phase: "active" | "done" | "failed" | "unknown"; anchor?: Element; rect?: SideAgentRect; name: string; arrived?: boolean };
+    labelSize?: { width: number; height: number };
+    name: string;
     /** 拿住态：就地确认期间光标按住目标不放，名牌变双键；scroll/resize 按 anchor 重定位 */
     hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string };
   }
@@ -111,6 +115,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   let viewportHooked = false;
   const instances = new Map<string, Instance>();
   const liveMarks: LiveMark[] = [];
+  let actionFrame: number | undefined;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   function ensureDom(): void {
     if (host) return;
@@ -155,6 +161,15 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         transition: opacity 160ms ease;
         pointer-events: none;
       }
+      .cursor.acting .label {
+        background: #172033; color: #fff; border-left: 3px solid var(--c);
+        padding: 7px 11px; border-radius: 10px;
+        width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
+        font-size: 13px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
+        text-shadow: none; opacity: 1;
+      }
+      .action-text { display: block; }
+      .agent-name { display: block; color: #d5dbea; font-size: 11px; font-weight: 500; }
       /* 拿住：名牌保持成员色，内嵌确认红 / 取消灰双键（C 案） */
       .cursor.holding .label {
         display: inline-flex; align-items: center; gap: 6px;
@@ -194,6 +209,17 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         box-shadow: 0 0 0 1px rgba(255,255,255,0.4), 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
         animation: highlight-breathe 500ms cubic-bezier(.25, 1, .5, 1) forwards;
         will-change: opacity, transform;
+      }
+      .highlight.action-target {
+        animation: none; background: transparent; mix-blend-mode: normal;
+        border-width: 3px;
+        box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px #172033;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cursor, .label, .svg-wrap { transition: none; }
+        .cursor.pressing .svg-wrap { transform: none; }
+        .ripple, .ripple.r2 { animation: rip-reduced 200ms ease-out forwards; }
+        @keyframes rip-reduced { from { opacity: .95; } to { opacity: 0; } }
       }
       @keyframes highlight-breathe {
         0% { opacity: 0; transform: scale(0.97); }
@@ -325,6 +351,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
   function onViewportResize(): void {
     for (const inst of instances.values()) {
+      if (inst.action) {
+        inst.labelSize = undefined;
+        continue;
+      }
       if (inst.highlightEl) {
         inst.highlightEl.remove();
         inst.highlightEl = undefined;
@@ -338,11 +368,13 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     }
     relayoutMarks();
     relayoutHolds();
+    relayoutActions();
   }
 
   function onScroll(): void {
     relayoutMarks();
     relayoutHolds();
+    relayoutActions();
   }
 
   function liveAnchor(holder: { anchor: Element | null; target?: string }): Element | null {
@@ -425,6 +457,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       restIndex,
       pos: home,
       resting: true,
+      name: id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id),
     };
     instances.set(id, inst);
     return inst;
@@ -433,6 +466,93 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   function setPos(inst: Instance, p: { x: number; y: number }): void {
     inst.pos = p;
     inst.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    positionActionLabel(inst);
+  }
+
+  function positionActionLabel(inst: Instance): void {
+    if (!inst.action) return;
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    const size = inst.labelSize ??= { width: label.offsetWidth, height: label.offsetHeight };
+    const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight }, inst.action.rect);
+    label.style.left = `${p.x - inst.pos.x}px`;
+    label.style.top = `${p.y - inst.pos.y}px`;
+  }
+
+  function clearAction(inst: Instance): void {
+    inst.action = undefined;
+    inst.labelSize = undefined;
+    inst.el.classList.remove("acting");
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    label.removeAttribute("style");
+    label.textContent = inst.name;
+    inst.highlightEl?.remove();
+    inst.highlightEl = undefined;
+  }
+
+  function renderActionLabel(inst: Instance): void {
+    const action = inst.action!;
+    const verb = { click: "点击", fill: "填写", hover: "定位" }[action.kind];
+    const text = action.phase === "active" ? `正在${verb}`
+      : action.phase === "failed" ? "操作未完成"
+      : action.phase === "unknown" ? "结果待确认"
+      : action.kind === "click" ? "已点击" : `${verb}结束`;
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    const line = document.createElement("span");
+    line.className = "action-text";
+    line.textContent = text + (action.name ? ` · ${action.name}` : "");
+    const name = document.createElement("span");
+    name.className = "agent-name";
+    name.textContent = inst.name;
+    label.replaceChildren(line, name);
+    inst.labelSize = undefined;
+    positionActionLabel(inst);
+  }
+
+  function relayoutActions(): void {
+    for (const inst of instances.values()) {
+      const action = inst.action;
+      if (!action) continue;
+      if (action.anchor) {
+        if (!action.anchor.isConnected) {
+          clearAction(inst);
+          schedulePark(inst);
+          continue;
+        }
+        const r = action.anchor.getBoundingClientRect();
+        action.rect = { x: r.x, y: r.y, width: r.width, height: r.height };
+      }
+      const r = action.rect;
+      if (r && inst.highlightEl) {
+        const b = highlightBounds(r);
+        const visible = b && r.x + r.width > 0 && r.y + r.height > 0 && r.x < innerWidth && r.y < innerHeight;
+        inst.highlightEl.style.visibility = visible ? "" : "hidden";
+        if (b) Object.assign(inst.highlightEl.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, height: `${b.height}px` });
+        // 飞行结束后随实际元素移动，不重新解析同名节点。
+        if (visible && inst.action?.arrived && inst.raf === undefined) setPos(inst, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      }
+      positionActionLabel(inst);
+    }
+  }
+
+  function followActions(): void {
+    if (actionFrame !== undefined) return;
+    const tick = () => {
+      actionFrame = undefined;
+      relayoutActions();
+      if ([...instances.values()].some(inst => inst.action)) actionFrame = requestAnimationFrame(tick);
+    };
+    actionFrame = requestAnimationFrame(tick);
+  }
+
+  function actionName(anchor?: Element, fallback?: string): string {
+    // 不读取字段值或 contenteditable 正文；只使用控件名称。
+    const root = anchor?.getRootNode() as Document | ShadowRoot | undefined;
+    const labelledBy = anchor?.getAttribute("aria-labelledby")?.split(/\s+/).map(id => root?.getElementById?.(id)?.textContent ?? "").join(" ");
+    const labels = anchor && "labels" in anchor ? Array.from((anchor as HTMLInputElement).labels ?? []).map(el => el.textContent).join(" ") : "";
+    const editable = anchor?.matches("input, textarea, [contenteditable]");
+    const text = anchor?.getAttribute("aria-label") || labelledBy || labels || anchor?.getAttribute("title") ||
+      anchor?.getAttribute("placeholder") || (!editable ? anchor?.textContent : "") || fallback || "";
+    return text.trim().replace(/\s+/g, " ").slice(0, 40);
   }
 
   function setResting(inst: Instance, on: boolean): void {
@@ -460,8 +580,9 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     cancelFly(inst);
     const from = inst.pos;
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
-    if (dist < 2) {
+    if (dist < 2 || reducedMotion.matches) {
       setPos(inst, to);
+      if (inst.action) inst.action.arrived = true;
       return 0;
     }
     const ms = flightMs(from, to);
@@ -472,6 +593,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       if (t < 1) inst.raf = requestAnimationFrame(tick);
       else {
         inst.raf = undefined;
+        if (inst.action) inst.action.arrived = true;
         setPos(inst, to);
       }
     };
@@ -482,6 +604,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   function schedulePark(inst: Instance): void {
     clearTimeout(inst.parkTimer);
     inst.parkTimer = setTimeout(() => {
+      if (inst.action?.phase === "active") return;
+      if (inst.action) clearAction(inst);
       const home = restPoint(inst.restIndex, window.innerWidth);
       setResting(inst, true);
       flyTo(inst, home);
@@ -599,6 +723,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   /** 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌），名牌变双键。 */
   function holdInst(inst: Instance, x: number, y: number, actions: MarkAction[], target?: string): void {
     releaseHoldInst(inst);
+    if (inst.action) clearAction(inst);
     clearTimeout(inst.parkTimer);
     clearTimeout(inst.pressTimer);
     if (!inst.visible) showAtRest(inst);
@@ -896,6 +1021,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     cancelFly(inst);
     clearTimeout(inst.parkTimer);
     releaseHoldInst(inst);
+    if (inst.action) clearAction(inst);
     inst.el.classList.add("hidden");
     inst.el.classList.remove("pressing", "rest", "flip");
     inst.visible = false;
@@ -907,6 +1033,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   }
 
   function teardown(): void {
+    if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
+    actionFrame = undefined;
     for (const inst of instances.values()) {
       stopReplayInst(inst);
       cancelFly(inst);
@@ -928,6 +1056,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     marksLayer = null;
     ns.cursor = undefined;
     ns.cursorHidden = undefined;
+    ns.cursorState = undefined;
     ns.markLayout = undefined;
     ns.holdState = undefined;
     ns.holdActionLabels = undefined;
@@ -943,6 +1072,50 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
   function api(id: string): SideAgentCursor {
     return {
+      beginAction(actionId, kind, rect, anchor, label): void {
+        const inst = getInstance(id);
+        releaseHoldInst(inst);
+        clearTimeout(inst.parkTimer);
+        stopReplayInst(inst);
+        if (inst.action) clearAction(inst);
+        if (!inst.visible) showAtRest(inst);
+        inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label) };
+        setResting(inst, false);
+        inst.el.classList.add("acting");
+        if (rect && anchor) {
+          inst.highlightEl?.remove();
+          inst.highlightEl = document.createElement("div");
+          inst.highlightEl.className = "highlight action-target";
+          inst.highlightEl.style.setProperty("--c", inst.color);
+          highlightLayer!.appendChild(inst.highlightEl);
+        }
+        renderActionLabel(inst);
+        followActions();
+      },
+
+      endAction(actionId, outcome, point): void {
+        const inst = instances.get(id);
+        if (!inst?.action || inst.action.id !== actionId || inst.action.phase !== "active") return;
+        cancelFly(inst);
+        inst.action.phase = outcome;
+        if (outcome === "done" && inst.action.kind === "click" && point) {
+          setPos(inst, { x: point[0], y: point[1] });
+          api(id).click(point[0], point[1]);
+        }
+        if (outcome !== "done") {
+          inst.highlightEl?.remove();
+          inst.highlightEl = undefined;
+        }
+        renderActionLabel(inst);
+        schedulePark(inst);
+      },
+      arrive(x, y): void {
+        const inst = instances.get(id);
+        if (!inst?.visible) return;
+        cancelFly(inst);
+        if (inst.action) inst.action.arrived = true;
+        setPos(inst, { x, y });
+      },
       move(x: number, y: number): number {
         const inst = getInstance(id);
         releaseHoldInst(inst);
@@ -1049,6 +1222,14 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   }
 
   ns.cursor = api(DEFAULT_ID);
+  ns.cursorState = (id = DEFAULT_ID) => {
+    const inst = instances.get(id);
+    if (!inst) return null;
+    const r = inst.el.querySelector(".label")?.getBoundingClientRect();
+    return { action: inst.action?.id ?? null, phase: inst.action?.phase ?? null,
+      label: inst.el.querySelector(".label")?.textContent ?? "", labelRect: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null,
+      targetRect: inst.action?.rect ?? null, hidden: !inst.visible, resting: inst.resting, x: inst.pos.x, y: inst.pos.y, size: CURSOR_SVG_SIZE };
+  };
   ns.cursorHidden = () => {
     const inst = instances.get(DEFAULT_ID);
     return !inst || !inst.visible;

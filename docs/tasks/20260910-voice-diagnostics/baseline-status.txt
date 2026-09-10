@@ -1,0 +1,20 @@
+ M .kimi-code/wiki/index.md
+ M AGENTS.md
+ M docs/METHODOLOGY.md
+ M docs/NOTES.md
+ M docs/STATUS.md
+ M extension/src/background/exec/input.ts
+ M extension/src/content/cursor.ts
+ M extension/src/shared/cursor-path.ts
+ M extension/src/shared/cursor-visual.ts
+ M extension/src/sideagent.d.ts
+ M extension/test/click-integrity.test.ts
+?? .kimi-code/wiki/closeout.md
+?? "docs/devlog/20260910-08-\350\256\251\350\247\204\350\214\203\347\272\246\346\235\237\347\273\223\346\236\234\350\200\214\351\235\236\351\207\215\345\244\215\346\265\201\347\250\213.md"
+?? docs/evals/20260910-cursor-visibility.md
+?? docs/evals/20260910-cursor-visibility/
+?? docs/evals/20260910-working-rules-simplification.md
+?? extension/src/shared/cursor-label.ts
+?? extension/test/cursor-label.test.ts
+?? extension/test/fixtures/acceptance/cursor-visibility.html
+?? scripts/acceptance/cursor-visibility-run.mjs

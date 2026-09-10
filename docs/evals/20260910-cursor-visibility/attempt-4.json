@@ -1,0 +1,33 @@
+{
+  "ok": false,
+  "records": [
+    {
+      "type": "check",
+      "name": "loaded cursor matches build",
+      "passed": true
+    },
+    {
+      "type": "tool",
+      "name": "open_tab",
+      "ok": true,
+      "elapsedMs": 3
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 238
+    },
+    {
+      "type": "tool",
+      "name": "fill",
+      "ok": true,
+      "elapsedMs": 3
+    },
+    {
+      "type": "failure",
+      "error": "Error: service worker evaluate: Error: No tab with id: 29958237\n    at evaluateInWorker (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cdp.mjs:154:11)\n    at async file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:36:64\n    at async wait (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:33:77)\n    at async runAndCapture (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:36:14)\n    at async file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:60:16",
+      "diagnostic": null
+    }
+  ]
+}

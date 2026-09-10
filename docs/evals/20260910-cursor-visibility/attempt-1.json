@@ -1,0 +1,194 @@
+{
+  "ok": false,
+  "records": [
+    {
+      "type": "check",
+      "name": "loaded cursor matches build",
+      "passed": true
+    },
+    {
+      "type": "tool",
+      "name": "open_tab",
+      "ok": true,
+      "elapsedMs": 1507
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 393
+    },
+    {
+      "type": "check",
+      "name": "fill shows actual action label",
+      "passed": true,
+      "data": {
+        "action": "ccad181d-e8dc-4971-a4f5-9d3d6e673ef1",
+        "hidden": false,
+        "label": "正在填写 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.796875,
+          "x": 51.99479293823242,
+          "y": 51.99479293823242
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 24,
+        "y": 24
+      }
+    },
+    {
+      "type": "tool",
+      "name": "fill",
+      "ok": true,
+      "elapsedMs": 1213
+    },
+    {
+      "type": "check",
+      "name": "fill ends from execution receipt",
+      "passed": true,
+      "data": {
+        "action": "ccad181d-e8dc-4971-a4f5-9d3d6e673ef1",
+        "hidden": false,
+        "label": "填写结束 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.79685974121094,
+          "x": 276.97119140625,
+          "y": 174.70716857910156
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 248.97639167040194,
+        "y": 236.70370404774707
+      }
+    },
+    {
+      "type": "check",
+      "name": "field name present and value absent",
+      "passed": true,
+      "data": {
+        "action": "ccad181d-e8dc-4971-a4f5-9d3d6e673ef1",
+        "hidden": false,
+        "label": "填写结束 · 联系邮箱Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 146.79685974121094,
+          "x": 276.97119140625,
+          "y": 174.70716857910156
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 45.99826431274414,
+          "width": 520.59033203125,
+          "x": 65.9982681274414,
+          "y": 263.5677185058594
+        },
+        "x": 248.97639167040194,
+        "y": 236.70370404774707
+      }
+    },
+    {
+      "type": "check",
+      "name": "click shows actual action label",
+      "passed": true,
+      "data": {
+        "action": "f50e86de-2e88-4260-acd8-842ae54f77d0",
+        "hidden": false,
+        "label": "正在点击 · 下一步Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 133.53297424316406,
+          "x": 276.97119140625,
+          "y": 264.698486328125
+        },
+        "phase": "active",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 41.770835876464844,
+          "width": 87.13542175292969,
+          "x": 65.9982681274414,
+          "y": 341.5625305175781
+        },
+        "x": 248.97639167040194,
+        "y": 236.70370404774707
+      }
+    },
+    {
+      "type": "tool",
+      "name": "click",
+      "ok": true,
+      "elapsedMs": 5611
+    },
+    {
+      "type": "check",
+      "name": "click ends from execution receipt",
+      "passed": true,
+      "data": {
+        "action": "f50e86de-2e88-4260-acd8-842ae54f77d0",
+        "hidden": false,
+        "label": "已点击 · 下一步Bunk",
+        "labelRect": {
+          "height": 49.9913215637207,
+          "width": 120.27778625488281,
+          "x": 137.9947967529297,
+          "y": 389.9947814941406
+        },
+        "phase": "done",
+        "resting": false,
+        "size": 44,
+        "targetRect": {
+          "height": 41.770835876464844,
+          "width": 87.13542175292969,
+          "x": 65.9982681274414,
+          "y": 341.5625305175781
+        },
+        "x": 110,
+        "y": 362
+      }
+    },
+    {
+      "type": "check",
+      "name": "actual fill and exactly one click",
+      "passed": true,
+      "data": {
+        "count": 1,
+        "text": "已接收：cursor-test@example.com · 1次"
+      }
+    },
+    {
+      "type": "tool",
+      "name": "snapshot",
+      "ok": true,
+      "elapsedMs": 18
+    },
+    {
+      "type": "check",
+      "name": "snapshot exposes field AX ref",
+      "passed": false,
+      "data": "  [ref=2] textbox \"联系人姓名\""
+    },
+    {
+      "type": "failure",
+      "error": "AssertionError [ERR_ASSERTION]: snapshot exposes field AX ref\n    at check (file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:28:102)\n    at file:///Users/mahaoxuan/Desktop/ego/scripts/acceptance/cursor-visibility-run.mjs:67:40"
+    }
+  ]
+}

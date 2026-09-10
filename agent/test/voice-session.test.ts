@@ -64,7 +64,7 @@ describe("read-only Step voice session", () => {
     h.socket.server({ ...call, response_id: "r2", call_id: "c2", name: "click", arguments: '{"target":"submit"}' });
     expect(h.socket.sent.at(-1).item.output).toContain("只允许查询");
   });
-  it("drops late audio, transcripts and tool completions from an interrupted turn", () => {
+  it("keeps late audio and tool completions out of an interrupted turn, and carries its late half-sentence into the current one", () => {
     const h = setup(); h.input(); h.committed(); h.response();
     h.socket.server({ type: "response.audio.delta", response_id: "r1", item_id: "i1", delta: "AQABAA==" });
     h.input(2);
@@ -79,7 +79,8 @@ describe("read-only Step voice session", () => {
     expect(h.socket.sent.filter(e => e.type === "response.create")).toHaveLength(2);
     h.response("r2");
     h.socket.server({ type: "conversation.item.input_audio_transcription.completed", item_id: "u2", transcript: "new" });
-    expect(h.events.at(-1)).toEqual({ kind: "text", turn: 2, role: "user", text: "new" });
+    // 旧音频和旧工具调用仍旧丢弃；被打断那一轮迟到的半句属于用户正在说的这句话，必须并进来。
+    expect(h.events.at(-1)).toEqual({ kind: "text", turn: 2, role: "user", text: "old new" });
   });
   it("never treats an unacknowledged configuration or a failed connection as ready", () => {
     const socket = new Socket(); const emit = vi.fn();
