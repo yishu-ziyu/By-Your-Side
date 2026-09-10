@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExperienceRuntime, ExperienceStore, isUserCorrection, validateLesson, type ExperienceComplete } from "../src/experience.js";
@@ -53,6 +53,14 @@ describe("browser experience contract", () => {
     expect(records).toHaveLength(1); expect(records[0]).toMatchObject({ outcome: "unknown", job: "done" });
     expect(records[0]!.observations[0]!.text).toContain("exported:20");
     expect(await memory.list()).toEqual([]);
+  });
+  it("a single corrupt file is skipped instead of breaking every experience read", async () => {
+    const { root, runtime, store } = await fixture(); await initial(runtime);
+    await writeFile(join(root, "experiences", "broken.json"), "{ not json");
+    await writeFile(join(root, "experiences", "empty.json"), "null");
+    const records = await store.list("a");
+    expect(records).toHaveLength(1);
+    expect(records[0]!.observations[0]!.text).toContain("exported:20");
   });
   it("links direct correction, extracts grounded suggestion and recalls it in a new conversation", async () => {
     const { runtime, memory, store } = await fixture(); await initial(runtime); await correct(runtime);

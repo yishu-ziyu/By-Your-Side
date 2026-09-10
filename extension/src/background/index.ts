@@ -54,7 +54,7 @@ import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk 
 
 import { workerTabControl } from "./worker-tab-control.js";
 import { conversationForRecordingTab, demoSession, dismissDemo, isRecording, receiveSteps, resumeDemoIfRecording, startDemo, stopDemo, type DemoSession } from "./demo.js";
-import { dismissCandidate, injectObserver, isObserving, listCandidates, patternCount, recordRun, setObserving, stopObserver, consumeCandidate } from "./observe.js";
+import { applyObserveAction, injectObserver, isObserving, listCandidates, patternCount, recordRun } from "./observe.js";
 import {
   clearCursorStatus,
   clearAmbientCursorStatus,
@@ -604,20 +604,11 @@ function demoRefusal(name: ToolName): string | undefined {
 }
 
 /**
- * 观察开关与候选处置。默认关：打开才注入，关掉立刻停并清掉未成的片断。
- * 「以后替我跑」的兑现路径在这里：把候选的骨架交给编译（走 skill_compile 同一条路），
- * 生成技能后把候选消费掉，同一件事不再问第二遍。
+ * 观察开关与候选处置。动作语义全在 observe.ts（含 accept 消费候选），这里只负责广播最新状态。
  */
 async function handleObserveControl(action: "on" | "off" | "list" | "dismiss" | "accept", signature?: string, hostname?: string): Promise<void> {
-  if (action === "on") { await setObserving(true); emitObserve(); return; }
-  if (action === "off") {
-    for (const tabId of (await chrome.tabs.query({ active: true }))) if (tabId.id != null) await stopObserver(tabId.id);
-    await setObserving(false);
-    emitObserve();
-    return;
-  }
-  if (action === "dismiss" && signature && hostname) { await dismissCandidate(signature, hostname); emitObserve(); return; }
-  emitObserve();
+  await applyObserveAction(action, signature, hostname);
+  await emitObserve();
 }
 
 async function emitObserve(): Promise<void> {

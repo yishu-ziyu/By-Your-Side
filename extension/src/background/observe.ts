@@ -72,6 +72,31 @@ export async function stopObserver(tabId: number): Promise<void> {
   }
 }
 
+/** 面板动作 → 状态变更（含开关、候选处置）。`accept` 必须消费候选，否则下次还会问同一件事。 */
+export async function applyObserveAction(
+  action: "on" | "off" | "list" | "dismiss" | "accept",
+  signature?: string,
+  hostname?: string,
+): Promise<void> {
+  if (action === "accept") {
+    if (signature && hostname) await consumeCandidate(signature, hostname);
+    return;
+  }
+  if (action === "dismiss") {
+    if (signature && hostname) await dismissCandidate(signature, hostname);
+    return;
+  }
+  if (action === "on") { await setObserving(true); return; }
+  if (action === "off") {
+    try {
+      for (const tab of await chrome.tabs.query({ active: true })) if (tab.id != null) await stopObserver(tab.id);
+    } catch {
+      /* 受限环境：至少把开关落下去 */
+    }
+    await setObserving(false);
+  }
+}
+
 async function load(): Promise<ObservedPattern[]> {
   if (patterns) return patterns;
   try {

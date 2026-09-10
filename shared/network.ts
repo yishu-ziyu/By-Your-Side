@@ -166,7 +166,8 @@ export function selectNetworkEntries(entries: readonly NetworkEntry[], query: Ne
     if (needle && !entry.url.toLowerCase().includes(needle)) return false;
     return true;
   });
-  const limit = Math.min(NETWORK_MAX_LIMIT, Math.max(1, Math.round(query.limit ?? NETWORK_DEFAULT_LIMIT)));
+  const requested = Number.isFinite(query.limit) ? Math.trunc(query.limit!) : NETWORK_DEFAULT_LIMIT;
+  const limit = Math.min(NETWORK_MAX_LIMIT, Math.max(1, requested));
   return { shown: matched.slice(Math.max(0, matched.length - limit)), matched: matched.length };
 }
 

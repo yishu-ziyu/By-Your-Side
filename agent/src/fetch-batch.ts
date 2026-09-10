@@ -37,7 +37,8 @@ export interface FetchPagesReply {
   data: { pages: FetchPageResult[]; saved: string[]; failed: number; totalBytes: number; count: number };
 }
 
-/** 页码列表；非法范围拒绝（不发请求）。 */
+/** 页码列表；非法范围拒绝（不发请求）。边生成边限页数：
+ * `to` 给成超大整数时，先填满上限立刻报错，不把循环跑到底。 */
 export function pageNumbers(range: FetchPagesRange): number[] {
   const step = range.step ?? 1;
   if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || !Number.isInteger(step)) {
@@ -46,9 +47,11 @@ export function pageNumbers(range: FetchPagesRange): number[] {
   if (step < 1) throw new Error("fetch.pages.step 必须 >= 1。");
   if (range.to < range.from) throw new Error("fetch.pages 需要 from <= to。");
   const pages: number[] = [];
-  for (let page = range.from; page <= range.to; page += step) pages.push(page);
-  if (pages.length > FETCH_PAGE_LIMIT) {
-    throw new Error(`fetch.pages 一次最多 ${FETCH_PAGE_LIMIT} 页（收到 ${pages.length} 页）。请分批调用。`);
+  for (let page = range.from; page <= range.to; page += step) {
+    if (pages.length >= FETCH_PAGE_LIMIT) {
+      throw new Error(`fetch.pages 一次最多 ${FETCH_PAGE_LIMIT} 页。请分批调用。`);
+    }
+    pages.push(page);
   }
   return pages;
 }

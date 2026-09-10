@@ -236,4 +236,18 @@ describe("观察（background 侧）", () => {
     await mod.setObserving(false);
     expect(await mod.patternCount()).toBe(0);
   });
+
+  it("accept 会消费候选：同一件事不再问第二遍", async () => {
+    observeHarness();
+    const mod = await import("../src/background/observe.js");
+    mod.resetObserveForTests();
+    await mod.setObserving(true);
+    const day = 24 * 60 * 60 * 1000;
+    for (const at of [0, day, 3 * day]) await mod.recordRun({ hostname: "x.com", anchors, at });
+    const candidate = (await mod.listCandidates())[0]!;
+    expect(candidate).toBeTruthy();
+    await mod.applyObserveAction("accept", candidate.signature, "x.com");
+    expect(await mod.listCandidates()).toHaveLength(0);
+    expect(await mod.patternCount()).toBe(0);
+  });
 });

@@ -44,7 +44,13 @@ export class ExperienceStore {
     catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return []; throw e; }
     const records: BrowserExperience[] = [];
     for (const name of names.filter(n => /^[a-zA-Z0-9_-]+\.json$/.test(n))) {
-      const record = JSON.parse(await readFile(join(this.directory, name), "utf8")) as BrowserExperience;
+      // 单个坏文件只跳过它：一个半截文件不能拖垮全部经验读取（与 SkillStore 同约定）。
+      let record: BrowserExperience;
+      try {
+        const parsed: unknown = JSON.parse(await readFile(join(this.directory, name), "utf8"));
+        if (!parsed || typeof parsed !== "object") continue;
+        record = parsed as BrowserExperience;
+      } catch { continue; }
       if (record.conversationId === conversationId && validMemoryId(record.id) && Array.isArray(record.observations) && Array.isArray(record.feedback)) records.push(record);
     }
     return records.sort((a, b) => a.startedAt - b.startedAt);

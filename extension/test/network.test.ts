@@ -122,6 +122,12 @@ describe("network 筛选", () => {
     expect(shown.map((e) => e.requestId)).toEqual(["c", "d"]);
     expect(matched).toBe(4);
   });
+
+  it("limit 非数值/越界时回到默认与钳制，不会失去限制", () => {
+    expect(selectNetworkEntries(entries, { types: "all", limit: Number.NaN }).shown).toHaveLength(4);
+    expect(selectNetworkEntries(entries, { types: "all", limit: 0 }).shown.map((e) => e.requestId)).toEqual(["d"]);
+    expect(selectNetworkEntries(entries, { types: "all", limit: 1e9 }).shown).toHaveLength(4);
+  });
 });
 
 describe("URL 凭据隐去", () => {

@@ -34,6 +34,11 @@ describe("批量翻页参数", () => {
     expect(pageNumbers({ from: 1, to: 20 })).toHaveLength(20);
   });
 
+  it("超大 to 不会把页码循环跑到底（边生成边限页数）", () => {
+    expect(() => pageNumbers({ from: 1, to: Number.MAX_SAFE_INTEGER })).toThrow(/最多 20 页/);
+    expect(() => pageNumbers({ from: 1, to: 1e15 })).toThrow(/最多 20 页/);
+  });
+
   it("{page} 占位符全部替换", () => {
     expect(substitutePage("https://x.test/a/{page}/b?page={page}", 7)).toBe("https://x.test/a/7/b?page=7");
   });
