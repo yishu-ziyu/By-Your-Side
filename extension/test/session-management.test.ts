@@ -32,9 +32,11 @@ describe("background conversation isolation", () => {
   p.onMessage.emit({kind:"client",msg:{type:"user_message",text:"A first",conversationId:"default"}}); await settle();
   wire.callbacks.onServerMessage({type:"agent_event",conversationId:"B",event:{kind:"text_delta",text:"B late"}}); await settle();
   p.onMessage.emit({kind:"client",msg:{type:"user_message",text:"A second",conversationId:"default"}}); await settle();
-  expect(storage["history:default"].filter((e:any)=>e.item.kind==="user").map((e:any)=>e.item.text)).toEqual(["A first","A second"]);
-  expect(JSON.stringify(storage["history:default"])).not.toContain("B late");
-  expect(JSON.stringify(storage["history:B"])).toContain("B late");
+  // 落盘形状是 {updatedAt, entries}；旧格式裸数组在 restore 里仍兼容
+  const storedEntries = (key: string) => storage[key]?.entries ?? storage[key] ?? [];
+  expect(storedEntries("history:default").filter((e:any)=>e.item.kind==="user").map((e:any)=>e.item.text)).toEqual(["A first","A second"]);
+  expect(JSON.stringify(storedEntries("history:default"))).not.toContain("B late");
+  expect(JSON.stringify(storedEntries("history:B"))).toContain("B late");
   expect(wire.sent.filter(m=>m.type==="user_message").map(m=>m.conversationId)).toEqual(["B","default","default"]);
  });
  it("reopening a panel synchronizes the chosen conversation without resetting another runtime", async () => {

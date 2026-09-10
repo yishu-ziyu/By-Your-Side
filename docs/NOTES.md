@@ -1,10 +1,36 @@
 # 会话工作笔记
 
+## 侧栏显示「未连接」：真因是扩展存储写满（2026-09-11 凌晨）
+
+用户报侧栏「未连接」。**先分清两条线**：面板 ⇆ 后台 service worker 的重连是好的（实测停掉后台 10 秒内自己恢复），坏的是后台根本没起来，因此没有进程去拉伴随进程。以后先看后台在不在，再谈网络。
+
+真故障：`chrome.storage.local` 被 `history:<会话 id>` 键写满（10,485,715 / 10,485,760 字节），后台刷 `Resource::kQuotaBytes quota exceeded`，草稿、模式、token 全部静默失败。已修，见 STATUS 与[本轮验收](evals/20260910-panel-history-quota.md)。
+
+**关键机制（下次别再猜）**：服务端给**每个会话**推 status，`recordAndBroadcastHistory()` 在 `status idle` 时落盘 —— 每个会话一个 `history:` 键是被这条路径批量写出来的，不只是历史积累。所以清理不能只在启动时做；现在每次落盘合并触发一次延后 5 秒的清理，并且只剩 status 的会话根本不落盘。
+
+排查用的入口（真机、只读）：CDP `127.0.0.1:9222`，attach 到 sidepanel 页 target，读 `chrome.storage.local.getBytesInUse(null)` / `get(null)`；后台 service worker 不在运行时，从面板侧 `chrome.runtime.connect()` 会把它唤醒。`chrome://extensions` 的 `chrome.developerPrivate.getExtensionsInfo()` 可读运行时告警。
+
+**坑**：`~/.sideagent/wrapper-err.log` 没有时间戳，多进程共用同一个 stderr 文件，**不能按行序推断时间**；带时间戳的是 `~/.sideagent/agent.log`（ISO，UTC）。另外我的探针脚本第一次按 `background.js` 匹配 service worker，命中了**别的扩展**的 SW，读到的存储是别人的——按扩展 ID 过滤。
+
+## 光标状态层人裁（2026-09-11）
+
+用户跑完真机任务反馈「还可以」，人裁记为可用。遮挡（是否压住 logo/正文）、字号、跨页胶囊手感没有逐项确认，属于未收集的观察，不要当成已通过写入结论。
+
 使用方式：当前进度以 [STATUS](STATUS.md) 为准；关键决策、阶段完成、受阻或交接时更新续接结论，不重复抄验收证据。下文旧任务描述保留为历史记录，不能覆盖当前指令和状态入口。规范修订依据见[本轮验收](evals/20260910-working-rules-simplification.md)。
+
+## 光标状态层第二轮（2026-09-10）
+
+补修（22:00）：真机里被拦下的点击（用户还没确认、鼠标没派发）被回执记成"已执行"，账本于是判完成——模型自己都起疑又读页面。现在回执按未执行上报，写作项转"结果未定"（只能靠页面前后读数解除）、只读项退回待做；`unknown` 不会被重新登记洗回 `pending`，所以模型没法把没做成的动作当可重试项再点一次。全量 1122 项、typecheck、build 通过，扩展已重载；22:32 宿主重连（ego lite 与 Dia），对之后的每一轮生效。见[本轮验收](evals/20260910-held-click-not-executed.md)。未决："取消会清掉整页标注"未授权（写在[上一轮验收](evals/20260910-held-confirm-mark-cleanup.md)）；确认/取消后没有回执给这一项收尾，账本只能靠模型读页面解除。
+
+补修（21:40）：真机里"待确认"名牌在用户确认后留在页面上。拿住态（hold）持有锚框标注元素，`releaseHoldInst` 现在连它一起撤掉；页面上模型画的其它标注不动。定向检查 `extension/test/overlay-check.mjs` 已加"任务标注不陪葬"的用例，并验证过没有修复时该用例会失败。
+
+用户先看 `docs/previews/cursor-status-round2.html` 定样态，再拍板"字号再小一点"后开始实现。续接先看 [本轮验收](evals/20260910-cursor-status.md) 及 STATUS。分工：文案/颜色/计时/胶囊在页面侧，状态、目标标签页与生命周期在 background 的 `cursor-status.ts`；状态按执行键（会话+成员）隔离，跨会话同名成员不互相覆盖。用户接管与主动停止都走 `suppressCursorStatus`，到下一次 `agent_start` 才恢复。
+
+未决取舍：非读类工具执行期间沿用"正在等模型响应"（不新增未批准的第六种文案）；等待秒数每次状态重置从 0 起算；跨页胶囊只在等待/读页面阶段出现。
 
 ## 光标可见性第一轮（2026-09-10）
 
-用户批准先做 P0。续接先看 [本轮验收](evals/20260910-cursor-visibility.md)及 STATUS；体验待用户判断后再进入 P1。页面可见性与操作成功分开检查：ChromeMain 工具可以在后台完成，但后台 RAF 不推进，截图和动作回执不能代替可见窗口中的运动检查。当前测试脚本使用唯一 request id、真实窗口可见性并恢复原前台，失败记录保留在验收文件。
+用户批准先做 P0，看录屏后确认第一轮可用，第二轮已交接给上面的状态层。排查历史请看 [第一轮验收](evals/20260910-cursor-visibility.md)。页面可见性与操作成功分开检查：ChromeMain 工具可以在后台完成，但后台 RAF 不推进，截图和动作回执不能代替可见窗口中的运动检查。当前测试脚本使用唯一 request id、真实窗口可见性并恢复原前台，失败记录保留在验收文件。
 
 ## 语音交接入口（2026-09-10）
 

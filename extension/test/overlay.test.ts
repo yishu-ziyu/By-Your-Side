@@ -76,8 +76,10 @@ describe("highlight / mark 几何", () => {
 });
 
 describe("cursor visual / palette", () => {
-  it("光标尺寸与描边大于旧版 27px/1.6，保证浅深底对比", () => {
-    expect(CURSOR_SVG_SIZE).toBeGreaterThanOrEqual(36);
+  it("光标尺寸锁定用户拍板值，描边仍大于旧版 27px/1.6", () => {
+    // 2026-09-10 为对比加大到 44；2026-09-11 用户反馈左上角压住 logo，要求小约 20%（44 → 35）。
+    // 原为下限断言（≥36），改为锁定该决定，防止以后无意改动。
+    expect(CURSOR_SVG_SIZE).toBe(35);
     expect(CURSOR_STROKE_WHITE).toBeGreaterThanOrEqual(2);
     expect(CURSOR_STROKE_HALO).toBeGreaterThan(CURSOR_STROKE_WHITE);
   });

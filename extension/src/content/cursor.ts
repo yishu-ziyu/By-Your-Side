@@ -65,6 +65,14 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   const DEFAULT_ID = LEAD_CURSOR_ID;
   const DEFAULT_LABEL = "By Your Side";
 
+  /** 状态文案与颜色是页面侧的唯一来源，background 只给状态名与目标标签页。 */
+  const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; clock?: boolean; autoHideMs?: number }> = {
+    waiting: { text: "正在等模型响应", color: "#f59e0b", clock: true },
+    reading: { text: "正在读这个页面", color: "#2f6fed" },
+    done: { text: "完成", color: "#16a34a", autoHideMs: 1500 },
+    failed: { text: "这一步没做成", sub: "可以让我重试", color: "#e2554f" },
+  };
+
   interface Instance {
     el: HTMLDivElement;
     color: string;
@@ -81,8 +89,32 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     action?: { id: string; kind: "click" | "fill" | "hover"; phase: "active" | "done" | "failed" | "unknown"; anchor?: Element; rect?: SideAgentRect; name: string; arrived?: boolean };
     labelSize?: { width: number; height: number };
     name: string;
+    /** 状态层：一轮任务里"在等 / 在读 / 完成 / 失败"。动作名牌优先于它显示。 */
+    status?: CursorStatus;
     /** 拿住态：就地确认期间光标按住目标不放，名牌变双键；scroll/resize 按 anchor 重定位 */
-    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string };
+    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string; mark?: HTMLDivElement };
+  }
+
+  type CursorStatusState = "waiting" | "reading" | "done" | "failed";
+
+  interface CursorStatus {
+    state: CursorStatusState;
+    text: string;
+    /** 第二行：clock 走秒数（等待），否则用 detail / 默认文案 / 成员名 */
+    detail: string;
+    sub: string;
+    clock: boolean;
+    since: number;
+    autoHideMs?: number;
+    tick?: ReturnType<typeof setInterval>;
+    clearTimer?: ReturnType<typeof setTimeout>;
+  }
+
+  interface CursorStatusView {
+    state: CursorStatusState;
+    text?: string;
+    detail?: string;
+    autoHideMs?: number;
   }
 
   interface MarkOptions {
@@ -163,13 +195,22 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       }
       .cursor.acting .label {
         background: #172033; color: #fff; border-left: 3px solid var(--c);
-        padding: 7px 11px; border-radius: 10px;
+        padding: 4px 8px; border-radius: 10px;
         width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
-        font-size: 13px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
+        font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
         text-shadow: none; opacity: 1;
       }
       .action-text { display: block; }
-      .agent-name { display: block; color: #d5dbea; font-size: 11px; font-weight: 500; }
+      .agent-name { display: block; color: #d5dbea; font-size: 9.5px; font-weight: 500; }
+      /* 状态层：等待 / 读页面 / 完成 / 失败。与动作名牌同一块，左侧色条按状态上色 */
+      .cursor.stating .label {
+        background: #172033; color: #fff; border-left: 3px solid var(--s, #2f6fed);
+        padding: 4px 8px; border-radius: 10px;
+        width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
+        font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
+        text-shadow: none; opacity: 1;
+      }
+      .cursor.rest.stating .label { opacity: 1; }
       /* 拿住：名牌保持成员色，内嵌确认红 / 取消灰双键（C 案） */
       .cursor.holding .label {
         display: inline-flex; align-items: center; gap: 6px;
@@ -197,6 +238,25 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       @keyframes rip {
         from { transform: scale(.5); opacity: .95; }
         to { transform: scale(4.2); opacity: 0; }
+      }
+      /* 跨页胶囊：它在别的标签页干活时，当前页右上角留一个可点入口 */
+      .xpage {
+        position: absolute; right: 20px; top: 20px;
+        display: none; align-items: center; gap: 9px;
+        max-width: min(320px, calc(100vw - 40px));
+        padding: 8px 12px; border-radius: 10px;
+        background: rgba(23, 32, 51, .95); color: #fff;
+        box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 8px 24px rgba(15,23,42,.35);
+        font: 600 12.5px/1.4 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        pointer-events: auto; cursor: pointer;
+      }
+      .xpage.on { display: flex; }
+      .xpage .xdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+      .xpage .xtxt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .xpage .xmain { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .xpage .xsub {
+        font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.62);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .highlight {
         position: absolute;
@@ -466,7 +526,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   function setPos(inst: Instance, p: { x: number; y: number }): void {
     inst.pos = p;
     inst.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
-    positionActionLabel(inst);
+    if (inst.action) positionActionLabel(inst);
+    else if (inst.status && !inst.hold) inst.el.classList.toggle("flip", p.x > window.innerWidth * 0.6);
   }
 
   function positionActionLabel(inst: Instance): void {
@@ -482,11 +543,42 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     inst.action = undefined;
     inst.labelSize = undefined;
     inst.el.classList.remove("acting");
+    inst.highlightEl?.remove();
+    inst.highlightEl = undefined;
+    refreshLabel(inst);
+  }
+
+  /** 名牌正文渲染：动作与状态共用同一块牌子。 */
+  function paintLabel(inst: Instance, main: string, sub: string): void {
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    const line = document.createElement("span");
+    line.className = "action-text";
+    line.textContent = main;
+    const name = document.createElement("span");
+    name.className = "agent-name";
+    name.textContent = sub;
+    label.replaceChildren(line, name);
+    inst.labelSize = undefined;
+    positionActionLabel(inst);
+  }
+
+  /** 优先级：拿住双键 > 动作 > 状态 > 成员名。 */
+  function refreshLabel(inst: Instance): void {
+    if (inst.hold) return;
+    if (inst.action) {
+      inst.el.classList.remove("stating");
+      renderActionLabel(inst);
+      return;
+    }
+    if (inst.status) {
+      renderStatusLabel(inst);
+      return;
+    }
+    inst.el.classList.remove("stating");
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
     label.removeAttribute("style");
     label.textContent = inst.name;
-    inst.highlightEl?.remove();
-    inst.highlightEl = undefined;
+    inst.labelSize = undefined;
   }
 
   function renderActionLabel(inst: Instance): void {
@@ -496,16 +588,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       : action.phase === "failed" ? "操作未完成"
       : action.phase === "unknown" ? "结果待确认"
       : action.kind === "click" ? "已点击" : `${verb}结束`;
-    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
-    const line = document.createElement("span");
-    line.className = "action-text";
-    line.textContent = text + (action.name ? ` · ${action.name}` : "");
-    const name = document.createElement("span");
-    name.className = "agent-name";
-    name.textContent = inst.name;
-    label.replaceChildren(line, name);
-    inst.labelSize = undefined;
-    positionActionLabel(inst);
+    paintLabel(inst, text + (action.name ? ` · ${action.name}` : ""), inst.name);
   }
 
   function relayoutActions(): void {
@@ -561,6 +644,82 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     inst.el.classList.toggle("flip", on && restOnRight(inst.restIndex));
   }
 
+  // ── 状态层：在等 / 在读 / 完成 / 失败 ────────────────────────────────
+
+  function statusSub(inst: Instance): string {
+    const status = inst.status!;
+    if (status.clock) return `已等 ${Math.max(0, Math.floor((Date.now() - status.since) / 1000))} 秒`;
+    return status.detail || status.sub || inst.name;
+  }
+
+  function renderStatusLabel(inst: Instance): void {
+    const status = inst.status!;
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    label.removeAttribute("style");
+    inst.labelSize = undefined;
+    inst.el.classList.add("stating");
+    inst.el.style.setProperty("--s", STATUS_COPY[status.state].color);
+    inst.el.classList.toggle("flip", inst.pos.x > window.innerWidth * 0.6);
+    paintLabel(inst, status.text, statusSub(inst));
+  }
+
+  function clearStatusTimers(inst: Instance): void {
+    if (inst.status?.tick !== undefined) clearInterval(inst.status.tick);
+    if (inst.status?.clearTimer !== undefined) clearTimeout(inst.status.clearTimer);
+  }
+
+  function startStatusTimers(inst: Instance): void {
+    const status = inst.status!;
+    const copy = STATUS_COPY[status.state];
+    if (copy.clock) {
+      const since = status.since;
+      status.tick = setInterval(() => {
+        // 动作名牌或拿住双键接管时不动别人的第二行
+        if (inst.status !== status || !inst.el.classList.contains("stating")) return;
+        const line = inst.el.querySelector<HTMLDivElement>(".agent-name");
+        if (line) line.textContent = `已等 ${Math.max(0, Math.floor((Date.now() - since) / 1000))} 秒`;
+      }, 1000);
+    }
+    const hideAfter = status.autoHideMs ?? copy.autoHideMs;
+    if (hideAfter !== undefined) {
+      status.clearTimer = setTimeout(() => {
+        clearStatusInst(inst);
+        parkNow(inst);
+      }, hideAfter);
+    }
+  }
+
+  function setStatusInst(inst: Instance, view: CursorStatusView): void {
+    const copy = STATUS_COPY[view.state];
+    if (!copy) return;
+    clearStatusTimers(inst);
+    inst.status = {
+      state: view.state,
+      text: view.text || copy.text,
+      detail: view.detail || "",
+      sub: copy.sub || "",
+      clock: Boolean(copy.clock),
+      since: Date.now(),
+      autoHideMs: view.autoHideMs,
+    };
+    if (!inst.visible) showAtRest(inst);
+    // 失败停在原地等处理：取消自动回角落，别把出错位置挪走
+    if (view.state === "failed") {
+      clearTimeout(inst.parkTimer);
+      setResting(inst, false);
+    }
+    startStatusTimers(inst);
+    // 拿住态（就地确认双键）优先，状态等松开后再画
+    if (!inst.hold) renderStatusLabel(inst);
+  }
+
+  function clearStatusInst(inst: Instance): void {
+    if (!inst.status) return;
+    clearStatusTimers(inst);
+    inst.status = undefined;
+    refreshLabel(inst);
+  }
+
   function cancelFly(inst: Instance): void {
     if (inst.raf !== undefined) {
       cancelAnimationFrame(inst.raf);
@@ -603,13 +762,16 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
   function schedulePark(inst: Instance): void {
     clearTimeout(inst.parkTimer);
-    inst.parkTimer = setTimeout(() => {
-      if (inst.action?.phase === "active") return;
-      if (inst.action) clearAction(inst);
-      const home = restPoint(inst.restIndex, window.innerWidth);
-      setResting(inst, true);
-      flyTo(inst, home);
-    }, PARK_AFTER_MS);
+    inst.parkTimer = setTimeout(() => parkNow(inst), PARK_AFTER_MS);
+  }
+
+  /** 立刻回待命角落（状态收完就是这么走的，不再多等一次 park 延迟）。 */
+  function parkNow(inst: Instance): void {
+    if (inst.action?.phase === "active") return;
+    if (inst.action) clearAction(inst);
+    const home = restPoint(inst.restIndex, window.innerWidth);
+    setResting(inst, true);
+    flyTo(inst, home);
   }
 
   function spawnRipple(x: number, y: number, cls: string, color: string): void {
@@ -682,6 +844,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   function armHoldLabel(inst: Instance, actions: MarkAction[]): void {
     const labelEl = inst.el.querySelector<HTMLDivElement>(".label");
     if (!labelEl) return;
+    inst.el.classList.remove("stating"); // 拿住态压过状态层，别把状态底色带到双键上
     labelEl.replaceChildren();
     inst.el.dataset.armed = "1";
     for (const action of actions) {
@@ -716,12 +879,20 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     clearTimeout(inst.pressTimer);
     inst.el.classList.remove("pressing", "holding");
     delete inst.el.dataset.armed;
-    const labelEl = inst.el.querySelector(".label");
-    if (labelEl) labelEl.textContent = hold.name;
+    // 确认锚框跟着拿住态一起走：用户确认/取消或动作换手后，"待确认"不该留在页面上
+    if (hold.mark) removeMark(hold.mark);
+    refreshLabel(inst);
   }
 
   /** 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌），名牌变双键。 */
-  function holdInst(inst: Instance, x: number, y: number, actions: MarkAction[], target?: string): void {
+  function holdInst(
+    inst: Instance,
+    x: number,
+    y: number,
+    actions: MarkAction[],
+    target?: string,
+    anchorMark?: HTMLDivElement | null,
+  ): void {
     releaseHoldInst(inst);
     if (inst.action) clearAction(inst);
     clearTimeout(inst.parkTimer);
@@ -736,6 +907,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       target,
       anchor: resolveAnchor({ x: x - 1, y: y - 1, width: 2, height: 2 }, target),
       name,
+      mark: anchorMark ?? undefined,
     };
     armHoldLabel(inst, actions);
     inst.el.classList.add("pressing", "holding");
@@ -750,13 +922,13 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     actions?: MarkAction[],
     options?: MarkOptions,
     observedNode?: Node,
-  ): void {
+  ): HTMLDivElement | null {
     const opts = { ...defaultMarkOptions, ...options };
     const isSketch = opts.style === "sketch";
     const motion = opts.motion ?? "grow";
     const pad = isSketch ? 10 : MARK_PAD;
     const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
-    if (!box) return;
+    if (!box) return null;
     ensureMarksDom();
     const el = document.createElement("div");
     el.className = isSketch ? `mark sketch ${motion === "boil" ? "boil" : "grow"}` : "mark";
@@ -831,6 +1003,14 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       options: opts,
       seed,
     });
+    return el;
+  }
+
+  /** 只撤指定的一条标注（拿住态的确认锚框），不碰模型画的其他标注。 */
+  function removeMark(el: HTMLDivElement): void {
+    const at = liveMarks.findIndex((mark) => mark.el === el);
+    if (at >= 0) liveMarks.splice(at, 1);
+    el.remove();
   }
 
   function stopReplayInst(inst: Instance): void {
@@ -1021,6 +1201,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     cancelFly(inst);
     clearTimeout(inst.parkTimer);
     releaseHoldInst(inst);
+    clearStatusInst(inst);
     if (inst.action) clearAction(inst);
     inst.el.classList.add("hidden");
     inst.el.classList.remove("pressing", "rest", "flip");
@@ -1032,6 +1213,48 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     }
   }
 
+  // ── 跨页胶囊：它在别的标签页干活时，当前页右上角的可点入口 ──────────────
+
+  let crossPill: HTMLDivElement | null = null;
+  let crossPillSession = "";
+
+  function ensureCrossPill(): HTMLDivElement {
+    ensureDom();
+    if (crossPill?.isConnected) return crossPill;
+    crossPill = document.createElement("div");
+    crossPill.className = "xpage";
+    crossPill.innerHTML =
+      `<span class="xdot"></span>` +
+      `<span class="xtxt"><span class="xmain"></span><span class="xsub"></span></span>`;
+    crossPill.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      try {
+        chrome.runtime.sendMessage({ type: "cross_page_click", sessionId: crossPillSession }, () => {
+          void chrome.runtime.lastError;
+        });
+      } catch {
+        /* 无扩展运行时（自检页）忽略 */
+      }
+    });
+    shadow!.appendChild(crossPill);
+    return crossPill;
+  }
+
+  function showCrossPill(view: { sessionId?: string; title?: string; state?: CursorStatusState }): void {
+    const el = ensureCrossPill();
+    crossPillSession = view.sessionId ?? "";
+    const copy = STATUS_COPY[view.state ?? "waiting"];
+    el.querySelector<HTMLSpanElement>(".xdot")!.style.background = copy?.color ?? "#2f6fed";
+    el.querySelector<HTMLSpanElement>(".xmain")!.textContent = "正在另一个标签页工作";
+    el.querySelector<HTMLSpanElement>(".xsub")!.textContent = `${view.title?.trim() || "另一个页面"} ↗`;
+    el.classList.add("on");
+  }
+
+  function hideCrossPill(): void {
+    crossPill?.classList.remove("on");
+  }
+
   function teardown(): void {
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
     actionFrame = undefined;
@@ -1040,12 +1263,15 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       cancelFly(inst);
       clearTimeout(inst.parkTimer);
       clearTimeout(inst.pressTimer);
+      clearStatusTimers(inst);
     }
     instances.clear();
     liveMarks.length = 0;
     host?.remove();
     marksHost?.remove();
     controlHost?.remove();
+    crossPill = null;
+    crossPillSession = "";
     host = null;
     marksHost = null;
     controlHost = null;
@@ -1058,11 +1284,15 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     ns.cursorHidden = undefined;
     ns.cursorState = undefined;
     ns.markLayout = undefined;
+    ns.markLayerCount = undefined;
     ns.holdState = undefined;
     ns.holdActionLabels = undefined;
     ns.clickHoldAction = undefined;
     ns.controlBanner = undefined;
     ns.clickHandback = undefined;
+    ns.cursorStatus = undefined;
+    ns.crossPageState = undefined;
+    ns.clickCrossPage = undefined;
     ns.setMarkConfig = undefined;
     ns.getMarkConfig = undefined;
     ns.markDetails = undefined;
@@ -1174,6 +1404,24 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         if (inst) hide(inst);
       },
 
+      setStatus(view?: CursorStatusView): void {
+        if (!view?.state) return;
+        setStatusInst(getInstance(id), view);
+      },
+
+      clearStatus(): void {
+        const inst = instances.get(id);
+        if (inst) clearStatusInst(inst);
+      },
+
+      showCrossPage(view?: { sessionId?: string; title?: string; state?: CursorStatusState }): void {
+        showCrossPill(view ?? {});
+      },
+
+      hideCrossPage(): void {
+        hideCrossPill();
+      },
+
       showUserControl(view?: {
         status?: string;
         sub?: string;
@@ -1202,11 +1450,11 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         observedNode?: Node,
       ): void {
         const inst = getInstance(id);
-        spawnMark(inst, rect, label, target, actions, options, observedNode);
+        const mark = spawnMark(inst, rect, label, target, actions, options, observedNode);
         // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
         if (parsed) {
-          holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target);
+          holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target, mark);
         }
       },
 
@@ -1233,6 +1481,44 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   ns.cursorHidden = () => {
     const inst = instances.get(DEFAULT_ID);
     return !inst || !inst.visible;
+  };
+  ns.cursorStatus = (id = DEFAULT_ID) => {
+    const inst = instances.get(id);
+    if (!inst) return null;
+    const label = inst.el.querySelector<HTMLDivElement>(".label");
+    const rect = label?.getBoundingClientRect();
+    const computed = label ? getComputedStyle(label) : null;
+    const nameEl = inst.el.querySelector<HTMLDivElement>(".agent-name");
+    return {
+      state: inst.status?.state ?? null,
+      text: inst.el.querySelector<HTMLDivElement>(".action-text")?.textContent ?? "",
+      detail: nameEl?.textContent ?? "",
+      fontSize: computed?.fontSize ?? "",
+      nameFontSize: nameEl ? getComputedStyle(nameEl).fontSize : "",
+      borderColor: computed?.borderLeftColor ?? "",
+      opacity: computed ? Number(computed.opacity) : 0,
+      labelRect: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
+      x: inst.pos.x,
+      y: inst.pos.y,
+      hidden: !inst.visible,
+      resting: inst.resting,
+    };
+  };
+  ns.crossPageState = () => {
+    if (!crossPill?.classList.contains("on")) return null;
+    const rect = crossPill.getBoundingClientRect();
+    return {
+      main: crossPill.querySelector<HTMLSpanElement>(".xmain")?.textContent ?? "",
+      sub: crossPill.querySelector<HTMLSpanElement>(".xsub")?.textContent ?? "",
+      sessionId: crossPillSession,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+  };
+  ns.clickCrossPage = () => {
+    if (!crossPill?.classList.contains("on")) return false;
+    crossPill.click();
+    return true;
   };
   ns.controlBanner = () => {
     if (!controlBar || !controlBar.classList.contains("on")) return null;
@@ -1294,6 +1580,8 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       width: parseFloat(m.el.style.width) || 0,
       height: parseFloat(m.el.style.height) || 0,
     }));
+  /** overlay 自检：标注层真实子节点数（不等于 liveMarks 记账） */
+  ns.markLayerCount = () => marksLayer?.childElementCount ?? 0;
   ns.setMarkConfig = (opts: MarkOptions) => {
     defaultMarkOptions = { ...defaultMarkOptions, ...opts };
   };

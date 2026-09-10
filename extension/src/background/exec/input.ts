@@ -119,7 +119,7 @@ async function ensureDomOps(tabId: number): Promise<void> {
   });
 }
 
-async function ensureCursor(tabId: number): Promise<void> {
+export async function ensureCursor(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["content-cursor.js"],
@@ -128,7 +128,7 @@ async function ensureCursor(tabId: number): Promise<void> {
 }
 
 /** 在页面 ISOLATED world 里执行 func 并取回结果。 */
-async function callDom<Args extends unknown[], Result>(
+export async function callDom<Args extends unknown[], Result>(
   tabId: number,
   func: (...args: Args) => Result,
   args: Args,

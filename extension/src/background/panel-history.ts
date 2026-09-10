@@ -2,6 +2,28 @@ import type { PanelHistoryEntry, PanelHistoryItem } from "../relay.js";
 
 export const DEFAULT_PANEL_HISTORY_LIMIT = 5_000;
 
+/** 单个会话落盘的历史字节上限。写满 chrome.storage.local 配额会让扩展所有写入失败。 */
+export const HISTORY_PERSIST_BUDGET_BYTES = 256 * 1024;
+
+/** 落盘形状：新格式带 updatedAt，旧格式是裸数组（按最旧处理）。 */
+export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry[] };
+
+export function historyUpdatedAt(value: unknown): number {
+  if (Array.isArray(value)) return 0;
+  const at = (value as { updatedAt?: unknown } | null | undefined)?.updatedAt;
+  return typeof at === "number" && Number.isFinite(at) ? at : 0;
+}
+
+/** 超出保留数量的 history 键，即需要删除的那些。 */
+export function historyKeysToDrop(records: Array<{ key: string; updatedAt: number }>, keep: number): string[] {
+  if (keep <= 0) return records.map((record) => record.key);
+  if (records.length <= keep) return [];
+  return [...records]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(keep)
+    .map((record) => record.key);
+}
+
 /**
  * Service worker 生命周期内的侧栏回放日志。
  *
@@ -89,9 +111,29 @@ export class PanelHistory {
     return this.entries.filter((entry) => entry.seq > afterSeq);
   }
 
+  /**
+   * 落盘窗口：从最新往回取，累计 UTF-8 字节不超过 budgetBytes，非空历史至少保留最新一条。
+   * 内存里仍是完整列表，这里只决定写进 storage 的那一份。
+   * 按字节而不是字符数计量：storage 配额算的是 UTF-8 字节，中文一个字占 3 字节。
+   */
+  persistWindow(budgetBytes: number): PanelHistoryEntry[] {
+    const encoder = new TextEncoder();
+    const out: PanelHistoryEntry[] = [];
+    let bytes = 0;
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index]!;
+      const size = encoder.encode(JSON.stringify(entry)).length + 1;
+      if (out.length > 0 && bytes + size > budgetBytes) break;
+      out.push(entry);
+      bytes += size;
+    }
+    return out.reverse();
+  }
+
   restore(value: unknown): void {
-    if (!Array.isArray(value)) return;
-    for (const entry of value) {
+    const list = Array.isArray(value) ? value : (value as StoredPanelHistory | null)?.entries;
+    if (!Array.isArray(list)) return;
+    for (const entry of list) {
       if (!entry || !Number.isInteger(entry.seq) || !entry.item || entry.seq < this.nextSeq) continue;
       this.entries.push(entry);
       this.nextSeq = entry.seq + 1;

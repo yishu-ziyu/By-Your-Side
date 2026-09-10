@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HeldClicks } from "../src/shared/held-clicks.js";
+import { HeldClicks, isHeldClickResult } from "../src/shared/held-clicks.js";
 
 const LEAD = "lead";
 
@@ -8,6 +8,22 @@ type Params = { target?: string; point?: [number, number]; label?: string };
 function newLedger() {
   return new HeldClicks<Params>(LEAD);
 }
+
+describe("回执执行事实", () => {
+  it("被拦下的点击算未执行", () => {
+    expect(isHeldClickResult("click", { clicked: false, held: true })).toBe(true);
+  });
+
+  it("真正点成的点击算执行", () => {
+    expect(isHeldClickResult("click", { clicked: true })).toBe(false);
+  });
+
+  it("其它工具带 held 字段不改判", () => {
+    expect(isHeldClickResult("mark", { held: true })).toBe(false);
+    expect(isHeldClickResult("fill", undefined)).toBe(false);
+    expect(isHeldClickResult("click", null)).toBe(false);
+  });
+});
 
 describe("HeldClicks pending 存取", () => {
   it("hold 后 hasPending 为真，drop 清除 pending 与 arm", () => {

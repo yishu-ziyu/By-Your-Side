@@ -116,7 +116,19 @@ export class TaskResultBook {
     if (!item || !resultCanUseExecution(item.status === "unknown" ? {...item,status:"pending"} : item, input.name, input.target)) return;
     if (item.evidence && (item.evidence.member !== input.member || item.evidence.runId !== input.runId || item.evidence.tool !== input.name)) return;
     if (!input.failed) {
-      item.status = "satisfied";
+      if (input.executionFact === "not_executed") {
+        // 工具成功返回但没有真正派发（点击被拦下等用户确认）：不是完成证据。
+        // 写作项转"结果未定"，只能靠真实页面读数核查解除；只读项退回待做。
+        if (isWriteTool(input.name)) {
+          item.status = "unknown";
+        } else {
+          item.status = "pending";
+          item.evidence = null;
+          return;
+        }
+      } else {
+        item.status = "satisfied";
+      }
     } else {
       if (input.executionFact === "not_executed") {
         item.status = "blocked";

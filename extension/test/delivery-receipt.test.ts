@@ -234,7 +234,7 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
     for (const id of ["delivery-A", "delivery-B"]) {
       expect(port.sent).toContainEqual(expect.objectContaining({kind:"delivery",conversationId:id,original:expect.objectContaining({conversationId:id,text:id})}));
       const stored = await chromeStub.storage.local.get(`history:${id}`);
-      expect(stored[`history:${id}`]).toContainEqual(expect.objectContaining({item:expect.objectContaining({kind:"user",text:id,undelivered:{original:{type:"user_message",conversationId:id,text:id}}})}));
+      expect(stored[`history:${id}`].entries).toContainEqual(expect.objectContaining({item:expect.objectContaining({kind:"user",text:id,undelivered:{original:{type:"user_message",conversationId:id,text:id}}})}));
     }
     port.deliver({ kind: "select_conversation", conversationId: "default" });
   });

@@ -29,7 +29,7 @@ import {
 } from "../../../shared/control.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryServerMessage } from "../relay.js";
-import { PanelHistory } from "./panel-history.js";
+import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
 import { VoiceRelay } from "./voice-relay.js";
 import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
@@ -43,6 +43,7 @@ import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
 import { isAffirmativeReply, isCancelReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
+import { isHeldClickResult } from "../shared/held-clicks.js";
 import { findSessionForTab, getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
 import { readElement } from "./exec/read-element.js";
@@ -50,6 +51,15 @@ import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 import { workerTabControl } from "./worker-tab-control.js";
+import {
+  clearCursorStatus,
+  clearAmbientCursorStatus,
+  resumeCursorStatus,
+  showCursorStatus,
+  suppressCursorStatus,
+  workingTabBehindPill,
+  type CursorStatusState,
+} from "./cursor-status.js";
 
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
@@ -87,6 +97,9 @@ function broadcastConversations() { for (const port of connectedPanels) { try { 
 const controllers = new Map<string, ReturnType<typeof createConversationController>>();
 let connectionSnapshot: [ConnState, TransportKind | undefined, string?] = ["connecting", undefined];
 let helloSnapshot: Extract<ServerMessage, {type:"hello_ok"}> | null = null;
+const HISTORY_PREFIX = "history:";
+const MAX_STORED_HISTORY_KEYS = 8;
+const HISTORY_PRUNE_DELAY_MS = 5_000;
 const transport = new Uplink({
  onServerMessage(msg) {
    if (msg.type === "voice") { voiceRelay.server(msg); return; }
@@ -135,18 +148,129 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  })();
  return true;
 });
-void Promise.all([chrome.storage.session.get(null), chrome.storage.local.get(null)]).then(([stored, local]) => {
- selectedConversationId = typeof stored.selectedConversationId === "string" ? stored.selectedConversationId : "default";
- setVisibleConversationId(selectedConversationId);
- controller("default");
- for (const key of Object.keys({...stored,...local})) if (key.startsWith("history:")) controller(key.slice(8));
- controller(selectedConversationId);
- transport.start();
+/** 点头上跨页胶囊：切到它正在干活的那个标签页。 */
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+ if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "cross_page_click") return;
+ const target = workingTabBehindPill(sender.tab?.id);
+ if (target == null) { sendResponse({ok:false,error:"NO_WORKING_TAB"}); return; }
+ void (async () => {
+   try {
+     const tab = await chrome.tabs.get(target);
+     if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
+     await chrome.tabs.update(target, { active: true });
+     sendResponse({ ok: true });
+   } catch {
+     sendResponse({ ok: false, error: "TAB_GONE" });
+   }
+ })();
+ return true;
 });
+let historyPruneTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * 服务端给每个会话都推 status，一次 idle 就会落盘一个会话键——只在启动时清理不够。
+ * 多次落盘合并成一次清理，避免每写一次就读一遍全量存储。
+ */
+function scheduleHistoryPrune(): void {
+ if (historyPruneTimer) return;
+ historyPruneTimer = setTimeout(() => {
+  historyPruneTimer = undefined;
+  void pruneStoredHistory(MAX_STORED_HISTORY_KEYS).catch(error => { console.error("[sideagent] 历史清理失败", error); });
+ }, HISTORY_PRUNE_DELAY_MS);
+}
+
+/** 只保留最近若干个会话的 history 键；旧格式（裸数组）没有 updatedAt，按最旧处理。 */
+async function pruneStoredHistory(keep: number): Promise<void> {
+ const all = await chrome.storage.local.get(null);
+ const records = Object.keys(all)
+  .filter(key => key.startsWith(HISTORY_PREFIX))
+  .map(key => ({ key, updatedAt: historyUpdatedAt(all[key]) }));
+ const drop = historyKeysToDrop(records, keep);
+ if (drop.length) await chrome.storage.local.remove(drop);
+}
+
+// transport.start() 曾写在 .then 里且无 catch：恢复链一旦 reject，扩展就永远不连、也不再重试。
+void (async () => {
+ try {
+  const [stored, local] = await Promise.all([chrome.storage.session.get(null), chrome.storage.local.get(null)]);
+  selectedConversationId = typeof stored.selectedConversationId === "string" ? stored.selectedConversationId : "default";
+  setVisibleConversationId(selectedConversationId);
+  controller("default");
+  for (const key of Object.keys({...stored,...local})) if (key.startsWith(HISTORY_PREFIX)) controller(key.slice(HISTORY_PREFIX.length));
+  controller(selectedConversationId);
+  await pruneStoredHistory(MAX_STORED_HISTORY_KEYS);
+ } catch (error) {
+  console.error("[sideagent] 启动恢复失败，仍继续连接", error);
+ }
+ transport.start();
+})();
 function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
 const getWorkingTabId = (sid: string = LEAD_SESSION_ID) => workingTabForKey(key(sid));
 const setSessionClaimBlocked = (sid: string, blocked: boolean) => blockKey(key(sid), blocked);
+
+/** 状态挂到哪一页：显式 tabId → 已认领的工作页 → 用户当前看的页。 */
+async function statusTabId(sid: string, explicit?: unknown): Promise<number | null> {
+  if (typeof explicit === "number") return explicit;
+  const claimed = await getWorkingTabId(sid);
+  if (claimed != null) return claimed;
+  try {
+    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return active?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 读页面的工具：光标显示「正在读这个页面」。 */
+const READ_TOOLS = new Set(["snapshot", "read_element", "screenshot", "observe_page"]);
+
+async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
+  await showCursorStatus({
+    key: key(sid),
+    state,
+    tabId: await statusTabId(sid, explicitTabId),
+  });
+}
+
+/**
+ * 一轮任务的事件 → 光标状态。
+ * 等待：任务开始到下一次动手之间；读页面：读类工具执行期间；完成：正常收尾后自动消失；
+ * 失败：一轮以错误结束时留在原地。动作类工具（点击/填写/定位/标注）自己有名牌，这里先让位。
+ */
+async function applyCursorStatusEvent(
+  sid: string,
+  event: Extract<ServerMessage, { type: "agent_event" }>["event"],
+): Promise<void> {
+  switch (event.kind) {
+    case "agent_start":
+      resumeCursorStatus(key(sid));
+      await setCursorStatus(sid, "waiting");
+      return;
+    case "tool_start": {
+      const name = event.name;
+      if (READ_TOOLS.has(name)) {
+        await setCursorStatus(sid, "reading", event.params?.tabId);
+        return;
+      }
+      if (name === "click" || name === "fill" || name === "hover" || name === "mark") {
+        await clearCursorStatus(key(sid));
+      }
+      return;
+    }
+    case "tool_end":
+      await setCursorStatus(sid, "waiting");
+      return;
+    case "agent_end":
+      await setCursorStatus(sid, "done");
+      return;
+    case "error":
+      await setCursorStatus(sid, "failed");
+      return;
+    default:
+      return;
+  }
+}
 async function getWorkingTabMap() {
  const map = await allWorkingTabs();
  return Object.fromEntries(Object.entries(map).filter(([k]) => parseExecutionKey(k).conversationId === conversationId).map(([k,v]) => [parseExecutionKey(k).sessionId,v]));
@@ -156,15 +280,22 @@ async function getWorkingTabMap() {
 
 const panels = new Set<chrome.runtime.Port>();
 const panelHistory = new PanelHistory();
-const historyKey = `history:${conversationId}`;
+const historyKey = `${HISTORY_PREFIX}${conversationId}`;
 const historyReady = chrome.storage.local.get(historyKey).then(async got => {
  panelHistory.restore(got[historyKey] ?? (await chrome.storage.session.get(historyKey))[historyKey]);
 }).catch(() => {});
 let historyFlushTimer: ReturnType<typeof setTimeout> | undefined;
+/** 只有 status 的历史不值得落盘：服务端给每个会话都推状态，一次 idle 就会写一个键、随后又被清理。 */
+function hasPersistableHistory(): boolean {
+ return panelHistory.since().some(entry => !(entry.item.kind === "server" && entry.item.msg.type === "status"));
+}
 function flushHistory() {
  if (historyFlushTimer) clearTimeout(historyFlushTimer);
  historyFlushTimer = undefined;
- void chrome.storage.local.set({[historyKey]:panelHistory.since()});
+ if (!hasPersistableHistory()) return;
+ const stored: StoredPanelHistory = { updatedAt: Date.now(), entries: panelHistory.persistWindow(HISTORY_PERSIST_BUDGET_BYTES) };
+ void chrome.storage.local.set({[historyKey]:stored}).catch(error => { console.error("[sideagent] 面板历史落盘失败", error); });
+ scheduleHistoryPrune();
 }
 /** 选中即问：把 text_delta 回推到划词所在页。 */
 let overlayAskTabId: number | undefined;
@@ -666,6 +797,14 @@ const callbacks: UplinkHandlers = {
       lastStatus = aggregateRunState(statusBySession.values());
       persistControl();
       if (msg.state === "idle") commitTrail(key(sid));
+      if (msg.state === "running") {
+        resumeCursorStatus(key(sid));
+        void setCursorStatus(sid, "waiting");
+      } else if (msg.state === "user") {
+        void suppressCursorStatus(key(sid));
+      } else if (msg.state === "idle") {
+        void clearAmbientCursorStatus(key(sid));
+      }
     } else if (msg.type === "agent_event") {
       const sid = msg.sessionId ?? LEAD_SESSION_ID;
       if (msg.event.kind === "tool_start") {
@@ -673,6 +812,7 @@ const callbacks: UplinkHandlers = {
       } else if (msg.event.kind === "tool_end") {
         activityBySession.set(sid, "running");
       }
+      void applyCursorStatusEvent(sid, msg.event);
       if (overlayAskTabId != null) {
         const kind = msg.event.kind;
         if (
@@ -784,7 +924,14 @@ async function executeToolCall(
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
     if (name === "mark") noteMarkDrawn(conversationId);
     else if (name === "clear_marks") noteMarksCleared(conversationId);
-    result = { type: "tool_result", id, ok: true, data, executionFact: "executed" };
+    // 被拦成等用户确认的点击没有派发任何鼠标事件：回执按未执行上报，账本不能据此判完成。
+    result = {
+      type: "tool_result",
+      id,
+      ok: true,
+      data,
+      executionFact: isHeldClickResult(name, data) ? "not_executed" : "executed",
+    };
   } catch (e) {
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
@@ -844,6 +991,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     return;
   }
   await hideCursorsForSessions(members.map((m) => key(m.sessionId)));
+  for (const m of members) void suppressCursorStatus(key(m.sessionId));
   const requestId = remoteRequestId ?? nextControlRequestId("takeover");
   const frozen = team.view();
   pendingControl = {
@@ -997,6 +1145,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   emitTeam();
   for (const sid of sessions) { dropPendingClicks(key(sid)); setSessionClaimBlocked(sid, false); }
   void hideCursorsForSessions(sessions.map(key));
+  for (const sid of sessions) void suppressCursorStatus(key(sid));
   void memberTabIds().then(ids => Promise.all(ids.map(id => hideUserControlBanners(id))));
   void stopTrailReplay(key());
   const completion=Promise.all([abortDrain,aborted.settled]).then(async () => {

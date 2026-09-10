@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Open Design · 执行记录时间线复刻（v0.22.0 源码参数）</title>
+<style>
+/*
+ * 数值来源（Open Design 开源仓库 nexu-io/open-design，tag open-design-v0.22.0，
+ * 与本机安装的 0.22.0 一致）：
+ *   apps/web/src/styles/tokens.css            —— 颜色 / 圆角 / 时长 / 缓动 / 字体
+ *   apps/web/src/styles/base.css              —— --font-size-12 / -13
+ *   apps/web/src/components/chat/ChatRoot.module.css —— --chat-* 接缝
+ *   apps/web/src/components/chat/primitives/record.module.css —— 行 / 折叠 / 扫光 / 点
+ *   apps/web/src/components/chat/ExecutionShell.tsx / primitives/ToolRow.tsx —— DOM 结构
+ */
+:root{
+  --bg:#fff; --bg-panel:#fafafa; --bg-fill-tertiary:rgba(0,0,0,.03);
+  --border:#dbdbdb; --border-strong:#bdbdbd;
+  --text:#494949; --text-strong:#202020; --text-muted:#5c5c5c; --text-soft:#848484;
+  --red:#F04142;
+  --radius:8px; --radius-lg:12px;
+  --font-size-12:12px; --font-size-13:13px;
+  --duration-faster:100ms;
+  --ease-out:cubic-bezier(0,0,0,1);
+  --sans:"Albert Sans","PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+  --mono:"JiduMono Pro",ui-monospace,"SFMono-Regular",Menlo,monospace;
+
+  --chat-bg:var(--bg); --chat-bg-panel:var(--bg-panel); --chat-bg-fill-tertiary:var(--bg-fill-tertiary);
+  --chat-border:var(--border); --chat-stroke:1px; --chat-radius:var(--radius);
+  --chat-text:var(--text); --chat-text-strong:var(--text-strong);
+  --chat-text-muted:var(--text-muted); --chat-text-soft:var(--text-soft);
+  --chat-red:var(--red);
+  --chat-font-mono:var(--mono);
+  --chat-t-body:var(--font-size-13); --chat-t-mini:var(--font-size-12); --chat-t-cap:var(--font-size-12);
+  --chat-lh-row:1.5; --chat-lh-body:1.7;
+  --chat-stream-ink:#a3a3a3;
+  --chat-dia-1:#7c3aed; --chat-dia-2:#e11d48; --chat-dia-3:#ea580c;
+  --chat-dia-4:#0ea5e9; --chat-dia-5:#2563eb;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#f5f5f5;color:var(--text);font:var(--chat-t-body)/var(--chat-lh-row) var(--sans);-webkit-font-smoothing:antialiased}
+
+/* ── 页面外壳（不属于 Open Design，只为并排看两份） ───────────────── */
+.page{max-width:1240px;margin:0 auto;padding:28px 24px 64px}
+.page h1{font-size:18px;font-weight:600;color:var(--chat-text-strong);margin:0 0 6px}
+.page .lede{color:var(--text-muted);font-size:13px;margin:0 0 18px}
+.page .lede code{font-family:var(--mono);font-size:12px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.panel{background:#fff;border:1px solid #e6e6e6;border-radius:12px;padding:16px 16px 20px}
+.panel > h2{font-size:13px;font-weight:600;color:var(--chat-text-strong);margin:0 0 4px}
+.panel > p{font-size:12px;color:var(--text-soft);margin:0 0 14px}
+.panel .stage{border:1px dashed #e6e6e6;border-radius:8px;padding:8px 4px}
+.toolbar{display:flex;gap:8px;align-items:center;margin:0 0 12px}
+.toolbar button{font:12px/1 var(--sans);padding:6px 10px;border-radius:8px;border:1px solid var(--border);
+  background:#fff;color:var(--chat-text-strong);cursor:pointer}
+.toolbar button:hover{background:var(--bg-fill-tertiary)}
+.toolbar span{font-size:12px;color:var(--text-soft)}
+.notes{margin:26px 0 0;font-size:12px;color:var(--text-muted)}
+.notes h3{font-size:12px;font-weight:600;color:var(--chat-text-strong);margin:16px 0 6px}
+.notes ul{margin:0;padding-left:18px}
+.notes li{margin:2px 0}
+.notes code{font-family:var(--mono);font-size:11.5px}
+
+/* ── 以下为 Open Design 执行记录的真实样式（选择器按源码逐条抄，类名保持原样） ── */
+.fold{border:0;border-radius:var(--chat-radius);background:var(--chat-bg-panel)}
+.fold > summary{display:flex;align-items:center;gap:7px;padding:8px 11px;cursor:pointer;list-style:none;
+  font-size:var(--chat-t-mini);color:var(--chat-text-strong);border-radius:var(--chat-radius)}
+.fold > summary::-webkit-details-marker{display:none}
+.fold > summary::marker{content:''}
+.fold > summary:hover{background:var(--chat-bg-fill-tertiary)}
+.fold.leaf > summary{cursor:default}
+.fold.leaf > summary:hover{background:none}
+.summaryContent{display:flex;align-items:center;gap:7px;flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap}
+.summaryContent > :last-child,.summaryContent > .name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chev{flex:none;margin-left:auto;display:inline-flex;transition:transform var(--duration-faster) var(--ease-out)}
+.fold[open] > summary .chev{transform:rotate(180deg)}
+.meta{flex:none;margin-left:auto;font-family:var(--chat-font-mono);font-size:var(--chat-t-cap);
+  color:var(--chat-text-soft);white-space:nowrap}
+.meta.num{font-family:inherit;font-variant-numeric:tabular-nums}
+.meta + .chev{margin-left:0}
+.meta + .meta{margin-left:0}
+.fold .body{padding:0 11px 11px;font-size:var(--chat-t-mini);line-height:var(--chat-lh-body);color:var(--chat-text-muted)}
+
+.fold.flat{border:0;background:none;border-radius:0}
+.fold.flat,.tool{--chat-progress-detail-ink:var(--chat-text-strong)}
+.fold.flat > summary{margin-inline:-7px;padding:6px 7px;border-radius:6px;font-size:var(--chat-t-body);font-weight:600}
+.fold.flat summary .meta,.fold.flat summary .chev{margin-left:0}
+.fold.flat > .body.stack{padding:0 0 2px}
+.fold.flat[open] > summary + .body.stack{border-top:var(--chat-stroke) solid var(--chat-border);padding-top:6px}
+.fold.flat > .body.stack > .think{padding:6px 0;font-size:var(--chat-t-body)}
+.fold.flat > .body.stack > :is(.fold,.tool){margin-inline:-7px}
+.fold.flat > .body.stack > .tool{padding:5px 7px}
+
+.tool{display:flex;align-items:center;gap:7px;padding:7px 11px;border:var(--chat-stroke) solid var(--chat-border);
+  border-radius:var(--chat-radius);background:var(--chat-bg);font-size:var(--chat-t-body);
+  color:var(--chat-progress-detail-ink);line-height:var(--chat-lh-row)}
+.tool + .tool{margin-top:6px}
+.tool .meta{margin-left:0;color:var(--chat-progress-detail-ink)}
+.name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fold > summary .name{flex:0 1 auto}
+.tool .name{font-weight:400}
+.name code{padding:0;background:none;border-radius:0;font-family:var(--chat-font-mono);
+  font-size:var(--chat-t-mini);color:var(--chat-text-strong)}
+.fold.flat .tool .name{flex:0 1 auto}
+.icon{flex:none;width:16px;height:16px;display:grid;place-items:center;color:var(--chat-text-strong)}
+.icon > svg{width:16px;height:16px;color:var(--chat-progress-detail-ink);fill:currentColor}
+.icon > svg[stroke]{fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.tool.fail,.fold.fail > summary{color:var(--chat-red)}
+.tool.fail .icon,.tool.fail .icon > svg{color:var(--chat-red)}
+
+/* 壳头那句会动的状态：扫 1.5s 停 1s（一轮 2.5s），停顿是动画的一半 */
+.shimmer{
+  background:linear-gradient(90deg,
+    var(--dia-base,var(--chat-text-muted)) 0%,
+    var(--dia-base,var(--chat-text-muted)) 33.33%,
+    var(--chat-dia-1) 40%,var(--chat-dia-2) 45%,var(--chat-dia-3) 50%,
+    var(--chat-dia-4) 55%,var(--chat-dia-5) 60%,
+    var(--dia-base,var(--chat-text-muted)) 66.67%,
+    var(--dia-base,var(--chat-text-muted)) 100%);
+  background-size:300% 100%;background-clip:text;-webkit-background-clip:text;
+  color:transparent;-webkit-text-fill-color:transparent;font-weight:500;font-size:var(--chat-t-body);
+  animation:chat-record-sweep 2.5s infinite;}
+.shimmer.head{--dia-base:var(--chat-text-strong);font-weight:600}
+@keyframes chat-record-sweep{
+  0%{background-position:100% 0;animation-timing-function:cubic-bezier(.23,1,.32,1)}
+  60%{background-position:0 0}
+  100%{background-position:0 0}}
+.dots{display:inline-flex;align-items:flex-end;gap:2px;margin-inline-start:3px;vertical-align:middle}
+.dots i{width:3px;height:3px;border-radius:50%;background:var(--chat-text-muted);
+  animation:chat-record-dot 1.2s var(--ease-out) infinite}
+.dots i:nth-child(2){animation-delay:.15s}
+.dots i:nth-child(3){animation-delay:.3s}
+@keyframes chat-record-dot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-3px)}}
+
+/* 思考正文：两态共用 96px 限高 + 普通滚动条，跟随由脚本负责 */
+.body.scroll{max-height:96px;overflow:auto}
+.think{color:var(--chat-stream-ink);font-size:var(--chat-t-mini);line-height:var(--chat-lh-body)}
+.think p{margin:0 0 6px}
+.think code{font-family:var(--chat-font-mono);font-size:11.5px;color:var(--chat-text-strong)}
+
+.orb{flex:none;display:inline-grid;place-items:center}
+.orb canvas{display:block}
+@media (prefers-reduced-motion:reduce){
+  .shimmer{animation:none;color:var(--dia-base,var(--chat-text-muted));-webkit-text-fill-color:currentColor}
+  .dots i{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Open Design · 执行记录（时间线）</h1>
+  <p class="lede">
+    左边是你截图那一屏的静态复刻，右边是同一条记录在<strong>跑动中</strong>的样子（点「重播」）。
+    全部尺寸/颜色/时长按开源仓库 tag <code>open-design-v0.22.0</code> 的 CSS 原值抄，不用估算值。
+  </p>
+
+  <div class="cols">
+    <!-- ── 左：静态对照 ─────────────────────────────────────── -->
+    <div class="panel">
+      <h2>静态对照</h2>
+      <p>你截图里的这一屏，逐行复原（思考过程全部收起，壳展开）。</p>
+      <div class="stage">
+        <details class="fold flat" open>
+          <summary>
+            <span class="summaryContent"><span class="name">进行中</span><span class="meta">4m 12s</span></span>
+            <span class="chev">⌄</span>
+          </summary>
+          <div class="body stack" id="staticBody"></div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ── 右：动态演示 ─────────────────────────────────────── -->
+    <div class="panel">
+      <h2>动态演示</h2>
+      <p>壳头四态、扫光、跳动圆点、逐行落下、实时秒数、跑完自动收起。</p>
+      <div class="toolbar">
+        <button id="play">重播</button>
+        <span id="phase">待机</span>
+      </div>
+      <div class="stage">
+        <details class="fold flat" open id="liveShell">
+          <summary id="liveHead">
+            <span class="orb" id="orbSlot"></span>
+            <span class="summaryContent">
+              <span class="shimmer head" id="liveState">进行中</span>
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            </span>
+            <span class="meta" id="liveElapsed">0s</span>
+            <span class="chev">⌄</span>
+          </summary>
+          <div class="body stack" id="liveBody"></div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h3>参数来源（可直接去仓库对）</h3>
+    <ul>
+      <li>行盒：<code>.tool</code> 1px #dbdbdb 边框 + 8px 圆角 + 白底；行距 6px；行内 gap 7px，padding 7px 11px；
+        壳内这一档压到 5px 7px，并左右各探出 7px（<code>record.module.css</code>）。</li>
+      <li>折叠头 <code>.fold &gt; summary</code>：字号 12px、色 #202020、padding 8px 11px；壳头那一行提到 13px/600，
+        margin-inline −7px、padding 6px 7px。</li>
+      <li>耗时：等宽字体 12px，跟着整行同色（壳内与工具行都是 #202020，不是灰）；
+        计数类（「13 处」）换正文字体 + <code>tabular-nums</code>，数字跳动时宽度不抖。</li>
+      <li>箭头：<code>.chev</code> 只过渡 <code>transform 100ms cubic-bezier(0,0,0,1)</code>；展开本身是原生
+        <code>&lt;details&gt;</code>，不加高度动画。</li>
+      <li>状态词扫光：<code>chat-record-sweep 2.5s infinite</code>（1.5s 扫 + 1s 停，先快后慢
+        <code>cubic-bezier(.23,1,.32,1)</code>），圆点 <code>1.2s</code> 依次错开 0.15s。</li>
+      <li>思考正文：<code>max-height:96px</code> + 普通滚动条；跟随由 <code>useThinkingFollow</code> 负责——
+        内容增长就贴底，用户往上滚就放手，滚回底部或折叠再展开恢复跟随（本页按同一规则实现）。</li>
+      <li>颜色：底 #fff / 面 #fafafa / 边 #dbdbdb / 主字 #202020 / 灰 #848484 / 失败 #F04142；
+        扫光五色 #7c3aed → #e11d48 → #ea580c → #0ea5e9 → #2563eb。</li>
+    </ul>
+    <h3>这里是近似的两处</h3>
+    <ul>
+      <li>壳头那颗球：产品里是 canvas 自绘的 thinking-orb（按 box 等比放大），本页用同色板
+        （#00ff08 / #00ffae / 深底 #202020）做了个简化版，转速与粒子密度不保证一致。</li>
+      <li>字体：产品内嵌 Albert Sans + JiduMono Pro；本页只带系统回退，中文落 PingFang SC、等宽落 SF Mono，
+        行高与字重一致，字面宽度会有零点几像素的出入。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// ── 图标：与 icons.tsx 同一条 path（16px 槽，1.75 描边 / 24 视图框） ──────────
+const S = (inner, stroke = true) => `<svg viewBox="0 0 24 24" ${stroke ? 'stroke' : 'fill:none'} aria-hidden="true">${inner}</svg>`;
+const ICON = {
+  brain: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.2c-1.1 0-2 .9-2 2v13.6c0 1.1.9 2 2 2s2-.9 2-2V5.2c0-1.1-.9-2-2-2Z"/><path d="M9.2 6.1c-1.6-.5-3.3.3-3.9 1.9-.5 1.4.1 2.9 1.3 3.6-.9.6-1.4 1.6-1.3 2.7.1 1.6 1.5 2.9 3.1 2.8"/><path d="M14.8 6.1c1.6-.5 3.3.3 3.9 1.9.5 1.4-.1 2.9-1.3 3.6.9.6 1.4 1.6 1.3 2.7-.1 1.6-1.5 2.9-3.1 2.8"/></svg>`,
+  read: S(`<path d="M2 12s3.6-6.4 10-6.4S22 12 22 12s-3.6 6.4-10 6.4S2 12 2 12z" fill="none"/><circle cx="12" cy="12" r="2.6" fill="none"/>`),
+  search: S(`<circle cx="10.8" cy="10.8" r="6.8" fill="none"/><path d="M20.5 20.5l-4.9-4.9" fill="none"/>`),
+  exec: S(`<path d="M4.5 6.5l5 5.5-5 5.5" fill="none"/><path d="M12.5 18h7" fill="none"/>`),
+  chev: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>`,
+};
+
+// ── 一屏的内容：取自你截图（搜索词、耗时、条数逐条照抄） ────────────────────
+const ROWS = [
+  { kind: "think", label: "思考过程", ms: 9400, text: "先摸清项目结构：列目录、读设计说明、量一遍图片原始尺寸，再决定怎么排。" },
+  { kind: "fold", label: "List project and linked directories", ms: 2000,
+    body: "app/\n  page.tsx\ncomponents/\n  Hero.tsx\n  Gallery.tsx\npublic/\n  images/…\ndesign/DESIGN.md" },
+  { kind: "search", label: "搜索 /Users/mahaoxuan/Library/Application Support", hits: 13, ms: 0 },
+  { kind: "think", label: "思考过程", ms: 4700, text: "这份 design-trans 里有排版令牌，先拿它当基线。" },
+  { kind: "read", label: "读取 langalpha-design-trans….json", ms: 100 },
+  { kind: "think", label: "思考过程", ms: 7000, text: "README 说明了站点的结构，接着找标题层级标签的用法。" },
+  { kind: "read", label: "读取 README.md", ms: 200 },
+  { kind: "search", label: "搜索 <(title|h1|h2)[^>]*>[^<]*", hits: 30, ms: 0 },
+  { kind: "think", label: "思考过程", ms: 5400, text: "再确认下设计稿里 OD_ / OPEN_DESIGN 这些前缀是不是变量名。" },
+  { kind: "search", label: "搜索 ^OD_|OPEN_DESIGN", hits: 32, ms: 0 },
+  { kind: "read", label: "读取 .od-next-device-frames.json", ms: 200 },
+  { kind: "think", label: "思考过程", ms: 2700, text: "设备画框的尺寸拿到了，看看 CLI 还提供什么能力。" },
+  { kind: "fold", label: "List OpenDesign CLI tools", ms: 400, body: "od build\nod preview\nod export --format png|pdf" },
+  { kind: "think", label: "思考过程", ms: 53200, text: "把 DESIGN.md 和 CSS 令牌一起读进来，逐条比对间距和字级——这一屏是整轮里最花时间的一段。" },
+  { kind: "read", label: "Read product DESIGN.md and CSS tokens", ms: 300 },
+  { kind: "read", label: "Measure intrinsic dimensions of project images", ms: 500 },
+  { kind: "think", label: "思考过程", ms: 38600, running: true,
+    text: "现在按 8px 的栅格重排：先把 Hero 的三栏收成两栏…\n再量一遍图片基准线…\n最后核对 12/13px 两档字级有没有混用…" },
+];
+
+const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
+const fmt = (ms) => {
+  if (ms == null) return "";
+  if (ms < 1000) return (ms / 1000).toFixed(1) + "s";
+  return (ms / 1000).toFixed(1) + "s";
+};
+const iconFor = (row) => row.kind === "search" ? ICON.search : row.kind === "read" ? ICON.read : ICON.exec;
+
+// 折叠行（`.fold` + `<summary>` + `.body`），与 Foldable/ToolRow 的结构一致
+function foldRow(row, { open = false, live = false } = {}) {
+  const d = el("details", "fold" + (live ? " thoughts" : ""));
+  if (open) d.open = true;
+  const sum = el("summary");
+  const content = el("span", "summaryContent");
+  if (live) {
+    const slot = el("span", "icon");
+    slot.appendChild(makeOrb(20));
+    content.appendChild(slot);
+    content.appendChild(el("span", "shimmer", `${row.label}<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>`));
+  } else {
+    const slot = el("span", "icon", row.kind === "think" ? ICON.brain : iconFor(row));
+    content.appendChild(slot);
+    content.appendChild(el("span", "name", row.label));
+  }
+  sum.appendChild(content);
+  if (row.ms) sum.appendChild(el("span", "meta", fmt(row.ms)));
+  sum.appendChild(el("span", "chev", ICON.chev));
+  d.appendChild(sum);
+
+  if (row.kind === "fold") {
+    const body = el("div", "body stack");
+    const pre = el("div", "think");
+    pre.style.whiteSpace = "pre-wrap";
+    pre.textContent = row.body;
+    body.appendChild(pre);
+    d.appendChild(body);
+  } else if (row.kind === "think") {
+    const body = el("div", "body stack scroll");
+    const pre = el("div", "think");
+    body.appendChild(pre);
+    d.appendChild(body);
+    d._thinkText = pre;
+  }
+  return d;
+}
+
+// 平铺工具行（`.tool`）
+function toolRow(row) {
+  const n = el("div", "tool");
+  n.appendChild(el("span", "icon", iconFor(row)));
+  n.appendChild(el("span", "name", row.label));
+  if (row.hits != null) n.appendChild(el("span", "meta num", `${row.hits} 处`));
+  else if (row.ms) n.appendChild(el("span", "meta", fmt(row.ms)));
+  return n;
+}
+
+// ── 壳头那颗球（简化版 thinking-orb：深底 + 绿色粒子漂移） ──────────────
+function makeOrb(box) {
+  const host = el("span", "orb");
+  const c = document.createElement("canvas");
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  c.width = Math.round(box * dpr); c.height = Math.round(box * dpr);
+  c.style.width = box + "px"; c.style.height = box + "px";
+  host.appendChild(c);
+  const ctx = c.getContext("2d");
+  const P = Array.from({ length: 7 }, (_, i) => ({ a: (i / 7) * Math.PI * 2, r: 0.18 + (i % 3) * 0.08, s: 0.0008 + i * 0.00012 }));
+  const t0 = performance.now();
+  const tick = (t) => {
+    const k = dpr * box / 20, u = (t - t0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, box, box);
+    ctx.fillStyle = "#202020";
+    ctx.beginPath(); ctx.arc(box / 2, box / 2, box / 2, 0, Math.PI * 2); ctx.fill();
+    for (const p of P) {
+      const ang = p.a + u * p.s * 6.28;
+      const rr = (0.28 + p.r * Math.sin(u / 900 + p.a)) * (box / 2);
+      const x = box / 2 + Math.cos(ang) * rr, y = box / 2 + Math.sin(ang) * rr * 0.92;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 2.2 * k);
+      g.addColorStop(0, p.a > 3 ? "#00ff08" : "#00ffae"); g.addColorStop(1, "rgba(0,255,8,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 2.2 * k, 0, Math.PI * 2); ctx.fill();
+    }
+    if (host.isConnected) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return host;
+}
+
+// ── 左：静态一屏 ─────────────────────────────────────────────────────
+const staticBody = document.getElementById("staticBody");
+for (const row of ROWS) {
+  staticBody.appendChild(row.kind === "think" || row.kind === "fold" ? foldRow(row) : toolRow(row));
+}
+
+// ── 右：跑动中的一轮 ─────────────────────────────────────────────────
+const liveBody = document.getElementById("liveBody");
+const liveHead = document.getElementById("liveHead");
+const liveState = document.getElementById("liveState");
+const liveElapsed = document.getElementById("liveElapsed");
+const orbSlot = document.getElementById("orbSlot");
+const phase = document.getElementById("phase");
+const shell = document.getElementById("liveShell");
+let timers = [];
+let raf = 0;
+
+function clearAll() {
+  timers.forEach(clearTimeout); timers = [];
+  cancelAnimationFrame(raf);
+  for (const node of liveBody.children) node._live = false;
+  liveBody.innerHTML = "";
+  orbSlot.replaceChildren();
+  liveState.textContent = "进行中";
+  liveState.className = "shimmer head";
+  liveElapsed.textContent = "0s";
+  shell.open = true;
+  phase.textContent = "跑动中";
+}
+
+function play() {
+  clearAll();
+  const orb = makeOrb(24);
+  orbSlot.replaceChildren(orb);
+  const started = performance.now();
+  const tick = () => {
+    liveElapsed.textContent = ((performance.now() - started) / 1000).toFixed(0) + "s";
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+
+  let at = 250;
+  ROWS.forEach((row, i) => {
+    const isLast = i === ROWS.length - 1;
+    const stepMs = Math.min(1400, Math.max(500, row.ms / 12));
+    timers.push(setTimeout(() => {
+      // 上一行如果还在跑，收尾
+      const prev = liveBody.lastElementChild;
+      if (prev && prev._live) {
+        prev._live = false;
+        const s = prev.querySelector(".shimmer");
+        if (s) s.outerHTML = `<span class="name">${prev._row.label}</span>`;
+        const m = prev.querySelector(".meta");
+        if (m && !m.textContent) m.textContent = fmt(prev._row.ms);
+        if (prev._row.kind === "think") prev.open = false; // 跑完自动收起
+      }
+
+      let node;
+      if (row.kind === "think" || row.kind === "fold") node = foldRow({ ...row, ms: 0 }, { open: true, live: true });
+      else node = toolRow({ ...row, ms: 0, hits: null });
+      node._live = true; node._row = row;
+
+      if (node.tagName === "DETAILS") {
+        const meta = node.querySelector(".meta");
+        if (!meta) node.querySelector("summary").insertBefore(el("span", "meta", "0.0s"), node.querySelector(".chev"));
+      } else {
+        const m = el("span", "meta", "0.0s");
+        node.insertBefore(m, null);
+      }
+      // 实时秒数：本行自己的计时
+      const rowStart = performance.now();
+      const tickRow = () => {
+        if (!node._live) return;
+        const el2 = node.querySelector(".meta");
+        if (el2) el2.textContent = ((performance.now() - rowStart) / 1000).toFixed(1) + "s";
+        requestAnimationFrame(tickRow);
+      };
+      requestAnimationFrame(tickRow);
+
+      // 思考行：正文一边写一边贴底跟随
+      if (row.kind === "think" && node._thinkText) {
+        const words = row.text.split(/(?<=[,，。：；\n])/);
+        let j = 0, follow = true;
+        const box = node.querySelector(".body.scroll");
+        box.addEventListener("scroll", () => {
+          const atBottom = box.scrollHeight - box.clientHeight - box.scrollTop < 8;
+          follow = atBottom;
+        });
+        const drop = () => {
+          if (j >= words.length) return;
+          node._thinkText.textContent += words[j++];
+          if (follow) box.scrollTop = box.scrollHeight;
+          if (node._live) setTimeout(drop, 90);
+        };
+        drop();
+      }
+      liveBody.appendChild(node);
+
+      // 这一行需要多久（演示里按真实耗时的 1/12 压缩，最短 0.5s）
+      timers.push(setTimeout(() => {
+        if (isLast) return;
+        node._live = false;
+        const s = node.querySelector(".shimmer");
+        if (s) s.outerHTML = `<span class="name">${row.label}</span>`;
+        const m = node.querySelector(".meta");
+        if (m) m.textContent = row.kind === "read" || row.kind === "fold" ? fmt(row.ms) : fmt(row.ms);
+        if (row.kind === "think") node.open = false;
+        if (row.hits != null) {
+          const num = el("span", "meta num", `${row.hits} 处`);
+          node.appendChild(num);
+        }
+      }, stepMs));
+    }, at));
+    at += stepMs + 120;
+  });
+
+  // 收尾：壳头变「已完成」，最后一条思考收起
+  timers.push(setTimeout(() => {
+    cancelAnimationFrame(raf);
+    const last = liveBody.lastElementChild;
+    if (last) {
+      last._live = false;
+      const s = last.querySelector(".shimmer");
+      if (s) s.outerHTML = `<span class="name">${last._row.label}</span>`;
+      const m = last.querySelector(".meta");
+      if (m) m.textContent = fmt(last._row.ms);
+      if (last._row.kind === "think") last.open = false;
+    }
+    orbSlot.replaceChildren();
+    liveState.className = "";
+    liveState.textContent = "已完成";
+    liveElapsed.textContent = fmt(ROWS.reduce((s, r) => s + (r.ms || 0), 0));
+    phase.textContent = "完成（停 1.5s 自动收起的规则在真机上生效；本页保留展开方便对照）";
+  }, at + 600));
+}
+
+document.getElementById("play").addEventListener("click", play);
+play();
+</script>
+</body>
+</html>

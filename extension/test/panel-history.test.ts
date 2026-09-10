@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PanelHistory } from "../src/background/panel-history.js";
+import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt } from "../src/background/panel-history.js";
 import type { BgToPanel, PanelHistoryItem, PanelToBg } from "../src/relay.js";
 
 describe("PanelHistory", () => {
@@ -109,4 +109,73 @@ it('persists one source plan with pending and unexecuted steps across history re
  const item:PanelHistoryItem={kind:'server',msg:{type:'agent_event',conversationId:'A',event:{kind:'notice',message:'语音计划',plan}}};
  history.record(item);history.record(item);const restored=new PanelHistory();restored.restore(JSON.parse(JSON.stringify(history.since())));restored.record(item);
  expect(restored.since()).toHaveLength(1);expect(restored.since()[0]!.item).toEqual(item);
+});
+
+
+describe("落盘窗口与保留数量（存储配额）", () => {
+  it("只落盘最近一段：累计超过预算即从最旧截断，且非空历史至少保留一条", () => {
+    const history = new PanelHistory();
+    for (let index = 0; index < 40; index += 1) {
+      history.record({ kind: "user", text: `第 ${index} 条 ${"填".repeat(20_000)}` });
+    }
+
+    const window = history.persistWindow(HISTORY_PERSIST_BUDGET_BYTES);
+    const bytes = new TextEncoder().encode(JSON.stringify(window)).length;
+
+    expect(bytes).toBeLessThanOrEqual(HISTORY_PERSIST_BUDGET_BYTES + 1);
+    expect(window.length).toBeGreaterThan(0);
+    expect(window.length).toBeLessThan(history.since().length);
+    // 截断的是旧的一头，最新一条必须在
+    expect(window[window.length - 1]!.seq).toBe(history.since().at(-1)!.seq);
+    expect(window.map((entry) => entry.seq)).toEqual([...window.map((entry) => entry.seq)].sort((a, b) => a - b));
+  });
+
+  it("单条就超预算时仍保留最新一条，不写成空数组", () => {
+    const history = new PanelHistory();
+    history.record({ kind: "user", text: "小" });
+    history.record({ kind: "user", text: "大".repeat(HISTORY_PERSIST_BUDGET_BYTES * 2) });
+
+    const window = history.persistWindow(HISTORY_PERSIST_BUDGET_BYTES);
+
+    expect(window).toHaveLength(1);
+    expect(window[0]!.seq).toBe(2);
+  });
+
+  it("空历史落盘为空数组", () => {
+    expect(new PanelHistory().persistWindow(HISTORY_PERSIST_BUDGET_BYTES)).toEqual([]);
+  });
+
+  it("只保留最近 N 个会话，旧格式（裸数组）按最旧先删", () => {
+    const records = [
+      { key: "history:old-array", updatedAt: historyUpdatedAt([{ seq: 1 }]) },
+      { key: "history:a", updatedAt: 100 },
+      { key: "history:b", updatedAt: 300 },
+      { key: "history:c", updatedAt: 200 },
+    ];
+
+    // 按 updatedAt 排序后丢掉最旧的；旧格式排在最后
+    expect(historyKeysToDrop(records, 2).sort()).toEqual(["history:a", "history:old-array"]);
+    expect(historyKeysToDrop(records, 4)).toEqual([]);
+    expect(historyKeysToDrop(records, 9)).toEqual([]);
+  });
+
+  it("恢复兼容两种形状：新版 {updatedAt, entries} 与旧版裸数组", () => {
+    const source = new PanelHistory();
+    source.record({ kind: "user", text: "第一次" });
+    source.record({ kind: "user", text: "第二次" });
+
+    const wrapped = new PanelHistory();
+    wrapped.restore({ updatedAt: 123, entries: JSON.parse(JSON.stringify(source.since())) });
+    expect(wrapped.since().map((entry) => entry.seq)).toEqual([1, 2]);
+
+    const legacy = new PanelHistory();
+    legacy.restore(JSON.parse(JSON.stringify(source.since())));
+    expect(legacy.since().map((entry) => entry.seq)).toEqual([1, 2]);
+
+    const broken = new PanelHistory();
+    broken.restore(null);
+    broken.restore(undefined);
+    broken.restore({ updatedAt: 1 });
+    expect(broken.since()).toEqual([]);
+  });
 });

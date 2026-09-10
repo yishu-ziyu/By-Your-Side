@@ -1,9 +1,10 @@
 /**
  * 虚拟光标视觉常量（tldraw 协作光标：色填 + 白描边 + 深色外晕 + 名牌）。
- * 从 27px/1.6 描边加大，保证浅色、深色、花哨背景上都压得住。
+ * 44px 是 2026-09-10 为浅色/深色/花哨背景对比加大的结果；
+ * 2026-09-11 用户反馈静止光标压住站点 logo，要求缩小约 20% → 35px。
  */
 
-export const CURSOR_SVG_SIZE = 44;
+export const CURSOR_SVG_SIZE = 35;
 export const CURSOR_STROKE_WHITE = 2.2;
 export const CURSOR_STROKE_HALO = 3.8;
 export const CURSOR_TIP = { x: 4.037, y: 4.688 };

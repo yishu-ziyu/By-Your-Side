@@ -39,6 +39,12 @@ interface SideAgentCursor {
   /** 绑定这次真实操作与同一个 DOM 元素；id 隔离晚到的结束消息。 */
   beginAction(id: string, kind: "click" | "fill" | "hover", rect?: SideAgentRect, anchor?: Element, label?: string): void;
   endAction(id: string, outcome: "done" | "failed" | "unknown", point?: [number, number]): void;
+  /** 状态层：在等 / 在读 / 完成 / 失败挂在光标名牌上。文案在页面侧，调用方只给状态。 */
+  setStatus?(view?: { state: "waiting" | "reading" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
+  clearStatus?(): void;
+  /** 跨页：它在别的标签页干活时，当前页右上角显示可点胶囊（点了切过去） */
+  showCrossPage?(view?: { sessionId?: string; title?: string; state?: "waiting" | "reading" | "done" | "failed" }): void;
+  hideCrossPage?(): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
@@ -95,6 +101,8 @@ interface SideAgentNamespace {
   } | null;
   /** overlay 自检：当前 mark 的文档坐标盒（生产路径不用） */
   markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
+  /** overlay 自检：标注层真实子节点数 */
+  markLayerCount?: () => number;
   /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */
   holdState?: (instanceId?: string) => {
     holding: boolean;
@@ -105,6 +113,30 @@ interface SideAgentNamespace {
   } | null;
   holdActionLabels?: () => Array<{ id: string; label: string }>;
   clickHoldAction?: (id: string) => boolean;
+  /** overlay 自检：光标状态名牌（状态层） */
+  cursorStatus?: (id?: string) => {
+    state: string | null;
+    text: string;
+    detail: string;
+    fontSize: string;
+    nameFontSize: string;
+    borderColor: string;
+    opacity: number;
+    labelRect: SideAgentRect | null;
+    x: number;
+    y: number;
+    hidden: boolean;
+    resting: boolean;
+  } | null;
+  /** overlay 自检：右上角跨页胶囊 */
+  crossPageState?: () => {
+    main: string;
+    sub: string;
+    sessionId: string;
+    rect: SideAgentRect;
+    viewport: { width: number; height: number };
+  } | null;
+  clickCrossPage?: () => boolean;
   /** overlay 自检：页顶接管条 */
   controlBanner?: () => { status: string; action: string } | null;
   clickHandback?: () => boolean;

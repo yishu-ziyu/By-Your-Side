@@ -234,6 +234,44 @@ if (released.holding || released.pressing) fail(`releaseHold 后仍在拿住 ${J
 const labelsAfterRelease = await page.evaluate(() => window.__sideagent.holdActionLabels());
 if (labelsAfterRelease.length !== 0) fail(`releaseHold 后名牌双键应消失 ${JSON.stringify(labelsAfterRelease)}`);
 
+// 确认锚框随拿住态一起撤，任务标注不受影响
+// （2026-09-10 真机：在 ChatGPT 上确认「发送」后，"待确认" 名牌一直挂在那颗按钮上）
+await page.evaluate(() => window.__sideagent.cursor.clearMarks());
+await page.evaluate(() => {
+  const box = document.getElementById("box");
+  const r = box.getBoundingClientRect();
+  const task = {
+    x: r.x, y: r.y, width: r.width, height: r.height,
+  };
+  // 1) 任务标注（模型画的）——不该被确认流程带走
+  window.__sideagent.cursor.mark(task, "AMR 位置", "#box");
+  // 2) 确认锚框——确认/取消后必须消失
+  window.__sideagent.cursor.mark(
+    { x: task.x, y: task.y + 70, width: task.width, height: task.height },
+    "待确认",
+    "#box",
+    [{ id: "confirm", label: "发送" }, { id: "cancel", label: "取消" }],
+  );
+});
+await page.waitForTimeout(60);
+const bothMarks = await page.evaluate(() => ({
+  layer: window.__sideagent.markLayerCount(),
+  labels: window.__sideagent.markDetails().map((m) => m.labelText),
+  holding: window.__sideagent.holdState()?.holding,
+}));
+if (bothMarks.layer !== 2) fail(`应同时存在任务标注与确认锚框 ${JSON.stringify(bothMarks)}`);
+if (!bothMarks.holding) fail("带 actions 的锚框未进入拿住态");
+await page.evaluate(() => window.__sideagent.cursor.releaseHold());
+await page.waitForTimeout(40);
+const afterConfirm = await page.evaluate(() => ({
+  layer: window.__sideagent.markLayerCount(),
+  labels: window.__sideagent.markDetails().map((m) => m.labelText),
+}));
+if (afterConfirm.layer !== 1 || afterConfirm.labels[0] !== "AMR 位置") {
+  fail(`确认后应只撤掉"待确认"锚框，实际 ${JSON.stringify(afterConfirm)}`);
+}
+await page.evaluate(() => window.__sideagent.cursor.clearMarks());
+
 // 待归档语义兜底测试：未显式传 actions 但 label 包含「待归档」时自动拿住并出双键
 await page.evaluate(() => {
   const box = document.getElementById("box");

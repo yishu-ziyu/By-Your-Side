@@ -54,3 +54,12 @@
 
 本轮原因、边界和失败已经由代码、定点测试及本文件解释，不另写经验或提案。第二轮等待/阅读/跨页状态尚未实施，待用户评价本轮可见性后再推进。
 
+## 2026-09-11 修订：光标尺寸 44px → 35px
+
+用户跑完真机任务后反馈：静止光标（默认停在左上角）会压住站点 logo，要求「在当前体积上大概小 20%」。据此 `extension/src/shared/cursor-visual.ts` 的 `CURSOR_SVG_SIZE` 由 44 改为 35；`extension/test/overlay.test.ts` 原「≥36 保证浅深底对比」的下限断言按新决定改为锁定 35。
+
+原第 1 条「44px 画布」的标准保留为历史记录，不追溯改写。修订依据是用户明确要求，不是为迁就实现。
+
+机器证据：`npx vitest run extension/test/overlay.test.ts extension/test/cursor-status.test.ts` 25 项通过；`node extension/test/cursor-status-check.mjs` PASS，截图 `/tmp/sideagent-cursor-status/`（与修订前同场景对比，箭头明显变小，文字牌尺寸未改）；`npm test` / `npm run typecheck` / `npm run build` 通过。
+
+未决：压住 logo 的是箭头还是它旁边的状态文字牌。文字牌（11px 两行）面积大于箭头，本轮只按用户要求缩箭头，文字牌尺寸未动。
