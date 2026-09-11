@@ -507,13 +507,13 @@ export class BrowserAgentSession {
     context: PageContext | undefined,
     images: SessionImageContent[],
   ): Promise<void> {
-    const observation = await this.readUserPageForPrompt(context);
+    const observation = await this.readUserPageForPrompt(context, "task");
     const promptText = observation ? `${finalText}\n\n${observation}` : finalText;
     await session.prompt(promptText, images.length > 0 ? { images } : undefined);
   }
 
   /** 预观察只读当前页（不接管、不改工作标签）；结果进 trace，失败静默降级。 */
-  private async readUserPageForPrompt(context?: PageContext): Promise<string | null> {
+  private async readUserPageForPrompt(context: PageContext | undefined, phase: "task" | "steer"): Promise<string | null> {
     const tabId = context?.tabId;
     if (!this.rpc || !context || typeof tabId !== "number") return null;
     const startedAt = Date.now();
@@ -524,10 +524,11 @@ export class BrowserAgentSession {
       const clipped = text.length > PRE_OBSERVATION_TEXT_MAX
         ? `${text.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[same-page observation truncated]`
         : text;
-      this.runTrace.record("pre_observation", { tabId, ms: Date.now() - startedAt, chars: clipped.length });
+      this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: clipped.length });
       return freshPageObservationText(context, clipped);
     } catch (error) {
       this.runTrace.record("pre_observation_failed", {
+        phase,
         tabId,
         ms: Date.now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
@@ -660,7 +661,10 @@ export class BrowserAgentSession {
     this.experience?.feedback(text);
     this.memoryRuntime?.invalidateUserTurn();
     const images = extractImages(attachments);
-    const input = withPageContext(text, context);
+    // 纠正类插话常靠"这个页面/不是这个/刚才那个"指代：先补一次只读观察，
+    // 否则模型会拿自己上一轮的前提继续推理（实测把 ChatGPT 页当成扩展管理页讲了四轮）。
+    const observation = steerNeedsPageObservation(text) ? await this.readUserPageForPrompt(context, "steer") : null;
+    const input = observation ? `${withPageContext(text, context)}\n\n${observation}` : withPageContext(text, context);
     this.pendingCorrections.add(input);
     this.controlEpoch += 1;
     // Ordered before the acceptance receipt: invalidate writes already queued at the extension.
@@ -1187,6 +1191,17 @@ export function withPageContext(text: string, context?: PageContext): string {
     if (sel) out += `[User's selected text]\n${sel}\n`;
   }
   return `${out}${text}`;
+}
+
+/**
+ * 插话里是否出现"页面指代 / 纠正"信号。这类句子多半是在纠正"我在看哪一页"或"刚才那一步"，
+ * 附一次当前页只读观察能直接掐掉"拿模型自己上一轮的前提继续推理"；
+ * 纯参数修改（改预算、换筛选）不附，省掉每次插话的页面 token。
+ */
+const STEER_PAGE_REFERENCE = /(这|那|当前|刚才|上面|页面|标签|网页|屏幕|截图|不是|不对|其实|改看|别看)/;
+
+export function steerNeedsPageObservation(text: string): boolean {
+  return STEER_PAGE_REFERENCE.test(text ?? "");
 }
 
 export function lastAssistantError(messages: unknown): string | null {

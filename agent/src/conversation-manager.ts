@@ -1,5 +1,6 @@
 import {join} from "node:path";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
+import {CONTROL_CONFIRM_TTL_MS,controlConfirmMessage,isControlConfirm,isControlReject} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
@@ -31,6 +32,8 @@ export class ConversationManager {
   private readonly requests = new Map<string, Promise<ConversationEntry>>();
   private readonly progress = new Map<string, TaskProgress>();
   private readonly voiceConfirmations=new Map<string,VoiceProposal>();
+  /** 语音控制句的读回确认：等用户"对/不"再落动作（改正在跑的任务、终止）。 */
+  private readonly controlConfirmations=new Map<string,{voiceId:string;turn:number;expiresAt:number;action:'steer'|'abort';text:string;expectedRunId:string|null}>();
   private readonly controlVersions=new Map<string,number>();
   private readonly makeupRuns=new Set<string>();
   private readonly voicePlans:VoicePlanStore;
@@ -82,6 +85,20 @@ export class ConversationManager {
     const pending=route?.resumeReadOnly?undefined:this.voiceConfirmations.get(id)??(route?this.voicePlans.proposal(id,route.voiceId,route.turn-1):undefined);
     if(!route?.resumeReadOnly){this.voiceConfirmations.delete(id);if(pending)this.voicePlans.update(id,pending.id,{proposal:{...pending,expiresAt:0}});}
     const short=text.replace(/[\p{P}\p{Z}\s]/gu,'');
+    // 语音控制句的读回确认：上一轮问过"你是说…吗"，这一轮的"对/不"直接决定动作落不落。
+    const control=this.controlConfirmations.get(id);
+    if(control)this.controlConfirmations.delete(id);
+    if(control&&route&&control.voiceId===route.voiceId&&route.turn===control.turn+1&&Date.now()<control.expiresAt){
+      if(isControlReject(text))return {kind:'clarify',message:'好，那我不动它。'};
+      if(isControlConfirm(text)){
+        route.onInputDecision?.(false);
+        if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+        const receipt=await this.dispatchTaskAction({requestId:route.requestId,conversationId:id,source:'voice',action:control.action,expectedRunId:control.expectedRunId,expectedControlVersion:route.controlVersion??before.controlVersion??0,text:control.text},stillCurrent);
+        return receipt.action==='steer'
+          ?{kind:'steer',ok:receipt.status==='accepted'||receipt.status==='applied',status:receipt.status,message:receipt.message,receipts:[receipt]}
+          :{kind:'action',ok:receipt.status==='accepted'||receipt.status==='applied',status:receipt.status,message:receipt.message,receipts:[receipt]};
+      }
+    }
     if(pending&&route&&pending.voiceId===route.voiceId&&route.turn===pending.turn+1&&Date.now()<pending.expiresAt){
       if(/^(好|好的|可以|是的|确认|同意|另开|开吧|好另开会话|另开会话|确认另开会话)$/.test(short)){
         route.onInputDecision?.(false);
@@ -176,6 +193,12 @@ export class ConversationManager {
       if(step.action==='clarify')return {kind:'clarify',message:/^(停止|停|停下)[。！!？?\s]*$/.test(step.text.trim())?'你是想停止播报，还是暂停任务？':'请说出目标会话的名称。'};
       const targetId=targetIds[index]!;
       const sharesInput=targetId===id||/(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text);
+      // 会改到正在跑的任务的控制句（修改/终止）：先复述一遍，等用户"对"再落。
+      if((step.action==='steer'||step.action==='abort')&&plan.steps.length===1&&targetId===id&&before.state==='running'&&route){
+        this.controlConfirmations.set(id,{voiceId:route.voiceId,turn:route.turn,expiresAt:Date.now()+CONTROL_CONFIRM_TTL_MS,action:step.action,text:step.text,expectedRunId:expected.get(targetId)??null});
+        journal[index]!.status='unexecuted';save();
+        return {kind:'clarify',message:controlConfirmMessage(step.text)};
+      }
       if(['pause','resume','abort'].includes(step.action))route?.reportStage?.('controlling');
       journal[index]!.status='pending';save();
       const receipt=await this.dispatchTaskAction({expectedControlVersion:versions.get(targetId)??0,requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:targetId,...(targetId!==id?{originConversationId:id}:{}),source:'voice',action:step.action,expectedRunId:expected.get(targetId)??null,text:step.text,...((step.action==='start'||step.action==='steer')&&sharesInput?route?.input:{})},stillCurrent);
