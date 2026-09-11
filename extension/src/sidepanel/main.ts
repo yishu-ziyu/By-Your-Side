@@ -258,6 +258,18 @@ let conversationReady = false;
 let transportConnected = false;
 const completedConversations = new Set<string>();
 let conversationRequest: string | null = null;
+/**
+ * 面板每次"打开进入"都开一段新会话：文档启动即置位，重连不重置。
+ * 决定方式——上一段还是空白页（标题仍是"新会话"）就复用它，否则另开一段；
+ * 方案见 docs/evals/20260911-open-panel-new-session.md。
+ */
+let bootFreshSession = true;
+let bootInheritedId: string | null = null;
+let bootDecisionTimer: ReturnType<typeof setTimeout> | null = null;
+let bootCreateTimer: ReturnType<typeof setTimeout> | null = null;
+/** 会话清单迟迟不到时的兜底时限；新建请求迟迟没有回执时的回退时限。 */
+const BOOT_DECISION_TIMEOUT_MS = 6_000;
+const BOOT_CREATE_FALLBACK_MS = 4_000;
 const conversations = new Map<string, ConversationSummary>();
 const receiptMessages = new Map<string, HTMLElement>();
 const conversationSwitcher = document.getElementById("conversation-switcher") as HTMLButtonElement;
@@ -410,16 +422,73 @@ function selectConversation(id: string, notify = true): void {
   port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
 }
 
+/**
+ * 打开进入时的会话决策：清单里上一段还是空白的新会话就复用它，否则另开一段。
+ * 清单没到、后台还没连上都不急着建；等下一次清单/连接事件或兜底时限再定。
+ */
+function resolveBootSession(inheritedId: string, listKnown: boolean): void {
+  if (!bootFreshSession) return;
+  bootInheritedId = inheritedId;
+  const inherited = conversations.get(inheritedId);
+  if (!inherited && !listKnown) return;
+  if (inherited && inherited.title === "新会话" && inherited.state === "idle") {
+    finishBootSession();
+    selectConversation(inheritedId, false);
+    return;
+  }
+  if (!requestNewConversation()) { armBootDecisionTimeout(); return; }
+  finishBootSession();
+}
+
+function finishBootSession(): void {
+  bootFreshSession = false;
+  if (bootDecisionTimer !== null) {
+    clearTimeout(bootDecisionTimer);
+    bootDecisionTimer = null;
+  }
+}
+
+function armBootDecisionTimeout(): void {
+  if (bootDecisionTimer !== null) return;
+  bootDecisionTimer = setTimeout(() => {
+    bootDecisionTimer = null;
+    if (!bootFreshSession) return;
+    if (!transportConnected) { armBootDecisionTimeout(); return; }
+    if (!requestNewConversation()) { armBootDecisionTimeout(); return; }
+    finishBootSession();
+  }, BOOT_DECISION_TIMEOUT_MS);
+}
+
+/** 新开会话的请求；返回是否真的发出（未连接或端口不可用时不动状态，留给下一次重试）。 */
+function requestNewConversation(): boolean {
+  if (conversationRequest) return true;
+  saveDraft();
+  conversationRequest = crypto.randomUUID();
+  renderConversations();
+  if (!send({ type: "conversation_create", requestId: conversationRequest })) {
+    conversationRequest = null;
+    renderConversations();
+    return false;
+  }
+  if (bootCreateTimer !== null) clearTimeout(bootCreateTimer);
+  bootCreateTimer = setTimeout(() => {
+    bootCreateTimer = null;
+    if (conversationReady || conversationRequest === null) return;
+    // 后台迟迟没有回执：不把面板卡在"正在新建"，退回显示上一段。
+    conversationRequest = null;
+    renderConversations();
+    if (bootInheritedId) selectConversation(bootInheritedId, false);
+  }, BOOT_CREATE_FALLBACK_MS);
+  return true;
+}
+
 conversationSwitcher.onclick = () => {
   conversationMenu.hidden = !conversationMenu.hidden;
   conversationSwitcher.setAttribute("aria-expanded", String(!conversationMenu.hidden));
 };
 conversationNew.onclick = () => {
   if (!conversationReady || conversationRequest) return;
-  saveDraft();
-  conversationRequest = crypto.randomUUID();
-  renderConversations();
-  send({ type: "conversation_create", requestId: conversationRequest });
+  requestNewConversation();
 };
 document.addEventListener("click", (e) => {
   if (!conversationMenu.contains(e.target as Node) && !conversationSwitcher.contains(e.target as Node)) {
@@ -2253,6 +2322,9 @@ function closeBlocks(): void {
       label.textContent = currentThinkingStart
         ? `思考过程${recordedDuration(currentThinkingStart, eventTime()) ? ` ${recordedDuration(currentThinkingStart, eventTime())}` : ""}`
         : "思考过程";
+      // B：收束——这一行落定一次（200ms 归位），不反向播放
+      label.classList.add("settle-once");
+      window.setTimeout(() => label.classList.remove("settle-once"), 400);
     }
   }
   currentAssistant = null;
@@ -2430,6 +2502,8 @@ function onToolStart(
   const chip = document.createElement("button");
   chip.type = "button";
   chip.className = "chip";
+  // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态
+  if (!applyingHistory) chip.classList.add("running");
   const dot = document.createElement("span");
   dot.className = `chip-dot ${chipState(false, false)}`;
   const iconBox = document.createElement("span");
@@ -2475,6 +2549,8 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   toolChips.delete(ev.toolCallId);
   if (!entry) return;
   entry.dot.className = `chip-dot ${chipState(true, ev.isError)}`;
+  // B：收束——蓝边底色按 --m-move 退回常态
+  entry.chip.classList.remove("running");
   // 球停下并定格：完成是收束，不是把球换掉
   entry.orb.setRunning(false);
   // 完成不是变色，是收束：点从放大处缩回原位（04 settle）
@@ -2745,7 +2821,8 @@ function handleServerMessage(raw: string): void {
 function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "conversations") {
     for (const c of envelope.conversations) upsertConversation(c);
-    if (envelope.selectedConversationId !== selectedConversationId || !conversationReady) {
+    if (bootFreshSession) resolveBootSession(envelope.selectedConversationId, envelope.conversations.length > 0);
+    else if (envelope.selectedConversationId !== selectedConversationId || !conversationReady) {
       selectConversation(envelope.selectedConversationId, false);
     }
     renderConversations();
@@ -2758,6 +2835,7 @@ function handleBgMessage(envelope: BgToPanel): void {
     return;
   }
   if (envelope.kind === "history") {
+    if (bootFreshSession) return;
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     applyHistory(envelope.entries);
     return;
@@ -2800,6 +2878,8 @@ function handleBgMessage(envelope: BgToPanel): void {
     // 等 hello_ok 带模型名到达；先亮绿灯
     setStatus("on", "已连接");
     voiceUI.reconnected();
+    // 清单可能先于连接到达：连上后补一次打开决策，别等兜底时限。
+    if (bootFreshSession && bootInheritedId !== null) resolveBootSession(bootInheritedId, conversations.size > 0);
   } else if (envelope.state === "connecting") {
     setStatus("retry", "连接中…");
   } else {
@@ -3057,4 +3137,5 @@ takeoverBtn.onclick = () => {
 };
 abortBtn.onclick = () => send({ type: "abort" });
 
+armBootDecisionTimeout();
 connect();

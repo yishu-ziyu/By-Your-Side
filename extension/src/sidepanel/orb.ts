@@ -190,12 +190,23 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
       if (next) {
         instance.running = true;
         instance.t0 = performance.now() / 1000;
+        // 跑起来才呼吸（18→20px），历史回放不进入这个状态
+        canvas.classList.remove("orb-settle");
+        canvas.classList.add("orb-live");
         ensureLoop();
         return;
       }
       instance.offset += performance.now() / 1000 - instance.t0;
       instance.running = false;
       paintStill(instance);
+      canvas.classList.remove("orb-live");
+      // 完成是收束：从呼吸处的放大缩回原位，一次性，不排队
+      if (!prefersReduce()) {
+        canvas.classList.remove("orb-settle");
+        canvas.classList.add("orb-settle");
+        // 用定时器摘 class 而不是 animationend：折叠的 details 里动画不启动，事件不会来。
+        window.setTimeout(() => canvas.classList.remove("orb-settle"), 400);
+      }
     },
     dispose(): void {
       instances.delete(instance);

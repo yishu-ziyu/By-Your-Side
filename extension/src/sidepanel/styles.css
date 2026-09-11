@@ -811,12 +811,70 @@ details.run-steps {
 
 /* ── 思考过程 ────────────────────────────────────────────────────── */
 details.thinking {
+  position: relative;
   align-self: stretch;
   flex-shrink: 0;
   color: var(--text-2);
   font-size: 12px;
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
+  /* 2px 竖线 + 10px 缩进：竖线改成伪元素后仍占同样的位置 */
+  padding-left: 12px;
+}
+
+/* A：运行中的那一步有生命——竖线先长出来，再轻微呼吸；结束落回常态 */
+details.thinking::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+  transform-origin: top center;
+  transition: background var(--m-move) var(--e-swift);
+}
+
+details.thinking.streaming::before {
+  background: var(--apple-blue);
+  animation: spineGrow var(--m-morph) var(--e-swift) both, spineBreathe 1.6s ease-in-out infinite;
+}
+
+@keyframes spineGrow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes spineBreathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* A：运行中的光球放大呼吸（18 → 20px），结束一次性收束回原位；只动 transform/opacity */
+canvas.orb-live {
+  animation: orbBreathe 0.9s ease-in-out infinite;
+}
+
+canvas.orb-settle {
+  animation: orbSettle 200ms var(--e-spring);
+}
+
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.111); }
+}
+
+@keyframes orbSettle {
+  from { transform: scale(1.111); }
+  to { transform: scale(1); }
+}
+
+/* B：完成是收束——行内文案落定一次，不反向播放 */
+.settle-once {
+  animation: settleIn 200ms var(--e-swift);
+}
+
+@keyframes settleIn {
+  from { opacity: 0.35; transform: translateY(-1px); }
+  to { opacity: 1; transform: none; }
 }
 
 details.thinking summary {
@@ -827,7 +885,13 @@ details.thinking summary {
   user-select: none;
   color: var(--text-2);
   font-size: 12px;
+  transition: color var(--m-move) var(--e-swift);
   list-style: none;
+}
+
+/* A：正在思考的那一行，名字也是信号；结束按 --m-move 退回次要色 */
+details.thinking.streaming summary {
+  color: var(--apple-blue);
 }
 
 details.thinking summary::-webkit-details-marker {
@@ -1179,6 +1243,12 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 .chip.error {
   border-color: color-mix(in srgb, var(--apple-red) 40%, transparent);
   background: var(--apple-red-soft);
+}
+
+/* A+B：正在跑的那个 chip 有蓝边和底色，跑完按 --m-move 退回常态（收束） */
+.chip.running {
+  border-color: color-mix(in srgb, var(--apple-blue) 45%, transparent);
+  background: var(--content-subtle-hover);
 }
 
 /* 状态点：运行中 accent 脉动，完成绿，失败红 */
@@ -2194,6 +2264,14 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   .msg.assistant.streaming::after,
   .dot.retry,
   .chip-dot.running {
+    animation: none;
+  }
+
+  /* A+B 新增的持续/一次性动效：减少动态时只留状态色，不动位移与呼吸 */
+  canvas.orb-live,
+  canvas.orb-settle,
+  details.thinking.streaming::before,
+  .settle-once {
     animation: none;
   }
 

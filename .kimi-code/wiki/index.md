@@ -20,3 +20,4 @@
 | [cross-process-session-closeout](patterns/cross-process-session-closeout.md) | 收盘顺序错、结果被收走、归属依赖任务绑定：跨进程会话的尾巴会丢 | 示范录制第一刀真机模拟 | 2026-09-11 |
 | [gui-test-window-steals-focus](patterns/gui-test-window-steals-focus.md) | 可见 GUI 测试窗口会抢用户前台；浏览器验收走 `--headless=new`，脚本自带拒绝 | 同上（用户反馈） | 2026-09-11 |
 | [pi-opencode-missing-session-header](patterns/pi-opencode-missing-session-header.md) | Prime Agent 的 refine/子代理请求缺 `x-opencode-session` 被 400 拒；别假设 refine 成功 | 用户截图报错排查 | 2026-09-11 |
+| [collapsed-details-animation-end](patterns/collapsed-details-animation-end.md) | 关闭的 `details` 里动画不启动，`animationend` 不会来；靠动画结束清状态要用定时器兜底，判断是否在跑看 `getAnimations()` | 面板运行态 A+B 动效 | 2026-09-11 |

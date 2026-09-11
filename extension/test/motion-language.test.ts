@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 const css = readFileSync(resolve(__dirname, "../src/sidepanel/styles.css"), "utf-8");
 const mainTs = readFileSync(resolve(__dirname, "../src/sidepanel/main.ts"), "utf-8");
 const cursorTs = readFileSync(resolve(__dirname, "../src/content/cursor.ts"), "utf-8");
+const orbTs = readFileSync(resolve(__dirname, "../src/sidepanel/orb.ts"), "utf-8");
 
 describe("Motion Language tokens", () => {
   it("3 个时长 + 3 条曲线齐全", () => {
@@ -89,7 +90,6 @@ describe("06 trace：定位高亮出现→保持→消退", () => {
 });
 
 describe("05 breathe：执行面板的光球", () => {
-  const orbTs = readFileSync(resolve(__dirname, "../src/sidepanel/orb.ts"), "utf-8");
   const vendorJs = readFileSync(resolve(__dirname, "../src/vendor/thinking-orbs.js"), "utf-8");
 
   it("引擎按 MIT 原样 vendor，许可与来源都在", () => {
@@ -125,5 +125,57 @@ describe("05 breathe：执行面板的光球", () => {
   it("历史回放不转：回放路径不点亮球", () => {
     expect(mainTs).toMatch(/if \(!applyingHistory\) orb\.setRunning\(true\)/);
     expect(mainTs).toMatch(/if \(!applyingHistory\) chipOrb\.setRunning\(true\)/);
+  });
+});
+
+describe("07 live：运行中的那一步有生命（A+B）", () => {
+  it("运行中的光球呼吸、结束收束，只用 transform/opacity", () => {
+    expect(orbTs).toMatch(/canvas\.classList\.add\("orb-live"\)/);
+    expect(orbTs).toMatch(/canvas\.classList\.add\("orb-settle"\)/);
+    expect(orbTs).toMatch(/window\.setTimeout\(\(\) => canvas\.classList\.remove\("orb-settle"\)/);
+    const live = css.match(/canvas\.orb-live\s*\{[^}]*\}/)?.[0] ?? "";
+    const settle = css.match(/canvas\.orb-settle\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(live).toMatch(/animation:\s*orbBreathe/);
+    expect(settle).toMatch(/animation:\s*orbSettle/);
+    const breatheFrames = css.slice(css.indexOf("@keyframes orbBreathe"), css.indexOf("@keyframes orbBreathe") + 160);
+    const settleFrames = css.slice(css.indexOf("@keyframes orbSettle"), css.indexOf("@keyframes orbSettle") + 160);
+    expect(breatheFrames).toContain("scale(1)");
+    expect(breatheFrames).toContain("scale(1.111)");
+    expect(settleFrames).toContain("scale(1.111)");
+    expect(settleFrames).toContain("scale(1)");
+  });
+
+  it("运行中思考行的竖线长出来并呼吸，落定后回到常态", () => {
+    expect(css).toMatch(/details\.thinking::before\s*\{[^}]*background:\s*var\(--border\)[^}]*transform-origin:\s*top/);
+    expect(css).toMatch(/details\.thinking\.streaming::before\s*\{[^}]*spineGrow[^}]*spineBreathe/);
+    expect(css).toMatch(/@keyframes spineGrow/);
+    expect(css).toMatch(/details\.thinking\.streaming summary\s*\{[^}]*color:\s*var\(--apple-blue\)/);
+  });
+
+  it("跑着的 chip 有运行态样式，跑完退回常态", () => {
+    expect(css).toMatch(/\.chip\.running\s*\{[^}]*border-color:\s*color-mix/);
+    expect(mainTs).toMatch(/if \(!applyingHistory\) chip\.classList\.add\("running"\)/);
+    expect(mainTs).toMatch(/entry\.chip\.classList\.remove\("running"\)/);
+  });
+
+  it("文案落定是一次性的，不反向播放", () => {
+    expect(mainTs).toMatch(/label\.classList\.add\("settle-once"\)/);
+    expect(css).toMatch(/\.settle-once\s*\{[^}]*animation:\s*settleIn/);
+  });
+
+  it("减少动态时新动效全部关掉", () => {
+    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(reduced).toMatch(/canvas\.orb-live/);
+    expect(reduced).toMatch(/canvas\.orb-settle/);
+    expect(reduced).toMatch(/details\.thinking\.streaming::before/);
+    expect(reduced).toMatch(/\.settle-once/);
+    expect(orbTs).toMatch(/const next = running && !prefersReduce\(\)/);
+    expect(orbTs).toMatch(/if \(!prefersReduce\(\)\) \{/);
+  });
+
+  it("新增规则不写 transition: all", () => {
+    for (const block of [css.match(/\.chip\.running\s*\{[^}]*\}/)?.[0] ?? "", css.match(/details\.thinking summary\s*\{[^}]*\}/)?.[0] ?? ""]) {
+      expect(block).not.toContain("transition: all");
+    }
   });
 });
