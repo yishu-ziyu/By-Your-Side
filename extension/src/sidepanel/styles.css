@@ -899,38 +899,6 @@ details.run-steps.done .run-icon {
   color: var(--apple-green);
 }
 
-/* 04 settle：等待态收束退出，完成图标从同一点旋转展开——不是"啪"地换一个 */
-.px-wrap.leaving {
-  animation: pxSettleOut var(--m-move) var(--e-swift) forwards;
-  pointer-events: none;
-}
-
-@keyframes pxSettleOut {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.96) translateY(-3px);
-  }
-}
-
-details.run-steps .run-icon.settling {
-  animation: runIconSettle var(--m-morph) var(--e-swift) both;
-}
-
-@keyframes runIconSettle {
-  from {
-    opacity: 0;
-    transform: scale(0.3) rotate(-70deg);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 .run-title {
   font-weight: 600;
   color: var(--text-primary);
@@ -1310,61 +1278,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   word-break: break-all;
   max-height: 160px;
   overflow-y: auto;
-}
-
-/* ── 像素格 loader ─────────────────────────────────────────── */
-/* 3×3 相位波纹 + 实时耗时 + 当前动作副标题；run 运行中常驻 body 底部 */
-.px-wrap {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 2px;
-}
-
-.px-grid {
-  display: grid;
-  /* 3×3 / 16px：等待态从主角退成背景，47px 的方阵会跟光球抢视线 */
-  grid-template-columns: repeat(3, 4px);
-  grid-auto-rows: 4px;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.px-grid i {
-  background: var(--accent);
-  border-radius: 1px;
-  opacity: 0.15;
-  animation: pxwave 1.6s ease-in-out infinite;
-}
-
-@keyframes pxwave {
-  0%,
-  100% {
-    opacity: 0.15;
-    transform: scale(0.85);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.px-meta {
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.px-elapsed {
-  font-family: var(--mono);
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.px-sub {
-  color: var(--text-3);
-  font-size: 11px;
-  margin-top: 2px;
 }
 
 /* 回到底部悬浮圆钮：内容超出一屏且用户上翻时出现 */
@@ -2282,12 +2195,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   .dot.retry,
   .chip-dot.running {
     animation: none;
-  }
-
-  /* 像素格静止（读数由 JS 驱动，不受影响照常刷新） */
-  .px-grid i {
-    animation: none;
-    opacity: 0.45;
   }
 
   .run-chevron {

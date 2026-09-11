@@ -5,7 +5,6 @@ import {
   describeTool,
   formatDuration,
   loaderSubtitle,
-  pixelDelay,
   workerEventRunPolicy,
   isLiveViewportPinned,
   liveViewportOverflows,
@@ -99,23 +98,6 @@ describe("loaderSubtitle 当前动作副标题", () => {
   });
   it("尚无工具回退「思考」", () => {
     expect(loaderSubtitle(null)).toBe("思考");
-  });
-});
-
-describe("pixelDelay 像素格相位波纹", () => {
-  it("按 (x+y)*0.12s 错相", () => {
-    expect(pixelDelay(0)).toBe(0);
-    expect(pixelDelay(1)).toBeCloseTo(0.12);
-    expect(pixelDelay(5)).toBeCloseTo(0.12); // 第二行第一列 x=0,y=1
-    expect(pixelDelay(24)).toBeCloseTo(0.96); // 右下角 x=4,y=4
-  });
-
-  it("阵列缩成 3×3 时坐标跟着换", () => {
-    // 等待态只剩 3×3，光球上线后它从主角退成背景
-    expect(pixelDelay(0, 3)).toBe(0);
-    expect(pixelDelay(1, 3)).toBeCloseTo(0.12); // x=1,y=0
-    expect(pixelDelay(3, 3)).toBeCloseTo(0.12); // x=0,y=1
-    expect(pixelDelay(8, 3)).toBeCloseTo(0.48); // 右下角 x=2,y=2
   });
 });
 

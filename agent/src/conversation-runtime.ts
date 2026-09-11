@@ -52,6 +52,9 @@ export async function createConversationRuntime(
   );
   toolSession = session;
   fleet.attachLead(session);
+  // 协作工具按需挂载：没有 worker 时模型只看到常驻工具，请到人（或拿到同伴工件）后再出现。
+  fleet.onMembersChange = (count) => session.setTeamToolsMounted(count > 0);
+  session.setTeamToolsMounted(fleet.size > 0);
   if (!session.available) {
     log("模型凭据未配置，会话暂不可用（连接面板后会收到设置指引）");
   }

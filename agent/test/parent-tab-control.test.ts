@@ -58,14 +58,14 @@ it("创建会话失败仍回收已打开页面", async () => {
     expect(call).toHaveBeenLastCalledWith("worker_tabs", { action: "release", workerId: expect.any(String) });
   } finally { create.mockRestore(); }
 });
-it("普通 close_tab 自动先接管，接管失败不发关闭调用", async () => {
+it("tabs action:close 自动先接管，接管失败不发关闭调用", async () => {
   const events: string[] = [];
   const rpc = { call: vi.fn(async () => { events.push("close"); return { closed: true }; }) };
   const take = vi.fn(async () => { events.push("take"); });
-  const tool = createBrowserTools(rpc as never, undefined, take).find(t => t.name === "close_tab")!;
-  await tool.execute("test", { tabId: 42 } as never, undefined, undefined, undefined as never);
+  const tool = createBrowserTools(rpc as never, undefined, take).find(t => t.name === "tabs")!;
+  await tool.execute("test", { action: "close", tabId: 42 } as never, undefined, undefined, undefined as never);
   expect(events).toEqual(["take", "close"]);
   take.mockRejectedValueOnce(new Error("页面现在归你"));
-  await expect(tool.execute("test2", { tabId: 42 } as never, undefined, undefined, undefined as never)).rejects.toThrow(/页面现在归你/);
+  await expect(tool.execute("test2", { action: "close", tabId: 42 } as never, undefined, undefined, undefined as never)).rejects.toThrow(/页面现在归你/);
   expect(rpc.call).toHaveBeenCalledOnce();
 });

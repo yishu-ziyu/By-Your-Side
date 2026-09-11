@@ -37,13 +37,30 @@ function formatTabs(tabs: TabInfo[]): string {
     .join("\n");
 }
 
+/**
+ * 合并工具：一个模型可见工具代理多个扩展 RPC 名。
+ * 能力开关（canExecute / isToolActive）按模型可见名判定，执行事实与账本仍按 RPC 名。
+ */
+const MODEL_TOOL_OF: Record<string, string> = {
+  list_tabs: "tabs",
+  get_active_tab: "tabs",
+  open_tab: "tabs",
+  switch_tab: "tabs",
+  close_tab: "tabs",
+  clear_marks: "mark",
+  // worker_tabs 是扩展侧 RPC 名；模型可见的入口是常驻的 take_tab。
+  worker_tabs: "take_tab",
+};
+
+export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
+
 export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: () => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void }): ToolDefinition[] {
   const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
-  // 依赖集合复用 WRITE_TOOLS；每次都问真实 canExecute，不看 JS 内容或提示词。
+  // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
   const unavailableWriteTools = (): ToolName[] =>
-    canExecute ? WRITE_TOOLS.filter((name) => !canExecute(name)) : [];
+    canExecute ? [...new Set(WRITE_TOOLS.map((name) => modelToolOf(name)))].filter((name) => !canExecute(name as ToolName)) as ToolName[] : [];
   const assertGenericJsAllowed = () => {
     const missing = unavailableWriteTools();
     if (missing.length === 0) return;
@@ -71,9 +88,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       try { assertGenericJsAllowed(); }
       catch (error) { if (sdkId) rpc.markCallRejected?.(sdkId); throw error; }
     }
-    if (canExecute && !canExecute(name)) {
+    if (canExecute && !canExecute(modelToolOf(name) as ToolName)) {
       if (sdkId) rpc.markCallRejected?.(sdkId);
-      throw new Error(`工具 ${name} 当前未启用，操作未执行`);
+      throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
       await takeTab(typeof params.tabId === "number" ? params.tabId : undefined);
@@ -130,7 +147,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled native-CSS target; browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS.',
+      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled native-CSS target; browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -149,66 +166,39 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }),
 
     defineTool({
-      name: "list_tabs",
-      label: "List tabs",
+      name: "tabs",
+      label: "Tabs",
       description:
-        sid ? "List only tabs assigned to you. Other members and user tabs are not available to workers." : "List ALL browser tabs, including user-opened tabs and other conversations, with id, title and URL. Filter this list to answer requests about existing tabs. Reading does not claim them. Use snapshot or read_element with tabId to read any tab.",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
-        return textResult(formatTabs(data.tabs), data);
-      },
-    }),
-
-    defineTool({
-      name: "get_active_tab",
-      label: "Get active tab",
-      description:
-        'Get the tab the user is currently looking at (the browser\'s focused tab), or null if there is none. Use it to resolve references like "this page" when the user message carries no page context. Pure query — does not claim the tab; call switch_tab to work on it.',
-      parameters: Type.Object({}),
-      execute: async () => {
-        const data = (await call("get_active_tab", {})) as ToolContract["get_active_tab"]["data"];
-        if (!data.tab) return textResult("No active tab found.", data);
-        return textResult(formatTabs([data.tab]), data);
-      },
-    }),
-
-    defineTool({
-      name: "open_tab",
-      label: "Open tab",
-      description:
-        "Open a new tab and claim it as the working tab. Omit url for a blank tab, then use navigate. Returns when the document is interactive, not when all resources finish. On readiness timeout, creation succeeded but the document is not confirmed ready; inspect the current URL and snapshot before acting.",
+        sid
+          ? 'One tool for browser tabs. action:"list" lists the tabs assigned to you; other members\' and user tabs are not available to workers.'
+          : 'One tool for browser tabs, in one call: action:"list" lists ALL tabs (id, title, URL) including user-opened and other conversations\' — reading does not claim them; action:"active" returns the tab the user is looking at right now (use it for "this page" when the message carries no page context, then action:"switch"); action:"open" opens url (omit for blank) and claims it as the working tab; action:"switch" makes tabId the working tab; action:"close" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.',
       parameters: Type.Object({
-        url: Type.Optional(Type.String({ description: "URL to open" })),
+        action: Type.Union([Type.Literal("list"), Type.Literal("active"), Type.Literal("open"), Type.Literal("switch"), Type.Literal("close")], {
+          description: "list | active | open | switch | close",
+        }),
+        tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch"; optional for "close", which defaults to the working tab)' })),
+        url: Type.Optional(Type.String({ description: 'URL to open for "open"; omit for a blank tab' })),
       }),
       execute: async (_id, params) => {
-        const data = (await call("open_tab", params)) as ToolContract["open_tab"]["data"];
-        return textResult(`Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}; document: ${data.readiness ?? "not checked"}`, data);
-      },
-    }),
-
-    defineTool({
-      name: "switch_tab",
-      label: "Switch tab",
-      description: "Switch the working tab to an existing tab (from list_tabs). Subsequent tools act on it.",
-      parameters: Type.Object({
-        tabId: Type.Number({ description: "Tab id from list_tabs" }),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("switch_tab", params)) as ToolContract["switch_tab"]["data"];
-        return textResult(`Working tab is now ${data.tabId}.`, data);
-      },
-    }),
-
-    defineTool({
-      name: "close_tab",
-      label: "Close tab",
-      description: "Close the working tab, or a specific tab when tabId is given.",
-      parameters: Type.Object({
-        tabId: Type.Optional(Type.Number({ description: "Tab id; omit to close the working tab" })),
-      }),
-      execute: async (_id, params) => {
-        const data = (await call("close_tab", params)) as ToolContract["close_tab"]["data"];
+        if (params.action === "list") {
+          const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
+          return textResult(formatTabs(data.tabs), data);
+        }
+        if (params.action === "active") {
+          const data = (await call("get_active_tab", {})) as ToolContract["get_active_tab"]["data"];
+          if (!data.tab) return textResult("No active tab found.", data);
+          return textResult(formatTabs([data.tab]), data);
+        }
+        if (params.action === "open") {
+          const data = (await call("open_tab", params.url ? { url: params.url } : {})) as ToolContract["open_tab"]["data"];
+          return textResult(`Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}; document: ${data.readiness ?? "not checked"}`, data);
+        }
+        if (params.action === "switch") {
+          if (typeof params.tabId !== "number") throw new Error('tabs action:"switch" 需要 tabId。');
+          const data = (await call("switch_tab", { tabId: params.tabId })) as ToolContract["switch_tab"]["data"];
+          return textResult(`Working tab is now ${data.tabId}.`, data);
+        }
+        const data = (await call("close_tab", typeof params.tabId === "number" ? { tabId: params.tabId } : {})) as ToolContract["close_tab"]["data"];
         return textResult("Tab closed.", data);
       },
     }),
@@ -425,11 +415,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
     defineTool({
       name: "mark",
-      label: "Mark element",
+      label: "Mark elements",
       description:
-        "Draw a persistent hand-drawn annotation on an element in the working tab: gently animated outline + pointer arrow + optional label. Use it to point out key content to the user (\"look here\", highlights). For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until clear_marks or page navigation. Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
+        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + pointer arrow + optional label on target (\"look here\", highlights). For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
       parameters: Type.Object({
-        target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
+        target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector; required unless clear is true' })),
         label: Type.Optional(Type.String({ description: "Short label shown next to the mark, e.g. 待删除" })),
         actions: Type.Optional(
           Type.Array(
@@ -437,24 +427,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
               id: Type.Union([Type.Literal("confirm"), Type.Literal("cancel")]),
               label: Type.String({ description: "Button text, e.g. 删除 / 取消" }),
             }),
-            { maxItems: 2, description: "Confirm/cancel buttons shown on the cursor's name pill while it holds the marked element" },
+            { maxItems: 2, description: "Confirm/cancel buttons shown on the cursor's name pill while it holds the marked element (draw only)" },
           ),
         ),
+        clear: Type.Optional(Type.Boolean({ description: "true clears every mark on the page instead of drawing; no target needed" })),
       }),
       execute: async (_id, params) => {
-        const data = (await call("mark", params)) as ToolContract["mark"]["data"];
+        if (params.clear === true) {
+          const data = (await call("clear_marks", {})) as ToolContract["clear_marks"]["data"];
+          return textResult("All marks cleared.", data);
+        }
+        if (typeof params.target !== "string" || !params.target.trim()) throw new Error("mark 需要 target；只想清除标注时传 clear:true。");
+        const data = (await call("mark", { target: params.target, label: params.label, actions: params.actions })) as ToolContract["mark"]["data"];
         return textResult(`Marked ${params.target}.`, data);
-      },
-    }),
-
-    defineTool({
-      name: "clear_marks",
-      label: "Clear marks",
-      description: "Remove all annotation marks previously drawn with mark.",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const data = (await call("clear_marks", {})) as ToolContract["clear_marks"]["data"];
-        return textResult("All marks cleared.", data);
       },
     }),
 

@@ -41,6 +41,18 @@ export const WRITE_TOOLS = [
 
 export const WRITE_TOOL_SET: ReadonlySet<ToolName> = new Set(WRITE_TOOLS);
 
+/**
+ * 只在有 worker 时才挂载给 Lead 的协作工具。
+ * spawn_worker 常驻（否则永远请不到人）；take_tab 也常驻——它管的是跨会话的页面所有权，
+ * 且从 S1 起「写能力不完整时通用 JS 一并拒绝」的闸门依赖它，不跟着 worker 数量变。
+ */
+export const TEAM_COORDINATION_TOOLS: ReadonlySet<string> = new Set([
+  "post",
+  "await_message",
+  "list_workers",
+  "stop_worker",
+]);
+
 export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 
 export const HANDBACK_NO_PAGE = "取不到当前页面，控制权仍归你。没有回到之前的工作标签。";

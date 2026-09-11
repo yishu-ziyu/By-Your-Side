@@ -92,6 +92,14 @@ describe("send_user_message host tool", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ kind: "user_delivery", delivery: { conversationId: "default", runId: "run-a", kind: "finding", text: speech, status: "composed", composedAt: 7 } });
   });
+
+  it("marks a finding delivery as run-ending, but never an acknowledgement", async () => {
+    const tool = createSendUserMessageTool({ conversationId: "default", getRunId: () => "run-a", emit: () => {}, clock: () => 7 });
+    const finding = await tool.execute("call-finding", { kind: "finding", content: speech }, undefined, undefined, {} as any);
+    expect(finding.terminate).toBe(true);
+    const ack = await tool.execute("call-ack", { kind: "ack", content: "先看一眼这个页面。" }, undefined, undefined, {} as any);
+    expect(ack.terminate).toBe(false);
+  });
 });
 
 describe("voice consumption", () => {

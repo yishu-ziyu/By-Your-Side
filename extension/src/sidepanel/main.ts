@@ -40,7 +40,6 @@ import {
   historyEventTime,
   recordedDuration,
   loaderSubtitle,
-  pixelDelay,
   workerEventRunPolicy,
   isLiveViewportPinned,
   liveViewportOverflows,
@@ -1685,6 +1684,8 @@ let currentThinkingStart = 0;
 const ORB_BOX_THINKING = 18;
 const ORB_BOX_CHIP = 16;
 const ORB_BOX_RECEIPT = 15;
+/** 运行状态行的球：比 chip 略大一点，它是整条状态行唯一的"在跑"指示。 */
+const ORB_BOX_STATUS = 17;
 /** 球句柄按宿主元素找回：折叠、结束时要把对应那个定格。 */
 const orbByHost = new WeakMap<HTMLElement, OrbHandle>();
 /** 用户发消息时刻：run 计时的起点（块体懒创建，先记时间戳）。 */
@@ -1712,10 +1713,9 @@ interface RunHost {
   timeEl: HTMLElement;
   chain: StepChain;
   start: number;
-  /** 像素格 loader（运行中常驻 body 底部）。 */
-  loader: HTMLElement;
-  loaderElapsed: HTMLElement;
-  loaderSub: HTMLElement;
+  /** 运行中唯一的状态行：summary 里的「正在做什么 · 耗时」，细节收进 body 点开再看。 */
+  titleEl: HTMLElement;
+  orb: OrbHandle;
   /** 耗时读数 interval；finishRun 必清，防泄漏。 */
   timer: number;
   /** 最近一个工具的中文动作名（loader 副标题）。 */
@@ -1940,49 +1940,25 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
 }
 
 // ── 执行步骤聚合块 ──────────────────────────────────────────
-// 一次 run（用户消息 → agent_end）中的思考块与工具 chips 收进同一个 details；
-// 块懒创建于首个步骤事件，运行中展开，结束后折叠并标注总耗时。
-// 运行中的等待态用像素格 loader（相位波纹 + 实时耗时 + 当前动作副标题）。
+// 一次 run（用户消息 → agent_end）只有一条状态行：[光球] 正在做什么 · 耗时（在 summary 上）。
+// 思考块与工具 chips 收进同一个 details 的 body，运行中也不展开——要看过程点一下。
 
-/** 3×3 像素格 loader：相位波纹动画 + 0.1s 精度耗时 + 当前动作副标题。 */
-function buildPixelLoader(): { root: HTMLElement; elapsed: HTMLElement; sub: HTMLElement } {
-  const root = document.createElement("div");
-  root.className = "px-wrap";
-  const grid = document.createElement("div");
-  grid.className = "px-grid";
-  // 3×3：光球上线后这里退成背景，只负责"整体还在跑"，视觉重量让给球
-  for (let i = 0; i < 9; i++) {
-    const cell = document.createElement("i");
-    cell.style.animationDelay = `${pixelDelay(i, 3)}s`;
-    grid.appendChild(cell);
-  }
-  const meta = document.createElement("div");
-  meta.className = "px-meta";
-  const line = document.createElement("div");
-  line.append("处理中 · ");
-  const elapsed = document.createElement("span");
-  elapsed.className = "px-elapsed";
-  elapsed.textContent = "0.0s";
-  line.appendChild(elapsed);
-  const sub = document.createElement("div");
-  sub.className = "px-sub";
-  sub.textContent = loaderSubtitle(null);
-  meta.append(line, sub);
-  root.append(grid, meta);
-  return { root, elapsed, sub };
-}
 
 function ensureRun(): NonNullable<typeof currentRun> {
   if (currentRun) return currentRun;
   const root = document.createElement("details");
   root.className = "run-steps";
-  root.open = true;
+  // 运行中只露一行状态；过程细节收进 body，点开再看（用户 2026-09-11 批准的收敛）。
+  root.open = false;
   const summary = document.createElement("summary");
   const iconBox = document.createElement("span");
   iconBox.className = "run-icon";
+  const orb = createOrb("solving", ORB_BOX_STATUS);
+  if (!applyingHistory) orb.setRunning(true);
+  iconBox.appendChild(orb.el);
   const title = document.createElement("span");
   title.className = "run-title";
-  title.textContent = "执行步骤";
+  title.textContent = `正在${loaderSubtitle(null)}`;
   const chainEl = document.createElement("span");
   chainEl.className = "run-chain";
   const timeEl = document.createElement("span");
@@ -2000,12 +1976,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
   root.append(summary, body);
   messagesEl.appendChild(root);
   const start = runStartAt || eventTime();
-  const { root: loader, elapsed: loaderElapsed, sub: loaderSub } = buildPixelLoader();
-  loaderElapsed.textContent = recordedDuration(start, eventTime()) ?? "";
-  body.appendChild(loader);
-  // 耗时读数 100ms 刷新；reduced-motion 只停格子动画，读数照常
+  timeEl.textContent = recordedDuration(start, eventTime()) ?? "";
+  // 唯一状态行的耗时读数 100ms 刷新
   const timer = window.setInterval(() => {
-    loaderElapsed.textContent = recordedDuration(start, Date.now()) ?? "";
+    timeEl.textContent = recordedDuration(start, Date.now()) ?? "";
   }, 100);
   currentRun = {
     root,
@@ -2015,9 +1989,8 @@ function ensureRun(): NonNullable<typeof currentRun> {
     timeEl,
     chain: new StepChain(),
     start,
-    loader,
-    loaderElapsed,
-    loaderSub,
+    titleEl: title,
+    orb,
     timer,
     lastToolShort: null,
     chipGroup: null,
@@ -2089,11 +2062,7 @@ function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
   lastLine.hidden = true;
   body.appendChild(lastLine);
   root.append(summary, body);
-  if (run.loader.isConnected && run.loader.parentElement === run.body) {
-    run.body.insertBefore(root, run.loader);
-  } else {
-    run.body.appendChild(root);
-  }
+  run.body.appendChild(root);
   const lane: WorkerLane = {
     root,
     body,
@@ -2221,8 +2190,9 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
             ? PLACEHOLDER_RUNNING
             : PLACEHOLDER_IDLE;
   if (flags.userHasPage && currentRun) {
+    // 页面归用户：停掉"在跑"的读数与光球，状态行只留结果
     clearInterval(currentRun.timer);
-    currentRun.loader.remove();
+    currentRun.orb.setRunning(false);
   }
   if (flags.finishRun) {
     closeBlocks();
@@ -2238,23 +2208,6 @@ function addChainStep(label: string): void {
   run.chainEl.textContent = run.chain.render();
 }
 
-/** 收束退场：让元素把退出动画走完再摘除，避免"啪"地消失。animationend 与超时双保险。 */
-function settleOut(el: HTMLElement): void {
-  let finished = false;
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    el.remove();
-  };
-  if (!el.isConnected) {
-    finish();
-    return;
-  }
-  el.classList.add("leaving");
-  el.addEventListener("animationend", finish, { once: true });
-  window.setTimeout(finish, 500);
-}
-
 function finishRun(): void {
   const run = currentRun;
   currentRun = null;
@@ -2263,24 +2216,16 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
-  // 空 run（纯文本回复，无思考/工具步骤）不留壳：等待态之外没有别的内容就整块撤掉
-  const hasSteps = [...run.body.children].some((el) => el !== run.loader);
+  // 空 run（纯文本回复，无思考/工具步骤）不留壳：状态行之外没有别的内容就整块撤掉
+  const hasSteps = run.body.children.length > 0;
   if (!hasSteps) {
-    run.loader.remove();
     run.root.remove();
     if (lastRun === run) lastRun = null;
     if (!applyingHistory) companion.onRunFinish();
     return;
   }
   run.root.classList.add("done");
-  run.iconBox.replaceChildren(icon(List));
-  if (applyingHistory) {
-    run.loader.remove();
-  } else {
-    // 等待态收束退出，完成图标从同一点展开——不是"啪"地换一个（04 settle）
-    settleOut(run.loader);
-    run.iconBox.classList.add("settling");
-  }
+  run.orb.setRunning(false);
   const title = run.root.querySelector(".run-title");
   if (title) title.textContent = "查看执行过程";
   // Keep the process in its original position above the final response.
@@ -2340,7 +2285,7 @@ function appendLeadDelta(delta: string): void {
     summary.appendChild(label);
     const pre = document.createElement("pre");
     details.append(summary, pre);
-    run.body.insertBefore(details, run.loader);
+    run.body.appendChild(details);
     currentLeadDraft = pre;
     currentLeadDraftDetails = details;
   }
@@ -2376,11 +2321,8 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       });
       details.append(summary, pre);
       stepsContainer().appendChild(details);
-      // 新思考块隔开前后工具调用：另起 chip 分组；loader 保持在 body 底部
-      if (currentRun) {
-        currentRun.chipGroup = null;
-        currentRun.body.appendChild(currentRun.loader);
-      }
+      // 新思考块隔开前后工具调用：另起 chip 分组
+      if (currentRun) currentRun.chipGroup = null;
       currentThinking = pre;
       currentThinkingDetails = details;
     }
@@ -2483,10 +2425,7 @@ function onToolStart(
     if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
     group = run.chipGroup;
   }
-  if (live) {
-    run.loaderSub.textContent = loaderSubtitle(run.lastToolShort);
-    run.body.appendChild(run.loader);
-  }
+  if (live) run.titleEl.textContent = `正在${action.full}`;
 
   const chip = document.createElement("button");
   chip.type = "button";

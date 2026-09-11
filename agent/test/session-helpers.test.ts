@@ -486,7 +486,7 @@ describe("extractImages & attachments integration", () => {
     ).toEqual([{ type: "image", data: "AAAA", mimeType: "image/png" }]);
   });
 
-  it("passes images to prompt when sending user message", () => {
+  it("passes images to prompt when sending user message", async () => {
     const { wrapped, raw, setStreaming } = controlledBrowserSession(false);
     setStreaming(false);
     wrapped.sendUserMessage("see this", undefined, [
@@ -498,6 +498,8 @@ describe("extractImages & attachments integration", () => {
         mimeType: "image/png",
       },
     ]);
+    // 预观察是异步的一步（无 tabId 时立刻返回 null），prompt 在同一微任务队列里发出。
+    await vi.waitFor(() => expect(raw.prompt).toHaveBeenCalledTimes(1));
     expect(raw.prompt).toHaveBeenCalledWith("see this", {
       images: [{ type: "image", data: "AAAA", mimeType: "image/png" }],
     });

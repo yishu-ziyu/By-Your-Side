@@ -13,6 +13,8 @@ export interface ToolAction {
 
 /** 工具名 → 中文动作；未知名称回退原始名。 */
 const ACTION_NAMES: Record<string, string> = {
+  tabs: "标签页",
+  // 合并前的旧名保留：历史会话回放里仍会出现。
   list_tabs: "列出标签页",
   get_active_tab: "定位当前页",
   open_tab: "打开标签页",
@@ -67,6 +69,21 @@ function str(v: unknown): string | null {
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
   const short = ACTION_NAMES[name] ?? name;
   switch (name) {
+    case "tabs": {
+      const action = str(params.action);
+      if (action === "open") {
+        const host = hostOf(params.url);
+        return { short: "打开标签页", full: host ? `打开标签页 ${host}` : "打开标签页" };
+      }
+      const byAction: Record<string, string> = {
+        list: "列出标签页",
+        active: "定位当前页",
+        switch: "切换标签页",
+        close: "关闭标签页",
+      };
+      const full = action ? byAction[action] : undefined;
+      return { short, full: full ?? short };
+    }
     case "browser_run": {
       const label = str(params.label);
       return { short, full: label ? clip(label, 32) : short };
@@ -89,6 +106,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: key ? `按键「${clip(key, 8)}」` : short };
     }
     case "mark": {
+      if (params.clear === true) return { short: "清除标注", full: "清除标注" };
       const label = str(params.label);
       return { short, full: label ? `标注「${clip(label)}」` : short };
     }
@@ -147,16 +165,9 @@ export function chipState(ended: boolean, isError: boolean): ChipState {
   return isError ? "error" : "done";
 }
 
-/** 像素格 loader 副标题：最近一个工具的中文动作名，尚无工具时为"思考"。 */
+/** 运行状态行的动作名：最近一个工具的中文动作，尚无工具时为"思考"。 */
 export function loaderSubtitle(lastToolShort: string | null): string {
   return lastToolShort ?? "思考";
-}
-
-/** 像素格相位波纹延迟（秒）：(x+y)*0.12，x/y 为格在 size×size 阵列中的坐标。 */
-export function pixelDelay(index: number, size = 5): number {
-  const x = index % size;
-  const y = Math.floor(index / size);
-  return (x + y) * 0.12;
 }
 
 /** 耗时格式化：<10s 一位小数（"1.3s"），<60s 整数（"12s"），否则 "2m 28s"。 */

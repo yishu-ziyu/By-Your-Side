@@ -84,11 +84,17 @@ export class Fleet {
   private readonly team = new TeamControl();
   private readonly lastContinue = new Map<string, { tabId: number; url: string; snapshot: string }>();
   private conversationSnapshot: (() => import("../../shared/voice.js").TaskProgressSnapshot | null) | null = null;
+  /** 成员数变化时通知宿主重新挂载协作工具；不是用户可见事件。 */
+  onMembersChange?: (count: number) => void;
 
   constructor(opts: { rpc: ToolRpc; sink: FleetSink; modelPattern?: string }) {
     this.rpc = opts.rpc;
     this.sink = opts.sink;
     this.modelPattern = opts.modelPattern;
+  }
+
+  private announceMembers(): void {
+    try { this.onMembersChange?.(this.workers.size); } catch { /* 挂载失败不阻塞任务 */ }
   }
 
   /** 与 Lead 共享同一会话进度；worker 写操作据此看到同一未决写入。 */
@@ -393,6 +399,7 @@ export class Fleet {
     workerSession = session;
     if (this.conversationSnapshot) session.bindConversationContext(this.conversationSnapshot);
     this.workers.set(id, session);
+    this.announceMembers();
     return session;
   }
 
@@ -402,6 +409,7 @@ export class Fleet {
     session.abort();
     session.dispose();
     this.workers.delete(id);
+    this.announceMembers();
     this.sink.setStatus("idle", id);
     this.releaseWorker(id);
     return true;

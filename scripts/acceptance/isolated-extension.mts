@@ -32,6 +32,11 @@ export interface IsolatedExtension {
   fixtureHits(): number;
   swEval(expression: string, timeoutMs?: number): Promise<unknown>;
   tool(name: string, params: Record<string, unknown>, sessionId?: string): Promise<any>;
+  /** 打开一个新页并返回它的 CDP target id；配 evalIn 用来驱动真实页面/面板。 */
+  newTarget(url: string): Promise<string>;
+  evalIn(targetId: string, expression: string, timeoutMs?: number): Promise<any>;
+  closeTarget(targetId: string): Promise<void>;
+  screenshot(targetId: string, filePath: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -114,7 +119,25 @@ export async function launchIsolatedExtension(): Promise<IsolatedExtension> {
       return swEval(`globalThis.__saCall(${JSON.stringify(id)}, ${JSON.stringify(name)}, ${JSON.stringify(params)}, ${JSON.stringify(sessionId)})`);
     };
 
-    return { outDir, fixtureOrigin, fixtureHits: () => hits, swEval, tool, close };
+    const evalIn = async (targetId: string, expression: string, timeoutMs = 60_000): Promise<any> => {
+      const session = await cdp!.attachSession(targetId);
+      const r = await cdp!.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, session, timeoutMs);
+      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+      return r.result?.value;
+    };
+    const newTarget = async (url: string): Promise<string> => {
+      const created = await cdp!.send("Target.createTarget", { url });
+      return created.targetId as string;
+    };
+    const screenshot = async (targetId: string, filePath: string): Promise<void> => {
+      const session = await cdp!.attachSession(targetId);
+      const shot = await cdp!.send("Page.captureScreenshot", { format: "png" }, session);
+      await writeFile(filePath, Buffer.from(shot.data as string, "base64"));
+    };
+    const closeTarget = async (targetId: string): Promise<void> => {
+      await cdp!.send("Target.closeTarget", { targetId }).catch(() => {});
+    };
+    return { outDir, fixtureOrigin, fixtureHits: () => hits, swEval, tool, newTarget, evalIn, closeTarget, screenshot, close };
   } catch (error) {
     await close();
     throw error;

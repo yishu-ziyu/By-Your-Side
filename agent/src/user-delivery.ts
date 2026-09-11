@@ -104,7 +104,14 @@ export function createSendUserMessageTool(opts: {
           composedAt: (opts.clock ?? Date.now)(),
         });
         opts.emit({ kind: "user_delivery", delivery });
-        return { content: [{ type: "text" as const, text: `delivered:${delivery.id}` }], details: { id: delivery.id } };
+        return {
+          content: [{ type: "text" as const, text: `delivered:${delivery.id}` }],
+          details: { id: delivery.id },
+          // finding 就是任务的最终结果：这一批工具结果带 terminate 后，SDK 的批次早停规则
+          // 让本轮结束，不再为"还要不要收尾"多问模型一次（省 1–3s）。
+          // ack 只是开场应答，提前终止会掐断任务，因此不参与早停。
+          terminate: kind === "finding",
+        };
       } catch (error) {
         deliveryMetrics.toolRejected += 1;
         throw error;

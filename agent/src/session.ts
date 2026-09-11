@@ -3,6 +3,7 @@ import {extractResultTarget, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX,
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {isWriteTool} from "../../shared/control.js";
 import {LEAD_SESSION_ID} from "../../shared/protocol.js";
+import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
 import {randomUUID} from "node:crypto";
 import {ProductContext} from "./product-context.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
@@ -32,7 +33,7 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, P
 import { filterReachableModels } from "./reachable-models.js";
 import type { UserDelivery, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId } from "./user-delivery.js";
-import { SessionHold, handbackContinueText } from "../../shared/control.js";
+import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { createBrowserTools } from "./tools.js";
@@ -99,6 +100,9 @@ export interface SessionCreateOptions {
 }
 
 const RESULT_TEXT_MAX = 500;
+/** 新任务发出前的当前页预观察：读失败/超时就降级为不注入，绝不阻塞用户消息。 */
+const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
+const PRE_OBSERVATION_TEXT_MAX = 12_000;
 
 /** 交还 prompt 发出后等待同 epoch agent_start 的窗口；超时按恢复失败处理，hold 归还 user。 */
 export const HANDBACK_RESTORE_TIMEOUT_MS = 30_000;
@@ -397,6 +401,23 @@ export class BrowserAgentSession {
 
   isToolActive(name: string): boolean { return this.session?.getActiveToolNames().includes(name) ?? true; }
 
+  /**
+   * 只有存在 worker 时才向模型挂载协作工具：post / await_message / list_workers / stop_worker / take_tab。
+   * spawn_worker 与工具定义始终在位，模型面只在「有没有同伴」上变化。
+   */
+  setTeamToolsMounted(mounted: boolean): void {
+    this.teamToolsMounted = mounted;
+    this.applyActiveTools();
+  }
+
+  private teamToolsMounted = true;
+
+  private applyActiveTools(): void {
+    if (!this.session) return;
+    const names = this.session.getActiveToolNames();
+    this.session.setActiveToolsByName(this.teamToolsMounted ? names : names.filter((name) => !TEAM_COORDINATION_TOOLS.has(name)));
+  }
+
   modelName(): string | undefined {
     const model = this.session?.model;
     return model ? `${model.provider}/${model.id}` : undefined;
@@ -473,7 +494,46 @@ export class BrowserAgentSession {
     }
     this.experience?.begin(text, context);
     this.memoryRuntime?.beginUserTurn(text, context);
-    void session.prompt(finalText, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
+    void this.promptWithFreshPageObservation(session, finalText, context, images).catch((err: unknown) => this.emitError(err));
+  }
+
+  /**
+   * 新任务开始前替模型读一次用户当前页：首轮即可动手，省掉一整轮"先观察"模型调用。
+   * 读不到（无 tabId、扩展未连接、超时、页面为空）时不注入，消息照常发送。
+   */
+  private async promptWithFreshPageObservation(
+    session: AgentSession,
+    finalText: string,
+    context: PageContext | undefined,
+    images: SessionImageContent[],
+  ): Promise<void> {
+    const observation = await this.readUserPageForPrompt(context);
+    const promptText = observation ? `${finalText}\n\n${observation}` : finalText;
+    await session.prompt(promptText, images.length > 0 ? { images } : undefined);
+  }
+
+  /** 预观察只读当前页（不接管、不改工作标签）；结果进 trace，失败静默降级。 */
+  private async readUserPageForPrompt(context?: PageContext): Promise<string | null> {
+    const tabId = context?.tabId;
+    if (!this.rpc || !context || typeof tabId !== "number") return null;
+    const startedAt = Date.now();
+    try {
+      const data = (await this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS)) as { text?: unknown };
+      const text = typeof data?.text === "string" ? data.text.trim() : "";
+      if (!text) return null;
+      const clipped = text.length > PRE_OBSERVATION_TEXT_MAX
+        ? `${text.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[same-page observation truncated]`
+        : text;
+      this.runTrace.record("pre_observation", { tabId, ms: Date.now() - startedAt, chars: clipped.length });
+      return freshPageObservationText(context, clipped);
+    } catch (error) {
+      this.runTrace.record("pre_observation_failed", {
+        tabId,
+        ms: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /** 运行中插话；若空闲则按普通消息处理。与 prompt 一样带上当前页锚点，避免打断后丢工作标签。 */
@@ -765,7 +825,7 @@ export class BrowserAgentSession {
     if (!this.session || !this.resourceLoader) return;
     try {
       await this.resourceLoader.reload();
-      this.session.setActiveToolsByName(this.session.getActiveToolNames());
+      this.applyActiveTools();
     } catch (err) {
       console.error(`[sideagent] 切换模式后重建系统 prompt 失败：${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1099,6 +1159,19 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
     }
   }
   return images;
+}
+
+/**
+ * 新任务首条消息尾部的当前页观察：模型可以直接动手，不必再花一轮 snapshot。
+ * 页面内容走不可信边界包裹，凭据样式文本先脱敏（与 snapshot 工具回执同一处理）。
+ */
+export function freshPageObservationText(context: PageContext, snapshotText: string): string {
+  const title = (context.title || "(untitled)").replace(/\s+/g, " ");
+  return [
+    "[FRESH PAGE OBSERVATION — read by the runtime just now, before this task started]",
+    `[This is tab ${context.tabId} "${title}" — ${context.url}, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab ${context.tabId}, switch to it first (tabs action:"switch").]`,
+    wrapPageContent(redactCredentialText(snapshotText), { tabId: context.tabId, title: context.title, url: context.url }),
+  ].join("\n");
 }
 
 /**

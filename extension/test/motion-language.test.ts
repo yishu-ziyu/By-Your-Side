@@ -60,15 +60,12 @@ describe("03 reveal：面板从触发它的按钮长出来", () => {
 });
 
 describe("04 settle：完成是收束，不是替换", () => {
-  it("finishRun 让等待态退场、完成图标展开", () => {
-    expect(mainTs).toMatch(/settleOut\(run\.loader\)/);
-    expect(mainTs).toMatch(/run\.iconBox\.classList\.add\("settling"\)/);
-  });
-
-  it("CSS 提供等待态退场与完成图标展开的动画", () => {
-    expect(css).toContain(".px-wrap.leaving");
-    expect(css).toContain("@keyframes pxSettleOut");
-    expect(css).toContain("@keyframes runIconSettle");
+  // 2026-09-11 用户批准的收敛：运行中不再有像素格等待态，状态行只留一个光球和耗时。
+  it("finishRun 让状态行的球停下来、文案落定", () => {
+    expect(mainTs).toMatch(/run\.orb\.setRunning\(false\)/);
+    expect(mainTs).toMatch(/title\.textContent = "查看执行过程"/);
+    expect(mainTs).not.toContain("px-wrap");
+    expect(css).not.toContain(".px-grid");
   });
 
   it("chip 完成时点收束、耗时读数推入", () => {

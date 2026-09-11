@@ -1,5 +1,5 @@
 import {expect,it,vi} from 'vitest';
-import {createBrowserTools} from '../src/tools.js';
+import {createBrowserTools,modelToolOf} from '../src/tools.js';
 import {WRITE_TOOLS} from '../../shared/control.js';
 
 const execute = (tools:any[], name:string, params:any) => tools.find(t=>t.name===name).execute('access-check',params,undefined,undefined,{});
@@ -7,7 +7,9 @@ const entry = (program:boolean, code:string) => program
  ? {name:'browser_run',params:{code:`return await browser.js({code:${JSON.stringify(code)}});`}}
  : {name:'js',params:{code}};
 
-for (const disabled of WRITE_TOOLS) for (const program of [false,true]) {
+// 能力开关按模型可见工具名判定（合并后：tabs / mark）。RPC 名到模型名的映射见 modelToolOf。
+const MODEL_WRITE_TOOLS=[...new Set(WRITE_TOOLS.map(name=>modelToolOf(name)))];
+for (const disabled of MODEL_WRITE_TOOLS) for (const program of [false,true]) {
  it(`${program?'program':'direct'} JS cannot bypass disabled ${disabled}`,async()=>{
   const rpc={call:vi.fn(async()=>({value:true}))};
   const tools=createBrowserTools(rpc as any,undefined,undefined,name=>name!==disabled);
