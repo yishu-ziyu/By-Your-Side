@@ -70,15 +70,31 @@ try{
     for(const item of played.slice(drained)){await command({kind:'playback_done',responseId:item.id});events.push({at:Date.now(),playerDrained:item.id});}
     drained=played.length;
   }
-  async function speak(text:string){
+  /** 只把这句话说完，不等回答。用于"说完不等它答完"的场景，例如任务还在跑的时候插话。 */
+  async function send(text:string){
     const current=++turn,start=Date.now();
     execFileSync('/usr/bin/say',['-v','Tingting','-r','190','-o',`${out}/input-${turn}.aiff`,text]);
     execFileSync('/opt/homebrew/bin/ffmpeg',['-y','-v','error','-i',`${out}/input-${turn}.aiff`,'-ar','24000','-ac','1','-f','s16le',`${out}/input-${turn}.pcm`]);
-    const pcm=Buffer.concat([await readFile(`${out}/input-${turn}.pcm`),Buffer.alloc(24000)]);
+    const speech=await readFile(`${out}/input-${turn}.pcm`);
+    const pcm=Buffer.concat([speech,Buffer.alloc(24000)]);
     await command({kind:'interrupt',turn});
-    for(let offset=0;offset<pcm.length;offset+=4800){await command({kind:'audio',turn,data:pcm.subarray(offset,offset+4800).toString('base64')});await sleep(100);}
+    // 两个计时起点，别混：
+    // - speechEnd = 真人"说完"那一刻。脚本按 100ms/4800B 实时送真实语音，最后一帧送出即话音结束。
+    // - commitAt  = 应用收到"这句说完了"那一刻。
+    // 中间补的 24000 字节（24kHz/16bit = 500ms 静音）是喂给服务端收尾用的，属于用户等待，不算说话。
+    // 真人端的停句判断（服务端多久认定你说完了）本脚本测不到，真人验收时另计。
+    let speechEnd=0;
+    for(let offset=0;offset<pcm.length;offset+=4800){
+      await command({kind:'audio',turn,data:pcm.subarray(offset,offset+4800).toString('base64')});
+      if(offset+4800>=speech.length&&!speechEnd)speechEnd=Date.now();
+      await sleep(100);
+    }
     await command({kind:'commit',turn,input:{context}});
-    const speechEnd=Date.now();
+    return {current,start,speechEnd,commitAt:Date.now()};
+  }
+  /** 等这一轮说完并收集结果。 */
+  async function settle(sent:{current:number;start:number;speechEnd:number;commitAt:number},text:string){
+    const {current,start,speechEnd,commitAt}=sent;
     await until(async()=>{
       await drain();
       const own=events.filter(x=>x.at>=start&&x.msg?.type==='voice'&&x.msg.event.turn===current).map(x=>x.msg.event);
@@ -99,13 +115,19 @@ try{
     const audio=Buffer.concat(frames.get(current)??[]);let energy=0;for(let i=0;i<audio.length;i+=2)energy+=audio.readInt16LE(i)**2;
     const branch=events.filter(x=>x.at>=start&&x.diagnostic==='prepare_result'&&x.fields?.turn===current).map(x=>String(x.fields?.branch??'none')).at(-1)??'none';
     const protocol=events.filter(x=>x.at>=start&&x.diagnostic==='prepare_result'&&x.fields?.turn===current).map(x=>String(x.fields?.protocol??'none')).at(-1)??'none';
-    const result={turn:current,input:text,branch,protocol,textUpdates,cumulative,recognized:textEvents.filter(x=>x.msg.event.role==='user').map(x=>x.msg.event.text),answer,responses:own.filter(x=>x.msg.event.kind==='response_end').map(x=>x.msg.event.responseId),audioBytes:audio.length,rms:audio.length?Math.sqrt(energy/(audio.length/2))/32768:0,firstAudioMs:(own.find(x=>x.msg.event.kind==='audio')?.at??speechEnd)-speechEnd};
+    const firstAudioAt=own.find(x=>x.msg.event.kind==='audio')?.at;
+    const result={turn:current,input:text,branch,protocol,textUpdates,cumulative,recognized:textEvents.filter(x=>x.msg.event.role==='user').map(x=>x.msg.event.text),answer,responses:own.filter(x=>x.msg.event.kind==='response_end').map(x=>x.msg.event.responseId),audioBytes:audio.length,rms:audio.length?Math.sqrt(energy/(audio.length/2))/32768:0,
+      // 体验口径：说完话 → 听到第一声。版本对照用上面这个（同一套送法，可比）。
+      userWaitMs:firstAudioAt?firstAudioAt-speechEnd:undefined,
+      // 工程口径：应用收到"说完了" → 出第一帧音频。
+      firstAudioMs:firstAudioAt?firstAudioAt-commitAt:undefined};
     await writeFile(`${out}/output-${current}.pcm`,audio);
     if(audio.length)execFileSync('/opt/homebrew/bin/ffmpeg',['-y','-v','error','-f','s16le','-ar','24000','-ac','1','-i',`${out}/output-${current}.pcm`,`${out}/output-${current}.wav`]);
     report.cases.push(result);console.log(JSON.stringify(result));
     assert.ok(result.audioBytes>0&&result.rms>0.001,'non-silent audio drained by production player');
     return result;
   }
+  async function speak(text:string){return settle(await send(text),text);}
   if(process.argv.includes('--post-page-greeting')){
     // Supply the fixture excerpt to isolate the transition back to chat.
     // Natural page reading is checked in the four-case mode separately.
@@ -131,6 +153,42 @@ try{
     assert.equal(r.branch,'control',`control sentence stays on the control branch: ${control}`);
     assert.ok(r.audioBytes>0&&r.rms>0.001,`control receipt spoken aloud: ${control}`);
   }
+  // 运行中的控制：先起一个真任务，趁它还在跑的时候说"暂停任务"。
+  // 闲置态的"暂停任务"只会得到一句"没有正在执行的任务"，测不出"能不能真的停住"。
+  // 这一轮量两件事：说完话 → 听到回执；以及任务是不是真的停了（不是只念一句没用的话）。
+  // 任务在暂停落地前就跑完时，回执会明说"没有正在执行的任务"——那种情况下这一轮没被真正测到，
+  // 必须换更长的任务重来；都不成就判失败，不能因为"状态不是 running"而假过。
+  {
+    const tasks=[
+      '把当前页面里每一句话都逐条读出来，读完再总结一句。',
+      '把当前页面里每一句话都逐条读出来，然后写一段一百字的介绍，再逐句翻译成英文。',
+      '把当前页面里每一句话都逐条读出来，写一段一百字的介绍，逐句翻译成英文，最后核对一遍有没有漏掉的话。',
+    ];
+    let exercised:{task:string;receipt:any;stateAfterPause:string|null}|null=null;
+    for(const [index,runningTask] of tasks.entries()){
+      await send(runningTask);
+      const entered=await until(async()=>manager!.getTaskProgress('default')?.state==='running'?true:undefined,60000,'说暂停之前任务已进入运行').catch(()=>undefined);
+      if(!entered){
+        await until(async()=>manager!.getTaskProgress('default')?.state!=='running'?true:undefined,90000,'上一轮任务结束').catch(()=>undefined);
+        continue;
+      }
+      const receipt=await speak('暂停任务');
+      const after=manager!.getTaskProgress('default');
+      if(/没有正在执行的任务|没有正在运行的任务/.test(receipt.answer.join(''))){
+        await until(async()=>manager!.getTaskProgress('default')?.state!=='running'?true:undefined,90000,'上一轮任务结束').catch(()=>undefined);
+        report.controlWhileRunningAttempts=(report.controlWhileRunningAttempts??[]).concat([{task:runningTask,missed:'任务在暂停落地前已结束'}]);
+        continue;
+      }
+      exercised={task:runningTask,receipt,stateAfterPause:after?.state??null};
+      if(index>0)report.controlWhileRunningAttempts=(report.controlWhileRunningAttempts??[]).concat([{task:tasks[index-1],missed:'任务在暂停落地前已结束'}]);
+      break;
+    }
+    report.controlWhileRunning=exercised??{exercised:false,note:'三次都没能在任务运行中说成暂停'};
+    assert.ok(exercised,'运行中暂停没有被真正测到（任务在暂停落地前就结束了）');
+    assert.equal(exercised!.receipt.responses.length,1,'运行中的暂停只播一份回执');
+    assert.ok(exercised!.receipt.audioBytes>0&&exercised!.receipt.rms>0.001,'运行中的暂停回执有声音');
+    assert.ok(exercised!.stateAfterPause!=='running','说停之后任务确实不再运行');
+  }
   }
   // Independently transcribe the returned greeting PCM. Non-routing diagnostic
   // session only: verifies spoken content, not just nonzero waveform energy.
@@ -151,6 +209,7 @@ try{
     assert.ok(/晚上好/.test(readback)&&!/任务已收到|招聘|岗位|深圳/.test(readback),'actual greeting audio matches the conversational answer');
   }finally{listener.close();}
   report.branchFirstAudioMs=Object.fromEntries(['reply','control','read_only','none'].map(branch=>[branch,report.cases.filter((c:any)=>c.branch===branch).map((c:any)=>c.firstAudioMs)]));
+  report.branchUserWaitMs=Object.fromEntries(['reply','control','read_only','none'].map(branch=>[branch,report.cases.filter((c:any)=>c.branch===branch).map((c:any)=>c.userWaitMs)]));
   report.ok=true;
 } catch(error){report.error=String(error);process.exitCode=1;}
 finally{
