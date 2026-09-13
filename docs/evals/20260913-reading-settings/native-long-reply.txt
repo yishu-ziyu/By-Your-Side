@@ -1,0 +1,213 @@
+Window: "模拟测试页面 · By Your Side 原生控制演练", App: Google Chrome.
+0 标准窗口 模拟测试页面 · By Your Side 原生控制演练 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=reading-settings, Secondary Actions: Raise
+	1 container 模拟测试页面 · By Your Side 原生控制演练 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=reading-settings
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: 127.0.0.1:48765/?scenario=a&case=reading-settings, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：110%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+					21 按钮 关闭侧边栏
+				22 按钮 AP
+				23 弹出式按钮 Chrome
+			24 工具栏 书签
+				25 工具栏 已保存的标签页分组
+					26 “已保存的标签页分组”按钮 “只回复：整理验收通过。不操作网页。”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “只操作当前B测试页：点击开始步骤，逐个等下一步出现再点，完成4步。不修改”分组 - 已关闭
+					28 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					30 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					31 按钮 标签页分组
+				32 分离器 分隔符
+				33 书签按钮 Gmail
+				34 书签按钮 YouTube
+				35 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				36 书签按钮 notion
+				37 书签按钮 Untitled notebook - NotebookLM
+				38 书签文件夹按钮 AI
+				39 弹出式按钮 包含隐藏书签的菜单
+				40 书签文件夹按钮 所有书签
+				41 分离器 分隔符
+			42 container
+				43 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a&case=reading-settings
+					44 container
+						45 文本 模拟测试页面 · 非真实产品界面
+						46 文本 SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。
+						47 标题 By Your Side 表单与连续步骤演练, Value: 1
+							48 文本 By Your Side 表单与连续步骤演练
+						49 文本 当前场景：
+						50 文本 A
+						51 文本  · A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+						52 container 场景链接
+							53 text 独立测试页面状态：
+							54 link Description: 场景 A, Value: 127.0.0.1:48765/?scenario=a
+							55 link Description: 场景 B, Value: 127.0.0.1:48765/?scenario=b
+							56 text （在每个标签页里打开一个链接，即得到互不干扰的状态）
+						57 标题 1. 表单（保存只写入本页内存）, Value: 2
+							58 文本 1. 表单（保存只写入本页内存）
+						59 文本 姓名
+						60 文本栏 (settable) 姓名, Placeholder: 例如：林然
+						61 文本 城市
+						62 文本栏 (settable) 城市, Placeholder: 例如：杭州
+						63 文本 备注
+						64 文本输入区 (settable) 备注, Placeholder: 例如：希望周五下午联系
+						65 文本 优先级
+						66 弹出式按钮 优先级, Value: 中
+							67 (selected) 中
+						68 container
+							69 按钮 保存到本页内存
+							70 按钮 清空本场景状态
+						71 文本 （尚未保存）
+						72 标题 2. 页面事件记录（不是 Agent 操作计数）, Value: 2
+							73 文本 2. 页面事件记录（不是 Agent 操作计数）
+						74 文本 事件条数：
+						75 文本 0
+						76 文本 记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。
+						77 内容列表 本场景操作记录
+							78 文本 （暂无操作记录）
+						79 标题 3. 连续步骤（下一步按钮延迟 10 秒出现）, Value: 2
+							80 文本 3. 连续步骤（下一步按钮延迟 10 秒出现）
+						81 文本 进度：
+						82 文本 未开始
+						83 文本 点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。
+						84 按钮 开始步骤
+						85 文本 接管修正（等待期间可修改，点按钮记录）
+						86 文本栏 (settable) 接管修正（等待期间可修改，点按钮记录）, Placeholder: 例如：把优先级改为高
+						87 按钮 记录接管修正
+					88 container
+						89 按钮 logo icon
+							90 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							91 图像
+						92 container
+							93 按钮
+			94 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				95 container
+					96 文本 By Your Side
+					97 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						98 图像
+					99 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						100 图像
+					101 container 当前连接与执行状态
+						102 文本 已连接
+					103 弹出式按钮 设置
+						104 图像
+					105 弹出式按钮 以下是虚构测试资料，无需联网，也不要操作网页。请帮我给家中老人选灯，解释
+					106 弹出式按钮 知识
+					107 按钮 ＋ 新会话
+					108 container 当前会话与控制
+						109 container
+							110 text 麦克风：已关 声音：未说
+						111 文本 回答已给出
+					112 文本 以下是虚构测试资料，无需联网，也不要操作网页。请帮我给家中老人选灯，解释结论、依据和不确定处。资料A：甲灯厂商说明称大按钮易操作，续航8小时，链接https://example.test/lamp-a；资料B：乙灯评测称重180克、续航12小时，但没有厂商证实，链接https://example.test/lamp-b；两灯价格相同，老人最在意操作简单。请给出约300字的完整建议。
+					113 开合三角标记 任务已接收
+						114 文本 任务已接收
+					115 按钮 使用了 1 条记忆 · 查看
+					116 文本 所有会话
+					117 开合三角标记 查看执行过程 思考 → send_user_message 耗时 11s
+						118 文本 查看执行过程
+						119 文本 思考 → send_user_message
+						120 文本 耗时 11s
+						121 图像
+					122 container
+						123 text 结论：选甲灯。  老人最在意“操作简单”，而甲灯是唯一把这一点作为明确卖点的：厂商说明称其采用大按钮、易操作。乙灯目前能打动人的是重量和续航，都不是老人的首要需求。
+					124 文本 依据分两层看。
+					125 内容列表
+						126 container
+							127 AXListMarker • 
+							128 文本 甲灯：大按钮这一条来自厂商自己的说明（
+							129 link Description: lamp-a, Value: example.test/lamp-a
+							130 文本 ）。厂商说明有夸大风险，但至少是产品方对自身功能的正式描述，属于可追责的信息。
+						131 container
+							132 AXListMarker • 
+							133 文本 乙灯：180 克、续航 12 小时来自第三方评测，且明确“没有厂商证实”（
+							134 link Description: lamp-b, Value: example.test/lamp-b
+							135 文本 ）。这类数据在准确性上弱一档，续航尤其容易被评测方法影响。
+						136 container
+							137 AXListMarker • 
+							138 文本 两灯价格相同，所以不必用差价换取舍，直接按核心需求排序即可。
+					139 文本 不确定处，建议下单前确认：
+					140 内容列表
+						141 container
+							142 AXListMarker 1. 
+							143 文本 甲灯“大按钮”只是文字描述，没有写按钮尺寸、按压力度或是否有背光；对关节不灵活的老人，实际手感可能有差别。
+						144 container
+							145 AXListMarker 2. 
+							146 文本 甲灯续航 8 小时是厂商数据，未说明是强光还是低亮模式下的时长；实际可能更短。
+						147 container
+							148 AXListMarker 3. 
+							149 文本 乙灯是否真的不适合，取决于老人是否更在意“拿得轻”或“少充电”。如果他不介意，乙灯本可更优，但现在的证据不足以支撑。
+						150 container
+							151 AXListMarker 4. 
+							152 文本 两个链接都是示例地址，我没有联网核实，以上仅为对资料本身的比较，不是实测结论。
+					153 container
+						154 text 可执行的下一步：  若条件允许，让老人实际按一下甲灯的按钮，或选择支持七天无理由退换的渠道，把“操作简单”这一核心假设用真实手感验证一次。
+					155 container
+						156 container 当前活动标签页（点击展开检查面板）
+							157 文本 1
+							158 文本 127.0.0.1:48765 · 模拟测试页面 · By Y…
+						159 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						160 开合三角标记 语音记录
+							161 文本 语音记录
+						162 文本输入区 (settable) 给 By Your Side 发消息，Enter 发送，Shift+Enter 换行
+						163 弹出式按钮 +, Help: 添加附件或截屏
+						164 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							165 文本 O
+							166 文本 DeepSeek V4.1 Flash (Go)
+							167 图像
+						168 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						169 按钮 发送
+							170 图像
+							171 图像
+			172 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			173 container
+				174 文本 By Your Side
+				175 复选框 Description: 取消固定到工具栏, Value: 1
+				176 按钮 关闭侧边栏
+			177 标签组
+				178 container
+					179 按钮 收起标签页
+					180 弹出式按钮 标签页分组
+					181 弹出式按钮 标签页搜索
+				182 container
+					183 滚动区
+					184 滚动区
+						185 标签 (selected, settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 内存用量 - 372 MB, Value: on
+							186 按钮 关闭
+				187 按钮 打开新的标签页
+				188 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	189 关闭按钮
+	190 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	191 最小化按钮
+192 menu bar
+	193 Chrome
+	194 文件
+	195 编辑
+	196 显示
+	197 历史记录
+	198 书签
+	199 个人资料
+	200 标签页
+	201 窗口
+	202 帮助
+
+The focused UI element is 169 按钮 发送

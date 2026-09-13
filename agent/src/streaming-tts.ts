@@ -92,8 +92,11 @@ export class SpeechTextBuffer {
       const candidate = this.text.slice(0, end);
       if ((candidate.match(/```/g)?.length ?? 0) % 2 || /\[[^\]]*$|\]\([^)]*$/.test(candidate)) end = this.sent;
     }
+    const startsAtLine = this.sent === 0 || /[\r\n]/.test(this.text[this.sent - 1]!);
     const part = this.text.slice(this.sent, end); this.sent = end;
-    return part.replace(/```[\s\S]*?(?:```|$)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    const withoutQuotes = part.replace(/^[ \t]*(?:>[ \t]?)+/gm, (marker, offset: number) =>
+      offset > 0 || startsAtLine ? '' : marker);
+    return withoutQuotes.replace(/```[\s\S]*?(?:```|$)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
       .replace(/https?:\/\/[^\s，。！？、]+/g, '').replace(/[*#`]/g, '').replace(/^\s*[-+]\s+/gm, '').trim();
   }
 }

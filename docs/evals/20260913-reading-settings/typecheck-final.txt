@@ -1,0 +1,12 @@
+
+> typecheck
+> npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent
+
+
+> @sideagent/extension@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @sideagent/agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+

@@ -1,0 +1,6 @@
+npm run test:unit: 186 files / 1662 tests passed
+npm run typecheck: passed
+npm run check:architecture: 166 production files passed
+git diff --check: passed
+scale/performance suite: not rerun; no scale-related change
+Human microphone/subjective listening: pending user acceptance

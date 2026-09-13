@@ -64,9 +64,13 @@ npm run check              # 顺序执行以上四项
 - `agent/test/`、`extension/test/`：行为回归；测试允许跨宿主装配，生产不允许。
 - `scripts/`：安装、诊断、验收与维护入口；`scripts/fixtures/`：本地测试页面，不是产品页面。
 - `extension/dist/`、`eval/runs/`、`out/acceptance/`：可生成的本地产物，按现有忽略规则管理。
-- `extension/src/vendor/`、图像/模型/字体资产及许可证：保留来源，不当作业务冗余删除。
+- `agent/src/vendor/`、`extension/src/vendor/`、图像/模型/字体资产及许可证：保留来源，不当作业务冗余删除。
 - `docs/`：见[文档导航](README.md)。历史证据不与生产代码一起打包，保留以便追溯失败和方案取舍。
 
 ## 仍需约束的维护热点
 
 `sidepanel/main.ts`仍包含会话/知识与执行过程视图，`background/index.ts`仍包含每会话控制器装配，`conversation-manager.ts`仍协调语音确认与交付。它们没有因本次提取变成小文件。本轮先分离独立模型调用和模型选择；之后修改知识管理或控制器时，沿完整职责提取并补生命周期验证。不要为了行数达标再制造一层转发，或把共享状态拆成相互回调的碎片。
+
+## Stagehand 兼容层
+
+`browser_run` 的 `api:"playwright"` 模式通过 `stagehand-bridge.ts` 在现有 QuickJS 中加载固定上游的官方兼容代码，提供 page/context。每步经现有 tools/RPC 控制链；程序固定开始时的任务 tabId。默认 ego 模式与已有工具保持兼容。此接法不需要 Browserbase Key，也不引入另一套浏览器扩展或 SDK experimentalBatch。支持范围和本地补丁见 `agent/src/vendor/stagehand/PATCH.md`；验收见 [接入记录](evals/20260913-stagehand-control-integration.md)。

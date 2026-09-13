@@ -190,7 +190,7 @@ it('passes the selected input to the shared idle conversation entry',async()=>{
  const input={context:{tabId:7,title:'form',url:'https://example.com',selection:{text:'海风'}},attachments:[{id:'i',type:'image' as const,name:'fixture.png',mimeType:'image/png' as const,dataBase64:'AQID'}]};
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'chat',text:'你好',target:null}]}));
  const ctx={requestId:'q',voiceId:'v',turn:1,runId:null,input};
- await h.manager.routeVoiceInput('default','你好',null,()=>true,ctx);expect(a.runtime.session.startTask).toHaveBeenCalledWith('你好',input.context,input.attachments);
+ await h.manager.routeVoiceInput('default','你好',null,()=>true,ctx);expect(a.runtime.session.startTask).toHaveBeenCalledWith('你好',input.context,input.attachments,{pageObservation:'on-demand'});
  a.emit({type:'agent_event',event:{kind:'agent_end'}});
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'start',text:'按图片和选区填写',target:null}]});
  await h.manager.routeVoiceInput('default','按图片和选区填写',null,()=>true,{...ctx,requestId:'q2',runId:h.manager.getTaskProgress('default')!.runId??null});

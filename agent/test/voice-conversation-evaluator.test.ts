@@ -78,7 +78,7 @@ describe('Evaluator: real manager event flow produces conversation evidence',()=
   await h.manager.routeVoiceInput('default','活动那个呢',null,()=>true);
   expect(JSON.stringify(session.classifyVoiceInput.mock.calls.at(-1))).toContain('青鹭工作坊');
   expect(session.classifyVoiceInput.mock.calls.at(-1)[0]).toBe('活动那个呢');
-  expect(session.startTask).toHaveBeenCalledWith('活动那个呢',undefined,undefined);
+  expect(session.startTask).toHaveBeenCalledWith('活动那个呢',undefined,undefined,{pageObservation:'on-demand'});
  });
  it('does not relabel explicitly old-run output as the replacement task result',async()=>{
   const h=managerHarness();await h.manager.ensureDefault();

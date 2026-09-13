@@ -1,0 +1,104 @@
+{
+ "model": "opencode-go/deepseek-flash",
+ "at": "2026-09-13T14:44:11.116Z",
+ "reports": [
+  {
+   "kind": "floor",
+   "label": "floor-1",
+   "ms": 4671,
+   "text": "你好"
+  },
+  {
+   "kind": "floor",
+   "label": "floor-2",
+   "ms": 2432,
+   "text": "你好"
+  },
+  {
+   "kind": "floor",
+   "label": "floor-3",
+   "ms": 1405,
+   "text": "你好"
+  },
+  {
+   "kind": "classify",
+   "variant": "production",
+   "text": "嗨，晚上好。",
+   "ms": 1547,
+   "reply": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "minimal",
+   "text": "嗨，晚上好。",
+   "ms": 1434,
+   "reply": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "production",
+   "text": "把姓名改成李明",
+   "ms": 1784,
+   "reply": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "minimal",
+   "text": "把姓名改成李明",
+   "ms": 1790,
+   "reply": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "production",
+   "text": "暂停",
+   "ms": 2093,
+   "reply": "{\"steps\":[{\"action\":\"clarify\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "minimal",
+   "text": "暂停",
+   "ms": 3293,
+   "reply": "{\"steps\":[{\"action\":\"clarify\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "production",
+   "text": "十加七等于多少？",
+   "ms": 1419,
+   "reply": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+  },
+  {
+   "kind": "classify",
+   "variant": "minimal",
+   "text": "十加七等于多少？",
+   "ms": 1618,
+   "reply": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+  },
+  {
+   "kind": "plan",
+   "text": "嗨，晚上好。",
+   "ms": 1458,
+   "steps": [
+    {
+     "action": "chat",
+     "text": "嗨，晚上好。",
+     "target": null
+    }
+   ]
+  },
+  {
+   "kind": "plan",
+   "text": "把姓名改成李明",
+   "ms": 1320,
+   "steps": [
+    {
+     "action": "start",
+     "text": "把姓名改成李明",
+     "target": null
+    }
+   ]
+  }
+ ]
+}

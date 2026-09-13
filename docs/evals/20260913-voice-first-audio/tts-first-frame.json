@@ -1,0 +1,45 @@
+{
+ "text": "晚上好，今天想聊点什么？",
+ "runs": [
+  {
+   "label": "cold-1",
+   "bytes": 179520,
+   "constructed": 0,
+   "pushAt": 13,
+   "firstAudio": 915,
+   "end": 1922
+  },
+  {
+   "label": "cold-2",
+   "bytes": 158400,
+   "constructed": 0,
+   "pushAt": 1,
+   "firstAudio": 812,
+   "end": 1764
+  },
+  {
+   "label": "cold-3",
+   "bytes": 173760,
+   "constructed": 0,
+   "pushAt": 1,
+   "firstAudio": 812,
+   "end": 1915
+  },
+  {
+   "label": "warm-1",
+   "bytes": 181440,
+   "constructed": 0,
+   "pushAt": 903,
+   "firstAudio": 1468,
+   "end": 2429
+  },
+  {
+   "label": "warm-2",
+   "bytes": 177600,
+   "constructed": 0,
+   "pushAt": 902,
+   "firstAudio": 1446,
+   "end": 2436
+  }
+ ]
+}

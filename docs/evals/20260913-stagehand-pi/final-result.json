@@ -1,0 +1,147 @@
+{
+  "task": "stagehand-pi-probe",
+  "evidence": {
+    "upstreamCommit": "b771930d2b4d858e5bd9670203c66260b385a8fa",
+    "sdkVersion": "4.1.0"
+  },
+  "mode": "launch-isolated",
+  "startedAt": "2026-09-13T11:09:35.563Z",
+  "env": {
+    "loopbackListen": "OK",
+    "sdk": {
+      "path": "/private/tmp/ego-stagehand-work/runtime/node_modules/@browserbasehq/stagehand/dist/index.mjs",
+      "version": "4.1.0",
+      "moduleRoot": "/tmp/ego-stagehand-work/runtime/node_modules"
+    }
+  },
+  "checks": [
+    {
+      "id": "connect.requires-cdpUrl",
+      "status": "PASS",
+      "detail": "connect 必须有 cdpUrl：没有调试端点就无法附着",
+      "evidence": {
+        "issues": [
+          "Invalid input: expected string, received undefined"
+        ]
+      }
+    },
+    {
+      "id": "connect.accepts-cdpUrl",
+      "status": "PASS",
+      "detail": "单个 cdpUrl 即可通过 schema；connect 不要求任何 launch 参数"
+    },
+    {
+      "id": "fill.values",
+      "status": "PASS",
+      "detail": "firstName=\"Ada\"，其余=[\"\",\"\",\"\"]",
+      "evidence": {
+        "firstName": "Ada",
+        "lastName": "",
+        "email": "",
+        "city": ""
+      }
+    },
+    {
+      "id": "fill.no-submit",
+      "status": "PASS",
+      "detail": "submits=0 navigations=0 url=http://127.0.0.1:61794/"
+    },
+    {
+      "id": "switch.handle-binding",
+      "status": "PASS",
+      "detail": "活跃页切到 second 后，旧句柄写入 first=\"BoundToFirst\"，second 未被写入=\"\"",
+      "evidence": {
+        "onSecond": {
+          "firstName": "",
+          "lastName": "",
+          "email": "",
+          "city": ""
+        },
+        "onFirst": {
+          "firstName": "Ada",
+          "lastName": "BoundToFirst",
+          "email": "",
+          "city": ""
+        }
+      }
+    },
+    {
+      "id": "switch.active-page-defaults",
+      "status": "INFO",
+      "detail": "AI act() 的默认目标页是否等于 setActivePage 后的活跃页未在本探针验证（需要模型凭据）；本项只覆盖句柄绑定。"
+    },
+    {
+      "id": "deadline.stops-batch",
+      "status": "PASS",
+      "detail": "前置写入 lastName 已发生，截止后等满 2.5s 所有页面均无新增写入（target 已落地：[\"firstName\",\"lastName\"]）",
+      "evidence": {
+        "outcome": {
+          "settled": "rejected",
+          "dispatchedAt": 1789297777057,
+          "settledAt": 1789297777968,
+          "message": "Stagehand callback batch timed out after 900ms"
+        },
+        "pages": [
+          {
+            "isTarget": true,
+            "url": "http://127.0.0.1:61794/",
+            "values": {
+              "firstName": "Ada",
+              "lastName": "Lovelace",
+              "email": "",
+              "city": ""
+            }
+          },
+          {
+            "isTarget": false,
+            "url": "http://127.0.0.1:61794/?page=2",
+            "values": {
+              "firstName": "",
+              "lastName": "",
+              "email": "",
+              "city": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "deadline.target-isolation",
+      "status": "PASS",
+      "detail": "target 预填 firstName 保持=\"Ada\"；越界写入=0",
+      "evidence": {
+        "pages": [
+          {
+            "isTarget": true,
+            "url": "http://127.0.0.1:61794/",
+            "values": {
+              "firstName": "Ada",
+              "lastName": "Lovelace",
+              "email": "",
+              "city": ""
+            }
+          },
+          {
+            "isTarget": false,
+            "url": "http://127.0.0.1:61794/?page=2",
+            "values": {
+              "firstName": "",
+              "lastName": "",
+              "email": "",
+              "city": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "abort.user-stop",
+      "status": "INFO",
+      "detail": "未测试用户停止：固定上游 Pi 扩展未转发 execute 的 AbortSignal，batch options 无 signal；deadline 成功不能证明用户取消成功。"
+    }
+  ],
+  "probeStatus": "passed",
+  "acceptanceStatus": "blocked",
+  "acceptanceNote": "原始用户契约（中途停止不新增操作、纠正姓名保留其他字段、真人语音、日常 Chrome）未由本探针覆盖；deadline 不等于用户 abort。",
+  "finishedAt": "2026-09-13T11:09:40.745Z"
+}

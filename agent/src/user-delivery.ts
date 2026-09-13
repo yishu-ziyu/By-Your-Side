@@ -76,7 +76,7 @@ export function createSendUserMessageTool(opts: {
     name: "send_user_message",
     label: "Send a user-facing message",
     description:
-      "Send the exact words the user should see and hear. Tool results and ordinary assistant text are internal work. Use kind=finding for the final task result, or kind=ack for a start acknowledgement. Do not use this tool for follow-up answers. An acknowledgement is not the final result. Do not claim independent verification. Keep the message short, usually one to three spoken sentences, naming concrete findings and any unread or unconfirmed limits.",
+      "Send the exact words the user should see and hear. Tool results and ordinary assistant text are internal work. Use kind=finding for the final task result, or kind=ack for a start acknowledgement. Do not use this tool for follow-up answers. An acknowledgement is not the final result. Do not claim independent verification. Keep simple outcomes short. For substantial written results, lead with the finding, use focused paragraphs and useful headings, and cite exact source URLs through descriptive Markdown links. Do not force headings on short replies. Preserve requested detail and any unread or unconfirmed limits.",
     parameters: Type.Object({
       kind: Type.Unsafe<"ack" | "finding">(Type.String({ description: "ack or finding. Final task results must be finding, not reply." })),
       content: Type.String({ description: "Exact user-facing text. Do not truncate trailing limits." }),

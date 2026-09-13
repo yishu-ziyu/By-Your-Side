@@ -1,0 +1,40 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+ ❯ agent/test/streaming-voice.test.ts (7 tests | 1 failed) 28ms
+   × speaks quoted text and source labels without Markdown quote markers or link addresses 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  agent/test/streaming-voice.test.ts > speaks quoted text and source labels without Markdown quote markers or link addresses
+AssertionError: expected '依据\n\n> 厂商说：续航更长。\n\n厂商说明' to be '依据\n\n厂商说：续航更长。\n\n厂商说明' // Object.is equality
+
+- Expected
++ Received
+
+  依据
+
+- 厂商说：续航更长。
++ > 厂商说：续航更长。
+
+  厂商说明
+
+ ❯ agent/test/streaming-voice.test.ts:65:88
+     63| it('speaks quoted text and source labels without Markdown quote marker…
+     64|  const buffer=new SpeechTextBuffer();
+     65|  expect(buffer.append('### 依据\n\n> 厂商说：续航更长。\n\n[厂商说明](https://example…
+       |                                                                                        ^
+     66| });
+     67|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 passed (7)
+   Start at  15:16:36
+   Duration  1.96s (transform 474ms, setup 0ms, import 1.80s, tests 28ms, environment 0ms)
+

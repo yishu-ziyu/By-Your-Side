@@ -1,0 +1,72 @@
+{
+  "evidence": {
+    "sourceSha256": "6dac6749211b13b94c8a8dad8a24fd07537a59d07ec462dd070d50c693b84c61",
+    "head": "fcd4d6dbd8831c9477c4b9b6c0f1fab84fd8638e",
+    "scriptSha256": "47c8743f276ff47ee50f5042dfe6cabad0e4a358fce766abe53e3a478b6b7eb5",
+    "backgroundSha256": "c04f0849e4436bed7ac3a8a77116775ca914125ccaeb6abccf394cd75d869c9e",
+    "sidepanelSha256": "73aefac2f5a33941ff147081efe1eccaff647e35170e53336b4a402ff0cc0c73",
+    "lockSha256": "b899ed3094cbe36ba090fa14d640ccaac03a274ea3d80e3149a4da1f92c75935"
+  },
+  "checks": [
+    {
+      "name": "one native spoken reply",
+      "ok": true
+    },
+    {
+      "name": "native reply has audio",
+      "ok": true
+    },
+    {
+      "name": "one cumulative native answer",
+      "ok": true
+    },
+    {
+      "name": "no generic task acknowledgement",
+      "ok": true
+    },
+    {
+      "name": "greeting does not automatically inspect a page",
+      "ok": true
+    },
+    {
+      "name": "greeting does not become an unsolicited page report",
+      "ok": true
+    }
+  ],
+  "scope": "Installed extension port + native host + real ASR/Pi/TTS; synthetic PCM; simulated playback_done, not human audio acceptance",
+  "ok": true,
+  "conversationId": "41dba1f8-9075-4707-ba31-e59fbf23eaf4",
+  "voiceId": "9170a13b-83fd-4dfd-afdc-7386909d3785",
+  "textUpdates": [
+    "晚上",
+    "晚上好",
+    "晚上好～",
+    "晚上好～有什么",
+    "晚上好～有什么想",
+    "晚上好～有什么想让我",
+    "晚上好～有什么想让我帮忙",
+    "晚上好～有什么想让我帮忙的",
+    "晚上好～有什么想让我帮忙的，",
+    "晚上好～有什么想让我帮忙的，还是",
+    "晚上好～有什么想让我帮忙的，还是就",
+    "晚上好～有什么想让我帮忙的，还是就随便",
+    "晚上好～有什么想让我帮忙的，还是就随便聊聊",
+    "晚上好～有什么想让我帮忙的，还是就随便聊聊？",
+    "晚上好～有什么想让我帮忙的，还是就随便聊聊？"
+  ],
+  "responses": [
+    "tts-e2d0465f-6997-41d7-9b92-b98b6f23aa3f"
+  ],
+  "audioFrames": 109,
+  "recognized": [
+    "嗨晚上好。"
+  ],
+  "browserCalls": [],
+  "answer": "晚上好～有什么想让我帮忙的，还是就随便聊聊？",
+  "cleanup": {
+    "ok": true,
+    "errors": [],
+    "removedTabs": [],
+    "probeClosed": true
+  }
+}

@@ -1158,6 +1158,9 @@ export async function pressKey(
   await sendCommand(tab.id, "Input.dispatchKeyEvent", {
     type: "rawKeyDown",
     ...base,
+    // macOS editing shortcuts need the editor command as well as the synthesized key.
+    ...(info.code === "KeyA" && info.modifiers === 4 && navigator.platform.startsWith("Mac")
+      ? { commands: ["selectAll"] } : {}),
     ...(info.text !== undefined ? { text: info.text } : {}),
   });
   await sendCommand(tab.id, "Input.dispatchKeyEvent", { type: "keyUp", ...base });

@@ -1,0 +1,36 @@
+/* 回答正文宋体候选：仅作用于真实回答 .msg.assistant.markdown。
+   正文宋体 15px；按钮/状态/输入框等系统字体不变；代码保持等宽。
+   背景、顶部、输入区、光球、状态一律不改。 */
+.msg.assistant.markdown {
+  font-family: "Songti SC", "STSong", "Songti TC", "SimSun", serif;
+  font-size: 15px;
+  line-height: 1.72;
+  letter-spacing: 0.01em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+/* 标题：同一宋体，只做字号/字重分层，压缩上下留白 */
+.msg.assistant.markdown h1,
+.msg.assistant.markdown h2 { font-size: 19px; line-height: 1.45; font-weight: 600; letter-spacing: 0; margin: 18px 0 8px; }
+.msg.assistant.markdown h3,
+.msg.assistant.markdown h4 { font-size: 15.5px; line-height: 1.55; font-weight: 600; margin: 15px 0 6px; }
+/* 段落：段距略小于行高倍数，避免整页夸张留白 */
+.msg.assistant.markdown p { margin: 8px 0 12px; }
+.msg.assistant.markdown strong { font-weight: 600; }
+/* 列表：缩进、行距跟随正文 */
+.msg.assistant.markdown ul,
+.msg.assistant.markdown ol { margin: 6px 0 12px; padding-left: 22px; }
+.msg.assistant.markdown li { margin: 3px 0; line-height: 1.7; }
+/* 链接：随正文自然换行，长 URL 不在窄 320px 溢出 */
+.msg.assistant.markdown a { color: var(--accent, #0a84ff); overflow-wrap: anywhere; word-break: break-word; }
+/* 引用：保留左侧竖线，字号跟随正文、颜色弱化 */
+.msg.assistant.markdown blockquote { margin: 8px 0 12px; padding: 2px 12px; border-left: 3px solid var(--border); color: var(--text-2); }
+/* 表格：可横向滚动，字号略小、行距跟随正文 */
+.msg.assistant.markdown table { display: block; max-width: 100%; overflow-x: auto; font-size: 13.5px; border-collapse: collapse; }
+.msg.assistant.markdown th,
+.msg.assistant.markdown td { padding: 7px 9px; line-height: 1.7; }
+/* 代码块/行内码保持等宽，不受宋体正文影响 */
+.msg.assistant.markdown code,
+.msg.assistant.markdown pre,
+.msg.assistant.markdown pre code,
+.msg.assistant.markdown kbd { font-family: var(--mono, "SF Mono", Menlo, Consolas, monospace); }

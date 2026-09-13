@@ -1,0 +1,34 @@
+
+> test:scale
+> vitest run agent/test/performance --maxWorkers=1
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+ ❯ agent/test/performance/task-receipt-scale.test.ts (2 tests | 1 failed) 26429ms
+   × lists 20_000 receipts from memory without scanning the directory 17165ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  agent/test/performance/task-receipt-scale.test.ts > lists 20_000 receipts from memory without scanning the directory
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ agent/test/performance/task-receipt-scale.test.ts:11:1
+      9| afterEach(() => dirs.splice(0).forEach(dir => rmSync(dir, { recursive:…
+     10|
+     11| it('lists 20_000 receipts from memory without scanning the directory',…
+       | ^
+     12|   const dir=mkdtempSync(join(tmpdir(),'ego-receipts-'));dirs.push(dir);
+     13|   const store=new TaskReceiptStore(dir);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  15:30:03
+   Duration  26.70s (transform 70ms, setup 0ms, import 103ms, tests 26.43s, environment 0ms)
+

@@ -1,6 +1,7 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "quickjs-emscripten";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
 import { USER_BLOCKED_ERROR } from "../../shared/control.js";
+import { buildPlaywrightProgram } from "./stagehand-bridge.js";
 
 export interface ProgramStep {
   parentId: string;
@@ -15,6 +16,10 @@ export interface ProgramStep {
 
 interface ProgramOptions {
   code: string;
+  /** "ego" = 现有 browser.* 程序；"playwright" = 官方兼容层，额外提供 page/context。 */
+  api?: "ego" | "playwright";
+  /** 任务缺省页；playwright 模式第一步读到的绑定页以它为准（没有则用 list_tabs 的 working 页）。 */
+  pageTabId?: number | null;
   call(name: ToolName, params: Record<string, unknown>, stepId?: string): Promise<unknown>;
   signal?: AbortSignal;
   id?: string;
@@ -25,6 +30,18 @@ interface ProgramOptions {
 const METHODS = [...TOOL_NAMES.filter(name => name !== "worker_tabs"), "waitFor", "sleep"];
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+/** 用户程序体；playwright 模式先注入官方兼容层与 RawPage/RawContext 适配。 */
+function programSource(options: ProgramOptions): string {
+  if (options.api === "playwright") {
+    return buildPlaywrightProgram({
+      code: options.code,
+      pageTabId: typeof options.pageTabId === "number" ? options.pageTabId : null,
+      platform: process.platform,
+    });
+  }
+  return `(async()=>{const value=await(async()=>{\n${options.code}\n})();return JSON.stringify(value===undefined?null:value);})()`;
+}
 
 /** Isolated JS heap. The only host capability is the existing, serialized browser RPC. */
 export async function runBrowserProgram(options: ProgramOptions): Promise<{
@@ -157,8 +174,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     }`);
     vm.unwrapResult(bootstrap).dispose();
     guard();
-    cpuDeadline = Date.now() + 100;
-    const evaluated = vm.evalCode(`(async()=>{const value=await(async()=>{\n${options.code}\n})();return JSON.stringify(value===undefined?null:value);})()`, "browser-program.js");
+    const source = programSource(options);
+    // The trusted facade is substantially larger than user code. Its initial evaluation
+    // yields at list_tabs before entering user code; subsequent jobs retain the 100ms limit.
+    cpuDeadline = Date.now() + (options.api === "playwright" ? 1000 : 100);
+    const evaluated = vm.evalCode(source, "browser-program.js");
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();

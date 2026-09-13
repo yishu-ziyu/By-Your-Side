@@ -1,0 +1,61 @@
+
+> test:scale
+> vitest run agent/test/performance --maxWorkers=1
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+ ❯ agent/test/performance/task-receipt-scale.test.ts (2 tests | 2 failed) 325029ms
+   × lists 20_000 receipts from memory without scanning the directory 216656ms
+   × keeps event-loop delay p95 under 20ms after 20_000 receipts and 200 sessions 108352ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  agent/test/performance/task-receipt-scale.test.ts > lists 20_000 receipts from memory without scanning the directory
+AssertionError: expected 1071.4016249999986 to be less than 50
+ ❯ agent/test/performance/task-receipt-scale.test.ts:22:37
+     20|   const started=performance.now();
+     21|   expect(store.list('A')).toHaveLength(5000);
+     22|   expect(performance.now()-started).toBeLessThan(50);
+       |                                     ^
+     23|   store.sync();
+     24| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  agent/test/performance/task-receipt-scale.test.ts > lists 20_000 receipts from memory without scanning the directory
+ FAIL  agent/test/performance/task-receipt-scale.test.ts > keeps event-loop delay p95 under 20ms after 20_000 receipts and 200 sessions
+Error: Hook timed out in 10000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ agent/test/performance/task-receipt-scale.test.ts:9:1
+      7| import { TaskReceiptStore } from '../../src/task-dispatcher.js';
+      8| const dirs: string[] = [];
+      9| afterEach(() => dirs.splice(0).forEach(dir => rmSync(dir, { recursive:…
+       | ^
+     10|
+     11| it('lists 20_000 receipts from memory without scanning the directory',…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  agent/test/performance/task-receipt-scale.test.ts > keeps event-loop delay p95 under 20ms after 20_000 receipts and 200 sessions
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ agent/test/performance/task-receipt-scale.test.ts:25:1
+     23|   store.sync();
+     24| });
+     25| it('keeps event-loop delay p95 under 20ms after 20_000 receipts and 20…
+       | ^
+     26|   const {monitorEventLoopDelay}=await import('node:perf_hooks');
+     27|   const dir=mkdtempSync(join(tmpdir(),'ego-receipts-'));dirs.push(dir);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  15:39:50
+   Duration  330.45s (transform 1.40s, setup 0ms, import 1.85s, tests 325.03s, environment 0ms)
+

@@ -59,3 +59,16 @@ describe('production streaming speech output',()=>{
   expect(emit).toHaveBeenCalledWith({kind:'user_delivery_stream',stream:{id:toolDeliveryId('d'),runId:'run',kind:'finding',phase:'streaming',text:'已找到结果。'}});
  });
 });
+
+it('speaks quoted text and source labels without Markdown quote markers or link addresses',()=>{
+ const buffer=new SpeechTextBuffer();
+ expect(buffer.append('### 依据\n\n> 厂商说：续航更长。\n\n[厂商说明](https://example.test/a)',true)).toBe('依据\n\n厂商说：续航更长。\n\n厂商说明');
+});
+
+
+it('does not treat a sentence boundary as a Markdown quote line',()=>{
+ const buffer=new SpeechTextBuffer();
+ expect(buffer.append('合格条件如下。')).toBe('合格条件如下。');
+ expect(buffer.append(' > 5 才通过。')).toBe('> 5 才通过。');
+ expect(buffer.append('\n> 这是下一行引用。')).toBe('这是下一行引用。');
+});

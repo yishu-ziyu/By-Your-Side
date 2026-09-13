@@ -1,0 +1,11 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>回答层次与来源 · 对照</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eae9e5;color:#252520;font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}header{padding:16px 22px;background:#faf9f6;border-bottom:1px solid #d8d7d1;display:flex;flex-wrap:wrap;gap:12px;align-items:center}h1{font-size:16px;margin:0 18px 0 0}nav{display:flex;gap:4px}button,select{font:inherit;padding:7px 12px;border:1px solid #d1d0c9;border-radius:7px;background:transparent;color:inherit;cursor:pointer}button[aria-pressed=true]{background:#292923;color:white;border-color:#292923}small{color:#69685f}main{padding:20px;display:flex;justify-content:center}iframe{width:min(var(--preview-width,440px),100%);height:calc(100vh - 152px);min-height:550px;border:1px solid #d4d3ce;border-radius:12px;background:white;box-shadow:0 8px 30px #0000000b}footer{padding:0 22px 12px;color:#76746c;font-size:12px;text-align:center}
+</style>
+<header><h1>回答排版</h1><nav aria-label="排版对照"><button data-variant="before" aria-pressed="false">改前 · 连续段落</button><button data-variant="after" aria-pressed="true">建议 · 层次与来源</button></nav><label>栏宽 <select id="width"><option value="320">320</option><option value="440" selected>440</option><option value="600">600</option></select></label><small>宋体已确认 · 本轮只比较层次与链接</small></header>
+<main><iframe title="By Your Side 回答排版预览" src="/panel.html?variant=after"></iframe></main><footer>样文来自你的截图，仅用于比较排版。本轮仅预览层次与链接，未应用到正式产品。</footer>
+<script>
+const frame=document.querySelector('iframe');let variant='after';
+for(const button of document.querySelectorAll('[data-variant]'))button.onclick=()=>{variant=button.dataset.variant;for(const b of document.querySelectorAll('[data-variant]'))b.setAttribute('aria-pressed',String(b===button));frame.contentWindow.postMessage({type:'reading-preview',variant},location.origin);};
+document.querySelector('#width').onchange=e=>document.documentElement.style.setProperty('--preview-width',e.target.value+'px');
+</script></html>

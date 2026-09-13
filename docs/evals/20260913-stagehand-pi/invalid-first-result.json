@@ -1,0 +1,118 @@
+{
+  "task": "stagehand-pi-probe",
+  "evidence": {
+    "upstreamCommit": "b771930d2b4d858e5bd9670203c66260b385a8fa",
+    "sdkVersion": "4.1.0"
+  },
+  "mode": "launch-isolated",
+  "startedAt": "2026-09-13T11:06:41.884Z",
+  "env": {
+    "loopbackListen": "OK",
+    "sdk": {
+      "path": "/private/tmp/ego-stagehand-work/runtime/node_modules/@browserbasehq/stagehand/dist/index.mjs",
+      "version": "4.1.0",
+      "moduleRoot": "/tmp/ego-stagehand-work/runtime/node_modules"
+    }
+  },
+  "checks": [
+    {
+      "id": "connect.requires-cdpUrl",
+      "status": "PASS",
+      "detail": "connect 必须有 cdpUrl：没有调试端点就无法附着",
+      "evidence": {
+        "issues": [
+          "Invalid input: expected string, received undefined"
+        ]
+      }
+    },
+    {
+      "id": "connect.accepts-cdpUrl",
+      "status": "PASS",
+      "detail": "单个 cdpUrl 即可通过 schema；connect 不要求任何 launch 参数"
+    },
+    {
+      "id": "fill.values",
+      "status": "PASS",
+      "detail": "firstName=\"Ada\"，其余=[\"\",\"\",\"\"]",
+      "evidence": {
+        "firstName": "Ada",
+        "lastName": "",
+        "email": "",
+        "city": ""
+      }
+    },
+    {
+      "id": "fill.no-submit",
+      "status": "PASS",
+      "detail": "submits=0 navigations=0 url=http://127.0.0.1:61132/"
+    },
+    {
+      "id": "switch.handle-binding",
+      "status": "PASS",
+      "detail": "活跃页切到 second 后，旧句柄写入 first=\"BoundToFirst\"，second 未被写入=\"\"",
+      "evidence": {
+        "onSecond": {
+          "firstName": "",
+          "lastName": "",
+          "email": "",
+          "city": ""
+        },
+        "onFirst": {
+          "firstName": "Ada",
+          "lastName": "BoundToFirst",
+          "email": "",
+          "city": ""
+        }
+      }
+    },
+    {
+      "id": "switch.active-page-defaults",
+      "status": "INFO",
+      "detail": "AI act() 的默认目标页是否等于 setActivePage 后的活跃页未在本探针验证（需要模型凭据）；本项只覆盖句柄绑定。"
+    },
+    {
+      "id": "deadline.stops-batch",
+      "status": "PASS",
+      "detail": "截止后等满 2.5s 仍无新增写入（已落地：[\"firstName\"]）",
+      "evidence": {
+        "outcome": {
+          "settled": "rejected",
+          "message": "Stagehand callback batch timed out after 900ms"
+        },
+        "values": {
+          "firstName": "Ada",
+          "lastName": "",
+          "email": "",
+          "city": ""
+        },
+        "writes": [
+          {
+            "id": "firstName",
+            "kind": "input",
+            "value": "Ada",
+            "at": 1789297603342
+          }
+        ]
+      }
+    },
+    {
+      "id": "abort.api-surface",
+      "status": "INFO",
+      "detail": "源码证据：Page/Locator/Batch 选项类型均无 AbortSignal（已查 6 个），批次只能靠 deadline 或 close 停；用户级 abort 未跑",
+      "evidence": {
+        "source": "dist/index.d.mts",
+        "checked": [
+          "PageNavigationOptions",
+          "PageClickOptions",
+          "PageTypeOptions",
+          "LocatorClickOptions",
+          "LocatorTypeOptions",
+          "ExperimentalBatchOptions"
+        ],
+        "withSignal": []
+      }
+    }
+  ],
+  "status": "passed",
+  "finishedAt": "2026-09-13T11:06:47.151Z"
+}

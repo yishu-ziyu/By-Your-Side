@@ -1,4 +1,5 @@
 import {join} from "node:path";
+import type {UserInputOptions} from "./session.js";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
 import {CONTROL_CONFIRM_TTL_MS,controlConfirmMessage,createControlConfirmSnapshot,isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -183,7 +184,9 @@ export class ConversationManager {
     // Idle conversational requests use the same capable session as typed input.
     // Classification still resolves controls, but cannot strip tools from ordinary content.
     if (willStart) {
-      const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent);
+      const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,single?.action==='chat'?{pageObservation:'on-demand'}:undefined);
+      // 隐式派发也是真实发生的一步 start：写进计划，让回执反映事实，而不是留下空计划假装零步已知。
+      if(route&&!route.resumeReadOnly&&receipt.status==='accepted')this.voicePlans.update(id,route.requestId,{steps:[{action:'start',text,targetId:id,targetTitle:this.entries.get(id)?.summary.title,status:'complete',receipt}]});
       return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt],awaitDelivery:receipt.status==='accepted'};
     }
     if(only?.action==='observe'){
@@ -404,7 +407,7 @@ export class ConversationManager {
     this.store?.save(this.list());
     this.emit({ type: "conversation_updated", conversationId, conversation: { ...entry.summary } });
   }
-  async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true): Promise<TaskReceipt> {
+  async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
     // 旧授权只在真正会生效的变更分支里失效：被拒的 start/steer、旧 run、重放请求都不能影响当前待确认。
     const dropPendingConsent = () => this.consentOf(request.conversationId)?.cancelAll('cancelled', '任务或页面控制已变化，旧请求未发送。');
@@ -428,7 +431,8 @@ export class ConversationManager {
         entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
         if(entry.summary.title==='新会话')entry.summary.title=title;
         this.publishRunIdentity(request.conversationId);
-        entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
+        if(inputOptions)entry.runtime.session.startTask(request.text??'',request.context,request.attachments,inputOptions);
+        else entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
         return {status:'accepted',runId:entry.summary.runId??null,message:`已接收新任务：${request.text??'使用所选资料'}`};
       }
       if(request.action==='pause'||request.action==='resume'||request.action==='abort'){

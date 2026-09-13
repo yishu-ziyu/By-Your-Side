@@ -1,0 +1,16 @@
+
+> test:unit
+> vitest run --exclude "agent/test/performance/**" --maxWorkers=2
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+
+ Test Files  183 passed (183)
+      Tests  1627 passed (1627)
+   Start at  15:26:23
+   Duration  218.56s (transform 12.80s, setup 0ms, import 295.59s, tests 34.14s, environment 79ms)
+

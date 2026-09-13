@@ -1,0 +1,26 @@
+
+> build
+> npm run build -w @sideagent/extension
+
+
+> @sideagent/extension@0.1.0 build
+> node build.mjs
+
+
+  dist/sidepanel.js         503.0kb
+  dist/background.js        305.0kb
+  dist/voice-vad-worker.js  106.9kb
+  dist/voice-permission.js    1.6kb
+
+⚡ Done in 204ms
+
+  dist/content-cursor.js    64.6kb
+  dist/content-domops.js    10.8kb
+  dist/content-record.js     9.9kb
+  dist/content-ask.js        9.1kb
+  dist/content-snapshot.js   8.1kb
+  dist/content-effect.js     7.8kb
+  dist/content-observe.js    6.7kb
+
+⚡ Done in 8ms
+dist/ 构建完成

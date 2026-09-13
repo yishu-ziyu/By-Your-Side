@@ -83,6 +83,10 @@ Pi 对话上下文持久化在 `~/.sideagent/conversations/`，伴随进程重�
 
 运行中可以继续发消息插话（steer），或点「中止」打断。Agent 操作 `click`/`hover`/`type_text`/`press_key`/`js`/`screenshot` 时会通过 `chrome.debugger` 挂载调试会话，标签页顶部出现「正在调试」提示条属正常现象，闲置 15 秒后自动卸载。
 
+## 阅读外观
+
+回答默认使用宋体。侧栏右上角“设置”可切换宋体／黑体／系统默认，以及小／标准／大字号；调整立即生效并自动保存，也可恢复默认。只改变回答正文，按钮和输入框保持原字体。见[阅读外观说明](docs/reading-appearance.md)。
+
 ## 安全说明
 
 - 伴随进程由 Chrome 经 native messaging 拉起，仅接受 host manifest `allowed_origins` 白名单里的扩展；ws 调试通道只监听 `127.0.0.1`，握手校验 token + `chrome-extension://` Origin。

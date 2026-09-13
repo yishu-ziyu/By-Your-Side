@@ -1,0 +1,17 @@
+{
+  "name": "@sideagent-experiments/stagehand-pi",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated, reproducible feasibility probe for Stagehand + Pi (experiment only; not wired into production).",
+  "scripts": {
+    "probe": "node run.mjs",
+    "probe:env": "node run.mjs --env-only"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "4.1.0"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

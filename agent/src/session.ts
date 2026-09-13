@@ -84,6 +84,9 @@ export class AcceptanceContinuity {
   }
 }
 
+/** Trusted input policy; tools and the original page/attachments stay available. */
+export interface UserInputOptions { pageObservation?: "on-demand" }
+
 export interface SessionCreateOptions {
   modelPattern?: string;
   mode?: AgentMode;
@@ -419,6 +422,12 @@ export class BrowserAgentSession {
 
   isToolActive(name: string): boolean { return this.session?.getActiveToolNames().includes(name) ?? true; }
 
+  /** A mode-hidden tool remains permitted; an explicitly unavailable tool does not. */
+  isToolHiddenByMode(name: string): boolean {
+    return !this.teamToolsMounted && this.permittedToolNames?.includes(name) === true
+      && (name === "page_operation" || TEAM_COORDINATION_TOOLS.has(name));
+  }
+
   /**
    * 只有存在 worker 时才向模型挂载协作工具：post / await_message / list_workers / stop_worker，
    * 以及共享页写入 `page_operation`。spawn_worker 与 take_tab 常驻。
@@ -494,7 +503,7 @@ export class BrowserAgentSession {
   waitForStop():Promise<void>{return this.stopCurrentRun();}
 
   /** 空闲时发起新任务；运行中自动转为插话。异步不阻塞，错误捕获为 error 事件。 */
-  sendUserMessage(text: string, context?: PageContext, attachments?: Attachment[]): void {
+  sendUserMessage(text: string, context?: PageContext, attachments?: Attachment[], inputOptions?: UserInputOptions): void {
     if (this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
       return;
@@ -530,7 +539,14 @@ export class BrowserAgentSession {
     }
     this.experience?.begin(text, context);
     this.memoryRuntime?.beginUserTurn(text, context);
-    void this.promptWithFreshPageObservation(session, finalText, context, images).catch((err: unknown) => this.emitError(err));
+    if (inputOptions?.pageObservation === "on-demand") {
+      // A conversational input is not an instruction to inspect the ambient page.
+      // Keep its identity and tools, but obtain page contents only if the answer needs them.
+      const reply = `${finalText}\n\n[Conversation reply: respond to the user's message. The page is background context, not a request for a page summary or a new task. Use tools if needed to answer the actual question.]`;
+      void session.prompt(reply, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
+    } else {
+      void this.promptWithFreshPageObservation(session, finalText, context, images).catch((err: unknown) => this.emitError(err));
+    }
   }
 
   /**
@@ -656,12 +672,12 @@ export class BrowserAgentSession {
     return assertDeliveryText(reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim());
   }
 
-  startTask(text:string,context?:PageContext,attachments?:Attachment[]):void {
+  startTask(text:string,context?:PageContext,attachments?:Attachment[],inputOptions?:UserInputOptions):void {
     if(this.hold.isHeld())throw new Error('页面现在归你，请先交还。');
     if(!this.session?.model)throw new Error(this.guidanceMessage());
     if(this.session.isStreaming)throw new Error('当前任务还在执行，请修改当前任务或另开会话。');
     this.pendingCorrections.clear();
-    this.deferredSteers=[];this.sendUserMessage(text,context,attachments);
+    this.deferredSteers=[];this.sendUserMessage(text,context,attachments,inputOptions);
   }
   queueSteerForResume(text:string,context?:PageContext,attachments?:Attachment[]):void{
     if(!this.hold.isHeld())throw new Error('任务没有暂停，补充要求未保存。');

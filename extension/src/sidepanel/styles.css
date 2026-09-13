@@ -2413,20 +2413,130 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
 @media (prefers-reduced-motion: reduce) { #memory-drawer { animation:none; } }
 
 
-/* 2026-09-08: reply typography only. All surrounding product design is unchanged. */
-.msg.assistant.markdown { font-size:14px; line-height:1.85; }
+/* 2026-09-13: 回答正文排版，替换 2026-09-08 的 reply typography 块（宋体候选稿已认可）。
+   只作用于真实回答 .msg.assistant.markdown；按钮、状态、输入框等其余 UI 字体不变，代码保持等宽。
+   默认档位在这里定义一次：--reading-font 宋体、--reading-size 15px；阅读外观模块只覆盖非默认档位。
+   标题用 em 跟随正文字号，不出现「小字号配大标题」。 */
+:root {
+  --reading-font: "Songti SC", "STSong", "Songti TC", "SimSun", serif;
+  --reading-size: 15px;
+}
+
+.msg.assistant.markdown {
+  font-family: var(--reading-font);
+  font-size: var(--reading-size);
+  line-height: 1.72;
+  letter-spacing: 0.01em;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .msg.assistant.markdown h1,
-.msg.assistant.markdown h2 { font-size:20px; line-height:1.5; letter-spacing:-.025em; font-weight:600; margin:10px 0 13px; }
-.msg.assistant.markdown h3 { font-size:15px; line-height:1.65; font-weight:600; margin:20px 0 8px; }
-.msg.assistant.markdown p { margin:9px 0 15px; }
+.msg.assistant.markdown h2 { font-size:1.27em; line-height:1.45; font-weight:600; letter-spacing:0; margin:18px 0 8px; }
+.msg.assistant.markdown h3,
+.msg.assistant.markdown h4 { font-size:1.03em; line-height:1.55; font-weight:600; margin:15px 0 6px; }
+.msg.assistant.markdown p { margin:8px 0 12px; }
 .msg.assistant.markdown strong { font-weight:600; }
 .msg.assistant.markdown ul,
-.msg.assistant.markdown ol { padding-left:21px; }
-.msg.assistant.markdown li { margin:5px 0; }
-.msg.assistant.markdown table { display:block; max-width:100%; overflow-x:auto; font-size:12px; border-collapse:collapse; }
+.msg.assistant.markdown ol { margin:6px 0 12px; padding-left:22px; }
+.msg.assistant.markdown li { margin:3px 0; line-height:1.7; }
+.msg.assistant.markdown a { color:var(--accent, #0a84ff); overflow-wrap:anywhere; word-break:break-word; }
+.msg.assistant.markdown blockquote { margin:8px 0 12px; padding:2px 12px; border-left:3px solid var(--border); color:var(--text-2); }
+.msg.assistant.markdown table { display:block; max-width:100%; overflow-x:auto; font-size:0.9em; border-collapse:collapse; }
 .msg.assistant.markdown th,
-.msg.assistant.markdown td { padding:9px 10px; line-height:1.7; }
-.msg.assistant.markdown pre { max-width:100%; overflow:auto; }
+.msg.assistant.markdown td { padding:7px 9px; line-height:1.7; }
+.msg.assistant.markdown code,
+.msg.assistant.markdown pre,
+.msg.assistant.markdown pre code,
+.msg.assistant.markdown kbd { font-family:var(--mono, "SF Mono", Menlo, Consolas, monospace); }
+
+/* 2026-09-13: 阅读外观面板（右上角齿轮展开）。只改回答排版，不改周边产品设计。 */
+.reading-settings { position: relative; display: inline-flex; align-items: center; }
+#reading-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-surface-elevated);
+  backdrop-filter: blur(12px);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: var(--glass-specular);
+  transition: color var(--m-quick) ease, border-color var(--m-quick) ease,
+              background var(--m-quick) ease, transform var(--m-move) var(--e-spring);
+}
+#reading-settings-btn:hover { color: var(--text-primary); border-color: var(--apple-blue); transform: translateY(-0.5px); }
+#reading-settings-btn:active { transform: scale(0.95); }
+#reading-settings-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+#reading-settings-btn svg { width: 14px; height: 14px; }
+.reading-settings-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 236px;
+  max-width: calc(100vw - 16px);
+  display: grid;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: var(--content-bg);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-specular), var(--popover-shadow, var(--glass-shadow));
+  color: var(--text-primary);
+  font-size: 12px;
+  animation: readingPanelIn var(--m-move) var(--e-swift);
+}
+.reading-settings-panel[hidden] { display: none; }
+@keyframes readingPanelIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.reading-settings-head { display: flex; align-items: center; justify-content: space-between; }
+.reading-settings-head h2 { margin: 0; font-size: 12.5px; font-weight: 600; }
+#reading-settings-close { border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; padding: 2px 0; cursor: pointer; border-radius: 6px; }
+#reading-settings-close:hover { color: var(--text-primary); }
+.reading-settings-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 8px; }
+.reading-settings-row label { color: var(--text-secondary); }
+.reading-settings-select {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--content-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+.reading-settings-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.reading-settings-hint { margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.reading-settings-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.reading-settings-reset, .reading-settings-retry {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.reading-settings-reset:hover { color: var(--text-primary); border-color: var(--btn-border-hover); }
+.reading-settings-retry { color: var(--err); border-color: var(--err); }
+.reading-settings-retry[hidden] { display: none; }
+.reading-settings-status { margin: 0 0 0 auto; font-size: 10.5px; color: var(--text-tertiary); }
+.reading-settings-status[data-state="saved"] { color: var(--ok); }
+.reading-settings-status[data-state="error"] { color: var(--err); }
+@media (prefers-reduced-motion: reduce) { .reading-settings-panel { animation: none; } }
+@media (max-width: 340px) {
+  .reading-settings-panel { width: min(236px, calc(100vw - 12px)); padding: 10px 11px; }
+  .reading-settings-row { grid-template-columns: 30px minmax(0, 1fr); gap: 6px; }
+}
 
 /* Voice progress: approved Particles Orb composer, 2026-09-08. */
 .voice-start{display:inline-flex;align-items:center;gap:0;flex-shrink:0;border:1px solid #e5dff0;border-radius:18px;background:#ffffff80;color:#655784;padding:0 7px 0 0;font-size:10px;cursor:pointer}

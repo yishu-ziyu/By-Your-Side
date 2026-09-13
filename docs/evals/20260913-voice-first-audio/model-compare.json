@@ -1,0 +1,273 @@
+{
+ "inputs": [
+  "嗨，晚上好。",
+  "十加七等于多少？",
+  "把姓名改成李明",
+  "暂停",
+  "当前招聘页面要求几年经验？",
+  "现在进展怎么样了",
+  "帮我在这个页面找到邮箱并复制下来",
+  "先别动，我再说一遍要求"
+ ],
+ "summary": [
+  {
+   "model": "reference",
+   "medianMs": 1734,
+   "decisions": "chat chat start clarify observe status start pause",
+   "errors": 0
+  },
+  {
+   "model": "gemini-3.1-flash-lite",
+   "medianMs": 4363,
+   "decisions": "chat chat chat(≠start) clarify observe status start chat(≠pause)",
+   "errors": 0
+  },
+  {
+   "model": "gemini-3-flash",
+   "medianMs": 4205,
+   "decisions": "chat chat start pause(≠clarify) observe status start pause",
+   "errors": 0
+  },
+  {
+   "model": "kimi-k2.5",
+   "medianMs": 619,
+   "decisions": "ERR(≠chat) ERR(≠chat) ERR(≠start) ERR(≠clarify) ERR(≠observe) ERR(≠status) ERR(≠start) ERR(≠pause)",
+   "errors": 0
+  },
+  {
+   "model": "gpt-5.4-mini",
+   "medianMs": null,
+   "decisions": "",
+   "errors": 0
+  }
+ ],
+ "detail": [
+  {
+   "label": "reference",
+   "provider": "opencode-go",
+   "id": "deepseek-flash",
+   "rows": [
+    {
+     "text": "嗨，晚上好。",
+     "ms": 1552,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+    },
+    {
+     "text": "十加七等于多少？",
+     "ms": 1444,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+    },
+    {
+     "text": "把姓名改成李明",
+     "ms": 1828,
+     "action": "start",
+     "raw": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+    },
+    {
+     "text": "暂停",
+     "ms": 1341,
+     "action": "clarify",
+     "raw": "{\"steps\":[{\"action\":\"clarify\",\"target\":null}]}"
+    },
+    {
+     "text": "当前招聘页面要求几年经验？",
+     "ms": 1734,
+     "action": "observe",
+     "raw": "{\"steps\":[{\"action\":\"observe\",\"target\":null}]}"
+    },
+    {
+     "text": "现在进展怎么样了",
+     "ms": 2022,
+     "action": "status",
+     "raw": "{\"steps\":[{\"action\":\"status\",\"target\":null}]}"
+    },
+    {
+     "text": "帮我在这个页面找到邮箱并复制下来",
+     "ms": 1134,
+     "action": "start",
+     "raw": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+    },
+    {
+     "text": "先别动，我再说一遍要求",
+     "ms": 1849,
+     "action": "pause",
+     "raw": "{\"steps\":[{\"action\":\"pause\",\"through\":0,\"target\":null},{\"action\":\"chat\",\"target\":null}]}"
+    }
+   ]
+  },
+  {
+   "label": "gemini-3.1-flash-lite",
+   "provider": "cliproxy",
+   "id": "gemini-3.1-flash-lite",
+   "rows": [
+    {
+     "text": "嗨，晚上好。",
+     "ms": 8167,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\"}]}"
+    },
+    {
+     "text": "十加七等于多少？",
+     "ms": 6446,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\"}]}"
+    },
+    {
+     "text": "把姓名改成李明",
+     "ms": 4299,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\"}]}"
+    },
+    {
+     "text": "暂停",
+     "ms": 3853,
+     "action": "clarify",
+     "raw": "{\"steps\":[{\"action\":\"clarify\",\"target\":null}]}"
+    },
+    {
+     "text": "当前招聘页面要求几年经验？",
+     "ms": 4363,
+     "action": "observe",
+     "raw": "{\"steps\":[{\"action\":\"observe\"}]}"
+    },
+    {
+     "text": "现在进展怎么样了",
+     "ms": 3662,
+     "action": "status",
+     "raw": "{\"steps\":[{\"action\":\"status\",\"target\":null}]}"
+    },
+    {
+     "text": "帮我在这个页面找到邮箱并复制下来",
+     "ms": 4563,
+     "action": "start",
+     "raw": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+    },
+    {
+     "text": "先别动，我再说一遍要求",
+     "ms": 3603,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\"}]}"
+    }
+   ]
+  },
+  {
+   "label": "gemini-3-flash",
+   "provider": "cliproxy",
+   "id": "gemini-3-flash",
+   "rows": [
+    {
+     "text": "嗨，晚上好。",
+     "ms": 5511,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+    },
+    {
+     "text": "十加七等于多少？",
+     "ms": 3118,
+     "action": "chat",
+     "raw": "{\"steps\":[{\"action\":\"chat\",\"target\":null}]}"
+    },
+    {
+     "text": "把姓名改成李明",
+     "ms": 4205,
+     "action": "start",
+     "raw": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+    },
+    {
+     "text": "暂停",
+     "ms": 7322,
+     "action": "pause",
+     "raw": "{\"steps\":[{\"action\":\"pause\",\"target\":null}]}"
+    },
+    {
+     "text": "当前招聘页面要求几年经验？",
+     "ms": 5374,
+     "action": "observe",
+     "raw": "{\"steps\":[{\"action\":\"observe\",\"target\":null}]}"
+    },
+    {
+     "text": "现在进展怎么样了",
+     "ms": 3959,
+     "action": "status",
+     "raw": "{\"steps\":[{\"action\":\"status\",\"target\":null}]}"
+    },
+    {
+     "text": "帮我在这个页面找到邮箱并复制下来",
+     "ms": 3585,
+     "action": "start",
+     "raw": "{\"steps\":[{\"action\":\"start\",\"target\":null}]}"
+    },
+    {
+     "text": "先别动，我再说一遍要求",
+     "ms": 3758,
+     "action": "pause",
+     "raw": "{\"steps\":[{\"action\":\"pause\",\"target\":null}]}"
+    }
+   ]
+  },
+  {
+   "label": "kimi-k2.5",
+   "provider": "cliproxy",
+   "id": "kimi-k2.5",
+   "rows": [
+    {
+     "text": "嗨，晚上好。",
+     "ms": 584,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "十加七等于多少？",
+     "ms": 470,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "把姓名改成李明",
+     "ms": 1421,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "暂停",
+     "ms": 456,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "当前招聘页面要求几年经验？",
+     "ms": 418,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "现在进展怎么样了",
+     "ms": 648,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "帮我在这个页面找到邮箱并复制下来",
+     "ms": 619,
+     "action": null,
+     "raw": ""
+    },
+    {
+     "text": "先别动，我再说一遍要求",
+     "ms": 702,
+     "action": null,
+     "raw": ""
+    }
+   ]
+  },
+  {
+   "label": "gpt-5.4-mini",
+   "provider": "cliproxy",
+   "id": "gpt-5.4-mini",
+   "error": "模型不可用或未配置凭据",
+   "rows": []
+  }
+ ]
+}

@@ -52,6 +52,7 @@ import {
   humanizeModelError,
 } from "./models.js";
 import { mountModelPicker } from "./model-picker.js";
+import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
@@ -221,6 +222,9 @@ app.innerHTML = `
     <button id="setup-save" type="button">保存并连接</button>
   </div>
 `;
+
+// 阅读外观：右上角齿轮 + 「阅读外观」面板。偏好状态在模块内，这里只注入 DOM 宿主。
+mountReadingSettings({ topbar: document.getElementById("topbar")!, app });
 
 const statusDot = document.getElementById("status-dot") as HTMLElement;
 const statusText = document.getElementById("status-text")!;

@@ -19,6 +19,17 @@ it('团队工具切换不能重新启用SDK目录中被禁用的本地工具', (
     expect(active).toContain('fill');
     expect(active).toContain('spawn_worker');
     expect(active.includes('page_operation')).toBe(mounted);
+    expect(session.isToolHiddenByMode('page_operation')).toBe(!mounted);
+    expect(session.isToolHiddenByMode('bash')).toBe(false);
     expect(active.includes('post')).toBe(mounted);
   }
+});
+
+it('a tool excluded from initial permission is not treated as a mode-hidden capability', () => {
+  let active = ['fill','snapshot'];
+  const raw = {getActiveToolNames:()=>active, setActiveToolsByName:(names:string[])=>{active=names;}};
+  const Constructor=BrowserAgentSession as unknown as new (...args:any[])=>BrowserAgentSession;
+  const session=new Constructor(raw,null,{emit(){},setStatus(){}},null,null);
+  session.setTeamToolsMounted(false);
+  expect(session.isToolHiddenByMode('page_operation')).toBe(false);
 });

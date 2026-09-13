@@ -45,12 +45,12 @@ describe("接话安全台词（① 抢答）", () => {
 
   it("接话先攒音频，过校验才播；拦下就换固定台词", () => {
     expect(voiceSession).toMatch(/import \{EARLY_HOLD_LINE,safeEarlyText\} from '\.\/voice-early\.js'/);
-    // 攒：early 响应落定前不播（落定后直发，拦下的直接丢）
-    expect(voiceSession).toMatch(/else if\(response\.early\)\{if\(response\.earlyDecided\)\{if\(response\.audio\)this\.deps\.emit\(frame\);\}else\{\(response\.earlyAudio\?\?=\[\]\)\.push\(frame\);\}\}/);
+    // 攒：落定前不播；落定后放行的帧直发（放行与"已有音频"分开，文字先到也不丢后到的音频），拦下就丢
+    expect(voiceSession).toMatch(/else if\(response\.early\)\{\s*if\(!response\.earlyDecided\)\(response\.earlyAudio\?\?=\[\]\)\.push\(frame\);\s*else if\(response\.earlyAllowed\)\{response\.audio=true;this\.deps\.emit\(frame\);\}/);
     expect(voiceSession).toMatch(/else if\(response\.early\)\{\s*response\.earlyTranscript=text\.slice\(0,2000\);/);
     // 判：整句转写一到就落定（不等 response.done），response.done 再兜一次
     expect(voiceSession.match(/this\.settleEarlyReply\(response\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
-    // 回执到了才是"有依据的接话"（开场确认），不拦；只有还在猜的时候才校验
+    // 有回执/事实依据的回答逐字播出（不把长回答降级成固定台词）；只有还在猜的时候才校验
     expect(voiceSession).toMatch(/const safe=this\.routeReceipt\?said:safeEarlyText\(said\);/);
     expect(voiceSession).toMatch(/this\.diagnostic\('early_reply_blocked',\{characters:said\.length\}\);/);
     expect(voiceSession).toMatch(/this\.pendingHoldLine=EARLY_HOLD_LINE;/);

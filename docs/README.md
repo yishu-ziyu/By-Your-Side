@@ -5,6 +5,7 @@
 | 现在完成了什么，还缺什么 | [STATUS](STATUS.md) |
 | 代码怎么分工，新增能力放哪里 | [架构与维护](architecture.md) |
 | 本地怎么安装、使用与运行 | [仓库README](../README.md) |
+| 怎么调整回答字体与字号 | [阅读外观](reading-appearance.md) |
 | 消息和控制如何传递 | [协议](protocol.md)、[语音调度](voice-dispatch.md)、[组合执行](browser-program.md) |
 | 上次为什么这样做 | [NOTES](NOTES.md)，只留因果与续接约束 |
 | 某次变更是否真正验过 | `evals/` 的任务标准与原始证据 |

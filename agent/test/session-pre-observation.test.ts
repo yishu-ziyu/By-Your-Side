@@ -32,6 +32,20 @@ function fakeSession(rpc: unknown, streaming = false) {
 }
 
 describe("新任务前的当前页预观察", () => {
+  it("对话保留原页面和输入，但不自动读出整页资料", async () => {
+    const rpc = {call:vi.fn(async()=>({text:"七百条笔记",tabId:77})),setPageTarget:vi.fn()};
+    const {wrapped,raw}=fakeSession(rpc);
+    wrapped.startTask("晚上好",pageContext(),undefined,{pageObservation:"on-demand"});
+    await vi.waitFor(()=>expect(raw.prompt).toHaveBeenCalledTimes(1));
+    expect(rpc.call).not.toHaveBeenCalled();
+    expect(rpc.setPageTarget.mock.calls[0]?.[1]).toBe(77);
+    const text=raw.prompt.mock.calls[0]![0];
+    expect(text).toContain("晚上好");
+    expect(text).toContain("https://example.com/video");
+    expect(text).not.toContain("七百条笔记");
+    expect(text).not.toContain("FRESH PAGE OBSERVATION");
+  });
+
   it("把用户当前页的观察附在消息后，模型首轮即可动手", async () => {
     const rpc = { call: vi.fn(async () => ({ text: 'button "暂停" [ref=3]', tabId: 77 })) };
     const { wrapped, raw } = fakeSession(rpc);

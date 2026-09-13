@@ -39,31 +39,46 @@ describe('live dialogue while a browser task runs',()=>{
     expect(pending[0].args[2]()).toBe(readOnly);
     pending[0].resolve({kind:'none'});pending[1].resolve({kind:'none'});await tick();
   });
-  it('can speak while the task classifier is still pending and does not repeat the chat afterward',async()=>{
+  it('never speaks before the route outcome, then answers once when the voice side owns the turn',async()=>{
     const h=harness({kind:'none'},true);let resolve!:(r:VoiceRouteResult)=>void;h.route.mockImplementationOnce(()=>new Promise(r=>resolve=r));
-    await h.input(1,'今天脑子有点乱');expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(1);
-    h.reply('early','先说说最困扰你的那一件？');expect(h.events.some(e=>e.kind==='audio')).toBe(true);
-    h.s.command({kind:'playback_done',responseId:'early'});expect(h.outputs).toHaveLength(0);
+    await h.input(1,'今天脑子有点乱');
+    expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
+    // 结果还没出来，上游这段生成不属于本轮任何一位回答者，不出声也不留字。
+    h.reply('early','先说说最困扰你的那一件？');
+    expect(h.events.some(e=>e.kind==='audio'||e.kind==='text'&&e.role==='assistant')).toBe(false);
     resolve({kind:'none'});await tick();expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(1);
+    h.reply('chat','先说说最困扰你的那一件？');expect(h.events.some(e=>e.kind==='audio')).toBe(true);
   });
-  it('keeps action confirmation behind the receipt even when early speech has already started',async()=>{
+  it('keeps action confirmation behind the real receipt instead of speculating first',async()=>{
     const h=harness({kind:'none'},true);let resolve!:(r:VoiceRouteResult)=>void;h.route.mockImplementationOnce(()=>new Promise(r=>resolve=r));
-    await h.input(1,'修改一下');h.reply('early','我来处理这个修改。');
-    resolve({kind:'clarify',message:'请说明要修改的内容。'});await tick();expect(h.outputs).toHaveLength(0);
-    h.s.command({kind:'playback_done',responseId:'early'});expect(h.outputs).toHaveLength(1);expect(h.outputs[0]!.push).toHaveBeenCalledWith('请说明要修改的内容。');
+    await h.input(1,'修改一下');
+    expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
+    resolve({kind:'clarify',message:'请说明要修改的内容。'});await tick();
+    expect(h.outputs).toHaveLength(1);expect(h.outputs[0]!.push).toHaveBeenCalledWith('请说明要修改的内容。');
   });
   it('does not start an early reply to an explicit request to stop speaking',async()=>{
     const h=harness({kind:'silent'},true);await h.input(1,'别说了');expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
   });
-  it('does not guard early speech with an action receipt that arrived before response.created',async()=>{
-    const h=harness({kind:'clarify',message:'需要确认。'},true);await h.input(1,'做一下');h.reply('early','我看看。');
-    expect(h.events.some(e=>e.kind==='audio')).toBe(true);expect(h.events.some(e=>e.kind==='text'&&e.text==='我看看。')).toBe(true);
+  it('does not re-validate an already-routed chat answer into the fixed hold line',async()=>{
+    const h=harness({kind:'none'},true);await h.input(1,'做一下');
+    const long='好的，我先看看这个页面上有哪些可以改的地方，再回来告诉你先动哪一步。';
+    h.reply('chat',long);
+    expect(h.events.some(e=>e.kind==='text'&&e.role==='assistant'&&e.text===long)).toBe(true);
+    expect(h.events.some(e=>e.kind==='audio')).toBe(true);
+    expect(h.events.some(e=>e.kind==='text'&&e.text==='我看一下')).toBe(false);
   });
-  it('does not turn a queued voice answer into a background result when the final message omits voiceTurn',async()=>{
-    const h=harness({kind:'none'},true);await h.input(1,'刚才那个呢');h.reply('early','我核对一下。');
-    h.s.streamDelivery({...h.finding('reply'),kind:'reply',voiceTurn:1});h.s.completeDelivery({...h.finding('reply'),kind:'reply'});
-    expect(h.outputs).toHaveLength(0);await h.input(2,'不用了，聊点别的');h.reply('new','好。');h.s.command({kind:'playback_done',responseId:'new'});
+  it('queues a same-turn formal delivery behind the spoken reply and speaks it once',async()=>{
+    const h=harness({kind:'none'},true);await h.input(1,'刚才那个呢');
+    h.socket.server({type:'response.created',response:{id:'chat'}});
+    h.s.streamDelivery({...h.finding('reply'),kind:'reply',voiceTurn:1});
     expect(h.outputs).toHaveLength(0);
+    h.socket.server({type:'response.audio_transcript.done',response_id:'chat',transcript:'我核对一下。'});
+    h.socket.server({type:'response.done',response:{id:'chat',status:'completed'}});
+    h.s.command({kind:'playback_done',responseId:'chat'});
+    expect(h.outputs).toHaveLength(1);
+    // 最终交付省略 voiceTurn 时仍认在原来那一轮，不再当成新的后台结果。
+    h.s.completeDelivery({...h.finding('reply'),kind:'reply'});
+    expect(h.outputs).toHaveLength(1);
   });
   it('keeps a browser task with a reading step together, while rejecting mixed control/read plans',()=>{
     const text='帮我等测试资料准备好，再读一下当前页面，告诉我两种模型的有效期。';
@@ -71,13 +86,20 @@ describe('live dialogue while a browser task runs',()=>{
     expect(()=>parseVoiceDecision(JSON.stringify({steps:[{action:'pause',through:0,target:null},{action:'observe',target:null}]}),'暂停当前任务。再读页面。')).toThrow();
     expect(()=>parseVoiceDecision(JSON.stringify({steps:[{action:'start',through:0,target:'不存在'},{action:'observe',target:null}]}),'打开页面。看一下。')).toThrow();
   });
-  it('speaks an accepted task acknowledgement even when final delivery is still pending',async()=>{
-    const h=harness({kind:'action',ok:true,awaitDelivery:true,receipts:[{requestId:'req',conversationId:'default',targetTitle:'默认会话',source:'voice',action:'start',runId:'run',status:'accepted',text:'列出标签页',message:'已接收',updatedAt:1}],message:'已接收'});
+  it('still acknowledges an explicit task while its final delivery is pending',async()=>{
+    const h=harness({kind:'action',ok:true,receipts:[{requestId:'req',conversationId:'default',targetTitle:'默认会话',source:'voice',action:'start',runId:'run',status:'accepted',text:'列出标签页',message:'已接收',updatedAt:1}],message:'已接收'});
     await h.input(1,'列出标签页');
     expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(1);
     h.reply('ack','好，我看看你都开了些什么。');
     expect(h.events.some(e=>e.kind==='audio')).toBe(true);
     expect(h.outputs).toHaveLength(0); // no final result exists
+  });
+  it('does not acknowledge an implicit dispatch that the main agent already owns',async()=>{
+    const h=harness({kind:'action',ok:true,awaitDelivery:true,receipts:[{requestId:'req',conversationId:'default',targetTitle:'默认会话',source:'voice',action:'start',runId:'run',status:'accepted',text:'嗨，晚上好。',message:'已接收',updatedAt:1}],message:'已接收'});
+    await h.input(1,'嗨，晚上好。');
+    expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
+    h.s.streamDelivery({...h.finding('greeting'),kind:'reply',text:'晚上好呀。'});
+    expect(h.outputs).toHaveLength(1);expect(h.outputs[0]!.push).toHaveBeenCalledWith('晚上好呀。');
   });
   it('waits for the current spoken reply to finish playback before taking over with a background result',async()=>{
     const h=harness();await h.input(1,'我是不是开太多了');h.reply('chat','先看看有哪些，再决定要不要整理。');

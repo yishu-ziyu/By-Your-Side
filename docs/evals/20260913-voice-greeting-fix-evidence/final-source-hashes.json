@@ -1,0 +1,9 @@
+{
+  "agent/src/session.ts": "6f057ec3a9c5522c62712fc2bc3267028ae304a5e9646497e4fcbaab7b88629f",
+  "agent/src/conversation-manager.ts": "1183391c580df28b171b1dffa2ac64bf0fa3c002fe837c0b77282352863bdd46",
+  "agent/src/voice-session.ts": "6bf7386ad8fd9fd259716172d6b47d8172ef1dd1df7b162ac69582189bcb3bf5",
+  "agent/src/prompt.ts": "606aa972c7ed9bbaa002cc5382a3b74e6df98415abdf7888d190db798392a6d0",
+  "agent/test/voice-greeting-regression.test.ts": "a75740e69359a42a496953357062a378ed2a86b2981b0d312fdcc55e38559552",
+  "agent/test/session-pre-observation.test.ts": "02f488a8e568c69cdfcc55ad2a1803a094ff1996d026142d140282aaf5106de6",
+  "agent/test/voice-delivery-run-boundary.test.ts": "6804ac3522adf6532c58c4c791bb91eedbd200b1ce8e8d9a4cf8ff1270ea9b90"
+}

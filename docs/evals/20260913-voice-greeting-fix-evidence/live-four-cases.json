@@ -1,0 +1,79 @@
+{
+  "scope": "Synthetic PCM; real ASR, classifier, Pi, TTS and production VoicePlayer; isolated Chrome; harness transport; no human microphone",
+  "model": "opencode-go/deepseek-flash",
+  "actualModel": "opencode-go/deepseek-flash",
+  "ok": true,
+  "sourceStable": true,
+  "sourceHashes": {
+    "agent/src/voice-session.ts": "5940403df6cf383a2a0dc7f2fdcbfa52d53b4f15e8d397131295a0262b7d355f",
+    "agent/src/conversation-manager.ts": "1183391c580df28b171b1dffa2ac64bf0fa3c002fe837c0b77282352863bdd46",
+    "agent/src/voice-receipt.ts": "ad2e0452f2e720fe186a5bb6ca01916ed70555a5a8b5ffdce17fb065ca6c7d13",
+    "agent/src/voice-service.ts": "b464441074e1dd713d62cf8ba020390aed004f199df3fe9dfa9ea81095d0cc74",
+    "agent/src/prompt.ts": "606aa972c7ed9bbaa002cc5382a3b74e6df98415abdf7888d190db798392a6d0",
+    "extension/src/sidepanel/voice-player.ts": "9fdf6afd55d2a41f100d4b1819c9c94d0c7b5925f3cd5342c1c5d9ff9c3c30fc"
+  },
+  "spokenGreetingReadback": "晚上好，今天想聊点什么？",
+  "cases": [
+    {
+      "input": "嗨，晚上好。",
+      "recognized": [
+        "嗨晚上好。"
+      ],
+      "answer": [
+        "晚上好，今天想聊点什么？"
+      ],
+      "responses": [
+        "tts-b58f1606-f01d-4a27-9cbb-1e641abd3370"
+      ],
+      "audioBytes": 144960,
+      "rms": 0.16105087204148483,
+      "firstAudioMs": 6824
+    },
+    {
+      "input": "你好。",
+      "recognized": [
+        "你好。"
+      ],
+      "answer": [
+        "你好呀，有什么想做的随时说。"
+      ],
+      "responses": [
+        "tts-36d79bc3-3255-4e27-8f5a-0b3a0020336a"
+      ],
+      "audioBytes": 187200,
+      "rms": 0.15975672719280523,
+      "firstAudioMs": 6953
+    },
+    {
+      "input": "十加七等于多少？",
+      "recognized": [
+        "10+7等于多少？"
+      ],
+      "answer": [
+        "10 + 7 = 17。"
+      ],
+      "responses": [
+        "tts-e83683c1-e415-41e0-8240-5da89eb716c8"
+      ],
+      "audioBytes": 107520,
+      "rms": 0.19399592253772469,
+      "firstAudioMs": 5411
+    },
+    {
+      "input": "当前招聘页面要求几年经验？",
+      "recognized": [
+        "当前招聘页面要求几年经验？"
+      ],
+      "answer": [
+        "页面上写着「要求三年经验」（工作地点：深圳）。"
+      ],
+      "responses": [
+        "tts-a573710a-893f-4f15-874e-588d8bbe5813"
+      ],
+      "audioBytes": 177600,
+      "rms": 0.20953672015568925,
+      "firstAudioMs": 4907
+    }
+  ],
+  "note": "Four real-service cases after on-demand page policy; later empty-input recovery is covered by final tests/native and separate history-case artifact."
+}

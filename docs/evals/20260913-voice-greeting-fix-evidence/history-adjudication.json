@@ -1,0 +1,35 @@
+{
+  "originalArtifact": "out/acceptance/voice-greeting-live-2026-09-13T13-21-38-376Z/result.json",
+  "originalAutomatedPass": false,
+  "originalFailure": "AssertionError [ERR_ASSERTION]: greeting does not continue prior page topic",
+  "scope": "real prior page discussion then greeting; synthetic PCM, real ASR/Pi/TTS and production VoicePlayer",
+  "answer": [
+    "晚上好。还看那个招聘页面，还是有别的要办？"
+  ],
+  "responses": [
+    "tts-4ddcc149-5d4a-4e9c-91ea-f47e77997e5f"
+  ],
+  "audioBytes": 261120,
+  "audioReadback": "晚上好，还看那个招聘页面，还是有别的要办。",
+  "sourceHashes": {
+    "agent/src/session.ts": "6f057ec3a9c5522c62712fc2bc3267028ae304a5e9646497e4fcbaab7b88629f",
+    "agent/src/voice-session.ts": "6bf7386ad8fd9fd259716172d6b47d8172ef1dd1df7b162ac69582189bcb3bf5",
+    "agent/src/conversation-manager.ts": "1183391c580df28b171b1dffa2ac64bf0fa3c002fe837c0b77282352863bdd46",
+    "agent/src/voice-receipt.ts": "ad2e0452f2e720fe186a5bb6ca01916ed70555a5a8b5ffdce17fb065ca6c7d13",
+    "agent/src/voice-service.ts": "b464441074e1dd713d62cf8ba020390aed004f199df3fe9dfa9ea81095d0cc74",
+    "agent/src/prompt.ts": "606aa972c7ed9bbaa002cc5382a3b74e6df98415abdf7888d190db798392a6d0",
+    "extension/src/sidepanel/voice-player.ts": "9fdf6afd55d2a41f100d4b1819c9c94d0c7b5925f3cd5342c1c5d9ff9c3c30fc"
+  },
+  "sourceStable": true,
+  "primaryAssessment": {
+    "pass": true,
+    "reason": "A brief reference to the topic the user just discussed is conversational continuity, not unsolicited introduction of new page facts. The original keyword rejection of 招聘 was broader than the required no-page-report behavior. Original failure retained; no product requirement for one reply, audio, or no task acknowledgement was removed."
+  },
+  "checks": {
+    "oneResponse": true,
+    "oneCumulativeAnswer": true,
+    "noTaskAck": true,
+    "noPageFacts": true,
+    "brief": true
+  }
+}

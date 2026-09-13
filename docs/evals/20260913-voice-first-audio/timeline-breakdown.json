@@ -1,0 +1,45 @@
+{
+ "source": "out/acceptance/voice-greeting-live-2026-09-13T13-08-48-490Z/result.json",
+ "cases": [
+  {
+   "turn": 1,
+   "commitToAsrMs": 668,
+   "asrToRouteStartMs": 1,
+   "routeMs": 2676,
+   "routeResultToFirstTokenMs": 2494,
+   "firstTokenToDeliveryMs": 306,
+   "deliveryToFirstAudioMs": 680,
+   "commitToFirstAudioMs": 6825
+  },
+  {
+   "turn": 2,
+   "commitToAsrMs": 493,
+   "asrToRouteStartMs": 0,
+   "routeMs": 2433,
+   "routeResultToFirstTokenMs": null,
+   "firstTokenToDeliveryMs": null,
+   "deliveryToFirstAudioMs": 698,
+   "commitToFirstAudioMs": 6954
+  },
+  {
+   "turn": 3,
+   "commitToAsrMs": 590,
+   "asrToRouteStartMs": 0,
+   "routeMs": 2024,
+   "routeResultToFirstTokenMs": null,
+   "firstTokenToDeliveryMs": null,
+   "deliveryToFirstAudioMs": 628,
+   "commitToFirstAudioMs": 5411
+  },
+  {
+   "turn": 4,
+   "commitToAsrMs": 733,
+   "asrToRouteStartMs": 0,
+   "routeMs": 1704,
+   "routeResultToFirstTokenMs": null,
+   "firstTokenToDeliveryMs": null,
+   "deliveryToFirstAudioMs": 668,
+   "commitToFirstAudioMs": 4907
+  }
+ ]
+}
