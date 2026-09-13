@@ -53,6 +53,13 @@ try{
     if(msg.type==='tool_call'){
       void browser.tool(msg.name,msg.params,msg.sessionId??'main').then(result=>manager!.handleMessage({type:'tool_result',conversationId:msg.conversationId,id:msg.id,ok:result.ok,data:result.data,error:result.error,executionFact:result.executionFact} as any)).catch(error=>manager!.handleMessage({type:'tool_result',conversationId:msg.conversationId,id:msg.id,ok:false,error:String(error)}));
     }
+    if(msg.type==='task_control'){
+      // 测试台在这里扮演扩展的控制闸门，只为让"喊停"这条路走完、好量回执多久出声。
+      // 它不检验授权、页面归属与执行版本，也不代表页面真的停了——那些由原生验收脚本覆盖。
+      // 第一版没有这段应答，结果管理器一直等扩展确认（45 秒），语音层先到 30 秒报超时，
+      // 看起来像"喊停没声音"的产品缺陷，实际是测试台缺应答。见 docs/evals/20260914-voice-stop-and-ruler.md。
+      manager!.handleMessage({type:'task_control_result',requestId:msg.requestId,action:msg.action,runId:msg.runId,ok:true} as any);
+    }
   });
   const entry=await manager.ensureDefault();assert.ok(entry.runtime.session.available,'real Pi model available');
   report.actualModel=entry.runtime.session.modelName();
@@ -187,7 +194,10 @@ try{
     assert.ok(exercised,'运行中暂停没有被真正测到（任务在暂停落地前就结束了）');
     assert.equal(exercised!.receipt.responses.length,1,'运行中的暂停只播一份回执');
     assert.ok(exercised!.receipt.audioBytes>0&&exercised!.receipt.rms>0.001,'运行中的暂停回执有声音');
-    assert.ok(exercised!.stateAfterPause!=='running','说停之后任务确实不再运行');
+    // 这里**不**断言"页面真的停了"：本测试台把控制闸门的应答替成了"已受理"，
+    // 所以它只能证明回执出不出声、多久出声。真实停住（授权、页面归属、执行版本、
+    // 之后不再写入）由原生验收脚本覆盖，不在这里冒充。
+    assert.ok(exercised!.stateAfterPause!=='running','控制受理后本会话不再处于运行态');
   }
   }
   // Independently transcribe the returned greeting PCM. Non-routing diagnostic
