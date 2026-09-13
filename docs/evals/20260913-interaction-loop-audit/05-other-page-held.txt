@@ -1,0 +1,185 @@
+Window: "模拟测试页面 · By Your Side 原生控制演练", App: Google Chrome.
+0 标准窗口 模拟测试页面 · By Your Side 原生控制演练 - Google Chrome, URL: 127.0.0.1:48765/?scenario=b, Secondary Actions: Raise
+	1 container 模拟测试页面 · By Your Side 原生控制演练 - Google Chrome, URL: 127.0.0.1:48765/?scenario=b
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: 127.0.0.1:48765/?scenario=b, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：110%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+					21 按钮 关闭侧边栏
+				22 按钮 AP
+				23 弹出式按钮 Chrome
+			24 工具栏 书签
+				25 工具栏 已保存的标签页分组
+					26 “已保存的标签页分组”按钮 “把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”分组 - 已打开
+					28 按钮 标签页分组
+				29 分离器 分隔符
+				30 书签按钮 Gmail
+				31 书签按钮 YouTube
+				32 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				33 书签按钮 notion
+				34 弹出式按钮 包含隐藏书签的菜单
+				35 书签文件夹按钮 所有书签
+				36 分离器 分隔符
+			37 container
+				38 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=b
+					39 container
+						40 文本 模拟测试页面 · 非真实产品界面
+						41 文本 SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。
+						42 标题 By Your Side 表单与连续步骤演练, Value: 1
+							43 文本 By Your Side 表单与连续步骤演练
+						44 文本 当前场景：
+						45 文本 B
+						46 文本  · A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+						47 container 场景链接
+							48 text 独立测试页面状态：
+							49 link Description: 场景 A, Value: 127.0.0.1:48765/?scenario=a
+							50 link Description: 场景 B, Value: 127.0.0.1:48765/?scenario=b
+							51 text （在每个标签页里打开一个链接，即得到互不干扰的状态）
+						52 标题 1. 表单（保存只写入本页内存）, Value: 2
+							53 文本 1. 表单（保存只写入本页内存）
+						54 文本 姓名
+						55 文本栏 (settable) 姓名, Placeholder: 例如：林然
+						56 文本 城市
+						57 文本栏 (settable) 城市, Placeholder: 例如：杭州
+						58 文本 备注
+						59 文本输入区 (settable) 备注, Placeholder: 例如：希望周五下午联系
+						60 文本 优先级
+						61 弹出式按钮 优先级, Value: 中
+							62 (selected) 中
+						63 container
+							64 按钮 保存到本页内存
+							65 按钮 清空本场景状态
+						66 文本 （尚未保存）
+						67 标题 2. 页面事件记录（不是 Agent 操作计数）, Value: 2
+							68 文本 2. 页面事件记录（不是 Agent 操作计数）
+						69 文本 事件条数：
+						70 文本 0
+						71 文本 记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。
+						72 内容列表 本场景操作记录
+							73 文本 （暂无操作记录）
+						74 标题 3. 连续步骤（下一步按钮延迟 10 秒出现）, Value: 2
+							75 文本 3. 连续步骤（下一步按钮延迟 10 秒出现）
+						76 文本 进度：
+						77 文本 未开始
+						78 文本 点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。
+						79 按钮 开始步骤
+						80 文本 接管修正（等待期间可修改，点按钮记录）
+						81 文本栏 (settable) 接管修正（等待期间可修改，点按钮记录）, Placeholder: 例如：把优先级改为高
+						82 按钮 记录接管修正
+					83 container
+						84 按钮 logo icon
+							85 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							86 图像
+						87 container
+							88 按钮
+					89 container
+						90 text 现在归你 1 个已暂停 L
+						91 按钮 交还
+			92 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				93 container
+					94 文本 By Your Side
+					95 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						96 图像
+					97 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						98 图像
+					99 container 当前连接与执行状态
+						100 文本 已连接
+					101 弹出式按钮 在当前测试页面点击“开始步骤”，等每次“下一步”出现后再点击，直到完成4
+					102 弹出式按钮 知识
+					103 按钮 ＋ 新会话
+					104 container 当前会话与控制
+						105 文本 现在归你
+						106 container
+							107 text 麦克风：已关 声音：未说
+					108 文本 在当前测试页面点击“开始步骤”，等每次“下一步”出现后再点击，直到完成4步。不要修改表单，不要保存。
+					109 开合三角标记 任务已接收
+						110 文本 任务已接收
+					111 按钮 使用了 2 条记忆 · 查看
+					112 开合三角标记 正在思考 思考 15s
+						113 文本 正在思考
+						114 文本 思考
+						115 文本 15s
+						116 图像
+					117 开合三角标记 当前页面已接管，你可以操作。
+						118 文本 当前页面已接管，你可以操作。
+					119 文本 1 个 Agent 已暂停
+					120 按钮 详情
+					121 container
+						122 container 当前活动标签页（点击展开检查面板）
+							123 文本 1
+							124 文本 127.0.0.1:48765 · 模拟测试页面 · By Y…
+						125 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						126 开合三角标记 语音记录
+							127 文本 语音记录
+						128 文本输入区 (settable) 插话：调整 Agent 的方向…（Enter 发送）
+						129 弹出式按钮 +, Help: 添加附件或截屏
+						130 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							131 文本 O
+							132 文本 DeepSeek V4.1 Flash (Go)
+							133 图像
+						134 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						135 按钮 中止
+							136 图像
+							137 图像
+			138 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			139 container
+				140 文本 By Your Side
+				141 复选框 Description: 取消固定到工具栏, Value: 1
+				142 按钮 关闭侧边栏
+			143 标签组
+				144 container
+					145 按钮 收起标签页
+					146 弹出式按钮 标签页分组
+					147 弹出式按钮 标签页搜索
+				148 container
+					149 滚动区
+					150 滚动区
+						151 container
+							152 标签 (settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 242 MB, Value: off
+							153 标签 (settable, boolean) Description: 新标签页 - 内存用量 - 256 MB, Value: off
+							154 标签组 分组“把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							155 标签 (settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”群组 - 内存用量 - 234 MB, Value: off
+							156 标签 (settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 266 MB, Value: off
+							157 标签 (selected, settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 内存用量 - 433 MB, Value: on
+								158 按钮 关闭
+				159 按钮 打开新的标签页
+				160 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	161 关闭按钮
+	162 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	163 最小化按钮
+164 menu bar
+	165 Chrome
+	166 文件
+	167 编辑
+	168 显示
+	169 历史记录
+	170 书签
+	171 个人资料
+	172 标签页
+	173 窗口
+	174 帮助
+
+The focused UI element is 38 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=b

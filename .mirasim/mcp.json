@@ -1,0 +1,36 @@
+{
+  "servers": [
+    {
+      "name": "fetch",
+      "enabled": true,
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "catalogId": "fetch"
+    },
+    {
+      "name": "filesystem",
+      "enabled": true,
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem"
+      ],
+      "catalogId": "filesystem"
+    },
+    {
+      "name": "memory",
+      "enabled": true,
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "catalogId": "memory"
+    }
+  ]
+}

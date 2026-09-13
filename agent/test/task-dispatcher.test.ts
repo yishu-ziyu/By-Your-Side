@@ -43,7 +43,12 @@ it('serializes state validation with acceptance and keeps expected rejections di
 });
 it('does not execute when a previously claimed record is unreadable',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'ego-receipts-'));dirs.push(dir);
- const d=new TaskDispatcher(new TaskReceiptStore(dir)), execute=vi.fn(async()=>accepted);
- await d.dispatch(req,'A',execute);writeFileSync(join(dir,readdirSync(dir)[0]!),'{partial');
- expect((await d.dispatch(req,'A',execute)).status).toBe('unknown');expect(execute).toHaveBeenCalledTimes(1);
+ const store=new TaskReceiptStore(dir), d=new TaskDispatcher(store), execute=vi.fn(async()=>accepted);
+ await d.dispatch(req,'A',execute);
+ store.sync();
+ const receiptFile=readdirSync(dir).find(name=>name.endsWith('.json')&&!name.startsWith('_'));
+ if(!receiptFile) throw new Error('expected a receipt file');
+ writeFileSync(join(dir,receiptFile),'{partial');
+ const reloaded=new TaskDispatcher(new TaskReceiptStore(dir));
+ expect((await reloaded.dispatch(req,'A',execute)).status).toBe('unknown');expect(execute).toHaveBeenCalledTimes(1);
 });

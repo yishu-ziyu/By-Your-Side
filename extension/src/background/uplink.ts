@@ -7,6 +7,8 @@
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  PROTOCOL_VERSION,
+  STORAGE_SCHEMA_VERSION,
   parseServerMessage,
   type ClientMessage,
   type ServerMessage,
@@ -139,7 +141,7 @@ export class Uplink {
     });
 
     // native 模式无 token，身份由 host manifest 的 allowed_origins 保证
-    port.postMessage({ type: "hello", token: "", client: "sidepanel" });
+    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
   private async connectWs(reason: string): Promise<void> {
@@ -167,7 +169,7 @@ export class Uplink {
     this.transport = "ws";
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel" }));
+      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION }));
     };
     ws.onmessage = (e) => {
       if (typeof e.data === "string") this.handleRaw(e.data);

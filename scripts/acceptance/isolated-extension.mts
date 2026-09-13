@@ -40,7 +40,7 @@ export interface IsolatedExtension {
   close(): Promise<void>;
 }
 
-export async function launchIsolatedExtension(): Promise<IsolatedExtension> {
+export async function launchIsolatedExtension(options: {hostResolverRules?: string} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
@@ -79,6 +79,7 @@ export async function launchIsolatedExtension(): Promise<IsolatedExtension> {
       "--no-first-run",
       "--no-default-browser-check",
       "--autoplay-policy=no-user-gesture-required",
+      ...(options.hostResolverRules ? [`--host-resolver-rules=${options.hostResolverRules}`, "--no-proxy-server"] : []),
       "about:blank",
     ], { stdio: "ignore" });
 

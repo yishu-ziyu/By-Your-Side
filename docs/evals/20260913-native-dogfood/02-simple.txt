@@ -1,0 +1,24 @@
+The following is a diff from the previous accessibility tree for Window: "「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 372-376, 379
++			379 container 信息栏容器
++				380 container 信息栏
++					381 container
++						382 文本 “By Your Side”已开始调试此浏览器
++						383 按钮 取消
++					384 按钮 关闭
++						385 文本 这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。
++						386 文本 当前页：www.zhipin.com · 「AI Builder（产…
++						387 文本 空闲
++						388 文本 空闲
++							389 text 麦克风：已关 声音：未说
++						390 文本 岗位是「AI Builder（产品方向）」，城市在深圳（深圳南山区大冲国际中心41楼）。只是读了页面，没有做任何操作。
++					391 开合三角标记 查看执行过程 … → 读取页面结构 → 思考 → send_user_message 耗时 27s
++						392 文本 查看执行过程
++						393 文本 … → 读取页面结构 → 思考 → send_user_message
++						394 文本 耗时 27s
++						395 图像
++					396 文本 请求失败，正在重试（1/3）…
++					397 文本 岗位是「AI Builder（产品方向）」，城市在深圳（深圳南山区大冲国际中心41楼）。只是读了页面，没有做任何操作。
++					398 文本 模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试
+~						316 按钮 发送
+The focused UI element is 46 HTML 内容 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘, URL: zhipin.com/job_detail/914bc0b40b3d33950nN52dW_FlVV.html

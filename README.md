@@ -1,4 +1,4 @@
-# SideAgent
+# By Your Side
 
 Chrome 侧边栏 Agent：在 Chrome 侧边栏里嵌入一个对话式 Agent，用自然语言让它直接操控你当前的浏览器——导航、读页面、点击、填表、截图、抓数据，复用你已登录的站点状态。
 
@@ -7,6 +7,8 @@ Chrome 侧边栏 Agent：在 Chrome 侧边栏里嵌入一个对话式 Agent，�
 整体进度、未完成验收和浏览器加载状态见[项目状态](docs/STATUS.md)。本轮语音调度仍在验收中；流程见[语音与任务调度](docs/voice-dispatch.md)。
 
 ## 架构
+
+模块职责、依赖方向和新增功能的落点见[架构与维护](docs/architecture.md)；资料导航见[文档索引](docs/README.md)。
 
 ```
 ┌─ Chrome 扩展 (MV3) ──────────────────┐       ┌─ 本地伴随进程 (Node.js) ─────────┐
@@ -35,7 +37,7 @@ npm run install:host   # 安装 native messaging host（只需一次）
 
 **1. 加载扩展**：打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选择 `extension/dist/`。扩展 ID 由 manifest 固定 key 推导为 `fnbjglhppbkgmjeehablkfilmmefjolo`，已写入 host 白名单。
 
-**2. 连接**：点击工具栏 SideAgent 图标打开侧边栏 → 伴随进程由 Chrome 自动拉起 → 看到「已连接」即可开始对话。
+**2. 连接**：点击工具栏 By Your Side 图标打开侧边栏 → 伴随进程由 Chrome 自动拉起 → 看到「已连接」即可开始对话。
 
 **模型/代理配置**：伴随进程自动继承 `~/.pi/agent/auth.json`（即 `pi /login` 的登录态；没有的话先运行 `npx @earendil-works/pi-coding-agent` 并 `/login`）。native 模式下命令行固定，模型与代理走配置文件 `~/.sideagent/config.json`：
 
@@ -65,7 +67,7 @@ Agent 还可以通过 `browser_run` 把观察、条件判断、等待和操作�
 - 「在当前页搜索 XXX，把前 10 条结果的标题和链接整理给我」
 - 「帮我把这个表单填了：姓名……」
 
-可以新建多个用户会话。A 运行时进入 B，A 会继续执行；各会话分别保留聊天、目标、草稿与附件、团队和控制状态。中止 B 不会中止 A。关闭再打开侧栏会恢复选中的会话与内容。
+可以新建多个用户会话。A 运行时进入 B，A 会继续执行；各会话分别保留聊天、目标、草稿与附件、团队和控制状态。中止 B 不会中止 A。重新打开面板进入新会话（空白的「新会话」可复用）；旧任务继续在后台跑，顶部提供返回入口。重连不是重新打开面板，不会因此再新建会话。
 
 每个会话首次使用页面时创建自己的 Chrome 标签组。同一 URL 在两个会话中分别打开；一个会话不能用 `tabId` 抢走另一个会话的页面。当前尚未归属的活动页可以明确借入。
 
@@ -96,6 +98,8 @@ npm run dev:agent      # WS 调试模式启动伴随进程（tsx，改代码重�
 npm run install:host   # 安装/更新 native messaging host
 npm run typecheck      # 两侧 tsc 检查
 npm test               # vitest 单元测试
+npm run check:architecture # 生产模块依赖方向
+npm run check          # 边界、类型、单测、构建
 ```
 
 已知环境问题：若 `npm test` 报 `@rolldown/binding-darwin-arm64` 缺失（npm 可选依赖 bug），手动补装：
@@ -104,8 +108,6 @@ npm test               # vitest 单元测试
 npm install --save-dev -W @rolldown/binding-darwin-arm64
 ```
 
-## 路线图
+## 后续工作
 
-未做（按优先级）：CDP Accessibility 快照升级（深层 iframe）、站点经验工具包、模型选择 UI、交互/视觉反馈优化、商店发布。
-
-已完成：native messaging 自启动伴随进程 + background 持连接（关面板任务不断，完成标准 `docs/evals/20260903-native-messaging.md`）。
+当前完成情况与未验项统一见[项目状态](docs/STATUS.md)。[早期路线图](docs/ROADMAP.md)保留设计背景，不作为当前已实现/未实现清单。

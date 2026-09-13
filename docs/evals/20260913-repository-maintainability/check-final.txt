@@ -1,0 +1,83 @@
+
+> check
+> npm run check:architecture && npm run typecheck && npm test && npm run build
+
+
+> check:architecture
+> node scripts/maintenance/check-boundaries.mjs
+
+Architecture boundaries: 163 production files passed.
+
+> typecheck
+> npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent
+
+
+> @sideagent/extension@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @sideagent/agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> test
+> npm run test:unit && npm run test:scale
+
+
+> test:unit
+> vitest run --exclude "agent/test/performance/**"
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+
+ Test Files  182 passed (182)
+      Tests  1598 passed (1598)
+   Start at  13:58:55
+   Duration  43.27s (transform 10.39s, setup 0ms, import 179.09s, tests 40.96s, environment 21ms)
+
+
+> test:scale
+> vitest run agent/test/performance --maxWorkers=1
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:59:39
+   Duration  9.98s (transform 44ms, setup 0ms, import 59ms, tests 9.83s, environment 0ms)
+
+
+> build
+> npm run build -w @sideagent/extension
+
+
+> @sideagent/extension@0.1.0 build
+> node build.mjs
+
+
+  dist/sidepanel.js         490.1kb
+  dist/background.js        305.0kb
+  dist/voice-vad-worker.js  106.9kb
+  dist/voice-permission.js    1.6kb
+
+⚡ Done in 175ms
+
+  dist/content-cursor.js    64.6kb
+  dist/content-domops.js    10.8kb
+  dist/content-record.js     9.9kb
+  dist/content-ask.js        9.1kb
+  dist/content-snapshot.js   8.1kb
+  dist/content-effect.js     7.8kb
+  dist/content-observe.js    6.7kb
+
+⚡ Done in 6ms
+dist/ 构建完成

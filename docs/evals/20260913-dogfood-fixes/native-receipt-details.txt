@@ -1,0 +1,133 @@
+The following is a diff from the previous accessibility tree for Window: "Example Domains" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 44-55, 94-95, 152, 170-171, 173-175
+~0 标准窗口 Example Domains - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - Google Chrome, URL: iana.org/help/example-domains, Secondary Actions: Raise
+~	1 container Example Domains - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - Google Chrome, URL: iana.org/help/example-domains
+~					9 文本栏 (settable) Description: 地址和搜索栏, Value: iana.org/help/example-domains, Placeholder: 问问 Google 或输入网址
++				173 HTML 内容 Example Domains, URL: iana.org/help/example-domains
++					174 container
++						175 container
++							176 link Description: Homepage, Value: iana.org/
++							177 内容列表
++								178 link Description: Domains, Value: iana.org/domains
++								179 link Description: Protocols, Value: iana.org/protocols
++								180 link Description: Numbers, Value: iana.org/numbers
++								181 link Description: About, Value: iana.org/about
++						182 container
++							183 内容列表
++								184 link Description: ← Instructions and Guides, Value: iana.org/help
++							185 标题 Example Domains, Value: 1
++								186 文本 Example Domains
++							187 container
++								188 文本 As described in 
++								189 link Description: RFC 2606, Value: iana.org/go/rfc2606
++								190 文本  and 
++								191 link Description: RFC 6761, Value: iana.org/go/rfc6761
++								192 文本 , a number of domains such as example.com and example.org are maintained for documentation purposes. These domains may be used as illustrative examples in documents without prior coordination with us. They are not available for registration or transfer.
++							193 文本 We provide a web service on the example domain hosts to provide basic information on the purpose of the domain. These web services are provided as best effort, but are not designed to support production applications. While incidental traffic for incorrectly configured applications is expected, please do not design applications that require the example domains to have operating HTTP service.
++							194 标题 Further Reading, Value: 2
++								195 文本 Further Reading
++							196 内容列表
++								197 container
++									198 AXListMarker ■ 
++									199 link Description: IANA-managed Reserved Domains, Value: iana.org/domains/reserved
++							200 container
++								201 文本 Last revised 
++								202 文本 9 years ago
++								203 文本 .
++						204 container
++							205 container
++								206 container Domain Names
++									207 link Description: Domain Names, Value: iana.org/domains
++								208 container Root Zone Registry .INT Registry .ARPA Registry IDN Repository
++									209 内容列表
++										210 link Description: Root Zone Registry, Value: iana.org/domains/root
++										211 link Description: .INT Registry, Value: iana.org/domains/int
++										212 link Description: .ARPA Registry, Value: iana.org/domains/arpa
++										213 link Description: IDN Repository, Value: iana.org/domains/idn-tables
++							214 container
++								215 container Number Resources
++									216 link Description: Number Resources, Value: iana.org/numbers
++								217 container Number Registries RIR Allocation Data Abuse Information
++									218 内容列表
++										219 link Description: Number Registries, Value: iana.org/numbers/registries
++										220 link Description: RIR Allocation Data, Value: iana.org/numbers/allocations/
++										221 link Description: Abuse Information, Value: iana.org/help/abuse
++							222 container
++								223 container Protocols
++									224 link Description: Protocols, Value: iana.org/protocols
++								225 container Protocol Registries Time Zone Database
++									226 内容列表
++										227 link Description: Protocol Registries, Value: iana.org/protocols
++										228 link Description: Time Zone Database, Value: iana.org/time-zones
++							229 container
++								230 container About Us
++									231 link Description: About Us, Value: iana.org/about
++								232 container News Performance The Organization Archive Contact Us
++									233 内容列表
++										234 link Description: News, Value: iana.org/news
++										235 link Description: Performance, Value: iana.org/performance
++										236 link Description: The Organization, Value: iana.org/about/organization
++										237 link Description: Archive, Value: iana.org/archive
++										238 link Description: Contact Us, Value: iana.org/contact
++							239 container
++								240 文本 The IANA functions coordinate the Internet’s globally unique identifiers, and are provided by 
++								241 link Description: Public Technical Identifiers, Value: pti.icann.org/
++								242 文本 , an affiliate of 
++								243 link Description: ICANN, Value: icann.org/
++								244 文本 .
++							245 内容列表
++								246 link Description: Privacy Policy, Value: icann.org/privacy/policy
++								247 link Description: Terms of Service, Value: icann.org/privacy/tos
++					248 container
++						249 按钮 logo icon
++							250 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
++							251 图像
++						252 container
++							253 按钮
++			254 container 信息栏容器
++				255 container 信息栏
++					256 container
++						257 文本 “By Your Side”已开始调试此浏览器
++						258 按钮 取消
++					259 按钮 关闭
++							260 text 麦克风：已关 声音：未说
++						261 文本 回答已给出
++					262 container
++						263 开合三角标记 任务已接收
++							264 文本 任务已接收
++						265 文本 这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。 · 已接收新任务：再在新标签页打开 https://www.iana.org/help/example-domains，对照它和当前 Example Domain 页面，用3条说明两者关系、这些域名能否注册、能否依赖其HTTP服务用于生产。每条附对应来源；没有写的不要推断。
++					266 开合三角标记 查看执行过程 … → 读取完整内容 → 思考 → send_user_message 耗时 11s
++						267 文本 查看执行过程
++						268 文本 … → 读取完整内容 → 思考 → send_user_message
++						269 文本 耗时 11s
++						270 图像
++					271 container
++						272 文本 已在新标签页打开 
++						273 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
++						274 文本 （tab 29960110），对照它和当前 example.com 页面（页面正文只有三句：Example Domain / This domain is for use in documentation examples without needing permission. Avoid use in operations. / Learn more），三点如下：
++					275 内容列表
++						276 container
++							277 AXListMarker 1. 
++							278 text 两者关系：example.com 正是 IANA 为文档用途保留的示例域名之一。IANA 页写明「As described in RFC 2606 and RFC 6761, a number of domains such as example.com and example.org are maintained for documentation purposes. These domains may be used as illustrative examples in documents without prior coordination with us.」 来源：
++							279 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
++							280 文本 （首段）。example.com 页面自身只说该域名用于文档示例、无需许可。
++						281 container
++							282 AXListMarker 2. 
++							283 text 能否注册：不能。IANA 页同一段直接写「They are not available for registration or transfer.」 来源：
++							284 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
++							285 文本 （首段）。example.com 页面上没有关于注册的说明。
++						286 container
++							287 AXListMarker 3. 
++							288 text 能否依赖其 HTTP 服务用于生产：不能依赖。IANA 页写「We provide a web service on the example domain hosts to provide basic information on the purpose of the domain. These web services are provided as best effort, but are not designed to support production applications.」并明确「please do not design applications that require the example domains to have operating HTTP service.」 来源：
++							289 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
++							290 文本 （第二段）。
++					291 文本 以上仅为两页已有文字；页面没写的（如实际可用性指标、谁在运维）我没有推断。
++							292 文本 www.iana.org · Example Domai…
+~						106 按钮 发送
++					293 按钮 回到底部
++						294 图像
+~							149 标签组 分组“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”- 3 个标签页•  Example Domain•  Example Domain•  Example Domains - 已展开
+~							151 标签 (settable, boolean) Description: Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 287 MB, Value: off
++							295 标签 (selected, settable, boolean) Description: Example Domains - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 259 MB, Value: on
++								296 按钮 关闭
+The focused UI element is 263 开合三角标记 任务已接收

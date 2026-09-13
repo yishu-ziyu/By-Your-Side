@@ -20,6 +20,13 @@ import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, collectEffect } from "./effect.js";
 import { switchTab } from "./tabs.js";
 import type { EffectReport } from "../../../../shared/effect.js";
+import type { ToolExecutionFact } from "../../../../shared/protocol.js";
+
+function notExecuted(error: unknown): Error {
+  const err = error instanceof Error ? error : new Error(String(error));
+  (err as Error & { executionFact: ToolExecutionFact }).executionFact = "not_executed";
+  return err;
+}
 
 interface DomRect {
   x: number;
@@ -87,6 +94,17 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
       const el = this;
       el.focus();
       const tag = el.tagName.toLowerCase();
+      if (tag === "select") {
+        const wanted = String(v).trim();
+        const opts = [...el.options].map((o) => ({ text: o.text, value: o.value }));
+        const exact = opts.find((o) => o.text.trim() === wanted || o.value === wanted);
+        const match = exact ?? opts.find((o) => o.text.includes(wanted) || (wanted && wanted.includes(o.text.trim())));
+        if (!match || !match.text.trim()) throw new Error("下拉框没有这个选项");
+        el.value = match.value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
       if (tag === "input" || tag === "textarea") {
         const proto = tag === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
         const desc = Object.getOwnPropertyDescriptor(proto, "value");
@@ -101,7 +119,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
         el.dispatchEvent(new Event("input", { bubbles: true }));
         return true;
       }
-      throw new Error("元素不可填充（非 input/textarea/contenteditable）");
+      throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");
     }`,
     [value],
   );
@@ -278,6 +296,7 @@ async function releaseHold(sessionId: string): Promise<void> {
 }
 
 type ClickParams = {
+  tabId?: number;
   target?: string;
   point?: [number, number];
   label?: string;
@@ -338,8 +357,6 @@ export async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<
   }
 }
 
-const controlBannerTabs = new Set<number>();
-
 export type ControlBannerView = {
   status?: string;
   sub?: string;
@@ -348,70 +365,112 @@ export type ControlBannerView = {
   members?: Array<{ id: string; initial: string; color: string }>;
 };
 
-async function paintControlBanner(tabId: number, show: boolean, view?: ControlBannerView | null): Promise<void> {
-  try {
-    await ensureCursor(tabId);
-    await callDom(
-      tabId,
-      (on: boolean, banner: ControlBannerView | null) => {
-        const c = window.__sideagent?.cursor;
-        if (on) c?.showUserControl?.(banner ?? undefined);
-        else c?.hideUserControl?.();
-      },
-      [show, show ? (view ?? null) : null],
-    );
-    if (show) controlBannerTabs.add(tabId);
-    else controlBannerTabs.delete(tabId);
-  } catch {
-    controlBannerTabs.delete(tabId);
-  }
+// 每页保留各会话的期望状态；最后更新的会话负责当前可见文案。
+const controlBannerOwners = new Map<number, Map<string, ControlBannerView | null>>();
+const controlBannerRevision = new Map<string, number>();
+const controlBannerPaints = new Map<number, Promise<void>>();
+const paintedControlBannerOwner = new Map<number, string>();
+
+/** 路由页面上的交还按钮：页面归属和控制条来源可能不是同一会话。 */
+export function getControlBannerOwner(tabId: number): string | undefined {
+  const owner = paintedControlBannerOwner.get(tabId);
+  return owner && controlBannerOwners.get(tabId)?.has(owner) ? owner : undefined;
+}
+const bannerOwnerKey = (owner?: string) => owner || "default";
+
+function beginBannerShow(owner: string): number {
+  const revision = (controlBannerRevision.get(owner) ?? 0) + 1;
+  controlBannerRevision.set(owner, revision);
+  return revision;
 }
 
-export async function showUserControlBanner(
-  tabId?: number,
-  sessionId: string = LEAD_SESSION_ID,
-  view?: ControlBannerView | null,
-): Promise<void> {
-  const ids = new Set<number>();
-  if (tabId != null) {
-    ids.add(tabId);
-    await Promise.all([...ids].map((id) => paintControlBanner(id, true, view)));
-    return;
-  }
-  const fallback = await resolveOverlayTabId(sessionId);
-  if (fallback != null) ids.add(fallback);
-  try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (active?.id != null) ids.add(active.id);
-  } catch {
-    /* 无活动标签 */
-  }
-  await Promise.all([...ids].map((id) => paintControlBanner(id, true, view)));
+/** 同页绘制串行，执行时读取最新期望状态，迟到的旧绘制后必定收敛到新状态。 */
+function renderControlBanner(tabId: number): Promise<void> {
+  const previous = controlBannerPaints.get(tabId) ?? Promise.resolve();
+  const next = previous.then(async () => {
+    try {
+      await ensureCursor(tabId);
+      const owners = controlBannerOwners.get(tabId);
+      const show = !!owners?.size;
+      const visible = owners ? [...owners.entries()].at(-1) : undefined;
+      const view = visible?.[1] ?? null;
+      await callDom(tabId, (on: boolean, banner: ControlBannerView | null) => {
+        const cursor = window.__sideagent?.cursor;
+        if (on) cursor?.showUserControl?.(banner ?? undefined);
+        else cursor?.hideUserControl?.();
+      }, [show, view]);
+      if (visible) paintedControlBannerOwner.set(tabId, visible[0]);
+      else paintedControlBannerOwner.delete(tabId);
+    } catch { /* 页面关闭或禁止注入，其他页仍继续清理。 */ }
+  });
+  controlBannerPaints.set(tabId, next);
+  void next.finally(() => {
+    if (controlBannerPaints.get(tabId) === next) controlBannerPaints.delete(tabId);
+  });
+  return next;
 }
 
-export async function showTeamControlBanners(tabIds: Iterable<number>, view?: ControlBannerView | null): Promise<void> {
+async function showControlBanners(ids: Set<number>, view: ControlBannerView | null | undefined, owner: string, revision: number): Promise<void> {
+  // 只读页面查询也会迟到，过期的展示不再登记或绘制。
+  if (controlBannerRevision.get(owner) !== revision) return;
+  for (const id of ids) {
+    const owners = controlBannerOwners.get(id) ?? new Map<string, ControlBannerView | null>();
+    owners.delete(owner);
+    owners.set(owner, view ?? null);
+    controlBannerOwners.set(id, owners);
+  }
+  await Promise.all([...ids].map(renderControlBanner));
+}
+
+export async function showUserControlBanner(tabId?: number, sessionId: string = LEAD_SESSION_ID, view?: ControlBannerView | null): Promise<void> {
+  const owner = bannerOwnerKey(sessionId);
+  const revision = beginBannerShow(owner);
   const ids = new Set<number>();
-  for (const id of tabIds) {
-    if (typeof id === "number") ids.add(id);
+  if (tabId != null) ids.add(tabId);
+  else {
+    const fallback = await resolveOverlayTabId(sessionId);
+    if (fallback != null) ids.add(fallback);
+    try {
+      const [active] = await chrome.tabs.query({active: true, lastFocusedWindow: true});
+      if (active?.id != null) ids.add(active.id);
+    } catch { /* 无活动页 */ }
   }
+  await showControlBanners(ids, view, owner, revision);
+}
+
+export async function showTeamControlBanners(tabIds: Iterable<number>, view?: ControlBannerView | null, owner?: string): Promise<void> {
+  const key = bannerOwnerKey(owner);
+  const revision = beginBannerShow(key);
+  const ids = new Set([...tabIds].filter(id => typeof id === "number"));
   try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const [active] = await chrome.tabs.query({active: true, lastFocusedWindow: true});
     if (active?.id != null) ids.add(active.id);
-  } catch {
-    /* 无活动标签 */
-  }
-  await Promise.all([...ids].map((id) => paintControlBanner(id, true, view)));
+  } catch { /* 无活动页 */ }
+  await showControlBanners(ids, view, key, revision);
 }
 
 export async function hideCursorsForSessions(sessionIds: Iterable<string>): Promise<void> {
-  await Promise.all([...sessionIds].map((id) => hideCursors(id)));
+  await Promise.all([...sessionIds].map(id => hideCursors(id)));
 }
 
-export async function hideUserControlBanners(tabId?: number): Promise<void> {
-  const ids = tabId == null ? new Set(controlBannerTabs) : new Set([tabId]);
-  if (tabId == null) controlBannerTabs.clear();
-  else controlBannerTabs.delete(tabId);
-  await Promise.all([...ids].map((id) => paintControlBanner(id, false)));
+/** 清理该会话实际展示过的全部页；其他会话的控制条重新按其状态绘制。 */
+export async function hideControlBannersForOwner(owner: string, alsoHide: Iterable<number> = []): Promise<void> {
+  const key = bannerOwnerKey(owner);
+  beginBannerShow(key);
+  const ids = new Set<number>(alsoHide);
+  for (const [id, owners] of controlBannerOwners) {
+    if (!owners.delete(key)) continue;
+    ids.add(id);
+    if (!owners.size) controlBannerOwners.delete(id);
+  }
+  await Promise.all([...ids].map(renderControlBanner));
+}
+
+export async function hideUserControlBanners(tabId?: number, owner?: string): Promise<void> {
+  if (tabId == null) return hideControlBannersForOwner(bannerOwnerKey(owner));
+  // 扩展启动时清理由旧 isolated world 遗留的单页控制条。
+  controlBannerOwners.delete(tabId);
+  await renderControlBanner(tabId);
 }
 
 export async function resolveHeldClick(
@@ -508,7 +567,7 @@ async function resolvePointerTarget(
         resolvedViaCdp = true;
       } catch (e) {
         if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
-          throw new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`);
+          throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
         }
         // debugger 不可用：落到 domops 路径（注意此时 @N 依赖 DOM 快照的 refs，
         // 若上次快照是 AX 版会解析不到——属边缘情况，让 domops 报「已失效」即可）
@@ -639,10 +698,10 @@ async function confirmPointerTarget(
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
         const msg = oneLine(e);
-        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw new Error(msg);
-        throw new Error(
+        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
+        throw notExecuted(new Error(
           `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${msg}）`,
-        );
+        ));
       }
     }
   }
@@ -684,10 +743,10 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
         const msg = oneLine(e);
-        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw new Error(msg);
-        throw new Error(
+        if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
+        throw notExecuted(new Error(
           `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${msg}）`,
-        );
+        ));
       }
     }
   }
@@ -767,7 +826,7 @@ export async function hover(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ hovered: true }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   const { point: [x, y] } = await resolvePointerTarget(tab.id, params);
@@ -790,7 +849,7 @@ export async function click(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ClickResult> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
@@ -920,7 +979,7 @@ export async function click(
         );
       }
       if (cdpMouseMoved) {
-        if (isPrePressTargetError(e)) throw e;
+        if (isPrePressTargetError(e)) throw notExecuted(e);
         throw new Error(
           `点击是否送达无法确认，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
         );
@@ -957,10 +1016,10 @@ export async function click(
 }
 
 export async function fill(
-  params: { target: string; value: string },
+  params: { target: string; value: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ filled: true }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
@@ -1003,11 +1062,11 @@ export async function fill(
       if (res?.ok && res.rect && typeof res.rect.x === "number") {
         targetRect = res.rect;
       } else if (backendNodeId === undefined) {
-        throw new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`);
+        throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
       }
     } catch (e) {
       if (backendNodeId === undefined) {
-        throw e;
+        throw notExecuted(e);
       }
     }
   }
@@ -1068,10 +1127,10 @@ export async function fill(
 }
 
 export async function typeText(
-  params: { text: string },
+  params: { text: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ typed: true }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   await maybeActivateTab(tab, sessionId);
@@ -1080,12 +1139,12 @@ export async function typeText(
 }
 
 export async function pressKey(
-  params: { key: string },
+  params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ pressed: true }> {
   const info = resolveKey(params.key);
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   await maybeActivateTab(tab, sessionId);
@@ -1106,10 +1165,10 @@ export async function pressKey(
 }
 
 export async function scroll(
-  params: { dy?: number; toBottom?: boolean },
+  params: { dy?: number; toBottom?: boolean; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ atBottom: boolean }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   await ensureDomOps(tab.id);
@@ -1147,6 +1206,7 @@ export async function scroll(
  */
 export async function mark(
   params: {
+    tabId?: number;
     target: string;
     label?: string;
     actions?: unknown;
@@ -1155,7 +1215,7 @@ export async function mark(
   },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ marked: true }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const observedDocument = await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
@@ -1170,7 +1230,7 @@ export async function mark(
       rect = await rectOfBackendNode(tabId, backendNodeId, true);
     } catch (e) {
       if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
-        throw new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`);
+        throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
       }
     }
   }
@@ -1234,8 +1294,8 @@ export async function mark(
 }
 
 /** clear_marks 工具：清除全部 mark 标注。受限页面本来就画不上标注，静默成功。 */
-export async function clearMarks(sessionId: string = LEAD_SESSION_ID): Promise<{ cleared: true }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: number): Promise<{ cleared: true }> {
+  const tab = await resolveWorkingTab(tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   try {
     await ensureCursor(tab.id);

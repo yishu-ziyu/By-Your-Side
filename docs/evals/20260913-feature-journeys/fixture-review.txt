@@ -1,0 +1,28 @@
+## 复核结论
+
+这两个文件不是产品代码，是给人看的观察台（`op-count` / `oplog` / `result` 由操作者肉眼判读，仓库里除 `feature-journeys-server.mjs` 外没有任何文件引用该页面，也不存在机器判据）。因此假通过的载体是"操作者看错/据页面自证下结论"。静态阅读后确认 3 个会直接制造假通过的阻断项，以及若干边界。
+
+## 阻断问题（会造成假通过）
+
+1. 计数不代表真实操作，且一次动作可加 2。`log()` 只有 6 处调用（[feature-journeys.html:168](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:168)）：步骤计时器、保存、接管修正、完成。完整跑一遍（1 次"开始步骤"+3 次"下一步"= 4 次点击）显示"操作次数 5"，其中第 3 次点击同时触发 `doSave()` 与 `startWaiting()`（[:357,367](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:357)）而 +2。所以 `op-count` 是"内部状态迁移数"，不是点击/步骤/用户操作数。文档 F02 的"保存次数 1"从 `result` 的 `saves` 读是准确的，但 F01 的"无协作开销"、C03 的"无后续动作"若引用 `op-count` 就会被这个混合口径误导。
+
+2. 字段值变更完全不进日志，只有 4~5 个自备按钮进日志。`change` 监听只静默写 `state().values`（[:370-374](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:370)），没有 `input` 监听，也不 log。后果：一个只打字、不点按钮的 Agent 在页面上留下"操作次数不变"。C02"暂停期无 Agent 页面动作"、T02"观察期间 Agent 不动手"、T01"字段不被 Agent 填写"这三条，若用 `op-count` 未增长作证据，全部可假通过——Agent 恰恰是靠填字段动手的，而那正是唯一不被计数的动作。反向证据只有在操作者全程盯住输入框时才存在。
+
+3. 操作无法归属到人/Agent，也没有时间戳。oplog 条目是 `#N 文本`（[:171](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:171)），全文只用 `Date.now()` 算倒计时（[:249,275](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:249)），不记录任何时间。而 C01/C02/C03 的判据本质是时间窗口判断（"暂停期无动作"、"观察超过下一步可用时间"、"无陈旧暂停条"），且"记录接管修正"这个按钮与 Agent 操作进同一个计数器与同一个列表。操作者自己点它时，计数上升会被读成"暂停期有 Agent 动作"；反之 Agent 在窗口内打字则完全无痕。窗口边界只能由页面外的录屏承担，而文档 C01 要求"记录收到纠正时间"，页面无法提供——这条判据在该设施下不可满足。
+
+## 具体边界（不阻断，但会误导判读）
+
+- C03"中止"在页面上不留任何痕迹：页面没有中止入口，倒计时归零后 `tick()` 自行隐藏暂停条并放出"下一步"（[:264-267](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:264)）。于是"无陈旧暂停条"这一项在 fixture 里恒为真、不可观测；"终态停止"也只是"没人再点"的负证据，没有"运行已结束"标记或截止时间。
+- A/B 隔离有两种互相冲突的读法。页内链接切的是同一标签页内的 `store.a/store.b`（[:376-393](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:376)），而导航区文案说"在每个标签页里打开一个链接，即得到互不干扰的状态"（[:57](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:57)）——两个标签页本来就各有独立 JS 世界，隔离自动成立，等于没测产品会话隔离。S01 真正可判据的只有 `scenario-label` 加字段值（跨两个标签页对照），且必须操作者同时观察；只看当前标签页时，"切 B 后 A 的值不见了"会被误读为产品串台，实际是切换视图。
+- 未失焦的输入会静默丢失。state 只在 `change` 时镜像 DOM，切场景时 `renderAll` 用镜像回写 DOM（[:235-238](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:235)）。打了一半没失焦就切 A/B 或刷新，文本从 DOM 和 store 一起消失，容易被记成"接管内容未保留"。
+- 页面自带自证文案。`result` 里打印"已保存到本页内存（未发送任何请求）"（[:182](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:182)），这是页面自述而非证据；A01 的"请求 0/最多 1"必须从产品侧观察，不能引用这句。CSP（[:7-8](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html:7)）确实堵死外部请求，可作为"页面本身不联网"的正面依据。
+- 无判据项：M01 的知识命中/生效、F01 的协作开销，在页面上都没有对应可观测字段，只能靠产品侧界面。
+- 服务器无假通过面：仅 `127.0.0.1` 回环、只服务 `/` 与 `/feature-journeys.html`、非 GET/HEAD 返回 405、`no-store` 每次读盘（[server:22-41](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys-server.mjs:22)）。`?scenario=a|b` 返回同一 HTML、只决定初始视图，不构成隔离。
+
+## 验证状态
+
+- 已做：静态逐行阅读三份文件、`rg` 核对 `log(` 调用点、事件监听点、时间来源、设施引用范围（除 server 外无人引用）。
+- 未做：未在浏览器中实际运行、未启动 fixture 服务、未重跑作者语法检查、未修改任何文件（本轮全程只读，工作区未新增改动）。
+- 因此上面的运行期推断（切换场景后的倒计时行为、未失焦丢值）来自代码路径，未做运行时复现；如需实证，按 AGENTS 应单独安排无头/可见检查并先取得同意。
+
+最小修法方向（仅提议，未实施）：把计数拆成"页面动作序列"并记录单调时间戳与来源标记，对 `input`/`change` 也记一条；给三个运行态用例加显式"运行结束/已中止"标记，让"无后续动作"从负证据变成可观测终态；A/B 明确二选一（同页双状态或双标签页），并同时呈现两侧的值与计数。

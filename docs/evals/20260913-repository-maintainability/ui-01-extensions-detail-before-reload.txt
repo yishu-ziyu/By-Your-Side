@@ -1,0 +1,3 @@
+The following is a diff from the previous accessibility tree for Window: "扩展程序 - By Your Side" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~							316 标签 (selected, settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 295 MB, Value: on
+The focused UI element is 348 点击此按钮即可离开“by your side details page”子页面。 “By Your Side”详情页面上的返回按钮

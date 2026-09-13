@@ -30,12 +30,58 @@ describe("fetch 边界", () => {
   });
 
   it("超过上限截断并明确标记", async () => {
-    const big = new Response("x".repeat(FETCH_MAX_BYTES + 100));
-    const { text, bytes, truncated } = await readCappedText(big);
+    const big = new Response("x".repeat(FETCH_MAX_BYTES + 100), { headers: { "content-length": String(FETCH_MAX_BYTES + 100) } });
+    const { text, retainedBytes, readBytes, totalBytes, truncated, stoppedReason } = await readCappedText(big);
     expect(truncated).toBe(true);
     expect(text.length).toBe(FETCH_MAX_BYTES);
-    expect(bytes).toBe(FETCH_MAX_BYTES + 100);
+    expect(retainedBytes).toBe(FETCH_MAX_BYTES);
+    expect(readBytes).toBeGreaterThanOrEqual(FETCH_MAX_BYTES);
+    expect(totalBytes).toBe(FETCH_MAX_BYTES + 100);
+    expect(stoppedReason).toBe("limit");
     const small = await readCappedText(new Response("ok"));
-    expect(small).toMatchObject({ text: "ok", bytes: 2, truncated: false });
+    expect(small).toMatchObject({ text: "ok", bytes: 2, truncated: false, stoppedReason: "complete" });
+  });
+
+  it("stops an endless stream without buffering the whole body", async () => {
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(64 * 1024).fill(97));
+      },
+    });
+    const response = new Response(body);
+    const result = await readCappedText(response, 8 * 1024);
+    expect(result.retainedBytes).toBe(8 * 1024);
+    expect(result.stoppedReason).toBe("limit");
+    expect(pulls).toBeLessThan(20);
+  });
+
+  it("honours abort and does not invent a total length", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024).fill(98));
+      },
+    });
+    const ac = new AbortController();
+    const pending = readCappedText(new Response(body), FETCH_MAX_BYTES, { signal: ac.signal });
+    ac.abort();
+    const result = await pending;
+    expect(result.stoppedReason).toBe("abort");
+    expect(result.totalBytes).toBeNull();
+  });
+
+  it("decodes UTF-8 across chunk boundaries", async () => {
+    const bytes = new TextEncoder().encode("你好");
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.subarray(0, 1));
+        controller.enqueue(bytes.subarray(1));
+        controller.close();
+      },
+    });
+    const result = await readCappedText(new Response(body));
+    expect(result.text).toBe("你好");
+    expect(result.stoppedReason).toBe("complete");
   });
 });

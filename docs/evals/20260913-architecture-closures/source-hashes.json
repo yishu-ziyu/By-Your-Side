@@ -1,0 +1,22 @@
+{
+  "agent/src/fetch-consent.ts": "fc57a7e4f8d382e1ba704c4428d65ce2882db3c0109781a122f8f57a98ebea16",
+  "agent/src/conversation-runtime.ts": "5785e8ba7a5ce202cc41bd1e8710f8d73db48367df21b2f8335bc28f882c3b4b",
+  "agent/src/conversation-manager.ts": "1823a01d4171141ceb5076649ff9ea492c446264e2bf7eef8d666c9672380df2",
+  "agent/src/tools.ts": "e02b9f25625ab6d3cf46b41872be9b29a7185bd339299db6b0d9e6e9496daad3",
+  "agent/src/fleet.ts": "5604ca3f7b60b6e37a9c2526655d00670e43dd9213176877ce3514c46545864a",
+  "agent/src/memory-store.ts": "fb59f84429e4529c4bfe2f15845c65773f0326cd6389d1b208167a6649fc0a5f",
+  "agent/src/memory-relevance.ts": "394c28f160428bd34a822c79a5d99bf45328b745e27193ead31f8fb96081192d",
+  "extension/src/background/state.ts": "d47543a52556009b363efa8d6d4dcfe2d3e92aecea0ff608de4dc0d198f31fb4",
+  "extension/src/background/worker-tab-control.ts": "b0db6a422f04f5909c36bec8fbbc4ab61225e9d24ce69e5e094f65ed472b9677",
+  "extension/src/background/index.ts": "c4083b04b4723119e5d92395f522319602f5b9413026d69278c06714457f9106",
+  "extension/src/sidepanel/consent.ts": "996203b0a01afd0227e6062758ebd0e18f0e48e9641f4eff93926971d7f7aef0",
+  "extension/src/sidepanel/main.ts": "6867c543e0a2fd33f99bd0949301b0a81a28800da882b025f27704b690110317",
+  "extension/src/sidepanel/styles.css": "ab858be0e3e5591ed5993fbc41f7161212d9aec381603a6c8b150b22933c4f31",
+  "shared/protocol.ts": "77ac09470a3de8681af8f8d26492fd306d3d4fd189a44ef8e72f8891d8a71962",
+  "shared/consent.ts": "4bf70460c049fc08ffee835270a1afbdbb69402df41f56c0c503b7f0e43601fa",
+  "shared/consent-ticket.ts": "a69f2ead8de41b53bfcac4439bc6809804e64fc081cb84ab8b2802af9e8615c9",
+  "scripts/acceptance/fetch-consent.mts": "8582aae816ee2367b6c6cd64c8959a4a65ba95c73d7b42318d8622a07ec7beb8",
+  "scripts/acceptance/page-transfer.mts": "66ac300b1c22033df0ed8b0bb3972bf9c3bec2e748ac3dfb77d03dce42869c33",
+  "scripts/acceptance/isolated-extension.mts": "7579d0787ed395103eb08a021635fed022336d8755545b6f81c29c82d4d10b7d",
+  "scripts/acceptance/sw-hook.mjs": "f7e97fe0140155719001197c8fd1b44d873a9502f70879d989524547d3e7d511"
+}

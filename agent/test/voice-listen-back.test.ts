@@ -104,16 +104,16 @@ describe("控制句先复述确认（#1）", () => {
   });
 
   it("改正在跑的任务先问一句，不直接落动作", () => {
-    expect(manager).toMatch(/private readonly controlConfirmations=new Map<string,\{voiceId:string;turn:number;expiresAt:number;action:'steer'\|'abort';text:string;expectedRunId:string\|null\}>\(\)/);
+    // 确认载荷由 voice-control-confirmation 的真实调度行为用例检查。
     expect(manager).toMatch(/if\(\(step\.action==='steer'\|\|step\.action==='abort'\)&&plan\.steps\.length===1&&targetId===id&&before\.state==='running'&&route\)\{/);
     expect(manager).toMatch(/return \{kind:'clarify',message:controlConfirmMessage\(step\.text\)\};/);
   });
 
   it("下一轮的对/不决定动作落不落，超时不认", () => {
     expect(manager).toMatch(/Date\.now\(\)\+CONTROL_CONFIRM_TTL_MS/);
-    expect(manager).toMatch(/control\.voiceId===route\.voiceId&&route\.turn===control\.turn\+1&&Date\.now\(\)<control\.expiresAt/);
-    expect(manager).toMatch(/if\(isControlReject\(text\)\)return \{kind:'clarify',message:'好，那我不动它。'\};/);
-    expect(manager).toMatch(/action:control\.action,expectedRunId:control\.expectedRunId,expectedControlVersion:route\.controlVersion\?\?before\.controlVersion\?\?0,text:control\.text/);
+    expect(manager).toMatch(/control\.voiceId===route\.voiceId&&route\.turn>control\.turn&&Date\.now\(\)<control\.expiresAt/);
+    // 具体拒绝与不执行由 voice-control-confirmation 的真实调度用例覆盖。
+    expect(manager).toContain("isControlReject(text)");
     // 只对当前会话、单步的控制句确认；别的会话/多步计划照旧
     expect(manager).toMatch(/plan\.steps\.length===1&&targetId===id/);
   });

@@ -1,0 +1,10 @@
+{
+  "agent/src/session.ts": "69e51017f531b10b7ad5eacac455e846ca6d8f34a4d2df4d7f69517e8768adb4",
+  "agent/test/session-run-tail.test.ts": "0d3a0c38e25edbddc22d84ec08ade1048d9f07977b9768943a87f883aea7e3ed",
+  "extension/src/sidepanel/markdown.ts": "b075f866efd1b0d39b77b792112397032a26d8269beccbad14d0cc856bc8a887",
+  "extension/src/sidepanel/receipt-copy.ts": "8db37a4106cc521322ce7eb95066e268324b1f5636bde6764766c070b11810ef",
+  "extension/src/sidepanel/main.ts": "f0420879be23b738d1989cd729455ae81c463cdccebb2ad00b39347fcd08626e",
+  "extension/src/sidepanel/styles.css": "5b475d84dc340d9fe4a235367124e1a9c3f1206dc9a417633c1a3f81c24684b1",
+  "extension/test/markdown.test.ts": "f9da3cf499fc375c3e6db14d789d9977b8dd3fbe075d0f251ed6e95703e6ac17",
+  "extension/test/receipt-copy.test.ts": "bf68accc55f7d50a1c7460de14a89c7f19da51de9e9cd8e5fa74a7634dcc795c"
+}

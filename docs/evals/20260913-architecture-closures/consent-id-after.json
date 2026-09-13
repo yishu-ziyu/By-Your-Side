@@ -1,0 +1,9 @@
+{
+  "oldId": "e81414a0-1d55-4674-871a-2b1ebb34d000",
+  "newId": "d37f6c0b-3538-4579-9e21-663c6c3428b3",
+  "acceptedOldDecision": false,
+  "outcome": {
+    "allowed": false,
+    "reason": "会话已关闭，本次请求未执行。"
+  }
+}

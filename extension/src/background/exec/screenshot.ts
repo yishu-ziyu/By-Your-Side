@@ -202,10 +202,10 @@ async function visibleFallback(tab: chrome.tabs.Tab, cdpError: unknown): Promise
 }
 
 export async function screenshot(
-  _params: Record<string, never> = {},
+  params: {tabId?: number} = {},
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ScreenshotResult> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   // worker 透传 sessionId：maybeActivateTab 对非 Lead 直接返回，绝不抢用户前台。
   await maybeActivateTab(tab, sessionId);

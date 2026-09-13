@@ -50,6 +50,8 @@ export interface TaskProgressSnapshot {
   controlVersion?:number;
   active: Array<{ member: string; action: string; since: number }>;
   lastAction: { action: string; failed: boolean; at: number } | null;
+  /** 本 run 最近一次成功 snapshot/read_element 的时刻；用于允许翻页按钮在读页后再点一次。旧快照可缺省。 */
+  lastReadAt?: number;
   /** Idle means this run stopped. Task success is never inferred from agent_end. */
   successVerified: false;
   /** Sourced assistant output, never an independent verification; absent on error/abort/no-result. */

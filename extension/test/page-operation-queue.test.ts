@@ -193,5 +193,6 @@ describe("page operation execution fact", () => {
     expect(pageOperationExecutionFact(new PageOperationError({ operator: "w", target: "#a", changed: false, readBack: null, reason: "原值冲突" }))).toBe("not_executed");
     expect(pageOperationExecutionFact(new PageOperationError({ operator: "w", target: "#a", changed: true, readBack: "x", reason: "读回不一致" }))).toBe("unknown");
     expect(pageOperationExecutionFact(new Error("页面已变化"))).toBe("unknown");
+    expect(pageOperationExecutionFact({ name: "PageOperationError", details: { changed: false } })).toBe("not_executed");
   });
 });

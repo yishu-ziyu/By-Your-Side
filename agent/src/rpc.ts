@@ -44,6 +44,9 @@ interface DispatchedCall {
   startedAt: number;
   state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected";
   fact?: ToolExecutionFact;
+  /** 缺省页可能变化的调用：发出时的设置序号与出站参数，供回执比对新旧。 */
+  targetSeq?: number;
+  targetParams?: Record<string, unknown>;
 }
 
 export type LateResultHandler = (info: {
@@ -60,12 +63,41 @@ export type LateResultHandler = (info: {
 
 const DISPATCHED_MAX = 512;
 
+/**
+ * 缺省作用在一个页面上、且协议里接受可选 tabId 的页面工具。
+ * 缺省缺 tabId 时补上任务缺省页；显式 tabId 与全局管理工具（list_tabs / get_active_tab /
+ * worker_tabs inspect）不补，避免把"看哪个页面"的管理动作绑到任务页上。
+ */
+const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
+  "snapshot",
+  "read_element",
+  "network",
+  "page_operation",
+  "close_tab", "click", "hover", "fill", "type_text", "press_key", "scroll",
+  "js", "navigate", "screenshot", "mark", "clear_marks",
+]);
+
+/** 成功后就明确改变工作目标的调用；失败不改缺省页。 */
+const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_tab", "worker_tabs", "click"]);
+
+function numberField(source: unknown, field: string): number | null {
+  if (!source || typeof source !== "object") return null;
+  const value = (source as Record<string, unknown>)[field];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export class ToolRpc {
   private pending = new Map<string, Pending>();
   private dispatched = new Map<string, DispatchedCall>();
   private lateListeners = new Set<LateResultHandler>();
   private sendFn: RpcSend | null;
   public onLateResult?: LateResultHandler;
+  /**
+   * 每个会话（默认页 / worker）当前的缺省页面与设置序号。
+   * 序号只增，谁的设置更新谁生效；缺省页不随之后的 active 切页漂移。
+   */
+  private pageTargets = new Map<string, { tabId: number | null; seq: number }>();
+  private pageTargetSeq = 0;
 
   constructor(send?: RpcSend) {
     this.sendFn = send ?? null;
@@ -84,6 +116,53 @@ export class ToolRpc {
   /** 获取已记录调用的执行事实；传输 id 与 SDK 调用 id 均可查询。 */
   getExecutionFact(id: string): ToolExecutionFact | undefined {
     return this.dispatched.get(id)?.fact;
+  }
+
+  private targetKey(sessionId?: string): string {
+    return sessionId && !isLeadSession(sessionId) ? sessionId : LEAD_SESSION_ID;
+  }
+
+  /**
+   * 记录某会话的任务缺省页（用户发送那一刻的 context.tabId）。
+   * 只影响之后缺省（没带 tabId）的页面调用；同一会话后设置者胜。
+   */
+  setPageTarget(sessionId: string | undefined, tabId: number | null): void {
+    this.pageTargets.set(this.targetKey(sessionId), { tabId, seq: ++this.pageTargetSeq });
+  }
+
+  /** 当前缺省页；未设置或已清空为 null。 */
+  getPageTarget(sessionId?: string): number | null {
+    return this.pageTargets.get(this.targetKey(sessionId))?.tabId ?? null;
+  }
+
+  /** 缺省页只补"没带 tabId 的页面工具"，显式 tabId 与全局管理工具原样放行。 */
+  resolvePageParams(name: ToolName, params: Record<string, unknown>, sessionId?: string): Record<string, unknown> {
+    if (!DEFAULT_TAB_TOOLS.has(name) || params.tabId !== undefined) return params;
+    const tabId = this.getPageTarget(sessionId);
+    return tabId == null ? params : { ...params, tabId };
+  }
+
+  /**
+   * 成功回执才更新缺省页（switch_tab / open_tab / worker_tabs claim）。
+   * 若期间已有更新的设置（例如用户发起了新任务），这个结果就不覆盖它。
+   */
+  private applyTargetReceipt(
+    name: string,
+    params: Record<string, unknown> | undefined,
+    data: unknown,
+    sessionId: string | undefined,
+    targetSeq: number | undefined,
+  ): void {
+    if (targetSeq === undefined || !TARGET_CHANGING_TOOLS.has(name)) return;
+    const key = this.targetKey(sessionId);
+    if ((this.pageTargets.get(key)?.seq ?? 0) > targetSeq) return;
+    let tabId: number | null;
+    if (name === "switch_tab") tabId = numberField(params, "tabId");
+    else if (name === "worker_tabs") tabId = params?.action === "claim" ? numberField(data, "tabId") : null;
+    else if (name === "click") tabId = numberField((data as {newTab?:unknown} | undefined)?.newTab, "tabId");
+    else tabId = numberField(data, "tabId");
+    if (tabId == null) return;
+    this.pageTargets.set(key, { tabId, seq: targetSeq });
   }
 
   /**
@@ -126,6 +205,10 @@ export class ToolRpc {
     }
     const timeout = timeoutMs ?? (SLOW_TOOLS.has(name) ? SLOW_TOOL_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS);
     const id = randomUUID();
+    // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
+    const outParams = this.resolvePageParams(name, params, sessionId);
+    // 可能改变缺省页的调用先占一个序号，回执按序号判断自己是否已被更新设置超越。
+    const targetSeq = TARGET_CHANGING_TOOLS.has(name) ? ++this.pageTargetSeq : undefined;
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -140,13 +223,13 @@ export class ToolRpc {
       }, timeout);
       this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId });
       try {
-        const frame: ToolCallFrame = { type: "tool_call", id, name, params };
+        const frame: ToolCallFrame = { type: "tool_call", id, name, params: outParams };
         if (programId) frame.programId = programId;
         if (executionEpoch !== undefined) frame.epochs = { [sessionId ?? "main"]: executionEpoch };
         if (sessionId && !isLeadSession(sessionId) && sessionId !== LEAD_SESSION_ID) {
           frame.sessionId = sessionId;
         }
-        this.registerDispatch(id, sdkId, name, sessionId);
+        this.registerDispatch(id, sdkId, name, sessionId, targetSeq, outParams);
         send(frame);
       } catch (err) {
         clearTimeout(timer);
@@ -163,7 +246,14 @@ export class ToolRpc {
     });
   }
 
-  private registerDispatch(transportId: string, sdkId: string | undefined, name: ToolName, sessionId?: string): void {
+  private registerDispatch(
+    transportId: string,
+    sdkId: string | undefined,
+    name: ToolName,
+    sessionId?: string,
+    targetSeq?: number,
+    targetParams?: Record<string, unknown>,
+  ): void {
     const existing = sdkId ? this.dispatched.get(sdkId) : undefined;
     const entry: DispatchedCall = existing ?? { id: transportId, sdkId, name, sessionId, startedAt: Date.now(), state: "sent" };
     entry.id = transportId;
@@ -171,6 +261,7 @@ export class ToolRpc {
     entry.sessionId = sessionId;
     entry.startedAt = Date.now();
     entry.state = "sent";
+    if (targetSeq !== undefined) { entry.targetSeq = targetSeq; entry.targetParams = targetParams; }
     this.dispatched.set(transportId, entry);
     if (sdkId) this.dispatched.set(sdkId, entry);
     this.pruneDispatched();
@@ -201,6 +292,7 @@ export class ToolRpc {
       if (disp && (disp.state === "timed_out" || disp.state === "disconnected" || disp.state === "sent" || disp.state === "preparing")) {
         disp.state = ok ? "resolved" : "rejected";
         disp.fact = executionFact ?? (ok ? "executed" : "unknown");
+        if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
         this.fireLateResult({
           id,
           toolCallId: disp.sdkId,
@@ -222,6 +314,7 @@ export class ToolRpc {
     if (disp) {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
+      if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
     }
     const ms = Date.now() - entry.startedAt;
     const who = entry.sessionId ?? "main";

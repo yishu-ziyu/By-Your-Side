@@ -108,12 +108,12 @@ describe('normal voice capture on the client',()=>{
   const voiced=()=>{for(let i=0;i<5;i++)frame(1000);};
   const silence=()=>{speech.state.probability=0.05;for(let i=0;i<35;i++)frame(0);speech.state.probability=0.9;};
 
-  it('starts a normal session with capture:true and still streams every frame to the classifier',async()=>{
+  it('starts a normal session without capture and still streams every frame to the classifier',async()=>{
     const audit=new Audit();
     const {client}=await session(audit);
     expect(client.diagnosticMode).toBe(false);
     expect(client.diagnosticRecording).toBe(false);
-    expect(audit.commands()[0]).toEqual({kind:'start',capture:true});
+    expect(audit.commands()[0]).toEqual({kind:'start'});
     // Every frame still reaches the classifier; no turn is open yet, so none of them go upstream.
     frame(1000);frame(1000);
     expect(speech.state.pushed.map(pcm=>pcm[0])).toEqual([1000,1000]);
@@ -125,44 +125,18 @@ describe('normal voice capture on the client',()=>{
     client.stop();
   });
 
-  it('sends exactly one C0 command per turn, with the same frames the turn played upstream',async()=>{
+  it('does not send C0 PCM on a normal session',async()=>{
     const audit=new Audit();
     const {client}=await session(audit);
     voiced();
     frame(1000);frame(1000);
     expect(audit.sent.filter(message=>message.command.kind==='audio')).toHaveLength(7);
     silence();
-    const captures=audit.commands().filter(command=>command.kind==='capture');
-    expect(captures).toHaveLength(1);
-    expect(captures[0]).toMatchObject({turn:1,sampleRate:24000});
-    const pcm=decode(captures[0].data);
-    expect(pcm.length).toBe(42*480);
-    expect(Array.from(pcm.subarray(0,7*480)).every(value=>value===1000)).toBe(true);
-    expect(Array.from(pcm.subarray(7*480)).every(value=>value===0)).toBe(true);
-    // The commit still goes upstream first; capture is evidence, not part of the voice path.
-    expect(audit.kinds().at(-2)).toBe('commit');
-    expect(audit.kinds().at(-1)).toBe('capture');
-    // A second turn produces its own single capture command.
+    expect(audit.commands().filter(command=>command.kind==='capture')).toHaveLength(0);
+    expect(audit.kinds().at(-1)).toBe('commit');
     voiced();
     silence();
-    const second=audit.commands().filter(command=>command.kind==='capture');
-    expect(second).toHaveLength(2);
-    expect(second[1]).toMatchObject({turn:2});
-    // 5 preroll frames + 35 silence frames; this turn had no extra voiced frames.
-    expect(decode(second[1].data).length).toBe(40*480);
-    client.stop();
-  });
-
-  it('caps a turn at 60 seconds of continuous audio and says so',async()=>{
-    const audit=new Audit();
-    const {client}=await session(audit);
-    voiced();
-    // 3000 active frames of 20ms = the 60-second turn bound the detector itself enforces.
-    for(let i=0;i<3000;i++)frame(1000);
-    silence();
-    const capture=audit.commands().find(command=>command.kind==='capture')!;
-    expect(capture.note).toBe('capped');
-    expect(decode(capture.data).length).toBe(60*24000);
+    expect(audit.commands().filter(command=>command.kind==='capture')).toHaveLength(0);
     client.stop();
   });
 

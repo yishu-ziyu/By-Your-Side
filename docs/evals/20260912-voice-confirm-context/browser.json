@@ -1,0 +1,59 @@
+{
+  "passed": true,
+  "scope": "real manager + actual BrowserAgentSession + isolated built Chrome extension; synthetic transcript/classifier/SDK, no audio or external model",
+  "sourceHashes": {
+    "agent/src/conversation-manager.ts": "c9cbebac6a757473e75ce6a47d2d18fd87ebd0623195fd0ae86aeb906abf23c6",
+    "agent/src/voice-confirm.ts": "b2126a0725818bec4584166be9399a06cfac438b3e8e61c31b2eb96acdc26b46",
+    "agent/src/session.ts": "f271892f9c5b3d375d6fb22dc106a7397251c822d4dfab65cd58729d716e7591",
+    "extension/dist/background.js": "17fac9086e5e993c22250fb24b96cb562027299438cef76163fd1aa43c56557e"
+  },
+  "originalTabId": 1638328076,
+  "confirmationTabId": 1638328077,
+  "checks": {
+    "confirmed": true,
+    "originalPageRead": true,
+    "freshOriginalContent": true,
+    "noOtherPageContent": true,
+    "oldWriteEpochInvalidated": true,
+    "fixturesUnchanged": true
+  },
+  "calls": [
+    {
+      "name": "snapshot",
+      "params": {
+        "tabId": 1638328076
+      }
+    }
+  ],
+  "confirmation": {
+    "kind": "steer",
+    "ok": true,
+    "status": "accepted",
+    "message": "语音修改已送达当前任务：不是刚才那个，改看当前页面",
+    "receipts": [
+      {
+        "requestId": "confirmation",
+        "conversationId": "default",
+        "source": "voice",
+        "action": "steer",
+        "runId": "68b8a4f8-c475-4dc2-ac24-71a72e5b1823",
+        "text": "不是刚才那个，改看当前页面",
+        "targetTitle": "查看当前网页",
+        "status": "accepted",
+        "message": "语音修改已送达当前任务：不是刚才那个，改看当前页面",
+        "updatedAt": 1789227867537
+      }
+    ],
+    "plan": {
+      "id": "confirmation",
+      "conversationId": "default",
+      "updatedAt": 1789227867537,
+      "steps": []
+    }
+  },
+  "steers": [
+    {
+      "text": "[User's current page: tab 1638328076 \"原页面A\" — http://127.0.0.1:54235/original-a]\n不是刚才那个，改看当前页面\n\n[FRESH PAGE OBSERVATION — read by the runtime just now, before this task started]\n[This is tab 1638328076 \"原页面A\" — http://127.0.0.1:54235/original-a, the page the user is looking at. Act on this observation in your first round: do not spend a round re-reading it. If your working tab is not tab 1638328076, switch to it first (tabs action:\"switch\").]\n<page-content untrusted tab=1638328076 url=\"http://127.0.0.1:54235/original-a\" title=\"原页面A\">\nRootWebArea \"原页面A\"\n  [ref=9] heading \"ORIGINAL_A_FRESH_AFTER_QUESTION\" level=1\n  [ref=10] textbox \"原字段\" value=\"A_UNCHANGED\"\n    [ref=29] text: A_UNCHANGED\n</page-content>"
+    }
+  ]
+}

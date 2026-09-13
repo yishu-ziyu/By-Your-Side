@@ -1,0 +1,177 @@
+Window: "扩展程序 - By Your Side", App: Google Chrome.
+0 标准窗口 扩展程序 - By Your Side - Google Chrome, URL: chrome://extensions/?id=fnbjglhppbkgmjeehablkfilmmefjolo, Secondary Actions: Raise
+	1 container 扩展程序 - By Your Side - Google Chrome, URL: chrome://extensions/?id=fnbjglhppbkgmjeehablkfilmmefjolo
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 Chrome
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: chrome://extensions/?id=fnbjglhppbkgmjeehablkfilmmefjolo, Placeholder: 问问 Google 或输入网址
+					10 按钮 为此标签页添加书签
+				11 container
+					12 弹出式按钮 Global Speed: 视频速度控制
+					13 弹出式按钮 Toggle ChatGPT Sidebar
+					14 弹出式按钮 Video Download Helper
+					15 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+					16 弹出式按钮 Stylus
+					17 弹出式按钮 Save to my mind
+					18 弹出式按钮 By Your Side
+					19 弹出式按钮 扩展程序
+				20 按钮 AP
+				21 弹出式按钮 Chrome
+			22 工具栏 书签
+				23 工具栏 已保存的标签页分组
+					24 “已保存的标签页分组”按钮 “只操作当前B测试页：点击开始步骤，逐个等下一步出现再点，完成4步。不修改”分组 - 已关闭
+					25 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					26 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					28 “已保存的标签页分组”按钮 “🧾 关闭 Google Payments 付款资料”分组 - 已关闭
+					29 按钮 标签页分组
+				30 分离器 分隔符
+				31 书签按钮 Gmail
+				32 书签按钮 YouTube
+				33 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				34 书签按钮 notion
+				35 书签按钮 Untitled notebook - NotebookLM
+				36 书签文件夹按钮 AI
+				37 书签按钮 ChatGPT
+				38 书签按钮 Language Reactor
+				39 弹出式按钮 包含隐藏书签的菜单
+				40 书签文件夹按钮 所有书签
+				41 分离器 分隔符
+			42 container
+				43 HTML 内容 扩展程序 - By Your Side, URL: chrome://extensions/?id=fnbjglhppbkgmjeehablkfilmmefjolo
+					44 container
+						45 标题 扩展程序, Value: 1
+							46 文本 扩展程序
+						47 搜索文本字段 (settable) 搜索扩展程序
+						48 文本 开发者模式
+						49 切换按钮 开发者模式, Value: 1
+						50 container
+							51 按钮 加载未打包的扩展程序
+								52 文本 加载未打包的扩展程序
+							53 按钮 打包扩展程序
+								54 文本 打包扩展程序
+							55 按钮 更新, Help: 立即更新扩展程序
+								56 文本 更新
+					57 container
+						58 container
+							59 菜单 Secondary Actions: Cancel
+								60 我的扩展程序
+									61 文本 我的扩展程序
+								62 键盘快捷键
+									63 文本 键盘快捷键
+							64 文本 使用 AI 编码智能体构建扩展程序？安装 
+							65 link Description: Chrome Extensions 和 Chrome Web Store skill, Value: developer.chrome.com/docs/extensions/ai/build-with-ai?utm_source=ext_sidebar&hl=zh-CN#modern_web_guidance
+							66 文本 ，即可让编码智能体掌握最新的 API 动态与最佳实践。
+							67 container
+								68 文本 在 
+								69 link Description: Chrome 应用商店, Value: chromewebstore.google.com/category/extensions?utm_source=ext_sidebar&hl=zh-CN
+								70 文本  中发现更多扩展程序和主题
+						71 container
+							72 点击此按钮即可离开“by your side details page”子页面。 “By Your Side”详情页面上的返回按钮
+							73 标题 By Your Side, Value: 1
+								74 文本 By Your Side
+							75 按钮 重新加载
+							76 文本 已启用
+							77 切换按钮 Description: 开启，扩展程序已启用, Value: 1
+							78 标题 说明, Value: 2
+								79 文本 说明
+							80 文本 侧边栏 Agent：连接本地伴随进程，替你操作浏览器。
+							81 标题 版本, Value: 2
+								82 文本 版本
+							83 文本 0.1.0
+							84 标题 大小, Value: 2
+								85 文本 大小
+							86 文本 16.7 MB
+							87 标题 ID, Value: 2
+								88 文本 ID
+							89 文本 fnbjglhppbkgmjeehablkfilmmefjolo
+							90 标题 检查视图：, Value: 2
+								91 文本 检查视图：
+							92 内容列表
+								93 container
+									94 AXListMarker • 
+									95 链接 Service Worker （无效）
+										96 文本 Service Worker （无效）
+							97 标题 权限, Value: 2
+								98 文本 权限
+							99 内容列表
+								100 container
+									101 AXListMarker • 
+									102 文本 访问页面调试程序后端
+								103 container
+									104 AXListMarker • 
+									105 文本 读取和更改您在所有网站上的所有数据
+								106 container
+									107 AXListMarker • 
+									108 文本 与协作的本机应用通信
+								109 container
+									110 AXListMarker • 
+									111 文本 查看和管理您的标签页组
+							112 标题 有权访问的网站, Value: 2
+								113 文本 有权访问的网站
+							114 文本 允许此扩展程序读取和更改您访问网站时留存的所有数据：
+							115 link Description: 详细了解扩展程序的权限, Value: support.google.com/chrome?p=enable_extensions
+							116 弹出式按钮 允许此扩展程序读取和更改您访问网站时留存的所有数据：, Value: 在所有网站上
+								117 (selected) 在所有网站上
+							118 链接 网站设置
+							119 切换按钮 固定到工具栏, Value: 1
+							120 切换按钮 在无痕模式下启用 警告：Google Chrome 无法阻止扩展程序记录您的浏览活动。若要在无痕模式下停用该扩展程序，请取消选中此选项。 对此设置的更改将在 Chrome 重启后生效。 , Value: 0
+							121 切换按钮 允许访问文件网址 对此设置的更改将在 Chrome 重启后生效。, Value: 1
+							122 切换按钮 收集各项错误, Value: 1
+							123 标题 来源, Value: 2
+								124 文本 来源
+							125 text 未打包的扩展程序 加载来源：
+							126 链接 ~/桌面/ego/extension/dist
+								127 文本 ~/桌面/ego/extension/dist
+							128 链接 卸载扩展程序
+			129 标签组
+				130 container
+					131 按钮 收起标签页
+					132 弹出式按钮 标签页分组
+					133 弹出式按钮 标签页搜索
+				134 container
+					135 滚动区
+					136 滚动区
+						137 container
+							138 标签 (settable, boolean) Value: off, Description: 女娲Nuwax AIOS | 全球首个开源AI智能体操作系统 | 女娲智能体OS | 产品级开源Agent操作系统 — AgentFlow·AgentGroup·VibeCoding | Skills技能·沙箱安全·MCP接入·LangGraph·多智能体·工作流 - 闲置标签页 - 已释放 162 MB
+							139 标签 (settable, boolean) Description: Particle Scroll | Canvas UI - 闲置标签页 - 已释放 154 MB, Value: off
+							140 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 143 MB, Value: off
+							141 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 151 MB, Value: off
+							142 标签组 分组“你好”- 1 个标签页•  Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 已展开
+							143 标签 (settable, boolean) Description: Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 属于“你好”群组 - 闲置标签页 - 已释放 525 MB, Value: off
+							144 标签组 分组“帮我打开youtube.”- 1 个标签页•  This UX Designer Shipped 3 Side Projects to 12… - 已展开
+							145 标签 (settable, boolean) Value: off, Description: This UX Designer Shipped 3 Side Projects to 12K+ Users ✦ Megan Yap - YouTube - 属于“帮我打开youtube.”群组 - 内存用量 - 609 MB
+							146 标签 (settable, boolean) Description: 开源项目查询 - 内存用量 - 696 MB, Value: off
+							147 标签 (settable, boolean) Description: VibeHub｜Vibe Coding 术语图鉴 · 用大白话找准前端、后端、AI 术语 - 闲置标签页 - 已释放 144 MB, Value: off
+							148 标签 (settable, boolean) Description: flomo - 闲置标签页 - 已释放 192 MB, Value: off
+							149 标签 (settable, boolean) Description: 打造信息可视化技能 - 内存用量高 - 1.3 GB, Value: off
+							150 标签 (settable, boolean) Description: Why We Like Things—Asterisk - 闲置标签页 - 已释放 99.1 MB, Value: off
+							151 标签 (settable, boolean) Description: How I manage my agents - 闲置标签页 - 已释放 132 MB, Value: off
+							152 标签 (settable, boolean) Description: Beautiful UI — Crafted primitives for AI-native interfaces - 闲置标签页 - 已释放 216 MB, Value: off
+							153 标签 (settable, boolean) Description: 游戏机制介绍 - 内存用量 - 712 MB, Value: off
+							154 标签 (settable, boolean) Description: AI Assistants Blocks for React — Live Previews & Source - 闲置标签页 - 已释放 127 MB, Value: off
+							155 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.8 GB, Value: off
+							156 标签 (selected, settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 295 MB, Value: on
+								157 按钮 关闭
+				158 按钮 打开新的标签页
+				159 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	160 关闭按钮
+	161 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	162 最小化按钮
+163 menu bar
+	164 Chrome
+	165 文件
+	166 编辑
+	167 显示
+	168 历史记录
+	169 书签
+	170 个人资料
+	171 标签页
+	172 窗口
+	173 帮助
+
+The focused UI element is 43 HTML 内容 扩展程序 - By Your Side, URL: chrome://extensions/?id=fnbjglhppbkgmjeehablkfilmmefjolo

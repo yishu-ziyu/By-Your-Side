@@ -1,0 +1,6 @@
+{
+  "run_id": "fixture-fail-s01",
+  "verdict": "FAIL",
+  "reason": "FAIL: S01",
+  "gates_sha256": "61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748"
+}

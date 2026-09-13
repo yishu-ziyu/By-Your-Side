@@ -37,7 +37,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, hover, clearMarks, dropPendingClicks, fill, hideCursorsForSessions, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { armDestructiveClick, click, hover, clearMarks, dropPendingClicks, fill, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
@@ -91,9 +91,9 @@ const handlers: Record<ToolName, Handler> = {
   scroll: (p, sid) => scroll(p, sid),
   js: (p, sid) => evaluateJs(p, sid),
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
-  screenshot: (_p, sid) => screenshot({}, sid),
+  screenshot: (p, sid) => screenshot(p, sid),
   mark: (p, sid) => mark(p, sid),
-  clear_marks: (_p, sid) => clearMarks(sid),
+  clear_marks: (p, sid) => clearMarks(sid, p.tabId),
 };
 
 let selectedConversationId = "default";
@@ -147,9 +147,9 @@ chrome.runtime.onConnect.addListener(port => {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "handback_click") return;
  void (async () => {
-  const binding = sender.tab?.id == null ? undefined : await findSessionForTab(sender.tab.id);
-  if (!binding) { sendResponse({ok:false,error:"TAB_OWNERSHIP_ERROR"}); return; }
-  await controller(parseExecutionKey(binding).conversationId).handback();
+  const owner = sender.tab?.id == null ? undefined : getControlBannerOwner(sender.tab.id);
+  if (!owner) { sendResponse({ok:false,error:"CONTROL_BANNER_EXPIRED"}); return; }
+  await controller(owner).handback();
   sendResponse({ok:true});
  })();
  return true;
@@ -323,7 +323,7 @@ let abortDrain:Promise<void>=Promise.resolve();
 let remoteControl:{request:Extract<ServerMessage,{type:'task_control'}>;timer:ReturnType<typeof setTimeout>;abortAck?:(ok:boolean)=>void}|null=null;
 const activityBySession = new Map<string, TeamMemberActivity>();
 const gate = new ControlGate();
-const team = new TeamControl();
+let team = new TeamControl();
 const CONTROL_STORE = `controlGate:${conversationId}`;
 const CONTROL_TIMEOUT_MS = 10_000;
 let controlRequestSeq = 0;
@@ -365,7 +365,7 @@ function cancelHandbackCapture(): void {
 }
 
 function persistControl(): void {
-  const snap = snapshotControl(gate, lastStatus, team.view());
+  const snap = {...snapshotControl(gate, lastStatus, team.view()), runId: epochRunId ?? null};
   void chrome.storage.session.set({ [CONTROL_STORE]: snap }).catch(() => {
     /* 存储失败不放开闸门 */
   });
@@ -388,7 +388,7 @@ function teamBannerView() {
 function emitTeam(): void {
   const view = team.view();
   if (!view || view.members.length === 0) return;
-  broadcastVisibleServer({ type: "team_status", team: view });
+  broadcastVisibleServer({ type: "team_status", team: view, ...(epochRunId ? {runId: epochRunId} : {}) });
 }
 
 function memberActivityForTakeover(phase: TeamMemberPhase, activity?: TeamMemberActivity): TeamMemberActivity {
@@ -447,6 +447,8 @@ async function memberTabIds(): Promise<number[]> {
 async function hydrateControl(): Promise<void> {
   try {
     const got = await chrome.storage.session.get(CONTROL_STORE);
+    const saved = got[CONTROL_STORE] as {runId?: string | null} | undefined;
+    epochRunId = saved?.runId ?? null;
     const applied = applyControlSnapshot(gate, got[CONTROL_STORE], team);
     lastStatus = applied.lastStatus;
     if (applied.restoredUser || teamHeld()) {
@@ -519,7 +521,7 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
       lastStatus = lost.lastStatus;
       gate.abort();
       persistControl();
-      void memberTabIds().then(ids => Promise.all(ids.map(id => hideUserControlBanners(id))));
+      void memberTabIds().then(ids => hideControlBannersForOwner(conversationId, ids));
     } else {
       lastStatus = lost.lastStatus;
       if (gate.isUser() || gate.isDraining) statusBySession.set(LEAD_SESSION_ID, lastStatus);
@@ -681,9 +683,9 @@ async function showUserControlGuarded(tabId?: number): Promise<void> {
   const generation = gate.gen;
   const ids = await memberTabIds();
   if (tabId != null) ids.push(tabId);
-  await showTeamControlBanners(ids, teamBannerView());
+  await showTeamControlBanners(ids, teamBannerView(), conversationId);
   if (!teamHeld() || gate.gen !== generation) {
-    await hideUserControlBanners(tabId);
+    await hideControlBannersForOwner(conversationId, tabId != null ? [tabId] : []);
   }
 }
 
@@ -789,7 +791,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       if (m.phase === "restored" && m.tabId != null) { handbackTab(m.tabId); setSessionClaimBlocked(m.sessionId, false); }
     }
     if (applied.globalHandback || allRestored) {
-      void hideUserControlBanners(pending.tabId);
+      void hideControlBannersForOwner(conversationId, pending.tabId != null ? [pending.tabId] : []);
       emitLocalStatus("running");
     } else {
       emitLocalStatus("user");
@@ -814,12 +816,33 @@ function postMode(port: chrome.runtime.Port): void {
   });
 }
 
+/** 新任务不能沿用上一轮的已中止控制视图；交还仍是同一个 run。 */
+function reconcileControlRun(): void {
+  const current = conversationSummaries.find(c => c.id === conversationId);
+  const nextRun = current?.runId;
+  if (!nextRun || nextRun === epochRunId) return;
+  const stale = !!epochRunId || team.view()?.phase === "aborted";
+  executionEpochs.clear();
+  epochRunId = nextRun;
+  if (stale) {
+    team = new TeamControl();
+    statusBySession.clear();
+    activityBySession.clear();
+    lastStatus = gate.isUser() ? "user" : current!.state;
+    if (pendingControl) clearPendingControl(pendingControl.requestId);
+    if (remoteControl) { clearTimeout(remoteControl.timer); remoteControl = null; }
+    if (!gate.isUser()) void hideControlBannersForOwner(conversationId);
+    persistControl();
+  }
+}
+
 // ── 上行连接 ───────────────────────────────────────────────────────
 
 const callbacks: UplinkHandlers = {
   onServerMessage(msg) {
+    reconcileControlRun();
     const knownRun=conversationSummaries.find(c=>c.id===conversationId)?.runId;
-    if(knownRun!==epochRunId){executionEpochs.clear();epochRunId=knownRun;}
+    if (knownRun && msg.runId && knownRun !== msg.runId && ["team_status","control_result","status","agent_event"].includes(msg.type)) return;
     if(!msg.runId||msg.runId===knownRun)for(const [id,epoch] of Object.entries(msg.epochs??{}))executionEpochs.set(id,Math.max(epoch,executionEpochs.get(id)??0));
     if(msg.type==='task_control'){void runRemoteControl(msg);return;}
     if(msg.type==='task_control_ack'){if(remoteControl?.request.requestId===msg.requestId)remoteControl.abortAck?.(msg.ok);return;}
@@ -854,7 +877,8 @@ const callbacks: UplinkHandlers = {
         for (const member of msg.team.members) if (member.phase === "restored" && member.tabId != null) { handbackTab(member.tabId); setSessionClaimBlocked(member.sessionId, false); }
         lastStatus = aggregateRunState(statusBySession.values());
         persistControl();
-        if (progress.hideBanners) void memberTabIds().then(ids => Promise.all(ids.map(id => hideUserControlBanners(id))));
+        // 恢复完成：收掉这个会话实际画过的全部条（含活动页），别动别的暂停会话。
+        if (progress.hideBanners) void memberTabIds().then((ids) => hideControlBannersForOwner(conversationId, ids));
         else void showUserControlGuarded();
         emitTeam();
       }
@@ -971,6 +995,8 @@ async function executeToolCall(
   };
   const attachFact = (error: unknown): void => {
     if (!error || typeof error !== "object") return;
+    const existing = (error as { executionFact?: string }).executionFact;
+    if (existing === "not_executed" || existing === "unknown" || existing === "executed") return;
     try { (error as { executionFact?: string }).executionFact = executionFact; } catch { /* 原始错误优先 */ }
   };
   try {
@@ -1012,7 +1038,7 @@ async function executeToolCall(
           attachFact(error);
           throw error;
         }
-      }, sid);
+      }, sid, params);
     };
     const data = name === "worker_tabs" ? await execute() : await workerTabControl.run(key(sid), execute);
     // 教学标注追踪：mark 成功 = 有待完成步骤；clear_marks = 步骤标注已清
@@ -1121,7 +1147,11 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
         : {}),
     })
   ) {
-    failPendingControl(requestId, "当前没有连接到 Agent，接管没有生效。");
+    // 宿主没连上时仍关闭本地写入口；按钮到关闸不能等 Agent 往返。
+    const pending = clearPendingControl(requestId);
+    if (pending?.action === "takeover" && pending.pageTabId == null) gate.commitTakeover(result.generation);
+    emitLocalStatus("user");
+    emitNotice("本地已接管。Agent 未连接，页面写入已停。");
   }
 }
 
@@ -1240,13 +1270,13 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   for (const sid of sessions) { dropPendingClicks(key(sid)); setSessionClaimBlocked(sid, false); }
   void hideCursorsForSessions(sessions.map(key));
   for (const sid of sessions) void suppressCursorStatus(key(sid));
-  void memberTabIds().then(ids => Promise.all(ids.map(id => hideUserControlBanners(id))));
+  void memberTabIds().then(ids => hideControlBannersForOwner(conversationId, ids));
   void stopTrailReplay(key());
   const completion=Promise.all([abortDrain,aborted.settled]).then(async () => {
     if (gate.gen !== aborted.generation) return;
     for (const tabId of await abortedTabs) handbackTab(tabId);
     await hideCursorsForSessions(sessions.map(key));
-    await Promise.all((await memberTabIds()).map(id => hideUserControlBanners(id)));
+    await hideControlBannersForOwner(conversationId, await memberTabIds());
     await stopTrailReplay(key());
   });
   abortDrain=completion.catch(()=>{});
@@ -1486,8 +1516,11 @@ function attachPanel(port: chrome.runtime.Port) {
         break;
       }
       case "control":
-        if (msg.action === "takeover") requestPanelControl('pause',msg.tabId);
-        else requestPanelControl('resume');
+        if (msg.action === "takeover") {
+          // 本地按钮先关写入口，不等宿主往返；pause 仍发给 Agent 排空任务。
+          void handleTakeover(msg.tabId, undefined, msg.tabId == null);
+          requestPanelControl("pause", msg.tabId);
+        } else requestPanelControl("resume");
         break;
       case "sync": {
         void historyReady.then(() => syncPanel(port, msg.afterSeq));
@@ -1503,6 +1536,7 @@ function attachPanel(port: chrome.runtime.Port) {
 }
 
 function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
+ reconcileControlRun();
  const port = { postMessage: (message: BgToPanel) => rawPort.postMessage({ ...message, conversationId, ...(message.kind === "server" ? {msg: {...message.msg, conversationId}} : {}) }) };
         port.postMessage({ kind: "conn", ...lastConn } satisfies BgToPanel);
         void chrome.storage.session.get(ASK_STORE).then((stored) => {
@@ -1525,7 +1559,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         if (entries.length > 0) port.postMessage({ kind: "history", entries } satisfies BgToPanel);
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
         if (team.view()) {
-          port.postMessage({ kind: "server", msg: { type: "team_status", team: team.view()! } } satisfies BgToPanel);
+          port.postMessage({ kind: "server", msg: { type: "team_status", team: team.view()!, ...(epochRunId ? {runId: epochRunId} : {}) } } satisfies BgToPanel);
         }
         port.postMessage({kind:"demo", ...demoStatus()} satisfies BgToPanel);
 }

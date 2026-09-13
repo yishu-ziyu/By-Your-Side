@@ -13,7 +13,10 @@ import { formatFetchReply, type FetchReply } from "./fetch-result.js";
 import { fetchPages } from "./fetch-batch.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
-import { WRITE_TOOLS, isWriteTool } from "../../shared/control.js";
+import { WRITE_TOOLS } from "../../shared/control.js";
+import { needsConsentTicket, requiresControlGate } from "../../shared/effect-policy.js";
+import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
+import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, type ProgramStep } from "./browser-program.js";
 
@@ -54,8 +57,22 @@ const MODEL_TOOL_OF: Record<string, string> = {
 
 export const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: () => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void }): ToolDefinition[] {
-  const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string}>();
+/**
+ * 需要用户确认的工具（今天只有会改服务端状态的 fetch）走这个回调：
+ * 未接线 = 没有侧栏入口，直接拒绝；接线了就在等用户选择前不发任何 RPC。
+ */
+export type ConsumeConsent = (
+  name: string,
+  params: Record<string, unknown>,
+  opts: { signal?: AbortSignal },
+) => ConsentOutcome | boolean | Promise<ConsentOutcome | boolean>;
+
+function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
+  return typeof result === "boolean" ? { allowed: result } : result;
+}
+
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: () => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent }): ToolDefinition[] {
+  const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
   // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
@@ -71,18 +88,56 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string) => {
     const scope = executionScope.getStore();
     const epoch = scope?.epoch;
+    const signal = scope?.signal;
     // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
     const sdkId = execution ? (stepId ?? scope?.toolCallId) : undefined;
     if (sdkId) rpc.ensureToolCall?.(sdkId, name, sid);
-    if (execution && isWriteTool(name) && (!execution.canWrite() || epoch !== execution.epoch())) {
-      if (sdkId) rpc.markCallRejected?.(sdkId);
+    const gated = !!(execution && requiresControlGate(name, params));
+    const rejectCall = () => { if (sdkId) rpc.markCallRejected?.(sdkId); };
+    const assertNotAborted = () => {
+      if (!signal?.aborted) return;
+      rejectCall();
+      throw new Error("本次调用已取消，操作未执行。");
+    };
+    assertNotAborted();
+    // 进入这一步时的执行闸门状态；等用户确认之后再复核一次，避免 TOCTOU。
+    const staleStep = () => gated && (!execution!.canWrite() || epoch !== execution!.epoch());
+    if (staleStep()) {
+      rejectCall();
       throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续。");
     }
-    try {
-      execution?.assertCall?.(name, params, sdkId);
-    } catch (error) {
-      if (sdkId) rpc.markCallRejected?.(sdkId);
-      throw error;
+    // 需要确认的请求：先等用户选择，获准后才发 RPC。参数用获准的副本，不再读外部对象。
+    let callParams = rpc.resolvePageParams?.(name, params, sid) ?? params;
+    const assertCall = (target: Record<string, unknown>) => {
+      try {
+        execution?.assertCall?.(name, target, sdkId);
+      } catch (error) {
+        rejectCall();
+        throw error;
+      }
+    };
+    if (needsConsentTicket(name, params)) {
+      const consumeConsent = execution?.consumeConsent;
+      if (!consumeConsent) {
+        rejectCall();
+        throw new Error(CONSENT_REQUIRED_ERROR);
+      }
+      // 明知会被执行闸门拒绝的请求，不拿去占用户的确认。
+      assertCall(callParams);
+      const outcome = consentOutcome(await consumeConsent(name, params, { signal }));
+      if (!outcome.allowed) {
+        rejectCall();
+        throw new Error(outcome.reason ?? CONSENT_REQUIRED_ERROR);
+      }
+      if (outcome.params) callParams = outcome.params;
+      if (staleStep()) {
+        rejectCall();
+        throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续。");
+      }
+      // 等用户点完可能已经有新的执行事实到达，再核一次。
+      assertCall(callParams);
+    } else {
+      assertCall(callParams);
     }
     if (name === "js") {
       try { assertGenericJsAllowed(); }
@@ -93,17 +148,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
-      await takeTab(typeof params.tabId === "number" ? params.tabId : undefined);
+      await takeTab(typeof callParams.tabId === "number" ? callParams.tabId : undefined);
     }
+    // 获准或页面移交的 await 返回后，取消信号仍可能先于 RPC 到达。
+    assertNotAborted();
     const invoke = (executionEpoch?: number) => {
       // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
       if (sdkId === undefined) {
-        if (executionEpoch !== undefined) return rpc.call(name, params, undefined, sid, programId, executionEpoch);
-        return programId ? rpc.call(name, params, undefined, sid, programId) : rpc.call(name, params, undefined, sid);
+        if (executionEpoch !== undefined) return rpc.call(name, callParams, undefined, sid, programId, executionEpoch);
+        return programId ? rpc.call(name, callParams, undefined, sid, programId) : rpc.call(name, callParams, undefined, sid);
       }
-      return rpc.call(name, params, undefined, sid, programId, executionEpoch, sdkId);
+      return rpc.call(name, callParams, undefined, sid, programId, executionEpoch, sdkId);
     };
-    if (execution && isWriteTool(name)) return invoke(epoch);
+    if (execution && requiresControlGate(name, params)) return invoke(epoch);
     return invoke(undefined);
   };
 
@@ -111,7 +168,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "page_operation",
       label: "Write and verify field",
-      description: "Safely edit a field on a shared page. The executor serializes the complete re-locate, expected-value check, focus, fill and readback. Use a stable CSS target from a fresh snapshot, never old coordinates. Read expectedValue first. Failure reports any mutation; never assume rollback. Do not hold the page while thinking or waiting for messages.",
+      description: "Safely edit a field on a shared page with collaborators. If you are the only agent on this page, use fill, not this tool — it will refuse and waste retries. The executor serializes the complete re-locate, expected-value check, focus, fill and readback. Use a stable CSS target from a fresh snapshot, never old coordinates. Read expectedValue first. Failure reports any mutation; never assume rollback. Do not hold the page while thinking or waiting for messages.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number()), target: Type.String(), expectedValue: Type.String(), value: Type.String(),
       }),
@@ -262,7 +319,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "click",
       label: "Click",
       description:
-        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.',
+        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.',
       parameters: Type.Object({
         target: Type.Optional(
           Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
@@ -295,7 +352,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Set the value of an input/textarea in the working tab (works with controlled components). target accepts the same locator forms as click.",
+        "Set the value of an input, textarea, or native select in the working tab (works with controlled components). For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.String({ description: "Value to set" }),
@@ -468,13 +525,16 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
   ];
-  return execution ? definitions.map(tool => ({ ...tool, execute: (...args: Parameters<ToolDefinition["execute"]>) => executionScope.run({epoch: execution.epoch(), toolCallId: args[0]}, async () => {
-    const rpcWithFacts = rpc as Partial<Pick<ToolRpc, "ensureToolCall" | "markCallRejected">>;
-    rpcWithFacts.ensureToolCall?.(args[0], tool.name as ToolName, sid);
+  return execution ? definitions.map(tool => ({ ...tool, execute: (...args: Parameters<ToolDefinition["execute"]>) => executionScope.run({epoch: execution.epoch(), toolCallId: args[0], signal: args[2]}, async () => {
+    rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);
     try {
       return await (tool as ToolDefinition).execute(...args);
     } catch (error) {
-      rpcWithFacts.markCallRejected?.(args[0]);
+      const fact = error && typeof error === "object" && "executionFact" in error
+        ? (error as { executionFact?: import("../../shared/protocol.js").ToolExecutionFact }).executionFact
+        : undefined;
+      if (fact) rpc.noteToolFact?.(args[0], fact);
+      else rpc.markCallRejected?.(args[0]);
       throw error;
     }
   }) })) : definitions;

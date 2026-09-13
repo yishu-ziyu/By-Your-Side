@@ -1,0 +1,1 @@
+shared/consent-ticket.ts: node:crypto — Node-only implementation belongs in agent

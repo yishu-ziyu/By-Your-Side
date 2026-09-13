@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryRuntime, explicitlyRequestsMemory } from "../src/memory-runtime.js";
+import { MemoryRuntime, explicitlyRequestsCurrentSiteScope, explicitlyRequestsMemory } from "../src/memory-runtime.js";
 import { MemoryStore } from "../src/memory-store.js";
 
 const roots: string[] = [];
@@ -65,6 +65,56 @@ describe("memory runtime authority and per-turn context", () => {
     });
     await tool(third.runtime).execute("named-site", { text: "整理会议摘要时用三条要点。" });
     expect((await third.store.list())[0]?.scope).toEqual({ kind: "site", hostname: "research.example" });
+  });
+
+  it("keeps an unqualified request global", async () => {
+    const { runtime, store } = await fixture();
+    runtime.beginUserTurn("请记住，会议摘要用三条要点", { tabId: 1, title: "Any", url: "https://research.example/a" });
+    await tool(runtime).execute("all", { text: "会议摘要请用三条要点。" });
+    expect((await store.list())[0]?.scope).toEqual({ kind: "all" });
+  });
+
+  it("reads an explicit site scope from the original request, including an IP host named in the sentence", async () => {
+    const first = await fixture();
+    first.runtime.beginUserTurn(
+      "请记住一条仅适用于127.0.0.1这个测试网站的测试偏好：样例代号JOURNEY-913的展示色是青色。不要保存成全局偏好，也不要操作页面。",
+      { tabId: 9, title: "Demo", url: "http://127.0.0.1:48765/?scenario=a&case=demo" },
+    );
+    await tool(first.runtime).execute("journey", { text: "样例代号JOURNEY-913的展示色是青色。" });
+    expect((await first.store.list())[0]?.scope).toEqual({ kind: "site", hostname: "127.0.0.1" });
+
+    const second = await fixture();
+    second.runtime.beginUserTurn("请记住，仅适用于127.0.0.1这个网站：展示色是青色。");
+    await tool(second.runtime).execute("ip-only", { text: "展示色是青色。" });
+    expect((await second.store.list())[0]?.scope).toEqual({ kind: "site", hostname: "127.0.0.1" });
+
+    expect(explicitlyRequestsCurrentSiteScope("请记住，仅适用于127.0.0.1这个网站：展示色是青色。")).toBe(true);
+  });
+
+  it("recognizes a named domain only-applies phrasing and prefers it over the active tab", async () => {
+    for (const [phrase, hostname] of [
+      ["请记住，仅适用于 example.com 的展示色是青色。", "example.com"],
+      ["请记住，这条仅限 research.example 生效。", "research.example"],
+      ["请记住，只在 shop.example 使用的展示色是青色。", "shop.example"],
+    ] as const) {
+      const { runtime, store } = await fixture();
+      runtime.beginUserTurn(phrase, { tabId: 4, title: "Elsewhere", url: "https://other.example/current" });
+      await tool(runtime).execute("named", { text: "展示色是青色。" });
+      expect((await store.list())[0]?.scope).toEqual({ kind: "site", hostname });
+    }
+  });
+
+  it("refuses an explicit site-only request when there is no usable address instead of falling back to global", async () => {
+    const { runtime, store } = await fixture();
+    runtime.beginUserTurn("请记住，只用于这个网站。");
+    await expect(tool(runtime).execute("no-address", { text: "展示色是青色。" })).rejects.toThrow(/没有网页上下文|地址/);
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("does not turn ordinary negated wording into a site scope", () => {
+    expect(explicitlyRequestsCurrentSiteScope("请记住，我在这个项目里偏爱 TypeScript。")).toBe(false);
+    expect(explicitlyRequestsCurrentSiteScope("请记住，只用于正式邮件的结尾敬语。")).toBe(false);
+    expect(explicitlyRequestsCurrentSiteScope("请记住，不只在当前网站，所有会话都要用青色。")).toBe(false);
   });
 
   it("invalidates authorization on takeover/steer boundaries and deduplicates one request", async () => {
@@ -153,4 +203,16 @@ describe("memory runtime authority and per-turn context", () => {
     expect(await beforeStart(runtime)({ systemPrompt: "BASE" })).toBeUndefined();
     expect(emit).not.toHaveBeenCalled();
   });
+});
+
+it('英文不只限于当前站点不得缩成站点范围', () => {
+  expect(explicitlyRequestsCurrentSiteScope('Please remember this preference, not only this site but everywhere.')).toBe(false);
+});
+
+it('保留本站范围，否定限定不会反向收窄', () => {
+  expect(explicitlyRequestsCurrentSiteScope('请记住，本条只用于本站')).toBe(true);
+  expect(explicitlyRequestsCurrentSiteScope('以后只用于本站')).toBe(true);
+  for (const phrase of ['not only this site', 'not limited to this site', '不是只用于这个网站']) {
+    expect(explicitlyRequestsCurrentSiteScope(phrase)).toBe(false);
+  }
 });

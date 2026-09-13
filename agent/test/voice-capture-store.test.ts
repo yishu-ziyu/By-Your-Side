@@ -24,10 +24,26 @@ const day=new Date(2026,8,10,12,0,0).getTime(); // local 2026-09-10
 const DAY=24*60*60*1000;
 
 describe('normal-use capture store',()=>{
-  it('writes one JSONL line per fact and keeps audio in per-turn WAV files',()=>{
+  it('default sessions keep metadata and write zero WAV bytes',()=>{
     const root=tempRoot();
     const store=new VoiceCaptureStore({root,now:()=>day});
     store.begin('v1','conv-1');
+    store.record('v1','conv-1',{type:'ready',sampleRate:24000,maxSeconds:60});
+    store.record('v1','conv-1',{type:'append',seq:1,eventId:'voice_a',turn:1,frame:0,samples:2,audio:b64([10,20])});
+    store.record('v1','conv-1',{type:'commit',seq:2,eventId:'voice_c',turn:1});
+    store.command('v1','conv-1',{kind:'capture',turn:1,sampleRate:24000,data:b64([1,2,3,4])});
+    expect(existsSync(join(root,'audio'))).toBe(false);
+    const commit=lines(root).find(line=>line.type==='commit');
+    expect(commit.c1).toBeNull();
+    const c0=lines(root).find(line=>line.type==='c0');
+    expect(c0).toMatchObject({audioPersisted:false,samples:4});
+    expect(c0.path).toBeUndefined();
+  });
+
+  it('writes one JSONL line per fact and keeps audio in per-turn WAV files',()=>{
+    const root=tempRoot();
+    const store=new VoiceCaptureStore({root,now:()=>day});
+    store.begin('v1','conv-1',{persistAudio:true});
     store.record('v1','conv-1',{type:'ready',sampleRate:24000,maxSeconds:60});
     store.record('v1','conv-1',{type:'append',seq:1,eventId:'voice_a',turn:1,frame:0,samples:2,audio:b64([10,20])});
     store.record('v1','conv-1',{type:'append',seq:2,eventId:'voice_b',turn:1,frame:1,samples:2,audio:b64([30,40])});
@@ -61,7 +77,7 @@ describe('normal-use capture store',()=>{
   it('assembles C1 from the accepted append bytes of that turn only',()=>{
     const root=tempRoot();
     const store=new VoiceCaptureStore({root,now:()=>day});
-    store.begin('v1','conv-1');
+    store.begin('v1','conv-1',{persistAudio:true});
     store.record('v1','conv-1',{type:'append',seq:1,eventId:'voice_a',turn:1,frame:0,samples:2,audio:b64([1,1])});
     store.record('v1','conv-1',{type:'append',seq:2,eventId:'voice_b',turn:2,frame:0,samples:2,audio:b64([2,2])});
     store.record('v1','conv-1',{type:'append',seq:3,eventId:'voice_c',turn:2,frame:1,samples:2,audio:b64([3,3])});
@@ -115,7 +131,7 @@ describe('normal-use capture store',()=>{
     writeFileSync(join(root,'audio'),'not a directory');
     const log=vi.fn();
     const store=new VoiceCaptureStore({root,now:()=>day,log});
-    store.begin('v1','conv-1');
+    store.begin('v1','conv-1',{persistAudio:true});
     expect(()=>store.command('v1','conv-1',{kind:'capture',turn:1,sampleRate:24000,data:b64([1,2])})).not.toThrow();
     const gap=lines(root).find(line=>line.type==='gap'&&line.code==='write_failed');
     expect(gap).toMatchObject({voiceId:'v1',conversationId:'conv-1',turn:1});
@@ -135,7 +151,7 @@ describe('normal-use capture store',()=>{
   it('clears the capture contents while keeping the directory',()=>{
     const root=tempRoot();
     const store=new VoiceCaptureStore({root,now:()=>day});
-    store.begin('v1','conv-1');
+    store.begin('v1','conv-1',{persistAudio:true});
     store.command('v1','conv-1',{kind:'capture',turn:1,sampleRate:24000,data:b64([1,2])});
     const printed:any[]=[];
     const cleared=clearVoiceCapture(root,(message:string)=>printed.push(message));

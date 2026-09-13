@@ -17,6 +17,7 @@ import {
   type TeamView,
   type ToolName,
 } from "./protocol.js";
+import { requiresControlGate } from "./effect-policy.js";
 
 export type ControlOwner = "agent" | "user";
 
@@ -394,8 +395,8 @@ export class ControlGate {
     this.sessionBlocked.set(sessionKey(sessionId), false);
   }
 
-  canLand(name: ToolName, sessionId?: string | null): boolean {
-    if (!WRITE_TOOL_SET.has(name)) return true;
+  canLand(name: ToolName, sessionId?: string | null, params?: Record<string, unknown>): boolean {
+    if (!WRITE_TOOL_SET.has(name) && !requiresControlGate(name, params)) return true;
     if (this.draining) return false;
     if (sessionId != null && this.sessionBlocked.has(sessionKey(sessionId))) {
       return this.sessionBlocked.get(sessionKey(sessionId)) === false;
@@ -403,9 +404,9 @@ export class ControlGate {
     return this.owner !== "user";
   }
 
-  async run<T>(id: string, name: ToolName, fn: () => Promise<T>, sessionId?: string | null): Promise<T> {
-    if (!WRITE_TOOL_SET.has(name)) {
-      if (!this.canLand(name, sessionId)) throw new Error(USER_BLOCKED_ERROR);
+  async run<T>(id: string, name: ToolName, fn: () => Promise<T>, sessionId?: string | null, params?: Record<string, unknown>): Promise<T> {
+    if (!WRITE_TOOL_SET.has(name) && !requiresControlGate(name, params)) {
+      if (!this.canLand(name, sessionId, params)) throw new Error(USER_BLOCKED_ERROR);
       return fn();
     }
     const key = `${sessionKey(sessionId)}::${id}`;
@@ -418,7 +419,7 @@ export class ControlGate {
       const settled = this.completed.get(key);
       if (settled) return this.replayCompleted<T>(settled, name);
     }
-    if (!this.canLand(name, sessionId)) {
+    if (!this.canLand(name, sessionId, params)) {
       throw new Error(USER_BLOCKED_ERROR);
     }
     let release: () => void = () => {};
@@ -426,7 +427,7 @@ export class ControlGate {
       release = resolve;
     });
     this.inflight.set(key, { settled: sentinel, sessionId: sessionKey(sessionId) });
-    if (!this.canLand(name, sessionId)) {
+    if (!this.canLand(name, sessionId, params)) {
       this.inflight.delete(key);
       release();
       throw new Error(USER_BLOCKED_ERROR);

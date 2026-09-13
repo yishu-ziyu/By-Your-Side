@@ -1,0 +1,14 @@
+{
+  "oldId": "consent-same-1",
+  "newId": "consent-same-1",
+  "acceptedOldDecision": true,
+  "outcome": {
+    "allowed": true,
+    "params": {
+      "url": "https://example.invalid/two",
+      "method": "POST",
+      "headers": {},
+      "body": "new"
+    }
+  }
+}

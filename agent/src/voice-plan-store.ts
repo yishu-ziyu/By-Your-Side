@@ -33,7 +33,7 @@ export class VoicePlanStore {
  }
  proposal(source:string,voiceId:string,turn:number):VoiceProposal|undefined{
   const records=this.directory?readdirSync(this.directory).filter(f=>f.endsWith('.json')).flatMap(f=>{try{return [this.read(f.slice(0,-5))!];}catch{return [];}}):[...this.memory.values()];
-  return records.find(r=>r.source===source&&r.proposal?.voiceId===voiceId&&r.proposal.turn===turn&&r.proposal.expiresAt>Date.now())?.proposal;
+  return records.filter(r=>r.source===source&&r.proposal?.voiceId===voiceId&&r.proposal.turn<=turn&&r.proposal.expiresAt>Date.now()).sort((a,b)=>b.proposal!.turn-a.proposal!.turn)[0]?.proposal;
  }
  private result(record:Record):VoiceRouteResult{return {...(record.result??uncertain()),plan:record.result?.plan??{id:record.id,conversationId:record.source,updatedAt:0,steps:record.steps}};}
  get(source:string,id:string):VoiceRouteResult|undefined{try{const record=this.read(this.key(source,id));return record?this.result(record):undefined;}catch{return uncertain();}}

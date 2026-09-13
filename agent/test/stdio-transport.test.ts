@@ -55,7 +55,7 @@ describe("encodeFrame / FrameDecoder", () => {
   });
 
   it("encodeFrame refuses oversized output with direction and limit, no content", () => {
-    expect(() => encodeFrame("x".repeat(MAX_OUTPUT_FRAME_BYTES + 1))).toThrow(/输出帧过大：\d+ 字节，上限 1048576 字节/);
+    expect(() => encodeFrame("x".repeat(MAX_OUTPUT_FRAME_BYTES + 1))).toThrow(/输出帧过大：\d+ 字节，上限 921600 字节/);
     expect(() => encodeFrame("x".repeat(MAX_OUTPUT_FRAME_BYTES + 1))).toThrow(/^(?!.*secret).*$/);
   });
 });

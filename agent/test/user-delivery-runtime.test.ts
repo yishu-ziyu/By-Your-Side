@@ -100,6 +100,18 @@ describe("send_user_message host tool", () => {
     const ack = await tool.execute("call-ack", { kind: "ack", content: "先看一眼这个页面。" }, undefined, undefined, {} as any);
     expect(ack.terminate).toBe(false);
   });
+
+  it("does not terminate a finding while remaining work is unfinished", async () => {
+    const tool = createSendUserMessageTool({
+      conversationId: "default",
+      getRunId: () => "run-a",
+      emit: () => {},
+      clock: () => 7,
+      hasUnfinishedWork: () => true,
+    });
+    const finding = await tool.execute("call-finding-open", { kind: "finding", content: speech }, undefined, undefined, {} as any);
+    expect(finding.terminate).toBe(false);
+  });
 });
 
 describe("voice consumption", () => {

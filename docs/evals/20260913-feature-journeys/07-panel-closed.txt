@@ -1,0 +1,230 @@
+Window: "模拟测试页面 · By Your Side 原生控制演练", App: Google Chrome.
+0 标准窗口 模拟测试页面 · By Your Side 原生控制演练 - 属于“只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”群组 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a, Secondary Actions: Raise
+	1 container 模拟测试页面 · By Your Side 原生控制演练 - 属于“只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”群组 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: 127.0.0.1:48765/?scenario=a, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：110%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+				21 按钮 AP
+				22 弹出式按钮 Chrome
+			23 工具栏 书签
+				24 工具栏 已保存的标签页分组
+					25 “已保存的标签页分组”按钮 “只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”分组 - 已打开
+					26 “已保存的标签页分组”按钮 “闻见 GitHub 登录”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					28 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					30 “已保存的标签页分组”按钮 “🧾 关闭 Google Payments 付款资料”分组 - 已关闭
+					31 按钮 标签页分组
+				32 分离器 分隔符
+				33 书签按钮 Gmail
+				34 书签按钮 YouTube
+				35 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				36 书签按钮 notion
+				37 书签按钮 Untitled notebook - NotebookLM
+				38 书签文件夹按钮 AI
+				39 书签按钮 ChatGPT
+				40 弹出式按钮 包含隐藏书签的菜单
+				41 书签文件夹按钮 所有书签
+				42 分离器 分隔符
+			43 container
+				44 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a
+					45 container
+						46 文本 模拟测试页面 · 非真实产品界面
+						47 文本 SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。
+						48 标题 By Your Side 表单与连续步骤演练, Value: 1
+							49 文本 By Your Side 表单与连续步骤演练
+						50 文本 当前场景：
+						51 文本 A
+						52 文本  · A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+						53 container 场景链接
+							54 text 独立测试页面状态：
+							55 link Description: 场景 A, Value: 127.0.0.1:48765/?scenario=a
+							56 link Description: 场景 B, Value: 127.0.0.1:48765/?scenario=b
+							57 text （在每个标签页里打开一个链接，即得到互不干扰的状态）
+						58 标题 1. 表单（保存只写入本页内存）, Value: 2
+							59 文本 1. 表单（保存只写入本页内存）
+						60 container
+							61 文本 姓名
+							62 文本栏 (settable) 姓名, Value: 验收乙, Placeholder: 例如：林然
+						63 container
+							64 文本 城市
+							65 文本栏 (settable) 城市, Value: 苏州, Placeholder: 例如：杭州
+						66 container
+							67 文本 备注
+							68 文本输入区 (settable) 备注, Value: 人工接管, Placeholder: 例如：希望周五下午联系
+						69 文本 优先级
+						70 弹出式按钮 优先级, Value: 高
+						71 container
+							72 按钮 保存到本页内存
+							73 按钮 清空本场景状态
+						74 文本 已保存到本页内存（未发送任何请求）
+						75 文本 场景：A
+						76 文本 姓名：验收乙
+						77 文本 城市：苏州
+						78 文本 备注：人工接管
+						79 文本 优先级：高
+						80 文本 保存次数：2
+						81 标题 2. 页面事件记录（不是 Agent 操作计数）, Value: 2
+							82 文本 2. 页面事件记录（不是 Agent 操作计数）
+						83 文本 事件条数：
+						84 文本 21
+						85 文本 记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。
+						86 内容列表 本场景操作记录
+							87 container
+								88 AXListMarker 1. 
+								89 文本 #1 2026-09-13T03:09:35.882Z input name=验收甲
+							90 container
+								91 AXListMarker 2. 
+								92 文本 #2 2026-09-13T03:09:35.883Z change name=验收甲
+							93 container
+								94 AXListMarker 3. 
+								95 文本 #3 2026-09-13T03:11:19.239Z input name=验收乙
+							96 container
+								97 AXListMarker 4. 
+								98 文本 #4 2026-09-13T03:11:19.239Z change name=验收乙
+							99 container
+								100 AXListMarker 5. 
+								101 文本 #5 2026-09-13T03:11:19.616Z input city=杭州
+							102 container
+								103 AXListMarker 6. 
+								104 文本 #6 2026-09-13T03:11:19.618Z change city=杭州
+							105 container
+								106 AXListMarker 7. 
+								107 文本 #7 2026-09-13T03:11:20.008Z input notes=仅模拟
+							108 container
+								109 AXListMarker 8. 
+								110 文本 #8 2026-09-13T03:11:20.008Z change notes=仅模拟
+							111 container
+								112 AXListMarker 9. 
+								113 文本 #9 2026-09-13T03:11:20.423Z input priority=高
+							114 container
+								115 AXListMarker 10. 
+								116 文本 #10 2026-09-13T03:11:20.425Z change priority=高
+							117 container
+								118 AXListMarker 11. 
+								119 文本 #11 2026-09-13T03:11:29.183Z 保存表单：姓名=验收乙，城市=杭州，优先级=高
+							120 container
+								121 AXListMarker 12. 
+								122 文本 #12 2026-09-13T03:12:49.101Z 步骤 1/4 已执行，等待 10 秒
+							123 container
+								124 AXListMarker 13. 
+								125 文本 #13 2026-09-13T03:13:11.917Z input city=南京
+							126 container
+								127 AXListMarker 14. 
+								128 文本 #14 2026-09-13T03:13:11.917Z change city=南京
+							129 container
+								130 AXListMarker 15. 
+								131 文本 #15 2026-09-13T03:14:36.093Z 步骤 2/4 已执行，等待 10 秒
+							132 container
+								133 AXListMarker 16. 
+								134 文本 #16 2026-09-13T03:15:04.749Z input notes=人工接管
+							135 container
+								136 AXListMarker 17. 
+								137 文本 #17 2026-09-13T03:15:04.758Z change notes=人工接管
+							138 container
+								139 AXListMarker 18. 
+								140 文本 #18 2026-09-13T03:15:55.553Z input city=苏州
+							141 container
+								142 AXListMarker 19. 
+								143 文本 #19 2026-09-13T03:15:55.554Z change city=苏州
+							144 container
+								145 AXListMarker 20. 
+								146 文本 #20 2026-09-13T03:17:22.075Z 保存表单：姓名=验收乙，城市=苏州，优先级=高
+							147 container
+								148 AXListMarker 21. 
+								149 文本 #21 2026-09-13T03:17:22.076Z 步骤 3/4 已执行，等待 10 秒
+						150 标题 3. 连续步骤（下一步按钮延迟 10 秒出现）, Value: 2
+							151 文本 3. 连续步骤（下一步按钮延迟 10 秒出现）
+						152 文本 进度：
+						153 文本 步骤 3/4：点击“保存到本页内存”
+						154 text 点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。 下一步按钮 6 秒后出现（现在可纠正或接管） 接管修正（等待期间可修改，点按钮记录）
+						155 文本栏 (settable) 接管修正（等待期间可修改，点按钮记录）, Placeholder: 例如：把优先级改为高
+						156 按钮 记录接管修正
+					157 container
+						158 按钮 logo icon
+							159 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							160 图像
+						161 container
+							162 按钮
+					163 container
+						164 text 正在恢复 0 / 1 L
+						165 按钮 (disabled) 请稍候
+			166 container 信息栏容器
+				167 container 信息栏
+					168 container
+						169 文本 “By Your Side”已开始调试此浏览器
+						170 按钮 取消
+					171 按钮 关闭
+			172 标签组
+				173 container
+					174 按钮 收起标签页
+					175 弹出式按钮 标签页分组
+					176 弹出式按钮 标签页搜索
+				177 container
+					178 滚动区
+					179 滚动区
+						180 container
+							181 标签 (settable, boolean) Value: off, Description: 女娲Nuwax AIOS | 全球首个开源AI智能体操作系统 | 女娲智能体OS | 产品级开源Agent操作系统 — AgentFlow·AgentGroup·VibeCoding | Skills技能·沙箱安全·MCP接入·LangGraph·多智能体·工作流 - 闲置标签页 - 已释放 162 MB
+							182 标签 (settable, boolean) Description: Particle Scroll | Canvas UI - 闲置标签页 - 已释放 154 MB, Value: off
+							183 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 143 MB, Value: off
+							184 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 151 MB, Value: off
+							185 标签组 分组“你好”- 1 个标签页•  Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 已展开
+							186 标签 (settable, boolean) Description: Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 属于“你好”群组 - 闲置标签页 - 已释放 525 MB, Value: off
+							187 标签组 分组“帮我打开youtube.”- 1 个标签页•  This UX Designer Shipped 3 Side Projects to 12… - 已展开
+							188 标签 (settable, boolean) Value: off, Description: This UX Designer Shipped 3 Side Projects to 12K+ Users ✦ Megan Yap - YouTube - 属于“帮我打开youtube.”群组 - 内存用量 - 609 MB
+							189 标签 (settable, boolean) Description: 开源项目查询 - 内存用量 - 696 MB, Value: off
+							190 标签 (settable, boolean) Description: VibeHub｜Vibe Coding 术语图鉴 · 用大白话找准前端、后端、AI 术语 - 闲置标签页 - 已释放 144 MB, Value: off
+							191 标签 (settable, boolean) Description: flomo - 闲置标签页 - 已释放 192 MB, Value: off
+							192 标签 (settable, boolean) Description: 打造信息可视化技能 - 内存用量高 - 1.3 GB, Value: off
+							193 标签 (settable, boolean) Description: Why We Like Things—Asterisk - 闲置标签页 - 已释放 99.1 MB, Value: off
+							194 标签 (settable, boolean) Description: How I manage my agents - 闲置标签页 - 已释放 132 MB, Value: off
+							195 标签 (settable, boolean) Description: Beautiful UI — Crafted primitives for AI-native interfaces - 闲置标签页 - 已释放 216 MB, Value: off
+							196 标签 (settable, boolean) Description: 游戏机制介绍 - 内存用量 - 712 MB, Value: off
+							197 标签组 分组“闻见 GitHub 登录”- 1 个标签页•  OAuth application settings - 已展开
+							198 标签 (settable, boolean) Description: OAuth application settings - 属于“闻见 GitHub 登录”群组 - 内存用量 - 440 MB, Value: off
+							199 标签 (settable, boolean) Description: AI Assistants Blocks for React — Live Previews & Source - 闲置标签页 - 已释放 127 MB, Value: off
+							200 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.8 GB, Value: off
+							201 标签组 分组“只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							202 标签 (selected, settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”群组 - 内存用量 - 193 MB, Value: on
+								203 按钮 关闭
+				204 按钮 打开新的标签页
+				205 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	206 关闭按钮
+	207 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	208 最小化按钮
+209 menu bar
+	210 Chrome
+	211 文件
+	212 编辑
+	213 显示
+	214 历史记录
+	215 书签
+	216 个人资料
+	217 标签页
+	218 窗口
+	219 帮助
+
+The focused UI element is 44 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a

@@ -22,32 +22,119 @@ export class TaskReceiptError extends Error {
 /** One private file per request. Never prune automatically: an old ID must not execute again. */
 export class TaskReceiptStore {
   private readonly memory = new Map<string, RecordEntry>();
+  private indexMem: Record<string, string[]> | null = null;
+  private readonly membership = new Map<string, Set<string>>();
+  private indexDirty = false;
+  private indexMissing = false;
+  private scannedAll = false;
+  private readonly loadedConversations = new Set<string>();
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   constructor(readonly directory?: string) { if (directory) mkdirSync(directory,{recursive:true,mode:0o700}); }
   private file(key: string): string { return join(this.directory!, `${hash(key)}.json`); }
+  private remember(key: string, record: RecordEntry): void {
+    this.memory.set(key, record);
+    this.addKey(record.receipt.conversationId, key);
+    if (record.receipt.originConversationId) this.addKey(record.receipt.originConversationId, key);
+  }
   read(key: string): RecordEntry | undefined {
-    if (!this.directory) return this.memory.get(key);
+    const cached = this.memory.get(key);
+    if (cached) return cached;
+    if (!this.directory) return;
     try {
       const record = JSON.parse(readFileSync(this.file(key),'utf8')) as RecordEntry;
       if (typeof record.fingerprint !== 'string' || typeof record.pending !== 'boolean' || !isTaskReceipt(record.receipt)) throw new Error('Invalid task receipt');
+      this.remember(key, record);
       return record;
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
   }
   claim(key: string, record: RecordEntry): boolean {
-    if (!this.directory) { if (this.memory.has(key)) return false; this.memory.set(key,record); return true; }
-    try { writeFileSync(this.file(key),JSON.stringify(record),{flag:'wx',mode:0o600}); return true; }
+    if (!this.directory) {
+      if (this.memory.has(key)) return false;
+      this.remember(key, record);
+      return true;
+    }
+    try {
+      writeFileSync(this.file(key),JSON.stringify(record),{flag:'wx',mode:0o600});
+      this.remember(key, record);
+      this.scheduleFlush();
+      return true;
+    }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false; throw error; }
   }
   finish(key: string, record: RecordEntry): void {
-    if (!this.directory) { this.memory.set(key,record); return; }
+    this.remember(key, record);
+    if (!this.directory) return;
     const file = this.file(key), staged = `${file}.${randomUUID()}.tmp`;
-    try { writeFileSync(staged,JSON.stringify(record),{mode:0o600});renameSync(staged,file); }
+    try { writeFileSync(staged,JSON.stringify(record),{mode:0o600});renameSync(staged,file); this.scheduleFlush(); }
     finally { rmSync(staged,{force:true}); }
   }
+  /** Durable index catch-up; list/read do not wait on this. */
+  sync(): void {
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    this.flushIndex();
+  }
+  private indexPath(): string { return join(this.directory!, "_index.json"); }
+  private loadIndex(): Record<string, string[]> {
+    if (this.indexMem) return this.indexMem;
+    try { this.indexMem = JSON.parse(readFileSync(this.indexPath(), "utf8")) as Record<string, string[]>; }
+    catch { this.indexMem = {}; this.indexMissing = true; }
+    this.membership.clear();
+    for (const [id, keys] of Object.entries(this.indexMem)) this.membership.set(id, new Set(keys));
+    return this.indexMem;
+  }
+  private flushIndex(): void {
+    if (!this.directory || !this.indexDirty || !this.indexMem) return;
+    const staged = `${this.indexPath()}.${randomUUID()}.tmp`;
+    try { writeFileSync(staged, JSON.stringify(this.indexMem), { mode: 0o600 }); renameSync(staged, this.indexPath()); this.indexDirty = false; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    finally { rmSync(staged, { force: true }); }
+  }
+  private addKey(conversationId: string, key: string): void {
+    if (this.directory) this.loadIndex();
+    else this.indexMem ??= {};
+    const index = this.indexMem!;
+    const list = index[conversationId] ?? (index[conversationId] = []);
+    let set = this.membership.get(conversationId);
+    if (!set) { set = new Set(list); this.membership.set(conversationId, set); }
+    if (set.has(key)) return;
+    set.add(key);
+    list.push(key);
+    this.indexDirty = true;
+  }
+  private scheduleFlush(): void {
+    if (!this.directory || this.flushTimer) return;
+    this.flushTimer = setTimeout(() => { this.flushTimer = null; this.flushIndex(); }, 250);
+    this.flushTimer.unref?.();
+  }
+  private hydrateConversation(conversationId: string): void {
+    if (this.loadedConversations.has(conversationId)) return;
+    this.loadedConversations.add(conversationId);
+    if (!this.directory) return;
+    const keys = this.loadIndex()[conversationId] ?? [];
+    if (keys.length === 0 && this.indexMissing && !this.scannedAll) {
+      this.scannedAll = true;
+      for (const name of readdirSync(this.directory).filter((f) => f.endsWith(".json") && !f.startsWith("_"))) {
+        try {
+          const record = JSON.parse(readFileSync(join(this.directory, name), "utf8")) as RecordEntry;
+          if (typeof record.fingerprint === "string" && typeof record.pending === "boolean" && isTaskReceipt(record.receipt)) {
+            this.remember(`${record.receipt.conversationId}:${record.receipt.requestId}`, record);
+          }
+        } catch { /* skip unreadable records; list must not throw */ }
+      }
+      return;
+    }
+    for (const key of keys.slice(-5000)) {
+      if (this.memory.has(key)) continue;
+      try { this.read(key); } catch { /* skip unreadable records; list must not throw */ }
+    }
+  }
   list(conversationId: string): TaskReceipt[] {
-    const records = this.directory ? readdirSync(this.directory).filter(f=>f.endsWith('.json')).map(f=> {
-      try { return JSON.parse(readFileSync(join(this.directory!,f),'utf8')) as RecordEntry; } catch { return undefined; }
-    }) : [...this.memory.values()];
-    return records.filter((r):r is RecordEntry=>!!r && isTaskReceipt(r.receipt) && (r.receipt.conversationId===conversationId||r.receipt.originConversationId===conversationId))
+    this.hydrateConversation(conversationId);
+    const keys = (this.indexMem?.[conversationId] ?? []).slice(-5000);
+    const records = keys.length > 0
+      ? keys.map((key) => this.memory.get(key)).filter((r): r is RecordEntry => !!r)
+      : [...this.memory.values()].filter((r) => r.receipt.conversationId===conversationId||r.receipt.originConversationId===conversationId);
+    return records.filter(r => isTaskReceipt(r.receipt))
       .map(r=>this.receipt(r)).sort((a,b)=>a.updatedAt-b.updatedAt).slice(-5000);
   }
   receipt(record: RecordEntry): TaskReceipt {

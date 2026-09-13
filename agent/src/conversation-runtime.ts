@@ -1,6 +1,7 @@
 import { LEAD_SESSION_ID, isLeadSession, type ClientMessage, type ServerMessage, type TeamView, type TeamMemberHandback } from "../../shared/protocol.js";
 import { fromTeamMemberHandback } from "../../shared/control.js";
 import { createFleetTools, Fleet } from "./fleet.js";
+import { FetchConsentBroker } from "./fetch-consent.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
@@ -17,6 +18,8 @@ export async function createConversationRuntime(
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
+  // 每会话一个授权等待区：多个待确认请求同时在场也互不覆盖，票据由它发行与消费。
+  const consent = new FetchConsentBroker({ conversationId, emit: sendCurrent });
   const fleet = new Fleet({
     rpc,
     modelPattern,
@@ -35,6 +38,7 @@ export async function createConversationRuntime(
         }),
     },
   });
+  fleet.bindConsentBroker(consent);
 
   let toolSession: BrowserAgentSession | undefined;
   const session = await BrowserAgentSession.create(
@@ -47,7 +51,7 @@ export async function createConversationRuntime(
       modelPattern,
       ...options,
       conversationId,
-      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: () => toolSession?.canWriteCurrentInput() ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step) }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
+      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: () => toolSession?.canWriteCurrentInput() ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts) }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },
   );
   toolSession = session;
@@ -290,7 +294,7 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, fleet, rpc, handleMessage, dispose() { fleet.dispose(); session.dispose(); } };
+  return { session, fleet, rpc, consent, handleMessage, dispose() { consent.dispose(); fleet.dispose(); session.dispose(); } };
 }
 function handbackPagesFromMessage(msg: Extract<ClientMessage, { type: "handback" }>) {
   if (msg.members && msg.members.length > 0) {

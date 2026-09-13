@@ -33,7 +33,13 @@ export class PageOperationError extends Error {
 
 /** 执行事实只由结构化 changed 决定：未改页 = 动作前拒绝可重试，改过或不明 = 未知。 */
 export function pageOperationExecutionFact(error: unknown): ToolExecutionFact {
-  return error instanceof PageOperationError && !error.details.changed ? "not_executed" : "unknown";
+  if (error instanceof PageOperationError) return error.details.changed ? "unknown" : "not_executed";
+  // 跨打包边界 instanceof 可能失败；只认结构化 details.changed，不从文案猜测。
+  if (error && typeof error === "object" && "details" in error) {
+    const details = (error as { details?: { changed?: unknown } }).details;
+    if (details && details.changed === false) return "not_executed";
+  }
+  return "unknown";
 }
 
 type FieldState = { value: string; rect: { x: number; y: number; width: number; height: number } };

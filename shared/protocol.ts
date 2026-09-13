@@ -8,8 +8,11 @@
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
+import { isFetchConsentRequest, type ConsentStatus, type FetchConsentRequest } from "./consent.js";
 
 export const PROTOCOL_VERSION = 1;
+export const STORAGE_SCHEMA_VERSION = 1;
+export const HOST_VERSION = "0.1.0";
 export const DEFAULT_PORT = 7758;
 export const DEFAULT_HOST = "127.0.0.1";
 /** Lead / 单会话路径的 sessionId；省略该字段即视为 Lead。 */
@@ -187,7 +190,7 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "skill_rollback"; requestId: string; id: string; expectedVersion?: number }
   | { type: "conversation_create"; requestId: string; title?: string }
   | { type: "conversation_list"; requestId?: string }
-  | { type: "hello"; token: string; client: "sidepanel" }
+  | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
   | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
   | { type: "task_action"; request: TaskActionRequest }
   | { type: "task_receipt_query"; requestId: string }
@@ -227,6 +230,10 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
   | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
+  /** 授权选择：只允许现有请求的 id，参数与票据都在伴随进程手里（见 agent/src/fetch-consent.ts）。 */
+  | { type: "consent_decision"; requestId: string; allow: boolean }
+  /** 问一次本会话还在等待的授权请求（用于面板重连/重开时恢复卡片）。 */
+  | { type: "consent_list" }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
 
 export interface ConversationEnvelope { conversationId?: string }
@@ -246,13 +253,19 @@ export interface ModelOption {
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
+  /** 有请求在等用户选择：目标、method、headers（敏感值已打码）与 body 原文，只展示这一次。 */
+  | { type: "consent_request"; request: FetchConsentRequest }
+  /** 一次确认的结局：allowed 只表示「已允许本次请求」，不代表已经发送或成功。 */
+  | { type: "consent_result"; requestId: string; status: ConsentStatus; message: string }
+  /** 本会话仍在等待的授权请求；按请求即时的期限，不被这次查询延长。 */
+  | { type: "consent_list"; requests: FetchConsentRequest[] }
   | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
   | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
-  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[] }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
@@ -366,7 +379,7 @@ export interface ToolContract {
   /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回伴随进程，不回侧栏。 */
   fetch: {
     params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
-    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string };
+    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort" };
   };
   /** 被动看当前工作页真实发出过哪些请求（CDP Network 域环形缓冲）；只读，不改页面。 */
   network: {
@@ -386,26 +399,26 @@ export interface ToolContract {
   open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
   switch_tab: { params: { tabId: number }; data: { tabId: number } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
-  navigate: { params: { url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
+  navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
   snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string; tabId: number } };
   click: {
-    params: { target?: string; point?: [number, number]; label?: string };
+    params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。 */
     data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
   };
   /** 真实鼠标移动；hovered 仅表示事件已派发，页面变化需另行观察。 */
   hover: {
-    params: { target?: string; point?: [number, number]; label?: string };
+    params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { target: string; value: string }; data: { filled: true } };
-  type_text: { params: { text: string }; data: { typed: true } };
-  press_key: { params: { key: string }; data: { pressed: true } };
-  scroll: { params: { dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
-  js: { params: { code: string }; data: { value: unknown } };
+  fill: { params: { tabId?: number; target: string; value: string }; data: { filled: true } };
+  type_text: { params: { tabId?: number; text: string }; data: { typed: true } };
+  press_key: { params: { tabId?: number; key: string }; data: { pressed: true } };
+  scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
+  js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string};data:unknown};
   screenshot: {
-    params: Record<string, never>;
+    params: {tabId?: number};
     data: {
       imageBase64: string;
       mediaType: "image/png";
@@ -428,12 +441,14 @@ export interface ToolContract {
     };
   };
   /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */
-  mark: { params: { target: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
+  mark: { params: { tabId?: number; target: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
   /** 清除全部 mark 标注 */
-  clear_marks: { params: Record<string, never>; data: { cleared: true } };
+  clear_marks: { params: {tabId?: number}; data: { cleared: true } };
 }
 
 // ── 编解码守卫 ─────────────────────────────────────────────────────
+
+const CONSENT_STATUSES: ReadonlySet<string> = new Set(["allowed", "rejected", "expired", "cancelled"]);
 
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
@@ -488,6 +503,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
     if (msg.type === "set_mode" && msg.mode !== "teach" && msg.mode !== "act") return null;
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
+    if (msg.type === "consent_decision") return validRequestId(msg.requestId) && typeof msg.allow === "boolean" ? msg : null;
+    if (msg.type === "consent_list") return msg;
     if (msg.type === "page_event") {
       if (msg.event !== "url_changed" || typeof msg.url !== "string") return null;
       if (!validOptionalSessionId(msg.sessionId)) return null;
@@ -564,6 +581,16 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return null;
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
+    if (msg.type === "consent_request") {
+      return isFetchConsentRequest(msg.request) && msg.request.conversationId === msg.conversationId ? msg : null;
+    }
+    if (msg.type === "consent_result") {
+      return validRequestId(msg.requestId) && CONSENT_STATUSES.has(msg.status)
+        && typeof msg.message === "string" && msg.message.length > 0 && msg.message.length <= 500 ? msg : null;
+    }
+    if (msg.type === "consent_list") {
+      return Array.isArray(msg.requests) && msg.requests.every(isFetchConsentRequest) ? msg : null;
+    }
     if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
     if(msg.type==='agent_event'&&msg.event?.kind==='notice'&&msg.event.plan!==undefined){
       const p=msg.event.plan;

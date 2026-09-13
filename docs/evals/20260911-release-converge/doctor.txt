@@ -1,0 +1,14 @@
+OK       node: v22.23.1
+OK       os: darwin 15.5
+OK       reference_machine: Apple M2; ram_gib=24.0
+OK       git: 4dd07bd6855d5c9f7839b59d4f8ff15a8b86c08a dirty
+OK       chrome: Google Chrome 152.0.7977.83
+OK       native_host: name=com.sideagent.host origins=1 path=set
+OK       extension_build: extension/dist present
+OK       model_credentials: present (not printed)
+OK       sideagent_config: present (not printed)
+OK       step_plan_voice: env credential present (not printed)
+BLOCKED  microphone: not probed (requires user gesture / OS permission UI)
+BLOCKED  github_branch_protection: main is not protected
+BLOCKED  holdout_custodian: no independent holdout custodian
+BLOCKED  evaluation_budget: no budget file; live paid eval BLOCKED

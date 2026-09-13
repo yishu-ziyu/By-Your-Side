@@ -30,7 +30,25 @@ export const HOOK_EXPRESSION = `(() => {
     globalThis.__saServerEvents.push(msg);
   }
   function installTeam() {
-    if (typeof handleTakeover === "function") globalThis.__saTakeover = handleTakeover;
+    if (typeof handleTakeover === "function") {
+      globalThis.__saTakeover = async function (tabId) {
+        try {
+          await handleTakeover(tabId, undefined, tabId == null);
+          return { ok: true, gate: globalThis.__saGate() };
+        } catch (error) {
+          return { ok: false, error: String(error && error.message ? error.message : error), gate: globalThis.__saGate() };
+        }
+      };
+    }
+    globalThis.__saTakeoverProbe = async function () {
+      const members = typeof localActiveMembers === "function" ? await localActiveMembers() : [];
+      return {
+        n: members.length,
+        lastStatus: typeof lastStatus !== "undefined" ? lastStatus : null,
+        lead: typeof LEAD_SESSION_ID !== "undefined" ? LEAD_SESSION_ID : null,
+        keys: typeof statusBySession !== "undefined" && statusBySession ? [...statusBySession.keys()] : [],
+      };
+    };
     if (typeof handleHandback === "function") globalThis.__saHandback = handleHandback;
     if (!globalThis.__saClientWrap) {
       const current = outgoing.sendClientMessage.bind(outgoing);
@@ -77,6 +95,20 @@ export const HOOK_EXPRESSION = `(() => {
       if (typeof gate !== "undefined" && gate && typeof gate.abort === "function") gate.abort();
       if (typeof team !== "undefined" && team && typeof team.clear === "function") team.clear();
     };
+    globalThis.__saResetControl = function () {
+      if (typeof pendingControl !== "undefined" && pendingControl) {
+        try { pendingControl.timeout.clear(); } catch (e) {}
+        pendingControl = null;
+      }
+      if (typeof gate !== "undefined" && gate && typeof gate.abort === "function") gate.abort();
+      if (typeof team !== "undefined" && team && typeof team.clear === "function") team.clear();
+    };
+    globalThis.__saMarkRunning = function () {
+      lastStatus = "running";
+      if (typeof statusBySession !== "undefined" && statusBySession && typeof statusBySession.set === "function") {
+        statusBySession.set("main", "running");
+      }
+    };
     globalThis.__saPrepareTeam = function (capability, workerId, tabId, leadTask, workerTask) {
       const requestId = "accept-team-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
       globalThis.__saLastServer = null;
@@ -110,6 +142,49 @@ export const HOOK_EXPRESSION = `(() => {
     };
     if (typeof handleAbort === "function") globalThis.__saAbortTeam = handleAbort;
     globalThis.__saSendClient = function (msg) { return outgoing.sendClientMessage(msg); };
+    // 隔离验收观察真实面板的授权选择，不记录请求正文或其它用户消息。
+    if (!globalThis.__saConsentClientHook) {
+      const sendClient = outgoing.sendClientMessage.bind(outgoing);
+      globalThis.__saConsentClientFrames = [];
+      outgoing.sendClientMessage = function (msg) {
+        if (msg && (msg.type === "consent_decision" || msg.type === "consent_list")) {
+          globalThis.__saConsentClientFrames.push(msg);
+        }
+        return sendClient(msg);
+      };
+      globalThis.__saConsentClientHook = true;
+    }
+    if (typeof workerTabControl !== "undefined" && !globalThis.__saClaimHook) {
+      const manage = workerTabControl.manage.bind(workerTabControl);
+      workerTabControl.manage = function (params, key, discard, canTake) {
+        let checks = 0;
+        return manage(params, key, discard, async function (keys) {
+          if (canTake) await canTake(keys);
+          if (params.action === "claim" && globalThis.__saPauseClaim && ++checks === 2) {
+            globalThis.__saClaimPaused = true;
+            await new Promise(resolve => { globalThis.__saResumeClaim = resolve; });
+            globalThis.__saClaimPaused = false;
+          }
+        });
+      };
+      globalThis.__saClaimHook = true;
+    }
+    globalThis.__saHandleServer = function (msg) {
+      incoming(typeof msg === "string" ? msg : JSON.stringify(msg));
+      return { ok: true };
+    };
+    globalThis.__saDeliverUser = function (delivery) {
+      if (typeof broadcastVisibleServer === "function") {
+        broadcastVisibleServer({ type: "agent_event", event: { kind: "user_delivery", delivery } });
+        return { ok: true, via: "broadcast" };
+      }
+      incoming(JSON.stringify({
+        type: "agent_event",
+        conversationId: delivery.conversationId,
+        event: { kind: "user_delivery", delivery },
+      }));
+      return { ok: true, via: "raw" };
+    };
   }
   if (typeof globalThis.__saCall === "function") {
     installTeam();

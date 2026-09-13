@@ -142,40 +142,91 @@ function buildProgram(input: CompileInput, steps: SkillStep[], inputs: Record<st
 }
 
 /**
- * 运行时解析器：只按标签 + role + 可访问名匹配；命中后打标记，把"标记选择器"交给原工具。
- * 引号纪律：选择器写成不带值的形式（[data-sideagent-target]），页面代码里就不需要转义引号。
- * 旧写法嵌了 \" 转义，被外层字符串吃掉后页面代码变成 "...target="1"]"，真机报 js: SyntaxError: Unexpected number。
- * 打标记前先清掉上一次的标记，保证选择器唯一。
+ * 运行时解析器：按标签 + role + 可访问名匹配；命中且只有一个才打标记，
+ * 把"标记选择器"交给原工具。
+ *
+ * 两端命名规则必须一致（录制在 extension/src/shared/dom-anchor.ts）：
+ *   aria-label > 关联 label / aria-labelledby > placeholder > title > 后代图片 alt
+ *   > 祖先文字（仅当自己没文字）> 自身文字 > name 属性，
+ * 同一套截断（60 字以内，超出补 …）。旧写法只看 aria-label / placeholder /
+ * textContent，label-only 的输入框（<label for=city>城市</label> + 无 aria-label）
+ * 在第 1 步就"目标找不到"。
+ *
+ * 语义唯一才执行：0 个命中停，多个同名命中同样停——绝不 find() 选第一个，
+ * 那会把"保存"点到错的按钮上。引号纪律：选择器写成不带值的形式
+ * （[data-sideagent-target]），页面代码里就不需要转义引号；打标记前先清掉上一次的标记。
  */
-const RESOLVER_HELPER = `async function resolveAnchor(anchor) {
-  if (!anchor) return null;
+const RESOLVER_HELPER = `async function locate(anchor) {
+  if (!anchor) return { hit: null, reason: "none", count: 0 };
   const source = [
     "(() => {",
     "const spec = " + JSON.stringify(anchor) + ";",
     'const norm = (s) => (s || "").replace(/\\\\s+/g, " ").trim();',
-    'const candidates = Array.from(document.querySelectorAll(spec.tag));',
-    "const hit = candidates.find((el) => {",
+    "const MAX_NAME = 60;",
+    "const clip = (s) => { const t = norm(s); if (!t) return \\"\\"; return t.length > MAX_NAME ? t.slice(0, MAX_NAME - 1) + \\"…\\" : t; };",
+    "const labelNameOf = (el) => {",
+    "  const first = el.labels && el.labels[0] ? el.labels[0].textContent : null;",
+    "  if (norm(first)) return first;",
+    '  const by = el.getAttribute("aria-labelledby");',
+    '  if (!by) return null;',
+    '  return by.split(/\\\\s+/).map((id) => { const n = document.getElementById(id); return n ? n.textContent : ""; }).join(" ");',
+    "};",
+    "const ancestorNameOf = (el) => {",
+    "  if (norm(el.textContent)) return null;",
+    "  let cur = el.parentElement;",
+    "  for (let depth = 0; depth < 4 && cur; depth += 1) {",
+    "    const t = norm(cur.textContent);",
+    '    if (t) return t.length > MAX_NAME ? t.slice(0, MAX_NAME - 1) + "…" : t;',
+    "    cur = cur.parentElement;",
+    "  }",
+    "  return null;",
+    "};",
+    "const namesOf = (el) => {",
+    '  const tag = (el.tagName || "").toUpperCase();',
+    "  const img = el.querySelector(\\"img[alt], svg[aria-label]\\");",
+    "  const raw = [",
+    '    el.getAttribute("aria-label"),',
+    "    labelNameOf(el),",
+    '    el.getAttribute("placeholder"),',
+    '    el.getAttribute("title"),',
+    '    img ? img.getAttribute("alt") : null,',
+    '    img ? img.getAttribute("aria-label") : null,',
+    "    ancestorNameOf(el),",
+    '    tag === "INPUT" || tag === "SELECT" ? null : el.textContent,',
+    '    el.getAttribute("name"),',
+    "  ];",
+    "  return raw.map(clip).filter(Boolean);",
+    "};",
+    "const candidates = Array.from(document.querySelectorAll(spec.tag));",
+    "const wanted = clip(spec.name);",
+    "const matches = candidates.filter((el) => {",
     '  if (spec.role && (el.getAttribute("role") || "").toLowerCase() !== spec.role) return false;',
-    "  if (!spec.name) return candidates.length === 1;",
-    '  return [el.getAttribute("aria-label"), el.getAttribute("placeholder"), el.textContent].some((v) => norm(v) === spec.name);',
+    "  if (!wanted) return true;",
+    "  return namesOf(el)[0] === wanted;",
     "});",
-    "if (!hit) return null;",
+    'if (matches.length !== 1) return { hit: null, reason: matches.length ? "ambiguous" : "none", count: matches.length };',
+    "const hit = matches[0];",
     'document.querySelectorAll("[data-sideagent-target]").forEach((el) => el.removeAttribute("data-sideagent-target"));',
     'hit.setAttribute("data-sideagent-target", "1");',
-    'return "[data-sideagent-target]";',
+    'return { hit: "[data-sideagent-target]", reason: null, count: 1 };',
     "})()",
   ].join("\\n");
   const result = await browser.js({ code: source });
-  return result && result.value ? result.value : null;
+  const value = result && result.value;
+  return value && typeof value === "object" ? value : { hit: null, reason: "none", count: 0 };
+}
+async function resolveAnchor(anchor) {
+  return (await locate(anchor)).hit;
 }
 async function resolveStep(index) {
-  const target = await resolveAnchor(resolveSpec[index]);
-  if (!target) throw new Error("第 " + (index + 1) + " 步的目标在页面上找不到了：脚本停下，没有继续操作。");
-  return target;
+  const found = await locate(resolveSpec[index]);
+  if (found && found.hit) return found.hit;
+  if (found && found.reason === "ambiguous") throw new Error("第 " + (index + 1) + " 步的目标有 " + found.count + " 个同名对象，不敢乱点：脚本停下。");
+  throw new Error("第 " + (index + 1) + " 步的目标在页面上找不到了：脚本停下，没有继续操作。");
 }
 /** 弱步骤用：认不出来就返回 null，由调用方跳过并记一笔。 */
 async function tryResolveStep(index) {
-  return await resolveAnchor(resolveSpec[index]);
+  return (await locate(resolveSpec[index])).hit;
 }`;
 
 /** 编译产物必须守住的红线：不出现坐标与 DOM 路径。 */

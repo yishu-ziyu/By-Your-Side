@@ -106,6 +106,16 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(() => gate('click', {target: '#other'})).not.toThrow();
   });
 
+  it('动作前拒绝（not_executed）记 blocked，不锁死后续观察和换目标写入', async () => {
+    const p = setup();
+    const gate = await executionGate(p);
+    start(p, 'call-1', 'click', {target: '@old'});
+    end(p, 'call-1', 'click', {failed: true, executionFact: 'not_executed'});
+    expect(itemsOf(p)[0]).toMatchObject({status: 'blocked'});
+    expect(() => gate('snapshot', {})).not.toThrow();
+    expect(() => gate('click', {target: '@new'})).not.toThrow();
+  });
+
   it('未决写入仍暂停同 run 的后续写入', async () => {
     const p = setup();
     const gate = await executionGate(p);
@@ -114,6 +124,26 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(p.snapshot().resultState).toBe('unknown');
     expect(() => gate('fill', {target: '#b'})).toThrow(/尚未确认结果/);
     expect(() => gate('click', {target: '#a'})).toThrow(/执行结果未知/);
+    expect(() => gate('snapshot', {})).not.toThrow();
+    expect(() => gate('read_element', {target: '#a'})).not.toThrow();
+  });
+
+  it('同一按钮在中间成功读页之后允许再点（翻页）', async () => {
+    let now = 1_000;
+    const p = new TaskProgress('default', () => now);
+    p.request('翻页');
+    p.observe({type: 'agent_event', event: {kind: 'agent_start'}} as never);
+    const gate = await executionGate(p);
+    start(p, 'call-1', 'click', {target: '#next', label: '下一页'});
+    now += 1;
+    end(p, 'call-1', 'click');
+    expect(() => gate('click', {target: '#next'})).toThrow(/已有成功回执/);
+    now += 1;
+    start(p, 'read-1', 'snapshot', {});
+    now += 1;
+    end(p, 'read-1', 'snapshot');
+    expect(p.snapshot().lastReadAt).toBeGreaterThan(1_000);
+    expect(() => gate('click', {target: '#next'})).not.toThrow();
   });
 
   it('被拦下的点击仍按未执行上报，不当作完成', async () => {

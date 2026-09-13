@@ -9,6 +9,7 @@ import { resolve } from "node:path";
  */
 const css = readFileSync(resolve(__dirname, "../src/sidepanel/styles.css"), "utf-8");
 const mainTs = readFileSync(resolve(__dirname, "../src/sidepanel/main.ts"), "utf-8");
+const modelPickerTs = readFileSync(resolve(__dirname, "../src/sidepanel/model-picker.ts"), "utf-8");
 const cursorTs = readFileSync(resolve(__dirname, "../src/content/cursor.ts"), "utf-8");
 const orbTs = readFileSync(resolve(__dirname, "../src/sidepanel/orb.ts"), "utf-8");
 
@@ -54,8 +55,8 @@ describe("03 reveal：面板从触发它的按钮长出来", () => {
   });
 
   it("缩放原点由按钮中点算出，且列表项只在展开那一次依次落位", () => {
-    expect(mainTs).toMatch(/function alignModelPopoverOrigin/);
-    expect(mainTs).toMatch(/function playPopoverOpening/);
+    expect(modelPickerTs).toMatch(/function alignModelPopoverOrigin/);
+    expect(modelPickerTs).toMatch(/function playPopoverOpening/);
     expect(css).toContain("#model-popover.opening .model-list > *");
   });
 });

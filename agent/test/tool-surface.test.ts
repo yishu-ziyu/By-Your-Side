@@ -13,7 +13,9 @@ const execute = (tools: { name: string; execute: Function }[], name: string, par
 
 /** 模型实际看到的清单：浏览器工具 + 账本/交付/记忆 + 团队工具（按挂载裁剪）。 */
 function leadSurface(workerCount: number): string[] {
-  const browser = createBrowserTools(rpc() as never).map((t) => t.name);
+  const browser = createBrowserTools(rpc() as never)
+    .map((t) => t.name)
+    .filter((name) => workerCount > 0 || name !== "page_operation");
   const ledger = ["record_task_results", "resolve_unknown_result"];
   const delivery = ["send_user_message"];
   const memory = ["remember_user_preference"];
@@ -31,6 +33,8 @@ describe("模型面预算", () => {
     expect(team.length).toBeLessThanOrEqual(27);
     expect(idle).not.toContain("await_message");
     expect(team).toContain("await_message");
+    expect(idle).not.toContain("page_operation");
+    expect(team).toContain("page_operation");
     for (const name of TEAM_COORDINATION_TOOLS) expect(idle).not.toContain(name);
   });
 
@@ -42,6 +46,30 @@ describe("模型面预算", () => {
     const names = createFleetTools(fleetStub(), "w1").map((t) => t.name);
     expect(names).toEqual(["post", "await_message"]);
     expect(workerSystemPrompt({ id: "w", peers: [], tabId: 1 })).toContain("expected current value");
+  });
+});
+
+describe("单人页不挂载 page_operation", () => {
+  it("setTeamToolsMounted(false) 从模型清单拿掉 page_operation，请来人后再挂上", async () => {
+    const { BrowserAgentSession } = await import("../src/session.js");
+    const names = ["fill", "snapshot", "page_operation", "post", "await_message", "spawn_worker", "take_tab"];
+    let active = [...names];
+    const session = {
+      getActiveToolNames: () => active,
+      getAllTools: () => names.map((name) => ({ name })),
+      setActiveToolsByName: (next: string[]) => { active = [...next]; },
+    };
+    const wrapper: { setTeamToolsMounted: (mounted: boolean) => void } = new (BrowserAgentSession as unknown as new (...args: unknown[]) => { setTeamToolsMounted: (mounted: boolean) => void })(
+      session, null, { emit() {}, setStatus() {} }, null, null,
+    );
+    wrapper.setTeamToolsMounted(false);
+    expect(active).not.toContain("page_operation");
+    expect(active).not.toContain("post");
+    expect(active).toContain("fill");
+    expect(active).toContain("spawn_worker");
+    wrapper.setTeamToolsMounted(true);
+    expect(active).toContain("page_operation");
+    expect(active).toContain("post");
   });
 });
 

@@ -1,0 +1,31 @@
+{
+  "scope": "temporary synthetic MemoryStore + actual MemoryRuntime before_agent_start; no personal memory or model access",
+  "results": [
+    {
+      "text": "导出本月库存报表",
+      "url": "https://example.invalid/inventory",
+      "selected": [],
+      "customerProcedureInjected": false
+    },
+    {
+      "text": "检查今天的天气",
+      "url": "https://example.invalid/weather",
+      "selected": [],
+      "customerProcedureInjected": false
+    },
+    {
+      "text": "导出客户名单",
+      "url": "https://another.invalid/customers",
+      "selected": [],
+      "customerProcedureInjected": false
+    },
+    {
+      "text": "帮我把全部客户名单导出",
+      "url": "https://example.invalid/customers",
+      "selected": [
+        "导出客户名单"
+      ],
+      "customerProcedureInjected": true
+    }
+  ]
+}

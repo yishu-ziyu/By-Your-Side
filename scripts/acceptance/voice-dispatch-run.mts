@@ -18,7 +18,10 @@ if(suite==='extensions'){
  for(let repeat=1;repeat<=3;repeat++){console.log(`extensions repetition ${repeat}/3`);for(const file of ['voice-control-run.mts','voice-context-run.mts','voice-target-run.mts'])await child(['--import','tsx',`scripts/acceptance/${file}`]);}
  process.exit(0);
 }
-if(suite==='faults')await child(['node_modules/vitest/vitest.mjs','run','agent/test/voice-session.test.ts','agent/test/voice-intent.test.ts','agent/test/task-dispatcher.test.ts','agent/test/task-control.test.ts','extension/test/voice-audio.test.ts','extension/test/voice-relay.test.ts','extension/test/session-management.test.ts']);
+if(suite==='faults'){
+ await child(['node_modules/vitest/vitest.mjs','run','agent/test/voice-session.test.ts','agent/test/voice-intent.test.ts','agent/test/task-dispatcher.test.ts','agent/test/task-control.test.ts','extension/test/voice-audio.test.ts','extension/test/voice-relay.test.ts','extension/test/session-management.test.ts']);
+ await child(['node_modules/vitest/vitest.mjs','run','agent/test/performance','--maxWorkers=1']);
+}
 const out=`/tmp/ego-voice-dispatch-${Date.now()}`;await mkdir(out,{recursive:true});
 const report:any={evidence:voiceEvidence(),suite,ok:false,source:'production modules + real Step/Pi/Chrome; synthetic audio',checks:[],events:[],voiceEvents:[],diagnostics:[]};
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));

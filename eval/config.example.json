@@ -1,0 +1,6 @@
+{
+  "profile": "reference-macos",
+  "candidate": null,
+  "budgetFile": null,
+  "notes": "Copy to a local path outside the repo if it contains secrets. Doctor and eval commands never print keys."
+}

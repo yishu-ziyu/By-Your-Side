@@ -1,0 +1,288 @@
+{
+  "report": {
+    "candidate_sha": "intentional-fail",
+    "baseline_sha": "176e23fd103497e522c5fc0428af2c559733e6c8",
+    "dirty_tree_flag": true,
+    "lockfile_sha256": "b899ed3094cbe36ba090fa14d640ccaac03a274ea3d80e3149a4da1f92c75935",
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "evaluation_revision": "61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748",
+    "dataset_manifest_sha256": "8e1f7be1a000c83c004af85b25d2cedf4c3d725faa702eff6c5884982084589c",
+    "profile": "fixture",
+    "run_id": "fixture-fail-s01",
+    "started_at": "2026-09-11T08:03:02.014716+00:00",
+    "gates_sha256": "61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748",
+    "observations": [
+      {
+        "id": "S01",
+        "value": 1,
+        "samples": 1000,
+        "measurement_mode": "tool_integration"
+      },
+      {
+        "id": "S02",
+        "value": 0,
+        "samples": 1000,
+        "measurement_mode": "tool_integration"
+      },
+      {
+        "id": "S03",
+        "value": 0,
+        "samples": 1000,
+        "measurement_mode": "tool_integration"
+      },
+      {
+        "id": "S04",
+        "value": 0,
+        "samples": 10000,
+        "measurement_mode": "offline"
+      },
+      {
+        "id": "S05",
+        "value": 0,
+        "samples": 100,
+        "measurement_mode": "integration"
+      },
+      {
+        "id": "P01",
+        "value": 0,
+        "samples": 20,
+        "measurement_mode": "integration"
+      },
+      {
+        "id": "F01",
+        "value": 524288,
+        "samples": 40,
+        "measurement_mode": "tool_integration"
+      },
+      {
+        "id": "F02",
+        "value": 921600,
+        "samples": 100,
+        "measurement_mode": "native_e2e"
+      },
+      {
+        "id": "D01",
+        "value": 1,
+        "samples": 500,
+        "measurement_mode": "integration"
+      },
+      {
+        "id": "D02",
+        "value": 0,
+        "samples": 150,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "R01",
+        "value": 0.95,
+        "samples": 150,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "R02",
+        "value": 0.9,
+        "samples": 50,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "R03",
+        "value": 0.9,
+        "samples": 50,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "R04",
+        "value": 0.9,
+        "samples": 50,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "R05",
+        "value": -3,
+        "samples": 150,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "L01",
+        "value": 3000,
+        "samples": 100,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "L02",
+        "value": 6000,
+        "samples": 100,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "L03",
+        "value": 6000,
+        "samples": 100,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "L04",
+        "value": 10000,
+        "samples": 100,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "L05",
+        "value": 0.95,
+        "samples": 100,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "V01",
+        "value": 1200,
+        "samples": 30,
+        "measurement_mode": "live_audio_e2e"
+      },
+      {
+        "id": "V02",
+        "value": 2000,
+        "samples": 30,
+        "measurement_mode": "live_audio_e2e"
+      },
+      {
+        "id": "V03",
+        "value": 3500,
+        "samples": 50,
+        "measurement_mode": "live_audio_e2e"
+      },
+      {
+        "id": "V04",
+        "value": 250,
+        "samples": 100,
+        "measurement_mode": "audio_replay_e2e"
+      },
+      {
+        "id": "V05",
+        "value": 250,
+        "samples": 30,
+        "measurement_mode": "human_acoustic"
+      },
+      {
+        "id": "V06",
+        "value": 0.95,
+        "samples": 200,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "V07",
+        "value": 0.98,
+        "samples": 200,
+        "measurement_mode": "live_audio_e2e"
+      },
+      {
+        "id": "V08",
+        "value": 0.05,
+        "samples": 100,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "V09",
+        "value": 0,
+        "samples": 100,
+        "measurement_mode": "integration"
+      },
+      {
+        "id": "V10",
+        "value": 0.95,
+        "samples": 100,
+        "measurement_mode": "live_audio_e2e"
+      },
+      {
+        "id": "C01",
+        "value": 100,
+        "samples": 100,
+        "measurement_mode": "native_e2e"
+      },
+      {
+        "id": "C02",
+        "value": 0,
+        "samples": 100,
+        "measurement_mode": "native_e2e"
+      },
+      {
+        "id": "U01",
+        "value": 100,
+        "samples": 100,
+        "measurement_mode": "rendered_ui"
+      },
+      {
+        "id": "U02",
+        "value": 300,
+        "samples": 100,
+        "measurement_mode": "native_e2e"
+      },
+      {
+        "id": "U03",
+        "value": 0,
+        "samples": 12,
+        "measurement_mode": "rendered_ui"
+      },
+      {
+        "id": "B01",
+        "value": 20,
+        "samples": 1000,
+        "measurement_mode": "reference_host"
+      },
+      {
+        "id": "B02",
+        "value": 50,
+        "samples": 1,
+        "measurement_mode": "reference_host"
+      },
+      {
+        "id": "K01",
+        "value": 1,
+        "samples": 150,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "K02",
+        "value": 1.1,
+        "samples": 150,
+        "measurement_mode": "live_model_e2e"
+      },
+      {
+        "id": "H01",
+        "value": 0.8,
+        "samples": 5,
+        "measurement_mode": "human_usability"
+      },
+      {
+        "id": "H02",
+        "value": 20,
+        "samples": 20,
+        "measurement_mode": "human_dogfood"
+      }
+    ],
+    "absolute_checks": {
+      "typecheck_pass": "PASS",
+      "all_applicable_unit_tests_pass_no_critical_skips": "PASS",
+      "production_build_pass": "PASS",
+      "fetch_incremental_read_cancel_deadline_and_utf8_tests_pass": "PASS",
+      "effect_policy_covers_fetch_pages_raw_js_and_nested_program_actions": "PASS",
+      "consent_ticket_scope_expiry_and_one_time_consumption_pass": "PASS",
+      "diagnostic_capture_requires_separate_explicit_consent": "PASS",
+      "no_duplicate_production_implementations_or_unrestricted_test_hooks": "PASS",
+      "keyboard_core_flows_and_reduced_motion_pass": "PASS",
+      "migration_backup_recovery_and_no_loss_pass": "PASS",
+      "native_full_user_entry_path_pass": "PASS",
+      "test_and_release_artifacts_have_identical_sha256": "PASS",
+      "evaluation_policy_and_oracle_are_independently_protected": {
+        "verdict": "BLOCKED",
+        "reason": "unprotected"
+      },
+      "human_review_signed_with_no_unresolved_release_blocker": {
+        "verdict": "BLOCKED",
+        "reason": "unsigned"
+      }
+    },
+    "human_review": {
+      "signed": false
+    }
+  }
+}

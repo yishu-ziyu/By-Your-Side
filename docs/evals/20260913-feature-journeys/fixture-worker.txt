@@ -1,0 +1,23 @@
+Done. Both files exist as new files under `scripts/fixtures/`; I touched nothing else (the other modified/untracked entries in `git status` are your concurrent changes, left alone).
+
+**What the fixture gives the native-control drill**
+
+- [feature-journeys.html](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys.html) — a loud "模拟测试页面 · 非真实产品界面 / SIMULATED FIXTURE" banner, an accessible form (姓名 / 城市 / 备注 / 优先级), a save action that writes only to in-page memory and renders a result card plus a numbered operation log, a four-step flow whose 下一步 button stays hidden for 10 seconds (with a visible countdown and a 接管修正 input/button for mid-run intervention), and A/B scenario links with independent in-memory state.
+- [feature-journeys-server.mjs](/Users/mahaoxuan/Desktop/ego/scripts/fixtures/feature-journeys-server.mjs) — dependency-free `node:http` server bound to `127.0.0.1:48765`, serving only `/` and `/feature-journeys.html`; `/favicon.ico` → 204, unknown paths → 404, non-GET/HEAD → 405. It never opens a browser. Copyable start command: `node scripts/fixtures/feature-journeys-server.mjs` (Ctrl+C stops; `FIXTURE_PORT` env overrides the port).
+
+**Scenarios — real UI operations and expectations**
+
+1. Memory-only save: open `http://127.0.0.1:48765/`, type 姓名=林然, 城市=杭州, 备注, set 优先级=高, click 保存到本页内存 → result card shows those values with 保存次数, 操作次数 becomes 1, log gains `#1 保存表单…`. Repeat → 保存次数 and #2 increment. Refresh → everything clears (memory-only, no storage/cookies).
+2. Sequential steps + 10s wait/takeover: click 开始步骤 → progress shows 步骤 1/4, countdown text counts down, and the 下一步 button is *not* present. While waiting, type into 接管修正 and click 记录接管修正 → log entry appended. After ~10s the 下一步（2/4）button appears; click through step 3 (which triggers the save) to step 4 → 进度 shows 已完成全部步骤 and the start button becomes 重新开始步骤.
+3. A/B independent state: open `?scenario=a` and `?scenario=b` in separate tabs (or use the two links in one tab) and enter different data in each — result, op count, and step progress stay per-scenario. Link switching uses `history.replaceState`, so it does not reload or clear the other scenario.
+4. Guarded paths: `GET /nope` → 404, `POST /` → 405, `GET /favicon.ico` → 204.
+
+**Evidence**
+
+- PASS — `node --check scripts/fixtures/feature-journeys-server.mjs`; extracted inline script compiles.
+- PASS — all 20 `getElementById` lookups resolve to real ids; all 5 `label for=` pairs have matching controls.
+- PASS — no external `src`/`href`, zero `img`/`link`/`iframe`/`object` tags, no `fetch`/`XHR`/`sendBeacon`/`WebSocket`/`localStorage`/`sessionStorage`/cookie use; CSP meta restricts to inline script+style only.
+- PASS (in-process handler calls) — `/` 200 `text/html` 13160 B, `HEAD /` 200 0 B, `/?scenario=b` 200, `/feature-journeys.html` 200, `/nope` 404, `/favicon.ico` 204, `POST /` 405.
+- BLOCKED/unverified — the actual TCP bind and any real browser rendering: this sandbox rejects `listen` with `EPERM` even on an ephemeral port, so `curl` against `127.0.0.1:48765` was not run here. Run the start command on the real machine to confirm binding before the drill.
+
+These are fixture checks only — they say nothing about By Your Side product acceptance; the real judgment comes from the native-control run itself.

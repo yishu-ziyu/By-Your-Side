@@ -21,10 +21,10 @@ describe('Evaluator: native screenshot frames do not kill a healthy transport',(
   expect(input.destroyed).toBe(false);expect(close).not.toHaveBeenCalled();expect(message.mock.calls.map(c=>c[0])).toEqual([payload,'{"next":true}']);
   input.destroy();output.destroy();
  });
- it('retains the 64MiB inbound header ceiling and the 1MiB outbound UTF8 ceiling',()=>{
+ it('retains the 64MiB inbound header ceiling and the 900KiB outbound UTF8 ceiling',()=>{
   const valid=Buffer.alloc(4);valid.writeUInt32LE(64*1024*1024);expect(new FrameDecoder().push(valid)).toEqual([]);
   const invalid=Buffer.alloc(4);invalid.writeUInt32LE(64*1024*1024+1);expect(()=>new FrameDecoder().push(invalid)).toThrow();
-  expect(encodeFrame('x'.repeat(1024*1024))).toHaveLength(1024*1024+4);
-  expect(()=>encodeFrame('x'.repeat(1024*1024+1))).toThrow();expect(()=>encodeFrame('字'.repeat(350000))).toThrow();
+  expect(encodeFrame('x'.repeat(900*1024))).toHaveLength(900*1024+4);
+  expect(()=>encodeFrame('x'.repeat(900*1024+1))).toThrow();expect(()=>encodeFrame('字'.repeat(350000))).toThrow();
  });
 });

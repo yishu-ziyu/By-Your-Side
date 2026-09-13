@@ -1,0 +1,282 @@
+Window: "Example Domains", App: Google Chrome.
+0 标准窗口 Example Domains - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - Google Chrome, URL: iana.org/help/example-domains, Secondary Actions: Raise
+	1 container Example Domains - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - Google Chrome, URL: iana.org/help/example-domains
+		2 container
+			3 工具栏
+				4 按钮 (disabled) 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: iana.org/help/example-domains, Placeholder: 问问 Google 或输入网址
+					10 按钮 为此标签页添加书签
+				11 container
+					12 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					13 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					14 弹出式按钮 Video Download Helper
+可以访问此网站
+					15 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					16 弹出式按钮 Stylus
+可以访问此网站
+					17 弹出式按钮 Save to my mind
+想要访问此网站
+					18 弹出式按钮 By Your Side
+可以访问此网站
+					19 弹出式按钮 扩展程序
+					20 按钮 关闭侧边栏
+				21 按钮 AP
+				22 弹出式按钮 Chrome
+			23 工具栏 书签
+				24 工具栏 已保存的标签页分组
+					25 “已保存的标签页分组”按钮 “这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”分组 - 已打开
+					26 “已保存的标签页分组”按钮 “只在新标签页打开 https://example.com，确认打开后用一”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “闻见 GitHub 登录”分组 - 已打开
+					28 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					30 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					31 按钮 标签页分组
+				32 分离器 分隔符
+				33 书签按钮 Gmail
+				34 书签按钮 YouTube
+				35 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				36 书签按钮 notion
+				37 书签按钮 Untitled notebook - NotebookLM
+				38 书签文件夹按钮 AI
+				39 书签按钮 ChatGPT
+				40 弹出式按钮 包含隐藏书签的菜单
+				41 书签文件夹按钮 所有书签
+				42 分离器 分隔符
+			43 container
+				44 HTML 内容 Example Domains, URL: iana.org/help/example-domains
+					45 container
+						46 container
+							47 link Description: Homepage, Value: iana.org/
+							48 内容列表
+								49 link Description: Domains, Value: iana.org/domains
+								50 link Description: Protocols, Value: iana.org/protocols
+								51 link Description: Numbers, Value: iana.org/numbers
+								52 link Description: About, Value: iana.org/about
+						53 container
+							54 内容列表
+								55 link Description: ← Instructions and Guides, Value: iana.org/help
+							56 标题 Example Domains, Value: 1
+								57 文本 Example Domains
+							58 container
+								59 文本 As described in 
+								60 link Description: RFC 2606, Value: iana.org/go/rfc2606
+								61 文本  and 
+								62 link Description: RFC 6761, Value: iana.org/go/rfc6761
+								63 文本 , a number of domains such as example.com and example.org are maintained for documentation purposes. These domains may be used as illustrative examples in documents without prior coordination with us. They are not available for registration or transfer.
+							64 文本 We provide a web service on the example domain hosts to provide basic information on the purpose of the domain. These web services are provided as best effort, but are not designed to support production applications. While incidental traffic for incorrectly configured applications is expected, please do not design applications that require the example domains to have operating HTTP service.
+							65 标题 Further Reading, Value: 2
+								66 文本 Further Reading
+							67 内容列表
+								68 container
+									69 AXListMarker ■ 
+									70 link Description: IANA-managed Reserved Domains, Value: iana.org/domains/reserved
+							71 container
+								72 文本 Last revised 
+								73 文本 9 years ago
+								74 文本 .
+						75 container
+							76 container
+								77 container Domain Names
+									78 link Description: Domain Names, Value: iana.org/domains
+								79 container Root Zone Registry .INT Registry .ARPA Registry IDN Repository
+									80 内容列表
+										81 link Description: Root Zone Registry, Value: iana.org/domains/root
+										82 link Description: .INT Registry, Value: iana.org/domains/int
+										83 link Description: .ARPA Registry, Value: iana.org/domains/arpa
+										84 link Description: IDN Repository, Value: iana.org/domains/idn-tables
+							85 container
+								86 container Number Resources
+									87 link Description: Number Resources, Value: iana.org/numbers
+								88 container Number Registries RIR Allocation Data Abuse Information
+									89 内容列表
+										90 link Description: Number Registries, Value: iana.org/numbers/registries
+										91 link Description: RIR Allocation Data, Value: iana.org/numbers/allocations/
+										92 link Description: Abuse Information, Value: iana.org/help/abuse
+							93 container
+								94 container Protocols
+									95 link Description: Protocols, Value: iana.org/protocols
+								96 container Protocol Registries Time Zone Database
+									97 内容列表
+										98 link Description: Protocol Registries, Value: iana.org/protocols
+										99 link Description: Time Zone Database, Value: iana.org/time-zones
+							100 container
+								101 container About Us
+									102 link Description: About Us, Value: iana.org/about
+								103 container News Performance The Organization Archive Contact Us
+									104 内容列表
+										105 link Description: News, Value: iana.org/news
+										106 link Description: Performance, Value: iana.org/performance
+										107 link Description: The Organization, Value: iana.org/about/organization
+										108 link Description: Archive, Value: iana.org/archive
+										109 link Description: Contact Us, Value: iana.org/contact
+							110 container
+								111 文本 The IANA functions coordinate the Internet’s globally unique identifiers, and are provided by 
+								112 link Description: Public Technical Identifiers, Value: pti.icann.org/
+								113 文本 , an affiliate of 
+								114 link Description: ICANN, Value: icann.org/
+								115 文本 .
+							116 内容列表
+								117 link Description: Privacy Policy, Value: icann.org/privacy/policy
+								118 link Description: Terms of Service, Value: icann.org/privacy/tos
+					119 container
+						120 按钮 logo icon
+							121 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							122 图像
+						123 container
+							124 按钮
+			125 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				126 container
+					127 文本 By Your Side
+					128 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						129 图像
+					130 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						131 图像
+					132 container 当前连接与执行状态
+						133 文本 已连接
+					134 弹出式按钮 这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。
+					135 弹出式按钮 知识
+					136 按钮 ＋ 新会话
+					137 container 当前会话与控制
+						138 container
+							139 text 麦克风：已关 声音：未说
+						140 文本 回答已给出
+					141 文本 这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。
+					142 开合三角标记 任务已接收
+						143 文本 任务已接收
+					144 开合三角标记 查看执行过程 … → 读取完整内容 → 思考 → send_user_message 耗时 5.7s
+						145 文本 查看执行过程
+						146 文本 … → 读取完整内容 → 思考 → send_user_message
+						147 文本 耗时 5.7s
+						148 图像
+					149 文本 岗位：AI Builder（产品方向）；城市：深圳（招聘方：自然选择，25-40K·14薪）。我没有操作页面，只是读取了当前标签页的内容。
+					150 文本 只在新标签页打开 https://example.com。打开后请只用这一句回复：https://example.com，页面显示 Example Domain。
+					151 开合三角标记 任务已接收
+						152 文本 任务已接收
+					153 开合三角标记 查看执行过程 … → 打开标签页 → 读取完整内容 → send_user_message 耗时 12s
+						154 文本 查看执行过程
+						155 文本 … → 打开标签页 → 读取完整内容 → send_user_message
+						156 文本 耗时 12s
+						157 图像
+					158 container
+						159 link Description: https://example.com, Value: example.com/
+						160 文本 ，页面显示 Example Domain。
+					161 文本 再在新标签页打开 https://www.iana.org/help/example-domains，对照它和当前 Example Domain 页面，用3条说明两者关系、这些域名能否注册、能否依赖其HTTP服务用于生产。每条附对应来源；没有写的不要推断。
+					162 container
+						163 开合三角标记 任务已接收
+							164 文本 任务已接收
+						165 文本 这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。 · 已接收新任务：再在新标签页打开 https://www.iana.org/help/example-domains，对照它和当前 Example Domain 页面，用3条说明两者关系、这些域名能否注册、能否依赖其HTTP服务用于生产。每条附对应来源；没有写的不要推断。
+					166 开合三角标记 查看执行过程 … → 读取完整内容 → 思考 → send_user_message 耗时 11s
+						167 文本 查看执行过程
+						168 文本 … → 读取完整内容 → 思考 → send_user_message
+						169 文本 耗时 11s
+						170 图像
+					171 container
+						172 文本 已在新标签页打开 
+						173 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+						174 文本 （tab 29960110），对照它和当前 example.com 页面（页面正文只有三句：Example Domain / This domain is for use in documentation examples without needing permission. Avoid use in operations. / Learn more），三点如下：
+					175 内容列表
+						176 container
+							177 AXListMarker 1. 
+							178 text 两者关系：example.com 正是 IANA 为文档用途保留的示例域名之一。IANA 页写明「As described in RFC 2606 and RFC 6761, a number of domains such as example.com and example.org are maintained for documentation purposes. These domains may be used as illustrative examples in documents without prior coordination with us.」 来源：
+							179 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+							180 文本 （首段）。example.com 页面自身只说该域名用于文档示例、无需许可。
+						181 container
+							182 AXListMarker 2. 
+							183 text 能否注册：不能。IANA 页同一段直接写「They are not available for registration or transfer.」 来源：
+							184 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+							185 文本 （首段）。example.com 页面上没有关于注册的说明。
+						186 container
+							187 AXListMarker 3. 
+							188 text 能否依赖其 HTTP 服务用于生产：不能依赖。IANA 页写「We provide a web service on the example domain hosts to provide basic information on the purpose of the domain. These web services are provided as best effort, but are not designed to support production applications.」并明确「please do not design applications that require the example domains to have operating HTTP service.」 来源：
+							189 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+							190 文本 （第二段）。
+					191 文本 以上仅为两页已有文字；页面没写的（如实际可用性指标、谁在运维）我没有推断。
+					192 container
+						193 container 当前活动标签页（点击展开检查面板）
+							194 文本 www.iana.org · Example Domai…
+						195 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						196 开合三角标记 语音记录
+							197 文本 语音记录
+						198 文本输入区 (settable) 给 By Your Side 发消息，Enter 发送，Shift+Enter 换行
+						199 弹出式按钮 +, Help: 添加附件或截屏
+						200 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							201 文本 O
+							202 文本 DeepSeek V4.1 Flash (Go)
+							203 图像
+						204 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						205 按钮 发送
+							206 图像
+							207 图像
+					208 按钮 回到底部
+						209 图像
+			210 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			211 container
+				212 文本 By Your Side
+				213 复选框 Description: 取消固定到工具栏, Value: 1
+				214 按钮 关闭侧边栏
+			215 标签组
+				216 container
+					217 按钮 收起标签页
+					218 弹出式按钮 标签页分组
+					219 弹出式按钮 标签页搜索
+				220 container
+					221 滚动区
+					222 滚动区
+						223 container
+							224 标签 (settable, boolean) Value: off, Description: 女娲Nuwax AIOS | 全球首个开源AI智能体操作系统 | 女娲智能体OS | 产品级开源Agent操作系统 — AgentFlow·AgentGroup·VibeCoding | Skills技能·沙箱安全·MCP接入·LangGraph·多智能体·工作流 - 闲置标签页 - 已释放 162 MB
+							225 标签 (settable, boolean) Description: Particle Scroll | Canvas UI - 内存用量高 - 886 MB, Value: off
+							226 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 143 MB, Value: off
+							227 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 151 MB, Value: off
+							228 标签组 分组“你好”- 1 个标签页•  Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 已展开
+							229 标签 (settable, boolean) Description: Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 属于“你好”群组 - 闲置标签页 - 已释放 525 MB, Value: off
+							230 标签组 分组“帮我打开youtube.”- 1 个标签页•  This UX Designer Shipped 3 Side Projects to 12… - 已展开
+							231 标签 (settable, boolean) Value: off, Description: This UX Designer Shipped 3 Side Projects to 12K+ Users ✦ Megan Yap - YouTube - 属于“帮我打开youtube.”群组 - 内存用量 - 609 MB
+							232 标签 (settable, boolean) Description: 开源项目查询 - 内存用量 - 696 MB, Value: off
+							233 标签 (settable, boolean) Description: VibeHub｜Vibe Coding 术语图鉴 · 用大白话找准前端、后端、AI 术语 - 闲置标签页 - 已释放 144 MB, Value: off
+							234 标签 (settable, boolean) Description: flomo - 闲置标签页 - 已释放 192 MB, Value: off
+							235 标签 (settable, boolean) Description: 打造信息可视化技能 - 内存用量高 - 1.3 GB, Value: off
+							236 标签 (settable, boolean) Description: Why We Like Things—Asterisk - 闲置标签页 - 已释放 99.1 MB, Value: off
+							237 标签 (settable, boolean) Description: How I manage my agents - 内存用量 - 505 MB, Value: off
+							238 标签 (settable, boolean) Description: Beautiful UI — Crafted primitives for AI-native interfaces - 内存用量 - 428 MB, Value: off
+							239 标签 (settable, boolean) Description: 游戏机制介绍 - 内存用量 - 712 MB, Value: off
+							240 标签组 分组“闻见 GitHub 登录”- 1 个标签页•  OAuth application settings - 已展开
+							241 标签 (settable, boolean) Description: OAuth application settings - 属于“闻见 GitHub 登录”群组 - 内存用量 - 440 MB, Value: off
+							242 标签 (settable, boolean) Description: AI Assistants Blocks for React — Live Previews & Source, Value: off
+							243 标签 (settable, boolean) Description: yishu-ziyu/newsnow-yi - 闲置标签页 - 已释放 168 MB, Value: off
+							244 标签 (settable, boolean) Description: Perfect Praise for Greatness - Grok - 闲置标签页 - 已释放 800 MB, Value: off
+							245 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.8 GB, Value: off
+							246 标签组 分组“只在新标签页打开 https://example.com，确认打开后用一”- 2 个标签页•  Example Domain•  Example Domains - 已展开
+							247 标签 (settable, boolean) Description: Example Domain - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - 内存用量 - 251 MB, Value: off
+							248 标签 (settable, boolean) Description: Example Domains - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - 内存用量 - 188 MB, Value: off
+							249 标签 (settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 69.6 MB, Value: off
+							250 标签组 分组“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”- 3 个标签页•  Example Domain•  Example Domain•  Example Domains - 已展开
+							251 标签 (settable, boolean) Description: Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 252 MB, Value: off
+							252 标签 (settable, boolean) Description: Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 287 MB, Value: off
+							253 标签 (selected, settable, boolean) Description: Example Domains - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 259 MB, Value: on
+								254 按钮 关闭
+						255 滚动条
+				256 按钮 打开新的标签页
+				257 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	258 关闭按钮
+	259 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	260 最小化按钮
+261 menu bar
+	262 Chrome
+	263 文件
+	264 编辑
+	265 显示
+	266 历史记录
+	267 书签
+	268 个人资料
+	269 标签页
+	270 窗口
+	271 帮助
+
+The focused UI element is 163 开合三角标记 任务已接收

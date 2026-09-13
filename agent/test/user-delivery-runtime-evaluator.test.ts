@@ -14,6 +14,20 @@ const raw='竹海工作坊的活动邀请，只看过标题，没有读正文。
 async function start(h:ReturnType<typeof fixture>){await h.manager.ensureDefault();await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'只读邮件标题'});}
 function finish(h:ReturnType<typeof fixture>){h.event({kind:'text_delta',delta:raw});h.event({kind:'agent_end'});}
 it('an acknowledgement alone still requires one result delivery',async()=>{const h=fixture();try{await start(h);const runId=h.manager.getTaskProgress('default')!.runId!;h.event({kind:'user_delivery',delivery:{conversationId:'default',id:'ack-only',runId,kind:'ack',text:'收到，我先看标题。',composedAt:100,status:'composed'}});finish(h);expect(h.compose).toHaveBeenCalledTimes(1);h.resolve('竹海工作坊发来了活动邀请，目前仅读标题。');await vi.waitFor(()=>expect(h.messages.some(m=>m.event?.kind==='user_delivery'&&m.event.delivery.kind==='finding')).toBe(true));h.event({kind:'agent_end'});expect(h.compose).toHaveBeenCalledTimes(1);}finally{h.manager.dispose();}});
+it('makes up a finding when tools finished but the model never wrote a result',async()=>{
+  const h=fixture();
+  try{
+    await start(h);
+    h.event({kind:'tool_start',toolCallId:'t1',name:'click',params:{target:'#pause'}});
+    h.event({kind:'tool_end',toolCallId:'t1',name:'click',isError:false,resultText:'clicked',executionFact:'executed'});
+    h.event({kind:'agent_end'});
+    expect(h.compose).toHaveBeenCalledTimes(1);
+    const makeup = h.compose.mock.calls.at(0)?.at(0) as { facts?: unknown } | undefined;
+    expect(String(makeup?.facts ?? "").length).toBeGreaterThan(0);
+    h.resolve('视频已暂停。');
+    await vi.waitFor(()=>expect(h.messages.some(m=>m.event?.kind==='user_delivery'&&m.event.delivery.kind==='finding')).toBe(true));
+  }finally{h.manager.dispose();}
+});
 it('a failed run cannot receive a late successful makeup answer',async()=>{const h=fixture();try{await start(h);finish(h);expect(h.compose).toHaveBeenCalledTimes(1);h.event({kind:'error',message:'任务读取失败'});h.resolve('找到活动邀请。');await new Promise(r=>setTimeout(r,10));expect(h.messages.filter(m=>m.event?.kind==='user_delivery'&&m.event.delivery.kind==='finding')).toHaveLength(0);expect(h.manager.getTaskProgress('default')!.state).toBe('error');}finally{h.manager.dispose();}});
 it('a prior follow-up delivery cannot be retagged onto a later text run',async()=>{const h=fixture();try{await start(h);const old=h.manager.getTaskProgress('default')!.runId!;h.event({kind:'user_delivery',delivery:{conversationId:'default',id:'old-finding',runId:old,kind:'finding',text:raw,composedAt:100,status:'composed'}});finish(h);const result:any=await h.manager.routeVoiceInput('default','活动那个呢？',null,()=>true,{requestId:'query-one',voiceId:'voice-one',turn:1,runId:old});expect(result.awaitDelivery).toBe(true);const followupRun=h.manager.getTaskProgress('default')!.runId!;h.event({kind:'user_delivery',delivery:{conversationId:'default',id:'followup-one',runId:followupRun,kind:'finding',text:raw,composedAt:101,status:'composed'}});finish(h);await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'新的地图任务'});const current=h.manager.getTaskProgress('default')!.runId!;expect(current).not.toBe(followupRun);h.event({kind:'user_delivery',delivery:{conversationId:'default',id:'late-followup',runId:followupRun,kind:'reply',text:raw,composedAt:102,status:'composed'}});expect(h.manager.getTaskProgress('default')!.conversationContext?.latestDelivery??null).toBeNull();}finally{h.manager.dispose();}});
 

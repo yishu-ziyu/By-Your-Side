@@ -25,8 +25,10 @@ import { displayNameFor } from "../../shared/cast.js";
 import { Mailbox, DEFAULT_AWAIT_MS } from "./mailbox.js";
 import { workerSystemPrompt } from "./prompt.js";
 import type { ToolRpc } from "./rpc.js";
+import type { FetchConsentBroker } from "./fetch-consent.js";
 import { BrowserAgentSession } from "./session.js";
 import { createBrowserTools } from "./tools.js";
+import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import { registerAcceptanceModel } from "./acceptance-model.js";
 
 export const MAX_WORKERS = 2;
@@ -59,13 +61,23 @@ export interface FleetSink {
   setStatus(state: AgentRunState, sessionId?: string): void;
 }
 
-/** Worker 工具的执行约束：与 Lead 共用同一会话进度，但只拦未决写入，不代替 Lead 登记结果。 */
-export function workerExecution(getSession: () => BrowserAgentSession | undefined) {
+/**
+ * Worker 工具的执行约束：与 Lead 共用同一会话进度，但只拦未决写入，不代替 Lead 登记结果。
+ * 需要用户确认的请求走同一会话的授权等待区（同一个侧栏入口），不是每个工人一套。
+ */
+export function workerExecution(
+  getSession: () => BrowserAgentSession | undefined,
+  getConsent?: () => Pick<FetchConsentBroker, "request"> | undefined,
+) {
   return {
     epoch: () => getSession()?.executionEpoch() ?? 0,
     canWrite: () => getSession()?.canWriteCurrentInput() ?? false,
     assertCall: (name: string, params: Record<string, unknown>) => getSession()?.assertWorkerWriteAllowed(name, params),
     onStep: (step: import('./browser-program.js').ProgramStep) => getSession()?.observeProgramStep(step),
+    consumeConsent: (name: string, params: Record<string, unknown>, opts?: { signal?: AbortSignal }) => {
+      const broker = getConsent?.();
+      return broker ? broker.request(params, opts) : { allowed: false, reason: CONSENT_REQUIRED_ERROR };
+    },
   };
 }
 
@@ -84,8 +96,14 @@ export class Fleet {
   private readonly team = new TeamControl();
   private readonly lastContinue = new Map<string, { tabId: number; url: string; snapshot: string }>();
   private conversationSnapshot: (() => import("../../shared/voice.js").TaskProgressSnapshot | null) | null = null;
+  private consentBroker: FetchConsentBroker | null = null;
   /** 成员数变化时通知宿主重新挂载协作工具；不是用户可见事件。 */
   onMembersChange?: (count: number) => void;
+
+  /** 工人和 Lead 共用同一会话的授权等待区；未接线时工人侧的确认请求会被明确拒绝。 */
+  bindConsentBroker(broker: FetchConsentBroker): void {
+    this.consentBroker = broker;
+  }
 
   constructor(opts: { rpc: ToolRpc; sink: FleetSink; modelPattern?: string }) {
     this.rpc = opts.rpc;
@@ -388,7 +406,7 @@ export class Fleet {
         appendPrompt: () => [],
         memberId: id,
         customTools: [
-          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession)),
+          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined)),
           ...createFleetTools(this, id),
         ],
       },
@@ -404,6 +422,13 @@ export class Fleet {
   }
 
   stop(id: string): boolean {
+    const retired = this.retireWorker(id);
+    if (retired) this.releaseWorker(id);
+    return retired;
+  }
+
+  /** 只做本地退休：中止、销毁、摘除、状态回 idle。页面归属与 release 交给调用方决定。 */
+  private retireWorker(id: string): boolean {
     const session = this.workers.get(id);
     if (!session) return false;
     session.abort();
@@ -411,8 +436,29 @@ export class Fleet {
     this.workers.delete(id);
     this.announceMembers();
     this.sink.setStatus("idle", id);
-    this.releaseWorker(id);
     return true;
+  }
+
+  /**
+   * 其他会话要接手本会话正在用的页面：只停旧成员并等它们真的停下，页面归属留给接手方的 claim。
+   * 不发本会话旧 run 的 release——旧 run 已被扩展身份闸门拒收，错误会盖掉新会话的接手，
+   * 还会把页面错误地交回本会话父 Agent。已不存在的成员直接跳过，不能因此挡住新会话。
+   * 返回真正停下的成员，便于调用方/测试核对范围。
+   */
+  async stopMembersForForeignTakeover(members: readonly string[]): Promise<string[]> {
+    const stopped: string[] = [];
+    for (const member of members) {
+      if (member === LEAD_SESSION_ID) {
+        if (!this.lead) continue;
+        await this.lead.yieldTab();
+      } else {
+        const worker = this.workers.get(member);
+        if (!worker || !this.retireWorker(member)) continue;
+        await worker.waitForStop();
+      }
+      stopped.push(member);
+    }
+    return stopped;
   }
 
   private releaseWorker(id: string): Promise<unknown> {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConversationManager } from "../src/conversation-manager.js";
+import { Fleet } from "../src/fleet.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 
 function harness() {
@@ -79,28 +80,45 @@ describe("independent conversation runtimes", () => {
   });
 });
 
-it('主 Agent 跨会话接手只停止页面成员，保留其他 worker；用户接管优先', async () => {
+it('主 Agent 跨会话接手只停本会话成员，不发旧 run release；用户接管优先', async () => {
   const coordinators = new Map<string, (owner: string, members: string[]) => Promise<void>>();
-  const sessions = new Map<string, any>();
+  const sessions = new Map<string, { session: any; fleet: Fleet; rpc: { call: any } }>();
   let held = false;
   const factory = async (id: string) => {
-    const session = { modelName: () => 'test', yieldTab: vi.fn(async () => {}), isHeld: () => held };
-    const fleet = { setTabCoordinator: (fn: any) => coordinators.set(id, fn), get: () => ({isHeld:()=>held}), stopAndRelease: vi.fn(async () => true) };
-    const runtime = { session, fleet }; sessions.set(id,runtime); return runtime;
+    const rpc = { call: vi.fn(async () => ({})), pendingSessionIds: () => [] };
+    const fleet = new Fleet({ rpc: rpc as never, sink: { emit: vi.fn(), setStatus: vi.fn() } });
+    const session = { modelName: () => 'test', executionEpoch: () => 0, isHeld: () => held, yieldTab: vi.fn(async () => {}) };
+    fleet.attachLead(session as never);
+    const original = fleet.setTabCoordinator.bind(fleet);
+    fleet.setTabCoordinator = (fn: (owner: string, members: string[]) => Promise<void>) => { coordinators.set(id, fn); original(fn); };
+    const runtime = { session, fleet, rpc: { rejectAll: vi.fn() } };
+    sessions.set(id, { session, fleet, rpc });
+    return runtime;
   };
   const manager = new ConversationManager(factory as never, () => {});
   await manager.ensureDefault();
   await manager.handleMessage({type:'conversation_create',requestId:'global-control'});
   const b = manager.list().find(c=>c.id!=='default')!.id;
   const take = coordinators.get(b)!;
-  await take('default',['writer']);
-  expect(sessions.get('default').fleet.stopAndRelease.mock.calls).toEqual([['writer']]);
-  expect(sessions.get('default').session.yieldTab).not.toHaveBeenCalled();
+  const source = sessions.get('default')!;
+  const writer = { isHeld: () => false, abort: vi.fn(), waitForStop: vi.fn(async () => {}), dispose: vi.fn() };
+  const unrelated = { isHeld: () => false, abort: vi.fn(), waitForStop: vi.fn(async () => {}), dispose: vi.fn() };
+  (source.fleet as unknown as { workers: Map<string, unknown> }).workers.set('writer', writer);
+  (source.fleet as unknown as { workers: Map<string, unknown> }).workers.set('unrelated', unrelated);
+
+  // ghost 是旧页面上早已停止的历史成员：不能因为找不到它就挡住新会话接手。
+  await take('default',['writer','ghost']);
+  expect(writer.abort).toHaveBeenCalledOnce();
+  expect(unrelated.abort).not.toHaveBeenCalled();
+  expect(source.rpc.call).not.toHaveBeenCalled();
+  expect(source.session.yieldTab).not.toHaveBeenCalled();
+
   await take('default',['main']);
-  expect(sessions.get('default').session.yieldTab).toHaveBeenCalledOnce();
+  expect(source.session.yieldTab).toHaveBeenCalledOnce();
+
   held = true;
   await expect(take('default',['main','reviewer'])).rejects.toThrow(/页面现在归你/);
-  expect(sessions.get('default').fleet.stopAndRelease).toHaveBeenCalledOnce();
+  expect(source.rpc.call).not.toHaveBeenCalled();
 });
 
 

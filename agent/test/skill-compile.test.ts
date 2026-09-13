@@ -126,8 +126,8 @@ describe("编译出来的脚本真的能跑（真机教训：页面代码语法�
           pageCodes.push(code);
           // 真机上的失败就在这里：页面代码本身不是合法 JS
           new Function(code);
-          // 让解析成功，返回标记选择器
-          return { value: '[data-sideagent-target]' };
+          // 让解析成功，返回定位结果（真实页面脚本返回 { hit, reason, count }）
+          return { value: { hit: '[data-sideagent-target]', reason: null, count: 1 } };
         }
         if (name === "click" || name === "fill" || name === "press_key") { clicked.push(name); return {}; }
         return {};
@@ -282,11 +282,134 @@ describe("全军覆没不算成功", () => {
         if (name === "js") {
           new Function(String((params as { code: string }).code));
           resolveCount += 1;
-          return { value: resolveCount === 1 ? null : '[data-sideagent-target]' };
+          return { value: resolveCount === 1 ? { hit: null, reason: "none", count: 0 } : { hit: '[data-sideagent-target]', reason: null, count: 1 } };
         }
         return {};
       },
     });
     expect((result.value as { skipped?: number[] }).skipped).toEqual([1]);
   });
+});
+
+/**
+ * 真机失败（2026-09-13，scripts/fixtures/feature-journeys.html）：
+ * 「看我做 → 编译 → 照上次跑」在**同源同结构**的新页面上第 1 步就「目标找不到」。
+ * 城市是 <label for="city">城市</label> + 无 aria-label 的输入框；保存按钮的父节点里
+ * 还并排着「清空本场景状态」，录制把两个按钮的文字拼成了一个不存在的名字。
+ *
+ * 这一组不检查字符串，直接用真执行器跑**真正生成的 program**：页面代码在我们按
+ * 真实结构搭的 DOM 上求值，断言它 fill 到哪个输入框、click 到哪个按钮。
+ */
+class DomNode {
+  tagName: string;
+  attrs: Record<string, string>;
+  text: string;
+  labels: DomNode[] = [];
+  parent: DomNode | null = null;
+
+  constructor(tag: string, attrs: Record<string, string> = {}, text = "") {
+    this.tagName = tag.toUpperCase();
+    this.attrs = { ...attrs };
+    this.text = text;
+  }
+
+  get id(): string { return this.attrs.id ?? ""; }
+  get textContent(): string { return this.text; }
+  get parentElement(): DomNode | null { return this.parent; }
+  getAttribute(key: string): string | null { return this.attrs[key] ?? null; }
+  setAttribute(key: string, value: string): void { this.attrs[key] = value; }
+  removeAttribute(key: string): void { delete this.attrs[key]; }
+  querySelector(_selector: string): DomNode | null { return null; }
+}
+
+class DomDocument {
+  constructor(public nodes: DomNode[]) {}
+  querySelectorAll(selector: string): DomNode[] {
+    if (selector === "[data-sideagent-target]") return this.nodes.filter(n => n.getAttribute("data-sideagent-target") !== null);
+    return this.nodes.filter(n => n.tagName.toLowerCase() === selector.toLowerCase());
+  }
+  getElementById(id: string): DomNode | null { return this.nodes.find(n => n.id === id) ?? null; }
+}
+
+/** feature-journeys.html 里与本次失败相关的那一小块结构。 */
+function cityAndSaveFixture(): { doc: DomDocument; city: DomNode; save: DomNode; reset: DomNode } {
+  const city = new DomNode("input", { id: "city", name: "city", type: "text", placeholder: "例如：杭州" });
+  city.labels = [new DomNode("label", { for: "city" }, "城市")];
+  const nameInput = new DomNode("input", { id: "name", name: "name", type: "text", placeholder: "例如：林然" });
+  nameInput.labels = [new DomNode("label", { for: "name" }, "姓名")];
+  const save = new DomNode("button", { id: "save-btn", type: "button" }, "保存到本页内存");
+  const reset = new DomNode("button", { id: "reset-btn", type: "button" }, "清空本场景状态");
+  // 父节点的 textContent 就是两个按钮文字拼起来（之间有空白）——录制误取祖先文字时的来源。
+  const field = new DomNode("div", { class: "field" }, "\n      保存到本页内存\n      \n      清空本场景状态\n    ");
+  save.parent = field;
+  reset.parent = field;
+  return { doc: new DomDocument([city, nameInput, save, reset, field]), city, save, reset };
+}
+
+/** 把 browser.js 收到的页面代码丢进这份 DOM 求值；click/fill 只记录目标，不真点。 */
+function domBackedBrowser(doc: DomDocument) {
+  const actions: Array<{ name: string; target: DomNode | null; value?: unknown }> = [];
+  const call = async (name: string, params: Record<string, unknown>) => {
+    if (name === "js") {
+      const code = String(params.code);
+      return { value: new Function("document", `return (${code});`)(doc) };
+    }
+    if (name === "click" || name === "fill") {
+      const target = doc.querySelectorAll(String(params.target))[0] ?? null;
+      actions.push({ name, target, value: params.value });
+      return {};
+    }
+    return {};
+  };
+  return { actions, call };
+}
+
+describe("真实页面：label-only 输入 + 并排两个按钮", () => {
+  it("生成的 program 在 DOM 上认得出 label 命名的城市输入框，并 fill/click 到对的元素", async () => {
+    const { doc, city, save } = cityAndSaveFixture();
+    const skill = compileSkill({ ...base, steps: [
+      { at: 0, kind: "click", anchor: { tag: "input", name: "城市" } },
+      { at: 60, kind: "type", anchor: { tag: "input", name: "城市" }, value: "复用城" },
+      { at: 400, kind: "click", anchor: { tag: "button", name: "保存到本页内存" } },
+    ] });
+    const { actions, call } = domBackedBrowser(doc);
+    const result = await runBrowserProgram({ code: skill.program, call });
+    expect(result.value).toMatchObject({ done: true, steps: 3 });
+    expect(actions.map(a => a.name)).toEqual(["click", "fill", "click"]);
+    expect(actions[1]?.target).toBe(city);
+    expect(actions[1]?.value).toBe("复用城");
+    expect(actions[2]?.target).toBe(save);
+  });
+
+  it("两个同名按钮时停下报歧义，不点第一个也不点错", async () => {
+    const doc = new DomDocument([
+      new DomNode("button", { id: "a" }, "保存"),
+      new DomNode("button", { id: "b" }, "保存"),
+    ]);
+    const skill = compileSkill({ ...base, steps: [{ at: 0, kind: "click", anchor: { tag: "button", name: "保存" } }] });
+    const { actions, call } = domBackedBrowser(doc);
+    await expect(runBrowserProgram({ code: skill.program, call })).rejects.toThrow(/2 个同名对象/);
+    expect(actions).toHaveLength(0);
+  });
+
+  it("拼了两个按钮的旧锚点在新页面上找不到任何目标，绝不退化成随便点一个", async () => {
+    const { doc } = cityAndSaveFixture();
+    const skill = compileSkill({ ...base, steps: [
+      { at: 0, kind: "click", anchor: { tag: "button", name: "保存到本页内存 清空本场景状态" } },
+    ] });
+    const { actions, call } = domBackedBrowser(doc);
+    await expect(runBrowserProgram({ code: skill.program, call })).rejects.toThrow(/第 1 步的目标在页面上找不到了/);
+    expect(actions).toHaveLength(0);
+  });
+});
+
+it('高优先级label不能被另一个字段的placeholder冒充', async () => {
+  const { doc, city } = cityAndSaveFixture();
+  const nameField = doc.nodes.find(n => n.id === 'name')!;
+  nameField.setAttribute('placeholder', '城市');
+  const skill = compileSkill({ ...base, steps: [{at:0, kind:'type',anchor:{tag:'input',name:'城市'},value:'复用城'}] });
+  const {actions,call} = domBackedBrowser(doc);
+  await runBrowserProgram({code:skill.program,call});
+  expect(actions).toHaveLength(1);
+  expect(actions[0]?.target).toBe(city);
 });

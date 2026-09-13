@@ -1,0 +1,34 @@
+修复完成并验证。最小改动落在 [conversation-manager.ts](/Users/mahaoxuan/Desktop/ego/agent/src/conversation-manager.ts:371)，新增测试 [pre-observation-identity-order.test.ts](/Users/mahaoxuan/Desktop/ego/agent/test/pre-observation-identity-order.test.ts:1)；`session.ts` 未改。
+
+## 根因（证据）
+
+新任务首轮预观察的 snapshot 是工具帧，扩展在 `executeToolCall` 里用最近发布的身份校验：`current = conversationSummaries.runId`，`runId !== current` 就报“原任务已停止或发生变化，操作未执行。”（[extension/src/background/index.ts:962](/Users/mahaoxuan/Desktop/ego/extension/src/background/index.ts:962)）。运行时的每个帧都经会话回调带上当时的 `progress.snapshot().runId`，而 agent 侧只在 `agent_start` / `status` 时才发 `conversation_updated`（[conversation-manager.ts:471](/Users/mahaoxuan/Desktop/ego/agent/src/conversation-manager.ts:471) 附近）。于是次序是：
+
+1. `progress.request()` 铸出新 runId（扩展还不知道）；
+2. `session.sendUserMessage` → 预观察 `rpc.call("snapshot")` 同步发出 tool_call，已带新 runId；
+3. 扩展拿新 runId 与旧/空身份比对 → 立即拒绝（trace 里 ms=6）。`agent_start` 之后的身份发布已经太晚。
+
+这正是证据 trace 中 `3e34d831`、`f7a34ff0` 两次 `pre_observation_failed` 的来源；简单任务因此失去预注入，多绕模型轮次。
+
+## 改动（约 15 行）
+
+- 新增 `publishRunIdentity(conversationId)`：把当前 runId 立刻以 `conversation_updated` 发布（[371](/Users/mahaoxuan/Desktop/ego/agent/src/conversation-manager.ts:371)）。
+- 用户新消息路径：仅当 `request()` 真的换了 runId 时才发布，且发生在 `runtime.handleMessage` 之前（[615-622](/Users/mahaoxuan/Desktop/ego/agent/src/conversation-manager.ts:615)）——运行中的同一条消息转插话时不换身份。
+- 任务动作 `start` 路径：把原来在 `session.startTask` 之后才发的 `conversation_updated` 提到之前（[403](/Users/mahaoxuan/Desktop/ego/agent/src/conversation-manager.ts:403)），语音/动作启动的新任务同样受益。
+- 身份闸门本身（runId/epoch 校验、`abortedRuns`、stale run 过滤）一行未动。
+
+## 完成标准与证据
+
+- [x] 先定点红测生产装配消息次序 — 检查者: 我，`npx vitest run agent/test/pre-observation-identity-order.test.ts` 修前 3/3 红：`publishedIndex=2` 不早于 snapshot 帧（index 0），扩展闸门记录拒绝。测试复刻扩展 `checkIdentity` 与 `conversationSummaries` 更新，并把运行时 emit 接到 ConversationManager 的会话回调，帧次序与生产一致。
+- [x] 新任务 snapshot 前最新身份已发向扩展 — 检查者: 我，修后同一文件 3/3 绿：`conversation_updated(runId=X)` 严格早于 snapshot 帧，零拒绝。
+- [x] 旧 run/中止仍拒绝 — 检查者: 我，同文件用例 2：中止后新任务先发布新身份；显式携带旧 runId 的迟到工具帧仍返回“原任务已停止或发生变化，操作未执行。”，当前进度 runId 不被污染。
+- [x] steer/交还不乱序 — 检查者: 我，同文件用例 3：插话与交还后 runId 不变、不重发摘要（`conversation_updated` 计数不变），交还后的同 run 工具帧仍通过。
+- [x] 适当定点测试 — 检查者: npm，相关 8 个测试文件 58/58 通过（`session-pre-observation`、`conversation-manager`、`task-control`、`team-handoff`、`task-dispatcher`、`task-action-protocol`、`handback-constraint`、`user-delivery-runtime`）；`npm run typecheck` 两个 workspace 通过。
+- 未通过/未跑 — 全量 `agent/test` 95 个文件中 94 通过，`task-dispatcher.test.ts > keeps event-loop delay p95 under 20ms …` 在并行加载下超时 5s（本轮 2 次运行分别 2/1 个失败，均是该性能用例）；单独运行该文件 7/7 通过，且该文件不引用 conversation-manager，判为与本改动无关的负载敏感用例，未声称通过。
+- 真实路径未验 — 我按约束未碰 Chrome/UI；请主代理在侧栏重跑一次简单任务，确认 trace 里出现 `pre_observation`（带 chars）而非 `pre_observation_failed`，且轮次下降。
+
+## 未改但需知道
+
+`session.steer()` 在空闲（未 streaming）时会退回 `sendUserMessage`，此时没有 `progress.request()` 换身份，预观察帧会带上一轮 runId。真实入口到不了这里（侧栏插话只发生在运行中，语音 steer 会被 `dispatchTaskAction` 的 running 校验挡住），未纳入本次最小改动，留给主代理判断是否需要单独收敛。
+
+未提交、未 push、未重载 Chrome；除上述两个文件外未触碰任何模块（`session.ts` 里的差异是他人 WIP，非我所改）。

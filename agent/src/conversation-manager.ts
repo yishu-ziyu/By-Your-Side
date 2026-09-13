@@ -1,6 +1,6 @@
 import {join} from "node:path";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
-import {CONTROL_CONFIRM_TTL_MS,controlConfirmMessage,isControlConfirm,isControlReject} from "./voice-confirm.js";
+import {CONTROL_CONFIRM_TTL_MS,controlConfirmMessage,createControlConfirmSnapshot,isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
@@ -33,7 +33,7 @@ export class ConversationManager {
   private readonly progress = new Map<string, TaskProgress>();
   private readonly voiceConfirmations=new Map<string,VoiceProposal>();
   /** 语音控制句的读回确认：等用户"对/不"再落动作（改正在跑的任务、终止）。 */
-  private readonly controlConfirmations=new Map<string,{voiceId:string;turn:number;expiresAt:number;action:'steer'|'abort';text:string;expectedRunId:string|null}>();
+  private readonly controlConfirmations=new Map<string,ControlConfirmSnapshot>();
   private readonly controlVersions=new Map<string,number>();
   private readonly makeupRuns=new Set<string>();
   private readonly voicePlans:VoicePlanStore;
@@ -83,32 +83,70 @@ export class ConversationManager {
     if(route?.recentTurns?.length)before.conversationContext={latestResult:null,...before.conversationContext,recentTurns:[...(before.conversationContext?.recentTurns??[]),...route.recentTurns].slice(-12)};
     const catalog=route?.targets??this.voiceTargets();
     const pending=route?.resumeReadOnly?undefined:this.voiceConfirmations.get(id)??(route?this.voicePlans.proposal(id,route.voiceId,route.turn-1):undefined);
-    if(!route?.resumeReadOnly){this.voiceConfirmations.delete(id);if(pending)this.voicePlans.update(id,pending.id,{proposal:{...pending,expiresAt:0}});}
     const short=text.replace(/[\p{P}\p{Z}\s]/gu,'');
     // 语音控制句的读回确认：上一轮问过"你是说…吗"，这一轮的"对/不"直接决定动作落不落。
-    const control=this.controlConfirmations.get(id);
-    if(control)this.controlConfirmations.delete(id);
-    if(control&&route&&control.voiceId===route.voiceId&&route.turn===control.turn+1&&Date.now()<control.expiresAt){
-      if(isControlReject(text))return {kind:'clarify',message:'好，那我不动它。'};
+    const control=route?.resumeReadOnly?undefined:this.controlConfirmations.get(id);
+    const consumeConfirmation=()=>{
+      if(route?.resumeReadOnly)return;
+      if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+      if(this.controlConfirmations.get(id)===control)this.controlConfirmations.delete(id);
+      if(this.voiceConfirmations.get(id)===pending)this.voiceConfirmations.delete(id);
+      if(pending)this.voicePlans.update(id,pending.id,{proposal:{...pending,expiresAt:0}});
+    };
+    if(route&&((control?.voiceId===route.voiceId&&route.turn<=control.turn)||(pending?.voiceId===route.voiceId&&route.turn<=pending.turn))){
+      route.onInputDecision?.(false);
+      return {kind:'clarify',message:'这句回应已过期，当前待确认要求保持不变。'};
+    }
+    if(control&&route&&control.voiceId===route.voiceId&&route.turn>control.turn&&Date.now()<control.expiresAt){
+      if(isControlReject(text)){consumeConfirmation();route.onInputDecision?.(false);return {kind:'clarify',message:'好，那我不动它。'};}
       if(isControlConfirm(text)){
         route.onInputDecision?.(false);
         if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
-        const receipt=await this.dispatchTaskAction({requestId:route.requestId,conversationId:id,source:'voice',action:control.action,expectedRunId:control.expectedRunId,expectedControlVersion:route.controlVersion??before.controlVersion??0,text:control.text},stillCurrent);
+        consumeConfirmation();
+        // 确认轮可以看着另一页/另一份附件，但送达的必须是复述时那份原要求，且按原控制版本验证。
+        const receipt=await this.dispatchTaskAction({
+          requestId: route.requestId,
+          conversationId: id,
+          source: 'voice',
+          action: control.action,
+          expectedRunId: control.expectedRunId,
+          expectedControlVersion: control.expectedControlVersion,
+          text: control.text,
+          ...(control.action === 'steer' ? {
+            ...(control.context ? {context: control.context} : {}),
+            ...(control.attachments ? {attachments: control.attachments} : {}),
+          } : {}),
+        },stillCurrent);
         return receipt.action==='steer'
           ?{kind:'steer',ok:receipt.status==='accepted'||receipt.status==='applied',status:receipt.status,message:receipt.message,receipts:[receipt]}
           :{kind:'action',ok:receipt.status==='accepted'||receipt.status==='applied',status:receipt.status,message:receipt.message,receipts:[receipt]};
       }
     }
-    if(pending&&route&&pending.voiceId===route.voiceId&&route.turn===pending.turn+1&&Date.now()<pending.expiresAt){
-      if(/^(好|好的|可以|是的|确认|同意|另开|开吧|好另开会话|另开会话|确认另开会话)$/.test(short)){
+    if(pending&&route&&pending.voiceId===route.voiceId&&route.turn>pending.turn&&Date.now()<pending.expiresAt){
+      const openReply=short.replace(/(?:另开会话|另开|开吧)$/, '');
+      if(isControlConfirm(text)||short==='同意'||(openReply!==short&&(!openReply||isControlConfirm(openReply)))){
         route.onInputDecision?.(false);
         if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+        consumeConfirmation();
         const entry=await this.create(pending.conversationId,pending.text.slice(0,36));
         this.emit({type:'conversation_updated',conversationId:entry.summary.id,conversation:{...entry.summary}});
         const receipt=await this.dispatchTaskAction({requestId:route.requestId,conversationId:entry.summary.id,originConversationId:id,source:'voice',action:'start',expectedRunId:null,text:pending.text,...pending.input},stillCurrent);
         return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt]};
       }
-      if(/^(不|不要|不用|算了|取消|不另开|不要另开会话)$/.test(short)){route.onInputDecision?.(false);return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};}
+      if(isControlReject(text)||/^(不另开|不要另开会话)$/.test(short)){consumeConfirmation();route.onInputDecision?.(false);return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};}
+    }
+    // 失效身份不能留作下一次确认；只读系统恢复完全不触碰待办。
+    if(route&&!route.resumeReadOnly&&(
+      (control&&(control.voiceId!==route.voiceId||Date.now()>=control.expiresAt))||
+      (pending&&(pending.voiceId!==route.voiceId||Date.now()>=pending.expiresAt))
+    ))consumeConfirmation();
+    // 纯确认只回答已经提出的动作，不能重新交给分类器变成“确认这句确认”。
+    if (route && !route.resumeReadOnly && isControlConfirm(text) && (control || pending || short.includes("确认"))) {
+      consumeConfirmation();
+      route.onInputDecision?.(false);
+      return {kind:'clarify',message:control||pending
+        ?'刚才那项操作已失效，我没有执行。请重新说明要做什么。'
+        :'目前没有等待确认的操作，我没有执行新动作。'};
     }
     route?.reportStage?.('classifying');
     const plan=route?.resumeReadOnly?{steps:[{action:route.resumeReadOnly,target:null,text}]}:await session.classifyVoiceInput(text,before.state,catalog.filter(c=>text.includes(c.title)).map(c=>c.title),{goal:before.goal,requestId:route?.requestId},before.conversationContext);
@@ -130,6 +168,8 @@ export class ConversationManager {
       if(action==='chat'||action==='observe')return {kind:'none',resumeReadOnly:action};
       throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
     }
+    // 进度/页面查询和空白轮不消耗待确认；新指令或新话题替换旧要求。系统只读恢复由 helper 排除。
+    if(willStart||plan.steps.some(step=>!['status','observe','silence','clarify'].includes(step.action)))consumeConfirmation();
     const receipts:TaskReceipt[]=[];
     if(!route?.resumeReadOnly)this.progress.get(id)?.recordUserTurn(text,route?.requestId);
     const versions=new Map(catalog.map(c=>[c.id,c.controlVersion??0]));
@@ -195,7 +235,16 @@ export class ConversationManager {
       const sharesInput=targetId===id||/(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text);
       // 会改到正在跑的任务的控制句（修改/终止）：先复述一遍，等用户"对"再落。
       if((step.action==='steer'||step.action==='abort')&&plan.steps.length===1&&targetId===id&&before.state==='running'&&route){
-        this.controlConfirmations.set(id,{voiceId:route.voiceId,turn:route.turn,expiresAt:Date.now()+CONTROL_CONFIRM_TTL_MS,action:step.action,text:step.text,expectedRunId:expected.get(targetId)??null});
+        this.controlConfirmations.set(id,createControlConfirmSnapshot({
+          voiceId: route.voiceId,
+          turn: route.turn,
+          expiresAt: Date.now()+CONTROL_CONFIRM_TTL_MS,
+          action: step.action,
+          text: step.text,
+          expectedRunId: expected.get(targetId) ?? null,
+          expectedControlVersion: versions.get(targetId) ?? 0,
+          input: route.input,
+        }));
         journal[index]!.status='unexecuted';save();
         return {kind:'clarify',message:controlConfirmMessage(step.text)};
       }
@@ -289,12 +338,25 @@ export class ConversationManager {
       return { kind: "none", spokenText: "这一轮的正式回答还没有交出来。" };
     }
   }
+  private makeupFacts(snap: TaskProgressSnapshot): string | null {
+    const latest = snap.conversationContext?.latestResult?.text?.trim();
+    if (latest) return latest;
+    const results = snap.results ?? [];
+    if (results.length) {
+      return results.map((item) => `${item.description}：${item.status}`).join("\n").slice(0, 6000);
+    }
+    if (snap.lastAction) {
+      return `最后动作：${snap.lastAction.action}${snap.lastAction.failed ? "（未成功）" : ""}。`;
+    }
+    if (snap.startedAt !== null && snap.goal) return `任务「${snap.goal}」已结束，没有形成文字结果。`;
+    return null;
+  }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);
     const session = this.entries.get(id)?.runtime.session;
     const snap = this.getTaskProgress(id);
-    const facts = snap?.conversationContext?.latestResult;
-    if (!progress || !snap || !facts?.text || snap.state !== "idle" || !snap.runId) return;
+    const facts = snap ? this.makeupFacts(snap) : null;
+    if (!progress || !snap || !facts || snap.state !== "idle" || !snap.runId) return;
     const existing = snap.conversationContext?.latestDelivery;
     if (progress.hasFinding() || (existing && existing.kind !== "ack" && existing.runId === snap.runId)) return;
     if (typeof session?.composeUserDelivery !== "function") return;
@@ -309,7 +371,7 @@ export class ConversationManager {
     try {
       const spoken = await session.composeUserDelivery({
         question: snap.goal,
-        facts: facts.text,
+        facts,
         recentTurns: snap.conversationContext?.recentTurns ?? [],
         latestDelivery: snap.conversationContext?.latestDelivery ?? null,
       },streaming.onText);
@@ -329,8 +391,23 @@ export class ConversationManager {
     for(const id of new Set([receipt.conversationId,...(receipt.originConversationId?[receipt.originConversationId]:[])]))this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:receipt.message,
       ...(receipt.message.startsWith('同一请求编号')?{}:{receipt})}});
   }
+  /**
+   * 把当前 runId 立刻发布给扩展。扩展 executeToolCall 按 conversationSummaries.runId 校验每个工具帧，
+   * 新任务的首轮预观察会先发 snapshot 帧；身份若还没同步过去就会被判成"原任务已停止或发生变化"。
+   */
+  private publishRunIdentity(conversationId: string): void {
+    const entry = this.entries.get(conversationId);
+    const snapshot = this.getTaskProgress(conversationId);
+    if (!entry || !snapshot) return;
+    entry.summary.runId = snapshot.runId ?? null;
+    entry.summary.updatedAt = Date.now();
+    this.store?.save(this.list());
+    this.emit({ type: "conversation_updated", conversationId, conversation: { ...entry.summary } });
+  }
   async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
+    // 旧授权只在真正会生效的变更分支里失效：被拒的 start/steer、旧 run、重放请求都不能影响当前待确认。
+    const dropPendingConsent = () => this.consentOf(request.conversationId)?.cancelAll('cancelled', '任务或页面控制已变化，旧请求未发送。');
     const currentTitle=this.entries.get(request.conversationId)?.summary.title;
     const title = request.action==='start'&&currentTitle==='新会话' ? request.text?.trim().slice(0,36)||currentTitle : currentTitle ?? '会话不可用';
     const receipt = await this.dispatcher.dispatch(request,title,async()=>{
@@ -344,20 +421,22 @@ export class ConversationManager {
         if(snapshot.state==='running'||entry.runtime.session.isStreaming())throw new TaskActionRejected('当前任务还在执行。要另开会话处理这个新任务吗？');
         if(snapshot.state==='paused'||entry.runtime.session.isHeld())throw new TaskActionRejected('页面现在归你。请继续原任务，或另开会话。');
         if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
+        // 只有真正会启动的新任务才让旧授权失效。
+        dropPendingConsent();
         entry.runtime.fleet.reset();
         this.progress.get(request.conversationId)!.request(request.text??'');
         entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
         if(entry.summary.title==='新会话')entry.summary.title=title;
+        this.publishRunIdentity(request.conversationId);
         entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
-        entry.summary.runId=this.getTaskProgress(request.conversationId)!.runId;
-        entry.summary.updatedAt=Date.now();this.store?.save(this.list());
-        this.emit({type:'conversation_updated',conversationId:request.conversationId,conversation:{...entry.summary}});
         return {status:'accepted',runId:entry.summary.runId??null,message:`已接收新任务：${request.text??'使用所选资料'}`};
       }
       if(request.action==='pause'||request.action==='resume'||request.action==='abort'){
         if(!request.expectedRunId)throw new TaskActionRejected('当前没有可控制的任务。');
         if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.fleet.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经终止，不能继续原任务。':'原任务没有暂停，未执行交还。');
         if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
+        // 控制生效之前就作废旧授权；校验没过的控制请求不进来。
+        dropPendingConsent();
         this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
         const result=await this.controls.request(request.conversationId,request.requestId,request.action,request.expectedRunId,request.scope,request.tabId);
         if(!result.ok){
@@ -370,6 +449,8 @@ export class ConversationManager {
       }
       if (request.action !== 'steer') throw new TaskActionRejected('这项调度能力尚未开放。');
       if(entry.runtime.session.isHeld()){
+        // 真正被接受的修改才让旧授权失效。
+        dropPendingConsent();
         const originRun=snapshot.runId;
         entry.runtime.session.queueSteerForResume(request.text??'',request.context,request.attachments);
         if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
@@ -383,6 +464,7 @@ export class ConversationManager {
         throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
       }
       if (entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你，请先交还。');
+      dropPendingConsent();
       const originRun=snapshot.runId;
       await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);
       if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
@@ -399,6 +481,9 @@ export class ConversationManager {
   private epochs(runtime:Runtime):Record<string,number>{
     return Object.fromEntries([['main',runtime.session.executionEpoch?.()??0],...(runtime.fleet.list?.()??[]).map(w=>[w.id,runtime.fleet.get(w.id)?.executionEpoch?.()??0])]);
   }
+
+  /** 该会话还在等用户选择的授权请求；没有运行时（或测试替身）时视为没有。 */
+  private consentOf(id: string) { return this.entries.get(id)?.runtime.consent; }
 
   private create(id: string, title: string, restored?: ConversationSummary): Promise<ConversationEntry> {
     const existing = this.entries.get(id);
@@ -447,9 +532,9 @@ export class ConversationManager {
         if (!source) return; // 已结束的运行时：扩展仍会检查归属并排空旧操作。
         const sessions = members.map(member => member === "main" ? source.session : source.fleet.get(member));
         if (sessions.some(session => session?.isHeld())) throw new Error("页面现在归你，操作未执行");
-        await Promise.all(members.map(member => member === "main"
-          ? source.session.yieldTab()
-          : source.fleet.stopAndRelease(member)));
+        // 跨会话只停旧成员：这里再发旧 run 的 release 会被身份闸门拒收（错误盖掉新会话接手），
+        // 也会把页面交回旧父 Agent。页面归属由接手方的 claim 与排空动作收敛。
+        await source.fleet.stopMembersForForeignTakeover(members);
       });
       const entry = { summary, runtime };
       const restoredResults = runtime.session.readPersistedTaskResults?.();
@@ -469,6 +554,11 @@ export class ConversationManager {
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
       runtime.fleet.bindConversationContext?.(() => this.getTaskProgress(id));
+      // 授权绑定原任务与原控制版本：发起时记下，用户点「允许」时再复核一次。
+      runtime.consent?.bindContext?.(() => ({
+        runId: progress.snapshot().runId ?? null,
+        controlVersion: this.controlVersions.get(id) ?? 0,
+      }));
       this.entries.set(id, entry);
       this.store?.save(this.list());
       this.pending.delete(id);
@@ -497,8 +587,23 @@ export class ConversationManager {
     const id = normalizeConversationId(message.conversationId);
     const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
     if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
+    // 授权只看本会话的等待区：未知 id、别的会话的 id 都命中不了，选择不会放行任何请求。
+    if (message.type === "consent_list") {
+      this.emit({ type: "consent_list", conversationId: id, requests: this.consentOf(id)?.list() ?? [] });
+      return;
+    }
+    if (message.type === "consent_decision") {
+      this.consentOf(id)?.decide(message.requestId, message.allow);
+      return;
+    }
+    // 接管、改需求、换任务、终止：只有真正会生效的消息才让旧授权失效；
+    // 无效的旧控制请求（taskRequestId 校验失败/已过期）不能影响当前待确认。
+    const dropPendingConsent = () => this.consentOf(id)?.cancelAll("cancelled", "任务或页面控制已变化，旧请求未发送。");
     if(message.type==='task_control_result'){this.controls.receive({...message,conversationId:id});return;}
-    if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&!message.taskRequestId)this.controlVersions.set(id,(this.controlVersions.get(id)??0)+1);
+    if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&!message.taskRequestId){
+      this.controlVersions.set(id,(this.controlVersions.get(id)??0)+1);
+      dropPendingConsent();
+    }
     if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&message.taskRequestId){
       const action=message.type==='takeover'?'pause':message.type==='handback'?'resume':'abort';
       const snapshot=this.getTaskProgress(id)!;
@@ -509,6 +614,7 @@ export class ConversationManager {
         else this.emit({type:'control_result',conversationId:id,requestId:message.requestId,action:message.type,ok:false,state:entry.summary.state,reason:'控制请求已过期，操作未执行。'});
         return;
       }
+      dropPendingConsent();
       if(message.type==='abort'){
         const sessions=[entry.runtime.session,...entry.runtime.fleet.list().map(w=>entry.runtime.fleet.get(w.id)).filter((s):s is NonNullable<typeof s>=>!!s)];
         this.progress.get(id)?.abort();entry.runtime.handleMessage(message);
@@ -535,8 +641,16 @@ export class ConversationManager {
     }
     if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话";
     if (message.type === "set_mode") entry.summary.mode = message.mode;
-    if (message.type === "user_message") this.progress.get(id)?.request(message.text);
+    if (message.type === "user_message") {
+      const progress = this.progress.get(id);
+      const before = progress?.snapshot().runId ?? null;
+      progress?.request(message.text);
+      // 只有真正开了新任务才换身份：运行中的同一条消息会转成插话，沿用当前 runId。
+      if (progress && (progress.snapshot().runId ?? null) !== before) this.publishRunIdentity(id);
+    }
     if (message.type === "abort") this.progress.get(id)?.abort();
+    // 新消息/插话是这条会话的真实输入，送达运行时之前让旧授权失效。
+    if (message.type === "user_message" || message.type === "steer") dropPendingConsent();
     entry.runtime.handleMessage(message);
     if (message.type === "user_message" || message.type === "set_mode") {
       entry.summary.updatedAt = Date.now();
@@ -676,6 +790,9 @@ export class ConversationManager {
 
   replayState(emit: (message: ServerMessage) => void): void {
     for (const { summary, runtime } of this.entries.values()) {
+      // 面板重开时把仍在等待的授权卡片恢复出来；这里只读，不延长期限。
+      const requests = runtime.consent?.list() ?? [];
+      if (requests.length > 0) emit({ type: "consent_list", conversationId: summary.id, requests });
       for(const result of this.voicePlans.list(summary.id))if(result.plan)emit({type:'agent_event',conversationId:summary.id,event:{kind:'notice',message:'语音计划',plan:result.plan}});
       for (const receipt of this.dispatcher.store.list(summary.id)) emit({type:'agent_event',conversationId:summary.id,event:{kind:'notice',message:receipt.message,receipt}});
       emit({ type: "status", conversationId: summary.id, epochs:this.epochs(runtime),state: runtime.session.isHeld() ? "user" : runtime.session.isStreaming() ? "running" : "idle" });
@@ -689,6 +806,8 @@ export class ConversationManager {
   disconnect(): void {
     this.controls.disconnect();
     for (const { runtime } of this.entries.values()) {
+      // 连接断了就没有确认入口：等待中的请求全部作废，不放行。
+      runtime.consent?.cancelAll("cancelled", "连接已断开，本次请求未发送。");
       runtime.rpc.rejectAll(new Error("Extension disconnected"));
       if (!runtime.session.isHeld() && !runtime.fleet.isGroupHeld()) {
         runtime.session.abort();

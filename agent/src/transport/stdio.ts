@@ -4,8 +4,8 @@
  */
 import type { Readable, Writable } from "node:stream";
 
-/** host→Chrome 输出帧上限 1MiB（Chrome 协议限制）；Chrome→host 输入帧上限 64MiB。两个方向分别有界，不无限缓冲。 */
-export const MAX_OUTPUT_FRAME_BYTES = 1024 * 1024;
+/** host→Chrome 输出帧上限 900KiB（低于 Chrome 1MiB 文档上限，给 JSON/UTF-8 留余量）；Chrome→host 输入帧上限 64MiB。 */
+export const MAX_OUTPUT_FRAME_BYTES = 900 * 1024;
 export const MAX_INPUT_FRAME_BYTES = 64 * 1024 * 1024;
 
 export function encodeFrame(message: string): Buffer {

@@ -124,8 +124,37 @@ export function explicitlyRequestsMemory(text: string): boolean {
     || /^from now on\b/iu.test(direct);
 }
 
+const SITE_NOUN_SOURCE = "网站|站点|网页";
+const SITE_ADDRESS_SOURCE = String.raw`\b\d{1,3}(?:\.\d{1,3}){3}\b|\b[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63}\b`;
+const SITE_TARGET_SOURCE = `(?:${SITE_NOUN_SOURCE}|${SITE_ADDRESS_SOURCE})`;
+/** "当前网站 / 这个测试网站 / 此站点 / 本站": the demonstrative itself carries the scope. */
+const CURRENT_SITE_RE = new RegExp(`(?:本站|(?:当前|这个|此|本)[^。！？.!?\\n的]{0,6}?(?:${SITE_NOUN_SOURCE}))`, "u");
+/** "仅适用于 127.0.0.1 这个测试网站 / 仅限 example.com / 只用于当前网站": a restriction marker next to a site target. */
+const RESTRICTED_SITE_RE = new RegExp(`(?:仅限|只限|仅适用|只适用|仅用于|只用于|仅对|只对|只在|仅在|仅限于|只限于)[^。！？.!?\\n]{0,16}?${SITE_TARGET_SOURCE}`, "iu");
+const ENGLISH_SITE_RE = /\b(?:this|current)\s+(?:website|site|webpage)\b/iu;
+const ENGLISH_RESTRICTED_SITE_RE = /\b(?:only|just|limited to|restricted to)\b[^.\n]{0,24}?\b(?:here|this site|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63})\b/iu;
+/** A negation that widens the scope ("not only this site") must not read as a site restriction. */
+const WIDENING_NEGATION_RE = /(?:不只|不仅|不光|不限于|不局限|非仅|并非|而不是|而不)/u;
+const WIDENING_NEGATION_EN_RE = /\bnot\s+(?:(?:only|just|limited to|restricted to)\s+)?$/iu;
+
 export function explicitlyRequestsCurrentSiteScope(text: string): boolean {
-  return /当前(?:网站|站点|网页)|这个(?:网站|站点)|此(?:网站|站点)|本站|仅限.{0,24}(?:网站|站点)|只(?:用于|在).{0,24}(?:网站|站点)|\b(?:this|current) (?:website|site)\b|\b(?:only |just )?(?:on|for) (?:this site|[a-z0-9.-]+\.[a-z]{2,})\b/iu.test(text.normalize("NFKC"));
+  const direct = text.normalize("NFKC").trim();
+  if (!direct) return false;
+  // Split only on clause punctuation that cannot occur inside a host or a URL.
+  const clauses = direct.split(/[。！？!?\n，,；;、]+/u).map((part) => part.trim()).filter(Boolean);
+  return clauses.some(clauseRestrictsToSite);
+}
+
+function clauseRestrictsToSite(clause: string): boolean {
+  const starts = [CURRENT_SITE_RE, RESTRICTED_SITE_RE, ENGLISH_SITE_RE, ENGLISH_RESTRICTED_SITE_RE]
+    .map((pattern) => pattern.exec(clause)?.index)
+    .filter((index): index is number => typeof index === "number");
+  if (starts.length === 0) return false;
+  const before = clause.slice(0, Math.min(...starts));
+  if (WIDENING_NEGATION_RE.test(before) || WIDENING_NEGATION_EN_RE.test(before)) return false;
+  // "不只在当前网站", "并非仅限此处": a negation glued to the marker widens scope, it does not narrow it.
+  if (/(?:不是|不|非|别|勿|莫|没|无)$/u.test(before)) return false;
+  return true;
 }
 
 function scopeForTurn(turn: ActiveUserTurn): MemoryScope {
@@ -142,11 +171,17 @@ function scopeForTurn(turn: ActiveUserTurn): MemoryScope {
 
 function requestedSiteHostname(text: string): string | null {
   if (!explicitlyRequestsCurrentSiteScope(text)) return null;
-  for (const match of text.normalize("NFKC").toLowerCase().matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/g)) {
-    const hostname = normalizeMemoryHostname(match[0]);
-    if (hostname) return hostname;
+  const normalized = text.normalize("NFKC").toLowerCase();
+  const candidates: { index: number; hostname: string }[] = [];
+  const patterns = [/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/g];
+  for (const pattern of patterns) {
+    for (const match of normalized.matchAll(pattern)) {
+      const hostname = normalizeMemoryHostname(match[0]);
+      if (hostname) candidates.push({ index: match.index ?? 0, hostname });
+    }
   }
-  return null;
+  candidates.sort((a, b) => a.index - b.index);
+  return candidates[0]?.hostname ?? null;
 }
 
 function appendMemoryContext(systemPrompt: string, entries: MemoryEntry[]): string {

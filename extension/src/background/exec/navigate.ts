@@ -7,11 +7,12 @@ import {readCurrentDocument,waitForInteractive,type PageReadiness} from "./page-
 export async function navigate(
   params: {
     url: string;
+    tabId?: number;
     timeout?: number;
   },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ url: string; title: string; note?: string } & PageReadiness> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   const timeoutMs = Math.max(1, params.timeout ?? 30) * 1000;
 

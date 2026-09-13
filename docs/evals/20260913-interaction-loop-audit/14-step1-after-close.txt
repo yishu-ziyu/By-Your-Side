@@ -1,0 +1,136 @@
+Window: "模拟测试页面 · By Your Side 原生控制演练", App: Google Chrome.
+0 标准窗口 模拟测试页面 · By Your Side 原生控制演练 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=handoff-final, Secondary Actions: Raise
+	1 container 模拟测试页面 · By Your Side 原生控制演练 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=handoff-final
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: 127.0.0.1:48765/?scenario=a&case=handoff-final, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：110%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+				21 按钮 AP
+				22 弹出式按钮 Chrome
+			23 工具栏 书签
+				24 工具栏 已保存的标签页分组
+					25 “已保存的标签页分组”按钮 “先等5秒，再把当前B测试页的城市填成成都。只改城市，不要保存。”分组 - 已打开
+					26 “已保存的标签页分组”按钮 “只操作当前B测试页：点击开始步骤，逐个等下一步出现再点，完成4步。不修改”分组 - 已关闭
+					27 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					28 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					30 按钮 标签页分组
+				31 分离器 分隔符
+				32 书签按钮 Gmail
+				33 书签按钮 YouTube
+				34 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				35 书签按钮 notion
+				36 书签按钮 Untitled notebook - NotebookLM
+				37 书签文件夹按钮 AI
+				38 弹出式按钮 包含隐藏书签的菜单
+				39 书签文件夹按钮 所有书签
+				40 分离器 分隔符
+			41 container
+				42 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a&case=handoff-final
+					43 container
+						44 文本 模拟测试页面 · 非真实产品界面
+						45 文本 SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。
+						46 标题 By Your Side 表单与连续步骤演练, Value: 1
+							47 文本 By Your Side 表单与连续步骤演练
+						48 文本 当前场景：
+						49 文本 A
+						50 文本  · A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+						51 container 场景链接
+							52 text 独立测试页面状态：
+							53 link Description: 场景 A, Value: 127.0.0.1:48765/?scenario=a
+							54 link Description: 场景 B, Value: 127.0.0.1:48765/?scenario=b
+							55 text （在每个标签页里打开一个链接，即得到互不干扰的状态）
+						56 标题 1. 表单（保存只写入本页内存）, Value: 2
+							57 文本 1. 表单（保存只写入本页内存）
+						58 文本 姓名
+						59 文本栏 (settable) 姓名, Placeholder: 例如：林然
+						60 文本 城市
+						61 文本栏 (settable) 城市, Placeholder: 例如：杭州
+						62 文本 备注
+						63 文本输入区 (settable) 备注, Placeholder: 例如：希望周五下午联系
+						64 文本 优先级
+						65 弹出式按钮 优先级, Value: 中
+							66 (selected) 中
+						67 container
+							68 按钮 保存到本页内存
+							69 按钮 清空本场景状态
+						70 文本 （尚未保存）
+						71 标题 2. 页面事件记录（不是 Agent 操作计数）, Value: 2
+							72 文本 2. 页面事件记录（不是 Agent 操作计数）
+						73 文本 事件条数：
+						74 文本 0
+						75 文本 记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。
+						76 内容列表 本场景操作记录
+							77 文本 （暂无操作记录）
+						78 标题 3. 连续步骤（下一步按钮延迟 10 秒出现）, Value: 2
+							79 文本 3. 连续步骤（下一步按钮延迟 10 秒出现）
+						80 文本 进度：
+						81 文本 未开始
+						82 文本 点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。
+						83 按钮 开始步骤
+						84 文本 接管修正（等待期间可修改，点按钮记录）
+						85 文本栏 (settable) 接管修正（等待期间可修改，点按钮记录）, Placeholder: 例如：把优先级改为高
+						86 按钮 记录接管修正
+					87 container
+						88 按钮 logo icon
+							89 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							90 图像
+						91 container
+							92 按钮
+					93 container
+						94 text 正在恢复 0 / 1 L
+						95 按钮 (disabled) 请稍候
+			96 标签组
+				97 container
+					98 按钮 收起标签页
+					99 弹出式按钮 标签页分组
+					100 弹出式按钮 标签页搜索
+				101 container
+					102 滚动区
+					103 滚动区
+						104 container
+							105 标签 (settable, boolean) Description: 扩展程序 - By Your Side, Value: off
+							106 标签组 分组“先等5秒，再把当前B测试页的城市填成成都。只改城市，不要保存。”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							107 标签 (settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“先等5秒，再把当前B测试页的城市填成成都。只改城市，不要保存。”群组 - 内存用量 - 405 MB, Value: off
+							108 标签 (selected, settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 内存用量 - 422 MB, Value: on
+								109 按钮 关闭
+				110 按钮 打开新的标签页
+				111 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	112 关闭按钮
+	113 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	114 最小化按钮
+115 menu bar
+	116 Chrome
+	117 文件
+	118 编辑
+	119 显示
+	120 历史记录
+	121 书签
+	122 个人资料
+	123 标签页
+	124 窗口
+	125 帮助
+
+The focused UI element is 42 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a&case=handoff-final

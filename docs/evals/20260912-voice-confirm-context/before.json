@@ -1,0 +1,55 @@
+{
+  "scope": "real ConversationManager and TaskDispatcher; stub classifier and execution; no browser, audio or external model",
+  "firstReply": {
+    "kind": "clarify",
+    "message": "你是说“不是刚才那个，改看当前页面”，对吗？确认后我就照做。",
+    "plan": {
+      "id": "voice-1",
+      "conversationId": "default",
+      "updatedAt": 1789226959995,
+      "steps": [
+        {
+          "action": "steer",
+          "text": "不是刚才那个，改看当前页面",
+          "targetId": "default",
+          "targetTitle": "在网页上查看内容",
+          "status": "unexecuted"
+        }
+      ]
+    }
+  },
+  "secondReply": {
+    "kind": "steer",
+    "ok": true,
+    "status": "accepted",
+    "message": "语音修改已送达当前任务：不是刚才那个，改看当前页面",
+    "receipts": [
+      {
+        "requestId": "voice-2",
+        "conversationId": "default",
+        "source": "voice",
+        "action": "steer",
+        "runId": "5519240e-7bd0-41f8-8939-9fcd3f4d8ca9",
+        "text": "不是刚才那个，改看当前页面",
+        "targetTitle": "在网页上查看内容",
+        "status": "accepted",
+        "message": "语音修改已送达当前任务：不是刚才那个，改看当前页面",
+        "updatedAt": 1789226959996
+      }
+    ],
+    "plan": {
+      "id": "voice-2",
+      "conversationId": "default",
+      "updatedAt": 1789226959996,
+      "steps": []
+    }
+  },
+  "classifications": 1,
+  "originalTabId": 101,
+  "confirmationTabId": 202,
+  "executionReceived": {
+    "text": "不是刚才那个，改看当前页面",
+    "context": null
+  },
+  "contextPreserved": false
+}

@@ -1,0 +1,394 @@
+Window: "「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘", App: Google Chrome.
+0 标准窗口 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.9 GB - Google Chrome, URL: zhipin.com/job_detail/914bc0b40b3d33950nN52dW_FlVV.html, Secondary Actions: Raise
+	1 container 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.9 GB - Google Chrome, URL: zhipin.com/job_detail/914bc0b40b3d33950nN52dW_FlVV.html
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: zhipin.com/job_detail/914bc0b40b3d33950nN52dW_FlVV.html, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：90%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+					21 按钮 关闭侧边栏
+				22 复选框 下载内容
+				23 按钮 AP
+				24 弹出式按钮 Chrome
+			25 工具栏 书签
+				26 工具栏 已保存的标签页分组
+					27 “已保存的标签页分组”按钮 “闻见 GitHub 登录”分组 - 已打开
+					28 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					30 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					31 “已保存的标签页分组”按钮 “🧾 关闭 Google Payments 付款资料”分组 - 已关闭
+					32 “已保存的标签页分组”按钮 “🧾 关闭 Google Payments 付款资料”分组 - 已关闭
+					33 按钮 标签页分组
+				34 分离器 分隔符
+				35 书签按钮 Gmail
+				36 书签按钮 YouTube
+				37 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				38 书签按钮 notion
+				39 书签按钮 Untitled notebook - NotebookLM
+				40 书签文件夹按钮 AI
+				41 书签按钮 ChatGPT
+				42 弹出式按钮 包含隐藏书签的菜单
+				43 书签文件夹按钮 所有书签
+				44 分离器 分隔符
+			45 container
+				46 HTML 内容 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘, URL: zhipin.com/job_detail/914bc0b40b3d33950nN52dW_FlVV.html
+					47 container
+						48 container
+							49 link Description: BOSS直聘, Value: zhipin.com/
+							50 内容列表
+								51 link Description: 首页, Value: zhipin.com/
+								52 link Description: 职位, Value: zhipin.com/web/geek/jobs
+								53 link Description: 公司, Value: zhipin.com/gongsi/
+								54 link Description: 校园, Value: zhipin.com/school/
+								55 link Description: 海归, Value: zhipin.com/returnee_jobs/
+								56 link Description: APP, Value: app.zhipin.com/
+								57 link Description: 有了, Value: youle.zhipin.com/recommend/selected/
+								58 link Description: 海外, Value: zhipin.com/overseas/
+								59 link Description: 无障碍专区, Value: zhipin.com/accessible_job/
+							60 container
+								61 文本栏 (settable) 搜索职位、公司
+								62 按钮 搜索
+							63 内容列表
+								64 link Description: 消息, Value: zhipin.com/web/geek/chat
+								65 link Description: 简历 new, Value: zhipin.com/web/geek/resume
+								66 link Description: 马浩宣, Value: zhipin.com/web/geek/recommend
+						67 container
+							68 container
+								69 文本 最新
+								70 标题 AI Builder（产品方向）, Value: 1
+									71 文本 AI Builder（产品方向）
+								72 文本 25-40K·14薪
+								73 link Description:  深圳, Value: zhipin.com/shenzhen/
+								74 文本 1-3年
+								75 文本 本科
+								76 link Description:  感兴趣, Value: javascript:;
+								77 link Description: 立即沟通, Value: javascript:;
+								78 link Description: 完善在线简历, Value: zhipin.com/web/geek/resume
+								79 link Description: 新增附件简历, Value: javascript:;
+							80 container
+								81 文本 ...
+								82 文本 五险一金
+								83 文本 补充医疗保险
+								84 文本 定期体检
+								85 文本 年终奖
+								86 文本 绩效奖金
+								87 文本 全勤奖
+								88 文本 带薪年假
+								89 文本 员工旅游
+								90 文本 零食下午茶
+								91 文本 团建聚餐
+								92 文本 节日福利
+								93 文本 生日福利
+								94 文本 交通补助
+							95 container
+								96 文本 AI Builder（产品方向）
+								97 文本 25-40K·14薪
+								98 文本 ...
+								99 container
+									100 text 五险一金 补充医疗保险 定期体检 年终奖 绩效奖金 全勤奖 带薪年假 员工旅游 零食下午茶 团建聚餐 节日福利 生日福利 交通补助
+								101 link Description:  感兴趣, Value: javascript:;
+								102 link Description: 立即沟通, Value: javascript:;
+								103 文本 自然选择 
+								104 link Description: 查看所有职位 , Value: zhipin.com/gongsi/job/e461f02cb74abe591HJz39q1GVM~.html
+								105 文本 下载App, 不错过Boss每一条消息
+							106 文本 公司基本信息
+							107 link Description: 自然选择, Value: zhipin.com/gongsi/e461f02cb74abe591HJz39q1GVM~.html
+							108 link Description: 自然选择, Value: zhipin.com/gongsi/e461f02cb74abe591HJz39q1GVM~.html
+							109 text A轮 100-499人
+							110 link Description: 互联网, Value: zhipin.com/i100020/
+							111 link Description: 查看全部职位, Value: zhipin.com/gongsi/job/e461f02cb74abe591HJz39q1GVM~.html
+							112 link Description:   , Value: app.zhipin.com/
+							113 container
+								114 container
+									115 link Description:  微信扫码分享, Value: javascript:;
+									116 link Description:  举报, Value: javascript:;
+								117 标题 职位描述, Value: 3
+									118 text 职位 描述
+								119 内容列表
+									120 container
+										121 text C 端产品
+									122 文本 社区产品
+									123 文本 AI产品
+									124 文本 社交产品
+									125 文本 内容产品
+								126 text 关于Elys Elys在刚刚过去的春节成为圈内现象级产品，在朋友圈一夜刷屏。 海量用户的自发安利和真实反馈，验证了我们的预判——一个与你⾼度对齐的、具备 agentic 能⼒、7*24h 全⽹做功的分身，能有效带来人和⼈之间最低熵、最美妙的连接。 它同时是、但也不仅仅是——AI版的微信、小红书、Tinder、LinkedIn，以及一切for“连接”的东西。在这里我们看到了约会、找工作、寻求共鸣，看到了信息和情感在网络中的流动，看到了人与人产生真实链接那一刻的aha moment，看到了很多东西。 Elys想成为真正AI-driven的新一代互联网。 我们相信我们正在解决AI时代最重要的问题。 工作内容： - 需求从起心动念到上线验收，你带着 agent 自己走完； - 每天面对的是真实的 badcase、trace、用户评价，自己给自己下需求； - 你 build 的东西会直接决定几十万人的分身怎么说话、怎么社交、怎么连接。 岗位要求： - Top 院校毕业，专业不限；工作经验 3 年以内； - 高度 AI native，vibe coding “筑基期”以上；有自己实际 build 过的小东西； - 对 LLM 的能力边界有一手体感；对 Agent、记忆、召回等有所涉猎； - 有独特的（模型分布之外的） taste； - 这个年纪应有的少年感（好奇心与野心）。 我们能提供的： - 有竞争力的薪酬（不管你之前多少我们先加 20% 为敬）； - 有大希望的期权（希望是指那部分期权是可能让你一夜财富自由的）； - 这个时代最激进的 AI-native 工作流，在这里一年等于人间 10 年； - 每月 600 美金+ 的订阅额度（Claude 和 Codex 双开打底）； - 最为关键的，是能够与一群 Crazyones 一起做这个时代最困难且最重要的事情！
+								127 标题 罗女士 3日内活跃, Value: 2
+									128 text 罗女士 3日内活跃
+								129 text 自然选择 · HRBP
+							130 container
+								131 标题 竞争力分析, Value: 3
+									132 文本 竞争力分析
+								133 link Description: 查看完整个人竞争力, Value: javascript:;
+								134 container
+									135 text 个人综合排名： 在
+									136 未加标签的图片 要获取缺失的图片说明，请打开上下文菜单。
+									137 文本 人中排名第
+									138 未加标签的图片 /4jo15bijai1661828091546.png
+								139 文本 你在？位置
+								140 文本 一般
+								141 文本 良好
+								142 文本 优秀
+								143 文本 极好
+							144 container
+								145 标题 BOSS 安全提示, Value: 3
+									146 文本 BOSS 安全提示
+								147 文本 BOSS直聘严禁用人单位和招聘者用户做出任何损害求职者合法权益的违法违规行为，包括但不限于扣押求职者证件、收取求职者财物、向求职者集资、让求职者入股、诱导求职者异地入职、异地参加培训、违法违规使用求职者简历等，您一旦发现此类行为， 
+								148 link Description: 请立即举报, Value: javascript:;
+							149 container
+								150 标题 公司介绍, Value: 3
+									151 文本 公司介绍
+								152 container
+									153 text 自然选择(Nature Select)成立于2024年初，致力于迎接硅基生命降临，并打造一个人与AI共存的世界。官网：https://www.natureselect.ai/ 具体的，我们在做两款产品，一个叫做EVE，对标《her》的走进现实陪伴用户一生的AI伴侣。EVE定义了全新的AI陪伴产品形态（Proactive的交互、双商兼具的“活人感”、SOTA 级长时记忆、高沉浸感的3D与游戏化设计、破次元Agent（首创AI送奶茶）），是当前市场上关注度最高的to C AI native产品之一。 另一款产品，是用AI来解决“连接”的下一代社交网络，这个暂时不展开。（马上上线后补充） 我们相信我们正在解决AI时代最重要的问题。 我们也累计拿到了顶级VC 5000w美金融资。 加入我们你会面临的事情有： 0，一起创造属于新时代Native的伟大产品（我们只做天花板最高，最重要也最困难的事） 1，真正解决长时记忆问题以及极致的CE（context engineering） 2，打造AI与传统检索推荐结合的下一代LLM driven的推荐系统 3，从语言、声音、视觉等全模态打造实时活人感的硅基生命基建 4，让AI真正具备打破次元壁调动现实物理世界的能力 5，定义人与AI共存的世界中全新的范式和协议 6，一起打造AI-native的新组织形式 我们能提供的： 有竞争力的基础工资（不管你之前多少我们先加20%为敬） 有大希望的期权（希望是指那部分期权是可能让你一夜财富自由的） 项目成功后的即时奖金 AI时代的扁平化新组织，只要你愿意，你可以参与任何事情，你的self-motivation一定会被给予足够的Attention。 人体工学椅+ Claude Max Plan （懂的都懂） 以上都有，但最为关键的，是能够与一群最疯狂的人站在时代的最风口浪尖做这个时代最困难又最重要的事情！
+								154 link Description: 查看全部, Value: zhipin.com/gongsi/e461f02cb74abe591HJz39q1GVM~.html
+								155 标题 工商信息, Value: 3
+									156 文本 工商信息
+								157 内容列表
+									158 container
+										159 text 公司名称 自然选择（深圳）智能有限公司
+									160 container
+										161 text 法定代表人 张筱帆
+									162 container
+										163 text 成立日期 2024-02-29
+									164 container
+										165 text 企业类型 有限责任公司（自然人独资）
+									166 container
+										167 text 经营状态 正常
+									168 container
+										169 text 注册资金 100万
+								170 link Description: 查看全部, Value: zhipin.com/gongsi/e461f02cb74abe591HJz39q1GVM~.html
+								171 标题 工作地址, Value: 3
+									172 文本 工作地址
+								173 文本 深圳南山区大冲国际中心41楼
+								174 container
+									175 图像 公司地址
+									176 文本 点击查看地图
+							177 container
+								178 标题 更多职位 看过该职位的人还看了, Value: 3
+									179 link Description: 更多职位, Value: zhipin.com/c101280600-p110101/e_104-y_6_7/
+									180 文本 看过该职位的人还看了
+								181 内容列表
+									182 link Description: 固件产品经理（智能穿戴） 25-35K·14薪 颂拓运动 深圳, Value: zhipin.com/job_detail/ed30a274f2f379aa0nF-29y8E1NV.html
+									183 link Description: 资深AI产品经理（AI方向） 25-40K·16薪 某大型知名互联网金融上市公司 深圳, Value: zhipin.com/job_detail/da763b4db4ed946e0nV92d67FVpW.html
+									184 link Description: 短剧分发产品-红果短剧 25-50K 字节跳动 深圳, Value: zhipin.com/job_detail/eb3ba77020b03ce90nF-3N29E1VV.html
+									185 link Description: GTM(J10021) 25-35K 和乐电子 深圳, Value: zhipin.com/job_detail/027c23177f5218f203V-09u9ElNT.html
+									186 link Description: 商业化产品经理 25-50K·15薪 万兴科技 深圳, Value: zhipin.com/job_detail/76dbf4cc805100fb0nB93tq_FlRZ.html
+									187 link Description: 亚马逊产品精品开发经理&主管 25-35K 智汇创想 深圳, Value: zhipin.com/job_detail/5a99eb4d7c04dde50nF42ti0EFVU.html
+							188 container
+								189 标题 精选职位, Value: 3
+									190 文本 精选职位
+								191 内容列表
+									192 内容列表
+										193 link Description: 高级产品经理（储能）(J17128) 25-45K·14薪 传音控股 深圳, Value: zhipin.com/job_detail/e6d6db850970c53003d62Ni5EFBS.html
+										194 link Description: 变现策略产品-番茄小说 25-50K·15薪 字节跳动 深圳, Value: zhipin.com/job_detail/4ecaac37d4cadc4203J539y8FFdY.html
+										195 link Description: 智能硬件产品经理 25-40K 创想三维 深圳, Value: zhipin.com/job_detail/96299db1f45229130nd63t-1FVFX.html
+										196 link Description: 产品经理（核心产品线） 25-35K 闪魔 深圳, Value: zhipin.com/job_detail/cbc308e2eb6e17a30nRz39y5GFJU.html
+										197 link Description: 产品经理 25-35K·13薪 北斗智联科技有限公司 深圳, Value: zhipin.com/job_detail/739c7f0f48e5427c1HN539S5FltW.html
+										198 link Description: 产品经理（软件方向） 25-40K 道通智能航空技术 深圳, Value: zhipin.com/job_detail/016a5504eb6f76510nF73Nu0F1tQ.html
+								199 container
+									200 文本 深圳
+									201 文本栏 (settable) Value: 产品经理, Placeholder: 搜索职位、公司
+									202 按钮 搜索
+							203 container
+								204 container
+									205 文本 城市招聘
+								206 container
+									207 文本 热门职位
+								208 container
+									209 文本 推荐公司
+								210 container
+									211 文本 热门企业
+								212 link Description: 郑州招聘, Value: zhipin.com/c101180100/
+								213 link Description: 吕梁招聘, Value: zhipin.com/c101101100/
+								214 link Description: 荆州招聘, Value: zhipin.com/c101200800/
+								215 link Description: 海北藏族自治州招聘, Value: zhipin.com/c101150300/
+								216 link Description: 中山招聘, Value: zhipin.com/c101281700/
+								217 link Description: 淮北招聘, Value: zhipin.com/c101221100/
+								218 link Description: 崇左招聘, Value: zhipin.com/c101300200/
+								219 link Description: 临沧招聘, Value: zhipin.com/c101290800/
+								220 link Description: 阿里地区招聘, Value: zhipin.com/c101140700/
+								221 link Description: 衡阳招聘, Value: zhipin.com/c101250400/
+							222 container
+								223 link Description:  首页, Value: zhipin.com/
+								224 link Description: 深圳招聘, Value: zhipin.com/c101280600/
+								225 文本 ·
+								226 link Description: 产品经理招聘, Value: zhipin.com/p110101/
+								227 link Description:  深圳产品经理招聘, Value: zhipin.com/c101280600-p110101/
+								228 link Description:  自然选择产品经理招聘, Value: zhipin.com/job_detail/914bc0b40b3d33950nN52dW_FlVV.html
+							229 文本 页面更新时间：2026-09-11
+						230 container
+							231 container
+								232 text 企业服务热线和算法/未成年人等举报渠道  400 065 5799
+							233 container
+								234 text 老年人直连热线 400 661 6030
+							235 container
+								236 text 工作日  8:00 - 22:00
+							237 container
+								238 text 休息日  8:00 - 22:00
+							239 container
+								240 link weibo.com/bosszhipin
+								241 link javascript:;
+								242 link app.zhipin.com/
+								243 link Description: boss直聘电脑端下载, Value: zhipin.com/desktop/
+							244 定义列表
+								245 container 企业服务
+									246 文本 企业服务
+								247 container
+									248 link Description: 职位搜索, Value: zhipin.com/job_detail/
+									249 link Description: BOSS直聘APP, Value: app.zhipin.com/
+									250 link Description: 投资者关系 Investor Relations, Value: ir.zhipin.com/
+									251 link Description: 直品公益基金会, Value: gongyi.zhipin.com/home
+									252 link Description: 求职技巧, Value: zhipin.com/web/common/geo/article-list.html
+							253 定义列表
+								254 container 使用与帮助
+									255 文本 使用与帮助
+								256 container
+									257 link Description: 协议与规则, Value: about.zhipin.com/agreement
+									258 link Description: 隐私政策, Value: about.zhipin.com/agreement?id=personalinfopro
+									259 link Description: 防骗指南, Value: zhipin.com/web/common/protocol/cheat-guide.html
+									260 link Description: 使用帮助, Value: zhipin.com/web/common/protocol/use-help.html
+							261 定义列表
+								262 container 联系BOSS直聘
+									263 文本 联系BOSS直聘
+								264 container
+									265 text 北京华品博睿网络技术有限公司 公司地址 北京市朝阳区太阳宫中路16号院1号楼18层1801内09 违法和不良信息举报邮箱/未成年人举报渠道 
+									266 link Description: jubao@kanzhun.com, Value: mailto:jubao@kanzhun.com
+							267 文本 Copyright © 2026 BOSS直聘
+							268 link Description: 京ICP备14013441号-5, Value: beian.miit.gov.cn/
+							269 文本 京ICP证150923号
+							270 link Description:  电子营业执照, Value: zhipin.com/web/common/protocol/business-license.html
+							271 link Description:  京公网安备11010502032801, Value: beian.gov.cn/portal/registerSystemInfo?recordcode=11010502032801
+							272 link Description: 朝阳网警, Value: sdwj.zhipin.com/web/index.html
+							273 link Description: 人力资源服务许可证, Value: zhipin.com/web/common/protocol/hr-service.html
+							274 link Description: 网上有害信息举报专区, Value: 12377.cn/
+							275 文本 朝阳区人社局监督电话
+							276 link Description: 算法备案信息, Value: about.zhipin.com/agreement?id=b9f73536711c4928bde84337cb53aa91
+						277 HTML 内容 about:blank
+					278 container
+						279 按钮 logo icon
+							280 未加标签的图片 logo icon
+							281 图像
+						282 container
+							283 按钮
+					284 container
+						285 text 现在归你 1 个已暂停 L
+						286 按钮 交还
+			287 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				288 container
+					289 文本 By Your Side
+					290 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						291 图像
+					292 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						293 图像
+					294 container 当前连接与执行状态
+						295 文本 已连接
+					296 弹出式按钮 分别在新标签页打开 https://example.com 和 http
+					297 弹出式按钮 知识
+					298 按钮 ＋ 新会话
+					299 container 当前会话与控制
+						300 文本 分别在新标签页打开 https://example.com 和 http
+						301 文本 当前页：www.zhipin.com · 「AI Builder（产…
+						302 文本 空闲
+						303 文本 空闲
+						304 container
+							305 text 麦克风：已关 声音：未说
+					306 文本 分别在新标签页打开 https://example.com 和 https://www.iana.org/help/example-domains，读完后比较它们的用途并给出来源。不要改动当前招聘页。
+					307 文本 分别在新标签页打开 https://example.com 和 http · 已接收新任务：分别在新标签页打开 https://example.com 和 https://www.iana.org/help/example-domains，读完后比较它们的用途并给出来源。不要改动当前招聘页。
+					308 文本 请求失败，正在重试（1/3）…
+					309 文本 分别在新标签页打开 https://example.com 和 http · 当前页面已接管，你可以操作。
+					310 文本 改成只打开 example.com，不要打开 IANA。用一句话说这个页面做什么。
+					311 文本 分别在新标签页打开 https://example.com 和 http · 修改已保存，继续后生效：改成只打开 example.com，不要打开 IANA。用一句话说这个页面做什么。
+					312 文本 分别在新标签页打开 https://example.com 和 http · 任务已终止。
+					313 文本 已中止
+					314 按钮 详情
+					315 container
+						316 container 当前活动标签页（点击展开检查面板）
+							317 文本 www.zhipin.com · 「AI Builder（产…
+						318 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						319 开合三角标记 语音记录
+							320 文本 语音记录
+						321 文本输入区 (settable) 现在归你。可补充要求，Enter 保存；交还后生效
+						322 弹出式按钮 +, Help: 添加附件或截屏
+						323 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							324 文本 O
+							325 文本 DeepSeek V4.1 Flash (Go)
+							326 图像
+						327 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						328 按钮 发送
+							329 图像
+							330 图像
+			331 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			332 container
+				333 文本 By Your Side
+				334 复选框 Description: 取消固定到工具栏, Value: 1
+				335 按钮 关闭侧边栏
+			336 标签组
+				337 container
+					338 按钮 收起标签页
+					339 弹出式按钮 标签页分组
+					340 弹出式按钮 标签页搜索
+				341 container
+					342 滚动区
+					343 滚动区
+						344 container
+							345 标签 (settable, boolean) Value: off, Description: 女娲Nuwax AIOS | 全球首个开源AI智能体操作系统 | 女娲智能体OS | 产品级开源Agent操作系统 — AgentFlow·AgentGroup·VibeCoding | Skills技能·沙箱安全·MCP接入·LangGraph·多智能体·工作流 - 闲置标签页 - 已释放 162 MB
+							346 标签 (settable, boolean) Description: Particle Scroll | Canvas UI - 闲置标签页 - 已释放 587 MB, Value: off
+							347 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 143 MB, Value: off
+							348 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 151 MB, Value: off
+							349 标签组 分组“你好”- 1 个标签页•  Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 已展开
+							350 标签 (settable, boolean) Description: Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 属于“你好”群组 - 闲置标签页 - 已释放 525 MB, Value: off
+							351 标签组 分组“帮我打开youtube.”- 1 个标签页•  This UX Designer Shipped 3 Side Projects to 12… - 已展开
+							352 标签 (settable, boolean) Value: off, Description: This UX Designer Shipped 3 Side Projects to 12K+ Users ✦ Megan Yap - YouTube - 属于“帮我打开youtube.”群组 - 内存用量 - 609 MB
+							353 标签 (settable, boolean) Description: 开源项目查询 - 内存用量 - 696 MB, Value: off
+							354 标签 (settable, boolean) Description: VibeHub｜Vibe Coding 术语图鉴 · 用大白话找准前端、后端、AI 术语 - 闲置标签页 - 已释放 144 MB, Value: off
+							355 标签 (settable, boolean) Description: flomo - 闲置标签页 - 已释放 192 MB, Value: off
+							356 标签 (settable, boolean) Description: 打造信息可视化技能 - 内存用量高 - 1.3 GB, Value: off
+							357 标签 (settable, boolean) Description: Why We Like Things—Asterisk - 闲置标签页 - 已释放 99.1 MB, Value: off
+							358 标签 (settable, boolean) Description: How I manage my agents - 内存用量 - 505 MB, Value: off
+							359 标签 (settable, boolean) Description: Beautiful UI — Crafted primitives for AI-native interfaces - 内存用量 - 428 MB, Value: off
+							360 标签 (settable, boolean) Description: 游戏机制介绍 - 内存用量 - 712 MB, Value: off
+							361 标签组 分组“闻见 GitHub 登录”- 1 个标签页•  OAuth application settings - 已展开
+							362 标签 (settable, boolean) Description: OAuth application settings - 属于“闻见 GitHub 登录”群组 - 内存用量 - 440 MB, Value: off
+							363 标签 (settable, boolean) Description: AI Assistants Blocks for React — Live Previews & Source, Value: off
+							364 标签 (settable, boolean) Description: yishu-ziyu/newsnow-yi - 闲置标签页 - 已释放 168 MB, Value: off
+							365 标签 (settable, boolean) Description: Perfect Praise for Greatness - Grok - 闲置标签页 - 已释放 800 MB, Value: off
+							366 标签 (selected, settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.9 GB, Value: on
+								367 按钮 关闭
+				368 按钮 打开新的标签页
+				369 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	370 关闭按钮
+	371 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	372 最小化按钮
+373 menu bar
+	374 Chrome
+	375 文件
+	376 编辑
+	377 显示
+	378 历史记录
+	379 书签
+	380 个人资料
+	381 标签页
+	382 窗口
+	383 帮助
+
+The focused UI element is 286 按钮 交还

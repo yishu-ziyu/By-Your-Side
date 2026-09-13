@@ -69,6 +69,8 @@ export function createSendUserMessageTool(opts: {
   getRunId: () => string | null;
   emit: (event: AgentUiEvent) => void;
   clock?: () => number;
+  /** 还有未完成步骤时，finding 不得提前 terminate。 */
+  hasUnfinishedWork?: () => boolean;
 }): ToolDefinition {
   return defineTool({
     name: "send_user_message",
@@ -110,7 +112,7 @@ export function createSendUserMessageTool(opts: {
           // finding 就是任务的最终结果：这一批工具结果带 terminate 后，SDK 的批次早停规则
           // 让本轮结束，不再为"还要不要收尾"多问模型一次（省 1–3s）。
           // ack 只是开场应答，提前终止会掐断任务，因此不参与早停。
-          terminate: kind === "finding",
+          terminate: kind === "finding" && !opts.hasUnfinishedWork?.(),
         };
       } catch (error) {
         deliveryMetrics.toolRejected += 1;

@@ -84,6 +84,8 @@ export class VoiceCaptureStore {
   private readonly maxAgeDays: number;
   private readonly pending = new Map<string, {turn: number; chunks: Buffer[]; bytes: number}>();
   private cleanedFor: string | null = null;
+  /** Voice sessions that explicitly consented to WAV persistence (diagnostic). */
+  private readonly audioSessions = new Set<string>();
 
   constructor(options: VoiceCaptureStoreOptions = {}) {
     this.root = options.root ?? join(homedir(), '.sideagent', 'voice-capture');
@@ -94,7 +96,9 @@ export class VoiceCaptureStore {
   }
 
   /** A new voice session starts here: retention runs once, and nothing else about the session changes. */
-  begin(voiceId: string, _conversationId: string): void {
+  begin(voiceId: string, _conversationId: string, opts?: { persistAudio?: boolean }): void {
+    if (opts?.persistAudio) this.audioSessions.add(voiceId);
+    else this.audioSessions.delete(voiceId);
     if (this.cleanedFor === voiceId) return;
     this.cleanedFor = voiceId;
     try { this.cleanup(); }
@@ -111,13 +115,14 @@ export class VoiceCaptureStore {
           return;
         case 'append': {
           const bytes = Math.floor(record.audio.length * 3 / 4) - (record.audio.endsWith('==') ? 2 : record.audio.endsWith('=') ? 1 : 0);
-          const entry = this.pendingFor(voiceId, record.turn);
-          if (entry.bytes + bytes <= VOICE_CAPTURE_PENDING_MAX_BYTES) {
-            entry.chunks.push(Buffer.from(record.audio, 'base64'));
-            entry.bytes += bytes;
-          } else {
-            // Keep the fragment bounded instead of growing without a commit; the gap says so.
-            this.append({at, voiceId, conversationId, turn: record.turn, type: 'gap', code: 'write_failed', detail: 'pending-audio-limit'});
+          if (this.audioSessions.has(voiceId)) {
+            const entry = this.pendingFor(voiceId, record.turn);
+            if (entry.bytes + bytes <= VOICE_CAPTURE_PENDING_MAX_BYTES) {
+              entry.chunks.push(Buffer.from(record.audio, 'base64'));
+              entry.bytes += bytes;
+            } else {
+              this.append({at, voiceId, conversationId, turn: record.turn, type: 'gap', code: 'write_failed', detail: 'pending-audio-limit'});
+            }
           }
           this.append({at, voiceId, conversationId, turn: record.turn, type: 'append', seq: record.seq, eventId: record.eventId, frame: record.frame, samples: record.samples, bytes});
           return;
@@ -126,7 +131,7 @@ export class VoiceCaptureStore {
           const key = `${voiceId}:${record.turn}`;
           const entry = this.pending.get(key);
           this.pending.delete(key);
-          const written = entry && entry.chunks.length ? this.writeAudio(at, voiceId, conversationId, record.turn, 'c1', Buffer.concat(entry.chunks)) : null;
+          const written = this.audioSessions.has(voiceId) && entry && entry.chunks.length ? this.writeAudio(at, voiceId, conversationId, record.turn, 'c1', Buffer.concat(entry.chunks)) : null;
           this.append({
             at, voiceId, conversationId, turn: record.turn, type: 'commit', eventId: record.eventId,
             appended: entry?.chunks.length ?? 0,
@@ -161,8 +166,9 @@ export class VoiceCaptureStore {
         const pcm = Buffer.from(command.data, 'base64');
         const samples = Math.floor(pcm.length / 2);
         const sampleRate = command.sampleRate ?? VOICE_DIAG_SAMPLE_RATE;
-        const written = this.writeAudio(at, voiceId, conversationId, command.turn, 'c0', pcm);
-        this.append({at, voiceId, conversationId, turn: command.turn, type: 'c0', sampleRate, samples, seconds: Number((samples / sampleRate).toFixed(3)), path: written});
+        const persist = this.audioSessions.has(voiceId);
+        const written = persist ? this.writeAudio(at, voiceId, conversationId, command.turn, 'c0', pcm) : null;
+        this.append({at, voiceId, conversationId, turn: command.turn, type: 'c0', sampleRate, samples, seconds: Number((samples / sampleRate).toFixed(3)), ...(persist ? {path: written} : {audioPersisted: false})});
       }
       if (command.serverText !== undefined) this.append({at, voiceId, conversationId, turn: command.turn, type: 'text', source: 'server', text: command.serverText});
       if (command.displayText !== undefined) this.append({at, voiceId, conversationId, turn: command.turn, type: 'text', source: 'display', text: command.displayText});

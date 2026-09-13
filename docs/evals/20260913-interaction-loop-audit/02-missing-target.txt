@@ -1,0 +1,220 @@
+Window: "模拟测试页面 · By Your Side 原生控制演练", App: Google Chrome.
+0 标准窗口 模拟测试页面 · By Your Side 原生控制演练 - 属于“把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”群组 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=replay, Secondary Actions: Raise
+	1 container 模拟测试页面 · By Your Side 原生控制演练 - 属于“把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”群组 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=replay
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: 127.0.0.1:48765/?scenario=a&case=replay, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：110%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+					21 按钮 关闭侧边栏
+				22 按钮 AP
+				23 弹出式按钮 Chrome
+			24 工具栏 书签
+				25 工具栏 已保存的标签页分组
+					26 “已保存的标签页分组”按钮 “把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”分组 - 已打开
+					28 按钮 标签页分组
+				29 分离器 分隔符
+				30 书签按钮 Gmail
+				31 书签按钮 YouTube
+				32 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				33 书签按钮 notion
+				34 弹出式按钮 包含隐藏书签的菜单
+				35 书签文件夹按钮 所有书签
+				36 分离器 分隔符
+			37 container
+				38 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a&case=replay
+					39 container
+						40 文本 模拟测试页面 · 非真实产品界面
+						41 文本 SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。
+						42 标题 By Your Side 表单与连续步骤演练, Value: 1
+							43 文本 By Your Side 表单与连续步骤演练
+						44 文本 当前场景：
+						45 文本 A
+						46 文本  · A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+						47 container 场景链接
+							48 text 独立测试页面状态：
+							49 link Description: 场景 A, Value: 127.0.0.1:48765/?scenario=a
+							50 link Description: 场景 B, Value: 127.0.0.1:48765/?scenario=b
+							51 text （在每个标签页里打开一个链接，即得到互不干扰的状态）
+						52 标题 1. 表单（保存只写入本页内存）, Value: 2
+							53 文本 1. 表单（保存只写入本页内存）
+						54 container
+							55 文本 姓名
+							56 文本栏 (settable) 姓名, Value: 甲1, Placeholder: 例如：林然
+						57 container
+							58 文本 城市
+							59 文本栏 (settable) 城市, Value: 无锡, Placeholder: 例如：杭州
+						60 container
+							61 文本 备注
+							62 文本输入区 (settable) 备注, Value: 乙1, Placeholder: 例如：希望周五下午联系
+						63 文本 优先级
+						64 弹出式按钮 优先级, Value: 中
+							65 (selected) 中
+						66 container
+							67 按钮 保存到本页内存
+							68 按钮 清空本场景状态
+						69 文本 （尚未保存）
+						70 标题 2. 页面事件记录（不是 Agent 操作计数）, Value: 2
+							71 文本 2. 页面事件记录（不是 Agent 操作计数）
+						72 文本 事件条数：
+						73 文本 14
+						74 文本 记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。
+						75 内容列表 本场景操作记录
+							76 container
+								77 AXListMarker 1. 
+								78 文本 #1 2026-09-13T03:48:23.088Z input name=协作甲
+							79 container
+								80 AXListMarker 2. 
+								81 文本 #2 2026-09-13T03:48:23.089Z change name=协作甲
+							82 container
+								83 AXListMarker 3. 
+								84 文本 #3 2026-09-13T03:48:23.768Z input notes=协作乙
+							85 container
+								86 AXListMarker 4. 
+								87 文本 #4 2026-09-13T03:48:23.769Z change notes=协作乙
+							88 container
+								89 AXListMarker 5. 
+								90 文本 #5 2026-09-13T03:48:28.004Z input city=广州
+							91 container
+								92 AXListMarker 6. 
+								93 文本 #6 2026-09-13T03:48:28.004Z change city=广州
+							94 container
+								95 AXListMarker 7. 
+								96 文本 #7 2026-09-13T03:50:28.541Z input name=甲1
+							97 container
+								98 AXListMarker 8. 
+								99 文本 #8 2026-09-13T03:50:28.542Z change name=甲1
+							100 container
+								101 AXListMarker 9. 
+								102 文本 #9 2026-09-13T03:50:31.383Z input notes=乙1
+							103 container
+								104 AXListMarker 10. 
+								105 文本 #10 2026-09-13T03:50:31.383Z change notes=乙1
+							106 container
+								107 AXListMarker 11. 
+								108 文本 #11 2026-09-13T04:16:32.458Z input city=苏州
+							109 container
+								110 AXListMarker 12. 
+								111 文本 #12 2026-09-13T04:16:32.460Z change city=苏州
+							112 container
+								113 AXListMarker 13. 
+								114 文本 #13 2026-09-13T04:26:47.010Z input city=无锡
+							115 container
+								116 AXListMarker 14. 
+								117 文本 #14 2026-09-13T04:26:47.011Z change city=无锡
+						118 标题 3. 连续步骤（下一步按钮延迟 10 秒出现）, Value: 2
+							119 文本 3. 连续步骤（下一步按钮延迟 10 秒出现）
+						120 文本 进度：
+						121 文本 未开始
+						122 文本 点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。
+						123 按钮 开始步骤
+						124 文本 接管修正（等待期间可修改，点按钮记录）
+						125 文本栏 (settable) 接管修正（等待期间可修改，点按钮记录）, Placeholder: 例如：把优先级改为高
+						126 按钮 记录接管修正
+					127 container
+						128 按钮 logo icon
+							129 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							130 图像
+						131 container
+							132 按钮
+			133 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				134 container
+					135 文本 By Your Side
+					136 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						137 图像
+					138 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						139 图像
+					140 container 当前连接与执行状态
+						141 文本 已连接
+					142 弹出式按钮 只查看这个页面有没有“提交到服务器”按钮。没有就回答没有，不要操作。
+					143 弹出式按钮 知识
+					144 按钮 ＋ 新会话
+					145 container 当前会话与控制
+						146 container
+							147 text 麦克风：已关 声音：未说
+						148 文本 回答已给出
+					149 文本 只查看这个页面有没有“提交到服务器”按钮。没有就回答没有，不要操作。
+					150 开合三角标记 任务已接收
+						151 文本 任务已接收
+					152 开合三角标记 查看执行过程 思考 → send_user_message 耗时 3.6s
+						153 文本 查看执行过程
+						154 文本 思考 → send_user_message
+						155 文本 耗时 3.6s
+						156 图像
+					157 文本 没有。这个页面上的按钮只有“保存到本页内存”“清空本场景状态”“开始步骤”“记录接管修正”，没有“提交到服务器”按钮。我没有做任何操作。
+					158 container
+						159 container 当前活动标签页（点击展开检查面板）
+							160 文本 1
+							161 文本 127.0.0.1:48765 · 模拟测试页面 · By Y…
+						162 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						163 开合三角标记 语音记录
+							164 文本 语音记录
+						165 文本输入区 (settable) 给 By Your Side 发消息，Enter 发送，Shift+Enter 换行
+						166 弹出式按钮 +, Help: 添加附件或截屏
+						167 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							168 文本 O
+							169 文本 DeepSeek V4.1 Flash (Go)
+							170 图像
+						171 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						172 按钮 发送
+							173 图像
+							174 图像
+			175 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			176 container
+				177 文本 By Your Side
+				178 复选框 Description: 取消固定到工具栏, Value: 1
+				179 按钮 关闭侧边栏
+			180 标签组
+				181 container
+					182 按钮 收起标签页
+					183 弹出式按钮 标签页分组
+					184 弹出式按钮 标签页搜索
+				185 container
+					186 滚动区
+					187 滚动区
+						188 container
+							189 标签 (settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 242 MB, Value: off
+							190 标签 (settable, boolean) Description: 新标签页 - 内存用量 - 256 MB, Value: off
+							191 标签组 分组“把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							192 标签 (selected, settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“把当前页面的城市改成苏州，不保存，姓名和备注保持原样。”群组 - 内存用量 - 232 MB, Value: on
+								193 按钮 关闭
+				194 按钮 打开新的标签页
+				195 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	196 关闭按钮
+	197 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	198 最小化按钮
+199 menu bar
+	200 Chrome
+	201 文件
+	202 编辑
+	203 显示
+	204 历史记录
+	205 书签
+	206 个人资料
+	207 标签页
+	208 窗口
+	209 帮助
+
+The focused UI element is 172 按钮 发送

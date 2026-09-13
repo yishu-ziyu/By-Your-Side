@@ -2,7 +2,7 @@
 
 ## 开发与沟通约定
 
-- 开发由当前主代理独立完成，不新增子代理或委派；用户另有明确要求时再调整。
+- 沿用全局协作分工：主代理负责判断、任务边界与最终验收；明确且非简单的执行任务默认交给 DeepSeek，并由独立 DeepSeek 会话复核。简单任务直接完成；委派时传递本项目约束、文件归属和验收要求，保留并发改动。用户当前要求优先。
 - 改动前用产品语言说明目的、范围、操作前后的可见变化和验证方式，明确用户实际使用的宿主、界面或命令。
 - 请求已明确目标和范围时，说明理解后推进，不另设一次确认。只有需要用户裁决的产品取舍、实质性范围变化或必要授权缺口时才暂停；换用未经授权的执行环境不能视为普通实现细节。已授权范围内连续推进，不把内部步骤变成审批点。
 - 当前用户要求优先于旧记录；需求修订后同步更新目标、完成标准和交付内容，并保留修订依据。文档只记录状态，不能自行授予权限；流程授权不能代替无关外部、破坏性或特权操作的授权。
@@ -17,8 +17,8 @@
 
 ### 项目检查入口
 
-- 按影响范围先跑定点检查；通过后只为新改动、失败或未决风险扩大验证。完整工程检查为 `npm run typecheck`、`npm test`、`npm run build`；修改 `shared/protocol.ts` 时覆盖受影响的契约。
-- 浏览器验收入口为 `npm run accept:browser`、`npm run accept:team`、`npm run accept:sessions`，按任务选择。隔离检查、合成输入与用户日常入口分别留证，不互相冒充；环境操作仍遵循有效授权。
+- 按影响范围先跑定点检查；通过后只为新改动、失败或未决风险扩大验证。完整工程检查为 `npm run check`（模块边界、类型、单测、构建），也可按范围运行 `npm run check:architecture`、`npm run typecheck`、`npm test`、`npm run build`；修改 `shared/protocol.ts` 时覆盖受影响的契约。发布评测入口为 `npm run doctor`、`npm run eval:offline`、`npm run eval:integration -- --headless`、`npm run eval:live`、`npm run eval:report`、`npm run release:verify`。门槛从 `eval/protected/quality-gates.json` 读取；缺凭据/预算/硬件为 BLOCKED，不算 PASS。
+- 浏览器验收入口为 `npm run accept:browser`、`npm run accept:team`、`npm run accept:sessions`，按任务选择。隔离检查、合成输入与用户日常入口分别留证，不互相冒充；环境操作仍遵循有效授权。`accept:browser` 仍连接开发者 ChromeMain，不能当作正式发布全链路。
 - 浏览器验收默认无头运行（`--headless=new`，不创建窗口），脚本在没有无头参数时拒绝运行；涉及可见运动/动效的检查单独安排并先取得用户同意，不得靠 `--window-position` 之类方式隐藏窗口。
 - 纯文档修改检查差异与引用，不运行产品测试或构建。
 

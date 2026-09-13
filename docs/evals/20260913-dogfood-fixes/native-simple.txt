@@ -1,0 +1,12 @@
+The following is a diff from the previous accessibility tree for Window: "「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 375-376, 380
++							380 text 麦克风：已关 声音：未说
++						381 文本 回答已给出
++					382 开合三角标记 查看执行过程 … → 读取完整内容 → 思考 → send_user_message 耗时 5.7s
++						383 文本 查看执行过程
++						384 文本 … → 读取完整内容 → 思考 → send_user_message
++						385 文本 耗时 5.7s
++						386 图像
++					387 文本 岗位：AI Builder（产品方向）；城市：深圳（招聘方：自然选择，25-40K·14薪）。我没有操作页面，只是读取了当前标签页的内容。
+~						315 按钮 发送
+The focused UI element is 315 按钮 发送

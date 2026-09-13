@@ -1,0 +1,16 @@
+{
+  "kind": "development_regression_set",
+  "split": "dev",
+  "holdout": false,
+  "independence": "same-agent-authored-not-blind",
+  "templates": [
+    "pause-current-video",
+    "extract-three-pages-with-one-404",
+    "fill-form-and-readback",
+    "revise-date-then-continue",
+    "panel-b-while-a-runs",
+    "late-asr-during-tts",
+    "fetch-disguised-post",
+    "multistep-missing-delivery"
+  ]
+}

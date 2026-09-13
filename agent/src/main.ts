@@ -14,7 +14,9 @@ import { WebSocket, WebSocketServer } from "ws";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
+  HOST_VERSION,
   PROTOCOL_VERSION,
+  STORAGE_SCHEMA_VERSION,
   parseClientMessage,
   type ClientMessage,
   type ServerMessage,
@@ -165,7 +167,7 @@ async function main(): Promise<void> {
   };
   const sendHelloOk = (conn: ClientConn): void => {
     void session.availableModels().then((models) => {
-      conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models });
+      conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
       conn.send({ type: "conversation_list", conversations: conversations.list() });
       conversations.replayState((msg) => conn.send(msg));
     });
@@ -183,7 +185,7 @@ async function main(): Promise<void> {
       const conversationId = msg.conversationId ?? "default";
       // Extension-side capture facts never reach the upstream voice session.
       if (msg.command.kind === "capture") { voiceCapture.command(msg.voiceId, conversationId, msg.command); return; }
-      if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId);
+      if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId, { persistAudio: msg.command.diagnostic === true || msg.command.capture === true });
       void voice.handle(conversationId, msg);
       return;
     }
@@ -239,6 +241,17 @@ function runStdioMode(
       if (msg.type !== "hello" || msg.client !== "sidepanel") {
         conn.send({ type: "hello_error", error: '首帧必须是 hello{client:"sidepanel"}' });
         shutdown(1);
+        return;
+      }
+      if (msg.protocol !== undefined && msg.protocol !== PROTOCOL_VERSION) {
+        conn.send({ type: "hello_error", error: `协议版本不兼容：扩展 ${msg.protocol}，伴随进程 ${PROTOCOL_VERSION}。请重载扩展并使用同一仓库构建，不要带着未知协议执行旧动作。` });
+        shutdown(1);
+        return;
+      }
+      if (msg.storageSchema !== undefined && msg.storageSchema !== STORAGE_SCHEMA_VERSION) {
+        conn.send({ type: "hello_error", error: `存储 schema 不兼容：扩展 ${msg.storageSchema}，伴随进程 ${STORAGE_SCHEMA_VERSION}。请升级后重试。` });
+        shutdown(1);
+        return;
       }
       authed = true;
       hooks.adoptClient(conn);
@@ -298,6 +311,9 @@ function runWsMode(
     }
     if (msg.token !== token) {
       return "token 不匹配";
+    }
+    if (msg.protocol !== undefined && msg.protocol !== PROTOCOL_VERSION) {
+      return `协议版本不兼容：扩展 ${msg.protocol}，伴随进程 ${PROTOCOL_VERSION}。请重载扩展并使用同一仓库构建。`;
     }
     return null;
   };

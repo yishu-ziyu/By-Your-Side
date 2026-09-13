@@ -1,0 +1,37 @@
+The following is a diff from the previous accessibility tree for Window: "Example Domain" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 10, 31, 45-282, 310, 360, 381-382, 386
+~0 标准窗口 Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - Google Chrome, URL: example.com/, Secondary Actions: Raise
+~	1 container Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - Google Chrome, URL: example.com/
+~				4 按钮 (disabled) 返回
+~					9 文本栏 (settable) Description: 地址和搜索栏, Value: example.com, Placeholder: 问问 Google 或输入网址
++					386 “已保存的标签页分组”按钮 “这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”分组 - 已打开
++				387 HTML 内容 Example Domain, URL: example.com/
++					388 container
++						389 标题 Example Domain, Value: 1
++							390 文本 Example Domain
++						391 文本 This domain is for use in documentation examples without needing permission. Avoid use in operations.
++						392 link Description: Learn more, Value: iana.org/domains/example
++					393 container
++						394 按钮 logo icon
++							395 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
++							396 图像
++						397 container
++							398 按钮
++							399 text 麦克风：已关 声音：未说
++						400 文本 回答已给出
++					401 开合三角标记 查看执行过程 … → 打开标签页 → 读取完整内容 → send_user_message 耗时 12s
++						402 文本 查看执行过程
++						403 文本 … → 打开标签页 → 读取完整内容 → send_user_message
++						404 文本 耗时 12s
++						405 图像
++					406 container
++						407 link Description: https://example.com, Value: example.com/
++						408 文本 ，页面显示 Example Domain。
++							409 文本 E
++							410 文本 example.com · Example Domain
+~						321 按钮 发送
+~							359 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.8 GB, Value: off
++							411 标签组 分组“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”- 1 个标签页•  Example Domain - 已展开
++							412 标签 (selected, settable, boolean) Description: Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 289 MB, Value: on
++								413 按钮 关闭
+The focused UI element is 387 HTML 内容 Example Domain, URL: example.com/

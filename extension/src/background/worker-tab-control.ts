@@ -1,5 +1,5 @@
 import { isLeadSession } from "../../../shared/protocol.js";
-import { getTabResource, getWorkingTabId, reclaimWorkerTabs, claimGlobalTab } from "./state.js";
+import { beginTabTransfer, getTabResource, getWorkingTabId, reclaimWorkerTabs, claimGlobalTab } from "./state.js";
 import { executionKey, parseExecutionKey } from "./tab-bindings.js";
 
 const STOPPED = "worker 已停止，页面已交回父 Agent；操作未执行";
@@ -56,15 +56,18 @@ export class WorkerTabControl {
       if (conversationId !== expected) throw new Error("页面归属已变化，请重新查看后再接手");
       if (conversationId === lead.conversationId && workers.length) throw new Error("worker 仍持有页面；请先停止并等待页面移交");
       const previous = (resource?.collaborators ?? []).filter(key => key !== leadKey);
-      await canTake([...previous, leadKey]);
-      const frozen = previous.filter(key => !this.stopped.has(key) && activeMembers.includes(parseExecutionKey(key).sessionId));
-      frozen.forEach(key => { this.stopped.add(key); discardPendingClicks(key); });
+      // 页面级围栏在任何 await 之前就位：只封这一页，旧所有者在别的页仍可继续；
+      // 移交不是停止成员（停止成员是 release_worker 的职责），也不再有需要在抛错时回滚的成员状态。
+      const releaseFence = beginTabTransfer(tabId, leadKey);
       try {
+        await canTake([...previous, leadKey]);
         await Promise.allSettled(previous.flatMap(key => [...(this.inflight.get(key) ?? [])]));
         previous.forEach(discardPendingClicks);
         await canTake([...previous, leadKey]);
         await claimGlobalTab(tabId, leadKey, expected);
-      } finally { frozen.forEach(key => this.stopped.delete(key)); }
+      } finally {
+        releaseFence();
+      }
     }
     return { tabId, workers, conversationId, owned: !!resource, foreign: !!resource && conversationId !== lead.conversationId, members: activeMembers };
   }

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "By Your Side quality gate specification v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "project",
+    "review_baseline_sha",
+    "policy",
+    "metrics",
+    "absolute_checks_required"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "proposed_quality_gate_specification_not_an_implemented_runner"
+    },
+    "project": {
+      "type": "string"
+    },
+    "review_baseline_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "aggregation",
+        "missing_or_untested"
+      ],
+      "properties": {
+        "aggregation": {
+          "const": "ALL_REQUIRED_PASS"
+        },
+        "missing_or_untested": {
+          "const": "BLOCKED"
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "unit",
+          "operator",
+          "target",
+          "minimum_samples",
+          "measurement_mode",
+          "requirement",
+          "on_missing"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "eq",
+              "lte",
+              "gte"
+            ]
+          },
+          "target": {
+            "type": "number"
+          },
+          "minimum_samples": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "requirement": {
+            "const": "required"
+          },
+          "on_missing": {
+            "const": "BLOCKED"
+          }
+        }
+      }
+    },
+    "absolute_checks_required": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}

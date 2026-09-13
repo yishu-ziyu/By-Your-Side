@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- 内联脚本/样式 + 禁止一切网络访问：本页不会向任何外部地址发送请求。 -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'" />
+  <title>模拟测试页面 · By Your Side 原生控制演练</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      margin: 0; padding: 24px; line-height: 1.55; max-width: 860px;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 15px; margin: 28px 0 8px; }
+    .banner {
+      border: 2px solid #b45309; background: #fff7ed; color: #7c2d12;
+      padding: 10px 14px; border-radius: 8px; font-weight: 600;
+    }
+    .banner small { display: block; font-weight: 400; margin-top: 4px; }
+    nav.scenarios { margin: 18px 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    nav.scenarios a { margin-right: 12px; font-weight: 600; }
+    .field { margin: 10px 0; }
+    label { display: block; font-weight: 600; margin-bottom: 4px; }
+    input, select, textarea, button { font: inherit; padding: 6px 8px; }
+    input[type="text"], textarea, select { width: min(100%, 420px); }
+    textarea { min-height: 64px; }
+    button { cursor: pointer; }
+    button[disabled] { cursor: not-allowed; opacity: .55; }
+    .card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-top: 10px; }
+    #result:empty::before { content: "（尚未保存）"; color: #64748b; }
+    ol#oplog { padding-left: 22px; }
+    ol#oplog:empty::after { content: "（暂无操作记录）"; color: #64748b; }
+    #countdown { color: #92400e; font-weight: 600; }
+    #step-state { font-weight: 600; }
+    .muted { color: #475569; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="banner" role="note" id="fixture-banner">
+    模拟测试页面 · 非真实产品界面
+    <small>SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。</small>
+  </div>
+
+  <h1>By Your Side 表单与连续步骤演练</h1>
+  <p class="muted">
+    当前场景：<span id="scenario-label" data-testid="scenario-label">A</span> ·
+    A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+  </p>
+
+  <nav class="scenarios" aria-label="场景链接">
+    <span class="muted">独立测试页面状态：</span>
+    <a id="scenario-a" href="?scenario=a">场景 A</a>
+    <a id="scenario-b" href="?scenario=b">场景 B</a>
+    <span class="muted">（在每个标签页里打开一个链接，即得到互不干扰的状态）</span>
+  </nav>
+
+  <h2>1. 表单（保存只写入本页内存）</h2>
+  <form id="entry-form" novalidate>
+    <div class="field">
+      <label for="name">姓名</label>
+      <input id="name" name="name" type="text" autocomplete="off" placeholder="例如：林然" />
+    </div>
+    <div class="field">
+      <label for="city">城市</label>
+      <input id="city" name="city" type="text" autocomplete="off" placeholder="例如：杭州" />
+    </div>
+    <div class="field">
+      <label for="notes">备注</label>
+      <textarea id="notes" name="notes" placeholder="例如：希望周五下午联系"></textarea>
+    </div>
+    <div class="field">
+      <label for="priority">优先级</label>
+      <select id="priority" name="priority">
+        <option value="低">低</option>
+        <option value="中" selected>中</option>
+        <option value="高">高</option>
+      </select>
+    </div>
+    <div class="field">
+      <button type="button" id="save-btn">保存到本页内存</button>
+      <button type="button" id="reset-btn">清空本场景状态</button>
+    </div>
+  </form>
+
+  <div class="card" role="status" aria-live="polite" id="result"></div>
+
+  <h2>2. 页面事件记录（不是 Agent 操作计数）</h2>
+  <div class="card">
+    <p class="muted">事件条数：<span id="op-count">0</span></p>
+    <p class="muted">记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。</p>
+    <ol id="oplog" aria-label="本场景操作记录"></ol>
+  </div>
+
+  <h2>3. 连续步骤（下一步按钮延迟 10 秒出现）</h2>
+  <div class="card">
+    <p>进度：<span id="step-state">未开始</span></p>
+    <p class="muted" id="step-hint">点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。</p>
+    <p id="countdown" role="status" aria-live="polite" hidden></p>
+    <div class="field">
+      <button type="button" id="start-btn">开始步骤</button>
+      <button type="button" id="next-step-btn" hidden>下一步</button>
+    </div>
+    <div class="field">
+      <label for="takeover-input">接管修正（等待期间可修改，点按钮记录）</label>
+      <input id="takeover-input" type="text" autocomplete="off" placeholder="例如：把优先级改为高" />
+      <button type="button" id="takeover-btn">记录接管修正</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var STEP_DELAY_MS = 10000;
+      var STEPS = [
+        "步骤 1/4：核对姓名与城市",
+        "步骤 2/4：填写备注并选择优先级",
+        "步骤 3/4：点击“保存到本页内存”",
+        "步骤 4/4：核对操作记录与结果"
+      ];
+
+      function freshState() {
+        return {
+          values: { name: "", city: "", notes: "", priority: "中" },
+          saved: null,
+          opCount: 0,
+          ops: [],
+          stepIndex: 0,
+          deadline: 0,
+          completed: false,
+          running: false,
+          waiting: false
+        };
+      }
+
+      // 仅本页内存：不使用 localStorage / sessionStorage / cookie / fetch。
+      var store = { a: freshState(), b: freshState() };
+      var active = "a";
+      var timerId = null;
+
+      var el = {
+        scenarioLabel: document.getElementById("scenario-label"),
+        linkA: document.getElementById("scenario-a"),
+        linkB: document.getElementById("scenario-b"),
+        form: document.getElementById("entry-form"),
+        name: document.getElementById("name"),
+        city: document.getElementById("city"),
+        notes: document.getElementById("notes"),
+        priority: document.getElementById("priority"),
+        save: document.getElementById("save-btn"),
+        reset: document.getElementById("reset-btn"),
+        result: document.getElementById("result"),
+        opCount: document.getElementById("op-count"),
+        oplog: document.getElementById("oplog"),
+        stepState: document.getElementById("step-state"),
+        stepHint: document.getElementById("step-hint"),
+        countdown: document.getElementById("countdown"),
+        start: document.getElementById("start-btn"),
+        next: document.getElementById("next-step-btn"),
+        takeoverInput: document.getElementById("takeover-input"),
+        takeoverBtn: document.getElementById("takeover-btn")
+      };
+
+      function state() { return store[active]; }
+
+      function log(text) {
+        var s = state();
+        s.opCount += 1;
+        s.ops.push("#" + s.opCount + " " + new Date().toISOString() + " " + text);
+      }
+
+      function renderResult() {
+        var s = state();
+        if (!s.saved) {
+          el.result.textContent = "";
+          return;
+        }
+        el.result.innerHTML = "";
+        var lines = [
+          "已保存到本页内存（未发送任何请求）",
+          "场景：" + active.toUpperCase(),
+          "姓名：" + (s.saved.name || "（空）"),
+          "城市：" + (s.saved.city || "（空）"),
+          "备注：" + (s.saved.notes || "（空）"),
+          "优先级：" + s.saved.priority,
+          "保存次数：" + s.saved.saves
+        ];
+        for (var i = 0; i < lines.length; i += 1) {
+          var p = document.createElement("p");
+          p.textContent = lines[i];
+          el.result.appendChild(p);
+        }
+      }
+
+      function renderOps() {
+        var s = state();
+        el.opCount.textContent = String(s.opCount);
+        el.oplog.innerHTML = "";
+        for (var i = 0; i < s.ops.length; i += 1) {
+          var li = document.createElement("li");
+          li.textContent = s.ops[i];
+          el.oplog.appendChild(li);
+        }
+      }
+
+      function renderSteps() {
+        var s = state();
+        if (!s.running) {
+          el.stepState.textContent = s.completed ? "已完成全部步骤" : "未开始";
+          el.start.hidden = false;
+          el.start.disabled = false;
+          el.start.textContent = s.completed ? "重新开始步骤" : "开始步骤";
+          el.next.hidden = true;
+          el.next.disabled = true;
+          el.countdown.hidden = true;
+          return;
+        }
+        el.start.hidden = true;
+        el.stepState.textContent = STEPS[s.stepIndex - 1] || "已完成全部步骤";
+        if (s.stepIndex >= STEPS.length) {
+          el.next.hidden = true;
+          el.next.disabled = true;
+        } else {
+          el.next.textContent = "下一步（" + (s.stepIndex + 1) + "/" + STEPS.length + "）";
+          // 等待窗口内“下一步”按钮不出现，倒计时结束后才显示并可点击。
+          el.next.hidden = s.waiting;
+          el.next.disabled = s.waiting;
+        }
+      }
+
+      function renderAll() {
+        var s = state();
+        el.name.value = s.values.name;
+        el.city.value = s.values.city;
+        el.notes.value = s.values.notes;
+        el.priority.value = s.values.priority;
+        el.scenarioLabel.textContent = active.toUpperCase();
+        renderResult();
+        renderOps();
+        renderSteps();
+        window.clearTimeout(timerId);
+        if (s.running && s.waiting) armCountdown();
+      }
+
+      function armCountdown() {
+        function remainingSeconds() {
+          return Math.max(0, Math.ceil((state().deadline - Date.now()) / 1000));
+        }
+        el.countdown.hidden = false;
+        el.countdown.textContent = "下一步按钮 " + remainingSeconds() + " 秒后出现（现在可纠正或接管）";
+        tick();
+
+        function tick() {
+          var s = state();
+          if (!s.running || !s.waiting) return;
+          var remaining = remainingSeconds();
+          if (remaining > 0) {
+            el.countdown.textContent = "下一步按钮 " + remaining + " 秒后出现（现在可纠正或接管）";
+            timerId = window.setTimeout(tick, 1000);
+            return;
+          }
+          s.waiting = false;
+          el.countdown.hidden = true;
+          el.next.hidden = false;
+          el.next.disabled = false;
+          renderSteps();
+        }
+      }
+
+      function startWaiting() {
+        var s = state();
+        s.waiting = true;
+        s.deadline = Date.now() + STEP_DELAY_MS;
+        log("步骤 " + s.stepIndex + "/" + STEPS.length + " 已执行，等待 10 秒");
+        renderOps();
+        renderSteps();
+        armCountdown();
+      }
+
+      function readForm() {
+        return {
+          name: el.name.value.trim(),
+          city: el.city.value.trim(),
+          notes: el.notes.value.trim(),
+          priority: el.priority.value
+        };
+      }
+
+      function runStepActions(index) {
+        if (index === 1) {
+          state().values = readForm();
+        } else if (index === 2) {
+          state().values = readForm();
+        } else if (index === 3) {
+          doSave();
+        }
+      }
+
+      function doSave() {
+        var s = state();
+        var values = readForm();
+        s.values = values;
+        s.saved = {
+          name: values.name,
+          city: values.city,
+          notes: values.notes,
+          priority: values.priority,
+          saves: (s.saved ? s.saved.saves : 0) + 1
+        };
+        log("保存表单：姓名=" + (values.name || "（空）") + "，城市=" + (values.city || "（空）") +
+            "，优先级=" + values.priority);
+        renderResult();
+        renderOps();
+      }
+
+      el.save.addEventListener("click", function () {
+        doSave();
+      });
+
+      el.reset.addEventListener("click", function () {
+        window.clearTimeout(timerId);
+        store[active] = freshState();
+        renderAll();
+      });
+
+      el.takeoverBtn.addEventListener("click", function () {
+        var text = el.takeoverInput.value.trim();
+        if (!text) {
+          log("接管修正：内容为空，未记录");
+        } else {
+          log("接管修正：" + text);
+          el.takeoverInput.value = "";
+        }
+        renderOps();
+      });
+
+      el.start.addEventListener("click", function () {
+        var s = state();
+        s.completed = false;
+        s.running = true;
+        s.stepIndex = 1;
+        runStepActions(1);
+        startWaiting();
+      });
+
+      el.next.addEventListener("click", function () {
+        var s = state();
+        if (s.waiting) return;
+        s.stepIndex += 1;
+        if (s.stepIndex > STEPS.length) {
+          s.stepIndex = STEPS.length;
+          renderSteps();
+          return;
+        }
+        runStepActions(s.stepIndex);
+        if (s.stepIndex >= STEPS.length) {
+          log("全部步骤完成");
+          s.completed = true;
+          s.running = false;
+          s.waiting = false;
+          renderOps();
+          renderSteps();
+          return;
+        }
+        startWaiting();
+      });
+
+      [el.name, el.city, el.notes, el.priority].forEach(function (node) {
+        for (var eventName of ["input", "change"]) {
+          node.addEventListener(eventName, function (event) {
+            state().values = readForm();
+            log(event.type + " " + node.id + "=" + node.value);
+            renderOps();
+          });
+        }
+      });
+
+      function selectScenario(next, pushState) {
+        if (next !== "a" && next !== "b") return;
+        state().values = readForm();
+        window.clearTimeout(timerId);
+        active = next;
+        if (pushState) {
+          window.history.replaceState(null, "", "?scenario=" + next);
+        }
+        renderAll();
+      }
+
+      el.linkA.addEventListener("click", function (event) {
+        event.preventDefault();
+        selectScenario("a", true);
+      });
+      el.linkB.addEventListener("click", function (event) {
+        event.preventDefault();
+        selectScenario("b", true);
+      });
+
+      var initial = new URLSearchParams(window.location.search).get("scenario");
+      selectScenario(initial === "b" ? "b" : "a", false);
+    })();
+  </script>
+</body>
+</html>

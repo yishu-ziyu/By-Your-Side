@@ -1,0 +1,39 @@
+复核完成。我读取了 `agent/src/memory-runtime.ts` 与 `agent/test/memory-runtime.test.ts` 的 diff、直接依赖（`shared/memory.ts` 的 `normalizeMemoryHostname`/`memoryTaskUrl`、`MemoryRuntime.beginUserTurn`/`scopeForTurn`/`requestedSiteHostname`）以及既有 `/tmp/ego-claims-native/memory-fix/result.txt`。未改文件、未操作 Chrome、未跑全量测试。真实模块无法在只读沙箱内执行（`npx tsx` 因 EPERM 创建 IPC pipe 失败），阻断项证据来自把源码中的正则/分句逻辑逐字复制到 `node -e` 中执行，并逐行走查范围判定链。
+
+## 无阻断（与要求一致，已验证）
+
+- 目标原句「仅适用于127.0.0.1这个测试网站」→ 判为 site，hostname 取句中的 `127.0.0.1`，不是全局；范围来自原始用户文本（`beginUserTurn(text)`），非模型回传文本。
+- 「仅站点但无地址」→ `scopeForTurn` 在无 URL 时抛「没有网页上下文」，无主机名时不回退成 `all`（`agent/src/memory-runtime.ts:161`）。
+- 中文「不限于这个网站」「不只在当前网站」→ 正确判为全局；未限定偏好、普通否定「只用于正式邮件的结尾敬语」→ 仍为全局。
+- 句中有域名时优先于当前标签页（`requestedHostname` 先于 tab URL）。以上与新增用例断言方向一致。
+
+## 阻断
+
+1. 英文「not only … 应全局」未生效（假阳性，判成了 site）。`WIDENING_NEGATION_EN_RE` 被拿去匹配 `before`，而 `before` 是站点匹配起点之前的切片，永不包含 `this site` 本身，因此该守卫永远不触发（代码注释明确写着要挡 "not only this site"）。实测：
+
+```
+not only this site                         -> SITE（应为 all）
+please remember, not only this site, ...   -> SITE（应为 all）
+not limited to this site                   -> SITE（应为 all）
+```
+
+   直接验证根因：`WIDENING_NEGATION_EN_RE.test("not only this site") === true`，但 `...test("not only "（before）) === false`。实际影响是：本应全局的偏好被收窄并保存到当前标签页 hostname。对应路径 `clauseRestrictsToSite`（`agent/src/memory-runtime.ts:148`）。新增测试没有英文 "not only" 用例，所以测试全绿也不覆盖此项。
+
+2. 回归：裸「本站」丢失识别 → 回退成 all。旧正则显式含 `本站`；新 `CURRENT_SITE_RE` 是 `(?:当前|这个|此|本)…(?:网站|站点|网页)`，`SITE_NOUN` 里没有「站」，所以「本站」不匹配任何分支。实测：
+
+```
+请记住，本条只用于本站   -> 新=all，旧=site
+以后只用于本站           -> 新=all，旧=site
+```
+
+   「只用于本站」现在静默落成全局，正是本任务要消除的「回退成 all」失败类型，方向与目标相反。
+
+## 其他（非阻断，供参考）
+
+- `requestedSiteHostname` 取全句最早出现的 IP/域名，若句中出现多个地址，可能选到并非限定目标的那个。
+- 「不是只用于这个网站」（用「不是」而非「不限于/不只」的拓宽否定）仍会判成 site，属同一启发式覆盖边缘。
+
+## 未验证
+
+- 未运行 `agent/test/memory-runtime.test.ts` 或任何测试（按指令不重跑）；result.txt 声称 13/13、回归 33/33、typecheck 通过，本复核未独立复现这些数字。
+- 真实模块执行、真实用户原句端到端路径未跑（沙箱只读，tsx/写缓存受限）。

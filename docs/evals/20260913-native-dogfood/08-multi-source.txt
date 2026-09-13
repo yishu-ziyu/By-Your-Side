@@ -1,0 +1,263 @@
+Window: "Example Domains", App: Google Chrome.
+0 标准窗口 Example Domains - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - Google Chrome, URL: iana.org/help/example-domains, Secondary Actions: Raise
+	1 container Example Domains - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - Google Chrome, URL: iana.org/help/example-domains
+		2 container
+			3 工具栏
+				4 按钮 (disabled) 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: iana.org/help/example-domains, Placeholder: 问问 Google 或输入网址
+					10 按钮 为此标签页添加书签
+				11 container
+					12 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					13 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					14 弹出式按钮 Video Download Helper
+可以访问此网站
+					15 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					16 弹出式按钮 Stylus
+可以访问此网站
+					17 弹出式按钮 Save to my mind
+想要访问此网站
+					18 弹出式按钮 By Your Side
+可以访问此网站
+					19 弹出式按钮 扩展程序
+					20 按钮 关闭侧边栏
+				21 复选框 下载内容
+				22 按钮 AP
+				23 弹出式按钮 Chrome
+			24 工具栏 书签
+				25 工具栏 已保存的标签页分组
+					26 “已保存的标签页分组”按钮 “只在新标签页打开 https://example.com，确认打开后用一”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “闻见 GitHub 登录”分组 - 已打开
+					28 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “帮我打开youtube.”分组 - 已打开
+					30 “已保存的标签页分组”按钮 “新会话”分组 - 已关闭
+					31 “已保存的标签页分组”按钮 “🧾 关闭 Google Payments 付款资料”分组 - 已关闭
+					32 按钮 标签页分组
+				33 分离器 分隔符
+				34 书签按钮 Gmail
+				35 书签按钮 YouTube
+				36 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				37 书签按钮 notion
+				38 书签按钮 Untitled notebook - NotebookLM
+				39 书签文件夹按钮 AI
+				40 书签按钮 ChatGPT
+				41 弹出式按钮 包含隐藏书签的菜单
+				42 书签文件夹按钮 所有书签
+				43 分离器 分隔符
+			44 container
+				45 HTML 内容 Example Domains, URL: iana.org/help/example-domains
+					46 container
+						47 container
+							48 link Description: Homepage, Value: iana.org/
+							49 内容列表
+								50 link Description: Domains, Value: iana.org/domains
+								51 link Description: Protocols, Value: iana.org/protocols
+								52 link Description: Numbers, Value: iana.org/numbers
+								53 link Description: About, Value: iana.org/about
+						54 container
+							55 内容列表
+								56 link Description: ← Instructions and Guides, Value: iana.org/help
+							57 标题 Example Domains, Value: 1
+								58 文本 Example Domains
+							59 container
+								60 文本 As described in 
+								61 link Description: RFC 2606, Value: iana.org/go/rfc2606
+								62 文本  and 
+								63 link Description: RFC 6761, Value: iana.org/go/rfc6761
+								64 文本 , a number of domains such as example.com and example.org are maintained for documentation purposes. These domains may be used as illustrative examples in documents without prior coordination with us. They are not available for registration or transfer.
+							65 文本 We provide a web service on the example domain hosts to provide basic information on the purpose of the domain. These web services are provided as best effort, but are not designed to support production applications. While incidental traffic for incorrectly configured applications is expected, please do not design applications that require the example domains to have operating HTTP service.
+							66 标题 Further Reading, Value: 2
+								67 文本 Further Reading
+							68 内容列表
+								69 container
+									70 AXListMarker ■ 
+									71 link Description: IANA-managed Reserved Domains, Value: iana.org/domains/reserved
+							72 container
+								73 文本 Last revised 
+								74 文本 9 years ago
+								75 文本 .
+						76 container
+							77 container
+								78 container Domain Names
+									79 link Description: Domain Names, Value: iana.org/domains
+								80 container Root Zone Registry .INT Registry .ARPA Registry IDN Repository
+									81 内容列表
+										82 link Description: Root Zone Registry, Value: iana.org/domains/root
+										83 link Description: .INT Registry, Value: iana.org/domains/int
+										84 link Description: .ARPA Registry, Value: iana.org/domains/arpa
+										85 link Description: IDN Repository, Value: iana.org/domains/idn-tables
+							86 container
+								87 container Number Resources
+									88 link Description: Number Resources, Value: iana.org/numbers
+								89 container Number Registries RIR Allocation Data Abuse Information
+									90 内容列表
+										91 link Description: Number Registries, Value: iana.org/numbers/registries
+										92 link Description: RIR Allocation Data, Value: iana.org/numbers/allocations/
+										93 link Description: Abuse Information, Value: iana.org/help/abuse
+							94 container
+								95 container Protocols
+									96 link Description: Protocols, Value: iana.org/protocols
+								97 container Protocol Registries Time Zone Database
+									98 内容列表
+										99 link Description: Protocol Registries, Value: iana.org/protocols
+										100 link Description: Time Zone Database, Value: iana.org/time-zones
+							101 container
+								102 container About Us
+									103 link Description: About Us, Value: iana.org/about
+								104 container News Performance The Organization Archive Contact Us
+									105 内容列表
+										106 link Description: News, Value: iana.org/news
+										107 link Description: Performance, Value: iana.org/performance
+										108 link Description: The Organization, Value: iana.org/about/organization
+										109 link Description: Archive, Value: iana.org/archive
+										110 link Description: Contact Us, Value: iana.org/contact
+							111 container
+								112 文本 The IANA functions coordinate the Internet’s globally unique identifiers, and are provided by 
+								113 link Description: Public Technical Identifiers, Value: pti.icann.org/
+								114 文本 , an affiliate of 
+								115 link Description: ICANN, Value: icann.org/
+								116 文本 .
+							117 内容列表
+								118 link Description: Privacy Policy, Value: icann.org/privacy/policy
+								119 link Description: Terms of Service, Value: icann.org/privacy/tos
+					120 container
+						121 按钮 logo icon
+							122 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							123 图像
+						124 container
+							125 按钮
+			126 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				127 container
+					128 文本 By Your Side
+					129 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						130 图像
+					131 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						132 图像
+					133 container 当前连接与执行状态
+						134 文本 已连接
+					135 弹出式按钮 只在新标签页打开 https://example.com，确认打开后用一
+					136 弹出式按钮 知识
+					137 按钮 ＋ 新会话
+					138 container 当前会话与控制
+						139 文本 只在新标签页打开 https://example.com，确认打开后用一
+						140 文本 当前页：www.iana.org · Example Domai…
+						141 文本 空闲
+						142 文本 空闲
+						143 container
+							144 text 麦克风：已关 声音：未说
+						145 文本 已在新标签页打开 IANA 帮助页，对照两个页面给你3条，全部只来自页面原文： **1. 两者关系**：example.com 是 IANA 按 RFC 2606 和 RFC 6761 维护的文档用途域名之一（页面原文举例 example.com、example.org），这类域名可直接用作文档中的示例，无需事先与
+					146 文本 只在新标签页打开 https://example.com，确认打开后用一句话告诉我，不要做其他事。
+					147 文本 只在新标签页打开 https://example.com，确认打开后用一 · 已接收新任务：只在新标签页打开 https://example.com，确认打开后用一句话告诉我，不要做其他事。
+					148 开合三角标记 查看执行过程 … → 思考 → 读取完整内容 → send_user_message 耗时 9.6s
+						149 文本 查看执行过程
+						150 文本 … → 思考 → 读取完整内容 → send_user_message
+						151 文本 耗时 9.6s
+						152 图像
+					153 container
+						154 文本 已在新标签页打开 
+						155 link Description: https://example.com，页面显示, Value: example.xn--com,-8k0i458g7d8b31b/
+						156 文本  “Example Domain”，其他什么都没动。
+					157 文本 模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试
+					158 文本 再在新标签页打开 https://www.iana.org/help/example-domains，对照它和当前 Example Domain 页面，用3条说明两者关系、这些域名能否注册、能否依赖其HTTP服务用于生产。每条附对应来源；没有写的不要推断。
+					159 文本 只在新标签页打开 https://example.com，确认打开后用一 · 已接收新任务：再在新标签页打开 https://www.iana.org/help/example-domains，对照它和当前 Example Domain 页面，用3条说明两者关系、这些域名能否注册、能否依赖其HTTP服务用于生产。每条附对应来源；没有写的不要推断。
+					160 开合三角标记 查看执行过程 … → 读取完整内容 → 思考 → send_user_message 耗时 23s
+						161 文本 查看执行过程
+						162 文本 … → 读取完整内容 → 思考 → send_user_message
+						163 文本 耗时 23s
+						164 图像
+					165 文本 已在新标签页打开 IANA 帮助页，对照两个页面给你3条，全部只来自页面原文：
+					166 container
+						167 text 1. 两者关系 ：example.com 是 IANA 按 RFC 2606 和 RFC 6761 维护的文档用途域名之一（页面原文举例 example.com、example.org），这类域名可直接用作文档中的示例，无需事先与 IANA 协调。example.com 页面自己也写着“This domain is for use in documentation examples without needing permission.” 来源：
+						168 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+						169 文本  ；
+						170 link Description: https://example.com/, Value: example.com/
+					171 container
+						172 text 2. 能否注册 ：不能。IANA 页面明确写“They are not available for registration or transfer.”（不可注册，也不可转让）。 来源：
+						173 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+					174 container
+						175 text 3. 能否依赖其 HTTP 服务用于生产 ：不能。IANA 说这些 example 域名主机上的 Web 服务只是“best effort”，并非为支持生产应用而设计，并明确要求不要设计需要 example 域名提供可用 HTTP 服务的应用；example.com 页面的说法是“Avoid use in operations.” 来源：
+						176 link Description: https://www.iana.org/help/example-domains, Value: iana.org/help/example-domains
+						177 文本  ；
+						178 link Description: https://example.com/, Value: example.com/
+					179 文本 补充一点限制：example.com 页面本身没有提到注册/转让，所以第2条只有 IANA 一个来源；页面上有 “Learn more” 和 “Further Reading” 链接，我没有点开，以上结论不含这些链接指向的内容。
+					180 文本 模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试
+					181 container
+						182 container 当前活动标签页（点击展开检查面板）
+							183 文本 www.iana.org · Example Domai…
+						184 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						185 开合三角标记 语音记录
+							186 文本 语音记录
+						187 文本输入区 (settable) 给 By Your Side 发消息，Enter 发送，Shift+Enter 换行
+						188 弹出式按钮 +, Help: 添加附件或截屏
+						189 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							190 文本 O
+							191 文本 DeepSeek V4.1 Flash (Go)
+							192 图像
+						193 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						194 按钮 发送
+							195 图像
+							196 图像
+			197 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			198 container
+				199 文本 By Your Side
+				200 复选框 Description: 取消固定到工具栏, Value: 1
+				201 按钮 关闭侧边栏
+			202 标签组
+				203 container
+					204 按钮 收起标签页
+					205 弹出式按钮 标签页分组
+					206 弹出式按钮 标签页搜索
+				207 container
+					208 滚动区
+					209 滚动区
+						210 container
+							211 标签 (settable, boolean) Value: off, Description: 女娲Nuwax AIOS | 全球首个开源AI智能体操作系统 | 女娲智能体OS | 产品级开源Agent操作系统 — AgentFlow·AgentGroup·VibeCoding | Skills技能·沙箱安全·MCP接入·LangGraph·多智能体·工作流 - 闲置标签页 - 已释放 162 MB
+							212 标签 (settable, boolean) Description: Particle Scroll | Canvas UI - 闲置标签页 - 已释放 587 MB, Value: off
+							213 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 143 MB, Value: off
+							214 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 151 MB, Value: off
+							215 标签组 分组“你好”- 1 个标签页•  Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 已展开
+							216 标签 (settable, boolean) Description: Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 属于“你好”群组 - 闲置标签页 - 已释放 525 MB, Value: off
+							217 标签组 分组“帮我打开youtube.”- 1 个标签页•  This UX Designer Shipped 3 Side Projects to 12… - 已展开
+							218 标签 (settable, boolean) Value: off, Description: This UX Designer Shipped 3 Side Projects to 12K+ Users ✦ Megan Yap - YouTube - 属于“帮我打开youtube.”群组 - 内存用量 - 609 MB
+							219 标签 (settable, boolean) Description: 开源项目查询 - 内存用量 - 696 MB, Value: off
+							220 标签 (settable, boolean) Description: VibeHub｜Vibe Coding 术语图鉴 · 用大白话找准前端、后端、AI 术语 - 闲置标签页 - 已释放 144 MB, Value: off
+							221 标签 (settable, boolean) Description: flomo - 闲置标签页 - 已释放 192 MB, Value: off
+							222 标签 (settable, boolean) Description: 打造信息可视化技能 - 内存用量高 - 1.3 GB, Value: off
+							223 标签 (settable, boolean) Description: Why We Like Things—Asterisk - 闲置标签页 - 已释放 99.1 MB, Value: off
+							224 标签 (settable, boolean) Description: How I manage my agents - 内存用量 - 505 MB, Value: off
+							225 标签 (settable, boolean) Description: Beautiful UI — Crafted primitives for AI-native interfaces - 内存用量 - 428 MB, Value: off
+							226 标签 (settable, boolean) Description: 游戏机制介绍 - 内存用量 - 712 MB, Value: off
+							227 标签组 分组“闻见 GitHub 登录”- 1 个标签页•  OAuth application settings - 已展开
+							228 标签 (settable, boolean) Description: OAuth application settings - 属于“闻见 GitHub 登录”群组 - 内存用量 - 440 MB, Value: off
+							229 标签 (settable, boolean) Description: AI Assistants Blocks for React — Live Previews & Source, Value: off
+							230 标签 (settable, boolean) Description: yishu-ziyu/newsnow-yi - 闲置标签页 - 已释放 168 MB, Value: off
+							231 标签 (settable, boolean) Description: Perfect Praise for Greatness - Grok - 闲置标签页 - 已释放 800 MB, Value: off
+							232 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.9 GB, Value: off
+							233 标签组 分组“只在新标签页打开 https://example.com，确认打开后用一”- 2 个标签页•  Example Domain•  Example Domains - 已展开
+							234 标签 (settable, boolean) Description: Example Domain - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - 内存用量 - 251 MB, Value: off
+							235 标签 (selected, settable, boolean) Description: Example Domains - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组, Value: on
+								236 按钮 关闭
+				237 按钮 打开新的标签页
+				238 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	239 关闭按钮
+	240 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	241 最小化按钮
+242 menu bar
+	243 Chrome
+	244 文件
+	245 编辑
+	246 显示
+	247 历史记录
+	248 书签
+	249 个人资料
+	250 标签页
+	251 窗口
+	252 帮助
+
+The focused UI element is 45 HTML 内容 Example Domains, URL: iana.org/help/example-domains

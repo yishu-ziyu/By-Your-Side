@@ -1,0 +1,23 @@
+{
+  "kind": "protected_evaluation_revision_local",
+  "review_baseline_sha": "176e23fd103497e522c5fc0428af2c559733e6c8",
+  "note": "Local locked copy of the Codex execution gates. GitHub branch protection and CODEOWNERS are NOT enabled; do not claim independent protection.",
+  "files": {
+    "quality-gates.json": {
+      "bytes": 18626,
+      "sha256": "61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748"
+    },
+    "quality-gates.schema.json": {
+      "bytes": 1943,
+      "sha256": "9433933e184a8ea0cdd213629302d4b5efd1c8f69bab58c75f40f3304380b580"
+    },
+    "CODEX_EXECUTION_SPEC.md": {
+      "bytes": 35944,
+      "sha256": "994c4a4a1e2ec41dc35477a47dd771b0bc240f8076fed2095b2bf2db29cb2186"
+    },
+    "REVIEW_EVIDENCE.md": {
+      "bytes": 5349,
+      "sha256": "64e893fcf56167962bfc53a9799c1d62c336409d4cc837abe75756739a53252b"
+    }
+  }
+}

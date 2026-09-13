@@ -1,0 +1,20 @@
+The following is a diff from the previous accessibility tree for Window: "Example Domain" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 387-398, 409-410, 413
++				413 HTML 内容 Example Domain, URL: example.com/
++					414 container
++						415 标题 Example Domain, Value: 1
++							416 文本 Example Domain
++						417 文本 This domain is for use in documentation examples without needing permission. Avoid use in operations.
++						418 link Description: Learn more, Value: iana.org/domains/example
++					419 container
++						420 按钮 logo icon
++							421 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
++							422 图像
++							423 文本 E
++							424 文本 example.com · Example Domain
+~							411 标签组 分组“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”- 2 个标签页•  Example Domain•  Example Domain - 已展开
+~							412 标签 (settable, boolean) Description: Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组 - 内存用量 - 252 MB, Value: off
++							425 标签 (selected, settable, boolean) Description: Example Domain - 属于“这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。”群组, Value: on
++								426 按钮 关闭
++						427 滚动条
+The focused UI element is 413 HTML 内容 Example Domain, URL: example.com/

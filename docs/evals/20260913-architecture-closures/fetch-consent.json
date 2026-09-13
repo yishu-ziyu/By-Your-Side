@@ -1,0 +1,40 @@
+{
+  "scope": "real compiled panel/background, production ConversationManager/runtime/tool assembly and local HTTP counter; model/native transport substituted",
+  "directAllowed": {
+    "before": 0,
+    "after": 1,
+    "error": null
+  },
+  "programRejected": {
+    "before": 1,
+    "after": 1,
+    "error": "Error: fetch: 已拒绝，本次请求未发送。"
+  },
+  "programAllowed": {
+    "before": 1,
+    "after": 2,
+    "error": null
+  },
+  "invalidControlPreservesApproval": {
+    "before": 2,
+    "after": 3,
+    "error": null
+  },
+  "changedTaskRejectsLateApproval": true,
+  "passed": true,
+  "received": [
+    {
+      "method": "POST",
+      "body": "{\"request\":\"direct\"}"
+    },
+    {
+      "method": "POST",
+      "body": "{\"request\":\"program\"}"
+    },
+    {
+      "method": "POST",
+      "body": "{\"request\":\"validated\"}"
+    }
+  ],
+  "horizontalOverflow": false
+}

@@ -204,6 +204,18 @@
       const el = mustResolve(target) as HTMLElement;
       el.focus();
       const tag = el.tagName.toLowerCase();
+      if (tag === "select") {
+        const select = el as HTMLSelectElement;
+        const wanted = value.trim();
+        const opts = [...select.options].map((o) => ({ text: o.text, value: o.value }));
+        const exact = opts.find((o) => o.text.trim() === wanted || o.value === wanted);
+        const match = exact ?? opts.find((o) => o.text.includes(wanted) || (wanted && wanted.includes(o.text.trim())));
+        if (!match || match.text.trim() === "") throw new Error(`下拉框没有「${value}」这个选项。`);
+        select.value = match.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        return { filled: true };
+      }
       if (tag === "input" || tag === "textarea") {
         // 用原生 value setter 写入，兼容 React 受控组件
         const proto = tag === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
@@ -219,7 +231,7 @@
         el.dispatchEvent(new Event("input", { bubbles: true }));
         return { filled: true };
       }
-      throw new Error("元素不可填充（非 input/textarea/contenteditable）");
+      throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");
     },
 
     scrollBy(dy: number | null): { atBottom: boolean } {

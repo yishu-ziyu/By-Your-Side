@@ -68,7 +68,10 @@ describe("browser experience contract", () => {
     const [entry] = await memory.list(); expect(entry!.experience?.evidence).toHaveLength(2);
     expect(entry!.text).toContain("待验证");
     expect(await memory.select({ text: "导出全部客户名单", url: page.url })).toEqual([entry]);
+    expect(await memory.select({ text: "把客户名单导出来，并核对数量", url: page.url })).toEqual([entry]);
     expect(await memory.select({ text: "导出全部客户名单", url: "https://other.example" })).toEqual([]);
+    expect(await memory.select({ text: "导出本月库存报表", url: page.url })).toEqual([]);
+    expect(await memory.select({ text: "删除客户名单记录", url: page.url })).toEqual([]);
     expect(await memory.select({ text: "比较雨伞价格", url: page.url })).toEqual([]);
     expect(await memory.select({ text: "检查天气并告诉我结果", url: page.url })).toEqual([]);
     const emit = vi.fn(); const next = new MemoryRuntime(memory, "b", emit);
@@ -78,6 +81,8 @@ describe("browser experience contract", () => {
     const injected = await handler({ systemPrompt: "BASE" });
     expect(injected.systemPrompt).toContain("选择全部客户");
     expect(injected.systemPrompt).toContain("inspect the current page");
+    next.beginUserTurn("导出本月库存报表", page);
+    expect(await handler({ systemPrompt: "BASE" })).toBeUndefined();
   });
   it("does not connect a correction to another conversation", async () => {
     const { runtime, store, memory } = await fixture(); await initial(runtime);

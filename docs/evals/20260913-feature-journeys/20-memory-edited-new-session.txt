@@ -1,0 +1,212 @@
+Window: "模拟测试页面 · By Your Side 原生控制演练", App: Google Chrome.
+0 标准窗口 模拟测试页面 · By Your Side 原生控制演练 - 属于“在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”群组 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=demo, Secondary Actions: Raise
+	1 container 模拟测试页面 · By Your Side 原生控制演练 - 属于“在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”群组 - Google Chrome, URL: 127.0.0.1:48765/?scenario=a&case=demo
+		2 container
+			3 工具栏
+				4 按钮 返回
+				5 按钮 (disabled) 前进
+				6 按钮 重新加载
+				7 container
+					8 弹出式按钮 查看网站信息
+					9 文本栏 (settable) Description: 地址和搜索栏, Value: 127.0.0.1:48765/?scenario=a&case=demo, Placeholder: 问问 Google 或输入网址
+					10 按钮 缩放比例：110%
+					11 按钮 为此标签页添加书签
+				12 container
+					13 弹出式按钮 Global Speed: 视频速度控制
+可以访问此网站
+					14 弹出式按钮 Toggle ChatGPT Sidebar
+可以访问此网站
+					15 弹出式按钮 Video Download Helper
+可以访问此网站
+					16 弹出式按钮 沉浸式翻译 - AI 双语网页翻译 | PDF翻译 | 视频翻译 | 漫画翻译
+可以访问此网站
+					17 弹出式按钮 Stylus
+可以访问此网站
+					18 弹出式按钮 Save to my mind
+想要访问此网站
+					19 弹出式按钮 By Your Side
+可以访问此网站
+					20 弹出式按钮 扩展程序
+					21 按钮 关闭侧边栏
+				22 按钮 AP
+				23 弹出式按钮 Chrome
+			24 工具栏 书签
+				25 工具栏 已保存的标签页分组
+					26 “已保存的标签页分组”按钮 “在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”分组 - 已打开
+					27 “已保存的标签页分组”按钮 “在本会话新标签页打开 http://127.0.0.1:48765/?s”分组 - 已打开
+					28 “已保存的标签页分组”按钮 “只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”分组 - 已打开
+					29 “已保存的标签页分组”按钮 “闻见 GitHub 登录”分组 - 已打开
+					30 “已保存的标签页分组”按钮 “你好”分组 - 已打开
+					31 按钮 标签页分组
+				32 分离器 分隔符
+				33 书签按钮 Gmail
+				34 书签按钮 YouTube
+				35 书签按钮 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+				36 书签按钮 notion
+				37 书签按钮 Untitled notebook - NotebookLM
+				38 书签文件夹按钮 AI
+				39 书签按钮 ChatGPT
+				40 弹出式按钮 包含隐藏书签的菜单
+				41 书签文件夹按钮 所有书签
+				42 分离器 分隔符
+			43 container
+				44 HTML 内容 模拟测试页面 · By Your Side 原生控制演练, URL: 127.0.0.1:48765/?scenario=a&case=demo
+					45 container
+						46 文本 模拟测试页面 · 非真实产品界面
+						47 文本 SIMULATED FIXTURE for native computer-control drills. 数据只保存在当前标签页内存中，刷新即丢失；页面不发送任何网络请求。
+						48 标题 By Your Side 表单与连续步骤演练, Value: 1
+							49 文本 By Your Side 表单与连续步骤演练
+						50 文本 当前场景：
+						51 文本 A
+						52 文本  · A/B 两个场景各自维护独立的内存状态，切换场景不会清空另一个场景的数据。
+						53 container 场景链接
+							54 text 独立测试页面状态：
+							55 link Description: 场景 A, Value: 127.0.0.1:48765/?scenario=a
+							56 link Description: 场景 B, Value: 127.0.0.1:48765/?scenario=b
+							57 text （在每个标签页里打开一个链接，即得到互不干扰的状态）
+						58 标题 1. 表单（保存只写入本页内存）, Value: 2
+							59 文本 1. 表单（保存只写入本页内存）
+						60 container
+							61 文本 姓名
+							62 文本栏 (settable) 姓名, Value: 验收甲, Placeholder: 例如：林然
+						63 文本 城市
+						64 文本栏 (settable) 城市, Placeholder: 例如：杭州
+						65 文本 备注
+						66 文本输入区 (settable) 备注, Placeholder: 例如：希望周五下午联系
+						67 文本 优先级
+						68 弹出式按钮 优先级, Value: 中
+							69 (selected) 中
+						70 container
+							71 按钮 保存到本页内存
+							72 按钮 清空本场景状态
+						73 文本 （尚未保存）
+						74 标题 2. 页面事件记录（不是 Agent 操作计数）, Value: 2
+							75 文本 2. 页面事件记录（不是 Agent 操作计数）
+						76 文本 事件条数：
+						77 文本 2
+						78 文本 记录字段 input/change 和页面状态变化；同一操作可能产生多条事件。来源需与侧栏执行过程和人工操作时间对应，不能由本页判断。
+						79 内容列表 本场景操作记录
+							80 container
+								81 AXListMarker 1. 
+								82 文本 #1 2026-09-13T03:34:17.239Z input name=验收甲
+							83 container
+								84 AXListMarker 2. 
+								85 文本 #2 2026-09-13T03:34:17.240Z change name=验收甲
+						86 标题 3. 连续步骤（下一步按钮延迟 10 秒出现）, Value: 2
+							87 文本 3. 连续步骤（下一步按钮延迟 10 秒出现）
+						88 文本 进度：
+						89 文本 未开始
+						90 文本 点击“开始步骤”，随后每完成一步都会等待 10 秒才出现“下一步”按钮。
+						91 按钮 开始步骤
+						92 文本 接管修正（等待期间可修改，点按钮记录）
+						93 文本栏 (settable) 接管修正（等待期间可修改，点按钮记录）, Placeholder: 例如：把优先级改为高
+						94 按钮 记录接管修正
+					95 container
+						96 按钮 logo icon
+							97 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
+							98 图像
+						99 container
+							100 按钮
+			101 HTML 内容 By Your Side, URL: chrome-extension://fnbjglhppbkgmjeehablkfilmmefjolo/sidepanel.html
+				102 container
+					103 文本 By Your Side
+					104 切换按钮 Description: 教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：生长定格）, Value: 0
+						105 图像
+					106 切换按钮 Description: 看我做一次：你亲手做一遍，我先只看不动手, Value: 0
+						107 图像
+					108 container 当前连接与执行状态
+						109 文本 已连接
+					110 弹出式按钮 在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答
+					111 弹出式按钮 知识
+					112 按钮 ＋ 新会话
+					113 container 当前会话与控制
+						114 container
+							115 text 麦克风：已关 声音：未说
+						116 文本 回答已给出
+					117 文本 在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答颜色，不操作页面。
+					118 开合三角标记 任务已接收
+						119 文本 任务已接收
+					120 按钮 使用了 2 条记忆 · 查看
+					121 开合三角标记 查看执行过程 … → 读取完整内容 → 思考 → send_user_message 耗时 13s
+						122 文本 查看执行过程
+						123 文本 … → 读取完整内容 → 思考 → send_user_message
+						124 文本 耗时 13s
+						125 图像
+					126 文本 JOURNEY-913-FIX 的展示色是紫色。这个答案来自你此前在该测试网站（127.0.0.1）记下的设定——当前页面本身没有任何 JOURNEY-913-FIX 的信息，我也没有操作页面。
+					127 container
+						128 container 当前活动标签页（点击展开检查面板）
+							129 文本 1
+							130 文本 127.0.0.1:48765 · 模拟测试页面 · By Y…
+						131 按钮 这条不对, Help: 标记最近一轮：只记录，不打断说话，不改变语音状态
+						132 开合三角标记 语音记录
+							133 文本 语音记录
+						134 文本输入区 (settable) 给 By Your Side 发消息，Enter 发送，Shift+Enter 换行
+						135 弹出式按钮 +, Help: 添加附件或截屏
+						136 弹出式按钮 O DeepSeek V4.1 Flash (Go), Help: 切换模型（opencode-go/deepseek-flash）
+							137 文本 O
+							138 文本 DeepSeek V4.1 Flash (Go)
+							139 图像
+						140 按钮 Description: 打开语音问进度, Help: 语音对话：问进度或调整当前任务
+						141 按钮 发送
+							142 图像
+							143 图像
+			144 滑块 Description: 侧边栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+			145 container
+				146 文本 By Your Side
+				147 复选框 Description: 取消固定到工具栏, Value: 1
+				148 按钮 关闭侧边栏
+			149 标签组
+				150 container
+					151 按钮 收起标签页
+					152 弹出式按钮 标签页分组
+					153 弹出式按钮 标签页搜索
+				154 container
+					155 滚动区
+					156 滚动区
+						157 container
+							158 标签 (settable, boolean) Value: off, Description: 女娲Nuwax AIOS | 全球首个开源AI智能体操作系统 | 女娲智能体OS | 产品级开源Agent操作系统 — AgentFlow·AgentGroup·VibeCoding | Skills技能·沙箱安全·MCP接入·LangGraph·多智能体·工作流 - 闲置标签页 - 已释放 162 MB
+							159 标签 (settable, boolean) Description: Particle Scroll | Canvas UI - 闲置标签页 - 已释放 154 MB, Value: off
+							160 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 143 MB, Value: off
+							161 标签 (settable, boolean) Description: 阿里云登录页 - 闲置标签页 - 已释放 151 MB, Value: off
+							162 标签组 分组“你好”- 1 个标签页•  Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 已展开
+							163 标签 (settable, boolean) Description: Trondheim vlog. 回挪威的几天_哔哩哔哩_bilibili - 属于“你好”群组 - 闲置标签页 - 已释放 525 MB, Value: off
+							164 标签组 分组“帮我打开youtube.”- 1 个标签页•  This UX Designer Shipped 3 Side Projects to 12… - 已展开
+							165 标签 (settable, boolean) Value: off, Description: This UX Designer Shipped 3 Side Projects to 12K+ Users ✦ Megan Yap - YouTube - 属于“帮我打开youtube.”群组 - 内存用量 - 609 MB
+							166 标签 (settable, boolean) Description: 开源项目查询 - 内存用量 - 696 MB, Value: off
+							167 标签 (settable, boolean) Description: VibeHub｜Vibe Coding 术语图鉴 · 用大白话找准前端、后端、AI 术语 - 闲置标签页 - 已释放 144 MB, Value: off
+							168 标签 (settable, boolean) Description: flomo - 闲置标签页 - 已释放 192 MB, Value: off
+							169 标签 (settable, boolean) Description: 打造信息可视化技能 - 内存用量高 - 1.3 GB, Value: off
+							170 标签 (settable, boolean) Description: Why We Like Things—Asterisk - 闲置标签页 - 已释放 99.1 MB, Value: off
+							171 标签 (settable, boolean) Description: How I manage my agents - 闲置标签页 - 已释放 132 MB, Value: off
+							172 标签 (settable, boolean) Description: Beautiful UI — Crafted primitives for AI-native interfaces - 闲置标签页 - 已释放 216 MB, Value: off
+							173 标签 (settable, boolean) Description: 游戏机制介绍 - 内存用量 - 712 MB, Value: off
+							174 标签组 分组“闻见 GitHub 登录”- 1 个标签页•  OAuth application settings - 已展开
+							175 标签 (settable, boolean) Description: OAuth application settings - 属于“闻见 GitHub 登录”群组 - 内存用量 - 440 MB, Value: off
+							176 标签 (settable, boolean) Description: AI Assistants Blocks for React — Live Previews & Source - 闲置标签页 - 已释放 127 MB, Value: off
+							177 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.8 GB, Value: off
+							178 标签组 分组“只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							179 标签 (settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。”群组 - 内存用量 - 193 MB, Value: off
+							180 标签组 分组“在本会话新标签页打开 http://127.0.0.1:48765/?s”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							181 标签 (settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“在本会话新标签页打开 http://127.0.0.1:48765/?s”群组 - 内存用量 - 285 MB, Value: off
+							182 标签 (settable, boolean) Description: 扩展程序 - By Your Side - 内存用量 - 269 MB, Value: off
+							183 标签组 分组“在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”- 1 个标签页•  模拟测试页面 · By Your Side 原生控制演练 - 已展开
+							184 标签 (selected, settable, boolean) Description: 模拟测试页面 · By Your Side 原生控制演练 - 属于“在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答”群组 - 内存用量 - 197 MB, Value: on
+								185 按钮 关闭
+				186 按钮 打开新的标签页
+				187 滑块 Description: 垂直标签栏大小调整手柄（可拖动）, Secondary Actions: Decrement, Increment
+	188 关闭按钮
+	189 全屏幕按钮 Help: 此按钮也可以执行缩放窗口的操作, Secondary Actions: 缩放窗口
+	190 最小化按钮
+191 menu bar
+	192 Chrome
+	193 文件
+	194 编辑
+	195 显示
+	196 历史记录
+	197 书签
+	198 个人资料
+	199 标签页
+	200 窗口
+	201 帮助
+
+The focused UI element is 141 按钮 发送

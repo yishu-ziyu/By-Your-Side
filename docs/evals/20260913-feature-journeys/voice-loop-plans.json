@@ -1,0 +1,181 @@
+[
+  {
+    "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-1",
+    "source": "40212c27-f895-490c-bc29-b51300ed69ea",
+    "steps": [
+      {
+        "action": "start",
+        "text": "把当前页面的城市改成上海。",
+        "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "targetTitle": "新会话",
+        "status": "complete",
+        "receipt": {
+          "requestId": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-1",
+          "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+          "source": "voice",
+          "action": "start",
+          "runId": "0ac08a0f-f3d5-4035-b291-cb7ac4699344",
+          "text": "把当前页面的城市改成上海。",
+          "targetTitle": "把当前页面的城市改成上海。",
+          "status": "accepted",
+          "message": "已接收新任务：把当前页面的城市改成上海。",
+          "updatedAt": 1789271625003
+        }
+      }
+    ],
+    "result": {
+      "kind": "action",
+      "ok": true,
+      "status": "accepted",
+      "message": "已接收新任务：把当前页面的城市改成上海。",
+      "receipts": [
+        {
+          "requestId": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-1",
+          "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+          "source": "voice",
+          "action": "start",
+          "runId": "0ac08a0f-f3d5-4035-b291-cb7ac4699344",
+          "text": "把当前页面的城市改成上海。",
+          "targetTitle": "把当前页面的城市改成上海。",
+          "status": "accepted",
+          "message": "已接收新任务：把当前页面的城市改成上海。",
+          "updatedAt": 1789271625003
+        }
+      ],
+      "plan": {
+        "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-1",
+        "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "updatedAt": 1789271625004,
+        "steps": [
+          {
+            "action": "start",
+            "text": "把当前页面的城市改成上海。",
+            "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+            "targetTitle": "新会话",
+            "status": "complete",
+            "receipt": {
+              "requestId": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-1",
+              "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+              "source": "voice",
+              "action": "start",
+              "runId": "0ac08a0f-f3d5-4035-b291-cb7ac4699344",
+              "text": "把当前页面的城市改成上海。",
+              "targetTitle": "把当前页面的城市改成上海。",
+              "status": "accepted",
+              "message": "已接收新任务：把当前页面的城市改成上海。",
+              "updatedAt": 1789271625003
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-2",
+    "source": "40212c27-f895-490c-bc29-b51300ed69ea",
+    "steps": [
+      {
+        "action": "steer",
+        "text": "不是上海，是苏州。",
+        "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "targetTitle": "把当前页面的城市改成上海。",
+        "status": "unexecuted"
+      }
+    ],
+    "result": {
+      "kind": "clarify",
+      "message": "你是说“不是上海，是苏州。”，对吗？确认后我就照做。",
+      "plan": {
+        "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-2",
+        "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "updatedAt": 1789271633071,
+        "steps": [
+          {
+            "action": "steer",
+            "text": "不是上海，是苏州。",
+            "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+            "targetTitle": "把当前页面的城市改成上海。",
+            "status": "unexecuted"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-3",
+    "source": "40212c27-f895-490c-bc29-b51300ed69ea",
+    "steps": [
+      {
+        "action": "steer",
+        "text": "对，是苏州，但是不要点确认。",
+        "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "targetTitle": "把当前页面的城市改成上海。",
+        "status": "unexecuted"
+      }
+    ],
+    "result": {
+      "kind": "clarify",
+      "message": "你是说“对，是苏州，但是不要点确认。”，对吗？确认后我就照做。",
+      "plan": {
+        "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-3",
+        "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "updatedAt": 1789271643768,
+        "steps": [
+          {
+            "action": "steer",
+            "text": "对，是苏州，但是不要点确认。",
+            "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+            "targetTitle": "把当前页面的城市改成上海。",
+            "status": "unexecuted"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-4",
+    "source": "40212c27-f895-490c-bc29-b51300ed69ea",
+    "steps": [
+      {
+        "action": "steer",
+        "text": "是的，确认。",
+        "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "targetTitle": "把当前页面的城市改成上海。",
+        "status": "unexecuted"
+      }
+    ],
+    "result": {
+      "kind": "clarify",
+      "message": "你是说“是的，确认。”，对吗？确认后我就照做。",
+      "plan": {
+        "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-4",
+        "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "updatedAt": 1789271670046,
+        "steps": [
+          {
+            "action": "steer",
+            "text": "是的，确认。",
+            "targetId": "40212c27-f895-490c-bc29-b51300ed69ea",
+            "targetTitle": "把当前页面的城市改成上海。",
+            "status": "unexecuted"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-5",
+    "source": "40212c27-f895-490c-bc29-b51300ed69ea",
+    "steps": [],
+    "result": {
+      "kind": "none",
+      "resumeReadOnly": "chat",
+      "plan": {
+        "id": "09f3d671-e803-4d2b-a274-5d8a59b72cd9-5",
+        "conversationId": "40212c27-f895-490c-bc29-b51300ed69ea",
+        "updatedAt": 1789271719701,
+        "steps": []
+      }
+    }
+  }
+]

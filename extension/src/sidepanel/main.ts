@@ -7,9 +7,10 @@ import { createOrb, type OrbHandle } from "./orb.js";
  *
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
-import { marked } from "marked";
+import { renderMarkdownHtml } from "./markdown.js";
+import { receiptCopy } from "./receipt-copy.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, GraduationCap, Search, Hand } from "lucide";
+import { createElement as icon, ArrowUp, Square, GraduationCap, Hand } from "lucide";
 import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
 import { skillHealth, skillRunSummary, skillStepsText, type Skill, type SkillRun } from "../../../shared/skill.js";
 import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
@@ -28,7 +29,6 @@ import {
   Eraser,
   ChevronDown,
   ArrowDown,
-  Check,
   Users,
   Send,
   Inbox,
@@ -49,24 +49,21 @@ import { LEAD_COLOR, displayColor, displayNameFor, personFor } from "../../../sh
 import { mountGrok, mountKenney, type GrokHandle } from "../shared/grok-bot.js";
 import { mountCompanion } from "./companion.js";
 import {
-  chipLabel,
-  displayName,
-  filterModels,
-  groupModelsByProvider,
   humanizeModelError,
-  modelReasoningMeta,
-  providerLabel,
-  providerMark,
 } from "./models.js";
+import { mountModelPicker } from "./model-picker.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ModelOption, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import type { UserDelivery } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
+import { actionQuestion, controlQuestion, micQuestion, pageQuestion, resultCardCopy, sessionQuestion, speechQuestion } from "./selectors.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
+import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryScopeLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
+import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
@@ -76,7 +73,6 @@ const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；交还
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
 const PLACEHOLDER_PARTIAL = "部分成员已恢复。未续跑的人仍归你。";
 
-marked.setOptions({ breaks: true, gfm: true });
 
 // 渲染出的链接一律新开标签页
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -87,7 +83,7 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 });
 
 function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text, { async: false }));
+  return DOMPurify.sanitize(renderMarkdownHtml(text));
 }
 
 const app = document.getElementById("app")!;
@@ -110,6 +106,21 @@ app.innerHTML = `
     <button id="conversation-new" type="button">＋ 新会话</button>
   </div>
   <button id="conversation-background" type="button" hidden></button>
+  <div id="consent-requests" aria-label="请求授权" hidden></div>
+  <div id="task-strip" aria-label="当前会话与控制">
+    <div id="task-session-q"></div>
+    <div id="task-page-q"></div>
+    <div id="task-action-q"></div>
+    <div id="task-control-q"></div>
+    <div id="voice-dual">
+      <span id="mic-q">麦克风：已关</span>
+      <span id="speech-q">声音：未说</span>
+    </div>
+    <div id="task-result-card" hidden>
+      <div id="task-result-primary"></div>
+      <div id="task-result-secondary"></div>
+    </div>
+  </div>
   <div id="conversation-menu" role="menu" hidden></div>
   <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
   <section id="memory-drawer" role="dialog" aria-label="知识与记忆" aria-modal="false" hidden>
@@ -271,6 +282,14 @@ let bootCreateTimer: ReturnType<typeof setTimeout> | null = null;
 const BOOT_DECISION_TIMEOUT_MS = 6_000;
 const BOOT_CREATE_FALLBACK_MS = 4_000;
 const conversations = new Map<string, ConversationSummary>();
+const consentPanel = new ConsentPanel(
+  document.getElementById("consent-requests")!,
+  () => selectedConversationId,
+  id => conversations.get(id)?.title ?? "其他会话",
+  id => selectConversation(id),
+  message => send(message),
+);
+window.addEventListener("pagehide", () => consentPanel.dispose());
 const receiptMessages = new Map<string, HTMLElement>();
 const conversationSwitcher = document.getElementById("conversation-switcher") as HTMLButtonElement;
 const conversationNew = document.getElementById("conversation-new") as HTMLButtonElement;
@@ -326,6 +345,7 @@ async function restoreDraft(id: string): Promise<void> {
 function upsertConversation(c: ConversationSummary): void {
   if (conversations.get(c.id)?.state === "running" && c.state === "idle" && c.id !== selectedConversationId) completedConversations.add(c.id);
   conversations.set(c.id, c);
+  if (c.id === selectedConversationId) noteRunStarted(c.runId);
 }
 
 function conversationStateLabel(c: ConversationSummary): string {
@@ -376,6 +396,7 @@ function resetConversationRender(): void {
   toolChips.clear();
   sessionRun.clear();
   teamView = null;
+  teamRunId = null;
   running = false;
   lastUserHasPage = false;
   lastHistorySeq = 0;
@@ -412,12 +433,12 @@ function selectConversation(id: string, notify = true): void {
     const summary = conversations.get(id);
     if (summary) applyMode(summary.mode, false);
     clearDemoView();
-    closeModelPopover();
-    modelState = null;
-    renderModelPicker();
+    modelPicker.reset();
     void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
   }
   renderConversations();
+  renderTaskStrip();
+  consentPanel.refresh();
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
   port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
 }
@@ -1491,246 +1512,22 @@ demoClose.onclick = () => {
 };
 
 // ── 模型选择器 ─────────────────────────────────────────────────────
-// 芯片在输入区左下；数据源是 agent 下发的 hello_ok.models / model_info。
-// 选择后发 set_model，等 agent 回 model_info 再更新显示。
-
-/** 当前模型信息：model = "provider/id"，models = 可选列表（已配置凭据的 provider）。 */
-let modelState: { model?: string; models: ModelOption[] } | null = null;
-let modelQuery = "";
-
-function closeModelPopover(): void {
-  modelPopover.hidden = true;
-  modelBtn.setAttribute("aria-expanded", "false");
-}
-
-function paintMark(el: HTMLElement, provider: string | undefined): void {
-  if (!provider) {
-    el.hidden = true;
-    return;
-  }
-  const { letter, hue } = providerMark(provider);
-  el.hidden = false;
-  el.textContent = letter;
-  el.style.background = `hsl(${hue} 42% 44%)`;
-}
-
-function currentProvider(): string | undefined {
-  const id = modelState?.model;
-  if (!id) return undefined;
-  return modelState?.models.find((m) => m.id === id)?.provider ?? id.split("/")[0];
-}
-
-function positionModelPopover(): void {
-  const composer = document.getElementById("composer")!;
-  const appBox = app.getBoundingClientRect();
-  const box = composer.getBoundingClientRect();
-  modelPopover.style.bottom = `${appBox.bottom - box.top + 8}px`;
-}
-
-/**
- * 面板要从触发它的那颗按钮长出来：把缩放原点对齐到按钮中点。
- * 不能读面板自己的 rect —— 展开动画的 transform 会污染测量，所以用 offsetLeft 换算布局位置。
- */
-function alignModelPopoverOrigin(): void {
-  const parent = modelPopover.offsetParent as HTMLElement | null;
-  if (!parent) return;
-  const popLeft = parent.getBoundingClientRect().left + modelPopover.offsetLeft;
-  const btn = modelBtn.getBoundingClientRect();
-  const x = Math.round(btn.left - popLeft + btn.width / 2);
-  if (x > 0 && x < modelPopover.offsetWidth) {
-    modelPopover.style.transformOrigin = `${x}px bottom`;
-  }
-}
-
-/** 展开只有这一次：列表项依次落位。搜索会重渲染列表，靠一次性 class 避免每次输入都重播。 */
-function playPopoverOpening(): void {
-  modelPopover.classList.remove("opening");
-  void modelPopover.offsetWidth;
-  modelPopover.classList.add("opening");
-  window.setTimeout(() => modelPopover.classList.remove("opening"), 600);
-}
-
-function modelSearchInput(): HTMLInputElement | null {
-  return modelPopover.querySelector(".model-search-input");
-}
-
-function ensurePopoverChrome(): HTMLElement {
-  let list = modelPopover.querySelector(".model-list") as HTMLElement | null;
-  if (list) return list;
-  const search = document.createElement("div");
-  search.className = "model-search";
-  const searchIcon = document.createElement("span");
-  searchIcon.className = "model-search-icon";
-  searchIcon.appendChild(icon(Search));
-  const input = document.createElement("input");
-  input.type = "search";
-  input.className = "model-search-input";
-  input.placeholder = "搜索模型…";
-  input.setAttribute("aria-label", "搜索模型");
-  input.autocomplete = "off";
-  input.addEventListener("input", () => {
-    modelQuery = input.value;
-    renderModelList();
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      moveModelHighlight(e.key === "ArrowDown" ? 1 : -1);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const cur = modelPopover.querySelector(".model-item.current-nav") as HTMLButtonElement | null;
-      cur?.click();
-    }
-  });
-  search.append(searchIcon, input);
-  list = document.createElement("div");
-  list.className = "model-list";
-  list.setAttribute("role", "listbox");
-  modelPopover.replaceChildren(search, list);
-  return list;
-}
-
-function visibleModelButtons(): HTMLButtonElement[] {
-  return [...modelPopover.querySelectorAll<HTMLButtonElement>(".model-item")];
-}
-
-function moveModelHighlight(delta: number): void {
-  const items = visibleModelButtons();
-  if (items.length === 0) return;
-  const idx = items.findIndex((el) => el.classList.contains("current-nav"));
-  const next = items[(idx < 0 ? (delta > 0 ? 0 : items.length - 1) : idx + delta + items.length) % items.length]!;
-  items.forEach((el) => el.classList.toggle("current-nav", el === next));
-  next.scrollIntoView({ block: "nearest" });
-}
-
-function renderModelList(): void {
-  const list = ensurePopoverChrome();
-  const models = filterModels(modelState?.models ?? [], modelQuery);
-  list.replaceChildren();
-  if (models.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "model-empty";
-    empty.textContent = modelQuery.trim() ? "无匹配模型" : "暂无可用模型";
-    list.appendChild(empty);
-    return;
-  }
-  for (const group of groupModelsByProvider(models)) {
-    const header = document.createElement("div");
-    header.className = "model-group";
-    header.textContent = providerLabel(group.provider);
-    list.appendChild(header);
-    for (const m of group.models) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "model-item";
-      item.dataset.model = m.id;
-      item.title = m.id;
-      item.setAttribute("role", "option");
-      item.setAttribute("aria-selected", String(m.id === modelState?.model));
-      if (m.id === modelState?.model) item.classList.add("current");
-      const mark = document.createElement("span");
-      mark.className = "model-mark";
-      paintMark(mark, m.provider);
-      const label = document.createElement("span");
-      label.className = "model-label";
-      label.textContent = displayName(m);
-      item.append(mark, label);
-      // 无可信能力证据时不渲染能力标签（issue #2 / 验收 B2）
-      const meta = modelReasoningMeta(m.provider, m.modelId);
-      if (meta.tag) {
-        const tag = document.createElement("span");
-        tag.className = `reasoning-tag tag-${meta.tier}`;
-        tag.textContent = meta.tag;
-        item.append(tag);
-      }
-      const check = document.createElement("span");
-      check.className = "model-check";
-      if (m.id === modelState?.model) check.appendChild(icon(Check));
-      item.append(check);
-      item.onclick = () => {
-        closeModelPopover();
-        if (m.id !== modelState?.model) send({ type: "set_model", model: m.id });
-      };
-      list.appendChild(item);
-    }
-  }
-  const current = list.querySelector(".model-item.current") ?? list.querySelector(".model-item");
-  current?.classList.add("current-nav");
-}
-
-function renderModelPicker(): void {
-  const models = modelState?.models ?? [];
-  const model = modelState?.model;
-  modelBtn.hidden = !model && models.length === 0;
-  modelBtn.disabled = models.length === 0;
-  modelName.textContent = chipLabel(model, models);
-  modelBtn.title = model ? `切换模型（${model}）` : "切换模型";
-  const provider = currentProvider();
-  paintMark(modelMark, provider);
-
-  if (modelReasoningTag) {
-    if (model) {
-      const found = models.find((m) => m.id === model);
-      const prov = found?.provider ?? provider ?? "";
-      const modelId = found?.modelId ?? (model.includes("/") ? model.split("/")[1]! : model);
-      const meta = modelReasoningMeta(prov, modelId);
-      // 无可信能力证据时芯片同样不显示能力标签（issue #2 / 验收 B2）
-      modelReasoningTag.hidden = !meta.tag;
-      if (meta.tag) {
-        modelReasoningTag.textContent = meta.tag;
-        modelReasoningTag.className = `reasoning-tag tag-${meta.tier}`;
-      }
-    } else {
-      modelReasoningTag.hidden = true;
-    }
-  }
-
-  if (models.length === 0) {
-    closeModelPopover();
-    return;
-  }
-  if (!modelPopover.hidden) renderModelList();
-}
-
-function applyModelInfo(model: string | undefined, models: ModelOption[] | undefined): void {
-  modelState = { model: model ?? modelState?.model, models: models ?? modelState?.models ?? [] };
-  renderModelPicker();
-}
-
-modelBtn.appendChild(icon(ChevronDown));
-modelBtn.onclick = () => {
-  const opening = modelPopover.hidden;
-  if (opening) {
-    modelQuery = "";
-    const input = modelSearchInput();
-    if (input) input.value = "";
-    renderModelList();
-    positionModelPopover();
-    modelPopover.hidden = false;
-    alignModelPopoverOrigin();
-    playPopoverOpening();
-    modelBtn.setAttribute("aria-expanded", "true");
-    queueMicrotask(() => modelSearchInput()?.focus());
-  } else {
-    closeModelPopover();
-  }
-};
-document.addEventListener("click", (e) => {
-  if (!modelPopover.hidden && !modelPopover.contains(e.target as Node) && !modelBtn.contains(e.target as Node)) {
-    closeModelPopover();
-  }
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || modelPopover.hidden) return;
-  const input = modelSearchInput();
-  if (input && input.value) {
-    input.value = "";
-    modelQuery = "";
-    renderModelList();
-    input.focus();
-    return;
-  }
-  closeModelPopover();
+// 芯片在输入区左下，搜索面板从芯片长出：完整实现见 ./model-picker.ts。
+// 数据源是 agent 下发的 hello_ok.models / model_info；选择后发 set_model，
+// 等 agent 回 model_info 再更新显示（收到回执才改变状态）。
+const modelPicker = mountModelPicker({
+  host: {
+    button: modelBtn,
+    mark: modelMark,
+    name: modelName,
+    reasoningTag: modelReasoningTag,
+    popover: modelPopover,
+    composer: composerEl,
+    app,
+  },
+  sendSetModel: (model) => {
+    send({ type: "set_model", model });
+  },
 });
 
 let port: chrome.runtime.Port | null = null;
@@ -1801,6 +1598,7 @@ let lastRun: RunHost | null = null;
 
 /** 显式交付气泡：按 delivery.id 只渲染一次，状态更新不重复生成。 */
 const deliveredBubbles = new Map<string, HTMLElement>();
+const resultByConversation = new Map<string, { summary: string | null; remaining: string[]; unknown: boolean; speechFailed: boolean }>();
 /** Lead 当前 run 是否启用了 explicit deliveryMode。 */
 let leadDeliveryMode: "explicit" | null = null;
 let currentLeadDraft: HTMLElement | null = null;
@@ -2172,11 +1970,30 @@ function laneForWorker(id: string): { lane: WorkerLane; run: RunHost; live: bool
 
 const sessionRun = new Map<string, AgentRunState>();
 let teamView: TeamView | null = null;
+/** teamView 属于哪一次 run。旧 run 的 team 不能盖住新 run 的运行状态（见 shared/team-run.ts）。 */
+let teamRunId: string | null = null;
 
 function setTeamView(next: TeamView | null): void {
-  teamView = next;
+  applyTeamRun(next === null ? emptyTeamRun() : { team: next, runId: teamRunId });
+}
+
+function applyTeamRun(next: TeamRunState): void {
+  if (next.team === teamView && next.runId === teamRunId) return;
+  teamView = next.team;
+  teamRunId = next.runId;
   renderTeamCard();
-  setSessionState(LEAD_SESSION_ID, sessionRun.get(LEAD_SESSION_ID) ?? (next ? "user" : "idle"));
+  setSessionState(LEAD_SESSION_ID, sessionRun.get(LEAD_SESSION_ID) ?? (next.team ? "user" : "idle"));
+}
+
+/** agent_start 携带 runId：换 run 清旧 team，同 run（交还触发）保留。 */
+function noteRunStarted(runId: string | null | undefined): void {
+  if (!isRunId(runId)) return;
+  applyTeamRun(observeRunStarted({ team: teamView, runId: teamRunId }, runId));
+}
+
+function applyTeamStatus(team: TeamView, runId: string | null | undefined): void {
+  const decision = acceptTeamStatus({ team: teamView, runId: teamRunId }, team, runId, applyingHistory);
+  if (decision.accept) applyTeamRun(decision.state);
 }
 
 function renderTeamCard(): void {
@@ -2224,6 +2041,41 @@ function renderTeamCard(): void {
   el.replaceChildren(summary, roster);
 }
 
+function renderTaskStrip(): void {
+  const flags = panelLive(sessionRun.values(), teamView);
+  const title = conversations.get(selectedConversationId)?.title;
+  const pageTitle = tabTitleText?.textContent ?? "";
+  const sessionEl = document.getElementById("task-session-q");
+  const pageEl = document.getElementById("task-page-q");
+  const actionEl = document.getElementById("task-action-q");
+  const controlEl = document.getElementById("task-control-q");
+  const micEl = document.getElementById("mic-q");
+  const speechEl = document.getElementById("speech-q");
+  if (sessionEl) { sessionEl.textContent = sessionQuestion(title); sessionEl.hidden = true; }
+  // 会话选择器和输入框的页面标签已经提供身份，状态区不再复述。
+  if (pageEl) { pageEl.textContent = `当前页：${pageQuestion(pageTitle, "")}`; pageEl.hidden = true; }
+  if (actionEl) {
+    actionEl.textContent = actionQuestion({ running: flags.running, action: statusText.textContent });
+    actionEl.hidden = !flags.running || ["已连接", "Agent 在操作", "正在处理"].includes(actionEl.textContent);
+  }
+  if (controlEl) { controlEl.hidden = false; controlEl.textContent = controlQuestion({ userHasPage: flags.userHasPage, draining: teamView?.phase === "draining", running: flags.running }); }
+  if (micEl) micEl.textContent = micQuestion(false);
+  if (speechEl) speechEl.textContent = speechQuestion(false);
+  const card = resultCardCopy(resultByConversation.get(selectedConversationId) ?? { summary: null });
+  const cardEl = document.getElementById("task-result-card");
+  const primaryEl = document.getElementById("task-result-primary");
+  const secondaryEl = document.getElementById("task-result-secondary");
+  if (cardEl && primaryEl && secondaryEl) {
+    cardEl.hidden = !card.visible;
+    const result = resultByConversation.get(selectedConversationId);
+    const plainReply = !!result?.summary && !result.unknown && !result.remaining?.length;
+    primaryEl.textContent = plainReply ? "回答已给出" : card.primary;
+    if (controlEl && !flags.running && !flags.userHasPage && card.visible) controlEl.hidden = true;
+    secondaryEl.textContent = card.secondary;
+    secondaryEl.hidden = !card.secondary;
+  }
+}
+
 function setSessionState(sessionId: string, state: AgentRunState): void {
   sessionRun.set(sessionId, state);
   const flags = panelLive(sessionRun.values(), teamView);
@@ -2248,6 +2100,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   if (statusPill) {
     statusPill.classList.toggle("running", flags.live);
   }
+  renderTaskStrip();
   inputEl.placeholder =
     teamView?.phase === "draining"
       ? PLACEHOLDER_DRAINING
@@ -2603,7 +2456,7 @@ function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
   scrollToEnd();
 }
 
-function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
+function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   if (sessionId && !isLeadSession(sessionId)) {
     handleWorkerEvent(sessionId, ev);
     return;
@@ -2629,7 +2482,10 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
       onToolEnd(ev);
       break;
     case "agent_start":
+      if (!runId || runId === conversations.get(selectedConversationId)?.runId) noteRunStarted(runId);
       leadDeliveryMode = (ev as { deliveryMode?: "explicit" }).deliveryMode ?? null;
+      resultByConversation.delete(selectedConversationId);
+      renderTaskStrip();
       closeBlocks();
       break;
     case "turn_end":
@@ -2662,10 +2518,22 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string): void {
         const previous=receiptMessages.get(key);if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
-        const text=`${ev.receipt.targetTitle} · ${ev.message}${ev.receipt.text&&!ev.message.includes(ev.receipt.text)?`\n原话：${ev.receipt.text}`:''}`;
-        const previous=receiptMessages.get(key);
-        if (previous) previous.textContent=text;
-        else receiptMessages.set(key,addMsg('msg notice',text));
+        const copy = receiptCopy(ev.receipt, selectedConversationId);
+        const previous = receiptMessages.get(key);
+        const restoreFocus = previous?.contains(document.activeElement);
+        const receipt = document.createElement("details");
+        receipt.className = `msg receipt${copy.collapsed ? "" : " notice"}`;
+        receipt.open = previous instanceof HTMLDetailsElement && previous.open;
+        const summary = document.createElement("summary");
+        summary.textContent = copy.summary;
+        const detail = document.createElement("p");
+        detail.textContent = copy.detail;
+        receipt.append(summary, detail);
+        if (previous) previous.replaceWith(receipt);
+        else messagesEl.appendChild(receipt);
+        receiptMessages.set(key, receipt);
+        if (restoreFocus) summary.focus({ preventScroll: true });
+        scrollToEnd();
       } else addMsg("msg notice", ev.message);
       break;
     case "error":
@@ -2682,6 +2550,17 @@ const DELIVERY_STATUS_RANK: Record<string, number> = {
 
 function handleUserDelivery(delivery: UserDelivery): void {
   if (!delivery || typeof delivery.id !== "string" || !delivery.id) return;
+  if (delivery.kind === "finding" || delivery.kind === "reply") {
+    const cid = delivery.conversationId || selectedConversationId;
+    const previous = resultByConversation.get(cid);
+    resultByConversation.set(cid, {
+      summary: delivery.text.trim().slice(0, 160),
+      remaining: previous?.remaining ?? [],
+      unknown: false,
+      speechFailed: previous?.speechFailed ?? false,
+    });
+    renderTaskStrip();
+  }
 
   const existing = deliveredBubbles.get(delivery.id);
   if (existing) {
@@ -2741,6 +2620,7 @@ const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send,()=>
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
   if (!msg) return;
+  if (consentPanel.receive(msg)) return;
   if (msg.type === "voice") { voiceUI.receive(msg); return; }
   if (msg.type === "memory_result") {
     handleMemoryResult(msg);
@@ -2795,11 +2675,11 @@ function handleServerMessage(raw: string): void {
   switch (msg.type) {
     case "hello_ok":
       setStatus("on", "已连接");
-      applyModelInfo(msg.model, msg.models ?? []);
+      modelPicker.apply(msg.model, msg.models);
       setupEl.hidden = true;
       break;
     case "model_info":
-      applyModelInfo(msg.model, msg.models);
+      modelPicker.update(msg.model, msg.models);
       break;
     case "hello_error":
       showSetup(msg.error);
@@ -2808,10 +2688,11 @@ function handleServerMessage(raw: string): void {
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
       break;
     case "team_status":
-      setTeamView(msg.team);
+      noteRunStarted(conversations.get(selectedConversationId)?.runId);
+      applyTeamStatus(msg.team, msg.runId);
       break;
     case "agent_event":
-      handleAgentEvent(msg.event, msg.sessionId);
+      handleAgentEvent(msg.event, msg.sessionId, msg.runId);
       break;
     default:
       break;
@@ -2830,13 +2711,22 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result") return;
+      && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result") return;
     handleServerMessage(JSON.stringify(envelope.msg));
     return;
   }
   if (envelope.kind === "history") {
-    if (bootFreshSession) return;
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
+    if (bootFreshSession) {
+      // 打开进入尚未定会话时仍要让这一次的正式交付出现，不能等历史回放。
+      for (const entry of envelope.entries) {
+        const item = entry.item;
+        if (item.kind === "server" && item.msg.type === "agent_event" && (item.msg.event.kind === "user_delivery" || item.msg.event.kind === "user_delivery_stream")) {
+          handleAgentEvent(item.msg.event, item.msg.sessionId);
+        }
+      }
+      return;
+    }
     applyHistory(envelope.entries);
     return;
   }
@@ -2873,6 +2763,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind !== "conn") return;
   // 连接状态
   transportConnected = envelope.state === "connected";
+  consentPanel.setConnected(transportConnected);
   renderConversations();
   if (envelope.state === "connected") {
     // 等 hello_ok 带模型名到达；先亮绿灯
@@ -2891,8 +2782,7 @@ function handleBgMessage(envelope: BgToPanel): void {
     }
     conversationRequest = null;
     renderConversations();
-    modelState = null;
-    renderModelPicker();
+    modelPicker.reset();
     setStatus("off", "未连接");
     // 同一失败原因只提示一次，重试循环不刷屏
     if (envelope.detail && envelope.detail !== lastDisconnectDetail) {
@@ -3023,7 +2913,7 @@ setupSave.onclick = () => {
 function autoResize(): void {
   inputEl.style.height = "auto";
   inputEl.style.height = `${Math.min(inputEl.scrollHeight, 140)}px`;
-  if (!modelPopover.hidden) positionModelPopover();
+  modelPicker.reposition();
 }
 
 attachments = new AttachmentsManager({

@@ -49,6 +49,15 @@ describe("WRITE_TOOLS", () => {
     expect(isWriteTool("read_element")).toBe(false);
   });
 
+  it("fetch 不在 WRITE_TOOLS 里，但仍走控制闸门", async () => {
+    expect(isWriteTool("fetch")).toBe(false);
+    const gate = new ControlGate();
+    await gate.takeover();
+    let ran = 0;
+    await expect(gate.run("f1", "fetch", async () => { ran += 1; return { ok: true }; }, "main", { method: "POST", body: "{}" })).rejects.toThrow(USER_BLOCKED_ERROR);
+    expect(ran).toBe(0);
+  });
+
   it("写名单都是协议里的工具名", () => {
     for (const name of WRITE_TOOLS) {
       expect(TOOL_NAMES).toContain(name);

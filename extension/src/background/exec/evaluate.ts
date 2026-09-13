@@ -11,10 +11,10 @@ interface CdpEvalResult {
 
 /** js 工具只走 CDP Runtime.evaluate，避免 MAIN world eval 被页面 CSP 拦截。 */
 export async function evaluateJs(
-  params: { code: string },
+  params: { code: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ value: unknown }> {
-  const tab = await resolveWorkingTab(undefined, sessionId);
+  const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   const res = await sendCommand<CdpEvalResult>(tab.id, "Runtime.evaluate", {

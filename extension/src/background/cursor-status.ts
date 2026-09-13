@@ -43,70 +43,59 @@ function watchTabChanges(): void {
   }
 }
 
-async function paintStatus(tabId: number, key: string, state: CursorStatusState): Promise<void> {
-  try {
-    await ensureCursor(tabId);
-    await callDom(
-      tabId,
-      (id: string, s: CursorStatusState) => {
-        window.__sideagent?.cursor?.for(id)?.setStatus?.({ state: s });
-      },
-      [instanceIdFor(key), state],
-    );
-  } catch {
-    /* 页面禁止注入：状态画不上不影响任务本身 */
-  }
+const statusPaints = new Map<string, Promise<void>>();
+
+/** A status and its clear share a queue, including the asynchronous injection step. */
+function renderStatus(tabId: number, key: string): Promise<void> {
+  const id = `${tabId}:${key}`;
+  const next = (statusPaints.get(id) ?? Promise.resolve()).then(async () => {
+    try {
+      if (living.get(key)?.tabId === tabId) await ensureCursor(tabId);
+      const entry = living.get(key);
+      if (entry?.tabId === tabId) {
+        await callDom(tabId, (instanceId: string, state: CursorStatusState) => {
+          window.__sideagent?.cursor?.for(instanceId)?.setStatus?.({ state });
+        }, [instanceIdFor(key), entry.state]);
+      } else {
+        await callDom(tabId, (instanceId: string) => {
+          window.__sideagent?.cursor?.for(instanceId)?.clearStatus?.();
+        }, [instanceIdFor(key)]);
+      }
+    } catch { /* Closed or restricted page. */ }
+  });
+  statusPaints.set(id, next);
+  void next.finally(() => { if (statusPaints.get(id) === next) statusPaints.delete(id); });
+  return next;
 }
 
-async function paintClear(tabId: number, key: string): Promise<void> {
-  try {
-    await callDom(
-      tabId,
-      (id: string) => {
-        window.__sideagent?.cursor?.for(id)?.clearStatus?.();
-      },
-      [instanceIdFor(key)],
-    );
-  } catch {
-    /* 页面关闭或导航中 */
-  }
+type PillView = { entry: LivingStatus; title: string };
+const pillOwners = new Map<number, Map<string, PillView>>();
+const pillPaints = new Map<number, Promise<void>>();
+
+function currentPill(tabId: number): PillView | undefined {
+  return [...(pillOwners.get(tabId)?.values() ?? [])].reverse().find(({ entry }) => isCurrentEntry(entry));
 }
 
-async function paintPill(
-  tabId: number,
-  key: string,
-  state: CursorStatusState,
-  title: string,
-  sessionId: string,
-  targetTabId: number | null,
-): Promise<void> {
-  if (targetTabId == null) return;
-  try {
-    await ensureCursor(tabId);
-    await callDom(
-      tabId,
-      (id: string, view: { state: CursorStatusState; title: string; sessionId: string; tabId: number }) => {
-        window.__sideagent?.cursor?.for(id)?.showCrossPage?.(view);
-      },
-      [instanceIdFor(key), { state, title, sessionId, tabId: targetTabId }],
-    );
-  } catch {
-    /* 页面禁止注入 */
-  }
-}
-
-async function hidePill(tabId: number): Promise<void> {
-  try {
-    await callDom(
-      tabId,
-      () => {
-        window.__sideagent?.cursor?.hideCrossPage?.();
-      },
-      [],
-    );
-  } catch {
-    /* 页面关闭或导航中 */
-  }
+/** Serialize writes per page, then re-read intent after injection: a late paint cannot undo a clear. */
+function renderPill(tabId: number): Promise<void> {
+  const next = (pillPaints.get(tabId) ?? Promise.resolve()).then(async () => {
+    try {
+      if (currentPill(tabId)) await ensureCursor(tabId);
+      const view = currentPill(tabId);
+      const targetTabId = view?.entry.tabId;
+      if (view && targetTabId != null) {
+        const { entry, title } = view;
+        await callDom(tabId, (id: string, value: { state: CursorStatusState; title: string; sessionId: string; tabId: number }) => {
+          window.__sideagent?.cursor?.for(id)?.showCrossPage?.(value);
+        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId }]);
+      } else {
+        await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
+      }
+    } catch { /* A closed or restricted page cannot change task success. */ }
+  });
+  pillPaints.set(tabId, next);
+  void next.finally(() => { if (pillPaints.get(tabId) === next) pillPaints.delete(tabId); });
+  return next;
 }
 
 async function activeTabId(): Promise<number | null> {
@@ -121,17 +110,32 @@ async function activeTabId(): Promise<number | null> {
 async function dropPill(entry: LivingStatus): Promise<void> {
   const pillTabId = entry.pillTabId;
   entry.pillTabId = undefined;
-  if (pillTabId != null) await hidePill(pillTabId);
+  if (pillTabId != null) {
+    const owners = pillOwners.get(pillTabId);
+    if (owners?.get(entry.key)?.entry === entry) owners.delete(entry.key);
+    if (owners?.size === 0) pillOwners.delete(pillTabId);
+    await renderPill(pillTabId);
+  }
+}
+
+/**
+ * 绘制中间有 await：这期间同一执行键可能被 clear/suppress 掉、或换成新状态的新登记。
+ * 只有「仍是当前登记的那一份」才有资格改动页面上的胶囊，否则旧绘制会把已经收掉的
+ * 跨页提示重新画回来、或把新状态/别的会话的胶囊盖掉。
+ */
+function isCurrentEntry(entry: LivingStatus): boolean {
+  return living.get(entry.key) === entry;
 }
 
 /** 只在它真的在别的标签页干活时留胶囊；等待/读页面之外的阶段、和页面相同的情况都收起。 */
 async function syncPill(entry: LivingStatus): Promise<void> {
   const ambient = entry.state === "waiting" || entry.state === "reading";
   if (entry.tabId == null || !ambient) {
-    await dropPill(entry);
+    if (isCurrentEntry(entry)) await dropPill(entry);
     return;
   }
   const active = await activeTabId();
+  if (!isCurrentEntry(entry)) return;
   if (active == null || active === entry.tabId) {
     await dropPill(entry);
     return;
@@ -143,10 +147,16 @@ async function syncPill(entry: LivingStatus): Promise<void> {
     /* 页面已被关掉，胶囊仍指向那个标签 */
   }
   const previous = entry.pillTabId;
-  entry.pillTabId = active;
-  if (previous != null && previous !== active) await hidePill(previous);
+  if (!isCurrentEntry(entry)) return;
+  if (previous != null && previous !== active) await dropPill(entry);
+  if (!isCurrentEntry(entry)) return;
   // 目标标签页随胶囊一起下发：点击时不必再查内存状态（service worker 可能已经重启过）
-  await paintPill(active, entry.key, entry.state, title, entry.sessionId, entry.tabId);
+  entry.pillTabId = active;
+  const owners = pillOwners.get(active) ?? new Map<string, PillView>();
+  owners.delete(entry.key);
+  owners.set(entry.key, { entry, title });
+  pillOwners.set(active, owners);
+  await renderPill(active);
 }
 
 async function resyncPills(): Promise<void> {
@@ -154,9 +164,10 @@ async function resyncPills(): Promise<void> {
 }
 
 async function forgetTab(tabId: number): Promise<void> {
+  pillOwners.delete(tabId);
   for (const [key, entry] of [...living]) {
     if (entry.pillTabId === tabId) entry.pillTabId = undefined;
-    if (entry.tabId === tabId) living.delete(key);
+    if (entry.tabId === tabId) await clearCursorStatus(key);
   }
 }
 
@@ -170,18 +181,18 @@ export async function showCursorStatus(opts: {
   watchTabChanges();
   const tabId = opts.tabId ?? null;
   const previous = living.get(opts.key);
-  const keepPill = previous?.pillTabId != null && previous.pillTabId === tabId ? previous.pillTabId : undefined;
   const entry: LivingStatus = {
     key: opts.key,
     sessionId: instanceIdFor(opts.key),
     state: opts.state,
     tabId,
-    pillTabId: keepPill,
   };
   living.set(opts.key, entry);
-  if (previous?.pillTabId != null && previous.pillTabId !== tabId) await hidePill(previous.pillTabId);
+  if (previous) await dropPill(previous);
   if (tabId == null) return;
-  await paintStatus(tabId, opts.key, opts.state);
+  if (!isCurrentEntry(entry)) return;
+  await renderStatus(tabId, opts.key);
+  if (!isCurrentEntry(entry)) return;
   await syncPill(entry);
 }
 
@@ -189,8 +200,8 @@ export async function clearCursorStatus(key: string): Promise<void> {
   const entry = living.get(key);
   if (!entry) return;
   living.delete(key);
-  if (entry.pillTabId != null) await hidePill(entry.pillTabId);
-  if (entry.tabId != null) await paintClear(entry.tabId, entry.key);
+  await dropPill(entry);
+  if (entry.tabId != null) await renderStatus(entry.tabId, entry.key);
 }
 
 /** 只清「暂时性」状态（等待/读页面）。完成由页面自己收，失败要留到下一轮或接管。 */
@@ -213,15 +224,15 @@ export function resumeCursorStatus(key: string): void {
 /** 点胶囊：从发消息的标签页反查「它正在干活的那个页面」。 */
 export function workingTabBehindPill(senderTabId: number | null | undefined): number | null {
   if (senderTabId == null) return null;
-  for (const entry of living.values()) {
-    if (entry.pillTabId === senderTabId && entry.tabId != null) return entry.tabId;
-  }
-  return null;
+  return currentPill(senderTabId)?.entry.tabId ?? null;
 }
 
 export function resetCursorStatusForTests(): void {
   living.clear();
   suppressed.clear();
+  pillOwners.clear();
+  pillPaints.clear();
+  statusPaints.clear();
 }
 
 export function cursorStatusForTests(key: string): LivingStatus | null {

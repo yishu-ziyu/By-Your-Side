@@ -1,0 +1,32 @@
+{
+  "scope": "real built extension and isolated headless Chrome; controlled claim interleaving; no external model",
+  "passed": true,
+  "lateOldClose": {
+    "type": "tool_result",
+    "id": "transfer-4",
+    "ok": false,
+    "error": "该页正在移交给其他会话，操作未执行",
+    "executionFact": "not_executed",
+    "conversationId": "A"
+  },
+  "concurrentClaim": {
+    "type": "tool_result",
+    "id": "transfer-5",
+    "ok": false,
+    "error": "该页正在由其他会话接手，请稍后再试",
+    "executionFact": "not_executed",
+    "conversationId": "C"
+  },
+  "owner": {
+    "tabId": 1145805886,
+    "workers": [],
+    "conversationId": "B",
+    "owned": true,
+    "foreign": false,
+    "members": [
+      "main"
+    ]
+  },
+  "otherPageValue": "other-page-continues",
+  "newOwnerValue": "new-owner"
+}

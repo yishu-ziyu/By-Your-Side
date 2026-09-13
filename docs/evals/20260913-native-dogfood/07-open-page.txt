@@ -1,0 +1,43 @@
+The following is a diff from the previous accessibility tree for Window: "Example Domain" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 10, 32, 46-286, 308, 358, 375-379, 382
+~0 标准窗口 Example Domain - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - Google Chrome, URL: example.com/, Secondary Actions: Raise
+~	1 container Example Domain - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - Google Chrome, URL: example.com/
+~				4 按钮 (disabled) 返回
+~					9 文本栏 (settable) Description: 地址和搜索栏, Value: example.com, Placeholder: 问问 Google 或输入网址
++					382 “已保存的标签页分组”按钮 “只在新标签页打开 https://example.com，确认打开后用一”分组 - 已打开
++				383 HTML 内容 Example Domain, URL: example.com/
++					384 container
++						385 标题 Example Domain, Value: 1
++							386 文本 Example Domain
++						387 文本 This domain is for use in documentation examples without needing permission. Avoid use in operations.
++						388 link Description: Learn more, Value: iana.org/domains/example
++					389 container
++						390 按钮 logo icon
++							391 未加标签的图片 logo icon. 要获取缺失的图片说明，请打开上下文菜单。
++							392 图像
++						393 container
++							394 按钮
++						395 文本 只在新标签页打开 https://example.com，确认打开后用一
++						396 文本 当前页：example.com · Example Domain
++						397 文本 空闲
++						398 文本 空闲
++							399 text 麦克风：已关 声音：未说
++						400 文本 已在新标签页打开 https://example.com，页面显示 “Example Domain”，其他什么都没动。
++					401 开合三角标记 查看执行过程 … → 思考 → 读取完整内容 → send_user_message 耗时 9.6s
++						402 文本 查看执行过程
++						403 文本 … → 思考 → 读取完整内容 → send_user_message
++						404 文本 耗时 9.6s
++						405 图像
++					406 container
++						407 文本 已在新标签页打开 
++						408 link Description: https://example.com，页面显示, Value: example.xn--com,-8k0i458g7d8b31b/
++						409 文本  “Example Domain”，其他什么都没动。
++					410 文本 模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试
++							411 文本 E
++							412 文本 example.com · Example Domain
+~						319 按钮 发送
+~							357 标签 (settable, boolean) Description: 「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘 - 内存用量高 - 3.9 GB, Value: off
++							413 标签组 分组“只在新标签页打开 https://example.com，确认打开后用一”- 1 个标签页•  Example Domain - 已展开
++							414 标签 (selected, settable, boolean) Description: Example Domain - 属于“只在新标签页打开 https://example.com，确认打开后用一”群组 - 内存用量 - 251 MB, Value: on
++								415 按钮 关闭
+The focused UI element is 383 HTML 内容 Example Domain, URL: example.com/

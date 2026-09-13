@@ -212,9 +212,9 @@ export class VoiceClient {
     else if (!this.diagSession) this.captureContinuousFrame(source);
     this.speechClassifier?.push(new Int16Array(data.pcm));
   }
-  /** Normal sessions start with `capture:true`; a manual diagnostic session never records twice. */
+  /** Normal sessions do not persist PCM. Diagnostic capture is an explicit second mode. */
   private startCommand(): VoiceCommand {
-    return this.diagSession ? { kind: 'start', diagnostic: true } : { kind: 'start', capture: true };
+    return this.diagSession ? { kind: 'start', diagnostic: true } : { kind: 'start' };
   }
   private resetCapture(): void {
     this.captureTurn = 0;
@@ -230,6 +230,7 @@ export class VoiceClient {
    * the detector sends upstream instead of cutting the speech onset off. Nothing is sent per frame.
    */
   private captureContinuousFrame(source: Int16Array): void {
+    if (!this.diagSession) return;
     if (this.captureTurn === 0) {
       this.capturePrefix.push(Int16Array.from(source));
       while (this.capturePrefix.reduce((sum, frame) => sum + frame.length, 0) > 7680) this.capturePrefix.shift();
@@ -253,6 +254,7 @@ export class VoiceClient {
   /** One command per turn, sent after the upstream commit and never a reason to change voice state. */
   private finishCaptureTurn(turn: number): void {
     if (this.diagSession) return;
+    if (!this.recording) { this.resetCapture(); return; }
     const frames = this.captureTurn === turn ? [...this.capturePrefix, ...this.captureFrames] : [];
     const capped = this.captureCapped;
     this.resetCapture();

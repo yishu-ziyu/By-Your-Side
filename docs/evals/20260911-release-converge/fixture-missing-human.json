@@ -1,0 +1,247 @@
+{
+  "report": {
+    "candidate_sha": "intentional-fail",
+    "baseline_sha": "176e23fd103497e522c5fc0428af2c559733e6c8",
+    "dirty_tree_flag": true,
+    "lockfile_sha256": "b899ed3094cbe36ba090fa14d640ccaac03a274ea3d80e3149a4da1f92c75935",
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "evaluation_revision": "61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748",
+    "dataset_manifest_sha256": "8e1f7be1a000c83c004af85b25d2cedf4c3d725faa702eff6c5884982084589c",
+    "profile": "fixture",
+    "run_id": "fixture-missing-human",
+    "started_at": "2026-09-11T08:03:02.014716+00:00",
+    "gates_sha256": "61f0bab1557be3330315214057466cb889b23b02d133110cf13fc3544502e748",
+    "observations": [
+      {
+        "id": "S01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "S02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "S03",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "S04",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "S05",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "P01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "F01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "F02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "D01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "D02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "R01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "R02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "R03",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "R04",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "R05",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "L01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "L02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "L03",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "L04",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "L05",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V03",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V04",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V05",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V06",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V07",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V08",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V09",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "V10",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "C01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "C02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "U01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "U02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "U03",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "B01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "B02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "K01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "K02",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "H01",
+        "missing": true,
+        "blocked_reason": "not run"
+      },
+      {
+        "id": "H02",
+        "missing": true,
+        "blocked_reason": "not run"
+      }
+    ],
+    "absolute_checks": {
+      "typecheck_pass": "PASS",
+      "all_applicable_unit_tests_pass_no_critical_skips": "PASS",
+      "production_build_pass": "PASS",
+      "fetch_incremental_read_cancel_deadline_and_utf8_tests_pass": "PASS",
+      "effect_policy_covers_fetch_pages_raw_js_and_nested_program_actions": "PASS",
+      "consent_ticket_scope_expiry_and_one_time_consumption_pass": "PASS",
+      "diagnostic_capture_requires_separate_explicit_consent": "PASS",
+      "no_duplicate_production_implementations_or_unrestricted_test_hooks": "PASS",
+      "keyboard_core_flows_and_reduced_motion_pass": "PASS",
+      "migration_backup_recovery_and_no_loss_pass": "PASS",
+      "native_full_user_entry_path_pass": "PASS",
+      "test_and_release_artifacts_have_identical_sha256": "PASS",
+      "evaluation_policy_and_oracle_are_independently_protected": {
+        "verdict": "BLOCKED",
+        "reason": "unprotected"
+      },
+      "human_review_signed_with_no_unresolved_release_blocker": {
+        "verdict": "BLOCKED",
+        "reason": "unsigned"
+      }
+    },
+    "human_review": {
+      "signed": false
+    }
+  }
+}

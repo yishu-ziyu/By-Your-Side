@@ -1,0 +1,35 @@
+
+> check
+> npm run check:architecture && npm run typecheck && npm test && npm run build
+
+
+> check:architecture
+> node scripts/maintenance/check-boundaries.mjs
+
+Architecture boundaries: 163 production files passed.
+
+> typecheck
+> npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent
+
+
+> @sideagent/extension@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @sideagent/agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+test/voice-model.test.ts(12,9): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+test/voice-model.test.ts(12,21): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+test/voice-model.test.ts(12,29): error TS2493: Tuple type '[]' of length '0' has no element at index '2'.
+test/voice-model.test.ts(14,9): error TS18048: 'context' is possibly 'undefined'.
+test/voice-model.test.ts(22,9): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+test/voice-model.test.ts(22,21): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+test/voice-model.test.ts(22,30): error TS2493: Tuple type '[]' of length '0' has no element at index '2'.
+npm error Lifecycle script `typecheck` failed with error:
+npm error code 1
+npm error path /Users/mahaoxuan/Desktop/ego/agent
+npm error workspace @sideagent/agent@0.1.0
+npm error location /Users/mahaoxuan/Desktop/ego/agent
+npm error command failed
+npm error command sh -c tsc --noEmit -p tsconfig.json

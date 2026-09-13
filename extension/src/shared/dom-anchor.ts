@@ -23,8 +23,14 @@ function labelText(el: Element): string | undefined {
   return undefined;
 }
 
-/** 最近的有文字的祖先：点击常落在裸 div 上，名字只可能在祖先那里。 */
+/**
+ * 最近的有文字的祖先：点击常落在裸 div 上，名字只可能在祖先那里。
+ * 但元素自己已经有文字时，祖先文字是别人的名字——真机教训：一个 div 里并排两个按钮，
+ * 祖先文字把两个按钮的文本拼成「保存到本页内存 清空本场景状态」，录成了一个页面上
+ * 根本不存在的对象名，重放自然一步都认不出来。这时不越级取名，用元素自己的文字。
+ */
 export function ancestorTextOf(el: Element): string | null {
+  if ((el.textContent ?? "").replace(/\s+/g, " ").trim()) return null;
   let cur: Element | null = el.parentElement;
   for (let depth = 0; depth < 4 && cur; depth += 1) {
     const text = (cur.textContent ?? "").replace(/\s+/g, " ").trim();

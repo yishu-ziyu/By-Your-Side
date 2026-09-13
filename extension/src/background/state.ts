@@ -24,6 +24,8 @@ const RESOURCE_STORAGE_KEY = "tabResources";
 let cached: TabBindingMap | undefined;
 let cachedResources: TabResourceMap | undefined;
 const claimBlocked = new Set<string>();
+/** 页面级交接围栏：tabId → 接手方 key。围栏期间只有接手方能对该页采取动作。 */
+const tabTransfers = new Map<number, string>();
 const groupByConversation = new Map<string, number>();
 const titleByConversation = new Map<string, string>();
 let mutationTail: Promise<void> = Promise.resolve();
@@ -52,6 +54,29 @@ export function setSessionClaimBlocked(key: string, blocked: boolean): void {
   const normalized = keyOf(key);
   if (blocked) claimBlocked.add(normalized);
   else claimBlocked.delete(normalized);
+}
+
+export function isTabTransferring(tabId: number): boolean { return tabTransfers.has(tabId); }
+
+/**
+ * 页面交接围栏。调用后该页立刻停止接受接手方以外的新操作，调用方再排空已进入的操作，
+ * 然后才变更归属。返回的释放函数必须放在 finally 里，失败也要归还围栏。
+ */
+export function beginTabTransfer(tabId: number, claimKey: string): () => void {
+  const owner = keyOf(claimKey);
+  const current = tabTransfers.get(tabId);
+  if (current !== undefined) throw Object.assign(
+    new Error(current === owner ? "该页正在移交，请稍候再试" : "该页正在由其他会话接手，请稍后再试"),
+    {executionFact: "not_executed" as const},
+  );
+  tabTransfers.set(tabId, owner);
+  return () => { if (tabTransfers.get(tabId) === owner) tabTransfers.delete(tabId); };
+}
+
+/** 旧工作指针离开页面不改变页资源归属；围栏按页而不是按工作指针判定。 */
+export function assertTabNotTransferring(tabId: number, key: string): void {
+  const owner = tabTransfers.get(tabId);
+  if (owner !== undefined && owner !== keyOf(key)) throw new Error("该页正在移交给其他会话，操作未执行");
 }
 
 async function loadMap(): Promise<TabBindingMap> {
@@ -114,6 +139,7 @@ export async function resolveReadableTab(tabId: number | undefined, key: string)
 /** 原成员已停止并排空；用检查时的归属防止并发接手互相覆盖。 */
 export async function claimGlobalTab(tabId: number, key: string, expectedConversationId: string | null): Promise<void> {
   if (!isLeadSession(parseExecutionKey(key).sessionId)) throw new Error("只有主 Agent 可以接手页面");
+  assertTabNotTransferring(tabId, key);
   await mutateState(async () => {
     let map = await loadMap();
     const resources = await loadResources();
@@ -201,6 +227,7 @@ async function applyConversationGroup(tabId: number, conversationId: string): Pr
 }
 
 export function assertResourceAccess(resource: TabResource | undefined, key: string): void {
+  if (resource) assertTabNotTransferring(resource.tabId, key);
   if (mayAccessResource(resource, key)) return;
   const who = parseExecutionKey(key);
   if (resource?.conversationId !== who.conversationId) throw new Error(isLeadSession(who.sessionId) ? "该页正在由其他会话使用，请调用 take_tab 协调接手后操作" : "标签页属于其他会话，未分配给当前 worker");
@@ -240,6 +267,7 @@ export async function setWorkingTab(id: number | null, key: string = LEAD_SESSIO
     let map = await loadMap();
     let resources = await loadResources();
     if (id != null) {
+      assertTabNotTransferring(id, normalized);
       const existing = resourceForTab(resources, id) ?? inferredResource(map, id);
       assertResourceAccess(existing, normalized);
       map = applyTabBinding(map, normalized, id);
@@ -268,6 +296,7 @@ export async function shareTab(
   const tab = await chrome.tabs.get(params.tabId);
   if (tab.id == null) throw new Error("标签页无效");
   const owner = keyOf(ownerKey);
+  assertTabNotTransferring(params.tabId, owner);
   const additions = params.collaborators.map((member) => collaboratorKey(owner, member));
   const removals = new Set((params.remove ?? []).map((member) => collaboratorKey(owner, member)));
   removals.delete(owner);
@@ -302,6 +331,7 @@ export async function guardToolAccess(name: string, key: string, explicitTabId?:
   const normalized = keyOf(key);
   const tabId = explicitTabId ?? await getWorkingTabId(normalized);
   if (tabId == null) return;
+  assertTabNotTransferring(tabId, normalized);
   const resource = await effectiveResource(tabId);
   assertResourceAccess(resource, normalized);
   if (resource?.mode === "shared" && SHARED_UNSAFE_TOOLS.has(name)) {
@@ -314,6 +344,7 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
   const normalized = keyOf(key);
   const blocked = claimBlocked.has(normalized);
   if (preferredTabId != null) {
+    assertTabNotTransferring(preferredTabId, normalized);
     const resource = await effectiveResource(preferredTabId);
     assertResourceAccess(resource, normalized);
     if (blocked && await getWorkingTabId(normalized) !== preferredTabId) throw new Error(CLAIM_BLOCKED_ERROR);
@@ -361,6 +392,7 @@ export async function maybeActivateTab(tab: chrome.tabs.Tab, key: string = LEAD_
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  tabTransfers.delete(tabId);
   void mutateState(async () => {
     const [map, resources] = await Promise.all([loadMap(), loadResources()]);
     let next = map;

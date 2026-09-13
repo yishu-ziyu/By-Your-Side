@@ -33,14 +33,17 @@ it('认领必须匹配检查时的归属，不能覆盖另一次接手',async()=
   await expect(s.claimGlobalTab(2,b,'B')).rejects.toThrow(/归属已变化/);
   await expect(s.claimGlobalTab(3,w,null)).rejects.toThrow(/主 Agent/);
 });
-it('跨会话接手等待原主 Agent 的操作完成，并阻止移交期间的新操作',async()=>{
+it('跨会话接手等待原主 Agent 的操作完成，并按页阻止移交期间的新操作',async()=>{
   const {s,a,b}=await setup();await s.claimGlobalTab(2,b,'B');
   const {WorkerTabControl}=await import('../src/background/worker-tab-control.js');const c=new WorkerTabControl();
   let end!:()=>void,started!:()=>void;const began=new Promise<void>(r=>started=r);
   const running=c.run(b,async()=>{started();await new Promise<void>(r=>end=r);});await began;
   const move=c.manage({action:'claim',tabId:2,expectedConversationId:'B'},a);
-  await vi.waitFor(()=>expect(c.isStopped(b)).toBe(true));
-  await expect(c.run(b,vi.fn())).rejects.toThrow();
+  // 旧断言期望 isStopped(b)（整个成员被停止）。那是错误语义：接手只封被交接的那一页，
+  // b 在别的页仍应可操作。改为验证该页围栏本身，以及围栏不跨页扩散。
+  await vi.waitFor(()=>expect(s.isTabTransferring(2)).toBe(true));
+  expect(s.isTabTransferring(1)).toBe(false);
+  await expect(c.run(b,async()=>{await s.guardToolAccess('fill',b,2);})).rejects.toThrow(/正在移交/);
   expect((await s.getTabResource(2))?.conversationId).toBe('B');
   end();await running;await move;
   expect((await s.getTabResource(2))?.conversationId).toBe('A');

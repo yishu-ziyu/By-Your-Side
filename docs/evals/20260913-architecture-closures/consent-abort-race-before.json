@@ -1,0 +1,1 @@
+{"calls":[{"name":"fetch","params":{"url":"https://example.invalid/","method":"POST","headers":{},"body":"{}"}}],"error":null}

@@ -12,6 +12,7 @@ import {
   type MemoryEntry,
   type MemoryScope,
 } from "../../shared/memory.js";
+import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 
 interface StoreFile {
   format: 1;
@@ -114,7 +115,7 @@ export class MemoryStore {
   async select(query: MemoryQuery): Promise<MemoryEntry[]> {
     assertQuery(query);
     const hostname = hostnameFromUrl(query.url);
-    return cloneEntries((await this.read()).filter((entry) => scopeAllows(entry.scope, hostname) && isRelevant(entry.version === 1 && entry.experience?.topic ? entry.experience.topic : entry.text, query.text)));
+    return cloneEntries((await this.read()).filter((entry) => scopeAllows(entry.scope, hostname) && isEntryRelevant(entry, query.text)));
   }
 
   async resolveSelected(selected: Array<{ id: string; version: number }>, query: MemoryQuery): Promise<MemoryEntry[]> {
@@ -125,7 +126,7 @@ export class MemoryStore {
     const wanted = new Map(selected.map(({ id, version }) => [id, version]));
     const hostname = hostnameFromUrl(query.url);
     return cloneEntries((await this.read()).filter((entry) =>
-      wanted.get(entry.id) === entry.version && scopeAllows(entry.scope, hostname) && isRelevant(entry.version === 1 && entry.experience?.topic ? entry.experience.topic : entry.text, query.text),
+      wanted.get(entry.id) === entry.version && scopeAllows(entry.scope, hostname) && isEntryRelevant(entry, query.text),
     ));
   }
 
@@ -255,31 +256,14 @@ function scopeAllows(scope: MemoryScope, hostname: string | null): boolean {
   return scope.kind === "all" || (hostname !== null && scope.hostname === hostname);
 }
 
-function isRelevant(memory: string, query: string): boolean {
-  const memoryTerms = terms(memory);
-  const queryTerms = terms(query);
-  for (const term of memoryTerms) if (queryTerms.has(term)) return true;
-  return false;
-}
-
-function terms(text: string): Set<string> {
-  const normalized = text.normalize("NFKC").toLowerCase();
-  const out = new Set<string>();
-  // Split scripts before tokenizing: a project number must not swallow adjacent
-  // Chinese words into one unmatchable token. Common request verbs are not topics.
-  const boilerplate = new Set(["整理", "帮我", "请用", "请你", "给我", "以后", "今后", "下次", "记住", "使用", "所有", "会话", "用于", "可以", "需要", "时候"]);
-  for (const word of normalized.match(/[\p{Script=Han}]+/gu) ?? []) {
-    for (let size = 2; size <= Math.min(4, word.length); size += 1) {
-      for (let i = 0; i + size <= word.length; i += 1) {
-        const term = word.slice(i, i + size);
-        if (!boilerplate.has(term)) out.add(term);
-      }
-    }
-  }
-  for (const word of normalized.replace(/[\p{Script=Han}]/gu, " ").match(/[\p{L}\p{N}]+/gu) ?? []) {
-    if (word.length >= 3 && !["the", "please", "remember", "always", "use", "with", "for", "this", "that"].includes(word)) out.add(word);
-  }
-  return out;
+/**
+ * A user edit (version > 1) replaces the topic with the user's own wording, so
+ * edited entries keep the permissive rule like any other personal entry.
+ * Automatic, unedited experiences match by task object instead.
+ */
+function isEntryRelevant(entry: MemoryEntry, query: string): boolean {
+  if (entry.version === 1 && entry.experience) return isRelevantExperience(entry.experience.topic ?? entry.text, query);
+  return isRelevantMemory(entry.text, query);
 }
 
 function cloneScope(scope: MemoryScope): MemoryScope {

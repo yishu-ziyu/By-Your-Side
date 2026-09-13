@@ -1,6 +1,6 @@
 import type { ServerMessage } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, VoiceConversationContext } from "../../shared/voice.js";
-import { deriveResultDescription, extractResultTarget, isPageIdentityTool, type TaskResultRegistration } from "../../shared/task-results.js";
+import { deriveResultDescription, extractResultTarget, isPageIdentityTool, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "./run-trace.js";
@@ -16,6 +16,7 @@ export class TaskProgress {
   private runId: string | null = null;
   private aborted = false;
   private lastAction: TaskProgressSnapshot["lastAction"] = null;
+  private lastReadAt: number | null = null;
   /** Lead-only conversation evidence: bounded turns, the current turn's streamed text, the run's final report. */
   private readonly turns: VoiceConversationContext["recentTurns"] = [];
   private readonly voicedRequests = new Set<string>();
@@ -42,6 +43,7 @@ export class TaskProgress {
     this.tools.clear();
     this.lastAction = snapshot.lastAction ? { ...snapshot.lastAction } : null;
     this.turnText = "";
+    this.lastReadAt = snapshot.lastReadAt ?? null;
     this.results.restore(snapshot);
     this.turns.length = 0;
     for (const turn of snapshot.conversationContext?.recentTurns ?? []) this.pushTurn(turn.role, turn.text);
@@ -81,6 +83,7 @@ export class TaskProgress {
     this.members.clear();
     this.tools.clear();
     this.lastAction = null;
+    this.lastReadAt = null;
     this.turnText = "";
     this.latestResult = null;
     this.results.clear();
@@ -154,6 +157,7 @@ export class TaskProgress {
       this.tools.delete(key);
       if (!this.aborted) {
         this.lastAction = { action: started.action, failed: e.isError, at: this.clock() };
+        if (!e.isError && (RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)) this.lastReadAt = this.lastAction.at;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: e.executionFact });
       }
@@ -177,7 +181,7 @@ export class TaskProgress {
       latestDelivery: this.ledger.latest(),
     };
     return { conversationId: this.conversationId, observedAt: this.clock(), state, goal: this.goal, startedAt: this.startedAt, runId: this.runId,
-      active: [...this.tools.values()].slice(-12).map(({ member, action, since }) => ({ member, action, since })), lastAction: this.lastAction ? { ...this.lastAction } : null, successVerified: false, conversationContext,
+      active: [...this.tools.values()].slice(-12).map(({ member, action, since }) => ({ member, action, since })), lastAction: this.lastAction ? { ...this.lastAction } : null, lastReadAt: this.lastReadAt ?? undefined, successVerified: false, conversationContext,
       results: this.results.list(), resultState: this.results.state() };
   }
 }

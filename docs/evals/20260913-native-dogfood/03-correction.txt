@@ -1,0 +1,18 @@
+The following is a diff from the previous accessibility tree for Window: "「AI Builder（产品方向）招聘」_自然选择招聘-BOSS直聘" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 412-416, 442
++						442 文本 这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。
++						443 文本 当前页：www.zhipin.com · 「AI Builder（产…
++						444 文本 空闲
++						445 文本 空闲
++							446 text 麦克风：已关 声音：未说
++						447 文本 按 14 薪算，税前年薪约 35 万–56 万（月薪 25–40K，标注「·14薪」）。整页没有任何明确写支持远程／居家／线上办公的字样，只写了「深圳」和地址「深圳南山区大冲国际中心41楼」。只读了这一页，未跳转、未联系任何人。
++					448 文本 请求失败，正在重试（1/3）…
++					449 开合三角标记 查看执行过程 思考 → send_user_message 耗时 9.9s
++						450 文本 查看执行过程
++						451 文本 思考 → send_user_message
++						452 文本 耗时 9.9s
++						453 图像
++					454 文本 按 14 薪算，税前年薪约 35 万–56 万（月薪 25–40K，标注「·14薪」）。整页没有任何明确写支持远程／居家／线上办公的字样，只写了「深圳」和地址「深圳南山区大冲国际中心41楼」。只读了这一页，未跳转、未联系任何人。
++					455 文本 模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试
+~						316 按钮 发送
+The focused UI element is 309 文本输入区 (settable) 给 By Your Side 发消息，Enter 发送，Shift+Enter 换行

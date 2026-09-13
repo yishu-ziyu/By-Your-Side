@@ -1,0 +1,55 @@
+
+> check
+> npm run check:architecture && npm run typecheck && npm test && npm run build
+
+
+> check:architecture
+> node scripts/maintenance/check-boundaries.mjs
+
+Architecture boundaries: 163 production files passed.
+
+> typecheck
+> npm run typecheck -w @sideagent/extension && npm run typecheck -w @sideagent/agent
+
+
+> @sideagent/extension@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> @sideagent/agent@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+
+> test
+> vitest run
+
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/ego
+
+ ❯ agent/test/task-dispatcher.test.ts (7 tests | 1 failed) 18437ms
+   × keeps event-loop delay p95 under 20ms after 20_000 receipts and 200 sessions 9859ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  agent/test/task-dispatcher.test.ts > keeps event-loop delay p95 under 20ms after 20_000 receipts and 200 sessions
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ agent/test/task-dispatcher.test.ts:58:1
+     56|   store.sync();
+     57| });
+     58| it('keeps event-loop delay p95 under 20ms after 20_000 receipts and 20…
+       | ^
+     59|   const {monitorEventLoopDelay}=await import('node:perf_hooks');
+     60|   const dir=mkdtempSync(join(tmpdir(),'ego-receipts-'));dirs.push(dir);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 181 passed (182)
+      Tests  1 failed | 1599 passed (1600)
+   Start at  13:57:08
+   Duration  26.09s (transform 8.77s, setup 0ms, import 96.12s, tests 46.90s, environment 53ms)
+
