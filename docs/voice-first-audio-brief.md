@@ -61,3 +61,25 @@
 ## 已知缺口
 
 以上数字全部来自合成语音（隔离浏览器 + 验收桥接传输）。真人麦克风路径的实测数字还没有，不能拿合成数字替代。
+
+## 相关文件（都在本仓库）
+
+关键链路源码：
+
+- `agent/src/voice-session.ts` — 一轮语音的生命周期。`routeInput()` 里发起分类并等待结果，`waitForMainReply()` 等到主 Agent 的正式交付，`settleEarlyReply()` 是旧的"抢答"通道（现只用于没有正式回答来源的场合）。
+- `agent/src/voice-model.ts` — `classifyVoiceInput()`，分类调用本体（模型、温度、maxTokens、重试预算都在这）。
+- `agent/src/voice-intent.ts` — 分类提示词与动作域定义、计划解析与校验。
+- `agent/src/conversation-manager.ts` — `routeVoiceInput()` / `executeVoiceInput()`，按分类结果决定派发（闲置态的内容请求走 `dispatchTaskAction` 交给主 Agent）。
+- `agent/src/voice-service.ts` + `agent/src/streaming-tts.ts` — 说话通道与 TTS 流。
+- `agent/src/conversation-runtime.ts` — 主 Agent（Pi）会话的装配。
+
+实测证据：
+
+- `docs/evals/20260913-voice-first-audio-latency.md` — 结论与判读。
+- `docs/evals/20260913-voice-first-audio/timeline-breakdown.json` — 5–7 秒的逐段分解。
+- `docs/evals/20260913-voice-first-audio/classifier-floor.json` — 分类耗时 vs 供应商下限。
+- `docs/evals/20260913-voice-first-audio/model-compare.json` — 换模型的对照。
+- `docs/evals/20260913-voice-first-audio/tts-first-frame.json` — TTS 首帧分解。
+- `scripts/experiments/voice-latency/` — 三个可复跑的探针脚本。
+
+产品当前状态与其它未决项：`docs/STATUS.md`。
