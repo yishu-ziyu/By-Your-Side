@@ -1,4 +1,4 @@
-import {expect,it} from 'vitest';
+import {describe,expect,it} from 'vitest';
 import {parseVoiceIntent,voiceClauses} from '../src/voice-intent.js';
 it('accepts only bounded original-word instructions and explicit target substrings',()=>{
  const text='把比价会话预算改600，然后继续原任务。';
@@ -123,4 +123,33 @@ it('routes content-entity follow-ups to chat, never to session clarification',as
  expect(parseVoiceDecision('{"steps":[{"action":"clarify","target":null}]}','停止。').steps).toEqual([{action:'clarify',text:'停止。',target:null}]);
  // 多步中的 clarify 不兜底（避免吞掉并列任务动作）
  expect(()=>parseVoiceDecision('{"steps":[{"action":"clarify","through":0,"target":null},{"action":"start","target":null}]}','那个呢，再打开天气页。')).toThrow();
+});
+
+describe('白名单与两条协议',()=>{
+  it('精简协议提示词与旧分类逐字一致；最小请求提示词独立且很短',async()=>{
+    const {VOICE_INTENT_PROMPT,VOICE_PLAN_PROMPT,VOICE_FREE_REPLY_PROMPT}=await import('../src/voice-intent.js');
+    expect(VOICE_PLAN_PROMPT).toBe(VOICE_INTENT_PROMPT);
+    expect(VOICE_FREE_REPLY_PROMPT).toContain('一两句自然口语');
+    expect(VOICE_FREE_REPLY_PROMPT.length).toBeLessThan(120);
+    // 最小请求不带计划/JSON/分支规则：没有可被误读的"不要编事实"条款。
+    expect(VOICE_FREE_REPLY_PROMPT).not.toContain('steps');
+    expect(VOICE_FREE_REPLY_PROMPT).not.toContain('JSON');
+  });
+  it('失败关闭：只有问候类与纯算术命中白名单，控制句与事实问句一律不命中',async()=>{
+    const {isFactFreeClosedUtterance}=await import('../src/voice-intent.js');
+    for(const text of ['嗨，晚上好。','你好。','谢谢','再见','十加七等于多少？','12乘以8等于几'])expect(isFactFreeClosedUtterance(text)).toBe(true);
+    // 识别实际产出的是符号算符（"十加七"→"10+7"）。ASCII 的 + - * / 在 Unicode 里属于标点，
+    // 若按标点整类删掉会变成"107"、算子消失，整句掉回慢路径——这条用例防的就是它。
+    for(const text of ['10+7等于多少？','10加7等于多少','12×3是多少','100-37等于几','100/4等于多少'])expect(isFactFreeClosedUtterance(text)).toBe(true);
+    for(const text of ['暂停任务','先停','停一停','别读了','安静点','不用念了','先等等','工资多少？','它要求几年经验？','简历投了吗？','当前招聘页面要求几年经验？'])expect(isFactFreeClosedUtterance(text)).toBe(false);
+  });
+  it('计划协议沿用既有校验：整句、分界、否定、引用、复合动作',async()=>{
+    const {parseVoiceDecision}=await import('../src/voice-intent.js');
+    const split=parseVoiceDecision(JSON.stringify({steps:[{action:'steer',through:0},{action:'resume'}]}),'改六百，继续');
+    expect(split.steps.map(s=>s.action)).toEqual(['steer','resume']);
+    expect(split.steps.map(s=>s.text).join('')).toBe('改六百，继续');
+    expect(()=>parseVoiceDecision(JSON.stringify({steps:[{action:'pause',target:null}]}),'不要停')).toThrow();
+    expect(()=>parseVoiceDecision(JSON.stringify({steps:[{action:'pause',target:null}]}),'把“暂停任务”读一遍')).toThrow();
+    expect(parseVoiceDecision(JSON.stringify({steps:[{action:'clarify',target:null}]}),'停').steps).toMatchObject([{action:'clarify'}]);
+  });
 });

@@ -19,7 +19,7 @@ if(!process.argv.includes('--headless'))throw Error('Required --headless');
 const out=resolve('out/acceptance',`voice-greeting-live-${new Date().toISOString().replace(/[:.]/g,'-')}`);
 await mkdir(out,{recursive:true});
 const model='opencode-go/deepseek-flash';
-const sourcePaths=['agent/src/session.ts','agent/src/voice-session.ts','agent/src/conversation-manager.ts','agent/src/voice-receipt.ts','agent/src/voice-service.ts','agent/src/prompt.ts','extension/src/sidepanel/voice-player.ts'];
+const sourcePaths=['agent/src/session.ts','agent/src/voice-session.ts','agent/src/conversation-manager.ts','agent/src/voice-model.ts','agent/src/voice-intent.ts','agent/src/voice-turn.ts','shared/voice.ts','agent/src/voice-receipt.ts','agent/src/voice-service.ts','agent/src/prompt.ts','extension/src/sidepanel/voice-player.ts'];
 const sourceHashes=async()=>Object.fromEntries(await Promise.all(sourcePaths.map(async p=>[p,createHash('sha256').update(await readFile(p)).digest('hex')])));
 const loadedHashes=await sourceHashes();
 const report:any={scope:'Synthetic PCM; real ASR, classifier, Pi, TTS and production VoicePlayer; isolated Chrome; harness transport; no human microphone',model,cases:[],ok:false};
@@ -97,7 +97,9 @@ try{
     const cumulative=textUpdates.every((text,index)=>index===0||text.startsWith(textUpdates[index-1]));
     const answer=cumulative&&textUpdates.length?[textUpdates.at(-1)]:textUpdates;
     const audio=Buffer.concat(frames.get(current)??[]);let energy=0;for(let i=0;i<audio.length;i+=2)energy+=audio.readInt16LE(i)**2;
-    const result={turn:current,input:text,textUpdates,cumulative,recognized:textEvents.filter(x=>x.msg.event.role==='user').map(x=>x.msg.event.text),answer,responses:own.filter(x=>x.msg.event.kind==='response_end').map(x=>x.msg.event.responseId),audioBytes:audio.length,rms:audio.length?Math.sqrt(energy/(audio.length/2))/32768:0,firstAudioMs:(own.find(x=>x.msg.event.kind==='audio')?.at??speechEnd)-speechEnd};
+    const branch=events.filter(x=>x.at>=start&&x.diagnostic==='prepare_result'&&x.fields?.turn===current).map(x=>String(x.fields?.branch??'none')).at(-1)??'none';
+    const protocol=events.filter(x=>x.at>=start&&x.diagnostic==='prepare_result'&&x.fields?.turn===current).map(x=>String(x.fields?.protocol??'none')).at(-1)??'none';
+    const result={turn:current,input:text,branch,protocol,textUpdates,cumulative,recognized:textEvents.filter(x=>x.msg.event.role==='user').map(x=>x.msg.event.text),answer,responses:own.filter(x=>x.msg.event.kind==='response_end').map(x=>x.msg.event.responseId),audioBytes:audio.length,rms:audio.length?Math.sqrt(energy/(audio.length/2))/32768:0,firstAudioMs:(own.find(x=>x.msg.event.kind==='audio')?.at??speechEnd)-speechEnd};
     await writeFile(`${out}/output-${current}.pcm`,audio);
     if(audio.length)execFileSync('/opt/homebrew/bin/ffmpeg',['-y','-v','error','-f','s16le','-ar','24000','-ac','1','-i',`${out}/output-${current}.pcm`,`${out}/output-${current}.wav`]);
     report.cases.push(result);console.log(JSON.stringify(result));
@@ -121,6 +123,14 @@ try{
   }
   const knowledge=await speak('十加七等于多少？');assert.ok(/17|十七/.test(knowledge.answer.join('')),'knowledge answer');assert.equal(knowledge.responses.length,1);
   const reading=await speak('当前招聘页面要求几年经验？');assert.ok(/三年|3年/.test(reading.answer.join('')),'page question retains browser context');
+  // 控制句轮次：同一口径报首声。闲置态下"暂停任务"与"继续"都得到确定的拒绝回执，
+  // 但都必须先过判定与控制链前的固定成本，用来核对第 8 条不因合并变慢。
+  for(const control of ['暂停任务','继续']){
+    const r=await speak(control);
+    assert.equal(r.responses.length,1,`one spoken control receipt for ${control}`);
+    assert.equal(r.branch,'control',`control sentence stays on the control branch: ${control}`);
+    assert.ok(r.audioBytes>0&&r.rms>0.001,`control receipt spoken aloud: ${control}`);
+  }
   }
   // Independently transcribe the returned greeting PCM. Non-routing diagnostic
   // session only: verifies spoken content, not just nonzero waveform energy.
@@ -140,6 +150,7 @@ try{
     report.spokenGreetingReadback=readback;
     assert.ok(/晚上好/.test(readback)&&!/任务已收到|招聘|岗位|深圳/.test(readback),'actual greeting audio matches the conversational answer');
   }finally{listener.close();}
+  report.branchFirstAudioMs=Object.fromEntries(['reply','control','read_only','none'].map(branch=>[branch,report.cases.filter((c:any)=>c.branch===branch).map((c:any)=>c.firstAudioMs)]));
   report.ok=true;
 } catch(error){report.error=String(error);process.exitCode=1;}
 finally{

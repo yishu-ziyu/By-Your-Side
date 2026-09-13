@@ -180,7 +180,7 @@ it("voice diagnostics record stage and lengths, never credentials or transcript 
  h.input();h.committed();h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'private transcript sentinel'});
  await Promise.resolve();await Promise.resolve();
  const log=JSON.stringify(diagnostic.mock.calls);
- expect(log).toContain('input_commit');expect(log).toContain('transcription');expect(log).toContain('route_result');
+ expect(log).toContain('input_commit');expect(log).toContain('transcription');expect(log).toContain('prepare_result');
  expect(log).not.toContain('private transcript sentinel');expect(log).not.toContain('synthetic-secret');
 });
 

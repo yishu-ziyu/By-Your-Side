@@ -10,7 +10,8 @@ import {ProductContext} from "./product-context.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import {type VoiceIntentPlan} from './voice-intent.js';
-import {answerVoiceObservation, classifyVoiceEdit, classifyVoiceInput, type VoiceModelCall} from "./voice-model.js";
+import {answerVoiceObservation, classifyVoiceEdit, classifyVoiceInput, prepareVoiceTurn, type VoiceModelCall, type VoiceTurnPrepareInput, type VoiceTurnPrepareOptions, type VoiceTurnPreparation} from "./voice-model.js";
+import type {DeliveryStreamDecision} from './voice-turn.js';
 /**
  * Pi SDK 会话的创建与包装：
  * - ModelRuntime → createAgentSession（禁用内置工具，仅注册 16 个浏览器工具）
@@ -33,7 +34,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { filterReachableModels } from "./reachable-models.js";
-import type { UserDelivery, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import type { UserDelivery, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
@@ -86,6 +87,15 @@ export class AcceptanceContinuity {
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { pageObservation?: "on-demand" }
+
+/**
+ * 交付流的语义轮次闸门：PREPARING 期间由它扣住前缀，终态之后不再放行。
+ * 会话不认识轮次本身，只在真正对外发之前问一次（见 VoiceTurnGate）。
+ */
+export interface VoiceTurnDeliveryGate {
+  holdDeliveryStream(stream: UserDeliveryStream, conversationId?: string): DeliveryStreamDecision;
+  holdUserDelivery(delivery: UserDelivery, conversationId?: string): DeliveryStreamDecision;
+}
 
 export interface SessionCreateOptions {
   modelPattern?: string;
@@ -249,6 +259,32 @@ export class BrowserAgentSession {
   }
 
   bindDeliveryRun(getRunId: () => string | null): void { this.deliveryRunId = getRunId; }
+  /** 语义轮次的输出闸门由 ConversationManager 持有；没接线（如测试替身）时全部直接放行。 */
+  private voiceTurnGate: VoiceTurnDeliveryGate | null = null;
+  /** 交付流归属的会话；测试替身与工人会话可以为空。 */
+  private voiceConversationId: string | null = null;
+  bindVoiceTurnGate(gate: VoiceTurnDeliveryGate | null): void { this.voiceTurnGate = gate; }
+  /**
+   * 本轮输出统一走这里：交付流前缀与正式交付在 PREPARING 期间都被扣住，
+   * 只有轮次 COMMITTED 之后才对外发；被丢弃轮次的晚到前缀不复活。
+   */
+  private emitGatedUiEvent(event: AgentUiEvent): void {
+    if (this.voiceTurnGate) {
+      const conversationId = this.voiceConversationId ?? undefined;
+      const decision = event.kind === 'user_delivery_stream' ? this.voiceTurnGate.holdDeliveryStream(event.stream, conversationId)
+        : event.kind === 'user_delivery' ? this.voiceTurnGate.holdUserDelivery(event.delivery, conversationId)
+        : 'pass';
+      if (decision !== 'pass') {
+        this.runTrace.record('voice_turn_output_held', {kind: event.kind, phase: decision});
+        return;
+      }
+    }
+    this.callbacks.emit(event);
+  }
+  /** 交付流只有被闸门放行才落线。 */
+  private emitDeliveryStream(stream: UserDeliveryStream): void {
+    this.emitGatedUiEvent({kind: 'user_delivery_stream', stream});
+  }
   private startEvent(): Extract<AgentUiEvent, { kind: "agent_start" }> {
     return this.explicitDelivery ? { kind: "agent_start", deliveryMode: "explicit" } : { kind: "agent_start" };
   }
@@ -330,6 +366,8 @@ export class BrowserAgentSession {
       });
       await resourceLoader.reload();
       let resultHost: BrowserAgentSession | null = null;
+      // send_user_message 的正式交付也走轮次闸门：接线完成前按原样发出。
+      const deliveryEmit: {current: ((event: AgentUiEvent) => void) | null} = {current: null};
       const runIdSlot: { current: () => string | null } = { current: () => null };
       const leadConversationId = isLeadDeliveryHost(options?.conversationId) ? options!.conversationId : undefined;
       const createOptions: CreateAgentSessionOptions = {
@@ -356,7 +394,7 @@ export class BrowserAgentSession {
           ...(leadConversationId ? [createSendUserMessageTool({
             conversationId: leadConversationId,
             getRunId: () => runIdSlot.current(),
-            emit: callbacks.emit,
+            emit: event => (deliveryEmit.current ?? callbacks.emit)(event),
             hasUnfinishedWork: () => {
               const snapshot = resultHost?.taskResultsHost?.getSnapshot();
               return (snapshot?.results ?? []).some(item => item.status === "pending" || item.status === "unknown");
@@ -385,6 +423,8 @@ export class BrowserAgentSession {
       const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
       resultHost = wrapper;
       wrapper.explicitDelivery = !!leadConversationId;
+      wrapper.voiceConversationId = options?.conversationId ?? null;
+      deliveryEmit.current = event => wrapper.emitGatedUiEvent(event);
       wrapper.productContext = productContext;
       wrapper.failurePolicy = failurePolicy;
       onRepeatedFailure = failure => {
@@ -634,6 +674,23 @@ export class BrowserAgentSession {
     if (!call) throw new VoiceIntentError('model_unavailable');
     return classifyVoiceInput(call, text, state, conversationTitles, task, conversation);
   }
+
+  /**
+   * 无副作用的一次性提案入口：用当前主 Agent 的模型与会话上下文跑**一次**请求，
+   * 同时得到意图计划与（不需要外部事实时的）正式回答正文。
+   * 需要页面/任务事实的句子不在提案里编答案：只判定计划，由既有派发与页面预观察交给主 Agent。
+   *
+   * 这里不改 activeGoal、不调 rpc.setPageTarget、不 runTrace.begin、不派发任何浏览器 RPC、
+   * 也不发布任何交付；候选只有经 parseVoiceTurnProposal 校验通过后才由调用方提交。
+   */
+  async prepareVoiceTurn(input: VoiceTurnPrepareInput, options?: VoiceTurnPrepareOptions): Promise<VoiceTurnPreparation> {
+    const call = this.voiceModelCall();
+    if (!call) throw new VoiceIntentError('model_unavailable');
+    return prepareVoiceTurn(call, input, options);
+  }
+
+  /** 提案入口是否真的可用：没有当前模型/运行时（例如只接线了分类替身的会话）时退回原调用。 */
+  canPrepareVoiceTurn(): boolean { return this.voiceModelCall() !== null; }
 
   async answerVoiceObservation(question:string,page:{title:string;url:string;text:string;imageBase64:string},stillCurrent:()=>boolean):Promise<string>{
     const call = this.voiceModelCall();
@@ -1014,7 +1071,9 @@ export class BrowserAgentSession {
               if((args.kind===undefined||args.kind==='finding'||args.kind==='ack')&&typeof args.content==='string'&&args.content.length<=2000){
                 const previous=this.deliveryPrefixes.get(part.id)??'';
                 if(args.content!==previous){
-                  emit({kind:'user_delivery_stream',stream:{id:toolDeliveryId(part.id),runId:this.deliveryRunId(),kind:args.kind??'reply',text:args.content,phase:args.content.startsWith(previous)?'streaming':'cancelled'}});
+                  // 尚未执行的工具参数还不是正式交付：PREPARING 阶段由轮次闸门扣住，
+                  // 只有这一轮 COMMITTED 之后才对外发（见 VoiceTurnGate）。
+                  this.emitDeliveryStream({id:toolDeliveryId(part.id),runId:this.deliveryRunId(),kind:args.kind??'reply',text:args.content,phase:args.content.startsWith(previous)?'streaming':'cancelled'});
                   this.deliveryPrefixes.set(part.id,args.content);
                 }
               }
@@ -1042,7 +1101,7 @@ export class BrowserAgentSession {
           });
           break;
         case "tool_execution_end":
-          if(event.toolName==='send_user_message'&&event.isError)emit({kind:'user_delivery_stream',stream:{id:toolDeliveryId(event.toolCallId),runId:this.deliveryRunId(),kind:'finding',text:'',phase:'cancelled'}});
+          if(event.toolName==='send_user_message'&&event.isError)this.emitDeliveryStream({id:toolDeliveryId(event.toolCallId),runId:this.deliveryRunId(),kind:'finding',text:'',phase:'cancelled'});
           if(event.toolName==='send_user_message'&&!event.isError){
             // 交付工具真的执行成功才算交付；ack 只是开场应答，仍要求有最终结果。
             const kind=this.toolArgs.get(event.toolCallId)?.kind;
@@ -1102,7 +1161,7 @@ export class BrowserAgentSession {
           emit(this.startEvent());
           break;
         case "agent_end": {
-          for(const id of this.deliveryPrefixes.keys())emit({kind:'user_delivery_stream',stream:{id:toolDeliveryId(id),runId:this.deliveryRunId(),kind:'reply',text:'',phase:'cancelled'}});
+          for(const id of this.deliveryPrefixes.keys())this.emitDeliveryStream({id:toolDeliveryId(id),runId:this.deliveryRunId(),kind:'reply',text:'',phase:'cancelled'});
           this.deliveryPrefixes.clear();
           // willRetry=true 时自动重试紧随其后，本轮并未结束：不下发 agent_end，
           // 避免进度状态与结果被误当作最终（状态保持 running）。
@@ -1117,7 +1176,7 @@ export class BrowserAgentSession {
           if (next) setStatus(next);
           if (toolFailure && !this.hold.isHeld() && !stoppedByUser) {
             this.deliveredResultThisRun = true;
-            emit({kind:"user_delivery",delivery:toolFailure});
+            this.emitGatedUiEvent({kind:"user_delivery",delivery:toolFailure});
           }
           emit({ kind: "agent_end" });
           if (!toolFailure && shouldSurfaceAgentEndIssue(this.hold.isHeld(), event.willRetry, stoppedByUser)) {

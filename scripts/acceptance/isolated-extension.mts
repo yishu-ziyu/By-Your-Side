@@ -6,12 +6,29 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createCdp, fetchJson } from "./cdp.mjs";
 import { installExecuteToolCallHook } from "./sw-hook.mjs";
 
-const CHROME = "/Users/mahaoxuan/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+/** 本机 Chrome for Testing。缓存目录名带版本号，浏览器更新后旧目录会被清掉，因此按实际存在的最高版本解析。 */
+function resolveChrome(): string {
+  const override = process.env.EGO_ACCEPTANCE_CHROME;
+  if (override) return override;
+  const root = join(homedir(), "Library/Caches/ms-playwright");
+  const suffix = "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+  const versions = existsSync(root)
+    ? readdirSync(root).filter(name => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.slice("chromium-".length)) - Number(a.slice("chromium-".length)))
+    : [];
+  for (const version of versions) {
+    const candidate = join(root, version, suffix);
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error("未找到 Chrome for Testing：请安装 Playwright 的 Chromium，或用 EGO_ACCEPTANCE_CHROME 指定可执行文件路径。");
+}
+
+const CHROME = resolveChrome();
 const DIST = resolve("extension/dist");
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

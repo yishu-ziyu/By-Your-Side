@@ -46,7 +46,7 @@ export function parseVoiceIntent(raw:string,text:string,conversationTitles:reado
   }
   if(covered.size!==clauses.length)throw invalid('coverage');
   const controlPatterns={pause:/暂停|先停一下|停一会|接管/,resume:/继续|交还/,abort:/取消|终止|中止/} as const;
-  const nonImmediate=/(不要|不用|别|不必|不想|无需|不需要|等我|等到|如果|假如|假设|要是|他说|她说|说过|刚才说|引用|朗读|念一遍|能不能|可不可以|是否可以)/;
+  const nonImmediate=/(不要|不用|别|不必|不想|无需|不需要|等我|等到|如果|假如|假设|要是|他说|她说|说过|刚才说|引用|朗读|念一遍|念一下|读一遍|读一下|复述|能不能|可不可以|是否可以)/;
   for(const step of steps){
     if(step.action==='clarify'&&!/(会话|停止|停下|那个任务|另一个任务|哪个任务)/.test(step.text))throw invalid('content_reference');
     if(['chat','clarify','silence','observe'].includes(step.action))continue;
@@ -70,6 +70,50 @@ export function parseVoiceIntent(raw:string,text:string,conversationTitles:reado
   if(steps.some(s=>['start','steer','pause'].includes(s.action))&&!steps.some(s=>s.action==='resume')&&voiceClauses(text).some(c=>/^(然后|接着|再)?(请)?(继续|继续原任务|交还给你继续)[。！!?？\s]*$/.test(c.trim())))throw invalid();
   if(steps.length>1&&steps.some(s=>['chat','clarify','silence','observe'].includes(s.action)))throw invalid();
   return {steps};
+}
+
+/**
+ * 控制类/需要事实的句子走精简协议：提示词与输出形状和原分类调用完全一致（只有 steps），
+ * 由应用按 steps 走既有控制链与原派发。这样这些句子在控制链/派发之前的固定成本不因合并而增加。
+ */
+export const VOICE_PLAN_PROMPT = VOICE_INTENT_PROMPT;
+
+/**
+ * 白名单句子（问候/寒暄/致谢/告别/应答、纯算术）的独立最小请求。
+ *
+ * 为什么不复用计划提示词：计划提示词里"涉及任何具体事实就不要给正文"这条对模型太强，
+ * 实测它把纯算术也算进"事实"，于是"读懂计划却不写正文"，整轮落回原路径（5.7 秒）。
+ * 这条路径的价值就是快与稳：没有计划、没有 JSON、没有分支规则可被误读，只要一两句正文。
+ */
+export const VOICE_FREE_REPLY_PROMPT =
+  '你是用户身边的语音助手。用一两句自然口语直接回答用户这句话：不解释、不markdown、不朗读内部ID，不要提到浏览器页面或任务，也不要声称执行过任何操作。只输出要对人说的正文。';
+
+/**
+ * 失败关闭（fail-closed）：默认认为这句话需要页面/任务/记忆等外部事实，必须交给有上下文与工具的主 Agent；
+ * 只有**确定不需要任何外部事实**的封闭类别才允许走完整提案直接给出正文。
+ *
+ * 为什么是白名单而不是黑名单：2026-09-14 复核实测，"工资多少？""它要求几年经验？""简历投了吗？"
+ * 这类依赖页面/任务事实的问句用"不含某几个词"判不出来，于是被 reply 分支直接开口描述世界——
+ * 那正是踩过的坑（凭标题编正文、把没发生的事说成已完成）。宁可慢一点，也不能在没有事实时开口。
+ *
+ * 允许直答的类别只有两类，都可以在程序里判定：
+ * 1) 问候/寒暄/致谢/告别/应答（整句只由这些词与语气词组成）；
+ * 2) 纯算术封闭问题（如"十加七等于多少"）。
+ * 其余一律返回 false → 走精简协议 + 原派发，由主 Agent 带上下文回答。
+ */
+const GREETING_WORD = '(?:嗨|哈喽|哈啰|你好|您好|大家好|喂|早上好|早安|中午好|下午好|晚上好|晚安|再见|拜拜|回见|明天见|谢谢|多谢|感谢|辛苦了|不客气|客气了|好的|好嘞|嗯|嗯嗯|收到|明白|知道了|在吗|你在吗)';
+const GREETING_ONLY = new RegExp(`^(?:${GREETING_WORD}){1,3}(?:呀|啊|哦|嘛|呢|吧|了|啦|喽|哟|哈|的)?$`);
+const ARITHMETIC_ATOM = '[\\d零一二三四五六七八九十百千万两]+';
+/** 中文算符或符号算符：识别常把"十加七"转成"10+7"，符号算符必须一并接受。 */
+const ARITHMETIC_OP = '(?:加|加上|减|减去|乘以|乘|除以|除|\\+|-|\\*|/|×|÷)';
+const ARITHMETIC_ONLY = new RegExp(`^(?:请问)?${ARITHMETIC_ATOM}${ARITHMETIC_OP}${ARITHMETIC_ATOM}(?:等于|是|得)?(?:多少|几)?(?:呀|啊|呢)?$`);
+/** 匹配前保留的算符：ASCII 的 + - * / 在 Unicode 里就是标点，整类删掉会把"10+7"变成"107"、算子消失。 */
+const KEEP_OPERATOR = '+-×÷*/%=';
+export function isFactFreeClosedUtterance(text: string): boolean {
+  // 只按整句判定：去掉空白与标点后，整句必须完全落在白名单类别里，多一个字都不算。
+  const clean = (text ?? '').replace(/[\s\p{P}]/gu, ch => (KEEP_OPERATOR.includes(ch) ? ch : ''));
+  if (!clean) return false;
+  return GREETING_ONLY.test(clean) || ARITHMETIC_ONLY.test(clean);
 }
 
 /** A subordinate condition qualifies the preceding instruction, not a new control. */

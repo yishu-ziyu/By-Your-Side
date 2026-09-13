@@ -903,7 +903,9 @@ export class StepVoiceSession {
   private async routeInput(): Promise<void> {
     if (this.diag.blocking || !this.deps.route || !this.routePending || this.routeStarted || this.transcript === null) return;
     this.routeStarted = true;
-    this.diagnostic("route_start", {turn:this.turn,requestId:`${this.voiceId}-${this.turn}`,characters: this.transcript.length});
+    // 一轮只走一次「准备 → 校验 → 提交」：判定并入主 Agent 的第一次推理后，
+    // 时间线上不再有独立的分类往返（prepare_start/prepare_result 就是那一轮的边界）。
+    this.diagnostic("prepare_start", {turn:this.turn,requestId:`${this.voiceId}-${this.turn}`,characters: this.transcript.length});
     const routeAt = Date.now();
     const turn = this.turn;
     let finish!:()=>void;
@@ -921,7 +923,7 @@ export class StepVoiceSession {
       this.actionRoutingTurns.delete(turn);
       record.result=receipt;record.finish();
       if (this.closed || this.turn !== turn) return;
-      this.diagnostic("route_result", {turn,requestId:`${this.voiceId}-${turn}`,kind: receipt.kind, accepted: (receipt.kind === "steer"||receipt.kind==='action') && receipt.ok, elapsedMs: Date.now()-routeAt});
+      this.diagnostic("prepare_result", {turn,requestId:`${this.voiceId}-${turn}`,kind: receipt.kind, branch: receipt.turn?.branch ?? null, protocol: receipt.turn?.protocol ?? null, accepted: (receipt.kind === "steer"||receipt.kind==='action') && receipt.ok, elapsedMs: Date.now()-routeAt});
       this.routeReceipt = receipt;
       this.routePending = false;
       // 回答归属：内容请求已经交给主 Agent（awaitDelivery）时，本轮只等它的正式交付。
@@ -955,9 +957,10 @@ export class StepVoiceSession {
       this.recordInputDecision(turn,false);
       record.result={kind:'clarify',message:'上一句没有得到确定结果，请查看侧栏回执后再决定是否重说。'};record.finish();
       const code = error instanceof VoiceIntentError ? error.code : "route_failed";
-      this.diagnostic("route_error", {turn,requestId:`${this.voiceId}-${turn}`,superseded:this.turn!==turn,code, elapsedMs: Date.now()-routeAt});
+      this.diagnostic("prepare_error", {turn,requestId:`${this.voiceId}-${turn}`,superseded:this.turn!==turn,code, elapsedMs: Date.now()-routeAt});
       if (!this.closed && this.turn === turn) {
         const detail = code === "classifier_timeout" ? "这句判断超时，未执行。可以继续说。"
+          : code === "free_reply_failed" ? "这次没有答上来，请再说一次。"
           : code === "model_unavailable" ? "任务模型不可用，这句未执行。请检查模型设置。"
           : error instanceof VoiceIntentError ? "这句没有判断清楚，未执行。可以继续说。"
           : "这句没有取得确定结果，请查看侧栏回执。可以继续询问进度。";

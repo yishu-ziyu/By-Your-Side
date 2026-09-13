@@ -21,7 +21,7 @@ export async function runLiveDialogue(h:{out:string;report:any;messages:any[];ma
     const end=await until(()=>{if(report.transportError)throw Error(report.transportError);if(report.stages.some((e:any)=>e.event==='turn_failed'&&e.at>=at))throw Error('Voice turn failed');const error=messages.slice(from).find(m=>m.type==='voice'&&m.event.kind==='state'&&m.event.state==='error');if(error)throw Error(error.event.detail);return messages.slice(from).find(m=>m.type==='voice'&&m.event.kind==='response_end');},60000);
     await until(()=>report.clientTiming?.find((e:any)=>e.command==='playback_done'&&e.responseId===end.event.responseId),30000);
     // Early speech is deliberately independent of routing; observe the actual receipt separately.
-    await until(()=>report.stages.find((e:any)=>e.event==='route_result'&&e.turn===end.event.turn&&e.at>=at),20000);
+    await until(()=>report.stages.find((e:any)=>e.event==='prepare_result'&&e.turn===end.event.turn&&e.at>=at),20000);
     await until(()=>messages.slice(from).filter(m=>m.type==='voice'&&m.event.kind==='state').at(-1)?.event.state==='ready'||undefined,30000);
     const answers=messages.slice(from).filter(m=>m.type==='voice'&&m.event.kind==='text'&&m.event.role==='assistant').map(m=>m.event.text);
     const commit=report.clientTiming?.findLast((e:any)=>e.command==='commit'&&e.at>=at);

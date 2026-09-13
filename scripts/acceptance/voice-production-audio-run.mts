@@ -55,7 +55,7 @@ try{
  if(emptyInterruption){
   h.check('empty candidate resumes the original answer on the new output turn',report.log.some((x:any)=>x.kind==='phase'&&x.detail==='继续回答上一句。')&&report.log.some((x:any)=>x.kind==='event'&&x.event.kind==='text'&&x.event.role==='assistant'&&x.event.turn===2&&/17|十七/.test(x.event.text)));
   const logs=(await readFile(join(homedir(),'.sideagent','agent.log'),'utf8')).split('\n').filter(line=>line.includes('[voice]')&&line.includes(h!.voiceId));
-  report.routeStarts=logs.filter(line=>line.includes('[voice] route_start ')).length;
+  report.routeStarts=logs.filter(line=>line.includes('[voice] prepare_start ')).length;
   h.check('the original request is routed once and no task starts',report.routeStarts===1&&await h.w(`${h.events(id)}.filter(e=>e.type==='agent_event'&&e.event.kind==='agent_start').length===0`));
  }
  report.functionalPass=true;report.ok=emptyInterruption?true:report.latencyPass;if(rounds===20&&!report.ok)process.exitCode=1;

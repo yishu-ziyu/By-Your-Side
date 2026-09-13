@@ -68,7 +68,7 @@ try{
  check('实际页面预算与排序正确',report.page.budget===800&&report.page.sort==='asc'&&JSON.stringify(report.page.prices)==='[699,799]');
  check('启动有正式回执和runId',report.events.some((e:any)=>e.event?.receipt?.action==='start'&&e.event.receipt.status==='accepted'&&typeof e.event.receipt.runId==='string'));
  await speak('别说了。');check('停止播报不新建任务',starts()===1);check('停止播报不生成新音频',!report.voiceEvents.some((e:any)=>e.kind==='audio'&&e.turn===turn));
- if(suite==='faults'){check('执行已接收后真实断线并重连',dropped&&connections>=2);check('断线没有重复路由任务',report.diagnostics.filter((e:any)=>e.event==='route_start'&&e.turn===3).length===1);}
+ if(suite==='faults'){check('执行已接收后真实断线并重连',dropped&&connections>=2);check('断线没有重复路由任务',report.diagnostics.filter((e:any)=>e.event==='prepare_start'&&e.turn===3).length===1);}
  report.ok=true;
 }catch(error){report.error=String(error);process.exitCode=1;}
 finally{

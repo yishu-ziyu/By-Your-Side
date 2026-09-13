@@ -82,7 +82,12 @@ export interface VoiceRouteContext {
 }
 export interface VoiceInputContext {observation?:{token:string;tabId:number};context?:PageContext;attachments?:Attachment[]}
 export interface VoicePlanSummary {id:string;conversationId:string;updatedAt:number;steps:Array<{action:string;text:string;targetId:string;targetTitle?:string;status:'unexecuted'|'pending'|'complete';receipt?:TaskReceipt}>}
-export type VoiceRouteResult = {plan?:VoicePlanSummary} & (
+/** 这一轮提交后的分支身份：reply=白名单句子的最小请求已产出正文；control=交给既有控制链；
+ *  read_only=程序按真实事实处理/派发的轮次（状态查询、澄清、停播报、看页面、需要事实的追问）。 */
+export type VoiceTurnBranch = 'reply' | 'control' | 'read_only';
+/** 这一轮的请求协议：free_reply = 白名单句子的最小直答请求；plan = 只判定计划的精简协议。 */
+export type VoiceTurnProtocol = 'free_reply' | 'plan';
+export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBranch;phase:'COMMITTED'|'DISCARDED';protocol?:VoiceTurnProtocol}} & (
   | {kind:'none';resumeTargetId?:string; resumeReadOnly?:'chat'|'observe'|'status'; snapshot?:TaskProgressSnapshot;spokenText?:string}
   | {kind:'silent'}
   | {kind:'clarify';message:string}

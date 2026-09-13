@@ -7,7 +7,7 @@ import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
   type ClientMessage, type ConversationSummary, type ServerMessage,
 } from "../../shared/protocol.js";
-import type { UserDelivery, UserDeliveryKind } from "../../shared/voice.js";
+import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
 import { createUserDelivery } from "./user-delivery.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
@@ -17,11 +17,15 @@ import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
 import { normalizeSkillHost } from "../../shared/skill.js";
 import { runSkill } from "./skill-runner.js";
 import { TaskProgress } from "./task-progress.js";
-import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult } from "../../shared/voice.js";
+import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
 import { TaskDispatcher, TaskActionRejected, TaskActionFailed, TaskReceiptError } from "./task-dispatcher.js";
 import {progressSpeech} from './voice-receipt.js';
 import {TaskControlBroker} from './task-control.js';
+import {VoiceTurnGate} from './voice-turn.js';
+import {isFactFreeClosedUtterance,type VoiceIntentPlan} from './voice-intent.js';
+import type {VoiceTurnPreparation} from './voice-model.js';
+import {VoiceIntentError} from './voice-errors.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
@@ -38,6 +42,10 @@ export class ConversationManager {
   private readonly controlVersions=new Map<string,number>();
   private readonly makeupRuns=new Set<string>();
   private readonly voicePlans:VoicePlanStore;
+  /** 语义轮次的输出闸门：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。 */
+  private readonly voiceTurns=new VoiceTurnGate();
+  /** 每个会话当前在跑的提案请求：新一句话到来时先取消它，不让旧候选继续占模型预算。 */
+  private readonly voiceTurnAborts=new Map<string,AbortController>();
   voiceTargets(){return this.list().map(c=>({id:c.id,title:c.title,runId:this.getTaskProgress(c.id)?.runId??null,controlVersion:this.controlVersions.get(c.id)??0}));}
   readonly controls:TaskControlBroker;
   constructor(
@@ -150,7 +158,12 @@ export class ConversationManager {
         :'目前没有等待确认的操作，我没有执行新动作。'};
     }
     route?.reportStage?.('classifying');
-    const plan=route?.resumeReadOnly?{steps:[{action:route.resumeReadOnly,target:null,text}]}:await session.classifyVoiceInput(text,before.state,catalog.filter(c=>text.includes(c.title)).map(c=>c.title),{goal:before.goal,requestId:route?.requestId},before.conversationContext);
+    // 准备阶段：一次提案推理同时给出意图计划与批准后要执行的那一件事。
+    // 没有提案入口的会话替身仍走原来的分类调用（行为不变）。
+    const prepared=route?.resumeReadOnly
+      ?{plan:{steps:[{action:route.resumeReadOnly,target:null,text}]},replyText:null,protocol:'plan' as const}
+      :await this.proposeVoiceTurn(id,session,text,before,catalog,route);
+    const plan=prepared.plan;
     const single=plan.steps.length===1?plan.steps[0]:undefined;
     const willStart=!route?.resumeReadOnly&&!route?.pendingDelegation&&single?.target===null&&['none','idle'].includes(before.state)
       &&['observe','chat','steer'].includes(single.action)&&!session.isHeld()&&!session.isStreaming();
@@ -180,14 +193,27 @@ export class ConversationManager {
     const requestId=route?.requestId??randomUUID();
     const only=plan.steps.length===1?plan.steps[0]:undefined;
     if(only?.action==='chat'&&route?.pendingDelegation)return {kind:'none',resumeReadOnly:'chat'};
+    // 提交分支 reply：白名单句子的正文已经由最小请求产出，直接走现有交付通道播出。
+    // 程序侧再守一道（失败关闭）：只有白名单类别允许直答；其余一律退回原路径，
+    // 由主 Agent 带上下文与工具回答。宁可慢，也不靠精简上下文编事实。
+    if(prepared.replyText&&only?.action==='chat'&&isFactFreeClosedUtterance(text)){
+      // 与旧闲置闲聊路径保持同一行为：真正会开新一轮的输入让旧授权失效。
+      // 授权本身仍按 runId/controlVersion 在点击"允许"时复核，这里只是让旧请求不再挂着。
+      if(willStart)this.consentOf(id)?.cancelAll('cancelled','任务或页面控制已变化，旧请求未发送。');
+      if(!stillCurrent())return {kind:'none',resumeReadOnly:'chat'};
+      return this.deliverVoiceReply(id,prepared.replyText,before,stillCurrent,route?.turn);
+    }
     if(route?.resumeReadOnly==='status'){const targetId=route.resumeTargetId??id,target=this.getTaskProgress(targetId);return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snapshot:target,spokenText:(targetId===id?'':'指定会话：')+progressSpeech(target)}:{kind:'clarify',message:'原目标会话已不可用，请重新询问。'};}
     // Idle conversational requests use the same capable session as typed input.
     // Classification still resolves controls, but cannot strip tools from ordinary content.
     if (willStart) {
-      const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,single?.action==='chat'?{pageObservation:'on-demand'}:undefined);
+      // 既有派发与页面预观察原样复用：observe/需要事实的追问交给主 Agent，由它读页面后回答；
+      // 不再给主 Agent 塞"已批准的工具意图"续跑文案（那会丢掉预观察并让它多绕一轮）。
+      const inputOptions=single?.action==='chat'?{pageObservation:'on-demand' as const}:undefined;
+      const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,inputOptions);
       // 隐式派发也是真实发生的一步 start：写进计划，让回执反映事实，而不是留下空计划假装零步已知。
       if(route&&!route.resumeReadOnly&&receipt.status==='accepted')this.voicePlans.update(id,route.requestId,{steps:[{action:'start',text,targetId:id,targetTitle:this.entries.get(id)?.summary.title,status:'complete',receipt}]});
-      return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt],awaitDelivery:receipt.status==='accepted'};
+      return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt],awaitDelivery:receipt.status==='accepted',turn:{branch:'read_only',phase:'COMMITTED',protocol:prepared.protocol}};
     }
     if(only?.action==='observe'){
       if(only.target!==null)return {kind:'clarify',message:'这次页面问答只查看你当前选中的浏览器页面，请先切到要看的页面。'};
@@ -261,7 +287,7 @@ export class ConversationManager {
           this.voiceConfirmations.set(id,proposal);this.voicePlans.update(id,route.requestId,{proposal});
           return {kind:'clarify',message:'当前任务还在执行。要另开会话处理这个新任务吗？'};
         }
-        return {kind:step.action==='steer'?'steer':'action',ok:false,status:receipt.status,message:receipt.message,receipts};
+        return {kind:step.action==='steer'?'steer':'action',ok:false,status:receipt.status,message:receipt.message,receipts,turn:{branch:'control',phase:'COMMITTED',protocol:'plan'}};
       }
       expected.set(targetId,receipt.runId);
       if(['pause','resume','abort'].includes(step.action))versions.set(targetId,(versions.get(targetId)??0)+1);
@@ -269,7 +295,7 @@ export class ConversationManager {
     const last=receipts.at(-1);
     if(!last)return {kind:'none'};
     if(receipts.length===1&&last.action==='status')return {kind:'none',resumeReadOnly:'status',resumeTargetId:last.conversationId,snapshot:this.getTaskProgress(last.conversationId)!,spokenText:(last.originConversationId?'指定会话：':'')+last.message};
-    return {kind:receipts.length===1&&last.action==='steer'?'steer':'action',ok:true,status:last.status,message:receipts.map(r=>r.message).join('；'),receipts};
+    return {kind:receipts.length===1&&last.action==='steer'?'steer':'action',ok:true,status:last.status,message:receipts.map(r=>r.message).join('；'),receipts,turn:{branch:'control',phase:'COMMITTED',protocol:'plan'}};
   }
 
   async steerFromVoice(id: string, text: string, expectedStartedAt: number | null, route?: VoiceRouteContext, stillCurrent = () => true): Promise<TaskReceipt> {
@@ -303,6 +329,69 @@ export class ConversationManager {
     } catch {
       return null;
     }
+  }
+  /**
+   * 准备 → 校验 → 提交。一次提案推理同时给出意图计划与 next；
+   * 校验不通过或超时（VoiceIntentError）由调用方给确定的失败回执，轮次进入 DISCARDED，
+   * 候选输出全部丢弃，绝不自动放行。
+   *
+   * 没有提案入口的会话（测试替身、工人）仍走原来的分类调用，行为不变。
+   */
+  private async proposeVoiceTurn(id:string,session:Runtime['session'],text:string,before:TaskProgressSnapshot,catalog:VoiceTarget[],route?:VoiceRouteContext):Promise<{plan:VoiceIntentPlan;replyText:string|null;protocol:'free_reply'|'plan'}>{
+    const titles=catalog.filter(c=>text.includes(c.title)).map(c=>c.title);
+    if(typeof session.prepareVoiceTurn!=='function'||session.canPrepareVoiceTurn?.()===false){
+      return {plan:await session.classifyVoiceInput(text,before.state,titles,{goal:before.goal,requestId:route?.requestId},before.conversationContext),replyText:null,protocol:'plan' as const};
+    }
+    const turnId=route?.requestId??`${route?.voiceId??id}-${route?.turn??randomUUID()}`;
+    // 同一会话里上一轮还没拿到终态：已在准备的是被新一句话取代（INTERRUPTED，前缀丢弃）；
+    // 已经提交的是正常做完（COMPLETED）。取消顺序里"先失效"的一步：旧候选的模型请求先取消。
+    this.voiceTurnAborts.get(id)?.abort();
+    const abort=new AbortController();
+    this.voiceTurnAborts.set(id,abort);
+    for(const previous of this.voiceTurns.preparing(id)){
+      if(previous===turnId)continue;
+      this.releaseVoiceOutput(id,this.voiceTurns.interrupt(previous));
+    }
+    for(const previous of this.voiceTurns.committed?.(id)??[])this.voiceTurns.complete(previous);
+    this.voiceTurns.begin(turnId,id);
+    // 失败关闭：默认这句话需要外部事实（页面/任务/记忆），走精简协议 + 原派发，由主 Agent 带上下文回答。
+    // 只有程序能确定"不需要任何外部事实"的封闭类别（问候/寒暄/致谢/告别/应答、纯算术）才走独立最小请求，
+    // 由模型直接给一两句正文。两条路径都不发计划 JSON：白名单句子不发计划提示词（模型会误读"不要编事实"而拒答），
+    // 其余句子走与旧分类逐字同形的精简协议，控制链/派发之前的固定成本不因合并而增加。
+    const protocol=isFactFreeClosedUtterance(text)?'free_reply' as const:'plan' as const;
+    let prepared:VoiceTurnPreparation;
+    try{
+      prepared=await session.prepareVoiceTurn({text,state:before.state,conversationTitles:titles,task:{goal:before.goal,requestId:route?.requestId},conversation:before.conversationContext},{cancel:abort.signal,protocol});
+    }catch(error){
+      // 校验不通过或超时：候选进入 DISCARDED，前缀丢弃；被扣住的真实交付仍然送达。
+      if(this.voiceTurnAborts.get(id)===abort)this.voiceTurnAborts.delete(id);
+      this.releaseVoiceOutput(id,this.voiceTurns.discard(turnId));
+      throw error;
+    }
+    if(this.voiceTurnAborts.get(id)===abort)this.voiceTurnAborts.delete(id);
+    const released=this.voiceTurns.commit(turnId);
+    if(!released)throw new VoiceIntentError('classifier_invalid_reply','turn_superseded');
+    this.releaseVoiceOutput(id,released);
+    return {plan:prepared.plan,replyText:prepared.replyText,protocol:prepared.protocol};
+  }
+  /** 把闸门放出的本轮输出按原顺序发出去（交付流先于正式交付，保持原有先后关系）。 */
+  private releaseVoiceOutput(id:string,released:{streams:UserDeliveryStream[];deliveries:UserDelivery[]}):void{
+    for(const stream of released.streams)this.emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});
+    for(const delivery of released.deliveries){
+      const message:ServerMessage={type:'agent_event',conversationId:id,event:{kind:'user_delivery',delivery}};
+      this.progress.get(id)?.observe(message);
+      this.emit(message);
+    }
+  }
+  /** 提交分支 reply 的正式交付：正文已在同一次推理里产出，这里只发布，不再补模型请求。 */
+  private deliverVoiceReply(id:string,text:string,before:TaskProgressSnapshot,stillCurrent:()=>boolean,voiceTurn?:number):VoiceRouteResult{
+    const originRun=before.runId??null,originControl=this.controlVersions.get(id)??0;
+    const streaming=this.beginDeliveryStream(id,'reply',before,stillCurrent,voiceTurn);
+    if(streaming.onText(text)===false){streaming.cancel();return {kind:'none',resumeReadOnly:'chat'};}
+    const delivery=this.publishDelivery(id,'reply',text,text,{runId:originRun,controlVersion:originControl},streaming.id);
+    if(!delivery){streaming.cancel();return {kind:'none',resumeReadOnly:'chat'};}
+    const published=this.getTaskProgress(id);
+    return {kind:'none',resumeReadOnly:'chat',snapshot:published??undefined,spokenText:delivery.text,turn:{branch:'reply',phase:'COMMITTED',protocol:'free_reply'}};
   }
   private beginDeliveryStream(conversationId:string,kind:UserDeliveryKind,before:TaskProgressSnapshot,stillCurrent:()=>boolean,voiceTurn?:number){
     const id=randomUUID(),runId=before.runId??null,control=this.controlVersions.get(conversationId)??0;
@@ -556,6 +645,8 @@ export class ConversationManager {
         },
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
+      // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
+      runtime.session.bindVoiceTurnGate?.(this.voiceTurns);
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
       runtime.fleet.bindConversationContext?.(() => this.getTaskProgress(id));
       // 授权绑定原任务与原控制版本：发起时记下，用户点「允许」时再复核一次。

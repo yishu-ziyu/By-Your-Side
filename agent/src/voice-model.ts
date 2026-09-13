@@ -2,7 +2,7 @@ import {randomUUID} from "node:crypto";
 import type {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import type {VoiceConversationContext} from "../../shared/voice.js";
 import {VoiceIntentError} from "./voice-errors.js";
-import {VOICE_INTENT_PROMPT, parseVoiceDecision, voiceDecisionClauses, type VoiceIntentPlan} from "./voice-intent.js";
+import {VOICE_FREE_REPLY_PROMPT, VOICE_INTENT_PROMPT, VOICE_PLAN_PROMPT, parseVoiceDecision, voiceDecisionClauses, type VoiceIntentPlan} from "./voice-intent.js";
 
 /**
  * 无浏览器工具的语音模型调用：编辑判定、整句意图分类、只读页面观察。
@@ -148,6 +148,170 @@ export async function classifyVoiceInput(
     }
   }
   throw new VoiceIntentError("classifier_invalid_reply");
+}
+
+/** 一次性提案的输入：与分类调用同一批上下文，但少了独立的分类往返。 */
+export interface VoiceTurnPrepareInput {
+  text: string;
+  state: string;
+  conversationTitles?: string[];
+  task?: VoiceIntentTask;
+  conversation?: VoiceConversationContext;
+}
+
+export interface VoiceTurnPreparation {
+  /** 判定出的计划；free_reply 命中时是程序构造的单步 chat（闸门与交付路径完全不变）。 */
+  plan: VoiceIntentPlan;
+  /** 只有 free_reply 命中且模型给出正文时非空。 */
+  replyText: string | null;
+  requestId: string;
+  attempts: number;
+  elapsedMs: number;
+  /** free_reply = 白名单句子的最小请求；plan = 只判定计划（控制句、看页面、需要事实的追问）。 */
+  protocol: 'free_reply' | 'plan';
+}
+
+/** 计划协议的总预算，以及两次尝试各自的子预算（与旧分类调用同一节奏）。 */
+const VOICE_TURN_TIMEOUT_MS = 15_000;
+const VOICE_TURN_ATTEMPT_TIMEOUTS_MS = [6_000, 9_000] as const;
+/**
+ * 白名单句子的最小请求：单次尝试、8 秒上限，失败就是确定失败。
+ * 故意不重试：这条路径的价值是快，第二次尝试只会把等待翻倍。
+ */
+const VOICE_FREE_REPLY_TIMEOUT_MS = 8_000;
+
+export interface VoiceTurnPrepareOptions {
+  /** 轮次被取代/说停时取消这次请求。 */
+  cancel?: AbortSignal;
+  /**
+   * free_reply = 白名单句子（问候/寒暄/致谢/告别/应答、纯算术）的独立最小请求：
+   *   不发计划提示词、不要 JSON、不做计划解析，只要一两句正文。
+   * plan = 其余句子：只判定计划，提示词与输出形状和旧分类调用一致，
+   *   由应用按 steps 走既有控制链与原派发（首声不因合并变慢，也不在没有事实时开口）。
+   */
+  protocol?: 'free_reply' | 'plan';
+}
+
+/**
+ * 一次请求完成这句话的判定或直答。无副作用：不碰 activeGoal、不调 rpc.setPageTarget、
+ * 不 runTrace.begin、不派发任何浏览器 RPC、不发布任何交付；候选只有经调用方提交后才对外输出。
+ *
+ * 失败一律抛 VoiceIntentError，由调用方给确定的失败回执，绝不自动放行；
+ * free_reply 失败时不会退回计划提示词再答一次（那会把等待翻倍），也不会用代码拼一句假回答。
+ */
+export async function prepareVoiceTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput, options: VoiceTurnPrepareOptions = {}): Promise<VoiceTurnPreparation> {
+  const {cancel, protocol = 'plan'} = options;
+  if (protocol === 'free_reply') return freeReplyTurn(call, input, cancel);
+  const budget = AbortSignal.timeout(VOICE_TURN_TIMEOUT_MS);
+  // 轮次被取代/说停时先取消这次模型请求：候选不再需要，也不该继续占着模型预算。
+  const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
+  const requestId = input.task?.requestId ?? randomUUID();
+  const startedAt = Date.now();
+  let rejection: string | undefined;
+  for (const [attempt, attemptTimeoutMs] of VOICE_TURN_ATTEMPT_TIMEOUTS_MS.entries()) {
+    const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
+    const callAt = Date.now();
+    const diagnose = (outcome: string, reason?: string, actions?: string[]) =>
+      console.error(`[voice-turn] ${JSON.stringify({
+        requestId,
+        attempt: attempt + 1,
+        elapsedMs: Date.now() - callAt,
+        outcome,
+        protocol,
+        ...(reason ? {reason} : {}),
+        ...(actions ? {actions} : {}),
+      })}`);
+
+    let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+    try {
+      reply = await call.runtime.completeSimple(call.model, {
+        systemPrompt: VOICE_PLAN_PROMPT
+          + (rejection ? rejectionHint(rejection) : "")
+          + (attempt ? VOICE_INTENT_RETRY_HINT : ""),
+        messages: [{
+          role: "user",
+          content: JSON.stringify({
+            state: input.state,
+            text: input.text,
+            clauses: voiceDecisionClauses(input.text),
+            ...(input.conversationTitles ? {conversationTitles: input.conversationTitles} : {}),
+            ...(input.task ? {task: {goal: input.task.goal?.slice(0, 600) ?? null}} : {}),
+            ...(input.conversation ? {conversation: input.conversation} : {}),
+          }),
+          timestamp: Date.now(),
+        }],
+      }, {
+        maxTokens: 1400,
+        temperature: 0,
+        signal: attemptSignal,
+        sessionId: call.sessionId,
+        headers: call.headers,
+      });
+    } catch {
+      const superseded = cancel?.aborted === true;
+      diagnose(superseded ? "cancelled" : attemptSignal.aborted ? "timeout" : "request_failed");
+      if (superseded) throw new VoiceIntentError("classifier_failed");
+      if (!attempt && !signal.aborted) continue;
+      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
+    }
+
+    if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+      diagnose("provider_failed");
+      if (!attempt && !signal.aborted) continue;
+      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
+    }
+
+    try {
+      const raw = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+      const plan = parseVoiceDecision(raw, input.text, input.conversationTitles);
+      diagnose("accepted", undefined, plan.steps.map(step => step.action));
+      return { plan, replyText: null, requestId, attempts: attempt + 1, elapsedMs: Date.now() - startedAt, protocol };
+    } catch (error) {
+      rejection = error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown";
+      diagnose("candidate_rejected", rejection);
+      if (attempt || signal.aborted) throw error;
+    }
+  }
+  throw new VoiceIntentError("classifier_invalid_reply");
+}
+
+/** 白名单句子的最小请求：一次尝试、只要正文；空正文/超时/失败都给确定的失败回执。 */
+async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput, cancel?: AbortSignal): Promise<VoiceTurnPreparation> {
+  const requestId = input.task?.requestId ?? randomUUID();
+  const startedAt = Date.now();
+  const budget = AbortSignal.timeout(VOICE_FREE_REPLY_TIMEOUT_MS);
+  const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
+  const diagnose = (outcome: string, reason?: string) =>
+    console.error(`[voice-turn] ${JSON.stringify({requestId, attempt: 1, elapsedMs: Date.now() - startedAt, outcome, protocol: 'free_reply', ...(reason ? {reason} : {})})}`);
+  let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+  try {
+    reply = await call.runtime.completeSimple(call.model, {
+      systemPrompt: VOICE_FREE_REPLY_PROMPT,
+      messages: [{role: "user", content: input.text, timestamp: Date.now()}],
+    }, {
+      maxTokens: 400,
+      temperature: 0,
+      reasoning: "minimal",
+      signal,
+      sessionId: call.sessionId,
+      headers: call.headers,
+    });
+  } catch {
+    diagnose(cancel?.aborted === true ? "cancelled" : signal.aborted ? "timeout" : "request_failed");
+    throw new VoiceIntentError("free_reply_failed");
+  }
+  if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+    diagnose("provider_failed");
+    throw new VoiceIntentError("free_reply_failed");
+  }
+  const text = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+  if (!text || text.length > 2000) {
+    diagnose("empty_reply", text ? "too_long" : "empty");
+    throw new VoiceIntentError("free_reply_failed");
+  }
+  diagnose("accepted");
+  // 计划由程序构造：闸门、只读判定与唯一交付权都走与计划协议同一条路，不因为直答另开一条。
+  return {plan: {steps: [{action: 'chat', text: input.text, target: null}]}, replyText: text, requestId, attempts: 1, elapsedMs: Date.now() - startedAt, protocol: 'free_reply'};
 }
 
 /** 只读观察当前页面并回答用户；出错时抛中文提示，由上层转成语音回执。 */

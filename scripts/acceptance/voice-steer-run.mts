@@ -90,7 +90,7 @@ async function run(mode:'text'|'voice'){
    voice!.command({kind:'interrupt',turn:1});const audio=Buffer.concat([pcm,Buffer.alloc(24000)]);
    for(let i=0;i<audio.length;i+=960){voice!.command({kind:'audio',turn:1,data:audio.subarray(i,i+960).toString('base64')});await sleep(20);}
    voice!.command({kind:'commit',turn:1});evidence.committedAt=Date.now();
-   await until(()=>evidence.diagnostics.some((d:any)=>d.event==='route_result')||done,20000,'Voice routing timeout');release();
+   await until(()=>evidence.diagnostics.some((d:any)=>d.event==='prepare_result')||done,20000,'Voice routing timeout');release();
   }
   await until(()=>!manager.get(cid)!.runtime.session.isStreaming()&&!jobs.size&&(mode==='text'||done),150000,'Task completion timeout');
   const owned=[...created];if(owned.length!==1)throw Error(`Expected one fixture tab, got ${owned.length}`);
