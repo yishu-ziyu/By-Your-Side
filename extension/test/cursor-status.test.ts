@@ -238,4 +238,36 @@ describe("光标状态层", () => {
     expect(painted.every(([details]) => (details as ScriptDetails).target.tabId === 21)).toBe(true);
     expect((painted.at(-1)?.[0].args?.[1] as { tabId?: number } | undefined)?.tabId).toBeUndefined();
   });
+  it("工作页迁移会清除旧页等待状态", async () => {
+    const env = installChrome({ activeId: 7 });
+    const { showCursorStatus } = await import("../src/background/cursor-status.js");
+    await showCursorStatus({ key: "main", state: "waiting", tabId: 7 });
+    env.executeScript.mockClear();
+    await showCursorStatus({ key: "main", state: "reading", tabId: 21 });
+    expect(env.executeScript.mock.calls.some(([d]) => d.target.tabId === 7 && String(d.func).includes("clearStatus"))).toBe(true);
+  });
+
+  it("多个跨页角色保留各自目标，移除后只留下仍在工作的角色", async () => {
+    const env = installChrome({ activeId: 7, titles: { 21: "文章", 22: "视频" } });
+    const { showCursorStatus, clearCursorStatus } = await import("../src/background/cursor-status.js");
+    await showCursorStatus({ key: "worker-a", state: "reading", tabId: 21 });
+    await showCursorStatus({ key: "worker-b", state: "waiting", tabId: 22 });
+    expect((pillCalls(env.executeScript).at(-1)?.[0].args?.[1] as CrossPageView).members).toEqual([
+      { sessionId: "worker-a", title: "文章", tabId: 21, state: "reading" },
+      { sessionId: "worker-b", title: "视频", tabId: 22, state: "waiting" },
+    ]);
+    await clearCursorStatus("worker-b");
+    expect((pillCalls(env.executeScript).at(-1)?.[0].args?.[1] as CrossPageView).members).toHaveLength(1);
+  });
+
+  it("失败后的结束事件不能覆盖失败；新工作状态可开始下一轮", async () => {
+    installChrome({ activeId: 21 });
+    const { showCursorStatus, cursorStatusForTests } = await import("../src/background/cursor-status.js");
+    await showCursorStatus({ key: "main", state: "failed", tabId: 21 });
+    await showCursorStatus({ key: "main", state: "done", tabId: 21 });
+    expect(cursorStatusForTests("main")?.state).toBe("failed");
+    await showCursorStatus({ key: "main", state: "waiting", tabId: 21 });
+    expect(cursorStatusForTests("main")?.state).toBe("waiting");
+  });
+
 });

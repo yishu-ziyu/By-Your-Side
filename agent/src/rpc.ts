@@ -73,6 +73,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "read_element",
   "network",
   "page_operation",
+  "page_translation",
   "close_tab", "click", "hover", "fill", "type_text", "press_key", "scroll",
   "js", "navigate", "screenshot", "mark", "clear_marks",
 ]);

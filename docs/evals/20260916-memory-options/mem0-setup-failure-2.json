@@ -1,0 +1,12 @@
+{
+  "vendor": "mem0",
+  "provider": "opencode-go",
+  "model": "deepseek-flash",
+  "root": "/tmp/bys-memory-eval-PBf7d2/mem0-data-1789534922",
+  "steps": [],
+  "retrieval": "NOT EVALUATED: built-in constant mock embedding; extraction and CRUD only",
+  "error": {
+    "type": "LLMError",
+    "message": "LLM extraction failed: Error code: 400 - {'type': 'error', 'error': {'type': 'MissingSessionID', 'message': 'Error from provider (Console Go): Request is missing x-opencode-session and cannot be routed efficiently. Please see https://opencode.ai/docs/go/#where-can-i-use-it'}}"
+  }
+}

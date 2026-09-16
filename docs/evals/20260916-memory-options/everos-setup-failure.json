@@ -1,0 +1,11 @@
+{
+  "vendor": "everos",
+  "provider": "opencode-go",
+  "model": "deepseek-flash",
+  "root": "/tmp/bys-memory-eval-PBf7d2/everos-data-1789534874",
+  "steps": [],
+  "error": {
+    "type": "ValidationError",
+    "message": "1 validation error for Settings\nmemorize.mode\n  Input should be 'chat' or 'agent' [type=literal_error, input_value='user', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error"
+  }
+}

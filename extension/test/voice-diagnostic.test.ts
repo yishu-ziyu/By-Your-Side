@@ -311,6 +311,32 @@ describe('voice diagnostics panel block',()=>{
   });
   afterEach(()=>vi.unstubAllGlobals());
   const byClass=(name:string)=>mockElements.find(element=>element.className&&element.className.split(' ').includes(name));
+  it('keeps live voice phases visible while diagnostics stay collapsed',async()=>{
+    // Stub microphone startup only; drive the callback registered by the real mounted VoiceUI.
+    let client:VoiceClient|undefined;
+    const start=vi.spyOn(VoiceClient.prototype,'start').mockImplementation(async function(this:VoiceClient){client=this;});
+    const composer=createMockElement("div");
+    const input=createMockElement("input");input.id="input";composer.appendChild(input);
+    const spacer=createMockElement("div");spacer.id="composer-spacer";composer.appendChild(spacer);
+    const send=vi.fn(()=>true);
+    const voice=mountVoiceUI(composer,()=>"conv-1",send);
+    try {
+      byClass('voice-start').onclick();
+      await Promise.resolve();
+      expect(client).toBeDefined();
+      const change=(client as unknown as {change:(phase:import('../src/sidepanel/voice-client.js').VoicePhase)=>void}).change;
+      for(const [phase,label] of [['connecting','正在连接'],['listening','正在听你说'],['thinking','正在处理这句话'],['speaking','正在回答'],['error','连接失败']] as const){
+        change(phase);
+        expect(byClass('voice-progress').hidden).toBe(false);
+        expect(byClass('voice-state').textContent).toBe(label);
+        expect(byClass('voice-end').textContent).toBe(phase==='error'?'重试':'结束');
+        expect(byClass('voice-diag').open).toBeFalsy();
+      }
+      change('idle');
+      expect(byClass('voice-progress').hidden).toBe(true);
+      expect(send).not.toHaveBeenCalled();
+    } finally { voice.stop();start.mockRestore(); }
+  });
   it('offers a compact manual block and starts nothing by itself',()=>{
     const composer=createMockElement("div");
     const input=createMockElement("input");input.id="input";composer.appendChild(input);
@@ -319,7 +345,7 @@ describe('voice diagnostics panel block',()=>{
     const voice=mountVoiceUI(composer,()=>"conv-1",send);
     expect(byClass('voice-diag')).toBeTruthy();
     // The block now covers automatic records too, so its title changed; the manual tools stay.
-    expect(byClass('voice-diag-summary').textContent).toBe('语音记录');
+    expect(byClass('voice-diag-summary').textContent).toBe('语音诊断');
     expect(byClass('voice-diag-start').textContent).toBe('开始录音');
     expect(byClass('voice-diag-start').disabled).toBe(false);
     expect(byClass('voice-diag-stop').disabled).toBe(true);
@@ -327,6 +353,13 @@ describe('voice diagnostics panel block',()=>{
     expect(byClass('voice-diag-clear').textContent).toBe('清空');
     expect(send).not.toHaveBeenCalled();
     expect(byClass('voice-diag-state').textContent).toContain('未开启');
+    // 问题标记不再是输入区常驻按钮：它只在默认收起的诊断 details 里，且文案点明不纠错。
+    expect(byClass('voice-diag').open).toBeFalsy();
+    const record=byClass('voice-record');
+    expect(record.children).toEqual([byClass('voice-diag')]);
+    expect(byClass('voice-diag-body').children).toContain(byClass('voice-record-head'));
+    expect(byClass('voice-diag-mark').textContent).toBe('记录本轮问题');
+    expect(byClass('voice-diag-mark-help').textContent).toContain('不会重试或修改任务');
     byClass('voice-diag-clear').onclick();
     expect(byClass('voice-diag-state').textContent).toContain('已清空');
     voice.stop();

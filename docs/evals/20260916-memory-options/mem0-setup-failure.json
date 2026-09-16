@@ -1,0 +1,11 @@
+{
+  "vendor": "mem0",
+  "provider": "opencode-go",
+  "model": "deepseek-flash",
+  "root": "/tmp/bys-memory-eval-PBf7d2/mem0-data-1789534875",
+  "steps": [],
+  "error": {
+    "type": "ValidationError",
+    "message": "1 validation error for MemoryConfig\nembedder.config\n  Value error, Unsupported embedding provider: mock [type=value_error, input_value={'embedding_dims': 10}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "root": "/tmp/bys-memory-eval-PBf7d2/agent-learning-1789536549",
+  "source": "docs/evals/20260916-memory-implementation/live-attempt2",
+  "provider": "opencode-go/deepseek-flash",
+  "embedding": "BAAI/bge-small-zh-v1.5 local",
+  "steps": [
+    {
+      "episode": 0,
+      "add_status": 200,
+      "flush_status": 200,
+      "flush": {
+        "request_id": "19b4a54e1030435e82fcc43b7b1aac55",
+        "data": {
+          "status": "extracted"
+        }
+      }
+    }
+  ],
+  "health": {
+    "status": "ok",
+    "version": "1.3.1",
+    "capabilities": {
+      "llm": true,
+      "embed": true,
+      "rerank": false,
+      "multimodal_llm": false,
+      "parser": true
+    },
+    "disabled_features": [
+      "agentic_search",
+      "knowledge",
+      "multimodal_upload"
+    ],
+    "cascade": {
+      "healthy": true,
+      "reasons": [],
+      "pending": 0,
+      "failed_permanent": 0,
+      "failed_retryable": 0,
+      "drain_consecutive_failures": 0,
+      "unrecoverable_total": 0,
+      "optimize_failure_streak": 0,
+      "prune_stale_seconds": 0.0
+    }
+  },
+  "error": {
+    "type": "AttributeError",
+    "message": "'OfflineEngine' object has no attribute 'drain'"
+  }
+}

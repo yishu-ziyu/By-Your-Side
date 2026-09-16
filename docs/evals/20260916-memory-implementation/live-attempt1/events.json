@@ -1,0 +1,4683 @@
+[
+  {
+    "at": 1789536170906,
+    "direction": "client",
+    "message": {
+      "type": "conversation_list"
+    }
+  },
+  {
+    "at": 1789536170906,
+    "direction": "server",
+    "message": {
+      "type": "conversation_list",
+      "conversations": [
+        {
+          "id": "default",
+          "title": "新会话",
+          "createdAt": 1789536168364,
+          "updatedAt": 1789536168364,
+          "state": "idle",
+          "mode": "act",
+          "runId": null,
+          "model": "opencode-go/deepseek-flash"
+        }
+      ]
+    }
+  },
+  {
+    "at": 1789536170907,
+    "direction": "server",
+    "message": {
+      "type": "status",
+      "conversationId": "default",
+      "epochs": {
+        "main": 0
+      },
+      "state": "idle"
+    }
+  },
+  {
+    "at": 1789536170908,
+    "direction": "client",
+    "message": {
+      "type": "consent_list",
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536170908,
+    "direction": "server",
+    "message": {
+      "type": "consent_list",
+      "conversationId": "default",
+      "requests": []
+    }
+  },
+  {
+    "at": 1789536170910,
+    "direction": "server",
+    "message": {
+      "type": "model_info",
+      "conversationId": "default",
+      "model": "opencode-go/deepseek-flash",
+      "models": [
+        {
+          "id": "minimax-cn/MiniMax-M3",
+          "provider": "minimax-cn",
+          "modelId": "MiniMax-M3",
+          "name": "MiniMax-M3 (最新·多模态)"
+        },
+        {
+          "id": "opencode-go/deepseek-flash",
+          "provider": "opencode-go",
+          "modelId": "deepseek-flash",
+          "name": "DeepSeek V4.1 Flash (Go)"
+        },
+        {
+          "id": "xai/grok-4.6",
+          "provider": "xai",
+          "modelId": "grok-4.6",
+          "name": "Grok 4.6"
+        },
+        {
+          "id": "xiaomi-token-plan-cn/mimo-v2.5",
+          "provider": "xiaomi-token-plan-cn",
+          "modelId": "mimo-v2.5",
+          "name": "MiMo-V2.5"
+        },
+        {
+          "id": "xiaomi-token-plan-cn/mimo-v2.5-pro",
+          "provider": "xiaomi-token-plan-cn",
+          "modelId": "mimo-v2.5-pro",
+          "name": "MiMo V2.5 Pro"
+        }
+      ]
+    }
+  },
+  {
+    "at": 1789536170910,
+    "direction": "client",
+    "message": {
+      "type": "consent_list",
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536170910,
+    "direction": "server",
+    "message": {
+      "type": "consent_list",
+      "conversationId": "default",
+      "requests": []
+    }
+  },
+  {
+    "at": 1789536170911,
+    "direction": "client",
+    "message": {
+      "type": "conversation_list"
+    }
+  },
+  {
+    "at": 1789536170911,
+    "direction": "server",
+    "message": {
+      "type": "conversation_list",
+      "conversations": [
+        {
+          "id": "default",
+          "title": "新会话",
+          "createdAt": 1789536168364,
+          "updatedAt": 1789536168364,
+          "state": "idle",
+          "mode": "act",
+          "runId": null,
+          "model": "opencode-go/deepseek-flash"
+        }
+      ]
+    }
+  },
+  {
+    "at": 1789536170911,
+    "direction": "server",
+    "message": {
+      "type": "status",
+      "conversationId": "default",
+      "epochs": {
+        "main": 0
+      },
+      "state": "idle"
+    }
+  },
+  {
+    "at": 1789536170913,
+    "direction": "server",
+    "message": {
+      "type": "model_info",
+      "conversationId": "default",
+      "model": "opencode-go/deepseek-flash",
+      "models": [
+        {
+          "id": "minimax-cn/MiniMax-M3",
+          "provider": "minimax-cn",
+          "modelId": "MiniMax-M3",
+          "name": "MiniMax-M3 (最新·多模态)"
+        },
+        {
+          "id": "opencode-go/deepseek-flash",
+          "provider": "opencode-go",
+          "modelId": "deepseek-flash",
+          "name": "DeepSeek V4.1 Flash (Go)"
+        },
+        {
+          "id": "xai/grok-4.6",
+          "provider": "xai",
+          "modelId": "grok-4.6",
+          "name": "Grok 4.6"
+        },
+        {
+          "id": "xiaomi-token-plan-cn/mimo-v2.5",
+          "provider": "xiaomi-token-plan-cn",
+          "modelId": "mimo-v2.5",
+          "name": "MiMo-V2.5"
+        },
+        {
+          "id": "xiaomi-token-plan-cn/mimo-v2.5-pro",
+          "provider": "xiaomi-token-plan-cn",
+          "modelId": "mimo-v2.5-pro",
+          "name": "MiMo V2.5 Pro"
+        }
+      ]
+    }
+  },
+  {
+    "at": 1789536170919,
+    "direction": "client",
+    "message": {
+      "type": "consent_list",
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536170919,
+    "direction": "server",
+    "message": {
+      "type": "consent_list",
+      "conversationId": "default",
+      "requests": []
+    }
+  },
+  {
+    "at": 1789536171170,
+    "direction": "client",
+    "message": {
+      "type": "task_action",
+      "request": {
+        "requestId": "5ed3fb7f-55bd-4844-977a-e751ce9f7c69",
+        "conversationId": "default",
+        "source": "text",
+        "action": "start",
+        "expectedRunId": null,
+        "text": "我的邮箱是lin@example.test你可以记住这一点。",
+        "context": {
+          "tabId": 172142168,
+          "title": "报名测试",
+          "url": "http://127.0.0.1:60103/article"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536171173,
+    "direction": "server",
+    "message": {
+      "type": "conversation_updated",
+      "conversationId": "default",
+      "conversation": {
+        "id": "default",
+        "title": "我的邮箱是lin@example.test你可以记住这一点。",
+        "createdAt": 1789536168364,
+        "updatedAt": 1789536171172,
+        "state": "idle",
+        "mode": "act",
+        "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+        "model": "opencode-go/deepseek-flash"
+      }
+    }
+  },
+  {
+    "at": 1789536171174,
+    "direction": "server",
+    "message": {
+      "type": "tool_call",
+      "id": "3ba78b70-6e66-4807-bfee-afebf0d22baa",
+      "name": "snapshot",
+      "params": {
+        "tabId": 172142168
+      },
+      "conversationId": "default",
+      "epochs": {
+        "main": 0
+      },
+      "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a"
+    }
+  },
+  {
+    "at": 1789536171175,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "conversationId": "default",
+      "event": {
+        "kind": "notice",
+        "message": "已接收新任务：我的邮箱是lin@example.test你可以记住这一点。",
+        "receipt": {
+          "requestId": "5ed3fb7f-55bd-4844-977a-e751ce9f7c69",
+          "conversationId": "default",
+          "source": "text",
+          "action": "start",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "text": "我的邮箱是lin@example.test你可以记住这一点。",
+          "targetTitle": "我的邮箱是lin@example.test你可以记住这一点。",
+          "status": "accepted",
+          "message": "已接收新任务：我的邮箱是lin@example.test你可以记住这一点。",
+          "updatedAt": 1789536171174
+        }
+      }
+    }
+  },
+  {
+    "at": 1789536171195,
+    "direction": "client",
+    "message": {
+      "type": "tool_result",
+      "id": "3ba78b70-6e66-4807-bfee-afebf0d22baa",
+      "ok": true,
+      "data": {
+        "text": "RootWebArea \"报名测试\" focused\n  [ref=11] heading \"活动报名\" level=1\n  [ref=70] text: Email 邮箱\n  [ref=3] textbox \"Email 邮箱\" required\n  [ref=14] button \"报名\"\n  [ref=72] text: 这是本地合成报名页面。",
+        "tabId": 172142168
+      },
+      "executionFact": "executed",
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536171198,
+    "direction": "server",
+    "message": {
+      "type": "status",
+      "state": "running",
+      "conversationId": "default",
+      "epochs": {
+        "main": 0
+      },
+      "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a"
+    }
+  },
+  {
+    "at": 1789536171198,
+    "direction": "server",
+    "message": {
+      "type": "conversation_updated",
+      "conversationId": "default",
+      "conversation": {
+        "id": "default",
+        "title": "我的邮箱是lin@example.test你可以记住这一点。",
+        "createdAt": 1789536168364,
+        "updatedAt": 1789536171198,
+        "state": "running",
+        "mode": "act",
+        "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+        "model": "opencode-go/deepseek-flash"
+      }
+    }
+  },
+  {
+    "at": 1789536171199,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "agent_start",
+        "deliveryMode": "explicit"
+      },
+      "conversationId": "default",
+      "epochs": {
+        "main": 0
+      },
+      "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a"
+    }
+  },
+  {
+    "at": 1789536171199,
+    "direction": "server",
+    "message": {
+      "type": "conversation_updated",
+      "conversationId": "default",
+      "conversation": {
+        "id": "default",
+        "title": "我的邮箱是lin@example.test你可以记住这一点。",
+        "createdAt": 1789536168364,
+        "updatedAt": 1789536171198,
+        "state": "running",
+        "mode": "act",
+        "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+        "model": "opencode-go/deepseek-flash"
+      }
+    }
+  },
+  {
+    "at": 1789536171199,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "turn_start"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536173822,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "The"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536173851,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536173864,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " says"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174083,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " \""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174083,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "我的"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174084,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "邮箱"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174084,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "是"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174084,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "lin"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174097,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "@"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174097,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "example"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174097,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".test"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174097,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "你可以"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174098,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "记住"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174294,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "这一点"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174294,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "。\""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174294,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " —"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174294,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " they"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " want"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " me"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " remember"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " their"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " email"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " This"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174295,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " is"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174296,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174297,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174297,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " request"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174297,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174297,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " I"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174297,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " should"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174297,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " use"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174298,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174298,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "_m"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174298,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "emory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174298,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " action"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174299,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ":\""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174299,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "change"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174299,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "\""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174300,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174300,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " save"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174300,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174301,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174301,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "The"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174301,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " page"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174302,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " shows"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174302,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174303,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " registration"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174303,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " form"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174303,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " with"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174303,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " an"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174303,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Email"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174304,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " field"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174304,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " The"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " just"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " wants"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " me"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " remember"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174305,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174306,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " email"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174306,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174306,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Maybe"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174306,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " they"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " also"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " want"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " me"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " fill"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174307,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "?"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174308,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " The"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174308,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " message"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174308,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " only"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " says"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " remember"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " this"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Let"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " me"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174309,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " save"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Let"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " me"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " do"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174310,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174311,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "_m"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174311,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "emory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174311,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " change"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174311,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174311,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Should"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " I"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " also"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " fill"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " form"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " and"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174312,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " submit"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "?"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " The"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " didn"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'t"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " ask"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174313,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " register"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174314,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174314,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Just"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174314,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " \""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174314,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "记住"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174314,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "这一点"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174315,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "\"."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174315,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " So"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174315,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " save"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174315,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174315,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " and"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174315,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " reply"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174316,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174316,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Kind"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174331,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " should"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174345,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " be"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174345,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "..."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174360,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " this"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174360,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " is"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174360,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174360,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174371,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " task"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174372,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ","
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174372,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " final"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174372,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " result"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174388,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " via"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174402,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " send"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174403,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "_user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174419,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "_message"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174419,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " kind"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174419,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ":\""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174434,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "finding"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174435,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "\"."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174435,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Actually"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174442,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174444,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'s"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174444,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174459,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " simple"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174459,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " fact"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174460,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " save"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174474,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174474,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Let"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174474,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " me"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174475,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " do"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174488,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174489,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174489,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Direct"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174499,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174511,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " message"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174512,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " author"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174529,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "izes"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174529,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " change"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174530,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174544,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Save"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174557,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " email"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174572,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536174803,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "tool_start",
+        "toolCallId": "call_00_OKqu78bcPCIqOnh81cxn9248",
+        "name": "user_memory",
+        "params": {
+          "action": "change",
+          "query": "邮箱 email"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536177077,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "memory",
+        "action": "saved",
+        "entries": [
+          {
+            "id": "1c9d7096-c119-44ba-b102-c5a9e1f331c0",
+            "version": 1,
+            "text": "我的邮箱是lin@example.test",
+            "scope": {
+              "kind": "all"
+            },
+            "sourceConversationId": "default",
+            "createdAt": 1789536177068,
+            "updatedAt": 1789536177068
+          }
+        ],
+        "message": "已记住：我的邮箱是lin@example.test\n适用范围：所有个人会话"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536177078,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "tool_end",
+        "toolCallId": "call_00_OKqu78bcPCIqOnh81cxn9248",
+        "name": "user_memory",
+        "isError": false,
+        "resultText": "已记住：我的邮箱是lin@example.test\n适用范围：所有个人会话"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536177080,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "turn_end"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536177080,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "turn_start"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178349,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Rece"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178396,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "ipt"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178517,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " confirms"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178517,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178517,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Reply"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178518,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " with"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178518,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " finding"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178539,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178728,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Note"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178728,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178728,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " page"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178729,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " has"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178729,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178729,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " form"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178729,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ";"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178729,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178729,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " user"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178730,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " hasn"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178730,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'t"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178734,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " asked"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178734,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178734,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " fill"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178735,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178735,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178738,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Just"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178738,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " confirm"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178739,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178739,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178739,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Maybe"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178739,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " mention"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178739,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " I"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178739,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " can"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178740,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " fill"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178740,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178740,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " if"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178740,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " needed"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178741,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " —"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178741,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " but"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178741,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " \""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178741,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "闲聊"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178843,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "时"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178843,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "只"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178843,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "简短"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178844,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "回应"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "一次"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "，"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "不"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "附加"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "任务"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "确认"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "\"."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178873,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " This"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178874,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " isn"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178942,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'t"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178942,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " ch"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178942,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "itch"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178942,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "at"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178968,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " exactly"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178968,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ","
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178968,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178968,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'s"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178969,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178969,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178969,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " request"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178998,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178998,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Keep"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178998,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " short"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Maybe"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " briefly"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " offer"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "?"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " Guidance"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " says"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " don"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536178999,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'t"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179000,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " push"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179000,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " proposals"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179000,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179073,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " I"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179073,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'ll"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179073,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " keep"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179087,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " it"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179087,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179087,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179176,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " memory"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179176,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " confirmation"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179212,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ","
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179212,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " perhaps"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179212,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " one"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179364,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " light"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179364,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " mention"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179365,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " that"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179365,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179365,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " "
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179365,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "报名"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179365,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " form"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179377,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " is"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179383,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " there"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179391,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " if"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179391,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " they"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179391,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " want"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179610,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179610,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " H"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179616,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "mm"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179617,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ","
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179617,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " \""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179617,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "不"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179618,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "主动"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179618,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "介绍"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179618,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "当前"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179618,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "页面"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179619,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "或"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179619,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "据此"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179620,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "提议"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179620,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "\""
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179620,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " applies"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179867,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " to"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179867,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " ch"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179867,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "itch"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179867,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "at"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179867,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179867,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " I"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'ll"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " just"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " confirm"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " briefly"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": ".\n\n"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "Actually"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179868,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " a"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179869,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " light"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179869,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " offer"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179869,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " is"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179869,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " useful"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " here"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " but"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " rules"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " say"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " don"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'t"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179870,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " proactively"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " propose"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " based"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " on"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " page"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " I"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "'ll"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " keep"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179871,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " just"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179872,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " the"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179873,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": " confirmation"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179873,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "thinking_delta",
+        "delta": "."
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179874,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179874,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179875,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179875,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179875,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179875,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179876,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179876,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179877,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179877,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179877,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179878,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179879,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱我就",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179879,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱我就直接",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179879,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱我就直接用它",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179880,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery_stream",
+        "stream": {
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱我就直接用它。",
+          "phase": "streaming"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179881,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "tool_start",
+        "toolCallId": "call_00_rIztDuw7wSi547lGpeyy7452",
+        "name": "send_user_message",
+        "params": {
+          "kind": "finding",
+          "content": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱我就直接用它。"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179884,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "user_delivery",
+        "delivery": {
+          "conversationId": "default",
+          "id": "delivery-f441720c6fb96eabfc9ed637cc432347",
+          "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+          "kind": "finding",
+          "text": "记住了，你的邮箱是 lin@example.test，之后填表需要邮箱我就直接用它。",
+          "composedAt": 1789536179883,
+          "status": "composed"
+        }
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179884,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "tool_end",
+        "toolCallId": "call_00_rIztDuw7wSi547lGpeyy7452",
+        "name": "send_user_message",
+        "isError": false,
+        "resultText": "delivered:delivery-f441720c6fb96eabfc9ed637cc432347"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179885,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "turn_end"
+      },
+      "conversationId": "default"
+    }
+  },
+  {
+    "at": 1789536179886,
+    "direction": "server",
+    "message": {
+      "type": "status",
+      "state": "idle",
+      "conversationId": "default",
+      "epochs": {
+        "main": 0
+      },
+      "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a"
+    }
+  },
+  {
+    "at": 1789536179886,
+    "direction": "server",
+    "message": {
+      "type": "conversation_updated",
+      "conversationId": "default",
+      "conversation": {
+        "id": "default",
+        "title": "我的邮箱是lin@example.test你可以记住这一点。",
+        "createdAt": 1789536168364,
+        "updatedAt": 1789536179886,
+        "state": "idle",
+        "mode": "act",
+        "runId": "481db5ac-fb8a-4f5d-b974-cb34ec078d8a",
+        "model": "opencode-go/deepseek-flash"
+      }
+    }
+  },
+  {
+    "at": 1789536179886,
+    "direction": "server",
+    "message": {
+      "type": "agent_event",
+      "event": {
+        "kind": "agent_end"
+      },
+      "conversationId": "default"
+    }
+  }
+]

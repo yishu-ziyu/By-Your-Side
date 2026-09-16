@@ -1,3 +1,6 @@
+import { pageTranslation } from "./exec/page-translation.js";
+import { installReading } from "./reading.js";
+import type { ReadingRecord } from "../shared/reading-state.js";
 /**
  * background service worker 入口：
  * - 持有到伴随进程的上行连接（native messaging 优先，ws 调试回退，见 uplink.ts）
@@ -75,6 +78,7 @@ const handlers: Record<ToolName, Handler> = {
   }),
   share_tab: (p, sid) => shareTab(p, sid),
   page_operation: (p, sid) => pageOperation(p, sid),
+  page_translation: (p, sid) => pageTranslation(p, sid),
   read_element: (p, sid) => readElement(p, sid),
   list_tabs: (_p, sid) => listTabs(sid),
   get_active_tab: (_p, sid) => getActiveTab(sid),
@@ -99,7 +103,7 @@ const handlers: Record<ToolName, Handler> = {
 let selectedConversationId = "default";
 const connectedPanels = new Set<chrome.runtime.Port>();
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
-function broadcastConversations() { for (const port of connectedPanels) { try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId}); } catch {} } }
+function broadcastConversations() { for (const port of connectedPanels) { try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId,resumeReading:reading.resumeOnOpen(selectedConversationId)}); } catch {} } }
 const controllers = new Map<string, ReturnType<typeof createConversationController>>();
 let connectionSnapshot: [ConnState, TransportKind | undefined, string?] = ["connecting", undefined];
 let helloSnapshot: Extract<ServerMessage, {type:"hello_ok"}> | null = null;
@@ -108,6 +112,8 @@ const MAX_STORED_HISTORY_KEYS = 8;
 const HISTORY_PRUNE_DELAY_MS = 5_000;
 const transport = new Uplink({
  onServerMessage(msg) {
+   if (msg.type === "reading_event") { reading.receive(msg); return; }
+   if (msg.type === "conversation_created") reading.created(msg);
    if (msg.type === "voice") { voiceRelay.server(msg); return; }
    if (msg.type === "hello_ok") helloSnapshot = msg;
    if (msg.type === "conversation_list") { conversationSummaries = msg.conversations; for (const conversation of msg.conversations) { void setConversationTitle(conversation.id, conversation.title); controller(conversation.id).restoreMode(conversation.mode); } }
@@ -122,7 +128,12 @@ const transport = new Uplink({
      void c.ready.then(() => c.callbacks.onServerMessage(msg));
    }
  },
- onConnState(...args) { connectionSnapshot = args; if (args[0] !== "connected") voiceRelay.disconnected(); if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"}); for (const c of controllers.values()) c.callbacks.onConnState(...args); },
+ onConnState(...args) { connectionSnapshot = args; if (args[0] !== "connected") { voiceRelay.disconnected(); reading.disconnected(); } if (args[0] === "connected") transport.sendClientMessage({type:"conversation_list"}); for (const c of controllers.values()) c.callbacks.onConnState(...args); },
+});
+const reading = installReading({
+  send: message => transport.sendClientMessage(message), selected: () => selectedConversationId,
+  import: async (id, record) => { const c = controller(id); await c.ready; await c.importReading(record); },
+  select: id => { selectedConversationId = id; setVisibleConversationId(id); void chrome.storage.session.set({selectedConversationId:id}); controller(id); broadcastConversations(); },
 });
 const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), () => selectedConversationId,async(id,input)=>{
   const enriched=await controller(id).voiceInput(input);return enriched;
@@ -308,8 +319,6 @@ function flushHistory() {
  void chrome.storage.local.set({[historyKey]:stored}).catch(error => { console.error("[sideagent] 面板历史落盘失败", error); });
  scheduleHistoryPrune();
 }
-/** 选中即问：把 text_delta 回推到划词所在页。 */
-let overlayAskTabId: number | undefined;
 
 /** 缓存的连接上下文，用于面板重开后的状态同步。 */
 let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } = { state: "connecting" };
@@ -929,21 +938,7 @@ const callbacks: UplinkHandlers = {
         activityBySession.set(sid, "running");
       }
       void applyCursorStatusEvent(sid, msg.event);
-      if (overlayAskTabId != null) {
-        const kind = msg.event.kind;
-        if (
-          kind === "text_delta" ||
-          kind === "turn_end" ||
-          kind === "agent_end" ||
-          kind === "error" ||
-          kind === "notice" ||
-          kind === "tool_start"
-        ) {
-          void chrome.tabs.sendMessage(overlayAskTabId, { type: "ask-event", event: msg.event }).catch(() => {
-            /* 页已关 */
-          });
-        }
-      }
+
     }
     if (msg.type === "tool_call") {
       void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId,msg.runId,msg.epochs?.[normalizeSessionId(msg.sessionId)]);
@@ -1263,6 +1258,9 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   const sessions = [...new Set([LEAD_SESSION_ID, ...statusBySession.keys(), ...(team.view()?.members.map(member => member.sessionId) ?? [])])];
   const abortedTabs = getWorkingTabMap().then(map => [...new Set(Object.values(map))]);
   team.abort();
+  if (lastStatus !== "idle" || [...statusBySession.values()].some(state => state !== "idle")) {
+    broadcastVisibleServer({ type: "agent_event", event: { kind: "run_stopped" } });
+  }
   statusBySession.clear();
   activityBySession.clear();
   emitLocalStatus("idle");
@@ -1355,7 +1353,7 @@ function ensureAskMenu(): void {
 }
 
 async function deliverAsk(ask: PendingAsk): Promise<void> {
-  await chrome.storage.session.set({ [ASK_STORE]: ask });
+  await chrome.storage.session.set({ [ASK_STORE]: {...ask, conversationId} });
   broadcast({ kind: "ask_selection", ask } satisfies BgToPanel);
 }
 
@@ -1541,7 +1539,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         port.postMessage({ kind: "conn", ...lastConn } satisfies BgToPanel);
         void chrome.storage.session.get(ASK_STORE).then((stored) => {
           const ask = stored[ASK_STORE] as PendingAsk | undefined;
-          if (ask && typeof ask.text === "string") {
+          if (ask && typeof ask.text === "string" && (!ask.conversationId || ask.conversationId === conversationId)) {
             port.postMessage({ kind: "ask_selection", ask } satisfies BgToPanel);
           }
         });
@@ -1556,7 +1554,7 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
           }
         }
         const entries = panelHistory.since(afterSeq ?? 0);
-        if (entries.length > 0) port.postMessage({ kind: "history", entries } satisfies BgToPanel);
+        if (entries.length > 0) port.postMessage({ kind: "history", entries, replay: true } satisfies BgToPanel);
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
         if (team.view()) {
           port.postMessage({ kind: "server", msg: { type: "team_status", team: team.view()!, ...(epochRunId ? {runId: epochRunId} : {}) } } satisfies BgToPanel);
@@ -1577,60 +1575,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
   if (selectedConversationId !== conversationId) return;
   const msg = raw as { type?: unknown; action?: unknown; text?: unknown };
-  if (msg.type === "ask-selection") {
-    const tab = sender.tab;
-    const text = typeof msg.text === "string" ? clipSelection(msg.text) : null;
-    const mode = (msg as { mode?: unknown }).mode;
-    if (tab?.id && text) {
-      const tabId = tab.id;
-      const ask: PendingAsk = {
-        text,
-        tabId,
-        title: tab.title ?? "",
-        url: tab.url ?? "",
-      };
-      if (mode === "continue") {
-        void chrome.sidePanel.open({ tabId }).catch(() => {
-          /* 面板可能已经开着 */
-        });
-        void deliverAsk(ask);
-      } else {
-        overlayAskTabId = tabId;
-        const question =
-          mode === "explain"
-            ? EXPLAIN_PROMPT
-            : typeof (msg as { question?: unknown }).question === "string" && (msg as { question: string }).question.trim()
-              ? (msg as { question: string }).question.trim()
-              : "这段是什么意思？";
-        const outgoing = {
-          type: lastStatus === "idle" ? ("user_message" as const) : ("steer" as const),
-          text: question,
-          context: {
-            tabId,
-            title: tab.title ?? "",
-            url: tab.url ?? "",
-            selection: { text },
-          },
-        };
-
-        recordAndBroadcastHistory({ kind: "user", text: question });
-        void attachPageContext(outgoing).then((enriched) => {
-          if (!uplink.sendClientMessage(enriched)) {
-            void chrome.tabs
-              .sendMessage(tabId, {
-                type: "ask-event",
-                event: { kind: "error", message: "没连上 Agent。打开侧栏看连接状态。" },
-              })
-              .catch(() => {
-                /* 页已关 */
-              });
-          }
-        });
-      }
-    }
-    sendResponse({ ok: true });
-    return;
-  }
   if (msg.type === "sidepanel_capture_tab") {
     void (async () => {
       try {
@@ -1670,7 +1614,18 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   return true;
 });
 
-return { isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
+async function importReading(record: ReadingRecord): Promise<void> {
+  for (const turn of record.turns) {
+    recordAndBroadcastHistory({kind: 'user', text: turn.question === EXPLAIN_PROMPT ? '解释这段文字' : turn.question});
+    recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'agent_start'}, conversationId}});
+    if (turn.answer) recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'text_delta', delta: turn.answer}, conversationId}});
+    if (turn.state === 'stopped' || turn.state === 'error') recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'notice', message: turn.state === 'stopped' ? '这条阅读回答已停止。' : '这条阅读回答未完成。'}, conversationId}});
+    recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'agent_end'}, conversationId}});
+  }
+  await deliverAsk({text:record.source.text,tabId:record.source.tabId,title:record.source.title,url:record.source.url});
+  flushHistory();
+}
+return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});return {context:enriched.context,attachments:enriched.attachments};},
 restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {
   void setMode(mode, conversationId).then(() => broadcast({kind:"mode",mode}));

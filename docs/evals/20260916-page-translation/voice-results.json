@@ -1,0 +1,71 @@
+{
+  "passed": true,
+  "model": "opencode-go/deepseek-flash",
+  "scope": "real classification with transcript text; microphone and end-to-end voice dispatch not run",
+  "results": [
+    {
+      "text": "帮我翻译这个页面。",
+      "state": "idle",
+      "goal": null,
+      "action": "start",
+      "plan": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "帮我翻译这个页面。",
+            "target": null
+          }
+        ]
+      },
+      "elapsedMs": 2346
+    },
+    {
+      "text": "我不要双语，只要译文。",
+      "state": "running",
+      "goal": "帮我翻译这个页面。",
+      "action": "steer",
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "我不要双语，只要译文。",
+            "target": null
+          }
+        ]
+      },
+      "elapsedMs": 3686
+    },
+    {
+      "text": "把这个页面翻译成中文，只要译文，不要双语。",
+      "state": "idle",
+      "goal": null,
+      "action": "start",
+      "plan": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "把这个页面翻译成中文，只要译文，不要双语。",
+            "target": null
+          }
+        ]
+      },
+      "elapsedMs": 1754
+    },
+    {
+      "text": "恢复双语，译文字号改成22。",
+      "state": "idle",
+      "goal": "帮我翻译这个页面。",
+      "action": "start-or-steer",
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "恢复双语，译文字号改成22。",
+            "target": null
+          }
+        ]
+      },
+      "elapsedMs": 1386
+    }
+  ]
+}

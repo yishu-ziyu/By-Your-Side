@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CURSOR_PALETTE, CURSOR_STROKE_HALO, CURSOR_STROKE_WHITE, CURSOR_SVG_SIZE, cursorColor } from "../src/shared/cursor-visual.js";
+import { CURSOR_STROKE_HALO, CURSOR_STROKE_WHITE, CURSOR_SVG_SIZE } from "../src/shared/cursor-visual.js";
+import { cursorColor } from "../src/shared/palette.js";
 import {
   HIGHLIGHT_PAD,
   MARK_PAD,
@@ -84,16 +85,10 @@ describe("cursor visual / palette", () => {
     expect(CURSOR_STROKE_HALO).toBeGreaterThan(CURSOR_STROKE_WHITE);
   });
 
-  it("多实例调色板按序着色且主实例恒为品牌蓝", () => {
-    expect(cursorColor("main", 0)).toBe("#2f6fed");
-    expect(cursorColor("worker-1", 1)).toBe("#e2554f");
-    expect(cursorColor("worker-2", 2)).toBe("#16a34a");
-    expect(cursorColor("worker-3", 3)).toBe("#9333ea");
-    expect(cursorColor("worker-4", 4)).toBe("#d97706");
-    expect(cursorColor("worker-5", 5)).toBe("#2f6fed");
-  });
-
-  it("调色板 5 色互不相同（多实例区分度不劣化）", () => {
-    expect(new Set(CURSOR_PALETTE).size).toBe(CURSOR_PALETTE.length);
+  it("保持页面与侧栏当前使用的名册配色，不回到退役的按序五色轮换", () => {
+    // 清理前从生产 palette.cursorColor 捕获，旧的 cursor-visual 配色函数没有生产调用方。
+    expect(["main", "wiki", "worker-1", "worker-2", "worker-3", "worker-4", "worker-5", ""].map(cursorColor)).toEqual([
+      "#2f6fed", "#000000", "#ff6a00", "#000000", "#ff3347", "#8656f6", "#9a6737", "#2f6fed",
+    ]);
   });
 });

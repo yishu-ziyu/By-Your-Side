@@ -43,6 +43,13 @@ interface MarkOptions {
   seed?: number;
 }
 
+interface CrossPageMember {
+  sessionId: string; title: string; tabId?: number; state?: "waiting" | "reading" | "done" | "failed";
+}
+interface CrossPageView {
+  sessionId?: string; title?: string; tabId?: number; state?: CrossPageMember["state"]; members?: CrossPageMember[];
+}
+
 interface SideAgentCursor {
   /** 绑定这次真实操作与同一个 DOM 元素；id 隔离晚到的结束消息。 */
   beginAction(id: string, kind: "click" | "fill" | "hover", rect?: SideAgentRect, anchor?: Element, label?: string): void;
@@ -51,7 +58,7 @@ interface SideAgentCursor {
   setStatus?(view?: { state: "waiting" | "reading" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
   clearStatus?(): void;
   /** 跨页：它在别的标签页干活时，当前页右上角显示可点胶囊（点了切过去） */
-  showCrossPage?(view?: { sessionId?: string; title?: string; state?: "waiting" | "reading" | "done" | "failed"; tabId?: number }): void;
+  showCrossPage?(view?: CrossPageView): void;
   hideCrossPage?(): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;

@@ -1,0 +1,73 @@
+{
+  "ok": true,
+  "source": "production sidepanel.js and styles.css; background transport and storage are test doubles; no live Agent actions",
+  "cases": [],
+  "clicks": [
+    {
+      "name": "main orb preserved and process collapsed",
+      "ok": true
+    },
+    {
+      "name": "paper background is flat",
+      "ok": true
+    },
+    {
+      "name": "paired logo loads",
+      "ok": true
+    },
+    {
+      "name": "tool detail accessible",
+      "ok": true
+    },
+    {
+      "name": "tool result updates open detail",
+      "ok": true
+    },
+    {
+      "name": "collaborator task rows live inside process",
+      "ok": true
+    },
+    {
+      "name": "takeover marked, not completed",
+      "ok": true
+    },
+    {
+      "name": "answer remains separate from collapsed process",
+      "ok": true
+    },
+    {
+      "name": "completed marker preserved",
+      "ok": true
+    },
+    {
+      "name": "streaming respects scroll position",
+      "ok": true
+    },
+    {
+      "name": "stop is not completion",
+      "ok": true
+    },
+    {
+      "name": "failure marker and message retained",
+      "ok": true
+    },
+    {
+      "name": "width 320 no overflow",
+      "ok": true
+    },
+    {
+      "name": "width 400 no overflow",
+      "ok": true
+    },
+    {
+      "name": "width 520 no overflow",
+      "ok": true
+    },
+    {
+      "name": "reduced motion removes message entrance",
+      "ok": true
+    }
+  ],
+  "errors": [],
+  "stage": "production DOM"
+}

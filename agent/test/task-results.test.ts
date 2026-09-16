@@ -96,3 +96,15 @@ describe('createTaskResultsTool', () => {
     expect(resultStateOf(p.snapshot().results!)).toBe('pending');
   });
 });
+
+
+describe('translation failure recovery', () => {
+  it.each(['not_executed','executed','unknown'] as const)('keeps %s translation failure accurate', executionFact => {
+    const p=new TaskProgress('default');p.request('翻译页面');p.observe({type:'agent_event',event:{kind:'agent_start'}});
+    const runId=p.snapshot().runId;
+    p.observe({type:'agent_event',runId,event:{kind:'tool_start',toolCallId:'translate',name:'page_translation',params:{action:'translate'}}} as any);
+    p.observe({type:'agent_event',runId,event:{kind:'tool_end',toolCallId:'translate',name:'page_translation',isError:true,resultText:'generation failed',executionFact}} as any);
+    expect(p.snapshot().resultState).toBe(executionFact==='unknown'?'unknown':'blocked');
+    expect(p.snapshot().results?.[0]?.status).not.toBe('satisfied');
+  });
+});

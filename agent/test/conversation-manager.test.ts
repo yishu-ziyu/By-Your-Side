@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConversationManager } from "../src/conversation-manager.js";
 import { Fleet } from "../src/fleet.js";
+import { TaskActionRejected } from "../src/task-dispatcher.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 
 function harness() {
@@ -142,6 +143,17 @@ it("voice edits require the same running task and only acknowledge after accepta
   await expect(h.manager.steerFromVoice("default","预算改成八百",startedAt)).rejects.toThrow("原任务");
 });
 
+it("明确没送进 Pi 的纠正回执是 rejected，不退化成 unknown", async () => {
+  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get("default")!;
+  await h.manager.handleMessage({type:"user_message",text:"原任务"});
+  const snapshot=h.manager.getTaskProgress("default")!;
+  expect(snapshot.runId).toBeTruthy();
+  a.runtime.session.steerCurrentTask=vi.fn(async()=>{throw new TaskActionRejected("原任务已停止或发生变化，修改未发送。");});
+  const receipt=await h.manager.dispatchTaskAction({requestId:"stop-race",conversationId:"default",source:"voice",action:"steer",expectedRunId:snapshot.runId??null,text:"预算改成八百"});
+  expect(receipt).toMatchObject({status:"rejected",message:"原任务已停止或发生变化，修改未发送。"});
+  expect(h.emitted.at(-1)).toMatchObject({event:{kind:"notice"}});
+});
+
 
 it("rejects superseded intentions and sends idle corrections to the capable session", async()=>{
  const h=harness();await h.manager.ensureDefault();const runtime=h.runtimes.get("default")!.runtime;
@@ -155,14 +167,14 @@ it("rejects superseded intentions and sends idle corrections to the capable sess
  expect(runtime.session.startTask).toHaveBeenCalledWith("预算改成八百",undefined,undefined);
 });
 
-it('starts voice tasks once, separates chat/status/silence and asks before replacing a running task',async()=>{
+it('starts voice tasks once, separates chat/status/silence and preserves a running task when adding another',async()=>{
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'start',text:'找书桌',target:null}]}));
  const context={requestId:'voice-start',runId:null,voiceId:'v',turn:1};
  expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,context)).toMatchObject({kind:'action',ok:true});
  expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,context)).toMatchObject({kind:'action',ok:true});
  expect(a.runtime.session.startTask).toHaveBeenCalledTimes(1);
- expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,{...context,requestId:'other',runId:h.manager.getTaskProgress('default')!.runId!})).toMatchObject({kind:'clarify'});
+ expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,{...context,requestId:'other',runId:h.manager.getTaskProgress('default')!.runId!})).toMatchObject({kind:'action',ok:true});
  for(const [action,kind] of [['chat','none'],['status','none'],['silence','silent']]) {
   a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action,text:'你好',target:null}]});
   expect(await h.manager.routeVoiceInput('default','你好',null,()=>true)).toMatchObject({kind});
@@ -237,15 +249,15 @@ it('resolves captured targets, isolates inputs and replays receipts to both conv
  expect(other.runtime.session.steerCurrentTask).toHaveBeenCalledTimes(2);
 });
 
-it('requires a fresh same-voice affirmative before creating the proposed background task',async()=>{
+it('requires a fresh same-voice affirmative for a previously stored legacy proposal',async()=>{
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
  a.emit({type:'agent_event',event:{kind:'agent_start'}});
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'start',text:'帮我找书桌',target:null}]}));
  const ctx={requestId:'proposal',voiceId:'v',turn:1,runId:h.manager.getTaskProgress('default')!.runId!};
- expect(await h.manager.routeVoiceInput('default','帮我找书桌',null,()=>true,ctx)).toMatchObject({kind:'clarify'});expect(h.manager.list()).toHaveLength(1);
+ await legacyProposal(h.manager,'proposal','帮我找书桌');expect(h.manager.list()).toHaveLength(1);
  expect(await h.manager.routeVoiceInput('default','好的',null,()=>true,{...ctx,requestId:'yes',turn:2})).toMatchObject({ok:true});
  expect(h.manager.list()).toHaveLength(2);expect(a.runtime.session.abort).not.toHaveBeenCalled();expect(a.runtime.session.startTask).not.toHaveBeenCalled();
- await h.manager.routeVoiceInput('default','帮我找书桌',null,()=>true,{...ctx,requestId:'again',turn:3});
+ await legacyProposal(h.manager,'again','帮我找书桌',3);
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'chat',text:'好的',target:null}]});
  await h.manager.routeVoiceInput('default','好的',null,()=>true,{...ctx,requestId:'new-lease',voiceId:'new',turn:4});
  expect(h.manager.list()).toHaveLength(2);
@@ -272,7 +284,7 @@ it.each(['denial','different','expired'])('cancels a pending proposal after %s',
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;a.emit({type:'agent_event',event:{kind:'agent_start'}});
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'start',text:'另找书桌',target:null}]}));
  const ctx={requestId:'pending',voiceId:'v',turn:1,runId:h.manager.getTaskProgress('default')!.runId!};
- await h.manager.routeVoiceInput('default','另找书桌',null,()=>true,ctx);
+ await legacyProposal(h.manager,'pending','另找书桌');
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'chat',text:'你好',target:null}]});
  const clock=mode==='expired'?vi.spyOn(Date,'now').mockReturnValue(Date.now()+91000):undefined;
  try{
@@ -338,4 +350,25 @@ it('routes a correction with the actual current task goal, not another conversat
  await h.manager.routeVoiceInput('default','其实我要换一下',null,()=>true);
  expect(session.classifyVoiceInput).toHaveBeenCalledWith('其实我要换一下','running',expect.any(Array),expect.objectContaining({goal:'打开地图'}),expect.objectContaining({recentTurns:expect.any(Array),latestResult:null}));
  h.manager.dispose();
+});
+
+async function legacyProposal(manager:ConversationManager,id:string,text:string,turn=1){
+ const proposal={id,conversationId:'legacy-'+id,voiceId:'v',turn,expiresAt:Date.now()+90000,text};
+ await (manager as any).voicePlans.run('default',id,{},async()=>{(manager as any).voicePlans.update('default',id,{proposal});return {kind:'clarify',message:'要另开会话吗？'};});
+ (manager as any).voiceConfirmations.set('default',proposal);
+}
+it('moves a rejected start to a new conversation without stopping the original task',async()=>{
+ const h=harness();await h.manager.ensureDefault();const original=h.runtimes.get('default')!;
+ original.emit({type:'agent_event',event:{kind:'agent_start'}});original.emit({type:'status',state:'running'});
+ const context={tabId:4,title:'原文',url:'https://example.test',selection:{text:'选区'}};
+ const request={requestId:'fork-input',conversationId:'default',source:'text' as const,action:'start' as const,expectedRunId:h.manager.getTaskProgress('default')!.runId??null,text:'新请求',context};
+ const rejected=await h.manager.dispatchTaskAction(request);
+ expect(rejected.newConversationRequest).toEqual(request);
+ await h.manager.handleMessage({type:'conversation_create',requestId:'fork-create'});
+ const destination=h.manager.list().find(c=>c.id!=='default')!.id;
+ const receipt=await h.manager.dispatchTaskAction({...request,requestId:'fork-start',conversationId:destination,expectedRunId:null,forkedFrom:{conversationId:'default',requestId:'fork-input'}});
+ expect(receipt.status).toBe('accepted');
+ expect(h.runtimes.get(destination)!.runtime.session.startTask).toHaveBeenCalledWith('新请求',context,undefined);
+ expect(original.runtime.session.abort).not.toHaveBeenCalled();
+ expect(original.runtime.session.startTask).not.toHaveBeenCalled();
 });

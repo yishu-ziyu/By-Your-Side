@@ -1,0 +1,116 @@
+{
+  "passed": true,
+  "scope": "real model classification + production voice routing + real running agent + actual webpage; controlled model wait; microphone/TTS not exercised",
+  "model": "opencode-go/deepseek-flash",
+  "font": "宋体, SimSun, \"Songti SC\", STSong, serif",
+  "cases": [
+    {
+      "text": "只留下译文就可以了。",
+      "routed": {
+        "kind": "steer",
+        "ok": true,
+        "status": "accepted",
+        "message": "语音修改已送达当前任务：只留下译文就可以了。",
+        "receipts": [
+          {
+            "requestId": "f4ce0316-9a02-4b42-a8b2-48a6a34fed25",
+            "conversationId": "default",
+            "source": "voice",
+            "action": "steer",
+            "runId": "90b6d4fa-2f79-4b2b-a5bd-a6d6388d8dc2",
+            "text": "只留下译文就可以了。",
+            "targetTitle": "翻译这个页面，默认双语。",
+            "status": "accepted",
+            "message": "语音修改已送达当前任务：只留下译文就可以了。",
+            "updatedAt": 1789492627708
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "f4ce0316-9a02-4b42-a8b2-48a6a34fed25",
+          "conversationId": "default",
+          "updatedAt": 1789492627710,
+          "steps": [
+            {
+              "action": "steer",
+              "text": "只留下译文就可以了。",
+              "targetId": "default",
+              "targetTitle": "翻译这个页面，默认双语。",
+              "status": "complete",
+              "receipt": {
+                "requestId": "f4ce0316-9a02-4b42-a8b2-48a6a34fed25",
+                "conversationId": "default",
+                "source": "voice",
+                "action": "steer",
+                "runId": "90b6d4fa-2f79-4b2b-a5bd-a6d6388d8dc2",
+                "text": "只留下译文就可以了。",
+                "targetTitle": "翻译这个页面，默认双语。",
+                "status": "accepted",
+                "message": "语音修改已送达当前任务：只留下译文就可以了。",
+                "updatedAt": 1789492627708
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "然后我需要字体改成宋体。",
+      "routed": {
+        "kind": "steer",
+        "ok": true,
+        "status": "accepted",
+        "message": "语音修改已送达当前任务：然后我需要字体改成宋体。",
+        "receipts": [
+          {
+            "requestId": "c4b3b0ba-a6e3-416a-8a56-ac29af44c228",
+            "conversationId": "default",
+            "source": "voice",
+            "action": "steer",
+            "runId": "90b6d4fa-2f79-4b2b-a5bd-a6d6388d8dc2",
+            "text": "然后我需要字体改成宋体。",
+            "targetTitle": "翻译这个页面，默认双语。",
+            "status": "accepted",
+            "message": "语音修改已送达当前任务：然后我需要字体改成宋体。",
+            "updatedAt": 1789492629745
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "c4b3b0ba-a6e3-416a-8a56-ac29af44c228",
+          "conversationId": "default",
+          "updatedAt": 1789492629751,
+          "steps": [
+            {
+              "action": "steer",
+              "text": "然后我需要字体改成宋体。",
+              "targetId": "default",
+              "targetTitle": "翻译这个页面，默认双语。",
+              "status": "complete",
+              "receipt": {
+                "requestId": "c4b3b0ba-a6e3-416a-8a56-ac29af44c228",
+                "conversationId": "default",
+                "source": "voice",
+                "action": "steer",
+                "runId": "90b6d4fa-2f79-4b2b-a5bd-a6d6388d8dc2",
+                "text": "然后我需要字体改成宋体。",
+                "targetTitle": "翻译这个页面，默认双语。",
+                "status": "accepted",
+                "message": "语音修改已送达当前任务：然后我需要字体改成宋体。",
+                "updatedAt": 1789492629745
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

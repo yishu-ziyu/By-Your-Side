@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CURSOR_PALETTE, cursorColor } from "../src/shared/palette.js";
+import { cursorColor } from "../src/shared/palette.js";
 import { highlightBounds } from "../src/shared/overlay.js";
 
 describe("element highlight geometry & palette", () => {
@@ -30,7 +30,7 @@ describe("element highlight geometry & palette", () => {
   });
 
   it("多实例：Lead 品牌蓝；人用名册色且对同一 id 稳定", () => {
-    expect(cursorColor("main")).toBe(CURSOR_PALETTE[0]);
+    expect(cursorColor("main")).toBe("#2f6fed");
     expect(cursorColor("wiki")).toBe(cursorColor("wiki"));
     expect(cursorColor("wiki")).not.toBe(cursorColor("main"));
   });

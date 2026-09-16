@@ -1,3 +1,4 @@
+import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingTranscript } from "./reading.js";
 /**
  * SideAgent 桥接协议（扩展 side panel ⇆ 本地伴随进程）。
  * 传输：WebSocket，JSON 文本帧，一帧一条消息。
@@ -172,6 +173,7 @@ export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
 
 export type ClientMessage = ConversationEnvelope & (
   | VoiceClientMessage
+  | ReadingClientMessage
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
@@ -188,7 +190,7 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "skill_note"; requestId: string; id: string; note: string }
   /** 回到上一版 */
   | { type: "skill_rollback"; requestId: string; id: string; expectedVersion?: number }
-  | { type: "conversation_create"; requestId: string; title?: string }
+  | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
   | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
@@ -251,6 +253,7 @@ export interface ModelOption {
 }
 
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
+  | ReadingEvent
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   /** 有请求在等用户选择：目标、method、headers（敏感值已打码）与 body 原文，只展示这一次。 */
@@ -298,6 +301,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
+  | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
@@ -311,6 +315,7 @@ export type AgentUiEvent =
   | { kind: "turn_end" }
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
+  | { kind: "run_stopped" }
   | { kind: "user_delivery"; delivery: UserDelivery }
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
   | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary }
@@ -324,6 +329,7 @@ export const TOOL_NAMES = [
   "worker_tabs",
   "share_tab",
   "page_operation",
+  "page_translation",
   "read_element",
   "list_tabs",
   "get_active_tab",
@@ -376,6 +382,7 @@ export interface TabInfo {
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
 export interface ToolContract {
+  page_translation: { params: import('./page-translation.js').TranslationCommand; data: import('./page-translation.js').TranslationReceipt };
   /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回伴随进程，不回侧栏。 */
   fetch: {
     params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
@@ -455,9 +462,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     const msg = JSON.parse(raw) as ClientMessage;
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    if (msg.type === "reading_request" || msg.type === "reading_cancel") return isReadingClientMessage(msg) ? msg : null;
+    if (msg.type === "conversation_create" && msg.reading !== undefined && !isReadingTranscript(msg.reading)) return null;
     if (msg.type === "voice") {
       if(!isVoiceClientMessage(msg))return null;
-      if(msg.command.kind==='commit'&&msg.command.input!==undefined){
+      if((msg.command.kind==='commit'||msg.command.kind==='input_context')&&msg.command.input!==undefined){
         const input=msg.command.input;
         if(input?.observation!==undefined&&(!input.observation||!validRequestId(input.observation.token)||!Number.isSafeInteger(input.observation.tabId)))return null;
         if(!input||typeof input!=='object'||Array.isArray(input)||(input.context!==undefined&&!isPageContext(input.context))||(input.attachments!==undefined&&(!Array.isArray(input.attachments)||!input.attachments.every(isAttachment))))return null;
@@ -579,6 +588,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
     if(msg.runId!==undefined&&msg.runId!==null&&!taskId(msg.runId))return null;
     if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return null;
+    if (msg.type === 'reading_event') return isReadingEvent(msg) ? msg : null;
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
     if (msg.type === "consent_request") {
@@ -608,6 +618,11 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
     if (msg.type === "agent_event" && msg.event?.kind === "notice" && msg.event.receipt !== undefined
       && (!isTaskReceipt(msg.event.receipt) || (msg.event.receipt.conversationId !== msg.conversationId && msg.event.receipt.originConversationId !== msg.conversationId))) return null;
+    if (msg.type === 'agent_event' && msg.event?.kind === 'notice' && msg.event.receipt?.newConversationRequest) {
+      const input = msg.event.receipt.newConversationRequest;
+      if (input.context !== undefined && !isPageContext(input.context)) return null;
+      if (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment))) return null;
+    }
     if (msg.type === "memory_result") {
       if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget"].includes(msg.action)) return null;
       if (msg.entries !== undefined && (!Array.isArray(msg.entries) || !msg.entries.every(isMemoryEntry))) return null;
@@ -623,6 +638,12 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (msg.ok && msg.action === "forget" && typeof msg.deletedId !== "string") return null;
       if (msg.ok && msg.action === "list" && (!Array.isArray(msg.skills) || (msg.runs !== undefined && typeof msg.runs !== "object"))) return null;
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
+    }
+    if (msg.type === "agent_event" && msg.event?.kind === "worker_task") {
+      const e = msg.event;
+      if (!msg.sessionId || isLeadSession(msg.sessionId)) return null;
+      if (![e.task, e.output].every((v) => typeof v === "string" && v.trim().length > 0 && v.length <= 80)) return null;
+      if (e.spawnToolCallId !== undefined && !validRequestId(e.spawnToolCallId)) return null;
     }
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;

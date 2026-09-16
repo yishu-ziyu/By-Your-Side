@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {parseVoiceIntent,voiceClauses} from '../src/voice-intent.js';
+import {parseVoiceDecision,parseVoiceIntent,voiceClauses,isVoiceBackchannel,isVoiceSilenceRequest} from '../src/voice-intent.js';
 it('accepts only bounded original-word instructions and explicit target substrings',()=>{
  const text='把比价会话预算改600，然后继续原任务。';
  expect(voiceClauses(text)).toEqual(['把比价会话预算改600，','然后继续原任务。']);
@@ -152,4 +152,20 @@ describe('白名单与两条协议',()=>{
     expect(()=>parseVoiceDecision(JSON.stringify({steps:[{action:'pause',target:null}]}),'把“暂停任务”读一遍')).toThrow();
     expect(parseVoiceDecision(JSON.stringify({steps:[{action:'clarify',target:null}]}),'停').steps).toMatchObject([{action:'clarify'}]);
   });
+});
+
+it('recognizes only pure backchannels, not resume, confirmation requests or revisions',()=>{
+ for(const text of ['嗯，对。','好的好的','是的，没错'])expect(isVoiceBackchannel(text)).toBe(true);
+ for(const text of ['继续','确认','好的，但是改成六百','对了，打开页面','他说好的'])expect(isVoiceBackchannel(text)).toBe(false);
+});
+
+it('keeps speech-only stop separate from task control, quotes and compound requests',()=>{
+ for(const text of ['别说了。','先别说了','停止播报'])expect(isVoiceSilenceRequest(text)).toBe(true);
+ for(const text of ['停止任务','别说了，继续操作','他说别说了','别说了是什么意思','别停止播报'])expect(isVoiceSilenceRequest(text)).toBe(false);
+});
+
+it('keeps reading inside a single explicitly independent transformation task',()=>{
+ const text='原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。';
+ const result=parseVoiceDecision(JSON.stringify({steps:[{action:'start',through:1,target:null},{action:'observe',target:null}]}),text);
+ expect(result.steps).toEqual([{action:'start',text,target:null}]);
 });

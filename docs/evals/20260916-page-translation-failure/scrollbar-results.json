@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "scope": "real built sidepanel with representative overflowing content; read+scroll behavior verified",
+  "state": {
+    "color": "color(srgb 0.611765 0.639216 0.686275 / 0.35) rgba(0, 0, 0, 0)",
+    "width": "thin",
+    "scrollTop": 100,
+    "scrollHeight": 672,
+    "clientHeight": 175,
+    "inputColor": "color(srgb 0.611765 0.639216 0.686275 / 0.35) rgba(0, 0, 0, 0)"
+  }
+}

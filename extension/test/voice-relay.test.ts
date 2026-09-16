@@ -36,7 +36,7 @@ it('never reads page context for a diagnostic take',async()=>{
  expect(commit.command.input).toBeUndefined();
 });
 
-it('snapshots committed context and drops a late commit after a new turn or selection',async()=>{
+it('commits audio immediately and binds late context to its original turn and lease',async()=>{
  vi.stubGlobal('chrome',{tabs:{query:vi.fn(async()=>[])}});
  const send=vi.fn((_message:unknown)=>true);let finish!:(v:any)=>void;
  const enrich=vi.fn(()=>new Promise<any>(r=>finish=r));
@@ -44,18 +44,21 @@ it('snapshots committed context and drops a late commit after a new turn or sele
  const command=(command:any)=>p.send({kind:'client',msg:{type:'voice',voiceId:'v1',conversationId:'A',command}});
  command({kind:'start'});command({kind:'interrupt',turn:1});command({kind:'commit',turn:1,input:{context:{tabId:1,title:'source',url:'https://example.com',selection:{text:'selected'}}}});
  command({kind:'interrupt',turn:2});finish({context:{tabId:1,title:'old',url:'https://example.com'}});await new Promise(r=>setTimeout(r,0));
- expect(send.mock.calls.some(([m]:any)=>m.command.kind==='commit')).toBe(false);
- command({kind:'commit',turn:2,input:{}});finish({context:{tabId:2,title:'fresh',url:'https://example.com/fresh'}});await new Promise(r=>setTimeout(r,0));
- expect(send.mock.calls.at(-1)?.[0]).toMatchObject({command:{kind:'commit',turn:2,input:{context:{tabId:2}}}});
- command({kind:'interrupt',turn:3});command({kind:'commit',turn:3});relay.selectionChanged('B');finish({});await new Promise(r=>setTimeout(r,0));
  expect(send.mock.calls.filter(([m]:any)=>m.command.kind==='commit')).toHaveLength(1);
+ expect(send.mock.calls[2]?.[0]).toMatchObject({command:{kind:'commit',turn:1,contextPending:true}});
+ expect(send.mock.calls.at(-1)?.[0]).toMatchObject({command:{kind:'input_context',turn:1,input:{context:{tabId:1}}}});
+ command({kind:'commit',turn:2,input:{}});finish({context:{tabId:2,title:'fresh',url:'https://example.com/fresh'}});await new Promise(r=>setTimeout(r,0));
+ expect(send.mock.calls.at(-1)?.[0]).toMatchObject({command:{kind:'input_context',turn:2,input:{context:{tabId:2}}}});
+ command({kind:'interrupt',turn:3});command({kind:'commit',turn:3});relay.selectionChanged('B');finish({});await new Promise(r=>setTimeout(r,0));
+ expect(send.mock.calls.filter(([m]:any)=>m.command.kind==='commit')).toHaveLength(3);
+ expect(send.mock.calls.filter(([m]:any)=>m.command.kind==='input_context')).toHaveLength(2);
 });
 it('invalidates page grants when a closed voice lease is replaced in the same conversation',async()=>{
  vi.stubGlobal('chrome',{tabs:{query:vi.fn(async()=>[{id:7,windowId:1,url:'https://page.test'}]),captureVisibleTab:vi.fn(async()=> 'data:image/png;base64,AQID')},scripting:{executeScript:vi.fn(async()=>[{frameId:0,documentId:'doc1',result:{text:'page',url:'https://page.test'}}])}});
  const send=vi.fn((_message:unknown)=>true),relay=new VoiceRelay(send,()=> 'A',async(_id,input)=>input),p=panel();relay.attach(p.port);
  const command=(voiceId:string,command:any)=>p.send({kind:'client',msg:{type:'voice',voiceId,conversationId:'A',command}});
  command('v1',{kind:'start'});command('v1',{kind:'interrupt',turn:1});command('v1',{kind:'commit',turn:1});await new Promise(r=>setTimeout(r,0));
- const sent=send.mock.calls.map(([m])=>m as any).find(m=>m.command.kind==='commit'),token=sent.command.input.observation.token;
+ const sent=send.mock.calls.map(([m])=>m as any).find(m=>m.command.kind==='input_context'),token=sent.command.input.observation.token;
  relay.server({type:'voice',voiceId:'v1',conversationId:'A',event:{kind:'state',state:'closed'}});command('v2',{kind:'start'});
  await expect(relay.observe('A',token)).rejects.toThrow('授权');
 });

@@ -1,0 +1,74 @@
+{
+  "passed": true,
+  "selection": "controls-only",
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "stop cancels tool wait and prevents late writes",
+      "passed": true,
+      "stopAt": 1789486500073,
+      "result": {
+        "name": "",
+        "email": "keep@example.com",
+        "city": "",
+        "note": "",
+        "submits": 0,
+        "writes": []
+      }
+    },
+    {
+      "name": "paused edit applied after handback with original email",
+      "passed": true,
+      "result": {
+        "name": "赵六",
+        "email": "keep@example.com",
+        "city": "杭州",
+        "note": "",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "赵六",
+            "at": 1789486515477
+          },
+          {
+            "field": "city",
+            "value": "杭州",
+            "at": 1789486519079
+          }
+        ]
+      }
+    },
+    {
+      "name": "reconnect and same request replay do not duplicate writes",
+      "passed": true
+    },
+    {
+      "name": "delayed running-task envelope arriving after completion is rejected",
+      "passed": true,
+      "receipt": {
+        "requestId": "ffb7edbb-c37e-4a2f-abba-37b7d2aadb12",
+        "conversationId": "5ca51fa3-3f9f-4e25-aa9e-78d921a0717b",
+        "source": "text",
+        "action": "steer",
+        "runId": "9804689c-5d7a-432e-b2f8-88bbe7279368",
+        "text": "迟到修改不得填写姓名",
+        "targetTitle": "暂停补充并恢复",
+        "status": "rejected",
+        "message": "原任务已停止或发生变化，修改未发送。",
+        "updatedAt": 1789486522833
+      }
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "4210e7b3781d3513edc45d770a786091180872bad1d7f06ebcf761c82b72aef3",
+    "agent/src/conversation-manager.ts": "ad675b0ea2df7341c89471a366822815064d1949605a68d2f52a9e173740f2c6",
+    "agent/src/fleet.ts": "4dbb75b3790d890cef2c48c29aeabe2aa8b5405a5ffc08926209657064571290",
+    "agent/src/task-dispatcher.ts": "d7f49e3e4d9367c0bd6075cf995b0b08195dfd58bddfe584a24a3f4f5b625de9",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "e70721bbc79ef93e0d05c939843b56d8226836e4db2c8550ab627e79ddf799cb"
+  },
+  "actualModel": "opencode-go/deepseek-flash"
+}

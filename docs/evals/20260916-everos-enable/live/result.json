@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "model": "opencode-go/deepseek-flash",
+  "recordId": "f3d30de0-6843-4ddd-9576-eac2ba4d0c52",
+  "conversationId": "default",
+  "startedAt": 1789538045239,
+  "endedAt": 1789538051034,
+  "observations": 1,
+  "recordPath": "/Users/mahaoxuan/.sideagent/experiences/f3d30de0-6843-4ddd-9576-eac2ba4d0c52.json"
+}

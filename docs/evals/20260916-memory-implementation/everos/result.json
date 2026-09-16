@@ -1,0 +1,128 @@
+{
+  "root": "/tmp/bys-memory-eval-PBf7d2/agent-learning-1789536652",
+  "source": "docs/evals/20260916-memory-implementation/live-attempt2",
+  "provider": "opencode-go/deepseek-flash",
+  "embedding": "BAAI/bge-small-zh-v1.5 local, zero-padded 512 to 1024 for EverOS schema; cosine unchanged",
+  "steps": [
+    {
+      "episode": 0,
+      "add_status": 200,
+      "flush_status": 200,
+      "flush": {
+        "request_id": "0fc3d1a3905349e8b3540e68aa1794d5",
+        "data": {
+          "status": "extracted"
+        }
+      },
+      "background_idle": true,
+      "ms": 24150,
+      "case_files": 0,
+      "skill_files": 0
+    },
+    {
+      "episode": 1,
+      "add_status": 200,
+      "flush_status": 200,
+      "flush": {
+        "request_id": "be45446057534f378832aeb77be3cbb9",
+        "data": {
+          "status": "extracted"
+        }
+      },
+      "background_idle": true,
+      "ms": 15674,
+      "case_files": 0,
+      "skill_files": 0
+    },
+    {
+      "episode": 2,
+      "add_status": 200,
+      "flush_status": 200,
+      "flush": {
+        "request_id": "bd4de476df324fab8bbf36406595058a",
+        "data": {
+          "status": "extracted"
+        }
+      },
+      "background_idle": true,
+      "ms": 18728,
+      "case_files": 0,
+      "skill_files": 0
+    }
+  ],
+  "health": {
+    "status": "ok",
+    "version": "1.3.1",
+    "capabilities": {
+      "llm": true,
+      "embed": true,
+      "rerank": false,
+      "multimodal_llm": false,
+      "parser": true
+    },
+    "disabled_features": [
+      "agentic_search",
+      "knowledge",
+      "multimodal_upload"
+    ],
+    "cascade": {
+      "healthy": true,
+      "reasons": [],
+      "pending": 0,
+      "failed_permanent": 0,
+      "failed_retryable": 0,
+      "drain_consecutive_failures": 0,
+      "unrecoverable_total": 0,
+      "optimize_failure_streak": 0,
+      "prune_stale_seconds": 0.0
+    }
+  },
+  "markdown": {
+    "bys-eval/signup/users/synthetic-user/episodes/episode-2026-09-16.md": "---\nid: episode_log_synthetic-user_2026-09-16\ntype: episode_daily\nfile_type: episode_daily\nschema_version: 1\nuser_id: synthetic-user\ntrack: user\ndate: '2026-09-16'\nentry_count: 3\nlast_appended_at: '2026-09-16T05:31:41.990530+00:00'\n---\n<!-- entry:ep_20260916_00000001 -->\n## ep_20260916_00000001\n\n**owner_id**: synthetic-user\n**session_id**: browser-episode-0\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: memcell\n**parent_id**: mc_219be1a1e74c\n**sender_ids**: [synthetic-user, bys-browser]\n\n### Subject\nsynthetic-user 请求报名活动测试页面 2026-09-16\n\n### Summary\n2026-09-16 05:23 UTC，synthetic-user 在浏览器标签页 1962596754（标题“报名测试”，网址 http://127.0.0.1:60308/article）上查看“活动报名”页面，并请求“帮我报名”。该页面包含一个必填的“Email 邮箱”文本框、一个“报名”按钮，以及说明文字“这是本地合成报名页面”。除提出报名请求外，对话中未记录后续操作、决定或结果。\n\n### Content\n2026-09-16 05:23 UTC，synthetic-user 在浏览器标签页 1962596754（标题“报名测试”，网址 http://127.0.0.1:60308/article）上查看“活动报名”页面，并请求“帮我报名”。该页面包含一个必填的“Email 邮箱”文本框、一个“报名”按钮，以及说明文字“这是本地合成报名页面”。除提出报名请求外，对话中未记录后续操作、决定或结果。\n<!-- /entry:ep_20260916_00000001 -->\n<!-- entry:ep_20260916_00000002 -->\n## ep_20260916_00000002\n\n**owner_id**: synthetic-user\n**session_id**: browser-episode-1\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: memcell\n**parent_id**: mc_2f8c0104d3b5\n**sender_ids**: [synthetic-user, bys-browser]\n\n### Subject\n用户在报名测试页面请求用 TASK_EMAIL 报名并保持默认邮箱不变\n\n### Summary\n2026-09-16 05:24 UTC，synthetic-user 在标签页 1962596754（标题“报名测试”，URL http://127.0.0.1:60308/article）上请求使用 TASK_EMAIL 帮忙报名，并明确默认邮箱不变。该页面是本地合成报名页面，包含一级标题“活动报名”、必填文本框“Email 邮箱”和处于焦点状态的“报名”按钮。\n\n### Content\n2026-09-16 05:24 UTC，synthetic-user 在标签页 1962596754（标题“报名测试”，URL http://127.0.0.1:60308/article）上请求使用 TASK_EMAIL 帮忙报名，并明确默认邮箱不变。该页面是本地合成报名页面，包含一级标题“活动报名”、必填文本框“Email 邮箱”和处于焦点状态的“报名”按钮。\n<!-- /entry:ep_20260916_00000002 -->\n<!-- entry:ep_20260916_00000003 -->\n## ep_20260916_00000003\n\n**owner_id**: synthetic-user\n**session_id**: browser-episode-2\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: memcell\n**parent_id**: mc_5e2b364f02f9\n**sender_ids**: [synthetic-user, bys-browser]\n\n### Subject\n用户在本地合成「报名测试」页面请求完成活动报名 2026-09-16\n\n### Summary\n2026-09-16 05:24 UTC，用户（synthetic-user）在浏览器标签页 1962596754「报名测试」（http://127.0.0.1:60308/article）上提出请求：“帮我报名。”该页面一级标题为“活动报名”，包含一个必填的“Email 邮箱”文本框和一个处于聚焦状态的“报名”按钮，页面底部文字注明“这是本地合成报名页面”。用户的目标是在该页面完成活动报名操作。\n\n### Content\n2026-09-16 05:24 UTC，用户（synthetic-user）在浏览器标签页 1962596754「报名测试」（http://127.0.0.1:60308/article）上提出请求：“帮我报名。”该页面一级标题为“活动报名”，包含一个必填的“Email 邮箱”文本框和一个处于聚焦状态的“报名”按钮，页面底部文字注明“这是本地合成报名页面”。用户的目标是在该页面完成活动报名操作。\n<!-- /entry:ep_20260916_00000003 -->\n",
+    "bys-eval/signup/users/synthetic-user/.atomic_facts/atomic_fact-2026-09-16.md": "---\nid: atomic_fact_log_synthetic-user_2026-09-16\ntype: atomic_fact_daily\nfile_type: atomic_fact_daily\nschema_version: 1\nuser_id: synthetic-user\ntrack: user\ndate: '2026-09-16'\nentry_count: 22\nlast_appended_at: '2026-09-16T05:31:53.315633+00:00'\n---\n<!-- entry:af_20260916_00000001 -->\n## af_20260916_00000001\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\nsynthetic-user 在浏览器标签页 1962596754 上查看“活动报名”页面。\n<!-- /entry:af_20260916_00000001 -->\n<!-- entry:af_20260916_00000002 -->\n## af_20260916_00000002\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\n浏览器标签页 1962596754 的标题是“报名测试”。\n<!-- /entry:af_20260916_00000002 -->\n<!-- entry:af_20260916_00000003 -->\n## af_20260916_00000003\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\n浏览器标签页 1962596754 的网址是 http://127.0.0.1:60308/article。\n<!-- /entry:af_20260916_00000003 -->\n<!-- entry:af_20260916_00000004 -->\n## af_20260916_00000004\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\nsynthetic-user 请求“帮我报名”。\n<!-- /entry:af_20260916_00000004 -->\n<!-- entry:af_20260916_00000005 -->\n## af_20260916_00000005\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\n“活动报名”页面包含一个必填的“Email 邮箱”文本框。\n<!-- /entry:af_20260916_00000005 -->\n<!-- entry:af_20260916_00000006 -->\n## af_20260916_00000006\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\n“活动报名”页面包含一个“报名”按钮。\n<!-- /entry:af_20260916_00000006 -->\n<!-- entry:af_20260916_00000007 -->\n## af_20260916_00000007\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\n“活动报名”页面包含说明文字“这是本地合成报名页面”。\n<!-- /entry:af_20260916_00000007 -->\n<!-- entry:af_20260916_00000008 -->\n## af_20260916_00000008\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:23:50.730000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: browser-episode-0\n\n### Fact\n除提出报名请求外，对话中未记录后续操作、决定或结果。\n<!-- /entry:af_20260916_00000008 -->\n<!-- entry:af_20260916_00000009 -->\n## af_20260916_00000009\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\nsynthetic-user 在 2026-09-16 05:24 UTC 在标签页 1962596754 上请求使用 TASK_EMAIL 帮忙报名。\n<!-- /entry:af_20260916_00000009 -->\n<!-- entry:af_20260916_00000010 -->\n## af_20260916_00000010\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\n标签页 1962596754 的标题是“报名测试”。\n<!-- /entry:af_20260916_00000010 -->\n<!-- entry:af_20260916_00000011 -->\n## af_20260916_00000011\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\n标签页 1962596754 的 URL 是 http://127.0.0.1:60308/article。\n<!-- /entry:af_20260916_00000011 -->\n<!-- entry:af_20260916_00000012 -->\n## af_20260916_00000012\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\nsynthetic-user 明确表示默认邮箱不变。\n<!-- /entry:af_20260916_00000012 -->\n<!-- entry:af_20260916_00000013 -->\n## af_20260916_00000013\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\n该页面是本地合成报名页面。\n<!-- /entry:af_20260916_00000013 -->\n<!-- entry:af_20260916_00000014 -->\n## af_20260916_00000014\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\n该页面包含一级标题“活动报名”。\n<!-- /entry:af_20260916_00000014 -->\n<!-- entry:af_20260916_00000015 -->\n## af_20260916_00000015\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\n该页面包含必填文本框“Email 邮箱”。\n<!-- /entry:af_20260916_00000015 -->\n<!-- entry:af_20260916_00000016 -->\n## af_20260916_00000016\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:01.528000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: browser-episode-1\n\n### Fact\n该页面包含处于焦点状态的“报名”按钮。\n<!-- /entry:af_20260916_00000016 -->\n<!-- entry:af_20260916_00000017 -->\n## af_20260916_00000017\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: browser-episode-2\n\n### Fact\n用户（synthetic-user）在浏览器标签页 1962596754「报名测试」（http://127.0.0.1:60308/article）上提出请求：“帮我报名。”\n<!-- /entry:af_20260916_00000017 -->\n<!-- entry:af_20260916_00000018 -->\n## af_20260916_00000018\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: browser-episode-2\n\n### Fact\n浏览器标签页 1962596754「报名测试」页面的一级标题为“活动报名”。\n<!-- /entry:af_20260916_00000018 -->\n<!-- entry:af_20260916_00000019 -->\n## af_20260916_00000019\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: browser-episode-2\n\n### Fact\n浏览器标签页 1962596754「报名测试」页面包含一个必填的“Email 邮箱”文本框。\n<!-- /entry:af_20260916_00000019 -->\n<!-- entry:af_20260916_00000020 -->\n## af_20260916_00000020\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: browser-episode-2\n\n### Fact\n浏览器标签页 1962596754「报名测试」页面包含一个处于聚焦状态的“报名”按钮。\n<!-- /entry:af_20260916_00000020 -->\n<!-- entry:af_20260916_00000021 -->\n## af_20260916_00000021\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: browser-episode-2\n\n### Fact\n浏览器标签页 1962596754「报名测试」页面底部文字注明“这是本地合成报名页面”。\n<!-- /entry:af_20260916_00000021 -->\n<!-- entry:af_20260916_00000022 -->\n## af_20260916_00000022\n\n**owner_id**: synthetic-user\n**timestamp**: 2026-09-16T05:24:58.474000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: browser-episode-2\n\n### Fact\n用户的目标是在浏览器标签页 1962596754「报名测试」页面完成活动报名操作。\n<!-- /entry:af_20260916_00000022 -->\n"
+  },
+  "recall": [
+    {
+      "query": "填写邮箱 报名 提交 验证",
+      "status": 200,
+      "response": {
+        "request_id": "fd95fe1418794acfb675027387c2cd16",
+        "data": {
+          "episodes": [],
+          "profiles": [],
+          "agent_cases": [],
+          "agent_skills": [],
+          "unprocessed_messages": []
+        }
+      }
+    },
+    {
+      "query": "email registration form submit verify",
+      "status": 200,
+      "response": {
+        "request_id": "e49999def5b142248d30930f3de270f6",
+        "data": {
+          "episodes": [],
+          "profiles": [],
+          "agent_cases": [],
+          "agent_skills": [],
+          "unprocessed_messages": []
+        }
+      }
+    },
+    {
+      "query": "比较雨伞和雨衣",
+      "status": 200,
+      "response": {
+        "request_id": "8ed92a61810d4cd98f67d867c1f40f54",
+        "data": {
+          "episodes": [],
+          "profiles": [],
+          "agent_cases": [],
+          "agent_skills": [],
+          "unprocessed_messages": []
+        }
+      }
+    }
+  ]
+}

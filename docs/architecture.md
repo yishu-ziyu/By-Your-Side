@@ -2,6 +2,8 @@
 
 本页描述代码职责与修改落点，不维护发布状态；当前结论见[STATUS](STATUS.md)。
 
+语音链路的全栈职责、四种生命周期及改造依据见[Voice架构与改造边界](voice-architecture.md)。
+
 ## 运行边界
 
 ```text

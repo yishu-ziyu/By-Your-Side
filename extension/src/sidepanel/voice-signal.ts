@@ -16,7 +16,10 @@ export class VoiceTurnDetector {
     // Recurrent models can retain speech confidence briefly after digital silence.
     // This floor is far below quiet speech; volume alone can never start a turn.
     const energy = pcm.reduce((sum, value) => sum + (value / 32768) ** 2, 0) / pcm.length;
-    const speaking = energy > 0.0001 ** 2 && probability >= (this.active ? 0.35 : 0.6);
+    // Silero's speech confidence is not a volume score. Built-in microphone
+    // speech can stay below .6 even at normal input levels. Use the model's
+    // .3/.25 hysteresis, while still requiring 96ms of speech to open a turn.
+    const speaking = energy > 0.0001 ** 2 && probability >= (this.active ? 0.25 : 0.3);
     if (!this.active) {
       this.prefix.push(pcm);
       while (this.prefix.reduce((sum, frame) => sum + frame.length, 0) > 24000 * 0.32) this.prefix.shift();

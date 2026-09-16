@@ -28,6 +28,11 @@ function notExecuted(error: unknown): Error {
   return err;
 }
 
+/** debugger 被占用/分离一类的失败：只有这类失败可以改走 domops 页面内路径。 */
+function isDebuggerUnavailable(error: unknown): boolean {
+  return /占用|DevTools|debugger|detach/i.test(oneLine(error));
+}
+
 interface DomRect {
   x: number;
   y: number;
@@ -566,7 +571,7 @@ async function resolvePointerTarget(
         }
         resolvedViaCdp = true;
       } catch (e) {
-        if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+        if (!isDebuggerUnavailable(e)) {
           throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
         }
         // debugger 不可用：落到 domops 路径（注意此时 @N 依赖 DOM 快照的 refs，
@@ -696,7 +701,7 @@ async function confirmPointerTarget(
         point: [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)],
       };
     } catch (e) {
-      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+      if (!isDebuggerUnavailable(e)) {
         const msg = oneLine(e);
         if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
         throw notExecuted(new Error(
@@ -741,7 +746,7 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
       await callOnBackendNode<boolean>(tabId, backendNodeId, HIT_TEST_AT_JS, [x, y]);
       return;
     } catch (e) {
-      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+      if (!isDebuggerUnavailable(e)) {
         const msg = oneLine(e);
         if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
         throw notExecuted(new Error(
@@ -1036,7 +1041,7 @@ export async function fill(
     try {
       targetRect = await rectOfBackendNode(tabId, backendNodeId);
     } catch (e) {
-      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+      if (!isDebuggerUnavailable(e)) {
         throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
       }
       // debugger 不可用时落到 domops
@@ -1093,7 +1098,7 @@ export async function fill(
         await endCursorAction(tabId, cid, actionId, "done");
         return { filled: true };
       } catch (e) {
-        if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+        if (!isDebuggerUnavailable(e)) {
           throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
         }
         // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
@@ -1232,7 +1237,7 @@ export async function mark(
     try {
       rect = await rectOfBackendNode(tabId, backendNodeId, true);
     } catch (e) {
-      if (!/占用|DevTools|debugger|detach/i.test(oneLine(e))) {
+      if (!isDebuggerUnavailable(e)) {
         throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
       }
     }

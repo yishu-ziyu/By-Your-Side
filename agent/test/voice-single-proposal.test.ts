@@ -210,13 +210,9 @@ describe('反例5：只有标题没有正文／读页失败／操作回执 unkno
     h.event('default',{kind:'agent_start'});
     const runId=h.manager.getTaskProgress('default')!.runId!;
     session.prepareVoiceTurn.mockResolvedValue(plan({action:'steer'},'预算改成八百'));
-    // 跑着的任务先读回确认：这一轮不执行。
-    const ask=await h.manager.routeVoiceInput('default','预算改成八百',null,()=>true,{requestId:'turn-unknown',voiceId:'v',turn:1,runId});
-    expect(ask).toMatchObject({kind:'clarify'});
-    expect(session.steerCurrentTask).not.toHaveBeenCalled();
-    // 确认轮的执行结果未知：如实说明，不重发。
+    // 修改直接派发；真正未知的执行回执仍如实保留，不能因免读回而盲目重做。
     session.steerCurrentTask=vi.fn(async()=>{throw new Error('upstream vanished');});
-    const receipt=await h.manager.routeVoiceInput('default','对',null,()=>true,{requestId:'turn-confirm',voiceId:'v',turn:2,runId});
+    const receipt=await h.manager.routeVoiceInput('default','预算改成八百',null,()=>true,{requestId:'turn-unknown',voiceId:'v',turn:1,runId});
     expect(receipt).toMatchObject({ok:false,status:'unknown'});
     expect(receipt.kind==='steer'&&receipt.message).toMatch(/无法确认|不会自动重做/);
     expect(session.steerCurrentTask).toHaveBeenCalledTimes(1);

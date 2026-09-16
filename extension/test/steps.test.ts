@@ -31,13 +31,13 @@ describe("describeTool 人性化动作描述", () => {
     expect(describeTool("clear_marks", {}).full).toBe("清除标注");
     expect(describeTool("mystery_tool", {}).full).toBe("mystery_tool");
   });
-  it("并行请人：chip 用名册短名，不出现「工人」", () => {
+  it("并行请人：创建前不猜名字，等待不暴露协议类别", () => {
     const spawn = describeTool("spawn_worker", { id: "wiki" }).full;
-    expect(spawn.startsWith("请了 ")).toBe(true);
+    expect(spawn).toBe("安排助手");
     expect(spawn).not.toMatch(/工人/);
-    expect(describeTool("post", { to: "feishu", kind: "notes" }).full).toMatch(/^投递 notes → /);
+    expect(describeTool("post", { to: "feishu", kind: "notes" }).full).toMatch(/^发送消息给 /);
     expect(describeTool("post", { to: "feishu", kind: "notes" }).full).not.toMatch(/工人/);
-    expect(describeTool("await_message", { kind: "notes" }).full).toBe("等待「notes」");
+    expect(describeTool("await_message", { kind: "notes" }).full).toBe("等待助手结果");
     expect(describeTool("stop_worker", { id: "wiki" }).full).toMatch(/^让 .+ 停下$/);
   });
   it("超长 label 截断", () => {
@@ -117,28 +117,7 @@ describe("workerEventRunPolicy 结束后不得开新处理中块", () => {
   });
 });
 
-describe("run-steps 布局防压缩与最小尺寸契约", () => {
-  it("styles.css 显式声明 flex-shrink: 0 与 min-height，杜绝被消息列表纵向挤压", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const cssPath = resolve(__dirname, "../src/sidepanel/styles.css");
-    const css = readFileSync(cssPath, "utf-8");
-
-    // 1. #messages > * 必须声明 flex-shrink: 0，确保整个 feed 不会压缩任何消息或步骤卡片
-    expect(css).toMatch(/#messages\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0/);
-
-    // 2. details.run-steps 必须显式具备 flex-shrink: 0 与 min-height: min-content
-    expect(css).toMatch(/details\.run-steps\s*\{[^}]*flex-shrink:\s*0/);
-    expect(css).toMatch(/details\.run-steps\s*\{[^}]*min-height:\s*min-content/);
-
-    // 3. summary 必须具备 min-height 保底与 box-sizing
-    expect(css).toMatch(/details\.run-steps\s+summary\s*\{[^}]*min-height:\s*38px/);
-    expect(css).toMatch(/details\.run-steps\s+summary\s*\{[^}]*box-sizing:\s*border-box/);
-
-    // 4. .run-body 子元素不压缩
-    expect(css).toMatch(/\.run-body\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0/);
-  });
-});
+// Layout is exercised in scripts/acceptance/steps-layout.mts against Chromium computed geometry.
 
 describe("执行中过程视窗限高", () => {
   it("钉在底部才跟，离开底部则停", () => {

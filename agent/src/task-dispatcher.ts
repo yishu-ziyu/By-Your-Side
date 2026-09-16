@@ -3,17 +3,14 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, rmSync
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isTaskReceipt, type TaskActionRequest, type TaskReceipt } from '../../shared/task-actions.js';
+import { canonicalValue } from './canonical-value.js';
 
 type RecordEntry = { fingerprint: string; pending: boolean; receipt: TaskReceipt };
 const keyOf = (a: Pick<TaskActionRequest,'conversationId'|'requestId'>) => `${a.conversationId}:${a.requestId}`;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-// Canonical key order makes transport property ordering irrelevant to deduplication.
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.entries(value).filter(([,v])=>v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
-  return JSON.stringify(value);
+export class TaskActionRejected extends Error {
+  constructor(message: string, readonly allowNewConversation = false) { super(message); }
 }
-export class TaskActionRejected extends Error {}
 export class TaskActionFailed extends Error {}
 export class TaskReceiptError extends Error {
   constructor(readonly receipt:TaskReceipt) { super(receipt.message); }
@@ -142,21 +139,32 @@ export class TaskReceiptStore {
   }
 }
 
+/**
+ * 控制（暂停/接管/终止）有自己的接收通道：它不等待慢的 start/steer（例如还在等页面预观察的那几秒），
+ * 否则"页面已经归用户"的停止请求会被卡在普通输入后面。控制自身仍按会话串行。
+ * 普通输入仍按会话串行，并且新入队的普通输入排在它之前已入队的控制之后，保持既有先后。
+ */
+const CONTROL_ACTIONS = new Set<TaskActionRequest['action']>(['pause','abort','resume']);
+
 /** Serialized acceptance boundary, not a queue for waiting until a task becomes runnable. */
 export class TaskDispatcher {
   private readonly active = new Map<string,{fingerprint:string;promise:Promise<TaskReceipt>}>();
   private readonly tails = new Map<string,Promise<unknown>>();
+  private readonly controlTails = new Map<string,Promise<unknown>>();
   constructor(readonly store = new TaskReceiptStore()) {}
   get(conversationId:string,requestId:string):TaskReceipt|undefined {
     const value=this.store.read(keyOf({conversationId,requestId}));return value?this.store.receipt(value):undefined;
   }
   dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'>>):Promise<TaskReceipt> {
-    const key=keyOf(request), fingerprint=hash(canonical(request));
+    const key=keyOf(request), fingerprint=hash(canonicalValue(request));
     const base:TaskReceipt={requestId:request.requestId,conversationId:request.conversationId,source:request.source,...(request.originConversationId?{originConversationId:request.originConversationId}:{}),action:request.action,runId:request.expectedRunId,text:request.text??'',targetTitle,status:'unknown',message:'执行结果尚无法确认。',updatedAt:Date.now()};
     const conflict=()=>({...base,status:'rejected' as const,message:'同一请求编号的内容发生变化，操作未执行。'});
     const pending=this.active.get(key);
     if(pending)return pending.fingerprint===fingerprint?pending.promise:Promise.resolve(conflict());
-    const promise=(this.tails.get(request.conversationId)??Promise.resolve()).catch(()=>{}).then(async()=>{
+    const conversationId=request.conversationId,control=CONTROL_ACTIONS.has(request.action);
+    const controlTail=this.controlTails.get(conversationId)??Promise.resolve();
+    const prior=control?controlTail:Promise.all([this.tails.get(conversationId)??Promise.resolve(),controlTail]);
+    const promise=prior.catch(()=>{}).then(async()=>{
       const record:RecordEntry={fingerprint,pending:true,receipt:base};
       let existing:RecordEntry|undefined;
       try { existing=this.store.read(key); }
@@ -172,13 +180,14 @@ export class TaskDispatcher {
       } catch { return {...base,status:'rejected' as const,message:'无法保存请求记录，操作未执行。'}; }
       let receipt:TaskReceipt;
       try { receipt={...base,...await execute(),updatedAt:Date.now()}; }
-      catch(error) { receipt={...base,status:error instanceof TaskActionRejected?'rejected':error instanceof TaskActionFailed?'failed':'unknown',message:error instanceof TaskActionRejected||error instanceof TaskActionFailed?error.message:'执行结果尚无法确认；不会自动重做。',updatedAt:Date.now()}; }
+      catch(error) { receipt={...base,...(error instanceof TaskActionRejected && error.allowNewConversation && request.action === 'start' ? {newConversationRequest:structuredClone(request)} : {}),status:error instanceof TaskActionRejected?'rejected':error instanceof TaskActionFailed?'failed':'unknown',message:error instanceof TaskActionRejected||error instanceof TaskActionFailed?error.message:'执行结果尚无法确认；不会自动重做。',updatedAt:Date.now()}; }
       try { this.store.finish(key,{fingerprint,pending:false,receipt}); }
       catch { return {...receipt,status:'unknown' as const,message:'回执未能保存，执行结果尚无法确认；不会自动重做。'}; }
       return receipt;
     });
-    this.active.set(key,{fingerprint,promise});this.tails.set(request.conversationId,promise);
-    void promise.finally(()=>{this.active.delete(key);if(this.tails.get(request.conversationId)===promise)this.tails.delete(request.conversationId);}).catch(()=>{});
+    const tails=control?this.controlTails:this.tails;
+    this.active.set(key,{fingerprint,promise});tails.set(conversationId,promise);
+    void promise.finally(()=>{this.active.delete(key);if(tails.get(conversationId)===promise)tails.delete(conversationId);}).catch(()=>{});
     return promise;
   }
 }

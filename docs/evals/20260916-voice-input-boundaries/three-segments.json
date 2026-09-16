@@ -1,0 +1,151 @@
+{
+  "ok": true,
+  "scope": "real headless extension transport and production voice coordination; controlled ASR; no acoustic or model quality claim",
+  "commands": [
+    {
+      "at": 1789554190762,
+      "command": {
+        "kind": "start"
+      }
+    },
+    {
+      "at": 1789554190764,
+      "command": {
+        "kind": "interrupt",
+        "turn": 1
+      }
+    },
+    {
+      "at": 1789554190765,
+      "command": {
+        "kind": "audio",
+        "turn": 1,
+        "data": "AQABAA=="
+      }
+    },
+    {
+      "at": 1789554190765,
+      "command": {
+        "kind": "commit",
+        "turn": 1,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554190766,
+      "command": {
+        "kind": "interrupt",
+        "turn": 2
+      }
+    },
+    {
+      "at": 1789554190767,
+      "command": {
+        "kind": "audio",
+        "turn": 2,
+        "data": "AQABAA=="
+      }
+    },
+    {
+      "at": 1789554190768,
+      "command": {
+        "kind": "commit",
+        "turn": 2,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554190769,
+      "command": {
+        "kind": "interrupt",
+        "turn": 3
+      }
+    },
+    {
+      "at": 1789554190769,
+      "command": {
+        "kind": "audio",
+        "turn": 3,
+        "data": "AQABAA=="
+      }
+    },
+    {
+      "at": 1789554190769,
+      "command": {
+        "kind": "commit",
+        "turn": 3,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554191029,
+      "command": {
+        "kind": "input_context",
+        "turn": 1,
+        "input": {
+          "context": {
+            "tabId": 1762983411,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:51262/reading"
+          },
+          "observation": {
+            "token": "1c7bf817-c0ae-4d44-859e-8330dcc9c280",
+            "tabId": 1762983411
+          }
+        }
+      }
+    },
+    {
+      "at": 1789554191030,
+      "command": {
+        "kind": "input_context",
+        "turn": 2,
+        "input": {
+          "context": {
+            "tabId": 1762983411,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:51262/reading"
+          },
+          "observation": {
+            "token": "dcbb62de-914c-498d-9e5e-0f9e5b60a2b2",
+            "tabId": 1762983411
+          }
+        }
+      }
+    },
+    {
+      "at": 1789554191030,
+      "command": {
+        "kind": "input_context",
+        "turn": 3,
+        "input": {
+          "context": {
+            "tabId": 1762983411,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:51262/reading"
+          },
+          "observation": {
+            "token": "34ab9208-f426-48df-90e3-b0d39549d63a",
+            "tabId": 1762983411
+          }
+        }
+      }
+    }
+  ],
+  "routes": [
+    {
+      "text": "我想 了解 这个页面",
+      "input": {
+        "context": {
+          "tabId": 1762983411,
+          "title": "Input order fixture",
+          "url": "http://127.0.0.1:51262/reading"
+        },
+        "observation": {
+          "token": "1c7bf817-c0ae-4d44-859e-8330dcc9c280",
+          "tabId": 1762983411
+        }
+      }
+    }
+  ]
+}

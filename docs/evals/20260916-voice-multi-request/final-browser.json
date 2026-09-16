@@ -1,0 +1,180 @@
+{
+  "ok": true,
+  "scope": "real isolated extension/model/browser and Step TTS; ASR text controlled; playback completion simulated",
+  "visibleQueuedReceipt": true,
+  "routes": [
+    {
+      "text": "同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+      "result": {
+        "kind": "action",
+        "ok": true,
+        "status": "accepted",
+        "message": "已接收新任务：同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+        "receipts": [
+          {
+            "requestId": "test-voice-1",
+            "conversationId": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+            "source": "voice",
+            "originConversationId": "default",
+            "action": "start",
+            "runId": "81318333-b217-4916-9a2d-90dab8eff620",
+            "text": "同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+            "targetTitle": "同时在新标签页打开 http://127.0.0.1:62757/sec",
+            "status": "accepted",
+            "message": "已接收新任务：同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+            "updatedAt": 1789557105150
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "test-voice-1",
+          "conversationId": "default",
+          "updatedAt": 1789557105153,
+          "steps": [
+            {
+              "action": "start",
+              "text": "同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+              "targetId": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+              "targetTitle": "同时在新标签页打开 http://127.0.0.1:62757/sec",
+              "status": "complete",
+              "receipt": {
+                "requestId": "test-voice-1",
+                "conversationId": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+                "source": "voice",
+                "originConversationId": "default",
+                "action": "start",
+                "runId": "81318333-b217-4916-9a2d-90dab8eff620",
+                "text": "同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+                "targetTitle": "同时在新标签页打开 http://127.0.0.1:62757/sec",
+                "status": "accepted",
+                "message": "已接收新任务：同时在新标签页打开 http://127.0.0.1:62757/second ，读取页面验证码并告诉我。",
+                "updatedAt": 1789557105150
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+      "result": {
+        "kind": "action",
+        "ok": true,
+        "status": "queued",
+        "message": "已排队：原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+        "receipts": [
+          {
+            "requestId": "test-voice-2",
+            "conversationId": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+            "originConversationId": "default",
+            "source": "voice",
+            "action": "start",
+            "runId": null,
+            "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+            "targetTitle": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+            "status": "queued",
+            "message": "已排队：原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+            "updatedAt": 1789557113111
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "test-voice-2",
+          "conversationId": "default",
+          "updatedAt": 1789557113114,
+          "steps": [
+            {
+              "action": "start",
+              "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+              "targetId": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+              "targetTitle": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+              "status": "complete",
+              "receipt": {
+                "requestId": "test-voice-2",
+                "conversationId": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+                "originConversationId": "default",
+                "source": "voice",
+                "action": "start",
+                "runId": null,
+                "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+                "targetTitle": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+                "status": "queued",
+                "message": "已排队：原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+                "updatedAt": 1789557113111
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "played": [
+    {
+      "id": "default",
+      "delivery": "speech-61033ed1-f114-473b-b3bb-fc94599e54de",
+      "status": "speaking"
+    },
+    {
+      "id": "default",
+      "delivery": "speech-61033ed1-f114-473b-b3bb-fc94599e54de",
+      "status": "played"
+    },
+    {
+      "id": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+      "delivery": "delivery-6cb068f88dc99516f0cd73cd69dbcd5c",
+      "status": "speaking"
+    },
+    {
+      "id": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+      "delivery": "delivery-6cb068f88dc99516f0cd73cd69dbcd5c",
+      "status": "played"
+    },
+    {
+      "id": "default",
+      "delivery": "delivery-b8f2230b36d99497c299c57402da75c9",
+      "status": "speaking"
+    },
+    {
+      "id": "default",
+      "delivery": "delivery-b8f2230b36d99497c299c57402da75c9",
+      "status": "played"
+    },
+    {
+      "id": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+      "delivery": "delivery-9036f60e9c47df28fd7e57df6a7f8041",
+      "status": "speaking"
+    },
+    {
+      "id": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+      "delivery": "delivery-9036f60e9c47df28fd7e57df6a7f8041",
+      "status": "played"
+    }
+  ],
+  "deliveries": {
+    "delivery-6cb068f88dc99516f0cd73cd69dbcd5c": {
+      "owner": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+      "text": "新标签页已打开 http://127.0.0.1:62757/second，页面上的验证码是 **BLUE-731**。\n\n页面同时写着：展馆每天 10:30 开门，票价 35 元。",
+      "kind": "finding"
+    },
+    "delivery-b8f2230b36d99497c299c57402da75c9": {
+      "owner": "default",
+      "text": "资料页写的是：展馆每天 10:30 开门，票价 35 元。页面末尾还带了一串验证码，与开放时间和票价无关，我就不复述了。",
+      "kind": "finding"
+    },
+    "delivery-9036f60e9c47df28fd7e57df6a7f8041": {
+      "owner": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+      "text": "验证码原文是 BLUE-731，转成小写是 **blue-731**（页面文字：展馆每天10:30开门，票价35元。验证码 BLUE-731。）。我只读了这一页，没有做任何改动。",
+      "kind": "finding"
+    }
+  },
+  "audioFrames": 1537,
+  "audioBytes": 3144004
+}

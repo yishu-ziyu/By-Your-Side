@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "model": "opencode-go/deepseek-flash",
+  "runtimeDir": "/Users/mahaoxuan/Desktop/AI 产品/By-Your-Side/out/acceptance/memory-live-1789537076855",
+  "cases": 10,
+  "scope": "real isolated extension and model; UI input, fresh conversations, actual form values, no production data"
+}

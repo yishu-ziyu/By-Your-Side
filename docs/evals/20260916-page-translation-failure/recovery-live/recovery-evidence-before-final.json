@@ -1,0 +1,33 @@
+{
+  "pageCompleted": true,
+  "lastReceipt": {
+    "blocks": [],
+    "document": "79eaf13b-8d72-43a9-bf08-903c17c5cfba",
+    "fontSize": null,
+    "language": "简体中文",
+    "mode": "translated",
+    "remaining": 0,
+    "translated": 88,
+    "unsupported": 0,
+    "tabId": 1303462499
+  },
+  "failures": [
+    {
+      "kind": "tool_end",
+      "toolCallId": "call_00_O0xfEQ65nSpwnuFed7dF9144",
+      "name": "page_translation",
+      "isError": true,
+      "resultText": "翻译生成失败，已完成 0 段，剩余 88 段。可继续翻译。Injected provider output limit before any apply",
+      "executionFact": "not_executed"
+    },
+    {
+      "kind": "tool_end",
+      "toolCallId": "call_00_3RIvCSerQX7peElsIKsw1854",
+      "name": "page_translation",
+      "isError": true,
+      "resultText": "翻译生成失败，已完成 15 段，剩余 73 段。可继续翻译。Unexpected non-whitespace character after JSON at position 364 (line 9 column 4)",
+      "executionFact": "executed"
+    }
+  ],
+  "evaluatorFailure": "Incorrectly expected generation error in extension RPC results; actual errors are top-level tool_end events. Corrected evaluator; raw events preserved."
+}

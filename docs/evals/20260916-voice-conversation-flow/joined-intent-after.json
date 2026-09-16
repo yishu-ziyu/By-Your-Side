@@ -1,0 +1,50 @@
+{
+  "model": "opencode-go/deepseek-flash",
+  "results": [
+    {
+      "text": "我想",
+      "expected": "listen",
+      "plan": {
+        "steps": [
+          {
+            "action": "listen",
+            "text": "我想",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1852,
+      "ok": true
+    },
+    {
+      "text": "我想 你给我介绍一下",
+      "expected": "listen",
+      "plan": {
+        "steps": [
+          {
+            "action": "listen",
+            "text": "我想 你给我介绍一下",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1768,
+      "ok": true
+    },
+    {
+      "text": "我想 你给我介绍一下 这个YouTube的视频",
+      "expected": "observe",
+      "plan": {
+        "steps": [
+          {
+            "action": "observe",
+            "text": "我想 你给我介绍一下 这个YouTube的视频",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1346,
+      "ok": true
+    }
+  ]
+}

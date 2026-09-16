@@ -1,0 +1,60 @@
+[
+  {
+    "id": "plana-cast-kim-37d50556",
+    "opened": {
+      "type": "tool_result",
+      "id": "iso-open_tab-1",
+      "ok": true,
+      "data": {
+        "tabId": 893132193,
+        "url": "http://127.0.0.1:51092/?id=plana-cast-kim-37d50556",
+        "title": "isolated probe",
+        "readiness": "complete",
+        "documentId": "00874E004E39D502575580C05F78B288",
+        "waitMs": 13
+      },
+      "executionFact": "executed",
+      "conversationId": "default"
+    },
+    "marked": {
+      "type": "tool_result",
+      "id": "iso-hover-2",
+      "ok": true,
+      "data": {
+        "hovered": true
+      },
+      "executionFact": "executed",
+      "conversationId": "default"
+    },
+    "label": "probe"
+  },
+  {
+    "id": "planb-cast-mike-0fb90ce9",
+    "opened": {
+      "type": "tool_result",
+      "id": "iso-open_tab-3",
+      "ok": true,
+      "data": {
+        "tabId": 893132194,
+        "url": "http://127.0.0.1:51092/?id=planb-cast-mike-0fb90ce9",
+        "title": "isolated probe",
+        "readiness": "complete",
+        "documentId": "F6A29B261DA410248CAB40CF321E4223",
+        "waitMs": 11
+      },
+      "executionFact": "executed",
+      "conversationId": "default"
+    },
+    "marked": {
+      "type": "tool_result",
+      "id": "iso-hover-4",
+      "ok": true,
+      "data": {
+        "hovered": true
+      },
+      "executionFact": "executed",
+      "conversationId": "default"
+    },
+    "label": "probe"
+  }
+]

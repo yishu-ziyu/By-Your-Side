@@ -159,7 +159,7 @@ async function main(): Promise<void> {
   const initial = await conversations.ensureDefault();
   // The voice session emits its own messages (including `diag` evidence), so this path must also
   // reach the capture store; otherwise normal-use recording would silently write nothing.
-  voice = new VoiceService(id => conversations.getTaskProgress(id), msg => {keepVoiceEvent(msg);current?.send(msg);}, undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId));
+  voice = new VoiceService(id => conversations.getTaskProgress(id), msg => {keepVoiceEvent(msg);current?.send(msg);}, undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId), (origin,target)=>conversations.isVoiceTask(origin,target));
   const session = initial.runtime.session;
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }

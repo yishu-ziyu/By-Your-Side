@@ -1,0 +1,28 @@
+{
+  "commitAt": 1856,
+  "events": [
+    {
+      "type": "session.created",
+      "at": 243,
+      "model": "stepaudio-2.5-realtime"
+    },
+    {
+      "type": "session.updated",
+      "at": 291,
+      "model": "stepaudio-2.5-realtime"
+    },
+    {
+      "type": "input_audio_buffer.committed",
+      "at": 1896
+    },
+    {
+      "type": "conversation.item.created",
+      "at": 1897
+    },
+    {
+      "type": "conversation.item.input_audio_transcription.completed",
+      "at": 2437,
+      "transcript": "先别说了。"
+    }
+  ]
+}

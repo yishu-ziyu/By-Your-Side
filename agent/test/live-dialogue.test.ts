@@ -32,8 +32,10 @@ describe('live dialogue while a browser task runs',()=>{
     h.route.mockImplementation(((...args:any[])=>new Promise(resolve=>pending.push({args,resolve}))) as any);
     await h.input(1,'读一下页面');h.reply('early');h.s.command({kind:'playback_done',responseId:'early'});
     await h.input(2,readOnly?'今天有点累':'取消刚才的任务');
+    // Classification of the previous fragment must finish before routing the next.
+    expect(pending).toHaveLength(1);
+    pending[0].args[3].onInputDecision(false);await tick();
     expect(pending[1].args[3].pendingDelegation).toBe(true);
-    pending[0].args[3].onInputDecision(false);
     let released=false;const gate=pending[0].args[3].awaitInputDecision().then(()=>released=true);await tick();expect(released).toBe(false);
     pending[1].args[3].onInputDecision(readOnly);await gate;
     expect(pending[0].args[2]()).toBe(readOnly);

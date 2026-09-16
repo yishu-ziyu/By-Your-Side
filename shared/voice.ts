@@ -65,10 +65,12 @@ export interface VoiceTarget {id:string;title:string;runId:string|null;controlVe
 export interface VoiceRouteContext {
   /** Keep pending delegation through conversational interjections, never through a new command. */
   awaitInputDecision?: () => Promise<void>;
-  onInputDecision?: (readOnly: boolean) => void;
+  onInputDecision?: (readOnly: boolean, incomplete?:boolean) => void;
   pendingDelegation?: boolean;
   /** In-session spoken dialogue, including replies that were not task findings. */
   recentTurns?: VoiceConversationContext['recentTurns'];
+  /** This input interrupted audio the client had actually begun playing. */
+  interruptedSpeech?:boolean;
   reportStage?:(stage:'classifying'|'observing'|'controlling')=>void;
   controlVersion?:number;
   resumeTargetId?:string;
@@ -89,7 +91,8 @@ export type VoiceTurnBranch = 'reply' | 'control' | 'read_only';
 export type VoiceTurnProtocol = 'free_reply' | 'plan';
 export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBranch;phase:'COMMITTED'|'DISCARDED';protocol?:VoiceTurnProtocol}} & (
   | {kind:'none';resumeTargetId?:string; resumeReadOnly?:'chat'|'observe'|'status'; snapshot?:TaskProgressSnapshot;spokenText?:string}
-  | {kind:'silent'}
+  | {kind:'silent';quiet?:boolean}
+  | {kind:'listening'}
   | {kind:'clarify';message:string}
   | {kind:'steer'|'action';awaitDelivery?:boolean;ok:boolean;status?:TaskReceipt['status'];message:string;receipts?:TaskReceipt[];snapshot?:TaskProgressSnapshot});
 
@@ -98,7 +101,8 @@ export type VoiceCommand =
   | { kind: "start"; diagnostic?: true; capture?: true }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
-  | { kind: "commit"; turn: number;input?:VoiceInputContext }
+  | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
+  | { kind: "input_context"; turn:number;input?:VoiceInputContext;error?:string }
   | { kind: "interrupt"; turn: number; played?: { itemId: string; ms: number } }
   | { kind: "playback_done"; responseId: string }
   /**
@@ -181,7 +185,8 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true);
     case "stop": return true;
     case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
-    case "commit": return turn(c.turn);
+    case "commit": return turn(c.turn)&&(c.contextPending===undefined||typeof c.contextPending==='boolean');
+    case "input_context": return turn(c.turn)&&(c.input!==undefined||c.error!==undefined)&&(c.error===undefined||typeof c.error==='string'&&c.error.length>0&&c.error.length<=500);
     case "interrupt": return turn(c.turn) && (c.played === undefined || !!c.played && id(c.played.itemId) && Number.isFinite(c.played.ms) && c.played.ms >= 0);
     case "playback_done": return id(c.responseId);
     /** A capture must carry at least one real fact; `note` alone is not evidence and is always optional. */

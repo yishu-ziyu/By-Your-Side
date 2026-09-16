@@ -1,0 +1,112 @@
+{
+  "results": [
+    {
+      "goal": "读取当前页面",
+      "text": "同时在新标签页打开哔哩哔哩",
+      "expected": {
+        "action": "start",
+        "target": null
+      },
+      "plan": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "同时在新标签页打开哔哩哔哩",
+            "target": null
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "goal": "读取当前页面",
+      "text": "另外帮我查明天天气",
+      "expected": {
+        "action": "start",
+        "target": null
+      },
+      "plan": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "另外帮我查明天天气",
+            "target": null
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "goal": "翻译当前页面",
+      "text": "再把字体改成宋体",
+      "expected": {
+        "action": "steer",
+        "target": null
+      },
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "再把字体改成宋体",
+            "target": null
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "goal": "比较两台电脑",
+      "text": "同时在新标签页看看另一台的价格",
+      "expected": {
+        "action": "steer",
+        "target": null
+      },
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "同时在新标签页看看另一台的价格",
+            "target": null
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "goal": "读取当前页面",
+      "text": "取消打开B站的任务",
+      "expected": {
+        "action": "abort",
+        "target": "打开B站"
+      },
+      "plan": {
+        "steps": [
+          {
+            "action": "abort",
+            "text": "取消打开B站的任务",
+            "target": "打开B站"
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "goal": "读取当前页面",
+      "text": "把整理链接的任务改为只列三个",
+      "expected": {
+        "action": "steer",
+        "target": "整理链接"
+      },
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "把整理链接的任务改为只列三个",
+            "target": "整理链接"
+          }
+        ]
+      },
+      "ok": true
+    }
+  ]
+}

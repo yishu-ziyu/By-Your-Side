@@ -1,0 +1,182 @@
+{
+  "root": "/tmp/bys-memory-eval-PBf7d2/baseline-1789534747620",
+  "results": [
+    {
+      "id": "C1-natural",
+      "level": "component: proposed tool arguments supplied by probe, no model",
+      "steps": [
+        {
+          "user": "我的邮箱是lin@example.test你可以记住这一点。",
+          "saved": false,
+          "error": "Error: 当前用户消息没有明确要求记住，不能保存记忆"
+        }
+      ],
+      "entries": []
+    },
+    {
+      "id": "C1-punctuation",
+      "level": "component: proposed tool arguments supplied by probe, no model",
+      "steps": [
+        {
+          "user": "我的邮箱是 lin@example.test，你可以记住这一点。",
+          "saved": false,
+          "error": "Error: 当前用户消息没有明确要求记住，不能保存记忆"
+        }
+      ],
+      "entries": []
+    },
+    {
+      "id": "C1-command-control",
+      "level": "component: proposed tool arguments supplied by probe, no model",
+      "steps": [
+        {
+          "user": "记住我的默认邮箱是 lin@example.test",
+          "saved": true
+        }
+      ],
+      "entries": [
+        {
+          "id": "890c3ec2-acad-479d-911b-47cb68c52f89",
+          "version": 1,
+          "text": "用户的默认邮箱是 lin@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "probe",
+          "createdAt": 1789534747630,
+          "updatedAt": 1789534747630
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "query": "帮我报名",
+      "entries": []
+    },
+    {
+      "id": "C2",
+      "query": "帮我报名，表单需要邮箱",
+      "entries": [
+        {
+          "id": "890c3ec2-acad-479d-911b-47cb68c52f89",
+          "version": 1,
+          "text": "用户的默认邮箱是 lin@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "probe",
+          "createdAt": 1789534747630,
+          "updatedAt": 1789534747630
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "query": "我的邮箱是什么",
+      "entries": [
+        {
+          "id": "890c3ec2-acad-479d-911b-47cb68c52f89",
+          "version": 1,
+          "text": "用户的默认邮箱是 lin@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "probe",
+          "createdAt": 1789534747630,
+          "updatedAt": 1789534747630
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "level": "component: proposed tool arguments supplied by probe, no model",
+      "steps": [
+        {
+          "user": "这次用 work@example.test，默认邮箱不变。",
+          "saved": false,
+          "error": "Error: 当前用户消息没有明确要求记住，不能保存记忆"
+        }
+      ],
+      "entries": [
+        {
+          "id": "193df676-2981-4575-8d4c-7e823ef98d03",
+          "version": 1,
+          "text": "用户的默认邮箱是 lin@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "seed",
+          "createdAt": 1789534747639,
+          "updatedAt": 1789534747639
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "level": "component: proposed tool arguments supplied by probe, no model",
+      "steps": [
+        {
+          "user": "以后改用 new@example.test，旧邮箱不用了。",
+          "saved": true
+        }
+      ],
+      "entries": [
+        {
+          "id": "f11dcf5a-62d3-4bd6-ab6b-a2f0b0e9e82d",
+          "version": 1,
+          "text": "用户的默认邮箱是 lin@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "seed",
+          "createdAt": 1789534747643,
+          "updatedAt": 1789534747643
+        },
+        {
+          "id": "92ba5d32-4142-44ac-8cb6-999c8a894900",
+          "version": 1,
+          "text": "用户的默认邮箱是 new@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "probe",
+          "createdAt": 1789534747647,
+          "updatedAt": 1789534747647
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "level": "component: proposed tool arguments supplied by probe, no model",
+      "steps": [
+        {
+          "user": "总结当前网页",
+          "saved": false,
+          "error": "Error: 当前用户消息没有明确要求记住，不能保存记忆"
+        }
+      ],
+      "entries": []
+    },
+    {
+      "id": "C6-delete",
+      "entries": []
+    },
+    {
+      "id": "C6-replay-store-boundary",
+      "entries": [
+        {
+          "id": "b5d893df-14d2-454d-9167-e8930dacb6b5",
+          "version": 1,
+          "text": "用户的默认邮箱是 lin@example.test",
+          "scope": {
+            "kind": "all"
+          },
+          "sourceConversationId": "probe",
+          "createdAt": 1789534747658,
+          "updatedAt": 1789534747658
+        }
+      ],
+      "note": "Store has no explicit-memory source suppression; production replay not exercised."
+    }
+  ]
+}

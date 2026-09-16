@@ -64,8 +64,11 @@ describe("03 reveal：面板从触发它的按钮长出来", () => {
 describe("04 settle：完成是收束，不是替换", () => {
   // 2026-09-11 用户批准的收敛：运行中不再有像素格等待态，状态行只留一个光球和耗时。
   it("finishRun 让状态行的球停下来、文案落定", () => {
-    expect(mainTs).toMatch(/run\.orb\.setRunning\(false\)/);
-    expect(mainTs).toMatch(/title\.textContent = "查看执行过程"/);
+    expect(mainTs).toContain("run.orbActivity.finish()");
+    expect(mainTs).toContain("syncRunOrb(run)");
+    expect(mainTs).toMatch(/title\.textContent = .*"查看执行过程"/);
+    expect(mainTs).toContain("执行失败 · 查看过程");
+    expect(mainTs).toContain("已停止 · 查看过程");
     expect(mainTs).not.toContain("px-wrap");
     expect(css).not.toContain(".px-grid");
   });
@@ -100,7 +103,7 @@ describe("05 breathe：执行面板的光球", () => {
     expect(existsSync(resolve(__dirname, "../src/vendor/thinking-orbs.LICENSE"))).toBe(true);
   });
 
-  it("只认三个身份，且映射就是定稿的那三个", () => {
+  it("保留原有三种小图标，主球使用独立运行状态", () => {
     expect(orbTs).toContain('"composing" | "solving" | "connecting"');
     expect(mainTs).toMatch(/createOrb\("composing"/);
     expect(mainTs).toMatch(/createOrb\("solving"/);
@@ -171,7 +174,7 @@ describe("07 live：运行中的那一步有生命（A+B）", () => {
     expect(reduced).toMatch(/details\.thinking\.streaming::before/);
     expect(reduced).toMatch(/\.settle-once/);
     expect(orbTs).toMatch(/const next = running && !prefersReduce\(\)/);
-    expect(orbTs).toMatch(/if \(!prefersReduce\(\)\) \{/);
+    expect(orbTs).toMatch(/if \(!prefersReduce\(\) &&/);
   });
 
   it("新增规则不写 transition: all", () => {

@@ -1,0 +1,72 @@
+[
+  {
+    "turn": 1,
+    "text": null,
+    "kind": "none",
+    "message": null,
+    "receipts": []
+  },
+  {
+    "turn": 2,
+    "text": "今天过得还可以，但是有点小累，然后我叫你帮我翻译一下这篇文章。",
+    "kind": "action",
+    "message": "已接收新任务：今天过得还可以，但是有点小累，然后我叫你帮我翻译一下这篇文章。",
+    "receipts": [
+      {
+        "action": "start",
+        "text": "今天过得还可以，但是有点小累，然后我叫你帮我翻译一下这篇文章。",
+        "status": "accepted",
+        "updatedAt": 1789492131958
+      }
+    ]
+  },
+  {
+    "turn": 3,
+    "text": "只留下一文就可以了。",
+    "kind": "clarify",
+    "message": "你是说“只留下一文就可以了。”，对吗？确认后我就照做。",
+    "receipts": []
+  },
+  {
+    "turn": 4,
+    "text": "呃，是的，是只留下翻译之后的，只有留下译文。",
+    "kind": "clarify",
+    "message": "你是说“呃，是的，是只留下翻译之后的，只有留下译文。”，对吗？确认后我就照做。",
+    "receipts": []
+  },
+  {
+    "turn": 5,
+    "text": null,
+    "kind": "steer",
+    "message": "语音修改已送达当前任务：呃，是的，是只留下翻译之后的，只有留下译文。",
+    "receipts": [
+      {
+        "action": "steer",
+        "text": "呃，是的，是只留下翻译之后的，只有留下译文。",
+        "status": "accepted",
+        "updatedAt": 1789492175651
+      }
+    ]
+  },
+  {
+    "turn": 6,
+    "text": "然后我需要字体改成宋体。",
+    "kind": "clarify",
+    "message": "你是说“然后我需要字体改成宋体。”，对吗？确认后我就照做。",
+    "receipts": []
+  },
+  {
+    "turn": 7,
+    "text": null,
+    "kind": "steer",
+    "message": "语音修改已送达当前任务：然后我需要字体改成宋体。",
+    "receipts": [
+      {
+        "action": "steer",
+        "text": "然后我需要字体改成宋体。",
+        "status": "accepted",
+        "updatedAt": 1789492190267
+      }
+    ]
+  }
+]

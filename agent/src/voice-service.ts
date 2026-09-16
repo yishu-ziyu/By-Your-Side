@@ -23,6 +23,7 @@ export async function readStepVoiceKey(): Promise<string> {
 
 /** One explicit human voice connection; background task sessions stay independent. */
 export class VoiceService {
+  private readonly deliveryOwners=new Map<string,string>();
   private readonly receiptAudioCache=new VoiceAudioCache(STEP_VOICE);
   private active: { id: string; conversationId: string; session: StepVoiceSession;observed:string;startedAt:number;controls:Set<string>;notifiedControls:Set<string>;announcedDeliveries:Set<string>;streamedDeliveries:Set<string> } | null = null;
   constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null,
@@ -34,7 +35,8 @@ export class VoiceService {
     private readonly diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"],
     private readonly targets?:()=>VoiceTarget[],
     private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void,
-    private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void) {}
+    private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void,
+    private readonly relatedTask:(origin:string,target:string)=>boolean=()=>false) {}
   async handle(conversationId: string, message: VoiceClientMessage): Promise<void> {
     if (message.command.kind === "start") {
       // Diagnostic capture is an explicit, server-confirmed mode; it is built without
@@ -57,6 +59,7 @@ export class VoiceService {
         ...(diag?{diagnosticMode:true}:{}),
         ...(capture?{captureMode:true}:{}),
         getSnapshot: () => this.snapshot(conversationId),
+        getDeliverySnapshot: stream => this.snapshot(this.deliveryOwners.get(stream.id)??conversationId),
         getTargets:this.targets,
         receiptAudioCache:this.receiptAudioCache,
         createSpeech:(key,callbacks)=>new StepTtsStream(key,STEP_VOICE,callbacks),
@@ -69,7 +72,7 @@ export class VoiceService {
         emit: event => this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event }),
         onPlayback: (deliveryId, status) => {
           if (this.active !== active) return;
-          this.onPlayback?.(conversationId, deliveryId, status);
+          this.onPlayback?.(this.deliveryOwners.get(deliveryId)??conversationId, deliveryId, status);
         },
         onSpokenAck: (text, runId) => {
           if (this.active !== active) return;
@@ -91,7 +94,30 @@ export class VoiceService {
     if (message.command.kind === "stop") this.active = null;
   }
   observe(message:ServerMessage):void {
-    const active=this.active;if(!active||message.conversationId!==active.conversationId)return;
+    const active=this.active;if(!active)return;
+    const owner=message.conversationId??active.conversationId;
+    if(owner!==active.conversationId){
+      if(!this.relatedTask(active.conversationId,owner))return;
+      const snapshot=this.snapshot(owner);
+      if(!snapshot)return;
+      if(['aborted','error','paused'].includes(snapshot.state)){
+        for(const [id,target] of this.deliveryOwners)if(target===owner)active.session.streamDelivery?.({id,runId:snapshot.runId??null,kind:'finding',text:'',phase:'cancelled'});
+        return;
+      }
+      if(message.type!=='agent_event'||!isLeadSession(message.sessionId))return;
+      const e=message.event;
+      if(e.kind==='user_delivery_stream'&&e.stream.runId===snapshot.runId){
+        this.deliveryOwners.set(e.stream.id,owner);active.streamedDeliveries.add(e.stream.id);
+        active.session.streamDelivery?.({...e.stream,text:`关于${snapshot.goal?.slice(0,60)??'另一项任务'}：${e.stream.text}`});
+      }else if(e.kind==='user_delivery'&&e.delivery.runId===snapshot.runId&&e.delivery.status!=='played'){
+        this.deliveryOwners.set(e.delivery.id,owner);
+        if(!active.announcedDeliveries.has(e.delivery.id)){
+          active.announcedDeliveries.add(e.delivery.id);
+          active.session.completeDelivery?.({...e.delivery,text:`关于${snapshot.goal?.slice(0,60)??'另一项任务'}：${e.delivery.text}`});
+        }
+      }
+      return;
+    }
     if(message.type==='task_control'){active.controls.add(message.requestId);return;}
     const snapshot=this.snapshot(active.conversationId);if(!snapshot)return;
     if(message.type==='agent_event'&&isLeadSession(message.sessionId)){
@@ -131,5 +157,5 @@ export class VoiceService {
     if(!active.controls.size&&snapshot.state==='error'&&snapshot.runId)active.session.notify(snapshot);
     else if(!active.controls.size&&snapshot.state==='idle'&&snapshot.runId&&!hasResult&&!delivery)active.session.notify(snapshot);
   }
-  close(): void { this.active?.session.close(); this.active = null; }
+  close(): void { this.active?.session.close(); this.active = null; this.deliveryOwners.clear(); }
 }

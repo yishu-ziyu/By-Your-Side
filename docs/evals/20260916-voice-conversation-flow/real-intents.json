@@ -1,0 +1,80 @@
+{
+  "model": "opencode-go/deepseek-flash",
+  "results": [
+    {
+      "text": "预算改成",
+      "expected": "listen",
+      "plan": {
+        "steps": [
+          {
+            "action": "listen",
+            "text": "预算改成",
+            "target": null
+          }
+        ]
+      },
+      "ms": 2051,
+      "ok": true
+    },
+    {
+      "text": "不对，我是说",
+      "expected": "listen",
+      "plan": {
+        "steps": [
+          {
+            "action": "listen",
+            "text": "不对，我是说",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1999,
+      "ok": true
+    },
+    {
+      "text": "帮我翻译这个页面",
+      "expected": "steer",
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "帮我翻译这个页面",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1309,
+      "ok": true
+    },
+    {
+      "text": "预算改成 六百，按价格排序",
+      "expected": "steer",
+      "plan": {
+        "steps": [
+          {
+            "action": "steer",
+            "text": "预算改成 六百，按价格排序",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1222,
+      "ok": true
+    },
+    {
+      "text": "别说了",
+      "expected": "silence",
+      "plan": {
+        "steps": [
+          {
+            "action": "silence",
+            "text": "别说了",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1452,
+      "ok": true
+    }
+  ]
+}

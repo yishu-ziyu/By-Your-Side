@@ -1,0 +1,11 @@
+{
+  "vendor": "everos",
+  "provider": "opencode-go",
+  "model": "deepseek-flash",
+  "root": "/tmp/bys-memory-eval-PBf7d2/everos-data-1789534921",
+  "steps": [],
+  "error": {
+    "type": "FileNotFoundError",
+    "message": "/private/tmp/bys-memory-eval-PBf7d2/everos-data-1789534921/ome.toml not found. Run `everos init` to create configuration files."
+  }
+}

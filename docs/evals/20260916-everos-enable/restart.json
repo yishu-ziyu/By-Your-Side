@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "oldPid": 9926,
+  "newPid": 12180,
+  "processedAtUnchanged": true,
+  "episodeEntries": 1,
+  "health": {
+    "status": "ok",
+    "version": "1.3.1",
+    "capabilities": {
+      "llm": true,
+      "embed": true,
+      "rerank": false,
+      "multimodal_llm": false,
+      "parser": true
+    },
+    "disabled_features": [
+      "agentic_search",
+      "knowledge",
+      "multimodal_upload"
+    ],
+    "cascade": {
+      "healthy": true,
+      "reasons": [],
+      "pending": 0,
+      "failed_permanent": 0,
+      "failed_retryable": 0,
+      "drain_consecutive_failures": 0,
+      "unrecoverable_total": 0,
+      "optimize_failure_streak": 0,
+      "prune_stale_seconds": 1.1
+    }
+  }
+}

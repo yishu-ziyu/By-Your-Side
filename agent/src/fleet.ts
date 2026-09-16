@@ -1,4 +1,4 @@
-import type {PageContext} from '../../shared/protocol.js';
+import type {Attachment, PageContext} from '../../shared/protocol.js';
 /**
  * 并行工人：Lead 拥有图，工人各绑一个 Pi session + 标签页 + 光标 id。
  * spawn 非阻塞；工人之间经 Mailbox 传工件。工人无 spawn 工具。
@@ -21,7 +21,7 @@ import {
   type ActiveMemberInput,
   type MemberHandbackPage,
 } from "../../shared/control.js";
-import { displayNameFor } from "../../shared/cast.js";
+import { assignedWorkerId, displayNameFor } from "../../shared/cast.js";
 import { Mailbox, DEFAULT_AWAIT_MS } from "./mailbox.js";
 import { workerSystemPrompt } from "./prompt.js";
 import type { ToolRpc } from "./rpc.js";
@@ -161,6 +161,37 @@ export class Fleet {
     return phase === "user" || phase === "draining" || phase === "restoring" || phase === "partial";
   }
 
+  /** 正在执行的成员立即更新；已暂停的成员保存到恢复时，失败成员停止旧任务。 */
+  async reviseSharedRequirement(
+    text: string,
+    context?: PageContext,
+    attachments?: Attachment[],
+  ): Promise<{ notified: string[]; queued: string[]; skipped: string[]; failed: Array<{ id: string; reason: string }> }> {
+    const notified: string[] = [];
+    const queued: string[] = [];
+    const skipped: string[] = [];
+    const failed: Array<{ id: string; reason: string }> = [];
+    for (const [id, session] of [...this.workers]) {
+      try {
+        if (session.isHeld()) {
+          session.queueSteerForResume(text, context, attachments);
+          queued.push(id);
+        } else if (session.isStreaming()) {
+          await session.steerSharedRequirement(text, context);
+          notified.push(id);
+        } else {
+          skipped.push(id);
+        }
+      } catch (error) {
+        let reason = error instanceof Error ? error.message : String(error);
+        try { await this.stopAndRelease(id); }
+        catch (releaseError) { reason += `；页面移交未确认：${String(releaseError)}`; }
+        failed.push({ id, reason });
+      }
+    }
+    return { notified, queued, skipped, failed };
+  }
+
   snapshotActive(): ActiveMemberInput[] {
     const waitingMsg = new Set(this.mailbox.waitingSessionIds());
     const waitingTool = new Set(this.rpc.pendingSessionIds());
@@ -270,13 +301,14 @@ export class Fleet {
     this.reset();
   }
 
-  async spawn(opts: { id?: string; goal: string; url?: string; peers?: string[]; sharedTabId?: number }): Promise<{ id: string; tabId?: number }> {
+  async spawn(opts: { id?: string; goal: string; task?: string; output?: string; spawnToolCallId?: string; url?: string; peers?: string[]; sharedTabId?: number }): Promise<{ id: string; tabId?: number }> {
     assertCanSpawn(this.workers.size + this.spawning.size);
     const goal = opts.goal.trim();
     if (!goal) throw new Error("spawn_worker 需要 goal");
     if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
 
-    const id = `${sanitizeWorkerId(opts.id, [...this.workers.keys(), ...this.spawning])}-${randomUUID().slice(0, 8)}`;
+    const occupied = [...this.workers.keys(), ...this.spawning];
+    const id = assignedWorkerId(sanitizeWorkerId(opts.id, occupied), randomUUID().slice(0, 8), occupied);
     this.spawning.add(id);
     const generation = this.generation;
     const peers = (opts.peers ?? []).map((p) => p.trim()).filter(Boolean);
@@ -311,6 +343,12 @@ export class Fleet {
       if (!this.workers.has(id)) this.releaseWorker(id);
     }
     console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
+    this.sink.emit({
+      kind: "worker_task",
+      task: opts.task?.trim().slice(0, 80) || "处理分配任务",
+      output: opts.output?.trim().slice(0, 80) || "处理结果",
+      ...(opts.spawnToolCallId ? { spawnToolCallId: opts.spawnToolCallId } : {}),
+    }, id);
     session.sendUserMessage(goal);
     return { id, tabId };
   }
@@ -406,7 +444,7 @@ export class Fleet {
         appendPrompt: () => [],
         memberId: id,
         customTools: [
-          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined)),
+          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined), (blocks, language, signal) => { if (!workerSession) throw new Error("翻译会话不可用"); return workerSession.translatePageBatch(blocks, language, signal); }),
           ...createFleetTools(this, id),
         ],
       },
@@ -552,9 +590,11 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     name: "spawn_worker",
     label: "Spawn worker",
     description:
-      "Start an independent part when parallel preparation reduces waiting. Explain the reason and responsibilities to the user before spawning. Use sharedTabId to collaborate on the SAME unsaved page; shared writes must use page_operation. Otherwise opens a separate tab. Non-blocking, max 2 live workers. Do not split short or sequential tasks.",
+      "Start an independent part when parallel preparation reduces waiting. Call send_user_message(kind=ack) with the reason and responsibilities before spawning. Use sharedTabId to collaborate on the SAME unsaved page; shared writes must use page_operation. Otherwise opens a separate tab. Non-blocking, max 2 live workers. Do not split short or sequential tasks.",
     parameters: Type.Object({
       goal: Type.String({ description: "Complete instructions for the worker; it has no other memory" }),
+      task: Type.String({ minLength: 1, maxLength: 80, description: "Short user-facing responsibility in the user language, e.g. 整理方案甲" }),
+      output: Type.String({ minLength: 1, maxLength: 80, description: "Short name of the expected artifact, e.g. 方案甲摘要. Not the artifact content." }),
       id: Type.Optional(Type.String({ description: "Short id, e.g. wiki or feishu" })),
       url: Type.Optional(Type.String({ description: "Optional URL to open as the worker's tab" })),
       peers: Type.Optional(Type.Array(Type.String(), { description: "Other worker ids in this job" })),
@@ -564,6 +604,9 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
       const result = await fleet.spawn({
         id: typeof params.id === "string" ? params.id : undefined,
         goal: String(params.goal),
+        task: typeof params.task === "string" ? params.task : undefined,
+        output: typeof params.output === "string" ? params.output : undefined,
+        spawnToolCallId: _id,
         url: typeof params.url === "string" ? params.url : undefined,
         peers: Array.isArray(params.peers) ? params.peers.map(String) : undefined,
         sharedTabId: typeof params.sharedTabId === "number" ? params.sharedTabId : undefined,

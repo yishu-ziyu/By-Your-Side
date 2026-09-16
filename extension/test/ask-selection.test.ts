@@ -7,11 +7,11 @@ describe("clipSelection", () => {
     expect(clipSelection("  a  ")).toBeNull();
   });
 
-  it("keeps a short phrase and collapses whitespace", () => {
-    expect(clipSelection("  MiroFish\n  is  ")).toBe("MiroFish is");
+  it("keeps paragraph and code whitespace", () => {
+    expect(clipSelection("  MiroFish\n  is  ")).toBe("MiroFish\n  is");
   });
 
-  it("truncates at 2000 characters", () => {
+  it("truncates at the explicit selection limit", () => {
     const raw = `ab${"x".repeat(MAX_ASK_CHARS)}`;
     const out = clipSelection(raw);
     expect(out).toHaveLength(MAX_ASK_CHARS);

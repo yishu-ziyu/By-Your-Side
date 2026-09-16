@@ -1,0 +1,52 @@
+{
+  "passed": true,
+  "selection": "thinking-only",
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier and assigned team setup, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "three edits during actual thinking reach final page",
+      "passed": true,
+      "inputTimes": [
+        1789488983824,
+        1789488983829,
+        1789488983833
+      ],
+      "firstToolAt": 1789488985070,
+      "result": {
+        "name": "陈七",
+        "email": "keep@example.com",
+        "city": "成都",
+        "note": "安静房间",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "陈七",
+            "at": 1789488991735
+          },
+          {
+            "field": "city",
+            "value": "成都",
+            "at": 1789488992245
+          },
+          {
+            "field": "note",
+            "value": "安静房间",
+            "at": 1789488992738
+          }
+        ]
+      }
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "6d9aada25a517783746587e698901bc9e469614656dd9b0a88d29fdbe9f9551c",
+    "agent/src/conversation-manager.ts": "b0bdefe6514c342159ef041b561d2d03de1fe90a153e8ca8bbd1eaa8a9c2ed9a",
+    "agent/src/fleet.ts": "b1c08b337ccca67d1d45e46dc5cd1e8bb317381f508d69388e3e353a6481b168",
+    "agent/src/task-dispatcher.ts": "7342f43daa25636c0f70edd9acff29e4dbab7cd42fcf309f512220021f8abf7c",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "0913fb926b98c1b3bc626c762eef7b971f8d8f4cc35644104c0ebd1a1b1293ec"
+  },
+  "actualModel": "opencode-go/deepseek-flash"
+}

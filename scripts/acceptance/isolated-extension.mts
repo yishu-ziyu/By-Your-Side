@@ -54,10 +54,12 @@ export interface IsolatedExtension {
   evalIn(targetId: string, expression: string, timeoutMs?: number): Promise<any>;
   closeTarget(targetId: string): Promise<void>;
   screenshot(targetId: string, filePath: string): Promise<void>;
+  /** Click an existing button, including closed shadow roots, through Chrome input. */
+  clickButton(targetId: string, text: string): Promise<void>;
   close(): Promise<void>;
 }
 
-export async function launchIsolatedExtension(options: {hostResolverRules?: string} = {}): Promise<IsolatedExtension> {
+export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
@@ -71,7 +73,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
   const fixture = createServer((_req, res) => {
     hits += 1;
     res.setHeader("content-type", "text/html; charset=utf-8");
-    res.end("<!doctype html><meta charset='utf-8'><title>isolated probe</title><p>probe</p>");
+    res.end(options.fixtureHtml ?? "<!doctype html><meta charset='utf-8'><title>isolated probe</title><p>probe</p>");
   });
   await new Promise<void>((r) => fixture.listen(0, "127.0.0.1", r));
   const fixtureOrigin = `http://127.0.0.1:${(fixture.address() as { port: number }).port}`;
@@ -155,7 +157,22 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
     const closeTarget = async (targetId: string): Promise<void> => {
       await cdp!.send("Target.closeTarget", { targetId }).catch(() => {});
     };
-    return { outDir, fixtureOrigin, fixtureHits: () => hits, swEval, tool, newTarget, evalIn, closeTarget, screenshot, close };
+    const clickButton = async (targetId: string, text: string): Promise<void> => {
+      const session = await cdp!.attachSession(targetId);
+      const textOf = (node: any): string => (node.nodeValue ?? '') + (node.children ?? []).map(textOf).join('');
+      const find = (node: any): any => {
+        if (node.nodeName === 'BUTTON' && textOf(node).trim() === text) return node;
+        for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+          const found = find(child);
+          if (found) return found;
+        }
+      };
+      const button = await until(async () => find((await cdp!.send('DOM.getDocument', { depth: -1, pierce: true }, session)).root), 10000, `button ${text}`);
+      const { object } = await cdp!.send('DOM.resolveNode', { backendNodeId: button.backendNodeId }, session);
+      const location = await cdp!.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function(){const r=this.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}', returnByValue: true }, session);
+      for (const type of ['mousePressed', 'mouseReleased']) await cdp!.send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...location.result.value }, session);
+    };
+    return { outDir, fixtureOrigin, fixtureHits: () => hits, swEval, tool, newTarget, evalIn, closeTarget, screenshot, clickButton, close };
   } catch (error) {
     await close();
     throw error;

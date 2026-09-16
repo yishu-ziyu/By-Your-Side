@@ -1,0 +1,5 @@
+
+> check:architecture
+> node scripts/maintenance/check-boundaries.mjs
+
+Architecture boundaries: 180 production files passed.

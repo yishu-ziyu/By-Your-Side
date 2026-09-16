@@ -88,7 +88,8 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
       complete: previous?.complete || complete,
       controlVersion: previous?.controlVersion ?? controlVersion,
     });
-    if (this.queue.size > 32) this.queue.delete(this.queue.keys().next().value!);
+    // Accepted results remain pending until consumed or explicitly silenced.
+    // A new result must never evict an older unplayed answer.
   }
 
   getQueued(id: string): QueuedSpeech<T> | undefined {
@@ -106,10 +107,13 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
     return true;
   }
 
-  takeQueued(): Array<[string, QueuedSpeech<T>]> {
-    const items = [...this.queue];
-    this.queue.clear();
-    return items;
+  *takeQueued(): IterableIterator<[string, QueuedSpeech<T>]> {
+    // A caller stops after starting one output. Leave the remaining results
+    // queued until that output finishes, instead of draining them all at once.
+    for (const [id, item] of [...this.queue]) {
+      this.queue.delete(id);
+      yield [id, item];
+    }
   }
 
   silenceQueued(): void {

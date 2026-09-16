@@ -1,0 +1,161 @@
+{
+  "ok": true,
+  "source": "production sidepanel.js and styles.css; background transport and storage are test doubles; no live Agent actions",
+  "cases": [],
+  "clicks": [
+    {
+      "name": "idle strip hidden; healthy connection quiet",
+      "ok": true
+    },
+    {
+      "name": "more opens",
+      "ok": true
+    },
+    {
+      "name": "menu animates on pointer entry",
+      "ok": true
+    },
+    {
+      "name": "menu uses opacity and transform transition",
+      "ok": true
+    },
+    {
+      "name": "Escape restores focus",
+      "ok": true
+    },
+    {
+      "name": "keyboard opens without motion",
+      "ok": true
+    },
+    {
+      "name": "rapid open-close-open remains open",
+      "ok": true
+    },
+    {
+      "name": "outside click dismisses",
+      "ok": true
+    },
+    {
+      "name": "reading opens and menu closes",
+      "ok": true
+    },
+    {
+      "name": "reading preference changes answer typography",
+      "ok": true
+    },
+    {
+      "name": "reading closes to visible trigger",
+      "ok": true
+    },
+    {
+      "name": "knowledge opens with focus",
+      "ok": true
+    },
+    {
+      "name": "knowledge closes to visible trigger",
+      "ok": true
+    },
+    {
+      "name": "recording dispatches",
+      "ok": true
+    },
+    {
+      "name": "recording stop visible",
+      "ok": true
+    },
+    {
+      "name": "recording stops via visible button",
+      "ok": true
+    },
+    {
+      "name": "mode dispatches teach",
+      "ok": true
+    },
+    {
+      "name": "mode authoritative update restores selection",
+      "ok": true
+    },
+    {
+      "name": "history opens",
+      "ok": true
+    },
+    {
+      "name": "new conversation dispatches and stays compact",
+      "ok": true
+    },
+    {
+      "name": "320/idle no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "320/running no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "320/user no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "takeover state remains visible",
+      "ok": true
+    },
+    {
+      "name": "360/idle no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "360/running no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "360/user no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "takeover state remains visible",
+      "ok": true
+    },
+    {
+      "name": "400/idle no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "400/running no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "400/user no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "takeover state remains visible",
+      "ok": true
+    },
+    {
+      "name": "520/idle no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "520/running no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "520/user no horizontal overflow",
+      "ok": true
+    },
+    {
+      "name": "takeover state remains visible",
+      "ok": true
+    },
+    {
+      "name": "disconnect visible",
+      "ok": true
+    },
+    {
+      "name": "reduced motion has no movement",
+      "ok": true
+    }
+  ],
+  "errors": [],
+  "stage": "production DOM"
+}

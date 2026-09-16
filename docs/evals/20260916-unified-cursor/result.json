@@ -1,0 +1,98 @@
+[
+  {
+    "name": "same role waiting cursor hidden",
+    "ok": true
+  },
+  {
+    "name": "identity and full title accessible",
+    "ok": true
+  },
+  {
+    "name": "single member target",
+    "ok": true
+  },
+  {
+    "name": "keyboard expands members",
+    "ok": true
+  },
+  {
+    "name": "list opens from top right with transition",
+    "ok": true
+  },
+  {
+    "name": "rapid close is immediately inert",
+    "ok": true
+  },
+  {
+    "name": "second member target",
+    "ok": true
+  },
+  {
+    "name": "escape restores trigger focus",
+    "ok": true
+  },
+  {
+    "name": "narrow viewport contained",
+    "ok": true
+  },
+  {
+    "name": "hidden entry removed from interaction",
+    "ok": true
+  },
+  {
+    "name": "local reading uses shared upper right entry",
+    "ok": true
+  },
+  {
+    "name": "local status label stays hidden",
+    "ok": true
+  },
+  {
+    "name": "latest state wins without animation queue",
+    "ok": true
+  },
+  {
+    "name": "reduced motion disables text animation",
+    "ok": true
+  },
+  {
+    "name": "waiting makes no model or duration claim",
+    "ok": true
+  },
+  {
+    "name": "local and remote roles coexist",
+    "ok": true
+  },
+  {
+    "name": "remote clear preserves local state",
+    "ok": true
+  },
+  {
+    "name": "action text lives in status entry not cursor",
+    "ok": true
+  },
+  {
+    "name": "unknown outcome remains visible",
+    "ok": true
+  },
+  {
+    "name": "only approval shows local buttons",
+    "ok": true
+  },
+  {
+    "name": "keyboard approval sends real handler message",
+    "ok": true
+  },
+  {
+    "name": "end hint expires",
+    "ok": true
+  },
+  {
+    "name": "failure stays in status entry",
+    "ok": true
+  },
+  {
+    "name": "stop cleanup removes state",
+    "ok": true
+  }
+]

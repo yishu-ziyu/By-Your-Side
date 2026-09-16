@@ -301,6 +301,60 @@ describe("B1 DOM 回退一次点击只送达一次", () => {
   });
 });
 
+describe("B3 AX ref：只有 debugger 不可用才回退 DOM 点击", () => {
+  it("CDP 路径遇 debugger 不可用时回退 domops，AX ref 只被 DOM 点击一次", async () => {
+    const { counter } = installPage();
+    mocks.isAxRef.mockReturnValue(true);
+    // DevTools 占用：CDP 任何命令都拿不到会话
+    mocks.sendCommand.mockRejectedValue(new Error("Another debugger is already attached"));
+    const { click } = await import("../src/background/exec/input.js");
+    vi.useFakeTimers();
+    const pending = click({ target: "@9" });
+    const resolved = expect(pending).resolves.toEqual({ clicked: true });
+    await vi.advanceTimersByTimeAsync(800);
+    await resolved;
+    expect(counter.clickCount).toBe(1);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+
+  it("AX ref 普通失效（非 debugger 问题）不回退 DOM 点击", async () => {
+    const { counter } = installPage();
+    mocks.isAxRef.mockReturnValue(true);
+    mocks.sendCommand.mockImplementation(async (_tab: number, method: string) => {
+      if (method === "DOM.resolveNode") return { object: { objectId: "node-9" } };
+      if (method === "Runtime.callFunctionOn") {
+        return { exceptionDetails: { exception: { description: "节点已离开文档，请重新 snapshot" } } };
+      }
+      return {};
+    });
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "@9" })).rejects.toThrow(/已失效/);
+    expect(counter.clickCount).toBe(0);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+
+  it("AX ref 确认阶段报遮挡时不回退 DOM 点击", async () => {
+    const { counter } = installPage();
+    mocks.isAxRef.mockReturnValue(true);
+    mocks.sendCommand.mockImplementation(
+      async (_tab: number, method: string, params?: { functionDeclaration?: string }) => {
+        if (method === "DOM.resolveNode") return { object: { objectId: "node-9" } };
+        if (method === "Runtime.callFunctionOn") {
+          const fn = params?.functionDeclaration ?? "";
+          if (fn.includes("getAttribute")) return { result: { value: "按钮" } };
+          if (fn.includes("const node = this;")) return { result: { value: { x: 10, y: 20, width: 80, height: 40 } } };
+          return { exceptionDetails: { exception: { description: "目标被其他元素覆盖，操作未执行。请重新 snapshot 确认当前可点击目标。" } } };
+        }
+        return {};
+      },
+    );
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "@9" })).rejects.toThrow(/覆盖/);
+    expect(counter.clickCount).toBe(0);
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+});
+
 describe("B2 视觉等待后重新确认目标", () => {
   it("目标移动后点击新坐标，不点原坐标处的另一个按钮", async () => {
     const { mover, neighbor, cursor } = installPage();

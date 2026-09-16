@@ -18,7 +18,7 @@ function leadSurface(workerCount: number): string[] {
     .filter((name) => workerCount > 0 || name !== "page_operation");
   const ledger = ["record_task_results", "resolve_unknown_result"];
   const delivery = ["send_user_message"];
-  const memory = ["remember_user_preference"];
+  const memory = ["user_memory"];
   const team = createFleetTools(fleetStub(), "main")
     .map((t) => t.name)
     .filter((name) => workerCount > 0 || name === "spawn_worker");
@@ -26,11 +26,13 @@ function leadSurface(workerCount: number): string[] {
 }
 
 describe("模型面预算", () => {
-  it("没有 worker 时 Lead 的模型可见工具不超过 23 个，有 worker 时不超过 27 个", () => {
+  it("没有 worker 时 Lead 的模型可见工具不超过 23 个，有 worker 时不超过 28 个", () => {
     const idle = leadSurface(0);
     const team = leadSurface(1);
     expect(idle.length).toBeLessThanOrEqual(23);
-    expect(team.length).toBeLessThanOrEqual(27);
+    // User-requested in-page translation adds one tool; no extra display tools.
+    expect(team.length).toBeLessThanOrEqual(28);
+    expect(idle).toContain("page_translation");
     expect(idle).not.toContain("await_message");
     expect(team).toContain("await_message");
     expect(idle).not.toContain("page_operation");

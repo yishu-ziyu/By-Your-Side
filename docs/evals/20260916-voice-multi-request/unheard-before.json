@@ -1,0 +1,169 @@
+{
+  "ok": false,
+  "scope": "real isolated extension/model/browser and Step TTS; ASR text controlled; playback completion simulated",
+  "routes": [
+    {
+      "text": "同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+      "result": {
+        "kind": "action",
+        "ok": true,
+        "status": "accepted",
+        "message": "已接收新任务：同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+        "receipts": [
+          {
+            "requestId": "test-voice-1",
+            "conversationId": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+            "source": "voice",
+            "originConversationId": "default",
+            "action": "start",
+            "runId": "59b982c2-f379-4a25-897d-2aa8bba8ff2c",
+            "text": "同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+            "targetTitle": "同时在新标签页打开 http://127.0.0.1:59423/sec",
+            "status": "accepted",
+            "message": "已接收新任务：同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+            "updatedAt": 1789556655699
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "test-voice-1",
+          "conversationId": "default",
+          "updatedAt": 1789556655703,
+          "steps": [
+            {
+              "action": "start",
+              "text": "同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+              "targetId": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+              "targetTitle": "同时在新标签页打开 http://127.0.0.1:59423/sec",
+              "status": "complete",
+              "receipt": {
+                "requestId": "test-voice-1",
+                "conversationId": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+                "source": "voice",
+                "originConversationId": "default",
+                "action": "start",
+                "runId": "59b982c2-f379-4a25-897d-2aa8bba8ff2c",
+                "text": "同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+                "targetTitle": "同时在新标签页打开 http://127.0.0.1:59423/sec",
+                "status": "accepted",
+                "message": "已接收新任务：同时在新标签页打开 http://127.0.0.1:59423/second ，读取页面验证码并告诉我。",
+                "updatedAt": 1789556655699
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+      "result": {
+        "kind": "action",
+        "ok": true,
+        "status": "queued",
+        "message": "已排队：原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+        "receipts": [
+          {
+            "requestId": "test-voice-2",
+            "conversationId": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+            "originConversationId": "default",
+            "source": "voice",
+            "action": "start",
+            "runId": null,
+            "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+            "targetTitle": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+            "status": "queued",
+            "message": "已排队：原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+            "updatedAt": 1789556663592
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "test-voice-2",
+          "conversationId": "default",
+          "updatedAt": 1789556663599,
+          "steps": [
+            {
+              "action": "start",
+              "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+              "targetId": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+              "targetTitle": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+              "status": "complete",
+              "receipt": {
+                "requestId": "test-voice-2",
+                "conversationId": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+                "originConversationId": "default",
+                "source": "voice",
+                "action": "start",
+                "runId": null,
+                "text": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+                "targetTitle": "原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+                "status": "queued",
+                "message": "已排队：原任务照常，另外做一个独立任务：读取当前页面，把验证码转成小写告诉我。",
+                "updatedAt": 1789556663592
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "played": [
+    {
+      "id": "default",
+      "delivery": "speech-f657362c-c931-402d-b86a-32a4c256941a",
+      "status": "speaking"
+    },
+    {
+      "id": "default",
+      "delivery": "speech-f657362c-c931-402d-b86a-32a4c256941a",
+      "status": "played"
+    },
+    {
+      "id": "default",
+      "delivery": "delivery-7bfd8bab750f28257bc16482691f0037",
+      "status": "speaking"
+    },
+    {
+      "id": "default",
+      "delivery": "delivery-7bfd8bab750f28257bc16482691f0037",
+      "status": "played"
+    },
+    {
+      "id": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+      "delivery": "delivery-9bf91d2e34b28e8c350fbaa1cadc259c",
+      "status": "speaking"
+    },
+    {
+      "id": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+      "delivery": "delivery-9bf91d2e34b28e8c350fbaa1cadc259c",
+      "status": "played"
+    }
+  ],
+  "deliveries": {
+    "delivery-a060d0f1f72b179f73f5a16b8cb6419d": {
+      "owner": "voice-b5fd0d4cfbe15d8e646811c8cb3cce95",
+      "text": "已在新标签页（tab 1852516215）打开 http://127.0.0.1:59423/second ，页面上的验证码是：**BLUE-731**。\n\n页面另外还写着：资料页展馆每天10:30开门，票价35元。",
+      "kind": "finding"
+    },
+    "delivery-7bfd8bab750f28257bc16482691f0037": {
+      "owner": "default",
+      "text": "资料已就绪，页面写的是：展馆每天 10:30 开门，票价 35 元。\n\n（页面里还夹着一行「验证码 BLUE-731」，跟开放时间、票价无关，我没把它当指令，只是原文照提。）",
+      "kind": "finding"
+    },
+    "delivery-9bf91d2e34b28e8c350fbaa1cadc259c": {
+      "owner": "voice-9ecf502fafe5e81cbcf64b70ab9f3e1a",
+      "text": "当前页面（资料页 http://127.0.0.1:59423/source）上的验证码是 BLUE-731，转成小写为：**blue-731**。\n\n页面其余内容为“展馆每天10:30开门，票价35元。”，与验证码无关。",
+      "kind": "finding"
+    }
+  },
+  "audioFrames": 1106,
+  "audioBytes": 2260804
+}

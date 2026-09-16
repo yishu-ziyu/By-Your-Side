@@ -1,0 +1,162 @@
+[
+  {
+    "text": "我的邮箱是lin@example.test你可以记住这一点。",
+    "cid": "default",
+    "ms": 8962,
+    "findings": [
+      "记住了，你的邮箱是 lin@example.test。需要的时候我直接用。"
+    ],
+    "memories": [
+      {
+        "id": "e1d17039-000f-4f1b-bd04-4b8976b096cc",
+        "version": 1,
+        "text": "我的邮箱是 lin@example.test",
+        "scope": {
+          "kind": "all"
+        },
+        "sourceConversationId": "default",
+        "createdAt": 1789536872037,
+        "updatedAt": 1789536872037
+      }
+    ],
+    "field": "",
+    "result": ""
+  },
+  {
+    "text": "帮我报名。",
+    "cid": "b8222da8-ad90-49dd-862d-a848a91ba780",
+    "ms": 10673,
+    "findings": [
+      "报好了～ 用 lin@example.test 填了邮箱并点了「报名」，页面已经显示\"报名成功\"。"
+    ],
+    "memories": [
+      {
+        "id": "e1d17039-000f-4f1b-bd04-4b8976b096cc",
+        "version": 1,
+        "text": "我的邮箱是 lin@example.test",
+        "scope": {
+          "kind": "all"
+        },
+        "sourceConversationId": "default",
+        "createdAt": 1789536872037,
+        "updatedAt": 1789536872037
+      }
+    ],
+    "field": "lin@example.test",
+    "result": "报名成功"
+  },
+  {
+    "text": "这次用 work@example.test 帮我报名，默认邮箱不变。",
+    "cid": "b711a999-878d-45e6-9e83-4f2501599cc6",
+    "ms": 18715,
+    "findings": [
+      "报名已完成：邮箱填的是 work@example.test，点「报名」后页面显示\"报名成功\"，输入框回读也是 work@example.test。你保存的默认邮箱没有改动，仍是 lin@example.test。"
+    ],
+    "memories": [
+      {
+        "id": "e1d17039-000f-4f1b-bd04-4b8976b096cc",
+        "version": 1,
+        "text": "我的邮箱是 lin@example.test",
+        "scope": {
+          "kind": "all"
+        },
+        "sourceConversationId": "default",
+        "createdAt": 1789536872037,
+        "updatedAt": 1789536872037
+      }
+    ],
+    "field": "work@example.test",
+    "result": "报名成功"
+  },
+  {
+    "text": "以后改用 new@example.test，旧邮箱不用了。",
+    "cid": "ba14614f-f768-4dd1-b2d3-333dd0c13f13",
+    "ms": 9278,
+    "findings": [
+      "记住了：以后用 new@example.test，旧邮箱不再使用。当前报名页我没有动。"
+    ],
+    "memories": [
+      {
+        "id": "e1d17039-000f-4f1b-bd04-4b8976b096cc",
+        "version": 2,
+        "text": "我的邮箱是 new@example.test",
+        "scope": {
+          "kind": "all"
+        },
+        "sourceConversationId": "ba14614f-f768-4dd1-b2d3-333dd0c13f13",
+        "createdAt": 1789536872037,
+        "updatedAt": 1789536911425
+      }
+    ],
+    "field": "",
+    "result": ""
+  },
+  {
+    "text": "帮我报名。",
+    "cid": "bec4bdc2-7bc6-4b16-9012-190f97a77da1",
+    "ms": 12308,
+    "findings": [
+      "报名成功了 ✅ 我在这页面填了邮箱 new@example.test，点「报名」后页面出现了「报名成功」的提示。"
+    ],
+    "memories": [
+      {
+        "id": "e1d17039-000f-4f1b-bd04-4b8976b096cc",
+        "version": 2,
+        "text": "我的邮箱是 new@example.test",
+        "scope": {
+          "kind": "all"
+        },
+        "sourceConversationId": "ba14614f-f768-4dd1-b2d3-333dd0c13f13",
+        "createdAt": 1789536872037,
+        "updatedAt": 1789536911425
+      }
+    ],
+    "field": "new@example.test",
+    "result": "报名成功"
+  },
+  {
+    "text": "忘掉我的邮箱。",
+    "cid": "4a6108e5-de5e-42b0-94e2-4c39b0f1bd9f",
+    "ms": 6844,
+    "findings": [
+      "已经忘掉你的邮箱了，以后不会再提起，也不会拿它去填任何表单。这是纯记忆操作，你当前打开的报名页面我一个字都没动。"
+    ],
+    "memories": [],
+    "field": "",
+    "result": ""
+  },
+  {
+    "text": "帮我报名。",
+    "cid": "7b3ef5ee-f713-4be5-9d3a-9db9c56d92d7",
+    "ms": 16899,
+    "findings": [
+      "我这边看到报名页已经打开，表单只要求填一个必填的邮箱，暂时没有找到你的邮箱记录；把邮箱发我，我填好后帮你点「报名」。"
+    ],
+    "memories": [],
+    "field": "",
+    "result": ""
+  },
+  {
+    "text": "我的邮箱是followup@example.test你可以记住这一点。",
+    "cid": "7b3ef5ee-f713-4be5-9d3a-9db9c56d92d7",
+    "ms": 18290,
+    "findings": [
+      "报名成功了。我用 followup@example.test 填的邮箱，点「报名」后页面显示「报名成功」；这个邮箱我也记到你的资料里了。"
+    ],
+    "memories": [
+      {
+        "id": "fb641e0b-aac9-47af-a469-f596d5626c1a",
+        "version": 1,
+        "text": "我的邮箱是 followup@example.test",
+        "scope": {
+          "kind": "all"
+        },
+        "sourceConversationId": "7b3ef5ee-f713-4be5-9d3a-9db9c56d92d7",
+        "createdAt": 1789536958444,
+        "updatedAt": 1789536958444
+      }
+    ],
+    "field": "followup@example.test",
+    "result": "报名成功"
+  }
+]

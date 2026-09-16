@@ -1,3 +1,5 @@
+import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
+import { CollaborationProgress, renderCollaboration } from "./collaboration-progress.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -8,9 +10,12 @@ import { createOrb, type OrbHandle } from "./orb.js";
  * 渲染层依赖：marked（assistant 消息 Markdown 渲染）+ dompurify（消毒）+ lucide（图标）。
  */
 import { renderMarkdownHtml } from "./markdown.js";
+import { attachAnswerActions } from "./answer-actions.js";
+import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
+import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, GraduationCap, Hand } from "lucide";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, Play } from "lucide";
 import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
 import { skillHealth, skillRunSummary, skillStepsText, type Skill, type SkillRun } from "../../../shared/skill.js";
 import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
@@ -59,7 +64,7 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage,
 import type { UserDelivery } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { actionQuestion, controlQuestion, micQuestion, pageQuestion, resultCardCopy, sessionQuestion, speechQuestion } from "./selectors.js";
+import { actionQuestion, controlQuestion, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
@@ -68,7 +73,7 @@ import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
 const TEACH_MODE_KEY = "sideagent_teach_mode";
-const PLACEHOLDER_IDLE = "给 By Your Side 发消息，Enter 发送，Shift+Enter 换行";
+const PLACEHOLDER_IDLE = "说说你想完成什么…";
 const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
 const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；交还后生效";
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
@@ -91,20 +96,30 @@ const app = document.getElementById("app")!;
 app.innerHTML = `
   <header id="topbar">
     <div class="brand-cluster">
-      <img id="logo" src="icons/icon-48.png" alt="" />
+      <img id="logo" src="icons/brand-mark.svg" alt="" />
       <span id="brand">By Your Side</span>
     </div>
-    <button id="teach-toggle" type="button" title="教学模式：Agent 只标注引导，由你手动操作" aria-pressed="false"></button>
-    <button id="record-toggle" type="button" title="看我做一次：你亲手做一遍，我先只看不动手" aria-pressed="false"></button>
     <div id="status-pill" class="activity-island" title="当前连接与执行状态">
       <span id="status-dot" class="dot island-pulse-dot"></span>
       <span id="status-text">未连接</span>
     </div>
+    <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
+    <div id="header-menu" popover="auto" aria-label="更多功能">
+      <button id="record-toggle" type="button" title="你亲手做一遍，AI 记录为可复用的技能" aria-pressed="false"><span>示范给 AI</span></button>
+      <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>技能与记忆</span></button>
+      <hr />
+      <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
+    </div>
   </header>
   <div id="conversation-bar">
     <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
-    <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false">知识</button>
-    <button id="conversation-new" type="button">＋ 新会话</button>
+    <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
+  </div>
+  <div id="operation-bar">
+    <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
+      <option value="act">帮我操作</option>
+      <option value="teach">指导我操作</option>
+    </select>
   </div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="consent-requests" aria-label="请求授权" hidden></div>
@@ -113,10 +128,6 @@ app.innerHTML = `
     <div id="task-page-q"></div>
     <div id="task-action-q"></div>
     <div id="task-control-q"></div>
-    <div id="voice-dual">
-      <span id="mic-q">麦克风：已关</span>
-      <span id="speech-q">声音：未说</span>
-    </div>
     <div id="task-result-card" hidden>
       <div id="task-result-primary"></div>
       <div id="task-result-secondary"></div>
@@ -124,10 +135,10 @@ app.innerHTML = `
   </div>
   <div id="conversation-menu" role="menu" hidden></div>
   <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
-  <section id="memory-drawer" role="dialog" aria-label="知识与记忆" aria-modal="false" hidden>
+  <section id="memory-drawer" role="dialog" aria-label="技能与记忆" aria-modal="false" hidden>
     <div class="memory-drawer-head">
       <div>
-        <h2 id="memory-title">知识</h2>
+        <h2 id="memory-title">技能与记忆</h2>
         <p id="knowledge-sub">技能与记忆，都在这儿</p>
       </div>
       <button id="memory-close" type="button">关闭</button>
@@ -148,6 +159,14 @@ app.innerHTML = `
   </section>
   <div id="messages"></div>
   <div id="team-card" hidden></div>
+  <section id="starter" aria-label="开始方式">
+    <p id="starter-title">说说你想完成什么</p>
+    <p id="starter-sub">浏览器 AI 助手，帮你读页面、整理信息或操作网页。</p>
+    <div id="starter-actions">
+      <button type="button" data-starter="请概括当前页面的要点。">概括当前页</button>
+      <button type="button" data-starter="请帮我填写当前页面的表单，提交前让我确认。">帮我填写表单</button>
+    </div>
+  </section>
   <div class="composer-dock-wrap">
     <div id="morph-sheet" class="page-morph-sheet" style="display: none;">
       <div class="morph-sheet-head">
@@ -174,6 +193,7 @@ app.innerHTML = `
     <div id="demo-strip" hidden>
       <div id="demo-head">
         <span id="demo-title"></span>
+        <button type="button" id="demo-stop" hidden>结束示范</button>
         <button type="button" id="demo-close" title="收起这份示范记录">✕</button>
       </div>
       <ol id="demo-steps"></ol>
@@ -204,6 +224,7 @@ app.innerHTML = `
           <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
         </button>
         <span id="composer-spacer"></span>
+        <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
         <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
         <button id="abort-btn" type="button" title="中止" hidden></button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
@@ -213,6 +234,7 @@ app.innerHTML = `
       </div>
     </div>
   </div>
+  <div id="composer-menu" popover="auto"><button id="voice-diagnostics-open" type="button">语音诊断</button></div>
   <div id="model-popover" hidden></div>
   <div id="setup" hidden>
     <h2>By Your Side 设置</h2>
@@ -223,8 +245,24 @@ app.innerHTML = `
   </div>
 `;
 
-// 阅读外观：右上角齿轮 + 「阅读外观」面板。偏好状态在模块内，这里只注入 DOM 宿主。
-mountReadingSettings({ topbar: document.getElementById("topbar")!, app });
+// 原生 popover 负责外部点击和 Escape；各入口复用已有行为。
+const headerMore = document.getElementById("header-more") as HTMLButtonElement;
+const headerMenu = document.getElementById("header-menu")!;
+headerMore.append(icon(Ellipsis));
+headerMore.addEventListener("click", (event) => {
+  headerMenu.classList.toggle("keyboard-open", event.detail === 0);
+});
+headerMenu.addEventListener("click", (event) => {
+  if (!(event.target as Element).closest("button")) return;
+  headerMenu.hidePopover();
+  // Dialogs move focus themselves; a recording command returns to its visible trigger.
+  if (headerMenu.contains(document.activeElement)) headerMore.focus();
+});
+mountReadingSettings({
+  topbar: document.getElementById("topbar")!, app,
+  trigger: document.getElementById("reading-settings-btn") as HTMLButtonElement,
+  returnFocus: headerMore,
+});
 
 const statusDot = document.getElementById("status-dot") as HTMLElement;
 const statusText = document.getElementById("status-text")!;
@@ -234,7 +272,7 @@ const inputEl = document.getElementById("input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 const abortBtn = document.getElementById("abort-btn") as HTMLButtonElement;
-const teachToggle = document.getElementById("teach-toggle") as HTMLButtonElement;
+const teachToggle = document.getElementById("teach-toggle") as HTMLSelectElement;
 const recordToggle = document.getElementById("record-toggle") as HTMLButtonElement;
 const demoStrip = document.getElementById("demo-strip") as HTMLDivElement;
 const demoTitle = document.getElementById("demo-title") as HTMLSpanElement;
@@ -295,6 +333,27 @@ const consentPanel = new ConsentPanel(
 );
 window.addEventListener("pagehide", () => consentPanel.dispose());
 const receiptMessages = new Map<string, HTMLElement>();
+const receiptForks = new Map<string, { request: TaskActionRequest; resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+const receiptForkPromises = new Map<string, Promise<void>>();
+function forkReceipt(receipt: TaskReceipt): Promise<void> {
+  const key = `${receipt.conversationId}:${receipt.requestId}`;
+  const existing = receiptForkPromises.get(key);
+  if (existing) return existing;
+  if (!receipt.newConversationRequest) return Promise.reject(new Error('缺少原请求，请重新输入。'));
+  const request = structuredClone(receipt.newConversationRequest);
+  const creationId = crypto.randomUUID();
+  const promise = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => { receiptForks.delete(creationId); reject(new Error('新会话回执未到达，未自动发送原请求；请检查会话列表。')); }, 15000);
+    receiptForks.set(creationId, {request, resolve, reject, timer});
+    if (!send({type:'conversation_create',requestId:creationId})) {
+      clearTimeout(timer); receiptForks.delete(creationId); reject(new Error('连接已断开，原请求未发送。'));
+    }
+  });
+  receiptForkPromises.set(key,promise);
+  void promise.catch(() => receiptForkPromises.delete(key));
+  return promise;
+}
+
 const conversationSwitcher = document.getElementById("conversation-switcher") as HTMLButtonElement;
 const conversationNew = document.getElementById("conversation-new") as HTMLButtonElement;
 const conversationMenu = document.getElementById("conversation-menu")!;
@@ -310,6 +369,8 @@ const conversationDrafts = new Map<string, ConversationDraft>();
 const draftFingerprints = new Map<string, string>();
 let restoringDraft = false;
 let draftRevision = 0;
+/** 当前会话的输入草稿是否已真正恢复完（切会话清空，旧 restore 不得标新会话）。 */
+let currentDraftReady = false;
 let draftWrites = Promise.resolve();
 const DRAFT_KEY = "sideagent_conversation_draft:";
 
@@ -343,8 +404,36 @@ async function restoreDraft(id: string): Promise<void> {
     else if (askCiteEl) askCiteEl.hidden = true;
     autoResize();
     draftFingerprints.set(id, JSON.stringify({ text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk }));
+    currentDraftReady = true;
+    updateStarterVisibility();
   } finally { restoringDraft = false; }
 }
+
+/**
+ * 起点引导只在"会话历史回放完 + 当前草稿恢复完"后出现：慢恢复期间 input 还是空的，
+ * 提前显示会让点击把 storage 里的原草稿覆盖成建议（约定见 docs/human-ai-contract.md）。
+ * 建议只写进草稿，发送仍由用户决定；出现与收起交给 styles.css 的 :has 判断。
+ */
+function starterReady(): boolean {
+  return historyPrimed && currentDraftReady;
+}
+
+function updateStarterVisibility(): void {
+  app.classList.toggle("starter-ready", starterReady());
+}
+
+document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").forEach((button) => {
+  button.onclick = () => {
+    // 还没恢复完就点（引导不可见时的键盘/事件竞态）：不写草稿，别覆盖正在恢复的原草稿。
+    if (!starterReady()) return;
+    if (!inputEl.value.trim()) {
+      inputEl.value = button.dataset.starter ?? "";
+      autoResize();
+      saveDraft();
+    }
+    inputEl.focus();
+  };
+});
 
 function upsertConversation(c: ConversationSummary): void {
   if (conversations.get(c.id)?.state === "running" && c.state === "idle" && c.id !== selectedConversationId) completedConversations.add(c.id);
@@ -364,7 +453,10 @@ function renderConversations(): void {
   conversationSwitcher.replaceChildren(currentTitle, icon(ChevronDown));
   conversationSwitcher.title = current?.title || "切换会话";
   conversationNew.disabled = !conversationReady || !transportConnected || conversationRequest !== null;
-  conversationNew.textContent = conversationRequest ? "正在新建…" : "＋ 新会话";
+  conversationNew.replaceChildren(icon(conversationRequest ? LoaderCircle : Plus));
+  conversationNew.setAttribute("aria-label", conversationRequest ? "正在新建会话" : "新会话");
+  conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
+  conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
   const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   const rows = list.map((c) => {
     const button = document.createElement("button");
@@ -392,7 +484,7 @@ function renderConversations(): void {
 }
 
 function resetConversationRender(): void {
-  if (currentRun) clearInterval(currentRun.timer);
+  if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
   closeBlocks();
   currentRun = null;
   lastRun = null;
@@ -411,6 +503,8 @@ function resetConversationRender(): void {
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
   historyPrimed = false;
+  currentDraftReady = false;
+  updateStarterVisibility();
   messagesEl.replaceChildren();
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
@@ -875,7 +969,7 @@ function closeMemoryDrawer(): void {
   memoryEdit = null;
   memoryForget = null;
   memoryInspection = null;
-  memoryOpen.focus();
+  headerMore.focus();
 }
 
 memoryOpen.onclick = () => memoryDrawer.hidden ? void openKnowledge(knowledgeSegment) : closeMemoryDrawer();
@@ -990,8 +1084,9 @@ const morphStop = sendBtn.querySelector(".morph-icon-stop");
 if (morphSend) morphSend.appendChild(icon(ArrowUp));
 if (morphStop) morphStop.appendChild(icon(Square));
 abortBtn.appendChild(icon(Square));
-teachToggle.appendChild(icon(GraduationCap));
-recordToggle.appendChild(icon(Hand));
+recordToggle.prepend(icon(Play));
+memoryOpen.prepend(icon(Database));
+document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
 
 function clipTitle(text: string, max = 16): string {
   const t = text.trim();
@@ -1087,11 +1182,11 @@ let teachMode = false;
 
 function renderTeachToggle(): void {
   teachToggle.classList.toggle("on", teachMode);
-  teachToggle.setAttribute("aria-pressed", String(teachMode));
+  teachToggle.value = teachMode ? "teach" : "act";
   const motionLabel = markMotion === "boil" ? "持续微抖" : "生长定格";
   teachToggle.title = teachMode
-    ? `教学模式已开启（手绘动效：${motionLabel}，右击切换）：Agent 只标注引导，由你手动操作（点击关闭）`
-    : `教学模式：Agent 只标注引导，由你手动操作（点击开启，右击切换手绘动效：${motionLabel}）`;
+    ? `教学模式已开启（手绘动效：${motionLabel}，右击切换）：Agent 只标注引导，由你手动操作（选择“帮我操作”关闭）`
+    : `教学模式：Agent 只标注引导，由你手动操作（选择“指导我操作”开启，右击切换手绘动效：${motionLabel}）`;
 }
 
 function applyMode(mode: AgentMode, persist: boolean): void {
@@ -1107,8 +1202,8 @@ void chrome.storage.local.get([TEACH_MODE_KEY, MARK_MOTION_KEY]).then((stored) =
   applyMode(stored[TEACH_MODE_KEY] === true ? "teach" : "act", false);
 });
 
-teachToggle.onclick = () => {
-  applyMode(teachMode ? "act" : "teach", true);
+teachToggle.onchange = () => {
+  applyMode(teachToggle.value === "teach" ? "teach" : "act", true);
   send({ type: "set_mode", mode: teachMode ? "teach" : "act" });
 };
 
@@ -1145,6 +1240,7 @@ async function openKnowledge(segment: "skills" | "memory"): Promise<void> {
   memoryShade.hidden = false;
   memoryOpen.setAttribute("aria-expanded", "true");
   setKnowledgeSegment(segment);
+  memoryClose.focus();
 }
 
 function setKnowledgeSegment(segment: "skills" | "memory"): void {
@@ -1427,6 +1523,8 @@ function renderDemo(): void {
   recordToggle.classList.toggle("on", recording);
   recordToggle.classList.toggle("recording", recording);
   recordToggle.setAttribute("aria-pressed", String(recording));
+  recordToggle.querySelector("span")!.textContent = recording ? "结束示范" : "示范给 AI";
+  document.getElementById("demo-stop")!.hidden = !recording;
   recordToggle.title = recording
     ? `${recordingHint(steps, truncated)}；做完点这里结束`
     : "看我做一次：你亲手做一遍，我先只看不动手";
@@ -1506,6 +1604,8 @@ recordToggle.onclick = () => {
   port?.postMessage({ kind: "demo", action, conversationId: selectedConversationId } satisfies PanelToBg);
 };
 
+document.getElementById("demo-stop")!.onclick = () => recordToggle.click();
+
 demoClose.onclick = () => {
   port?.postMessage({ kind: "demo", action: "dismiss", conversationId: selectedConversationId } satisfies PanelToBg);
   demoState = { recording: false, steps: [], truncated: false };
@@ -1555,7 +1655,7 @@ const ORB_BOX_THINKING = 18;
 const ORB_BOX_CHIP = 16;
 const ORB_BOX_RECEIPT = 15;
 /** 运行状态行的球：比 chip 略大一点，它是整条状态行唯一的"在跑"指示。 */
-const ORB_BOX_STATUS = 17;
+const ORB_BOX_STATUS = 24;
 /** 球句柄按宿主元素找回：折叠、结束时要把对应那个定格。 */
 const orbByHost = new WeakMap<HTMLElement, OrbHandle>();
 /** 用户发消息时刻：run 计时的起点（块体懒创建，先记时间戳）。 */
@@ -1576,6 +1676,10 @@ interface WorkerLane {
 
 /** 当前 run 的"执行步骤"聚合块。 */
 interface RunHost {
+  orbMark: HTMLSpanElement;
+  orbActivity: RunOrbActivity;
+  collaboration: CollaborationProgress;
+  collaborationEl: HTMLElement;
   root: HTMLDetailsElement;
   body: HTMLElement;
   iconBox: HTMLElement;
@@ -1670,6 +1774,8 @@ function setStatus(mode: "off" | "on" | "retry", text: string): void {
   statusText.textContent = text;
   const pill = document.getElementById("status-pill");
   if (pill) {
+    pill.title = text;
+    pill.setAttribute("aria-label", text);
     pill.classList.toggle("status-on", mode === "on");
     pill.classList.toggle("status-retry", mode === "retry");
     pill.classList.toggle("status-off", mode === "off");
@@ -1819,14 +1925,18 @@ function ensureRun(): NonNullable<typeof currentRun> {
   if (currentRun) return currentRun;
   const root = document.createElement("details");
   root.className = "run-steps";
-  // 运行中只露一行状态；过程细节收进 body，点开再看（用户 2026-09-11 批准的收敛）。
+  // 过程默认收起，工具与协作任务使用同一个展开入口。
   root.open = false;
   const summary = document.createElement("summary");
   const iconBox = document.createElement("span");
   iconBox.className = "run-icon";
-  const orb = createOrb("solving", ORB_BOX_STATUS);
+  const orb = createOrb("thinking", ORB_BOX_STATUS);
   if (!applyingHistory) orb.setRunning(true);
-  iconBox.appendChild(orb.el);
+  const orbMark = document.createElement("span");
+  orbMark.className = "run-orb-mark";
+  orbMark.hidden = true;
+  orbMark.setAttribute("role", "img");
+  iconBox.append(orb.el, orbMark);
   const title = document.createElement("span");
   title.className = "run-title";
   title.textContent = `正在${loaderSubtitle(null)}`;
@@ -1838,13 +1948,21 @@ function ensureRun(): NonNullable<typeof currentRun> {
   chevron.className = "run-chevron";
   chevron.appendChild(icon(ChevronDown));
   summary.append(iconBox, title, chainEl, timeEl, chevron);
+  const collaborationEl = document.createElement("div");
+  collaborationEl.className = "run-collaboration";
+  collaborationEl.hidden = true;
+
   const body = document.createElement("div");
   body.className = "run-body";
   runBodyPinned = true;
   bindLiveViewport(body, (next) => {
     runBodyPinned = next;
   });
-  root.append(summary, body);
+  body.append(collaborationEl);
+  const reveal = document.createElement("div");
+  reveal.className = "run-reveal";
+  reveal.append(body);
+  root.append(summary, reveal);
   messagesEl.appendChild(root);
   const start = runStartAt || eventTime();
   timeEl.textContent = recordedDuration(start, eventTime()) ?? "";
@@ -1866,6 +1984,10 @@ function ensureRun(): NonNullable<typeof currentRun> {
     lastToolShort: null,
     chipGroup: null,
     workers: new Map(),
+    orbActivity: new RunOrbActivity(),
+    orbMark,
+    collaboration: new CollaborationProgress(),
+    collaborationEl,
   };
   if (!applyingHistory) companion.onStepStart(root);
   return currentRun;
@@ -1932,7 +2054,10 @@ function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
   lastLine.className = "worker-last";
   lastLine.hidden = true;
   body.appendChild(lastLine);
-  root.append(summary, body);
+  const reveal = document.createElement("div");
+  reveal.className = "run-reveal";
+  reveal.append(body);
+  root.append(summary, reveal);
   run.body.appendChild(root);
   const lane: WorkerLane = {
     root,
@@ -2053,31 +2178,29 @@ function renderTaskStrip(): void {
   const pageEl = document.getElementById("task-page-q");
   const actionEl = document.getElementById("task-action-q");
   const controlEl = document.getElementById("task-control-q");
-  const micEl = document.getElementById("mic-q");
-  const speechEl = document.getElementById("speech-q");
   if (sessionEl) { sessionEl.textContent = sessionQuestion(title); sessionEl.hidden = true; }
   // 会话选择器和输入框的页面标签已经提供身份，状态区不再复述。
   if (pageEl) { pageEl.textContent = `当前页：${pageQuestion(pageTitle, "")}`; pageEl.hidden = true; }
   if (actionEl) {
     actionEl.textContent = actionQuestion({ running: flags.running, action: statusText.textContent });
-    actionEl.hidden = !flags.running || ["已连接", "Agent 在操作", "正在处理"].includes(actionEl.textContent);
+    actionEl.hidden = !!currentRun || !flags.running || ["已连接", "Agent 在操作", "正在处理"].includes(actionEl.textContent);
   }
-  if (controlEl) { controlEl.hidden = false; controlEl.textContent = controlQuestion({ userHasPage: flags.userHasPage, draining: teamView?.phase === "draining", running: flags.running }); }
-  if (micEl) micEl.textContent = micQuestion(false);
-  if (speechEl) speechEl.textContent = speechQuestion(false);
+  if (controlEl) { controlEl.hidden = !flags.userHasPage && teamView?.phase !== "draining"; controlEl.textContent = controlQuestion({ userHasPage: flags.userHasPage, draining: teamView?.phase === "draining", running: flags.running }); }
   const card = resultCardCopy(resultByConversation.get(selectedConversationId) ?? { summary: null });
   const cardEl = document.getElementById("task-result-card");
   const primaryEl = document.getElementById("task-result-primary");
   const secondaryEl = document.getElementById("task-result-secondary");
   if (cardEl && primaryEl && secondaryEl) {
-    cardEl.hidden = !card.visible;
     const result = resultByConversation.get(selectedConversationId);
-    const plainReply = !!result?.summary && !result.unknown && !result.remaining?.length;
-    primaryEl.textContent = plainReply ? "回答已给出" : card.primary;
+    const plainReply = !!result?.summary && !result.unknown && !result.remaining?.length && !result.speechFailed;
+    cardEl.hidden = !card.visible || plainReply;
+    primaryEl.textContent = card.primary;
     if (controlEl && !flags.running && !flags.userHasPage && card.visible) controlEl.hidden = true;
     secondaryEl.textContent = card.secondary;
     secondaryEl.hidden = !card.secondary;
   }
+  const strip = document.getElementById("task-strip")!;
+  strip.hidden = !Array.from(strip.children).some((child) => !(child as HTMLElement).hidden);
 }
 
 function setSessionState(sessionId: string, state: AgentRunState): void {
@@ -2118,7 +2241,10 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   if (flags.userHasPage && currentRun) {
     // 页面归用户：停掉"在跑"的读数与光球，状态行只留结果
     clearInterval(currentRun.timer);
-    currentRun.orb.setRunning(false);
+  }
+  if (currentRun) {
+    if (teamView?.phase === "aborted") currentRun.orbActivity.stop();
+    syncRunOrb(currentRun);
   }
   if (flags.finishRun) {
     closeBlocks();
@@ -2134,6 +2260,30 @@ function addChainStep(label: string): void {
   run.chainEl.textContent = run.chain.render();
 }
 
+const RUN_ORB_MARKS = {
+  user: { icon: Hand, label: "等待你操作" },
+  completed: { icon: Check, label: "已完成" },
+  failed: { icon: CircleAlert, label: "执行失败" },
+  stopped: { icon: Square, label: "已停止" },
+} as const;
+
+function syncRunOrb(run: RunHost): void {
+  const state = run.orbActivity.state(lastUserHasPage);
+  const mark = state in RUN_ORB_MARKS ? RUN_ORB_MARKS[state as keyof typeof RUN_ORB_MARKS] : null;
+  run.orbMark.hidden = !mark;
+  if (mark && run.orbMark.dataset.state !== state) {
+    run.orbMark.dataset.state = state;
+    run.orbMark.setAttribute("aria-label", mark.label);
+    run.orbMark.title = mark.label;
+    const graphic = icon(mark.icon);
+    graphic.setAttribute("aria-hidden", "true");
+    run.orbMark.replaceChildren(graphic);
+  }
+  if (mark && state !== "completed") run.titleEl.textContent = mark.label;
+  run.orb.setState(state);
+  run.orb.setRunning(!applyingHistory && orbStateRuns(state));
+}
+
 function finishRun(): void {
   const run = currentRun;
   currentRun = null;
@@ -2143,17 +2293,23 @@ function finishRun(): void {
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
   // 空 run（纯文本回复，无思考/工具步骤）不留壳：状态行之外没有别的内容就整块撤掉
-  const hasSteps = run.body.children.length > 0;
+  const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
   if (!hasSteps) {
     run.root.remove();
     if (lastRun === run) lastRun = null;
     if (!applyingHistory) companion.onRunFinish();
     return;
   }
+  run.collaboration.finish();
+  renderCollaboration(run.collaborationEl, run.collaboration);
   run.root.classList.add("done");
-  run.orb.setRunning(false);
+  run.orbActivity.finish();
+  syncRunOrb(run);
   const title = run.root.querySelector(".run-title");
-  if (title) title.textContent = "查看执行过程";
+  if (title) {
+    const outcome = run.orbActivity.state();
+    title.textContent = outcome === "failed" ? "执行失败 · 查看过程" : outcome === "stopped" ? "已停止 · 查看过程" : "查看执行过程";
+  }
   // Keep the process in its original position above the final response.
   const duration = recordedDuration(run.start, eventTime());
   run.timeEl.textContent = duration ? `耗时 ${duration}` : "";
@@ -2168,6 +2324,7 @@ function stepsContainer(): HTMLElement {
 }
 
 function closeBlocks(): void {
+  if (currentAssistant) attachAnswerActions(currentAssistant, inputEl);
   // 流式光标移除；进行中的思考块折叠并落定文案（带耗时）
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
   if (currentThinkingDetails) {
@@ -2313,12 +2470,15 @@ function toggleChipDetail(entry: ToolChipEntry): void {
   if (group.expanded === entry) {
     group.expanded = null;
     entry.chip.classList.remove("active");
+    entry.chip.setAttribute("aria-expanded", "false");
     group.detail.hidden = true;
     return;
   }
   group.expanded?.chip.classList.remove("active");
+  group.expanded?.chip.setAttribute("aria-expanded", "false");
   group.expanded = entry;
   entry.chip.classList.add("active");
+  entry.chip.setAttribute("aria-expanded", "true");
   renderChipDetail(entry);
   group.detail.hidden = false;
   scrollToEnd();
@@ -2329,6 +2489,13 @@ function onToolStart(
   sessionId?: string,
 ): void {
   const action = describeTool(ev.name, ev.params);
+  if (ev.name === "await_message") {
+    action.full = (currentRun ?? lastRun)?.collaboration.waitingFor(ev.params.from) ?? action.full;
+  }
+  if (ev.name === "post" && ev.params.to === "main" && ev.params.kind === "done") {
+    const output = sessionId ? (currentRun ?? lastRun)?.collaboration.members.get(sessionId)?.output : null;
+    action.full = `交回${output ?? "结果"}给主助手`;
+  }
   let run: RunHost;
   let group: ChipGroup;
   let live = true;
@@ -2354,11 +2521,14 @@ function onToolStart(
     if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
     group = run.chipGroup;
   }
-  if (live) run.titleEl.textContent = `正在${action.full}`;
+  run.orbActivity.observe({ kind: "tool_start", ...ev }, sessionId ?? "main");
+  syncRunOrb(run);
+  if (live && orbStateRuns(run.orbActivity.state(lastUserHasPage))) run.titleEl.textContent = `正在${action.full}`;
 
   const chip = document.createElement("button");
   chip.type = "button";
   chip.className = "chip";
+  chip.setAttribute("aria-expanded", "false");
   // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态
   if (!applyingHistory) chip.classList.add("running");
   const dot = document.createElement("span");
@@ -2394,6 +2564,11 @@ function onToolStart(
 }
 
 function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string }): void {
+  const run = currentRun ?? lastRun;
+  if (run) {
+    run.orbActivity.observe({ kind: "tool_end", name: "", ...ev });
+    syncRunOrb(run);
+  }
   for (const run of [currentRun, lastRun]) {
     if (!run) continue;
     for (const [id, lane] of run.workers) {
@@ -2430,8 +2605,16 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
   const found = laneForWorker(sessionId);
   if (!found) return;
-  const { lane } = found;
+  const { lane, run } = found;
+  if (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped") { run.orbActivity.observe(ev, sessionId); syncRunOrb(run); }
+  if (run.collaboration.apply(sessionId, ev)) renderCollaboration(run.collaborationEl, run.collaboration);
   switch (ev.kind) {
+    case "worker_task": {
+      const chip = ev.spawnToolCallId ? toolChips.get(ev.spawnToolCallId)?.chip : null;
+      const label = chip?.querySelector(".chip-label");
+      if (label) label.textContent = `请了 ${displayNameFor(sessionId)} · ${ev.task}`;
+      break;
+    }
     case "text_delta": {
       lane.lastLine.hidden = false;
       lane.lastLine.textContent = ((lane.lastLine.textContent ?? "") + ev.delta).slice(-280);
@@ -2464,6 +2647,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
   if (sessionId && !isLeadSession(sessionId)) {
     handleWorkerEvent(sessionId, ev);
     return;
+  }
+  const progressRun = currentRun ?? lastRun;
+  if (progressRun && (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped")) { progressRun.orbActivity.observe(ev); syncRunOrb(progressRun); }
+  if (progressRun && progressRun.collaboration.apply("main", ev)) {
+    renderCollaboration(progressRun.collaborationEl, progressRun.collaboration);
   }
   switch (ev.kind) {
     case "memory":
@@ -2511,7 +2699,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       }
       if(bubble&&bubble.dataset.streaming!=='true')break;
       if(!bubble){bubble=addMsg('msg assistant markdown','');bubble.dataset.deliveryId=s.id;bubble.dataset.deliveryKind=s.kind;bubble.dataset.streaming='true';deliveredBubbles.set(s.id,bubble);}
-      bubble.innerHTML=renderMarkdown(s.text);scrollToEnd();break;
+      bubble.innerHTML=renderMarkdown(s.text);placeStartAcknowledgement(bubble, s.kind);scrollToEnd();break;
     }
     case "turn_start":
       break;
@@ -2522,21 +2710,24 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         const previous=receiptMessages.get(key);if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
-        const copy = receiptCopy(ev.receipt, selectedConversationId);
         const previous = receiptMessages.get(key);
         const restoreFocus = previous?.contains(document.activeElement);
-        const receipt = document.createElement("details");
-        receipt.className = `msg receipt${copy.collapsed ? "" : " notice"}`;
-        receipt.open = previous instanceof HTMLDetailsElement && previous.open;
-        const summary = document.createElement("summary");
-        summary.textContent = copy.summary;
-        const detail = document.createElement("p");
-        detail.textContent = copy.detail;
-        receipt.append(summary, detail);
+        const receipt = renderReceipt(ev.receipt, selectedConversationId, previous, forkReceipt);
+        const ordinary = receiptCopy(ev.receipt, selectedConversationId).collapsed;
         if (previous) previous.replaceWith(receipt);
-        else messagesEl.appendChild(receipt);
+        if (ordinary) {
+          let archive = messagesEl.querySelector<HTMLDetailsElement>('.receipt-archive');
+          if (!archive) {
+            archive = document.createElement('details'); archive.className = 'receipt-archive';
+            const summary = document.createElement('summary'); summary.textContent = '查看任务回执'; archive.append(summary); messagesEl.append(archive);
+          }
+          const runKey = ev.receipt.runId ?? ev.receipt.requestId;
+          let run = Array.from(archive.querySelectorAll<HTMLElement>('.receipt-run')).find(el => el.dataset.runId === runKey);
+          if (!run) { run = document.createElement('div'); run.className = 'receipt-run'; run.dataset.runId = runKey; archive.append(run); }
+          run.append(receipt);
+        } else messagesEl.append(receipt);
         receiptMessages.set(key, receipt);
-        if (restoreFocus) summary.focus({ preventScroll: true });
+        if (restoreFocus) receipt.querySelector<HTMLElement>('summary,button')?.focus({preventScroll:true});
         scrollToEnd();
       } else addMsg("msg notice", ev.message);
       break;
@@ -2551,6 +2742,10 @@ const DELIVERY_STATUS_RANK: Record<string, number> = {
   speaking: 1,
   played: 2,
 };
+
+function placeStartAcknowledgement(bubble: HTMLElement, kind: string): void {
+  if (kind === "ack" && currentRun) messagesEl.insertBefore(bubble, currentRun.root);
+}
 
 function handleUserDelivery(delivery: UserDelivery): void {
   if (!delivery || typeof delivery.id !== "string" || !delivery.id) return;
@@ -2570,7 +2765,9 @@ function handleUserDelivery(delivery: UserDelivery): void {
   if (existing) {
     if(existing.dataset.streaming==='true'){
       existing.innerHTML=renderMarkdown(delivery.text);delete existing.dataset.streaming;
+      if (delivery.kind === 'reply') attachAnswerActions(existing, inputEl);
       existing.dataset.deliveryKind=delivery.kind;
+      placeStartAcknowledgement(existing, delivery.kind);
       existing.dataset.deliveryStatus=delivery.status;voiceUI.deliver?.(delivery);scrollToEnd();return;
     }
     const oldStatus = existing.dataset.deliveryStatus ?? "";
@@ -2586,10 +2783,12 @@ function handleUserDelivery(delivery: UserDelivery): void {
 
   const bubble = addMsg("msg assistant markdown", "");
   bubble.innerHTML = renderMarkdown(delivery.text);
+  if (delivery.kind === 'reply') attachAnswerActions(bubble, inputEl);
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
   bubble.dataset.deliveryStatus = delivery.status;
   deliveredBubbles.set(delivery.id, bubble);
+  placeStartAcknowledgement(bubble, delivery.kind);
   scrollToEnd();
 }
 
@@ -2620,6 +2819,23 @@ const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send,()=>
   ...(pendingAsk?{context:{tabId:pendingAsk.tabId,title:pendingAsk.title,url:pendingAsk.url,selection:{text:pendingAsk.text}}}:{}),
   attachments:attachments?.getAttachments()??[],
 }));
+
+const diagnosticRecord = composerEl.querySelector<HTMLElement>('.voice-record');
+if (diagnosticRecord) diagnosticRecord.hidden = true;
+document.querySelector('#composer-menu')?.addEventListener('beforetoggle', (event) => {
+  if ((event as ToggleEvent).newState !== 'open') return;
+  const button = document.querySelector('#composer-more')!.getBoundingClientRect();
+  const menu = document.querySelector<HTMLElement>('#composer-menu')!;
+  menu.style.left = `${Math.max(8, button.right - 160)}px`;
+  menu.style.top = `${Math.max(8, button.top - 58)}px`;
+});
+document.querySelector('#voice-diagnostics-open')?.addEventListener('click', () => {
+  document.querySelector<HTMLElement>('#composer-menu')?.hidePopover();
+  if (!diagnosticRecord) return;
+  diagnosticRecord.hidden = !diagnosticRecord.hidden;
+  const details = diagnosticRecord.querySelector<HTMLDetailsElement>('details');
+  if (details) details.open = !diagnosticRecord.hidden;
+});
 
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
@@ -2663,6 +2879,17 @@ function handleServerMessage(raw: string): void {
   }
   if (msg.type === "conversation_created" || msg.type === "conversation_updated") {
     upsertConversation(msg.conversation);
+    if (msg.type === 'conversation_created' && msg.requestId) {
+      const pending = receiptForks.get(msg.requestId);
+      if (pending) {
+        clearTimeout(pending.timer); receiptForks.delete(msg.requestId);
+        const {request} = pending;
+        const moved: TaskActionRequest = {requestId:crypto.randomUUID(),conversationId:msg.conversation.id,source:'text',action:'start',expectedRunId:null,forkedFrom:{conversationId:request.conversationId,requestId:request.requestId},text:request.text,context:request.context,attachments:request.attachments};
+        if (send({type:'task_action',conversationId:msg.conversation.id,request:moved})) { pending.resolve(); selectConversation(msg.conversation.id); }
+        else pending.reject(new Error('新会话已创建，但原请求尚未发出；连接恢复后可重试。'));
+      }
+    }
+
     if (msg.type === "conversation_created" && msg.requestId === conversationRequest) {
       conversationRequest = null;
       selectConversation(msg.conversation.id);
@@ -2705,6 +2932,7 @@ function handleServerMessage(raw: string): void {
 
 function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "conversations") {
+    if (envelope.resumeReading) finishBootSession();
     for (const c of envelope.conversations) upsertConversation(c);
     if (bootFreshSession) resolveBootSession(envelope.selectedConversationId, envelope.conversations.length > 0);
     else if (envelope.selectedConversationId !== selectedConversationId || !conversationReady) {
@@ -2731,7 +2959,7 @@ function handleBgMessage(envelope: BgToPanel): void {
       }
       return;
     }
-    applyHistory(envelope.entries);
+    applyHistory(envelope.entries, envelope.replay === true);
     return;
   }
   if (envelope.kind === "mode") {
@@ -2831,7 +3059,7 @@ function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage
   bubble.append(tag, retry);
 }
 
-function applyHistory(entries: PanelHistoryEntry[]): void {
+function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
   const fresh: PanelHistoryEntry[] = [];
   applyingHistory = true;
   try {
@@ -2853,8 +3081,12 @@ function applyHistory(entries: PanelHistoryEntry[]): void {
     applyingHistory = false;
     historyOccurredAt = undefined;
   }
+  // 实时增量与历史都走此入口。批次处理完后，只恢复仍在运行的主球；
+  // 完成块已由 finishRun 收束，不会在回放时重新转动。
+  if (currentRun && !restoring) syncRunOrb(currentRun);
   const replay = !historyPrimed && fresh.length > 1;
   historyPrimed = true;
+  updateStarterVisibility();
   if (!replay) {
     const lastUser = [...fresh].reverse().find((e) => e.item.kind === "user");
     if (lastUser) {
@@ -3011,9 +3243,14 @@ function sendInput(): void {
   saveDraft();
 }
 
+function stopCurrentTask(): void {
+  if (!send({ type: "abort" })) return;
+  if (currentRun) { currentRun.orbActivity.stop(); syncRunOrb(currentRun); }
+}
+
 sendBtn.onclick = () => {
   if (sendBtn.classList.contains("stopping")) {
-    send({ type: "abort" });
+    stopCurrentTask();
   } else {
     sendInput();
   }
@@ -3029,7 +3266,7 @@ inputEl.addEventListener("keydown", (e) => {
 takeoverBtn.onclick = () => {
   port?.postMessage({ kind: "control", action: "takeover", conversationId: selectedConversationId } satisfies PanelToBg);
 };
-abortBtn.onclick = () => send({ type: "abort" });
+abortBtn.onclick = stopCurrentTask;
 
 armBootDecisionTimeout();
 connect();

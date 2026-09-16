@@ -19,7 +19,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   let shownTurn=0;
   let currentDeliveryKind: UserDelivery['kind'] | null = null;
 
-  // 语音记录：正常语音自动留证（agent 落盘），这里保留手动复现、导出与清空，并提供一秒钟标记。
+  // 语音诊断：正常语音自动留证（agent 落盘），这里保留手动复现、导出、清空与一次点击的问题标记。
+  // 「记录本轮问题」只写日志，不是纠错入口；改正仍走输入框或语音。
   // Frames arrive every 20ms; the block refreshes on a short throttle instead.
   let renderTimer:ReturnType<typeof setTimeout>|null=null;
   const scheduleDiag=():void=>{
@@ -32,13 +33,14 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   };
   const record=node('div','voice-record');
   const recordHead=node('div','voice-record-head');
-  const markButton=node('button','voice-diag-mark','这条不对') as HTMLButtonElement;markButton.type='button';
-  markButton.title='标记最近一轮：只记录，不打断说话，不改变语音状态';
+  const markButton=node('button','voice-diag-mark','记录本轮问题') as HTMLButtonElement;markButton.type='button';
+  markButton.title='记录本轮问题：只写进语音诊断日志，不会重试或修改任务';
+  const markHelp=node('span','voice-diag-mark-help','仅记录问题，不会重试或修改任务');
   const markNote=node('span','voice-diag-mark-note','');
   markNote.setAttribute('role','status');
-  recordHead.append(markButton,markNote);
+  recordHead.append(markButton,markHelp,markNote);
   const diag=node('details','voice-diag') as HTMLDetailsElement;
-  diag.appendChild(node('summary','voice-diag-summary','语音记录'));
+  diag.appendChild(node('summary','voice-diag-summary','语音诊断'));
   const diagBody=node('div','voice-diag-body');
   const diagState=node('div','voice-diag-state','');
   diagState.setAttribute('role','status');
@@ -63,9 +65,9 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   const playerC0=node('audio','voice-diag-player-c0') as HTMLAudioElement;playerC0.controls=true;playerC0.preload='none';
   const playerC1=node('audio','voice-diag-player-c1') as HTMLAudioElement;playerC1.controls=true;playerC1.preload='none';
   audioRow.append(loadC0,playerC0,loadC1,playerC1);
-  diagBody.append(diagState,actions,diagList,diagDetail,audioRow);
+  diagBody.append(recordHead,diagState,actions,diagList,diagDetail,audioRow);
   diag.appendChild(diagBody);
-  record.append(recordHead,diag);
+  record.append(diag);
   composer.querySelector('#input')!.before(record);
   const audioUrls=new Map<string,string>();
   let diagNotice:{text:string;at:number}|null=null;

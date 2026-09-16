@@ -1,0 +1,231 @@
+{
+  "passed": true,
+  "selection": "all",
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier and assigned team setup, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "three edits during running task",
+      "passed": true,
+      "result": {
+        "name": "李四",
+        "email": "keep@example.com",
+        "city": "上海",
+        "note": "地铁附近",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "李四",
+            "at": 1789488545494
+          },
+          {
+            "field": "city",
+            "value": "上海",
+            "at": 1789488546057
+          },
+          {
+            "field": "note",
+            "value": "地铁附近",
+            "at": 1789488546612
+          }
+        ]
+      },
+      "receipts": [
+        {
+          "requestId": "8957996d-5b1f-4a44-a4dd-74c5f22b38fa",
+          "conversationId": "9152f45b-db12-4825-adff-a79905f0f546",
+          "source": "text",
+          "action": "steer",
+          "runId": "87c59388-bbff-411d-bea4-65df80a45d4c",
+          "text": "姓名改成李四。保留邮箱。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：姓名改成李四。保留邮箱。",
+          "updatedAt": 1789488538336
+        },
+        {
+          "requestId": "345e7db2-d77d-421e-b844-99db42c8ddcb",
+          "conversationId": "9152f45b-db12-4825-adff-a79905f0f546",
+          "source": "text",
+          "action": "steer",
+          "runId": "87c59388-bbff-411d-bea4-65df80a45d4c",
+          "text": "城市改成上海。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：城市改成上海。",
+          "updatedAt": 1789488538357
+        },
+        {
+          "requestId": "a67bce6b-903e-455c-8235-56ef36f4c006",
+          "conversationId": "9152f45b-db12-4825-adff-a79905f0f546",
+          "source": "text",
+          "action": "steer",
+          "runId": "87c59388-bbff-411d-bea4-65df80a45d4c",
+          "text": "备注填写地铁附近。不要提交。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：备注填写地铁附近。不要提交。",
+          "updatedAt": 1789488538376
+        }
+      ]
+    },
+    {
+      "name": "all queued edits consumed before next model response",
+      "passed": true
+    },
+    {
+      "name": "edit during actual thinking reaches final page",
+      "passed": true,
+      "inputAt": 1789488552969,
+      "result": {
+        "name": "陈七",
+        "email": "keep@example.com",
+        "city": "成都",
+        "note": "",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "陈七",
+            "at": 1789488562916
+          },
+          {
+            "field": "city",
+            "value": "成都",
+            "at": 1789488563473
+          }
+        ]
+      }
+    },
+    {
+      "name": "stop bypasses correction pre-observation and late correction is rejected",
+      "passed": true,
+      "stoppedAt": 1789488572971,
+      "confirmedAt": 1789488573136,
+      "receipt": {
+        "requestId": "e2949560-b468-4102-b9fb-68abea2c9fd4",
+        "conversationId": "cefd6289-a21b-4744-9de5-5f0f2a113a2c",
+        "source": "text",
+        "action": "steer",
+        "runId": "bb80c0e8-e79a-4556-9272-8effc0bfdb81",
+        "text": "不是这个页面，先重新看当前页面再改姓名。",
+        "targetTitle": "读取期间停止",
+        "status": "rejected",
+        "message": "原任务已停止或发生变化，修改未发送。",
+        "updatedAt": 1789488573137
+      },
+      "result": {
+        "name": "",
+        "email": "keep@example.com",
+        "city": "",
+        "note": "",
+        "submits": 0,
+        "writes": []
+      }
+    },
+    {
+      "name": "stop cancels tool wait and prevents late writes",
+      "passed": true,
+      "stopAt": 1789488578924,
+      "result": {
+        "name": "",
+        "email": "keep@example.com",
+        "city": "",
+        "note": "",
+        "submits": 0,
+        "writes": []
+      }
+    },
+    {
+      "name": "paused edit applied after handback with original email",
+      "passed": true,
+      "result": {
+        "name": "赵六",
+        "email": "keep@example.com",
+        "city": "杭州",
+        "note": "",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "赵六",
+            "at": 1789488590986
+          },
+          {
+            "field": "city",
+            "value": "杭州",
+            "at": 1789488591484
+          }
+        ]
+      }
+    },
+    {
+      "name": "reconnect and same request replay do not duplicate writes",
+      "passed": true
+    },
+    {
+      "name": "delayed running-task envelope arriving after completion is rejected",
+      "passed": true,
+      "receipt": {
+        "requestId": "5ebdcaea-f49d-4b0e-9610-827b9e43eb0b",
+        "conversationId": "b33be20f-57ec-48e6-b552-58002fd5423c",
+        "source": "text",
+        "action": "steer",
+        "runId": "9a15ca0c-6562-4588-a8fa-72af82a6a758",
+        "text": "迟到修改不得填写姓名",
+        "targetTitle": "暂停补充并恢复",
+        "status": "rejected",
+        "message": "原任务已停止或发生变化，修改未发送。",
+        "updatedAt": 1789488595070
+      }
+    },
+    {
+      "name": "both actual workers receive common correction and avoid old writes",
+      "passed": true,
+      "setup": "fleet.spawn assigns two independent local pages; correction uses production panel",
+      "results": [
+        {
+          "id": "form_a-cast-bunk-eb01176b",
+          "result": {
+            "email": "keep@example.com",
+            "name": "李四",
+            "submits": 0,
+            "writes": [
+              {
+                "at": 1789488616319,
+                "field": "name",
+                "value": "李四"
+              }
+            ]
+          }
+        },
+        {
+          "id": "form_b-cast-lester-321d5755",
+          "result": {
+            "email": "keep@example.com",
+            "name": "李四",
+            "submits": 0,
+            "writes": [
+              {
+                "at": 1789488616321,
+                "field": "name",
+                "value": "李四"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "6d9aada25a517783746587e698901bc9e469614656dd9b0a88d29fdbe9f9551c",
+    "agent/src/conversation-manager.ts": "b0bdefe6514c342159ef041b561d2d03de1fe90a153e8ca8bbd1eaa8a9c2ed9a",
+    "agent/src/fleet.ts": "b1c08b337ccca67d1d45e46dc5cd1e8bb317381f508d69388e3e353a6481b168",
+    "agent/src/task-dispatcher.ts": "7342f43daa25636c0f70edd9acff29e4dbab7cd42fcf309f512220021f8abf7c",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "281943f9c7c779b6024c853d758b1b3954b5ed6d5fc124896dd8426b0b5c2b07"
+  },
+  "actualModel": "opencode-go/deepseek-flash"
+}

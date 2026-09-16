@@ -25,7 +25,8 @@ import { isMarkActionId, parseMarkActions, resolveImplicitMarkActions } from "..
 import { markLabelPlacement } from "../shared/mark-label.js";
 import type { MarkAction } from "../../../shared/protocol.js";
 import { cursorColor, LEAD_CURSOR_ID } from "../shared/palette.js";
-import { displayNameFor } from "../../../shared/cast.js";
+import { mountGrok, mountKenney } from "../shared/grok-bot.js";
+import { displayNameFor, personFor } from "../../../shared/cast.js";
 import { cursorLabelPosition } from "../shared/cursor-label.js";
 import {
   CURSOR_ARROW_PATH,
@@ -66,10 +67,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   const DEFAULT_LABEL = "By Your Side";
 
   /** 状态文案与颜色是页面侧的唯一来源，background 只给状态名与目标标签页。 */
-  const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; clock?: boolean; autoHideMs?: number }> = {
-    waiting: { text: "正在等模型响应", color: "#f59e0b", clock: true },
+  const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; autoHideMs?: number }> = {
+    waiting: { text: "处理中", color: "#f59e0b" },
     reading: { text: "正在读这个页面", color: "#2f6fed" },
-    done: { text: "完成", color: "#16a34a", autoHideMs: 1500 },
+    done: { text: "本轮已结束", color: "#16a34a", autoHideMs: 1500 },
     failed: { text: "这一步没做成", sub: "可以让我重试", color: "#e2554f" },
   };
 
@@ -100,13 +101,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   interface CursorStatus {
     state: CursorStatusState;
     text: string;
-    /** 第二行：clock 走秒数（等待），否则用 detail / 默认文案 / 成员名 */
+    /** 状态详情只采用已知信息，不在页面重复累计等待秒数。 */
     detail: string;
     sub: string;
-    clock: boolean;
-    since: number;
     autoHideMs?: number;
-    tick?: ReturnType<typeof setInterval>;
     clearTimer?: ReturnType<typeof setTimeout>;
   }
 
@@ -154,7 +152,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     if (host) return;
     host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CURSOR);
-    host.setAttribute("aria-hidden", "true");
+    host.setAttribute("aria-label", "助手操作与状态");
     host.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
     shadow = host.attachShadow({ mode: "closed" });
 
@@ -239,24 +237,52 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         from { transform: scale(.5); opacity: .95; }
         to { transform: scale(4.2); opacity: 0; }
       }
-      /* 跨页胶囊：它在别的标签页干活时，当前页右上角留一个可点入口 */
+      /* 跨页入口：角色身份与页面位置，不遮挡阅读的大通知。 */
       .xpage {
-        position: absolute; right: 20px; top: 20px;
-        display: none; align-items: center; gap: 9px;
-        max-width: min(320px, calc(100vw - 40px));
-        padding: 8px 12px; border-radius: 10px;
-        background: rgba(23, 32, 51, .95); color: #fff;
-        box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 8px 24px rgba(15,23,42,.35);
-        font: 600 12.5px/1.4 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-        pointer-events: auto; cursor: pointer;
+        position: absolute; right: 20px; top: 20px; display: none;
+        max-width: min(280px, calc(100vw - 40px)); pointer-events: auto;
+        color: #292821; font: 400 12px/1.5 -apple-system, "PingFang SC", sans-serif;
       }
-      .xpage.on { display: flex; }
-      .xpage .xdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
-      .xpage .xtxt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-      .xpage .xmain { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .xpage .xsub {
-        font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.62);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      .xpage.on { display: block; }
+      .cursor:not(.holding) .label { display: none !important; }
+      .cursor.rest:not(.holding) { visibility: hidden; }
+      .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#fcfaf5; color:#292821; border:1px solid #dcd6cb; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
+      .hold-prompt { flex-basis:100%; font-size:12px; white-space:normal; }
+      .hold-action.confirm { background:#292821; color:#fff; }
+      .hold-action.cancel { background:#ece7de; color:#514b42; }
+      .hold-action:focus-visible { outline:2px solid #79523b; outline-offset:2px; }
+      .xdetail { color:inherit; font-size:11px; padding:8px; overflow-wrap:anywhere; }
+      .xdetail[hidden] { display:none; }
+      .xpage button {
+        font: inherit; color: inherit; cursor: pointer; display: flex; align-items: center;
+        gap: 7px; min-width: 0; width: 100%; box-sizing: border-box;
+        background: #fcfaf5; border: 1px solid #dcd6cb; border-radius: 20px;
+        padding: 6px 10px; box-shadow: 0 2px 8px #2928210d;
+      }
+      .xpage button:hover { background: #f1ede4; }
+      .xpage button:focus-visible { outline: 2px solid #79523b; outline-offset: 3px; }
+      .xface { display: inline-flex; width: 22px; height: 22px; flex-shrink: 0; align-items:center; justify-content:center; }
+      .xface svg { width: 22px; height: 22px; }
+      .xface .kn { position:relative; display:block; background:var(--body) center / contain no-repeat; }
+      .xface .kn i { position:absolute; left:18%; right:18%; top:24%; bottom:30%; background:var(--face) center / contain no-repeat; }
+      .xmain { white-space: nowrap; flex-shrink: 0; font-weight: 500; }
+      .xsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #686459; }
+      .xarrow { margin-left: auto; }
+      .xlist { margin-top: 6px; padding: 5px; border: 1px solid #dcd6cb; border-radius: 12px; background: #fcfaf5; max-height: 240px; overflow-y:auto; }
+      .xlist {
+        transform-origin: top right;
+        opacity: 1; transform: scale(1);
+        transition: opacity 250ms cubic-bezier(.22,1,.36,1), transform 250ms cubic-bezier(.22,1,.36,1), display 250ms allow-discrete;
+      }
+      .xlist[hidden] { display:none; opacity:0; transform:scale(.97); transition-duration:150ms; }
+      @starting-style { .xlist:not([hidden]):not([data-restored]) { opacity:0; transform:scale(.97); } }
+      @media(prefers-reduced-motion:reduce) { .xlist { transition:none; } }
+      .xlist button { border:0; border-radius:7px; box-shadow:none; }
+      @media(prefers-color-scheme:dark) {
+        .xpage { color:#ece8df; }
+        .xpage button, .xlist { background:#282720; border-color:#49463d; }
+        .xpage button:hover { background:#343229; }
+        .xsub { color:#c0bbaf; }
       }
       .highlight {
         position: absolute;
@@ -556,6 +582,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     inst.highlightEl?.remove();
     inst.highlightEl = undefined;
     refreshLabel(inst);
+    renderAmbient();
   }
 
   /** 名牌正文渲染：动作与状态共用同一块牌子。 */
@@ -658,7 +685,6 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
   function statusSub(inst: Instance): string {
     const status = inst.status!;
-    if (status.clock) return `已等 ${Math.max(0, Math.floor((Date.now() - status.since) / 1000))} 秒`;
     return status.detail || status.sub || inst.name;
   }
 
@@ -674,22 +700,12 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   }
 
   function clearStatusTimers(inst: Instance): void {
-    if (inst.status?.tick !== undefined) clearInterval(inst.status.tick);
     if (inst.status?.clearTimer !== undefined) clearTimeout(inst.status.clearTimer);
   }
 
   function startStatusTimers(inst: Instance): void {
     const status = inst.status!;
     const copy = STATUS_COPY[status.state];
-    if (copy.clock) {
-      const since = status.since;
-      status.tick = setInterval(() => {
-        // 动作名牌或拿住双键接管时不动别人的第二行
-        if (inst.status !== status || !inst.el.classList.contains("stating")) return;
-        const line = inst.el.querySelector<HTMLDivElement>(".agent-name");
-        if (line) line.textContent = `已等 ${Math.max(0, Math.floor((Date.now() - since) / 1000))} 秒`;
-      }, 1000);
-    }
     const hideAfter = status.autoHideMs ?? copy.autoHideMs;
     if (hideAfter !== undefined) {
       status.clearTimer = setTimeout(() => {
@@ -708,8 +724,6 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       text: view.text || copy.text,
       detail: view.detail || "",
       sub: copy.sub || "",
-      clock: Boolean(copy.clock),
-      since: Date.now(),
       autoHideMs: view.autoHideMs,
     };
     if (!inst.visible) showAtRest(inst);
@@ -721,6 +735,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     startStatusTimers(inst);
     // 拿住态（就地确认双键）优先，状态等松开后再画
     if (!inst.hold) renderStatusLabel(inst);
+    renderAmbient();
   }
 
   function clearStatusInst(inst: Instance): void {
@@ -728,6 +743,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     clearStatusTimers(inst);
     inst.status = undefined;
     refreshLabel(inst);
+    renderAmbient();
   }
 
   function cancelFly(inst: Instance): void {
@@ -778,7 +794,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   /** 立刻回待命角落（状态收完就是这么走的，不再多等一次 park 延迟）。 */
   function parkNow(inst: Instance): void {
     if (inst.action?.phase === "active") return;
-    if (inst.action) clearAction(inst);
+    if (inst.action?.phase === "done") clearAction(inst);
     const home = restPoint(inst.restIndex, window.innerWidth);
     setResting(inst, true);
     flyTo(inst, home);
@@ -856,6 +872,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     if (!labelEl) return;
     inst.el.classList.remove("stating"); // 拿住态压过状态层，别把状态底色带到双键上
     labelEl.replaceChildren();
+    const prompt = document.createElement("span");
+    prompt.className = "hold-prompt";
+    prompt.textContent = "确认执行此操作？";
+    labelEl.appendChild(prompt);
     inst.el.dataset.armed = "1";
     for (const action of actions) {
       const btn = document.createElement("button");
@@ -892,6 +912,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     // 确认锚框跟着拿住态一起走：用户确认/取消或动作换手后，"待确认"不该留在页面上
     if (hold.mark) removeMark(hold.mark);
     refreshLabel(inst);
+    renderAmbient();
   }
 
   /** 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌），名牌变双键。 */
@@ -921,6 +942,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     };
     armHoldLabel(inst, actions);
     inst.el.classList.add("pressing", "holding");
+    renderAmbient();
     flyTo(inst, { x, y });
   }
 
@@ -1226,49 +1248,130 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
   let crossPill: HTMLDivElement | null = null;
   let crossPillSession = "";
+  let remoteMembers: CrossPageMember[] = [];
   /** 胶囊指向的标签页；点击时随消息带上去，不依赖后台内存状态 */
   let crossPillTabId: number | null = null;
 
-  function ensureCrossPill(): HTMLDivElement {
-    ensureDom();
-    if (crossPill?.isConnected) return crossPill;
-    crossPill = document.createElement("div");
-    crossPill.className = "xpage";
-    crossPill.innerHTML =
-      `<span class="xdot"></span>` +
-      `<span class="xtxt"><span class="xmain"></span><span class="xsub"></span></span>`;
-    crossPill.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      try {
-        // 目标标签页来自胶囊本身：service worker 重启过也能跳对地方
-        chrome.runtime.sendMessage(
-          { type: "cross_page_click", sessionId: crossPillSession, tabId: crossPillTabId },
-          (res: { ok?: boolean } | undefined) => {
-            if (chrome.runtime.lastError || res?.ok !== true) hideCrossPill();
-          },
-        );
-      } catch {
-        /* 无扩展运行时（自检页）忽略 */
-      }
-    });
-    shadow!.appendChild(crossPill);
-    return crossPill;
+  function jumpToMember(member: CrossPageMember): void {
+    try {
+      chrome.runtime.sendMessage({ type: "cross_page_click", sessionId: member.sessionId, tabId: member.tabId },
+        (res: { ok?: boolean } | undefined) => {
+          if (chrome.runtime.lastError || res?.ok !== true) hideCrossPill();
+        });
+    } catch { /* 自检页没有扩展运行时。 */ }
   }
 
-  function showCrossPill(view: { sessionId?: string; title?: string; state?: CursorStatusState; tabId?: number }): void {
-    const el = ensureCrossPill();
-    crossPillSession = view.sessionId ?? "";
-    crossPillTabId = typeof view.tabId === "number" ? view.tabId : null;
-    const copy = STATUS_COPY[view.state ?? "waiting"];
-    el.querySelector<HTMLSpanElement>(".xdot")!.style.background = copy?.color ?? "#2f6fed";
-    el.querySelector<HTMLSpanElement>(".xmain")!.textContent = "正在另一个标签页工作";
-    el.querySelector<HTMLSpanElement>(".xsub")!.textContent = `${view.title?.trim() || "另一个页面"} ↗`;
-    el.classList.add("on");
+  function memberButton(member: CrossPageMember & { local?: boolean; detail?: string }): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.member = member.sessionId;
+    const face = document.createElement("span");
+    face.className = "xface";
+    face.setAttribute("aria-hidden", "true");
+    const person = personFor(member.sessionId);
+    if (person?.kenney) {
+      mountKenney(face, chrome.runtime.getURL(`cast/${person.kenney.body}`), chrome.runtime.getURL(`cast/${person.kenney.face}`), 22);
+    } else if (person) mountGrok(face, person, 22, { animate: false });
+    else face.innerHTML = '<svg viewBox="0 0 128 128" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="26" stroke-linecap="round"><path d="M53 22L32 79"/><path d="M94 41L73 98"/></g></svg>';
+    const name = document.createElement("span");
+    name.className = "xmain";
+    name.textContent = displayNameFor(member.sessionId);
+    const title = document.createElement("span");
+    title.className = "xsub";
+    title.textContent = member.local ? member.title : `在 ${member.title}`;
+    const arrow = document.createElement("span");
+    arrow.className = "xarrow";
+    arrow.textContent = member.local ? "⌄" : "↗";
+    arrow.setAttribute("aria-hidden", "true");
+    const state = member.state === "reading" ? "正在读取" : "等待响应";
+    button.title = `${name.textContent} · ${state} · ${member.title}`;
+    button.setAttribute("aria-label", member.local ? `${name.textContent} · ${member.title}，查看详情` : `${button.title}，切换到工作页面`);
+    button.append(face, name, title, arrow);
+    if (member.local) {
+      button.title = member.detail || member.title;
+      button.setAttribute("aria-expanded", "false");
+      button.onclick = () => {
+        let detail = button.nextElementSibling as HTMLElement | null;
+        if (!detail?.classList.contains("xdetail")) {
+          detail = document.createElement("div"); detail.className = "xdetail xlist";
+          detail.textContent = member.detail || member.title; detail.hidden = true; button.after(detail);
+        }
+        detail.hidden = !detail.hidden; detail.inert = detail.hidden; button.setAttribute("aria-expanded", String(!detail.hidden));
+      };
+    } else button.onclick = () => jumpToMember(member);
+    return button;
+  }
+
+  function showCrossPill(view: CrossPageView): void {
+    remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state }];
+    crossPillSession = view.sessionId ?? remoteMembers[0]!.sessionId;
+    crossPillTabId = view.tabId ?? null;
+    for (const member of remoteMembers) {
+      const inst = instances.get(member.sessionId);
+      if (inst && !inst.hold) hide(inst);
+    }
+    renderAmbient();
+  }
+
+  function renderAmbient(): void {
+    const members: Array<CrossPageMember & { local?: boolean; detail?: string }> = [...remoteMembers];
+    for (const [id, inst] of instances) {
+      if (inst.hold || remoteMembers.some(m => m.sessionId === id)) continue;
+      if (inst.action) {
+        const a = inst.action;
+        const verb = {click:"点击", fill:"填写", hover:"定位"}[a.kind];
+        const text = a.phase === "active" ? `正在${verb}` : a.phase === "unknown" ? "结果待确认" : a.phase === "failed" ? "操作未完成" : `${verb}结束`;
+        members.push({sessionId:id, title:text, local:true, detail:a.name ? `${text} · ${a.name}` : text});
+      } else if (inst.status) members.push({sessionId:id, title:inst.status.text, local:true, detail:inst.status.detail || inst.status.sub || inst.status.text});
+    }
+    if (!members.length) { crossPill?.classList.remove("on"); return; }
+    ensureDom();
+    if (!crossPill?.isConnected) {
+      crossPill = document.createElement("div");
+      crossPill.className = "xpage";
+      crossPill.addEventListener("click", ev => ev.stopPropagation());
+      shadow!.appendChild(crossPill);
+    }
+    const previousText = new Map(Array.from(crossPill.querySelectorAll<HTMLButtonElement>("button[data-member]")).map(button => [button.dataset.member, button.querySelector(".xsub")?.textContent]));
+    const wasOpen = crossPill.querySelector("button")?.getAttribute("aria-expanded") === "true";
+    const hadFocus = crossPill.contains(shadow?.activeElement ?? null);
+    crossPill.replaceChildren();
+    const trigger = memberButton(members[0]!);
+    if (members.length > 1) {
+      trigger.querySelector(".xmain")!.textContent = `${members.length} 位助手`;
+      trigger.querySelector(".xsub")!.textContent = "查看工作状态";
+      trigger.title = "查看助手与工作页面";
+      trigger.setAttribute("aria-label", `${members.length} 位助手，展开工作状态`);
+      trigger.setAttribute("aria-expanded", "false");
+      const list = document.createElement("div");
+      list.className = "xlist";
+      list.hidden = !wasOpen;
+      if (wasOpen) list.dataset.restored = "true";
+      list.inert = list.hidden;
+      trigger.setAttribute("aria-expanded", String(wasOpen));
+      list.append(...members.map(memberButton));
+      trigger.onclick = () => { delete list.dataset.restored; list.hidden = !list.hidden; list.inert = list.hidden; trigger.setAttribute("aria-expanded", String(!list.hidden)); };
+      crossPill.onkeydown = ev => { if (ev.key === "Escape") { list.hidden = true; list.inert = true; trigger.setAttribute("aria-expanded", "false"); trigger.focus(); ev.stopPropagation(); } };
+      crossPill.append(trigger, list);
+    } else {
+      crossPill.onkeydown = null;
+      crossPill.append(trigger);
+    }
+    crossPill.classList.add("on");
+    if (!reducedMotion.matches) {
+      for (const button of crossPill.querySelectorAll<HTMLButtonElement>("button[data-member]")) {
+        const text = button.querySelector<HTMLElement>(".xsub");
+        if (text && previousText.has(button.dataset.member) && previousText.get(button.dataset.member) !== text.textContent) {
+          text.animate([{opacity:.4, transform:"translateY(2px)"}, {opacity:1, transform:"translateY(0)"}], {duration:150, easing:"ease-out"});
+        }
+      }
+    }
+    if (hadFocus) trigger.focus();
   }
 
   function hideCrossPill(): void {
-    crossPill?.classList.remove("on");
+    remoteMembers = [];
+    renderAmbient();
   }
 
   function teardown(): void {
@@ -1281,6 +1384,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
       clearTimeout(inst.pressTimer);
       clearStatusTimers(inst);
     }
+    remoteMembers = [];
     instances.clear();
     liveMarks.length = 0;
     host?.remove();
@@ -1337,6 +1441,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
           highlightLayer!.appendChild(inst.highlightEl);
         }
         renderActionLabel(inst);
+        renderAmbient();
         followActions();
       },
 
@@ -1361,6 +1466,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
           window.setTimeout(() => el.remove(), 1200);
         }
         renderActionLabel(inst);
+        renderAmbient();
         schedulePark(inst);
       },
       arrive(x, y): void {
@@ -1435,10 +1541,10 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
 
       clearStatus(): void {
         const inst = instances.get(id);
-        if (inst) clearStatusInst(inst);
+        if (inst) { clearStatusInst(inst); if (inst.action && inst.action.phase !== "active") clearAction(inst); }
       },
 
-      showCrossPage(view?: { sessionId?: string; title?: string; state?: CursorStatusState }): void {
+      showCrossPage(view?: CrossPageView): void {
         showCrossPill(view ?? {});
       },
 
@@ -1541,7 +1647,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   };
   ns.clickCrossPage = () => {
     if (!crossPill?.classList.contains("on")) return false;
-    crossPill.click();
+    crossPill.querySelector("button")?.click();
     return true;
   };
   ns.controlBanner = () => {

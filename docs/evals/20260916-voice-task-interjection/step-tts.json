@@ -1,0 +1,45 @@
+{
+  "scope": "production voice coordinator and real Step TTS; controlled routing/task delivery; simulated playback completion",
+  "results": [
+    {
+      "timing": "during-classification",
+      "ok": true,
+      "outputs": [
+        {
+          "frames": 130,
+          "bytes": 265920,
+          "text": [
+            "当前任务还在执行。要另开会话处理这个新任务吗？"
+          ]
+        },
+        {
+          "frames": 156,
+          "bytes": 317760,
+          "text": [
+            "最早的一轮讨论了接口兼容，包括使用方式、模型调用和兼容范围。"
+          ]
+        }
+      ]
+    },
+    {
+      "timing": "after-clarification",
+      "ok": true,
+      "outputs": [
+        {
+          "frames": 143,
+          "bytes": 292800,
+          "text": [
+            "当前任务还在执行。要另开会话处理这个新任务吗？"
+          ]
+        },
+        {
+          "frames": 159,
+          "bytes": 325440,
+          "text": [
+            "最早的一轮讨论了接口兼容，包括使用方式、模型调用和兼容范围。"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -73,6 +73,7 @@ type Dependencies = {
   captureMode?: boolean;
   diagnostic?: (event: string, fields: Record<string, string | number | boolean | null>) => void;
   getSnapshot: () => TaskProgressSnapshot | null;
+  getDeliverySnapshot?: (stream:UserDeliveryStream)=>TaskProgressSnapshot|null;
   getTargets?:()=>VoiceTarget[];
   emit: (event: VoiceEvent) => void;
   route?: (text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => Promise<VoiceRouteResult>;
@@ -83,7 +84,7 @@ type Dependencies = {
   createSpeech?: (key: string, callbacks: SpeechCallbacks) => SpeechOutput;
 };
 
-type RoutedTurn = {deadline:number;text:string;context:VoiceRouteContext;result:VoiceRouteResult|null;settled:Promise<void>;finish:()=>void};
+type RoutedTurn = {decision:Promise<void>;decided:boolean;decide:(incomplete?:boolean)=>void;deadline:number;text:string;context:VoiceRouteContext;result:VoiceRouteResult|null;settled:Promise<void>;finish:()=>void};
 
 /** Owns only an upstream voice connection. No reference to any writable task API. */
 export class StepVoiceSession {
@@ -131,6 +132,9 @@ export class StepVoiceSession {
   private routeStarted = false;
   private routeReceipt: VoiceRouteResult | null = null;
   private currentRequest:RoutedTurn|null=null;
+  private lastClassification:RoutedTurn|null=null;
+  private transcriptQueue:Array<{turn:number;spoken:string;itemId:string}>=[];
+  private drainingTranscripts=false;
   private suspendedRequest:RoutedTurn|null=null;
   private transcript: string | null = null;
 
@@ -171,7 +175,7 @@ export class StepVoiceSession {
 
   private readonly receiptAudioCache:VoiceAudioCache;
   private readonly diag:VoiceDiagnosticTrace;
-  private liveSpeech: {id:string;runId:string|null;turn:number;text:string;responseId:string;output:SpeechOutput;buffer:SpeechTextBuffer;audio:boolean;finished:boolean} | null = null;
+  private liveSpeech: {stream:UserDeliveryStream;id:string;runId:string|null;turn:number;text:string;responseId:string;output:SpeechOutput;buffer:SpeechTextBuffer;audio:boolean;finished:boolean} | null = null;
   private readonly acknowledgedRuns = new Set<string>();
 
   private recordInputDecision(turn:number,readOnly:boolean):void {
@@ -207,7 +211,7 @@ export class StepVoiceSession {
       response.earlyAllowed=true;
       for(const frame of frames)this.deps.emit(frame);
       this.deps.emit({kind:'text',turn:this.turn,role:'assistant',text:safe});
-      this.remember('assistant',safe,response.id);
+      this.pendingSpokenText.set(response.id,{text:safe});
       response.audio=response.audio||frames.length>0;
     }else{
       this.diagnostic('early_reply_blocked',{characters:said.length});
@@ -232,13 +236,17 @@ export class StepVoiceSession {
     this.flushSpeech();
   }
 
+  private pendingSpokenText = new Map<string, {text:string; local?:boolean}>();
+  private quietUntilNextInput = false;
+  private awaitingContinuation = false;
+  private interruptedSpeech = false;
   private speechBusy():boolean {
-    return !!(this.response||this.awaitingResponse!==null||this.pendingAnswer!==null||this.routePending||this.pendingSteer||this.playback.waitingCount||this.liveSpeech||(this.turn>0&&!this.committed.has(this.turn)));
+    return !!(this.awaitingContinuation||this.response||this.awaitingResponse!==null||this.pendingAnswer!==null||this.routePending||this.pendingSteer||this.playback.waitingCount||this.liveSpeech||(this.turn>0&&!this.committed.has(this.turn)));
   }
   private flushSpeech():void {
-    if(this.closed||!this.configured||this.speechBusy())return;
-    const snapshot=this.deps.getSnapshot();
+    if(this.closed||!this.configured||this.quietUntilNextInput||this.speechBusy())return;
     for(const [id,queued] of this.playback.takeQueued()){
+      const snapshot=this.deps.getDeliverySnapshot?.(queued.stream)??this.deps.getSnapshot();
       if(!snapshot||queued.stream.runId!==(snapshot.runId??null)||queued.controlVersion!==(snapshot.controlVersion??0)||['paused','aborted','error'].includes(snapshot.state)){this.playback.silence(id);continue;}
       if(queued.stream.kind==='ack'&&queued.stream.runId&&this.acknowledgedRuns.has(queued.stream.runId))continue;
       this.streamDelivery(queued.stream);
@@ -250,6 +258,7 @@ export class StepVoiceSession {
   /** Only explicit official text enters this output; input recognition stays on the realtime session. */
   streamDelivery(stream: UserDeliveryStream): void {
     if (this.diag.blocking || !this.deps.createSpeech || !this.key || this.closed || this.playback.isSilenced(stream.id)) return;
+    if(this.quietUntilNextInput){this.playback.silence(stream.id);return;}
     if (stream.phase === 'cancelled') {
       this.playback.silence(stream.id);
       if(this.liveSpeech?.id===stream.id){
@@ -261,19 +270,23 @@ export class StepVoiceSession {
     }
     if(stream.voiceTurn!==undefined&&stream.voiceTurn!==this.turn){this.playback.silence(stream.id);return;}
     if(stream.kind==='ack'&&stream.runId&&this.acknowledgedRuns.has(stream.runId))return;
-    // 本轮归属主 Agent 的正式回答：一轮之内兑现一次；旧轮（被打断/已翻篇）到达只静音，不重新出声。
+    // 主任务正式回答只兑现一次；插入请求尚待判定或仅澄清时，保留原任务的交付资格。
     if(this.mainReply&&stream.voiceTurn===undefined&&stream.runId===this.mainReply.runId&&(stream.kind==='finding'||stream.kind==='reply')){
       if(this.mainReply.turn!==this.turn){
-        // An input candidate may be only noise. Keep the original answer until
-        // transcription decides whether to resume it or replace it.
-        if(this.suspendedRequest){this.playback.enqueue(stream,this.deps.getSnapshot()?.controlVersion??0);return;}
-        this.mainReply=null;this.playback.silence(stream.id);return;
+        // A new input has not necessarily replaced the running task. Keep its
+        // result until the new request is resolved; a clarification has no
+        // authority to discard an answer from that still-current task.
+        if(this.suspendedRequest||this.routePending||this.awaitingContinuation||!this.committed.has(this.turn)){
+          this.playback.enqueue(stream,(this.deps.getDeliverySnapshot?.(stream)??this.deps.getSnapshot())?.controlVersion??0);return;
+        }
+        const independent=this.routeReceipt&&'receipts' in this.routeReceipt&&this.routeReceipt.receipts?.length&&this.routeReceipt.receipts.every(r=>r.conversationId!==this.deps.getSnapshot()?.conversationId);
+        if(this.routeReceipt?.kind!=='clarify'&&!independent){this.mainReply=null;this.playback.silence(stream.id);return;}
       }
       this.mainReply=null;
     }
     const earlySpeaking=this.awaitingValidated||this.response?.early===true;
     if(this.liveSpeech?.id!==stream.id&&(stream.voiceTurn===undefined||earlySpeaking)&&(this.speechBusy()||this.playback.hasQueued(stream.id))){
-      this.playback.enqueue(stream, this.deps.getSnapshot()?.controlVersion??0);
+      this.playback.enqueue(stream, (this.deps.getDeliverySnapshot?.(stream)??this.deps.getSnapshot())?.controlVersion??0);
       return;
     }
     if (this.liveSpeech?.id !== stream.id) {
@@ -305,7 +318,7 @@ export class StepVoiceSession {
           this.flushSpeech();
         },
       });
-      live={id:stream.id,runId:stream.runId,turn,text:'',responseId,output,buffer:new SpeechTextBuffer(),audio:false,finished:false};
+      live={stream:{...stream},id:stream.id,runId:stream.runId,turn,text:'',responseId,output,buffer:new SpeechTextBuffer(),audio:false,finished:false};
       this.liveSpeech=live;
       this.announcedResults.add(stream.id);
       this.pendingAnswer=null;this.turnDeadline=0;
@@ -330,9 +343,14 @@ export class StepVoiceSession {
     const tail=live.buffer.append('',true);if(tail)live.output.push(tail);
     live.finished=true;live.output.finish();
   }
-  private cancelSpeech(): void {
+  private cancelSpeech(preserveUnheard=false): void {
     const live=this.liveSpeech;if(!live)return;
-    this.liveSpeech=null;this.playback.silence(live.id);
+    this.liveSpeech=null;
+    const preserve=preserveUnheard&&live.stream.voiceTurn===undefined&&['finding','reply'].includes(live.stream.kind);
+    if(preserve){
+      const stream={...live.stream,text:live.text};
+      this.playback.enqueue(stream,(this.deps.getDeliverySnapshot?.(stream)??this.deps.getSnapshot())?.controlVersion??0,live.finished);
+    }else this.playback.silence(live.id);
     live.output.cancel();this.playback.forget(live.responseId);
   }
   constructor(private readonly deps: Dependencies) {
@@ -403,7 +421,7 @@ export class StepVoiceSession {
     if(this.history.length>20)this.history.splice(0,this.history.length-20);
   }
   notify(snapshot:TaskProgressSnapshot):void {
-    if(this.closed||this.diag.blocking||!snapshot.runId)return;
+    if(this.closed||this.diag.blocking||this.quietUntilNextInput||!snapshot.runId)return;
     const result=snapshot.conversationContext?.latestResult;
     const hasResult=Boolean(snapshot.state==='idle'&&result&&result.runId===snapshot.runId&&typeof result.text==='string'&&result.text.trim().length>0&&result.source==='assistant_output');
 
@@ -483,13 +501,15 @@ export class StepVoiceSession {
     if (this.closed || (!this.configured&&!this.readyOnce&&command.kind!=='interrupt')) return;
     if (command.kind === "interrupt") {
       if (command.turn <= this.turn) return;
+      this.pendingSpokenText.clear();
+      this.interruptedSpeech=!!command.played&&command.played.ms>0;
       // 用户在上一轮还没答完时又开口：这一轮的回答会在这里被取消，而它的转写往往稍后才回来。
       // 记下“被打断的那一轮”，等它到达时并进当前轮，而不是让它无声消失。
       const mainAnswerPending = this.mainReply?.turn === this.turn;
-      const answerWasCut = this.response !== null || this.awaitingResponse !== null || this.routePending || this.pendingAnswer !== null || mainAnswerPending;
+      const answerWasCut = this.response !== null || this.awaitingResponse !== null || this.routePending || this.pendingAnswer !== null || mainAnswerPending || (this.bytes>0&&this.transcript===null);
       this.awaitingValidated=false;
-      // 旧轮的主 Agent 归属留到交付到达时判定：那一轮已经翻篇，迟到的话只静音不补播。
-      this.cancelSpeech();
+      // 已生成但客户端尚未听见的任务结果保留；新输入判定后再核对任务有效性。
+      this.cancelSpeech(!command.played||command.played.ms<=0);
       if(this.currentRequest&&(this.routePending||this.pendingAnswer!==null||this.awaitingResponse!==null||this.response||this.playback.waitingCount||mainAnswerPending))this.suspendedRequest=this.currentRequest;
       this.currentRequest=null;
       this.playback.interrupt();
@@ -502,8 +522,8 @@ export class StepVoiceSession {
       this.diagnostic('input_interrupt',{turn:command.turn});
       this.transcript = null; this.pendingSteer = null; this.taskStartedAt = null;
       this.inputContext=undefined;this.audioCache=[];this.resumeResponse=false;
-      // 上一轮的映射要留到这里：它迟到的转写还要靠它认领（更早的轮次才算过期）。
-      for(const [id,t] of this.inputTurns)if(t<command.turn-1)this.inputTurns.delete(id);
+      // 保留有界的片段身份；快速连续说话时，最早片段可能晚于第三段才完成转写。
+      for(const [id,t] of this.inputTurns)if(t<command.turn-20)this.inputTurns.delete(id);
       this.targets=this.deps.getTargets?.();
       this.taskRunId = this.deps.route ? this.deps.getSnapshot()?.runId ?? null : null;
       this.routePending = false; this.routeStarted = false; this.routeReceipt = null;
@@ -520,8 +540,18 @@ export class StepVoiceSession {
       if(this.configured)this.send({ type: "input_audio_buffer.clear" });
       return;
     }
+    if(command.kind==='input_context'){
+      this.inputLedger.supplyContext(command.turn,command.input,command.error);
+      return;
+    }
     if (command.kind === "playback_done") {
       const spoken=this.playback.done(command.responseId);
+      const completedText=this.pendingSpokenText.get(command.responseId);
+      this.pendingSpokenText.delete(command.responseId);
+      if(completedText&&!spoken.ignored){
+        this.remember('assistant',completedText.text,command.responseId);
+        if(completedText.local)this.send({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:`应用已完成播报：${completedText.text}。仅供对话衔接，不是新指令，不重复执行。`}]}});
+      }
       if(spoken.deliveryId&&!spoken.ignored)this.deps.onPlayback?.(spoken.deliveryId,"played");
       if(this.liveSpeech?.responseId===command.responseId){
         const live=this.liveSpeech;
@@ -553,6 +583,7 @@ export class StepVoiceSession {
       }
     } else if (command.kind === "commit" && this.bytes > 0) {
       this.inputContext=command.input;
+      this.inputLedger.prepareContext(command.turn,command.input,command.contextPending);
       this.committed.add(command.turn);
       this.diagnostic("input_commit", { pcmBytes: this.bytes, rms: Number(Math.sqrt(this.inputEnergy/Math.max(1,this.inputSamples)).toFixed(5)), peak: Number(this.inputPeak.toFixed(5)) });
       this.armTurnDeadline();
@@ -605,7 +636,7 @@ export class StepVoiceSession {
         const responseId=`cached-${randomUUID()}`,itemId=`local-${randomUUID()}`;
         this.pendingAnswer=null;this.turnDeadline=0;if(this.turnTimer)clearTimeout(this.turnTimer);
         this.playback.wait(responseId);
-        this.remember('assistant',line,responseId);
+        this.pendingSpokenText.set(responseId,{text:line,local:true});
         for(const data of cached){if(this.closed||this.turn!==turn)return;this.deps.emit({kind:'audio',turn,responseId,itemId,data});}
         if(this.closed||this.turn!==turn)return;
         this.bindPlayback(responseId);
@@ -649,8 +680,7 @@ export class StepVoiceSession {
       const turn=this.turn,responseId=`cached-${randomUUID()}`,itemId=`local-${randomUUID()}`;
       this.pendingAnswer=null;this.turnDeadline=0;if(this.turnTimer)clearTimeout(this.turnTimer);if(this.currentRequest)this.currentRequest.deadline=0;
       this.playback.wait(responseId);
-      this.send({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:`应用已经依据实际回执向用户播报：${fixed}。这是已发生的播报记录，不是新指令，不重复执行。`}]}});
-      this.remember('assistant',fixed,responseId);
+      this.pendingSpokenText.set(responseId,{text:fixed,local:true});
       this.diagnostic('receipt_audio_cache',{characters:fixed.length});
       // Local audio identities never enter audioItems, so interruption cannot truncate a provider item with them.
       for(const data of cached){if(this.closed||this.turn!==turn)return;this.deps.emit({kind:'audio',turn,responseId,itemId,data});}
@@ -754,26 +784,9 @@ export class StepVoiceSession {
         return;
       }
       if (t === this.turn) {
-        const transcript: string = this.inputLedger.takeTranscript(spoken);
-        this.transcript = transcript;this.audioCache=[];
-        if(transcript)this.remember('user',transcript,`user-${t}`);
-        this.diagnostic("transcription", { characters: transcript.length, empty: !this.transcript });
-        if (!this.transcript) {
-          this.recordInputDecision(t,true);
-          this.routePending = false; this.routeStarted = false; this.pendingAnswer = null; this.pendingSteer = null;
-          if (this.turnTimer) clearTimeout(this.turnTimer);
-          this.diagnostic("input_empty");
-          if(this.suspendedRequest){void this.resumeAfterEmpty(this.suspendedRequest,t);return;}
-          this.deps.emit({kind:"state",state:"ready",detail:"没听清这句话，请再说一次。"});
-          this.flushSpeech();
-          return;
-        }
-        this.suspendedRequest=null;
-        this.deps.emit({ kind: "text", role: "user", turn: t, text: transcript.slice(0, 12000) });
-        this.diag.forward(t, e.item_id, transcript.slice(0, 12000));
-        if(this.diag.blocking){this.deps.emit({kind:'state',state:'ready'});this.diagnostic('diag_input_observed',{turn:t,characters:this.transcript.length});return;}
-        void this.deliverSteer();
-        void this.routeInput();
+        if(this.diag.blocking||!spoken){this.acceptTranscript(t,spoken,e.item_id);return;}
+        this.transcriptQueue.push({turn:t,spoken,itemId:e.item_id});
+        void this.drainTranscripts();
       }
       return;
     }
@@ -801,7 +814,7 @@ export class StepVoiceSession {
           if(e.response.status==='completed'&&g.bytes<=960000&&g.audio.length>0&&normalizeSpeech(g.transcript||g.fallback||'')===normalizeSpeech(g.expected)){
             this.receiptAudioCache.put(g.expected,g.audio.map(frame=>frame.data));
             for(const frame of g.audio)this.deps.emit(frame);
-            this.deps.emit({kind:'text',turn:this.turn,role:'assistant',text:g.expected});this.remember('assistant',g.expected,response.id);response.audio=true;
+            this.deps.emit({kind:'text',turn:this.turn,role:'assistant',text:g.expected});this.pendingSpokenText.set(response.id,{text:g.expected});response.audio=true;
             this.diagnostic('receipt_speech_verified',{characters:g.expected.length,attempt:this.receiptAttempts+1});
           }else{
             this.diagnostic('receipt_speech_rejected',{
@@ -866,7 +879,7 @@ export class StepVoiceSession {
           if(this.pendingStartAck){this.pendingStartAck=false;this.deps.onSpokenAck?.(text.trim(),this.startAckRunId);}
         }
         else {
-          this.deps.emit({ kind: "text", turn: this.turn, role: "assistant", text: text.slice(0, 12000) });this.remember('assistant',text,response.id);
+          this.deps.emit({ kind: "text", turn: this.turn, role: "assistant", text: text.slice(0, 12000) });this.pendingSpokenText.set(response.id,{text:text.slice(0,2000)});
           if(this.pendingStartAck){this.pendingStartAck=false;this.deps.onSpokenAck?.(text.trim(),this.startAckRunId);}
         }
       }
@@ -897,6 +910,64 @@ export class StepVoiceSession {
       this.pendingAnswer = this.turn;
     }
   }
+  /** Audio segments may finish before the preceding intent decision. Keep their
+   * order without waiting for that intent's page work or spoken answer. */
+  private async drainTranscripts():Promise<void> {
+    if(this.drainingTranscripts)return;
+    this.drainingTranscripts=true;
+    try{
+      while(this.transcriptQueue.length&&!this.closed){
+        if(this.lastClassification&&!this.lastClassification.decided)await this.lastClassification.decision;
+        if(this.closed)return;
+        const segment=this.transcriptQueue.shift()!;
+        const ready=this.inputLedger.resolveContext(segment.turn);
+        const context=ready instanceof Promise?await ready:ready;
+        if(this.closed)return;
+        const contextError=context.error;
+        if(contextError){
+          this.inputLedger.finishUtterance();
+          if(segment.turn===this.turn){
+            this.routePending=false;this.pendingAnswer=null;
+            this.recordInputDecision(segment.turn,true);
+            if(this.turnTimer)clearTimeout(this.turnTimer);
+            this.deps.emit({kind:'text',turn:segment.turn,role:'user',text:segment.spoken});
+            this.deps.emit({kind:'state',state:'ready',detail:contextError});
+          }
+          continue;
+        }
+        if(segment.turn!==this.turn){
+          this.inputLedger.holdTranscript(this.inputLedger.takeTranscript(segment.spoken));
+          continue;
+        }
+        this.inputContext=context.input??this.inputContext;
+        this.acceptTranscript(segment.turn,segment.spoken,segment.itemId);
+      }
+    }finally{this.drainingTranscripts=false;}
+  }
+  private acceptTranscript(t:number,spoken:string,itemId:string):void {
+    const transcript: string = this.inputLedger.takeTranscript(spoken);
+    this.transcript = transcript;this.audioCache=[];
+    if(transcript)this.remember('user',transcript,`user-${t}`);
+    this.diagnostic("transcription", { characters: transcript.length, empty: !this.transcript });
+    if (!this.transcript) {
+      this.recordInputDecision(t,true);
+      this.routePending = false; this.routeStarted = false; this.pendingAnswer = null; this.pendingSteer = null;
+      if (this.turnTimer) clearTimeout(this.turnTimer);
+      this.diagnostic("input_empty");
+      if(this.suspendedRequest){void this.resumeAfterEmpty(this.suspendedRequest,t);return;}
+      this.deps.emit({kind:"state",state:"ready",detail:"没听清这句话，请再说一次。"});
+      this.flushSpeech();
+      return;
+    }
+    this.suspendedRequest=null;
+    this.quietUntilNextInput=false;
+    this.awaitingContinuation=false;
+    this.deps.emit({ kind: "text", role: "user", turn: t, text: transcript.slice(0, 12000) });
+    this.diag.forward(t, itemId, transcript.slice(0, 12000));
+    if(this.diag.blocking){this.deps.emit({kind:'state',state:'ready'});this.diagnostic('diag_input_observed',{turn:t,characters:this.transcript.length});return;}
+    void this.deliverSteer();
+    void this.routeInput();
+  }
   private reportStage(turn:number,stage:'classifying'|'observing'|'controlling'):void {
     if(!this.closed&&this.turn===turn)this.deps.emit({kind:'state',state:'answering',detail:{classifying:'正在理解这句话',observing:'正在读取当前页面',controlling:'正在等待页面控制结果'}[stage]});
   }
@@ -908,24 +979,44 @@ export class StepVoiceSession {
     this.diagnostic("prepare_start", {turn:this.turn,requestId:`${this.voiceId}-${this.turn}`,characters: this.transcript.length});
     const routeAt = Date.now();
     const turn = this.turn;
-    let finish!:()=>void;
-    const record:RoutedTurn={deadline:this.turnDeadline,text:this.transcript,context:{recentTurns:this.history.map(({role,text})=>({role,text})).slice(-12),reportStage:stage=>this.reportStage(turn,stage),requestId:`${this.voiceId}-${turn}`,voiceId:this.voiceId,turn,runId:this.taskRunId,controlVersion:this.targets?.find(t=>t.id===this.deps.getSnapshot()?.conversationId)?.controlVersion,input:this.inputContext,targets:this.targets},result:null,settled:new Promise<void>(r=>finish=r),finish:()=>finish()};
-    this.currentRequest=record;
+    let finish!:()=>void,resolveDecision!:()=>void;
+    const decision=new Promise<void>(resolve=>resolveDecision=resolve);
+    const record:RoutedTurn={decision,decided:false,decide:(incomplete=false)=>{
+      if(record.decided)return;
+      record.decided=true;
+      if(incomplete&&!this.closed){
+        this.inputLedger.holdTranscript(record.text);
+      }else this.inputLedger.finishUtterance();
+      resolveDecision();
+    },deadline:this.turnDeadline,text:this.transcript,context:{interruptedSpeech:this.interruptedSpeech,recentTurns:this.history.map(({role,text})=>({role,text})).slice(-12),reportStage:stage=>this.reportStage(turn,stage),requestId:`${this.voiceId}-${turn}`,voiceId:this.voiceId,turn,runId:this.taskRunId,controlVersion:this.targets?.find(t=>t.id===this.deps.getSnapshot()?.conversationId)?.controlVersion,input:this.inputContext,targets:this.targets},result:null,settled:new Promise<void>(r=>finish=r),finish:()=>finish()};
+    this.currentRequest=record;this.lastClassification=record;
     if(this.deps.earlyReplies){
       record.context.pendingDelegation=this.routingTurns.size>0;
       record.context.awaitInputDecision=()=>this.awaitInputDecision(turn);
-      record.context.onInputDecision=readOnly=>{if(!readOnly)this.actionRoutingTurns.add(turn);this.recordInputDecision(turn,readOnly);};
+      record.context.onInputDecision=(readOnly,incomplete)=>{record.decide(incomplete);if(!readOnly)this.actionRoutingTurns.add(turn);this.recordInputDecision(turn,readOnly);};
     }
     this.routingTurns.add(turn);
     try {
       const receipt = await this.deps.route(record.text, this.taskStartedAt, () => this.deps.earlyReplies?this.routeIsCurrent(turn):!this.closed && this.turn === turn,record.context);
       this.routingTurns.delete(turn);
       this.actionRoutingTurns.delete(turn);
-      record.result=receipt;record.finish();
+      record.result=receipt;record.decide(receipt.kind==='listening');record.finish();
       if (this.closed || this.turn !== turn) return;
       this.diagnostic("prepare_result", {turn,requestId:`${this.voiceId}-${turn}`,kind: receipt.kind, branch: receipt.turn?.branch ?? null, protocol: receipt.turn?.protocol ?? null, accepted: (receipt.kind === "steer"||receipt.kind==='action') && receipt.ok, elapsedMs: Date.now()-routeAt});
       this.routeReceipt = receipt;
       this.routePending = false;
+      if(receipt.kind==='listening'){
+        this.pendingAnswer=null;this.mainReply=null;this.announcement=null;
+        this.awaitingContinuation=true;
+        if(this.turnTimer)clearTimeout(this.turnTimer);
+        this.deps.emit({kind:'state',state:'ready',detail:'你继续说，我在听。'});return;
+      }
+      if(receipt.kind==='silent'){
+        if(receipt.quiet){this.quietUntilNextInput=true;this.playback.silenceQueued();}
+        this.announcement=null;this.mainReply=null;
+        this.pendingAnswer=null;if(this.turnTimer)clearTimeout(this.turnTimer);
+        this.deps.emit({kind:'state',state:'ready'});this.flushSpeech();return;
+      }
       // 回答归属：内容请求已经交给主 Agent（awaitDelivery）时，本轮只等它的正式交付。
       // 这里不再生成问候或"任务已收到"；分类期间就到的交付留在队列里，由 flushSpeech 播出去。
       if(this.mainAgentOwnsReply(receipt)){
@@ -945,16 +1036,11 @@ export class StepVoiceSession {
         this.pendingAnswer=null;this.turnDeadline=0;if(this.turnTimer)clearTimeout(this.turnTimer);record.deadline=0;
         this.flushSpeech();return;
       }
-      if(receipt.kind==='silent'){
-        this.announcement=null;
-        this.pendingAnswer=null;if(this.turnTimer)clearTimeout(this.turnTimer);
-        this.deps.emit({kind:'state',state:'ready'});this.flushSpeech();return;
-      }
       this.createResponse();
     } catch (error) {
       this.routingTurns.delete(turn);
       this.actionRoutingTurns.delete(turn);
-      this.recordInputDecision(turn,false);
+      record.decide();this.recordInputDecision(turn,false);
       record.result={kind:'clarify',message:'上一句没有得到确定结果，请查看侧栏回执后再决定是否重说。'};record.finish();
       const code = error instanceof VoiceIntentError ? error.code : "route_failed";
       this.diagnostic("prepare_error", {turn,requestId:`${this.voiceId}-${turn}`,superseded:this.turn!==turn,code, elapsedMs: Date.now()-routeAt});
@@ -1027,11 +1113,14 @@ export class StepVoiceSession {
     this.close(false);
   }
   close(emit = true): void {
+    this.pendingSpokenText.clear();
     this.playback.clear();
     this.cancelSpeech();
     if (this.closed) return;
     this.diag.gap('closed',this.turn);
     this.closed = true;
+    this.lastClassification?.decide();this.transcriptQueue=[];
+    this.inputLedger.clear();
     for(const resolve of this.decisionWaiters)resolve();this.decisionWaiters.clear();
     if (this.timer) clearTimeout(this.timer);
     if (this.lifetime) clearTimeout(this.lifetime);

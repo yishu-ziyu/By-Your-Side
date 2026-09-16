@@ -1,0 +1,9 @@
+{
+  "shared/page-translation.ts": "16ac02d019dcfa8d5d4e94cd32f49652156194d4828434f229edc55f02d998ad",
+  "agent/src/page-translation.ts": "f67f383869c205e206d93ae134535a0998ba29930047b773ffc77d17ec16beb6",
+  "agent/src/tools.ts": "c6e43d5218db89ef18f76a916ec90d62721409f7f4ae8b298832b77fa718a830",
+  "agent/src/session.ts": "823e0864c0e6a57c0edf4b5300422af67eee0c6740154373e315f05e9301c433",
+  "extension/src/shared/page-translation.ts": "f6bcddc91edac9b81661a865a34aa20e469b3fce48fabaa330c8212efdc34632",
+  "extension/src/background/exec/page-translation.ts": "7d9dbe374c03fc27ca6ccf52379f2505ca1a5ef1084062b3fe38d8e258e4db29",
+  "extension/dist/background.js": "28c1f330e8a57076e7d952cb6f44b2faa36c9f3f0b71f7cbf369e84451a074e7"
+}

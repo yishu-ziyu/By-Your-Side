@@ -3,7 +3,6 @@
  */
 import { LEAD_COLOR, displayColor } from "../../../shared/cast.js";
 
-export const CURSOR_PALETTE = ["#2f6fed", "#e2554f", "#16a34a", "#9333ea", "#d97706"] as const;
 export const LEAD_CURSOR_ID = "main";
 
 export function cursorColor(id: string): string {

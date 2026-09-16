@@ -1,0 +1,17 @@
+{
+  "extension/src/content/ask.ts": "502af82ac282a8e769293b2c11d556d9bb663210c7401e3fb5edd746f316fe22",
+  "extension/src/content/ask-styles.ts": "6b190a02ea2fa2a8f73cac2579abafd7dd3ecb7665dd072c0d25906738d276b9",
+  "extension/src/background/reading.ts": "efb4078cac2348d1fe19553f40df6b8680087537f0379a694f36a02dfea21f98",
+  "extension/src/shared/reading-state.ts": "629f52f762c9d3b613f229cd2570b8d61c5d2941125f17b6a262a308a097743f",
+  "extension/src/shared/ask-selection.ts": "dfbc6854a3bc354aa97cf7859d5f6f88bb72a1ff37fbb4ec6834e449d9b52e21",
+  "extension/src/shared/markdown.ts": "b075f866efd1b0d39b77b792112397032a26d8269beccbad14d0cc856bc8a887",
+  "shared/reading.ts": "27b918cc59e9a5e61f40cc6de742ac56333614270ee390aeda15ff12bb4c207a",
+  "shared/protocol.ts": "44ba3ccccea7cfb7b0bd08de9367f71bf772ba7b9520c849d4b107d4c4b362b6",
+  "agent/src/reading.ts": "67ddd2191441441366c0aae56439ef2385503907694d9c53ec7f4b81a5d7a74c",
+  "agent/src/session.ts": "823e0864c0e6a57c0edf4b5300422af67eee0c6740154373e315f05e9301c433",
+  "agent/src/conversation-manager.ts": "6670f280483009735acda2011bf93c9b9273785ff53fb2e79cfab7a191e3f8d9",
+  "agent/src/conversation-store.ts": "ca974896ace88dda6d1c45a0044ad1f515590219b5cbb8153f01e28394202699",
+  "extension/dist/content-ask.js": "5bae840469cd9b5d54a075cae327c4312c27c4c1d9ca3cd8e2555ba38cc5fa16",
+  "extension/dist/background.js": "28c1f330e8a57076e7d952cb6f44b2faa36c9f3f0b71f7cbf369e84451a074e7",
+  "extension/dist/sidepanel.js": "7db1e22d1575a19d94839beee905186f6b5c89b92e729c41120f06e4fe40a716"
+}

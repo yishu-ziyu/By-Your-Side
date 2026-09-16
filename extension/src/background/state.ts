@@ -322,7 +322,7 @@ export async function shareTab(
   return { tabId: params.tabId, collaborators: resource.collaborators.map((key) => parseExecutionKey(key).sessionId) };
 }
 
-const SHARED_UNSAFE_TOOLS = new Set(["open_tab", "switch_tab", "close_tab", "navigate", "click", "hover", "fill", "type_text", "press_key", "scroll", "js", "mark", "clear_marks"]);
+const SHARED_UNSAFE_TOOLS = new Set(["page_translation", "open_tab", "switch_tab", "close_tab", "navigate", "click", "hover", "fill", "type_text", "press_key", "scroll", "js", "mark", "clear_marks"]);
 
 /** controller 在每个工具执行前调用；共享页写入只能走完整 page_operation。 */
 export async function guardToolAccess(name: string, key: string, explicitTabId?: number): Promise<void> {

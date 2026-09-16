@@ -85,9 +85,9 @@ function renderPill(tabId: number): Promise<void> {
       const targetTabId = view?.entry.tabId;
       if (view && targetTabId != null) {
         const { entry, title } = view;
-        await callDom(tabId, (id: string, value: { state: CursorStatusState; title: string; sessionId: string; tabId: number }) => {
+        await callDom(tabId, (id: string, value: CrossPageView) => {
           window.__sideagent?.cursor?.for(id)?.showCrossPage?.(value);
-        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId }]);
+        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].filter(v => isCurrentEntry(v.entry) && v.entry.tabId != null).map(v => ({ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId! })) }]);
       } else {
         await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
       }
@@ -181,6 +181,8 @@ export async function showCursorStatus(opts: {
   watchTabChanges();
   const tabId = opts.tabId ?? null;
   const previous = living.get(opts.key);
+  // Ending a failed run is not evidence of recovery. A new working state may replace it.
+  if (previous?.state === "failed" && opts.state === "done") return;
   const entry: LivingStatus = {
     key: opts.key,
     sessionId: instanceIdFor(opts.key),
@@ -188,7 +190,10 @@ export async function showCursorStatus(opts: {
     tabId,
   };
   living.set(opts.key, entry);
-  if (previous) await dropPill(previous);
+  if (previous) {
+    await dropPill(previous);
+    if (previous.tabId != null && previous.tabId !== tabId) await renderStatus(previous.tabId, opts.key);
+  }
   if (tabId == null) return;
   if (!isCurrentEntry(entry)) return;
   await renderStatus(tabId, opts.key);

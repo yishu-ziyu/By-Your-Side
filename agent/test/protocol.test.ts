@@ -666,3 +666,26 @@ it('validates source-side plan receipts including unexecuted steps',()=>{
  expect(parseServerMessage(JSON.stringify({...message,conversationId:'B'}))).toBeNull();
  expect(parseServerMessage(JSON.stringify({...message,event:{...message.event,plan:{...plan,steps:[{...plan.steps[0],status:'success-guessed'}]}}}))).toBeNull();
 });
+
+describe("worker task metadata contract", () => {
+  const frame = { type: "agent_event", sessionId: "a-cast-kim-abcdef01", event: { kind: "worker_task", task: "阅读方案甲", output: "方案甲摘要", spawnToolCallId: "spawn-1" } };
+  it("preserves identity and task labels across transport", () => {
+    expect(parseServerMessage(JSON.stringify(frame))).toEqual(frame);
+  });
+  it("rejects missing worker identity and unbounded or blank labels", () => {
+    for (const sessionId of [undefined, "main"]) expect(parseServerMessage(JSON.stringify({ ...frame, sessionId }))).toBeNull();
+    for (const task of ["", "  ", 12, "x".repeat(81)]) expect(parseServerMessage(JSON.stringify({ ...frame, event: { ...frame.event, task } }))).toBeNull();
+  });
+});
+
+it('validates asynchronous voice context with the same page and attachment guards as commit',()=>{
+ const frame=(command:unknown)=>JSON.stringify({type:'voice',voiceId:'voice-1',conversationId:'default',command});
+ expect(parseClientMessage(frame({kind:'commit',turn:1,contextPending:true}))).not.toBeNull();
+ expect(parseClientMessage(frame({kind:'input_context',turn:1,input:{context:{tabId:7,title:'page',url:'https://example.test'}}}))).not.toBeNull();
+ for(const command of [{kind:'commit',turn:1,contextPending:'yes'},{kind:'input_context',turn:1},{kind:'input_context',turn:1,error:99},{kind:'input_context',turn:1,input:{context:{tabId:'bad'}}},{kind:'input_context',turn:1,input:{observation:{token:'x',tabId:'bad'}}}])expect(parseClientMessage(frame(command))).toBeNull();
+});
+
+it('accepts a queued task receipt without calling it an executed action',async()=>{
+ const {isTaskReceipt}=await import('../../shared/task-actions.js');
+ expect(isTaskReceipt({requestId:'q',conversationId:'task',originConversationId:'source',source:'voice',action:'start',runId:null,text:'打开网页',targetTitle:'打开网页',status:'queued',message:'等待执行名额',updatedAt:1})).toBe(true);
+});

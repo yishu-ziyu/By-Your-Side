@@ -1,0 +1,169 @@
+{
+  "passed": false,
+  "selection": "all",
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier and assigned team setup, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "three edits during running task",
+      "passed": true,
+      "result": {
+        "name": "李四",
+        "email": "keep@example.com",
+        "city": "上海",
+        "note": "地铁附近",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "李四",
+            "at": 1789487162703
+          },
+          {
+            "field": "city",
+            "value": "上海",
+            "at": 1789487163210
+          },
+          {
+            "field": "note",
+            "value": "地铁附近",
+            "at": 1789487163701
+          }
+        ]
+      },
+      "receipts": [
+        {
+          "requestId": "e866d4a6-7451-4879-b877-2f7e96abfe15",
+          "conversationId": "aaa19413-0203-4831-8b47-61c1b941a4c5",
+          "source": "text",
+          "action": "steer",
+          "runId": "de8895dc-9602-40c8-a642-a67e08940116",
+          "text": "姓名改成李四。保留邮箱。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：姓名改成李四。保留邮箱。",
+          "updatedAt": 1789487158400
+        },
+        {
+          "requestId": "99e38dbe-5bba-4f2d-9bad-5856afb26c91",
+          "conversationId": "aaa19413-0203-4831-8b47-61c1b941a4c5",
+          "source": "text",
+          "action": "steer",
+          "runId": "de8895dc-9602-40c8-a642-a67e08940116",
+          "text": "城市改成上海。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：城市改成上海。",
+          "updatedAt": 1789487158558
+        },
+        {
+          "requestId": "339c1b38-b0f6-4351-914d-581f0c248517",
+          "conversationId": "aaa19413-0203-4831-8b47-61c1b941a4c5",
+          "source": "text",
+          "action": "steer",
+          "runId": "de8895dc-9602-40c8-a642-a67e08940116",
+          "text": "备注填写地铁附近。不要提交。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：备注填写地铁附近。不要提交。",
+          "updatedAt": 1789487158711
+        }
+      ]
+    },
+    {
+      "name": "all queued edits consumed before next model response",
+      "passed": true
+    },
+    {
+      "name": "edit during actual thinking reaches final page",
+      "passed": true,
+      "inputAt": 1789487168697,
+      "result": {
+        "name": "陈七",
+        "email": "keep@example.com",
+        "city": "成都",
+        "note": "",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "陈七",
+            "at": 1789487174895
+          },
+          {
+            "field": "city",
+            "value": "成都",
+            "at": 1789487175408
+          }
+        ]
+      }
+    },
+    {
+      "name": "stop cancels tool wait and prevents late writes",
+      "passed": true,
+      "stopAt": 1789487184981,
+      "result": {
+        "name": "",
+        "email": "keep@example.com",
+        "city": "",
+        "note": "",
+        "submits": 0,
+        "writes": []
+      }
+    },
+    {
+      "name": "paused edit applied after handback with original email",
+      "passed": true,
+      "result": {
+        "name": "赵六",
+        "email": "keep@example.com",
+        "city": "杭州",
+        "note": "",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "赵六",
+            "at": 1789487195263
+          },
+          {
+            "field": "city",
+            "value": "杭州",
+            "at": 1789487195772
+          }
+        ]
+      }
+    },
+    {
+      "name": "reconnect and same request replay do not duplicate writes",
+      "passed": true
+    },
+    {
+      "name": "delayed running-task envelope arriving after completion is rejected",
+      "passed": true,
+      "receipt": {
+        "requestId": "ba8e3080-5152-4085-a141-3902934dfcf5",
+        "conversationId": "de1af1fe-fe09-435d-b23f-8e2f50121286",
+        "source": "text",
+        "action": "steer",
+        "runId": "ba7b273b-a4e0-4ec1-8556-75ec328604e4",
+        "text": "迟到修改不得填写姓名",
+        "targetTitle": "暂停补充并恢复",
+        "status": "rejected",
+        "message": "原任务已停止或发生变化，修改未发送。",
+        "updatedAt": 1789487199260
+      }
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "cfaf45039243dece529ede8bbdc62b0eaf4cccad6d460f04b597d57f9db01cba",
+    "agent/src/conversation-manager.ts": "8e520e6adb7eacd4af4a1d903055ed958c291c225484260b4905f84b52914a8c",
+    "agent/src/fleet.ts": "89b20b214bd83ee27a556d6217b5f6c5eb1a2d0f1dc93c9f97873bc019f4e360",
+    "agent/src/task-dispatcher.ts": "d7f49e3e4d9367c0bd6075cf995b0b08195dfd58bddfe584a24a3f4f5b625de9",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "cfc87c112c8126de332acb857b57bef65f769ac370c58950c0d5c109be14ba5d"
+  },
+  "actualModel": "opencode-go/deepseek-flash",
+  "error": "Error: 等待超时：task completed"
+}

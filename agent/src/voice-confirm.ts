@@ -1,12 +1,11 @@
 import type {Attachment, PageContext} from '../../shared/protocol.js';
 import type {VoiceInputContext} from '../../shared/voice.js';
+import {normalizeSpeech} from './voice-receipt.js';
 
 /**
- * 语音控制句的读回确认。
- *
- * 实时转写会听错（实测把"BOSS直聘"听成"boss直拼"、把否定词整段丢掉），而控制句一旦认错
- * 就直接改动正在跑的任务。所以"改正在跑的任务/终止"这类句子先复述一遍，等用户确认再动手：
- * 慢一拍，但错一次的成本比慢一次高。见 docs/evals/20260911-voice-listen-back.md。
+ * 终止任务的语音读回与已有待确认请求的身份快照。
+ * 普通 steer 直接送达；不在语音入口重复确认每条修改。
+ * 具体危险网页动作仍由执行层确认。
  */
 
 /** 确认窗口：超过这个时间没回应就作废，避免几天后一句"对"误触发。 */
@@ -55,11 +54,11 @@ const AFFIRMATIVE = /^(?:(?:对的|是的|好的|可以|没错|就这个|就这�
 const NEGATIVE = /^(?:(?:不用了?|不要了?|不对|不|别动|别|先别|算了|取消|停下?|打住|撤销|作废)(?:吧|啦|呀|啊)?)+(?:谢谢|多谢)?$/;
 
 export function isControlConfirm(text: string): boolean {
-  return AFFIRMATIVE.test(normalize(text));
+  return AFFIRMATIVE.test(normalizeSpeech(text ?? ""));
 }
 
 export function isControlReject(text: string): boolean {
-  const short = normalize(text);
+  const short = normalizeSpeech(text ?? "");
   return short === "不是" || NEGATIVE.test(short);
 }
 
@@ -67,8 +66,4 @@ export function isControlReject(text: string): boolean {
 export function controlConfirmMessage(text: string): string {
   const quoted = text.replace(/\s+/g, " ").trim().slice(0, 80);
   return `你是说“${quoted}”，对吗？确认后我就照做。`;
-}
-
-function normalize(text: string): string {
-  return (text ?? "").replace(/[\p{P}\p{Z}\s]/gu, "");
 }

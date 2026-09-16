@@ -13,6 +13,7 @@ import {
   type MemoryScope,
 } from "../../shared/memory.js";
 import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
+import { sameMemoryScope, validateMemoryDecision, type MemoryDecision } from "./memory-decision.js";
 
 interface StoreFile {
   format: 1;
@@ -42,6 +43,42 @@ export class MemoryStore {
 
   async list(): Promise<MemoryEntry[]> {
     return cloneEntries(await this.read());
+  }
+
+  /** One direct user operation, checked again under the lock; no partial duplicate updates. */
+  async applyDecision(decision: MemoryDecision, userMessage: string, sourceConversationId: string, guard: () => boolean): Promise<MemoryEntry[]> {
+    if (!["save", "update", "forget"].includes(decision.action)) throw new Error("Not a memory mutation");
+    assertCreateInput({ text: decision.text || "forget", scope: decision.scope, sourceConversationId });
+    return this.withWriteLock((entries, forgotten) => {
+      if (!guard()) throw new Error("Memory operation is no longer authorized");
+      validateMemoryDecision(decision, userMessage, entries);
+      const targets = entries.filter(e => decision.targets.some(t => t.id === e.id));
+      if (decision.action === "forget") {
+        for (const entry of targets) {
+          if (entry.experience) forgotten.push(entry.experience.runId);
+          entries.splice(entries.indexOf(entry), 1);
+        }
+        return cloneEntries(targets);
+      }
+      if (decision.action === "save") {
+        const identical = entries.find(e => e.text === decision.text.trim() && sameMemoryScope(e.scope, decision.scope));
+        if (identical) return cloneEntries([identical]);
+      }
+      const prior = targets[0];
+      const now = Date.now();
+      const next: MemoryEntry = {
+        id: prior?.id ?? randomUUID(), version: prior ? prior.version + 1 : 1,
+        text: decision.text.trim(), scope: cloneScope(decision.scope), sourceConversationId,
+        createdAt: prior?.createdAt ?? now, updatedAt: Math.max(now, (prior?.updatedAt ?? 0) + 1),
+      };
+      for (const entry of targets) {
+        // A user replacement must not be resurrected by an old experience job.
+        if (entry.experience) forgotten.push(entry.experience.runId);
+        entries.splice(entries.indexOf(entry), 1);
+      }
+      entries.push(next);
+      return cloneEntries([next]);
+    }, guard);
   }
 
   async create(input: { text: string; scope: MemoryScope; sourceConversationId: string; guard?: () => boolean }): Promise<MemoryEntry> {

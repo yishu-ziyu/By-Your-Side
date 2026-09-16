@@ -25,6 +25,7 @@ export type ControlOwner = "agent" | "user";
 export const WRITE_TOOLS = [
   "worker_tabs",
   "page_operation",
+  "page_translation",
   "open_tab",
   "switch_tab",
   "close_tab",

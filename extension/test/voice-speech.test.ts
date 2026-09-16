@@ -22,6 +22,26 @@ it('a single uncertain frame cannot start speech, but lower confidence does not 
  for(let i=0;i<30;i++)d.push(pcm,.4);
  expect(start).toHaveBeenCalledTimes(1);expect(end).not.toHaveBeenCalled();
 });
+it('accepts sustained moderate speech confidence without requiring a louder repeat',()=>{
+ const start=vi.fn(),audio=vi.fn(),end=vi.fn();
+ const d=new VoiceTurnDetector({start,audio,end});
+ const pcm=new Int16Array(768).fill(1600);
+ // Controlled probabilities in the range observed during missed live input;
+ // this is a detector regression, not a replay of recorded microphone audio.
+ for(const probability of [.32,.48,.53])d.push(pcm,probability);
+ expect(start).toHaveBeenCalledExactlyOnceWith(1);
+ expect(audio).toHaveBeenCalledTimes(3);
+ for(let i=0;i<25;i++)d.push(pcm,.28);
+ expect(end).not.toHaveBeenCalled();
+ for(let i=0;i<22;i++)d.push(new Int16Array(768),0);
+ expect(end).toHaveBeenCalledExactlyOnceWith(1);
+});
+it('rejects isolated moderate-confidence bursts separated by non-speech',()=>{
+ const start=vi.fn();const d=new VoiceTurnDetector({start,audio:()=>{},end:()=>{}});
+ const pcm=new Int16Array(768).fill(12000);
+ for(let i=0;i<20;i++)for(const p of [.48,.53,.1])d.push(pcm,p);
+ expect(start).not.toHaveBeenCalled();
+});
 function fixture(){
  const worker={onmessage:null as null|((e:any)=>void),onerror:null as null|(()=>void),postMessage:vi.fn(),terminate:vi.fn()};
  vi.stubGlobal('Worker',function(){return worker});vi.stubGlobal('chrome',{runtime:{getURL:(s:string)=>s}});

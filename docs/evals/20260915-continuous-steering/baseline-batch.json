@@ -1,0 +1,88 @@
+{
+  "passed": false,
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "three edits during running task",
+      "passed": true,
+      "result": {
+        "name": "李四",
+        "email": "keep@example.com",
+        "city": "上海",
+        "note": "地铁附近",
+        "submits": 0,
+        "writes": [
+          {
+            "field": "name",
+            "value": "李四",
+            "at": 1789486370342
+          },
+          {
+            "field": "city",
+            "value": "上海",
+            "at": 1789486370900
+          },
+          {
+            "field": "note",
+            "value": "地铁附近",
+            "at": 1789486371451
+          }
+        ]
+      },
+      "receipts": [
+        {
+          "requestId": "b6c4b79e-87b6-4433-a340-85f645413e65",
+          "conversationId": "70460366-4ccc-4756-99e3-bb5d3a5316fb",
+          "source": "text",
+          "action": "steer",
+          "runId": "2d554867-fd60-4296-86fe-d206a7807473",
+          "text": "姓名改成李四。保留邮箱。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：姓名改成李四。保留邮箱。",
+          "updatedAt": 1789486351085
+        },
+        {
+          "requestId": "0c773b7e-b085-4bbf-9cd7-f93ae93aca1c",
+          "conversationId": "70460366-4ccc-4756-99e3-bb5d3a5316fb",
+          "source": "text",
+          "action": "steer",
+          "runId": "2d554867-fd60-4296-86fe-d206a7807473",
+          "text": "城市改成上海。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：城市改成上海。",
+          "updatedAt": 1789486351090
+        },
+        {
+          "requestId": "60b776f6-9212-44a1-83af-8957c8dd83fa",
+          "conversationId": "70460366-4ccc-4756-99e3-bb5d3a5316fb",
+          "source": "text",
+          "action": "steer",
+          "runId": "2d554867-fd60-4296-86fe-d206a7807473",
+          "text": "备注填写地铁附近。不要提交。",
+          "targetTitle": "连续三条修改",
+          "status": "accepted",
+          "message": "修改已送达当前任务：备注填写地铁附近。不要提交。",
+          "updatedAt": 1789486351247
+        }
+      ]
+    },
+    {
+      "name": "all queued edits consumed before next model response",
+      "passed": false
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "4210e7b3781d3513edc45d770a786091180872bad1d7f06ebcf761c82b72aef3",
+    "agent/src/conversation-manager.ts": "ad675b0ea2df7341c89471a366822815064d1949605a68d2f52a9e173740f2c6",
+    "agent/src/fleet.ts": "4dbb75b3790d890cef2c48c29aeabe2aa8b5405a5ffc08926209657064571290",
+    "agent/src/task-dispatcher.ts": "d7f49e3e4d9367c0bd6075cf995b0b08195dfd58bddfe584a24a3f4f5b625de9",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "0b36fcb2444bf43e15fbb34aed7d9deed420c70c0370ea643cc82fc0e3448312"
+  },
+  "actualModel": "opencode-go/deepseek-flash",
+  "error": "AssertionError [ERR_ASSERTION]: three pending edits must enter the next model request together"
+}

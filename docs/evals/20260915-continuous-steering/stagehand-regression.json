@@ -1,0 +1,110 @@
+{
+  "scope": "real official compatibility runtime, QuickJS, ToolRpc and built extension in isolated headless Chrome; no model/microphone",
+  "passed": true,
+  "tabs": {
+    "a": 234685319,
+    "b": 234685320
+  },
+  "fill": {
+    "result": {
+      "value": {
+        "name": "张三",
+        "email": "test@example.com"
+      },
+      "steps": 17
+    },
+    "state": {
+      "name": "张三",
+      "email": "test@example.com",
+      "submits": 0,
+      "writes": [
+        {
+          "field": "name",
+          "value": "张三",
+          "at": 1789487460966
+        },
+        {
+          "field": "email",
+          "value": "test@example.com",
+          "at": 1789487461530
+        }
+      ]
+    }
+  },
+  "clickAndKeyboard": {
+    "previewClicks": 1,
+    "trialDidNotClick": true,
+    "ambiguityDidNotWrite": true,
+    "selection": {
+      "start": 0,
+      "end": 2
+    }
+  },
+  "stop": {
+    "requestedAt": 1789487464678,
+    "settledAt": 1789487464689,
+    "observedUntil": 1789487466393,
+    "state": {
+      "name": "张三",
+      "email": "test@example.com",
+      "submits": 0,
+      "writes": [
+        {
+          "field": "name",
+          "value": "张三",
+          "at": 1789487460966
+        },
+        {
+          "field": "email",
+          "value": "test@example.com",
+          "at": 1789487461530
+        }
+      ]
+    },
+    "lateCalls": [],
+    "writesAfterStop": []
+  },
+  "correctionAndTabSwitch": {
+    "a": {
+      "name": "李明",
+      "email": "test@example.com",
+      "submits": 0,
+      "writes": [
+        {
+          "field": "name",
+          "value": "张三",
+          "at": 1789487460966
+        },
+        {
+          "field": "email",
+          "value": "test@example.com",
+          "at": 1789487461530
+        },
+        {
+          "field": "name",
+          "value": "李明",
+          "at": 1789487467273
+        }
+      ]
+    },
+    "b": {
+      "name": "",
+      "email": "",
+      "submits": 0,
+      "writes": []
+    },
+    "bActivatedDuringWait": true,
+    "finalActiveTab": 234685319
+  },
+  "epoch": true,
+  "hashes": {
+    "agent/src/tools.ts": "2aff8d15a1eb4424a3d64fc2928b440b1676085911d90776e6e00d0fc5ca2604",
+    "agent/src/browser-program.ts": "89a59fcd7b1c666feaceeefd1cd0e9825367d7ceb0cf322e40c8c616e54097b6",
+    "agent/src/session.ts": "cfaf45039243dece529ede8bbdc62b0eaf4cccad6d460f04b597d57f9db01cba",
+    "agent/src/conversation-runtime.ts": "f979b3f29f43f57a3fcb081004e8b4caae2660d8891337bd79bb41cb533a9285",
+    "agent/src/stagehand-bridge.ts": "3fd296f64e024277d9d1ad03f9b44848fc0a32d454acb9b1ad99b9db035173eb",
+    "agent/src/vendor/stagehand/runtime.ts": "82cf447197a1d4902c52bce7df2573557d6a945e19d35e684377ae2957f07ae1",
+    "scripts/acceptance/stagehand-control.mts": "78a05396b4aea9823c794e876096b3a693696b15725ddbdaf204c29d363a0553",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8"
+  }
+}

@@ -1,0 +1,360 @@
+{
+  "passed": true,
+  "model": "opencode-go/deepseek-flash",
+  "scope": "isolated headless production panel + WS + current model + real extension; microphone not run",
+  "cases": [
+    {
+      "text": "帮我翻译这个页面。",
+      "elapsedMs": 9316,
+      "recoveredOtherToolErrors": [
+        "页面归属已变化，请重新查看后再接手"
+      ],
+      "firstPageResultMs": 6470,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "worker_tabs",
+          "params": {
+            "action": "inspect",
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "begin",
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "worker_tabs",
+          "params": {
+            "action": "claim",
+            "tabId": 1405808338,
+            "expectedConversationId": null
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 1405808338,
+            "document": "c9d9fc4f-a289-4cef-98aa-b8544f2e113e",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 1405808338,
+            "document": "c9d9fc4f-a289-4cef-98aa-b8544f2e113e",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "1:0",
+                "text": "用心阅读"
+              },
+              {
+                "id": "2:0",
+                "text": "有用的助手能帮助你理解页面，而不会取代你自己的判断。"
+              },
+              {
+                "id": "3:0",
+                "text": "请阅读 "
+              },
+              {
+                "id": "3:1",
+                "text": "原始来源"
+              },
+              {
+                "id": "3:2",
+                "text": "，然后再下结论。"
+              },
+              {
+                "id": "4:0",
+                "text": "你可以随时更改阅读模式，回到原文。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 1405808338,
+            "document": "c9d9fc4f-a289-4cef-98aa-b8544f2e113e",
+            "action": "collect"
+          }
+        }
+      ]
+    },
+    {
+      "text": "我不要双语，只要译文。",
+      "elapsedMs": 4080,
+      "recoveredOtherToolErrors": [],
+      "firstPageResultMs": 2015,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "display",
+            "mode": "translated",
+            "tabId": 1405808338
+          }
+        }
+      ]
+    },
+    {
+      "text": "恢复双语，译文字号改成22。",
+      "elapsedMs": 5012,
+      "recoveredOtherToolErrors": [],
+      "firstPageResultMs": 2548,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "display",
+            "fontSize": 22,
+            "mode": "bilingual",
+            "tabId": 1405808338
+          }
+        }
+      ]
+    },
+    {
+      "text": "恢复原文。",
+      "elapsedMs": 9070,
+      "recoveredOtherToolErrors": [],
+      "firstPageResultMs": null,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "restore",
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "read_element",
+          "params": {
+            "target": "loc=css:body",
+            "tabId": 1405808338
+          }
+        }
+      ]
+    },
+    {
+      "text": "把这个页面翻译成中文，只要译文，不要双语。",
+      "elapsedMs": 8912,
+      "recoveredOtherToolErrors": [],
+      "firstPageResultMs": 4947,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "begin",
+            "mode": "translated",
+            "tabId": 1405808338
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 1405808338,
+            "document": "1d4d936e-31d5-4bae-9ec2-860f79b44b6a",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 1405808338,
+            "document": "1d4d936e-31d5-4bae-9ec2-860f79b44b6a",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "1:0",
+                "text": "用心阅读"
+              },
+              {
+                "id": "2:0",
+                "text": "有用的助手能帮助你理解页面，而不会取代你自己的判断。"
+              },
+              {
+                "id": "3:0",
+                "text": "在得出结论之前，请先阅读"
+              },
+              {
+                "id": "3:1",
+                "text": "原始来源"
+              },
+              {
+                "id": "3:2",
+                "text": "。"
+              },
+              {
+                "id": "4:0",
+                "text": "你可以随时更改阅读模式并返回原文。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 1405808338,
+            "document": "1d4d936e-31d5-4bae-9ec2-860f79b44b6a",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "read_element",
+          "params": {
+            "target": "loc=css:body",
+            "tabId": 1405808338
+          }
+        }
+      ]
+    },
+    {
+      "text": "恢复双语，译文字号改成22。",
+      "source": "voice transcript through production route",
+      "routed": {
+        "kind": "action",
+        "ok": true,
+        "status": "accepted",
+        "message": "已接收新任务：恢复双语，译文字号改成22。",
+        "receipts": [
+          {
+            "requestId": "d7353356-5b24-4d31-80dc-ab77f8e73ab8",
+            "conversationId": "default",
+            "source": "voice",
+            "action": "start",
+            "runId": "f3e3a78c-9372-4f2b-898f-0d8557956bf3",
+            "text": "恢复双语，译文字号改成22。",
+            "targetTitle": "帮我翻译这个页面。",
+            "status": "accepted",
+            "message": "已接收新任务：恢复双语，译文字号改成22。",
+            "updatedAt": 1789490380473
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "d7353356-5b24-4d31-80dc-ab77f8e73ab8",
+          "conversationId": "default",
+          "updatedAt": 1789490380476,
+          "steps": [
+            {
+              "action": "start",
+              "text": "恢复双语，译文字号改成22。",
+              "targetId": "default",
+              "targetTitle": "帮我翻译这个页面。",
+              "status": "complete",
+              "receipt": {
+                "requestId": "d7353356-5b24-4d31-80dc-ab77f8e73ab8",
+                "conversationId": "default",
+                "source": "voice",
+                "action": "start",
+                "runId": "f3e3a78c-9372-4f2b-898f-0d8557956bf3",
+                "text": "恢复双语，译文字号改成22。",
+                "targetTitle": "帮我翻译这个页面。",
+                "status": "accepted",
+                "message": "已接收新任务：恢复双语，译文字号改成22。",
+                "updatedAt": 1789490380473
+              }
+            }
+          ]
+        }
+      },
+      "elapsedMs": 9751
+    },
+    {
+      "text": "我不要双语，只要译文。",
+      "source": "voice transcript through production route",
+      "routed": {
+        "kind": "action",
+        "ok": true,
+        "status": "accepted",
+        "message": "已接收新任务：我不要双语，只要译文。",
+        "receipts": [
+          {
+            "requestId": "cb818432-7605-4e08-93bd-1ee98ea9f518",
+            "conversationId": "default",
+            "source": "voice",
+            "action": "start",
+            "runId": "2ee308a1-efab-4f29-ae45-b778b43c2df0",
+            "text": "我不要双语，只要译文。",
+            "targetTitle": "帮我翻译这个页面。",
+            "status": "accepted",
+            "message": "已接收新任务：我不要双语，只要译文。",
+            "updatedAt": 1789490389472
+          }
+        ],
+        "awaitDelivery": true,
+        "turn": {
+          "branch": "read_only",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "cb818432-7605-4e08-93bd-1ee98ea9f518",
+          "conversationId": "default",
+          "updatedAt": 1789490389475,
+          "steps": [
+            {
+              "action": "start",
+              "text": "我不要双语，只要译文。",
+              "targetId": "default",
+              "targetTitle": "帮我翻译这个页面。",
+              "status": "complete",
+              "receipt": {
+                "requestId": "cb818432-7605-4e08-93bd-1ee98ea9f518",
+                "conversationId": "default",
+                "source": "voice",
+                "action": "start",
+                "runId": "2ee308a1-efab-4f29-ae45-b778b43c2df0",
+                "text": "我不要双语，只要译文。",
+                "targetTitle": "帮我翻译这个页面。",
+                "status": "accepted",
+                "message": "已接收新任务：我不要双语，只要译文。",
+                "updatedAt": 1789490389472
+              }
+            }
+          ]
+        }
+      },
+      "elapsedMs": 9000
+    }
+  ]
+}

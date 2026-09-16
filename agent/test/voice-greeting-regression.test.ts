@@ -310,3 +310,257 @@ describe('C 应然：语音侧自己回答时的音频顺序',()=>{
     expect(h.assistantText()).not.toContain('我看一下');
   });
 });
+
+describe('continuous conversation while task results arrive',()=>{
+ it('keeps the second queued result until the first actually finishes playing',async()=>{
+  const h=voiceHarness();h.startTurn(1,'继续介绍');
+  for(const [id,text] of [['queued-first','第一条结果。'],['queued-second','第二条结果。']] as const){
+   h.session.completeDelivery({id,runId:'run-greeting',kind:'finding',text});
+  }
+  expect(h.outputs).toHaveLength(0);
+  h.resolve({...acceptedGreeting});await Promise.resolve();await Promise.resolve();
+  expect(h.outputs).toHaveLength(1);
+  h.outputs[0]!.cb.audio('AQABAA==');h.outputs[0]!.cb.end();
+  const response=h.audioFrames().at(-1)!;
+  h.session.command({kind:'playback_done',responseId:response.responseId});
+  expect(h.outputs).toHaveLength(2);
+  expect(h.outputs[1]!.push).toHaveBeenCalledWith('第二条结果。');
+ });
+ it('does not flush queued task speech after a request to stay silent',async()=>{
+  const h=voiceHarness();h.startTurn(1,'别说了');
+  h.session.completeDelivery({id:'queued-result',runId:'run-greeting',kind:'finding',text:'后台刚完成的结果。'});
+  h.resolve({kind:'silent',quiet:true});await Promise.resolve();await Promise.resolve();
+  expect(h.outputs).toHaveLength(0);
+  expect(h.responseCreates()).toBe(0);
+ });
+});
+
+it('stays quiet for later task results, then answers a fresh user turn',async()=>{
+ const h=voiceHarness();h.startTurn(1,'别说了');h.resolve({kind:'silent',quiet:true});
+ await Promise.resolve();await Promise.resolve();
+ h.session.completeDelivery({id:'later-result',runId:'run-greeting',kind:'finding',text:'稍后完成的结果。'});
+ expect(h.outputs).toHaveLength(0);
+ h.startTurn(2,'现在告诉我结果');
+ h.resolve({...acceptedGreeting});await Promise.resolve();await Promise.resolve();
+ h.session.completeDelivery({id:'fresh-answer',runId:'run-greeting',kind:'reply',text:'这是你刚才问的结果。'});
+ expect(h.outputs).toHaveLength(1);
+});
+
+it('does not pass an interrupted realtime answer off as already heard',async()=>{
+ const h=voiceHarness();h.startTurn(1,'介绍一下');h.resolve({kind:'none'});
+ await Promise.resolve();await Promise.resolve();h.responseCreated('heard-boundary');
+ h.socket.server({type:'response.audio.delta',response_id:'heard-boundary',item_id:'audio-boundary',delta:'AQABAA=='});
+ h.socket.server({type:'response.audio_transcript.done',response_id:'heard-boundary',item_id:'audio-boundary',transcript:'第一句话。还没听到的后半段。'});
+ h.startTurn(2,'你刚才说什么');
+ const context=(h.route.mock.calls as any[]).at(-1)[3];
+ expect(context.recentTurns.filter((t:any)=>t.role==='assistant')).toEqual([]);
+});
+
+it('retains a realtime answer after confirmed playback and ignores duplicate completion',async()=>{
+ const h=voiceHarness();h.startTurn(1,'介绍一下');h.resolve({kind:'none'});
+ await Promise.resolve();await Promise.resolve();h.responseCreated('fully-heard');
+ h.socket.server({type:'response.audio.delta',response_id:'fully-heard',item_id:'heard-audio',delta:'AQABAA=='});
+ h.socket.server({type:'response.audio_transcript.done',response_id:'fully-heard',item_id:'heard-audio',transcript:'这句已经完整播放。'});
+ h.socket.server({type:'response.done',response:{id:'fully-heard',status:'completed'}});
+ h.session.command({kind:'playback_done',responseId:'fully-heard'});
+ h.session.command({kind:'playback_done',responseId:'fully-heard'});
+ h.startTurn(2,'你刚才说什么');
+ const context=(h.route.mock.calls as any[]).at(-1)[3];
+ expect(context.recentTurns.filter((t:any)=>t.role==='assistant')).toEqual([{role:'assistant',text:'这句已经完整播放。'}]);
+});
+
+it('waits without speaking or dispatching while the user composes a sentence',async()=>{
+ const h=voiceHarness();h.startTurn(1,'预算改成');h.resolve({kind:'listening'});
+ await Promise.resolve();await Promise.resolve();
+ expect(h.outputs).toHaveLength(0);expect(h.responseCreates()).toBe(0);
+ expect(h.events.at(-1)).toMatchObject({kind:'state',state:'ready'});
+ h.startTurn(2,'六百，按价格排序');
+ expect((h.route.mock.calls as any[]).at(-1)[0]).toBe('预算改成 六百，按价格排序');
+});
+
+it('does not treat background noise as permission to speak after silence',async()=>{
+ const h=voiceHarness();h.startTurn(1,'别说了');h.resolve({kind:'silent',quiet:true});
+ await Promise.resolve();await Promise.resolve();
+ h.startTurn(2,'');
+ h.session.completeDelivery({id:'after-noise',runId:'run-greeting',kind:'finding',text:'新的后台结果。'});
+ expect(h.outputs).toHaveLength(0);
+});
+
+it('holds task results while waiting for the rest of a sentence',async()=>{
+ const h=voiceHarness();h.startTurn(1,'我想');h.resolve({kind:'listening'});
+ await Promise.resolve();await Promise.resolve();
+ h.session.completeDelivery({id:'while-composing',runId:'run-greeting',kind:'finding',text:'后台已完成。'});
+ expect(h.outputs).toHaveLength(0);
+ h.startTurn(2,'先听结果');h.resolve({kind:'silent'});
+ await Promise.resolve();await Promise.resolve();
+ expect(h.outputs).toHaveLength(1);
+ expect(h.outputs[0]!.push).toHaveBeenCalledWith('后台已完成。');
+});
+
+it('does not dispatch an incomplete request through the production manager',async()=>{
+ const h=managerHarness();try{
+  await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
+  runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'listen',text:'我想',target:null}]});
+  expect(await h.manager.routeVoiceInput('default','我想',null,()=>true,{...greetingRoute,requestId:'unfinished-1'})).toMatchObject({kind:'listening'});
+  expect(runtime.session.startTask).not.toHaveBeenCalled();
+ }finally{h.manager.dispose()}
+});
+
+it('accepts conversational feedback without another model call or task action',async()=>{
+ const h=managerHarness();try{
+  await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
+  const result=await h.manager.routeVoiceInput('default','嗯，对。',null,()=>true,{...greetingRoute,requestId:'backchannel',interruptedSpeech:true});
+  expect(result).toMatchObject({kind:'silent'});expect('quiet' in result&&result.quiet).toBeFalsy();
+  expect(runtime.session.classifyVoiceInput).not.toHaveBeenCalled();
+  expect(runtime.session.startTask).not.toHaveBeenCalled();
+ }finally{h.manager.dispose()}
+});
+
+it('returns an unfinished-input decision without waiting for the next turn decision',async()=>{
+ const h=managerHarness();try{
+  await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
+  runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'listen',text:'我想',target:null}]});
+  const wait=vi.fn(()=>new Promise<void>(()=>{}));
+  const result=await h.manager.routeVoiceInput('default','我想',null,()=>true,{...greetingRoute,requestId:'unfinished-race',awaitInputDecision:wait});
+  expect(result).toMatchObject({kind:'listening'});expect(wait).not.toHaveBeenCalled();
+ }finally{h.manager.dispose()}
+});
+
+it('joins a late listening decision before the following ASR completes',async()=>{
+ const h=voiceHarness();let resolveFirst!:(r:any)=>void;
+ h.route.mockImplementationOnce(()=>new Promise(r=>resolveFirst=r));
+ h.startTurn(1,'我想');
+ h.session.command({kind:'interrupt',turn:2});
+ h.session.command({kind:'audio',turn:2,data:'AQABAA=='});
+ resolveFirst({kind:'listening'});await Promise.resolve();await Promise.resolve();
+ h.session.command({kind:'commit',turn:2});
+ h.socket.server({type:'input_audio_buffer.committed',item_id:'u2'});
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u2',transcript:'你给我介绍一下'});
+ expect((h.route.mock.calls as any[]).at(-1)[0]).toBe('我想 你给我介绍一下');
+ h.resolve({kind:'listening'});await Promise.resolve();await Promise.resolve();
+ h.startTurn(3,'这个YouTube的视频');
+ expect((h.route.mock.calls as any[]).at(-1)[0]).toBe('我想 你给我介绍一下 这个YouTube的视频');
+});
+
+it('silences explicit speech-only control without waiting on a classifier',async()=>{
+ const h=managerHarness();try{
+  await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
+  const result=await h.manager.routeVoiceInput('default','先别说了。',null,()=>true,{...greetingRoute,requestId:'speech-stop'});
+  expect(result).toMatchObject({kind:'silent',quiet:true});
+  expect(runtime.session.classifyVoiceInput).not.toHaveBeenCalled();
+  expect(runtime.session.startTask).not.toHaveBeenCalled();
+ }finally{h.manager.dispose()}
+});
+
+it('does not let an older idle chat start a task after a newer page question',async()=>{
+ const h=managerHarness();try{
+  await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
+  let current=true,durable=false,release!:()=>void,classified!:()=>void;
+  const ready=new Promise<void>(r=>classified=r),gate=new Promise<void>(r=>release=r);
+  const old=h.manager.routeVoiceInput('default','还不错，我现在在看这部剧。',null,()=>current||durable,{
+   ...greetingRoute,requestId:'old-context-chat',
+   onInputDecision:readOnly=>{durable=!readOnly;classified()},awaitInputDecision:()=>gate,
+  });
+  await ready;current=false;
+  runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'observe',text:'你可以告诉我这部剧的内容吗？',target:null}]});
+  runtime.session.answerVoiceObservation=vi.fn(async()=> '根据当前页的简介，这是一部校园短剧。');
+  runtime.rpc.call=vi.fn(async()=>({tabId:7,url:'https://example.test/video',title:'校园短剧',text:'剧情简介',imageBase64:'image',documentId:'doc',capturedAt:Date.now(),scope:'viewport'}));
+  release();await old;
+  const result=await h.manager.routeVoiceInput('default','你可以告诉我这部剧的内容吗？',null,()=>true,{
+   ...greetingRoute,turn:2,requestId:'new-page-question',pendingDelegation:true,input:{observation:{token:'observed',tabId:7}},
+  });
+  expect(runtime.session.startTask).not.toHaveBeenCalled();
+  expect(result).toMatchObject({kind:'none',spokenText:'根据当前页的简介，这是一部校园短剧。'});
+ }finally{h.manager.dispose()}
+});
+
+it.each(['before-next-text','after-next-text','after-third-text'])('assembles speech when classification settles %s',async timing=>{
+ const h=voiceHarness();const resolutions:Array<(r:any)=>void>=[];
+ h.route.mockImplementation(()=>new Promise(r=>resolutions.push(r)));
+ h.startTurn(1,'我想');
+ if(timing==='before-next-text'){resolutions[0]!({kind:'listening'});await Promise.resolve();await Promise.resolve();}
+ h.startTurn(2,'你给我介绍一下');
+ if(timing==='after-next-text'){resolutions[0]!({kind:'listening'});await Promise.resolve();await Promise.resolve();}
+ if(timing!=='after-third-text'){
+  await vi.waitFor(()=>expect(resolutions).toHaveLength(2));
+  resolutions[1]!({kind:'listening'});await Promise.resolve();await Promise.resolve();
+ }
+ h.startTurn(3,'当前这篇文章');
+ if(timing==='after-third-text'){resolutions[0]!({kind:'listening'});await Promise.resolve();await Promise.resolve();}
+ await vi.waitFor(()=>expect((h.route.mock.calls as any[]).at(-1)[0]).toBe('我想 你给我介绍一下 当前这篇文章'));
+});
+
+it('waits for intent classification, not the preceding browser task to finish',()=>{
+ const h=voiceHarness();h.startTurn(1,'帮我整理页面');
+ const first=(h.route.mock.calls as any[])[0][3];first.onInputDecision(false);
+ h.startTurn(2,'现在做得怎么样');
+ expect(h.route).toHaveBeenCalledTimes(2);
+});
+
+it('sends audio to ASR before page context is ready and waits before routing',async()=>{
+ const h=voiceHarness();
+ h.session.command({kind:'interrupt',turn:1});h.session.command({kind:'audio',turn:1,data:'AQABAA=='});
+ h.session.command({kind:'commit',turn:1,contextPending:true});
+ expect(h.socket.sent.some(e=>e.type==='input_audio_buffer.commit')).toBe(true);
+ h.socket.server({type:'input_audio_buffer.committed',item_id:'slow-page'});
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'slow-page',transcript:'介绍这个页面'});
+ expect(h.route).not.toHaveBeenCalled();
+ h.session.command({kind:'input_context',turn:1,input:{context:{tabId:7,title:'原页',url:'https://example.test/original'}}});
+ await vi.waitFor(()=>expect(h.route).toHaveBeenCalledOnce());
+ expect((h.route.mock.calls as any[])[0][3].input.context.tabId).toBe(7);
+});
+
+it('keeps the original page when delayed context and a following segment cross',async()=>{
+ const h=voiceHarness();
+ h.session.command({kind:'interrupt',turn:1});h.session.command({kind:'audio',turn:1,data:'AQABAA=='});
+ h.session.command({kind:'commit',turn:1,contextPending:true});
+ h.socket.server({type:'input_audio_buffer.committed',item_id:'fragment1'});
+ h.session.command({kind:'interrupt',turn:2});
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'fragment1',transcript:'帮我介绍'});
+ h.session.command({kind:'audio',turn:2,data:'AQABAA=='});h.session.command({kind:'commit',turn:2,contextPending:true});
+ h.socket.server({type:'input_audio_buffer.committed',item_id:'fragment2'});
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'fragment2',transcript:'这个页面'});
+ h.session.command({kind:'input_context',turn:2,input:{context:{tabId:8,title:'新页',url:'https://example.test/new'}}});
+ expect(h.route).not.toHaveBeenCalled();
+ h.session.command({kind:'input_context',turn:1,input:{context:{tabId:7,title:'原页',url:'https://example.test/original'}}});
+ await vi.waitFor(()=>expect(h.route).toHaveBeenCalledOnce());
+ const call=(h.route.mock.calls as any[])[0];expect(call[0]).toBe('帮我介绍 这个页面');expect(call[3].input.context.tabId).toBe(7);
+});
+
+it('does not dispatch a request whose page context failed',async()=>{
+ const h=voiceHarness();
+ h.session.command({kind:'interrupt',turn:1});h.session.command({kind:'audio',turn:1,data:'AQABAA=='});h.session.command({kind:'commit',turn:1,contextPending:true});
+ h.socket.server({type:'input_audio_buffer.committed',item_id:'failed-page'});
+ h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'failed-page',transcript:'点击提交'});
+ h.session.command({kind:'input_context',turn:1,error:'页面资料准备失败，这句话尚未执行。'});
+ await vi.waitFor(()=>expect(h.events.at(-1)).toMatchObject({kind:'state',state:'ready',detail:expect.stringContaining('尚未执行')}));
+ expect(h.route).not.toHaveBeenCalled();
+});
+
+it('keeps the original task answer while clarifying an additional independent task',async()=>{
+ const h=voiceHarness();h.startTurn(1,'读一下这页最早的内容');h.resolve({...acceptedGreeting});
+ await Promise.resolve();await Promise.resolve();
+ h.startTurn(2,'同时在新标签页打开另一个网站');
+ h.session.completeDelivery({id:'original-task-result',runId:'run-greeting',kind:'finding',text:'最早一轮讨论的是接口兼容。'});
+ expect(h.outputs).toHaveLength(0);
+ h.resolve({kind:'clarify',message:'当前任务还在执行。要另开会话处理这个新任务吗？'});
+ await Promise.resolve();await Promise.resolve();
+ expect(h.outputs).toHaveLength(1);
+ h.outputs[0]!.cb.audio('AQABAA==');h.outputs[0]!.cb.end();
+ h.session.command({kind:'playback_done',responseId:h.audioFrames().at(-1)!.responseId});
+ expect(h.outputs).toHaveLength(2);
+ expect(h.outputs[1]!.push).toHaveBeenCalledWith('最早一轮讨论的是接口兼容。');
+});
+
+
+it('retains a task result interrupted before the client hears its first sound',async()=>{
+ const h=voiceHarness();h.startTurn(1,'读页面');h.resolve({...acceptedGreeting});
+ await Promise.resolve();await Promise.resolve();
+ h.session.completeDelivery({id:'unheard-task',runId:'run-greeting',kind:'finding',text:'页面开放时间是十点半。'});
+ expect(h.outputs).toHaveLength(1);
+ h.startTurn(2,'同时打开另一个页面');
+ expect(h.outputs[0]!.cancel).toHaveBeenCalledOnce();
+ h.resolve({kind:'silent'});await Promise.resolve();await Promise.resolve();
+ expect(h.outputs).toHaveLength(2);
+ expect(h.outputs[1]!.push).toHaveBeenCalledWith('页面开放时间是十点半。');
+});

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "same role waiting cursor hidden",
+    "ok": true
+  },
+  {
+    "name": "identity and full title accessible",
+    "ok": true
+  },
+  {
+    "name": "single member target",
+    "ok": true
+  },
+  {
+    "name": "keyboard expands members",
+    "ok": true
+  },
+  {
+    "name": "second member target",
+    "ok": true
+  },
+  {
+    "name": "escape restores trigger focus",
+    "ok": true
+  },
+  {
+    "name": "narrow viewport contained",
+    "ok": true
+  },
+  {
+    "name": "hidden entry removed from interaction",
+    "ok": true
+  }
+]

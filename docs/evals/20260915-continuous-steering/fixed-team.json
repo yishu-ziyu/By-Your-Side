@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "selection": "team-only",
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier and assigned team setup, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "both actual workers receive common correction and avoid old writes",
+      "passed": true,
+      "setup": "fleet.spawn assigns two independent local pages; correction uses production panel",
+      "results": [
+        {
+          "id": "form_a-cast-bunk-e586450a",
+          "result": {
+            "email": "keep@example.com",
+            "name": "李四",
+            "submits": 0,
+            "writes": [
+              {
+                "at": 1789487409520,
+                "field": "name",
+                "value": "李四"
+              }
+            ]
+          }
+        },
+        {
+          "id": "form_b-cast-lester-da746d6a",
+          "result": {
+            "email": "keep@example.com",
+            "name": "李四",
+            "submits": 0,
+            "writes": [
+              {
+                "at": 1789487412584,
+                "field": "name",
+                "value": "李四"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "cfaf45039243dece529ede8bbdc62b0eaf4cccad6d460f04b597d57f9db01cba",
+    "agent/src/conversation-manager.ts": "8e520e6adb7eacd4af4a1d903055ed958c291c225484260b4905f84b52914a8c",
+    "agent/src/fleet.ts": "89b20b214bd83ee27a556d6217b5f6c5eb1a2d0f1dc93c9f97873bc019f4e360",
+    "agent/src/task-dispatcher.ts": "d7f49e3e4d9367c0bd6075cf995b0b08195dfd58bddfe584a24a3f4f5b625de9",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "0b1487cf717b8637e7766d721320d5048622fb2195bad8eff6a40ece47e3ad9a"
+  },
+  "actualModel": "opencode-go/deepseek-flash"
+}

@@ -177,7 +177,9 @@ export class TaskResultBook {
         item.status = "satisfied";
       }
     } else {
-      if (input.executionFact === "not_executed") {
+      if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
+        // Translation may fail while generating its next batch after acknowledged earlier batches.
+        // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
         item.status = "blocked";
       } else if (isWriteTool(input.name)) {
         item.status = "unknown";

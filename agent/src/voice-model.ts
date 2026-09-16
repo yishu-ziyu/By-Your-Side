@@ -2,7 +2,7 @@ import {randomUUID} from "node:crypto";
 import type {ModelRuntime} from "@earendil-works/pi-coding-agent";
 import type {VoiceConversationContext} from "../../shared/voice.js";
 import {VoiceIntentError} from "./voice-errors.js";
-import {VOICE_FREE_REPLY_PROMPT, VOICE_INTENT_PROMPT, VOICE_PLAN_PROMPT, parseVoiceDecision, voiceDecisionClauses, type VoiceIntentPlan} from "./voice-intent.js";
+import {VOICE_FREE_REPLY_PROMPT, VOICE_PLAN_PROMPT, parseVoiceDecision, voiceDecisionClauses, type VoiceIntentPlan} from "./voice-intent.js";
 
 /**
  * 无浏览器工具的语音模型调用：编辑判定、整句意图分类、只读页面观察。
@@ -26,9 +26,9 @@ export interface VoiceIntentTask {
 
 /** 编辑判定的总预算。 */
 const VOICE_EDIT_TIMEOUT_MS = 15_000;
-/** 整句意图分类的总预算，以及两次尝试各自的子预算。 */
-const VOICE_INTENT_TIMEOUT_MS = 15_000;
-const VOICE_INTENT_ATTEMPT_TIMEOUTS_MS = [6_000, 9_000] as const;
+/** 计划判定的总预算，以及两次尝试各自的子预算；整句分类与一次性提案共用。 */
+const VOICE_PLAN_TIMEOUT_MS = 15_000;
+const VOICE_PLAN_ATTEMPT_TIMEOUTS_MS = [6_000, 9_000] as const;
 /** 只读页面观察的单次预算。 */
 const VOICE_OBSERVATION_TIMEOUT_MS = 20_000;
 
@@ -46,6 +46,104 @@ function rejectionHint(rejection: string): string {
 /** 第一次尝试的候选或请求没有通过应用校验时的强化提示。 */
 const VOICE_INTENT_RETRY_HINT =
   "\n上次候选或请求没有通过应用校验，请重新判断整句。查询也必须提取明确的会话名称。等我说继续属于未来条件，不能立即resume，放入前一步的分界内。缺少图片或比较对象仍是start，不是clarify。chat/clarify/silence不得与任务动作混用；最后一步不填through，单一步骤不需要分界，应用会保留全部原话。纠正原任务要结合task.goal，不能另作start。对上文事项的内容追问或指代（如“那个呢”）归chat，不是clarify；clarify只用于未命名的“那个/另一个会话”或裸“停止”。只返回JSON。";
+
+interface VoicePlanRun {
+  plan: VoiceIntentPlan;
+  requestId: string;
+  attempts: number;
+  elapsedMs: number;
+}
+
+/**
+ * 计划判定的唯一流程：整句意图分类与一次性提案的计划协议都走这里。
+ *
+ * 请求组装、提示词、模型参数、15 秒总预算内的 6s→9s 重试、parseVoiceDecision 校验和每条诊断都只有一份；
+ * 两个入口只注入三处差异：诊断前缀、诊断里是否带 protocol、是否接受取消信号。
+ * free_reply 不走这里（它是另一次最小请求，见 freeReplyTurn）。
+ */
+async function runVoicePlan(
+  call: VoiceModelCall,
+  input: VoiceTurnPrepareInput,
+  options: {diagnosePrefix: string; diagnoseProtocol?: 'plan'; cancel?: AbortSignal},
+): Promise<VoicePlanRun> {
+  const {diagnosePrefix, diagnoseProtocol, cancel} = options;
+  const budget = AbortSignal.timeout(VOICE_PLAN_TIMEOUT_MS);
+  // 轮次被取代/说停时先取消这次模型请求：候选不再需要，也不该继续占着模型预算。
+  const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
+  const requestId = input.task?.requestId ?? randomUUID();
+  const startedAt = Date.now();
+  let rejection: string | undefined;
+  for (const [attempt, attemptTimeoutMs] of VOICE_PLAN_ATTEMPT_TIMEOUTS_MS.entries()) {
+    const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
+    const callAt = Date.now();
+    const diagnose = (outcome: string, reason?: string, actions?: string[]) =>
+      console.error(`${diagnosePrefix} ${JSON.stringify({
+        requestId,
+        attempt: attempt + 1,
+        elapsedMs: Date.now() - callAt,
+        outcome,
+        ...(diagnoseProtocol ? {protocol: diagnoseProtocol} : {}),
+        ...(reason ? {reason} : {}),
+        ...(actions ? {actions} : {}),
+      })}`);
+
+    let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+    try {
+      reply = await call.runtime.completeSimple(call.model, {
+        // 计划提示词与旧分类调用逐字相同：VOICE_PLAN_PROMPT === VOICE_INTENT_PROMPT（既有契约测试锁定）。
+        systemPrompt: VOICE_PLAN_PROMPT
+          + (rejection ? rejectionHint(rejection) : "")
+          + (attempt ? VOICE_INTENT_RETRY_HINT : ""),
+        messages: [{
+          role: "user",
+          content: JSON.stringify({
+            state: input.state,
+            text: input.text,
+            clauses: voiceDecisionClauses(input.text),
+            ...(input.conversationTitles ? {conversationTitles: input.conversationTitles} : {}),
+            ...(input.task ? {task: {goal: input.task.goal?.slice(0, 600) ?? null}} : {}),
+            ...(input.conversation ? {conversation: input.conversation} : {}),
+          }),
+          timestamp: Date.now(),
+        }],
+      }, {
+        maxTokens: 1400,
+        temperature: 0,
+        signal: attemptSignal,
+        sessionId: call.sessionId,
+        headers: call.headers,
+      });
+    } catch {
+      // 取消与超时都会让请求失败：只有调用方主动取消时才立刻收手，其余在总预算内重试一次。
+      const superseded = cancel?.aborted === true;
+      diagnose(superseded ? "cancelled" : attemptSignal.aborted ? "timeout" : "request_failed");
+      if (superseded) throw new VoiceIntentError("classifier_failed");
+      if (!attempt && !signal.aborted) continue;
+      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
+    }
+
+    if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+      diagnose("provider_failed");
+      if (!attempt && !signal.aborted) continue;
+      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
+    }
+
+    try {
+      const plan = parseVoiceDecision(
+        reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim(),
+        input.text,
+        input.conversationTitles,
+      );
+      diagnose("accepted", undefined, plan.steps.map(step => step.action));
+      return {plan, requestId, attempts: attempt + 1, elapsedMs: Date.now() - startedAt};
+    } catch (error) {
+      rejection = error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown";
+      diagnose("candidate_rejected", rejection);
+      if (attempt || signal.aborted) throw error;
+    }
+  }
+  throw new VoiceIntentError("classifier_invalid_reply");
+}
 
 /** 判定一句语音是否为“直接修改当前任务条件”的指令；模型不可用由调用方先行拦截。 */
 export async function classifyVoiceEdit(call: VoiceModelCall, text: string): Promise<boolean> {
@@ -73,8 +171,7 @@ export async function classifyVoiceEdit(call: VoiceModelCall, text: string): Pro
 /**
  * 把整句语音分类成动作计划。
  *
- * 总预算 15 秒不变；第一次失败后在总预算内重试一次（子预算 6s → 9s）。
- * 每次尝试都带诊断 requestId，拒绝原因回灌模型，并把候选/请求失败写进 stderr 诊断。
+ * 走与一次性提案同一份计划流程（runVoicePlan）；返回值仍是计划本身，诊断前缀仍是 voice-classifier。
  */
 export async function classifyVoiceInput(
   call: VoiceModelCall,
@@ -84,73 +181,11 @@ export async function classifyVoiceInput(
   task?: VoiceIntentTask,
   conversation?: VoiceConversationContext,
 ): Promise<VoiceIntentPlan> {
-  const signal = AbortSignal.timeout(VOICE_INTENT_TIMEOUT_MS);
-  let rejection: string | undefined;
-  const requestId = task?.requestId ?? randomUUID();
-  for (const [attempt, attemptTimeoutMs] of VOICE_INTENT_ATTEMPT_TIMEOUTS_MS.entries()) {
-    const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
-    const callAt = Date.now();
-    const diagnose = (outcome: string, reason?: string, actions?: string[]) =>
-      console.error(`[voice-classifier] ${JSON.stringify({
-        requestId,
-        attempt: attempt + 1,
-        elapsedMs: Date.now() - callAt,
-        outcome,
-        ...(reason ? {reason} : {}),
-        ...(actions ? {actions} : {}),
-      })}`);
-
-    let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
-    try {
-      reply = await call.runtime.completeSimple(call.model, {
-        systemPrompt: VOICE_INTENT_PROMPT
-          + (rejection ? rejectionHint(rejection) : "")
-          + (attempt ? VOICE_INTENT_RETRY_HINT : ""),
-        messages: [{
-          role: "user",
-          content: JSON.stringify({
-            state,
-            text,
-            clauses: voiceDecisionClauses(text),
-            ...(conversationTitles ? {conversationTitles} : {}),
-            ...(task ? {task: {goal: task.goal?.slice(0, 600) ?? null}} : {}),
-            ...(conversation ? {conversation} : {}),
-          }),
-          timestamp: Date.now(),
-        }],
-      }, {
-        maxTokens: 1400,
-        temperature: 0,
-        signal: attemptSignal,
-        sessionId: call.sessionId,
-        headers: call.headers,
-      });
-    } catch {
-      diagnose(attemptSignal.aborted ? "timeout" : "request_failed");
-      if (!attempt && !signal.aborted) continue;
-      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
-    }
-
-    if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-      diagnose("provider_failed");
-      if (!attempt && !signal.aborted) continue;
-      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
-    }
-
-    try {
-      const plan = parseVoiceDecision(reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim(), text, conversationTitles);
-      diagnose("accepted", undefined, plan.steps.map(step => step.action));
-      return plan;
-    } catch (error) {
-      rejection = error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown";
-      diagnose("candidate_rejected", rejection);
-      if (attempt || signal.aborted) throw error;
-    }
-  }
-  throw new VoiceIntentError("classifier_invalid_reply");
+  const {plan} = await runVoicePlan(call, {text, state, conversationTitles, task, conversation}, {diagnosePrefix: "[voice-classifier]"});
+  return plan;
 }
 
-/** 一次性提案的输入：与分类调用同一批上下文，但少了独立的分类往返。 */
+/** 计划判定的输入：整句分类与一次性提案的 plan 协议共用同一批上下文。 */
 export interface VoiceTurnPrepareInput {
   text: string;
   state: string;
@@ -171,9 +206,6 @@ export interface VoiceTurnPreparation {
   protocol: 'free_reply' | 'plan';
 }
 
-/** 计划协议的总预算，以及两次尝试各自的子预算（与旧分类调用同一节奏）。 */
-const VOICE_TURN_TIMEOUT_MS = 15_000;
-const VOICE_TURN_ATTEMPT_TIMEOUTS_MS = [6_000, 9_000] as const;
 /**
  * 白名单句子的最小请求：单次尝试、8 秒上限，失败就是确定失败。
  * 故意不重试：这条路径的价值是快，第二次尝试只会把等待翻倍。
@@ -202,77 +234,8 @@ export interface VoiceTurnPrepareOptions {
 export async function prepareVoiceTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput, options: VoiceTurnPrepareOptions = {}): Promise<VoiceTurnPreparation> {
   const {cancel, protocol = 'plan'} = options;
   if (protocol === 'free_reply') return freeReplyTurn(call, input, cancel);
-  const budget = AbortSignal.timeout(VOICE_TURN_TIMEOUT_MS);
-  // 轮次被取代/说停时先取消这次模型请求：候选不再需要，也不该继续占着模型预算。
-  const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
-  const requestId = input.task?.requestId ?? randomUUID();
-  const startedAt = Date.now();
-  let rejection: string | undefined;
-  for (const [attempt, attemptTimeoutMs] of VOICE_TURN_ATTEMPT_TIMEOUTS_MS.entries()) {
-    const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
-    const callAt = Date.now();
-    const diagnose = (outcome: string, reason?: string, actions?: string[]) =>
-      console.error(`[voice-turn] ${JSON.stringify({
-        requestId,
-        attempt: attempt + 1,
-        elapsedMs: Date.now() - callAt,
-        outcome,
-        protocol,
-        ...(reason ? {reason} : {}),
-        ...(actions ? {actions} : {}),
-      })}`);
-
-    let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
-    try {
-      reply = await call.runtime.completeSimple(call.model, {
-        systemPrompt: VOICE_PLAN_PROMPT
-          + (rejection ? rejectionHint(rejection) : "")
-          + (attempt ? VOICE_INTENT_RETRY_HINT : ""),
-        messages: [{
-          role: "user",
-          content: JSON.stringify({
-            state: input.state,
-            text: input.text,
-            clauses: voiceDecisionClauses(input.text),
-            ...(input.conversationTitles ? {conversationTitles: input.conversationTitles} : {}),
-            ...(input.task ? {task: {goal: input.task.goal?.slice(0, 600) ?? null}} : {}),
-            ...(input.conversation ? {conversation: input.conversation} : {}),
-          }),
-          timestamp: Date.now(),
-        }],
-      }, {
-        maxTokens: 1400,
-        temperature: 0,
-        signal: attemptSignal,
-        sessionId: call.sessionId,
-        headers: call.headers,
-      });
-    } catch {
-      const superseded = cancel?.aborted === true;
-      diagnose(superseded ? "cancelled" : attemptSignal.aborted ? "timeout" : "request_failed");
-      if (superseded) throw new VoiceIntentError("classifier_failed");
-      if (!attempt && !signal.aborted) continue;
-      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
-    }
-
-    if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-      diagnose("provider_failed");
-      if (!attempt && !signal.aborted) continue;
-      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
-    }
-
-    try {
-      const raw = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
-      const plan = parseVoiceDecision(raw, input.text, input.conversationTitles);
-      diagnose("accepted", undefined, plan.steps.map(step => step.action));
-      return { plan, replyText: null, requestId, attempts: attempt + 1, elapsedMs: Date.now() - startedAt, protocol };
-    } catch (error) {
-      rejection = error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown";
-      diagnose("candidate_rejected", rejection);
-      if (attempt || signal.aborted) throw error;
-    }
-  }
-  throw new VoiceIntentError("classifier_invalid_reply");
+  const {plan, requestId, attempts, elapsedMs} = await runVoicePlan(call, input, {diagnosePrefix: "[voice-turn]", diagnoseProtocol: 'plan', cancel});
+  return {plan, replyText: null, requestId, attempts, elapsedMs, protocol};
 }
 
 /** 白名单句子的最小请求：一次尝试、只要正文；空正文/超时/失败都给确定的失败回执。 */

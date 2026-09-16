@@ -30,6 +30,7 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
   }
 }
 function one(receipt:Pick<TaskReceipt,'action'|'status'|'message'>):string {
+  if(receipt.status==='queued')return receipt.message.slice(0,180);
   if(receipt.status==='unknown')return '这条指令的执行结果还无法确认，我不会自动重做。';
   if(receipt.status==='rejected'||receipt.status==='failed')return receipt.message.slice(0,180);
   switch(receipt.action){

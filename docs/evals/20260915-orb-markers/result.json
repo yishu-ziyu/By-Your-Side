@@ -1,0 +1,110 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "thinking",
+      "ok": true
+    },
+    {
+      "name": "thinking marker",
+      "ok": true
+    },
+    {
+      "name": "thinking",
+      "ok": true
+    },
+    {
+      "name": "thinking marker",
+      "ok": true
+    },
+    {
+      "name": "thinking",
+      "ok": true
+    },
+    {
+      "name": "thinking marker",
+      "ok": true
+    },
+    {
+      "name": "executing",
+      "ok": true
+    },
+    {
+      "name": "executing marker",
+      "ok": true
+    },
+    {
+      "name": "waiting",
+      "ok": true
+    },
+    {
+      "name": "waiting marker",
+      "ok": true
+    },
+    {
+      "name": "user",
+      "ok": true
+    },
+    {
+      "name": "user marker",
+      "ok": true
+    },
+    {
+      "name": "waiting",
+      "ok": true
+    },
+    {
+      "name": "waiting marker",
+      "ok": true
+    },
+    {
+      "name": "failed",
+      "ok": true
+    },
+    {
+      "name": "failed marker",
+      "ok": true
+    },
+    {
+      "name": "completed",
+      "ok": true
+    },
+    {
+      "name": "completed marker",
+      "ok": true
+    },
+    {
+      "name": "thinking",
+      "ok": true
+    },
+    {
+      "name": "thinking marker",
+      "ok": true
+    },
+    {
+      "name": "stopped",
+      "ok": true
+    },
+    {
+      "name": "stopped marker",
+      "ok": true
+    },
+    {
+      "name": "completed",
+      "ok": true
+    },
+    {
+      "name": "completed marker",
+      "ok": true
+    },
+    {
+      "name": "stopped",
+      "ok": true
+    },
+    {
+      "name": "stopped marker",
+      "ok": true
+    }
+  ],
+  "outDir": "/var/folders/k6/7c96rbxd1r782myg_bnlqshw0000gn/T/sideagent-isolated-JXnbyg"
+}

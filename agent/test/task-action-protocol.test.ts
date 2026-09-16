@@ -22,3 +22,12 @@ it('accepts a cross-conversation receipt in its origin, but rejects an unrelated
  expect(parseServerMessage(JSON.stringify(frame))).not.toBeNull();
  expect(parseServerMessage(JSON.stringify({...frame,conversationId:'unrelated'}))).toBeNull();
 });
+it('validates recoverable receipt input and original request identity',()=>{
+ const request={requestId:'q',conversationId:'A',source:'text',action:'start',expectedRunId:'run',text:'核对文章',context:{tabId:4,title:'原文',url:'https://example.test'}};
+ const receipt={...request,runId:'run',targetTitle:'A',status:'rejected',message:'另开会话',updatedAt:1,newConversationRequest:request};
+ const parse=(r:unknown)=>parseServerMessage(JSON.stringify({type:'agent_event',conversationId:'A',event:{kind:'notice',message:'另开会话',receipt:r}}));
+ expect(parse(receipt)).not.toBeNull();
+ expect(parse({...receipt,newConversationRequest:{...request,requestId:'other'}})).toBeNull();
+ expect(parse({...receipt,newConversationRequest:{...request,context:{tabId:'bad'}}})).toBeNull();
+ expect(parse({...receipt,newConversationRequest:{...request,attachments:[{}]}})).toBeNull();
+});

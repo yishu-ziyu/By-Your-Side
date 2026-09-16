@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-15T16:11:51.372Z",
+  "reloaded": true,
+  "safety": {
+    "count": 182,
+    "allIdle": true
+  },
+  "previousPids": [
+    1694,
+    1695
+  ],
+  "previousWorker": "0B40A65812B27FC27274FB8BAA90D5ED",
+  "worker": "E30F8AFDC433B1F0BFCCCF54CD3EB77E",
+  "pids": [
+    58406
+  ],
+  "confirmedPids": [
+    58406,
+    58439
+  ],
+  "hostStillRunning": true
+}

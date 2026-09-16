@@ -1,0 +1,207 @@
+{
+  "ok": true,
+  "scope": "real headless extension transport and production voice coordination; real Step ASR with synthesized speech; no microphone or human hearing claim",
+  "providerEvents": [
+    "session.created",
+    "session.updated",
+    "input_audio_buffer.cleared",
+    "input_audio_buffer.committed",
+    "conversation.item.created",
+    "conversation.item.input_audio_transcription.completed",
+    "input_audio_buffer.cleared",
+    "input_audio_buffer.committed",
+    "conversation.item.created",
+    "input_audio_buffer.cleared",
+    "conversation.item.input_audio_transcription.completed",
+    "input_audio_buffer.committed",
+    "conversation.item.created",
+    "conversation.item.input_audio_transcription.completed"
+  ],
+  "commands": [
+    {
+      "at": 1789554258608,
+      "command": {
+        "kind": "start"
+      }
+    },
+    {
+      "at": 1789554258922,
+      "command": {
+        "kind": "interrupt",
+        "turn": 1
+      }
+    },
+    {
+      "at": 1789554262240,
+      "command": {
+        "kind": "audio",
+        "turn": 1,
+        "bytes": 24000
+      }
+    },
+    {
+      "at": 1789554262243,
+      "command": {
+        "kind": "audio",
+        "turn": 1,
+        "bytes": 24000
+      }
+    },
+    {
+      "at": 1789554262246,
+      "command": {
+        "kind": "audio",
+        "turn": 1,
+        "bytes": 712
+      }
+    },
+    {
+      "at": 1789554262246,
+      "command": {
+        "kind": "commit",
+        "turn": 1,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554262906,
+      "command": {
+        "kind": "interrupt",
+        "turn": 2
+      }
+    },
+    {
+      "at": 1789554262907,
+      "command": {
+        "kind": "input_context",
+        "turn": 1,
+        "input": {
+          "context": {
+            "tabId": 1901200699,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:53014/reading"
+          },
+          "observation": {
+            "token": "9c50f050-b801-4e6d-9dc6-d07b98c9c3e1",
+            "tabId": 1901200699
+          }
+        }
+      }
+    },
+    {
+      "at": 1789554262909,
+      "command": {
+        "kind": "audio",
+        "turn": 2,
+        "bytes": 24000
+      }
+    },
+    {
+      "at": 1789554262911,
+      "command": {
+        "kind": "audio",
+        "turn": 2,
+        "bytes": 23606
+      }
+    },
+    {
+      "at": 1789554262912,
+      "command": {
+        "kind": "commit",
+        "turn": 2,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554262913,
+      "command": {
+        "kind": "interrupt",
+        "turn": 3
+      }
+    },
+    {
+      "at": 1789554263577,
+      "command": {
+        "kind": "input_context",
+        "turn": 2,
+        "input": {
+          "context": {
+            "tabId": 1901200699,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:53014/reading"
+          },
+          "observation": {
+            "token": "c48c95d0-bac5-4b95-a89b-9185cfaab65b",
+            "tabId": 1901200699
+          }
+        }
+      }
+    },
+    {
+      "at": 1789554263579,
+      "command": {
+        "kind": "audio",
+        "turn": 3,
+        "bytes": 24000
+      }
+    },
+    {
+      "at": 1789554263582,
+      "command": {
+        "kind": "audio",
+        "turn": 3,
+        "bytes": 24000
+      }
+    },
+    {
+      "at": 1789554263585,
+      "command": {
+        "kind": "audio",
+        "turn": 3,
+        "bytes": 15502
+      }
+    },
+    {
+      "at": 1789554263586,
+      "command": {
+        "kind": "commit",
+        "turn": 3,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554263846,
+      "command": {
+        "kind": "input_context",
+        "turn": 3,
+        "input": {
+          "context": {
+            "tabId": 1901200699,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:53014/reading"
+          },
+          "observation": {
+            "token": "6cd1f391-fbdd-4d52-b297-38a48c802e19",
+            "tabId": 1901200699
+          }
+        }
+      }
+    }
+  ],
+  "routes": [
+    {
+      "text": "我想。 了解。 这个页面。",
+      "input": {
+        "context": {
+          "tabId": 1901200699,
+          "title": "Input order fixture",
+          "url": "http://127.0.0.1:53014/reading"
+        },
+        "observation": {
+          "token": "9c50f050-b801-4e6d-9dc6-d07b98c9c3e1",
+          "tabId": 1901200699
+        }
+      }
+    }
+  ]
+}

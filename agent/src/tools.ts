@@ -1,3 +1,5 @@
+import { runPageTranslation, type TranslateBatch } from "./page-translation.js";
+import type { TranslationReceipt, TranslationRequest } from "../../shared/page-translation.js";
 /**
  * 浏览器工具的 defineTool 封装。
  * 每个 execute 只做一件事：rpc.call 转发给扩展，再把结果转成模型友好的 content。
@@ -71,7 +73,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
   return typeof result === "boolean" ? { allowed: result } : result;
 }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: () => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean }): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: () => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -167,6 +169,24 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   };
 
   const definitions = [
+    defineTool({
+      name: "page_translation",
+      label: "翻译网页",
+      description: 'Translate the current webpage IN PLACE, progressively, using the current model. action:"translate" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48). action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. Use this tool, never handwritten JS or a sidebar-only translation. Do not delegate page translation to workers.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('translate'), Type.Literal('display'), Type.Literal('restore')]),
+        tabId: Type.Optional(Type.Number()), language: Type.Optional(Type.String()),
+        mode: Type.Optional(Type.Union([Type.Literal('bilingual'), Type.Literal('translated')])),
+        fontSize: Type.Optional(Type.Number({minimum: 10, maximum: 48})),
+      }),
+      execute: async (_id, params, signal) => {
+        const stop = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(240_000)]);
+        const result = await runPageTranslation(params as TranslationRequest,
+          async command => await call('page_translation', {...command}) as TranslationReceipt,
+          translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), stop);
+        return textResult(JSON.stringify(result), result);
+      },
+    }),
     defineTool({
       name: "page_operation",
       label: "Write and verify field",

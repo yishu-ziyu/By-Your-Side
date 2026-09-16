@@ -49,7 +49,7 @@ export type PanelToBg =
 export type BgToPanel = BgToPanelPayload & { conversationId?: string };
 
 type BgToPanelPayload =
-  | { kind: "conversations"; conversations: import("../../shared/protocol.js").ConversationSummary[]; selectedConversationId: string }
+  | { kind: "conversations"; conversations: import("../../shared/protocol.js").ConversationSummary[]; selectedConversationId: string; resumeReading?: boolean }
   /** 来自伴随进程的协议消息（tool_call 不经面板，由 background 直接执行）。 */
   | { kind: "server"; msg: ServerMessage }
   /** 连接状态变化。 */
@@ -57,7 +57,7 @@ type BgToPanelPayload =
   /** 当前 Agent 运行模式（教学模式开关状态同步）。 */
   | { kind: "mode"; mode: AgentMode }
   /** 面板关闭期间积累的、按 seq 排序的可见历史。 */
-  | { kind: "history"; entries: PanelHistoryEntry[] }
+  | { kind: "history"; entries: PanelHistoryEntry[]; replay?: boolean }
   /** 选中即问：划词或右键把一段正文交给侧栏，不自动发送。 */
   | { kind: "ask_selection"; ask: PendingAsk }
   /**

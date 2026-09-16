@@ -46,3 +46,24 @@ describe("voice input vs playback vs task", () => {
     expect("cancelTask" in playback).toBe(false);
   });
 });
+
+it('preserves an unfinished phrase across noise, then consumes it once',()=>{
+ const input=new VoiceInputLedger();input.holdTranscript('预算改成');
+ expect(input.takeTranscript('')).toBe('');
+ expect(input.takeTranscript('六百')).toBe('预算改成 六百');
+ expect(input.takeTranscript('谢谢')).toBe('谢谢');
+});
+it('does not carry an unfinished phrase into a much later question',()=>{
+ const input=new VoiceInputLedger();input.holdTranscript('预算改成');
+ const now=Date.now;Date.now=()=>now()+21000;
+ try{expect(input.takeTranscript('现在几点')).toBe('现在几点');}finally{Date.now=now;}
+});
+
+it('keeps multiple late fragments across rapid pauses and orders them by capture turn',()=>{
+ const input=new VoiceInputLedger();input.turn=1;
+ input.interrupt(2,true);input.interrupt(3,true);
+ expect(input.mergeLate(2,'了解')).toBe(true);
+ expect(input.mergeLate(1,'我想')).toBe(true);
+ expect(input.mergeLate(1,'重复')).toBe(false);
+ expect(input.takeTranscript('这个页面')).toBe('我想 了解 这个页面');
+});

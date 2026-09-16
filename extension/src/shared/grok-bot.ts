@@ -198,7 +198,7 @@ class GrokBot {
   }
 }
 
-export function mountGrok(host: HTMLElement, person: Person, size = 28): GrokHandle {
+export function mountGrok(host: HTMLElement, person: Person, size = 28, options: { animate?: boolean } = {}): GrokHandle {
   host.replaceChildren();
   const id = `gb${++clip}`;
   const d = SHAPES[person.shape];
@@ -213,8 +213,10 @@ export function mountGrok(host: HTMLElement, person: Person, size = 28): GrokHan
   const svg = host.querySelector("svg");
   if (!svg) throw new Error("grok svg missing");
   const bot = new GrokBot(svg, person);
-  live.add(bot);
-  ensureLoop();
+  if (options.animate !== false) {
+    live.add(bot);
+    ensureLoop();
+  }
   return {
     destroy() {
       bot.destroy();

@@ -3,6 +3,7 @@ import { SYSTEM_PROMPT, workerSystemPrompt } from "../src/prompt.js";
 it("planning is structural and communicates useful decomposition before spawning", () => {
   expect(SYSTEM_PROMPT).toContain("dependencies, transferable artifacts, shared live state, and coordination cost");
   expect(SYSTEM_PROMPT).toContain("Before spawn_worker, tell the user");
+  expect(SYSTEM_PROMPT).toContain("via send_user_message(kind=ack), once");
   expect(SYSTEM_PROMPT).toContain("never a fixed pair");
   expect(SYSTEM_PROMPT).toContain("Do NOT spawn for a short single-field edit");
   expect(SYSTEM_PROMPT).toContain("sharedTabId");

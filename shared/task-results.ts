@@ -34,7 +34,7 @@ export const TASK_RESULT_META_TOOLS = ["record_task_results", "send_user_message
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "snapshot"] as const;
 
 /** 页面身份类工具：执行后当前文档/工作页可能改变，此前读数不能再当作前后对比基线。 */
-export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close_tab", "worker_tabs", "page_operation", "js"] as const;
+export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close_tab", "worker_tabs", "page_operation", "page_translation", "js"] as const;
 
 /** 单条读数的完整文本上限；超过即标记截断，不能作为前后对比基线。 */
 export const RESULT_OBSERVATION_TEXT_MAX = 50_000;
@@ -158,7 +158,7 @@ export function selectResultBinding(items: readonly TaskResultItem[], tool: stri
 }
 
 const RESULT_ACTION_LABELS: Record<string, string> = {
-  click: "点击", hover: "悬停", fill: "填写", page_operation: "修改字段", type_text: "输入文字",
+  click: "点击", hover: "悬停", fill: "填写", page_operation: "修改字段", page_translation: "翻译网页", type_text: "输入文字",
   press_key: "按键", navigate: "打开页面", open_tab: "打开标签页", switch_tab: "切换标签页",
   close_tab: "关闭标签页", scroll: "滚动页面", mark: "标注页面", clear_marks: "清除标注",
   js: "执行页面脚本", worker_tabs: "调整页面归属", share_tab: "设置协作页面",

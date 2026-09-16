@@ -1,0 +1,64 @@
+{
+  "ok": false,
+  "scope": "real isolated extension/model/browser and Step TTS; ASR text controlled; playback completion simulated",
+  "routes": [
+    {
+      "text": "同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+      "result": {
+        "kind": "steer",
+        "ok": true,
+        "status": "accepted",
+        "message": "语音修改已送达当前任务：同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+        "receipts": [
+          {
+            "requestId": "test-voice-1",
+            "conversationId": "default",
+            "source": "voice",
+            "action": "steer",
+            "runId": "1e88036d-87e5-4492-bcd4-4be433843ee3",
+            "text": "同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+            "targetTitle": "先调用 await_fixture_release 等资料就绪，再读取当",
+            "status": "accepted",
+            "message": "语音修改已送达当前任务：同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+            "updatedAt": 1789556271896
+          }
+        ],
+        "turn": {
+          "branch": "control",
+          "phase": "COMMITTED",
+          "protocol": "plan"
+        },
+        "plan": {
+          "id": "test-voice-1",
+          "conversationId": "default",
+          "updatedAt": 1789556271898,
+          "steps": [
+            {
+              "action": "steer",
+              "text": "同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+              "targetId": "default",
+              "targetTitle": "先调用 await_fixture_release 等资料就绪，再读取当",
+              "status": "complete",
+              "receipt": {
+                "requestId": "test-voice-1",
+                "conversationId": "default",
+                "source": "voice",
+                "action": "steer",
+                "runId": "1e88036d-87e5-4492-bcd4-4be433843ee3",
+                "text": "同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+                "targetTitle": "先调用 await_fixture_release 等资料就绪，再读取当",
+                "status": "accepted",
+                "message": "语音修改已送达当前任务：同时在新标签页打开 http://127.0.0.1:57348/second ，读取页面验证码并告诉我。",
+                "updatedAt": 1789556271896
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "played": null,
+  "deliveries": {},
+  "audioFrames": 0,
+  "audioBytes": 0
+}

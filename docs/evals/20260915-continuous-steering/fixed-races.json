@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "scope": "real session wrapper with controlled observation and Pi events; no live model/browser",
+  "cases": [
+    {
+      "name": "old writes blocked while fresh-page observation waits",
+      "passed": true
+    },
+    {
+      "name": "identical inputs remain distinct until both are consumed",
+      "passed": true,
+      "blockedAfterFirst": true
+    },
+    {
+      "name": "stop during observation prevents later steer enqueue",
+      "passed": true,
+      "rejected": true,
+      "queuedAfterStop": 0
+    }
+  ],
+  "hashes": {
+    "session": "cfaf45039243dece529ede8bbdc62b0eaf4cccad6d460f04b597d57f9db01cba"
+  }
+}

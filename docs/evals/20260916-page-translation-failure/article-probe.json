@@ -1,0 +1,17 @@
+{
+  "url": "https://asteriskmag.com/issues/15/why-we-like-things",
+  "batches": [
+    {
+      "blocks": 15,
+      "segments": 40,
+      "chars": 4117,
+      "ms": 48948,
+      "ok": false,
+      "error": "Error: 这批翻译未完成（length），已保留之前的译文。可以继续翻译。"
+    }
+  ],
+  "collection": {
+    "total": 88,
+    "unsupported": 0
+  }
+}

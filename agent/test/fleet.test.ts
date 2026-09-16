@@ -305,7 +305,7 @@ describe("shared page worker registration", () => {
     const create = vi.spyOn(Session, "create").mockResolvedValue(worker as never);
     try {
       const result = await fleet.spawn({ id: "writer", goal: "prepare one independent field", sharedTabId: 42 });
-      expect(result).toEqual({ id: expect.stringMatching(/^writer-[a-f0-9]{8}$/), tabId: 42 });
+      expect(result).toEqual({ id: expect.stringMatching(/^writer-cast-[a-z]+-[a-f0-9]{8}$/), tabId: 42 });
       expect(call.mock.calls[0]).toEqual(["share_tab", { tabId: 42, collaborators: ["main", result.id] }]);
       expect(call).toHaveBeenCalledTimes(1);
       expect(call.mock.calls.some(([name]) => name === "switch_tab")).toBe(false);
@@ -314,6 +314,28 @@ describe("shared page worker registration", () => {
       expect(worker.sendUserMessage).toHaveBeenCalledWith("prepare one independent field");
       await fleet.stopAndRelease(result.id);
       expect(call).toHaveBeenLastCalledWith("worker_tabs", { action: "release", workerId: result.id });
+    } finally { create.mockRestore(); }
+  });
+});
+
+describe("真实创建身份与职责关联", () => {
+  it("并发相同短名不会撞角色，登记事件使用实际 id 和对应创建调用", async () => {
+    const { BrowserAgentSession: Session } = await import("../src/session.js");
+    const { displayNameFor } = await import("../../shared/cast.js");
+    const emit = vi.fn();
+    const call = vi.fn(async () => ({ tabId: 42 }));
+    const fleet = new Fleet({ rpc: { call } as never, sink: { emit, setStatus: vi.fn() } });
+    fleet.attachLead({ runtime: {}, modelName: () => "model" } as never);
+    const create = vi.spyOn(Session, "create").mockImplementation(async () => ({ available: true, sendUserMessage: vi.fn(), abort: vi.fn(), dispose: vi.fn() }) as never);
+    try {
+      const [a, b] = await Promise.all([
+        fleet.spawn({ id: "read", goal: "source A", task: "整理甲", output: "甲摘要", spawnToolCallId: "spawn-a" }),
+        fleet.spawn({ id: "read", goal: "source B", task: "整理乙", output: "乙摘要", spawnToolCallId: "spawn-b" }),
+      ]);
+      expect(displayNameFor(a.id)).not.toBe(displayNameFor(b.id));
+      expect(emit).toHaveBeenCalledWith({ kind: "worker_task", task: "整理甲", output: "甲摘要", spawnToolCallId: "spawn-a" }, a.id);
+      expect(emit).toHaveBeenCalledWith({ kind: "worker_task", task: "整理乙", output: "乙摘要", spawnToolCallId: "spawn-b" }, b.id);
+      fleet.abortAll();
     } finally { create.mockRestore(); }
   });
 });

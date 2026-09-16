@@ -1,0 +1,95 @@
+{
+  "model": "opencode-go/deepseek-flash",
+  "results": [
+    {
+      "text": "我刚打开一篇文章，它主要讲了什么？",
+      "expected": "observe",
+      "plan": {
+        "steps": [
+          {
+            "action": "observe",
+            "text": "我刚打开一篇文章，它主要讲了什么？",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1923,
+      "ok": true
+    },
+    {
+      "text": "这个页面上的两种套餐有什么区别？",
+      "expected": "observe",
+      "plan": {
+        "steps": [
+          {
+            "action": "observe",
+            "text": "这个页面上的两种套餐有什么区别？",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1446,
+      "ok": true
+    },
+    {
+      "text": "还不错，我现在在看这部剧，就这个YouTube的这部剧。你可以告诉我说这部剧的内容是什么吗？",
+      "expected": "observe",
+      "plan": {
+        "steps": [
+          {
+            "action": "observe",
+            "text": "还不错，我现在在看这部剧，就这个YouTube的这部剧。你可以告诉我说这部剧的内容是什么吗？",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1513,
+      "ok": true
+    },
+    {
+      "text": "不对，我是说。现在这个页面讲了什么？",
+      "expected": "observe",
+      "plan": {
+        "steps": [
+          {
+            "action": "observe",
+            "text": "不对，我是说。现在这个页面讲了什么？",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1324,
+      "ok": true
+    },
+    {
+      "text": "请帮我总结当前页面的三条观点。",
+      "expected": "start",
+      "plan": {
+        "steps": [
+          {
+            "action": "start",
+            "text": "请帮我总结当前页面的三条观点。",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1164,
+      "ok": true
+    },
+    {
+      "text": "预算改成……",
+      "expected": "listen",
+      "plan": {
+        "steps": [
+          {
+            "action": "listen",
+            "text": "预算改成……",
+            "target": null
+          }
+        ]
+      },
+      "ms": 1148,
+      "ok": true
+    }
+  ]
+}

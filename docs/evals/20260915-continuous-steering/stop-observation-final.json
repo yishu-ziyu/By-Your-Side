@@ -1,0 +1,44 @@
+{
+  "passed": true,
+  "selection": "observation-only",
+  "scope": "isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier and assigned team setup, no native host or microphone",
+  "model": "opencode-go/deepseek-flash",
+  "cases": [
+    {
+      "name": "stop bypasses correction pre-observation and late correction is rejected",
+      "passed": true,
+      "stoppedAt": 1789488471076,
+      "confirmedAt": 1789488471230,
+      "receipt": {
+        "requestId": "4228f804-91f6-4a1d-be38-db0373347df4",
+        "conversationId": "265400f8-b795-4550-a587-d2020a3f214c",
+        "source": "text",
+        "action": "steer",
+        "runId": "f691c1e6-6a38-48d3-8b56-ba5604aeb3fa",
+        "text": "不是这个页面，先重新看当前页面再改姓名。",
+        "targetTitle": "读取期间停止",
+        "status": "rejected",
+        "message": "原任务已停止或发生变化，修改未发送。",
+        "updatedAt": 1789488471231
+      },
+      "result": {
+        "name": "",
+        "email": "keep@example.com",
+        "city": "",
+        "note": "",
+        "submits": 0,
+        "writes": []
+      }
+    }
+  ],
+  "hashes": {
+    "agent/src/session.ts": "6d9aada25a517783746587e698901bc9e469614656dd9b0a88d29fdbe9f9551c",
+    "agent/src/conversation-manager.ts": "b0bdefe6514c342159ef041b561d2d03de1fe90a153e8ca8bbd1eaa8a9c2ed9a",
+    "agent/src/fleet.ts": "b1c08b337ccca67d1d45e46dc5cd1e8bb317381f508d69388e3e353a6481b168",
+    "agent/src/task-dispatcher.ts": "7342f43daa25636c0f70edd9acff29e4dbab7cd42fcf309f512220021f8abf7c",
+    "extension/dist/background.js": "bdd86df5a4e48794a050cde6d842ab1e3583c5e9e1b7d27dbfc9470fed77f4e8",
+    "extension/dist/sidepanel.js": "fa2e8cad97bff33ba33468ed043153f2679690d68ef2ea8882694f35907811f1",
+    "scripts/acceptance/continuous-steering.mts": "281943f9c7c779b6024c853d758b1b3954b5ed6d5fc124896dd8426b0b5c2b07"
+  },
+  "actualModel": "opencode-go/deepseek-flash"
+}

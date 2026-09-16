@@ -15,6 +15,8 @@ export class VoiceRelay {
       let message: ClientMessage | null;
       try { message = parseClientMessage(JSON.stringify(raw.msg)); } catch { return; }
       if (!message || message.type !== "voice" || !message.conversationId) return;
+      // Context completion is produced by this relay, never by a panel.
+      if(message.command.kind==='input_context')return;
       if (message.command.kind === "start") {
         if (message.conversationId !== this.selected()) return;
         if (this.lease?.port === port && this.lease.voiceId === message.voiceId) return;
@@ -30,12 +32,12 @@ export class VoiceRelay {
       // A diagnostic take never reads the page: its commit carries no observation or ask context.
       if(message.command.kind==='commit'&&this.enrich&&!lease.diagnostic){
         const command=message.command;
-        void this.enrich(lease.conversationId,command.input??{}).then(async input=>{
-          const observation=await this.observation.issue().catch(()=>undefined);
-          input={...input,observation};
-          if(this.lease!==lease||lease.turn!==command.turn)return;
-          if(!this.send({...message,command:{...command,input}}))this.disconnected();
-        }).catch(()=>{if(this.lease===lease&&lease.turn===command.turn)this.post({type:'voice',voiceId:lease.voiceId,conversationId:lease.conversationId,event:{kind:'state',state:'ready',detail:'页面资料没能读取，这句话没有发送，请重说。'}});});
+        if(!this.send({...message,command:{...command,contextPending:true}})){this.disconnected();return;}
+        void Promise.all([this.enrich(lease.conversationId,command.input??{}),this.observation.issue().catch(()=>undefined)]).then(([input,observation])=>{
+          if(this.lease!==lease)return;
+          const source={...input,...(!input.context||input.context.tabId===observation?.tabId?{observation}:{})};
+          if(!this.send({...message,command:{kind:'input_context',turn:command.turn,input:source}}))this.disconnected();
+        }).catch(()=>{if(this.lease===lease)this.send({...message,command:{kind:'input_context',turn:command.turn,error:'页面资料没能读取，这句话尚未执行。'}});});
         return;
       }
       if (!this.send(message)) { this.disconnected(); return; }

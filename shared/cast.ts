@@ -1,6 +1,6 @@
 /**
  * 并行时侧栏/光标上的人。律师班 + 火线班都可以上场。
- * 按 worker id 稳定散列，纯函数，面板和页面光标同一套。
+ * 新 worker 的角色编码进 id，旧记录沿用散列；面板和页面光标共用纯函数。
  * Lead（main）不是这张名册。
  */
 
@@ -137,7 +137,8 @@ export function isLeadId(id: string | undefined | null): boolean {
 /** worker sessionId → 人。Lead 返回 null。 */
 export function personFor(id: string): Person | null {
   if (isLeadId(id)) return null;
-  const person = CAST[hash(id) % CAST.length];
+  const key = /-cast-([a-z]+)-[a-f0-9]{8}$/.exec(id)?.[1];
+  const person = CAST.find((p) => p.key === key) ?? CAST[hash(id) % CAST.length];
   return person ?? CAST[0] ?? null;
 }
 
@@ -149,4 +150,15 @@ export function displayColor(id: string): string {
 /** 光标名牌 / 步骤行名字。 */
 export function displayNameFor(id: string): string {
   return personFor(id)?.name ?? LEAD_NAME;
+}
+
+/** 创建时保留一个未被占用的角色，身份编码随 sessionId 回放并传到网页光标。 */
+export function assignedWorkerId(base: string, nonce: string, occupiedIds: Iterable<string>): string {
+  const occupied = new Set([...occupiedIds].map((id) => personFor(id)?.key));
+  const start = hash(base) % CAST.length;
+  for (let offset = 0; offset < CAST.length; offset++) {
+    const person = CAST[(start + offset) % CAST.length]!;
+    if (!occupied.has(person.key)) return `${base}-cast-${person.key}-${nonce}`;
+  }
+  throw new Error("没有可用的助手身份");
 }

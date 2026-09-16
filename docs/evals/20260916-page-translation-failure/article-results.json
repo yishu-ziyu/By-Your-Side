@@ -1,0 +1,83 @@
+{
+  "url": "https://asteriskmag.com/issues/15/why-we-like-things",
+  "batches": [
+    {
+      "blocks": 15,
+      "segments": 40,
+      "chars": 4117,
+      "ms": 6336,
+      "ok": true
+    },
+    {
+      "blocks": 4,
+      "segments": 24,
+      "chars": 3352,
+      "ms": 5678,
+      "ok": true
+    },
+    {
+      "blocks": 5,
+      "segments": 17,
+      "chars": 3152,
+      "ms": 4737,
+      "ok": true
+    },
+    {
+      "blocks": 4,
+      "segments": 10,
+      "chars": 2817,
+      "ms": 6158,
+      "ok": true
+    },
+    {
+      "blocks": 6,
+      "segments": 18,
+      "chars": 3298,
+      "ms": 4849,
+      "ok": true
+    },
+    {
+      "blocks": 5,
+      "segments": 17,
+      "chars": 3259,
+      "ms": 5114,
+      "ok": true
+    },
+    {
+      "blocks": 8,
+      "segments": 20,
+      "chars": 3634,
+      "ms": 6962,
+      "ok": true
+    },
+    {
+      "blocks": 5,
+      "segments": 21,
+      "chars": 3615,
+      "ms": 6185,
+      "ok": true
+    },
+    {
+      "blocks": 9,
+      "segments": 21,
+      "chars": 3655,
+      "ms": 5146,
+      "ok": true
+    },
+    {
+      "blocks": 4,
+      "segments": 11,
+      "chars": 2724,
+      "ms": 5937,
+      "ok": true
+    },
+    {
+      "blocks": 23,
+      "segments": 61,
+      "chars": 4794,
+      "ms": 3643,
+      "ok": false,
+      "error": "SyntaxError: Unexpected non-whitespace character after JSON at position 375 (line 2 column 1)"
+    }
+  ]
+}

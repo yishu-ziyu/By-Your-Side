@@ -9,10 +9,19 @@
  * 2. 颜色跟着 --text-secondary 走，深色模式自动反相；主题切换会重画静止的球。
  * 3. 用户在系统里开了"减少动态"就一律定格——光球是状态提示，不是必须动的装饰。
  */
+import type { RunOrbState } from "./run-orb.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
-/** 产品只用这三个身份：思考、调工具、用记忆。 */
-export type OrbState = "composing" | "solving" | "connecting";
+/** 保留细节图标的三个预设，并提供主运行球的状态表现。 */
+export type OrbState = "composing" | "solving" | "connecting" | RunOrbState;
+
+const STATE_PRESET: Partial<Record<OrbState, string>> = {
+  thinking: "solving", executing: "working", waiting: "breathing",
+};
+const TERMINAL_STATES = new Set<OrbState>(["user", "completed", "failed", "stopped"]);
+function presetFor(state: OrbState) {
+  return resolvePreset(STATE_PRESET[state] ?? (TERMINAL_STATES.has(state) ? "solving" : state), GEOM);
+}
 
 /** 引擎的几何坐标系固定 20；显示尺寸靠 canvas 缩放，别改这里。 */
 const GEOM = 20;
@@ -28,10 +37,9 @@ type OrbInstance = {
   box: number;
   dpr: number;
   running: boolean;
-  /** 本次起跑的时间原点（秒） */
-  t0: number;
-  /** 之前累计跑过的秒数，续跑时接着走，不跳帧 */
-  offset: number;
+  requestedRunning: boolean;
+  refreshMotion(): void;
+  state: OrbState;
 };
 
 const instances = new Set<OrbInstance>();
@@ -123,9 +131,10 @@ function tick(now: number): void {
   const seconds = now / 1000;
   let anyLive = false;
   for (const o of instances) {
+    if (!o.canvas.isConnected) { instances.delete(o); continue; }
     if (!o.running) continue;
     anyLive = true;
-    paint(o, (seconds - o.t0 + o.offset) * o.preset.speed);
+    paint(o, seconds * o.preset.speed);
   }
   if (anyLive) raf = requestAnimationFrame(tick);
 }
@@ -137,6 +146,9 @@ function ensureLoop(): void {
 function bindTheme(): void {
   if (themeBound) return;
   themeBound = true;
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").addEventListener?.("change", () => {
+    for (const o of instances) o.refreshMotion();
+  });
   window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
     inkResolved = false;
     for (const o of instances) {
@@ -148,6 +160,7 @@ function bindTheme(): void {
 export type OrbHandle = {
   el: HTMLCanvasElement;
   /** 切到运行态就开始转，切回静止定格一帧并让出 rAF */
+  setState(state: OrbState): void;
   setRunning(running: boolean): void;
   dispose(): void;
 };
@@ -167,41 +180,54 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
   canvas.setAttribute("aria-hidden", "true");
 
   const ctx = canvas.getContext("2d");
-  if (!ctx) return { el: canvas, setRunning: () => {}, dispose: () => {} };
+  if (!ctx) return { el: canvas, setState: () => {}, setRunning: () => {}, dispose: () => {} };
 
   const instance: OrbInstance = {
     canvas,
     ctx,
-    preset: resolvePreset(state, GEOM),
+    preset: presetFor(state),
+    state,
+    requestedRunning: false,
+    refreshMotion: () => {},
     box,
     dpr,
     running: false,
-    t0: 0,
-    offset: 0,
   };
+  canvas.dataset.orbState = state;
+  canvas.dataset.orbMode = instance.preset.mode;
   instances.add(instance);
   paintStill(instance);
 
-  return {
+  const handle: OrbHandle = {
     el: canvas,
+    setState(nextState: OrbState): void {
+      if (instance.state === nextState) return;
+      instance.state = nextState;
+      canvas.dataset.orbState = nextState;
+      // 上游没有完成/失败动画；终态暂停当前形态，不冒用 shaping/connecting。
+      if (!TERMINAL_STATES.has(nextState)) {
+        instance.preset = presetFor(nextState);
+        canvas.dataset.orbMode = instance.preset.mode;
+        paint(instance, prefersReduce() ? STILL_T : performance.now() / 1000 * instance.preset.speed);
+      }
+    },
     setRunning(running: boolean): void {
+      instance.requestedRunning = running;
       const next = running && !prefersReduce();
       if (next === instance.running) return;
       if (next) {
         instance.running = true;
-        instance.t0 = performance.now() / 1000;
         // 跑起来才呼吸（18→20px），历史回放不进入这个状态
         canvas.classList.remove("orb-settle");
         canvas.classList.add("orb-live");
         ensureLoop();
         return;
       }
-      instance.offset += performance.now() / 1000 - instance.t0;
       instance.running = false;
-      paintStill(instance);
+      if (prefersReduce() || !TERMINAL_STATES.has(instance.state)) paintStill(instance);
       canvas.classList.remove("orb-live");
       // 完成是收束：从呼吸处的放大缩回原位，一次性，不排队
-      if (!prefersReduce()) {
+      if (!prefersReduce() && !["stopped", "user", "failed"].includes(instance.state)) {
         canvas.classList.remove("orb-settle");
         canvas.classList.add("orb-settle");
         // 用定时器摘 class 而不是 animationend：折叠的 details 里动画不启动，事件不会来。
@@ -209,7 +235,10 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
       }
     },
     dispose(): void {
+      instance.running = false;
       instances.delete(instance);
     },
   };
+  instance.refreshMotion = () => handle.setRunning(instance.requestedRunning);
+  return handle;
 }

@@ -1,0 +1,369 @@
+{
+  "vendor": "everos",
+  "provider": "opencode-go",
+  "model": "deepseek-flash",
+  "root": "/tmp/bys-memory-eval-PBf7d2/everos-data-1789534992",
+  "steps": [
+    {
+      "case": "health",
+      "elapsed_s": 0.0,
+      "data": {
+        "status": "ok",
+        "version": "1.3.1",
+        "capabilities": {
+          "llm": true,
+          "embed": false,
+          "rerank": false,
+          "multimodal_llm": false,
+          "parser": true
+        },
+        "disabled_features": [
+          "vector_search",
+          "hybrid_search",
+          "reflection",
+          "skill_extraction",
+          "agentic_search",
+          "knowledge",
+          "multimodal_upload"
+        ],
+        "cascade": {
+          "healthy": true,
+          "reasons": [],
+          "pending": 0,
+          "failed_permanent": 0,
+          "failed_retryable": 0,
+          "drain_consecutive_failures": 0,
+          "unrecoverable_total": 0,
+          "optimize_failure_streak": 0,
+          "prune_stale_seconds": 0.0
+        }
+      }
+    },
+    {
+      "case": "C1",
+      "elapsed_s": 6.53,
+      "data": {
+        "add_status": 200,
+        "add": {
+          "request_id": "79606465c8e14f99988c0c6bb4ebf68d",
+          "data": {
+            "message_count": 1,
+            "status": "accumulated"
+          }
+        },
+        "flush_status": 200,
+        "flush": {
+          "request_id": "ad35cbf70e7f4e009f52a6e894a0b3f8",
+          "data": {
+            "status": "extracted"
+          }
+        }
+      }
+    },
+    {
+      "case": "C1-keyword",
+      "elapsed_s": 7.39,
+      "data": {
+        "status": 200,
+        "response": {
+          "request_id": "d836de2d033f40629a7f155f69d3e301",
+          "data": {
+            "episodes": [
+              {
+                "id": "probe-user_ep_20260916_00000001",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C1",
+                "timestamp": "2026-09-16T05:03:15.571000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "subject": "用户提供邮箱地址 lin@example.test 并请求记住该信息",
+                "episode": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "type": "Conversation",
+                "score": 0.39556291699409485,
+                "atomic_facts": []
+              }
+            ],
+            "profiles": [],
+            "agent_cases": [],
+            "agent_skills": [],
+            "unprocessed_messages": []
+          }
+        }
+      }
+    },
+    {
+      "case": "C3",
+      "elapsed_s": 10.35,
+      "data": {
+        "add_status": 200,
+        "add": {
+          "request_id": "af87a40406e045f5a723b414278272db",
+          "data": {
+            "message_count": 1,
+            "status": "accumulated"
+          }
+        },
+        "flush_status": 200,
+        "flush": {
+          "request_id": "a1db157c72e946ffbda42dca3f94671d",
+          "data": {
+            "status": "extracted"
+          }
+        }
+      }
+    },
+    {
+      "case": "C3-keyword",
+      "elapsed_s": 10.36,
+      "data": {
+        "status": 200,
+        "response": {
+          "request_id": "b4ce9fd5cff842ba81f3787267464c3b",
+          "data": {
+            "episodes": [
+              {
+                "id": "probe-user_ep_20260916_00000001",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C1",
+                "timestamp": "2026-09-16T05:03:15.571000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "subject": "用户提供邮箱地址 lin@example.test 并请求记住该信息",
+                "episode": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "type": "Conversation",
+                "score": 0.39556291699409485,
+                "atomic_facts": []
+              }
+            ],
+            "profiles": [],
+            "agent_cases": [],
+            "agent_skills": [],
+            "unprocessed_messages": []
+          }
+        }
+      }
+    },
+    {
+      "case": "C4",
+      "elapsed_s": 12.49,
+      "data": {
+        "add_status": 200,
+        "add": {
+          "request_id": "9438e0482962420ba95d79510ab4ef98",
+          "data": {
+            "message_count": 1,
+            "status": "accumulated"
+          }
+        },
+        "flush_status": 200,
+        "flush": {
+          "request_id": "1702dc96fb8844edb9607f8a6c243cf8",
+          "data": {
+            "status": "extracted"
+          }
+        }
+      }
+    },
+    {
+      "case": "C4-keyword",
+      "elapsed_s": 12.5,
+      "data": {
+        "status": 200,
+        "response": {
+          "request_id": "b43a7d1482a64f2bae89f18d00d5e976",
+          "data": {
+            "episodes": [
+              {
+                "id": "probe-user_ep_20260916_00000002",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C3",
+                "timestamp": "2026-09-16T05:03:22.960000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC，probe-user 表示这次（2026-09-16）使用 work@example.test，并说明默认邮箱保持不变。该决定确认了本次操作邮箱为 work@example.test，同时维持原有默认邮箱不变。",
+                "subject": "probe-user 指定本次使用 work@example.test 邮箱，默认邮箱保持不变",
+                "episode": "2026-09-16 05:03 UTC，probe-user 表示这次（2026-09-16）使用 work@example.test，并说明默认邮箱保持不变。该决定确认了本次操作邮箱为 work@example.test，同时维持原有默认邮箱不变。",
+                "type": "Conversation",
+                "score": 0.32347381114959717,
+                "atomic_facts": []
+              },
+              {
+                "id": "probe-user_ep_20260916_00000001",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C1",
+                "timestamp": "2026-09-16T05:03:15.571000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "subject": "用户提供邮箱地址 lin@example.test 并请求记住该信息",
+                "episode": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "type": "Conversation",
+                "score": 0.2506921887397766,
+                "atomic_facts": []
+              }
+            ],
+            "profiles": [],
+            "agent_cases": [],
+            "agent_skills": [],
+            "unprocessed_messages": []
+          }
+        }
+      }
+    },
+    {
+      "case": "C5",
+      "elapsed_s": 5.38,
+      "data": {
+        "add_status": 200,
+        "add": {
+          "request_id": "d2fab09444b84e518dbf06ec7510bbba",
+          "data": {
+            "message_count": 2,
+            "status": "accumulated"
+          }
+        },
+        "flush_status": 200,
+        "flush": {
+          "request_id": "95823f4ee9904bec842ace5ee497c66f",
+          "data": {
+            "status": "extracted"
+          }
+        }
+      }
+    },
+    {
+      "case": "C5-keyword",
+      "elapsed_s": 20.85,
+      "data": {
+        "status": 200,
+        "response": {
+          "request_id": "705f32db7d524c4abd29e2c3d06f8be7",
+          "data": {
+            "episodes": [],
+            "profiles": [],
+            "agent_cases": [],
+            "agent_skills": [],
+            "unprocessed_messages": []
+          }
+        }
+      }
+    },
+    {
+      "case": "C2-帮我报名",
+      "elapsed_s": 0.01,
+      "data": {
+        "status": 200,
+        "response": {
+          "request_id": "b054302c54c84b588b0771747487c5a0",
+          "data": {
+            "episodes": [],
+            "profiles": [],
+            "agent_cases": [],
+            "agent_skills": [],
+            "unprocessed_messages": []
+          }
+        }
+      }
+    },
+    {
+      "case": "C2-帮我报名，表单需要邮箱",
+      "elapsed_s": 0.01,
+      "data": {
+        "status": 200,
+        "response": {
+          "request_id": "6ba7ce63ffb34ff285c7159e7bcb8b15",
+          "data": {
+            "episodes": [
+              {
+                "id": "probe-user_ep_20260916_00000003",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C4",
+                "timestamp": "2026-09-16T05:03:33.325000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC，probe-user 发出通知，表示从今以后（2026-09-16 起）改用邮箱 new@example.test，旧邮箱不再使用。probe-user 未说明旧邮箱地址，也未给出更换原因，仅作出这一邮箱变更决定。",
+                "subject": "用户通知今后改用新邮箱 new@example.test 并停用旧邮箱",
+                "episode": "2026-09-16 05:03 UTC，probe-user 发出通知，表示从今以后（2026-09-16 起）改用邮箱 new@example.test，旧邮箱不再使用。probe-user 未说明旧邮箱地址，也未给出更换原因，仅作出这一邮箱变更决定。",
+                "type": "Conversation",
+                "score": 0.6522734761238098,
+                "atomic_facts": []
+              },
+              {
+                "id": "probe-user_ep_20260916_00000002",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C3",
+                "timestamp": "2026-09-16T05:03:22.960000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC，probe-user 表示这次（2026-09-16）使用 work@example.test，并说明默认邮箱保持不变。该决定确认了本次操作邮箱为 work@example.test，同时维持原有默认邮箱不变。",
+                "subject": "probe-user 指定本次使用 work@example.test 邮箱，默认邮箱保持不变",
+                "episode": "2026-09-16 05:03 UTC，probe-user 表示这次（2026-09-16）使用 work@example.test，并说明默认邮箱保持不变。该决定确认了本次操作邮箱为 work@example.test，同时维持原有默认邮箱不变。",
+                "type": "Conversation",
+                "score": 0.6346529126167297,
+                "atomic_facts": []
+              },
+              {
+                "id": "probe-user_ep_20260916_00000001",
+                "user_id": "probe-user",
+                "app_id": "default",
+                "project_id": "default",
+                "session_id": "session-C1",
+                "timestamp": "2026-09-16T05:03:15.571000Z",
+                "sender_ids": [
+                  "probe-user"
+                ],
+                "summary": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "subject": "用户提供邮箱地址 lin@example.test 并请求记住该信息",
+                "episode": "2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。",
+                "type": "Conversation",
+                "score": 0.4932023286819458,
+                "atomic_facts": []
+              }
+            ],
+            "profiles": [],
+            "agent_cases": [],
+            "agent_skills": [],
+            "unprocessed_messages": []
+          }
+        }
+      }
+    },
+    {
+      "case": "C6",
+      "elapsed_s": 0.0,
+      "data": {
+        "status": "NOT RUN",
+        "reason": "No public memory deletion endpoint in inspected API; file deletion and derived-source suppression require an adapter."
+      }
+    }
+  ],
+  "memory_routes": [],
+  "markdown": {
+    "default_app/default_project/users/probe-user/user.md": "---\nid: profile_probe-user\ntype: user_profile\nschema_version: 1\nuser_id: probe-user\ntrack: user\nsummary: 用户的默认邮箱已改为 new@example.test（自 2026-09-16 起），原默认邮箱 lin@example.test 不再使用。\nexplicit_info:\n- category: 联系方式\n  description: 用户的默认邮箱已改为 new@example.test（自 2026-09-16 起），原默认邮箱 lin@example.test\n    不再使用。\n  evidence: 2026-09-16 用户明确表示：“以后改用 new@example.test，旧邮箱不用了。”\n- category: 沟通偏好\n  description: 用户希望助手记住其邮箱信息。\n  evidence: 用户说：“你可以记住这一点。”\n- category: 联系方式\n  description: 用户还有一个工作邮箱 work@example.test，可在特定场景下指定使用。\n  evidence: 2026-09-16 用户说：“这次用 work@example.test，默认邮箱不变。”\nimplicit_traits:\n- trait: 场景化区分账号\n  description: 用户会根据具体场景切换使用的联系方式（工作邮箱 vs 默认邮箱），并有意识地保留默认设定或整体替换默认账号，体现出对个人与工作信息的分渠道管理习惯。\n  basis: 用户先后区分“这次使用”的邮箱与“默认邮箱”，后又整体更换默认邮箱并声明旧邮箱停用，说明其按场景与阶段管理不同邮箱。\n  evidence: 2026-09-16 用户表示：“这次用 work@example.test，默认邮箱不变。”；同日稍后又表示：“以后改用 new@example.test，旧邮箱不用了。”\nprofile_timestamp_ms: 1789535013325\n---\n用户的默认邮箱已改为 new@example.test（自 2026-09-16 起），原默认邮箱 lin@example.test 不再使用。\n",
+    "default_app/default_project/users/web-only/user.md": "---\nid: profile_web-only\ntype: user_profile\nschema_version: 1\nuser_id: web-only\ntrack: user\nsummary: web-only 使用简体中文进行交流。\nexplicit_info:\n- category: 语言与沟通习惯\n  description: web-only 使用简体中文进行交流。\n  evidence: 其唯一一条消息为中文祈使句“总结当前网页。”\n- category: 使用场景\n  description: web-only 在网页浏览场景下使用 Assistant，需要对当前打开的网页内容获取摘要。\n  evidence: 其发言直接要求“总结当前网页”，指向对当前页面内容的处理需求。\nimplicit_traits:\n- trait: 指令极简、目标导向\n  description: web-only 倾向于用最短的祈使句直接下达任务，不附加背景说明或礼貌修饰，注重快速获得结果。\n  basis: 从其唯一一条发言的形式看，整句仅由动词与宾语构成，无任何铺垫或额外要求，属于典型的任务导向式表达。\n  evidence: 发言内容为“总结当前网页。”，以句号收尾的极简命令式表达。\nprofile_timestamp_ms: 1789535025826\n---\nweb-only 使用简体中文进行交流。\n",
+    "default_app/default_project/users/probe-user/episodes/episode-2026-09-16.md": "---\nid: episode_log_probe-user_2026-09-16\ntype: episode_daily\nfile_type: episode_daily\nschema_version: 1\nuser_id: probe-user\ntrack: user\ndate: '2026-09-16'\nentry_count: 3\nlast_appended_at: '2026-09-16T05:03:45.783242+00:00'\n---\n<!-- entry:ep_20260916_00000001 -->\n## ep_20260916_00000001\n\n**owner_id**: probe-user\n**session_id**: session-C1\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: memcell\n**parent_id**: mc_c8a240425d89\n**sender_ids**: [probe-user]\n\n### Subject\n用户提供邮箱地址 lin@example.test 并请求记住该信息\n\n### Summary\n2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。\n\n### Content\n2026-09-16 05:03 UTC（星期三），用户 probe-user 在对话中告知其邮箱地址为 lin@example.test，并明确表示希望对方记住这一信息。该消息是本次对话的起始内容，未涉及其他参与者、决策或情绪表达。\n<!-- /entry:ep_20260916_00000001 -->\n<!-- entry:ep_20260916_00000002 -->\n## ep_20260916_00000002\n\n**owner_id**: probe-user\n**session_id**: session-C3\n**timestamp**: 2026-09-16T05:03:22.960000+00:00\n**parent_type**: memcell\n**parent_id**: mc_83f5245429ee\n**sender_ids**: [probe-user]\n\n### Subject\nprobe-user 指定本次使用 work@example.test 邮箱，默认邮箱保持不变\n\n### Summary\n2026-09-16 05:03 UTC，probe-user 表示这次（2026-09-16）使用 work@example.test，并说明默认邮箱保持不变。该决定确认了本次操作邮箱为 work@example.test，同时维持原有默认邮箱不变。\n\n### Content\n2026-09-16 05:03 UTC，probe-user 表示这次（2026-09-16）使用 work@example.test，并说明默认邮箱保持不变。该决定确认了本次操作邮箱为 work@example.test，同时维持原有默认邮箱不变。\n<!-- /entry:ep_20260916_00000002 -->\n<!-- entry:ep_20260916_00000003 -->\n## ep_20260916_00000003\n\n**owner_id**: probe-user\n**session_id**: session-C4\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: memcell\n**parent_id**: mc_7a28fd990dfc\n**sender_ids**: [probe-user]\n\n### Subject\n用户通知今后改用新邮箱 new@example.test 并停用旧邮箱\n\n### Summary\n2026-09-16 05:03 UTC，probe-user 发出通知，表示从今以后（2026-09-16 起）改用邮箱 new@example.test，旧邮箱不再使用。probe-user 未说明旧邮箱地址，也未给出更换原因，仅作出这一邮箱变更决定。\n\n### Content\n2026-09-16 05:03 UTC，probe-user 发出通知，表示从今以后（2026-09-16 起）改用邮箱 new@example.test，旧邮箱不再使用。probe-user 未说明旧邮箱地址，也未给出更换原因，仅作出这一邮箱变更决定。\n<!-- /entry:ep_20260916_00000003 -->\n",
+    "default_app/default_project/users/probe-user/.atomic_facts/atomic_fact-2026-09-16.md": "---\nid: atomic_fact_log_probe-user_2026-09-16\ntype: atomic_fact_daily\nfile_type: atomic_fact_daily\nschema_version: 1\nuser_id: probe-user\ntrack: user\ndate: '2026-09-16'\nentry_count: 17\nlast_appended_at: '2026-09-16T05:03:59.195715+00:00'\n---\n<!-- entry:af_20260916_00000001 -->\n## af_20260916_00000001\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n该消息发生在2026-09-16 05:03 UTC（星期三）。\n<!-- /entry:af_20260916_00000001 -->\n<!-- entry:af_20260916_00000002 -->\n## af_20260916_00000002\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n用户 probe-user 在对话中告知其邮箱地址为 lin@example.test。\n<!-- /entry:af_20260916_00000002 -->\n<!-- entry:af_20260916_00000003 -->\n## af_20260916_00000003\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n用户 probe-user 明确表示希望对方记住其邮箱地址 lin@example.test 这一信息。\n<!-- /entry:af_20260916_00000003 -->\n<!-- entry:af_20260916_00000004 -->\n## af_20260916_00000004\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n该消息是本次对话的起始内容。\n<!-- /entry:af_20260916_00000004 -->\n<!-- entry:af_20260916_00000005 -->\n## af_20260916_00000005\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n该消息未涉及其他参与者。\n<!-- /entry:af_20260916_00000005 -->\n<!-- entry:af_20260916_00000006 -->\n## af_20260916_00000006\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n该消息未涉及决策。\n<!-- /entry:af_20260916_00000006 -->\n<!-- entry:af_20260916_00000007 -->\n## af_20260916_00000007\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:15.571000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C1\n\n### Fact\n该消息未涉及情绪表达。\n<!-- /entry:af_20260916_00000007 -->\n<!-- entry:af_20260916_00000008 -->\n## af_20260916_00000008\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:22.960000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: session-C3\n\n### Fact\nprobe-user 表示这次（2026-09-16）使用 work@example.test。\n<!-- /entry:af_20260916_00000008 -->\n<!-- entry:af_20260916_00000009 -->\n## af_20260916_00000009\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:22.960000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: session-C3\n\n### Fact\nprobe-user 说明默认邮箱保持不变。\n<!-- /entry:af_20260916_00000009 -->\n<!-- entry:af_20260916_00000010 -->\n## af_20260916_00000010\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:22.960000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: session-C3\n\n### Fact\nprobe-user 的决定确认了本次操作邮箱为 work@example.test。\n<!-- /entry:af_20260916_00000010 -->\n<!-- entry:af_20260916_00000011 -->\n## af_20260916_00000011\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:22.960000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000002\n**session_id**: session-C3\n\n### Fact\nprobe-user 的决定维持了原有默认邮箱不变。\n<!-- /entry:af_20260916_00000011 -->\n<!-- entry:af_20260916_00000012 -->\n## af_20260916_00000012\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: session-C4\n\n### Fact\nprobe-user 于 2026-09-16 05:03 UTC 发出通知。\n<!-- /entry:af_20260916_00000012 -->\n<!-- entry:af_20260916_00000013 -->\n## af_20260916_00000013\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: session-C4\n\n### Fact\nprobe-user 表示从今以后（2026-09-16 起）改用邮箱 new@example.test。\n<!-- /entry:af_20260916_00000013 -->\n<!-- entry:af_20260916_00000014 -->\n## af_20260916_00000014\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: session-C4\n\n### Fact\nprobe-user 表示旧邮箱不再使用。\n<!-- /entry:af_20260916_00000014 -->\n<!-- entry:af_20260916_00000015 -->\n## af_20260916_00000015\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: session-C4\n\n### Fact\nprobe-user 未说明旧邮箱地址。\n<!-- /entry:af_20260916_00000015 -->\n<!-- entry:af_20260916_00000016 -->\n## af_20260916_00000016\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: session-C4\n\n### Fact\nprobe-user 未给出更换邮箱的原因。\n<!-- /entry:af_20260916_00000016 -->\n<!-- entry:af_20260916_00000017 -->\n## af_20260916_00000017\n\n**owner_id**: probe-user\n**timestamp**: 2026-09-16T05:03:33.325000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000003\n**session_id**: session-C4\n\n### Fact\nprobe-user 仅作出这一邮箱变更决定。\n<!-- /entry:af_20260916_00000017 -->\n",
+    "default_app/default_project/users/web-only/episodes/episode-2026-09-16.md": "---\nid: episode_log_web-only_2026-09-16\ntype: episode_daily\nfile_type: episode_daily\nschema_version: 1\nuser_id: web-only\ntrack: user\ndate: '2026-09-16'\nentry_count: 1\nlast_appended_at: '2026-09-16T05:03:51.182739+00:00'\n---\n<!-- entry:ep_20260916_00000001 -->\n## ep_20260916_00000001\n\n**owner_id**: web-only\n**session_id**: session-C5\n**timestamp**: 2026-09-16T05:03:45.826000+00:00\n**parent_type**: memcell\n**parent_id**: mc_dd5bc746bdc7\n**sender_ids**: [web-only]\n\n### Subject\n用户于2026-09-16请求总结当前网页内容\n\n### Summary\n2026-09-16 05:03 UTC，用户（web-only）发出请求，要求总结其当前正在浏览的网页内容。该请求未附带具体网址、网页正文或其他补充说明，对话中未出现其他参与者，也未产生后续决策、计划或情绪表达。\n\n### Content\n2026-09-16 05:03 UTC，用户（web-only）发出请求，要求总结其当前正在浏览的网页内容。该请求未附带具体网址、网页正文或其他补充说明，对话中未出现其他参与者，也未产生后续决策、计划或情绪表达。\n<!-- /entry:ep_20260916_00000001 -->\n",
+    "default_app/default_project/users/web-only/.atomic_facts/atomic_fact-2026-09-16.md": "---\nid: atomic_fact_log_web-only_2026-09-16\ntype: atomic_fact_daily\nfile_type: atomic_fact_daily\nschema_version: 1\nuser_id: web-only\ntrack: user\ndate: '2026-09-16'\nentry_count: 4\nlast_appended_at: '2026-09-16T05:04:01.359514+00:00'\n---\n<!-- entry:af_20260916_00000001 -->\n## af_20260916_00000001\n\n**owner_id**: web-only\n**timestamp**: 2026-09-16T05:03:45.826000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C5\n\n### Fact\n用户（web-only）于2026-09-16 05:03 UTC发出请求，要求总结其当前正在浏览的网页内容。\n<!-- /entry:af_20260916_00000001 -->\n<!-- entry:af_20260916_00000002 -->\n## af_20260916_00000002\n\n**owner_id**: web-only\n**timestamp**: 2026-09-16T05:03:45.826000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C5\n\n### Fact\n该请求未附带具体网址、网页正文或其他补充说明。\n<!-- /entry:af_20260916_00000002 -->\n<!-- entry:af_20260916_00000003 -->\n## af_20260916_00000003\n\n**owner_id**: web-only\n**timestamp**: 2026-09-16T05:03:45.826000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C5\n\n### Fact\n对话中未出现其他参与者。\n<!-- /entry:af_20260916_00000003 -->\n<!-- entry:af_20260916_00000004 -->\n## af_20260916_00000004\n\n**owner_id**: web-only\n**timestamp**: 2026-09-16T05:03:45.826000+00:00\n**parent_type**: episode\n**parent_id**: ep_20260916_00000001\n**session_id**: session-C5\n\n### Fact\n对话中未产生后续决策、计划或情绪表达。\n<!-- /entry:af_20260916_00000004 -->\n"
+  }
+}

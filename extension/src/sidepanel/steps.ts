@@ -31,6 +31,7 @@ const ACTION_NAMES: Record<string, string> = {
   sleep: "等待",
   fill: "填写文本",
   page_operation: "填写并核对",
+  page_translation: "翻译网页",
   share_tab: "安排同页协作",
   take_tab: "接管页面",
   type_text: "输入文本",
@@ -69,6 +70,12 @@ function str(v: unknown): string | null {
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
   const short = ACTION_NAMES[name] ?? name;
   switch (name) {
+    case "page_translation": {
+      const full = params.action === 'restore' ? '恢复网页原文'
+        : params.action === 'display' ? [params.mode === 'translated' ? '只显示译文' : params.mode === 'bilingual' ? '显示双语' : '调整译文', typeof params.fontSize === 'number' ? `字号 ${params.fontSize}` : ''].filter(Boolean).join(' · ')
+        : short;
+      return {short: full, full};
+    }
     case "tabs": {
       const action = str(params.action);
       if (action === "open") {
@@ -111,9 +118,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: label ? `标注「${clip(label)}」` : short };
     }
     case "spawn_worker": {
-      const id = str(params.id);
-      const name = id ? personFor(id)?.name : null;
-      return { short, full: name ? `请了 ${name}` : short };
+      return { short, full: "安排助手" };
     }
     case "stop_worker": {
       const id = str(params.id);
@@ -121,16 +126,13 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: name ? `让 ${name} 停下` : short };
     }
     case "post": {
-      const kind = str(params.kind);
       const to = str(params.to);
-      const who = to ? displayNameFor(to) : null;
-      if (kind && who && who !== to) return { short, full: `投递 ${clip(kind)} → ${who}` };
-      if (kind && to) return { short, full: `投递 ${clip(kind)} → ${clip(to, 12)}` };
-      return { short, full: short };
+      const who = to === "main" ? "主助手" : to ? displayNameFor(to) : null;
+      return { short: "发送消息", full: who ? `发送消息给 ${who}` : "发送消息" };
     }
     case "await_message": {
-      const kind = str(params.kind);
-      return { short, full: kind ? `等待「${clip(kind)}」` : short };
+      const from = str(params.from);
+      return { short: "等待结果", full: from ? `等待 ${from === "main" ? "主助手" : displayNameFor(from)} 的消息` : "等待助手结果" };
     }
     default:
       return { short, full: short };

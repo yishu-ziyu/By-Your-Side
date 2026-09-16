@@ -1,0 +1,110 @@
+{
+  "ok": true,
+  "scope": "real headless extension transport and production voice coordination; controlled ASR; no acoustic or model quality claim",
+  "commands": [
+    {
+      "at": 1789554081104,
+      "command": {
+        "kind": "start"
+      }
+    },
+    {
+      "at": 1789554081261,
+      "command": {
+        "kind": "interrupt",
+        "turn": 1
+      }
+    },
+    {
+      "at": 1789554081262,
+      "command": {
+        "kind": "audio",
+        "turn": 1,
+        "data": "AQABAA=="
+      }
+    },
+    {
+      "at": 1789554081262,
+      "command": {
+        "kind": "commit",
+        "turn": 1,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554081263,
+      "command": {
+        "kind": "interrupt",
+        "turn": 2
+      }
+    },
+    {
+      "at": 1789554081263,
+      "command": {
+        "kind": "audio",
+        "turn": 2,
+        "data": "AQABAA=="
+      }
+    },
+    {
+      "at": 1789554081264,
+      "command": {
+        "kind": "commit",
+        "turn": 2,
+        "contextPending": true
+      }
+    },
+    {
+      "at": 1789554081525,
+      "command": {
+        "kind": "input_context",
+        "turn": 1,
+        "input": {
+          "context": {
+            "tabId": 1570668085,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:50776/reading"
+          },
+          "observation": {
+            "token": "b7e6c17a-9d7e-4d59-9b86-78d6d46b7c6a",
+            "tabId": 1570668085
+          }
+        }
+      }
+    },
+    {
+      "at": 1789554081525,
+      "command": {
+        "kind": "input_context",
+        "turn": 2,
+        "input": {
+          "context": {
+            "tabId": 1570668085,
+            "title": "Input order fixture",
+            "url": "http://127.0.0.1:50776/reading"
+          },
+          "observation": {
+            "token": "0c55a38f-c56d-45d6-b909-7a873608ca74",
+            "tabId": 1570668085
+          }
+        }
+      }
+    }
+  ],
+  "routes": [
+    {
+      "text": "我想 介绍当前页面",
+      "input": {
+        "context": {
+          "tabId": 1570668085,
+          "title": "Input order fixture",
+          "url": "http://127.0.0.1:50776/reading"
+        },
+        "observation": {
+          "token": "b7e6c17a-9d7e-4d59-9b86-78d6d46b7c6a",
+          "tabId": 1570668085
+        }
+      }
+    }
+  ]
+}

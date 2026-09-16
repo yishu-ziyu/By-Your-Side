@@ -57,27 +57,18 @@ async function setup(readFails = false) {
       attachments: [{id: "a", type: "image", name: "a.png", mimeType: "image/png", dataBase64: "QUFB"}],
     },
   };
-  async function confirm() {
-    const asked = await manager.routeVoiceInput("default", "不是刚才那个，改看当前页面", null, () => true, route);
-    expect(asked.kind).toBe("clarify");
-    expect(raw.steer).not.toHaveBeenCalled();
-    return manager.routeVoiceInput("default", "对", null, () => true, {
-      ...route, requestId: "voice-2", turn: 2,
-      input: {
-        context: {tabId: 202, title: "确认时页面B", url: "https://example.invalid/b"},
-        attachments: [{id: "b", type: "image", name: "b.png", mimeType: "image/png", dataBase64: "QkJC"}],
-      },
-    });
+  async function sendCorrection() {
+    return manager.routeVoiceInput("default", "不是刚才那个，改看当前页面", null, () => true, route);
   }
-  return { manager, raw, rpc, wrapped, confirm };
+  return { manager, raw, rpc, wrapped, sendCorrection };
 }
 
-describe("纠正确认的跨模块验收", () => {
-  it("确认后真实 session 观察原页，向 SDK 交付原页事实和原图，并使旧写入代次失效", async () => {
+describe("直接语音纠正的跨模块验收", () => {
+  it("无需确认，真实 session 观察原页，向 SDK 交付原页事实和原图，并使旧写入代次失效", async () => {
     const h = await setup();
     try {
       const previousEpoch = h.wrapped.executionEpoch();
-      expect(await h.confirm()).toMatchObject({kind: "steer", ok: true});
+      expect(await h.sendCorrection()).toMatchObject({kind: "steer", ok: true});
       expect(h.rpc.call).toHaveBeenCalledExactlyOnceWith("snapshot", {tabId: 101}, 4000);
       expect(h.raw.steer).toHaveBeenCalledTimes(1);
       const [input, images] = h.raw.steer.mock.calls[0]!;
@@ -90,10 +81,10 @@ describe("纠正确认的跨模块验收", () => {
     } finally { h.manager.dispose(); }
   });
 
-  it("原页读不到时仍保留原页锚点，不读取或注入确认时活动页", async () => {
+  it("原页读不到时仍保留原页锚点，不读取或注入其他活动页", async () => {
     const h = await setup(true);
     try {
-      expect(await h.confirm()).toMatchObject({kind: "steer", ok: true});
+      expect(await h.sendCorrection()).toMatchObject({kind: "steer", ok: true});
       expect(h.rpc.call).toHaveBeenCalledExactlyOnceWith("snapshot", {tabId: 101}, 4000);
       const [input] = h.raw.steer.mock.calls[0]!;
       expect(input).toContain("https://example.invalid/a");

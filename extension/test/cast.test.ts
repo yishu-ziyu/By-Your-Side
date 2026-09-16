@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAST, displayColor, displayNameFor, personFor } from "../../shared/cast.js";
+import { CAST, assignedWorkerId, displayColor, displayNameFor, personFor } from "../../shared/cast.js";
 import { cursorColor } from "../src/shared/palette.js";
 import { lerpExpr } from "../src/shared/grok-bot.js";
 import { GROKBOT_ORIGINAL } from "../src/shared/grok-original.js";
@@ -56,5 +56,25 @@ describe("界面文案不含工人", () => {
       expect(describeTool("stop_worker", { id }).full).not.toMatch(/工人/);
     }
     expect(describeTool("list_workers", {}).full).not.toMatch(/工人/);
+  });
+});
+
+
+describe("运行身份分配", () => {
+  it("同样的请求名并行创建时分配不同角色，光标和历史读取一致", () => {
+    const a = assignedWorkerId("reader", "abcdef01", []);
+    const b = assignedWorkerId("reader", "abcdef02", [a]);
+    expect(personFor(a)?.key).not.toBe(personFor(b)?.key);
+    for (const id of [a, b]) {
+      expect(cursorColor(id)).toBe(personFor(id)?.color);
+      expect(displayNameFor(JSON.parse(JSON.stringify(id)))).toBe(personFor(id)?.name);
+    }
+  });
+  it("旧会话仍按旧散列显示；新会话不受随机后缀影响", () => {
+    expect(displayNameFor("a-cbb6b6e5")).toBe("Gus");
+    expect(displayNameFor("b-d0df6c9f")).toBe("Gus");
+    expect(displayNameFor(assignedWorkerId("a", "abcdef01", [])))
+      .toBe(displayNameFor(assignedWorkerId("a", "12345678", [])));
+    expect(describeTool("spawn_worker", { id: "a" }).full).toBe("安排助手");
   });
 });

@@ -330,8 +330,11 @@ const SAVE_STATUS_TEXT: Record<ReadingSaveState, string> = {
 };
 
 export interface ReadingSettingsHost {
-  /** 右上角宿主：齿轮按钮与面板都挂在这里。 */
+  /** 顶部宿主：挂载外观面板，未传入口时附带默认按钮。 */
   topbar: HTMLElement;
+  /** 复用更多菜单中的入口，关闭时回到可见的更多按钮。 */
+  trigger?: HTMLButtonElement;
+  returnFocus?: HTMLElement;
   /** 应用容器，仅在需要时用于收敛面板位置。 */
   app?: HTMLElement | null;
   /** 写 CSS 变量的元素；默认 document.documentElement。 */
@@ -357,16 +360,16 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   const wrapper = doc.createElement("div");
   wrapper.className = "reading-settings";
 
-  const button = doc.createElement("button");
+  const button = host.trigger ?? doc.createElement("button");
   button.id = "reading-settings-btn";
   button.type = "button";
   button.className = "reading-settings-btn";
-  button.title = "设置";
-  button.setAttribute("aria-label", "设置"); // 齿轮入口叫「设置」，展开的面板才叫「阅读外观」
+  button.title = host.trigger ? "阅读外观" : "设置";
+  button.setAttribute("aria-label", host.trigger ? "阅读外观" : "设置");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", "reading-settings-panel");
-  button.append(icon(Settings));
+  if (!host.trigger) button.append(icon(Settings));
 
   const panel = doc.createElement("section");
   panel.id = "reading-settings-panel";
@@ -431,7 +434,8 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   foot.append(resetBtn, status, retryBtn);
 
   panel.append(head, fontField.row, sizeField.row, hint, foot);
-  wrapper.append(button, panel);
+  if (!host.trigger) wrapper.append(button);
+  wrapper.append(panel);
   host.topbar.append(wrapper);
 
   function syncControls(prefs: ReadingPrefs): void {
@@ -454,8 +458,8 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
 
   let open = false;
 
-  function focusGear(): void {
-    button.focus();
+  function focusTrigger(): void {
+    (host.returnFocus ?? button).focus();
   }
 
   function openPanel(): void {
@@ -469,9 +473,9 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
     open = false;
     panel.hidden = true;
     button.setAttribute("aria-expanded", "false");
-    // 关闭后焦点不该留在已隐藏的面板里：显式要求或焦点原本在面板内都回到齿轮。
+    // 关闭后焦点不该留在已隐藏的面板里：显式要求或焦点原本在面板内都回到可见入口。
     const active = doc.activeElement;
-    if (returnFocus || (active && wrapper.contains(active))) focusGear();
+    if (returnFocus || (active && wrapper.contains(active))) focusTrigger();
   }
 
   button.addEventListener("click", () => {
@@ -499,7 +503,7 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   function onOutsidePointerdown(event: Event): void {
     if (!open) return;
     const target = event.target as Node | null;
-    if (target && wrapper.contains(target)) return;
+    if (target && (wrapper.contains(target) || button.contains(target))) return;
     closePanel(false);
   }
 

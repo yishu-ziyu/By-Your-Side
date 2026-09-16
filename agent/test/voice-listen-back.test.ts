@@ -103,9 +103,9 @@ describe("控制句先复述确认（#1）", () => {
     expect(controlConfirmMessage("让位是你把它切过去，就是。")).toBe("你是说“让位是你把它切过去，就是。”，对吗？确认后我就照做。");
   });
 
-  it("改正在跑的任务先问一句，不直接落动作", () => {
+  it("只有终止任务保留读回，普通修改直接派发", () => {
     // 确认载荷由 voice-control-confirmation 的真实调度行为用例检查。
-    expect(manager).toMatch(/if\(\(step\.action==='steer'\|\|step\.action==='abort'\)&&plan\.steps\.length===1&&targetId===id&&before\.state==='running'&&route\)\{/);
+    expect(manager).toMatch(/if\(step\.action==='abort'&&plan\.steps\.length===1&&targetId===id&&before\.state==='running'&&route\)\{/);
     expect(manager).toMatch(/return \{kind:'clarify',message:controlConfirmMessage\(step\.text\)\};/);
   });
 

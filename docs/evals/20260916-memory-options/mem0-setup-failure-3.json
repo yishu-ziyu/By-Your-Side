@@ -1,0 +1,12 @@
+{
+  "vendor": "mem0",
+  "provider": "opencode-go",
+  "model": "deepseek-flash",
+  "root": "/tmp/bys-memory-eval-PBf7d2/mem0-data-1789534993",
+  "steps": [],
+  "retrieval": "Local BAAI/bge-small-zh-v1.5; not directly comparable to EverOS keyword recall",
+  "error": {
+    "type": "ValueError",
+    "message": "Top-level entity parameters frozenset({'user_id'}) are not supported in get_all(). Use filters={'user_id': '...'} instead."
+  }
+}
