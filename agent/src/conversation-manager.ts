@@ -403,7 +403,7 @@ export class ConversationManager {
     if (!text.trim() || text.length > 2000) throw new Error("这段修改没有听清或过长，请简短重说。");
     this.progress.get(id)?.recordUserTurn(text,route?.requestId);
     const receipt = await this.dispatchTaskAction({requestId:route?.requestId ?? randomUUID(),conversationId:id,source:'voice',action:'steer',expectedRunId:route ? route.runId : snapshot.runId ?? null,text},stillCurrent);
-    if (receipt.status !== 'accepted') throw new TaskReceiptError(receipt);
+    if (receipt.status !== 'accepted' && receipt.status !== 'applied') throw new TaskReceiptError(receipt);
     return receipt;
   }
   private publishDelivery(conversationId: string, kind: UserDeliveryKind, text: string, replyTo?: string, expected?: { runId: string | null; controlVersion?: number; states?: TaskProgressSnapshot["state"][] }, deliveryId?: string): UserDelivery | null {
@@ -792,7 +792,7 @@ export class ConversationManager {
       const originRun=snapshot.runId;
       this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
       entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
-      await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);
+      const steerOutcome=await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);
       // 共同要求变了：正在跑的成员先挡住在途写入，再拿到新要求，避免它们继续按旧要求写。
       const members = await entry.runtime.fleet.reviseSharedRequirement?.(request.text!,request.context,request.attachments);
       if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
@@ -801,7 +801,11 @@ export class ConversationManager {
         entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
       }
       const memberNote = members ? memberRevisionNotice(members) : '';
-      return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}${memberNote?`；${memberNote}`:''}`};
+      const note = memberNote?`；${memberNote}`:'';
+      if(steerOutcome?.kind==='display-applied')return {status:'applied',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已直接应用并核对：${steerOutcome.text}原任务继续。${note}`};
+      if(steerOutcome?.kind==='display-unknown')return {status:'unknown',runId:originRun,message:`修改已尝试执行，但结果未能确认：${steerOutcome.reason}没有自动重做。${note}`};
+      if(steerOutcome?.kind==='display-failed')return {status:'failed',runId:originRun,message:`修改未能核对成功：${steerOutcome.reason}没有把它记为完成。${note}`};
+      return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}${note}`};
     },{deferredResume:request.action==='resume'&&['interrupted','idle','error'].includes(this.getTaskProgress(request.conversationId)?.state??'')});
     this.emitReceipt(receipt);
     return receipt;

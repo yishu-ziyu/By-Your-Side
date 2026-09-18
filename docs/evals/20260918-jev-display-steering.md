@@ -30,6 +30,9 @@
 - `dispatchTaskAction` 的运行中 `steer` 命中显示候选时经统一执行器直接应用，保留同一 `runId`。
 - 先登记修改（挡住在途旧写入）再等待异步判断与执行；应用后把最新要求与已核验事实交回原任务。
 - 同一请求重放不重复执行；开关关闭保持原修改行为。
+- 写闸门按具体工具调用放行显示直达本身，旧计划调用仍返回「旧步骤未执行」。
+- 检查：`npx vitest run agent/test/display-steering.test.ts`（10 通过）；
+  回归：`display-fast-path/continuous-steering/page-translation/page-translation-executor/conversation-manager/task-dispatcher/task-queue/voice-control-confirmation` 共 128 项通过。
 
 ## Ticket 4 连续修改、范围回退与晚到结果
 

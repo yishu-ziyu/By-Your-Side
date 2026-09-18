@@ -1,4 +1,4 @@
-import {decideDisplay,displayFastPathEnabled} from './display-fast-path.js';
+import {decideDisplay,displayFastPathEnabled,displaySteerFastPathEnabled,type DisplayParams} from './display-fast-path.js';
 import type {TranslationDisplayState} from '../../shared/page-translation.js';
 import { TRANSLATION_PROMPT, parseTranslations, translationModelBlocks, restoreTranslationWhitespace } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
@@ -104,6 +104,13 @@ export type DisplayExecutionOutcome=
   |{kind:'applied';text:string}
   |{kind:'failed';reason:string;executed:DisplayExecutionFact};
 
+/** What a runtime steering request actually did; the manager turns it into a receipt. */
+export type SteerOutcome=
+  |{kind:'model'}
+  |{kind:'display-applied';text:string;params:DisplayParams}
+  |{kind:'display-failed';reason:string}
+  |{kind:'display-unknown';reason:string};
+
 /**
  * 交付流的语义轮次闸门：PREPARING 期间由它扣住前缀，终态之后不再放行。
  * 会话不认识轮次本身，只在真正对外发之前问一次（见 VoiceTurnGate）。
@@ -175,6 +182,8 @@ export interface SessionCallbacks {
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
   private displayAbort:AbortController|null=null;
+  private steerDisplayAbort:AbortController|null=null;
+  private authorizedDisplayCall:string|null=null;
   private displayScopeBlockedRun:string|null=null;
   private displayWork:Promise<void>|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[]}>=[];
@@ -358,10 +367,18 @@ export class BrowserAgentSession {
    * 两者的结局不同：准备中的不算已接受，暂停/终止时直接取消，不写进交还 prompt；
    * 已排队的补留在记录里，交还时连原附件一起带回。
    */
-  private readonly pendingCorrections: Array<{ id: string; input: string | null; text: string; attachments?: Attachment[] }> = [];
+  private readonly pendingCorrections: Array<{ id: string; input: string | null; text: string; attachments?: Attachment[]; fact?:string }> = [];
   /** 交还 prompt 里嵌入的未读补充：按批次身份销账，不做任意子串匹配。 */
   private handbackDelivery: { text: string; ids: string[] } | null = null;
-  canWriteCurrentInput(): boolean { return !this.hold.isHeld() && this.pendingCorrections.length === 0; }
+  /**
+   * 写闸门：接管一律拒绝；有待消费的补充时，只放行正在执行的显示直达调用本身，
+   * 旧计划与模型的新写入都被挡在补充被读到之前。
+   */
+  canWriteCurrentInput(toolCallId?: string): boolean {
+    if (this.hold.isHeld()) return false;
+    if (this.pendingCorrections.length === 0) return true;
+    return this.authorizedDisplayCall !== null && toolCallId === this.authorizedDisplayCall;
+  }
   private pendingStop: Promise<void> | null = null;
   private pendingHandback: {
     epoch: number;
@@ -780,12 +797,16 @@ export class BrowserAgentSession {
     const id=`display-${randomUUID()}`;
     onId(id);
     this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:input});
+    const previous=this.authorizedDisplayCall;
+    this.authorizedDisplayCall=id;
     try{
       const result=await tool.execute(id,input,signal);
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:firstText(result),executionFact:this.rpc?.getExecutionFact(id)});
       this.emitReadObservation(id,name,input,result,false);return result;
     }catch(error){
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:this.rpc?.getExecutionFact(id)});throw error;
+    }finally{
+      if(this.authorizedDisplayCall===id)this.authorizedDisplayCall=previous;
     }
   }
 
@@ -1181,24 +1202,30 @@ export class BrowserAgentSession {
     this.handbackDelivery=null;
     const prefix=reason==="stopped"?"任务已停止，":reason==="superseded"?"新任务开始前，":"这一轮结束前没读到你的补充：";
     this.runTrace.record("steer_unconsumed",{reason,count:dropped.length,texts:dropped.map(record=>record.input)});
+    const committed=dropped.filter(record=>record.fact);
     this.callbacks.emit({
       kind:"notice",
-      message:reason==="ended"
+      message:committed.length&&reason==="ended"
+        ? `这一轮结束前模型没读到你的补充，但显示修改已由运行时直接执行并核对：${committed.map(record=>record.fact).join('；')}。没有重复执行。`
+        : reason==="ended"
         ? `这一轮结束前没读到你的补充：${preview}。它们没有被执行；需要的话请重新发送。`
         : `${prefix}尚未被模型读到的补充没有执行：${preview}。需要的话请重新发送。`,
     });
     return true;
   }
 
-  /** Voice edits must never fall back to starting a new prompt. Resolves after Pi accepts the steer. */
-  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<void> {
+  /**
+   * 运行中修改统一入口：先登记（挡住在途旧写入），命中显示直达时直接执行并核验，
+   * 未命中则按原路交给 Pi。语音与文字都走这里，不另开任务。
+   */
+  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<SteerOutcome> {
     const session = this.session;
     if(this.displayWork){
       const runId=this.deliveryRunId();this.controlEpoch++;this.displayAbort?.abort();
       await this.displayWork.catch(()=>{});
       if(!session||this.hold.isHeld()||runId!==this.deliveryRunId())throw new TaskActionRejected('原任务已变化，修改未执行。');
       const updated=`原任务：${this.activeGoal}\n用户最新修改：${text}`;
-      await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments),false);return;
+      await this.promptWithFreshPageObservation(session,withPageContext(updated,context),context,extractImages(attachments),false);return {kind:'model'};
     }
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
     if (!session?.isStreaming) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
@@ -1209,24 +1236,119 @@ export class BrowserAgentSession {
     this.experience?.feedback(text);
     this.memoryRuntime?.invalidateUserTurn();
     const images = extractImages(attachments);
-    // 先登记再观察：预观察期间扩展仍可能收到旧计划的写入，闸门必须已经落下。
+    // 先登记再观察/判断：预观察与 Jev 判断期间旧计划的写入必須已经被挡住。
     const record = this.reserveCorrection(text, attachments);
     const runId = this.deliveryRunId();
-    // 纠正类插话常靠"这个页面/不是这个/刚才那个"指代：先补一次只读观察，
-    // 否则模型会拿自己上一轮的前提继续推理（实测把 ChatGPT 页当成扩展管理页讲了四轮）。
-    const observation = steerNeedsPageObservation(text) ? await this.readUserPageForPrompt(context, "steer") : null;
-    // 观察期间用户可能停止、接管或换任务（新任务会让 isStreaming 再次为 true）：
     // 认原来那条登记和原来的 run 身份，不能只看"现在是否在跑"。
-    const stillSameTask = this.pendingCorrections.includes(record)
+    const current = () => this.pendingCorrections.includes(record) && !this.hold.isHeld() && session.isStreaming
       && (runId === null || this.deliveryRunId() === runId);
-    if (!stillSameTask || !session.isStreaming || this.hold.isHeld()) {
+    try{
+      if(displaySteerFastPathEnabled()&&this.explicitDelivery&&this.modeState?.value==='act'&&context&&typeof context.tabId==='number'&&!context.selection&&!images.length){
+        const fast=await this.tryDisplaySteering(session,record,text,context,current);
+        if(fast.kind==='applied')return {kind:'display-applied',text:fast.text,params:fast.params};
+        if(fast.kind==='failed')return {kind:'display-failed',reason:fast.reason};
+        if(fast.kind==='unknown')return {kind:'display-unknown',reason:fast.reason};
+        if(fast.kind==='cancelled')throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
+      }
+      // 纠正类插话常靠"这个页面/不是这个/刚才那个"指代：先补一次只读观察，
+      // 否则模型会拿自己上一轮的前提继续推理（实测把 ChatGPT 页当成扩展管理页讲了四轮）。
+      const observation = steerNeedsPageObservation(text) ? await this.readUserPageForPrompt(context, "steer") : null;
+      if(!current())throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
+      const input = observation ? `${withPageContext(text, context)}\n\n${observation}` : withPageContext(text, context);
+      record.input = input;
+      try { if (images.length) await session.steer(input, images); else await session.steer(input); }
+      catch (error) { this.unreserveCorrection(record); throw error; }
+      return {kind:'model'};
+    }catch(error){
+      if(error instanceof TaskActionRejected)throw error;
       this.unreserveCorrection(record);
-      throw new TaskActionRejected("原任务已停止或发生变化，修改未发送。");
+      throw error;
     }
-    const input = observation ? `${withPageContext(text, context)}\n\n${observation}` : withPageContext(text, context);
-    record.input = input;
-    try { if (images.length) await session.steer(input, images); else await session.steer(input); }
-    catch (error) { this.unreserveCorrection(record); throw error; }
+  }
+
+  /**
+   * 运行中显示直达：读翻译状态 → Jev 判断 → 前后文档身份一致才执行 → 读回核验。
+   * 任一阶段失效都不写入；命中但执行过/结果未知的情况不自动重做，而是把真实事实交回原任务。
+   */
+  private async tryDisplaySteering(
+    session:AgentSession,
+    record:{id:string;input:string|null;text:string;fact?:string},
+    text:string,
+    context:PageContext,
+    current:()=>boolean,
+  ):Promise<
+    |{kind:'applied';text:string;params:DisplayParams}
+    |{kind:'failed';reason:string}
+    |{kind:'unknown';reason:string}
+    |{kind:'fallback';partialScope?:true}
+    |{kind:'cancelled'}>{
+    if(!this.rpc)return {kind:'fallback'};
+    const tabId=context.tabId as number;
+    const controller=new AbortController();
+    const previousAbort=this.steerDisplayAbort;
+    this.steerDisplayAbort=controller;
+    const active=()=>current()&&!controller.signal.aborted;
+    try{
+      let before:{translation?:TranslationDisplayState|null};
+      try{before=await this.rpc.call('snapshot',{tabId},PRE_OBSERVATION_TIMEOUT_MS) as {translation?:TranslationDisplayState|null};}
+      catch{return {kind:'fallback'};}
+      if(!active())return {kind:'cancelled'};
+      if(!before.translation?.translated||!before.translation.displayValid)return {kind:'fallback'};
+      const decision=await decideDisplay(text,controller.signal);
+      if(!active())return {kind:'cancelled'};
+      if(decision.kind==='cancelled')return {kind:'cancelled'};
+      if(decision.kind==='fallback'){
+        if(decision.partialScope)this.displayScopeBlockedRun=this.deliveryRunId();
+        return {kind:'fallback',...(decision.partialScope?{partialScope:true as const}:{})};
+      }
+      // 整页明确修改重新授权本 run 的整页写入：早先的局部约束被用户的新要求取代。
+      this.displayScopeBlockedRun=null;
+      let latest:{translation?:TranslationDisplayState|null};
+      try{latest=await this.rpc.call('snapshot',{tabId},PRE_OBSERVATION_TIMEOUT_MS) as {translation?:TranslationDisplayState|null};}
+      catch{return {kind:'fallback'};}
+      if(!active())return {kind:'cancelled'};
+      if(latest.translation?.document!==before.translation.document||!latest.translation?.displayValid)return {kind:'fallback'};
+      const params:Record<string,unknown>={...decision.params,tabId,document:before.translation.document};
+      const outcome=await this.executeDisplayCommand(session,params,controller.signal,active);
+      if(outcome.kind==='applied'){
+        const delivered=await this.returnDisplayFactToModel(session,record,text,context,`[运行时的显示修改已经直接执行并核对：${outcome.text}。这条修改不需要再由你执行一次；继续原任务其余部分，不要用旧设置覆盖它。]`,active);
+        this.runTrace.record('display_steer_applied',{params,delivered});
+        return {kind:'applied',text:outcome.text,params:decision.params};
+      }
+      if(outcome.executed==='not_executed')return {kind:'fallback'};
+      const reason=outcome.reason;
+      if(outcome.executed==='unknown'){
+        const delivered=await this.returnDisplayFactToModel(session,record,text,context,`[运行时的显示修改已尝试执行，但结果未知：${reason}。不要自动重做这条修改；先按现有核查流程确认页面结果，再继续。]`,active);
+        this.runTrace.record('display_steer_unknown',{params,reason,delivered});
+        return {kind:'unknown',reason};
+      }
+      const delivered=await this.returnDisplayFactToModel(session,record,text,context,`[运行时的显示修改没有通过读回核对：${reason}。这条修改没有被确认为完成；请先读取当前页面，再决定是否需要处理，不要盲目重复执行。]`,active);
+      this.runTrace.record('display_steer_unverified',{params,reason,delivered});
+      return {kind:'failed',reason};
+    }catch(error){
+      if(!active())return {kind:'cancelled'};
+      this.runTrace.record('display_steer_failed',{reason:error instanceof Error?error.message:String(error)});
+      return {kind:'fallback'};
+    }finally{
+      if(this.steerDisplayAbort===controller)this.steerDisplayAbort=previousAbort;
+    }
+  }
+
+  /** 把"要求 + 运行时事实"作为插话交回原任务；任务已失效时释放登记，不留下悬空闸门。 */
+  private async returnDisplayFactToModel(
+    session:AgentSession,
+    record:{id:string;input:string|null;text:string;fact?:string},
+    text:string,
+    context:PageContext,
+    note:string,
+    active:()=>boolean,
+  ):Promise<boolean>{
+    record.fact=note.replace(/^\[|\]$/g,'').slice(0,120);
+    if(!active()){this.unreserveCorrection(record);return false;}
+    const input=`${withPageContext(text,context)}\n\n${note}`;
+    record.input=input;
+    try{await session.steer(input);return true;}
+    catch{this.unreserveCorrection(record);return false;}
   }
 
   /**
@@ -1247,6 +1369,7 @@ export class BrowserAgentSession {
 
   abort(): void {
     this.abandonUnconsumedCorrections("stopped");
+    this.steerDisplayAbort?.abort();
     this.deferredSteers=[];
     this.runTrace.record("abort");
     this.controlEpoch += 1;
@@ -1271,6 +1394,7 @@ export class BrowserAgentSession {
     this.experience?.interrupt();
     this.runTrace.record("takeover", { abortStream: opts?.abortStream });
     // 预观察还没回来的补充一个字都没进 Pi，不能按"已接受"留给交还：暂停时直接取消。
+    this.steerDisplayAbort?.abort();
     for(const record of this.pendingCorrections.filter(candidate=>candidate.input===null))this.unreserveCorrection(record);
     // 已排队的未读补充保留，但把它们从 Pi 队列里摘出来：交还 prompt 会重新带上，
     // 否则同一个要求会先进队列、再进 prompt，被模型读两遍。
@@ -1427,6 +1551,7 @@ export class BrowserAgentSession {
 
   dispose(): void {
     this.displayAbort?.abort();
+    this.steerDisplayAbort?.abort();
     this.experience?.dispose();
     this.runTrace.record("dispose");
     this.session?.dispose();
