@@ -1159,6 +1159,12 @@ export class ConversationManager {
     // 新消息/插话是这条会话的真实输入，送达运行时之前让旧授权失效。
     if (message.type === "user_message" || message.type === "steer") dropPendingConsent();
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld())this.pendingStarts.add(id);
+    if(message.type==='steer'&&entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()){
+      // 侧栏文字修改在运行中与语音走同一个调度入口：登记要求、真实回执与请求去重都保留。
+      // 空闲/接管仍由原 steer 路径处理（空闲转新任务，接管给提示）。
+      await this.dispatchTaskAction({requestId:`steer-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:this.getTaskProgress(id)?.runId??null,text:message.text,context:message.context,attachments:message.attachments});
+      return;
+    }
     try{entry.runtime.handleMessage(message);}catch(error){this.pendingStarts.delete(id);throw error;}
     if (message.type === "user_message" || message.type === "set_mode") {
       entry.summary.updatedAt = Date.now();

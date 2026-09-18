@@ -152,6 +152,18 @@ describe('运行中显示修改的调度归属',()=>{
   expect(h.steers).toHaveLength(1);
  });
 
+ it('routes a plain steer client message through the same scheduling entry as voice',async()=>{
+  const {h,manager,emitted}=await managerHarness();
+  const runId=manager.getTaskProgress('default')!.runId;
+  vi.mocked(decideDisplay).mockResolvedValue(candidate({fontFamily:'songti'}));
+  await manager.handleMessage({type:'steer',text:'把译文改成宋体',context,conversationId:'default'} as never);
+  expect(h.pageState.fontFamily).toBe('songti');
+  expect(h.translationCalls).toHaveLength(1);
+  expect(manager.getTaskProgress('default')!.runId).toBe(runId);
+  expect(manager.getTaskProgress('default')!.recoveryInput?.requirements).toContain('把译文改成宋体');
+  expect(emitted.some(message=>message.type==='agent_event'&&(message as any).event?.kind==='notice'&&String((message as any).event.message).includes('已直接应用并核对'))).toBe(true);
+ });
+
  it('keeps the requirement and the action itself visible in the task progress',async()=>{
   const {h,manager}=await managerHarness();
   const before=manager.getTaskProgress('default')!;
