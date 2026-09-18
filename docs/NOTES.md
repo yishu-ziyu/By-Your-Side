@@ -146,3 +146,9 @@
 语音首声 4.9–7.7 秒里，两段模型往返占 5.2 秒；其中意图分类这 1.7–2.7 秒**等于同一供应商跑极小提示的下限**（实测 1.4–4.7 秒），所以削分类提示词、加 `reasoning:"minimal"` 都不会有收益——别再从这两个方向找速度。本地模型池不是捷径：候选要么 4.2–4.4 秒（比现用更慢，且把「把姓名改成李明」判成闲聊），要么返回空文本。TTS 侧同理：建连加 `tts.create` 只值约 270ms，剩余约 540ms 是服务端从收到文字到出声的固有时延，为此改语音流生命周期不值得。
 
 要显著更快只能让分类与回答并行（预期 -2 秒），但那会动刚确认的回答归属规则，属用户裁决范围。探针在 `scripts/experiments/voice-latency/`，结论见[首声验收](evals/20260913-voice-first-audio-latency.md)。
+
+## 2026-09-18 日常试用启用
+
+启用日常试用三件套：重载日常扩展、`~/.sideagent/config.json` 的 model 换 minimax-cn/MiniMax-M3（opencode-go/deepseek-flash 周限 429，两天后重置）、displaySteerFastPath 打开。回退点：commit `2bdc618` 之前的状态即 `867f60b` 加未提交树；配置回退用 `/tmp/config.json.bak-20260918`（启用前备份）。
+
+面板驱动要用受信输入（click + focus + CDP Input.insertText + Enter）；直接给 #input 赋 value 不进入框架状态，消息发不出去。验证脚本 `scripts/acceptance/daily-enablement-check.mjs`，证据 `out/enablement/daily-trial-1789743968156/`。
