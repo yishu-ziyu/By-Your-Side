@@ -117,11 +117,12 @@ function ownText(ev: RunEvidence): string {
 function contentChecks(ev: RunEvidence, mat: JourneyMaterial): CheckResult[] {
   const p = ev.page;
   if (!p) return [check("content-unchanged", false, "缺少页面探针")];
-  const ok = p.contentMutations === 0 && p.initialText !== null && norm(p.currentText) === norm(p.initialText);
+  // 正文同一性以文本为准：显示修改（字体）会合法重组 DOM（span 包裹），mutation 计数只进详情
+  const ok = p.initialText !== null && norm(p.currentText) === norm(p.initialText);
   const wantPath = new URL(mat.startPath, "http://fixture").pathname;
   const pageOk = p.url === wantPath;
   return [
-    check("content-unchanged", ok, `内容变更 ${p.contentMutations} 次，正文${ok ? "未变" : "已变"}`),
+    check("content-unchanged", ok, `内容/属性变更 ${p.contentMutations}/${p.attrMutations} 次，正文文本${ok ? "未变" : "已变"}`),
     check("page-identity", pageOk, pageOk ? `页面身份 ${wantPath}` : `页面被替换：期望 ${wantPath}，实际 ${p.url}`),
   ];
 }
