@@ -25,7 +25,7 @@ function baseEvidence(caseId: string, m: 0 | 1, over: Partial<RunEvidence> = {})
   const { page: pageOver, ...rest } = over;
   return {
     caseId, materialId: mat.materialId,
-    conversationId: CID, runId: "run-1",
+    conversationId: CID, runIds: ["run-1"],
     deliveries: [], receipts: [], toolCalls: [], hits: {}, writes: [],
     page: { ...pageProbe(), ...pageOver, url: path },
     takeoverWindow: null, restartAtMs: null,
@@ -237,6 +237,16 @@ describe("oracle 反向（A01-02）：八类反例全部不合格", () => {
     const v = judge("R01", 0, ev);
     expect(v.qualified).toBe(false);
     expect(v.checks.find((c) => c.id === "source-cited")?.ok).toBe(false);
+  });
+  it("同会话跨多个 run 的交付都算数（原始任务 + steer 各是一个 run）", () => {
+    const ev = goodEvidence("R03", 0);
+    const [first, second] = ev.deliveries;
+    ev.deliveries = [{ ...first!, runId: "run-1" }, { ...second!, runId: "run-2" }];
+    ev.runIds = ["run-1", "run-2"];
+    expect(judge("R03", 0, ev).qualified).toBe(true);
+    // 但其他会话/其他臂的 run 仍被拒
+    ev.runIds = ["run-2"];
+    expect(judge("R03", 0, ev).qualified).toBe(false);
   });
   it("页面被整体替换（换页冒充同页）不合格", () => {
     const ev = goodEvidence("R01", 0);

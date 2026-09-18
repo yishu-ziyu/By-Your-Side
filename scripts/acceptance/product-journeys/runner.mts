@@ -149,10 +149,15 @@ function extractReceipts(events: EventView[]) {
     });
 }
 
-function extractRunId(events: EventView[], conversationId: string): string | null {
-  const status = events.filter((e) => e.message.type === "status" && (e.message as { conversationId?: string }).conversationId === conversationId && (e.message as { runId?: string }).runId);
-  const last = status.at(-1);
-  return last ? String((last.message as { runId?: string }).runId) : null;
+function extractRunIds(events: EventView[], conversationId: string): string[] {
+  const ids = new Set<string>();
+  for (const e of events) {
+    if (e.message.type === "status" && (e.message as { conversationId?: string }).conversationId === conversationId) {
+      const runId = (e.message as { runId?: string }).runId;
+      if (runId) ids.add(runId);
+    }
+  }
+  return [...ids];
 }
 
 function extractToolCalls(events: EventView[]) {
@@ -336,7 +341,7 @@ export async function runOne(
     caseId: jc.caseId,
     materialId: mat.materialId,
     conversationId,
-    runId: extractRunId(events.slice(eventsBefore), conversationId),
+    runIds: extractRunIds(events.slice(eventsBefore), conversationId),
     deliveries,
     receipts: extractReceipts(events.slice(eventsBefore)),
     toolCalls: extractToolCalls(events.slice(eventsBefore)),

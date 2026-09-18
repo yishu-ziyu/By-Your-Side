@@ -26,9 +26,10 @@ export interface PageProbe {
 export interface RunEvidence {
   caseId: string;
   materialId: string;
-  /** 本臂的会话/运行身份；交付必须绑定它们才算数 */
+  /** 本臂的会话身份；交付必须绑定它才算数 */
   conversationId: string;
-  runId?: string | null;
+  /** 本臂该会话出现过的全部 runId（一个任务可跨多个 run：原始任务 + steer/恢复） */
+  runIds?: string[];
   deliveries: DeliveryEvidence[];
   receipts: ReceiptEvidence[];
   toolCalls: ToolCallEvidence[];
@@ -104,7 +105,7 @@ function commonChecks(jc: JourneyCase, mat: JourneyMaterial, ev: RunEvidence): C
 export function ownDeliveries(ev: RunEvidence): DeliveryEvidence[] {
   return ev.deliveries.filter((d) => {
     if (d.conversationId !== ev.conversationId) return false;
-    if (ev.runId && d.runId && d.runId !== ev.runId) return false;
+    if (ev.runIds?.length && d.runId && !ev.runIds.includes(d.runId)) return false;
     return true;
   });
 }
