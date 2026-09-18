@@ -139,9 +139,9 @@ const JUDGES: Record<string, Judge> = {
     const deliveries = ownDeliveries(ev).filter((d) => d.kind === "finding" || d.kind === "reply");
     const first = norm(deliveries[0]?.text ?? "");
     const last = norm(deliveries.at(-1)?.text ?? "");
-    const expect = mat.expect as { explainKeywords: string[]; selectedTerm: string };
-    const missingKw = expect.explainKeywords.filter((k) => !first.includes(norm(k)));
-    const explainOk = deliveries.length > 0 && first.includes(expect.selectedTerm) && missingKw.length === 0;
+    const expect = mat.expect as { explainKeywords: string[]; explainMinKeywordHits?: number; selectedTerm: string };
+    const kwHits = expect.explainKeywords.filter((k) => first.includes(norm(k))).length;
+    const explainOk = deliveries.length > 0 && (first.includes(expect.selectedTerm) || kwHits >= (expect.explainMinKeywordHits ?? expect.explainKeywords.length));
     const followOk = deliveries.length >= 2 && last.includes(expect.selectedTerm);
     return [
       check("explain-selection", explainOk, explainOk ? "解释命中选中术语定义" : "解释未命中选中术语"),

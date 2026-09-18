@@ -88,7 +88,8 @@ export const JOURNEY_CASES: JourneyCase[] = [
       expect: {
         selectionSelector: m === 0 ? "#def-incremental" : "#def-writethrough",
         selectedTerm: at2(DOCS, m).term,
-        explainKeywords: m === 0 ? ["变化", "数据块"] : ["缓存", "最新值"],
+        explainKeywords: m === 0 ? ["增量", "变化", "变动", "数据块", "复制"] : ["缓存", "写入", "存储", "最新"],
+        explainMinKeywordHits: 2,
         followupMustMentionTerm: true,
         contentUnchanged: true,
         noWrites: true,

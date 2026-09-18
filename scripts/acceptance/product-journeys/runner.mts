@@ -175,8 +175,9 @@ async function waitTerminal(events: EventView[], host: HostHandle, conversationI
         const snap = host.manager.getTaskProgress(conversationId);
         const kind = snap?.conversationContext?.latestDelivery?.kind;
         if (kind === "finding" || kind === "reply") return "ended";
-        const notice = own.some((e) => eventKind(e) === "notice");
-        if (notice) return "ended";
+        // 普通 notice（如 accepted 回执）不终止补齐等待；只有明确「没有正式回答」才提前结束
+        const noDelivery = own.some((e) => eventKind(e) === "notice" && String((e.message as { event?: { message?: string } }).event?.message ?? "").includes("正式回答还没有"));
+        if (noDelivery) return "ended";
         await sleep(150);
       }
       return "ended";
