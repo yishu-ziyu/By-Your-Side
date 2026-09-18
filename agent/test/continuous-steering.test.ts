@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { BrowserAgentSession } from "../src/session.js";
+import { BrowserAgentSession, STEER_CONTRACT_NOTE } from "../src/session.js";
 import { TaskActionRejected } from "../src/task-dispatcher.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 
@@ -175,6 +175,11 @@ describe("连续插话进入同一轮模型输入（真实 Pi 队列语义）", 
         .toBeLessThan(inputs.findIndex(input => input.includes(edits[1]!)));
       // 三条补充必须在同一次模型输入里，而不是等到各自下一轮。
       expect(inputs.filter(input => edits.some(text => input.includes(text)))).toHaveLength(3);
+      // 回退路径的每条插话载荷都要携带「补充而非替换」契约：实测反例是模型把最新输入当成全部目标，
+      // 只交付修改报告，原任务的答案再也不会被交付（docs/evals/20260918-prompt-budget-and-steer-contract.md）。
+      for (const input of inputs.filter(input => edits.some(text => input.includes(text)))) {
+        expect(input).toContain(STEER_CONTRACT_NOTE);
+      }
     } finally {
       harness.cleanup();
     }
@@ -394,5 +399,22 @@ describe("已接受但这一轮没读到的补充", () => {
     // 模型收到的是另一段恰好包含同样字样的输入（例如别处引用了它）。
     harness.messageStart(`引用：备注改成终稿。但这条不是原样输入`);
     expect(harness.wrapped.canWriteCurrentInput()).toBe(false);
+  });
+});
+
+describe("运行中插话的原任务契约（回退路径）", () => {
+  it("插话载荷带契约与页面上下文；Pi 原样回显后按整条载荷销账，契约不进用户面事件", async () => {
+    const harness = syntheticSession();
+    await harness.wrapped.steerCurrentTask("把已有译文改成宋体。", pageContext());
+    expect(harness.raw.steer).toHaveBeenCalledTimes(1);
+    const payload = harness.raw.steer.mock.calls[0]![0] as string;
+    expect(payload).toContain("把已有译文改成宋体。");
+    expect(payload).toContain("本地表单");
+    expect(payload).toContain(STEER_CONTRACT_NOTE);
+    // 契约只进模型载荷，不进任何用户面事件。
+    expect(harness.emitted.filter(event => JSON.stringify(event).includes(STEER_CONTRACT_NOTE))).toEqual([]);
+    // Pi 把整条载荷原样回显为 user 消息后，销账仍精确匹配，写入放行。
+    harness.messageStart(payload);
+    expect(harness.wrapped.canWriteCurrentInput()).toBe(true);
   });
 });

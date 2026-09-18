@@ -40,8 +40,10 @@ describe("模型面预算", () => {
     for (const name of TEAM_COORDINATION_TOOLS) expect(idle).not.toContain(name);
   });
 
-  it("系统提示词不超过 15,000 字符", () => {
-    expect(SYSTEM_PROMPT.length).toBeLessThanOrEqual(15_000);
+  it("系统提示词不超过 16,000 字符", () => {
+    // 2026-09-18 用户裁决上调：P0 confirm_blocked_write 指引（+170）在旧 15,000 上越线至 15168。
+    // 新值保留头部空间，但模型面仍是有界预算；继续加提示词内容需在此预算内裁剪仲裁。
+    expect(SYSTEM_PROMPT.length).toBeLessThanOrEqual(16_000);
   });
 
   it("worker 只拿到自己的工具（浏览器 + 投递/等待）,没有 spawn_worker", () => {

@@ -7,6 +7,7 @@ import {
   lastAssistantError,
   runProducedNothing,
   shouldSurfaceAgentEndIssue,
+  STEER_CONTRACT_NOTE,
   withPageContext,
 } from "../src/session.js";
 import { handbackContinueText } from "../../shared/control.js";
@@ -512,7 +513,7 @@ it('voice steering waits for queue acceptance and cannot restart an idle task', 
   raw.steer.mockImplementation(()=>new Promise<void>(resolve=>{accept=resolve;}));
   let accepted=false;const pending=wrapped.steerCurrentTask('预算改成八百').then(()=>{accepted=true;});
   await flushMicrotasks();expect(accepted).toBe(false);expect(raw.prompt).not.toHaveBeenCalled();expect(raw.abort).not.toHaveBeenCalled();
-  accept();await pending;expect(accepted).toBe(true);expect(raw.steer).toHaveBeenCalledExactlyOnceWith('预算改成八百');
+  accept();await pending;expect(accepted).toBe(true);expect(raw.steer).toHaveBeenCalledExactlyOnceWith(`预算改成八百\n${STEER_CONTRACT_NOTE}`);
   setStreaming(false);await expect(wrapped.steerCurrentTask('预算改成六百')).rejects.toThrow('当前没有正在执行');
   expect(raw.prompt).not.toHaveBeenCalled();
 });

@@ -6,10 +6,12 @@
  * alternating order, and checks both the page result and the original task's own result.
  * No microphone, no ASR/TTS claims; voice coverage is marked separately in results.json.
  *
- * Usage: npx --no-install tsx scripts/acceptance/jev-display-steering.mts --headless [--smoke] [--boundaries-only]
+ * Usage: npx --no-install tsx scripts/acceptance/jev-display-steering.mts --headless [--smoke] [--boundaries-only] [--pairs N] [--skip-boundaries]
+ * 效率分层：--smoke（1 对 2 臂，~2.5 分钟）用于迭代；--pairs N --skip-boundaries 用于中问抽查；
+ * 全量 10 对 + 6 边界只用于正式留证。部分范围的水远不会置 results.passed=true。
  */
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {mkdir, writeFile, readFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {homedir} from 'node:os';
@@ -22,11 +24,18 @@ import {TaskDispatcher, TaskReceiptStore} from '../../agent/src/task-dispatcher.
 import {loadConfig} from '../../agent/src/config.js';
 import {DEFAULT_PORT, PROTOCOL_VERSION, HOST_VERSION, STORAGE_SCHEMA_VERSION, parseClientMessage} from '../../shared/protocol.js';
 import {launchIsolatedExtension, until} from './isolated-extension.mts';
+import {displayAcceptanceExitCode, judgeDisplaySteeringRun, summarizeDisplaySteering} from './display-steering-oracle.mjs';
 
 if (!process.argv.includes('--headless')) throw new Error('Required: --headless');
 const smoke = process.argv.includes('--smoke');
 const boundariesOnly = process.argv.includes('--boundaries-only');
-const PAIR_COUNT = smoke ? 1 : 10;
+const skipBoundaries = process.argv.includes('--skip-boundaries');
+const pairsFlag = process.argv.find(a => a === '--pairs' || a.startsWith('--pairs='));
+const pairsRaw = pairsFlag ? Number(pairsFlag.includes('=') ? pairsFlag.slice('--pairs='.length) : process.argv[process.argv.indexOf(pairsFlag) + 1]) : NaN;
+if (pairsFlag && !(Number.isInteger(pairsRaw) && pairsRaw >= 1 && pairsRaw <= 10)) throw new Error('--pairs 需要 1..10 的整数（总对数固定 10）');
+const reviewRaces = process.argv.includes('--review-races');
+const PAIR_COUNT = smoke ? 1 : (Number.isInteger(pairsRaw) ? pairsRaw : 10);
+const pairsLimited = PAIR_COUNT < 10;
 const out = resolve('out/acceptance', `jev-display-steering-${Date.now()}`);
 await mkdir(out, {recursive: true});
 
@@ -100,15 +109,18 @@ console.error = (...args: any[]) => {
   }
 };
 const originalFetch = globalThis.fetch;
+// Review race mode uses a controlled decision response, never claims live Jev accuracy.
+let reviewDecision: (() => Promise<Response>) | null = null;
 globalThis.fetch = (async (input: any, init?: any) => {
   if (String(input).includes('api.typesafe.ai')) {
+    if (reviewDecision) return reviewDecision();
     const started = Date.now();
     try { return await originalFetch(input, init); } finally { jevCalls.push(Date.now() - started); }
   }
   return originalFetch(input, init);
 }) as typeof fetch;
 
-const TASK_TEXT = '请阅读当前网页的文章：先数一数一共有几个段落，再用一句不超过40字的话概括。不要修改网页上的任何内容，也不要翻译。';
+const TASK_TEXT = '请阅读当前网页的文章：先数一数正文一共有几个段落，再用一句不超过40字的话概括。不要修改网页上的任何内容，也不要翻译。回答中各用独立一行给出“段落数：N”和“概括：一句话”，N只写数字。';
 const MODIFIERS = [
   {text: '把已有译文改成宋体。', font: 'songti', mode: null},
   {text: '已有译文请只显示译文。', font: null, mode: 'translated'},
@@ -135,6 +147,10 @@ const fixtureHtml = `<!doctype html><meta charset="utf-8"><title>Display steerin
 let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
 let panel = '';
 const results: any = {passed: false, pairs: [], boundaries: [], runs: [], summary: {}, scope: {}, error: null};
+results.sourceDigests=Object.fromEntries(await Promise.all([
+  'agent/src/session.ts','agent/src/conversation-manager.ts','agent/src/task-progress.ts',
+  'scripts/acceptance/jev-display-steering.mts','scripts/acceptance/display-steering-oracle.mjs',
+].map(async path=>[path,createHash('sha256').update(await readFile(path)).digest('hex')])));
 
 const sleep = (ms: number) => new Promise(resolveSleep => setTimeout(resolveSleep, ms));
 
@@ -149,32 +165,36 @@ try {
   await until(async () => await iso!.evalIn(panel, "!!document.querySelector('#input')") || undefined, 10000, 'panel');
   await iso.evalIn(panel, "globalThis.probePort=chrome.runtime.connect({name:'sideagent-panel'});probePort.postMessage({kind:'retry'});");
   await until(() => socket?.readyState === WebSocket.OPEN || undefined, 15000, 'connected');
-  const target = await iso.newTarget(`${iso.fixtureOrigin}/article`);
-  const tab: any = await until(async () => (await iso!.swEval('chrome.tabs.query({})') as any[]).find(candidate => candidate.url === `${iso!.fixtureOrigin}/article`), 5000, 'tab');
+  let target = await iso.newTarget(`${iso.fixtureOrigin}/article`);
+  let tab: any = await until(async () => (await iso!.swEval('chrome.tabs.query({})') as any[]).find(candidate => candidate.url === `${iso!.fixtureOrigin}/article`), 5000, 'tab');
   await iso.swEval(`chrome.tabs.update(${tab.id},{active:true})`);
   const page = (expression: string) => iso!.evalIn(target, expression);
+  let fixtureConversationId='default';
   const call = async (params: any) => {
-    const receipt = await iso!.tool('page_translation', {tabId: tab.id, ...params}, 'main');
+    // Seed with the arm's own conversation identity through the existing test hook;
+    // otherwise seeding claims every new page for "default" before the actual task starts.
+    const receipt:any = await iso!.swEval(`globalThis.__saCall(${JSON.stringify(`fixture-${randomUUID()}`)},'page_translation',${JSON.stringify({tabId:tab.id,...params})},'main',undefined,${JSON.stringify(fixtureConversationId)})`);
     assert(receipt.ok, receipt.error);
     return receipt.data;
   };
-  const observe = () => page(`(()=>{const p=document.querySelector('article p'),t=p?.querySelector('[data-bys-translation]');return {mode:t?'bilingual':'translated',font:p?getComputedStyle(t||p).fontFamily:'',text:p?.textContent??''};})()`);
+  const observe = () => page(`(()=>{const paragraphs=[...document.querySelectorAll('article p')].map(p=>{const t=p.querySelector('[data-bys-translation]');return {mode:t?'bilingual':'translated',font:getComputedStyle(t||p).fontFamily,text:p.textContent??''};});return {...paragraphs[0],paragraphs};})()`);
   const panelIdle = async () => (await iso!.evalIn(panel, "document.getElementById('abort-btn').hidden")) === true;
   const panelRunning = async () => (await iso!.evalIn(panel, "!document.getElementById('abort-btn').hidden")) === true;
   const sendInput = (text: string) => iso!.evalIn(panel, `(()=>{const e=document.querySelector('#input');e.value=${JSON.stringify(text)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`);
-  const waitSettled = async (start: number, timeoutMs: number): Promise<'settled' | 'timeout'> => {
+  const waitSettled = async (start: number, timeoutMs: number, session=entry.runtime.session): Promise<'settled' | 'timeout'> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const ended = events.slice(start).some(item => item.message?.event?.kind === 'agent_end' && item.message.event.willRetry !== true);
-      if (ended && !entry.runtime.session.isStreaming()) return 'settled';
+      if (ended && !session.isStreaming()) return 'settled';
       await sleep(150);
     }
     return 'timeout';
   };
-  const waitMatch = async (match: () => Promise<boolean>, timeoutMs: number): Promise<number | undefined> => {
+  const waitMatch = async (match: () => Promise<boolean>, timeoutMs: number, done?:()=>boolean): Promise<number | undefined> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (await match()) return Date.now();
+      if (done?.()) return undefined;
       await sleep(120);
     }
     return undefined;
@@ -191,62 +211,169 @@ try {
   const setDisplay = (mode: string, fontFamily: string) => call({action: 'display', mode, fontFamily});
   const matchesExpected = async (modifier: {font: string | null; mode: string | null}, expected: {font: string; mode: string}) => {
     const observed = await observe();
-    const fontOk = modifier.font ? (modifier.font === 'songti' ? /Songti SC/.test(observed.font) : !/Songti SC/.test(observed.font)) : true;
-    return {ok: observed.mode === expected.mode && fontOk, observed};
+    const paragraphs = observed.paragraphs ?? [];
+    return {ok: paragraphs.length === 4 && paragraphs.every((p:any) => p.mode === expected.mode
+      && (expected.font === 'songti' ? /Songti SC/.test(p.font) : p.font === 'Arial')), observed};
   };
 
   async function runSteered(name: string, modifier: {text: string; font: string | null; mode: string | null}, enabled: boolean, options?: {initial?: {mode: string; font: string}; waitForChange?: boolean}): Promise<any> {
+    // Each arm gets a fresh conversation through the actual panel. A prior arm's runtime
+    // "already applied" message must not become evidence for the next arm's request.
+    await until(async()=>await panelIdle()||undefined,20000,'previous panel task idle');
+    const creationStart=events.length;
+    await iso!.evalIn(panel,"document.getElementById('conversation-new').click()");
+    const created:any=await until(()=>events.slice(creationStart).find(e=>e.message?.type==='conversation_created')?.message,15000,'fresh arm conversation');
+    const conversationId=created.conversation.id;
+    fixtureConversationId=conversationId;
+    const runEntry=manager.get(conversationId)!;
+    await until(async()=>((await iso!.swEval("chrome.storage.session.get('selectedConversationId')")) as {selectedConversationId?:string}|undefined)?.selectedConversationId===conversationId||undefined,5000,'panel selected fresh conversation');
+    // Use an equivalent new fixture page as well: never bypass the previous conversation's page ownership.
+    const previousTarget=target;
+    const url=`${iso!.fixtureOrigin}/article#arm-${randomUUID()}`;
+    target=await iso!.newTarget(url);
+    tab=await until(async()=>(await iso!.swEval('chrome.tabs.query({})') as any[]).find(t=>t.url===url),5000,'fresh arm page');
+    await iso!.swEval(`chrome.tabs.update(${tab.id},{active:true})`);
+    await iso!.closeTarget(previousTarget);
+    await seedTranslations();
     const waitForChange = options?.waitForChange !== false;
     const initialMode = options?.initial?.mode ?? (modifier.mode ? (modifier.mode === 'bilingual' ? 'translated' : 'bilingual') : 'translated');
     const initialFont = options?.initial?.font ?? (modifier.font === 'original' ? 'songti' : 'original');
     await setDisplay(initialMode, initialFont);
     const expected = {mode: modifier.mode ?? initialMode, font: modifier.font ?? initialFont};
     if (waitForChange) assert((await matchesExpected(modifier, expected)).ok === false, '初始显示状态必须与目标不同');
-    await until(async () => ((await panelIdle()) && !entry.runtime.session.isStreaming() && ['idle', 'none', 'aborted', 'error'].includes(manager.getTaskProgress('default')?.state ?? '')) || undefined, 20000, 'panel idle');
+    await until(async () => ((await panelIdle()) && !runEntry.runtime.session.isStreaming() && ['idle', 'none', 'aborted', 'error'].includes(manager.getTaskProgress(conversationId)?.state ?? '')) || undefined, 20000, 'panel idle');
     process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH = enabled ? '1' : '0';
     const jevStart = jevCalls.length;
     const decisionStart = displayDecisions.length;
+    const conversationCountBefore = manager.list().length;
     const taskMarker = events.length;
     await sendInput(TASK_TEXT);
     // 等新一轮的模型真的在流：仅看面板 running 会读到上一轮残留状态。
-    await until(async () => ((await panelRunning()) && entry.runtime.session.isStreaming() && events.slice(taskMarker).some(item => item.message?.event?.kind === 'turn_start')) || undefined, 30000, 'task running with model');
+    await until(async () => ((await panelRunning()) && runEntry.runtime.session.isStreaming() && events.slice(taskMarker).some(item => item.message?.conversationId===conversationId&&item.message?.event?.kind === 'turn_start')) || undefined, 30000, 'task running with model');
     await sleep(300);
-    const runId = manager.getTaskProgress('default')?.runId ?? null;
+    const runId = manager.getTaskProgress(conversationId)?.runId ?? null;
     const start = events.length;
     const steerAt = Date.now();
     await sendInput(modifier.text);
-    const pageAt = waitForChange ? await waitMatch(async () => (await matchesExpected(modifier, expected)).ok, 45000) : undefined;
-    const settle = await waitSettled(start, 90000);
+    const pageAt = waitForChange ? await waitMatch(async () => (await matchesExpected(modifier, expected)).ok, 45000,
+      ()=>!runEntry.runtime.session.isStreaming()&&events.slice(start).some(e=>e.message?.conversationId===conversationId&&e.message?.event?.kind==='agent_end'&&e.message.event.willRetry!==true)) : undefined;
+    const settle = await waitSettled(start, 90000,runEntry.runtime.session);
     await sleep(1200);
     const final = await matchesExpected(modifier, expected);
     const window = events.slice(start);
     const displayStarts = window.filter(item => item.message?.event?.kind === 'tool_start' && item.message.event.name === 'page_translation' && item.message.event.params?.action === 'display');
     const directStarts = displayStarts.filter(item => String(item.message.event.toolCallId).startsWith('display-'));
-    const reTranslate = window.filter(item => item.message?.event?.kind === 'tool_start' && item.message.event.name === 'page_translation' && item.message.event.params?.action !== 'display');
+    const reTranslate = window.filter(item => item.message?.type === 'tool_call' && item.message.name === 'page_translation'
+      && !['display','collect'].includes(item.message.params?.action));
     const findings = window.filter(item => item.message?.event?.kind === 'user_delivery' && ['finding', 'reply'].includes(item.message.event.delivery.kind));
-    const runIdAfter = manager.getTaskProgress('default')?.runId ?? null;
+    const runIdAfter = manager.getTaskProgress(conversationId)?.runId ?? null;
     const answer = findings.map(item => item.message.event.delivery.text).join(' ');
-    return {
+    const steeringReceipt=window.find(item=>item.message?.event?.receipt?.action==='steer')?.message.event.receipt??null;
+    const displayExecutions = window.filter(item => item.message?.type === 'tool_call' && item.message.name === 'page_translation'
+      && item.message.params?.action === 'display').map(item => {
+      const call = item.message;
+      const result = window.find(e => e.message?.type === 'tool_result' && e.message.id === call.id)?.message;
+      return {id:call.id, params:call.params, ok:result?.ok === true && !result?.data?.error,
+        executionFact:result?.data?.executionFact ?? result?.executionFact ?? 'unknown',
+        tabId:result?.data?.tabId ?? call.params.tabId, document:result?.data?.document ?? call.params.document ?? null,
+        runId:call.runId ?? null};
+    });
+    const run = {
       name, enabled, text: modifier.text, expected,
       initialMode, initialFont,
       pageChangedMs: pageAt ? pageAt - steerAt : null,
       totalMs: Date.now() - steerAt,
       settle, finalMatch: final.ok, finalObserved: final.observed,
-      direct: directStarts.length > 0, directStarts: directStarts.length, displayStarts: displayStarts.length,
+      direct: directStarts.length > 0 && steeringReceipt?.status==='applied', directStarts: directStarts.length, displayStarts: displayStarts.length,
       reTranslate: reTranslate.length,
       modelTurns: window.filter(item => item.message?.event?.kind === 'turn_start').length,
       jevCalls: jevCalls.length - jevStart, jevMs: jevCalls.slice(jevStart),
       decisions: displayDecisions.slice(decisionStart).map(entry => entry.reason),
       sameRunId: runId !== null && runIdAfter === runId,
-      runId,
+      runId, conversationId, tabId:tab.id,
       delivered: findings.length > 0, answer: answer.slice(0, 400),
       answerMentionsCount: /(4|四)/.test(answer),
-      conversationCount: manager.list().length,
+      deliveries:findings.map(item => item.message.event.delivery), displayExecutions,
+      steeringReceipt,
+      conversationCountBefore, conversationCountAfter: manager.list().length,
     };
+    return {...run, judgment:judgeDisplaySteeringRun(run)};
   }
 
   await seedTranslations();
-  if (!boundariesOnly) {
+  if (reviewRaces) {
+    const latch = () => {let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
+    const decisionResponse = () => new Response(JSON.stringify({answers:{
+      direct:{noul:.99},extra:{noul:.01},partial:{noul:.01},font_requested:{noul:.99},mode_requested:{noul:.01},
+      font:{choice:'songti',probabilities:{songti:.99,original:.005,unspecified:.005}},mode:{choice:'unspecified'},
+    }}),{headers:{'Content-Type':'application/json'}});
+    for (const kind of ['refresh-during-route','cancel-during-readback'] as const) {
+      const originalHold=latch(),decisionHold=latch(),readbackHold=latch();
+      const originalCall=entry.runtime.rpc.call.bind(entry.runtime.rpc);
+      let originalWaiting=false,routeWaiting=false,readbackWaiting=false,wrote=false;
+      const marker=events.length;
+      let failure:string|null=null,receipt:any=null;
+      try {
+        await until(()=>!entry.runtime.session.isStreaming()||undefined,20000,'previous task idle');
+        await setDisplay('translated','original');
+        process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH='1';
+        entry.runtime.rpc.call=(async (...args:any[])=>{
+          const [name,params]=args;
+          const result=await (originalCall as any)(...args);
+          if(name==='read_element'&&!originalWaiting){originalWaiting=true;await originalHold.promise;}
+          if(name==='page_translation'&&params?.action==='display')wrote=true;
+          if(kind==='cancel-during-readback'&&name==='snapshot'&&wrote&&!readbackWaiting){readbackWaiting=true;await readbackHold.promise;}
+          return result;
+        }) as typeof entry.runtime.rpc.call;
+        await sendInput(`先调用 read_element 读取 body 全文，不能跳过这个工具。${TASK_TEXT}`);
+        await until(()=>originalWaiting||undefined,45000,'original task held at real read_element receipt');
+        const runId=manager.getTaskProgress('default')!.runId;
+        reviewDecision=async()=>{routeWaiting=true;if(kind==='refresh-during-route')await decisionHold.promise;return decisionResponse();};
+        const editStart=events.length;
+        await sendInput('把译文改成宋体');
+        if(kind==='refresh-during-route'){
+          await until(()=>routeWaiting||undefined,10000,'Jev route held');
+          await page('location.reload()');
+          await seedTranslations();
+          decisionHold.release();
+        }else{
+          await until(()=>readbackWaiting||undefined,10000,'post-write readback held');
+          await iso.evalIn(panel,"document.getElementById('abort-btn').click()");
+          await until(()=>events.slice(editStart).some(e=>e.direction==='client'&&(e.message?.type==='abort'||e.message?.action==='abort'))||undefined,5000,'panel cancellation sent');
+          originalHold.release();
+          await until(()=>manager.getTaskProgress('default')?.state==='aborted'||undefined,10000,'task cancelled');
+          readbackHold.release();
+        }
+        receipt=await until(()=>events.slice(editStart).find(e=>e.message?.event?.receipt?.action==='steer')?.message.event.receipt,10000,'steering receipt');
+        if(kind==='refresh-during-route'){
+          assert.equal(receipt.status,'rejected');
+          assert(!manager.getTaskProgress('default')?.recoveryInput?.requirements.includes('把译文改成宋体'));
+        }else{
+          assert.notEqual(receipt.status,'applied');
+          assert(!receipt.message.includes('原任务继续'));
+        }
+        originalHold.release();readbackHold.release();reviewDecision=null;
+        assert.equal(await waitSettled(marker,90000),'settled');
+        const after=await observe();
+        const writes=events.slice(editStart).filter(e=>e.message?.type==='tool_call'&&e.message.name==='page_translation'&&e.message.params?.action==='display');
+        assert.equal(writes.length,kind==='refresh-during-route'?0:1);
+        assert(after.paragraphs.every((p:any)=>kind==='refresh-during-route'?!/Songti SC/.test(p.font):/Songti SC/.test(p.font)));
+        assert.equal(manager.getTaskProgress('default')?.runId,runId);
+        results.boundaries.push({name:kind,failure:null,receipt,displayCalls:writes.length,observed:after,
+          scope:'real panel/extension/runtime/tools; live task model; controlled Jev response and read receipt timing'});
+      }catch(error){
+        failure=error instanceof Error?error.message:String(error);
+        results.boundaries.push({name:kind,failure,receipt});
+      }finally{
+        decisionHold.release();originalHold.release();readbackHold.release();reviewDecision=null;
+        entry.runtime.rpc.call=originalCall;
+        if(failure&&entry.runtime.session.isStreaming())await manager.handleMessage({type:'abort',conversationId:'default'});
+        await writeFile(join(out,'results.json'),JSON.stringify(results,null,2));
+        console.log(JSON.stringify({reviewRace:kind,failure,receipt}));
+      }
+    }
+  }
+  if (!boundariesOnly && !reviewRaces) {
     for (let pair = 0; pair < PAIR_COUNT; pair++) {
       const modifier = MODIFIERS[pair % MODIFIERS.length]!;
       const order = pair % 2 === 0 ? [false, true] : [true, false];
@@ -262,10 +389,12 @@ try {
     }
   }
 
-  if (!smoke) {
+  if (!smoke && !reviewRaces && !skipBoundaries) {
     const boundary = async (name: string, text: string, check: (run: any) => string | null, options?: {initial?: {mode: string; font: string}; waitForChange?: boolean; font?: string | null; mode?: string | null}) => {
       const run = await runSteered(`boundary-${name}`, {text, font: options?.font ?? null, mode: options?.mode ?? null}, true, options);
-      const failure = check(run);
+      const required=['settled','sameTask','deliveryIdentity','paragraphCount','summary','noRepeatedExecution','noRetranslation'];
+      const missing=required.filter(key=>!run.judgment.checks[key]);
+      const failure = check(run) ?? (missing.length ? `原任务或执行证据未通过：${missing.join(', ')}` : null);
       results.boundaries.push({name, text, ...run, failure});
       console.log(JSON.stringify({boundary: name, failure, observed: run.finalObserved, direct: run.direct}));
       await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2));
@@ -279,45 +408,30 @@ try {
     await boundary('恢复网站字体', '把已有译文恢复成网站原来的字体。', run => /Songti SC/.test(run.finalObserved.font) ? '没有恢复原字体' : null, {font: 'original', initial: {mode: 'translated', font: 'songti'}});
   }
 
-  const armStats = (enabled: boolean) => {
-    const runs = results.runs.filter((run: any) => run.enabled === enabled);
-    const good = runs.filter((run: any) => run.finalMatch && run.settle === 'settled' && run.sameRunId && run.delivered);
-    const times = good.map((run: any) => run.pageChangedMs).filter((value: any): value is number => typeof value === 'number').sort((a: number, b: number) => a - b);
-    const median = (values: number[]) => values.length === 0 ? null : values.length % 2 ? values[(values.length - 1) / 2] : (values[values.length / 2 - 1]! + values[values.length / 2]!) / 2;
-    return {
-      runs: runs.length, success: good.length,
-      direct: runs.filter((run: any) => run.direct).length,
-      medianPageMs: median(times),
-      pageMs: times,
-      jevCalls: runs.reduce((sum: number, run: any) => sum + run.jevCalls, 0),
-      jevMedianMs: median(runs.flatMap((run: any) => run.jevMs).sort((a: number, b: number) => a - b)),
-      failures: runs.filter((run: any) => !good.includes(run)).map((run: any) => ({name: run.name, settle: run.settle, finalMatch: run.finalMatch, sameRunId: run.sameRunId, delivered: run.delivered, pageChangedMs: run.pageChangedMs})),
-    };
-  };
-  const off = armStats(false), on = armStats(true);
-  const paired = results.pairs.filter((pair: any) => pair.arms.off?.finalMatch && pair.arms.on?.finalMatch).map((pair: any) => pair.arms.on.pageChangedMs - pair.arms.off.pageChangedMs);
-  results.summary = {
-    pairs: results.pairs.length, runs: results.runs.length,
-    off, on,
-    pairedDeltasMs: paired,
-    pairedMedianDeltaMs: paired.length ? (paired.slice().sort((a: number, b: number) => a - b)[Math.floor(paired.length / 2)]) : null,
-    allRunsCorrect: results.runs.length > 0 && results.runs.every((run: any) => run.finalMatch && run.settle === 'settled' && run.sameRunId && run.delivered && run.reTranslate === 0),
-    boundaryFailures: results.boundaries.filter((entry: any) => entry.failure).length,
-    testsAccountedFor: results.runs.length + results.boundaries.length,
-  };
+  results.summary = summarizeDisplaySteering(results.runs, results.pairs, results.boundaries);
   results.scope = {
+    pairsRequested: PAIR_COUNT,
+    pairsLimited: pairsLimited || smoke || null,
+    boundariesSkipped: skipBoundaries || smoke || null,
     model: model ?? '(runtime default)',
     textRoute: 'real sidepanel input -> background -> task_action steer -> ConversationManager -> registered tools',
     voiceRoute: 'not exercised in this script (no microphone/ASR); shared dispatch covered by agent/test/voice-display-steering.test.ts',
     switchAfterRun: 'SIDEAGENT_DISPLAY_STEER_FASTPATH left off; ~/.sideagent/config.json unchanged',
+    reviewRaces: reviewRaces ? 'Live task model and actual browser, scripted Jev response/read receipt timing; no model accuracy or latency claims' : null,
     note: 'paired on/off runs follow browser-use/jev-ultrafast docs/performance.md; small samples are not a statistical claim',
+    armIsolation: 'fresh conversation and equivalent fixture page per arm; no cross-arm memory or page-ownership bypass',
   };
-  results.passed = !smoke && results.pairs.length >= 10 && results.summary.allRunsCorrect && results.summary.boundaryFailures === 0;
+  const exitCode = displayAcceptanceExitCode({summary:results.summary, smoke, boundariesOnly:boundariesOnly||reviewRaces, boundaries:results.boundaries, pairsExpected: pairsLimited ? PAIR_COUNT : null});
+  // 正式通过只能来自全量范围：10 对全跑且含 6 个边界。部分范围（smoke/--pairs/--skip-boundaries）只看退出码与逐项结果。
+  results.passed = !smoke && !boundariesOnly && !reviewRaces && !skipBoundaries && !pairsLimited && exitCode === 0;
+  results.smokePassed = smoke ? exitCode === 0 : null;
+  results.boundariesPassed = boundariesOnly ? exitCode === 0 : null;
+  results.reviewRacesPassed = reviewRaces ? exitCode === 0 : null;
   await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2));
   await iso.screenshot(target, join(out, 'page.png'));
   await iso.screenshot(panel, join(out, 'panel.png'));
   console.log(JSON.stringify({out, passed: results.passed, summary: results.summary}, null, 2));
-  if (!results.passed && !boundariesOnly) process.exitCode = 1;
+  process.exitCode = exitCode;
 } catch (error) {
   results.error = error instanceof Error ? error.message : String(error);
   await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2)).catch(() => {});

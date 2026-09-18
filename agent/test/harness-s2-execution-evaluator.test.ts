@@ -22,7 +22,9 @@ describe('S2 correction execution fence',()=>{
   const session:any=new (BrowserAgentSession as any)(raw,null,{emit:vi.fn(),setStatus:status},null,null);session.subscribeEvents();const epoch=session.executionEpoch();await session.steerCurrentTask('对象改成Y');
   expect(session.executionEpoch()).toBeGreaterThan(epoch);expect(status).toHaveBeenCalledWith('running');expect(session.canWriteCurrentInput()).toBe(false);
   subscriber({type:'turn_start'});expect(session.canWriteCurrentInput()).toBe(false);subscriber({type:'message_start',message:{role:'user',content:'不相关的旧消息'}});expect(session.canWriteCurrentInput()).toBe(false);
-  subscriber({type:'message_start',message:{role:'user',content:'对象改成Y'}});expect(session.canWriteCurrentInput()).toBe(true);
+  // Pi 原样回显整条插话载荷（含原任务契约）；只回显裸文本不算消费，不给写入放行。
+  subscriber({type:'message_start',message:{role:'user',content:'对象改成Y'}});expect(session.canWriteCurrentInput()).toBe(false);
+  subscriber({type:'message_start',message:{role:'user',content:raw.steer.mock.calls[0][0]}});expect(session.canWriteCurrentInput()).toBe(true);
  });
 });
 it('handback publishes its real supplied page snapshot as matched observation evidence before continuing',()=>{const emit=vi.fn();const raw:any={model:{id:'fixture'},isStreaming:false,agent:{state:{messages:[]}},abort:vi.fn(async()=>{}),prompt:vi.fn(async()=>{})};const session:any=new (BrowserAgentSession as any)(raw,null,{emit,setStatus:vi.fn()},null,null);session.holdForUser({abortStream:false});try{void session.continueAfterHandback({tabId:7,url:'https://fixture.test',title:'当前页'},'verified fresh Y snapshot');const start=emit.mock.calls.map(c=>c[0]).find(e=>e.kind==='tool_start'&&e.name==='snapshot');const end=emit.mock.calls.map(c=>c[0]).find(e=>e.kind==='tool_end'&&e.name==='snapshot');expect(start).toBeDefined();expect(end).toMatchObject({toolCallId:start?.toolCallId,isError:false,resultText:'verified fresh Y snapshot'});}finally{session.abort();}});

@@ -76,7 +76,7 @@ describe("纠正类插话补一次当前页观察（#3）", () => {
 
   it("插话路径真的会附上观察，且 trace 标了 phase", () => {
     expect(session).toMatch(/const observation = steerNeedsPageObservation\(text\) \? await this\.readUserPageForPrompt\(context, "steer"\) : null;/);
-    expect(session).toMatch(/const input = observation \? `\$\{withPageContext\(text, context\)\}\\n\\n\$\{observation\}` : withPageContext\(text, context\);/);
+    expect(session).toMatch(/const base = observation \? `\$\{withPageContext\(text, context\)\}\\n\\n\$\{observation\}` : withPageContext\(text, context\);[\s\S]*?const input = `\$\{base\}\\n\$\{STEER_CONTRACT_NOTE\}`;/);
     expect(session).toMatch(/private async readUserPageForPrompt\(context: PageContext \| undefined, phase: "task" \| "steer"\)/);
     expect(session).toMatch(/this\.runTrace\.record\("pre_observation", \{ phase, tabId/);
   });

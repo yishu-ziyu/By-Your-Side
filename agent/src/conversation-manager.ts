@@ -790,11 +790,22 @@ export class ConversationManager {
       if (entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你，请先交还。');
       dropPendingConsent();
       const originRun=snapshot.runId;
-      this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
+      const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
       entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
-      const steerOutcome=await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);
+      let steerOutcome:Awaited<ReturnType<Runtime['session']['steerCurrentTask']>>;
+      try{steerOutcome=await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);}
+      catch(error){
+        if(error instanceof TaskActionRejected){
+          revokeRequirement();
+          entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+        }
+        throw error;
+      }
       // 共同要求变了：正在跑的成员先挡住在途写入，再拿到新要求，避免它们继续按旧要求写。
-      const members = await entry.runtime.fleet.reviseSharedRequirement?.(request.text!,request.context,request.attachments);
+      const beforeMembers=this.getTaskProgress(request.conversationId);
+      const members = beforeMembers?.runId===originRun&&beforeMembers.state==='running'
+        &&(beforeMembers.controlVersion??0)===(snapshot.controlVersion??0)
+        ?await entry.runtime.fleet.reviseSharedRequirement?.(request.text!,request.context,request.attachments):undefined;
       if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
         this.progress.get(request.conversationId)?.reviseResults();
         this.progress.get(request.conversationId)?.recordUserTurn(request.text??'',request.requestId);
@@ -802,7 +813,13 @@ export class ConversationManager {
       }
       const memberNote = members ? memberRevisionNotice(members) : '';
       const note = memberNote?`；${memberNote}`:'';
-      if(steerOutcome?.kind==='display-applied')return {status:'applied',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已直接应用并核对：${steerOutcome.text}原任务继续。${note}`};
+      if(steerOutcome?.kind==='display-applied'){
+        const latest=this.getTaskProgress(request.conversationId);
+        if(latest?.runId!==originRun||latest.state!=='running'||entry.runtime.session.isHeld()||(latest.controlVersion??0)!==(snapshot.controlVersion??0))
+          return {status:'failed',runId:originRun,message:`显示修改已核对：${steerOutcome.text}但原任务或控制状态已变化，未确认继续。`};
+        return {status:'applied',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已直接应用并核对：${steerOutcome.text}原任务继续。${note}`};
+      }
+      if(steerOutcome?.kind==='display-handoff-failed')return {status:'failed',runId:originRun,message:steerOutcome.text};
       if(steerOutcome?.kind==='display-unknown')return {status:'unknown',runId:originRun,message:`修改已尝试执行，但结果未能确认：${steerOutcome.reason}没有自动重做。${note}`};
       if(steerOutcome?.kind==='display-failed')return {status:'failed',runId:originRun,message:`修改未能核对成功：${steerOutcome.reason}没有把它记为完成。${note}`};
       return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}${note}`};

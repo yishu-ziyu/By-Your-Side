@@ -7,6 +7,8 @@
  * ("旧步骤未执行") is exercised for real rather than asserted on a private queue.
  */
 import {beforeEach,describe,expect,it,vi} from 'vitest';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
 vi.mock('../src/display-fast-path.js',()=>({
   displayFastPathEnabled:()=>true,
   displaySteerFastPathEnabled:vi.fn(()=>true),
@@ -17,6 +19,7 @@ vi.mock('../src/run-trace.js',async(importOriginal)=>{
  return {...actual,RunTrace:class{begin(){}record(){}event(){}}};
 });
 import {decideDisplay,displaySteerFastPathEnabled} from '../src/display-fast-path.js';
+import {STEER_CONTRACT_NOTE} from '../src/session.js';
 import {TaskActionRejected} from '../src/task-dispatcher.js';
 import {candidate,context,managerHarness,pageHarness} from './fixtures/display-steering-harness.js';
 
@@ -240,12 +243,13 @@ describe('连续修改与竞态（Ticket 4）',()=>{
   expect(h.pageState.fontFamily).toBe('songti');
  });
 
- it('falls back without writing when the same-URL document changes while Jev decides',async()=>{
+ it('invalidates the request, without a model fallback, when the same-URL document changes while Jev decides',async()=>{
   const h=pageHarness();
   vi.mocked(decideDisplay).mockImplementation(async()=>{h.pageState.document='two';return candidate({fontFamily:'songti'});});
-  const outcome=await h.wrapper.steerCurrentTask('把译文改成宋体',context);
-  expect(outcome).toEqual({kind:'model'});
+  await expect(h.wrapper.steerCurrentTask('把译文改成宋体',context)).rejects.toThrow('页面实例已变化');
   expect(h.translationCalls).toHaveLength(0);
+  expect(h.steers).toHaveLength(0);
+  expect(h.wrapper.canWriteCurrentInput()).toBe(true);
   expect(h.pageState.fontFamily).toBe('original');
  });
 
@@ -353,5 +357,46 @@ describe('连续修改与竞态（Ticket 4）',()=>{
   const progress=manager.getTaskProgress('default')!;
   expect((progress.results??[]).some(item=>item.tool==='page_translation'&&item.status==='unknown')).toBe(true);
   expect(progress.nextStep?.allowWrites).toBe(false);
+ });
+});
+
+/**
+ * Ticket 7：显示修改不得改变未指定属性。
+ * 反例来自 out/acceptance/jev-display-steering-1789734088114 pair-0-off：用户只要求宋体，
+ * 模型却提交 {mode:'bilingual',fontFamily:'songti'}。两个检查分开：执行层省略字段必须保留原值；
+ * 模型面（工具说明＋插话契约）必须要求只提交本次要求改变的字段。
+ */
+describe('显示修改不得改变未指定属性（Ticket 7）',()=>{
+ const toolSource=readFileSync(resolve(__dirname,'../src/tools.ts'),'utf8');
+ it('执行层：只带字体时不改模式，只带模式时不改字体，组合请求两项都生效',async()=>{
+  const h=pageHarness();
+  // 行1：仅译文＋原字体 → 只改宋体 → 仍为仅译文。
+  await h.tool('page_translation').execute('row1',{action:'display',fontFamily:'songti',tabId:7,document:'one'});
+  expect(h.pageState).toMatchObject({fontFamily:'songti',mode:'translated'});
+  // 行2：双语＋宋体 → 再要求切回仅译文 → 字体仍是宋体（本夹具初始模式固定 translated，这里先显式切双语）。
+  await h.tool('page_translation').execute('row2a',{action:'display',mode:'bilingual',tabId:7,document:'one'});
+  expect(h.pageState).toMatchObject({fontFamily:'songti',mode:'bilingual'});
+  await h.tool('page_translation').execute('row2b',{action:'display',mode:'translated',tabId:7,document:'one'});
+  expect(h.pageState).toMatchObject({fontFamily:'songti',mode:'translated'});
+  // 行4：明确组合请求两项都生效。
+  await h.tool('page_translation').execute('row4',{action:'display',fontFamily:'songti',mode:'bilingual',tabId:7,document:'one'});
+  expect(h.pageState).toMatchObject({fontFamily:'songti',mode:'bilingual'});
+ });
+ it('模型面：display 工具说明要求只提交本次改变的字段，省略即保持现状',()=>{
+  expect(toolSource).toMatch(/action:"display" switches existing results/);
+  expect(toolSource).toMatch(/submit ONLY the fields this request changes/i);
+  expect(toolSource).toMatch(/omitted fields keep the current page state/i);
+  expect(toolSource).toMatch(/must not carry mode or fontSize/i);
+ });
+ it('模型面：运行中插话契约要求显示修改只动本次要求的字段',()=>{
+  expect(STEER_CONTRACT_NOTE).toContain('只提交本次要求改变的字段');
+  expect(STEER_CONTRACT_NOTE).toContain('保持当前状态');
+ });
+ it('模型面：最新输入里明确的修改要求优先于任务早期限制，未指明属性仍受约束',()=>{
+  // MiniMax 实测反例（out/acceptance/jev-display-steering-17897389* pair-1-off）：模型以原任务“不要修改网页”
+  // 为由整体跳过“只显示译文”的显示修改。契约必须说明最新修改要求对其指明属性的优先语义。
+  expect(STEER_CONTRACT_NOTE).toContain('优先于任务早期的限制');
+  expect(STEER_CONTRACT_NOTE).toContain('按其指明的属性执行');
+  expect(STEER_CONTRACT_NOTE).toContain('未指明的属性仍受早期限制约束');
  });
 });

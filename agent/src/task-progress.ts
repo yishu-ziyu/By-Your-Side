@@ -63,14 +63,22 @@ export class TaskProgress {
   }
   prepareResume():void { this.lifecycleFrozen=false;this.failureLimit=false; }
   /** Conversational turns are not new task requirements. Call only for actual task input. */
-  recordRequirement(text:string,context?:PageContext,attachments?:Attachment[]):void {
+  recordRequirement(text:string,context?:PageContext,attachments?:Attachment[]):()=>void {
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
     const clean=String(sanitizeTrace(text)).trim();
     const requirements=clean&&prior.requirements.at(-1)!==clean?[...prior.requirements,clean]:[...prior.requirements];
     const attachmentKeys=[...new Set([...prior.attachmentKeys,...(attachments??[]).map(attachmentRecoveryKey)])];
     if(requirements.length>64||requirements.some(t=>t.length>12000)||requirements.reduce((n,t)=>n+t.length,0)>RECOVERY_INPUT_MAX||attachmentKeys.length>16)throw new Error('原任务补充内容已达到保留上限，这条修改未接收；请先交付已有结果或另开任务。');
     const page=context?pageRecoveryKey(context.tabId,context.url):prior.page;
-    this.recoveryInput={requirements,attachmentKeys,...(page?{page}:{})};
+    const recorded={requirements,attachmentKeys,...(page?{page}:{})};
+    const runId=this.runId;
+    this.recoveryInput=recorded;
+    // Only the caller that just registered this input can revoke it before acceptance.
+    // Preserve a fresh page observation, and never roll back a later requirement or another run.
+    return ()=>{
+      if(this.runId!==runId||this.recoveryInput!==recorded)return;
+      this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys};
+    };
   }
   invalidatePage(tabId?:number,url?:string):void {
     this.readback.restore(this.snapshot());this.results.notePageChange();this.completedReads.clear();this.lastReadAt=null;
