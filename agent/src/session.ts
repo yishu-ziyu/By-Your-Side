@@ -98,6 +98,12 @@ export class AcceptanceContinuity {
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { pageObservation?: "on-demand" }
 
+/** Reusable display execution result. `executed` says whether a page write may have landed. */
+export type DisplayExecutionFact='not_executed'|'executed'|'unknown';
+export type DisplayExecutionOutcome=
+  |{kind:'applied';text:string}
+  |{kind:'failed';reason:string;executed:DisplayExecutionFact};
+
 /**
  * 交付流的语义轮次闸门：PREPARING 期间由它扣住前缀，终态之后不再放行。
  * 会话不认识轮次本身，只在真正对外发之前问一次（见 VoiceTurnGate）。
@@ -735,40 +741,71 @@ export class BrowserAgentSession {
     await session.prompt(promptText, images.length > 0 ? { images } : undefined);
   }
 
-  /** Invoke the same active SDK tool wrappers and feed their real receipts to the ledger. */
+  /**
+   * 可复用的显示执行：走已注册工具 + 读回核验，只返回真实结果。
+   * 不结束任务、不打空闲、不发交付；新任务收尾留在 runDisplayCommand，运行中修改的收尾在 steerCurrentTask。
+   */
+  private async executeDisplayCommand(session:AgentSession,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean):Promise<DisplayExecutionOutcome>{
+    if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'not_executed'};
+    let lastCallId:string|null=null;
+    let writeAttempted=false,writeSucceeded=false;
+    const execute=(name:string,input:Record<string,unknown>)=>this.invokeDisplayTool(session,name,input,signal,current,id=>{lastCallId=id;});
+    try{
+      writeAttempted=true;
+      await execute('page_translation',params);
+      writeSucceeded=true;
+      if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'executed'};
+      const result=await execute('snapshot',{tabId:params.tabId});
+      const after=(result as {details?:{translation?:TranslationDisplayState|null}}|undefined)?.details?.translation;
+      if(!after?.displayValid||after.document!==params.document||(params.mode&&after.mode!==params.mode)||(params.fontFamily&&after.fontFamily!==params.fontFamily))
+        return {kind:'failed',reason:'没有核对到要求的显示结果。',executed:'executed'};
+      return {kind:'applied',text:displayFactText(params)};
+    }catch(error){
+      const reason=error instanceof Error?error.message:'显示操作未完成。';
+      const fact=lastCallId?this.rpc?.getExecutionFact(lastCallId):undefined;
+      // 已发出的写入、明确执行过的回执都不允许自动重做；只有确定没执行才回原路径。
+      const executed:DisplayExecutionFact=writeSucceeded||fact==='executed'?'executed'
+        :fact==='not_executed'?'not_executed'
+        :writeAttempted?'unknown'
+        :'not_executed';
+      return {kind:'failed',reason,executed};
+    }
+  }
+
+  /** 执行一次已注册的会话工具并发出与模型调用同一形状的 tool_start/tool_end/读数事件。 */
+  private async invokeDisplayTool(session:AgentSession,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void):Promise<unknown>{
+    if(!current())throw new Error('显示操作已取消。');
+    const tool=session.agent.state.tools.find(t=>t.name===name);
+    if(!tool)throw new Error(`工具${name}当前不可用。`);
+    const id=`display-${randomUUID()}`;
+    onId(id);
+    this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:input});
+    try{
+      const result=await tool.execute(id,input,signal);
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:firstText(result),executionFact:this.rpc?.getExecutionFact(id)});
+      this.emitReadObservation(id,name,input,result,false);return result;
+    }catch(error){
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:this.rpc?.getExecutionFact(id)});throw error;
+    }
+  }
+
+  /** 新任务显示直达的收尾：交付正式 finding、写入经历、结束本轮。 */
   private async runDisplayCommand(session:AgentSession,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean):Promise<void>{
-    const execute=async(name:string,input:Record<string,unknown>)=>{
-      if(!current())throw new Error('显示操作已取消。');
-      const tool=session.agent.state.tools.find(t=>t.name===name);
-      if(!tool)throw new Error(`工具${name}当前不可用。`);
-      const id=`display-${randomUUID()}`;
-      this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:input});
-      try{
-        const result=await tool.execute(id,input,signal);
-        this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:firstText(result),executionFact:this.rpc?.getExecutionFact(id)});
-        this.emitReadObservation(id,name,input,result,false);return result;
-      }catch(error){
-        this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:this.rpc?.getExecutionFact(id)});throw error;
-      }
-    };
     try{
       await session.sendCustomMessage({customType:'display-fast-path-request',content:`用户请求：${this.activeGoal}`,display:false});
-      await execute('page_translation',params);
-      if(!current())return;
-      const result=await execute('snapshot',{tabId:params.tabId});
-      const after=(result.details as {translation?:TranslationDisplayState|null}|undefined)?.translation;
-      if(!after?.displayValid||after.document!==params.document||(params.mode&&after.mode!==params.mode)||(params.fontFamily&&after.fontFamily!==params.fontFamily))throw new Error('没有核对到要求的显示结果。');
-      const text=[params.fontFamily==='songti'?'译文已改成宋体':'',params.mode==='bilingual'?'已显示原文和译文':params.mode==='translated'?'已切换为仅译文':''].filter(Boolean).join('，')+'。';
-      await execute('send_user_message',{kind:'finding',content:text});
-      this.deliveredResultThisRun=true;
-      await session.sendCustomMessage({customType:'display-fast-path-result',content:text,display:false});
-      this.runTrace.record('display_fast_path_completed',{params});
-    }catch(error){
-      // Once a command was attempted, never retry it via the model on an unknown receipt.
-      if(current()){
-        const message=error instanceof Error?error.message:'显示操作未完成。';
-        await execute('send_user_message',{kind:'finding',outcome:'partial',content:`这次显示操作尚未完成核对：${message}`}).catch(()=>this.callbacks.emit({kind:'error',message}));
+      const outcome=await this.executeDisplayCommand(session,params,signal,current);
+      if(outcome.kind==='applied'){
+        if(!current())return;
+        await this.invokeDisplayTool(session,'send_user_message',{kind:'finding',content:outcome.text},signal,current,()=>{});
+        this.deliveredResultThisRun=true;
+        await session.sendCustomMessage({customType:'display-fast-path-result',content:outcome.text,display:false});
+        this.runTrace.record('display_fast_path_completed',{params});
+      }else if(current()){
+        await this.invokeDisplayTool(session,'send_user_message',{kind:'finding',outcome:'partial',content:`这次显示操作尚未完成核对：${outcome.reason}`},signal,current,()=>{}).catch(()=>this.callbacks.emit({kind:'error',message:outcome.reason}));
       }
+    }catch(error){
+      const message=error instanceof Error?error.message:'显示操作未完成。';
+      if(current())this.callbacks.emit({kind:'error',message});
     }finally{
       if(current()){this.callbacks.setStatus('idle');this.callbacks.emit({kind:'agent_end'});this.experience?.finish();}
     }
@@ -1854,4 +1891,9 @@ function firstText(result: unknown): string {
     }
   }
   return "";
+}
+
+/** User-facing fact for a verified display change; never claims more than the verified parameters. */
+export function displayFactText(params:Record<string,unknown>):string{
+  return [params.fontFamily==='songti'?'译文已改成宋体':'',params.mode==='bilingual'?'已显示原文和译文':params.mode==='translated'?'已切换为仅译文':''].filter(Boolean).join('，')+'。';
 }
