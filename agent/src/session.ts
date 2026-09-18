@@ -709,7 +709,8 @@ export class BrowserAgentSession {
         const before=await this.rpc!.call('snapshot',{tabId:context.tabId},PRE_OBSERVATION_TIMEOUT_MS) as {text?:string;translation?:TranslationDisplayState|null};
         if(!current())return;
         if(before.translation?.translated&&before.translation.displayValid){
-          const candidate=await decideDisplay(this.activeGoal??finalText,controller.signal,()=>{if(current())this.displayScopeBlockedRun=runId;});
+          const decision=await decideDisplay(this.activeGoal??finalText,controller.signal);
+          if(decision.kind==='fallback'&&decision.partialScope&&current())this.displayScopeBlockedRun=runId;
           if(!current())return;
           const latest=await this.rpc!.call('snapshot',{tabId:context.tabId},PRE_OBSERVATION_TIMEOUT_MS) as {translation?:TranslationDisplayState|null};
           if(!current())return;
@@ -717,8 +718,8 @@ export class BrowserAgentSession {
             this.callbacks.emit({kind:'notice',message:'页面已变化，这次显示操作没有执行。请在当前页面重新发起。'});
             this.callbacks.setStatus('idle');this.callbacks.emit({kind:'agent_end'});return;
           }
-          if(candidate){
-            await this.runDisplayCommand(session,{...candidate,tabId:context.tabId,document:before.translation.document},controller.signal,current);
+          if(decision.kind==='candidate'){
+            await this.runDisplayCommand(session,{...decision.params,tabId:context.tabId,document:before.translation.document},controller.signal,current);
             return;
           }
         }

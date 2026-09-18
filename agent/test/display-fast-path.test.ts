@@ -24,14 +24,14 @@ describe('display fast path task boundaries',()=>{
  });
 
  it('uses existing tools and emits a verified finding with the observed document',async()=>{
-  const h=harness();vi.mocked(decideDisplay).mockResolvedValue({action:'display',fontFamily:'songti'});
+  const h=harness();vi.mocked(decideDisplay).mockResolvedValue({kind:'candidate',params:{action:'display',fontFamily:'songti'},reason:'accepted'});
   await h.wrapper.promptWithFreshPageObservation(h.session,'宋体',context,[]);
   expect(h.display).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({document:'one',tabId:7}),expect.any(AbortSignal));
   expect(h.delivery).toHaveBeenCalledWith(expect.any(String),expect.objectContaining({kind:'finding',content:'译文已改成宋体。'}),expect.any(AbortSignal));
   expect(h.session.prompt).not.toHaveBeenCalled();
  });
  it('falls back without writing when the router is uncertain',async()=>{
-  const h=harness();vi.mocked(decideDisplay).mockResolvedValue(null);
+  const h=harness();vi.mocked(decideDisplay).mockResolvedValue({kind:'fallback',reason:'direct_uncertain'});
   await h.wrapper.promptWithFreshPageObservation(h.session,'复杂请求',context,[]);
   expect(h.display).not.toHaveBeenCalled();expect(h.session.prompt).toHaveBeenCalledOnce();
  });
@@ -41,7 +41,7 @@ describe('display fast path task boundaries',()=>{
   expect(decideDisplay).not.toHaveBeenCalled();expect(h.session.prompt).toHaveBeenCalledOnce();
  });
  it('cancels old commands after a same-URL document replacement',async()=>{
-  const h=harness();vi.mocked(decideDisplay).mockResolvedValue({action:'display',fontFamily:'songti'});
+  const h=harness();vi.mocked(decideDisplay).mockResolvedValue({kind:'candidate',params:{action:'display',fontFamily:'songti'},reason:'accepted'});
   h.rpc.call.mockResolvedValueOnce({text:'译文',translation:state}).mockResolvedValueOnce({text:'译文',translation:{...state,document:'two'}});
   await h.wrapper.promptWithFreshPageObservation(h.session,'宋体',context,[]);
   expect(h.display).not.toHaveBeenCalled();expect(h.session.prompt).not.toHaveBeenCalled();expect(h.emit).toHaveBeenCalledWith(expect.objectContaining({kind:'notice'}));
@@ -50,7 +50,7 @@ describe('display fast path task boundaries',()=>{
   const h=harness();let release!:(v:any)=>void;
   vi.mocked(decideDisplay).mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
   const work=h.wrapper.promptWithFreshPageObservation(h.session,'宋体',context,[]);await vi.waitFor(()=>expect(release).toBeTypeOf('function'));
-  h.wrapper.abort();release({action:'display',fontFamily:'songti'});await work;
+  h.wrapper.abort();release({kind:'candidate',params:{action:'display',fontFamily:'songti'},reason:'accepted'});await work;
   expect(h.display).not.toHaveBeenCalled();expect(h.session.prompt).not.toHaveBeenCalled();
  });
 });

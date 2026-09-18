@@ -31,6 +31,14 @@ describe("loadConfig", () => {
     expect(loadConfig(p)).toEqual({ model: "kimi-coding/kimi-for-coding", proxy: "http://127.0.0.1:7897" });
   });
 
+  it("reads both display fast-path switches independently", () => {
+    const p = join(dir, "config.json");
+    writeFileSync(p, JSON.stringify({ displayFastPath: true, displaySteerFastPath: false }));
+    expect(loadConfig(p)).toEqual({ displayFastPath: true, displaySteerFastPath: false });
+    writeFileSync(p, JSON.stringify({ displaySteerFastPath: "yes" }));
+    expect(loadConfig(p)).toEqual({});
+  });
+
   it("ignores malformed fields", () => {
     const p = join(dir, "config.json");
     writeFileSync(p, JSON.stringify({ model: 42, proxy: "socks5://x", extra: true }));
