@@ -2,6 +2,10 @@
 
 当前进度只看[STATUS](STATUS.md)。本页保留不容易从单个函数或测试看出的因果约束；旧工作记录完整保存在[历史快照](history/20260913-notes-snapshot.md)。
 
+## 2026-09-19 记忆判断失败定位（MiniMax M3 期间）
+
+user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，不能混为「模型不行」：①插话到达即 `invalidateUserTurn`（session.ts 约 L884/L1253），会 abort 进行中的判断子调用，且 steer 通道从不重新 `beginUserTurn`（仅 sendUserMessage 路径），本轮剩余时间记忆写入必死；②同一回合 `turn.change` 同时缓存成功与失败（memory-runtime.ts：重试不能问到同意为止），同轮重试 2ms 返回旧失败；③判断子调用 15 秒硬超时（`AbortSignal.timeout(15_000)`），MiniMax-M3 `supportsReasoningEffort: false` 且无 thinkingLevelMap，思考压不下去，实测 15012ms 撞超时（deepseek-flash 的 minimal 映射为关思考，同类调用 4.9s 完成）；④底层 stopReason/errorMessage 在 session.ts 约 L442 被吞，界面只能说「记忆判断失败」。实测链（00:13–00:17）：插话后 6ms abort → 两次「当前记忆操作已失效」→ 用户点重试开新回合、M3 判断 15s 超时 → 同轮缓存失败 → 换 deepseek-flash 新回合 4.9s 成功。待裁决改进三点：超时按模型自适应或放宽；steer 后重新授权当轮重试；记录底层错误原因。证据 trace：`~/.sideagent/traces/1789745681628-dcc0bb06-236b-4d46-9015-7793aec002d6.jsonl`。
+
 ## 2026-09-18 Ticket 7 显示属性域
 
 显示修改的两个失败来源必须分开查：执行层（in-page display 是条件赋值，省略字段天然保留原值）从不是缺陷；模型面才需要「只提交本次要求改变的字段」的指引。最新插话的明确修改要求对**其指明的属性**优先于任务早期限制（如「不要修改页面」），未指明属性仍受约束——缺这句时 MiniMax 会整体放弃执行显示修改。
