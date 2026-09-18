@@ -64,6 +64,32 @@ describe('运行中显示修改（文字）',()=>{
   expect(h.translationCalls.map(call=>call.action)).toEqual(['display']);
  });
 
+ it('uses normal steering once the model is running even if the new-task display work is still pending',async()=>{
+  const h=pageHarness();
+  vi.mocked(decideDisplay).mockResolvedValue(candidate({fontFamily:'songti'}));
+  h.wrapper.displayWork=Promise.resolve();
+  const outcome=await h.wrapper.steerCurrentTask('把译文改成宋体',context);
+  expect(outcome).toMatchObject({kind:'display-applied'});
+  expect(h.translationCalls).toHaveLength(1);
+  expect(h.raw.prompt).not.toHaveBeenCalled();
+ });
+
+ it('merges the requirement into one prompt only when the model has not started yet',async()=>{
+  const h=pageHarness({streaming:false});
+  let release!:()=>void;
+  h.wrapper.displayWork=new Promise<void>(resolve=>{release=resolve;});
+  h.wrapper.activeGoal='读取这篇文章';
+  const steering=h.wrapper.steerCurrentTask('改成宋体',context);
+  release();
+  const outcome=await steering;
+  expect(outcome).toEqual({kind:'model'});
+  expect(h.raw.prompt).toHaveBeenCalledTimes(1);
+  const promptText=h.raw.prompt.mock.calls[0]![0] as string;
+  expect(promptText).toContain('原任务：读取这篇文章');
+  expect(promptText).toContain('用户最新修改：改成宋体');
+  expect(h.translationCalls).toHaveLength(0);
+ });
+
  it('falls back to the original model path for mixed or uncertain requests',async()=>{
   const h=pageHarness();
   vi.mocked(decideDisplay).mockResolvedValue({kind:'fallback',reason:'extra_or_uncertain'});

@@ -1222,7 +1222,9 @@ export class BrowserAgentSession {
    */
   async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<SteerOutcome> {
     const session = this.session;
-    if(this.displayWork){
+    // 新任务显示路由尚未进入 Pi 时（Pi 还没在流），插话要取消路由并把两段要求合并重提示；
+    // 一旦模型已经在跑，即使 displayWork 还挂着，也算正常的运行中修改，走统一 steer 路径。
+    if(this.displayWork&&!session?.isStreaming){
       const runId=this.deliveryRunId();this.controlEpoch++;this.displayAbort?.abort();
       await this.displayWork.catch(()=>{});
       if(!session||this.hold.isHeld()||runId!==this.deliveryRunId())throw new TaskActionRejected('原任务已变化，修改未执行。');
