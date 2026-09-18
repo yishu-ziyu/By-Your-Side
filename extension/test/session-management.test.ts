@@ -23,6 +23,36 @@ beforeEach(async () => {
  await import("../src/background/index.js"); await settle();
 });
 const summary = (id: string) => ({id,title:id,createdAt:1,updatedAt:1,state:"idle",mode:"act"});
+
+it('resumes through the actual panel task_action relay without replacing the original run',async()=>{
+ const {ConversationManager}=await import('../../agent/src/conversation-manager.js');
+ const {TaskProgress}=await import('../../agent/src/task-progress.js');
+ const page={tabId:7,title:'Fixture',url:'https://fixture.test/form'};
+ const image={id:'original-image',type:'image' as const,name:'fixture.png',mimeType:'image/png' as const,dataBase64:'AQ=='};
+ const progress=new TaskProgress('default');progress.request('填写测试表单',page,[image]);
+ progress.observe({type:'agent_event',event:{kind:'agent_start'}});
+ progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'call_fixture/1',name:'fill',params:{target:'#name'}}});
+ const before=progress.snapshot();const start=vi.fn();let resume=vi.fn();
+ const manager=new ConversationManager(async(_id,emit)=>{
+  resume=vi.fn(async()=>{emit({type:'agent_event',event:{kind:'agent_start'}});emit({type:'status',state:'running'});});
+  return {session:{available:true,modelName:()=> 'fixture',isStreaming:()=>false,isHeld:()=>false,
+   readPersistedTaskResults:()=>before,persistTaskResults:vi.fn(),startTask:start,resumeInterruptedTask:resume},
+   fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
+   rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn()} as any;
+ },message=>wire.callbacks.onServerMessage(message));
+ try{
+  await manager.ensureDefault();await settle();const p=panel();
+  const request={requestId:'panel-resume',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId,text:'继续原任务',context:page,attachments:[image]};
+  p.onMessage.emit({kind:'client',msg:{type:'task_action',conversationId:'default',request}});await settle();
+  const forwarded=wire.sent.find(m=>m.type==='task_action'&&m.request.requestId===request.requestId);
+  expect(forwarded).toMatchObject({type:'task_action',request});
+  await manager.handleMessage(forwarded);await settle();
+  expect(start).not.toHaveBeenCalled();expect(resume).toHaveBeenCalledWith(expect.objectContaining({runId:before.runId,state:'interrupted'}),page,[image]);
+  expect(manager.getTaskProgress('default')).toMatchObject({runId:before.runId,state:'running',resultState:'unknown'});
+  expect(manager.dispatcher.get('default','panel-resume')).toMatchObject({action:'resume',status:'accepted',runId:before.runId});
+ }finally{manager.dispose();}
+});
+
 describe("background conversation isolation", () => {
  it("routes late events and preserves prior turns while another conversation is selected", async () => {
   const p = panel();

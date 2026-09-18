@@ -1,7 +1,26 @@
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
-import type { ConsentStatus, FetchConsentRequest } from "../../../shared/consent.js";
+import type { ConsentRequest, ConsentStatus } from "../../../shared/consent.js";
 
-type Entry = { request: FetchConsentRequest; status: "pending" | ConsentStatus; submitted: boolean; message?: string };
+type Entry = { request: ConsentRequest; status: "pending" | ConsentStatus; submitted: boolean; message?: string };
+
+/** 卡片文案的纯函数部分：不读页面、不决定权限，只区分两类请求。 */
+export function consentHeading(request: ConsentRequest, pending: boolean): string {
+  return request.kind === "write"
+    ? (pending ? "允许核对并在需要时重设这一项吗？" : "请求确认")
+    : (pending ? "允许发送这次请求吗？" : "请求授权");
+}
+export function consentTargetText(request: ConsentRequest): string {
+  return request.kind === "write" ? `任务：${request.goal}` : `${request.method} ${request.url}`;
+}
+export function consentDetailsText(request: ConsentRequest): { summary: string; content: string } {
+  return request.kind === "write"
+    ? { summary: "查看动作", content: `未确认的动作：${request.description}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${request.tool} ${request.target} = ${request.value}\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` }
+    : { summary: "查看发送内容", content: `请求头：\n${JSON.stringify(request.headers, null, 2)}\n\n发送内容：\n${request.body ?? "（无请求正文）"}` };
+}
+export function consentStatusText(request: ConsentRequest, connected: boolean): string {
+  if (!connected) return "连接已断开，本次请求尚未获准。请等待重新连接。";
+  return request.kind === "write" ? "仅允许这一次核对/必要时重设；到期后不会执行。" : "仅允许这一次请求；到期后不会发送。";
+}
 
 /** 授权入口独立于聊天正文，只发送已有请求的选择。 */
 export class ConsentPanel {
@@ -66,7 +85,7 @@ export class ConsentPanel {
 
   private key(cid: string, id: string): string { return `${cid}:${id}`; }
 
-  private remember(request: FetchConsentRequest, authoritativePending = false): void {
+  private remember(request: ConsentRequest, authoritativePending = false): void {
     const key = this.key(request.conversationId, request.id);
     const existing = this.entries.get(key);
     if (existing && existing.status !== "pending") return;
@@ -127,23 +146,25 @@ export class ConsentPanel {
         if (focusId === entry.request.id) outcome.focus({preventScroll: true});
         continue;
       }
+      const request = entry.request;
       const heading = document.createElement("h2");
-      heading.textContent = entry.status === "pending" ? "允许发送这次请求吗？" : "请求授权";
+      heading.textContent = consentHeading(request, entry.status === "pending");
       const target = document.createElement("p");
       target.className = "consent-target";
-      target.textContent = `${entry.request.method} ${entry.request.url}`;
+      target.textContent = consentTargetText(request);
       const details = document.createElement("details");
       details.open = expanded.has(entry.request.id);
       const summary = document.createElement("summary");
-      summary.textContent = "查看发送内容";
+      const copy = consentDetailsText(request);
+      summary.textContent = copy.summary;
       const content = document.createElement("pre");
-      content.textContent = `请求头：\n${JSON.stringify(entry.request.headers, null, 2)}\n\n发送内容：\n${entry.request.body ?? "（无请求正文）"}`;
+      content.textContent = copy.content;
       details.append(summary, content);
       const status = document.createElement("p");
       status.className = "consent-status";
       status.setAttribute("role", "status");
       status.tabIndex = -1;
-      status.textContent = entry.message ?? (this.connected ? "仅允许这一次请求；到期后不会发送。" : "连接已断开，本次请求尚未获准。请等待重新连接。");
+      status.textContent = entry.message ?? consentStatusText(request, this.connected);
       card.append(heading, target, details, status);
       if (entry.status === "pending") {
         const actions = document.createElement("div");

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrowserAgentSession, runProducedNothing } from "../src/session.js";
+import {createUserDelivery,toolDeliveryId} from '../src/user-delivery.js';
 
 // 这些用例用合成会话驱动真实 SDK 事件形状，不落用户轨迹（与 session-helpers.test.ts 同一约定）。
 vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
@@ -39,7 +40,7 @@ function fixture(opts: { explicitDelivery?: boolean } = {}) {
     .map(([e]) => e as { kind: string; message?: string })
     .filter(e => e.kind === "notice" || e.kind === "error")
     .map(e => e.message ?? "");
-  /** 走一次 send_user_message 的完整真实路径：流式参数 + 工具开始 + 工具成功。 */
+  /** 合成成功交付的完整事件顺序：参数生成、工具开始、校验后的正式交付、工具成功。 */
   const deliver = (id: string, kind: "finding" | "ack", content: string) => {
     event({
       type: "message_update",
@@ -50,6 +51,7 @@ function fixture(opts: { explicitDelivery?: boolean } = {}) {
       },
     });
     event({ type: "tool_execution_start", toolCallId: id, toolName: "send_user_message", args: { kind, content } });
+    (wrapped as any).emitValidatedDelivery({kind:'user_delivery',delivery:createUserDelivery({conversationId:'default',runId:'run-fixture',id:toolDeliveryId(id),kind,text:content})});
     event({
       type: "tool_execution_end",
       toolCallId: id,

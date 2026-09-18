@@ -155,13 +155,15 @@ export class TaskDispatcher {
   get(conversationId:string,requestId:string):TaskReceipt|undefined {
     const value=this.store.read(keyOf({conversationId,requestId}));return value?this.store.receipt(value):undefined;
   }
-  dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'>>):Promise<TaskReceipt> {
+  dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'> & Partial<Pick<TaskReceipt,'action'>>>, options?:{deferredResume?:boolean}):Promise<TaskReceipt> {
     const key=keyOf(request), fingerprint=hash(canonicalValue(request));
     const base:TaskReceipt={requestId:request.requestId,conversationId:request.conversationId,source:request.source,...(request.originConversationId?{originConversationId:request.originConversationId}:{}),action:request.action,runId:request.expectedRunId,text:request.text??'',targetTitle,status:'unknown',message:'执行结果尚无法确认。',updatedAt:Date.now()};
     const conflict=()=>({...base,status:'rejected' as const,message:'同一请求编号的内容发生变化，操作未执行。'});
     const pending=this.active.get(key);
     if(pending)return pending.fingerprint===fingerprint?pending.promise:Promise.resolve(conflict());
-    const conversationId=request.conversationId,control=CONTROL_ACTIONS.has(request.action);
+    // A checkpoint resume includes a slow page read. It belongs to the ordinary
+    // lane so pause/abort can invalidate it immediately, not wait behind the read.
+    const conversationId=request.conversationId,control=CONTROL_ACTIONS.has(request.action)&&!(request.action==='resume'&&options?.deferredResume);
     const controlTail=this.controlTails.get(conversationId)??Promise.resolve();
     const prior=control?controlTail:Promise.all([this.tails.get(conversationId)??Promise.resolve(),controlTail]);
     const promise=prior.catch(()=>{}).then(async()=>{

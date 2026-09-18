@@ -55,11 +55,19 @@ describe('document-bound page translation', () => {
     for (const [command] of call.mock.calls.slice(1)) expect(command).toMatchObject({tabId:12,document:'doc-1'});
     expect(translate).toHaveBeenCalledTimes(1);
   });
+  it('stops chasing a continuously changing page after three batches without progress', async () => {
+    const call = vi.fn(async () => ({...receipt,blocks}));
+    const translate = vi.fn(async () => [{id:'1:0',text:'阅读'},{id:'1:1',text:'原文'}]);
+    const result = await runPageTranslation({action:'translate'},call,translate,new AbortController().signal);
+    expect(result).toMatchObject({translated:0,remaining:1,incompleteReason:'page-changing',blocks:[]});
+    expect(translate).toHaveBeenCalledTimes(3);
+  });
   it('display and restore never invoke the model', async () => {
     const call=vi.fn().mockResolvedValue(receipt), translate=vi.fn();
-    await runPageTranslation({action:'display',mode:'translated'},call,translate,new AbortController().signal);
+    await runPageTranslation({action:'display',mode:'translated',fontFamily:'songti'},call,translate,new AbortController().signal);
     await runPageTranslation({action:'restore'},call,translate,new AbortController().signal);
     expect(translate).not.toHaveBeenCalled();
+    expect(call.mock.calls[0]?.[0]).toMatchObject({fontFamily:'songti'});
   });
   it('cancellation during model generation prevents the late batch from writing', async () => {
     const abort=new AbortController();
@@ -83,6 +91,26 @@ describe('document-bound page translation', () => {
     await expect(tool.execute('known-failure',{action:'translate'},new AbortController().signal,undefined,{} as never)).rejects.toThrow('provider output limit');
     expect(rpc.getExecutionFact('known-failure')).toBe(translated?'executed':'not_executed');
   });
+  it('keeps an explicit pre-write page failure recoverable through the composed tool', async () => {
+    let fail = true;
+    const rpc = new ToolRpc(frame => queueMicrotask(() => {
+      if (fail) rpc.handleResult(frame.id, false, undefined, '当前页面还没有译文，请先翻译页面。', 'not_executed');
+      else rpc.handleResult(frame.id, true, receipt, undefined, 'executed');
+    }));
+    const tool = createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>1,canWrite:()=>true}).find(t => t.name === 'page_translation')!;
+    await expect(tool.execute('missing-translation', {action:'display',fontFamily:'songti'}, new AbortController().signal, undefined, {} as never)).rejects.toThrow('还没有译文');
+    expect(rpc.getExecutionFact('missing-translation')).toBe('not_executed');
+    fail = false;
+    await expect(tool.execute('retry-translation', {action:'translate'}, new AbortController().signal, undefined, {} as never)).resolves.toBeDefined();
+  });
+  it('retains acknowledged writes when the live page later removes their paragraphs', async () => {
+    const call = vi.fn().mockResolvedValueOnce(receipt)
+      .mockResolvedValueOnce({...receipt,blocks})
+      .mockResolvedValueOnce({...receipt,applied:1,translated:0})
+      .mockResolvedValueOnce({...receipt,blocks,translated:0});
+    const translate = vi.fn().mockResolvedValueOnce([{id:'1:0',text:'阅读'},{id:'1:1',text:'原文'}]).mockRejectedValueOnce(Error('provider failed'));
+    await expect(runPageTranslation({action:'translate'},call,translate,new AbortController().signal)).rejects.toMatchObject({executionFact:'executed'});
+  });
   it('does not reclassify a missing apply receipt as a safe model failure', async () => {
     const call=vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt,blocks}).mockRejectedValueOnce(Object.assign(new Error('RPC timeout'),{executionFact:'unknown'}));
     await expect(runPageTranslation({action:'translate'},call,async()=>[{id:'1:0',text:'阅读'},{id:'1:1',text:'来源'}],new AbortController().signal)).rejects.toMatchObject({executionFact:'unknown'});
@@ -95,6 +123,7 @@ describe('document-bound page translation', () => {
   });
   it('validates mode, size and apply identity at the extension boundary', () => {
     expect(()=>validateTranslationCommand({action:'display',fontSize:0})).toThrow();
+    expect(()=>validateTranslationCommand({action:'display',fontFamily:'invalid' as never})).toThrow();
     expect(()=>validateTranslationCommand({action:'apply',translations:[]})).toThrow();
     expect(()=>validateTranslationCommand({action:'display',mode:'translated',fontSize:20})).not.toThrow();
   });

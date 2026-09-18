@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "missing": {
+    "type": "tool_result",
+    "id": "iso-page_translation-2",
+    "ok": false,
+    "error": "当前页面还没有译文，请先翻译页面。",
+    "executionFact": "not_executed",
+    "conversationId": "default"
+  },
+  "stale": {
+    "type": "tool_result",
+    "id": "iso-page_translation-4",
+    "ok": false,
+    "error": "网页已变化，这批译文未写入。请在当前页面重新翻译。",
+    "executionFact": "not_executed",
+    "conversationId": "default"
+  },
+  "font": true,
+  "restore": true
+}

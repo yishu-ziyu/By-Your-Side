@@ -1,5 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { VOICE_PERSONALITY } from './voice-personality.js';
+import {nextStepInstruction, partialResultNote, type TaskNextStep} from '../../shared/task-next-step.js';
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";
@@ -71,15 +72,18 @@ export function createSendUserMessageTool(opts: {
   clock?: () => number;
   /** 还有未完成步骤时，finding 不得提前 terminate。 */
   hasUnfinishedWork?: () => boolean;
+  /** Bound to the current host snapshot, never to model-authored completion flags. */
+  getNextStep?: () => TaskNextStep | null;
 }): ToolDefinition {
   return defineTool({
     name: "send_user_message",
     label: "Send a user-facing message",
     description:
-      "Send the exact words the user should see and hear. Tool results and ordinary assistant text are internal work. Use kind=finding for the final task result, or kind=ack for a start acknowledgement. Do not use this tool for follow-up answers. An acknowledgement is not the final result. Do not claim independent verification. Keep simple outcomes short. For substantial written results, lead with the finding, use focused paragraphs and useful headings, and cite exact source URLs through descriptive Markdown links. Do not force headings on short replies. Preserve requested detail and any unread or unconfirmed limits.",
+      "Send the exact words the user should see and hear. Tool results and ordinary assistant text are internal work. Use kind=finding for the final task result, or kind=ack for a start acknowledgement. For a finding, outcome=complete (default) requires no outstanding results and a real post-action page readback; outcome=partial honestly reports unfinished, blocked or unverified work and ends this turn without clearing the ledger. Never claim completion in a partial report. Do not use this tool for follow-up answers. An acknowledgement is not the final result. Do not claim independent verification. Keep simple outcomes short. For substantial written results, lead with the finding, use focused paragraphs and useful headings, and cite exact source URLs through descriptive Markdown links. Do not force headings on short replies. Preserve requested detail and any unread or unconfirmed limits.",
     parameters: Type.Object({
       kind: Type.Unsafe<"ack" | "finding">(Type.String({ description: "ack or finding. Final task results must be finding, not reply." })),
       content: Type.String({ description: "Exact user-facing text. Do not truncate trailing limits." }),
+      outcome: Type.Optional(Type.Union([Type.Literal('complete'),Type.Literal('partial')],{description:'For finding: complete requires current execution and readback evidence; partial reports limits and stops without marking unfinished work complete.'})),
       reply_to: Type.Optional(Type.String({ description: "Optional user utterance or previous delivery id this answers" })),
     }),
     execute: async (_id, params) => {
@@ -89,7 +93,18 @@ export function createSendUserMessageTool(opts: {
         if (!HOST_TOOL_KINDS.includes(kind as (typeof HOST_TOOL_KINDS)[number])) {
           throw new Error("kind 必须是 ack 或 finding。任务最终结果用 finding，不要发 reply。");
         }
-        const text = assertDeliveryText(String(params.content ?? ""));
+        let text = assertDeliveryText(String(params.content ?? ""));
+        const outcome=params.outcome??'complete';
+        if(!['complete','partial'].includes(outcome))throw new Error('outcome 必须是 complete 或 partial。');
+        const next=kind==='finding'?opts.getNextStep?.():undefined;
+        if(kind==='finding'&&opts.getNextStep&&!next)throw new Error('当前任务判断尚未接线，未交付。');
+        if(next?.delivery==='none')throw new Error(nextStepInstruction(next));
+        if(next&&outcome==='complete'&&next.delivery!=='report'){
+          throw new Error(`${nextStepInstruction(next)}不能交付为完整结果；确实无法继续时请用 outcome=partial 说明已完成和未确认部分。`);
+        }
+        if(kind==='finding'&&outcome==='partial'){
+          text=assertDeliveryText(`${text}\n\n${next?partialResultNote(next):'任务状态：仅交付部分结果，未声明全部完成。'}`);
+        }
         const runId = opts.getRunId();
         if (!runId) throw new Error("当前没有可绑定的任务，未交付。");
         const replyTo = params.reply_to == null ? undefined : String(params.reply_to).trim() || undefined;
@@ -108,11 +123,11 @@ export function createSendUserMessageTool(opts: {
         opts.emit({ kind: "user_delivery", delivery });
         return {
           content: [{ type: "text" as const, text: `delivered:${delivery.id}` }],
-          details: { id: delivery.id },
+          details: { id: delivery.id, ...(next?{outcome,nextAction:next.action,resultIds:next.resultIds}:{}) },
           // finding 就是任务的最终结果：这一批工具结果带 terminate 后，SDK 的批次早停规则
           // 让本轮结束，不再为"还要不要收尾"多问模型一次（省 1–3s）。
           // ack 只是开场应答，提前终止会掐断任务，因此不参与早停。
-          terminate: kind === "finding" && !opts.hasUnfinishedWork?.(),
+          terminate: kind === "finding" && (next ? true : !opts.hasUnfinishedWork?.()),
         };
       } catch (error) {
         deliveryMetrics.toolRejected += 1;

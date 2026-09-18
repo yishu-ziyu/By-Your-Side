@@ -1,0 +1,7 @@
+{
+  "note": "V2 rules developed after seeing v1 holdout; frozen before fresh v2 holdout is read",
+  "hashes": {
+    "scripts/experiments/local-display-router-v2.mts": "0c27a0335c083cf8136ce8fff8dbebb61fa88c43da4e4af3af1698fff454597f",
+    "scripts/experiments/typesafe-display-router.mts": "8ae9911d737d2599fbd77fd541d9128d403855d9d0fbf7693be91e335f5c7db3"
+  }
+}

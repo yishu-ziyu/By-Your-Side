@@ -1,4 +1,5 @@
 import type {ExtensionFactory} from '@earendil-works/pi-coding-agent';
+import {TOOL_FAILURE_LIMIT} from '../../shared/task-next-step.js';
 
 export interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
 
@@ -17,7 +18,7 @@ export class RepeatedToolFailurePolicy {
         const previous=this.failures.get(event.toolName);
         const attempts=previous?.error===error?previous.attempts+1:1;
         this.failures.set(event.toolName,{error,attempts});
-        if(attempts<3)return;
+        if(attempts<TOOL_FAILURE_LIMIT)return;
         this.stopped=true;
         this.onStop({toolName:event.toolName,error,attempts});
         ctx.abort();

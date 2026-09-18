@@ -25,7 +25,10 @@
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
     "check": "npm run check:architecture && npm run typecheck && npm test && npm run build",
     "test:unit": "vitest run --exclude \"agent/test/performance/**\"",
-    "test:scale": "vitest run agent/test/performance --maxWorkers=1"
+    "test:scale": "vitest run agent/test/performance --maxWorkers=1",
+    "test:p0": "vitest run agent/test/p0-review-regressions.test.ts agent/test/task-acceptance-durability.test.ts agent/test/task-confirmed-recovery.test.ts agent/test/task-recovery-matrix.test.ts agent/test/task-restart-checkpoint.test.ts agent/test/task-next-step.test.ts agent/test/task-queue.test.ts agent/test/task-dispatcher.test.ts agent/test/p0-evaluation-contract.test.ts agent/test/p0-fixture.test.ts extension/test/session-management.test.ts extension/test/p0-snapshot-identity.test.ts extension/test/harness-s2-document-evaluator.test.ts extension/test/read-element.test.ts extension/test/consent-copy.test.ts",
+    "eval:p0": "tsx scripts/eval/p0.mts",
+    "fixture:p0": "tsx scripts/acceptance/p0-fixture.mts"
   },
   "devDependencies": {
     "typescript": "7.0.2",

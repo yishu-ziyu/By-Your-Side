@@ -1,6 +1,18 @@
 /**
  * Panel selectors: the four questions the user should see immediately.
  */
+import type {ConversationSummary} from '../../../shared/protocol.js';
+
+export function conversationStateLabel(c: Pick<ConversationSummary,'state'|'checkpoint'>): string {
+  if (c.checkpoint === 'unavailable') return '恢复失败';
+  return c.checkpoint === 'interrupted' ? '已中断' : c.state === 'running' ? '运行中' : c.state === 'user' ? '现在归你' : '空闲';
+}
+
+export function conversationBackgroundLabel(c: Pick<ConversationSummary,'state'|'checkpoint'>): string {
+  if (c.checkpoint === 'unavailable') return '恢复失败，未执行';
+  return c.checkpoint === 'interrupted' ? '已中断，可继续' : c.state === 'running' ? '后台运行中' : c.state === 'user' ? '现在归你' : '已结束';
+}
+
 export function sessionQuestion(title: string | null | undefined): string {
   return (title || "新会话").trim() || "新会话";
 }

@@ -1,3 +1,4 @@
+import type {TranslationDisplayState} from '../../../../shared/page-translation.js';
 import {withObservedDocument} from "../observation-document.js";
 import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
@@ -16,11 +17,18 @@ import { withTimeout } from "../timeout.js";
 export async function snapshot(
   params: { tabId?: number; scope?: "full_page" | "viewport" },
   sessionId: string = LEAD_SESSION_ID,
-): Promise<{ text: string; tabId: number }> {
+): Promise<{ text: string; tabId: number; url?:string; translation?:TranslationDisplayState|null }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
-  const result = await withObservedDocument(tab.id, sessionId, () => snapshotTab(tab.id!, params.scope));
-  return { ...result, tabId: tab.id };
+  return withObservedDocument(tab.id, sessionId, async () => {
+    const result=await snapshotTab(tab.id!,params.scope);
+    const current=await chrome.tabs.get(tab.id!);
+    // SPA URL changes do not necessarily replace the document. Do not label the
+    // new content with the address observed before the read began.
+    if(current.id!==tab.id||current.url!==tab.url)throw new Error('读取期间页面地址已变化，请重新读取当前页面。');
+    const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
+    return {...result,tabId:tab.id!,...(translation?{translation}:{}),...(typeof current.url==='string'?{url:current.url}:{})};
+  });
 }
 
 /** 对指定标签做 snapshot，不改工作标签认领。交还时读用户当前页用。 */
@@ -84,4 +92,21 @@ async function domSnapshot(tabId: number, scope: "full_page" | "viewport"): Prom
   const text = results[0]?.result;
   if (typeof text !== "string") throw new Error("snapshot 未返回文本");
   return { text };
+}
+
+/** Serialized read-only observation; never trust page-written text as a completion flag. */
+export function readTranslationDisplay():TranslationDisplayState|null {
+  type Block={element:HTMLElement;output?:HTMLElement;segments:Array<{node:Text;original:string;translation?:string}>};
+  const state=(globalThis as typeof globalThis & {__bysTranslation?:{token:string;url:string;mode:'bilingual'|'translated';fontFamily:'original'|'songti';blocks:Map<HTMLElement,Block>}}).__bysTranslation;
+  const url=new URL(location.href);url.hash='';
+  if(!state||state.url!==url.href)return null;
+  const blocks=[...state.blocks.values()].filter(b=>b.segments.every(s=>s.translation!==undefined));
+  const displayValid=blocks.length>0&&blocks.every(b=>{
+    if(!b.element.isConnected||!b.segments.every(s=>s.node.isConnected&&s.node.data===(state.mode==='translated'?s.translation:s.original)))return false;
+    const target=state.mode==='bilingual'?b.output:b.element;
+    if(!target?.isConnected)return false;
+    if(state.mode==='bilingual'&&target.textContent!==b.segments.map(s=>s.translation).join(''))return false;
+    return state.fontFamily!=='songti'||/Songti SC|STSong|SimSun/.test(getComputedStyle(target).fontFamily);
+  });
+  return {document:state.token,mode:state.mode,fontFamily:state.fontFamily,translated:blocks.length,displayValid};
 }

@@ -656,6 +656,10 @@ describe("conversation envelope", () => {
     expect(parseClientMessage(JSON.stringify({ type: "conversation_create", requestId: "request-a", title: "A" }))).not.toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: "conversation_create", requestId: 4 }))).toBeNull();
     expect(parseServerMessage(JSON.stringify({ type: "conversation_list", conversations: [{ id: 4 }] }))).toBeNull();
+    const interrupted={id:'A',title:'恢复任务',createdAt:1,updatedAt:2,state:'idle',mode:'act',runId:'run-1',checkpoint:'interrupted'};
+    expect(parseServerMessage(JSON.stringify({type:'conversation_list',conversations:[{...interrupted,checkpoint:'unavailable'}]}))).not.toBeNull();
+    expect(parseServerMessage(JSON.stringify({type:'conversation_list',conversations:[interrupted]}))).toMatchObject({conversations:[interrupted]});
+    expect(parseServerMessage(JSON.stringify({type:'conversation_list',conversations:[{...interrupted,checkpoint:'running'}]}))).toBeNull();
   });
 });
 

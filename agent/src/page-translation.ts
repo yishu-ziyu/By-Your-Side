@@ -47,6 +47,8 @@ export async function runPageTranslation(
   if (request.action !== 'translate') return call({...request, action: request.action});
   let receipt = await call({...request, action: 'begin'});
   const target = {tabId: receipt.tabId, document: receipt.document};
+  let stalledBatches = 0;
+  let acknowledgedWrite = false;
   for (let batch = 0; batch < 128; batch++) {
     signal.throwIfAborted();
     receipt = await call({...target, action: 'collect'});
@@ -57,12 +59,16 @@ export async function runPageTranslation(
     } catch (cause) {
       // No RPC is in flight here. All previous writes have acknowledgements; this batch never touched the page.
       throw Object.assign(new Error(`翻译生成失败，已完成 ${receipt.translated} 段，剩余 ${receipt.remaining} 段。可继续翻译。${cause instanceof Error ? cause.message : ''}`), {
-        executionFact: receipt.translated > 0 ? 'executed' : 'not_executed', cause,
+        executionFact: acknowledgedWrite || receipt.translated > 0 ? 'executed' : 'not_executed', cause,
       });
     }
     signal.throwIfAborted();
+    const before = receipt;
     receipt = await call({...target, action: 'apply', translations});
+    acknowledgedWrite ||= (receipt.applied ?? receipt.translated) > 0;
+    stalledBatches = receipt.translated <= before.translated && receipt.remaining >= before.remaining ? stalledBatches + 1 : 0;
+    if (stalledBatches >= 3) return {...receipt, blocks: [], incompleteReason: 'page-changing'};
   }
   // Bounded work on infinite feeds; report remaining, never claim the entire site is done.
-  return receipt;
+  return {...receipt, blocks: [], incompleteReason: 'batch-limit'};
 }

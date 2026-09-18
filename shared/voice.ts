@@ -1,6 +1,8 @@
 import type {TaskReceipt} from './task-actions.js';
+import {isTaskNextStep} from './task-next-step.js';
 import type {Attachment,PageContext} from './protocol.js';
 import { isTaskResultItem, isTaskResultState, type TaskResultItem, type TaskResultState } from './task-results.js';
+import {isTaskRecoveryInput,type TaskRecoveryInput} from './task-recovery.js';
 
 export const USER_DELIVERY_KINDS = ["ack", "finding", "reply"] as const;
 export type UserDeliveryKind = (typeof USER_DELIVERY_KINDS)[number];
@@ -43,10 +45,18 @@ export interface VoiceConversationContext {
 export interface TaskProgressSnapshot {
   conversationId: string;
   observedAt: number;
-  state: "none" | "running" | "paused" | "idle" | "aborted" | "error";
+  /** interrupted = the prior host stopped while this run was active; nothing resumes automatically. */
+  state: "none" | "running" | "paused" | "interrupted" | "idle" | "aborted" | "error";
   goal: string | null;
   startedAt: number | null;
   runId?: string | null;
+  /** True for the original run restored after a host restart; old satisfied writes stay replay-locked. */
+  restartRecovery?: boolean;
+  interruptionReason?: 'host_restart' | 'connection_lost' | 'manual_continuation';
+  recoveryInput?:TaskRecoveryInput;
+  /** Auxiliary effect without a durable result binding must stay uncertain after interruption. */
+  untrackedWritePending?:boolean;
+  unresolvedEffect?:boolean;
   controlVersion?:number;
   active: Array<{ member: string; action: string; since: number }>;
   lastAction: { action: string; failed: boolean; at: number } | null;
@@ -59,6 +69,8 @@ export interface TaskProgressSnapshot {
   /** Remaining registered results. Default [] / unregistered; optional so older snapshots stay valid. */
   results?: TaskResultItem[];
   resultState?: TaskResultState;
+  /** Recomputed by the host; persisted projections are never resumed as commands. */
+  nextStep?: import('./task-next-step.js').TaskNextStep;
 }
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}
@@ -229,9 +241,15 @@ export function isVoiceConversationContext(v: unknown): v is VoiceConversationCo
 export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
   if (!v || typeof v !== "object") return false;
   const s = v as TaskProgressSnapshot;
-  return id(s.conversationId) && Number.isFinite(s.observedAt) && ["none", "running", "paused", "idle", "aborted", "error"].includes(s.state)
+  return id(s.conversationId) && Number.isFinite(s.observedAt) && ["none", "running", "paused", "interrupted", "idle", "aborted", "error"].includes(s.state)
     && (s.goal === null || typeof s.goal === "string" && s.goal.length <= 600) && (s.startedAt === null || Number.isFinite(s.startedAt))
     && (s.runId === undefined || s.runId === null || id(s.runId))
+    && (s.restartRecovery === undefined || typeof s.restartRecovery === "boolean")
+    && (s.interruptionReason === undefined || ['host_restart','connection_lost','manual_continuation'].includes(s.interruptionReason))
+    && (s.recoveryInput === undefined || isTaskRecoveryInput(s.recoveryInput))
+    && (s.untrackedWritePending === undefined || typeof s.untrackedWritePending==='boolean')
+    && (s.unresolvedEffect === undefined || typeof s.unresolvedEffect==='boolean')
+    && (s.nextStep === undefined || isTaskNextStep(s.nextStep))
     && s.successVerified === false && Array.isArray(s.active) && s.active.length <= 12 && s.active.every(a => a && typeof a.member === "string" && typeof a.action === "string" && a.action.length <= 100 && Number.isFinite(a.since))
     && (s.lastAction === null || !!s.lastAction && typeof s.lastAction.action === "string" && typeof s.lastAction.failed === "boolean" && Number.isFinite(s.lastAction.at))
     && (s.conversationContext === undefined || isVoiceConversationContext(s.conversationContext)

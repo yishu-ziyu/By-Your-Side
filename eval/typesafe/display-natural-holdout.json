@@ -1,0 +1,434 @@
+[
+  {
+    "id": "display-natural-001",
+    "category": "direct_songti",
+    "text": "能不能帮我把这份译文换成宋体？",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti" },
+    "rationale": "礼貌问句表达的是立即代办请求，目标字体明确。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-002",
+    "category": "songti_paraphrase",
+    "text": "翻好的内容用中文书刊里常见的那种宋体排一下。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti" },
+    "rationale": "用自然释义指定宋体，且已有译文可直接调整。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-003",
+    "category": "direct_original_font",
+    "text": "字体改回页面原来用的那套。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original" },
+    "rationale": "明确要求恢复原字体，没有要求恢复原文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-004",
+    "category": "direct_bilingual",
+    "text": "把原文和译文都显示出来。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "bilingual" },
+    "rationale": "明确要求同时显示两种文本。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-005",
+    "category": "direct_translated",
+    "text": "这次只给我看译文就行。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "translated" },
+    "rationale": "明确要求仅显示已有译文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-006",
+    "category": "combined_songti_translated",
+    "text": "只留翻译后的内容，字换成宋体。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti", "mode": "translated" },
+    "rationale": "同时指定仅译文和宋体，两个维度都受支持。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-007",
+    "category": "combined_original_bilingual",
+    "text": "用原来的字体，把中外文一起摆出来。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original", "mode": "bilingual" },
+    "rationale": "自然表达同时要求原字体和双语显示。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-008",
+    "category": "negation_then_songti",
+    "text": "别保留现在这个字形了，换宋体。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti" },
+    "rationale": "否定当前样式后给出明确的正向目标宋体。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-009",
+    "category": "negation_then_translated",
+    "text": "不要双语对照，只留下译文。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "translated" },
+    "rationale": "否定双语并明确指定仅译文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-010",
+    "category": "negation_then_bilingual",
+    "text": "别只放翻译，原文也一起给我看。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "bilingual" },
+    "rationale": "明确从仅译文切换到原文与译文并列。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-011",
+    "category": "combined_songti_bilingual",
+    "text": "改成宋体，原文和译文都要保留。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti", "mode": "bilingual" },
+    "rationale": "组合要求只涉及支持的字体与显示模式。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-012",
+    "category": "combined_original_translated",
+    "text": "字体回到最初的样子，但页面上只看译文。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original", "mode": "translated" },
+    "rationale": "最初的样子修饰字体，同时明确仅显示译文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-013",
+    "category": "asr_songti_typo",
+    "text": "把译文换成松体显示。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti" },
+    "rationale": "在字体语境中，松体是宋体的低歧义语音识别错字。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-014",
+    "category": "translated_paraphrase",
+    "text": "页面上保留翻好的这一份，源语言内容先收起来。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "translated" },
+    "rationale": "没有使用标准模式词，但含义明确为仅译文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-015",
+    "category": "bilingual_paraphrase",
+    "text": "我想一边看原句，一边对着翻译读。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "bilingual" },
+    "rationale": "对照阅读清楚表达双语同时显示。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-016",
+    "category": "translated_ellipsis",
+    "text": "译文留下即可。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "translated" },
+    "rationale": "简短省略句仍有明确的仅译文意图。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-017",
+    "category": "original_font_paraphrase",
+    "text": "别用替换后的字形了，按网页本来的字体显示。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original" },
+    "rationale": "明确要求页面原字体，未涉及文本内容恢复。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-018",
+    "category": "songti_existing_translation",
+    "text": "这份已经翻好了，正文按宋体排吧。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti" },
+    "rationale": "已有译文且当前请求只是改变字体。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-019",
+    "category": "bilingual_existing_translation",
+    "text": "翻译已经有了，把对应的原句也并排放回来。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "bilingual" },
+    "rationale": "要求在现有译文旁显示原文，属于双语模式。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-020",
+    "category": "combined_paraphrase",
+    "text": "用书页常见的宋体来排，原文那份先别显示。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti", "mode": "translated" },
+    "rationale": "宋体用释义表达，隐藏外文明确指向仅译文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-021",
+    "category": "combined_paraphrase",
+    "text": "字形照网站原本的，原句和翻译都保留。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original", "mode": "bilingual" },
+    "rationale": "同时给出原字体与双语显示两个清楚目标。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-022",
+    "category": "polite_translated",
+    "text": "麻烦帮我切成只显示翻译结果的版本。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "translated" },
+    "rationale": "麻烦帮我是直接委托，目标是仅译文模式。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-023",
+    "category": "negation_then_original_font",
+    "text": "先别用宋体了，改回原字体。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original" },
+    "rationale": "否定宋体后给出明确的原字体目标。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-024",
+    "category": "negation_then_translated",
+    "text": "不要同时挂两种语言，我只读翻译后的。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "translated" },
+    "rationale": "先排除双语，再清楚要求仅显示译文。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-025",
+    "category": "bilingual_state_change",
+    "text": "从只看译文切回对照阅读。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "mode": "bilingual" },
+    "rationale": "对照阅读是双语模式的自然表达。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-026",
+    "category": "combined_polite",
+    "text": "请让现成的译文用宋体显示，同时把原文也留着。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti", "mode": "bilingual" },
+    "rationale": "礼貌祈使同时指定宋体与双语显示。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-027",
+    "category": "combined_settings_paraphrase",
+    "text": "阅读时只显示翻好的内容，字形沿用网页原来的。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "original", "mode": "translated" },
+    "rationale": "两个目标都明确且属于支持范围。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-028",
+    "category": "combined_bilingual_songti",
+    "text": "页面上原文和翻译一起展示，翻译内容排成宋体。",
+    "hasTranslation": true,
+    "expected": { "action": "display", "fontFamily": "songti", "mode": "bilingual" },
+    "rationale": "同一句中明确指定双语模式和宋体。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-029",
+    "category": "no_translation_songti",
+    "text": "把译文改成宋体。",
+    "hasTranslation": false,
+    "expected": null,
+    "rationale": "当前没有已有译文，不能执行译文显示调整。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-030",
+    "category": "no_translation_bilingual",
+    "text": "给我原文和译文对照着看。",
+    "hasTranslation": false,
+    "expected": null,
+    "rationale": "缺少译文，无法切换到双语显示。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-031",
+    "category": "no_translation_translated",
+    "text": "这里只显示翻译后的内容。",
+    "hasTranslation": false,
+    "expected": null,
+    "rationale": "不存在可供显示的译文，必须回退。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-032",
+    "category": "unsupported_summary",
+    "text": "把这份译文压缩成三句话再给我看。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "请求额外总结内容，不是显示设置。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-033",
+    "category": "unsupported_retranslation",
+    "text": "这版翻得太生硬，重新译得自然一点。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "请求重新翻译，不属于已有译文的显示调整。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-034",
+    "category": "unsupported_font_size",
+    "text": "译文的字号再大两级。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "字号调整不在支持范围内。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-035",
+    "category": "unsupported_other_font",
+    "text": "给翻译换成黑体，看着醒目一点。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "黑体不是支持的宋体或原字体。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-036",
+    "category": "restore_original_text",
+    "text": "把翻译撤掉，恢复网页原文。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "请求恢复原文内容，不等同于切换原字体或双语模式。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-037",
+    "category": "unclear_reference",
+    "text": "把那个切回来。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "那个没有可解析指代，无法确定字体或显示模式。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-038",
+    "category": "negation_without_target",
+    "text": "我不想要现在这种显示。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "只有否定，没有给出可执行的正向目标。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-039",
+    "category": "capability_question",
+    "text": "我只问一下你是否支持切换宋体，不要实际修改。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "明确是能力询问，并明确禁止执行。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-040",
+    "category": "quoted_instruction",
+    "text": "文中写着“切到仅译文模式”，我是在引用这句话，别执行。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "显示指令只是引述，且用户明确要求不执行。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-041",
+    "category": "conditional_future",
+    "text": "如果我待会儿说开始，再把字体换成宋体。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "执行条件尚未发生，是未来安排而非当前指令。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-042",
+    "category": "future_arrangement",
+    "text": "明天读这篇时记得切成双语，现在先不用动。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "明确要求当前不执行，只描述未来安排。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-043",
+    "category": "ambiguous_asr",
+    "text": "帮我切成双鱼。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "双鱼可能是双语的识别错误，也可能是其他内容，歧义过高。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-044",
+    "category": "unsupported_color",
+    "text": "把译文颜色调浅一些。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "颜色调整不属于支持的字体或显示模式。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-045",
+    "category": "mixed_supported_unsupported",
+    "text": "换成宋体，再把字号放大一倍。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "请求包含无法执行的字号调整，不应擅自只完成其中一部分。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-046",
+    "category": "unsupported_content_edit",
+    "text": "只保留译文，不过先把每段改短一点。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "虽然包含仅译文模式，但还要求改写内容，需整体回退。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-047",
+    "category": "missing_history",
+    "text": "像刚才那样显示就好。",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "没有提供历史上下文，无法知道刚才对应哪种设置。",
+    "provenance": "synthetic_holdout"
+  },
+  {
+    "id": "display-natural-048",
+    "category": "informational_question",
+    "text": "宋体和网页原字体看起来有什么区别？",
+    "hasTranslation": true,
+    "expected": null,
+    "rationale": "这是询问差异，没有要求修改显示。",
+    "provenance": "synthetic_holdout"
+  }
+]

@@ -1,0 +1,258 @@
+[
+  {
+    "id": "atomic-01",
+    "category": "polite_font",
+    "text": "请帮我把翻译的字换用宋体。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-02",
+    "category": "original_font",
+    "text": "保留翻译内容，字形恢复到网站自带的字体。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "original"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-03",
+    "category": "show_both",
+    "text": "读的时候我需要对照原句，请把原文也显示出来。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-04",
+    "category": "translation_only",
+    "text": "原来的文字先藏起来，屏幕上只留翻译结果。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "mode": "translated"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-05",
+    "category": "negation_positive",
+    "text": "别恢复原文字体，我现在要宋体。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-06",
+    "category": "mode_correction",
+    "text": "不是要把翻译关掉，我要原文和翻译同时看。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-07",
+    "category": "both_font_mode",
+    "text": "将现有翻译换宋体，显示方式用原译文对照。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-08",
+    "category": "only_font_mode",
+    "text": "翻译内容还在就行：字体用宋体，原文不显示。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti",
+      "mode": "translated"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-09",
+    "category": "original_only",
+    "text": "字体回到网页默认的，只看译文那一份。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "original",
+      "mode": "translated"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-10",
+    "category": "original_both",
+    "text": "请恢复网页原本的字形，两个文本版本都展示。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "original",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-11",
+    "category": "preserve_content",
+    "text": "不用再翻译，现有译文切成宋体即可。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-12",
+    "category": "polite_mode",
+    "text": "麻烦把现成译文切换为双语显示。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "明确全页支持操作"
+  },
+  {
+    "id": "atomic-13",
+    "category": "local_scope",
+    "text": "正文保持原样，只让选中的译文用宋体。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-14",
+    "category": "different_scopes",
+    "text": "标题仍用网页字体，正文改宋体。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-15",
+    "category": "additional_task",
+    "text": "原译文对照显示，顺便提炼五个重点。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-16",
+    "category": "future",
+    "text": "等我读完这一段再变成仅译文，现在别切。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-17",
+    "category": "quoted",
+    "text": "有人建议我说“译文用宋体”，我只是转述。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-18",
+    "category": "discussion",
+    "text": "你觉得宋体是不是比现在的字体好读？先解释。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-19",
+    "category": "unknown_reference",
+    "text": "字体用上次我喜欢的那个。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-20",
+    "category": "unsupported_font",
+    "text": "保持仅译文，把字体换为楷体。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-21",
+    "category": "restore_content",
+    "text": "不用翻译版本了，页面还原到只有原文。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-22",
+    "category": "negative_no_target",
+    "text": "先别采用现在这个字体。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-23",
+    "category": "missing_translation",
+    "text": "译文换成宋体，同时显示原文。",
+    "hasTranslation": false,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  },
+  {
+    "id": "atomic-24",
+    "category": "extra_layout",
+    "text": "改宋体，顺便把段落之间的距离加大。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "缺少译文/明确目标，或包含非当前整页显示操作；按category区分"
+  }
+]

@@ -1,4 +1,4 @@
-import {withObservedDocument, recordObservedDocument} from "../observation-document.js";
+import {withObservedDocumentIdentity, recordObservedDocument} from "../observation-document.js";
 import {elementMatches, validateElementRead, type ElementProperty, type ElementValue} from "../../../../shared/element-state.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { isAxRef, snapshotRefKind } from "../axstate.js";
@@ -8,7 +8,7 @@ import { getWorkingTabId, resolveReadableTab } from "../state.js";
 const MAX_ELEMENT_CHARS = 1_000_000;
 
 export type ReadElementResult = ToolContract["read_element"]["data"];
-type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check'>;
+type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'>;
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
 /** Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
@@ -40,6 +40,13 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       let value: ElementValue | undefined;
       if (property === 'textContent') value = textContent;
       else if (property === 'value' && hasValue) value = maskValue(String(el.value ?? ''));
+      else if (property === 'displayValue' && hasValue) {
+        // 显示值：select 取当前选中项的可见文字，option 取自身文字，其余取字段值。
+        const select = tagName === 'select' ? el as unknown as HTMLSelectElement : null;
+        const option = tagName === 'option' ? el as unknown as HTMLOptionElement : null;
+        const shown = option ? option.textContent : select ? (select.selectedOptions?.[0]?.textContent ?? select.options?.[select.selectedIndex]?.textContent ?? select.value) : el.value;
+        value = maskValue(String(shown ?? ''));
+      }
       else if (property === 'visible' && element.nodeType !== 3) {
         const style = getComputedStyle(element);
         value = element.getClientRects().length > 0 && style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.display !== 'none';
@@ -94,7 +101,7 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
   return assertComplete(reply.data);
 }
 
-async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[]): Promise<ElementData> {
+async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[]): Promise<{data:ElementData;documentId?:string}> {
   const isolatedRef = target.kind === "ref";
   const results = await chrome.scripting.executeScript({
     target: { tabId },
@@ -110,7 +117,7 @@ async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, me
   if (!reply.ok) throw new Error(reply.error);
   const data = assertComplete(reply.data);
   if (first.documentId) recordObservedDocument(tabId, member, first.documentId);
-  return data;
+  return {data,...(first.documentId?{documentId:first.documentId}:{})};
 }
 
 export async function readElement(
@@ -123,22 +130,28 @@ export async function readElement(
   const tab = await resolveReadableTab(tabId, executionKey);
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
   const target = parseTarget(params.target);
-  const read = async (): Promise<ElementData> => {
+  const read = async (): Promise<{data:ElementData;documentId?:string}> => {
     if (target.kind === 'ref') {
-      if (isAxRef(tabId, target.ref)) return readAxRef(tabId, target.ref, properties);
+      if (isAxRef(tabId, target.ref)) {
+        const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,target.ref,properties));
+        return {data:observed.value,...(observed.documentId?{documentId:observed.documentId}:{})};
+      }
       if (snapshotRefKind(tabId) !== 'dom') throw new Error(`ref @${target.ref} 已过期或不属于当前 snapshot；请重新 snapshot 或使用唯一 CSS`);
     }
     return readDom(tabId, target, executionKey, properties);
   };
   if (!params.expect) {
-    const data = target.kind === 'ref' && isAxRef(tabId, target.ref) ? await withObservedDocument(tabId, executionKey, read) : await read();
-    return {tabId,target:target.normalized,...data};
+    const observed = await read();
+    return {tabId,target:target.normalized,...observed.data,...(observed.documentId?{documentId:observed.documentId}:{})};
   }
   const expected = params.expect;
   const started = Date.now();
-  return withObservedDocument(tabId, executionKey, async () => {
+  let finalDocumentId:string|undefined;
+  const observed = await withObservedDocumentIdentity(tabId, executionKey, async () => {
     while (true) {
-      const data = await read();
+      const current = await read();
+      const data=current.data;
+      finalDocumentId=current.documentId;
       const actual = data.properties?.[expected.property];
       if (actual === undefined) throw new Error(`页面未返回 ${expected.property} 属性，未验证成功。`);
       if (elementMatches(actual, expected)) return {tabId,target:target.normalized,...data,check:{matched:true as const,property:expected.property,elapsedMs:Date.now()-started}};
@@ -147,4 +160,6 @@ export async function readElement(
       await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
     }
   });
+  const documentId=observed.documentId??finalDocumentId;
+  return {...observed.value,...(documentId?{documentId}:{})};
 }

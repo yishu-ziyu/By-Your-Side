@@ -1,0 +1,181 @@
+[
+  {
+    "id": "rf01",
+    "source": {
+      "path": "out/acceptance/p0-local-agent-retest-20260917/cases/receipt-loss/trace.json",
+      "location": "events[628,631,634,642,647,650]"
+    },
+    "provenance": "historical_trace",
+    "state": {
+      "goal": "在当前表单把测试姓名填成「测试乙」，方案选「青松」，保存一次。",
+      "observations": {
+        "nameReadback": "测试乙",
+        "planReadback": "青松",
+        "saveActionReceipt": "点击操作已执行",
+        "pageReceipt": "保存回执丢失，结果未确认，请勿重复保存。"
+      }
+    },
+    "expected": "insufficient",
+    "rationale": "姓名和方案已读回，但执行点击和页面的未知回执不能证明记录已持久化，也没有明确证明保存失败。",
+    "historicalDecision": null
+  },
+  {
+    "id": "rf02",
+    "source": {
+      "path": "out/acceptance/p0-local-agent-retest-20260917/cases/extension-reload/trace.json",
+      "location": "events[296,298]"
+    },
+    "provenance": "historical_trace",
+    "state": {
+      "goal": "把测试姓名填成「测试丙」，方案选「远山」，先不要保存；填好后读回表单当前内容。",
+      "observations": {
+        "currentPage": "原任务表单，账户 A",
+        "name": "空",
+        "plan": "请选择",
+        "saveStatus": "尚未保存"
+      }
+    },
+    "expected": "contradicted",
+    "rationale": "当前原任务表单的姓名为空且方案未选择，明确不满足填写要求。",
+    "historicalDecision": {
+      "verdict": "not_complete",
+      "location": "events[1417].msg.event.delivery.text",
+      "timing": "later final report; not same-input A/B"
+    }
+  },
+  {
+    "id": "rf03",
+    "source": {
+      "path": "out/acceptance/p0-local-agent-retest-20260917/cases/host-restart/trace.json",
+      "location": "events[595]"
+    },
+    "provenance": "historical_trace",
+    "state": {
+      "goal": "把测试姓名填成「测试丁」，方案选「海风」，保存一次。",
+      "observations": {
+        "currentPage": "原任务表单，账户 A",
+        "name": "测试丁",
+        "plan": "请选择",
+        "saveStatus": "尚未保存"
+      }
+    },
+    "expected": "contradicted",
+    "rationale": "姓名已填，但方案仍未选择且页面明确尚未保存，至少两项要求未满足。",
+    "historicalDecision": {
+      "verdict": "not_complete",
+      "location": "events[2161].msg.event.delivery.text",
+      "timing": "later final report; not same-input A/B"
+    }
+  },
+  {
+    "id": "rf04",
+    "source": {
+      "path": "out/acceptance/p0-local-agent-retest-20260917/cases/resume-cancel/trace.json",
+      "location": "events[325,350]"
+    },
+    "provenance": "historical_trace",
+    "state": {
+      "goal": "把测试姓名填成「测试辛」，方案选「青松」，先不要保存。",
+      "observations": {
+        "nameWriteReceipt": "填写操作已执行",
+        "planWriteReceipt": "未收到结果",
+        "currentPageReadback": "读取当前页面超时"
+      }
+    },
+    "expected": "insufficient",
+    "rationale": "只有一次写入执行回执，方案和当前页面均无有效读回；没有足够证据判断全部要求，也没有明确冲突。",
+    "historicalDecision": null
+  },
+  {
+    "id": "rf05",
+    "source": {
+      "path": "out/acceptance/p0-local-agent-retest-20260917/cases/attachments-corrections/trace.json",
+      "location": "events[1388,1390,5313,5314]"
+    },
+    "provenance": "historical_trace",
+    "state": {
+      "goal": "按照附件把测试姓名填上；补充修改为方案选「远山」，仍然不要保存。",
+      "observations": {
+        "currentPage": "原任务表单，账户 A",
+        "name": "测试己",
+        "plan": "请选择",
+        "saveStatus": "尚未保存"
+      }
+    },
+    "expected": "contradicted",
+    "rationale": "读回显示姓名已存在且没有保存，但方案仍是未选择，明确违背最新目标中的「远山」。",
+    "historicalDecision": {
+      "verdict": "not_complete",
+      "location": "events[5392].msg.event.delivery.text",
+      "timing": "later final report; not same-input A/B"
+    }
+  },
+  {
+    "id": "rf06",
+    "source": {
+      "path": "docs/evals/20260916-page-translation-failure.md",
+      "location": "lines 13-19"
+    },
+    "provenance": "historical_summary",
+    "state": {
+      "goal": "翻译当前页面，只留下译文。",
+      "observations": {
+        "translationStart": "页面翻译已开始，内容收集成功",
+        "generationReceipt": "这批翻译未完成",
+        "pageApply": "没有发生",
+        "pageLanguageReadback": "页面仍为英文"
+      }
+    },
+    "expected": "contradicted",
+    "rationale": "页面没有应用译文且读回仍为英文，明确未达到只保留译文的目标。",
+    "historicalDecision": null
+  },
+  {
+    "id": "rf07",
+    "provenance": "historical_trace",
+    "source": {
+      "path": "out/acceptance/p0-local-agent-retest-20260917/cases/receipt-loss/trace.json",
+      "location": "events[873].msg.event.resultText; goal from same run"
+    },
+    "state": {
+      "goal": "在当前账户A的/form表单把测试姓名填成「测试乙」，方案选「青松」，保存一次。",
+      "observations": {
+        "source": "站点状态接口，HTTP 200",
+        "account": "A",
+        "offers": [
+          {
+            "id": "a",
+            "name": "青松"
+          },
+          {
+            "id": "b",
+            "name": "海风"
+          },
+          {
+            "id": "c",
+            "name": "远山"
+          }
+        ],
+        "records": [
+          {
+            "id": "receipt-1",
+            "name": "测试乙",
+            "choice": "a",
+            "page": "/form",
+            "account": "A"
+          }
+        ],
+        "sideEffects": 1,
+        "duplicateWrites": 0,
+        "wrongPageWrites": 0
+      }
+    },
+    "expected": "satisfied",
+    "rationale": "真实fetch工具返回相同账户/页面记录及方案映射，正好保存一次；不是使用助手最终声明替代事实。",
+    "historicalDecision": {
+      "verdict": "complete",
+      "location": "events[1933].msg.event.delivery.text",
+      "timing": "later final report; not same-input A/B"
+    }
+  }
+]

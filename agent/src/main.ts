@@ -164,6 +164,7 @@ async function main(): Promise<void> {
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }
     current = conn;
+    conversations.reconnect();
   };
   const sendHelloOk = (conn: ClientConn): void => {
     void session.availableModels().then((models) => {

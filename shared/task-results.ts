@@ -1,4 +1,5 @@
 import { taskId } from "./task-actions.js";
+import {isWriteTool} from './control.js';
 
 export const TASK_RESULT_STATES = ["unregistered", "pending", "satisfied", "blocked", "unknown"] as const;
 export type TaskResultState = (typeof TASK_RESULT_STATES)[number];
@@ -21,14 +22,24 @@ export interface TaskResultEvidence {
   runId: string;
   /** 该结果被判定为未决的时刻；核查读数必须晚于它。旧快照可缺省。 */
   observedAt?: number;
+  /** Host-classified effects for aliases or parameter-dependent tools (tabs/fetch). */
+  effectful?: true;
+  /** SHA-256 of the original fill value. Raw field contents are not copied into the result ledger. */
+  valueHash?: string;
 }
 
 export interface TaskResultItem extends TaskResultRegistration {
   status: TaskResultItemStatus;
   evidence: TaskResultEvidence | null;
+  /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再阻塞写入与交付。 */
+  supersededBy?: string;
 }
 
-export const TASK_RESULT_META_TOOLS = ["record_task_results", "send_user_message", "resolve_unknown_result"] as const;
+export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {
+  return isWriteTool(item.tool)||item.evidence?.effectful===true;
+}
+
+export const TASK_RESULT_META_TOOLS = ["record_task_results", "send_user_message", "resolve_unknown_result", "confirm_blocked_write"] as const;
 
 /** 只有这些真实只读工具回执可以充当解除未决的页面证据。 */
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "snapshot"] as const;
@@ -65,12 +76,19 @@ export function normalizeResultEvidence(text: string): string {
 
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length >= 1 && v.length <= max;
 
+/** Opaque correlation data, not a task/file key. Preserve program suffixes and provider ids exactly. */
+export function isToolCallId(value: unknown): value is string {
+  return text(value, 512) && !/[\s\u0000-\u001f\u007f-\u009f]/u.test(value);
+}
+
 export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
   if (!v || typeof v !== "object") return false;
   const e = v as TaskResultEvidence;
-  return taskId(e.toolCallId) && text(e.tool, 100) && text(e.member, 128) && taskId(e.runId)
+  return isToolCallId(e.toolCallId) && text(e.tool, 100) && text(e.member, 128) && taskId(e.runId)
     && (e.target === null || text(e.target, 500))
-    && (e.observedAt === undefined || Number.isFinite(e.observedAt));
+    && (e.observedAt === undefined || Number.isFinite(e.observedAt))
+    && (e.effectful === undefined || e.effectful === true)
+    && (e.valueHash === undefined || typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash));
 }
 
 export function isTaskResultItem(v: unknown): v is TaskResultItem {
@@ -79,7 +97,14 @@ export function isTaskResultItem(v: unknown): v is TaskResultItem {
   return taskId(r.id) && text(r.description, 600) && text(r.tool, 100)
     && (r.target === null || text(r.target, 500))
     && TASK_RESULT_ITEM_STATUSES.includes(r.status)
-    && (r.evidence === null || isTaskResultEvidence(r.evidence));
+    && (r.evidence === null || isTaskResultEvidence(r.evidence))
+    && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy));
+}
+
+/** 只有取代项本身已满足时，被取代的未知才不再阻塞；否则未知仍生效。 */
+export function isSupersededUnknown(item: Pick<TaskResultItem,'id'|'status'|'supersededBy'>, items: readonly TaskResultItem[]): boolean {
+  return item.status === 'unknown' && typeof item.supersededBy === 'string'
+    && items.some(candidate => candidate.id === item.supersededBy && candidate.status === 'satisfied');
 }
 
 export function isTaskResultState(v: unknown): v is TaskResultState {
@@ -88,7 +113,7 @@ export function isTaskResultState(v: unknown): v is TaskResultState {
 
 export function resultStateOf(items: readonly TaskResultItem[]): TaskResultState {
   if (items.length === 0) return "unregistered";
-  if (items.some(item => item.status === "unknown")) return "unknown";
+  if (items.some(item => item.status === "unknown" && !isSupersededUnknown(item, items))) return "unknown";
   if (items.some(item => item.status === "blocked")) return "blocked";
   if (items.some(item => item.status === "pending")) return "pending";
   return "satisfied";

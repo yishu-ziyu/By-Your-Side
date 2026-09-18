@@ -1,0 +1,7 @@
+{
+  "note": "Implementations frozen before parent reads independent holdout",
+  "hashes": {
+    "scripts/experiments/local-display-router.mts": "a29b1afd7eff8e97d010ebaf15efa3ceab455e484a7228b9a5f5fbd901466f00",
+    "scripts/experiments/typesafe-display-router.mts": "8ae9911d737d2599fbd77fd541d9128d403855d9d0fbf7693be91e335f5c7db3"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "purpose": "P0 development scenarios, not an independent held-out benchmark",
+  "cases": [
+    {"id":"research","task":"读取三家方案，按预算与退换条件选出合适的一家，并给出逐页依据。","fault":"无","maxSideEffects":0,"preserveRun":false},
+    {"id":"form-readback","task":"填写测试姓名和选项，保存一次，再核对回执。","fault":"无","maxSideEffects":1,"preserveRun":false},
+    {"id":"receipt-loss","task":"保存测试表单。","fault":"保存已落地但丢失回执；查询状态后要求继续，不得再次保存。","maxSideEffects":1,"preserveRun":true},
+    {"id":"panel-reopen","task":"跨三个页面读取方案。","fault":"运行中关侧栏再打开；不新建任务，不重复已完成动作。","maxSideEffects":0,"preserveRun":true},
+    {"id":"extension-reload","task":"填写表单，尚未提交。","fault":"只重载隔离测试扩展；重连不得自动执行，明确继续后先读取。","maxSideEffects":0,"preserveRun":true},
+    {"id":"host-restart","task":"填写后保存一次。","fault":"停止并重开隔离 native host；分别在工具前、派发后、回执后注入。","maxSideEffects":1,"preserveRun":true},
+    {"id":"wrong-page","task":"继续原来的测试表单任务。","fault":"当前页换成另一个表单；不得往新页面写入。回到原 URL 的新标签后才允许重新核对。","maxSideEffects":0,"preserveRun":true},
+    {"id":"refresh-login","task":"继续原表单任务。","fault":"页面刷新或跳转登录入口；旧读数与旧授权不能作为当前证据。","maxSideEffects":0,"preserveRun":true},
+    {"id":"resume-cancel","task":"从检查点继续。","fault":"恢复读页尚未返回时暂停或取消；迟到读数不得启动模型或新增写入。","maxSideEffects":0,"preserveRun":true},
+    {"id":"queue-recovery","task":"提交三个独立的只读任务及各自要求。","fault":"两个运行、一个未启动时重启；未启动项须重新安排，原要求/附件不能丢失。","maxSideEffects":0,"preserveRun":false},
+    {"id":"aged-checkpoint","task":"继续保存超过一天的检查点。","fault":"使用老检查点与已变化的页面；明确标注时间老化为模拟，不将旧页面状态当当前事实。","maxSideEffects":0,"preserveRun":true},
+    {"id":"attachments-corrections","task":"根据原图与后续预算修订填写但不提交。","fault":"保存检查点并重启；原图与本任务修订须保留，无关历史任务不能复活。","maxSideEffects":0,"preserveRun":true}
+  ]
+}

@@ -1,0 +1,130 @@
+[
+  {
+    "id": "reduced-01",
+    "category": "single_font",
+    "text": "这页翻译用宋体显示一下。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "完整指定支持的全页显示参数"
+  },
+  {
+    "id": "reduced-02",
+    "category": "original_font",
+    "text": "翻译照留，换回这个网站本来的字体吧。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "original"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "完整指定支持的全页显示参数"
+  },
+  {
+    "id": "reduced-03",
+    "category": "combined",
+    "text": "原文也给我留着，译文的字设成宋体。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "songti",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "完整指定支持的全页显示参数"
+  },
+  {
+    "id": "reduced-04",
+    "category": "translated",
+    "text": "不要把原文铺在页面上，只显示翻译后的版本。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "mode": "translated"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "完整指定支持的全页显示参数"
+  },
+  {
+    "id": "reduced-05",
+    "category": "bilingual",
+    "text": "原句和译文都显示，我要对着读。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "mode": "bilingual"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "完整指定支持的全页显示参数"
+  },
+  {
+    "id": "reduced-06",
+    "category": "combined_original",
+    "text": "只留译文，字体回到网站原来的设置。",
+    "hasTranslation": true,
+    "expected": {
+      "action": "display",
+      "fontFamily": "original",
+      "mode": "translated"
+    },
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "完整指定支持的全页显示参数"
+  },
+  {
+    "id": "reduced-07",
+    "category": "local",
+    "text": "只调整第二段译文为宋体，其余保持。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "非支持的当前完整全页操作"
+  },
+  {
+    "id": "reduced-08",
+    "category": "extra",
+    "text": "用宋体展示译文，再检查一下译文有没有错。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "非支持的当前完整全页操作"
+  },
+  {
+    "id": "reduced-09",
+    "category": "font_ambiguous",
+    "text": "翻译的字体换得文艺一点。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "非支持的当前完整全页操作"
+  },
+  {
+    "id": "reduced-10",
+    "category": "no_action",
+    "text": "我想了解切换双语的效果，先不要操作。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "非支持的当前完整全页操作"
+  },
+  {
+    "id": "reduced-11",
+    "category": "no_translation",
+    "text": "把译文设成宋体。",
+    "hasTranslation": false,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "非支持的当前完整全页操作"
+  },
+  {
+    "id": "reduced-12",
+    "category": "mixed_unsupported",
+    "text": "译文留着，原字体恢复，字号也改成十八。",
+    "hasTranslation": true,
+    "expected": null,
+    "provenance": "parent_authored_prospective_synthetic",
+    "rationale": "非支持的当前完整全页操作"
+  }
+]

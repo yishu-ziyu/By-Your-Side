@@ -8,6 +8,14 @@ export function progressSpeech(snapshot: TaskProgressSnapshot): string {
     case 'none':return '目前没有正在执行的任务。';
     case 'running':return snapshot.active[0]?`任务还在执行，正在${snapshot.active[0].action}。`:'任务还在执行，正在处理你的要求。';
     case 'paused':return '任务已暂停，页面现在归你。';
+    case 'interrupted': {
+      const results=snapshot.results??[],done=results.filter(item=>item.status==='satisfied').length;
+      const unknown=results.filter(item=>item.status==='unknown').length;
+      const kept=done?`已保留 ${done} 项已确认步骤和原目标。`:'原目标和已有进度已经保留。';
+      const uncertain=unknown?`${unknown} 项操作结果仍无法确认，不会自动重做。`:'';
+      const reason=snapshot.interruptionReason==='connection_lost'?'连接断开':snapshot.interruptionReason==='manual_continuation'?'等待继续':'本地进程重启';
+      return `任务因${reason}而中断，${kept}${uncertain}说“继续原任务”后，我会先重新读取当前页面。`;
+    }
     case 'aborted':return '任务已终止。';
     case 'error':return '任务遇到了问题，请查看侧栏的错误记录。';
     case 'idle': {
@@ -37,7 +45,7 @@ function one(receipt:Pick<TaskReceipt,'action'|'status'|'message'>):string {
     case 'start':return '任务已收到。';
     case 'steer':return receipt.message.includes('继续后生效')?'修改已保存，继续后生效。':'修改已送达当前任务。';
     case 'pause':return '任务已暂停，页面现在归你。';
-    case 'resume':return '已交还，原任务继续。';
+    case 'resume':return receipt.message.includes('检查点')?'已从检查点继续原任务，先重新读取当前页面。':'已交还，原任务继续。';
     case 'abort':return '任务已终止。';
     case 'status':return receipt.message;
   }

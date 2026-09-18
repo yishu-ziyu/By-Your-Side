@@ -3,7 +3,7 @@ import {describe,it,expect,vi} from 'vitest';
 import {StepTtsStream,SpeechTextBuffer,type SpeechCallbacks} from '../src/streaming-tts.js';
 import {StepVoiceSession,STEP_VOICE} from '../src/voice-session.js';
 import {BrowserAgentSession} from '../src/session.js';
-import {toolDeliveryId} from '../src/user-delivery.js';
+import {toolDeliveryId,createSendUserMessageTool} from '../src/user-delivery.js';
 
 class Socket extends EventEmitter {
   sent:any[]=[];
@@ -47,7 +47,7 @@ describe('production streaming speech output',()=>{
   output!.audio('AQABAA==');s.completeDelivery({id:'d',runId:'r',kind:'finding',text:'这是第一句。旧的第二句。'});
   expect(events.filter(e=>e.kind==='audio')).toHaveLength(count);expect(cancel).toHaveBeenCalledOnce();expect(route).not.toHaveBeenCalled();s.close();
  });
- it('streams only the explicit answer tool, never ordinary text or tool output',()=>{
+ it('streams only validated final tool output, never ordinary text or unexecuted finding arguments',async()=>{
   let subscriber:(e:any)=>void=()=>{};const emit=vi.fn();
   const s:any=new (BrowserAgentSession as any)({subscribe:(f:any)=>subscriber=f},null,{emit,setStatus:vi.fn()},null,null);
   s.explicitDelivery=true;s.bindDeliveryRun(()=>'run');s.subscribeEvents();
@@ -56,6 +56,10 @@ describe('production streaming speech output',()=>{
   subscriber({type:'message_update',assistantMessageEvent:{type:'toolcall_delta',contentIndex:0,partial:{content:[{type:'toolCall',id:'c',name:'click',arguments:{content:'不要读'}}]}}});
   expect(emit.mock.calls.filter(c=>c[0].kind==='user_delivery_stream')).toHaveLength(0);
   subscriber({type:'message_update',assistantMessageEvent:{type:'toolcall_delta',contentIndex:0,partial:{content:[{type:'toolCall',id:'d',name:'send_user_message',arguments:{kind:'finding',content:'已找到结果。'}}]}}});
+  expect(emit.mock.calls.filter(c=>c[0].kind==='user_delivery_stream')).toHaveLength(0);
+  const tool=createSendUserMessageTool({conversationId:'default',getRunId:()=> 'run',emit:event=>s.emitValidatedDelivery(event),
+    getNextStep:()=>({action:'deliver',reason:'receipts_reviewed',allowWrites:true,delivery:'report',resultIds:[]})});
+  await (tool.execute as any)('d',{kind:'finding',content:'已找到结果。'});
   expect(emit).toHaveBeenCalledWith({kind:'user_delivery_stream',stream:{id:toolDeliveryId('d'),runId:'run',kind:'finding',phase:'streaming',text:'已找到结果。'}});
  });
 });

@@ -64,7 +64,7 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage,
 import type { UserDelivery } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { actionQuestion, controlQuestion, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
+import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
@@ -436,13 +436,10 @@ document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").fo
 });
 
 function upsertConversation(c: ConversationSummary): void {
-  if (conversations.get(c.id)?.state === "running" && c.state === "idle" && c.id !== selectedConversationId) completedConversations.add(c.id);
+  if (conversations.get(c.id)?.state === "running" && c.state === "idle" && !c.checkpoint && c.id !== selectedConversationId) completedConversations.add(c.id);
+  if (c.checkpoint) completedConversations.delete(c.id);
   conversations.set(c.id, c);
   if (c.id === selectedConversationId) noteRunStarted(c.runId);
-}
-
-function conversationStateLabel(c: ConversationSummary): string {
-  return c.state === "running" ? "运行中" : c.state === "user" ? "现在归你" : "空闲";
 }
 
 function renderConversations(): void {
@@ -475,10 +472,11 @@ function renderConversations(): void {
   conversationMenu.replaceChildren(...rows);
   const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
     ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
+    ?? list.find((c) => c.id !== selectedConversationId && c.checkpoint === "interrupted")
     ?? list.find((c) => c.id !== selectedConversationId && completedConversations.has(c.id));
   conversationBackground.hidden = !other;
   if (other) {
-    conversationBackground.textContent = `${other.title} · ${other.state === "running" ? "后台运行中" : other.state === "user" ? "现在归你" : "已结束"} ↗`;
+    conversationBackground.textContent = `${other.title} · ${conversationBackgroundLabel(other)} ↗`;
     conversationBackground.onclick = () => selectConversation(other.id);
   }
 }

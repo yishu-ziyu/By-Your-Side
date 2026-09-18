@@ -1,0 +1,73 @@
+{
+  "provenance": "development_controls_not_holdout",
+  "cases": [
+    {
+      "text": "改成宋体",
+      "expected": {
+        "action": "display",
+        "fontFamily": "songti"
+      },
+      "actual": {
+        "action": "display",
+        "fontFamily": "songti"
+      }
+    },
+    {
+      "text": "恢复原字体",
+      "expected": {
+        "action": "display",
+        "fontFamily": "original"
+      },
+      "actual": {
+        "action": "display",
+        "fontFamily": "original"
+      }
+    },
+    {
+      "text": "显示双语",
+      "expected": {
+        "action": "display",
+        "mode": "bilingual"
+      },
+      "actual": {
+        "action": "display",
+        "mode": "bilingual"
+      }
+    },
+    {
+      "text": "只显示译文",
+      "expected": {
+        "action": "display",
+        "mode": "translated"
+      },
+      "actual": {
+        "action": "display",
+        "mode": "translated"
+      }
+    },
+    {
+      "text": "改成宋体，只显示译文",
+      "expected": {
+        "action": "display",
+        "fontFamily": "songti",
+        "mode": "translated"
+      },
+      "actual": {
+        "action": "display",
+        "fontFamily": "songti",
+        "mode": "translated"
+      }
+    },
+    {
+      "text": "不要双语，只要译文",
+      "expected": {
+        "action": "display",
+        "mode": "translated"
+      },
+      "actual": {
+        "action": "display",
+        "mode": "translated"
+      }
+    }
+  ]
+}

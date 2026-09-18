@@ -35,7 +35,7 @@ it('duplicate admission does not create a second execution and restart never rep
   const h=setup(directory);h.queue.add(request('a'),'a');h.queue.add(request('a'),'a');await h.queue.pump();
   h.queue.add(request('b'),'b');expect(h.execute).toHaveBeenCalledTimes(1);
   const restored=setup(directory);await restored.queue.pump();
-  expect(restored.execute).not.toHaveBeenCalled();expect(restored.queue.list().map(j=>j.state)).toEqual(['unknown','unknown']);
+  expect(restored.execute).not.toHaveBeenCalled();expect(restored.queue.list().map(j=>j.state)).toEqual(['unknown','suspended']);
   expect(restored.queue.get('b')?.request.text).toBe('b');
  }finally{rmSync(directory,{recursive:true,force:true});}
 });

@@ -1451,8 +1451,8 @@ function attachPanel(port: chrome.runtime.Port) {
       case "observe": void handleObserveControl(msg.action, msg.signature, msg.hostname); break;
       case "client": {
         const wireClient = msg.msg;
-        const client = wireClient?.type==='task_action' && ['start','steer'].includes(wireClient.request.action)
-          ? {type:wireClient.request.action==='start'?'user_message' as const:'steer' as const,text:wireClient.request.text!,context:wireClient.request.context,attachments:wireClient.request.attachments,conversationId}
+        const client = wireClient?.type==='task_action' && ['start','steer','resume'].includes(wireClient.request.action)
+          ? {type:wireClient.request.action==='start'?'user_message' as const:'steer' as const,text:wireClient.request.text??'继续原任务',context:wireClient.request.context,attachments:wireClient.request.attachments,conversationId}
           : wireClient;
         if (!client || typeof client.type !== "string") break;
         // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent

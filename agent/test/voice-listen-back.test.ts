@@ -105,7 +105,7 @@ describe("控制句先复述确认（#1）", () => {
 
   it("只有终止任务保留读回，普通修改直接派发", () => {
     // 确认载荷由 voice-control-confirmation 的真实调度行为用例检查。
-    expect(manager).toMatch(/if\(step\.action==='abort'&&plan\.steps\.length===1&&targetId===id&&before\.state==='running'&&route\)\{/);
+    expect(manager).toMatch(/if\(step\.action==='abort'&&plan\.steps\.length===1&&targetId===id&&\['running','interrupted'\]\.includes\(before\.state\)&&route\)\{/);
     expect(manager).toMatch(/return \{kind:'clarify',message:controlConfirmMessage\(step\.text\)\};/);
   });
 

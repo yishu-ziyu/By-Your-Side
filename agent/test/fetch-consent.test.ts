@@ -19,7 +19,7 @@ afterEach(() => restoreTestOrigin());
 
 type Frames = ServerMessage[];
 const consentRequests = (frames: Frames): FetchConsentRequest[] =>
-  frames.flatMap((frame) => (frame.type === "consent_request" ? [frame.request] : []));
+  frames.flatMap((frame) => (frame.type === "consent_request" && frame.request.kind !== 'write' ? [frame.request] : []));
 const consentResults = (frames: Frames) => frames.flatMap((frame) => (frame.type === "consent_result" ? [frame] : []));
 
 /** request() 未获确认前不会落定；用 0ms 计时器区分「立刻拒绝」与「进入等待」。 */

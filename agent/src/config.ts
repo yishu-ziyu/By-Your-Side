@@ -8,6 +8,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface AgentConfig {
+  /** Opt-in small display-command fast path; credentials stay in typesafe.env. */
+  displayFastPath?: boolean;
   /** provider/id 格式，如 kimi-coding/kimi-for-coding */
   model?: string;
   /** http(s)://host:port 形式的代理地址 */
@@ -29,6 +31,7 @@ export function loadConfig(path = configPath()): AgentConfig {
   try {
     const json = JSON.parse(raw) as Record<string, unknown>;
     const config: AgentConfig = {};
+    if(typeof json.displayFastPath === "boolean")config.displayFastPath=json.displayFastPath;
     if (typeof json.model === "string" && json.model) config.model = json.model;
     if (typeof json.proxy === "string" && /^https?:\/\//.test(json.proxy)) config.proxy = json.proxy;
     return config;

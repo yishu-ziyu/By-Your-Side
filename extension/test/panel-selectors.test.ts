@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionQuestion, controlQuestion, micQuestion, pageQuestion, resultCardCopy, sessionQuestion, speechQuestion } from "../src/sidepanel/selectors.js";
+import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, micQuestion, pageQuestion, resultCardCopy, sessionQuestion, speechQuestion } from "../src/sidepanel/selectors.js";
 
 describe("panel four questions", () => {
   it("names the session, page, action and controller", () => {
@@ -13,6 +13,22 @@ describe("panel four questions", () => {
   it("keeps mic and speech independent", () => {
     expect(micQuestion(true)).toBe("麦克风：正在听");
     expect(speechQuestion(false)).toBe("声音：未说");
+  });
+});
+
+describe('conversation checkpoint labels',()=>{
+  it('shows checkpoint failure without promising continuation',()=>{
+    expect(conversationStateLabel({state:'idle',checkpoint:'unavailable'})).toBe('恢复失败');
+    expect(conversationBackgroundLabel({state:'idle',checkpoint:'unavailable'})).toBe('恢复失败，未执行');
+  });
+  it('shows an interrupted checkpoint instead of idle or completed',()=>{
+    expect(conversationStateLabel({state:'idle',checkpoint:'interrupted'})).toBe('已中断');
+    expect(conversationBackgroundLabel({state:'idle',checkpoint:'interrupted'})).toBe('已中断，可继续');
+  });
+  it('keeps existing live and idle labels',()=>{
+    expect(conversationStateLabel({state:'running'})).toBe('运行中');
+    expect(conversationStateLabel({state:'user'})).toBe('现在归你');
+    expect(conversationBackgroundLabel({state:'idle'})).toBe('已结束');
   });
 });
 

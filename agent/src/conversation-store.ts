@@ -34,25 +34,48 @@ export class ConversationStore {
     try { writeFileSync(staged, JSON.stringify(transcript), {mode: 0o600}); renameSync(staged, file); }
     finally { rmSync(staged, {force: true}); }
   }
+  /**
+   * Pi 在首个 assistant 消息前不创建会话文件；“已接收”回执必须对应真实可恢复存储。
+   * 先用 SDK 自己的 header 建文件，再 setSessionFile 接管：SDK 把该会话标为 flushed，
+   * 之后的检查点、附件和阅读交接条目都会立即写盘。
+   */
+  private ensureSessionFile(manager: SessionManager): void {
+    const file = manager.getSessionFile();
+    if (!file || existsSync(file)) return;
+    const header = manager.getHeader();
+    if (!header) return;
+    try {
+      writeFileSync(file, `${JSON.stringify(header)}\n`, { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      // 扩展重载时新旧宿主可能短暂同时在跑：另一个进程已经建好同一份会话文件，接管它即可。
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    manager.setSessionFile(file);
+  }
   sessionManager(id: string): SessionManager {
     if (!validConversationId(id)) throw new Error("Invalid conversation id");
     const directory = join(this.directory, id);
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const pointer = join(directory, "session-path.txt");
+    let manager: SessionManager | undefined;
     if (existsSync(pointer)) {
       const path = readFileSync(pointer, "utf8").trim();
-      if (path.startsWith(`${directory}/`) && existsSync(path)) return SessionManager.open(path);
+      if (path.startsWith(`${directory}/`) && existsSync(path)) manager = SessionManager.open(path);
     }
-    const manager = SessionManager.create(process.cwd(), directory);
+    if (!manager) {
+      manager = SessionManager.create(process.cwd(), directory);
+      this.ensureSessionFile(manager);
+      writeFileSync(pointer, manager.getSessionFile()!, { mode: 0o600 });
+    }
     // Pi defers its first file until an assistant message exists. Reading transfer
     // deliberately triggers no model turn, so restore its explicit seed separately.
     const readingFile = join(directory, 'reading.json');
     if (existsSync(readingFile)) {
       const reading: unknown = JSON.parse(readFileSync(readingFile, 'utf8'));
       if (!isReadingTranscript(reading)) throw new Error('Invalid stored reading handoff');
-      manager.appendCustomMessageEntry('reading-handoff', readingHandoffContext(reading), false);
+      const already = manager.getBranch().some(entry => entry.type === 'custom_message' && entry.customType === 'reading-handoff');
+      if (!already) manager.appendCustomMessageEntry('reading-handoff', readingHandoffContext(reading), false);
     }
-    writeFileSync(pointer, manager.getSessionFile()!, { mode: 0o600 });
     return manager;
   }
 }

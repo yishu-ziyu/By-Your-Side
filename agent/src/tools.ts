@@ -172,12 +172,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "page_translation",
       label: "翻译网页",
-      description: 'Translate the current webpage IN PLACE, progressively, using the current model. action:"translate" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48). action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. Use this tool, never handwritten JS or a sidebar-only translation. Do not delegate page translation to workers.',
+      description: 'Translate the current webpage IN PLACE, progressively, using the current model. action:"translate" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. Never use handwritten JS to change translation fonts. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation. Use this tool, never handwritten JS or a sidebar-only translation. Do not delegate page translation to workers.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('translate'), Type.Literal('display'), Type.Literal('restore')]),
         tabId: Type.Optional(Type.Number()), language: Type.Optional(Type.String()),
         mode: Type.Optional(Type.Union([Type.Literal('bilingual'), Type.Literal('translated')])),
         fontSize: Type.Optional(Type.Number({minimum: 10, maximum: 48})),
+        fontFamily: Type.Optional(Type.Union([Type.Literal('original'), Type.Literal('songti')])),
+        document: Type.Optional(Type.String({description:'Observed translation instance; reject if the page changed.'})),
       }),
       execute: async (_id, params, signal) => {
         const stop = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(240_000)]);
@@ -202,7 +204,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "read_element",
       label: "Read complete element",
-      description: "Read a unique current element without changing the page. By default return complete textContent and field value; use target:'body' for full source text. For controls/media use properties (paused, currentTime, checked, enabled, visible, expanded, pressed, value), not handwritten JS probes. To verify or wait, use expect:{property:'paused',equals:true} or expect:{property:'textContent',contains:'Saved'}, with timeoutMs up to 5000. Returns check.matched only when that exact condition holds; timeout is a failure, never success. Use a current snapshot @ref or unique observed native CSS; ambiguity/stale refs fail without switching targets. Works inside browser_run with the same parameters. Main may read any tab; workers only assigned tabs.",
+      description: "Read a unique current element without changing the page. By default return complete textContent and field value; use target:'body' for full source text. For controls/media use properties (paused, currentTime, checked, enabled, visible, expanded, pressed, value), not handwritten JS probes. Native select has two different states: value is the option's internal value/id (for example 'c'), while displayValue is the visible label the user sees (for example '远山'). When the requested state is expressed as a human-visible option label, verify with displayValue, never compare that label to value or selected. To verify or wait, use expect:{property:'paused',equals:true}, expect:{property:'displayValue',equals:'远山'} for a select label, or expect:{property:'textContent',contains:'Saved'}, with timeoutMs up to 5000. Returns check.matched only when that exact condition holds; timeout is a failure, never success. Use a current snapshot @ref or unique observed native CSS; ambiguity/stale refs fail without switching targets. Works inside browser_run with the same parameters. Main may read any tab; workers only assigned tabs.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
         target: Type.String({ description: 'Current "@N" snapshot ref, "loc=css:...", or unique native CSS selector' }),
@@ -211,8 +213,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           Type.Object({ property: Type.Union(['visible','enabled','checked','selected','paused','ended'].map(p => Type.Literal(p))), equals: Type.Boolean({description:'Boolean true/false, never a quoted string.'}) }),
           Type.Object({ property: Type.Union([Type.Literal('expanded'),Type.Literal('pressed')]), equals: Type.Union([Type.Boolean(),Type.Literal('mixed')]) }),
           Type.Object({ property: Type.Union([Type.Literal('currentTime'),Type.Literal('duration')]), equals: Type.Number() }),
-          Type.Object({ property: Type.Union([Type.Literal('textContent'),Type.Literal('value')]), equals: Type.String() }),
-          Type.Object({ property: Type.Union([Type.Literal('textContent'), Type.Literal('value')]), contains: Type.String({ minLength: 1 }) }),
+          Type.Object({ property: Type.Union([Type.Literal('textContent'),Type.Literal('value'),Type.Literal('displayValue')]), equals: Type.String() }),
+          Type.Object({ property: Type.Union([Type.Literal('textContent'), Type.Literal('value'), Type.Literal('displayValue')]), contains: Type.String({ minLength: 1 }) }),
         ])),
         timeoutMs: Type.Optional(Type.Number({ minimum: 0, maximum: 5000, description: 'Optional bounded wait for expect; default 0 checks once. No model round trips while waiting.' })),
       }),

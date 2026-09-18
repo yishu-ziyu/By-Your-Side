@@ -1,5 +1,5 @@
 import {isWriteTool} from "../../shared/control.js";
-import {randomUUID} from "node:crypto";
+import {createHash, randomUUID} from "node:crypto";
 import { defineTool, type AgentToolResult, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";
@@ -17,6 +17,7 @@ import {
   normalizeTaskResultRegistration,
   resultCanUseExecution,
   resultStateOf,
+  resultHasWriteEffect,
   selectResultBinding,
   type ResultPageObservation,
   type TaskResultItem,
@@ -26,6 +27,20 @@ import {
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 
 export type { TaskResultItem, TaskResultRegistration, TaskResultState } from "../../shared/task-results.js";
+
+/** 一次用户确认后的受支持恢复记录：supersedes 指向保留原证据的旧未知项。 */
+export interface ConfirmedRecoveryRecord {
+  supersedes: string;
+  description: string;
+  tool: string;
+  target: string | null;
+  member: string;
+  runId: string;
+  toolCallId: string;
+  satisfied: boolean;
+  effectful?: boolean;
+  valueHash?: string;
+}
 
 /** 协调、探针与位置类动作不产生用户可见结果，不自动建项；需要时模型仍可显式登记。 */
 export const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover"]);
@@ -53,6 +68,15 @@ export class TaskResultBook {
 
   state(): TaskResultState { return resultStateOf(this.items); }
 
+  /** Only a complete, identified pre-write baseline makes an unknown eligible for evidence checking. */
+  verifiableUnknownIds(): string[] {
+    return this.items.filter(item=>{
+      const baseline=this.baselines.get(item.id);
+      return item.status==='unknown' && baseline && !baseline.truncated && baseline.tabId!==null
+        && baseline.runId===item.evidence?.runId && baseline.member===item.evidence?.member;
+    }).map(item=>item.id);
+  }
+
   register(intents: readonly unknown[]): void {
     if (!Array.isArray(intents) || intents.length > 64) throw new Error("结果登记最多64项");
     const normalized = intents.map(normalizeTaskResultRegistration);
@@ -78,7 +102,7 @@ export class TaskResultBook {
   revise(): void {
     for (const item of this.items) {
       if (item.status !== "pending" && item.status !== "blocked") continue;
-      if (item.status === "pending" && item.evidence) { if (isWriteTool(item.tool)) item.status = "unknown"; continue; }
+      if (item.status === "pending" && item.evidence) { if (resultHasWriteEffect(item)) item.status = "unknown"; continue; }
       item.status = "pending";
       item.target = null;
       item.evidence = null;
@@ -88,7 +112,7 @@ export class TaskResultBook {
   abandonMember(member: string): void {
     for (const item of this.items) {
       if (item.status !== "pending" || item.evidence?.member !== member) continue;
-      if (isWriteTool(item.tool)) item.status = "unknown";
+      if (resultHasWriteEffect(item)) item.status = "unknown";
       else item.evidence = null;
     }
   }
@@ -99,9 +123,9 @@ export class TaskResultBook {
     if (!Array.isArray(snapshot.results) || snapshot.results.length > 64) { this.items = []; return; }
     this.items = snapshot.results.filter(isTaskResultItem).map(item => {
       let evidence = item.evidence && item.evidence.runId === snapshot.runId && item.evidence.tool === item.tool && item.evidence.target === item.target ? { ...item.evidence } : null;
-      const status = item.status === "satisfied" && !evidence || item.status === "pending" && item.evidence && isWriteTool(item.tool) ? "unknown" : item.status;
+      const status = item.status === "satisfied" && !evidence || item.status === "pending" && item.evidence && resultHasWriteEffect(item) ? "unknown" : item.status;
       if (status === "pending") evidence = null;
-      return { id: item.id, description: item.description, tool: item.tool, target: item.target, status, evidence };
+      return { id: item.id, description: item.description, tool: item.tool, target: item.target, status, evidence, ...(item.supersededBy ? { supersededBy: item.supersededBy } : {}) };
     });
   }
 
@@ -113,21 +137,50 @@ export class TaskResultBook {
     }
   }
 
+  /**
+   * 用户确认的受支持恢复：新建一条独立的“当前状态”结果项。
+   * 旧 unknown 不改写，只在新项 satisfied 时标为被取代；重启前 satisfied
+   * 也保留原证据，新项只说明当前页面已经重新满足要求。
+   */
+  recordConfirmedRecovery(input: ConfirmedRecoveryRecord): TaskResultItem | null {
+    const old = this.items.find(item => item.id === input.supersedes && (item.status === 'unknown' || item.status === 'satisfied'));
+    if (!old) return null;
+    // 失败重设可能已由事件管道自动记下同一个调用；不重复建项。
+    const existing = this.items.find(item => item.evidence?.toolCallId === input.toolCallId && item.tool === input.tool);
+    if (existing) {
+      existing.description = input.description;
+      if (old.status === 'unknown') old.supersededBy = existing.id;
+      return existing;
+    }
+    if (this.items.length >= MAX_TASK_RESULTS) throw new Error('结果账本已满，无法记录新的核对结果；本次操作未执行。');
+    const item: TaskResultItem = {
+      id: `state-${++this.autoSeq}-${Math.random().toString(36).slice(2, 6)}`,
+      description: input.description,
+      tool: input.tool,
+      target: input.target,
+      status: input.satisfied ? 'satisfied' : 'unknown',
+      evidence: { toolCallId: input.toolCallId, tool: input.tool, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock(), ...(input.effectful ? { effectful: true as const } : {}),...(input.valueHash?{valueHash:input.valueHash}:{}) },
+    };
+    this.items.push(item);
+    if (old.status === 'unknown') old.supersededBy = item.id;
+    return item;
+  }
+
   /** 页面/文档可能已经改变：之前的读数不能再当作前后对比基线。 */
   notePageChange(): void { this.observations = []; this.baselines.clear(); }
 
-  noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; description?: string }): void {
+  noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; description?: string; effectful?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
     const item = this.resolveStartItem(input);
     if (!item) return;
-    if (isWriteTool(input.name)) {
+    if (isWriteTool(input.name)||input.effectful) {
       // 写入只作用于工作页：只有写入前的工作页读数能作为前后对比基线。
       const baseline = [...this.observations].reverse().find(observation => observation.runId === input.runId && observation.member === input.member && observation.workingTab);
       if (baseline) this.baselines.set(item.id, baseline);
       else this.baselines.delete(item.id);
     }
     item.status = "pending";
-    item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
+    item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock(),...(input.effectful&&!isWriteTool(input.name)?{effectful:true as const}:{}),...(input.valueHash?{valueHash:input.valueHash}:{}) };
   }
 
   /**
@@ -135,7 +188,7 @@ export class TaskResultBook {
    * 没有可复用的写操作才自动建项。只读工具不自动建项：观察不是用户可见待办。
    * 复用规则见 selectResultBinding：在途、已满足、未决项都不参与改绑。
    */
-  private resolveStartItem(input: { name: string; target: string | null; description?: string }): TaskResultItem | null {
+  private resolveStartItem(input: { name: string; target: string | null; description?: string; effectful?:boolean }): TaskResultItem | null {
     const binding = selectResultBinding(this.items, input.name, input.target);
     if (binding.kind === "exact" || binding.kind === "rebind") {
       const item = this.items.find(candidate => candidate.id === binding.itemId);
@@ -144,7 +197,7 @@ export class TaskResultBook {
       return item;
     }
     if (binding.kind !== "create") return null;
-    if (!isWriteTool(input.name) || AUTO_RESULT_EXCLUDED_TOOLS.has(input.name) || this.items.length >= MAX_TASK_RESULTS) return null;
+    if ((!isWriteTool(input.name)&&!input.effectful) || AUTO_RESULT_EXCLUDED_TOOLS.has(input.name) || this.items.length >= MAX_TASK_RESULTS) return null;
     const item: TaskResultItem = {
       id: this.nextAutoId(),
       description: input.description ?? deriveResultDescription(input.name, undefined, input.target),
@@ -157,16 +210,24 @@ export class TaskResultBook {
     return item;
   }
 
-  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact }): void {
+  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
-    const item = this.items.find(candidate => (candidate.status === "pending" || candidate.status === "unknown") && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.member === input.member && candidate.evidence.tool === input.name && candidate.evidence.runId === input.runId && candidate.evidence.target === input.target);
+    const write=isWriteTool(input.name)||input.effectful===true;
+    let item = this.items.find(candidate => (candidate.status === "pending" || candidate.status === "unknown") && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.member === input.member && candidate.evidence.tool === input.name && candidate.evidence.runId === input.runId && candidate.evidence.target === input.target);
+    // Auxiliary JS/scroll normally stays out of the visible obligations, but an
+    // uncertain effect must never disappear just because no item was registered.
+    if(!item&&write&&(input.failed||input.executionFact==='unknown')&&input.executionFact!=='not_executed'&&this.items.length<MAX_TASK_RESULTS){
+      item={id:this.nextAutoId(),description:deriveResultDescription(input.name,undefined,input.target),tool:input.name,target:input.target,status:'unknown',
+        evidence:{toolCallId:input.toolCallId,tool:input.name,target:input.target,member:input.member,runId:input.runId,...(!isWriteTool(input.name)?{effectful:true as const}:{}),...(input.valueHash?{valueHash:input.valueHash}:{})}};
+      this.items.push(item);
+    }
     if (!item || !resultCanUseExecution(item.status === "unknown" ? {...item,status:"pending"} : item, input.name, input.target)) return;
     if (item.evidence && (item.evidence.member !== input.member || item.evidence.runId !== input.runId || item.evidence.tool !== input.name)) return;
     if (!input.failed) {
       if (input.executionFact === "not_executed") {
         // 工具成功返回但没有真正派发（点击被拦下等用户确认）：不是完成证据。
         // 写作项转"结果未定"，只能靠真实页面读数核查解除；只读项退回待做。
-        if (isWriteTool(input.name)) {
+        if (write) {
           item.status = "unknown";
         } else {
           item.status = "pending";
@@ -174,27 +235,27 @@ export class TaskResultBook {
           return;
         }
       } else {
-        item.status = "satisfied";
+        item.status = write&&input.executionFact==='unknown'?'unknown':"satisfied";
       }
     } else {
       if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
         // Translation may fail while generating its next batch after acknowledged earlier batches.
         // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
         item.status = "blocked";
-      } else if (isWriteTool(input.name)) {
+      } else if (write) {
         item.status = "unknown";
       } else {
         item.status = "blocked";
       }
     }
-    item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
+    item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock(),...(write&&!isWriteTool(input.name)?{effectful:true as const}:{}),...(input.valueHash?{valueHash:input.valueHash}:{}) };
   }
 
-  resolveLateResult(input: { toolCallId: string; runId: string; ok: boolean; data?: unknown }): boolean {
-    if (!input.ok) return false;
+  resolveLateResult(input: { toolCallId: string; runId: string; ok: boolean; data?: unknown; executionFact?:import('../../shared/protocol.js').ToolExecutionFact }): boolean {
+    if(input.executionFact==='unknown'||!input.ok&&input.executionFact!=='not_executed')return false;
     const item = this.items.find(candidate => candidate.status === "unknown" && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.runId === input.runId);
     if (!item) return false;
-    item.status = "satisfied";
+    item.status = input.executionFact==='not_executed'?'blocked':'satisfied';
     return true;
   }
 
@@ -342,6 +403,132 @@ export function createVerifyUnknownResultTool(opts: {
       }
       opts.persist?.();
       return { content: [{ type: "text" as const, text: `已用真实页面读数确认「${item.description}」的结果，未知解除。可以继续剩余独立步骤。` }], details: { ok: true, resolved: id } };
+    },
+  });
+}
+
+/** 支持“当前状态核对 / 用户确认后重设一次”的低风险状态设置工具；外部动作不在此列。 */
+export const SUPPORTED_RECOVERY_TOOLS: ReadonlySet<string> = new Set(['fill']);
+
+/**
+ * 有边界的恢复续接：先核对当前页面，值已满足就只记录新证据、不写入；
+ * 确实需要重设时，先取得用户对这一个具体动作的确认，再只执行一次并读回。
+ * 旧 unknown 的状态与证据不改写，只标 supersededBy，由新项是否 satisfied 决定是否解除阻塞。
+ */
+export function createConfirmBlockedWriteTool(opts: {
+  getSnapshot: () => TaskProgressSnapshot;
+  read: (input: {target: string; tabId?:number}) => Promise<{displayValue?: string; value?: string; tabId?: number; documentId?:string}>;
+  confirm: (input: {id: string; tool: string; target: string; value: string; description: string; tabId:number; documentId:string}) => Promise<{allowed: boolean; reason?: string}>;
+  executeWrite: (input: {tool: string; target: string; value: string; tabId:number}) => Promise<void>;
+  record: (input: ConfirmedRecoveryRecord) => TaskResultItem | null;
+  persist: () => void;
+  emit: (event: AgentUiEvent) => void;
+  member?: string;
+}): ToolDefinition {
+  const stateValue = (text: string | undefined) => normalizeResultEvidence(String(text ?? ''));
+  const readTracked = async (target: string, tabId?:number): Promise<{text: string; observationId: string; tabId:number|null; documentId:string|null}> => {
+    const observationId = `confirm-read-${randomUUID()}`;
+    const params=tabId===undefined?{target,properties:['displayValue']}:{target,tabId,properties:['displayValue']};
+    opts.emit({kind: 'tool_start', toolCallId: observationId, name: 'read_element', params});
+    try {
+      const data = await opts.read({target, ...(tabId===undefined?{}:{tabId})});
+      const text = String(data.displayValue ?? data.value ?? '');
+      opts.emit({kind: 'tool_end', toolCallId: observationId, name: 'read_element', isError: false, resultText: text.slice(0, 500), executionFact: 'executed'});
+      return {text, observationId,tabId:typeof data.tabId==='number'?data.tabId:null,documentId:typeof data.documentId==='string'&&data.documentId?data.documentId:null};
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      opts.emit({kind: 'tool_end', toolCallId: observationId, name: 'read_element', isError: true, resultText: message.slice(0, 500), executionFact: 'not_executed'});
+      throw error;
+    }
+  };
+  const fail = (reason: string, text: string): AgentToolResult<{ok: boolean; reason?: string; state?: string; record?: string}> => ({content: [{type: 'text' as const, text}], details: {ok: false, reason}});
+  return defineTool({
+    name: 'confirm_blocked_write',
+    label: 'Re-check or confirm one blocked state-setting write',
+    description:
+      'Use after restart when an earlier low-risk form fill is either unknown, or had a success receipt but the fresh page no longer satisfies that field. ' +
+      'First re-read the current page and object: if the field already has the exact required value, this records that current state as satisfied and executes nothing; the old unknown stays in the ledger as history. ' +
+      'If the value is really missing, it asks the user to confirm this one exact action, then executes it once and reads it back. ' +
+      'Supported: fill on one form field. It never releases other unknown writes and never covers external actions (save, send, pay, delete); those need a reliable receipt or a user decision. ' +
+      'Never claim the old action succeeded, and never repeat a write without the user confirmation this tool obtains.',
+    parameters: Type.Object({
+      id: Type.String({description: 'Result id for the earlier fill (unknown, or pre-restart satisfied but stale on the fresh page)'}),
+      target: Type.String({description: 'Exact locator of the form field to check or set'}),
+      value: Type.String({description: 'Exact state the field must have'}),
+    }),
+    execute: async (_id, params): Promise<AgentToolResult<{ok: boolean; reason?: string; state?: string; record?: string}>> => {
+      const id = String(params.id ?? '');
+      const target = String(params.target ?? '').trim();
+      const value = String(params.value ?? '').trim();
+      const snapshot = opts.getSnapshot();
+      const item = snapshot.results?.find(candidate => candidate.id === id);
+      if (!item) return fail('not_recoverable', `结果项 ${id} 当前不是可恢复的表单状态，未执行确认。`);
+      if (!SUPPORTED_RECOVERY_TOOLS.has(item.tool)) return fail('unsupported_tool', `不支持的确认重设工具「${item.tool}」；保存、发送、支付、删除等外部动作必须核对可靠回执或请用户决定。`);
+      const recoverable = item.status === 'unknown' || (item.status === 'satisfied' && snapshot.restartRecovery === true);
+      if (!recoverable) return fail('not_recoverable', `结果项 ${id} 当前不是可恢复的表单状态，未执行确认。`);
+      if (!target || target.length > 500 || !value || value.length > 500) return fail('bad_params', '目标或期望值无效，未执行确认。');
+      if (!snapshot.runId) return fail('no_run', '当前没有运行中的任务身份，未执行确认。');
+      const runId = snapshot.runId;
+      const member = opts.member ?? 'main';
+      const expected = stateValue(value);
+      const valueHash=createHash('sha256').update(value).digest('hex');
+      const originalTarget=item.target==null?null:normalizeResultTarget(item.target);
+      const stableSameTarget=!!originalTarget&&originalTarget===normalizeResultTarget(target)&&!/^@[1-9]\d*$/.test(originalTarget);
+      const sameOriginalValue=!!item.evidence?.valueHash&&item.evidence.valueHash===valueHash;
+      // 1) 先核对当前页面：已经满足就不做任何写入，也不改动旧未知的状态。
+      let before: {text: string; observationId: string; tabId:number|null; documentId:string|null};
+      try { before = await readTracked(target); } catch (error) { return fail('read_failed', `当前页面无法读取目标：${error instanceof Error ? error.message : String(error)}`); }
+      if (stateValue(before.text) && stateValue(before.text) === expected && stableSameTarget && sameOriginalValue) {
+        const record = opts.record({supersedes: id, description: `当前页面已满足：${item.description}`, tool: 'read_element', target, member, runId, toolCallId: before.observationId, satisfied: true,valueHash});
+        if (!record) return fail('record_failed', '未能记录当前状态的核对结果，未做写入。');
+        opts.persist();
+        return {content: [{type: 'text' as const, text: `当前页面「${target}」已经是「${value}」，没有执行写入；旧未确认动作保留为历史记录，可以继续剩余步骤。`}], details: {ok: true, state: 'already_satisfied', record: record.id}};
+      }
+      // 2) 确实需要重设：只向用户确认这一个具体动作。
+      if(before.tabId===null||!before.documentId)return fail('page_identity_missing','当前页面缺少可绑定的文档身份，未请求重新设置；原未确认记录保留。');
+      const outcome = await opts.confirm({id, tool: item.tool, target, value, description: item.description,tabId:before.tabId,documentId:before.documentId}).catch(error => ({allowed: false, reason: error instanceof Error ? error.message : String(error)}));
+      if (!outcome.allowed) {
+        return {content: [{type: 'text' as const, text: `没有允许这次重新设置（${outcome.reason ?? '未允许'}）；没有执行写入，原未确认记录保留。请说明卡点并等待用户核对。`}], details: {ok: false, state: 'not_confirmed', reason: outcome.reason}};
+      }
+      // 3) 等确认期间页面可能已经满足：再读一次，仍满足就跳过写入。
+      try {
+        const during = await readTracked(target,before.tabId);
+        if(during.documentId!==before.documentId){
+          return fail('page_changed','等待确认期间页面实例已变化，本次重新设置作废，未执行写入。');
+        }
+        if (stateValue(during.text) && stateValue(during.text) === expected) {
+          const record = opts.record({supersedes: id, description: `用户确认期间页面已满足：${item.description}`, tool: 'read_element', target, member, runId, toolCallId: during.observationId, satisfied: true,valueHash});
+          if (record) {
+            opts.persist();
+            return {content: [{type: 'text' as const, text: `等待确认期间页面「${target}」已经是「${value}」；没有执行写入，旧未确认记录保留。`}], details: {ok: true, state: 'already_satisfied', record: record.id}};
+          }
+        }
+      } catch { /* 读不到就按需要重设继续；写入结果仍要靠读回 */ }
+      // 4) 只执行这一次与用户确认完全一致的操作，然后读回。
+      const toolCallId = `confirm-${randomUUID()}`;
+      opts.emit({kind: 'tool_start', toolCallId, name: item.tool, params: {target, value,tabId:before.tabId}});
+      try {
+        await opts.executeWrite({tool: item.tool, target, value,tabId:before.tabId});
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const executionFact=(error as {executionFact?:'not_executed'|'executed'|'unknown'}|null)?.executionFact??'unknown';
+        opts.emit({kind: 'tool_end', toolCallId, name: item.tool, isError: true, resultText: message.slice(0, 500), executionFact});
+        if(executionFact==='not_executed'){
+          return {content:[{type:'text' as const,text:`确认后的重新设置在执行前被拒绝（${message.slice(0,160)}）；没有发生新的写入，原未确认记录保留。`}],details:{ok:false,state:'not_executed',reason:message}};
+        }
+        const record = opts.record({supersedes: id, description: `用户确认后重新设置，结果仍未确认：${item.description}`, tool: item.tool, target, member, runId, toolCallId, satisfied: false, effectful: true,valueHash});
+        if (record) opts.persist();
+        return {content: [{type: 'text' as const, text: `重新设置没有取得确定回执（${message.slice(0, 160)}）；没有继续写入，原未确认记录保留。`}], details: {ok: false, state: 'unknown', reason: message}};
+      }
+      let after = '';
+      try { after = (await readTracked(target,before.tabId)).text; } catch { after = ''; }
+      const matched = !!stateValue(after) && stateValue(after) === expected;
+      opts.emit({kind: 'tool_end', toolCallId, name: item.tool, isError: false, resultText: (matched ? `readback matched: ${value}` : `readback mismatch: expected ${value}`).slice(0, 500), executionFact: 'executed'});
+      const record = opts.record({supersedes: id, description: matched ? `用户确认后已重新设置并读回：${item.description}` : `用户确认后重新设置，读回未确认：${item.description}`, tool: item.tool, target, member, runId, toolCallId, satisfied: matched, effectful: true,valueHash});
+      if (record) opts.persist();
+      return {content: [{type: 'text' as const, text: matched
+        ? `已按用户确认把「${target}」重新设置为「${value}」并读回一致；只执行了这一次，旧未确认动作保留为历史记录，可以继续剩余步骤。`
+        : `重新设置已派发，但读回没有得到「${value}」；结果仍按未确认处理，没有继续写入。`}], details: {ok: matched, state: matched ? 'reset' : 'readback_mismatch', record: record?.id}};
     },
   });
 }

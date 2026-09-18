@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "cases": [
+    "bilingual paragraph insertion; excludes code, editable, hidden and buttons",
+    "translated-only preserves original text nodes, links and event listeners",
+    "switch back and resize without new translation",
+    "restore exact original markup",
+    "partial results appear early; remaining batch adopts new mode without retranslating completed blocks",
+    "restored document rejects late batch",
+    "source mutation skips stale paragraphs while applying unchanged ones without overwriting new text",
+    "incremental collection includes updated and newly loaded text",
+    "navigation rejects old document result"
+  ]
+}

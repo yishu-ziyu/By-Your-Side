@@ -9,7 +9,7 @@ import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type Readi
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
-import { isFetchConsentRequest, type ConsentStatus, type FetchConsentRequest } from "./consent.js";
+import { isConsentRequest, type ConsentStatus, type ConsentRequest } from "./consent.js";
 
 export const PROTOCOL_VERSION = 1;
 export const STORAGE_SCHEMA_VERSION = 1;
@@ -23,6 +23,8 @@ export function normalizeConversationId(id?: string | null): string { return id 
 export interface ConversationSummary {
   id: string; title: string; createdAt: number; updatedAt: number;
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
+  /** A durable task checkpoint exists after the local host stopped mid-run. */
+  checkpoint?: "interrupted" | "unavailable";
 }
 
 export function isLeadSession(sessionId?: string | null): boolean {
@@ -257,11 +259,11 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   /** 有请求在等用户选择：目标、method、headers（敏感值已打码）与 body 原文，只展示这一次。 */
-  | { type: "consent_request"; request: FetchConsentRequest }
+  | { type: "consent_request"; request: ConsentRequest }
   /** 一次确认的结局：allowed 只表示「已允许本次请求」，不代表已经发送或成功。 */
   | { type: "consent_result"; requestId: string; status: ConsentStatus; message: string }
   /** 本会话仍在等待的授权请求；按请求即时的期限，不被这次查询延长。 */
-  | { type: "consent_list"; requests: FetchConsentRequest[] }
+  | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
   | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
@@ -308,7 +310,7 @@ export type AgentUiEvent =
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown> }
   | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
-  | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean }
+  | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
   | { kind: "tool_late_result"; toolCallId: string; name: string; ok: boolean; executionFact: ToolExecutionFact }
   | { kind: "turn_start" }
@@ -398,7 +400,7 @@ export interface ToolContract {
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
     params: { tabId?: number; target: string } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; documentId?: string; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
@@ -407,7 +409,7 @@ export interface ToolContract {
   switch_tab: { params: { tabId: number }; data: { tabId: number } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string; tabId: number } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string; tabId: number; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null } };
   click: {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。 */
@@ -592,14 +594,14 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)?msg:null;
     if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
     if (msg.type === "consent_request") {
-      return isFetchConsentRequest(msg.request) && msg.request.conversationId === msg.conversationId ? msg : null;
+      return isConsentRequest(msg.request) && msg.request.conversationId === msg.conversationId ? msg : null;
     }
     if (msg.type === "consent_result") {
       return validRequestId(msg.requestId) && CONSENT_STATUSES.has(msg.status)
         && typeof msg.message === "string" && msg.message.length > 0 && msg.message.length <= 500 ? msg : null;
     }
     if (msg.type === "consent_list") {
-      return Array.isArray(msg.requests) && msg.requests.every(isFetchConsentRequest) ? msg : null;
+      return Array.isArray(msg.requests) && msg.requests.every(isConsentRequest) ? msg : null;
     }
     if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
     if(msg.type==='agent_event'&&msg.event?.kind==='notice'&&msg.event.plan!==undefined){
@@ -819,5 +821,6 @@ function isConversationSummary(value: unknown): value is ConversationSummary {
   return validConversationId(item.id) && typeof item.title === "string" && item.title.length <= 120 &&
     Number.isFinite(item.createdAt) && Number.isFinite(item.updatedAt) && isAgentRunState(item.state) &&
     (item.mode === "act" || item.mode === "teach") && (item.model === undefined || typeof item.model === "string")
-    && (item.runId === undefined || item.runId === null || taskId(item.runId));
+    && (item.runId === undefined || item.runId === null || taskId(item.runId))
+    && (item.checkpoint === undefined || item.checkpoint === "interrupted" || item.checkpoint === "unavailable");
 }

@@ -1,0 +1,1403 @@
+{
+  "passed": true,
+  "url": "https://www.openhands.dev/",
+  "model": "opencode-go/deepseek-flash",
+  "injectedFailures": 0,
+  "failures": [],
+  "state": {
+    "mode": "translated",
+    "total": 182,
+    "translated": 182
+  },
+  "cases": [
+    {
+      "text": "翻译这个页面。只留下译文",
+      "elapsedMs": 92360,
+      "recoveredOtherToolErrors": [
+        "页面归属已变化，请重新查看后再接手",
+        "CSS 选择器匹配 12 个元素: h2"
+      ],
+      "firstPageResultMs": 7235,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 402235659
+          }
+        },
+        {
+          "name": "worker_tabs",
+          "params": {
+            "action": "inspect",
+            "tabId": 402235659
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "begin",
+            "mode": "translated",
+            "targetLanguage": "简体中文",
+            "tabId": 402235659
+          }
+        },
+        {
+          "name": "worker_tabs",
+          "params": {
+            "action": "claim",
+            "tabId": 402235659,
+            "expectedConversationId": null
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "1:0",
+                "text": "你的智能代理驱动SDLC成熟度如何？"
+              },
+              {
+                "id": "2:0",
+                "text": "参加2分钟测验"
+              },
+              {
+                "id": "3:0",
+                "text": "开放平台，用于 "
+              },
+              {
+                "id": "3:1",
+                "text": "智能代理软件开发"
+              },
+              {
+                "id": "4:0",
+                "text": "试用 OpenHands Cloud"
+              },
+              {
+                "id": "5:0",
+                "text": "联系我们"
+              },
+              {
+                "id": "6:0",
+                "text": "自带你的智能代理"
+              },
+              {
+                "id": "12:0",
+                "text": "让我们开始构建！"
+              },
+              {
+                "id": "13:0",
+                "text": "你想构建什么？"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "7:0",
+                "text": "对话"
+              },
+              {
+                "id": "14:0",
+                "text": "模型"
+              },
+              {
+                "id": "8:0",
+                "text": "无仓库"
+              },
+              {
+                "id": "15:0",
+                "text": "打开工作区"
+              },
+              {
+                "id": "15:1",
+                "text": "插件"
+              },
+              {
+                "id": "9:0",
+                "text": "hello-world"
+              },
+              {
+                "id": "16:0",
+                "text": "推荐的自动化"
+              },
+              {
+                "id": "17:0",
+                "text": "Slack 频道监控"
+              },
+              {
+                "id": "19:0",
+                "text": "Slack 站会摘要"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "21:0",
+                "text": "开启时进行 PR 审查"
+              },
+              {
+                "id": "10:0",
+                "text": "earth"
+              },
+              {
+                "id": "18:0",
+                "text": "关注频道中的提及，并基于消息上下文开启对话。"
+              },
+              {
+                "id": "20:0",
+                "text": "收集站会回复，并在工作日向团队频道发布摘要。"
+              },
+              {
+                "id": "22:0",
+                "text": "审查新打开的拉取请求，并将发现以行内评论形式发布。"
+              },
+              {
+                "id": "23:0",
+                "text": "已固定的自动化"
+              },
+              {
+                "id": "24:0",
+                "text": "最近的自动化活动"
+              },
+              {
+                "id": "25:0",
+                "text": "添加"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "11:0",
+                "text": "本地"
+              },
+              {
+                "id": "26:0",
+                "text": "Agent Canvas 预览：首页"
+              },
+              {
+                "id": "27:0",
+                "text": "深受以下公司工程师信赖"
+              },
+              {
+                "id": "28:0",
+                "text": "一次构建，让 Agent 持续运行。"
+              },
+              {
+                "id": "29:0",
+                "text": "从模板开始，或自行构建。通过 GitHub、Slack、Jira、Linear、定时计划及支持的集成触发工作流，让工程工作持续推进，无需有人手动启动每项任务。"
+              },
+              {
+                "id": "30:0",
+                "text": "探索自动化模板"
+              },
+              {
+                "id": "33:0",
+                "text": "团队沟通"
+              },
+              {
+                "id": "36:0",
+                "text": "项目管理"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "39:0",
+                "text": "事件响应"
+              },
+              {
+                "id": "42:0",
+                "text": "代码审查"
+              },
+              {
+                "id": "45:0",
+                "text": "可靠性"
+              },
+              {
+                "id": "48:0",
+                "text": "安全"
+              },
+              {
+                "id": "51:0",
+                "text": "CI/CD"
+              },
+              {
+                "id": "31:0",
+                "text": "在 Slack 中处理工程请求"
+              },
+              {
+                "id": "34:0",
+                "text": "分诊每个新的 Linear 问题"
+              },
+              {
+                "id": "37:0",
+                "text": "分诊传入的 Jira 事件"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "40:0",
+                "text": "审查每个拉取请求"
+              },
+              {
+                "id": "43:0",
+                "text": "起草每次事件回顾"
+              },
+              {
+                "id": "46:0",
+                "text": "修复安全发现"
+              },
+              {
+                "id": "49:0",
+                "text": "自动修复CI失败"
+              },
+              {
+                "id": "32:0",
+                "text": "监控Slack频道中的@openhands提及，根据消息上下文开启对话，并在代理完成后回复。"
+              },
+              {
+                "id": "35:0",
+                "text": "对新的Linear问题进行分类，建议标签，查找重复项，并在工作开始前提出澄清问题。"
+              },
+              {
+                "id": "38:0",
+                "text": "监控新的bug或事件，收集日志和近期变更，建议严重程度，并将问题路由给正确的负责人。"
+              },
+              {
+                "id": "41:0",
+                "text": "监控拉取请求上的可配置标签，检查完整的PR上下文，并在每次标签事件后发布一条AI审查评论。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "44:0",
+                "text": "将 Notion 和 Jira 中的事件笔记拉取到共享时间线中，并附上负责人、决策和后续任务。"
+              },
+              {
+                "id": "47:0",
+                "text": "审查安全警报，验证发现的问题，更新受影响的代码，并提交包含修复方案的拉取请求。"
+              },
+              {
+                "id": "50:0",
+                "text": "检测失败的工作流，检查日志，找出可能的原因，并提交包含建议修复方案的拉取请求。"
+              },
+              {
+                "id": "52:0",
+                "text": "自动化"
+              },
+              {
+                "id": "53:0",
+                "text": "从信号到已交付的变更。"
+              },
+              {
+                "id": "54:0",
+                "text": "将来自你的工程栈的事件转化为端到端的智能体工作流。触发工作，让智能体进行规划和执行，验证结果，交付变更，并监控每一步。"
+              },
+              {
+                "id": "55:0",
+                "text": "信号"
+              },
+              {
+                "id": "56:0",
+                "text": "规划"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "60:0",
+                "text": "监控"
+              },
+              {
+                "id": "57:0",
+                "text": "执行"
+              },
+              {
+                "id": "59:0",
+                "text": "交付"
+              },
+              {
+                "id": "58:0",
+                "text": "验证"
+              },
+              {
+                "id": "61:0",
+                "text": "使用场景"
+              },
+              {
+                "id": "62:0",
+                "text": "让 SDLC 中的重复性环节自动运行。"
+              },
+              {
+                "id": "63:0",
+                "text": "在整个软件生命周期中，使用代理处理重复、高频的工作，同时让工程师掌控审查、批准和合并。"
+              },
+              {
+                "id": "64:0",
+                "text": "01"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "65:0",
+                "text": "审查 PR 并修复 CI 失败"
+              },
+              {
+                "id": "66:0",
+                "text": "审查变更、发现问题、修复失败的检查，并自动开启后续 PR。"
+              },
+              {
+                "id": "67:0",
+                "text": "02"
+              },
+              {
+                "id": "68:0",
+                "text": "分诊问题并开启草稿 PR"
+              },
+              {
+                "id": "69:0",
+                "text": "将收到的请求转化为有明确范围的工作，收集上下文，并开启附带正确详细信息的草稿 PR。"
+              },
+              {
+                "id": "70:0",
+                "text": "03"
+              },
+              {
+                "id": "71:0",
+                "text": "在发布周期中实现 QA 自动化"
+              },
+              {
+                "id": "72:0",
+                "text": "使用代理执行可重复的检查、调查失败，并让质量工作从代码变更持续贯穿到发布。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "73:0",
+                "text": "04"
+              },
+              {
+                "id": "74:0",
+                "text": "调查事件并提出修复方案"
+              },
+              {
+                "id": "75:0",
+                "text": "汇总警报、日志和近期变更，然后调查问题并提出补丁，同时由人工处理需要判断的决策。"
+              },
+              {
+                "id": "76:0",
+                "text": "05"
+              },
+              {
+                "id": "77:0",
+                "text": "保持文档和代码库映射的时效性"
+              },
+              {
+                "id": "78:0",
+                "text": "随着代码变更更新文档和系统上下文，以避免知识过时。"
+              },
+              {
+                "id": "79:0",
+                "text": "06"
+              },
+              {
+                "id": "80:0",
+                "text": "自动化重复性工程杂务"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "81:0",
+                "text": "即使笔记本电脑合上，也能处理依赖更新、QA 扫描、发布说明和其他计划内工作。"
+              },
+              {
+                "id": "82:0",
+                "text": "与你依赖的应用集成"
+              },
+              {
+                "id": "83:0",
+                "text": "通过 GitHub、Slack、Jira、Linear 等触发工作。使用 MCP 连接内部工具、API 和数据源，让智能体能够贯穿整个工程工作流采取行动。"
+              },
+              {
+                "id": "84:0",
+                "text": "多后端"
+              },
+              {
+                "id": "85:0",
+                "text": "你的智能体。你的模型。你的运行时。"
+              },
+              {
+                "id": "86:0",
+                "text": "统一智能体工作流的运行方式，而无需统一使用某一个智能体或模型。使用 Claude Code、Codex、Gemini CLI、OpenHands 或你自己的技术栈。OpenHands 既能运行闭源模型，也能运行 Kimi、DeepSeek、Qwen 等开放权重模型——可在本地、云端或你的 VPC 内运行。"
+              },
+              {
+                "id": "87:0",
+                "text": "智能体"
+              },
+              {
+                "id": "191:0",
+                "text": "模型"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "192:0",
+                "text": "模型"
+              },
+              {
+                "id": "89:0",
+                "text": "运行时"
+              },
+              {
+                "id": "90:0",
+                "text": "为您选择的基础设施而构建。"
+              },
+              {
+                "id": "91:0",
+                "text": "OpenHands 与领先的 AI 基础设施提供商合作，在您组织已使用的模型、硬件和部署环境中支持智能体工作负载。"
+              },
+              {
+                "id": "92:0",
+                "text": "“Lemonade Server 与 OpenHands 的集成体现了 AMD 对开源创新和开发者选择的承诺。这一合作实现了优先考虑隐私、成本效益和灵活模型选择的本地编码智能体——同时利用 Ryzen AI PC 上的加速能力。我们共同支持多种工作流程，并坚守开源价值观。”"
+              },
+              {
+                "id": "93:0",
+                "text": "Adrian Macias"
+              },
+              {
+                "id": "94:0",
+                "text": "AMD 开发者加速总监"
+              },
+              {
+                "id": "95:0",
+                "text": "从您的笔记本电脑开始。扩展到云端。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "96:0",
+                "text": "从你选择的智能体和模型开始在本地运行。将行之有效的部分转化为共享自动化，然后将成功的流程扩展到生产环境。"
+              },
+              {
+                "id": "97:0",
+                "text": "个人开发者"
+              },
+              {
+                "id": "98:0",
+                "text": "按你的方式开始运行智能体。"
+              },
+              {
+                "id": "99:0",
+                "text": "在本地针对真实代码运行"
+              },
+              {
+                "id": "100:0",
+                "text": "使用 Claude Code、Codex、OpenHands 或你偏好的智能体"
+              },
+              {
+                "id": "101:0",
+                "text": "并行运行多个智能体"
+              },
+              {
+                "id": "102:0",
+                "text": "将有价值的任务转化为你的第一个自动化流程"
+              },
+              {
+                "id": "103:0",
+                "text": "当笔记本性能成为瓶颈时，将执行迁移到虚拟机"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "193:0",
+                "text": "模型"
+              },
+              {
+                "id": "104:0",
+                "text": "免费下载"
+              },
+              {
+                "id": "105:0",
+                "text": "团队"
+              },
+              {
+                "id": "106:0",
+                "text": "将代理的成果转化为共享自动化。"
+              },
+              {
+                "id": "107:0",
+                "text": "共享自动化，而非重复构建提示词"
+              },
+              {
+                "id": "108:0",
+                "text": "通过 GitHub、Slack、Jira、CI 或计划任务触发工作"
+              },
+              {
+                "id": "109:0",
+                "text": "笔记本合上后代理仍持续运行"
+              },
+              {
+                "id": "110:0",
+                "text": "跨仓库和团队运行工作流"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "194:0",
+                "text": "模型"
+              },
+              {
+                "id": "111:0",
+                "text": "将真正行之有效的模式标准化"
+              },
+              {
+                "id": "112:0",
+                "text": "创建账户"
+              },
+              {
+                "id": "113:0",
+                "text": "企业版"
+              },
+              {
+                "id": "114:0",
+                "text": "全面掌控地运行生产级智能体。"
+              },
+              {
+                "id": "115:0",
+                "text": "部署在您的 VPC 或受控环境中"
+              },
+              {
+                "id": "116:0",
+                "text": "在安全沙箱中隔离智能体执行"
+              },
+              {
+                "id": "117:0",
+                "text": "定义智能体可以访问的对象和范围"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "195:0",
+                "text": "模型"
+              },
+              {
+                "id": "118:0",
+                "text": "审计每一项操作、工作流和用户"
+              },
+              {
+                "id": "119:0",
+                "text": "管理用量、预算和组织策略"
+              },
+              {
+                "id": "120:0",
+                "text": "联系销售"
+              },
+              {
+                "id": "121:0",
+                "text": "代理控制平面"
+              },
+              {
+                "id": "122:0",
+                "text": "控制代理在生产环境中的运行方式。"
+              },
+              {
+                "id": "123:0",
+                "text": "随着代理的使用在团队中不断普及，OpenHands 为平台和安全团队提供集中控制，管理谁可以运行代理、代理可以访问什么、代理在哪里执行、代理的花费以及代理更改了什么。"
+              },
+              {
+                "id": "124:0",
+                "text": "了解企业版"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "125:0",
+                "text": "开发者喜爱 OpenHands"
+              },
+              {
+                "id": "126:0",
+                "text": "加入数百万为智能体 SDLC 构建的开发者行列"
+              },
+              {
+                "id": "127:0",
+                "text": "‍"
+              },
+              {
+                "id": "128:0",
+                "text": "Nacho Martínez Rincón"
+              },
+              {
+                "id": "131:0",
+                "text": "Dan Kempe"
+              },
+              {
+                "id": "135:0",
+                "text": "Esteban Puerta"
+              },
+              {
+                "id": "139:0",
+                "text": "Fisherman"
+              },
+              {
+                "id": "129:0",
+                "text": "Oracle 数据科学家倡导者"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "196:0",
+                "text": "模型"
+              },
+              {
+                "id": "132:0",
+                "text": "@danielkempe"
+              },
+              {
+                "id": "136:0",
+                "text": "@Esteban_Puerta9"
+              },
+              {
+                "id": "140:0",
+                "text": "@Rybens92"
+              },
+              {
+                "id": "130:0",
+                "text": "OpenHands SDK 是最完整的代理 harness 和代理 AI 开发 SDK 之一——包括用开源模型实现 vibecoding。通过工具系统实现工具调用的可靠性极高——对开发者非常友好！"
+              },
+              {
+                "id": "133:0",
+                "text": "OpenHands 融资 1880 万美元，用于构建云端编码代理，当天即可解决 87% 的缺陷工单。"
+              },
+              {
+                "id": "137:0",
+                "text": "到现在这个阶段，基本没必要自己从头造轮子，尤其是当 claude code SDK 和 openhands sdk 已经提供了好用的 API 供你利用时。"
+              },
+              {
+                "id": "141:0",
+                "text": "你们的代理被严重低估了，尽管有很多基准测试在评估代理编码并以你们的工作为参照——用经过测试的模型运行的 OpenHands 代理……"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "197:0",
+                "text": "模型"
+              },
+              {
+                "id": "134:0",
+                "text": "这才是 AI 编程工具应有的样子。不是又一个聊天界面。而是真正能自主解决问题并将成果交付到生产环境的工具。"
+              },
+              {
+                "id": "138:0",
+                "text": "接下来才是精彩之处。"
+              },
+              {
+                "id": "142:0",
+                "text": "我就是不明白为什么大家对您的作品如此沉默……"
+              },
+              {
+                "id": "143:0",
+                "text": "‍"
+              },
+              {
+                "id": "144:0",
+                "text": "一直转发，直到人们醒来。"
+              },
+              {
+                "id": "145:0",
+                "text": "赵静怡"
+              },
+              {
+                "id": "148:0",
+                "text": "Leonardo Gonzalez"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "198:0",
+                "text": "模型"
+              },
+              {
+                "id": "152:0",
+                "text": "Wil - e/acc"
+              },
+              {
+                "id": "155:0",
+                "text": "Christian Genco"
+              },
+              {
+                "id": "146:0",
+                "text": "Walmart Global Tech 软件工程师"
+              },
+              {
+                "id": "149:0",
+                "text": "@archimagos"
+              },
+              {
+                "id": "153:0",
+                "text": "@wilfullyapt"
+              },
+              {
+                "id": "156:0",
+                "text": "@cgenco"
+              },
+              {
+                "id": "150:0",
+                "text": "我喜欢使用像 "
+              },
+              {
+                "id": "150:1",
+                "text": "@allhands_ai"
+              },
+              {
+                "id": "150:2",
+                "text": " OpenHands 这样的自主智能体来完成 80% 的工作（尤其是后端），然后用像 "
+              },
+              {
+                "id": "150:3",
+                "text": "@windsurf"
+              },
+              {
+                "id": "150:4",
+                "text": " 或 "
+              },
+              {
+                "id": "150:5",
+                "text": "@zeddotdev"
+              },
+              {
+                "id": "150:6",
+                "text": " 这样的交互式 IDE 进行调试、优化和 UI 工作。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "199:0",
+                "text": "模型"
+              },
+              {
+                "id": "154:0",
+                "text": "我真是爱死用 OpenHands 做 vibe coding 了。这不像你的编辑器在替你干活，更像一个背下了所有书本知识的傻瓜实习生。OpenHands 提交，我来微调，反复循环。太惊艳了！！"
+              },
+              {
+                "id": "157:0",
+                "text": "我还没试过 Devin，但我真是爱死 OpenHands 了。我更喜欢对它的工作方式有更多掌控。"
+              },
+              {
+                "id": "147:0",
+                "text": "我很喜欢这个项目，因为它是编程智能体领域的首创，而且你可以自由地按自己的方式配置。它还能和各种生态系统很好地集成。我相信这个项目能走得长远！"
+              },
+              {
+                "id": "158:0",
+                "text": "而且那种通用工作流就是未来。只要开个 GitHub issue，AI 自己搞定、写测试，然后推一个 PR，简直太神奇了。"
+              },
+              {
+                "id": "151:0",
+                "text": "它帮我省下了大量时间，搭配合适的模型和方案也能省下不少钱。"
+              },
+              {
+                "id": "159:0",
+                "text": "常见问题"
+              },
+              {
+                "id": "160:0",
+                "text": "关于 OpenHands、安全性以及团队如何让智能体投入工作的常见问题。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "200:0",
+                "text": "模型"
+              },
+              {
+                "id": "161:0",
+                "text": "联系我们"
+              },
+              {
+                "id": "162:0",
+                "text": "什么是 OpenHands？"
+              },
+              {
+                "id": "162:1",
+                "text": "OpenHands 与 GitHub Copilot 或 ChatGPT 等 AI 编程工具有何不同？"
+              },
+              {
+                "id": "162:2",
+                "text": "OpenHands 能否处理大型或遗留代码库？"
+              },
+              {
+                "id": "162:3",
+                "text": "OpenHands 对企业使用是否安全？"
+              },
+              {
+                "id": "162:4",
+                "text": "哪些类型的团队在使用 OpenHands？"
+              },
+              {
+                "id": "163:0",
+                "text": "OpenHands 是一个用于软件开发的 AI 智能体平台，能够执行真正的工程工作，而不仅仅是提供代码建议。它运行自主智能体，这些智能体可以规划、编写并在你的代码库中应用更改，帮助团队端到端地完成复杂任务。它构建于开源基础之上，专为大规模企业软件开发而设计。"
+              },
+              {
+                "id": "164:0",
+                "text": "OpenHands 不是帮助你更快地编写代码，而是帮助你端到端地交付变更。GitHub Copilot 或 ChatGPT 等工具会生成代码建议。OpenHands 运行智能体来完成整个工程任务，跨整个代码库采取行动，并行运行任务，并在真实环境中执行更改。"
+              },
+              {
+                "id": "165:0",
+                "text": "是的。OpenHands 专为处理大型、复杂和遗留代码库而设计。借助其大型代码库 SDK，它可以映射整个系统中的依赖关系并按正确顺序编排更改，使多个智能体能够安全地并行工作而不会产生冲突。"
+              },
+              {
+                "id": "166:0",
+                "text": "OpenHands 在你的环境中运行，无论是在本地部署还是私有云中，因此你的代码永远不会离开你的控制。由于智能体在安全、隔离的执行环境中运行，并具备完全可审计性，因此它专为具有严格数据安全、合规和治理要求的组织而构建。"
+              },
+              {
+                "id": "167:0",
+                "text": "OpenHands 被以下团队使用：大规模自动化工程工作流的平台团队、构建内部开发者平台或 AI 驱动工具的团队，以及管理大型或遗留代码库和关键任务软件系统的企业。"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "201:0",
+                "text": "模型"
+              },
+              {
+                "id": "168:0",
+                "text": "开源是核心。"
+              },
+              {
+                "id": "169:0",
+                "text": "模型在变。智能体在变。需求在变。OpenHands 为你提供一个可审查、可扩展的基础，你可以在本地运行、自行托管，并将其带入生产环境，而无需围绕专有平台进行重建。"
+              },
+              {
+                "id": "170:0",
+                "text": "在 GitHub 上加星"
+              },
+              {
+                "id": "171:0",
+                "text": "部署自托管版"
+              },
+              {
+                "id": "172:0",
+                "text": "加入社区"
+              },
+              {
+                "id": "173:0",
+                "text": "85.3K"
+              },
+              {
+                "id": "174:0",
+                "text": "GitHub 星标"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "202:0",
+                "text": "模型"
+              },
+              {
+                "id": "175:0",
+                "text": "565"
+              },
+              {
+                "id": "176:0",
+                "text": "贡献者"
+              },
+              {
+                "id": "177:0",
+                "text": "MIT"
+              },
+              {
+                "id": "178:0",
+                "text": "核心许可证"
+              },
+              {
+                "id": "179:0",
+                "text": "构建自主软件开发的开放标准。"
+              },
+              {
+                "id": "180:0",
+                "text": "OpenHands 是安全、透明、模型无关的编码代理的基础——让每个软件团队都能在完全掌控下更快构建。"
+              },
+              {
+                "id": "181:0",
+                "text": "加入社区"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "apply",
+            "translations": [
+              {
+                "id": "203:0",
+                "text": "模型"
+              },
+              {
+                "id": "182:0",
+                "text": "© "
+              },
+              {
+                "id": "182:1",
+                "text": "2026"
+              },
+              {
+                "id": "182:2",
+                "text": " OpenHands - 保留所有权利"
+              },
+              {
+                "id": "183:0",
+                "text": "隐私政策"
+              },
+              {
+                "id": "183:1",
+                "text": "联系我们"
+              }
+            ]
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "tabId": 402235659,
+            "document": "c974e136-4212-49b7-8df5-7abcc19ac730",
+            "action": "collect"
+          }
+        },
+        {
+          "name": "read_element",
+          "params": {
+            "target": "h1",
+            "properties": [
+              "textContent"
+            ],
+            "tabId": 402235659
+          }
+        },
+        {
+          "name": "read_element",
+          "params": {
+            "target": "h2",
+            "properties": [
+              "textContent"
+            ],
+            "tabId": 402235659
+          }
+        }
+      ]
+    },
+    {
+      "text": "字体改成宋体。",
+      "elapsedMs": 9815,
+      "recoveredOtherToolErrors": [],
+      "firstPageResultMs": 3012,
+      "calls": [
+        {
+          "name": "snapshot",
+          "params": {
+            "tabId": 402235659
+          }
+        },
+        {
+          "name": "page_translation",
+          "params": {
+            "action": "display",
+            "fontFamily": "songti",
+            "mode": "translated",
+            "tabId": 402235659
+          }
+        },
+        {
+          "name": "js",
+          "params": {
+            "code": "(() => { const h = document.querySelector('h1'); const p = document.querySelector('main p, p'); const out = {h1: h ? getComputedStyle(h).fontFamily : null}; const el = document.querySelector('[data-bys-translation], [class*=translat], font'); out.p = p ? getComputedStyle(p).fontFamily : null; out.body = getComputedStyle(document.body).fontFamily; out.marked = !!el; return out; })()",
+            "tabId": 402235659
+          }
+        }
+      ]
+    }
+  ]
+}

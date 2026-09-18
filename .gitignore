@@ -14,3 +14,11 @@ dist/
 /.statamcp/
 /.video_agent/
 /.pi/
+
+# Local credentials and generated experiment/session artifacts
+.env
+.env.*
+!.env.example
+/out/
+__pycache__/
+*.py[cod]

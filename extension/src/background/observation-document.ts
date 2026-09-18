@@ -6,12 +6,17 @@ const keyOf = (tabId: number, member: string) => `${tabId}:${member}`;
 const stale = () => new Error('页面文档已变化，旧目标未执行。请重新 snapshot 或 read_element 核对当前页面和目标。');
 
 export async function withObservedDocument<T>(tabId: number, member: string, read: () => Promise<T>): Promise<T> {
+  return (await withObservedDocumentIdentity(tabId, member, read)).value;
+}
+
+/** Same guard as withObservedDocument, but also returns the exact document identity that was read. */
+export async function withObservedDocumentIdentity<T>(tabId: number, member: string, read: () => Promise<T>): Promise<{value:T;documentId:string|null}> {
   const before = await readCurrentDocument(tabId);
   const result = await read();
   const after = await readCurrentDocument(tabId);
   if (before?.documentId && after?.documentId !== before.documentId) throw stale();
   if (after?.documentId) recordObservedDocument(tabId, member, after.documentId);
-  return result;
+  return {value:result,documentId:after?.documentId??null};
 }
 
 export function recordObservedDocument(tabId: number, member: string, documentId: string): void {

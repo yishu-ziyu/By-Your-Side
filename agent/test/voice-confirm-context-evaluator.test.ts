@@ -18,6 +18,7 @@ async function setup(readFails = false) {
   let running = false;
   const raw = {
     model: { id: "fixture", provider: "fixture" },
+    sessionManager: {appendCustomEntry: vi.fn(), getBranch: () => []},
     get isStreaming() { return running; },
     steer: vi.fn(async (_text: string, _images?: unknown[]) => {}),
   };
