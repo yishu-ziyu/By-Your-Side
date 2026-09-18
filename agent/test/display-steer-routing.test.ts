@@ -79,6 +79,20 @@ describe('composeDisplayDecision',()=>{
     expect(composeDisplayDecision(baseAnswers({direct:{noul:.1},partial:{noul:.5}}),true)).toMatchObject({kind:'fallback',reason:'direct_uncertain',partialScope:true});
     expect(composeDisplayDecision(baseAnswers({extra:{noul:.9},partial:{noul:0}}),true)).toEqual({kind:'fallback',reason:'extra_or_uncertain'});
   });
+  it('maps the common request shapes to fallbacks instead of guesses',()=>{
+    // 能力询问：直接动作判断为否。
+    expect(composeDisplayDecision(baseAnswers({direct:{noul:.1}}),true)).toMatchObject({kind:'fallback',reason:'direct_uncertain'});
+    // 纯否定：否定后的字体目标只能是 unspecified，不猜默认值。
+    expect(composeDisplayDecision(baseAnswers({font:{choice:'unspecified',probabilities:{songti:.1,original:.05,unspecified:.85}}}),true)).toMatchObject({kind:'fallback',reason:'no_positive_change'});
+    // 恢复网站原字体：明确请求但不属于本轮能力。
+    expect(composeDisplayDecision(baseAnswers({font:fontOriginal}),true)).toEqual({kind:'fallback',reason:'unsupported_original_font'});
+    // 局部标题：带 partialScope 回退。
+    expect(composeDisplayDecision(baseAnswers({partial:{noul:.9}}),true)).toEqual({kind:'fallback',reason:'partial_or_uncertain',partialScope:true});
+    // 显示加总结：额外任务，完整回退。
+    expect(composeDisplayDecision(baseAnswers({extra:{noul:.9}}),true)).toEqual({kind:'fallback',reason:'extra_or_uncertain'});
+    // “不是取消，切回双语”：否定词不应把正常修改判成取消。
+    expect(composeDisplayDecision(baseAnswers({mode:modeBilingual}),true)).toEqual({kind:'candidate',params:{action:'display',mode:'bilingual'},reason:'accepted'});
+  });
 });
 
 describe('decideDisplay request boundary',()=>{

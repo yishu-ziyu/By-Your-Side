@@ -1795,6 +1795,8 @@ export class BrowserAgentSession {
           // willRetry=true 时自动重试紧随其后，本轮并未结束：不下发 agent_end，
           // 避免进度状态与结果被误当作最终（状态保持 running）。
           if (event.willRetry) break;
+          // 这一轮真的结束了：运行中显示直达已没有归属，中止在途调用，不再写入。
+          this.steerDisplayAbort?.abort();
           // 这一轮真的结束了：还没被模型读到的补充要有明确结局，不能留在队列里悄悄影响下一轮。
           // 暂停（页面归用户）例外：那些补充是留给交还后续跑的，不能被这一轮收尾清掉。
           const correctionsCleared = this.hold.isHeld() || this.abandonUnconsumedCorrections("ended");

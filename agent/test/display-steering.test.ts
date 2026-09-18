@@ -264,3 +264,127 @@ describe('运行中显示修改的调度归属',()=>{
   expect((progress.results??[]).some(item=>item.tool==='page_translation')).toBe(true);
  });
 });
+
+const candidate=(params:Record<string,unknown>)=>({kind:'candidate' as const,params:{action:'display' as const,...params},reason:'accepted' as const});
+
+describe('连续修改与竞态（Ticket 4）',()=>{
+ it('later same-property request wins while a different property is preserved',async()=>{
+  const {h,manager}=await managerHarness();
+  const request=(id:string,text:string)=>({requestId:id,conversationId:'default',source:'text' as const,action:'steer' as const,expectedRunId:manager.getTaskProgress('default')!.runId??null,text,context});
+  vi.mocked(decideDisplay).mockResolvedValueOnce(candidate({mode:'bilingual'}));
+  expect((await manager.dispatchTaskAction(request('c1','切回双语'))).status).toBe('applied');
+  h.messageStart(h.steers.at(-1)!);
+  vi.mocked(decideDisplay).mockResolvedValueOnce(candidate({mode:'translated'}));
+  expect((await manager.dispatchTaskAction(request('c2','还是只显示译文'))).status).toBe('applied');
+  expect(h.pageState.mode).toBe('translated');
+  h.messageStart(h.steers.at(-1)!);
+  vi.mocked(decideDisplay).mockResolvedValueOnce(candidate({fontFamily:'songti'}));
+  expect((await manager.dispatchTaskAction(request('c3','字体改成宋体'))).status).toBe('applied');
+  expect(h.pageState.mode).toBe('translated');
+  expect(h.pageState.fontFamily).toBe('songti');
+  expect(manager.getTaskProgress('default')!.runId).toBe(request('x','x').expectedRunId);
+ });
+
+ it('preserves a partial-scope fallback while a later whole-page request clears it',async()=>{
+  const {h,manager}=await managerHarness();
+  const runId=manager.getTaskProgress('default')!.runId??null;
+  vi.mocked(decideDisplay).mockResolvedValueOnce({kind:'fallback',reason:'partial_or_uncertain',partialScope:true});
+  const partial=await manager.dispatchTaskAction({requestId:'p1',conversationId:'default',source:'text',action:'steer',expectedRunId:runId,text:'只把标题改成宋体',context});
+  expect(partial.status).toBe('accepted');
+  expect(h.wrapper.displayScopeBlockedRun).toBe(runId);
+  // 模型读到这条要求之前，旧写入先被补充闸门挡住。
+  await expect(h.tool('page_translation').execute('before-consume',{action:'display',fontFamily:'songti',tabId:7,document:'one'})).rejects.toThrow(/已补充或改变要求/);
+  h.messageStart(h.steers.at(-1)!);
+  // 读到之后整页写入仍被局部范围约束挡住；约束随回退保留。
+  await expect(h.tool('page_translation').execute('old-plan',{action:'display',fontFamily:'songti',tabId:7,document:'one'})).rejects.toThrow(/整页/);
+  expect(h.pageState.fontFamily).toBe('original');
+  vi.mocked(decideDisplay).mockResolvedValueOnce(candidate({fontFamily:'songti'}));
+  const whole=await manager.dispatchTaskAction({requestId:'p2',conversationId:'default',source:'text',action:'steer',expectedRunId:runId,text:'把整页译文都改成宋体',context});
+  expect(whole.status).toBe('applied');
+  expect(h.pageState.fontFamily).toBe('songti');
+ });
+
+ it('falls back without writing when the same-URL document changes while Jev decides',async()=>{
+  const h=pageHarness();
+  vi.mocked(decideDisplay).mockImplementation(async()=>{h.pageState.document='two';return candidate({fontFamily:'songti'});});
+  const outcome=await h.wrapper.steerCurrentTask('把译文改成宋体',context);
+  expect(outcome).toEqual({kind:'model'});
+  expect(h.translationCalls).toHaveLength(0);
+  expect(h.pageState.fontFamily).toBe('original');
+ });
+
+ it('reports a failed verification instead of success when the document changes after the write',async()=>{
+  const h=pageHarness();
+  vi.mocked(decideDisplay).mockResolvedValue(candidate({fontFamily:'songti'}));
+  const original=h.rpc.call.getMockImplementation()!;
+  let snapshots=0;
+  h.rpc.call.mockImplementation(async(name:string,params:any,...rest:any[])=>{
+   const result=await original(name,params,...rest);
+   if(name==='snapshot'){
+    snapshots+=1;
+    if(snapshots===3)return {...result,translation:{...result.translation,document:'two'}};
+   }
+   return result;
+  });
+  const outcome=await h.wrapper.steerCurrentTask('把译文改成宋体',context);
+  expect(outcome).toMatchObject({kind:'display-failed'});
+  expect(h.translationCalls).toHaveLength(1);
+  expect(h.steers.at(-1)).toContain('没有通过读回核对');
+ });
+
+ it('does not write after the user aborted while Jev was deciding',async()=>{
+  const h=pageHarness();
+  let release!:(value:any)=>void;
+  vi.mocked(decideDisplay).mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  const steering=h.wrapper.steerCurrentTask('把译文改成宋体',context);
+  await vi.waitFor(()=>expect(decideDisplay).toHaveBeenCalled());
+  h.wrapper.abort();
+  release(candidate({fontFamily:'songti'}));
+  await expect(steering).rejects.toBeInstanceOf(TaskActionRejected);
+  expect(h.translationCalls).toHaveLength(0);
+  expect(h.pageState.fontFamily).toBe('original');
+ });
+
+ it('does not write when the original run ended while Jev was deciding',async()=>{
+  const h=pageHarness();
+  let release!:(value:any)=>void;
+  vi.mocked(decideDisplay).mockImplementation(()=>new Promise(resolve=>{release=resolve;}));
+  const steering=h.wrapper.steerCurrentTask('把译文改成宋体',context);
+  await vi.waitFor(()=>expect(decideDisplay).toHaveBeenCalled());
+  h.setStreaming(false);
+  h.agentEnd();
+  release(candidate({fontFamily:'songti'}));
+  await expect(steering).rejects.toBeInstanceOf(TaskActionRejected);
+  expect(h.translationCalls).toHaveLength(0);
+ });
+
+ it.each([
+  ['你能把译文改成宋体吗','direct_uncertain'],
+  ['不要把译文改成宋体','no_positive_change'],
+  ['把字体恢复成网站原来的','unsupported_original_font'],
+  ['把译文改成宋体，然后告诉我标题','extra_or_uncertain'],
+  ['把译文改成宋体','timeout'],
+ ])('falls back to the original model path for %s (%s)',async(text,reason)=>{
+  const h=pageHarness();
+  vi.mocked(decideDisplay).mockResolvedValue({kind:'fallback',reason} as never);
+  const outcome=await h.wrapper.steerCurrentTask(text,context);
+  expect(outcome).toEqual({kind:'model'});
+  expect(h.translationCalls).toHaveLength(0);
+  expect(h.pageState.fontFamily).toBe('original');
+  expect(h.steers[0]).toContain(text);
+ });
+
+ it('keeps an unknown display result as an unresolved write instead of retrying',async()=>{
+  const {h,manager}=await managerHarness();
+  const runId=manager.getTaskProgress('default')!.runId??null;
+  vi.mocked(decideDisplay).mockResolvedValue(candidate({fontFamily:'songti'}));
+  h.failNextPageTranslation(Object.assign(new Error('回执丢失'),{executionFact:'unknown'}),'unknown');
+  h.forceFact('page_translation','unknown');
+  const receipt=await manager.dispatchTaskAction({requestId:'unknown-1',conversationId:'default',source:'text',action:'steer',expectedRunId:runId,text:'把译文改成宋体',context});
+  expect(receipt.status).toBe('unknown');
+  expect(h.translationCalls).toHaveLength(1);
+  const progress=manager.getTaskProgress('default')!;
+  expect((progress.results??[]).some(item=>item.tool==='page_translation'&&item.status==='unknown')).toBe(true);
+  expect(progress.nextStep?.allowWrites).toBe(false);
+ });
+});
