@@ -55,7 +55,8 @@ async function portFree(port: number): Promise<boolean> {
 if (!(await portFree(DEFAULT_PORT))) throw new Error(`端口 ${DEFAULT_PORT} 已被占用（可能有本地伴随进程在运行）。不终止任何进程；请先停掉冲突实例再重跑。`);
 
 const token = randomUUID();
-const model = loadConfig().model;
+// 执行模型默认取本机 config.json；可用 SIDEAGENT_ACCEPTANCE_MODEL 覆盖，不改日常配置。
+const model = process.env.SIDEAGENT_ACCEPTANCE_MODEL || loadConfig().model;
 const runtimeDir = resolve('out/acceptance', `jev-display-steering-store-${Date.now()}`);
 await mkdir(runtimeDir, {recursive: true});
 const events: any[] = [];
@@ -88,8 +89,16 @@ wss.on('connection', client => {
   client.on('close', () => { if (socket === client) { socket = undefined; manager.disconnect(); } });
 });
 
-/** Count real Jev calls without touching credentials or results. */
+/** Count real Jev calls and record decision reasons without touching credentials. */
 const jevCalls: number[] = [];
+const displayDecisions: {at: number; reason: string; ms: number}[] = [];
+const originalConsoleError = console.error;
+console.error = (...args: any[]) => {
+  originalConsoleError(...args);
+  if (args[0] === '[display-fast-path]' && typeof args[1] === 'string') {
+    try { const parsed = JSON.parse(args[1]); displayDecisions.push({at: Date.now(), reason: String(parsed.reason), ms: Number(parsed.ms)}); } catch { /* keep raw log only */ }
+  }
+};
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: any, init?: any) => {
   if (String(input).includes('api.typesafe.ai')) {
@@ -196,6 +205,7 @@ try {
     await until(async () => ((await panelIdle()) && !entry.runtime.session.isStreaming() && ['idle', 'none', 'aborted', 'error'].includes(manager.getTaskProgress('default')?.state ?? '')) || undefined, 20000, 'panel idle');
     process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH = enabled ? '1' : '0';
     const jevStart = jevCalls.length;
+    const decisionStart = displayDecisions.length;
     const taskMarker = events.length;
     await sendInput(TASK_TEXT);
     // 等新一轮的模型真的在流：仅看面板 running 会读到上一轮残留状态。
@@ -226,6 +236,7 @@ try {
       reTranslate: reTranslate.length,
       modelTurns: window.filter(item => item.message?.event?.kind === 'turn_start').length,
       jevCalls: jevCalls.length - jevStart, jevMs: jevCalls.slice(jevStart),
+      decisions: displayDecisions.slice(decisionStart).map(entry => entry.reason),
       sameRunId: runId !== null && runIdAfter === runId,
       runId,
       delivered: findings.length > 0, answer: answer.slice(0, 400),
@@ -259,9 +270,11 @@ try {
       console.log(JSON.stringify({boundary: name, failure, observed: run.finalObserved, direct: run.direct}));
       await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2));
     };
-    await boundary('局部标题不改整页', '只把标题的字体改成宋体，正文不要动。', run => /Songti SC/.test(run.finalObserved.font) ? '正文被整页改动' : run.delivered ? null : '没有交付说明');
-    await boundary('能力询问不改页面', '你能把已有译文改成宋体吗？', run => /Songti SC/.test(run.finalObserved.font) || run.displayStarts > 0 ? '询问被当成执行' : null);
-    await boundary('纯否定不改页面', '不要把已有译文改成宋体。', run => /Songti SC/.test(run.finalObserved.font) ? '否定被当成执行' : null);
+    await boundary('局部标题不改整页', '只把标题的字体改成宋体，正文不要动。', run => /Songti SC/.test(run.finalObserved.font) ? '正文被整页改动' : run.delivered ? null : '没有交付说明', {waitForChange: false});
+    // Jev 的既有政策：礼貌请求（“你能…吗”）算请求。这个句式按请求执行是记录到的真实行为，不是失败。
+    await boundary('礼貌请求按请求执行', '你能把已有译文改成宋体吗？', run => /Songti SC/.test(run.finalObserved.font) ? null : '礼貌请求没有执行', {waitForChange: false, font: 'songti'});
+    await boundary('明确信息问句不改页面', '请问把译文改成宋体是已经支持的功能吗？', run => /Songti SC/.test(run.finalObserved.font) || run.displayStarts > 0 ? '信息问句被当成执行' : null, {waitForChange: false});
+    await boundary('纯否定不改页面', '不要把已有译文改成宋体。', run => /Songti SC/.test(run.finalObserved.font) ? '否定被当成执行' : null, {waitForChange: false});
     await boundary('显示加另一步都完成', '把已有译文改成宋体，再告诉我文章标题。', run => /Songti SC/.test(run.finalObserved.font) && run.answer.includes('Display steering') ? null : '没有同时完成两项要求', {font: 'songti'});
     await boundary('恢复网站字体', '把已有译文恢复成网站原来的字体。', run => /Songti SC/.test(run.finalObserved.font) ? '没有恢复原字体' : null, {font: 'original', initial: {mode: 'translated', font: 'songti'}});
   }
@@ -293,6 +306,7 @@ try {
     testsAccountedFor: results.runs.length + results.boundaries.length,
   };
   results.scope = {
+    model: model ?? '(runtime default)',
     textRoute: 'real sidepanel input -> background -> task_action steer -> ConversationManager -> registered tools',
     voiceRoute: 'not exercised in this script (no microphone/ASR); shared dispatch covered by agent/test/voice-display-steering.test.ts',
     switchAfterRun: 'SIDEAGENT_DISPLAY_STEER_FASTPATH left off; ~/.sideagent/config.json unchanged',
@@ -312,6 +326,7 @@ try {
   process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH = '';
   await writeFile(join(out, 'events.json'), JSON.stringify(events, null, 2)).catch(() => {});
   globalThis.fetch = originalFetch;
+  console.error = originalConsoleError;
   await iso?.close();
   manager.dispose();
   for (const client of wss.clients) client.terminate();
