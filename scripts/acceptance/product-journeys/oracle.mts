@@ -113,11 +113,16 @@ function ownText(ev: RunEvidence): string {
   return ownDeliveries(ev).filter((d) => d.kind === "finding" || d.kind === "reply").map((d) => d.text).join("\n");
 }
 
-function contentChecks(ev: RunEvidence): CheckResult[] {
+function contentChecks(ev: RunEvidence, mat: JourneyMaterial): CheckResult[] {
   const p = ev.page;
   if (!p) return [check("content-unchanged", false, "缺少页面探针")];
   const ok = p.contentMutations === 0 && p.initialText !== null && norm(p.currentText) === norm(p.initialText);
-  return [check("content-unchanged", ok, `内容变更 ${p.contentMutations} 次，正文${ok ? "未变" : "已变"}`)];
+  const wantPath = new URL(mat.startPath, "http://fixture").pathname;
+  const pageOk = p.url === wantPath;
+  return [
+    check("content-unchanged", ok, `内容变更 ${p.contentMutations} 次，正文${ok ? "未变" : "已变"}`),
+    check("page-identity", pageOk, pageOk ? `页面身份 ${wantPath}` : `页面被替换：期望 ${wantPath}，实际 ${p.url}`),
+  ];
 }
 
 type Judge = (mat: JourneyMaterial, ev: RunEvidence) => CheckResult[];
@@ -127,11 +132,12 @@ const JUDGES: Record<string, Judge> = {
     const text = norm(ownText(ev));
     const must = (mat.expect.mustContain as string[]).map(norm);
     const missing = must.filter((m) => !text.includes(m));
-    const sourceOk = /来源|出自|文章|标题|原文|\/article/.test(ownText(ev));
+    const sourceMust = (mat.expect.sourceMustContain as string[] | undefined) ?? [];
+    const sourceOk = sourceMust.some((s) => ownText(ev).includes(s));
     return [
       check("facts", missing.length === 0, missing.length === 0 ? "指定事实齐全" : `缺事实：${missing.join("、")}`),
-      check("source-cited", sourceOk, sourceOk ? "标注了来源" : "未标注来源"),
-      ...contentChecks(ev),
+      check("source-cited", sourceOk, sourceOk ? `来源与实际页面吻合（${sourceMust.find((s) => ownText(ev).includes(s))}）` : `来源未指向实际页面（需含 ${sourceMust.join(" 或 ")}）`),
+      ...contentChecks(ev, mat),
     ];
   },
 
@@ -146,7 +152,7 @@ const JUDGES: Record<string, Judge> = {
     return [
       check("explain-selection", explainOk, explainOk ? "解释命中选中术语定义" : "解释未命中选中术语"),
       check("followup-keeps-reference", followOk, followOk ? "追问仍指代原选区" : `追问未指代原术语「${expect.selectedTerm}」`),
-      ...contentChecks(ev),
+      ...contentChecks(ev, mat),
     ];
   },
 
@@ -159,7 +165,7 @@ const JUDGES: Record<string, Judge> = {
     return [
       check("summary-complete", missing.length === 0, missing.length === 0 ? "概括覆盖全部要点" : `概括缺：${missing.join("、")}`),
       check("font-changed", fontOk, fontOk ? `字体已变（${font.slice(0, 60)}）` : `字体未变宋体（${font.slice(0, 60)}）`),
-      ...contentChecks(ev),
+      ...contentChecks(ev, mat),
     ];
   },
 
@@ -171,7 +177,7 @@ const JUDGES: Record<string, Judge> = {
     return [
       check("gap-flagged", marked, marked ? "明确标注原文未说明" : "未标注「原文未说明」"),
       check("no-fabrication", fabricated.length === 0, fabricated.length === 0 ? "无编造" : `编造了：${fabricated.join("、")}`),
-      ...contentChecks(ev),
+      ...contentChecks(ev, mat),
     ];
   },
 
@@ -263,8 +269,8 @@ function compareJudge(mat: JourneyMaterial, ev: RunEvidence): CheckResult[] {
   const checks: CheckResult[] = [];
   for (const o of expect.compareOffers) {
     const hasName = text.includes(o.name);
-    const monthStrings = [String(o.perMonth), String(o.perMonth - 1), String(o.perMonth + 1)];
-    const hasMonth = monthStrings.some((s) => text.includes(s));
+    const accept = (o as { acceptPerMonth?: string[] }).acceptPerMonth ?? [String(o.perMonth)];
+    const hasMonth = accept.some((s) => text.includes(s));
     checks.push(check(`offer-${o.name}`, hasName && hasMonth,
       hasName && hasMonth ? `${o.name}：月度口径已给出` : `${o.name}：${!hasName ? "未提及" : "月度口径缺失或错误"}`));
     const returnsMentioned = new RegExp(`${o.name}[^\\n]{0,40}(支持|不支持)[^\\n]{0,8}退换|${o.name}[^\\n]{0,40}退换`).test(ownText(ev));

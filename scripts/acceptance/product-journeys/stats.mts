@@ -48,10 +48,12 @@ export interface AggregateReport {
     failedWaitsMs: number[];
   };
   interventions: {
+    /** 运行器只能记录计划步骤；被迫介入需要真实用户场景，当前数据源为「未测量」 */
+    measured: false;
+    note: string;
     forcedTotal: number;
     forcedMedian: number | null;
     plannedTotal: number;
-    /** 被迫介入 ≤1 的任务数（T08 门槛用：至少 22/24） */
     withinOneForced: number;
   };
   gateDetail: string;
@@ -123,6 +125,8 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
       failedWaitsMs: failedWaits,
     },
     interventions: {
+      measured: false,
+      note: "被迫介入未被自动测量：脚本化运行器不制造计划外救场；该指标须由 T08 真人/真实使用场景产出，本报告不以此宣称达标。",
       forcedTotal: forcedCounts.reduce((a, b) => a + b, 0),
       forcedMedian: median(forcedCounts),
       plannedTotal: started.reduce((a, r) => a + r.interventions.planned, 0),

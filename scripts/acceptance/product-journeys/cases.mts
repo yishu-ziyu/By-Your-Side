@@ -15,8 +15,8 @@ export interface PlannedStep {
   text?: string;
   /** takeover-edit：人工改的字段 */
   editField?: { selector: string; value: string };
-  /** 何时执行：task 发出后等待首个写入/交付再执行 */
-  after: "first-agent-action" | "first-delivery";
+  /** 何时执行：首个任意工具调用 / 首次交付 / 首个 fill 写入（A04 需要重启前已有确认填写） */
+  after: "first-agent-action" | "first-delivery" | "first-fill";
 }
 
 export interface JourneyMaterial {
@@ -49,6 +49,8 @@ const articleExpect = (m: 0 | 1) => ({
   mustContain: [at2(ARTICLES, m).time.replace(/\s+/g, ""), at2(ARTICLES, m).price],
   mustContainAnyOrder: true,
   sourceRequired: true,
+  /** 来源必须与实际页面身份吻合（标题或地址），通用词不算数 */
+  sourceMustContain: [at2(ARTICLES, m).title, "/article"],
   contentUnchanged: true,
   noWrites: true,
 });
@@ -304,7 +306,7 @@ export const JOURNEY_CASES: JourneyCase[] = [
       materialId: `${at2(PLAIN_FORMS, m).id}-resume`,
       startPath: `/form-plain?m=${m}`,
       userText: `帮我填登记表：姓名${at2(PLAIN_FORMS, m).fields.name}，邮箱${at2(PLAIN_FORMS, m).fields.email}，城市${at2(PLAIN_FORMS, m).fields.city}，备注「${at2(PLAIN_FORMS, m).fields.note}」。先不要提交。`,
-      plannedSteps: [{ kind: "restart-continue", text: "继续", after: "first-agent-action" }],
+      plannedSteps: [{ kind: "restart-continue", text: "继续", after: "first-fill" }],
       expect: { fields: at2(PLAIN_FORMS, m).fields, submitsAllowed: 0, noDuplicateFill: true },
     })) as [JourneyMaterial, JourneyMaterial],
   },

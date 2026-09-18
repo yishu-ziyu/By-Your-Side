@@ -149,6 +149,12 @@ function extractReceipts(events: EventView[]) {
     });
 }
 
+function extractRunId(events: EventView[], conversationId: string): string | null {
+  const status = events.filter((e) => e.message.type === "status" && (e.message as { conversationId?: string }).conversationId === conversationId && (e.message as { runId?: string }).runId);
+  const last = status.at(-1);
+  return last ? String((last.message as { runId?: string }).runId) : null;
+}
+
 function extractToolCalls(events: EventView[]) {
   return events
     .filter((e) => e.direction === "server" && e.message.type === "tool_call")
@@ -256,6 +262,7 @@ export async function runOne(
   let restartAtMs: number | null = null;
   let deliveries: RunEvidence["deliveries"] = [];
   let tabId: number | null = null;
+  let pageTargetId: string | null = null;
 
   try {
     // 新会话 + 独立页面
@@ -264,6 +271,7 @@ export async function runOne(
     await sleep(300);
     conversationId = (await iso.swEval("chrome.storage.session.get('selectedConversationId').then(s=>s.selectedConversationId??'default')")) as string;
     const pageTarget = await iso.newTarget(`${fixture.origin}${mat.startPath}`);
+    pageTargetId = pageTarget;
     const tab = await until(async () => {
       const tabs = (await iso.swEval("chrome.tabs.query({})")) as { id: number; url: string }[];
       return tabs.find((t) => t.url.startsWith(`${fixture.origin}${new URL(mat.startPath, "http://x").pathname}`));
@@ -328,7 +336,7 @@ export async function runOne(
     caseId: jc.caseId,
     materialId: mat.materialId,
     conversationId,
-    runId: null,
+    runId: extractRunId(events.slice(eventsBefore), conversationId),
     deliveries,
     receipts: extractReceipts(events.slice(eventsBefore)),
     toolCalls: extractToolCalls(events.slice(eventsBefore)),
@@ -365,7 +373,7 @@ export async function runOne(
   };
 
   await iso.screenshot(panel, join(outDir, "panel-final.png")).catch(() => {});
-  if (tabId !== null) await iso.screenshot(String(tabId), join(outDir, "page-final.png")).catch(() => {});
+  if (pageTargetId !== null) await iso.screenshot(pageTargetId, join(outDir, "page-final.png")).catch(() => {});
   writeFileSync(join(outDir, "events.json"), JSON.stringify(events.slice(eventsBefore), null, 2));
   writeFileSync(join(outDir, "run.json"), JSON.stringify({ row, verdict, evidence: { ...evidence, deliveries: deliveries.map((d) => ({ ...d, text: String(d.text ?? "").slice(0, 2000) })) }, model: env.model, startedAt, endedAt }, null, 2));
   if (tabId !== null) await iso.swEval(`chrome.tabs.remove(${tabId}).catch(()=>{})`).catch(() => {});
@@ -385,9 +393,12 @@ async function runPlannedStep(
   const { iso, panel } = env;
   const events = env.host.current.events;
   const waitCue = async () => {
-    const want = step.after === "first-delivery" ? "user_delivery" : "tool_call";
     const base = events.length;
-    await until(() => events.slice(base).some((e) => eventKind(e) === want || (want === "tool_call" && e.message.type === "tool_call")) || undefined, Math.max(10_000, deadline - Date.now()), `cue:${step.after}`);
+    await until(() => events.slice(base).some((e) => {
+      if (step.after === "first-delivery") return eventKind(e) === "user_delivery";
+      if (step.after === "first-fill") return e.message.type === "tool_call" && (e.message as { name?: string }).name === "fill";
+      return eventKind(e) === "tool_start" || e.message.type === "tool_call";
+    }) || undefined, Math.max(10_000, deadline - Date.now()), `cue:${step.after}`);
   };
   switch (step.kind) {
     case "steer":
