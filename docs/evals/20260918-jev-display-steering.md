@@ -46,6 +46,31 @@
 
 - 语音判定为运行中显示修改后进入 Ticket 3 的统一入口，保留请求/任务/页面身份。
 - 相同文字与转写输入结果一致；不新增确认循环；不吞原任务播报。
+- 语音朗读在 `applied` 时播报已核对的事实，普通修改仍只说“已送达”，不把接受当成页面成功。
+- 检查：`npx vitest run agent/test/voice-display-steering.test.ts`（7 通过）；
+  回归：`voice-control-confirmation`、`voice-delivery-run-boundary`、`task-next-step` 共 65 项通过。
+
+## 参考实现（browser-use/jev-ultrafast）
+
+参考仓库：[browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast)，实际阅读 commit
+`452c1ad2dd628008f1d5608f28158d76e49e6cc0`（2026-09-16，`Reduce browser round trips and record a 7-second Flights demo`）。
+本轮阅读了 `jev_ultrafast/model.py`、`agent.py`、`snapshot.js`、`browser.py`、`docs/performance.md`（另及 `questions.py`、`docs/design.md`）。只借鉴以下做法，不接入其完整网页动作循环。
+
+借鉴：
+
+- **单次请求多判断**（`model.py::choose`）：一次 TypeSafe 请求同时给出操作与目标多个判断，只校验被选中操作对应的那个目标头，没被选中的头不能造成动作。本项目的 `display-fast-path.ts` 本就是单请求多问题（direct/extra/partial/font/mode）；Ticket 1 把结果整理成候选/回退/取消三类，未命中头不产生可执行参数。
+- **决策一次性消费**（`agent.py::act` 在任何变更或模型调用之前把 `state["decision"]=None`，重试不能双击）。本项目落成 `tryDisplaySteering` 在执行前先置 `record.displayConsumed` 并拒绝重入；对应测试“consumes the decision once before executing…”。
+- **执行记录与后续观察分离**（`agent.py` 在 `act` 返回后、重新观察前先写 history；`browser.py` 的 `after_input` 读取是只读且在执行之后）。本项目：写工具返回即发出 `tool_end`，随后才做核对 snapshot；`display_executed` 先记入 run trace，核对读数失败不能抹掉执行事实（`failed executed` 仍保留回执）。
+- **配对验收方法**（`docs/performance.md`）：同一目标/同一模型设置下原始与优化交替跑，独立结果检查器，全部尝试计入，报中位数并明说样本小不足以作统计结论。Ticket 6 的验收脚本沿用这一形式，并单列边界场景。
+
+没有采用：
+
+- 完整动作循环与动作空间（`agent.py::run/tick`、`model.py::action_space`）：超出本票组范围，且明令不替换 Pi 与现有浏览器执行框架。
+- `snapshot.js` 的 DOM 读取器与点击栓：扩展已有自己的 `snapshot`/`page_translation` 执行器；再养一套观察/执行会分叉。
+- `model.py` 对 429/529/503 的自动重试：Ticket 1 要求单次调用、1 秒超时、无重试。
+- 字段文本辅助模型、原生 select 中断策略、录像/截图流水线：本轮不新增模型调用或浏览器能力。
+
+差异说明：参考仓库的决策一次性可以成立，是因为它的循环每次只做一步；本项目要在原任务继续运行时保持事实可追溯，所以另外保留了“已核验事实交回原任务 + 补充闸门”，不靠决策对象本身活着。
 
 ## Ticket 6 真实配对验收与 review 交付
 

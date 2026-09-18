@@ -43,7 +43,8 @@ function one(receipt:Pick<TaskReceipt,'action'|'status'|'message'>):string {
   if(receipt.status==='rejected'||receipt.status==='failed')return receipt.message.slice(0,180);
   switch(receipt.action){
     case 'start':return '任务已收到。';
-    case 'steer':return receipt.message.includes('继续后生效')?'修改已保存，继续后生效。':'修改已送达当前任务。';
+    // 页面修改已核对时朗读实际结果；普通修改仍只说“已送达”，不把接受当成成功。
+    case 'steer':return receipt.status==='applied'?receipt.message.slice(0,180):receipt.message.includes('继续后生效')?'修改已保存，继续后生效。':'修改已送达当前任务。';
     case 'pause':return '任务已暂停，页面现在归你。';
     case 'resume':return receipt.message.includes('检查点')?'已从检查点继续原任务，先重新读取当前页面。':'已交还，原任务继续。';
     case 'abort':return '任务已终止。';

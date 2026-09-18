@@ -81,6 +81,8 @@ describe('reusable display execution (Ticket 2)',()=>{
   h.snapshot.mockResolvedValueOnce({content:[{type:'text',text:'译文'}],details:{text:'译文',tabId:7,translation:{...state,document:'two'}} as never});
   expect(await run(h)).toEqual({kind:'failed',reason:'没有核对到要求的显示结果。',executed:'executed'});
   expect(h.delivery).not.toHaveBeenCalled();
+  // 执行回执先落账；后续读数失败不能把这次执行抹掉。
+  expect(h.emit.mock.calls.some(([event]:any[])=>event?.kind==='tool_end'&&event.name==='page_translation'&&event.isError===false)).toBe(true);
   expect(h.emit).not.toHaveBeenCalledWith(expect.objectContaining({kind:'agent_end'}));
  });
 

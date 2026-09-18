@@ -367,7 +367,7 @@ export class BrowserAgentSession {
    * 两者的结局不同：准备中的不算已接受，暂停/终止时直接取消，不写进交还 prompt；
    * 已排队的补留在记录里，交还时连原附件一起带回。
    */
-  private readonly pendingCorrections: Array<{ id: string; input: string | null; text: string; attachments?: Attachment[]; fact?:string }> = [];
+  private readonly pendingCorrections: Array<{ id: string; input: string | null; text: string; attachments?: Attachment[]; fact?:string; displayConsumed?:boolean }> = [];
   /** 交还 prompt 里嵌入的未读补充：按批次身份销账，不做任意子串匹配。 */
   private handbackDelivery: { text: string; ids: string[] } | null = null;
   /**
@@ -771,6 +771,8 @@ export class BrowserAgentSession {
       writeAttempted=true;
       await execute('page_translation',params);
       writeSucceeded=true;
+      // 执行事实先于后续观察落账：即使核对读数失败，也不能把这次执行抹掉。
+      this.runTrace.record('display_executed',{params});
       if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'executed'};
       const result=await execute('snapshot',{tabId:params.tabId});
       const after=(result as {details?:{translation?:TranslationDisplayState|null}}|undefined)?.details?.translation;
@@ -1272,7 +1274,7 @@ export class BrowserAgentSession {
    */
   private async tryDisplaySteering(
     session:AgentSession,
-    record:{id:string;input:string|null;text:string;fact?:string},
+    record:{id:string;input:string|null;text:string;fact?:string;displayConsumed?:boolean},
     text:string,
     context:PageContext,
     current:()=>boolean,
@@ -1308,6 +1310,9 @@ export class BrowserAgentSession {
       catch{return {kind:'fallback'};}
       if(!active())return {kind:'cancelled'};
       if(latest.translation?.document!==before.translation.document||!latest.translation?.displayValid)return {kind:'fallback'};
+      // 决策只消费一次：在真正执行之前就标记已消费，重入/重试不能把同一条候选再执行一遍。
+      if(record.displayConsumed)return {kind:'cancelled'};
+      record.displayConsumed=true;
       const params:Record<string,unknown>={...decision.params,tabId,document:before.translation.document};
       const outcome=await this.executeDisplayCommand(session,params,controller.signal,active);
       if(outcome.kind==='applied'){
@@ -1337,7 +1342,7 @@ export class BrowserAgentSession {
   /** 把"要求 + 运行时事实"作为插话交回原任务；任务已失效时释放登记，不留下悬空闸门。 */
   private async returnDisplayFactToModel(
     session:AgentSession,
-    record:{id:string;input:string|null;text:string;fact?:string},
+    record:{id:string;input:string|null;text:string;fact?:string;displayConsumed?:boolean},
     text:string,
     context:PageContext,
     note:string,
