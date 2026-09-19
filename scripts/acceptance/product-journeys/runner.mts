@@ -140,9 +140,9 @@ function extractDeliveries(events: EventView[], conversationId: string) {
     .filter((d) => d.kind && d.kind !== "ack" && d.text);
 }
 
-function extractReceipts(events: EventView[]) {
+function extractReceipts(events: EventView[], conversationId: string) {
   return events
-    .filter((e) => eventKind(e) === "notice" && (e.message as { event?: { receipt?: unknown } }).event?.receipt)
+    .filter((e) => eventKind(e) === "notice" && (e.message as { conversationId?: string }).conversationId === conversationId && (e.message as { event?: { receipt?: unknown } }).event?.receipt)
     .map((e) => {
       const r = (e.message as { event: { receipt: { requestId?: string; status?: string; action?: string } } }).event.receipt;
       return { requestId: String(r.requestId ?? ""), status: String(r.status ?? ""), action: r.action };
@@ -160,12 +160,26 @@ function extractRunIds(events: EventView[], conversationId: string): string[] {
   return [...ids];
 }
 
-function extractToolCalls(events: EventView[]) {
+function extractToolCalls(events: EventView[], conversationId: string) {
+  // 只取本臂会话；确认时刻来自同 toolCallId 的 tool_end（host 侧结构化事实）
+  const ends = new Map<string, { at: number; ok: boolean; executionFact?: string }>();
+  for (const e of events) {
+    if (eventKind(e) !== "tool_end") continue;
+    const ev = (e.message as { event?: { toolCallId?: string; isError?: boolean; executionFact?: string } }).event;
+    const cid = (e.message as { conversationId?: string }).conversationId;
+    if (cid !== conversationId || !ev?.toolCallId) continue;
+    ends.set(ev.toolCallId, { at: e.at, ok: ev.isError === false, executionFact: ev.executionFact });
+  }
   return events
-    .filter((e) => e.direction === "server" && e.message.type === "tool_call")
+    .filter((e) => e.direction === "server" && e.message.type === "tool_call" && (e.message as { conversationId?: string }).conversationId === conversationId)
     .map((e) => {
-      const m = e.message as { name?: string; params?: { target?: string; value?: string } };
-      return { name: String(m.name ?? ""), at: e.at, params: { target: m.params?.target, value: m.params?.value } };
+      const m = e.message as { id?: string; name?: string; params?: { target?: string; value?: string } };
+      const end = m.id ? ends.get(m.id) : undefined;
+      return {
+        name: String(m.name ?? ""), at: e.at, toolCallId: m.id,
+        params: { target: m.params?.target, value: m.params?.value },
+        ...(end ? { confirmedAt: end.at, ok: end.ok, executionFact: end.executionFact } : {}),
+      };
     });
 }
 
@@ -335,7 +349,7 @@ export async function runOne(
     const d = v - (hitsBefore[k] ?? 0);
     if (d > 0) hits[k] = d;
   }
-  const writes = fixture.writes().slice(writesBefore).map((w) => ({ kind: w.kind, page: w.page, values: w.values, at: w.at, result: "ok" as const }));
+  const writes = fixture.writes().slice(writesBefore).filter((w) => w.at >= startedAt).map((w) => ({ kind: w.kind, page: w.page, values: w.values, at: w.at, result: "ok" as const }));
 
   const evidence: RunEvidence = {
     caseId: jc.caseId,
@@ -343,8 +357,8 @@ export async function runOne(
     conversationId,
     runIds: extractRunIds(events.slice(eventsBefore), conversationId),
     deliveries,
-    receipts: extractReceipts(events.slice(eventsBefore)),
-    toolCalls: extractToolCalls(events.slice(eventsBefore)),
+    receipts: extractReceipts(events.slice(eventsBefore), conversationId),
+    toolCalls: extractToolCalls(events.slice(eventsBefore), conversationId),
     hits,
     writes,
     page,
@@ -357,6 +371,31 @@ export async function runOne(
   if (!verdict.qualified && status === "pass") {
     status = "fail";
     reason = verdict.checks.filter((c) => !c.ok).map((c) => `${c.id}:${c.detail}`).join(" | ");
+  }
+
+  // 臂末清理：会话仍在跑则主动终止并等终态；确认不了停止就重启 host，下一臂不复用污染状态
+  if (conversationId !== "reading-card") {
+    try {
+      const snap = env.host.current.manager.getTaskProgress(conversationId);
+      if (snap && (snap.state === "running" || snap.state === "paused")) {
+        interventions.forced += 1;
+        interventions.reasons.push("臂末清理：任务未自行结束，执行终止");
+        await env.host.current.manager.handleMessage({ type: "abort", conversationId } as never);
+        const stopDeadline = Date.now() + 10_000;
+        while (Date.now() < stopDeadline) {
+          const s2 = env.host.current.manager.getTaskProgress(conversationId);
+          if (!s2 || s2.state === "aborted" || s2.state === "idle" || s2.state === "error") break;
+          await sleep(200);
+        }
+        const finalSnap = env.host.current.manager.getTaskProgress(conversationId);
+        if (finalSnap && finalSnap.state === "running") {
+          interventions.reasons.push("臂末清理：终止未确认，重启 host 隔离");
+          await env.restartHost();
+        }
+      }
+    } catch (cleanupError) {
+      interventions.reasons.push(`臂末清理异常：${cleanupError instanceof Error ? cleanupError.message : cleanupError}`);
+    }
   }
 
   const lastDeliveryAt = (() => {
@@ -401,7 +440,14 @@ async function runPlannedStep(
     const base = events.length;
     await until(() => events.slice(base).some((e) => {
       if (step.after === "first-delivery") return eventKind(e) === "user_delivery";
-      if (step.after === "first-fill") return e.message.type === "tool_call" && (e.message as { name?: string }).name === "fill";
+      if (step.after === "first-fill") {
+        // 已确认写入：fill 调用 + 同 toolCallId 的 tool_end 且 ok/executed
+        const calls = new Set(events.slice(base).filter((x) => x.message.type === "tool_call" && (x.message as { name?: string }).name === "fill").map((x) => (x.message as { id?: string }).id));
+        return events.slice(base).some((x) => eventKind(x) === "tool_end"
+          && calls.has((x.message as { event?: { toolCallId?: string } }).event?.toolCallId)
+          && (x.message as { event?: { isError?: boolean; executionFact?: string } }).event?.isError === false
+          && (x.message as { event?: { executionFact?: string } }).event?.executionFact === "executed");
+      }
       return eventKind(e) === "tool_start" || e.message.type === "tool_call";
     }) || undefined, Math.max(10_000, deadline - Date.now()), `cue:${step.after}`);
   };

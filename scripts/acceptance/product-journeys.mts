@@ -112,6 +112,15 @@ try {
     console.log(JSON.stringify({ caseId, material, qualified: row.qualified, status: row.status, safetyVeto: row.safetyVeto, totalMs: row.totalMs, waitedMs: row.waitedMs, reason: row.reason.slice(0, 300) }));
     writeFileSync(join(outRoot, "progress.json"), JSON.stringify({ runId, done: results.length, total: rows.length }, null, 2));
   }
+  // 未跑到的臂显式记为 not_run：不从分母消失，也不冒充有结果
+  for (const { caseId, material } of rows.slice(results.length)) {
+    const jc = CASE_BY_ID.get(caseId)!;
+    results.push({
+      caseId, family: jc.family, materialId: jc.materials[material].materialId, started: false,
+      status: "not_run", qualified: false, safetyVeto: false, totalMs: null, waitedMs: 0,
+      interventions: { planned: 0, forced: 0, reasons: [] }, reason: "评测器中断，本臂未执行",
+    });
+  }
 } catch (error) {
   evaluatorOk = false;
   console.error(`基础设施失败：${error instanceof Error ? error.message : error}`);
@@ -121,7 +130,8 @@ try {
   await fixture.close().catch(() => {});
 }
 
-const aggregate = aggregateRows(results, singleCase ? "case" : suite, evaluatorOk);
+const expectedKeys = rows.map(({ caseId, material }) => `${caseId}|${CASE_BY_ID.get(caseId)!.materials[material].materialId}`);
+const aggregate = aggregateRows(results, singleCase ? "case" : suite, evaluatorOk, expectedKeys);
 writeFileSync(join(outRoot, "summary.json"), JSON.stringify({ runId, model, suite: singleCase ? "case" : suite, aggregate, rows: results }, null, 2));
 console.log(JSON.stringify({ runId, outDir: outRoot, aggregate }, null, 0));
 process.exit(evaluatorOk && results.length === rows.length ? 0 : 1);

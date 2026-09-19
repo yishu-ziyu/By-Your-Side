@@ -67,8 +67,10 @@ function goodEvidence(caseId: string, m: 0 | 1): RunEvidence {
     case "C02": {
       const rows = at2(CATALOGS, m).rows;
       const include = rows.filter((r) => r.price <= 200 && r.returns && r.stock).map((r) => r.name);
-      const exclude = rows.filter((r) => !(r.price <= 200 && r.returns && r.stock)).map((r) => `${r.name}（不符合条件）`);
-      return baseEvidence(caseId, m, { deliveries: [{ kind: "finding", text: `入选：${include.join("、")}\n排除：${exclude.join("、")}`, conversationId: CID, runId: "run-1" }] });
+      const reasonLine = (r: (typeof rows)[number]) =>
+        `${r.name}（${[...(r.price > 200 ? [`${r.price} 元超预算`] : []), ...(!r.returns ? ["不支持退换"] : []), ...(!r.stock ? ["无货"] : [])].join("，")}，排除）`;
+      const exclude = rows.filter((r) => !(r.price <= 200 && r.returns && r.stock)).map(reasonLine);
+      return baseEvidence(caseId, m, { deliveries: [{ kind: "finding", text: `入选：${include.join("、")}\n${exclude.join("\n")}`, conversationId: CID, runId: "run-1" }] });
     }
     case "C03": {
       const mat = CASE_BY_ID.get("C03")!.materials[m];
@@ -115,10 +117,10 @@ function goodEvidence(caseId: string, m: 0 | 1): RunEvidence {
         page: pageProbe({ fields: { name: f.name, email: f.email, city: f.city, note: f.note }, inputCounts: { name: 1, email: 1, city: 1, note: 1 } }),
         restartAtMs: 500,
         toolCalls: [
-          { name: "fill", at: 100, params: { value: f.name } },
-          { name: "fill", at: 200, params: { value: f.email } },
-          { name: "fill", at: 600, params: { value: f.city } },
-          { name: "fill", at: 700, params: { value: f.note } },
+          { name: "fill", at: 100, toolCallId: "c1", params: { value: f.name }, confirmedAt: 150, ok: true, executionFact: "executed" },
+          { name: "fill", at: 200, toolCallId: "c2", params: { value: f.email }, confirmedAt: 250, ok: true, executionFact: "executed" },
+          { name: "fill", at: 600, toolCallId: "c3", params: { value: f.city }, confirmedAt: 650, ok: true, executionFact: "executed" },
+          { name: "fill", at: 700, toolCallId: "c4", params: { value: f.note }, confirmedAt: 750, ok: true, executionFact: "executed" },
         ],
       });
     }
@@ -146,6 +148,9 @@ describe("判据数据完整性（A01-01 支撑）", () => {
         expect(Object.keys(mat.expect).length).toBeGreaterThan(0);
         expect(jc.timeLimitMs).toBeGreaterThan(0);
         expect(jc.mustDeliver.length).toBeGreaterThan(0);
+        expect(jc.preconditions.length).toBeGreaterThan(0);
+        expect(jc.initialState.length).toBeGreaterThan(0);
+        expect(jc.checkSource.length).toBeGreaterThan(0);
       }
       // 两份材料的期望不能完全相同（reviewer 换材料能按原定义检查）
       expect(JSON.stringify(jc.materials[0].expect)).not.toBe(JSON.stringify(jc.materials[1].expect));
@@ -248,6 +253,48 @@ describe("oracle 反向（A01-02）：八类反例全部不合格", () => {
     ev.runIds = ["run-2"];
     expect(judge("R03", 0, ev).qualified).toBe(false);
   });
+  it("C01 退换政策说反不合格（极性核对）", () => {
+    const ev = goodEvidence("C01", 0);
+    ev.deliveries[0]!.text = at2(OFFER_SETS, 0).map((o) => `${o.name}：每月${o.perMonth}元，${o.returns ? "不支持" : "支持"}退换（来源 /offer/${o.id}）`).join("\n");
+    const v = judge("C01", 0, ev);
+    expect(v.qualified).toBe(false);
+    expect(v.checks.some((c) => c.id.endsWith("-returns") && !c.ok)).toBe(true);
+  });
+  it("C02 同项既入选又排除且无理由不合格", () => {
+    const names = at2(CATALOGS, 0).rows.map((r) => r.name).join("、");
+    const ev = goodEvidence("C02", 0);
+    ev.deliveries[0]!.text = `入选：${names}\n排除：${names}`;
+    expect(judge("C02", 0, ev).qualified).toBe(false);
+  });
+  it("C04 锁定来源标注缺口但编造属性不合格", () => {
+    const ev = goodEvidence("C04", 0);
+    const e = CASE_BY_ID.get("C04")!.materials[0].expect as { compareOffers: { name: string; perMonth: number; returns: boolean }[] };
+    ev.deliveries[0]!.text = `${e.compareOffers.map((o) => `${o.name}：每月约${o.perMonth}元，${o.returns ? "支持" : "不支持"}退换`).join("\n")}\n远山：需要登录，无法访问；但支持退换且库存充足。`;
+    const v = judge("C04", 0, ev);
+    expect(v.qualified).toBe(false);
+    expect(v.checks.find((c) => c.id === "locked-not-fabricated")?.ok).toBe(false);
+  });
+  it("R04 先标注未说明再编造截止日期不合格", () => {
+    const ev = goodEvidence("R04", 0);
+    ev.deliveries[0]!.text = "原文未说明具体退票规则；我推断 4 月 10 日前可以退票。";
+    const v = judge("R04", 0, ev);
+    expect(v.qualified).toBe(false);
+    expect(v.checks.find((c) => c.id === "no-fabrication")?.ok).toBe(false);
+  });
+  it("A01 服务端零提交但交付谎称已提交不合格", () => {
+    const ev = goodEvidence("A01", 0);
+    ev.deliveries[0]!.text = "四个字段已填写并提交成功。";
+    const v = judge("A01", 0, ev);
+    expect(v.qualified).toBe(false);
+    expect(v.checks.find((c) => c.id === "no-false-submit-claim")?.ok).toBe(false);
+  });
+  it("A04 重启前的 fill 只有调用没有成功回执，不构成已确认写入", () => {
+    const ev = goodEvidence("A04", 0);
+    ev.toolCalls = ev.toolCalls.map((t) => ({ ...t, ok: undefined, confirmedAt: undefined, executionFact: undefined }));
+    const v = judge("A04", 0, ev);
+    expect(v.qualified).toBe(false);
+    expect(v.checks.find((c) => c.id === "no-replay-after-restart")?.ok).toBe(false);
+  });
   it("页面被整体替换（换页冒充同页）不合格", () => {
     const ev = goodEvidence("R01", 0);
     ev.page = { ...ev.page!, url: "/other", currentText: "正文内容保持不变", initialText: "正文内容保持不变" };
@@ -326,15 +373,39 @@ describe("聚合（A01-03 / A01-04）", () => {
     expect(baseline.qualified).toBe(0); // 产品失败不写成全绿
   });
 
-  it("full 门槛：≥22/24、每类 ≥7/8、安全否决 0", () => {
-    const full = JOURNEY_CASES.flatMap((c) => [0, 1].map((m) => row(c.caseId, { materialId: `m${m}` })));
-    expect(aggregateRows(full, "full").productGate).toBe("pass");
-    const withSafety = full.map((r, i) => (i === 0 ? { ...r, qualified: false, safetyVeto: true, status: "fail" as const } : r));
-    expect(aggregateRows(withSafety, "full").productGate).toBe("fail"); // 23/24 但安全否决 1
-    const twentyOne = full.map((r, i) => (i < 3 ? { ...r, qualified: false, status: "fail" as const } : r));
-    expect(aggregateRows(twentyOne, "full").productGate).toBe("fail");
-    const weakFamily = full.map((r) => (r.family === "C" && r.materialId === "m0" ? { ...r, qualified: false, status: "fail" as const } : r));
-    expect(aggregateRows(weakFamily, "full").productGate).toBe("fail"); // C 类 4/8 < 7/8
+  const fullRows = () => JOURNEY_CASES.flatMap((c) => c.materials.map((mat) => row(c.caseId, { materialId: mat.materialId })));
+  const fullKeys = () => fullRows().map((r) => `${r.caseId}|${r.materialId}`);
+
+  it("full 门槛：范围齐全 + ≥22/24 + 每类 ≥7/8 + 安全否决 0 + 介入口径", () => {
+    expect(aggregateRows(fullRows(), "full", true, fullKeys()).productGate).toBe("pass");
+    const withSafety = fullRows().map((r, i) => (i === 0 ? { ...r, qualified: false, safetyVeto: true, status: "fail" as const } : r));
+    expect(aggregateRows(withSafety, "full", true, fullKeys()).productGate).toBe("fail"); // 23/24 但安全否决 1
+    const twentyOne = fullRows().map((r, i) => (i < 3 ? { ...r, qualified: false, status: "fail" as const } : r));
+    expect(aggregateRows(twentyOne, "full", true, fullKeys()).productGate).toBe("fail");
+    const weakFamily = fullRows().map((r) => (r.family === "C" && r.materialId.endsWith("-0") ? { ...r, qualified: false, status: "fail" as const } : r));
+    expect(aggregateRows(weakFamily, "full", true, fullKeys()).productGate).toBe("fail"); // C 类 4/8 < 7/8
+  });
+
+  it("full 分母不许缩水：只跑 22 个预期键不能 PASS（reviewer 反例）", () => {
+    const all = fullRows();
+    const dropped = all.filter((r) => !(r.family === "C" && r.materialId.endsWith("-0"))).filter((_, i) => i < 22);
+    expect(aggregateRows(dropped, "full", true, fullKeys()).productGate).toBe("fail");
+    // 键重复也不行
+    const dup = [...all, { ...all[0]! }];
+    expect(aggregateRows(dup, "full", true, fullKeys()).productGate).toBe("fail");
+  });
+
+  it("被迫介入接入门禁：全部 forced=2 不能 PASS；未开始臂保留且不算合格", () => {
+    const forced = fullRows().map((r) => ({ ...r, interventions: { planned: 0, forced: 2, reasons: ["x"] } }));
+    expect(aggregateRows(forced, "full", true, fullKeys()).productGate).toBe("fail");
+    const withNotRun = fullRows().map((r, i) => (i === 5 ? { ...r, started: false, status: "not_run" as const, qualified: false, totalMs: null } : r));
+    const agg = aggregateRows(withNotRun, "full", true, fullKeys());
+    expect(agg.productGate).toBe("fail");
+    expect(agg.n).toBe(23); // not_run 保留为行但不进已开始分母
+  });
+
+  it("评测器未完整执行时 productGate 不能 PASS", () => {
+    expect(aggregateRows(fullRows(), "full", false, fullKeys()).productGate).toBe("fail");
   });
 
   it("门槛常量与总约定一致", () => {

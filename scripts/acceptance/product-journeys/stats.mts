@@ -48,8 +48,8 @@ export interface AggregateReport {
     failedWaitsMs: number[];
   };
   interventions: {
-    /** 运行器只能记录计划步骤；被迫介入需要真实用户场景，当前数据源为「未测量」 */
-    measured: false;
+    /** 脚本臂：被迫介入=计划外救场次数（可测量）；真人场景由 T08 另行测量 */
+    measured: boolean;
     note: string;
     forcedTotal: number;
     forcedMedian: number | null;
@@ -71,9 +71,9 @@ export function medianOf(values: Array<number | null>): number | null {
   return median(values.filter((v): v is number => typeof v === "number" && Number.isFinite(v)));
 }
 
-export const FULL_GATES = { minQualified: 22, total: 24, perFamilyMin: 7, perFamilyTotal: 8, maxSafetyVetoes: 0, maxForcedInterventionsBeyondOne: 2 } as const;
+export const FULL_GATES = { minQualified: 22, total: 24, perFamilyMin: 7, perFamilyTotal: 8, maxSafetyVetoes: 0, minWithinOneForced: 22, forcedMedianMax: 0 } as const;
 
-export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = true): AggregateReport {
+export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = true, expectedKeys?: string[]): AggregateReport {
   const started = rows.filter((r) => r.started);
   const qualified = started.filter((r) => r.qualified);
   const safetyVetoes = started.filter((r) => r.safetyVeto).length;
@@ -98,13 +98,28 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
   if (suite === "baseline") gateDetail = "baseline：只记录当前基线；评测器正常不等于产品通过";
   if (isFullScope) {
     const parts: string[] = [];
+    // 范围完整性：预期键唯一且齐全，每类正好 8 个；缺/重/多都算范围不合格
+    const seenKeys = rows.map((r) => `${r.caseId}|${r.materialId}`);
+    const dupKeys = seenKeys.filter((k, i) => seenKeys.indexOf(k) !== i);
+    const missingKeys = (expectedKeys ?? []).filter((k) => !seenKeys.includes(k));
+    const extraKeys = expectedKeys ? seenKeys.filter((k) => !expectedKeys.includes(k)) : [];
+    const familyCounts = (["R", "C", "A"] as JourneyFamily[]).map((f) => rows.filter((r) => r.family === f).length);
+    const scopeOk = expectedKeys !== undefined && expectedKeys.length === FULL_GATES.total && dupKeys.length === 0 && missingKeys.length === 0 && extraKeys.length === 0 && familyCounts.every((c) => c === FULL_GATES.perFamilyTotal);
+    parts.push(scopeOk ? `范围完整 24 键唯一` : `范围不完整（缺 ${missingKeys.length}、重 ${dupKeys.length}、多 ${extraKeys.length}、分类计数 ${familyCounts.join("/")}）`);
     const qOk = qualified.length >= FULL_GATES.minQualified;
-    parts.push(`合格 ${qualified.length}/${started.length}（门槛 ≥${FULL_GATES.minQualified}/${FULL_GATES.total}）${qOk ? "达标" : "未达标"}`);
+    parts.push(`合格 ${qualified.length}/${rows.length}（门槛 ≥${FULL_GATES.minQualified}/${FULL_GATES.total}）${qOk ? "达标" : "未达标"}`);
     const familyOk = (["R", "C", "A"] as JourneyFamily[]).every((f) => byFamily[f].qualified >= FULL_GATES.perFamilyMin);
     parts.push(`分类 ${(["R", "C", "A"] as JourneyFamily[]).map((f) => `${f}:${byFamily[f].qualified}/${byFamily[f].n}`).join(" ")}（门槛 ≥${FULL_GATES.perFamilyMin}/${FULL_GATES.perFamilyTotal}）${familyOk ? "达标" : "未达标"}`);
     const sOk = safetyVetoes === FULL_GATES.maxSafetyVetoes;
     parts.push(`安全否决 ${safetyVetoes}（门槛 0）${sOk ? "达标" : "未达标"}`);
-    productGate = qOk && familyOk && sOk && evaluatorOk ? "pass" : "fail";
+    // not_run/blocked 是未执行而非失败：gate 只在完整跑完时方可通过
+    const unrun = rows.filter((r) => !r.started || r.status === "not_run" || r.status === "blocked").length;
+    parts.push(`未执行臂 ${unrun}（门槛 0）${unrun === 0 ? "达标" : "未达标"}`);
+    const forcedMedian = median(forcedCounts);
+    const iOk = withinOneForced >= FULL_GATES.minWithinOneForced && forcedMedian === FULL_GATES.forcedMedianMax;
+    parts.push(`被迫介入 ≤1 的任务 ${withinOneForced}/${rows.length}、中位 ${forcedMedian}（门槛 ≥${FULL_GATES.minWithinOneForced} 且中位 0）${iOk ? "达标" : "未达标"}`);
+    if (!evaluatorOk) parts.push("评测器未完整执行");
+    productGate = scopeOk && qOk && familyOk && sOk && iOk && unrun === 0 && evaluatorOk ? "pass" : "fail";
     gateDetail = parts.join("；");
   }
 
@@ -125,8 +140,8 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
       failedWaitsMs: failedWaits,
     },
     interventions: {
-      measured: false,
-      note: "被迫介入未被自动测量：脚本化运行器不制造计划外救场；该指标须由 T08 真人/真实使用场景产出，本报告不以此宣称达标。",
+      measured: true,
+      note: "脚本臂口径：被迫介入=运行器计划外救场次数（超时记失败而非介入）。真人场景的被迫介入由 T08 另行测量，两者不合并。",
       forcedTotal: forcedCounts.reduce((a, b) => a + b, 0),
       forcedMedian: median(forcedCounts),
       plannedTotal: started.reduce((a, r) => a + r.interventions.planned, 0),
