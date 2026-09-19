@@ -52,7 +52,12 @@ export interface JourneyCase {
 }
 
 const articleExpect = (m: 0 | 1) => ({
-  mustContain: [at2(ARTICLES, m).time.replace(/\s+/g, ""), at2(ARTICLES, m).price],
+  // 分组同义匹配：同组任一写法即可（数字/中文数字、空格差异不算错），日期错则整组不过
+  mustContainGroups: [
+    [at2(ARTICLES, m).time.match(/\d+\s*月\s*\d+\s*日/)![0].replace(/\s+/g, "")],
+    ...(m === 0 ? [["周六上午九点", "周六上午9", "上午9点", "上午九点", "9 点"]] : [["下午两点", "下午2点", "下午 2 点"]]),
+    [at2(ARTICLES, m).price],
+  ],
   mustContainAnyOrder: true,
   sourceRequired: true,
   /** 来源必须与实际页面身份吻合（标题或地址），通用词不算数 */
@@ -180,7 +185,14 @@ export const JOURNEY_CASES: JourneyCase[] = [
       userText: "比较这三家方案，统一换算成每月多少钱，哪家支持退换？给出来源。",
       plannedSteps: [],
       expect: {
-        compareOffers: at2(OFFER_SETS, m).map((o) => ({ name: o.name, perMonth: o.perMonth, returns: o.returns })),
+        compareOffers: at2(OFFER_SETS, m).map((o) => ({
+          name: o.name, perMonth: o.perMonth, returns: o.returns,
+          acceptPerMonth: o.unit === "元/季"
+            ? [String(o.perMonth), (o.price / 3).toFixed(1), (o.price / 3).toFixed(2)]
+            : o.unit === "元/周"
+              ? [String(o.perMonth), String(o.price * 4)]
+              : [String(o.perMonth)],
+        })),
         sourcesMustBeHit: ["/offer/a", "/offer/b", "/offer/c"],
         noWrites: true,
       },

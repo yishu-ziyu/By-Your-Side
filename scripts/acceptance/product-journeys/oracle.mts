@@ -141,8 +141,11 @@ type Judge = (mat: JourneyMaterial, ev: RunEvidence) => CheckResult[];
 const JUDGES: Record<string, Judge> = {
   R01: (mat, ev) => {
     const text = norm(ownText(ev));
-    const must = (mat.expect.mustContain as string[]).map(norm);
-    const missing = must.filter((m) => !text.includes(m));
+    const groups = (mat.expect.mustContainGroups as string[][] | undefined) ?? [];
+    const must = groups.length ? groups.map((g) => g.map(norm)) : [(mat.expect.mustContain as string[]).map(norm)];
+    const missing = groups.length
+      ? must.map((variants, i) => (variants.some((v) => text.includes(v)) ? null : `第${i + 1}组(${variants[0]}等)`)).filter((x): x is string => !!x)
+      : must[0]!.filter((x) => !text.includes(x));
     const sourceMust = (mat.expect.sourceMustContain as string[] | undefined) ?? [];
     const sourceOk = sourceMust.some((s) => ownText(ev).includes(s));
     return [
@@ -329,13 +332,26 @@ function compareJudge(mat: JourneyMaterial, ev: RunEvidence): CheckResult[] {
     const hasMonth = accept.some((s) => text.includes(s));
     checks.push(check(`offer-${o.name}`, hasName && hasMonth,
       hasName && hasMonth ? `${o.name}：月度口径已给出` : `${o.name}：${!hasName ? "未提及" : "月度口径缺失或错误"}`));
-    // 退换政策必须与真实布尔值一致：取含该方案名的行，核对极性，说反/含糊都不行
-    const line = ownText(ev).split("\n").find((l) => l.includes(o.name)) ?? "";
-    const saysSupport = /支持(七天)?退换|可退换|七天无理由/.test(line) && !/不支持|不可退/.test(line);
-    const saysNoSupport = /不支持(七天)?退换|不可退换|不退换/.test(line);
-    const polarityOk = o.returns ? saysSupport : saysNoSupport;
+    // 退换政策必须与真实布尔值一致：任何含极性词的句段把该极性赋给它提到的名字（支持分组表述「X 和 Y 都支持」）
+    // 句段（。；换行）内若同时出现两种极性，按子句（，、）再拆，使「X 和 Y 都支持，Z 不支持」各归各
+    const segments = ownText(ev).split(/[\n。；;]/);
+    let supportClaimed = false, noSupportClaimed = false;
+    const NEG = /不支持|不可退换|不退换|没有退换/;
+    const POS = /(?<![不没])支持(七天)?退换|可退换|七天无理由/;
+    for (const seg of segments) {
+      if (!seg.includes(o.name)) continue;
+      const mixed = NEG.test(seg) && POS.test(seg);
+      const units = mixed ? seg.split(/[，、,]/).filter((u) => u.includes(o.name) && (NEG.test(u) || POS.test(u))) : [seg];
+      for (const u of units) {
+        const neg = NEG.test(u);
+        const pos = POS.test(u) && !neg;
+        if (pos) supportClaimed = true;
+        if (neg) noSupportClaimed = true;
+      }
+    }
+    const polarityOk = o.returns ? supportClaimed && !noSupportClaimed : noSupportClaimed && !supportClaimed;
     checks.push(check(`offer-${o.name}-returns`, polarityOk,
-      polarityOk ? `${o.name}：退换政策正确（${o.returns ? "支持" : "不支持"}）` : `${o.name}：退换政策${o.returns ? "应支持" : "应不支持"}，实际表述「${line.slice(0, 60)}」`));
+      polarityOk ? `${o.name}：退换政策正确（${o.returns ? "支持" : "不支持"}）` : `${o.name}：退换政策${o.returns ? "应支持" : "应不支持"}（支持表述${supportClaimed ? "有" : "无"}/否定表述${noSupportClaimed ? "有" : "无"}）`));
   }
   if (expect.sourcesMustBeHit) {
     const unvisited = expect.sourcesMustBeHit.filter((p) => !((ev.hits[p] ?? 0) > 0));

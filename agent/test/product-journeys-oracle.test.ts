@@ -468,3 +468,26 @@ describe("校准回归：合理表达不被误杀（v8 真实回答转正）", (
     expect(judge("C02", 0, ev).qualified).toBe(false);
   });
 });
+
+describe("校准回归：R01/C01 的合理转述（v9 真实回答转正）", () => {
+  it("R01 阿拉伯数字时间写法合格", () => {
+    const ev = goodEvidence("R01", 0);
+    ev.deliveries[0]!.text = "时间：4 月 18 日周六上午 9 点开场。票价：免费开放。来源：文章《山雾茶季记事》。";
+    expect(judge("R01", 0, ev).qualified).toBe(true);
+  });
+  it("R01 日期写错仍不合格", () => {
+    const ev = goodEvidence("R01", 0);
+    ev.deliveries[0]!.text = "时间：5 月 1 日上午 9 点。票价：免费开放。来源：文章《山雾茶季记事》。";
+    expect(judge("R01", 0, ev).qualified).toBe(false);
+  });
+  it("C01 分组表述退换政策（X 和 Y 都支持）合格", () => {
+    const ev = goodEvidence("C01", 0);
+    ev.deliveries[0]!.text = "海风方案约166.67元/月（500元/季），青松方案180元/月，远山方案约240元/月（60元/周）。退换方面，海风和青松都支持七天退换，远山明确不支持退换。";
+    expect(judge("C01", 0, ev).qualified).toBe(true);
+  });
+  it("C01 分组表述说反仍不合格", () => {
+    const ev = goodEvidence("C01", 0);
+    ev.deliveries[0]!.text = "海风约167元/月，青松180元/月，远山约240元/月。退换方面，远山和青松都支持七天退换，海风不支持退换。";
+    expect(judge("C01", 0, ev).qualified).toBe(false);
+  });
+});
