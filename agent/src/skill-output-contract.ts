@@ -29,9 +29,8 @@ export function deliverableContractInput(skill: Skill): DeliverableContractInput
 }
 
 /**
- * 校准（真实 Jev，scripts/acceptance/skill-output-contract-probe.mts，40 次调用）：
- * "这条要求只靠这份做法就能交付"的样本落在 .80–.92；带额外交付/操作/筛选/条件的样本 ≤.75。
- * 取 .80 能拒绝全部已测的额外要求；代价是措辞很短的窄请求有时压在门限上（宁可这次不学）。
+ * 学习门限独立于自动执行路由。问法必须描述真实的通用完成回执，
+ * 不能假设执行器会向用户呈现读到的页面内容。校准记录见集成验收。
  */
 export const DELIVERABLE_MIN = .80;
 const CALL_TIMEOUT_MS = 2000;
@@ -46,14 +45,15 @@ export async function judgeDeliverableContract(input: DeliverableContractInput, 
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     body: JSON.stringify({
       model: "jev-1.13.0",
-      state: { request: input.request, workflowActions: input.actions },
+      state: { request: input.request, workflowActions: input.actions,
+        userVisibleReply: "已完成，结果已核对。", reportsPageContents: false },
       questions: {
         workflow_only: {
           type: "noul",
-          instructions: "`request` is what the user asked for. `workflowActions` is everything the saved workflow does, and after doing it the app reports the result it verified. Would running `workflowActions` and reporting that verified result fully satisfy `request`? Answer yes when the request asks for those actions and for the outcome of doing them, however briefly it is worded. Answer no when the user also asks for data the actions do not produce (for example a membership level, a list, a translation), for another operation (exporting, sending, saving, annotating), or for a filter, scope or condition that the actions do not perform.",
+          instructions: "Would performing exactly `workflowActions` and showing ONLY `userVisibleReply` fully satisfy `request`? The reply is a generic completion acknowledgment. It NEVER reports page contents, search results, field values, lists, translations, or summaries, even if the workflow reads them privately to verify execution. A request to search and CHECK/VERIFY the result can be satisfied by doing the check and acknowledging completion. A request to TELL/SHOW/REPORT the result or any information from the page cannot: the generic acknowledgment does not deliver that information. Also reject extra operations, filters, scope changes or conditions not performed by workflowActions.",
           criteria: {
-            true: "Doing those actions and reporting the verified result satisfies the whole request, including a request to be told the outcome",
-            false: "The request also needs something those actions do not produce: extra data, another operation, a filter, scope or condition",
+            true: "Only the listed actions and their private verification are requested; a generic completion acknowledgment is enough",
+            false: "User needs page/result information in the reply, or an additional action/filter/scope/condition; a generic acknowledgment is insufficient",
           },
         },
       },
@@ -62,6 +62,6 @@ export async function judgeDeliverableContract(input: DeliverableContractInput, 
   if (!response.ok) throw new Error(`TypeSafe HTTP ${response.status}`);
   const raw = await response.json() as { answers?: Record<string, { noul?: number }> };
   const value = raw.answers?.workflow_only?.noul;
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("TypeSafe 未返回可用的判断");
-  return Math.min(1, Math.max(0, value));
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new Error("TypeSafe 未返回可用的判断");
+  return value;
 }

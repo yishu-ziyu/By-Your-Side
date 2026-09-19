@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { anchorFor, isSensitiveField, type DemoStep } from "../../shared/demo-record.js";
-import { forbiddenInSkill, normalizeSkillHost, type Skill, type SkillCandidate } from "../../shared/skill.js";
+import { SKILL_OUTPUT_CONTRACT_VERSION, forbiddenInSkill, normalizeSkillHost, type Skill, type SkillCandidate } from "../../shared/skill.js";
 import type { PageContext, ToolContract, ToolName } from "../../shared/protocol.js";
 import type { ElementExpectation } from "../../shared/element-state.js";
 import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
@@ -19,16 +19,14 @@ export interface SkillEvidence {
 const READ_ONLY = new Set(["snapshot", "read_element", "list_tabs", "get_active_tab", "screenshot", "network", "scroll"]);
 const SAFE_CLICK = /^(?:搜索|查询|查找|筛选|应用筛选|下一页|上一页|search|find|filter|apply filters|next page|previous page)$/i;
 
-/**
- * Restrict automatic replay to non-secret field edits and named, read-oriented controls.
- * An automatically learned skill must also have had its deliverable contract verified:
- * otherwise the saved steps only cover part of the request ("并告诉我会员等级"…) while a
- * generic completion receipt would claim the whole thing. Skills demonstrated by hand
- * carry no sourceRunId and are unaffected.
- */
+/** Automatic routing requires current output coverage, including for legacy demonstrations. */
 export function autoSkillEligible(skill: Skill): boolean {
+  return skill.learnedOutputContractVersion === SKILL_OUTPUT_CONTRACT_VERSION && hasReplayableWorkflow(skill);
+}
+
+/** Structural evidence can be checked before the separate output judgment certifies it. */
+function hasReplayableWorkflow(skill: Skill): boolean {
   if (!skill.check.expect || !skill.check.marker?.name || !skill.requestTemplate || skill.weakSteps || skill.droppedSteps) return false;
-  if (skill.sourceRunId && !skill.learnedOutputChecked) return false;
   if (validateCompiledSkill(skill)) return false;
   return skill.steps.every((step, index) => {
     if (step.redacted || step.weak) return false;
@@ -155,8 +153,8 @@ export class SkillLearningTrace {
     const hash = createHash("sha256").update(JSON.stringify({ hostname, template, steps: compiled.steps, check })).digest("hex").slice(0, 24);
     const skill = { ...compiled, id: `learned-${hash}`, sourceRunId: run.id };
     // 结构资格在这里判；"这条要求被做法完整覆盖"由学习收尾的语义判断决定，
-    // 通过后才置 learnedOutputChecked，之后 autoSkillEligible 才放行自动复用。
-    if (!autoSkillEligible(compiled)) return null;
+    // 通过后才置 learnedOutputContractVersion，之后 autoSkillEligible 才放行自动复用。
+    if (!hasReplayableWorkflow(compiled)) return null;
     return { skill, sourceRunId: run.id, createdAt: Date.now(), evidence: { toolCallIds: [...this.ids, proof.toolCallId], verifiedAt: Date.now(), actionCount: this.steps.length } };
   }
 }

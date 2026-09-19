@@ -27,10 +27,12 @@ const fixtures:Fixture[]=focused?[
   {text:'搜索「{{客户名}}」，地区「{{地区}}」，并告诉我会员等级。',expected:'extra'},
   {text:'搜索「{{客户名}}」，地区「{{地区}}」，完成后核对查询结果并列出全部结果。',expected:'extra'},
 ]:[
+  {text:acceptanceShaped,expected:'workflow-only'},
   {text:'搜索「{{客户名}}」，地区「{{地区}}」',expected:'workflow-only'},
   {text:'查一下客户「{{客户名}}」，地区「{{地区}}」',expected:'workflow-only'},
   {text:'帮我搜索「{{客户名}}」，地区「{{地区}}」',expected:'workflow-only'},
-  {text:'搜索客户「{{客户名}}」，地区「{{地区}}」，找到之后告诉我结果',expected:'workflow-only'},
+  // A generic completion acknowledgment does not tell the user the search results.
+  {text:'搜索客户「{{客户名}}」，地区「{{地区}}」，找到之后告诉我结果',expected:'extra'},
   {text:'搜索「{{客户名}}」，地区「{{地区}}」，并告诉我会员等级',expected:'extra'},
   {text:'搜索「{{客户名}}」，地区「{{地区}}」，列出全部结果',expected:'extra'},
   {text:'搜索「{{客户名}}」，地区「{{地区}}」，把说明翻译成英文',expected:'extra'},
@@ -50,10 +52,10 @@ try{
     const input=deliverableContractInput({...workflow,requestTemplate:f.text});
     const started=Date.now();
     let probability:number|null=null,error:string|null=null;
-    try{probability=await judgeDeliverableContract(input);liveCalls++;}
+    try{liveCalls++;probability=await judgeDeliverableContract(input);}
     catch(caught){error=caught instanceof Error?caught.message:String(caught);}
     const verdict=probability===null?'error':probability>=DELIVERABLE_MIN?'workflow-only':'extra';
-    const passed=f.expected==='extra'?verdict!=='workflow-only':verdict===f.expected;
+    const passed=verdict===f.expected;
     records.push({index,...f,input,probability,verdict,error,elapsedMs:Date.now()-started,passed});
     console.log(JSON.stringify({index,expected:f.expected,probability,verdict,elapsedMs:Date.now()-started,passed}));
   }

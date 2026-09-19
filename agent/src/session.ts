@@ -60,7 +60,7 @@ import { ExperienceRuntime, type ExperienceStore } from "./experience.js";
 import type { SkillStore } from "./skill-store.js";
 import { SkillLearningTrace, type SkillEvidence } from "./skill-learning.js";
 import { DELIVERABLE_MIN, deliverableContractInput, judgeDeliverableContract, type DeliverableContractJudge } from "./skill-output-contract.js";
-import { HIDDEN_MATERIAL, redactSkillMaterials, type Skill } from "../../shared/skill.js";
+import { SKILL_OUTPUT_CONTRACT_VERSION, HIDDEN_MATERIAL, redactSkillMaterials, type Skill } from "../../shared/skill.js";
 import { trySkillFastLoop, type SelectedSkillRun } from "./skill-fast-loop.js";
 import { programFirstGuidance } from "./program-first.js";
 
@@ -206,12 +206,12 @@ export class BrowserAgentSession {
    * 学习资格：这条要求必须被做法本身完整覆盖。判断不通过、超时或服务不可用时都不生成候选
    * （宁可这次不学，也不生成"只会查询却宣称完整交付"的可自动复用条目）。
    */
-  private async deliverableCoveredByWorkflow(skill: Skill): Promise<boolean> {
+  private async deliverableCoveredByWorkflow(skill: Skill): Promise<"covered" | "not_covered" | "unavailable"> {
     try {
       const probability = await this.deliverableJudge(deliverableContractInput(skill));
-      if (typeof probability !== "number" || !Number.isFinite(probability)) return false;
-      return Math.min(1, Math.max(0, probability)) >= DELIVERABLE_MIN;
-    } catch { return false; }
+      if (typeof probability !== "number" || !Number.isFinite(probability) || probability < 0 || probability > 1) return "unavailable";
+      return probability >= DELIVERABLE_MIN ? "covered" : "not_covered";
+    } catch { return "unavailable"; }
   }
   /** Called only after the current task has a real final delivery, including host makeup delivery. */
   async completeSkillLearning(runId: string): Promise<void> {
@@ -223,11 +223,14 @@ export class BrowserAgentSession {
     try {
       const candidate = this.skillLearning.finish(runId, true);
       if (!candidate) return;
-      if (!await this.deliverableCoveredByWorkflow(candidate.skill)) {
-        this.callbacks.emit({ kind: "notice", message: "这次要求里还有做法本身没覆盖的内容（例如另外的输出或操作），没有生成可自动复用的做法。" });
+      const coverage = await this.deliverableCoveredByWorkflow(candidate.skill);
+      if (coverage !== "covered") {
+        this.callbacks.emit({ kind: "notice", message: coverage === "unavailable"
+          ? "这次做法的完整性暂时无法核验，没有生成候选。任务结果不受影响。"
+          : "还不能确认这份做法覆盖整条要求，没有生成可自动复用的做法。" });
         return;
       }
-      candidate.skill.learnedOutputChecked = true;
+      candidate.skill.learnedOutputContractVersion = SKILL_OUTPUT_CONTRACT_VERSION;
       if (await this.skillStore.propose(candidate)) {
         this.callbacks.emit({ kind: "notice", message: "这次做法已有执行和核验记录，可在技能列表中查看并保存；尚未自动启用。" });
       }

@@ -108,7 +108,7 @@ describe("verified run to pending candidate", () => {
     const narrow = learningFixture().candidate()!;
     // 默认（还没做语义判断）不自动复用；只有学习收尾确认"做法覆盖整条要求"后才置位。
     const unverified = { ...narrow.skill } as typeof narrow.skill;
-    delete (unverified as { learnedOutputChecked?: unknown }).learnedOutputChecked;
+    delete (unverified as { learnedOutputContractVersion?: unknown }).learnedOutputContractVersion;
     expect(autoSkillEligible(unverified)).toBe(false);
     expect(autoSkillEligible(narrow.skill)).toBe(true);
   });

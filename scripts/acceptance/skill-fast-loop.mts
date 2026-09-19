@@ -68,6 +68,8 @@ globalThis.fetch=(async (input:any,init?:any)=>{
   const url=String(input?.url??input);
   const kind=url.includes('api.typesafe.ai')?'jev':/\/(?:chat\/completions|responses|messages)(?:\?|$)/.test(url)?'model':null;
   if(!kind)return realFetch(input,init);
+  const limit=Number(process.env[kind==='model'?'SIDEAGENT_ACCEPTANCE_MAX_MODEL_CALLS':'SIDEAGENT_ACCEPTANCE_MAX_JEV_CALLS']??Infinity);
+  if(network.filter(record=>record.kind===kind).length>=limit)throw new Error(`${kind} acceptance request budget exhausted`);
   const record={at:Date.now(),kind,elapsedMs:0,status:undefined as number|undefined};network.push(record);
   try{const response=await realFetch(input,init);record.status=response.status;return response;}finally{record.elapsedMs=Date.now()-record.at;}
 }) as typeof fetch;
@@ -78,7 +80,7 @@ const fixtureHtml=`<!doctype html><html lang="zh"><meta charset="utf-8"><title>�
 <label>地区 <input id="region" type="text" aria-label="地区"></label>
 <button id="search" type="button">搜索</button><p id="results" aria-label="查询结果" role="status">尚未查询</p>
 <script>window.actions=[];for(const id of ['customer','region'])document.getElementById(id).addEventListener('input',e=>window.actions.push({kind:'fill',field:id,value:e.target.value}));document.getElementById('search').onclick=()=>{const customer=document.getElementById('customer').value,region=document.getElementById('region').value;window.actions.push({kind:'search',customer,region});document.getElementById('results').textContent='客户：'+customer+'；地区：'+region;};</script></html>`;
-const sourcePaths=['agent/src/skill-fast-loop.ts','agent/src/skill-learning.ts','agent/src/skill-compile.ts','agent/src/skill-router.ts','agent/src/skill-judge.ts','agent/src/skill-store.ts','agent/src/session.ts','agent/src/conversation-manager.ts','agent/src/conversation-runtime.ts','agent/src/run-trace.ts','agent/src/program-first.ts','agent/src/tools.ts','agent/src/browser-program.ts','shared/skill.ts','shared/protocol.ts','extension/src/background/exec/read-element.ts','extension/src/sidepanel/main.ts','scripts/acceptance/skill-fast-loop.mts'];
+const sourcePaths=['agent/src/skill-output-contract.ts','agent/src/typesafe-auth.ts','agent/src/task-progress.ts','shared/task-view.ts','agent/src/skill-fast-loop.ts','agent/src/skill-learning.ts','agent/src/skill-compile.ts','agent/src/skill-router.ts','agent/src/skill-judge.ts','agent/src/skill-store.ts','agent/src/session.ts','agent/src/conversation-manager.ts','agent/src/conversation-runtime.ts','agent/src/run-trace.ts','agent/src/program-first.ts','agent/src/tools.ts','agent/src/browser-program.ts','shared/skill.ts','shared/protocol.ts','extension/src/background/exec/read-element.ts','extension/src/sidepanel/main.ts','scripts/acceptance/skill-fast-loop.mts'];
 const digests=()=>Promise.all(sourcePaths.map(async path=>[path,createHash('sha256').update(await readFile(path)).digest('hex')]));
 const report:any={passed:false,loopPassed:false,model,sourceDigests:Object.fromEntries(await digests()),scope:{realBrowser:true,realPanel:true,realMainModel:true,dailyExtensionTouched:false},runs:[],boundaries:[],bench:[],error:null};
 let panel='',target='',tab:any;
@@ -198,6 +200,17 @@ try{
     }
   }
   }
+  if(process.argv.includes('--output-boundary')){
+    const id=await freshConversation();await freshPage('extra-output');
+    const result=await runTask(id,'搜索「赵六」，地区「苏州」，找到之后告诉我结果。','extra-output');
+    assert(result.mainModelCalls>0,'a generic-completion skill must not swallow a requested answer');
+    assert(result.deliveries.some((d:any)=>d.kind==='finding'&&d.text.includes('赵六')&&d.text.includes('苏州')),'the actual answer must include the requested result');
+    // Learning qualification has a bounded 2s call after delivery. Let it settle before
+    // checking that a query-only candidate was not certified for this extra output.
+    await new Promise(resolve=>setTimeout(resolve,2500));
+    assert.equal((await skills.listCandidates()).length,0,'extra output must not become a generic-completion recipe');
+    report.outputBoundary={passed:true,runLabel:result.label};
+  }
   if(process.argv.includes('--bench')||benchOnly){
     // Same production tools in both arms. Only the program-first policy differs.
     // If baseline already batches, that is measured, not forced into a straw-man baseline.
@@ -229,7 +242,8 @@ finally{
   }
   report.sourceStable=JSON.stringify(report.sourceDigests)===JSON.stringify(Object.fromEntries(await digests()));
   report.passed=(benchOnly||report.loopPassed)&&!report.error&&report.sourceStable&&(!(process.argv.includes('--bench')||benchOnly)||report.benchSummary?.passed===true)
-    &&(!process.argv.includes('--boundaries')||report.boundaries.length===3&&report.boundaries.every((b:any)=>b.passed));
+    &&(!process.argv.includes('--boundaries')||report.boundaries.length===3&&report.boundaries.every((b:any)=>b.passed))
+    &&(!process.argv.includes('--output-boundary')||report.outputBoundary?.passed===true);
   if(!report.passed)process.exitCode=1;
   await writeFile(join(out,'report.json'),JSON.stringify(report,null,2));
   await writeFile(join(out,'events.json'),JSON.stringify(events,null,2));

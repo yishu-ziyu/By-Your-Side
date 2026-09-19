@@ -45,6 +45,8 @@ export interface SkillCheck {
   inputKeys?: string[];
 }
 
+export const SKILL_OUTPUT_CONTRACT_VERSION = 1;
+
 export interface Skill {
   id: string;
   name: string;
@@ -64,10 +66,10 @@ export interface Skill {
   /** The real completed run from which the user explicitly saved this skill. */
   sourceRunId?: string;
   /**
-   * 自动学习的技能：只有当这次要求被做法本身完整覆盖（语义判断通过）时才置位。
-   * 缺这一位的学习技能一律不自动复用，只能由用户显式选中执行。
+   * 当前交付规则的认证版本。旧规则认证与未认证的手动示范不自动路由；
+   * 用户仍可显式选中执行。规则版本变化后旧认证不能沿用。
    */
-  learnedOutputChecked?: true;
+  learnedOutputContractVersion?: number;
   lastRunAt?: number;
   /** 示范里有几步没记到对象名，编译时丢掉了（卡片要如实说明） */
   droppedSteps?: number;

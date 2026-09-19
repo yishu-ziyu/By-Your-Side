@@ -91,6 +91,18 @@ it("manual invalid inputs and version never query or write the browser", async (
   expect(h.page.rpc.call).not.toHaveBeenCalled(); expect(h.prompts).not.toHaveBeenCalled();
 });
 
+it.each([true, false])("an old output certificate cannot bypass current coverage (learned=$learned)", async learned => {
+  const h = await harness();
+  const template = "搜索「{{客户名}}」，地区「{{地区}}」，找到之后告诉我结果";
+  const legacy = { ...h.candidate.skill, requestTemplate: template, intent: template, sourceRunId: learned ? h.candidate.sourceRunId : undefined,
+    learnedOutputContractVersion: undefined, learnedOutputChecked: true };
+  await h.store.put(legacy);
+  await h.manager.dispatchTaskAction({ requestId: "legacy-output", conversationId: "default", source: "text", action: "start", expectedRunId: null,
+    text: "搜索「李四」，地区「深圳」，找到之后告诉我结果", context: skillPage });
+  await vi.waitFor(() => expect(h.prompts).toHaveBeenCalledOnce());
+  expect(h.page.writes).toHaveLength(0);
+});
+
 it("this run's materials reach the page but never appear in any public event or panel history", async () => {
   const h = await harness();
   const canary = "CANARY7f3a9b2cd41d";
@@ -205,11 +217,16 @@ it.each(["delivered", "superseded"] as const)("keeps verified learning bound to 
   expect(candidate.sourceRunId).toBe(h.manager.getTaskProgress("default")!.runId);
   expect(candidate.skill.inputs).toEqual({ 客户名: "", 地区: "" });
   // 只有"做法覆盖整条要求"被确认后，学习候选才带可自动复用的资格。
-  expect(candidate.skill.learnedOutputChecked).toBe(true);
+  expect(candidate.skill.learnedOutputContractVersion).toBe(1);
   expect(await h.store.list()).toEqual([]);
 });
 
-it("learning refuses to propose a candidate when the saved workflow does not cover the whole request", async () => {
+it.each([
+  { score: .2, notice: "没有生成可自动复用的做法" },
+  { score: 2, notice: "完整性暂时无法核验" },
+  { score: -.1, notice: "完整性暂时无法核验" },
+  { score: null, notice: "完整性暂时无法核验" },
+])("learning never certifies a rejected, invalid or unavailable judgment: $score", async ({ score, notice }) => {
   const h = await harness(); await h.store.forget(h.candidate.skill.id);
   let deliver!: (text: string) => void;
   vi.spyOn(h.wrapper, "composeUserDelivery").mockImplementation(() => new Promise(resolve => { deliver = resolve; }));
@@ -220,10 +237,10 @@ it("learning refuses to propose a candidate when the saved workflow does not cov
   h.sdkEvent({ type: "agent_end", messages: [] });
   await vi.waitFor(() => expect(deliver).toBeTypeOf("function"));
   // 判断：这条要求里"告诉我会员等级"不在做法的交付范围内。
-  h.wrapper.setDeliverableJudge(async () => .2);
+  h.wrapper.setDeliverableJudge(async () => { if (score === null) throw new Error("service unavailable"); return score; });
   deliver("已核对结果中的李四和深圳。");
   await vi.waitFor(() => expect(h.messages.some(message => message.type === "agent_event" && message.event.kind === "notice"
-    && message.event.message.includes("没有生成可自动复用的做法"))).toBe(true));
+    && message.event.message.includes(notice))).toBe(true));
   expect(await h.store.listCandidates()).toEqual([]);
   expect(await h.store.list()).toEqual([]);
 });

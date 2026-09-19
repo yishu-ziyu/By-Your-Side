@@ -211,7 +211,7 @@ export class SkillStore {
     const next: Skill = { ...existing, ...patch, version: existing.version + 1, updatedAt: now };
     // 内容/契约被替换后，"整条要求已被这份做法覆盖"的旧认证不再适用：
     // 重新示范出来的做法要等下一次真实收尾的语义判断，才能再自动复用。
-    delete (next as { learnedOutputChecked?: unknown }).learnedOutputChecked;
+    delete (next as { learnedOutputContractVersion?: unknown }).learnedOutputContractVersion;
     await this.put(next);
     return next;
   }

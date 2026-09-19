@@ -30,11 +30,11 @@ describe("技能存储", () => {
     const updated = await s.update(learned.id, { intent: "把结果导出成表格", name: "导出结果",
       steps: [{ kind: "click", anchor: { tag: "button", name: "导出" } }] });
     expect(updated?.version).toBe(2);
-    expect(updated?.learnedOutputChecked).toBeUndefined();
+    expect(updated?.learnedOutputContractVersion).toBeUndefined();
     expect(autoSkillEligible((await s.get(learned.id))!)).toBe(false);
     // 回退到归档的旧版本时，认证随被恢复的那一版一起回来（内容与认证本来就是一对）。
     const restored = await s.rollback(learned.id);
-    expect(restored?.learnedOutputChecked).toBe(true);
+    expect(restored?.learnedOutputContractVersion).toBe(1);
     expect(autoSkillEligible(restored!)).toBe(true);
   });
 

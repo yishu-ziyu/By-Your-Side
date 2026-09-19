@@ -1,3 +1,4 @@
+import { SKILL_OUTPUT_CONTRACT_VERSION } from "../../../shared/skill.js";
 import { SkillLearningTrace, type SkillEvidence } from "../../src/skill-learning.js";
 import type { ToolContract } from "../../../shared/protocol.js";
 
@@ -24,7 +25,7 @@ export function learningFixture(query = "张三", region = "北京", runId = "ru
   // (BrowserAgentSession.completeSkillLearning); the fixture stands in for that verified learn.
   const candidate = () => {
     const value = trace.finish(runId, true)!;
-    return value && { ...value, skill: { ...value.skill, learnedOutputChecked: true as const } };
+    return value && { ...value, skill: { ...value.skill, learnedOutputContractVersion: SKILL_OUTPUT_CONTRACT_VERSION } };
   };
   return { trace, events, candidate };
 }
