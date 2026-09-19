@@ -2,6 +2,34 @@
 
 当前进度只看[STATUS](STATUS.md)。本页保留不容易从单个函数或测试看出的因果约束；旧工作记录完整保存在[历史快照](history/20260913-notes-snapshot.md)。
 
+## 2026-09-19 独立 worktree 的技能快速复用
+
+技能编译器的临时目标也会进入既有结果账本。不同语义对象不能共用同一个 `[data-sideagent-target]`，否则第二个字段被当成第一个字段的重复填写；按语义对象分配标记，同一对象保留同一标记，不绕过去重。
+
+“程序返回”“页面读回成立”“最终结果交付”是三个时点。既有宿主可能在 agent_end 之后补交付，候选只能在同 runId、状态空闲、账本允许完整报告且有真实 finding 时收尾；新任务和改口不得继承旧轮的待完成学习。任意 JS 或未知写入仍阻止学习，只有宿主自己生成的只读轮询错误可以在新的成功读回后恢复候选资格。
+
+模型只用snapshot读结果时，唯一具名的status/alert节点可触发一次有时限的真实read_element来形成凭证，不能直接拿快照文字当凭证；多节点或只有输入框时不猜。改口后完成的残段不重新开始学习，避免保存成缺少前半段的“完整做法”。
+
+额外 program-first 提示的配对没有满足目标，暂时显式开关启用；不能以技能复用的低延迟证明首次执行策略有效。原始失败、修正计时边界及当前门槛见[验收](evals/20260919-skill-fast-loop.md)。
+
+验收必须连诊断目录一起隔离。本轮遗漏 `RunTrace` 默认目录导致日常 trace 轮转，未恢复旧日志；今后验收在构造会话前设置 `SIDEAGENT_TRACE_DIR`，Vitest 默认也是独立临时目录。会话/技能数据与诊断日志不要混称为同一种存储。
+
+## 2026-09-19 集成到主线期间的续接结论
+
+`codex/skill-loop-integration` 从 main `c57edb9` 合并 `52b593e`，无文本冲突，验收期间保持合并中、未提交；[集成验收](evals/20260919-skill-loop-integration.md)已更新，当前进度看 STATUS。
+
+路由的候选概率判断原本同时承担「是这份做法」和「材料齐全可执行」，缺材料请求下模型会压低它，于是 `needs_input` 被吞成 `no_match`。已拆出独立的 `clarify_i` 判断（非执行、门限 .85，非目标样本 ≤.33、缺材料样本 .88–.93）；执行门限仍为 .9，且澄清路径结构上不可能执行。以后不要把这两个判断重新合成一条。
+
+本树 `npm ci --ignore-scripts` 装不上 `rolldown` 的 arm64 原生绑定：lockfile 里 `@rolldown/binding-darwin-arm64` 只有 optionalDependencies 引用、没有包条目（npm 可选依赖已知问题）。正确修法是按 lock 的版本把平台绑定补进 `node_modules`；不要删锁文件或改依赖版本。
+
+受管沙箱下 headless Chrome for Testing 启动即 SIGABRT，真实隔离侧栏验收无法在本环境执行；不要用 `--no-sandbox` 之类绕开，也不要用手写 UI 自动化冒充该验收器。
+
+技能运行的材料不进公开面，但"公开面"有三条容易漏的边：①`invokeDisplayTool` 的顶层 `tool_start.params`；②`observeProgramStep` 的子步骤（`onStep` 绑在 `createBrowserTools` 的闭包上，直接 `tool.execute` 也会触发，所以顶层隐藏后 `fill value` / `read_element expect` 仍会漏）；③失败文本（RPC 错误会把材料写回 message）。前两条按白名单只发"对哪个对象做什么"，第三条用本次已知材料逐个替换成 `[本次材料已隐藏]`——保留"哪一步没完成"的事实，异常本体仍原样给私有执行判定。`tool_observation` 只进结果账本（`conversation-manager` 提前 return），不下发侧栏、不进 RunTrace；账本落盘的是结果项描述，不含读数原文。
+
+自动学习的资格必须是"这份做法能完整交付整条要求"，不能只看账本允许 report + 回执 satisfied：示范会编译出查询几步，用户在同一句里还要"告诉我会员等级/列出结果/导出"时，复用只会回通用完成回执却宣称完成。已用真实 Jev 判断（`skill-output-contract.ts`，门限 .80）在收尾时把这类请求挡在候选之外，并把认证写进 `learnedOutputChecked`：没这一位的学习技能不自动复用（手工示范技能不受影响），`SkillStore.update`（重新示范会整份替换步骤/凭证/程序）必须清掉旧认证，回退归档版本时认证随内容一起回来。门限 .80 的依据是 40 次真实调用：窄请求 .80–.92、带额外交付 ≤.75；短措辞窄请求会压在门限上，判不通过只是"这次不学"。
+
+本地模板匹配的"完整命中"必须要求槽位有终止边界：`(.+?)` 会把 `搜索李四，地区深圳后导出` 整段尾部当材料并给 confidence=1。现在的规则是槽位带引号、或模板里槽位后面还有字面文本，才走确定性直达；无引号的尾部槽位交完整语义判断。代价是未带引号的自由文本不再零模型直达，带引号的换材料路径仍是零模型（真实验收的 `搜索「李四」，地区「深圳」…` 不受影响）。
+
 ## 2026-09-19 记忆判断失败定位（MiniMax M3 期间）
 
 user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，不能混为「模型不行」：①插话到达即 `invalidateUserTurn`（session.ts 约 L884/L1253），会 abort 进行中的判断子调用，且 steer 通道从不重新 `beginUserTurn`（仅 sendUserMessage 路径），本轮剩余时间记忆写入必死；②同一回合 `turn.change` 同时缓存成功与失败（memory-runtime.ts：重试不能问到同意为止），同轮重试 2ms 返回旧失败；③判断子调用 15 秒硬超时（`AbortSignal.timeout(15_000)`），MiniMax-M3 `supportsReasoningEffort: false` 且无 thinkingLevelMap，思考压不下去，实测 15012ms 撞超时（deepseek-flash 的 minimal 映射为关思考，同类调用 4.9s 完成）；④底层 stopReason/errorMessage 在 session.ts 约 L442 被吞，界面只能说「记忆判断失败」。实测链（00:13–00:17）：插话后 6ms abort → 两次「当前记忆操作已失效」→ 用户点重试开新回合、M3 判断 15s 超时 → 同轮缓存失败 → 换 deepseek-flash 新回合 4.9s 成功。待裁决改进三点：超时按模型自适应或放宽；steer 后重新授权当轮重试；记录底层错误原因。证据 trace：`~/.sideagent/traces/1789745681628-dcc0bb06-236b-4d46-9015-7793aec002d6.jsonl`。

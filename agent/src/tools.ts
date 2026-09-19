@@ -21,6 +21,7 @@ import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, type ProgramStep } from "./browser-program.js";
+import type { SkillEvidence } from "./skill-learning.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
@@ -73,7 +74,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
   return typeof result === "boolean" ? { allowed: result } : result;
 }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void } }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -89,7 +90,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       `通用页面 JS 不可用：工具 ${missing.join("、")} 当前未启用，操作未执行。请改用 snapshot 或 read_element 观察页面。`,
     );
   };
-  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string) => {
+  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number): Promise<unknown> => {
     const scope = executionScope.getStore();
     const epoch = scope?.epoch;
     const signal = scope?.signal;
@@ -154,18 +155,46 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
       await takeTab(typeof callParams.tabId === "number" ? callParams.tabId : undefined);
     }
+    let target: ToolContract["read_element"]["data"] | undefined;
+    const learning = execution?.learning;
+    if (learning?.active() && (name === "fill" || name === "click") && typeof callParams.target === "string") {
+      // Observe the actual target, not a model-authored description. This is optional
+      // learning evidence; failure disables learning without inventing an anchor.
+      try {
+        if (canExecute && !canExecute("read_element")) throw new Error("目标观察不可用");
+        target = await call("read_element", { target: callParams.target, ...(typeof callParams.tabId === "number" ? { tabId: callParams.tabId } : {}) }, programId, `${sdkId ?? "skill-observation"}/anchor`) as ToolContract["read_element"]["data"];
+      } catch {
+        learning.observe({ toolCallId: sdkId ?? "", name, params: {}, error: "未取得稳定目标证据，不生成技能" });
+      }
+      // The read above is an await boundary: recheck control and task state before writing.
+      assertNotAborted();
+      if (staleStep()) { rejectCall(); throw new Error("用户已修改要求，旧步骤未执行。"); }
+      assertCall(callParams);
+    }
     // 获准或页面移交的 await 返回后，取消信号仍可能先于 RPC 到达。
     assertNotAborted();
     const invoke = (executionEpoch?: number) => {
       // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
       if (sdkId === undefined) {
-        if (executionEpoch !== undefined) return rpc.call(name, callParams, undefined, sid, programId, executionEpoch);
-        return programId ? rpc.call(name, callParams, undefined, sid, programId) : rpc.call(name, callParams, undefined, sid);
+        if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch);
+        return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId) : rpc.call(name, callParams, rpcTimeoutMs, sid);
       }
-      return rpc.call(name, callParams, undefined, sid, programId, executionEpoch, sdkId);
+      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId);
     };
-    if (execution && requiresControlGate(name, params)) return invoke(epoch);
-    return invoke(undefined);
+    try {
+      const result = await invoke(execution && requiresControlGate(name, params) ? epoch : undefined);
+      const verify = origin !== "readonly-poll" ? learning?.observe({ toolCallId: sdkId ?? "", name, params: callParams, result, target }) : undefined;
+      if (name === "snapshot" && verify) {
+        // One bounded, read-only observation using the same tool/control chain.
+        // An absent/stale result node disables learning, never fails the user's snapshot.
+        try { await call("read_element", { ...verify }, programId, `${sdkId ?? "skill"}/proof`, undefined, 1500); }
+        catch { /* failed read already cleared the learning proof */ }
+      }
+      return result;
+    } catch (error) {
+      learning?.observe({ toolCallId: sdkId ?? "", name, params: {}, origin, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   };
 
   const definitions = [
@@ -241,7 +270,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // playwright 模式在发起这一刻锁定任务缺省页；程序第一步还会用 list_tabs 读一次绑定页。
         const pageTabId = api === "playwright" ? rpc.getPageTarget?.(sid) ?? null : null;
         const result = await runBrowserProgram({ code: params.code, api, pageTabId,
-          call: (name, args, stepId) => call(name, args, id, stepId), signal, id,
+          call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
         });

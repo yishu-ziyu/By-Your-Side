@@ -90,7 +90,7 @@ export class RunTrace {
   private closed = false;
   private dropped = 0;
 
-  constructor(private readonly directory = join(homedir(), ".sideagent", "traces"), private readonly maxBytes = 8 * 1024 * 1024) {
+  constructor(private readonly directory = process.env.SIDEAGENT_TRACE_DIR || join(homedir(), ".sideagent", "traces"), private readonly maxBytes = 8 * 1024 * 1024) {
     this.path = join(directory, `${Date.now()}-${this.sessionId}.jsonl`);
   }
 

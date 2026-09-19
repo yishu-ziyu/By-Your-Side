@@ -17,7 +17,7 @@ import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-action
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, Play } from "lucide";
 import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
-import { skillHealth, skillRunSummary, skillStepsText, type Skill, type SkillRun } from "../../../shared/skill.js";
+import { skillHealth, skillRunSummary, skillStepsText, sensitiveSkillInput, type Skill, type SkillRun, type SkillCandidate } from "../../../shared/skill.js";
 import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
 import { describeAnchor } from "../../../shared/skill.js";
 import {
@@ -1228,6 +1228,7 @@ let redoSkillId: string | null = null;
 let redoSkillVersion: number | null = null;
 let skillRequest = "";
 let skillEntries: Array<{ skill: Skill; runs: SkillRun[] }> = [];
+let learnedCandidates: SkillCandidate[] = [];
 
 // ── 知识抽屉：技能与记忆一个入口（方案一：摘要 + 展开） ──────────────
 // 默认只露「名字 + 事实行 + 一个主按钮」；凭证、步骤、脚本、其余动作收进一次展开。
@@ -1259,9 +1260,11 @@ function setKnowledgeSegment(segment: "skills" | "memory"): void {
 }
 
 async function refreshSkills(): Promise<void> {
+  const conversationId = selectedConversationId;
   const hostname = await currentHostname();
+  if (conversationId !== selectedConversationId) return;
   skillRequest = crypto.randomUUID();
-  send({ type: "skill_list", requestId: skillRequest, ...(hostname ? { hostname } : {}) });
+  send({ type: "skill_list", conversationId, requestId: skillRequest, ...(hostname ? { hostname } : {}) });
   port?.postMessage({ kind: "observe", action: "list", conversationId: selectedConversationId } satisfies PanelToBg);
 }
 
@@ -1338,8 +1341,48 @@ function renderObserve(): void {
 
 /** 技能行：摘要 + 展开。过期的技能主按钮变短，点下去先就地确认。 */
 function renderSkills(): void {
+  const editing = skillList.querySelector<HTMLFormElement>(".skill-run-inputs");
+  if (editing) {
+    // A late list refresh must not discard values the user has begun typing.
+    // Keep the existing row and its handlers; a changed version disables execution.
+    const current = skillEntries.find(entry => entry.skill.id === editing.dataset.skillId)?.skill;
+    if (!current || String(current.version) !== editing.dataset.skillVersion) {
+      const submit = editing.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (submit) { submit.disabled = true; submit.textContent = "做法已变化，请重新打开后核对"; }
+    }
+    return;
+  }
   skillList.replaceChildren();
-  if (skillEntries.length === 0) {
+  for (const candidate of learnedCandidates) {
+    const card = document.createElement("div");
+    card.className = "observe-card";
+    card.dataset.skillCandidate = candidate.skill.id;
+    const title = document.createElement("p");
+    title.textContent = `${candidate.skill.name.replace(/\{\{([^{}]+)\}\}/g, "〔$1〕")} · 待你确认保存`;
+    const facts = document.createElement("p");
+    facts.className = "row-facts";
+    facts.textContent = `${candidate.evidence.actionCount} 步已执行并核对结果；尚未启用，不保存输入内容。`;
+    const detail = document.createElement("details");
+    detail.className = "disc";
+    const summary = document.createElement("summary"); summary.textContent = "查看做法与完成条件";
+    const body = document.createElement("div"); body.className = "disc-body";
+    for (const text of [...skillStepsText(candidate.skill), candidate.skill.check.text]) {
+      const line = document.createElement("p"); line.textContent = text; body.appendChild(line);
+    }
+    detail.append(summary, body);
+    const actions = document.createElement("div"); actions.className = "row-actions";
+    const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "保存这份做法";
+    const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.className = "btn ghost"; dismiss.textContent = "不用保存";
+    const decide = (type: "skill_candidate_save" | "skill_candidate_dismiss") => {
+      skillRequest = crypto.randomUUID(); save.disabled = true; dismiss.disabled = true;
+      if (!send({ type, requestId: skillRequest, id: candidate.skill.id, sourceRunId: candidate.sourceRunId })) {
+        save.disabled = false; dismiss.disabled = false;
+      }
+    };
+    save.onclick = () => decide("skill_candidate_save"); dismiss.onclick = () => decide("skill_candidate_dismiss");
+    actions.append(save, dismiss); card.append(title, facts, detail, actions); skillList.appendChild(card);
+  }
+  if (skillEntries.length === 0 && learnedCandidates.length === 0) {
     const empty = document.createElement("p");
     empty.className = "memory-quiet";
     empty.textContent = transportConnected
@@ -1379,7 +1422,7 @@ function renderSkills(): void {
         yes.type = "button";
         yes.className = "btn";
         yes.textContent = "确认跑一次";
-        yes.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; startSkillRun(skill, runBtn); };
+        yes.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; startSkillRun(skill, runBtn, undefined, true); };
         const no = document.createElement("button");
         no.type = "button";
         no.className = "btn ghost";
@@ -1496,11 +1539,39 @@ function renderSkills(): void {
   }
 }
 
-function startSkillRun(skill: Skill, button: HTMLButtonElement): void {
+function startSkillRun(skill: Skill, button: HTMLButtonElement, inputs?: Record<string, string>, allowStale = false): void {
+  const keys = Object.keys(skill.inputs);
+  if (keys.length && inputs === undefined) {
+    const row = button.closest(".row");
+    if (!row || row.querySelector(".skill-run-inputs")) return;
+    const form = document.createElement("form"); form.className = "skill-run-inputs disc-body";
+    form.dataset.skillId = skill.id; form.dataset.skillVersion = String(skill.version);
+    const fields = new Map<string, HTMLInputElement>();
+    const hint = document.createElement("p"); hint.textContent = "这次用什么材料？修改只对本次生效。"; form.appendChild(hint);
+    for (const key of keys) {
+      const label = document.createElement("label"); label.textContent = key;
+      const input = document.createElement("input");
+      const sensitive = sensitiveSkillInput(skill, key);
+      input.type = sensitive ? "password" : "text"; input.autocomplete = "off"; input.maxLength = 8000;
+      input.value = sensitive ? "" : skill.inputs[key]!; input.required = sensitive || !input.value;
+      label.appendChild(input); form.appendChild(label); fields.set(key, input);
+    }
+    const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn primary"; submit.textContent = "用这些材料执行";
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "btn ghost"; cancel.textContent = "取消"; cancel.onclick = () => { form.remove(); renderSkills(); };
+    form.append(submit, cancel);
+    form.onsubmit = event => {
+      event.preventDefault();
+      const values = Object.fromEntries([...fields].map(([key, input]) => [key, input.value]));
+      fields.forEach(input => { input.value = ""; }); form.remove(); startSkillRun(skill, button, values, allowStale);
+    };
+    row.appendChild(form); fields.values().next().value?.focus(); return;
+  }
   button.disabled = true;
   button.textContent = "跑着…";
   skillRequest = crypto.randomUUID();
-  send({ type: "skill_run", requestId: skillRequest, id: skill.id, expectedVersion: skill.version });
+  if (!send({ type: "skill_run", requestId: skillRequest, id: skill.id, expectedVersion: skill.version, inputs, allowStale })) {
+    button.disabled = false; button.textContent = "照上次那样跑";
+  }
 }
 
 segSkills.onclick = () => setKnowledgeSegment("skills");
@@ -2845,13 +2916,21 @@ function handleServerMessage(raw: string): void {
     return;
   }
   if (msg.type === "skill_result") {
+    if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
     if (msg.action === "list" && msg.ok) {
+      if (msg.requestId !== skillRequest) return;
       skillEntries = (msg.skills ?? []).map(skill => ({ skill, runs: msg.runs?.[skill.id] ?? [] }));
+      learnedCandidates = msg.candidates ?? [];
       renderSkills();
       return;
     }
+    if (msg.action === "candidate_save" || msg.action === "candidate_dismiss") {
+      if (msg.requestId !== skillRequest) return;
+      addMsg(msg.ok ? "msg" : "msg error", !msg.ok ? `没有保存更改：${msg.error}` : msg.action === "candidate_save" ? "做法已保存，下次同类任务会先检查能否直接复用。" : "这份做法不会保存，也不会自动执行。");
+      void refreshSkills(); return;
+    }
     if (msg.action === "run" && msg.requestId === skillRequest) {
-      if (!msg.ok || !msg.run) { addMsg("msg error", `这次没跑成：${msg.error ?? "未知原因"}`); return; }
+      if (!msg.ok || !msg.run) { addMsg("msg error", `这次没跑成：${msg.error ?? "未知原因"}`); void refreshSkills(); return; }
       const outcome = msg.run;
       addMsg(outcome.ok ? "msg" : "msg error", outcome.ok
         ? `照上次那样跑完了：${outcome.steps} 步 · ${Math.max(0.1, outcome.elapsedMs / 1000).toFixed(1)} 秒。`

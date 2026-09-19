@@ -10,7 +10,7 @@ import {isWriteTool} from "../../shared/control.js";
 import {requiresControlGate} from "../../shared/effect-policy.js";
 import {LEAD_SESSION_ID} from "../../shared/protocol.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
-import {randomUUID} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import {ProductContext} from "./product-context.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
@@ -56,6 +56,12 @@ import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MemoryRuntime } from "./memory-runtime.js";
 import { ExperienceRuntime, type ExperienceStore } from "./experience.js";
+import type { SkillStore } from "./skill-store.js";
+import { SkillLearningTrace, type SkillEvidence } from "./skill-learning.js";
+import { DELIVERABLE_MIN, deliverableContractInput, judgeDeliverableContract, type DeliverableContractJudge } from "./skill-output-contract.js";
+import { HIDDEN_MATERIAL, redactSkillMaterials, type Skill } from "../../shared/skill.js";
+import { trySkillFastLoop, type SelectedSkillRun } from "./skill-fast-loop.js";
+import { programFirstGuidance } from "./program-first.js";
 
 export interface SessionAcceptanceContinuityEvidence {
   instanceId: string;
@@ -96,7 +102,7 @@ export class AcceptanceContinuity {
 }
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
-export interface UserInputOptions { pageObservation?: "on-demand" }
+export interface UserInputOptions { pageObservation?: "on-demand"; selectedSkill?: SelectedSkillRun }
 
 /** Reusable display execution result. `executed` says whether a page write may have landed. */
 export type DisplayExecutionFact='not_executed'|'executed'|'unknown';
@@ -139,6 +145,7 @@ export interface SessionCreateOptions {
   /** Product-owned personal memory. Omit for workers and synthetic sessions. */
   memoryStore?: MemoryStore;
   experienceStore?: ExperienceStore;
+  skillStore?: SkillStore;
   conversationId?: string;
   /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
   memberId?: string;
@@ -187,10 +194,54 @@ export interface SessionCallbacks {
 }
 
 export class BrowserAgentSession {
+  private skillStore: SkillStore | undefined;
+  private readonly skillLearning = new SkillLearningTrace();
+  isLearningSkillRun(): boolean { return !!this.skillStore && this.skillLearning.active(); }
+  observeSkillEvidence(event: SkillEvidence): ReturnType<SkillLearningTrace["observe"]> { return this.skillLearning.observe(event); }
+  private deliverableJudge: DeliverableContractJudge = judgeDeliverableContract;
+  /** 只给测试/验收注入确定判断用；生产默认走 TypeSafe。 */
+  setDeliverableJudge(judge: DeliverableContractJudge): void { this.deliverableJudge = judge; }
+  /**
+   * 学习资格：这条要求必须被做法本身完整覆盖。判断不通过、超时或服务不可用时都不生成候选
+   * （宁可这次不学，也不生成"只会查询却宣称完整交付"的可自动复用条目）。
+   */
+  private async deliverableCoveredByWorkflow(skill: Skill): Promise<boolean> {
+    try {
+      const probability = await this.deliverableJudge(deliverableContractInput(skill));
+      if (typeof probability !== "number" || !Number.isFinite(probability)) return false;
+      return Math.min(1, Math.max(0, probability)) >= DELIVERABLE_MIN;
+    } catch { return false; }
+  }
+  /** Called only after the current task has a real final delivery, including host makeup delivery. */
+  async completeSkillLearning(runId: string): Promise<void> {
+    const snapshot = this.conversationSnapshot();
+    const delivered = snapshot?.conversationContext?.latestDelivery;
+    if (!this.skillStore || runId !== this.deliveryRunId() || snapshot?.runId !== runId || snapshot.state !== "idle"
+      || snapshot.nextStep?.delivery !== "report" || delivered?.kind !== "finding" || delivered.runId !== runId
+      || (snapshot.results ?? []).some(item => item.status !== "satisfied")) return;
+    try {
+      const candidate = this.skillLearning.finish(runId, true);
+      if (!candidate) return;
+      if (!await this.deliverableCoveredByWorkflow(candidate.skill)) {
+        this.callbacks.emit({ kind: "notice", message: "这次要求里还有做法本身没覆盖的内容（例如另外的输出或操作），没有生成可自动复用的做法。" });
+        return;
+      }
+      candidate.skill.learnedOutputChecked = true;
+      if (await this.skillStore.propose(candidate)) {
+        this.callbacks.emit({ kind: "notice", message: "这次做法已有执行和核验记录，可在技能列表中查看并保存；尚未自动启用。" });
+      }
+    } catch {
+      this.callbacks.emit({ kind: "notice", message: "本次结果已保留，但候选做法未能保存。" });
+    }
+  }
   private activeGoal:string|null=null;
   private displayAbort:AbortController|null=null;
   private steerDisplayAbort:AbortController|null=null;
   private authorizedDisplayCall:string|null=null;
+  /** >0 表示正在跑技能自带程序：子步骤对外事件只发脱敏形状。 */
+  private skillProgramDepth=0;
+  /** 正在跑的技能程序本次材料：公开/持久化的文本里出现就直接替换，不靠猜测。 */
+  private skillMaterials: string[]=[];
   private displayScopeBlockedRun:string|null=null;
   private displayWork:Promise<void>|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[]}>=[];
@@ -214,12 +265,20 @@ export class BrowserAgentSession {
   /** 直接工具调用的参数暂存，用于只读读数事件（tool_execution_end 不带 args）。 */
   private readonly toolArgs = new Map<string, Record<string, unknown>>();
   bindConversationContext(snapshot:()=>TaskProgressSnapshot|null):void { this.conversationSnapshot = snapshot; this.productContext?.bind(snapshot); }
+  /**
+   * browser_run 子步骤对外事件。技能程序把本次材料内联在参数里（fill value、read_element expect…），
+   * 运行期间只发脱敏形状；执行仍用真实参数，账本照旧登记对象与结果。
+   */
   observeProgramStep(step: ProgramStep): void {
-    if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
+    const hidden = this.skillProgramDepth > 0;
+    if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:hidden?hiddenProgramParams(step.params):step.params,
+      ...(hidden&&step.name==='fill'&&typeof step.params.value==='string'?{valueHash:createHash('sha256').update(step.params.value).digest('hex')}:{})});
     else {
       this.callbacks.emit({kind:'tool_end',toolCallId:step.id,name:step.name,isError:!!step.error,
         executionFact:this.rpc?.getExecutionFact(step.id),
-        resultText:step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX))});
+        resultText:hidden?this.publicText(step.error??''):step.error ?? (step.name==='screenshot'?'Screenshot captured; image attached to program result.':(JSON.stringify(step.result)??'undefined').slice(0,RESULT_TEXT_MAX))});
+      // 读数只进结果账本（tool_observation 不下发侧栏），因此这里仍用真实参数与结果做前后对比，
+      // 面板可见的只有上面那条脱敏后的 tool_end。
       this.emitReadObservation(step.id,step.name,step.params,step.result,!!step.error);
     }
   }
@@ -227,6 +286,8 @@ export class BrowserAgentSession {
   private durableTaskSnapshot(snapshot:TaskProgressSnapshot):TaskProgressSnapshot {
     return {...snapshot,observedAt:0,active:[],lastAction:null};
   }
+  /** 技能运行期间的公开文本。 */
+  private publicText(text:string):string{return this.skillMaterials.length?redactSkillMaterials(text,this.skillMaterials):text;}
   /** One append is the acceptance boundary: checkpoint + required image bytes become recoverable together. */
   persistAcceptedTask(snapshot:TaskProgressSnapshot,attachments?:Attachment[]):void {
     if(this.checkpointReadFailed||!this.session?.sessionManager)throw new Error('任务会话存储不可用');
@@ -544,6 +605,7 @@ export class BrowserAgentSession {
       memoryHost = session;
       const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
       resultHost = wrapper;
+      wrapper.skillStore = options?.skillStore;
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.voiceConversationId = options?.conversationId ?? null;
       deliveryEmit.current = event => wrapper.emitValidatedDelivery(event);
@@ -713,7 +775,7 @@ export class BrowserAgentSession {
       const reply = `${finalText}\n\n[Conversation reply: respond to the user's message. The page is background context, not a request for a page summary or a new task. Use tools if needed to answer the actual question.]`;
       void session.prompt(reply, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
     } else {
-      const work=this.promptWithFreshPageObservation(session, finalText, context, images);
+      const work=this.promptWithFreshPageObservation(session, finalText, context, images, true, inputOptions?.selectedSkill);
       if(this.displayAbort)this.displayWork=work;
       void work.catch((err: unknown) => this.emitError(err)).finally(()=>{if(this.displayWork===work)this.displayWork=null;});
     }
@@ -729,8 +791,52 @@ export class BrowserAgentSession {
     context: PageContext | undefined,
     images: SessionImageContent[],
     allowDisplay=true,
+    selectedSkill?: SelectedSkillRun,
   ): Promise<void> {
-    if(allowDisplay&&displayFastPathEnabled()&&context&&!context.selection&&!images.length&&this.explicitDelivery&&this.modeState?.value==='act'){
+    let skillFallback = "";
+    const allowDisplayPath = allowDisplay && displayFastPathEnabled() && context && !context.selection && !images.length
+      && this.explicitDelivery && this.modeState.value === "act";
+    if (allowDisplay && this.skillStore && context && !context.selection && !images.length && this.explicitDelivery && this.modeState.value === "act") {
+      const controller = new AbortController(); this.displayAbort = controller;
+      const epoch = this.controlEpoch, runId = this.deliveryRunId();
+      const current = () => !controller.signal.aborted && epoch === this.controlEpoch && runId === this.deliveryRunId() && !this.hold.isHeld();
+      this.skillLearning.cancel();
+      this.callbacks.setStatus("running"); this.callbacks.emit(this.startEvent());
+      try {
+        const result = await trySkillFastLoop({ store: this.skillStore, rpc: this.rpc!, request: this.activeGoal ?? finalText, context,
+          signal: controller.signal, current, selected: selectedSkill,
+          execute: async (name, params, display) => await this.invokeDisplayTool(session, name, params, controller.signal, current, () => {}, display) as { details?: unknown },
+          notice: message => this.callbacks.emit({ kind: "notice", message }),
+        });
+        this.runTrace.record("skill_fast_path", { kind: result.kind, ...(result.kind === "miss" ? { reason: result.reason } : {}) });
+        if (!current() || result.kind === "stopped") return;
+        if (result.kind === "done") {
+          const text = result.outcome.ok
+            ? `已完成 · 使用「${result.skillName}」· ${(result.outcome.elapsedMs / 1000).toFixed(1)} 秒，结果已核对。`
+            : `这次技能没有确认完成：${result.outcome.error ?? "请核对页面"}`;
+          try {
+            await this.invokeDisplayTool(session, "send_user_message", { kind: "finding", outcome: result.outcome.ok ? "complete" : "partial", content: text }, controller.signal, current, () => {});
+            this.deliveredResultThisRun = true;
+            await session.sendCustomMessage({ customType: "skill-fast-path-result", content: `用户请求：${this.activeGoal}\n${text}`, display: false });
+          } catch (error) { if (current()) this.callbacks.emit({ kind: "error", message: error instanceof Error ? error.message : "技能结果交付失败" }); }
+          finally {
+            if (current()) { this.callbacks.setStatus("idle"); this.callbacks.emit({ kind: "agent_end" }); }
+            // No primary-model experience extraction after a zero-model replay.
+            this.experience?.finish({ extract: false });
+          }
+          return;
+        }
+        if (result.kind === "fallback") {
+          this.callbacks.emit({ kind: "notice", message: "已停止这次技能执行，我重新查看页面；不会盲目从头重跑。" });
+          skillFallback = "\n[The saved skill stopped or its result was not verified. Some steps may already have executed. Read the current page and task ledger before continuing; never replay completed or unknown writes. No success has been reported.]";
+        }
+      } finally { if (this.displayAbort === controller) this.displayAbort = null; }
+      // Preserve the active fast-path work while handing over to the existing
+      // display path, so stop/takeover do not see a falsely idle session.
+      if (!allowDisplayPath) this.displayWork = null;
+      if (!current()) return;
+    }
+    if(allowDisplayPath){
       const controller=new AbortController();this.displayAbort=controller;
       const epoch=this.controlEpoch,runId=this.deliveryRunId();
       const current=()=>!controller.signal.aborted&&epoch===this.controlEpoch&&runId===this.deliveryRunId()&&!this.hold.isHeld();
@@ -761,7 +867,11 @@ export class BrowserAgentSession {
     }
     const observation = await this.readUserPageForPrompt(context, "task");
     const scopeNote=this.displayScopeBlockedRun!==null&&this.displayScopeBlockedRun===this.deliveryRunId()?"\n[Current request is scoped to part of the page. page_translation changes the entire page and is blocked for this request. Do not modify the page. Explain the whole-page-only limitation and report this request as partial.]":"";
-    const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)+scopeNote;
+    const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)+scopeNote+skillFallback
+      +(this.modeState.value === "act" && context && typeof context.tabId === "number" ? programFirstGuidance() : "");
+    const learningRun = this.deliveryRunId();
+    // A steered/resumed tail omits earlier actions; never compile it as a full workflow.
+    if (allowDisplay && this.skillStore && learningRun && context && !skillFallback) this.skillLearning.begin(learningRun, this.activeGoal ?? finalText, context);
     await session.prompt(promptText, images.length > 0 ? { images } : undefined);
   }
 
@@ -799,23 +909,32 @@ export class BrowserAgentSession {
     }
   }
 
-  /** 执行一次已注册的会话工具并发出与模型调用同一形状的 tool_start/tool_end/读数事件。 */
-  private async invokeDisplayTool(session:AgentSession,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void):Promise<unknown>{
+  /**
+   * 执行一次已注册的会话工具并发出与模型调用同一形状的 tool_start/tool_end/读数事件。
+   * `display` 只给出对外形状：技能程序把本次材料内联在代码里，公开事件、面板历史与诊断
+   * 不得携带运行代码或材料原文，执行仍用真实 input。
+   */
+  private async invokeDisplayTool(session:AgentSession,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void,display?:{params:Record<string,unknown>;materials?:string[]}):Promise<unknown>{
     if(!current())throw new Error('显示操作已取消。');
     const tool=session.agent.state.tools.find(t=>t.name===name);
     if(!tool)throw new Error(`工具${name}当前不可用。`);
     const id=`display-${randomUUID()}`;
     onId(id);
-    this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:input});
+    this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:display?.params??input});
     const previous=this.authorizedDisplayCall;
     this.authorizedDisplayCall=id;
+    // display 只在技能程序这条路上给出：期间子步骤（fill value、read_element expect…）
+    // 也只发脱敏形状；失败文本用本次材料逐个替换，保留"哪一步没完成"这类事实，但不带回材料原文。
+    const hiddenProgram=display!==undefined;
+    if(hiddenProgram){this.skillProgramDepth+=1;this.skillMaterials=display!.materials??[];}
     try{
       const result=await tool.execute(id,input,signal);
-      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:firstText(result),executionFact:this.rpc?.getExecutionFact(id)});
-      this.emitReadObservation(id,name,input,result,false);return result;
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:this.publicText(firstText(result)),executionFact:this.rpc?.getExecutionFact(id)});
+      this.emitReadObservation(id,name,display?.params??input,result,false);return result;
     }catch(error){
-      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:this.rpc?.getExecutionFact(id)});throw error;
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:this.publicText(error instanceof Error?error.message:String(error)),executionFact:this.rpc?.getExecutionFact(id)});throw error;
     }finally{
+      if(hiddenProgram){this.skillProgramDepth-=1;if(this.skillProgramDepth===0)this.skillMaterials=[];}
       if(this.authorizedDisplayCall===id)this.authorizedDisplayCall=previous;
     }
   }
@@ -1233,6 +1352,7 @@ export class BrowserAgentSession {
    * 未命中则按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
   async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<SteerOutcome> {
+    this.skillLearning.cancel();
     const session = this.session;
     // 新任务显示路由尚未进入 Pi 时（Pi 还没在流），插话要取消路由并把两段要求合并重提示；
     // 一旦模型已经在跑，即使 displayWork 还挂着，也算正常的运行中修改，走统一 steer 路径。
@@ -1764,6 +1884,7 @@ export class BrowserAgentSession {
           break;
         }
         case "tool_execution_start":
+          if (!["browser_run", "snapshot", "read_element", "click", "fill", "press_key", "tabs", "list_tabs", "get_active_tab", "scroll", "send_user_message", "task_results"].includes(event.toolName)) this.skillLearning.cancel();
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot") {
             this.acceptanceTrace.resumeSnapshotToolCalled = true;
           }
@@ -1782,6 +1903,7 @@ export class BrowserAgentSession {
             // 交付工具真的执行成功才算交付；ack 只是开场应答，仍要求有最终结果。
             const kind=this.toolArgs.get(event.toolCallId)?.kind;
             if(kind!=='ack')this.deliveredResultThisRun=true;
+            if(this.toolArgs.get(event.toolCallId)?.outcome==='partial')this.skillLearning.cancel();
           }
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot" && !event.isError) {
@@ -1860,6 +1982,12 @@ export class BrowserAgentSession {
             this.emitGatedUiEvent({kind:"user_delivery",delivery:toolFailure});
           }
           emit({ kind: "agent_end" });
+          const learnableEnd = correctionsCleared && !toolFailure && !stoppedByUser && !this.hold.isHeld()
+            && !lastAssistantError(event.messages) && !(this.conversationSnapshot()?.results ?? []).some(item => item.status !== "satisfied");
+          if (!learnableEnd) this.skillLearning.cancel();
+          else if (this.deliveredResultThisRun && this.deliveryRunId()) void this.completeSkillLearning(this.deliveryRunId()!);
+          // Otherwise keep the bounded trace for the existing host makeup-delivery path.
+          // No candidate exists yet. A new task, correction or cancellation invalidates it.
           if (!correctionsCleared) {
             emit({ kind: 'error', message: '未读补充尚未清理，已阻止继续执行。请重试或重新连接。' });
             break;
@@ -2073,6 +2201,17 @@ function firstText(result: unknown): string {
     }
   }
   return "";
+}
+
+/**
+ * 技能程序子步骤的对外形状：只留"对哪个对象、做什么动作"，其余（value / expect / code …）
+ * 一律替换。白名单制，避免新增参数类型时悄悄把本次材料带出去。
+ */
+const PROGRAM_STEP_SAFE_KEYS = ["target", "tabId", "action", "key", "selector", "properties", "label", "kind", "from", "to", "ms", "timeoutMs"];
+function hiddenProgramParams(params: Record<string, unknown>): Record<string, unknown> {
+  const hidden: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) hidden[key] = PROGRAM_STEP_SAFE_KEYS.includes(key) ? value : HIDDEN_MATERIAL;
+  return hidden;
 }
 
 /** User-facing fact for a verified display change; never claims more than the verified parameters. */

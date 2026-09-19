@@ -1,6 +1,4 @@
-import {readFileSync} from 'node:fs';
-import {homedir} from 'node:os';
-import {join} from 'node:path';
+import {readTypeSafeKey} from './typesafe-auth.js';
 import {loadConfig} from './config.js';
 import type {TranslationFont,TranslationMode} from '../../shared/page-translation.js';
 
@@ -69,17 +67,13 @@ export function displaySteerFastPathEnabled():boolean {
   if(!displayFastPathEnabled())return false;
   return process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH==='1'||(process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH!=='0'&&loadConfig().displaySteerFastPath===true);
 }
-function readKey():string {
-  if(process.env.TYPESAFE_API_KEY)return process.env.TYPESAFE_API_KEY;
-  try{return readFileSync(join(homedir(),'.sideagent','typesafe.env'),'utf8').split('\n').find(s=>s.startsWith('TYPESAFE_API_KEY='))?.slice('TYPESAFE_API_KEY='.length).trim().replace(/^["']|["']$/g,'')??'';}catch{return '';}
-}
 /**
  * One bounded Jev call: fixed model, 1s timeout, no retry. Every uncertainty is a typed fallback;
  * only an explicit supported parameter set becomes a candidate, and a candidate carries no execution right.
  */
 export async function decideDisplay(request:string,signal:AbortSignal):Promise<DisplayRoutingResult>{
   if(signal.aborted)return {kind:'cancelled'};
-  const key=readKey();
+  const key=readTypeSafeKey();
   if(!key)return {kind:'fallback',reason:'missing_credentials'};
   const started=Date.now();
   const log=(reason:string)=>console.error('[display-fast-path]',JSON.stringify({reason,ms:Date.now()-started}));

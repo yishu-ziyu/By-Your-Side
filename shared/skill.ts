@@ -37,6 +37,12 @@ export interface SkillCheck {
   marker?: SkillAnchor;
   /** 给人看的一句话 */
   text: string;
+  /** A positive readback condition, not merely the continued presence of a button. */
+  expect?: import("./element-state.js").ElementExpectation;
+  /** Rebind the condition to this run's material instead of the demonstration's value. */
+  inputKey?: string;
+  /** A result node must contain every listed material, not just the primary one. */
+  inputKeys?: string[];
 }
 
 export interface Skill {
@@ -53,6 +59,15 @@ export interface Skill {
   updatedAt: number;
   sourceDemoId: string;
   runCount: number;
+  /** Explicit task wording with {{input key}} slots; never an arbitrary regular expression. */
+  requestTemplate?: string;
+  /** The real completed run from which the user explicitly saved this skill. */
+  sourceRunId?: string;
+  /**
+   * 自动学习的技能：只有当这次要求被做法本身完整覆盖（语义判断通过）时才置位。
+   * 缺这一位的学习技能一律不自动复用，只能由用户显式选中执行。
+   */
+  learnedOutputChecked?: true;
   lastRunAt?: number;
   /** 示范里有几步没记到对象名，编译时丢掉了（卡片要如实说明） */
   droppedSteps?: number;
@@ -77,6 +92,25 @@ export interface SkillRun {
   error?: string;
   /** 弱步骤里认不出来、被跳过的第几步（1 起算） */
   skipped?: number[];
+}
+
+/** Pending proposals share SkillStore but are excluded from all executable-skill queries. */
+export interface SkillCandidate {
+  skill: Skill;
+  sourceRunId: string;
+  createdAt: number;
+  dismissedAt?: number;
+  evidence: { toolCallIds: string[]; verifiedAt: number; actionCount: number };
+}
+
+export function isSkillCandidate(value: unknown): value is SkillCandidate {
+  const candidate = value as SkillCandidate | undefined;
+  return !!candidate && validSkillId(candidate.skill?.id) && typeof candidate.sourceRunId === "string" && candidate.sourceRunId.length <= 128
+    && typeof candidate.createdAt === "number" && typeof candidate.skill.program === "string" && candidate.skill.program.length <= 100_000
+    && Array.isArray(candidate.skill.steps) && candidate.skill.steps.length <= 200 && isSkillInputs(candidate.skill.inputs)
+    && typeof candidate.skill.name === "string" && typeof candidate.skill.hostname === "string"
+    && Array.isArray(candidate.evidence?.toolCallIds) && candidate.evidence.toolCallIds.length <= 100
+    && candidate.evidence.toolCallIds.every(id => typeof id === "string" && id.length <= 200);
 }
 
 /** 卡片上的一句话事实，不解释、不美化。 */
@@ -116,9 +150,63 @@ export function validSkillId(value: unknown): value is string {
   return typeof value === "string" && ID.test(value);
 }
 
+const RESERVED_INPUT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+/** Validate the wire payload before it can reach a program or be merged with defaults. */
+export function isSkillInputs(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= 200 && entries.every(([key, input]) =>
+    key.length > 0 && key.length <= 100 && !RESERVED_INPUT_KEYS.has(key)
+    && typeof input === "string" && input.length <= 8_000)
+    && entries.reduce((size, [key, input]) => size + key.length + String(input).length, 0) <= 32_000;
+}
+
+export function sensitiveSkillInput(skill: Skill, key: string): boolean {
+  return /password|passwd|token|secret|api.?key|authorization|密码|口令|密钥|验证码/i.test(key)
+    || skill.steps.some(step => step.inputKey === key && (step.redacted || step.anchor?.inputType === "password"));
+}
+
+export class SkillInputError extends Error {
+  constructor(message: string, readonly missing: string[] = []) { super(message); this.name = "SkillInputError"; }
+}
+
+/** A run-local copy. Sensitive defaults are never a source of input, including legacy files. */
+export function bindSkillInputs(skill: Skill, overrides: Record<string, string> = {}): Record<string, string> {
+  if (!isSkillInputs(overrides) || !isSkillInputs(skill.inputs)) throw new SkillInputError("技能输入格式无效");
+  const known = new Set(skill.steps.flatMap(step => step.inputKey ? [step.inputKey] : []));
+  for (const key of Object.keys(overrides)) {
+    if (!known.has(key) || !Object.hasOwn(skill.inputs, key)) throw new SkillInputError(`未知技能输入：${key}`);
+  }
+  const inputs: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const key of known) {
+    if (RESERVED_INPUT_KEYS.has(key) || !Object.hasOwn(skill.inputs, key)) throw new SkillInputError("技能输入定义无效");
+    const supplied = Object.hasOwn(overrides, key);
+    const sensitive = sensitiveSkillInput(skill, key);
+    const value = supplied ? overrides[key]! : sensitive ? "" : skill.inputs[key]!;
+    if ((sensitive && !value) || (!supplied && !value)) missing.push(key);
+    inputs[key] = value;
+  }
+  if (missing.length) throw new SkillInputError(`请提供本次输入：${missing.join("、")}`, missing);
+  return inputs;
+}
+
 /** 技能只在同一个站点（hostname）内复用；未限定站点的不下发。 */
 export function normalizeSkillHost(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/^www\./, "");
+}
+
+export const HIDDEN_MATERIAL = "[本次材料已隐藏]";
+
+/**
+ * 技能运行期间，公开或持久化的文本里出现本次材料就整段替换：只保留"发生了什么事"的事实，
+ * 不把材料原文带出去。材料是已知的本次输入，所以这里不需要猜。
+ */
+export function redactSkillMaterials(text: string, materials: readonly string[]): string {
+  let out = text;
+  for (const value of materials) if (value.length >= 2 && out.includes(value)) out = out.split(value).join(HIDDEN_MATERIAL);
+  return out;
 }
 
 /** 步骤与凭证里都不允许出现坐标或 DOM 路径：那是会失效的东西。 */
@@ -146,6 +234,18 @@ export function skillStepsText(skill: Skill): string[] {
         ? `在${describeAnchor(step.anchor)}里输入（内容已隐藏）`
         : `在${describeAnchor(step.anchor)}里输入「${value}」`;
     }
+    return `点击${describeAnchor(step.anchor)}`;
+  });
+}
+
+/**
+ * 这份做法会做的动作，供语义判断使用：只说"对哪个对象做什么"，不带示范时的值，
+ * 也不带"内容已隐藏"这类展示修饰——否则判断会把展示措辞误当成缺失的交付。
+ */
+export function skillWorkflowActions(skill: Skill): string[] {
+  return skill.steps.map(step => {
+    if (step.kind === "press") return `按${KEY_LABEL[step.key ?? ""] ?? step.key ?? "键"}`;
+    if (step.inputKey) return `在${describeAnchor(step.anchor)}里输入本次材料`;
     return `点击${describeAnchor(step.anchor)}`;
   });
 }

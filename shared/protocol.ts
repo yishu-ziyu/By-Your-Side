@@ -11,6 +11,7 @@ import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDe
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
 import { isConsentRequest, type ConsentStatus, type ConsentRequest } from "./consent.js";
+import { isSkillInputs, isSkillCandidate, validSkillId } from "./skill.js";
 
 export const PROTOCOL_VERSION = 1;
 export const STORAGE_SCHEMA_VERSION = 1;
@@ -188,7 +189,9 @@ export type ClientMessage = ConversationEnvelope & (
   /** 列出某个站点上的技能（hostname 为空则列全部） */
   | { type: "skill_list"; requestId: string; hostname?: string }
   /** 按技能跑一遍：不叫模型，跑完写运行记录 */
-  | { type: "skill_run"; requestId: string; id: string; expectedVersion?: number }
+  | { type: "skill_run"; requestId: string; id: string; expectedVersion?: number; inputs?: Record<string, string>; allowStale?: boolean }
+  | { type: "skill_candidate_save"; requestId: string; id: string; sourceRunId: string }
+  | { type: "skill_candidate_dismiss"; requestId: string; id: string; sourceRunId: string }
   /** 记一条修订线索（"这次不太对"），不改做法，下次重新示范时提醒 */
   | { type: "skill_note"; requestId: string; id: string; note: string }
   /** 回到上一版 */
@@ -267,7 +270,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
-  | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
+  | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback" | "candidate_save" | "candidate_dismiss"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; candidates?: import('./skill.js').SkillCandidate[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
@@ -310,7 +313,7 @@ export type AgentUiEvent =
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
-  | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown> }
+  | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
   | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string }
@@ -403,7 +406,7 @@ export interface ToolContract {
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
     params: { tabId?: number; target: string } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; documentId?: string; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; documentId?: string; anchorSource?: import('./demo-record.js').AnchorSource; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
@@ -504,6 +507,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "skill_run") {
       if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
       if (msg.expectedVersion !== undefined && !Number.isInteger(msg.expectedVersion)) return null;
+      if (msg.inputs !== undefined && !isSkillInputs(msg.inputs)) return null;
+      if (msg.allowStale !== undefined && typeof msg.allowStale !== "boolean") return null;
+    }
+    if (msg.type === "skill_candidate_save" || msg.type === "skill_candidate_dismiss") {
+      if (!validRequestId(msg.requestId) || !validSkillId(msg.id) || typeof msg.sourceRunId !== "string" || !msg.sourceRunId || msg.sourceRunId.length > 128) return null;
     }
     if (msg.type === "skill_note") {
       if (!validRequestId(msg.requestId) || typeof msg.id !== "string") return null;
@@ -638,10 +646,12 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
     if (msg.type === "skill_result") {
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["compile", "forget", "list", "run", "note", "rollback"].includes(msg.action)) return null;
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["compile", "forget", "list", "run", "note", "rollback", "candidate_save", "candidate_dismiss"].includes(msg.action)) return null;
       if (msg.ok && (msg.action === "compile" || msg.action === "run" || msg.action === "note" || msg.action === "rollback") && (!msg.skill || typeof msg.skill.program !== "string" || !Array.isArray(msg.skill.steps))) return null;
       if (msg.ok && msg.action === "forget" && typeof msg.deletedId !== "string") return null;
       if (msg.ok && msg.action === "list" && (!Array.isArray(msg.skills) || (msg.runs !== undefined && typeof msg.runs !== "object"))) return null;
+      if (msg.candidates !== undefined && (!Array.isArray(msg.candidates) || msg.candidates.length > 30 || !msg.candidates.every(isSkillCandidate))) return null;
+      if (msg.ok && msg.action === "candidate_save" && (!msg.skill || !validSkillId(msg.skill.id))) return null;
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
     if (msg.type === "agent_event" && msg.event?.kind === "worker_task") {

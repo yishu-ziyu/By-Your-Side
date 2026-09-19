@@ -9,6 +9,24 @@ async function directory() { const dir = await mkdtemp(join(tmpdir(), "sideagent
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 describe("RunTrace", () => {
+  it("isolates the default diagnostic writer and its retention via an explicit process-local directory", async () => {
+    const isolated = await directory(), unrelated = await directory();
+    const sentinel = join(unrelated, "1000000000000-aaaa.jsonl");
+    await writeFile(sentinel, "existing diagnostics");
+    const previous = process.env.SIDEAGENT_TRACE_DIR;
+    process.env.SIDEAGENT_TRACE_DIR = isolated;
+    try {
+      for (let i = 0; i < 22; i++) {
+        const trace = new RunTrace();
+        expect(trace.path.startsWith(isolated + "/")).toBe(true);
+        trace.begin("isolated test", undefined, "fixture"); await trace.flush();
+      }
+      expect((await readdir(isolated)).length).toBeLessThanOrEqual(20);
+      expect(await readFile(sentinel, "utf8")).toBe("existing diagnostics");
+    } finally {
+      if (previous === undefined) delete process.env.SIDEAGENT_TRACE_DIR; else process.env.SIDEAGENT_TRACE_DIR = previous;
+    }
+  });
   it("records program child steps under the parent and hides source code and input literals", async () => {
     const trace = new RunTrace(await directory());
     trace.begin("edit a test draft", {}, "provider/model");

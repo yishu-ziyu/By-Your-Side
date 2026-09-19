@@ -61,7 +61,27 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) throw new Error(`当前${tagName}目标不支持或尚无有效的 ${property} 属性；请观察实际目标状态。`);
       values[property] = value;
     }
-    return {ok:true,data:{tagName,textContent,...(hasValue ? {value:maskValue(String(el.value ?? ''))} : {}),...(properties.length ? {properties:values} : {})}};
+    // Extract only naming sources here. The shared anchorFor() owns naming priority and
+    // clipping; this function is serialized into Chrome and cannot close over imports.
+    let anchorSource: ElementData['anchorSource'];
+    if (element.nodeType !== 3 && typeof el.getAttribute === 'function') {
+      const clip = (value: string | null | undefined) => value == null ? null : value.slice(0, 180);
+      const by = el.getAttribute('aria-labelledby');
+      const label = el.labels?.[0]?.textContent || (by ? by.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? '').join(' ') : null);
+      const image = el.querySelector?.('img[alt], svg[aria-label]');
+      let ancestor: string | null = null;
+      if (!textContent.trim()) {
+        let parent = el.parentElement;
+        for (let depth = 0; parent && depth < 4; depth++, parent = parent.parentElement) {
+          if (parent.textContent?.trim()) { ancestor = parent.textContent; break; }
+        }
+      }
+      anchorSource = { tag: tagName, role: el.getAttribute('role'), type: el.getAttribute('type'), name: clip(el.getAttribute('name')),
+        ariaLabel: clip(el.getAttribute('aria-label')), label: clip(label), placeholder: clip(el.getAttribute('placeholder')),
+        title: clip(el.getAttribute('title')), alt: clip(image?.getAttribute('alt') ?? image?.getAttribute('aria-label')),
+        text: hasValue ? null : clip(textContent), ancestorText: clip(ancestor), autocomplete: el.getAttribute('autocomplete') };
+    }
+    return {ok:true,data:{tagName,textContent,...(hasValue ? {value:maskValue(String(el.value ?? ''))} : {}),...(properties.length ? {properties:values} : {}),...(anchorSource ? {anchorSource} : {})}};
   } catch (error) { return {ok:false,error:error instanceof Error ? error.message : String(error)}; }
 }
 

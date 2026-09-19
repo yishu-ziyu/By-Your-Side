@@ -230,7 +230,9 @@ export class TaskProgress {
       // business state. An uncertain switch must be re-observed, but it must not
       // permanently lock unrelated form writes like an uncertain fill/click does.
       const durableEffect=write&&!(e.name==='tabs'&&tabAction==='switch');
-      const valueHash=e.name==='fill'&&typeof e.params.value==='string'?createHash('sha256').update(e.params.value).digest('hex'):undefined;
+      // The host hashes private skill inputs before redacting public tool parameters.
+      const valueHash=e.name==='fill'?(typeof e.valueHash==='string'&&/^[a-f0-9]{64}$/.test(e.valueHash)?e.valueHash
+        :typeof e.params.value==='string'?createHash('sha256').update(e.params.value).digest('hex'):undefined):undefined;
       if(!this.aborted&&write)this.readback.beginWrite();
       if (!this.aborted && this.tools.size < 100) this.tools.set(`${member}:${e.toolCallId}`, { member, name: e.name, action: label(e.name), since: this.clock(), target,
         tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction,

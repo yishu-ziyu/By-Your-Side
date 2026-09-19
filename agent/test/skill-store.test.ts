@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SkillStore } from "../src/skill-store.js";
 import { compileSkill } from "../src/skill-compile.js";
+import { autoSkillEligible } from "../src/skill-learning.js";
+import { learningFixture } from "./fixtures/skill-evidence.js";
 import type { Skill } from "../../shared/skill.js";
 
 const dirs: string[] = [];
@@ -19,6 +21,23 @@ function skill(id: string, hostname: string, now = 1_700_000_000_000): Skill {
 }
 
 describe("技能存储", () => {
+  it("重新示范换掉契约后，旧的「整条要求已覆盖」认证不再沿用", async () => {
+    const { store: s } = await store();
+    const learned = learningFixture().candidate()!.skill;
+    await s.put(learned);
+    expect(autoSkillEligible((await s.get(learned.id))!)).toBe(true);
+    // 面板"重新示范"会整份替换步骤/凭证/程序；此刻旧认证必须作废。
+    const updated = await s.update(learned.id, { intent: "把结果导出成表格", name: "导出结果",
+      steps: [{ kind: "click", anchor: { tag: "button", name: "导出" } }] });
+    expect(updated?.version).toBe(2);
+    expect(updated?.learnedOutputChecked).toBeUndefined();
+    expect(autoSkillEligible((await s.get(learned.id))!)).toBe(false);
+    // 回退到归档的旧版本时，认证随被恢复的那一版一起回来（内容与认证本来就是一对）。
+    const restored = await s.rollback(learned.id);
+    expect(restored?.learnedOutputChecked).toBe(true);
+    expect(autoSkillEligible(restored!)).toBe(true);
+  });
+
   it("写一份读一份，字段原样保留", async () => {
     const { store: s } = await store();
     await s.put(skill("skill-a", "www.example.com"));
