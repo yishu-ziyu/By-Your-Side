@@ -245,3 +245,28 @@ describe("manager 集成：task_view 随真实状态变化下发与重放", () =
     manager.dispose();
   });
 });
+
+describe("outstanding 与 nextStep 同口径（review 修复）", () => {
+  it("已被取代的 unknown 项不再列入未完成项", () => {
+    const h = startedRun();
+    const snap = h.progress.snapshot();
+    const withSuperseded: TaskProgressSnapshot = {
+      ...snap,
+      results: [
+        { id: "r1", description: "写入备注", tool: "fill", target: null, status: "unknown", evidence: null, supersededBy: "r2" },
+        { id: "r2", description: "写入备注（用户确认后重核对）", tool: "fill", target: null, status: "satisfied", evidence: null },
+      ] as never,
+    };
+    const view = projectTaskView(withSuperseded);
+    expect(view.results.map((r) => r.id)).toEqual(["r1", "r2"]); // 事实全保留
+    expect(view.outstanding.map((r) => r.id)).toEqual([]); // 已被取代的不算未完成
+  });
+  it("未被取代的 unknown 仍列入未完成项", () => {
+    const h = startedRun();
+    const snap: TaskProgressSnapshot = {
+      ...h.progress.snapshot(),
+      results: [{ id: "r1", description: "写入备注", tool: "fill", target: null, status: "unknown", evidence: null }] as never,
+    };
+    expect(projectTaskView(snap).outstanding.map((r) => r.id)).toEqual(["r1"]);
+  });
+});

@@ -10,6 +10,7 @@
  */
 import type { TaskProgressSnapshot } from "./voice.js";
 import type { TaskNextStep } from "./task-next-step.js";
+import { isSupersededUnknown } from "./task-results.js";
 
 export const TASK_VIEW_STATES = ["none", "running", "paused", "interrupted", "idle", "aborted", "error"] as const;
 
@@ -53,27 +54,33 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
   if (snapshot.state === "paused") return { reason: "human_control", detail: null };
   if (snapshot.state === "interrupted") return { reason: "restart_checkpoint", detail: snapshot.interruptionReason ?? null };
   if (snapshot.state === "aborted") return { reason: "cancelled", detail: null };
-  if (snapshot.state === "error") return { reason: "runtime_error", detail: null };
-  if (!nextStep) return null;
-  switch (nextStep.reason) {
-    case "failure_limit":
-      return { reason: "failure_limit", detail: null };
-    case "unknown_with_baseline":
-    case "unknown_without_baseline":
-      return { reason: nextStep.reason, detail: null };
-    case "readback_required":
-      return { reason: "readback_required", detail: null };
-    case "tool_failed":
-      return { reason: "tool_failed", detail: null };
-    default:
-      return null;
+  // 与 decideTaskNextStep 同优先级：failure_limit/unknown 先于 runtime_error
+  if (nextStep) {
+    switch (nextStep.reason) {
+      case "failure_limit":
+        return { reason: "failure_limit", detail: null };
+      case "unknown_with_baseline":
+      case "unknown_without_baseline":
+        return { reason: nextStep.reason, detail: null };
+      case "readback_required":
+        return { reason: "readback_required", detail: null };
+      case "tool_failed":
+        return { reason: "tool_failed", detail: null };
+      case "runtime_error":
+        return { reason: "runtime_error", detail: null };
+      default:
+        break;
+    }
   }
+  if (snapshot.state === "error") return { reason: "runtime_error", detail: null };
+  return null;
 }
 
 /** 只读投影：同一份事实（实时或重放恢复的快照）必须得到同一份视图。 */
 export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const requirements = snapshot.recoveryInput?.requirements ?? [];
-  const results = (snapshot.results ?? []).map((item) => ({ id: item.id, description: item.description, status: String(item.status) }));
+  const rawResults = snapshot.results ?? [];
+  const results = rawResults.map((item) => ({ id: item.id, description: item.description, status: String(item.status) }));
   return {
     conversationId: snapshot.conversationId,
     runId: snapshot.runId ?? null,
@@ -87,7 +94,8 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     lastAction: snapshot.lastAction ? { ...snapshot.lastAction } : null,
     waiting: waitingFor(snapshot, snapshot.nextStep),
     results,
-    outstanding: results.filter((r) => OPEN_STATUSES.has(r.status)),
+    // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
+    outstanding: results.filter((r, i) => OPEN_STATUSES.has(r.status) && !isSupersededUnknown(rawResults[i]!, rawResults)),
     latestDelivery: snapshot.conversationContext?.latestDelivery ? { kind: String(snapshot.conversationContext.latestDelivery.kind) } : null,
     resumable: snapshot.state === "interrupted" && !!snapshot.recoveryInput,
   };
@@ -105,8 +113,13 @@ export function isTaskView(value: unknown): value is TaskView {
   if (v.goal !== null && typeof v.goal !== "string") return false;
   if (!Array.isArray(v.revisions) || v.revisions.length > 64 || !v.revisions.every((r) => typeof r === "string")) return false;
   if (v.page !== null && (!v.page || typeof v.page !== "object" || !Number.isSafeInteger(v.page.tabId) || typeof v.page.urlHash !== "string")) return false;
-  if (!Array.isArray(v.active) || !Array.isArray(v.results) || !Array.isArray(v.outstanding)) return false;
-  if (v.waiting !== null && (!v.waiting || typeof v.waiting.reason !== "string")) return false;
+  const itemOk = (x: unknown): boolean => !!x && typeof x === "object" && typeof (x as TaskViewResultItem).id === "string" && typeof (x as TaskViewResultItem).description === "string" && typeof (x as TaskViewResultItem).status === "string";
+  if (!Array.isArray(v.results) || !v.results.every(itemOk)) return false;
+  if (!Array.isArray(v.outstanding) || !v.outstanding.every(itemOk)) return false;
+  const activeOk = (x: unknown): boolean => !!x && typeof x === "object" && typeof (x as { member?: unknown }).member === "string" && typeof (x as { action?: unknown }).action === "string" && typeof (x as { since?: unknown }).since === "number";
+  if (!Array.isArray(v.active) || !v.active.every(activeOk)) return false;
+  if (v.lastAction !== null && (!v.lastAction || typeof v.lastAction.action !== "string" || typeof v.lastAction.failed !== "boolean" || typeof v.lastAction.at !== "number")) return false;
+  if (v.waiting !== null && v.waiting !== undefined && (typeof v.waiting !== "object" || typeof v.waiting.reason !== "string" || (v.waiting.detail !== null && typeof v.waiting.detail !== "string"))) return false;
   if (v.latestDelivery !== null && (!v.latestDelivery || typeof v.latestDelivery.kind !== "string")) return false;
   if (typeof v.resumable !== "boolean") return false;
   return true;

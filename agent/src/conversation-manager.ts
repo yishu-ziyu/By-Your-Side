@@ -140,7 +140,8 @@ export class ConversationManager {
     if (!progress) return;
     const snapshot = { ...progress.snapshot(), controlVersion: this.controlVersions.get(conversationId) ?? 0 };
     const view = projectTaskView(snapshot);
-    const key = JSON.stringify(view);
+    const { observedAt: _omit, ...content } = view;
+    const key = JSON.stringify(content);
     if (!force && this.lastTaskViews.get(conversationId) === key) return;
     this.lastTaskViews.set(conversationId, key);
     this.emit({ type: "task_view", conversationId, view });
@@ -927,7 +928,7 @@ export class ConversationManager {
     const progress = new TaskProgress(id);
     this.progress.set(id, progress);
     // T02：任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
-    for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults"] as const) {
+    for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "verifyUnknownResult", "recordConfirmedRecovery", "stopAfterFailures"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
       (progress as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
         const result = original(...args);
@@ -1358,6 +1359,7 @@ export class ConversationManager {
       // 面板重开时把仍在等待的授权卡片恢复出来；这里只读，不延长期限。
       if (summary.checkpoint === 'unavailable') {
         emit({type:'agent_event',conversationId:summary.id,event:{kind:'error',message:TASK_CHECKPOINT_UNAVAILABLE}});
+        this.emitTaskView(summary.id, true);
         continue;
       }
       const requests = runtime.consent?.list() ?? [];
