@@ -160,27 +160,38 @@ function extractRunIds(events: EventView[], conversationId: string): string[] {
   return [...ids];
 }
 
-function extractToolCalls(events: EventView[], conversationId: string) {
-  // 只取本臂会话；确认时刻来自同 toolCallId 的 tool_end（host 侧结构化事实）
-  const ends = new Map<string, { at: number; ok: boolean; executionFact?: string }>();
-  for (const e of events) {
-    if (eventKind(e) !== "tool_end") continue;
-    const ev = (e.message as { event?: { toolCallId?: string; isError?: boolean; executionFact?: string } }).event;
-    const cid = (e.message as { conversationId?: string }).conversationId;
-    if (cid !== conversationId || !ev?.toolCallId) continue;
-    ends.set(ev.toolCallId, { at: e.at, ok: ev.isError === false, executionFact: ev.executionFact });
-  }
-  return events
-    .filter((e) => e.direction === "server" && e.message.type === "tool_call" && (e.message as { conversationId?: string }).conversationId === conversationId)
-    .map((e) => {
-      const m = e.message as { id?: string; name?: string; params?: { target?: string; value?: string } };
-      const end = m.id ? ends.get(m.id) : undefined;
-      return {
-        name: String(m.name ?? ""), at: e.at, toolCallId: m.id,
-        params: { target: m.params?.target, value: m.params?.value },
-        ...(end ? { confirmedAt: end.at, ok: end.ok, executionFact: end.executionFact } : {}),
-      };
+/** 串行执行模型下，同名工具按顺序配对调用与结束事件（wire id 与 SDK toolCallId 是不同命名空间）。 */
+export function pairCallsWithEnds(events: EventView[], conversationId: string) {
+  const own = events.filter((e) => (e.message as { conversationId?: string }).conversationId === conversationId
+    || (e.message as { event?: { conversationId?: string } }).event?.conversationId === conversationId);
+  const calls = own.filter((e) => e.direction === "server" && e.message.type === "tool_call");
+  const ends = own.filter((e) => eventKind(e) === "tool_end");
+  const usedEnds = new Set<number>();
+  return calls.map((e) => {
+    const m = e.message as { id?: string; name?: string; params?: { target?: string; value?: string } };
+    const name = String(m.name ?? "");
+    const endIdx = ends.findIndex((x, i) => {
+      if (usedEnds.has(i)) return false;
+      const ev = (x.message as { event?: { name?: string } }).event;
+      return ev?.name === name && x.at >= e.at;
     });
+    let end: { at: number; ok: boolean; executionFact?: string } | undefined;
+    if (endIdx >= 0) {
+      usedEnds.add(endIdx);
+      const x = ends[endIdx]!;
+      const ev = (x.message as { event?: { isError?: boolean; executionFact?: string } }).event;
+      end = { at: x.at, ok: ev?.isError === false, executionFact: ev?.executionFact };
+    }
+    return {
+      name, at: e.at, toolCallId: m.id,
+      params: { target: m.params?.target, value: m.params?.value },
+      ...(end ? { confirmedAt: end.at, ok: end.ok, executionFact: end.executionFact } : {}),
+    };
+  });
+}
+
+function extractToolCalls(events: EventView[], conversationId: string) {
+  return pairCallsWithEnds(events, conversationId);
 }
 
 async function waitTerminal(events: EventView[], host: HostHandle, conversationId: string, deadlineMs: number, minIndex = 0): Promise<"ended" | "timeout"> {
@@ -319,7 +330,7 @@ export async function runOne(
       let lastInputIndex = events.length;
       // 计划步骤
       for (const step of mat.plannedSteps) {
-        await runPlannedStep(env, step, tabId, pageTarget, deadline, interventions, (w) => { takeoverWindow = w; }, (t) => { restartAtMs = t; });
+        await runPlannedStep(env, step, tabId, pageTarget, conversationId, deadline, interventions, (w) => { takeoverWindow = w; }, (t) => { restartAtMs = t; });
         lastInputIndex = events.length;
         if (Date.now() > deadline) break;
       }
@@ -429,6 +440,7 @@ async function runPlannedStep(
   step: PlannedStep,
   tabId: number,
   pageTarget: string,
+  armConversationId: string,
   deadline: number,
   interventions: JourneyRow["interventions"],
   setTakeover: (w: { start: number; end: number }) => void,
@@ -441,12 +453,8 @@ async function runPlannedStep(
     await until(() => events.slice(base).some((e) => {
       if (step.after === "first-delivery") return eventKind(e) === "user_delivery";
       if (step.after === "first-fill") {
-        // 已确认写入：fill 调用 + 同 toolCallId 的 tool_end 且 ok/executed
-        const calls = new Set(events.slice(base).filter((x) => x.message.type === "tool_call" && (x.message as { name?: string }).name === "fill").map((x) => (x.message as { id?: string }).id));
-        return events.slice(base).some((x) => eventKind(x) === "tool_end"
-          && calls.has((x.message as { event?: { toolCallId?: string } }).event?.toolCallId)
-          && (x.message as { event?: { isError?: boolean; executionFact?: string } }).event?.isError === false
-          && (x.message as { event?: { executionFact?: string } }).event?.executionFact === "executed");
+        // 已确认写入：fill 调用 + 顺序配对的 tool_end 且 ok/executed
+        return pairCallsWithEnds(events.slice(base), armConversationId).some((t) => t.name === "fill" && t.ok === true && t.executionFact === "executed");
       }
       return eventKind(e) === "tool_start" || e.message.type === "tool_call";
     }) || undefined, Math.max(10_000, deadline - Date.now()), `cue:${step.after}`);

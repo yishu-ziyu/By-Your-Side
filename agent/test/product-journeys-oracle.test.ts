@@ -441,3 +441,30 @@ describe("统计口径（A01-05）", () => {
     expect(agg.qualifiedRate).toBe(0.5);
   });
 });
+
+describe("校准回归：合理表达不被误杀（v8 真实回答转正）", () => {
+  it("C02 分节标题 + 逐项理由的结构化回答合格", () => {
+    const ev = goodEvidence("C02", 0);
+    ev.deliveries[0]!.text = `**符合条件（≤200 元 + 支持七天退换 + 现货）**
+
+- **苔径** — 120 元，支持七天退换，现货 ✅
+
+**被排除**
+
+- **涧声**（260 元）：价格超过 200 元上限。
+- **岚岫**（150 元）：不支持退换。
+- **汀洲**（180 元）：库存为「无货」。`;
+    expect(judge("C02", 0, ev).qualified).toBe(true);
+  });
+  it("A02「没提交/按钮没动」是合法的未提交陈述", () => {
+    const ev = goodEvidence("A02", 0);
+    ev.deliveries[0]!.text = "登记表已经按最新要求填好，没提交：姓名林夏、邮箱 summer@example.com、城市杭州。「提交登记」按钮没动。";
+    expect(judge("A02", 0, ev).qualified).toBe(true);
+  });
+  it("C02 双列反例在新解析下仍不合格", () => {
+    const names = at2(CATALOGS, 0).rows.map((r) => r.name).join("、");
+    const ev = goodEvidence("C02", 0);
+    ev.deliveries[0]!.text = `入选：${names}\n排除：${names}`;
+    expect(judge("C02", 0, ev).qualified).toBe(false);
+  });
+});

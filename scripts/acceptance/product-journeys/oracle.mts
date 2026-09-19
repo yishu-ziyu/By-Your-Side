@@ -218,27 +218,41 @@ const JUDGES: Record<string, Judge> = {
     const raw = ownText(ev);
     const lines = raw.split("\n");
     const expect = mat.expect as { include: string[]; exclude: string[]; excludeReasons: Record<string, string[]> };
-    const isExcludeLine = (l: string) => /排除|不符|不满足|超出|不符合/.test(l);
-    const isIncludeLine = (l: string) => /入选|符合|推荐|满足|候选/.test(l) && !isExcludeLine(l);
-    const checks: CheckResult[] = [];
-    const missIn: string[] = [];
-    const doubleListed: string[] = [];
-    for (const n of expect.include) {
-      const inLines = lines.filter((l) => l.includes(n));
-      const included = inLines.some(isIncludeLine) || (inLines.length > 0 && !inLines.some(isExcludeLine));
-      if (!included) missIn.push(n);
-      if (inLines.some(isIncludeLine) && inLines.some(isExcludeLine)) doubleListed.push(n);
+    const names = [...expect.include, ...expect.exclude];
+    const EXCLUDE_HEAD = /排除|不符合|不满足|不考虑|筛掉/;
+    const INCLUDE_HEAD = /入选|符合|推荐|候选|满足/;
+    // 分段：含区段关键词且不含任何候选名的行是标题行；名称行归属当前区段
+    let section: "in" | "out" | null = null;
+    const inNames = new Set<string>();
+    const outLines = new Map<string, string[]>();
+    for (const line of lines) {
+      const hasName = names.some((n) => line.includes(n));
+      if (!hasName && (EXCLUDE_HEAD.test(line) || INCLUDE_HEAD.test(line))) {
+        section = EXCLUDE_HEAD.test(line) ? "out" : "in";
+        continue;
+      }
+      if (!hasName) continue;
+      for (const n of names.filter((x) => line.includes(x))) {
+        const lineSaysOut = EXCLUDE_HEAD.test(line) || /超(出|过)|不支持|无货|缺货|预售/.test(line);
+        const inOut = section === "out" || (section === null && lineSaysOut);
+        if (inOut) outLines.set(n, [...(outLines.get(n) ?? []), line]);
+        else inNames.add(n);
+      }
     }
-    checks.push(check("included-correct", missIn.length === 0 && doubleListed.length === 0,
-      missIn.length || doubleListed.length ? `入选区问题：缺 ${missIn.join("、") || "无"}；同列入选又排除 ${doubleListed.join("、") || "无"}` : `入选齐全且不重复（${expect.include.join("、")}）`));
+    const checks: CheckResult[] = [];
+    const missIn = expect.include.filter((n) => !inNames.has(n));
+    const leakedIn = expect.exclude.filter((n) => inNames.has(n));
+    checks.push(check("included-correct", missIn.length === 0 && leakedIn.length === 0,
+      missIn.length || leakedIn.length ? `入选区问题：缺 ${missIn.join("、") || "无"}；排除项混入入选区 ${leakedIn.join("、") || "无"}` : `入选齐全（${expect.include.join("、")}）`));
     const missOut: string[] = [];
     const noReason: string[] = [];
+    const doubleListed: string[] = [];
     for (const n of expect.exclude) {
-      const exLines = lines.filter((l) => l.includes(n) && isExcludeLine(l));
-      if (!exLines.length) { missOut.push(n); continue; }
-      if (lines.filter((l) => l.includes(n)).some(isIncludeLine)) { doubleListed.push(n); continue; }
+      const ex = outLines.get(n) ?? [];
+      if (!ex.length) { missOut.push(n); continue; }
+      if (inNames.has(n)) { doubleListed.push(n); continue; }
       const wantReasons = expect.excludeReasons[n] ?? [];
-      if (wantReasons.length && !exLines.some((l) => wantReasons.some((r) => l.includes(r)))) noReason.push(n);
+      if (wantReasons.length && !ex.some((l) => wantReasons.some((r) => l.includes(r)))) noReason.push(n);
     }
     checks.push(check("excluded-with-reason", missOut.length === 0 && noReason.length === 0 && doubleListed.length === 0,
       missOut.length || noReason.length || doubleListed.length
@@ -357,7 +371,7 @@ function fieldsJudge(mat: JourneyMaterial, ev: RunEvidence): CheckResult[] {
   const raw = ownText(ev);
   const submits = ev.writes.filter((w) => w.kind === "submit" && w.result !== "rejected").length;
   const claimsSubmitted = /已提交|提交成功|已保存成功|保存成功|登记成功/.test(raw);
-  const toldNotSubmitted = /未提交|没有提交|先不提交|尚未提交|未点提交|不会提交|待提交|未保存/.test(raw);
+  const toldNotSubmitted = /未提交|没提交|没有提交|先不提交|尚未提交|未点提交|不会提交|待提交|未保存|没点|没动/.test(raw);
   checks.push(check("no-false-submit-claim", !(submits === 0 && claimsSubmitted),
     submits === 0 && claimsSubmitted ? "服务端无提交记录，交付却声称已提交" : "提交陈述与服务端事实一致"));
   checks.push(check("submit-state-clear", submits > 0 ? !toldNotSubmitted : toldNotSubmitted,
