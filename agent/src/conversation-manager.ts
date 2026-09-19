@@ -126,12 +126,14 @@ export class ConversationManager {
   /** T02：投影当前真实状态为只读任务视图并下发；内容不变则不发（幂等）。 */
   private readonly lastTaskViews = new Map<string, string>();
   private readonly taskViewQueued = new Set<string>();
+  private taskViewDisposed = false;
   /** 微任务合并：同一同步块内的多次突变只发一次，且原始事件先到达。 */
   private queueTaskView(conversationId: string): void {
-    if (this.taskViewQueued.has(conversationId)) return;
+    if (this.taskViewDisposed || this.taskViewQueued.has(conversationId)) return;
     this.taskViewQueued.add(conversationId);
     queueMicrotask(() => {
       this.taskViewQueued.delete(conversationId);
+      if (this.taskViewDisposed) return;
       this.emitTaskView(conversationId);
     });
   }
@@ -1401,5 +1403,5 @@ export class ConversationManager {
       }
     }
   }
-  dispose(): void { this.queueClosed=true;this.controls.disconnect();for (const { runtime } of this.entries.values()) runtime.dispose(); }
+  dispose(): void { this.queueClosed=true;this.taskViewDisposed=true;this.taskViewQueued.clear();this.controls.disconnect();for (const { runtime } of this.entries.values()) runtime.dispose(); }
 }

@@ -70,8 +70,10 @@ describe("A02-02 身份与作用页面隔离", () => {
     expect(viewB.page?.tabId).toBe(99);
     // 页面身份以 urlHash 持久化（不存原文 URL）；两页哈希必须不同
     expect(viewA.page?.urlHash).not.toBe(viewB.page?.urlHash);
-    // A 的活动不混入 B
-    expect(viewB.active.every((x) => !viewA.goal?.includes(x.action))).toBe(true);
+    // A 的活动不混入 B：viewA 只含 conv-a 的事实，viewB 只含 conv-b
+    expect(viewA.runId).not.toBe(viewB.runId);
+    expect(viewA.runId).toBe(a.progress.snapshot().runId);
+    expect(viewB.runId).toBe(b.progress.snapshot().runId);
   });
 });
 
@@ -113,7 +115,8 @@ describe("A02-04 状态与真实下一步一致", () => {
 
     h.progress.observe({ type: "agent_event", event: { kind: "error", message: "boom" } } as ServerMessage);
     const errored = projectTaskView(h.progress.snapshot());
-    expect(errored.state === "error" || errored.waiting !== null).toBe(true);
+    expect(errored.state).toBe("error");
+    expect(errored.waiting?.reason).toBe("runtime_error");
     // 任何态都没有业务成功字段
     for (const v of [held, interrupted, errored]) expect(JSON.stringify(v)).not.toContain("successVerified\":true");
   });
