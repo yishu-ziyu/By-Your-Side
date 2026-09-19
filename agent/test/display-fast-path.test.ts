@@ -65,7 +65,7 @@ describe('reusable display execution (Ticket 2)',()=>{
  it('runs the registered tool, verifies font and mode, and never ends the task by itself',async()=>{
   const h=harness();
   const outcome=await run(h);
-  expect(outcome).toEqual({kind:'applied',text:'译文已改成宋体。'});
+  expect(outcome).toEqual({kind:'applied',text:'译文已改成宋体。',after:state});
   expect(h.display).toHaveBeenCalledTimes(1);
   expect(h.display.mock.calls[0]![1]).toMatchObject({action:'display',fontFamily:'songti',tabId:7,document:'one'});
   expect(h.snapshot).toHaveBeenCalledTimes(1);

@@ -16,6 +16,7 @@ import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
+import type {TaskReceiptDiff} from '../../shared/task-actions.js';
 import {pageRecoveryKey,attachmentRecoveryKey} from './task-recovery.js';
 import {assertTaskStepExecution} from '../../shared/task-next-step.js';
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
@@ -107,13 +108,13 @@ export interface UserInputOptions { pageObservation?: "on-demand"; selectedSkill
 /** Reusable display execution result. `executed` says whether a page write may have landed. */
 export type DisplayExecutionFact='not_executed'|'executed'|'unknown';
 export type DisplayExecutionOutcome=
-  |{kind:'applied';text:string}
+  |{kind:'applied';text:string;after:TranslationDisplayState}
   |{kind:'failed';reason:string;executed:DisplayExecutionFact};
 
 /** What a runtime steering request actually did; the manager turns it into a receipt. */
 export type SteerOutcome=
   |{kind:'model'}
-  |{kind:'display-applied';text:string;params:DisplayParams}
+  |{kind:'display-applied';text:string;params:DisplayParams;diff?:TaskReceiptDiff}
   |{kind:'display-handoff-failed';text:string}
   |{kind:'display-failed';reason:string}
   |{kind:'display-unknown';reason:string};
@@ -879,7 +880,7 @@ export class BrowserAgentSession {
    * 可复用的显示执行：走已注册工具 + 读回核验，只返回真实结果。
    * 不结束任务、不打空闲、不发交付；新任务收尾留在 runDisplayCommand，运行中修改的收尾在 steerCurrentTask。
    */
-  private async executeDisplayCommand(session:AgentSession,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean):Promise<DisplayExecutionOutcome>{
+  private async executeDisplayCommand(session:AgentSession,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,before?:TranslationDisplayState):Promise<DisplayExecutionOutcome>{
     if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'not_executed'};
     let lastCallId:string|null=null;
     let writeAttempted=false,writeSucceeded=false;
@@ -896,7 +897,10 @@ export class BrowserAgentSession {
       const after=(result as {details?:{translation?:TranslationDisplayState|null}}|undefined)?.details?.translation;
       if(!after?.displayValid||after.document!==params.document||(params.mode&&after.mode!==params.mode)||(params.fontFamily&&after.fontFamily!==params.fontFamily))
         return {kind:'failed',reason:'没有核对到要求的显示结果。',executed:'executed'};
-      return {kind:'applied',text:displayFactText(params)};
+      // T04 修改范围：未要求改变的属性必须读回为原值，否则不核对为成功、不产生差异展示。
+      if(before&&(params.mode===undefined&&after.mode!==before.mode||params.fontFamily===undefined&&after.fontFamily!==before.fontFamily))
+        return {kind:'failed',reason:'出现了未要求改变的显示变化，这次修改未核对为成功。',executed:'executed'};
+      return {kind:'applied',text:displayFactText(params),after};
     }catch(error){
       const reason=error instanceof Error?error.message:'显示操作未完成。';
       const fact=lastCallId?this.rpc?.getExecutionFact(lastCallId):undefined;
@@ -1256,6 +1260,7 @@ export class BrowserAgentSession {
       "Continue the ORIGINAL goal. Apply the following task inputs IN ORDER. A later correction replaces any earlier conflicting instruction about the same field/action; do not ask the user to reconcile already-superseded wording:",
       persistedUserTurns || "(legacy checkpoint: no task-scoped inputs; do not replay unrelated requests from conversation history, ask when the original requirement is unclear)",
       "Treat the fresh page observation below as current truth; do not assume the pre-restart page state still exists.",
+      "The user may have edited fields on this page while the task was stopped. Those visible values are the user's current decisions: do not overwrite them to satisfy the earlier instruction, keep them, and report any conflict instead of resolving it silently.",
       "Previous login/account assumptions and old approvals are not reusable. Check the currently visible account before account-sensitive actions; ask the user when it cannot be established.",
       "Never repeat a satisfied result. Never repeat or bypass an unknown write. For a low-risk fill whose latest required value is clear, use confirm_blocked_write when the old result is unknown OR when it succeeded before restart but the fresh page no longer has that value. This is the bounded recovery path, not a replay: it preserves old evidence, checks current state, and asks the user only if one exact reset is still needed. Other unknown writes still require reliable evidence or a user decision.",
       "Continue only pending or blocked work, then verify the requested user-visible outcome before delivery.",
@@ -1383,7 +1388,7 @@ export class BrowserAgentSession {
     try{
       if(displaySteerFastPathEnabled()&&this.explicitDelivery&&this.modeState?.value==='act'&&context&&typeof context.tabId==='number'&&!context.selection&&!images.length){
         const fast=await this.tryDisplaySteering(session,record,text,context,current,taskCurrent);
-        if(fast.kind==='applied')return {kind:'display-applied',text:fast.text,params:fast.params};
+        if(fast.kind==='applied')return {kind:'display-applied',text:fast.text,params:fast.params,...(fast.diff?{diff:fast.diff}:{})};
         if(fast.kind==='handoff-failed')return {kind:'display-handoff-failed',text:fast.text};
         if(fast.kind==='failed')return {kind:'display-failed',reason:fast.reason};
         if(fast.kind==='unknown')return {kind:'display-unknown',reason:fast.reason};
@@ -1419,7 +1424,7 @@ export class BrowserAgentSession {
     current:()=>boolean,
     taskCurrent:()=>boolean=current,
   ):Promise<
-    |{kind:'applied';text:string;params:DisplayParams}
+    |{kind:'applied';text:string;params:DisplayParams;diff?:TaskReceiptDiff}
     |{kind:'handoff-failed';text:string}
     |{kind:'failed';reason:string}
     |{kind:'unknown';reason:string}
@@ -1458,13 +1463,15 @@ export class BrowserAgentSession {
       if(record.displayConsumed)return {kind:'cancelled'};
       record.displayConsumed=true;
       const params:Record<string,unknown>={...decision.params,tabId,document:before.translation.document};
-      const outcome=await this.executeDisplayCommand(session,params,controller.signal,active);
+      const outcome=await this.executeDisplayCommand(session,params,controller.signal,active,latest.translation??undefined);
       if(outcome.kind==='applied'){
+        // 旧值、新值、保留项全部来自宿主读回；没有依据（基础快照缺失）就不产生差异展示。
+        const diff=latest.translation?receiptDisplayDiff(latest.translation,params,outcome.after,context.title??'当前页面'):undefined;
         const delivered=await this.returnDisplayFactToModel(session,record,text,context,{state:'verified',text:outcome.text},`[运行时的显示修改已经直接执行并核对：${outcome.text}这条修改不需要再由你执行一次；继续原任务其余部分，不要用旧设置覆盖它。]`,active);
         this.runTrace.record('display_steer_applied',{params,delivered});
         if(!taskActive())return {kind:'failed',reason:`${outcome.text}但原任务或控制状态已变化，未确认继续。`};
         if(!delivered)return {kind:'handoff-failed',text:`${outcome.text}但原任务尚未收到修改事实，旧计划写入仍被阻止；接管后交还可恢复交接，不会重新执行显示操作。`};
-        return {kind:'applied',text:outcome.text,params:decision.params};
+        return {kind:'applied',text:outcome.text,params:decision.params,...(diff?{diff}:{})};
       }
       if(outcome.executed==='not_executed'){
         if(!active())return {kind:'cancelled'};
@@ -2217,4 +2224,31 @@ function hiddenProgramParams(params: Record<string, unknown>): Record<string, un
 /** User-facing fact for a verified display change; never claims more than the verified parameters. */
 export function displayFactText(params:Record<string,unknown>):string{
   return [params.fontFamily==='songti'?'译文已改成宋体':'',params.mode==='bilingual'?'已显示原文和译文':params.mode==='translated'?'已切换为仅译文':''].filter(Boolean).join('，')+'。';
+}
+
+const DISPLAY_ATTRIBUTE_LABELS:Record<string,string>={fontFamily:'字体',mode:'显示模式'};
+const displayValueLabel=(attribute:string,value:unknown):string=>{
+  if(typeof value!=='string'||!value)return '未知';
+  if(attribute==='fontFamily')return value==='songti'?'宋体':value==='original'?'原字体':value.slice(0,64);
+  if(attribute==='mode')return value==='translated'?'仅译文':value==='bilingual'?'双语':value.slice(0,64);
+  return value.slice(0,64);
+};
+/**
+ * T04 回执差异：只把本次要求改变的字段列为变化；未提到的字段只有在读回里观测到未变时才进保留项。
+ * 旧值取写入前最后一次宿主快照，新值取核对读回，均非模型自报；缺依据返回 undefined，不伪造「其他不变」。
+ */
+export function receiptDisplayDiff(before:TranslationDisplayState,params:Record<string,unknown>,after:TranslationDisplayState,target:string):TaskReceiptDiff|undefined{
+  const changed:TaskReceiptDiff['changed']=[];const preserved:string[]=[];
+  for(const attribute of ['fontFamily','mode'] as const){
+    const label=DISPLAY_ATTRIBUTE_LABELS[attribute]!;
+    if(params[attribute]!==undefined){
+      // 要求值读回后与旧值相同不算一次变化：不制造「宋体 → 宋体」式的假差异。
+      const from=displayValueLabel(attribute,before[attribute]),to=displayValueLabel(attribute,after[attribute]);
+      if(from!==to)changed.push({attribute:label,from,to});
+    }
+    else if(after[attribute]===before[attribute])preserved.push(label);
+  }
+  if(!changed.length)return undefined;
+  const clean=target.trim().slice(0,120);
+  return {target:clean||'当前页面',changed,preserved};
 }

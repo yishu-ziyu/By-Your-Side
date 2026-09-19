@@ -315,6 +315,7 @@ export function handbackContinueText(context: PageContext, snapshot: string,orig
     "[HANDOFF BOUNDARY]",
     "[The CURRENT page and snapshot are authoritative. Stay on this tab. Do not switch tabs, navigate, reload, or reopen any page. Do not reopen the site. These stay-on-page instructions apply only to this restored original task and expire when that original task ends.]",
     "[Continue the original task only from the supplied snapshot. Do not repeat completed steps; treat every completed step as complete and do not redo it. If the original task is already complete, acknowledge that and stop.]",
+    "[The user may have edited fields or content on this page while it was theirs. Those visible values are the user's current decisions: do not overwrite them to satisfy an earlier instruction, keep them, and report any conflict instead of resolving it silently.]",
     ...(originalGoal?["[Original user goal; apply subsequent amendments as constraints]",originalGoal]:[]),
     "[Applying an amendment does not by itself finish the original goal. If authorized work remains, perform its next step now; do not end with a promise to continue in another reply. Continue bounded tool calls until the requested result or explicit stop condition is reached. Never redo completed steps.]",
     `[User's current page: tab ${context.tabId} "${title}" — ${context.url}]`,

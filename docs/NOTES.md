@@ -30,6 +30,16 @@
 
 本地模板匹配的"完整命中"必须要求槽位有终止边界：`(.+?)` 会把 `搜索李四，地区深圳后导出` 整段尾部当材料并给 confidence=1。现在的规则是槽位带引号、或模板里槽位后面还有字面文本，才走确定性直达；无引号的尾部槽位交完整语义判断。代价是未带引号的自由文本不再零模型直达，带引号的换材料路径仍是零模型（真实验收的 `搜索「李四」，地区「深圳」…` 不受影响）。
 
+## 2026-09-19 T05 接续入口：两个“看不见的断点”
+
+A04「恢复触发后挂起」不是模型问题，而是扩展上行连接：旧连接 onclose 排的重连定时器（1s）在新连接建立后照常触发，`connectNative()` 的 teardown 把刚建立的 transport 拆掉，宿主侧等价于一次瞬时断连 → `manager.disconnect()` 中断正在续跑的 turn，且被中断过滤吞掉终态事件。修复在 `extension/src/background/uplink.ts`：定时器到点与 connectNative/connectWs 入口都在已有活传输时直接返回，`retry()` 先清旧定时器。复现器 `scripts/acceptance/t05-connect-repro.mts`（不调模型）：旧代码 host2 连接后 ~835ms 自杀重连，修复后 6s 稳定。任何“重连/补取视图”的新代码都要遵守同一约束：不得为了刷新而拆除正在服务任务的活连接。
+
+`confirm_blocked_write` 的确认卡在本票前从未真正到达面板：`WriteConfirmBroker` 发出的 `consent_request` 少了 envelope `conversationId`，`parseServerMessage` 要求 `request.conversationId === msg.conversationId`，后台静默丢弃整条消息，用户只能等到「确认已过期」。这是 P0 有界恢复在实机上全军覆没的直接原因。补 envelope 字段 + 协议往返回归（`agent/test/task-confirmed-recovery.test.ts`）。同类的“宿主发了但面板收不到”问题，先查协议校验与 envelope，不要先怀疑 UI。
+
+接续入口（`extension/src/sidepanel/resume-entry.ts`）的 「继续」只发 `task_action/resume`（requestId + expectedRunId + expectedControlVersion + 当前活动页 context），由 `ConversationManager.dispatchTaskAction` 的 resume 分支走既有 `session.resumeInterruptedTask`：先重读页面、核对身份、带持久检查点提示词。按钮出现的唯一依据是 T02 视图的 `resumable`（已扩到「idle/error 但只交付部分结果且恢复输入仍在」，与宿主实际支持的 resume 分支一致）。重启恢复期间用户手改的字段由两处提示词保护（`session.ts` RESTART CONTINUATION、`shared/control.ts` handbackContinueText）；若模型请求重设人工值，确认卡上应拒绝而不是允许。
+
+集成注意：`agent/src/conversation-manager.ts` 本票只加了 2 处（`task_view_query` 分支、检查点不可用守卫放行），T04 合入时按此串行 rebase；T03 任务条与本组件各有一份等待原因文案，集成时合并到一处。
+
 ## 2026-09-19 记忆判断失败定位（MiniMax M3 期间）
 
 user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，不能混为「模型不行」：①插话到达即 `invalidateUserTurn`（session.ts 约 L884/L1253），会 abort 进行中的判断子调用，且 steer 通道从不重新 `beginUserTurn`（仅 sendUserMessage 路径），本轮剩余时间记忆写入必死；②同一回合 `turn.change` 同时缓存成功与失败（memory-runtime.ts：重试不能问到同意为止），同轮重试 2ms 返回旧失败；③判断子调用 15 秒硬超时（`AbortSignal.timeout(15_000)`），MiniMax-M3 `supportsReasoningEffort: false` 且无 thinkingLevelMap，思考压不下去，实测 15012ms 撞超时（deepseek-flash 的 minimal 映射为关思考，同类调用 4.9s 完成）；④底层 stopReason/errorMessage 在 session.ts 约 L442 被吞，界面只能说「记忆判断失败」。实测链（00:13–00:17）：插话后 6ms abort → 两次「当前记忆操作已失效」→ 用户点重试开新回合、M3 判断 15s 超时 → 同轮缓存失败 → 换 deepseek-flash 新回合 4.9s 成功。待裁决改进三点：超时按模型自适应或放宽；steer 后重新授权当轮重试；记录底层错误原因。证据 trace：`~/.sideagent/traces/1789745681628-dcc0bb06-236b-4d46-9015-7793aec002d6.jsonl`。
@@ -184,3 +194,13 @@ user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，
 启用日常试用三件套：重载日常扩展、`~/.sideagent/config.json` 的 model 换 minimax-cn/MiniMax-M3（opencode-go/deepseek-flash 周限 429，两天后重置）、displaySteerFastPath 打开。回退点：commit `2bdc618` 之前的状态即 `867f60b` 加未提交树；配置回退用 `/tmp/config.json.bak-20260918`（启用前备份）。
 
 面板驱动要用受信输入（click + focus + CDP Input.insertText + Enter）；直接给 #input 赋 value 不进入框架状态，消息发不出去。验证脚本 `scripts/acceptance/daily-enablement-check.mjs`，证据 `out/enablement/daily-trial-1789743968156/`。
+
+## 2026-09-19 T03 任务条（交接要点）
+
+面板装配有两个不显眼但会致命的顺序坑，改 main.ts 时别再踩：`AttachmentsManager` 构造期就会回调 `onChanged`，谁在里面读还没赋值的 `attachments`（或任务条）就会让整个面板脚本抛异常、`connect()` 永远不执行——界面看起来只是「未连接」。T03 已加 `attachmentsReady` 闸门。
+
+验收脚本要驱动真实侧栏时：headless 默认窗口内高只有 ~413px，任务条一出现就可能把底部发送按钮推出可视区（点击会落在视口外，`elementFromPoint` 返回 null）；`task-bar-harness.mts` 固定 400×900 并在点击前断言元素在视口内。background 只在真实状态变化时下发 `task_view`、且不进历史，面板重开时由 `lastTaskViews` 缓存原样回放，否则任务条会空着等下一次事件。
+
+`task_view` 自带 `conversationId`，但 background 的 `broadcast` 会把封套里的 `conversationId` 改写成「当前可见会话」，所以判断任务身份必须用视图自己的字段（组件里已 `currentConversationId()` 兜住）。
+
+材料事实的口径：面板发送时后台会给 `user_message` 附当前页面上下文，所以任务条在发送后按同一口径补全页面标签（`noteRequestPage`）；页面是上下文、不能移除，选区和附件才可移除。

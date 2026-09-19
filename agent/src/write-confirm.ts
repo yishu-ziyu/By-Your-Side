@@ -77,7 +77,7 @@ export class WriteConfirmBroker {
       timer.unref?.();
       const pending: Pending = {...input, id, expiresAt, done: false, timer, resolve};
       this.pending.set(id, pending);
-      this.emit({type: 'consent_request', request: this.view(pending)});
+      this.emit({type: 'consent_request', conversationId: pending.conversationId, request: this.view(pending)});
     });
   }
 

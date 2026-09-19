@@ -202,6 +202,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
   | { type: "task_action"; request: TaskActionRequest }
   | { type: "task_receipt_query"; requestId: string }
+  /** 重开侧栏/重连/切回会话时补取当前只读任务视图；不产生任务或权限。 */
+  | { type: "task_view_query"; requestId: string }
   | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[] }
   | { type: "abort"; taskRequestId?:string }
   | { type:'task_control_result';requestId:string;action:'pause'|'resume'|'abort';runId:string;ok:boolean;reason?:string;uncertain?:boolean;partial?:boolean }
@@ -488,6 +490,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
         && (r.attachments === undefined || Array.isArray(r.attachments) && r.attachments.every(isAttachment)) ? msg : null;
     }
     if (msg.type === "task_receipt_query") return validRequestId(msg.requestId) ? msg : null;
+    if (msg.type === "task_view_query") return validRequestId(msg.requestId) ? msg : null;
     if(msg.type==='task_control_result')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&typeof msg.ok==='boolean'
       &&(msg.reason===undefined||typeof msg.reason==='string'&&msg.reason.length<=1000)&&(msg.uncertain===undefined||typeof msg.uncertain==='boolean')&&(msg.partial===undefined||typeof msg.partial==='boolean')?msg:null;
     if((msg.type==='takeover'||msg.type==='handback'||msg.type==='abort')&&msg.taskRequestId!==undefined&&!validRequestId(msg.taskRequestId))return null;

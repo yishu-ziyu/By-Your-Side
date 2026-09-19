@@ -4,6 +4,7 @@ import {TaskProgress} from '../src/task-progress.js';
 import {TaskResultBook} from '../src/task-results.js';
 import {createConfirmBlockedWriteTool} from '../src/task-results.js';
 import {WriteConfirmBroker, requirementsFingerprint, pageFingerprint} from '../src/write-confirm.js';
+import {parseServerMessage} from '../../shared/protocol.js';
 import {assertTaskStepExecution, decideTaskNextStep} from '../../shared/task-next-step.js';
 import {isTaskProgressSnapshot} from '../../shared/voice.js';
 import type {ServerMessage} from '../../shared/protocol.js';
@@ -302,5 +303,23 @@ describe('manager revalidates the confirmation binding at decision time',()=>{
     const request=pendingRequest(h.frames);
     await h.manager.handleMessage({type:'consent_decision',conversationId:'default',requestId:request.id,allow:true});
     await expect(pending).resolves.toMatchObject({allowed:false,reason:expect.stringContaining('页面实例已变化')});
+  });
+});
+
+describe('页面重设确认消息能通过生产协议到达真实面板',()=>{
+  it('发出的 consent_request 带 conversationId，并能被 parseServerMessage 接受',async()=>{
+    const frames:ServerMessage[]=[];
+    const broker=new WriteConfirmBroker(message=>frames.push(message));
+    const pending=broker.request({conversationId:'conv-a',runId:'run-1',controlVersion:0,
+      requirementsHash:requirementsFingerprint('填写方案',['填写方案']),
+      pageHash:pageFingerprint({tabId:7,urlHash:'a'.repeat(64)}),
+      tabId:7,documentId:'doc-1',tool:'fill',target:'#choice',value:'远山',goal:'填写方案',description:'填写选择'});
+    const emitted=frames.find(message=>message.type==='consent_request');
+    expect(emitted).toBeDefined();
+    const parsed=parseServerMessage(JSON.stringify(emitted));
+    // 缺 envelope conversationId 时后台会整条丢弃：卡片永远不出现，用户无法确认。
+    expect(parsed).toMatchObject({type:'consent_request',conversationId:'conv-a',request:{kind:'write',conversationId:'conv-a',target:'#choice'}});
+    expect(broker.decide('conv-a',(emitted as Extract<ServerMessage,{type:'consent_request'}>).request.id,true)).toBe(true);
+    await expect(pending).resolves.toEqual({allowed:true});
   });
 });
