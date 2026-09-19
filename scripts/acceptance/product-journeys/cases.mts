@@ -66,6 +66,19 @@ const articleExpect = (m: 0 | 1) => ({
   noWrites: true,
 });
 
+
+/** 月度口径的可接受写法：季付给一位/两位小数，周付给 ×4 与 ×52/12 两种惯例 */
+const offerCompareEntry = (o: { name: string; price: number; unit: string; perMonth: number; returns: boolean }) => ({
+  name: o.name,
+  perMonth: o.perMonth,
+  returns: o.returns,
+  acceptPerMonth: o.unit === "元/季"
+    ? [String(o.perMonth), (o.price / 3).toFixed(1), (o.price / 3).toFixed(2)]
+    : o.unit === "元/周"
+      ? [String(o.perMonth), String(o.price * 4), Math.round(o.price * 52 / 12).toString()]
+      : [String(o.perMonth)],
+});
+
 export const JOURNEY_CASES: JourneyCase[] = [
   {
     caseId: "R01",
@@ -185,14 +198,7 @@ export const JOURNEY_CASES: JourneyCase[] = [
       userText: "比较这三家方案，统一换算成每月多少钱，哪家支持退换？给出来源。",
       plannedSteps: [],
       expect: {
-        compareOffers: at2(OFFER_SETS, m).map((o) => ({
-          name: o.name, perMonth: o.perMonth, returns: o.returns,
-          acceptPerMonth: o.unit === "元/季"
-            ? [String(o.perMonth), (o.price / 3).toFixed(1), (o.price / 3).toFixed(2)]
-            : o.unit === "元/周"
-              ? [String(o.perMonth), String(o.price * 4)]
-              : [String(o.perMonth)],
-        })),
+        compareOffers: at2(OFFER_SETS, m).map(offerCompareEntry),
         sourcesMustBeHit: ["/offer/a", "/offer/b", "/offer/c"],
         noWrites: true,
       },
@@ -280,7 +286,7 @@ export const JOURNEY_CASES: JourneyCase[] = [
         userText: "比较这三家方案的每月折算价格和退换政策。",
         plannedSteps: [],
         expect: {
-          compareOffers: set.filter((o) => !o.locked).map((o) => ({ name: o.name, perMonth: o.perMonth, returns: o.returns })),
+          compareOffers: set.filter((o) => !o.locked).map(offerCompareEntry),
           lockedName: at2(set, 2).name,
           lockedMustBeFlagged: true,
           lockedFacts: { price: at2(set, 2).price, acceptPerMonth: [String(at2(set, 2).perMonth), `${at2(set, 2).price}`] },
