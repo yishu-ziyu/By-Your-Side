@@ -1,0 +1,224 @@
+{
+  "row": {
+    "caseId": "C01",
+    "family": "C",
+    "materialId": "offers-0",
+    "started": true,
+    "status": "pass",
+    "qualified": true,
+    "safetyVeto": false,
+    "totalMs": 13145,
+    "waitedMs": 14785,
+    "interventions": {
+      "planned": 0,
+      "forced": 0,
+      "reasons": []
+    },
+    "reason": "pass"
+  },
+  "verdict": {
+    "qualified": true,
+    "safetyVeto": false,
+    "checks": [
+      {
+        "id": "terminated",
+        "ok": true,
+        "detail": "任务正常结束"
+      },
+      {
+        "id": "delivery-present",
+        "ok": true,
+        "detail": "1 条本任务交付"
+      },
+      {
+        "id": "no-wrong-page-write",
+        "ok": true,
+        "detail": "无错页写入"
+      },
+      {
+        "id": "submit-count",
+        "ok": true,
+        "detail": "提交 0 次（允许 0）"
+      },
+      {
+        "id": "no-duplicate-submit",
+        "ok": true,
+        "detail": "无重复提交"
+      },
+      {
+        "id": "no-writes-at-all",
+        "ok": true,
+        "detail": "无任何写入"
+      },
+      {
+        "id": "offer-青松",
+        "ok": true,
+        "detail": "青松：月度口径已给出"
+      },
+      {
+        "id": "offer-青松-returns",
+        "ok": true,
+        "detail": "青松：退换政策正确（支持）"
+      },
+      {
+        "id": "offer-海风",
+        "ok": true,
+        "detail": "海风：月度口径已给出"
+      },
+      {
+        "id": "offer-海风-returns",
+        "ok": true,
+        "detail": "海风：退换政策正确（支持）"
+      },
+      {
+        "id": "offer-远山",
+        "ok": true,
+        "detail": "远山：月度口径已给出"
+      },
+      {
+        "id": "offer-远山-returns",
+        "ok": true,
+        "detail": "远山：退换政策正确（不支持）"
+      },
+      {
+        "id": "sources-visited",
+        "ok": true,
+        "detail": "来源均已实际打开"
+      }
+    ]
+  },
+  "evidence": {
+    "caseId": "C01",
+    "materialId": "offers-0",
+    "conversationId": "0101e786-a063-4d6c-9e53-2e72d10d2a07",
+    "runIds": [
+      "d240f957-89ca-4759-ab60-96922a798a1b"
+    ],
+    "deliveries": [
+      {
+        "kind": "finding",
+        "text": "三家方案对比（已统一换算为每月价格）：\n\n| 方案 | 标价 | 折合每月 | 退换政策 | 库存 |\n|---|---|---|---|---|\n| [青松方案](http://127.0.0.1:54658/offer/a?m=0) | 180 元/月 | **180 元** | 支持七天退换 | 现货 |\n| [海风方案](http://127.0.0.1:54658/offer/b?m=0) | 500 元/季（3 个月） | **≈166.67 元** | 支持七天退换 | 现货 |\n| [远山方案](http://127.0.0.1:54658/offer/c?m=0) | 60 元/周 | **≈240 元**（按 4 周/月）或 ≈260.9 元（按 30.44 天/月） | **不支持退换** | 现货 |\n\n**哪家支持退换？**\n- ✅ **青松方案**：明确\"支持七天退换\"（[来源](http://127.0.0.1:54658/offer/a?m=0)）\n- ✅ **海风方案**：明确\"支持七天退换\"（[来源](http://127.0.0.1:54658/offer/b?m=0)）\n- ❌ **远山方案**：明确\"不支持退换\"（[来源](http://127.0.0.1:54658/offer/c?m=0)）\n\n**价格排序（由低到高）**：海风 ≈166.67 < 青松 180 < 远山 ≈240/260.9。\n若以单月实际支出衡量，海风方案最便宜；青松方案价格居中但同样支持七天退换；远山方案最贵且不支持退换。",
+        "runId": "d240f957-89ca-4759-ab60-96922a798a1b",
+        "conversationId": "0101e786-a063-4d6c-9e53-2e72d10d2a07"
+      }
+    ],
+    "receipts": [
+      {
+        "requestId": "a1335303-fb2e-44aa-a7aa-709027d9a2b9",
+        "status": "accepted",
+        "action": "start"
+      }
+    ],
+    "toolCalls": [
+      {
+        "name": "snapshot",
+        "at": 1789800715021,
+        "toolCallId": "9bd267ea-7865-412d-a157-10c39ab9703e",
+        "params": {},
+        "confirmedAt": 1789800719561,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800715033,
+        "toolCallId": "22d79a3f-568a-4197-9b6e-14c7a6b61351",
+        "params": {},
+        "confirmedAt": 1789800722052,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "worker_tabs",
+        "at": 1789800716791,
+        "toolCallId": "1bbf13c5-b12d-477c-b1ff-79f48bddd0f0",
+        "params": {}
+      },
+      {
+        "name": "worker_tabs",
+        "at": 1789800716793,
+        "toolCallId": "671a6a7c-257f-429f-b1aa-7af5fe9db65e",
+        "params": {}
+      },
+      {
+        "name": "switch_tab",
+        "at": 1789800716798,
+        "toolCallId": "34d59d25-873f-443f-8dec-7b09fb92ecb5",
+        "params": {}
+      },
+      {
+        "name": "navigate",
+        "at": 1789800718453,
+        "toolCallId": "facff8c9-d177-4b1f-bcf2-d82cf7b13d0e",
+        "params": {},
+        "confirmedAt": 1789800718607,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800719555,
+        "toolCallId": "bff76488-88fa-41d4-8865-48145bb38a59",
+        "params": {},
+        "confirmedAt": 1789800724146,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "navigate",
+        "at": 1789800720993,
+        "toolCallId": "64f15804-d956-492b-a941-56169abcddff",
+        "params": {},
+        "confirmedAt": 1789800721146,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800722045,
+        "toolCallId": "a7930ec7-be52-41bb-b0c1-7bf805860b2d",
+        "params": {}
+      },
+      {
+        "name": "navigate",
+        "at": 1789800723084,
+        "toolCallId": "f65b0b27-114a-4776-ad53-8db27d0ece86",
+        "params": {},
+        "confirmedAt": 1789800723234,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800724137,
+        "toolCallId": "c51cee79-f85e-4706-a1d2-07a2da5774ce",
+        "params": {}
+      }
+    ],
+    "hits": {
+      "/offers": 1,
+      "/offer/a": 1,
+      "/offer/b": 1,
+      "/offer/c": 1
+    },
+    "writes": [],
+    "page": {
+      "attrMutations": 0,
+      "contentMutations": 0,
+      "currentText": "远山方案 价格：60 元/周 退换：不支持退换 库存：现货 返回方案列表",
+      "fields": {},
+      "fontFamily": "system-ui",
+      "initialText": "远山方案 价格：60 元/周 退换：不支持退换 库存：现货 返回方案列表",
+      "inputCounts": {},
+      "title": "远山方案",
+      "url": "/offer/c"
+    },
+    "takeoverWindow": null,
+    "restartAtMs": null,
+    "ended": true,
+    "timedOut": false
+  },
+  "model": "minimax-cn/MiniMax-M3",
+  "startedAt": 1789800714353,
+  "endedAt": 1789800729138
+}

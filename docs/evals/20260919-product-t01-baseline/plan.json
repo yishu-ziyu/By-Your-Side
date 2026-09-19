@@ -1,0 +1,55 @@
+{
+  "runId": "journeys-baseline-2026-09-19T06-50-24-889Z",
+  "suite": "baseline",
+  "model": "minimax-cn/MiniMax-M3",
+  "rows": [
+    {
+      "caseId": "R01",
+      "material": 0
+    },
+    {
+      "caseId": "R02",
+      "material": 0
+    },
+    {
+      "caseId": "R03",
+      "material": 0
+    },
+    {
+      "caseId": "R04",
+      "material": 0
+    },
+    {
+      "caseId": "C01",
+      "material": 0
+    },
+    {
+      "caseId": "C02",
+      "material": 0
+    },
+    {
+      "caseId": "C03",
+      "material": 0
+    },
+    {
+      "caseId": "C04",
+      "material": 0
+    },
+    {
+      "caseId": "A01",
+      "material": 0
+    },
+    {
+      "caseId": "A02",
+      "material": 0
+    },
+    {
+      "caseId": "A03",
+      "material": 0
+    },
+    {
+      "caseId": "A04",
+      "material": 0
+    }
+  ]
+}

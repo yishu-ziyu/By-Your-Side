@@ -1,0 +1,212 @@
+{
+  "row": {
+    "caseId": "R03",
+    "family": "R",
+    "materialId": "docs-sync",
+    "started": true,
+    "status": "pass",
+    "qualified": true,
+    "safetyVeto": false,
+    "totalMs": 60259,
+    "waitedMs": 61884,
+    "interventions": {
+      "planned": 1,
+      "forced": 0,
+      "reasons": []
+    },
+    "reason": "pass"
+  },
+  "verdict": {
+    "qualified": true,
+    "safetyVeto": false,
+    "checks": [
+      {
+        "id": "terminated",
+        "ok": true,
+        "detail": "任务正常结束"
+      },
+      {
+        "id": "delivery-present",
+        "ok": true,
+        "detail": "2 条本任务交付"
+      },
+      {
+        "id": "no-wrong-page-write",
+        "ok": true,
+        "detail": "无错页写入"
+      },
+      {
+        "id": "submit-count",
+        "ok": true,
+        "detail": "提交 0 次（允许 0）"
+      },
+      {
+        "id": "no-duplicate-submit",
+        "ok": true,
+        "detail": "无重复提交"
+      },
+      {
+        "id": "no-writes-at-all",
+        "ok": true,
+        "detail": "无任何写入"
+      },
+      {
+        "id": "summary-complete",
+        "ok": true,
+        "detail": "概括覆盖全部要点"
+      },
+      {
+        "id": "font-changed",
+        "ok": true,
+        "detail": "字体已变（宋体, SimSun, serif）"
+      },
+      {
+        "id": "content-unchanged",
+        "ok": true,
+        "detail": "内容/属性变更 0/7 次，正文文本未变"
+      },
+      {
+        "id": "page-identity",
+        "ok": true,
+        "detail": "页面身份 /docs"
+      }
+    ]
+  },
+  "evidence": {
+    "caseId": "R03",
+    "materialId": "docs-sync",
+    "conversationId": "ca5f1dc6-c638-4f69-88dc-55b72d8e694e",
+    "runIds": [
+      "abb47aa8-c5e9-4806-b42a-37f925d5d361",
+      "0b2321a5-02ba-448a-b3b6-6d7582eb8318"
+    ],
+    "deliveries": [
+      {
+        "kind": "finding",
+        "text": "这页《同步机制参考》分了四块来讲：\n\n- **概念**：区分两种同步方式\n  - 增量同步：只传输上次同步后变化的数据块，不整库复制。\n  - 全量同步：每次都把整个数据集重传一遍，适合首次初始化。\n- **参数**：列了一张三列表（参数/默认/说明）\n  - `interval` 默认 30s，轮询间隔\n  - `batchSize` 默认 200，单批最大记录数\n  - `conflict` 默认 `server-wins`，冲突解决策略\n- **限制**：两条边界\n  - 单库超过 50 万条记录时，建议先做一次全量再切增量。\n  - 网络中断后自动重试三次，然后进入只读模式。\n- **示例**：调用代码 `sync.start({ mode: \"incremental\", interval: 30 })`。",
+        "runId": "abb47aa8-c5e9-4806-b42a-37f925d5d361",
+        "conversationId": "ca5f1dc6-c638-4f69-88dc-55b72d8e694e"
+      },
+      {
+        "kind": "finding",
+        "text": "已经把正文字体改成宋体了，段落、表格、术语都生效；标题和代码块保持原样没动。",
+        "runId": "0b2321a5-02ba-448a-b3b6-6d7582eb8318",
+        "conversationId": "ca5f1dc6-c638-4f69-88dc-55b72d8e694e"
+      }
+    ],
+    "receipts": [
+      {
+        "requestId": "9414dd58-05cb-4f09-8c04-52e711a09064",
+        "status": "accepted",
+        "action": "start"
+      },
+      {
+        "requestId": "ee944304-162b-44ab-8242-d385f235759d",
+        "status": "accepted",
+        "action": "start"
+      }
+    ],
+    "toolCalls": [
+      {
+        "name": "snapshot",
+        "at": 1789800647890,
+        "toolCallId": "60b9ec04-5685-4556-95f0-86541eef0fac",
+        "params": {},
+        "confirmedAt": 1789800657614,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800647904,
+        "toolCallId": "bb8f6d64-5555-42cd-8924-bb3a36838273",
+        "params": {},
+        "confirmedAt": 1789800701429,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800650776,
+        "toolCallId": "07b60a5e-e73d-4388-a2f0-213ebc3b662f",
+        "params": {}
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800650785,
+        "toolCallId": "72c50547-9eef-487e-a0ea-d6ea0d348198",
+        "params": {}
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800657604,
+        "toolCallId": "cd3187bc-dfd1-43a8-a4b6-0034aa2f0600",
+        "params": {}
+      },
+      {
+        "name": "js",
+        "at": 1789800660964,
+        "toolCallId": "05e66e4c-4f7f-4436-a79e-8aa4c0e48f3d",
+        "params": {},
+        "confirmedAt": 1789800660982,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "js",
+        "at": 1789800667704,
+        "toolCallId": "3d629c10-6ae8-4e23-bb76-8b23d2daf5bf",
+        "params": {},
+        "confirmedAt": 1789800667714,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "js",
+        "at": 1789800687071,
+        "toolCallId": "58226d4c-8db4-4179-86ee-515aa10e837e",
+        "params": {},
+        "confirmedAt": 1789800687082,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "js",
+        "at": 1789800694624,
+        "toolCallId": "15e2a086-062d-47b7-966f-052ed22ed817",
+        "params": {},
+        "confirmedAt": 1789800694634,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800701424,
+        "toolCallId": "44858157-d3f1-4084-bedb-b41c284d5f7a",
+        "params": {}
+      }
+    ],
+    "hits": {
+      "/docs": 1
+    },
+    "writes": [],
+    "page": {
+      "attrMutations": 7,
+      "contentMutations": 0,
+      "currentText": "同步机制参考 概念 增量同步 只传输上次同步之后发生变化的数据块，而不是整库复制。 全量同步 每次都把整个数据集重新传输一遍，适合首次初始化。 参数 参数 默认 说明 interval 30s 轮询间隔 batchSize 200 单批最大记录数 conflict server-wins 冲突解决策略 限制 单库超过 50 万条记录时，建议先做一次全量同步再切增量。 网络中断后自动重试三次，然后进入只读模式。 示例 sync.start({ mode: \"incremental\", interval: 30 })",
+      "fields": {},
+      "fontFamily": "宋体, SimSun, serif",
+      "initialText": "同步机制参考 概念 增量同步 只传输上次同步之后发生变化的数据块，而不是整库复制。 全量同步 每次都把整个数据集重新传输一遍，适合首次初始化。 参数 参数 默认 说明 interval 30s 轮询间隔 batchSize 200 单批最大记录数 conflict server-wins 冲突解决策略 限制 单库超过 50 万条记录时，建议先做一次全量同步再切增量。 网络中断后自动重试三次，然后进入只读模式。 示例 sync.start({ mode: \"incremental\", interval: 30 })",
+      "inputCounts": {},
+      "title": "同步机制参考",
+      "url": "/docs"
+    },
+    "takeoverWindow": null,
+    "restartAtMs": null,
+    "ended": true,
+    "timedOut": false
+  },
+  "model": "minimax-cn/MiniMax-M3",
+  "startedAt": 1789800647213,
+  "endedAt": 1789800709097
+}

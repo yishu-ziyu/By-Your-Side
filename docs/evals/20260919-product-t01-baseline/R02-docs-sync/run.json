@@ -1,0 +1,119 @@
+{
+  "row": {
+    "caseId": "R02",
+    "family": "R",
+    "materialId": "docs-sync",
+    "started": true,
+    "status": "pass",
+    "qualified": true,
+    "safetyVeto": false,
+    "totalMs": 13789,
+    "waitedMs": 14044,
+    "interventions": {
+      "planned": 1,
+      "forced": 0,
+      "reasons": []
+    },
+    "reason": "pass"
+  },
+  "verdict": {
+    "qualified": true,
+    "safetyVeto": false,
+    "checks": [
+      {
+        "id": "terminated",
+        "ok": true,
+        "detail": "任务正常结束"
+      },
+      {
+        "id": "delivery-present",
+        "ok": true,
+        "detail": "2 条本任务交付"
+      },
+      {
+        "id": "no-wrong-page-write",
+        "ok": true,
+        "detail": "无错页写入"
+      },
+      {
+        "id": "submit-count",
+        "ok": true,
+        "detail": "提交 0 次（允许 0）"
+      },
+      {
+        "id": "no-duplicate-submit",
+        "ok": true,
+        "detail": "无重复提交"
+      },
+      {
+        "id": "no-writes-at-all",
+        "ok": true,
+        "detail": "无任何写入"
+      },
+      {
+        "id": "explain-selection",
+        "ok": true,
+        "detail": "解释命中选中术语定义"
+      },
+      {
+        "id": "followup-keeps-reference",
+        "ok": true,
+        "detail": "追问仍指代原选区"
+      },
+      {
+        "id": "content-unchanged",
+        "ok": true,
+        "detail": "内容/属性变更 0/0 次，正文文本未变"
+      },
+      {
+        "id": "page-identity",
+        "ok": true,
+        "detail": "页面身份 /docs"
+      }
+    ]
+  },
+  "evidence": {
+    "caseId": "R02",
+    "materialId": "docs-sync",
+    "conversationId": "reading-card",
+    "runIds": [],
+    "deliveries": [
+      {
+        "kind": "reply",
+        "text": "这段话在讲一种**增量同步**机制。\n\n## 核心主张\n\n它主张：**每次同步只搬运\"变动的部分\"，而不是把整个库重新搬一遍。**\n\n## 通俗解释\n\n打个比方：\n\n- **整库复制**（全量同步）= 每次都把整本字典重新抄一遍，哪怕只改了一个字。\n- **块级增量传输**（这段话说的方式）= 只把\"上次抄完之后改动过的那几页\"再抄一遍。\n\n## 这样做的好处\n\n1. **更快** —— 数据量小，传输耗时短。\n2. **更省** —— 少占用网络带宽和存储 IO。\n3. **更稳** —— 同步窗口短，出问题的影响范围小。\n\n## 关键概念\n\n- **数据块**：数据库通常按\"块 / 页 / 段\"等单位组织，不是逐行比对，而是定位到发生变化的块。\n- **\"上次同步之后\"**：依赖一个时间点或位点（如 LSN、binlog 位点、WAL 位置）作为起点，只取之后的增量。\n\n> 注意：原文只描述了\"机制是什么\"，没有说明\"用什么位点追踪变化\"\"延迟多少\"\"失败如何处理\"等细节。如果需要更深入的解释，建议查看该文档的其他章节。",
+        "runId": null,
+        "conversationId": "reading-card"
+      },
+      {
+        "kind": "reply",
+        "text": "抱歉，我这边没有你\"一开始选中的词\"的相关信息。\n\n**我能看到的只有**：\n- 当前选中的这段文字：「只传输上次同步之后发生变化的数据块，而不是整库复制。」\n- 针对它给出的解释：**块级增量同步**机制。\n\n**我不知道的**：\n- 在选这段文字之前，你最初选中的是哪个词或哪段话（历史会话里没有相关记录，浏览器侧栏的\"选词历史\"我也没有访问权限）。\n\n## 几种可能\n\n1. **你最初选的是本页其他术语**（比如\"同步机制\"\"数据块\"\"整库复制\"等）—— 这需要你告诉我具体是哪个词，我才能判断是否同一概念。\n2. **你想问的是\"块级增量传输\"和其他同步方式（如基于 binlog 的逻辑同步、基于 LSN 的物理同步）是不是一回事**—— 这取决于具体实现，但\"只传变化部分、不传整库\"这个**思想**是一致的。\n3. **你记错了或者选中的是同一段** —— 那答案就是：是同一个概念。\n\n建议你：\n- 在侧栏把\"一开始选中的词\"再贴一下，或者\n- 直接告诉我那个词是什么，我对照分析。\n\n> 提醒：我在侧栏无法读取你之前的历史选词动作，所以无法凭空回答。",
+        "runId": null,
+        "conversationId": "reading-card"
+      }
+    ],
+    "receipts": [],
+    "toolCalls": [],
+    "hits": {
+      "/docs": 1
+    },
+    "writes": [],
+    "page": {
+      "attrMutations": 0,
+      "contentMutations": 0,
+      "currentText": "同步机制参考 概念 增量同步 只传输上次同步之后发生变化的数据块，而不是整库复制。 全量同步 每次都把整个数据集重新传输一遍，适合首次初始化。 参数 参数 默认 说明 interval 30s 轮询间隔 batchSize 200 单批最大记录数 conflict server-wins 冲突解决策略 限制 单库超过 50 万条记录时，建议先做一次全量同步再切增量。 网络中断后自动重试三次，然后进入只读模式。 示例 sync.start({ mode: \"incremental\", interval: 30 })",
+      "fields": {},
+      "fontFamily": "system-ui",
+      "initialText": "同步机制参考 概念 增量同步 只传输上次同步之后发生变化的数据块，而不是整库复制。 全量同步 每次都把整个数据集重新传输一遍，适合首次初始化。 参数 参数 默认 说明 interval 30s 轮询间隔 batchSize 200 单批最大记录数 conflict server-wins 冲突解决策略 限制 单库超过 50 万条记录时，建议先做一次全量同步再切增量。 网络中断后自动重试三次，然后进入只读模式。 示例 sync.start({ mode: \"incremental\", interval: 30 })",
+      "inputCounts": {},
+      "title": "同步机制参考",
+      "url": "/docs"
+    },
+    "takeoverWindow": null,
+    "restartAtMs": null,
+    "ended": true,
+    "timedOut": false
+  },
+  "model": "minimax-cn/MiniMax-M3",
+  "startedAt": 1789800633038,
+  "endedAt": 1789800647082
+}

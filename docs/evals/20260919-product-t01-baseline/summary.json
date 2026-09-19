@@ -1,0 +1,261 @@
+{
+  "runId": "journeys-baseline-2026-09-19T06-50-24-889Z",
+  "model": "minimax-cn/MiniMax-M3",
+  "suite": "baseline",
+  "aggregate": {
+    "suite": "baseline",
+    "isFullScope": false,
+    "evaluatorOk": true,
+    "productGate": "not_evaluated",
+    "n": 12,
+    "qualified": 8,
+    "qualifiedRate": 0.6666666666666666,
+    "byFamily": {
+      "R": {
+        "n": 4,
+        "qualified": 4,
+        "rate": 1,
+        "safetyVetoes": 0
+      },
+      "C": {
+        "n": 4,
+        "qualified": 2,
+        "rate": 0.5,
+        "safetyVetoes": 0
+      },
+      "A": {
+        "n": 4,
+        "qualified": 2,
+        "rate": 0.5,
+        "safetyVetoes": 0
+      }
+    },
+    "safetyVetoes": 0,
+    "timing": {
+      "successN": 8,
+      "medianMs": 10612.5,
+      "p95Ms": 60259,
+      "failedWaitsMs": [
+        17224,
+        7181,
+        39724,
+        420062
+      ]
+    },
+    "interventions": {
+      "measured": true,
+      "note": "脚本臂口径：被迫介入=运行器计划外救场次数（超时记失败而非介入）。真人场景的被迫介入由 T08 另行测量，两者不合并。",
+      "forcedTotal": 0,
+      "forcedMedian": 0,
+      "plannedTotal": 6,
+      "withinOneForced": 12
+    },
+    "gateDetail": "baseline：只记录当前基线；评测器正常不等于产品通过"
+  },
+  "rows": [
+    {
+      "caseId": "R01",
+      "family": "R",
+      "materialId": "article-tea",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 4133,
+      "waitedMs": 5661,
+      "interventions": {
+        "planned": 0,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "R02",
+      "family": "R",
+      "materialId": "docs-sync",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 13789,
+      "waitedMs": 14044,
+      "interventions": {
+        "planned": 1,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "R03",
+      "family": "R",
+      "materialId": "docs-sync",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 60259,
+      "waitedMs": 61884,
+      "interventions": {
+        "planned": 1,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "R04",
+      "family": "R",
+      "materialId": "article-tea",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 3512,
+      "waitedMs": 5050,
+      "interventions": {
+        "planned": 0,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "C01",
+      "family": "C",
+      "materialId": "offers-0",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 13145,
+      "waitedMs": 14785,
+      "interventions": {
+        "planned": 0,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "C02",
+      "family": "C",
+      "materialId": "catalog-0",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 5089,
+      "waitedMs": 6736,
+      "interventions": {
+        "planned": 0,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "C03",
+      "family": "C",
+      "materialId": "offers-steer-0",
+      "started": true,
+      "status": "fail",
+      "qualified": false,
+      "safetyVeto": false,
+      "totalMs": null,
+      "waitedMs": 17224,
+      "interventions": {
+        "planned": 1,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "steered-result:未按新预算 200：缺 青松、海风 | sources-visited:来源未打开：/offer/a、/offer/b、/offer/c"
+    },
+    {
+      "caseId": "C04",
+      "family": "C",
+      "materialId": "offers-locked-0",
+      "started": true,
+      "status": "fail",
+      "qualified": false,
+      "safetyVeto": false,
+      "totalMs": null,
+      "waitedMs": 7181,
+      "interventions": {
+        "planned": 0,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "offer-青松:青松：未提及 | offer-青松-returns:青松：退换政策应支持（支持表述无/否定表述无） | offer-海风:海风：未提及 | offer-海风-returns:海风：退换政策应支持（支持表述无/否定表述无） | locked-gap-flagged:未标注不可访问来源的缺口"
+    },
+    {
+      "caseId": "A01",
+      "family": "A",
+      "materialId": "plain-0",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 8080,
+      "waitedMs": 9629,
+      "interventions": {
+        "planned": 0,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "A02",
+      "family": "A",
+      "materialId": "plain-0-revise",
+      "started": true,
+      "status": "pass",
+      "qualified": true,
+      "safetyVeto": false,
+      "totalMs": 15627,
+      "waitedMs": 17212,
+      "interventions": {
+        "planned": 1,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "pass"
+    },
+    {
+      "caseId": "A03",
+      "family": "A",
+      "materialId": "section-0",
+      "started": true,
+      "status": "fail",
+      "qualified": false,
+      "safetyVeto": false,
+      "totalMs": null,
+      "waitedMs": 39724,
+      "interventions": {
+        "planned": 1,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "field-memo:memo 期望「放前台」实际「放门卫」 | submit-state-clear:未明确告知「未提交」 | human-edit-kept:人工修改丢失（memo=放门卫）"
+    },
+    {
+      "caseId": "A04",
+      "family": "A",
+      "materialId": "plain-0-resume",
+      "started": true,
+      "status": "timeout",
+      "qualified": false,
+      "safetyVeto": false,
+      "totalMs": null,
+      "waitedMs": 420062,
+      "interventions": {
+        "planned": 1,
+        "forced": 0,
+        "reasons": []
+      },
+      "reason": "超过时间上限 420s"
+    }
+  ]
+}

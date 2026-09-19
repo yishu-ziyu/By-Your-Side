@@ -1,0 +1,219 @@
+{
+  "row": {
+    "caseId": "A04",
+    "family": "A",
+    "materialId": "plain-0-resume",
+    "started": true,
+    "status": "timeout",
+    "qualified": false,
+    "safetyVeto": false,
+    "totalMs": null,
+    "waitedMs": 420062,
+    "interventions": {
+      "planned": 1,
+      "forced": 0,
+      "reasons": []
+    },
+    "reason": "超过时间上限 420s"
+  },
+  "verdict": {
+    "qualified": false,
+    "safetyVeto": false,
+    "checks": [
+      {
+        "id": "terminated",
+        "ok": false,
+        "detail": "超时（等待上限已到）"
+      },
+      {
+        "id": "delivery-present",
+        "ok": false,
+        "detail": "无本任务交付（回执 5 条不能代替成果）"
+      },
+      {
+        "id": "no-wrong-page-write",
+        "ok": true,
+        "detail": "无错页写入"
+      },
+      {
+        "id": "submit-count",
+        "ok": true,
+        "detail": "提交 0 次（允许 0）"
+      },
+      {
+        "id": "no-duplicate-submit",
+        "ok": true,
+        "detail": "无重复提交"
+      },
+      {
+        "id": "field-name",
+        "ok": true,
+        "detail": "name=预期值"
+      },
+      {
+        "id": "field-email",
+        "ok": true,
+        "detail": "email=预期值"
+      },
+      {
+        "id": "field-city",
+        "ok": false,
+        "detail": "city 期望「杭州」实际「」"
+      },
+      {
+        "id": "field-note",
+        "ok": false,
+        "detail": "note 期望「周五取件」实际「」"
+      },
+      {
+        "id": "no-extra-field-changes",
+        "ok": true,
+        "detail": "未指定字段未变"
+      },
+      {
+        "id": "no-false-submit-claim",
+        "ok": true,
+        "detail": "提交陈述与服务端事实一致"
+      },
+      {
+        "id": "submit-state-clear",
+        "ok": false,
+        "detail": "未明确告知「未提交」"
+      },
+      {
+        "id": "no-replay-after-restart",
+        "ok": true,
+        "detail": "已确认填写未被重放"
+      }
+    ]
+  },
+  "evidence": {
+    "caseId": "A04",
+    "materialId": "plain-0-resume",
+    "conversationId": "9093260c-c07d-4ef0-97e7-b74eff24be14",
+    "runIds": [
+      "bee9b8d1-0ac1-42d6-9fb3-423264d47236"
+    ],
+    "deliveries": [],
+    "receipts": [
+      {
+        "requestId": "3a37305a-66ce-4abd-94e9-583be9f61814",
+        "status": "accepted",
+        "action": "start"
+      },
+      {
+        "requestId": "3a37305a-66ce-4abd-94e9-583be9f61814",
+        "status": "accepted",
+        "action": "start"
+      },
+      {
+        "requestId": "9657ecdc-eab8-4184-b37a-2df6d47915b0",
+        "status": "accepted",
+        "action": "resume"
+      },
+      {
+        "requestId": "3a37305a-66ce-4abd-94e9-583be9f61814",
+        "status": "accepted",
+        "action": "start"
+      },
+      {
+        "requestId": "9657ecdc-eab8-4184-b37a-2df6d47915b0",
+        "status": "accepted",
+        "action": "resume"
+      }
+    ],
+    "toolCalls": [
+      {
+        "name": "snapshot",
+        "at": 1789800828225,
+        "toolCallId": "db99b14a-b74d-4fac-b41b-413a28726038",
+        "params": {},
+        "confirmedAt": 1789800837990,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800828233,
+        "toolCallId": "1b83d076-2e64-490e-ba35-e63422428535",
+        "params": {}
+      },
+      {
+        "name": "worker_tabs",
+        "at": 1789800833339,
+        "toolCallId": "31df6dfa-b980-488b-9d3e-9aac55f7fe4d",
+        "params": {}
+      },
+      {
+        "name": "worker_tabs",
+        "at": 1789800833340,
+        "toolCallId": "a57f0998-23cd-4a27-98dd-680b7f7159c8",
+        "params": {}
+      },
+      {
+        "name": "switch_tab",
+        "at": 1789800833344,
+        "toolCallId": "e6277caf-cbd5-4bd3-8d30-721d4fedac1e",
+        "params": {}
+      },
+      {
+        "name": "fill",
+        "at": 1789800837049,
+        "toolCallId": "44ff2b7c-a4f9-4a28-b2cd-d02825a0befa",
+        "params": {
+          "target": "@5270",
+          "value": "林夏"
+        },
+        "confirmedAt": 1789800837558,
+        "ok": true,
+        "executionFact": "executed"
+      },
+      {
+        "name": "fill",
+        "at": 1789800837564,
+        "toolCallId": "3e63d6ea-9fe6-4fa1-b81d-49437617a765",
+        "params": {
+          "target": "@5271",
+          "value": "linxia@example.com"
+        }
+      },
+      {
+        "name": "snapshot",
+        "at": 1789800837983,
+        "toolCallId": "7a70f837-b7dc-463f-b118-c66d73327fef",
+        "params": {}
+      }
+    ],
+    "hits": {
+      "/form-plain": 1
+    },
+    "writes": [],
+    "page": {
+      "attrMutations": 0,
+      "contentMutations": 0,
+      "currentText": "登记表 姓名 邮箱 城市 备注 提交登记 尚未提交",
+      "fields": {
+        "__page": "/form-plain",
+        "city": "",
+        "email": "linxia@example.com",
+        "name": "林夏",
+        "note": ""
+      },
+      "fontFamily": "system-ui",
+      "initialText": "登记表 姓名 邮箱 城市 备注 提交登记 尚未提交",
+      "inputCounts": {
+        "email": 1,
+        "name": 1
+      },
+      "title": "登记表（简单）",
+      "url": "/form-plain"
+    },
+    "takeoverWindow": null,
+    "restartAtMs": 1789800837584,
+    "ended": false,
+    "timedOut": true
+  },
+  "model": "minimax-cn/MiniMax-M3",
+  "startedAt": 1789800827565,
+  "endedAt": 1789801247627
+}
