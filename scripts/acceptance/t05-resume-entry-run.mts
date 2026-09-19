@@ -119,7 +119,7 @@ async function killHostAt(cue: 'accepted' | 'first-fill', from: number): Promise
 
 async function openPanel(): Promise<string> {
   const id = (await iso!.swEval('chrome.runtime.id')) as string;
-  const target = await iso!.newTarget(`chrome-extension://${id}/sidepanel.html`);
+  const target = await iso!.newTarget(`chrome-extension://${id}/sidepanel.html?acceptance=t05`);
   await until(async () => (await iso!.evalIn(target, "!!document.querySelector('#input')")) || undefined, 10_000, 'panel input');
   return target;
 }

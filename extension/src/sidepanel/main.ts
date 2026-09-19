@@ -2836,8 +2836,11 @@ function queryTaskView(): void {
 
 // 验收测量入口（只读）：触发一次视图补取 / 读取「收到快照 → 摘要下一帧」的采样。
 // 不产生任务、权限或页面动作，供隔离浏览器验收脚本使用。
-(globalThis as { __t05QueryView?: () => void }).__t05QueryView = () => queryTaskView();
-(globalThis as { __resumeEntryTiming?: () => unknown }).__resumeEntryTiming = () => resumeEntry.timing();
+// 验收钩子只在显式验收模式下暴露（acceptance 脚本打开 sidepanel.html?acceptance=t05）
+if (new URLSearchParams(location.search).get("acceptance") === "t05") {
+  (globalThis as { __t05QueryView?: () => void }).__t05QueryView = () => queryTaskView();
+  (globalThis as { __resumeEntryTiming?: () => unknown }).__resumeEntryTiming = () => resumeEntry.timing();
+}
 
 function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {
   const outcome = memoryState.receive(msg.conversationId, msg);
@@ -2950,6 +2953,8 @@ function handleServerMessage(raw: string): void {
     case "task_view":
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
+      // T03 任务条：只信视图自己的任务身份，跨会话/旧 run 的视图不改当下这一条。
+      if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;
     case "team_status":
       noteRunStarted(conversations.get(selectedConversationId)?.runId);
@@ -2957,10 +2962,6 @@ function handleServerMessage(raw: string): void {
       break;
     case "agent_event":
       handleAgentEvent(msg.event, msg.sessionId, msg.runId);
-      break;
-    case "task_view":
-      // 只信视图自己的任务身份：跨会话/旧 run 的视图不改当下这一条。
-      if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;
     default:
       break;

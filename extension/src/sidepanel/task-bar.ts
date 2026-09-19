@@ -42,12 +42,12 @@ export function waitingCopy(reason: string, detail: string | null): { text: stri
   };
 }
 
-/** 状态层：一句话说清现在该谁行动。 */
-export function stateHeadline(state: TaskView["state"]): string {
+/** 状态层：一句话说清现在该谁行动。interrupted 必须区分有无真实恢复依据（与 T05 接续入口同口径）。 */
+export function stateHeadline(state: TaskView["state"], resumable?: boolean): string {
   switch (state) {
     case "running": return "正在执行";
     case "paused": return "已暂停 · 页面归你";
-    case "interrupted": return "已中断 · 可继续";
+    case "interrupted": return resumable === false ? "已中断 · 没有可恢复的依据" : "已中断 · 可继续";
     case "aborted": return "已停止";
     case "error": return "出错";
     case "idle": return "已结束";
@@ -290,7 +290,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   }
 
   const goal = view?.goal ?? null;
-  const headline = view ? stateHeadline(view.state) : "新任务";
+  const headline = view ? stateHeadline(view.state, view.resumable) : "新任务";
   let activity: string | null = null;
   if (view?.state === "running") {
     activity = activityText(view);

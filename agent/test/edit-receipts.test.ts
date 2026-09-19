@@ -272,3 +272,21 @@ describe('旧数据兼容与字段校验', () => {
     expect(isTaskReceipt({...legacy, status: 'applied', diff: {target: '文章', changed: [{attribute: '字体', from: '原字体', to: '宋体'}], preserved: ['显示模式']}})).toBe(true);
   });
 });
+
+describe('差异构造不变量（复核 P2-3）', () => {
+  it('changed 只含 params 内的属性，preserved 只含 params 外的属性', async () => {
+    const { receiptDisplayDiff } = await import('../src/session.js');
+    const before = { fontFamily: 'original', mode: 'translation' } as never;
+    const afterBoth = { fontFamily: 'songti', mode: 'bilingual' } as never;
+    // params 只要求字体：即使模式也变了，changed 只能列字体；模式不进 preserved（因为它确实变了，不能说「保持不变」）
+    const diff = receiptDisplayDiff(before, { fontFamily: 'songti' }, afterBoth, '文章')!;
+    expect(diff.changed.map((c) => c.attribute)).toEqual(['字体']);
+    expect(diff.preserved).toEqual([]);
+    // params 外属性未变才进 preserved
+    const diff2 = receiptDisplayDiff(before, { fontFamily: 'songti' }, { fontFamily: 'songti', mode: 'translation' } as never, '文章')!;
+    expect(diff2.changed.map((c) => c.attribute)).toEqual(['字体']);
+    expect(diff2.preserved).toEqual(['显示模式']);
+    // params 内的属性若读回与旧值相同，不造假差异
+    expect(receiptDisplayDiff(before, { fontFamily: 'original' }, before, '文章')).toBeUndefined();
+  });
+});

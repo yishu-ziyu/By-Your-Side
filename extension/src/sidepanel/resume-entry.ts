@@ -189,9 +189,9 @@ export class ResumeEntry {
     const started = this.now();
     this.view = view;
     this.checkpointUnavailable = options.checkpointUnavailable === true;
-    // 视图进入别的状态即说明这次继续已生效（或已被取消），解除本地等待；
-    // 回执缺口只在同一任务的同一状态里保留，换任务或真正开跑后清掉。
-    if (this.pendingRequestId && view?.state !== "interrupted") this.clearPending();
+    // 视图进入 running 才说明这次继续真的生效；idle/error/partial 等状态不得提前清掉等待，
+    // 否则晚到的拒绝回执会被静默丢弃，用户看不到原因（超时由 pendingTimer 兜底）。
+    if (this.pendingRequestId && view?.state === "running") this.clearPending();
     if (this.note && view && (view.runId !== this.noteRunId || view.state === "running")) this.note = null;
     const summary = buildResumeSummary(this.view, this.checkpointUnavailable, this.note);
     this.render(summary);
