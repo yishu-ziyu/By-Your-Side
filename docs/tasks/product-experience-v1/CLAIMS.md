@@ -16,9 +16,9 @@
 |---|---|---|---|---|---|---|---|---|---|
 | T01 | 完整任务评测集 | 终审 CHANGES_REQUESTED 已全部修复，换新基线 v15（8/12），READY_FOR_REVIEW 待复审 | 主代理（本会话） | 56bd662 | t01/review-fixes | ../bys-worktrees/t01-eval | local-main-1 | 已合入 main @22ec3f0 | 无 |
 | T02 | 统一任务视图 | READY_FOR_REVIEW（独立复核一轮 + must-fix 已修） | 主代理（本会话） | fb46d7b | t02/task-view | ../bys-worktrees/t02-task-view | local-main-1 | 已合入 main @95a93bf | T01 @22ec3f0 |
-| T03 | 任务条与材料入口 | 实现中 | worker-pro（子代理） | 04f212a | t03-task-bar | ../bys-worktrees/t03-task-bar | local-sub-1 | `extension/src/sidepanel/task-bar.ts`（新）等；main.ts 只交装配补丁 | T02 @95a93bf |
-| T04 | 修改回执分层 | 实现中 | worker-pro（子代理） | 04f212a | t04-edit-receipts | ../bys-worktrees/t04-edit-receipts | local-sub-2 | `shared/task-actions.ts`、`receipt-copy.ts`/`receipt-view.ts`；conversation-manager/session 只交最小补丁 | T02 @95a93bf + 显示范围修复 |
-| T05 | 接续入口 | 实现中 | worker-pro（子代理） | 04f212a | t05-resume-entry | ../bys-worktrees/t05-resume-entry | local-sub-3 | `task-recovery.ts`、`task-next-step.ts`、接续入口；conversation-manager 只交最小补丁 | T02 @95a93bf；P0 门槛另列 |
+| T03 | 任务条与材料入口 | READY_FOR_REVIEW（复核 CHANGES_REQUESTED 的 P0/P1 已在 main 修复） | worker（子代理） | 04f212a | t03-task-bar | ../bys-worktrees/t03-task-bar | local-sub-1 | 已合入 main @627de83 + 复核修复 @265fd58 | T02 @95a93bf |
+| T04 | 修改回执分层 | READY_FOR_REVIEW（复核仅文档口径问题，已在 main 修正） | worker（子代理） | 04f212a | t04-edit-receipts | ../bys-worktrees/t04-edit-receipts | local-sub-2 | 已合入 main @c7dee42 + 复核修正 @265fd58 | T02 @95a93bf + 显示范围修复 |
+| T05 | 接续入口 | READY_FOR_REVIEW（复核 P1 证据口径已重写；P0 实机复测仍 NOT_RUN，整票保持待验） | worker（子代理） | 04f212a | t05-resume-entry | ../bys-worktrees/t05-resume-entry | local-sub-3 | 已合入 main @6daa388 + 复核修正 @265fd58 | T02 @95a93bf；P0 门槛另列 |
 | T06 | 统一成果交付 | 待认领 | — | — | — | — | — | `agent/src/user-delivery.ts`、`user-delivery-ledger.ts`、`shared/voice.ts`、侧栏交付呈现 | T02+T03+T04+T05 |
 | T07 | 语音三类协作 | 待认领 | — | — | — | — | — | 语音路由、`agent/src/voice-receipt.ts`、`voice-client.ts`/`voice-player.ts`/`voice-speech.ts` | T04+T05+T06 |
 | T08 | 首次使用与试用版 | 实现中（只读预备：安装卡点盘点，不宣称集成） | scout（子代理） | 04f212a | t08-prep | ../bys-worktrees/t08-prep | local-sub-4 | 只读 + `docs/tasks/product-experience-v1/t08-prep-notes.md` | T01—T07 未齐，禁止标集成完成 |
