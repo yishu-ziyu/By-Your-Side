@@ -149,7 +149,7 @@ async function main(): Promise<void> {
     if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record);
   };
   const conversations = new ConversationManager(
-    (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore }),
+    (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore, skillStore }),
     (msg) => {keepVoiceEvent(msg);voice?.observe(msg);current?.send(msg);},
     store,
     memoryStore,

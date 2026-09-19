@@ -9,7 +9,8 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { normalizeSkillHost, validSkillId, type Skill, type SkillRun } from "../../shared/skill.js";
+import { normalizeSkillHost, validSkillId, type Skill, type SkillRun, type SkillCandidate } from "../../shared/skill.js";
+import { autoSkillEligible } from "./skill-learning.js";
 
 /**
  * 归档文件名的匹配式。用普通字符串拼，不用模板字符串——
@@ -22,6 +23,7 @@ function versionPattern(id: string): RegExp {
 
 export class SkillStore {
   constructor(private readonly directory: string) {}
+  private readonly candidateWrites = new Map<string, Promise<unknown>>();
 
   /** 运行记录上限：够看趋势，又不让文件无限长。 */
   static readonly MAX_RUNS = 200;
@@ -36,15 +38,81 @@ export class SkillStore {
 
   async put(skill: Skill): Promise<void> {
     if (!validSkillId(skill.id)) throw new Error("技能 id 非法");
+    return this.writeAtomic(this.path(skill.id), skill);
+  }
+
+  private async writeAtomic(target: string, value: unknown): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const target = this.path(skill.id);
     const temporary = `${target}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporary, JSON.stringify(skill), { mode: 0o600 });
+      await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
       await rename(temporary, target);
     } finally {
       await rm(temporary, { force: true });
     }
+  }
+
+  private serializeCandidate<T>(id: string, operation: () => Promise<T>): Promise<T> {
+    const prior = this.candidateWrites.get(id) ?? Promise.resolve();
+    const next = prior.catch(() => {}).then(operation);
+    this.candidateWrites.set(id, next);
+    void next.finally(() => { if (this.candidateWrites.get(id) === next) this.candidateWrites.delete(id); }).catch(() => {});
+    return next;
+  }
+
+  async propose(candidate: SkillCandidate): Promise<boolean> {
+    const { skill } = candidate;
+    if (!validSkillId(skill.id) || !autoSkillEligible(skill) || !candidate.sourceRunId || skill.sourceRunId !== candidate.sourceRunId) throw new Error("候选技能证据不完整");
+    return this.serializeCandidate(skill.id, async () => {
+      if (await this.get(skill.id) || await this.getCandidate(skill.id)) return false;
+      await this.writeAtomic(join(this.directory, `${skill.id}.candidate.json`), candidate);
+      return true;
+    });
+  }
+
+  async getCandidate(id: string): Promise<SkillCandidate | undefined> {
+    if (!validSkillId(id)) return undefined;
+    try {
+      const value = JSON.parse(await readFile(join(this.directory, `${id}.candidate.json`), "utf8")) as SkillCandidate;
+      return value?.skill?.id === id && typeof value.sourceRunId === "string" && autoSkillEligible(value.skill) ? value : undefined;
+    } catch { return undefined; }
+  }
+
+  async listCandidates(hostname?: string): Promise<SkillCandidate[]> {
+    let files: string[];
+    try { files = await readdir(this.directory); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+    const candidates: SkillCandidate[] = [];
+    for (const name of files.filter(name => /^[A-Za-z0-9_-]+\.candidate\.json$/.test(name))) {
+      const value = await this.getCandidate(name.slice(0, -".candidate.json".length));
+      if (value && !value.dismissedAt && (!hostname || value.skill.hostname === normalizeSkillHost(hostname)) && !await this.get(value.skill.id)) candidates.push(value);
+    }
+    return candidates.sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
+  }
+
+  /** Explicit confirmation promotes the stored proposal, never a client-supplied program. */
+  async saveCandidate(id: string, sourceRunId: string): Promise<Skill> {
+    if (!validSkillId(id)) throw new Error("候选 id 非法");
+    return this.serializeCandidate(id, async () => {
+      const existing = await this.get(id);
+      if (existing) {
+        if (existing.sourceRunId !== sourceRunId) throw new Error("候选来源已变化");
+        return existing;
+      }
+      const candidate = await this.getCandidate(id);
+      if (!candidate || candidate.dismissedAt || candidate.sourceRunId !== sourceRunId) throw new Error("候选已变化或不存在，请重新查看");
+      await this.put(candidate.skill);
+      await rm(join(this.directory, `${id}.candidate.json`), { force: true });
+      return candidate.skill;
+    });
+  }
+
+  async dismissCandidate(id: string, sourceRunId: string): Promise<void> {
+    if (!validSkillId(id)) throw new Error("候选 id 非法");
+    return this.serializeCandidate(id, async () => {
+      const candidate = await this.getCandidate(id);
+      if (!candidate || candidate.sourceRunId !== sourceRunId) throw new Error("候选已变化或不存在");
+      await this.writeAtomic(join(this.directory, `${id}.candidate.json`), { ...candidate, dismissedAt: Date.now() });
+    });
   }
 
   async list(): Promise<Skill[]> {
@@ -88,7 +156,10 @@ export class SkillStore {
   async appendRun(id: string, run: SkillRun): Promise<void> {
     if (!validSkillId(id)) return;
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    await appendFile(this.runsPath(id), `${JSON.stringify(run)}\n`, { mode: 0o600 });
+    const { at, ok, elapsedMs, steps, failedStep, skipped } = run;
+    // Runtime values and raw error messages can contain private input. Persist facts only.
+    const record: SkillRun = { at, ok, elapsedMs, steps, ...(failedStep === undefined ? {} : { failedStep }), ...(skipped ? { skipped } : {}), ...(!ok ? { error: failedStep ? "页面目标已变化" : "运行未完成，请核对本次任务记录" } : {}) };
+    await appendFile(this.runsPath(id), `${JSON.stringify(record)}\n`, { mode: 0o600 });
     const runs = await this.listRuns(id);
     if (runs.length > SkillStore.MAX_RUNS) {
       const keep = runs.slice(-SkillStore.MAX_RUNS).map(run => JSON.stringify(run)).join("\n") + "\n";

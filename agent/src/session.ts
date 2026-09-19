@@ -56,6 +56,10 @@ import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MemoryRuntime } from "./memory-runtime.js";
 import { ExperienceRuntime, type ExperienceStore } from "./experience.js";
+import type { SkillStore } from "./skill-store.js";
+import { SkillLearningTrace, type SkillEvidence } from "./skill-learning.js";
+import { trySkillFastLoop, type SelectedSkillRun } from "./skill-fast-loop.js";
+import { programFirstGuidance } from "./program-first.js";
 
 export interface SessionAcceptanceContinuityEvidence {
   instanceId: string;
@@ -96,7 +100,7 @@ export class AcceptanceContinuity {
 }
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
-export interface UserInputOptions { pageObservation?: "on-demand" }
+export interface UserInputOptions { pageObservation?: "on-demand"; selectedSkill?: SelectedSkillRun }
 
 /** Reusable display execution result. `executed` says whether a page write may have landed. */
 export type DisplayExecutionFact='not_executed'|'executed'|'unknown';
@@ -139,6 +143,7 @@ export interface SessionCreateOptions {
   /** Product-owned personal memory. Omit for workers and synthetic sessions. */
   memoryStore?: MemoryStore;
   experienceStore?: ExperienceStore;
+  skillStore?: SkillStore;
   conversationId?: string;
   /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
   memberId?: string;
@@ -187,6 +192,26 @@ export interface SessionCallbacks {
 }
 
 export class BrowserAgentSession {
+  private skillStore: SkillStore | undefined;
+  private readonly skillLearning = new SkillLearningTrace();
+  isLearningSkillRun(): boolean { return !!this.skillStore && this.skillLearning.active(); }
+  observeSkillEvidence(event: SkillEvidence): ReturnType<SkillLearningTrace["observe"]> { return this.skillLearning.observe(event); }
+  /** Called only after the current task has a real final delivery, including host makeup delivery. */
+  async completeSkillLearning(runId: string): Promise<void> {
+    const snapshot = this.conversationSnapshot();
+    const delivered = snapshot?.conversationContext?.latestDelivery;
+    if (!this.skillStore || runId !== this.deliveryRunId() || snapshot?.runId !== runId || snapshot.state !== "idle"
+      || snapshot.nextStep?.delivery !== "report" || delivered?.kind !== "finding" || delivered.runId !== runId
+      || (snapshot.results ?? []).some(item => item.status !== "satisfied")) return;
+    try {
+      const candidate = this.skillLearning.finish(runId, true);
+      if (candidate && await this.skillStore.propose(candidate)) {
+        this.callbacks.emit({ kind: "notice", message: "这次做法已有执行和核验记录，可在技能列表中查看并保存；尚未自动启用。" });
+      }
+    } catch {
+      this.callbacks.emit({ kind: "notice", message: "本次结果已保留，但候选做法未能保存。" });
+    }
+  }
   private activeGoal:string|null=null;
   private displayAbort:AbortController|null=null;
   private steerDisplayAbort:AbortController|null=null;
@@ -544,6 +569,7 @@ export class BrowserAgentSession {
       memoryHost = session;
       const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
       resultHost = wrapper;
+      wrapper.skillStore = options?.skillStore;
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.voiceConversationId = options?.conversationId ?? null;
       deliveryEmit.current = event => wrapper.emitValidatedDelivery(event);
@@ -713,7 +739,7 @@ export class BrowserAgentSession {
       const reply = `${finalText}\n\n[Conversation reply: respond to the user's message. The page is background context, not a request for a page summary or a new task. Use tools if needed to answer the actual question.]`;
       void session.prompt(reply, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
     } else {
-      const work=this.promptWithFreshPageObservation(session, finalText, context, images);
+      const work=this.promptWithFreshPageObservation(session, finalText, context, images, true, inputOptions?.selectedSkill);
       if(this.displayAbort)this.displayWork=work;
       void work.catch((err: unknown) => this.emitError(err)).finally(()=>{if(this.displayWork===work)this.displayWork=null;});
     }
@@ -729,8 +755,52 @@ export class BrowserAgentSession {
     context: PageContext | undefined,
     images: SessionImageContent[],
     allowDisplay=true,
+    selectedSkill?: SelectedSkillRun,
   ): Promise<void> {
-    if(allowDisplay&&displayFastPathEnabled()&&context&&!context.selection&&!images.length&&this.explicitDelivery&&this.modeState?.value==='act'){
+    let skillFallback = "";
+    const allowDisplayPath = allowDisplay && displayFastPathEnabled() && context && !context.selection && !images.length
+      && this.explicitDelivery && this.modeState.value === "act";
+    if (allowDisplay && this.skillStore && context && !context.selection && !images.length && this.explicitDelivery && this.modeState.value === "act") {
+      const controller = new AbortController(); this.displayAbort = controller;
+      const epoch = this.controlEpoch, runId = this.deliveryRunId();
+      const current = () => !controller.signal.aborted && epoch === this.controlEpoch && runId === this.deliveryRunId() && !this.hold.isHeld();
+      this.skillLearning.cancel();
+      this.callbacks.setStatus("running"); this.callbacks.emit(this.startEvent());
+      try {
+        const result = await trySkillFastLoop({ store: this.skillStore, rpc: this.rpc!, request: this.activeGoal ?? finalText, context,
+          signal: controller.signal, current, selected: selectedSkill,
+          execute: async (name, params) => await this.invokeDisplayTool(session, name, params, controller.signal, current, () => {}) as { details?: unknown },
+          notice: message => this.callbacks.emit({ kind: "notice", message }),
+        });
+        this.runTrace.record("skill_fast_path", { kind: result.kind, ...(result.kind === "miss" ? { reason: result.reason } : {}) });
+        if (!current() || result.kind === "stopped") return;
+        if (result.kind === "done") {
+          const text = result.outcome.ok
+            ? `已完成 · 使用「${result.skillName}」· ${(result.outcome.elapsedMs / 1000).toFixed(1)} 秒，结果已核对。`
+            : `这次技能没有确认完成：${result.outcome.error ?? "请核对页面"}`;
+          try {
+            await this.invokeDisplayTool(session, "send_user_message", { kind: "finding", outcome: result.outcome.ok ? "complete" : "partial", content: text }, controller.signal, current, () => {});
+            this.deliveredResultThisRun = true;
+            await session.sendCustomMessage({ customType: "skill-fast-path-result", content: `用户请求：${this.activeGoal}\n${text}`, display: false });
+          } catch (error) { if (current()) this.callbacks.emit({ kind: "error", message: error instanceof Error ? error.message : "技能结果交付失败" }); }
+          finally {
+            if (current()) { this.callbacks.setStatus("idle"); this.callbacks.emit({ kind: "agent_end" }); }
+            // No primary-model experience extraction after a zero-model replay.
+            this.experience?.finish({ extract: false });
+          }
+          return;
+        }
+        if (result.kind === "fallback") {
+          this.callbacks.emit({ kind: "notice", message: "已停止这次技能执行，我重新查看页面；不会盲目从头重跑。" });
+          skillFallback = "\n[The saved skill stopped or its result was not verified. Some steps may already have executed. Read the current page and task ledger before continuing; never replay completed or unknown writes. No success has been reported.]";
+        }
+      } finally { if (this.displayAbort === controller) this.displayAbort = null; }
+      // Preserve the active fast-path work while handing over to the existing
+      // display path, so stop/takeover do not see a falsely idle session.
+      if (!allowDisplayPath) this.displayWork = null;
+      if (!current()) return;
+    }
+    if(allowDisplayPath){
       const controller=new AbortController();this.displayAbort=controller;
       const epoch=this.controlEpoch,runId=this.deliveryRunId();
       const current=()=>!controller.signal.aborted&&epoch===this.controlEpoch&&runId===this.deliveryRunId()&&!this.hold.isHeld();
@@ -761,7 +831,11 @@ export class BrowserAgentSession {
     }
     const observation = await this.readUserPageForPrompt(context, "task");
     const scopeNote=this.displayScopeBlockedRun!==null&&this.displayScopeBlockedRun===this.deliveryRunId()?"\n[Current request is scoped to part of the page. page_translation changes the entire page and is blocked for this request. Do not modify the page. Explain the whole-page-only limitation and report this request as partial.]":"";
-    const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)+scopeNote;
+    const promptText = (observation ? `${finalText}\n\n${observation}` : finalText)+scopeNote+skillFallback
+      +(this.modeState.value === "act" && context && typeof context.tabId === "number" ? programFirstGuidance() : "");
+    const learningRun = this.deliveryRunId();
+    // A steered/resumed tail omits earlier actions; never compile it as a full workflow.
+    if (allowDisplay && this.skillStore && learningRun && context && !skillFallback) this.skillLearning.begin(learningRun, this.activeGoal ?? finalText, context);
     await session.prompt(promptText, images.length > 0 ? { images } : undefined);
   }
 
@@ -1233,6 +1307,7 @@ export class BrowserAgentSession {
    * 未命中则按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
   async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<SteerOutcome> {
+    this.skillLearning.cancel();
     const session = this.session;
     // 新任务显示路由尚未进入 Pi 时（Pi 还没在流），插话要取消路由并把两段要求合并重提示；
     // 一旦模型已经在跑，即使 displayWork 还挂着，也算正常的运行中修改，走统一 steer 路径。
@@ -1764,6 +1839,7 @@ export class BrowserAgentSession {
           break;
         }
         case "tool_execution_start":
+          if (!["browser_run", "snapshot", "read_element", "click", "fill", "press_key", "tabs", "list_tabs", "get_active_tab", "scroll", "send_user_message", "task_results"].includes(event.toolName)) this.skillLearning.cancel();
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot") {
             this.acceptanceTrace.resumeSnapshotToolCalled = true;
           }
@@ -1782,6 +1858,7 @@ export class BrowserAgentSession {
             // 交付工具真的执行成功才算交付；ack 只是开场应答，仍要求有最终结果。
             const kind=this.toolArgs.get(event.toolCallId)?.kind;
             if(kind!=='ack')this.deliveredResultThisRun=true;
+            if(this.toolArgs.get(event.toolCallId)?.outcome==='partial')this.skillLearning.cancel();
           }
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot" && !event.isError) {
@@ -1860,6 +1937,12 @@ export class BrowserAgentSession {
             this.emitGatedUiEvent({kind:"user_delivery",delivery:toolFailure});
           }
           emit({ kind: "agent_end" });
+          const learnableEnd = correctionsCleared && !toolFailure && !stoppedByUser && !this.hold.isHeld()
+            && !lastAssistantError(event.messages) && !(this.conversationSnapshot()?.results ?? []).some(item => item.status !== "satisfied");
+          if (!learnableEnd) this.skillLearning.cancel();
+          else if (this.deliveredResultThisRun && this.deliveryRunId()) void this.completeSkillLearning(this.deliveryRunId()!);
+          // Otherwise keep the bounded trace for the existing host makeup-delivery path.
+          // No candidate exists yet. A new task, correction or cancellation invalidates it.
           if (!correctionsCleared) {
             emit({ kind: 'error', message: '未读补充尚未清理，已阻止继续执行。请重试或重新连接。' });
             break;

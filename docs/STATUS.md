@@ -4,6 +4,8 @@
 
 ## 当前工作
 
+技能快速复用在独立worktree `feat/skill-fast-loop-20260919` 部分验收通过，未提交、合并或加载日常扩展：真实隔离侧栏自动复用1.816秒、手动换材料1.686秒，均零主模型调用；停止无后续写入，改口结果正确但约77.6秒。最终工程检查2,194项单测+2项规模测试通过。路由52例有4例保守回退未满足预期状态；额外program-first提示只减少24.4%主模型调用，未达40%门槛、默认关闭。完整证据、学习边界、未恢复的旧诊断日志影响见[本轮验收](evals/20260919-skill-fast-loop.md)。这是用户新增授权的隔离任务，不改变原P0、真人语音或正式发布门槛。
+
 日常试用已按用户决定启用（2026-09-18）：日常扩展已重载加载新运行时，任务模型从耗尽周限（429，两天后重置）的 opencode-go/deepseek-flash 切为 `minimax-cn/MiniMax-M3`，`~/.sideagent/config.json` 的 `displaySteerFastPath` 打开（父开关 displayFastPath 原已开）。真实面板验证通过：SW 存活、面板模型显示 MiniMax-M3、最小真实任务端到端回答正确；证据 `out/enablement/daily-trial-1789743968156/`（evidence.json + 截图），验证脚本 `scripts/acceptance/daily-enablement-check.mjs`。试用观察项：MiniMax 的概括粘行/命名行格式习惯、真实显示修改的准确度与回退体验；新任务模型待 deepseek 周限恢复后可再裁决。此前 Ticket 7 修复见下。
 
 Ticket 7「显示修改不得改变未指定的属性」已修复并验证（2026-09-18，已连同前两轮未提交成果一并提交为可回退点 `2bdc618`）：反例重建确认执行层省略字段本就保留原值（display 分支条件赋值），缺陷在模型面——工具说明与插话契约补上「只提交本次要求改变的字段、省略即保持现状」；另发现 MiniMax 以原任务「不要修改网页」为由整体跳过显示修改，契约再补「最新明确修改要求对其指明属性优先于任务早期限制」。真实配对（任务模型按用户指示从耗尽周限的 opencode-go/deepseek-flash 换为 minimax-cn/MiniMax-M3，仅验收环境变量、日常配置未改）：原始反例 pair-0-off 与欠执行反例 pair-1-off 均全项通过，20 臂无任何未要求属性被改；`npm run check` 退出 0（215 文件 2061+2 项）。剩余失败均为 MiniMax 行为/习惯类别（summary 粘行超 40 字、缺命名行、该 display 却 translate、晚到交付 flush 污染下一臂窗口致 deliveryIdentity 假阳性），逐一定位并保留证据，未放宽任何验收标准；配对窗口归属缝隙记为验收台已知缺口。见[属性域修复](evals/20260918-display-attribute-scoping.md)。

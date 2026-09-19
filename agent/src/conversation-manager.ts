@@ -19,7 +19,8 @@ import type { MemoryStore } from "./memory-store.js";
 import type { SkillStore } from "./skill-store.js";
 import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
 import { normalizeSkillHost } from "../../shared/skill.js";
-import { runSkill } from "./skill-runner.js";
+import type { SkillRunOutcome } from "./skill-runner.js";
+import { bindSkillInputs } from "../../shared/skill.js";
 import { TaskProgress } from "./task-progress.js";
 import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
@@ -421,6 +422,7 @@ export class ConversationManager {
       const message: ServerMessage = { type: "agent_event", conversationId, event: { kind: "user_delivery", delivery } };
       this.progress.get(conversationId)?.observe(message);
       this.emit(message);
+      if (kind === "finding" && runId) void this.entries.get(conversationId)?.runtime.session.completeSkillLearning?.(runId);
       return delivery;
     } catch {
       return null;
@@ -1134,7 +1136,8 @@ export class ConversationManager {
       return;
     }
     if (message.type === "skill_compile" || message.type === "skill_forget" || message.type === "skill_list"
-      || message.type === "skill_run" || message.type === "skill_note" || message.type === "skill_rollback") {
+      || message.type === "skill_run" || message.type === "skill_note" || message.type === "skill_rollback"
+      || message.type === "skill_candidate_save" || message.type === "skill_candidate_dismiss") {
       await this.handleSkillMessage(message, id);
       return;
     }
@@ -1231,10 +1234,12 @@ export class ConversationManager {
    * 失败如实回报（编译不出来就说清楚），不产出半成品。
    */
   private async handleSkillMessage(
-    message: Extract<ClientMessage, { type: "skill_compile" | "skill_forget" | "skill_list" | "skill_run" | "skill_note" | "skill_rollback" }>,
+    message: Extract<ClientMessage, { type: "skill_compile" | "skill_forget" | "skill_list" | "skill_run" | "skill_note" | "skill_rollback" | "skill_candidate_save" | "skill_candidate_dismiss" }>,
     conversationId: string,
   ): Promise<void> {
-    const action = message.type === "skill_compile" ? "compile"
+    const action = message.type === "skill_candidate_save" ? "candidate_save"
+      : message.type === "skill_candidate_dismiss" ? "candidate_dismiss"
+      : message.type === "skill_compile" ? "compile"
       : message.type === "skill_forget" ? "forget"
       : message.type === "skill_list" ? "list"
       : message.type === "skill_note" ? "note"
@@ -1242,12 +1247,23 @@ export class ConversationManager {
       : "run";
     try {
       if (!this.skillStore) throw new Error("技能存储不可用");
+      if (message.type === "skill_candidate_save") {
+        const skill = await this.skillStore.saveCandidate(message.id, message.sourceRunId);
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill });
+        return;
+      }
+      if (message.type === "skill_candidate_dismiss") {
+        await this.skillStore.dismissCandidate(message.id, message.sourceRunId);
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true });
+        return;
+      }
       if (message.type === "skill_list") {
         // 技能只在同一站点复用；面板问"这一页有什么技能"时按 hostname 过滤。
         const skills = message.hostname ? await this.skillStore.findByHost(message.hostname) : await this.skillStore.list();
         const runs: Record<string, import("../../shared/skill.js").SkillRun[]> = {};
         for (const skill of skills) runs[skill.id] = await this.skillStore.listRuns(skill.id);
-        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skills, runs });
+        const candidates = await this.skillStore.listCandidates(message.hostname);
+        this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skills, runs, candidates });
         return;
       }
       if (message.type === "skill_note") {
@@ -1272,8 +1288,26 @@ export class ConversationManager {
         const entry = this.entries.get(conversationId);
         if (!entry) throw new Error("会话还没准备好");
         if (entry.runtime.session.isStreaming()) throw new Error("现在有任务在跑，等它结束再跑技能。");
-        const outcome = await runSkill({ skill, rpc: entry.runtime.rpc });
-        await this.skillStore.appendRun(skill.id, outcome);
+        if ((entry.summary.mode ?? "act") !== "act") throw new Error("请先切到操作模式，再执行技能。");
+        if (entry.runtime.session.isHeld()) throw new Error("页面现在归你，请先结束或交还原任务。");
+        if (this.dispatcher.get(conversationId, message.requestId)) throw new Error("这条技能请求已有任务记录，请查看原结果；没有重放。");
+        // Parameter validation happens before even querying the current tab.
+        const inputs = bindSkillInputs(skill, message.inputs);
+        // A new task must acknowledge the previous run identity just like normal
+        // panel input. Capture it before awaiting Chrome so a concurrent change rejects.
+        const previousRunId = this.getTaskProgress(conversationId)?.runId ?? null;
+        const active = await entry.runtime.rpc.call("get_active_tab", {}) as { tab: { id: number; title: string; url: string } | null };
+        if (!active.tab) throw new Error("没有当前页面，技能未执行。");
+        const context = { tabId: active.tab.id, title: active.tab.title, url: active.tab.url };
+        let resolveRun!: (run: SkillRunOutcome) => void;
+        const completed = new Promise<SkillRunOutcome>(resolve => { resolveRun = resolve; });
+        // Manual execution uses the same durable task acceptance and registered tools
+        // as normal input; it no longer has a private RPC route around the control gates.
+        const receipt = await this.dispatchTaskAction({ requestId: message.requestId, conversationId, source: "text", action: "start", expectedRunId: previousRunId,
+          text: `运行已保存的技能「${skill.name}」，使用这次填写的材料。`, context }, () => true,
+          { selectedSkill: { id: skill.id, expectedVersion: skill.version, inputs, allowStale: message.allowStale, onResult: resolveRun } });
+        if (receipt.status !== "accepted") throw new Error(receipt.message);
+        const outcome = await completed;
         this.emit({ type: "skill_result", conversationId, requestId: message.requestId, action, ok: true, skill, run: outcome });
         return;
       }

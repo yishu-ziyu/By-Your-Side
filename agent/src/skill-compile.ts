@@ -13,7 +13,8 @@
  *   - 完成凭证默认取最后一步的目标：找不到它就说明页面已经不像当初，脚本必须停
  */
 import type { DemoStep } from "../../shared/demo-record.js";
-import { forbiddenInSkill, normalizeSkillHost, validSkillId, type Skill, type SkillAnchor, type SkillStep } from "../../shared/skill.js";
+import { bindSkillInputs, forbiddenInSkill, normalizeSkillHost, validSkillId, type Skill, type SkillAnchor, type SkillStep, type SkillCheck } from "../../shared/skill.js";
+import { validateElementRead } from "../../shared/element-state.js";
 
 export interface CompileInput {
   id: string;
@@ -22,6 +23,8 @@ export interface CompileInput {
   hostname: string;
   steps: DemoStep[];
   now?: number;
+  check?: SkillCheck;
+  requestTemplate?: string;
 }
 
 function anchorOf(step: DemoStep): SkillAnchor | undefined {
@@ -31,7 +34,8 @@ function anchorOf(step: DemoStep): SkillAnchor | undefined {
 }
 
 function inputKeyFor(anchor: SkillAnchor | undefined, taken: Set<string>): string {
-  const base = (anchor?.name ?? anchor?.tag ?? "输入").slice(0, 24);
+  const raw = (anchor?.name ?? anchor?.tag ?? "输入").slice(0, 24);
+  const base = ["__proto__", "prototype", "constructor"].includes(raw) ? "输入" : raw;
   let key = base;
   let n = 2;
   while (taken.has(key)) { key = `${base}${n}`; n += 1; }
@@ -65,7 +69,7 @@ export function compileSkill(input: CompileInput): Skill {
   // 凭证要能被认出来：优先最后一个"有可访问名"的目标，全是裸标签时才退回最后一步。
   const reversed = [...steps].reverse();
   const last = reversed.find(s => s.anchor?.name) ?? reversed.find(s => s.anchor);
-  const check = {
+  const check: SkillCheck = input.check ?? {
     ...(last?.anchor ? { marker: last.anchor } : {}),
     text: last?.anchor
       ? `跑完后页面上必须还能找到${last.anchor.name ? `「${last.anchor.name}」` : ` ${last.anchor.tag} `}；找不到就说明这一页已经和示范时不一样，不算跑完。`
@@ -81,25 +85,35 @@ export function compileSkill(input: CompileInput): Skill {
     steps,
     inputs,
     check,
-    program: buildProgram(input, steps, inputs, check.marker, host),
+    program: buildProgram(input, steps, inputs, check.marker, host, check),
     version: 1,
     createdAt: now,
     updatedAt: now,
     sourceDemoId: input.demoId,
     runCount: 0,
+    ...(input.requestTemplate ? { requestTemplate: input.requestTemplate } : {}),
     ...(weakCount > 0 ? { weakSteps: weakCount } : {}),
   };
 }
 
 /** 生成 browser_run 可用的函数体：先解析、再动作，解析不到就停。 */
-function buildProgram(input: CompileInput, steps: SkillStep[], inputs: Record<string, string>, marker: SkillAnchor | undefined, host: string): string {
+function buildProgram(input: CompileInput, steps: SkillStep[], inputs: Record<string, string>, marker: SkillAnchor | undefined, host: string, check: SkillCheck): string {
   const lines: string[] = [];
   lines.push(`// 由示范编译（${host}）`);
-  lines.push(`// 目标：${input.intent.trim() || "（未填写）"}`);
+  lines.push(`// 目标：${input.intent.trim().replace(/[\r\n\u2028\u2029]/g, " ") || "（未填写）"}`);
   lines.push("// 每一步先按语义找对象；找不到就停，不猜、不点错。");
   lines.push(`const inputs = ${JSON.stringify(inputs, null, 2)};`);
   lines.push(`const resolveSpec = ${JSON.stringify(steps.map(s => s.anchor ?? null))};`);
   lines.push("const skipped = [];");
+  // Domain is checked inside every semantic observation, before the next write.
+  lines.push(`const expectedHost = ${JSON.stringify(host)};`);
+  if (check.expect) lines.push(`let observedDocument;
+async function verifyDocument(target) {
+  const observed = await browser.read_element({ target });
+  if (!observed.documentId) throw new Error("无法确认页面身份，技能未继续执行。");
+  if (observedDocument && observedDocument !== observed.documentId) throw new Error("页面在执行中被替换，技能已停止。");
+  observedDocument = observed.documentId;
+}`);
   lines.push("");
   lines.push(...RESOLVER_HELPER.split("\n"));
   lines.push("");
@@ -137,8 +151,33 @@ function buildProgram(input: CompileInput, steps: SkillStep[], inputs: Record<st
     lines.push('  throw new Error("完成凭证不成立：跑完后没找到该有的对象，不算跑完。");');
     lines.push("}");
   }
-  lines.push(`return { done: true, steps: ${steps.length}, ...(skipped.length ? { skipped } : {}) };`);
+  if (check.expect && marker) {
+    lines.push(`const expected = ${JSON.stringify(check.expect)};`);
+    if (check.inputKey) lines.push(`expected[${JSON.stringify("contains" in check.expect ? "contains" : "equals")}] = inputs[${JSON.stringify(check.inputKey)}];`);
+    lines.push(`const proof = await browser.read_element({ target: await resolveAnchor(${JSON.stringify(marker)}), expect: expected, timeoutMs: 1500 });`);
+    lines.push('if (!proof.check?.matched) throw new Error("完成条件未核验，不能报告成功。");');
+    if (check.inputKeys?.length) {
+      lines.push(`for (const key of ${JSON.stringify(check.inputKeys)}) {`);
+      lines.push(`  const result = await browser.read_element({ target: await resolveAnchor(${JSON.stringify(marker)}), expect: { property: "textContent", contains: inputs[key] }, timeoutMs: 1500 });`);
+      lines.push('  if (!result.check?.matched) throw new Error("部分材料没有在结果中核对通过。");');
+      lines.push('}');
+    }
+    lines.push(`return { done: true, verified: true, steps: ${steps.length}, ...(skipped.length ? { skipped } : {}) };`);
+  } else lines.push(`return { done: true, steps: ${steps.length}, ...(skipped.length ? { skipped } : {}) };`);
   return lines.join("\n");
+}
+
+/**
+ * Bind the compiler-owned input declaration, not arbitrary JavaScript. This also supports
+ * existing saved programs without rewriting their file, version, steps or completion check.
+ * A modified/missing declaration fails closed rather than silently using the old values.
+ */
+export function skillProgramWithInputs(skill: Skill, overrides?: Record<string, string>): string {
+  const inputs = bindSkillInputs(skill, overrides);
+  const declaration = `const inputs = ${JSON.stringify(skill.inputs, null, 2)};`;
+  const parts = skill.program.split(declaration);
+  if (parts.length !== 2) throw new Error("技能输入声明已变化，请重新示范；没有执行旧参数。");
+  return `${parts[0]}const inputs = ${JSON.stringify(inputs, null, 2)};${parts[1]}`;
 }
 
 /**
@@ -156,11 +195,18 @@ function buildProgram(input: CompileInput, steps: SkillStep[], inputs: Record<st
  * 那会把"保存"点到错的按钮上。引号纪律：选择器写成不带值的形式
  * （[data-sideagent-target]），页面代码里就不需要转义引号；打标记前先清掉上一次的标记。
  */
-const RESOLVER_HELPER = `async function locate(anchor) {
+const RESOLVER_HELPER = `const semanticKeys = [];
+async function locate(anchor) {
   if (!anchor) return { hit: null, reason: "none", count: 0 };
+  const semanticKey = JSON.stringify(anchor);
+  let semanticIndex = semanticKeys.indexOf(semanticKey);
+  if (semanticIndex < 0) semanticIndex = semanticKeys.push(semanticKey) - 1;
+  const marker = "skill-" + semanticIndex;
   const source = [
     "(() => {",
+    "const host = location.hostname.toLowerCase(); if ((host.startsWith('www.') ? host.slice(4) : host) !== " + JSON.stringify(expectedHost) + ") throw new Error('技能站点已变化，未执行后续操作。');",
     "const spec = " + JSON.stringify(anchor) + ";",
+    "const marker = " + JSON.stringify(marker) + ";",
     'const norm = (s) => (s || "").replace(/\\\\s+/g, " ").trim();',
     "const MAX_NAME = 60;",
     "const clip = (s) => { const t = norm(s); if (!t) return \\"\\"; return t.length > MAX_NAME ? t.slice(0, MAX_NAME - 1) + \\"…\\" : t; };",
@@ -206,9 +252,10 @@ const RESOLVER_HELPER = `async function locate(anchor) {
     "});",
     'if (matches.length !== 1) return { hit: null, reason: matches.length ? "ambiguous" : "none", count: matches.length };',
     "const hit = matches[0];",
-    'document.querySelectorAll("[data-sideagent-target]").forEach((el) => el.removeAttribute("data-sideagent-target"));',
-    'hit.setAttribute("data-sideagent-target", "1");',
-    'return { hit: "[data-sideagent-target]", reason: null, count: 1 };',
+    'const selector = "[data-sideagent-target=" + marker + "]";',
+    'document.querySelectorAll(selector).forEach((el) => el.removeAttribute("data-sideagent-target"));',
+    'hit.setAttribute("data-sideagent-target", marker);',
+    'return { hit: selector, reason: null, count: 1 };',
     "})()",
   ].join("\\n");
   const result = await browser.js({ code: source });
@@ -234,6 +281,13 @@ export function validateCompiledSkill(skill: Skill): string | null {
   if (!validSkillId(skill.id)) return "技能 id 非法";
   if (!skill.hostname) return "技能缺少站点";
   if (skill.steps.length === 0) return "示范里没有可编译的步骤";
+  if (skill.check.expect) {
+    if (!skill.check.marker?.name) return "技能完成条件缺少具名对象";
+    try { validateElementRead({ expect: skill.check.expect }); } catch { return "技能完成条件无效"; }
+    if (skill.check.inputKey && !Object.hasOwn(skill.inputs, skill.check.inputKey)) return "技能完成条件引用了未知输入";
+    if (skill.check.inputKeys && (!Array.isArray(skill.check.inputKeys) || skill.check.inputKeys.length > 20
+      || skill.check.inputKeys.some(key => typeof key !== "string" || !Object.hasOwn(skill.inputs, key)))) return "技能完成条件引用了未知输入";
+  }
   const bad = forbiddenInSkill(JSON.stringify({ steps: skill.steps, program: skill.program, check: skill.check }));
   return bad ? `编译产物里出现了${bad}` : null;
 }

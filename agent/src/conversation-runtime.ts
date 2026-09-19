@@ -9,12 +9,13 @@ import { consumeAcceptanceCapability } from "./acceptance-capability.js";
 import { frozenMembersFromTakeover } from "./team-handoff.js";
 import type { ExperienceStore } from "./experience.js";
 import type { MemoryStore } from "./memory-store.js";
+import type { SkillStore } from "./skill-store.js";
 const log = (message: string) => console.error(`[sideagent] ${message}`);
 export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore },
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -51,7 +52,7 @@ export async function createConversationRuntime(
       modelPattern,
       ...options,
       conversationId,
-      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts) }, (blocks, language, signal) => { if (!toolSession) throw new Error("翻译会话不可用"); return toolSession.translatePageBatch(blocks, language, signal); }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
+      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) } }, (blocks, language, signal) => { if (!toolSession) throw new Error("翻译会话不可用"); return toolSession.translatePageBatch(blocks, language, signal); }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },
   );
   toolSession = session;

@@ -326,6 +326,8 @@ class DomDocument {
   constructor(public nodes: DomNode[]) {}
   querySelectorAll(selector: string): DomNode[] {
     if (selector === "[data-sideagent-target]") return this.nodes.filter(n => n.getAttribute("data-sideagent-target") !== null);
+    const marker = /^\[data-sideagent-target=(skill-\d+)\]$/.exec(selector)?.[1];
+    if (marker) return this.nodes.filter(n => n.getAttribute("data-sideagent-target") === marker);
     return this.nodes.filter(n => n.tagName.toLowerCase() === selector.toLowerCase());
   }
   getElementById(id: string): DomNode | null { return this.nodes.find(n => n.id === id) ?? null; }
@@ -347,12 +349,12 @@ function cityAndSaveFixture(): { doc: DomDocument; city: DomNode; save: DomNode;
 }
 
 /** 把 browser.js 收到的页面代码丢进这份 DOM 求值；click/fill 只记录目标，不真点。 */
-function domBackedBrowser(doc: DomDocument) {
+function domBackedBrowser(doc: DomDocument, hostname = "example.com") {
   const actions: Array<{ name: string; target: DomNode | null; value?: unknown }> = [];
   const call = async (name: string, params: Record<string, unknown>) => {
     if (name === "js") {
       const code = String(params.code);
-      return { value: new Function("document", `return (${code});`)(doc) };
+      return { value: new Function("document", "location", `return (${code});`)(doc, { hostname }) };
     }
     if (name === "click" || name === "fill") {
       const target = doc.querySelectorAll(String(params.target))[0] ?? null;

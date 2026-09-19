@@ -1,6 +1,5 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "quickjs-emscripten";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
-import { USER_BLOCKED_ERROR } from "../../shared/control.js";
 import { buildPlaywrightProgram } from "./stagehand-bridge.js";
 
 export interface ProgramStep {
@@ -20,7 +19,7 @@ interface ProgramOptions {
   api?: "ego" | "playwright";
   /** 任务缺省页；playwright 模式第一步读到的绑定页以它为准（没有则用 list_tabs 的 working 页）。 */
   pageTabId?: number | null;
-  call(name: ToolName, params: Record<string, unknown>, stepId?: string): Promise<unknown>;
+  call(name: ToolName, params: Record<string, unknown>, stepId?: string, origin?: "readonly-poll"): Promise<unknown>;
   signal?: AbortSignal;
   id?: string;
   timeoutMs?: number;
@@ -95,7 +94,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const code = `(() => {const es=document.querySelectorAll(${JSON.stringify(params.selector)}); if(es.length>1) throw Error('wait_for matched multiple elements; use a unique selector'); const e=es[0]; if(!e)return {ready:false,count:0}; const r=e.getBoundingClientRect(),s=getComputedStyle(e); return {ready:r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&!e.disabled,count:1};})()`;
     do {
       guard();
-      const data = await options.call("js", { code }, stepId) as { value?: { ready?: boolean } };
+      const data = await options.call("js", { code }, stepId, "readonly-poll") as { value?: { ready?: boolean } };
       last = data.value;
       polls++;
       guard();
@@ -151,7 +150,9 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         emit({ ...step, phase: "end", result, elapsedMs: Date.now() - started });
       } catch (error) {
         const text = message(error);
-        if (text.includes(USER_BLOCKED_ERROR) || /disconnect|not connected|Tool call .* timed out/i.test(text)) stop(text);
+        // A caught RPC error is not a license to keep writing. The host owns this
+        // boundary even if generated JS catches the rejected promise or queued writes.
+        stop(text);
         emit({ ...step, phase: "end", result: actualResult, error: text, elapsedMs: Date.now() - started });
         if (!closed) {
           const handle = vm.newError(`${step.name}: ${text}`);

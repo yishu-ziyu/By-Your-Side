@@ -10,6 +10,7 @@
  *   - 把这次的耗时与结果写进运行记录——技能要不要改、还敢不敢自己跑，全靠这些证据。
  */
 import { runBrowserProgram } from "./browser-program.js";
+import { skillProgramWithInputs } from "./skill-compile.js";
 import type { ToolRpc } from "./rpc.js";
 import type { Skill, SkillRun } from "../../shared/skill.js";
 
@@ -29,6 +30,9 @@ export function stepFromError(message: string): number | undefined {
 export async function runSkill(options: {
   skill: Skill;
   rpc: ToolRpc;
+  inputs?: Record<string, string>;
+  /** Session callers use the registered browser_run tool so control and the task ledger remain authoritative. */
+  execute?: (code: string, id: string, signal?: AbortSignal) => Promise<{ value: unknown; steps: number }>;
   signal?: AbortSignal;
   onStep?: Parameters<typeof runBrowserProgram>[0]["onStep"];
   now?: () => number;
@@ -42,8 +46,10 @@ export async function runSkill(options: {
     options.onStep?.(step);
   };
   try {
-    const result = await runBrowserProgram({
-      code: options.skill.program,
+    // Validate all inputs before even observing the browser.
+    const code = skillProgramWithInputs(options.skill, options.inputs);
+    const result = options.execute ? await options.execute(code, programId, options.signal) : await runBrowserProgram({
+      code,
       call: (name, params, stepId) => options.rpc.call(name, params, undefined, undefined, programId, undefined, stepId),
       signal: options.signal,
       id: programId,

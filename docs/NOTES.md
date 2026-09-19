@@ -2,6 +2,18 @@
 
 当前进度只看[STATUS](STATUS.md)。本页保留不容易从单个函数或测试看出的因果约束；旧工作记录完整保存在[历史快照](history/20260913-notes-snapshot.md)。
 
+## 2026-09-19 独立 worktree 的技能快速复用
+
+技能编译器的临时目标也会进入既有结果账本。不同语义对象不能共用同一个 `[data-sideagent-target]`，否则第二个字段被当成第一个字段的重复填写；按语义对象分配标记，同一对象保留同一标记，不绕过去重。
+
+“程序返回”“页面读回成立”“最终结果交付”是三个时点。既有宿主可能在 agent_end 之后补交付，候选只能在同 runId、状态空闲、账本允许完整报告且有真实 finding 时收尾；新任务和改口不得继承旧轮的待完成学习。任意 JS 或未知写入仍阻止学习，只有宿主自己生成的只读轮询错误可以在新的成功读回后恢复候选资格。
+
+模型只用snapshot读结果时，唯一具名的status/alert节点可触发一次有时限的真实read_element来形成凭证，不能直接拿快照文字当凭证；多节点或只有输入框时不猜。改口后完成的残段不重新开始学习，避免保存成缺少前半段的“完整做法”。
+
+额外 program-first 提示的配对没有满足目标，暂时显式开关启用；不能以技能复用的低延迟证明首次执行策略有效。原始失败、修正计时边界及当前门槛见[验收](evals/20260919-skill-fast-loop.md)。
+
+验收必须连诊断目录一起隔离。本轮遗漏 `RunTrace` 默认目录导致日常 trace 轮转，未恢复旧日志；今后验收在构造会话前设置 `SIDEAGENT_TRACE_DIR`，Vitest 默认也是独立临时目录。会话/技能数据与诊断日志不要混称为同一种存储。
+
 ## 2026-09-19 记忆判断失败定位（MiniMax M3 期间）
 
 user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，不能混为「模型不行」：①插话到达即 `invalidateUserTurn`（session.ts 约 L884/L1253），会 abort 进行中的判断子调用，且 steer 通道从不重新 `beginUserTurn`（仅 sendUserMessage 路径），本轮剩余时间记忆写入必死；②同一回合 `turn.change` 同时缓存成功与失败（memory-runtime.ts：重试不能问到同意为止），同轮重试 2ms 返回旧失败；③判断子调用 15 秒硬超时（`AbortSignal.timeout(15_000)`），MiniMax-M3 `supportsReasoningEffort: false` 且无 thinkingLevelMap，思考压不下去，实测 15012ms 撞超时（deepseek-flash 的 minimal 映射为关思考，同类调用 4.9s 完成）；④底层 stopReason/errorMessage 在 session.ts 约 L442 被吞，界面只能说「记忆判断失败」。实测链（00:13–00:17）：插话后 6ms abort → 两次「当前记忆操作已失效」→ 用户点重试开新回合、M3 判断 15s 超时 → 同轮缓存失败 → 换 deepseek-flash 新回合 4.9s 成功。待裁决改进三点：超时按模型自适应或放宽；steer 后重新授权当轮重试；记录底层错误原因。证据 trace：`~/.sideagent/traces/1789745681628-dcc0bb06-236b-4d46-9015-7793aec002d6.jsonl`。

@@ -129,7 +129,7 @@ export class ExperienceRuntime {
     this.active.outcome = "interrupted";
     this.finish();
   }
-  finish(): void {
+  finish(options?: { extract?: boolean }): void {
     const record = this.active;
     this.active = null;
     if (!record) return;
@@ -137,7 +137,7 @@ export class ExperienceRuntime {
     this.enqueue(async () => {
       const previous = (await this.store.list(this.conversationId)).filter(r => r.id !== record.id && r.startedAt <= record.startedAt && r.hostname === record.hostname && r.observations.length > 0).at(-1);
       if (record.feedback.length && previous) record.previousId = previous.id;
-      record.job = record.outcome !== "interrupted" && record.feedback.length > 0 && (record.observations.length > 0 || !!previous) ? "pending" : "done";
+      record.job = options?.extract !== false && record.outcome !== "interrupted" && record.feedback.length > 0 && (record.observations.length > 0 || !!previous) ? "pending" : "done";
       await this.store.put(record);
       if (record.job === "pending") {
         // Explicit negative feedback invalidates the old suggestions actually used in that task.
