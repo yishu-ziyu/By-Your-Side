@@ -491,3 +491,9 @@ describe("校准回归：R01/C01 的合理转述（v9 真实回答转正）", ()
     expect(judge("C01", 0, ev).qualified).toBe(false);
   });
 });
+
+it("C02 单行混合回答（口语化排除）合格——v10 真实回答转正", () => {
+  const ev = goodEvidence("C02", 0);
+  ev.deliveries[0]!.text = "200 元以内、支持退换又有现货的只有苔径，120 块。涧声超预算（260 元），岚岫不支持退换，汀洲没货，都没进。";
+  expect(judge("C02", 0, ev).qualified).toBe(true);
+});

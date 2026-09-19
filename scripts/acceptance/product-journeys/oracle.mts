@@ -219,39 +219,41 @@ const JUDGES: Record<string, Judge> = {
 
   C02: (mat, ev) => {
     const raw = ownText(ev);
-    const lines = raw.split("\n");
     const expect = mat.expect as { include: string[]; exclude: string[]; excludeReasons: Record<string, string[]> };
     const names = [...expect.include, ...expect.exclude];
-    const EXCLUDE_HEAD = /排除|不符合|不满足|不考虑|筛掉/;
-    const INCLUDE_HEAD = /入选|符合|推荐|候选|满足/;
-    // 分段：含区段关键词且不含任何候选名的行是标题行；名称行归属当前区段
-    let section: "in" | "out" | null = null;
+    const EXCLUDE = /排除|不符合|不满足|不考虑|筛掉|超(出|过|预算)|超了|高于|不支持|无货|缺货|预售|没货|没进|不进|没入选/;
+    const HEADER = /入选|符合|推荐|候选|满足|排除|不符合|不考虑/;
+    // 行级区段（标题行不含名字，为后续行定基调）+ 子句级判定（逗号/句号拆分），单行混合回答也不错判
     const inNames = new Set<string>();
-    const outLines = new Map<string, string[]>();
-    for (const line of lines) {
-      const hasName = names.some((n) => line.includes(n));
-      if (!hasName && (EXCLUDE_HEAD.test(line) || INCLUDE_HEAD.test(line))) {
-        section = EXCLUDE_HEAD.test(line) ? "out" : "in";
+    const outClauses = new Map<string, string[]>();
+    let section: "in" | "out" | null = null;
+    for (const line of raw.split("\n")) {
+      const lineNames = names.filter((n) => line.includes(n));
+      if (!lineNames.length && HEADER.test(line)) {
+        section = /排除|不符合|不考虑|筛掉/.test(line) ? "out" : "in";
         continue;
       }
-      if (!hasName) continue;
-      for (const n of names.filter((x) => line.includes(x))) {
-        const lineSaysOut = EXCLUDE_HEAD.test(line) || /超(出|过)|不支持|无货|缺货|预售/.test(line);
-        const inOut = section === "out" || (section === null && lineSaysOut);
-        if (inOut) outLines.set(n, [...(outLines.get(n) ?? []), line]);
-        else inNames.add(n);
+      if (!lineNames.length) continue;
+      for (const clause of line.split(/[。，；、\n]/)) {
+        const clauseNames = lineNames.filter((n) => clause.includes(n));
+        if (!clauseNames.length) continue;
+        const out = section === "out" || EXCLUDE.test(clause);
+        for (const n of clauseNames) {
+          if (out) outClauses.set(n, [...(outClauses.get(n) ?? []), clause]);
+          else inNames.add(n);
+        }
       }
     }
     const checks: CheckResult[] = [];
     const missIn = expect.include.filter((n) => !inNames.has(n));
-    const leakedIn = expect.exclude.filter((n) => inNames.has(n));
+    const leakedIn = expect.exclude.filter((n) => inNames.has(n) && !outClauses.has(n));
     checks.push(check("included-correct", missIn.length === 0 && leakedIn.length === 0,
       missIn.length || leakedIn.length ? `入选区问题：缺 ${missIn.join("、") || "无"}；排除项混入入选区 ${leakedIn.join("、") || "无"}` : `入选齐全（${expect.include.join("、")}）`));
     const missOut: string[] = [];
     const noReason: string[] = [];
     const doubleListed: string[] = [];
     for (const n of expect.exclude) {
-      const ex = outLines.get(n) ?? [];
+      const ex = outClauses.get(n) ?? [];
       if (!ex.length) { missOut.push(n); continue; }
       if (inNames.has(n)) { doubleListed.push(n); continue; }
       const wantReasons = expect.excludeReasons[n] ?? [];
