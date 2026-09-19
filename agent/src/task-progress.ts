@@ -1,6 +1,7 @@
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
-import type { TaskProgressSnapshot, UserDelivery, VoiceConversationContext } from "../../shared/voice.js";
-import { deriveResultDescription, extractResultTarget, isPageIdentityTool, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
+import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
+import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
+import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "./run-trace.js";
@@ -45,6 +46,8 @@ export class TaskProgress {
   private failureLimit=false;
   private lastBrowserFailed=false;
   private readonly results: TaskResultBook;
+  /** T06：本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
+  private runSources: UserDeliverySourceRef[] = [];
   constructor(private readonly conversationId: string, private readonly clock = Date.now) {
     this.ledger = new UserDeliveryLedger(conversationId);
     this.results = new TaskResultBook(clock);
@@ -53,6 +56,32 @@ export class TaskProgress {
   registerResults(intents: readonly TaskResultRegistration[]): void { this.results.register(intents); }
   reviseResults(): void { this.results.revise();this.failureLimit=false; }
   stopAfterFailures():void { this.failureLimit=true; }
+  /** 交付事实链：已满足项、仍未完成项、本 run 真实读到的页面。未完成项名称不升级状态、不删证据。 */
+  deliveryFacts(): { delivered: string[]; remaining: UserDeliveryRemainingItem[]; sources: UserDeliverySourceRef[] } {
+    // 描述超界时加省略号：事实链可以被界面折叠展示，但不能静默截断得看不出来。
+    const shorten = (description: string): string => description.length > USER_DELIVERY_FACT_DESCRIPTION_MAX
+      ? `${description.slice(0, USER_DELIVERY_FACT_DESCRIPTION_MAX - 1)}…`
+      : description;
+    const items = this.results.list();
+    const delivered: string[] = [];
+    for (const item of items) {
+      if (item.status !== "satisfied") continue;
+      const description = shorten(item.description);
+      if (!delivered.includes(description)) delivered.push(description);
+      if (delivered.length >= USER_DELIVERY_FACT_ITEM_MAX) break;
+    }
+    const remaining: UserDeliveryRemainingItem[] = [];
+    for (const item of items) {
+      if (!["pending", "blocked", "unknown"].includes(item.status) || isSupersededUnknown(item, items)) continue;
+      remaining.push({ id: item.id, description: shorten(item.description), status: item.status as UserDeliveryRemainingItem["status"] });
+      if (remaining.length >= USER_DELIVERY_FACT_ITEM_MAX) break;
+    }
+    return { delivered, remaining, sources: this.runSources.map((source) => ({ ...source })) };
+  }
+  private noteRunSource(url: string): void {
+    if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
+    this.runSources.push({ url });
+  }
   /** Stop the live run without discarding obligations or guessing external effects. */
   interrupt(reason:NonNullable<TaskProgressSnapshot['interruptionReason']>):boolean {
     if(!this.runId||!this.goal||this.aborted)return false;
@@ -161,6 +190,7 @@ export class TaskProgress {
     this.completedReads.clear();
     this.failureLimit=false;
     this.lastBrowserFailed=false;
+    this.runSources = [];
     this.ledger.beginRun(this.runId);
   }
   abort(): void { this.aborted = true; this.interrupted = false; this.restartRecovery = false; for (const member of new Set([...this.tools.values()].map(t=>t.member))) this.results.abandonMember(member); this.tools.clear(); this.members.clear(); this.turnText = ""; }
@@ -223,6 +253,8 @@ export class TaskProgress {
       if (lead && this.turnText.length < 20000) this.turnText += e.delta;
     } else if (e.kind === "tool_start") {
       const target = extractResultTarget(e.params);
+      // T06：模型真实打开或读到的页面才算来源；正文里的链接不算。
+      if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.noteRunSource(e.params.url);
       const tabAction=e.name==='tabs'?String(e.params.action):e.name==='open_tab'?'open':e.name==='close_tab'?'close':undefined;
       const browserControl=e.name==='tabs'&&['open','switch','close'].includes(tabAction??'');
       const write=isWriteTool(e.name)||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write')||browserControl;
@@ -244,6 +276,8 @@ export class TaskProgress {
       }
     } else if (e.kind === "tool_observation") {
       if (!this.aborted && this.runId) {
+        // T06：只记真实读到的页面地址；模型正文里的链接不算来源。
+        if (typeof e.url === "string") this.noteRunSource(e.url);
         if((RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name))this.results.noteObservation({ toolCallId: e.toolCallId, tool: e.name, target: e.target, tabId: e.tabId, workingTab: e.workingTab, text: e.text, truncated: e.truncated, member, runId: this.runId });
         const key=`${member}:${e.toolCallId}`,read=this.completedReads.get(key);
         if(read?.name===e.name){

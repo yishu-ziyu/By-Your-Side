@@ -204,3 +204,13 @@ user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，
 `task_view` 自带 `conversationId`，但 background 的 `broadcast` 会把封套里的 `conversationId` 改写成「当前可见会话」，所以判断任务身份必须用视图自己的字段（组件里已 `currentConversationId()` 兜住）。
 
 材料事实的口径：面板发送时后台会给 `user_message` 附当前页面上下文，所以任务条在发送后按同一口径补全页面标签（`noteRequestPage`）；页面是上下文、不能移除，选区和附件才可移除。
+
+## 2026-09-19 T06 交付事实链（交接要点）
+
+交付事实链宁可少说不可猜：`UserDelivery.facts` 只由宿主账本、`nextStep` 和真实页面读数投影；`complete` 与未完成项并存会在 `isUserDelivery` 直接失败。host 重启后 `sources` 会少（快照不持久化内存来源），这是有意的诚实边界——不要按正文链接回填。
+
+面板有两个身份闸门别合并：交付只落在自己的会话（中转层已过滤，`handleUserDelivery` 里是第二道），结果卡（task strip）只认当前 run；晚到的旧 run 交付仍渲染为历史气泡，但不改写结果卡。面板对交付/流事件必须走 `deliveryPresentation` 纯函数（同 id 重放只更状态、正式结果不被晚到流覆盖、取消前缀不复活），直接写分支判断容易丢这三条。
+
+验收脚本只开一个带 `?acceptance=t06` 的面板，不能先开默认面板再关掉它：后台↔host 会进入「连接尚未恢复」，真实任务动作全被拒收（旧整轮记录保留在 `out/acceptance/20260919-193651-t06/`）。50 次呈现时间从 `handleBgMessage` 收到交付信封起算，不含后台转发与模型。
+
+T01 的 C 类任务在 `fetch` 被私网闸门拒绝后仍不稳定（本轮 C01/C04 复现）：Agent 重试 3 次后停写。T06 只保证这类失败诚实交付部分结果 + 卡点（`partial` + 未完成项），没有修回退导航；R03 material 0 的字体未落地同属既有显示链缺口。

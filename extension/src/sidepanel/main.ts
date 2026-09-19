@@ -67,6 +67,7 @@ import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDi
 import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
 import { TaskBar } from "./task-bar.js";
 import { ResumeEntry } from "./resume-entry.js";
+import { DeliveryPresentationTiming, deliveryPresentation, renderDeliveryFacts } from "./delivery-facts-view.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
@@ -1787,6 +1788,8 @@ let lastRun: RunHost | null = null;
 /** 显式交付气泡：按 delivery.id 只渲染一次，状态更新不重复生成。 */
 const deliveredBubbles = new Map<string, HTMLElement>();
 const resultByConversation = new Map<string, { summary: string | null; remaining: string[]; unknown: boolean; speechFailed: boolean }>();
+/** T06：正式交付 → 结果可见的下一帧采样；只在验收模式读取。 */
+const deliveryTiming = new DeliveryPresentationTiming();
 /** Lead 当前 run 是否启用了 explicit deliveryMode。 */
 let leadDeliveryMode: "explicit" | null = null;
 let currentLeadDraft: HTMLElement | null = null;
@@ -2757,14 +2760,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case 'user_delivery_stream': {
       const s=ev.stream;
-      let bubble=deliveredBubbles.get(s.id);
-      if(s.phase==='cancelled'){
-        if(bubble?.dataset.streaming==='true'){bubble.dataset.streaming='cancelled';bubble.title='这次回答未完成';}
-        break;
-      }
-      if(bubble&&bubble.dataset.streaming!=='true')break;
-      if(!bubble){bubble=addMsg('msg assistant markdown','');bubble.dataset.deliveryId=s.id;bubble.dataset.deliveryKind=s.kind;bubble.dataset.streaming='true';deliveredBubbles.set(s.id,bubble);}
-      bubble.innerHTML=renderMarkdown(s.text);placeStartAcknowledgement(bubble, s.kind);scrollToEnd();break;
+      const bubble=deliveredBubbles.get(s.id);
+      const state=bubble?{official:bubble.dataset.streaming===undefined,streaming:bubble.dataset.streaming==='true',cancelled:bubble.dataset.streaming==='cancelled'}:undefined;
+      const plan=deliveryPresentation({kind:'stream',phase:s.phase},state);
+      if(plan==='ignore'||plan==='status')break;
+      if(plan==='mark_cancelled'){bubble!.dataset.streaming='cancelled';bubble!.title='这次回答未完成';break;}
+      const target=bubble??addMsg('msg assistant markdown','');
+      if(!bubble){target.dataset.deliveryId=s.id;target.dataset.deliveryKind=s.kind;deliveredBubbles.set(s.id,target);}
+      target.dataset.streaming='true';
+      target.innerHTML=renderMarkdown(s.text);placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
     }
     case "turn_start":
       break;
@@ -2823,33 +2827,49 @@ function placeStartAcknowledgement(bubble: HTMLElement, kind: string): void {
 
 function handleUserDelivery(delivery: UserDelivery): void {
   if (!delivery || typeof delivery.id !== "string" || !delivery.id) return;
-  if (delivery.kind === "finding" || delivery.kind === "reply") {
-    const cid = delivery.conversationId || selectedConversationId;
+  // 任务身份：交付只落在自己的会话；跨会话送达不渲染、不入结果卡。
+  const cid = delivery.conversationId;
+  if (!cid || cid !== selectedConversationId) return;
+  const receivedAt = performance.now();
+  const currentRunId = conversations.get(cid)?.runId ?? null;
+  // 晚到的旧 run 交付只能归档到自己的历史位置，不能改写当前结果卡。
+  const staleForStrip = delivery.kind !== "ack" && currentRunId !== null && delivery.runId !== null && delivery.runId !== currentRunId;
+  if ((delivery.kind === "finding" || delivery.kind === "reply") && !staleForStrip) {
     const previous = resultByConversation.get(cid);
+    const facts = delivery.facts;
     resultByConversation.set(cid, {
       summary: delivery.text.trim().slice(0, 160),
-      remaining: previous?.remaining ?? [],
-      unknown: false,
+      // 未完成项只来自事实链；旧记录缺字段时保持原值，不从叙述猜。
+      remaining: facts ? facts.remaining.map((item) => item.description) : previous?.remaining ?? [],
+      unknown: facts ? facts.remaining.some((item) => item.status === "unknown") : previous?.unknown ?? false,
       speechFailed: previous?.speechFailed ?? false,
     });
     renderTaskStrip();
   }
 
   const existing = deliveredBubbles.get(delivery.id);
-  if (existing) {
-    if(existing.dataset.streaming==='true'){
-      existing.innerHTML=renderMarkdown(delivery.text);delete existing.dataset.streaming;
-      if (delivery.kind === 'reply') attachAnswerActions(existing, inputEl);
-      existing.dataset.deliveryKind=delivery.kind;
-      placeStartAcknowledgement(existing, delivery.kind);
-      existing.dataset.deliveryStatus=delivery.status;voiceUI.deliver?.(delivery);scrollToEnd();return;
-    }
-    const oldStatus = existing.dataset.deliveryStatus ?? "";
+  const existingState = existing
+    ? { official: existing.dataset.streaming === undefined, streaming: existing.dataset.streaming === 'true', cancelled: existing.dataset.streaming === 'cancelled' }
+    : undefined;
+  const plan = deliveryPresentation({ kind: 'delivery' }, existingState);
+  if (plan === 'status') {
+    const oldStatus = existing!.dataset.deliveryStatus ?? "";
     const oldRank = DELIVERY_STATUS_RANK[oldStatus] ?? -1;
     const newRank = DELIVERY_STATUS_RANK[delivery.status] ?? -1;
-    if (newRank > oldRank) {
-      existing.dataset.deliveryStatus = delivery.status;
-    }
+    if (newRank > oldRank) existing!.dataset.deliveryStatus = delivery.status;
+    return;
+  }
+  if (plan === 'update_text') {
+    existing!.innerHTML = renderMarkdown(delivery.text);
+    delete existing!.dataset.streaming;
+    appendDeliveryFacts(existing!, delivery);
+    if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(existing!, inputEl);
+    existing!.dataset.deliveryKind = delivery.kind;
+    placeStartAcknowledgement(existing!, delivery.kind);
+    existing!.dataset.deliveryStatus = delivery.status;
+    voiceUI.deliver?.(delivery);
+    scrollToEnd();
+    scheduleDeliveryVisible(existing!, receivedAt);
     return;
   }
 
@@ -2857,13 +2877,30 @@ function handleUserDelivery(delivery: UserDelivery): void {
 
   const bubble = addMsg("msg assistant markdown", "");
   bubble.innerHTML = renderMarkdown(delivery.text);
-  if (delivery.kind === 'reply') attachAnswerActions(bubble, inputEl);
+  appendDeliveryFacts(bubble, delivery);
+  if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble, inputEl);
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
   bubble.dataset.deliveryStatus = delivery.status;
   deliveredBubbles.set(delivery.id, bubble);
   placeStartAcknowledgement(bubble, delivery.kind);
   scrollToEnd();
+  scheduleDeliveryVisible(bubble, receivedAt);
+}
+
+/** 事实链块只加在结果正文之后；没有字段就不加，不回填旧记录。 */
+function appendDeliveryFacts(bubble: HTMLElement, delivery: UserDelivery): void {
+  const facts = renderDeliveryFacts(delivery, { openSource: (url) => { window.open(url, "_blank", "noopener"); } });
+  if (facts) bubble.append(facts);
+}
+
+/** 收到正式交付 → 结果可见的下一帧；历史回放不算新的呈现。 */
+function scheduleDeliveryVisible(bubble: HTMLElement, receivedAt: number): void {
+  if (applyingHistory) return;
+  requestAnimationFrame(() => {
+    const visible = bubble.isConnected && (bubble.textContent ?? "").trim().length > 0;
+    deliveryTiming.record(receivedAt, visible);
+  });
 }
 
 // ── 连接管理（panel ⇆ background Port） ────────────────────────────
@@ -2911,6 +2948,14 @@ function queryTaskView(): void {
 if (new URLSearchParams(location.search).get("acceptance") === "t05") {
   (globalThis as { __t05QueryView?: () => void }).__t05QueryView = () => queryTaskView();
   (globalThis as { __resumeEntryTiming?: () => unknown }).__resumeEntryTiming = () => resumeEntry.timing();
+}
+
+// T06 验收测量入口（只读）：把后台会转发的同一信封喂给真实接收路径，读取「收到交付 → 结果可见」采样。
+// 只渲染交付，不发送任何请求、不产生任务或页面动作；验收脚本从这里驱动 50 次事件更新。
+if (new URLSearchParams(location.search).get("acceptance") === "t06") {
+  (globalThis as { __t06AcceptDelivery?: (message: ServerMessage) => void }).__t06AcceptDelivery =
+    (message) => handleBgMessage({ kind: "server", conversationId: message.conversationId, msg: message });
+  (globalThis as { __t06DeliveryTiming?: () => unknown }).__t06DeliveryTiming = () => deliveryTiming.summary();
 }
 
 function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {

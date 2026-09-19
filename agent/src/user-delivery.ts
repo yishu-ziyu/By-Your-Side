@@ -7,8 +7,12 @@ import type { AgentUiEvent } from "../../shared/protocol.js";
 import {
   USER_DELIVERY_TEXT_MAX,
   isUserDelivery,
+  isUserDeliveryFacts,
   type UserDelivery,
+  type UserDeliveryFacts,
   type UserDeliveryKind,
+  type UserDeliveryRemainingItem,
+  type UserDeliverySourceRef,
   type VoiceConversationContext,
 } from "../../shared/voice.js";
 
@@ -25,6 +29,13 @@ export function resetDeliveryMetrics(): void {
 const RECORD_KINDS = ["ack", "finding", "reply"] as const;
 const HOST_TOOL_KINDS = ["ack", "finding"] as const;
 
+/** 宿主提供的事实链投影输入；outcome 由工具按已校验的 nextStep 决定，不由模型或宿主自报。 */
+export interface DeliveryFactInput {
+  delivered: string[];
+  remaining: UserDeliveryRemainingItem[];
+  sources: UserDeliverySourceRef[];
+}
+
 /** Lead has a conversationId; fleet workers do not. Memory store is unrelated. */
 export function isLeadDeliveryHost(conversationId?: string): boolean {
   return typeof conversationId === "string" && conversationId.length > 0;
@@ -39,6 +50,7 @@ export function createUserDelivery(input: {
   id?: string;
   composedAt?: number;
   status?: UserDelivery["status"];
+  facts?: UserDeliveryFacts;
 }): UserDelivery {
   const delivery = {
     conversationId: input.conversationId,
@@ -49,6 +61,7 @@ export function createUserDelivery(input: {
     composedAt: input.composedAt ?? Date.now(),
     status: input.status ?? "composed",
     ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+    ...(input.facts ? { facts: input.facts } : {}),
   } as UserDelivery;
   if (!RECORD_KINDS.includes(input.kind as (typeof RECORD_KINDS)[number])) throw new Error("kind 必须是 ack、finding 或 reply。");
   if (input.runId !== null && !isUserDelivery(delivery)) throw new Error("正式回答格式无效，请改写成不超过2000字的完整句子，不要截断末尾。");
@@ -74,6 +87,8 @@ export function createSendUserMessageTool(opts: {
   hasUnfinishedWork?: () => boolean;
   /** Bound to the current host snapshot, never to model-authored completion flags. */
   getNextStep?: () => TaskNextStep | null;
+  /** 宿主事实链：已满足项、未完成项、本 run 真实读到的页面；未接线时不附 facts。 */
+  getDeliveryFacts?: () => DeliveryFactInput | null;
 }): ToolDefinition {
   return defineTool({
     name: "send_user_message",
@@ -111,6 +126,14 @@ export function createSendUserMessageTool(opts: {
         if (replyTo !== undefined && (replyTo.length < 1 || replyTo.length > USER_DELIVERY_TEXT_MAX)) {
           throw new Error("reply_to 无效，请省略或给出完整引用，不要截断。");
         }
+        // 事实链字段只从宿主投影；模型正文写不进这里，缺接线时保持旧记录形状。
+        const hostFacts = kind === "finding" ? opts.getDeliveryFacts?.() ?? null : null;
+        const facts: UserDeliveryFacts | undefined = hostFacts
+          ? { outcome, delivered: hostFacts.delivered, remaining: hostFacts.remaining, sources: hostFacts.sources }
+          : undefined;
+        if (facts && !isUserDeliveryFacts(facts)) {
+          throw new Error("交付事实链无效（未完成项与 outcome 不一致或字段超界），本次未交付。");
+        }
         const delivery = createUserDelivery({
           id: toolDeliveryId(_id),
           conversationId: opts.conversationId,
@@ -119,6 +142,7 @@ export function createSendUserMessageTool(opts: {
           text,
           replyTo,
           composedAt: (opts.clock ?? Date.now)(),
+          ...(facts ? { facts } : {}),
         });
         opts.emit({ kind: "user_delivery", delivery });
         return {

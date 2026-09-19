@@ -9,6 +9,43 @@ export type UserDeliveryKind = (typeof USER_DELIVERY_KINDS)[number];
 export const USER_DELIVERY_STATUSES = ["composed", "speaking", "played"] as const;
 export type UserDeliveryStatus = (typeof USER_DELIVERY_STATUSES)[number];
 export const USER_DELIVERY_TEXT_MAX = 2000;
+/** 交付事实链数组上限：足够覆盖真实任务，又不让一条交付记录拖垮历史存储。 */
+export const USER_DELIVERY_FACT_ITEM_MAX = 12;
+export const USER_DELIVERY_SOURCE_MAX = 12;
+export const USER_DELIVERY_SOURCE_URL_MAX = 500;
+export const USER_DELIVERY_SOURCE_TITLE_MAX = 160;
+export const USER_DELIVERY_FACT_DESCRIPTION_MAX = 160;
+
+/** 交付范围：complete 只在交付时账本没有未完成义务时成立；partial 明确还有缺口。 */
+export const USER_DELIVERY_OUTCOMES = ["complete", "partial"] as const;
+export type UserDeliveryOutcome = (typeof USER_DELIVERY_OUTCOMES)[number];
+
+/** 本 run 真实读过的页面；url 来自页面读取事实，不是模型自报的引用。 */
+export interface UserDeliverySourceRef {
+  url: string;
+  title?: string | null;
+}
+
+/** 交付时仍未完成的义务（结果账本原文，状态原样，不升级）。 */
+export interface UserDeliveryRemainingItem {
+  id: string;
+  description: string;
+  status: "pending" | "blocked" | "unknown";
+}
+
+/**
+ * 与正文分离的宿主事实链投影：是否存在实际执行／核验、任务身份和部分完成约束都在这里，
+ * 不由模型叙述写入。旧记录可缺省；缺字段时界面如实少说，不从叙述猜已核验结果。
+ */
+export interface UserDeliveryFacts {
+  outcome: UserDeliveryOutcome;
+  /** 结果账本中已满足项的人话说明；不表示业务目标已独立核验。 */
+  delivered: string[];
+  /** 交付时仍未完成的义务；outcome=complete 时必须为空。 */
+  remaining: UserDeliveryRemainingItem[];
+  /** 可定位来源：本 run 真实读到的页面；恢复后丢失时为空，不猜测补齐。 */
+  sources: UserDeliverySourceRef[];
+}
 
 /** Official user-facing message. Internal text_delta / tool output is not this record. */
 export interface UserDelivery {
@@ -20,6 +57,8 @@ export interface UserDelivery {
   replyTo?: string;
   composedAt: number;
   status: UserDeliveryStatus;
+  /** 宿主事实链；旧记录缺省。 */
+  facts?: UserDeliveryFacts;
 }
 
 /** Cumulative text of an explicitly user-facing answer; not ordinary model text_delta. */
@@ -213,6 +252,31 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     default: return false;
   }
 }
+const shortText = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length >= 1 && v.length <= max;
+const deliveryUrl = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= USER_DELIVERY_SOURCE_URL_MAX
+  && /^https?:\/\/[^\s]+$/.test(v);
+
+/** 事实链字段严格校验：非法即整条记录失败，不回退到「无字段」假装兼容。 */
+export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
+  if (!v || typeof v !== "object") return false;
+  const f = v as UserDeliveryFacts;
+  if (!USER_DELIVERY_OUTCOMES.includes(f.outcome)) return false;
+  if (!Array.isArray(f.delivered) || f.delivered.length > USER_DELIVERY_FACT_ITEM_MAX
+    || !f.delivered.every((item) => shortText(item, USER_DELIVERY_FACT_DESCRIPTION_MAX))) return false;
+  if (!Array.isArray(f.remaining) || f.remaining.length > USER_DELIVERY_FACT_ITEM_MAX
+    || !f.remaining.every((item) => !!item && typeof item === "object"
+      && id((item as UserDeliveryRemainingItem).id)
+      && shortText((item as UserDeliveryRemainingItem).description, USER_DELIVERY_FACT_DESCRIPTION_MAX)
+      && ["pending", "blocked", "unknown"].includes((item as UserDeliveryRemainingItem).status))) return false;
+  if (!Array.isArray(f.sources) || f.sources.length > USER_DELIVERY_SOURCE_MAX
+    || !f.sources.every((item) => !!item && typeof item === "object" && deliveryUrl((item as UserDeliverySourceRef).url)
+      && ((item as UserDeliverySourceRef).title === undefined || (item as UserDeliverySourceRef).title === null
+        || shortText((item as UserDeliverySourceRef).title, USER_DELIVERY_SOURCE_TITLE_MAX)))) return false;
+  // 漏项却报全部完成必须在记录边界就失败，界面与验收都不用再猜叙述。
+  if (f.outcome === "complete" && f.remaining.length > 0) return false;
+  return true;
+}
+
 export function isUserDelivery(v: unknown): v is UserDelivery {
   if (!v || typeof v !== "object") return false;
   const d = v as UserDelivery;
@@ -221,7 +285,8 @@ export function isUserDelivery(v: unknown): v is UserDelivery {
     && typeof d.text === "string" && d.text.trim().length >= 1 && d.text.length <= USER_DELIVERY_TEXT_MAX
     && Number.isFinite(d.composedAt)
     && USER_DELIVERY_STATUSES.includes(d.status)
-    && (d.replyTo === undefined || typeof d.replyTo === "string" && d.replyTo.length >= 1 && d.replyTo.length <= USER_DELIVERY_TEXT_MAX);
+    && (d.replyTo === undefined || typeof d.replyTo === "string" && d.replyTo.length >= 1 && d.replyTo.length <= USER_DELIVERY_TEXT_MAX)
+    && (d.facts === undefined || isUserDeliveryFacts(d.facts));
 }
 
 export function isSpeakableDelivery(d: UserDelivery | null | undefined, runId?: string | null): d is UserDelivery {

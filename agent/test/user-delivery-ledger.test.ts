@@ -68,6 +68,30 @@ describe("UserDeliveryLedger", () => {
     expect(l.markPlayback("d-1", "played")).toBeNull(); // 旧 run id 不再已知
   });
 
+  it("同交付重放不重复呈现，两次有效修订都保留", () => {
+    const l = new UserDeliveryLedger("c1");
+    l.beginRun("run-1");
+    expect(l.record(delivery({ id: "d-1", text: "第一版：周六上午九点。" }))).toBe(true);
+    // 同一 deliveryId 的重放（含改文）既不重复也不改写。
+    expect(l.record(delivery({ id: "d-1", text: "第一版：周六上午九点。" }))).toBe(false);
+    expect(l.record(delivery({ id: "d-1", text: "重放时改了正文。" }))).toBe(false);
+    // 新 id 的有效修订按到达顺序保留，旧版没被删掉（仍可定位到自己的正文）。
+    expect(l.record(delivery({ id: "d-2", text: "修订版：周六上午十点。" }))).toBe(true);
+    expect(l.latest()).toMatchObject({ id: "d-2", text: "修订版：周六上午十点。" });
+    expect(l.markPlayback("d-1", "played")?.text).toBe("第一版：周六上午九点。");
+    expect(l.markPlayback("d-2", "played")?.text).toBe("修订版：周六上午十点。");
+  });
+
+  it("事实链随交付记录保留，重放与状态更新不改写", () => {
+    const l = new UserDeliveryLedger("c1");
+    l.beginRun("run-1");
+    const record = delivery({ id: "d-facts", facts: { outcome: "partial", delivered: ["读了三家方案"], remaining: [{ id: "r-1", description: "预约页被登录墙挡住", status: "blocked" }], sources: [{ url: "https://fixture.test/offer/a" }] } });
+    expect(l.record(record)).toBe(true);
+    expect(l.record({ ...record, text: "重放改文。" })).toBe(false);
+    expect(l.markPlayback("d-facts", "played")?.facts).toEqual(record.facts);
+    expect(l.latest()?.facts?.remaining[0]).toMatchObject({ status: "blocked" });
+  });
+
   it("latest returns copies that cannot mutate the ledger", () => {
     const l = new UserDeliveryLedger("c1");
     l.beginRun("run-1");
@@ -88,6 +112,10 @@ describe("frozen delivery contract in shared", () => {
     expect(isUserDelivery(delivery({ runId: 42 as never }))).toBe(false);
     expect(isUserDelivery(delivery({ status: "heard_by_human" as never }))).toBe(false);
     expect(isUserDelivery(delivery({ replyTo: "d-0" }))).toBe(true);
+    // 可选事实链：字段非法整条记录失败；旧记录无字段仍有效。
+    expect(isUserDelivery(delivery({ facts: { outcome: "partial", delivered: [], remaining: [], sources: [] } }))).toBe(true);
+    expect(isUserDelivery(delivery({ facts: { outcome: "complete", delivered: [], remaining: [{ id: "r-1", description: "还剩", status: "pending" }], sources: [] } }))).toBe(false);
+    expect(isUserDelivery(delivery({ facts: { outcome: "complete", delivered: [], remaining: [], sources: [{ url: "not-a-url" }] } }))).toBe(false);
   });
   it("keeps latestDelivery optional and compatible in snapshots and the wire envelope", () => {
     const base = { conversationId: "c1", observedAt: 1, state: "idle" as const, goal: null, startedAt: 1, runId: "run-1", active: [], lastAction: null, successVerified: false as const };

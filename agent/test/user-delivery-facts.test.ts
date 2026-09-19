@@ -1,0 +1,152 @@
+/**
+ * T06 交付事实链接线：send_user_message 只从宿主投影取事实，TaskProgress 只记真实读到的页面；
+ * 漏项却报 complete 在工具边界被拒（不发事件）。旧记录/未接线时保持旧形状。
+ */
+import { describe, expect, it } from "vitest";
+import { TaskProgress } from "../src/task-progress.js";
+import { createSendUserMessageTool } from "../src/user-delivery.js";
+import { parseServerMessage } from "../../shared/protocol.js";
+import type { AgentUiEvent } from "../../shared/protocol.js";
+import type { TaskNextStep } from "../../shared/task-next-step.js";
+import type { UserDelivery } from "../../shared/voice.js";
+
+const COMPLETE: TaskNextStep = { action: "deliver", reason: "receipts_reviewed", allowWrites: true, delivery: "report", resultIds: ["r-1"] };
+const PARTIAL: TaskNextStep = { action: "ask_user", reason: "unknown_with_baseline", allowWrites: false, delivery: "partial", resultIds: ["r-1"] };
+
+function tool(over: Partial<Parameters<typeof createSendUserMessageTool>[0]> = {}) {
+  const events: AgentUiEvent[] = [];
+  return {
+    events,
+    tool: createSendUserMessageTool({
+      conversationId: "default",
+      getRunId: () => "run-a",
+      emit: (event) => events.push(event),
+      clock: () => 7,
+      getNextStep: () => COMPLETE,
+      ...over,
+    }),
+  };
+}
+
+describe("send_user_message 事实链", () => {
+  it("finding 带上宿主事实：来源、已满足项、未完成项", async () => {
+    const h = tool({
+      getDeliveryFacts: () => ({
+        delivered: ["填写姓名"],
+        remaining: [{ id: "r-2", description: "备注还没核对", status: "pending" }],
+        sources: [{ url: "https://fixture.test/offer/a" }],
+      }),
+    });
+    await h.tool.execute("call-1", { kind: "finding", outcome: "partial", content: "三家方案已比较，备注还没核对。" }, undefined, undefined, {} as never);
+    const delivery = (h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery;
+    expect(delivery.facts).toMatchObject({
+      outcome: "partial",
+      delivered: ["填写姓名"],
+      remaining: [{ id: "r-2", description: "备注还没核对", status: "pending" }],
+      sources: [{ url: "https://fixture.test/offer/a" }],
+    });
+    expect(delivery.text).toContain("仅交付部分结果");
+    expect(parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "default", event: { kind: "user_delivery", delivery } }))).not.toBeNull();
+  });
+
+  it("漏项却报 complete：工具边界拒绝，不发任何交付事件", async () => {
+    const h = tool({
+      getDeliveryFacts: () => ({ delivered: [], remaining: [{ id: "r-2", description: "还剩一项", status: "pending" }], sources: [] }),
+    });
+    await expect(h.tool.execute("call-2", { kind: "finding", content: "全部完成。" }, undefined, undefined, {} as never)).rejects.toThrow(/事实链无效/);
+    expect(h.events).toHaveLength(0);
+  });
+
+  it("未接线时不附 facts（旧记录形状）；ack 永远不带事实链", async () => {
+    const h = tool({ getDeliveryFacts: () => ({ delivered: ["填写姓名"], remaining: [], sources: [{ url: "https://a.test/x" }] }) });
+    await h.tool.execute("call-ack", { kind: "ack", content: "收到，先看一眼。" }, undefined, undefined, {} as never);
+    expect((h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery.facts).toBeUndefined();
+    const legacy = tool();
+    await legacy.tool.execute("call-legacy", { kind: "finding", content: "读完了。" }, undefined, undefined, {} as never);
+    expect((legacy.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery.facts).toBeUndefined();
+  });
+
+  it("partial 事实与文本一致：记录里的 outcome 和正文说明同一件事", async () => {
+    const h = tool({ getNextStep: () => PARTIAL, getDeliveryFacts: () => ({ delivered: [], remaining: [{ id: "r-1", description: "未知写入", status: "unknown" }], sources: [] }) });
+    await h.tool.execute("call-3", { kind: "finding", outcome: "partial", content: "订单状态还没确认。" }, undefined, undefined, {} as never);
+    const delivery = (h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery;
+    expect(delivery.facts?.outcome).toBe("partial");
+    expect(delivery.facts?.remaining[0]?.status).toBe("unknown");
+    expect(delivery.text).toContain("有操作的结果仍无法确认");
+  });
+});
+
+// ── TaskProgress：真实来源与账本投影 ──────────────────────────────
+
+function progressHarness() {
+  const p = new TaskProgress("default", () => 1000);
+  p.request("比较三家方案，给出来源。");
+  const runId = p.snapshot().runId!;
+  const emit = (event: AgentUiEvent) => p.observe({ type: "agent_event", conversationId: "default", runId, event } as never);
+  emit({ kind: "agent_start", deliveryMode: "explicit" });
+  return { p, runId, emit };
+}
+
+describe("TaskProgress.deliveryFacts", () => {
+  it("来源只记真实打开或读到的页面：去重、拒绝非 http、新任务清空", () => {
+    const h = progressHarness();
+    h.emit({ kind: "tool_start", toolCallId: "n1", name: "navigate", params: { url: "https://fixture.test/offer/c" } });
+    h.emit({ kind: "tool_start", toolCallId: "n2", name: "open_tab", params: { url: "https://fixture.test/offer/c" } });
+    h.emit({ kind: "tool_start", toolCallId: "n3", name: "navigate", params: { url: "javascript:alert(1)" } });
+    h.emit({ kind: "tool_observation", toolCallId: "t1", name: "snapshot", target: null, tabId: 3, workingTab: true, text: "页面正文", truncated: false, url: "https://fixture.test/offer/a" });
+    h.emit({ kind: "tool_observation", toolCallId: "t2", name: "read_element", target: "#price", tabId: 3, workingTab: true, text: "价格", truncated: false, url: "https://fixture.test/offer/a" });
+    h.emit({ kind: "tool_observation", toolCallId: "t3", name: "snapshot", target: null, tabId: 4, workingTab: false, text: "另一页", truncated: false, url: "https://fixture.test/offer/b" });
+    h.emit({ kind: "tool_observation", toolCallId: "t4", name: "snapshot", target: null, tabId: 5, workingTab: true, text: "本地", truncated: false, url: "file:///tmp/page.html" });
+    expect(h.p.deliveryFacts().sources.map((s) => s.url)).toEqual([
+      "https://fixture.test/offer/c", "https://fixture.test/offer/a", "https://fixture.test/offer/b",
+    ]);
+    h.emit({ kind: "agent_end" });
+    h.p.request("新任务：读一篇文章。");
+    expect(h.p.deliveryFacts().sources).toEqual([]);
+  });
+
+  it("已满足项进 delivered，未完成项保留原状态，被满足项取代的未知不再阻塞", () => {
+    const h = progressHarness();
+    h.p.registerResults([{ id: "r-fill", description: "填写姓名", tool: "fill", target: "#name" }]);
+    h.p.registerResults([{ id: "r-submit", description: "提交订单", tool: "click", target: "#submit" }]);
+    h.emit({ kind: "tool_start", toolCallId: "c1", name: "fill", params: { target: "#name", value: "林夏" } });
+    h.emit({ kind: "tool_end", toolCallId: "c1", name: "fill", isError: false, resultText: "ok", executionFact: "executed" });
+    h.emit({ kind: "tool_start", toolCallId: "c2", name: "click", params: { target: "#submit" } });
+    h.emit({ kind: "tool_end", toolCallId: "c2", name: "click", isError: false, resultText: "unknown", executionFact: "unknown" });
+    const before = h.p.deliveryFacts();
+    expect(before.delivered).toContain("填写姓名");
+    expect(before.remaining).toContainEqual({ id: "r-submit", description: "提交订单", status: "unknown" });
+    const recovered = h.p.recordConfirmedRecovery({ supersedes: "r-submit", description: "当前订单状态已核对", tool: "read_element", target: null, member: "main", runId: h.runId, toolCallId: "c3", satisfied: true });
+    expect(recovered).not.toBeNull();
+    const after = h.p.deliveryFacts();
+    expect(after.remaining.map((item) => item.id)).not.toContain("r-submit");
+    expect(after.delivered).toContain("当前订单状态已核对");
+  });
+
+  it("没有登记项时不编造成果或未完成项", () => {
+    const h = progressHarness();
+    expect(h.p.deliveryFacts()).toEqual({ delivered: [], remaining: [], sources: [] });
+  });
+
+  it("长描述在事实链里明确标出截断，不静默切掉", () => {
+    const h = progressHarness();
+    const long = `页面需要核对的长字段：${'很长的说明'.repeat(40)}`;
+    h.p.registerResults([{ id: "r-long", description: long, tool: "fill", target: "#note" }]);
+    const remaining = h.p.deliveryFacts().remaining;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.description.endsWith("…")).toBe(true);
+    expect(remaining[0]!.description.length).toBeLessThanOrEqual(160);
+  });
+});
+
+describe("旧记录兼容", () => {
+  it("快照里的旧交付记录（无 facts）仍然有效，带事实链的也有效", () => {
+    const base = { conversationId: "c1", observedAt: 1, state: "idle" as const, goal: null, startedAt: 1, runId: "run-1", active: [], lastAction: null, successVerified: false as const };
+    const legacy: UserDelivery = { conversationId: "c1", id: "d-1", runId: "run-1", kind: "finding", text: "旧记录正文。", composedAt: 1, status: "composed" };
+    const withFacts: UserDelivery = { ...legacy, id: "d-2", facts: { outcome: "partial", delivered: [], remaining: [{ id: "r-1", description: "还没做", status: "pending" }], sources: [] } };
+    const wire = (delivery: UserDelivery) => parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "c1", event: { kind: "user_delivery", delivery } }));
+    expect(wire(legacy)).not.toBeNull();
+    expect(wire(withFacts)).not.toBeNull();
+    expect(base).toBeTruthy();
+  });
+});

@@ -222,6 +222,34 @@ describe("PanelHistory user delivery deduplication & status update", () => {
     history.record(itemSpeaking);
     expect((history.since()[0]!.item as any).msg.event.delivery.status).toBe("played");
   });
+
+  it("keeps two valid revisions with the same text pattern as separate entries", () => {
+    const history = new PanelHistory();
+    const base = { conversationId: "conv-1", runId: "run-1", kind: "finding" as const, composedAt: 1000, status: "composed" as const };
+    history.record({ kind: "server", msg: { type: "agent_event", conversationId: "conv-1", event: { kind: "user_delivery", delivery: { ...base, id: "rev-1", text: "时间：周六上午九点。" } } } });
+    history.record({ kind: "server", msg: { type: "agent_event", conversationId: "conv-1", event: { kind: "user_delivery", delivery: { ...base, id: "rev-2", text: "时间：周六上午十点。" } } } });
+    const rows = history.since();
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => (row.item as any).msg.event.delivery.id)).toEqual(["rev-1", "rev-2"]);
+    expect(rows.map((row) => (row.item as any).msg.event.delivery.text)).toEqual(["时间：周六上午九点。", "时间：周六上午十点。"]);
+  });
+
+  it("keeps fact-chain fields across status updates and history restore", () => {
+    const facts = { outcome: "partial" as const, delivered: ["读了三家方案"], remaining: [{ id: "r-1", description: "预约页被登录墙挡住", status: "blocked" as const }], sources: [{ url: "https://fixture.test/offer/a" }] };
+    const item = (status: "composed" | "played"): PanelHistoryItem => ({
+      kind: "server",
+      msg: { type: "agent_event", conversationId: "conv-1", event: { kind: "user_delivery", delivery: { ...deliveryA1, id: "d-facts", facts, status } } },
+    });
+    const history = new PanelHistory();
+    history.record(item("composed"));
+    history.record(item("played"));
+    const stored = (history.since()[0]!.item as any).msg.event.delivery;
+    expect(stored.status).toBe("played");
+    expect(stored.facts).toEqual(facts);
+    const restored = new PanelHistory();
+    restored.restore(history.since());
+    expect((restored.since()[0]!.item as any).msg.event.delivery.facts).toEqual(facts);
+  });
 });
 
 describe("VoiceUI deliver consumption", () => {

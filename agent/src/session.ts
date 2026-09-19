@@ -45,7 +45,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { filterReachableModels } from "./reachable-models.js";
-import type { UserDelivery, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import type { UserDelivery, UserDeliveryFacts, UserDeliveryRemainingItem, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
@@ -263,6 +263,8 @@ export class BrowserAgentSession {
     verify: (input: {id: string; expect: string; observation: {toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null}}) => {ok: boolean; reason?: string};
     confirmWrite?: (input: {id: string; tool: string; target: string; value: string; description: string; tabId: number; documentId: string}) => Promise<{allowed: boolean; reason?: string}>;
     recordConfirmedRecovery?: (input: ConfirmedRecoveryRecord) => TaskResultItem | null;
+    /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
+    deliveryFacts?: () => { delivered: string[]; remaining: UserDeliveryRemainingItem[]; sources: UserDeliverySourceRef[] };
   } | null = null;
   private persistedResults = "";
   private checkpointReadFailed = false;
@@ -287,6 +289,18 @@ export class BrowserAgentSession {
     }
   }
   bindTaskResults(host: BrowserAgentSession["taskResultsHost"]): void { this.taskResultsHost = host; }
+  /** T06：当前事实链投影；outcome 由宿主 nextStep 决定，未接线时不附字段（旧记录形状）。 */
+  deliveryFactsSnapshot(): UserDeliveryFacts | undefined {
+    const hostFacts = this.taskResultsHost?.deliveryFacts?.();
+    if (!hostFacts) return undefined;
+    const next = this.conversationSnapshot()?.nextStep;
+    return {
+      outcome: next?.delivery === "report" && hostFacts.remaining.length === 0 ? "complete" : "partial",
+      delivered: hostFacts.delivered,
+      remaining: hostFacts.remaining,
+      sources: hostFacts.sources,
+    };
+  }
   private durableTaskSnapshot(snapshot:TaskProgressSnapshot):TaskProgressSnapshot {
     return {...snapshot,observedAt:0,active:[],lastAction:null};
   }
@@ -581,6 +595,7 @@ export class BrowserAgentSession {
             getRunId: () => runIdSlot.current(),
             emit: event => (deliveryEmit.current ?? callbacks.emit)(event),
             getNextStep: () => resultHost?.conversationSnapshot()?.nextStep ?? null,
+            getDeliveryFacts: () => resultHost?.taskResultsHost?.deliveryFacts?.() ?? null,
             hasUnfinishedWork: () => {
               const snapshot = resultHost?.taskResultsHost?.getSnapshot();
               return (snapshot?.results ?? []).some(item => item.status === "pending" || item.status === "unknown");
@@ -619,7 +634,11 @@ export class BrowserAgentSession {
         wrapper.taskResultsHost?.stopAfterFailures?.();
         wrapper.runTrace.record("repeated_tool_failure", {...failure});
         const text = `工具「${failure.toolName}」连续三次返回相同错误，已停止重试。这一步没有完成。`;
-        if (leadConversationId) wrapper.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text});
+        // T06：工具失败也必须带事实链（partial + 剩余项）；终止前的 nextStep 已因 failure_limit 变成 partial。
+        if (leadConversationId) {
+          const facts = wrapper.deliveryFactsSnapshot();
+          wrapper.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text,...(facts?{facts}:{})});
+        }
         else callbacks.emit({kind:"error",message:text});
       };
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);

@@ -22,7 +22,7 @@ import { normalizeSkillHost } from "../../shared/skill.js";
 import type { SkillRunOutcome } from "./skill-runner.js";
 import { bindSkillInputs } from "../../shared/skill.js";
 import { TaskProgress } from "./task-progress.js";
-import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
+import type { TaskProgressSnapshot, UserDeliveryFacts, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
 import { projectTaskView } from "../../shared/task-view.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
 import { TaskDispatcher, TaskActionRejected, TaskActionFailed, TaskReceiptError } from "./task-dispatcher.js";
@@ -445,7 +445,9 @@ export class ConversationManager {
     }
     const runId = expected && "runId" in expected ? expected.runId : snap.runId ?? null;
     try {
-      const delivery = createUserDelivery({ conversationId, runId, kind, text, replyTo, ...(deliveryId?{id:deliveryId}:{}) });
+      // T06：正式结果带上宿主事实链；补发路径与工具路径同一口径，自己写不进事实。
+      const facts = kind === "finding" ? this.deliveryFactsOf(conversationId) : undefined;
+      const delivery = createUserDelivery({ conversationId, runId, kind, text, replyTo, ...(deliveryId?{id:deliveryId}:{}), ...(facts ? { facts } : {}) });
       const message: ServerMessage = { type: "agent_event", conversationId, event: { kind: "user_delivery", delivery } };
       this.progress.get(conversationId)?.observe(message);
       this.emit(message);
@@ -454,6 +456,15 @@ export class ConversationManager {
     } catch {
       return null;
     }
+  }
+  /** 事实链只从当前 run 的账本与真实读数投影；complete 仅在账本无未完成项且 nextStep 允许报告时成立。 */
+  private deliveryFactsOf(conversationId: string): UserDeliveryFacts | undefined {
+    const progress = this.progress.get(conversationId);
+    if (!progress) return undefined;
+    const facts = progress.deliveryFacts();
+    const snap = this.getTaskProgress(conversationId);
+    const outcome = snap?.nextStep?.delivery === 'report' && facts.remaining.length === 0 ? 'complete' as const : 'partial' as const;
+    return { outcome, delivered: facts.delivered, remaining: facts.remaining, sources: facts.sources };
   }
   /**
    * 准备 → 校验 → 提交。一次提案推理同时给出意图计划与 next；
@@ -1040,6 +1051,7 @@ export class ConversationManager {
           if (item) runtime.session.persistTaskResults?.(progress.snapshot());
           return item;
         },
+        deliveryFacts: () => progress.deliveryFacts(),
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
