@@ -20,8 +20,8 @@
 | T04 | 修改回执分层 | READY_FOR_REVIEW（复核仅文档口径问题，已在 main 修正） | worker（子代理） | 04f212a | t04-edit-receipts | ../bys-worktrees/t04-edit-receipts | local-sub-2 | 已合入 main @c7dee42 + 复核修正 @265fd58 | T02 @95a93bf + 显示范围修复 |
 | T05 | 接续入口 | READY_FOR_REVIEW（复核 P1 证据口径已重写；P0 实机复测仍 NOT_RUN，整票保持待验） | worker（子代理） | 04f212a | t05-resume-entry | ../bys-worktrees/t05-resume-entry | local-sub-3 | 已合入 main @6daa388 + 复核修正 @265fd58 | T02 @95a93bf；P0 门槛另列 |
 | T06 | 统一成果交付 | READY_FOR_REVIEW（复核：无 P0/P1，P2 已修；建议 ACCEPTED，终裁留 ChatGPT） | worker（子代理） | 9c5447b | t06-delivery | ../bys-worktrees/t06-delivery | local-sub-5 | 已合入 main @a0453ae + 复核修正 @372729b | T02—T05 |
-| T07 | 语音三类协作 | 待认领 | — | — | — | — | — | 语音路由、`agent/src/voice-receipt.ts`、`voice-client.ts`/`voice-player.ts`/`voice-speech.ts` | T04+T05+T06 |
-| T08 | 首次使用与试用版 | 实现中（只读预备：安装卡点盘点，不宣称集成） | scout（子代理） | 04f212a | t08-prep | ../bys-worktrees/t08-prep | local-sub-4 | 只读 + `docs/tasks/product-experience-v1/t08-prep-notes.md` | T01—T07 未齐，禁止标集成完成 |
+| T07 | 语音三类协作 | 挂起：用户移到别处开工（本环境不开工）；真人 40 指令 + 20 对照门槛注意 | — | — | — | — | — | 语音路由、`agent/src/voice-receipt.ts`、`voice-client.ts`/`voice-player.ts`/`voice-speech.ts` | T04+T05+T06 已合入 |
+| T08 | 首次使用与试用版 | 挂起：用户移到别处开工（本环境不开工）；只读预备已合入 main @bba42de | scout（子代理） | 04f212a | t08-prep | ../bys-worktrees/t08-prep | local-sub-4 | 预备笔记 `docs/tasks/product-experience-v1/t08-prep-notes.md` | T01—T07 未齐，禁止标集成完成 |
 
 ## 推进顺序
 
