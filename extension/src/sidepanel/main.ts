@@ -64,8 +64,9 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage,
 import type { UserDelivery } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
+import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
 import { TaskBar } from "./task-bar.js";
+import { ResumeEntry } from "./resume-entry.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
@@ -131,6 +132,7 @@ app.innerHTML = `
       <div id="task-result-secondary"></div>
     </div>
   </div>
+  <div id="resume-entry-root"></div>
   <div id="conversation-menu" role="menu" hidden></div>
   <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
   <section id="memory-drawer" role="dialog" aria-label="技能与记忆" aria-modal="false" hidden>
@@ -504,6 +506,7 @@ function resetConversationRender(): void {
   currentDraftReady = false;
   updateStarterVisibility();
   messagesEl.replaceChildren();
+  resumeEntry.clear();
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
   companion.onTakeover(false);
@@ -535,6 +538,7 @@ function selectConversation(id: string, notify = true): void {
   renderConversations();
   renderTaskStrip();
   taskBar.reset();
+  queryTaskView();
   consentPanel.refresh();
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
   port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
@@ -2707,6 +2711,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
             else if (ev.receipt.status === "rejected" || ev.receipt.status === "failed") taskBar.noteControlResult("stop", false, ev.receipt.message);
           }
         }
+        resumeEntry.noteReceipt(ev.receipt);
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
         const previous = receiptMessages.get(key);
         const restoreFocus = previous?.contains(document.activeElement);
@@ -2807,6 +2812,32 @@ function send(msg: ClientMessage): boolean {
     return false;
   }
 }
+
+// ── T05 接续入口：消费 task_view；「继续原任务」只提交现有 resume 动作 ──
+const resumeEntry = new ResumeEntry({
+  root: document.getElementById("resume-entry-root")!,
+  sendResume: (request) => send({ type: "task_action", request }),
+  getContext: async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (!tab?.id) return null;
+      return { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
+    } catch {
+      return null;
+    }
+  },
+});
+
+/** 面板重开/重连/切会话时补取权威视图；拿不到时保持本地已渲染事实，不编造。 */
+function queryTaskView(): void {
+  if (!conversationReady || !transportConnected) return;
+  send({ type: "task_view_query", requestId: crypto.randomUUID() });
+}
+
+// 验收测量入口（只读）：触发一次视图补取 / 读取「收到快照 → 摘要下一帧」的采样。
+// 不产生任务、权限或页面动作，供隔离浏览器验收脚本使用。
+(globalThis as { __t05QueryView?: () => void }).__t05QueryView = () => queryTaskView();
+(globalThis as { __resumeEntryTiming?: () => unknown }).__resumeEntryTiming = () => resumeEntry.timing();
 
 function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {
   const outcome = memoryState.receive(msg.conversationId, msg);
@@ -2916,6 +2947,10 @@ function handleServerMessage(raw: string): void {
     case "status":
       setSessionState(msg.sessionId ?? LEAD_SESSION_ID, msg.state);
       break;
+    case "task_view":
+      // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
+      resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
+      break;
     case "team_status":
       noteRunStarted(conversations.get(selectedConversationId)?.runId);
       applyTeamStatus(msg.team, msg.runId);
@@ -3003,6 +3038,8 @@ function handleBgMessage(envelope: BgToPanel): void {
     // 等 hello_ok 带模型名到达；先亮绿灯
     setStatus("on", "已连接");
     voiceUI.reconnected();
+    // 面板重开或重连：补取当前只读视图，摘要不靠旧缓存。
+    queryTaskView();
     // 清单可能先于连接到达：连上后补一次打开决策，别等兜底时限。
     if (bootFreshSession && bootInheritedId !== null) resolveBootSession(bootInheritedId, conversations.size > 0);
   } else if (envelope.state === "connecting") {

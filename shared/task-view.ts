@@ -44,7 +44,7 @@ export interface TaskView {
   outstanding: TaskViewResultItem[];
   /** 最近一次正式交付引用；没有则为 null */
   latestDelivery: { kind: string } | null;
-  /** 是否有可恢复的真实依据（中断 + 恢复输入存在）；「继续」按钮只能以此为凭 */
+  /** 是否有可恢复的真实依据（中断并留有恢复输入；或已结束但只交付了部分结果）；「继续」按钮只能以此为凭 */
   resumable: boolean;
 }
 
@@ -97,7 +97,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
     outstanding: results.filter((r, i) => OPEN_STATUSES.has(r.status) && !isSupersededUnknown(rawResults[i]!, rawResults)),
     latestDelivery: snapshot.conversationContext?.latestDelivery ? { kind: String(snapshot.conversationContext.latestDelivery.kind) } : null,
-    resumable: snapshot.state === "interrupted" && !!snapshot.recoveryInput,
+    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && snapshot.nextStep?.delivery === "partial")) && !!snapshot.recoveryInput,
   };
 }
 

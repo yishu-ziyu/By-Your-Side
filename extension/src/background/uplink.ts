@@ -30,6 +30,7 @@ export class Uplink {
   private transport: TransportKind | null = null;
   private retryAttempt = 0;
   private authFailed = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(handlers: UplinkHandlers) {
     this.handlers = handlers;
@@ -43,6 +44,7 @@ export class Uplink {
   retry(): void {
     this.authFailed = false;
     this.retryAttempt = 0;
+    this.clearReconnectTimer();
     this.teardown();
     void this.connectNative();
   }
@@ -93,21 +95,36 @@ export class Uplink {
     this.handlers.onServerMessage(msg);
   }
 
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer === null) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
   private handleDisconnect(detail: string | undefined): void {
     const wasTransport = this.transport;
     this.teardown();
     if (this.authFailed) {
+      this.clearReconnectTimer();
       this.handlers.onConnState("disconnected", wasTransport ?? undefined, detail ?? "认证失败");
       return;
     }
     this.handlers.onConnState("connecting", undefined, detail);
     const delay = Math.min(15_000, 1000 * 2 ** this.retryAttempt);
     this.retryAttempt += 1;
-    setTimeout(() => void this.connectNative(), delay);
+    // 旧连接的断开可能晚于新连接建立：重连定时器不得掐掉已经活着的新连接（否则刚恢复的任务会被再次打断）。
+    this.clearReconnectTimer();
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.transport !== null) return;
+      void this.connectNative();
+    }, delay);
   }
 
   private async connectNative(): Promise<void> {
     if (this.authFailed) return;
+    // 重连定时器或面板 retry 到达时，已有一个活的传输就不再拆掉它重建。
+    if (this.transport !== null) return;
     this.teardown();
     this.handlers.onConnState("connecting", undefined);
 
@@ -146,7 +163,9 @@ export class Uplink {
 
   private async connectWs(reason: string): Promise<void> {
     if (this.authFailed) return;
+    if (this.transport !== null) return;
     const stored = await chrome.storage.local.get(TOKEN_KEY);
+    if (this.transport !== null) return;
     const token = typeof stored[TOKEN_KEY] === "string" ? stored[TOKEN_KEY] : "";
     if (!token) {
       // 没 token 连 ws 也必败，直接停住等用户在面板里设置

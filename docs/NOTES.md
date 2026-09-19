@@ -2,6 +2,16 @@
 
 当前进度只看[STATUS](STATUS.md)。本页保留不容易从单个函数或测试看出的因果约束；旧工作记录完整保存在[历史快照](history/20260913-notes-snapshot.md)。
 
+## 2026-09-19 T05 接续入口：两个“看不见的断点”
+
+A04「恢复触发后挂起」不是模型问题，而是扩展上行连接：旧连接 onclose 排的重连定时器（1s）在新连接建立后照常触发，`connectNative()` 的 teardown 把刚建立的 transport 拆掉，宿主侧等价于一次瞬时断连 → `manager.disconnect()` 中断正在续跑的 turn，且被中断过滤吞掉终态事件。修复在 `extension/src/background/uplink.ts`：定时器到点与 connectNative/connectWs 入口都在已有活传输时直接返回，`retry()` 先清旧定时器。复现器 `scripts/acceptance/t05-connect-repro.mts`（不调模型）：旧代码 host2 连接后 ~835ms 自杀重连，修复后 6s 稳定。任何“重连/补取视图”的新代码都要遵守同一约束：不得为了刷新而拆除正在服务任务的活连接。
+
+`confirm_blocked_write` 的确认卡在本票前从未真正到达面板：`WriteConfirmBroker` 发出的 `consent_request` 少了 envelope `conversationId`，`parseServerMessage` 要求 `request.conversationId === msg.conversationId`，后台静默丢弃整条消息，用户只能等到「确认已过期」。这是 P0 有界恢复在实机上全军覆没的直接原因。补 envelope 字段 + 协议往返回归（`agent/test/task-confirmed-recovery.test.ts`）。同类的“宿主发了但面板收不到”问题，先查协议校验与 envelope，不要先怀疑 UI。
+
+接续入口（`extension/src/sidepanel/resume-entry.ts`）的 「继续」只发 `task_action/resume`（requestId + expectedRunId + expectedControlVersion + 当前活动页 context），由 `ConversationManager.dispatchTaskAction` 的 resume 分支走既有 `session.resumeInterruptedTask`：先重读页面、核对身份、带持久检查点提示词。按钮出现的唯一依据是 T02 视图的 `resumable`（已扩到「idle/error 但只交付部分结果且恢复输入仍在」，与宿主实际支持的 resume 分支一致）。重启恢复期间用户手改的字段由两处提示词保护（`session.ts` RESTART CONTINUATION、`shared/control.ts` handbackContinueText）；若模型请求重设人工值，确认卡上应拒绝而不是允许。
+
+集成注意：`agent/src/conversation-manager.ts` 本票只加了 2 处（`task_view_query` 分支、检查点不可用守卫放行），T04 合入时按此串行 rebase；T03 任务条与本组件各有一份等待原因文案，集成时合并到一处。
+
 ## 2026-09-19 记忆判断失败定位（MiniMax M3 期间）
 
 user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，不能混为「模型不行」：①插话到达即 `invalidateUserTurn`（session.ts 约 L884/L1253），会 abort 进行中的判断子调用，且 steer 通道从不重新 `beginUserTurn`（仅 sendUserMessage 路径），本轮剩余时间记忆写入必死；②同一回合 `turn.change` 同时缓存成功与失败（memory-runtime.ts：重试不能问到同意为止），同轮重试 2ms 返回旧失败；③判断子调用 15 秒硬超时（`AbortSignal.timeout(15_000)`），MiniMax-M3 `supportsReasoningEffort: false` 且无 thinkingLevelMap，思考压不下去，实测 15012ms 撞超时（deepseek-flash 的 minimal 映射为关思考，同类调用 4.9s 完成）；④底层 stopReason/errorMessage 在 session.ts 约 L442 被吞，界面只能说「记忆判断失败」。实测链（00:13–00:17）：插话后 6ms abort → 两次「当前记忆操作已失效」→ 用户点重试开新回合、M3 判断 15s 超时 → 同轮缓存失败 → 换 deepseek-flash 新回合 4.9s 成功。待裁决改进三点：超时按模型自适应或放宽；steer 后重新授权当轮重试；记录底层错误原因。证据 trace：`~/.sideagent/traces/1789745681628-dcc0bb06-236b-4d46-9015-7793aec002d6.jsonl`。

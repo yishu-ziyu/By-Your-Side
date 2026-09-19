@@ -1110,7 +1110,7 @@ export class ConversationManager {
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);return;}
     const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
     if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
-    if (entry.summary.checkpoint === 'unavailable' && message.type !== 'task_action' && message.type !== 'task_receipt_query') {
+    if (entry.summary.checkpoint === 'unavailable' && message.type !== 'task_action' && message.type !== 'task_receipt_query' && message.type !== 'task_view_query') {
       this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:TASK_CHECKPOINT_UNAVAILABLE}});
       return;
     }
@@ -1159,6 +1159,7 @@ export class ConversationManager {
       }
     }
     if (message.type === 'task_action') { await this.dispatchTaskAction(message.request); return; }
+    if (message.type === 'task_view_query') { this.emitTaskView(id, true); return; }
     if (message.type === 'task_receipt_query') {
       const receipt = this.taskQueue.list(id).find(j=>j.request.requestId===message.requestId)?.receipt??this.dispatcher.get(id,message.requestId)??this.dispatcher.store.list(id).find(r=>r.requestId===message.requestId);
       if (receipt) this.emitReceipt(receipt);
