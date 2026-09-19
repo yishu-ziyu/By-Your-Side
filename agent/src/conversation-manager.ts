@@ -22,6 +22,7 @@ import { normalizeSkillHost } from "../../shared/skill.js";
 import { runSkill } from "./skill-runner.js";
 import { TaskProgress } from "./task-progress.js";
 import type { TaskProgressSnapshot, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
+import { projectTaskView } from "../../shared/task-view.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
 import { TaskDispatcher, TaskActionRejected, TaskActionFailed, TaskReceiptError } from "./task-dispatcher.js";
 import {WriteConfirmBroker, pageFingerprint, requirementsFingerprint, type PendingWriteConfirmation} from './write-confirm.js';
@@ -121,6 +122,29 @@ export class ConversationManager {
   }
   get(id: string): ConversationEntry | undefined { return this.entries.get(id); }
   getTaskProgress(id: string): TaskProgressSnapshot | null { const snapshot=this.progress.get(id)?.snapshot();return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:null; }
+
+  /** T02：投影当前真实状态为只读任务视图并下发；内容不变则不发（幂等）。 */
+  private readonly lastTaskViews = new Map<string, string>();
+  private readonly taskViewQueued = new Set<string>();
+  /** 微任务合并：同一同步块内的多次突变只发一次，且原始事件先到达。 */
+  private queueTaskView(conversationId: string): void {
+    if (this.taskViewQueued.has(conversationId)) return;
+    this.taskViewQueued.add(conversationId);
+    queueMicrotask(() => {
+      this.taskViewQueued.delete(conversationId);
+      this.emitTaskView(conversationId);
+    });
+  }
+  private emitTaskView(conversationId: string, force = false): void {
+    const progress = this.progress.get(conversationId);
+    if (!progress) return;
+    const snapshot = { ...progress.snapshot(), controlVersion: this.controlVersions.get(conversationId) ?? 0 };
+    const view = projectTaskView(snapshot);
+    const key = JSON.stringify(view);
+    if (!force && this.lastTaskViews.get(conversationId) === key) return;
+    this.lastTaskViews.set(conversationId, key);
+    this.emit({ type: "task_view", conversationId, view });
+  }
   markDeliveryPlayback(conversationId: string, deliveryId: string, status: "speaking" | "played"): void {
     const updated = this.progress.get(conversationId)?.markPlayback(deliveryId, status);
     if (!updated) return;
@@ -902,6 +926,15 @@ export class ConversationManager {
     const states = new Map<string, "idle" | "running" | "user">();
     const progress = new TaskProgress(id);
     this.progress.set(id, progress);
+    // T02：任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
+    for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults"] as const) {
+      const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
+      (progress as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
+        const result = original(...args);
+        this.queueTaskView(id);
+        return result;
+      };
+    }
     const promise = this.factory(id, (message) => {
       // A rejected checkpoint must not be replaced by a late runtime event.
       if (summary.checkpoint === 'unavailable') return;
@@ -1332,6 +1365,7 @@ export class ConversationManager {
       for(const result of this.voicePlans.list(summary.id))if(result.plan)emit({type:'agent_event',conversationId:summary.id,event:{kind:'notice',message:'语音计划',plan:result.plan}});
       for (const receipt of this.dispatcher.store.list(summary.id)) emit({type:'agent_event',conversationId:summary.id,event:{kind:'notice',message:receipt.message,receipt}});
       emit({ type: "status", conversationId: summary.id, epochs:this.epochs(runtime),state: runtime.session.isHeld() ? "user" : runtime.session.isStreaming() ? "running" : "idle" });
+      this.emitTaskView(summary.id, true);
       void runtime.session.availableModels().then((models) => emit({ type: "model_info", conversationId: summary.id, model: runtime.session.modelName(), models }));
       for (const worker of runtime.fleet.list()) emit({ type: "status", conversationId: summary.id, sessionId: worker.id, state: runtime.fleet.get(worker.id)?.isHeld() ? "user" : worker.streaming ? "running" : "idle" });
       const team = runtime.fleet.teamView();

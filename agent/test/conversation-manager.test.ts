@@ -129,10 +129,12 @@ it("voice edits require the same running task and only acknowledge after accepta
   const startedAt=h.manager.getTaskProgress("default")!.startedAt;
   let resolve!:()=>void;
   a.runtime.session.steerCurrentTask=vi.fn(()=>new Promise<void>(r=>{resolve=r;}));
-  const n=h.emitted.length;
+  // T02：task_view 是只读投影流量，不算对修改的应答；本用例的「未确认前不回应」只数应答类消息
+  const notView=(m:{type?:string})=>m.type!=="task_view";
+  const n=h.emitted.filter(notView).length;
   const pending=h.manager.steerFromVoice("default","预算改成八百",startedAt);
   await vi.waitFor(()=>expect(a.runtime.session.steerCurrentTask).toHaveBeenCalledTimes(1));
-  expect(h.emitted).toHaveLength(n);
+  expect(h.emitted.filter(notView)).toHaveLength(n);
   resolve();await pending;
   expect(h.emitted.at(-1)).toMatchObject({conversationId:"default",event:{kind:"notice",message:"语音修改已送达当前任务：预算改成八百"}});
   expect(a.runtime.handleMessage).not.toHaveBeenCalled();expect(a.runtime.session.abort).not.toHaveBeenCalled();

@@ -9,6 +9,7 @@ import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type Readi
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
+import { isTaskView } from "./task-view.js";
 import { isConsentRequest, type ConsentStatus, type ConsentRequest } from "./consent.js";
 
 export const PROTOCOL_VERSION = 1;
@@ -274,6 +275,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
+  /** 只读任务视图投影（T02）：由真实状态生成，不是可执行命令，不证明业务成功。 */
+  | { type: "task_view"; view: import('./task-view.js').TaskView }
   | {
       type: "control_result";
       requestId: string;
@@ -658,6 +661,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if (msg.type === "conversation_list" && (!Array.isArray(msg.conversations) || !msg.conversations.every(isConversationSummary))) return null;
     if (msg.type === "tool_call" && msg.programId !== undefined && !validRequestId(msg.programId)) return null;
     if (msg.type === "status" && !isAgentRunState(msg.state)) return null;
+    if (msg.type === "task_view" && !isTaskView(msg.view)) return null;
     if (msg.type === "control_result") {
       if (!validRequestId(msg.requestId)) return null;
       if (msg.action !== "takeover" && msg.action !== "handback") return null;
