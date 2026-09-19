@@ -10,7 +10,7 @@ const sha=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex'
 const manifestText=readFileSync(join(root,'eval/p0/cases.json'),'utf8');
 const manifest=JSON.parse(manifestText) as P0Manifest;
 // HEAD alone cannot identify a locally modified extension or native host.
-const paths=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard','--','agent/src','extension/src','shared','package.json','package-lock.json','agent/package.json','extension/package.json','extension/build.mjs','extension/manifest.json','extension/public','extension/static','eval/p0','scripts/eval/lib/p0-fixture.ts','scripts/acceptance/p0-fixture.mts','scripts/acceptance/p0-local-agent-run.mts'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean);
+const paths=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard','--','agent/src','extension/src','shared','package.json','package-lock.json','agent/package.json','extension/package.json','extension/build.mjs','extension/manifest.json','extension/public','extension/static','eval/p0','scripts/eval/lib/p0-fixture.ts','scripts/acceptance/p0-fixture.mts','scripts/acceptance/p0-local-agent-run.mts','scripts/acceptance/round-evidence.mts'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean);
 const fingerprint=createHash('sha256');
 for(const path of [...new Set(paths)].sort()){
   fingerprint.update(path).update('\0');

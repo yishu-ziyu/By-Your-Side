@@ -12,7 +12,8 @@ import {isResultMetaTool} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';
 import {TaskReadback} from './task-readback.js';
 import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recovery.js';
-import {pageRecoveryKey,attachmentRecoveryKey} from './task-recovery.js';
+import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
+import type { DeliveryFactInput } from './user-delivery.js';
 
 const labels: Record<string, string> = { record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 const label = (name: string) => labels[name] ?? name.slice(0, 100);
@@ -58,7 +59,7 @@ export class TaskProgress {
   reviseResults(): void { this.results.revise();this.failureLimit=false; }
   stopAfterFailures():void { this.failureLimit=true; }
   /** 交付事实链：已满足项、仍未完成项、本 run 真实读到的页面。未完成项名称不升级状态、不删证据。 */
-  deliveryFacts(): { delivered: string[]; remaining: UserDeliveryRemainingItem[]; sources: UserDeliverySourceRef[] } {
+  deliveryFacts(): DeliveryFactInput {
     // 描述超界时加省略号：事实链可以被界面折叠展示，但不能静默截断得看不出来。
     const shorten = (description: string): string => description.length > USER_DELIVERY_FACT_DESCRIPTION_MAX
       ? `${description.slice(0, USER_DELIVERY_FACT_DESCRIPTION_MAX - 1)}…`
@@ -101,14 +102,15 @@ export class TaskProgress {
     const attachmentKeys=[...new Set([...prior.attachmentKeys,...(attachments??[]).map(attachmentRecoveryKey)])];
     if(requirements.length>64||requirements.some(t=>t.length>12000)||requirements.reduce((n,t)=>n+t.length,0)>RECOVERY_INPUT_MAX||attachmentKeys.length>16)throw new Error('原任务补充内容已达到保留上限，这条修改未接收；请先交付已有结果或另开任务。');
     const page=context?pageRecoveryKey(context.tabId,context.url):prior.page;
-    const recorded={requirements,attachmentKeys,...(page?{page}:{})};
+    const materials=mergeTaskMaterials(prior.materials??[],context,attachments);
+    const recorded={requirements,attachmentKeys,materials,...(page?{page}:{})};
     const runId=this.runId;
     this.recoveryInput=recorded;
     // Only the caller that just registered this input can revoke it before acceptance.
     // Preserve a fresh page observation, and never roll back a later requirement or another run.
     return ()=>{
       if(this.runId!==runId||this.recoveryInput!==recorded)return;
-      this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys};
+      this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys,materials:prior.materials};
     };
   }
   invalidatePage(tabId?:number,url?:string):void {

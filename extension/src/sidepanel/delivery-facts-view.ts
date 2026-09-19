@@ -59,9 +59,10 @@ export function buildDeliveryFactView(facts: UserDeliveryFacts | undefined | nul
   const deliveredTotal = facts.delivered.length + (facts.omittedDelivered ?? 0);
   const headline = facts.outcome === "partial"
     ? remainingTotal ? `部分完成 · 还有 ${remainingTotal} 项未完成` : "部分完成"
-    : sources.length ? `已交付 · 来源 ${sources.length}` : "已交付";
+    : facts.outcome === "unverified" ? "已交付 · 完成情况未核验"
+      : sources.length ? `已交付 · 来源 ${sources.length}` : "已交付";
   const done = delivered.length ? `已完成 ${deliveredTotal} 项：${delivered.join("、")}${deliveredTotal > delivered.length ? "…" : ""}` : "";
-  const visible = facts.outcome === "partial" || remaining.length > 0 || sources.length > 0 || delivered.length > 0;
+  const visible = facts.outcome !== "complete" || remaining.length > 0 || sources.length > 0 || delivered.length > 0;
   return { visible, tone, headline, done, remaining, remainingTotal, delivered, sources };
 }
 

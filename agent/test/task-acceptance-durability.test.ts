@@ -7,6 +7,7 @@ import {ConversationManager} from '../src/conversation-manager.js';
 import {ConversationStore} from '../src/conversation-store.js';
 import {TaskDispatcher,TaskReceiptStore} from '../src/task-dispatcher.js';
 import type {TaskActionRequest} from '../../shared/task-actions.js';
+import {projectTaskView} from '../../shared/task-view.js';
 
 const dirs:string[]=[];
 afterEach(()=>{for(const dir of dirs.splice(0))rmSync(dir,{recursive:true,force:true});});
@@ -86,6 +87,11 @@ describe('acceptance durability before the first assistant message',()=>{
     expect(restored).toMatchObject({state:'interrupted',runId:before.runId,goal:request.text});
     expect(restored.recoveryInput?.requirements).toEqual([request.text]);
     expect(restored.recoveryInput?.attachmentKeys).toHaveLength(1);
+    expect(projectTaskView(restored).materials).toEqual(projectTaskView(before).materials);
+    expect(projectTaskView(restored).materials).toEqual([
+      expect.objectContaining({kind:'page',label:'Fixture（fixture.test）'}),
+      expect.objectContaining({kind:'attachment',label:'fixture.png'}),
+    ]);
     const replay=await second.manager.dispatchTaskAction(request);
     expect(replay).toEqual(receipt);
     expect(second.sessions.get('default')!.startTask).not.toHaveBeenCalled();

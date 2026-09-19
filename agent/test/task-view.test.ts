@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import { TaskProgress } from "../src/task-progress.js";
 import { projectTaskView, isTaskView, type TaskView } from "../../shared/task-view.js";
 import { parseServerMessage } from "../../shared/protocol.js";
-import type { TaskProgressSnapshot } from "../../shared/voice.js";
+import { TASK_NEXT_REASONS } from "../../shared/task-next-step.js";
+import { TASK_RESULT_ITEM_STATUSES } from "../../shared/task-results.js";
+import { USER_DELIVERY_KINDS, type TaskProgressSnapshot } from "../../shared/voice.js";
 import type { ServerMessage, ClientMessage } from "../../shared/protocol.js";
 
 const CID = "conv-a";
@@ -209,6 +211,27 @@ describe("协议契约：task_view 消息校验", () => {
     expect(ok).toMatchObject({ type: "task_view" });
     const bad = parseServerMessage(JSON.stringify({ type: "task_view", conversationId: CID, view: { ...view, state: "bogus" } }));
     expect(bad).toBeNull();
+  });
+  it("正式结果状态、等待原因与交付类型保持兼容", () => {
+    const base = projectTaskView(startedRun().progress.snapshot());
+    const parse = (view: TaskView) => parseServerMessage(JSON.stringify({ type: "task_view", conversationId: CID, view }));
+    for (const status of TASK_RESULT_ITEM_STATUSES) {
+      expect(parse({ ...base, results: [{ id: "r1", description: "结果", status }] })).not.toBeNull();
+    }
+    for (const reason of TASK_NEXT_REASONS) {
+      expect(parse({ ...base, waiting: { reason, detail: null } })).not.toBeNull();
+    }
+    for (const kind of USER_DELIVERY_KINDS) {
+      expect(parse({ ...base, latestDelivery: { kind } })).not.toBeNull();
+    }
+  });
+  it("拒绝结果状态、等待原因与交付类型中的未知字符串", () => {
+    const base = projectTaskView(startedRun().progress.snapshot());
+    const parse = (view: unknown) => parseServerMessage(JSON.stringify({ type: "task_view", conversationId: CID, view }));
+    expect(parse({ ...base, results: [{ id: "r1", description: "结果", status: "corrupt" }] })).toBeNull();
+    expect(parse({ ...base, outstanding: [{ id: "r1", description: "结果", status: "corrupt" }] })).toBeNull();
+    expect(parse({ ...base, waiting: { reason: "corrupt", detail: null } })).toBeNull();
+    expect(parse({ ...base, latestDelivery: { kind: "corrupt" } })).toBeNull();
   });
 });
 

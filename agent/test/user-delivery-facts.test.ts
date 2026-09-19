@@ -9,6 +9,7 @@ import { parseServerMessage } from "../../shared/protocol.js";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import type { TaskNextStep } from "../../shared/task-next-step.js";
 import type { UserDelivery } from "../../shared/voice.js";
+import { buildDeliveryFactView } from "../../extension/src/sidepanel/delivery-facts-view.js";
 
 const COMPLETE: TaskNextStep = { action: "deliver", reason: "receipts_reviewed", allowWrites: true, delivery: "report", resultIds: ["r-1"] };
 const PARTIAL: TaskNextStep = { action: "ask_user", reason: "unknown_with_baseline", allowWrites: false, delivery: "partial", resultIds: ["r-1"] };
@@ -29,6 +30,29 @@ function tool(over: Partial<Parameters<typeof createSendUserMessageTool>[0]> = {
 }
 
 describe("send_user_message 事实链", () => {
+  it("空账本的 report 许可不证明完整完成，模型 complete 不升级宿主事实", async () => {
+    const h = tool({
+      getNextStep: () => ({ ...COMPLETE, action: "continue", reason: "open_task", resultIds: [] }),
+      getDeliveryFacts: () => ({ delivered: [], remaining: [], sources: [] }),
+    });
+    await h.tool.execute("unverified", { kind: "finding", outcome: "complete", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never);
+    const event = h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>;
+    expect(event.delivery.facts?.outcome).toBe("unverified");
+    expect(buildDeliveryFactView(event.delivery.facts).headline).toContain("未核验");
+  });
+
+  it("十五项义务的省略计数穿过正式交付与 wire 解析后仍在界面显示十五项", async () => {
+    const p = new TaskProgress("default");
+    p.request("核对十五项");
+    p.registerResults(Array.from({ length: 15 }, (_, i) => ({ id: `r-${i}`, description: `义务 ${i}`, tool: "snapshot", target: null })));
+    const h = tool({ getRunId: () => p.snapshot().runId!, getNextStep: () => p.snapshot().nextStep!, getDeliveryFacts: () => p.deliveryFacts() });
+    await h.tool.execute("fifteen", { kind: "finding", outcome: "partial", content: "这些项尚未核对。" }, undefined, undefined, {} as never);
+    const message = parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "default", event: h.events[0] }));
+    if (message?.type !== "agent_event" || message.event.kind !== "user_delivery") throw new Error("正式交付未通过协议");
+    expect(message.event.delivery.facts?.omittedRemaining).toBe(3);
+    expect(buildDeliveryFactView(message.event.delivery.facts).remainingTotal).toBe(15);
+  });
+
   it("finding 带上宿主事实：来源、已满足项、未完成项", async () => {
     const h = tool({
       getDeliveryFacts: () => ({

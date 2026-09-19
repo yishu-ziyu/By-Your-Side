@@ -23,6 +23,7 @@ import {WebSocketServer, WebSocket} from 'ws';
 import {Type} from 'typebox';
 import {SessionManager} from '@earendil-works/pi-coding-agent';
 import {createCdp, fetchJson} from './cdp.mjs';
+import {pairedAcceptedReceipt, roundFinding} from './round-evidence.mjs';
 import {sleep, until} from './isolated-extension.mts';
 import {ConversationManager} from '../../agent/src/conversation-manager.js';
 import {ConversationStore} from '../../agent/src/conversation-store.js';
@@ -64,7 +65,7 @@ const writeConsent = writeConsentArg as 'off' | 'allow' | 'deny';
 
 const manifestText = await readFile(join(root, 'eval/p0/cases.json'), 'utf8');
 const manifest = JSON.parse(manifestText) as {version: number; cases: Array<{id: string; task: string; fault: string; maxSideEffects: number; preserveRun: boolean}>};
-const fingerprintPaths = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'agent/src', 'extension/src', 'shared', 'package.json', 'package-lock.json', 'agent/package.json', 'extension/package.json', 'extension/build.mjs', 'extension/manifest.json', 'extension/public', 'extension/static', 'eval/p0', 'scripts/eval/lib/p0-fixture.ts', 'scripts/acceptance/p0-fixture.mts', 'scripts/acceptance/p0-local-agent-run.mts'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
+const fingerprintPaths = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'agent/src', 'extension/src', 'shared', 'package.json', 'package-lock.json', 'agent/package.json', 'extension/package.json', 'extension/build.mjs', 'extension/manifest.json', 'extension/public', 'extension/static', 'eval/p0', 'scripts/eval/lib/p0-fixture.ts', 'scripts/acceptance/p0-fixture.mts', 'scripts/acceptance/p0-local-agent-run.mts', 'scripts/acceptance/round-evidence.mts'], {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
 const fingerprintHash = createHash('sha256');
 for (const path of [...new Set(fingerprintPaths)].sort()) {
   fingerprintHash.update(path).update('\0');
@@ -860,19 +861,39 @@ const CASES: Record<string, (c: Case) => Promise<void>> = {
     await until(async () => ((await c.fixtureState()).sideEffects >= 1) || undefined, 180_000, '保存已落到服务端');
     await c.snapshotProgress('after-write');
     await sleep(150);
+    const steerMark = c.recorder.events.length;
+    const steerAtMs = Date.now();
     await c.say('先不要重复保存；查一下测试站点 /api/state 的真实状态，把已有记录内容告诉我，再按情况继续。');
-    const steered = c.recorder.events.some(e => e.kind === 'client_msg' && (e as any).msg?.type === 'task_action' && (e as any).msg.request?.action === 'steer');
-    c.check('补充要求作为同一任务的修改送达（steer）', steered);
+    // 只认插话窗口内、与已发出请求编号配对的 accepted/applied 回执；按 action 或旧回执都不算送达。
+    const steerReceipts = () => c.eventsSince(steerMark)
+      .filter(e => e.kind === 'server_msg' && (e as any).msg?.type === 'agent_event' && (e as any).msg.event?.receipt)
+      .map(e => (e as any).msg.event.receipt as {requestId?: string; action?: string; status?: string});
+    const steerRequestIds = () => c.eventsSince(steerMark)
+      .filter(e => e.kind === 'client_msg' && (e as any).msg?.type === 'task_action' && (e as any).msg.request?.action === 'steer')
+      .map(e => (e as any).msg.request?.requestId as string | undefined)
+      .filter((id): id is string => typeof id === 'string');
+    const steered = await until(() => pairedAcceptedReceipt(steerReceipts(), steerRequestIds()) || undefined, 30_000, 'steer accepted/applied').then(() => true).catch(() => false);
+    c.check('补充要求作为同一任务的修改送达（steer 回执 accepted/applied）', steered, {requests: steerRequestIds(), receipts: steerReceipts().slice(-2)});
     await c.waitIdle('default', 240_000);
-    await sleep(1000);
+    // 后续查询只认新窗口；正式交付必须是插话后、且晚于本轮查询组合的 finding，不能采到旧交付。
+    const readTools = ['fetch', 'navigate', 'snapshot', 'js', 'read_element', 'browser_run'];
+    const readStarts = () => c.eventsSince(steerMark).filter(e => e.kind === 'server_msg' && (e as any).msg?.type === 'agent_event' && (e as any).msg.event?.kind === 'tool_start' && readTools.includes((e as any).msg.event?.name));
+    const roundDeliveries = () => c.eventsSince(steerMark)
+      .filter(e => e.kind === 'server_msg' && (e as any).msg?.type === 'agent_event' && (e as any).msg.event?.kind === 'user_delivery' && (e as any).msg.event.delivery?.kind === 'finding')
+      .map(e => (e as any).msg.event.delivery as {kind?: string; runId?: string | null; composedAt?: number; text?: string});
+    const queryAtMs = readStarts()[0]?.at;
+    const finding = await until(() => roundFinding(roundDeliveries(), c.runIds.before, Math.max(steerAtMs, queryAtMs ?? steerAtMs)) || undefined, 30_000, '插话后正式交付').catch(() => undefined);
+    c.check('插话轮次给出新的正式交付', !!finding, finding?.text?.slice(0, 160) ?? `窗口内交付=${roundDeliveries().length}`);
     const state = await c.fixtureState();
     c.check('整个场景只写入一次', state.sideEffects === 1, {sideEffects: state.sideEffects});
     c.check('没有重复保存', state.duplicateWrites === 0, state);
     c.check('没有错页写入', state.wrongPageWrites === 0, state);
-    const all = c.deliveries('default').map(d => d.text).join('\n');
+    const record = (state.records ?? [])[0] as {name?: string; choice?: string; page?: string} | undefined;
+    const all = String(finding?.text ?? '');
+    const mentionsChoice = !!record?.choice && new RegExp(`(?:^|[^\\w])${record.choice}(?:[^\\w]|$)`, 'i').test(all);
     c.check('后续交付提到服务端已有记录', /测试乙/.test(all), all.slice(0, 200));
-    const queried = c.recorder.events.some(e => e.kind === 'server_msg' && (e as any).msg?.type === 'agent_event' && (e as any).msg.event?.kind === 'tool_start' && ['fetch', 'navigate', 'snapshot', 'js', 'read_element', 'browser_run'].includes((e as any).msg.event?.name));
-    c.check('查询过服务端或页面状态', queried);
+    c.check('正式交付与服务端实际记录一致', !!record && all.includes(String(record.name)) && (all.includes('青松') || mentionsChoice), {record, text: all.slice(0, 200)});
+    c.check('后续查询过服务端或页面状态', readStarts().length > 0);
     c.runIds.after = (await c.progress())?.runId ?? null;
     c.check('查询与继续沿用原任务身份', c.runIds.after === c.runIds.before, {before: c.runIds.before, after: c.runIds.after});
     c.userCorrections = 1;

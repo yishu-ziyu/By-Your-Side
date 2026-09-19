@@ -12,7 +12,7 @@ import {
   type ClientMessage, type ConversationSummary, type ServerMessage,
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
-import { createUserDelivery } from "./user-delivery.js";
+import { createUserDelivery, projectDeliveryFacts } from "./user-delivery.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -457,14 +457,13 @@ export class ConversationManager {
       return null;
     }
   }
-  /** 事实链只从当前 run 的账本与真实读数投影；complete 仅在账本无未完成项且 nextStep 允许报告时成立。 */
+  /** 语音补发沿用正式工具的宿主事实投影，空账本不能证明完成。 */
   private deliveryFactsOf(conversationId: string): UserDeliveryFacts | undefined {
     const progress = this.progress.get(conversationId);
     if (!progress) return undefined;
     const facts = progress.deliveryFacts();
     const snap = this.getTaskProgress(conversationId);
-    const outcome = snap?.nextStep?.delivery === 'report' && facts.remaining.length === 0 ? 'complete' as const : 'partial' as const;
-    return { outcome, delivered: facts.delivered, remaining: facts.remaining, sources: facts.sources };
+    return projectDeliveryFacts(facts, snap?.nextStep);
   }
   /**
    * 准备 → 校验 → 提交。一次提案推理同时给出意图计划与 next；

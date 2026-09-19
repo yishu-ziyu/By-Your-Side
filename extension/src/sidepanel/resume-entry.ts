@@ -90,7 +90,9 @@ function headlineFor(view: TaskView, checkpointUnavailable: boolean): { tone: Re
     case "interrupted": return { tone: "waiting", headline: "已中断 · 可继续" };
     case "aborted": return { tone: "stopped", headline: "已停止" };
     case "error": return { tone: "blocked", headline: "运行出错" };
-    case "idle": return view.outstanding.length ? { tone: "waiting", headline: "任务已结束 · 仍有未完成项" } : { tone: "running", headline: "已完成" };
+    case "idle": return view.outstanding.length || view.waiting || view.resumable
+      ? { tone: "waiting", headline: "任务已结束 · 仍需处理" }
+      : { tone: "running", headline: "任务已结束" };
     default: return { tone: "running", headline: "当前会话" };
   }
 }
@@ -124,7 +126,8 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
     if (unknown) return "未知项需要核对可靠回执或由你决定；在得到依据前不会重复提交。";
     if (blocked) return "按当前页面新观察换方法继续；无法恢复的部分会如实说明。";
     if (remaining.length) return "还有未完成项；可以用「继续原任务」从剩余部分继续（如果原依据仍在）。";
-    return "这一轮已经结束，没有未完成项。";
+    if (view.waiting || view.resumable) return "这一轮已经结束，仍需核对或处理；请按阻塞说明继续。";
+    return "这一轮已经结束；登记的步骤没有待办，不代表所有要求都已核验。";
   })();
   const gaps: string[] = [];
   if (checkpointUnavailable) gaps.push("原任务检查点无法恢复；原记录未被覆盖，本会话不会执行它，其他独立任务可以另开会话");

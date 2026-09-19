@@ -45,8 +45,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { filterReachableModels } from "./reachable-models.js";
-import type { UserDelivery, UserDeliveryFacts, UserDeliveryRemainingItem, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
-import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId } from "./user-delivery.js";
+import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
@@ -264,7 +264,7 @@ export class BrowserAgentSession {
     confirmWrite?: (input: {id: string; tool: string; target: string; value: string; description: string; tabId: number; documentId: string}) => Promise<{allowed: boolean; reason?: string}>;
     recordConfirmedRecovery?: (input: ConfirmedRecoveryRecord) => TaskResultItem | null;
     /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
-    deliveryFacts?: () => { delivered: string[]; remaining: UserDeliveryRemainingItem[]; sources: UserDeliverySourceRef[] };
+    deliveryFacts?: () => DeliveryFactInput;
   } | null = null;
   private persistedResults = "";
   private checkpointReadFailed = false;
@@ -294,12 +294,7 @@ export class BrowserAgentSession {
     const hostFacts = this.taskResultsHost?.deliveryFacts?.();
     if (!hostFacts) return undefined;
     const next = this.conversationSnapshot()?.nextStep;
-    return {
-      outcome: next?.delivery === "report" && hostFacts.remaining.length === 0 ? "complete" : "partial",
-      delivered: hostFacts.delivered,
-      remaining: hostFacts.remaining,
-      sources: hostFacts.sources,
-    };
+    return projectDeliveryFacts(hostFacts, next);
   }
   private durableTaskSnapshot(snapshot:TaskProgressSnapshot):TaskProgressSnapshot {
     return {...snapshot,observedAt:0,active:[],lastAction:null};
@@ -2027,11 +2022,14 @@ export class BrowserAgentSession {
               console.error(`[sideagent] 模型请求最终失败：${errText}`);
               emit({ kind: "error", message: `模型请求最终失败：${errText}` });
             } else if (!this.deliveredResultThisRun && (this.explicitDelivery || runProducedNothing(event.messages))) {
-              // 正式交付模式只认成功交付；ack、读取或失败调用留在历史里也不能替代答案。
-              // 模型 200 但空响应（实测见于 kimi-coding/k3 被限流时），面板不能装死
+              // 正文已生成但宿主尚在补正式交付，不等于模型无输出；也不能升级成已交付。
+              const lastAssistant = event.messages.filter(message => message.role === "assistant").at(-1);
+              const hasFinalText = lastAssistant?.role === "assistant"
+                && lastAssistant.content.some(part => part.type === "text" && part.text.trim());
               emit({
                 kind: "notice",
-                message: "模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试",
+                message: hasFinalText ? "执行已结束，正式结果尚未交付。"
+                  : "模型返回了空响应：可能触发了限流或该模型当前不可用，建议在面板顶栏切换模型（如 kimi-coding/kimi-for-coding）后重试",
               });
             }
           }

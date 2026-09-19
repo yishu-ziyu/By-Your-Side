@@ -3,7 +3,7 @@
  *
  * 事实来源与诚实边界：
  * - 状态/目标/作用页/等待原因全部消费 T02 的只读 task_view 投影，不另造状态机；
- * - 材料入口只列面板实际发出的请求里的东西（选区/附件，发送时快照），作用页以 task_view.page 为准；
+ * - 已接受材料由宿主 task_view 恢复；发送中与旧协议沿用实际发出的请求快照，作用页以 task_view.page 为准；
  * - 「发送中」不冒充「已接收」：只有 accepted 回执才把材料标为已随任务送入；
  * - 不显示百分比/剩余时间；接管与停止区分「请求中」与「已生效」，失败保留原状态可重试；
  * - 不新增任何动画：信息不依赖动效，prefers-reduced-motion 下完全等价。
@@ -226,7 +226,7 @@ function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): Mater
   const rows: MaterialRow[] = [];
   for (const item of set.items) {
     if (item.kind === "page") {
-      rows.push({ key: item.key, kind: "page", kindLabel: KIND_LABEL.page, label: resolvedPageLabel ?? item.label, removable: false });
+      rows.push({ key: item.key, kind: "page", kindLabel: KIND_LABEL.page, label: item.key === 'task:page' ? resolvedPageLabel ?? item.label : item.label, removable: false });
     } else {
       rows.push({ key: item.key, kind: item.kind, kindLabel: KIND_LABEL[item.kind], label: item.label, removable: false });
     }
@@ -432,6 +432,11 @@ export class TaskBar {
       if (view.state === "none" || staleRun) this.taskMaterials = null;
     }
     if (previous && previous.conversationId !== view.conversationId) this.taskMaterials = null;
+    if (view.materials !== undefined) {
+      this.taskMaterials = view.runId && view.state !== 'none'
+        ? { runId: view.runId, items: view.materials.map(item => ({ ...item })) }
+        : null;
+    }
     this.render();
   }
 
@@ -546,6 +551,8 @@ export class TaskBar {
   }
 
   private absorbMaterials(entry: SentRequestMaterials): void {
+    // 新宿主的接受事实是唯一权威；晚到回执或旧请求缓存不得覆盖它。
+    if (this.view?.materials !== undefined) return;
     const items: TaskMaterialItem[] = [];
     if (entry.action === "start" || !this.taskMaterials) {
       if (entry.page) items.push({ key: "task:page", kind: "page", label: pageLabelOf({ title: entry.page.title, url: entry.page.url }) });

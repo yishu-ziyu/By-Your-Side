@@ -142,6 +142,21 @@ describe('A05-02/A05-03 正向接续摘要与恢复入口', () => {
 });
 
 describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
+  it('真实读取失败后结束：空账本不能显示已完成', () => {
+    const progress = new TaskProgress('default');
+    progress.request('读取页面', PAGE);
+    for (const event of [
+      { kind: 'agent_start' },
+      { kind: 'tool_start', toolCallId: 'failed-read', name: 'snapshot', params: {} },
+      { kind: 'tool_end', toolCallId: 'failed-read', name: 'snapshot', isError: true, executionFact: 'not_executed' },
+      { kind: 'agent_end' },
+    ]) progress.observe({ type: 'agent_event', event } as ServerMessage);
+    const summary = buildResumeSummary(projectTaskView(progress.snapshot()));
+    expect(summary.headline).toBe('任务已结束 · 仍需处理');
+    expect(summary.blocking).toContain('失败');
+    expect(summary.nextStep).not.toContain('没有未完成项');
+    expect(buildResumeSummary(viewOf({state: 'idle', waiting: null, outstanding: [], resumable: false})).headline).toBe('任务已结束');
+  });
   it('未知写入：摘要区分已完成与未知，不出现全任务成功或自动重做承诺', () => {
     const summary = buildResumeSummary(viewOf({
       state: 'idle',

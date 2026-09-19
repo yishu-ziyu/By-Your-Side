@@ -4,6 +4,7 @@
  * 每臂：新会话 + 独立页面；计划步骤（steer/追问/接管改字段/重启继续）按用例定义执行。
  */
 import { randomUUID } from "node:crypto";
+import { pairCallsWithEnds } from './tool-receipts.mjs';
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
@@ -160,35 +161,7 @@ function extractRunIds(events: EventView[], conversationId: string): string[] {
   return [...ids];
 }
 
-/** 串行执行模型下，同名工具按顺序配对调用与结束事件（wire id 与 SDK toolCallId 是不同命名空间）。 */
-export function pairCallsWithEnds(events: EventView[], conversationId: string) {
-  const own = events.filter((e) => (e.message as { conversationId?: string }).conversationId === conversationId
-    || (e.message as { event?: { conversationId?: string } }).event?.conversationId === conversationId);
-  const calls = own.filter((e) => e.direction === "server" && e.message.type === "tool_call");
-  const ends = own.filter((e) => eventKind(e) === "tool_end");
-  const usedEnds = new Set<number>();
-  return calls.map((e) => {
-    const m = e.message as { id?: string; name?: string; params?: { target?: string; value?: string } };
-    const name = String(m.name ?? "");
-    const endIdx = ends.findIndex((x, i) => {
-      if (usedEnds.has(i)) return false;
-      const ev = (x.message as { event?: { name?: string } }).event;
-      return ev?.name === name && x.at >= e.at;
-    });
-    let end: { at: number; ok: boolean; executionFact?: string } | undefined;
-    if (endIdx >= 0) {
-      usedEnds.add(endIdx);
-      const x = ends[endIdx]!;
-      const ev = (x.message as { event?: { isError?: boolean; executionFact?: string } }).event;
-      end = { at: x.at, ok: ev?.isError === false, executionFact: ev?.executionFact };
-    }
-    return {
-      name, at: e.at, toolCallId: m.id,
-      params: { target: m.params?.target, value: m.params?.value },
-      ...(end ? { confirmedAt: end.at, ok: end.ok, executionFact: end.executionFact } : {}),
-    };
-  });
-}
+export { pairCallsWithEnds } from './tool-receipts.mjs';
 
 function extractToolCalls(events: EventView[], conversationId: string) {
   return pairCallsWithEnds(events, conversationId);

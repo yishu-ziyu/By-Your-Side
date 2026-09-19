@@ -10,6 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskView } from "../../shared/task-view.js";
 import type { TaskReceipt } from "../../shared/task-actions.js";
+import { TaskProgress } from "../../agent/src/task-progress.js";
+import { projectTaskView } from "../../shared/task-view.js";
+import { parseServerMessage } from "../../shared/protocol.js";
 import {
   CONTROL_PENDING_TIMEOUT_MS,
   TaskBar,
@@ -207,6 +210,31 @@ function mount(options: Partial<ConstructorParameters<typeof TaskBar>[0]> = {}) 
 }
 
 describe("任务条文案：真实原因，不合并成含糊状态", () => {
+  it("重建面板和宿主检查点后恢复本 run 材料，拒绝的补充不进入材料", () => {
+    const progress = new TaskProgress(CONV);
+    progress.request('读选区与附件', { tabId: 7, title: '活动说明', url: 'https://forms.example/edit?token=secret', selection: { text: '退票说明原文' } }, [
+      { type: 'image', id: 'image-1', name: '参考截图.png', mimeType: 'image/png', dataBase64: 'aGVsbG8=' },
+    ]);
+    const revoke = progress.recordRequirement('未接受补充', undefined, [{ type: 'image', id: 'rejected-image', name: '未接受.png', mimeType: 'image/png', dataBase64: 'd29ybGQ=' }]);
+    revoke();
+    const restored = new TaskProgress(CONV);
+    restored.restoreResults(JSON.parse(JSON.stringify(progress.snapshot())));
+    const message = parseServerMessage(JSON.stringify({ type: 'task_view', conversationId: CONV, view: projectTaskView(restored.snapshot()) }));
+    if (message?.type !== 'task_view') throw new Error('材料未通过协议');
+    const h = mount();
+    h.bar.updateView(message.view);
+    expect(h.text()).toContain('退票说明原文');
+    expect(h.text()).toContain('参考截图.png');
+    expect(h.text()).not.toContain('未接受.png');
+    expect(JSON.stringify(message.view)).not.toContain('token=secret');
+    h.bar.updateView({ ...message.view, conversationId: 'other' });
+    expect(h.text()).toContain('参考截图.png');
+    restored.abort();
+    restored.request('新任务');
+    h.bar.updateView(projectTaskView(restored.snapshot()));
+    expect(h.text()).not.toContain('参考截图.png');
+    h.bar.dispose();
+  });
   it("阻塞原因逐条可读，未知原因不吞掉原文", () => {
     expect(waitingCopy("human_control", null).text).toBe("页面已交给你，Agent 暂停等待");
     expect(waitingCopy("failure_limit", null).text).toContain("连续失败");

@@ -12,10 +12,12 @@
  */
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {WebSocket} from 'ws';
 import {loadConfig} from '../../agent/src/config.js';
 import {startHost, stopHost, startIsolatedPanel, type HostHolder} from './product-journeys/runner.mjs';
 import {createJourneyFixture, at2, PLAIN_FORMS} from './product-journeys/fixtures.mjs';
+import {pairedAcceptedReceipt, roundFinding} from './round-evidence.mjs';
 import {sleep, until} from './isolated-extension.mts';
 
 if (!process.argv.includes('--headless')) throw new Error('需要显式 --headless：本驱动只允许无头隔离运行。');
@@ -26,6 +28,9 @@ const argOf = (name: string, fallback?: string): string | undefined => {
 const caseId = argOf('--case', 'A05-02')!;
 if (!['A05-01', 'A05-02', 'A05-03', 'timing', 'cancel-late'].includes(caseId)) throw new Error(`未知 --case：${caseId}`);
 const material = Number(argOf('--material', '0')) as 0 | 1;
+const inputSource = argOf('--input', 'text');
+if (!['text', 'voice'].includes(inputSource!)) throw new Error('需要 --input text|voice');
+if (inputSource === 'voice' && caseId !== 'A05-02') throw new Error('语音接收边界仅用于 A05-02');
 const model = loadConfig().model ?? '(未配置)';
 const outRoot = resolve(argOf('--report', `out/acceptance/${new Date().toISOString().replace(/[:.]/g, '-')}-t05-${caseId}`)!);
 mkdirSync(outRoot, {recursive: true});
@@ -47,20 +52,29 @@ let tabId = -1;
 let pageTarget = '';
 let restartAtMs: number | null = null;
 const humanEdit = {selector: '#note', value: ''};
+const voiceRoutes: unknown[] = [];
+let beforeResumeProbe: Record<string, unknown> | undefined;
+let finalProbe: Record<string, unknown> | undefined;
 
 const eventKind = (event: TraceEvent): string | undefined => {
   const message = event.message;
   if (message.type === 'agent_event') return (message.event as {kind?: string} | undefined)?.kind;
   return typeof message.type === 'string' ? message.type : undefined;
 };
-const eventReceipt = (event: TraceEvent): {action?: string; status?: string; runId?: string | null} | undefined => {
+const eventReceipt = (event: TraceEvent): {action?: string; status?: string; runId?: string | null; requestId?: string} | undefined => {
   const message = event.message;
   if (message.type !== 'agent_event') return undefined;
-  return (message.event as {receipt?: {action?: string; status?: string; runId?: string | null}} | undefined)?.receipt;
+  return (message.event as {receipt?: {action?: string; status?: string; runId?: string | null; requestId?: string}} | undefined)?.receipt;
 };
 const ownEvents = (from = 0): TraceEvent[] => events.slice(from).filter((event) =>
   (event.message as {conversationId?: string}).conversationId === conversationId
   || (event.message as {event?: {conversationId?: string}}).event?.conversationId === conversationId);
+/** 只保留某时刻之后的净会话事件；宿主重启回放的旧回执/旧交付不进入本轮窗口。 */
+const ownEventsSince = (ms: number): TraceEvent[] => ownEvents(0).filter((event) => event.at >= ms);
+const deliveriesIn = (list: TraceEvent[]): Array<{kind?: string; runId?: string | null; composedAt?: number}> => list
+  .map((event) => (event.message.event as {kind?: string; delivery?: {kind?: string; runId?: string | null; composedAt?: number}} | undefined))
+  .filter((event): event is {kind?: string; delivery: {kind?: string; runId?: string | null; composedAt?: number}} => event?.kind === 'user_delivery' && !!event.delivery)
+  .map((event) => event.delivery);
 
 const panelEval = <T,>(expression: string): Promise<T> => iso!.evalIn(panel, expression) as Promise<T>;
 const panelSend = async (text: string): Promise<void> => {
@@ -146,18 +160,19 @@ async function waitForEntry(timeout = 45_000): Promise<void> {
   await until(async () => (await entryButton()).present || undefined, timeout, 'resume entry button');
 }
 
-async function waitForEnd(from: number, timeout = 240_000): Promise<boolean> {
+/** 只认 sinceMs 之后的 agent_end 与本轮正式交付；同 run 的旧 finding（composedAt 更早）不算完成。 */
+async function waitForEnd(sinceMs: number, timeout = 240_000): Promise<boolean> {
   return until(async () => {
-    const own = ownEvents(from);
+    const own = ownEventsSince(sinceMs);
     const ended = own.some((event) => ['agent_end', 'error'].includes(eventKind(event) ?? ''));
     const snapshot = holder.current.manager.getTaskProgress(conversationId);
     if (!ended || !snapshot || ['running', 'interrupted', 'paused'].includes(snapshot.state)) return undefined;
-    await sleep(1_500);
-    return holder.current.manager.getTaskProgress(conversationId);
+    // 执行停止只说明这轮结束；宿主可能仍在异步补正式回答，等到本轮组合的新 finding 为止。
+    return roundFinding(deliveriesIn(own), snapshot.runId, sinceMs) || undefined;
   }, timeout, 'task terminal').then(() => true).catch(() => false);
 }
 
-const plan = {caseId, material, model, fixture: fixture.origin, outRoot, startedAt: new Date().toISOString()};
+const plan = {caseId, material, inputSource, model, fixture: fixture.origin, outRoot, startedAt: new Date().toISOString()};
 writeFileSync(join(outRoot, 'plan.json'), JSON.stringify(plan, null, 2));
 
 try {
@@ -169,6 +184,7 @@ try {
   await newConversation();
   await openFixturePage();
   const before = events.length;
+  const scenarioAtMs = Date.now();
 
   if (caseId === 'A05-01') {
     await panelSend(`${userText}每填一项后读回确认，全部填完再汇报。`);
@@ -187,7 +203,7 @@ try {
     }, 20_000, 'summary visible').catch(() => null);
     check('summary-shows-goal', !!observed && observed.text.includes('登记表'), observed ? observed.text.slice(0, 240) : 'no summary before task end');
     check('summary-mentions-running', !!observed && ['running', 'paused', 'interrupted'].includes(observed.state ?? '') && (observed.text.includes('正在执行') || observed.text.includes('剩余') || observed.text.includes('正在处理')), observed ? `${observed.state} ${observed.text.slice(0, 200)}` : 'no summary before task end');
-    const ended = await waitForEnd(before);
+    const ended = await waitForEnd(scenarioAtMs);
     check('task-completed-after-reopen', ended, `terminal=${ended}`);
     const probe = await pageProbe();
     const fields = (probe.fields ?? {}) as Record<string, unknown>;
@@ -198,10 +214,25 @@ try {
   }
 
   if (caseId === 'A05-02' || caseId === 'A05-03') {
-    await panelSend(caseId === 'A05-03' ? `${userText}每填一项后读回确认，全部填完再汇报。` : userText);
+    if (inputSource === 'voice') {
+      // 从真实语音语义路由接收文本；不冒充麦克风/ASR/扬声器验收。
+      const context = await iso!.swEval(`chrome.tabs.get(${tabId}).then(t=>({tabId:t.id,title:t.title,url:t.url}))`) as {tabId:number;title:string;url:string};
+      const route = await holder.current.manager.routeVoiceInput(conversationId, userText, Date.now(), () => true,
+        {voiceId:'t05-acceptance',requestId:randomUUID(),turn:1,runId:null,input:{context},targets:holder.current.manager.voiceTargets()});
+      voiceRoutes.push(route);
+      check('accepted-from-voice-route', ownEvents(before).some(event => {
+        const receipt = (event.message.event as {receipt?:{action?:string;source?:string;status?:string}} | undefined)?.receipt;
+        return receipt?.action === 'start' && receipt.source === 'voice' && receipt.status === 'accepted';
+      }));
+    } else await panelSend(caseId === 'A05-03' ? `${userText}每填一项后读回确认，全部填完再汇报。` : userText);
     const {outputsBeforeKill, runIdAtKill} = await killHostAt(caseId === 'A05-02' ? 'accepted' : 'first-fill', before);
     if (caseId === 'A05-02') check('killed-before-first-output', outputsBeforeKill === 0, `outputs=${outputsBeforeKill}`);
-    else check('killed-mid-execution', fillCalls(before).some((call) => call.confirmed && call.at < (restartAtMs ?? 0)), `confirmed=${fillCalls(before).filter((call) => call.confirmed).length}`);
+    else {
+      check('killed-mid-execution', fillCalls(before).some((call) => call.confirmed && call.at < (restartAtMs ?? 0)), `confirmed=${fillCalls(before).filter((call) => call.confirmed).length}`);
+      const atRestart = await pageProbe();
+      const fields = (atRestart.fields ?? {}) as Record<string, unknown>;
+      check('has-unfinished-fields-before-resume', fields.name !== expected.name || fields.email !== expected.email || fields.city !== expected.city, JSON.stringify(fields));
+    }
     await waitForEntry();
     const entry = await entryText();
     check('entry-shows-original-goal', entry.includes('登记表') || entry.includes(expected.name), entry.slice(0, 240));
@@ -213,6 +244,7 @@ try {
       await iso!.swEval(`chrome.scripting.executeScript({target:{tabId:${tabId}},world:'MAIN',func:(selector,value)=>{const el=document.querySelector(selector);el.focus();el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));},args:[${JSON.stringify(humanEdit.selector)},${JSON.stringify(humanEdit.value)}]})`);
       await sleep(300);
     }
+    beforeResumeProbe = await pageProbe();
     // A05-03 的未知写入需要一次用户确认（P0 有界恢复）：验收脚本作为模拟用户点真实面板卡片。
     // 人工改过的字段保留：卡片若要求重设人工值，模拟用户拒绝；其余允许一次。
     const consentSamples: unknown[] = [];
@@ -231,24 +263,37 @@ try {
         })
         .catch((error) => { consentSamples.push({error: error instanceof Error ? error.message : String(error)}); if (consentSamples.length > 40) consentSamples.shift(); });
     }, 400) : null;
+    const resumeAtMs = Date.now();
     await clickResume();
-    if (consentTimer) setTimeout(() => clearInterval(consentTimer), 180_000);
     if (caseId === 'A05-03') writeFileSync(join(outRoot, 'consent-samples.json'), JSON.stringify(consentSamples, null, 2));
-    const accepted = await until(() => ownEvents(before).some((event) => {
-      const receipt = eventReceipt(event);
-      return receipt?.action === 'resume' && (receipt.status === 'accepted' || receipt.status === 'applied');
-    }) || undefined, 30_000, 'resume accepted').then(() => true).catch(() => false);
+    // 只认点击之后的客户端请求与其 requestId 配对的回执；宿主重放的旧 resume 回执不算本轮接收。
+    const accepted = await until(() => {
+      const own = ownEventsSince(resumeAtMs);
+      const requestIds = own
+        .filter((event) => event.message.type === 'task_action' && (event.message.request as {action?: string} | undefined)?.action === 'resume')
+        .map((event) => (event.message.request as {requestId?: string}).requestId)
+        .filter((id): id is string => typeof id === 'string');
+      return pairedAcceptedReceipt(own.map(eventReceipt).filter((receipt): receipt is {requestId?: string; status?: string} => !!receipt), requestIds) || undefined;
+    }, 30_000, 'resume accepted').then(() => true).catch(() => false);
     check('resume-request-accepted', accepted, `accepted=${accepted}`);
-    const ended = await waitForEnd(before, caseId === 'A05-03' ? 420_000 : 240_000);
+    const ended = await waitForEnd(resumeAtMs, caseId === 'A05-03' ? 420_000 : 240_000);
+    if (consentTimer) clearInterval(consentTimer);
     check('task-completed-after-resume', ended, `terminal=${ended}`);
     const probe = await pageProbe();
+    finalProbe = probe;
     const fields = (probe.fields ?? {}) as Record<string, unknown>;
     check('same-task-identity', (holder.current.manager.getTaskProgress(conversationId)?.runId ?? null) === runIdAtKill, `${holder.current.manager.getTaskProgress(conversationId)?.runId} vs ${runIdAtKill}`);
     if (caseId === 'A05-03') {
-      const confirmedBefore = fillCalls(before).filter((call) => call.confirmed && call.at < (restartAtMs ?? 0)).map((call) => call.value);
+      const confirmedBefore = fillCalls(before).filter((call) => call.confirmed && call.at < (restartAtMs ?? 0));
       const afterRestart = fillCalls(before).filter((call) => call.at > (restartAtMs ?? 0));
-      check('no-replayed-fill-after-restart', afterRestart.every((call) => !confirmedBefore.includes(call.value)), JSON.stringify({confirmedBefore, afterRestart: afterRestart.map((call) => call.value)}));
+      check('no-replayed-fill-after-restart', afterRestart.every((call) => !confirmedBefore.some(prior => prior.target === call.target && prior.value === call.value)), JSON.stringify({confirmedBefore, afterRestart}));
       check('human-edit-preserved', fields.note === humanEdit.value, `note=${JSON.stringify(fields.note)} want=${JSON.stringify(humanEdit.value)}`);
+      const priorFields = (beforeResumeProbe.fields ?? {}) as Record<string, unknown>;
+      const priorCounts = (beforeResumeProbe.inputCounts ?? {}) as Record<string, number>;
+      const finalCounts = (probe.inputCounts ?? {}) as Record<string, number>;
+      const stableFields = ['name', 'email', 'city'].filter(key => priorFields[key] === expected[key as keyof typeof expected]);
+      stableFields.push('note');
+      check('no-rewrites-via-alternate-tools', stableFields.every(key => (priorCounts[key] ?? 0) === (finalCounts[key] ?? 0)), JSON.stringify({stableFields,priorCounts,finalCounts}));
       check('other-fields-complete', fields.name === expected.name && fields.email === expected.email && fields.city === expected.city, JSON.stringify(fields));
       writeFileSync(join(outRoot, 'consent-samples.json'), JSON.stringify(consentSamples, null, 2));
     } else {
@@ -305,12 +350,12 @@ try {
     check('no-resume-button-after-cancel', !button.present, JSON.stringify(button));
   }
 
-  writeFileSync(join(outRoot, 'events.json'), JSON.stringify(events.slice(before), null, 2));
 } catch (error) {
   check('infrastructure', false, error instanceof Error ? error.message : String(error));
 } finally {
+  writeFileSync(join(outRoot, 'events.json'), JSON.stringify(events, null, 2));
   writeFileSync(join(outRoot, 'result.json'), JSON.stringify({
-    caseId, material, model, restartAtMs, humanEdit, conversationId, tabId, pageTarget,
+    caseId, material, inputSource, voiceRoutes, model, restartAtMs, humanEdit, conversationId, tabId, pageTarget, beforeResumeProbe, finalProbe,
     checks, ok: checks.every((item) => item.ok), endedAt: new Date().toISOString(),
   }, null, 2));
   if (iso && panel) await iso.screenshot(panel, join(outRoot, 'panel-final.png')).catch(() => {});

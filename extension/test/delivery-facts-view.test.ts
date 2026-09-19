@@ -44,6 +44,7 @@ describe("交付事实链契约", () => {
   });
 
   it("拒绝错来源、越界与坏状态", () => {
+    expect(isUserDelivery(delivery({ facts: facts({ omittedRemaining: 3 }) }))).toBe(false);
     expect(isUserDelivery(delivery({ facts: facts({ sources: [{ url: "javascript:alert(1)" }] }) }))).toBe(false);
     expect(isUserDelivery(delivery({ facts: facts({ sources: [{ url: "file:///etc/passwd" }] }) }))).toBe(false);
     expect(isUserDelivery(delivery({ facts: facts({ sources: [{ url: "https://a.test/x", title: "标题".repeat(200) }] }) }))).toBe(false);

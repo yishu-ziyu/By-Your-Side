@@ -16,8 +16,8 @@ export const USER_DELIVERY_SOURCE_URL_MAX = 500;
 export const USER_DELIVERY_SOURCE_TITLE_MAX = 160;
 export const USER_DELIVERY_FACT_DESCRIPTION_MAX = 160;
 
-/** 交付范围：complete 只在交付时账本没有未完成义务时成立；partial 明确还有缺口。 */
-export const USER_DELIVERY_OUTCOMES = ["complete", "partial"] as const;
+/** 宿主交付范围：complete 仅指已登记项有回执和所需读回；unverified 不推断空账本任务完成。 */
+export const USER_DELIVERY_OUTCOMES = ["complete", "partial", "unverified"] as const;
 export type UserDeliveryOutcome = (typeof USER_DELIVERY_OUTCOMES)[number];
 
 /** 本 run 真实读过的页面；url 来自页面读取事实，不是模型自报的引用。 */
@@ -278,7 +278,7 @@ export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
       && ((item as UserDeliverySourceRef).title === undefined || (item as UserDeliverySourceRef).title === null
         || shortText((item as UserDeliverySourceRef).title, USER_DELIVERY_SOURCE_TITLE_MAX)))) return false;
   // 漏项却报全部完成必须在记录边界就失败，界面与验收都不用再猜叙述。
-  if (f.outcome === "complete" && f.remaining.length > 0) return false;
+  if (f.outcome === "complete" && (f.remaining.length > 0 || (f.omittedRemaining ?? 0) > 0)) return false;
   return true;
 }
 

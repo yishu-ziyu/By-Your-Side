@@ -74,6 +74,15 @@ function fixture(opts: { explicitDelivery?: boolean } = {}) {
 }
 
 describe("交付后的收尾不再误报空响应", () => {
+  it("恢复轮已经生成正文但尚未正式交付时，不误报模型空响应或限流", () => {
+    const h = fixture({ explicitDelivery: true });
+    h.event({type:"message_update", assistantMessageEvent:{type:"text_delta",delta:"剩余字段已填好，人工备注保留。"}});
+    h.event({type:"agent_end",willRetry:false,messages:[{role:"assistant",content:[{type:"text",text:"剩余字段已填好，人工备注保留。"}]}]});
+    expect(h.notices().some(message => /空响应|限流/.test(message))).toBe(false);
+    expect(h.notices()).toContain("执行已结束，正式结果尚未交付。");
+    expect(h.callbacks.emit.mock.calls.some(([event]) => event.kind === 'user_delivery')).toBe(false);
+  });
+
   it("有效 finding 交付后的空尾收尾轮不再提示模型空响应", () => {
     const h = fixture({ explicitDelivery: true });
     h.deliver("t1", "finding", "岗位是前端开发，城市上海。");

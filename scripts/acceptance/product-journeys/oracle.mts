@@ -114,7 +114,7 @@ function commonChecks(jc: JourneyCase, mat: JourneyMaterial, ev: RunEvidence): C
 export function ownDeliveries(ev: RunEvidence): DeliveryEvidence[] {
   return ev.deliveries.filter((d) => {
     if (d.conversationId !== ev.conversationId) return false;
-    if (ev.runIds?.length && d.runId && !ev.runIds.includes(d.runId)) return false;
+    if (ev.runIds?.length && (!d.runId || !ev.runIds.includes(d.runId))) return false;
     return true;
   });
 }

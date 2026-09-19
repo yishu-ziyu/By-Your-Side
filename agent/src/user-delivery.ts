@@ -11,8 +11,6 @@ import {
   type UserDelivery,
   type UserDeliveryFacts,
   type UserDeliveryKind,
-  type UserDeliveryRemainingItem,
-  type UserDeliverySourceRef,
   type VoiceConversationContext,
 } from "../../shared/voice.js";
 
@@ -29,11 +27,16 @@ export function resetDeliveryMetrics(): void {
 const RECORD_KINDS = ["ack", "finding", "reply"] as const;
 const HOST_TOOL_KINDS = ["ack", "finding"] as const;
 
-/** 宿主提供的事实链投影输入；outcome 由工具按已校验的 nextStep 决定，不由模型或宿主自报。 */
-export interface DeliveryFactInput {
-  delivered: string[];
-  remaining: UserDeliveryRemainingItem[];
-  sources: UserDeliverySourceRef[];
+/** 宿主投影包含完整截断计数；模型只能请求保守的部分交付，不能升级完成状态。 */
+export type DeliveryFactInput = Omit<UserDeliveryFacts, "outcome">;
+
+/** 工具、普通正文补发及语音补发共用同一个事实投影。report 是报告许可，不是业务完成证明。 */
+export function projectDeliveryFacts(host: DeliveryFactInput, next: TaskNextStep | null | undefined, requestPartial = false): UserDeliveryFacts {
+  const remaining = host.remaining.length + (host.omittedRemaining ?? 0);
+  const outcome = requestPartial || remaining > 0 || next?.delivery !== "report"
+    ? "partial"
+    : next.reason === "receipts_reviewed" && host.delivered.length > 0 ? "complete" : "unverified";
+  return { ...host, outcome };
 }
 
 /** Lead has a conversationId; fleet workers do not. Memory store is unrelated. */
@@ -128,8 +131,11 @@ export function createSendUserMessageTool(opts: {
         }
         // 事实链字段只从宿主投影；模型正文写不进这里，缺接线时保持旧记录形状。
         const hostFacts = kind === "finding" ? opts.getDeliveryFacts?.() ?? null : null;
+        if (hostFacts && outcome === "complete" && (hostFacts.remaining.length > 0 || (hostFacts.omittedRemaining ?? 0) > 0)) {
+          throw new Error("交付事实链无效：仍有未完成项，请如实交付部分结果。");
+        }
         const facts: UserDeliveryFacts | undefined = hostFacts
-          ? { outcome, delivered: hostFacts.delivered, remaining: hostFacts.remaining, sources: hostFacts.sources }
+          ? projectDeliveryFacts(hostFacts, next, outcome === "partial")
           : undefined;
         if (facts && !isUserDeliveryFacts(facts)) {
           throw new Error("交付事实链无效（未完成项与 outcome 不一致或字段超界），本次未交付。");
@@ -147,7 +153,7 @@ export function createSendUserMessageTool(opts: {
         opts.emit({ kind: "user_delivery", delivery });
         return {
           content: [{ type: "text" as const, text: `delivered:${delivery.id}` }],
-          details: { id: delivery.id, ...(next?{outcome,nextAction:next.action,resultIds:next.resultIds}:{}) },
+          details: { id: delivery.id, ...(next?{outcome:facts?.outcome??outcome,nextAction:next.action,resultIds:next.resultIds}:{}) },
           // finding 就是任务的最终结果：这一批工具结果带 terminate 后，SDK 的批次早停规则
           // 让本轮结束，不再为"还要不要收尾"多问模型一次（省 1–3s）。
           // ack 只是开场应答，提前终止会掐断任务，因此不参与早停。
