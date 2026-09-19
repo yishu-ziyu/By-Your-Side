@@ -64,7 +64,8 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage,
 import type { UserDelivery } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
+import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
+import { TaskBar } from "./task-bar.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
@@ -123,11 +124,8 @@ app.innerHTML = `
   </div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="consent-requests" aria-label="请求授权" hidden></div>
-  <div id="task-strip" aria-label="当前会话与控制">
-    <div id="task-session-q"></div>
-    <div id="task-page-q"></div>
-    <div id="task-action-q"></div>
-    <div id="task-control-q"></div>
+  <div id="task-bar-root"></div>
+  <div id="task-strip" aria-label="当前会话与结果">
     <div id="task-result-card" hidden>
       <div id="task-result-primary"></div>
       <div id="task-result-secondary"></div>
@@ -298,6 +296,8 @@ const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
 const attachMenu = document.getElementById("attach-menu") as HTMLElement;
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
 let attachments!: AttachmentsManager;
+/** 附件管理器构造期间会回调 onChanged；装配完成前不碰任务条。 */
+let attachmentsReady = false;
 
 // 页面感知胶囊与检查器 DOM
 const pagePill = document.getElementById("page-pill") as HTMLElement | null;
@@ -534,6 +534,7 @@ function selectConversation(id: string, notify = true): void {
   }
   renderConversations();
   renderTaskStrip();
+  taskBar.reset();
   consentPanel.refresh();
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
   port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
@@ -1091,6 +1092,9 @@ function clipTitle(text: string, max = 16): string {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
+/** 活动标签页快照：页面标牌与任务条材料共用同一份事实，不重复假设。 */
+let activeTabInfo: { id: number; title: string; url: string } | null = null;
+
 async function refreshActiveTabPill(): Promise<void> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) {
     if (tabTitleText) tabTitleText.textContent = "浏览器活动标签页";
@@ -1099,6 +1103,7 @@ async function refreshActiveTabPill(): Promise<void> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
+    if (tab.id != null) activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
     const title = tab.title || tab.url || "未知页面";
     let host = "";
     try {
@@ -1152,12 +1157,14 @@ document.addEventListener("click", (e) => {
 });
 
 if (typeof chrome !== "undefined" && chrome.tabs) {
-  chrome.tabs.onActivated?.addListener(() => void refreshActiveTabPill());
+  chrome.tabs.onActivated?.addListener(() => { void refreshActiveTabPill(); taskBar.noteTabsChanged(); });
   chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
     if (changeInfo.status || changeInfo.title || changeInfo.url) {
       void refreshActiveTabPill();
+      taskBar.noteTabsChanged();
     }
   });
+  chrome.tabs.onRemoved?.addListener(() => taskBar.noteTabsChanged());
 }
 void refreshActiveTabPill();
 
@@ -2169,21 +2176,7 @@ function renderTeamCard(): void {
 }
 
 function renderTaskStrip(): void {
-  const flags = panelLive(sessionRun.values(), teamView);
-  const title = conversations.get(selectedConversationId)?.title;
-  const pageTitle = tabTitleText?.textContent ?? "";
-  const sessionEl = document.getElementById("task-session-q");
-  const pageEl = document.getElementById("task-page-q");
-  const actionEl = document.getElementById("task-action-q");
-  const controlEl = document.getElementById("task-control-q");
-  if (sessionEl) { sessionEl.textContent = sessionQuestion(title); sessionEl.hidden = true; }
-  // 会话选择器和输入框的页面标签已经提供身份，状态区不再复述。
-  if (pageEl) { pageEl.textContent = `当前页：${pageQuestion(pageTitle, "")}`; pageEl.hidden = true; }
-  if (actionEl) {
-    actionEl.textContent = actionQuestion({ running: flags.running, action: statusText.textContent });
-    actionEl.hidden = !!currentRun || !flags.running || ["已连接", "Agent 在操作", "正在处理"].includes(actionEl.textContent);
-  }
-  if (controlEl) { controlEl.hidden = !flags.userHasPage && teamView?.phase !== "draining"; controlEl.textContent = controlQuestion({ userHasPage: flags.userHasPage, draining: teamView?.phase === "draining", running: flags.running }); }
+  // 目标/活动/材料/控制层由任务条（task-bar.ts）接管；这里只保留结果卡。
   const card = resultCardCopy(resultByConversation.get(selectedConversationId) ?? { summary: null });
   const cardEl = document.getElementById("task-result-card");
   const primaryEl = document.getElementById("task-result-primary");
@@ -2193,7 +2186,6 @@ function renderTaskStrip(): void {
     const plainReply = !!result?.summary && !result.unknown && !result.remaining?.length && !result.speechFailed;
     cardEl.hidden = !card.visible || plainReply;
     primaryEl.textContent = card.primary;
-    if (controlEl && !flags.running && !flags.userHasPage && card.visible) controlEl.hidden = true;
     secondaryEl.textContent = card.secondary;
     secondaryEl.hidden = !card.secondary;
   }
@@ -2707,6 +2699,14 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果待确认':'未执行')}\n${s.text}`).join('\n');
         const previous=receiptMessages.get(key);if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
+        // 任务条材料只认这张回执：accepted/applied 才把这次发出的材料升级为「已随任务送入」。
+        taskBar.noteReceipt(ev.receipt);
+        if (ev.receipt.conversationId === selectedConversationId) {
+          if (ev.receipt.action === "abort") {
+            if (ev.receipt.status === "accepted" || ev.receipt.status === "applied") taskBar.noteStopAccepted();
+            else if (ev.receipt.status === "rejected" || ev.receipt.status === "failed") taskBar.noteControlResult("stop", false, ev.receipt.message);
+          }
+        }
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
         const previous = receiptMessages.get(key);
         const restoreFocus = previous?.contains(document.activeElement);
@@ -2922,6 +2922,10 @@ function handleServerMessage(raw: string): void {
       break;
     case "agent_event":
       handleAgentEvent(msg.event, msg.sessionId, msg.runId);
+      break;
+    case "task_view":
+      // 只信视图自己的任务身份：跨会话/旧 run 的视图不改当下这一条。
+      if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;
     default:
       break;
@@ -3161,6 +3165,7 @@ attachments = new AttachmentsManager({
     if (!scope || scope === selectedConversationId) {
       autoResize();
       saveDraft();
+      if (attachmentsReady) syncTaskBarDraft();
     } else {
       const draft = conversationDrafts.get(scope) ?? { text: "", attachments: [], ask: null };
       draft.attachments = attachments.getAttachments(scope);
@@ -3172,6 +3177,63 @@ attachments = new AttachmentsManager({
     addMsg("msg error", errMsg);
   },
 });
+attachmentsReady = true;
+
+// ── 任务条（T03）：消费 task_view，材料事实来自实际发出的请求与回执 ──
+function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string } | null> {
+  if (typeof chrome === "undefined" || !chrome.tabs?.get) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) { resolve(null); return; }
+        resolve({ title: tab.title, url: tab.url });
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function activeTabId(): Promise<number | null> {
+  if (typeof chrome === "undefined" || !chrome.tabs?.query) return Promise.resolve(null);
+  // 与 background attachPageContext 同口径：先最后聚焦窗口，再兜底任一活动标签页。
+  return chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    .then(([tab]) => tab ?? chrome.tabs.query({ active: true }).then(([fallback]) => fallback).catch(() => undefined))
+    .then((tab) => tab?.id ?? null)
+    .catch(() => null);
+}
+
+const taskBar = new TaskBar({
+  root: document.getElementById("task-bar-root")!,
+  resolvePage: resolveTabPage,
+  getActiveTabId: activeTabId,
+  removeDraftAttachment: (id) => attachments.removeItem(id),
+  removeDraftSelection: clearPendingAsk,
+  currentConversationId: () => selectedConversationId,
+  // 重试走真实控制入口：与接管/停止按钮同一条路径，不新增权限。
+  onRetryControl: (action) => {
+    if (action === "stop") stopCurrentTask();
+    else takeoverBtn.click();
+  },
+});
+window.addEventListener("pagehide", () => taskBar.dispose());
+
+/**
+ * 草稿材料：选区引用与附件瓷贴是唯一可移除入口；页面按发送时会附上的那一页如实展示。
+ * 任务条只汇总，不自己采集页面内容。
+ */
+function syncTaskBarDraft(): void {
+  const atts = attachments.getAttachments().map((a) => ({ id: a.id, name: a.name }));
+  const page = pendingAsk
+    ? { tabId: pendingAsk.tabId, title: pendingAsk.title, url: pendingAsk.url }
+    : activeTabInfo
+      ? { tabId: activeTabInfo.id, title: activeTabInfo.title, url: activeTabInfo.url }
+      : null;
+  const selection = pendingAsk?.text ?? null;
+  const hasText = inputEl.value.trim().length > 0;
+  taskBar.setDraft(page || selection || atts.length ? { page, selection, attachments: atts } : null, hasText);
+}
+syncTaskBarDraft();
 
 function hostOf(url: string): string {
   try {
@@ -3189,6 +3251,7 @@ function applyPendingAsk(ask: PendingAsk): void {
   askCiteEl.hidden = false;
   inputEl.focus();
   saveDraft();
+  syncTaskBarDraft();
 }
 
 function clearPendingAsk(): void {
@@ -3197,6 +3260,7 @@ function clearPendingAsk(): void {
   if (askCiteText) askCiteText.textContent = "";
   void chrome.storage?.session?.remove(ASK_STORE);
   saveDraft();
+  syncTaskBarDraft();
 }
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
@@ -3227,12 +3291,33 @@ function sendInput(): void {
       }
     : undefined;
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
-  const sent = send(
-    running||held
-      ? { type: "task_action", request:{requestId:crypto.randomUUID(),conversationId:selectedConversationId,source:'text',action:'steer',expectedRunId:conversations.get(selectedConversationId)?.runId??null,text,context,attachments:clientAttachments} }
-      : { type: "task_action", request:{requestId:crypto.randomUUID(),conversationId:selectedConversationId,source:'text',action:'start',expectedRunId:conversations.get(selectedConversationId)?.runId??null,text,context,attachments:clientAttachments} },
-  );
+  const conversation = selectedConversationId;
+  const request = {
+    requestId: crypto.randomUUID(),
+    conversationId: selectedConversationId,
+    source: 'text' as const,
+    action: (running||held ? 'steer' : 'start') as "steer" | "start",
+    expectedRunId: conversations.get(selectedConversationId)?.runId ?? null,
+    text,
+    context,
+    attachments: clientAttachments,
+  };
+  const sent = send(running||held ? { type: "task_action", request } : { type: "task_action", request });
   if (!sent) { noticeSendFailed(); return; }
+  // 本地反馈：快照这次真正送出的材料；回执 accepted 之前只显示「发送中」
+  taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
+  // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。
+  if (!context) {
+    void (async () => {
+      try {
+        const id = await activeTabId();
+        // 期间切了会话就不再补这条材料（任务条已重置）。
+        if (id == null || conversation !== selectedConversationId) return;
+        const info = (await resolveTabPage(id)) ?? { title: "", url: "" };
+        taskBar.noteRequestPage(request.requestId, { tabId: id, title: info.title ?? "", url: info.url ?? "" });
+      } catch { /* 拿不到页面信息就只展示已知材料，不猜 */ }
+    })();
+  }
   sendFailNotified = false;
   inputEl.value = "";
   clearPendingAsk();
@@ -3243,6 +3328,7 @@ function sendInput(): void {
 
 function stopCurrentTask(): void {
   if (!send({ type: "abort" })) return;
+  taskBar.noteControlRequested("stop");
   if (currentRun) { currentRun.orbActivity.stop(); syncRunOrb(currentRun); }
 }
 
@@ -3253,7 +3339,7 @@ sendBtn.onclick = () => {
     sendInput();
   }
 };
-inputEl.addEventListener("input", () => { autoResize(); saveDraft(); });
+inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBarDraft(); });
 window.addEventListener("pagehide", saveDraft);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -3262,6 +3348,7 @@ inputEl.addEventListener("keydown", (e) => {
   }
 });
 takeoverBtn.onclick = () => {
+  taskBar.noteControlRequested("takeover");
   port?.postMessage({ kind: "control", action: "takeover", conversationId: selectedConversationId } satisfies PanelToBg);
 };
 abortBtn.onclick = stopCurrentTask;

@@ -595,6 +595,9 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
   broadcastVisibleServer({ type: "agent_event", event: { kind, message } });
 }
 
+/** T03：每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
+const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();
+
 // ── 示范录制：用户亲手做一遍，系统只看不做 ──────────────────────────
 
 function demoStatus() {
@@ -850,6 +853,7 @@ function reconcileControlRun(): void {
 const callbacks: UplinkHandlers = {
   onServerMessage(msg) {
     reconcileControlRun();
+    if (msg.type === "task_view") lastTaskViews.set(msg.view.conversationId, msg.view);
     const knownRun=conversationSummaries.find(c=>c.id===conversationId)?.runId;
     if (knownRun && msg.runId && knownRun !== msg.runId && ["team_status","control_result","status","agent_event"].includes(msg.type)) return;
     if(!msg.runId||msg.runId===knownRun)for(const [id,epoch] of Object.entries(msg.epochs??{}))executionEpochs.set(id,Math.max(epoch,executionEpochs.get(id)??0));
@@ -1559,6 +1563,11 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         if (team.view()) {
           port.postMessage({ kind: "server", msg: { type: "team_status", team: team.view()!, ...(epochRunId ? {runId: epochRunId} : {}) } } satisfies BgToPanel);
         }
+        // T03：任务视图只在真实状态变化时下发、不进历史。面板重开时把这一会话最近一次
+        // 权威视图原样补上（缓存的就是收到的那一份，不重算、不改写），否则任务条会空着
+        // 直到下一次状态变化。
+        const lastView = lastTaskViews.get(conversationId);
+        if (lastView) port.postMessage({ kind: "server", msg: { type: "task_view", view: lastView } } satisfies BgToPanel);
         port.postMessage({kind:"demo", ...demoStatus()} satisfies BgToPanel);
 }
 

@@ -1,8 +1,10 @@
 # 项目进度
 
-更新：2026-09-18。本次汇总提交收录 9 月 17–18 日的翻译可靠性、P0 恢复和 Jev 显示加速代码、测试与验收文档，并更新 GitHub README。下文历史记录中的“未提交”指对应验收当时的状态；本次提交不改变 P0 未结项及真人语音待验收的结论。工程检查与提交范围见[汇总记录](evals/20260918-repository-publish.md)。
+更新：2026-09-19。本次追加 T03 轻量任务条交付（待独立 review，见下）；上一段汇总提交（2026-09-18）收录 9 月 17–18 日的翻译可靠性、P0 恢复和 Jev 显示加速代码、测试与验收文档，并更新 GitHub README。下文历史记录中的“未提交”指对应验收当时的状态；本次提交不改变 P0 未结项及真人语音待验收的结论。工程检查与提交范围见[汇总记录](evals/20260918-repository-publish.md)。
 
 ## 当前工作
+
+T03「轻量任务条与实际材料入口」实现完成、待独立 review（2026-09-19，分支 `t03-task-bar`，基线 04f212a）：会话区上方新增独立任务条组件（`extension/src/sidepanel/task-bar.ts`），消费 T02 的 `task_view`，两层层常态＝目标＋当前活动，阻塞时露出真实原因；材料入口列实际使用的页面/选区/附件，草稿可移除（移除后核对真实上行请求 `attachments=[]`），「发送中」与「已随任务送入」按回执分开；作用页来自任务绑定页而不是当前标签页；接管/停止区分请求中与已生效，10 秒未确认给「再试」。指标实测（无头隔离串行、0 次模型调用）：首次本地反馈 P95 15.8ms（50 次，目标 ≤150ms）、权威事件→UI 帧 P95 15.8ms（50 次，目标 ≤200ms）；320px/键盘/减少动态通过；`npm run check`（218 文件 2185 项＋规模 2 项＋边界/类型/构建）退出 0。三态 5 秒可读懂留真人裁决（NOT_RUN）。未推送、未重载日常扩展、未改配置。证据与逐项验收：[T03 验收文档](evals/20260919-product-t03.md)，原始数据 `out/acceptance/20260919-t03-{perf,states}/`。
 
 日常试用已按用户决定启用（2026-09-18）：日常扩展已重载加载新运行时，任务模型从耗尽周限（429，两天后重置）的 opencode-go/deepseek-flash 切为 `minimax-cn/MiniMax-M3`，`~/.sideagent/config.json` 的 `displaySteerFastPath` 打开（父开关 displayFastPath 原已开）。真实面板验证通过：SW 存活、面板模型显示 MiniMax-M3、最小真实任务端到端回答正确；证据 `out/enablement/daily-trial-1789743968156/`（evidence.json + 截图），验证脚本 `scripts/acceptance/daily-enablement-check.mjs`。试用观察项：MiniMax 的概括粘行/命名行格式习惯、真实显示修改的准确度与回退体验；新任务模型待 deepseek 周限恢复后可再裁决。此前 Ticket 7 修复见下。
 

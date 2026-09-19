@@ -10,7 +10,9 @@ const cache=join(homedir(),'Library/Caches/ms-playwright');
 const chromePath=readdirSync(cache).filter(n=>/^chromium-\d+$/.test(n)).sort((a,b)=>Number(b.split('-')[1])-Number(a.split('-')[1])).map(n=>join(cache,n,'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')).find(p=>existsSync(p));
 if(!chromePath)throw Error('Chrome for Testing is unavailable');
 if(!process.argv.includes('--headless'))throw Error('Required --headless');
-const out=resolve('docs/evals/20260916-sidebar-header');await mkdir(out,{recursive:true});
+// 默认仍写历史证据目录；要跑回归又不想覆盖旧截图时用 --out= 指定。
+const outArg=process.argv.find(a=>a.startsWith('--out='));
+const out=resolve(outArg?outArg.slice(6):'docs/evals/20260916-sidebar-header');await mkdir(out,{recursive:true});
 const css=await readFile('extension/src/sidepanel/styles.css','utf8');
 const mock=`globalThis.uiMessages=[];globalThis.uiListeners=[];globalThis.uiDisconnects=[];globalThis.uiEmit=e=>uiListeners.forEach(fn=>fn(e));
 const storage={get:async()=>({}),set:async()=>{},remove:async()=>{}};
@@ -77,7 +79,11 @@ try{
    await cdp.send('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:false},sid);
    await evaluate(`uiEmit({kind:'server',msg:{type:'status',conversationId:'default',state:${JSON.stringify(state)}}})`);
    await check(`${width}/${state} no horizontal overflow`,`document.documentElement.scrollWidth<=innerWidth`);
-   if(state==='user')await check('takeover state remains visible',`!document.querySelector('#task-control-q').hidden`);
+   if(state==='user'){
+     // T03：控制权状态改由任务条（task-bar.ts）表达；这里按真实结构补一份暂停视图。
+     await evaluate(`uiEmit({kind:'server',msg:{type:'task_view',conversationId:'default',view:{conversationId:'default',runId:'run-sidebar-header',controlVersion:1,observedAt:Date.now(),state:'paused',goal:'打开知乎，找一篇有评论的文章',revisions:[],page:{tabId:1,urlHash:'h'},active:[],lastAction:null,waiting:{reason:'human_control',detail:null},results:[],outstanding:[],latestDelivery:null,resumable:false}}})`);
+     await check('takeover state remains visible',`document.querySelector('#task-bar-root')?.textContent.includes('页面归你')===true`);
+   }
  }
  await evaluate(`uiEmit({kind:'server',msg:{type:'status',conversationId:'default',state:'idle'}});uiEmit({kind:'conn',state:'disconnected'})`);
  await check('disconnect visible',`getComputedStyle(document.querySelector('#status-text')).display!=='none'`);

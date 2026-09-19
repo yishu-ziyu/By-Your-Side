@@ -156,3 +156,13 @@ user_memory「记忆判断失败，尚未修改记忆」有多个独立来源，
 启用日常试用三件套：重载日常扩展、`~/.sideagent/config.json` 的 model 换 minimax-cn/MiniMax-M3（opencode-go/deepseek-flash 周限 429，两天后重置）、displaySteerFastPath 打开。回退点：commit `2bdc618` 之前的状态即 `867f60b` 加未提交树；配置回退用 `/tmp/config.json.bak-20260918`（启用前备份）。
 
 面板驱动要用受信输入（click + focus + CDP Input.insertText + Enter）；直接给 #input 赋 value 不进入框架状态，消息发不出去。验证脚本 `scripts/acceptance/daily-enablement-check.mjs`，证据 `out/enablement/daily-trial-1789743968156/`。
+
+## 2026-09-19 T03 任务条（交接要点）
+
+面板装配有两个不显眼但会致命的顺序坑，改 main.ts 时别再踩：`AttachmentsManager` 构造期就会回调 `onChanged`，谁在里面读还没赋值的 `attachments`（或任务条）就会让整个面板脚本抛异常、`connect()` 永远不执行——界面看起来只是「未连接」。T03 已加 `attachmentsReady` 闸门。
+
+验收脚本要驱动真实侧栏时：headless 默认窗口内高只有 ~413px，任务条一出现就可能把底部发送按钮推出可视区（点击会落在视口外，`elementFromPoint` 返回 null）；`task-bar-harness.mts` 固定 400×900 并在点击前断言元素在视口内。background 只在真实状态变化时下发 `task_view`、且不进历史，面板重开时由 `lastTaskViews` 缓存原样回放，否则任务条会空着等下一次事件。
+
+`task_view` 自带 `conversationId`，但 background 的 `broadcast` 会把封套里的 `conversationId` 改写成「当前可见会话」，所以判断任务身份必须用视图自己的字段（组件里已 `currentConversationId()` 兜住）。
+
+材料事实的口径：面板发送时后台会给 `user_message` 附当前页面上下文，所以任务条在发送后按同一口径补全页面标签（`noteRequestPage`）；页面是上下文、不能移除，选区和附件才可移除。
