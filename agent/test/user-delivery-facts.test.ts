@@ -90,9 +90,13 @@ function progressHarness() {
 describe("TaskProgress.deliveryFacts", () => {
   it("来源只记真实打开或读到的页面：去重、拒绝非 http、新任务清空", () => {
     const h = progressHarness();
+    // 导航成功才记来源（复核 P2-2：意图不记，成功 tool_end 才记）
     h.emit({ kind: "tool_start", toolCallId: "n1", name: "navigate", params: { url: "https://fixture.test/offer/c" } });
+    h.emit({ kind: "tool_end", toolCallId: "n1", name: "navigate", isError: false, executionFact: "executed", resultText: "ok" });
     h.emit({ kind: "tool_start", toolCallId: "n2", name: "open_tab", params: { url: "https://fixture.test/offer/c" } });
+    h.emit({ kind: "tool_end", toolCallId: "n2", name: "open_tab", isError: false, executionFact: "executed", resultText: "ok" });
     h.emit({ kind: "tool_start", toolCallId: "n3", name: "navigate", params: { url: "javascript:alert(1)" } });
+    h.emit({ kind: "tool_end", toolCallId: "n3", name: "navigate", isError: false, executionFact: "executed", resultText: "ok" });
     h.emit({ kind: "tool_observation", toolCallId: "t1", name: "snapshot", target: null, tabId: 3, workingTab: true, text: "页面正文", truncated: false, url: "https://fixture.test/offer/a" });
     h.emit({ kind: "tool_observation", toolCallId: "t2", name: "read_element", target: "#price", tabId: 3, workingTab: true, text: "价格", truncated: false, url: "https://fixture.test/offer/a" });
     h.emit({ kind: "tool_observation", toolCallId: "t3", name: "snapshot", target: null, tabId: 4, workingTab: false, text: "另一页", truncated: false, url: "https://fixture.test/offer/b" });
@@ -148,5 +152,30 @@ describe("旧记录兼容", () => {
     expect(wire(legacy)).not.toBeNull();
     expect(wire(withFacts)).not.toBeNull();
     expect(base).toBeTruthy();
+  });
+});
+
+describe("复核修正（P2-2/P2-4）", () => {
+  it("导航意图不记来源：只有成功 tool_end 才把 URL 记为本 run 来源", () => {
+    const p = new TaskProgress("default", () => 1);
+    p.request("比较三个页面");
+    p.observe({ type: "agent_event", event: { kind: "agent_start" } } as never);
+    // 导航被拒（not_executed）：URL 不得进来源
+    p.observe({ type: "agent_event", event: { kind: "tool_start", toolCallId: "n1", name: "navigate", params: { url: "https://a.example/x" } } } as never);
+    p.observe({ type: "agent_event", event: { kind: "tool_end", toolCallId: "n1", name: "navigate", isError: true, executionFact: "not_executed", resultText: "refused" } } as never);
+    // 成功打开：才记
+    p.observe({ type: "agent_event", event: { kind: "tool_start", toolCallId: "n2", name: "open_tab", params: { url: "https://b.example/y" } } } as never);
+    p.observe({ type: "agent_event", event: { kind: "tool_end", toolCallId: "n2", name: "open_tab", isError: false, executionFact: "executed", resultText: "ok" } } as never);
+    const facts = p.deliveryFacts();
+    expect(facts.sources.map((s) => s.url)).toEqual(["https://b.example/y"]);
+  });
+  it("事实链封顶时计数不缩水：omitted 字段如实报省略条数", () => {
+    const p = new TaskProgress("default", () => 1);
+    p.request("多项任务");
+    const intents = Array.from({ length: 15 }, (_, i) => ({ id: `r${i}`, description: `义务 ${i}`, tool: "snapshot", target: null }));
+    p.registerResults(intents as never);
+    const facts = p.deliveryFacts();
+    expect(facts.remaining.length).toBe(12);
+    expect(facts.omittedRemaining).toBe(3);
   });
 });

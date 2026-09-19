@@ -55,12 +55,14 @@ export function buildDeliveryFactView(facts: UserDeliveryFacts | undefined | nul
   const delivered = facts.delivered.slice(0, DELIVERY_FACT_LIST_MAX);
   const sources = facts.sources.map((source) => ({ url: source.url, label: source.title?.trim() || sourceLabel(source.url) }));
   const tone: DeliveryFactView["tone"] = facts.outcome === "partial" ? "partial" : "complete";
+  const remainingTotal = facts.remaining.length + (facts.omittedRemaining ?? 0);
+  const deliveredTotal = facts.delivered.length + (facts.omittedDelivered ?? 0);
   const headline = facts.outcome === "partial"
-    ? facts.remaining.length ? `部分完成 · 还有 ${facts.remaining.length} 项未完成` : "部分完成"
+    ? remainingTotal ? `部分完成 · 还有 ${remainingTotal} 项未完成` : "部分完成"
     : sources.length ? `已交付 · 来源 ${sources.length}` : "已交付";
-  const done = delivered.length ? `已完成 ${facts.delivered.length} 项：${delivered.join("、")}${facts.delivered.length > delivered.length ? "…" : ""}` : "";
+  const done = delivered.length ? `已完成 ${deliveredTotal} 项：${delivered.join("、")}${deliveredTotal > delivered.length ? "…" : ""}` : "";
   const visible = facts.outcome === "partial" || remaining.length > 0 || sources.length > 0 || delivered.length > 0;
-  return { visible, tone, headline, done, remaining, remainingTotal: facts.remaining.length, delivered, sources };
+  return { visible, tone, headline, done, remaining, remainingTotal, delivered, sources };
 }
 
 export interface DeliveryFactViewOptions {

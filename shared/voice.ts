@@ -45,6 +45,9 @@ export interface UserDeliveryFacts {
   remaining: UserDeliveryRemainingItem[];
   /** 可定位来源：本 run 真实读到的页面；恢复后丢失时为空，不猜测补齐。 */
   sources: UserDeliverySourceRef[];
+  /** delivered/remaining 各自因封顶被省略的条数；不缺省为 0。界面计数必须用它，不得拿截断后的数组长度冒充总数。 */
+  omittedDelivered?: number;
+  omittedRemaining?: number;
 }
 
 /** Official user-facing message. Internal text_delta / tool output is not this record. */
@@ -263,6 +266,8 @@ export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
   if (!USER_DELIVERY_OUTCOMES.includes(f.outcome)) return false;
   if (!Array.isArray(f.delivered) || f.delivered.length > USER_DELIVERY_FACT_ITEM_MAX
     || !f.delivered.every((item) => shortText(item, USER_DELIVERY_FACT_DESCRIPTION_MAX))) return false;
+  if (f.omittedDelivered !== undefined && !(Number.isSafeInteger(f.omittedDelivered) && f.omittedDelivered >= 0)) return false;
+  if (f.omittedRemaining !== undefined && !(Number.isSafeInteger(f.omittedRemaining) && f.omittedRemaining >= 0)) return false;
   if (!Array.isArray(f.remaining) || f.remaining.length > USER_DELIVERY_FACT_ITEM_MAX
     || !f.remaining.every((item) => !!item && typeof item === "object"
       && id((item as UserDeliveryRemainingItem).id)

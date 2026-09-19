@@ -48,6 +48,7 @@ export class TaskProgress {
   private readonly results: TaskResultBook;
   /** T06：本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
   private runSources: UserDeliverySourceRef[] = [];
+  private readonly pendingNavUrls = new Map<string, string>();
   constructor(private readonly conversationId: string, private readonly clock = Date.now) {
     this.ledger = new UserDeliveryLedger(conversationId);
     this.results = new TaskResultBook(clock);
@@ -63,20 +64,21 @@ export class TaskProgress {
       ? `${description.slice(0, USER_DELIVERY_FACT_DESCRIPTION_MAX - 1)}…`
       : description;
     const items = this.results.list();
+    const allDelivered = items.filter((item) => item.status === "satisfied").map((item) => shorten(item.description));
     const delivered: string[] = [];
-    for (const item of items) {
-      if (item.status !== "satisfied") continue;
-      const description = shorten(item.description);
+    for (const description of allDelivered) {
       if (!delivered.includes(description)) delivered.push(description);
       if (delivered.length >= USER_DELIVERY_FACT_ITEM_MAX) break;
     }
+    const allRemaining = items.filter((item) => ["pending", "blocked", "unknown"].includes(item.status) && !isSupersededUnknown(item, items));
     const remaining: UserDeliveryRemainingItem[] = [];
-    for (const item of items) {
-      if (!["pending", "blocked", "unknown"].includes(item.status) || isSupersededUnknown(item, items)) continue;
+    for (const item of allRemaining) {
       remaining.push({ id: item.id, description: shorten(item.description), status: item.status as UserDeliveryRemainingItem["status"] });
       if (remaining.length >= USER_DELIVERY_FACT_ITEM_MAX) break;
     }
-    return { delivered, remaining, sources: this.runSources.map((source) => ({ ...source })) };
+    const omittedDelivered = allDelivered.length - delivered.length;
+    const omittedRemaining = allRemaining.length - remaining.length;
+    return { delivered, remaining, sources: this.runSources.map((source) => ({ ...source })), ...(omittedDelivered ? { omittedDelivered } : {}), ...(omittedRemaining ? { omittedRemaining } : {}) };
   }
   private noteRunSource(url: string): void {
     if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
@@ -253,8 +255,8 @@ export class TaskProgress {
       if (lead && this.turnText.length < 20000) this.turnText += e.delta;
     } else if (e.kind === "tool_start") {
       const target = extractResultTarget(e.params);
-      // T06：模型真实打开或读到的页面才算来源；正文里的链接不算。
-      if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.noteRunSource(e.params.url);
+      // T06：导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
+      if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
       const tabAction=e.name==='tabs'?String(e.params.action):e.name==='open_tab'?'open':e.name==='close_tab'?'close':undefined;
       const browserControl=e.name==='tabs'&&['open','switch','close'].includes(tabAction??'');
       const write=isWriteTool(e.name)||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write')||browserControl;
@@ -294,6 +296,11 @@ export class TaskProgress {
       const started = this.tools.get(key);
       if (!started || started.name !== e.name) return;
       this.tools.delete(key);
+      const pendingNav = this.pendingNavUrls.get(key);
+      if (pendingNav) {
+        this.pendingNavUrls.delete(key);
+        if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
+      }
       if (!this.aborted) {
         this.lastAction = { action: started.action, failed: e.isError, at: this.clock() };
         if(!isResultMetaTool(e.name))this.lastBrowserFailed=e.isError;
