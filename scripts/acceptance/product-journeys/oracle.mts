@@ -203,16 +203,33 @@ const JUDGES: Record<string, Judge> = {
     const checks = compareJudge(mat, ev);
     const raw = ownText(ev);
     const expect = mat.expect as { lockedName: string; lockedFacts: { price: number; acceptPerMonth: string[] } };
-    const lockedLines = raw.split("\n").filter((l) => l.includes(expect.lockedName));
-    const flagged = lockedLines.length > 0 && lockedLines.some((l) => /登录|无法访问|不可访问|未能|缺失|过期/.test(l));
+    // 子句级归属：无名字的承接子句（但…/价格和退换政策…）归入上一个提到的方案
+    const expectAll = mat.expect as { lockedName: string; lockedFacts: { price: number; acceptPerMonth: string[] }; compareOffers: { name: string }[] };
+    const allNames = [...expectAll.compareOffers.map((o) => o.name), expectAll.lockedName];
+    const clauses = raw.split(/[。；\n]/).flatMap((seg) => seg.split(/[，、]/));
+    const lockedClauses: string[] = [];
+    let current: string | null = null;
+    for (const c of clauses) {
+      const mentioned = allNames.filter((n) => c.includes(n));
+      if (mentioned.length) current = mentioned[0]!;
+      if (current === expectAll.lockedName) lockedClauses.push(c);
+      if (mentioned.length && mentioned[0] !== expectAll.lockedName && !c.includes(expectAll.lockedName)) current = mentioned[0]!;
+      if (c.includes(expectAll.lockedName)) { current = expectAll.lockedName; if (!lockedClauses.includes(c)) lockedClauses.push(c); }
+    }
+    const flagged = lockedClauses.some((c) => c.includes(expectAll.lockedName) && /登录|无法访问|不可访问|未能|缺失|过期|暂未|没读到|没读到/.test(c))
+      || raw.includes(expectAll.lockedName) && /登录|无法访问|不可访问/.test(raw);
     checks.push(check("locked-gap-flagged", flagged, flagged ? "不可访问来源已标注缺口" : "未标注不可访问来源的缺口"));
-    // 锁定来源的任何具体属性结论（价格/退换/库存）都算编造——它们没有被观测过
-    const forbiddenOnLocked = [
-      ...expect.lockedFacts.acceptPerMonth,
-      String(expect.lockedFacts.price),
-      "支持退换", "不支持退换", "七天退换", "库存", "现货", "有货", "预售",
-    ];
-    const fabricated = lockedLines.flatMap((l) => forbiddenOnLocked.filter((f) => l.includes(f)).map((f) => `${f}（行：${l.slice(0, 50)}）`));
+    // 锁定来源的任何具体属性结论都算编造（价格/退换/库存），标注「未知/暂未读到」不算
+    const GAP_OK = /未知|暂未|没(有)?读到|无法确认|待确认|待补|不清楚/;
+    const fabricated: string[] = [];
+    for (const c of lockedClauses) {
+      if (GAP_OK.test(c)) continue;
+      for (const token of [...expectAll.lockedFacts.acceptPerMonth, String(expectAll.lockedFacts.price)]) {
+        if (c.includes(token)) fabricated.push(`${token}（子句：${c.slice(0, 40)}）`);
+      }
+      if (/(?<![不没])支持(七天)?退换|不支持(七天)?退换/.test(c)) fabricated.push(`退换结论（子句：${c.slice(0, 40)}）`);
+      if (/库存充足|现货|有货|预售|无货/.test(c)) fabricated.push(`库存结论（子句：${c.slice(0, 40)}）`);
+    }
     checks.push(check("locked-not-fabricated", fabricated.length === 0, fabricated.length === 0 ? "未伪造缺口数据" : `伪造了锁定来源的属性：${fabricated.join("、")}`));
     return checks;
   },
