@@ -2,6 +2,16 @@
 
 当前进度只看[STATUS](STATUS.md)。本页保留不容易从单个函数或测试看出的因果约束；旧工作记录完整保存在[历史快照](history/20260913-notes-snapshot.md)。
 
+## 2026-09-20 先收口，再判断产品方向
+
+用户指出长测试和多票推进已经遮住产品目的，要求先汇总已有信息、方案与资源，再决定方向；本轮明确只保存成果、清理已合并分支名称和整理现状，不借收口继续开发或扩大测试。自然交流、可靠执行、越用越熟练是已讨论的判断重点，不是已批准的新开发清单。用户提供的材料：
+- [Jev 与产品体验讨论](https://chatgpt.com/share/6aaeda2d-4ae0-83ee-a6ca-a157966ad0bb)
+- [ego 与技能复用讨论](https://chatgpt.com/share/6aaeda48-ed20-83ee-88c1-74607faa672e)
+- [Building a Harness with Jev](https://x.com/sydneyrunkle/status/2100754364545761643)
+- [StepAudio 3 Realtime 官方指南](https://platform.stepfun.com/docs/zh/guides/models/stepaudio-3-realtime)
+
+阅读共享对话时要按消息时间去重排序，页面数据中有重复和逆序记录；助手建议不能当成用户决定，官方宣传不能当项目实测。历史任务授权不自动让上述新方向进入实施。Git 恢复办法和保存证据见[收口记录](evals/20260920-workspace-consolidation.md)，当前能力与遗留只在 STATUS 维护。
+
 ## 2026-09-19 复核裁决与实现报告的先后关系
 
 `60b3b62` 的实现汇总早于 ChatGPT 最终复核，不能把汇总中的“复核修复完毕”解释为后续 CHANGES_REQUESTED 已解决。当前裁决已回填 STATUS；CLAIMS 的“本会话”、工作树路径和 workspaceId 是历史归属，不是仍在执行的任务。下一轮先核对 STATUS 的待认领事项与裁决来源，再决定执行范围。
