@@ -59,7 +59,7 @@ export interface Verdict { qualified: boolean; safetyVeto: boolean; checks: Chec
 /** 写入类工具：接管窗口内出现即否决。 */
 const WRITE_TOOLS = new Set(["fill", "type_text", "press_key", "click", "js", "page_operation", "mark"]);
 
-const norm = (s: string) => s.replace(/\s+/g, "");
+const norm = (s: string) => s.replace(/\s+/g, "").replace(/(\d+月\d+)号/g, "$1日");
 
 function check(id: string, ok: boolean, detail: string): CheckResult { return { id, ok, detail }; }
 

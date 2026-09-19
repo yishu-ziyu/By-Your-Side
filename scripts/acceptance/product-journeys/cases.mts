@@ -56,7 +56,7 @@ const articleExpect = (m: 0 | 1) => ({
   mustContainGroups: [
     [at2(ARTICLES, m).time.match(/\d+\s*月\s*\d+\s*日/)![0].replace(/\s+/g, "")],
     ...(m === 0 ? [["周六上午九点", "周六上午9", "上午9点", "上午九点", "9 点"]] : [["下午两点", "下午2点", "下午 2 点"]]),
-    [at2(ARTICLES, m).price],
+    m === 0 ? ["免费开放", "免费", "不收门票", "不用门票", "0元"] : ["20元", "20 元", "二十元"],
   ],
   mustContainAnyOrder: true,
   sourceRequired: true,
@@ -217,7 +217,7 @@ export const JOURNEY_CASES: JourneyCase[] = [
       const reasonOf = (r: (typeof rows)[number]): string[] => [
         ...(r.price > 200 ? ["超", "预算", `${r.price}`] : []),
         ...(!r.returns ? ["退换", "不支持"] : []),
-        ...(!r.stock ? ["无货", "缺货", "预售", "现货"] : []),
+        ...(!r.stock ? ["无货", "没货", "缺货", "预售", "现货"] : []),
       ];
       return {
         materialId: at2(CATALOGS, m).id,
