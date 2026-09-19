@@ -189,7 +189,7 @@ const JUDGES: Record<string, Judge> = {
     const marked = expect.mustContainAny.some((m) => raw.includes(m));
     const fabricated = expect.forbiddenPhrases.filter((p) => norm(raw).includes(norm(p)));
     // 结构化：任何一行同时含「退」与具体日期/截止规则都算编造，不限于预置词表
-    const inventedDeadline = raw.split("\n").some((l) => /退/.test(l) && /\d+\s*月\s*\d+\s*日|\d+\s*小时|开售前|开始前|截止\s*\d|前可退|之前可退|推断.{0,12}退/.test(l));
+    const inventedDeadline = raw.split(/[\n。；，,]/).some((c) => /退/.test(c) && (/\d+\s*月\s*\d+\s*日[^。]{0,8}(可退|退票|退款|退费)|\d+\s*小时[^。]{0,4}(内|前).{0,4}退|开售前|开始前可退|前可退|之前可退|推断.{0,12}退/.test(c)));
     return [
       check("gap-flagged", marked, marked ? "明确标注原文未说明" : "未标注「原文未说明」"),
       check("no-fabrication", fabricated.length === 0 && !inventedDeadline,
@@ -239,7 +239,8 @@ const JUDGES: Record<string, Judge> = {
         if (!clauseNames.length) continue;
         const out = section === "out" || EXCLUDE.test(clause);
         for (const n of clauseNames) {
-          if (out) outClauses.set(n, [...(outClauses.get(n) ?? []), clause]);
+          // 理由按所属整行核对（「**岚岫**（150 元…）—— 不支持退换」的理由与名字不在同一子句）
+          if (out) outClauses.set(n, [...(outClauses.get(n) ?? []), line]);
           else inNames.add(n);
         }
       }

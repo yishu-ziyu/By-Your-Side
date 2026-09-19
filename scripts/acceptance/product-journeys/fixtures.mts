@@ -62,12 +62,12 @@ export const OFFER_SETS: OfferSpec[][] = [
   [
     { id: "a", name: "青松", price: 180, unit: "元/月", perMonth: 180, returns: true, stock: true },
     { id: "b", name: "海风", price: 500, unit: "元/季", perMonth: 167, returns: true, stock: true },
-    { id: "c", name: "远山", price: 60, unit: "元/周", perMonth: 240, returns: false, stock: true },
+    { id: "c", name: "远山", price: 60, unit: "元/周", perMonth: 260, returns: false, stock: true },
   ],
   [
     { id: "a", name: "松涛", price: 220, unit: "元/月", perMonth: 220, returns: false, stock: true },
     { id: "b", name: "渡口", price: 450, unit: "元/季", perMonth: 150, returns: true, stock: false },
-    { id: "c", name: "叠翠", price: 45, unit: "元/周", perMonth: 180, returns: true, stock: true },
+    { id: "c", name: "叠翠", price: 45, unit: "元/周", perMonth: 195, returns: true, stock: true },
   ],
 ];
 
