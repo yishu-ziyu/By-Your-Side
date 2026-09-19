@@ -844,7 +844,7 @@ export class ConversationManager {
         const latest=this.getTaskProgress(request.conversationId);
         if(latest?.runId!==originRun||latest.state!=='running'||entry.runtime.session.isHeld()||(latest.controlVersion??0)!==(snapshot.controlVersion??0))
           return {status:'failed',runId:originRun,message:`显示修改已核对：${steerOutcome.text}但原任务或控制状态已变化，未确认继续。`};
-        return {status:'applied',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已直接应用并核对：${steerOutcome.text}原任务继续。${note}`};
+        return {status:'applied',runId:originRun,...(steerOutcome.diff?{diff:steerOutcome.diff}:{}),message:`${request.source==='voice'?'语音修改':'修改'}已直接应用并核对：${steerOutcome.text}原任务继续。${note}`};
       }
       if(steerOutcome?.kind==='display-handoff-failed')return {status:'failed',runId:originRun,message:steerOutcome.text};
       if(steerOutcome?.kind==='display-unknown')return {status:'unknown',runId:originRun,message:`修改已尝试执行，但结果未能确认：${steerOutcome.reason}没有自动重做。${note}`};
