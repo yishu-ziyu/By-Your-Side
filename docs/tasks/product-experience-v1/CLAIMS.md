@@ -14,8 +14,8 @@
 
 | 票 | 目标 | 状态 | 责任 Agent | 基线 commit | 分支 | 工作树 | workspaceId | 预计修改文件 | 依赖版本 |
 |---|---|---|---|---|---|---|---|---|---|
-| T01 | 完整任务评测集 | READY_FOR_REVIEW（独立复核已过一轮，终裁留 ChatGPT） | 主代理（本会话） | 56bd662 | t01/product-journeys | ../bys-worktrees/t01-eval | local-main-1 | 已合入 main @4cd8d55 | 无 |
-| T02 | 统一任务视图 | 待认领 | — | — | — | — | — | `agent/src/task-progress.ts`、`product-context.ts`、`shared/voice.ts`、`shared/protocol.ts`、可新增 `shared/task-view.ts` | T01 口径 |
+| T01 | 完整任务评测集 | 终审 CHANGES_REQUESTED 已全部修复，换新基线 v15（8/12），READY_FOR_REVIEW 待复审 | 主代理（本会话） | 56bd662 | t01/review-fixes | ../bys-worktrees/t01-eval | local-main-1 | 已合入 main @22ec3f0 | 无 |
+| T02 | 统一任务视图 | READY_FOR_REVIEW（独立复核一轮 + must-fix 已修） | 主代理（本会话） | fb46d7b | t02/task-view | ../bys-worktrees/t02-task-view | local-main-1 | 已合入 main @95a93bf | T01 @22ec3f0 |
 | T03 | 任务条与材料入口 | 待认领 | — | — | — | — | — | `extension/src/sidepanel/main.ts`、`steps.ts`、`attachments.ts`、新增任务条组件、`extension/test/task-view-ui.test.ts` | T02 冻结接口 |
 | T04 | 修改回执分层 | 待认领 | — | — | — | — | — | `agent/src/conversation-manager.ts`、`session.ts`、`task-progress.ts`、`shared/task-actions.ts`、`receipt-copy.ts`/`receipt-view.ts` | T02 + 显示范围修复（已在基线） |
 | T05 | 接续入口 | 待认领 | — | — | — | — | — | `agent/src/task-recovery.ts`、`shared/task-next-step.ts`、`conversation-manager.ts`、`extension/test/resume-entry.test.ts` | T02 + P0 门槛 |
