@@ -1,6 +1,6 @@
 # Voice 全栈架构与改造边界
 
-本页描述职责、因果关系与下一步设计。当前执行进度唯一入口：[STATUS](STATUS.md)。完整产品模块边界见[架构总览](architecture.md)。2026-09-16依据当前源码、装配入口、两轮真人日志及受控失败回归核对；不是仅从目录名推测。
+本页描述职责、因果关系与下一步设计。当前执行进度唯一入口：[STATUS](STATUS.md)。完整产品模块边界见[架构总览](architecture.md)。2026-09-20 将日常语音装配改为 Realtime 3；原 2.5 阶段的问题与证据保留为历史，不是回退入口。迁移验证见[日常验收](evals/20260920-realtime3-daily.md)。
 
 ## 产品整体
 
@@ -26,12 +26,12 @@ flowchart LR
 
 ## 一条语音的真实路径
 
-1. `sidepanel/voice-client.ts`取得麦克风，AudioWorklet输出PCM；`voice-vad-worker.ts`做人声判断，`voice-signal.ts`切声音片段。开口触发本地播放器停声，同时发interrupt；停顿触发commit。
-2. `background/voice-relay.ts`绑定侧栏端口、voiceId、会话及turn；commit还经过页面上下文补全与观察令牌签发。消息再通过native连接送入本地进程。
-3. `agent/main.ts`把voice消息交`VoiceService`，把任务/会话消息交`ConversationManager`。两者通过明确回调连接，而非同一个执行循环。
-4. `StepVoiceSession`将音频送阶跃，接收最终转写，交manager判定意图。`voice-model.ts`复用当前任务模型，无网页工具地分类；不是阶跃音频模型自行执行网页。
-5. manager决定继续倾听、对话、读页或派发任务。派发经过`TaskDispatcher`请求账本，再进入每会话运行时和Pi；实际网页动作经RPC回扩展执行，保持runId/controlVersion/页面权限检查。
-6. 正式结果经过交付账本、`VoiceService.observe`和语音输出队列；阶跃TTS产生音频，侧栏`VoicePlayer`播放并发送playback_done。结果生成、音频收到、音频播完是三个不同事件。
+1. `sidepanel/voice-client.ts`取得麦克风，AudioWorklet 连续输出 24kHz PCM16；不再加载本地人声分类模型或按停顿提交音频。普通开口不调用播放器 stop。
+2. `background/voice-relay.ts`保留端口、voiceId、会话和 turn 绑定。服务端 `input_turn` 确定话轮后，客户端 commit 仅请求页面上下文，后台签发观察令牌并异步补齐；不向模型重复 commit 已由服务端切分的音频。
+3. `agent/main.ts`仍以 `VoiceService`连接语音与任务管理，但唯一默认实例是 `RealtimeVoiceSession`，由 `RealtimeVoiceConnection`连接开放平台 3、核对真实模型及 server_vad 配置。原类只保留历史代码/测试和类型定义，没有运行时切换。
+4. 3 处理对话、回应和 read_page/task_status/browser_request 选择；网页操作只派发对应话轮的真实原话，不接受模型改写成另一条命令。派发等待来源页面资料，晚到的旧话轮和重复工具调用不能再次启动任务。
+5. browser_request 进入原 manager/dispatcher，保留 runId、controlVersion、页面权限与确认机制；任务控制分类、开放式规划、内容生成和翻译仍用现有任务模型。只读观察使用本轮页面观察令牌，不把可见文字说成整页内容。
+6. 正式交付按 deliveryId 排队并在播前重新核对所属任务；全部音频由 3 产生，不再调用旧 TTS。工具结果回复等待对应 response 生成结束和真实 playback_done；播放确认超时结束语音而非假报已听完。结束通话或停声不取消任务。
 
 装配证据：`extension/src/background/index.ts`实例化VoiceRelay；`agent/src/main.ts`实例化VoiceService并注入manager路由和播放回执回调。已使用AST匹配核对构造调用；模块图来自源码，未声称运行过不可用的CodeGraph服务。
 
@@ -39,12 +39,12 @@ flowchart LR
 
 | 生命周期 | 身份/事实来源 | 当前持有者 | 正确边界 |
 |---|---|---|---|
-| 声音片段 | voiceId + turn，PCM、VAD、commit | 浏览器VoiceClient/Detector，后台lease，上游输入映射 | 一次停顿只结束片段，不自动意味着用户完整请求结束 |
-| 对话请求 | 原话、拼接片段、意图判定及当前性 | StepVoiceSession、VoiceInputLedger、manager路由 | 新片段先明确是补全还是新请求，再决定派发；判定结束不能等同任务结束 |
+| 声音片段 | voiceId + turn，PCM、服务端VAD | 浏览器VoiceClient，后台lease，RealtimeVoiceConnection | 一次停顿只结束片段，不自动意味着用户完整请求结束 |
+| 对话请求 | 原话、输入/response绑定、工具判断及当前性 | RealtimeVoiceConnection、RealtimeVoiceSession、manager路由 | 新片段先明确是补全还是新请求，再决定派发；判定结束不能等同任务结束 |
 | 网页任务 | requestId、runId、controlVersion、页面身份、执行回执 | manager、TaskDispatcher、runtime、扩展闸门 | 只有明确任务动作改变任务；新闲聊不能无意取消任务，旧闲聊不能跨轮启动过时任务 |
 | 交付与播放 | deliveryId、responseId、播放代次、playback_done | 交付账本、VoicePlayback、VoicePlayer | 任务完成不等于已播报；打断播放不等于取消任务；未播完全文不能记为已听见 |
 
-## 已确认的跨层问题
+## 历史：2.5 阶段已确认的跨层问题
 
 | 现象 | 真实原因 | 修改涉及层 |
 |---|---|---|
@@ -57,7 +57,7 @@ flowchart LR
 
 证据与每次失败保留在[连续对话验收](evals/20260916-voice-conversation-flow.md)和[收音诊断](evals/20260916-voice-input-diagnosis.md)。
 
-## 需要补证的跨层边界
+## 历史研究：需要补证的跨层边界（不等于 3 已通过）
 
 - 原后台commit等待异步页面资料、旧commit可能被新turn丢弃的分支，已在本轮拆分：音频先提交，页面资料按原片段异步补齐；派发仍等待来源就绪。真实扩展慢页面资料与实际阶跃/模型/读页链路通过，见[输入边界验收](evals/20260916-voice-input-boundaries.md)。它证明该分支修复，不倒推过去未保存音频的每次漏听原因。
 - 分类可能晚于下一片段的完整转写。输入拼接必须按语义判定顺序处理，而不是只修“晚于下一次开口、早于下一次转写”的一个时序。

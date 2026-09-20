@@ -10,6 +10,8 @@
 - [Building a Harness with Jev](https://x.com/sydneyrunkle/status/2100754364545761643)
 - [StepAudio 3 Realtime 官方指南](https://platform.stepfun.com/docs/zh/guides/models/stepaudio-3-realtime)
 
+后续用户已明确价值顺序：反馈不足优先，其次慢、再其次理解错；简单操作直接呈现变化，复杂任务简短说明关键进展，目标明确时直接推进，付款/最终确认/撤销成果才询问。用户先授权 StepAudio 3 验证，再指定 OS 接入实现与官方文档为起点，随后因缺少可见体验/指标改为先独立试用入口；要求保留并总结之前成果，不因换方法抛弃。前期 27 条离线判据测试不能冒充真实语音结果；保留[本轮总结](evals/20260920-stepaudio3-validation.md)。用户再次明确要求立即执行而非复述方案后，已交付独立 Chrome for Testing 中的原侧栏＋Realtime 3 插件，实际任务仍走原 ConversationManager 和 MiniMax-M3。首次交付见[试用历史](evals/20260920-stepaudio3-trial.md)。之后用户真人认可 3，并明确要求日常只用 3、不保留 2.5 开关：本轮已完成日常加载，后续从[STATUS](STATUS.md)和[日常验收](evals/20260920-realtime3-daily.md)续接，不再从旧试用入口开始。普通对话/工具选择交 3，但任务分类、规划与翻译尚未全部替换；原执行与权限账本不重写。断线恢复与实际播放确认必须分别核对，不能把模型生成完当播完。本次 Chrome 假麦克风文件返回全零 PCM，保留失败并改用明确标注的合成 MediaStream；真实用户声学效果不由该检查代替。主代理亲自执行，不派子代理。
+
 阅读共享对话时要按消息时间去重排序，页面数据中有重复和逆序记录；助手建议不能当成用户决定，官方宣传不能当项目实测。历史任务授权不自动让上述新方向进入实施。Git 恢复办法和保存证据见[收口记录](evals/20260920-workspace-consolidation.md)，当前能力与遗留只在 STATUS 维护。
 
 ## 2026-09-19 复核裁决与实现报告的先后关系

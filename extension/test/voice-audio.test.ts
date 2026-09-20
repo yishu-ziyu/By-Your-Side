@@ -52,15 +52,14 @@ it('streams only after ready, rejects foreign and old turns, and releases captur
  for(let i=0;i<5;i++)frame(.1);expect(sent).toHaveLength(1);
  c.receive({type:'voice',voiceId,conversationId:'B',event:{kind:'state',state:'ready'}});
  for(let i=0;i<5;i++)frame(.1);expect(sent).toHaveLength(1);
- c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
- for(let i=0;i<5;i++)frame(.1);expect(sent[1].command).toMatchObject({kind:'interrupt',turn:1});
+ c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready',inputMode:'server_vad'}});
+ for(let i=0;i<5;i++)frame(.1);expect(sent[1].command).toMatchObject({kind:'audio',turn:1});
  for(let i=0;i<35;i++)frame(0);
- // 正式版默认不落盘原始音频：commit 之后不再追加 capture PCM。
+ // Continuous PCM includes silence; only the server declares turns. No local interruption/capture.
  const commands=sent.map((m:any)=>m.command);
  expect(commands[0]).toEqual({kind:'start'});
- expect(commands.filter((c:any)=>c.kind==='commit')).toEqual([{kind:'commit',turn:1}]);
- expect(commands.at(-1)).toEqual({kind:'commit',turn:1});
- expect(commands.filter((c:any)=>c.kind==='capture')).toHaveLength(0);
+ expect(commands.filter((c:any)=>c.kind==='audio')).toHaveLength(40);
+ expect(commands.filter((c:any)=>c.kind==='interrupt'||c.kind==='commit'||c.kind==='capture')).toHaveLength(0);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});
  expect(change).toHaveBeenLastCalledWith('listening',undefined);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready',detail:'没听清这句话，请再说一次。'}});
@@ -69,8 +68,13 @@ it('streams only after ready, rejects foreign and old turns, and releases captur
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready',detail:'这句没有判断清楚，未执行。可以继续说。'}});
  expect(track.stop).not.toHaveBeenCalled();expect(raw.close).not.toHaveBeenCalled();expect(c.active).toBe(true);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'audio',turn:1,itemId:'i1',responseId:'r1',data:Buffer.alloc(48000).toString('base64')}});expect(nodes).toHaveLength(1);
- for(let i=0;i<5;i++)frame(.1);expect(nodes[0].stop).toHaveBeenCalledTimes(1);
+ for(let i=0;i<5;i++)frame(.1);expect(nodes[0].stop).not.toHaveBeenCalled();
+ c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'input_turn',turn:2}});
+ expect(sent.at(-1).command).toEqual({kind:'commit',turn:2,input:{}});
+ expect(nodes[0].stop).not.toHaveBeenCalled();
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'audio',turn:1,itemId:'i1',responseId:'r1',data:'AQABAA=='}});expect(nodes).toHaveLength(1);
+ c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'audio',turn:2,itemId:'i1',responseId:'r1',data:'AQABAA=='}});expect(nodes).toHaveLength(2);
+ c.stopSpeaking();expect(nodes.every(n=>n.stop.mock.calls.length===1)).toBe(true);expect(sent.at(-1).command).toEqual({kind:'interrupt',turn:2});
  c.stop();expect(track.stop).toHaveBeenCalledTimes(1);expect(worklet.port.onmessage).toBeNull();expect(raw.close).toHaveBeenCalledTimes(1);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});expect(change).toHaveBeenLastCalledWith('idle',undefined);
 });

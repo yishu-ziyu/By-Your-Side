@@ -14,6 +14,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   button.innerHTML='<canvas aria-hidden="true"></canvas><span>语音</span>';
   composer.querySelector('#composer-spacer')!.after(button);
   const status=region.querySelector<HTMLElement>('.voice-state')!,end=region.querySelector<HTMLButtonElement>('.voice-end')!;
+  const stopSpeech=document.createElement('button');stopSpeech.type='button';stopSpeech.className='voice-stop-speech';stopSpeech.textContent='停声';stopSpeech.title='只停止说话，后台任务继续';end.before(stopSpeech);
   const transcript=region.querySelector<HTMLElement>('.voice-answer')!,question=region.querySelector<HTMLElement>('.voice-question')!,facts=region.querySelector<HTMLElement>('.voice-facts')!;
   let phase:VoicePhase='idle';
   let shownTurn=0;
@@ -189,6 +190,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation:()=>string, 
   };
   button.onclick=()=>client.active?client.stop():void retry();
   end.onclick=()=>phase==='error'?void retry():client.stop();
+  stopSpeech.onclick=()=>client.stopSpeaking();
   window.addEventListener('focus',()=>{
     if(phase==='error' && client.needsMicrophonePermission)void microphonePermissionState().then(state=>{
       if(state==='granted' && phase==='error') {client.needsMicrophonePermission=false;end.textContent='重试';status.textContent='麦克风已授权，点击重试。';}

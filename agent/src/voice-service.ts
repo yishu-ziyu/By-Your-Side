@@ -1,42 +1,45 @@
 import {VoiceAudioCache} from "./voice-audio-cache.js";
-import {StepTtsStream} from './streaming-tts.js';
+import {RealtimeVoiceSession,type RealtimeVoiceDependencies} from './realtime-voice-session.js';
 import {isLeadSession} from '../../shared/protocol.js';
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, VoiceClientMessage, VoiceRouteContext,VoiceTarget } from "../../shared/voice.js";
-import { StepVoiceSession,STEP_VOICE } from "./voice-session.js";
+import type { StepVoiceSession } from "./voice-session.js";
+import {STEP_VOICE} from './realtime-voice-connection.js';
+type VoiceSession=Pick<StepVoiceSession,'start'|'command'|'close'|'notify'|'streamDelivery'|'completeDelivery'>;
 
 export async function readStepVoiceKey(): Promise<string> {
-  const environment = process.env.SIDEAGENT_STEP_PLAN_KEY?.trim();
+  const environment = process.env.STEPFUN_API_KEY?.trim();
   if (environment) return environment;
-  const file = join(homedir(), ".sideagent", "step-plan.key");
+  const file = join(homedir(), ".sideagent", "stepfun-api.key");
   try {
     const info = await stat(file);
     if (info.mode & 0o077) throw new Error("permissions");
     const key = (await readFile(file, "utf8")).trim();
     if (key) return key;
   } catch { /* one safe diagnostic, no key material */ }
-  throw new Error("请先配置本机 Step Plan 语音 Key，再重试。");
+  throw new Error("请先配置本机 StepFun 开放平台 API Key，再重试。");
 }
 
 /** One explicit human voice connection; background task sessions stay independent. */
 export class VoiceService {
   private readonly deliveryOwners=new Map<string,string>();
   private readonly receiptAudioCache=new VoiceAudioCache(STEP_VOICE);
-  private active: { id: string; conversationId: string; session: StepVoiceSession;observed:string;startedAt:number;controls:Set<string>;notifiedControls:Set<string>;announcedDeliveries:Set<string>;streamedDeliveries:Set<string> } | null = null;
+  private active: { id: string; conversationId: string; session: VoiceSession;observed:string;startedAt:number;controls:Set<string>;notifiedControls:Set<string>;announcedDeliveries:Set<string>;streamedDeliveries:Set<string> } | null = null;
   constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null,
     private readonly emit: (msg: ServerMessage) => void,
     private readonly getKey = readStepVoiceKey,
-    private readonly createSession = (deps: ConstructorParameters<typeof StepVoiceSession>[0]) => new StepVoiceSession(deps),
+    private readonly createSession = (deps: RealtimeVoiceDependencies):VoiceSession => new RealtimeVoiceSession(deps),
     private readonly steer?: (id: string, text: string, startedAt: number | null) => Promise<void>,
     private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<ConstructorParameters<typeof StepVoiceSession>[0]["route"]>>,
     private readonly diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"],
     private readonly targets?:()=>VoiceTarget[],
     private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void,
     private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void,
-    private readonly relatedTask:(origin:string,target:string)=>boolean=()=>false) {}
+    private readonly relatedTask:(origin:string,target:string)=>boolean=()=>false,
+    private readonly readPage?:(conversationId:string,input:import('../../shared/voice.js').VoiceInputContext)=>Promise<unknown>) {}
   async handle(conversationId: string, message: VoiceClientMessage): Promise<void> {
     if (message.command.kind === "start") {
       // Diagnostic capture is an explicit, server-confirmed mode; it is built without
@@ -62,7 +65,7 @@ export class VoiceService {
         getDeliverySnapshot: stream => this.snapshot(this.deliveryOwners.get(stream.id)??conversationId),
         getTargets:this.targets,
         receiptAudioCache:this.receiptAudioCache,
-        createSpeech:(key,callbacks)=>new StepTtsStream(key,STEP_VOICE,callbacks),
+        ...(this.readPage&&!diag?{readPage:(input:import('../../shared/voice.js').VoiceInputContext)=>this.readPage!(conversationId,input)}:{}),
         diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),
         ...(this.route && !diag ? {route: (text: string, startedAt: number | null, stillCurrent: () => boolean, context:VoiceRouteContext) => this.route!(conversationId, text, startedAt, () => this.active?.id === message.voiceId && stillCurrent(), context)} : {}),
         ...(this.steer && !diag ? { steer: async (text: string, startedAt: number | null) => {
@@ -81,7 +84,7 @@ export class VoiceService {
       }) };
       this.active = active;
       try { const key = await this.getKey(); if (this.active === active) active.session.start(key); }
-      catch { if (this.active === active) { active.session.close(false); this.active = null; this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail: "请先配置本机 Step Plan 语音 Key，再重试。" } }); } }
+      catch { if (this.active === active) { active.session.close(false); this.active = null; this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail: "请先配置本机 StepFun 开放平台 API Key，再重试。" } }); } }
       return;
     }
     const active = this.active;

@@ -70,6 +70,7 @@ export async function startHost(model: string, storeDir: string, events: RunnerE
       if (message.type === "hello") {
         if (message.token !== token) { client.close(); return; }
         host.socket = client;
+        manager.reconnect();
         const session = manager.get("default")!.runtime.session;
         client.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models: await session.availableModels(), hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: "0.1.0" }));
         client.send(JSON.stringify({ type: "conversation_list", conversations: manager.list() }));
@@ -96,8 +97,8 @@ export async function stopHost(host: HostHandle): Promise<void> {
 }
 
 /** 启动隔离扩展并把 SW 的 WS 指向 host，打开真实侧栏。返回面板 target。 */
-export async function startIsolatedPanel(host: HostHandle): Promise<{ iso: IsolatedExtension; panel: string }> {
-  const iso = await launchIsolatedExtension();
+export async function startIsolatedPanel(host: HostHandle, options: Parameters<typeof launchIsolatedExtension>[0] = {}): Promise<{ iso: IsolatedExtension; panel: string }> {
+  const iso = await launchIsolatedExtension(options);
   await iso.swEval(`globalThis.WebSocket=class extends WebSocket { constructor(url, protocols){super(url==='ws://127.0.0.1:${DEFAULT_PORT}'?'ws://127.0.0.1:${host.port}':url,protocols)} };`);
   await iso.swEval(`chrome.storage.local.set({sideagent_token:${JSON.stringify(host.token)}})`);
   const id = (await iso.swEval("chrome.runtime.id")) as string;

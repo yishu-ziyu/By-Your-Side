@@ -102,22 +102,22 @@ describe('normal voice capture on the client',()=>{
     const client=new VoiceClient(audit.send,phase,()=>{});
     await client.start('conv-1');
     const voiceId=audit.sent[0]!.voiceId;
-    client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'state',state:'ready'}});
+    client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'state',state:'ready',inputMode:'server_vad'}});
     return {client,voiceId};
   }
   const voiced=()=>{for(let i=0;i<5;i++)frame(1000);};
   const silence=()=>{speech.state.probability=0.05;for(let i=0;i<35;i++)frame(0);speech.state.probability=0.9;};
 
-  it('starts a normal session without capture and still streams every frame to the classifier',async()=>{
+  it('starts without capture and streams continuously to server VAD, not a local classifier',async()=>{
     const audit=new Audit();
     const {client}=await session(audit);
     expect(client.diagnosticMode).toBe(false);
     expect(client.diagnosticRecording).toBe(false);
     expect(audit.commands()[0]).toEqual({kind:'start'});
-    // Every frame still reaches the classifier; no turn is open yet, so none of them go upstream.
+    // Realtime 3 receives every frame after ready; local classifier is no longer part of the route.
     frame(1000);frame(1000);
-    expect(speech.state.pushed.map(pcm=>pcm[0])).toEqual([1000,1000]);
-    expect(audit.kinds().filter(kind=>kind==='audio')).toHaveLength(0);
+    expect(speech.state.pushed).toHaveLength(0);
+    expect(audit.kinds().filter(kind=>kind==='audio')).toHaveLength(2);
     for(let i=0;i<3;i++)frame(1000);
     expect(audit.kinds().filter(kind=>kind==='audio')).toHaveLength(5);
     // Nothing is sent per frame beyond the ordinary upstream audio.
@@ -133,7 +133,8 @@ describe('normal voice capture on the client',()=>{
     expect(audit.sent.filter(message=>message.command.kind==='audio')).toHaveLength(7);
     silence();
     expect(audit.commands().filter(command=>command.kind==='capture')).toHaveLength(0);
-    expect(audit.kinds().at(-1)).toBe('commit');
+    expect(audit.kinds().at(-1)).toBe('audio');
+    expect(audit.kinds()).not.toContain('interrupt');
     voiced();
     silence();
     expect(audit.commands().filter(command=>command.kind==='capture')).toHaveLength(0);
@@ -142,11 +143,13 @@ describe('normal voice capture on the client',()=>{
 
   it('marks the latest turn with one command and no change to voice state',async()=>{
     const audit=new Audit();const phase=vi.fn();
-    const {client}=await session(audit,phase);
+    const {client,voiceId}=await session(audit,phase);
+    expect(client.markLatest().ok).toBe(false);
+    client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'input_turn',turn:2}});
     voiced();
     const before=audit.sent.length,phases=phase.mock.calls.length;
-    expect(client.markLatest()).toEqual({ok:true,turn:1});
-    expect(audit.sent.slice(before).map(message=>message.command)).toEqual([{kind:'capture',turn:1,mark:true}]);
+    expect(client.markLatest()).toEqual({ok:true,turn:2});
+    expect(audit.sent.slice(before).map(message=>message.command)).toEqual([{kind:'capture',turn:2,mark:true}]);
     expect(phase.mock.calls.length).toBe(phases);
     expect(client.active).toBe(true);
     expect(client.diagnosticRecording).toBe(false);

@@ -44,9 +44,9 @@ By Your Side 是一个 Chrome 侧栏助手。它复用你当前浏览器的登�
 - **控制指定任务**：可以按明确任务名称查询、修改或取消；页面接管与任务控制另有执行回执。
 - **接收多个结果**：关联任务的结果回到原语音，按各自任务身份校验、排队播报。尚未听到首声的结果不会因为下一次插话而丢失。
 
-识别与语音输出使用阶跃星辰；意图判断和网页执行使用当前配置的任务模型。项目没有接入 GPT Live 或 Gemini Live。
+日常语音只使用 StepAudio 3 Realtime 开放平台 API，负责连续对话、理解和工具选择；网页任务的控制、规划和执行仍接现有任务引擎。不提供 2.5 切换或回退。开口不会由本地程序强制截断播报；“停声”按钮只停声音，不取消后台任务。
 
-目前的验证覆盖了分段输入、任务插入、同页等待和多结果播报。真人设备上的收音、回声和接话自然度仍在持续验证；已听到一半的精确续播、全部任务统一控制、稳定的“第二项”编号指代仍是后续工作。重启会保留待办记录，但不会自动重跑旧页面动作。
+原任务隔离与多结果机制的历史验证保留；Realtime 3 的证据单列在[日常迁移验收](docs/evals/20260920-realtime3-daily.md)，不把旧语音测试当作新版本真人体验通过。真人设备上的收音、回声和接话自然度仍在持续验证；已听到一半的精确续播、全部任务统一控制、稳定的“第二项”编号指代仍是后续工作。重启会保留待办记录，但不会自动重跑旧页面动作。
 
 详见[语音架构](docs/voice-architecture.md)和[多任务验收](docs/evals/20260916-voice-multi-request.md)。
 
@@ -96,13 +96,13 @@ Chrome 会自动启动本地伴随进程。正常使用不需要手动启动服�
 
 ### 4. 可选：启用语音
 
-将自己的阶跃语音服务 Key 写入本机文件 `~/.sideagent/step-plan.key`，并限制其权限：
+将自己的 StepFun **开放平台 API Key** 写入本机文件 `~/.sideagent/stepfun-api.key`（不是 Step Plan 套餐 Key），并限制其权限：
 
 ```bash
-chmod 600 ~/.sideagent/step-plan.key
+chmod 600 ~/.sideagent/stepfun-api.key
 ```
 
-文件只保存 Key 本身，不加 JSON 包装。也支持 `SIDEAGENT_STEP_PLAN_KEY` 环境变量，但它必须对 Chrome 启动的伴随进程可见。当前代码使用 `stepaudio-2.5-realtime` 与 `stepaudio-2.5-tts`，需要账号能够访问这些服务。未配置语音 Key 不影响文字功能。
+文件只保存 Key 本身，不加 JSON 包装。也支持 `STEPFUN_API_KEY` 环境变量，但它必须对 Chrome 启动的伴随进程可见。唯一语音模型为 `stepaudio-3-realtime-preview`，连接 `wss://api.stepfun.com/v1/realtime`；不再调用 2.5 Realtime 或旧 TTS。Key 只由本地进程读取，不发送到侧栏。开放平台按账号规则计费；未配置语音 Key 不影响文字功能。
 
 ### 5. 可选：启用 Jev 显示操作加速
 

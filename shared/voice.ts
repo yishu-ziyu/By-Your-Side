@@ -194,7 +194,8 @@ export type VoiceDiagRecord =
 
 export type VoiceEvent =
   | {kind:'reset_output';turn:number}
-  | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean }
+  | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean; inputMode?: 'server_vad' }
+  | { kind: "input_turn"; turn: number }
   | { kind: "audio"; turn: number; data: string; itemId: string; responseId: string }
   | { kind: "text"; turn: number; role: "user" | "assistant"; text: string }
   | { kind: "facts"; turn: number; snapshot: TaskProgressSnapshot }
@@ -340,6 +341,7 @@ export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {
     case "text": return serverTurn(e.turn) && ["user", "assistant"].includes(e.role) && typeof e.text === "string" && e.text.length <= 12000;
     case "facts": return serverTurn(e.turn) && isTaskProgressSnapshot(e.snapshot);
     case "response_end": return serverTurn(e.turn) && id(e.responseId);
+    case "input_turn": return turn(e.turn);
     case "diag": return isVoiceDiagRecord(e.record);
     default: return false;
   }

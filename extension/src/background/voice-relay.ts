@@ -5,7 +5,7 @@ import type {VoiceInputContext} from '../../../shared/voice.js';
 /** Audio bypasses persisted task history and is delivered only to its owning panel. */
 export class VoiceRelay {
   private readonly observation=new VoiceObservation();
-  private lease: { port: chrome.runtime.Port; voiceId: string; conversationId: string;turn:number;diagnostic:boolean } | null = null;
+  private lease: { port: chrome.runtime.Port; voiceId: string; conversationId: string;turn:number;diagnostic:boolean;serverVad?:boolean } | null = null;
   constructor(private readonly send: (message: ClientMessage) => boolean, private readonly selected: () => string,
     private readonly enrich?:(conversationId:string,input:VoiceInputContext)=>Promise<VoiceInputContext>) {}
   attach(port: chrome.runtime.Port): void {
@@ -26,9 +26,11 @@ export class VoiceRelay {
       const lease = this.lease;
       if (!lease || lease.port !== port || lease.voiceId !== message.voiceId || lease.conversationId !== message.conversationId) return;
       if(message.command.kind==='interrupt'){
-        if(message.command.turn<=lease.turn)return;lease.turn=message.command.turn;
+        if(lease.serverVad){if(message.command.turn!==lease.turn)return;}
+        else {if(message.command.turn<=lease.turn)return;lease.turn=message.command.turn;}
       }
-      if((message.command.kind==='audio'||message.command.kind==='commit')&&message.command.turn!==lease.turn)return;
+      if(message.command.kind==='audio'&&!lease.serverVad&&message.command.turn!==lease.turn)return;
+      if(message.command.kind==='commit'&&message.command.turn!==lease.turn)return;
       // A diagnostic take never reads the page: its commit carries no observation or ask context.
       if(message.command.kind==='commit'&&this.enrich&&!lease.diagnostic){
         const command=message.command;
@@ -51,6 +53,8 @@ export class VoiceRelay {
   server(message: Extract<ServerMessage, { type: "voice" }>): void {
     const lease = this.lease;
     if (!lease || lease.voiceId !== message.voiceId || lease.conversationId !== message.conversationId) return;
+    if(message.event.kind==='state'&&message.event.state==='ready'&&message.event.inputMode==='server_vad'){lease.serverVad=true;lease.turn=1;}
+    if(message.event.kind==='input_turn'){if(!lease.serverVad||message.event.turn<=lease.turn)return;lease.turn=message.event.turn;}
     this.post(message);
     if (message.event.kind === "state" && (message.event.state === "closed" || message.event.state === "error")) {this.lease = null;this.observation.clear();}
   }

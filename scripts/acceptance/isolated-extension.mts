@@ -59,7 +59,7 @@ export interface IsolatedExtension {
   close(): Promise<void>;
 }
 
-export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string} = {}): Promise<IsolatedExtension> {
+export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fakeMedia?: boolean} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
@@ -90,6 +90,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
     child = spawn(CHROME, [
       "--headless=new",
       "--mute-audio",
+      ...(options.fakeMedia ? ['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'] : []),
       "--enable-unsafe-extension-debugging",
       `--user-data-dir=${profile}`,
       "--remote-debugging-port=0",
@@ -100,7 +101,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       "--autoplay-policy=no-user-gesture-required",
       ...(options.hostResolverRules ? [`--host-resolver-rules=${options.hostResolverRules}`, "--no-proxy-server"] : []),
       "about:blank",
-    ], { stdio: "ignore" });
+    ], { stdio: "ignore", env:{...process.env,STEPFUN_API_KEY:undefined,SIDEAGENT_STEP_PLAN_KEY:undefined,TYPESAFE_API_KEY:undefined} });
 
     const port = await until(async () => {
       try {

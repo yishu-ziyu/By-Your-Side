@@ -1,5 +1,5 @@
 import {isVoiceDiagRecord,VOICE_DIAG_MAX_SECONDS,VOICE_DIAG_SAMPLE_RATE,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord} from '../../../shared/voice.js';
-import { SpeechClassifier } from './voice-speech.js';
+import type { SpeechClassifier } from './voice-speech.js';
 import { VoicePlayer } from './voice-player.js';
 import { VoiceTurnDetector, pcmBase64, pcmBase64Large } from './voice-signal.js';
 import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
@@ -13,6 +13,8 @@ export class VoiceClient {
   private speechClassifier: SpeechClassifier | null = null;
   private player: VoicePlayer | null = null;
   private ready = false;
+  private serverVad = false;
+  private hasInputTurn = false;
   private turn = 0;
   private speaking = false;
   private phase: VoicePhase = 'idle';
@@ -81,6 +83,8 @@ export class VoiceClient {
     this.userIntentActive = true;
     this.conversationId = conversationId;
     this.turn = 0;
+    this.serverVad = false;
+    this.hasInputTurn = false;
     this.diagSession = diagnostic;
     this.diagConfirmed = false;
     this.recording = false;
@@ -210,6 +214,7 @@ export class VoiceClient {
     const source = new Int16Array(data.pcm);
     if (this.recording) this.captureDiagnosticFrame(source);
     else if (!this.diagSession) this.captureContinuousFrame(source);
+    if(this.serverVad&&!this.diagSession){this.command({kind:'audio',turn:this.turn,data:pcmBase64(source)});return;}
     this.speechClassifier?.push(new Int16Array(data.pcm));
   }
   /** Normal sessions do not persist PCM. Diagnostic capture is an explicit second mode. */
@@ -277,7 +282,7 @@ export class VoiceClient {
   markLatest(note?: string): { ok: boolean; turn: number; detail?: string } {
     const turn = this.turn;
     if (!this.id) return { ok: false, turn, detail: '语音未开启，标记未发送。' };
-    if (!turn) return { ok: false, turn, detail: '还没有可标记的一轮，先说一句再标记。' };
+    if (!turn || this.serverVad&&!this.hasInputTurn) return { ok: false, turn, detail: '还没有可标记的一轮，先说一句再标记。' };
     const ok = this.command({ kind: 'capture', turn, mark: true, ...(note ? { note } : {}) });
     return ok ? { ok: true, turn } : { ok: false, turn, detail: '语音连接未就绪，标记未发送。' };
   }
@@ -344,21 +349,10 @@ export class VoiceClient {
     }, 500);
     this.diagWait = timer;
   }
-  private async prepareSpeech(id: string, detector: VoiceTurnDetector): Promise<boolean> {
+  private async prepareSpeech(id: string, _detector: VoiceTurnDetector): Promise<boolean> {
     this.speechClassifier?.close(); this.speechClassifier = null;
-    let classifier: SpeechClassifier;
-    // The classifier still receives frames (the copy above already happened), but a diagnostic take
-    // is opened and closed by the user, so its decisions never drive turns.
-    try { classifier = await SpeechClassifier.create((pcm, probability) => {
-      if (this.id === id && this.ready && !this.diagSession) detector.push(pcm, probability);
-    }, () => { if (this.id === id) this.fail('人声检测未能运行，请重新开启语音。'); });
-    } catch {
-      if (this.id === id) this.fail('人声检测未能加载，请重新开启语音。');
-      return false;
-    }
-    if (this.id !== id) { classifier.close(); return false; }
-    this.speechClassifier = classifier;
-    return true;
+    // Realtime 3 owns segmentation; diagnostics are manually bounded.
+    return this.id === id;
   }
 
   scheduleRecovery(detail = '语音连接已断开，正在恢复…'): void {
@@ -450,6 +444,12 @@ export class VoiceClient {
     if(message.voiceId!==this.id||message.conversationId!==this.conversationId)return;
     const e=message.event;
     if(e.kind==='diag'){this.onDiagRecord(e.record);return;}
+    if(e.kind==='input_turn'){
+      if(!this.serverVad||this.diagSession||e.turn<=this.turn)return;
+      this.turn=e.turn;this.hasInputTurn=true;this.player?.follow(this.turn);
+      const input=this.getInput();this.command({kind:'commit',turn:this.turn,input});
+      return;
+    }
     if(e.kind==='state'){
       if(e.state==='error'){
         if(e.recoverable && this.userIntentActive && !this.needsMicrophonePermission) {
@@ -468,6 +468,8 @@ export class VoiceClient {
         return;
       }
       if(e.state==='ready'){
+        this.serverVad=e.inputMode==='server_vad'||this.serverVad;
+        if(this.serverVad){this.turn=Math.max(1,this.turn);this.player?.follow(this.turn);}
         if(this.connectTimer)clearTimeout(this.connectTimer);
         this.ready=true;
         this.recovering=false;
@@ -490,6 +492,11 @@ export class VoiceClient {
     else if(e.kind==='audio'){this.player?.enqueue(e);this.setPhase('speaking');}
     else if(e.kind==='response_end')this.player?.responseEnd(e.responseId);
     else this.event(e);
+  }
+  stopSpeaking():void{
+    if(!this.id||!this.ready)return;
+    this.player?.stop();this.command({kind:'interrupt',turn:this.turn});
+    this.setPhase('listening','已停声，后台任务继续');
   }
   fail(detail: string): void {
     this.userIntentActive = false;

@@ -11,6 +11,8 @@ export class VoicePlayer {
   begin(turn: number): { itemId: string; ms: number } | undefined {
     const played = this.stop(); this.turn = turn; return played;
   }
+  /** Full-duplex input advances without cutting existing playback. */
+  follow(turn: number): void { this.turn=turn; }
   enqueue(event: { turn: number; itemId: string; responseId: string; data: string }): void {
     if (event.turn !== this.turn) return;
     const bytes = Uint8Array.from(atob(event.data), x => x.charCodeAt(0));
