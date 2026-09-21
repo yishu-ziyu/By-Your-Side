@@ -1,0 +1,89 @@
+{
+  "model": "minimax-cn/MiniMax-M3",
+  "rows": [
+    {
+      "state": "idle",
+      "text": "然后把这条评论复制到Flomo的新笔记编辑器。",
+      "expected": [
+        "steer"
+      ],
+      "actual": [
+        "steer"
+      ],
+      "elapsedMs": 1333,
+      "passed": true
+    },
+    {
+      "state": "idle",
+      "text": "另外查一下明天的天气。",
+      "expected": [
+        "start"
+      ],
+      "actual": [
+        "start"
+      ],
+      "elapsedMs": 1234,
+      "passed": true
+    },
+    {
+      "state": "running",
+      "text": "不是置顶那条，改成第一条普通评论。",
+      "expected": [
+        "steer"
+      ],
+      "actual": [
+        "steer"
+      ],
+      "elapsedMs": 1119,
+      "passed": true
+    },
+    {
+      "state": "paused",
+      "text": "然后把这条评论复制到笔记。",
+      "expected": [
+        "steer"
+      ],
+      "actual": [
+        "steer"
+      ],
+      "elapsedMs": 2663,
+      "passed": true
+    },
+    {
+      "state": "interrupted",
+      "text": "给原任务补充一下：读完以后把这条评论复制到笔记。",
+      "expected": [
+        "steer"
+      ],
+      "actual": [
+        "steer"
+      ],
+      "elapsedMs": 950,
+      "passed": true
+    },
+    {
+      "state": "interrupted",
+      "text": "继续原任务。",
+      "expected": [
+        "resume"
+      ],
+      "actual": [
+        "resume"
+      ],
+      "elapsedMs": 831,
+      "passed": true
+    },
+    {
+      "state": "idle",
+      "text": "这个时间索引是什么意思？",
+      "expected": [
+        "chat"
+      ],
+      "actual": [
+        "chat"
+      ],
+      "elapsedMs": 1033,
+      "passed": true
+    }
+  ]
+}

@@ -198,6 +198,7 @@ describe("delivery closure", () => {
     try {
       await h.manager.ensureDefault();
       await h.manager.handleMessage({ type: "user_message", conversationId: "default", text: "只读邮件标题" });
+      (h.manager as any).progress.get("default").goals.clear(); // Legacy makeup-delivery lifecycle fixture.
       h.event({ kind: "text_delta", delta: facts });
       h.event({ kind: "agent_end" });
       expect(h.compose).toHaveBeenCalledTimes(1);

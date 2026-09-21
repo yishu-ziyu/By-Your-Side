@@ -4,8 +4,10 @@ import { BrowserAgentSession, freshPageObservationText } from "../src/session.js
 // 合成会话不写用户真实 trace（与 session-helpers.test.ts 同策略）。
 vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
   begin() {}
+  correlate() {}
   record() {}
   event() {}
+  stage() { return { end() {} }; }
 } }));
 
 function pageContext() {
@@ -19,7 +21,7 @@ function fakeSession(rpc: unknown, streaming = false) {
     },
     model: { id: "test" },
     sessionId: "session-test",
-    agent: { state: { messages: [] } },
+    agent: { state: { messages: [], tools: [] } },
     abort: vi.fn(async () => {}),
     prompt: vi.fn(async (_text: string) => {}),
     steer: vi.fn(async (_text: string) => {}),

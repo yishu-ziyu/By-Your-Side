@@ -1,5 +1,6 @@
 import {TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
+import {type RouteShadow, sharedRouteShadow} from './route-shadow.js';
 import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import {displayNameFor} from '../../shared/cast.js';
@@ -12,7 +13,7 @@ import {
   type ClientMessage, type ConversationSummary, type ServerMessage,
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
-import { createUserDelivery, projectDeliveryFacts } from "./user-delivery.js";
+import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./user-delivery.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -57,6 +58,12 @@ function isInterruptedResumeText(text: string): boolean {
     'continue', 'resumeprevioustask', 'continuetheprevioustask',
   ].includes(normalized);
 }
+/** Map a real task_action receipt to the shadow `actual` vocabulary: start/steer/resume stay as they were settled, any rejection collapses to `rejected`. */
+function shadowActualForReceipt(receipt: TaskReceipt): {action: string; note: string} {
+  return receipt.status === 'rejected' || receipt.status === 'failed'
+    ? {action: 'rejected', note: `${receipt.action}_${receipt.status}`}
+    : {action: receipt.action, note: receipt.status};
+}
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
 /** Identity is captured by each runtime's emitter, never read from the selected panel. */
@@ -66,6 +73,10 @@ export class ConversationManager {
   /** Narrow fence while an interrupted run re-reads the page before agent_start. */
   private readonly checkpointResumes=new Set<string>();
   private readonly taskPages=new Map<string,number>();
+  /** Route-shadow only: last up-to-3 text utterances (user_message or panel task_action) per conversation, for Jev's `previous` context. */
+  private readonly textShadowHistory=new Map<string,string[]>();
+  /** Route-shadow only: text task_action requestIds already observed, so a replayed request is not counted twice. */
+  private readonly shadowedTaskRequests=new Map<string,true>();
   private readonly reading = new ReadingRequests();
   private readonly entries = new Map<string, ConversationEntry>();
   private readonly pending = new Map<string, Promise<ConversationEntry>>();
@@ -97,6 +108,7 @@ export class ConversationManager {
     private readonly memoryStore?: MemoryStore,
     private readonly skillStore?: SkillStore,
     readonly dispatcher = new TaskDispatcher(),
+    private readonly routeShadow: RouteShadow = sharedRouteShadow(),
   ) {this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
     this.writeConfirm=new WriteConfirmBroker(message=>this.emit(message));
     this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,maxRunning:2,maxWaiting:8,
@@ -172,10 +184,12 @@ export class ConversationManager {
     }
     return this.executeVoiceInput(id,text,startedAt,stillCurrent,route);
   }
-  private async executeVoiceInput(id:string,text:string,startedAt:number|null,stillCurrent:()=>boolean,route?:VoiceRouteContext):Promise<VoiceRouteResult>{
+  private async executeVoiceInput(id:string,text:string,_startedAt:number|null,stillCurrent:()=>boolean,route?:VoiceRouteContext):Promise<VoiceRouteResult>{
     const session = this.entries.get(id)?.runtime.session;
     if (!session || !text.trim() || text.length > 2000) throw new Error("这句话没有听清或过长，请重新说。");
     const before=this.getTaskProgress(id)!;
+    // SDK teardown/preparation can still own the run after a UI idle event.
+    if (['none','idle'].includes(before.state) && session.isStreaming()) before.state='running';
     if(route?.recentTurns?.length)before.conversationContext={latestResult:null,...before.conversationContext,recentTurns:[...(before.conversationContext?.recentTurns??[]),...route.recentTurns].slice(-12)};
     const catalog=route?.targets??this.voiceTargets();
     const pending=route?.resumeReadOnly?undefined:this.voiceConfirmations.get(id)??(route?this.voicePlans.proposal(id,route.voiceId,route.turn-1):undefined);
@@ -265,7 +279,7 @@ export class ConversationManager {
     const plan=prepared.plan;
     const single=plan.steps.length===1?plan.steps[0]:undefined;
     const willStart=!route?.resumeReadOnly&&!route?.pendingDelegation&&single?.target===null&&['none','idle'].includes(before.state)
-      &&['observe','chat','steer'].includes(single.action)&&!session.isHeld()&&!session.isStreaming();
+      &&(['observe','chat'].includes(single.action)||single.action==='steer'&&!before.recoveryInput)&&!session.isHeld()&&!session.isStreaming();
     // A capable reply may internally start a session, but that does not turn
     // an old chat/page question into a durable user command. New speech can
     // supersede that reply; only explicit task actions survive a later query.
@@ -316,7 +330,7 @@ export class ConversationManager {
     if (willStart) {
       // 既有派发与页面预观察原样复用：observe/需要事实的追问交给主 Agent，由它读页面后回答；
       // 不再给主 Agent 塞"已批准的工具意图"续跑文案（那会丢掉预观察并让它多绕一轮）。
-      const inputOptions=single?.action==='chat'?{pageObservation:'on-demand' as const}:undefined;
+      const inputOptions=single?.action==='chat'?{pageObservation:'on-demand' as const,conversationOnly:true}:undefined;
       const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,inputOptions);
       // 隐式派发也是真实发生的一步 start：写进计划，让回执反映事实，而不是留下空计划假装零步已知。
       if(route&&!route.resumeReadOnly&&receipt.status==='accepted')this.voicePlans.update(id,route.requestId,{steps:[{action:'start',text,targetId:id,targetTitle:this.entries.get(id)?.summary.title,status:'complete',receipt}]});
@@ -463,7 +477,7 @@ export class ConversationManager {
     if (!progress) return undefined;
     const facts = progress.deliveryFacts();
     const snap = this.getTaskProgress(conversationId);
-    return projectDeliveryFacts(facts, snap?.nextStep);
+    return projectDeliveryFacts(factsForDelivery(facts,snap?.nextStep), snap?.nextStep);
   }
   /**
    * 准备 → 校验 → 提交。一次提案推理同时给出意图计划与 next；
@@ -674,15 +688,29 @@ export class ConversationManager {
       if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
       // The panel sends ordinary typed input as start. Resolve continuation inside
       // the acceptance boundary so retries retain the ORIGINAL request fingerprint.
-      const request = originalRequest.source === 'text' && originalRequest.action === 'start' && !originalRequest.forkedFrom
+      let request = originalRequest.source === 'text' && originalRequest.action === 'start' && !originalRequest.forkedFrom
         && isInterruptedResumeText(originalRequest.text ?? '')
-        && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && snapshot.nextStep?.delivery === 'partial')
+        && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && projectTaskView(snapshot).resumable)
         ? { ...originalRequest, action: 'resume' as const } : originalRequest;
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
       if(request.expectedControlVersion!==undefined&&request.expectedControlVersion!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('页面控制权已再次变化，旧计划的后续步骤未执行。');
       if (request.action === 'status')return {status:'applied',runId:snapshot.runId??null,message:progressSpeech(snapshot)};
       if(!this.connected&&request.action!=='abort')throw new TaskActionRejected('连接尚未恢复，原任务和待办已保留。');
-      if(['idle','error'].includes(snapshot.state)&&snapshot.nextStep?.delivery==='partial'
+      if (request.action==='steer' && ['idle','error'].includes(snapshot.state) && !entry.runtime.session.isStreaming()) {
+        if (!snapshot.runId || !snapshot.recoveryInput || !request.context?.tabId || !entry.runtime.session.available) throw new TaskActionRejected('续接需要原任务记录、当前页面和可用模型；补充尚未发送。');
+        if(this.runningTasks()>=2)throw new TaskActionRejected('当前执行名额已满；这条续接未执行，原任务记录保持不变。');
+        const progress=this.progress.get(request.conversationId)!;
+        const rollback=progress.recordRequirement(request.text??'',request.context,request.attachments);
+        try {
+          entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId,request.attachments);
+          entry.runtime.session.persistTaskResults?.(progress.snapshot());
+        } catch(error) { rollback(); throw error; }
+        progress.recordUserTurn(request.text??'',request.requestId);
+        progress.interrupt('manual_continuation');
+        snapshot=progress.snapshot();
+        request={...request,action:'resume'};
+      }
+      if(['idle','error'].includes(snapshot.state)&&projectTaskView(snapshot).resumable
         &&(request.action==='resume'||request.action==='start'&&isInterruptedResumeText(request.text??''))){
         if(request.action!=='resume')throw new TaskActionRejected('请继续原任务，不要将未完成事项重新登记为新任务。');
         if(!request.context?.tabId||!entry.runtime.session.available)throw new TaskActionRejected('继续前需要当前页面和可用模型，原任务的未完成记录保持不变。');
@@ -753,6 +781,7 @@ export class ConversationManager {
         const targetProgress=this.progress.get(request.conversationId)!;
         const beforeAccept=targetProgress.snapshot();
         targetProgress.request(request.text??'',request.context,request.attachments);
+        if (inputOptions?.conversationOnly) targetProgress.goals.clear();
         const acceptedRunId=targetProgress.snapshot().runId??null;
         try{
           if(entry.runtime.session.persistAcceptedTask)entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(),request.attachments);
@@ -823,7 +852,7 @@ export class ConversationManager {
         const heldMembers = memberNote ? `；${memberNote}` : '';
         return {status:'accepted',runId:originRun??null,message:`修改已保存，继续后生效：${request.text??'所选资料'}${heldMembers}`};
       }
-      if (!request.expectedRunId || snapshot.runId !== request.expectedRunId || snapshot.state !== 'running' || !entry.runtime.session.isStreaming()) {
+      if (!request.expectedRunId || snapshot.runId !== request.expectedRunId || !['running','idle'].includes(snapshot.state) || !entry.runtime.session.isStreaming()) {
         throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
       }
       if (entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你，请先交还。');
@@ -865,6 +894,36 @@ export class ConversationManager {
     },{deferredResume:request.action==='resume'&&['interrupted','idle','error'].includes(this.getTaskProgress(request.conversationId)?.state??'')});
     this.emitReceipt(receipt);
     return receipt;
+  }
+  /**
+   * 真实侧栏文字以 `task_action` 到达（不是 `user_message`），所以文字影子必须在这个入口接线：
+   * 先在真实消息类型上 observe 一次，再让 actual 跟着真实回执的 status/action 走。
+   * 语音 task_action 由实时语音层自己记录，这里不重复计为 text；重放的 requestId 只记一次。
+   * 只做日志，不改路由：dispatchTaskAction 的返回值原样交给调用方。
+   */
+  private async handleShadowedTaskAction(request: TaskActionRequest): Promise<TaskReceipt> {
+    const utterance = request.source === 'text' ? request.text ?? '' : '';
+    const shadowKey = `${request.conversationId}:${request.requestId}`;
+    const shadowed = !!utterance.trim() && !this.shadowedTaskRequests.has(shadowKey);
+    if (shadowed) {
+      this.shadowedTaskRequests.set(shadowKey, true);
+      if (this.shadowedTaskRequests.size > 200) {
+        const oldest = this.shadowedTaskRequests.keys().next().value;
+        if (oldest !== undefined) this.shadowedTaskRequests.delete(oldest);
+      }
+      const previous = this.textShadowHistory.get(request.conversationId) ?? [];
+      const progress = this.getTaskProgress(request.conversationId);
+      this.routeShadow.observe({channel:'text',conversationId:request.conversationId,text:utterance,previous,taskRunning:progress?(progress.state==='running'||progress.state==='paused'):'unknown',taskState:progress?.state,...(request.context?{page:{title:request.context.title,url:request.context.url}}:{})});
+      this.textShadowHistory.set(request.conversationId,[...previous,utterance].slice(-3));
+    }
+    try {
+      const receipt = await this.dispatchTaskAction(request);
+      if (shadowed) this.routeShadow.actual({channel:'text',conversationId:request.conversationId,kind:'entry',...shadowActualForReceipt(receipt)});
+      return receipt;
+    } catch (error) {
+      if (shadowed) this.routeShadow.actual({channel:'text',conversationId:request.conversationId,kind:'entry',action:'rejected',note:'dispatch_error'});
+      throw error;
+    }
   }
   /**
    * 只向领任务开放一次有边界的重设确认：绑定由宿主自己从当前进度与页面算出，
@@ -944,6 +1003,7 @@ export class ConversationManager {
     // T02：任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
     for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "verifyUnknownResult", "recordConfirmedRecovery", "stopAfterFailures"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
+      // SAFETY: 同名方法按原签名包装，参数与返回值形状不变；动态按方法名赋值 TypeScript 无法表达。
       (progress as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
         const result = original(...args);
         this.queueTaskView(id);
@@ -1034,6 +1094,7 @@ export class ConversationManager {
       else if (summary.checkpoint !== 'unavailable') delete summary.checkpoint;
       runtime.session.bindTaskResults?.({
         getSnapshot: () => progress.snapshot(),
+        goals: progress.goals,
         stopAfterFailures: () => { progress.stopAfterFailures(); runtime.session.persistTaskResults?.(progress.snapshot()); },
         register: items => {
           if (!progress.snapshot().runId || progress.snapshot().state === "aborted") throw new Error("当前没有可登记结果的任务");
@@ -1120,7 +1181,7 @@ export class ConversationManager {
       return;
     }
     const id = normalizeConversationId(message.conversationId);
-    if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);return;}
+    if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.handleShadowedTaskAction(message.request);return;}
     const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
     if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
     if (entry.summary.checkpoint === 'unavailable' && message.type !== 'task_action' && message.type !== 'task_receipt_query' && message.type !== 'task_view_query') {
@@ -1171,7 +1232,7 @@ export class ConversationManager {
         return;
       }
     }
-    if (message.type === 'task_action') { await this.dispatchTaskAction(message.request); return; }
+    if (message.type === 'task_action') { await this.handleShadowedTaskAction(message.request); return; }
     if (message.type === 'task_view_query') { this.emitTaskView(id, true); return; }
     if (message.type === 'task_receipt_query') {
       const receipt = this.taskQueue.list(id).find(j=>j.request.requestId===message.requestId)?.receipt??this.dispatcher.get(id,message.requestId)??this.dispatcher.store.list(id).find(r=>r.requestId===message.requestId);
@@ -1190,8 +1251,18 @@ export class ConversationManager {
       return;
     }
     if(message.type==='user_message'){
+      // Shadow routing only: ask Jev which lane this text utterance belongs to, in parallel, purely for offline comparison.
+      const previous=this.textShadowHistory.get(id)??[];
+      const shadowProgress=this.getTaskProgress(id);
+      this.routeShadow.observe({channel:'text',conversationId:id,text:message.text,previous,taskRunning:shadowProgress?(shadowProgress.state==='running'||shadowProgress.state==='paused'):'unknown',taskState:shadowProgress?.state,...(message.context?{page:{title:message.context.title,url:message.context.url}}:{})});
+      this.textShadowHistory.set(id,[...previous,message.text].slice(-3));
+    } else if(message.type==='steer'){
+      this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'steer'});
+    }
+    if(message.type==='user_message'){
       const checkpoint=this.getTaskProgress(id);
       if(checkpoint&&(checkpoint.state==='interrupted'||['idle','error'].includes(checkpoint.state)&&checkpoint.nextStep?.delivery==='partial')&&isInterruptedResumeText(message.text)){
+        this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'resume',note:'checkpoint_resume'});
         const requestId=`restart-${randomUUID()}`;
         this.progress.get(id)?.recordUserTurn(message.text,requestId);
         entry.summary.updatedAt=Date.now();
@@ -1200,15 +1271,18 @@ export class ConversationManager {
         return;
       }
       if(checkpoint?.state==='interrupted'&&!this.checkpointResumes.has(id)){
+        this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'steer',note:'interrupted_amend'});
         await this.dispatchTaskAction({requestId:`amend-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:checkpoint.runId??null,text:message.text,context:message.context,attachments:message.attachments});
         return;
       }
     }
     if(message.type==='user_message'&&this.checkpointResumes.has(id)&&!entry.runtime.session.isStreaming()){
+      this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'checkpoint_starting'});
       this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'当前任务正在启动或恢复检查点，这条新要求尚未发送；请等它进入运行后再补充。'}});
       return;
     }
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()&&this.runningTasks()>=2){
+      this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'slots_full'});
       this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'当前执行名额已满，这项新任务尚未接收；请等待运行中的任务完成。'}});return;
     }
     if(message.type==='user_message'&&message.context?.tabId!==undefined)this.taskPages.set(id,message.context.tabId);
@@ -1232,6 +1306,14 @@ export class ConversationManager {
       // 空闲/接管仍由原 steer 路径处理（空闲转新任务，接管给提示）。
       await this.dispatchTaskAction({requestId:`steer-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:this.getTaskProgress(id)?.runId??null,text:message.text,context:message.context,attachments:message.attachments});
       return;
+    }
+    if(message.type==='user_message'){
+      // actual 必须反映这条消息真正进入的路径：接管中只得到「页面归你」提示，运行中会转为插话，只有空闲且会话可用才开新任务。
+      const shadowSession=entry.runtime.session;
+      if(shadowSession.isHeld())this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'page_held'});
+      else if(shadowSession.isStreaming())this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'steer',note:'runtime_steer'});
+      else if(!shadowSession.available)this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'session_unavailable'});
+      else this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'start',note:'runtime_handle'});
     }
     try{entry.runtime.handleMessage(message);}catch(error){this.pendingStarts.delete(id);throw error;}
     if (message.type === "user_message" || message.type === "set_mode") {

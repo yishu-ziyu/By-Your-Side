@@ -20,6 +20,8 @@ const baseAnswers=(over:Record<string,unknown>={})=>({
   direct:{noul:.99},
   extra:{noul:0},
   partial:{noul:0},
+  font_requested:{noul:Object.hasOwn(over,'font')?.99:0},
+  mode_requested:{noul:Object.hasOwn(over,'mode')?.99:0},
   font:{choice:'unspecified',probabilities:{}},
   mode:{choice:'unspecified',probabilities:{}},
   ...over,

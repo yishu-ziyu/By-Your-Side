@@ -10,24 +10,24 @@ describe('S2 registered remaining results',()=>{
  it('observation satisfies only its registered result, while display and playback cannot satisfy mark',()=>{
   const p=setup();call(p,'read','snapshot');expect(result(p,'observe-x').status).toBe('satisfied');expect(result(p,'mark-x').status).toBe('pending');
   event(p,{kind:'user_delivery',delivery:{conversationId:'default',runId:p.snapshot().runId,id:'done',kind:'finding',text:'全部完成',composedAt:1,status:'composed'}});event(p,{kind:'agent_end'});p.markPlayback('done','played');
-  expect(p.snapshot().resultState).toBe('pending');expect(result(p,'mark-x').status).toBe('pending');
+  expect(p.snapshot().executionState).toBe('pending');expect(result(p,'mark-x').status).toBe('pending');
  });
- it('matched successful execution satisfies all registered results; success is not permanently unreportable',()=>{const p=setup();call(p,'read','snapshot');call(p,'draw','mark',{target:'#x'});expect(p.snapshot().resultState).toBe('satisfied');expect(result(p,'mark-x').evidence).toMatchObject({toolCallId:'draw',tool:'mark',target:'#x'});});
+ it('matched successful execution satisfies all registered results; success is not permanently unreportable',()=>{const p=setup();call(p,'read','snapshot');call(p,'draw','mark',{target:'#x'});expect(p.snapshot().executionState).toBe('satisfied');expect(result(p,'mark-x').evidence).toMatchObject({toolCallId:'draw',tool:'mark',target:'#x'});});
  it('wrong target, mismatched member, old run and duplicate completion cannot satisfy a result',()=>{
   const p=setup();call(p,'wrong','mark',{target:'#y'});expect(result(p,'mark-x').status).toBe('pending');
   event(p,{kind:'tool_start',toolCallId:'draw',name:'mark',params:{target:'#x'}});p.observe({type:'agent_event',sessionId:'other-member',runId:p.snapshot().runId,event:{kind:'tool_end',toolCallId:'draw',name:'mark',isError:false,resultText:'ok'}});event(p,{kind:'tool_end',toolCallId:'draw',name:'mark',isError:false,resultText:'ok'},'old-run');expect(result(p,'mark-x').status).not.toBe('satisfied');
  });
- it('failure retains the owed result and its failure evidence',()=>{const p=setup();call(p,'read','snapshot');call(p,'draw','mark',{target:'#x'},true,'not_executed');expect(result(p,'mark-x')).toMatchObject({status:'blocked'});expect(p.snapshot().resultState).toBe('blocked');event(p,{kind:'agent_end'});expect(p.snapshot().resultState).toBe('blocked');});
+ it('failure retains the owed result and its failure evidence',()=>{const p=setup();call(p,'read','snapshot');call(p,'draw','mark',{target:'#x'},true,'not_executed');expect(result(p,'mark-x')).toMatchObject({status:'blocked'});expect(p.snapshot().executionState).toBe('blocked');event(p,{kind:'agent_end'});expect(p.snapshot().executionState).toBe('blocked');});
  it('correction preserves completed observation and rebinds only the remaining target; late X cannot complete Y',()=>{
   const p=setup();call(p,'read','snapshot');const run=p.snapshot().runId;p.reviseResults();p.registerResults([{id:'mark-x',description:'标出指定对象',tool:'mark',target:'#y'}]);call(p,'old-target','mark',{target:'#x'});
-  expect(p.snapshot().runId).toBe(run);expect(result(p,'observe-x').status).toBe('satisfied');expect(result(p,'mark-x').status).toBe('pending');call(p,'new-target','mark',{target:'#y'});expect(p.snapshot().resultState).toBe('satisfied');
+  expect(p.snapshot().runId).toBe(run);expect(result(p,'observe-x').status).toBe('satisfied');expect(result(p,'mark-x').status).toBe('pending');call(p,'new-target','mark',{target:'#y'});expect(p.snapshot().executionState).toBe('satisfied');
  });
- it('omitting owed entries from a later registration cannot erase them or fabricate completion',()=>{const p=setup();call(p,'read','snapshot');p.registerResults([{...requirements[0],status:'satisfied'}]);expect(result(p,'mark-x').status).toBe('pending');expect(p.snapshot().resultState).toBe('pending');});
+ it('omitting owed entries from a later registration cannot erase them or fabricate completion',()=>{const p=setup();call(p,'read','snapshot');p.registerResults([{...requirements[0],status:'satisfied'}]);expect(result(p,'mark-x').status).toBe('pending');expect(p.snapshot().executionState).toBe('pending');});
  it('an in-flight write restored without a receipt remains unknown and cannot be reset to retry by registration',()=>{
   const p=setup();call(p,'read','snapshot');event(p,{kind:'tool_start',toolCallId:'uncertain',name:'mark',params:{target:'#x'}});const stored=p.snapshot();const restored:any=new TaskProgress('default');restored.restoreResults(stored);
   expect(result(restored,'mark-x').status).toBe('unknown');expect(restored.snapshot().state).not.toBe('running');restored.registerResults(requirements);expect(result(restored,'mark-x').status).toBe('unknown');
  });
  it('confirmed results survive read-only recovery without replay and cannot satisfy a new task',()=>{
-  const p=setup();call(p,'read','snapshot');call(p,'draw','mark',{target:'#x'});const restored:any=new TaskProgress('default');restored.restoreResults(p.snapshot());expect(restored.snapshot().resultState).toBe('satisfied');restored.request('新任务Y');expect(restored.snapshot().results).toEqual([]);expect(restored.snapshot().resultState).toBe('unregistered');
+  const p=setup();call(p,'read','snapshot');call(p,'draw','mark',{target:'#x'});const restored:any=new TaskProgress('default');restored.restoreResults(p.snapshot());expect(restored.snapshot().executionState).toBe('satisfied');restored.request('新任务Y');expect(restored.snapshot().results).toEqual([]);expect(restored.snapshot().executionState).toBe('unregistered');
  });
 });

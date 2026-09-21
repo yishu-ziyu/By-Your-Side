@@ -70,6 +70,29 @@ describe("RunTrace", () => {
     expect((await stat(join(trace.path, ".."))).mode & 0o777).toBe(0o700);
   });
 
+  it("freezes stage identity and correlation at stage start", async () => {
+    const trace = new RunTrace(await directory());
+    trace.begin("fast task", {}, "provider/model", { runId: "run-one", goalRevision: "revision-one" });
+    const stage = trace.stage("judgment", { branch: "fast_task" });
+    trace.correlate({ runId: "run-two", goalRevision: "revision-two" });
+    stage.end("miss", { reason: "coverage_uncertain" });
+    stage.end("ignored");
+    await trace.flush();
+    const rows = (await readFile(trace.path, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    const stageRows = rows.filter(row => row.data?.name === "judgment");
+    expect(stageRows).toHaveLength(2);
+    expect(new Set(stageRows.map(row => row.data.stageId)).size).toBe(1);
+    expect(stageRows.map(row => [row.runId, row.goalRevision])).toEqual([
+      ["run-one", "revision-one"],
+      ["run-one", "revision-one"],
+    ]);
+    expect(stageRows[1]).toMatchObject({
+      type: "stage_end",
+      data: { outcome: "miss", durationMs: expect.any(Number), reason: "coverage_uncertain" },
+    });
+    expect(stageRows[1].data.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("redacts secrets in structured args, sensitive fill targets, free text, URL and images", () => {
     const result = JSON.stringify(sanitizeTrace({
       password: "one", args: { target: 'input[type="password"]', text: "two" },

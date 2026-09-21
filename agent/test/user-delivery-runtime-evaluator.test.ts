@@ -11,7 +11,7 @@ function fixture(action: 'chat'|'observe'='chat'){
  return {manager,messages,compose,event:(e:any)=>publish(e),resolve:(text:string)=>answer(text)};
 }
 const raw='竹海工作坊的活动邀请，只看过标题，没有读正文。';
-async function start(h:ReturnType<typeof fixture>){await h.manager.ensureDefault();await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'只读邮件标题'});}
+async function start(h:ReturnType<typeof fixture>){await h.manager.ensureDefault();await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'只读邮件标题'});(h.manager as any).progress.get('default').goals.clear(); /* Legacy delivery-formatting eligibility, isolated from the goal verifier. */}
 function finish(h:ReturnType<typeof fixture>){h.event({kind:'text_delta',delta:raw});h.event({kind:'agent_end'});}
 it('an acknowledgement alone still requires one result delivery',async()=>{const h=fixture();try{await start(h);const runId=h.manager.getTaskProgress('default')!.runId!;h.event({kind:'user_delivery',delivery:{conversationId:'default',id:'ack-only',runId,kind:'ack',text:'收到，我先看标题。',composedAt:100,status:'composed'}});finish(h);expect(h.compose).toHaveBeenCalledTimes(1);h.resolve('竹海工作坊发来了活动邀请，目前仅读标题。');await vi.waitFor(()=>expect(h.messages.some(m=>m.event?.kind==='user_delivery'&&m.event.delivery.kind==='finding')).toBe(true));h.event({kind:'agent_end'});expect(h.compose).toHaveBeenCalledTimes(1);}finally{h.manager.dispose();}});
 it('reports only a partial result when a write finished without readback or model delivery',async()=>{

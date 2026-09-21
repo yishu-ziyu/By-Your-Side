@@ -9,7 +9,7 @@ it('notifies once from current real task state, ignores foreign events, and wait
  await service.handle('A',{type:'voice',voiceId:'v',command:{kind:'start'}});
  const end={type:'agent_event' as const,conversationId:'A',event:{kind:'agent_end' as const}};
  progress.observe(end);service.observe({...end,conversationId:'B'});expect(notify).not.toHaveBeenCalled();
- service.observe(end);service.observe(end);expect(notify).toHaveBeenCalledTimes(1);expect(progressSpeech(notify.mock.calls[0]![0])).toContain('结果还没有确认');
+ service.observe(end);service.observe(end);expect(notify).toHaveBeenCalledTimes(1);expect(progressSpeech(notify.mock.calls[0]![0])).toContain('还有未完成的要求：task');
  progress.request('next');progress.observe({type:'agent_event',event:{kind:'agent_start'}});service.observe({type:'status',conversationId:'A',state:'running'});
  const runId=progress.snapshot().runId!;service.observe({type:'task_control',conversationId:'A',requestId:'pause',action:'pause',runId});
  progress.observe({type:'status',state:'user'});service.observe({type:'status',conversationId:'A',state:'user'});expect(notify).toHaveBeenCalledTimes(1);

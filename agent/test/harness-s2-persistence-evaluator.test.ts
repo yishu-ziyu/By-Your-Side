@@ -16,7 +16,7 @@ function fixture(complete:boolean){
  wrapped(sm).persistTaskResults(p.snapshot());const next=wrapped(SessionManager.open(sm.getSessionFile()!));const restored=new TaskProgress('default');restored.restoreResults(next.readPersistedTaskResults()!);next.bindConversationContext(()=>restored.snapshot());return {next,restored};
 }
 for(const completed of [false,true])it(`real Pi file recovery does not replay ${completed?'confirmed':'uncertain'} writes`,async()=>{
- const {next,restored}=fixture(completed);expect(restored.snapshot()).toMatchObject({state:'interrupted',restartRecovery:true,resultState:completed?'satisfied':'unknown'});expect(restored.snapshot().conversationContext?.recentTurns).toContainEqual({role:'user',text:'只处理当前页'});
+ const {next,restored}=fixture(completed);expect(restored.snapshot()).toMatchObject({state:'interrupted',restartRecovery:true,executionState:completed?'satisfied':'unknown'});expect(restored.snapshot().conversationContext?.recentTurns).toContainEqual({role:'user',text:'只处理当前页'});
  const rpc:any={call:vi.fn(async()=>({marked:true}))};const tools=createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>next.executionEpoch(),canWrite:()=>true,assertCall:(name,params)=>next.assertTaskResultExecution(name,params)});
  await expect((tools.find(t=>t.name==='mark')!.execute as any)('replay',{target:'#y'})).rejects.toThrow();expect(rpc.call).not.toHaveBeenCalled();
 });

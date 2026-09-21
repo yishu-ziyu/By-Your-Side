@@ -82,8 +82,10 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
 /** 只读投影：同一份事实（实时或重放恢复的快照）必须得到同一份视图。 */
 export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const requirements = snapshot.recoveryInput?.requirements ?? [];
-  const rawResults = snapshot.results ?? [];
+  const executionResults = snapshot.results ?? [];
+  const rawResults = snapshot.goalPlan ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
   const results = rawResults.map((item) => ({ id: item.id, description: item.description, status: item.status }));
+  const outstanding=results.filter((item,i)=>OPEN_STATUSES.has(item.status)&&!('tool' in rawResults[i]!&&isSupersededUnknown(rawResults[i] as import('./task-results.js').TaskResultItem,executionResults)));
   return {
     conversationId: snapshot.conversationId,
     runId: snapshot.runId ?? null,
@@ -99,9 +101,9 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     waiting: waitingFor(snapshot, snapshot.nextStep),
     results,
     // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
-    outstanding: results.filter((r, i) => OPEN_STATUSES.has(r.status) && !isSupersededUnknown(rawResults[i]!, rawResults)),
+    outstanding,
     latestDelivery: snapshot.conversationContext?.latestDelivery ? { kind: snapshot.conversationContext.latestDelivery.kind } : null,
-    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && snapshot.nextStep?.delivery === "partial")) && !!snapshot.recoveryInput,
+    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && (snapshot.nextStep?.delivery === "partial"||outstanding.length>0))) && !!snapshot.recoveryInput,
   };
 }
 

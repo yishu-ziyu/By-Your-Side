@@ -42,7 +42,7 @@ export class TaskReadback {
     this.required.set(key,{member,tabId,revision:this.revision});
   }
   observed(member:string,observation:{tabId:number|null;workingTab:boolean;truncated:boolean;text:string},readVersion:number):void {
-    if(observation.tabId===null||observation.truncated||!observation.text)return;
+    if(observation.tabId===null||observation.truncated)return;
     if(observation.workingTab&&this.pages.size<100)this.pages.set(member,observation.tabId);
     for(const [key,write] of this.required){
       if(write.member!==member||write.revision>readVersion)continue;

@@ -81,7 +81,18 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
         title: clip(el.getAttribute('title')), alt: clip(image?.getAttribute('alt') ?? image?.getAttribute('aria-label')),
         text: hasValue ? null : clip(textContent), ancestorText: clip(ancestor), autocomplete: el.getAttribute('autocomplete') };
     }
-    return {ok:true,data:{tagName,textContent,...(hasValue ? {value:maskValue(String(el.value ?? ''))} : {}),...(properties.length ? {properties:values} : {}),...(anchorSource ? {anchorSource} : {})}};
+    const scopeLabels:string[]=[];
+    let scope=element.parentElement;
+    for(let depth=0;scope&&depth<8&&scopeLabels.length<4;depth++,scope=scope.parentElement){
+      const role=scope.getAttribute?.('role')||scope.tagName?.toLowerCase();
+      if(!['form','dialog','region','group','row','article','section','fieldset'].includes(role))continue;
+      const labelledBy=scope.getAttribute?.('aria-labelledby');
+      const name=scope.getAttribute?.('aria-label')
+        ||(labelledBy?labelledBy.split(/\s+/).map(id=>document.getElementById(id)?.textContent??'').join(' '):'')
+        ||scope.querySelector?.(':scope > legend, :scope > h1, :scope > h2, :scope > h3')?.textContent;
+      if(name?.trim())scopeLabels.push(`${role}: ${name.trim().slice(0,180)}`);
+    }
+    return {ok:true,data:{tagName,textContent,...(scopeLabels.length?{scopeLabels}:{}),...(hasValue ? {value:maskValue(String(el.value ?? ''))} : {}),...(properties.length ? {properties:values} : {}),...(anchorSource ? {anchorSource} : {})}};
   } catch (error) { return {ok:false,error:error instanceof Error ? error.message : String(error)}; }
 }
 

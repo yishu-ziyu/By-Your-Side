@@ -6,6 +6,7 @@ import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import {
   USER_DELIVERY_TEXT_MAX,
+  USER_DELIVERY_FACT_ITEM_MAX,
   isUserDelivery,
   isUserDeliveryFacts,
   type UserDelivery,
@@ -28,15 +29,29 @@ const RECORD_KINDS = ["ack", "finding", "reply"] as const;
 const HOST_TOOL_KINDS = ["ack", "finding"] as const;
 
 /** 宿主投影包含完整截断计数；模型只能请求保守的部分交付，不能升级完成状态。 */
-export type DeliveryFactInput = Omit<UserDeliveryFacts, "outcome">;
+export type DeliveryFactInput = Omit<UserDeliveryFacts, "outcome"> & {pendingAnswers?:Array<{id:string;description:string}>};
+
+/** Called only while constructing an actual delivery, never by status/voice progress queries. */
+export function factsForDelivery(host:DeliveryFactInput,next:TaskNextStep|null|undefined):DeliveryFactInput {
+  const {pendingAnswers,...facts}=host;
+  if(next?.delivery!=='report'||!pendingAnswers?.length)return facts;
+  const descriptions=[...new Set([...facts.delivered,...pendingAnswers.map(g=>g.description)])];
+  return {...facts,delivered:descriptions.slice(0,USER_DELIVERY_FACT_ITEM_MAX),omittedDelivered:(facts.omittedDelivered??0)+Math.max(0,descriptions.length-USER_DELIVERY_FACT_ITEM_MAX),remaining:facts.remaining.filter(g=>!pendingAnswers.some(a=>a.id===g.id)),omittedRemaining:0};
+}
 
 /** 工具、普通正文补发及语音补发共用同一个事实投影。report 是报告许可，不是业务完成证明。 */
 export function projectDeliveryFacts(host: DeliveryFactInput, next: TaskNextStep | null | undefined, requestPartial = false): UserDeliveryFacts {
   const remaining = host.remaining.length + (host.omittedRemaining ?? 0);
-  const outcome = requestPartial || remaining > 0 || next?.delivery !== "report"
-    ? "partial"
-    : next.reason === "receipts_reviewed" && host.delivered.length > 0 ? "complete" : "unverified";
-  return { ...host, outcome };
+  let outcome: UserDeliveryFacts['outcome'];
+  if (requestPartial || remaining > 0 || next?.delivery !== "report") {
+    outcome = "partial";
+  } else if (next.reason === "receipts_reviewed" && host.delivered.length > 0) {
+    outcome = "complete";
+  } else {
+    outcome = "unverified";
+  }
+  const {pendingAnswers:_,...facts}=host;
+  return { ...facts, outcome };
 }
 
 /** Lead has a conversationId; fleet workers do not. Memory store is unrelated. */
@@ -92,19 +107,22 @@ export function createSendUserMessageTool(opts: {
   getNextStep?: () => TaskNextStep | null;
   /** 宿主事实链：已满足项、未完成项、本 run 真实读到的页面；未接线时不附 facts。 */
   getDeliveryFacts?: () => DeliveryFactInput | null;
+  verifyAnswer?: (text:string,signal?:AbortSignal)=>Promise<void>;
+  /** Runs on the raw partial text before the partialResultNote suffix is appended; throwing rejects the delivery. */
+  verifyPartial?: (text:string,signal?:AbortSignal)=>Promise<void>;
 }): ToolDefinition {
   return defineTool({
     name: "send_user_message",
     label: "Send a user-facing message",
     description:
-      "Send the exact words the user should see and hear. Tool results and ordinary assistant text are internal work. Use kind=finding for the final task result, or kind=ack for a start acknowledgement. For a finding, outcome=complete (default) requires no outstanding results and a real post-action page readback; outcome=partial honestly reports unfinished, blocked or unverified work and ends this turn without clearing the ledger. Never claim completion in a partial report. Do not use this tool for follow-up answers. An acknowledgement is not the final result. Do not claim independent verification. Keep simple outcomes short. For substantial written results, lead with the finding, use focused paragraphs and useful headings, and cite exact source URLs through descriptive Markdown links. Do not force headings on short replies. Preserve requested detail and any unread or unconfirmed limits.",
+      "Send the exact words the user should see and hear. Tool results and ordinary assistant text are internal work. Use kind=finding for the final task result, or kind=ack for a start acknowledgement. For a finding, outcome=complete (default) requires no outstanding results and a real post-action page readback; outcome=partial honestly reports unfinished, blocked or unverified work and ends this turn without clearing the ledger. Never claim completion in a partial report; the wording is checked against the goal ledger and is rejected if it states or implies a still-pending goal is already done or confirmed. Do not use this tool for follow-up answers. An acknowledgement is not the final result. Do not claim independent verification. Keep simple outcomes short. For substantial written results, lead with the finding, use focused paragraphs and useful headings, and cite exact source URLs through descriptive Markdown links. Do not force headings on short replies. Preserve requested detail and any unread or unconfirmed limits.",
     parameters: Type.Object({
       kind: Type.Unsafe<"ack" | "finding">(Type.String({ description: "ack or finding. Final task results must be finding, not reply." })),
       content: Type.String({ description: "Exact user-facing text. Do not truncate trailing limits." }),
       outcome: Type.Optional(Type.Union([Type.Literal('complete'),Type.Literal('partial')],{description:'For finding: complete requires current execution and readback evidence; partial reports limits and stops without marking unfinished work complete.'})),
       reply_to: Type.Optional(Type.String({ description: "Optional user utterance or previous delivery id this answers" })),
     }),
-    execute: async (_id, params) => {
+    execute: async (_id, params, signal) => {
       deliveryMetrics.toolCalls += 1;
       try {
         const kind = params.kind;
@@ -114,6 +132,7 @@ export function createSendUserMessageTool(opts: {
         let text = assertDeliveryText(String(params.content ?? ""));
         const outcome=params.outcome??'complete';
         if(!['complete','partial'].includes(outcome))throw new Error('outcome 必须是 complete 或 partial。');
+        if(kind==='finding'&&outcome==='complete'&&opts.verifyAnswer)await opts.verifyAnswer(text,signal);
         const next=kind==='finding'?opts.getNextStep?.():undefined;
         if(kind==='finding'&&opts.getNextStep&&!next)throw new Error('当前任务判断尚未接线，未交付。');
         if(next?.delivery==='none')throw new Error(nextStepInstruction(next));
@@ -121,6 +140,7 @@ export function createSendUserMessageTool(opts: {
           throw new Error(`${nextStepInstruction(next)}不能交付为完整结果；确实无法继续时请用 outcome=partial 说明已完成和未确认部分。`);
         }
         if(kind==='finding'&&outcome==='partial'){
+          if(opts.verifyPartial)await opts.verifyPartial(text,signal);
           text=assertDeliveryText(`${text}\n\n${next?partialResultNote(next):'任务状态：仅交付部分结果，未声明全部完成。'}`);
         }
         const runId = opts.getRunId();
@@ -130,7 +150,8 @@ export function createSendUserMessageTool(opts: {
           throw new Error("reply_to 无效，请省略或给出完整引用，不要截断。");
         }
         // 事实链字段只从宿主投影；模型正文写不进这里，缺接线时保持旧记录形状。
-        const hostFacts = kind === "finding" ? opts.getDeliveryFacts?.() ?? null : null;
+        const rawFacts = kind === "finding" ? opts.getDeliveryFacts?.() ?? null : null;
+        const hostFacts=rawFacts?(outcome==='complete'?factsForDelivery(rawFacts,next):rawFacts):null;
         if (hostFacts && outcome === "complete" && (hostFacts.remaining.length > 0 || (hostFacts.omittedRemaining ?? 0) > 0)) {
           throw new Error("交付事实链无效：仍有未完成项，请如实交付部分结果。");
         }
@@ -139,6 +160,9 @@ export function createSendUserMessageTool(opts: {
           : undefined;
         if (facts && !isUserDeliveryFacts(facts)) {
           throw new Error("交付事实链无效（未完成项与 outcome 不一致或字段超界），本次未交付。");
+        }
+        if (facts && outcome === 'complete' && facts.outcome !== 'complete') {
+          throw new Error('任务结果尚未核验，本次完成正文未发送。请核对已有执行结果；仅能报告资料或仍有未确认部分时，用 outcome=partial 如实说明，不宣称全部完成。');
         }
         const delivery = createUserDelivery({
           id: toolDeliveryId(_id),

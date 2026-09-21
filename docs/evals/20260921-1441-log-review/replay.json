@@ -1,0 +1,48 @@
+{
+  "materialReplay": [
+    {
+      "time": "2026-09-21T06:45:09.516Z",
+      "chars": 9830,
+      "prepare": "材料为空或超过单份原文预算"
+    },
+    {
+      "time": "2026-09-21T06:45:19.545Z",
+      "chars": 3142,
+      "prepare": "accepted"
+    },
+    {
+      "time": "2026-09-21T06:45:27.129Z",
+      "chars": 9732,
+      "prepare": "材料为空或超过单份原文预算"
+    },
+    {
+      "time": "2026-09-21T06:47:26.482Z",
+      "chars": 1898,
+      "prepare": "accepted"
+    },
+    {
+      "time": "2026-09-21T06:47:26.483Z",
+      "chars": 8582,
+      "prepare": "材料为空或超过单份原文预算"
+    }
+  ],
+  "replanError": "本版目标已固定；改变做法不能删除未完成要求",
+  "voiceReplay": {
+    "toolOutputsWhileSpeaking": 0,
+    "toolOutputsAfterSpeechStopped": 1,
+    "createsBeforeNextResponseCreated": 1,
+    "retainedAsrLogged": true,
+    "retainedAsrSentToClient": false
+  },
+  "debuggerReplay": {
+    "attachCalls": 2,
+    "results": [
+      "fulfilled",
+      "该标签页正被 DevTools 或其他调试器占用"
+    ]
+  },
+  "deliveryReplay": {
+    "answerChecks": 0,
+    "text": "页面已圈好\n\n任务状态：仅交付部分结果。仍有未完成或未核验事项，未声明全部完成。"
+  }
+}

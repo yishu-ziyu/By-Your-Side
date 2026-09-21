@@ -15,7 +15,7 @@ return (await browser.snapshot()).text;
 
 这里的选择器只对应本地验收夹具。真实页面的目标必须先观察得到，不能直接套用。
 
-- `browser` 包含 `shared/protocol.ts` 的全部 17 个浏览器方法，参数与独立工具一致，返回原始数据。例如 `snapshot()` 返回 `{text}`，`js({code})` 返回 `{value}`。
+- `browser` 的方法来自 `shared/protocol.ts` 的 `TOOL_NAMES`，排除内部 `worker_tabs`，另有 `waitFor` / `sleep`；以 `agent/src/browser-program.ts` 的 `METHODS` 为准，参数与独立工具一致，返回原始数据。例如 `snapshot()` 返回 `{text}`，`js({code})` 返回 `{value}`。
 - `browser.waitFor({selector, timeoutMs})` 等待唯一、可见且未禁用的原生 CSS 目标。默认 5 秒，最多 30 秒；通过现有 `js` RPC 轮询，只读页面，不修改页面状态。
 - `browser.sleep({ms})` 最多等待 10 秒，可中断。正常业务优先等状态，不用猜测睡眠时长。
 - 每个操作都应 `await`。同一程序的浏览器操作顺序执行，未等待的剩余调用不会在程序结束后继续落地。
@@ -44,12 +44,13 @@ return (await browser.snapshot()).text;
 
 ## 验收入口
 
+本地定点检查：
+
 ```sh
-npm test -- agent/test/browser-program.test.ts agent/test/run-trace.test.ts
-node --import tsx scripts/acceptance/program-run.mjs
-node --import tsx scripts/acceptance/program-run.mjs --mode=program --explicit=yes
-node scripts/acceptance/program-control-run.mjs
+npx vitest run agent/test/browser-program.test.ts agent/test/run-trace.test.ts
 ```
+
+`program-run.mjs` 和 `program-control-run.mjs` 是直连 ChromeMain 的历史验收入口，当前脚本没有无头隔离保护。不能把它们当默认验证命令直接执行；需要对应环境授权，并按现行无头要求选择或调整运行器。
 
 真实浏览器脚本只使用 `local.yishu.chrome-main`，同一时间只能有一个验收操作者。对照区分“工具可用时模型自主选择”和“明确要求组合执行”，两者不能混报。测试只填写本地草稿，不提交数据。
 

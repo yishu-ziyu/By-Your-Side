@@ -32,6 +32,8 @@ server → conversation_updated{conversation}
 
 ### 对话
 
+当前任务与控制入口还包括共享 `task_action`、`task_view` 和独立交付消息；见[任务调度](voice-dispatch.md)。下面保留基础/兼容帧说明，不是完整协议清单。
+
 以下帧均可携带 `conversationId`。
 
 ```
@@ -72,7 +74,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 - 伴随进程侧 RPC 默认超时 30s（`navigate`/`screenshot` 60s），超时/断连即以错误结果结束该工具调用。
 - 扩展侧任何异常都必须回 `ok:false` + 一行人类可读 error，不允许挂断不回。
 
-`browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。生产装配中，内部开始/结束直接同步转成既有步骤事件，先登记子调用再执行权限检查，使用 `父调用ID/序号` 关联；独立工具包装器仍可回传SDK进度，但不能把异步进度队列当作权限登记前置。详见 `docs/browser-program.md`。
+`browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。生产装配中，内部开始/结束直接同步转成既有步骤事件，先登记子调用再执行权限检查，使用 `父调用ID/序号` 关联；独立工具包装器仍可回传SDK进度，但不能把异步进度队列当作权限登记前置。详见[组合执行](browser-program.md)。
 
 ## 工作标签页语义
 
@@ -93,6 +95,8 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 `read_element{tabId?, target}` 按当前 ref 或唯一 CSS 定位返回完整 `textContent` 与表单 `value`，用于补读快照缩略的材料和填写前的原值。读取不滚动、不聚焦、不修改页面，不接受任意脚本；归属和协作者检查仍生效。超过安全上限时明确报错，不把截断值用于原值核对。独立读取可在用户接管时进行，已停止的 browser program 不能借此继续执行。
 
+`read_elements{tabId?, selector, limit?}` 按 CSS 选择器（或 `loc=css:...`）一次性读取全部命中元素（按文档顺序取前 `limit` 个，默认 60，1–200），返回每个元素的标签、文字（截 200 字）、可见性、位置矩形与六项计算样式，供圈注、标注一类结果核验取证；不接受 `@ref`。零命中返回 `total:0` 与空列表，不算错误；输出超过安全上限时明确报错，不返回部分内容。只读，不修改页面、不注入样式。
+
 ## 面板恢复与 Pi 持久化
 
 扩展内部 relay 使用 `select_conversation{conversationId}` 切换显示，`sync{conversationId, afterSeq?}` 按会话同步历史；历史和状态 envelope 带 `conversationId`。选择项保存在 `chrome.storage.session`，聊天历史与各会话的输入草稿、待发送附件保存在 `chrome.storage.local`。历史序号单调递增，新一轮用户消息不会清空前面的轮次。
@@ -105,7 +109,7 @@ Pi 上下文保存在 `~/.sideagent/conversations/{conversationId}/` 下的会�
 
 `scope` 为 `{kind:"all"}` 或 `{kind:"site",hostname}`。站点范围只约束使用，个人管理列表仍展示全部条目。条目包含 id、version、text、scope、sourceConversationId、createdAt、updatedAt；内容最多 2000 字符。
 
-只有 Lead 的 `remember_user_preference` 工具能新增，且当前用户消息须明确要求保留。网页、附件、工具输出及 worker 无权自动保存。每轮按主题词与精确 hostname 选择记忆，再重新核对条目版本，通过 Pi 单轮提示使用。`agent_event` 中的 `memory` 事件记录 saved/used 及条目快照，历史回执不随之后的修改而重写。
+当前 Lead 工具为 `user_memory`：`recall` 查询任务所需资料，`change` 按当前直接用户请求解释保存、修改或忘记。语义解释由 `memory-decision.ts` 完成，运行时核对输入当前性；网页、附件、工具输出及 worker 不能自行授予记忆修改权限。检索由 `MemoryStore.select / resolveSelected` 选择并复核版本，通过 Pi 单轮提示使用。`agent_event` 中的 `memory` 事件记录 saved/used 及条目快照，历史回执不随之后的修改而重写。
 
 数据当前存于操作系统用户目录 `~/.sideagent/memory/memories.json`；原子替换与写锁保护并发修改。忘记会移除有效条目，后续新轮次不再读取它；原聊天仍保留。当前没有按 Chrome 配置分别选择存储目录，不能宣称已实现浏览器配置隔离。
 
@@ -131,17 +135,11 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 目录权限 0700、文件权限 0600；每会话最多约 8 MiB，创建文件时清理到最近约 20 份。单条记录限制总字符和节点数，达到上限明确标记截断。日志是诊断证据，不作为自动停止任务或判定业务成功的条件。
 
 
-## 网页经历与纠正（第一轮）
+## 经历、显式记忆与技能
 
-`MemoryEntry.experience?` 包含 `runId`、`evidence`（最多8条、每条最多600字符）及 `topic?`（最多200字符）。缺省仍表示现有显式记忆。经验使用同一 memory_list/update/forget 协议与 memory 事件，前端通过来源标记显示“已整理这次纠正”，不增加独立操作入口。
+它们分别由 `ExperienceStore`、`MemoryStore`、`SkillStore` 持有，不能把自动整理建议等同于用户已确认的事实或可自动执行的技能。经历采集与模型整理不是网页执行权限；保存做法后的匹配与复用仍须核对材料、页面和结果。
 
-ExperienceRuntime 只观察 Lead；由用户消息开始、浏览器 tool_execution_end 收集有限文本、agent_end 封存，abort/takeover 标记 interrupted。结束、工具成功和模型自述均不证明任务成功，本轮任务结果默认 unknown；逐条观察另存工具是否失败。仅直接用户纠正且有同会话同网站的任务观察时进入整理，未启用成功轨迹自动提炼。
-
-每个任务独立原子写入 `~/.sideagent/experiences/{id}.json`。本地落盘队列与后台普通模型调用分开；任务有 pending/done/failed 状态，最多3次尝试，可恢复 pending。模型输出必须包含与输入逐字一致的纠正和观察引用；整理只能生成待验证文本建议，无工具、无执行权限。
-
-记忆首次发布按 topic 检索，避免“核对结果”等模板词把无关任务召回；用户编辑后按新文本选择。适用范围默认当前 hostname。来源 runId 保证发布幂等，不覆盖用户更新；forget 把 runId 记入 memories.json 的 forgottenExperiences，使后台重试不能复活。发生新的明确纠正时，只废止原任务实际使用且版本仍未变的经验，用户后来的修改优先。
-
-当前页面若因另一会话占用而被既有隔离规则移除，不凭旧页面信息注入站点记忆。新会话应使用自己的页面；用户消息含唯一明确网址时，用该目标地址选择经验；否则需要起始 PageContext，本轮不会在中途导航后补入经验。EverOS 服务和语义检索未接入。
+EverOS 是独立可选桥接，安装与边界见[桥接说明](../scripts/everos/README.md)；普通源码安装不自动启用。本机启用历史见[记录](evals/20260916-everos-enable.md)，当前服务运行状态需要另行核对，不能再笼统写成“未接入”。
 
 ### 主 Agent 全局查看与页面调度
 

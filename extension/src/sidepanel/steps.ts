@@ -10,7 +10,6 @@ export interface ToolAction {
   /** 工具卡标题，带得上关键参数就带，如 "点击「结算服务」"。 */
   full: string;
 }
-
 /** 工具名 → 中文动作；未知名称回退原始名。 */
 const ACTION_NAMES: Record<string, string> = {
   tabs: "标签页",
@@ -23,6 +22,7 @@ const ACTION_NAMES: Record<string, string> = {
   navigate: "打开页面",
   snapshot: "读取页面结构",
   read_element: "读取完整内容",
+  read_elements: "读回多个元素",
   click: "点击",
   hover: "悬停",
   remember_user_preference: "记住偏好",
@@ -54,10 +54,13 @@ function clip(text: string, max = 16): string {
 }
 
 function hostOf(url: unknown): string | null {
-  if (typeof url !== "string" || !url) return null;
+  if (typeof url !== "string" || !url) {
+    return null;
+  }
   try {
     return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host;
-  } catch {
+  }
+  catch {
     return null;
   }
 }
@@ -65,7 +68,6 @@ function hostOf(url: unknown): string | null {
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
-
 /** 工具调用 → 人性化动作描述。 */
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
   const short = ACTION_NAMES[name] ?? name;
@@ -73,8 +75,8 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     case "page_translation": {
       const full = params.action === 'restore' ? '恢复网页原文'
         : params.action === 'display' ? [params.mode === 'translated' ? '只显示译文' : params.mode === 'bilingual' ? '显示双语' : '调整译文', typeof params.fontSize === 'number' ? `字号 ${params.fontSize}` : ''].filter(Boolean).join(' · ')
-        : short;
-      return {short: full, full};
+          : short;
+      return { short: full, full };
     }
     case "tabs": {
       const action = str(params.action);
@@ -113,7 +115,9 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: key ? `按键「${clip(key, 8)}」` : short };
     }
     case "mark": {
-      if (params.clear === true) return { short: "清除标注", full: "清除标注" };
+      if (params.clear === true) {
+        return { short: "清除标注", full: "清除标注" };
+      }
       const label = str(params.label);
       return { short, full: label ? `标注「${clip(label)}」` : short };
     }
@@ -138,49 +142,52 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: short };
   }
 }
-
 /**
  * 步骤链：相邻重复去重，超长时只保留最近几步（前缀 "…"）。
  * 例：思考 → 读取页面结构 → 思考 → 点击
  */
 export class StepChain {
   private steps: string[] = [];
-
   push(label: string): void {
-    if (this.steps[this.steps.length - 1] !== label) this.steps.push(label);
+    if (this.steps[this.steps.length - 1] !== label) {
+      this.steps.push(label);
+    }
   }
-
   /** 最多保留最近 keep 步渲染；超出时前缀省略号。 */
   render(keep = 3): string {
-    if (this.steps.length === 0) return "";
+    if (this.steps.length === 0) {
+      return "";
+    }
     const shown = this.steps.slice(-keep);
     const prefix = this.steps.length > keep ? "… → " : "";
     return prefix + shown.join(" → ");
   }
 }
-
 /** chip 状态：tool_end 前运行中；结束后按 isError 分完成/失败。 */
 export type ChipState = "running" | "done" | "error";
 
 export function chipState(ended: boolean, isError: boolean): ChipState {
-  if (!ended) return "running";
+  if (!ended) {
+    return "running";
+  }
   return isError ? "error" : "done";
 }
-
 /** 运行状态行的动作名：最近一个工具的中文动作，尚无工具时为"思考"。 */
 export function loaderSubtitle(lastToolShort: string | null): string {
   return lastToolShort ?? "思考";
 }
-
 /** 耗时格式化：<10s 一位小数（"1.3s"），<60s 整数（"12s"），否则 "2m 28s"。 */
 export function formatDuration(ms: number): string {
   const s = Math.max(0, ms) / 1000;
-  if (s < 9.95) return `${(Math.round(s * 10) / 10).toFixed(1)}s`;
-  if (s < 59.5) return `${Math.round(s)}s`;
+  if (s < 9.95) {
+    return `${(Math.round(s * 10) / 10).toFixed(1)}s`;
+  }
+  if (s < 59.5) {
+    return `${Math.round(s)}s`;
+  }
   const m = Math.floor(s / 60);
   return `${m}m ${Math.round(s % 60)}s`;
 }
-
 /**
  * 工人事件该进哪一块执行步骤。
  * 全员 idle 时 finishRun 会清掉 currentRun；Pi 的 agent_end 紧随 idle 到达，
@@ -193,29 +200,35 @@ export function workerEventRunPolicy(input: {
   graphRunning: boolean;
   hasLastRun: boolean;
 }): WorkerEventRunPolicy {
-  if (input.hasCurrentRun) return "current";
-  if (input.graphRunning) return "new";
-  if (input.hasLastRun) return "reuse-last";
+  if (input.hasCurrentRun) {
+    return "current";
+  }
+  if (input.graphRunning) {
+    return "new";
+  }
+  if (input.hasLastRun) {
+    return "reuse-last";
+  }
   return "drop";
 }
-
 /** Legacy history has no reliable clock; never use replay wall time for it. */
 export function historyEventTime(applyingHistory: boolean, occurredAt?: number): number {
-  return applyingHistory ? (typeof occurredAt === "number" && Number.isFinite(occurredAt) ? occurredAt : Number.NaN) : Date.now();
+  if (applyingHistory) {
+    if (typeof occurredAt === "number" && Number.isFinite(occurredAt)) {
+      return occurredAt;
+    }
+    return Number.NaN;
+  }
+  return Date.now();
 }
+
 export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }
-
 /** 执行中过程窗是否钉在底部；程序滚动不要走这条，只认人滚。 */
 export const LIVE_VIEWPORT_SLOP_PX = 12;
 
-export function isLiveViewportPinned(
-  scrollTop: number,
-  scrollHeight: number,
-  clientHeight: number,
-  slop = LIVE_VIEWPORT_SLOP_PX,
-): boolean {
+export function isLiveViewportPinned(scrollTop: number, scrollHeight: number, clientHeight: number, slop = LIVE_VIEWPORT_SLOP_PX): boolean {
   return scrollHeight - scrollTop - clientHeight < slop;
 }
 

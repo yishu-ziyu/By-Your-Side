@@ -35,14 +35,18 @@ export interface TaskResultItem extends TaskResultRegistration {
   supersededBy?: string;
 }
 
+/** Control-gated browser focus is observable, but is not an irreversible page write. */
+export function resultToolHasWriteEffect(tool:string):boolean {
+  return isWriteTool(tool)&&tool!=='switch_tab';
+}
 export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {
-  return isWriteTool(item.tool)||item.evidence?.effectful===true;
+  return resultToolHasWriteEffect(item.tool)||item.evidence?.effectful===true;
 }
 
-export const TASK_RESULT_META_TOOLS = ["record_task_results", "send_user_message", "resolve_unknown_result", "confirm_blocked_write"] as const;
+export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message", "resolve_unknown_result", "confirm_blocked_write"] as const;
 
-/** 只有这些真实只读工具回执可以充当解除未决的页面证据。 */
-export const RESULT_VERIFY_READ_TOOLS = ["read_element", "snapshot"] as const;
+/** 只有这些真实只读工具回执可以充当解除未决的页面证据。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
+export const RESULT_VERIFY_READ_TOOLS = ["read_element", "read_elements", "snapshot"] as const;
 
 /** 页面身份类工具：执行后当前文档/工作页可能改变，此前读数不能再当作前后对比基线。 */
 export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close_tab", "worker_tabs", "page_operation", "page_translation", "js"] as const;
@@ -137,7 +141,8 @@ export function normalizeResultTarget(target: string): string {
   return clean.startsWith('loc=css:') ? clean.slice('loc=css:'.length).trim() : clean;
 }
 
-export function extractResultTarget(params: Record<string, unknown> | undefined): string | null {
+export function extractResultTarget(params: Record<string, unknown> | undefined, tool?: string): string | null {
+  if ((tool === 'switch_tab' || tool === 'tabs' && params?.action === 'switch') && Number.isSafeInteger(params?.tabId)) return `tab:${params!.tabId}`;
   const target = params?.target;
   return typeof target === "string" && target.trim() ? normalizeResultTarget(target) : null;
 }
@@ -202,12 +207,16 @@ function shortText(value: unknown, max: number): string | null {
  */
 export function deriveResultDescription(name: string, params: Record<string, unknown> | undefined, target: string | null): string {
   const p = params ?? {};
-  const action = RESULT_ACTION_LABELS[name] ?? name;
+  const tabTool = name === 'tabs' && ['open', 'switch', 'close'].includes(String(p.action)) ? `${p.action}_tab` : name;
+  const action = RESULT_ACTION_LABELS[tabTool] ?? name;
   const label = shortText(p.label, 40);
   const url = shortText(p.url, 80);
   const key = shortText(p.key, 20);
   let text: string;
   switch (name) {
+    case 'tabs':
+      text = action;
+      break;
     case "click":
     case "hover":
     case "mark":

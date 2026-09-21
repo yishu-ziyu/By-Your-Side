@@ -177,7 +177,7 @@ describe("R1 execution fact identity", () => {
     const p = progressFixture();
     p.observe({ type: "agent_event", event: { kind: "tool_start", toolCallId: "c1", name: "click", params: { target: "#append" } } });
     p.observe({ type: "agent_event", event: { kind: "tool_end", toolCallId: "c1", name: "click", isError: true, resultText: "页面操作部分完成后失败" } });
-    expect(p.snapshot().resultState).toBe("unknown");
+    expect(p.snapshot().executionState).toBe("unknown");
   });
 });
 
@@ -194,9 +194,9 @@ describe("R2 late receipt reaches real progress", () => {
     const tools = createBrowserTools(rpc, undefined, undefined, undefined, { epoch: () => 0, canWrite: () => true, assertCall: (name, params, id) => session.assertTaskResultExecution(name, params, id) });
     await expect((tools.find(t => t.name === "click")!.execute as any)("late-call", { target: "#append" })).rejects.toThrow(/disconnected/);
     raw.emit({ type: "tool_execution_end", toolCallId: "late-call", toolName: "click", isError: true, result: { content: [{ type: "text", text: "Extension disconnected" }] } });
-    expect(p.snapshot().resultState).toBe("unknown");
+    expect(p.snapshot().executionState).toBe("unknown");
     expect(rpc.handleResult(transportId, true, { clicked: true }, undefined, "executed")).toBe(true);
-    expect(p.snapshot().resultState).toBe("satisfied");
+    expect(p.snapshot().executionState).toBe("satisfied");
   });
 });
 
@@ -220,10 +220,10 @@ describe("R3 page evidence recovery", () => {
     });
     const missing = await (tool.execute as any)("verify-1", { id: "append", target: "body", expect: "记录 9" });
     expect(missing.details.ok).toBe(false);
-    expect(p.snapshot().resultState).toBe("unknown");
+    expect(p.snapshot().executionState).toBe("unknown");
     const matched = await (tool.execute as any)("verify-2", { id: "append", target: "body", expect: "记录 1" });
     expect(matched.details.ok).toBe(true);
-    expect(p.snapshot().resultState).toBe("satisfied");
+    expect(p.snapshot().executionState).toBe("satisfied");
   });
 
   it("rejects text that already existed before the write", async () => {
@@ -237,7 +237,7 @@ describe("R3 page evidence recovery", () => {
     });
     const out = await (tool.execute as any)("verify-pre", { id: "append", target: "h1", expect: "隔离记录页" });
     expect(out.details.ok).toBe(false);
-    expect(p.snapshot().resultState).toBe("unknown");
+    expect(p.snapshot().executionState).toBe("unknown");
   });
 
   it("refuses recovery without a pre-write read, on a different page, or outside the read scope", async () => {
@@ -245,28 +245,28 @@ describe("R3 page evidence recovery", () => {
     unknownClick(noBaseline);
     const toolA = createVerifyUnknownResultTool({ getSnapshot: () => noBaseline.snapshot(), read: async () => ({ textContent: "记录 1", tabId: 7 }), verify: input => noBaseline.verifyUnknownResult(input) });
     expect((await (toolA.execute as any)("v-a", { id: "append", target: "body", expect: "记录 1" })).details.ok).toBe(false);
-    expect(noBaseline.snapshot().resultState).toBe("unknown");
+    expect(noBaseline.snapshot().executionState).toBe("unknown");
 
     const wrongPage = progressFixture();
     observePage(wrongPage, { toolCallId: "read-1", name: "snapshot", target: null, tabId: 7, text: "0" });
     unknownClick(wrongPage);
     const toolB = createVerifyUnknownResultTool({ getSnapshot: () => wrongPage.snapshot(), read: async () => ({ textContent: "记录 1", tabId: 9 }), verify: input => wrongPage.verifyUnknownResult(input) });
     expect((await (toolB.execute as any)("v-b", { id: "append", target: "body", expect: "记录 1" })).details.ok).toBe(false);
-    expect(wrongPage.snapshot().resultState).toBe("unknown");
+    expect(wrongPage.snapshot().executionState).toBe("unknown");
 
     const scope = progressFixture();
     observePage(scope, { toolCallId: "read-1", name: "read_element", target: "#footer", tabId: 7, text: "页脚" });
     unknownClick(scope);
     const toolC = createVerifyUnknownResultTool({ getSnapshot: () => scope.snapshot(), read: async () => ({ textContent: "记录 1", tabId: 7 }), verify: input => scope.verifyUnknownResult(input) });
     expect((await (toolC.execute as any)("v-c", { id: "append", target: "#rows", expect: "记录 1" })).details.ok).toBe(false);
-    expect(scope.snapshot().resultState).toBe("unknown");
+    expect(scope.snapshot().executionState).toBe("unknown");
 
     const otherTab = progressFixture();
     observePage(otherTab, { toolCallId: "read-1", name: "snapshot", target: null, tabId: 9, text: "0", workingTab: false });
     unknownClick(otherTab);
     const toolD = createVerifyUnknownResultTool({ getSnapshot: () => otherTab.snapshot(), read: async () => ({ textContent: "记录 1", tabId: 9 }), verify: input => otherTab.verifyUnknownResult(input) });
     expect((await (toolD.execute as any)("v-d", { id: "append", target: "body", expect: "记录 1" })).details.ok).toBe(false);
-    expect(otherTab.snapshot().resultState).toBe("unknown");
+    expect(otherTab.snapshot().executionState).toBe("unknown");
   });
 
   it("keeps unknown when the verification read fails", async () => {
@@ -280,7 +280,7 @@ describe("R3 page evidence recovery", () => {
     });
     const out = await (tool.execute as any)("verify-3", { id: "append", target: "body", expect: "记录 1" });
     expect(out.details.ok).toBe(false);
-    expect(p.snapshot().resultState).toBe("unknown");
+    expect(p.snapshot().executionState).toBe("unknown");
   });
 });
 

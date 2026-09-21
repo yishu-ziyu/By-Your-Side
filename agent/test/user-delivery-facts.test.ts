@@ -35,16 +35,17 @@ describe("send_user_message 事实链", () => {
       getNextStep: () => ({ ...COMPLETE, action: "continue", reason: "open_task", resultIds: [] }),
       getDeliveryFacts: () => ({ delivered: [], remaining: [], sources: [] }),
     });
-    await h.tool.execute("unverified", { kind: "finding", outcome: "complete", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never);
+    await expect(h.tool.execute("unverified", { kind: "finding", outcome: "complete", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never)).rejects.toThrow(/尚未核验/);
+    expect(h.events).toHaveLength(0);
+    await h.tool.execute("partial", { kind: "finding", outcome: "partial", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never);
     const event = h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>;
-    expect(event.delivery.facts?.outcome).toBe("unverified");
-    expect(buildDeliveryFactView(event.delivery.facts).headline).toContain("未核验");
+    expect(event.delivery.facts?.outcome).toBe("partial");
   });
 
   it("十五项义务的省略计数穿过正式交付与 wire 解析后仍在界面显示十五项", async () => {
     const p = new TaskProgress("default");
     p.request("核对十五项");
-    p.registerResults(Array.from({ length: 15 }, (_, i) => ({ id: `r-${i}`, description: `义务 ${i}`, tool: "snapshot", target: null })));
+    p.goals.install(p.snapshot().goalPlan!.revision, Array.from({ length: 15 }, (_, i) => ({ id: `r-${i}`, description: `义务 ${i}`, criterion: `核对义务 ${i}`, kind: "condition" as const, requirements: ['requirement-1'] })), 1);
     const h = tool({ getRunId: () => p.snapshot().runId!, getNextStep: () => p.snapshot().nextStep!, getDeliveryFacts: () => p.deliveryFacts() });
     await h.tool.execute("fifteen", { kind: "finding", outcome: "partial", content: "这些项尚未核对。" }, undefined, undefined, {} as never);
     const message = parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "default", event: h.events[0] }));
@@ -133,8 +134,9 @@ describe("TaskProgress.deliveryFacts", () => {
     expect(h.p.deliveryFacts().sources).toEqual([]);
   });
 
-  it("已满足项进 delivered，未完成项保留原状态，被满足项取代的未知不再阻塞", () => {
+  it("旧检查点无目标计划时沿用动作事实，被取代的未知不再阻塞", () => {
     const h = progressHarness();
+    h.p.goals.clear(); // Legacy checkpoint compatibility; new requests project goals.
     h.p.registerResults([{ id: "r-fill", description: "填写姓名", tool: "fill", target: "#name" }]);
     h.p.registerResults([{ id: "r-submit", description: "提交订单", tool: "click", target: "#submit" }]);
     h.emit({ kind: "tool_start", toolCallId: "c1", name: "fill", params: { target: "#name", value: "林夏" } });
@@ -151,14 +153,15 @@ describe("TaskProgress.deliveryFacts", () => {
     expect(after.delivered).toContain("当前订单状态已核对");
   });
 
-  it("没有登记项时不编造成果或未完成项", () => {
+  it("没有目标计划时仍保留用户要求，不以空动作账本冒充完成", () => {
     const h = progressHarness();
-    expect(h.p.deliveryFacts()).toEqual({ delivered: [], remaining: [], sources: [] });
+    expect(h.p.deliveryFacts()).toEqual({ delivered: [], remaining: [{ id: "user-request", description: "比较三家方案，给出来源。", status: "pending" }], sources: [] });
   });
 
   it("长描述在事实链里明确标出截断，不静默切掉", () => {
     const h = progressHarness();
     const long = `页面需要核对的长字段：${'很长的说明'.repeat(40)}`;
+    h.p.goals.clear(); // The legacy projection still preserves truncation indicators.
     h.p.registerResults([{ id: "r-long", description: long, tool: "fill", target: "#note" }]);
     const remaining = h.p.deliveryFacts().remaining;
     expect(remaining).toHaveLength(1);
@@ -197,7 +200,7 @@ describe("复核修正（P2-2/P2-4）", () => {
     const p = new TaskProgress("default", () => 1);
     p.request("多项任务");
     const intents = Array.from({ length: 15 }, (_, i) => ({ id: `r${i}`, description: `义务 ${i}`, tool: "snapshot", target: null }));
-    p.registerResults(intents as never);
+    p.goals.install(p.snapshot().goalPlan!.revision, intents.map(i=>({id:i.id,description:i.description,criterion:i.description,kind:"condition" as const,requirements:['requirement-1']})),1);
     const facts = p.deliveryFacts();
     expect(facts.remaining.length).toBe(12);
     expect(facts.omittedRemaining).toBe(3);

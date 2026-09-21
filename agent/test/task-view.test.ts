@@ -54,7 +54,7 @@ describe("A02-01 实时与重放投影一致", () => {
     restored.restoreResults(h.progress.snapshot());
     restored.restoreResults(h.progress.snapshot()); // 重复恢复同一快照
     const view = projectTaskView({ ...restored.snapshot() });
-    expect(view.results.length).toBe((h.progress.snapshot().results ?? []).length);
+    expect(view.results).toEqual(projectTaskView(h.progress.snapshot()).results);
   });
 });
 
@@ -157,6 +157,7 @@ describe("A02-07 旧快照兼容与损坏拒绝", () => {
   it("缺少新增字段的旧快照正常投影，未知字段不靠猜填满", () => {
     const h = startedRun();
     const legacy = h.progress.snapshot() as Partial<TaskProgressSnapshot>;
+    delete legacy.goalPlan;
     delete legacy.results;
     delete legacy.nextStep;
     delete legacy.recoveryInput;
@@ -284,8 +285,8 @@ describe("outstanding 与 nextStep 同口径（review 修复）", () => {
       ] as never,
     };
     const view = projectTaskView(withSuperseded);
-    expect(view.results.map((r) => r.id)).toEqual(["r1", "r2"]); // 事实全保留
-    expect(view.outstanding.map((r) => r.id)).toEqual([]); // 已被取代的不算未完成
+    expect(view.results.map((r) => r.id)).toEqual(["user-request"]); // 已取代的执行未知不污染用户目标
+    expect(view.outstanding.map((r) => r.id)).toEqual(["user-request"]); // 原始用户要求仍未核验
   });
   it("未被取代的 unknown 仍列入未完成项", () => {
     const h = startedRun();
@@ -293,6 +294,6 @@ describe("outstanding 与 nextStep 同口径（review 修复）", () => {
       ...h.progress.snapshot(),
       results: [{ id: "r1", description: "写入备注", tool: "fill", target: null, status: "unknown", evidence: null }] as never,
     };
-    expect(projectTaskView(snap).outstanding.map((r) => r.id)).toEqual(["r1"]);
+    expect(projectTaskView(snap).outstanding.map((r) => r.id)).toEqual(["user-request", "r1"]);
   });
 });

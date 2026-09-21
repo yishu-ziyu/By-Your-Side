@@ -8,14 +8,36 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface AgentConfig {
+  /** Experimental general browser decision loop; never enabled by merely building the project. */
+  generalBrowserLoop?: boolean;
   /** Opt-in small display-command fast path; credentials stay in typesafe.env. */
   displayFastPath?: boolean;
   /** Opt-in display fast path while a task is already running; off by default and constrained by displayFastPath. */
   displaySteerFastPath?: boolean;
+  /** Opt-in shadow routing: ask Jev which lane an utterance belongs to and record it, without changing any routing. Off by default. */
+  routeShadow?: boolean;
+  /** Daily cap on Jev calls made by shadow routing; 1-5000, default 400. */
+  routeShadowDailyLimit?: number;
   /** provider/id 格式，如 kimi-coding/kimi-for-coding */
   model?: string;
   /** http(s)://host:port 形式的代理地址 */
   proxy?: string;
+}
+
+export function generalBrowserLoopEnabled():boolean {
+  if(process.env.SIDEAGENT_GENERAL_BROWSER_LOOP==='0')return false;
+  if(process.env.SIDEAGENT_GENERAL_BROWSER_LOOP==='1')return true;
+  return loadConfig().generalBrowserLoop===true;
+}
+
+export function routeShadowEnabled():boolean {
+  if(process.env.SIDEAGENT_ROUTE_SHADOW==='0')return false;
+  if(process.env.SIDEAGENT_ROUTE_SHADOW==='1')return true;
+  return loadConfig().routeShadow===true;
+}
+
+export function routeShadowDailyLimit():number {
+  return loadConfig().routeShadowDailyLimit??400;
 }
 
 export function configPath(): string {
@@ -33,8 +55,11 @@ export function loadConfig(path = configPath()): AgentConfig {
   try {
     const json = JSON.parse(raw) as Record<string, unknown>;
     const config: AgentConfig = {};
+    if(typeof json.generalBrowserLoop === "boolean")config.generalBrowserLoop=json.generalBrowserLoop;
     if(typeof json.displayFastPath === "boolean")config.displayFastPath=json.displayFastPath;
     if(typeof json.displaySteerFastPath === "boolean")config.displaySteerFastPath=json.displaySteerFastPath;
+    if(typeof json.routeShadow === "boolean")config.routeShadow=json.routeShadow;
+    if(typeof json.routeShadowDailyLimit === "number" && Number.isInteger(json.routeShadowDailyLimit) && json.routeShadowDailyLimit>=1 && json.routeShadowDailyLimit<=5000)config.routeShadowDailyLimit=json.routeShadowDailyLimit;
     if (typeof json.model === "string" && json.model) config.model = json.model;
     if (typeof json.proxy === "string" && /^https?:\/\//.test(json.proxy)) config.proxy = json.proxy;
     return config;

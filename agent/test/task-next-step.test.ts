@@ -11,6 +11,7 @@ function task(id='default') {
   let tick=0, call=0;
   const progress=new TaskProgress(id,()=>++tick);
   progress.request('填写姓名，核对后报告');
+  progress.goals.clear(); // Legacy-checkpoint readback gates; goal-aware completion is tested in task-goal-tool.
   progress.observe({type:'agent_event',event:{kind:'agent_start'}});
   const emit=(event:any,member='main')=>progress.observe({type:'agent_event',sessionId:member,event} as ServerMessage);
   const step=(name:string,params:Record<string,unknown>,failed=false,fact:ToolExecutionFact='executed',member='main')=>{
@@ -105,6 +106,7 @@ describe('P0.3 next-step decision from production progress',()=>{
     const h=task();h.read();h.step('fill',{target:'#name'});h.read();
     h.emit({kind:'agent_end'});const before=h.progress.snapshot().runId;
     h.progress.request('另一项任务');
+    h.progress.goals.clear(); // Continue this legacy execution-ledger fixture.
     h.progress.observe({type:'agent_event',runId:before!,event:{kind:'tool_start',toolCallId:'late',name:'fill',params:{target:'#old'}}});
     expect(h.next()).toMatchObject({action:'continue',delivery:'report'});
     expect(h.progress.snapshot().results).toEqual([]);

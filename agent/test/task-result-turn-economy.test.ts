@@ -59,7 +59,7 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(itemsOf(p)[0]!.description.length).toBeGreaterThan(1);
     end(p, 'call-1', 'click');
     expect(itemsOf(p)[0]).toMatchObject({status: 'satisfied'});
-    expect(p.snapshot().resultState).toBe('satisfied');
+    expect(p.snapshot().executionState).toBe('satisfied');
   });
 
   it('预登记 target:null 的写项在执行时自动改绑实际目标，id 与说明保持', async () => {
@@ -69,7 +69,7 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(itemsOf(p)).toHaveLength(1);
     expect(itemsOf(p)[0]).toMatchObject({id: 'follow', description: '关注 UP 主', target: '#follow', status: 'pending'});
     end(p, 'call-1', 'click');
-    expect(p.snapshot().resultState).toBe('satisfied');
+    expect(p.snapshot().executionState).toBe('satisfied');
   });
 
   it('同工具两个无证据待办：不误绑，另建自动项', async () => {
@@ -85,7 +85,7 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(items.find(i => i.id === 'first')).toMatchObject({target: '#x', status: 'pending'});
     expect(items.find(i => i.id === 'second')).toMatchObject({target: '#y', status: 'pending'});
     expect(items.find(i => i.tool === 'click' && i.target === '#z')).toMatchObject({status: 'satisfied'});
-    expect(p.snapshot().resultState).toBe('pending');
+    expect(p.snapshot().executionState).toBe('pending');
   });
 
   it('自动项在模型随后登记同工具同目标时被吸收，不出现两条同名待办', async () => {
@@ -121,7 +121,7 @@ describe('记账下沉：执行事实驱动账本', () => {
     const gate = await executionGate(p);
     start(p, 'call-1', 'click', {target: '#a'});
     end(p, 'call-1', 'click', {failed: true, executionFact: 'unknown'});
-    expect(p.snapshot().resultState).toBe('unknown');
+    expect(p.snapshot().executionState).toBe('unknown');
     expect(() => gate('fill', {target: '#b'})).toThrow(/尚未确认结果/);
     expect(() => gate('click', {target: '#a'})).toThrow(/执行结果未知/);
     expect(() => gate('snapshot', {})).not.toThrow();
@@ -152,7 +152,7 @@ describe('记账下沉：执行事实驱动账本', () => {
     start(p, 'call-1', 'click', {target: '#delete'});
     end(p, 'call-1', 'click', {executionFact: 'not_executed'});
     expect(itemsOf(p)[0]).toMatchObject({status: 'unknown'});
-    expect(p.snapshot().resultState).toBe('unknown');
+    expect(p.snapshot().executionState).toBe('unknown');
     expect(() => gate('click', {target: '#delete'})).toThrow(/执行结果未知/);
   });
 
@@ -198,7 +198,7 @@ describe('真实调用序列重放（A 候选：4 次记账只服务 1 次 click
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({tool: 'click', target: '@18', status: 'satisfied'});
     expect(items[0]!.description).toContain('暂停视频');
-    expect(p.snapshot().resultState).toBe('satisfied');
+    expect(p.snapshot().executionState).toBe('satisfied');
   });
 });
 

@@ -5,7 +5,7 @@ vi.mock('../src/display-fast-path.js', () => ({
 }));
 vi.mock('../src/run-trace.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/run-trace.js')>();
-  return {...actual, RunTrace: class {begin() {} record() {} event() {}}};
+  return {...actual, RunTrace: class {begin() {} correlate() {} record() {} event() {} stage() {return {end() {}}}}};
 });
 import {decideDisplay} from '../src/display-fast-path.js';
 import {candidate, context, managerHarness, pageHarness} from './fixtures/display-steering-harness.js';

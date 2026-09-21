@@ -327,7 +327,7 @@ const SHARED_UNSAFE_TOOLS = new Set(["page_translation", "open_tab", "switch_tab
 /** controller 在每个工具执行前调用；共享页写入只能走完整 page_operation。 */
 export async function guardToolAccess(name: string, key: string, explicitTabId?: number): Promise<void> {
   if (name === "worker_tabs" || name === "list_tabs" || name === "get_active_tab") return;
-  if (isLeadSession(parseExecutionKey(key).sessionId) && ["snapshot", "read_element"].includes(name)) return;
+  if (isLeadSession(parseExecutionKey(key).sessionId) && ["snapshot", "read_element", "read_elements"].includes(name)) return;
   const normalized = keyOf(key);
   const tabId = explicitTabId ?? await getWorkingTabId(normalized);
   if (tabId == null) return;

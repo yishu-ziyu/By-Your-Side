@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, chmod, mkdir, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 
 const SECRET_KEY = /^(?:password|passwd|pwd|secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|cookie|set-cookie)$/i;
 const SENSITIVE_TARGET = /password|passwd|pwd|secret|token|api[_-]?key|密码|口令/i;
@@ -78,6 +79,7 @@ export class RunTrace {
   readonly sessionId = randomUUID();
   readonly path: string;
   private runId: string | null = null;
+  private goalRevision: string | null = null;
   private turn = 0;
   private started = 0;
   private turnStarted = 0;
@@ -94,12 +96,46 @@ export class RunTrace {
     this.path = join(directory, `${Date.now()}-${this.sessionId}.jsonl`);
   }
 
-  begin(text: string, context: unknown, model: unknown): void {
-    this.runId = randomUUID();
+  begin(text: string, context: unknown, model: unknown, correlation?: { runId?: string | null; goalRevision?: string | null }): void {
+    this.runId = correlation?.runId ?? randomUUID();
+    this.goalRevision = correlation?.goalRevision ?? null;
     this.turn = 0;
     this.started = Date.now();
+    this.firstResponse = false;
     this.tools.clear();
     this.record("run_start", { text, context, model });
+  }
+
+  correlate(correlation: { runId?: string | null; goalRevision?: string | null }): void {
+    if (correlation.runId) this.runId = correlation.runId;
+    if (correlation.goalRevision) this.goalRevision = correlation.goalRevision;
+  }
+
+  /** Process-local monotonic duration recorded in the existing trace stream. */
+  stage(name: string, data: Record<string, unknown> = {}): { end: (outcome: string, details?: Record<string, unknown>) => void } {
+    const stageId = randomUUID();
+    const startedAt = performance.now();
+    const correlation = {
+      runId: this.runId,
+      goalRevision: this.goalRevision,
+      turn: this.turn,
+    };
+    let ended = false;
+    this.write("stage_start", { stageId, name, ...data }, correlation);
+    return {
+      end: (outcome, details = {}) => {
+        if (ended) return;
+        ended = true;
+        this.write("stage_end", {
+          stageId,
+          name,
+          outcome,
+          durationMs: Math.max(0, performance.now() - startedAt),
+          ...data,
+          ...details,
+        }, correlation);
+      },
+    };
   }
 
   /** SDK events are observed only: no control decisions and no token-by-token logging. */
@@ -146,19 +182,31 @@ export class RunTrace {
   }
 
   record(type: string, data: Record<string, unknown> = {}): void {
+    this.write(type, data, {
+      runId: this.runId,
+      goalRevision: this.goalRevision,
+      turn: this.turn,
+    });
+  }
+
+  private write(
+    type: string,
+    data: Record<string, unknown>,
+    correlation: { runId: string | null; goalRevision: string | null; turn: number },
+  ): void {
     if (this.closed) return;
     if (this.queued >= 128) { this.dropped++; return; }
     try {
-      let line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: this.runId, turn: this.turn,
+      let line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn,
         type, data: sanitizeTrace(data), ...(this.dropped ? { droppedEvents: this.dropped } : {}) }) + "\n";
       this.dropped = 0;
       if (Buffer.byteLength(line) > 256 * 1024) {
-        line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: this.runId, turn: this.turn,
+        line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn,
           type, toolCallId: data.toolCallId, truncated: true, originalBytes: Buffer.byteLength(line), reason: "record size limit" }) + "\n";
       }
       if (this.bytes + Buffer.byteLength(line) > this.maxBytes) {
         this.closed = true;
-        line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: this.runId,
+        line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision,
           type: "trace_limit", truncated: true, reason: "session byte limit; subsequent events omitted" }) + "\n";
       }
       this.bytes += Buffer.byteLength(line);

@@ -1,0 +1,2360 @@
+[
+ {
+  "day": "2026-09-10",
+  "at": 1789039084864,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 1,
+  "asrOutcome": "current",
+  "text": "嗨，你好，能看到我当前的界面吗？",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": null,
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.03,
+    "answer": 0.0,
+    "page_question": 0.97,
+    "task": 0.0
+   },
+   "pageChange": 0.15,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039097325,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "具体的界面不需要看回执啊，就目当前所在的界面。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "silent",
+   "accepted": false,
+   "elapsedMs": 7442
+  },
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "control",
+  "label": "page_question",
+  "labelAlt": "steer",
+  "previous": [
+   "嗨，你好，能看到我当前的界面吗？"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.8,
+   "probabilities": {
+    "steer": 0.83,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.17,
+    "task": 0.0
+   },
+   "pageChange": 0.37,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039110328,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "你可以截个图看一下在哪。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1011
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好，能看到我当前的界面吗？",
+   "具体的界面不需要看回执啊，就目当前所在的界面。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.83,
+   "probabilities": {
+    "steer": 0.01,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.14,
+    "task": 0.85
+   },
+   "pageChange": 0.46,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039139930,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "然后一直同时帮我把标签页切到那个，",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1211
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "incomplete",
+  "labelAlt": "task",
+  "previous": [
+   "嗨，你好，能看到我当前的界面吗？",
+   "具体的界面不需要看回执啊，就目当前所在的界面。",
+   "你可以截个图看一下在哪。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.68,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.28,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "task": 0.72,
+    "page_question": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039158211,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "那就暂时不管这个任务了，我需要。",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": null,
+  "label": "control",
+  "labelAlt": null,
+  "previous": [
+   "具体的界面不需要看回执啊，就目当前所在的界面。",
+   "你可以截个图看一下在哪。",
+   "然后一直同时帮我把标签页切到那个，"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "control",
+   "confidence": 0.89,
+   "probabilities": {
+    "steer": 0.01,
+    "incomplete": 0.07,
+    "status": 0.0,
+    "control": 0.91,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 0.01
+   },
+   "pageChange": 0.42,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039163589,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 6,
+  "asrOutcome": "current",
+  "text": "切到那个open code。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1248
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "你可以截个图看一下在哪。",
+   "然后一直同时帮我把标签页切到那个，",
+   "那就暂时不管这个任务了，我需要。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.93,
+   "probabilities": {
+    "steer": 0.05,
+    "incomplete": 0.01,
+    "status": 0.0,
+    "control": 0.01,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 0.9299999999999999
+   },
+   "pageChange": 0.94,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039179558,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 7,
+  "asrOutcome": "current",
+  "text": "当前对你现在其实是对的。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 907
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [
+   "然后一直同时帮我把标签页切到那个，",
+   "那就暂时不管这个任务了，我需要。",
+   "切到那个open code。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.31,
+   "probabilities": {
+    "steer": 0.21,
+    "incomplete": 0.1,
+    "status": 0.11,
+    "control": 0.02,
+    "chat": 0.4,
+    "answer": 0.01,
+    "page_question": 0.1,
+    "task": 0.05
+   },
+   "pageChange": 0.29,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039197059,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 8,
+  "asrOutcome": "filtered",
+  "text": "这个，go的这个界面，它的消耗量，go，",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": null,
+  "label": "incomplete",
+  "labelAlt": null,
+  "previous": [
+   "那就暂时不管这个任务了，我需要。",
+   "切到那个open code。",
+   "当前对你现在其实是对的。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.51,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.36,
+    "status": 0.03,
+    "control": 0.0,
+    "chat": 0.0,
+    "task": 0.03,
+    "page_question": 0.58,
+    "answer": 0.0
+   },
+   "pageChange": 0.19,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039197938,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 9,
+  "asrOutcome": "current",
+  "text": "汇报一下。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "none",
+   "accepted": false,
+   "elapsedMs": 1468
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "status:applied"
+  ],
+  "actual": "chat",
+  "label": "status",
+  "labelAlt": "page_question",
+  "previous": [
+   "切到那个open code。",
+   "当前对你现在其实是对的。",
+   "这个，go的这个界面，它的消耗量，go，"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "status",
+   "confidence": 0.94,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.02,
+    "status": 0.95,
+    "control": 0.0,
+    "chat": 0.0,
+    "task": 0.01,
+    "page_question": 0.02,
+    "answer": 0.0
+   },
+   "pageChange": 0.12,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039209529,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 10,
+  "asrOutcome": "current",
+  "text": "去购套餐。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1504
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "当前对你现在其实是对的。",
+   "这个，go的这个界面，它的消耗量，go，",
+   "汇报一下。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.02,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 0.98
+   },
+   "pageChange": 0.77,
+   "batchMs": 1275
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039279258,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 11,
+  "asrOutcome": "current",
+  "text": "嗯，你可以现在在这个画面上圈出五小时用量。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1230
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "这个，go的这个界面，它的消耗量，go，",
+   "汇报一下。",
+   "去购套餐。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 1.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "answer": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.91,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039347498,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 12,
+  "asrOutcome": "filtered",
+  "text": "引导的我去购买那个。",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": null,
+  "label": "task",
+  "labelAlt": "incomplete",
+  "previous": [
+   "汇报一下。",
+   "去购套餐。",
+   "嗯，你可以现在在这个画面上圈出五小时用量。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.38,
+   "probabilities": {
+    "task": 0.45,
+    "page_question": 0.02,
+    "status": 0.02,
+    "chat": 0.06,
+    "incomplete": 0.3,
+    "steer": 0.13,
+    "answer": 0.02,
+    "control": 0.0
+   },
+   "pageChange": 0.53,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039349002,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 13,
+  "asrOutcome": "current",
+  "text": "CEN套餐。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1531
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "incomplete",
+  "labelAlt": null,
+  "previous": [
+   "去购套餐。",
+   "嗯，你可以现在在这个画面上圈出五小时用量。",
+   "引导的我去购买那个。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.46,
+   "probabilities": {
+    "task": 0.2,
+    "page_question": 0.02,
+    "status": 0.0,
+    "chat": 0.01,
+    "incomplete": 0.53,
+    "steer": 0.22,
+    "answer": 0.02,
+    "control": 0.0
+   },
+   "pageChange": 0.44,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789039361153,
+  "voiceId": "67f7a0d9-f4a8-49ab-92b8-f4347c981cfa",
+  "turn": 14,
+  "asrOutcome": "current",
+  "text": "引导我去购买我",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1687
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": "incomplete",
+  "previous": [
+   "嗯，你可以现在在这个画面上圈出五小时用量。",
+   "引导的我去购买那个。",
+   "CEN套餐。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.43,
+   "probabilities": {
+    "task": 0.37,
+    "page_question": 0.0,
+    "status": 0.01,
+    "chat": 0.02,
+    "answer": 0.01,
+    "steer": 0.09,
+    "incomplete": 0.5,
+    "control": 0.0
+   },
+   "pageChange": 0.62,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055672420,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 1,
+  "asrOutcome": "current",
+  "text": "嗨，你好吗？",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1196
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "chat": 1.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "answer": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.06,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055687109,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "刷新一下当前的页面。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 1333
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好吗？"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "task": 0.99,
+    "page_question": 0.0,
+    "status": 0.0,
+    "chat": 0.01,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "answer": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055721724,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "把五小时容量圈出来。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 2025
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好吗？",
+   "刷新一下当前的页面。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "task": 0.98,
+    "page_question": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "steer": 0.02,
+    "incomplete": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055740145,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "目前消耗了多少呀？",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "none",
+   "accepted": false,
+   "elapsedMs": 1670
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "status:applied"
+  ],
+  "actual": "chat",
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好吗？",
+   "刷新一下当前的页面。",
+   "把五小时容量圈出来。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.97,
+   "probabilities": {
+    "task": 0.01,
+    "page_question": 0.98,
+    "status": 0.01,
+    "chat": 0.0,
+    "answer": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.14,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055751894,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "我实际上它是按照金额来算，它并不是按照时间来算。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 2153
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "chat",
+  "labelAlt": "steer",
+  "previous": [
+   "刷新一下当前的页面。",
+   "把五小时容量圈出来。",
+   "目前消耗了多少呀？"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.74,
+   "probabilities": {
+    "task": 0.0,
+    "page_question": 0.14,
+    "status": 0.0,
+    "chat": 0.03,
+    "answer": 0.78,
+    "steer": 0.05,
+    "incomplete": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.14,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055767610,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 6,
+  "asrOutcome": "filtered",
+  "text": "可以的，你如果你要，你可以点开这个呃。",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": null,
+  "label": "incomplete",
+  "labelAlt": null,
+  "previous": [
+   "把五小时容量圈出来。",
+   "目前消耗了多少呀？",
+   "我实际上它是按照金额来算，它并不是按照时间来算。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.59,
+   "probabilities": {
+    "task": 0.64,
+    "page_question": 0.02,
+    "status": 0.0,
+    "chat": 0.01,
+    "answer": 0.02,
+    "steer": 0.01,
+    "incomplete": 0.29,
+    "control": 0.01
+   },
+   "pageChange": 0.48,
+   "batchMs": 1213
+  }
+ },
+ {
+  "day": "2026-09-10",
+  "at": 1789055769972,
+  "voiceId": "deb071ce-1b31-40a4-bf4a-926d9517c0ea",
+  "turn": 7,
+  "asrOutcome": "current",
+  "text": "显示详情就可以看到了。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "steer",
+   "accepted": true,
+   "elapsedMs": 1919
+  },
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "steer",
+  "label": "steer",
+  "labelAlt": "task",
+  "previous": [
+   "目前消耗了多少呀？",
+   "我实际上它是按照金额来算，它并不是按照时间来算。",
+   "可以的，你如果你要，你可以点开这个呃。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.79,
+   "probabilities": {
+    "answer": 0.03,
+    "task": 0.82,
+    "chat": 0.02,
+    "control": 0.01,
+    "incomplete": 0.03,
+    "steer": 0.03,
+    "status": 0.0,
+    "page_question": 0.06
+   },
+   "pageChange": 0.65,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789068250583,
+  "voiceId": "3f70f513-658c-48bc-8c51-d7507e6faea2",
+  "turn": 1,
+  "asrOutcome": "current",
+  "text": "查open code购套餐的额度。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 2204
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.87,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.9,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.1
+   },
+   "pageChange": 0.51,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789068264666,
+  "voiceId": "3f70f513-658c-48bc-8c51-d7507e6faea2",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "是go套餐g o go套餐。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "steer",
+   "accepted": true,
+   "elapsedMs": 1982
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "steer:accepted"
+  ],
+  "actual": "steer",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "查open code购套餐的额度。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.69,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.17,
+    "control": 0.0,
+    "incomplete": 0.08,
+    "steer": 0.74,
+    "status": 0.0,
+    "page_question": 0.01
+   },
+   "pageChange": 0.33,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789068367441,
+  "voiceId": "3f70f513-658c-48bc-8c51-d7507e6faea2",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "按照你的推荐顺序往下。",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": null,
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "查open code购套餐的额度。",
+   "是go套餐g o go套餐。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.68,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.24,
+    "chat": 0.0,
+    "control": 0.02,
+    "incomplete": 0.01,
+    "steer": 0.73,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.68,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789068369260,
+  "voiceId": "3f70f513-658c-48bc-8c51-d7507e6faea2",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "推进就行。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "steer",
+   "accepted": false,
+   "elapsedMs": 2141
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "steer:rejected"
+  ],
+  "actual": "steer",
+  "label": "steer",
+  "labelAlt": "control",
+  "previous": [
+   "查open code购套餐的额度。",
+   "是go套餐g o go套餐。",
+   "按照你的推荐顺序往下。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.55,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.2,
+    "control": 0.14,
+    "incomplete": 0.04,
+    "steer": 0.61,
+    "status": 0.01,
+    "page_question": 0.0
+   },
+   "pageChange": 0.64,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107305089,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 1,
+  "asrOutcome": "current",
+  "text": "嗨，你好。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 2095
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 1.0,
+    "task": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.26,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107310667,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "帮我把当前的这个标签页。",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": null,
+  "label": "incomplete",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.53,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.6,
+    "control": 0.0,
+    "incomplete": 0.4,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107313580,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "我的那个boss直拼那一块。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "none",
+   "accepted": false,
+   "elapsedMs": 1552
+  },
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "incomplete",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。",
+   "帮我把当前的这个标签页。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.7,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.75,
+    "control": 0.0,
+    "incomplete": 0.24,
+    "steer": 0.01,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107335018,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "我想把我现在的当前的这个页面切到那个标签页里去。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 2157
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。",
+   "帮我把当前的这个标签页。",
+   "我的那个boss直拼那一块。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.97,
+    "control": 0.0,
+    "incomplete": 0.01,
+    "steer": 0.02,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107376342,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 5,
+  "asrOutcome": "filtered",
+  "text": "让位是你把它切过去，就是。",
+  "era": "classifier25",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": null,
+  "label": "incomplete",
+  "labelAlt": "steer",
+  "previous": [
+   "帮我把当前的这个标签页。",
+   "我的那个boss直拼那一块。",
+   "我想把我现在的当前的这个页面切到那个标签页里去。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.6,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.65,
+    "control": 0.02,
+    "incomplete": 0.12,
+    "steer": 0.21,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 1125
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107383106,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 6,
+  "asrOutcome": "current",
+  "text": "它已经在那里已经有了呀，就是不需要把当前的页面给它改成这个，只是你把它调过去就行。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "action",
+   "accepted": true,
+   "elapsedMs": 2905
+  },
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "task",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "我的那个boss直拼那一块。",
+   "我想把我现在的当前的这个页面切到那个标签页里去。",
+   "让位是你把它切过去，就是。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.58,
+   "probabilities": {
+    "answer": 0.02,
+    "chat": 0.01,
+    "steer": 0.33,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "task": 0.63,
+    "control": 0.01
+   },
+   "pageChange": 0.76,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-11",
+  "at": 1789107392928,
+  "voiceId": "c1a00f53-5ed4-4090-9d93-583b06c7325c",
+  "turn": 7,
+  "asrOutcome": "current",
+  "text": "不是chrome的扩展管理页了。",
+  "era": "classifier25",
+  "oldRoute": {
+   "kind": "steer",
+   "accepted": true,
+   "elapsedMs": 1844
+  },
+  "realtimeTools": [],
+  "dispatched": [
+   "steer:accepted"
+  ],
+  "actual": "steer",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "我想把我现在的当前的这个页面切到那个标签页里去。",
+   "让位是你把它切过去，就是。",
+   "它已经在那里已经有了呀，就是不需要把当前的页面给它改成这个，只是你把它调过去就行。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.89,
+   "probabilities": {
+    "answer": 0.0,
+    "page_question": 0.01,
+    "chat": 0.01,
+    "steer": 0.9,
+    "status": 0.0,
+    "control": 0.01,
+    "task": 0.06,
+    "incomplete": 0.01
+   },
+   "pageChange": 0.66,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789890650219,
+  "voiceId": "8028419b-b522-40a2-9168-cb25bf9876ca",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "嗨，你好呀。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "steer": 0.0,
+    "page_question": 0.0,
+    "chat": 1.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "task": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789890657393,
+  "voiceId": "8028419b-b522-40a2-9168-cb25bf9876ca",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "呃，可以看到我当前这个页面吗？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好呀。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "steer": 0.0,
+    "page_question": 1.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "task": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.16,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789890675214,
+  "voiceId": "8028419b-b522-40a2-9168-cb25bf9876ca",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "嗯，有看到吗？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好呀。",
+   "呃，可以看到我当前这个页面吗？"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.97,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "page_question": 0.98,
+    "status": 0.01,
+    "control": 0.0,
+    "task": 0.0,
+    "incomplete": 0.01
+   },
+   "pageChange": 0.15,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789890683173,
+  "voiceId": "8028419b-b522-40a2-9168-cb25bf9876ca",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "读到了什么呢？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好呀。",
+   "呃，可以看到我当前这个页面吗？",
+   "嗯，有看到吗？"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.97,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "page_question": 0.98,
+    "status": 0.01,
+    "control": 0.0,
+    "task": 0.0,
+    "incomplete": 0.01
+   },
+   "pageChange": 0.13,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789911442769,
+  "voiceId": "4bb4abb8-096b-4a6a-9c4e-7e675b134b2e",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "嗨，你好。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "chat",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.99,
+    "steer": 0.0,
+    "page_question": 0.01,
+    "status": 0.0,
+    "control": 0.0,
+    "task": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789911861720,
+  "voiceId": "ce568f20-face-4017-8d90-a3f755460d1e",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "嗨，晚上好。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "page_question",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 1.0,
+    "steer": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "task": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789911869801,
+  "voiceId": "ce568f20-face-4017-8d90-a3f755460d1e",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "帮我把这个标签也贴到 B 站那一",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "task",
+  "labelAlt": "incomplete",
+  "previous": [
+   "嗨，晚上好。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.54,
+   "probabilities": {
+    "answer": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "task": 0.61,
+    "incomplete": 0.39
+   },
+   "pageChange": 0.85,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789911902235,
+  "voiceId": "ce568f20-face-4017-8d90-a3f755460d1e",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "不是说把标签页切到 B 站那一个，不是表情。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "嗨，晚上好。",
+   "帮我把这个标签也贴到 B 站那一"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.91,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "steer": 0.93,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "task": 0.06999999999999999,
+    "control": 0.0
+   },
+   "pageChange": 0.67,
+   "batchMs": 1113
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789911935929,
+  "voiceId": "ce568f20-face-4017-8d90-a3f755460d1e",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "你他妈瞎呀！",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [
+   "嗨，晚上好。",
+   "帮我把这个标签也贴到 B 站那一",
+   "不是说把标签页切到 B 站那一个，不是表情。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.61,
+   "probabilities": {
+    "steer": 0.31,
+    "control": 0.0,
+    "task": 0.02,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.67,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.69,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789917471326,
+  "voiceId": "aa8fc6ea-96f0-44ed-9124-b48b99b51c55",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "打开哔哩哔哩。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "task_action"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.89,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789917486060,
+  "voiceId": "aa8fc6ea-96f0-44ed-9124-b48b99b51c55",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "打开第一行第四个视频",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "task_action"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "打开哔哩哔哩。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789917504022,
+  "voiceId": "aa8fc6ea-96f0-44ed-9124-b48b99b51c55",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "呃，移动到第 15 分钟",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "task_action"
+  ],
+  "dispatched": [
+   "start:rejected"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": "steer",
+  "previous": [
+   "打开哔哩哔哩。",
+   "打开第一行第四个视频"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.02,
+    "control": 0.01,
+    "task": 0.96,
+    "answer": 0.0,
+    "incomplete": 0.01,
+    "chat": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789917524440,
+  "voiceId": "aa8fc6ea-96f0-44ed-9124-b48b99b51c55",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "它确实打开了，我需要移动到 15 分钟啊",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "task_action"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "打开哔哩哔哩。",
+   "打开第一行第四个视频",
+   "呃，移动到第 15 分钟"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.84,
+   "probabilities": {
+    "steer": 0.86,
+    "control": 0.01,
+    "task": 0.1,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.01,
+    "status": 0.02,
+    "page_question": 0.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789917549216,
+  "voiceId": "aa8fc6ea-96f0-44ed-9124-b48b99b51c55",
+  "turn": 6,
+  "asrOutcome": "current",
+  "text": "然后我将第一条评论复制下来之后，粘贴到我的浮墨笔记里。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "task_action"
+  ],
+  "dispatched": [
+   "start:rejected"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "打开第一行第四个视频",
+   "呃，移动到第 15 分钟",
+   "它确实打开了，我需要移动到 15 分钟啊"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.02,
+    "control": 0.0,
+    "task": 0.98,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.56,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-20",
+  "at": 1789917550986,
+  "voiceId": "aa8fc6ea-96f0-44ed-9124-b48b99b51c55",
+  "turn": 7,
+  "asrOutcome": "current",
+  "text": "但是不要点击提交",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "task_action"
+  ],
+  "dispatched": [
+   "steer:accepted"
+  ],
+  "actual": "steer",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "呃，移动到第 15 分钟",
+   "它确实打开了，我需要移动到 15 分钟啊",
+   "然后我将第一条评论复制下来之后，粘贴到我的浮墨笔记里。"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.83,
+   "probabilities": {
+    "steer": 0.85,
+    "control": 0.09,
+    "task": 0.06,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.4,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967451232,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "嗨，你好。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_status",
+   "read_page"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "status",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.97,
+   "probabilities": {
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 0.02,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.98,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967460891,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "我的这个浏览器当中，目前有多少个标签页啊？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_status",
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "status",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.89,
+   "probabilities": {
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 0.92,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.05,
+    "status": 0.0,
+    "page_question": 0.03
+   },
+   "pageChange": 0.17,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967500534,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "翻一下当前这个页面",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "task_action",
+   "read_page"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "task",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。",
+   "我的这个浏览器当中，目前有多少个标签页啊？"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.92,
+   "probabilities": {
+    "steer": 0.01,
+    "control": 0.02,
+    "task": 0.93,
+    "answer": 0.0,
+    "incomplete": 0.01,
+    "chat": 0.0,
+    "status": 0.0,
+    "page_question": 0.03
+   },
+   "pageChange": 0.85,
+   "batchMs": 1220
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967508884,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "置办了一文",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "incomplete",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。",
+   "我的这个浏览器当中，目前有多少个标签页啊？",
+   "翻一下当前这个页面"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.6,
+   "probabilities": {
+    "task": 0.64,
+    "steer": 0.01,
+    "incomplete": 0.32,
+    "status": 0.0,
+    "page_question": 0.01,
+    "control": 0.01,
+    "answer": 0.0,
+    "chat": 0.01
+   },
+   "pageChange": 0.67,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967514303,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 6,
+  "asrOutcome": "current",
+  "text": "只保留一吻",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "steer",
+  "labelAlt": "incomplete",
+  "previous": [
+   "我的这个浏览器当中，目前有多少个标签页啊？",
+   "翻一下当前这个页面",
+   "置办了一文"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.8,
+   "probabilities": {
+    "task": 0.83,
+    "steer": 0.11,
+    "incomplete": 0.04,
+    "status": 0.0,
+    "page_question": 0.0,
+    "control": 0.02,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.82,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967531232,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 7,
+  "asrOutcome": "current",
+  "text": "对",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [
+   "翻一下当前这个页面",
+   "置办了一文",
+   "只保留一吻"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.67,
+   "probabilities": {
+    "task": 0.09,
+    "steer": 0.09,
+    "incomplete": 0.08,
+    "status": 0.01,
+    "page_question": 0.0,
+    "control": 0.01,
+    "answer": 0.01,
+    "chat": 0.71
+   },
+   "pageChange": 0.52,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789967543859,
+  "voiceId": "9bc1904d-df95-4167-a321-056af2f238de",
+  "turn": 8,
+  "asrOutcome": "current",
+  "text": "呃，不是要你在这里翻译，是要你把这个页面上的内容给翻译掉。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "steer",
+  "labelAlt": null,
+  "previous": [
+   "置办了一文",
+   "只保留一吻",
+   "对"
+  ],
+  "taskRunning": true,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.98,
+   "probabilities": {
+    "task": 0.02,
+    "incomplete": 0.0,
+    "steer": 0.98,
+    "status": 0.0,
+    "page_question": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789970471038,
+  "voiceId": "def5ead4-e2d7-474a-befd-f612b98b137b",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "嗨，你好呀。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "page_question": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "chat": 1.0
+   },
+   "pageChange": 0.1,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789970478732,
+  "voiceId": "def5ead4-e2d7-474a-befd-f612b98b137b",
+  "turn": 3,
+  "asrOutcome": "current",
+  "text": "可以看到当前这篇文章吗？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好呀。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.96,
+   "probabilities": {
+    "task": 0.01,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "page_question": 0.98,
+    "control": 0.0,
+    "answer": 0.0,
+    "chat": 0.01
+   },
+   "pageChange": 0.39,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789970489611,
+  "voiceId": "def5ead4-e2d7-474a-befd-f612b98b137b",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "嗯，把它改成中文，然后",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "task",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好呀。",
+   "可以看到当前这篇文章吗？"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.78,
+   "probabilities": {
+    "task": 0.81,
+    "steer": 0.1,
+    "incomplete": 0.08,
+    "status": 0.0,
+    "page_question": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.89,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789972965343,
+  "voiceId": "3591cd09-ce28-45f0-93f6-34293725a6ea",
+  "turn": 2,
+  "asrOutcome": "current",
+  "text": "嗨，你好。",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page",
+   "read_page"
+  ],
+  "dispatched": [
+   "start:accepted"
+  ],
+  "actual": "page_question",
+  "label": "chat",
+  "labelAlt": null,
+  "previous": [],
+  "taskRunning": false,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.97,
+   "probabilities": {
+    "task": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.02,
+    "status": 0.0,
+    "answer": 0.0,
+    "chat": 0.98
+   },
+   "pageChange": 0.15,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789972983375,
+  "voiceId": "3591cd09-ce28-45f0-93f6-34293725a6ea",
+  "turn": 4,
+  "asrOutcome": "current",
+  "text": "是关于什么的？Hello，可以看到当天的文章吗？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [
+   "read_page"
+  ],
+  "dispatched": [],
+  "actual": "page_question",
+  "label": "page_question",
+  "labelAlt": null,
+  "previous": [
+   "嗨，你好。"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.95,
+   "probabilities": {
+    "task": 0.02,
+    "steer": 0.0,
+    "incomplete": 0.01,
+    "status": 0.0,
+    "page_question": 0.96,
+    "control": 0.0,
+    "answer": 0.0,
+    "chat": 0.01
+   },
+   "pageChange": 0.45,
+   "batchMs": 1266
+  }
+ },
+ {
+  "day": "2026-09-21",
+  "at": 1789972999969,
+  "voiceId": "3591cd09-ce28-45f0-93f6-34293725a6ea",
+  "turn": 5,
+  "asrOutcome": "current",
+  "text": "可以先将它的前三段进行翻译吗？",
+  "era": "realtime3",
+  "oldRoute": null,
+  "realtimeTools": [],
+  "dispatched": [],
+  "actual": "chat",
+  "label": "task",
+  "labelAlt": "answer",
+  "previous": [
+   "嗨，你好。",
+   "是关于什么的？Hello，可以看到当天的文章吗？"
+  ],
+  "taskRunning": false,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "task": 0.96,
+    "steer": 0.02,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.02,
+    "status": 0.0,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.78,
+   "batchMs": 1266
+  }
+ }
+]

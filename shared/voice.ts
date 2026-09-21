@@ -1,3 +1,4 @@
+import { isTaskGoalPlan, type TaskGoalPlan } from './task-goals.js';
 import type {TaskReceipt} from './task-actions.js';
 import {isTaskNextStep} from './task-next-step.js';
 import type {Attachment,PageContext} from './protocol.js';
@@ -99,6 +100,8 @@ export interface TaskProgressSnapshot {
   /** Auxiliary effect without a durable result binding must stay uncertain after interruption. */
   untrackedWritePending?:boolean;
   unresolvedEffect?:boolean;
+  /** All dispatched durable effects in this run have entries in the execution ledger. */
+  executionAuditComplete?:boolean;
   controlVersion?:number;
   active: Array<{ member: string; action: string; since: number }>;
   lastAction: { action: string; failed: boolean; at: number } | null;
@@ -110,7 +113,11 @@ export interface TaskProgressSnapshot {
   conversationContext?: VoiceConversationContext;
   /** Remaining registered results. Default [] / unregistered; optional so older snapshots stay valid. */
   results?: TaskResultItem[];
+  /** Execution ledger summary; does not imply user goals are met. */
+  executionState?: TaskResultState;
   resultState?: TaskResultState;
+  /** User outcomes; execution results remain independent replay evidence. */
+  goalPlan?: TaskGoalPlan;
   /** Recomputed by the host; persisted projections are never resumed as commands. */
   nextStep?: import('./task-next-step.js').TaskNextStep;
 }
@@ -320,13 +327,16 @@ export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
     && (s.recoveryInput === undefined || isTaskRecoveryInput(s.recoveryInput))
     && (s.untrackedWritePending === undefined || typeof s.untrackedWritePending==='boolean')
     && (s.unresolvedEffect === undefined || typeof s.unresolvedEffect==='boolean')
+    && (s.executionAuditComplete === undefined || typeof s.executionAuditComplete==='boolean')
     && (s.nextStep === undefined || isTaskNextStep(s.nextStep))
+    && (s.goalPlan === undefined || isTaskGoalPlan(s.goalPlan))
     && s.successVerified === false && Array.isArray(s.active) && s.active.length <= 12 && s.active.every(a => a && typeof a.member === "string" && typeof a.action === "string" && a.action.length <= 100 && Number.isFinite(a.since))
     && (s.lastAction === null || !!s.lastAction && typeof s.lastAction.action === "string" && typeof s.lastAction.failed === "boolean" && Number.isFinite(s.lastAction.at))
     && (s.conversationContext === undefined || isVoiceConversationContext(s.conversationContext)
       && (s.conversationContext.latestDelivery == null
         || s.conversationContext.latestDelivery.conversationId === s.conversationId && s.conversationContext.latestDelivery.runId === (s.runId ?? null)))
     && (s.results === undefined || Array.isArray(s.results) && s.results.length <= 64 && s.results.every(isTaskResultItem))
+    && (s.executionState === undefined || isTaskResultState(s.executionState))
     && (s.resultState === undefined || isTaskResultState(s.resultState));
 }
 export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {

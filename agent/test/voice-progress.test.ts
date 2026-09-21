@@ -61,3 +61,14 @@ it('preserves a reported failure when the runtime settles to idle', () => {
   p.observe({type:'status',state:'idle'});
   expect(p.snapshot().state).toBe('error');
 });
+
+it('语音进度与面板一样保留用户目标，不把成功动作当成已完成',async()=>{
+ const {progressSpeech}=await import('../src/voice-receipt.js');
+ const p=new TaskProgress('voice');p.request('复制第一条评论到笔记');
+ p.observe({type:'agent_event',event:{kind:'agent_start'}});
+ p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'click',name:'click',params:{target:'#editor'}}});
+ p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'click',name:'click',isError:false,executionFact:'executed',resultText:'clicked'}});
+ p.observe({type:'agent_event',event:{kind:'agent_end'}});
+ expect(progressSpeech(p.snapshot())).toContain('还有未完成的要求：复制第一条评论到笔记');
+ expect(progressSpeech(p.snapshot())).not.toContain('需要你读回');
+});

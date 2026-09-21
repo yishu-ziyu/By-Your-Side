@@ -1,4 +1,8 @@
 import { runPageTranslation, type TranslateBatch } from "./page-translation.js";
+import {runBrowserDecisionLoop} from './browser-decision-loop.js';
+import type {BrowserMaterial, BrowserControl} from '../../shared/browser-decision.js';
+import type {BrowserMaterialResult} from './browser-material.js';
+import {generalBrowserLoopEnabled} from './config.js';
 import type { TranslationReceipt, TranslationRequest } from "../../shared/page-translation.js";
 /**
  * 浏览器工具的 defineTool 封装。
@@ -74,7 +78,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
   return typeof result === "boolean" ? { allowed: result } : result;
 }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void } }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void } }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -198,6 +202,30 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   };
 
   const definitions = [
+    ...((generalBrowserLoopEnabled()&&execution?.goal&&execution.reserveDecision)?[defineTool({
+      name:'browser_loop',label:'通用网页操作',
+      description:'Delegate a bounded browser interaction to a general observation/action loop. It dynamically selects observed controls, never site scripts. Prefer it for navigating controls, filling supplied values, changing filters/settings and other sequences supported by the current page. Supply the complete local goal and ALL constraints; the host also supplies original task context. When exact values are already prepared, pass them in materials (id, value, source, purpose). An empty array is allowed: the loop can request text after selecting a field, without restarting the task. Material values must come from the user, be explicitly generated to meet their request, or use source:"observed" with an exact id/value saved by capture_page_material. The host also supplies these saved materials when the array is empty; never guess personal information. If materials are not prepared, the loop can select a real field and ask the bounded text helper for that field only; missing facts hand back to you. Missing values/unsupported controls/uncertainty/failures hand control back to you. It can return needs_verification, never task success: independently inspect fresh state and verify ALL requirements before task_results or send_user_message completion. Do not repeatedly call the same failed loop; handle its specific reason using other permitted tools. Existing dangerous-action confirmation, user takeover, cancellation and task version apply to every step.',
+      parameters:Type.Object({goal:Type.String({minLength:1,maxLength:12000}),materials:Type.Array(Type.Object({id:Type.String({minLength:1}),value:Type.String({maxLength:8000}),source:Type.Union([Type.Literal('user'),Type.Literal('generated'),Type.Literal('observed')]),purpose:Type.String()}),{maxItems:12})}),
+      execute:async(id,params,signal)=>{
+        if(params.materials.some(m=>m.source==='user'&&(!execution?.userText||!execution.userText().includes(m.value))))throw new Error('用户材料没有匹配到本轮原文，未执行；不得把生成内容标成用户提供。');
+        const observed=execution?.observedMaterials?.()??[];
+        if(params.materials.some(m=>m.source==='observed'&&!observed.some(saved=>saved.id===m.id&&saved.value===m.value)))throw new Error('原文材料没有匹配宿主保存的来源');
+        const materials=[...params.materials,...observed.filter(m=>!params.materials.some(p=>p.id===m.id))].slice(0,12);
+        const stop=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(90000)]);
+        const original=executionScope.getStore();
+        rpc.noteToolFact?.(id,'unknown');
+        const run=()=>runBrowserDecisionLoop({goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
+          call:async(name,args,stepId)=>{
+            const childId=`${id}/${stepId}`,started=Date.now();
+            execution?.onStep?.({parentId:id,id:childId,name,phase:'start',params:args});
+            try{const result=await call(name,args,id,childId);execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,result,elapsedMs:Date.now()-started});return result;}
+            catch(e){execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,error:e instanceof Error?e.message:String(e),elapsedMs:Date.now()-started});throw e;}
+          }});
+        const result=original?await executionScope.run({...original,signal:stop},run):await run();
+        rpc.noteToolFact?.(id,result.receipts.some(r=>r.fact==='unknown')?'unknown':'executed');
+        return textResult(wrapPageContent(redactCredentialText(JSON.stringify(result)),{}),result);
+      },
+    })]:[]),
     defineTool({
       name: "page_translation",
       label: "翻译网页",
@@ -255,6 +283,20 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
     defineTool({
+      name: "read_elements",
+      label: "Read matching elements",
+      description: "Host-only, bounded readback of EVERY current element matching a native CSS selector, without changing the page: text, visibility, position and computed style for each match, plus total/truncated counts. Use to verify page-wide annotation/highlight/marking state that a single read_element cannot cover; the host reads this directly, it is never a model claim.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
+        selector: Type.String({ minLength: 1, description: "Native CSS selector; every current match is read, up to limit." }),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Maximum elements to read (1-200, matching the executor bound); excess are reported as truncated, not silently dropped." })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("read_elements", params)) as ToolContract["read_elements"]["data"];
+        return textResult(wrapPageContent(redactCredentialText(JSON.stringify(data)), { tabId: data.tabId }), data);
+      },
+    }),
+    defineTool({
       name: "browser_run",
       label: "Browser program",
       description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled native-CSS target; browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
@@ -292,6 +334,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }),
         tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch"; optional for "close", which defaults to the working tab)' })),
         url: Type.Optional(Type.String({ description: 'URL to open for "open"; omit for a blank tab' })),
+        decisionGuard: Type.Optional(Type.Object({
+          observationId: Type.String(),
+          operation: Type.Literal('switch_tab'),
+          sourceTabId: Type.Number(),
+        }, { description: 'Host-issued guard for a switch selected from a current browser observation.' })),
       }),
       execute: async (_id, params) => {
         if (params.action === "list") {
@@ -309,7 +356,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }
         if (params.action === "switch") {
           if (typeof params.tabId !== "number") throw new Error('tabs action:"switch" 需要 tabId。');
-          const data = (await call("switch_tab", { tabId: params.tabId })) as ToolContract["switch_tab"]["data"];
+          const data = (await call("switch_tab", {
+            tabId: params.tabId,
+            ...(params.decisionGuard ? { decisionGuard: params.decisionGuard } : {}),
+          })) as ToolContract["switch_tab"]["data"];
           return textResult(`Working tab is now ${data.tabId}.`, data);
         }
         const data = (await call("close_tab", typeof params.tabId === "number" ? { tabId: params.tabId } : {})) as ToolContract["close_tab"]["data"];

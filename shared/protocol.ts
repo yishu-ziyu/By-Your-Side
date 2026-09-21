@@ -341,6 +341,7 @@ export const TOOL_NAMES = [
   "page_operation",
   "page_translation",
   "read_element",
+  "read_elements",
   "list_tabs",
   "get_active_tab",
   "open_tab",
@@ -408,7 +409,21 @@ export interface ToolContract {
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
     params: { tabId?: number; target: string } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; documentId?: string; anchorSource?: import('./demo-record.js').AnchorSource; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; scopeLabels?:string[]; documentId?: string; anchorSource?: import('./demo-record.js').AnchorSource; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+  };
+  /** 宿主自己读取一个选择器命中的全部元素（有界），供目标核验取证；不改页面，不能由模型替代提供。 */
+  read_elements: {
+    params: { tabId?: number; selector: string; limit?: number };
+    data: {
+      tabId: number; documentId?: string; selector: string;
+      total: number; truncated: boolean;
+      elements: Array<{
+        index: number; tagName: string; text: string; visible: boolean;
+        rect: { x: number; y: number; width: number; height: number };
+        style: { backgroundColor: string; color: string; outline: string; border: string; textDecoration: string; fontWeight: string };
+        scopeLabels?: string[];
+      }>;
+    };
   };
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
@@ -417,7 +432,7 @@ export interface ToolContract {
   switch_tab: { params: { tabId: number }; data: { tabId: number } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport" }; data: { text: string; tabId: number; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;observation?:import('./browser-decision.js').BrowserObservation } };
   click: {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。 */
@@ -433,7 +448,7 @@ export interface ToolContract {
   press_key: { params: { tabId?: number; key: string }; data: { pressed: true } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
-  observe_page: {params:{token:string};data:unknown};
+  observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
   screenshot: {
     params: {tabId?: number};
     data: {

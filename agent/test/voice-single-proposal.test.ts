@@ -469,7 +469,7 @@ describe('第二轮要求7：observe 复用既有派发与页面预观察',()=>{
   it('真实会话在派发时先读当前页，把预观察结果交给主 Agent（不再另塞合成文案）',async()=>{
     const {BrowserAgentSession}=await import('../src/session.js');
     const prompt=vi.fn(async (_text?:string)=>{});
-    const raw={model:{id:'fixture',provider:'fixture'},get isStreaming(){return false;},prompt,steer:vi.fn(async()=>{})};
+    const raw={model:{id:'fixture',provider:'fixture'},agent:{state:{messages:[],tools:[]}},get isStreaming(){return false;},prompt,steer:vi.fn(async()=>{})};
     const rpc={call:vi.fn(async()=>({text:'ORIGINAL_PAGE_CONTENT',tabId:7})),setPageTarget:vi.fn(),getPageTarget:vi.fn(()=>null)};
     const Session=BrowserAgentSession as unknown as new (...args:any[])=>any;
     const session=new Session(raw,null,{emit:()=>{},setStatus:()=>{}},null,null,undefined,null,rpc);

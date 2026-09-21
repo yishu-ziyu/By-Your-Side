@@ -44,6 +44,22 @@ describe("loadConfig", () => {
     writeFileSync(p, JSON.stringify({ model: 42, proxy: "socks5://x", extra: true }));
     expect(loadConfig(p)).toEqual({});
   });
+
+  it("reads routeShadow and routeShadowDailyLimit independently, rejecting out-of-range or wrong-typed limits", () => {
+    const p = join(dir, "config.json");
+    writeFileSync(p, JSON.stringify({ routeShadow: true, routeShadowDailyLimit: 200 }));
+    expect(loadConfig(p)).toEqual({ routeShadow: true, routeShadowDailyLimit: 200 });
+    writeFileSync(p, JSON.stringify({ routeShadow: false, routeShadowDailyLimit: 1 }));
+    expect(loadConfig(p)).toEqual({ routeShadow: false, routeShadowDailyLimit: 1 });
+    writeFileSync(p, JSON.stringify({ routeShadowDailyLimit: 5000 }));
+    expect(loadConfig(p)).toEqual({ routeShadowDailyLimit: 5000 });
+    for (const bad of [0, 5001, 3.5, -1, "200"]) {
+      writeFileSync(p, JSON.stringify({ routeShadowDailyLimit: bad }));
+      expect(loadConfig(p)).toEqual({});
+    }
+    writeFileSync(p, JSON.stringify({ routeShadow: "yes" }));
+    expect(loadConfig(p)).toEqual({});
+  });
 });
 
 describe("resolveConfig", () => {

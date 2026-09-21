@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("../src/run-trace.js", async importOriginal => ({
   ...await importOriginal<typeof import("../src/run-trace.js")>(),
-  RunTrace: class { begin() {} record() {} event() {} },
+  RunTrace: class { begin() {} correlate() {} record() {} event() {} stage() { return { end() {} }; } },
 }));
 import { BrowserAgentSession } from "../src/session.js";
 import { ConversationManager } from "../src/conversation-manager.js";
@@ -68,7 +68,7 @@ it("manual parameterized replay starts a new durable task after an earlier run, 
   const first = await h.manager.dispatchTaskAction({ requestId: "first", conversationId: "default", source: "text", action: "start", expectedRunId: null,
     text: "搜索「李四」，地区「深圳」", context: skillPage });
   expect(first.status, h.executionErrors.map(error => String(error)).join("; ")).toBe("accepted");
-  await vi.waitFor(() => expect(h.messages.some(message => message.type === "agent_event" && message.event.kind === "user_delivery")).toBe(true));
+  await vi.waitFor(() => expect(h.messages.some(message => message.type === "agent_event" && message.event.kind === "user_delivery"),JSON.stringify(h.messages.filter(message=>message.type==="agent_event"&&message.event.kind==="error"))).toBe(true));
   await vi.waitFor(() => expect(h.wrapper.isStreaming()).toBe(false));
   const oldRun = h.manager.getTaskProgress("default")!.runId;
   await h.manager.handleMessage({ type: "skill_run", conversationId: "default", requestId: "manual", id: h.candidate.skill.id,
@@ -198,6 +198,9 @@ it.each(["delivered", "superseded"] as const)("keeps verified learning bound to 
     text: "搜索「李四」，地区「深圳」", context: skillPage })).status).toBe("accepted");
   await vi.waitFor(() => expect(h.prompts).toHaveBeenCalledOnce());
   await h.tool("browser_run").execute("real-program", { code: 'await browser.fill({target:"@1",value:"李四"}); await browser.fill({target:"@2",value:"深圳"}); await browser.click({target:"@3"}); return await browser.read_element({target:"@4",expect:{property:"textContent",contains:"李四"}});' });
+  h.sdkEvent({type:"tool_execution_start",toolCallId:"goal-inspect",toolName:"task_goals",args:{action:"inspect"}});
+  h.sdkEvent({type:"tool_execution_end",toolCallId:"goal-inspect",toolName:"task_goals",isError:false,result:{content:[{type:"text",text:"目标仍属于本轮任务"}]}});
+  (h.manager as any).progress.get("default").goals.clear(); // Isolate legacy-checkpoint workflow learning from the new goal verifier.
   h.sdkEvent({ type: "agent_end", messages: [] });
   await vi.waitFor(() => expect(deliver).toBeTypeOf("function"));
   expect(await h.store.listCandidates()).toEqual([]);
@@ -234,6 +237,7 @@ it.each([
     text: "搜索「李四」，地区「深圳」，并告诉我会员等级", context: skillPage })).status).toBe("accepted");
   await vi.waitFor(() => expect(h.prompts).toHaveBeenCalledOnce());
   await h.tool("browser_run").execute("real-program", { code: 'await browser.fill({target:"@1",value:"李四"}); await browser.fill({target:"@2",value:"深圳"}); await browser.click({target:"@3"}); return await browser.read_element({target:"@4",expect:{property:"textContent",contains:"李四"}});' });
+  (h.manager as any).progress.get("default").goals.clear(); // Isolate legacy-checkpoint workflow learning from the new goal verifier.
   h.sdkEvent({ type: "agent_end", messages: [] });
   await vi.waitFor(() => expect(deliver).toBeTypeOf("function"));
   // 判断：这条要求里"告诉我会员等级"不在做法的交付范围内。
@@ -258,7 +262,8 @@ it("T02 任务视图：自动技能回放期间沿用真实任务身份与页面
   // 视图绑定的是任务自己的页面与 run，而不是当前选中的 tab 或另起一个幽灵 run。
   expect(last).toMatchObject({ runId, state: "idle", page: { tabId: skillPage.tabId }, latestDelivery: { kind: "finding" } });
   // 真实写入进入账本且不升级状态；没有未完成项残留，也没有模型介入。
-  expect(last.results.map(result => result.status)).toEqual(["satisfied", "satisfied", "satisfied"]);
+  expect(last.results.map(result => result.status)).toEqual(["satisfied"]);
+  expect(h.manager.getTaskProgress("default")!.results).toHaveLength(3);
   expect(last.outstanding).toEqual([]);
   expect(h.prompts).not.toHaveBeenCalled();
 });

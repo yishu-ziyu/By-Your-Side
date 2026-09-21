@@ -21,7 +21,7 @@ import {
   type ClientMessage,
   type ServerMessage,
 } from "../../shared/protocol.js";
-import { loadConfig, resolveConfig } from "./config.js";
+import { loadConfig, resolveConfig, generalBrowserLoopEnabled } from "./config.js";
 import { BrowserAgentSession } from "./session.js";
 import { createStdioTransport } from "./transport/stdio.js";
 import { ConversationStore } from "./conversation-store.js";
@@ -31,6 +31,7 @@ import { ExperienceStore } from "./experience.js";
 import { MemoryStore } from "./memory-store.js";
 import { SkillStore } from "./skill-store.js";
 import { VoiceService } from "./voice-service.js";
+import { readVoicePage } from './voice-page-reader.js';
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
 
@@ -160,14 +161,13 @@ async function main(): Promise<void> {
   // The voice session emits its own messages (including `diag` evidence), so this path must also
   // reach the capture store; otherwise normal-use recording would silently write nothing.
   voice = new VoiceService(id => conversations.getTaskProgress(id), msg => {keepVoiceEvent(msg);current?.send(msg);}, undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId), (origin,target)=>conversations.isVoiceTask(origin,target), async(id,input)=>{
-    if(!input.observation)throw new Error('本轮页面观察权限尚未就绪，请重新说明要查看的页面。');
     const runtime=conversations.get(id)?.runtime;
     if(!runtime)throw new Error('会话已关闭，未读取页面。');
-    const value=await runtime.rpc.call('observe_page',{token:input.observation.token},8000);
-    if(!value||typeof value!=='object')throw new Error('页面没有返回有效资料。');
-    const page=value as Record<string,unknown>;
-    return {text:page.text,url:page.url,title:page.title,scope:page.scope,capturedAt:page.capturedAt};
-  });
+    return readVoicePage(runtime.rpc,input);
+  },generalBrowserLoopEnabled()?async(request,stillCurrent)=>{
+    const receipt=await conversations.dispatchTaskAction(request,stillCurrent);
+    return {ok:['queued','accepted','applied'].includes(receipt.status),status:receipt.status,message:receipt.message,receipt};
+  }:undefined);
   const session = initial.runtime.session;
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }

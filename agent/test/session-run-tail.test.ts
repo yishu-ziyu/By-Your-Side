@@ -5,8 +5,10 @@ import {createUserDelivery,toolDeliveryId} from '../src/user-delivery.js';
 // 这些用例用合成会话驱动真实 SDK 事件形状，不落用户轨迹（与 session-helpers.test.ts 同一约定）。
 vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
   begin() {}
+  correlate() {}
   record() {}
   event() {}
+  stage() { return { end() {} }; }
 } }));
 
 /** Pi assistant 消息的真实形状：content 是 text / thinking / toolCall 块，没有顶层 toolCalls 字段。 */

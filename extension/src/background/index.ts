@@ -8,7 +8,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * - side panel 经 chrome.runtime Port 接入，只做渲染与用户输入转发
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
-import type { AgentRunState, ClientMessage, ServerMessage, TeamMemberPhase, ToolName } from "../../../shared/protocol.js";
+import type { AgentRunState, ClientMessage, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import {
@@ -35,6 +35,7 @@ import type { PanelHistoryServerMessage } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
 import { VoiceRelay } from "./voice-relay.js";
+import {assertBrowserDecision} from './browser-observation.js';
 import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tabs.js";
 import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
@@ -52,6 +53,7 @@ import { isHeldClickResult } from "../shared/held-clicks.js";
 import { findSessionForTab, getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
 import { readElement } from "./exec/read-element.js";
+import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
@@ -80,6 +82,7 @@ const handlers: Record<ToolName, Handler> = {
   page_operation: (p, sid) => pageOperation(p, sid),
   page_translation: (p, sid) => pageTranslation(p, sid),
   read_element: (p, sid) => readElement(p, sid),
+  read_elements: (p, sid) => readElements(p, sid),
   list_tabs: (_p, sid) => listTabs(sid),
   get_active_tab: (_p, sid) => getActiveTab(sid),
   open_tab: (p, sid) => openTab(p, sid),
@@ -245,7 +248,7 @@ async function statusTabId(sid: string, explicit?: unknown): Promise<number | nu
 }
 
 /** 读页面的工具：光标显示「正在读这个页面」。 */
-const READ_TOOLS = new Set(["snapshot", "read_element", "screenshot", "observe_page", "network"]);
+const READ_TOOLS = new Set(["snapshot", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
 
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
   await showCursorStatus({
@@ -407,6 +410,17 @@ function memberActivityForTakeover(phase: TeamMemberPhase, activity?: TeamMember
   return "running";
 }
 
+function freezeMemberForTakeover(member: TeamMemberView): TeamFrozenMember {
+  return {
+    sessionId: member.sessionId,
+    role: member.role,
+    activity: memberActivityForTakeover(member.phase, member.activity),
+    tabId: member.tabId,
+    title: member.title,
+    url: member.url,
+  };
+}
+
 async function localActiveMembers() {
   const statuses = [...statusBySession.entries()] as [string, AgentRunState][];
   if (!statusBySession.has(LEAD_SESSION_ID) && lastStatus !== "idle") {
@@ -547,14 +561,7 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
         ? {
             groupId: view.groupId,
             generation: view.generation,
-            members: view.members.map((m) => ({
-              sessionId: m.sessionId,
-              role: m.role,
-              activity: memberActivityForTakeover(m.phase, m.activity),
-              tabId: m.tabId,
-              title: m.title,
-              url: m.url,
-            })),
+            members: view.members.map(freezeMemberForTakeover),
           }
         : {}),
     });
@@ -973,7 +980,7 @@ async function executeToolCall(
   epoch?:number,
 ): Promise<void> {
   if(name==='observe_page'){
-    try{const data=await voiceRelay.observe(conversationId,params.token);uplink.sendClientMessage({type:'tool_result',id,ok:true,data});}
+    try{const data=await voiceRelay.observe(conversationId,params.token,params.mode);uplink.sendClientMessage({type:'tool_result',id,ok:true,data});}
     catch(e){uplink.sendClientMessage({type:'tool_result',id,ok:false,error:oneLine(e)});}
     return;
   }
@@ -1027,6 +1034,9 @@ async function executeToolCall(
             throw error;
           }
         }
+        await assertBrowserDecision(key(sid),name,params);
+        checkIdentity();
+        if(gate.gen!==operationGeneration||workerTabControl.isStopped(key(sid)))throw new Error('操作所属控制轮次已失效，操作未执行。');
         // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
         try {
@@ -1134,14 +1144,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
         ? {
             groupId: frozen.groupId,
             generation: frozen.generation,
-            members: frozen.members.map((m) => ({
-              sessionId: m.sessionId,
-              role: m.role,
-              activity: memberActivityForTakeover(m.phase, m.activity),
-              tabId: m.tabId,
-              title: m.title,
-              url: m.url,
-            })),
+            members: frozen.members.map(freezeMemberForTakeover),
           }
         : {}),
     })

@@ -1,18 +1,23 @@
-# 文档导航
+# 文档入口
 
-| 要回答的问题 | 唯一入口 |
+先读需要回答的问题，不通读历史材料。
+
+| 问题 | 入口 |
 |---|---|
-| 现在完成了什么，还缺什么 | [STATUS](STATUS.md) |
-| 接下来按什么顺序开发 | [ROADMAP](ROADMAP.md)；实际完成情况仍以 STATUS 为准 |
-| 代码怎么分工，新增能力放哪里 | [架构与维护](architecture.md) |
-| 本地怎么安装、使用与运行 | [仓库README](../README.md) |
-| 语音如何接收多个要求与返回结果 | [语音架构](voice-architecture.md)、[多要求调度](voice-multi-request-design.md) |
-| 怎么调整回答字体与字号 | [阅读外观](reading-appearance.md) |
-| 消息和控制如何传递 | [协议](protocol.md)、[语音调度](voice-dispatch.md)、[组合执行](browser-program.md) |
-| 上次为什么这样做 | [NOTES](NOTES.md)，只留因果与续接约束 |
-| 某次变更是否真正验过 | `evals/` 的任务标准与原始证据 |
-| 本地 Agent 如何继续 P0 实机测试 | [P0 验收交接](evals/20260917-p0-local-agent-handoff.md)；未跑报告不能视为通过 |
-| 哪个设计方向曾被推翻 | `devlog/` 的设计决定 |
-| 旧版本状态或完整工作记录 | `history/`；历史不代表当前进度 |
+| 现在能用什么、哪里失败、下一步是什么？ | [当前状态](STATUS.md) |
+| 请求怎么走、状态归谁、代码改哪里？ | [架构](architecture.md) |
+| 如何安装、运行和配置？ | [仓库 README](../README.md) |
+| 为什么采用这个方向？ | [路线与决定](ROADMAP.md) |
+| 继续某项工作前有什么容易遗漏的原因？ | [续接要点](NOTES.md) |
 
-`ROADMAP.md` 保存已经确认的开发顺序，不能代替 STATUS 的实际状态；其中明确标为历史的段落只用于理解方向演变。`METHODOLOGY.md`、`work/`、`tasks/`、`reviews/`与`diagnostics/`保留各自时期的方法、任务与排查材料。它们都不能覆盖当前 AGENTS 规则和 STATUS 结论。新增资料放到已有分类，避免为同一问题再维护第二份状态表。
+按需查：[语音链路](voice-architecture.md) · [任务调度](voice-dispatch.md) · [消息协议](protocol.md) · [组合执行](browser-program.md) · [阅读外观](reading-appearance.md) · [人机协作](human-ai-contract.md)。
+
+## 资料归属
+
+- `STATUS.md`：唯一当前状态。每项保留结论、证据、未完成处；更新替换旧结论，不追加工作流水。
+- 架构与专题说明：描述源码职责和边界，不复制加载、通过、待办清单。
+- `evals/`：某次任务的标准、版本、失败和验证结果；通过仅对该轮范围有效。修订追加依据，不擦掉原始失败。
+- `devlog/`：方向变化和实测推翻的方案。
+- [history/](history/README.md)：旧状态与旧方案；`tasks/`、`work/`、`reviews/`、`diagnostics/`、`research/` 是按需查的任务资料，不是当前执行指令。
+
+更新现状时注明核对日期，区分源码、本机配置、加载证据、实际体验。配置为 true 不证明运行进程已采用；构建通过不证明已加载；收到音频不证明听感正常。项目规则只在 [AGENTS.md](../AGENTS.md) 维护。

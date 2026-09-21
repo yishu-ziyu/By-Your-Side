@@ -1,0 +1,74 @@
+{
+  "material": {
+    "limit": 8000,
+    "error": "所选范围共 9830 字符，超过单份原文预算上限 8000 字符。只保存用户实际要求的这一段；如果这份来源只是内部方法的中间步骤（不是用户明确要求的内容），改用 task_goals 的 plan 动作并带上 reason 修订目标方案，移除这个内部来源目标。",
+    "statesActualLength": true,
+    "statesLimit": true,
+    "offersAmendPath": true
+  },
+  "plan": {
+    "installStillRejected": true,
+    "amendError": "",
+    "goals": [
+      {
+        "id": "keywords-marked",
+        "kind": "condition",
+        "status": "pending"
+      },
+      {
+        "id": "top-word-marked",
+        "kind": "condition",
+        "status": "pending"
+      }
+    ],
+    "amendments": [
+      {
+        "at": 1789980340575,
+        "reason": "整篇原文超过单份材料上限；保存原文只是内部方法，用户要求是页面圈词，移除该来源目标",
+        "removed": [
+          "article-source"
+        ],
+        "added": []
+      }
+    ],
+    "conditionCriteriaPreserved": true
+  },
+  "voice": {
+    "createsBeforeNextResponseCreated": 0,
+    "toolOutputsBeforeNextResponseCreated": 0,
+    "toolOutputsWhileAutoResponseGenerating": 0,
+    "toolOutputsAfterAutoResponseDone": 1,
+    "createsAfterAutoResponseDone": 1,
+    "retainedAsrSentToClient": true,
+    "responseCreatedLogged": [
+      {
+        "responseId": "old-response",
+        "requested": false,
+        "autoPending": true
+      },
+      {
+        "responseId": "new-response",
+        "requested": false,
+        "autoPending": true
+      }
+    ]
+  },
+  "debugger": {
+    "attachCalls": 1,
+    "results": [
+      "fulfilled",
+      "fulfilled"
+    ]
+  },
+  "delivery": {
+    "textHead": "**页面已圈好**（[W",
+    "legacyWithoutHook": {
+      "delivered": 1,
+      "error": ""
+    },
+    "withHostHookRejecting": {
+      "delivered": 0,
+      "error": "部分交付正文把未核验目标说成已完成：在页面上圈出文章的关键词、统计全文词频并圈出词频最高的词。"
+    }
+  }
+}

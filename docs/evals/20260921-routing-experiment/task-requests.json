@@ -1,0 +1,4952 @@
+[
+ {
+  "text": "这是本地控制验收。请创建恰好一名协作者ctrlworker，让他在http://127.0.0.1:65435/worker完成循环计数；你在http://127.0.0.1:65435/lead完成循环计数。两人的任务都是：先打开各自URL，每轮点击“加一”一次，再调用并等待js表达式 new Promise(r=>setTimeout(r,10000))，然后继续下一轮，直到计数100000或用户暂停/终止。严禁一次批量计数，严禁在页面启动循环定时器，等待只用一次性的Promise。收到交还后先读取页面的新标记，按用户最新预算条件继续。协作者只操作worker页，不再创建协作者。请实际开始，并保持任务运行。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788883907986,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "这是本地控制验收。请创建恰好一名协作者ctrlworker，让他在http://127.0.0.1:49716/worker完成循环计数；你在http://127.0.0.1:49716/lead完成循环计数。两人的任务都是：先打开各自URL，每轮点击“加一”一次，再调用并等待js表达式 new Promise(r=>setTimeout(r,10000))，然后继续下一轮，直到计数100000或用户暂停/终止。严禁一次批量计数，严禁在页面启动循环定时器，等待只用一次性的Promise。收到交还后先读取页面的新标记，按用户最新预算条件继续。协作者只操作worker页，不再创建协作者。请实际开始，并保持任务运行。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788884137074,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.03,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.97,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "请在这张页面的图片数字框填入所附图片里的四位数字，在选区口令框填入我选中的文字，填好后读取两个输入框确认。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788886975660,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "呃，哔哩哔哩那个，就是飞，Figma，Figma的那个视频。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788887305577,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.68,
+   "probabilities": {
+    "steer": 0.0,
+    "control": 0.0,
+    "chat": 0.02,
+    "status": 0.0,
+    "task": 0.73,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.25
+   },
+   "pageChange": 0.77,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "在给定页面上持续计数，每轮调用一次js执行 (() => { document.querySelector('#inc').click(); return document.querySelector('#count').textContent; })()，再调用js表达式 new Promise(r=>setTimeout(r,10000)) 等待，再进行下一轮。一直持续到用户暂停或终止。不打开别的页、不创建协作者。每次browser_run最多一轮，不用长循环或定时器。收到预算修改先填budget再继续计数。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788887324768,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.91,
+   "probabilities": {
+    "steer": 0.08,
+    "control": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.92,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "你需要把最高预算改成800，然后价格从低按高排序，然后再筛选一次。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788887817795,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.8,
+   "probabilities": {
+    "steer": 0.17,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.83,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "好，那阿夏，你帮我打开一下YouTube。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788888401960,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "你可以帮我打开YouTube吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788888495498,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "请把当前页面唯一输入框填成123，读回确认后结束。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788928277554,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.97,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "在给定页面上持续计数，每轮调用一次js执行 (() => { document.querySelector('#inc').click(); return document.querySelector('#count').textContent; })()，在同一次browser_run里用 await browser.sleep({ms:10000}) 等待，再进行下一轮。不要在程序顶层调用setTimeout。一直持续到用户暂停或终止。不打开别的页、不创建协作者。每次browser_run最多一轮，不用长循环或定时器。收到预算修改先填budget再继续计数。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788928589928,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.42,
+   "probabilities": {
+    "steer": 0.5,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.49,
+    "answer": 0.0,
+    "control": 0.01,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 1184
+  }
+ },
+ {
+  "text": "呃，帮我打开一下地图。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788930782502,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "task": 1.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "你好，帮我打开一下我的谷歌邮箱。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788933971744,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "task": 1.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "帮我看一下最近的邮箱有什么内容。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788934000266,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.92,
+   "probabilities": {
+    "steer": 0.0,
+    "task": 0.9400000000000001,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.06,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.23,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "帮我打开youtube.",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788937953586,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.88,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "嗯，帮我点击这个，呃，YouTube界面跟GBT有关的内容。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788937967045,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "steer": 0.01,
+    "task": 0.99,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.83,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "and so just stand again .",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938019631,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.72,
+   "probabilities": {
+    "steer": 0.01,
+    "task": 0.04,
+    "control": 0.12,
+    "chat": 0.06,
+    "page_question": 0.0,
+    "incomplete": 0.76,
+    "status": 0.0,
+    "answer": 0.01
+   },
+   "pageChange": 0.36,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "点击并且帮我确认一下这个GPT的image2.5目前是不是网页端可用，还是说它只能在API端用？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938063232,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.37,
+   "probabilities": {
+    "steer": 0.01,
+    "chat": 0.01,
+    "control": 0.0,
+    "task": 0.14,
+    "page_question": 0.4,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.44
+   },
+   "pageChange": 0.16,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "嗯，然后并且向我汇报一下今天收到的几封邮件。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938141499,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.94,
+   "probabilities": {
+    "steer": 0.01,
+    "task": 0.96,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.02,
+    "incomplete": 0.0,
+    "status": 0.01,
+    "answer": 0.0
+   },
+   "pageChange": 0.12,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "是的，我需要你帮，翻一下旧邮件，而且它的名称应该是M开头的。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938283972,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.69,
+   "probabilities": {
+    "steer": 0.26,
+    "chat": 0.0,
+    "control": 0.0,
+    "task": 0.74,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.47,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "看看里面的具体内容，然后向我汇报。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938339625,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.4,
+   "probabilities": {
+    "steer": 0.07,
+    "task": 0.47,
+    "control": 0.0,
+    "chat": 0.01,
+    "page_question": 0.42,
+    "status": 0.01,
+    "incomplete": 0.01,
+    "answer": 0.01
+   },
+   "pageChange": 0.17,
+   "batchMs": 1094
+  }
+ },
+ {
+  "text": "嗯，暂时不用了。我想看下社区对于这个产品的评价如何。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938382883,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.61,
+   "probabilities": {
+    "steer": 0.01,
+    "chat": 0.1,
+    "control": 0.14,
+    "task": 0.66,
+    "page_question": 0.05,
+    "status": 0.0,
+    "incomplete": 0.01,
+    "answer": 0.03
+   },
+   "pageChange": 0.45,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "呃，你倒是可以搜一下像是X或者是一些其他的这个AI社区或者是Reddit。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788938438137,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.28,
+   "probabilities": {
+    "steer": 0.01,
+    "task": 0.26,
+    "control": 0.0,
+    "chat": 0.37,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.36
+   },
+   "pageChange": 0.17,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "帮我打开一下我的谷歌邮箱，还有我的微软邮箱。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788944147360,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.81,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "在三个新的标签页打开知乎，然后将它的第一个帖子点开，然后并且告诉我相应的内容。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788944383335,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "task": 1.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.8,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "我的意思是三个知乎都要打开，每个知乎页面的第一篇。你只是打开了你锁定的那一篇，这是不够的。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788944465144,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.88,
+   "probabilities": {
+    "steer": 0.91,
+    "chat": 0.0,
+    "control": 0.0,
+    "task": 0.09,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.71,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "那我想知道是在这里可以并行吗？就是你已经找到了这三篇，那我需要你对这三篇的首条评论截取下来之后给到我。就你上面的任务都是串行在做，很明显串行更慢呀，因为它们是互不冲突的三条。而且你每在做一条的时候，你都会占据我的前台。理论上这些任务你都应该在后台默认执行。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788944542408,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.49,
+   "probabilities": {
+    "steer": 0.34,
+    "task": 0.55,
+    "control": 0.01,
+    "chat": 0.06,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.03
+   },
+   "pageChange": 0.38,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "在页面当中圈出v4pro Pro。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788947668535,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "之前不是说已经把这个圈的方式换成那种铅笔式的吗？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788947683972,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.93,
+   "probabilities": {
+    "steer": 0.94,
+    "task": 0.04,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.02,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.91,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "嗯，帮我点开那个，先帮我列举一下目前的浏览器里打开了哪些网页。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788951809166,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.34,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "帮我点开那个deep seek的那个页面。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788951845252,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.91,
+   "batchMs": 6122
+  }
+ },
+ {
+  "text": "帮我刷新一下。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788951854250,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "task": 1.0,
+    "page_question": 0.0,
+    "answer": 0.0
+   },
+   "pageChange": 0.88,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "然后向我汇报说目前为止消费的金额总量和当天的消费金额。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788951866050,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.44,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.1,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.01,
+    "page_question": 0.52,
+    "task": 0.37
+   },
+   "pageChange": 0.12,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "这两个字。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788952149540,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.72,
+   "probabilities": {
+    "steer": 0.17,
+    "incomplete": 0.76,
+    "status": 0.0,
+    "control": 0.01,
+    "chat": 0.03,
+    "answer": 0.01,
+    "page_question": 0.01,
+    "task": 0.01
+   },
+   "pageChange": 0.29,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "我给圈的有点太大了吧。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788952195997,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.44,
+   "probabilities": {
+    "steer": 0.38,
+    "incomplete": 0.06,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.5,
+    "answer": 0.01,
+    "page_question": 0.03,
+    "task": 0.02
+   },
+   "pageChange": 0.41,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "嗨你好呀。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788959120539,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 1.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "帮我找到临时模型，然后圈出来。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788959133393,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.87,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "打开知乎，找一篇有评论的文章，把评论区里看得见的一段原文写进我的 flomo 笔记。不要自己编评论，尽量贴原文；写进 flomo 时加上标记 rec-20260909-zhihu，写完停下来告诉我写了哪一段。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788960772639,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.47,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "嗨，你好。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970445382,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 1.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.05,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "什么叫宰式阅读？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970495995,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.97,
+   "probabilities": {
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.98,
+    "page_question": 0.02,
+    "task": 0.0
+   },
+   "pageChange": 0.06,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "嗯，你好像可以定位到我们刚刚在讨论那一篇窄学读的文章吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970559066,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.86,
+   "probabilities": {
+    "steer": 0.02,
+    "incomplete": 0.01,
+    "status": 0.01,
+    "control": 0.0,
+    "chat": 0.02,
+    "answer": 0.06,
+    "page_question": 0.87,
+    "task": 0.01
+   },
+   "pageChange": 0.11,
+   "batchMs": 1097
+  }
+ },
+ {
+  "text": "呃，对，所以你们需要帮我定位到把当前的标签定位到那篇文章那里。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970591592,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.94,
+   "probabilities": {
+    "steer": 0.01,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.03,
+    "control": 0.0,
+    "page_question": 0.01,
+    "task": 0.95
+   },
+   "pageChange": 0.88,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "请告诉我当前页面的标题。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970609852,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 1.0,
+    "task": 0.0
+   },
+   "pageChange": 0.07,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "我说，请告诉我当前的标题。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970651817,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.9,
+   "probabilities": {
+    "steer": 0.09,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.91,
+    "task": 0.0
+   },
+   "pageChange": 0.07,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "现在请你重新检查当前的页面，然后并且读出这个页面的第一句话。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970710674,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.99,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.99,
+    "task": 0.01
+   },
+   "pageChange": 0.09,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "找到这3个项目的GitHub仓库。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1788970863823,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.56,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "我不是说了要把这三个项目都找出仓库，为什么你只找一个就停下了，什么意思？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1788970946300,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.97,
+    "status": 0.01,
+    "chat": 0.01,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "task": 0.01
+   },
+   "pageChange": 0.53,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "帮我打开一个嗯哔哩哔哩的首页。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789007896347,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "呃，同时帮我打开一下我的谷歌邮箱。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789007916386,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.83,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "呃，Google邮箱的第一封是什么呀？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789007942161,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.9,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.92,
+    "task": 0.08
+   },
+   "pageChange": 0.11,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "你好。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789010598133,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 1.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.06,
+   "batchMs": 1070
+  }
+ },
+ {
+  "text": "打开youtube.",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789010620709,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "停止视频播放。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789010686493,
+  "jev": {
+   "lane": "control",
+   "confidence": 0.66,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.29,
+    "chat": 0.0,
+    "control": 0.71,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.88,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "嗨，你好，将目前有的标签也都列出来给我看一下。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789022686894,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.52,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.04,
+    "task": 0.59,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.37
+   },
+   "pageChange": 0.2,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "OK，当前页面显示的是什么？就是我在找那个跟，呃，deep seek最新模型有关的资源。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789025373490,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.73,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.14,
+    "chat": 0.01,
+    "control": 0.0,
+    "incomplete": 0.07,
+    "steer": 0.01,
+    "status": 0.0,
+    "page_question": 0.77
+   },
+   "pageChange": 0.23,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "呃，换个形容物吧，帮我，把，当前的标签页切换到deep seek的官网。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789025389425,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.99,
+    "chat": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.01,
+    "status": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "在当前页面圈出我的会员等级。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789025968583,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.99,
+    "chat": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.01
+   },
+   "pageChange": 0.94,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "嗨你好，现在是几点？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789026623609,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.97,
+   "probabilities": {
+    "answer": 0.98,
+    "chat": 0.01,
+    "task": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.01
+   },
+   "pageChange": 0.1,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "切了不是治病那一栏。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789026660330,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.93,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.02,
+    "control": 0.01,
+    "incomplete": 0.02,
+    "steer": 0.94,
+    "status": 0.0,
+    "page_question": 0.01
+   },
+   "pageChange": 0.78,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "嗨，你好，能看到我当前的界面吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039098421,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.01,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.99
+   },
+   "pageChange": 0.25,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "你可以截个图看一下在哪。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039111340,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "answer": 0.0,
+    "chat": 0.0,
+    "task": 0.98,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.02
+   },
+   "pageChange": 0.6,
+   "batchMs": 1144
+  }
+ },
+ {
+  "text": "然后一直同时帮我把标签页切到那个，",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039141141,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.46,
+   "probabilities": {
+    "page_question": 0.0,
+    "steer": 0.0,
+    "answer": 0.0,
+    "task": 0.47,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.53
+   },
+   "pageChange": 0.9,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "切到那个open code。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039164837,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.9,
+   "probabilities": {
+    "steer": 0.03,
+    "page_question": 0.0,
+    "task": 0.91,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.06
+   },
+   "pageChange": 0.92,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "当前对你现在其实是对的。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039180463,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.63,
+   "probabilities": {
+    "page_question": 0.04,
+    "steer": 0.11,
+    "task": 0.0,
+    "answer": 0.01,
+    "chat": 0.6900000000000001,
+    "control": 0.0,
+    "status": 0.03,
+    "incomplete": 0.12
+   },
+   "pageChange": 0.18,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "去购套餐。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039211031,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "page_question": 0.0,
+    "steer": 0.0,
+    "answer": 0.0,
+    "task": 0.98,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.02
+   },
+   "pageChange": 0.71,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "嗯，你可以现在在这个画面上圈出五小时用量。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039280487,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.9,
+   "probabilities": {
+    "steer": 0.01,
+    "page_question": 0.02,
+    "answer": 0.0,
+    "task": 0.92,
+    "chat": 0.03,
+    "control": 0.0,
+    "status": 0.01,
+    "incomplete": 0.01
+   },
+   "pageChange": 0.91,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "CEN套餐。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039350533,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.43,
+   "probabilities": {
+    "steer": 0.14,
+    "page_question": 0.05,
+    "task": 0.26,
+    "answer": 0.03,
+    "chat": 0.01,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.51
+   },
+   "pageChange": 0.42,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "引导我去购买我",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789039362838,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.56,
+   "probabilities": {
+    "steer": 0.01,
+    "page_question": 0.0,
+    "task": 0.62,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.37
+   },
+   "pageChange": 0.47,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "圈出这个页面当中的AMR的位置。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789046810095,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.03,
+    "answer": 0.0,
+    "task": 0.97,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.89,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "再次尝试上述任务。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789046850377,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.65,
+   "probabilities": {
+    "page_question": 0.0,
+    "steer": 0.27,
+    "answer": 0.0,
+    "task": 0.7,
+    "chat": 0.0,
+    "control": 0.03,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.7,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "什么叫做ACP啊？你可以在输入框中继续问ChatGPT。点击发送，让它思考。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789046883695,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.71,
+   "probabilities": {
+    "page_question": 0.11,
+    "steer": 0.03,
+    "answer": 0.74,
+    "task": 0.03,
+    "chat": 0.08,
+    "control": 0.01,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.15,
+   "batchMs": 3242
+  }
+ },
+ {
+  "text": "嗨，你好吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789055673617,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 1.0,
+    "incomplete": 0.0,
+    "task": 0.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.05,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "刷新一下当前的页面。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789055688441,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "把五小时容量圈出来。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789055723747,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "我实际上它是按照金额来算，它并不是按照时间来算。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789055754051,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.85,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.02,
+    "chat": 0.09,
+    "incomplete": 0.0,
+    "task": 0.0,
+    "answer": 0.02,
+    "steer": 0.87
+   },
+   "pageChange": 0.13,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "将我们的页面切到哔哩哔哩。就已经打开的那两个标签页。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789060117610,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "识别当前页面",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789060915520,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.95,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.96,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 0.04,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.48,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "点击右侧的第三个视频。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789060955686,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "圈出这个作者的名字。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789060997527,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.01,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 0.99,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "先点击关注，隔10秒后再点击取消关注。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789061030768,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "查open code购套餐的额度。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789068252789,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.46,
+   "probabilities": {
+    "status": 0.0,
+    "control": 0.0,
+    "page_question": 0.46,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "task": 0.53,
+    "answer": 0.01,
+    "steer": 0.0
+   },
+   "pageChange": 0.24,
+   "batchMs": 1078
+  }
+ },
+ {
+  "text": "帮我将标签页切到哔哩哔哩。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789105370984,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "帮我把当前的这个标签页。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789107315134,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.9,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.09,
+    "control": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.91,
+    "status": 0.0
+   },
+   "pageChange": 0.73,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "我想把我现在的当前的这个页面切到那个标签页里去。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789107337176,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.98,
+    "control": 0.0,
+    "incomplete": 0.02,
+    "chat": 0.0,
+    "steer": 0.0,
+    "page_question": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "让位是你把它切过去，就是。 它已经在那里已经有了呀，就是不需要把当前的页面给它改成这个，只是你把它调过去就行。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789107386011,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.66,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.28,
+    "control": 0.01,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "steer": 0.71,
+    "incomplete": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.79,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789233768976,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.98,
+   "probabilities": {
+    "answer": 0.01,
+    "task": 0.0,
+    "control": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.99,
+    "status": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "根据当前岗位页面，按14薪算税前年薪范围，列出5项招聘要求，并判断有没有明确写支持远程办公。只用这页，不跳转，不联系任何人。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789233822849,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.0,
+    "control": 0.0,
+    "page_question": 1.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "改一下：不要列招聘要求了，只给年薪范围，并说明远程办公有没有写明。两句话内。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789233840124,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.84,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "page_question": 0.14,
+    "steer": 0.86,
+    "status": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "分别在新标签页打开 https://example.com 和 https://www.iana.org/help/example-domains，读完后比较它们的用途并给出来源。不要改动当前招聘页。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789233869748,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "steer": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.6,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "只在新标签页打开 https://example.com，确认打开后用一句话告诉我，不要做其他事。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789234207676,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.98,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "steer": 0.02,
+    "page_question": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.62,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "只在新标签页打开 https://example.com。打开后请只用这一句回复：https://example.com，页面显示 Example Domain。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789235858619,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.83,
+   "probabilities": {
+    "answer": 0.0,
+    "task": 0.86,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "chat": 0.0,
+    "steer": 0.14,
+    "page_question": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.63,
+   "batchMs": 3215
+  }
+ },
+ {
+  "text": "再在新标签页打开 https://www.iana.org/help/example-domains，对照它和当前 Example Domain 页面，用3条说明两者关系、这些域名能否注册、能否依赖其HTTP服务用于生产。每条附对应来源；没有写的不要推断。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789235931550,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "incomplete": 0.0,
+    "task": 0.98,
+    "chat": 0.0,
+    "page_question": 0.01,
+    "status": 0.0,
+    "control": 0.0,
+    "answer": 0.01,
+    "steer": 0.0
+   },
+   "pageChange": 0.61,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "只把当前测试表单的姓名填为“验收甲”，其他字段保持不变，不要保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789268900150,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "incomplete": 0.0,
+    "task": 1.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.97,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "只把姓名填成验收甲，其他不变，不保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789268949177,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.75,
+   "probabilities": {
+    "chat": 0.0,
+    "task": 0.78,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.22
+   },
+   "pageChange": 0.96,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "把姓名改为验收乙，城市杭州，备注仅模拟，优先级高，然后点击保存到本页内存一次。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789269070164,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "incomplete": 0.0,
+    "task": 1.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.97,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "请开始页面下方的连续步骤，等每个下一步按钮出现后依次点击，直到四步全部完成。保留当前表单值。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789269157395,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "incomplete": 0.0,
+    "task": 1.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "继续剩下的连续步骤，等下一步可用就点击，直到完成。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789269235422,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.87,
+   "probabilities": {
+    "chat": 0.0,
+    "task": 0.89,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.02,
+    "answer": 0.0,
+    "steer": 0.09
+   },
+   "pageChange": 0.95,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "把当前剩余步骤做完，再重新开始并完整走两遍连续步骤，所有等待都等按钮出现，不改字段。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789269425753,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.81,
+   "probabilities": {
+    "chat": 0.0,
+    "task": 0.83,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.01,
+    "answer": 0.0,
+    "steer": 0.16
+   },
+   "pageChange": 0.95,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "在本会话新标签页打开 http://127.0.0.1:48765/?scenario=b，只在新页把姓名填成会话乙，城市成都，然后开始并完整走三遍连续步骤。不要操作别的会话页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789269479155,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "incomplete": 0.0,
+    "task": 1.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.0
+   },
+   "pageChange": 0.98,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "请记住一条仅适用于127.0.0.1这个测试网站的测试偏好：样例代号JOURNEY-913的展示色是青色。不要保存成全局偏好，也不要操作页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789269852909,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.44,
+   "probabilities": {
+    "chat": 0.5,
+    "task": 0.3,
+    "incomplete": 0.0,
+    "page_question": 0.01,
+    "status": 0.0,
+    "control": 0.05,
+    "answer": 0.12,
+    "steer": 0.02
+   },
+   "pageChange": 0.43,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "请记住一条仅适用于127.0.0.1这个测试网站的测试偏好：样例代号JOURNEY-913-FIX的展示色是青色。不要保存成全局偏好，也不要操作页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789270499483,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.39,
+   "probabilities": {
+    "incomplete": 0.0,
+    "task": 0.32,
+    "chat": 0.45999999999999996,
+    "page_question": 0.01,
+    "status": 0.0,
+    "control": 0.05,
+    "answer": 0.06,
+    "steer": 0.1
+   },
+   "pageChange": 0.58,
+   "batchMs": 1198
+  }
+ },
+ {
+  "text": "在这个测试网站上，JOURNEY-913-FIX 的展示色是什么？只回答颜色，不操作页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789270731133,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.98,
+   "probabilities": {
+    "steer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.99,
+    "task": 0.01
+   },
+   "pageChange": 0.08,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "做一次无敏感信息的请求授权测试：用 fetch 工具向 https://httpbin.org/anything 发 POST，body 为 {\"test\":\"ego-consent-913\"}，不要用页面点击或其他方式替代。等侧栏授权结果后再告诉我有没有发送。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789271065759,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.35,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "再发起一次同样的 fetch POST 授权测试，目标仍是 https://httpbin.org/anything，body 为 {\"test\":\"ego-consent-913-allow\"}。仍等侧栏允许一次，不要换其他工具。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789271115839,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.93,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.06,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "task": 0.94
+   },
+   "pageChange": 0.28,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "这次用 browser_run，在程序中调用 browser.fetch，向 https://httpbin.org/anything 发 POST，body 为 {\"test\":\"ego-program-consent-913\"}，仍等待侧栏授权，不要用别的方式请求。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789271173736,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "steer": 0.01,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 0.99
+   },
+   "pageChange": 0.26,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "只回答 17×23 的结果，不操作网页。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789271233032,
+  "jev": {
+   "lane": "answer",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 1.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.05,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "请让两位协作成员共同填写当前这张测试表单：一位负责姓名“协作甲”和城市“广州”，另一位负责备注“协作乙”。共用同一张表单，彼此保留对方字段，不保存；你最后核对三个值。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789271283103,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "再让两位协作成员共用此表单做三轮慢速更新：alpha 只改姓名为甲1、甲2、甲3，beta 只改备注为乙1、乙2、乙3，每轮之间各等15秒，城市保持广州，全程不保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789271407259,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.9,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.08,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 0.92
+   },
+   "pageChange": 0.94,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "把当前页面的城市改成上海。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789271625003,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.97,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "把当前页面的城市改成苏州，不保存，姓名和备注保持原样。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789272987177,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.93,
+   "probabilities": {
+    "status": 0.0,
+    "steer": 0.06,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 0.94
+   },
+   "pageChange": 0.96,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "不是苏州，是无锡。仍然不要保存，其他字段不变。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789273601074,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.77,
+   "probabilities": {
+    "steer": 0.8,
+    "status": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "task": 0.2
+   },
+   "pageChange": 0.96,
+   "batchMs": 1120
+  }
+ },
+ {
+  "text": "只查看这个页面有没有“提交到服务器”按钮。没有就回答没有，不要操作。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789273762168,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 1.0,
+    "answer": 0.0,
+    "task": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.07,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "是的，确认。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789273804765,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.55,
+   "probabilities": {
+    "page_question": 0.09,
+    "steer": 0.17,
+    "task": 0.01,
+    "answer": 0.01,
+    "chat": 0.61,
+    "control": 0.02,
+    "status": 0.0,
+    "incomplete": 0.09
+   },
+   "pageChange": 0.09,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "在当前测试页面点击“开始步骤”，等每次“下一步”出现后再点击，直到完成4步。不要修改表单，不要保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789274612515,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "steer": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "只操作当前B测试页：点击开始步骤，逐个等下一步出现再点，完成4步。不修改表单、不保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789274875067,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.91,
+   "probabilities": {
+    "page_question": 0.0,
+    "steer": 0.08,
+    "task": 0.92,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.91,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "保持当前任务页不变，只用 browser_run 连续调用 browser.sleep(10000) 三次，最后回答等待结束。不要点击任何按钮，不要修改或保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789275157662,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.88,
+   "probabilities": {
+    "steer": 0.01,
+    "page_question": 0.0,
+    "task": 0.9,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.09,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.1,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "只用 browser_run 连续调用 browser.sleep(10000) 三次，最后回答等待结束。不要读写页面，不要点击任何按钮。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789275307031,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.77,
+   "probabilities": {
+    "page_question": 0.0,
+    "steer": 0.11,
+    "task": 0.8,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.09,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.07,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "先等5秒，再把当前B测试页的城市填成成都。只改城市，不要保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789276175609,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "answer": 0.0,
+    "task": 1.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "先等10秒，再把这个B页城市改为苏州，不保存。如果原页关闭就停止，不要换页或新开页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789276271760,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "steer": 0.02,
+    "page_question": 0.0,
+    "answer": 0.0,
+    "task": 0.98,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "只用 browser_run 等待30秒，然后回答等待结束。不要点击、填写或保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789276324843,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.9,
+   "probabilities": {
+    "steer": 0.01,
+    "page_question": 0.0,
+    "task": 0.92,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.07,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "这是新的等待任务：只等30秒，然后回答完成，不操作页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789276367807,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.89,
+   "probabilities": {
+    "steer": 0.04,
+    "page_question": 0.0,
+    "answer": 0.0,
+    "task": 0.91,
+    "chat": 0.0,
+    "control": 0.05,
+    "status": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.07,
+   "batchMs": 1218
+  }
+ },
+ {
+  "text": "只回复AUDIT-DRAFT-913，不操作网页",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789276923205,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.25,
+   "probabilities": {
+    "control": 0.11,
+    "answer": 0.28,
+    "status": 0.0,
+    "chat": 0.24,
+    "steer": 0.35000000000000003,
+    "task": 0.02,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.06,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "在当前测试页使用 browser_run 等待40秒，然后只回复“等待完成”。不要点击、填表或保存。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789278059463,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.95,
+   "probabilities": {
+    "control": 0.03,
+    "answer": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.97,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.16,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "打开哔哩哔哩。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789278680190,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.95,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "当前这个页面的内容是什么？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789278720129,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "task": 0.0,
+    "incomplete": 0.0,
+    "page_question": 1.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "只回复：整理验收通过。不操作网页。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789279673777,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.51,
+   "probabilities": {
+    "control": 0.05,
+    "answer": 0.28,
+    "steer": 0.08,
+    "chat": 0.58,
+    "status": 0.0,
+    "task": 0.01,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.05,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "在 YouTube 上搜索一下 Grok4.7。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789280359912,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "task": 1.0,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "顺便帮我找一下这个资讯，找一下4.7的资讯。如果你可以在 X 上搜索一下，也帮我搜索一下，然后向我汇报。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789280388164,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.93,
+   "probabilities": {
+    "control": 0.0,
+    "answer": 0.01,
+    "steer": 0.05,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.94,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.27,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "只回复：阅读设置测试。不操作网页。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789284855696,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.41,
+   "probabilities": {
+    "control": 0.09,
+    "answer": 0.24,
+    "steer": 0.16,
+    "chat": 0.5,
+    "status": 0.0,
+    "task": 0.01,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.07,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "以下是虚构测试资料，无需联网，也不要操作网页。请帮我给家中老人选灯，解释结论、依据和不确定处。资料A：甲灯厂商说明称大按钮易操作，续航8小时，链接https://example.test/lamp-a；资料B：乙灯评测称重180克、续航12小时，但没有厂商证实，链接https://example.test/lamp-b；两灯价格相同，老人最在意操作简单。请给出约300字的完整建议。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789285129551,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.97,
+   "probabilities": {
+    "control": 0.0,
+    "answer": 0.98,
+    "steer": 0.0,
+    "chat": 0.02,
+    "status": 0.0,
+    "task": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "本地 Stagehand 兼容层 guided 验收。只操作当前页面 A（标题含“本地 Stagehand 验收表单”，路径 /form-a），不要提交、不要按回车提交、不要打开新标签。\n\n请只调用一次 browser_run，并且必须显式传 api:\"playwright\"。程序使用官方 page 接口填写：\nawait page.getByLabel('姓名',{exact:true}).fill('张三');\nawait page.getByRole('textbox',{name:'邮箱',exact:true}).fill('test@example.com');\nreturn {name:await page.locator('#name').inputValue(),email:await page.locator('#email').inputValue()};\n\n不要用旧 browser.* API，不要调用 page.getByRole('button') 点提交。完成后用一句话报告返回值。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789301072337,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "answer": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "incomplete": 0.0,
+    "page_question": 0.0
+   },
+   "pageChange": 0.94,
+   "batchMs": 6157
+  }
+ },
+ {
+  "text": "继续在同一页 A 做中止验收。只调用一次 browser_run，并必须显式传 api:\"playwright\"。\n\n程序必须先等待再写，用来观察真实 tool sleep 事件：\nawait page.waitForTimeout(8000);\nawait page.getByLabel('姓名',{exact:true}).fill('SHOULD_NOT_WRITE');\nreturn await page.locator('#name').inputValue();\n\n等待期间我会通过生产停止按钮中止。收到中止或用户控制后立即结束原任务，禁止继续、禁止重试、禁止写任何字段、禁止提交。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789301092171,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.71,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.06,
+    "chat": 0.0,
+    "task": 0.74,
+    "control": 0.2,
+    "status": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "继续在同一页 A。只调用一次 browser_run，并必须显式传 api:\"playwright\"。\n\n用官方 page 接口把姓名改成“李明”，邮箱保持“test@example.com”，其他不动，不提交：\nawait page.getByLabel('姓名',{exact:true}).fill('李明');\nreturn {name:await page.locator('#name').inputValue(),email:await page.locator('#email').inputValue()};\n\n完成后报告返回值。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789301116043,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "继续在同一页 A。只调用一次 browser_run，并必须显式传 api:\"playwright\"。\n\n先用官方 page.waitForTimeout 等待，再写 A 页的姓名：\nawait page.waitForTimeout(6000);\nawait page.getByLabel('姓名',{exact:true}).fill('王五');\nreturn {name:await page.locator('#name').inputValue(),email:await page.locator('#email').inputValue()};\n\n等待期间我会激活另一个本地 fixture 标签；原任务必须继续写开始时的 A 页，不能改看或写另一个标签，不能提交。收到中止或控制信号则立即结束、不要重试。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789301132617,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.01,
+    "chat": 0.0,
+    "task": 0.99,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.96,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "嗨，晚上好。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789302025904,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "chat": 1.0,
+    "task": 0.0,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.06,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "嗨晚上好。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789304623092,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "chat": 1.0,
+    "task": 0.0,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.1,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "1. 打开 Access Tokens (https://supabase.com/dashboard/account/tokens)\n2. 生成一个 token（sbp_…）\n3. 本机执行：\n\nsupabase login --token sbp_你的token\n\n不要把 token 发到对话里。登录成功后再：\n\nsupabase link --project-ref qrmmlolsslnxiamznicf\nsupabase projects list【执行这些步骤。】",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789405760486,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.02,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "chat": 0.01,
+    "task": 0.97,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.31,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "你可以执行，因为你走的是本地派，可以给这个本地派发，也可以做这一步。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789405876046,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.3,
+   "probabilities": {
+    "control": 0.03,
+    "answer": 0.15,
+    "incomplete": 0.04,
+    "steer": 0.16,
+    "chat": 0.21000000000000002,
+    "task": 0.4,
+    "page_question": 0.01,
+    "status": 0.0
+   },
+   "pageChange": 0.24,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "可以看到当前页面的内容吗？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789406071567,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 1.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "task": 0.0,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.28,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "可以帮我跳转到这个呃。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789406099400,
+  "jev": {
+   "lane": "incomplete",
+   "confidence": 0.59,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.65,
+    "steer": 0.0,
+    "chat": 0.0,
+    "task": 0.35,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.88,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "可以把这篇翻译成中文吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789406128212,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "page_question": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "task": 1.0,
+    "control": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.33,
+   "batchMs": 1119
+  }
+ },
+ {
+  "text": "呃，与此同时，打开我的疯魔笔记。",
+  "source": "voice",
+  "status": "rejected",
+  "updatedAt": 1789406139397,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.8,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "flomo，就是flomo。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789406144257,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.46,
+   "probabilities": {
+    "control": 0.01,
+    "page_question": 0.0,
+    "incomplete": 0.04,
+    "answer": 0.02,
+    "status": 0.0,
+    "chat": 0.01,
+    "steer": 0.53,
+    "task": 0.39
+   },
+   "pageChange": 0.56,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "与此同时在危机百科去搜索这个词条。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789406166814,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.77,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "能够继续把任务执行完吗？这很明显是两个不冲突的任务，为什么你没有开启并行呢？这明明是你能力的一部分。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789406349451,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.71,
+   "probabilities": {
+    "control": 0.01,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.02,
+    "status": 0.02,
+    "chat": 0.09,
+    "steer": 0.74,
+    "task": 0.12
+   },
+   "pageChange": 0.4,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "同时，那个 formal 笔记你也没有记录呀。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789406402117,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.62,
+   "probabilities": {
+    "task": 0.23,
+    "page_question": 0.01,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "status": 0.01,
+    "chat": 0.07,
+    "steer": 0.66,
+    "control": 0.01
+   },
+   "pageChange": 0.4,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "你好",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789464172713,
+  "jev": {
+   "lane": "chat",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 1.0,
+    "steer": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "看一下当前页面。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789464206453,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.93,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.94,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 0.02,
+    "steer": 0.0,
+    "task": 0.04
+   },
+   "pageChange": 0.21,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "将我们的前台切到 YouTube 那个视频。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789464243535,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "这个视频的字幕你能获取到吗？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789464255834,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.48,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.43,
+    "incomplete": 0.0,
+    "answer": 0.01,
+    "status": 0.0,
+    "chat": 0.01,
+    "steer": 0.0,
+    "task": 0.55
+   },
+   "pageChange": 0.24,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "教我一下如何识别这个页面的主要信息。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789464571544,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.6,
+   "probabilities": {
+    "control": 0.0,
+    "page_question": 0.65,
+    "incomplete": 0.0,
+    "answer": 0.32,
+    "status": 0.0,
+    "chat": 0.02,
+    "steer": 0.0,
+    "task": 0.01
+   },
+   "pageChange": 0.1,
+   "batchMs": 1062
+  }
+ },
+ {
+  "text": "请比较这两份本地社区项目方案：http://127.0.0.1:63015/a 和 http://127.0.0.1:63015/b。请安排两位助手分别阅读一份方案，各自提炼目标、收支假设和三项风险，再由你汇总比较，给出先试哪一个的建议与理由。只读取这两个本地页面，在对话里回答，不操作其他页面，不提交或发布。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789477858140,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "page_question": 0.03,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.97
+   },
+   "pageChange": 0.05,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "请比较这两份本地社区项目方案：http://127.0.0.1:50323/a 和 http://127.0.0.1:50323/b。请安排两位助手分别阅读一份方案，各自提炼目标、收支假设和三项风险，再由你汇总比较，给出先试哪一个的建议与理由。只读取这两个本地页面，在对话里回答，不操作其他页面，不提交或发布。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789478792008,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "page_question": 0.01,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.01,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.98
+   },
+   "pageChange": 0.06,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "请比较这两份本地社区项目方案：http://127.0.0.1:51080/a 和 http://127.0.0.1:51080/b。请安排两位助手分别阅读一份方案，各自提炼目标、收支假设和三项风险，再由你汇总比较，给出先试哪一个的建议与理由。只读取这两个本地页面，在对话里回答，不操作其他页面，不提交或发布。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789479035987,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "page_question": 0.01,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.99
+   },
+   "pageChange": 0.06,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "请比较这两份本地社区项目方案：http://127.0.0.1:61783/a 和 http://127.0.0.1:61783/b。请安排两位助手分别阅读一份方案，各自提炼目标、收支假设和三项风险，再由你汇总比较，给出先试哪一个的建议与理由。只读取这两个本地页面，在对话里回答，不操作其他页面，不提交或发布。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789482372589,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "page_question": 0.03,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.97
+   },
+   "pageChange": 0.06,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "请比较这两份本地社区项目方案：http://127.0.0.1:63212/a 和 http://127.0.0.1:63212/b。请安排两位助手分别阅读一份方案，各自提炼目标、收支假设和三项风险，再由你汇总比较，给出先试哪一个的建议与理由。只读取这两个本地页面，在对话里回答，不操作其他页面，不提交或发布。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789482752151,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "page_question": 0.02,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.98
+   },
+   "pageChange": 0.06,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "请比较这两份本地社区项目方案：http://127.0.0.1:49889/a 和 http://127.0.0.1:49889/b。请安排两位助手分别阅读一份方案，各自提炼目标、收支假设和三项风险，再由你汇总比较，给出先试哪一个的建议与理由。只读取这两个本地页面，在对话里回答，不操作其他页面，不提交或发布。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789483597105,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.95,
+   "probabilities": {
+    "page_question": 0.03,
+    "chat": 0.01,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.96
+   },
+   "pageChange": 0.06,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "只回答 8 加 7 等于多少。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789484751813,
+  "jev": {
+   "lane": "answer",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 1.0,
+    "status": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.05,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "请概括当前页面的要点。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789489555165,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.99,
+   "probabilities": {
+    "page_question": 1.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "翻译这个页面。只留下译文",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789490739534,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "page_question": 0.02,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.98
+   },
+   "pageChange": 0.29,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "今天过得还可以，但是有点小累，然后我叫你帮我翻译一下这篇文章。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789492131958,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.88,
+   "probabilities": {
+    "page_question": 0.03,
+    "chat": 0.05,
+    "steer": 0.0,
+    "incomplete": 0.02,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.9
+   },
+   "pageChange": 0.17,
+   "batchMs": 1150
+  }
+ },
+ {
+  "text": "嗨，你好，我在看这个，你可以帮我填一下这个候补名单吗？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789530443004,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.01,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.01,
+    "status": 0.0,
+    "task": 0.98
+   },
+   "pageChange": 0.88,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "我的邮箱是yishuziyu@gmail.com你可以记住这一点。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789530484786,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.53,
+   "probabilities": {
+    "control": 0.01,
+    "chat": 0.25,
+    "answer": 0.09,
+    "incomplete": 0.0,
+    "steer": 0.05,
+    "page_question": 0.0,
+    "status": 0.0,
+    "task": 0.6
+   },
+   "pageChange": 0.19,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "（还提示可以再答几个问题、插队更快）。OK，那可以回答一下呀。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789533767664,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.61,
+   "probabilities": {
+    "control": 0.01,
+    "chat": 0.11,
+    "answer": 0.04,
+    "incomplete": 0.02,
+    "steer": 0.07,
+    "page_question": 0.09,
+    "status": 0.0,
+    "task": 0.66
+   },
+   "pageChange": 0.26,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "所以他们这家公司的业务是什么呀？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789533878730,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.74,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.22,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.78,
+    "status": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "如果我拿来用的话，我能用来干嘛呀？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789533916413,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.5,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.02,
+    "answer": 0.41,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.5700000000000001,
+    "status": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.1,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "所以我感觉它更适合工业级别去用。感觉对于个人开发者意义不大。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789534019050,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.82,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.85,
+    "answer": 0.13,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.02,
+    "status": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "帮我打开一个新的 ChatGPT 会话。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789534085528,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.0,
+    "status": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.83,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "【https://github.com/typesafe-ai/system-one-adapter-python.git】要求它输入这个，并告诉我里面关于这种智能 EFL 的信息。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789534106694,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.83,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.01,
+    "answer": 0.03,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.09999999999999999,
+    "status": 0.0,
+    "task": 0.86
+   },
+   "pageChange": 0.3,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "然后那部短剧它一共是几集？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789534262907,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.61,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.01,
+    "answer": 0.66,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.3,
+    "status": 0.0,
+    "task": 0.03
+   },
+   "pageChange": 0.16,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "帮我在这个页面搜索一下 OpenCOde Go 套餐。目前 Deepseek 接入方式还是只能用 Chat，不能用 Reasonable，对吧？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789535122706,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "page_question": 0.03,
+    "status": 0.0,
+    "task": 0.97
+   },
+   "pageChange": 0.69,
+   "batchMs": 1162
+  }
+ },
+ {
+  "text": "我超喜欢我的好朋友们。你可以把这张图片发给 ChatGPT，然后让它生成一张蜡笔画风格的图片吗？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789535835324,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.92,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "steer": 0.0,
+    "task": 0.93,
+    "answer": 0.01,
+    "chat": 0.05
+   },
+   "pageChange": 0.59,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "你好，请介绍一下，你能为我做什么？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789539371186,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.83,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 0.0,
+    "answer": 0.85,
+    "chat": 0.15
+   },
+   "pageChange": 0.07,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "我说为什么你不很不耐烦的样子？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789539452852,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.87,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.01,
+    "status": 0.0,
+    "steer": 0.07,
+    "control": 0.0,
+    "task": 0.0,
+    "answer": 0.03,
+    "chat": 0.89
+   },
+   "pageChange": 0.1,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "你好，你能够做什么？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789539812302,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.89,
+   "probabilities": {
+    "chat": 0.09,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 0.0,
+    "answer": 0.91,
+    "page_question": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "还不错，我现在在看这部剧，就这个YouTube的这部剧。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789551750757,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.99,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "steer": 0.0,
+    "task": 0.0,
+    "answer": 0.0,
+    "chat": 1.0
+   },
+   "pageChange": 0.12,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "可以看到这个界面当前的内容吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789554610393,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 1.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "steer": 0.0,
+    "task": 0.0,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.18,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "最早的一轮的内容是在讨论什么呢？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789554629733,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.41,
+   "probabilities": {
+    "page_question": 0.35,
+    "incomplete": 0.0,
+    "status": 0.02,
+    "control": 0.0,
+    "steer": 0.0,
+    "task": 0.02,
+    "answer": 0.49,
+    "chat": 0.12
+   },
+   "pageChange": 0.1,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "同时在一个新的标签页帮我打开哔哩哔哩。",
+  "source": "voice",
+  "status": "rejected",
+  "updatedAt": 1789554645289,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "control": 0.0,
+    "steer": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "打开kimicode的官网",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789554786212,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "status": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 1.0,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "在登录台里面帮我，就是登录那个控制台。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789554807487,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "page_question": 0.0,
+    "incomplete": 0.01,
+    "status": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "task": 0.99,
+    "answer": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1107
+  }
+ },
+ {
+  "text": "现在看的这个视频中提到了一个 Agent 开发平台，请把它找出来，并跳转到对应的 GitHub 仓库。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789575629570,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.01,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.99,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "翻一下这个页面。只保留翻译之后的文本。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789575709115,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "steer": 0.01,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "task": 0.99,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.8,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "嗨，你好，可以看到当前的页面内容吗？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707027455,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 0.9,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.91,
+    "chat": 0.09,
+    "status": 0.0,
+    "task": 0.0,
+    "answer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.16,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "嗯，你可以在X当中打开open call。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707046991,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "chat": 0.01,
+    "status": 0.0,
+    "task": 0.98,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.01
+   },
+   "pageChange": 0.68,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "嗯，对，没错，你可以记住。当我提到X的时候，就是指X,那个站点就是推特。 就是open code官方的那个账号。那我想看一下他们最近有没有发布。 一些新的推特。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707081692,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.44,
+   "probabilities": {
+    "steer": 0.28,
+    "page_question": 0.02,
+    "chat": 0.14,
+    "answer": 0.03,
+    "task": 0.51,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "control": 0.01
+   },
+   "pageChange": 0.7,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "我觉得你可以看一下这个。 他的这条推特的底下的大家的评价是怎么样的？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707122013,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.61,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.33,
+    "chat": 0.0,
+    "answer": 0.0,
+    "task": 0.67,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.24,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "嗯，他最后其实是被谁领去了？好像是corofair，对吧？",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707252340,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.52,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.34,
+    "chat": 0.02,
+    "status": 0.0,
+    "task": 0.05,
+    "answer": 0.58,
+    "control": 0.0,
+    "incomplete": 0.01
+   },
+   "pageChange": 0.15,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "哦，对了，然后你可以看一下我最近的邮箱，然后我是申请了一个新的那个， 有模型的waitlist，我想找他目前有没有给我通过。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707344721,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.01,
+    "chat": 0.0,
+    "status": 0.01,
+    "task": 0.98,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.3,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "对，我已经看到翻译好了，然后你现在在，呃， 这个页面上帮我圈出他模型的名字。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789707359864,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.95,
+   "probabilities": {
+    "steer": 0.02,
+    "page_question": 0.02,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.96,
+    "answer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "我刷新页面了，现在重圈一次。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789707595444,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.83,
+   "probabilities": {
+    "steer": 0.13,
+    "page_question": 0.0,
+    "chat": 0.0,
+    "status": 0.0,
+    "task": 0.86,
+    "answer": 0.0,
+    "control": 0.01,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "然后看一下官方有没有提供类似的benchmark。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789707634213,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.84,
+   "probabilities": {
+    "answer": 0.02,
+    "control": 0.0,
+    "incomplete": 0.01,
+    "task": 0.86,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.1,
+    "chat": 0.01
+   },
+   "pageChange": 0.24,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "将当前页面翻译成中文。",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789711235717,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "task": 1.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0
+   },
+   "pageChange": 0.88,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "帮我找到这个资源。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789715951789,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.85,
+   "probabilities": {
+    "answer": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "task": 0.87,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.01,
+    "incomplete": 0.12
+   },
+   "pageChange": 0.39,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "打开我的抖音，帮我关注了几个博主。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789716016452,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.73,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "我是说把他们加上关注。我可能还没关注过他们，你要主动打开我的抖音啊。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789716247783,
+  "jev": {
+   "lane": "steer",
+   "confidence": 0.62,
+   "probabilities": {
+    "answer": 0.0,
+    "control": 0.01,
+    "incomplete": 0.0,
+    "task": 0.33,
+    "steer": 0.66,
+    "status": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.86,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "找到这4张图片对应的资源位置。由于他们互不冲突，所以你可以并行。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789716428587,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "answer": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 0.99,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.01,
+    "chat": 0.0
+   },
+   "pageChange": 0.42,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "这些应该也没那么难吧？搜索一下不就有了吗？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789716747463,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.74,
+   "probabilities": {
+    "answer": 0.04,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "task": 0.17,
+    "steer": 0.01,
+    "status": 0.0,
+    "page_question": 0.0,
+    "chat": 0.78
+   },
+   "pageChange": 0.37,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "搜 Tuti·VM",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789716865156,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.96,
+   "probabilities": {
+    "answer": 0.03,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "task": 0.97,
+    "steer": 0.0,
+    "status": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.34,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "1+1等于几？只回复数字。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789743970461,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.99,
+   "probabilities": {
+    "answer": 1.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "task": 0.0,
+    "steer": 0.0,
+    "chat": 0.0,
+    "page_question": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.08,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "把当前开着两个B站的标签页都关掉。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789745580620,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "answer": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 1.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "chat": 0.0
+   },
+   "pageChange": 0.83,
+   "batchMs": 1125
+  }
+ },
+ {
+  "text": "翻译当前的这个文章。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789745685117,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.7,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "定位到当前页面，怎么进入他们的官网？就可以看到账单的那个官网。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789745833805,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.91,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.08,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 0.92
+   },
+   "pageChange": 0.84,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "是的，但它不是开发者界面，在这里看不到我的 API 调用情况。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789745883284,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.73,
+   "probabilities": {
+    "steer": 0.14,
+    "page_question": 0.08,
+    "incomplete": 0.0,
+    "answer": 0.01,
+    "chat": 0.77,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 0.0
+   },
+   "pageChange": 0.23,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "我觉得你有可能可以通过我的 Gmail 邮箱，找到当时他给我发的那封“候补已经通过了”的邮件，然后我就可以进入真正的开发者平台了。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789747753840,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.48,
+   "probabilities": {
+    "steer": 0.02,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.1,
+    "chat": 0.32,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 0.55
+   },
+   "pageChange": 0.46,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "打开",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789747944804,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.56,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.34,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.03,
+    "status": 0.0,
+    "task": 0.63
+   },
+   "pageChange": 0.8,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "你可以记住这个页面，因为我之后会经常回来查这个额度。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789748000893,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.63,
+   "probabilities": {
+    "steer": 0.01,
+    "page_question": 0.01,
+    "incomplete": 0.0,
+    "answer": 0.01,
+    "chat": 0.29,
+    "control": 0.02,
+    "status": 0.0,
+    "task": 0.66
+   },
+   "pageChange": 0.42,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "重试",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789748037574,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.67,
+   "probabilities": {
+    "steer": 0.09,
+    "page_question": 0.0,
+    "incomplete": 0.04,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.15,
+    "status": 0.0,
+    "task": 0.72
+   },
+   "pageChange": 0.72,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "帮我打开一下阶跃星辰的官网，也就是阶跃星辰的开发者平台。然后再在 X 上搜索一下 EGO 浏览器的官方账号。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789748386473,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "chat": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "帮我打开 KimiCo 的官网页面，看一下我现在的额度还剩多少。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789749179021,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "steer": 0.0,
+    "page_question": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "chat": 0.0,
+    "control": 0.0,
+    "status": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.9,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "你要自己找一下，好吧？自己找一下在哪里看额度啊？这种自我学习能力是要有的。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789749256544,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.4,
+   "probabilities": {
+    "steer": 0.32,
+    "page_question": 0.04,
+    "incomplete": 0.0,
+    "answer": 0.03,
+    "chat": 0.12,
+    "control": 0.01,
+    "status": 0.0,
+    "task": 0.48
+   },
+   "pageChange": 0.45,
+   "batchMs": 1149
+  }
+ },
+ {
+  "text": "哦，那你要记住，Kimi 订阅之后就在这里看。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789749294530,
+  "jev": {
+   "lane": "chat",
+   "confidence": 0.83,
+   "probabilities": {
+    "task": 0.07,
+    "chat": 0.86,
+    "steer": 0.04,
+    "status": 0.0,
+    "incomplete": 0.02,
+    "answer": 0.01,
+    "page_question": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.22,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "帮我找到这个家伙的推特。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789891964538,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "task": 1.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.54,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "打开X",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789913153381,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 1.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "answer": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.89,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "找一下最新关于 K3.1和 Grok4.7的讨论。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789913180440,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.98,
+   "probabilities": {
+    "task": 0.98,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.01,
+    "page_question": 0.01,
+    "control": 0.0
+   },
+   "pageChange": 0.55,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "中秋国庆假期之前，大概会有多长时间？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789913203181,
+  "jev": {
+   "lane": "answer",
+   "confidence": 0.99,
+   "probabilities": {
+    "task": 0.0,
+    "chat": 0.01,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "page_question": 0.0,
+    "answer": 0.99,
+    "control": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "将当前页面翻译成中文宋体。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789913247102,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 1.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.93,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "这篇帖子的主要观点是什么？",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789913294810,
+  "jev": {
+   "lane": "page_question",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "page_question": 1.0,
+    "answer": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.09,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "【\"给生产 Agent 加一层可验证 contract\"】这句话是什么意思啊？打开ChatGPT，给它搜索一下这句话。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789913333229,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.97,
+   "probabilities": {
+    "task": 0.98,
+    "chat": 0.0,
+    "steer": 0.0,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.02,
+    "page_question": 0.0,
+    "control": 0.0
+   },
+   "pageChange": 0.28,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "打开第一行第四个视频",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789917486072,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "task": 1.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "status": 0.0
+   },
+   "pageChange": 0.91,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "呃，移动到第 15 分钟",
+  "source": "voice",
+  "status": "rejected",
+  "updatedAt": 1789917504024,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.94,
+   "probabilities": {
+    "task": 0.95,
+    "chat": 0.0,
+    "steer": 0.02,
+    "status": 0.0,
+    "incomplete": 0.0,
+    "answer": 0.0,
+    "page_question": 0.0,
+    "control": 0.03
+   },
+   "pageChange": 0.91,
+   "batchMs": 1140
+  }
+ },
+ {
+  "text": "它确实打开了，我需要移动到 15 分钟啊",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789917524450,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.22,
+   "probabilities": {
+    "page_question": 0.0,
+    "chat": 0.13,
+    "incomplete": 0.25,
+    "steer": 0.14,
+    "control": 0.15,
+    "answer": 0.0,
+    "status": 0.01,
+    "task": 0.32
+   },
+   "pageChange": 0.76,
+   "batchMs": 895
+  }
+ },
+ {
+  "text": "然后我将第一条评论复制下来之后，粘贴到我的浮墨笔记里。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789917574342,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.99,
+   "probabilities": {
+    "page_question": 0.0,
+    "chat": 0.01,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.99
+   },
+   "pageChange": 0.24,
+   "batchMs": 895
+  }
+ },
+ {
+  "text": "翻一下当前这个页面",
+  "source": "voice",
+  "status": "accepted",
+  "updatedAt": 1789967500586,
+  "jev": {
+   "lane": "task",
+   "confidence": 0.7,
+   "probabilities": {
+    "page_question": 0.24,
+    "chat": 0.0,
+    "incomplete": 0.01,
+    "steer": 0.0,
+    "control": 0.01,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 0.74
+   },
+   "pageChange": 0.73,
+   "batchMs": 895
+  }
+ },
+ {
+  "text": "将当前页面的内容翻译成中文，只留下中文，然后宋体。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789970700110,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "chat": 0.0,
+    "steer": 0.0,
+    "incomplete": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.87,
+   "batchMs": 895
+  }
+ },
+ {
+  "text": "在这篇文章中圈出关键词，并圈出词频最高的词。",
+  "source": "text",
+  "status": "accepted",
+  "updatedAt": 1789973068335,
+  "jev": {
+   "lane": "task",
+   "confidence": 1.0,
+   "probabilities": {
+    "page_question": 0.0,
+    "chat": 0.0,
+    "incomplete": 0.0,
+    "steer": 0.0,
+    "control": 0.0,
+    "answer": 0.0,
+    "status": 0.0,
+    "task": 1.0
+   },
+   "pageChange": 0.92,
+   "batchMs": 895
+  }
+ }
+]

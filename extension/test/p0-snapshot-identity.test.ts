@@ -1,6 +1,6 @@
 import {afterEach,expect,it,vi} from 'vitest';
 vi.mock('../src/background/state.js',()=>({resolveReadableTab:async()=>({id:7,url:'https://fixture.test/form'})}));
-vi.mock('../src/background/observation-document.js',()=>({withObservedDocument:(_tab:number,_session:string,run:()=>Promise<unknown>)=>run()}));
+vi.mock('../src/background/observation-document.js',()=>({withObservedDocumentIdentity:async(_tab:number,_session:string,run:()=>Promise<unknown>)=>({value:await run(),documentId:'fixture-document'})}));
 vi.mock('../src/background/debugger.js',()=>({sendCommand:async()=>({nodes:[{}]})}));
 vi.mock('../src/background/axtree.js',()=>({axTreeToText:()=>({text:'Current form',backendIds:[]})}));
 vi.mock('../src/background/axstate.js',()=>({recordAxSnapshot:vi.fn(),clearAxSnapshot:vi.fn()}));

@@ -142,6 +142,7 @@ describe("session sets the task default page", () => {
     const steers: string[] = [];
     const fake = {
       model: { id: "fake" },
+      agent: { state: { messages: [], tools: [] } },
       isStreaming: streaming,
       prompt: async (text: string) => { prompts.push(text); },
       steer: async (text: string) => { steers.push(text); },
@@ -207,6 +208,10 @@ describe("default page reaches both tool paths", () => {
     const read = tools.find((tool) => tool.name === "read_element")!;
     await read.execute("call-1", { target: "body" }, undefined, undefined, {} as never);
     expect(sent.find((frame) => frame.name === "read_element")!.params).toEqual({ target: "body", tabId: 29960189 });
+    // read_elements 是 read_element 的多元素同级只读工具，缺省页注入规则必须一致。
+    const readMany = tools.find((tool) => tool.name === "read_elements")!;
+    await readMany.execute("call-2", { selector: "mark.keyword" }, undefined, undefined, {} as never);
+    expect(sent.find((frame) => frame.name === "read_elements")!.params).toEqual({ selector: "mark.keyword", tabId: 29960189 });
   });
 });
 

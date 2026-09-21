@@ -1,0 +1,336 @@
+{
+  "production": {
+    "files": 31,
+    "added": 924,
+    "deleted": 108,
+    "details": [
+      {
+        "file": "agent/src/task-goals.ts",
+        "added": 89,
+        "deleted": 0
+      },
+      {
+        "file": "agent/src/browser-decision-loop.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/src/conversation-manager.ts",
+        "added": 26,
+        "deleted": 8
+      },
+      {
+        "file": "agent/src/goal-reasoning-review.ts",
+        "added": 39,
+        "deleted": 0
+      },
+      {
+        "file": "agent/src/goal-evidence-judge.ts",
+        "added": 107,
+        "deleted": 0
+      },
+      {
+        "file": "agent/src/task-evidence-budget.ts",
+        "added": 16,
+        "deleted": 0
+      },
+      {
+        "file": "agent/src/voice-intent.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/src/task-goal-tool.ts",
+        "added": 134,
+        "deleted": 0
+      },
+      {
+        "file": "agent/src/task-results.ts",
+        "added": 4,
+        "deleted": 4
+      },
+      {
+        "file": "agent/src/voice-receipt.ts",
+        "added": 14,
+        "deleted": 7
+      },
+      {
+        "file": "agent/src/task-progress.ts",
+        "added": 40,
+        "deleted": 9
+      },
+      {
+        "file": "agent/src/task-readback.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/src/session.ts",
+        "added": 135,
+        "deleted": 31
+      },
+      {
+        "file": "agent/src/product-context.ts",
+        "added": 3,
+        "deleted": 3
+      },
+      {
+        "file": "agent/src/tools.ts",
+        "added": 8,
+        "deleted": 5
+      },
+      {
+        "file": "agent/src/user-delivery.ts",
+        "added": 17,
+        "deleted": 4
+      },
+      {
+        "file": "agent/src/conversation-runtime.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/src/task-evidence.ts",
+        "added": 127,
+        "deleted": 0
+      },
+      {
+        "file": "agent/src/browser-decision-model.ts",
+        "added": 2,
+        "deleted": 2
+      },
+      {
+        "file": "extension/src/background/ax-text-evidence.ts",
+        "added": 24,
+        "deleted": 0
+      },
+      {
+        "file": "extension/src/sidepanel/task-bar.ts",
+        "added": 3,
+        "deleted": 3
+      },
+      {
+        "file": "extension/src/background/exec/snapshot.ts",
+        "added": 12,
+        "deleted": 8
+      },
+      {
+        "file": "extension/src/background/exec/read-element.ts",
+        "added": 12,
+        "deleted": 1
+      },
+      {
+        "file": "shared/task-goals.ts",
+        "added": 53,
+        "deleted": 0
+      },
+      {
+        "file": "shared/browser-decision.ts",
+        "added": 5,
+        "deleted": 1
+      },
+      {
+        "file": "shared/voice.ts",
+        "added": 10,
+        "deleted": 0
+      },
+      {
+        "file": "shared/task-results.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "shared/task-next-step.ts",
+        "added": 19,
+        "deleted": 12
+      },
+      {
+        "file": "shared/protocol.ts",
+        "added": 2,
+        "deleted": 2
+      },
+      {
+        "file": "shared/task-view.ts",
+        "added": 5,
+        "deleted": 3
+      },
+      {
+        "file": "shared/page-text-evidence.ts",
+        "added": 13,
+        "deleted": 0
+      }
+    ]
+  },
+  "tests": {
+    "files": 33,
+    "added": 507,
+    "deleted": 76,
+    "details": [
+      {
+        "file": "agent/test/voice-task-delivery-regression.test.ts",
+        "added": 3,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/task-recovery-matrix.test.ts",
+        "added": 3,
+        "deleted": 3
+      },
+      {
+        "file": "agent/test/voice-multi-request.test.ts",
+        "added": 25,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/task-goal-tool.test.ts",
+        "added": 70,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/task-confirmed-recovery.test.ts",
+        "added": 9,
+        "deleted": 9
+      },
+      {
+        "file": "agent/test/skill-session.test.ts",
+        "added": 7,
+        "deleted": 2
+      },
+      {
+        "file": "agent/test/task-next-step.test.ts",
+        "added": 2,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/write-receipt-loss.test.ts",
+        "added": 11,
+        "deleted": 11
+      },
+      {
+        "file": "agent/test/browser-initial-path.test.ts",
+        "added": 9,
+        "deleted": 1
+      },
+      {
+        "file": "agent/test/voice-conversation-evaluator.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/test/harness-s2-results-isolation-evaluator.test.ts",
+        "added": 7,
+        "deleted": 7
+      },
+      {
+        "file": "agent/test/task-goals.test.ts",
+        "added": 108,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/task-results.test.ts",
+        "added": 7,
+        "deleted": 7
+      },
+      {
+        "file": "agent/test/task-evidence-recovery.test.ts",
+        "added": 46,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/task-evidence-budget.test.ts",
+        "added": 14,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/harness-s2-persistence-evaluator.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/test/task-evidence.test.ts",
+        "added": 43,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/voice-notifications.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/test/conversation-manager.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/test/voice-control-confirmation.test.ts",
+        "added": 2,
+        "deleted": 2
+      },
+      {
+        "file": "agent/test/voice-greeting-regression.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "agent/test/task-answer-goals.test.ts",
+        "added": 50,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/task-view.test.ts",
+        "added": 5,
+        "deleted": 4
+      },
+      {
+        "file": "agent/test/task-result-turn-economy.test.ts",
+        "added": 6,
+        "deleted": 6
+      },
+      {
+        "file": "agent/test/voice-progress.test.ts",
+        "added": 11,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/user-delivery-runtime.test.ts",
+        "added": 1,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/p0-review-regressions.test.ts",
+        "added": 7,
+        "deleted": 6
+      },
+      {
+        "file": "agent/test/browser-decision-input.test.ts",
+        "added": 11,
+        "deleted": 0
+      },
+      {
+        "file": "agent/test/user-delivery-facts.test.ts",
+        "added": 7,
+        "deleted": 5
+      },
+      {
+        "file": "agent/test/harness-s2-results-evaluator.test.ts",
+        "added": 6,
+        "deleted": 6
+      },
+      {
+        "file": "agent/test/user-delivery-runtime-evaluator.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "extension/test/task-view-ui.test.ts",
+        "added": 1,
+        "deleted": 1
+      },
+      {
+        "file": "extension/test/ax-text-evidence.test.ts",
+        "added": 30,
+        "deleted": 0
+      }
+    ]
+  }
+}

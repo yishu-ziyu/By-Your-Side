@@ -40,6 +40,17 @@ interface DomRect {
   height: number;
 }
 
+/** Serialized into the page by callDom; keep this function self-contained. */
+function readDomTargetRect(target: string): { ok: true; rect: DomRect } | { ok: false; error: string } {
+  const dom = window.__sideagent?.dom;
+  if (!dom) return { ok: false, error: "domops 未注入" };
+  try {
+    return { ok: true, rect: dom.rectOf(target) };
+  } catch (error: any) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
+}
+
 /** "@N" → ref 号；非 @N 形式返回 null。 */
 function parseRef(target: string): number | null {
   if (!target.startsWith("@")) return null;
@@ -582,15 +593,7 @@ async function resolvePointerTarget(
       await ensureDomOps(tabId);
       const res = await callDom(
         tabId,
-        (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
-          const dom = window.__sideagent?.dom;
-          if (!dom) return { ok: false, error: "domops 未注入" };
-          try {
-            return { ok: true, rect: dom.rectOf(t) };
-          } catch (e: any) {
-            return { ok: false, error: e?.message ?? String(e) };
-          }
-        },
+        readDomTargetRect,
         [target],
       );
       if (!res || !res.ok) {
@@ -1053,15 +1056,7 @@ export async function fill(
       await ensureDomOps(tabId);
       const res = await callDom(
         tabId,
-        (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
-          const dom = window.__sideagent?.dom;
-          if (!dom) return { ok: false, error: "domops 未注入" };
-          try {
-            return { ok: true, rect: dom.rectOf(t) };
-          } catch (e: any) {
-            return { ok: false, error: e?.message ?? String(e) };
-          }
-        },
+        readDomTargetRect,
         [params.target],
       );
       if (res?.ok && res.rect && typeof res.rect.x === "number") {

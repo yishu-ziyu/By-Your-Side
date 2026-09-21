@@ -238,7 +238,7 @@ describe("任务条文案：真实原因，不合并成含糊状态", () => {
   it("阻塞原因逐条可读，未知原因不吞掉原文", () => {
     expect(waitingCopy("human_control", null).text).toBe("页面已交给你，Agent 暂停等待");
     expect(waitingCopy("failure_limit", null).text).toContain("连续失败");
-    expect(waitingCopy("readback_required", null).text).toContain("读回确认");
+    expect(waitingCopy("readback_required", null).text).toBe("Agent 尚需核对页面结果");
     expect(waitingCopy("unknown_with_baseline", null).text).toContain("结果未知");
     expect(waitingCopy("restart_checkpoint", "host_restart").detail).toContain("伴随进程");
     expect(waitingCopy("runtime_error", null).text).toBe("运行出错");

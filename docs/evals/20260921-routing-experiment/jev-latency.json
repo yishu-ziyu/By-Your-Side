@@ -1,0 +1,50 @@
+{
+ "model": "jev-1.13.0",
+ "calls": 37,
+ "usage": {
+  "input_tokens": 185864,
+  "output_tokens": 28056
+ },
+ "singles": [
+  {
+   "text": "嗨，你好呀。",
+   "ms": 820,
+   "lane": "chat"
+  },
+  {
+   "text": "呃，可以看到我当前这个页面吗？",
+   "ms": 922,
+   "lane": "page_question"
+  },
+  {
+   "text": "嗯，有看到吗？",
+   "ms": 901,
+   "lane": "page_question"
+  },
+  {
+   "text": "读到了什么呢？",
+   "ms": 863,
+   "lane": "page_question"
+  },
+  {
+   "text": "嗨，你好。",
+   "ms": 825,
+   "lane": "chat"
+  },
+  {
+   "text": "嗨，晚上好。",
+   "ms": 894,
+   "lane": "chat"
+  },
+  {
+   "text": "帮我把这个标签也贴到 B 站那一",
+   "ms": 862,
+   "lane": "task"
+  },
+  {
+   "text": "不是说把标签页切到 B 站那一个，不是表情。",
+   "ms": 908,
+   "lane": "steer"
+  }
+ ]
+}

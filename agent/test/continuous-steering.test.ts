@@ -19,8 +19,10 @@ import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 // 合成/脚本会话不进用户保留的 trace。
 vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
   begin() {}
+  correlate() {}
   record() {}
   event() {}
+  stage() { return { end() {} }; }
 } }));
 
 async function until<T>(probe: () => T | undefined | false, timeoutMs = 5000, what = "condition"): Promise<T> {

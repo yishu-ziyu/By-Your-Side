@@ -1,3 +1,5 @@
+import { goalsSatisfied } from '../../shared/task-goals.js';
+import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
 import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
@@ -15,7 +17,7 @@ import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recov
 import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
 import type { DeliveryFactInput } from './user-delivery.js';
 
-const labels: Record<string, string> = { record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
+const labels: Record<string, string> = { capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 const label = (name: string) => labels[name] ?? name.slice(0, 100);
 
 /** Runtime receipts drive progress; bounded target bindings are retained, page contents are excluded. */
@@ -32,6 +34,7 @@ export class TaskProgress {
   private lifecycleFrozen=false;
   private recoveryInput:TaskRecoveryInput|undefined;
   private unresolvedEffect=false;
+  private executionAuditComplete=false;
   private lastAction: TaskProgressSnapshot["lastAction"] = null;
   private lastReadAt: number | null = null;
   /** Lead-only conversation evidence: bounded turns, the current turn's streamed text, the run's final report. */
@@ -47,6 +50,7 @@ export class TaskProgress {
   private failureLimit=false;
   private lastBrowserFailed=false;
   private readonly results: TaskResultBook;
+  readonly goals = new TaskGoalBook();
   /** T06：本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
   private runSources: UserDeliverySourceRef[] = [];
   private readonly pendingNavUrls = new Map<string, string>();
@@ -64,14 +68,17 @@ export class TaskProgress {
     const shorten = (description: string): string => description.length > USER_DELIVERY_FACT_DESCRIPTION_MAX
       ? `${description.slice(0, USER_DELIVERY_FACT_DESCRIPTION_MAX - 1)}…`
       : description;
-    const items = this.results.list();
+    const executionItems = this.results.list();
+    const plan = this.goals.snapshot();
+    // Unknown effects remain visible even when they are not user outcomes.
+    const items = plan ? [...plan.goals, ...executionItems.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionItems))] : executionItems;
     const allDelivered = items.filter((item) => item.status === "satisfied").map((item) => shorten(item.description));
     const delivered: string[] = [];
     for (const description of allDelivered) {
       if (!delivered.includes(description)) delivered.push(description);
       if (delivered.length >= USER_DELIVERY_FACT_ITEM_MAX) break;
     }
-    const allRemaining = items.filter((item) => ["pending", "blocked", "unknown"].includes(item.status) && !isSupersededUnknown(item, items));
+    const allRemaining = items.filter((item) => ["pending", "blocked", "unknown"].includes(item.status) && !('tool' in item && isSupersededUnknown(item, executionItems)));
     const remaining: UserDeliveryRemainingItem[] = [];
     for (const item of allRemaining) {
       remaining.push({ id: item.id, description: shorten(item.description), status: item.status as UserDeliveryRemainingItem["status"] });
@@ -79,7 +86,8 @@ export class TaskProgress {
     }
     const omittedDelivered = allDelivered.length - delivered.length;
     const omittedRemaining = allRemaining.length - remaining.length;
-    return { delivered, remaining, sources: this.runSources.map((source) => ({ ...source })), ...(omittedDelivered ? { omittedDelivered } : {}), ...(omittedRemaining ? { omittedRemaining } : {}) };
+    const pendingAnswers=plan?.goals.filter(g=>g.kind==='answer'&&g.status==='pending').map(g=>({id:g.id,description:shorten(g.description)}));
+    return { delivered, remaining, ...(pendingAnswers?.length?{pendingAnswers}:{}), sources: this.runSources.map((source) => ({ ...source })), ...(omittedDelivered ? { omittedDelivered } : {}), ...(omittedRemaining ? { omittedRemaining } : {}) };
   }
   private noteRunSource(url: string): void {
     if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
@@ -93,7 +101,11 @@ export class TaskProgress {
     this.lifecycleFrozen=true;
     return true;
   }
-  prepareResume():void { this.lifecycleFrozen=false;this.failureLimit=false; }
+  prepareResume():void {
+    this.lifecycleFrozen=false;this.failureLimit=false;
+    // Upgrade only on explicit continuation, using complete task inputs, not a historical summary.
+    if(!this.goals.snapshot()&&this.recoveryInput?.requirements.length)this.goals.require(this.recoveryInput.requirements);
+  }
   /** Conversational turns are not new task requirements. Call only for actual task input. */
   recordRequirement(text:string,context?:PageContext,attachments?:Attachment[]):()=>void {
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
@@ -105,15 +117,19 @@ export class TaskProgress {
     const materials=mergeTaskMaterials(prior.materials??[],context,attachments);
     const recorded={requirements,attachmentKeys,materials,...(page?{page}:{})};
     const runId=this.runId;
+    const priorGoals = this.goals.snapshot();
     this.recoveryInput=recorded;
+    this.goals.require(requirements);
     // Only the caller that just registered this input can revoke it before acceptance.
     // Preserve a fresh page observation, and never roll back a later requirement or another run.
     return ()=>{
       if(this.runId!==runId||this.recoveryInput!==recorded)return;
       this.recoveryInput={...recorded,requirements:prior.requirements,attachmentKeys:prior.attachmentKeys,materials:prior.materials};
+      this.goals.restore(priorGoals, false);
     };
   }
   invalidatePage(tabId?:number,url?:string):void {
+    this.goals.invalidatePage(tabId ?? null);
     this.readback.restore(this.snapshot());this.results.notePageChange();this.completedReads.clear();this.lastReadAt=null;
     const page=tabId!==undefined&&url?pageRecoveryKey(tabId,url):undefined;
     if(page&&this.recoveryInput)this.recoveryInput.page=page;
@@ -130,6 +146,7 @@ export class TaskProgress {
     this.lifecycleFrozen=false;
     this.recoveryInput=snapshot.recoveryInput?structuredClone(snapshot.recoveryInput):undefined;
     this.unresolvedEffect=snapshot.unresolvedEffect===true||snapshot.untrackedWritePending===true;
+    this.executionAuditComplete=snapshot.executionAuditComplete===true&&!snapshot.untrackedWritePending;
     this.members.clear();
     this.tools.clear();
     this.lastAction = snapshot.lastAction ? { ...snapshot.lastAction } : null;
@@ -137,7 +154,9 @@ export class TaskProgress {
     // A pre-restart read does not prove the state of the page after reconnecting.
     this.lastReadAt = this.restartRecovery ? null : snapshot.lastReadAt ?? null;
     this.results.restore(snapshot);
-    this.readback.restore(snapshot);
+    this.goals.restore(snapshot.goalPlan,this.interrupted);
+    if(snapshot.state==='idle'&&snapshot.goalPlan&&goalsSatisfied(snapshot.goalPlan)&&snapshot.nextStep?.delivery==='report')this.readback.reset();
+    else this.readback.restore(snapshot);
     this.completedReads.clear();
     this.failureLimit=snapshot.nextStep?.reason==='failure_limit';
     this.lastBrowserFailed=snapshot.nextStep?.reason==='tool_failed';
@@ -181,7 +200,9 @@ export class TaskProgress {
     this.interruptionReason=undefined;
     this.lifecycleFrozen=false;
     this.recoveryInput={requirements:[],attachmentKeys:[]};
+    this.goals.clear();
     this.unresolvedEffect=false;
+    this.executionAuditComplete=true;
     this.recordRequirement(text,context,attachments);
     this.members.clear();
     this.tools.clear();
@@ -234,7 +255,10 @@ export class TaskProgress {
         this.latestResult = null;
       }
     } else if (e.kind === "user_delivery") {
-      if (lead && this.ledger.record(e.delivery)) this.pushTurn("assistant", e.delivery.text);
+      if (lead && this.ledger.record(e.delivery)) {
+        this.pushTurn("assistant", e.delivery.text);
+        if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
+      }
     } else if (e.kind === "agent_end") {
       if (this.members.get(member) !== "paused" && this.members.get(member) !== "error") end("idle");
       if (lead) {
@@ -256,25 +280,41 @@ export class TaskProgress {
     } else if (e.kind === "text_delta") {
       if (lead && this.turnText.length < 20000) this.turnText += e.delta;
     } else if (e.kind === "tool_start") {
-      const target = extractResultTarget(e.params);
+      const target = extractResultTarget(e.params, e.name);
       // T06：导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
       if ((e.name === "navigate" || e.name === "open_tab") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
-      const tabAction=e.name==='tabs'?String(e.params.action):e.name==='open_tab'?'open':e.name==='close_tab'?'close':undefined;
+      let tabAction: string | undefined;
+      if (e.name === 'tabs') {
+        tabAction = String(e.params.action);
+      } else if (e.name === 'open_tab') {
+        tabAction = 'open';
+      } else if (e.name === 'close_tab') {
+        tabAction = 'close';
+      } else if (e.name === 'switch_tab') {
+        tabAction = 'switch';
+      }
       const browserControl=e.name==='tabs'&&['open','switch','close'].includes(tabAction??'');
       const write=isWriteTool(e.name)||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write')||browserControl;
       // A tabs/switch call changes which page is controlled, not remote/page
       // business state. An uncertain switch must be re-observed, but it must not
       // permanently lock unrelated form writes like an uncertain fill/click does.
-      const durableEffect=write&&!(e.name==='tabs'&&tabAction==='switch');
+      const durableEffect=write&&tabAction!=='switch';
       // The host hashes private skill inputs before redacting public tool parameters.
-      const valueHash=e.name==='fill'?(typeof e.valueHash==='string'&&/^[a-f0-9]{64}$/.test(e.valueHash)?e.valueHash
-        :typeof e.params.value==='string'?createHash('sha256').update(e.params.value).digest('hex'):undefined):undefined;
+      let valueHash: string | undefined;
+      if (e.name === 'fill') {
+        if (typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash)) {
+          valueHash = e.valueHash;
+        } else if (typeof e.params.value === 'string') {
+          valueHash = createHash('sha256').update(e.params.value).digest('hex');
+        }
+      }
+      if(!this.aborted&&this.tools.size>=100&&(durableEffect||e.name==='fetch'))this.executionAuditComplete=false;
       if(!this.aborted&&write)this.readback.beginWrite();
       if (!this.aborted && this.tools.size < 100) this.tools.set(`${member}:${e.toolCallId}`, { member, name: e.name, action: label(e.name), since: this.clock(), target,
         tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction,
         ...(valueHash?{valueHash}:{}) });
       if (!this.aborted) {
-        this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId, description: deriveResultDescription(e.name, e.params, target),effectful:durableEffect,valueHash });
+        this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId, description: deriveResultDescription(e.name, e.params, target),effectful:durableEffect,recordResult:browserControl,valueHash });
         // 页面/文档可能改变：旧读数不能再当作后续写入的前后对比基线。
         if (isPageIdentityTool(e.name)) this.results.notePageChange();
       }
@@ -306,6 +346,7 @@ export class TaskProgress {
       if (!this.aborted) {
         this.lastAction = { action: started.action, failed: e.isError, at: this.clock() };
         if(!isResultMetaTool(e.name))this.lastBrowserFailed=e.isError;
+        if (started.durableEffect && e.executionFact !== 'not_executed') this.goals.invalidatePage(started.tabId);
         if(started.write&&e.executionFact!=='not_executed'){
           if(started.tabAction==='close')this.readback.closedTab(member,started.tabId);
           else {
@@ -321,6 +362,7 @@ export class TaskProgress {
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: e.executionFact,
           effectful:started.durableEffect||(e.name==='fetch'&&e.isError&&e.executionFact!=='not_executed'),valueHash:started.valueHash });
+        if((started.durableEffect||e.name==='fetch')&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
         if(started.durableEffect&&e.isError&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
       }
     } else if (e.kind === "tool_late_result") {
@@ -341,18 +383,37 @@ export class TaskProgress {
   recordConfirmedRecovery(input: import('./task-results.js').ConfirmedRecoveryRecord) { return this.results.recordConfirmedRecovery(input); }
   snapshot(): TaskProgressSnapshot {
     const phases = [...this.members.values()];
-    const state = this.aborted ? "aborted" : phases.includes("running") ? "running" : phases.includes("paused") ? "paused" : phases.includes("error") ? "error" : this.interrupted ? "interrupted" : this.startedAt !== null ? "idle" : "none";
+    let state: TaskProgressSnapshot['state'];
+    if (this.aborted) {
+      state = "aborted";
+    } else if (phases.includes("running")) {
+      state = "running";
+    } else if (phases.includes("paused")) {
+      state = "paused";
+    } else if (phases.includes("error")) {
+      state = "error";
+    } else if (this.interrupted) {
+      state = "interrupted";
+    } else if (this.startedAt !== null) {
+      state = "idle";
+    } else {
+      state = "none";
+    }
     const conversationContext: VoiceConversationContext = {
       recentTurns: this.turns.map(t => ({ ...t })),
       latestResult: this.latestResult && this.latestResult.runId === this.runId ? { ...this.latestResult } : null,
       latestDelivery: this.ledger.latest(),
     };
-    const snapshot:TaskProgressSnapshot = { conversationId: this.conversationId, observedAt: this.clock(), state, goal: this.goal, startedAt: this.startedAt, runId: this.runId,
+    const snapshot:TaskProgressSnapshot = { goalPlan: this.goals.snapshot(), conversationId: this.conversationId, observedAt: this.clock(), state, goal: this.goal, startedAt: this.startedAt, runId: this.runId,
       ...(this.restartRecovery ? { restartRecovery: true } : {}),
       ...(this.interrupted?{interruptionReason:this.interruptionReason}:{}),
       ...(this.recoveryInput?{recoveryInput:structuredClone(this.recoveryInput)}:{}),
       active: [...this.tools.values()].slice(-12).map(({ member, action, since }) => ({ member, action, since })), lastAction: this.lastAction ? { ...this.lastAction } : null, lastReadAt: this.lastReadAt ?? undefined, successVerified: false, conversationContext,
-      results: this.results.list(), resultState: this.results.state() };
+      results: this.results.list(), executionState: this.results.state(), resultState: this.results.state() };
+    if (snapshot.goalPlan) {
+      snapshot.resultState = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results!)) ? 'unknown' : goalsSatisfied(snapshot.goalPlan) ? 'satisfied' : 'pending';
+    }
+    snapshot.executionAuditComplete=this.executionAuditComplete;
     if(this.unresolvedEffect)snapshot.unresolvedEffect=true;
     if([...this.tools].some(([key,tool])=>tool.durableEffect&&!snapshot.results!.some(item=>`${item.evidence?.member}:${item.evidence?.toolCallId}`===key)))snapshot.untrackedWritePending=true;
     snapshot.nextStep=decideTaskNextStep(snapshot,{inFlight:[...this.tools.values()].some(tool=>!isResultMetaTool(tool.name)),

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { BrowserAgentSession } from '../src/session.js';
 
-vi.mock('../src/run-trace.js', () => ({ RunTrace: class { record() {} } }));
+vi.mock('../src/run-trace.js', () => ({ RunTrace: class { begin() {} correlate() {} record() {} event() {} stage() { return { end() {} }; } } }));
 
 it('团队工具切换不能重新启用SDK目录中被禁用的本地工具', () => {
   const permitted = ['snapshot', 'fill', 'spawn_worker', 'take_tab', 'post', 'await_message', 'list_workers', 'stop_worker', 'page_operation'];

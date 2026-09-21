@@ -35,12 +35,12 @@ describe('superseded unknowns stay in history but stop blocking',()=>{
     expect(kept.evidence).toEqual(old.evidence);
     expect(kept.supersededBy).toBe(record!.id);
     expect(after.results!.find(item=>item.id===record!.id)?.status).toBe('satisfied');
-    expect(after.resultState).toBe('satisfied');
-    expect(decideTaskNextStep(after,{})).toMatchObject({action:'deliver'});
+    expect(after.executionState).toBe('satisfied');
+    expect(decideTaskNextStep(after,{})).toMatchObject({action:'continue',reason:'remaining'});
     expect(()=>assertTaskStepExecution({...after,state:'running'},'fill',{target:'#choice'})).not.toThrow();
     expect(isTaskProgressSnapshot(after)).toBe(true);
     const restored=new TaskProgress('default');restored.restoreResults(after);
-    expect(restored.snapshot().resultState).toBe('satisfied');
+    expect(restored.snapshot().executionState).toBe('satisfied');
     expect(restored.snapshot().results!.find(item=>item.id===old.id)?.supersededBy).toBe(record!.id);
   });
 
@@ -50,7 +50,7 @@ describe('superseded unknowns stay in history but stop blocking',()=>{
     const old=before.results!.find(item=>item.status==='unknown')!;
     progress.recordConfirmedRecovery({supersedes:old.id,description:'重新设置结果仍未确认','tool':'fill',target:'#choice',member:'main',runId:before.runId!,toolCallId:'confirm-1',satisfied:false,effectful:true});
     const stillUnknown=progress.snapshot();
-    expect(stillUnknown.resultState).toBe('unknown');
+    expect(stillUnknown.executionState).toBe('unknown');
     expect(decideTaskNextStep(stillUnknown,{})).toMatchObject({action:'ask_user',reason:'unknown_without_baseline'});
     expect(()=>assertTaskStepExecution({...stillUnknown,state:'running'},'fill',{target:'#choice'})).toThrow(/执行结果未知/);
 
@@ -162,7 +162,7 @@ describe('confirm_blocked_write tool',()=>{
     expect(result.details).toMatchObject({ok:false,state:'not_confirmed'});
     expect(s.executeWrite).not.toHaveBeenCalled();
     expect(s.record).not.toHaveBeenCalled();
-    expect(s.progress.snapshot().resultState).toBe('unknown');
+    expect(s.progress.snapshot().executionState).toBe('unknown');
   });
 
   it('executes exactly the confirmed action once, reads it back, and keeps the old unknown',async()=>{
@@ -172,7 +172,7 @@ describe('confirm_blocked_write tool',()=>{
     expect(s.executeWrite).toHaveBeenCalledExactlyOnceWith({tool:'fill',target:'#choice',value:'远山',tabId:7});
     expect(s.record.mock.calls[0]![0]).toMatchObject({supersedes:s.unknown.id,tool:'fill',target:'#choice',satisfied:true});
     expect(s.progress.snapshot().results!.find(item=>item.id===s.unknown.id)?.status).toBe('unknown');
-    expect(s.progress.snapshot().resultState).toBe('satisfied');
+    expect(s.progress.snapshot().executionState).toBe('satisfied');
   });
 
   it('keeps the result unknown and reports the block when the confirmed write fails',async()=>{
@@ -181,7 +181,7 @@ describe('confirm_blocked_write tool',()=>{
     expect(result.details).toMatchObject({ok:false,state:'unknown'});
     expect(s.executeWrite).toHaveBeenCalledOnce();
     expect(s.record.mock.calls[0]![0]).toMatchObject({supersedes:s.unknown.id,tool:'fill',satisfied:false});
-    expect(s.progress.snapshot().resultState).toBe('unknown');
+    expect(s.progress.snapshot().executionState).toBe('unknown');
     expect(()=>assertTaskStepExecution({...s.progress.snapshot(),state:'running'},'fill',{target:'#choice'})).toThrow(/执行结果未知/);
   });
 
@@ -190,7 +190,7 @@ describe('confirm_blocked_write tool',()=>{
     const result=await s.run({id:s.unknown.id,target:'#choice',value:'远山'});
     expect(result.details).toMatchObject({ok:false,reason:'page_changed'});
     expect(s.executeWrite).not.toHaveBeenCalled();
-    expect(s.progress.snapshot().resultState).toBe('unknown');
+    expect(s.progress.snapshot().executionState).toBe('unknown');
   });
 
   it('preserves a confirmed write rejection as not_executed instead of inventing a new unknown effect',async()=>{
@@ -200,7 +200,7 @@ describe('confirm_blocked_write tool',()=>{
     const result=await s.run({id:s.unknown.id,target:'#choice',value:'远山'});
     expect(result.details).toMatchObject({ok:false,state:'not_executed'});
     expect(s.progress.snapshot().results).toHaveLength(before);
-    expect(s.progress.snapshot().resultState).toBe('unknown');
+    expect(s.progress.snapshot().executionState).toBe('unknown');
   });
 
   it('refuses external actions and unknown ids without touching the page',async()=>{

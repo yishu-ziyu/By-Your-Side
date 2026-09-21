@@ -126,7 +126,7 @@ describe("语音修改直接送达", () => {
     expect(answer.kind).toBe('none');expect(received).toHaveLength(1);
   });
 
-  it.each(['ended','replaced','control-changed','old-voice'])('原任务 %s 不把要求送到旧执行；已结束的新要求另起任务',async mode=>{
+  it.each(['ended','replaced','control-changed','old-voice'])('原任务 %s 不把要求送到旧执行；缺少续接页面时保留原任务',async mode=>{
     const {manager,received,endRun}=setup();await manager.ensureDefault();
     const {runId,controlVersion}=await runningTask(manager);
     if(mode==='ended'||mode==='replaced')endRun();
@@ -134,7 +134,7 @@ describe("语音修改直接送达", () => {
     if(mode==='control-changed')await manager.handleMessage({type:'takeover',requestId:'takeover',conversationId:'default'});
     const call=manager.routeVoiceInput('default','改为宋体',null,()=>mode!=='old-voice',routeFor(manager,runId,controlVersion));
     if(mode==='old-voice')await expect(call).rejects.toThrow();
-    else {const result=await call;if(mode==='ended')expect(result).toMatchObject({kind:'action',ok:true});else expect(done(result).ok).not.toBe(true);}
+    else {const result=await call;expect(done(result).ok).not.toBe(true);}
     expect(received).toHaveLength(0);
   });
 

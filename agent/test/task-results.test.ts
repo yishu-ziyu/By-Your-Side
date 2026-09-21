@@ -26,7 +26,7 @@ function call(p: TaskProgress, id: string, name: string, params: Record<string, 
 describe('task result registry', () => {
   it('defaults to an empty unregistered ledger and never claims independent verification', () => {
     const p = new TaskProgress('default');
-    expect(p.snapshot()).toMatchObject({results: [], resultState: 'unregistered', successVerified: false});
+    expect(p.snapshot()).toMatchObject({results: [], executionState: 'unregistered', successVerified: false});
     expect(isTaskProgressSnapshot(p.snapshot())).toBe(true);
   });
 
@@ -39,7 +39,7 @@ describe('task result registry', () => {
     expect(p.snapshot().results!.find(r => r.id === 'mark-x')).toMatchObject({status: 'pending', target: null});
     expect(p.snapshot().results!.find(r => r.id === 'mark-x2')).toMatchObject({status: 'pending', target: null});
     expect(p.snapshot().results!.find(r => r.id.startsWith('auto-'))).toMatchObject({status: 'satisfied', target: '#x'});
-    expect(p.snapshot().resultState).toBe('pending');
+    expect(p.snapshot().executionState).toBe('pending');
   });
 
   it('keeps the first evidence when a duplicate receipt arrives', () => {
@@ -58,21 +58,21 @@ describe('task result registry', () => {
     p.abort();
     const restored = new TaskProgress('default');
     restored.restoreResults(p.snapshot());
-    expect(restored.snapshot()).toMatchObject({runId: p.snapshot().runId, state: 'aborted', resultState: 'pending'});
+    expect(restored.snapshot()).toMatchObject({runId: p.snapshot().runId, state: 'aborted', executionState: 'pending'});
     const live = progress();
     call(live, 'read', 'snapshot');
     call(live, 'draw', 'mark', {target: '#x'});
     const idle = new TaskProgress('default');
     idle.restoreResults(live.snapshot());
     expect(idle.snapshot().state).not.toBe('running');
-    expect(idle.snapshot().resultState).toBe('satisfied');
+    expect(idle.snapshot().executionState).toBe('satisfied');
   });
 
   it('ignores a snapshot from another conversation', () => {
     const p = progress();
     const other = new TaskProgress('other');
     other.restoreResults(p.snapshot());
-    expect(other.snapshot()).toMatchObject({results: [], resultState: 'unregistered'});
+    expect(other.snapshot()).toMatchObject({results: [], executionState: 'unregistered'});
   });
 });
 
@@ -91,7 +91,7 @@ describe('createTaskResultsTool', () => {
     await expect(tool.execute('t3', {results: [{id: 'mark-x', description: '标出指定对象', tool: 'click', target: '#x'}]} as any, undefined, undefined, {} as any)).rejects.toThrow(/未启用/);
     const result = await tool.execute('t4', {results: [{id: 'mark-x', description: '标出指定对象', tool: 'mark', target: '#y', status: 'satisfied'}]} as any, undefined, undefined, {} as any);
     expect(p.snapshot().results!.find(r => r.id === 'mark-x')).toMatchObject({status: 'pending', target: '#y'});
-    expect(JSON.parse((result as any).content[0].text).resultState).toBe('pending');
+    expect(JSON.parse((result as any).content[0].text).executionState).toBe('pending');
     expect(p.snapshot().results!.every(isTaskResultItem)).toBe(true);
     expect(resultStateOf(p.snapshot().results!)).toBe('pending');
   });
@@ -104,7 +104,7 @@ describe('translation failure recovery', () => {
     const runId=p.snapshot().runId;
     p.observe({type:'agent_event',runId,event:{kind:'tool_start',toolCallId:'translate',name:'page_translation',params:{action:'translate'}}} as any);
     p.observe({type:'agent_event',runId,event:{kind:'tool_end',toolCallId:'translate',name:'page_translation',isError:true,resultText:'generation failed',executionFact}} as any);
-    expect(p.snapshot().resultState).toBe(executionFact==='unknown'?'unknown':'blocked');
+    expect(p.snapshot().executionState).toBe(executionFact==='unknown'?'unknown':'blocked');
     expect(p.snapshot().results?.[0]?.status).not.toBe('satisfied');
   });
 });

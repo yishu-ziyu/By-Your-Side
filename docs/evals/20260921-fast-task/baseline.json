@@ -1,0 +1,109 @@
+{
+  "input": "typed real sidebar; clock starts before CDP dispatch; includes polling overhead; not microphone latency",
+  "runs": [
+    {
+      "artifact": "out/acceptance/fast-task-baseline-display-1789967941514/result.json",
+      "scenario": "display",
+      "passed": true,
+      "visibleResultMs": null,
+      "deliveryMs": 17278.237707999997,
+      "panelMs": 17292.445958,
+      "primaryModelTurns": 7,
+      "error": null,
+      "checks": {
+        "actualOutcome": true,
+        "goalsSatisfied": true,
+        "verifiedDelivery": true,
+        "panelComplete": true,
+        "noUnexpectedTranslationGeneration": true
+      }
+    },
+    {
+      "artifact": "out/acceptance/fast-task-baseline-display-1789968016305/result.json",
+      "scenario": "display",
+      "passed": false,
+      "visibleResultMs": 10149.489334,
+      "deliveryMs": null,
+      "panelMs": null,
+      "primaryModelTurns": 16,
+      "error": "Error: finding timeout",
+      "checks": null
+    },
+    {
+      "artifact": "out/acceptance/fast-task-baseline-display-1789968137247/result.json",
+      "scenario": "display",
+      "passed": false,
+      "visibleResultMs": null,
+      "deliveryMs": 86982.139834,
+      "panelMs": null,
+      "primaryModelTurns": 21,
+      "error": "Error: panel outcome timeout",
+      "checks": null
+    },
+    {
+      "artifact": "out/acceptance/fast-task-baseline-tab-1789967867318/result.json",
+      "scenario": "tab",
+      "passed": false,
+      "visibleResultMs": null,
+      "deliveryMs": null,
+      "panelMs": null,
+      "primaryModelTurns": 0,
+      "error": "Error: Fixture tabs missing",
+      "checks": null,
+      "assessment": "Invalid fixture setup before input; excluded from task performance, retained."
+    },
+    {
+      "artifact": "out/acceptance/fast-task-baseline-tab-1789967905039/result.json",
+      "scenario": "tab",
+      "passed": true,
+      "visibleResultMs": null,
+      "deliveryMs": 12136.409249999999,
+      "panelMs": 12137.258917,
+      "primaryModelTurns": 6,
+      "error": null,
+      "checks": {
+        "actualOutcome": true,
+        "goalsSatisfied": true,
+        "verifiedDelivery": true,
+        "panelComplete": true,
+        "noUnexpectedTranslationGeneration": true
+      }
+    },
+    {
+      "artifact": "out/acceptance/fast-task-baseline-tab-1789967997149/result.json",
+      "scenario": "tab",
+      "passed": true,
+      "visibleResultMs": 3715.6463339999996,
+      "deliveryMs": 15951.333167,
+      "panelMs": 16045.754624999998,
+      "primaryModelTurns": 8,
+      "error": null,
+      "checks": {
+        "actualOutcome": true,
+        "goalsSatisfied": true,
+        "verifiedDelivery": true,
+        "panelComplete": true,
+        "noUnexpectedTranslationGeneration": true
+      }
+    },
+    {
+      "artifact": "out/acceptance/fast-task-baseline-tab-1789968109447/result.json",
+      "scenario": "tab",
+      "passed": false,
+      "visibleResultMs": 5640.38325,
+      "deliveryMs": 24462.029417,
+      "panelMs": 24464.273417,
+      "primaryModelTurns": 8,
+      "error": null,
+      "checks": {
+        "actualOutcome": true,
+        "goalsSatisfied": true,
+        "verifiedDelivery": true,
+        "panelComplete": true,
+        "tabsPreserved": false,
+        "noUnexpectedTranslationGeneration": true
+      },
+      "assessment": "Task result passed; tabs-preservation check failed but lacked before/after data. Evaluator updated to await all three fixture tabs and retain both lists; do not infer product tab loss."
+    }
+  ]
+}

@@ -10,8 +10,10 @@ vi.mock("../src/run-trace.js", async importOriginal => ({
   ...await importOriginal<typeof import("../src/run-trace.js")>(),
   RunTrace: class {
   begin() {}
+  correlate() {}
   record() {}
   event() {}
+  stage() { return { end() {} }; }
 } }));
 
 async function setup(readFails = false) {

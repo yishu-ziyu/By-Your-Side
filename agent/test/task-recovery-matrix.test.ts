@@ -14,7 +14,7 @@ import {assertTaskStepExecution} from '../../shared/task-next-step.js';
 
 vi.mock('../src/run-trace.js',async importOriginal=>({
   ...await importOriginal<typeof import('../src/run-trace.js')>(),
-  RunTrace:class {begin(){} record(){} event(){}},
+  RunTrace:class {begin(){} correlate(){} record(){} event(){} stage(){return{end(){}}}},
 }));
 
 const dirs:string[]=[];
@@ -65,7 +65,7 @@ describe('P0 recovery matrix — deterministic production boundaries',()=>{
       h.event({kind:'tool_start',toolCallId:'submit',name:'click',params:{target:'#submit'}});
       h.manager.disconnect();
       h.event({kind:'agent_end'});
-      expect(h.manager.getTaskProgress('default')).toMatchObject({state:'interrupted',runId:run,resultState:'unknown'});
+      expect(h.manager.getTaskProgress('default')).toMatchObject({state:'interrupted',runId:run,executionState:'unknown'});
       expect(h.persist.mock.calls.at(-1)?.[0]).toMatchObject({state:'interrupted',runId:run});
       expect(h.messages.some(message=>message.type==='agent_event'&&message.event.kind==='user_delivery')).toBe(false);
     }finally{h.manager.dispose();}
@@ -138,7 +138,9 @@ describe('P0 recovery matrix — deterministic production boundaries',()=>{
     progress.observe({type:'agent_event',event:{kind:'agent_start'}});
     progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'switch',name:'tabs',params:{action:'switch',tabId:7}}});
     progress.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'switch',name:'tabs',isError:true,resultText:'ownership changed',executionFact:'unknown'}});
-    expect(progress.snapshot().resultState).toBe('unregistered');
+    // Keep the failed control as an incomplete result; it is not an unknown
+    // business write and must not prevent re-observation or ordinary form work.
+    expect(progress.snapshot().executionState).toBe('blocked');
     expect(progress.snapshot().unresolvedEffect).toBeUndefined();
     expect(progress.snapshot().untrackedWritePending).toBeUndefined();
     progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'read',name:'snapshot',params:{tabId:7}}});
@@ -158,7 +160,7 @@ describe('P0 recovery matrix — deterministic production boundaries',()=>{
     progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'late',name:'click',params:{target:'#save'}}});
     progress.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'late',name:'click',isError:true,resultText:'receipt lost',executionFact:'unknown'}});
     progress.observe({type:'agent_event',event:{kind:'tool_late_result',toolCallId:'late',name:'click',ok:true,executionFact:'unknown'}});
-    expect(progress.snapshot().resultState).toBe('unknown');
+    expect(progress.snapshot().executionState).toBe('unknown');
     progress.observe({type:'agent_event',event:{kind:'tool_late_result',toolCallId:'late',name:'click',ok:false,executionFact:'not_executed'}});
     expect(progress.snapshot().results?.[0]?.status).toBe('blocked');
   });

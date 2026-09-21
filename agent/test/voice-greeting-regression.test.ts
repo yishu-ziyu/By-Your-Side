@@ -56,7 +56,7 @@ describe('A 应然：idle 闲聊仍交给有能力的会话，回答归属写清
     // 能力保留：同一句话仍由主 Agent 处理，不是被过滤掉或降级成纯语音闲聊。
     expect(session.classifyVoiceInput).toHaveBeenCalledTimes(1);
     expect(session.startTask).toHaveBeenCalledTimes(1);
-    expect(session.startTask).toHaveBeenCalledWith('嗨，晚上好。',undefined,undefined,{pageObservation:'on-demand'});
+    expect(session.startTask).toHaveBeenCalledWith('嗨，晚上好。',undefined,undefined,{pageObservation:'on-demand',conversationOnly:true});
     expect(result).toMatchObject({kind:'action',ok:true,awaitDelivery:true});
     // 计划记录真实发生的隐式派发（一步 start），不再是空计划。
     expect(result.plan?.steps).toHaveLength(1);

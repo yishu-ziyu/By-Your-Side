@@ -71,6 +71,7 @@ const DISPATCHED_MAX = 512;
 const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "snapshot",
   "read_element",
+  "read_elements",
   "network",
   "page_operation",
   "page_translation",

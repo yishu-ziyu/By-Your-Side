@@ -1,0 +1,46 @@
+import {afterEach,expect,it,vi} from 'vitest';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {SessionManager} from '@earendil-works/pi-coding-agent';
+import {BrowserAgentSession} from '../src/session.js';
+import {TaskProgress} from '../src/task-progress.js';
+import {TaskEvidence} from '../src/task-evidence.js';
+const dirs:string[]=[];afterEach(()=>dirs.splice(0).forEach(dir=>rmSync(dir,{recursive:true,force:true})));
+const wrapped=(sessionManager:SessionManager)=>new (BrowserAgentSession as any)({sessionManager},null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
+it('真实会话文件恢复原文和来源目标，字段完成不能解除未知写入锁',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'bys-material-recovery-'));dirs.push(dir);
+ const sm=SessionManager.create(process.cwd(),dir);sm.appendMessage({role:'assistant',content:[],timestamp:1} as any);
+ const p=new TaskProgress('default');p.request('复制第一条评论到笔记');p.observe({type:'agent_event',event:{kind:'agent_start'}});
+ const runId=p.snapshot().runId!,revision=p.snapshot().goalPlan!.revision;
+ p.goals.install(revision,[{id:'source',description:'第一条评论正文',criterion:'第一条评论完整正文',kind:'material',materialId:'comment',requirements:['requirement-1']},{id:'paste',description:'笔记中粘贴正文',criterion:'笔记内容与comment相同',kind:'field',materialId:'comment',requirements:['requirement-1']}],1);
+ const material={...new TaskEvidence().prepare('comment','第一条评论正文',{id:'original-read',runId,revision,tabId:7,url:'https://video.example/',text:'第一行\n第二行',truncated:false,at:1},[{start:0,end:7}]),verification:{goalId:'source',revision,criterion:'第一条评论完整正文',description:'第一条评论正文',probability:1,at:1}};
+ sm.appendCustomEntry('sideagent-task-material-v1',material);
+ p.goals.verify(revision,'source',{matched:true,reason:'来源完整',evidence:{observationId:'original-read',tabId:7,verifiedAt:1,materialId:'comment'}});
+ p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'uncertain-fill',name:'fill',params:{target:'#editor',tabId:9,value:material.value}}});
+ p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'uncertain-fill',name:'fill',isError:true,executionFact:'unknown',resultText:'timeout'}});
+ wrapped(sm).persistTaskResults(p.snapshot());
+ const restored=wrapped(SessionManager.open(sm.getSessionFile()!)), progress=new TaskProgress('default');
+ progress.restoreResults(restored.readPersistedTaskResults()!);restored.bindConversationContext(()=>progress.snapshot());
+ expect(restored.browserObservedMaterials()).toEqual([material]);
+ expect(progress.snapshot().goalPlan!.goals.map(g=>g.status)).toEqual(['satisfied','pending']);
+ progress.prepareResume();progress.observe({type:'agent_event',event:{kind:'agent_start'}});
+ progress.goals.verify(revision,'paste',{matched:true,reason:'当前内容相同，但旧动作仍未知',evidence:{observationId:'fresh-read',tabId:9,verifiedAt:2,materialId:'comment'}});
+ expect(progress.snapshot().nextStep).toMatchObject({delivery:'partial',reason:'unknown_without_baseline'});
+ expect(()=>restored.assertTaskResultExecution('fill',{target:'#editor',tabId:9,value:material.value})).toThrow('未知');
+ progress.recordRequirement('然后把同一条评论也放到资料表');
+ expect(restored.browserObservedMaterials()[0]!.value).toBe('第一行\n第二行');
+ expect(progress.snapshot().goalPlan!.coverage).toBe('unplanned');
+});
+
+it('标准填写只能使用已核验的复制材料，不能在提取失败后自行重写',()=>{
+ const sm=SessionManager.inMemory(),session=wrapped(sm),p=new TaskProgress('default');p.request('把评论复制到笔记');
+ const revision=p.snapshot().goalPlan!.revision;
+ p.goals.install(revision,[{id:'source',description:'评论正文',criterion:'完整正文',kind:'material',materialId:'comment',requirements:['requirement-1']},{id:'paste',description:'粘贴正文',criterion:'正文完全一致',kind:'field',materialId:'comment',requirements:['requirement-1']}],1);
+ session.bindConversationContext(()=>p.snapshot());
+ vi.spyOn(session,'browserObservedMaterials').mockReturnValue([{id:'comment',purpose:'评论正文',value:'完整原文',source:'observed'}]);
+ expect(()=>session.assertTaskResultExecution('fill',{target:'#editor',value:'完整原文'})).toThrow('尚未核验');
+ p.goals.verify(revision,'source',{matched:true,reason:'完整',evidence:{observationId:'read',tabId:7,verifiedAt:1,materialId:'comment'}});
+ expect(()=>session.assertTaskResultExecution('fill',{target:'#editor',value:'自己重写的文字'})).toThrow('不一致');
+ expect(()=>session.assertTaskResultExecution('fill',{target:'#editor',value:'完整原文'})).not.toThrow();
+});

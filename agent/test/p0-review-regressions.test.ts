@@ -51,7 +51,7 @@ describe('real program-step checkpoint identities',()=>{
     await runBrowserProgram({id:'call_generated',code:'await browser.fill({target:"#name",value:"海风"});',call:async()=>({filled:true}),onStep:step=>bridge.observeProgramStep(step)});
     const h=disk(p.snapshot()),saved=wrapped(SessionManager.open(h.file)).readPersistedTaskResults();
     expect(saved?.results?.[0]?.evidence?.toolCallId).toBe('call_generated/1');
-    expect(saved?.runId).toBe(p.snapshot().runId);expect(saved?.resultState).toBe('satisfied');
+    expect(saved?.runId).toBe(p.snapshot().runId);expect(saved?.executionState).toBe('satisfied');
   });
   it.each(['satisfied','unknown','pending'] as const)('round-trips %s through a real Pi file without changing the call id',status=>{
     const p=task(undefined,status),before=p.snapshot(),h=disk(before);
@@ -59,7 +59,7 @@ describe('real program-step checkpoint identities',()=>{
     expect(saved).not.toBeNull();expect(isTaskProgressSnapshot(saved)).toBe(true);
     const restored=new TaskProgress('default');restored.restoreResults(saved!);
     expect(restored.snapshot()).toMatchObject({state:'interrupted',runId:before.runId,goal:before.goal,
-      resultState:status==='satisfied'?'satisfied':'unknown',recoveryInput:before.recoveryInput});
+      executionState:status==='satisfied'?'satisfied':'unknown',recoveryInput:before.recoveryInput});
     expect(restored.snapshot().results?.[0]?.evidence?.toolCallId).toBe('call_00_fixture/3');
     restored.prepareResume();restored.observe({type:'agent_event',event:{kind:'agent_start'}});
     const session=wrapped(SessionManager.open(h.file));session.bindConversationContext(()=>restored.snapshot());
@@ -72,7 +72,7 @@ describe('real program-step checkpoint identities',()=>{
     expect(saved).not.toBeNull();const p=new TaskProgress('default');p.restoreResults(saved!);
     expect(p.handleLateResult('call_00_fixture-3',true)).toBe(false);
     expect(p.handleLateResult('call_00_fixture/3',true)).toBe(true);
-    expect(p.snapshot().resultState).toBe('satisfied');
+    expect(p.snapshot().executionState).toBe('satisfied');
   });
   it('accepts opaque bounded call ids without relaxing task and request ids',()=>{
     const e=task('root').snapshot().results![0]!.evidence!;
@@ -104,7 +104,7 @@ describe('actual panel task_action continuation',()=>{
       const first=await manager.dispatchTaskAction(request);
       expect(first).toMatchObject({action:'resume',status:'accepted',runId:before.runId});
       expect(r!.start).not.toHaveBeenCalled();expect(r!.resume).toHaveBeenCalledOnce();
-      expect(manager.getTaskProgress('default')).toMatchObject({state:'running',runId:before.runId,resultState:'unknown'});
+      expect(manager.getTaskProgress('default')).toMatchObject({state:'running',runId:before.runId,executionState:'unknown'});
       expect(await manager.dispatchTaskAction(request)).toEqual(first);
       expect(r!.resume).toHaveBeenCalledOnce();
       expect(await manager.dispatchTaskAction({...request,text:'别的任务'})).toMatchObject({status:'rejected'});
@@ -118,7 +118,7 @@ describe('actual panel task_action continuation',()=>{
       const request:TaskActionRequest={requestId:issue,conversationId:'default',source:'text',action:'start',expectedRunId:issue==='stale-run'?'old-run':before.runId!,expectedControlVersion:issue==='stale-control'?99:0,text:'继续原任务',...(issue==='missing-page'?{}:{context:page})};
       expect(await manager.dispatchTaskAction(request)).toMatchObject({status:'rejected'});
       expect(r!.start).not.toHaveBeenCalled();expect(r!.resume).not.toHaveBeenCalled();
-      expect(manager.getTaskProgress('default')).toMatchObject({state:'interrupted',runId:before.runId,resultState:'unknown'});
+      expect(manager.getTaskProgress('default')).toMatchObject({state:'interrupted',runId:before.runId,executionState:'unknown'});
     }finally{manager.dispose();}
   });
   it('keeps an ordinary new task distinct from the narrow continuation phrase',async()=>{
@@ -132,7 +132,8 @@ describe('actual panel task_action continuation',()=>{
     }finally{manager.dispose();}
   });
   it('does not reinterpret continue in a completed, non-recoverable conversation',async()=>{
-    const p=new TaskProgress('default');p.request('解释一个概念');p.observe({type:'agent_event',event:{kind:'agent_start'}});p.observe({type:'agent_event',event:{kind:'agent_end'}});
+    const p=new TaskProgress('default');p.request('解释一个概念');p.goals.clear(); // Classified conversational request has no browser goals.
+    p.observe({type:'agent_event',event:{kind:'agent_start'}});p.observe({type:'agent_event',event:{kind:'agent_end'}});
     const before=p.snapshot();let r:ReturnType<typeof runtime>;
     const manager=new ConversationManager(async(_id,emit)=>(r=runtime(()=>before,emit)) as any,()=>{});
     try{

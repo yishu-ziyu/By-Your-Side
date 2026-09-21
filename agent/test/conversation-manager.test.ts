@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ConversationManager } from "../src/conversation-manager.js";
 import { Fleet } from "../src/fleet.js";
 import { TaskActionRejected } from "../src/task-dispatcher.js";
+import { RouteShadow } from "../src/route-shadow.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 
-function harness() {
+function harness(routeShadow?: RouteShadow) {
   const emitted: ServerMessage[] = [];
   const runtimes = new Map<string, { emit: (message: ServerMessage) => void; runtime: any; history: string[] }>();
   const factory = vi.fn(async (id: string, emit: (message: ServerMessage) => void) => {
@@ -29,7 +33,7 @@ function harness() {
     runtimes.set(id, { emit:observe, runtime, history });
     return runtime;
   });
-  return { manager: new ConversationManager(factory as never, (message) => emitted.push(message)), emitted, runtimes, factory };
+  return { manager: new ConversationManager(factory as never, (message) => emitted.push(message), undefined, undefined, undefined, undefined, routeShadow), emitted, runtimes, factory };
 }
 
 describe("independent conversation runtimes", () => {
@@ -204,7 +208,7 @@ it('passes the selected input to the shared idle conversation entry',async()=>{
  const input={context:{tabId:7,title:'form',url:'https://example.com',selection:{text:'海风'}},attachments:[{id:'i',type:'image' as const,name:'fixture.png',mimeType:'image/png' as const,dataBase64:'AQID'}]};
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'chat',text:'你好',target:null}]}));
  const ctx={requestId:'q',voiceId:'v',turn:1,runId:null,input};
- await h.manager.routeVoiceInput('default','你好',null,()=>true,ctx);expect(a.runtime.session.startTask).toHaveBeenCalledWith('你好',input.context,input.attachments,{pageObservation:'on-demand'});
+ await h.manager.routeVoiceInput('default','你好',null,()=>true,ctx);expect(a.runtime.session.startTask).toHaveBeenCalledWith('你好',input.context,input.attachments,{pageObservation:'on-demand',conversationOnly:true});
  a.emit({type:'agent_event',event:{kind:'agent_end'}});
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'start',text:'按图片和选区填写',target:null}]});
  await h.manager.routeVoiceInput('default','按图片和选区填写',null,()=>true,{...ctx,requestId:'q2',runId:h.manager.getTaskProgress('default')!.runId??null});
@@ -373,4 +377,121 @@ it('moves a rejected start to a new conversation without stopping the original t
  expect(h.runtimes.get(destination)!.runtime.session.startTask).toHaveBeenCalledWith('新请求',context,undefined);
  expect(original.runtime.session.abort).not.toHaveBeenCalled();
  expect(original.runtime.session.startTask).not.toHaveBeenCalled();
+});
+
+it('route-shadow: shadow-routes every text user_message and records the runtime-handle actual, without changing routing',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'user_message',text:'打开地图'});
+ expect(shadow.observe).toHaveBeenCalledWith({channel:'text',conversationId:'default',text:'打开地图',previous:[],taskRunning:false,taskState:'none'});
+ expect(shadow.actual).toHaveBeenCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'start',note:'runtime_handle'});
+ expect(h.runtimes.get('default')!.history).toEqual(['打开地图']); // real routing is unaffected by the shadow call
+ await h.manager.handleMessage({type:'user_message',text:'再补充一句'});
+ expect(shadow.observe).toHaveBeenLastCalledWith(expect.objectContaining({text:'再补充一句',previous:['打开地图']}));
+});
+
+it('route-shadow: a user_message while the task is streaming is recorded as steer, not start',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'user_message',text:'打开地图'});
+ shadow.actual.mockClear(); // the first message starts the task; only the interjection below is under test
+ await h.manager.handleMessage({type:'user_message',text:'再补充一句'});
+ expect(shadow.actual).toHaveBeenCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'steer',note:'runtime_steer'});
+ expect(h.runtimes.get('default')!.history).toEqual(['打开地图','再补充一句']); // the runtime still receives the interjection exactly once
+});
+
+it('route-shadow: a user_message while the page is held is recorded as rejected, not start',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'user_message',text:'打开地图'}); // task now streaming
+ h.runtimes.get('default')!.runtime.session.isHeld=()=>true; // user takes the page over mid-run
+ shadow.actual.mockClear();
+ await h.manager.handleMessage({type:'user_message',text:'再补充一句'});
+ expect(shadow.actual).toHaveBeenCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'rejected',note:'page_held'});
+});
+
+it('route-shadow: a user_message with no available model is recorded as rejected, not start',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ h.runtimes.get('default')!.runtime.session.available=false;
+ await h.manager.handleMessage({type:'user_message',text:'打开地图'});
+ expect(shadow.actual).toHaveBeenCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'rejected',note:'session_unavailable'});
+});
+
+it('route-shadow: a real panel text task_action records one utterance and an actual bound to the accepted receipt',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ const context={tabId:4,title:'地图',url:'https://example.test'};
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'panel-start',conversationId:'default',source:'text',action:'start',expectedRunId:null,text:'打开地图',context}});
+ expect(shadow.observe).toHaveBeenCalledTimes(1);
+ expect(shadow.observe).toHaveBeenCalledWith({channel:'text',conversationId:'default',text:'打开地图',previous:[],taskRunning:false,taskState:'none',page:{title:'地图',url:'https://example.test'}});
+ expect(shadow.actual).toHaveBeenCalledTimes(1);
+ expect(shadow.actual).toHaveBeenCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'start',note:'accepted'});
+ expect(h.runtimes.get('default')!.runtime.session.startTask).toHaveBeenCalledWith('打开地图',context,undefined); // routing itself is unchanged
+});
+
+it('route-shadow: panel task_action texts share the same previous history as user_message',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'panel-start',conversationId:'default',source:'text',action:'start',expectedRunId:null,text:'打开地图'}});
+ h.runtimes.get('default')!.runtime.session.steerCurrentTask=vi.fn(async()=>({kind:'accepted'}));
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'panel-steer',conversationId:'default',source:'text',action:'steer',expectedRunId:h.manager.getTaskProgress('default')!.runId??null,text:'改成步行'}});
+ expect(shadow.observe).toHaveBeenLastCalledWith(expect.objectContaining({text:'改成步行',previous:['打开地图']}));
+ expect(shadow.actual).toHaveBeenLastCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'steer',note:'accepted'});
+});
+
+it('route-shadow: a panel task_action rejected by the receipt is recorded as rejected, not start',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ const a=h.runtimes.get('default')!;
+ a.emit({type:'agent_event',event:{kind:'agent_start'}});a.emit({type:'status',state:'running'});
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'panel-busy',conversationId:'default',source:'text',action:'start',expectedRunId:h.manager.getTaskProgress('default')!.runId??null,text:'再开一个'}});
+ expect(shadow.observe).toHaveBeenCalledTimes(1);
+ expect(shadow.actual).toHaveBeenCalledTimes(1);
+ expect(shadow.actual).toHaveBeenCalledWith({channel:'text',conversationId:'default',kind:'entry',action:'rejected',note:'start_rejected'});
+});
+
+it('route-shadow: a voice task_action is not counted as text',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'voice-start',conversationId:'default',source:'voice',action:'start',expectedRunId:null,text:'打开地图'}});
+ expect(shadow.observe).not.toHaveBeenCalled();
+ expect(shadow.actual).not.toHaveBeenCalled();
+ expect(h.runtimes.get('default')!.runtime.session.startTask).toHaveBeenCalledTimes(1); // the voice task itself still runs
+});
+
+it('route-shadow: replaying the same panel requestId records exactly one utterance and one actual',async()=>{
+ const shadow={observe:vi.fn(),actual:vi.fn()};
+ const h=harness(shadow as never);await h.manager.ensureDefault();
+ const request={requestId:'panel-once',conversationId:'default',source:'text' as const,action:'start' as const,expectedRunId:null,text:'打开地图'};
+ await h.manager.handleMessage({type:'task_action',request});
+ await h.manager.handleMessage({type:'task_action',request});
+ expect(shadow.observe).toHaveBeenCalledTimes(1);
+ expect(shadow.actual).toHaveBeenCalledTimes(1);
+ expect(h.runtimes.get('default')!.runtime.session.startTask).toHaveBeenCalledTimes(1);
+});
+
+it('route-shadow: a real text task_action writes one utterance and one receipt-bound actual to disk',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'bys-shadow-on-'));
+ const doFetch=vi.fn(async()=>({ok:true,json:async()=>({answers:{lane_0:{choice:'task',confidence:0.9,probabilities:{task:0.9}},pagechange_0:{noul:0.8}}})}));
+ const shadow=new RouteShadow({enabled:()=>true,dailyLimit:()=>400,root,key:()=>'k',fetch:doFetch as unknown as typeof fetch});
+ const h=harness(shadow);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'panel-disk',conversationId:'default',source:'text',action:'start',expectedRunId:null,text:'打开地图'}});
+ await vi.waitFor(()=>expect(readdirSync(root).flatMap(f=>readFileSync(join(root,f),'utf8').trim().split('\n')).length).toBe(2));
+ const records=readdirSync(root).flatMap(f=>readFileSync(join(root,f),'utf8').trim().split('\n')).map(line=>JSON.parse(line));
+ expect(records.find(r=>r.type==='utterance')).toMatchObject({channel:'text',text:'打开地图'});
+ expect(records.find(r=>r.type==='actual')).toMatchObject({channel:'text',kind:'entry',action:'start',note:'accepted'});
+ rmSync(root,{recursive:true,force:true});
+});
+
+it('route-shadow: a real text task_action writes nothing while the shadow is disabled',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'bys-shadow-off-'));
+ const doFetch=vi.fn(async()=>{throw new Error('shadow fetch must not run while disabled');});
+ const shadow=new RouteShadow({enabled:()=>false,dailyLimit:()=>400,root,key:()=>'k',fetch:doFetch as unknown as typeof fetch});
+ const h=harness(shadow);await h.manager.ensureDefault();
+ await h.manager.handleMessage({type:'task_action',request:{requestId:'panel-off',conversationId:'default',source:'text',action:'start',expectedRunId:null,text:'打开地图'}});
+ expect(doFetch).not.toHaveBeenCalled();
+ expect(readdirSync(root)).toEqual([]); // disabled: zero writes, exactly like route-shadow.test.ts requires
+ expect(h.runtimes.get('default')!.runtime.session.startTask).toHaveBeenCalledTimes(1); // routing is unaffected
+ rmSync(root,{recursive:true,force:true});
 });

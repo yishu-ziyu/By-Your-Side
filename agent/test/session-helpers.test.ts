@@ -16,8 +16,10 @@ import { handbackContinueText } from "../../shared/control.js";
 // Actual persistence/redaction is covered by run-trace.test.ts.
 vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
   begin() {}
+  correlate() {}
   record() {}
   event() {}
+  stage() { return { end() {} }; }
 } }));
 
 async function flushMicrotasks(rounds = 10) {
@@ -45,7 +47,7 @@ function controlledBrowserSession(streaming = true, handbackRestoreTimeoutMs?: n
       return isStreaming;
     },
     model: { id: "test" },
-    agent: { state: { messages: [] } },
+    agent: { state: { messages: [], tools: [] } },
     abort: vi.fn(() => abortPending),
     prompt: vi.fn((_text: string) => promptPending),
     steer: vi.fn(async (_text: string) => {}),
@@ -520,7 +522,11 @@ it('voice steering waits for queue acceptance and cannot restart an idle task', 
 
 it('keeps the original task goal when resuming after a saved parameter change',async()=>{
  const {wrapped,raw,setStreaming,settleAbort,agentStart}=controlledBrowserSession(false);
- const goal='持续统计新增记录，直到用户暂停或终止。';wrapped.startTask(goal);setStreaming(true);wrapped.holdForUser();wrapped.queueSteerForResume('预算改600');
+ const goal='持续统计新增记录，直到用户暂停或终止。';wrapped.startTask(goal);
+ // This case resumes an already-started task. Pausing during preparation must
+ // cancel that pending prompt (covered separately in browser-initial-path).
+ await vi.waitFor(()=>expect(raw.prompt).toHaveBeenCalledTimes(1));
+ setStreaming(true);wrapped.holdForUser();wrapped.queueSteerForResume('预算改600');
  const resumed=wrapped.continueAfterHandback({tabId:1,title:'current',url:'https://example.com'},'fresh marker');settleAbort();await flushMicrotasks();
  expect(raw.prompt.mock.calls.at(-1)![0]).toContain(goal);expect(raw.prompt.mock.calls.at(-1)![0]).toContain('预算改600');expect(raw.prompt).toHaveBeenCalledTimes(2);agentStart();expect(await resumed).toBe(true);
 });

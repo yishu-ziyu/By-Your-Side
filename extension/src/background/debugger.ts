@@ -9,6 +9,7 @@ const PROTOCOL_VERSION = "1.3";
 const IDLE_MS = 15_000;
 
 const attached = new Set<number>();
+const inFlight = new Map<number, Promise<void>>();
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleIdleDetach(): void {
@@ -23,26 +24,40 @@ export async function ensureAttached(tabId: number): Promise<void> {
     scheduleIdleDetach();
     return;
   }
-  try {
-    await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION);
-  } catch (e) {
-    const msg = oneLine(e);
-    if (/another debugger/i.test(msg)) {
-      throw new Error("该标签页正被 DevTools 或其他调试器占用");
-    }
-    if (/already attached/i.test(msg)) {
-      // SW 重启后 Chrome 侧仍挂着：视为已 attach
-      attached.add(tabId);
-      scheduleIdleDetach();
-      void enableNetworkCapture(tabId);
-      return;
-    }
-    throw new Error(msg);
+  // 如果已有 in-flight 的 attach Promise，复用它
+  const existing = inFlight.get(tabId);
+  if (existing) {
+    return existing;
   }
-  attached.add(tabId);
-  scheduleIdleDetach();
-  // 被动观测：只要持有调试器就采 Network（不额外 attach、不注入页面）。
-  void enableNetworkCapture(tabId);
+  // 创建新的 attach Promise
+  const promise = (async () => {
+    try {
+      await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION);
+    } catch (e) {
+      const msg = oneLine(e);
+      if (/another debugger/i.test(msg)) {
+        throw new Error("该标签页正被 DevTools 或其他调试器占用");
+      }
+      if (/already attached/i.test(msg)) {
+        // SW 重启后 Chrome 侧仍挂着：视为已 attach
+        attached.add(tabId);
+        scheduleIdleDetach();
+        void enableNetworkCapture(tabId);
+        return;
+      }
+      throw new Error(msg);
+    }
+    attached.add(tabId);
+    scheduleIdleDetach();
+    // 被动观测：只要持有调试器就采 Network（不额外 attach、不注入页面）。
+    void enableNetworkCapture(tabId);
+  })();
+  inFlight.set(tabId, promise);
+  try {
+    await promise;
+  } finally {
+    inFlight.delete(tabId);
+  }
 }
 
 export async function sendCommand<T = unknown>(
@@ -63,6 +78,7 @@ export async function sendCommand<T = unknown>(
 
 export async function detach(tabId: number): Promise<void> {
   attached.delete(tabId);
+  inFlight.delete(tabId);
   try {
     await chrome.debugger.detach({ tabId });
   } catch {

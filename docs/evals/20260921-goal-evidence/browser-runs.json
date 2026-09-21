@@ -1,0 +1,212 @@
+{
+  "browserRuns": [
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789923844876/result.json",
+      "scenario": null,
+      "passed": false,
+      "error": "Error: task delivery timeout",
+      "checks": null,
+      "durationMs": null,
+      "probes": null,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789924055334/result.json",
+      "scenario": null,
+      "passed": false,
+      "error": null,
+      "checks": {
+        "exactSourceInEditor": false,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": false,
+        "deliveryComplete": false,
+        "materialPrimitiveUsed": false
+      },
+      "durationMs": 24350,
+      "probes": 1,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789924340745/result.json",
+      "scenario": null,
+      "passed": false,
+      "error": null,
+      "checks": {
+        "exactSourceInEditor": false,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": false,
+        "deliveryComplete": false,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 94439,
+      "probes": 0,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789924633504/result.json",
+      "scenario": null,
+      "passed": false,
+      "error": "Error: task delivery timeout",
+      "checks": null,
+      "durationMs": null,
+      "probes": null,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789925370842/result.json",
+      "scenario": null,
+      "passed": false,
+      "error": null,
+      "checks": {
+        "exactSourceInEditor": false,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": false,
+        "deliveryComplete": false,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 178730,
+      "probes": 3,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789925821077/result.json",
+      "scenario": null,
+      "passed": true,
+      "error": null,
+      "checks": {
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": true,
+        "deliveryComplete": true,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 47551,
+      "probes": 0,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789926096914/result.json",
+      "scenario": "unfamiliar-citation-contenteditable-off-viewport",
+      "passed": true,
+      "error": null,
+      "checks": {
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": true,
+        "deliveryComplete": true,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 37837,
+      "probes": 0,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789927686746/result.json",
+      "scenario": "quoted-page-instruction-is-only-source-text",
+      "passed": false,
+      "error": null,
+      "checks": {
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": false,
+        "deliveryComplete": false,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 44987,
+      "probes": 0,
+      "panel": null
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789928429427/result.json",
+      "scenario": "quoted-page-instruction-is-only-source-text",
+      "passed": false,
+      "error": null,
+      "checks": {
+        "panelMatchesCompletedTask": false,
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": false,
+        "deliveryComplete": false,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 69324,
+      "probes": 0,
+      "panel": {
+        "headline": "尚未完成 · 可继续",
+        "waiting": ""
+      }
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789929408135/result.json",
+      "scenario": "quoted-page-instruction-is-only-source-text",
+      "passed": false,
+      "error": null,
+      "checks": {
+        "panelMatchesCompletedTask": false,
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": false,
+        "deliveryComplete": false,
+        "materialPrimitiveUsed": true
+      },
+      "durationMs": 126363,
+      "probes": 1,
+      "panel": {
+        "headline": "尚未完成 · 可继续",
+        "waiting": ""
+      }
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789930237238/result.json",
+      "scenario": "quoted-page-instruction-is-only-source-text",
+      "passed": true,
+      "error": null,
+      "checks": {
+        "panelMatchesCompletedTask": true,
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": true,
+        "deliveryComplete": true,
+        "materialPrimitiveUsed": true,
+        "fixtureSaveStatusIsLive": true
+      },
+      "durationMs": 34336,
+      "probes": 0,
+      "panel": {
+        "headline": "本轮已结束",
+        "waiting": ""
+      }
+    },
+    {
+      "artifact": "out/acceptance/goal-evidence-copy-1789932795280/result.json",
+      "scenario": "unfamiliar-citation-contenteditable-off-viewport",
+      "passed": true,
+      "error": null,
+      "checks": {
+        "panelMatchesCompletedTask": true,
+        "exactSourceInEditor": true,
+        "searchUnchanged": true,
+        "notSaved": true,
+        "goalComplete": true,
+        "deliveryComplete": true,
+        "materialPrimitiveUsed": true,
+        "fixtureSaveStatusIsLive": true
+      },
+      "durationMs": 23636,
+      "probes": 0,
+      "panel": {
+        "headline": "本轮已结束",
+        "waiting": ""
+      }
+    }
+  ]
+}

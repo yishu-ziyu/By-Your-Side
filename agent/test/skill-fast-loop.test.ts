@@ -45,9 +45,33 @@ describe("production router → store → registered browser_run → QuickJS →
     expect(fills.every(result => result.status === "satisfied")).toBe(true);
     expect((await h.store.get(h.candidate.skill.id))!.inputs).toEqual({ 客户名: "", 地区: "" });
   });
+  it("exposes one closed execution boundary for exact replay", async () => {
+    const h = await harness(), onProgramStart = vi.fn(), onProgramEnd = vi.fn();
+    expect(await trySkillFastLoop({ ...h.options, exactOnly: true, onProgramStart, onProgramEnd }))
+      .toMatchObject({ kind: "done", outcome: { ok: true } });
+    expect(onProgramStart).toHaveBeenCalledTimes(1);
+    expect(onProgramEnd).toHaveBeenCalledWith("executed");
+    expect(h.options.judge).not.toHaveBeenCalled();
+  });
   it("supports the original material as a fresh explicit request", async () => {
     const h = await harness(); expect(await trySkillFastLoop({ ...h.options, request: "搜索「张三」，地区「北京」" })).toMatchObject({ kind: "done", outcome: { ok: true } });
     expect(h.page.output.textContent).toBe("张三 / 北京");
+  });
+  it("does not let an explicitly selected skill certify an exact task plus an extra requirement", async () => {
+    const h = await harness();
+    const result = await trySkillFastLoop({
+      ...h.options,
+      request: "搜索「李四」，地区「深圳」，然后导出结果。",
+      exactOnly: true,
+      selected: {
+        id: h.candidate.skill.id,
+        expectedVersion: h.candidate.skill.version,
+        inputs: { 客户名: "李四", 地区: "深圳" },
+      },
+    });
+    expect(result).toMatchObject({ kind: "miss" });
+    expect(h.page.writes).toEqual([]);
+    expect(h.options.execute).not.toHaveBeenCalled();
   });
   it("ambiguous saved skills never touch the page", async () => {
     const h = await harness(); await h.store.put({ ...h.candidate.skill, id: "second-recipe" });

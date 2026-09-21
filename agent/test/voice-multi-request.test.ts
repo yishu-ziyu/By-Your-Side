@@ -82,3 +82,28 @@ it('counts page preparation against capacity before the model emits agent_start'
  expect((await h.manager.dispatchTaskAction({requestId:'prep3',conversationId:third.id,source:'text',action:'start',expectedRunId:null,text:'第三项'})).status).toBe('rejected');
  expect(h.runtimes.get(third.id).session.startTask).not.toHaveBeenCalled();
 });
+
+it('a related instruction during SDK teardown stays with the original run, independent work queues normally',async()=>{
+ const h=harness();await h.manager.ensureDefault();await h.say('读取第一条评论');
+ const runtime=h.runtimes.get('default'),run=h.manager.getTaskProgress('default')!.runId;
+ runtime.emit({type:'agent_event',event:{kind:'agent_end'}}); // SDK still owns the stream.
+ runtime.session.classifyVoiceInput=vi.fn(async(text:string,state:string)=>{expect(state).toBe('running');return {steps:[{action:'steer',text,target:null}]};});
+ const reply:any=await h.say('然后把这条评论放进笔记');
+ expect(reply.receipts[0].status).toBe('accepted');
+ expect(runtime.session.steerCurrentTask).toHaveBeenCalledWith('然后把这条评论放进笔记',expect.objectContaining({tabId:1}),undefined);
+ expect(h.manager.getTaskProgress('default')!.runId).toBe(run);
+ expect(h.manager.list()).toHaveLength(1);
+});
+
+it('a related idle continuation preserves requirements and resumes the same run',async()=>{
+ const h=harness();await h.manager.ensureDefault();await h.say('读取第一条评论');
+ const runtime=h.runtimes.get('default'),run=h.manager.getTaskProgress('default')!.runId;
+ runtime.finish();
+ runtime.session.classifyVoiceInput=async(text:string)=>({steps:[{action:'steer',text,target:null}]});
+ runtime.session.resumeInterruptedTask=vi.fn(async()=>{});
+ const reply:any=await h.say('然后把这条评论放进笔记');
+ expect(reply.receipts[0].status).toBe('accepted');
+ expect(runtime.session.resumeInterruptedTask).toHaveBeenCalledWith(expect.objectContaining({runId:run,recoveryInput:expect.objectContaining({requirements:['读取第一条评论','然后把这条评论放进笔记']})}),expect.objectContaining({tabId:1}),undefined);
+ expect(runtime.session.startTask).toHaveBeenCalledOnce();
+ expect(h.manager.getTaskProgress('default')!.runId).toBe(run);
+});

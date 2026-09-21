@@ -18,6 +18,7 @@ import {
   resultCanUseExecution,
   resultStateOf,
   resultHasWriteEffect,
+  resultToolHasWriteEffect,
   selectResultBinding,
   type ResultPageObservation,
   type TaskResultItem,
@@ -169,11 +170,11 @@ export class TaskResultBook {
   /** 页面/文档可能已经改变：之前的读数不能再当作前后对比基线。 */
   notePageChange(): void { this.observations = []; this.baselines.clear(); }
 
-  noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; description?: string; effectful?:boolean; valueHash?:string }): void {
+  noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; description?: string; effectful?:boolean; recordResult?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
     const item = this.resolveStartItem(input);
     if (!item) return;
-    if (isWriteTool(input.name)||input.effectful) {
+    if (resultToolHasWriteEffect(input.name)||input.effectful) {
       // 写入只作用于工作页：只有写入前的工作页读数能作为前后对比基线。
       const baseline = [...this.observations].reverse().find(observation => observation.runId === input.runId && observation.member === input.member && observation.workingTab);
       if (baseline) this.baselines.set(item.id, baseline);
@@ -188,7 +189,7 @@ export class TaskResultBook {
    * 没有可复用的写操作才自动建项。只读工具不自动建项：观察不是用户可见待办。
    * 复用规则见 selectResultBinding：在途、已满足、未决项都不参与改绑。
    */
-  private resolveStartItem(input: { name: string; target: string | null; description?: string; effectful?:boolean }): TaskResultItem | null {
+  private resolveStartItem(input: { name: string; target: string | null; description?: string; effectful?:boolean; recordResult?:boolean }): TaskResultItem | null {
     const binding = selectResultBinding(this.items, input.name, input.target);
     if (binding.kind === "exact" || binding.kind === "rebind") {
       const item = this.items.find(candidate => candidate.id === binding.itemId);
@@ -197,7 +198,9 @@ export class TaskResultBook {
       return item;
     }
     if (binding.kind !== "create") return null;
-    if ((!isWriteTool(input.name)&&!input.effectful) || AUTO_RESULT_EXCLUDED_TOOLS.has(input.name) || this.items.length >= MAX_TASK_RESULTS) return null;
+    // A browser control can be a user result without creating an irreversible
+    // page effect. Keep result registration separate from unknown-write policy.
+    if ((!isWriteTool(input.name)&&!input.effectful&&!input.recordResult) || AUTO_RESULT_EXCLUDED_TOOLS.has(input.name) || this.items.length >= MAX_TASK_RESULTS) return null;
     const item: TaskResultItem = {
       id: this.nextAutoId(),
       description: input.description ?? deriveResultDescription(input.name, undefined, input.target),
@@ -212,7 +215,7 @@ export class TaskResultBook {
 
   noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
-    const write=isWriteTool(input.name)||input.effectful===true;
+    const write=resultToolHasWriteEffect(input.name)||input.effectful===true;
     let item = this.items.find(candidate => (candidate.status === "pending" || candidate.status === "unknown") && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.member === input.member && candidate.evidence.tool === input.name && candidate.evidence.runId === input.runId && candidate.evidence.target === input.target);
     // Auxiliary JS/scroll normally stays out of the visible obligations, but an
     // uncertain effect must never disappear just because no item was registered.
@@ -312,13 +315,13 @@ export function createTaskResultsTool(opts: {
 }): ToolDefinition {
   return defineTool({
     name: "record_task_results",
-    label: "Record remaining task results",
+    label: "Record execution steps",
     description:
-      "Declare the results of a multi-step page task when an explicit plan helps. This is optional: observing and acting do not require registration, and executed actions are recorded automatically from their real receipts. With one unlocated pending item per tool, the actual target binds to it at execution time; use this tool to name the plan, not to unlock actions. On a user correction, UPDATE the existing pending item using its SAME id and new description/target. IDs are opaque: even an id containing the old object name must be reused. A new id ADDS an obligation and cannot replace an old one. If you change the implementation method, update the SAME still-pending id with the new tool/target BEFORE executing it (for example click to browser_run); do not leave an obsolete click obligation behind. These entries track execution receipts, not independent business success; verify the actual requested state with read_element expect or a relevant page observation. Declare intent only. Each item names an existing executable tool and, once located, its selector. Description is the human outcome, target is the locator. For tools with a target parameter, use target null until observation binds it. For tools without a target parameter, target null represents the tool invocation itself. This tool does not write the page or mark results complete. Do not register this tool or send_user_message as evidence.",
+      "Optionally name EXECUTION steps and their receipts. Use task_goals for user outcomes: these entries cannot establish that the user request is complete. This is optional: observing and acting do not require registration, and executed actions are recorded automatically from their real receipts. With one unlocated pending item per tool, the actual target binds to it at execution time; use this tool to name the plan, not to unlock actions. On a user correction, UPDATE the existing pending item using its SAME id and new description/target. IDs are opaque: even an id containing the old object name must be reused. A new id ADDS an obligation and cannot replace an old one. If you change the implementation method, update the SAME still-pending id with the new tool/target BEFORE executing it (for example click to browser_run); do not leave an obsolete click obligation behind. These entries track execution receipts, not independent business success; verify the actual requested state with read_element expect or a relevant page observation. Declare intent only. Each item names an existing executable tool and, once located, its selector. Description is the human outcome, target is the locator. For tools with a target parameter, use target null until observation binds it. For tools without a target parameter, target null represents the tool invocation itself. This tool does not write the page or mark results complete. Do not register this tool or send_user_message as evidence.",
     parameters: Type.Object({
       results: Type.Array(Type.Object({
         id: Type.String({ description: "Stable opaque id. On correction reuse the existing id, even when its wording mentions the old target." }),
-        description: Type.String({ description: "Human outcome to finish; not a selector" }),
+        description: Type.String({ description: "Short execution-step description; not a user-goal completion claim or selector" }),
         tool: Type.String({ description: "Existing executable tool that will produce this result" }),
         target: Type.Optional(Type.Union([Type.String({ description: "Exact tool target parameter (CSS or @ref), not object text" }), Type.Null()], { description: "Omit until located or when the tool has no target parameter. Copy the exact upcoming target after observation." })),
       }), {maxItems:64}),
@@ -336,7 +339,7 @@ export function createTaskResultsTool(opts: {
       }
       opts.register(registered);
       const snapshot = opts.getSnapshot();
-      const details = { resultState: snapshot.resultState ?? "unregistered", results: snapshot.results ?? [] };
+      const details = { executionState: snapshot.executionState ?? snapshot.resultState ?? "unregistered", resultState: snapshot.resultState ?? "unregistered", results: snapshot.results ?? [] };
       return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
     },
   });
