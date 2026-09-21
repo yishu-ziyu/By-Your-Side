@@ -133,7 +133,6 @@ app.innerHTML = `
       <div id="task-result-secondary"></div>
     </div>
   </div>
-  <div id="resume-entry-root"></div>
   <div id="conversation-menu" role="menu" hidden></div>
   <button id="memory-shade" type="button" aria-label="关闭记忆" hidden></button>
   <section id="memory-drawer" role="dialog" aria-label="技能与记忆" aria-modal="false" hidden>
@@ -158,7 +157,9 @@ app.innerHTML = `
       <div id="memory-body" hidden></div>
     </div>
   </section>
-  <div id="messages"></div>
+  <div id="messages">
+    <div id="resume-entry-root"></div>
+  </div>
   <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
     <p id="starter-title">说说你想完成什么</p>
@@ -506,7 +507,9 @@ function resetConversationRender(): void {
   historyPrimed = false;
   currentDraftReady = false;
   updateStarterVisibility();
+  const resumeRoot = document.getElementById("resume-entry-root");
   messagesEl.replaceChildren();
+  if (resumeRoot) messagesEl.appendChild(resumeRoot);
   resumeEntry.clear();
   renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
@@ -1948,12 +1951,21 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   } else if (!atts || atts.length === 0) {
     div.textContent = "";
   }
-  messagesEl.appendChild(div);
+  appendToMessages(div);
   if (!applyingHistory) {
     companion.onSend(div);
   }
   scrollToEnd();
   return div;
+}
+
+function appendToMessages(node: HTMLElement): void {
+  const resumeRoot = document.getElementById("resume-entry-root");
+  if (resumeRoot && resumeRoot.parentElement === messagesEl) {
+    messagesEl.insertBefore(node, resumeRoot);
+  } else {
+    messagesEl.appendChild(node);
+  }
 }
 
 function addMsg(cls: string, text: string): HTMLElement {
@@ -1963,7 +1975,7 @@ function addMsg(cls: string, text: string): HTMLElement {
   const div = document.createElement("div");
   div.className = cls;
   div.textContent = text;
-  messagesEl.appendChild(div);
+  appendToMessages(div);
   scrollToEnd();
   return div;
 }
@@ -2255,14 +2267,17 @@ function renderTeamCard(): void {
 
 function renderTaskStrip(): void {
   // 目标/活动/材料/控制层由任务条（task-bar.ts）接管；这里只保留结果卡。
+  // 当已有消息流内的接续卡或结果已通过正文呈现时，隐藏顶部结果卡，防止信息五重重复。
   const card = resultCardCopy(resultByConversation.get(selectedConversationId) ?? { summary: null });
   const cardEl = document.getElementById("task-result-card");
   const primaryEl = document.getElementById("task-result-primary");
   const secondaryEl = document.getElementById("task-result-secondary");
+  const resumeRoot = document.getElementById("resume-entry-root");
+  const hasResume = !!resumeRoot && !resumeRoot.hidden && resumeRoot.hasChildNodes();
   if (cardEl && primaryEl && secondaryEl) {
     const result = resultByConversation.get(selectedConversationId);
     const plainReply = !!result?.summary && !result.unknown && !result.remaining?.length && !result.speechFailed;
-    cardEl.hidden = !card.visible || plainReply;
+    cardEl.hidden = !card.visible || plainReply || hasResume;
     primaryEl.textContent = card.primary;
     secondaryEl.textContent = card.secondary;
     secondaryEl.hidden = !card.secondary;
@@ -3077,6 +3092,7 @@ function handleServerMessage(raw: string): void {
     case "task_view":
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
+      renderTaskStrip();
       // T03 任务条：只信视图自己的任务身份，跨会话/旧 run 的视图不改当下这一条。
       if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;

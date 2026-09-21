@@ -27,7 +27,7 @@ export function waitingCopy(reason: string, detail: string | null): { text: stri
     failure_limit: "连续失败达到上限，已停住等你决定",
     unknown_with_baseline: "结果未知，等待核对",
     unknown_without_baseline: "结果未知，且没有可对比的基线",
-    readback_required: "需要你读回确认结果",
+    readback_required: "Agent 尚需核对页面结果",
     tool_failed: "上一步工具失败",
     runtime_error: "运行出错",
   };
@@ -50,7 +50,7 @@ export function stateHeadline(state: TaskView["state"], resumable?: boolean): st
     case "interrupted": return resumable === false ? "已中断 · 没有可恢复的依据" : "已中断 · 可继续";
     case "aborted": return "已停止";
     case "error": return "出错";
-    case "idle": return "已结束";
+    case "idle": return "本轮已结束";
     default: return "";
   }
 }
@@ -282,15 +282,16 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     materials = { rows: [], head: "材料", status: `未接收：${clip(failedSend.note ?? "", 40)}`, note: null };
   }
 
-  // ── 可见性：没有任何可说的事就整条隐藏 ──
-  const hasViewStory = !!view && view.state !== "none" && (!!view.goal || view.state !== "idle");
+  // ── 可见性：没有任何可说的事就整条隐藏；已结束(idle)的任务不再在顶部常驻 ──
+  const isOngoing = !!view && view.state !== "none" && view.state !== "idle";
+  const hasViewStory = isOngoing && (!!view.goal || view.state === "running" || view.state === "paused" || view.state === "interrupted");
   const visible = !!materials || hasViewStory || !!controlNote;
   if (!visible) {
     return { visible: false, state: "draft", goal: null, goalTitle: null, headline: "", activity: null, idleAge: null, waiting: null, page: null, materials: null, control: null };
   }
 
   const goal = view?.goal ?? null;
-  const headline = view ? stateHeadline(view.state, view.resumable) : "新任务";
+  const headline = view?.state === 'idle' && view.outstanding.length ? '尚未完成 · 可继续' : view ? stateHeadline(view.state, view.resumable) : "新任务";
   let activity: string | null = null;
   if (view?.state === "running") {
     activity = activityText(view);

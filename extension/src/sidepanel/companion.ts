@@ -27,7 +27,7 @@ export interface Box {
 
 export const SPRITE_W = 36;
 export const SPRITE_H = 36;
-export const RIM_GAP = 32;
+export const RIM_GAP = 38;
 export const LEAN_GAP = 28;
 /** 允许搭在边框上的最大重叠；必须小于气泡 padding（用户气泡 9px）。 */
 export const PAW_OVERLAP = 6;

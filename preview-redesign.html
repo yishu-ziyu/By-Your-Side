@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>By Your Side - AI Elements 风格流式任务卡预览</title>
+  <style>
+    :root {
+      --wallpaper: #f5f2eb;
+      --glass-surface: #f5f2eb;
+      --glass-surface-elevated: #fcfaf5;
+      --glass-border: #dcd6cb;
+      --glass-border-subtle: #e4dfd5;
+
+      --content-bg: #fcfaf5;
+      --content-subtle: #ece7de;
+      --content-subtle-hover: #e4ddd1;
+      --content-border: #ded8cd;
+
+      --text-primary: #292821;
+      --text-secondary: #686459;
+      --text-tertiary: #807b70;
+      --text-quaternary: #b9b2a5;
+
+      --accent: #79523b;
+      --accent-hover: #62412e;
+      --accent-soft: rgba(121, 82, 59, 0.08);
+      --ok: #438558;
+      --ok-soft: rgba(67, 133, 88, 0.1);
+      --warn: #9b682b;
+      --warn-soft: rgba(155, 104, 43, 0.1);
+
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+      --mono: "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+    body {
+      margin: 0;
+      padding: 30px 20px;
+      font-family: var(--font);
+      background: #eae6dc;
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .header-banner {
+      text-align: center;
+      margin-bottom: 24px;
+      max-width: 720px;
+    }
+    .header-banner h1 {
+      font-size: 22px;
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+    .header-banner p {
+      margin: 0;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* 真实 Chrome 侧边栏比例：宽 380px，高 720px */
+    .sidepanel-frame {
+      width: 380px;
+      height: 720px;
+      background: var(--wallpaper);
+      border-radius: 18px;
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 1. 顶部 Header：干净利落，无任何悬浮大卡 */
+    .sp-topbar {
+      height: 44px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0,0,0,0.04);
+      background: var(--glass-surface);
+      flex-shrink: 0;
+    }
+    .sp-brand {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .sp-brand-icon {
+      width: 16px;
+      height: 16px;
+      background: #292821;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .sp-top-actions {
+      display: flex;
+      gap: 12px;
+      color: var(--text-tertiary);
+      font-size: 14px;
+    }
+
+    .sp-subbar {
+      padding: 6px 14px 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .session-badge {
+      font-weight: 600;
+      font-size: 13.5px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mode-pill {
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: var(--content-subtle);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    /* 2. 消息流主体（滚动容器） */
+    .sp-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 用户气泡 */
+    .chat-bubble-user {
+      align-self: flex-end;
+      max-width: 86%;
+      background: var(--content-subtle);
+      color: var(--text-primary);
+      padding: 9px 12px;
+      border-radius: 12px 12px 2px 12px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    /* ─── AI Elements 风格：In-Stream Agent Task 卡片 ─── */
+    .ai-task-card {
+      align-self: stretch;
+      background: var(--content-bg);
+      border: 1px solid var(--content-border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      transition: border-color 0.15s ease;
+    }
+
+    /* TaskTrigger: 折叠头部，支持点击展开/收起 */
+    .ai-task-trigger {
+      padding: 12px 14px;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: background 0.15s ease;
+    }
+    .ai-task-trigger:hover {
+      background: rgba(0,0,0,0.015);
+    }
+
+    .trigger-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .target-scope {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .target-scope .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+
+    .trigger-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .task-status-badge {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+    .task-chevron {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      transition: transform 0.2s ease;
+    }
+    .ai-task-card.expanded .task-chevron {
+      transform: rotate(180deg);
+    }
+
+    .task-goal-line {
+      font-size: 13.5px;
+      font-weight: 600;
+      line-height: 1.45;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    /* TaskContent: 展开收起抽屉 */
+    .ai-task-content {
+      border-top: 1px solid var(--glass-border-subtle);
+      background: var(--content-subtle);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 每一个 TaskItem */
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .task-item-icon {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .task-item.done .task-item-icon {
+      background: var(--ok);
+      color: #fff;
+    }
+    .task-item.pending .task-item-icon {
+      border: 1.5px solid var(--warn);
+      color: var(--warn);
+    }
+    .task-item-title {
+      flex: 1;
+    }
+    .task-item.done .task-item-title {
+      color: var(--text-secondary);
+    }
+    .task-item.pending .task-item-title {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    /* TaskFooter: 动作与操作提示 */
+    .ai-task-footer {
+      border-top: 1px solid var(--glass-border-subtle);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--content-bg);
+    }
+    .task-resume-hint {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      line-height: 1.35;
+      flex: 1;
+    }
+    .btn-task-resume {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 13px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .btn-task-resume:hover {
+      background: var(--accent-hover);
+    }
+    .btn-task-resume:active {
+      transform: scale(0.97);
+    }
+
+    /* 成果来源与快捷操作条 */
+    .ai-delivery-meta {
+      padding: 0 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sources-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .sources-label {
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+    .source-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: var(--content-subtle);
+      border: 1px solid var(--content-border);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.12s;
+    }
+    .source-chip:hover {
+      background: var(--content-subtle-hover);
+      color: var(--text-primary);
+    }
+
+    .meta-actions-row {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      padding-top: 4px;
+    }
+    .meta-action-btn {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .meta-action-btn:hover {
+      color: var(--accent);
+    }
+
+    /* 3. 底部 Composer 输入框：无穿模吉祥物，干净清爽 */
+    .sp-composer {
+      padding: 10px 14px 14px;
+      background: linear-gradient(180deg, rgba(245, 242, 235, 0) 0%, var(--wallpaper) 20%);
+      flex-shrink: 0;
+    }
+    .composer-card {
+      background: var(--content-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      padding: 8px 10px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.03);
+    }
+    .composer-active-site {
+      font-size: 11px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 5px;
+    }
+    .composer-active-site .site-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+    .composer-textarea {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      min-height: 22px;
+    }
+    .composer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(0,0,0,0.04);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .composer-btn-send {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--text-primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* 交互指示说明 */
+    .interactive-guide {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--text-tertiary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .click-badge {
+      background: var(--accent);
+      color: white;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-banner">
+    <h1>AI Elements 风格「流式任务卡」完整视觉效果</h1>
+    <p>顶部 0 悬浮，任务状态自然流入消息流。卡片支持展开与收起，无多余冗余信息与穿模悬浮物。</p>
+  </div>
+
+  <!-- 模拟 Chrome 侧边栏 -->
+  <div class="sidepanel-frame">
+
+    <!-- 顶栏：完全释放空间，不再霸占 1/3 屏幕 -->
+    <div class="sp-topbar">
+      <div class="sp-brand">
+        <div class="sp-brand-icon">S</div>
+        <span>By Your Side</span>
+      </div>
+      <div class="sp-top-actions">
+        <span>⋯</span>
+      </div>
+    </div>
+
+    <div class="sp-subbar">
+      <div class="session-badge">1+1等于几啊？ ▾</div>
+      <div class="mode-pill">帮我操作 ▾</div>
+    </div>
+
+    <!-- 消息滚动区：顶部干干净净，从历史消息自然滑下 -->
+    <div class="sp-messages">
+
+      <!-- 用户原始请求 -->
+      <div class="chat-bubble-user">
+        把当前页面显示的这个技能解释理解一遍之后，放到我的浮墨笔记当中。
+      </div>
+
+      <!-- AI 响应：采用 AI Elements 的 Task 卡片规范 -->
+      <div class="ai-task-card expanded" id="agentTaskCard">
+
+        <!-- 1. TaskTrigger（标题区，点击可折叠/展开） -->
+        <div class="ai-task-trigger" onclick="toggleTaskCard()">
+          <div class="trigger-top-row">
+            <div class="target-scope">
+              <span class="dot"></span>
+              <span>flomo · 浮墨笔记</span>
+            </div>
+            <div class="trigger-right">
+              <span class="task-status-badge">需接续 (1/3)</span>
+              <span class="task-chevron">▼</span>
+            </div>
+          </div>
+          <p class="task-goal-line">把当前页面显示的这个技能解释理解一遍之后，放到我的浮墨笔记当中。</p>
+        </div>
+
+        <!-- 2. TaskContent（子步骤列表抽屉） -->
+        <div class="ai-task-content" id="taskContent">
+          <div class="task-item done">
+            <div class="task-item-icon">✓</div>
+            <div class="task-item-title">
+              已提取 Waza 技能体系解释（8个技能、Chaining、Why）
+            </div>
+          </div>
+          <div class="task-item pending">
+            <div class="task-item-icon">○</div>
+            <div class="task-item-title">
+              整理为适合放进浮墨笔记的 Memo 正文
+            </div>
+          </div>
+          <div class="task-item pending">
+            <div class="task-item-icon">○</div>
+            <div class="task-item-title">
+              在 flomo 中创建新笔记并核对内容一致性
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. TaskFooter（继续操作与免责提示） -->
+        <div class="ai-task-footer">
+          <div class="task-resume-hint">已保留本轮进度，继续时直接处理剩余 2 项，不重做已完成步骤。</div>
+          <button class="btn-task-resume" type="button">
+            <span>继续原任务</span>
+            <span>→</span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- 4. 来源链接与交互按钮（Pill 风格，彻底消除裸露下划线） -->
+      <div class="ai-delivery-meta">
+        <div class="sources-row">
+          <span class="sources-label">依据来源:</span>
+          <a href="#" class="source-chip">📄 tw93/waza (README)</a>
+          <a href="#" class="source-chip">📝 flomoapp.com</a>
+        </div>
+        <div class="meta-actions-row">
+          <span class="meta-action-btn">📋 复制当前结果</span>
+          <span class="meta-action-btn">💬 继续追问</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 底栏输入框：右下角无穿模小人，安全区呼吸充足 -->
+    <div class="sp-composer">
+      <div class="composer-card">
+        <div class="composer-active-site">
+          <span class="site-dot"></span>
+          <span>flomoapp.com · flomo · 浮墨笔记</span>
+        </div>
+        <div class="composer-textarea">说说你想完成什么...</div>
+        <div class="composer-bar">
+          <div style="display: flex; gap: 8px;">
+            <span>＋</span>
+            <span>MiniMax-M3 ▾</span>
+          </div>
+          <div class="composer-btn-send">↑</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="interactive-guide">
+    <span class="click-badge">可交互</span> 点击卡片头部区域可体验折叠/展开效果
+  </div>
+
+  <script>
+    function toggleTaskCard() {
+      const card = document.getElementById('agentTaskCard');
+      const content = document.getElementById('taskContent');
+      if (content.style.display === 'none') {
+        content.style.display = 'flex';
+        card.classList.add('expanded');
+      } else {
+        content.style.display = 'none';
+        card.classList.remove('expanded');
+      }
+    }
+  </script>
+
+</body>
+</html>
