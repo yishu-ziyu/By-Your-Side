@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reject lint violations that are new in this commit.
+#
+# Installed with: git config core.hooksPath scripts/git-hooks
+# Keep it fast and side-effect free: it only reads git state and runs oxlint.
+#
+# Escape hatch for a one-off commit that must land as-is:
+#   git commit --no-verify
+# Using it skips every gate, so say why in the commit message.
+
+node scripts/lint-changed.mjs --staged
