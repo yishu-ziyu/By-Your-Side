@@ -85,4 +85,4 @@ Cua Driver 0.7.1（`/Applications/CuaDriver.app`，com.trycua.driver）daemon �
 
 ## anti-slop 规则集已接入（2026-09-23）
 
-lint 入口为 `npm run lint`（`npm run lint:fix` 仅空白行 autofix）；未并入 `npm run check`。规则集 vendor 在 `tools/oxlint/anti-slop/`，pinned revision 与更新方式见该目录 `VENDOR.md`；策略只在 `oxlint.config.ts` 改，上游规则实现保持未修改。**接入=只做度量，没有消红**：全仓 26,405 条 error（78% 是可 autofix 的空白行规则），oxlint 自带默认规则只有 199 条 warning。续接或改严苛度前先读[验收文件](evals/20260923-anti-slop-vendor.md)的基线与待决项；没有用户裁决前不要跑全量 `--fix`，也不要把 `lint` 并进 `check`。
+lint 入口为 `npm run lint`（`npm run lint:fix` 仅空白行 autofix）；未并入 `npm run check`。规则集 vendor 在 `tools/oxlint/anti-slop/`，pinned revision 与更新方式见该目录 `VENDOR.md`；策略只在 `oxlint.config.ts` 改，上游规则实现保持未修改。**已落地三步**（提交 `f71dfef` 空白行机械消红 611 文件 / `1d5fd33` 新改动闸门 / `2e49428` vendor+config）：`require-readable-spacing` 只剩 86 个 WIP 文件里的 4,694 条，`npm run lint:changed` + pre-commit 钩子（`core.hooksPath`）已挡住真实新增，baseline 10,681 条。续接先读[验收文件](evals/20260923-anti-slop-vendor.md)的分批计划与「baseline 是快照、工作树是活水」提醒；每批修完必须 `npm run lint:baseline` 下调，否则等于没做。

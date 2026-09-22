@@ -48,8 +48,40 @@
 
 接入方式与 pinned revision 见 `tools/oxlint/anti-slop/VENDOR.md`（`c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b`，2026-09-10）。
 
-## 待用户裁决（不阻塞已完成的接入）
+## 落地进度（2026-09-23，三个提交）
 
-1. **收敛范围**：只对新改动生效（changed-files lint / 提交前钩子），还是全量收敛？
-2. **`require-readable-spacing` 单独处理**：占违规量 78% 且可 autofix，是否作为一次独立的机械提交先消掉？
-3. **起始严苛度**：是否先把高信号类型证据类规则保持 error，其余暂设 warn，分批收紧？
+裁决结果：按「先机械消空白行 → 再只卡新改动 → 最后分批收紧」执行。
+
+| 提交 | 内容 |
+| --- | --- |
+| `f71dfef` | `require-readable-spacing` 机械消红：611 个**无未提交改动**的文件，+18,557 行、全部为插入空白；逐个文件验证剥离空白后与 HEAD token 一致，因此不可能改变行为。该规则基线 20,621 → 4,694。 |
+| `1d5fd33` | `scripts/lint-changed.mjs` + `scripts/git-hooks/pre-commit` + `tools/oxlint/anti-slop-baseline.json`：只 lint 在改文件，且仅当「文件×规则」计数超过 baseline 才失败。已 `git config core.hooksPath scripts/git-hooks`。 |
+| `2e49428` | vendor 规则集、`oxlint.config.ts`、验收文档；`package.json` 只提交本轮新增的 4 个 script 与 2 个 devDependency，**未**夹带工作树里别人的未提交改动。 |
+
+当前入口：`npm run lint`（全量）、`npm run lint:changed`（在改文件）、`npm run lint:baseline`（重算 baseline）。`lint` 仍未并入 `npm run check`。
+
+baseline 快照（生成时 10,681 条 / 548 文件）分布见上表；其中 `require-readable-spacing` 4,694 条全部落在 86 个**当时有未提交改动或未跟踪**的文件里，等它们落地后重跑一次 autofix 即可归零，不需要额外设计。
+
+## 已生效的行为，续接前必须知道
+
+- **pre-commit 钩子已启用**（`core.hooksPath`）。以后每次 `git commit` 都会跑 `lint:changed --staged`，新增违规会直接挡住提交。绕过方式是 `git commit --no-verify`，但要在 commit message 里写原因。
+- 闸门判据是「文件×规则」计数不超过 baseline，不是逐行对比：改文件不会释放它的历史额度，只有真正修掉违规才会。代价是「修掉一条旧违规、新增一条同规则新违规」会算通过——这是棘轮的有意取舍。
+- **baseline 是快照，工作树是活水。** 生成 baseline 时（03:29）之后仍有文件在被继续修改，再次运行 `npm run lint:changed` 立刻报出 `hover-recovery` / `click-integrity` / `pointer-input` / `clipboard-bridge` / `cap02c-locator` 等文件各多出 1–2 条新违规（mtime 03:34–03:35，晚于 baseline）。这不是误报，是闸门在抓真实新增。WIP 稳定后可用 `npm run lint:baseline` 重算，但重算等于把当时的新违规一并认成历史额度，要有意识地做。
+
+## 分批收紧计划（剩余 10,681 条）
+
+按「价值/风险比」排序，每批独立可 review，完成后必须同步下调 baseline（`npm run lint:baseline`）——不下调就等于没做。
+
+| 批次 | 规则 | 量 | 做法与风险 |
+| --- | --- | --- | --- |
+| A | `require-readable-spacing` | 4,694 | 等 86 个 WIP/未跟踪文件落地后重跑 autofix，无需设计。 |
+| B | `no-conditional-empty-object-spread` | 385 | 机械改写：把 `...(x ? {a} : {})` 拆成先建对象再有条件赋值。无接口变化；该规则故意不提供 autofix，因为「省略字段」与「赋 undefined」不等价，需人工确认。 |
+| C | `no-array-filter-map` 103 + `oxc/no-accumulating-spread` 3 | 106 | 改 lazy iterator 管线。**先确认运行时支持**：扩展跑 Chrome、agent 跑 Node 22，都要实测；TS lib 声明不构成 polyfill。 |
+| D | `no-shape-in-symbol-names` 32 + `no-object-parameters` 31 + `no-reflect-get` 2 | 65 | 纯重命名 / 换类型，风险低但涉及面广，按目录分批。 |
+| E | `no-chained-type-assertions` 195 + `no-known-value-widening` 317 + `no-unknown-parameters` 457 + `no-unknown-returns` 112 + `no-unsafe-dictionary-type` 572 | 1,653 | 类型证据组，需要在 I/O 边界补 schema / 具名域类型，是真正的大头。按目录推进，每步守住对外行为不变。 |
+| F | `no-runtime-typeof` | 939 | 与 E 同主题（边界解析替代临时 typeof），可并入 E 的同一批改动，也可单独按模块推。 |
+| G | `no-module-mocking` | 92 | 测试替身改真实依赖缝；与全局 Testing Rules 同向，但改测试容易破坏现有覆盖，需逐文件确认替换后仍能失败。 |
+| H | `require-safety-comment-for-type-assertion` | 2,548 | 每条断言都要有真实的 `SAFETY:` 依据。**禁止批量生成占位注释**——那正是本规则要防的 slop。建议随文件被修改时顺手补，不单独扫。 |
+| I | oxlint 自带 warning（`no-unused-vars` 79、`no-unused-expressions` 57、`unicorn/*` 45 等） | ~199 | 与本策略无关的既有基线，量小，可随手清。 |
+
+建议顺序 A → B → C → D → I → E/F → G → H。
