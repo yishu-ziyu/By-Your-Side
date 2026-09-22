@@ -91,3 +91,43 @@ J4 输入：“请继续原任务；把来源改成同一个蓝色 Note 提示�
 ## 数据边界
 
 使用新开的公开资料页与空白草稿；保留用户原会话及原笔记。只允许填写本轮草稿，不点击保存/提交。Flomo 首页存在与本任务无关的私人笔记，测试前先通过真实 UI 缩小可见笔记范围，避免把无关内容送入产品模型。验收记录不收录私人笔记、凭据或完整浏览记录。
+
+## 修复后复测（2026-09-22 18:01–18:10，Kimi Code 会话续作）
+
+复测环境与 14:07 轮同类：日常 Chrome、真实扩展、已登录 Flomo、侧栏实际选用 MiniMax-M3。消息进入面板当时打开的复制任务会话（运行记录落 `~/.sideagent/conversations/d505b83c-…`），先原句重发 J3、再原句发 J4 改口；不再依赖已被 dispose 的中断任务。最终加载版 background.js `7d12fa8b…`（构建于 18:10；与 17:43 版的差异仅为一条注释）。
+
+### 基础设施扩充（用户批准，属验收工具链，不改产品逻辑）
+
+- Cua Driver 0.7.1（`/Applications/CuaDriver.app`，身份 com.trycua.driver）daemon 已授权（Accessibility + Screen Recording）并可后台常驻。`hotkey` 的 background 模式经 macOS 14+ auth-message envelope 向指定 pid 投递可信按键：Chromium 接受为真实输入，不前台、不动真实鼠标；`click` 的 element_index+window_id 走 AX 路径，后台/隐藏窗口可用。
+- 扩展 manifest 增加 `_execute_action` 命令（Command+Shift+Y / Ctrl+Shift+Y），background 增加 `setPanelBehavior({openPanelOnActionClick:true})`。效果：侧栏可随时用后台可信按键打开（实测 3 次均成功）；顺带修复「点工具栏图标无任何行为」。
+- 实测边界：CDP 合成按键**不**触发浏览器级快捷键（Cmd+T 合成无效）——系统级可信按键是打开侧栏链路的唯一可行面；页面内真实输入仍走 CDP（insertText/鼠标事件）。typecheck、architecture（228 文件）、build 通过后重载验证。
+
+### J3 复测：PASS（耗时 2m0s）
+
+- 18:01:51 原句经真实键入+真实点击发送。run `6a0d2246`：列 tab 找到重开的 System One（tab 29965552）→ 读页面结构 → `capture_page_material` 取第一句（范围正确）→ 切到 flomo tab 29965553 → `type_text` 先被来源闸门拒（预期路径）→ `fill` 一次成功。
+- 目标证据复核链起作用：首判 `matched:false`（0.63）并指出「setNodeHTML 整段覆盖、原文与 URL 拼接为单段、未形成两行结构」；模型改为两段结构后二判 `matched:true`（0.62），18:03:54 正式交付。
+- 独立读回 Flomo 草稿：`<p>Jev currently accepts text input only.</p><p>https://docs.typesafe.ai/concepts/system-one</p>`，与来源 Note 第一句逐字一致，另起一行附来源 URL；未点击保存/提交。
+- 14:22 轮的三个失败特征（整段误当第一句、5m20s 超时、闸门外绕行）均未复现。
+
+### J4 复测：接续与捕获 PASS，改写被既有回执闸门阻断（部分完成）
+
+- 改口继承实证： amendment 合并后 `task_goals` 回执中 requirement-1 原样保留、requirement-2（末句修订）并列在列，面板显示「+1 修订」——修复 2 在本路径生效。
+- 来源重绑定实证：`capture_page_material` 捕获到**同一个**蓝色 Note 框的末句 `Images, audio, and video are not supported (yet).`——14:36 轮的错 Note/整段误绑未复现，修复 1 在本路径生效。
+- 填写被拦：`fill` 返回「『填写 .tiptap.ProseMirror』已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请定位当前字段并用 `confirm_blocked_write` 核对/确认一次恢复。」随后 `confirm_blocked_write` 返回「结果项 auto-a-awqz 当前不是可恢复的表单状态，未执行确认」——确认路径对该字段不可用。
+- 模型退路：Ctrl+A/Delete 清空草稿后重填，仍被同一回执闸门拒绝；三次相同错误后按设计停止，run 以「部分完成 · 还有 1 项未完成」结束。
+- 副作用（如实记录）：模型为清空重填把 J3 已填入内容删除，复测后 Flomo 草稿为空。
+- 结论：J4 的「改口保留其他要求 + 来源对象绑定 + 末句捕获」三项通过；「要求已修订后改写同一字段」仍被既有成功回执挡住，且 `confirm_blocked_write` 无可用恢复态。这不是放松写入核验能解决的——需要在修订成立且材料已重新捕获时，提供一条以新 revision 为键的回执失效/确认路径。
+
+### J5 复测：接管请求未确认（未完成，附工具链瑕疵）
+
+- J3/J4 运行中共 4 次点击「接管」（精确坐标与 JS click 两种方式）：面板均记录「接管请求还没得到确认，页面可能仍由 Agent 控制 / 再试」，未出现「已暂停 · 页面归你」；其中一次误点工具回执芯片（文本匹配命中「接管页面」chip），一次「再试」复点未落地（按钮查找命中隐藏元素）。第 4 次前 run 已自行结束（部分完成），「交还」未测。
+- 不得据此判定产品故障（真人点击路径未复核），也不得记通过；需要一次真人路径的接管/交还复测。
+
+### 中断任务续接入口：实测死路（产品发现）
+
+- 该会话任务自 17:15:40（V2.3 重载断连）起 `state=interrupted / connection_lost`；17:38、17:43 两次扩展重载后 run 被 dispose（trace 有 abort/dispose），持久化快照仅剩 UI 残留。保留页面绑定为 chatgpt tab 29965355（任务上下文页，非 flomo/typesafe）。
+- 表现：发文本只完成修订合并不起 run；点「继续原任务」无任何后端事件（无新 trace、无会话记录、无守卫文案）；激活保留页后点击同样无事件。对照 14:32 轮（tab 未丢时接管/交还有效），说明「保留 tab 丢失 + 伴随进程重启」后检查点续接入口不可用。
+
+### 复测边界
+
+- 只证明：J3 全过；J4 的继承/来源/捕获过，改写确认路径不过；J5 控制请求未确认；中断续接死路。不外推模型质量、语音与发布门槛。Flomo 未点保存/提交；模型请求均为日常 MiniMax-M3，未做模型对比实验。

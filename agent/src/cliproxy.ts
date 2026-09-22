@@ -32,6 +32,9 @@ export interface CliproxyModelSpec {
   reasoning: boolean;
   /** 是否声明图像输入（截图工具结果依赖它；不确定的一律 false 保守降级）。 */
   image: boolean;
+  /** 覆盖注册用的上下文/输出上限；缺省 128000/16384。 */
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 /**
@@ -58,6 +61,8 @@ export const CLIPROXY_MODELS: readonly CliproxyModelSpec[] = [
   { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", reasoning: false, image: false },
   // xAI
   { id: "grok-3-mini", name: "Grok 3 Mini", reasoning: true, image: false },
+  // MiMo（2026-09-22 网关实测对话往返通过；MiMo V2.6 Flash 走 Command Code/opencode-go 网关）
+  { id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", reasoning: true, image: false, contextWindow: 1000000, maxTokens: 131072 },
   { id: "grok-4.3", name: "Grok 4.3", reasoning: true, image: true },
   { id: "grok-4.5", name: "Grok 4.5", reasoning: true, image: true },
   { id: "grok-4.6", name: "Grok 4.6", reasoning: true, image: true },
@@ -166,8 +171,8 @@ export async function registerCliproxyProvider(
         reasoning: spec.reasoning,
         input: spec.image ? ["text" as const, "image" as const] : ["text" as const],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 16384,
+        contextWindow: spec.contextWindow ?? 128000,
+        maxTokens: spec.maxTokens ?? 16384,
       })),
     });
     console.error(`[sideagent] 本地池已接入：${CLIPROXY_PROVIDER} 注册 ${specs.length} 个模型`);

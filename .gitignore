@@ -14,6 +14,8 @@ dist/
 /.statamcp/
 /.video_agent/
 /.pi/
+/.commandcode/
+/~/
 
 # Local credentials and generated experiment/session artifacts
 .env

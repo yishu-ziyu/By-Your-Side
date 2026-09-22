@@ -72,3 +72,13 @@ Jev 对真实浏览器来源有保守判断；重复换 DOM/网络工具不能�
 首次验收中“身份完整”的判断已被同文档替换反例推翻；续接时以[原验收文件的 P1 补充](evals/20260922-realtime-unknown-fill-readback.md#p1-同文档对象替换修复本轮)为准，不将历史 CSS/DOM 读回正例当作当前支持范围。
 
 真实 Chrome 无模型验收中，A 的隔离钩子未就绪，不能用随后 B/C 的成功补成 A 正例；C 的 PASS 仅指 snapshot-only 安全跳过，不代表原 C2 修复。下次续接先看[本轮限制](evals/20260922-realtime-unknown-fill-readback.md#真实浏览器无模型验收)，不要自动重跑或改生产能力。
+
+## 后台 GUI 基础设施（2026-09-22 18:10 起可用）
+
+Cua Driver 0.7.1（`/Applications/CuaDriver.app`，com.trycua.driver）daemon 已授权可常驻。用法：`cua-driver call <tool> '<json>'`；打开侧栏用 `hotkey {"keys":["cmd","shift","y"],"pid":<Chrome pid>}`（background 默认：可信按键投递到 pid，不前台、不动真实鼠标）。扩展已带 `_execute_action` 命令（Command+Shift+Y）与 `setPanelBehavior`，该按键即开侧栏。`click` 用 element_index+window_id 走 AX 路径（后台/隐藏窗口可用）；`get_window_state`/`zoom` 取 AX 树/截图；`get_accessibility_tree` 看桌面。页面内真实输入仍走 CDP（Runtime.evaluate + Input.insertText/鼠标事件）。**CDP 合成按键不触发浏览器级快捷键**（Cmd+T 实测无效），这是选 CuaDriver 的原因。权限归属 driver 身份；`cua-driver skills install` 可给各代理装技能包（未装）。验收脚本属临时工具，未入库。
+
+## Computer Use 复测后续接（2026-09-22 18:10）
+
+- 已实证生效：改口继承（requirement 并列）、来源对象绑定与句子范围（同 Note 末句准确捕获）。未过：①「修订后改写已有成功回执的字段」——闸门按字段选择器+回执拒绝重放，`confirm_blocked_write` 对该字段无恢复态；需要以新 revision 为键的回执失效/确认路径，不能靠放松核验。② 中断任务续接：保留 tab 丢失+伴随进程重启后 run 已 dispose，「继续原任务」无后端事件。③ J5 接管/交还需真人路径复测（自动化点击只拿到「未确认」，含工具链瑕疵，不能定罪也不能记过）。
+- 复测消息发在面板原会话（记录 d505b83c）；c54da576 的历史（含「无法继续」finding 与中断快照）保留未动。复测后 Flomo 草稿为空（模型清空重填的副作用）。
+- 模型侧待决记录：默认模型现为 minimax-cn/MiniMax-M3（本日 J3 全链正常，2m0s）。候选 MiMo V2.6 Flash 经 Command Code（Provider 计划，OpenAI/Anthropic 兼容端点）——若要换，先走真实路径对比再定，不以价格/宣传替换验收。CUA-S1（trycua/cua `libs/cua-s1`，cua-s1-form-v0）当前为 source-only 研究版：无权重、无性能声明、代码 MIT 但未来权重商用条款未定，暂不可用；表单专用方向与本产品填写路径相关，条款明确后再评估。
