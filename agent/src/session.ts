@@ -1,9 +1,12 @@
+import { realtimeBrowserError, REALTIME_FILL_READBACK_TIMEOUT_MS, type RealtimeFillReadback } from './realtime-browser-tools.js';
+import { classifyDirectExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
+import { judgeRealtimeBrowserAction } from './realtime-browser-judge.js';
 import { reviewTaskGoal } from './goal-reasoning-review.js';
 import { reserveEvidenceWork } from './task-evidence-budget.js';
 import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
 import { isBrowserObservation, type BrowserMaterial, type BrowserObservation } from '../../shared/browser-decision.js';
 import { createCapturePageMaterialTool, createTaskGoalsTool, type GoalToolHost } from './task-goal-tool.js';
-import { TaskEvidence, elementText, redactObservedText } from './task-evidence.js';
+import { TaskEvidence, elementText, redactObservedText, fieldMaterialValue } from './task-evidence.js';
 import type { TaskGoalBook } from './task-goals.js';
 import {decideDisplay,displayFastPathEnabled,displaySteerFastPathEnabled,type DisplayParams} from './display-fast-path.js';
 import {decideFastTask,type FastTaskDecision,type FastTaskSkillOption} from './fast-task.js';
@@ -16,14 +19,12 @@ import { TRANSLATION_PROMPT, parseTranslations, translationModelBlocks, restoreT
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, type ConfirmedRecoveryRecord} from "./task-results.js";
-import {extractResultTarget, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultItem, type TaskResultRegistration} from "../../shared/task-results.js";
+import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultItem, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
-import {isWriteTool} from "../../shared/control.js";
-import {requiresControlGate} from "../../shared/effect-policy.js";
-import {LEAD_SESSION_ID} from "../../shared/protocol.js";
+import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
 import {createHash,randomUUID} from "node:crypto";
-import {ProductContext} from "./product-context.js";
+import {LEAD_SESSION_ID} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
@@ -479,7 +480,14 @@ export class BrowserAgentSession {
   bindConversationContext(snapshot:()=>TaskProgressSnapshot|null):void { this.conversationSnapshot = snapshot; this.productContext?.bind(snapshot); }
   browserObservedMaterials(): BrowserMaterial[] {
     const snapshot=this.conversationSnapshot();
-    return snapshot?.runId&&snapshot.goalPlan ? this.taskEvidence.list(snapshot.runId,snapshot.goalPlan.revision).materials : [];
+    if(!snapshot?.runId||!snapshot.goalPlan)return [];
+    const materials=this.taskEvidence.list(snapshot.runId,snapshot.goalPlan.revision).materials;
+    const cited=snapshot.goalPlan.goals.filter(goal=>goal.kind==='field'&&goal.appendSourceUrl).flatMap(goal=>{
+      const material=materials.find(item=>item.id===goal.materialId);
+      const value=material&&fieldMaterialValue(goal,material);
+      return value?[{id:`field:${goal.id}`,value,source:'observed' as const,purpose:goal.description}]:[];
+    });
+    return [...materials,...cited];
   }
   browserDecisionRunId():string|null {return this.deliveryRunId();}
   async browserFieldMaterial(goal:string,control:BrowserControl,signal:AbortSignal):Promise<BrowserMaterialResult>{
@@ -595,12 +603,16 @@ export class BrowserAgentSession {
     if(name==='page_translation'&&params.action!=='collect'&&this.displayScopeBlockedRun!==null&&this.displayScopeBlockedRun===this.deliveryRunId())throw new Error('当前要求只修改页面的一部分，翻译显示工具只能修改整页。本次操作未执行，请说明此限制，不要更改整页来代替局部要求。');
     if (this.checkpointReadFailed) throw new Error(TASK_CHECKPOINT_UNAVAILABLE);
     const snapshot=this.conversationSnapshot();
-    assertTaskStepExecution(snapshot,name,params);
+    // display-* 前缀即直连用户请求（语音/显示命令）：不继承旧任务的“已取消”生命周期；其余约束照旧。
+    assertTaskStepExecution(snapshot,name,params,false,_toolCallId?.startsWith('display-')===true);
     if (snapshot?.goalPlan?.goals.some(g=>g.kind==='field'&&g.status!=='satisfied') && ['fill','type_text'].includes(name)) {
       const value=typeof params.value==='string'?params.value:typeof params.text==='string'?params.text:'';
       const literalUserValue=value.length>0&&(snapshot.recoveryInput?.requirements??[]).some(text=>text.includes(value));
-      const captured=this.browserObservedMaterials().some(m=>m.value===value&&snapshot.goalPlan!.goals.some(g=>g.kind==='material'&&g.materialId===m.id&&g.status==='satisfied'));
-      if(!literalUserValue&&!captured)throw new Error('复制来源尚未核验，或填写内容与已保存原文不一致。先用 capture_page_material / task_goals verify 取得完整正文；不得在来源核验失败后自行重写填写。');
+      const materials=this.browserObservedMaterials();
+      const captured=snapshot.goalPlan.goals.some(goal=>goal.kind==='field'&&materials.some(material=>
+        material.id===goal.materialId&&fieldMaterialValue(goal,material)===value
+        &&snapshot.goalPlan!.goals.some(source=>source.kind==='material'&&source.materialId===material.id&&source.status==='satisfied')));
+      if(!literalUserValue&&!captured)throw new Error('复制来源尚未核验，或填写内容与已保存原文不一致。查看 task_goals inspect 的 fieldValues；用一次 fill 填入对应字段的完整 value（包含已要求的换行与来源网址），不要拆成多次 type_text，也不要用脚本绕过核验。没有 fieldValues 时先核验来源。');
     }
     if (snapshot?.runId&&snapshot.goalPlan&&this.skillProgramDepth===0&&['js','network','fetch'].includes(name)) {
       const pending=snapshot.goalPlan.goals.filter(g=>g.kind==='material'&&g.status!=='satisfied').map(g=>g.id);
@@ -760,7 +772,8 @@ export class BrowserAgentSession {
           return reply.content.filter(part => part.type === "text").map(part => part.text).join("\n");
         })
         : null;
-      const productContext = options?.conversationId ? new ProductContext() : null;
+      let resultHost: BrowserAgentSession | null = null;
+      const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools()) : null;
       let onRepeatedFailure: ConstructorParameters<typeof RepeatedToolFailurePolicy>[0] = () => {};
       const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure));
       const resourceLoader = new DefaultResourceLoader({
@@ -780,7 +793,6 @@ export class BrowserAgentSession {
         appendSystemPromptOverride: (base) => appendPrompt(base),
       });
       await resourceLoader.reload();
-      let resultHost: BrowserAgentSession | null = null;
       // send_user_message 的正式交付也走轮次闸门：接线完成前按原样发出。
       const deliveryEmit: {current: ((event: AgentUiEvent) => void) | null} = {current: null};
       const runIdSlot: { current: () => string | null } = { current: () => null };
@@ -936,10 +948,14 @@ export class BrowserAgentSession {
       this.permittedToolNames = this.session.getActiveToolNames();
     }
     const hiddenWhenSolo = new Set<string>([...TEAM_COORDINATION_TOOLS, "page_operation"]);
+    const snapshot = this.conversationSnapshot();
+    // A goal plan does not by itself identify a new run: keep live legacy slots editable too.
+    const legacyPending = snapshot?.results?.some(item => !item.id.startsWith(AUTO_RESULT_ID_PREFIX)
+      && (item.status === 'pending' || item.status === 'blocked'));
+    const automaticResults = !!snapshot?.runId && !!snapshot.goalPlan && !snapshot.restartRecovery && !legacyPending;
     this.session.setActiveToolsByName(
-      this.teamToolsMounted
-        ? this.permittedToolNames
-        : this.permittedToolNames.filter((name) => !hiddenWhenSolo.has(name)),
+      this.permittedToolNames.filter(name => (this.teamToolsMounted || !hiddenWhenSolo.has(name))
+        && (!automaticResults || name !== 'record_task_results')),
     );
   }
 
@@ -987,6 +1003,149 @@ export class BrowserAgentSession {
   isStreaming(): boolean {
     return !!this.displayWork || (this.session?.isStreaming ?? false);
   }
+  prepareRealtimeBrowserInput(text: string, context?: PageContext): void {
+    this.activeGoal = text;
+    this.activeGoalPage = context ? {tabId: context.tabId, url: context.url} : null;
+    this.rpc?.setPageTarget(this.memberId, context?.tabId ?? null);
+  }
+
+  /** Execute the already-registered browser tool; no Pi prompt or routing model. */
+  async executeRealtimeBrowserTool(name: string, args: Record<string, unknown>, signal: AbortSignal, identity?: {inputId?: string; runId?: string | null}): Promise<unknown> {
+    let toolCallId: string | undefined;
+    let readback: RealtimeFillReadback | undefined;
+    let readbackAttempted=false;
+    const executionFact = () => toolCallId ? this.rpc?.getExecutionFact(toolCallId) ?? 'unknown' : 'not_executed';
+    // Host feedback outlet: facts decide the channel; the model never authors a success state.
+    const feedbackFor = (fact: 'executed' | 'not_executed' | 'unknown', data: unknown, failed: boolean): ExecutionFeedback | null => {
+      const feedback = classifyDirectExecutionFeedback({tool:name,args,executionFact:fact,data,failed,
+        ...(identity?.inputId?{inputId:identity.inputId}:{}), runId: identity?.runId ?? null, ...(toolCallId?{toolCallId}:{})});
+      if (feedback) this.callbacks.emit({kind:'execution_feedback',feedback});
+      return feedback;
+    };
+    try {
+      if (!this.session || this.isStreaming() || !this.canWriteCurrentInput()) throw new Error('当前任务正在执行或页面由用户接管，未执行语音工具。');
+      const epoch = this.controlEpoch, runId = this.deliveryRunId();
+      const revision = this.conversationSnapshot()?.goalPlan?.revision;
+      const controller = new AbortController();
+      const stop = AbortSignal.any([signal, controller.signal]);
+      const current = () => !stop.aborted && epoch === this.controlEpoch && runId === this.deliveryRunId()
+        && revision === this.conversationSnapshot()?.goalPlan?.revision && !this.hold.isHeld();
+      this.displayAbort = controller;
+      this.callbacks.setStatus('running');
+      const recover = async () => {
+        if(readbackAttempted||name!=='fill'||executionFact()!=='unknown'||!toolCallId)return;
+        readbackAttempted=true;
+        try {
+          readback=identity?.inputId&&identity.runId===runId&&runId
+            ? await this.readbackUnknownFill(toolCallId,args,stop,current)
+            : {status:'skipped',reason:'input_identity_missing'};
+        } catch { readback={status:'failed',reason:'readback_unavailable'}; }
+      };
+      const work = name === 'judge_browser_action'
+        ? this.judgeRealtimeBrowserTool(args,stop,current)
+        : (async()=>{
+          try {
+            const result=await this.invokeDisplayTool(this.session!,name,args,stop,current,id=>{
+              toolCallId=id;
+              if(name==='fill')this.rpc?.prepareFillReadback?.(id,this.memberId);
+            });
+            await recover();
+            return result;
+          } catch(error) {
+            if(name==='fill'&&toolCallId&&executionFact()!=='unknown'&&this.rpc?.getFillReadback?.(toolCallId)
+              &&(error as {executionFact?:unknown})?.executionFact==='unknown') {
+              readback={status:'skipped',reason:'original_receipt_arrived'};
+            }
+            await recover();
+            throw error;
+          }
+        })();
+      this.displayWork = work.then(()=>{});
+      // displayWork is also awaited by existing stop/takeover handling.
+      void this.displayWork.catch(()=>{});
+      try {
+        const result = await work;
+        const feedback = name === 'judge_browser_action' ? null : feedbackFor(executionFact(), (result as {details?:unknown}).details, false);
+        return {ok:true, content:(result as {content:unknown}).content,
+          ...(name === 'judge_browser_action' ? {} : {toolCallId, executionFact:executionFact()}),
+          ...(readback?{readback,transportId:toolCallId?this.rpc?.getTransportId?.(toolCallId):undefined}:{}),
+          ...(feedback?{feedback}:{})};
+      } finally {
+        if (this.displayAbort === controller) {
+          this.displayAbort = null;
+          this.displayWork = null;
+          this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
+        }
+      }
+    } catch (error) {
+      if (name === 'judge_browser_action') throw error;
+      const fact = executionFact();
+      const rejection = realtimeBrowserError(error, fact, toolCallId);
+      if(readback)rejection.readback=readback;
+      const transportId=toolCallId?this.rpc?.getTransportId?.(toolCallId):undefined;
+      if(transportId)rejection.transportId=transportId;
+      const feedback = feedbackFor(fact, undefined, true);
+      if (feedback) (rejection as Error & {feedback?: ExecutionFeedback}).feedback = feedback;
+      throw rejection;
+    }
+  }
+
+  /** One registered read, still inside the original displayWork and cancellation scope. */
+  private async readbackUnknownFill(fillId:string,args:Record<string,unknown>,signal:AbortSignal,current:()=>boolean):Promise<RealtimeFillReadback> {
+    const original=this.rpc?.getFillReadback?.(fillId),target=original?.target;
+    if(!current())return {status:'skipped',reason:'input_no_longer_current'};
+    if(this.rpc?.getExecutionFact(fillId)===undefined)return {status:'skipped',reason:'original_call_fact_missing'};
+    if(this.rpc?.getExecutionFact(fillId)!=='unknown')return {status:'skipped',reason:'original_receipt_arrived'};
+    if(!target)return {status:'skipped',reason:'original_field_identity_missing'};
+    if(target.protected)return {status:'skipped',reason:'protected_field'};
+    if(!target.nodeIdentity)return {status:'skipped',reason:'original_node_identity_missing'};
+    const {protected:_protected,...identity}=target;
+    const deadline=Date.now()+REALTIME_FILL_READBACK_TIMEOUT_MS;
+    const stop=AbortSignal.any([signal,AbortSignal.timeout(REALTIME_FILL_READBACK_TIMEOUT_MS)]);
+    const valid=()=>current()&&!stop.aborted&&this.rpc?.getExecutionFact(fillId)==='unknown';
+    let toolCallId:string|undefined;
+    const ids=()=>({toolCallId,...(toolCallId?{transportId:this.rpc?.getTransportId?.(toolCallId)}:{}),target:identity});
+    try {
+      if(!valid())return {status:'skipped',reason:'input_no_longer_current'};
+      const result=await this.invokeDisplayTool(this.session!,'read_element',{
+        tabId:target.tabId,target:target.target,properties:['value'],readback:{documentId:target.documentId,deadline,nodeIdentity:target.nodeIdentity},
+      },stop,valid,id=>{toolCallId=id;}) as {content:unknown;details?:{tabId?:number;documentId?:string;target?:string;value?:string;nodeIdentity?:{kind:'ax';backendNodeId:number}}};
+      if(!valid())return {...ids(),status:'skipped',reason:'input_no_longer_current'};
+      const data=result.details;
+      if(data?.tabId!==target.tabId||data.documentId!==target.documentId||data.target!==target.target||data.nodeIdentity?.kind!=='ax'||data.nodeIdentity.backendNodeId!==target.nodeIdentity.backendNodeId||typeof data.value!=='string') {
+        return {...ids(),status:'failed',reason:'read_identity_or_value_missing'};
+      }
+      return {...ids(),status:'observed',content:result.content,matchesExpected:data.value===args.value};
+    } catch(error) {
+      const message=error instanceof Error?error.message:'';
+      const reason=!current()?'input_no_longer_current':this.rpc?.getExecutionFact(fillId)===undefined?'original_call_fact_missing'
+        :this.rpc?.getExecutionFact(fillId)!=='unknown'?'original_receipt_arrived'
+        :Date.now()>=deadline?'read_timeout':message.includes('READBACK_PROTECTED')?'protected_field'
+        :message.includes('READBACK_DOCUMENT')?'document_changed':message.includes('READBACK_NODE')?'original_node_unverifiable':'read_failed';
+      return {...ids(),status:['input_no_longer_current','original_call_fact_missing','original_receipt_arrived','protected_field','document_changed','original_node_unverifiable'].includes(reason)?'skipped':'failed',reason};
+    }
+  }
+
+  private async judgeRealtimeBrowserTool(args: Record<string,unknown>, signal: AbortSignal, current:()=>boolean) {
+    if (!this.rpc || !current()) throw new Error('页面判断已取消。');
+    const id = `jev-${randomUUID()}`, name = 'judge_browser_action';
+    this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:args});
+    try {
+      const result = await judgeRealtimeBrowserAction(this.rpc,{
+        request:String(args.request),userTask:this.browserDecisionContext(),
+        ...(typeof args.tabId === 'number'?{tabId:args.tabId}:{}),
+        history:(this.conversationSnapshot()?.results??[]).slice(-8).map(r=>`${r.tool}: ${r.description} [${r.status}]`),
+      },signal);
+      if (!current()) throw new Error('用户要求已变化，旧页面判断已丢弃。');
+      const text = JSON.stringify(result);
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:text,executionFact:'executed'});
+      return {content:[{type:'text' as const,text}]};
+    } catch (error) {
+      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:'not_executed'});
+      throw error;
+    }
+  }
+
   executionEpoch():number{return this.controlEpoch;}
   waitForStop():Promise<void>{return this.stopCurrentRun();}
 
@@ -1886,6 +2045,7 @@ export class BrowserAgentSession {
     if(hiddenProgram){this.skillProgramDepth+=1;this.skillMaterials=display!.materials??[];}
     try{
       const result=await tool.execute(id,input,signal);
+      if(name==='read_element'&&input.readback&&!current())throw new Error('READBACK_STALE');
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:this.publicText(firstText(result)),executionFact:this.rpc?.getExecutionFact(id)});
       this.emitReadObservation(id,name,display?.params??input,result,false);return result;
     }catch(error){
@@ -2057,13 +2217,21 @@ export class BrowserAgentSession {
     }, {triggerTurn: false});
   }
 
-  private async verifyAnswerDelivery(text:string,signal?:AbortSignal):Promise<void> {
+  async verifyAnswerDelivery(text:string,signal?:AbortSignal):Promise<void> {
     const snapshot=this.conversationSnapshot();
     const goals=snapshot?.goalPlan?.goals.filter(goal=>goal.kind==='answer'&&goal.status==='pending')??[];
     if(!snapshot?.runId||!snapshot.goalPlan||!goals.length||snapshot.nextStep?.delivery!=='report')return;
     const host=this.goalToolHost(),current=host.current();
+    const evidence=host.evidence.list(snapshot.runId,snapshot.goalPlan.revision);
+    const sources=evidence.materials.map(material=>({value:material.value,sourceUrl:material.observation.url,truncated:false}));
+    // Read-only answers often use the initial page observation without capturing a
+    // copy material. Give the reviewer that real evidence, not an empty source list.
+    if(!sources.length){
+      const latest=evidence.observations.at(-1);
+      if(latest){const observed=host.evidence.read(latest.id,snapshot.runId);sources.push({value:observed.text.slice(0,32000),sourceUrl:observed.url,truncated:observed.truncated||observed.text.length>32000});}
+    }
     const result=await host.review('answer',{requirements:snapshot.recoveryInput?.requirements,goals,answer:text,
-      verifiedGoals:snapshot.goalPlan.goals.filter(goal=>goal.status==='satisfied'),sources:host.evidence.list(snapshot.runId,snapshot.goalPlan.revision).materials.map(material=>({value:material.value,sourceUrl:material.observation.url}))},signal??new AbortController().signal);
+      verifiedGoals:snapshot.goalPlan.goals.filter(goal=>goal.status==='satisfied'),sources},signal??new AbortController().signal);
     if(!current()||this.conversationSnapshot()?.runId!==snapshot.runId||this.conversationSnapshot()?.goalPlan?.revision!==snapshot.goalPlan.revision)throw new Error('任务已变化，旧答复未交付');
     if(!result.matched)throw new Error(`答复尚未满足目标：${result.reason}`);
   }

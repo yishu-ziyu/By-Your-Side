@@ -5,7 +5,7 @@ import { Type } from 'typebox';
 import type { TaskProgressSnapshot } from '../../shared/voice.js';
 import { taskRequirementId, type TaskGoalDefinition } from '../../shared/task-goals.js';
 import { TaskGoalBook } from './task-goals.js';
-import { TaskEvidence, elementText, type ObservedMaterial } from './task-evidence.js';
+import { TaskEvidence, elementText, fieldMaterialValue, type ObservedMaterial } from './task-evidence.js';
 
 export interface GoalToolHost {
   snapshot(): TaskProgressSnapshot;
@@ -21,7 +21,7 @@ interface GoalOperationInput {
   action:'inspect'|'plan'|'read_observation'|'capture'|'verify';
   goals?:TaskGoalDefinition[]; reason?:string;
   observationId?:string; materialId?:string; purpose?:string;
-  firstFragment?:string; lastFragment?:string; spans?:Array<{start:number;end:number}>;
+  firstFragment?:string; lastFragment?:string; quote?:string; spans?:Array<{start:number;end:number}>;
   goalId?:string; tabId?:number; target?:string; elements?:{selector:string};
 }
 async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperationInput,cancel?:AbortSignal) {
@@ -32,8 +32,16 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
   const reviewEvidence=host.review;
   const requirements = snapshot.recoveryInput?.requirements ?? (snapshot.goal ? [snapshot.goal] : []);
   const result = (details: unknown,untrusted=false) => ({ content: [{ type: 'text' as const, text: untrusted?wrapPageContent(JSON.stringify(details),{}):JSON.stringify(details) }], details });
+  const fieldValues = () => {
+    const materials=host.evidence.list(runId,revision).materials;
+    return (host.book().snapshot()?.goals??[]).filter(goal=>goal.kind==='field').flatMap(goal=>{
+      const material=materials.find(item=>item.id===goal.materialId);
+      const value=material&&fieldMaterialValue(goal,material);
+      return value===undefined?[]:[{goalId:goal.id,materialId:goal.materialId,value}];
+    });
+  };
   assertCurrent();
-  if (input.action === 'inspect') return result({ requirements:requirements.map((text,i)=>({id:taskRequirementId(i),text})), plan: snapshot.goalPlan, ...host.evidence.list(runId, revision) },true);
+  if (input.action === 'inspect') return result({ requirements:requirements.map((text,i)=>({id:taskRequirementId(i),text})), plan: snapshot.goalPlan, ...host.evidence.list(runId, revision),fieldValues:fieldValues() },true);
   if (input.action === 'read_observation') return result(host.evidence.read(input.observationId ?? '', runId),true);
   if (input.action === 'plan') {
     const goals = input.goals ?? [];
@@ -63,9 +71,10 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
     }
     const observation = host.evidence.read(input.observationId ?? '', runId);
     const material = input.firstFragment || input.lastFragment
-      ? host.evidence.prepareFragments(input.materialId ?? '', input.purpose ?? '', observation, input.firstFragment ?? '', input.lastFragment ?? '')
+      ? host.evidence.prepareFragments(input.materialId ?? '', input.purpose ?? '', observation, input.firstFragment ?? '', input.lastFragment ?? '',input.quote)
       : host.evidence.prepare(input.materialId ?? '', input.purpose ?? '', observation, input.spans ?? []);
-    const review = await reviewEvidence('source', { requirements, goal, observation, material, historicalObservation:observation.revision!==revision }, signal);
+    const previousSources=host.evidence.list(runId,revision).materials.filter(saved=>saved.observation.revision!==revision);
+    const review = await reviewEvidence('source', { requirements, goal, observation, material, previousSources, historicalObservation:observation.revision!==revision }, signal);
     assertCurrent();
     if (!review.matched) return result(review);
     const currentGoal=host.book().snapshot()?.goals.find(current=>current.id===goal.id);
@@ -79,7 +88,7 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
     host.book().bindPendingMaterial(revision,material.id,captured.id);
     host.book().verify(revision,goal.id,{...review,evidence:{observationId:observation.id,tabId:observation.tabId,verifiedAt:captured.verification.at,materialId:captured.id}});
     host.persist();
-    return result(captured,true);
+    return result({...captured,fieldValues:fieldValues()},true);
   }
   const goal = snapshot.goalPlan?.goals.find(g => g.id === input.goalId);
   if (!goal || snapshot.goalPlan?.coverage !== 'verified') throw new Error('先登记完整目标，再按目标标识核验');
@@ -94,12 +103,13 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
       :await reviewEvidence('reuse',{requirements,goal,material},signal);
     evidence = { observationId: material.observation.id, tabId: material.observation.tabId, verifiedAt: Date.now(), materialId: material.id };
   } else {
-    if (!input.tabId || goal.kind === 'field' && !input.target) throw new Error('核验需要当前目标页及字段');
+    if (!input.tabId) throw new Error('核验缺少 tabId，请指定目标页；condition 可省略 target，用整页观察核验，不必猜选择器。');
+    if (goal.kind === 'field' && !input.target) throw new Error('字段核验还需要 target，请指定已观察到的编辑器或字段。');
     const read = await host.read(input.tabId, input.target, signal, goal.kind === 'condition' ? input.elements : undefined);
     assertCurrent();
     const data = read.data;
     const actual = elementText(data);
-    if (goal.kind === 'field' && (!material || typeof actual !== 'string' || actual !== material.value)) review = { matched: false, reason: !material ? '缺少待写入的原文材料' : actual === '' ? '目标编辑器仍为空' : '目标内容与原文材料不一致' };
+    if (goal.kind === 'field' && (!material || typeof actual !== 'string' || actual !== fieldMaterialValue(goal,material))) review = { matched: false, reason: !material ? '缺少待写入的原文材料' : actual === '' ? '目标编辑器仍为空' : '目标内容与原文及所要求的来源网址不一致' };
     else review = await reviewEvidence(goal.kind==='field'?'target':'condition', { requirements, goal, target: input.target, page: data, material, executionFacts: host.snapshot().results, executionAuditComplete:host.snapshot().executionAuditComplete===true&&!host.snapshot().untrackedWritePending }, signal);
     evidence = { observationId: read.id, tabId: input.tabId, verifiedAt: Date.now(), ...(material ? { materialId: material.id } : {}) };
   }
@@ -110,10 +120,10 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
 export function createTaskGoalsTool(getHost: () => GoalToolHost) {
   return defineTool({
     name: 'task_goals', label: '核对任务目标',
-    description: 'Track USER OUTCOMES separately from action receipts. At task start call inspect, then plan with all requirements. An unplanned user-request is only a placeholder: replace it with concrete goals; do not retain it as an extra umbrella goal. Cover all constraints, including source acquisition and destination content for copying. Both material and field goals MUST have materialId; a copied field references the same materialId as its source. Use condition for user-provided/generated values and other page states. Use answer only when the user requires a textual answer; it completes on actual send_user_message delivery, not a page read. Never substitute answer for a requested browser change or copied source. Do not create click/switch goals as intermediate steps. Plan is independently checked and fixed for this requirement revision: do not replace unmet goals with successful actions. To revise an already-fixed plan without a new user requirement (for example dropping an internal-only source that keeps failing), call plan again with a non-empty reason explaining the method change. Every existing condition/field/answer goal and any already-satisfied goal, including material, then carries over unchanged and cannot be removed or altered; only a still-pending material goal with no field referencing its materialId may be dropped or replaced; new goals may be added. Omitting reason, or touching a locked goal, is rejected before any model review. Inspect lists host-recorded observations and exact saved materials; read_observation retrieves source text. Use capture_page_material with REQUIRED observationId and a selection; it copies the inclusive first/last fragment range from observation.fragments, preserving original text and explicit line breaks. These IDs are immutable source labels, NEVER live click/fill targets. Prefer fragments over compact snapshot text, which may normalize or clip content. For raw read_element text only, ordered character spans are also supported (joined with newline); code copies exact text after independent source/completeness review. Materials survive task amendments. To reuse an earlier captured source, reference its materialId in the new source goal and verify that goal; the host checks the old source certificate against the new requirement before accepting it. Reuse saved material values verbatim in fill/browser_loop. verify reads a fresh target/page itself, independently checks the specific goal, and for fields requires exact material equality. For a condition goal only, optionally pass elements:{selector} to have the host itself freshly read every element currently matching that selector (text, visibility, position, computed style, bounded count) as evidence for an on-page annotation/highlight; never fabricate this evidence yourself, and the selector alone does not prove the goal. It cannot resolve unknown writes or authorize retries. Never mark yourself done using action receipts. If evidence is insufficient, keep the goal pending and report partial with the actual missing requirement.',
+    description: 'Track USER OUTCOMES separately from action receipts. At task start call inspect, then plan with all requirements. An unplanned user-request is only a placeholder: replace it with concrete goals; do not retain it as an extra umbrella goal. Cover all constraints, including source acquisition and destination content for copying. Both material and field goals MUST have materialId; a copied field references the same materialId as its source. Use condition for user-provided/generated values and other page states. For an information-only question use one answer goal, with the question and restrictions as its criterion. Read host observations directly; do not invent a material capture requirement or materialId for an answer. An answer completes on actual send_user_message delivery. Never substitute answer for a requested browser change or copied source. Do not create click/switch goals as intermediate steps. Plan is independently checked and fixed for this requirement revision: do not replace unmet goals with successful actions. To revise an already-fixed plan without a new user requirement (for example dropping an internal-only source that keeps failing), call plan again with a non-empty reason explaining the method change. Every existing condition/field/answer goal and any already-satisfied goal, including material, then carries over unchanged and cannot be removed or altered; only a still-pending material goal with no field referencing its materialId may be dropped or replaced; new goals may be added. Omitting reason, or touching a locked goal, is rejected before any model review. Inspect lists host-recorded observations and exact saved materials; read_observation retrieves source text. Use capture_page_material with REQUIRED observationId and a selection; it copies the inclusive first/last fragment range from observation.fragments, preserving original text and explicit line breaks. These IDs are immutable source labels, NEVER live click/fill targets. Prefer fragments over compact snapshot text, which may normalize or clip content. For raw read_element text only, ordered character spans are also supported (joined with newline); code copies exact text after independent source/completeness review. Materials survive task amendments. To reuse an earlier captured source, reference its materialId in the new source goal and verify that goal; the host checks the old source certificate against the new requirement before accepting it. Reuse saved material values verbatim in fill/browser_loop. verify reads a fresh target/page itself, independently checks the specific goal, and for fields requires exact material equality. For a condition goal only, optionally pass elements:{selector} to have the host itself freshly read every element currently matching that selector (text, visibility, position, computed style, bounded count) as evidence for an on-page annotation/highlight; never fabricate this evidence yourself, and the selector alone does not prove the goal. It cannot resolve unknown writes or authorize retries. Never mark yourself done using action receipts. If evidence is insufficient, keep the goal pending and report partial with the actual missing requirement.',
     parameters: Type.Object({
       action: Type.Union([Type.Literal('inspect'),Type.Literal('plan'),Type.Literal('read_observation'),Type.Literal('verify')]),
-      goals: Type.Optional(Type.Array(Type.Object({ id: Type.String(), description: Type.String(), criterion: Type.String(), requirements: Type.Array(Type.String({description:"Copy requirement IDs from inspect.requirements, e.g. requirement-1. These refer to USER inputs, not goal numbers."})), kind: Type.Union([Type.Literal('material'), Type.Literal('field'), Type.Literal('condition'),Type.Literal('answer')]), materialId: Type.Optional(Type.String()) }), { maxItems: 32 })),
+      goals: Type.Optional(Type.Array(Type.Object({ id: Type.String(), description: Type.String(), criterion: Type.String(), requirements: Type.Array(Type.String({description:"Copy requirement IDs from inspect.requirements, e.g. requirement-1. These refer to USER inputs, not goal numbers."})), kind: Type.Union([Type.Literal('material'), Type.Literal('field'), Type.Literal('condition'),Type.Literal('answer')]), materialId: Type.Optional(Type.String()), appendSourceUrl:Type.Optional(Type.Boolean({description:'Field goals only: set true when the user requests the source URL. Expected field value is exact material.value + newline + its observed source URL; no other additions.'})) }), { maxItems: 32 })),
       reason: Type.Optional(Type.String({minLength:1,maxLength:500,description:'Required only when revising an already-fixed (verified) plan with the same requirement revision; explain the method change.'})),
       observationId: Type.Optional(Type.String({description:'Exact source observation id from inspect.'})),
       goalId: Type.Optional(Type.String()), tabId: Type.Optional(Type.Integer({ minimum: 1 })), target: Type.Optional(Type.String()),
@@ -133,10 +143,10 @@ export function createCapturePageMaterialTool(getHost:()=>GoalToolHost) {
       materialId:Type.String({minLength:1,description:'materialId of the already planned source goal.'}),
       purpose:Type.String({minLength:1,maxLength:500}),
       selection:Type.Union([
-        Type.Object({kind:Type.Literal('fragments'),first:Type.String({minLength:1}),last:Type.String({minLength:1})}),
+        Type.Object({kind:Type.Literal('fragments'),first:Type.String({minLength:1}),last:Type.String({minLength:1}),quote:Type.Optional(Type.String({minLength:1,maxLength:8000,description:'Exact unique substring within these raw fragments. Required when the user requests only a sentence or excerpt inside a larger fragment. Copy it verbatim; the host locates and copies the original characters. Omit only when the entire fragment range is requested.'}))}),
         Type.Object({kind:Type.Literal('text'),spans:Type.Array(Type.Object({start:Type.Integer({minimum:0}),end:Type.Integer({minimum:1})}),{minItems:1,maxItems:128})}),
       ]),
     }),
-    execute:(_id,input,signal)=>executeGoalOperation(getHost,{action:'capture',observationId:input.observationId,materialId:input.materialId,purpose:input.purpose,...(input.selection.kind==='fragments'?{firstFragment:input.selection.first,lastFragment:input.selection.last}:{spans:input.selection.spans})},signal),
+    execute:(_id,input,signal)=>executeGoalOperation(getHost,{action:'capture',observationId:input.observationId,materialId:input.materialId,purpose:input.purpose,...(input.selection.kind==='fragments'?{firstFragment:input.selection.first,lastFragment:input.selection.last,quote:input.selection.quote}:{spans:input.selection.spans})},signal),
   });
 }

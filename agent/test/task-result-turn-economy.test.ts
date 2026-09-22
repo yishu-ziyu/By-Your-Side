@@ -39,6 +39,17 @@ async function executionGate(p: TaskProgress): Promise<(name: string, params?: R
 const itemsOf = (p: TaskProgress) => p.snapshot().results ?? [];
 
 describe('记账下沉：执行事实驱动账本', () => {
+  it('separate completed script invocations keep separate receipts and a complete audit',async()=>{
+    const p=setup(),gate=await executionGate(p);
+    for(const id of ['script-one','script-two']){
+      expect(()=>gate('js',{code:'document.title'})).not.toThrow();
+      start(p,id,'js',{code:'document.title'});end(p,id,'js',{executionFact:'executed'});
+    }
+    expect(itemsOf(p).map(item=>item.evidence?.toolCallId)).toEqual(['script-one','script-two']);
+    expect(p.snapshot().executionAuditComplete).toBe(true);
+    start(p,'script-two','js',{code:'document.title'});end(p,'script-two','js',{executionFact:'executed'});
+    expect(itemsOf(p).map(item=>item.evidence?.toolCallId)).toEqual(['script-one','script-two']);
+  });
   it('观察和写操作都不再需要预先登记', async () => {
     const p = setup();
     const gate = await executionGate(p);
@@ -144,6 +155,9 @@ describe('记账下沉：执行事实驱动账本', () => {
     end(p, 'read-1', 'snapshot');
     expect(p.snapshot().lastReadAt).toBeGreaterThan(1_000);
     expect(() => gate('click', {target: '#next'})).not.toThrow();
+    start(p,'call-2','click',{target:'#next'});end(p,'call-2','click',{executionFact:'executed'});
+    expect(itemsOf(p).filter(item=>item.tool==='click').map(item=>item.evidence?.toolCallId)).toEqual(['call-1','call-2']);
+    expect(p.snapshot().executionAuditComplete).toBe(true);
   });
 
   it('被拦下的点击仍按未执行上报，不当作完成', async () => {
@@ -156,7 +170,7 @@ describe('记账下沉：执行事实驱动账本', () => {
     expect(() => gate('click', {target: '#delete'})).toThrow(/执行结果未知/);
   });
 
-  it('协调/探针类工具不产生用户可见待办', () => {
+  it('脚本与页面归属保留执行回执，滚动不产生持久写入项', () => {
     const p = setup();
     start(p, 'call-1', 'js', {});
     end(p, 'call-1', 'js');
@@ -164,7 +178,8 @@ describe('记账下沉：执行事实驱动账本', () => {
     end(p, 'call-2', 'worker_tabs');
     start(p, 'call-3', 'scroll', {dy: 400});
     end(p, 'call-3', 'scroll');
-    expect(itemsOf(p)).toHaveLength(0);
+    expect(itemsOf(p).map(item=>item.tool)).toEqual(['js','worker_tabs']);
+    expect(itemsOf(p).every(item=>item.status==='satisfied')).toBe(true);
   });
 });
 
@@ -195,7 +210,7 @@ describe('真实调用序列重放（A 候选：4 次记账只服务 1 次 click
     // 原始运行为此花了 4 次 record_task_results（都在同一个 click 上）；新规则下 0 次。
     expect(legacyRejections).toBe(2);
     const items = itemsOf(p);
-    expect(items).toHaveLength(1);
+    expect(items.map(item=>item.tool)).toEqual(['click','js']);
     expect(items[0]).toMatchObject({tool: 'click', target: '@18', status: 'satisfied'});
     expect(items[0]!.description).toContain('暂停视频');
     expect(p.snapshot().executionState).toBe('satisfied');

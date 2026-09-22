@@ -6,6 +6,8 @@ export interface TaskGoal {
   requirements: string[];
   kind: 'material' | 'field' | 'condition' | 'answer';
   materialId?: string;
+  /** A copied field may append its observed source URL when the user requests it. */
+  appendSourceUrl?: boolean;
   status: 'pending' | 'satisfied' | 'blocked';
   reason?: string;
   evidence?: { observationId: string; tabId: number | null; verifiedAt: number; materialId?: string };
@@ -19,7 +21,7 @@ export interface TaskGoalPlan {
   amendments?: Array<{ at: number; reason: string; removed: string[]; added: string[] }>;
 }
 
-export type TaskGoalDefinition = Pick<TaskGoal, 'id' | 'description' | 'criterion' | 'requirements' | 'kind' | 'materialId'>;
+export type TaskGoalDefinition = Pick<TaskGoal, 'id' | 'description' | 'criterion' | 'requirements' | 'kind' | 'materialId' | 'appendSourceUrl'>;
 
 export function isTaskGoalPlan(value: unknown): value is TaskGoalPlan {
   if (!value || typeof value !== 'object') return false;
@@ -35,6 +37,7 @@ export function isTaskGoalPlan(value: unknown): value is TaskGoalPlan {
       && Array.isArray(g.requirements) && g.requirements.length > 0 && g.requirements.length <= 64
       && g.requirements.every(id => typeof id==='string' && /^requirement-([1-9]|[1-5][0-9]|6[0-4])$/.test(id))
       && (g.materialId === undefined || text(g.materialId, 64))
+      && (g.appendSourceUrl === undefined || g.kind === 'field' && typeof g.appendSourceUrl === 'boolean')
       && (['condition','answer'].includes(g.kind) || text(g.materialId,64))
       && (g.reason === undefined || text(g.reason, 500))
       && (g.evidence === undefined || !!g.evidence && text(g.evidence.observationId, 200)

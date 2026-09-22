@@ -1,5 +1,8 @@
+import { realtimeBrowserError } from './realtime-browser-tools.js';
+import { projectTaskView } from '../../shared/task-view.js';
 import { VoiceAudioCache } from "./voice-audio-cache.js";
 import { RealtimeVoiceSession, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
+import { voiceSpokenResultGateEnabled } from './config.js';
 import { sharedRouteShadow } from './route-shadow.js';
 import { isLeadSession } from '../../shared/protocol.js';
 import { readFile, stat } from "node:fs/promises";
@@ -32,6 +35,11 @@ export async function readStepVoiceKey(): Promise<string> {
   }
   throw new Error("请先配置本机 StepFun 开放平台 API Key，再重试。");
 }
+/** 仍未确认（unknown）或被阻碍（blocked）的执行项：用户必须知道的缺口，保留人话播报。 */
+function hasUnresolvedObstacle(snapshot: TaskProgressSnapshot): boolean {
+  return projectTaskView(snapshot).outstanding.some(item => item.status === 'unknown' || item.status === 'blocked');
+}
+
 /** One explicit human voice connection; background task sessions stay independent. */
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
@@ -47,7 +55,7 @@ export class VoiceService {
     announcedDeliveries: Set<string>;
     streamedDeliveries: Set<string>;
   } | null = null;
-  constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null, private readonly emit: (msg: ServerMessage) => void, private readonly getKey = readStepVoiceKey, private readonly createSession = (deps: RealtimeVoiceDependencies): VoiceSession => new RealtimeVoiceSession(deps), private readonly steer?: (id: string, text: string, startedAt: number | null) => Promise<void>, private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<ConstructorParameters<typeof StepVoiceSession>[0]["route"]>>, private readonly diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"], private readonly targets?: () => VoiceTarget[], private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void, private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void, private readonly relatedTask: (origin: string, target: string) => boolean = () => false, private readonly readPage?: (conversationId: string, input: import('../../shared/voice.js').VoiceInputContext) => Promise<unknown>, private readonly dispatchTask?: RealtimeVoiceDependencies['dispatchTask']) {
+  constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null, private readonly emit: (msg: ServerMessage) => void, private readonly getKey = readStepVoiceKey, private readonly createSession = (deps: RealtimeVoiceDependencies): VoiceSession => new RealtimeVoiceSession(deps), private readonly steer?: (id: string, text: string, startedAt: number | null) => Promise<void>, private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<ConstructorParameters<typeof StepVoiceSession>[0]["route"]>>, private readonly diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"], private readonly targets?: () => VoiceTarget[], private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void, private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void, private readonly relatedTask: (origin: string, target: string) => boolean = () => false, private readonly readPage?: (conversationId: string, input: import('../../shared/voice.js').VoiceInputContext) => Promise<unknown>, private readonly dispatchTask?: RealtimeVoiceDependencies['dispatchTask'], private readonly browserTool?: (id: string, ...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => Promise<unknown>) {
   }
   async handle(conversationId: string, message: VoiceClientMessage): Promise<void> {
     if (message.command.kind === "start") {
@@ -79,9 +87,15 @@ export class VoiceService {
           getSnapshot: () => this.snapshot(conversationId),
           getDeliverySnapshot: stream => this.snapshot(this.deliveryOwners.get(stream.id) ?? conversationId),
           getTargets: this.targets,
+          ...(!diag && this.browserTool ? {browserTool: (...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => {
+            if (this.active?.id !== message.voiceId) throw realtimeBrowserError('语音会话已关闭，未执行。', 'not_executed');
+            return this.browserTool!(conversationId,...args);
+          }} : {}),
           receiptAudioCache: this.receiptAudioCache,
           // Shared across voice sessions so the daily Jev-call budget is counted once, not reset per session; never wired for diagnostic capture.
           ...(!diag ? { shadow: sharedRouteShadow() } : {}),
+          // Explicit opt-in; shadow logging alone never enables product behavior.
+          ...(!diag ? { voiceSpokenResultGate: voiceSpokenResultGateEnabled() } : {}),
           ...(this.readPage && !diag ? { readPage: (input: import('../../shared/voice.js').VoiceInputContext) => this.readPage!(conversationId, input) } : {}),
           ...(this.dispatchTask && !diag ? { dispatchTask: (request: import('../../shared/task-actions.js').TaskActionRequest, stillCurrent: () => boolean) => this.dispatchTask!(request, () => this.active?.id === message.voiceId && stillCurrent()) } : {}),
           diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),
@@ -223,10 +237,10 @@ export class VoiceService {
       return;
     }
     // session.ts emits status idle before agent_end; do not broadcast premature empty idle on status message alone
-    if (message.type === 'status' && message.state === 'idle' && !hasResult && !speakable) {
+    if (message.type === 'status' && message.state === 'idle' && !hasResult && !speakable && !hasUnresolvedObstacle(snapshot)) {
       return;
     }
-    if (snapshot.state === 'idle' && hasResult && !speakable) {
+    if (snapshot.state === 'idle' && hasResult && !speakable && !hasUnresolvedObstacle(snapshot)) {
       return;
     }
     const key = `${snapshot.runId}:${snapshot.state}:${resultIdentity}:${delivery?.id ?? 'none'}`;
@@ -237,7 +251,9 @@ export class VoiceService {
     if (!active.controls.size && snapshot.state === 'error' && snapshot.runId) {
       active.session.notify(snapshot);
     }
-    else if (!active.controls.size && snapshot.state === 'idle' && snapshot.runId && !hasResult && !delivery) {
+    // 只有仍未确认或受阻的真实执行项才需要第二次开口；普通 running→idle 是内部状态，不补播。
+    // 已有结果文本不能呑掉未确认项（复核 2026-09-21：idle + 结果文本 + unknown 项仍需告知）。
+    else if (!active.controls.size && snapshot.state === 'idle' && snapshot.runId && !delivery && hasUnresolvedObstacle(snapshot)) {
       active.session.notify(snapshot);
     }
   }

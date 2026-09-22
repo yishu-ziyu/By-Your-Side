@@ -204,4 +204,26 @@ describe("新任务预观察的身份次序", () => {
     expect(h.gate.rejections).toEqual([]);
     expect(h.frames().at(-1)!.runId).toBe(runId);
   });
+
+  it("已中止任务：直连 display 帧不携带已中止身份（新语音请求不被连坐），任务帧仍按原身份被拒", async () => {
+    const h = harness();
+    await h.manager.ensureDefault();
+    await h.manager.handleMessage({ type: "user_message", text: "第一个任务", context: pageContext() });
+    const run = h.manager.getTaskProgress(CONVERSATION_ID)!.runId;
+    h.gate.noteAbort();
+    h.setStreaming(false);
+    // SAFETY: 测试直接驱动会话内部的 TaskProgress 构造“已中止”状态（生产由用户停止达成）。
+    (h.manager as unknown as { progress: Map<string, { abort(): void }> }).progress.get(CONVERSATION_ID)!.abort();
+    expect(h.manager.getTaskProgress(CONVERSATION_ID)!.state).toBe("aborted");
+
+    // 新的直连用户请求（display-* 帧）：不附着已中止 runId，不被身份闸门连坐。
+    h.emitFrame({ type: "tool_call", id: "display-after-stop", name: "switch_tab", params: { tabId: TAB_ID }, sdkId: "display-after-stop" });
+    expect((h.emitted.at(-1) as { runId?: string | null }).runId ?? null).toBeNull();
+    expect(h.gate.rejections).toEqual([]);
+
+    // 任务族迟到帧：仍附着原身份 → 扩展按原样拒收（保住“停任务杀旧步”的原语义）。
+    h.emitFrame({ type: "tool_call", id: "task-after-stop", name: "snapshot", params: { tabId: TAB_ID } });
+    expect((h.emitted.at(-1) as { runId?: string | null }).runId).toBe(run);
+    expect(h.gate.rejections).toEqual([IDENTITY_ERROR]);
+  });
 });

@@ -60,6 +60,9 @@ interface SideAgentCursor {
   /** 跨页：它在别的标签页干活时，当前页右上角显示可点胶囊（点了切过去） */
   showCrossPage?(view?: CrossPageView): void;
   hideCrossPage?(): void;
+  /** 执行反馈胶囊（V2）：宿主事实短语；成功一次轻微回弹，不抢焦点、不配音、不循环。 */
+  showFeedback?(view?: import("./shared/feedback-pill.js").FeedbackPillView): void;
+  hideFeedback?(): void;
   /** 沿浅弧飞到视口坐标 (x,y)；首次从角落出发。返回飞行毫秒，供调用方等待。 */
   move(x: number, y: number): number;
   /** 执行前确认落点，避免低帧率时视觉仍落后于实际输入。 */
@@ -158,6 +161,14 @@ interface SideAgentNamespace {
     viewport: { width: number; height: number };
   } | null;
   clickCrossPage?: () => boolean;
+  /** overlay 自检：右上角执行反馈胶囊（V2） */
+  feedbackState?: () => {
+    id: string;
+    text: string;
+    kind: string;
+    bounces: number;
+    visible: boolean;
+  } | null;
   /** overlay 自检：页顶接管条 */
   controlBanner?: () => { status: string; action: string } | null;
   clickHandback?: () => boolean;

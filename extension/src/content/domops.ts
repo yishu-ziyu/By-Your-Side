@@ -1,3 +1,4 @@
+import {replaceEditableText} from "../shared/editable-text.js";
 /**
  * DOM 操作 content script（ISOLATED world，重复注入幂等）。
  * 暴露 window.__sideagent.dom = { resolve, rectOf, confirmForClick, hitTestAt, rememberPoint, confirmPoint, click, fill, scrollBy, scrollToBottom }。
@@ -227,8 +228,7 @@
         return { filled: true };
       }
       if (el.isContentEditable) {
-        el.textContent = value;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
+        replaceEditableText(el,value);
         return { filled: true };
       }
       throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");

@@ -3,7 +3,7 @@ import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
 import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
-import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
+import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "./run-trace.js";
@@ -17,7 +17,7 @@ import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recov
 import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
 import type { DeliveryFactInput } from './user-delivery.js';
 
-const labels: Record<string, string> = { capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
+const labels: Record<string, string> = { judge_browser_action: "判断页面操作", capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 const label = (name: string) => labels[name] ?? name.slice(0, 100);
 
 /** Runtime receipts drive progress; bounded target bindings are retained, page contents are excluded. */
@@ -235,6 +235,8 @@ export class TaskProgress {
     };
     if (message.type === "status") {
       if (message.state === "running") {
+        // Direct tools have no Pi agent_start/agent_end lifecycle.
+        if (this.runId) this.startedAt ??= this.clock();
         if(this.interrupted&&lead){this.ledger.beginRun(this.runId);this.latestResult=null;}
         this.interrupted = false; this.members.set(member, "running");
       }
@@ -298,7 +300,7 @@ export class TaskProgress {
       // A tabs/switch call changes which page is controlled, not remote/page
       // business state. An uncertain switch must be re-observed, but it must not
       // permanently lock unrelated form writes like an uncertain fill/click does.
-      const durableEffect=write&&tabAction!=='switch';
+      const durableEffect=resultToolHasWriteEffect(e.name)||(browserControl&&tabAction!=='switch')||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write');
       // The host hashes private skill inputs before redacting public tool parameters.
       let valueHash: string | undefined;
       if (e.name === 'fill') {

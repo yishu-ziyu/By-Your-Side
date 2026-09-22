@@ -2,6 +2,28 @@ import { expect, it } from 'vitest';
 import { TaskEvidence } from '../src/task-evidence.js';
 
 const source = { id: 'snapshot-1', runId: 'run-1', revision: 'revision-1', tabId: 3, url: 'https://video.example/watch', text: '第一条评论\n00:00 开始\n01:20 小雨\n第二条评论\n别的内容', truncated: false, at: 10 };
+
+it('同一原始片段内只捕获指定句子，恢复后保留精确范围', () => {
+  const store = new TaskEvidence();
+  const first = 'Jev currently accepts text input only.';
+  const raw = `${first} It evaluates strings and JSON. Images are not supported.`;
+  const observation = {...source, fragments: {truncated:false, fragments:[{id:'note',kind:'text' as const,text:raw}]}};
+  const material = store.prepareFragments('sentence', '第一句', observation, 'note', 'note', first);
+  expect(material.value).toBe(first);
+  expect(material.selection).toEqual({kind:'fragments',ids:['note'],range:{start:0,end:first.length}});
+  store.restore(JSON.parse(JSON.stringify(material)));
+  expect(store.list(source.runId,source.revision).materials[0]).toEqual(material);
+  expect(() => store.restore({...material,sourceText:material.sourceText!.replace('Images','Pictures')})).toThrow('已绑定');
+  expect(() => store.restore({...material,id:'invalid',selection:{...material.selection,range:{start:0,end:1}}})).toThrow('范围');
+});
+
+it('精确选句拒绝改写和有歧义的重复文本，不扩大范围或猜位置', () => {
+  const store = new TaskEvidence();
+  const observation = {...source,fragments:{truncated:false,fragments:[{id:'note',kind:'text' as const,text:'Same sentence. Another sentence. Same sentence.'}]}};
+  expect(() => store.prepareFragments('m','句子',observation,'note','note','Invented sentence.')).toThrow('原文');
+  expect(() => store.prepareFragments('m','句子',observation,'note','note','Same sentence.')).toThrow('多处');
+  expect(store.prepareFragments('m','句子',observation,'note','note','Another sentence.').value).toBe('Another sentence.');
+});
 it('跨页取用原文，持久化恢复不需要旧节点引用', () => {
   const evidence = new TaskEvidence(); evidence.observe(source);
   const start = source.text.indexOf('00:00'), end = source.text.indexOf('\n第二条');

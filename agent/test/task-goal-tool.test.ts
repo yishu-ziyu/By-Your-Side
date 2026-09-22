@@ -22,6 +22,26 @@ const goals = [
   { id: 'source-goal', description: '取得第一条评论', criterion: '第一条评论完整正文', kind: 'material' as const, requirements: ['requirement-1'], materialId: 'comment' },
   { id: 'paste-goal', description: '粘贴评论', criterion: '笔记编辑器与评论正文完全一致', kind: 'field' as const, requirements: ['requirement-1'], materialId: 'comment' },
 ];
+
+it('一句原文加真实来源网址能够核验，额外内容与遗漏网址仍不通过', async () => {
+  const f = fixture();
+  const snap=f.progress.snapshot();
+  const sourceUrl='https://article.example/source';
+  f.evidence.observe({id:'note',runId:snap.runId!,revision:snap.goalPlan!.revision,tabId:3,url:sourceUrl,text:'短句。 后续内容。',truncated:false,at:1,fragments:{truncated:false,fragments:[{id:'p',kind:'text',text:'短句。 后续内容。'}]}});
+  await f.call({action:'plan',goals:[goals[0]!,{...goals[1]!,appendSourceUrl:true}]});
+  const captured=await f.capture({observationId:'note',materialId:'comment',purpose:'第一句',selection:{kind:'fragments',first:'p',last:'p',quote:'短句。'}});
+  const value=`短句。\n${sourceUrl}`;
+  expect(captured.details).toMatchObject({value:'短句。',fieldValues:[{goalId:'paste-goal',materialId:'comment',value}]});
+  expect((await f.call({action:'inspect'})).details).toMatchObject({fieldValues:[{goalId:'paste-goal',value}]});
+  f.read.mockResolvedValue({id:'fresh',data:{tagName:'div',editableText:value,textContent:value.replace('\n',''),page:{url:'https://notes.example',text:'笔记编辑器'}}});
+  await f.call({action:'verify',goalId:'paste-goal',tabId:8,target:'#editor'});
+  expect(f.progress.snapshot().goalPlan!.goals[1]!.status).toBe('satisfied');
+  for(const wrong of ['短句。',`${value}\n未经要求的文本`]) {
+    f.read.mockResolvedValue({id:'wrong',data:{value:wrong,page:{url:'https://notes.example',text:'笔记编辑器'}}});
+    await f.call({action:'verify',goalId:'paste-goal',tabId:8,target:'#editor'});
+    expect(f.progress.snapshot().goalPlan!.goals[1]!.status).toBe('pending');
+  }
+});
 it('原文取得后目标仍未完成，空字段与错误字段拒绝，正确字段才完成', async () => {
   const f = fixture(); await f.call({ action: 'plan', goals });
   await f.capture({ observationId: 'source', materialId: 'comment', purpose: '第一条评论正文', selection:{kind:'text',spans: [{ start: 6, end: 23 }]} });

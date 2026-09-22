@@ -128,3 +128,46 @@ describe('document-bound page translation', () => {
     expect(()=>validateTranslationCommand({action:'display',mode:'translated',fontSize:20})).not.toThrow();
   });
 });
+
+describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', () => {
+  const marker = '这批翻译未完成（aborted），已保留之前的译文。可以继续翻译。';
+  const segments = [{id:'1:0',text:'阅读 '},{id:'1:1',text:'来源'}];
+  const collectThenFinish = () => vi.fn(async (command: Record<string, unknown>) => {
+    if (command.action === 'begin') return receipt;
+    if (command.action === 'collect') {
+      return (collectThenFinish as {n?: number}).n
+        ? {...receipt, blocks: [], translated: 1, remaining: 0}
+        : ((collectThenFinish as {n?: number}).n = 1, {...receipt, blocks});
+    }
+    return {...receipt, blocks: [], translated: 1, remaining: 0};
+  });
+
+  it('同批瞬时生成中断只重试一次并可完成，不再整批报故障', async () => {
+    const call = vi.fn()
+      .mockResolvedValueOnce(receipt)
+      .mockResolvedValueOnce({...receipt, blocks})
+      .mockResolvedValueOnce({...receipt, translated: 1, remaining: 0, blocks: []})
+      .mockResolvedValueOnce({...receipt, translated: 1, remaining: 0, blocks: []});
+    const translate = vi.fn().mockRejectedValueOnce(new Error(marker)).mockResolvedValueOnce(segments);
+    const result = await runPageTranslation({action:'translate'}, call as never, translate, new AbortController().signal);
+    expect(translate).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({translated: 1, remaining: 0});
+  });
+
+  it('连续两次中断如实报整批故障（重试有界）', async () => {
+    const call = vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt, blocks});
+    const translate = vi.fn().mockRejectedValue(new Error(marker));
+    await expect(runPageTranslation({action:'translate'}, call as never, translate, new AbortController().signal))
+      .rejects.toThrow('翻译生成失败');
+    expect(translate).toHaveBeenCalledTimes(2);
+  });
+
+  it('用户主动停止：如实报告已停止与进度，不算生成故障，也不再重试', async () => {
+    const abort = new AbortController();
+    const call = vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt, blocks});
+    const translate = vi.fn().mockImplementation(async () => { abort.abort(); throw new Error(marker); });
+    await expect(runPageTranslation({action:'translate'}, call as never, translate, abort.signal))
+      .rejects.toThrow('已停止翻译请求');
+    expect(translate).toHaveBeenCalledTimes(1);
+  });
+});

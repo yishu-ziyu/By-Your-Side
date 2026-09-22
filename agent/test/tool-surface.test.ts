@@ -12,6 +12,9 @@ import { MemoryStore } from "../src/memory-store.js";
 import { SYSTEM_PROMPT, workerSystemPrompt } from "../src/prompt.js";
 import { LEAD_SESSION_ID } from "../../shared/protocol.js";
 import { TEAM_COORDINATION_TOOLS } from "../../shared/control.js";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { TaskProgress } from "../src/task-progress.js";
+import { ToolRpc } from "../src/rpc.js";
 
 const rpc = () => ({ call: vi.fn(async () => ({})), ensureToolCall() {}, markCallRejected() {}, noteToolFact() {} });
 const fleetStub = () => ({ mailbox: {}, list: () => [], get: () => undefined, takeTab: async () => ({}), spawn: async () => ({}) }) as never;
@@ -204,6 +207,143 @@ describe("单人页不挂载 page_operation", () => {
     expect(active).toContain("page_operation");
     expect(active).toContain("post");
   });
+});
+
+/** Real Pi lifecycle and registered tools; a local finite provider only captures model inputs. */
+async function taskSurfaceSession() {
+  const { BrowserAgentSession } = await import('../src/session.js');
+  const dir = mkdtempSync(join(tmpdir(), 'bys-result-surface-'));
+  const modelRuntime = await ModelRuntime.create({authPath:join(dir,'auth.json'),modelsPath:null,
+    modelsStorePath:join(dir,'models.json'),allowModelNetwork:false,refreshOnCreate:false});
+  type Input = {systemPrompt?:string;tools?:{name:string;description:string}[];messages:unknown[]};
+  const inputs:Input[] = [];
+  const replies:Array<(input:Input)=>unknown[]> = [];
+  const model = {id:'probe',name:'Local surface probe',api:'surface-probe',provider:'surface-probe',
+    baseUrl:'http://127.0.0.1',reasoning:false,input:['text'],contextWindow:32000,maxTokens:1024,
+    cost:{input:0,output:0,cacheRead:0,cacheWrite:0}};
+  const stream = (_model:unknown, context:Input) => {
+    // Pi also keeps executor functions on context.tools; capture model-facing metadata only.
+    inputs.push({systemPrompt:context.systemPrompt,tools:context.tools?.map(({name,description})=>({name,description})),
+      messages:structuredClone(context.messages)});
+    const content = replies.shift()?.(inputs.at(-1)!) ?? [];
+    const reason = content.length ? 'toolUse' : 'stop';
+    const message = {role:'assistant',content,api:model.api,provider:model.provider,model:model.id,
+      stopReason:reason,timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,
+        cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}};
+    return {async *[Symbol.asyncIterator]() {yield {type:'start',partial:message};yield {type:'done',reason,message};},
+      result:async()=>message};
+  };
+  modelRuntime.registerNativeProvider({id:model.provider,name:model.name,
+    auth:{apiKey:{name:'Local only',resolve:async()=>({auth:{}})}},getModels:()=>[model],stream,streamSimple:stream
+  } as unknown as Parameters<ModelRuntime['registerNativeProvider']>[0]);
+  const progress = new TaskProgress('default');
+  const wire = new ToolRpc(), frames:Array<{name:string}>=[];
+  wire.setPageTarget(undefined,7);
+  wire.setSend(frame=>{frames.push(frame);wire.handleResult(frame.id,frame.name!=='fill',
+    {tabId:7,value:'星河'},frame.name==='fill'?'receipt lost':undefined,frame.name==='fill'?'unknown':'executed');});
+  const host = await BrowserAgentSession.create(wire, {
+    emit:event=>progress.observe({type:'agent_event',event}),setStatus:()=>{},
+  }, {conversationId:'default',modelRuntime,modelPattern:'surface-probe/probe',customTools:createBrowserTools(wire,
+    undefined,undefined,undefined,{epoch:()=>host.executionEpoch(),canWrite:id=>host.canWriteCurrentInput(id),
+      assertCall:(name,params,id)=>host.assertTaskResultExecution(name,params,id)})});
+  expect(host.available).toBe(true);
+  host.bindConversationContext(()=>progress.snapshot());
+  host.bindTaskResults({getSnapshot:()=>progress.snapshot(),goals:progress.goals,
+    register:items=>progress.registerResults(items),verify:input=>progress.verifyUnknownResult(input)});
+  const inner = (host as unknown as {session:{prompt(text:string):Promise<void>}}).session;
+  return {host,progress,inputs,replies,frames,prompt:()=>inner.prompt('检查本轮工具契约'),
+    close:()=>{host.dispose();rmSync(dir,{recursive:true,force:true});}};
+}
+
+describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览器）',()=>{
+  it('模型后续输入拿到自动结果 ID，现有核查工具不依赖手工登记且不凭缺基线读数解除 unknown',async()=>{
+    const h=await taskSurfaceSession();
+    try {
+      h.progress.request('填写星河，不提交');
+      h.replies.push(()=>[{type:'toolCall',id:'actual-write',name:'fill',arguments:{target:'#code',value:'星河'}}]);
+      h.replies.push(input=>{
+        const texts=(input.messages as {content?:unknown}[]).map(message=>typeof message.content==='string'?message.content:
+          Array.isArray(message.content)?message.content.map(part=>part.text??'').join(''): '');
+        const text=texts.find(t=>t.startsWith('应用状态快照，不是新用户消息'))!;
+        const projection=JSON.parse(text.slice(text.indexOf('{'),text.indexOf('。下一步由宿主计算')));
+        const item=projection.results.find((r:{status:string})=>r.status==='unknown');
+        expect(item.evidence.toolCallId).toBe('actual-write');
+        return [{type:'toolCall',id:'check-result',name:'resolve_unknown_result',arguments:{id:item.id,target:'#code',expect:'星河',tabId:7}}];
+      });
+      await h.prompt();
+      expect(h.inputs).toHaveLength(3);
+      for(const input of h.inputs)expect(input.tools?.map(t=>t.name)).not.toContain('record_task_results');
+      expect(h.frames.map(f=>f.name)).toEqual(['fill','read_element']);
+      expect(h.progress.snapshot()).toMatchObject({executionState:'unknown',successVerified:false});
+      expect(h.progress.snapshot().goalPlan?.goals[0]?.status).toBe('pending');
+      expect(()=>h.host.assertTaskResultExecution('fill',{target:'#other',value:'星河'})).toThrow(/尚未确认结果/);
+    } finally {h.close();}
+  },15000);
+
+  it('每次输入按当前 run 收起手工入口，模式与团队切换不重新暴露',async()=>{
+    const h=await taskSurfaceSession();
+    try {
+      expect(h.host.isToolActive('record_task_results')).toBe(true);
+      h.progress.request('把代号填成星河，不要保存或提交');
+      await h.prompt();
+      const input=h.inputs.at(-1)!;
+      expect(input.tools?.map(t=>t.name)).not.toContain('record_task_results');
+      expect(input.tools?.map(t=>t.name)).toEqual(expect.arrayContaining(['task_goals','capture_page_material','resolve_unknown_result','confirm_blocked_write','send_user_message']));
+      expect(input.systemPrompt).not.toContain('record_task_results');
+      expect(input.tools?.find(t=>t.name==='resolve_unknown_result')?.description).not.toContain('record_task_results');
+      for(const mounted of [false,true,false]){
+        h.host.setTeamToolsMounted(mounted);
+        await h.host.setMode(mounted?'teach':'act');
+        expect(h.host.isToolActive('record_task_results')).toBe(false);
+        expect(h.host.isToolActive('page_operation')).toBe(mounted);
+      }
+      h.progress.request('下一项任务');
+      await h.prompt();
+      expect(h.inputs.at(-1)!.tools?.map(t=>t.name)).not.toContain('record_task_results');
+    } finally {h.close();}
+  },15000);
+
+  it('旧检查点与已有手工槽位保留兼容，恢复后新建任务重新隐藏',async()=>{
+    const h=await taskSurfaceSession();
+    try {
+      h.progress.request('旧任务');
+      h.progress.registerResults([{id:'legacy-slot',description:'填写草稿',tool:'fill',target:null}]);
+      await h.prompt();
+      expect(h.host.isToolActive('record_task_results')).toBe(true);
+      const saved=h.progress.snapshot();
+      h.progress.restoreResults({...saved,state:'running'});
+      expect(h.progress.snapshot().restartRecovery).toBe(true);
+      await h.prompt();
+      expect(h.inputs.at(-1)!.tools?.map(t=>t.name)).toContain('record_task_results');
+      expect(h.progress.snapshot().results?.some(r=>r.id==='legacy-slot')).toBe(true);
+      h.progress.request('全新任务');
+      await h.prompt();
+      expect(h.inputs.at(-1)!.tools?.map(t=>t.name)).not.toContain('record_task_results');
+      h.progress.restoreResults({...saved,goalPlan:undefined,state:'idle',restartRecovery:undefined});
+      await h.prompt();
+      expect(h.inputs.at(-1)!.tools?.map(t=>t.name)).toContain('record_task_results');
+    } finally {h.close();}
+  },15000);
+
+  it.each(['restart','no-plan','manual-blocked','auto-unknown'] as const)('兼容条件独立生效：%s',async kind=>{
+    const h=await taskSurfaceSession();
+    try {
+      h.progress.request('原任务');
+      const saved=h.progress.snapshot();
+      if(kind==='restart')h.progress.restoreResults({...saved,state:'running'});
+      if(kind==='no-plan')h.progress.restoreResults({...saved,goalPlan:undefined,state:'idle'});
+      if(kind==='manual-blocked')h.progress.restoreResults({...saved,state:'idle',results:[
+        {id:'legacy',description:'旧执行方法',tool:'click',target:'#old',status:'blocked',evidence:null},
+      ]});
+      if(kind==='auto-unknown'){
+        h.progress.observe({type:'agent_event',event:{kind:'tool_start',name:'fill',toolCallId:'unknown-write',params:{target:'#code',value:'星河'}}});
+        h.progress.observe({type:'agent_event',event:{kind:'tool_end',name:'fill',toolCallId:'unknown-write',isError:true,executionFact:'unknown',resultText:'timeout'}});
+      }
+      await h.prompt();
+      expect(h.inputs.at(-1)!.tools?.some(tool=>tool.name==='record_task_results')).toBe(kind!=='auto-unknown');
+      if(kind==='auto-unknown')expect(h.progress.snapshot().results![0]!.status).toBe('unknown');
+    } finally {h.close();}
+  },15000);
 });
 
 describe("合并工具的行为", () => {

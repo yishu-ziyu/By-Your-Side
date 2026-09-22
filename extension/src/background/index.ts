@@ -50,7 +50,7 @@ import { oneLine } from "./util.js";
 import { consumeTeachUrlChange, getMode, noteMarkDrawn, noteMarksCleared, setMode } from "./mode.js";
 import { isAffirmativeReply, isCancelReply, isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { isHeldClickResult } from "../shared/held-clicks.js";
-import { findSessionForTab, getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
+import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, shareTab, guardToolAccess, setVisibleConversationId, setConversationTitle } from "./state.js";
 import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
@@ -64,7 +64,9 @@ import {
   clearCursorStatus,
   clearAmbientCursorStatus,
   resumeCursorStatus,
+  retireExecutionFeedback,
   showCursorStatus,
+  showExecutionFeedback,
   suppressCursorStatus,
   workingTabBehindPill,
   type CursorStatusState,
@@ -106,7 +108,7 @@ const handlers: Record<ToolName, Handler> = {
 let selectedConversationId = "default";
 const connectedPanels = new Set<chrome.runtime.Port>();
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
-function broadcastConversations() { for (const port of connectedPanels) { try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId,resumeReading:reading.resumeOnOpen(selectedConversationId)}); } catch {} } }
+function broadcastConversations() { for (const port of connectedPanels) { try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId,resumeReading:reading.resumeOnOpen(selectedConversationId)}); } catch { /* 面板端口已断开 */ } } }
 const controllers = new Map<string, ReturnType<typeof createConversationController>>();
 let connectionSnapshot: [ConnState, TransportKind | undefined, string?] = ["connecting", undefined];
 let helloSnapshot: Extract<ServerMessage, {type:"hello_ok"}> | null = null;
@@ -270,6 +272,7 @@ async function applyCursorStatusEvent(
   switch (event.kind) {
     case "agent_start":
       resumeCursorStatus(key(sid));
+      void retireExecutionFeedback();
       await setCursorStatus(sid, "waiting");
       return;
     case "tool_start": {
@@ -935,6 +938,7 @@ const callbacks: UplinkHandlers = {
       if (msg.state === "idle") commitTrail(key(sid));
       if (msg.state === "running") {
         resumeCursorStatus(key(sid));
+        void retireExecutionFeedback();
         void setCursorStatus(sid, "waiting");
       } else if (msg.state === "user") {
         void suppressCursorStatus(key(sid));
@@ -947,6 +951,13 @@ const callbacks: UplinkHandlers = {
         activityBySession.set(sid, msg.event.name === "await_message" ? "waiting_message" : "waiting_tool");
       } else if (msg.event.kind === "tool_end") {
         activityBySession.set(sid, "running");
+      }
+      // 胶囊画不上（受限页等）时用侧栏文字降级；画不上不等于任务失败。
+      if (msg.event.kind === "execution_feedback") {
+        const feedback = msg.event.feedback;
+        void showExecutionFeedback(feedback).then(shown => {
+          if (!shown) emitNotice(`${feedback.text}（页面提示无法显示，已保留在侧栏）`);
+        });
       }
       void applyCursorStatusEvent(sid, msg.event);
 
@@ -1040,7 +1051,13 @@ async function executeToolCall(
         // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
         try {
-          const r = await handler(params, key(sid));
+          // SAFETY: 此三元只在 name==='read_element' 时进入 readElement 分支，params 已由工具分发契约保证是 read_element 的参数形状；unknown 收窄仅为满足 readElement 的类型签名，不改变运行行为。
+          const r = name==='read_element'&&params.readback
+            ? await readElement(params as unknown as import('../../../shared/protocol.js').ToolContract['read_element']['params'],key(sid),()=>{
+              checkIdentity();
+              if(gate.gen!==operationGeneration||gate.isSessionBlocked(sid)||workerTabControl.isStopped(key(sid)))throw new Error('READBACK_CANCELLED');
+            })
+            : await handler(params, key(sid));
           executionFact = "executed";
           return r;
         } catch (error) {
@@ -1400,6 +1417,13 @@ if (chrome.commands?.onCommand) {
   });
 }
 
+// 工具栏图标点击 = 打开侧栏。manifest 的 side_panel 只声明面板本身，未登记
+// setPanelBehavior 时图标点击没有任何行为；同时这也是 manifest _execute_action
+// 命令（Command+Shift+Y）能打开侧栏的前提。
+void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
+  /* 老版本 Chrome 无此 API：图标行为不变 */
+});
+
 // 步骤完成自动感知：teach 模式 + 有待完成标注时，working tab 的 URL 变化
 // （chrome.tabs.onUpdated 的 changeInfo.url，SPA pushState 也会触发）视为
 // 用户可能已完成当前步骤 → 清标注 + 通知 agent。agent 未连接时 sendClientMessage 静默丢弃。
@@ -1583,7 +1607,7 @@ chrome.tabs.onActivated.addListener((info) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
   if (selectedConversationId !== conversationId) return;
   const msg = raw as { type?: unknown; action?: unknown; text?: unknown };

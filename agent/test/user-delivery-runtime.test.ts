@@ -181,7 +181,7 @@ describe("UserDeliveryLedger bookkeeping used by TaskProgress", () => {
 });
 
 describe("delivery closure", () => {
-  function fixture() {
+  function fixture(verifyAnswerDelivery?: (text:string)=>Promise<void>) {
     const messages: any[] = [];
     let publish: (e: any) => void = () => {};
     let streaming = false;
@@ -189,10 +189,32 @@ describe("delivery closure", () => {
     const compose = vi.fn(() => new Promise<string>(resolve => { answer = resolve; }));
     const manager = new ConversationManager(async (_id, emit) => {
       publish = e => { if (e.kind === "agent_start") streaming = true; if (e.kind === "agent_end" || e.kind === "error") streaming = false; emit({ type: "agent_event", event: e }); };
-      return { session: { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, abort: () => { streaming = false; } }, fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
+      return { session: { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, ...(verifyAnswerDelivery?{verifyAnswerDelivery}:{}), abort: () => { streaming = false; } }, fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
     }, m => messages.push(m));
     return { manager, messages, compose, event: (e: any) => publish(e), resolve: (text: string) => answer(text) };
   }
+  it.each(['valid','rejected','cancelled'] as const)('reviews the existing final answer without generating it again: %s',async(outcome)=>{
+    let release!:()=>void;
+    const verify=vi.fn(async()=>{if(outcome==='rejected')throw new Error('答案不满足目标');if(outcome==='cancelled')await new Promise<void>(resolve=>{release=resolve;});});
+    const h=fixture(verify);
+    try {
+      await h.manager.ensureDefault();
+      await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'Jev目前支持哪些输入？'});
+      const p=(h.manager as any).progress.get('default') as TaskProgress;
+      p.goals.install(p.snapshot().goalPlan!.revision,[{id:'answer',kind:'answer',description:'解释支持的输入',criterion:'只支持文本输入',requirements:['requirement-1']}],1);
+      const answer='Jev目前只支持文本输入，图片、音频和视频尚不支持。';
+      h.event({kind:'text_delta',delta:answer});h.event({kind:'agent_end'});
+      expect(verify).toHaveBeenCalledWith(answer);
+      expect(h.compose).not.toHaveBeenCalled();
+      if(outcome==='cancelled'){h.event({kind:'error',message:'用户已终止'});release();}
+      await new Promise(resolve=>setTimeout(resolve,0));
+      const deliveries=h.messages.filter(m=>m.event?.kind==='user_delivery');
+      if(outcome==='valid'){
+        expect(deliveries).toHaveLength(1);expect(deliveries[0].event.delivery.text).toBe(answer);
+        expect(p.snapshot().goalPlan!.goals[0]!.status).toBe('satisfied');
+      }else{expect(deliveries).toHaveLength(0);expect(p.snapshot().goalPlan!.goals[0]!.status).toBe('pending');}
+    }finally{h.manager.dispose();}
+  });
   it("drops a late makeup finding after the run errors", async () => {
     const h = fixture();
     try {

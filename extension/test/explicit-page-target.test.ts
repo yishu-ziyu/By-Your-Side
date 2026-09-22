@@ -34,3 +34,37 @@ it('所有缺省页面动作都把任务目标传给原有归属检查，不能�
     expect(resolve).toHaveBeenCalledExactlyOnceWith(91,'main');
   }
 });
+
+it('fill checks the document captured before dispatch, even at the same URL',async()=>{
+  let documentId='original-document';
+  const executeScript=vi.fn(async(_details:Record<string,unknown>)=>[{documentId,result:{url:'https://same-url.test/',readyState:'complete'}}]);
+  vi.stubGlobal('chrome',{...chrome,scripting:{executeScript}});
+  const state=await import('../src/background/state.js');
+  vi.spyOn(state,'resolveWorkingTab').mockResolvedValue({id:91,url:'https://same-url.test/'} as chrome.tabs.Tab);
+  const activate=vi.spyOn(state,'maybeActivateTab');
+  const {withObservedDocumentIdentity}=await import('../src/background/observation-document.js');
+  const observed=await withObservedDocumentIdentity(91,'main',async()=>({target:'#code'}));
+  documentId='replacement-document';
+  const {fill}=await import('../src/background/exec/input.js');
+  await expect(fill({tabId:91,target:observed.value.target,value:'星河',expectedDocumentId:observed.documentId!},'main')).rejects.toMatchObject({executionFact:'not_executed'});
+  expect(activate).not.toHaveBeenCalled();
+  expect(executeScript.mock.calls.every(([call])=>!('files' in (call??{})))).toBe(true);
+});
+
+// A host-bound AX fill must never become a DOM-ref fill with the same printed @number.
+it.each(['dom-rebind','debugger-unavailable'] as const)('bound fill refuses %s before DOM fallback',async mode=>{
+  const executeScript=vi.fn(async(_details:Record<string,unknown>)=>[{documentId:'original',result:{url:'https://same-url.test/',readyState:'complete'}}]);
+  vi.stubGlobal('chrome',{...chrome,scripting:{executeScript}});
+  const state=await import('../src/background/state.js');
+  vi.spyOn(state,'resolveWorkingTab').mockResolvedValue({id:91,url:'https://same-url.test/'} as chrome.tabs.Tab);
+  vi.spyOn(state,'maybeActivateTab').mockResolvedValue(undefined);
+  const ax=await import('../src/background/axstate.js');
+  ax.recordAxSnapshot(91,[4]);
+  if(mode==='dom-rebind')ax.clearAxSnapshot(91);
+  const debuggerApi=await import('../src/background/debugger.js');
+  const send=vi.spyOn(debuggerApi,'sendCommand').mockRejectedValue(new Error('debugger detached'));
+  const {fill}=await import('../src/background/exec/input.js');
+  await expect(fill({tabId:91,target:'@4',value:'星河',expectedDocumentId:'original',expectedBackendNodeId:4},'main')).rejects.toThrow();
+  expect(executeScript.mock.calls.every(([call])=>!('files' in call)&&!('documentIds' in (call.target as object)))).toBe(true);
+  expect(send).toHaveBeenCalledTimes(mode==='dom-rebind'?0:1);
+});

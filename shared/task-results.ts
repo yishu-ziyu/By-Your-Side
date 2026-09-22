@@ -35,9 +35,9 @@ export interface TaskResultItem extends TaskResultRegistration {
   supersededBy?: string;
 }
 
-/** Control-gated browser focus is observable, but is not an irreversible page write. */
+/** Focus, scrolling and hovering require control, but do not create durable write obligations. */
 export function resultToolHasWriteEffect(tool:string):boolean {
-  return isWriteTool(tool)&&tool!=='switch_tab';
+  return isWriteTool(tool)&&!['switch_tab','scroll','hover'].includes(tool);
 }
 export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {
   return resultToolHasWriteEffect(item.tool)||item.evidence?.effectful===true;
@@ -167,7 +167,7 @@ export type ResultBinding =
   | { kind: "rebind"; itemId: string }
   /** 没有可复用的待办：调用方决定是否按真实动作新建自动项。 */
   | { kind: "create" }
-  /** 同工具同目标已有在途/已满足/未决的项：不新建、不改绑，交给执行闸门与核查流程。 */
+  /** 同工具同目标已有在途/未决的项：不新建、不改绑，交给执行闸门与核查流程。 */
   | { kind: "none" };
 
 /**
@@ -181,7 +181,10 @@ export function selectResultBinding(items: readonly TaskResultItem[], tool: stri
   const exact = items.find(item => (!item.evidence || item.status === "blocked")
     && resultCanUseExecution(item.status === "blocked" ? { ...item, status: "pending" } : item, tool, target));
   if (exact) return { kind: "exact", itemId: exact.id };
-  if (items.some(item => item.tool === tool && item.target === target)) return { kind: "none" };
+  // A completed receipt describes one invocation, not every later call at that
+  // target. The execution gate owns replay permission; an allowed new call must
+  // get its own receipt so audit coverage does not silently become incomplete.
+  if (items.some(item => item.tool === tool && item.target === target && item.status !== 'satisfied')) return { kind: "none" };
   const unlocated = items.filter(item => item.status === "pending" && item.evidence === null && item.tool === tool && item.target === null);
   if (unlocated.length === 1) return { kind: "rebind", itemId: unlocated[0]!.id };
   return { kind: "create" };

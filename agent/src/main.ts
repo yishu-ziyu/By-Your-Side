@@ -167,7 +167,7 @@ async function main(): Promise<void> {
   },generalBrowserLoopEnabled()?async(request,stillCurrent)=>{
     const receipt=await conversations.dispatchTaskAction(request,stillCurrent);
     return {ok:['queued','accepted','applied'].includes(receipt.status),status:receipt.status,message:receipt.message,receipt};
-  }:undefined);
+  }:undefined, (id,call,input,signal)=>conversations.executeRealtimeBrowserTool(id,call,input,signal));
   const session = initial.runtime.session;
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }

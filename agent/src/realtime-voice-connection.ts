@@ -19,6 +19,9 @@
  *
  * 已知限制：不做断线重连；provider 30 分钟会话上限由外部处理；同一实例只持一条会话。
  */
+import { REALTIME_BROWSER_TOOL_NAMES, realtimeBrowserError, REALTIME_BROWSER_TOOLS, REALTIME_BROWSER_INSTRUCTIONS, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
+import { isExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
+import type { RequestJudgment } from './route-shadow.js';
 import WebSocket, {type RawData} from 'ws';
 
 export const MODEL = 'stepaudio-3-realtime-preview';
@@ -27,6 +30,8 @@ export const STEP_VOICE = 'qingchunshaonv';
 const VOICE = STEP_VOICE;
 const SAMPLE_RATE = 24_000;
 const CONNECT_TIMEOUT_MS = 15_000;
+/** 建连阶段瞬时供应商错误的静默重建预算；耗尽后按原样 fatal（面板恢复仍兑底）。 */
+const MAX_HANDSHAKE_RETRIES = 2;
 const RESPONSE_WATCHDOG_MS = 12_000;
 // server_vad 在 speech_stopped 后会自行创建回复；事故日志显示 created/首个工具调用通常在个位数~8ms 内抵达
 // （docs/evals/20260921-1441-log-review.md 第4节，agent.log 14:42:52.233→.241）。留约两百倍余量防抖动；
@@ -39,7 +44,6 @@ const MAX_SEEN_EVENTS = 2_048;
 const MAX_TOOL_OUTPUT_CHARS = 12_000;
 const BUSY_RETRY_MS = 800;
 const MAX_BUSY_RETRIES = 3;
-
 const INSTRUCTIONS = `你是 By Your Side 的语音搭子，边聊边帮用户操作当前网页。
 - 始终保持 voice 指定的同一个说话人的音色和自然音域，不模仿用户的声线，不扮演其他人物，不根据内容切换性别或声音。
 - 默认只说一句短话。操作请求先调用工具，不先朗读计划，不说“我先看看、接下来、稍等让我”。收到结果后只报结果或一个必要问题；除非用户要求讲解，不复述页面内容、步骤或原话。
@@ -60,6 +64,7 @@ const TOOL_DEFINITIONS = [
 
 export interface RealtimeTaskAction {action:'start'|'steer'|'pause'|'resume';targetId?:string;includePending?:boolean}
 export interface RealtimeVoiceTools {
+  browserTool?: (call: RealtimeBrowserCall, signal: AbortSignal) => Promise<unknown>;
   task_action?: (text:string,action:RealtimeTaskAction,inputSequences?:number[])=>Promise<unknown>;
   browser_request: (text: string,inputSequences?:number[]) => Promise<unknown>;
   read_page: () => Promise<unknown>;
@@ -73,6 +78,24 @@ export interface RealtimeVoiceConnectionOptions {
   send: (event: Record<string, unknown>) => void;
   tools: RealtimeVoiceTools;
   log?: (event: Record<string, unknown>) => void;
+  voiceId?: string;
+  voiceSpokenResultGate?: boolean;
+  /** Started alongside execution; never awaited by the tool path. Also serves shadow observation. */
+  judgeRequest?: (input: VoiceRequestInput) => Promise<RequestJudgment | null>;
+}
+
+export interface VoiceRequestInput {
+  voiceId: string;
+  turn: number;
+  itemId: string;
+  inputId: string;
+  text: string;
+}
+
+interface RequestState {
+  input: VoiceRequestInput;
+  judgment?: RequestJudgment;
+  invalidated: boolean;
 }
 
 type Phase = 'idle' | 'connecting' | 'configuring' | 'ready' | 'closed';
@@ -85,6 +108,8 @@ interface UserInput {
 }
 
 interface PendingToolCall {
+  inputId?: string;
+  executionFact?: string;
   speechSeq: number;
   callId: string;
   name: string;
@@ -94,6 +119,10 @@ interface PendingToolCall {
   /** Accepted asynchronous work will provide a separate final delivery. */
   deferReply?: boolean;
   arguments?:Record<string,unknown>;
+  /** 宿主对动作自身的反馈；是否结束整条请求还须匹配请求判断。 */
+  feedback?: ExecutionFeedback;
+  /** 工具回执 ok:false：即使无反馈也必须正常续答。 */
+  failed?: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -105,13 +134,33 @@ function asString(value: unknown): string | null {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-function serializeToolOutput(value: unknown): string {
+function serializeToolOutput(value: unknown, preserveExecution = false): string {
   let text: string;
   try {
     const json = JSON.stringify(value);
     text = typeof json === 'string' ? json : String(value);
   } catch {
     text = String(value);
+  }
+  if (preserveExecution && text.length > MAX_TOOL_OUTPUT_CHARS) {
+    const result = asRecord(value)!;
+    const readback=asRecord(result.readback);
+    const readbackMeta=readback?{status:readback.status,toolCallId:readback.toolCallId,transportId:readback.transportId,
+      reason:readback.reason,matchesExpected:readback.matchesExpected,truncated:true,
+      ...(JSON.stringify(readback.target??null).length<=2000?{target:readback.target}:{identityTruncated:true})}:undefined;
+    const metadata = {ok:result.ok, toolCallId:result.toolCallId, transportId:result.transportId, executionFact:result.executionFact,
+      ...(readbackMeta?{readback:readbackMeta}:{}),truncated:true};
+    const field = typeof result.error === 'string' ? 'error' : 'contentPreview';
+    const content = field === 'error' ? String(result.error) : JSON.stringify(result.content) ?? text;
+    // Measure encoded JSON: quotes, escapes and surrogate pairs count toward the same budget.
+    const encode = (length:number) => JSON.stringify({...metadata, [field]:content.slice(0,length)});
+    let low = 0, high = Math.min(content.length, MAX_TOOL_OUTPUT_CHARS);
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (encode(mid).length <= MAX_TOOL_OUTPUT_CHARS) low = mid;
+      else high = mid - 1;
+    }
+    return encode(low);
   }
   return text.length > MAX_TOOL_OUTPUT_CHARS ? `${text.slice(0, MAX_TOOL_OUTPUT_CHARS)}…[输出过长已截断]` : text;
 }
@@ -134,6 +183,7 @@ export class RealtimeVoiceConnection {
   private ws: WebSocket | null = null;
   private phase: Phase = 'idle';
   private closed = false;
+  private handshakeRetries = 0;
   private createdModel: string | null = null;
   private readyAt = 0;
   private responseSeq = 0;
@@ -148,7 +198,7 @@ export class RealtimeVoiceConnection {
   private readonly playedResponses = new Set<string>();
   private readonly audioBytes = new Map<string, number>();
   private readonly assistantText = new Map<string, string>();
-  private readonly finalizedResponses = new Set<string>();
+  private readonly finalizedText = new Map<string, string>(); // 已确认并交付的完整终稿（按值幂等，增量前缀不算）
   private userSpeaking = false;
   private speechStopAt: number | null = null;
   private firstTextNoted = false;
@@ -165,6 +215,8 @@ export class RealtimeVoiceConnection {
   private inputWaiters: Array<(input: UserInput | null) => void> = [];
   private readonly pendingToolCalls = new Map<string, PendingToolCall>();
   private wantResponse = false;
+  private spokenGateStoppedTurn: number | null = null;
+  private readonly requests = new Map<string, RequestState>();
   private queuedNotify: Array<{text:string;id?:string;valid?:()=>boolean}> = [];
   private creatingDeliveryId: string | undefined;
   private creatingNotice:{notice:{text:string;id?:string;valid?:()=>boolean};speechSeq:number}|null=null;
@@ -176,6 +228,10 @@ export class RealtimeVoiceConnection {
   private localCancelResponseId: string | null = null;
   /** stop 时 response.created 还没到：迟到的 created 立即取消、音频不下发，下一次真实用户输入解锁。 */
   private pendingStop = false;
+  private browserAbort = new AbortController();
+  private browserQueue: Promise<unknown> = Promise.resolve();
+  /** 已向前端交付过 response_done 的轮次：重复 response.done 不重复交付。 */
+  private readonly finishedResponses = new Set<string>();
   /** 非 null 时是该 speechSeq 已置位的服务端自动回复待启动窗口：created 到达或超时前，不能自己发 response.create。 */
   private autoResponsePending: number | null = null;
 
@@ -216,6 +272,7 @@ export class RealtimeVoiceConnection {
       const text = (asString(message.text) ?? '').trim();
       if (!text) return;
       this.pendingStop = false; // 新的真实输入解锁停声
+      this.browserAbort.abort(); this.browserAbort = new AbortController();
       this.speechSeq++;this.speechItemId=null;
       this.recordUserInput({id: `text-${++this.textSeq}`, text});
       this.socketSend({type: 'conversation.item.create', item: {type: 'message', role: 'user', content: [{type: 'input_text', text}]}});
@@ -250,6 +307,7 @@ export class RealtimeVoiceConnection {
     if (this.closed) return;
     this.closed = true;
     this.phase = 'closed';
+    this.browserAbort.abort();
     this.clearTimers();
     for (const waiter of this.inputWaiters) waiter(null);
     this.inputWaiters = [];
@@ -287,8 +345,13 @@ export class RealtimeVoiceConnection {
         const id = asString(asRecord(event.response)?.id) ?? asString(event.response_id) ?? `resp-${++this.responseSeq}`;
         this.activeResponseId = id;
         this.responseInputs.set(id,this.speechSeq);
-        if(this.creatingDeliveryId&&this.creatingNotice?.speechSeq===this.speechSeq&&!this.pendingStop)this.sendToClient({type:'delivery_response',deliveryId:this.creatingDeliveryId,responseId:id});
-        else if(this.creatingNotice)this.queuedNotify.unshift(this.creatingNotice.notice);
+        // 通知已随本轮回复开始生成：普通通知（无 deliveryId）也在这里一次性消费，不再重新入队（R1）。
+        // deliveryId 只负责把正式交付和这条回复/播放回执关联；话轮已换或已停声时回复不属于这条通知，重新排队。
+        if(this.creatingNotice){
+          if(this.creatingNotice.speechSeq===this.speechSeq&&!this.pendingStop){
+            if(this.creatingDeliveryId)this.sendToClient({type:'delivery_response',deliveryId:this.creatingDeliveryId,responseId:id});
+          }else this.queuedNotify.unshift(this.creatingNotice.notice);
+        }
         this.creatingDeliveryId=undefined;this.creatingNotice=null;
         // 日志从不记录 response.created，是本次事故"唯一根因缺原始帧证明"的直接原因；
         // 留痕区分这条 created 是我们请求的（requested）还是服务端在自动回复待启动期内自己发的（autoPending）。
@@ -329,6 +392,7 @@ export class RealtimeVoiceConnection {
         return;
       }
       case 'input_audio_buffer.speech_started':
+        this.browserAbort.abort(); this.browserAbort = new AbortController();
         // 全双工交给 provider 判断：不清队列、不发 response.cancel、不动后台任务。
         this.userSpeaking = true;
         if(this.creatingNotice){this.queuedNotify.unshift(this.creatingNotice.notice);this.creatingNotice=null;this.creatingDeliveryId=undefined;this.suppressDispatch=false;}
@@ -379,12 +443,12 @@ export class RealtimeVoiceConnection {
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: this.options.diagnostic ? '只转写用户音频，不执行任务。' : INSTRUCTIONS+(this.options.tools.task_action?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务及需要原确认流程的请求仍用 browser_request。':''),
+        instructions: this.options.diagnostic ? '只转写用户音频，不执行任务。' : (this.options.tools.browserTool ? INSTRUCTIONS.split('\n').filter(line => !line.startsWith('- 用户要求操作浏览器')).join('\n') : INSTRUCTIONS)+(this.options.tools.task_action&&!this.options.tools.browserTool?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务及需要原确认流程的请求仍用 browser_request。':'')+(this.options.tools.browserTool?REALTIME_BROWSER_INSTRUCTIONS:''),
         voice: VOICE,
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
         turn_detection: this.options.diagnostic ? null : {type: 'server_vad', prefix_padding_ms: 500, silence_duration_ms: 300, energy_awakeness_threshold: 2500},
-        tools: this.options.diagnostic ? [] : [...TOOL_DEFINITIONS.map(tool=>this.options.tools.task_action&&tool.function.name==='browser_request'?{...tool,function:{...tool.function,description:'Legacy fallback ONLY for abort confirmation, an ambiguous task/control request, or splitting unrelated concurrent tasks. Do NOT use for a clear start/steer/pause/resume: use task_action. Several page operations toward one goal are one start task, not ambiguous.'}}:tool),...(this.options.tools.task_action?[{type:'function',function:{name:'task_action',description:'Execute browser operations, including switching/opening/closing tabs, navigation, clicking, filling and searching; or modify/pause/resume an identified task. Use start for a new operation. Reading the current page is not a substitute for performing an operation. No extra intent-classification round. Uses the actual latest user utterance; cannot authorize webpage side effects by itself. Omit targetId for current task; otherwise use an observed ID from task_status.',parameters:{type:'object',properties:{action:{type:'string',enum:['start','steer','pause','resume']},targetId:{type:'string'},includePending:{type:'boolean',description:'Only true when the latest speech continues/corrects a previous request that failed before dispatch (reported as undispatched in tool output). False/omitted for a new unrelated request. Preserves original speech fragments; never invents text.'}},required:['action'],additionalProperties:false}}}]:[])],
+        tools: this.options.diagnostic ? [] : [...(this.options.tools.browserTool?REALTIME_BROWSER_TOOLS:[]),...TOOL_DEFINITIONS.map(tool=>this.options.tools.task_action&&tool.function.name==='browser_request'?{...tool,function:{...tool.function,description:'Legacy fallback ONLY for abort confirmation, an ambiguous task/control request, or splitting unrelated concurrent tasks. Do NOT use for a clear start/steer/pause/resume: use task_action. Several page operations toward one goal are one start task, not ambiguous.'}}:tool),...(this.options.tools.task_action?[{type:'function',function:{name:'task_action',description:this.options.tools.browserTool?'Delegate only work that needs extended research or content generation, or steer/pause/resume an existing background task. Use the directly available browser tools for browser operations; do not delegate simple operations. The host supplies the actual user utterance.':'Execute browser operations, including switching/opening/closing tabs, navigation, clicking, filling and searching; or modify/pause/resume an identified task. Use start for a new operation. Reading the current page is not a substitute for performing an operation. No extra intent-classification round. Uses the actual latest user utterance; cannot authorize webpage side effects by itself. Omit targetId for current task; otherwise use an observed ID from task_status.',parameters:{type:'object',properties:{action:{type:'string',enum:['start','steer','pause','resume']},targetId:{type:'string'},includePending:{type:'boolean',description:'Only true when the latest speech continues/corrects a previous request that failed before dispatch (reported as undispatched in tool output). False/omitted for a new unrelated request. Preserves original speech fragments; never invents text.'}},required:['action'],additionalProperties:false}}}]:[])],
       },
     });
     this.armTimer('connect', CONNECT_TIMEOUT_MS, () => this.fatal('语音服务没有确认会话配置，连接超时'));
@@ -397,6 +461,7 @@ export class RealtimeVoiceConnection {
     if (issues.length > 0) return this.fatal(`语音配置未生效：${issues.join('；')}`);
     this.phase = 'ready';
     this.readyAt = Date.now();
+    this.handshakeRetries = 0;
     this.clearTimer('connect');
     this.log({type: 'ready', model: this.createdModel, voice: session.voice, vad: asRecord(session.turn_detection)?.type});
     this.sendToClient({type: 'ready', model: this.createdModel ?? MODEL});
@@ -421,7 +486,7 @@ export class RealtimeVoiceConnection {
     const delta = asString(event.delta);
     if (!delta) return;
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
-    if (this.finalizedResponses.has(responseId)) return; // 已定稿就不再吃迟到 delta
+    if (this.finalizedText.has(responseId)) return; // 已确认终稿就不再吃迟到 delta
     if (!this.firstTextNoted && this.speechStopAt !== null) {
       this.firstTextNoted = true;
       this.emitMetric('first_text_since_vad_stop', Date.now() - this.speechStopAt);
@@ -433,10 +498,14 @@ export class RealtimeVoiceConnection {
 
   private onAssistantDone(event: Record<string, unknown>): void {
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
-    if (this.finalizedResponses.has(responseId)) return;
-    this.finalizedResponses.add(responseId);
     const text = (asString(event.transcript) ?? asString(event.text) ?? this.assistantText.get(responseId) ?? '').trim();
-    if (text) this.sendToClient({type: 'transcript', role: 'assistant', text, final: true, responseId});
+    const prior = text ? this.finalizedText.get(responseId) : undefined;
+    if (text) {
+      this.assistantText.set(responseId, text); // 累计权威文本
+      if (prior !== text) this.finalizedText.set(responseId, text); // 终稿事件才确认完整文本；更完整迟到终稿可覆盖旧值（R2/A3）
+    }
+    if (!text || prior === text) return; // 空事件/相同最终事件重复 → 幂等不新增消息（A1）
+    this.sendToClient({type: 'transcript', role: 'assistant', text, final: true, responseId});
   }
 
   private onUserCompleted(event: Record<string, unknown>): void {
@@ -444,19 +513,21 @@ export class RealtimeVoiceConnection {
     if (!text) return; // 只有噪声没有识别结果，不算一条请求
     // 缺 item_id 时不能都叫 user-input，会和已消费的旧回合撞 id；按 speech 轮 + 序号给唯一 id。
     const itemId = asString(event.item_id) ?? `speech-${this.speechSeq}-${++this.asrSeq}`;
-    const origin=this.speechItems.get(itemId);
+    const knownRequest = this.requests.get(itemId)?.input;
+    const origin=this.speechItems.get(itemId) ?? (knownRequest ? {seq:knownRequest.turn-1,at:0} : undefined);
     if(this.consumedInputIds.has(itemId))return;
-    if(this.speechItemId&&asString(event.item_id)&&itemId!==this.speechItemId){
+    if((origin && origin.seq !== this.speechSeq) || (this.speechItemId&&asString(event.item_id)&&itemId!==this.speechItemId)){
       if(origin&&origin.seq>=this.speechSeq-3&&Date.now()-origin.at<=12000){
         this.pendingInputs.set(itemId,{...origin,text});this.log({type:'late_asr_retained',itemId,speechSeq:origin.seq});
         // 不作为 latestInput、不派发，但用户说过的这句话必须能在界面上看到、被持久化。
-        this.sendToClient({type:'transcript',role:'user',text,final:true,itemId});
+        this.sendToClient({type:'transcript',role:'user',text,final:true,itemId,turn:origin.seq+1,current:false});
       }else this.log({type:'late_asr_ignored',itemId});
       return;
     }
     this.pendingInputs.set(itemId,{seq:this.speechSeq,at:origin?.at??Date.now(),text});
-    this.recordUserInput({id: itemId, text});
-    this.sendToClient({type: 'transcript', role: 'user', text, final: true,itemId});
+    // With no VAD/item binding, show/route ASR as before but never authorize capsule-only behavior.
+    this.recordUserInput({id: itemId, text}, origin?.seq === this.speechSeq || this.speechItemId === itemId);
+    this.sendToClient({type: 'transcript', role: 'user', text, final: true,itemId,turn:this.speechSeq+1,current:true});
   }
 
   private onResponseDone(event: Record<string, unknown>): void {
@@ -470,16 +541,46 @@ export class RealtimeVoiceConnection {
       const item=asRecord(raw);
       if(item?.type==='function_call'&&(item.status===undefined||item.status==='completed'))this.onFunctionCall({...item,response_id:id});
     }
-    if (this.activeResponseId === id) this.activeResponseId = null;
-    this.sendingResponse = false;
-    this.busyRetries = 0;
-    this.clearTimer('create-watch');
+    // 先落权威文本与定稿事件：response.done 自带的全文覆盖增量，重复定稿不重复交付（A1/R2）。
+    this.finalizeResponseText(id, asString(response?.transcript) ?? asString(response?.text));
+    // 「生成结束」与「音频是否播放」从此分账：工具输出与续答请求不等音频裁决（A3）。
+    this.markGenerationDone(id);
+    this.finishResponseDone(id, status, null);
+  }
+
+  /** 确认定稿（幂等）：只有 response.done 自带的完整文本字段（或 transcript.done 终稿事件）
+   * 才算完整材料与定稿；不拿增量前缀冒充定稿，也不因幂等封死更完整的迟到终稿（R2/A3）。 */
+  private finalizeResponseText(id: string, doneText: string | null): void {
+    const incoming = (doneText ?? '').trim();
+    if (!incoming) return; // 无确认文本：不定稿、不发 final（迟到终稿仍可交付）
+    this.assistantText.set(id, incoming);
+    if (this.finalizedText.get(id) === incoming) return; // 相同最终文本：幂等
+    this.finalizedText.set(id, incoming);
+    this.sendToClient({type: 'transcript', role: 'assistant', text: incoming, final: true, responseId: id});
+  }
+
+  /**
+   * 供应商生成结束即刻入账，与音频是否播放无关：本轮进入 doneResponses、释放
+   * activeResponseId 占用，工具输出与续答不再等音频裁决（A3）。只清与本 response
+   * 绑定的状态；若期间已为下一轮发出了 response.create，不碰它的看门狗。
+   */
+  private markGenerationDone(id: string): void {
     this.doneResponses.add(id);
-    if (!this.finalizedResponses.has(id)) {
-      this.finalizedResponses.add(id);
-      const text = (this.assistantText.get(id) ?? '').trim();
-      if (text) this.sendToClient({type: 'transcript', role: 'assistant', text, final: true, responseId: id});
+    if (this.activeResponseId === id) {
+      this.activeResponseId = null;
+      this.sendingResponse = false;
+      this.busyRetries = 0;
+      this.clearTimer('create-watch');
     }
+    this.suppressDispatch = false;
+  }
+
+  /** 本 response 对前端的收账：定稿、response_done、播放记账。幂等：重复 response.done 只交付一次（A1）。 */
+  private finishResponseDone(id: string, status: string, doneText: string | null): void {
+    if (this.finishedResponses.has(id)) return;
+    this.finishedResponses.add(id);
+    if (this.activeResponseId === id) this.activeResponseId = null;
+    this.finalizeResponseText(id, doneText);
     this.sendToClient({type: 'response_done', responseId: id, status});
     this.log({type: 'response_done', responseId: id, status});
     if (this.localCancelResponseId === id) this.localCancelResponseId = null;
@@ -533,7 +634,12 @@ export class RealtimeVoiceConnection {
     const code = asString(nested?.code) ?? asString(event.code) ?? '';
     const message = asString(nested?.message) ?? asString(event.message) ?? type;
     this.log({type: 'provider_error', providerType: type, code, message});
-    if (this.phase !== 'ready') return this.fatal(`语音服务出错：${message}`);
+    if (this.phase !== 'ready') {
+      // 建连阶段的供应商瞬时错误：有界、静默地重建握手，不让一次抖动中断整次会话；
+      // 已有用户输入或预算耗尽时回退原 fatal（面板恢复作为兑底）。
+      if (this.retryHandshake(message)) return;
+      return this.fatal(`语音服务出错：${message}`);
+    }
     if (/busy|active|already|已有|进行中/i.test(`${code} ${message}`)) {
       this.sendingResponse = false;
       this.clearTimer('create-watch');
@@ -553,29 +659,70 @@ export class RealtimeVoiceConnection {
 
   private async executeTool(call: PendingToolCall): Promise<void> {
     const started = Date.now();
+    const direct = !!this.options.tools.browserTool && REALTIME_BROWSER_TOOL_NAMES.some(name=>name===call.name);
     let result: unknown;
     try {
-      if(call.speechSeq!==this.speechSeq)throw new Error('这轮请求已过期，没有执行工具。');
+      if(call.speechSeq!==this.speechSeq)throw realtimeBrowserError('这轮请求已过期，没有执行工具。', 'not_executed');
       if (call.name === 'browser_request') result = await this.runBrowserRequest(call.speechSeq);
       else if(call.name==='task_action'){
         if(!this.options.tools.task_action)throw new Error('结构化任务入口未启用');
         const args=call.arguments;
         if(!args||!['start','steer','pause','resume'].includes(String(args.action))||Object.keys(args).some(k=>!['action','targetId','includePending'].includes(k))||(args.includePending!==undefined&&typeof args.includePending!=='boolean')||(args.targetId!==undefined&&(typeof args.targetId!=='string'||!args.targetId)))throw new Error('任务动作参数无效，未执行');
+        // SAFETY: 上一行已校验 args.action 属于四个枚举值、键白名单、includePending 布尔、targetId 非空字符串，
+        // 运行时形状已满足 RealtimeTaskAction，这里只是让编译器接受已验证的 JSON 记录。
         result=await this.runBrowserRequest(call.speechSeq,args as unknown as RealtimeTaskAction);
       }
       else if (call.name === 'read_page') result = await this.options.tools.read_page();
       else if (call.name === 'task_status') result = await this.options.tools.task_status();
+      else if (this.options.tools.browserTool && REALTIME_BROWSER_TOOLS.some(t => t.function.name === call.name)) {
+        const signal = this.browserAbort.signal;
+        const run = this.browserQueue.then(() => this.runDirectBrowserTool(call, signal));
+        this.browserQueue = run.catch(() => {});
+        result = await run;
+      }
       else result = {ok: false, error: `未知工具 ${call.name}`};
     } catch (error) {
-      result = {ok: false, error: errorMessage(error)};
+      const facts = asRecord(error);
+      const rejectionFeedback = direct ? asRecord(facts?.feedback) : null;
+      result = {ok: false, error: errorMessage(error),
+        ...(direct ? {toolCallId:facts?.toolCallId, transportId:facts?.transportId, executionFact:facts?.executionFact,
+          ...(facts?.readback?{readback:facts.readback}:{}), ...(rejectionFeedback ? {feedback:rejectionFeedback} : {})} : {})};
     }
-    call.output = serializeToolOutput(result);
+    if (direct) {
+      const output = asRecord(result);
+      const fact = output?.executionFact;
+      result = {...(output ?? {content:result}), executionFact:fact === 'executed' || fact === 'not_executed' ? fact : 'unknown'};
+    }
+    const feedback = direct ? asRecord(asRecord(result)?.feedback) : null;
+    call.feedback = isExecutionFeedback(feedback) ? feedback : undefined;
+    if (direct) {
+      // 模型只需知道回执文案（界面会显示，受限页由侧栏降级）；静音/身份等宿主内部标记不进模型上下文。
+      const visible = {...(asRecord(result) ?? {})};
+      delete visible.feedback;
+      result = call.feedback ? {...visible, hostFeedback:{text:call.feedback.text}} : visible;
+    }
+    call.output = serializeToolOutput(result, direct);
     const receipt = asRecord(result);
     call.deferReply = call.name === 'task_action' && receipt?.ok === true && ['accepted','queued'].includes(String(receipt.status));
     const failed=asRecord(result)?.ok===false;
+    call.failed=failed;
+    call.executionFact = asString(receipt?.executionFact) ?? undefined;
     this.log({type: 'tool_output', callId: call.callId, name: call.name, ms: Date.now() - started,ok:!failed,...(failed?{error:asRecord(result)?.error}:{})});
     if(call.name==='read_page'&&failed)this.sendToClient({type:'status',text:`未读到页面：${asString(asRecord(result)?.error)??'页面资料不可用'}`});
     this.maybeFlush();
+  }
+
+  private async runDirectBrowserTool(call: PendingToolCall, signal: AbortSignal): Promise<unknown> {
+    const current = () => !this.closed && !signal.aborted && !this.pendingStop && !this.suppressDispatch && call.speechSeq === this.speechSeq;
+    if (!current()) throw realtimeBrowserError('这轮浏览器请求已取消或过期，未执行。', 'not_executed');
+    if (!call.arguments) throw realtimeBrowserError('工具参数不是有效 JSON，未执行。', 'not_executed');
+    validateRealtimeBrowserTool(call.name, call.arguments);
+    const input = await this.resolveUserInput(false);
+    if (!current() || !input) throw realtimeBrowserError('尚无本轮真实用户要求，未执行浏览器操作。', 'not_executed');
+    if (this.consumedInputIds.has(input.id)) throw realtimeBrowserError('本轮已交给后台任务，不能同时直接操作。', 'not_executed');
+    call.inputId = input.id;
+    this.log({type:'browser_tool_dispatch',name:call.name,callId:call.callId,inputId:input.id});
+    return this.options.tools.browserTool!({name:call.name,args:call.arguments,callId:call.callId,inputId:input.id,text:input.text}, signal);
   }
 
   /** 只把用户最新的真实输入交出去；ASR 没到可短等，等不到就不执行。同一个输入只派发一次。 */
@@ -631,8 +778,27 @@ export class RealtimeVoiceConnection {
     });
   }
 
-  private recordUserInput(input: UserInput): void {
+  private recordUserInput(input: UserInput, identityKnown = true): void {
     if (this.consumedInputIds.has(input.id)) return; // 旧回合的重复/迟到结果不算新候选，也不打断正在等新 ASR 的调用
+    const existing = this.requests.get(input.id);
+    if (existing) {
+      if (existing.input.text !== input.text || !identityKnown) existing.invalidated = true;
+    } else {
+      const identity: VoiceRequestInput = {voiceId: this.options.voiceId ?? '', turn: this.speechSeq + 1,
+        itemId: input.id, inputId: input.id, text: input.text};
+      const request: RequestState = {input: identity, invalidated: !identityKnown || this.spokenGateStoppedTurn === this.speechSeq};
+      this.requests.set(input.id, request);
+      const seq = this.speechSeq;
+      // Invocation is synchronous; completion cannot gate input delivery or tool execution.
+      try {
+        void this.options.judgeRequest?.(identity).then(judgment => {
+          if (!judgment || this.closed || this.pendingStop || seq !== this.speechSeq || request.invalidated) return;
+          if (judgment.voiceId !== identity.voiceId || judgment.turn !== identity.turn
+            || judgment.itemId !== identity.itemId || judgment.inputId !== identity.inputId) return;
+          request.judgment = judgment;
+        }).catch(() => {});
+      } catch { /* Judgment unavailable: normal voice continues. */ }
+    }
     this.latestInput = input;
     this.log({type: 'user_input', inputId: input.id, chars: input.text.length});
     const waiters = this.inputWaiters;
@@ -648,19 +814,29 @@ export class RealtimeVoiceConnection {
     if (this.pendingStop||this.pendingNotice) return; // 停声/等待通知接收期间不创建新回复
     if (this.autoResponsePending === this.speechSeq) return; // 服务端自动回复待启动，created 或超时前不抢发
     if (this.activeResponseId !== null || this.sendingResponse || this.userSpeaking) return;
+    // A response may contain several calls. Return the complete batch before asking for continuation.
+    if ([...this.pendingToolCalls.values()].some(call => !call.settled && call.output === null)) return;
     let replyNeeded = false;
+    const batch: PendingToolCall[] = [];
     for (const call of this.pendingToolCalls.values()) {
       if (call.settled || call.output === null) continue;
       const finished = call.responseId === null ? this.activeResponseId === null : this.doneResponses.has(call.responseId);
       if (!finished) continue; // 服务端须已结束生成；播放回执不阻塞工具结果。
       this.socketSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: call.callId, output: call.output}});
       call.settled = true;
+      batch.push(call);
       replyNeeded ||= !call.deferReply;
       this.log({type: 'tool_output_sent', callId: call.callId, name: call.name});
     }
+    if (batch.length && this.canCloseWithCapsule(batch)) {
+      replyNeeded = false;
+      this.sendToClient({type: 'status', phase: 'idle', text: 'Realtime 3 已连接'});
+    }
     if(!replyNeeded&&this.playbackBusy())return;
     while(this.queuedNotify[0]?.valid&&!this.queuedNotify[0].valid!())this.queuedNotify.shift();
-    if (this.queuedNotify.length && !replyNeeded) {
+    // 前一条通知还在等自己的回复创建（creatingNotice 未清）：先为它发 response.create，
+    // 后一条不能抢占发送或覆盖它的关联（R2）。
+    if (this.queuedNotify.length && !replyNeeded && !this.creatingNotice) {
       const notice = this.queuedNotify.shift()!;
       const text = notice.text;
       const itemId=`bys-notice-${++this.noticeSeq}`;
@@ -684,9 +860,42 @@ export class RealtimeVoiceConnection {
       this.armTimer('create-watch', RESPONSE_WATCHDOG_MS, () => {
         this.log({type: 'create_watchdog'});
         this.sendingResponse = false;
+        // 通知回复的 created 一直没到：为同一条通知重试请求，不能让队列卡死在第一条。
+        if (this.creatingNotice) this.wantResponse = true;
         this.maybeFlush();
       });
     }
+  }
+
+  /** No wait, no rolling eligibility: every result in this batch must be a confirmed closable action. */
+  private canCloseWithCapsule(batch: PendingToolCall[]): boolean {
+    if (!this.options.voiceSpokenResultGate) return false;
+    const inputId = batch[0]?.inputId;
+    const request = inputId ? this.requests.get(inputId) : undefined;
+    const judgment = request?.judgment;
+    let reason = 'judgment_unavailable';
+    if (inputId && judgment && !request?.invalidated) {
+      const current = judgment.voiceId === this.options.voiceId && judgment.turn === this.speechSeq + 1
+        && judgment.itemId === inputId && judgment.inputId === inputId && this.latestInput?.id === inputId;
+      const valid = Number.isFinite(judgment.pageChange) && judgment.pageChange >= 0 && judgment.pageChange <= 1
+        && Number.isFinite(judgment.spokenResult) && judgment.spokenResult >= 0 && judgment.spokenResult <= 1
+        && Number.isFinite(judgment.completedAt) && judgment.completedAt <= Date.now();
+      const requestAllows = judgment.lane === 'task' && judgment.pageChange >= 0.80 && judgment.spokenResult <= 0.20;
+      const resultsAllow = batch.every(call => call.inputId === inputId && call.speechSeq === this.speechSeq
+        && !call.failed && !call.deferReply && call.executionFact === 'executed'
+        && call.feedback?.channel === 'capsule' && call.feedback.kind === 'success'
+        && call.feedback.capsuleCanCloseAction === true && call.feedback.facts.executionFact === 'executed');
+      if (this.wantResponse || this.creatingNotice) reason = 'reply_already_pending';
+      else if (this.spokenGateStoppedTurn === this.speechSeq) reason = 'user_stopped';
+      else if (!current) reason = 'stale_input';
+      else if (!valid) reason = 'invalid_judgment';
+      else if (!requestAllows) reason = 'spoken_result_needed';
+      else if (!resultsAllow) reason = 'execution_requires_continuation';
+      else reason = 'capsule_only';
+    }
+    const applied = reason === 'capsule_only';
+    this.log({type: 'spoken_result_gate', inputId, applied, reason, judgment, callIds: batch.map(call => call.callId)});
+    return applied;
   }
 
   private playbackBusy(): boolean {
@@ -703,6 +912,9 @@ export class RealtimeVoiceConnection {
     // 也要拦住这轮，等下一次真实用户输入解锁。
     if (responseId === null) this.pendingStop = true;
     this.wantResponse = false;
+    this.spokenGateStoppedTurn = this.speechSeq;
+    const request = this.latestInput ? this.requests.get(this.latestInput.id) : undefined;
+    if (request) request.invalidated = true;
     this.busyRetries = 0;
     this.clearTimer('busy-retry');
     this.clearTimer('create-watch');
@@ -733,6 +945,29 @@ export class RealtimeVoiceConnection {
     this.log({type: 'fatal', message});
     this.sendToClient({type: 'error', message});
     this.close();
+  }
+
+  /** 建连阶段拆掉旧套接字并重新握手；返回 false 表示不可重试（调用方按原样 fatal）。 */
+  private retryHandshake(reason: string): boolean {
+    if (this.closed || this.phase === 'ready' || this.handshakeRetries >= MAX_HANDSHAKE_RETRIES) return false;
+    // 已有用户输入后不再静默重建：把真实故障如实抛给调用方处理。
+    if (this.latestInput !== null || this.requests.size > 0) return false;
+    this.handshakeRetries += 1;
+    this.log({type: 'handshake_retry', attempt: this.handshakeRetries, reason: reason.slice(0, 120)});
+    const old = this.ws;
+    this.ws = null;
+    if (old) {
+      try {
+        old.removeAllListeners();
+        // 弃用套接字晚到的 error 不得因无监听器而炸掉进程。
+        old.on('error', () => { /* retired socket */ });
+        old.close();
+      } catch { /* 套接字已死 */ }
+    }
+    this.clearTimer('connect');
+    this.phase = 'idle';
+    this.start();
+    return true;
   }
 
   private emitMetric(name: string, value: number): void {

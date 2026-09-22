@@ -298,19 +298,15 @@ function scriptUrl(extensionId) {
 }
 
 async function findBackgroundScript(cdp, sessionId, extensionId) {
-  const wanted = scriptUrl(extensionId);
-  /** @type {string | null} */
-  let scriptId = null;
-  const off = cdp.onEvent("Debugger.scriptParsed", (m) => {
-    const info = m.params ?? {};
-    const url = info.url ?? "";
-    if (url.split("?")[0] === wanted) scriptId = info.scriptId;
+  const controller = new AbortController();
+  const parsed = cdp.waitForEvent('Debugger.scriptParsed', 12_000, {
+    sessionId, signal: controller.signal,
+    predicate: message => message.params?.url?.split('?')[0] === scriptUrl(extensionId),
   });
-  await cdp.send("Debugger.enable", {}, sessionId);
-  await new Promise((r) => setTimeout(r, 150));
-  off();
-  if (scriptId) return scriptId;
-  throw new Error("Debugger 未看到 SideAgent background.js；service worker 可能未醒");
+  try {
+    await cdp.send('Debugger.enable', {}, sessionId);
+    return (await parsed).params.scriptId;
+  } finally { controller.abort(); }
 }
 
 async function listenerBodyLines(cdp, sessionId, scriptId) {
@@ -352,107 +348,123 @@ async function hookOnPausedFrame(cdp, sessionId, paused) {
   throw new Error(`无法在暂停帧里拿到 uplink.handleRaw / executeToolCall：${lastErr}`);
 }
 
-function triggerExpression(probeUrl) {
-  return `void (async () => {
+// Runs before breakpoints are installed: no paused worker can block readiness.
+export function prepareProbeExpression(probeUrl) {
+  return `(async () => {
     const tab = await chrome.tabs.create({ url: ${JSON.stringify(probeUrl)}, active: false });
-    await new Promise((r) => setTimeout(r, 400));
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => { chrome.runtime.sendMessage({ type: "sideagent-accept-probe" }); }
-      });
-    } finally {
-      try { await chrome.tabs.remove(tab.id); } catch (e) {}
-    }
+    globalThis.__saProbeTab = tab.id;
+    globalThis.__saProbeState = { phase: 'tab-created', tabId: tab.id };
+    const ready = await new Promise((resolve, reject) => {
+      const finish = (error, value) => { clearTimeout(timer); chrome.tabs.onUpdated.removeListener(updated); error ? reject(error) : resolve(value); };
+      const updated = (id, change, value) => { if (id === tab.id && change.status === 'complete') finish(null, value); };
+      const timer = setTimeout(() => finish(new Error('probe page did not become complete')), 12000);
+      chrome.tabs.onUpdated.addListener(updated);
+      chrome.tabs.get(tab.id).then(value => { if (value.status === 'complete') finish(null, value); }, error => finish(error));
+    });
+    globalThis.__saProbeState = { phase: 'page-complete', tabId: tab.id, url: ready.url, status: ready.status };
+    if (ready.url !== ${JSON.stringify(probeUrl)}) throw new Error('probe URL mismatch: ' + ready.url);
+    const injected = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => {
+      globalThis.__saProbe = { ready: document.readyState, url: location.href, sent: false };
+      return globalThis.__saProbe;
+    } });
+    const result = injected[0];
+    if (!result || result.result.ready !== 'complete' || result.result.url !== ${JSON.stringify(probeUrl)}) throw new Error('probe injection did not confirm readiness');
+    globalThis.__saProbeState = { phase: 'injected', tabId: tab.id, documentId: result.documentId, injected: result.result };
+    return globalThis.__saProbeState;
   })()`;
 }
 
+export function triggerExpression(tabId) {
+  return `chrome.scripting.executeScript({ target: { tabId: ${JSON.stringify(tabId)} }, func: () => {
+    if (!globalThis.__saProbe) throw new Error('probe injection missing');
+    const message = chrome.runtime.sendMessage({ type: 'sideagent-accept-probe' });
+    globalThis.__saProbe.sent = true;
+    message.then(() => { globalThis.__saProbe.delivered = true; }, error => { globalThis.__saProbe.messageError = String(error); });
+    return { sent: true };
+  } })`;
+}
+
+function evaluateValue(result) {
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+  return result.result?.value;
+}
+
 /**
- * 在已 attach 的 SideAgent SW 上安装 __saCall。
- * 触发：在 127.0.0.1 fixture 标签的 isolated world 发 runtime.sendMessage
- * （SW 自己 sendMessage 不会进本 SW 的 onMessage）。
+ * One trigger, with session-scoped pauses; never await its completion before resume.
+ * @param {(kind: string, data: unknown) => void} [diagnose]
  */
-export async function installExecuteToolCallHook(cdp, sessionId, extensionId, probeUrl) {
-  if (!probeUrl) throw new Error("installExecuteToolCallHook 需要本地 probeUrl");
-  const already = await cdp.send(
-    "Runtime.evaluate",
-    { expression: "typeof globalThis.__saCall", returnByValue: true },
-    sessionId,
-  );
-  if (already.result?.value === "function") return { ok: true, already: true };
-
-  const scriptId = await findBackgroundScript(cdp, sessionId, extensionId);
-  const lines = await listenerBodyLines(cdp, sessionId, scriptId);
-  const breakpointIds = [];
-  for (const lineNumber of lines) {
-    const bp = await cdp.send(
-      "Debugger.setBreakpoint",
-      { location: { scriptId, lineNumber } },
-      sessionId,
-    );
-    if (bp.breakpointId) breakpointIds.push(bp.breakpointId);
-  }
-  if (breakpointIds.length === 0) throw new Error("setBreakpoint 未返回 breakpointId");
-
+export async function installExecuteToolCallHook(cdp, sessionId, extensionId, probeUrl, diagnose = () => {}) {
+  if (!probeUrl) throw new Error('installExecuteToolCallHook 需要本地 probeUrl');
+  const evaluate = async expression => evaluateValue(await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId));
+  if (await evaluate('typeof globalThis.__saCall') === 'function') return { ok: true, already: true };
+  const offException = cdp.onEvent('Runtime.exceptionThrown', message => diagnose('sw-exception', { expectedSession: sessionId, ...message }));
+  const offPause = cdp.onEvent('Debugger.paused', message => diagnose('debugger-paused', {
+    expectedSession: sessionId, sessionId: message.sessionId, reason: message.params?.reason,
+    hitBreakpoints: message.params?.hitBreakpoints, frames: message.params?.callFrames?.map(frame => ({ functionName: frame.functionName, location: frame.location })),
+  }));
+  const waits = new AbortController(), breakpointIds = [];
+  let trigger;
   try {
-    let pausedP = cdp.waitForEvent("Debugger.paused", 12_000);
-    await cdp.send(
-      "Runtime.evaluate",
-      { expression: triggerExpression(probeUrl), awaitPromise: false, returnByValue: true },
-      sessionId,
-    );
-    let paused;
-    try {
-      paused = await pausedP;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(
-        `无法把 SW 停在生产 onMessage 里以进入 executeToolCall 闭包（${msg}）。` +
-          "SW 自己发 sendMessage 进不了本进程 listener；需要已加载扩展对 127.0.0.1 fixture 注入 content script。",
-      );
+    await cdp.send('Runtime.enable', {}, sessionId);
+    const probe = await evaluate(prepareProbeExpression(probeUrl));
+    diagnose('probe-ready', probe);
+    const scriptId = await findBackgroundScript(cdp, sessionId, extensionId);
+    const lines = await listenerBodyLines(cdp, sessionId, scriptId);
+    for (const lineNumber of lines) {
+      const bp = await cdp.send('Debugger.setBreakpoint', { location: { scriptId, lineNumber } }, sessionId);
+      if (bp.breakpointId) breakpointIds.push(bp.breakpointId);
     }
-    let hooked = null;
-    let lastScopeError = "no matching controller frame";
-    for (let attempt = 0; attempt < Math.max(2, lines.length + 1); attempt += 1) {
-      try {
-        hooked = await hookOnPausedFrame(cdp, sessionId, paused);
-        break;
-      } catch (error) {
-        lastScopeError = error instanceof Error ? error.message : String(error);
-        pausedP = cdp.waitForEvent("Debugger.paused", 4_000);
-        await cdp.send("Debugger.resume", {}, sessionId);
-        try {
-          paused = await pausedP;
-        } catch {
-          break;
-        }
-      }
+    if (!breakpointIds.length) throw new Error('setBreakpoint 未返回 breakpointId');
+    const pausedWait = timeout => cdp.waitForEvent('Debugger.paused', timeout, {
+      sessionId, signal: waits.signal,
+      predicate: message => message.params?.hitBreakpoints?.some(id => breakpointIds.includes(id)),
+    });
+    let pausedPromise = pausedWait(12_000);
+    diagnose('trigger-dispatched', { sessionId, tabId: probe.tabId });
+    trigger = evaluate(triggerExpression(probe.tabId)).then(value => {
+      if (value?.[0]?.result?.sent !== true) throw new Error('probe message was not sent');
+      diagnose('trigger-complete', { sessionId, value });
+      return value;
+    });
+    // A successful trigger is not readiness; a rejected trigger ends the wait.
+    const nextPause = pending => new Promise((resolve, reject) => {
+      pending.then(resolve, reject);
+      trigger.catch(reject);
+    });
+    let paused = await nextPause(pausedPromise);
+    let hooked, lastError;
+    for (let framePass = 0; framePass <= lines.length; framePass++) {
+      try { hooked = await hookOnPausedFrame(cdp, sessionId, paused); break; }
+      catch (error) { lastError = error; }
+      if (framePass === lines.length) break;
+      pausedPromise = pausedWait(4_000);
+      await cdp.send('Debugger.resume', {}, sessionId);
+      paused = await nextPause(pausedPromise);
     }
-    if (!hooked) {
-      throw new Error(`触发消息经过 listener，但没有停进 conversation controller 作用域：${lastScopeError}`);
-    }
-    await cdp.send("Debugger.resume", {}, sessionId);
-    const kind = await cdp.send(
-      "Runtime.evaluate",
-      { expression: "typeof globalThis.__saCall", returnByValue: true },
-      sessionId,
-    );
-    if (kind.result?.value !== "function") {
-      throw new Error("钩子安装后 globalThis.__saCall 仍不可用");
-    }
+    if (!hooked) throw new Error(`No controller scope in triggered listeners: ${lastError}`);
+    // Remove before resuming so the same message cannot hit another breakpoint.
+    for (const breakpointId of breakpointIds.splice(0)) await cdp.send('Debugger.removeBreakpoint', { breakpointId }, sessionId);
+    await cdp.send('Debugger.resume', {}, sessionId);
+    await trigger;
+    diagnose('probe-message', await evaluate(`chrome.scripting.executeScript({target:{tabId:${probe.tabId}},func:()=>globalThis.__saProbe})`));
+    if (await evaluate('typeof globalThis.__saCall') !== 'function') throw new Error('钩子安装后 globalThis.__saCall 仍不可用');
     return hooked;
+  } catch (error) {
+    diagnose('hook-error', { sessionId, error: String(error), cdp: cdp.diagnostics() });
+    throw error;
   } finally {
-    for (const breakpointId of breakpointIds) {
-      try {
-        await cdp.send("Debugger.removeBreakpoint", { breakpointId }, sessionId);
-      } catch {
-        /* 忽略 */
-      }
-    }
+    waits.abort();
+    offException(); offPause();
+    // Debugger.disable removes our breakpoints and resumes even on trigger failure.
     try {
-      await cdp.send("Debugger.resume", {}, sessionId);
-    } catch {
-      /* 未暂停 */
+      await cdp.send('Debugger.disable', {}, sessionId, 4000);
+      if (trigger) await trigger.catch(() => {});
+      diagnose('probe-final-state', await evaluate('globalThis.__saProbeState'));
+      await evaluate(`(async()=>{if(globalThis.__saProbeTab != null){await chrome.tabs.remove(globalThis.__saProbeTab);delete globalThis.__saProbeTab;}})()`);
+      diagnose('hook-cleanup', { status: 'PASS', sessionId });
+    } catch (error) {
+      diagnose('hook-cleanup', { status: 'FAIL', sessionId, error: String(error) });
+      throw error;
     }
   }
 }

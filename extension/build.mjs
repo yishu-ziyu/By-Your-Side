@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.join(root, "dist");
+// 验收隔离构建可输出到临时目录（默认仍是日常 dist）；不带环境变量时行为不变。
+const dist = process.env.SIDEAGENT_BUILD_DIST ? path.resolve(process.env.SIDEAGENT_BUILD_DIST) : path.join(root, "dist");
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });

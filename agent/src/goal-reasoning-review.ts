@@ -29,11 +29,11 @@ export async function reviewAmbiguousGoal(call: VoiceModelCall | null, stage: Ex
 /** Uncertainty hands the same evidence to the current task model exactly once. */
 export async function reviewTaskGoal(call:VoiceModelCall|null,stage:GoalReviewStage,data:unknown,signal:AbortSignal,onFallback?:()=>void):Promise<GoalEvidenceReview> {
   const reviewed=await reviewGoalEvidence(stage,data,signal);
-  if(stage!=='plan'&&!reviewed.matched&&reviewed.probability>(stage==='target'?.5:GOAL_REVIEW_NO_MAX)
+  if(stage!=='plan'&&reviewed.reviewedBy!=='code'&&!reviewed.matched&&reviewed.probability>(stage==='target'?.5:GOAL_REVIEW_NO_MAX)
     &&(!reviewed.issue||reviewed.issue.kind==='none'||reviewed.issue.confidence<.75)) {
     onFallback?.();
     const resolved=await reviewAmbiguousGoal(call,stage,data,signal);
     return {...reviewed,...resolved,reviewedBy:'main'};
   }
-  return {...reviewed,reviewedBy:'jev'};
+  return {...reviewed,reviewedBy:reviewed.reviewedBy??'jev'};
 }

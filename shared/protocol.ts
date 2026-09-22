@@ -1,4 +1,5 @@
 import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingTranscript } from "./reading.js";
+import { isExecutionFeedback } from "./execution-feedback.js";
 /**
  * SideAgent 桥接协议（扩展 side panel ⇆ 本地伴随进程）。
  * 传输：WebSocket，JSON 文本帧，一帧一条消息。
@@ -306,7 +307,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
       requestId: string;
       continuity: AcceptanceContinuityEvidence[];
     }
-  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string }
+  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; /** 直连 display 调用身份；宿主区分帧族用，扩展不消费 */ sdkId?: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
@@ -321,6 +322,12 @@ export type AgentUiEvent =
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
   | { kind: "tool_late_result"; toolCallId: string; name: string; ok: boolean; executionFact: ToolExecutionFact }
+  /**
+   * 宿主执行反馈出口（V2）：简单成功进胶囊、失败／未知／等待确认保留可找到的文字入口。
+   * 事实与文案由宿主生成，不由模型叙述；身份复用 inputId/toolCallId，便于去重与过期判断；
+   * 频道（胶囊／语音／无）由 shared/execution-feedback 的事实规则决定。
+   */
+  | { kind: "execution_feedback"; feedback: import('./execution-feedback.js').ExecutionFeedback }
   | { kind: "turn_start" }
   | { kind: "turn_end" }
   | { kind: "agent_start"; deliveryMode?: "explicit" }
@@ -383,6 +390,23 @@ export interface TabInfo {
 }
 
 /**
+ * switch_tab 执行后读回的浏览器事实：只证明核验这一刻的状态——目标标签是其所属
+ * 已聚焦窗口的活动标签、工作目标仍指向它；不宣称页面已加载、内容已读取或之后不会被切走。
+ * 读取失败（目标消失/查询异常）时只有 verified:false，不伪造事实字段。
+ * 旧回执没有该字段，仍按原 tabId 提供工作目标，但不能授权成功胶囊。
+ */
+export interface SwitchTabVerification {
+  /** true 仅当：目标标签是其所属窗口的活动标签、该窗口处于聚焦状态、工作目标仍指向它 */
+  verified: boolean;
+  /** 核验时刻目标窗口内实际活动的标签页；读不到时缺省 */
+  activeTabId?: number;
+  windowId?: number;
+  windowFocused?: boolean;
+  /** 核验时刻的工作目标；null = 已无工作目标 */
+  workingTabId?: number | null;
+}
+
+/**
  * 各工具的 params 与成功时 tool_result.data 形状。
  * 失败时 ok=false，error 为人类可读的一行描述。
  *
@@ -408,8 +432,8 @@ export interface ToolContract {
   share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
-    params: { tabId?: number; target: string } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; textContent: string; value?: string; scopeLabels?:string[]; documentId?: string; anchorSource?: import('./demo-record.js').AnchorSource; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    params: { tabId?: number; target: string; /** Host-only adjunct read; never exposed in provider schemas. */ readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
+    data: { tabId: number; target: string; tagName: string; textContent: string; editableText?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: import('./demo-record.js').AnchorSource; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
   /** 宿主自己读取一个选择器命中的全部元素（有界），供目标核验取证；不改页面，不能由模型替代提供。 */
   read_elements: {
@@ -429,7 +453,7 @@ export interface ToolContract {
   /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
   open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
-  switch_tab: { params: { tabId: number }; data: { tabId: number } };
+  switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
   snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;observation?:import('./browser-decision.js').BrowserObservation } };
@@ -443,7 +467,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string }; data: { filled: true } };
+  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true } };
   type_text: { params: { tabId?: number; text: string }; data: { typed: true } };
   press_key: { params: { tabId?: number; key: string }; data: { pressed: true } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
@@ -677,6 +701,9 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!msg.sessionId || isLeadSession(msg.sessionId)) return null;
       if (![e.task, e.output].every((v) => typeof v === "string" && v.trim().length > 0 && v.length <= 80)) return null;
       if (e.spawnToolCallId !== undefined && !validRequestId(e.spawnToolCallId)) return null;
+    }
+    if (msg.type === "agent_event" && msg.event?.kind === "execution_feedback") {
+      if (!isExecutionFeedback(msg.event.feedback)) return null;
     }
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;

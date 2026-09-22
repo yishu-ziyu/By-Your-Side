@@ -56,37 +56,97 @@ export interface IsolatedExtension {
   screenshot(targetId: string, filePath: string): Promise<void>;
   /** Click an existing button, including closed shadow roots, through Chrome input. */
   clickButton(targetId: string, text: string): Promise<void>;
-  close(): Promise<void>;
+  diagnostics(): IsolationDiagnostics;
+  close(): Promise<IsolationCleanup>;
 }
 
-export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fakeMedia?: boolean} = {}): Promise<IsolatedExtension> {
+/** 隔离启动器自记的诊断快照（准确反映实现返回的字段；CDP 细节保持不透明）。 */
+export interface IsolationDiagnostics {
+  cdp: unknown;
+  fixtureListening: boolean;
+  chromePid: number | undefined;
+  chromeExit: number | null;
+  chromeSignal: NodeJS.Signals | null;
+}
+
+export interface IsolationCleanup {
+  status: 'PASS' | 'FAIL';
+  resources: Record<string, string>;
+  errors: string[];
+}
+
+// Also used when launch fails before an IsolatedExtension can be returned.
+export async function closeIsolatedResources(
+  resources: { child?: ChildProcess; cdp?: ReturnType<typeof createCdp>; fixture?: Server },
+): Promise<IsolationCleanup> {
+  const result: IsolationCleanup = { status: 'PASS', resources: {}, errors: [] };
+  const finish = async (name: string, resource: unknown, dispose: () => Promise<void>) => {
+    if (!resource) { result.resources[name] = 'NOT_CREATED'; return; }
+    try { await dispose(); result.resources[name] = 'CLOSED'; }
+    catch (error) { result.resources[name] = 'FAILED'; result.errors.push(`${name}: ${error}`); result.status = 'FAIL'; }
+  };
+  await finish('cdp', resources.cdp, () => resources.cdp!.close());
+  await finish('chrome', resources.child, async () => {
+    const child = resources.child!;
+    if (child.exitCode !== null || child.signalCode !== null || !child.pid) return;
+    await new Promise<void>((resolve, reject) => {
+      const stopped = () => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(() => {
+        child.removeListener('close', stopped);
+        child.kill('SIGKILL');
+        reject(new Error('Chrome graceful close timed out; SIGKILL fallback sent'));
+      }, 5000);
+      child.once('close', stopped);
+      child.kill('SIGTERM');
+    });
+  });
+  await finish('fixture', resources.fixture, async () => {
+    const server = resources.fixture!;
+    if (!server.listening) return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('fixture close timed out')), 3000);
+      server.close(error => { clearTimeout(timer); if (error) reject(error); else resolve(); });
+      server.closeAllConnections();
+    });
+  });
+  return result;
+}
+
+export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fakeMedia?: boolean; localOnly?: boolean; diagnose?: (kind: string, data: unknown) => void} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
-  await cp(DIST, extDir, { recursive: true });
-  const manifestPath = join(extDir, "manifest.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  delete manifest.key;
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  let hits = 0;
-  const fixture = createServer((_req, res) => {
-    hits += 1;
-    res.setHeader("content-type", "text/html; charset=utf-8");
-    res.end(options.fixtureHtml ?? "<!doctype html><meta charset='utf-8'><title>isolated probe</title><p>probe</p>");
-  });
-  await new Promise<void>((r) => fixture.listen(0, "127.0.0.1", r));
-  const fixtureOrigin = `http://127.0.0.1:${(fixture.address() as { port: number }).port}`;
-
-  let child: ChildProcess | undefined;
+  let child: ChildProcess | undefined, fixture: Server | undefined;
   let cdp: ReturnType<typeof createCdp> | undefined;
-  const close = async (): Promise<void> => {
-    child?.kill("SIGKILL");
-    await cdp?.close().catch(() => {});
-    await new Promise<void>((r) => (fixture as Server).close(() => r()));
-  };
-
+  let hits = 0, closing: Promise<IsolationCleanup> | undefined;
+  const close = () => closing ??= closeIsolatedResources({ child, cdp, fixture }).then(result => {
+    options.diagnose?.('isolation-cleanup', { outDir, ...result });
+    return result;
+  });
   try {
+    await cp(DIST, extDir, { recursive: true });
+    const manifestPath = join(extDir, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    delete manifest.key;
+    // Test-only transport isolation, applied before the service worker starts.
+    // __saCall still enters the real executor; no native host or network uplink can connect.
+    if (options.localOnly) {
+      manifest.permissions = manifest.permissions.filter((permission: string) => permission !== 'nativeMessaging');
+      manifest.content_security_policy = {extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'"};
+    }
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    fixture = createServer((_req, res) => {
+      hits += 1;
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.end(options.fixtureHtml ?? "<!doctype html><meta charset='utf-8'><title>isolated probe</title><p>probe</p>");
+    });
+    await new Promise<void>((resolve, reject) => {
+      fixture!.once("error", reject);
+      fixture!.listen(0, "127.0.0.1", () => { fixture!.removeListener("error", reject); resolve(); });
+    });
+    const fixtureOrigin = `http://127.0.0.1:${(fixture!.address() as { port: number }).port}`;
+
     child = spawn(CHROME, [
       "--headless=new",
       "--mute-audio",
@@ -103,7 +163,12 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       "about:blank",
     ], { stdio: "ignore", env:{...process.env,STEPFUN_API_KEY:undefined,SIDEAGENT_STEP_PLAN_KEY:undefined,TYPESAFE_API_KEY:undefined} });
 
+    let spawnError: Error | undefined;
+    child.on("error", error => { spawnError = error; });
+    options.diagnose?.("isolation-started", { outDir, pid: child.pid, fixtureOrigin });
     const port = await until(async () => {
+      if (spawnError) throw spawnError;
+      if (child!.exitCode !== null) throw new Error(`Chrome exited before ready: ${child!.exitCode}`);
       try {
         return (await readFile(join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
       } catch {
@@ -126,7 +191,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
     }, 20_000, "SideAgent service worker");
     const extensionId = new URL(found.target.url).host;
 
-    const hooked = await installExecuteToolCallHook(cdp, found.session, extensionId, `${fixtureOrigin}/hook`);
+    const hooked = await installExecuteToolCallHook(cdp, found.session, extensionId, `${fixtureOrigin}/hook`, options.diagnose);
     if (hooked?.ok !== true) throw new Error(`executeToolCall 钩子未装上：${JSON.stringify(hooked)}`);
 
     const swEval = async (expression: string, timeoutMs = 90_000): Promise<unknown> => {
@@ -173,9 +238,9 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       const location = await cdp!.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function(){const r=this.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}', returnByValue: true }, session);
       for (const type of ['mousePressed', 'mouseReleased']) await cdp!.send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...location.result.value }, session);
     };
-    return { outDir, fixtureOrigin, fixtureHits: () => hits, swEval, tool, newTarget, evalIn, closeTarget, screenshot, clickButton, close };
+    return { outDir, fixtureOrigin, fixtureHits: () => hits, swEval, tool, newTarget, evalIn, closeTarget, screenshot, clickButton, diagnostics: () => ({ cdp: cdp!.diagnostics(), fixtureListening: fixture!.listening, chromePid: child!.pid, chromeExit: child!.exitCode, chromeSignal: child!.signalCode }), close };
   } catch (error) {
-    await close();
-    throw error;
+    const cleanup = await close();
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { isolationCleanup: cleanup });
   }
 }

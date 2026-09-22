@@ -1,115 +1,86 @@
-# 架构与维护
+# 当前主链路与一项简化提案
 
-核对工作树：2026-09-20。本页描述代码职责与修改落点；当前开关、加载和验收只看[STATUS](STATUS.md)。安装运行见[README](../README.md)。
+2026-09-22，依据 `main@94b1782` 的**当前工作树，含未提交改动**。本轮只读源码与七个测试文件，未执行测试、浏览器、模型请求、构建或重载。图描述源码能力，不代表日常已加载。
 
-语音链路的全栈职责、四种生命周期及改造依据见[Voice架构与改造边界](voice-architecture.md)。
+[配置源码](../agent/src/config.ts#L27)的通用循环、显示快路与影子路由均缺省关闭；本机 `~/.sideagent/config.json` 四项开关目前均为 true，模型为 `minimax-cn/MiniMax-M3`。会话保存的模型可覆盖全局配置（[装配](../agent/src/main.ts#L153)）。[STATUS](STATUS.md)含旧加载记录，本轮未核对日常进程。新 A 保留“实现方报告通过，最新独立 review 待完成”。
 
-## 运行边界
+## 一、当前主链路图
 
-```text
-侧栏输入/呈现 ── runtime Port / relay ── 扩展后台 ── native stdio ── 本地 Agent
-                                           │                        │
-                                     浏览器工具执行             会话/模型/任务调度
-                                           │                        │
-                                     页面脚本与 CDP           工具请求经 RPC 返回后台
+实线为调用/数据方向，虚线为条件路径；并非每次输入都会经过所有节点。节点实现见下表。
 
-两侧依赖 shared 的协议和纯规则，不导入对方的运行实现。
+```mermaid
+flowchart TD
+  Text[侧栏文字 sendInput] -->|runtime Port| BG[扩展后台 / VoiceRelay]
+  Audio[麦克风 / 播放器] <-->|runtime Port：PCM、播放回执| BG
+  BG -->|Native Messaging：task_action、页面元数据| CM[ConversationManager：输入、任务与控制]
+  BG <-->|Native Messaging：语音帧| VS[VoiceService / RealtimeVoiceSession / Connection]
+  VS <-->|模型 API：WebSocket 音频、转写、函数调用| RT[StepAudio Realtime 3：直答与选工具]
+  VS -->|直接浏览器工具| CM
+  VS -.->|task_action；或 browser_request 旧路由| CM
+  CM -->|文字 / 委派任务| Session[BrowserAgentSession：工具、任务生命周期]
+  Session -->|满足条件才尝试| Fast[已保存技能 / 快捷动作]
+  Fast -.->|有候选时请求| Jev[Jev API：结构化判断]
+  Fast -->|命中| Tools[已注册 tools / browser_run]
+  Fast -->|未覆盖；保留已执行事实| Pi[Pi AgentSession：Agent runtime]
+  Session -->|按需读页分支 / 常规任务| Pi
+  Pi <-->|模型 API：规划、内容生成、工具调用| LLM[当前配置的主模型]
+  Pi --> Tools
+  Tools -.->|开关启用且被选用| Loop[browser_loop：有界观察与执行]
+  Loop <-->|候选判断| Jev
+  Loop -.->|缺字段材料时请求生成| LLM
+  CM -->|语音直连：不调用 Pi.prompt| Tools
+  VS -->|read_page：观察令牌| RPC[ToolRpc]
+  Tools --> RPC
+  Loop --> RPC
+  RPC <-->|Native Messaging：tool_call / tool_result| BG
+  BG --> Gate[身份 / 授权 / ControlGate / exec]
+  Gate <-->|Chrome API、脚本注入、Debugger| Page[真实页面]
+  Session -.->|目标 / 来源 / 落点核验| Jev
+  Session -.->|不确定证据的一次复核| LLM
+  RPC --> Facts[执行账本 / 目标账本 / 材料 / 交付]
+  Session --> Facts
+  Facts -->|任务视图、正式交付| BG
+  Facts -->|任务通知| VS
+  BG --> UI[侧栏文字 / 胶囊 / 播放反馈]
+  VS -.->|符合条件的续答判重| Jev
+  CM -.->|影子路由：异步记录，不决定派发| Jev
 ```
 
-| 位置 | 拥有的职责 | 不应承担 |
+**普通问答。** 语音由 Realtime 直接回答；扩展先取得页面标题/URL和观察令牌，未因此读取正文；模型调用 `read_page` 才读可见文字。侧栏文字统一发 `task_action`，后台补页面元数据；默认任务入口通常预读 snapshot，可能先走快捷候选判断，未命中再由 Pi 的主模型回答。`pageObservation:on-demand` 已存在，但不是普通侧栏文字的默认入口。[文字入口](../extension/src/sidepanel/main.ts#L3455)、[元数据](../extension/src/background/index.ts#L1346)、[按需分支](../agent/src/session.ts#L1184)。
+
+**明确填写。** 文字路径可精确复用已有技能；普通 fill 不是快捷选择器的通用分支，未匹配技能时由 Pi 主模型选工具。语音由 Realtime 观察、选 fill，宿主调用同一已注册工具，不增加 Pi 推理；歧义时才选 `judge_browser_action`。执行、结果登记和反馈归不同代码层；“不保存/提交”仍须贯穿要求、工具选择与权限检查，不能仅凭一句提示词证明。[快捷候选](../agent/src/fast-task.ts#L127)、[直连](../agent/src/session.ts#L998)。
+
+**复杂任务。** 文字进入 Pi；语音经 `task_action` 委派，源码将其暴露与 `generalBrowserLoop` 开关联动，关闭时仍有 `browser_request` 旧分类入口。主模型提出目标、研究和生成内容；宿主校验目标覆盖、保存原文、核验落点。可选 Fleet、QuickJS `browser_run` 或有界 Jev 循环；技能复用已有程序，材料复用已捕获文本，均走现有工具闸门。[装配](../agent/src/main.ts#L163)、[旧分类](../agent/src/conversation-manager.ts#L492)。
+
+串行等待包括文字预观察→快捷判断→Pi、直接工具队列→整批结果及生成结束→Realtime续答、目标读回→Jev→必要时主模型复核。影子路由不被主调用等待；续答判重的 200ms 是扣音预算。端到端耗时及各分支使用频率**待验证**，不按模块数估算。[工具队列/回传](../agent/src/realtime-voice-connection.ts#L798)、[核验](../agent/src/goal-reasoning-review.ts#L30)。
+
+## 二、职责与事实归属
+
+| 职责 / 类型 | 产生、保存 → 消费；必要边界 | 源码与本轮抽查测试 |
 |---|---|---|
-| `shared/` | 消息契约、输入校验、跨宿主纯规则 | Node/Chrome执行、文件存储、模型调用 |
-| `agent/src/main.ts`、`transport/` | 本地进程启动、连接与生命周期 | 页面DOM或侧栏渲染 |
-| `agent/src/conversation-manager.ts` | 用户会话、任务身份、语音路由与交付协调 | 浏览器执行实现 |
-| `agent/src/conversation-runtime.ts` | 装配每会话的RPC、Lead、协作团队、授权等待区 | 跨会话共享可变状态 |
-| `agent/src/session.ts` | Pi会话、工具挂载、当前任务及接管生命周期 | 侧栏选择状态 |
-| `extension/src/background/` | 上行连接、页面归属、执行闸门、历史与控制回执 | 依赖侧栏是否打开才能运行 |
-| `extension/src/background/exec/` | 浏览器工具的实际读写 | 自行决定用户意图或绕过授权 |
-| `extension/src/content/` | 页面内观察、输入、标注与事件采集 | 会话管理、模型状态 |
-| `extension/src/sidepanel/` | 输入、局部视图状态、收到消息后的呈现 | 以显示状态代替任务执行事实 |
+| 理解与决策 | Realtime API处理语音、回答和函数选择；主模型API处理Pi任务的规划/生成；Jev API返回候选或概率，普通代码决定是否采用。Pi是运行时，不是第三个模型。 | [`RealtimeVoiceSession.start`](../agent/src/realtime-voice-session.ts#L48)、[`BrowserAgentSession.create`](../agent/src/session.ts#L734)、[`decideBrowserCandidate`](../agent/src/browser-decision-model.ts#L12)；Jev接口含义核对[官方说明](https://docs.typesafe.ai/concepts/system-one.md)。 |
+| 输入与派发：`TaskActionRequest`、`TaskReceipt` | 文字/语音生成请求，manager校验输入、run和控制版本；dispatcher按requestId串行、去重并落盘；queue保存排队要求。accepted/applied只说明接收或控制应用，不说明网页目标完成。旧browser_request另有VoicePlanStore和分类请求。 | [`dispatchTaskAction`](../agent/src/conversation-manager.ts#L696)、[`TaskDispatcher.dispatch`](../agent/src/task-dispatcher.ts#L166)。测试① [`conversation-manager`](../agent/test/conversation-manager.test.ts#L321)保护旧计划重放不重复分类/执行，属于仍可达兼容路径。 |
+| 派发与实际执行：`tool_call`、参数、调用身份 | Realtime/Pi只提出调用；BrowserAgentSession和tools检查任务/模式/授权，ToolRpc发出；扩展核对run、epoch、页面归属、decisionGuard和ControlGate后执行。动作包括tabs、navigate、click、fill、type_text、press_key、scroll、hover、mark、page_translation；Pi另有组合程序、fetch/js和协作工具。 | [`createBrowserTools`](../agent/src/tools.ts#L80)、[`invokeDisplayTool`](../agent/src/session.ts#L2017)、[`executeToolCall`](../extension/src/background/index.ts#L984)。测试② [`realtime-direct-tools`](../agent/test/realtime-direct-tools.test.ts#L57)保护原话/页面传递、无Pi派发、旧话轮排队写入取消；不是实测模型理解。 |
+| 浏览器观察：snapshot/AX、DOM字段、标签、`BrowserObservation` | 扩展读浏览器事实并登记有时效的候选身份；宿主/model消费。`decisionGuard`是采用该观察的约束，不是执行结果。语音令牌仅授权读当前页，`read_page`正文不覆盖全页或图片。 | [`snapshot`](../extension/src/background/exec/snapshot.ts#L25)、[`BrowserObservationRegistry.issue/consume`](../extension/src/background/browser-observation.ts#L141)、[`VoiceObservation.issue/capture`](../extension/src/background/voice-observation.ts#L10)、[`readVoicePage`](../agent/src/voice-page-reader.ts#L5)。 |
+| 真实执行：`tool_result.executionFact` | 扩展产生executed/not_executed/unknown；RPC关联传输ID与宿主调用ID，超时/断连保守保留未知；宿主工具事件和Realtime结果消费。RPC在途表与持久执行账本是不同寿命的记录，不是两个独立判决器。 | [`ToolRpc`](../agent/src/rpc.ts#L106)、[`executeToolCall`](../extension/src/background/index.ts#L1000)。不能把ok、reject或模型叙述单独当执行事实。 |
+| 执行账本：`TaskResultItem`、`executionState` | TaskProgress消费真实tool_start/end/late_result，TaskResultBook自动建项、保存执行证据及写前基线；Pi私有会话文件保存可恢复快照。模型另可手工注册pending槽位，register需吸收自动项，resolveStartItem需改绑——这是独立维护同一执行条目的复杂度候选。 | [`TaskProgress.observe`](../agent/src/task-progress.ts#L284)、[`register`](../agent/src/task-results.ts#L81)、[`resolveStartItem`](../agent/src/task-results.ts#L192)、[`persistTaskResults`](../agent/src/session.ts#L563)。测试③ [`task-result-turn-economy`](../agent/test/task-result-turn-economy.test.ts#L40)保护零预登记自动记账/未知写锁，后半是历史调用序列反事实；④ [`task-results`](../agent/test/task-results.test.ts#L80)保护登记接口不能伪造完成及旧槽位兼容。 |
+| 动作核验：`read_element.check`、`BrowserStepReceipt` | 扩展检查具体字段条件；browser_loop把执行调用、核验调用和观察ID关联成逐步回执，由工具输出/宿主事件消费。verification只证明该动作的指定后置条件，不能代替完整用户目标。 | [`read_element`契约](../agent/src/tools.ts#L270)、[`BrowserStepReceipt`](../shared/browser-decision.ts#L94)、[`runBrowserDecisionLoop`](../agent/src/browser-decision-loop.ts#L264)。 |
+| 用户目标：`TaskGoalPlan`、`resultState` | 主模型提出目标与条件；TaskGoalBook检查覆盖、版本并保存转移；具体核验先做身份/字面检查，再用Jev，特定不确定结果允许一次主模型复核。TaskProgress据此投影目标进度，unknown写入约束优先。 | [`executeGoalOperation`](../agent/src/task-goal-tool.ts#L27)、[`TaskGoalBook.verify`](../agent/src/task-goals.ts#L89)、[`decideTaskNextStep`](../shared/task-next-step.ts#L41)。测试⑤ [`task-goal-tool`](../agent/test/task-goal-tool.test.ts#L25)保护原文取得≠目标完成、错误字段不通过、改口后旧计划失效。 |
+| 原文与证据：`TaskObservation`、`ObservedMaterial`、来源核验证书 | BrowserAgentSession采集实际读数，TaskEvidence按run/revision保存观察；capture复制指定片段而非让模型重写。原文/证书写入Pi私有日志，可供恢复、填写和核验复用；新的页面操作仍需新鲜节点身份。 | [`TaskEvidence`](../agent/src/task-evidence.ts#L19)、[`goalToolHost`](../agent/src/session.ts#L326)、[`capture`](../agent/src/task-goal-tool.ts#L54)、[`readPersistedTaskResults`](../agent/src/session.ts#L571)。这些正文与TaskResultBook的执行/写前基线用途不同，不能直接合并。 |
+| 横跨三路：输入、取消、插话、改口、接管 | 语音speechSeq/browserAbort撤销旧直接工具；任务改口先登记未消费补充并关旧写入口；session.controlEpoch与run/revision作废旧结果；manager.controlVersion使旧控制/授权失效；扩展generation在异步边界再检查。任务原要求、未知执行、已接受未消费补充须保留。停声/关通话不等于撤销后台任务。 | [`steerCurrentTask`](../agent/src/session.ts#L2468)、[`holdForUser`](../agent/src/session.ts#L2676)、[`dispatchTask`](../agent/src/realtime-voice-session.ts#L118)、[`disconnect`](../agent/src/conversation-manager.ts#L1545)。测试⑥ [`task-recovery-matrix`](../agent/test/task-recovery-matrix.test.ts#L59)保护断连未决写、迟到事件、慢恢复期间取消和不自动重放。 |
+| 文字、界面与语音：`UserDelivery`、`ExecutionFeedback`、`TaskView` | send_user_message形成正式交付，TaskProgress内的UserDeliveryLedger保存交付/播放事实；宿主反馈分类决定胶囊，扩展/侧栏呈现；VoiceService通知Realtime生成音频。response.done是生成完成，playback_done才是播放回执。TaskView、summary、侧栏缓存是投影；不能只因同名状态就删掉。 | [`交付装配`](../agent/src/session.ts#L832)、[`projectTaskView`](../shared/task-view.ts#L83)、[`反馈分类`](../shared/execution-feedback.ts#L100)、[`VoiceService.observe`](../agent/src/voice-service.ts#L205)、[`maybeFlush`](../agent/src/realtime-voice-connection.ts#L928)。测试⑦ [`task-view-ui`](../extension/test/task-view-ui.test.ts#L272)保护“请求停止≠已经停手”；[L623](../extension/test/task-view-ui.test.ts#L623)是源码分支形状检查，属实现细节，不代表应直接删除。 |
+| 复用与可选路径 | 技能保存程序、输入模板和结果检查；精确命中可免推理，语义候选才问Jev；browser_run的QuickJS子步骤复用同一RPC。显式记忆本地选取进入Pi上下文；经历/技能学习另有有界模型处理，不能自行授权动作。影子Jev只记录，不参与路由。 | [`trySkillFastLoop`](../agent/src/skill-fast-loop.ts#L68)、[`browser_run`](../agent/src/tools.ts#L306)、[`MemoryRuntime.recall`](../agent/src/memory-runtime.ts#L66)、[`经历装配`](../agent/src/session.ts#L887)、[`RouteShadow.observe`](../agent/src/route-shadow.ts#L127)。 |
 
-扩展内部协议是 [relay.ts](../extension/src/relay.ts)，扩展与Agent之间是 [protocol.ts](../shared/protocol.ts)。具体消息语义见[协议说明](protocol.md)。
+## 三、Issue：新任务只保留目标计划和自动执行记账
 
-## 请求经过哪些判断
+2026-09-22 已完成工具面与提示的最小实现，未提交/重载；[验收](evals/20260922-automatic-result-registration.md)。实际 Pi＋本地脚本模型验证新任务隐藏登记入口、自动结果 ID 回到下一轮工具调用；真实模型任务质量与提速未测。下述主链路不新增模块，旧记录和恢复工具保留。
 
-文字请求由扩展送入 `ConversationManager / TaskDispatcher`，每个会话的 `createConversationRuntime` 装配 RPC、Pi、Fleet 和授权。`BrowserAgentSession` 持有当前目标、工具和执行生命周期。
+**问题。** `record_task_results`与自动登记共同维护执行条目；模型还须在换对象/方法时同步旧槽位。它和`task_goals`并非同义，但新任务已有目标计划后，再让模型维护预执行清单收益不明。另一处复杂度是文字问答与语音直答入口不对称；处理它需要路由质量证据，本次不选。
 
-当前 `session.ts` 的任务入口按条件尝试：已保存技能复用 → 已有译文的显示操作 → 通用浏览器循环 → 普通 Pi 任务。前一路可直接结束，也可能携已有执行事实交接；不是每句话都要完整走四遍。
-
-- **技能复用**：复用已保存且符合条件的做法；失败要保留已执行步骤，不从头重放。
-- **显示操作**：仅适用已有译文和有效文档状态；配置开启且条件满足时调用 Jev。运行中的显示修改还有单独开关与身份检查。
-- **通用循环**：`generalBrowserLoop` 开启、act 模式、工具可用、无选区/图片、具备任务与页面上下文等条件成立时，从任务入口调用 `browser_loop`。`browser-decision-loop.ts` 获取观察、让 Jev 选候选、按需由主模型准备材料，经原工具执行与读回；停止或交接后由主模型核验/处理剩余要求。循环结束不代表目标完成。已有标签作为浏览器级候选加入同一观察；执行前核对来源与目标身份，切后读取活动标签。页面控件截断不等于浏览器标签能力缺失，原权限/取消与最终任务核验保留。
-- **普通任务**：主模型处理开放式规划、内容生成、工具选择和最终核验；`browser_run` 是其可用的 QuickJS 组合执行工具，不等同于 Jev 决策循环。
-
-语音先由 Realtime 3 选择工具；明确任务在相应装配下可经结构化入口进入上述任务系统，旧路由/确认仍有保留分支。准确路径见[语音架构](voice-architecture.md)。
-
-## 状态归属与数据
-
-| 状态 | 持有者 | 边界 |
-|---|---|---|
-| 用户会话与执行实例 | `conversation-manager.ts`、`conversation-runtime.ts` | 切换界面不改变后台任务身份 |
-| 当前任务、修改与结果 | `session.ts`、任务调度/账本模块 | 接收、执行、读回、目标完成分别记录 |
-| 页面归属与在途动作 | 扩展 `background/` | tabId 不等于授权；晚到操作受任务/页面版本约束 |
-| 聊天展示与草稿 | 扩展历史、侧栏、Chrome storage | 不是任务执行的事实来源 |
-| Pi 对话、任务回执、显式记忆、经历、技能 | `conversation-store.ts` 等；本机 `~/.sideagent/` | 各自存储，不将历史文字或经验自动提升为用户授权 |
-| 语音输入和播放 | Realtime 会话、relay、播放器、交付账本 | 停声、关通话、取消任务是不同动作 |
-
-## 哪些是硬约束
-
-页面/任务身份、参数校验、授权消费、取消、重复请求和未知写入保护由代码执行。回复简短、正确理解、挑选合适工具、对照用户目标仍含模型判断。提示词和结构化输出都不能单独证明行为正确；验收必须到真实页面结果。
-
-## 主要维护入口
-
-| 要改什么 | 先读与修改的位置 | 必须保留的边界 |
-|---|---|---|
-| 模型选择交互 | `sidepanel/model-picker.ts`，纯显示规则在 `models.ts` | DOM与发出选择由入口注入；收到模型回执才更新当前选择 |
-| 语音工具选择与任务交接 | `realtime-voice-connection.ts`、`realtime-voice-session.ts`、`conversation-manager.ts`；旧分类分支另查 `voice-intent.ts` | 真实转写与来源绑定；工具判断不能自行授予页面权限 |
-| 纠正、确认、暂停 | `voice-confirm.ts`、`voice-plan-store.ts`、`conversation-manager.ts`、`task-dispatcher.ts` | 原页面/附件/runId/controlVersion；确认不确认自身 |
-| 新浏览器能力 | `shared/protocol.ts` → `agent/src/tools.ts`/`browser-program.ts` → `background/exec/`；通用候选另查 `shared/browser-decision.ts` 和 `browser-decision-loop.ts` | 单工具与组合执行经过同一页面、执行与授权检查 |
-| 页面移交与接管 | `background/tab-bindings.ts`、`state.ts`、`worker-tab-control.ts`、`shared/control.ts` | 操作绑定目标tab；读页不等于认领；旧回执不得改新任务 |
-| 授权 | `agent/src/fetch-consent.ts`、`consent-ticket.ts`，共享展示契约在 `shared/consent.ts` | Node账本归Agent；一次授权绑定原参数和任务身份 |
-| 新记忆或技能行为 | `memory-store.ts`/`memory-runtime.ts`、`skill-store.ts`/`skill-runner.ts` | 历史、显式记忆、经验、技能分别存储；复用不能跳过当前页面校验 |
-| 交付与进度呈现 | `task-progress.ts`、`user-delivery.ts`，侧栏 `steps.ts`/`selectors.ts` | 执行动作完成不等于用户目标完成；接收回执不等于正式交付 |
-
-新功能先放进最接近的业务模块；需要另建模块时，让它独立拥有相关状态，并通过明确参数或回调连接。不要复制入口里的状态，再靠双向同步维护两份真相；不要把不相关功能塞进 `utils` 或新增通用服务容器。
-
-## 检查与开发
-
-```sh
-npm run check:architecture # 生产代码依赖方向
-npm run typecheck          # 两端类型
-npm test                   # 普通回归后顺序运行规模测试
-npm run build              # 扩展构建
-npm run check              # 顺序执行以上四项
-```
-
-边界检查使用现有构建器解析静态import、export、字面量动态import与require，拒绝绑定某台机器的绝对文件路径、跨宿主实现依赖、扩展界面之间的实现依赖、生产代码导入测试/脚本，以及浏览器/共享模块中的Node内置模块。类型引用被擦除，不在运行依赖检查范围；计算出来的动态路径、行为耦合和任意循环依赖也不由此证明。类型检查、独立复核及真实入口验收仍需保留。
-
-规模测试保留在 `agent/test/performance/`，`npm test` 先跑普通回归，再单Worker跑规模测试，避免测量与大批并行测试争抢资源。原数据规模、5秒单项超时及性能门槛不变；也可用 `npm run test:scale` 单独定位。
-
-浏览器验收脚本见 `scripts/acceptance/`；执行前核对脚本实际连接的浏览器。项目要求默认无头，但旧 program 脚本仍直连 ChromeMain，不能当无头隔离入口直接运行。日常 Chrome 原生测试是另一种证据。语音改动的文字/合成测试不能替代真人声学验收。门槛以 `eval/protected/quality-gates.json` 为准，不因整理仓库修改。
-
-## 源码与资料的归属
-
-- `agent/test/`、`extension/test/`：行为回归；测试允许跨宿主装配，生产不允许。
-- `scripts/`：安装、诊断、验收与维护入口；`scripts/fixtures/`：本地测试页面，不是产品页面。
-- `extension/dist/`、`eval/runs/`、`out/acceptance/`：可生成的本地产物，按现有忽略规则管理。
-- `agent/src/vendor/`、`extension/src/vendor/`、图像/模型/字体资产及许可证：保留来源，不当作业务冗余删除。
-- `docs/`：见[文档导航](README.md)。历史证据不与生产代码一起打包，保留以便追溯失败和方案取舍。
-
-## 仍需约束的维护热点
-
-`sidepanel/main.ts`仍包含会话/知识与执行过程视图，`background/index.ts`仍包含每会话控制器装配，`conversation-manager.ts`仍协调语音确认与交付。它们没有因本次提取变成小文件。本轮先分离独立模型调用和模型选择；之后修改知识管理或控制器时，沿完整职责提取并补生命周期验证。不要为了行数达标再制造一层转发，或把共享状态拆成相互回调的碎片。
-
-## Stagehand 兼容层
-
-`browser_run` 的 `api:"playwright"` 模式通过 `stagehand-bridge.ts` 在现有 QuickJS 中加载固定上游的官方兼容代码，提供 page/context。每步经现有 tools/RPC 控制链；程序固定开始时的任务 tabId。默认 ego 模式与已有工具保持兼容。此接法不需要 Browserbase Key，也不引入另一套浏览器扩展或 SDK experimentalBatch。支持范围和本地补丁见 `agent/src/vendor/stagehand/PATCH.md`；验收见 [接入记录](evals/20260913-stagehand-control-integration.md)。
-
-
-## 用户目标与原文材料
-
-`TaskResultBook` 保留执行回执和未知写入保护；`TaskGoalBook` 保存用户目标。`TaskProgress.resultState` 在有目标计划时表示目标进度，`executionState` 单独表示执行账本；运行 idle 不等于完成。侧栏、语音进度与正式交付从这些宿主事实投影，不由模型自填状态。
-
-`TaskEvidence` 保留本任务的观察与所选原文；原文来自完整元素文字或未压缩的 AX 文本/换行片段。`capture_page_material` 要求明确观察身份，代码复制文本，语义判断核对来源范围。所选材料与核验证书进入原有私有会话日志，快照仅保存引用。节点引用不跨文档复用；恢复和改口保持旧文本，但新目标须重新匹配来源。
-
-核验先做身份、版本和字面相等检查，再处理必要语义；不确定时只对同一证据做一次主模型复核。目标身份与内容匹配分开，已知失败的旧方法不会覆盖已核验目标，未知副作用仍优先阻止重复操作。当前验收与未覆盖范围只看 [STATUS](STATUS.md)。
+1. **范围与效果**：仅Pi新任务的工具表/提示；覆盖文字动作和复杂研究填写。移除可选的手工记账回合，不改变实际执行器，语音直接工具照旧。
+2. **已实现的最小改动**：有runId/goalPlan、非restartRecovery且无既有非自动编号pending/blocked槽位时，Pi输入前收起`record_task_results`；复用`applyActiveTools`，不加Router或持久状态。无计划、重启恢复或仍有旧槽位的任务保留原入口，不迁移历史项。不能仅靠有goalPlan就误判为全新任务。
+3. **文件与迁移**：`session.ts`在新任务prompt前应用可见工具过滤，恢复/模式/团队工具重挂载仍遵守该规则；`product-context.ts`只在旧入口可用时说明手工登记；`task-results.ts`将未知结果工具的ID指引改为现有宿主results投影，保留登记实现供旧路径使用。[挂载](../agent/src/session.ts#L933)、[新run/恢复标记](../agent/src/task-progress.ts#L190)、[现有投影](../agent/src/product-context.ts#L13)。
+4. **不变量**：TaskResultBook、TaskGoalBook、动作核验和交付各自保留；真实回执自动登记、unknown写锁、禁止保存/提交、取消/接管、原要求及已接受补充均不削弱。不得把执行成功、目标满足、生成结束合并。
+5. **复用测试**：上表③④⑤⑥为核心；不删任何测试。登记接口测试继续保护旧检查点；历史反事实保留，不能冒充当前性能实测。
+6. **最少补验**：现有测试内验证新任务看不到登记工具仍能“资料→草稿、不提交”，换方法不漏目标；恢复旧pending/unknown仍可处理且不重放；切模式/挂团队不重新暴露新任务已隐藏工具。机器检查事实，人审最终草稿；再取最小实际路径确认模型能从results找到ID。
+7. **收益/风险/假设**：减少一种模型职责及新槽位同步机会；能省多少回合、是否提速待测。隐藏提示、模式/团队、旧任务兼容和自动结果ID路径已离线验证，复杂资料→草稿的真实模型验收未跑。另有三项自动记账旧回归在本轮入场代码中已失败，原断言保留，详见验收；不把工程现状写成全绿。回退只恢复工具可见性与提示，无存储迁移。

@@ -44,3 +44,18 @@ it('标准填写只能使用已核验的复制材料，不能在提取失败后�
  expect(()=>session.assertTaskResultExecution('fill',{target:'#editor',value:'自己重写的文字'})).toThrow('不一致');
  expect(()=>session.assertTaskResultExecution('fill',{target:'#editor',value:'完整原文'})).not.toThrow();
 });
+
+it('附来源网址的填写只允许已核验原文和观察网址，仍拒绝额外文字',()=>{
+ const session=wrapped(SessionManager.inMemory()),p=new TaskProgress('default');p.request('复制原文到笔记，另起一行附来源网址');
+ const revision=p.snapshot().goalPlan!.revision,url='https://fixture.test/source';
+ p.goals.install(revision,[{id:'source',description:'原文',criterion:'指定原文',kind:'material',materialId:'quote',requirements:['requirement-1']},{id:'paste',description:'粘贴原文和来源',criterion:'原文换行加来源网址',kind:'field',materialId:'quote',appendSourceUrl:true,requirements:['requirement-1']}],1);
+ session.bindConversationContext(()=>p.snapshot());
+ vi.spyOn(session,'browserObservedMaterials').mockReturnValue([{id:'quote',purpose:'原文',value:'Exact sentence.',source:'observed',observation:{url}} as any]);
+ const fill=(value:string)=>()=>session.assertTaskResultExecution('fill',{target:'#editor',value});
+ expect(fill(`Exact sentence.\n${url}`)).toThrow('尚未核验');
+ p.goals.verify(revision,'source',{matched:true,reason:'已核对',evidence:{observationId:'read',tabId:7,verifiedAt:1,materialId:'quote'}});
+ expect(fill(`Exact sentence.\n${url}`)).not.toThrow();
+ expect(fill('Exact sentence.')).toThrow('不一致');
+ expect(fill('Exact sentence.\nhttps://other.test/')).toThrow('不一致');
+ expect(fill(`Extra sentence. Exact sentence.\n${url}`)).toThrow('不一致');
+});

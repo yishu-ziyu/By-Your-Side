@@ -4,7 +4,8 @@
  * send 函数可注入，测试无需真实 WebSocket。
  */
 import { randomUUID } from "node:crypto";
-import { LEAD_SESSION_ID, isLeadSession, type ToolExecutionFact, type ToolName } from "../../shared/protocol.js";
+import { normalizeResultTarget } from '../../shared/task-results.js';
+import { LEAD_SESSION_ID, isLeadSession, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
 export const SLOW_TOOL_TIMEOUT_MS = 60_000;
@@ -18,6 +19,8 @@ export interface ToolCallFrame {
   params: Record<string, unknown>;
   sessionId?: string;
   programId?: string;
+  /** SDK 调用身份（display-* = 直连用户请求）；宿主用于区分帧族，扩展不消费。 */
+  sdkId?: string;
   epochs?: Record<string, number>;
 }
 export type RpcSend = (frame: ToolCallFrame) => void;
@@ -33,6 +36,17 @@ interface Pending {
   name: string;
   startedAt: number;
   sessionId?: string;
+  cleanup?: () => void;
+}
+
+export interface FillReadbackTarget {
+  tabId: number;
+  documentId: string;
+  target: string;
+  nodeIdentity?: ToolContract['read_element']['data']['nodeIdentity'];
+  protected: boolean;
+  sourceToolCallId: string;
+  sourceTransportId: string;
 }
 
 interface DispatchedCall {
@@ -47,6 +61,9 @@ interface DispatchedCall {
   /** 缺省页可能变化的调用：发出时的设置序号与出站参数，供回执比对新旧。 */
   targetSeq?: number;
   targetParams?: Record<string, unknown>;
+  prepareFillReadback?: boolean;
+  readTarget?: FillReadbackTarget;
+  fillTarget?: FillReadbackTarget;
 }
 
 export type LateResultHandler = (info: {
@@ -118,6 +135,35 @@ export class ToolRpc {
   /** 获取已记录调用的执行事实；传输 id 与 SDK 调用 id 均可查询。 */
   getExecutionFact(id: string): ToolExecutionFact | undefined {
     return this.dispatched.get(id)?.fact;
+  }
+
+  /** Only the direct Realtime fill boundary opts in; ordinary tool calls are unchanged. */
+  prepareFillReadback(id: string, sessionId?: string): void {
+    this.ensureToolCall(id, 'fill', sessionId);
+    this.dispatched.get(id)!.prepareFillReadback = true;
+  }
+
+  getFillReadback(id: string): {transportId: string; target?: FillReadbackTarget} | undefined {
+    const call = this.dispatched.get(id);
+    if (!call?.id || call.name !== 'fill' || !call.prepareFillReadback) return;
+    return {transportId:call.id, ...(call.fillTarget ? {target:{...call.fillTarget}} : {})};
+  }
+
+  getTransportId(id: string): string | undefined { return this.dispatched.get(id)?.id || undefined; }
+
+  private recordReadTarget(call: DispatchedCall, data: unknown): void {
+    if (call.name !== 'read_element' || !call.sdkId || !data || typeof data !== 'object') return;
+    const field = data as Partial<ToolContract['read_element']['data']> & {truncated?:boolean}, source = field.anchorSource;
+    if (typeof field.tabId !== 'number' || !Number.isSafeInteger(field.tabId) || field.tabId !== call.targetParams?.tabId
+      || typeof field.documentId !== 'string' || !field.documentId || typeof field.target !== 'string'
+      || typeof call.targetParams?.target !== 'string' || normalizeResultTarget(field.target) !== normalizeResultTarget(call.targetParams.target)
+      || field.truncated || typeof field.value !== 'string' || !['input','textarea','select'].includes(field.tagName??'') || !source || typeof source !== 'object'
+      || !(source.type===null||typeof source.type==='string') || !(source.autocomplete===null||typeof source.autocomplete==='string')) return;
+    call.readTarget = {tabId:field.tabId, documentId:field.documentId, target:field.target,
+      ...(field.nodeIdentity?.kind==='ax' && Number.isSafeInteger(field.nodeIdentity.backendNodeId) && field.nodeIdentity.backendNodeId>0
+        && field.target===`@${field.nodeIdentity.backendNodeId}` ? {nodeIdentity:{...field.nodeIdentity}} : {}),
+      protected:String(source.type??'').toLowerCase() === 'password' || /one-time-code|cc-(number|csc|exp)/i.test(String(source.autocomplete ?? '')),
+      sourceToolCallId:call.sdkId, sourceTransportId:call.id};
   }
 
   private targetKey(sessionId?: string): string {
@@ -197,7 +243,7 @@ export class ToolRpc {
   }
 
   /** 发起一次工具调用；超时或断连时 reject。工人调用传入 sessionId，扩展按 session 绑 tab/光标。 */
-  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string): Promise<unknown> {
+  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal): Promise<unknown> {
     const send = this.sendFn;
     if (!send) {
       const err: ToolExecutionError = new Error("Extension is not connected");
@@ -208,11 +254,31 @@ export class ToolRpc {
     const timeout = timeoutMs ?? (SLOW_TOOLS.has(name) ? SLOW_TOOL_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS);
     const id = randomUUID();
     // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
-    const outParams = this.resolvePageParams(name, params, sessionId);
+    let outParams = this.resolvePageParams(name, params, sessionId);
+    const prepared = sdkId ? this.dispatched.get(sdkId) : undefined;
+    if (name === 'fill' && prepared?.prepareFillReadback) {
+      // Reuse the last actual call on this page, never a post-timeout observation.
+      const previous = [...new Set(this.dispatched.values())].reverse().find(call => call !== prepared && call.id
+        && call.sessionId === sessionId && call.targetParams?.tabId === outParams.tabId);
+      const target = previous?.state === 'resolved' ? previous.readTarget : undefined;
+      if (target && typeof outParams.target === 'string' && normalizeResultTarget(target.target) === normalizeResultTarget(outParams.target)) {
+        prepared.fillTarget = {...target};
+        outParams = {...outParams, expectedDocumentId:target.documentId, ...(target.nodeIdentity?{expectedBackendNodeId:target.nodeIdentity.backendNodeId}:{})};
+      }
+    }
     // 可能改变缺省页的调用先占一个序号，回执按序号判断自己是否已被更新设置超越。
     const targetSeq = TARGET_CHANGING_TOOLS.has(name) ? ++this.pageTargetSeq : undefined;
     return new Promise<unknown>((resolve, reject) => {
+      const abort = () => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer); pending.cleanup?.(); this.pending.delete(id);
+        const disp = this.dispatched.get(id);
+        if (disp) { disp.state = 'timed_out'; disp.fact = 'unknown'; }
+        reject(Object.assign(new Error('Readback cancelled'), {executionFact:'unknown'}));
+      };
       const timer = setTimeout(() => {
+        this.pending.get(id)?.cleanup?.();
         this.pending.delete(id);
         const disp = this.dispatched.get(id);
         if (disp) {
@@ -223,9 +289,12 @@ export class ToolRpc {
         err.executionFact = "unknown";
         reject(err);
       }, timeout);
-      this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId });
+      this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId,
+        ...(signal ? {cleanup:()=>signal.removeEventListener('abort',abort)} : {}) });
+      signal?.addEventListener('abort',abort,{once:true});
+      if (signal?.aborted) { abort(); return; }
       try {
-        const frame: ToolCallFrame = { type: "tool_call", id, name, params: outParams };
+        const frame: ToolCallFrame = { type: "tool_call", id, name, params: outParams, ...(sdkId ? { sdkId } : {}) };
         if (programId) frame.programId = programId;
         if (executionEpoch !== undefined) frame.epochs = { [sessionId ?? "main"]: executionEpoch };
         if (sessionId && !isLeadSession(sessionId) && sessionId !== LEAD_SESSION_ID) {
@@ -235,6 +304,7 @@ export class ToolRpc {
         send(frame);
       } catch (err) {
         clearTimeout(timer);
+        this.pending.get(id)?.cleanup?.();
         this.pending.delete(id);
         const e: ToolExecutionError = err instanceof Error ? err : new Error(String(err));
         e.executionFact = "not_executed";
@@ -263,7 +333,10 @@ export class ToolRpc {
     entry.sessionId = sessionId;
     entry.startedAt = Date.now();
     entry.state = "sent";
-    if (targetSeq !== undefined) { entry.targetSeq = targetSeq; entry.targetParams = targetParams; }
+    // Only existing target-changing receipts need full params. Observation binding
+    // retains identity, never field values, scripts or other page content.
+    entry.targetParams = targetSeq !== undefined ? targetParams : targetParams ? {tabId:targetParams.tabId,target:targetParams.target} : undefined;
+    if (targetSeq !== undefined) entry.targetSeq = targetSeq;
     this.dispatched.set(transportId, entry);
     if (sdkId) this.dispatched.set(sdkId, entry);
     this.pruneDispatched();
@@ -310,6 +383,7 @@ export class ToolRpc {
       return false;
     }
     clearTimeout(entry.timer);
+    entry.cleanup?.();
     this.pending.delete(id);
     const fact: ToolExecutionFact = executionFact ?? (ok ? "executed" : "unknown");
     const disp = this.dispatched.get(id);
@@ -317,6 +391,7 @@ export class ToolRpc {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
       if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
+      if (ok && fact === 'executed') this.recordReadTarget(disp, data);
     }
     const ms = Date.now() - entry.startedAt;
     const who = entry.sessionId ?? "main";
@@ -341,6 +416,7 @@ export class ToolRpc {
   rejectAll(err: ToolExecutionError): void {
     for (const [id, entry] of this.pending.entries()) {
       clearTimeout(entry.timer);
+      entry.cleanup?.();
       const disp = this.dispatched.get(id);
       if (disp) {
         disp.state = "disconnected";

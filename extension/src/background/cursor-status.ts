@@ -7,6 +7,8 @@
  */
 import { callDom, ensureCursor } from "./exec/input.js";
 import { parseExecutionKey } from "./tab-bindings.js";
+import { feedbackIsStale, type FeedbackPillView } from "../shared/feedback-pill.js";
+import type { ExecutionFeedback } from "../../../shared/execution-feedback.js";
 
 export type CursorStatusState = "waiting" | "reading" | "done" | "failed";
 
@@ -243,4 +245,74 @@ export function resetCursorStatusForTests(): void {
 export function cursorStatusForTests(key: string): LivingStatus | null {
   const entry = living.get(key);
   return entry ? { ...entry } : null;
+}
+
+// ── 执行反馈胶囊（V2）───────────────────────────────────────────────
+// 简单成功/未知/等待确认的宿主事实：画到用户正在看的那一页；动作回执另有目标页时也画过去。
+// 查看/重绘、回避旧结果覆盖、受限页降级由这里的台账与调用方负责。
+
+/** 每个标签页最近一次反馈身份：同一结果不重发，时间更早的结果不得覆盖更新的。 */
+const feedbackSeen = new Map<number, { id: string; at: number }>();
+const feedbackPaints = new Map<number, Promise<boolean>>();
+/** 最近画过反馈的页面（含动作落点页）：新一轮工作开始时一并收掉，不留下旧回执。 */
+const feedbackTabs = new Set<number>();
+
+function paintFeedback(tabId: number, view: FeedbackPillView): Promise<boolean> {
+  const next = (feedbackPaints.get(tabId) ?? Promise.resolve(false)).then(async () => {
+    try {
+      await ensureCursor(tabId);
+      await callDom(tabId, (pill: FeedbackPillView) => {
+        // SAFETY: content-cursor.js 由本扩展注入；showFeedback 是同一契约的可选方法，老版本注入脚本没有它也不影响结果判定。
+        (window.__sideagent?.cursor as {showFeedback?: (view: FeedbackPillView) => void} | undefined)?.showFeedback?.(pill);
+      }, [view]);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  feedbackPaints.set(tabId, next);
+  void next.finally(() => { if (feedbackPaints.get(tabId) === next) feedbackPaints.delete(tabId); });
+  return next;
+}
+
+/**
+ * 对用户有意义的一次执行反馈：画到当前页与动作目标页。
+ * 返回值只回答「用户当前看的那一页是否看到」：可见页受限而别的页画上时仍算没看到，
+ * 由调用方用侧栏文字降级；受限页画不上不当作任务失败。
+ */
+export async function showExecutionFeedback(feedback: ExecutionFeedback): Promise<boolean> {
+  const view: FeedbackPillView = {
+    id: feedback.id,
+    text: feedback.text,
+    kind: feedback.kind,
+    ...(feedback.facts.detail ? { detail: feedback.facts.detail } : {}),
+  };
+  const active = await activeTabId();
+  const targets = [...new Set([active, feedback.facts.tabId ?? null].filter((id): id is number => typeof id === "number"))];
+  let shownOnActive = false;
+  let shownAny = false;
+  for (const tabId of targets) {
+    const seen = feedbackSeen.get(tabId);
+    if (seen && (seen.id === feedback.id || feedbackIsStale(seen.at, feedback.createdAt))) continue;
+    feedbackSeen.set(tabId, { id: feedback.id, at: feedback.createdAt });
+    const painted = await paintFeedback(tabId, view);
+    if (!painted) continue;
+    shownAny = true;
+    feedbackTabs.add(tabId);
+    if (active == null || tabId === active) shownOnActive = true;
+  }
+  return active == null ? shownAny : shownOnActive;
+}
+
+/** 新的一轮真实工作开始：上一轮的旧回执失效，收掉可见胶囊（不等于失败）。 */
+export async function retireExecutionFeedback(explicitTabId?: number | null): Promise<void> {
+  const tabIds = [...new Set([await activeTabId(), explicitTabId ?? null, ...feedbackTabs].filter((id): id is number => typeof id === "number"))];
+  feedbackTabs.clear();
+  for (const tabId of tabIds) {
+    feedbackSeen.delete(tabId);
+    try {
+      await ensureCursor(tabId);
+      await callDom(tabId, () => { (window.__sideagent?.cursor as {hideFeedback?: () => void} | undefined)?.hideFeedback?.(); }, []);
+    } catch { /* 受限页没有胶囊可收。 */ }
+  }
 }

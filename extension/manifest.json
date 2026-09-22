@@ -36,6 +36,13 @@
         "mac": "Command+J"
       },
       "description": "问选中的文字"
+    },
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "打开 By Your Side 侧栏"
     }
   },
   "action": {

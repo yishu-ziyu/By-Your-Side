@@ -48,6 +48,27 @@ function formatTabs(tabs: TabInfo[]): string {
 }
 
 /**
+ * 工作目标与可见结果分开表达：`Working tab is now N` 只是执行事实（工作目标已指向 N）；
+ * 用户此刻是否看得到，只按执行后读回的核验事实说。未核验/核验不通过时明确说未确认或
+ * 不在前台，不让模型把工作目标转述成「用户已经看到目标页」，也不声称页面已加载完成。
+ */
+function switchResultText(data: ToolContract["switch_tab"]["data"]): string {
+  const base = `Working tab is now ${data.tabId}.`;
+  const verification = data.verification;
+  if (!verification) return `${base} Whether the user can see it was not verified.`;
+  if (verification.verified === true && verification.activeTabId === data.tabId && verification.windowFocused === true) {
+    return `${base} Read-back right after: it was the active tab of its focused window at that moment, so the user was on this page.`;
+  }
+  if (typeof verification.activeTabId === "number" && verification.activeTabId !== data.tabId) {
+    return `${base} Read-back right after: it was NOT the active tab (the active tab is ${verification.activeTabId}); the user may still be on another page.`;
+  }
+  if (verification.activeTabId === data.tabId && verification.windowFocused !== true) {
+    return `${base} Read-back right after: its window was not focused, so the user may not be looking at it.`;
+  }
+  return `${base} The current active tab could not be read back; visibility is unconfirmed.`;
+}
+
+/**
  * 合并工具：一个模型可见工具代理多个扩展 RPC 名。
  * 能力开关（canExecute / isToolActive）按模型可见名判定，执行事实与账本仍按 RPC 名。
  */
@@ -101,7 +122,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
     const sdkId = execution ? (stepId ?? scope?.toolCallId) : undefined;
     if (sdkId) rpc.ensureToolCall?.(sdkId, name, sid);
-    const gated = !!(execution && requiresControlGate(name, params));
+    const recoveryRead = name === 'read_element' ? (params as {readback?:{documentId:string;deadline:number}}).readback : undefined;
+    const gated = !!(execution && (requiresControlGate(name, params) || recoveryRead));
     const rejectCall = () => { if (sdkId) rpc.markCallRejected?.(sdkId); };
     const assertNotAborted = () => {
       if (!signal?.aborted) return;
@@ -178,6 +200,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     // 获准或页面移交的 await 返回后，取消信号仍可能先于 RPC 到达。
     assertNotAborted();
     const invoke = (executionEpoch?: number) => {
+      if(recoveryRead) {
+        const remaining=recoveryRead.deadline-Date.now();
+        if(remaining<=0)throw new Error('Readback deadline elapsed');
+        return rpc.call(name,callParams,remaining,sid,programId,executionEpoch,sdkId,signal);
+      }
       // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
       if (sdkId === undefined) {
         if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch);
@@ -186,7 +213,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId);
     };
     try {
-      const result = await invoke(execution && requiresControlGate(name, params) ? epoch : undefined);
+      const result = await invoke(gated ? epoch : undefined);
       const verify = origin !== "readonly-poll" ? learning?.observe({ toolCallId: sdkId ?? "", name, params: callParams, result, target }) : undefined;
       if (name === "snapshot" && verify) {
         // One bounded, read-only observation using the same tool/control chain.
@@ -214,15 +241,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const stop=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(90000)]);
         const original=executionScope.getStore();
         rpc.noteToolFact?.(id,'unknown');
-        const run=()=>runBrowserDecisionLoop({goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
-          call:async(name,args,stepId)=>{
-            const childId=`${id}/${stepId}`,started=Date.now();
+        const run=()=>runBrowserDecisionLoop({parentCallId:id,goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
+          call:async(name,args,childId)=>{
+            const started=Date.now();
             execution?.onStep?.({parentId:id,id:childId,name,phase:'start',params:args});
             try{const result=await call(name,args,id,childId);execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,result,elapsedMs:Date.now()-started});return result;}
             catch(e){execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,error:e instanceof Error?e.message:String(e),elapsedMs:Date.now()-started});throw e;}
           }});
         const result=original?await executionScope.run({...original,signal:stop},run):await run();
-        rpc.noteToolFact?.(id,result.receipts.some(r=>r.fact==='unknown')?'unknown':'executed');
+        rpc.noteToolFact?.(id,result.receipts.some(r=>r.executionFact==='unknown')?'unknown':'executed');
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(result)),{}),result);
       },
     })]:[]),
@@ -261,7 +288,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "read_element",
       label: "Read complete element",
-      description: "Read a unique current element without changing the page. By default return complete textContent and field value; use target:'body' for full source text. For controls/media use properties (paused, currentTime, checked, enabled, visible, expanded, pressed, value), not handwritten JS probes. Native select has two different states: value is the option's internal value/id (for example 'c'), while displayValue is the visible label the user sees (for example '远山'). When the requested state is expressed as a human-visible option label, verify with displayValue, never compare that label to value or selected. To verify or wait, use expect:{property:'paused',equals:true}, expect:{property:'displayValue',equals:'远山'} for a select label, or expect:{property:'textContent',contains:'Saved'}, with timeoutMs up to 5000. Returns check.matched only when that exact condition holds; timeout is a failure, never success. Use a current snapshot @ref or unique observed native CSS; ambiguity/stale refs fail without switching targets. Works inside browser_run with the same parameters. Main may read any tab; workers only assigned tabs.",
+      description: "Read a unique current element without changing the page. By default return complete textContent and field value. Rich editors also return editableText with paragraph and hard-break newlines; raw textContent omits these breaks, so use editableText for copied rich-text content. Use target:'body' for full source text. For controls/media use properties (paused, currentTime, checked, enabled, visible, expanded, pressed, value), not handwritten JS probes. Native select has two different states: value is the option's internal value/id (for example 'c'), while displayValue is the visible label the user sees (for example '远山'). When the requested state is expressed as a human-visible option label, verify with displayValue, never compare that label to value or selected. To verify or wait, use expect:{property:'paused',equals:true}, expect:{property:'displayValue',equals:'远山'} for a select label, or expect:{property:'textContent',contains:'Saved'}, with timeoutMs up to 5000. Returns check.matched only when that exact condition holds; timeout is a failure, never success. Use a current snapshot @ref or unique observed native CSS; ambiguity/stale refs fail without switching targets. Works inside browser_run with the same parameters. Main may read any tab; workers only assigned tabs.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
         target: Type.String({ description: 'Current "@N" snapshot ref, "loc=css:...", or unique native CSS selector' }),
@@ -278,7 +305,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
         // A state query does not need the element's entire descendant text in the model context.
-        const projected = params.properties?.length || params.expect ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check } : data;
+        const projected = params.properties?.length || params.expect ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, ...(params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined?{editableText:data.editableText}:{}) } : data;
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(projected)), { tabId: data.tabId }), data);
       },
     }),
@@ -360,7 +387,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             tabId: params.tabId,
             ...(params.decisionGuard ? { decisionGuard: params.decisionGuard } : {}),
           })) as ToolContract["switch_tab"]["data"];
-          return textResult(`Working tab is now ${data.tabId}.`, data);
+          return textResult(switchResultText(data), data);
         }
         const data = (await call("close_tab", typeof params.tabId === "number" ? { tabId: params.tabId } : {})) as ToolContract["close_tab"]["data"];
         return textResult("Tab closed.", data);
@@ -459,7 +486,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Set the value of an input, textarea, or native select in the working tab (works with controlled components). For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
+        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.String({ description: "Value to set" }),

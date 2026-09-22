@@ -1,0 +1,72 @@
+{
+  "migration": {
+    "externalNotifications": 1,
+    "notificationsSent": 1,
+    "sameText": false,
+    "events": [
+      {
+        "type": "notify_sent",
+        "chars": 11,
+        "at": 1789997188298
+      },
+      {
+        "type": "notify_queued",
+        "chars": 11,
+        "at": 1789997188298
+      }
+    ]
+  },
+  "current": {
+    "externalNotifications": 1,
+    "notificationsSent": 2,
+    "sameText": true,
+    "events": [
+      {
+        "type": "notify_sent",
+        "chars": 11,
+        "at": 1789997189902
+      },
+      {
+        "type": "notify_queued",
+        "chars": 11,
+        "at": 1789997189902
+      },
+      {
+        "type": "response_created",
+        "responseId": "one",
+        "requested": true,
+        "autoPending": false,
+        "at": 1789997189902
+      },
+      {
+        "type": "notify_sent",
+        "chars": 11,
+        "at": 1789997189902
+      }
+    ]
+  },
+  "identified": {
+    "externalNotifications": 1,
+    "notificationsSent": 1,
+    "sameText": false,
+    "events": [
+      {
+        "type": "notify_sent",
+        "chars": 11,
+        "at": 1789997285014
+      },
+      {
+        "type": "notify_queued",
+        "chars": 11,
+        "at": 1789997285014
+      },
+      {
+        "type": "response_created",
+        "responseId": "one",
+        "requested": true,
+        "autoPending": false,
+        "at": 1789997285014
+      }
+    ]
+  }
+}

@@ -1,15 +1,17 @@
 import { browserCandidates, isBrowserObservation, type BrowserMaterial, type BrowserObservation, type BrowserLoopOutcome, type BrowserStepReceipt, type BrowserActionGuard } from '../../shared/browser-decision.js';
-import type { ToolName } from '../../shared/protocol.js';
+import type { ToolName, ToolExecutionFact } from '../../shared/protocol.js';
 import { decideBrowserCandidate, type BrowserDecisionInput } from './browser-decision-model.js';
 import type { BrowserDecision, BrowserControl } from '../../shared/browser-decision.js';
 import { browserContextChange } from '../../shared/browser-decision-context.js';
 import type { BrowserMaterialResult } from './browser-material.js';
 
 export interface BrowserLoopOptions {
+  /** Actual host tool call ID; child IDs are shared with RPC and step events. */
+  parentCallId: string;
   goal: string;
   materials: BrowserMaterial[];
   signal: AbortSignal;
-  call: (name: ToolName, params: Record<string, unknown>, stepId: string) => Promise<unknown>;
+  call: (name: ToolName, params: Record<string, unknown>, toolCallId: string) => Promise<unknown>;
   decide?: (input: BrowserDecisionInput, signal: AbortSignal) => Promise<BrowserDecision>;
   reserveDecision?: () => void;
   getMaterial?: (goal: string, control: BrowserControl, signal: AbortSignal) => Promise<BrowserMaterialResult>;
@@ -38,13 +40,16 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
       throw new Error('任务循环时长预算已用完');
     }
   };
-  const call = async (name: ToolName, params: Record<string, unknown>) => {
+  const nextCallId = () => `${options.parentCallId}/decision-${++seq}`;
+  const call = async (name: ToolName, params: Record<string, unknown>, toolCallId = nextCallId()) => {
     active();
-    return options.call(name, params, `decision-${++seq}`);
+    return options.call(name, params, toolCallId);
   };
   const note = (r: BrowserStepReceipt) => {
     receipts.push(r);
-    history.push(`${r.operation}: ${r.detail} [${r.fact}]`);
+    // Preserve the decision model's history text while receipts use separate facts.
+    const historyLabel = r.executionFact === 'executed' ? (r.verification === 'verified' ? 'verified' : 'executed_unverified') : r.executionFact;
+    history.push(`${r.operation}: ${r.detail} [${historyLabel}]`);
     options.onStep?.(r);
   };
   if (!options.goal.trim() || options.goal.length > 12000 || options.materials.length > 12 || new Set(options.materials.map(m => m.id)).size !== options.materials.length || options.materials.some(m => !m.id || typeof m.value !== 'string' || m.value.length > 8000 || !['user', 'generated', 'observed'].includes(m.source))) {
@@ -120,12 +125,14 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
         if (!target) {
           return finish('handoff', '目标标签页不在当前观察中');
         }
+        const toolCallId = nextCallId();
         let executed = false;
         try {
-          await call('switch_tab', { tabId: target.id, decisionGuard: { observationId: page.id, operation: 'switch_tab', sourceTabId: page.tabId } });
+          await call('switch_tab', { tabId: target.id, decisionGuard: { observationId: page.id, operation: 'switch_tab', sourceTabId: page.tabId } }, toolCallId);
           executed = true;
           active();
-          const actual = await call('get_active_tab', {}) as {
+          const verificationToolCallId = nextCallId();
+          const actual = await call('get_active_tab', {}, verificationToolCallId) as {
             tab?: {
               id: number;
               url: string;
@@ -136,22 +143,22 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
           if (actual.tab?.id !== target.id || actual.tab.url !== target.url || actual.tab.title !== target.title) {
             throw new Error('当前活动标签页与目标不一致');
           }
-          note({ observationId: page.id, candidateId: candidate.id, operation: 'switch_tab', fact: 'verified', detail: `已切到「${target.title}」，活动标签页与原观察一致；完整任务仍需核验` });
+          note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: 'switch_tab', executionFact: 'executed', verification: 'verified', verificationToolCallId, detail: `已切到「${target.title}」，活动标签页与原观察一致；完整任务仍需核验` });
         }
         catch (e) {
           const error = e as Error & {
             executionFact?: string;
           };
-          let fact: BrowserStepReceipt['fact'];
+          let executionFact: ToolExecutionFact;
           if (executed) {
-            fact = 'executed_unverified';
+            executionFact = 'executed';
           } else if (error.executionFact === 'not_executed') {
-            fact = 'not_executed';
+            executionFact = 'not_executed';
           } else {
-            fact = 'unknown';
+            executionFact = 'unknown';
           }
-          note({ observationId: page.id, candidateId: candidate.id, operation: 'switch_tab', fact, detail: error.message });
-          if (fact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
+          note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: 'switch_tab', executionFact, verification: 'unverified', detail: error.message });
+          if (executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
             page = undefined;
             continue;
           }
@@ -221,15 +228,16 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
       if (operation === 'fill') {
         params.value = fillValue;
       }
+      const toolCallId = nextCallId();
       let result: unknown;
       try {
-        result = await call(operation, params);
+        result = await call(operation, params, toolCallId);
       }
       catch (e) {
         const error = e as Error & {
           executionFact?: string;
         };
-        note({ observationId: page.id, candidateId: candidate.id, operation: candidate.operation, fact: error.executionFact === 'not_executed' ? 'not_executed' : 'unknown', detail: error.message });
+        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: error.executionFact === 'not_executed' ? 'not_executed' : 'unknown', verification: 'unverified', detail: error.message });
         if (error.executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
           page = undefined;
           continue;
@@ -244,17 +252,16 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
         newTab?: unknown;
       };
       if (data?.held) {
-        note({ observationId: page.id, candidateId: candidate.id, operation: candidate.operation, fact: 'not_executed', detail: '等待现有权限/用户确认，未执行点击' });
+        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: 'not_executed', verification: 'unverified', detail: '等待现有权限/用户确认，未执行点击' });
         return finish('handoff', '当前动作等待用户确认');
       }
       if (options.signal.aborted) {
-        note({ observationId: page.id, candidateId: candidate.id, operation: candidate.operation, fact: 'executed_unverified', detail: '执行回执到达时任务已取消；保留写入事实，不再执行后续动作' });
+        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: 'executed', verification: 'unverified', detail: '执行回执到达时任务已取消；保留写入事实，不再执行后续动作' });
         return finish('cancelled', '任务已取消');
       }
       stale = 0;
       waits = 0;
-      let fact: BrowserStepReceipt['fact'] = 'executed_unverified';
-      let detail = `${candidate.label}：已执行，最终目标尚未核验`;
+      let receipt: BrowserStepReceipt = { toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: 'executed', verification: 'unverified', detail: `${candidate.label}：已执行，最终目标尚未核验` };
       let progress = data?.effect?.changed === true;
       if (candidate.operation === 'fill' || candidate.operation === 'select') {
         try {
@@ -265,7 +272,8 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
           };
           const property = state.tagName?.toLowerCase() === 'select' ? 'displayValue' : 'value';
           const expected = fillValue;
-          const verified = await call('read_element', { tabId: page.tabId, target: candidate.target, expect: { property, equals: expected } }) as {
+          const verificationToolCallId = nextCallId();
+          const verified = await call('read_element', { tabId: page.tabId, target: candidate.target, expect: { property, equals: expected } }, verificationToolCallId) as {
             check?: {
               matched?: boolean;
             };
@@ -273,16 +281,15 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
           if (verified.check?.matched !== true) {
             throw new Error('字段读回与目标值不一致');
           }
-          fact = 'verified';
-          detail = `${candidate.label}：本次字段值读回一致；不代表整个任务完成`;
+          receipt = { ...receipt, executionFact: 'executed', verification: 'verified', verificationToolCallId, detail: `${candidate.label}：本次字段值读回一致；不代表整个任务完成` };
           progress = true;
         }
         catch (e) {
-          note({ observationId: page.id, candidateId: candidate.id, operation: candidate.operation, fact, detail: '字段已写入但读回未通过' });
+          note({ ...receipt, detail: '字段已写入但读回未通过' });
           return finish(options.signal.aborted ? 'cancelled' : 'handoff', '写入后的核验失败，不自动重复填写');
         }
       }
-      note({ observationId: page.id, candidateId: candidate.id, operation: candidate.operation, fact, detail });
+      note(receipt);
       // Capture after every mutation. A changed page is progress evidence, never success evidence.
       const afterRaw = await call('snapshot', { decision: true });
       const after = (afterRaw as {

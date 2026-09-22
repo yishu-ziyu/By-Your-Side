@@ -1,4 +1,4 @@
-import { LEAD_SESSION_ID, isLeadSession, type TabInfo } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID, isLeadSession, type SwitchTabVerification, type TabInfo } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { getTabResource, getWorkingTabId, maybeActivateTab, resolveWorkingTab, setWorkingTab, shouldActivateForKey } from "../state.js";
 import { parseExecutionKey } from "../tab-bindings.js";
@@ -57,10 +57,36 @@ export async function openTab(
 export async function switchTab(
   params: { tabId: number },
   sessionId: string = LEAD_SESSION_ID,
-): Promise<{ tabId: number }> {
+): Promise<{ tabId: number; verification?: SwitchTabVerification }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
   await maybeActivateTab(tab, sessionId);
-  return { tabId: params.tabId };
+  return { tabId: params.tabId, verification: await readSwitchVerification(params.tabId, sessionId) };
+}
+
+/**
+ * 执行后读一次浏览器当前事实：工作目标、目标窗口内实际活动的标签、窗口焦点。
+ * 只证明核验这一刻的状态：不等待页面加载、不轮询重试、不抢焦点（激活规则沿用
+ * shouldActivateForKey / mayActivateTabInWindow，核验只读不改）。目标消失或读取
+ * 失败时如实返回 verified:false（不带事实字段），不伪造成功结论。
+ */
+async function readSwitchVerification(tabId: number, sessionId: string): Promise<SwitchTabVerification> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const win = await chrome.windows.get(tab.windowId);
+    const [active] = await chrome.tabs.query({ windowId: tab.windowId, active: true });
+    const workingTabId = await getWorkingTabId(sessionId);
+    const activeTabId = active?.id;
+    const windowFocused = win.focused === true;
+    return {
+      verified: activeTabId === tabId && windowFocused && workingTabId === tabId,
+      ...(activeTabId != null ? { activeTabId } : {}),
+      windowId: tab.windowId,
+      windowFocused,
+      workingTabId,
+    };
+  } catch {
+    return { verified: false };
+  }
 }
 
 export async function closeTab(

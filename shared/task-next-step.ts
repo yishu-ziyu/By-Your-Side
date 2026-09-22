@@ -123,8 +123,10 @@ export function partialResultNote(decision: TaskNextStep): string {
   }
   return `任务状态：仅交付部分结果。${limit}`;
 }
-/** Both lead and worker use the same control/uncertainty policy; replay checks retain their original scope. */
-export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, name: string, params: Record<string, unknown> = {}, worker = false): void {
+/** Both lead and worker use the same control/uncertainty policy; replay checks retain their original scope.
+ * freshDirect：直连的新用户请求（display-* 调用）不为旧任务的“已取消”生命周期买单；
+ * 只豁免 cancelled 这一条原因，未知写入、运行时错误、重复回执与失败边界照常生效。 */
+export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, name: string, params: Record<string, unknown> = {}, worker = false, freshDirect = false): void {
   if (!snapshot) {
     return;
   }
@@ -133,17 +135,18 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     return;
   }
   const decision = decideTaskNextStep(snapshot, { failureLimit: snapshot.nextStep?.reason === 'failure_limit' });
-  if (write && ['cancelled', 'human_control', 'restart_checkpoint', 'runtime_error', 'failure_limit'].includes(decision.reason)) {
+  const cancelledForFreshDirect = freshDirect && decision.reason === 'cancelled';
+  if (write && !cancelledForFreshDirect && ['cancelled', 'human_control', 'restart_checkpoint', 'runtime_error', 'failure_limit'].includes(decision.reason)) {
     throw new Error(nextStepInstruction(decision));
   }
   const target = extractResultTarget(params, name);
   for (const item of snapshot.results ?? []) {
     if (item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results ?? [])) {
       if (!worker && item.tool === name && (item.target === null || item.target === target)) {
-        throw new Error(`「${item.description}」的执行结果未知，不能自动重做；请先查询结果或由用户决定。`);
+        throw new Error(`「${item.description}」的执行结果未知（结果 ${item.id}，调用 ${item.evidence?.toolCallId ?? '缺失'}），不能自动重做；请先查询结果或由用户决定。`);
       }
       if (write && resultHasWriteEffect(item)) {
-        throw new Error(`任务中存在尚未确认结果的操作「${item.description}」，当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
+        throw new Error(`任务中存在尚未确认结果的操作「${item.description}」（结果 ${item.id}，调用 ${item.evidence?.toolCallId ?? '缺失'}），当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
       }
     }
     if (!write || item.tool !== name || item.status !== 'satisfied' || item.target === null || item.target !== target) {
@@ -156,7 +159,7 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
         : `「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
     }
   }
-  if (write && !decision.allowWrites) {
+  if (write && !cancelledForFreshDirect && !decision.allowWrites) {
     throw new Error(nextStepInstruction(decision));
   }
   if (write && (snapshot.results?.length ?? 0) >= MAX_TASK_RESULTS) {

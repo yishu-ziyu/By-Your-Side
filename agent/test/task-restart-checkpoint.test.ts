@@ -123,8 +123,22 @@ describe('P0 restart checkpoints',()=>{
     expect(session.prompt).not.toHaveBeenCalled();
   });
 
-  it('routes an explicit typed continuation through the checkpoint path without creating a new run',async()=>{
-    const persisted=runningCheckpoint();
+  it.each([
+    {entry:'user_message',text:'继续原任务'},
+    {entry:'task_action',text:'继续原任务'},
+    {entry:'task_action',text:'请继续原任务；预算改成七百，其余条件不变。'},
+    {entry:'task_action',text:'请继续原任务；预算改成七百，其余条件不变。',idle:true},
+    {entry:'task_action',text:'请继续原任务；预算改成七百，其余条件不变。',idle:true,complete:true},
+  ])('keeps the original run and requirements for typed continuation $entry: $text',async({entry,text,idle=false,complete=false})=>{
+    let persisted=runningCheckpoint();
+    if(idle){const stopped=new TaskProgress('default');stopped.restoreResults(persisted);stopped.observe({type:'agent_event',event:{kind:'agent_end'}});persisted={...stopped.snapshot(),state:'idle',restartRecovery:undefined};}
+    if(complete){
+      const finished=new TaskProgress('default');finished.request('比较三家方案并填写最终选择');finished.recordRequirement('预算改成六百，只处理当前页');
+      const revision=finished.snapshot().goalPlan!.revision;
+      finished.goals.install(revision,[{id:'choice',description:'按预算填写选择',criterion:'符合全部要求',kind:'condition',requirements:['requirement-1','requirement-2']}],2);
+      finished.goals.verify(revision,'choice',{matched:true,reason:'页面已核对',evidence:{observationId:'read',tabId:7,verifiedAt:1}});
+      finished.observe({type:'agent_event',event:{kind:'agent_start'}});finished.observe({type:'agent_event',event:{kind:'agent_end'}});persisted=finished.snapshot();
+    }
     const emitted:ServerMessage[]=[];
     let runtimeEmit:(message:ServerMessage)=>void=()=>{};
     let streaming=false;
@@ -134,7 +148,7 @@ describe('P0 restart checkpoints',()=>{
       runtimeEmit({type:'status',state:'running'});
     });
     const handleMessage=vi.fn();
-    const store={load:()=>[{id:'default',title:'恢复任务',createdAt:1,updatedAt:1,state:'running' as const,mode:'act' as const,runId:persisted.runId}],save:vi.fn()};
+    const store={load:()=>[{id:'default',title:'恢复任务',createdAt:1,updatedAt:1,state:idle?'idle' as const:'running' as const,mode:'act' as const,runId:persisted.runId}],save:vi.fn()};
     const manager=new ConversationManager(async(_id,emit)=>{
       runtimeEmit=emit;
       return {
@@ -148,16 +162,21 @@ describe('P0 restart checkpoints',()=>{
     },message=>emitted.push(message),store as any);
     await manager.ensureDefault();
     const before=manager.getTaskProgress('default')!;
-    expect(before.state).toBe('interrupted');
+    expect(before.state).toBe(idle?'idle':'interrupted');
     expect(manager.get('default')?.summary.state).toBe('idle');
-    expect(manager.get('default')?.summary.checkpoint).toBe('interrupted');
-    expect(emitted.some(message=>message.type==='conversation_updated'&&message.conversation.state==='idle'&&message.conversation.checkpoint==='interrupted')).toBe(true);
-    expect(emitted.some(message=>message.type==='agent_event'&&message.event.kind==='notice'&&message.event.message.includes('继续原任务'))).toBe(true);
+    if(!idle){
+      expect(manager.get('default')?.summary.checkpoint).toBe('interrupted');
+      expect(emitted.some(message=>message.type==='agent_event'&&message.event.kind==='notice'&&message.event.message.includes('继续原任务'))).toBe(true);
+    }
     const context:PageContext={tabId:7,title:'当前表单',url:'https://fixture.test/form'};
-    await manager.handleMessage({type:'user_message',text:'继续原任务',context});
+    if(entry==='task_action')await manager.handleMessage({type:'task_action',request:{requestId:'typed-resume',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId??null,text,context}});
+    else await manager.handleMessage({type:'user_message',text,context});
     expect(resumeInterruptedTask).toHaveBeenCalledWith(expect.objectContaining({state:'interrupted',runId:before.runId}),context,undefined);
     expect(handleMessage).not.toHaveBeenCalled();
     expect(manager.getTaskProgress('default')).toMatchObject({state:'running',runId:before.runId});
+    expect(manager.getTaskProgress('default')!.recoveryInput!.requirements.slice(0,2)).toEqual(before.recoveryInput!.requirements);
+    if(!complete)expect(manager.getTaskProgress('default')!.results?.find(item=>item.id==='uncertain')?.status).toBe('unknown');
+    if(text.includes('七百'))expect(resumeInterruptedTask.mock.calls[0]![0].recoveryInput!.requirements.at(-1)).toBe('预算改成七百，其余条件不变。');
     expect(manager.get('default')?.summary.checkpoint).toBeUndefined();
     expect(emitted.some(message=>message.type==='conversation_updated'&&message.conversation.state==='running'&&message.conversation.checkpoint===undefined)).toBe(true);
     expect(emitted.some(message=>message.type==='agent_event'&&message.event.kind==='notice'&&message.event.receipt?.action==='resume'&&message.event.receipt.status==='accepted')).toBe(true);

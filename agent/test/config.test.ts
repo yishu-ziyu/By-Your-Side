@@ -62,6 +62,16 @@ describe("loadConfig", () => {
   });
 });
 
+it('voiceSpokenResultGate is opt-in and independent of routeShadow', () => {
+  const p = join(dir, 'config.json');
+  for (const gate of [undefined, false, 'true', 1]) {
+    writeFileSync(p, JSON.stringify({routeShadow:true,voiceSpokenResultGate:gate}));
+    expect(loadConfig(p).voiceSpokenResultGate === true).toBe(false);
+  }
+  writeFileSync(p, JSON.stringify({routeShadow:false,voiceSpokenResultGate:true}));
+  expect(loadConfig(p)).toMatchObject({routeShadow:false,voiceSpokenResultGate:true});
+});
+
 describe("resolveConfig", () => {
   it("CLI wins over config file", () => {
     expect(

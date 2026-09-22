@@ -55,6 +55,7 @@ import {
   viewportRectToDocumentBox,
 } from "../shared/overlay.js";
 import { roughArrow, roughEllipse } from "../shared/rough/index.js";
+import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type FeedbackPillView } from "../shared/feedback-pill.js";
 
 (function () {
   const ns = (window.__sideagent ??= {});
@@ -147,6 +148,14 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   const liveMarks: LiveMark[] = [];
   let actionFrame: number | undefined;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  /** 静态 SVG 构造：避免拼 innerHTML；属性与原模板一致。 */
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+    return node;
+  }
 
   function ensureDom(): void {
     if (host) return;
@@ -535,12 +544,18 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     ensureDom();
     const el = document.createElement("div");
     el.className = "cursor hidden";
-    el.innerHTML =
-      `<div class="svg-wrap"><svg width="${CURSOR_SVG_SIZE}" height="${CURSOR_SVG_SIZE}" viewBox="0 0 24 24">` +
-      `<path class="halo" d="${CURSOR_ARROW_PATH}" fill="none" stroke="#0f172a" stroke-width="${CURSOR_STROKE_HALO}" stroke-linejoin="round"/>` +
-      `<path class="fill" d="${CURSOR_ARROW_PATH}" stroke="#ffffff" stroke-width="${CURSOR_STROKE_WHITE}" stroke-linejoin="round"/>` +
-      `</svg></div>` +
-      `<div class="label">${id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id)}</div>`;
+    const svgWrap = document.createElement("div");
+    svgWrap.className = "svg-wrap";
+    const cursorSvg = svgEl("svg", { width: CURSOR_SVG_SIZE, height: CURSOR_SVG_SIZE, viewBox: "0 0 24 24" });
+    cursorSvg.append(
+      svgEl("path", { class: "halo", d: CURSOR_ARROW_PATH, fill: "none", stroke: "#0f172a", "stroke-width": CURSOR_STROKE_HALO, "stroke-linejoin": "round" }),
+      svgEl("path", { class: "fill", d: CURSOR_ARROW_PATH, stroke: "#ffffff", "stroke-width": CURSOR_STROKE_WHITE, "stroke-linejoin": "round" }),
+    );
+    svgWrap.appendChild(cursorSvg);
+    const nameLabel = document.createElement("div");
+    nameLabel.className = "label";
+    nameLabel.textContent = id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id);
+    el.replaceChildren(svgWrap, nameLabel);
     const color = cursorColor(id);
     el.style.setProperty("--c", color);
     shadow!.appendChild(el);
@@ -985,27 +1000,35 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
           const a = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { ...o, seed: seed + 7 });
           return `${e} ${a}`;
         });
-        el.innerHTML =
-          `<svg class="sketch-svg" style="left:0;top:0;width:100%;height:100%;">` +
-          frames.map((f, i) => `<path class="boil-path frame-${i}" data-i="${i}" d="${f}"/>`).join("") +
-          `</svg>` +
-          (label ? `<div class="mark-label sketch-label"></div>` : "");
+        const svg = svgEl("svg", { class: "sketch-svg", style: "left:0;top:0;width:100%;height:100%;" });
+        frames.forEach((f, i) => svg.appendChild(svgEl("path", { class: `boil-path frame-${i}`, "data-i": i, d: f })));
+        el.replaceChildren(svg);
+        if (label) {
+          const markLabel = document.createElement("div");
+          markLabel.className = "mark-label sketch-label";
+          el.appendChild(markLabel);
+        }
       } else {
         const ellipsePath = roughEllipse(cx, cy, rx, ry, { seed, roughness: 1.1 });
         const arrowPath = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { seed: seed + 7, roughness: 1.0 });
-        el.innerHTML =
-          `<svg class="sketch-svg anim-stroke-grow" style="left:0;top:0;width:100%;height:100%;">` +
-          `<path class="rough-ellipse-path" d="${ellipsePath}"/>` +
-          `<path class="sketch-arrow-path" d="${arrowPath}"/>` +
-          `</svg>` +
-          (label ? `<div class="mark-label sketch-label"></div>` : "");
+        const svg = svgEl("svg", { class: "sketch-svg anim-stroke-grow", style: "left:0;top:0;width:100%;height:100%;" });
+        svg.append(svgEl("path", { class: "rough-ellipse-path", d: ellipsePath }), svgEl("path", { class: "sketch-arrow-path", d: arrowPath }));
+        el.replaceChildren(svg);
+        if (label) {
+          const markLabel = document.createElement("div");
+          markLabel.className = "mark-label sketch-label";
+          el.appendChild(markLabel);
+        }
       }
     } else {
-      el.innerHTML =
-        `<svg class="mark-arrow" width="24" height="24" viewBox="0 0 24 24" fill="none">` +
-        `<path d="M2 12h17m-6-6 6 6-6 6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` +
-        `</svg>` +
-        (label ? `<div class="mark-label"></div>` : "");
+      const svg = svgEl("svg", { class: "mark-arrow", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none" });
+      svg.appendChild(svgEl("path", { d: "M2 12h17m-6-6 6 6-6 6", "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+      el.replaceChildren(svg);
+      if (label) {
+        const markLabel = document.createElement("div");
+        markLabel.className = "mark-label";
+        el.appendChild(markLabel);
+      }
     }
 
     if (label) {
@@ -1249,8 +1272,6 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   let crossPill: HTMLDivElement | null = null;
   let crossPillSession = "";
   let remoteMembers: CrossPageMember[] = [];
-  /** 胶囊指向的标签页；点击时随消息带上去，不依赖后台内存状态 */
-  let crossPillTabId: number | null = null;
 
   function jumpToMember(member: CrossPageMember): void {
     try {
@@ -1271,8 +1292,15 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     const person = personFor(member.sessionId);
     if (person?.kenney) {
       mountKenney(face, chrome.runtime.getURL(`cast/${person.kenney.body}`), chrome.runtime.getURL(`cast/${person.kenney.face}`), 22);
-    } else if (person) mountGrok(face, person, 22, { animate: false });
-    else face.innerHTML = '<svg viewBox="0 0 128 128" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="26" stroke-linecap="round"><path d="M53 22L32 79"/><path d="M94 41L73 98"/></g></svg>';
+    } else if (person) {
+      mountGrok(face, person, 22, { animate: false });
+    } else {
+      const fallback = svgEl("svg", { viewBox: "0 0 128 128", "aria-hidden": "true" });
+      const group = svgEl("g", { fill: "none", stroke: "currentColor", "stroke-width": 26, "stroke-linecap": "round" });
+      group.append(svgEl("path", { d: "M53 22L32 79" }), svgEl("path", { d: "M94 41L73 98" }));
+      fallback.appendChild(group);
+      face.replaceChildren(fallback);
+    }
     const name = document.createElement("span");
     name.className = "xmain";
     name.textContent = displayNameFor(member.sessionId);
@@ -1305,7 +1333,6 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
   function showCrossPill(view: CrossPageView): void {
     remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state }];
     crossPillSession = view.sessionId ?? remoteMembers[0]!.sessionId;
-    crossPillTabId = view.tabId ?? null;
     for (const member of remoteMembers) {
       const inst = instances.get(member.sessionId);
       if (inst && !inst.hold) hide(inst);
@@ -1374,6 +1401,77 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     renderAmbient();
   }
 
+  // ── 执行反馈胶囊：宿主事实短语（切好了 / 已填入 / 结果待确认…）────────────
+  // 成功一次轻微回弹后收起；待处理保留可找到的文字入口；同一结果重绘不回弹。
+
+  let feedbackPill: HTMLDivElement | null = null;
+  let feedbackPillState: FeedbackPillState | null = null;
+  let feedbackTimer: number | undefined;
+
+  /** 跨页胶囊与反馈胶囊共用右上角；同时出现时反馈在上，跨页入口下移。 */
+  function positionCrossPill(): void {
+    if (crossPill) crossPill.style.top = feedbackPillState ? "64px" : "";
+  }
+
+  function renderFeedbackPill(): void {
+    if (!feedbackPillState) {
+      feedbackPill?.classList.remove("on");
+      positionCrossPill();
+      return;
+    }
+    ensureDom();
+    if (!feedbackPill?.isConnected) {
+      feedbackPill = document.createElement("div");
+      feedbackPill.className = "xpage xfeedback";
+      feedbackPill.addEventListener("click", ev => { ev.stopPropagation(); hideFeedbackPill(); });
+      shadow!.appendChild(feedbackPill);
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    const main = document.createElement("span");
+    main.className = "xmain";
+    main.textContent = feedbackPillState.text;
+    button.append(main);
+    if (feedbackPillState.kind !== "success") {
+      const sub = document.createElement("span");
+      sub.className = "xsub";
+      sub.textContent = "详情在侧栏";
+      button.append(sub);
+    }
+    button.title = feedbackPillState.detail || feedbackPillState.text;
+    button.setAttribute("aria-label", feedbackPillState.text);
+    feedbackPill.replaceChildren(button);
+    feedbackPill.classList.add("on");
+    positionCrossPill();
+  }
+
+  function showFeedbackPill(view?: FeedbackPillView): void {
+    if (!view?.text) return;
+    const next: FeedbackPillView = { id: view.id || `f-${Date.now()}`, text: view.text, kind: view.kind ?? "success", ...(view.detail ? { detail: view.detail } : {}) };
+    const { state, bounce } = beginFeedbackPill(feedbackPillState, next, Date.now());
+    // 减少动态偏好：不回弹，但仍展示；成功仍算一次独立反馈（bounces 记 0）。
+    const played = bounce && !reducedMotion.matches;
+    feedbackPillState = played || !bounce ? state : { ...state, bounces: 0 };
+    renderFeedbackPill();
+    if (played) {
+      feedbackPill?.querySelector("button")?.animate(
+        [{ transform: "scale(.94)" }, { transform: "scale(1.035)", offset: .55 }, { transform: "scale(1)" }],
+        { duration: 340, easing: "cubic-bezier(.22,1,.36,1)" },
+      );
+    }
+    if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
+    feedbackTimer = window.setTimeout(() => hideFeedbackPill(), feedbackLifetimeMs(feedbackPillState.kind));
+  }
+
+  function hideFeedbackPill(): void {
+    if (feedbackTimer !== undefined) {
+      clearTimeout(feedbackTimer);
+      feedbackTimer = undefined;
+    }
+    feedbackPillState = null;
+    renderFeedbackPill();
+  }
+
   function teardown(): void {
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
     actionFrame = undefined;
@@ -1387,12 +1485,15 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     remoteMembers = [];
     instances.clear();
     liveMarks.length = 0;
+    if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
+    feedbackTimer = undefined;
+    feedbackPillState = null;
+    feedbackPill = null;
     host?.remove();
     marksHost?.remove();
     controlHost?.remove();
     crossPill = null;
     crossPillSession = "";
-    crossPillTabId = null;
     host = null;
     marksHost = null;
     controlHost = null;
@@ -1413,6 +1514,7 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     ns.clickHandback = undefined;
     ns.cursorStatus = undefined;
     ns.crossPageState = undefined;
+    ns.feedbackState = undefined;
     ns.clickCrossPage = undefined;
     ns.setMarkConfig = undefined;
     ns.getMarkConfig = undefined;
@@ -1552,6 +1654,14 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
         hideCrossPill();
       },
 
+      showFeedback(view?: FeedbackPillView): void {
+        showFeedbackPill(view);
+      },
+
+      hideFeedback(): void {
+        hideFeedbackPill();
+      },
+
       showUserControl(view?: {
         status?: string;
         sub?: string;
@@ -1650,6 +1760,13 @@ import { roughArrow, roughEllipse } from "../shared/rough/index.js";
     crossPill.querySelector("button")?.click();
     return true;
   };
+  ns.feedbackState = () => feedbackPillState ? {
+    id: feedbackPillState.id,
+    text: feedbackPillState.text,
+    kind: feedbackPillState.kind,
+    bounces: feedbackPillState.bounces,
+    visible: Boolean(feedbackPill?.classList.contains("on")),
+  } : null;
   ns.controlBanner = () => {
     if (!controlBar || !controlBar.classList.contains("on")) return null;
     const statusEl = controlBar.querySelector("b");

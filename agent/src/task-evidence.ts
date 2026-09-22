@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { redactCredentialText } from '../../shared/untrusted.js';
 import { isPageTextEvidence, type PageTextEvidence } from '../../shared/page-text-evidence.js';
+import type { TaskGoalDefinition } from '../../shared/task-goals.js';
 
 /** Single-material character cap shared by capture and checkpoint restore. A whole document over this limit is a known limitation, not a bug. */
 export const MATERIAL_VALUE_MAX = 8000;
@@ -11,8 +12,10 @@ export interface TaskObservation {
 }
 export interface ObservedMaterial {
   id: string; purpose: string; value: string; source: 'observed';
-  observation: Omit<TaskObservation, 'text' | 'fragments' | 'protectedFragmentIds'>; selection: {kind:'text';spans:Array<{start:number;end:number}>} | {kind:'fragments';ids:string[]};
-  verification?: { goalId:string; revision:string; criterion:string; description:string; probability:number; at:number; reviewedBy?:'jev'|'main' };
+  /** Bounded original container for selecting another span from the same source later. */
+  sourceText?:string;
+  observation: Omit<TaskObservation, 'text' | 'fragments' | 'protectedFragmentIds'>; selection: {kind:'text';spans:Array<{start:number;end:number}>} | {kind:'fragments';ids:string[];range?:{start:number;end:number}};
+  verification?: { goalId:string; revision:string; criterion:string; description:string; probability:number; at:number; reviewedBy?:'jev'|'main'|'code' };
 }
 
 /** Observations expire in memory; only deliberately selected source text is persisted. */
@@ -53,14 +56,23 @@ export class TaskEvidence {
     const value = spans.map(s => observation.text.slice(s.start, s.end)).join('\n');
     return this.material(id,purpose,value,observation,{kind:'text',spans:structuredClone(spans)});
   }
-  prepareFragments(id: string, purpose: string, observation: TaskObservation, firstId: string, lastId: string): ObservedMaterial {
+  prepareFragments(id: string, purpose: string, observation: TaskObservation, firstId: string, lastId: string, quote?:string): ObservedMaterial {
     const raw=observation.fragments;
     if (!isPageTextEvidence(raw)||raw.truncated) throw new Error('原文片段不完整，请取得目标范围的完整来源');
     const first=raw.fragments.findIndex(f=>f.id===firstId), last=raw.fragments.findIndex(f=>f.id===lastId);
     if (first<0||last<first) throw new Error('来源片段范围无效');
-    const selected=raw.fragments.slice(first,last+1), value=selected.map(f=>f.text).join('');
+    const selected=raw.fragments.slice(first,last+1), rawValue=selected.map(f=>f.text).join('');
     if(selected.some(fragment=>observation.protectedFragmentIds?.includes(fragment.id)))throw new Error('所选原文含已隐去的凭据，不能把遮蔽内容当成完整原文复制');
-    return this.material(id,purpose,value,observation,{kind:'fragments',ids:selected.map(f=>f.id)});
+    let range:{start:number;end:number}|undefined;
+    if(quote!==undefined) {
+      const start=rawValue.indexOf(quote);
+      if(!quote.trim()||start<0)throw new Error('指定文本不在所选原文片段中；请逐字选取，不要改写');
+      if(rawValue.indexOf(quote,start+1)>=0)throw new Error('指定文本在所选片段中出现多处；请缩小片段范围');
+      range={start,end:start+quote.length};
+    }
+    const value=range?rawValue.slice(range.start,range.end):rawValue;
+    const material=this.material(id,purpose,value,observation,{kind:'fragments',ids:selected.map(f=>f.id),...(range?{range}:{})});
+    return range&&rawValue.length<=MATERIAL_VALUE_MAX?{...material,sourceText:rawValue}:material;
   }
   private material(id:string,purpose:string,value:string,observation:TaskObservation,selection:ObservedMaterial['selection']):ObservedMaterial {
     if(!id.trim()||id.length>64||!purpose.trim()||purpose.length>500)throw new Error('材料标识或用途无效');
@@ -72,11 +84,11 @@ export class TaskEvidence {
   canonicalMaterial(material:ObservedMaterial):ObservedMaterial {
     const existing=this.materials.find(item=>item.observation.runId===material.observation.runId&&item.id===material.id);
     if(!existing||this.sameSource(existing,material))return material;
-    const suffix=createHash('sha256').update(JSON.stringify({observation:material.observation,selection:material.selection,value:material.value})).digest('hex').slice(0,24);
+    const suffix=createHash('sha256').update(JSON.stringify({observation:material.observation,selection:material.selection,value:material.value,sourceText:material.sourceText})).digest('hex').slice(0,24);
     return {...material,id:`${material.id.slice(0,39)}-${suffix}`};
   }
   private sameSource(first:ObservedMaterial,second:ObservedMaterial):boolean {
-    return first.value===second.value&&JSON.stringify(first.observation)===JSON.stringify(second.observation)
+    return first.value===second.value&&first.sourceText===second.sourceText&&JSON.stringify(first.observation)===JSON.stringify(second.observation)
       &&JSON.stringify(first.selection)===JSON.stringify(second.selection);
   }
   assertSave(material: ObservedMaterial): void {
@@ -99,7 +111,7 @@ export class TaskEvidence {
       ||!text(verification.criterion,2000)||!text(verification.description,160)
       ||!Number.isFinite(verification.probability)||verification.probability<0||verification.probability>1
       ||!Number.isFinite(verification.at)
-      ||verification.reviewedBy!==undefined&&!['jev','main'].includes(verification.reviewedBy)))throw new Error('原文核验证书无效');
+      ||verification.reviewedBy!==undefined&&!['jev','main','code'].includes(verification.reviewedBy)))throw new Error('原文核验证书无效');
     if(m.source!=='observed'||!text(m.id,64)||!text(m.purpose,500)||!text(m.value,MATERIAL_VALUE_MAX)
       ||!o||!text(o.id,200)||!text(o.runId,200)||!text(o.revision,64)
       ||!Number.isSafeInteger(o.tabId)||o.tabId<=0||typeof o.truncated!=='boolean'||!Number.isFinite(o.at))throw new Error('原文材料检查点无效');
@@ -111,12 +123,25 @@ export class TaskEvidence {
           &&span.start>=0&&span.end>span.start&&(i===0||span.start>=selection.spans[i-1]!.end)))throw new Error('原文选取范围无效');
     } else if(selection.kind!=='fragments'||!Array.isArray(selection.ids)||!selection.ids.length||selection.ids.length>3000
       ||new Set(selection.ids).size!==selection.ids.length||!selection.ids.every(id=>text(id,100)))throw new Error('原文选取范围无效');
+    if(selection.kind==='fragments'&&selection.range!==undefined) {
+      const {start,end}=selection.range;
+      if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end-start!==m.value.length)throw new Error('原文选取范围无效');
+    }
+    if(m.sourceText!==undefined&&(!text(m.sourceText,MATERIAL_VALUE_MAX)||selection.kind!=='fragments'||!selection.range
+      ||m.sourceText.slice(selection.range.start,selection.range.end)!==m.value))throw new Error('原文容器与选取范围不一致');
     this.save(m);
   }
 }
 
+/** The only supported addition to literal source text is its observed URL, as planned. */
+export function fieldMaterialValue(goal:Pick<TaskGoalDefinition,'appendSourceUrl'>,material:{value:string;observation?:{url?:string}}):string|undefined {
+  if(!goal.appendSourceUrl)return material.value;
+  return material.observation?.url?`${material.value}\n${material.observation.url}`:undefined;
+}
+
 /** Empty text is a real read; non-form elements must not prefer a stray value property. */
 export function elementText(data:Record<string,unknown>):string|undefined {
+  if(typeof data.editableText==='string')return data.editableText;
   const properties=data.properties&&typeof data.properties==='object'?data.properties as Record<string,unknown>:{};
   const form=typeof data.tagName!=='string'||['input','textarea','select','option'].includes(data.tagName.toLowerCase());
   const values=form?[data.value,properties.value,data.textContent,properties.textContent]:[data.textContent,properties.textContent,data.value,properties.value];

@@ -22,7 +22,9 @@ export function restoreTranslationWhitespace(translations: TranslationSegment[],
 
 export function parseTranslations(text: string, blocks: TranslationBlock[]): TranslationSegment[] {
   const raw = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  const result: unknown = JSON.parse(raw);
+  let result: unknown;
+  // 必须原样重抛：上层按 SyntaxError 区分“无效 JSON”与“段落不匹配”。
+  try { result = JSON.parse(raw); } catch (error) { throw error; }
   const source = blocks.flatMap(b => b.segments);
   if (!Array.isArray(result) || result.length !== source.length) throw new Error('译文段落不完整，已保留之前完成的内容。');
   const byId = new Map<string, {id:string; text:string}>();
@@ -54,13 +56,29 @@ export async function runPageTranslation(
     receipt = await call({...target, action: 'collect'});
     if (!receipt.blocks.length) return receipt;
     let translations: TranslationSegment[];
+    // 每批至多重试一次“生成中断”；用户主动停止（signal 已中止）绝不重试，如实报进度。
+    let streamRetried = false;
     try {
       translations = await translate(receipt.blocks, receipt.language, signal);
     } catch (cause) {
       // No RPC is in flight here. All previous writes have acknowledgements; this batch never touched the page.
-      throw Object.assign(new Error(`翻译生成失败，已完成 ${receipt.translated} 段，剩余 ${receipt.remaining} 段。可继续翻译。${cause instanceof Error ? cause.message : ''}`), {
+      const failure = (message: string) => Object.assign(new Error(message), {
         executionFact: acknowledgedWrite || receipt.translated > 0 ? 'executed' : 'not_executed', cause,
       });
+      const stopped = () => failure(`已停止翻译请求，已完成 ${receipt.translated} 段，剩余 ${receipt.remaining} 段；可从已完成处继续翻译。`);
+      const interrupted = cause instanceof Error && cause.message.includes('这批翻译未完成');
+      if (signal.aborted) throw stopped();
+      if (!interrupted || streamRetried) {
+        throw failure(`翻译生成失败，已完成 ${receipt.translated} 段，剩余 ${receipt.remaining} 段。可继续翻译。${cause instanceof Error ? cause.message : ''}`);
+      }
+      // 瞬时生成中断（流被掐断等）：同批重试一次；再次失败按原样如实报告。
+      streamRetried = true;
+      try {
+        translations = await translate(receipt.blocks, receipt.language, signal);
+      } catch (retryCause) {
+        if (signal.aborted) throw stopped();
+        throw failure(`翻译生成失败，已完成 ${receipt.translated} 段，剩余 ${receipt.remaining} 段。可继续翻译。${retryCause instanceof Error ? retryCause.message : ''}`);
+      }
     }
     signal.throwIfAborted();
     const before = receipt;

@@ -3,17 +3,21 @@ import {readCurrentDocument} from './exec/page-readiness.js';
 // A selector/ref belongs to the document observed by this execution member, even if the URL is unchanged.
 const observed = new Map<string, string>();
 const keyOf = (tabId: number, member: string) => `${tabId}:${member}`;
-const stale = () => new Error('页面文档已变化，旧目标未执行。请重新 snapshot 或 read_element 核对当前页面和目标。');
+const stale = () => Object.assign(new Error('页面文档已变化，旧目标未执行。请重新 snapshot 或 read_element 核对当前页面和目标。'),{code:'STALE_DOCUMENT'});
 
 export async function withObservedDocument<T>(tabId: number, member: string, read: () => Promise<T>): Promise<T> {
   return (await withObservedDocumentIdentity(tabId, member, read)).value;
 }
 
 /** Same guard as withObservedDocument, but also returns the exact document identity that was read. */
-export async function withObservedDocumentIdentity<T>(tabId: number, member: string, read: () => Promise<T>): Promise<{value:T;documentId:string|null}> {
+export async function withObservedDocumentIdentity<T>(tabId: number, member: string, read: () => Promise<T>, check=()=>{}): Promise<{value:T;documentId:string|null}> {
+  check();
   const before = await readCurrentDocument(tabId);
+  check();
   const result = await read();
+  check();
   const after = await readCurrentDocument(tabId);
+  check();
   if (before?.documentId && after?.documentId !== before.documentId) throw stale();
   if (after?.documentId) recordObservedDocument(tabId, member, after.documentId);
   return {value:result,documentId:after?.documentId??null};

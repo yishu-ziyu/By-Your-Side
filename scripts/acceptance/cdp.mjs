@@ -1,105 +1,133 @@
-/**
- * 最小 CDP 客户端。只连 browser 目标，再 attach 扩展 service worker。
- * 不 attach 普通页面，避免抢走扩展的 chrome.debugger。
- */
+/** Minimal browser CDP client; every pending operation belongs to this socket. */
 export function createCdp(webSocketDebuggerUrl) {
   const ws = new WebSocket(webSocketDebuggerUrl);
-  let seq = 0;
-  const pending = new Map();
-  const sessions = new Map();
-  const eventHandlers = new Map();
+  let seq = 0, closedError, closing;
+  const pending = new Map(), sessions = new Map(), eventHandlers = new Map();
+  const operations = new Set();
 
-  ws.addEventListener("message", (ev) => {
-    const m = JSON.parse(String(ev.data));
-    if (m.id && pending.has(m.id)) {
-      pending.get(m.id)(m);
-      pending.delete(m.id);
+  // Attach a rejection observer immediately. Callers still receive the original
+  // rejecting promise, including waits created before an awaited trigger fails.
+  function operation(label, timeoutMs, subscribe) {
+    let resolve, reject, timer, unsubscribe;
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    promise.catch(() => {});
+    const entry = { label, finish(error, value) {
+      if (!operations.delete(entry)) return;
+      clearTimeout(timer);
+      unsubscribe?.();
+      if (error) reject(error); else resolve(value);
+    } };
+    operations.add(entry);
+    if (closedError) entry.finish(closedError);
+    else {
+      timer = setTimeout(() => entry.finish(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      try { unsubscribe = subscribe(entry.finish); }
+      catch (error) { entry.finish(error); }
+      // subscribe may settle synchronously (e.g. a ready socket or aborted wait).
+      if (!operations.has(entry)) unsubscribe?.();
     }
-    if (m.method && eventHandlers.has(m.method)) {
-      for (const fn of eventHandlers.get(m.method)) fn(m);
-    }
-  });
+    return promise;
+  }
+
+  function end(error) {
+    if (closedError) return;
+    closedError = error;
+    for (const entry of [...operations]) entry.finish(error);
+    pending.clear(); sessions.clear(); eventHandlers.clear();
+  }
+  function detachSocketListeners() {
+    ws.removeEventListener('message', onMessage);
+    ws.removeEventListener('close', onClose);
+    ws.removeEventListener('error', onError);
+  }
+  function onClose() { end(new Error('CDP closed: WebSocket 断开')); detachSocketListeners(); }
+  function onError() { end(new Error('CDP closed: WebSocket 连接失败')); close().catch(() => {}); }
+  function onMessage(ev) {
+    let message;
+    try { message = JSON.parse(String(ev.data)); }
+    catch { onError(); return; }
+    if (message.id) pending.get(message.id)?.(message);
+    for (const fn of [...(eventHandlers.get(message.method) ?? [])]) fn(message);
+  }
+  ws.addEventListener('message', onMessage);
+  ws.addEventListener('close', onClose);
+  ws.addEventListener('error', onError);
 
   function ready() {
-    if (ws.readyState === WebSocket.OPEN) return Promise.resolve();
-    return new Promise((res, rej) => {
-      ws.addEventListener("open", () => res(), { once: true });
-      ws.addEventListener("error", () => rej(new Error("CDP WebSocket 连接失败")), { once: true });
+    return operation('CDP ready', 10_000, finish => {
+      if (ws.readyState === WebSocket.OPEN) { finish(); return; }
+      const opened = () => finish();
+      ws.addEventListener('open', opened);
+      return () => ws.removeEventListener('open', opened);
     });
   }
 
   function send(method, params = {}, sessionId, timeoutMs = 30_000) {
     const id = ++seq;
-    const frame = { id, method, params };
-    if (sessionId) frame.sessionId = sessionId;
-    ws.send(JSON.stringify(frame));
-    return new Promise((res, rej) => {
-      const timer = setTimeout(() => {
+    return operation(`CDP ${method}`, timeoutMs, finish => {
+      pending.set(id, message => {
         pending.delete(id);
-        rej(new Error(`CDP ${method} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-      pending.set(id, (m) => {
-        clearTimeout(timer);
-        if (m.error) rej(new Error(`${method}: ${m.error.message ?? JSON.stringify(m.error)}`));
-        else res(m.result ?? {});
+        finish(message.error ? new Error(`${method}: ${message.error.message ?? JSON.stringify(message.error)}`) : null, message.result ?? {});
       });
+      try { ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })); }
+      catch (error) { pending.delete(id); throw error; }
+      return () => pending.delete(id);
     });
   }
 
   async function attachSession(targetId) {
     if (sessions.has(targetId)) return sessions.get(targetId);
-    const att = await send("Target.attachToTarget", { targetId, flatten: true });
-    const sessionId = att.sessionId;
-    if (!sessionId) throw new Error("Target.attachToTarget 未返回 sessionId");
+    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+    if (!sessionId) throw new Error('Target.attachToTarget 未返回 sessionId');
+    if (closedError) throw closedError;
     sessions.set(targetId, sessionId);
     return sessionId;
   }
 
   function close() {
-    return new Promise((res) => {
-      if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-        res();
-        return;
-      }
-      const timer = setTimeout(res, 1000);
-      ws.addEventListener(
-        "close",
-        () => {
-          clearTimeout(timer);
-          res();
-        },
-        { once: true },
-      );
-      try {
-        ws.close();
-      } catch {
-        clearTimeout(timer);
-        res();
-      }
+    if (closing) return closing;
+    end(new Error('CDP closed by client'));
+    closing = new Promise((resolve, reject) => {
+      if (ws.readyState === WebSocket.CLOSED) { detachSocketListeners(); resolve(); return; }
+      const cleanup = () => { clearTimeout(timer); ws.removeEventListener('close', stopped); detachSocketListeners(); };
+      const stopped = () => { cleanup(); resolve(); };
+      const timer = setTimeout(() => { cleanup(); reject(new Error('CDP socket close timed out')); }, 1000);
+      ws.addEventListener('close', stopped);
+      try { if (ws.readyState !== WebSocket.CLOSING) ws.close(); }
+      catch (error) { cleanup(); reject(error); }
     });
+    closing.catch(() => {});
+    return closing;
   }
 
   function onEvent(method, fn) {
+    if (closedError) throw closedError;
     if (!eventHandlers.has(method)) eventHandlers.set(method, new Set());
     eventHandlers.get(method).add(fn);
-    return () => eventHandlers.get(method)?.delete(fn);
+    return () => {
+      const handlers = eventHandlers.get(method);
+      handlers?.delete(fn);
+      if (!handlers?.size) eventHandlers.delete(method);
+    };
   }
 
-  function waitForEvent(method, timeoutMs = 10_000) {
-    return new Promise((res, rej) => {
-      const timer = setTimeout(() => {
-        off();
-        rej(new Error(`CDP event ${method} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-      const off = onEvent(method, (m) => {
-        clearTimeout(timer);
-        off();
-        res(m);
+  function waitForEvent(method, timeoutMs = 10_000, { sessionId, predicate = () => true, signal } = {}) {
+    return operation(`CDP event ${method}`, timeoutMs, finish => {
+      const off = onEvent(method, message => {
+        if (sessionId && message.sessionId !== sessionId) return;
+        try { if (predicate(message)) finish(null, message); }
+        catch (error) { finish(error); }
       });
+      const abort = () => finish(signal.reason ?? new Error('CDP wait aborted'));
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
+      return () => { off(); signal?.removeEventListener('abort', abort); };
     });
   }
-
-  return { ready, send, attachSession, close, ws, onEvent, waitForEvent };
+  function diagnostics() {
+    return { closed: !!closedError, requests: pending.size, operations: [...operations].map(op => op.label), listeners: [...eventHandlers].map(([method, handlers]) => ({ method, count: handlers.size })) };
+  }
+  return { ready, send, attachSession, close, ws, onEvent, waitForEvent, diagnostics };
 }
 
 export async function fetchJson(url, timeoutMs = 5000) {
@@ -120,8 +148,13 @@ export async function connectBrowser(port) {
     throw new Error(`http://127.0.0.1:${port}/json/version 没有 webSocketDebuggerUrl`);
   }
   const cdp = createCdp(version.webSocketDebuggerUrl);
-  await cdp.ready();
-  return { cdp, version };
+  try {
+    await cdp.ready();
+    return { cdp, version };
+  } catch (error) {
+    await cdp.close();
+    throw error;
+  }
 }
 
 export function findServiceWorker(targets, extensionId) {

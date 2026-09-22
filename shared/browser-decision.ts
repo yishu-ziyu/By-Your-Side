@@ -1,4 +1,4 @@
-import type { TabInfo } from './protocol.js';
+import type { TabInfo, ToolExecutionFact } from './protocol.js';
 /** Cross-provider observation/decision contract. Page strings are evidence, never instructions. */
 export const BROWSER_OPERATIONS = ['click', 'fill', 'select', 'press_key', 'scroll', 'switch_tab', 'wait', 'reobserve', 'handoff', 'done'] as const;
 
@@ -91,13 +91,19 @@ export interface BrowserActionGuard {
   sourceTabId?: number;
 }
 
-export interface BrowserStepReceipt {
+export type BrowserStepReceipt = {
+  /** Host call identity for this action attempt; not proof of execution. */
+  toolCallId: string;
+  /** Observation used to choose the action, not post-action evidence. */
   observationId: string;
   candidateId: string;
   operation: BrowserOperation;
-  fact: 'not_executed' | 'executed_unverified' | 'verified' | 'unknown';
   detail: string;
-}
+} & (
+  | { executionFact: ToolExecutionFact; verification: 'unverified'; verificationToolCallId?: never }
+  // Verification covers this action only, never completion of the user's goal.
+  | { executionFact: Extract<ToolExecutionFact, 'executed'>; verification: 'verified'; verificationToolCallId: string }
+);
 
 export type BrowserLoopOutcome = {
   status: 'needs_verification' | 'handoff' | 'blocked' | 'cancelled';

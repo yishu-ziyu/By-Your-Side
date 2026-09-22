@@ -1,4 +1,5 @@
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
+import {replaceEditableText} from "../../shared/editable-text.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
@@ -65,6 +66,7 @@ async function callOnBackendNode<T>(
   functionDeclaration: string,
   args?: unknown[],
   executionContextId?: number,
+  expectedDocumentId?: string,
 ): Promise<T> {
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", {
     backendNodeId,
@@ -72,6 +74,10 @@ async function callOnBackendNode<T>(
   });
   const objectId = resolved.object?.objectId;
   if (!objectId) throw new Error("节点无法解析（页面可能已变化）");
+  if(expectedDocumentId) {
+    try { await assertSameDocument(tabId,expectedDocumentId); }
+    catch(error) { throw notExecuted(error); }
+  }
   const result = await sendCommand<{
     result?: { value?: T };
     exceptionDetails?: { exception?: { description?: string }; text?: string };
@@ -102,7 +108,7 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
 }
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
-async function fillBackendNode(tabId: number, backendNodeId: number, value: string): Promise<void> {
+async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string): Promise<void> {
   await callOnBackendNode<unknown>(
     tabId,
     backendNodeId,
@@ -131,13 +137,14 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
         return true;
       }
       if (el.isContentEditable) {
-        el.textContent = v;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
+        (${replaceEditableText.toString()})(el, v);
         return true;
       }
       throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");
     }`,
     [value],
+    undefined,
+    expectedDocumentId,
   );
 }
 
@@ -162,9 +169,10 @@ export async function callDom<Args extends unknown[], Result>(
   tabId: number,
   func: (...args: Args) => Result,
   args: Args,
+  documentId?:string,
 ): Promise<Awaited<Result>> {
   const results = await chrome.scripting.executeScript<Args, Result>({
-    target: { tabId },
+    target: { tabId, ...(documentId?{documentIds:[documentId]}:{}) },
     world: "ISOLATED",
     func,
     args,
@@ -1024,11 +1032,15 @@ export async function click(
 }
 
 export async function fill(
-  params: { target: string; value: string; tabId?: number },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ filled: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
+  if(params.expectedDocumentId) {
+    try { await assertSameDocument(tab.id,params.expectedDocumentId); }
+    catch(error) { throw notExecuted(error); }
+  }
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
@@ -1038,13 +1050,17 @@ export async function fill(
   const ref = parseRef(params.target);
   const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
 
+  if(params.expectedBackendNodeId!==undefined && backendNodeId!==params.expectedBackendNodeId) {
+    throw notExecuted(new Error('原 AX 对象身份无法核对，填写未执行。'));
+  }
+
   // 操作前在 scrollIntoView 之后取目标包围盒，动作边框持续到操作返回。
   let targetRect: DomRect | undefined;
   if (backendNodeId !== undefined) {
     try {
       targetRect = await rectOfBackendNode(tabId, backendNodeId);
     } catch (e) {
-      if (!isDebuggerUnavailable(e)) {
+      if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
         throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
       }
       // debugger 不可用时落到 domops
@@ -1078,9 +1094,13 @@ export async function fill(
     }
 
     // 2. 真实填充操作
+    if(params.expectedDocumentId) {
+      try { await assertSameDocument(tabId,params.expectedDocumentId); }
+      catch(error) { throw notExecuted(error); }
+    }
     if (backendNodeId !== undefined) {
       try {
-        await fillBackendNode(tabId, backendNodeId, params.value);
+        await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId);
         if (targetRect) {
           await recordCursorTrail(
             tabId,
@@ -1093,7 +1113,7 @@ export async function fill(
         await endCursorAction(tabId, cid, actionId, "done");
         return { filled: true };
       } catch (e) {
-        if (!isDebuggerUnavailable(e)) {
+        if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
         }
         // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
@@ -1108,6 +1128,7 @@ export async function fill(
         return dom.fill(t, v);
       },
       [params.target, params.value],
+      params.expectedDocumentId,
     );
     if (targetRect) {
       await recordCursorTrail(

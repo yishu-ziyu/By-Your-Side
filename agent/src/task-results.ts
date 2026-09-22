@@ -172,6 +172,7 @@ export class TaskResultBook {
 
   noteStart(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; description?: string; effectful?:boolean; recordResult?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
+    if(this.items.some(item=>item.evidence?.toolCallId===input.toolCallId&&item.evidence.member===input.member&&item.evidence.runId===input.runId))return;
     const item = this.resolveStartItem(input);
     if (!item) return;
     if (resultToolHasWriteEffect(input.name)||input.effectful) {
@@ -200,7 +201,7 @@ export class TaskResultBook {
     if (binding.kind !== "create") return null;
     // A browser control can be a user result without creating an irreversible
     // page effect. Keep result registration separate from unknown-write policy.
-    if ((!isWriteTool(input.name)&&!input.effectful&&!input.recordResult) || AUTO_RESULT_EXCLUDED_TOOLS.has(input.name) || this.items.length >= MAX_TASK_RESULTS) return null;
+    if ((!isWriteTool(input.name)&&!input.effectful&&!input.recordResult) || (AUTO_RESULT_EXCLUDED_TOOLS.has(input.name)&&!input.effectful) || this.items.length >= MAX_TASK_RESULTS) return null;
     const item: TaskResultItem = {
       id: this.nextAutoId(),
       description: input.description ?? deriveResultDescription(input.name, undefined, input.target),
@@ -362,7 +363,7 @@ export function createVerifyUnknownResultTool(opts: {
     name: "resolve_unknown_result",
     label: "Resolve an uncertain write with page evidence",
     description:
-      "Use only when a write tool returned an unknown execution result (timeout, disconnect, or an error that does not explicitly say it was rejected before running). This tool re-reads target in the current page and resolves the unknown only if expect appears verbatim in that fresh read AND did not appear in a page read taken before the write. The comparison baseline is the last successful snapshot or read_element before the write: a page snapshot covers the whole page, so any target may be re-read; a read_element baseline requires the same target. If no pre-write read exists, the page changed, or expect was already present before the write, the result stays unknown. id is the result id from record_task_results. Never claim success and never claim nothing happened when the evidence is insufficient.",
+      "Use only when a write tool returned an unknown execution result (timeout, disconnect, or an error that does not explicitly say it was rejected before running). This tool re-reads target in the current page and resolves the unknown only if expect appears verbatim in that fresh read AND did not appear in a page read taken before the write. The comparison baseline is the last successful snapshot or read_element before the write: a page snapshot covers the whole page, so any target may be re-read; a read_element baseline requires the same target. If no pre-write read exists, the page changed, or expect was already present before the write, the result stays unknown. Copy id from the unknown item's id in the latest host-projected results (also task.results), not a toolCallId or goal id. Never claim success and never claim nothing happened when the evidence is insufficient.",
     parameters: Type.Object({
       id: Type.String({ description: "Result id whose status is unknown" }),
       target: Type.String({ description: 'Read target for the check: "@N", "loc=css:...", native CSS, or "body" for full page text' }),

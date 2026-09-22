@@ -1,3 +1,6 @@
+import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
+import { isSupersededUnknown } from '../../shared/task-results.js';
+import type { VoiceInputContext } from '../../shared/voice.js';
 import {TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
 import {type RouteShadow, sharedRouteShadow} from './route-shadow.js';
@@ -13,7 +16,7 @@ import {
   type ClientMessage, type ConversationSummary, type ServerMessage,
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
-import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./user-delivery.js";
+import { createUserDelivery, projectDeliveryFacts, factsForDelivery, assertDeliveryText } from "./user-delivery.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -50,14 +53,18 @@ function memberRevisionNotice(members: MemberRevision): string {
   ].filter(Boolean).join('；');
 }
 
-/** Deliberately narrow: only an explicit continuation phrase resumes a restart checkpoint. */
-function isInterruptedResumeText(text: string): boolean {
-  const normalized = text.trim().replace(/[\s。！!？?，,；;：:]+/g, '').toLowerCase();
+/** Recognize explicit control language, preserving any separately stated amendment. */
+function continuationInput(text:string):{amendment?:string}|null {
+  const request=text.trim().replace(/^(?:请\s*|please\s+)/i,'');
+  const compound=request.match(/^(继续原任务|继续刚才的任务|继续刚才任务|从中断处继续|接着完成原任务|resume previous task|continue the previous task)\s*[，,；;。:：]\s*(\S[\s\S]*)$/i);
+  if(compound)return {amendment:compound[2]!.trim()};
+  const normalized = request.replace(/[\s。！!？?，,；;：:]+/g, '').toLowerCase();
   return [
     '继续', '继续原任务', '继续刚才的任务', '继续刚才任务', '从中断处继续', '接着完成原任务',
     'continue', 'resumeprevioustask', 'continuetheprevioustask',
-  ].includes(normalized);
+  ].includes(normalized)?{}:null;
 }
+function isInterruptedResumeText(text:string):boolean { return continuationInput(text)!==null; }
 /** Map a real task_action receipt to the shadow `actual` vocabulary: start/steer/resume stay as they were settled, any rejection collapses to `rejected`. */
 function shadowActualForReceipt(receipt: TaskReceipt): {action: string; note: string} {
   return receipt.status === 'rejected' || receipt.status === 'failed'
@@ -619,12 +626,17 @@ export class ConversationManager {
     this.makeupRuns.add(originRun);
     const streaming=this.beginDeliveryStream(id,'finding',snap,()=>this.getTaskProgress(id)?.state==='idle');
     try {
-      const spoken = await session.composeUserDelivery({
-        question: snap.goal,
-        facts,
-        recentTurns: snap.conversationContext?.recentTurns ?? [],
-        latestDelivery: snap.conversationContext?.latestDelivery ?? null,
-      },streaming.onText);
+      let spoken:string;
+      if(snap.conversationContext?.latestResult?.source==='assistant_output'
+        &&snap.goalPlan?.goals.some(goal=>goal.kind==='answer'&&goal.status==='pending')
+        &&typeof session.verifyAnswerDelivery==='function') {
+        spoken=assertDeliveryText(facts);
+        await session.verifyAnswerDelivery(spoken);
+        if(streaming.onText(spoken)===false){streaming.cancel();return;}
+      }else{
+        spoken=await session.composeUserDelivery({question:snap.goal,facts,
+          recentTurns:snap.conversationContext?.recentTurns??[],latestDelivery:snap.conversationContext?.latestDelivery??null},streaming.onText);
+      }
       const now = this.getTaskProgress(id);
       if (!now || now.runId !== originRun || now.state !== "idle" || (this.controlVersions.get(id) ?? 0) !== originControl) {streaming.cancel();return;}
       if (this.progress.get(id)?.hasFinding() || (now.conversationContext?.latestDelivery && now.conversationContext.latestDelivery.kind !== "ack")) {streaming.cancel();return;}
@@ -656,6 +668,40 @@ export class ConversationManager {
     this.store?.save(this.list());
     this.emit({ type: "conversation_updated", conversationId, conversation: { ...entry.summary } });
   }
+  private readonly directVoiceInputs = new Map<string, {inputId: string; runId: string | null}>();
+
+  async executeRealtimeBrowserTool(id: string, call: RealtimeBrowserCall, input: VoiceInputContext, signal: AbortSignal): Promise<unknown> {
+    validateRealtimeBrowserTool(call.name, call.args);
+    const entry = this.entries.get(id), progress = this.progress.get(id);
+    if (!entry || !progress || !this.connected || signal.aborted) throw realtimeBrowserError('语音会话或浏览器连接已失效，未执行。', 'not_executed');
+    const snapshot = progress.snapshot();
+    const readOnly = ['snapshot','read_element','read_elements','judge_browser_action'].includes(call.name)
+      || call.name === 'tabs' && ['list','active'].includes(String(call.args.action));
+    if (entry.runtime.session.isStreaming() || entry.runtime.session.isHeld() || this.pendingStarts.has(id) || ['running','paused'].includes(snapshot.state)
+      || snapshot.state === 'interrupted' && !readOnly) {
+      throw realtimeBrowserError('原任务仍在执行、接管或等待恢复；请先处理原任务，未并发操作页面。', 'not_executed');
+    }
+    const previous = this.directVoiceInputs.get(id);
+    if (previous?.inputId === call.inputId && previous.runId !== snapshot.runId) throw realtimeBrowserError('原任务已变化，旧语音工具未执行。', 'not_executed');
+    const auditMissing = snapshot.runId && (snapshot.unresolvedEffect || snapshot.untrackedWritePending || snapshot.executionAuditComplete === false);
+    if (auditMissing && !readOnly) {
+      throw realtimeBrowserError(`原任务 ${snapshot.runId} 缺少可关联的执行记录，无法安全解除写入限制。可先读取页面或列出标签核查；历史记录不足时需人工核对原任务，不能用新语音清除风险。`, 'not_executed');
+    }
+    const unknown = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results ?? []));
+    if (previous?.inputId !== call.inputId) {
+      const before = snapshot;
+      // Inspection belongs to the unresolved run. Never reset its receipts on a new voice input.
+      if (!auditMissing && !unknown && snapshot.state !== 'interrupted') progress.request(call.text,input.context,input.attachments);
+      else progress.recordUserTurn(call.text,call.inputId);
+      try { entry.runtime.session.persistAcceptedTask(progress.snapshot(),input.attachments); }
+      catch (error) { progress.restoreResults(before); throw realtimeBrowserError(error, 'not_executed'); }
+      entry.runtime.session.prepareRealtimeBrowserInput(call.text,input.context);
+      this.directVoiceInputs.set(id,{inputId:call.inputId,runId:progress.snapshot().runId ?? null});
+      this.publishRunIdentity(id);
+    }
+    return entry.runtime.session.executeRealtimeBrowserTool(call.name,call.args,signal,{inputId:call.inputId,runId:progress.snapshot().runId ?? null});
+  }
+
   async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
     if (request.action === 'abort') this.writeConfirm.cancelConversation(request.conversationId, '原任务已终止，本次确认作废，未执行。');
@@ -688,14 +734,28 @@ export class ConversationManager {
       if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
       // The panel sends ordinary typed input as start. Resolve continuation inside
       // the acceptance boundary so retries retain the ORIGINAL request fingerprint.
+      const continuation=originalRequest.source==='text'?continuationInput(originalRequest.text??''):null;
+      const explicitAmendment=!!continuation?.amendment&&!!snapshot.runId&&!!snapshot.recoveryInput;
       let request = originalRequest.source === 'text' && originalRequest.action === 'start' && !originalRequest.forkedFrom
-        && isInterruptedResumeText(originalRequest.text ?? '')
-        && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && projectTaskView(snapshot).resumable)
+        && continuation
+        && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable||explicitAmendment))
         ? { ...originalRequest, action: 'resume' as const } : originalRequest;
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
       if(request.expectedControlVersion!==undefined&&request.expectedControlVersion!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('页面控制权已再次变化，旧计划的后续步骤未执行。');
       if (request.action === 'status')return {status:'applied',runId:snapshot.runId??null,message:progressSpeech(snapshot)};
       if(!this.connected&&request.action!=='abort')throw new TaskActionRejected('连接尚未恢复，原任务和待办已保留。');
+      const amendment=request.action==='resume'&&originalRequest.source==='text'
+        ?continuation?.amendment:undefined;
+      if(amendment&&(snapshot.state==='interrupted'||['idle','error'].includes(snapshot.state)&&explicitAmendment)) {
+        const progress=this.progress.get(request.conversationId)!;
+        const rollback=progress.recordRequirement(amendment,undefined,request.attachments);
+        try {
+          entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
+          entry.runtime.session.persistTaskResults?.(progress.snapshot());
+        } catch(error) { rollback(); throw error; }
+        progress.recordUserTurn(originalRequest.text??'',request.requestId);
+        snapshot=progress.snapshot();
+      }
       if (request.action==='steer' && ['idle','error'].includes(snapshot.state) && !entry.runtime.session.isStreaming()) {
         if (!snapshot.runId || !snapshot.recoveryInput || !request.context?.tabId || !entry.runtime.session.available) throw new TaskActionRejected('续接需要原任务记录、当前页面和可用模型；补充尚未发送。');
         if(this.runningTasks()>=2)throw new TaskActionRejected('当前执行名额已满；这条续接未执行，原任务记录保持不变。');
@@ -1039,7 +1099,10 @@ export class ConversationManager {
       const live=this.entries.get(id)?.runtime;
       const carriesIdentity=['tool_call','control_result','team_status','status'].includes(message.type)||(message.type==='agent_event'&&message.event.kind==='agent_start');
       const scoped:ServerMessage = { ...message, conversationId: id, ...(live&&carriesIdentity?{epochs:{...this.epochs(live),...message.epochs}}:{}) };
-      if(carriesIdentity&&scoped.type!=='task_control')scoped.runId=progressSnapshot.runId;
+      // 直连 display 帧（新用户请求）不继承任务 runId：旧任务已中止时不被扩展身份闸门连坐；
+      // 任务族帧保持原身份绑定，中止后的迟到任务帧仍按原身份被拒（原语义不变）。
+      const freshDisplayCall = message.type === 'tool_call' && typeof message.sdkId === 'string' && message.sdkId.startsWith('display-');
+      if(carriesIdentity&&scoped.type!=='task_control'&&!freshDisplayCall)scoped.runId=progressSnapshot.runId;
       this.emit(scoped);
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
         void this.fulfillOwedDelivery(id);

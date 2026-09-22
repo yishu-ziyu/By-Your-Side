@@ -16,7 +16,9 @@ export interface AgentConfig {
   displaySteerFastPath?: boolean;
   /** Opt-in shadow routing: ask Jev which lane an utterance belongs to and record it, without changing any routing. Off by default. */
   routeShadow?: boolean;
-  /** Daily cap on Jev calls made by shadow routing; 1-5000, default 400. */
+  /** Request-level spoken result gate; off unless explicitly enabled. */
+  voiceSpokenResultGate?: boolean;
+  /** Shared daily cap on request judgments (shadow and voice gate); 1-5000, default 400. */
   routeShadowDailyLimit?: number;
   /** provider/id 格式，如 kimi-coding/kimi-for-coding */
   model?: string;
@@ -34,6 +36,10 @@ export function routeShadowEnabled():boolean {
   if(process.env.SIDEAGENT_ROUTE_SHADOW==='0')return false;
   if(process.env.SIDEAGENT_ROUTE_SHADOW==='1')return true;
   return loadConfig().routeShadow===true;
+}
+
+export function voiceSpokenResultGateEnabled(): boolean {
+  return loadConfig().voiceSpokenResultGate === true;
 }
 
 export function routeShadowDailyLimit():number {
@@ -58,6 +64,7 @@ export function loadConfig(path = configPath()): AgentConfig {
     if(typeof json.generalBrowserLoop === "boolean")config.generalBrowserLoop=json.generalBrowserLoop;
     if(typeof json.displayFastPath === "boolean")config.displayFastPath=json.displayFastPath;
     if(typeof json.displaySteerFastPath === "boolean")config.displaySteerFastPath=json.displaySteerFastPath;
+    if(typeof json.voiceSpokenResultGate === "boolean")config.voiceSpokenResultGate=json.voiceSpokenResultGate;
     if(typeof json.routeShadow === "boolean")config.routeShadow=json.routeShadow;
     if(typeof json.routeShadowDailyLimit === "number" && Number.isInteger(json.routeShadowDailyLimit) && json.routeShadowDailyLimit>=1 && json.routeShadowDailyLimit<=5000)config.routeShadowDailyLimit=json.routeShadowDailyLimit;
     if (typeof json.model === "string" && json.model) config.model = json.model;

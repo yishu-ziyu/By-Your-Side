@@ -21,6 +21,7 @@ const ACTION_NAMES: Record<string, string> = {
   close_tab: "关闭标签页",
   navigate: "打开页面",
   snapshot: "读取页面结构",
+  judge_browser_action: "判断页面操作",
   read_element: "读取完整内容",
   read_elements: "读回多个元素",
   click: "点击",

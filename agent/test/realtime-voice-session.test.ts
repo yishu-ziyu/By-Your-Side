@@ -11,7 +11,7 @@ class Socket extends EventEmitter{
 }
 const sessions:RealtimeVoiceSession[]=[];
 afterEach(()=>{sessions.splice(0).forEach(s=>s.close());vi.useRealTimers();});
-function fixture(diagnosticMode=false,structured=false,shadow?:{observe:ReturnType<typeof vi.fn>;actual:ReturnType<typeof vi.fn>}){
+function fixture(diagnosticMode=false,structured=false,shadow?:{judge:ReturnType<typeof vi.fn>;actual:ReturnType<typeof vi.fn>}){
   const socket=new Socket(),events:VoiceEvent[]=[];
   const snapshot:TaskProgressSnapshot={conversationId:'A',runId:null,state:'none',goal:null,startedAt:null,observedAt:1,active:[],lastAction:null,successVerified:false};
   const route=vi.fn(async(..._args:unknown[])=>({kind:'action' as const,ok:true,message:'已接收，不代表完成'}));const readPage=vi.fn(async()=>({text:'真实页面'}));const dispatchTask=vi.fn(async(..._args:unknown[])=>({ok:true,status:'accepted'}));const onPlayback=vi.fn();
@@ -193,29 +193,29 @@ describe('daily Realtime 3 native adapter',()=>{
   f.socket.server({type:'response.function_call_arguments.done',call_id:'evil',name:'browser_request',arguments:'{}'});await Promise.resolve();expect(f.route).not.toHaveBeenCalled();expect(f.socket.sent.some(x=>x.type==='input_audio_buffer.commit')).toBe(true);
  });
  it('route-shadow: observes each settled user transcript with previous utterances, task state and page, and never blocks routing',async()=>{
-  const shadow={observe:vi.fn(),actual:vi.fn()};
+  const shadow={judge:vi.fn(),actual:vi.fn()};
   const f=fixture(false,false,shadow);f.ready();f.begin();
   f.session.command({kind:'commit',turn:2,input:{context:{tabId:7,title:'Page',url:'https://example.test'}}});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'填写代号'});
   expect(f.route).not.toHaveBeenCalled(); // shadow observation must never itself trigger real routing
-  expect(shadow.observe).toHaveBeenCalledTimes(1);
-  expect(shadow.observe).toHaveBeenCalledWith({channel:'voice',conversationId:'A',voiceId:'voice3',turn:2,itemId:'u1',text:'填写代号',previous:[],taskRunning:false,taskState:'none',page:{title:'Page',url:'https://example.test'}});
+  expect(shadow.judge).toHaveBeenCalledTimes(1);
+  expect(shadow.judge).toHaveBeenCalledWith({channel:'voice',conversationId:'A',voiceId:'voice3',turn:2,itemId:'u1',inputId:'u1',text:'填写代号',previous:[],taskRunning:false,taskState:'none',page:{title:'Page',url:'https://example.test'}},false);
   f.begin('second','r2');f.session.command({kind:'commit',turn:3,input:{context:{tabId:7,title:'Page',url:'https://example.test'}}});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'second',transcript:'不要保存'});
-  expect(shadow.observe).toHaveBeenCalledTimes(2);
-  expect(shadow.observe.mock.calls[1]?.[0]).toMatchObject({turn:3,itemId:'second',text:'不要保存',previous:['填写代号']});
+  expect(shadow.judge).toHaveBeenCalledTimes(2);
+  expect(shadow.judge.mock.calls[1]?.[0]).toMatchObject({turn:3,itemId:'second',text:'不要保存',previous:['填写代号']});
  });
  it('route-shadow: records nothing in diagnostic mode even with a shadow configured',async()=>{
-  const shadow={observe:vi.fn(),actual:vi.fn()};
+  const shadow={judge:vi.fn(),actual:vi.fn()};
   const f=fixture(true,true,shadow);f.ready();
   f.session.command({kind:'interrupt',turn:1});f.session.command({kind:'audio',turn:1,data:Buffer.alloc(960).toString('base64')});f.session.command({kind:'commit',turn:1});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'d1',transcript:'诊断语句'});
   f.socket.server({type:'response.function_call_arguments.done',call_id:'evil',name:'browser_request',arguments:'{}'});
   await Promise.resolve();
-  expect(shadow.observe).not.toHaveBeenCalled();expect(shadow.actual).not.toHaveBeenCalled();
+  expect(shadow.judge).not.toHaveBeenCalled();expect(shadow.actual).not.toHaveBeenCalled();
  });
  it('route-shadow: records a tool actual for read_page, task_status and browser_request, bound to the latest user item',async()=>{
-  const shadow={observe:vi.fn(),actual:vi.fn()};
+  const shadow={judge:vi.fn(),actual:vi.fn()};
   const f=fixture(false,false,shadow);f.ready();f.begin();
   f.session.command({kind:'commit',turn:2,input:{context:{tabId:7,title:'Page',url:'https://example.test'}}});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'读一下页面'});
@@ -229,7 +229,7 @@ describe('daily Realtime 3 native adapter',()=>{
   expect(shadow.actual).toHaveBeenCalledWith(expect.objectContaining({kind:'tool',name:'browser_request'}));
  });
  it('route-shadow: records a task_action tool actual and the dispatch outcome once dispatchTask resolves',async()=>{
-  const shadow={observe:vi.fn(),actual:vi.fn()};
+  const shadow={judge:vi.fn(),actual:vi.fn()};
   const f=fixture(false,true,shadow);f.ready();f.begin();
   f.session.command({kind:'commit',turn:2,input:{context:{tabId:7,title:'Page',url:'https://example.test'}}});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'填写代号'});
@@ -239,7 +239,7 @@ describe('daily Realtime 3 native adapter',()=>{
   await vi.waitFor(()=>expect(shadow.actual).toHaveBeenCalledWith({channel:'voice',conversationId:'A',voiceId:'voice3',turn:2,itemId:'u1',kind:'dispatch',action:'start',status:'accepted'}));
  });
  it('route-shadow: attributes the dispatch actual to the requesting turn/item even if a new turn starts before it resolves',async()=>{
-  const shadow={observe:vi.fn(),actual:vi.fn()};
+  const shadow={judge:vi.fn(),actual:vi.fn()};
   const f=fixture(false,true,shadow);f.ready();f.begin();
   f.session.command({kind:'commit',turn:2,input:{context:{tabId:7,title:'Page',url:'https://example.test'}}});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'填写代号'});
@@ -254,7 +254,7 @@ describe('daily Realtime 3 native adapter',()=>{
   await vi.waitFor(()=>expect(shadow.actual).toHaveBeenCalledWith({channel:'voice',conversationId:'A',voiceId:'voice3',turn:2,itemId:'u1',kind:'dispatch',action:'start',status:'applied'}));
  });
  it('route-shadow: never carries a previous turn itemId into a tool actual for a new turn without its own transcript',async()=>{
-  const shadow={observe:vi.fn(),actual:vi.fn()};
+  const shadow={judge:vi.fn(),actual:vi.fn()};
   const f=fixture(false,false,shadow);f.ready();f.begin();
   f.session.command({kind:'commit',turn:2,input:{context:{tabId:7,title:'Page',url:'https://example.test'}}});
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u1',transcript:'读一下页面'});

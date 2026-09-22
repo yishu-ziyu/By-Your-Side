@@ -1,0 +1,13 @@
+{
+  "beforeCreate": {
+    "notifications": 2,
+    "responseCreates": 0
+  },
+  "deliveryBindings": [
+    {
+      "type": "delivery_response",
+      "deliveryId": "delivery-2",
+      "responseId": "reply"
+    }
+  ]
+}

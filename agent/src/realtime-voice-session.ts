@@ -1,3 +1,5 @@
+import { realtimeBrowserError, type ExecuteRealtimeBrowserTool } from './realtime-browser-tools.js';
+import { progressSpeech } from './voice-receipt.js';
 import { randomUUID } from 'node:crypto';
 import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voice-connection.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
@@ -6,10 +8,12 @@ import type { VoiceCommand, VoiceEvent, VoiceInputContext, TaskProgressSnapshot,
 import type { RouteShadow } from './route-shadow.js';
 
 export type RealtimeVoiceDependencies = ConstructorParameters<typeof StepVoiceSession>[0] & {
+  browserTool?: ExecuteRealtimeBrowserTool;
   readPage?: (input: VoiceInputContext) => Promise<unknown>;
   dispatchTask?: (request: TaskActionRequest, stillCurrent: () => boolean) => Promise<unknown>;
   createConnection?: (options: ConstructorParameters<typeof RealtimeVoiceConnection>[0]) => RealtimeVoiceConnection;
-  /** Observability-only: ask Jev which lane each utterance belongs to and record real routing decisions. Never influences behavior. */
+  voiceSpokenResultGate?: boolean;
+  /** Shared request judgment and optional audit observation; policy lives in the connection. */
   shadow?: RouteShadow;
 };
 
@@ -50,7 +54,28 @@ export class RealtimeVoiceSession {
       key, connect: this.deps.connect, diagnostic: this.deps.diagnosticMode,
       send: e => this.receive(e),
       log: e => this.deps.diagnostic?.(String(e.type), { detail: JSON.stringify(e) }),
+      voiceId: this.deps.voiceId,
+      voiceSpokenResultGate: this.deps.voiceSpokenResultGate,
+      judgeRequest: async identity => {
+        if (this.deps.diagnosticMode || this.closed) return null;
+        const snapshot = this.deps.getSnapshot();
+        const page = this.input.input?.context;
+        const previous = this.recentUserTexts;
+        this.recentUserTexts = [...previous, identity.text].slice(-3);
+        if (!snapshot) return null;
+        return this.deps.shadow?.judge({channel: 'voice', conversationId: snapshot.conversationId,
+          ...identity, previous, taskRunning: snapshot.state === 'running' || snapshot.state === 'paused',
+          taskState: snapshot.state, ...(page ? {page: {title: page.title, url: page.url}} : {})},
+          this.deps.voiceSpokenResultGate === true) ?? null;
+      },
       tools: {
+        ...(!this.deps.diagnosticMode && this.deps.browserTool ? { browserTool: async (call: Parameters<ExecuteRealtimeBrowserTool>[0], signal: AbortSignal) => {
+          const origin = this.input;
+          await this.waitForInput(origin);
+          if (this.closed || signal.aborted || this.input !== origin || !origin.input) throw realtimeBrowserError('语音页面资料已过期，未执行。', 'not_executed');
+          this.recordToolActual(origin.turn, this.lastUserItemId, call.name);
+          return this.deps.browserTool!({...call,inputId:`${this.deps.voiceId}:${call.inputId}`},origin.input,signal);
+        }} : {}),
         ...(!this.deps.diagnosticMode && this.deps.dispatchTask ? { task_action: (text: string, action: RealtimeTaskAction, sequences?: number[]) => this.dispatchTask(text, action, sequences) } : {}),
         browser_request: async (text, sequences) => {
           this.recordToolActual(this.turn, this.lastUserItemId, 'browser_request');
@@ -251,25 +276,14 @@ export class RealtimeVoiceSession {
           return;
         }
         const text = String(event.text ?? '');
+        const eventTurn = !this.deps.diagnosticMode && typeof event.turn === 'number' ? event.turn : this.turn;
         if (role === 'user') {
           const itemId = typeof event.itemId === 'string' ? event.itemId : `asr-${this.turn}`;
-          this.emit({ kind: 'diag', record: { type: 'asr', turn: this.turn, itemId, outcome: 'current', text } });
-          this.emit({ kind: 'diag', record: { type: 'forward', turn: this.turn, itemId, text } });
-          this.lastUserItemId = itemId;
-          if (!this.deps.diagnosticMode) {
-            const snapshot = this.deps.getSnapshot();
-            const page = this.input.input?.context;
-            if (snapshot) {
-              this.deps.shadow?.observe({
-                channel: 'voice', conversationId: snapshot.conversationId, voiceId: this.deps.voiceId, turn: this.turn, itemId, text,
-                previous: this.recentUserTexts, taskRunning: snapshot.state === 'running' || snapshot.state === 'paused', taskState: snapshot.state,
-                ...(page ? { page: { title: page.title, url: page.url } } : {}),
-              });
-            }
-            this.recentUserTexts = [...this.recentUserTexts, text].slice(-3);
-          }
+          this.emit({ kind: 'diag', record: { type: 'asr', turn: eventTurn, itemId, outcome: event.current === false ? 'filtered' : 'current', text } });
+          this.emit({ kind: 'diag', record: { type: 'forward', turn: eventTurn, itemId, text } });
+          if (event.current !== false) this.lastUserItemId = itemId;
         }
-        this.emit({ kind: 'text', turn: this.turn, role, text });
+        this.emit({ kind: 'text', turn: eventTurn, role, text });
         return;
       }
       case 'audio': {
@@ -320,7 +334,7 @@ export class RealtimeVoiceSession {
       this.completeDelivery(delivery);
     }
     else {
-      this.connection?.notifyTask(`当前任务状态：${JSON.stringify({ state: snapshot.state, goal: snapshot.goal, successVerified: snapshot.successVerified })}`);
+      this.connection?.notifyTask(progressSpeech(snapshot));
     }
   }
   streamDelivery(stream: UserDeliveryStream): void {
