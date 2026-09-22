@@ -3653,7 +3653,14 @@ function handleServerMessage(raw: string): void {
     return;
   }
 
-  if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
+  if (msg.conversationId && msg.conversationId !== selectedConversationId) {
+    // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 只放行目录，
+    // 模型本身仍按会话归属丢弃，不把别会话的当前模型安到本会话头上。
+    // live 复现：225 条 models=163 的 model_info 被整条过滤，芯片停在空目录。
+    if (msg.type === "model_info" && Array.isArray(msg.models) && msg.models.length > 0) modelPicker.update(undefined, msg.models);
+
+    return;
+  }
 
   switch (msg.type) {
     case "hello_ok":
@@ -3708,7 +3715,10 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result") return;
+      && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result"
+      // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 放行进内层，
+      // 由内层只收目录、不收模型。live 复现：225 条 models=163 在这里被整条丢弃。
+      && envelope.msg.type !== "model_info") return;
     handleServerMessage(JSON.stringify(envelope.msg));
 
     return;

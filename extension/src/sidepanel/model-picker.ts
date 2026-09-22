@@ -68,6 +68,8 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   /** 当前模型信息：model = "provider/id"，models = 可选列表（已配置凭据的 provider）。 */
   let modelState: { model?: string; models: ModelOption[] } | null = null;
   let modelQuery = "";
+  /** false = 只看常用（默认精选集）；true = 列出全部已配置凭据的模型。 */
+  let showAllModels = false;
 
   function closeModelPopover(): void {
     modelPopover.hidden = true;
@@ -160,6 +162,26 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
       }
     });
     search.append(searchIcon, input);
+    // 「只看常用 / 显示全部」开关：agent 下发全量并打 featured 标，
+    // 默认只显示精选集；关掉开关才列出所有已配置凭据的模型。
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "model-scope-toggle";
+    toggle.setAttribute("aria-pressed", String(showAllModels));
+    toggle.textContent = showAllModels ? "只看常用" : "显示全部";
+    toggle.title = showAllModels
+      ? "收起，只显示常用模型"
+      : "展开所有已配置凭据的模型（按 provider 分组，可用搜索过滤）";
+    toggle.addEventListener("click", () => {
+      showAllModels = !showAllModels;
+      toggle.setAttribute("aria-pressed", String(showAllModels));
+      toggle.textContent = showAllModels ? "只看常用" : "显示全部";
+      toggle.title = showAllModels
+        ? "收起，只显示常用模型"
+        : "展开所有已配置凭据的模型（按 provider 分组，可用搜索过滤）";
+      renderModelList();
+    });
+    search.append(toggle);
     list = document.createElement("div");
     list.className = "model-list";
     list.setAttribute("role", "listbox");
@@ -184,13 +206,33 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function renderModelList(): void {
     const list = ensurePopoverChrome();
-    const models = filterModels(modelState?.models ?? [], modelQuery);
+    const all = modelState?.models ?? [];
+    let models = filterModels(all, modelQuery, !showAllModels);
+
+    // 当前会话模型永远出现在默认视图：agent 的 featured 按它自己当时 current 打，
+    // 跨会话目录或枚举先后会让本会话的当前模型漏出去——用户必须还能选回当前模型。
+    const currentId = modelState?.model;
+
+    if (!showAllModels && !modelQuery.trim() && currentId && all.some((m) => m.id === currentId) && !models.some((m) => m.id === currentId)) {
+      models = [...models, ...all.filter((m) => m.id === currentId)];
+    }
+
+    // 旧 agent 不下发 featured 标记时，「只看常用」会把这些模型全滤掉、显示成「暂无可用模型」。
+    // 那是数据缺失而不是真的没有模型，此时退回全量，绝不把可达模型藏成不可见。
+    if (!showAllModels && models.length === 0 && all.length > 0 && !all.some((m) => m.featured === true)) {
+      models = filterModels(all, modelQuery, false);
+    }
+
     list.replaceChildren();
 
     if (models.length === 0) {
       const empty = document.createElement("div");
       empty.className = "model-empty";
-      empty.textContent = modelQuery.trim() ? "无匹配模型" : "暂无可用模型";
+
+      // 目录本身为空（不是搜索滤空）：告诉用户是数据没到，不是没有模型可选。
+      if (modelQuery.trim()) empty.textContent = "无匹配模型";
+      else if (modelState?.model) empty.textContent = "模型目录还没拿到，暂时没法切换";
+      else empty.textContent = "暂无可用模型";
       list.appendChild(empty);
 
       return;
@@ -252,7 +294,9 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     const models = modelState?.models ?? [];
     const model = modelState?.model;
     modelBtn.hidden = !model && models.length === 0;
-    modelBtn.disabled = models.length === 0;
+    // 目录还没拿到时，芯片仍显示当前模型：保持可点，让菜单解释原因。
+    // 只有连当前模型都不知道时才真禁用（那种状态芯片本来就是隐藏的）。
+    modelBtn.disabled = !model && models.length === 0;
     modelName.textContent = chipLabel(model, models);
     modelBtn.title = model ? `切换模型（${model}）` : "切换模型";
     const provider = currentProvider();
@@ -276,7 +320,9 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
       }
     }
 
-    if (models.length === 0) {
+    // 目录为空但知道当前模型：不强制收起——菜单要能打开并说明「为什么没得选」。
+    // 只有完全无信息（无模型也无目录）才没有可展示内容。
+    if (!model && models.length === 0) {
       closeModelPopover();
 
       return;

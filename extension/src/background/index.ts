@@ -8,7 +8,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * - side panel 经 chrome.runtime Port 接入，只做渲染与用户输入转发
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
-import type { AgentRunState, ClientMessage, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
+import type { AgentRunState, ClientMessage, ModelOption, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import {
@@ -41,7 +41,22 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, hover, clearMarks, dropPendingClicks, fill, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
+import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
+import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
+
+// macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
+if (isDarwinClipboardHostPlatform()) {
+  setClipboardBridge(createDarwinClipboardBridge());
+}
+(globalThis as typeof globalThis & { __saClipboardBridge?: () => ReturnType<typeof getClipboardBridge> }).__saClipboardBridge =
+  () => getClipboardBridge();
+
+import { uploadFile } from "./exec/upload.js";
+import { cdp } from "./exec/cdp.js";
+import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
+import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
+import { fileChooserSetFiles } from "./exec/file-chooser.js";
+import { downloadStat, downloadCancel, downloadDelete } from "./exec/download.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
@@ -78,6 +93,7 @@ const handlers: Record<ToolName, Handler> = {
   fetch: (p) => fetchUrl(p),
   network: (p, sid) => network(p, sid),
   worker_tabs: (p, sid) => workerTabControl.manage(p, sid, dropPendingClicks, async keys => {
+
     for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready; if (owner.isUserHeld(who.sessionId)) throw new Error("页面现在归你，操作未执行"); }
   }),
   share_tab: (p, sid) => shareTab(p, sid),
@@ -93,8 +109,32 @@ const handlers: Record<ToolName, Handler> = {
   navigate: (p, sid) => navigate(p, sid),
   snapshot: (p, sid) => snapshot(p, sid),
   click: (p, sid) => click(p, sid),
+  double_click: (p, sid) => doubleClick(p, sid),
+  drag: (p, sid) => drag(p, sid),
+  wheel: (p, sid) => wheel(p, sid),
+  mouse_down: (p, sid) => mouseDown(p, sid),
+  mouse_up: (p, sid) => mouseUp(p, sid),
+  key_down: (p, sid) => keyDown(p, sid),
+  key_up: (p, sid) => keyUp(p, sid),
+  release_held_inputs: (_p, sid) => releaseHeldInputs(sid),
+  paste: (p, sid) => paste(p, sid),
+  html5_drag: (p, sid) => html5DragAndDrop(p, sid),
+  upload_file: (p, sid) => uploadFile(p, sid),
+  cdp: (p, sid) => cdp(p, sid),
+  arm_event: (p, sid) => armEvent(p, sid),
+  wait_event: (p, sid) => waitEvent(p, sid),
+  disarm_event: (p, sid) => disarmEvent(p, sid),
+  consume_events: (p, sid) => consumeEvents(p, sid),
+  accept_dialog: (p, sid) => acceptDialog(p, sid),
+  dismiss_dialog: (p, sid) => dismissDialog(p, sid),
+  dialog_info: (p, sid) => dialogInfo(p, sid),
+  file_chooser_set_files: (p, sid) => fileChooserSetFiles(p, sid),
+  download_stat: (p, sid) => downloadStat(p, sid),
+  download_cancel: (p, sid) => downloadCancel(p, sid),
+  download_delete: (p, sid) => downloadDelete(p, sid),
   hover: (p, sid) => hover(p, sid),
   fill: (p, sid) => fill(p, sid),
+  select_option: (p, sid) => selectOption(p, sid),
   type_text: (p, sid) => typeText(p, sid),
   press_key: (p, sid) => pressKey(p, sid),
   scroll: (p, sid) => scroll(p, sid),
@@ -328,7 +368,7 @@ function flushHistory() {
 
 /** 缓存的连接上下文，用于面板重开后的状态同步。 */
 let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } = { state: "connecting" };
-let lastHelloOk: { version: number; model?: string } | null = null;
+let lastHelloOk: { version: number; model?: string; models?: ModelOption[] } | null = null;
 let lastStatus: AgentRunState = "idle";
 const statusBySession = new Map<string, AgentRunState>();
 const executionEpochs=new Map<string,number>();
@@ -870,7 +910,10 @@ const callbacks: UplinkHandlers = {
     if(msg.type==='task_control'){void runRemoteControl(msg);return;}
     if(msg.type==='task_control_ack'){if(remoteControl?.request.requestId===msg.requestId)remoteControl.abortAck?.(msg.ok);return;}
     if (msg.type === "hello_ok") {
-      lastHelloOk = { version: msg.version, model: conversationId === "default" ? msg.model : lastModelInfo?.model };
+      // 目录（models）是全局事实，与会话归属无关：必须随 hello_ok 一起缓存，
+      // 否则面板重开/重连后回放只剩 model、拿不到可选列表，芯片会退化成死按钮
+      // （用户实测：点了模型芯片没反应）。model 仍按会话归属取，不回写别会话的默认值。
+      lastHelloOk = { version: msg.version, model: conversationId === "default" ? msg.model : lastModelInfo?.model, models: msg.models };
       if (msg.models && conversationId === "default" && !lastModelInfo) lastModelInfo = { type: "model_info", model: msg.model, models: msg.models };
       // 会话模式由 runtime 的 conversation summary 恢复；握手不回写本地默认值。
     } else if (msg.type === "model_info") {
@@ -1057,7 +1100,14 @@ async function executeToolCall(
               checkIdentity();
               if(gate.gen!==operationGeneration||gate.isSessionBlocked(sid)||workerTabControl.isStopped(key(sid)))throw new Error('READBACK_CANCELLED');
             })
-            : await handler(params, key(sid));
+            : name === 'wheel'
+              ? await wheel(params as import('../../../shared/protocol.js').ToolContract['wheel']['params'], key(sid), () => {
+                checkIdentity();
+                if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
+                  throw new Error('操作所属控制轮次已失效，后续输入未执行。');
+                }
+              })
+              : await handler(params, key(sid));
           executionFact = "executed";
           return r;
         } catch (error) {
@@ -1576,10 +1626,11 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         });
         postMode(port as chrome.runtime.Port);
         if (lastHelloOk) {
-          port.postMessage({
-            kind: "server",
-            msg: { type: "hello_ok", version: lastHelloOk.version, model: lastHelloOk.model },
-          } satisfies BgToPanel);
+          const helloReplay: Extract<ServerMessage, { type: "hello_ok" }> = { type: "hello_ok", version: lastHelloOk.version, model: lastHelloOk.model };
+
+          // 目录跟随 hello_ok 回放：否则面板重开只剩模型名、没有可选列表。
+          if (lastHelloOk.models) helloReplay.models = lastHelloOk.models;
+          port.postMessage({ kind: "server", msg: helloReplay } satisfies BgToPanel);
           if (lastModelInfo) {
             port.postMessage({ kind: "server", msg: lastModelInfo } satisfies BgToPanel);
           }
