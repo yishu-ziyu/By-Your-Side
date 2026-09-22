@@ -1,14 +1,25 @@
 export const UNIQUE_TEXT: string;
+
 export const COUNTER_BEFORE: string;
+
 export const COUNTER_AFTER: string;
+
 export const FILL_BEFORE: string;
+
 export const FILL_AFTER: string;
+
 export const FILL_VALUE: string;
+
 export const INC_BUTTON_LABEL: string;
+
 export const PHASE_IDLE: string;
+
 export const PHASE_CLICKED: string;
+
 export const PHASE_CHANGED: string;
+
 export const DEFAULT_RUNS: number;
+
 export const FAILURE: Record<string, string>;
 
 export function extensionIdFromKey(key: string): string;
@@ -77,13 +88,21 @@ export function findServiceWorker(
 
 export function buildDriverExpression(opts: object): string;
 export function swDriver(opts: object): Promise<unknown>;
+
 export const USER_BLOCKED_ERROR: string;
+
 export const LEAD_MARK: string;
+
 export const WORKER_MARK: string;
+
 export const USER_LEAD_MARK: string;
+
 export const USER_WORKER_MARK: string;
+
 export const TEAM_LEAD_SESSION: string;
+
 export const TEAM_WORKER_SESSION: string;
+
 export function buildTeamDriverExpression(opts: object): string;
 export function teamDriver(opts: object): Promise<unknown>;
 export function evaluateTeamRun(driverResult: unknown, expected?: object): EvaluatedRun;

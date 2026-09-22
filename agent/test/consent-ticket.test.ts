@@ -11,7 +11,9 @@ const LOCKED_PARAMS: Record<string, unknown> = {
   consent: "confirm-1",
   drop: undefined,
 };
+
 const LOCKED_HASH = "25bb3c6113b98b06e2a160d6220372ee5cbbc65534c18e56d553ebf8965025e8";
+
 const REORDERED_PARAMS: Record<string, unknown> = {
   tags: ["a", "b"],
   consent: "confirm-2",

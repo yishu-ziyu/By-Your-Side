@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {displayAcceptanceExitCode, judgeDisplaySteeringRun, median, summarizeDisplaySteering, type DisplayAcceptanceRun} from '../../scripts/acceptance/display-steering-oracle.mjs';
+
 const good = ():DisplayAcceptanceRun => ({
   name:'pair', enabled:true, runId:'r1', conversationId:'default', tabId:7,
   finalMatch:true, settle:'settled', sameRunId:true, conversationCountBefore:1, conversationCountAfter:1,
@@ -8,6 +9,7 @@ const good = ():DisplayAcceptanceRun => ({
   displayExecutions:[{id:'call1',params:{mode:'translated'},ok:true,executionFact:'executed',tabId:7,document:'doc',runId:'r1'}],
   reTranslate:0, pageChangedMs:500,totalMs:2000,direct:true,jevCalls:1,
 });
+
 describe('display steering acceptance oracle',()=>{
   it('accepts the real fixture outcome, not an arbitrary delivery',()=>expect(judgeDisplaySteeringRun(good()).ok).toBe(true));
   it.each(['段落数：99\n概括：阅读笔记、研究工具、资料对比和下一步行动。','段落数：4','段落数：4\n概括：今天的天气很好。'])('rejects wrong or missing task evidence: %s',answer=>{

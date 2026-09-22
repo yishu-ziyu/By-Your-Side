@@ -11,9 +11,12 @@ import { TaskReceiptStore } from "../../agent/src/task-dispatcher.js";
 import { REPO_ROOT } from "./lib/verify.js";
 
 const dir = mkdtempSync(join(tmpdir(), "ego-scale-loop-"));
+
 const store = new TaskReceiptStore(dir);
+
 for (let s = 0; s < 200; s++) {
   const cid = `C${s}`;
+
   for (let i = 0; i < 100; i++) {
     const n = s * 100 + i;
     store.claim(`${cid}:req-${n}`, {
@@ -34,16 +37,24 @@ for (let s = 0; s < 200; s++) {
     });
   }
 }
+
 store.list("C0");
+
 const histogram = monitorEventLoopDelay({ resolution: 1 });
+
 histogram.enable();
+
 for (let i = 0; i < 1000; i++) {
   store.list(`C${i % 200}`);
   await new Promise((r) => setImmediate(r));
 }
+
 histogram.disable();
+
 store.sync();
+
 const p95 = histogram.percentile(95) / 1e6;
+
 const report = {
   metric: "B01",
   measurement_mode: "reference_host",
@@ -55,10 +66,17 @@ const report = {
   ok: p95 <= 20,
   voice: "not included",
 };
+
 const outDir = join(REPO_ROOT, "eval", "runs");
+
 mkdirSync(outDir, { recursive: true });
+
 const path = join(outDir, `scale-loop-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+
 writeFileSync(path, JSON.stringify(report, null, 2));
+
 rmSync(dir, { recursive: true, force: true });
+
 console.log(JSON.stringify({ ...report, path }, null, 2));
+
 process.exit(report.ok ? 0 : 1);

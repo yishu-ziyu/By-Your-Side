@@ -53,10 +53,12 @@ describe("loadConfig", () => {
     expect(loadConfig(p)).toEqual({ routeShadow: false, routeShadowDailyLimit: 1 });
     writeFileSync(p, JSON.stringify({ routeShadowDailyLimit: 5000 }));
     expect(loadConfig(p)).toEqual({ routeShadowDailyLimit: 5000 });
+
     for (const bad of [0, 5001, 3.5, -1, "200"]) {
       writeFileSync(p, JSON.stringify({ routeShadowDailyLimit: bad }));
       expect(loadConfig(p)).toEqual({});
     }
+
     writeFileSync(p, JSON.stringify({ routeShadow: "yes" }));
     expect(loadConfig(p)).toEqual({});
   });
@@ -64,10 +66,12 @@ describe("loadConfig", () => {
 
 it('voiceSpokenResultGate is opt-in and independent of routeShadow', () => {
   const p = join(dir, 'config.json');
+
   for (const gate of [undefined, false, 'true', 1]) {
     writeFileSync(p, JSON.stringify({routeShadow:true,voiceSpokenResultGate:gate}));
     expect(loadConfig(p).voiceSpokenResultGate === true).toBe(false);
   }
+
   writeFileSync(p, JSON.stringify({routeShadow:false,voiceSpokenResultGate:true}));
   expect(loadConfig(p)).toMatchObject({routeShadow:false,voiceSpokenResultGate:true});
 });

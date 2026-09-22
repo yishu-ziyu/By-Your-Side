@@ -4,6 +4,7 @@ import { PageOperationQueue } from "../src/background/page-operation-queue.js";
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
+
   return { promise, resolve };
 }
 
@@ -12,16 +13,21 @@ describe("page operation queue", () => {
     const queue = new PageOperationQueue();
     const releaseFirst = deferred<void>();
     const events: string[] = [];
+
     const first = queue.run(7, async () => {
       events.push("甲:核对", "甲:focus", "甲:输入");
       await releaseFirst.promise;
       events.push("甲:读回");
+
       return "甲";
     });
+
     const second = queue.run(7, async () => {
       events.push("乙:核对", "乙:focus", "乙:输入", "乙:读回");
+
       return "乙";
     });
+
     await Promise.resolve();
     expect(events).toEqual(["甲:核对", "甲:focus", "甲:输入"]);
     releaseFirst.resolve();
@@ -98,11 +104,15 @@ describe("page_operation executor", () => {
     let field = "old";
     vi.stubGlobal("chrome", { scripting: { executeScript: vi.fn(async (details: any) => {
       if (details.files) return [{ result: undefined }];
+
       if (details.world === "ISOLATED") return [{ result: 0 }];
+
       if (details.args[1] === "inspect") return [{ result: { ok: true, data: { value: field, rect: { x: 1, y: 2, width: 30, height: 10 } } } }];
       const previousValue = field;
+
       if (previousValue !== details.args[2]) throw new Error("原值冲突");
       field = details.args[3];
+
       return [{ result: { ok: true, data: { previousValue, readBack: field } } }];
     }) } });
     const { pageOperation } = await import("../src/background/exec/page-operation.js");
@@ -171,8 +181,11 @@ describe("page_operation executor", () => {
     vi.doMock("../src/background/debugger.js", () => ({ sendCommand: vi.fn() }));
     vi.stubGlobal("chrome", { scripting: { executeScript: vi.fn(async (details: any) => {
       if (details.files) return [{ result: undefined }];
+
       if (details.world === "ISOLATED") return [{ result: 0 }];
+
       if (details.args[1] === "inspect") return [{ result: { ok: true, data: { value: "old", rect: { x: 0, y: 0, width: 10, height: 10 } } } }];
+
       return [{ result: { ok: false, error: "输入事件后字段已被替换", changed: true, readBack: null } }];
     }) } });
     const { pageOperation } = await import("../src/background/exec/page-operation.js");

@@ -7,6 +7,7 @@ function installChrome() {
     func?: unknown;
     args?: unknown[];
   }) => [{ frameId: 0, result: undefined }]);
+
   vi.stubGlobal("chrome", {
     debugger: { onDetach: { addListener: vi.fn() } },
     scripting: { executeScript },
@@ -16,6 +17,7 @@ function installChrome() {
       query: vi.fn(async () => []),
     },
   });
+
   return executeScript;
 }
 
@@ -41,9 +43,11 @@ describe("hideUserControlBanners", () => {
 
   it("显式页只清理该页，不影响其他会话的内存追踪页", async () => {
     const executeScript = installChrome();
+
     const { hideUserControlBanners, showUserControlBanner } = await import(
       "../src/background/exec/input.js"
     );
+
     await showUserControlBanner(41);
     executeScript.mockClear();
 
@@ -53,6 +57,7 @@ describe("hideUserControlBanners", () => {
       .filter(([details]) => details.args?.[0] === false)
       .map(([details]) => details.target.tabId)
       .sort((a, b) => a - b);
+
     expect(hiddenTabIds).toEqual([73]);
   });
 });

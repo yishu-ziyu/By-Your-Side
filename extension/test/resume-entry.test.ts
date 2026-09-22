@@ -80,12 +80,16 @@ describe('A05-02/A05-03 正向接续摘要与恢复入口', () => {
     installDom();
     const sent: TaskActionRequest[] = [];
     const root = el('div');
+
     const entry = new ResumeEntry({
       root: root as unknown as HTMLElement,
-      sendResume: (request) => { sent.push(request); return true; },
+      sendResume: (request) => { sent.push(request);
+
+ return true; },
       getContext: async () => ({ ...PAGE }),
       scheduleFrame: (callback) => callback(),
     });
+
     entry.apply(viewOf());
     const section = root.children[0]!;
     const text = section.children.map((child) => child.textContent).join('\n');
@@ -102,6 +106,7 @@ describe('A05-02/A05-03 正向接续摘要与恢复入口', () => {
     expect(sent).toHaveLength(1);
     const request = sent[0]!;
     expect(request).toMatchObject({ conversationId: 'default', source: 'text', action: 'resume', expectedRunId: 'run-1', expectedControlVersion: 0, text: '继续原任务', context: PAGE });
+
     // 不直接执行旧工具参数：恢复请求只携带身份/版本/上下文。
     for (const forbidden of ['params', 'target', 'value', 'tool', 'toolCallId']) expect(request).not.toHaveProperty(forbidden);
     expect(new Set(Object.keys(request))).toEqual(new Set(['requestId', 'conversationId', 'source', 'action', 'expectedRunId', 'expectedControlVersion', 'text', 'context']));
@@ -145,6 +150,7 @@ describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
   it('真实读取失败后结束：空账本不能显示已完成', () => {
     const progress = new TaskProgress('default');
     progress.request('读取页面', PAGE);
+
     for (const event of [
       { kind: 'agent_start' },
       { kind: 'tool_start', toolCallId: 'failed-read', name: 'snapshot', params: {} },
@@ -167,6 +173,7 @@ describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
       ],
       outstanding: [{ id: 'r2', description: '保存登记表', status: 'unknown' }],
     }));
+
     expect(summary.done.map((item) => item.id)).toEqual(['r1']);
     expect(summary.remaining[0]).toMatchObject({ id: 'r2', statusLabel: '结果未知' });
     expect(summary.blocking).toContain('未知');
@@ -217,7 +224,11 @@ describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
     installDom();
     const sent: TaskActionRequest[] = [];
     const root = el('div');
-    const entry = new ResumeEntry({ root: root as unknown as HTMLElement, sendResume: (request) => { sent.push(request); return true; }, getContext: async () => ({ ...PAGE }), scheduleFrame: (callback) => callback() });
+
+    const entry = new ResumeEntry({ root: root as unknown as HTMLElement, sendResume: (request) => { sent.push(request);
+
+ return true; }, getContext: async () => ({ ...PAGE }), scheduleFrame: (callback) => callback() });
+
     const idlePartial = viewOf({ state: 'idle', waiting: { reason: 'unknown_without_baseline', detail: null }, results: [{ id: 'r1', description: '填写姓名', status: 'satisfied' }, { id: 'r2', description: '保存', status: 'unknown' }], outstanding: [{ id: 'r2', description: '保存', status: 'unknown' }] });
     entry.apply(idlePartial);
     find(root.children[0]!, 'resume-action')!.onclick!();
@@ -235,6 +246,7 @@ describe('A05-08 呈现时序与请求去重', () => {
   it('50 次最新恢复快照到可见摘要（下一帧）P95 ≤200ms', () => {
     installDom();
     const root = el('div');
+
     const entry = new ResumeEntry({
       root: root as unknown as HTMLElement,
       sendResume: () => true,
@@ -242,6 +254,7 @@ describe('A05-08 呈现时序与请求去重', () => {
       scheduleFrame: (callback) => callback(),
       now: () => performance.now(),
     });
+
     for (let i = 0; i < 50; i += 1) entry.apply(viewOf({ observedAt: 1000 + i }));
     const timing = entry.timing();
     expect(timing.count).toBe(50);
@@ -254,12 +267,16 @@ describe('A05-08 呈现时序与请求去重', () => {
     installDom();
     const sent: TaskActionRequest[] = [];
     const root = el('div');
+
     const entry = new ResumeEntry({
       root: root as unknown as HTMLElement,
-      sendResume: (request) => { sent.push(request); return true; },
+      sendResume: (request) => { sent.push(request);
+
+ return true; },
       getContext: async () => ({ ...PAGE }),
       scheduleFrame: (callback) => callback(),
     });
+
     entry.apply(viewOf());
     find(root.children[0]!, 'resume-action')!.onclick!();
     await flush();
@@ -289,7 +306,11 @@ describe('A05-08 呈现时序与请求去重', () => {
     installDom();
     const sent: TaskActionRequest[] = [];
     const root = el('div');
-    const entry = new ResumeEntry({ root: root as unknown as HTMLElement, sendResume: (request) => { sent.push(request); return true; }, getContext: async () => null, scheduleFrame: (callback) => callback() });
+
+    const entry = new ResumeEntry({ root: root as unknown as HTMLElement, sendResume: (request) => { sent.push(request);
+
+ return true; }, getContext: async () => null, scheduleFrame: (callback) => callback() });
+
     entry.apply(viewOf());
     find(root.children[0]!, 'resume-action')!.onclick!();
     await flush();
@@ -312,6 +333,7 @@ describe('A05-08 呈现时序与请求去重', () => {
 
 describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', () => {
   interface FakePort { name: string; sent: unknown[]; disconnectCalls: number; onMessage: { addListener: () => void }; onDisconnect: { addListener: () => void }; postMessage: (m: unknown) => void; disconnect: () => void; }
+
   class FakeWebSocket {
     static OPEN = 1;
     static CONNECTING = 0;
@@ -328,6 +350,7 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
     open(): void { this.readyState = FakeWebSocket.OPEN; this.onopen?.(); }
     close(): void { if (this.readyState === FakeWebSocket.CLOSED) return; this.readyState = FakeWebSocket.CLOSED; this.onclose?.(); }
   }
+
   function nativePort(): FakePort {
     return {
       name: 'com.sideagent.host', sent: [], disconnectCalls: 0,
@@ -342,13 +365,16 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
     let nativeAvailable = false;
     vi.stubGlobal('WebSocket', FakeWebSocket);
     vi.stubGlobal('chrome', {
-      runtime: { connectNative: () => { if (!nativeAvailable) throw new Error('native host 不可用'); const port = nativePort(); ports.push(port); return port; }, lastError: undefined },
+      runtime: { connectNative: () => { if (!nativeAvailable) throw new Error('native host 不可用'); const port = nativePort(); ports.push(port);
+
+ return port; }, lastError: undefined },
       storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) } },
     });
     const states: string[] = [];
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: (state) => { states.push(state); } });
     FakeWebSocket.instances = [];
     uplink.start();
+
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     const first = FakeWebSocket.instances[0]!;
     first.open();
@@ -369,14 +395,18 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
     const ports: FakePort[] = [];
     vi.stubGlobal('WebSocket', FakeWebSocket);
     vi.stubGlobal('chrome', {
-      runtime: { connectNative: () => { const port = nativePort(); ports.push(port); return port; }, lastError: undefined },
+      runtime: { connectNative: () => { const port = nativePort(); ports.push(port);
+
+ return port; }, lastError: undefined },
       storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) } },
     });
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: () => {} });
     uplink.start();
+
     for (let i = 0; i < 4; i += 1) await Promise.resolve();
     expect(ports).toHaveLength(1);
     uplink.retry();
+
     for (let i = 0; i < 4; i += 1) await Promise.resolve();
     expect(ports[0]!.disconnectCalls).toBe(1);
     expect(ports).toHaveLength(2);
@@ -397,6 +427,7 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
     const before = progress.snapshot();
     const messages: ServerMessage[] = [];
     const resume = vi.fn(async () => {});
+
     const manager = new ConversationManager(async (_id, emit) => ({
       session: {
         available: true, modelName: () => 'fixture/model', isStreaming: () => false, isHeld: () => false,
@@ -409,11 +440,13 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
       handleMessage: vi.fn(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any), (message) => messages.push(message));
+
     return { manager, before, resume, messages };
   }
 
   it('两次继续只启动一次；第二次明确说正在恢复而不是重放', async () => {
     const h = managerHarness();
+
     try {
       await h.manager.ensureDefault();
       expect(h.manager.getTaskProgress('default')).toMatchObject({ state: 'interrupted', runId: h.before.runId });
@@ -429,6 +462,7 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
 
   it('task_view_query 补取当前只读视图；中断态带 resumable=true 和原身份', async () => {
     const h = managerHarness();
+
     try {
       await h.manager.ensureDefault();
       h.messages.length = 0;

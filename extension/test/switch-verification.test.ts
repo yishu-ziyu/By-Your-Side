@@ -8,10 +8,15 @@ import { beforeEach, expect, it, vi } from "vitest";
 type FakeTab = { id: number; windowId: number; active: boolean };
 
 let stored: Record<string, unknown>;
+
 let tabs: Map<number, FakeTab>;
+
 let windows: Map<number, { focused: boolean }>;
+
 let updates: Array<{ id: number; props: Record<string, unknown> }>;
+
 let activeOverride: number | undefined;
+
 let updateMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -27,10 +32,13 @@ beforeEach(() => {
   activeOverride = undefined;
   updateMock = vi.fn(async (id: number, props: { active?: boolean }) => {
     updates.push({ id, props: props as Record<string, unknown> });
+
     if (props.active) {
       const target = tabs.get(id);
+
       if (target) for (const [, tab] of tabs) if (tab.windowId === target.windowId) tab.active = tab.id === id;
     }
+
     return { ...tabs.get(id)! };
   });
   vi.stubGlobal("chrome", {
@@ -43,7 +51,9 @@ beforeEach(() => {
     tabs: {
       get: vi.fn(async (id: number) => {
         const tab = tabs.get(id);
+
         if (!tab) throw new Error(`No tab with id: ${id}`);
+
         return { ...tab };
       }),
       update: updateMock,
@@ -51,6 +61,7 @@ beforeEach(() => {
         const list = [...tabs.values()].filter(t => (q.windowId == null || t.windowId === q.windowId) && (q.active == null || t.active));
         const activeId = activeOverride != null ? activeOverride : list[0]?.id;
         const active = list.find(t => t.id === activeId) ?? list[0];
+
         return active ? [{ ...active }] : [];
       }),
       onRemoved: { addListener: vi.fn() },
@@ -62,6 +73,7 @@ beforeEach(() => {
 async function setup() {
   const state = await import("../src/background/state.js");
   const { switchTab } = await import("../src/background/exec/tabs.js");
+
   return { state, switchTab };
 }
 
@@ -118,6 +130,7 @@ it("激活后、核验前用户切到其他页：读回不一致即 verified=fal
   // 激活请求成功发出，但用户随即切回页 1：update 只记录、不改变活动状态（模拟核验前被切走）。
   updateMock.mockImplementation(async (id: number, props: { active?: boolean }) => {
     updates.push({ id, props: props as Record<string, unknown> });
+
     return { ...tabs.get(id)! };
   });
   const result = await switchTab({ tabId: 2 }, lead);

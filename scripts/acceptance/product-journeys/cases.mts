@@ -6,6 +6,7 @@
 import { ARTICLES, CATALOGS, DOCS, OFFER_SETS, PLAIN_FORMS, SECTION_FORMS, at2 } from "./fixtures.mjs";
 
 export type JourneyFamily = "R" | "C" | "A";
+
 export type StepKind = "steer" | "ask" | "takeover-edit" | "restart-continue";
 
 /** 计划中的人工/系统步骤（允许介入）；除此之外的救场算被迫介入。 */
@@ -220,17 +221,21 @@ export const JOURNEY_CASES: JourneyCase[] = [
       const rows = at2(CATALOGS, m).rows;
       const include = rows.filter((r) => r.price <= 200 && r.returns && r.stock).map((r) => r.name);
       const exclude = rows.filter((r) => !(r.price <= 200 && r.returns && r.stock)).map((r) => r.name);
+
       const reasonOf = (r: (typeof rows)[number]): string[] => [
         ...(r.price > 200 ? ["超", "预算", `${r.price}`] : []),
         ...(!r.returns ? ["退换", "不支持"] : []),
         ...(!r.stock ? ["无货", "没货", "缺货", "预售", "现货"] : []),
       ];
+
       return {
         materialId: at2(CATALOGS, m).id,
         startPath: `/catalog?m=${m}`,
         userText: "筛出 200 元以内、支持退换、有现货的候选；被排除的说一下为什么。",
         plannedSteps: [],
-        expect: { include, exclude, excludeReasons: Object.fromEntries(exclude.map((n) => { const row = rows.find((r) => r.name === n)!; return [n, reasonOf(row)]; })), noWrites: true },
+        expect: { include, exclude, excludeReasons: Object.fromEntries(exclude.map((n) => { const row = rows.find((r) => r.name === n)!;
+
+ return [n, reasonOf(row)]; })), noWrites: true },
       };
     }) as [JourneyMaterial, JourneyMaterial],
   },
@@ -250,6 +255,7 @@ export const JOURNEY_CASES: JourneyCase[] = [
       const set = at2(OFFER_SETS, m);
       const budget = m === 0 ? 200 : 190;
       const eligible = set.filter((o) => o.perMonth <= budget && o.returns);
+
       return {
         materialId: `offers-steer-${m}`,
         startPath: `/offers?m=${m}`,
@@ -280,6 +286,7 @@ export const JOURNEY_CASES: JourneyCase[] = [
     materials: [0, 1].map((m): JourneyMaterial => {
       const set = at2(OFFER_SETS, m).map((o) => ({ ...o }));
       set[2] = { ...at2(set, 2), locked: true };
+
       return {
         materialId: `offers-locked-${m}`,
         startPath: `/offers?m=${m}&locked=c`,
@@ -383,6 +390,7 @@ export const CASE_BY_ID = new Map(JOURNEY_CASES.map((c) => [c.caseId, c]));
 export function suiteRows(suite: "baseline" | "smoke" | "sample" | "full"): { caseId: string; material: 0 | 1 }[] {
   const pick = (ids: string[], materials: (0 | 1)[]) =>
     ids.flatMap((caseId) => materials.map((material) => ({ caseId, material })));
+
   switch (suite) {
     case "baseline": return pick(JOURNEY_CASES.map((c) => c.caseId), [0]);
     case "smoke": return pick(["R01", "C01", "A01"], [0]);

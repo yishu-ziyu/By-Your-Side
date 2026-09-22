@@ -5,6 +5,7 @@
  */
 export async function teamDriver(opts) {
   const started = Date.now();
+
   const out = {
     lead: { sessionId: opts.leadId, tabId: null, mark: opts.leadMark },
     worker: { sessionId: opts.workerId, tabId: null, mark: opts.workerMark },
@@ -34,12 +35,15 @@ export async function teamDriver(opts) {
   };
 
   const call = globalThis.__saCall;
+
   if (typeof call !== "function") {
     out.stage = "hook";
     out.error = "globalThis.__saCall 不存在：未进入 executeToolCall";
     out.elapsedMs = Date.now() - started;
+
     return out;
   }
+
   if (
     typeof globalThis.__saTakeover !== "function" ||
     typeof globalThis.__saHandback !== "function" ||
@@ -48,31 +52,39 @@ export async function teamDriver(opts) {
     out.stage = "hook";
     out.error = "未挂上生产 handleTakeover/handleHandback";
     out.elapsedMs = Date.now() - started;
+
     return out;
   }
 
   let seq = 0;
   let openTabCount = 0;
+
   async function tool(sessionId, name, params) {
     if (name === "open_tab") openTabCount += 1;
     const id = "team-" + sessionId + "-" + name + "-" + ++seq;
     const msg = await call(id, name, params, sessionId);
+
     if (!msg || msg.type !== "tool_result") throw new Error(name + " 未回 tool_result");
+
     return msg;
   }
 
   function waitControlResult(requestId, timeoutMs) {
     const t0 = Date.now();
+
     return new Promise((resolve, reject) => {
       const timer = setInterval(() => {
         const s = (globalThis.__saServerEvents || []).find(function (event) {
           return event && event.type === "control_result" && event.requestId === requestId;
         });
+
         if (s && s.type === "control_result" && s.requestId === requestId) {
           clearInterval(timer);
           resolve(s);
+
           return;
         }
+
         if (Date.now() - t0 > timeoutMs) {
           clearInterval(timer);
           reject(new Error("等待 Agent control_result 超时 requestId=" + requestId));
@@ -83,16 +95,20 @@ export async function teamDriver(opts) {
 
   function waitServerEvent(type, requestId, timeoutMs) {
     const t0 = Date.now();
+
     return new Promise((resolve, reject) => {
       const timer = setInterval(() => {
         const event = (globalThis.__saServerEvents || []).find(function (item) {
           return item && item.type === type && item.requestId === requestId;
         });
+
         if (event) {
           clearInterval(timer);
           resolve(event);
+
           return;
         }
+
         if (Date.now() - t0 > timeoutMs) {
           clearInterval(timer);
           reject(new Error("等待 Agent " + type + " 超时 requestId=" + requestId));
@@ -103,6 +119,7 @@ export async function teamDriver(opts) {
 
   function waitTeamStatus(groupId, generation, predicate, timeoutMs) {
     const t0 = Date.now();
+
     return new Promise((resolve, reject) => {
       const timer = setInterval(() => {
         const event = (globalThis.__saServerEvents || []).find(function (item) {
@@ -115,11 +132,14 @@ export async function teamDriver(opts) {
             predicate(item.team)
           );
         });
+
         if (event) {
           clearInterval(timer);
           resolve(event.team);
+
           return;
         }
+
         if (Date.now() - t0 > timeoutMs) {
           clearInterval(timer);
           reject(new Error("等待 Agent team_status 最终状态超时 groupId=" + groupId));
@@ -133,6 +153,7 @@ export async function teamDriver(opts) {
       target: { tabId },
       func: (value) => {
         const el = document.getElementById("page-mark");
+
         if (el) el.textContent = value;
       },
       args: [text],
@@ -142,24 +163,29 @@ export async function teamDriver(opts) {
   try {
     out.stage = "open_lead";
     const leadOpen = await tool(opts.leadId, "open_tab", { url: opts.leadUrl });
+
     if (!leadOpen.ok) throw new Error(leadOpen.error || "lead open_tab failed");
     out.lead.tabId = leadOpen.data.tabId;
 
     out.stage = "open_worker";
     const workerOpen = await tool(opts.workerId, "open_tab", { url: opts.workerUrl });
+
     if (!workerOpen.ok) throw new Error(workerOpen.error || "worker open_tab failed");
     out.worker.tabId = workerOpen.data.tabId;
     const openTabsBefore = openTabCount;
 
     out.stage = "agent_assembly";
+
     const leadTask = {
       taskId: "lead-original-" + opts.userLeadMark,
       expectedSnapshotMarker: "page-mark-" + opts.userLeadMark,
     };
+
     const workerTask = {
       taskId: "worker-original-" + opts.userWorkerMark,
       expectedSnapshotMarker: "page-mark-" + opts.userWorkerMark,
     };
+
     const assembled = await globalThis.__saPrepareTeam(opts.capability, opts.workerId, out.worker.tabId, leadTask, workerTask);
     out.agentAssembly.ready = Boolean(assembled && assembled.ok);
     out.agentAssembly.members = (assembled && assembled.members) || [];
@@ -167,6 +193,7 @@ export async function teamDriver(opts) {
 
     out.stage = "write_lead";
     const leadClick = await tool(opts.leadId, "click", { target: opts.incSelector });
+
     if (!leadClick.ok || (leadClick.data && leadClick.data.held)) throw new Error("lead click 未落地");
     await tool(opts.leadId, "fill", { target: opts.inputSelector, value: opts.leadFill });
     const leadSnap = await tool(opts.leadId, "snapshot", {});
@@ -174,6 +201,7 @@ export async function teamDriver(opts) {
 
     out.stage = "write_worker";
     const workerClick = await tool(opts.workerId, "click", { target: opts.incSelector });
+
     if (!workerClick.ok || (workerClick.data && workerClick.data.held)) throw new Error("worker click 未落地");
     await tool(opts.workerId, "fill", { target: opts.inputSelector, value: opts.workerFill });
     const workerSnap = await tool(opts.workerId, "snapshot", {});
@@ -189,25 +217,33 @@ export async function teamDriver(opts) {
     const delayMs = opts.inflightMs || 1800;
     const code = "new Promise(function(r){setTimeout(function(){r(1)}," + delayMs + ")})";
     let writeEnded = 0;
+
     const inflightLead = tool(opts.leadId, "js", { code }).then((msg) => {
       writeEnded = Date.now();
+
       return msg;
     });
+
     const inflightWorker = tool(opts.workerId, "js", { code }).then((msg) => {
       writeEnded = Date.now();
+
       return msg;
     });
+
     await new Promise((r) => setTimeout(r, 120));
 
     out.stage = "takeover";
     await globalThis.__saTakeover();
     const takeMsg = globalThis.__saLastClient;
+
     if (!takeMsg || takeMsg.type !== "takeover" || !takeMsg.requestId) {
       throw new Error("生产 handleTakeover 没有发出 takeover 帧");
     }
+
     if (!Array.isArray(takeMsg.members) || takeMsg.members.length < 2) {
       throw new Error("takeover 帧没有冻结两名成员");
     }
+
     out.takeover.requestId = takeMsg.requestId;
     out.takeover.groupId = takeMsg.groupId || null;
     const agentTake = await waitControlResult(takeMsg.requestId, 15000);
@@ -238,6 +274,7 @@ export async function teamDriver(opts) {
     globalThis.__saServerEvents = [];
     await globalThis.__saHandback();
     const backMsg = globalThis.__saLastClient;
+
     if (!backMsg || backMsg.type !== "handback") throw new Error("生产 handleHandback 没有发出 handback 帧");
     out.handback.requestId = backMsg.requestId;
     out.handback.members = backMsg.members || [];
@@ -258,9 +295,11 @@ export async function teamDriver(opts) {
       15000,
     );
     out.originalTask.after = continuityEvent.continuity || [];
+
     function resumed(sessionId, taskId, tabId) {
       const before = out.originalTask.before.find((item) => item.sessionId === sessionId);
       const after = out.originalTask.after.find((item) => item.sessionId === sessionId);
+
       return Boolean(
         before &&
           after &&
@@ -283,6 +322,7 @@ export async function teamDriver(opts) {
           && after.resumeContinuationMarkerFound === true
       );
     }
+
     out.originalTask.leadResumed = resumed(opts.leadId, leadTask.taskId, out.lead.tabId);
     out.originalTask.workerResumed = resumed(opts.workerId, workerTask.taskId, out.worker.tabId);
     out.originalTask.reason =
@@ -296,9 +336,11 @@ export async function teamDriver(opts) {
     globalThis.__saServerEvents = [];
     await globalThis.__saTakeover();
     const partialTake = globalThis.__saLastClient;
+
     if (!partialTake || partialTake.type !== "takeover" || !partialTake.requestId) {
       throw new Error("partial 验收没有发出第二次 takeover");
     }
+
     await waitControlResult(partialTake.requestId, 15000);
     const openBeforePartial = openTabCount;
     await chrome.tabs.remove(out.worker.tabId);
@@ -309,22 +351,27 @@ export async function teamDriver(opts) {
     globalThis.__saServerEvents = [];
     await globalThis.__saHandback();
     const partialBack = globalThis.__saLastClient;
+
     if (!partialBack || partialBack.type !== "handback" || !partialBack.requestId) {
       throw new Error("partial 验收没有发出 handback");
     }
+
     const partialAck = await waitControlResult(partialBack.requestId, 15000);
     const partialGroupId = partialBack.groupId || partialAck?.team?.groupId;
     const partialGeneration = partialBack.generation ?? partialAck?.team?.generation;
+
     const partialTeam = await waitTeamStatus(
       partialGroupId,
       partialGeneration,
       (view) => {
         const lead = view.members.find((member) => member.sessionId === opts.leadId || member.sessionId === "main");
         const worker = view.members.find((member) => member.sessionId === opts.workerId);
+
         return view.phase === "partial" && lead?.phase === "restored" && worker?.phase === "paused_tab_closed";
       },
       15000,
     );
+
     out.partial.fromAgent = true;
     out.partial.team = partialTeam;
     out.partial.openTabAfter = openTabCount - openBeforePartial;
@@ -347,21 +394,26 @@ export async function teamDriver(opts) {
     } catch {
       /* Agent 可能已断开；本地闸门仍要清 */
     }
+
     try {
       if (typeof globalThis.__saAbortGate === "function") globalThis.__saAbortGate();
     } catch {
       /* 隔离下一轮 */
     }
+
     for (const tabId of [out.lead.tabId, out.worker.tabId]) {
       if (tabId == null) continue;
+
       try {
         await chrome.tabs.remove(tabId);
       } catch {
         /* 标签可能已关 */
       }
     }
+
     out.elapsedMs = Date.now() - started;
   }
+
   return out;
 }
 

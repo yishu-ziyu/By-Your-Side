@@ -34,10 +34,13 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
   const onAbort = (): void => controller.abort();
   opts?.signal?.addEventListener("abort", onAbort);
   const timer = setTimeout(() => controller.abort(), FETCH_READ_DEADLINE_MS);
+
   try {
     let hops = 0;
+
     for (;;) {
       let response: Response;
+
       try {
         response = await fetch(request.url, {
           method: request.method,
@@ -51,18 +54,23 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
         if (controller.signal.aborted) throw new Error("fetch 已取消或超时，操作未执行。");
         throw new Error(`fetch 请求失败（未送达或网络错误）：${oneLine(error)}。不是页面结果，不要据此判断接口不存在。`);
       }
+
       const next = redirectUrl(response, request.url);
+
       if (next) {
         hops += 1;
+
         if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，操作未执行。");
         assertRedirectAllowed(request.url, next);
         request = { ...request, url: next, body: request.method === "GET" ? undefined : request.body };
         continue;
       }
+
       const capped = await readCappedText(response, FETCH_MAX_BYTES, {
         signal: controller.signal,
         deadlineMs: FETCH_READ_DEADLINE_MS,
       });
+
       return {
         url: response.url || request.url,
         status: response.status,

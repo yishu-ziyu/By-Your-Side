@@ -6,12 +6,17 @@ import { isTaskReceipt, type TaskActionRequest, type TaskReceipt } from '../../s
 import { canonicalValue } from './canonical-value.js';
 
 type RecordEntry = { fingerprint: string; pending: boolean; receipt: TaskReceipt };
+
 const keyOf = (a: Pick<TaskActionRequest,'conversationId'|'requestId'>) => `${a.conversationId}:${a.requestId}`;
+
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+
 export class TaskActionRejected extends Error {
   constructor(message: string, readonly allowNewConversation = false) { super(message); }
 }
+
 export class TaskActionFailed extends Error {}
+
 export class TaskReceiptError extends Error {
   constructor(readonly receipt:TaskReceipt) { super(receipt.message); }
 }
@@ -31,16 +36,22 @@ export class TaskReceiptStore {
   private remember(key: string, record: RecordEntry): void {
     this.memory.set(key, record);
     this.addKey(record.receipt.conversationId, key);
+
     if (record.receipt.originConversationId) this.addKey(record.receipt.originConversationId, key);
   }
   read(key: string): RecordEntry | undefined {
     const cached = this.memory.get(key);
+
     if (cached) return cached;
+
     if (!this.directory) return;
+
     try {
       const record = JSON.parse(readFileSync(this.file(key),'utf8')) as RecordEntry;
+
       if (typeof record.fingerprint !== 'string' || typeof record.pending !== 'boolean' || !isTaskReceipt(record.receipt)) throw new Error('Invalid task receipt');
       this.remember(key, record);
+
       return record;
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
   }
@@ -48,40 +59,51 @@ export class TaskReceiptStore {
     if (!this.directory) {
       if (this.memory.has(key)) return false;
       this.remember(key, record);
+
       return true;
     }
+
     try {
       writeFileSync(this.file(key),JSON.stringify(record),{flag:'wx',mode:0o600});
       this.remember(key, record);
       this.scheduleFlush();
+
       return true;
     }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false; throw error; }
   }
   finish(key: string, record: RecordEntry): void {
     this.remember(key, record);
+
     if (!this.directory) return;
     const file = this.file(key), staged = `${file}.${randomUUID()}.tmp`;
+
     try { writeFileSync(staged,JSON.stringify(record),{mode:0o600});renameSync(staged,file); this.scheduleFlush(); }
     finally { rmSync(staged,{force:true}); }
   }
   /** Durable index catch-up; list/read do not wait on this. */
   sync(): void {
     if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+
     this.flushIndex();
   }
   private indexPath(): string { return join(this.directory!, "_index.json"); }
   private loadIndex(): Record<string, string[]> {
     if (this.indexMem) return this.indexMem;
+
     try { this.indexMem = JSON.parse(readFileSync(this.indexPath(), "utf8")) as Record<string, string[]>; }
     catch { this.indexMem = {}; this.indexMissing = true; }
+
     this.membership.clear();
+
     for (const [id, keys] of Object.entries(this.indexMem)) this.membership.set(id, new Set(keys));
+
     return this.indexMem;
   }
   private flushIndex(): void {
     if (!this.directory || !this.indexDirty || !this.indexMem) return;
     const staged = `${this.indexPath()}.${randomUUID()}.tmp`;
+
     try { writeFileSync(staged, JSON.stringify(this.indexMem), { mode: 0o600 }); renameSync(staged, this.indexPath()); this.indexDirty = false; }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     finally { rmSync(staged, { force: true }); }
@@ -92,7 +114,9 @@ export class TaskReceiptStore {
     const index = this.indexMem!;
     const list = index[conversationId] ?? (index[conversationId] = []);
     let set = this.membership.get(conversationId);
+
     if (!set) { set = new Set(list); this.membership.set(conversationId, set); }
+
     if (set.has(key)) return;
     set.add(key);
     list.push(key);
@@ -106,31 +130,40 @@ export class TaskReceiptStore {
   private hydrateConversation(conversationId: string): void {
     if (this.loadedConversations.has(conversationId)) return;
     this.loadedConversations.add(conversationId);
+
     if (!this.directory) return;
     const keys = this.loadIndex()[conversationId] ?? [];
+
     if (keys.length === 0 && this.indexMissing && !this.scannedAll) {
       this.scannedAll = true;
+
       for (const name of readdirSync(this.directory).filter((f) => f.endsWith(".json") && !f.startsWith("_"))) {
         try {
           const record = JSON.parse(readFileSync(join(this.directory, name), "utf8")) as RecordEntry;
+
           if (typeof record.fingerprint === "string" && typeof record.pending === "boolean" && isTaskReceipt(record.receipt)) {
             this.remember(`${record.receipt.conversationId}:${record.receipt.requestId}`, record);
           }
         } catch { /* skip unreadable records; list must not throw */ }
       }
+
       return;
     }
+
     for (const key of keys.slice(-5000)) {
       if (this.memory.has(key)) continue;
+
       try { this.read(key); } catch { /* skip unreadable records; list must not throw */ }
     }
   }
   list(conversationId: string): TaskReceipt[] {
     this.hydrateConversation(conversationId);
     const keys = (this.indexMem?.[conversationId] ?? []).slice(-5000);
+
     const records = keys.length > 0
       ? keys.map((key) => this.memory.get(key)).filter((r): r is RecordEntry => !!r)
       : [...this.memory.values()].filter((r) => r.receipt.conversationId===conversationId||r.receipt.originConversationId===conversationId);
+
     return records.filter(r => isTaskReceipt(r.receipt))
       .map(r=>this.receipt(r)).sort((a,b)=>a.updatedAt-b.updatedAt).slice(-5000);
   }
@@ -153,43 +186,61 @@ export class TaskDispatcher {
   private readonly controlTails = new Map<string,Promise<unknown>>();
   constructor(readonly store = new TaskReceiptStore()) {}
   get(conversationId:string,requestId:string):TaskReceipt|undefined {
-    const value=this.store.read(keyOf({conversationId,requestId}));return value?this.store.receipt(value):undefined;
+    const value=this.store.read(keyOf({conversationId,requestId}));
+
+return value?this.store.receipt(value):undefined;
   }
   dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'> & Partial<Pick<TaskReceipt,'action'|'diff'>>>, options?:{deferredResume?:boolean}):Promise<TaskReceipt> {
     const key=keyOf(request), fingerprint=hash(canonicalValue(request));
     const base:TaskReceipt={requestId:request.requestId,conversationId:request.conversationId,source:request.source,...(request.originConversationId?{originConversationId:request.originConversationId}:{}),action:request.action,runId:request.expectedRunId,text:request.text??'',targetTitle,status:'unknown',message:'执行结果尚无法确认。',updatedAt:Date.now()};
     const conflict=()=>({...base,status:'rejected' as const,message:'同一请求编号的内容发生变化，操作未执行。'});
     const pending=this.active.get(key);
+
     if(pending)return pending.fingerprint===fingerprint?pending.promise:Promise.resolve(conflict());
     // A checkpoint resume includes a slow page read. It belongs to the ordinary
     // lane so pause/abort can invalidate it immediately, not wait behind the read.
     const conversationId=request.conversationId,control=CONTROL_ACTIONS.has(request.action)&&!(request.action==='resume'&&options?.deferredResume);
     const controlTail=this.controlTails.get(conversationId)??Promise.resolve();
     const prior=control?controlTail:Promise.all([this.tails.get(conversationId)??Promise.resolve(),controlTail]);
+
     const promise=prior.catch(()=>{}).then(async()=>{
       const record:RecordEntry={fingerprint,pending:true,receipt:base};
       let existing:RecordEntry|undefined;
+
       try { existing=this.store.read(key); }
       catch { return {...base,status:'unknown' as const,message:'已有请求记录无法读取，执行结果尚无法确认；不会自动重做。'}; }
+
       if(existing)return existing.fingerprint===fingerprint?this.store.receipt(existing):conflict();
+
       try {
         if(!this.store.claim(key,record)) {
           let raced:RecordEntry|undefined;
+
           try { raced=this.store.read(key); } catch { return {...base,status:'unknown' as const,message:'已有请求记录无法读取；不会自动重做。'}; }
+
           if(!raced)return {...base,status:'unknown' as const,message:'请求记录状态发生变化；不会自动重做。'};
+
           return raced.fingerprint===fingerprint?this.store.receipt(raced):conflict();
         }
       } catch { return {...base,status:'rejected' as const,message:'无法保存请求记录，操作未执行。'}; }
+
       let receipt:TaskReceipt;
+
       try { receipt={...base,...await execute(),updatedAt:Date.now()}; }
       catch(error) { receipt={...base,...(error instanceof TaskActionRejected && error.allowNewConversation && request.action === 'start' ? {newConversationRequest:structuredClone(request)} : {}),status:error instanceof TaskActionRejected?'rejected':error instanceof TaskActionFailed?'failed':'unknown',message:error instanceof TaskActionRejected||error instanceof TaskActionFailed?error.message:'执行结果尚无法确认；不会自动重做。',updatedAt:Date.now()}; }
+
       try { this.store.finish(key,{fingerprint,pending:false,receipt}); }
       catch { return {...receipt,status:'unknown' as const,message:'回执未能保存，执行结果尚无法确认；不会自动重做。'}; }
+
       return receipt;
     });
+
     const tails=control?this.controlTails:this.tails;
     this.active.set(key,{fingerprint,promise});tails.set(conversationId,promise);
-    void promise.finally(()=>{this.active.delete(key);if(tails.get(conversationId)===promise)tails.delete(conversationId);}).catch(()=>{});
+    void promise.finally(()=>{this.active.delete(key);
+
+if(tails.get(conversationId)===promise)tails.delete(conversationId);}).catch(()=>{});
+
     return promise;
   }
 }

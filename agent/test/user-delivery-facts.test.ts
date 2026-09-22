@@ -12,10 +12,12 @@ import type { UserDelivery } from "../../shared/voice.js";
 import { buildDeliveryFactView } from "../../extension/src/sidepanel/delivery-facts-view.js";
 
 const COMPLETE: TaskNextStep = { action: "deliver", reason: "receipts_reviewed", allowWrites: true, delivery: "report", resultIds: ["r-1"] };
+
 const PARTIAL: TaskNextStep = { action: "ask_user", reason: "unknown_with_baseline", allowWrites: false, delivery: "partial", resultIds: ["r-1"] };
 
 function tool(over: Partial<Parameters<typeof createSendUserMessageTool>[0]> = {}) {
   const events: AgentUiEvent[] = [];
+
   return {
     events,
     tool: createSendUserMessageTool({
@@ -35,6 +37,7 @@ describe("send_user_message 事实链", () => {
       getNextStep: () => ({ ...COMPLETE, action: "continue", reason: "open_task", resultIds: [] }),
       getDeliveryFacts: () => ({ delivered: [], remaining: [], sources: [] }),
     });
+
     await expect(h.tool.execute("unverified", { kind: "finding", outcome: "complete", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never)).rejects.toThrow(/尚未核验/);
     expect(h.events).toHaveLength(0);
     await h.tool.execute("partial", { kind: "finding", outcome: "partial", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never);
@@ -49,6 +52,7 @@ describe("send_user_message 事实链", () => {
     const h = tool({ getRunId: () => p.snapshot().runId!, getNextStep: () => p.snapshot().nextStep!, getDeliveryFacts: () => p.deliveryFacts() });
     await h.tool.execute("fifteen", { kind: "finding", outcome: "partial", content: "这些项尚未核对。" }, undefined, undefined, {} as never);
     const message = parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "default", event: h.events[0] }));
+
     if (message?.type !== "agent_event" || message.event.kind !== "user_delivery") throw new Error("正式交付未通过协议");
     expect(message.event.delivery.facts?.omittedRemaining).toBe(3);
     expect(buildDeliveryFactView(message.event.delivery.facts).remainingTotal).toBe(15);
@@ -62,6 +66,7 @@ describe("send_user_message 事实链", () => {
         sources: [{ url: "https://fixture.test/offer/a" }],
       }),
     });
+
     await h.tool.execute("call-1", { kind: "finding", outcome: "partial", content: "三家方案已比较，备注还没核对。" }, undefined, undefined, {} as never);
     const delivery = (h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery;
     expect(delivery.facts).toMatchObject({
@@ -78,6 +83,7 @@ describe("send_user_message 事实链", () => {
     const h = tool({
       getDeliveryFacts: () => ({ delivered: [], remaining: [{ id: "r-2", description: "还剩一项", status: "pending" }], sources: [] }),
     });
+
     await expect(h.tool.execute("call-2", { kind: "finding", content: "全部完成。" }, undefined, undefined, {} as never)).rejects.toThrow(/事实链无效/);
     expect(h.events).toHaveLength(0);
   });
@@ -109,6 +115,7 @@ function progressHarness() {
   const runId = p.snapshot().runId!;
   const emit = (event: AgentUiEvent) => p.observe({ type: "agent_event", conversationId: "default", runId, event } as never);
   emit({ kind: "agent_start", deliveryMode: "explicit" });
+
   return { p, runId, emit };
 }
 

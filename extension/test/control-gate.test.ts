@@ -54,7 +54,9 @@ describe("WRITE_TOOLS", () => {
     const gate = new ControlGate();
     await gate.takeover();
     let ran = 0;
-    await expect(gate.run("f1", "fetch", async () => { ran += 1; return { ok: true }; }, "main", { method: "POST", body: "{}" })).rejects.toThrow(USER_BLOCKED_ERROR);
+    await expect(gate.run("f1", "fetch", async () => { ran += 1;
+
+ return { ok: true }; }, "main", { method: "POST", body: "{}" })).rejects.toThrow(USER_BLOCKED_ERROR);
     expect(ran).toBe(0);
   });
 
@@ -194,11 +196,13 @@ describe("SW 重启 / 断线不得把 hold 打成 agent", () => {
     const stored = snapshotControl(live, "user");
 
     const premature = new ControlGate();
+
     const tooEarly = applyFirstUplinkState({
       hydrateDone: false,
       owner: premature.control,
       connState: "connecting",
     });
+
     expect(premature.control).toBe("agent");
     expect(tooEarly.applyLost).toBe(false);
     expect(tooEarly.abortGate).toBe(false);
@@ -219,12 +223,15 @@ describe("ControlGate", () => {
     const gate = new ControlGate();
     let releaseLead!: () => void;
     let releaseWorker!: () => void;
+
     const lead = gate.run("lead-write", "click", () => new Promise<{ clicked: true }>((resolve) => {
       releaseLead = () => resolve({ clicked: true });
     }), LEAD_SESSION_ID);
+
     const worker = gate.run("worker-write", "fill", () => new Promise<{ filled: true }>((resolve) => {
       releaseWorker = () => resolve({ filled: true });
     }), "wiki");
+
     await Promise.resolve();
 
     expect(gate.inflightSessionIds().sort()).toEqual([LEAD_SESSION_ID, "wiki"]);
@@ -283,33 +290,43 @@ describe("ControlGate", () => {
     let started = false;
     let finished = false;
     let release!: () => void;
+
     const inflight = new Promise<void>((resolve) => {
       release = resolve;
     });
+
     const p1 = gate.run("in", "click", async () => {
       started = true;
       await inflight;
       finished = true;
+
       return { clicked: true };
     });
+
     await Promise.resolve();
     expect(started).toBe(true);
 
     let confirmed = false;
+
     const takeoverP = gate.takeover().then((r) => {
       confirmed = true;
+
       return r;
     });
+
     await Promise.resolve();
     expect(gate.isDraining).toBe(true);
     expect(confirmed).toBe(false);
     expect(gate.control).toBe("agent");
 
     let lateLanded = false;
+
     const late = gate.run("late", "fill", async () => {
       lateLanded = true;
+
       return { filled: true };
     });
+
     await expect(late).rejects.toThrow(USER_BLOCKED_ERROR);
     expect(lateLanded).toBe(false);
 
@@ -326,6 +343,7 @@ describe("ControlGate", () => {
     await expect(
       gate.run("after", "click", async () => {
         afterLanded = true;
+
         return { clicked: true };
       }),
     ).rejects.toThrow(USER_BLOCKED_ERROR);
@@ -335,13 +353,17 @@ describe("ControlGate", () => {
   it("abort 在排空中途到达则不得进入 user", async () => {
     const gate = new ControlGate();
     let release!: () => void;
+
     const inflight = new Promise<void>((resolve) => {
       release = resolve;
     });
+
     const p1 = gate.run("in", "click", async () => {
       await inflight;
+
       return { clicked: true };
     });
+
     await Promise.resolve();
     const takeoverP = gate.takeover();
     gate.abort();
@@ -365,12 +387,15 @@ describe("ControlGate", () => {
   it("abort 立即放行新动作，同时暴露旧动作真正退出的时刻供 UI 二次清理", async () => {
     const gate = new ControlGate();
     let release!: () => void;
+
     const inflight = gate.run("old", "click", async () => {
       await new Promise<void>((resolve) => {
         release = resolve;
       });
+
       return { clicked: true };
     });
+
     await Promise.resolve();
 
     const aborted = gate.abort();
@@ -405,6 +430,7 @@ describe("prepareHandback / continue text", () => {
     expect(prepareHandback(null)).toEqual({ ok: false, reason: HANDBACK_NO_PAGE });
     const ok = prepareHandback({ id: 9, title: "另一条", url: "https://v.flomoapp.com/mine?n=2" }, 1);
     expect(ok.ok).toBe(true);
+
     if (ok.ok) {
       expect(ok.context.tabId).toBe(9);
       expect(ok.context.tabId).not.toBe(1);
@@ -417,6 +443,7 @@ describe("prepareHandback / continue text", () => {
       { tabId: 9, title: "另一条笔记", url: "https://v.flomoapp.com/mine" },
       "heading 今天的会议",
     );
+
     expect(text).toContain("Continue the original task");
     expect(text).toContain("Do not reopen");
     expect(text).toContain("Do not repeat completed steps");
@@ -458,8 +485,15 @@ describe("R4 执行器按操作身份去重", () => {
   it("相同 id 的重复投递只执行一次并回传原结果", async () => {
     const gate = new ControlGate();
     let writes = 0;
-    const first = await gate.run("dup-1", "click", async () => { writes += 1; return { clicked: writes }; }, "main");
-    const second = await gate.run("dup-1", "click", async () => { writes += 1; return { clicked: writes }; }, "main");
+
+    const first = await gate.run("dup-1", "click", async () => { writes += 1;
+
+ return { clicked: writes }; }, "main");
+
+    const second = await gate.run("dup-1", "click", async () => { writes += 1;
+
+ return { clicked: writes }; }, "main");
+
     expect(first).toEqual({ clicked: 1 });
     expect(second).toEqual({ clicked: 1 });
     expect(writes).toBe(1);
@@ -470,9 +504,17 @@ describe("R4 执行器按操作身份去重", () => {
     let writes = 0;
     let release!: () => void;
     const blocker = new Promise<void>(resolve => { release = resolve; });
-    const first = gate.run("dup-2", "click", async () => { writes += 1; await blocker; return { clicked: true }; }, "main");
+
+    const first = gate.run("dup-2", "click", async () => { writes += 1; await blocker;
+
+ return { clicked: true }; }, "main");
+
     await Promise.resolve();
-    const second = gate.run("dup-2", "click", async () => { writes += 1; return { clicked: false }; }, "main");
+
+    const second = gate.run("dup-2", "click", async () => { writes += 1;
+
+ return { clicked: false }; }, "main");
+
     release();
     expect(await first).toEqual({ clicked: true });
     expect(await second).toEqual({ clicked: true });
@@ -483,18 +525,26 @@ describe("R4 执行器按操作身份去重", () => {
     const gate = new ControlGate();
     let writes = 0;
     await expect(gate.run("dup-3", "click", async () => { writes += 1; throw new Error("动作后未知"); }, "main")).rejects.toThrow("动作后未知");
-    await expect(gate.run("dup-3", "click", async () => { writes += 1; return {}; }, "main")).rejects.toThrow("动作后未知");
+    await expect(gate.run("dup-3", "click", async () => { writes += 1;
+
+ return {}; }, "main")).rejects.toThrow("动作后未知");
     expect(writes).toBe(1);
   });
 
   it("SW 重启后持久快照仍能识别重复投递", async () => {
     const live = new ControlGate();
     let writes = 0;
-    await live.run("dup-4", "click", async () => { writes += 1; return { clicked: true }; }, "main");
+    await live.run("dup-4", "click", async () => { writes += 1;
+
+ return { clicked: true }; }, "main");
     const stored = snapshotControl(live, "idle");
     const restarted = new ControlGate();
     applyControlSnapshot(restarted, stored);
-    const replay = await restarted.run("dup-4", "click", async () => { writes += 1; return { clicked: true }; }, "main").then(() => null, (e: any) => e);
+
+    const replay = await restarted.run("dup-4", "click", async () => { writes += 1;
+
+ return { clicked: true }; }, "main").then(() => null, (e: any) => e);
+
     expect(String(replay?.message)).toMatch(/重复执行/);
     expect(replay?.executionFact).toBe("unknown");
     expect(writes).toBe(1);
@@ -503,8 +553,12 @@ describe("R4 执行器按操作身份去重", () => {
   it("只读工具不去重，写工具按 session 与 id 区分", async () => {
     const gate = new ControlGate();
     let reads = 0;
-    await gate.run("read-1", "snapshot", async () => { reads += 1; return reads; }, "main");
-    await gate.run("read-1", "snapshot", async () => { reads += 1; return reads; }, "main");
+    await gate.run("read-1", "snapshot", async () => { reads += 1;
+
+ return reads; }, "main");
+    await gate.run("read-1", "snapshot", async () => { reads += 1;
+
+ return reads; }, "main");
     expect(reads).toBe(2);
     let writes = 0;
     await gate.run("same-id", "click", async () => { writes += 1; }, "main");

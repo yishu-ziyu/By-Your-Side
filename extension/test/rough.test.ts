@@ -50,6 +50,7 @@ describe("rough 几何与 PRNG 单元测试", () => {
       { seed: 55, roughness: 1, boil: 0.3 },
       3,
     );
+
     expect(frames.length).toBe(3);
     expect(frames[0]).not.toBe(frames[1]);
     expect(frames[1]).not.toBe(frames[2]);

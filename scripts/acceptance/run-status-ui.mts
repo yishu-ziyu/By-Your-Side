@@ -10,7 +10,9 @@ import { extname, join, resolve } from "node:path";
 import { launchIsolatedExtension, sleep } from "./isolated-extension.mts";
 
 const OUT = process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? "/tmp/sideagent-run-status";
+
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
 const check = (name: string, ok: boolean, detail?: string): void => {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -30,22 +32,29 @@ async function main(): Promise<void> {
   await mkdir(OUT, { recursive: true });
   const iso = await launchIsolatedExtension();
   const report: Record<string, unknown> = { ok: false, checks, outDir: iso.outDir };
+
   // 面板页由本地服务提供：真 sidepanel.html + 真 dist 资源 + 注入的 mock chrome.runtime（不碰真 background）。
   const server = createServer(async (req, res) => {
     const pathname = new URL(req.url ?? "/", "http://local").pathname;
+
     if (pathname === "/sidepanel.html") {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end((await readFile("extension/sidepanel.html", "utf8")).replace("<script type=\"module\"", '<script src="mock.js"></script><script type="module"'));
+
       return;
     }
+
     if (pathname === "/mock.js") {
       res.setHeader("Content-Type", "text/javascript");
       res.end(MOCK);
+
       return;
     }
+
     if (/\.(js|css|woff2|svg|png)$/.test(pathname)) {
       try {
         const file = resolve("extension/dist", `.${pathname}`);
+
         if (!file.startsWith(`${resolve("extension/dist")}/`)) throw new Error("path");
         res.setHeader("Content-Type", ({ ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png" } as Record<string, string>)[extname(file)] ?? "application/octet-stream");
         res.end(await readFile(file));
@@ -53,20 +62,27 @@ async function main(): Promise<void> {
         res.statusCode = 404;
         res.end();
       }
+
       return;
     }
+
     res.statusCode = 404;
     res.end();
   });
+
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const panelUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/sidepanel.html`;
+
   try {
     const targetId = await iso.newTarget(panelUrl);
+
     for (let n = 0; n < 40; n += 1) {
       const ready = await iso.evalIn(targetId, `Boolean(document.querySelector('#conversation-new') && globalThis.uiEmit)`).catch(() => false);
+
       if (ready) break;
       await sleep(200);
     }
+
     await iso.evalIn(targetId, `globalThis.uiEmit ? true : (()=>{throw new Error('panel not ready')})()`);
     await iso.evalIn(targetId, `emit({kind:'conversations',selectedConversationId:'default',conversations:[{id:'default',title:'新会话',createdAt:1,updatedAt:1,state:'running',mode:'act'}]});
       emit({kind:'conn',state:'connected'});
@@ -77,6 +93,7 @@ async function main(): Promise<void> {
     await iso.evalIn(targetId, `(()=>{const ev=e=>emit({kind:'server',msg:{type:'agent_event',conversationId:'default',event:e}});
       ev({kind:'thinking_delta',delta:'先看一眼这个页面，再决定点哪里。'});})()`);
     await sleep(150);
+
     const thinkingLive = await iso.evalIn(targetId, `(()=>{
       const d=document.querySelector('details.thinking');
       const orb=d?d.querySelector('canvas'):null;
@@ -88,6 +105,7 @@ async function main(): Promise<void> {
         orbAnim:orb?getComputedStyle(orb).animationName:null,
         color:span?getComputedStyle(span).color:null,
       };})()`);
+
     report.thinkingLive = thinkingLive;
     check("思考中那一行的竖线在呼吸", typeof thinkingLive.spine === "string" && thinkingLive.spine.includes("spineBreathe"), `spine ${thinkingLive.spine}`);
     check("思考中那一行的光球在呼吸", String(thinkingLive.orbClass).includes("orb-live") && String(thinkingLive.orbAnim).includes("orbBreathe"), `orb ${thinkingLive.orbClass} / ${thinkingLive.orbAnim}`);
@@ -99,6 +117,7 @@ async function main(): Promise<void> {
       ev({kind:'tool_end',toolCallId:'t1',name:'snapshot',isError:false,resultText:'ok'});
       ev({kind:'tool_start',toolCallId:'t2',name:'click',params:{label:'暂停'}});})()`);
     await sleep(700);
+
     const running = await iso.evalIn(targetId, `(()=>{
       const run=document.querySelector('details.run-steps');
       return {
@@ -110,6 +129,7 @@ async function main(): Promise<void> {
         title:run?run.querySelector('.run-title').textContent:null,
         time:run?run.querySelector('.run-time').textContent:null,
       };})()`);
+
     report.running = running;
     check("像素格等待态已移除", running.px === 0, `px nodes ${running.px}`);
     check("运行中只有一个执行块", running.runCount === 1, `runs ${running.runCount}`);
@@ -117,6 +137,7 @@ async function main(): Promise<void> {
     check("状态行带实时耗时", /\d/.test(running.time ?? ""), `time ${running.time}`);
     check("细节默认收起，点开才看", running.open === false, `open ${running.open}`);
     check("运行指示是光球", running.orbs >= 1, `canvas ${running.orbs}`);
+
     // B：思考行落定（收束一次、回到常态），跑着的 chip 有蓝边 + 光球在呼吸
     const settle = await iso.evalIn(targetId, `(()=>{
       const d=document.querySelector('details.thinking');
@@ -130,10 +151,12 @@ async function main(): Promise<void> {
         chipBorder:chip?getComputedStyle(chip).borderColor:null,
         chipOrbClass:chipOrb?chipOrb.className:null,
       };})()`);
+
     report.settle = settle;
     check("思考行落定后不再是运行态", settle.thinkingStreaming === false && settle.spineIdle === "none", `streaming ${settle.thinkingStreaming} spine ${settle.spineIdle}`);
     check("跑着的 chip 带运行态样式", settle.chipRunning === true && typeof settle.chipBorder === "string", `running ${settle.chipRunning} border ${settle.chipBorder}`);
     check("跑着的 chip 光球在呼吸", String(settle.chipOrbClass).includes("orb-live"), `orb ${settle.chipOrbClass}`);
+
     // 光球是不是真的在动：同一批 canvas 隔 400ms 取两次像素指纹，比较变化。
     const orbMotion = await iso.evalIn(targetId, `(async()=>{
       const canvases=[...document.querySelectorAll('canvas')].filter(c=>c.width>0&&c.height>0);
@@ -143,6 +166,7 @@ async function main(): Promise<void> {
       const b=sample();
       return {count:canvases.length,changed:a.filter((v,i)=>v!==b[i]).length,reduce:matchMedia('(prefers-reduced-motion: reduce)').matches};
     })()`);
+
     report.orbMotion = orbMotion;
     check("运行中的光球真的在动", orbMotion.changed >= 1, `canvas ${orbMotion.count} changed ${orbMotion.changed} reduce ${orbMotion.reduce}`);
     await iso.screenshot(targetId, join(iso.outDir, "running.png"));
@@ -157,10 +181,12 @@ async function main(): Promise<void> {
     await iso.evalIn(targetId, `(()=>{const ev=e=>emit({kind:'server',msg:{type:'agent_event',conversationId:'default',event:e}});
       ev({kind:'tool_end',toolCallId:'t2',name:'click',isError:false,resultText:'Clicked 暂停. Page reacted: paused false → true.'});})()`);
     await sleep(80);
+
     const closing = await iso.evalIn(targetId, `(()=>{
       const chip=[...document.querySelectorAll('.chip')].find(c=>c.textContent.includes('暂停'));
       const orb=chip?chip.querySelector('canvas'):null;
       return {running:chip?chip.classList.contains('running'):null, orbClass:orb?orb.className:null, dot:chip?chip.querySelector('.chip-dot').className:null};})()`);
+
     report.closing = closing;
     check("结束后 chip 退出运行态", closing.running === false, `running ${closing.running}`);
     check("结束后光球收束一次", String(closing.orbClass).includes("orb-settle"), `orb ${closing.orbClass}`);
@@ -172,10 +198,12 @@ async function main(): Promise<void> {
       emit({kind:'server',msg:{type:'status',state:'idle'}});
       ev({kind:'agent_end'});})()`);
     await sleep(900);
+
     const done = await iso.evalIn(targetId, `(()=>{
       const run=document.querySelector('details.run-steps');
       return { title:run?run.querySelector('.run-title').textContent:null, time:run?run.querySelector('.run-time').textContent:null, open:run?run.open:null, px:document.querySelectorAll('.px-wrap,.px-grid').length };
     })()`);
+
     report.done = done;
     check("结束后状态行落定为查看执行过程", done.title === "查看执行过程", `title ${done.title}`);
     check("结束后带总耗时", /耗时/.test(done.time ?? ""), `time ${done.time}`);

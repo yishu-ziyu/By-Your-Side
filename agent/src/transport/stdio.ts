@@ -6,13 +6,16 @@ import type { Readable, Writable } from "node:stream";
 
 /** host→Chrome 输出帧上限 900KiB（低于 Chrome 1MiB 文档上限，给 JSON/UTF-8 留余量）；Chrome→host 输入帧上限 64MiB。 */
 export const MAX_OUTPUT_FRAME_BYTES = 900 * 1024;
+
 export const MAX_INPUT_FRAME_BYTES = 64 * 1024 * 1024;
 
 export function encodeFrame(message: string): Buffer {
   const body = Buffer.from(message, "utf8");
+
   if (body.byteLength > MAX_OUTPUT_FRAME_BYTES) throw new Error(`输出帧过大：${body.byteLength} 字节，上限 ${MAX_OUTPUT_FRAME_BYTES} 字节`);
   const header = Buffer.allocUnsafe(4);
   header.writeUInt32LE(body.byteLength, 0);
+
   return Buffer.concat([header, body]);
 }
 
@@ -23,13 +26,17 @@ export class FrameDecoder {
   push(chunk: Buffer): string[] {
     this.buffer = this.buffer.length === 0 ? Buffer.from(chunk) : Buffer.concat([this.buffer, chunk]);
     const frames: string[] = [];
+
     while (this.buffer.length >= 4) {
       const length = this.buffer.readUInt32LE(0);
+
       if (length > MAX_INPUT_FRAME_BYTES) throw new Error(`输入帧过大：${length} 字节，上限 ${MAX_INPUT_FRAME_BYTES} 字节`);
+
       if (this.buffer.length < 4 + length) break;
       frames.push(this.buffer.subarray(4, 4 + length).toString("utf8"));
       this.buffer = this.buffer.subarray(4 + length);
     }
+
     return frames;
   }
 }
@@ -50,23 +57,28 @@ export function createStdioTransport(
   let messageCb: ((message: string) => void) | null = null;
   let closeCb: (() => void) | null = null;
   let closed = false;
+
   const fireClose = (): void => {
     if (closed) return;
     closed = true;
     closeCb?.();
   };
+
   const decoder = new FrameDecoder();
 
   input.on("data", (chunk: Buffer) => {
     let frames: string[];
+
     try {
       frames = decoder.push(chunk);
     } catch (error) {
       // 拒绝诊断只含方向/字节数/限制，不含帧原文。
       console.error(`[stdio] 拒绝输入帧：${error instanceof Error ? error.message : String(error)}`);
       input.destroy();
+
       return;
     }
+
     for (const frame of frames) messageCb?.(frame);
   });
   input.on("end", fireClose);

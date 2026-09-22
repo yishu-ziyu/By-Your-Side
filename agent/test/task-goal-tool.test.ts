@@ -11,13 +11,19 @@ function fixture() {
   const read = vi.fn(async (): Promise<{ id: string; data: Record<string, unknown> }> => ({ id: 'fresh', data: { value: '', page: { url: 'https://notes.example', text: '笔记编辑器' } } }));
   const reviewCalls: Array<{ stage: string; data: unknown }> = [];
   let current = true;
-  const host: GoalToolHost = { snapshot: () => progress.snapshot(), book: () => progress.goals, evidence, review: async(stage,data)=>{reviewCalls.push({stage,data});const r=await completeSimple();return {...JSON.parse(r.content[0]!.text),probability:1};}, current: () => () => current, persist: vi.fn(), read };
+
+  const host: GoalToolHost = { snapshot: () => progress.snapshot(), book: () => progress.goals, evidence, review: async(stage,data)=>{reviewCalls.push({stage,data});const r=await completeSimple();
+
+return {...JSON.parse(r.content[0]!.text),probability:1};}, current: () => () => current, persist: vi.fn(), read };
+
   const tool = createTaskGoalsTool(() => host);
   const captureTool=createCapturePageMaterialTool(()=>host);
   const capture=(params:Parameters<typeof captureTool.execute>[1])=>captureTool.execute("capture",params,new AbortController().signal,undefined,{} as never);
   const call = (params: Parameters<typeof tool.execute>[1]) => tool.execute('call', params, new AbortController().signal, undefined, {} as never);
+
   return { progress, evidence, completeSimple, read, host, call, capture, reviewCalls, cancel: () => { current = false; } };
 }
+
 const goals = [
   { id: 'source-goal', description: '取得第一条评论', criterion: '第一条评论完整正文', kind: 'material' as const, requirements: ['requirement-1'], materialId: 'comment' },
   { id: 'paste-goal', description: '粘贴评论', criterion: '笔记编辑器与评论正文完全一致', kind: 'field' as const, requirements: ['requirement-1'], materialId: 'comment' },
@@ -36,12 +42,14 @@ it('一句原文加真实来源网址能够核验，额外内容与遗漏网址�
   f.read.mockResolvedValue({id:'fresh',data:{tagName:'div',editableText:value,textContent:value.replace('\n',''),page:{url:'https://notes.example',text:'笔记编辑器'}}});
   await f.call({action:'verify',goalId:'paste-goal',tabId:8,target:'#editor'});
   expect(f.progress.snapshot().goalPlan!.goals[1]!.status).toBe('satisfied');
+
   for(const wrong of ['短句。',`${value}\n未经要求的文本`]) {
     f.read.mockResolvedValue({id:'wrong',data:{value:wrong,page:{url:'https://notes.example',text:'笔记编辑器'}}});
     await f.call({action:'verify',goalId:'paste-goal',tabId:8,target:'#editor'});
     expect(f.progress.snapshot().goalPlan!.goals[1]!.status).toBe('pending');
   }
 });
+
 it('原文取得后目标仍未完成，空字段与错误字段拒绝，正确字段才完成', async () => {
   const f = fixture(); await f.call({ action: 'plan', goals });
   await f.capture({ observationId: 'source', materialId: 'comment', purpose: '第一条评论正文', selection:{kind:'text',spans: [{ start: 6, end: 23 }]} });
@@ -59,11 +67,14 @@ it('原文取得后目标仍未完成，空字段与错误字段拒绝，正确�
   expect(f.progress.snapshot().resultState).toBe('satisfied');
   expect(f.progress.deliveryFacts().remaining).toEqual([]);
 });
+
 it('遗漏目标不能通过审核，迟到的计划不能覆盖改口或取消', async () => {
   const f = fixture(); f.completeSimple.mockResolvedValueOnce({ stopReason: 'stop', content: [{ type: 'text', text: '{"matched":false,"reason":"缺少目的地"}' }] });
   await f.call({ action: 'plan', goals: goals.slice(0, 1) });
   expect(f.progress.snapshot().goalPlan!.coverage).toBe('unplanned');
-  f.completeSimple.mockImplementationOnce(async () => { f.cancel(); return { stopReason: 'stop', content: [{ type: 'text', text: '{"matched":true,"reason":"匹配"}' }] }; });
+  f.completeSimple.mockImplementationOnce(async () => { f.cancel();
+
+ return { stopReason: 'stop', content: [{ type: 'text', text: '{"matched":true,"reason":"匹配"}' }] }; });
   await expect(f.call({ action: 'plan', goals })).rejects.toThrow('任务已变化');
   expect(f.progress.snapshot().goalPlan!.coverage).toBe('unplanned');
 });
@@ -110,6 +121,7 @@ const removableGoals = [
   { id: 'scratch-source', description: '临时保存页面日志作为内部依据', criterion: '完整保存当前页面日志', kind: 'material' as const, requirements: ['requirement-1'], materialId: 'scratch-log' },
   { id: 'body-marked', description: '在正文中圈出关键词', criterion: '关键词的实际出现位置都有可见标注', kind: 'condition' as const, requirements: ['requirement-1'] },
 ];
+
 it('已固定方案带 reason 且核验通过时移除未引用的内部材料，条件目标原样保留',async()=>{
  const f=fixture();await f.call({action:'plan',goals:removableGoals});
  await f.call({action:'plan',goals:[{...removableGoals[1]!,criterion:'改写后的条件描述'}],reason:'内部日志保存反复超限，改为直接核对页面'});

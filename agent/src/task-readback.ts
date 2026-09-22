@@ -15,9 +15,11 @@ export class TaskReadback {
   beginWrite():void { this.revision++; }
   restore(snapshot:TaskProgressSnapshot):void {
     this.reset();
+
     for(const item of snapshot.results??[]){
       if(item.status==='satisfied'&&resultHasWriteEffect(item))this.written(item.evidence?.member??'main',null);
     }
+
     // Old hosts did not record auxiliary mutations as result items. Retain their
     // pending review conservatively, but never reuse a saved observation as fresh.
     if(snapshot.nextStep?.reason==='readback_required'&&!this.required.size)this.written('main',null);
@@ -26,8 +28,13 @@ export class TaskReadback {
   forgetPage(member:string):void { this.pages.delete(member); }
   closedTab(member:string,tabId:number|null):void {
     this.revision++;
-    if(this.closed.size>=100){this.overflow=true;return;}
+
+    if(this.closed.size>=100){this.overflow=true;
+
+return;}
+
     this.closed.set(`${member}:${tabId??'unknown'}`,{member,tabId,revision:this.revision});
+
     if(this.pages.get(member)===tabId)this.pages.delete(member);
   }
   observedTabs(member:string,tabIds:readonly number[],readVersion:number):void {
@@ -38,14 +45,21 @@ export class TaskReadback {
   written(member:string,tabId:number|null):void {
     this.revision++;
     const key=`${member}:${tabId??'working'}`;
-    if(this.required.size>=100&&!this.required.has(key)){this.overflow=true;return;}
+
+    if(this.required.size>=100&&!this.required.has(key)){this.overflow=true;
+
+return;}
+
     this.required.set(key,{member,tabId,revision:this.revision});
   }
   observed(member:string,observation:{tabId:number|null;workingTab:boolean;truncated:boolean;text:string},readVersion:number):void {
     if(observation.tabId===null||observation.truncated)return;
+
     if(observation.workingTab&&this.pages.size<100)this.pages.set(member,observation.tabId);
+
     for(const [key,write] of this.required){
       if(write.member!==member||write.revision>readVersion)continue;
+
       if(write.tabId===null?observation.workingTab:write.tabId===observation.tabId)this.required.delete(key);
     }
   }

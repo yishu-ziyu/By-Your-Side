@@ -11,44 +11,56 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const CDP = `http://127.0.0.1:${process.env.CDP_PORT ?? 9222}`;
 
 /** manifest key（base64 SPKI DER）→ 扩展 ID（与 install-host.mjs 同算法）。 */
 function extensionIdFromKey(key) {
   const der = Buffer.from(key, "base64");
   const hash = createHash("sha256").update(der).digest();
+
   return [...hash.subarray(0, 16)]
     .map((b) => String.fromCharCode(97 + (b >> 4)) + String.fromCharCode(97 + (b & 15)))
     .join("");
 }
 
 const manifest = JSON.parse(readFileSync(join(repoRoot, "extension/manifest.json"), "utf8"));
+
 if (!manifest.key) {
   console.error("extension/manifest.json 缺少 key 字段，无法确定扩展 ID");
   process.exit(1);
 }
+
 const EXT_ID = extensionIdFromKey(manifest.key);
 
 const ver = await (await fetch(`${CDP}/json/version`)).json().catch(() => null);
+
 if (!ver) {
   console.error(`连不上 ${CDP}——Chrome 需要带 --remote-debugging-port 启动`);
   process.exit(1);
 }
+
 const ws = new WebSocket(ver.webSocketDebuggerUrl);
+
 await new Promise((res, rej) => {
   ws.addEventListener("open", res);
   ws.addEventListener("error", rej);
 });
 
 let seq = 0;
+
 const pending = new Map();
+
 ws.addEventListener("message", (ev) => {
   const m = JSON.parse(String(ev.data));
+
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
 });
+
 function send(method, params = {}, sessionId) {
   const id = ++seq;
   ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+
   return new Promise((res) => pending.set(id, res));
 }
 
@@ -56,7 +68,9 @@ function send(method, params = {}, sessionId) {
 // - 外部直接开 chrome-extension:// 页面会被 Chrome 拦（ERR_BLOCKED_BY_CLIENT），不能靠临时扩展页调 chrome.runtime.reload()；
 // - 已开的旧 chrome://extensions 标签常被冻结，evaluate 会挂起——必须新建标签（新渲染进程）。
 const { result: t } = await send("Target.createTarget", { url: "chrome://extensions/", active: false });
+
 await new Promise((r) => setTimeout(r, 2500));
+
 const { result: att } = await send("Target.attachToTarget", { targetId: t.targetId, flatten: true });
 
 const r = await send("Runtime.evaluate", {
@@ -79,9 +93,11 @@ const r = await send("Runtime.evaluate", {
   })()`,
   returnByValue: true,
 }, att.sessionId);
+
 const outcome = r.result?.result?.value ?? JSON.stringify(r.result);
 
 await new Promise((r2) => setTimeout(r2, 800));
+
 await send("Target.closeTarget", { targetId: t.targetId });
 
 if (outcome === "ok") {
@@ -90,4 +106,5 @@ if (outcome === "ok") {
   console.error(`重载失败：${outcome}`);
   process.exit(1);
 }
+
 process.exit(0);

@@ -7,5 +7,6 @@ export const LEAD_CURSOR_ID = "main";
 
 export function cursorColor(id: string): string {
   if (!id || id === LEAD_CURSOR_ID) return LEAD_COLOR;
+
   return displayColor(id);
 }

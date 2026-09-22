@@ -7,15 +7,18 @@ import { isRelevantExperience, isRelevantMemory } from "../src/memory-relevance.
 import { MemoryStore } from "../src/memory-store.js";
 
 const roots: string[] = [];
+
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 async function store() {
   const root = await mkdtemp(join(tmpdir(), "sideagent-experience-relevance-"));
   roots.push(root);
+
   return new MemoryStore(root);
 }
 
 const customerProcedure = "待验证的做法：导出客户名单\n下次参考：进入客户管理，按客户手机号去重，并核对客户总数。";
+
 const site = { kind: "site", hostname: "crm.example" } as const;
 
 describe("procedure matching rule", () => {
@@ -27,6 +30,7 @@ describe("procedure matching rule", () => {
       ["下载月度对账单", "下载图片素材包"],
       ["Export customer list", "Export the monthly inventory report"],
     ] as const;
+
     for (const [topic, query] of crossObject) expect(isRelevantExperience(topic, query)).toBe(false);
   });
 
@@ -58,7 +62,9 @@ async function customerExperience(s: MemoryStore) {
     sourceConversationId: "a",
     evidence: ["feedback-1：客户手机号重复了"],
   });
+
   if (!entry) throw new Error("experience was not created");
+
   return entry;
 }
 
@@ -66,12 +72,15 @@ describe("automatic experience relevance", () => {
   it("does not select an automatic workflow when only the generic action word is shared", async () => {
     const s = await store();
     await customerExperience(s);
+
     const negatives = [
       { topic: "删除过期草稿", text: "删除供应商档案" },
       { topic: "发送周报给团队", text: "发送退款通知给客户" },
       { topic: "下载月度对账单", text: "下载图片素材包" },
     ];
+
     expect(await s.select({ text: "导出本月库存报表", url: "https://crm.example/inventory" })).toEqual([]);
+
     for (const [index, negative] of negatives.entries()) {
       const entry = await s.createExperience({
         runId: `run-negative-${index}`,
@@ -81,6 +90,7 @@ describe("automatic experience relevance", () => {
         sourceConversationId: "a",
         evidence: [`feedback-${index}：范围不对`],
       });
+
       expect(entry).not.toBeNull();
       expect(await s.select({ text: negative.text, url: "https://crm.example/work" })).toEqual([]);
     }
@@ -110,11 +120,13 @@ describe("automatic experience relevance", () => {
       sourceConversationId: "a",
       evidence: ["feedback-2：月份选错了"],
     });
+
     expect(await s.select({ text: "导出上个月的报表", url: "https://crm.example/customers" })).toEqual([short]);
   });
 
   it("selects an English wording of the same task", async () => {
     const s = await store();
+
     const entry = await s.createExperience({
       runId: "run-english",
       topic: "Export customer list",
@@ -123,6 +135,7 @@ describe("automatic experience relevance", () => {
       sourceConversationId: "a",
       evidence: ["feedback-1：exported only 20 of 200 customers"],
     });
+
     expect(await s.select({ text: "Please export the full customer list to CSV" })).toEqual([entry]);
     expect(await s.select({ text: "Export the monthly inventory report" })).toEqual([]);
   });
@@ -153,11 +166,13 @@ describe("automatic experience relevance", () => {
 
   it("keeps permissive relevance for explicit preferences", async () => {
     const s = await store();
+
     const preference = await s.create({
       text: "导出时用 CSV 格式。",
       scope: { kind: "all" },
       sourceConversationId: "a",
     });
+
     expect(await s.select({ text: "导出本月库存报表" })).toEqual([preference]);
   });
 
@@ -167,11 +182,15 @@ describe("automatic experience relevance", () => {
     const runtime = new MemoryRuntime(s, "fixture", () => {});
     let handler: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
     runtime.extension()({ on: (name: string, fn: typeof handler) => { if (name === "before_agent_start") handler = fn; } } as never);
+
     if (!handler) throw new Error("before_agent_start handler missing");
+
     const inject = async (text: string, url: string) => {
       runtime.beginUserTurn(text, { tabId: 1, title: "fixture", url });
+
       return (await handler!({ systemPrompt: "BASE" }))?.systemPrompt.includes("按客户手机号去重") ?? false;
     };
+
     expect(await inject("导出本月库存报表", "https://crm.example/inventory")).toBe(false);
     expect(await inject("检查今天的天气", "https://crm.example/weather")).toBe(false);
     expect(await inject("导出客户名单", "https://other.example/customers")).toBe(false);

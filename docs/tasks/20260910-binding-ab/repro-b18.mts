@@ -40,14 +40,21 @@ const modelCode = `
 async function run(label: string, latencyMs: number) {
   let js = 0;
   const seen: string[] = [];
+
   const call = async (name: string, params: any) => {
     await new Promise(r => setTimeout(r, latencyMs));
     seen.push(name);
-    if (name === "js") { js++; return { value: { found: true, disabled: js < 2 } }; }
+
+    if (name === "js") { js++;
+
+ return { value: { found: true, disabled: js < 2 } }; }
+
     if (name === "click") return { clicked: true };
+
     if (name === "snapshot") return { text: 'RootWebArea "收件箱"\n  [ref=6] button "确认提交"' };
     throw new Error("unexpected method " + name);
   };
+
   try {
     const r = await runBrowserProgram({ code: modelCode, call, id: "program-1" });
     console.log(`[${label} latency=${latencyMs}ms] FULFILLED value=${JSON.stringify(r.value)} steps=${r.steps} calls=${seen.join(",")}`);
@@ -58,5 +65,7 @@ async function run(label: string, latencyMs: number) {
 }
 
 await run("model call#2 exact", 0);
+
 await run("model call#2 exact", 120);
+
 await run("model call#2 exact", 1200);

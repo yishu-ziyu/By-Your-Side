@@ -20,6 +20,7 @@ interface RecordApi {
 
 (function () {
   const ns = window.__sideagent as unknown as { record?: RecordApi } | undefined;
+
   if (ns?.record) return; // 重复注入幂等
   const store = (window.__sideagent ??= {}) as unknown as { record?: RecordApi };
 
@@ -45,6 +46,7 @@ interface RecordApi {
     steps = result.steps;
     truncated = truncated || result.truncated;
     const t = now();
+
     // 合并期内的连续输入不必每击键都上行，省掉无意义的通道流量。
     if (t - lastPost < 250) return;
     lastPost = t;
@@ -66,6 +68,7 @@ interface RecordApi {
   function onClick(ev: MouseEvent): void {
     if (!recording || ev.button !== 0 || insideOverlay(ev.target)) return;
     const hit = anchorOfTarget(ev.target);
+
     if (!hit) return;
     record({ at: now(), kind: "click", anchor: hit.anchor, page: page() });
   }
@@ -73,8 +76,10 @@ interface RecordApi {
   function onInput(ev: Event): void {
     if (!recording || insideOverlay(ev.target)) return;
     const el = ev.target;
+
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement)) return;
     const src = sourceOf(el);
+
     if (el instanceof HTMLInputElement && !TEXTUAL_INPUT.has((el.type ?? "").toLowerCase())) return;
     const sensitive = isSensitiveField(src);
     const value = el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.textContent ?? el.value) : el.value;
@@ -89,6 +94,7 @@ interface RecordApi {
 
   function onKeydown(ev: KeyboardEvent): void {
     if (!recording || insideOverlay(ev.target)) return;
+
     if (!PRESS_KEYS.has(ev.key)) return;
     record({ at: now(), kind: "press", key: ev.key, page: page() });
   }
@@ -118,6 +124,7 @@ interface RecordApi {
       truncated = false;
       lastPost = 0;
       attach(true);
+
       return { ok: true };
     },
     stop() {
@@ -125,6 +132,7 @@ interface RecordApi {
       recording = false;
       attach(false);
       post();
+
       return { ok: true, count: steps.length };
     },
     recording() {

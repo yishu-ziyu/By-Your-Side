@@ -21,6 +21,7 @@ describe("parseClientEnvKey", () => {
       "export OPENAI_API_KEY=sk-first",
       "OPENAI_API_KEY=sk-second",
     ].join("\n");
+
     expect(parseClientEnvKey(content)).toBe("sk-first");
   });
 
@@ -69,6 +70,7 @@ describe("selectCliproxyModels", () => {
       "gemini-3-flash",
       "kimi-k2",
     ]);
+
     expect(selected.map((s) => s.id)).toEqual(["kimi-k2", "gemini-3-flash"]);
   });
 

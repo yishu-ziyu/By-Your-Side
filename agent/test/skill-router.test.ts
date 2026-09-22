@@ -5,6 +5,7 @@ import { skillSourceValues } from "../src/skill-judge.js";
 
 const skill = compileSkill({ id: "search", demoId: "demo", hostname: "example.com", intent: "搜索张三", requestTemplate: "搜索{{客户名}}",
   steps: [{ at: 0, kind: "type", anchor: { tag: "input", name: "客户名", inputType: "search" }, value: "张三" }] });
+
 const input = (userText: string) => ({ userText, hostname: "example.com", skills: [skill] });
 
 describe("skill router policy fixtures", () => {
@@ -72,6 +73,7 @@ describe("structured semantic composition", () => {
   it("rejects partial task coverage", () => { expect(composeSkillJudgment(query, { ...accepted, complete: .7 }).status).toBe("no_match"); });
   it("requires all calibrated judgment gates, not just one high score", () => {
     expect(composeSkillJudgment(query, { ...accepted, direct: .91, complete: .91, candidates: [{ ...accepted.candidates[0]!, probability: .91 }] }).status).toBe("match");
+
     for (const partial of [{ direct: .89 }, { complete: .89 }, { candidates: [{ ...accepted.candidates[0]!, probability: .89 }] }]) {
       expect(composeSkillJudgment(query, { ...accepted, ...partial }).status).toBe("no_match");
     }
@@ -116,6 +118,7 @@ describe("clarification is judged apart from execution", () => {
     requestTemplate: "搜索「{{客户名}}」，地区「{{地区}}」",
     steps: [{ at: 0, kind: "type", anchor: { tag: "input", name: "客户名", inputType: "search" }, value: "张三" },
       { at: 1, kind: "type", anchor: { tag: "input", name: "地区", inputType: "text" }, value: "北京" }] });
+
   const partial = { userText: "查找客户「李四」", hostname: "example.com", skills: [two] };
   const gap = { direct: .93, complete: .8, candidates: [{ skillId: "search2", probability: .47, waiting: .94, inputs: { 客户名: "李四" } }] };
   it("asks for the missing material when the workflow itself is identified", () => {

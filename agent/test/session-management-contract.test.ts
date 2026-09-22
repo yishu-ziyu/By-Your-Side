@@ -57,6 +57,7 @@ describe("session management acceptance fixture", () => {
 
 function successDriver() {
     const eventLog = "transaction-order-is-focused-input-work-experience>change-work-experience>focused-input-education>change-education";
+
   return {
     conversations: {
       a: "default",

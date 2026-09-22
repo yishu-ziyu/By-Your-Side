@@ -6,12 +6,21 @@ import {projectTaskView} from '../../shared/task-view.js';
 import {startTaskBarHarness, sleep, until} from './task-bar-harness.mts';
 
 if (!process.argv.includes('--headless')) throw new Error('Required: --headless');
+
 const out = resolve('out/acceptance', `${new Date().toISOString().replace(/[:.]/g, '-')}-materials-reopen`);
+
 mkdirSync(out, {recursive:true});
+
 const h = await startTaskBarHarness({controlled:true, outDir:join(out, 'harness')});
+
 const checks: {name:string; passed:boolean}[] = [];
+
 const text = async () => String(await h.panel("document.querySelector('#task-bar-root')?.textContent ?? ''"));
-const check = (name:string, passed:boolean) => { checks.push({name,passed}); if (!passed) throw new Error(name); };
+
+const check = (name:string, passed:boolean) => { checks.push({name,passed});
+
+ if (!passed) throw new Error(name); };
+
 try {
   const original = new TaskProgress('default');
   original.request('核对报名材料', {tabId:7,title:'报名表',url:'https://fixture.test/form',selection:{text:'指定段落'}},

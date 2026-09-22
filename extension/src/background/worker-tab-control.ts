@@ -15,20 +15,30 @@ export class WorkerTabControl {
     if (this.stopped.has(key)) return Promise.reject(new Error(STOPPED));
     const jobs = this.inflight.get(key) ?? new Set<Promise<unknown>>();
     this.inflight.set(key, jobs);
+
     const job = Promise.resolve().then(async () => {
       const stored = await chrome.storage.session.get(`stoppedWorker:${key}`);
+
       if (stored[`stoppedWorker:${key}`]) this.stopped.add(key);
+
       if (this.stopped.has(key)) throw new Error(STOPPED);
+
       return operation();
     });
+
     jobs.add(job);
-    void job.finally(() => { jobs.delete(job); if (!jobs.size) this.inflight.delete(key); }).catch(() => {});
+    void job.finally(() => { jobs.delete(job);
+
+ if (!jobs.size) this.inflight.delete(key); }).catch(() => {});
+
     return job;
   }
 
   async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }, leadKey: string, discardPendingClicks: (key: string) => void = () => {}, canTake: (keys: string[]) => Promise<void> = async () => {}) {
     const lead = parseExecutionKey(leadKey);
+
     if (!isLeadSession(lead.sessionId)) throw new Error("只有父 Agent 可以管理 worker 页面");
+
     if (params.action === "release") {
       if (!params.workerId || isLeadSession(params.workerId) || params.workerId.includes("::")) throw new Error("无效的 worker 身份");
       const workerKey = executionKey(lead.conversationId, params.workerId);
@@ -37,28 +47,38 @@ export class WorkerTabControl {
       await chrome.storage.session.set({ [`stoppedWorker:${workerKey}`]: true });
       await Promise.allSettled([...(this.inflight.get(workerKey) ?? [])]);
       discardPendingClicks(workerKey);
+
       return { tabIds: await reclaimWorkerTabs(leadKey, workerKey), workers: [] };
     }
+
     if (params.action !== "inspect" && params.action !== "claim") throw new Error("无效的页面管理操作");
     const tabId = params.tabId ?? await getWorkingTabId(leadKey);
+
     if (tabId == null) throw new Error("没有可接管的标签页");
     await chrome.tabs.get(tabId);
     const resource = await getTabResource(tabId);
     const conversationId = resource?.conversationId ?? null;
     const activeMembers: string[] = [];
+
     for (const key of resource?.collaborators ?? []) {
       const member = parseExecutionKey(key).sessionId;
+
       if (!isLeadSession(member) || await getWorkingTabId(key) === tabId) activeMembers.push(member);
     }
+
     const workers = (resource?.collaborators ?? []).map(key => parseExecutionKey(key).sessionId).filter(id => !isLeadSession(id));
+
     if (params.action === "claim") {
       const expected = params.expectedConversationId === undefined ? lead.conversationId : params.expectedConversationId;
+
       if (conversationId !== expected) throw new Error("页面归属已变化，请重新查看后再接手");
+
       if (conversationId === lead.conversationId && workers.length) throw new Error("worker 仍持有页面；请先停止并等待页面移交");
       const previous = (resource?.collaborators ?? []).filter(key => key !== leadKey);
       // 页面级围栏在任何 await 之前就位：只封这一页，旧所有者在别的页仍可继续；
       // 移交不是停止成员（停止成员是 release_worker 的职责），也不再有需要在抛错时回滚的成员状态。
       const releaseFence = beginTabTransfer(tabId, leadKey);
+
       try {
         await canTake([...previous, leadKey]);
         await Promise.allSettled(previous.flatMap(key => [...(this.inflight.get(key) ?? [])]));
@@ -69,6 +89,7 @@ export class WorkerTabControl {
         releaseFence();
       }
     }
+
     return { tabId, workers, conversationId, owned: !!resource, foreign: !!resource && conversationId !== lead.conversationId, members: activeMembers };
   }
 }

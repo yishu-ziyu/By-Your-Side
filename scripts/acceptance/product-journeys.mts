@@ -26,13 +26,18 @@ if (!process.argv.includes("--headless")) {
 
 function arg(name: string, fallback: string): string {
   const flag = process.argv.find((a) => a.startsWith(`${name}=`)) ?? process.argv.find((a) => a === name && process.argv[process.argv.indexOf(a) + 1]);
+
   if (!flag) return fallback;
+
   return flag.includes("=") ? flag.slice(name.length + 1) : process.argv[process.argv.indexOf(flag) + 1];
 }
 
 const suite = arg("--suite", "smoke") as "baseline" | "smoke" | "sample" | "full";
+
 const singleCase = arg("--case", "");
+
 const singleMaterial = Number(arg("--material", "0")) as 0 | 1;
+
 const model = arg("--model", loadConfig().model);
 
 if (!existsSync(resolve("extension/dist/manifest.json"))) {
@@ -43,6 +48,7 @@ if (!existsSync(resolve("extension/dist/manifest.json"))) {
 const rows: { caseId: string; material: 0 | 1 }[] = singleCase
   ? [{ caseId: singleCase, material: singleMaterial }]
   : suiteRows(suite);
+
 for (const r of rows) {
   if (!CASE_BY_ID.has(r.caseId)) {
     console.error(`未知用例：${r.caseId}`);
@@ -51,20 +57,28 @@ for (const r of rows) {
 }
 
 const runId = `journeys-${singleCase ? `case-${singleCase}` : suite}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+
 const outRoot = join(REPO_ROOT, "eval", "runs", runId);
+
 mkdirSync(outRoot, { recursive: true });
 
 const fixture = createJourneyFixture();
+
 await new Promise<void>((r) => fixture.server.listen(0, "127.0.0.1", r));
 
 const events: import("./product-journeys/runner.mjs").RunnerEnv["events"] = [];
+
 const holder: HostHolder = { current: await startHost(model, join(outRoot, "host"), events) };
+
 let evaluatorOk = true;
+
 const results: JourneyRow[] = [];
+
 let iso: Awaited<ReturnType<typeof startIsolatedPanel>>["iso"] | undefined;
 
 try {
   const session = holder.current.manager.get("default")?.runtime.session;
+
   if (!session?.available) throw new Error(`模型不可用：${model}`);
   const started = await startIsolatedPanel(holder.current);
   iso = started.iso;
@@ -95,6 +109,7 @@ try {
     const jc = CASE_BY_ID.get(caseId)!;
     const mat = jc.materials[material];
     let row: JourneyRow;
+
     try {
       const result = await runOne(env, jc, mat);
       row = result.row;
@@ -108,10 +123,12 @@ try {
         reason: `runner error: ${error instanceof Error ? error.message : error}`,
       };
     }
+
     results.push(row);
     console.log(JSON.stringify({ caseId, material, qualified: row.qualified, status: row.status, safetyVeto: row.safetyVeto, totalMs: row.totalMs, waitedMs: row.waitedMs, reason: row.reason.slice(0, 300) }));
     writeFileSync(join(outRoot, "progress.json"), JSON.stringify({ runId, done: results.length, total: rows.length }, null, 2));
   }
+
   // 未跑到的臂显式记为 not_run：不从分母消失，也不冒充有结果
   for (const { caseId, material } of rows.slice(results.length)) {
     const jc = CASE_BY_ID.get(caseId)!;
@@ -131,7 +148,11 @@ try {
 }
 
 const expectedKeys = rows.map(({ caseId, material }) => `${caseId}|${CASE_BY_ID.get(caseId)!.materials[material].materialId}`);
+
 const aggregate = aggregateRows(results, singleCase ? "case" : suite, evaluatorOk, expectedKeys);
+
 writeFileSync(join(outRoot, "summary.json"), JSON.stringify({ runId, model, suite: singleCase ? "case" : suite, aggregate, rows: results }, null, 2));
+
 console.log(JSON.stringify({ runId, outDir: outRoot, aggregate }, null, 0));
+
 process.exit(evaluatorOk && results.length === rows.length ? 0 : 1);

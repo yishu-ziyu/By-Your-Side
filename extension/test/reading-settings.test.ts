@@ -15,9 +15,11 @@ const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 function gate() {
   let release!: () => void;
+
   const promise = new Promise<void>((resolve) => {
     release = resolve;
   });
+
   return { promise, release };
 }
 
@@ -42,18 +44,21 @@ class FakePort implements ReadingSettingsPort {
   holdLoad(): () => void {
     const held = gate();
     this.loadGate = held;
+
     return held.release;
   }
 
   holdSave(): () => void {
     const held = gate();
     this.saveGate = held;
+
     return held.release;
   }
 
   async load(): Promise<unknown> {
     this.loadCalls += 1;
     await this.loadGate?.promise;
+
     return this.stored;
   }
 
@@ -61,13 +66,17 @@ class FakePort implements ReadingSettingsPort {
     this.saves.push({ ...prefs });
     this.inFlight += 1;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+
     try {
       await this.saveGate?.promise;
+
       if (this.failNextSaves > 0) {
         this.failNextSaves -= 1;
         throw new Error("QUOTA_BYTES quota exceeded");
       }
+
       this.stored = { ...prefs };
+
       for (const listener of this.listeners) listener({ ...prefs }); // 自己写入的回声
     } finally {
       this.inFlight -= 1;
@@ -76,6 +85,7 @@ class FakePort implements ReadingSettingsPort {
 
   subscribe(listener: (raw: unknown) => void): () => void {
     this.listeners.add(listener);
+
     return () => this.listeners.delete(listener);
   }
 
@@ -105,18 +115,22 @@ class OutOfOrderPort implements ReadingSettingsPort {
 
   save(prefs: ReadingPrefs): Promise<void> {
     this.stored = { ...prefs }; // 提交先于 Promise 落地
+
     for (const listener of this.listeners) listener({ ...prefs }); // 自己写入的回声
+
     return new Promise<void>((resolve) => this.settles.push(resolve));
   }
 
   subscribe(listener: (raw: unknown) => void): () => void {
     this.listeners.add(listener);
+
     return () => this.listeners.delete(listener);
   }
 
   /** 另一个窗口/面板写入。 */
   emit(raw: unknown): void {
     this.stored = { ...(raw as ReadingPrefs) };
+
     for (const listener of this.listeners) listener(raw);
   }
 
@@ -130,11 +144,13 @@ function createHarness(stored?: unknown) {
   const port = new FakePort(stored);
   const applied: ReadingPrefs[] = [];
   const statuses: ReadingStatus[] = [];
+
   const store = new ReadingSettingsStore({
     port,
     apply: (prefs) => applied.push({ ...prefs }),
     onStatus: (status) => statuses.push({ ...status }),
   });
+
   return { port, applied, statuses, store };
 }
 
@@ -207,6 +223,7 @@ describe("启动读取", () => {
     port.load = async () => {
       throw new Error("storage unavailable");
     };
+
     const applied: ReadingPrefs[] = [];
     const store = new ReadingSettingsStore({ port, apply: (prefs) => applied.push({ ...prefs }) });
     await store.start();
@@ -378,23 +395,31 @@ describe('回读期间的新选择', () => {
     let receive!: (raw: unknown) => void;
     let loads = 0;
     const heldRead = gate();
+
     const port: ReadingSettingsPort = {
       async load() {
         const snapshot = { ...stored };
+
         if (++loads === 2) await heldRead.promise;
+
         return snapshot;
       },
       async save(prefs) { stored = { ...prefs }; receive(stored); },
-      subscribe(fn) { receive = fn; return () => {}; },
+      subscribe(fn) { receive = fn;
+
+ return () => {}; },
     };
+
     const store = new ReadingSettingsStore({ port, apply: () => {} });
     await store.start();
     store.update({ font: 'hei' });
     await tick();
     expect(loads).toBe(2);
     const latest: ReadingPrefs = { font: 'system', size: 'large' };
+
     if (source === 'local') store.update(latest);
     else { stored = latest; receive(latest); }
+
     await tick();
     heldRead.release();
     await tick();

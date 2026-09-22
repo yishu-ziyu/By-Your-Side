@@ -6,19 +6,29 @@ import { isTaskResultItem, isTaskResultState, type TaskResultItem, type TaskResu
 import {isTaskRecoveryInput,type TaskRecoveryInput} from './task-recovery.js';
 
 export const USER_DELIVERY_KINDS = ["ack", "finding", "reply"] as const;
+
 export type UserDeliveryKind = (typeof USER_DELIVERY_KINDS)[number];
+
 export const USER_DELIVERY_STATUSES = ["composed", "speaking", "played"] as const;
+
 export type UserDeliveryStatus = (typeof USER_DELIVERY_STATUSES)[number];
+
 export const USER_DELIVERY_TEXT_MAX = 2000;
+
 /** 交付事实链数组上限：足够覆盖真实任务，又不让一条交付记录拖垮历史存储。 */
 export const USER_DELIVERY_FACT_ITEM_MAX = 12;
+
 export const USER_DELIVERY_SOURCE_MAX = 12;
+
 export const USER_DELIVERY_SOURCE_URL_MAX = 500;
+
 export const USER_DELIVERY_SOURCE_TITLE_MAX = 160;
+
 export const USER_DELIVERY_FACT_DESCRIPTION_MAX = 160;
 
 /** 宿主交付范围：complete 仅指已登记项有回执和所需读回；unverified 不推断空账本任务完成。 */
 export const USER_DELIVERY_OUTCOMES = ["complete", "partial", "unverified"] as const;
+
 export type UserDeliveryOutcome = (typeof USER_DELIVERY_OUTCOMES)[number];
 
 /** 本 run 真实读过的页面；url 来自页面读取事实，不是模型自报的引用。 */
@@ -123,6 +133,7 @@ export interface TaskProgressSnapshot {
 }
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}
+
 export interface VoiceRouteContext {
   /** Keep pending delegation through conversational interjections, never through a new command. */
   awaitInputDecision?: () => Promise<void>;
@@ -143,13 +154,18 @@ export interface VoiceRouteContext {
   turn: number;
   input?:VoiceInputContext;
 }
+
 export interface VoiceInputContext {observation?:{token:string;tabId:number};context?:PageContext;attachments?:Attachment[]}
+
 export interface VoicePlanSummary {id:string;conversationId:string;updatedAt:number;steps:Array<{action:string;text:string;targetId:string;targetTitle?:string;status:'unexecuted'|'pending'|'complete';receipt?:TaskReceipt}>}
+
 /** 这一轮提交后的分支身份：reply=白名单句子的最小请求已产出正文；control=交给既有控制链；
  *  read_only=程序按真实事实处理/派发的轮次（状态查询、澄清、停播报、看页面、需要事实的追问）。 */
 export type VoiceTurnBranch = 'reply' | 'control' | 'read_only';
+
 /** 这一轮的请求协议：free_reply = 白名单句子的最小直答请求；plan = 只判定计划的精简协议。 */
 export type VoiceTurnProtocol = 'free_reply' | 'plan';
+
 export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBranch;phase:'COMMITTED'|'DISCARDED';protocol?:VoiceTurnProtocol}} & (
   | {kind:'none';resumeTargetId?:string; resumeReadOnly?:'chat'|'observe'|'status'; snapshot?:TaskProgressSnapshot;spokenText?:string}
   | {kind:'silent';quiet?:boolean}
@@ -172,17 +188,24 @@ export type VoiceCommand =
    * voiceId+turn, and nothing here changes what the voice session does.
    */
   | { kind: "capture"; turn: number; data?: string; sampleRate?: number; serverText?: string; displayText?: string; mark?: true; note?: string };
+
 export interface VoiceClientMessage { type: "voice"; voiceId: string; command: VoiceCommand }
 
 export const VOICE_DIAG_SAMPLE_RATE = 24000;
+
 /** One diagnostic take is bounded; longer speech is truncated, never silently claimed complete. */
 export const VOICE_DIAG_MAX_SECONDS = 60;
+
 export const VOICE_DIAG_TEXT_MAX = 12000;
+
 /** A normal-use capture carries a whole turn (60s at 24k ≈ 3.8M base64 chars); frames stay under `validPCM`. */
 export const VOICE_CAPTURE_MAX_BASE64 = 8_000_000;
+
 export const VOICE_CAPTURE_NOTE_MAX = 200;
+
 /** Raw ASR seen before the old-turn filter; `current` is this turn, `filtered` was dropped as an old turn. */
 export type VoiceDiagAsrOutcome = 'current' | 'filtered' | 'empty' | 'unknown';
+
 export type VoiceDiagGapCode = 'reconnect' | 'send_failed' | 'truncated' | 'closed';
 
 /**
@@ -208,18 +231,26 @@ export type VoiceEvent =
   | { kind: "facts"; turn: number; snapshot: TaskProgressSnapshot }
   | { kind: "response_end"; turn: number; responseId: string }
   | { kind: "diag"; record: VoiceDiagRecord };
+
 export interface VoiceServerMessage { type: "voice"; voiceId: string; event: VoiceEvent }
 
 const id = (v: unknown): v is string => typeof v === "string" && /^[\w-]{1,128}$/.test(v);
+
 const turn = (v: unknown) => Number.isSafeInteger(v) && Number(v) > 0;
+
 const serverTurn = (v:unknown)=>Number.isSafeInteger(v)&&Number(v)>=0;
+
 const diagTurn=(v:unknown)=>v===null||turn(v);
+
 const diagItemId=(v:unknown)=>typeof v==="string"&&v.length>=1&&v.length<=128;
+
 const diagTextField=(v:unknown)=>typeof v==="string"&&v.length<=VOICE_DIAG_TEXT_MAX;
+
 export function isVoiceDiagRecord(v: unknown): v is VoiceDiagRecord {
   if (!v || typeof v !== "object") return false;
   const r = v as Record<string, unknown>;
   const seq = Number.isSafeInteger(r.seq) && Number(r.seq) > 0;
+
   switch (r.type) {
     case "ready": return Number.isFinite(r.sampleRate) && Number(r.sampleRate) > 0 && Number(r.sampleRate) <= 192000 && Number.isFinite(r.maxSeconds) && Number(r.maxSeconds) > 0 && Number(r.maxSeconds) <= 900;
     case "append": return seq && id(r.eventId) && turn(r.turn) && (r.frame === null || Number.isSafeInteger(r.frame) && Number(r.frame) >= 0) && Number.isSafeInteger(r.samples) && Number(r.samples) > 0 && validPCM(r.audio);
@@ -231,18 +262,23 @@ export function isVoiceDiagRecord(v: unknown): v is VoiceDiagRecord {
     default: return false;
   }
 }
+
 export function validPCM(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= 65536 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 }
+
 /** Same rules as `validPCM`, but a capture command may carry a whole turn instead of one frame. */
 export function validCapturePCM(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= VOICE_CAPTURE_MAX_BASE64 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 }
+
 export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   if (!v || typeof v !== "object") return false;
   const m = v as VoiceClientMessage;
+
   if (m.type !== "voice" || !id(m.voiceId) || !m.command || typeof m.command !== "object") return false;
   const c = m.command;
+
   switch (c.kind) {
     case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true);
     case "stop": return true;
@@ -263,7 +299,9 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     default: return false;
   }
 }
+
 const shortText = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length >= 1 && v.length <= max;
+
 const deliveryUrl = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= USER_DELIVERY_SOURCE_URL_MAX
   && /^https?:\/\/[^\s]+$/.test(v);
 
@@ -271,28 +309,37 @@ const deliveryUrl = (v: unknown): v is string => typeof v === "string" && v.leng
 export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
   if (!v || typeof v !== "object") return false;
   const f = v as UserDeliveryFacts;
+
   if (!USER_DELIVERY_OUTCOMES.includes(f.outcome)) return false;
+
   if (!Array.isArray(f.delivered) || f.delivered.length > USER_DELIVERY_FACT_ITEM_MAX
     || !f.delivered.every((item) => shortText(item, USER_DELIVERY_FACT_DESCRIPTION_MAX))) return false;
+
   if (f.omittedDelivered !== undefined && !(Number.isSafeInteger(f.omittedDelivered) && f.omittedDelivered >= 0)) return false;
+
   if (f.omittedRemaining !== undefined && !(Number.isSafeInteger(f.omittedRemaining) && f.omittedRemaining >= 0)) return false;
+
   if (!Array.isArray(f.remaining) || f.remaining.length > USER_DELIVERY_FACT_ITEM_MAX
     || !f.remaining.every((item) => !!item && typeof item === "object"
       && id((item as UserDeliveryRemainingItem).id)
       && shortText((item as UserDeliveryRemainingItem).description, USER_DELIVERY_FACT_DESCRIPTION_MAX)
       && ["pending", "blocked", "unknown"].includes((item as UserDeliveryRemainingItem).status))) return false;
+
   if (!Array.isArray(f.sources) || f.sources.length > USER_DELIVERY_SOURCE_MAX
     || !f.sources.every((item) => !!item && typeof item === "object" && deliveryUrl((item as UserDeliverySourceRef).url)
       && ((item as UserDeliverySourceRef).title === undefined || (item as UserDeliverySourceRef).title === null
         || shortText((item as UserDeliverySourceRef).title, USER_DELIVERY_SOURCE_TITLE_MAX)))) return false;
+
   // 漏项却报全部完成必须在记录边界就失败，界面与验收都不用再猜叙述。
   if (f.outcome === "complete" && (f.remaining.length > 0 || (f.omittedRemaining ?? 0) > 0)) return false;
+
   return true;
 }
 
 export function isUserDelivery(v: unknown): v is UserDelivery {
   if (!v || typeof v !== "object") return false;
   const d = v as UserDelivery;
+
   return id(d.conversationId) && id(d.id) && (d.runId === null || id(d.runId))
     && USER_DELIVERY_KINDS.includes(d.kind)
     && typeof d.text === "string" && d.text.trim().length >= 1 && d.text.length <= USER_DELIVERY_TEXT_MAX
@@ -310,15 +357,18 @@ export function isSpeakableDelivery(d: UserDelivery | null | undefined, runId?: 
 export function isVoiceConversationContext(v: unknown): v is VoiceConversationContext {
   if (!v || typeof v !== "object") return false;
   const c = v as VoiceConversationContext;
+
   return Array.isArray(c.recentTurns) && c.recentTurns.length <= 12
     && c.recentTurns.every(t => t && (t.role === "user" || t.role === "assistant") && typeof t.text === "string" && t.text.length <= 2000)
     && (c.latestResult === null || !!c.latestResult && id(c.latestResult.runId) && typeof c.latestResult.text === "string" && c.latestResult.text.length <= 6000
       && Number.isFinite(c.latestResult.observedAt) && c.latestResult.source === "assistant_output")
     && (c.latestDelivery === undefined || c.latestDelivery === null || isUserDelivery(c.latestDelivery));
 }
+
 export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
   if (!v || typeof v !== "object") return false;
   const s = v as TaskProgressSnapshot;
+
   return id(s.conversationId) && Number.isFinite(s.observedAt) && ["none", "running", "paused", "interrupted", "idle", "aborted", "error"].includes(s.state)
     && (s.goal === null || typeof s.goal === "string" && s.goal.length <= 600) && (s.startedAt === null || Number.isFinite(s.startedAt))
     && (s.runId === undefined || s.runId === null || id(s.runId))
@@ -339,12 +389,16 @@ export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
     && (s.executionState === undefined || isTaskResultState(s.executionState))
     && (s.resultState === undefined || isTaskResultState(s.resultState));
 }
+
 export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {
   if (!v || typeof v !== "object") return false;
   const m = v as VoiceServerMessage;
+
   if (m.type !== "voice" || !id(m.voiceId) || !m.event || typeof m.event !== "object") return false;
   const e = m.event;
+
   if(e.kind==='reset_output')return Number.isSafeInteger(e.turn)&&e.turn>=0;
+
   switch (e.kind) {
     case "state": return ["connecting", "ready", "answering", "closed", "error"].includes(e.state) && (e.detail === undefined || typeof e.detail === "string" && e.detail.length <= 500) && (e.recoverable === undefined || typeof e.recoverable === "boolean");
     case "audio": return serverTurn(e.turn) && validPCM(e.data) && id(e.itemId) && id(e.responseId);

@@ -2,18 +2,43 @@
 import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {WRITE_TOOLS} from '../../shared/control.js';
+
 const PAGE_MUTATIONS=new Set<string>(WRITE_TOOLS.filter(n=>!['worker_tabs','mark','clear_marks'].includes(n)));
+
 if(!process.argv.includes('--headless'))throw new Error('--headless required');
-const root=resolve('out/acceptance/20260920-general-browser'),out=join(root,`dev-${Date.now()}`);await mkdir(out,{recursive:true});
-process.env.SIDEAGENT_TRACE_DIR=join(out,'traces');process.env.SIDEAGENT_GENERAL_BROWSER_LOOP='1';
+
+const root=resolve('out/acceptance/20260920-general-browser'),out=join(root,`dev-${Date.now()}`);
+
+await mkdir(out,{recursive:true});
+
+process.env.SIDEAGENT_TRACE_DIR=join(out,'traces');
+
+process.env.SIDEAGENT_GENERAL_BROWSER_LOOP='1';
+
 process.env.EGO_ACCEPTANCE_CHROME=resolve('out/experiments/realtime3-browser/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
+
 const {startHost,startIsolatedPanel,stopHost}=await import('./product-journeys/runner.mjs');
+
 const {loadConfig}=await import('../../agent/src/config.js');
-const events:any[]=[];let host:any,iso:any,panel:string|undefined;
+
+const events:any[]=[];
+
+let host:any,iso:any,panel:string|undefined;
+
 const report:any={passed:false,kind:'development-not-holdout',headless:true,checks:[]};
+
 const save=()=>writeFile(join(out,'result.json'),JSON.stringify({...report,events},null,2));
+
 const timer=setTimeout(()=>{report.error='150s hard timeout';void save().finally(()=>process.exit(2));},150000);
-const wait=async(fn:()=>any,label:string,ms=110000)=>{const end=Date.now()+ms;while(Date.now()<end){const r=await fn();if(r)return r;await new Promise(r=>setTimeout(r,100));}throw Error(label+' timeout');};
+
+const wait=async(fn:()=>any,label:string,ms=110000)=>{const end=Date.now()+ms;
+
+while(Date.now()<end){const r=await fn();
+
+if(r)return r;await new Promise(r=>setTimeout(r,100));}
+
+throw Error(label+' timeout');};
+
 try{
  host=await startHost(loadConfig().model??'',join(out,'store'),events);
  const scope=process.argv.includes('--scope');
@@ -23,6 +48,7 @@ try{
  const input=scope?'把级别改成 Gold，不要改锁定值，不要点保存。':'把代号填为 nebula-42，勾选“只看可用项目”。不要点击保存，也不要提交。';
  report.scenario=scope?'separate-changing-region-and-long-prose':'on-demand-field-material';
  await iso.evalIn(panel,`(()=>{const i=document.querySelector('#input');i.value=${JSON.stringify(input)};i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`);
+
  if(process.argv.includes('--stop')){
   await wait(()=>events.some(e=>e.message.type==='tool_call'&&e.message.name==='snapshot'&&e.message.params?.decision===true),'initial loop observation');
   const before=host.manager.getTaskProgress('default');
@@ -46,5 +72,9 @@ try{
  report.passed=report.checks.every((c:any)=>c.passed);
  }
 }catch(e){report.error=String(e);}finally{
- clearTimeout(timer);await iso?.close().catch(()=>{});if(host)await stopHost(host).catch(()=>{});await save();console.log(JSON.stringify({out,...report},null,2));if(!report.passed)process.exitCode=1;
+ clearTimeout(timer);await iso?.close().catch(()=>{});
+
+if(host)await stopHost(host).catch(()=>{});await save();console.log(JSON.stringify({out,...report},null,2));
+
+if(!report.passed)process.exitCode=1;
 }

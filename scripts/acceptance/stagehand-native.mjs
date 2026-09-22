@@ -16,6 +16,7 @@ import { redactEvidence } from './redact.mjs';
 import { normalizeServiceWorkerInspector } from './sw-hook.mjs';
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const FIXTURE_HTML = `<!doctype html>
@@ -121,32 +122,44 @@ function requireConfirmedLoaded() {
 
 function isMainSession(message) {
   const sessionId = message?.msg?.sessionId;
+
   return sessionId == null || sessionId === 'main';
 }
 
 function projectServerMessage(message, conversationId) {
   if (message.conversationId && message.conversationId !== conversationId) return null;
   const type = message?.msg?.type;
+
   if (type === 'hello_ok' || type === 'model_info') {
     return { type, model: message.msg.model ?? null };
   }
+
   if (type === 'status') {
     if (message.conversationId !== conversationId) return null;
+
     if (message.msg.sessionId != null && message.msg.sessionId !== 'main') return null;
+
     return { type, state: message.msg.state ?? null, sessionId: message.msg.sessionId ?? 'main' };
   }
+
   if (type !== 'agent_event') return null;
+
   if (message.conversationId !== conversationId) return null;
+
   if (message.msg.sessionId != null && message.msg.sessionId !== 'main') return null;
   const event = message.msg.event;
+
   if (!event || typeof event !== 'object') return null;
   const kind = event.kind;
+
   if (kind === 'agent_start' || kind === 'agent_end' || kind === 'turn_end') {
     return { type, event: { kind, runId: event.runId ?? null } };
   }
+
   if (kind === 'tool_start') {
     const params = event.params && typeof event.params === 'object' ? event.params : {};
     const projected = { kind, toolCallId: event.toolCallId ?? null, name: event.name, params: {} };
+
     if (event.name === 'browser_run') {
       projected.params = {
         api: typeof params.api === 'string' ? params.api : null,
@@ -167,8 +180,10 @@ function projectServerMessage(message, conversationId) {
         url: typeof params.url === 'string' ? params.url.slice(0, 300) : null,
       };
     }
+
     return { type, event: projected };
   }
+
   if (kind === 'tool_end') {
     return {
       type,
@@ -181,24 +196,30 @@ function projectServerMessage(message, conversationId) {
       },
     };
   }
+
   if (kind === 'error' || kind === 'notice') {
     return { type, event: { kind, message: typeof event.message === 'string' ? event.message.slice(0, 800) : null } };
   }
+
   return null;
 }
 
 async function main() {
   requireConfirmedLoaded();
+
   const root =
     process.env.ACCEPT_EVIDENCE_DIR ||
     join(process.cwd(), 'out/acceptance', `stagehand-native-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+
   await mkdir(root, { recursive: true });
 
   const fixtureHtml = Buffer.from(FIXTURE_HTML);
+
   const fixtureServer = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(fixtureHtml);
   });
+
   await new Promise((resolve) => fixtureServer.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${fixtureServer.address().port}`;
 
@@ -212,6 +233,7 @@ async function main() {
   let sentAt = null;
 
   const startedAt = Date.now();
+
   const result = {
     passed: false,
     scope:
@@ -230,19 +252,27 @@ async function main() {
       '本脚本只使用本地 127.0.0.1 fixture，不向外部服务提交数据。',
     ],
   };
+
   const writeEvidence = (name, value) => writeFile(join(root, name), JSON.stringify(redactEvidence(value ?? null), null, 2));
+
   const readEvents = async () => {
     if (!cdp || !panel) return [];
+
     return evaluateInWorker(cdp, panel.session, 'globalThis.__stagehandNativeEvents || []');
   };
+
   const eventsSince = async (since) => (await readEvents()).filter((entry) => entry.at >= since);
+
   const latestStatusEntry = async (since = 0) => {
     const entries = await readEvents();
+
     return entries
       .filter((entry) => entry.at >= since && entry.msg?.type === 'status' && isMainSession(entry))
       .at(-1) ?? null;
   };
+
   const latestStatus = async (since = 0) => (await latestStatusEntry(since))?.msg?.state ?? null;
+
   const readPanelUi = async () =>
     evaluateInWorker(
       cdp,
@@ -265,25 +295,36 @@ async function main() {
         };
       })()`,
     );
+
   const assertTaskReady = async (label) => {
     const state = await latestStatus();
     const ui = await readPanelUi();
+
     const selectedNow = await evaluateInWorker(
       cdp,
       swSession,
       `chrome.storage.session.get('selectedConversationId').then((stored) => typeof stored.selectedConversationId === 'string' ? stored.selectedConversationId : 'default')`,
     );
+
     if (selectedNow !== conversationId) {
       throw new Error(`${label}: 生产会话选择已从 ${conversationId} 变为 ${selectedNow}，拒绝把消息发给变化后的会话`);
     }
+
     if (state && state !== 'idle') throw new Error(`${label}: 会话 ${conversationId} 当前状态为 ${state}，拒绝并发运行`);
+
     if (ui.stopping || ui.abortVisible) throw new Error(`${label}: 生产面板仍有运行中的任务`);
+
     if (ui.setupVisible) throw new Error(`${label}: 生产面板处于 setup 状态，native host 未就绪`);
+
     if (ui.statusText !== '已连接') throw new Error(`${label}: 生产面板未连接 native host，状态=${ui.statusText}`);
+
     if ((ui.input ?? '') !== '') throw new Error(`${label}: 输入框有未发送草稿，拒绝覆盖或拼入用户内容`);
+
     if (ui.hasAttachments) throw new Error(`${label}: 输入框带有附件，拒绝发送`);
+
     return ui;
   };
+
   const readFixture = async (tabId) => {
     const value = await evaluateInWorker(
       cdp,
@@ -306,15 +347,19 @@ async function main() {
         },
       }).then((items) => items[0]?.result ?? null)`,
     );
+
     if (!value) throw new Error(`fixture tab ${tabId} 读取失败`);
+
     return value;
   };
+
   const createFixtureTab = async (path) => {
     const tab = await evaluateInWorker(
       cdp,
       swSession,
       `chrome.tabs.create({ url: ${JSON.stringify(origin + path)}, active: false })`,
     );
+
     await until(
       async () => evaluateInWorker(cdp, swSession, `chrome.tabs.get(${tab.id}).then((tab) => tab.status === 'complete')`),
       `fixture ${path} loaded`,
@@ -323,19 +368,23 @@ async function main() {
     await until(
       async () => {
         const state = await readFixture(tab.id);
+
         return state.name === '' && state.email === '' ? state : false;
       },
       `fixture ${path} form ready`,
       30000,
     );
+
     return tab;
   };
+
   const activateFixture = async (tabId, label) => {
     if (!(
       await evaluateInWorker(cdp, swSession, `chrome.tabs.get(${tabId}).then((tab) => !!tab)`)
     )) {
       throw new Error(`${label}: fixture tab ${tabId} 不存在`);
     }
+
     await evaluateInWorker(cdp, swSession, `chrome.tabs.update(${tabId}, { active: true })`);
     await until(
       async () => evaluateInWorker(cdp, swSession, `chrome.tabs.get(${tabId}).then((tab) => tab.active === true)`),
@@ -343,12 +392,15 @@ async function main() {
       10000,
     );
   };
+
   const captureTab = async (tabId, filename) => {
     const tab = await evaluateInWorker(cdp, swSession, `chrome.tabs.get(${tabId})`);
     const targets = (await cdp.send('Target.getTargets')).targetInfos;
     const target = targets.find((item) => item.type === 'page' && item.url === tab.url);
+
     if (!target) throw new Error(`screenshot target unavailable: ${tab.url}`);
     const attached = await cdp.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+
     try {
       await cdp.send('Page.enable', {}, attached.sessionId);
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }, attached.sessionId);
@@ -357,8 +409,10 @@ async function main() {
       await cdp.send('Target.detachFromTarget', { sessionId: attached.sessionId }).catch(() => {});
     }
   };
+
   const browserRunsSince = async (since) => {
     const entries = await eventsSince(since);
+
     return entries
       .filter((entry) => entry.msg?.type === 'agent_event' && entry.msg.event?.kind === 'tool_start' && entry.msg.event.name === 'browser_run')
       .map((entry) => ({
@@ -369,13 +423,16 @@ async function main() {
         code: entry.msg.event.params?.code ?? '',
       }));
   };
+
   const nestedStepsSince = async (since, parentIds) => {
     const entries = await eventsSince(since);
     const parents = new Set(parentIds.filter(Boolean));
+
     return entries
       .filter((entry) => entry.msg?.type === 'agent_event' && entry.msg.event?.kind === 'tool_start')
       .filter((entry) => {
         const id = entry.msg.event.toolCallId;
+
         return typeof id === 'string' && id.includes('/') && [...parents].some((parent) => id.startsWith(`${parent}/`));
       })
       .map((entry) => ({
@@ -385,35 +442,46 @@ async function main() {
         params: entry.msg.event.params ?? {},
       }));
   };
+
   const assertGuidedPlaywright = (label, runs, codeNeedle) => {
     if (!runs.length) throw new Error(`${label}: 模型没有调用 browser_run`);
     const playwright = runs.filter((run) => run.api === 'playwright');
     const legacy = runs.filter((run) => run.api !== 'playwright');
+
     if (!playwright.length) throw new Error(`${label}: browser_run 未显式传 api:"playwright"`);
+
     if (legacy.length) throw new Error(`${label}: 出现未显式使用 playwright 的 browser_run`);
     const combined = playwright.map((run) => run.code || '').join('\n');
+
     if (!/page\.(getByLabel|getByRole|locator|waitForTimeout)/.test(combined)) {
       throw new Error(`${label}: playwright 程序没有使用官方 page 接口`);
     }
+
     if (codeNeedle && !codeNeedle.test(combined)) throw new Error(`${label}: playwright 程序缺少预期控制点 ${codeNeedle}`);
+
     return playwright;
   };
+
   const officialMethods = (runs) => {
     const combined = runs.map((run) => run.code || '').join('\n');
+
     return ['getByLabel', 'getByRole', 'locator', 'waitForTimeout'].filter((name) => combined.includes(`page.${name}`));
   };
+
   const waitTaskStarted = async (since, timeout = 180000) => {
     return until(
       async () => {
         const entries = await eventsSince(since);
         const start = entries.find((entry) => entry.msg?.type === 'agent_event' && entry.msg.event?.kind === 'agent_start');
         const running = entries.some((entry) => entry.msg?.type === 'status' && entry.msg.state === 'running');
+
         return start && running ? { startedAt: start.at, runningAt: Date.now() } : false;
       },
       `task started after ${since}`,
       timeout,
     );
   };
+
   const waitTaskFinished = async (since, timeout = 240000) => {
     return until(
       async () => {
@@ -421,13 +489,16 @@ async function main() {
         const end = entries.filter((entry) => entry.msg?.type === 'agent_event' && entry.msg.event?.kind === 'agent_end').at(-1);
         const idle = entries.filter((entry) => entry.msg?.type === 'status' && entry.msg.state === 'idle').at(-1);
         const ui = await readPanelUi();
+
         if (!end || !idle || ui.stopping || ui.abortVisible) return false;
+
         return { endedAt: end.at, idleAt: idle.at, observedAt: Date.now() };
       },
       `task finished after ${since}`,
       timeout,
     );
   };
+
   const sendGuided = async (text) => {
     await assertTaskReady('send guided task');
     await activateFixture(tabA.id, 'before send');
@@ -440,8 +511,10 @@ async function main() {
       'composer cleared after send',
       5000,
     ).catch(() => {});
+
     return at;
   };
+
   const clickNormalStop = async () => {
     const selector = await until(
       async () =>
@@ -460,17 +533,23 @@ async function main() {
       'normal stop button visible',
       10000,
     );
+
     await evaluateInWorker(cdp,panel.session,`(()=>{globalThis.__stagehandStopClick=null;document.querySelector(${JSON.stringify(selector)}).addEventListener('click',e=>{globalThis.__stagehandStopClick={at:Date.now(),trusted:e.isTrusted};},{once:true})})()`);
     await clickUi(cdp, panel.session, selector);
     const click=await evaluateInWorker(cdp,panel.session,'globalThis.__stagehandStopClick');
+
     if(!click?.trusted)throw new Error('Stop button did not receive a trusted click; stop behavior was not tested');
     result.stopClick=click;
+
     return selector === '#abort-btn' ? '#abort-btn (生产中止按钮)' : '#send-btn.stopping (生产停止按钮)';
   };
+
   const abortOwnedTask = async () => {
     if (!ownsTask || sentAt == null) return false;
     const state = (await latestStatusEntry(sentAt).catch(() => null))?.msg?.state ?? null;
+
     if (state !== 'running') return false;
+
     const selector = await evaluateInWorker(
       cdp,
       panel.session,
@@ -482,7 +561,9 @@ async function main() {
         return null;
       })()`,
     ).catch(() => null);
+
     if (selector) await clickUi(cdp, panel.session, selector).catch(() => {});
+
     return !!selector;
   };
 
@@ -498,6 +579,7 @@ async function main() {
     const extId = sideagentExtensionId();
     result.extensionId = extId;
     const sw = findServiceWorker((await cdp.send('Target.getTargets')).targetInfos, extId);
+
     if (!sw) throw new Error('Production SideAgent service worker unavailable');
     swSession = await cdp.attachSession(sw.targetId);
     await normalizeServiceWorkerInspector(cdp, swSession);
@@ -517,7 +599,9 @@ async function main() {
         if(!button||button.disabled)return false;
         return document.querySelector('[data-conversation-id][aria-checked="true"]')?.dataset.conversationId||false;
       })()`);
+
       const stored=await evaluateInWorker(cdp,swSession,`chrome.storage.session.get('selectedConversationId').then(s=>s.selectedConversationId)`);
+
       return uiId&&uiId===stored?uiId:false;
     },'panel conversation ready and selected',60000);
     result.conversationId = conversationId;
@@ -543,6 +627,7 @@ async function main() {
       });
       port.postMessage({ kind: 'sync', afterSeq: Number.MAX_SAFE_INTEGER });
     })()`;
+
     await evaluateInWorker(cdp, panel.session, observerSource);
     await until(
       async () => (await readEvents()).some((entry) => entry.msg?.type === 'status'),
@@ -552,26 +637,32 @@ async function main() {
 
     const initialUi = await readPanelUi();
     result.panelStatus = initialUi.statusText;
+
     if (initialUi.statusText !== '已连接') throw new Error(`production panel not connected: ${initialUi.statusText}`);
     const initialState = await latestStatus();
     result.initialTaskState = initialState;
+
     if (initialState && initialState !== 'idle') throw new Error(`refusing concurrent run: conversation ${conversationId} is ${initialState}`);
 
     const protocolModel = (await readEvents())
       .filter((entry) => entry.msg?.type === 'hello_ok' || entry.msg?.type === 'model_info')
       .map((entry) => entry.msg.model)
       .find(Boolean);
+
     const panelModel = await until(
       async () => {
         const ui = await readPanelUi();
+
         return ui.modelName || false;
       },
       'real model name from production panel state',
       60000,
     );
+
     result.model = panelModel;
     result.modelFromProtocol = protocolModel ?? null;
     result.modelSource = 'production panel #model-name / native host state';
+
     if (/mock|stub|fake|acceptance-model/i.test(panelModel)) {
       throw new Error(`production panel reports non-real model: ${panelModel}`);
     }
@@ -592,13 +683,16 @@ async function main() {
     const fillNested = await nestedStepsSince(fillSentAt, fillRuns.map((run) => run.id));
     const fillState = await readFixture(tabA.id);
     await captureTab(tabA.id, '01-scenario1-filled-a.png');
+
     const fillPassed =
       fillState.name === TEST.fillName &&
       fillState.email === TEST.fillEmail &&
       fillState.submits === 0;
+
     const fillNestedWrites =
       fillNested.some((step) => step.name === 'fill' && step.params.value === TEST.fillName) &&
       fillNested.some((step) => step.name === 'fill' && step.params.value === TEST.fillEmail);
+
     result.scenarios.fill = {
       guided: true,
       prompt: fillText,
@@ -615,6 +709,7 @@ async function main() {
       screenshot: '01-scenario1-filled-a.png',
       passed: fillPassed,
     };
+
     if (!fillPassed) throw new Error(`scenario 1 failed: ${JSON.stringify(fillState)}`);
 
     // Scenario 2: stop a real model program after the real sleep tool starts.
@@ -627,15 +722,18 @@ async function main() {
       'browser_run event for abort scenario',
       180000,
     );
+
     const sleepStep = await until(
       async () => {
         const runs = await browserRunsSince(abortSentAt);
         const steps = await nestedStepsSince(abortSentAt, runs.map((run) => run.id));
+
         return steps.find((step) => step.name === 'sleep' && Number(step.params.ms ?? 0) >= 1000) ?? false;
       },
       'real sleep tool event for abort scenario',
       180000,
     );
+
     const stopRequestedAt = Date.now();
     const atStop = await readFixture(tabA.id);
     const stopMethod = await clickNormalStop();
@@ -643,20 +741,25 @@ async function main() {
     ownsTask = false;
     const abortRuns = await browserRunsSince(abortSentAt);
     const abortPlaywright = assertGuidedPlaywright('scenario 2', abortRuns, /waitForTimeout/);
+
     const abortRunEnd = (await eventsSince(abortSentAt))
       .filter((entry) => entry.msg?.type === 'agent_event' && entry.msg.event?.kind === 'tool_end' && entry.msg.event.name === 'browser_run')
       .at(-1) ?? null;
+
     // Raw bridge splits long waits; observe beyond the full guided 8000ms, not its first chunk.
     const requestedSleepMs = 8000;
+
     const observeUntil = Math.max(
       abortFinished.endedAt + 2500,
       sleepStep.at + requestedSleepMs + 2500,
       Date.now() + 2500,
     );
+
     while (Date.now() < observeUntil) await pause(500);
     const afterAbort = await readFixture(tabA.id);
     const abortNested = await nestedStepsSince(sleepStep.at, abortRuns.map((run) => run.id));
     const postStopFillSteps = abortNested.filter((step) => step.name === 'fill' && step.at >= stopRequestedAt);
+
     const abortPassed =
       atStop.name === baselineBeforeAbort.name &&
       atStop.email === baselineBeforeAbort.email &&
@@ -666,6 +769,7 @@ async function main() {
       afterAbort.submits === 0 &&
       afterAbort.writes.length === atStop.writes.length &&
       postStopFillSteps.length === 0;
+
     await captureTab(tabA.id, '02-scenario2-after-abort-a.png');
     result.scenarios.abort = {
       guided: true,
@@ -691,6 +795,7 @@ async function main() {
       screenshot: '02-scenario2-after-abort-a.png',
       passed: abortPassed,
     };
+
     if (!abortPassed) throw new Error(`scenario 2 failed: ${JSON.stringify({ atStop, afterAbort, postStopFillSteps })}`);
 
     // Scenario 3: normal guided rename, with the email intentionally unchanged.
@@ -704,6 +809,7 @@ async function main() {
     const renameState = await readFixture(tabA.id);
     const renameBState = await readFixture(tabB.id);
     await captureTab(tabA.id, '03-scenario3-renamed-a.png');
+
     const renamePassed =
       renameState.name === TEST.rename &&
       renameState.email === TEST.fillEmail &&
@@ -711,6 +817,7 @@ async function main() {
       renameBState.name === '' &&
       renameBState.email === '' &&
       renameBState.submits === 0;
+
     result.scenarios.rename = {
       guided: true,
       prompt: renameText,
@@ -725,21 +832,25 @@ async function main() {
       screenshot: '03-scenario3-renamed-a.png',
       passed: renamePassed,
     };
+
     if (!renamePassed) throw new Error(`scenario 3 failed: ${JSON.stringify({ renameState, renameBState })}`);
 
     // Scenario 4: activate the other own fixture during a real wait; the task stays on A.
     const switchText = promptTabSwitch();
     const switchSentAt = await sendGuided(switchText);
     await waitTaskStarted(switchSentAt);
+
     const switchSleepStep = await until(
       async () => {
         const runs = await browserRunsSince(switchSentAt);
         const steps = await nestedStepsSince(switchSentAt, runs.map((run) => run.id));
+
         return steps.find((step) => step.name === 'sleep' && Number(step.params.ms ?? 0) >= 1000) ?? false;
       },
       'real sleep tool event for tab-switch scenario',
       180000,
     );
+
     const bActivatedAt = Date.now();
     await activateFixture(tabB.id, 'during task wait');
     const bActiveDuringWait = await evaluateInWorker(cdp, swSession, `chrome.tabs.get(${tabB.id}).then(t=>t.active)`);
@@ -754,6 +865,7 @@ async function main() {
     const aWriteAfterActivation = switchAState.writes.find((write) => write.at >= bActivatedAt) ?? null;
     await captureTab(tabA.id, '04-scenario4-target-a.png');
     await captureTab(tabB.id, '05-scenario4-untouched-b.png');
+
     const switchPassed =
       switchAState.name === TEST.switchProof &&
       switchAState.email === TEST.fillEmail &&
@@ -763,6 +875,7 @@ async function main() {
       switchBState.submits === 0 &&
       !!aWriteAfterActivation &&
       bActiveDuringWait === true;
+
     result.scenarios.tabSwitch = {
       guided: true,
       prompt: switchText,
@@ -785,6 +898,7 @@ async function main() {
       screenshots: ['04-scenario4-target-a.png', '05-scenario4-untouched-b.png'],
       passed: switchPassed,
     };
+
     if (!switchPassed) {
       throw new Error(`scenario 4 failed: ${JSON.stringify({ switchAState, switchBState, bActive, aWriteAfterActivation })}`);
     }
@@ -795,23 +909,29 @@ async function main() {
     result.error = error instanceof Error ? error.message : String(error);
   } finally {
     result.elapsedMs = Date.now() - startedAt;
+
     if (cdp && panel) {
       await abortOwnedTask().catch(() => {});
       await sleep(500);
       result.events = await readEvents().catch(() => []);
     }
+
     await writeEvidence('events.json', result.events ?? []);
     await writeEvidence('result.json', result);
+
     if (cdp && swSession) {
       try {
         const tabs = await evaluateInWorker(cdp, swSession, 'chrome.tabs.query({})');
+
         const ownedTabIds = tabs
           .filter((tab) => tab.id != null && (String(tab.url ?? '').startsWith(origin) || tab.id === panel?.tabId))
           .map((tab) => tab.id);
+
         result.cleanup = {
           keepTabs: process.argv.includes('--keep-tabs'),
           removedTabIds: ownedTabIds,
         };
+
         if (!process.argv.includes('--keep-tabs') && ownedTabIds.length) {
           await evaluateInWorker(cdp, swSession, `chrome.tabs.remove(${JSON.stringify(ownedTabIds)})`);
         }
@@ -819,6 +939,7 @@ async function main() {
         result.cleanup = { error: error instanceof Error ? error.message : String(error) };
       }
     }
+
     if (cdp) await cdp.close().catch(() => {});
     fixtureServer.closeAllConnections();
     await new Promise((resolve) => fixtureServer.close(resolve));

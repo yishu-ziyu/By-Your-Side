@@ -10,9 +10,11 @@ function installChrome() {
       attach: vi.fn(async (details: { tabId: number }) => {
         attachCalls++;
         const { tabId } = details;
+
         if (mockAttachedTabs.has(tabId)) {
           throw new Error("Another debugger is already attached");
         }
+
         mockAttachedTabs.add(tabId);
         await new Promise((resolve) => setImmediate(resolve));
       }),
@@ -49,6 +51,7 @@ describe("debugger 并发 attach", () => {
     (globalThis as any).setTimeout = (...args: Parameters<typeof setTimeout>) => {
       const timer = realSetTimeout(...args);
       timers.push(timer);
+
       return timer;
     };
   });
@@ -96,11 +99,13 @@ describe("debugger 并发 attach", () => {
     // 两个都应该 reject，且消息相同
     expect(results[0].status).toBe("rejected");
     expect(results[1].status).toBe("rejected");
+
     if (results[0].status === "rejected") {
       expect((results[0].reason as Error).message).toBe(
         "该标签页正被 DevTools 或其他调试器占用"
       );
     }
+
     if (results[1].status === "rejected") {
       expect((results[1].reason as Error).message).toBe(
         "该标签页正被 DevTools 或其他调试器占用"
@@ -124,6 +129,7 @@ describe("debugger 并发 attach", () => {
 
   it('attach 抛 "already attached" 时视为已连接，不报错', async () => {
     const chromeStub = installChrome();
+
     const { ensureAttached, detachAll } = await import(
       "../src/background/debugger.js"
     );
@@ -145,6 +151,7 @@ describe("debugger 并发 attach", () => {
 
   it("不同 tab 并发各 attach 一次", async () => {
     const chromeStub = installChrome();
+
     const { ensureAttached, detachAll } = await import(
       "../src/background/debugger.js"
     );
@@ -169,6 +176,7 @@ describe("debugger 并发 attach", () => {
 
   it("detach 清掉 in-flight 项，之后可重新 attach", async () => {
     const chromeStub = installChrome();
+
     const { ensureAttached, detach, detachAll } = await import(
       "../src/background/debugger.js"
     );

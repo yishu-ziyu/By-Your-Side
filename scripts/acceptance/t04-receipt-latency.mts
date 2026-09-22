@@ -26,8 +26,11 @@ if (!process.argv.includes("--headless=new") && !process.argv.includes("--headle
 }
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 const ROUNDS = 50;
+
 const TARGET_P95_MS = 200;
+
 const token = randomUUID();
 
 interface RenderFact { requestId: string; domAt: number; frameAt: number; text: string }
@@ -38,33 +41,47 @@ const portFree = await new Promise<boolean>(done => {
   probe.once("listening", () => probe.close(() => done(true)));
   probe.listen(DEFAULT_PORT, "127.0.0.1");
 });
+
 if (!portFree) {
   console.error(`端口 ${DEFAULT_PORT} 已被占用（可能有本地伴随进程在运行）。不终止任何进程；请先停掉冲突实例再重跑。`);
   process.exit(2);
 }
 
 const conversations = [{ id: "default", title: "新会话", createdAt: Date.now(), updatedAt: Date.now(), state: "idle" as const, mode: "act" as const, runId: null }];
+
 const wss = new WebSocketServer({ host: "127.0.0.1", port: DEFAULT_PORT });
+
 const listening = new Promise<void>((done, reject) => { wss.once("listening", done); wss.once("error", reject); });
+
 let socket: WebSocket | undefined;
+
 wss.on("connection", client => {
   client.on("message", raw => {
     const message = parseClientMessage(raw.toString());
+
     if (!message) return;
+
     if (message.type === "hello") {
-      if (message.token !== token) { client.close(); return; }
+      if (message.token !== token) { client.close();
+
+ return; }
+
       socket = client;
       client.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: "acceptance", models: [], hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: "0.1.0" }));
       client.send(JSON.stringify({ type: "conversation_list", conversations }));
+
       return;
     }
+
     if (message.type === "conversation_list") client.send(JSON.stringify({ type: "conversation_list", conversations }));
   });
   client.on("close", () => { if (socket === client) socket = undefined; });
 });
 
 const report: Record<string, unknown> = { ok: false, rounds: ROUNDS, targetP95Ms: TARGET_P95_MS, samples: [], failures: [] };
+
 const iso = await launchIsolatedExtension();
+
 try {
   await listening;
   const extId = await iso.swEval("chrome.runtime.id") as string;
@@ -109,9 +126,11 @@ try {
   })()`);
 
   const samples: Array<{ requestId: string; latencyMs: number; domMs: number; textOk: boolean }> = [];
+
   for (let i = 0; i < ROUNDS; i++) {
     const requestId = `t04-lat-${i}-${Date.now()}`;
     const message = "修改已直接应用并核对：译文已改成宋体。原任务继续。";
+
     const receipt = {
       requestId,
       conversationId: "default",
@@ -125,18 +144,23 @@ try {
       updatedAt: Date.now(),
       diff: { target: "文章", changed: [{ attribute: "字体", from: "原字体", to: "宋体" }], preserved: ["显示模式"] },
     };
+
     const t0 = Date.now();
+
     if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("受控 agent 连接已断开，测量中止");
     socket.send(JSON.stringify({ type: "agent_event", conversationId: "default", event: { kind: "notice", message, receipt } }));
     const render = await waitForRender(panelId, requestId, 3_000);
+
     if (!render) {
       report.failures.push({ i, requestId, reason: "3 秒内面板没有出现这条回执" });
       samples.push({ requestId, latencyMs: 3_000, domMs: 3_000, textOk: false });
       continue;
     }
+
     const textOk = render.text.includes("修改已应用并核对") && render.text.includes("字体：原字体 → 宋体") && render.text.includes("显示模式保持不变");
     samples.push({ requestId, latencyMs: render.frameAt - t0, domMs: render.domAt - t0, textOk });
   }
+
   report.samples = samples;
 
   const sorted = samples.map(sample => sample.latencyMs).sort((a, b) => a - b);
@@ -173,18 +197,22 @@ try {
   await iso.close();
   wss.close();
 }
+
 process.exit(report.ok === true ? 0 : 1);
 
 /** 面板里等这条回执真的渲染；返回面板记录的帧时间。 */
 async function waitForRender(panelId: string, requestId: string, timeoutMs: number): Promise<RenderFact | null> {
   const end = Date.now() + timeoutMs;
+
   while (Date.now() < end) {
     const found = await iso.evalIn(
       panelId,
       `(globalThis.__t04?.renders ?? []).find(r => r.requestId === ${JSON.stringify(requestId)}) ?? null`,
     ) as RenderFact | null;
+
     if (found) return found;
     await sleep(5);
   }
+
   return null;
 }

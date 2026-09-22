@@ -1,61 +1,86 @@
 /** Offline collection rules only. Language/evidence agreement requires a separate human reading. */
 export interface FactEvent { seq: number; at: number; channel: string; data: Record<string, any> }
+
 export type FactScenario = 'A' | 'B' | 'C' | 'D';
+
 export const isPageRead = (name:string) => ['snapshot','observe_page','read_element','read_elements'].includes(name);
+
 export interface FactProbe { value: string; writes: string[]; saved: number; submitted: number; deleted: number; code: string }
 
 export function providerCalls(events: FactEvent[]) {
   const calls = new Map<string, {callId:string;responseId:string;name:string;arguments:unknown;at:number;seq:number}>();
+
   for (const e of events.filter(e=>e.channel==='provider-in')) {
     const items = e.data.type==='response.function_call_arguments.done' ? [e.data] : e.data.type==='response.done' ? e.data.response?.output ?? [] : [];
+
     for (const item of items) if (item.call_id && item.name && !calls.has(item.call_id)) calls.set(item.call_id, {
       callId:item.call_id,responseId:e.data.response_id ?? e.data.response?.id,name:item.name,arguments:item.arguments,at:e.at,seq:e.seq,
     });
   }
+
   return [...calls.values()];
 }
+
 export function toolOutputs(events: FactEvent[]) {
   return events.filter(e=>e.channel==='provider-out'&&e.data.item?.type==='function_call_output').map(e=>{
     let result: any;
+
     try { result=JSON.parse(e.data.item.output); } catch { result={unparseable:true,raw:e.data.item.output}; }
+
     return {seq:e.seq,at:e.at,callId:e.data.item.call_id,result};
   });
 }
+
 /** A tool-bearing response or pre-tool preamble is never the final result reply. */
 export function finalReply(events: FactEvent[]) {
   const incoming=events.filter(e=>e.channel==='provider-in');
   const created=incoming.filter(e=>e.data.type==='response.created').at(-1);
+
   if(!created)return null;
   const id=created.data.response?.id;
   const done=incoming.find(e=>e.seq>created.seq&&e.data.type==='response.done'&&e.data.response?.id===id);
+
   if(!done||done.data.response?.status!=='completed')return null;
   const calls=providerCalls(events),outputs=toolOutputs(events);
+
   if(calls.some(c=>c.responseId===id||!outputs.some(o=>o.callId===c.callId&&o.seq<created.seq)))return null;
   let text='';
+
   for(const e of incoming.filter(e=>e.data.response_id===id)) {
     if(['response.audio_transcript.delta','response.text.delta'].includes(e.data.type))text+=e.data.delta??'';
+
     if(['response.audio_transcript.done','response.text.done'].includes(e.data.type))text=e.data.transcript??e.data.text??text;
   }
+
   const full=(done.data.response?.output??[]).filter((i:any)=>i.type==='message').flatMap((i:any)=>i.content??[]).map((c:any)=>c.transcript??c.text??'').join('');
+
   if(full)text=full;
   const audio=incoming.find(e=>e.seq>=created.seq&&e.data.type==='response.audio.delta'&&e.data.response_id===id);
+
   return {responseId:id,text:text.trim(),complete:!!text.trim(),createdSeq:created.seq,doneSeq:done.seq,doneAt:done.at,firstAudioAt:audio?.at??null};
 }
 
 type EvidenceStatus = 'PASS' | 'FAIL' | 'UNDETERMINED';
+
 const unique = <T,>(items:T[]):T|undefined => items.length===1?items[0]:undefined;
+
 const completeId = (value:unknown):value is string => typeof value==='string' && value.length>0 && !/redacted|truncated|\.\.\.|…/i.test(value);
+
 const succeeded = (result:any) => result?.ok===true && result.executionFact==='executed' && !result.truncated;
 
 /** Only the existing read_element JSON envelope, not arbitrary page prose. */
 function fieldOutput(result:any) {
   if(!succeeded(result)||result.content?.length!==1)return null;
   const text=result.content[0]?.text;
+
   if(typeof text!=='string')return null;
   const match=/^<page-content untrusted tab=(\d+)>\n([\s\S]*)\n<\/page-content>$/.exec(text);
+
   if(!match)return null;
+
   try {
     const field=JSON.parse(match[2]!);
+
     return field && field.tabId===Number(match[1]) && typeof field.value==='string' && !field.truncated ? field : null;
   } catch {return null;}
 }
@@ -70,17 +95,21 @@ function assessReadback(events:FactEvent[],expected:string) {
   const created=events.filter(e=>e.channel==='provider-in'&&e.data.type==='response.created').at(-1);
   const responseId=created?.data.response?.id;
   const done=unique(events.filter(e=>e.channel==='provider-in'&&e.data.type==='response.done'&&e.data.response?.id===responseId));
+
   const finalBoundary=created&&done&&done.seq>created.seq&&done.data.response.status==='completed'&&
     !(done.data.response.output??[]).some((item:any)=>item.type==='function_call')&&!calls.some(c=>c.responseId===responseId)?created:null;
+
   const generationRequests=events.filter(e=>e.channel==='provider-out'&&e.data.type==='response.create'&&e.seq<(created?.seq??0));
   const generationRequest=generationRequests.at(-1);
   const generationBoundary=generationRequest&&(!calls.length||generationRequest.seq>Math.max(...calls.map(c=>c.seq)))?generationRequest:finalBoundary;
   const receipt=(dispatch:FactEvent)=>unique(events.filter(e=>e.channel==='extension-in'&&e.data.type==='tool_result'&&e.data.id===dispatch.data.id));
   const writeResult=write&&receipt(write);
   const target=write?.data.params;
+
   const evidence=reads.filter(read=>!write||read.seq>write.seq||(receipt(read)?.seq??0)>write.seq).map(read=>{
     const result=receipt(read),params=read.data.params,field=result?.data.data;
     let observation:EvidenceStatus='UNDETERMINED',reason='missing write, dispatch identity, or receipt';
+
     if(write&&completeId(write.data.id)&&writeResult&&succeeded(writeResult.data)&&writeResult.seq>write.seq&&result&&completeId(read.data.id)&&
       dispatches.filter(e=>e.data.id===read.data.id).length===1) {
       if(read.seq<=writeResult.seq) {observation='FAIL';reason='read dispatched before write completed';}
@@ -99,16 +128,20 @@ function assessReadback(events:FactEvent[],expected:string) {
         observation='FAIL';reason='returned field does not match write target';
       } else {observation='PASS';reason='same field read after completed write';}
     }
+
     const end=unique(events.filter(e=>e.channel==='direct-end'&&e.data.result?.toolCallId===read.data.id));
     const call=end&&unique(calls.filter(c=>c.callId===end.data.callId));
     const start=call&&unique(events.filter(e=>e.channel==='direct-start'&&e.data.callId===call.callId));
     const matchingOutputs=call?outputs.filter(o=>o.callId===call.callId):[];
     const sent=unique(matchingOutputs);
+
     if(observation==='PASS'&&start&&writeResult&&start.seq<=writeResult.seq) {
       observation='FAIL';reason='host read started before write completed';
     }
+
     let delivered:EvidenceStatus='UNDETERMINED';
     let deliveryReason='missing explicit transport/host/provider identity or final response';
+
     if(end&&call&&completeId(call.responseId)&&start&&result&&finalBoundary&&completeId(responseId)) {
       if(!(call.seq<=start.seq&&start.seq<read.seq&&result.seq<end.seq)||call.name!==read.data.name||end.data.name!==call.name) {
         delivered='FAIL';deliveryReason='inconsistent call chain';
@@ -118,6 +151,7 @@ function assessReadback(events:FactEvent[],expected:string) {
         delivered='FAIL';deliveryReason='no output sent before final response creation';
       } else {
         const hostField=fieldOutput(end.data.result),sentField=fieldOutput(sent.result);
+
         if(sent.result.toolCallId!==read.data.id||!hostField||!sentField) {
           deliveryReason='missing or failed structured host/provider output';
         } else if(!completeId(field?.documentId)||!completeId(hostField.documentId)||!completeId(sentField.documentId)) {
@@ -127,15 +161,18 @@ function assessReadback(events:FactEvent[],expected:string) {
         } else {delivered='FAIL';deliveryReason='output differs from this read receipt';}
       }
     }
+
     return {transportId:read.data.id,toolCallId:end?.data.result?.toolCallId??null,callId:call?.callId??null,
       responseId:call?.responseId??null,finalResponseId:responseId??null,dispatchSeq:read.seq,resultSeq:result?.seq??null,
       sentSeq:sent?.seq??null,finalCreatedSeq:finalBoundary?.seq??null,generationBoundarySeq:generationBoundary?.seq??null,observation,reason,delivered,deliveryReason,
       value:observation==='PASS'?field.value:null,valueMatches:observation==='PASS'?(field.value===expected?'PASS':'FAIL') as EvidenceStatus:'UNDETERMINED' as EvidenceStatus};
   });
+
   // Preserve each observation; conflicting/multiple valid reads need review rather than cherry-picking a success.
   const valid=evidence.filter(e=>e.observation==='PASS');
   const selected=unique(valid);
   const postActionRead:EvidenceStatus=selected?'PASS':valid.length?'UNDETERMINED':evidence.some(e=>e.observation==='UNDETERMINED')?'UNDETERMINED':'FAIL';
+
   return {postActionRead,readEvidenceDelivered:selected?.delivered??(evidence.length?'UNDETERMINED':'FAIL'),
     readValueMatches:selected?.valueMatches??'UNDETERMINED',readbackEvidence:evidence};
 }
@@ -155,9 +192,12 @@ export function assessFactRun(scenario:FactScenario, events:FactEvent[], probe:F
   const coverage=!!calls.length&&(scenario==='A'?writes.some(c=>c.name==='fill'):scenario==='B'?held:scenario==='C'?dropped&&!!unknown:readFailed);
   const sideEffects=probe ? probe.saved+probe.submitted+probe.deleted : null;
   const repeated=!!probe&&(scenario==='A'||scenario==='C')&&(probe.writes.length>1||!!unknown&&writes.some(c=>c.seq>unknown.seq));
+
   const action=!probe?'UNDETERMINED':!coverage?'FAIL':sideEffects!==0?'FAIL':
     scenario==='A'||scenario==='C'?(probe.value===expected&&probe.writes.length===1?'PASS':'FAIL'):'PASS';
+
   const readback=assessReadback(events,expected);
+
   return {
     scenarioCoverage:coverage?'PASS':'FAIL', action, ...(['A','C'].includes(scenario)?readback:
       {postActionRead:'NOT_APPLICABLE',readEvidenceDelivered:'NOT_APPLICABLE',readValueMatches:'NOT_APPLICABLE',readbackEvidence:[]}),

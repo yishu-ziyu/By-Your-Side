@@ -13,25 +13,32 @@ export class PageOperationQueue {
 
   private state(tabId: number): PageQueueState {
     let state = this.pages.get(tabId);
+
     if (!state) {
       state = { blocked: false, generation: 0, tail: Promise.resolve(), running: null };
       this.pages.set(tabId, state);
     }
+
     return state;
   }
 
   run<T>(tabId: number, operation: () => Promise<T>, canWrite: () => boolean = () => true): Promise<T> {
     const state = this.state(tabId);
+
     if (state.blocked) return Promise.reject(new Error(USER_BLOCKED_ERROR));
     const generation = state.generation;
+
     const result = state.tail.then(async () => {
       if (state.blocked || state.generation !== generation || !canWrite()) throw new Error(USER_BLOCKED_ERROR);
       const running = operation();
       state.running = running;
+
       try { return await running; }
       finally { if (state.running === running) state.running = null; }
     });
+
     state.tail = result.then(() => undefined, () => undefined);
+
     return result;
   }
 
@@ -41,6 +48,7 @@ export class PageOperationQueue {
     state.blocked = true;
     state.generation += 1;
     const running = state.running;
+
     if (running) await Promise.allSettled([running]);
   }
 
@@ -49,5 +57,7 @@ export class PageOperationQueue {
 }
 
 export const pageOperationQueue = new PageOperationQueue();
+
 export function takeoverTab(tabId: number): Promise<void> { return pageOperationQueue.takeover(tabId); }
+
 export function handbackTab(tabId: number): void { pageOperationQueue.handback(tabId); }

@@ -26,20 +26,27 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
+
 const OUT_DIR = path.join(DIR, "out");
+
 const MODULE_ROOT =
   process.env.STAGEHAND_MODULE_ROOT ?? path.join(DIR, "node_modules");
+
 const SDK_ENTRY = path.join(MODULE_ROOT, "@browserbasehq", "stagehand", "dist", "index.mjs");
+
 const argv = process.argv.slice(2);
+
 const envOnly = argv.includes("--env-only");
 
 const FORBIDDEN = /computer-use|--gui|--headful|window-position|--user-data-dir=|--profile-directory/;
+
 if (argv.some((arg) => FORBIDDEN.test(arg))) {
   console.error(`refused: GUI/computer-use argument ${argv.find((a) => FORBIDDEN.test(a))}`);
   process.exit(2);
 }
 
 const log = (line) => process.stdout.write(`${line}\n`);
+
 const record = {
   task: "stagehand-pi-probe",
   evidence: { upstreamCommit: "b771930d2b4d858e5bd9670203c66260b385a8fa", sdkVersion: "4.1.0" },
@@ -48,6 +55,7 @@ const record = {
   env: {},
   checks: [],
 };
+
 const check = (id, status, detail, evidence) => {
   record.checks.push({ id, status, detail, ...(evidence === undefined ? {} : { evidence }) });
   log(`${status.padEnd(7)} ${id} — ${detail}`);
@@ -69,9 +77,11 @@ async function probeConnectContract(sdk) {
       : "connect 必须有 cdpUrl：没有调试端点就无法附着",
     { issues: noUrl.success ? null : noUrl.error.issues.map((issue) => issue.message) },
   );
+
   const withUrl = sdk.LocalBrowserConnectOptionsSchema.safeParse({
     cdpUrl: "http://127.0.0.1:9222",
   });
+
   check(
     "connect.accepts-cdpUrl",
     withUrl.success ? "PASS" : "FAIL",
@@ -86,40 +96,51 @@ async function capability() {
     probe.once("error", (error) => resolve(`ERR ${error.code}`));
     probe.listen(0, "127.0.0.1", () => probe.close(() => resolve("OK")));
   });
+
   record.env.loopbackListen = canListen;
 
   let sdk;
+
   try {
     const resolved = await realpath(SDK_ENTRY);
+
     const manifest = JSON.parse(
       await readFile(path.join(MODULE_ROOT, "@browserbasehq", "stagehand", "package.json"), "utf8"),
     );
+
     const module = await import(pathToFileURL(resolved).href);
     sdk = { module, info: { path: resolved, version: manifest.version, moduleRoot: MODULE_ROOT } };
   } catch (error) {
     sdk = { error: `${error.code ?? ""} ${error.message}`.trim() };
   }
+
   record.env.sdk = sdk.error ? { error: sdk.error } : sdk.info;
+
   return { canListen, sdk };
 }
 
 /** 本地无提交 fixture 服务；只监听 loopback，用完即关。 */
 async function serveFixture() {
   const html = await readFile(path.join(DIR, "fixture", "form.html"), "utf8");
+
   const server = createServer((request, response) => {
     if (request.method === "POST") {
       // 走到这里就证明表单真的提交了——记为失败证据，而不是放过。
       response.writeHead(500, { "content-type": "text/plain" });
       response.end("submitted");
+
       return;
     }
+
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(html);
   });
+
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
+
   return {
     url: `http://127.0.0.1:${server.address().port}/`,
     close: () => new Promise((resolve) => server.close(resolve)),
@@ -129,6 +150,7 @@ async function serveFixture() {
 /** 读页面观测层。SDK 的 Page 不暴露 evaluate，所以读 fixture 渲染进 DOM 的 JSON。 */
 async function state(page) {
   const raw = await page.locator("#probe-state").textContent();
+
   return { url: await page.url(), ...JSON.parse(raw) };
 }
 
@@ -144,13 +166,17 @@ async function main() {
 
   // 纯 schema 的 connect 契约不碰 socket，先跑，避免沙箱网络限制掩盖真实结论。
   const api = sdk.module;
+
   if (api) await probeConnectContract(api);
 
   if (sdk.version && sdk.version !== "4.1.0") sdk.error = `Expected pinned SDK 4.1.0, got ${sdk.version}`;
+
   if (sdk.error) check("dependency", "BLOCKED", `Stagehand 不可加载：${sdk.error}`);
+
   if (canListen !== "OK") {
     check("sandbox-socket", "BLOCKED", `沙箱禁止 loopback 监听/连接（${canListen}），CDP 无法建立`);
   }
+
   if (sdk.error || canListen !== "OK") {
     log("环境受阻：契约测试未跑（BLOCKED，不等于通过，也不等于契约失败）。");
     await persist("blocked", "blocked");
@@ -161,6 +187,7 @@ async function main() {
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "stagehand-pi-probe-"));
   let browser;
   let stagehand;
+
   try {
     // 隔离浏览器：全新 userDataDir、无头、本地 fixture；与用户日常 Chrome 无关。
     browser = await api.localBrowser.launch({ headless: true, userDataDir });
@@ -178,7 +205,9 @@ async function main() {
     check("run", "BLOCKED", `探针未能完成：${error?.stack ?? error}`);
   } finally {
     try { await stagehand?.close?.(); } catch { /* 关闭失败不掩盖主证据 */ }
+
     try { await browser?.close?.(); } catch { /* 同上 */ }
+
     await fixture.close();
     await rm(userDataDir, { force: true, recursive: true }).catch(() => undefined);
   }
@@ -256,6 +285,7 @@ async function probeDeadline(stagehand, context, url) {
 
   let outcome;
   const dispatchedAt = Date.now();
+
   try {
     await stagehand.experimentalBatch(
       async (batch) => {
@@ -264,6 +294,7 @@ async function probeDeadline(stagehand, context, url) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         await batch.page.locator("#email").fill("ada@example.com");
         await batch.page.locator("#city").fill("London");
+
         return "completed";
       },
       undefined,
@@ -280,17 +311,22 @@ async function probeDeadline(stagehand, context, url) {
 
   // 读**所有**页面：先前活跃过的 second 也必须在检查范围内，防止写串到别页。
   const pages = [];
+
   for (const candidate of await context.pages()) {
     pages.push({ isTarget: candidate.pageId === target.pageId, ...(await state(candidate)) });
   }
+
   const after = pages.find((entry) => entry.isTarget);
+
   if (!after) throw new Error("Bound target page disappeared; deadline evidence unavailable");
+
   const lateWrites = pages
     .filter((entry) => entry.writes.some((write) => write.id === "email" || write.id === "city"))
     .map((entry) => ({ isTarget: entry.isTarget, url: entry.url, ids: entry.writes.map((w) => w.id) }));
 
   // 前置写入必须真实发生，否则没有“已下达的批次”可被中止，结论无效。
   const preWriteHappened = after.values.lastName === "Lovelace";
+
   if (!preWriteHappened || !/timed out/i.test(outcome.message ?? "")) {
     check(
       "deadline.stops-batch",

@@ -12,7 +12,9 @@ import { TaskProgress } from "../src/task-progress.js";
 import { BrowserAgentSession } from "../src/session.js";
 
 const roots: string[] = [];
+
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
+
 async function harness() {
   const root = await mkdtemp(join(tmpdir(), "bys-fast-skill-")); roots.push(root);
   const store = new SkillStore(root), candidate = learningFixture().candidate();
@@ -21,15 +23,21 @@ async function harness() {
   const progress = new TaskProgress("default"); progress.request("搜索「李四」，地区「深圳」");
   const session = new (BrowserAgentSession as any)(null, null, { emit: (event: any) => progress.observe({ type: "agent_event", conversationId: "default", event }), setStatus: () => {} }, null, null, 30_000, null, page.rpc);
   session.bindConversationContext(() => progress.snapshot());
+
   const tools = createBrowserTools(page.rpc, undefined, undefined, undefined, { epoch: () => page.state.epoch, canWrite: () => page.state.writable,
     assertCall: (name, params, id) => session.assertTaskResultExecution(name, params, id), onStep: step => session.observeProgramStep(step) });
+
   let sequence = 0;
+
   const execute = vi.fn(async (name: "snapshot" | "browser_run", params: Record<string, unknown>) => {
     const tool = tools.find(tool => tool.name === name)!;
+
     return tool.execute(`fast-${++sequence}`, params, controller.signal, undefined, {} as never);
   });
+
   const options = { store, rpc: page.rpc, context: skillPage, request: "搜索「李四」，地区「深圳」", signal: controller.signal,
     current: () => !controller.signal.aborted && page.state.epoch === 0, execute, notice, judge };
+
   return { store, candidate, page, controller, options, progress };
 }
 
@@ -59,6 +67,7 @@ describe("production router → store → registered browser_run → QuickJS →
   });
   it("does not let an explicitly selected skill certify an exact task plus an extra requirement", async () => {
     const h = await harness();
+
     const result = await trySkillFastLoop({
       ...h.options,
       request: "搜索「李四」，地区「深圳」，然后导出结果。",
@@ -69,6 +78,7 @@ describe("production router → store → registered browser_run → QuickJS →
         inputs: { 客户名: "李四", 地区: "深圳" },
       },
     });
+
     expect(result).toMatchObject({ kind: "miss" });
     expect(h.page.writes).toEqual([]);
     expect(h.options.execute).not.toHaveBeenCalled();
@@ -78,7 +88,9 @@ describe("production router → store → registered browser_run → QuickJS →
     expect(await trySkillFastLoop(h.options)).toMatchObject({ kind: "miss" }); expect(h.page.writes).toEqual([]); expect(h.options.execute).not.toHaveBeenCalled();
   });
   it("stale skills stay out of automatic replay", async () => {
-    const h = await harness(); for (let i = 0; i < 3; i++) await h.store.appendRun(h.candidate.skill.id, { at: i, ok: false, elapsedMs: 1, steps: 1, failedStep: 1 });
+    const h = await harness();
+
+ for (let i = 0; i < 3; i++) await h.store.appendRun(h.candidate.skill.id, { at: i, ok: false, elapsedMs: 1, steps: 1, failedStep: 1 });
     expect(await trySkillFastLoop(h.options)).toMatchObject({ kind: "miss" }); expect(h.page.writes).toEqual([]);
   });
   it("does not run after deletion", async () => {
@@ -95,6 +107,7 @@ describe("production router → store → registered browser_run → QuickJS →
   });
   it("takeover during the program prevents every later write", async () => {
     const h = await harness(); h.page.state.afterFill = () => { h.page.state.epoch++; h.page.state.writable = false; };
+
     expect(await trySkillFastLoop(h.options)).toEqual({ kind: "stopped" }); expect(h.page.writes).toHaveLength(1);
   });
   it("abort is not a reason to reroute or continue executing", async () => {
@@ -111,7 +124,9 @@ describe("production router → store → registered browser_run → QuickJS →
     const original = h.options.execute.getMockImplementation()!;
     h.options.execute.mockImplementation(async (name, params) => {
       const result = await original(name, params);
+
       if (name === "snapshot") await h.store.put({ ...h.candidate.skill, version: 2 });
+
       return result;
     });
     expect(await trySkillFastLoop(h.options)).toMatchObject({ kind: "miss" }); expect(h.page.writes).toEqual([]);
@@ -125,7 +140,9 @@ describe("production router → store → registered browser_run → QuickJS →
     const execute = h.options.execute.getMockImplementation()!;
     h.options.execute.mockImplementation(async (name, params) => {
       const result = await execute(name, params);
+
       if (name === "snapshot") await h.store.put({ ...h.candidate.skill, version: 2 });
+
       return result;
     });
     expect(await trySkillFastLoop({ ...h.options, selected: { id: h.candidate.skill.id, expectedVersion: 1,
@@ -150,8 +167,10 @@ it.each(["read_element", "snapshot"] as const)("registered normal tools capture 
   const invoke = (name: string, params: Record<string, unknown>) => tools.find(tool => tool.name === name)!.execute(`normal-${++id}`, params, undefined, undefined, {} as never);
   await invoke("fill", { target: "@1", value: "张三", tabId: 7 }); await invoke("fill", { target: "@2", value: "北京", tabId: 7 });
   await invoke("click", { target: "@3", tabId: 7 });
+
   if (observer === "snapshot") await invoke("snapshot", { tabId: 7 });
   else await invoke("read_element", { target: "@4", tabId: 7, expect: { property: "textContent", contains: "张三" } });
   expect(trace.finish("normal-run", true)).toMatchObject({ evidence: { actionCount: 3 }, skill: { inputs: { 客户名: "", 地区: "" } } });
+
   if (observer === "snapshot") expect(page.rpc.call.mock.calls.some((args: unknown[]) => args[0] === "read_element" && args[2] === 1500)).toBe(true);
 });

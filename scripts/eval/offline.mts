@@ -9,17 +9,24 @@ import { GATES_PATH, REPO_ROOT, loadGates, sha256File, verifyReport, type EvalRe
 
 function arg(name: string): string | undefined {
   const flag = process.argv.find((a) => a.startsWith(`${name}=`));
+
   return flag ? flag.slice(name.length + 1) : undefined;
 }
 
 const candidate = arg("--candidate") ?? "WORKTREE";
+
 const runId = `offline-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+
 const outDir = join(REPO_ROOT, "eval", "runs", runId);
+
 mkdirSync(outDir, { recursive: true });
 
 const tests = spawnSync("npm", ["test"], { cwd: REPO_ROOT, encoding: "utf8" });
+
 writeFileSync(join(outDir, "npm-test.log"), `${tests.stdout}\n${tests.stderr}`);
+
 const typecheck = spawnSync("npm", ["run", "typecheck"], { cwd: REPO_ROOT, encoding: "utf8" });
+
 writeFileSync(join(outDir, "typecheck.log"), `${typecheck.stdout}\n${typecheck.stderr}`);
 
 const report: EvalReport = {
@@ -51,9 +58,15 @@ const report: EvalReport = {
 };
 
 const result = verifyReport(report);
+
 writeFileSync(join(outDir, "report.json"), JSON.stringify({ report, result }, null, 2));
+
 console.log(`run_id=${runId}`);
+
 console.log(`npm test exit=${tests.status}`);
+
 console.log(`typecheck exit=${typecheck.status}`);
+
 console.log(`verify=${result.verdict} ${result.reason}`);
+
 if (tests.status !== 0 || typecheck.status !== 0 || result.verdict === "FAIL") process.exit(1);

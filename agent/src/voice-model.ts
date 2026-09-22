@@ -26,9 +26,12 @@ export interface VoiceIntentTask {
 
 /** 编辑判定的总预算。 */
 const VOICE_EDIT_TIMEOUT_MS = 15_000;
+
 /** 计划判定的总预算，以及两次尝试各自的子预算；整句分类与一次性提案共用。 */
 const VOICE_PLAN_TIMEOUT_MS = 15_000;
+
 const VOICE_PLAN_ATTEMPT_TIMEOUTS_MS = [6_000, 9_000] as const;
+
 /** 只读页面观察的单次预算。 */
 const VOICE_OBSERVATION_TIMEOUT_MS = 20_000;
 
@@ -73,9 +76,11 @@ async function runVoicePlan(
   const requestId = input.task?.requestId ?? randomUUID();
   const startedAt = Date.now();
   let rejection: string | undefined;
+
   for (const [attempt, attemptTimeoutMs] of VOICE_PLAN_ATTEMPT_TIMEOUTS_MS.entries()) {
     const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
     const callAt = Date.now();
+
     const diagnose = (outcome: string, reason?: string, actions?: string[]) =>
       console.error(`${diagnosePrefix} ${JSON.stringify({
         requestId,
@@ -88,6 +93,7 @@ async function runVoicePlan(
       })}`);
 
     let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+
     try {
       reply = await call.runtime.completeSimple(call.model, {
         // 计划提示词与旧分类调用逐字相同：VOICE_PLAN_PROMPT === VOICE_INTENT_PROMPT（既有契约测试锁定）。
@@ -117,13 +123,16 @@ async function runVoicePlan(
       // 取消与超时都会让请求失败：只有调用方主动取消时才立刻收手，其余在总预算内重试一次。
       const superseded = cancel?.aborted === true;
       diagnose(superseded ? "cancelled" : attemptSignal.aborted ? "timeout" : "request_failed");
+
       if (superseded) throw new VoiceIntentError("classifier_failed");
+
       if (!attempt && !signal.aborted) continue;
       throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
     }
 
     if (reply.stopReason === "error" || reply.stopReason === "aborted") {
       diagnose("provider_failed");
+
       if (!attempt && !signal.aborted) continue;
       throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
     }
@@ -134,20 +143,25 @@ async function runVoicePlan(
         input.text,
         input.conversationTitles,
       );
+
       diagnose("accepted", undefined, plan.steps.map(step => step.action));
+
       return {plan, requestId, attempts: attempt + 1, elapsedMs: Date.now() - startedAt};
     } catch (error) {
       rejection = error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown";
       diagnose("candidate_rejected", rejection);
+
       if (attempt || signal.aborted) throw error;
     }
   }
+
   throw new VoiceIntentError("classifier_invalid_reply");
 }
 
 /** 判定一句语音是否为“直接修改当前任务条件”的指令；模型不可用由调用方先行拦截。 */
 export async function classifyVoiceEdit(call: VoiceModelCall, text: string): Promise<boolean> {
   const signal = AbortSignal.timeout(VOICE_EDIT_TIMEOUT_MS);
+
   const reply = await call.runtime.completeSimple(call.model, {
     systemPrompt: VOICE_EDIT_PROMPT,
     messages: [{role: "user", content: text, timestamp: Date.now()}],
@@ -160,11 +174,15 @@ export async function classifyVoiceEdit(call: VoiceModelCall, text: string): Pro
   }).catch(() => {
     throw new VoiceIntentError(signal.aborted ? "classifier_timeout" : "classifier_failed");
   });
+
   const decision = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+
   if (reply.stopReason === "error" || reply.stopReason === "aborted") {
     throw new VoiceIntentError(signal.aborted ? "classifier_timeout" : "classifier_failed");
   }
+
   if (!["EDIT", "NONE"].includes(decision)) throw new VoiceIntentError("classifier_invalid_reply");
+
   return decision === "EDIT";
 }
 
@@ -182,6 +200,7 @@ export async function classifyVoiceInput(
   conversation?: VoiceConversationContext,
 ): Promise<VoiceIntentPlan> {
   const {plan} = await runVoicePlan(call, {text, state, conversationTitles, task, conversation}, {diagnosePrefix: "[voice-classifier]"});
+
   return plan;
 }
 
@@ -233,8 +252,10 @@ export interface VoiceTurnPrepareOptions {
  */
 export async function prepareVoiceTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput, options: VoiceTurnPrepareOptions = {}): Promise<VoiceTurnPreparation> {
   const {cancel, protocol = 'plan'} = options;
+
   if (protocol === 'free_reply') return freeReplyTurn(call, input, cancel);
   const {plan, requestId, attempts, elapsedMs} = await runVoicePlan(call, input, {diagnosePrefix: "[voice-turn]", diagnoseProtocol: 'plan', cancel});
+
   return {plan, replyText: null, requestId, attempts, elapsedMs, protocol};
 }
 
@@ -244,9 +265,12 @@ async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput,
   const startedAt = Date.now();
   const budget = AbortSignal.timeout(VOICE_FREE_REPLY_TIMEOUT_MS);
   const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
+
   const diagnose = (outcome: string, reason?: string) =>
     console.error(`[voice-turn] ${JSON.stringify({requestId, attempt: 1, elapsedMs: Date.now() - startedAt, outcome, protocol: 'free_reply', ...(reason ? {reason} : {})})}`);
+
   let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+
   try {
     reply = await call.runtime.completeSimple(call.model, {
       systemPrompt: VOICE_FREE_REPLY_PROMPT,
@@ -263,16 +287,21 @@ async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput,
     diagnose(cancel?.aborted === true ? "cancelled" : signal.aborted ? "timeout" : "request_failed");
     throw new VoiceIntentError("free_reply_failed");
   }
+
   if (reply.stopReason === "error" || reply.stopReason === "aborted") {
     diagnose("provider_failed");
     throw new VoiceIntentError("free_reply_failed");
   }
+
   const text = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+
   if (!text || text.length > 2000) {
     diagnose("empty_reply", text ? "too_long" : "empty");
     throw new VoiceIntentError("free_reply_failed");
   }
+
   diagnose("accepted");
+
   // 计划由程序构造：闸门、只读判定与唯一交付权都走与计划协议同一条路，不因为直答另开一条。
   return {plan: {steps: [{action: 'chat', text: input.text, target: null}]}, replyText: text, requestId, attempts: 1, elapsedMs: Date.now() - startedAt, protocol: 'free_reply'};
 }
@@ -285,6 +314,7 @@ export async function answerVoiceObservation(
   stillCurrent: () => boolean,
 ): Promise<string> {
   if (!stillCurrent()) throw new Error("本次观察已取消。");
+
   const reply = await call.runtime.completeSimple(call.model, {
     systemPrompt: VOICE_OBSERVATION_PROMPT,
     messages: [{
@@ -302,9 +332,13 @@ export async function answerVoiceObservation(
     sessionId: call.sessionId,
     headers: call.headers,
   });
+
   if (!stillCurrent()) throw new Error("本次观察已取消。");
+
   if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("这次页面观察没有完成，请重试。");
   const answer = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+
   if (!answer || answer.length > 600) throw new Error("没有取得可用的页面回答。");
+
   return answer;
 }

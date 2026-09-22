@@ -1,9 +1,14 @@
 import {describe,expect,it} from 'vitest';
 import {assessFactRun,finalReply,isPageRead,type FactEvent} from '../../scripts/acceptance/realtime-fact-oracle.mjs';
+
 const event=(seq:number,channel:string,data:Record<string,unknown>):FactEvent=>({seq,at:seq*100,channel,data});
+
 const created=(seq:number,id:string)=>event(seq,'provider-in',{type:'response.created',response:{id}});
+
 const done=(seq:number,id:string,text:string,output:unknown[]=[])=>event(seq,'provider-in',{type:'response.done',response:{id,status:'completed',output:[{type:'message',content:[{transcript:text}]},...output]}});
+
 const probe={value:'',writes:[],saved:0,submitted:0,deleted:0,code:'hidden'};
+
 describe('Realtime fact-consumption collection boundaries',()=>{
  it('keeps a no-tool verbal success as an action failure and language unjudged',()=>{
   const result=assessFactRun('A',[created(1,'r1'),done(2,'r1','已经填写好了')],probe);
@@ -18,6 +23,7 @@ describe('Realtime fact-consumption collection boundaries',()=>{
  it('requires sent output before a new completed response and preserves provider/host IDs',()=>{
   const events=[created(1,'r1'),done(2,'r1','',[{type:'function_call',call_id:'provider',name:'fill'}]),
    event(3,'provider-out',{item:{type:'function_call_output',call_id:'provider',output:JSON.stringify({toolCallId:'host',executionFact:'unknown'})}}),created(4,'r2')];
+
   expect(finalReply(events)).toBeNull();events.push(done(5,'r2','原调用没有确认回执。'));
   expect(finalReply(events)?.responseId).toBe('r2');
   expect(assessFactRun('C',events,probe).outputs[0]).toMatchObject({callId:'provider',result:{toolCallId:'host'}});
@@ -33,18 +39,22 @@ it('read_page transport observe_page is covered by the read failure injector',()
  expect(isPageRead('observe_page')).toBe(true);expect(isPageRead('snapshot')).toBe(true);
  expect(isPageRead('fill')).toBe(false);expect(isPageRead('get_active_tab')).toBe(false);
 });
+
 it('measures from the final VAD stop when a single synthetic utterance is segmented',()=>{
  const events=[event(1,'provider-in',{type:'input_audio_buffer.speech_stopped'}),event(2,'extension-out',{name:'observe_page'}),
   event(4,'provider-in',{type:'input_audio_buffer.speech_stopped'}),event(5,'extension-out',{name:'fill'})];
+
  const timing=assessFactRun('C',events,probe).timing;
  expect(timing.firstActionMs).toBe(100);expect(timing.firstToolMs).toBe(-200);
 });
+
 it('allows real alternative reading after an injected failure without calling language automatically correct',()=>{
  const events=[created(1,'r1'),done(2,'r1','',[{type:'function_call',call_id:'failed',name:'read_page'}]),
   event(3,'provider-out',{item:{type:'function_call_output',call_id:'failed',output:JSON.stringify({ok:false,error:'TEST_INJECTED_READ_FAILURE: first read unavailable'})}}),
   created(4,'r2'),done(5,'r2','',[{type:'function_call',call_id:'fresh',name:'read_element'}]),
   event(6,'provider-out',{item:{type:'function_call_output',call_id:'fresh',output:JSON.stringify({ok:true,executionFact:'executed',content:[{text:'核对码：琥珀-731'}]})}}),
   created(7,'r3'),done(8,'r3','核对码是琥珀-731')];
+
  const result=assessFactRun('D',events,probe);
  expect(result.scenarioCoverage).toBe('PASS');expect(result.action).toBe('PASS');expect(result.language).toBe('NOT_JUDGED');
 });
@@ -54,6 +64,7 @@ it('allows real alternative reading after an injected failure without calling la
 function readbackFixture(value='星河') {
  const field={tabId:7,target:'@6',documentId:'doc',value,tagName:'input'};
  const result={ok:true,executionFact:'executed',toolCallId:'read',content:[{type:'text',text:`<page-content untrusted tab=7>\n${JSON.stringify(field)}\n</page-content>`}]};
+
  return [
   event(1,'provider-in',{type:'response.function_call_arguments.done',response_id:'wr',call_id:'pw',name:'fill',arguments:'{}'}),
   event(2,'direct-start',{callId:'pw',name:'fill',args:{target:'@6'}}),
@@ -70,7 +81,9 @@ function readbackFixture(value='星河') {
   created(13,'final'),done(14,'final','核查完毕'),
  ];
 }
+
 const row=(events:FactEvent[],seq:number)=>events.find(e=>e.seq===seq)!;
+
 describe('correlated post-action readback',()=>{
  it.each(['tabId','target'] as const)('A: rejects another %s even with the expected text',key=>{
   const events=readbackFixture();row(events,9).data.params[key]=key==='tabId'?8:'@9';
@@ -82,6 +95,7 @@ describe('correlated post-action readback',()=>{
  });
  it.each(['missing','late'] as const)('C/D: %s output cannot support the final answer',mode=>{
   const events=readbackFixture().filter(e=>mode!=='missing'||e.seq!==12);
+
   if(mode==='late')row(events,12).seq=13.5;
   expect(assessFactRun('A',events,probe)).toMatchObject({postActionRead:'PASS',readEvidenceDelivered:'FAIL'});
  });
@@ -97,23 +111,34 @@ describe('correlated post-action readback',()=>{
 describe('readback evidence gaps and mismatched calls',()=>{
  it.each(['document','tab','target','returned-tab','returned-target','value','truncated'] as const)('leaves missing %s evidence undetermined',kind=>{
   const events=readbackFixture();
+
   if(kind==='document')delete row(events,3).data.params.documentId;
+
   if(kind==='tab')delete row(events,9).data.params.tabId;
+
   if(kind==='target')delete row(events,9).data.params.target;
+
   if(kind==='returned-tab')delete row(events,10).data.data.tabId;
+
   if(kind==='returned-target')delete row(events,10).data.data.target;
+
   if(kind==='value')delete row(events,10).data.data.value;
+
   if(kind==='truncated')row(events,10).data.data.truncated=true;
   expect(assessFactRun('A',events,probe).postActionRead).toBe('UNDETERMINED');
  });
  it.each(['host-id','provider-id','redacted'] as const)('does not infer a missing %s link from identical text',kind=>{
   const events=readbackFixture();
+
   if(kind==='host-id')row(events,11).data.result.toolCallId='another-host';
+
   if(kind==='provider-id')row(events,11).data.callId='another-provider';
+
   if(kind==='redacted') {
    const item=row(events,12).data.item;
    item.output=item.output.replace('doc','[redacted]');
   }
+
   expect(assessFactRun('A',events,probe)).toMatchObject({postActionRead:'PASS',readEvidenceDelivered:'UNDETERMINED'});
  });
  it('does not count expected text in title or error as the field value',()=>{

@@ -5,22 +5,31 @@ import {afterEach,describe,expect,it,vi} from 'vitest';
 import {VoiceCaptureStore,clearVoiceCapture,wavBuffer} from '../src/voice-capture-store.js';
 
 const roots:string[]=[];
-const tempRoot=():string=>{const root=mkdtempSync(join(tmpdir(),'voice-capture-'));roots.push(root);return root;};
+
+const tempRoot=():string=>{const root=mkdtempSync(join(tmpdir(),'voice-capture-'));roots.push(root);
+
+return root;};
+
 afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
 
 const b64=(values:number[]):string=>Buffer.from(new Int16Array(values).buffer).toString('base64');
+
 const lines=(root:string):any[]=>readdirSync(root).filter(name=>name.endsWith('.jsonl')).sort()
   .flatMap(name=>readFileSync(join(root,name),'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)));
+
 const wav=(path:string):{riff:string;wave:string;sampleRate:number;channels:number;bits:number;dataBytes:number;samples:number[]}=>{
   const buf=readFileSync(path);
   const data=buf.subarray(44);
+
   return {
     riff:buf.toString('ascii',0,4),wave:buf.toString('ascii',8,12),
     sampleRate:buf.readUInt32LE(24),channels:buf.readUInt16LE(22),bits:buf.readUInt16LE(34),dataBytes:buf.readUInt32LE(40),
     samples:Array.from(new Int16Array(data.buffer.slice(data.byteOffset,data.byteOffset+data.length))),
   };
 };
+
 const day=new Date(2026,8,10,12,0,0).getTime(); // local 2026-09-10
+
 const DAY=24*60*60*1000;
 
 describe('normal-use capture store',()=>{

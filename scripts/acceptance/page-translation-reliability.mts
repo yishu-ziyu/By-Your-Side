@@ -3,9 +3,15 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {launchIsolatedExtension,until} from './isolated-extension.mts';
+
 if(!process.argv.includes('--headless'))throw Error('Required: --headless');
-const out=resolve(process.argv.find(arg=>arg.startsWith('--out='))?.slice(6) ?? 'docs/evals/20260917-page-translation-reliability');await mkdir(out,{recursive:true});
+
+const out=resolve(process.argv.find(arg=>arg.startsWith('--out='))?.slice(6) ?? 'docs/evals/20260917-page-translation-reliability');
+
+await mkdir(out,{recursive:true});
+
 const iso=await launchIsolatedExtension({fixtureHtml:`<!doctype html><meta charset="utf-8"><style>body{font:20px Arial}a{font-family:Arial}</style><main><h1>Read with care</h1><p style="color: blue; font-family: Georgia !important;">Read <a href="#source">the source</a>.</p></main>`});
+
 try{
  const target=await iso.newTarget(iso.fixtureOrigin+'/article');
  const tab=await until(async()=>(await iso.swEval('chrome.tabs.query({})') as any[]).find(t=>t.url===iso.fixtureOrigin+'/article'),5000,'tab');
@@ -13,7 +19,11 @@ try{
  await until(async()=>await page('document.readyState==="complete"')||undefined,5000,'document');
  assert((await iso.tool('switch_tab',{tabId:tab.id})).ok);
  const raw=(p:any)=>iso.tool('page_translation',{tabId:tab.id,...p});
- const call=async(p:any)=>{const r=await raw(p);assert(r.ok,JSON.stringify(r));return r.data;};
+
+ const call=async(p:any)=>{const r=await raw(p);assert(r.ok,JSON.stringify(r));
+
+return r.data;};
+
  const missing=await raw({action:'display',mode:'translated'});
  assert.equal(missing.ok,false);assert.equal(missing.executionFact,'not_executed');assert.match(missing.error,/还没有译文/);
  const original=await page('document.querySelector("main").innerHTML');
@@ -35,6 +45,7 @@ try{
  await call({action:'display',fontFamily:'songti'});
  await iso.screenshot(target,out+'/songti.png');
  await call({action:'restore'});assert.equal(await page('document.querySelector("main").innerHTML'),original);
+
  // Repeat typography after the website changes inline-style presence.
  for (const initial of [false,true]) {
   for (const fontSize of [undefined,24]) {
@@ -54,6 +65,7 @@ try{
    await call({action:'restore'});
   }
  }
+
  const doomed=await iso.newTarget(iso.fixtureOrigin+'/closed');
  const doomedTab=await until(async()=>(await iso.swEval('chrome.tabs.query({})') as any[]).find(t=>t.url===iso.fixtureOrigin+'/closed'),5000,'doomed tab');
  await iso.closeTarget(doomed);

@@ -27,30 +27,47 @@ import {launchIsolatedExtension, until} from './isolated-extension.mts';
 import {displayAcceptanceExitCode, judgeDisplaySteeringRun, summarizeDisplaySteering} from './display-steering-oracle.mjs';
 
 if (!process.argv.includes('--headless')) throw new Error('Required: --headless');
+
 const smoke = process.argv.includes('--smoke');
+
 const boundariesOnly = process.argv.includes('--boundaries-only');
+
 const skipBoundaries = process.argv.includes('--skip-boundaries');
+
 const pairsFlag = process.argv.find(a => a === '--pairs' || a.startsWith('--pairs='));
+
 const pairsRaw = pairsFlag ? Number(pairsFlag.includes('=') ? pairsFlag.slice('--pairs='.length) : process.argv[process.argv.indexOf(pairsFlag) + 1]) : NaN;
+
 if (pairsFlag && !(Number.isInteger(pairsRaw) && pairsRaw >= 1 && pairsRaw <= 10)) throw new Error('--pairs 需要 1..10 的整数（总对数固定 10）');
+
 const reviewRaces = process.argv.includes('--review-races');
+
 const PAIR_COUNT = smoke ? 1 : (Number.isInteger(pairsRaw) ? pairsRaw : 10);
+
 const pairsLimited = PAIR_COUNT < 10;
+
 const out = resolve('out/acceptance', `jev-display-steering-${Date.now()}`);
+
 await mkdir(out, {recursive: true});
 
 async function readTypesafeKey(): Promise<string> {
   for (const path of [resolve('.env.typesafe.local'), join(homedir(), '.sideagent', 'typesafe.env')]) {
     try {
       const line = (await readFile(path, 'utf8')).split('\n').find(value => value.startsWith('TYPESAFE_API_KEY='));
+
       if (line) return line.slice('TYPESAFE_API_KEY='.length).trim().replace(/^["']|["']$/g, '');
     } catch { /* try the next location */ }
   }
+
   return '';
 }
+
 const typesafeKey = await readTypesafeKey();
+
 if (!typesafeKey) throw new Error('缺少 TYPESAFE_API_KEY：本机 ~/.sideagent/typesafe.env 或 .env.typesafe.local。不把密钥写进仓库或报告。');
+
 process.env.TYPESAFE_API_KEY = typesafeKey;
+
 process.env.SIDEAGENT_DISPLAY_FASTPATH = '1';
 
 async function portFree(port: number): Promise<boolean> {
@@ -61,36 +78,56 @@ async function portFree(port: number): Promise<boolean> {
     probe.listen(port, '127.0.0.1');
   });
 }
+
 if (!(await portFree(DEFAULT_PORT))) throw new Error(`端口 ${DEFAULT_PORT} 已被占用（可能有本地伴随进程在运行）。不终止任何进程；请先停掉冲突实例再重跑。`);
 
 const token = randomUUID();
+
 // 执行模型默认取本机 config.json；可用 SIDEAGENT_ACCEPTANCE_MODEL 覆盖，不改日常配置。
 const model = process.env.SIDEAGENT_ACCEPTANCE_MODEL || loadConfig().model;
+
 const runtimeDir = resolve('out/acceptance', `jev-display-steering-store-${Date.now()}`);
+
 await mkdir(runtimeDir, {recursive: true});
+
 const events: any[] = [];
+
 const store = new ConversationStore(join(runtimeDir, 'conversations'));
+
 let socket: WebSocket | undefined;
+
 const manager = new ConversationManager(
   (id, emit, summary) => createConversationRuntime(id, emit, model, {sessionManager: store.sessionManager(id), mode: summary?.mode}),
-  message => { events.push({at: Date.now(), direction: 'server', message}); if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); },
+  message => { events.push({at: Date.now(), direction: 'server', message});
+
+ if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); },
   store, undefined, undefined, new TaskDispatcher(new TaskReceiptStore(join(runtimeDir, 'receipts'))),
 );
+
 const wss = new WebSocketServer({host: '127.0.0.1', port: DEFAULT_PORT});
+
 const listening = new Promise<void>((done, reject) => { wss.once('listening', done); wss.once('error', reject); });
+
 wss.on('connection', client => {
   client.on('message', async raw => {
     const message = parseClientMessage(raw.toString());
+
     if (!message) return;
+
     if (message.type === 'hello') {
-      if (message.token !== token) { client.close(); return; }
+      if (message.token !== token) { client.close();
+
+ return; }
+
       socket = client;
       const session = manager.get('default')!.runtime.session;
       client.send(JSON.stringify({type: 'hello_ok', version: PROTOCOL_VERSION, model: session.modelName(), models: await session.availableModels(), hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: '0.1.0'}));
       client.send(JSON.stringify({type: 'conversation_list', conversations: manager.list()}));
       manager.replayState(m => client.send(JSON.stringify(m)));
+
       return;
     }
+
     if (socket !== client) return;
     events.push({at: Date.now(), direction: 'client', message});
     void manager.handleMessage(message).catch(error => events.push({error: String(error)}));
@@ -100,27 +137,37 @@ wss.on('connection', client => {
 
 /** Count real Jev calls and record decision reasons without touching credentials. */
 const jevCalls: number[] = [];
+
 const displayDecisions: {at: number; reason: string; ms: number}[] = [];
+
 const originalConsoleError = console.error;
+
 console.error = (...args: any[]) => {
   originalConsoleError(...args);
+
   if (args[0] === '[display-fast-path]' && typeof args[1] === 'string') {
     try { const parsed = JSON.parse(args[1]); displayDecisions.push({at: Date.now(), reason: String(parsed.reason), ms: Number(parsed.ms)}); } catch { /* keep raw log only */ }
   }
 };
+
 const originalFetch = globalThis.fetch;
+
 // Review race mode uses a controlled decision response, never claims live Jev accuracy.
 let reviewDecision: (() => Promise<Response>) | null = null;
+
 globalThis.fetch = (async (input: any, init?: any) => {
   if (String(input).includes('api.typesafe.ai')) {
     if (reviewDecision) return reviewDecision();
     const started = Date.now();
+
     try { return await originalFetch(input, init); } finally { jevCalls.push(Date.now() - started); }
   }
+
   return originalFetch(input, init);
 }) as typeof fetch;
 
 const TASK_TEXT = '请阅读当前网页的文章：先数一数正文一共有几个段落，再用一句不超过40字的话概括。不要修改网页上的任何内容，也不要翻译。回答中各用独立一行给出“段落数：N”和“概括：一句话”，N只写数字。';
+
 const MODIFIERS = [
   {text: '把已有译文改成宋体。', font: 'songti', mode: null},
   {text: '已有译文请只显示译文。', font: null, mode: 'translated'},
@@ -145,8 +192,11 @@ const fixtureHtml = `<!doctype html><meta charset="utf-8"><title>Display steerin
 </article>`;
 
 let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
+
 let panel = '';
+
 const results: any = {passed: false, pairs: [], boundaries: [], runs: [], summary: {}, scope: {}, error: null};
+
 results.sourceDigests=Object.fromEntries(await Promise.all([
   'agent/src/session.ts','agent/src/conversation-manager.ts','agent/src/task-progress.ts',
   'scripts/acceptance/jev-display-steering.mts','scripts/acceptance/display-steering-oracle.mjs',
@@ -170,33 +220,44 @@ try {
   await iso.swEval(`chrome.tabs.update(${tab.id},{active:true})`);
   const page = (expression: string) => iso!.evalIn(target, expression);
   let fixtureConversationId='default';
+
   const call = async (params: any) => {
     // Seed with the arm's own conversation identity through the existing test hook;
     // otherwise seeding claims every new page for "default" before the actual task starts.
     const receipt:any = await iso!.swEval(`globalThis.__saCall(${JSON.stringify(`fixture-${randomUUID()}`)},'page_translation',${JSON.stringify({tabId:tab.id,...params})},'main',undefined,${JSON.stringify(fixtureConversationId)})`);
     assert(receipt.ok, receipt.error);
+
     return receipt.data;
   };
+
   const observe = () => page(`(()=>{const paragraphs=[...document.querySelectorAll('article p')].map(p=>{const t=p.querySelector('[data-bys-translation]');return {mode:t?'bilingual':'translated',font:getComputedStyle(t||p).fontFamily,text:p.textContent??''};});return {...paragraphs[0],paragraphs};})()`);
   const panelIdle = async () => (await iso!.evalIn(panel, "document.getElementById('abort-btn').hidden")) === true;
   const panelRunning = async () => (await iso!.evalIn(panel, "!document.getElementById('abort-btn').hidden")) === true;
   const sendInput = (text: string) => iso!.evalIn(panel, `(()=>{const e=document.querySelector('#input');e.value=${JSON.stringify(text)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`);
+
   const waitSettled = async (start: number, timeoutMs: number, session=entry.runtime.session): Promise<'settled' | 'timeout'> => {
     const deadline = Date.now() + timeoutMs;
+
     while (Date.now() < deadline) {
       const ended = events.slice(start).some(item => item.message?.event?.kind === 'agent_end' && item.message.event.willRetry !== true);
+
       if (ended && !session.isStreaming()) return 'settled';
       await sleep(150);
     }
+
     return 'timeout';
   };
+
   const waitMatch = async (match: () => Promise<boolean>, timeoutMs: number, done?:()=>boolean): Promise<number | undefined> => {
     const deadline = Date.now() + timeoutMs;
+
     while (Date.now() < deadline) {
       if (await match()) return Date.now();
+
       if (done?.()) return undefined;
       await sleep(120);
     }
+
     return undefined;
   };
 
@@ -208,10 +269,13 @@ try {
     const translations = receipt.blocks.flatMap((block: any, index: number) => block.segments.map((segment: any) => ({id: segment.id, text: zh[index % zh.length]})));
     await call({action: 'apply', document: receipt.document, translations});
   }
+
   const setDisplay = (mode: string, fontFamily: string) => call({action: 'display', mode, fontFamily});
+
   const matchesExpected = async (modifier: {font: string | null; mode: string | null}, expected: {font: string; mode: string}) => {
     const observed = await observe();
     const paragraphs = observed.paragraphs ?? [];
+
     return {ok: paragraphs.length === 4 && paragraphs.every((p:any) => p.mode === expected.mode
       && (expected.font === 'songti' ? /Songti SC/.test(p.font) : p.font === 'Arial')), observed};
   };
@@ -240,6 +304,7 @@ try {
     const initialFont = options?.initial?.font ?? (modifier.font === 'original' ? 'songti' : 'original');
     await setDisplay(initialMode, initialFont);
     const expected = {mode: modifier.mode ?? initialMode, font: modifier.font ?? initialFont};
+
     if (waitForChange) assert((await matchesExpected(modifier, expected)).ok === false, '初始显示状态必须与目标不同');
     await until(async () => ((await panelIdle()) && !runEntry.runtime.session.isStreaming() && ['idle', 'none', 'aborted', 'error'].includes(manager.getTaskProgress(conversationId)?.state ?? '')) || undefined, 20000, 'panel idle');
     process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH = enabled ? '1' : '0';
@@ -255,29 +320,36 @@ try {
     const start = events.length;
     const steerAt = Date.now();
     await sendInput(modifier.text);
+
     const pageAt = waitForChange ? await waitMatch(async () => (await matchesExpected(modifier, expected)).ok, 45000,
       ()=>!runEntry.runtime.session.isStreaming()&&events.slice(start).some(e=>e.message?.conversationId===conversationId&&e.message?.event?.kind==='agent_end'&&e.message.event.willRetry!==true)) : undefined;
+
     const settle = await waitSettled(start, 90000,runEntry.runtime.session);
     await sleep(1200);
     const final = await matchesExpected(modifier, expected);
     const window = events.slice(start);
     const displayStarts = window.filter(item => item.message?.event?.kind === 'tool_start' && item.message.event.name === 'page_translation' && item.message.event.params?.action === 'display');
     const directStarts = displayStarts.filter(item => String(item.message.event.toolCallId).startsWith('display-'));
+
     const reTranslate = window.filter(item => item.message?.type === 'tool_call' && item.message.name === 'page_translation'
       && !['display','collect'].includes(item.message.params?.action));
+
     const findings = window.filter(item => item.message?.event?.kind === 'user_delivery' && ['finding', 'reply'].includes(item.message.event.delivery.kind));
     const runIdAfter = manager.getTaskProgress(conversationId)?.runId ?? null;
     const answer = findings.map(item => item.message.event.delivery.text).join(' ');
     const steeringReceipt=window.find(item=>item.message?.event?.receipt?.action==='steer')?.message.event.receipt??null;
+
     const displayExecutions = window.filter(item => item.message?.type === 'tool_call' && item.message.name === 'page_translation'
       && item.message.params?.action === 'display').map(item => {
       const call = item.message;
       const result = window.find(e => e.message?.type === 'tool_result' && e.message.id === call.id)?.message;
+
       return {id:call.id, params:call.params, ok:result?.ok === true && !result?.data?.error,
         executionFact:result?.data?.executionFact ?? result?.executionFact ?? 'unknown',
         tabId:result?.data?.tabId ?? call.params.tabId, document:result?.data?.document ?? call.params.document ?? null,
         runId:call.runId ?? null};
     });
+
     const run = {
       name, enabled, text: modifier.text, expected,
       initialMode, initialFont,
@@ -297,22 +369,29 @@ try {
       steeringReceipt,
       conversationCountBefore, conversationCountAfter: manager.list().length,
     };
+
     return {...run, judgment:judgeDisplaySteeringRun(run)};
   }
 
   await seedTranslations();
+
   if (reviewRaces) {
-    const latch = () => {let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
+    const latch = () => {let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});
+
+return {promise,release};};
+
     const decisionResponse = () => new Response(JSON.stringify({answers:{
       direct:{noul:.99},extra:{noul:.01},partial:{noul:.01},font_requested:{noul:.99},mode_requested:{noul:.01},
       font:{choice:'songti',probabilities:{songti:.99,original:.005,unspecified:.005}},mode:{choice:'unspecified'},
     }}),{headers:{'Content-Type':'application/json'}});
+
     for (const kind of ['refresh-during-route','cancel-during-readback'] as const) {
       const originalHold=latch(),decisionHold=latch(),readbackHold=latch();
       const originalCall=entry.runtime.rpc.call.bind(entry.runtime.rpc);
       let originalWaiting=false,routeWaiting=false,readbackWaiting=false,wrote=false;
       const marker=events.length;
       let failure:string|null=null,receipt:any=null;
+
       try {
         await until(()=>!entry.runtime.session.isStreaming()||undefined,20000,'previous task idle');
         await setDisplay('translated','original');
@@ -320,17 +399,27 @@ try {
         entry.runtime.rpc.call=(async (...args:any[])=>{
           const [name,params]=args;
           const result=await (originalCall as any)(...args);
+
           if(name==='read_element'&&!originalWaiting){originalWaiting=true;await originalHold.promise;}
+
           if(name==='page_translation'&&params?.action==='display')wrote=true;
+
           if(kind==='cancel-during-readback'&&name==='snapshot'&&wrote&&!readbackWaiting){readbackWaiting=true;await readbackHold.promise;}
+
           return result;
         }) as typeof entry.runtime.rpc.call;
         await sendInput(`先调用 read_element 读取 body 全文，不能跳过这个工具。${TASK_TEXT}`);
         await until(()=>originalWaiting||undefined,45000,'original task held at real read_element receipt');
         const runId=manager.getTaskProgress('default')!.runId;
-        reviewDecision=async()=>{routeWaiting=true;if(kind==='refresh-during-route')await decisionHold.promise;return decisionResponse();};
+        reviewDecision=async()=>{routeWaiting=true;
+
+if(kind==='refresh-during-route')await decisionHold.promise;
+
+return decisionResponse();};
+
         const editStart=events.length;
         await sendInput('把译文改成宋体');
+
         if(kind==='refresh-during-route'){
           await until(()=>routeWaiting||undefined,10000,'Jev route held');
           await page('location.reload()');
@@ -344,7 +433,9 @@ try {
           await until(()=>manager.getTaskProgress('default')?.state==='aborted'||undefined,10000,'task cancelled');
           readbackHold.release();
         }
+
         receipt=await until(()=>events.slice(editStart).find(e=>e.message?.event?.receipt?.action==='steer')?.message.event.receipt,10000,'steering receipt');
+
         if(kind==='refresh-during-route'){
           assert.equal(receipt.status,'rejected');
           assert(!manager.getTaskProgress('default')?.recoveryInput?.requirements.includes('把译文改成宋体'));
@@ -352,6 +443,7 @@ try {
           assert.notEqual(receipt.status,'applied');
           assert(!receipt.message.includes('原任务继续'));
         }
+
         originalHold.release();readbackHold.release();reviewDecision=null;
         assert.equal(await waitSettled(marker,90000),'settled');
         const after=await observe();
@@ -367,17 +459,20 @@ try {
       }finally{
         decisionHold.release();originalHold.release();readbackHold.release();reviewDecision=null;
         entry.runtime.rpc.call=originalCall;
+
         if(failure&&entry.runtime.session.isStreaming())await manager.handleMessage({type:'abort',conversationId:'default'});
         await writeFile(join(out,'results.json'),JSON.stringify(results,null,2));
         console.log(JSON.stringify({reviewRace:kind,failure,receipt}));
       }
     }
   }
+
   if (!boundariesOnly && !reviewRaces) {
     for (let pair = 0; pair < PAIR_COUNT; pair++) {
       const modifier = MODIFIERS[pair % MODIFIERS.length]!;
       const order = pair % 2 === 0 ? [false, true] : [true, false];
       const pairResult: any = {pair, text: modifier.text, arms: {}};
+
       for (const enabled of order) {
         const run = await runSteered(`pair-${pair}-${enabled ? 'on' : 'off'}`, modifier, enabled);
         results.runs.push(run);
@@ -385,6 +480,7 @@ try {
         console.log(JSON.stringify({pair, enabled, ms: run.pageChangedMs, settle: run.settle, direct: run.direct, match: run.finalMatch, answer: run.answerMentionsCount, jev: run.jevCalls}));
         await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2));
       }
+
       results.pairs.push(pairResult);
     }
   }
@@ -399,6 +495,7 @@ try {
       console.log(JSON.stringify({boundary: name, failure, observed: run.finalObserved, direct: run.direct}));
       await writeFile(join(out, 'results.json'), JSON.stringify(results, null, 2));
     };
+
     await boundary('局部标题不改整页', '只把标题的字体改成宋体，正文不要动。', run => /Songti SC/.test(run.finalObserved.font) ? '正文被整页改动' : run.delivered ? null : '没有交付说明', {waitForChange: false});
     // Jev 的既有政策：礼貌请求（“你能…吗”）算请求。这个句式按请求执行是记录到的真实行为，不是失败。
     await boundary('礼貌请求按请求执行', '你能把已有译文改成宋体吗？', run => /Songti SC/.test(run.finalObserved.font) ? null : '礼貌请求没有执行', {waitForChange: false, font: 'songti'});
@@ -443,6 +540,7 @@ try {
   console.error = originalConsoleError;
   await iso?.close();
   manager.dispose();
+
   for (const client of wss.clients) client.terminate();
   await new Promise<void>(done => wss.close(() => done()));
 }

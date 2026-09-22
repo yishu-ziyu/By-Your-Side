@@ -3,10 +3,15 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve,extname,sep} from 'node:path';
+
 const here=fileURLToPath(new URL('.',import.meta.url));
+
 const dist=resolve(here,'../../../extension/dist');
+
 const sample=await readFile(resolve(here,'sample.md'),'utf8');
+
 const structured=await readFile(resolve(here,'sample-structured.md'),'utf8');
+
 const mock=`
 const listeners=[];
 const storageListeners=[];
@@ -32,20 +37,31 @@ requestAnimationFrame(()=>{document.querySelector('#messages').scrollTop=0;});
 },50);
 });
 `;
+
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'};
+
 const server=createServer(async(req,res)=>{
  try {
  const name=new URL(req.url,'http://127.0.0.1').pathname;
- if(name==='/mock.js'){res.setHeader('Content-Type','text/javascript');res.end(mock);return;}
+
+ if(name==='/mock.js'){res.setHeader('Content-Type','text/javascript');res.end(mock);
+
+return;}
+
  if(name==='/panel.html'){
  let html=await readFile(resolve(dist,'sidepanel.html'),'utf8');
  html=html.replace('</head>','<link id="reading-candidate" rel="stylesheet" href="/candidate.css"></head>').replace('<script type="module"','<script src="/mock.js"></script><script type="module"');
- res.setHeader('Content-Type',mime['.html']);res.end(html);return;
+ res.setHeader('Content-Type',mime['.html']);res.end(html);
+
+return;
  }
+
  const local=name==='/'?'preview.html':name==='/candidate.css'?'candidate.css':null;
  const file=local?resolve(here,local):resolve(dist,'.'+decodeURIComponent(name));
+
  if(!local&&!file.startsWith(dist+sep))throw Error('path');
  res.setHeader('Content-Type',mime[extname(file)]??'application/octet-stream');res.end(await readFile(file));
  }catch{res.statusCode=404;res.end('Not found');}
 });
+
 server.listen(Number(process.env.READING_PREVIEW_PORT??0),'127.0.0.1',()=>console.log('Reading preview: http://127.0.0.1:'+server.address().port));

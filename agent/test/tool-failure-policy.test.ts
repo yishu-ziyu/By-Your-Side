@@ -7,8 +7,10 @@ function setup() {
   const policy=new RepeatedToolFailurePolicy(stopped);
   policy.extension()({on:(name:string,fn:Function)=>{handlers[name]=fn;}} as any);
   const result=(toolName:string,text:string,isError=true)=>handlers.tool_result!({toolName,isError,content:[{type:'text',text}]},{abort});
+
   return {policy,stopped,abort,result};
 }
+
 describe('repeated execution failure boundary',()=>{
   it('stops after three identical failures even with successful observations between them',()=>{
     const h=setup();

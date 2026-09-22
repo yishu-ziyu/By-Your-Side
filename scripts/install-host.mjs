@@ -21,16 +21,19 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 function extensionIdFromKey(key) {
   const der = Buffer.from(key, "base64");
   const hash = createHash("sha256").update(der).digest();
+
   return [...hash.subarray(0, 16)]
     .map((b) => String.fromCharCode(97 + (b >> 4)) + String.fromCharCode(97 + (b & 15)))
     .join("");
 }
 
 const manifest = JSON.parse(readFileSync(join(repoRoot, "extension/manifest.json"), "utf8"));
+
 if (!manifest.key) {
   console.error("extension/manifest.json 缺少 key 字段，无法确定扩展 ID");
   process.exit(1);
 }
+
 const extensionId = extensionIdFromKey(manifest.key);
 
 // wrapper 脚本必须放在非 TCC 保护目录（~/.sideagent/）：
@@ -38,6 +41,7 @@ const extensionId = extensionIdFromKey(manifest.key);
 // （现象：面板报 "Native host has exited"，进程根本没起来）。
 // 仓库代码被 node 读不受影响；wrapper 本身必须在保护区外。
 const wrapperPath = join(homedir(), ".sideagent", "native-host.sh");
+
 const wrapper = [
   "#!/bin/bash",
   "# 由 npm run install:host 生成，勿手改；路径变化后重跑安装脚本",
@@ -45,8 +49,11 @@ const wrapper = [
   `exec "${process.execPath}" "${join(repoRoot, "node_modules/tsx/dist/cli.mjs")}" "${join(repoRoot, "agent/src/main.ts")}" 2>> "$HOME/.sideagent/wrapper-err.log"`,
   "",
 ].join("\n");
+
 mkdirSync(join(homedir(), ".sideagent"), { recursive: true });
+
 writeFileSync(wrapperPath, wrapper);
+
 chmodSync(wrapperPath, 0o755);
 
 const hostManifestDir = join(homedir(), "Library/Application Support/Google/Chrome/NativeMessagingHosts");
@@ -57,29 +64,38 @@ const hostManifestDir = join(homedir(), "Library/Application Support/Google/Chro
 
 function runningChromeUserDataDirs() {
   let out = "";
+
   try {
     out = execSync("ps aux", { encoding: "utf8" });
   } catch {
     return [];
   }
+
   const dirs = new Set();
+
   // 只认正式 Chrome（Google Chrome.app）的命令行；ps 输出参数不带引号，
   // 路径可能含空格：取到下一个 -- 参数或行尾为止
   for (const line of out.split("\n")) {
     if (!line.includes("Google Chrome.app/Contents/MacOS/Google Chrome")) continue;
     const m = line.match(/--user-data-dir=(.+?)(?:\s+--\w|$)/);
+
     if (!m) continue;
     const dir = m[1].replace(/^"|"$/g, "").trim();
+
     if (dir.startsWith("/")) dirs.add(dir);
   }
+
   return [...dirs];
 }
 
 const cliDirIndex = process.argv.indexOf("--user-data-dir");
+
 const userDataDirs = new Set([join(homedir(), "Library/Application Support/Google/Chrome")]);
+
 if (cliDirIndex !== -1 && process.argv[cliDirIndex + 1]) {
   userDataDirs.add(process.argv[cliDirIndex + 1]);
 }
+
 for (const dir of runningChromeUserDataDirs()) userDataDirs.add(dir);
 
 const hostManifest = JSON.stringify(
@@ -102,5 +118,7 @@ for (const userDataDir of userDataDirs) {
 }
 
 console.log(`  扩展 ID: ${extensionId}（由 manifest key 推导）`);
+
 console.log(`  wrapper: ${wrapperPath}`);
+
 console.log("下一步：完全退出 Chrome（Cmd+Q，native host 清单只在启动时扫描）后重开，打开侧边栏即可自动连接。");

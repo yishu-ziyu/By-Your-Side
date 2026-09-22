@@ -40,6 +40,7 @@ const CASES: RealCase[] = [
 ];
 
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
 function check(name: string, ok: boolean, detail?: string): void {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -53,9 +54,11 @@ function matchReport(text: string, wanted: string[]): { matched: string[]; missi
   const hay = normalize(text);
   const matched: string[] = [];
   const missing: string[] = [];
+
   for (const want of wanted) {
     (hay.includes(normalize(want)) ? matched : missing).push(want);
   }
+
   return { matched, missing };
 }
 
@@ -63,12 +66,14 @@ async function main(): Promise<void> {
   const outPath = process.argv.find((a) => a.startsWith("--out="))?.slice(6);
   const only = process.argv.find((a) => a.startsWith("--case="))?.slice(7);
   const cases = only ? CASES.filter((c) => c.name === only) : CASES;
+
   if (cases.length === 0) throw new Error(`未知 case：${only}`);
 
   const iso = await launchIsolatedExtension();
   const downloadsDir = join(iso.outDir, "downloads");
   const outDir = iso.outDir;
   const report: Record<string, unknown> = { ok: false, outDir, cases: [], checks, guard: null, downloadsDir };
+
   try {
     check("生产 executeToolCall 路径可达（__saCall 已挂上真实 uplink.handleRaw）", true, "isolated-extension 已确认");
 
@@ -83,11 +88,13 @@ async function main(): Promise<void> {
       const fetched = await iso.tool("fetch", { url: realCase.api });
       const fetchMs = Date.now() - fetchStart;
       const reply = fetched?.data as FetchReply | undefined;
+
       if (fetched?.ok !== true || !reply) {
         record.fetch = { ok: false, error: fetched?.error };
         check(`${realCase.name}: fetch 公开接口`, false, String(fetched?.error ?? "no data"));
         continue;
       }
+
       const modelFetchText = formatFetchReply(reply, undefined, downloadsDir);
       record.fetch = {
         ms: fetchMs,
@@ -102,12 +109,14 @@ async function main(): Promise<void> {
         `HTTP ${reply.status} ${reply.bytes}B、请求 ${fetchMs}ms、进上下文 ${modelFetchText.length} 字符`);
 
       let json: any;
+
       try {
         json = JSON.parse(reply.text);
       } catch (error) {
         check(`${realCase.name}: 接口返回可解析 JSON`, false, String(error));
         continue;
       }
+
       const wanted = realCase.wanted(json);
       record.wanted = wanted;
 
@@ -117,24 +126,30 @@ async function main(): Promise<void> {
       let snapshotAttempts = 0;
       let match = { matched: [] as string[], missing: wanted };
       const deadline = Date.now() + 30_000;
+
       while (Date.now() < deadline) {
         snapshotAttempts += 1;
         const started = Date.now();
         snapshot = await iso.tool("snapshot", {});
         snapshotMs = Date.now() - started;
+
         if (snapshot?.ok !== true || typeof snapshot?.data?.text !== "string") {
           await sleep(800);
           continue;
         }
+
         match = matchReport(snapshot.data.text, wanted);
+
         if (match.matched.length >= realCase.requireMatches) break;
         await sleep(800);
       }
+
       if (snapshot?.ok !== true || typeof snapshot?.data?.text !== "string") {
         record.snapshot = { ok: false, error: snapshot?.error };
         check(`${realCase.name}: 同页 snapshot`, false, String(snapshot?.error ?? "no text"));
         continue;
       }
+
       const snapshotText: string = snapshot.data.text;
       await writeFile(join(outDir, `snapshot-${realCase.name}.txt`), snapshotText);
       await writeFile(join(outDir, `api-${realCase.name}.json`), reply.text);
@@ -176,9 +191,11 @@ async function main(): Promise<void> {
   } finally {
     await writeFile(join(outDir, "result.json"), `${JSON.stringify(report, null, 2)}\n`);
     console.log(`evidence ${outDir}`);
+
     if (outPath) await writeFile(resolve(outPath), `${JSON.stringify(report, null, 2)}\n`);
     await iso.close();
   }
+
   process.exit(report.ok === true ? 0 : 1);
 }
 

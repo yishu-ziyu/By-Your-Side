@@ -14,6 +14,7 @@ function progress() {
   p.request('找到X再圈出，保持当前页。');
   p.observe({type: 'agent_event', event: {kind: 'agent_start'}});
   p.registerResults(intents);
+
   return p;
 }
 
@@ -80,11 +81,13 @@ describe('createTaskResultsTool', () => {
   it('registers intent only and rejects meta tools, inactive tools, and completion claims', async () => {
     const p = progress();
     const active = new Set(['snapshot', 'mark']);
+
     const tool = createTaskResultsTool({
       getSnapshot: () => p.snapshot(),
       register: items => p.registerResults(items),
       isToolActive: name => active.has(name),
     });
+
     expect(tool.name).toBe('record_task_results');
     await expect(tool.execute('t1', {results: [{id: 'mark-x', description: '标出指定对象', tool: 'send_user_message', target: '#x'}]} as any, undefined, undefined, {} as any)).rejects.toThrow(/send_user_message/);
     await expect(tool.execute('t2', {results: [{id: 'mark-x', description: '标出指定对象', tool: 'record_task_results', target: null}]} as any, undefined, undefined, {} as any)).rejects.toThrow(/record_task_results/);

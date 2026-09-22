@@ -9,13 +9,19 @@ import {createConversationRuntime} from '../../../agent/src/conversation-runtime
 import {VOICE_INTENT_PROMPT, voiceDecisionClauses} from '../../../agent/src/voice-intent.js';
 
 const MODEL = 'opencode-go/deepseek-flash';
+
 const inputs = ['嗨，晚上好。', '把姓名改成李明', '暂停', '十加七等于多少？'];
+
 const reports: any[] = [];
 
 const runtime = await createConversationRuntime('probe', () => {}, MODEL);
+
 const session: any = runtime.session;
+
 const inner = session.session;
+
 if (!session.available || !inner?.model) throw new Error('生产模型不可用，实验终止');
+
 const headers = { 'x-opencode-session': inner.sessionId, 'x-opencode-client': 'pi' };
 
 /** 与生产 classifyVoiceInput 完全同形的输入。 */
@@ -25,8 +31,10 @@ function payload(text: string) {
 
 async function timed<T>(label: string, run: () => Promise<T>) {
   const started = Date.now();
+
   try {
     const value = await run();
+
     return { label, ms: Date.now() - started, value };
   } catch (error) {
     return { label, ms: Date.now() - started, error: String(error) };
@@ -39,6 +47,7 @@ for (let i = 0; i < 3; i++) {
     systemPrompt: '只回复两个字。',
     messages: [{ role: 'user', content: '说你好', timestamp: Date.now() }],
   }, { maxTokens: 20, reasoning: 'minimal', sessionId: inner.sessionId, headers, signal: AbortSignal.timeout(30_000) }));
+
   reports.push({ kind: 'floor', ...r, value: undefined, text: (r.value as any)?.content?.map((p: any) => p.text).join('') });
 }
 
@@ -56,6 +65,7 @@ for (const text of inputs) {
       headers,
       signal: AbortSignal.timeout(30_000),
     }));
+
     reports.push({
       kind: 'classify', variant, text, ms: r.ms, error: r.error,
       reply: (r.value as any)?.content?.map((p: any) => p.text).join('').slice(0, 400),
@@ -70,4 +80,5 @@ for (const text of inputs.slice(0, 2)) {
 }
 
 runtime.dispose();
+
 console.log(JSON.stringify({ model: MODEL, at: new Date().toISOString(), reports }, null, 1));

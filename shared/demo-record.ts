@@ -74,7 +74,9 @@ const MAX_NAME = 60;
 function clean(text: string | null | undefined): string | undefined {
   if (typeof text !== "string") return undefined;
   const t = text.replace(/\s+/g, " ").trim();
+
   if (!t) return undefined;
+
   return t.length > MAX_NAME ? `${t.slice(0, MAX_NAME - 1)}…` : t;
 }
 
@@ -84,22 +86,30 @@ export function anchorFor(src: AnchorSource): DemoAnchor {
   const type = tag === "input" ? (src.type ?? "text").toLowerCase() : undefined;
   const anchor: DemoAnchor = { tag };
   const role = src.role ? src.role.toLowerCase() : undefined;
+
   if (role) anchor.role = role;
+
   // 取名字的顺序：显式标签 → 占位 → title → 图片 alt → 祖先文字 → 自身文字 → name 属性。
   // 真机上点击经常落在裸 div 上，名字只可能在祖先或后代图片里。
   const name = clean(src.ariaLabel) ?? clean(src.label) ?? clean(src.placeholder) ?? clean(src.title)
     ?? clean(src.alt) ?? clean(src.ancestorText) ?? clean(src.text) ?? clean(src.name);
+
   if (name) anchor.name = name;
+
   if (type && type !== "text") anchor.inputType = type;
+
   return anchor;
 }
 
 /** 密码框、卡号、验证码、token 一类：内容绝不落盘。 */
 export function isSensitiveField(src: AnchorSource): boolean {
   const type = (src.type ?? "").toLowerCase();
+
   if (type === "password") return true;
   const autocomplete = (src.autocomplete ?? "").toLowerCase();
+
   if (autocomplete.startsWith("cc-") || autocomplete === "one-time-code" || autocomplete === "current-password" || autocomplete === "new-password") return true;
+
   return [src.name, src.id, src.placeholder, src.ariaLabel, src.label].some(v => typeof v === "string" && SENSITIVE_ATTR.test(v));
 }
 
@@ -107,13 +117,16 @@ export function isSensitiveField(src: AnchorSource): boolean {
 export function scrubUrl(raw: string | null | undefined): string | undefined {
   if (typeof raw !== "string" || !raw) return undefined;
   const m = /^(https?:\/\/[^/?#]+)([^?#]*)/.exec(raw);
+
   if (!m) return undefined;
   const suffix = raw.includes("?") || raw.includes("#") ? "?…" : "";
+
   return `${m[1]}${m[2]}${suffix}`;
 }
 
 export function sameAnchor(a?: DemoAnchor, b?: DemoAnchor): boolean {
   if (!a || !b) return !a && !b;
+
   return a.tag === b.tag && a.role === b.role && a.name === b.name && a.inputType === b.inputType;
 }
 
@@ -129,29 +142,42 @@ export interface PushResult {
 export function pushStep(steps: DemoStep[], step: DemoStep, limits: DemoLimits = DEFAULT_DEMO_LIMITS): PushResult {
   const next = steps.slice();
   const last = next[next.length - 1];
+
   if (last && last.kind === step.kind && sameAnchor(last.anchor, step.anchor)) {
     if (step.kind === "type" && step.at - last.at <= limits.mergeWindowMs) {
       const merged: DemoStep = { ...last, value: step.value ?? last.value, redacted: step.redacted ?? last.redacted, repeats: (last.repeats ?? 1) + 1 };
+
       if (step.value === undefined && step.redacted) delete merged.value;
       next[next.length - 1] = merged;
+
       return { steps: next, truncated: false };
     }
+
     if (step.kind === "click" && step.at - last.at <= CLICK_MERGE_MS) {
       next[next.length - 1] = { ...last, repeats: (last.repeats ?? 1) + 1 };
+
       return { steps: next, truncated: false };
     }
+
     if (step.kind === "press" && last.key === step.key && step.at - last.at <= CLICK_MERGE_MS) {
       next[next.length - 1] = { ...last, repeats: (last.repeats ?? 1) + 1 };
+
       return { steps: next, truncated: false };
     }
   }
+
   next.push(step);
+
   if (next.length > limits.maxSteps) return { steps: next.slice(0, limits.maxSteps), truncated: true };
+
   if (byteLength(next) > limits.maxBytes) {
     const trimmed = next.slice();
+
     while (trimmed.length > 1 && byteLength(trimmed) > limits.maxBytes) trimmed.pop();
+
     return { steps: trimmed, truncated: true };
   }
+
   return { steps: next, truncated: false };
 }
 
@@ -163,14 +189,21 @@ export function byteLength(steps: DemoStep[]): number {
 function target(anchor: DemoAnchor | undefined): string {
   if (!anchor) return "页面";
   const name = anchor.name ? `「${anchor.name}」` : "";
+
   if (anchor.tag === "input" || anchor.tag === "textarea") {
     const kind = anchor.inputType === "search" ? "搜索框" : "输入框";
+
     return `${kind}${name}`;
   }
+
   if (anchor.tag === "a") return `链接${name}`;
+
   if (anchor.tag === "button") return `按钮${name}`;
+
   if (anchor.role === "tab") return `标签页${name}`;
+
   if (anchor.role === "menuitem") return `菜单项${name}`;
+
   return `${anchor.role ?? anchor.tag}${name}`;
 }
 
@@ -179,6 +212,7 @@ const KEY_LABEL: Record<string, string> = { Enter: "回车", Tab: "Tab", Escape:
 /** 面板里给人看的一行；不出现坐标、选择器与字段值。 */
 export function describeStep(step: DemoStep): string {
   const times = (step.repeats ?? 1) > 1 ? ` ×${step.repeats}` : "";
+
   switch (step.kind) {
     case "click":
       return `点击${target(step.anchor)}${times}`;
@@ -200,5 +234,6 @@ export function describeSteps(steps: DemoStep[]): string[] {
 /** 录制期间的实时计数，面板与日志共用一句人话。 */
 export function recordingHint(steps: DemoStep[], truncated: boolean): string {
   const head = `示范中：已记下 ${steps.length} 步`;
+
   return truncated ? `${head}（已达上限，后面的动作不再记录）` : head;
 }

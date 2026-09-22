@@ -18,13 +18,16 @@ export type OrbState = "composing" | "solving" | "connecting" | RunOrbState;
 const STATE_PRESET: Partial<Record<OrbState, string>> = {
   thinking: "solving", executing: "working", waiting: "breathing",
 };
+
 const TERMINAL_STATES = new Set<OrbState>(["user", "completed", "failed", "stopped"]);
+
 function presetFor(state: OrbState) {
   return resolvePreset(STATE_PRESET[state] ?? (TERMINAL_STATES.has(state) ? "solving" : state), GEOM);
 }
 
 /** 引擎的几何坐标系固定 20；显示尺寸靠 canvas 缩放，别改这里。 */
 const GEOM = 20;
+
 /** 定格帧。跑完停在它的一个相位上，形态仍然可辨（不是空帧）。 */
 const STILL_T = 0.6;
 
@@ -43,10 +46,15 @@ type OrbInstance = {
 };
 
 const instances = new Set<OrbInstance>();
+
 let raf = 0;
+
 let probeCtx: CanvasRenderingContext2D | null | undefined;
+
 let cachedInk: Rgb | null = null;
+
 let inkResolved = false;
+
 let themeBound = false;
 
 function prefersReduce(): boolean {
@@ -63,18 +71,25 @@ function prefersDark(): boolean {
  */
 function readInk(): Rgb | null {
   const style = getComputedStyle(document.body);
+
   const raw = (
     style.getPropertyValue("--orb-ink").trim() || style.getPropertyValue("--text-secondary").trim()
   );
+
   if (!raw) return null;
+
   if (probeCtx === undefined) probeCtx = document.createElement("canvas").getContext("2d");
+
   if (!probeCtx) return null;
   probeCtx.fillStyle = "#000";
   probeCtx.fillStyle = raw;
   const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(probeCtx.fillStyle);
+
   if (!m) return null;
   const [, r, g, b] = m;
+
   if (!r || !g || !b) return null;
+
   return [parseInt(r, 16), parseInt(g, 16), parseInt(b, 16)];
 }
 
@@ -83,16 +98,20 @@ function ink(): Rgb | null {
     cachedInk = readInk();
     inkResolved = true;
   }
+
   return cachedInk;
 }
 
 /** 引擎把每个笔画/点标成"白度"，这里换算成当前主题下的 alpha。 */
 function shade(color: Rgb | null, white: number, alpha: number, dark: boolean): string {
   const v = dark ? 1 - white : white;
+
   if (!color) {
     const l = Math.round((dark ? 1 - v : v) * 255);
+
     return `rgba(${l},${l},${l},${alpha})`;
   }
+
   return `rgba(${color[0]},${color[1]},${color[2]},${(alpha * (1 - v)).toFixed(3)})`;
 }
 
@@ -100,12 +119,14 @@ function paint(o: OrbInstance, engineT: number): void {
   const color = ink();
   const dark = prefersDark();
   const frameOf = MODE_FRAMES[o.preset.mode];
+
   if (!frameOf) return;
   const frame = frameOf(GEOM, engineT, o.preset.opts);
   const k = (o.dpr * o.box) / GEOM;
   const ctx = o.ctx;
   ctx.setTransform(k, 0, 0, k, 0, 0);
   ctx.clearRect(0, 0, GEOM, GEOM);
+
   for (const line of frame.lines) {
     ctx.strokeStyle = shade(color, line.white, line.a ?? 1, dark);
     ctx.lineWidth = line.w;
@@ -114,6 +135,7 @@ function paint(o: OrbInstance, engineT: number): void {
     ctx.lineTo(line.x2, line.y2);
     ctx.stroke();
   }
+
   for (const dot of frame.dots) {
     ctx.fillStyle = shade(color, dot.white, dot.a ?? 1, dark);
     ctx.beginPath();
@@ -130,12 +152,15 @@ function tick(now: number): void {
   raf = 0;
   const seconds = now / 1000;
   let anyLive = false;
+
   for (const o of instances) {
     if (!o.canvas.isConnected) { instances.delete(o); continue; }
+
     if (!o.running) continue;
     anyLive = true;
     paint(o, seconds * o.preset.speed);
   }
+
   if (anyLive) raf = requestAnimationFrame(tick);
 }
 
@@ -151,6 +176,7 @@ function bindTheme(): void {
   });
   window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
     inkResolved = false;
+
     for (const o of instances) {
       if (!o.running) paintStill(o);
     }
@@ -180,6 +206,7 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
   canvas.setAttribute("aria-hidden", "true");
 
   const ctx = canvas.getContext("2d");
+
   if (!ctx) return { el: canvas, setState: () => {}, setRunning: () => {}, dispose: () => {} };
 
   const instance: OrbInstance = {
@@ -193,6 +220,7 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
     dpr,
     running: false,
   };
+
   canvas.dataset.orbState = state;
   canvas.dataset.orbMode = instance.preset.mode;
   instances.add(instance);
@@ -204,6 +232,7 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
       if (instance.state === nextState) return;
       instance.state = nextState;
       canvas.dataset.orbState = nextState;
+
       // 上游没有完成/失败动画；终态暂停当前形态，不冒用 shaping/connecting。
       if (!TERMINAL_STATES.has(nextState)) {
         instance.preset = presetFor(nextState);
@@ -214,18 +243,24 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
     setRunning(running: boolean): void {
       instance.requestedRunning = running;
       const next = running && !prefersReduce();
+
       if (next === instance.running) return;
+
       if (next) {
         instance.running = true;
         // 跑起来才呼吸（18→20px），历史回放不进入这个状态
         canvas.classList.remove("orb-settle");
         canvas.classList.add("orb-live");
         ensureLoop();
+
         return;
       }
+
       instance.running = false;
+
       if (prefersReduce() || !TERMINAL_STATES.has(instance.state)) paintStill(instance);
       canvas.classList.remove("orb-live");
+
       // 完成是收束：从呼吸处的放大缩回原位，一次性，不排队
       if (!prefersReduce() && !["stopped", "user", "failed"].includes(instance.state)) {
         canvas.classList.remove("orb-settle");
@@ -239,6 +274,8 @@ export function createOrb(state: OrbState, box = 20): OrbHandle {
       instances.delete(instance);
     },
   };
+
   instance.refreshMotion = () => handle.setRunning(instance.requestedRunning);
+
   return handle;
 }

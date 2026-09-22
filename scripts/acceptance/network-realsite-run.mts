@@ -11,9 +11,11 @@ import { join, resolve } from "node:path";
 import { launchIsolatedExtension, sleep } from "./isolated-extension.mts";
 
 const PAGE = "https://www.bilibili.com/video/BV1GJ411x7h7/";
+
 const API_PREFIX = "https://api.bilibili.com/";
 
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
 function check(name: string, ok: boolean, detail?: string): void {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -24,6 +26,7 @@ async function main(): Promise<void> {
   const iso = await launchIsolatedExtension();
   const outDir = iso.outDir;
   const report: Record<string, unknown> = { ok: false, page: PAGE, outDir, checks, network: null, fetch: null, filter: null, clear: null };
+
   try {
     const opened = await iso.tool("open_tab", { url: "about:blank" });
     check("open_tab about:blank", opened?.ok === true && opened?.data?.tabId != null, `tabId ${opened?.data?.tabId}`);
@@ -62,21 +65,26 @@ async function main(): Promise<void> {
     const candidates = [...new Set([...listText.matchAll(new RegExp(`${API_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\s]+`, "g"))].map((m) => m[0]))].slice(0, 4);
     report.fetch = { candidates };
     let fetched: any;
+
     for (const candidate of candidates) {
       const attempt = await iso.tool("fetch", { url: candidate });
       const data = attempt?.data;
       let parsed: any;
+
       try {
         parsed = data?.text ? JSON.parse(data.text) : undefined;
       } catch {
         parsed = undefined;
       }
+
       report.fetch = { ...(report.fetch as object), attempted: candidate, ok: attempt?.ok, status: data?.status, bytes: data?.bytes, parsedCode: parsed?.code };
+
       if (attempt?.ok === true && data?.status === 200 && parsed && parsed.code === 0) {
         fetched = { attempt, candidate, parsed };
         break;
       }
     }
+
     check("fetch 页面自己调用过的接口能取到数据", Boolean(fetched),
       fetched ? `${fetched.candidate} → HTTP ${fetched.attempt.data.status}，${fetched.attempt.data.bytes}B，code ${fetched.parsed.code}` : `试了 ${(report.fetch as any).candidates?.length ?? 0} 个候选均失败`);
 
@@ -94,9 +102,11 @@ async function main(): Promise<void> {
   } finally {
     await writeFile(join(outDir, "result.json"), `${JSON.stringify(report, null, 2)}\n`);
     console.log(`evidence ${outDir}`);
+
     if (outPath) await writeFile(resolve(outPath), `${JSON.stringify(report, null, 2)}\n`);
     await iso.close();
   }
+
   process.exit(report.ok === true ? 0 : 1);
 }
 

@@ -16,6 +16,7 @@ import {
 import type { ConnState, TransportKind } from "../relay.js";
 
 export const NATIVE_HOST_NAME = "com.sideagent.host";
+
 const TOKEN_KEY = "sideagent_token";
 
 export interface UplinkHandlers {
@@ -54,15 +55,19 @@ export class Uplink {
     try {
       if (this.transport === "native" && this.nativePort) {
         this.nativePort.postMessage(msg);
+
         return true;
       }
+
       if (this.transport === "ws" && this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify(msg));
+
         return true;
       }
     } catch {
       return false;
     }
+
     return false;
   }
 
@@ -72,11 +77,13 @@ export class Uplink {
     } catch {
       /* 忽略 */
     }
+
     try {
       this.ws?.close();
     } catch {
       /* 忽略 */
     }
+
     this.nativePort = null;
     this.ws = null;
     this.transport = null;
@@ -85,13 +92,16 @@ export class Uplink {
   private handleRaw(raw: unknown): void {
     // native 通道收到的是已反序列化的对象；统一 stringify 后走协议守卫
     const msg = parseServerMessage(typeof raw === "string" ? raw : JSON.stringify(raw));
+
     if (!msg) return;
+
     if (msg.type === "hello_ok") {
       this.retryAttempt = 0;
       this.handlers.onConnState("connected", this.transport ?? undefined, msg.model);
     } else if (msg.type === "hello_error") {
       this.authFailed = true;
     }
+
     this.handlers.onServerMessage(msg);
   }
 
@@ -104,11 +114,14 @@ export class Uplink {
   private handleDisconnect(detail: string | undefined): void {
     const wasTransport = this.transport;
     this.teardown();
+
     if (this.authFailed) {
       this.clearReconnectTimer();
       this.handlers.onConnState("disconnected", wasTransport ?? undefined, detail ?? "认证失败");
+
       return;
     }
+
     this.handlers.onConnState("connecting", undefined, detail);
     const delay = Math.min(15_000, 1000 * 2 ** this.retryAttempt);
     this.retryAttempt += 1;
@@ -116,6 +129,7 @@ export class Uplink {
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
+
       if (this.transport !== null) return;
       void this.connectNative();
     }, delay);
@@ -123,18 +137,22 @@ export class Uplink {
 
   private async connectNative(): Promise<void> {
     if (this.authFailed) return;
+
     // 重连定时器或面板 retry 到达时，已有一个活的传输就不再拆掉它重建。
     if (this.transport !== null) return;
     this.teardown();
     this.handlers.onConnState("connecting", undefined);
 
     let port: chrome.runtime.Port;
+
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
     } catch (err) {
       await this.connectWs(`native host 不可用：${err instanceof Error ? err.message : String(err)}`);
+
       return;
     }
+
     this.nativePort = port;
     this.transport = "native";
 
@@ -146,6 +164,7 @@ export class Uplink {
     port.onDisconnect.addListener(() => {
       if (this.nativePort !== port) return;
       const detail = chrome.runtime.lastError?.message;
+
       if (everConnected) {
         // 曾经连上过：host 崩溃或被回收，走重连
         this.handleDisconnect(detail ?? "伴随进程连接断开");
@@ -163,10 +182,13 @@ export class Uplink {
 
   private async connectWs(reason: string): Promise<void> {
     if (this.authFailed) return;
+
     if (this.transport !== null) return;
     const stored = await chrome.storage.local.get(TOKEN_KEY);
+
     if (this.transport !== null) return;
     const token = typeof stored[TOKEN_KEY] === "string" ? stored[TOKEN_KEY] : "";
+
     if (!token) {
       // 没 token 连 ws 也必败，直接停住等用户在面板里设置
       this.handlers.onConnState(
@@ -174,29 +196,36 @@ export class Uplink {
         undefined,
         `${reason}；且未配置 ws 调试 token。安装 native host（npm run install:host）或在面板设置 token`,
       );
+
       return;
     }
 
     let ws: WebSocket;
+
     try {
       ws = new WebSocket(`ws://${DEFAULT_HOST}:${DEFAULT_PORT}`);
     } catch {
       this.handleDisconnect(reason);
+
       return;
     }
+
     this.ws = ws;
     this.transport = "ws";
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION }));
     };
+
     ws.onmessage = (e) => {
       if (typeof e.data === "string") this.handleRaw(e.data);
     };
+
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.handleDisconnect(`ws 调试通道断开（${reason}）`);
     };
+
     ws.onerror = () => {
       try {
         ws.close();

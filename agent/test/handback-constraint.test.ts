@@ -17,6 +17,7 @@ describe("新任务不受上一轮交还留在本页约束", () => {
       { tabId: 3, title: "fixture", url: "http://127.0.0.1/recovery.html" },
       "editor closed",
     );
+
     expect(text).toContain("[HANDOFF BOUNDARY]");
     expect(text).toContain("Continue the original task");
     expect(text).not.toContain("new task");

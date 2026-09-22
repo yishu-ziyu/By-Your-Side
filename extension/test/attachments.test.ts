@@ -58,20 +58,25 @@ describe("AttachmentsManager DOM & state management", () => {
         remove: (cls: string) => classList.delete(cls),
         toggle: (cls: string, force?: boolean) => {
           const val = force !== undefined ? force : !classList.has(cls);
+
           if (val) classList.add(cls);
           else classList.delete(cls);
+
           return val;
         },
         contains: (cls: string) => classList.has(cls),
       },
       appendChild: (child: any) => {
         children.push(child);
+
         return child;
       },
       replaceChildren: (...next: any[]) => { children.splice(0, children.length, ...next); },
       removeChild: (child: any) => {
         const idx = children.indexOf(child);
+
         if (idx !== -1) children.splice(idx, 1);
+
         return child;
       },
       remove: () => {
@@ -83,6 +88,7 @@ describe("AttachmentsManager DOM & state management", () => {
         if (k === "class") {
           v.split(/\s+/).forEach((c) => c && classList.add(c));
         }
+
         el[k] = v;
       },
       getAttribute: (k: string) => el[k],
@@ -92,7 +98,9 @@ describe("AttachmentsManager DOM & state management", () => {
       },
       querySelector: (selector: string) => {
         if (selector === "#menu-action-screenshot") return createMockElement("div");
+
         if (selector === "#menu-action-upload") return createMockElement("div");
+
         return null;
       },
       scrollTo: () => {},
@@ -124,6 +132,7 @@ describe("AttachmentsManager DOM & state management", () => {
         createElementNS: (_ns: string, tag: string) => createMockElement(tag),
         addEventListener: () => {},
       } as any;
+
       (globalThis as any).document = mockDoc;
 
       const mockImage = class {
@@ -134,12 +143,15 @@ describe("AttachmentsManager DOM & state management", () => {
           if (this.onload) setTimeout(this.onload, 0);
         }
       } as any;
+
       (globalThis as any).Image = mockImage;
 
       const mockRaf = (cb: any) => {
         cb(performance.now() + 1000);
+
         return 1;
       };
+
       (globalThis as any).requestAnimationFrame = mockRaf;
 
       const composerEl = createMockElement();
@@ -150,6 +162,7 @@ describe("AttachmentsManager DOM & state management", () => {
       const fileInputEl = createMockElement("input");
 
       let changedCount = -1;
+
       const manager = new AttachmentsManager({
         composerEl,
         stripEl,
@@ -197,6 +210,7 @@ describe("AttachmentsManager DOM & state management", () => {
   it("keeps an in-flight attachment in its original conversation when the user switches", async () => {
     const previous = { document: globalThis.document, Image: globalThis.Image, raf: globalThis.requestAnimationFrame };
     let finishImage: (() => void) | undefined;
+
     try {
       (globalThis as any).document = {
         createElement: createMockElement,
@@ -209,14 +223,19 @@ describe("AttachmentsManager DOM & state management", () => {
         naturalHeight = 1;
         set src(_value: string) { finishImage = () => this.onload?.(); }
       };
-      (globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) => { cb(performance.now() + 1000); return 1; };
+      (globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) => { cb(performance.now() + 1000);
+
+ return 1; };
+
       const stripEl = createMockElement();
       const changes: string[] = [];
+
       const manager = new AttachmentsManager({
         composerEl: createMockElement(), stripEl, inputEl: createMockElement("textarea"),
         attachBtn: createMockElement("button"), menuEl: createMockElement(), fileInputEl: createMockElement("input"),
         onChanged: (_count, scope) => { if (scope) changes.push(scope); },
       });
+
       manager.restore([], "A");
       const pending = manager.addFromDataUrl("data:image/png;base64,AQID", "A.png");
       manager.restore([], "B");

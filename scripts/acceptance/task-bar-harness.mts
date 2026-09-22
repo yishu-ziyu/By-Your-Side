@@ -186,11 +186,14 @@ function stubRuntimeFactory(onEmit: (conversationId: string, message: Record<str
       {
         get(target, prop) {
           if (typeof prop === "string" && prop in target) return target[prop];
+
           if (typeof prop === "symbol") return undefined;
+
           return () => undefined;
         },
       },
     );
+
     const runtime = {
       session,
       consent: { list: () => [], cancelAll: () => {} },
@@ -199,7 +202,9 @@ function stubRuntimeFactory(onEmit: (conversationId: string, message: Record<str
       handleMessage: () => {},
       dispose: () => {},
     };
+
     onEmit(id, (message: Record<string, unknown>) => emit(message));
+
     return runtime as never;
   };
 }
@@ -233,12 +238,15 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
   });
 
   const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+
   const managerEmit = (message: Record<string, unknown>) => {
     if (message.type === "task_view") {
       const view = message.view as Record<string, unknown>;
       viewsSent.push({ at: Date.now(), wall: Date.now(), goal: (view.goal as string | null) ?? null, state: String(view.state), conversationId: String(view.conversationId) });
     }
+
     transcript.push({ at: Date.now(), dir: "out", type: String(message.type) });
+
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   };
 
@@ -250,31 +258,44 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
   wss.on("connection", (client) => {
     client.on("message", async (raw) => {
       let message: Record<string, any>;
+
       try {
         message = JSON.parse(raw.toString());
       } catch {
         return;
       }
+
       transcript.push({ at: Date.now(), dir: "in", type: String(message.type ?? "?") });
+
       if (message.type === "hello") {
-        if (message.token !== token) { transcript.push({ at: Date.now(), dir: "out", type: "hello_rejected" }); client.close(); return; }
+        if (message.token !== token) { transcript.push({ at: Date.now(), dir: "out", type: "hello_rejected" }); client.close();
+
+ return; }
+
         socket = client;
         transcript.push({ at: Date.now(), dir: "out", type: "hello_ok" });
         client.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: "acceptance/stub", models: [] }));
         client.send(JSON.stringify({ type: "conversation_list", conversations: manager ? manager.list() : [conversationSummary()] }));
+
         if (manager) manager.replayState((m) => client.send(JSON.stringify(m)));
         client.send(JSON.stringify({ type: "status", conversationId: "default", state: "idle" }));
+
         return;
       }
+
       if (message.type === "conversation_list" && !manager) {
         client.send(JSON.stringify({ type: "conversation_list", conversations: [conversationSummary()] }));
+
         return;
       }
+
       if (socket !== client) return;
+
       if (controlled) {
         if (message.type === "takeover" && typeof message.requestId === "string") {
           takeoverRequests.push(message.requestId);
         }
+
         if (message.type === "task_action" && message.request?.action) {
           const entry = {
             requestId: String(message.request.requestId),
@@ -284,12 +305,16 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
             attachments: (message.request.attachments ?? []).map((att: Record<string, unknown>) => String(att?.name ?? att?.id ?? "?")),
             at: Date.now(),
           };
+
           receivedRequests.push(entry);
           const waiter = requestWaiters.shift();
+
           if (waiter) { consumedRequests += 1; waiter(entry); }
         }
+
         return;
       }
+
       void manager?.handleMessage(message as never).catch(() => {});
     });
     client.on("close", () => { if (socket === client) socket = undefined; });
@@ -327,7 +352,9 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
 
   const panel = async (expression: string, timeoutMs = 60_000): Promise<any> => {
     const r = await cdp.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture: true }, session, timeoutMs);
+
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+
     return r.result?.value;
   };
 
@@ -344,29 +371,36 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
 
   const clickPoint = async (selector: string): Promise<{ x: number; y: number }> => {
     const point = await panel(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('missing ' + ${JSON.stringify(selector)}); const r = e.getBoundingClientRect(); if (!r.width || !r.height) throw new Error('not visible ' + ${JSON.stringify(selector)}); if (r.top < 0 || r.bottom > innerHeight || r.left < 0 || r.right > innerWidth) throw new Error('outside viewport ' + ${JSON.stringify(selector)} + ' ' + JSON.stringify({ top: r.top, bottom: r.bottom, innerHeight })); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+
     return point as { x: number; y: number };
   };
+
   const click = async (selector: string): Promise<void> => {
     const point = await clickPoint(selector);
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", clickCount: 1, ...point }, session);
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, ...point }, session);
   };
+
   const screenshot = async (file: string): Promise<void> => {
     const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, session);
     await writeFile(file, Buffer.from(shot.data as string, "base64"));
   };
+
   const key = async (k: string, code = ""): Promise<void> => {
     const common = { key: k, code: code || k, windowsVirtualKeyCode: k === "Tab" ? 9 : k === "Enter" ? 13 : undefined, text: k === "Enter" ? "\r" : undefined };
     await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...common }, session);
     await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...common }, session);
   };
+
   const setViewport = async (width: number, height: number): Promise<void> => {
     await cdp.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, session);
     await sleep(50);
   };
+
   const setReducedMotion = async (value: "reduce" | "no-preference"): Promise<void> => {
     await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value }] }, session);
   };
+
   const setInput = async (text: string): Promise<void> => {
     await panel(`(() => { const i = document.querySelector('#input'); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   };
@@ -388,10 +422,13 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
     nextRequest: () => {
       // 点击→上行可能在 nextRequest 注册之前就到达了：先看未消费的。
       const ready = receivedRequests[consumedRequests];
+
       if (ready) {
         consumedRequests += 1;
+
         return Promise.resolve(ready);
       }
+
       return new Promise((resolve) => requestWaiters.push(resolve));
     },
     sendReceipt: (requestId, status, message, runId) => {
@@ -407,6 +444,7 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
         message,
         updatedAt: Date.now(),
       };
+
       const envelope = { type: "agent_event", conversationId: "default", event: { kind: "notice", receipt } };
       viewsSent.push({ at: Date.now(), wall: Date.now(), goal: null, state: `receipt:${status}`, conversationId: "default" });
       socket?.send(JSON.stringify(envelope));
@@ -422,6 +460,7 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
     },
     emitRuntime: (message) => {
       const emit = emitters.get("default");
+
       if (!emit) throw new Error("stub runtime 尚未创建（先让 manager 建 default 会话）");
       emit(message);
     },
@@ -435,6 +474,7 @@ export async function startTaskBarHarness(options: HarnessOptions = {}): Promise
     },
     close: async () => {
       try { await iso.close(); } catch { /* 已关 */ }
+
       for (const client of wss.clients) client.terminate();
       await new Promise<void>((r) => wss.close(() => r()));
       manager?.dispose();

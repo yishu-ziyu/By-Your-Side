@@ -23,6 +23,7 @@ function installChrome(opts: { titles?: Record<number, string>; activeId?: numbe
     },
     windows: { update: vi.fn(async () => ({})) },
   });
+
   return { executeScript, query, get, update, activated, removed };
 }
 
@@ -34,6 +35,7 @@ function statusCalls(executeScript: ReturnType<typeof vi.fn>, instanceId = "main
 function pillCalls(executeScript: ReturnType<typeof vi.fn>) {
   return executeScript.mock.calls.filter(([details]) => {
     const view = (details as ScriptDetails).args?.[1];
+
     return Boolean(view && typeof view === "object" && "title" in (view as object));
   });
 }
@@ -154,9 +156,11 @@ describe("光标状态层", () => {
 
   it("接管时立刻收起，恢复工作前不再上状态", async () => {
     const env = installChrome({ titles: { 21: "BOSS直聘" }, activeId: 5 });
+
     const { showCursorStatus, suppressCursorStatus, resumeCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );
+
     await showCursorStatus({ key: "main", state: "reading", tabId: 21 });
     env.executeScript.mockClear();
 
@@ -172,6 +176,7 @@ describe("光标状态层", () => {
 
   it("idle 只清等待/读页面，完成与失败留到下一轮", async () => {
     installChrome({ titles: { 21: "BOSS直聘" }, activeId: 21 });
+
     const { showCursorStatus, clearAmbientCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );
@@ -210,9 +215,11 @@ describe("光标状态层", () => {
 
     expect(cursorStatusForTests("desk::main")?.state).toBe("waiting");
     expect(cursorStatusForTests("main")?.state).toBe("reading");
+
     const byTab = env.executeScript.mock.calls
       .filter(([details]) => (details as ScriptDetails).args?.[1] === "waiting")
       .map(([details]) => (details as ScriptDetails).target.tabId);
+
     expect(byTab).toEqual([21]);
   });
 

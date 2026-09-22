@@ -15,30 +15,42 @@ const SHAPES: Record<CastShape, string> = {
 };
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
 const xOf = (p: number[] | undefined) => p?.[0] ?? 0;
+
 const yOf = (p: number[] | undefined) => p?.[1] ?? 0;
+
 const mixPt = (a: number[], b: number[] | undefined, t: number): [number, number] => {
   const ax = xOf(a);
   const ay = yOf(a);
+
   return [ax + (xOf(b) - ax) * t, ay + (yOf(b) - ay) * t];
 };
+
 const ringPath = (ring: number[][]) =>
   "M" + ring.map((p) => `${xOf(p).toFixed(2)} ${yOf(p).toFixed(2)}`).join("L") + "Z";
+
 const centroid = (ring: number[][]): [number, number] => {
   const n = ring.length || 1;
   let x = 0;
   let y = 0;
+
   for (const p of ring) {
     x += xOf(p) / n;
     y += yOf(p) / n;
   }
+
   return [x, y];
 };
+
 const cloneExpr = (expr: number[][][]) => expr.map((r) => r.map((p) => [xOf(p), yOf(p)]));
 
 let clip = 0;
+
 const live = new Set<GrokBot>();
+
 let raf = 0;
+
 let last = 0;
 
 function reduceMotion(): boolean {
@@ -48,6 +60,7 @@ function reduceMotion(): boolean {
 function loop(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
+
   for (const bot of live) bot.tick(now, dt);
   raf = live.size ? requestAnimationFrame(loop) : 0;
 }
@@ -90,15 +103,18 @@ class GrokBot {
     this.svg = svg;
     const e0 = svg.querySelector(".e0");
     const e1 = svg.querySelector(".e1");
+
     if (!(e0 instanceof SVGPathElement) || !(e1 instanceof SVGPathElement)) {
       throw new Error("grok eyes missing");
     }
+
     this.eye0 = e0;
     this.eye1 = e1;
     this.pool = [...person.pool];
     this.mood = person.mood;
     this.expr = person.expr;
     const rings = GROKBOT_ORIGINAL.EXPRESSIONS[person.expr];
+
     if (!rings) throw new Error(`missing expression ${person.expr}`);
     this.current = cloneExpr(rings);
     this.target = rings;
@@ -120,6 +136,7 @@ class GrokBot {
       ring.map((p, j) => mixPt(p, this.target[e]?.[j], t)),
     );
     const next = GROKBOT_ORIGINAL.EXPRESSIONS[i];
+
     if (!next) return;
     this.target = next;
     this.expr = i;
@@ -132,54 +149,68 @@ class GrokBot {
       this.morph = 1;
       this.blink = 1;
       this.draw();
+
       return;
     }
+
     this.vel += (-14 * this.vel - 49 * (this.morph - 1)) * dt;
     this.morph += this.vel * dt;
+
     if (!Number.isFinite(this.morph)) {
       this.morph = 1;
       this.vel = 0;
     }
+
     if (now > this.nextBlink) {
       this.blinkStart = now;
       this.nextBlink = now + 2600 + Math.random() * 3400;
     }
+
     if (this.blinkStart) {
       const t = (now - this.blinkStart) / 320;
+
       if (t >= 1) {
         this.blinkStart = 0;
         this.blink = 1;
       } else this.blink = Math.max(t < 0.42 ? 1 - t / 0.42 : (t - 0.42) / 0.58, 0.04);
     }
+
     if (this.pool.length > 1 && now > this.nextExpr) {
       const next = this.pool.find((i) => i !== this.expr) ?? this.pool[0] ?? this.expr;
       this.choose(next);
       this.nextExpr = now + (this.waiting || this.mood === "wait" ? 2800 : 1500) + Math.random() * 1800;
     }
+
     if (now > this.nextGaze) {
       const amp = this.waiting || this.mood === "wait" ? 6 : 16;
       this.gx = (Math.random() - 0.5) * amp;
       this.gy = (Math.random() - 0.5) * amp * 0.6;
       this.nextGaze = now + 800 + Math.random() * 1400;
     }
+
     this.gazeX += (this.gx - this.gazeX) * Math.min(1, dt * 3);
     this.gazeY += (this.gy - this.gazeY) * Math.min(1, dt * 3);
+
     if (this.mood === "play" && !this.waiting && now > this.nextTilt) {
       this.svg.classList.remove("tilt-once");
       void this.svg.getBoundingClientRect();
       this.svg.classList.add("tilt-once");
       this.nextTilt = now + 3800 + Math.random() * 3200;
     }
+
     this.draw();
   }
 
   draw(): void {
     const t = clamp(this.morph, 0, 1);
+
     const shown = this.current.map((ring, e) =>
       ring.map((p, j) => mixPt(p, this.target[e]?.[j], t)),
     );
+
     [this.eye0, this.eye1].forEach((el, i) => {
       const ring = shown[i];
+
       if (!ring) return;
       const c = centroid(ring);
       const x = c[0] + this.gazeX;
@@ -211,12 +242,15 @@ export function mountGrok(host: HTMLElement, person: Person, size = 28, options:
     </g>
   </svg>`;
   const svg = host.querySelector("svg");
+
   if (!svg) throw new Error("grok svg missing");
   const bot = new GrokBot(svg, person);
+
   if (options.animate !== false) {
     live.add(bot);
     ensureLoop();
   }
+
   return {
     destroy() {
       bot.destroy();
@@ -243,5 +277,6 @@ export function mountKenney(host: HTMLElement, bodyUrl: string, faceUrl: string,
 /** 表情插值（单测用）：t=0 起点，t=1 终点。 */
 export function lerpExpr(from: number[][][], to: number[][][], t: number): number[][][] {
   const k = clamp(t, 0, 1);
+
   return from.map((ring, e) => ring.map((p, j) => mixPt(p, to[e]?.[j], k)));
 }

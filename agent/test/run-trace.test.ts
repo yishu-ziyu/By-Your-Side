@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { RunTrace, sanitizeTrace } from "../src/run-trace.js";
 
 const dirs: string[] = [];
-async function directory() { const dir = await mkdtemp(join(tmpdir(), "sideagent-trace-")); dirs.push(dir); return dir; }
+
+async function directory() { const dir = await mkdtemp(join(tmpdir(), "sideagent-trace-")); dirs.push(dir);
+
+ return dir; }
+
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 describe("RunTrace", () => {
@@ -15,12 +19,14 @@ describe("RunTrace", () => {
     await writeFile(sentinel, "existing diagnostics");
     const previous = process.env.SIDEAGENT_TRACE_DIR;
     process.env.SIDEAGENT_TRACE_DIR = isolated;
+
     try {
       for (let i = 0; i < 22; i++) {
         const trace = new RunTrace();
         expect(trace.path.startsWith(isolated + "/")).toBe(true);
         trace.begin("isolated test", undefined, "fixture"); await trace.flush();
       }
+
       expect((await readdir(isolated)).length).toBeLessThanOrEqual(20);
       expect(await readFile(sentinel, "utf8")).toBe("existing diagnostics");
     } finally {
@@ -102,6 +108,7 @@ describe("RunTrace", () => {
       details: { imageBase64: "screenshot-payload", mediaType: "image/png" },
       message: { content: [{ type: "toolCall", args: { target: "#password", text: "nested-secret" } }] },
     }));
+
     for (const secret of ["one", "two", "three", "five", "six", "seven", "eight", "abcdef", "ghijkl", "screenshot-payload", "nested-secret"]) expect(result).not.toContain(secret);
     expect(result).toContain('"base64Chars":6');
   });
@@ -125,6 +132,7 @@ describe("RunTrace", () => {
     const trace = new RunTrace(bad);
     expect(() => trace.begin("goal", undefined, "model")).not.toThrow();
     await expect(trace.flush()).resolves.toBeUndefined();
+
     for (let i = 0; i < 22; i++) await writeFile(join(dir, `${1000 + i}-aaaaaaaa.jsonl`), "old");
     const good = new RunTrace(dir); good.begin("goal", undefined, "model"); await good.flush();
     expect((await readdir(dir)).filter((name) => name.endsWith(".jsonl"))).toHaveLength(20);
@@ -136,7 +144,9 @@ describe("RunTrace", () => {
       { toolName: "type_text", args: { text: "typing-secret" } },
       { message: { content: [{ type: "toolCall", name: "fill", arguments: { target: "point:10,20", value: "assistant-secret" } }] } },
     ];
+
     const text = JSON.stringify(sanitizeTrace(events));
+
     for (const secret of ["fill-secret", "typing-secret", "assistant-secret"]) expect(text).not.toContain(secret);
     expect(text).toContain("@42");
     expect(text).toContain("[redacted]");
@@ -162,11 +172,14 @@ describe("RunTrace", () => {
         source: "visible-tab", capturedAt: 123,
       },
     }));
+
     expect(out).not.toContain("BIGPAYLOAD");
     expect(out).toContain('"base64Chars":10');
+
     for (const fragment of ['"width":2560', '"cssWidth":1440', '"cssHeight":900', '"devicePixelRatio":2', '"tabId":11', '"source":"visible-tab"', '"capturedAt":123']) {
       expect(out).toContain(fragment);
     }
+
     // URL 进白名单但仍走字符串脱敏：凭据不落盘
     expect(out).not.toContain("s3cret");
     expect(out).toContain("example.com");

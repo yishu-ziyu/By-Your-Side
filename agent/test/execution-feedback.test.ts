@@ -11,6 +11,7 @@ describe('执行反馈分类', () => {
   it('切标签成功：具体短语、一次回弹、仅动作自身可由胶囊结束', () => {
     const feedback = classifyDirectExecutionFeedback({ ...base, executionFact: 'executed',
       data: { tabId: 21, verification: { verified: true, activeTabId: 21, windowId: 3, windowFocused: true, workingTabId: 21 } } });
+
     expect(feedback).toMatchObject({
       id: 'tool:display-1', channel: 'capsule', kind: 'success', text: '切好了', bounce: true, capsuleCanCloseAction: true,
       facts: { tool: 'tabs', action: 'switch', executionFact: 'executed', tabId: 21 },
@@ -83,6 +84,7 @@ describe('V2.3 切页核验：成功必须来自执行后的真实读回', () =>
   it('A2 回显一致但实际活动页仍是旧页：不显示切好了、不回弹、无闭合资格', () => {
     const feedback = classifyDirectExecutionFeedback({ ...base, executionFact: 'executed',
       data: { tabId: 21, verification: { ...verified, verified: false, activeTabId: 7 } } });
+
     expect(feedback).toMatchObject({ kind: 'unknown', text: '结果待确认', bounce: false, capsuleCanCloseAction: false });
     expect(feedback?.text).not.toContain('切好');
     expect(feedback?.facts.executionFact).toBe('executed');
@@ -99,6 +101,7 @@ describe('V2.3 切页核验：成功必须来自执行后的真实读回', () =>
   it('目标页已激活但窗口未聚焦：用户看不到，不给成功资格', () => {
     const feedback = classifyDirectExecutionFeedback({ ...base, executionFact: 'executed',
       data: { tabId: 21, verification: { ...verified, verified: false, windowFocused: false } } });
+
     expect(feedback).toMatchObject({ kind: 'unknown', text: '结果待确认', bounce: false, capsuleCanCloseAction: false });
     expect(String(feedback?.facts.detail ?? '')).toContain('聚焦');
   });
@@ -112,12 +115,17 @@ describe('V2.3 切页核验：成功必须来自执行后的真实读回', () =>
   it('手工矛盾回执（verified:true 但事实与请求不符）仍不通过', () => {
     const lying = classifyDirectExecutionFeedback({ ...base, executionFact: 'executed',
       data: { tabId: 21, verification: { ...verified, activeTabId: 7 } } });
+
     expect(lying).toMatchObject({ kind: 'unknown', capsuleCanCloseAction: false });
+
     const unfocused = classifyDirectExecutionFeedback({ ...base, executionFact: 'executed',
       data: { tabId: 21, verification: { ...verified, windowFocused: false } } });
+
     expect(unfocused).toMatchObject({ kind: 'unknown', capsuleCanCloseAction: false });
+
     const drifted = classifyDirectExecutionFeedback({ ...base, executionFact: 'executed',
       data: { tabId: 21, verification: { ...verified, workingTabId: 7 } } });
+
     expect(drifted).toMatchObject({ kind: 'unknown', capsuleCanCloseAction: false });
   });
 });

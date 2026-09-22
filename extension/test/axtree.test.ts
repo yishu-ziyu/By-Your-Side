@@ -56,6 +56,7 @@ describe("axTreeToText", () => {
       node({ nodeId: "g", parentId: "r", role: { value: "generic" }, childIds: ["b"], backendDOMNodeId: 2 }),
       node({ nodeId: "b", parentId: "g", role: { value: "button" }, name: { value: "内层按钮" }, backendDOMNodeId: 3 }),
     ];
+
     const { text } = axTreeToText(nodes);
     expect(text).not.toContain("generic");
     expect(text).toContain('button "内层按钮"');
@@ -65,7 +66,9 @@ describe("axTreeToText", () => {
     const many: AxNodeLite[] = [
       node({ nodeId: "r", role: { value: "RootWebArea" }, childIds: [], backendDOMNodeId: 1 }),
     ];
+
     const childIds: string[] = [];
+
     for (let i = 0; i < 3000; i++) {
       const id = `n${i}`;
       childIds.push(id);
@@ -79,6 +82,7 @@ describe("axTreeToText", () => {
         }),
       );
     }
+
     many[0]!.childIds = childIds;
     const { text, truncated } = axTreeToText(many);
     expect(truncated).toBe(true);
@@ -97,16 +101,19 @@ describe("快照预算治理", () => {
   it("超预算时优先保住全部 ref 行，先丢纯文本行", () => {
     const textNodes: AxNodeLite[] = [];
     const rootChildren: string[] = [];
+
     for (let i = 0; i < 400; i += 1) {
       const id = `t${i}`;
       rootChildren.push(id);
       textNodes.push(node({ nodeId: id, parentId: "root", role: { value: "StaticText" }, name: { value: `大段说明文字第 ${i} 段，` + "很长的正文内容".repeat(6) }, backendDOMNodeId: 1000 + i }));
     }
+
     const nodes: AxNodeLite[] = [
       node({ nodeId: "root", role: { value: "RootWebArea" }, childIds: ["btn", ...rootChildren], backendDOMNodeId: 1 }),
       node({ nodeId: "btn", parentId: "root", role: { value: "button" }, name: { value: "提交" }, backendDOMNodeId: 20 }),
       ...textNodes,
     ];
+
     const { text, truncated, backendIds } = axTreeToText(nodes, 3_000);
     expect(truncated).toBe(true);
     expect(backendIds).toContain(20);
@@ -121,6 +128,7 @@ describe("快照预算治理", () => {
       node({ nodeId: "b", parentId: "r", role: { value: "button" }, name: { value: "暂停" }, childIds: ["t"], backendDOMNodeId: 2 }),
       node({ nodeId: "t", parentId: "b", role: { value: "StaticText" }, name: { value: "暂停" }, backendDOMNodeId: 3 }),
     ];
+
     const { text } = axTreeToText(nodes);
     expect(text.match(/暂停/g)).toHaveLength(1);
   });
@@ -132,6 +140,7 @@ describe("快照预算治理", () => {
       node({ nodeId: "t1", parentId: "r", role: { value: "StaticText" }, name: { value: "提交订单后不可撤销" }, backendDOMNodeId: 3 }),
       node({ nodeId: "t2", parentId: "r", role: { value: "StaticText" }, name: { value: "另一段说明" }, backendDOMNodeId: 4 }),
     ];
+
     const { text } = axTreeToText(nodes);
     expect(text).toContain("提交订单后不可撤销");
     expect(text).toContain("另一段说明");

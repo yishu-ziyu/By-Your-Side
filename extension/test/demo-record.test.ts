@@ -91,11 +91,13 @@ describe("步骤合并与预算", () => {
   it("触顶如实标记 truncated，并把步骤截在预算内", () => {
     let steps: DemoStep[] = [];
     let truncated = false;
+
     for (let i = 0; i < 5; i += 1) {
       const r = pushStep(steps, { at: i * 5_000, kind: "click", anchor: { tag: "button", name: `第${i}个` } }, { ...L, maxSteps: 3 });
       steps = r.steps;
       truncated = truncated || r.truncated;
     }
+
     expect(steps).toHaveLength(3);
     expect(truncated).toBe(true);
     expect(recordingHint(steps, truncated)).toContain("不再记录");
@@ -104,11 +106,13 @@ describe("步骤合并与预算", () => {
   it("字节预算按 UTF-8 算，超了就丢尾部并标记", () => {
     let steps: DemoStep[] = [];
     let truncated = false;
+
     for (let i = 0; i < 20; i += 1) {
       const r = pushStep(steps, type(i * 5_000, `字段${i}`, "值".repeat(50)), { ...L, maxBytes: 1_200 });
       steps = r.steps;
       truncated = truncated || r.truncated;
     }
+
     expect(truncated).toBe(true);
     expect(byteLength(steps)).toBeLessThanOrEqual(1_200);
   });
@@ -131,12 +135,14 @@ describe("人话描述", () => {
       { at: 20, kind: "press", key: "Enter" },
       { at: 30, kind: "click", anchor: { tag: "a", name: "第一条记录" } },
     ]);
+
     expect(lines).toEqual([
       "点击按钮「筛选」",
       "在搜索框「客户」里输入「张三」",
       "按 回车",
       "点击链接「第一条记录」",
     ]);
+
     for (const line of lines) expect(line).not.toMatch(/nth-of-type|#[\w-]+\s*>|\(\d+,\s*\d+\)/);
   });
 });

@@ -6,6 +6,7 @@ function fixture(accepted=true){
   const selection={removeAllRanges:vi.fn(),addRange:vi.fn()};
   const document={getSelection:()=>selection,createRange:()=>range,execCommand:vi.fn(()=>accepted)};
   const element={ownerDocument:document,focus:vi.fn(),isConnected:true};
+
   return {element,document,selection,range};
 }
 

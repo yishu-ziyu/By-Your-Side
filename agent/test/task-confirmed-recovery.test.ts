@@ -18,6 +18,7 @@ function unknownFillProgress(){
   progress.observe({type:'agent_event',event:{kind:'agent_start'}});
   progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'call_00_fill/1',name:'fill',params:{target:'#choice',value:'远山'}}});
   progress.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'call_00_fill/1',name:'fill',isError:false,resultText:'unknown',executionFact:'unknown'}});
+
   return progress;
 }
 
@@ -113,7 +114,11 @@ describe('confirm_blocked_write tool',()=>{
     const confirm=vi.fn(async()=>overrides.confirm??{allowed:false,reason:'用户拒绝'});
     const executeWrite=vi.fn(async()=>{if(overrides.writeError)throw overrides.writeError;});
     const records:ReturnType<TaskResultBook['recordConfirmedRecovery']>[]=[];
-    const record=vi.fn((input:Parameters<TaskResultBook['recordConfirmedRecovery']>[0])=>{const item=progress.recordConfirmedRecovery(input);records.push(item);return item;});
+
+    const record=vi.fn((input:Parameters<TaskResultBook['recordConfirmedRecovery']>[0])=>{const item=progress.recordConfirmedRecovery(input);records.push(item);
+
+return item;});
+
     const tool=createConfirmBlockedWriteTool({
       getSnapshot:()=>progress.snapshot(),
       read,
@@ -123,8 +128,10 @@ describe('confirm_blocked_write tool',()=>{
       persist:vi.fn(),
       emit:vi.fn(),
     });
+
     const run=(params:Record<string,unknown>)=>tool.execute('call-1',params as never,undefined,undefined,{} as never);
     const unknown=progress.snapshot().results!.find(item=>item.status==='unknown')!;
+
     return {progress,unknown,run,read,confirm,executeWrite,record,records};
   }
 
@@ -230,6 +237,7 @@ describe('confirm_blocked_write tool',()=>{
     restored.prepareResume();restored.observe({type:'agent_event',event:{kind:'agent_start'}});
     let read=0;
     const executeWrite=vi.fn(async()=>{});
+
     const tool=createConfirmBlockedWriteTool({
       getSnapshot:()=>restored.snapshot(),
       read:vi.fn(async()=>({displayValue:++read<3?'':'测试丙',tabId:7,documentId:'doc-new'})),
@@ -237,6 +245,7 @@ describe('confirm_blocked_write tool',()=>{
       executeWrite,
       record:input=>restored.recordConfirmedRecovery(input),persist:vi.fn(),emit:vi.fn(),
     });
+
     const result=await tool.execute('recover-old',{id:old.id,target:'@9',value:'测试丙'} as never,undefined,undefined,{} as never);
     expect(result.details).toMatchObject({ok:true,state:'reset'});
     expect(executeWrite).toHaveBeenCalledOnce();
@@ -249,11 +258,14 @@ describe('manager revalidates the confirmation binding at decision time',()=>{
   function runningManager(){
     const frames:ServerMessage[]=[];
     const emits:Record<string,(message:ServerMessage)=>void>={};
+
     const manager=new ConversationManager(async(id,emit)=>{
       emits[id]=emit;
       const session={available:true,modelName:()=> 'fixture',isHeld:()=>false,isStreaming:()=>false,startTask:vi.fn(),abort:vi.fn(),bindTaskResults:vi.fn(),bindDeliveryRun:vi.fn(),bindVoiceTurnGate:vi.fn(),bindConversationContext:vi.fn(),persistTaskResults:vi.fn(),persistRecoveryAttachments:vi.fn()};
+
       return {session,fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),bindConversationContext:vi.fn(),list:()=>[]},rpc:{rejectAll:vi.fn(),call:vi.fn(async()=>({tabId:7,documentId:'doc-1'}))},dispose:vi.fn(),handleMessage:vi.fn()} as any;
     },message=>frames.push(message));
+
     return {manager,frames,emits};
   }
 
@@ -263,6 +275,7 @@ describe('manager revalidates the confirmation binding at decision time',()=>{
     await h.manager.dispatchTaskAction({requestId:'start-1',conversationId:'default',source:'text',action:'start',expectedRunId:null,text:'填写方案',context:page} as any);
     h.emits['default']!({type:'agent_event',conversationId:'default',event:{kind:'agent_start'}});
     expect(h.manager.getTaskProgress('default')?.state).toBe('running');
+
     return h;
   }
 
@@ -310,10 +323,12 @@ describe('页面重设确认消息能通过生产协议到达真实面板',()=>{
   it('发出的 consent_request 带 conversationId，并能被 parseServerMessage 接受',async()=>{
     const frames:ServerMessage[]=[];
     const broker=new WriteConfirmBroker(message=>frames.push(message));
+
     const pending=broker.request({conversationId:'conv-a',runId:'run-1',controlVersion:0,
       requirementsHash:requirementsFingerprint('填写方案',['填写方案']),
       pageHash:pageFingerprint({tabId:7,urlHash:'a'.repeat(64)}),
       tabId:7,documentId:'doc-1',tool:'fill',target:'#choice',value:'远山',goal:'填写方案',description:'填写选择'});
+
     const emitted=frames.find(message=>message.type==='consent_request');
     expect(emitted).toBeDefined();
     const parsed=parseServerMessage(JSON.stringify(emitted));

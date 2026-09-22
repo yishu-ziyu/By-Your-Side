@@ -72,6 +72,7 @@ export class WriteConfirmBroker {
   request(input: WriteConfirmationBinding & {ttlMs?: number}): Promise<WriteConfirmationOutcome> {
     const id = `write-confirm-${randomUUID()}`;
     const expiresAt = this.now() + (input.ttlMs ?? CONSENT_TTL_MS);
+
     return new Promise<WriteConfirmationOutcome>(resolve => {
       const timer = setTimeout(() => this.settle(id, {allowed: false, reason: STATUS_MESSAGE.expired}), Math.max(0, expiresAt - this.now()));
       timer.unref?.();
@@ -83,8 +84,10 @@ export class WriteConfirmBroker {
 
   get(id: string): PendingWriteConfirmation | undefined {
     const pending = this.pending.get(id);
+
     if (!pending) return undefined;
     const {done: _done, timer: _timer, resolve: _resolve, ...binding} = pending;
+
     return binding;
   }
 
@@ -95,8 +98,10 @@ export class WriteConfirmBroker {
   /** 用户的方向选择；只对仍然在等的这一条生效，重复决策不改变结果。 */
   decide(conversationId: string, requestId: string, allow: boolean): boolean {
     const pending = this.pending.get(requestId);
+
     if (!pending || pending.conversationId !== conversationId) return false;
     this.settle(requestId, allow ? {allowed: true} : {allowed: false, reason: STATUS_MESSAGE.rejected});
+
     return true;
   }
 
@@ -104,6 +109,7 @@ export class WriteConfirmBroker {
   reject(requestId: string, reason: string): boolean {
     if (!this.pending.has(requestId)) return false;
     this.settle(requestId, {allowed: false, reason});
+
     return true;
   }
 
@@ -129,13 +135,16 @@ export class WriteConfirmBroker {
 
   private settle(id: string, outcome: WriteConfirmationOutcome): void {
     const pending = this.pending.get(id);
+
     if (!pending || pending.done) return;
     pending.done = true;
     clearTimeout(pending.timer);
     this.pending.delete(id);
+
     const status: ConsentStatus = outcome.allowed ? 'allowed'
       : outcome.reason === STATUS_MESSAGE.expired ? 'expired'
       : outcome.reason === STATUS_MESSAGE.cancelled ? 'cancelled' : 'rejected';
+
     this.emit({type: 'consent_result', conversationId: pending.conversationId, requestId: id, status, message: outcome.allowed ? STATUS_MESSAGE.allowed : outcome.reason ?? STATUS_MESSAGE.rejected});
     pending.resolve(outcome);
   }

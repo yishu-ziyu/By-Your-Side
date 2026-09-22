@@ -34,6 +34,7 @@ function lead() {
     url: "http://127.0.0.1/lead",
   };
 }
+
 function worker(id: string, tabId: number) {
   return {
     sessionId: id,
@@ -58,6 +59,7 @@ async function userGroup() {
   await gate.beginTakeover();
   gate.commitTakeover(gate.gen, [LEAD_SESSION_ID, "wiki"]);
   team.commitUser(team.view()!.generation);
+
   return { gate, team };
 }
 
@@ -65,12 +67,14 @@ describe("P0-1 部分交还：session 级硬闸门，禁止整体 gate.handback"
   it("paused_tab_closed 的 worker 不能落地写，也不能认领别页；restored 成员可以写", async () => {
     const { gate, team } = await userGroup();
     team.beginRestore();
+
     const leadPage = prepareMemberHandback({
       sessionId: LEAD_SESSION_ID,
       boundTab: { id: 11, title: "Lead now", url: "http://127.0.0.1/lead?n=2" },
       snapshot: "lead-n2",
       capturedAt: 1,
     });
+
     const closed = prepareMemberHandback({ sessionId: "wiki", boundTab: null, capturedAt: 2 });
     team.applyHandback([leadPage, closed]);
     team.markRestored(LEAD_SESSION_ID);
@@ -91,6 +95,7 @@ describe("P0-1 部分交还：session 级硬闸门，禁止整体 gate.handback"
         "fill",
         async () => {
           wikiLanded = true;
+
           return { filled: true };
         },
         "wiki",
@@ -165,6 +170,7 @@ describe("逐成员恢复进度同步到本地闸门", () => {
 describe("P0-2 pending takeover 断线不得 split-brain / 过期消息不得 hydrate", () => {
   it("断线跨过旧 timeout 后仍保持 draining；重连收到 held team 后 UI 与硬闸门一起归 user", async () => {
     vi.useFakeTimers();
+
     try {
       const gate = new ControlGate();
       const team = new TeamControl();
@@ -172,10 +178,12 @@ describe("P0-2 pending takeover 断线不得 split-brain / 过期消息不得 hy
       team.snapshotAndFreeze(frozen, 1, { groupId: "disconnect-team", generation: 1 });
       team.beginDrain();
       const pending = await gate.beginTakeover();
+
       const deadline = new PendingControlTimeout(10_000, () => {
         gate.cancelTakeover(pending.generation);
         team.clear();
       });
+
       deadline.arm();
 
       vi.advanceTimersByTime(9_000);
@@ -186,11 +194,13 @@ describe("P0-2 pending takeover 断线不得 split-brain / 过期消息不得 hy
       expect(team.view()?.phase).toBe("draining");
 
       deadline.arm();
+
       const held = {
         ...team.view()!,
         phase: "user" as const,
         members: team.view()!.members.map((member) => ({ ...member, phase: "user" as const })),
       };
+
       const accepted = acceptIncomingTeam({ incoming: held, local: team.view() });
       expect(accepted).toEqual({ accept: true, restoreUser: true });
       team.hydrate(held);
@@ -210,11 +220,13 @@ describe("P0-2 pending takeover 断线不得 split-brain / 过期消息不得 hy
   it("排空中断线：不 cancelTakeover、不 abort 闸门", async () => {
     const gate = new ControlGate();
     await gate.beginTakeover();
+
     const lost = onUplinkLostDuringControl({
       owner: gate.control,
       draining: gate.isDraining,
       pendingAction: "takeover",
     });
+
     expect(lost.abortGate).toBe(false);
     expect(lost.cancelTakeover).toBe(false);
     expect(gate.isDraining).toBe(true);
@@ -225,17 +237,20 @@ describe("P0-2 pending takeover 断线不得 split-brain / 过期消息不得 hy
     const local = new TeamControl();
     local.snapshotAndFreeze(snapshotActiveGroup({ lead: lead(), workers: [worker("wiki", 21)] }));
     local.beginDrain();
+
     const incoming = {
       ...local.view()!,
       phase: "user" as const,
       members: local.view()!.members.map((m) => ({ ...m, phase: "user" as const })),
     };
+
     const accepted = acceptIncomingTeam({
       incoming,
       local: local.view(),
       pendingRequestId: "takeover-1",
       resultRequestId: "takeover-1",
     });
+
     expect(accepted.accept).toBe(true);
     expect(accepted.restoreUser).toBe(true);
   });
@@ -317,6 +332,7 @@ describe("P1-3 成员组固定在点击时，Agent 不得二次 snapshot", () =>
         { id: 21, title: "Wiki real title", url: "https://example.com/wiki" },
       ],
     });
+
     expect(members).toEqual([
       expect.objectContaining({ sessionId: LEAD_SESSION_ID, activity: "waiting_tool", title: "Lead real title", url: "https://example.com/lead" }),
       expect.objectContaining({ sessionId: "wiki", activity: "waiting_message", title: "Wiki real title", url: "https://example.com/wiki" }),
@@ -325,18 +341,22 @@ describe("P1-3 成员组固定在点击时，Agent 不得二次 snapshot", () =>
 
   it("holdFrozenGroup 只用冻结名单，点击后新来的 worker 进不了组", () => {
     const frozen = snapshotActiveGroup({ lead: lead(), workers: [worker("wiki", 21)] });
+
     const live = snapshotActiveGroup({
       lead: lead(),
       workers: [worker("wiki", 21), worker("late", 99)],
     });
+
     expect(live.map((m) => m.sessionId)).toContain("late");
     const held: string[] = [];
+
     const team = holdFrozenGroup({
       team: new TeamControl(),
       frozen,
       live,
       holdMember: (id) => held.push(id),
     });
+
     expect(team.members.map((m) => m.sessionId)).toEqual([LEAD_SESSION_ID, "wiki"]);
     expect(held).toEqual([LEAD_SESSION_ID, "wiki"]);
     expect(held).not.toContain("late");
@@ -367,14 +387,18 @@ describe("P1-5 绑定页诚实、终态可见、snapshot 失败 ≠ 关标签", 
       snapshotError: "Accessibility.getFullAXTree 8 秒内没有返回",
       capturedAt: 1,
     });
+
     expect(failed.ok).toBe(false);
+
     if (!failed.ok) {
       expect(failed.closed).toBe(false);
       expect(failed.reason).toBe(TEAM_SNAPSHOT_FAILED);
       expect(failed.reason).not.toBe(TEAM_TAB_CLOSED);
     }
+
     const closed = prepareMemberHandback({ sessionId: "wiki", boundTab: null, capturedAt: 2 });
     expect(closed.ok).toBe(false);
+
     if (!closed.ok) {
       expect(closed.closed).toBe(true);
       expect(closed.reason).toBe(TEAM_TAB_CLOSED);
@@ -432,6 +456,7 @@ describe("P1-5 绑定页诚实、终态可见、snapshot 失败 ≠ 关标签", 
         { sessionId: "wiki", role: "worker" as const, phase: "restored" as const },
       ],
     };
+
     expect(panelLive(["running", "idle"], restored)).toMatchObject({ running: true, live: true, finishRun: false });
     expect(panelLive(["idle", "idle"], restored)).toMatchObject({ running: false, live: false, finishRun: true });
   });

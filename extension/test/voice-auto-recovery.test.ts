@@ -9,6 +9,7 @@ afterEach(() => {
 
 function createMockAudioContext() {
   const nodes: any[] = [];
+
   const context = {
     currentTime: 0,
     destination: {},
@@ -20,6 +21,7 @@ function createMockAudioContext() {
     createBufferSource: () => {
       const n = { connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: () => {} };
       nodes.push(n);
+
       return n;
     },
     audioWorklet: { addModule: vi.fn(async () => {}) },
@@ -31,6 +33,7 @@ function createMockAudioContext() {
     }),
     createMediaStreamSource: () => ({ connect: vi.fn() }),
   };
+
   return { context: context as unknown as AudioContext, nodes, raw: context };
 }
 
@@ -54,8 +57,11 @@ it('recovers automatically after transport disconnect, reusing microphone withou
   const { getUserMedia, track } = setupAudioMocks();
   const sent: any[] = [];
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     (phase, detail) => phaseHistory.push({ phase, detail }),
     () => {}
   );
@@ -128,8 +134,11 @@ it('recovers on server error marked as recoverable (e.g. 29min lifetime limit)',
   const { getUserMedia } = setupAudioMocks();
   const sent: any[] = [];
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     (phase, detail) => phaseHistory.push({ phase, detail }),
     () => {}
   );
@@ -169,8 +178,11 @@ it('does NOT recover on unrecoverable errors (permissions, model mismatch, crede
   const { getUserMedia, track, raw } = setupAudioMocks();
   const sent: any[] = [];
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     (phase, detail) => phaseHistory.push({ phase, detail }),
     () => {}
   );
@@ -206,8 +218,11 @@ it('does NOT recover on unrecoverable errors (permissions, model mismatch, crede
 it('aborts auto-recovery if user stops or switches conversation', async () => {
   setupAudioMocks();
   const sent: any[] = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     () => {},
     () => {}
   );
@@ -239,8 +254,11 @@ it('exhausts retries after max attempts and transitions to error state', async (
   setupAudioMocks();
   const sent: any[] = [];
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     (phase, detail) => phaseHistory.push({ phase, detail }),
     () => {}
   );
@@ -283,6 +301,7 @@ it('VoiceRelay posts recoverable error on disconnected() and binds new lease on 
   const relay = new VoiceRelay(send, () => 'conv-relay');
 
   let portMessage: (m: any) => void = () => {};
+
   const port1 = {
     postMessage: vi.fn(),
     onMessage: { addListener: (f: any) => { portMessage = f; } },
@@ -313,6 +332,7 @@ it('VoiceRelay posts recoverable error on disconnected() and binds new lease on 
 
   // Client reconnects on new port with new voiceId
   let port2Message: (m: any) => void = () => {};
+
   const port2 = {
     postMessage: vi.fn(),
     onMessage: { addListener: (f: any) => { port2Message = f; } },
@@ -327,6 +347,7 @@ it('VoiceRelay posts recoverable error on disconnected() and binds new lease on 
 
   expect(send).toHaveBeenCalledTimes(2);
   const secondCall = send.mock.calls[1];
+
   if (!secondCall || !secondCall[0]) throw new Error('Expected second send call');
   expect(secondCall[0]).toMatchObject({
     type: 'voice',
@@ -339,6 +360,7 @@ it('VoiceRelay posts recoverable error on disconnected() and binds new lease on 
 it('rebinds track onended across recovery so unplugging mic is always caught', async () => {
   const { track } = setupAudioMocks();
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
+
   const client = new VoiceClient(
     () => true,
     (phase, detail) => phaseHistory.push({ phase, detail }),
@@ -376,8 +398,11 @@ it('handles silent connect timeout during recovery within the 30s budget', async
   setupAudioMocks();
   const sent: any[] = [];
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     (phase, detail) => phaseHistory.push({ phase, detail }),
     () => {}
   );
@@ -409,8 +434,11 @@ it('handles silent connect timeout during recovery within the 30s budget', async
 it('ignores duplicate transport ready events when an attempt is already in flight', async () => {
   setupAudioMocks();
   const sent: any[] = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     () => {},
     () => {}
   );
@@ -446,6 +474,7 @@ it('initial start retains 45s permission timeout and does not fail prematurely a
   vi.useFakeTimers();
   setupAudioMocks();
   const phases: string[] = [];
+
   const client = new VoiceClient(
     () => true,
     p => phases.push(p),
@@ -470,8 +499,11 @@ it('records recovery diagnostics with event, attempt and timestamp without sensi
   setupAudioMocks();
   const sent: any[] = [];
   const diagnostics: any[] = [];
+
   const client = new VoiceClient(
-    m => { sent.push(m); return true; },
+    m => { sent.push(m);
+
+ return true; },
     () => {},
     () => {},
     () => ({}),

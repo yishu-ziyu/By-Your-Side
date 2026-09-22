@@ -7,17 +7,24 @@ import {RouteShadow} from '../src/route-shadow.js';
 function freshRoot(): string {
   return mkdtempSync(join(tmpdir(), 'route-shadow-test-'));
 }
+
 function dayFor(at: number): string {
   const date = new Date(at);
   const pad = (value: number) => String(value).padStart(2, '0');
+
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
 function readLines(root: string, day: string): Array<Record<string, unknown>> {
   const path = join(root, `${day}.jsonl`);
+
   if (!existsSync(path)) return [];
+
   return readFileSync(path, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
+
 const NOW = 1_700_000_000_000; // fixed instant so day-file assertions are deterministic
+
 const okResponse = (answers: Record<string, unknown>, usage?: Record<string, number>) =>
   ({ok: true, status: 200, json: async () => ({answers, usage})}) as Response;
 
@@ -76,10 +83,12 @@ describe('RouteShadow: observe() request shape matches route-compare.py', () => 
 describe('RouteShadow: successful utterance record', () => {
   it('writes one complete utterance record with all fields on a successful Jev call', async () => {
     const root = freshRoot();
+
     const fetchMock = vi.fn(async () => okResponse(
       {lane_0: {choice: 'task', confidence: 0.87, probabilities: {task: 0.87, chat: 0.05}}, pagechange_0: {noul: 0.7}},
       {promptTokens: 120, completionTokens: 40},
     ));
+
     const shadow = new RouteShadow({enabled: () => true, dailyLimit: () => 400, root, key: () => 'k', fetch: fetchMock as unknown as typeof fetch, now: () => NOW});
     shadow.observe({channel: 'voice', conversationId: 'c1', voiceId: 'v1', turn: 3, itemId: 'i9', text: '把这个页面翻译一下', previous: ['你好'], taskRunning: true, taskState: 'running', page: {title: '页面标题', url: 'https://example.test/a'}});
     await vi.waitFor(() => { expect(readLines(root, dayFor(NOW)).some(l => l.type === 'utterance')).toBe(true); });
@@ -181,9 +190,11 @@ describe('RouteShadow: daily call budget', () => {
 describe('RouteShadow V2.2: spoken_result_0 recorded without regressing lane/pageChange', () => {
   it('A3: writes the raw spoken_result_0 noul and the same total request time as requestMs/ms, in one fetch', async () => {
     const root = freshRoot();
+
     const fetchMock = vi.fn(async () => okResponse(
       {lane_0: {choice: 'task', confidence: 0.8}, pagechange_0: {noul: 0.7}, spoken_result_0: {noul: 0.42}},
     ));
+
     let clock = NOW;
     const shadow = new RouteShadow({enabled: () => true, dailyLimit: () => 400, root, key: () => 'k', fetch: fetchMock as unknown as typeof fetch, now: () => (clock += 7)});
     shadow.observe({channel: 'voice', conversationId: 'c1', text: '切到测试标签页', previous: [], taskRunning: 'unknown'});
@@ -200,12 +211,15 @@ describe('RouteShadow V2.2: spoken_result_0 recorded without regressing lane/pag
 
   it('A3: missing or invalid spoken_result_0 is recorded as no valid conclusion — never fabricated to 0 or 1', async () => {
     const invalid: Array<Record<string, unknown> | undefined> = [undefined, {noul: '1'}, {noul: null}, {noul: Number.POSITIVE_INFINITY}, {}];
+
     for (const spoken of invalid) {
       const root = freshRoot();
+
       const fetchMock = vi.fn(async () => okResponse({
         lane_0: {choice: 'task'}, pagechange_0: {noul: 0.5},
         ...(spoken !== undefined ? {spoken_result_0: spoken} : {}),
       }));
+
       const shadow = new RouteShadow({enabled: () => true, dailyLimit: () => 400, root, key: () => 'k', fetch: fetchMock as unknown as typeof fetch, now: () => NOW});
       shadow.observe({channel: 'text', conversationId: 'c1', text: 'x', previous: [], taskRunning: 'unknown'});
       await vi.waitFor(() => { expect(readLines(root, dayFor(NOW)).some(l => l.type === 'utterance')).toBe(true); });
@@ -247,6 +261,7 @@ describe('RouteShadow: default log root', () => {
     const base = freshRoot();
     const previous = process.env.SIDEAGENT_ROUTE_SHADOW_DIR;
     process.env.SIDEAGENT_ROUTE_SHADOW_DIR = base;
+
     try {
       const shadow = new RouteShadow({enabled: () => true, dailyLimit: () => 400, key: () => '', fetch: vi.fn() as unknown as typeof fetch, now: () => NOW});
       shadow.actual({channel: 'voice', conversationId: 'c1', kind: 'tool', name: 'read_page'});
@@ -254,6 +269,7 @@ describe('RouteShadow: default log root', () => {
       if (previous === undefined) delete process.env.SIDEAGENT_ROUTE_SHADOW_DIR;
       else process.env.SIDEAGENT_ROUTE_SHADOW_DIR = previous;
     }
+
     expect(readLines(base, dayFor(NOW))).toEqual([expect.objectContaining({type: 'actual', kind: 'tool', name: 'read_page'})]);
   });
 });
@@ -276,6 +292,7 @@ it('production judgment shares the daily cap and returns only audited validated 
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(readLines(root,dayFor(NOW)).at(-1)).toMatchObject({reason:'daily_limit'});
 });
+
 it('audit write failure cannot yield production data',async()=>{
   const root=join(freshRoot(),'not-a-directory');writeFileSync(root,'occupied');
   const shadow=new RouteShadow({enabled:()=>false,dailyLimit:()=>1,root,key:()=> 'k',fetch:async()=>okResponse({lane_0:{choice:'task'},pagechange_0:{noul:0.9},spoken_result_0:{noul:0.1}})});

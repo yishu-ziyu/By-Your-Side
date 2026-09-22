@@ -9,11 +9,15 @@ const makeSkill = () => compileSkill({ id: "skill-inputs", demoId: "demo", inten
 
 function browser() {
   const values: unknown[] = [];
+
   const call = vi.fn(async (name: string, params: Record<string, unknown>) => {
     if (name === "js") return { value: { hit: "[data-sideagent-target]", count: 1 } };
+
     if (name === "fill") values.push(params.value);
+
     return {};
   });
+
   return { rpc: { call } as unknown as ToolRpc, call, values };
 }
 

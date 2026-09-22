@@ -3,8 +3,13 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {NativeVoiceHarness} from './native-voice-harness.mts';
+
 const server=createServer((_q,res)=>{res.setHeader('Content-Type','text/html;charset=utf-8');res.end('<!doctype html><title>语音资料验收</title><h1>资料录入</h1><p id="source">海风</p><label>图片数字<input id="digits" aria-label="图片数字"></label><label>选区口令<input id="password" aria-label="选区口令"></label>');});
-let h:NativeVoiceHarness|undefined;const report:any={ok:false};
+
+let h:NativeVoiceHarness|undefined;
+
+const report:any={ok:false};
+
 try{
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${(server.address() as any).port}/`;
  h=await NativeVoiceHarness.open('voice-context');const id=await h.create('自动验收 · 页面图片');const tab=await h.openTab(id,url);
@@ -18,4 +23,6 @@ try{
  await h.wait(`${h.events(id)}.some(e=>e.type==='voice'&&e.event.kind==='text'&&e.event.role==='assistant'&&e.event.text==='这一轮执行已经结束，结果还没有确认。')`,30000);
  h.check('unsolicited end report did not claim verified success',true);report.ok=true;
 }catch(e){report.error=String(e);process.exitCode=1;}
-finally{if(h){report.events=await h.w(`(globalThis.__saServerEvents||[]).filter(e=>${JSON.stringify(h.ids)}.includes(e.conversationId)&&e.type!=='tool_call'&&!(e.type==='voice'&&e.event.kind==='audio'))`).catch(()=>[]);await h.finishReport(report);await h.close();console.log(JSON.stringify({out:h.out,ok:report.ok,error:report.error}));}server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}
+finally{if(h){report.events=await h.w(`(globalThis.__saServerEvents||[]).filter(e=>${JSON.stringify(h.ids)}.includes(e.conversationId)&&e.type!=='tool_call'&&!(e.type==='voice'&&e.event.kind==='audio'))`).catch(()=>[]);await h.finishReport(report);await h.close();console.log(JSON.stringify({out:h.out,ok:report.ok,error:report.error}));}
+
+server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}

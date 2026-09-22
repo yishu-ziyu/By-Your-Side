@@ -21,9 +21,11 @@ describe('执行反馈胶囊状态', () => {
 
   it('成功短暂展示，待处理保留更久', () => {
     expect(feedbackLifetimeMs('success')).toBe(FEEDBACK_SUCCESS_MS);
+
     for (const kind of ['pending', 'unknown', 'failure'] as const) {
       expect(feedbackLifetimeMs(kind)).toBe(FEEDBACK_PENDING_MS);
     }
+
     expect(FEEDBACK_PENDING_MS).toBeGreaterThan(FEEDBACK_SUCCESS_MS);
   });
 

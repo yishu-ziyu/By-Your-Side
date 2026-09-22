@@ -32,18 +32,25 @@ import { installExecuteToolCallHook } from "./sw-hook.mjs";
 
 function parseRuns(argv) {
   const flag = argv.find((a) => a.startsWith("--runs="));
+
   if (flag) {
     const n = Number(flag.slice("--runs=".length));
+
     if (!Number.isInteger(n) || n < 1 || n > 20) throw new Error("--runs 必须是 1..20 的整数");
+
     return n;
   }
+
   const env = Number(process.env.ACCEPT_RUNS ?? DEFAULT_RUNS);
+
   if (!Number.isInteger(env) || env < 1) return DEFAULT_RUNS;
+
   return env;
 }
 
 function evidenceRoot() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
   return join(tmpdir(), `sideagent-acceptance-${stamp}`);
 }
 
@@ -51,16 +58,20 @@ async function writePng(dir, name, b64) {
   if (!b64) return null;
   const file = join(dir, name);
   await writeFile(file, Buffer.from(b64, "base64"));
+
   return name;
 }
 
 async function writeRunEvidence(dir, evaluated, driver, connection, extra) {
   await mkdir(dir, { recursive: true });
   const shots = [];
+
   for (const key of ["before", "afterClick", "afterFill"]) {
     const name = await writePng(dir, `${key}.png`, driver.screenshots?.[key]);
+
     if (name) shots.push(name);
   }
+
   const json = buildResultJson({
     ok: evaluated.ok,
     startedAt: evaluated.startedAt,
@@ -79,7 +90,9 @@ async function writeRunEvidence(dir, evaluated, driver, connection, extra) {
     evidenceDir: dir,
     screenshots: shots,
   });
+
   await writeFile(join(dir, "result.json"), `${JSON.stringify(json, null, 2)}\n`);
+
   return { json, shots };
 }
 
@@ -89,17 +102,20 @@ async function main() {
   await mkdir(root, { recursive: true });
 
   const lines = [];
+
   const say = (line) => {
     lines.push(line);
     console.log(line);
   };
 
   let connection;
+
   try {
     connection = discoverChromeMain();
     say(
       `PASS connect ${connection.wrapperBundleId} pid=${connection.pid} port=${connection.port} userDataDir=ChromeMain`,
     );
+
     if (connection.refusedDefaultChromePids.length) {
       say(`  note refused com.google.Chrome default pids=${connection.refusedDefaultChromePids.join(",")}`);
     }
@@ -107,6 +123,7 @@ async function main() {
     const msg = e instanceof Error ? e.message : String(e);
     say(`FAIL connect chrome-main`);
     say(msg);
+
     const payload = buildResultJson({
       ok: false,
       startedAt: Date.now(),
@@ -119,22 +136,27 @@ async function main() {
       evidenceDir: root,
       screenshots: [],
     });
+
     await writeFile(join(root, "result.json"), `${JSON.stringify(payload, null, 2)}\n`);
     console.error(`evidence: ${root}`);
     process.exitCode = 1;
+
     return;
   }
 
   let extId;
+
   try {
     extId = sideagentExtensionId();
   } catch (e) {
     say(`FAIL extension id: ${e instanceof Error ? e.message : e}`);
     process.exitCode = 1;
+
     return;
   }
 
   let cdp;
+
   try {
     const browser = await connectBrowser(connection.port);
     cdp = browser.cdp;
@@ -163,6 +185,7 @@ async function main() {
     );
     console.error(`evidence: ${root}`);
     process.exitCode = 1;
+
     return;
   }
 
@@ -183,6 +206,7 @@ async function main() {
   try {
     const targets = await cdp.send("Target.getTargets");
     let sw = findServiceWorker(targets.targetInfos ?? targets, extId);
+
     if (!sw) {
       try {
         const listed = await fetchJson(`http://127.0.0.1:${connection.port}/json/list`);
@@ -191,6 +215,7 @@ async function main() {
         sw = undefined;
       }
     }
+
     if (!sw) {
       say(`FAIL extension service worker`);
       say(recoveryExtension(extId));
@@ -199,11 +224,13 @@ async function main() {
       failureStage = "extension";
       throw new Error("extension_not_found");
     }
+
     const swId = sw.targetId ?? sw.id;
     say(`PASS extension ${extId} service_worker`);
     const sessionId = await cdp.attachSession(swId);
     await cdp.send("Runtime.enable", {}, sessionId);
     fixture = await startFixtureServer();
+
     try {
       const hooked = await installExecuteToolCallHook(
         cdp,
@@ -211,6 +238,7 @@ async function main() {
         extId,
         `${fixture.origin}/index.html?hook=1`,
       );
+
       say(`PASS executeToolCall hook already=${Boolean(hooked.already)}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -221,10 +249,12 @@ async function main() {
       failureStage = "executeToolCall";
       throw e;
     }
+
     const startedAll = Date.now();
 
     for (let i = 1; i <= runs; i++) {
       const url = `${fixture.origin}/index.html?run=${i}&t=${Date.now()}`;
+
       const expression = buildDriverExpression({
         url,
         incSelector: `#${INC_BUTTON_ID}`,
@@ -233,7 +263,9 @@ async function main() {
         sessionId: "acpt",
         timeoutMs: STEP_TIMEOUT_MS,
       });
+
       let driver;
+
       try {
         driver = await evaluateInWorker(cdp, sessionId, expression, STEP_TIMEOUT_MS + 10_000);
       } catch (e) {
@@ -247,6 +279,7 @@ async function main() {
           elapsedMs: 0,
         };
       }
+
       const evaluated = evaluateRun(driver);
       const runDir = join(root, `run-${i}`);
       const evidence = await writeRunEvidence(runDir, evaluated, driver ?? {}, connection, { execution });
@@ -261,6 +294,7 @@ async function main() {
         tabId: driver?.tabId ?? null,
       });
       say(formatRun(i, evaluated));
+
       if (!evaluated.ok) {
         overallOk = false;
         failureCategory = evaluated.failureCategory;
@@ -297,13 +331,16 @@ async function main() {
       evidenceDir: root,
       screenshots: runRecords.flatMap((r) => r.screenshots.map((s) => `run-${r.index}/${s}`)),
     });
+
     await writeFile(join(root, "result.json"), `${JSON.stringify(summary, null, 2)}\n`);
     say(overallOk ? `PASS ${runs} consecutive runs` : `FAIL consecutive runs`);
     say(`evidence ${root}`);
+
     if (overallOk) {
       say(`  unique=${UNIQUE_TEXT}`);
       say(`  click ${COUNTER_AFTER} fill ${FILL_AFTER} phase ${PHASE_CHANGED}`);
     }
+
     process.exitCode = overallOk ? 0 : 1;
   } catch (e) {
     if (failureCategory !== "extension_not_found") {
@@ -312,6 +349,7 @@ async function main() {
       failureCategory = failureCategory ?? "unexpected";
       failureStage = failureStage ?? "run";
     }
+
     const payload = buildResultJson({
       ok: false,
       startedAt: Date.now(),
@@ -330,6 +368,7 @@ async function main() {
       evidenceDir: root,
       screenshots: [],
     });
+
     await writeFile(join(root, "result.json"), `${JSON.stringify(payload, null, 2)}\n`);
     say(`evidence ${root}`);
     process.exitCode = 1;
@@ -341,6 +380,7 @@ async function main() {
         /* 忽略 */
       }
     }
+
     if (cdp) await cdp.close();
   }
 

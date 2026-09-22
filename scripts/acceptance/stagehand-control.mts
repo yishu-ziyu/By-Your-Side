@@ -11,13 +11,21 @@ import type {ProgramStep} from '../../agent/src/browser-program.js';
 import {launchIsolatedExtension, until} from './isolated-extension.mts';
 
 if (!process.argv.includes('--headless')) throw Error('Required: --headless');
+
 const out = resolve('out/acceptance', `stagehand-control-${new Date().toISOString().replace(/[:.]/g,'-')}`);
+
 await mkdir(out,{recursive:true});
+
 const evidence: Record<string, unknown> = {scope:'real official compatibility runtime, QuickJS, ToolRpc and built extension in isolated headless Chrome; no model/microphone', passed:false};
+
 const events: Array<Record<string,unknown>>=[];
+
 const iso=await launchIsolatedExtension();
+
 let observe: (step:ProgramStep)=>void=()=>{};
+
 let epoch=0;
+
 const rpc=new ToolRpc(frame=>{
   events.push({at:Date.now(),kind:'rpc-start',...frame});
   const args=[frame.id,frame.name,frame.params,frame.sessionId??'main',frame.programId??null,'default'];
@@ -26,19 +34,26 @@ const rpc=new ToolRpc(frame=>{
     rpc.handleResult(frame.id,r.ok,r.data,r.error,r.executionFact);
   },e=>rpc.handleResult(frame.id,false,undefined,String(e)));
 });
+
 const tool=createBrowserTools(rpc,undefined,undefined,name=>name!=="page_operation",{isToolHiddenByMode:name=>name==="page_operation",epoch:()=>epoch,canWrite:()=>true,onStep:step=>{
   events.push({at:Date.now(),kind:'step',...step});observe(step);
 }}).find(t=>t.name==='browser_run')!;
+
 let seq=0;
+
 const run=(code:string,signal?:AbortSignal)=>tool.execute(`accept-${++seq}`,{code,api:'playwright'},signal,undefined,{} as never);
+
 const state=(target:string)=>iso.evalIn(target,`({name:document.querySelector('#name').value,email:document.querySelector('#email').value,submits:window.submits,writes:window.writes})`);
+
 try {
   const targets=[];
+
   for(const name of ['form-a','form-b']){
     const target=await iso.newTarget(`${iso.fixtureOrigin}/${name}`);targets.push(target);
     await until(async()=>await iso.evalIn(target,"document.readyState==='complete'")?true:undefined,10000,'fixture load');
     await iso.evalIn(target,`document.title=${JSON.stringify(name)};document.body.innerHTML='<h1>填写联系信息</h1><form><label for="name">姓名</label><input id="name"><label for="email">邮箱</label><input id="email"><button>提交</button><button type="button" id="preview">预览</button><output id="preview-count">0</output></form>';window.submits=0;document.querySelector('#preview').onclick=()=>document.querySelector('#preview-count').textContent=String(Number(document.querySelector('#preview-count').textContent)+1);window.writes=[];document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submits++};document.querySelectorAll('input').forEach(e=>e.addEventListener('input',()=>window.writes.push({field:e.id,value:e.value,at:Date.now()})));`);
   }
+
   const [a,b]=targets;
   const tabs=await iso.swEval('chrome.tabs.query({})') as Array<{id:number,url:string}>;
   const tabA=tabs.find(t=>t.url===`${iso.fixtureOrigin}/form-a`)!.id;
@@ -68,8 +83,10 @@ try {
 
   const controller=new AbortController();let requestedAt=0;
   observe=step=>{if(step.name==='sleep'&&step.phase==='start'){requestedAt=Date.now();controller.abort();}};
+
   await assert.rejects(run(`try{await page.waitForTimeout(1500);}catch{}await page.getByLabel('姓名',{exact:true}).fill('SHOULD_NOT_WRITE');`,controller.signal),/abort|取消|中止/i);
   const settledAt=Date.now();observe=()=>{};
+
   await new Promise(r=>setTimeout(r,1700));
   const after=await state(a);assert.equal(after.name,'张三');assert.equal(after.email,'test@example.com');assert.equal(after.submits,0);
   const late=events.filter(e=>e.kind==='rpc-start'&&Number(e.at)>settledAt);assert.equal(late.length,0);
@@ -78,8 +95,10 @@ try {
   // A real tab activation interleaved with a running program; the task pointer stays A.
   let switched:Promise<unknown>|undefined;
   observe=step=>{if(step.name==='sleep'&&step.phase==='start')switched=iso.swEval(`chrome.tabs.update(${tabB},{active:true})`);};
+
   await run(`await page.waitForTimeout(350);await page.getByLabel('姓名',{exact:true}).fill('李明');return await page.locator('#name').inputValue();`);
   const activation=await switched as {active?:boolean}|undefined;observe=()=>{};
+
   assert.equal(activation?.active,true,'B was actually activated during the wait');
   assert.equal((await state(a)).name,'李明');assert.equal((await state(a)).email,'test@example.com');assert.equal((await state(a)).submits,0);
   assert.equal((await state(b)).name,'');assert.equal((await state(b)).email,'');assert.equal((await state(b)).submits,0);
@@ -88,8 +107,11 @@ try {
 
   // A changed task epoch must also stop later writes in a still-running program.
   observe=step=>{if(step.name==='sleep'&&step.phase==='start')epoch++;};
+
   await assert.rejects(run(`await page.waitForTimeout(50);await page.locator('#name').fill('STALE');`),/改变|取消|旧|epoch|stale/i);
-  observe=()=>{};assert.equal((await state(a)).name,'李明');
+  observe=()=>{};
+
+assert.equal((await state(a)).name,'李明');
   evidence.epoch=true;evidence.passed=true;
 } catch(e){evidence.error=String(e);process.exitCode=1;}
 finally{

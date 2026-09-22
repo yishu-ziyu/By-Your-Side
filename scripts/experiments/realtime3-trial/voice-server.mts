@@ -22,17 +22,29 @@
 import WebSocket, {type RawData} from 'ws';
 
 export const MODEL = 'stepaudio-3-realtime-preview';
+
 const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${MODEL}`;
+
 const VOICE = 'wenrounansheng';
+
 const SAMPLE_RATE = 24_000;
+
 const CONNECT_TIMEOUT_MS = 15_000;
+
 const RESPONSE_WATCHDOG_MS = 12_000;
+
 const ASR_WAIT_MS = 3_000;
+
 const PLAYBACK_TAIL_MS = 10_000;
+
 const PLAYBACK_MAX_WAIT_MS = 90_000;
+
 const MAX_SEEN_EVENTS = 2_048;
+
 const MAX_TOOL_OUTPUT_CHARS = 12_000;
+
 const BUSY_RETRY_MS = 800;
+
 const MAX_BUSY_RETRIES = 3;
 
 const INSTRUCTIONS = `你是 By Your Side 的语音搭子，边聊边帮用户操作当前网页。
@@ -80,33 +92,45 @@ interface PendingToolCall {
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
+
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
 function serializeToolOutput(value: unknown): string {
   let text: string;
+
   try {
     const json = JSON.stringify(value);
     text = typeof json === 'string' ? json : String(value);
   } catch {
     text = String(value);
   }
+
   return text.length > MAX_TOOL_OUTPUT_CHARS ? `${text.slice(0, MAX_TOOL_OUTPUT_CHARS)}…[输出过长已截断]` : text;
 }
 
 /** session.updated 的 echo 必须和请求一致才允许 ready。纯函数，便于离线用反例检查。 */
 export function configurationIssues(createdModel: string | null, session: Record<string, unknown>): string[] {
   const issues: string[] = [];
+
   if (createdModel !== MODEL) issues.push(`session.created 返回的模型是 ${createdModel ?? '缺失'}`);
   const updatedModel = asString(session.model);
+
   if (updatedModel !== null && updatedModel !== '' && updatedModel !== MODEL) issues.push(`session.updated 返回的模型是 ${updatedModel}`);
+
   if (session.voice !== VOICE) issues.push(`音色未生效：${String(session.voice ?? '缺失')}`);
+
   if (session.input_audio_format !== 'pcm16') issues.push(`输入格式不是 pcm16：${String(session.input_audio_format ?? '缺失')}`);
+
   if (session.output_audio_format !== 'pcm16') issues.push(`输出格式不是 pcm16：${String(session.output_audio_format ?? '缺失')}`);
+
   if (asRecord(session.turn_detection)?.type !== 'server_vad') issues.push(`VAD 未生效：${String(asRecord(session.turn_detection)?.type ?? '缺失')}`);
+
   return issues;
 }
 
@@ -172,40 +196,53 @@ export class TrialVoiceSession {
   /** 处理前端消息；工具在后台异步执行，不阻塞音频进出。 */
   handle(message: Record<string, unknown>): void {
     const type = asString(message.type);
+
     if (type === 'stop') return this.close();
+
     if (type === 'stop_speech') return this.stopSpeech();
+
     if (type === 'audio') {
       if (this.phase !== 'ready') return this.log({type: 'audio_before_ready_ignored'});
       const data = asString(message.data);
+
       if (data) this.socketSend({type: 'input_audio_buffer.append', audio: data});
+
       return;
     }
+
     if (type === 'text') {
       if (this.phase !== 'ready') return this.log({type: 'text_before_ready_ignored'});
       const text = (asString(message.text) ?? '').trim();
+
       if (!text) return;
       this.pendingStop = false; // 新的真实输入解锁停声
       this.recordUserInput({id: `text-${++this.textSeq}`, text});
       this.socketSend({type: 'conversation.item.create', item: {type: 'message', role: 'user', content: [{type: 'input_text', text}]}});
       this.wantResponse = true;
       this.maybeFlush();
+
       return;
     }
+
     if (type === 'playback_done') {
       const responseId = asString(message.responseId);
+
       if (!responseId) return;
       this.playedResponses.add(responseId);
       this.clearTimer(`playback:${responseId}`);
       this.log({type: 'playback_done', responseId});
       this.maybeFlush();
+
       return;
     }
+
     this.log({type: 'unknown_client_message', clientType: type});
   }
 
   /** 真实进展通知：用户说话/播放/生成中就存住（只留最新一条），空闲时播一次；通知这轮不许再派发 browser_request。 */
   notifyTask(text: string): void {
     const trimmed = text.trim();
+
     if (!trimmed || this.closed) return;
     this.queuedNotify = trimmed;
     this.maybeFlush();
@@ -218,13 +255,16 @@ export class TrialVoiceSession {
     this.closed = true;
     this.phase = 'closed';
     this.clearTimers();
+
     for (const waiter of this.inputWaiters) waiter(null);
     this.inputWaiters = [];
+
     try {
       this.ws?.close(1000, 'trial ended');
     } catch {
       /* already closing */
     }
+
     this.log({type: 'closed'});
     this.sendToClient({type: 'closed'});
   }
@@ -233,20 +273,26 @@ export class TrialVoiceSession {
 
   private onProviderMessage(data: RawData): void {
     let event: Record<string, unknown>;
+
     try {
       const record = asRecord(JSON.parse(data.toString()));
+
       if (!record) return this.log({type: 'unparsable_provider_event'});
       event = record;
     } catch {
       return this.log({type: 'unparsable_provider_event'});
     }
+
     const type = asString(event.type) ?? '';
     const eventId = asString(event.event_id);
+
     if (eventId) {
       if (this.seenEventIds.has(eventId)) return this.log({type: 'provider_event_duplicate', providerType: type});
       this.seenEventIds.add(eventId);
+
       if (this.seenEventIds.size > MAX_SEEN_EVENTS) this.seenEventIds.clear();
     }
+
     switch (type) {
       case 'session.created': return this.onSessionCreated(event);
       case 'session.updated': return this.onSessionUpdated(event);
@@ -256,14 +302,17 @@ export class TrialVoiceSession {
         this.sendingResponse = false;
         this.busyRetries = 0;
         this.clearTimer('create-watch');
+
         if (this.pendingStop) {
           // stop_speech 时 response.create 已发、created 未到：这时才等到，立即取消并抑制这轮音频。
           this.socketSend({type: 'response.cancel'});
           this.localCancelResponseId = id;
           this.log({type: 'late_response_cancelled', responseId: id});
         }
+
         return;
       }
+
       case 'response.audio.delta': return this.onAudioDelta(event);
       case 'response.audio_transcript.delta':
       case 'response.text.delta': return this.onAssistantDelta(event);
@@ -282,12 +331,14 @@ export class TrialVoiceSession {
         this.pendingStop = false; // 新的真实回合解锁停声
         this.speechSeq += 1;
         this.log({type: 'speech_started'});
+
         return this.emitMetric('vad_speech_started_since_ready', this.sinceReady());
       case 'input_audio_buffer.speech_stopped':
         this.userSpeaking = false;
         this.speechStopAt = Date.now();
         this.log({type: 'speech_stopped'});
         this.emitMetric('vad_speech_stopped_since_ready', this.sinceReady());
+
         return this.maybeFlush();
       default:
         if (type === 'error' || type.endsWith('_error')) this.onProviderError(type, event);
@@ -298,6 +349,7 @@ export class TrialVoiceSession {
     const model = asString(asRecord(event.session)?.model) ?? null;
     this.createdModel = model;
     this.log({type: 'session_created', model});
+
     if (model !== MODEL) return this.fatal(`语音服务返回的模型是 ${model ?? '未知'}，不是 ${MODEL}`);
     this.phase = 'configuring';
     this.socketSend({
@@ -319,6 +371,7 @@ export class TrialVoiceSession {
     if (this.phase === 'ready') return; // 重复 echo 不重启会话
     const session = asRecord(event.session) ?? {};
     const issues = configurationIssues(this.createdModel, session);
+
     if (issues.length > 0) return this.fatal(`语音配置未生效：${issues.join('；')}`);
     this.phase = 'ready';
     this.readyAt = Date.now();
@@ -330,27 +383,35 @@ export class TrialVoiceSession {
 
   private onAudioDelta(event: Record<string, unknown>): void {
     const delta = asString(event.delta);
+
     if (!delta) return;
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
+
     if (this.localCancelResponseId === responseId) return this.log({type: 'audio_after_stop_skipped', responseId});
     const bytes = Math.floor((delta.length * 3) / 4);
     this.audioBytes.set(responseId, (this.audioBytes.get(responseId) ?? 0) + bytes);
+
     if (!this.firstAudioNoted && this.speechStopAt !== null) {
       this.firstAudioNoted = true;
       this.emitMetric('first_audio_since_vad_stop', Date.now() - this.speechStopAt);
     }
+
     this.sendToClient({type: 'audio', data: delta, responseId});
   }
 
   private onAssistantDelta(event: Record<string, unknown>): void {
     const delta = asString(event.delta);
+
     if (!delta) return;
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
+
     if (this.finalizedResponses.has(responseId)) return; // 已定稿就不再吃迟到 delta
+
     if (!this.firstTextNoted && this.speechStopAt !== null) {
       this.firstTextNoted = true;
       this.emitMetric('first_text_since_vad_stop', Date.now() - this.speechStopAt);
     }
+
     const full = (this.assistantText.get(responseId) ?? '') + delta;
     this.assistantText.set(responseId, full);
     this.sendToClient({type: 'transcript', role: 'assistant', text: full, final: false, responseId});
@@ -358,14 +419,17 @@ export class TrialVoiceSession {
 
   private onAssistantDone(event: Record<string, unknown>): void {
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
+
     if (this.finalizedResponses.has(responseId)) return;
     this.finalizedResponses.add(responseId);
     const text = (asString(event.transcript) ?? asString(event.text) ?? this.assistantText.get(responseId) ?? '').trim();
+
     if (text) this.sendToClient({type: 'transcript', role: 'assistant', text, final: true, responseId});
   }
 
   private onUserCompleted(event: Record<string, unknown>): void {
     const text = (asString(event.transcript) ?? '').trim();
+
     if (!text) return; // 只有噪声没有识别结果，不算一条请求
     // 缺 item_id 时不能都叫 user-input，会和已消费的旧回合撞 id；按 speech 轮 + 序号给唯一 id。
     const itemId = asString(event.item_id) ?? `speech-${this.speechSeq}-${++this.asrSeq}`;
@@ -376,23 +440,30 @@ export class TrialVoiceSession {
   private onResponseDone(event: Record<string, unknown>): void {
     const response = asRecord(event.response);
     const id = asString(response?.id) ?? asString(event.response_id) ?? this.activeResponseId;
+
     if (!id) return this.log({type: 'response_done_without_id'});
     const status = asString(response?.status) ?? 'completed';
+
     if (this.activeResponseId === id) this.activeResponseId = null;
     this.sendingResponse = false;
     this.busyRetries = 0;
     this.clearTimer('create-watch');
     this.doneResponses.add(id);
+
     if (!this.finalizedResponses.has(id)) {
       this.finalizedResponses.add(id);
       const text = (this.assistantText.get(id) ?? '').trim();
+
       if (text) this.sendToClient({type: 'transcript', role: 'assistant', text, final: true, responseId: id});
     }
+
     this.sendToClient({type: 'response_done', responseId: id, status});
     this.log({type: 'response_done', responseId: id, status});
+
     if (this.localCancelResponseId === id) this.localCancelResponseId = null;
     this.suppressDispatch = false;
     const bytes = this.audioBytes.get(id) ?? 0;
+
     if (status === 'cancelled') {
       // provider 已放弃这轮：剩余音频作废，不再等 playback_done。
       this.playedResponses.add(id);
@@ -406,13 +477,16 @@ export class TrialVoiceSession {
         this.maybeFlush();
       });
     }
+
     this.maybeFlush();
   }
 
   private onFunctionCall(event: Record<string, unknown>): void {
     const callId = (asString(event.call_id) ?? '').trim();
+
     if (!callId || this.seenCallIds.has(callId)) return; // 同一个 call_id 只执行一次
     this.seenCallIds.add(callId);
+
     const call: PendingToolCall = {
       callId,
       name: asString(event.name) ?? 'unknown',
@@ -420,6 +494,7 @@ export class TrialVoiceSession {
       output: null,
       settled: false,
     };
+
     this.pendingToolCalls.set(callId, call);
     this.log({type: 'tool_call', callId, name: call.name, responseId: call.responseId});
     void this.executeTool(call);
@@ -430,16 +505,22 @@ export class TrialVoiceSession {
     const code = asString(nested?.code) ?? asString(event.code) ?? '';
     const message = asString(nested?.message) ?? asString(event.message) ?? type;
     this.log({type: 'provider_error', providerType: type, code, message});
+
     if (this.phase !== 'ready') return this.fatal(`语音服务出错：${message}`);
+
     if (/busy|active|already|已有|进行中/i.test(`${code} ${message}`)) {
       this.sendingResponse = false;
       this.clearTimer('create-watch');
+
       if (this.pendingStop) return; // 已停声：不把被拒的这一轮排回来
       this.wantResponse = true; // 被拒的那次 response.create 已带走的输出还等在对话里，稍后重来
       const retrying = this.busyRetries++ < MAX_BUSY_RETRIES;
+
       if (retrying) this.armTimer('busy-retry', BUSY_RETRY_MS, () => this.maybeFlush());
+
       return this.sendToClient({type: 'status', text: retrying ? '语音服务正忙，稍后重试' : '语音服务持续繁忙，已停止自动重试'});
     }
+
     // 会话还能继续的 provider 报错不改状态，只提示事实（error 留给会结束通话的故障）。
     this.sendToClient({type: 'status', text: `语音服务提示：${message}`});
   }
@@ -449,6 +530,7 @@ export class TrialVoiceSession {
   private async executeTool(call: PendingToolCall): Promise<void> {
     const started = Date.now();
     let result: unknown;
+
     try {
       if (call.name === 'browser_request') result = await this.runBrowserRequest();
       else if (call.name === 'read_page') result = await this.options.tools.read_page();
@@ -457,6 +539,7 @@ export class TrialVoiceSession {
     } catch (error) {
       result = {ok: false, error: errorMessage(error)};
     }
+
     call.output = serializeToolOutput(result);
     this.log({type: 'tool_output', callId: call.callId, name: call.name, ms: Date.now() - started});
     this.maybeFlush();
@@ -466,17 +549,22 @@ export class TrialVoiceSession {
   private async runBrowserRequest(): Promise<unknown> {
     if (this.suppressDispatch) return {ok: false, error: '这轮是后台任务的进展通知，不是用户的新要求；没有执行网页操作'};
     const input = await this.resolveUserInput();
+
     if (!input) {
       const stale = this.latestInput;
+
       if (stale && this.consumedInputIds.has(stale.id)) return {ok: false, error: '这个请求已经交给页面任务，不需要重复执行'};
+
       return {ok: false, error: '还没有识别到用户的原始请求，没有执行网页操作'};
     }
+
     if (this.consumedInputIds.has(input.id)) return {ok: false, error: '这个请求已经交给页面任务，不需要重复执行'};
     this.consumedInputIds.add(input.id);
     this.log({type: 'browser_request', inputId: input.id, chars: input.text.length});
     this.sendToClient({type: 'status', text: '正在把请求交给网页任务…'});
     const result = await this.options.tools.browser_request(input.text);
     this.sendToClient({type: 'status', text: '已交给网页任务，有进展会说明。'});
+
     return result;
   }
 
@@ -486,18 +574,22 @@ export class TrialVoiceSession {
    */
   private resolveUserInput(): Promise<UserInput | null> {
     const candidate = this.latestInput;
+
     if (candidate) return Promise.resolve(this.consumedInputIds.has(candidate.id) ? null : candidate);
+
     return new Promise(resolve => {
       const deliver = (input: UserInput | null): void => {
         clearTimeout(timer);
         this.inputWaiters = this.inputWaiters.filter(waiter => waiter !== deliver);
         resolve(input);
       };
+
       const timer = setTimeout(() => {
         this.inputWaiters = this.inputWaiters.filter(waiter => waiter !== deliver);
         const late = this.latestInput;
         resolve(late && !this.consumedInputIds.has(late.id) ? late : null);
       }, ASR_WAIT_MS);
+
       this.inputWaiters.push(deliver);
     });
   }
@@ -508,6 +600,7 @@ export class TrialVoiceSession {
     this.log({type: 'user_input', inputId: input.id, chars: input.text.length});
     const waiters = this.inputWaiters;
     this.inputWaiters = [];
+
     for (const waiter of waiters) waiter(input);
   }
 
@@ -516,21 +609,27 @@ export class TrialVoiceSession {
   /** 空闲才动：没有活跃生成、没在等 response.created、用户没在说话、上轮音频播完。 */
   private maybeFlush(): void {
     if (this.phase !== 'ready' || this.closed) return;
+
     if (this.pendingStop) return; // 停声后等下一次真实用户输入再开新轮（通知/工具输出先存住）
+
     if (this.activeResponseId !== null || this.sendingResponse || this.userSpeaking || this.playbackBusy()) return;
     let inserted = false;
+
     for (const call of this.pendingToolCalls.values()) {
       if (call.settled || call.output === null) continue;
       const finished = call.responseId === null ? this.activeResponseId === null : this.doneResponses.has(call.responseId);
+
       const played = call.responseId === null
         ? !this.playbackBusy()
         : !this.audioBytes.has(call.responseId) || this.playedResponses.has(call.responseId);
+
       if (!finished || !played) continue; // 必须等对应 response.done 和实际播放结束
       this.socketSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: call.callId, output: call.output}});
       call.settled = true;
       inserted = true;
       this.log({type: 'tool_output_sent', callId: call.callId, name: call.name});
     }
+
     if (this.queuedNotify !== null) {
       const text = this.queuedNotify;
       this.queuedNotify = null;
@@ -542,6 +641,7 @@ export class TrialVoiceSession {
       inserted = true;
       this.log({type: 'notify_sent', chars: text.length});
     }
+
     if (inserted || this.wantResponse) {
       this.wantResponse = false;
       this.sendingResponse = true;
@@ -558,12 +658,14 @@ export class TrialVoiceSession {
     for (const id of this.audioBytes.keys()) {
       if (!this.playedResponses.has(id)) return true;
     }
+
     return false;
   }
 
   /** 明确停声：只 cancel 当前语音并清播放队列，不取消后台任务，也不清输入缓冲。 */
   private stopSpeech(): void {
     const responseId = this.activeResponseId;
+
     // response.create 已发、created 未到（或 provider 自动响应在路上）时 responseId 还是 null；
     // 也要拦住这轮，等下一次真实用户输入解锁。
     if (responseId === null) this.pendingStop = true;
@@ -572,11 +674,13 @@ export class TrialVoiceSession {
     this.clearTimer('busy-retry');
     this.clearTimer('create-watch');
     this.sendingResponse = false;
+
     if (responseId) {
       this.socketSend({type: 'response.cancel'});
       this.localCancelResponseId = responseId;
       this.clearTimer(`playback:${responseId}`);
     }
+
     for (const id of this.audioBytes.keys()) this.playedResponses.add(id);
     this.sendToClient({type: 'clear_audio'});
     this.sendToClient({type: 'status', text: '已停止播报'});
@@ -610,6 +714,7 @@ export class TrialVoiceSession {
 
   private sendToClient(event: Record<string, unknown>): void {
     if (this.closed && event.type !== 'closed') return;
+
     try {
       this.options.send(event);
     } catch (error) {
@@ -619,6 +724,7 @@ export class TrialVoiceSession {
 
   private socketSend(event: Record<string, unknown>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return this.log({type: 'socket_send_dropped', providerType: event.type});
+
     try {
       this.ws.send(JSON.stringify(event));
     } catch (error) {
@@ -644,6 +750,7 @@ export class TrialVoiceSession {
 
   private clearTimer(name: string): void {
     const timer = this.timers.get(name);
+
     if (timer) clearTimeout(timer);
     this.timers.delete(name);
   }

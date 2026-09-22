@@ -14,31 +14,42 @@ export interface MemoryEntry {
 }
 
 export const MEMORY_TEXT_MAX = 2000;
+
 export function validMemoryText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= MEMORY_TEXT_MAX;
 }
+
 export function validMemoryId(value: unknown): value is string {
   return typeof value === "string" && /^[a-zA-Z0-9_-]{1,96}$/.test(value);
 }
+
 export function validMemoryVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
+
 export function normalizeMemoryHostname(value: string): string | null {
   const host = value.trim().toLowerCase().replace(/\.$/, "");
+
   if (!host || host.length > 253 || /[\s/\\@?#:]/.test(host)) return null;
+
   try {
     const normalized = new URL(`https://${host}`).hostname;
+
     return normalized.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) ? normalized : null;
   } catch { return null; }
 }
+
 export function isMemoryScope(value: unknown): value is MemoryScope {
   if (!value || typeof value !== "object") return false;
   const scope = value as MemoryScope;
+
   return scope.kind === "all" || (scope.kind === "site" && typeof scope.hostname === "string" && normalizeMemoryHostname(scope.hostname) === scope.hostname);
 }
+
 export function isMemoryEntry(value: unknown): value is MemoryEntry {
   if (!value || typeof value !== "object") return false;
   const entry = value as MemoryEntry;
+
   return validMemoryId(entry.id) && validMemoryVersion(entry.version) && validMemoryText(entry.text)
     && isMemoryScope(entry.scope) && typeof entry.sourceConversationId === "string"
     && /^[a-zA-Z0-9_-]{1,64}$/.test(entry.sourceConversationId)
@@ -52,8 +63,10 @@ export function isMemoryEntry(value: unknown): value is MemoryEntry {
 /** A single explicit target URL is more precise than the incidental active tab. */
 export function memoryTaskUrl(text: string, currentUrl?: string): string | undefined {
   const urls = [...new Set((text.match(/https?:\/\/[^\s<>"“”]+/gu) ?? []).map(url => url.replace(/[，。；！？）)\]】]+$/gu, "")))];
+
   if (urls.length === 1) {
     try { return new URL(urls[0]!).href; } catch { /* Use the observed page below. */ }
   }
+
   return currentUrl;
 }

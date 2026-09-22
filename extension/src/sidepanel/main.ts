@@ -75,11 +75,17 @@ import { MemoryManagementState, memoryScopeLabel, sameMemorySnapshot, type Memor
 import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
+
 const TEACH_MODE_KEY = "sideagent_teach_mode";
+
 const PLACEHOLDER_IDLE = "说说你想完成什么…";
+
 const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
+
 const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；交还后生效";
+
 const PLACEHOLDER_DRAINING = "正在停止所有 Agent 的新动作。";
+
 const PLACEHOLDER_PARTIAL = "部分成员已恢复。未续跑的人仍归你。";
 
 
@@ -96,6 +102,7 @@ function renderMarkdown(text: string): string {
 }
 
 const app = document.getElementById("app")!;
+
 app.innerHTML = `
   <header id="topbar">
     <div class="brand-cluster">
@@ -249,17 +256,23 @@ app.innerHTML = `
 
 // 原生 popover 负责外部点击和 Escape；各入口复用已有行为。
 const headerMore = document.getElementById("header-more") as HTMLButtonElement;
+
 const headerMenu = document.getElementById("header-menu")!;
+
 headerMore.append(icon(Ellipsis));
+
 headerMore.addEventListener("click", (event) => {
   headerMenu.classList.toggle("keyboard-open", event.detail === 0);
 });
+
 headerMenu.addEventListener("click", (event) => {
   if (!(event.target as Element).closest("button")) return;
   headerMenu.hidePopover();
+
   // Dialogs move focus themselves; a recording command returns to its visible trigger.
   if (headerMenu.contains(document.activeElement)) headerMore.focus();
 });
+
 mountReadingSettings({
   topbar: document.getElementById("topbar")!, app,
   trigger: document.getElementById("reading-settings-btn") as HTMLButtonElement,
@@ -267,67 +280,116 @@ mountReadingSettings({
 });
 
 const statusDot = document.getElementById("status-dot") as HTMLElement;
+
 const statusText = document.getElementById("status-text")!;
+
 const messagesEl = document.getElementById("messages")!;
+
 const composerEl = document.getElementById("composer") as HTMLElement;
+
 const inputEl = document.getElementById("input") as HTMLTextAreaElement;
+
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
+
 const abortBtn = document.getElementById("abort-btn") as HTMLButtonElement;
+
 const teachToggle = document.getElementById("teach-toggle") as HTMLSelectElement;
+
 const recordToggle = document.getElementById("record-toggle") as HTMLButtonElement;
+
 const demoStrip = document.getElementById("demo-strip") as HTMLDivElement;
+
 const demoTitle = document.getElementById("demo-title") as HTMLSpanElement;
+
 const demoSteps = document.getElementById("demo-steps") as HTMLOListElement;
+
 const demoClose = document.getElementById("demo-close") as HTMLButtonElement;
+
 const demoActions = document.getElementById("demo-actions") as HTMLDivElement;
+
 const demoIntent = document.getElementById("demo-intent") as HTMLInputElement;
+
 const demoCompile = document.getElementById("demo-compile") as HTMLButtonElement;
+
 const demoSkill = document.getElementById("demo-skill") as HTMLDivElement;
+
 const modelBtn = document.getElementById("model-btn") as HTMLButtonElement;
+
 const modelMark = document.getElementById("model-mark") as HTMLElement;
+
 const modelName = document.getElementById("model-name")!;
+
 const modelReasoningTag = document.getElementById("model-reasoning-tag") as HTMLElement;
+
 const modelPopover = document.getElementById("model-popover")!;
+
 const setupEl = document.getElementById("setup")!;
+
 const tokenInput = document.getElementById("token-input") as HTMLInputElement;
+
 const setupErr = document.getElementById("setup-err")!;
+
 const setupSave = document.getElementById("setup-save") as HTMLButtonElement;
 
 // 附件瓷贴与动作菜单 DOM
 const attachmentsStrip = document.getElementById("attachments-strip") as HTMLElement;
+
 const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
+
 const attachMenu = document.getElementById("attach-menu") as HTMLElement;
+
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
+
 let attachments!: AttachmentsManager;
+
 /** 附件管理器构造期间会回调 onChanged；装配完成前不碰任务条。 */
 let attachmentsReady = false;
 
 // 页面感知胶囊与检查器 DOM
 const pagePill = document.getElementById("page-pill") as HTMLElement | null;
+
 const askCiteEl = document.getElementById("ask-cite") as HTMLElement | null;
+
 const askCiteHost = document.getElementById("ask-cite-host") as HTMLElement | null;
+
 const askCiteText = document.getElementById("ask-cite-text") as HTMLElement | null;
+
 const askCiteClose = document.getElementById("ask-cite-close") as HTMLButtonElement | null;
+
 let pendingAsk: PendingAsk | null = null;
+
 let selectedConversationId = "default";
+
 let conversationReady = false;
+
 let transportConnected = false;
+
 const completedConversations = new Set<string>();
+
 let conversationRequest: string | null = null;
+
 /**
  * 面板每次"打开进入"都开一段新会话：文档启动即置位，重连不重置。
  * 决定方式——上一段还是空白页（标题仍是"新会话"）就复用它，否则另开一段；
  * 方案见 docs/evals/20260911-open-panel-new-session.md。
  */
 let bootFreshSession = true;
+
 let bootInheritedId: string | null = null;
+
 let bootDecisionTimer: ReturnType<typeof setTimeout> | null = null;
+
 let bootCreateTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** 会话清单迟迟不到时的兜底时限；新建请求迟迟没有回执时的回退时限。 */
 const BOOT_DECISION_TIMEOUT_MS = 6_000;
+
 const BOOT_CREATE_FALLBACK_MS = 4_000;
+
 const conversations = new Map<string, ConversationSummary>();
+
 const consentPanel = new ConsentPanel(
   document.getElementById("consent-requests")!,
   () => selectedConversationId,
@@ -335,47 +397,75 @@ const consentPanel = new ConsentPanel(
   id => selectConversation(id),
   message => send(message),
 );
+
 window.addEventListener("pagehide", () => consentPanel.dispose());
+
 const receiptMessages = new Map<string, HTMLElement>();
+
 const receiptForks = new Map<string, { request: TaskActionRequest; resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+
 const receiptForkPromises = new Map<string, Promise<void>>();
+
 function forkReceipt(receipt: TaskReceipt): Promise<void> {
   const key = `${receipt.conversationId}:${receipt.requestId}`;
   const existing = receiptForkPromises.get(key);
+
   if (existing) return existing;
+
   if (!receipt.newConversationRequest) return Promise.reject(new Error('缺少原请求，请重新输入。'));
   const request = structuredClone(receipt.newConversationRequest);
   const creationId = crypto.randomUUID();
+
   const promise = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => { receiptForks.delete(creationId); reject(new Error('新会话回执未到达，未自动发送原请求；请检查会话列表。')); }, 15000);
     receiptForks.set(creationId, {request, resolve, reject, timer});
+
     if (!send({type:'conversation_create',requestId:creationId})) {
       clearTimeout(timer); receiptForks.delete(creationId); reject(new Error('连接已断开，原请求未发送。'));
     }
   });
+
   receiptForkPromises.set(key,promise);
   void promise.catch(() => receiptForkPromises.delete(key));
+
   return promise;
 }
 
 const conversationSwitcher = document.getElementById("conversation-switcher") as HTMLButtonElement;
+
 const conversationNew = document.getElementById("conversation-new") as HTMLButtonElement;
+
 const conversationMenu = document.getElementById("conversation-menu")!;
+
 const conversationBackground = document.getElementById("conversation-background") as HTMLButtonElement;
+
 const memoryOpen = document.getElementById("memory-open") as HTMLButtonElement;
+
 const memoryShade = document.getElementById("memory-shade") as HTMLButtonElement;
+
 const memoryDrawer = document.getElementById("memory-drawer") as HTMLElement;
+
 const memoryClose = document.getElementById("memory-close") as HTMLButtonElement;
+
 const memoryTitle = document.getElementById("memory-title") as HTMLElement;
+
 const memoryBody = document.getElementById("memory-body") as HTMLElement;
+
 type ConversationDraft = { text: string; attachments: Attachment[]; ask: PendingAsk | null };
+
 const conversationDrafts = new Map<string, ConversationDraft>();
+
 const draftFingerprints = new Map<string, string>();
+
 let restoringDraft = false;
+
 let draftRevision = 0;
+
 /** 当前会话的输入草稿是否已真正恢复完（切会话清空，旧 restore 不得标新会话）。 */
 let currentDraftReady = false;
+
 let draftWrites = Promise.resolve();
+
 const DRAFT_KEY = "sideagent_conversation_draft:";
 
 function saveDraft(): void {
@@ -383,6 +473,7 @@ function saveDraft(): void {
   const id = selectedConversationId;
   const draft: ConversationDraft = { text: inputEl.value, attachments: attachments.getAttachments(), ask: pendingAsk };
   const fingerprint = JSON.stringify(draft);
+
   if (draftFingerprints.get(id) === fingerprint) return;
   draftRevision += 1;
   draftFingerprints.set(id, fingerprint);
@@ -393,17 +484,22 @@ function saveDraft(): void {
 async function restoreDraft(id: string): Promise<void> {
   const revision = draftRevision;
   let draft = conversationDrafts.get(id);
+
   if (!draft) {
     const stored = await chrome.storage.local.get(DRAFT_KEY + id);
+
     if (revision !== draftRevision || selectedConversationId !== id) return;
     draft = stored[DRAFT_KEY + id] as ConversationDraft | undefined;
   }
+
   if (selectedConversationId !== id) return;
   restoringDraft = true;
+
   try {
     inputEl.value = typeof draft?.text === "string" ? draft.text : "";
     attachments.restore(draft?.attachments ?? [], id);
     pendingAsk = draft?.ask ?? null;
+
     if (pendingAsk) applyPendingAsk(pendingAsk);
     else if (askCiteEl) askCiteEl.hidden = true;
     autoResize();
@@ -430,19 +526,23 @@ document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").fo
   button.onclick = () => {
     // 还没恢复完就点（引导不可见时的键盘/事件竞态）：不写草稿，别覆盖正在恢复的原草稿。
     if (!starterReady()) return;
+
     if (!inputEl.value.trim()) {
       inputEl.value = button.dataset.starter ?? "";
       autoResize();
       saveDraft();
     }
+
     inputEl.focus();
   };
 });
 
 function upsertConversation(c: ConversationSummary): void {
   if (conversations.get(c.id)?.state === "running" && c.state === "idle" && !c.checkpoint && c.id !== selectedConversationId) completedConversations.add(c.id);
+
   if (c.checkpoint) completedConversations.delete(c.id);
   conversations.set(c.id, c);
+
   if (c.id === selectedConversationId) noteRunStarted(c.runId);
 }
 
@@ -459,6 +559,7 @@ function renderConversations(): void {
   conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
   conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
   const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+
   const rows = list.map((c) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -471,14 +572,19 @@ function renderConversations(): void {
     state.textContent = conversationStateLabel(c);
     button.append(title, state);
     button.onclick = () => selectConversation(c.id);
+
     return button;
   });
+
   conversationMenu.replaceChildren(...rows);
+
   const other = list.find((c) => c.id !== selectedConversationId && c.state === "running")
     ?? list.find((c) => c.id !== selectedConversationId && c.state === "user")
     ?? list.find((c) => c.id !== selectedConversationId && c.checkpoint === "interrupted")
     ?? list.find((c) => c.id !== selectedConversationId && completedConversations.has(c.id));
+
   conversationBackground.hidden = !other;
+
   if (other) {
     conversationBackground.textContent = `${other.title} · ${conversationBackgroundLabel(other)} ↗`;
     conversationBackground.onclick = () => selectConversation(other.id);
@@ -487,6 +593,7 @@ function renderConversations(): void {
 
 function resetConversationRender(): void {
   if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
+
   closeBlocks();
   currentRun = null;
   lastRun = null;
@@ -509,6 +616,7 @@ function resetConversationRender(): void {
   updateStarterVisibility();
   const resumeRoot = document.getElementById("resume-entry-root");
   messagesEl.replaceChildren();
+
   if (resumeRoot) messagesEl.appendChild(resumeRoot);
   resumeEntry.clear();
   renderTeamCard();
@@ -521,6 +629,7 @@ function selectConversation(id: string, notify = true): void {
   completedConversations.delete(id);
   conversationMenu.hidden = true;
   conversationSwitcher.setAttribute("aria-expanded", "false");
+
   if (id !== selectedConversationId || !conversationReady) {
     if (conversationReady) saveDraft();
     selectedConversationId = id;
@@ -530,20 +639,24 @@ function selectConversation(id: string, notify = true): void {
     restoringDraft = true;
     inputEl.value = "";
     pendingAsk = null;
+
     if (askCiteEl) askCiteEl.hidden = true;
     attachments.restore([], id);
     restoringDraft = false;
     const summary = conversations.get(id);
+
     if (summary) applyMode(summary.mode, false);
     clearDemoView();
     modelPicker.reset();
     void restoreDraft(id).catch(() => addMsg("msg error", "未能恢复这段会话的输入草稿。"));
   }
+
   renderConversations();
   renderTaskStrip();
   taskBar.reset();
   queryTaskView();
   consentPanel.refresh();
+
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
   port?.postMessage({ kind: "sync", conversationId: id, afterSeq: lastHistorySeq } satisfies PanelToBg);
 }
@@ -556,18 +669,26 @@ function resolveBootSession(inheritedId: string, listKnown: boolean): void {
   if (!bootFreshSession) return;
   bootInheritedId = inheritedId;
   const inherited = conversations.get(inheritedId);
+
   if (!inherited && !listKnown) return;
+
   if (inherited && inherited.title === "新会话" && inherited.state === "idle") {
     finishBootSession();
     selectConversation(inheritedId, false);
+
     return;
   }
-  if (!requestNewConversation()) { armBootDecisionTimeout(); return; }
+
+  if (!requestNewConversation()) { armBootDecisionTimeout();
+
+ return; }
+
   finishBootSession();
 }
 
 function finishBootSession(): void {
   bootFreshSession = false;
+
   if (bootDecisionTimer !== null) {
     clearTimeout(bootDecisionTimer);
     bootDecisionTimer = null;
@@ -578,9 +699,17 @@ function armBootDecisionTimeout(): void {
   if (bootDecisionTimer !== null) return;
   bootDecisionTimer = setTimeout(() => {
     bootDecisionTimer = null;
+
     if (!bootFreshSession) return;
-    if (!transportConnected) { armBootDecisionTimeout(); return; }
-    if (!requestNewConversation()) { armBootDecisionTimeout(); return; }
+
+    if (!transportConnected) { armBootDecisionTimeout();
+
+ return; }
+
+    if (!requestNewConversation()) { armBootDecisionTimeout();
+
+ return; }
+
     finishBootSession();
   }, BOOT_DECISION_TIMEOUT_MS);
 }
@@ -591,20 +720,26 @@ function requestNewConversation(): boolean {
   saveDraft();
   conversationRequest = crypto.randomUUID();
   renderConversations();
+
   if (!send({ type: "conversation_create", requestId: conversationRequest })) {
     conversationRequest = null;
     renderConversations();
+
     return false;
   }
+
   if (bootCreateTimer !== null) clearTimeout(bootCreateTimer);
   bootCreateTimer = setTimeout(() => {
     bootCreateTimer = null;
+
     if (conversationReady || conversationRequest === null) return;
     // 后台迟迟没有回执：不把面板卡在"正在新建"，退回显示上一段。
     conversationRequest = null;
     renderConversations();
+
     if (bootInheritedId) selectConversation(bootInheritedId, false);
   }, BOOT_CREATE_FALLBACK_MS);
+
   return true;
 }
 
@@ -612,16 +747,19 @@ conversationSwitcher.onclick = () => {
   conversationMenu.hidden = !conversationMenu.hidden;
   conversationSwitcher.setAttribute("aria-expanded", String(!conversationMenu.hidden));
 };
+
 conversationNew.onclick = () => {
   if (!conversationReady || conversationRequest) return;
   requestNewConversation();
 };
+
 document.addEventListener("click", (e) => {
   if (!conversationMenu.contains(e.target as Node) && !conversationSwitcher.contains(e.target as Node)) {
     conversationMenu.hidden = true;
     conversationSwitcher.setAttribute("aria-expanded", "false");
   }
 });
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !conversationMenu.hidden) {
     conversationMenu.hidden = true;
@@ -635,6 +773,7 @@ type MemoryInspection = {
   entries: MemoryEntry[];
   message?: string;
 };
+
 type MemoryEdit = {
   id: string;
   text: string;
@@ -643,30 +782,43 @@ type MemoryEdit = {
   pendingRequestId: string | null;
   error: string;
 };
+
 type MemoryForget = { id: string; pendingRequestId: string | null; error: string };
+
 type MemoryUiRequest = { action: "list" | "update" | "forget"; entryId?: string };
 
 const memoryState = new MemoryManagementState();
+
 const memoryUiRequests = new Map<string, MemoryUiRequest>();
+
 let memoryLoaded = false;
+
 let memoryListRequestId: string | null = null;
+
 let memoryListError = "";
+
 let memoryInspection: MemoryInspection | null = null;
+
 let memoryEdit: MemoryEdit | null = null;
+
 let memoryForget: MemoryForget | null = null;
+
 let currentMemoryHostname = "";
 
 function memoryButton(label: string, action: string, id?: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.memoryAction = action;
+
   if (id) button.dataset.memoryId = id;
   button.textContent = label;
+
   return button;
 }
 
 function memorySourceLabel(entry: MemoryEntry): string {
   const conversation = conversations.get(entry.sourceConversationId);
+
   return conversation?.title || "原会话";
 }
 
@@ -680,6 +832,7 @@ function formatMemoryTime(timestamp: number): string {
 
 function renderMemoryInspection(): HTMLElement | null {
   const inspection = memoryInspection;
+
   if (!inspection) return null;
   const section = document.createElement("section");
   section.className = "memory-inspection";
@@ -692,6 +845,7 @@ function renderMemoryInspection(): HTMLElement | null {
         ? "更新的记忆"
         : "保存的记忆";
   section.appendChild(title);
+
   if (inspection.message) {
     const message = document.createElement("p");
     message.textContent = inspection.message;
@@ -701,6 +855,7 @@ function renderMemoryInspection(): HTMLElement | null {
     message.textContent = "这条记忆不再用于新请求。旧聊天仍然保留。";
     section.appendChild(message);
   }
+
   for (const snapshot of inspection.entries) {
     const item = document.createElement("div");
     item.className = "memory-inspection-item";
@@ -710,6 +865,7 @@ function renderMemoryInspection(): HTMLElement | null {
     meta.textContent = `${memoryScopeLabel(snapshot.scope)} · 版本 ${snapshot.version}`;
     item.append(text, meta);
     const current = memoryState.get(snapshot.id);
+
     if (!current) {
       const changed = document.createElement("small");
       changed.className = "memory-inspection-changed";
@@ -721,8 +877,10 @@ function renderMemoryInspection(): HTMLElement | null {
       changed.textContent = "此后已更新。下方列表显示当前版本。";
       item.appendChild(changed);
     }
+
     section.appendChild(item);
   }
+
   return section;
 }
 
@@ -740,6 +898,7 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
   textarea.value = edit.text;
   textarea.disabled = edit.pendingRequestId !== null;
   textarea.oninput = () => { edit.text = textarea.value; edit.error = ""; };
+
   textLabel.appendChild(textarea);
 
   const scopeLabel = document.createElement("label");
@@ -748,6 +907,7 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
   select.dataset.memoryField = "scope";
   select.dataset.memoryId = entry.id;
   select.disabled = edit.pendingRequestId !== null;
+
   for (const [value, label] of [["all", "所有会话"], ["site", "指定站点"]] as const) {
     const option = document.createElement("option");
     option.value = value;
@@ -755,12 +915,15 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
     option.selected = edit.scopeKind === value;
     select.appendChild(option);
   }
+
   select.onchange = () => {
     edit.scopeKind = select.value as MemoryScope["kind"];
+
     if (edit.scopeKind === "site" && !edit.hostname) edit.hostname = currentMemoryHostname;
     edit.error = "";
     renderMemoryDrawer();
   };
+
   scopeLabel.appendChild(select);
 
   const hostnameLabel = document.createElement("label");
@@ -774,6 +937,7 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
   hostname.value = edit.hostname;
   hostname.disabled = edit.pendingRequestId !== null;
   hostname.oninput = () => { edit.hostname = hostname.value; edit.error = ""; };
+
   hostnameLabel.appendChild(hostname);
 
   const hint = document.createElement("p");
@@ -792,6 +956,7 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
   save.disabled = edit.pendingRequestId !== null;
   actions.append(cancel, save);
   form.append(textLabel, scopeLabel, hostnameLabel, hint, error, actions);
+
   return form;
 }
 
@@ -799,8 +964,10 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   const card = document.createElement("article");
   card.className = "memory-row";
   card.dataset.memoryId = entry.id;
+
   if (memoryEdit?.id === entry.id) {
     card.appendChild(renderMemoryEdit(entry));
+
     return card;
   }
 
@@ -829,6 +996,7 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   summary.textContent = "来源";
   const detail = document.createElement("p");
   detail.textContent = `会话：${memorySourceLabel(entry)}\n保存于 ${formatMemoryTime(entry.createdAt)} · 当前版本 ${entry.version}`;
+
   if (entry.experience) detail.textContent += `\n来自这次纠正的待验证做法；再次使用仍需检查。\n${entry.experience.evidence.map(line => line.replace(/^feedback-\d+：/, "你的纠正：").replace(/^(?:previous-)?observation-\d+：/, "网页结果：")).join("\n")}`;
   source.append(summary, detail);
   card.appendChild(source);
@@ -848,17 +1016,20 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
     confirmActions.className = "memory-actions";
     const cancel = memoryButton("取消", "cancel-forget", entry.id);
     cancel.disabled = memoryForget.pendingRequestId !== null;
+
     const forget = memoryButton(
       memoryForget.pendingRequestId ? "正在忘记…" : memoryForget.error ? "重试忘记" : "确认忘记",
       "confirm-forget",
       entry.id,
     );
+
     forget.className = "memory-danger memory-forget-submit";
     forget.disabled = memoryForget.pendingRequestId !== null;
     confirmActions.append(cancel, forget);
     confirm.append(heading, explanation, error, confirmActions);
     card.appendChild(confirm);
   }
+
   return card;
 }
 
@@ -867,6 +1038,7 @@ function renderMemoryDrawer(): void {
   memoryTitle.textContent = entries.length ? `记忆 · ${entries.length}` : "记忆";
   memoryBody.replaceChildren();
   const inspection = renderMemoryInspection();
+
   if (inspection) memoryBody.appendChild(inspection);
 
   const intro = document.createElement("p");
@@ -882,20 +1054,25 @@ function renderMemoryDrawer(): void {
     failure.append(text, memoryButton("重试", "reload"));
     memoryBody.appendChild(failure);
   }
+
   if (!memoryLoaded && memoryListRequestId) {
     const loading = document.createElement("div");
     loading.className = "memory-empty";
     loading.textContent = "正在读取记忆…";
     memoryBody.appendChild(loading);
+
     return;
   }
+
   if (!memoryLoaded && !memoryListRequestId) {
     const unavailable = document.createElement("div");
     unavailable.className = "memory-empty";
     unavailable.append("还不能读取记忆。", memoryButton("重试", "reload"));
     memoryBody.appendChild(unavailable);
+
     return;
   }
+
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "memory-empty";
@@ -905,10 +1082,13 @@ function renderMemoryDrawer(): void {
     text.textContent = "在聊天里明确说「请记住」，保存成功后会出现在这里。";
     empty.append(heading, text);
     memoryBody.appendChild(empty);
+
     return;
   }
+
   const list = document.createElement("div");
   list.className = "memory-list";
+
   for (const entry of entries) list.appendChild(renderMemoryEntry(entry));
   memoryBody.appendChild(list);
 }
@@ -917,13 +1097,17 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (outcome.kind === "ignored") return;
   const uiRequest = memoryUiRequests.get(outcome.requestId);
   memoryUiRequests.delete(outcome.requestId);
+
   if (outcome.action === "list") {
     if (memoryListRequestId !== outcome.requestId) return;
     memoryListRequestId = null;
+
     if (outcome.kind === "success") {
       memoryLoaded = true;
       memoryListError = "";
+
       if (memoryEdit && !memoryState.get(memoryEdit.id)) memoryEdit = null;
+
       if (memoryForget && !memoryState.get(memoryForget.id)) memoryForget = null;
     } else {
       memoryListError = `未能读取记忆：${outcome.error}`;
@@ -931,21 +1115,25 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   } else if (outcome.action === "update" && uiRequest?.entryId) {
     if (memoryEdit?.id === uiRequest.entryId && memoryEdit.pendingRequestId === outcome.requestId) {
       memoryEdit.pendingRequestId = null;
+
       if (outcome.kind === "success") memoryEdit = null;
       else memoryEdit.error = `修改未保存：${outcome.error}`;
     }
   } else if (outcome.action === "forget" && uiRequest?.entryId) {
     if (memoryForget?.id === uiRequest.entryId && memoryForget.pendingRequestId === outcome.requestId) {
       memoryForget.pendingRequestId = null;
+
       if (outcome.kind === "success") memoryForget = null;
       else memoryForget.error = `没有忘记这条记忆：${outcome.error}`;
     }
   }
+
   if (!memoryDrawer.hidden) renderMemoryDrawer();
 }
 
 function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>, ui: MemoryUiRequest): void {
   memoryUiRequests.set(message.requestId, ui);
+
   if (send(message)) return;
   processMemoryOutcome(memoryState.rejectLocally(message.requestId, "连接不可用，请重试"));
 }
@@ -980,8 +1168,11 @@ function closeMemoryDrawer(): void {
 }
 
 memoryOpen.onclick = () => memoryDrawer.hidden ? void openKnowledge(knowledgeSegment) : closeMemoryDrawer();
+
 memoryClose.onclick = closeMemoryDrawer;
+
 memoryShade.onclick = closeMemoryDrawer;
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !memoryDrawer.hidden) {
     event.preventDefault();
@@ -991,24 +1182,34 @@ document.addEventListener("keydown", (event) => {
 
 memoryBody.addEventListener("click", (event) => {
   const target = (event.target as Element).closest<HTMLButtonElement>("button[data-memory-action]");
+
   if (!target) return;
   const action = target.dataset.memoryAction;
   const id = target.dataset.memoryId;
+
   if (action === "reload") {
     requestMemoryList();
+
     return;
   }
+
   if (!id) return;
   const entry = memoryState.get(id);
+
   if (!entry) {
     requestMemoryList();
+
     return;
   }
+
   if (action === "source") {
     const details = memoryBody.querySelector<HTMLDetailsElement>(`details[data-memory-source="${CSS.escape(id)}"]`);
+
     if (details) details.open = !details.open;
+
     return;
   }
+
   if (action === "edit") {
     memoryForget = null;
     memoryEdit = {
@@ -1021,54 +1222,74 @@ memoryBody.addEventListener("click", (event) => {
     };
     renderMemoryDrawer();
     memoryBody.querySelector<HTMLTextAreaElement>(`textarea[data-memory-id="${CSS.escape(id)}"]`)?.focus();
+
     return;
   }
+
   if (action === "cancel-edit") {
     memoryEdit = null;
     renderMemoryDrawer();
+
     return;
   }
+
   if (action === "save" && memoryEdit?.id === id) {
     const text = memoryEdit.text.trim();
+
     if (!text) {
       memoryEdit.error = "记忆内容不能为空。";
       renderMemoryDrawer();
+
       return;
     }
+
     if (text.length > MEMORY_TEXT_MAX) {
       memoryEdit.error = `记忆内容最多 ${MEMORY_TEXT_MAX} 个字符。`;
       renderMemoryDrawer();
+
       return;
     }
+
     let scope: MemoryScope = { kind: "all" };
+
     if (memoryEdit.scopeKind === "site") {
       const hostname = normalizeMemoryHostname(memoryEdit.hostname);
+
       if (!hostname) {
         memoryEdit.error = "请输入网站域名，例如 example.com。";
         renderMemoryDrawer();
+
         return;
       }
+
       memoryEdit.hostname = hostname;
       scope = { kind: "site", hostname };
     }
+
     const message = memoryState.beginUpdate(selectedConversationId, entry, text, scope);
     memoryEdit.pendingRequestId = message.requestId;
     memoryEdit.error = "";
     renderMemoryDrawer();
     dispatchMemoryRequest(message, { action: "update", entryId: id });
+
     return;
   }
+
   if (action === "forget") {
     memoryEdit = null;
     memoryForget = { id, pendingRequestId: null, error: "" };
     renderMemoryDrawer();
+
     return;
   }
+
   if (action === "cancel-forget") {
     memoryForget = null;
     renderMemoryDrawer();
+
     return;
   }
+
   if (action === "confirm-forget" && memoryForget?.id === id) {
     const message = memoryState.beginForget(selectedConversationId, entry);
     memoryForget.pendingRequestId = message.requestId;
@@ -1079,24 +1300,38 @@ memoryBody.addEventListener("click", (event) => {
 });
 
 const morphSheet = document.getElementById("morph-sheet") as HTMLElement | null;
+
 const closeMorphSheetBtn = document.getElementById("close-morph-sheet") as HTMLButtonElement | null;
+
 const tabIconSq = document.getElementById("tab-icon-sq") as HTMLElement | null;
+
 const tabTitleText = document.getElementById("tab-title-text") as HTMLElement | null;
+
 const morphSheetTitle = document.getElementById("morph-sheet-title") as HTMLElement | null;
+
 const morphSheetUrl = document.getElementById("morph-sheet-url") as HTMLElement | null;
+
 const morphSheetStatus = document.getElementById("morph-sheet-status") as HTMLElement | null;
 
 const morphSend = sendBtn.querySelector(".morph-icon-send");
+
 const morphStop = sendBtn.querySelector(".morph-icon-stop");
+
 if (morphSend) morphSend.appendChild(icon(ArrowUp));
+
 if (morphStop) morphStop.appendChild(icon(Square));
+
 abortBtn.appendChild(icon(Square));
+
 recordToggle.prepend(icon(Play));
+
 memoryOpen.prepend(icon(Database));
+
 document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
 
 function clipTitle(text: string, max = 16): string {
   const t = text.trim();
+
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
@@ -1106,14 +1341,19 @@ let activeTabInfo: { id: number; title: string; url: string } | null = null;
 async function refreshActiveTabPill(): Promise<void> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) {
     if (tabTitleText) tabTitleText.textContent = "浏览器活动标签页";
+
     return;
   }
+
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
     if (!tab) return;
+
     if (tab.id != null) activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
     const title = tab.title || tab.url || "未知页面";
     let host = "";
+
     try {
       if (tab.url) {
         const pageUrl = new URL(tab.url);
@@ -1123,8 +1363,11 @@ async function refreshActiveTabPill(): Promise<void> {
     } catch {
       currentMemoryHostname = "";
     }
+
     const displayLabel = host ? `${host} · ${clipTitle(title, 14)}` : clipTitle(title, 20);
+
     if (tabTitleText) tabTitleText.textContent = displayLabel;
+
     if (tabIconSq) {
       if (tab.favIconUrl && tab.favIconUrl.startsWith("http")) {
         tabIconSq.innerHTML = `<img src="${DOMPurify.sanitize(tab.favIconUrl)}" style="width:12px;height:12px;border-radius:2px;object-fit:cover;" alt="" />`;
@@ -1133,8 +1376,11 @@ async function refreshActiveTabPill(): Promise<void> {
         tabIconSq.textContent = letter;
       }
     }
+
     if (morphSheetTitle) morphSheetTitle.textContent = `标题：${title}`;
+
     if (morphSheetUrl) morphSheetUrl.textContent = `URL：${tab.url || "-"}`;
+
     if (morphSheetStatus) morphSheetStatus.textContent = `状态：${tab.status === "complete" ? "已就绪 (complete)" : "加载中 (loading)"}`;
   } catch {
     if (tabTitleText) tabTitleText.textContent = "活动标签页就绪";
@@ -1145,14 +1391,17 @@ function toggleMorphSheet(open?: boolean): void {
   if (!morphSheet) return;
   const willOpen = open !== undefined ? open : morphSheet.style.display === "none" || !morphSheet.style.display;
   morphSheet.style.display = willOpen ? "flex" : "none";
+
   if (willOpen) void refreshActiveTabPill();
 }
 
 pagePill?.addEventListener("click", () => toggleMorphSheet());
+
 closeMorphSheetBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleMorphSheet(false);
 });
+
 document.addEventListener("click", (e) => {
   if (
     morphSheet &&
@@ -1174,6 +1423,7 @@ if (typeof chrome !== "undefined" && chrome.tabs) {
   });
   chrome.tabs.onRemoved?.addListener(() => taskBar.noteTabsChanged());
 }
+
 void refreshActiveTabPill();
 
 const companion = mountCompanion({
@@ -1189,8 +1439,11 @@ const companion = mountCompanion({
 // （chrome.storage.session），background 推来的 mode 消息会反向收敛本地存储。
 
 const MARK_MOTION_KEY = "sideagent_mark_motion";
+
 type MarkMotion = "grow" | "boil";
+
 let markMotion: MarkMotion = "grow";
+
 let teachMode = false;
 
 function renderTeachToggle(): void {
@@ -1205,6 +1458,7 @@ function renderTeachToggle(): void {
 function applyMode(mode: AgentMode, persist: boolean): void {
   teachMode = mode === "teach";
   renderTeachToggle();
+
   if (persist) void chrome.storage.local.set({ [TEACH_MODE_KEY]: teachMode });
 }
 
@@ -1212,6 +1466,7 @@ void chrome.storage.local.get([TEACH_MODE_KEY, MARK_MOTION_KEY]).then((stored) =
   if (stored[MARK_MOTION_KEY] === "boil" || stored[MARK_MOTION_KEY] === "grow") {
     markMotion = stored[MARK_MOTION_KEY];
   }
+
   applyMode(stored[TEACH_MODE_KEY] === true ? "teach" : "act", false);
 });
 
@@ -1228,21 +1483,37 @@ teachToggle.oncontextmenu = (ev) => {
 };
 
 const knowledgeDrawer = document.getElementById("memory-drawer") as HTMLElement;
+
 const segSkills = document.getElementById("seg-skills") as HTMLButtonElement;
+
 const segMemory = document.getElementById("seg-memory") as HTMLButtonElement;
+
 const skillPane = document.getElementById("skill-pane") as HTMLDivElement;
+
 const skillList = document.getElementById("skill-list") as HTMLDivElement;
+
 const observeToggle = document.getElementById("observe-toggle") as HTMLButtonElement;
+
 const observeHint = document.getElementById("observe-hint") as HTMLSpanElement;
+
 const observeCandidates = document.getElementById("observe-candidates") as HTMLDivElement;
+
 let knowledgeSegment: "skills" | "memory" = "skills";
+
 let observing = false;
+
 let observedPatterns = 0;
+
 let observedCandidates: ObservedPattern[] = [];
+
 let redoSkillId: string | null = null;
+
 let redoSkillVersion: number | null = null;
+
 let skillRequest = "";
+
 let skillEntries: Array<{ skill: Skill; runs: SkillRun[] }> = [];
+
 let learnedCandidates: SkillCandidate[] = [];
 
 // ── 知识抽屉：技能与记忆一个入口（方案一：摘要 + 展开） ──────────────
@@ -1263,13 +1534,16 @@ function setKnowledgeSegment(segment: "skills" | "memory"): void {
   segMemory.setAttribute("aria-selected", String(segment === "memory"));
   skillPane.hidden = segment !== "skills";
   memoryBody.hidden = segment !== "memory";
+
   if (segment === "skills") {
     // 先按手上的数据画一次（多半是空态），别让抽屉在等到回复前是一片空白
     renderObserve();
     renderSkills();
     void refreshSkills();
+
     return;
   }
+
   renderMemoryDrawer();
   requestMemoryList();
 }
@@ -1277,6 +1551,7 @@ function setKnowledgeSegment(segment: "skills" | "memory"): void {
 async function refreshSkills(): Promise<void> {
   const conversationId = selectedConversationId;
   const hostname = await currentHostname();
+
   if (conversationId !== selectedConversationId) return;
   skillRequest = crypto.randomUUID();
   send({ type: "skill_list", conversationId, requestId: skillRequest, ...(hostname ? { hostname } : {}) });
@@ -1287,6 +1562,7 @@ async function refreshSkills(): Promise<void> {
 async function currentHostname(): Promise<string> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+
     return tab?.url ? new URL(tab.url).hostname : "";
   } catch {
     return "";
@@ -1301,6 +1577,7 @@ function renderObserve(): void {
     : "打开后我才会观察你的操作，从中找出你可能常做的事，再问你要不要以后替你跑。";
   observeHint.textContent = observing ? "只记骨架" : "打开后才会看你常做的事";
   observeCandidates.replaceChildren();
+
   for (const pattern of observedCandidates) {
     const card = document.createElement("div");
     card.className = "observe-card";
@@ -1313,11 +1590,13 @@ function renderObserve(): void {
     const body = document.createElement("div");
     body.className = "disc-body";
     const list = document.createElement("ol");
+
     for (const anchor of pattern.anchors) {
       const li = document.createElement("li");
       li.textContent = describeAnchor(anchor);
       list.appendChild(li);
     }
+
     body.appendChild(list);
     detail.append(summary, body);
     const actions = document.createElement("div");
@@ -1339,6 +1618,7 @@ function renderObserve(): void {
       });
       port?.postMessage({ kind: "observe", action: "accept", conversationId: selectedConversationId, signature: pattern.signature, hostname: pattern.hostname } satisfies PanelToBg);
     };
+
     const dismiss = document.createElement("button");
     dismiss.type = "button";
     dismiss.className = "btn ghost";
@@ -1348,6 +1628,7 @@ function renderObserve(): void {
       observedCandidates = observedCandidates.filter(p => !(p.signature === pattern.signature && p.hostname === pattern.hostname));
       renderObserve();
     };
+
     actions.append(accept, dismiss);
     card.append(text, detail, actions);
     observeCandidates.appendChild(card);
@@ -1357,17 +1638,23 @@ function renderObserve(): void {
 /** 技能行：摘要 + 展开。过期的技能主按钮变短，点下去先就地确认。 */
 function renderSkills(): void {
   const editing = skillList.querySelector<HTMLFormElement>(".skill-run-inputs");
+
   if (editing) {
     // A late list refresh must not discard values the user has begun typing.
     // Keep the existing row and its handlers; a changed version disables execution.
     const current = skillEntries.find(entry => entry.skill.id === editing.dataset.skillId)?.skill;
+
     if (!current || String(current.version) !== editing.dataset.skillVersion) {
       const submit = editing.querySelector<HTMLButtonElement>('button[type="submit"]');
+
       if (submit) { submit.disabled = true; submit.textContent = "做法已变化，请重新打开后核对"; }
     }
+
     return;
   }
+
   skillList.replaceChildren();
+
   for (const candidate of learnedCandidates) {
     const card = document.createElement("div");
     card.className = "observe-card";
@@ -1381,22 +1668,28 @@ function renderSkills(): void {
     detail.className = "disc";
     const summary = document.createElement("summary"); summary.textContent = "查看做法与完成条件";
     const body = document.createElement("div"); body.className = "disc-body";
+
     for (const text of [...skillStepsText(candidate.skill), candidate.skill.check.text]) {
       const line = document.createElement("p"); line.textContent = text; body.appendChild(line);
     }
+
     detail.append(summary, body);
     const actions = document.createElement("div"); actions.className = "row-actions";
     const save = document.createElement("button"); save.type = "button"; save.className = "btn primary"; save.textContent = "保存这份做法";
     const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.className = "btn ghost"; dismiss.textContent = "不用保存";
+
     const decide = (type: "skill_candidate_save" | "skill_candidate_dismiss") => {
       skillRequest = crypto.randomUUID(); save.disabled = true; dismiss.disabled = true;
+
       if (!send({ type, requestId: skillRequest, id: candidate.skill.id, sourceRunId: candidate.sourceRunId })) {
         save.disabled = false; dismiss.disabled = false;
       }
     };
+
     save.onclick = () => decide("skill_candidate_save"); dismiss.onclick = () => decide("skill_candidate_dismiss");
     actions.append(save, dismiss); card.append(title, facts, detail, actions); skillList.appendChild(card);
   }
+
   if (skillEntries.length === 0 && learnedCandidates.length === 0) {
     const empty = document.createElement("p");
     empty.className = "memory-quiet";
@@ -1404,8 +1697,10 @@ function renderSkills(): void {
       ? "这一页还没有技能。亲手做一遍再填一句话编译；或者打开观察，让它自己看出你常做的事。"
       : "还没连上伴随进程，技能与观察暂时读不到。";
     skillList.appendChild(empty);
+
     return;
   }
+
   for (const { skill, runs } of skillEntries) {
     const health = skillHealth(runs);
     const row = document.createElement("div");
@@ -1427,9 +1722,13 @@ function renderSkills(): void {
     runBtn.className = "btn primary";
     runBtn.textContent = "照上次那样跑";
     runBtn.onclick = () => {
-      if (!health.stale) { startSkillRun(skill, runBtn); return; }
+      if (!health.stale) { startSkillRun(skill, runBtn);
+
+ return; }
+
       // 可能过期：不直接跑，先就地确认，不弹原生对话框（那会卡住整个面板）
       runBtn.textContent = "可能过期，仍然要跑？";
+
       if (!row.querySelector(".stale-confirm")) {
         const confirmRow = document.createElement("div");
         confirmRow.className = "row-actions stale-confirm";
@@ -1438,15 +1737,18 @@ function renderSkills(): void {
         yes.className = "btn";
         yes.textContent = "确认跑一次";
         yes.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; startSkillRun(skill, runBtn, undefined, true); };
+
         const no = document.createElement("button");
         no.type = "button";
         no.className = "btn ghost";
         no.textContent = "算了";
         no.onclick = () => { confirmRow.remove(); runBtn.textContent = "照上次那样跑"; };
+
         confirmRow.append(yes, no);
         row.appendChild(confirmRow);
       }
     };
+
     actions.appendChild(runBtn);
 
     const detail = document.createElement("details");
@@ -1455,18 +1757,21 @@ function renderSkills(): void {
     summary.textContent = "凭证、步骤与其余动作";
     const body = document.createElement("div");
     body.className = "disc-body";
+
     if (skill.notes?.length) {
       const notes = document.createElement("p");
       notes.className = "check";
       notes.textContent = `你说过不对的地方：${skill.notes.map((note: { text: string }) => note.text).join("；")}`;
       body.appendChild(notes);
     }
+
     if (skill.check.text) {
       const check = document.createElement("p");
       check.className = "check";
       check.textContent = `完成凭证：${skill.check.text}`;
       body.appendChild(check);
     }
+
     if (skill.weakSteps || skill.droppedSteps) {
       const weak = document.createElement("p");
       weak.className = "check";
@@ -1475,12 +1780,15 @@ function renderSkills(): void {
         : `有 ${skill.droppedSteps} 步没记到对象名，已跳过。`;
       body.appendChild(weak);
     }
+
     const steps = document.createElement("ol");
+
     for (const line of skillStepsText(skill)) {
       const li = document.createElement("li");
       li.textContent = line;
       steps.appendChild(li);
     }
+
     const script = document.createElement("pre");
     script.textContent = skill.program;
     body.append(steps, script);
@@ -1499,6 +1807,7 @@ function renderSkills(): void {
       port?.postMessage({ kind: "demo", action: "start", conversationId: selectedConversationId } satisfies PanelToBg);
       addMsg("msg", `重新示范：现在你亲手做一遍（会覆盖「${skill.name}」，旧版本留着）。做完点「做完了」，再点「编译成脚本」。`);
     };
+
     const noteBox = document.createElement("div");
     noteBox.className = "skill-note-box";
     noteBox.hidden = true;
@@ -1512,6 +1821,7 @@ function renderSkills(): void {
     noteSend.textContent = "记下";
     noteSend.onclick = () => {
       const text = noteInput.value.trim();
+
       if (!text) return;
       noteBox.hidden = true;
       noteInput.value = "";
@@ -1520,12 +1830,16 @@ function renderSkills(): void {
       send({ type: "skill_note", requestId: skillRequest, id: skill.id, note: text });
       window.setTimeout(() => void refreshSkills(), 700);
     };
+
     noteBox.append(noteInput, noteSend);
     const noteBtn = document.createElement("button");
     noteBtn.type = "button";
     noteBtn.className = "btn ghost";
     noteBtn.textContent = "这次不太对";
-    noteBtn.onclick = () => { noteBox.hidden = !noteBox.hidden; if (!noteBox.hidden) noteInput.focus(); };
+    noteBtn.onclick = () => { noteBox.hidden = !noteBox.hidden;
+
+ if (!noteBox.hidden) noteInput.focus(); };
+
     const rollback = document.createElement("button");
     rollback.type = "button";
     rollback.className = "btn ghost";
@@ -1538,6 +1852,7 @@ function renderSkills(): void {
       send({ type: "skill_rollback", requestId: skillRequest, id: skill.id, expectedVersion: skill.version });
       window.setTimeout(() => void refreshSkills(), 700);
     };
+
     const forget = document.createElement("button");
     forget.type = "button";
     forget.className = "btn ghost";
@@ -1546,6 +1861,7 @@ function renderSkills(): void {
       skillRequest = crypto.randomUUID();
       send({ type: "skill_forget", requestId: skillRequest, id: skill.id });
     };
+
     secondary.append(redo, noteBtn, rollback, forget);
     body.append(secondary, noteBox);
     detail.append(summary, body);
@@ -1556,13 +1872,16 @@ function renderSkills(): void {
 
 function startSkillRun(skill: Skill, button: HTMLButtonElement, inputs?: Record<string, string>, allowStale = false): void {
   const keys = Object.keys(skill.inputs);
+
   if (keys.length && inputs === undefined) {
     const row = button.closest(".row");
+
     if (!row || row.querySelector(".skill-run-inputs")) return;
     const form = document.createElement("form"); form.className = "skill-run-inputs disc-body";
     form.dataset.skillId = skill.id; form.dataset.skillVersion = String(skill.version);
     const fields = new Map<string, HTMLInputElement>();
     const hint = document.createElement("p"); hint.textContent = "这次用什么材料？修改只对本次生效。"; form.appendChild(hint);
+
     for (const key of keys) {
       const label = document.createElement("label"); label.textContent = key;
       const input = document.createElement("input");
@@ -1571,26 +1890,35 @@ function startSkillRun(skill: Skill, button: HTMLButtonElement, inputs?: Record<
       input.value = sensitive ? "" : skill.inputs[key]!; input.required = sensitive || !input.value;
       label.appendChild(input); form.appendChild(label); fields.set(key, input);
     }
+
     const submit = document.createElement("button"); submit.type = "submit"; submit.className = "btn primary"; submit.textContent = "用这些材料执行";
     const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "btn ghost"; cancel.textContent = "取消"; cancel.onclick = () => { form.remove(); renderSkills(); };
+
     form.append(submit, cancel);
     form.onsubmit = event => {
       event.preventDefault();
       const values = Object.fromEntries([...fields].map(([key, input]) => [key, input.value]));
       fields.forEach(input => { input.value = ""; }); form.remove(); startSkillRun(skill, button, values, allowStale);
     };
-    row.appendChild(form); fields.values().next().value?.focus(); return;
+
+    row.appendChild(form); fields.values().next().value?.focus();
+
+ return;
   }
+
   button.disabled = true;
   button.textContent = "跑着…";
   skillRequest = crypto.randomUUID();
+
   if (!send({ type: "skill_run", requestId: skillRequest, id: skill.id, expectedVersion: skill.version, inputs, allowStale })) {
     button.disabled = false; button.textContent = "照上次那样跑";
   }
 }
 
 segSkills.onclick = () => setKnowledgeSegment("skills");
+
 segMemory.onclick = () => setKnowledgeSegment("memory");
+
 observeToggle.onclick = () => {
   port?.postMessage({ kind: "observe", action: observing ? "off" : "on", conversationId: selectedConversationId } satisfies PanelToBg);
 };
@@ -1600,6 +1928,7 @@ observeToggle.onclick = () => {
 // 默认只显示步骤与完成情况，脚本代码以后折叠在「代码」里，不铺在脸上。
 
 let demoState: { recording: boolean; steps: DemoStep[]; truncated: boolean } = { recording: false, steps: [], truncated: false };
+
 let skillRequestId = "";
 
 function renderDemo(): void {
@@ -1613,11 +1942,13 @@ function renderDemo(): void {
     ? `${recordingHint(steps, truncated)}；做完点这里结束`
     : "看我做一次：你亲手做一遍，我先只看不动手";
   demoStrip.hidden = !recording && steps.length === 0;
+
   if (demoStrip.hidden) return;
   demoTitle.textContent = recording ? recordingHint(steps, truncated) : `示范结束：记下 ${steps.length} 步${truncated ? "（中途已达上限）" : ""}`;
   demoSteps.replaceChildren(...describeSteps(steps).map((line) => {
     const li = document.createElement("li");
     li.textContent = line;
+
     return li;
   }));
   demoSteps.lastElementChild?.scrollIntoView({ block: "nearest" });
@@ -1627,9 +1958,14 @@ function renderDemo(): void {
 /** 编译入口：把这一份示范 + 你的一句话交给伴随进程编译成技能。 */
 demoCompile.onclick = () => {
   const steps = demoState.steps;
+
   if (!steps.length) return;
   const host = hostnameOf(steps);
-  if (!host) { addMsg("msg error", "这份示范没有可用的站点信息，换个普通网页再试。"); return; }
+
+  if (!host) { addMsg("msg error", "这份示范没有可用的站点信息，换个普通网页再试。");
+
+ return; }
+
   demoCompile.disabled = true;
   demoCompile.textContent = "编译中…";
   skillRequestId = crypto.randomUUID();
@@ -1647,8 +1983,10 @@ demoCompile.onclick = () => {
 function hostnameOf(steps: DemoStep[]): string | null {
   for (const step of steps) {
     if (!step.page) continue;
+
     try { return new URL(step.page).hostname; } catch { /* 跳过坏地址 */ }
   }
+
   return null;
 }
 
@@ -1660,11 +1998,13 @@ function renderSkillResult(skill: Skill): void {
   title.className = "demo-skill-title";
   title.textContent = skill.version > 1 ? `已更新：${skill.name}（第 ${skill.version} 版）` : `已编译：${skill.name}`;
   const list = document.createElement("ol");
+
   for (const line of skillStepsText(skill)) {
     const li = document.createElement("li");
     li.textContent = line;
     list.appendChild(li);
   }
+
   const check = document.createElement("p");
   check.className = "demo-skill-check";
   check.textContent = `完成凭证：${skill.check.text}`;
@@ -1719,16 +2059,27 @@ const modelPicker = mountModelPicker({
 });
 
 let port: chrome.runtime.Port | null = null;
+
 let reconnectAttempt = 0;
+
 let lastDisconnectDetail = "";
+
 let running = false;
+
 let applyingHistory = false;
+
 let historyPrimed = false;
+
 let lastUserHasPage = false;
+
 let currentAssistant: HTMLElement | null = null;
+
 let currentAssistantText = "";
+
 let currentThinking: HTMLElement | null = null;
+
 let currentThinkingDetails: HTMLDetailsElement | null = null;
+
 let currentThinkingStart = 0;
 
 /**
@@ -1736,14 +2087,20 @@ let currentThinkingStart = 0;
  * 三处各自跟着那行的字号走，不强行统一成一个数。
  */
 const ORB_BOX_THINKING = 18;
+
 const ORB_BOX_CHIP = 16;
+
 const ORB_BOX_RECEIPT = 15;
+
 /** 运行状态行的球：比 chip 略大一点，它是整条状态行唯一的"在跑"指示。 */
 const ORB_BOX_STATUS = 24;
+
 /** 球句柄按宿主元素找回：折叠、结束时要把对应那个定格。 */
 const orbByHost = new WeakMap<HTMLElement, OrbHandle>();
+
 /** 用户发消息时刻：run 计时的起点（块体懒创建，先记时间戳）。 */
 let runStartAt = 0;
+
 interface WorkerLane {
   root: HTMLDetailsElement;
   body: HTMLElement;
@@ -1785,17 +2142,23 @@ interface RunHost {
 
 /** 当前 run；run 外为 null。 */
 let currentRun: RunHost | null = null;
+
 /** finishRun 刚收掉的那一块。全员 idle 后到达的 agent_end 复用它，禁止再开 loader。 */
 let lastRun: RunHost | null = null;
 
 /** 显式交付气泡：按 delivery.id 只渲染一次，状态更新不重复生成。 */
 const deliveredBubbles = new Map<string, HTMLElement>();
+
 const resultByConversation = new Map<string, { summary: string | null; remaining: string[]; unknown: boolean; speechFailed: boolean }>();
+
 /** T06：正式交付 → 结果可见的下一帧采样；只在验收模式读取。 */
 const deliveryTiming = new DeliveryPresentationTiming();
+
 /** Lead 当前 run 是否启用了 explicit deliveryMode。 */
 let leadDeliveryMode: "explicit" | null = null;
+
 let currentLeadDraft: HTMLElement | null = null;
+
 let currentLeadDraftDetails: HTMLDetailsElement | null = null;
 
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
@@ -1859,6 +2222,7 @@ function setStatus(mode: "off" | "on" | "retry", text: string): void {
   statusDot.className = `dot island-pulse-dot${mode === "on" ? " on" : mode === "retry" ? " retry" : ""}`;
   statusText.textContent = text;
   const pill = document.getElementById("status-pill");
+
   if (pill) {
     pill.title = text;
     pill.setAttribute("aria-label", text);
@@ -1870,16 +2234,25 @@ function setStatus(mode: "off" | "on" | "retry", text: string): void {
 
 // 跟随滚动：用户上翻后不再强拉到底，右下角浮出"回到底部"圆钮
 const toBottomBtn = document.createElement("button");
+
 toBottomBtn.id = "to-bottom";
+
 toBottomBtn.type = "button";
+
 toBottomBtn.title = "回到底部";
+
 toBottomBtn.hidden = true;
+
 toBottomBtn.appendChild(icon(ArrowDown));
+
 app.appendChild(toBottomBtn);
 
 let pinned = true;
+
 let runBodyPinned = true;
+
 let thinkPinned = true;
+
 let followingLive = false;
 
 function nearBottom(): boolean {
@@ -1888,11 +2261,13 @@ function nearBottom(): boolean {
 
 function followLive(el: HTMLElement | null, stick: boolean): void {
   if (!el) return;
+
   if (stick) {
     followingLive = true;
     el.scrollTop = el.scrollHeight;
     followingLive = false;
   }
+
   el.classList.toggle("overflowing", liveViewportOverflows(el.scrollHeight, el.clientHeight));
 }
 
@@ -1911,6 +2286,7 @@ messagesEl.addEventListener("scroll", () => {
 function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
   followLive(currentThinking, force || thinkPinned);
+
   if (force || pinned) messagesEl.scrollTop = messagesEl.scrollHeight;
   toBottomBtn.hidden = nearBottom();
 }
@@ -1924,9 +2300,11 @@ toBottomBtn.onclick = () => {
 function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   const div = document.createElement("div");
   div.className = "msg user";
+
   if (atts && atts.length > 0) {
     const thumbs = document.createElement("div");
     thumbs.className = "user-msg-attachments";
+
     for (const att of atts) {
       if (att.type === "image") {
         const img = document.createElement("img");
@@ -1938,11 +2316,14 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
           e.stopPropagation();
           window.open(img.src, "_blank");
         };
+
         thumbs.appendChild(img);
       }
     }
+
     div.appendChild(thumbs);
   }
+
   if (text) {
     const textEl = document.createElement("div");
     textEl.className = "user-msg-text";
@@ -1951,16 +2332,21 @@ function addUserMsg(text: string, atts?: Attachment[]): HTMLElement {
   } else if (!atts || atts.length === 0) {
     div.textContent = "";
   }
+
   appendToMessages(div);
+
   if (!applyingHistory) {
     companion.onSend(div);
   }
+
   scrollToEnd();
+
   return div;
 }
 
 function appendToMessages(node: HTMLElement): void {
   const resumeRoot = document.getElementById("resume-entry-root");
+
   if (resumeRoot && resumeRoot.parentElement === messagesEl) {
     messagesEl.insertBefore(node, resumeRoot);
   } else {
@@ -1972,11 +2358,13 @@ function addMsg(cls: string, text: string): HTMLElement {
   if (cls.split(/\s+/).includes("user")) {
     return addUserMsg(text);
   }
+
   const div = document.createElement("div");
   div.className = cls;
   div.textContent = text;
   appendToMessages(div);
   scrollToEnd();
+
   return div;
 }
 
@@ -2000,14 +2388,17 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
   const snapshots = event.entries.map((entry) => ({ ...entry, scope: { ...entry.scope } }));
   button.onclick = () => openMemoryDrawer({ action: event.action, entries: snapshots, message: event.message });
   receipt.append(mark, button);
+
   if (event.entries.length === 1) {
     const scope = document.createElement("span");
     scope.className = "memory-receipt-scope";
     scope.textContent = memoryScopeLabel(event.entries[0]!.scope);
     receipt.appendChild(scope);
   }
+
   messagesEl.appendChild(receipt);
   scrollToEnd();
+
   return receipt;
 }
 
@@ -2026,6 +2417,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const iconBox = document.createElement("span");
   iconBox.className = "run-icon";
   const orb = createOrb("thinking", ORB_BOX_STATUS);
+
   if (!applyingHistory) orb.setRunning(true);
   const orbMark = document.createElement("span");
   orbMark.className = "run-orb-mark";
@@ -2061,10 +2453,12 @@ function ensureRun(): NonNullable<typeof currentRun> {
   messagesEl.appendChild(root);
   const start = runStartAt || eventTime();
   timeEl.textContent = recordedDuration(start, eventTime()) ?? "";
+
   // 唯一状态行的耗时读数 100ms 刷新
   const timer = window.setInterval(() => {
     timeEl.textContent = recordedDuration(start, Date.now()) ?? "";
   }, 100);
+
   currentRun = {
     root,
     body,
@@ -2084,7 +2478,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
     collaboration: new CollaborationProgress(),
     collaborationEl,
   };
+
   if (!applyingHistory) companion.onStepStart(root);
+
   return currentRun;
 }
 
@@ -2096,14 +2492,18 @@ function castAsset(file: string): string {
 
 function paintLaneFace(lane: WorkerLane, id: string): void {
   const person = personFor(id);
+
   if (!person) return;
   lane.grok?.destroy();
   lane.grok = null;
   const kenney = (lane.waiting && person.kenneyWait) || person.kenney;
+
   if (kenney) {
     mountKenney(lane.face, castAsset(kenney.body), castAsset(kenney.face), 32);
+
     return;
   }
+
   lane.grok = mountGrok(lane.face, person, 32);
   lane.grok.setWaiting(lane.waiting);
 }
@@ -2119,6 +2519,7 @@ function setLaneWaiting(lane: WorkerLane, id: string, waiting: boolean): void {
 
 function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
   const existing = run.workers.get(id);
+
   if (existing) return existing;
   const person = personFor(id);
   const root = document.createElement("details");
@@ -2154,6 +2555,7 @@ function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
   reveal.append(body);
   root.append(summary, reveal);
   run.body.appendChild(root);
+
   const lane: WorkerLane = {
     root,
     body,
@@ -2167,8 +2569,10 @@ function ensureWorkerLane(id: string, run: RunHost): WorkerLane {
     grok: null,
     awaiting: new Set(),
   };
+
   if (person) paintLaneFace(lane, id);
   run.workers.set(id, lane);
+
   return lane;
 }
 
@@ -2181,19 +2585,27 @@ function laneForWorker(id: string): { lane: WorkerLane; run: RunHost; live: bool
     graphRunning: running,
     hasLastRun: lastRun != null,
   });
+
   if (policy === "drop") return null;
+
   if (policy === "reuse-last") {
     const run = lastRun;
+
     if (!run) return null;
     const lane = run.workers.get(id);
+
     return lane ? { lane, run, live: false } : null;
   }
+
   const run = policy === "current" && currentRun ? currentRun : ensureRun();
+
   return { lane: ensureWorkerLane(id, run), run, live: true };
 }
 
 const sessionRun = new Map<string, AgentRunState>();
+
 let teamView: TeamView | null = null;
+
 /** teamView 属于哪一次 run。旧 run 的 team 不能盖住新 run 的运行状态（见 shared/team-run.ts）。 */
 let teamRunId: string | null = null;
 
@@ -2217,18 +2629,23 @@ function noteRunStarted(runId: string | null | undefined): void {
 
 function applyTeamStatus(team: TeamView, runId: string | null | undefined): void {
   const decision = acceptTeamStatus({ team: teamView, runId: teamRunId }, team, runId, applyingHistory);
+
   if (decision.accept) applyTeamRun(decision.state);
 }
 
 function renderTeamCard(): void {
   const el = document.getElementById("team-card");
+
   if (!el) return;
   const view = teamView;
+
   if (!shouldShowTeamCard(view?.phase)) {
     el.hidden = true;
     el.replaceChildren();
+
     return;
   }
+
   el.hidden = false;
   const summary = document.createElement("div");
   summary.className = "team-summary";
@@ -2242,6 +2659,7 @@ function renderTeamCard(): void {
   const roster = document.createElement("div");
   roster.className = "team-roster";
   roster.hidden = true;
+
   for (const m of view!.members) {
     const row = document.createElement("div");
     row.className = "team-member";
@@ -2252,16 +2670,20 @@ function renderTeamCard(): void {
     name.textContent = `${m.role === "lead" ? "Lead" : displayNameFor(m.sessionId)} · ${memberBoundPageLabel(m)}`;
     const st = document.createElement("em");
     st.textContent = memberStatusLabel(m);
+
     if (m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed" || m.phase === "aborted") {
       st.classList.add("warn");
     }
+
     row.append(dot, name, st);
     roster.appendChild(row);
   }
+
   detail.onclick = () => {
     roster.hidden = !roster.hidden;
     detail.textContent = roster.hidden ? "详情" : "收起";
   };
+
   el.replaceChildren(summary, roster);
 }
 
@@ -2274,6 +2696,7 @@ function renderTaskStrip(): void {
   const secondaryEl = document.getElementById("task-result-secondary");
   const resumeRoot = document.getElementById("resume-entry-root");
   const hasResume = !!resumeRoot && !resumeRoot.hidden && resumeRoot.hasChildNodes();
+
   if (cardEl && primaryEl && secondaryEl) {
     const result = resultByConversation.get(selectedConversationId);
     const plainReply = !!result?.summary && !result.unknown && !result.remaining?.length && !result.speechFailed;
@@ -2282,6 +2705,7 @@ function renderTaskStrip(): void {
     secondaryEl.textContent = card.secondary;
     secondaryEl.hidden = !card.secondary;
   }
+
   const strip = document.getElementById("task-strip")!;
   strip.hidden = !Array.from(strip.children).some((child) => !(child as HTMLElement).hidden);
 }
@@ -2290,12 +2714,15 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   sessionRun.set(sessionId, state);
   const flags = panelLive(sessionRun.values(), teamView);
   running = flags.running;
+
   if (flags.userHasPage !== lastUserHasPage) {
     lastUserHasPage = flags.userHasPage;
     companion.onTakeover(flags.userHasPage);
   }
+
   takeoverBtn.hidden = !flags.takeoverVisible;
   abortBtn.hidden = !flags.abortVisible;
+
   // Send / Stop in-place morphing
   if (flags.abortVisible) {
     sendBtn.classList.add("stopping");
@@ -2306,10 +2733,13 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     sendBtn.title = "发送";
     sendBtn.hidden = !flags.sendVisible;
   }
+
   const statusPill = document.getElementById("status-pill");
+
   if (statusPill) {
     statusPill.classList.toggle("running", flags.live);
   }
+
   renderTaskStrip();
   inputEl.placeholder =
     teamView?.phase === "draining"
@@ -2321,14 +2751,17 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
           : flags.composer === "running"
             ? PLACEHOLDER_RUNNING
             : PLACEHOLDER_IDLE;
+
   if (flags.userHasPage && currentRun) {
     // 页面归用户：停掉"在跑"的读数与光球，状态行只留结果
     clearInterval(currentRun.timer);
   }
+
   if (currentRun) {
     if (teamView?.phase === "aborted") currentRun.orbActivity.stop();
     syncRunOrb(currentRun);
   }
+
   if (flags.finishRun) {
     closeBlocks();
     finishRun();
@@ -2354,6 +2787,7 @@ function syncRunOrb(run: RunHost): void {
   const state = run.orbActivity.state(lastUserHasPage);
   const mark = state in RUN_ORB_MARKS ? RUN_ORB_MARKS[state as keyof typeof RUN_ORB_MARKS] : null;
   run.orbMark.hidden = !mark;
+
   if (mark && run.orbMark.dataset.state !== state) {
     run.orbMark.dataset.state = state;
     run.orbMark.setAttribute("aria-label", mark.label);
@@ -2362,6 +2796,7 @@ function syncRunOrb(run: RunHost): void {
     graphic.setAttribute("aria-hidden", "true");
     run.orbMark.replaceChildren(graphic);
   }
+
   if (mark && state !== "completed") run.titleEl.textContent = mark.label;
   run.orb.setState(state);
   run.orb.setRunning(!applyingHistory && orbStateRuns(state));
@@ -2371,32 +2806,41 @@ function finishRun(): void {
   const run = currentRun;
   currentRun = null;
   runStartAt = 0;
+
   if (!run) return;
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
   // 空 run（纯文本回复，无思考/工具步骤）不留壳：状态行之外没有别的内容就整块撤掉
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
+
   if (!hasSteps) {
     run.root.remove();
+
     if (lastRun === run) lastRun = null;
+
     if (!applyingHistory) companion.onRunFinish();
+
     return;
   }
+
   run.collaboration.finish();
   renderCollaboration(run.collaborationEl, run.collaboration);
   run.root.classList.add("done");
   run.orbActivity.finish();
   syncRunOrb(run);
   const title = run.root.querySelector(".run-title");
+
   if (title) {
     const outcome = run.orbActivity.state();
     title.textContent = outcome === "failed" ? "执行失败 · 查看过程" : outcome === "stopped" ? "已停止 · 查看过程" : "查看执行过程";
   }
+
   // Keep the process in its original position above the final response.
   const duration = recordedDuration(run.start, eventTime());
   run.timeEl.textContent = duration ? `耗时 ${duration}` : "";
   run.root.open = false;
+
   if (!applyingHistory) companion.onRunFinish();
   scrollToEnd();
 }
@@ -2410,11 +2854,13 @@ function closeBlocks(): void {
   if (currentAssistant) attachAnswerActions(currentAssistant, inputEl);
   // 流式光标移除；进行中的思考块折叠并落定文案（带耗时）
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
+
   if (currentThinkingDetails) {
     orbByHost.get(currentThinkingDetails)?.setRunning(false);
     currentThinkingDetails.classList.remove("streaming");
     currentThinkingDetails.open = false;
     const label = currentThinkingDetails.querySelector("summary span");
+
     if (label) {
       label.textContent = currentThinkingStart
         ? `思考过程${recordedDuration(currentThinkingStart, eventTime()) ? ` ${recordedDuration(currentThinkingStart, eventTime())}` : ""}`
@@ -2424,28 +2870,33 @@ function closeBlocks(): void {
       window.setTimeout(() => label.classList.remove("settle-once"), 400);
     }
   }
+
   currentAssistant = null;
   currentAssistantText = "";
   currentThinking = null;
   currentThinkingDetails = null;
   currentThinkingStart = 0;
+
   if (currentLeadDraftDetails) {
     orbByHost.get(currentLeadDraftDetails)?.setRunning(false);
     currentLeadDraftDetails.classList.remove("streaming");
     currentLeadDraftDetails.open = false;
   }
+
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
 }
 
 function appendLeadDelta(delta: string): void {
   const run = ensureRun();
+
   if (!currentLeadDraft) {
     const details = document.createElement("details");
     details.className = "thinking streaming";
     details.open = false;
     const summary = document.createElement("summary");
     const orb = createOrb("composing", ORB_BOX_THINKING);
+
     if (!applyingHistory) orb.setRunning(true);
     orbByHost.set(details, orb);
     summary.appendChild(orb.el);
@@ -2458,6 +2909,7 @@ function appendLeadDelta(delta: string): void {
     currentLeadDraft = pre;
     currentLeadDraftDetails = details;
   }
+
   currentLeadDraft.appendChild(document.createTextNode(delta));
   scrollToEnd();
 }
@@ -2477,6 +2929,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       details.open = true;
       const summary = document.createElement("summary");
       const orb = createOrb("composing", ORB_BOX_THINKING);
+
       if (!applyingHistory) orb.setRunning(true);
       orbByHost.set(details, orb);
       summary.appendChild(orb.el);
@@ -2490,19 +2943,23 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
       });
       details.append(summary, pre);
       stepsContainer().appendChild(details);
+
       // 新思考块隔开前后工具调用：另起 chip 分组
       if (currentRun) currentRun.chipGroup = null;
       currentThinking = pre;
       currentThinkingDetails = details;
     }
+
     currentThinking.appendChild(document.createTextNode(delta));
   }
+
   scrollToEnd();
 }
 
 function shortParams(params: Record<string, unknown>): string {
   try {
     const s = JSON.stringify(params);
+
     return s.length > 200 ? `${s.slice(0, 197)}...` : s;
   } catch {
     return "";
@@ -2522,8 +2979,10 @@ function buildChipGroup(host: HTMLElement, before?: HTMLElement | null): ChipGro
   detail.className = "chip-detail";
   detail.hidden = true;
   root.append(row, detail);
+
   if (before) host.insertBefore(root, before);
   else host.appendChild(root);
+
   return { root, row, detail, expanded: null };
 }
 
@@ -2535,11 +2994,13 @@ function renderChipDetail(entry: ToolChipEntry): void {
   raw.className = "raw";
   raw.textContent = entry.name;
   detail.appendChild(raw);
+
   if (entry.paramsText) {
     const pre = document.createElement("pre");
     pre.textContent = entry.paramsText;
     detail.appendChild(pre);
   }
+
   if (entry.resultText) {
     const pre = document.createElement("pre");
     pre.className = "result";
@@ -2550,13 +3011,16 @@ function renderChipDetail(entry: ToolChipEntry): void {
 
 function toggleChipDetail(entry: ToolChipEntry): void {
   const group = entry.group;
+
   if (group.expanded === entry) {
     group.expanded = null;
     entry.chip.classList.remove("active");
     entry.chip.setAttribute("aria-expanded", "false");
     group.detail.hidden = true;
+
     return;
   }
+
   group.expanded?.chip.classList.remove("active");
   group.expanded?.chip.setAttribute("aria-expanded", "false");
   group.expanded = entry;
@@ -2572,26 +3036,34 @@ function onToolStart(
   sessionId?: string,
 ): void {
   const action = describeTool(ev.name, ev.params);
+
   if (ev.name === "await_message") {
     action.full = (currentRun ?? lastRun)?.collaboration.waitingFor(ev.params.from) ?? action.full;
   }
+
   if (ev.name === "post" && ev.params.to === "main" && ev.params.kind === "done") {
     const output = sessionId ? (currentRun ?? lastRun)?.collaboration.members.get(sessionId)?.output : null;
     action.full = `交回${output ?? "结果"}给主助手`;
   }
+
   let run: RunHost;
   let group: ChipGroup;
   let live = true;
+
   if (sessionId && !isLeadSession(sessionId)) {
     const found = laneForWorker(sessionId);
+
     if (!found) return;
     found.lane.chain.push(action.short);
     found.lane.chainEl.textContent = found.lane.chain.render();
+
     if (!found.lane.chipGroup) found.lane.chipGroup = buildChipGroup(found.lane.body, found.lane.lastLine);
     group = found.lane.chipGroup;
     run = found.run;
     live = found.live;
+
     if (live) run.lastToolShort = `${displayNameFor(sessionId)} · ${action.short}`;
+
     if (ev.name === "await_message") {
       found.lane.awaiting.add(ev.toolCallId);
       setLaneWaiting(found.lane, sessionId, true);
@@ -2601,17 +3073,21 @@ function onToolStart(
     closeBlocks();
     addChainStep(action.short);
     run.lastToolShort = action.short;
+
     if (!run.chipGroup) run.chipGroup = buildChipGroup(run.body);
     group = run.chipGroup;
   }
+
   run.orbActivity.observe({ kind: "tool_start", ...ev }, sessionId ?? "main");
   syncRunOrb(run);
+
   if (live && orbStateRuns(run.orbActivity.state(lastUserHasPage))) run.titleEl.textContent = `正在${action.full}`;
 
   const chip = document.createElement("button");
   chip.type = "button";
   chip.className = "chip";
   chip.setAttribute("aria-expanded", "false");
+
   // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态
   if (!applyingHistory) chip.classList.add("running");
   const dot = document.createElement("span");
@@ -2620,6 +3096,7 @@ function onToolStart(
   iconBox.className = "chip-icon";
   // 工具在跑时用光球（solving = 色带归位）；跑完定格在同一颗球上，不换成别的图标
   const chipOrb = createOrb("solving", ORB_BOX_CHIP);
+
   if (!applyingHistory) chipOrb.setRunning(true);
   iconBox.appendChild(chipOrb.el);
   const label = document.createElement("span");
@@ -2629,6 +3106,7 @@ function onToolStart(
   dur.className = "dur";
   dur.hidden = true;
   chip.append(dot, iconBox, label, dur);
+
   const entry: ToolChipEntry = {
     chip,
     dot,
@@ -2640,6 +3118,7 @@ function onToolStart(
     resultText: "",
     group,
   };
+
   chip.onclick = () => toggleChipDetail(entry);
   group.row.appendChild(chip);
   toolChips.set(ev.toolCallId, entry);
@@ -2648,61 +3127,79 @@ function onToolStart(
 
 function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string }): void {
   const run = currentRun ?? lastRun;
+
   if (run) {
     run.orbActivity.observe({ kind: "tool_end", name: "", ...ev });
     syncRunOrb(run);
   }
+
   for (const run of [currentRun, lastRun]) {
     if (!run) continue;
+
     for (const [id, lane] of run.workers) {
       if (lane.awaiting.delete(ev.toolCallId)) {
         setLaneWaiting(lane, id, lane.awaiting.size > 0);
       }
     }
   }
+
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
+
   if (!entry) return;
   entry.dot.className = `chip-dot ${chipState(true, ev.isError)}`;
   // B：收束——蓝边底色按 --m-move 退回常态
   entry.chip.classList.remove("running");
   // 球停下并定格：完成是收束，不是把球换掉
   entry.orb.setRunning(false);
+
   // 完成不是变色，是收束：点从放大处缩回原位（04 settle）
   if (!applyingHistory) {
     entry.dot.classList.add("settling");
     window.setTimeout(() => entry.dot.classList.remove("settling"), 500);
   }
+
   const duration = recordedDuration(entry.start, eventTime());
   entry.dur.hidden = duration === null;
   entry.dur.textContent = duration ?? "";
+
   if (ev.isError) entry.chip.classList.add("error");
   const text = ev.resultText ?? "";
+
   if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;
+
   // 详情正展开着这个 chip 时实时补上结果
   if (entry.group.expanded === entry) renderChipDetail(entry);
+
   if (!applyingHistory) companion.onStepDone();
   scrollToEnd();
 }
 
 function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
   const found = laneForWorker(sessionId);
+
   if (!found) return;
   const { lane, run } = found;
+
   if (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped") { run.orbActivity.observe(ev, sessionId); syncRunOrb(run); }
+
   if (run.collaboration.apply(sessionId, ev)) renderCollaboration(run.collaborationEl, run.collaboration);
+
   switch (ev.kind) {
     case "worker_task": {
       const chip = ev.spawnToolCallId ? toolChips.get(ev.spawnToolCallId)?.chip : null;
       const label = chip?.querySelector(".chip-label");
+
       if (label) label.textContent = `请了 ${displayNameFor(sessionId)} · ${ev.task}`;
       break;
     }
+
     case "text_delta": {
       lane.lastLine.hidden = false;
       lane.lastLine.textContent = ((lane.lastLine.textContent ?? "") + ev.delta).slice(-280);
       break;
     }
+
     case "thinking_delta":
       break;
     case "tool_start":
@@ -2723,19 +3220,25 @@ function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
     default:
       break;
   }
+
   scrollToEnd();
 }
 
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   if (sessionId && !isLeadSession(sessionId)) {
     handleWorkerEvent(sessionId, ev);
+
     return;
   }
+
   const progressRun = currentRun ?? lastRun;
+
   if (progressRun && (ev.kind === "error" || ev.kind === "agent_end" || ev.kind === "run_stopped")) { progressRun.orbActivity.observe(ev); syncRunOrb(progressRun); }
+
   if (progressRun && progressRun.collaboration.apply("main", ev)) {
     renderCollaboration(progressRun.collaborationEl, progressRun.collaboration);
   }
+
   switch (ev.kind) {
     case "memory":
       renderMemoryReceipt(ev);
@@ -2746,6 +3249,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       } else {
         appendDelta("assistant", ev.delta);
       }
+
       break;
     case "thinking_delta":
       appendDelta("thinking", ev.delta);
@@ -2778,48 +3282,65 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       const bubble=deliveredBubbles.get(s.id);
       const state=bubble?{official:bubble.dataset.streaming===undefined,streaming:bubble.dataset.streaming==='true',cancelled:bubble.dataset.streaming==='cancelled'}:undefined;
       const plan=deliveryPresentation({kind:'stream',phase:s.phase},state);
+
       if(plan==='ignore'||plan==='status')break;
+
       if(plan==='mark_cancelled'){bubble!.dataset.streaming='cancelled';bubble!.title='这次回答未完成';break;}
+
       const target=bubble??addMsg('msg assistant markdown','');
+
       if(!bubble){target.dataset.deliveryId=s.id;target.dataset.deliveryKind=s.kind;deliveredBubbles.set(s.id,target);}
+
       target.dataset.streaming='true';
       target.innerHTML=renderMarkdown(s.text);placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
     }
+
     case "turn_start":
       break;
     case "notice":
       if(ev.plan){
         const key=`plan:${ev.plan.conversationId}:${ev.plan.id}`;
         const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果待确认':'未执行')}\n${s.text}`).join('\n');
-        const previous=receiptMessages.get(key);if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
+        const previous=receiptMessages.get(key);
+
+if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
         // 任务条材料只认这张回执：accepted/applied 才把这次发出的材料升级为「已随任务送入」。
         taskBar.noteReceipt(ev.receipt);
+
         if (ev.receipt.conversationId === selectedConversationId) {
           if (ev.receipt.action === "abort") {
             if (ev.receipt.status === "accepted" || ev.receipt.status === "applied") taskBar.noteStopAccepted();
             else if (ev.receipt.status === "rejected" || ev.receipt.status === "failed") taskBar.noteControlResult("stop", false, ev.receipt.message);
           }
         }
+
         resumeEntry.noteReceipt(ev.receipt);
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
         const previous = receiptMessages.get(key);
         const restoreFocus = previous?.contains(document.activeElement);
         const receipt = renderReceipt(ev.receipt, selectedConversationId, previous, forkReceipt);
         const ordinary = receiptCopy(ev.receipt, selectedConversationId).collapsed;
+
         if (previous) previous.replaceWith(receipt);
+
         if (ordinary) {
           let archive = messagesEl.querySelector<HTMLDetailsElement>('.receipt-archive');
+
           if (!archive) {
             archive = document.createElement('details'); archive.className = 'receipt-archive';
             const summary = document.createElement('summary'); summary.textContent = '查看任务回执'; archive.append(summary); messagesEl.append(archive);
           }
+
           const runKey = ev.receipt.runId ?? ev.receipt.requestId;
           let run = Array.from(archive.querySelectorAll<HTMLElement>('.receipt-run')).find(el => el.dataset.runId === runKey);
+
           if (!run) { run = document.createElement('div'); run.className = 'receipt-run'; run.dataset.runId = runKey; archive.append(run); }
+
           run.append(receipt);
         } else messagesEl.append(receipt);
         receiptMessages.set(key, receipt);
+
         if (restoreFocus) receipt.querySelector<HTMLElement>('summary,button')?.focus({preventScroll:true});
         scrollToEnd();
       } else addMsg("msg notice", ev.message);
@@ -2844,11 +3365,13 @@ function handleUserDelivery(delivery: UserDelivery): void {
   if (!delivery || typeof delivery.id !== "string" || !delivery.id) return;
   // 任务身份：交付只落在自己的会话；跨会话送达不渲染、不入结果卡。
   const cid = delivery.conversationId;
+
   if (!cid || cid !== selectedConversationId) return;
   const receivedAt = performance.now();
   const currentRunId = conversations.get(cid)?.runId ?? null;
   // 晚到的旧 run 交付只能归档到自己的历史位置，不能改写当前结果卡。
   const staleForStrip = delivery.kind !== "ack" && currentRunId !== null && delivery.runId !== null && delivery.runId !== currentRunId;
+
   if ((delivery.kind === "finding" || delivery.kind === "reply") && !staleForStrip) {
     const previous = resultByConversation.get(cid);
     const facts = delivery.facts;
@@ -2863,21 +3386,28 @@ function handleUserDelivery(delivery: UserDelivery): void {
   }
 
   const existing = deliveredBubbles.get(delivery.id);
+
   const existingState = existing
     ? { official: existing.dataset.streaming === undefined, streaming: existing.dataset.streaming === 'true', cancelled: existing.dataset.streaming === 'cancelled' }
     : undefined;
+
   const plan = deliveryPresentation({ kind: 'delivery' }, existingState);
+
   if (plan === 'status') {
     const oldStatus = existing!.dataset.deliveryStatus ?? "";
     const oldRank = DELIVERY_STATUS_RANK[oldStatus] ?? -1;
     const newRank = DELIVERY_STATUS_RANK[delivery.status] ?? -1;
+
     if (newRank > oldRank) existing!.dataset.deliveryStatus = delivery.status;
+
     return;
   }
+
   if (plan === 'update_text') {
     existing!.innerHTML = renderMarkdown(delivery.text);
     delete existing!.dataset.streaming;
     appendDeliveryFacts(existing!, delivery);
+
     if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(existing!, inputEl);
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
@@ -2885,6 +3415,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     voiceUI.deliver?.(delivery);
     scrollToEnd();
     scheduleDeliveryVisible(existing!, receivedAt);
+
     return;
   }
 
@@ -2893,6 +3424,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   const bubble = addMsg("msg assistant markdown", "");
   bubble.innerHTML = renderMarkdown(delivery.text);
   appendDeliveryFacts(bubble, delivery);
+
   if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble, inputEl);
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
@@ -2906,6 +3438,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
 /** 事实链块只加在结果正文之后；没有字段就不加，不回填旧记录。 */
 function appendDeliveryFacts(bubble: HTMLElement, delivery: UserDelivery): void {
   const facts = renderDeliveryFacts(delivery, { openSource: (url) => { window.open(url, "_blank", "noopener"); } });
+
   if (facts) bubble.append(facts);
 }
 
@@ -2928,8 +3461,10 @@ function clearDemoView(): void {
 function send(msg: ClientMessage): boolean {
   if (!port || !transportConnected) return false;
   const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
+
   try {
     port.postMessage(envelope);
+
     return true;
   } catch {
     return false;
@@ -2943,7 +3478,9 @@ const resumeEntry = new ResumeEntry({
   getContext: async () => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+
       if (!tab?.id) return null;
+
       return { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
     } catch {
       return null;
@@ -2984,7 +3521,9 @@ const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send,()=>
 }));
 
 const diagnosticRecord = composerEl.querySelector<HTMLElement>('.voice-record');
+
 if (diagnosticRecord) diagnosticRecord.hidden = true;
+
 document.querySelector('#composer-menu')?.addEventListener('beforetoggle', (event) => {
   if ((event as ToggleEvent).newState !== 'open') return;
   const button = document.querySelector('#composer-more')!.getBoundingClientRect();
@@ -2992,70 +3531,106 @@ document.querySelector('#composer-menu')?.addEventListener('beforetoggle', (even
   menu.style.left = `${Math.max(8, button.right - 160)}px`;
   menu.style.top = `${Math.max(8, button.top - 58)}px`;
 });
+
 document.querySelector('#voice-diagnostics-open')?.addEventListener('click', () => {
   document.querySelector<HTMLElement>('#composer-menu')?.hidePopover();
+
   if (!diagnosticRecord) return;
   diagnosticRecord.hidden = !diagnosticRecord.hidden;
   const details = diagnosticRecord.querySelector<HTMLDetailsElement>('details');
+
   if (details) details.open = !diagnosticRecord.hidden;
 });
 
 function handleServerMessage(raw: string): void {
   const msg = parseServerMessage(raw);
+
   if (!msg) return;
+
   if (consentPanel.receive(msg)) return;
-  if (msg.type === "voice") { voiceUI.receive(msg); return; }
+
+  if (msg.type === "voice") { voiceUI.receive(msg);
+
+ return; }
+
   if (msg.type === "memory_result") {
     handleMemoryResult(msg);
+
     return;
   }
+
   if (msg.type === "skill_result") {
     if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
+
     if (msg.action === "list" && msg.ok) {
       if (msg.requestId !== skillRequest) return;
       skillEntries = (msg.skills ?? []).map(skill => ({ skill, runs: msg.runs?.[skill.id] ?? [] }));
       learnedCandidates = msg.candidates ?? [];
       renderSkills();
+
       return;
     }
+
     if (msg.action === "candidate_save" || msg.action === "candidate_dismiss") {
       if (msg.requestId !== skillRequest) return;
       addMsg(msg.ok ? "msg" : "msg error", !msg.ok ? `没有保存更改：${msg.error}` : msg.action === "candidate_save" ? "做法已保存，下次同类任务会先检查能否直接复用。" : "这份做法不会保存，也不会自动执行。");
-      void refreshSkills(); return;
+      void refreshSkills();
+
+ return;
     }
+
     if (msg.action === "run" && msg.requestId === skillRequest) {
-      if (!msg.ok || !msg.run) { addMsg("msg error", `这次没跑成：${msg.error ?? "未知原因"}`); void refreshSkills(); return; }
+      if (!msg.ok || !msg.run) { addMsg("msg error", `这次没跑成：${msg.error ?? "未知原因"}`); void refreshSkills();
+
+ return; }
+
       const outcome = msg.run;
       addMsg(outcome.ok ? "msg" : "msg error", outcome.ok
         ? `照上次那样跑完了：${outcome.steps} 步 · ${Math.max(0.1, outcome.elapsedMs / 1000).toFixed(1)} 秒。`
           + (outcome.skipped?.length ? `第 ${outcome.skipped.join("、")} 步没认出来，已跳过。` : "")
         : `跑到第 ${outcome.failedStep ?? "?"} 步停下了：${outcome.error ?? ""}`);
       void refreshSkills(); // 刷新事实行：跑过几次、上次结果
+
       return;
     }
+
     if ((msg.action === "note" || msg.action === "rollback") && msg.requestId === skillRequest) {
-      if (!msg.ok) { addMsg("msg error", `没做成：${msg.error ?? "未知原因"}`); return; }
+      if (!msg.ok) { addMsg("msg error", `没做成：${msg.error ?? "未知原因"}`);
+
+ return; }
+
       addMsg("msg", msg.action === "note"
         ? `已确认记下：下次重新示范「${msg.skill?.name ?? "这份技能"}」时会提醒你。`
         : `已回到上一版：${msg.skill?.name ?? ""}（现在是第 ${msg.skill?.version ?? "?"} 版）`);
       void refreshSkills();
+
       return;
     }
-    if (msg.action === "forget" && msg.ok) { void refreshSkills(); return; }
+
+    if (msg.action === "forget" && msg.ok) { void refreshSkills();
+
+ return; }
+
     demoCompile.disabled = false;
     demoCompile.textContent = "编译成脚本";
+
     if (msg.ok && msg.skill) { renderSkillResult(msg.skill); redoSkillId = null; redoSkillVersion = null; }
     else if (msg.requestId === skillRequestId) addMsg("msg error", `编译没成：${msg.error ?? "未知原因"}`);
+
     return;
   }
+
   if (msg.type === "conversation_created" || msg.type === "conversation_updated") {
     upsertConversation(msg.conversation);
+
     if (msg.type === 'conversation_created' && msg.requestId) {
       const pending = receiptForks.get(msg.requestId);
+
       if (pending) {
         clearTimeout(pending.timer); receiptForks.delete(msg.requestId);
         const {request} = pending;
         const moved: TaskActionRequest = {requestId:crypto.randomUUID(),conversationId:msg.conversation.id,source:'text',action:'start',expectedRunId:null,forkedFrom:{conversationId:request.conversationId,requestId:request.requestId},text:request.text,context:request.context,attachments:request.attachments};
+
         if (send({type:'task_action',conversationId:msg.conversation.id,request:moved})) { pending.resolve(); selectConversation(msg.conversation.id); }
         else pending.reject(new Error('新会话已创建，但原请求尚未发出；连接恢复后可重试。'));
       }
@@ -3065,15 +3640,21 @@ function handleServerMessage(raw: string): void {
       conversationRequest = null;
       selectConversation(msg.conversation.id);
     }
+
     renderConversations();
+
     return;
   }
+
   if (msg.type === "conversation_list") {
     for (const c of msg.conversations) upsertConversation(c);
     renderConversations();
+
     return;
   }
+
   if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
+
   switch (msg.type) {
     case "hello_ok":
       setStatus("on", "已连接");
@@ -3093,6 +3674,7 @@ function handleServerMessage(raw: string): void {
       // T05 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
       resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
       renderTaskStrip();
+
       // T03 任务条：只信视图自己的任务身份，跨会话/旧 run 的视图不改当下这一条。
       if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;
@@ -3111,76 +3693,101 @@ function handleServerMessage(raw: string): void {
 function handleBgMessage(envelope: BgToPanel): void {
   if (envelope.kind === "conversations") {
     if (envelope.resumeReading) finishBootSession();
+
     for (const c of envelope.conversations) upsertConversation(c);
+
     if (bootFreshSession) resolveBootSession(envelope.selectedConversationId, envelope.conversations.length > 0);
     else if (envelope.selectedConversationId !== selectedConversationId || !conversationReady) {
       selectConversation(envelope.selectedConversationId, false);
     }
+
     renderConversations();
+
     return;
   }
+
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
       && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result") return;
     handleServerMessage(JSON.stringify(envelope.msg));
+
     return;
   }
+
   if (envelope.kind === "history") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
+
     if (bootFreshSession) {
       // 打开进入尚未定会话时仍要让这一次的正式交付出现，不能等历史回放。
       for (const entry of envelope.entries) {
         const item = entry.item;
+
         if (item.kind === "server" && item.msg.type === "agent_event" && (item.msg.event.kind === "user_delivery" || item.msg.event.kind === "user_delivery_stream")) {
           handleAgentEvent(item.msg.event, item.msg.sessionId);
         }
       }
+
       return;
     }
+
     applyHistory(envelope.entries, envelope.replay === true);
+
     return;
   }
+
   if (envelope.kind === "mode") {
     // background 是运行时权威：以其为准并收敛本地存储
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     applyMode(envelope.mode, false);
+
     return;
   }
+
   if (envelope.kind === "observe") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     observing = envelope.observing;
     observedCandidates = envelope.candidates;
     observedPatterns = envelope.patterns;
     renderObserve();
+
     return;
   }
+
   if (envelope.kind === "demo") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     demoState = { recording: envelope.recording, steps: envelope.steps, truncated: envelope.truncated };
     renderDemo();
+
     return;
   }
+
   if (envelope.kind === "ask_selection") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     applyPendingAsk(envelope.ask);
+
     return;
   }
+
   if (envelope.kind === "delivery") {
     if ((envelope.conversationId ?? "default") !== selectedConversationId) return;
     handleDeliveryReceipt(envelope.seq, envelope.ok, envelope.original);
+
     return;
   }
+
   if (envelope.kind !== "conn") return;
   // 连接状态
   transportConnected = envelope.state === "connected";
   consentPanel.setConnected(transportConnected);
   renderConversations();
+
   if (envelope.state === "connected") {
     // 等 hello_ok 带模型名到达；先亮绿灯
     setStatus("on", "已连接");
     voiceUI.reconnected();
     // 面板重开或重连：补取当前只读视图，摘要不靠旧缓存。
     queryTaskView();
+
     // 清单可能先于连接到达：连上后补一次打开决策，别等兜底时限。
     if (bootFreshSession && bootInheritedId !== null) resolveBootSession(bootInheritedId, conversations.size > 0);
   } else if (envelope.state === "connecting") {
@@ -3192,30 +3799,38 @@ function handleBgMessage(envelope: BgToPanel): void {
       sessionRun.clear();
       setTeamView(null);
     }
+
     conversationRequest = null;
     renderConversations();
     modelPicker.reset();
     setStatus("off", "未连接");
+
     // 同一失败原因只提示一次，重试循环不刷屏
     if (envelope.detail && envelope.detail !== lastDisconnectDetail) {
       lastDisconnectDetail = envelope.detail;
       addMsg("msg notice", envelope.detail);
     }
+
     if (envelope.detail?.includes("token")) showSetup(envelope.detail);
   }
 }
 
 let lastHistorySeq = 0;
+
 let historyOccurredAt: number | undefined;
+
 function eventTime(): number { return historyEventTime(applyingHistory, historyOccurredAt); }
+
 /** seq → 用户气泡。delivery 回执只标记自己的气泡，绝不触碰输入框（issue #4 竞态边界）。 */
 const userBubbles = new Map<number, HTMLElement>();
 
 /** background→agent 上行确定失败的回执：标记未送达并提供原文重试；迟到/重复/未知 seq 忽略。 */
 function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage): void {
   if (ok) return;
+
   if (!Number.isInteger(seq)) return;
   const bubble = userBubbles.get(seq);
+
   if (!bubble || bubble.dataset.failed === "true") return;
   bubble.dataset.failed = "true";
   bubble.classList.add("undelivered");
@@ -3230,28 +3845,34 @@ function handleDeliveryReceipt(seq: number, ok: boolean, original: ClientMessage
   retry.onclick = () => {
     if (!send(original)) {
       noticeSendFailed();
+
       return;
     }
+
     bubble.dataset.retried = "true";
     retry.disabled = true;
     retry.textContent = "已重试";
   };
+
   bubble.append(tag, retry);
 }
 
 function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
   const fresh: PanelHistoryEntry[] = [];
   applyingHistory = true;
+
   try {
     for (const entry of entries) {
       if (entry.seq <= lastHistorySeq) continue;
       fresh.push(entry);
       historyOccurredAt = entry.occurredAt;
+
       if (entry.item.kind === "user") {
         if (!running) runStartAt = eventTime();
         const bubble = addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
+
         if (entry.item.undelivered) handleDeliveryReceipt(entry.seq, false, entry.item.undelivered.original);
       }
       else handleServerMessage(JSON.stringify(entry.item.msg));
@@ -3261,34 +3882,43 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
     applyingHistory = false;
     historyOccurredAt = undefined;
   }
+
   // 实时增量与历史都走此入口。批次处理完后，只恢复仍在运行的主球；
   // 完成块已由 finishRun 收束，不会在回放时重新转动。
   if (currentRun && !restoring) syncRunOrb(currentRun);
   const replay = !historyPrimed && fresh.length > 1;
   historyPrimed = true;
   updateStarterVisibility();
+
   if (!replay) {
     const lastUser = [...fresh].reverse().find((e) => e.item.kind === "user");
+
     if (lastUser) {
       const bubble = messagesEl.querySelector(".msg.user:last-of-type");
+
       if (bubble) companion.onSend(bubble as HTMLElement);
     }
   }
+
   scrollToEnd(false);
 }
 
 function connect(): void {
   let p: chrome.runtime.Port;
+
   try {
     p = chrome.runtime.connect({ name: PANEL_PORT_NAME });
   } catch {
     scheduleReconnect();
+
     return;
   }
+
   port = p;
   p.onMessage.addListener((msg: BgToPanel) => handleBgMessage(msg));
   p.onDisconnect.addListener(() => {
     voiceUI.disconnect();
+
     if (port === p) port = null;
     scheduleReconnect();
   });
@@ -3316,10 +3946,13 @@ function showSetup(error?: string): void {
 
 setupSave.onclick = () => {
   const t = tokenInput.value.trim();
+
   if (!t) {
     setupErr.textContent = "请输入 token";
+
     return;
   }
+
   void chrome.storage.local.set({ [TOKEN_KEY]: t });
   setupEl.hidden = true;
   const retry: PanelToBg = { kind: "retry" };
@@ -3343,6 +3976,7 @@ attachments = new AttachmentsManager({
     if (!scope || scope === selectedConversationId) {
       autoResize();
       saveDraft();
+
       if (attachmentsReady) syncTaskBarDraft();
     } else {
       const draft = conversationDrafts.get(scope) ?? { text: "", attachments: [], ask: null };
@@ -3355,15 +3989,20 @@ attachments = new AttachmentsManager({
     addMsg("msg error", errMsg);
   },
 });
+
 attachmentsReady = true;
 
 // ── 任务条（T03）：消费 task_view，材料事实来自实际发出的请求与回执 ──
 function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string } | null> {
   if (typeof chrome === "undefined" || !chrome.tabs?.get) return Promise.resolve(null);
+
   return new Promise((resolve) => {
     try {
       chrome.tabs.get(tabId, (tab) => {
-        if (chrome.runtime.lastError || !tab) { resolve(null); return; }
+        if (chrome.runtime.lastError || !tab) { resolve(null);
+
+ return; }
+
         resolve({ title: tab.title, url: tab.url });
       });
     } catch {
@@ -3374,6 +4013,7 @@ function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string }
 
 function activeTabId(): Promise<number | null> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) return Promise.resolve(null);
+
   // 与 background attachPageContext 同口径：先最后聚焦窗口，再兜底任一活动标签页。
   return chrome.tabs.query({ active: true, lastFocusedWindow: true })
     .then(([tab]) => tab ?? chrome.tabs.query({ active: true }).then(([fallback]) => fallback).catch(() => undefined))
@@ -3394,6 +4034,7 @@ const taskBar = new TaskBar({
     else takeoverBtn.click();
   },
 });
+
 window.addEventListener("pagehide", () => taskBar.dispose());
 
 /**
@@ -3402,15 +4043,18 @@ window.addEventListener("pagehide", () => taskBar.dispose());
  */
 function syncTaskBarDraft(): void {
   const atts = attachments.getAttachments().map((a) => ({ id: a.id, name: a.name }));
+
   const page = pendingAsk
     ? { tabId: pendingAsk.tabId, title: pendingAsk.title, url: pendingAsk.url }
     : activeTabInfo
       ? { tabId: activeTabInfo.id, title: activeTabInfo.title, url: activeTabInfo.url }
       : null;
+
   const selection = pendingAsk?.text ?? null;
   const hasText = inputEl.value.trim().length > 0;
   taskBar.setDraft(page || selection || atts.length ? { page, selection, attachments: atts } : null, hasText);
 }
+
 syncTaskBarDraft();
 
 function hostOf(url: string): string {
@@ -3423,6 +4067,7 @@ function hostOf(url: string): string {
 
 function applyPendingAsk(ask: PendingAsk): void {
   pendingAsk = ask;
+
   if (!askCiteEl || !askCiteHost || !askCiteText) return;
   askCiteHost.textContent = hostOf(ask.url);
   askCiteText.textContent = ask.text;
@@ -3434,7 +4079,9 @@ function applyPendingAsk(ask: PendingAsk): void {
 
 function clearPendingAsk(): void {
   pendingAsk = null;
+
   if (askCiteEl) askCiteEl.hidden = true;
+
   if (askCiteText) askCiteText.textContent = "";
   void chrome.storage?.session?.remove(ASK_STORE);
   saveDraft();
@@ -3457,9 +4104,12 @@ function sendInput(): void {
   const held=panelLive(sessionRun.values(), teamView).userHasPage;
   const text = inputEl.value.trim();
   const pendingAtts = attachments.getAttachments();
+
   if (!text && pendingAtts.length === 0) return;
+
   // steer 归入进行中的 run，不动计时起点；新消息重开计时
   if (!running&&!held) runStartAt = Date.now();
+
   const context = pendingAsk
     ? {
         tabId: pendingAsk.tabId,
@@ -3468,8 +4118,10 @@ function sendInput(): void {
         selection: { text: pendingAsk.text },
       }
     : undefined;
+
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
+
   const request = {
     requestId: crypto.randomUUID(),
     conversationId: selectedConversationId,
@@ -3480,15 +4132,22 @@ function sendInput(): void {
     context,
     attachments: clientAttachments,
   };
+
   const sent = send(running||held ? { type: "task_action", request } : { type: "task_action", request });
-  if (!sent) { noticeSendFailed(); return; }
+
+  if (!sent) { noticeSendFailed();
+
+ return; }
+
   // 本地反馈：快照这次真正送出的材料；回执 accepted 之前只显示「发送中」
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
+
   // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。
   if (!context) {
     void (async () => {
       try {
         const id = await activeTabId();
+
         // 期间切了会话就不再补这条材料（任务条已重置）。
         if (id == null || conversation !== selectedConversationId) return;
         const info = (await resolveTabPage(id)) ?? { title: "", url: "" };
@@ -3496,6 +4155,7 @@ function sendInput(): void {
       } catch { /* 拿不到页面信息就只展示已知材料，不猜 */ }
     })();
   }
+
   sendFailNotified = false;
   inputEl.value = "";
   clearPendingAsk();
@@ -3507,6 +4167,7 @@ function sendInput(): void {
 function stopCurrentTask(): void {
   if (!send({ type: "abort" })) return;
   taskBar.noteControlRequested("stop");
+
   if (currentRun) { currentRun.orbActivity.stop(); syncRunOrb(currentRun); }
 }
 
@@ -3517,19 +4178,25 @@ sendBtn.onclick = () => {
     sendInput();
   }
 };
+
 inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBarDraft(); });
+
 window.addEventListener("pagehide", saveDraft);
+
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     sendInput();
   }
 });
+
 takeoverBtn.onclick = () => {
   taskBar.noteControlRequested("takeover");
   port?.postMessage({ kind: "control", action: "takeover", conversationId: selectedConversationId } satisfies PanelToBg);
 };
+
 abortBtn.onclick = stopCurrentTask;
 
 armBootDecisionTimeout();
+
 connect();

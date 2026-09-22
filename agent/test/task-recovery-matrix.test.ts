@@ -18,46 +18,60 @@ vi.mock('../src/run-trace.js',async importOriginal=>({
 }));
 
 const dirs:string[]=[];
+
 afterEach(()=>dirs.splice(0).forEach(dir=>rmSync(dir,{recursive:true,force:true})));
+
 const page={tabId:7,title:'表单',url:'https://fixture.test/form'};
+
 const image:Attachment={id:'image-1',name:'original.png',type:'image',mimeType:'image/png',dataBase64:'AQABAA=='};
 
 function checkpoint(attachments?:Attachment[]){
   const original=new TaskProgress('default');original.request('填写并保存',page,attachments);
   original.observe({type:'agent_event',event:{kind:'agent_start'}});
-  const progress=new TaskProgress('default');progress.restoreResults(original.snapshot());return progress;
+  const progress=new TaskProgress('default');progress.restoreResults(original.snapshot());
+
+return progress;
 }
+
 function sessionFixture(progress:TaskProgress,sessionManager?:SessionManager){
   const prompt=vi.fn(async(_text:string,_options?:unknown)=>{});
   const rpc={setPageTarget:vi.fn(),call:vi.fn(async()=>({tabId:7,url:page.url,text:'Current form'}))};
   const raw={model:{id:'fixture',provider:'test'},isStreaming:false,prompt,sessionManager,clearQueue:vi.fn(),abort:vi.fn(async()=>{})};
   const wrapper=new (BrowserAgentSession as any)(raw,null,{emit:(event:any)=>progress.observe({type:'agent_event',event}),setStatus:vi.fn()},null,null,30000,null,rpc) as BrowserAgentSession;
   wrapper.bindConversationContext(()=>progress.snapshot());
+
   return {wrapper,rpc,prompt,raw};
 }
 
 function managerFixture(){
   let emit:(message:ServerMessage)=>void=()=>{};
+
   let streaming=false;
   const persist=vi.fn();
   const abort=vi.fn(()=>{streaming=false;emit({type:'agent_event',event:{kind:'agent_end'}});});
   const messages:ServerMessage[]=[];
+
   const manager=new ConversationManager(async(_id,send)=>{
     emit=send;
+
     return {
       session:{available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>streaming,
         persistTaskResults:persist,abort,availableModels:async()=>[],waitForStop:async()=>{}},
       fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),abortTeam:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},consent:{cancelAll:vi.fn(),bindContext:vi.fn(),list:()=>[]},dispose:vi.fn(),
-      handleMessage:(message:any)=>{if(message.type==='user_message'){streaming=true;emit({type:'agent_event',event:{kind:'agent_start'}});}if(message.type==='abort')abort();},
+      handleMessage:(message:any)=>{if(message.type==='user_message'){streaming=true;emit({type:'agent_event',event:{kind:'agent_start'}});}
+
+if(message.type==='abort')abort();},
     } as any;
   },message=>messages.push(message));
+
   return {manager,persist,abort,messages,event:(event:any)=>emit({type:'agent_event',event})};
 }
 
 describe('P0 recovery matrix — deterministic production boundaries',()=>{
   it('persists a disconnected in-flight write as interrupted, never completed by late agent_end',async()=>{
     const h=managerFixture();
+
     try{
       await h.manager.ensureDefault();
       await h.manager.handleMessage({type:'user_message',text:'填写后提交',context:page});
@@ -92,8 +106,10 @@ describe('P0 recovery matrix — deterministic production boundaries',()=>{
     await vi.waitFor(()=>expect(start).toHaveBeenCalledOnce());
     const stop=vi.fn(async()=>({status:'applied' as const,message:'cancelled',runId:'run'}));
     const cancel=dispatcher.dispatch({...resume,requestId:'abort',action:'abort'},'任务',stop);
+
     try{await vi.waitFor(()=>expect(stop).toHaveBeenCalledOnce(),{timeout:100});}
     finally{release();await first;await cancel;}
+
     await (dispatcher.dispatch as any)(resume,'任务',start,{deferredResume:true});
     expect(start).toHaveBeenCalledOnce();
   });
@@ -104,7 +120,9 @@ describe('P0 recovery matrix — deterministic production boundaries',()=>{
     expect(restored.snapshot()).toMatchObject({state:'interrupted',runId:original.snapshot().runId});
   });
   it('still stops the runtime when checkpoint persistence fails during disconnect',async()=>{
-    const h=managerFixture();try{
+    const h=managerFixture();
+
+try{
       await h.manager.ensureDefault();await h.manager.handleMessage({type:'user_message',text:'填写表单',context:page});
       h.persist.mockImplementation(()=>{throw Error('disk unavailable');});
       expect(()=>h.manager.disconnect()).not.toThrow();expect(h.abort).toHaveBeenCalledOnce();

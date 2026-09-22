@@ -11,7 +11,9 @@ import { ConversationManager } from "../src/conversation-manager.js";
 import type { ClientMessage, PageContext, ServerMessage } from "../../shared/protocol.js";
 
 const CONVERSATION_ID = "default";
+
 const TAB_ID = 77;
+
 const IDENTITY_ERROR = "原任务已停止或发生变化，操作未执行。";
 
 function pageContext(): PageContext {
@@ -23,12 +25,15 @@ function extensionGate() {
   let published: string | null | undefined;
   const aborted = new Set<string>();
   const rejections: string[] = [];
+
   return {
     apply(message: ServerMessage): void {
       if (message.type === "conversation_list") {
         published = message.conversations.find((c) => c.id === CONVERSATION_ID)?.runId;
+
         return;
       }
+
       if ((message.type === "conversation_updated" || message.type === "conversation_created")
         && message.conversationId === CONVERSATION_ID) {
         published = message.conversation.runId;
@@ -41,10 +46,13 @@ function extensionGate() {
     /** 与 executeToolCall 的 checkIdentity() 同一判定。 */
     checkToolCall(message: ServerMessage): string | null {
       const runId = (message as { runId?: string | null }).runId;
+
       if (runId && (aborted.has(runId) || published !== runId)) {
         rejections.push(IDENTITY_ERROR);
+
         return IDENTITY_ERROR;
       }
+
       return null;
     },
     get publishedRunId(): string | null | undefined {
@@ -66,6 +74,7 @@ function harness() {
 
   const factory = async (_id: string, emit: (message: ServerMessage) => void) => {
     emitFrame = emit;
+
     const session = {
       modelName: () => "test/model",
       available: true,
@@ -76,6 +85,7 @@ function harness() {
         if (context && typeof context.tabId === "number") {
           emit({ type: "tool_call", id: `snapshot-${context.tabId}`, name: "snapshot", params: { tabId: context.tabId } });
         }
+
         streaming = true;
         emit({ type: "agent_event", event: { kind: "agent_start" } });
         emit({ type: "status", state: "running" });
@@ -90,6 +100,7 @@ function harness() {
         streaming = false;
       }),
     };
+
     const runtime = {
       session,
       fleet: { reset: vi.fn(), setTabCoordinator: vi.fn(), list: () => [], get: () => undefined, bindConversationContext: vi.fn() },
@@ -99,18 +110,23 @@ function harness() {
           if (streaming) emit({ type: "tool_call", id: `snapshot-steer-${TAB_ID}`, name: "snapshot", params: { tabId: TAB_ID } });
           else session.sendUserMessage(message.text, message.context);
         }
+
         if (message.type === "steer") void session.steerCurrentTask(message.text, message.context).catch(() => {});
+
         if (message.type === "abort") void session.abort();
       },
     };
+
     return runtime as never;
   };
 
   const manager = new ConversationManager(factory as never, (message) => {
     emitted.push(message);
     gate.apply(message);
+
     if (message.type === "tool_call") gate.checkToolCall(message);
   });
+
   return {
     manager,
     emitted,
@@ -135,6 +151,7 @@ describe("新任务预观察的身份次序", () => {
     const publishedIndex = h.emitted.findIndex(
       (m) => m.type === "conversation_updated" && m.conversation.runId === runId,
     );
+
     expect(publishedIndex).toBeGreaterThanOrEqual(0);
     expect(publishedIndex).toBeLessThan(h.emitted.findIndex((m) => m.type === "tool_call" && m.name === "snapshot"));
     expect(h.gate.rejections).toEqual([]);
@@ -143,11 +160,13 @@ describe("新任务预观察的身份次序", () => {
   it("task_action start 在首个预观察之前发布身份", async () => {
     const h = harness();
     await h.manager.ensureDefault();
+
     const receipt = await h.manager.dispatchTaskAction({
       requestId: "pre-observe-start", conversationId: CONVERSATION_ID,
       source: "text", action: "start", expectedRunId: null,
       text: "只填姓名", context: pageContext(),
     });
+
     expect(receipt.status).toBe("accepted");
     const frame = h.frames().find(f => f.name === "snapshot")!;
     expect(frame).toBeDefined();

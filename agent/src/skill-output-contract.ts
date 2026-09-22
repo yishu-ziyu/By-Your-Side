@@ -33,12 +33,15 @@ export function deliverableContractInput(skill: Skill): DeliverableContractInput
  * 不能假设执行器会向用户呈现读到的页面内容。校准记录见集成验收。
  */
 export const DELIVERABLE_MIN = .80;
+
 const CALL_TIMEOUT_MS = 2000;
 
 export async function judgeDeliverableContract(input: DeliverableContractInput, signal?: AbortSignal): Promise<number> {
   const key = readTypeSafeKey();
+
   if (!key) throw new Error("TypeSafe 凭据不可用");
   const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS);
+
   const response = await fetch("https://api.typesafe.ai/v1/systemone", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -59,9 +62,12 @@ export async function judgeDeliverableContract(input: DeliverableContractInput, 
       },
     }),
   });
+
   if (!response.ok) throw new Error(`TypeSafe HTTP ${response.status}`);
   const raw = await response.json() as { answers?: Record<string, { noul?: number }> };
   const value = raw.answers?.workflow_only?.noul;
+
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new Error("TypeSafe 未返回可用的判断");
+
   return value;
 }

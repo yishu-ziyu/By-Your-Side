@@ -14,16 +14,25 @@ import {until} from './isolated-extension.mts';
 import {loadConfig} from '../../agent/src/config.js';
 
 if (!process.argv.includes('--headless')) throw new Error('需要显式 --headless：本驱动只允许无头隔离运行。');
+
 const argOf = (name: string, fallback?: string): string | undefined => {
   const index = process.argv.indexOf(name);
+
   return index === -1 ? fallback : process.argv[index + 1];
 };
+
 const outRoot = resolve(argOf('--report', 'out/acceptance/t05-connect-repro')!);
+
 mkdirSync(outRoot, {recursive: true});
+
 const model = loadConfig().model;
+
 const events: HostHolder['current']['events'] = [];
+
 const log: {at: number; kind: string; detail?: string}[] = [];
+
 const push = (kind: string, detail?: string): void => { log.push({at: Date.now(), kind, ...(detail ? {detail} : {})}); };
+
 const instrument = (host: HostHandle, tag: string): void => {
   host.wss.on('connection', (client: {on: (event: string, handler: () => void) => void}) => {
     push(`${tag}:connection`);
@@ -32,9 +41,13 @@ const instrument = (host: HostHandle, tag: string): void => {
 };
 
 const holder: HostHolder = {current: await startHost(model, join(outRoot, 'host'), events)};
+
 instrument(holder.current, 'host1');
+
 const {iso, panel} = await startIsolatedPanel(holder.current);
+
 let result = 'incomplete';
+
 try {
   await until(() => holder.current.socket?.readyState === 1 || undefined, 30_000, 'first connect');
   push('first connect ready');
@@ -58,5 +71,7 @@ try {
   await iso.close().catch(() => {});
   await stopHost(holder.current).catch(() => {});
 }
+
 console.log(JSON.stringify({result, log}, null, 2));
+
 process.exit(result === 'connection-stable' ? 0 : 1);

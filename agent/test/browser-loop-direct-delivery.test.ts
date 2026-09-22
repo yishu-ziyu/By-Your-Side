@@ -1,13 +1,20 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/display-fast-path.js',()=>({displayFastPathEnabled:vi.fn(()=>false),displaySteerFastPathEnabled:()=>false,decideDisplay:vi.fn()}));
+
 vi.mock('../src/skill-fast-loop.js',()=>({trySkillFastLoop:vi.fn(async()=>({kind:'miss',reason:'no saved skill'})),loadFastSkillOptions:vi.fn(async()=>[])}));
+
 vi.mock('../src/fast-task.js',()=>({decideFastTask:vi.fn(async()=>({kind:'miss',reason:'no_candidate'}))}));
+
 // 合成会话不写用户真实 trace（与 session-pre-observation.test.ts 同策略）。
 vi.mock('../src/run-trace.js',()=>({RunTrace:class{begin(){}correlate(){}record(){}event(){}stage(){return{end(){}}}},
   sanitizeTrace:(text:string)=>String(text)}));
+
 vi.mock('../src/browser-decision-model.js',()=>({decideBrowserCandidate:vi.fn()}));
+
 // 语义复核替身：直接交付不得新增一次裁决调用（只计调用，不改变交付门槛）。
 vi.mock('../src/goal-reasoning-review.js',()=>({reviewTaskGoal:vi.fn(async()=>({matched:true,probability:.99,reason:'test'}))}));
+
 import {BrowserAgentSession} from '../src/session.js';
 import {TaskProgress} from '../src/task-progress.js';
 import {createBrowserTools} from '../src/tools.js';
@@ -28,7 +35,9 @@ import type {TaskProgressSnapshot} from '../../shared/voice.js';
 afterEach(()=>{vi.unstubAllEnvs();vi.clearAllMocks();vi.mocked(decideBrowserCandidate).mockReset();vi.mocked(reviewTaskGoal).mockClear();});
 
 const REQUEST='把当前页第一条置顶评论的正文填到笔记编辑器，不要保存';
+
 const CONTEXT:PageContext={tabId:77,title:'评论页',url:'https://test.invalid/comments'};
+
 const page={id:'obs-1',tabId:77,documentId:'doc-1',url:CONTEXT.url,observedAt:Date.now(),source:'accessibility' as const,text:'页面文本',truncated:false,controls:[{ref:'@1',role:'button',name:'保存',disabled:false}]};
 
 interface Wrapped {
@@ -46,6 +55,7 @@ interface Wrapped {
 }
 
 type DecisionKind='done'|'click';
+
 /** satisfied-conditions=已规划且全部满足；material-*=带原文材料目标的复制任务；pending=仍有未完成项。 */
 type PlanVariant='satisfied-conditions'|'material-captured'|'material-missing'|'pending';
 
@@ -67,16 +77,22 @@ function harness(options:HarnessOptions={}){
   const events:AgentUiEvent[]=[];
   const toolNames:string[]=[];
   const statuses:string[]=[];
+
   const record=(event:AgentUiEvent)=>{
     events.push(event);
+
     if(event.kind==='tool_start')toolNames.push(event.name);
     progress.observe({type:'agent_event',sessionId:'main',event});
   };
+
   const callbacks={emit:vi.fn(record),setStatus:vi.fn((state:string)=>{statuses.push(state);progress.observe({type:'status',state} as never);})};
+
   const rpc={
     call:vi.fn(async(name:string,params:Record<string,unknown>)=>{
       if(name==='snapshot'&&params.decision===true)return {tabId:CONTEXT.tabId,text:'页面文本',observation:{...page,observedAt:Date.now()}};
+
       if(name==='snapshot')return {tabId:CONTEXT.tabId,url:CONTEXT.url,text:'页面文本'};
+
       if(name==='click')return {effect:{changed:false}};
       throw new Error(`unexpected rpc ${name}`);
     }),
@@ -87,7 +103,9 @@ function harness(options:HarnessOptions={}){
     ensureToolCall:vi.fn(),
     markCallRejected:vi.fn(),
   };
+
   const Session=BrowserAgentSession as unknown as new (...args:unknown[])=>BrowserAgentSession;
+
   const raw={
     get isStreaming(){return false;},
     model:{id:'test'},
@@ -99,11 +117,14 @@ function harness(options:HarnessOptions={}){
     sendCustomMessage:vi.fn(async (_message?:unknown)=>{}),
     subscribe:vi.fn(()=>()=>{}),
   };
+
   const wrapped=new Session(raw,null,callbacks,null,null,undefined,null,rpc) as unknown as Wrapped;
+
   const internal=wrapped as unknown as {
     verifyAnswerDelivery:(text:string,signal?:AbortSignal)=>Promise<void>;
     verifyPartialDelivery:(text:string,signal?:AbortSignal)=>Promise<void>;
   };
+
   wrapped.explicitDelivery=true;
   wrapped.skillStore=null;
   wrapped.modeState={value:'act'};
@@ -142,13 +163,16 @@ function harness(options:HarnessOptions={}){
   vi.mocked(decideBrowserCandidate).mockImplementation(async input=>{
     options.onDecide?.(handle);
     const kind=decisions[Math.min(decisionIndex++,decisions.length-1)]!;
+
     return {observationId:input.page.id,candidateId:kind==='click'?'c1':'done',confidence:.99,model:'test'};
   });
+
   /** task_goals 写账本的同一组 API（install/verify）建立目标方案；材料与 capture_page_material 落账形状一致。 */
   const plan=(variant:PlanVariant)=>{
     const snapshot=progress.snapshot();
     const revision=snapshot.goalPlan!.revision;
     const runId=snapshot.runId!;
+
     const definitions:TaskGoalDefinition[]=variant==='satisfied-conditions'
       ? [
           {id:'g-editor',description:'「笔记」编辑器含完整评论正文，未保存',criterion:'编辑器读回等于已核验原文材料，且没有点击保存',requirements:['requirement-1'],kind:'condition'},
@@ -158,17 +182,23 @@ function harness(options:HarnessOptions={}){
           {id:'g-source',description:'来源：当前页第一条置顶评论的完整正文',criterion:'原文材料与页面选定正文逐字一致',requirements:['requirement-1'],kind:'material',materialId:'comment'},
           {id:'g-editor',description:'目标：「笔记」编辑器含完整评论正文，未保存',criterion:'编辑器读回等于原文材料，且没有点击保存',requirements:['requirement-1'],kind:'field',materialId:'comment'},
         ];
+
     progress.goals.install(revision,definitions,1);
     const evidence={observationId:'obs-proof',tabId:CONTEXT.tabId,verifiedAt:Date.now()};
+
     if(variant==='satisfied-conditions'){
       progress.goals.verify(revision,'g-editor',{matched:true,reason:'编辑器读回与已核验原文一致',evidence});
       progress.goals.verify(revision,'g-check',{matched:true,reason:'复选框读回为已勾选',evidence});
+
       return;
     }
+
     if(variant==='material-captured')captureMaterial(runId,revision);
     progress.goals.verify(revision,'g-source',{matched:true,reason:'已捕获并核对本项目标的完整原文',evidence:{...evidence,materialId:'comment'}});
+
     if(variant!=='pending')progress.goals.verify(revision,'g-editor',{matched:true,reason:'编辑器读回与原文材料一致',evidence:{...evidence,materialId:'comment'}});
   };
+
   /** 与检查点恢复相同入口写入本轮材料库：runId/revision 取当前任务，不新建第二份存储。 */
   const captureMaterial=(runId:string,revision:string)=>{
     (wrapped as unknown as {taskEvidence:{restore(value:unknown):void}}).taskEvidence.restore({
@@ -177,13 +207,17 @@ function harness(options:HarnessOptions={}){
       selection:{kind:'text',spans:[{start:0,end:9}]},
     });
   };
+
   const settle=async()=>{for(let i=0;i<40;i++)await new Promise(resolve=>setTimeout(resolve,0));};
+
   const send=async(text=REQUEST,context:PageContext|undefined=CONTEXT)=>{
     wrapped.sendUserMessage(text,context);
     await settle();
   };
+
   const deliveries=()=>events.filter(event=>event.kind==='user_delivery');
   const handle={progress,raw,wrapped,events,toolNames,deliveries,settle,send,plan,captureMaterial,statuses:()=>statuses};
+
   return handle;
 }
 
@@ -192,8 +226,10 @@ function started(options:HarnessOptions={}){
   const h=harness(options);
   h.progress.request(REQUEST,CONTEXT);
   const plan=options.plan??'satisfied-conditions';
+
   if(plan==='none')h.progress.goals.clear();
   else h.plan(plan);
+
   return h;
 }
 
@@ -213,6 +249,7 @@ describe('浏览器循环收尾：已有完整有效宿主证据时直接交付'
     expect(deliveries).toHaveLength(1);
     const delivery=deliveries[0]!;
     expect(delivery.kind==='user_delivery'&&delivery.delivery.kind).toBe('finding');
+
     if(delivery.kind!=='user_delivery')throw new Error('expected a delivery');
     expect(delivery.delivery.text).toContain('已核对完成');
     expect(delivery.delivery.text).toContain('「笔记」编辑器含完整评论正文，未保存');
@@ -318,6 +355,7 @@ describe('浏览器循环收尾：已有完整有效宿主证据时直接交付'
       host.progress.request('另一个新任务',CONTEXT);
       expect(host.progress.snapshot().runId).not.toBe(before);
     }});
+
     await h.send();
     expect(h.raw.prompt).not.toHaveBeenCalled();
     expect(h.deliveries()).toHaveLength(0);

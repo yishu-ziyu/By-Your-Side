@@ -2,19 +2,31 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {ConversationManager} from '../src/conversation-manager.js';
 import type {ServerMessage} from '../../shared/protocol.js';
+
 const cleanup:Array<()=>void>=[];
+
 afterEach(()=>cleanup.splice(0).forEach(fn=>fn()));
+
 function setup(action='observe') {
- const messages:ServerMessage[]=[];let emit:(m:ServerMessage)=>void=()=>{};let streaming=false;let held=false;
+ const messages:ServerMessage[]=[];let emit:(m:ServerMessage)=>void=()=>{};
+
+let streaming=false;let held=false;
  const startTask=vi.fn(()=>{streaming=true;emit({type:'agent_event',event:{kind:'agent_start',deliveryMode:'explicit'}});});
  const answerVoiceObservation=vi.fn(async()=> '我只能看页面，不能圈画。');
  const composeUserDelivery=vi.fn(async()=> '我不能在页面圈画。');
  const session:any={available:true,modelName:()=> 'fixture',isHeld:()=>held,isStreaming:()=>streaming, startTask,abort:vi.fn(),classifyVoiceInput:vi.fn(async()=>({steps:[{action,text:'ignored classifier paraphrase',target:null}]})),answerVoiceObservation,composeUserDelivery,bindDeliveryRun:vi.fn(),bindConversationContext:vi.fn()};
  const rpc={rejectAll:vi.fn(),call:vi.fn(async()=>({tabId:7,url:'https://fixture.test',title:'当前页面',text:'X对象',imageBase64:'AQ==',documentId:'doc-7',capturedAt:123,scope:'viewport'}))};
- const manager=new ConversationManager(async(_id,sink)=>{emit=sink;return {session,rpc,fleet:{teamView:()=>null,isGroupHeld:()=>held,reset:vi.fn(),abortTeam:vi.fn()},handleMessage:vi.fn(),dispose:()=>{}} as any;},m=>messages.push(m));cleanup.push(()=>manager.dispose());
+
+ const manager=new ConversationManager(async(_id,sink)=>{emit=sink;
+
+return {session,rpc,fleet:{teamView:()=>null,isGroupHeld:()=>held,reset:vi.fn(),abortTeam:vi.fn()},handleMessage:vi.fn(),dispose:()=>{}} as any;},m=>messages.push(m));
+
+cleanup.push(()=>manager.dispose());
  const route=(text:string,stillCurrent=()=>true)=>manager.routeVoiceInput('default',text,null,stillCurrent,{requestId:'request-one',voiceId:'voice-one',turn:1,runId:manager.getTaskProgress('default')?.runId??null,input:{context:{tabId:7,url:'https://fixture.test',title:'当前页面'},observation:{token:'test-grant',tabId:7}}});
+
  return {manager,session,rpc,messages,route,emit:(event:any)=>emit({type:'agent_event',event}),held:()=>{held=true;},finish:()=>{streaming=false;emit({type:'agent_event',event:{kind:'agent_end'}});}};
 }
+
 describe('S1: ordinary voice reaches the capable execution session',()=>{
  for(const action of ['observe','chat','steer'])it(`an idle ${action} classification cannot trap a request in a tool-less answer`,async()=>{
   const h=setup(action);await h.manager.ensureDefault();const text=action==='observe'?'找到当前页的X并圈出来。':'你可以圈出来的。';

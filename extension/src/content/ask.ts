@@ -17,28 +17,37 @@ interface SelectionSnapshot {
 
 export function selectionSnapshot(): SelectionSnapshot | null {
   const selection = getSelection();
+
   if (!selection || selection.isCollapsed || !selection.rangeCount) {
     return null;
   }
+
   if (isEditableTarget(selection.anchorNode?.parentElement ?? null) || isEditableTarget(selection.focusNode?.parentElement ?? null)) {
     return null;
   }
+
   const raw = selection.toString().trim();
   const text = clipSelection(raw);
+
   if (!text) {
     return null;
   }
+
   const range = selection.getRangeAt(0).cloneRange();
   const rect = range.getBoundingClientRect();
+
   if (!rect.width && !rect.height) {
     return null;
   }
+
   const node = range.commonAncestorContainer;
   const parent = node instanceof Element ? node : node.parentElement;
   const paragraph = parent?.closest('p,li,pre,blockquote,h1,h2,h3,td');
+
   const surrounding = paragraph ? [paragraph.previousElementSibling, paragraph, paragraph.nextElementSibling]
     .filter((e): e is HTMLElement => e instanceof HTMLElement && !isEditableTarget(e) && !e.querySelector('input,textarea,[contenteditable]') && e.checkVisibility())
     .map(e => e.innerText).join('\n').slice(0, READING_CONTEXT_LIMIT) : '';
+
   return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
@@ -46,6 +55,7 @@ function boot(): void {
   if (window !== window.top || document.contentType !== 'text/html') {
     return;
   }
+
   document.querySelector(`[${HOST}]`)?.remove();
   const host = document.createElement('div');
   host.setAttribute(HOST, '1');
@@ -64,12 +74,15 @@ function boot(): void {
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
   const el = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
+
   for (const item of root.querySelectorAll('.identity')) {
     item.append(icon(Sparkles));
   }
+
   for (const [action, symbol] of [['close', X], ['copy', Copy], ['retry', RotateCcw], ['handoff', PanelRight]] as const) {
     el(`[data-act="${action}"]`).prepend(icon(symbol));
   }
+
   const surface = el('.surface');
   const messages = el('.messages');
   const input = el<HTMLTextAreaElement>('textarea');
@@ -86,48 +99,62 @@ function boot(): void {
   let pageUrl = location.href;
   let renderedThread = '';
   let renderedTurns = 0;
+
   const answers: Array<{
     node: HTMLElement;
     status: HTMLElement;
     text: string;
   }> = [];
+
   const drafts = new Map<string, string>();
   let pinned = false;
   const highlightName = `by-your-side-reading`;
+
   const highlights = (CSS as typeof CSS & {
     highlights?: Map<string, unknown>;
   }).highlights;
+
   const HighlightClass = (globalThis as unknown as {
     Highlight?: new (...ranges: Range[]) => unknown;
   }).Highlight;
+
   const highlightStyle = document.createElement('style');
   highlightStyle.textContent = `::highlight(${highlightName}) { background: #dfe8f8; color: inherit; }`;
   document.documentElement.append(highlightStyle);
+
   const report = (message = '', informational = false) => {
     error.textContent = message;
     error.hidden = !message;
     error.classList.toggle('info', informational);
   };
+
   async function rpc(type: string, extra: Record<string, unknown> = {}): Promise<any> {
     const result = await chrome.runtime.sendMessage({ type, threadId: record?.threadId, ...extra });
+
     if (!result?.ok) {
       throw new Error(result?.error ?? '扩展连接已断开，请刷新页面后重试。');
     }
+
     return result;
   }
+
   const rememberDraft = () => {
     if (record) {
       drafts.set(record.threadId, input.value);
     }
   };
+
   function position(): void {
     if (!visible || !snapshot) {
       return;
     }
+
     const r = snapshot.range?.startContainer.isConnected ? snapshot.range.getBoundingClientRect() : snapshot.rect;
+
     if (r.bottom < 0 || r.top > innerHeight) {
       pinned = true;
     }
+
     const margin = 12;
     const available = Math.max(r.top - margin - 8, innerHeight - r.bottom - margin - 8);
     surface.style.maxHeight = expanded ? `${Math.min(innerHeight - margin * 2, pinned ? 540 : Math.max(220, available))}px` : '';
@@ -140,11 +167,13 @@ function boot(): void {
     surface.style.top = `${top}px`;
     surface.style.transformOrigin = above >= margin ? 'bottom center' : 'top center';
   }
+
   function highlight(): void {
     if (snapshot?.range && HighlightClass) {
       highlights?.set(highlightName, new HighlightClass(snapshot.range));
     }
   }
+
   function show(keyboard = false): void {
     visible = true;
     surface.hidden = false;
@@ -152,6 +181,7 @@ function boot(): void {
     surface.classList.toggle('enter', !keyboard);
     position();
   }
+
   function hide(): void {
     const restoreFocus = Boolean(root.activeElement);
     rememberDraft();
@@ -159,49 +189,62 @@ function boot(): void {
     surface.hidden = true;
     restore.hidden = !record;
     highlights?.delete(highlightName);
+
     if (restoreFocus && lastFocus?.isConnected) {
       lastFocus.focus({ preventScroll: true });
     }
   }
+
   function update(next: ReadingRecord): void {
     if (record?.threadId === next.threadId && record.updatedAt > next.updatedAt) {
       return;
     }
+
     record = next;
+
     if (next.handoffError) {
       report(next.handoffError);
     }
     else if (next.transferredConversationId) {
       report();
     }
+
     if (expanded) {
       render();
     }
   }
+
   function render(): void {
     const source = record?.source ?? snapshot?.source;
     surface.classList.toggle('expanded', expanded);
     el('.bar').hidden = expanded;
+
     for (const selector of ['.header', '.quote', '.composer']) {
       el(selector).hidden = !expanded;
     }
+
     messages.hidden = !expanded || !record?.turns.length;
     el('.footer').hidden = !expanded || !record?.turns.length;
+
     if (!expanded || !source) {
       position();
+
       return;
     }
+
     el('.site').textContent = new URL(source.url).hostname;
     el('.quote summary').textContent = `“${source.text.replace(/\s+/g, ' ').slice(0, 64)}${source.text.length > 64 ? '…' : ''}”`;
     el('.quote p').textContent = source.text;
     el('.limit').hidden = !source.truncated;
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 36;
+
     if (renderedThread !== record?.threadId || renderedTurns > (record?.turns.length ?? 0)) {
       messages.replaceChildren();
       answers.length = 0;
       renderedThread = record?.threadId ?? '';
       renderedTurns = 0;
     }
+
     for (const [index, turn] of (record?.turns ?? []).entries()) {
       if (!answers[index]) {
         const wrapper = document.createElement('article');
@@ -218,21 +261,29 @@ function boot(): void {
         messages.append(wrapper);
         answers.push({ node, status, text: '' });
       }
+
       const item = answers[index]!;
+
       if (item.text !== turn.answer) {
         item.node.innerHTML = DOMPurify.sanitize(renderMarkdownHtml(turn.answer), { FORBID_TAGS: ['img', 'video', 'audio', 'iframe', 'style', 'form', 'input', 'button'] });
+
         for (const link of item.node.querySelectorAll('a')) {
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
         }
+
         item.text = turn.answer;
       }
+
       item.status.textContent = turn.state === 'pending' ? '正在回答…' : turn.state === 'streaming' ? '正在生成…' : turn.state === 'stopped' ? '已停止，内容已保留' : turn.state === 'error' ? turn.error ?? '回答未完成，可以重试。' : '';
     }
+
     renderedTurns = record?.turns.length ?? 0;
+
     if (atBottom) {
       messages.scrollTop = messages.scrollHeight;
     }
+
     const busy = readingBusy(record);
     const last = record?.turns.at(-1);
     submit.replaceChildren(icon(busy ? Square : ArrowUp));
@@ -246,15 +297,19 @@ function boot(): void {
     el('[data-act="retry"]').hidden = !last || !['error', 'stopped'].includes(last.state);
     position();
   }
+
   async function enter(keyboard = false): Promise<void> {
     if (!snapshot) {
       return;
     }
+
     const version = selectionVersion;
     const result = await rpc('reading_open', { source: snapshot.source });
+
     if (version !== selectionVersion) {
       return;
     }
+
     rememberDraft();
     record = result.record;
     input.value = drafts.get(record!.threadId) ?? '';
@@ -266,20 +321,26 @@ function boot(): void {
     highlight();
     input.focus({ preventScroll: true });
   }
+
   async function send(question: string, retry = false): Promise<void> {
     if (!record || sending || !question.trim()) {
       return;
     }
+
     const threadId = record.threadId;
     sending = true;
     report();
     render();
+
     try {
       const result = await rpc('reading_send', { question, retry });
+
       if (record?.threadId !== threadId) {
         return;
       }
+
       update(result.record);
+
       if (record?.turns.at(-1)?.state !== 'error') {
         input.value = '';
         rememberDraft();
@@ -293,13 +354,17 @@ function boot(): void {
       render();
     }
   }
+
   root.addEventListener('click', event => {
     const action = (event.target as Element).closest('[data-act]')?.getAttribute('data-act');
+
     if (!action) {
       return;
     }
+
     void (async () => {
       report();
+
       if (action === 'ask') {
         await enter();
       }
@@ -312,9 +377,11 @@ function boot(): void {
       }
       else if (action === 'restore') {
         const restored = await rpc('reading_get');
+
         if (!restored.record) {
           throw new Error('阅读记录已过期，请重新划词。');
         }
+
         record = restored.record;
         snapshot ??= { source: record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
         expanded = true;
@@ -331,12 +398,14 @@ function boot(): void {
       }
       else if (action === 'handoff') {
         await rpc('reading_handoff');
+
         if (!record?.transferredConversationId) {
           report('正在交接阅读记录…', true);
         }
       }
     })().catch(err => {
       report(err.message);
+
       if (!visible) {
         expanded = true;
         render();
@@ -348,6 +417,7 @@ function boot(): void {
   el('.bar').addEventListener('pointerdown', event => event.preventDefault());
   el<HTMLFormElement>('.composer').addEventListener('submit', event => {
     event.preventDefault();
+
     if (readingBusy(record)) {
       void rpc('reading_stop').then(result => update(result.record)).catch(err => report(err.message));
     }
@@ -364,16 +434,20 @@ function boot(): void {
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
+
       if (!readingBusy(record)) {
         void send(input.value);
       }
     }
   });
+
   function changedSelection(keyboard = false): void {
     const next = selectionSnapshot();
+
     if (!next || root.activeElement || next.source.text === snapshot?.source.text && visible) {
       return;
     }
+
     rememberDraft();
     selectionVersion++;
     snapshot = next;
@@ -383,6 +457,7 @@ function boot(): void {
     render();
     show(keyboard);
   }
+
   document.addEventListener('pointerdown', event => {
     if (!event.composedPath().includes(host)) {
       hide();
@@ -417,11 +492,13 @@ function boot(): void {
     void rpc('reading_leave').catch(() => {
     });
   });
+
   // SPA navigation has no content-script reinjection; release the old document UI.
   const navigation = () => {
     if (location.href === pageUrl) {
       return;
     }
+
     void rpc('reading_leave').catch(() => {
     });
     pageUrl = location.href;
@@ -432,17 +509,21 @@ function boot(): void {
     hide();
     restore.hidden = true;
   };
+
   window.addEventListener('popstate', navigation);
   setInterval(navigation, 1000);
   chrome.runtime.onMessage.addListener(raw => {
     if (raw?.type === 'reading_update' && raw.record?.threadId === record?.threadId) {
       update(raw.record);
     }
+
     if (raw?.type === 'ask-open' || raw?.type === 'ask-hotkey') {
       snapshot = selectionSnapshot();
+
       if (!snapshot && typeof raw.text === 'string' && clipSelection(raw.text)) {
         snapshot = { source: { text: clipSelection(raw.text)!, surrounding: '', truncated: raw.text.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range: null, rect: new DOMRect(200, 100, 0, 0) };
       }
+
       if (snapshot) {
         selectionVersion++;
         void enter(true).catch(err => report(err.message));

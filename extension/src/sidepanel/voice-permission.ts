@@ -3,6 +3,7 @@ export async function requestMicrophonePermission(getMedia = () => navigator.med
   const stream = await getMedia();
   stream.getTracks().forEach(track => track.stop());
 }
+
 export async function microphonePermissionState(): Promise<PermissionState | 'unknown'> {
   try { return (await navigator.permissions.query({name:'microphone' as PermissionName})).state; }
   catch { return 'unknown'; }

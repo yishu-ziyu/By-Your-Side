@@ -6,14 +6,19 @@ var ORB_STATES = [
   "thinking",
   "speaking"
 ];
+
 var ERROR_COLOR_FROM = "#fb7185";
+
 var ERROR_COLOR_TO = "#f43f5e";
+
 var hexToRgb = (hex) => {
   const clean = hex.replace("#", "");
   const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
   const n = Number.parseInt(full, 16);
+
   return [n >> 16 & 255, n >> 8 & 255, n & 255];
 };
+
 var stateMotion = (state) => {
   switch (state) {
     case "listening":
@@ -26,6 +31,7 @@ var stateMotion = (state) => {
       return "none";
   }
 };
+
 var stateEnergy = (state, t) => {
   switch (state) {
     case "listening":
@@ -42,7 +48,9 @@ var stateEnergy = (state, t) => {
       return 0;
   }
 };
+
 var approach = (current, target, rate, dt) => current + (target - current) * (1 - Math.exp(-rate * dt));
+
 var createStateMix = (initial = "idle") => {
   const weights = {
     idle: 0,
@@ -53,36 +61,51 @@ var createStateMix = (initial = "idle") => {
     error: 0,
     disabled: 0
   };
+
   weights[initial] = 1;
   const keys = Object.keys(weights);
+
   const update = (state, dt, rate = 6) => {
     let total = 0;
+
     for (const key of keys) {
       const target = key === state ? 1 : 0;
       const next = approach(weights[key], target, rate, dt);
       weights[key] = target === 0 && next < 1e-3 ? 0 : next;
       total += weights[key];
     }
+
     if (total > 0) {
       for (const key of keys) weights[key] /= total;
     }
+
     return weights;
   };
+
   return { weights, update };
 };
+
 var PARTICLE_COUNT = 720;
+
 var TWO_PI = Math.PI * 2;
+
 var GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
 var STATIC_TIME = 1.7;
+
 var ERROR_FROM_RGB = hexToRgb(ERROR_COLOR_FROM);
+
 var ERROR_TO_RGB = hexToRgb(ERROR_COLOR_TO);
+
 var mixRgb = (a, b, m) => [
   a[0] + (b[0] - a[0]) * m,
   a[1] + (b[1] - a[1]) * m,
   a[2] + (b[2] - a[2]) * m
 ];
+
 var buildSphere = (count) => {
   const points = [];
+
   for (let i = 0; i < count; i += 1) {
     const y = 1 - i / (count - 1) * 2;
     const radiusAtY = Math.sqrt(1 - y * y);
@@ -96,8 +119,10 @@ var buildSphere = (count) => {
       tone: i * 0.5436890126 % 1
     });
   }
+
   return points;
 };
+
 function mountOrb(canvas, size, getState) {
   const ctx = canvas.getContext("2d");
   const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -115,6 +140,7 @@ function mountOrb(canvas, size, getState) {
   let connectingPhase = 0;
   const angleX = 0.32;
   let levelS = 0;
+
   const render = (dt, isStatic = false) => {
     const st = stateRef.current;
     const spd = speedRef.current;
@@ -123,12 +149,15 @@ function mountOrb(canvas, size, getState) {
     let ripple = 0;
     let pulse = 0;
     let flow = 0;
+
     for (const s of ORB_STATES) {
       const kind = stateMotion(s);
+
       if (kind === "ripple") ripple += w[s];
       else if (kind === "pulse") pulse += w[s];
       else if (kind === "flow") flow += w[s];
     }
+
     const wIdle = w.idle;
     const wConn = w.connecting;
     const wError = w.error;
@@ -161,6 +190,7 @@ function mountOrb(canvas, size, getState) {
     ctx.clearRect(0, 0, size, size);
     const glow = ripple + pulse + flow;
     ctx.globalCompositeOperation = !isStatic && glow > 0.5 ? "lighter" : "source-over";
+
     for (let i = 0; i < points.length; i += 1) {
       const p = points[i];
       const x1 = p.x * cosY - p.z * sinY;
@@ -170,22 +200,28 @@ function mountOrb(canvas, size, getState) {
       const depth = (z2 + 1) / 2;
       const perspective = 0.65 + depth * 0.45;
       let pointRadius = radius;
+
       if (rippleAmp > 2e-3) {
         pointRadius *= 1 + rippleAmp * Math.sin(p.y * 4.5 - t * 6.5 * spd);
       }
+
       if (pulseAmp > 2e-3) {
         pointRadius *= 1 - pulseAmp * (0.5 + 0.5 * Math.sin(p.ringFrac * TWO_PI + t * 3.1 * spd));
       }
+
       let ox = shakeX;
       let oy = shakeY;
+
       if (idleAmp > 0.01) {
         ox += idleAmp * (Math.sin(t * 0.55 * spd + p.seed * 3.7) + 0.5 * Math.sin(t * 1.3 * spd + p.seed * 1.3));
         oy += idleAmp * (Math.cos(t * 0.62 * spd + p.seed * 2.9) + 0.5 * Math.sin(t * 1.05 * spd + p.seed * 5.1));
       }
+
       if (jitterAmp > 0.01) {
         ox += jitterAmp * Math.sin(t * 14 * spd + p.seed * 9.3);
         oy += jitterAmp * Math.cos(t * 17 * spd + p.seed * 6.1);
       }
+
       const sphereX = center + x1 * pointRadius * perspective + ox;
       const sphereY = center + y1 * pointRadius * perspective + oy;
       const sphereAlpha = (0.12 + depth * depth * 0.78) * alphaScale;
@@ -194,6 +230,7 @@ function mountOrb(canvas, size, getState) {
       let screenY = sphereY;
       let alpha = sphereAlpha;
       let dot = sphereDot;
+
       if (wConn > 4e-3) {
         const base = i / points.length * TWO_PI;
         const jitter = 0.05 * Math.sin(t * 1.3 + p.seed);
@@ -208,6 +245,7 @@ function mountOrb(canvas, size, getState) {
         alpha = sphereAlpha + (ringAlpha - sphereAlpha) * wConn;
         dot = sphereDot + (ringDot - sphereDot) * wConn;
       }
+
       const cr = from[0] + (to[0] - from[0]) * p.tone;
       const cg = from[1] + (to[1] - from[1]) * p.tone;
       const cb = from[2] + (to[2] - from[2]) * p.tone;
@@ -216,22 +254,30 @@ function mountOrb(canvas, size, getState) {
       ctx.arc(screenX, screenY, dot, 0, TWO_PI);
       ctx.fill();
     }
+
     ctx.globalCompositeOperation = "source-over";
   };
+
   let last = 0, raf;
+
   function frame(now) {
     stateRef.current = getState();
     let dt = last ? Math.min((now - last) / 1e3, 0.05) : 0;
     last = now;
+
     if (!document.hidden) {
       t += reduce ? 0 : dt;
       render(reduce ? 0 : dt, reduce);
     }
+
     raf = requestAnimationFrame(frame);
   }
+
   raf = requestAnimationFrame(frame);
+
   return () => cancelAnimationFrame(raf);
 }
+
 export {
   ERROR_COLOR_FROM,
   ERROR_COLOR_TO,

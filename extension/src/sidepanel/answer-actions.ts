@@ -12,6 +12,7 @@ export function attachAnswerActions(answer: HTMLElement, composer: HTMLTextAreaE
   feedback.setAttribute('role', 'status');
   copy.onclick = async () => {
     copy.disabled = true;
+
     try {
       await navigator.clipboard.writeText(text);
       feedback.textContent = '已复制';
@@ -21,6 +22,7 @@ export function attachAnswerActions(answer: HTMLElement, composer: HTMLTextAreaE
       copy.disabled = false;
     }
   };
+
   const followup = document.createElement('button');
   followup.type = 'button';
   followup.textContent = '继续追问';

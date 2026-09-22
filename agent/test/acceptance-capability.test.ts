@@ -9,6 +9,7 @@ const dirs: string[] = [];
 function capabilityPath(): string {
   const dir = mkdtempSync(join(tmpdir(), "sideagent-acceptance-capability-"));
   dirs.push(dir);
+
   return join(dir, "capability.json");
 }
 

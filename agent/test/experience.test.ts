@@ -8,7 +8,9 @@ import { memoryTaskUrl } from "../../shared/memory.js";
 import { MemoryRuntime } from "../src/memory-runtime.js";
 
 const roots: string[] = [];
+
 const runtimes: ExperienceRuntime[] = [];
+
 afterEach(async () => {
   const finished = runtimes.splice(0);
   finished.forEach(r => r.dispose());
@@ -16,28 +18,36 @@ afterEach(async () => {
   await Promise.all(finished.map(r => r.flush()));
   await Promise.all(roots.splice(0).map(r => rm(r, { recursive: true, force: true })));
 });
+
 const page = { tabId: 1, title: "客户", url: "https://crm.example/customers" };
+
 const correction = "不对，你只导出了当前页20条，我要全部200条客户。";
+
 const complete: ExperienceComplete = async (_system, raw) => {
   const data = JSON.parse(raw);
+
   return JSON.stringify({ lesson: { task: "导出客户名单", problem: "只导出当前页，漏了其他客户", approach: "先检查导出范围，选择全部客户", check: "核对文件客户数量与页面全部客户数量", evidence: [
     { id: "feedback-1", quote: "只导出了当前页20条" },
     { id: "previous-observation-1", quote: "exported:20,total:200" },
   ] } });
 };
+
 async function fixture(extract = complete, conversationId = "a") {
   const root = await mkdtemp(join(tmpdir(), "ego-experience-")); roots.push(root);
   const store = new ExperienceStore(join(root, "experiences"));
   const memory = new MemoryStore(join(root, "memories"));
   const emit = vi.fn();
   const runtime = new ExperienceRuntime(store, memory, conversationId, extract, emit); runtimes.push(runtime);
+
   return { root, store, memory, emit, runtime };
 }
+
 async function initial(runtime: ExperienceRuntime) {
   runtime.begin("导出全部客户名单", page);
   runtime.observe({ type: "tool_execution_end", toolName: "read_element", result: { text: "exported:20,total:200" }, isError: false });
   runtime.finish(); await runtime.flush();
 }
+
 async function correct(runtime: ExperienceRuntime) {
   runtime.begin(correction, page); runtime.finish(); await runtime.flush();
 }

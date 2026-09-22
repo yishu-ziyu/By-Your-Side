@@ -13,33 +13,44 @@ import {isTaskProgressSnapshot,type TaskProgressSnapshot} from '../../shared/voi
 import type {ServerMessage} from '../../shared/protocol.js';
 
 const dirs:string[]=[];
+
 afterEach(()=>{for(const dir of dirs.splice(0))rmSync(dir,{recursive:true,force:true});});
+
 const page={tabId:7,title:'Fixture',url:'https://fixture.test/form'};
+
 function task(id='call_00_fixture/3',status:'satisfied'|'unknown'|'pending'='unknown'){
   const p=new TaskProgress('default');
   p.request('填写测试表单，保留原来的选择',page);
   p.recordRequirement('只保存一次');
   p.observe({type:'agent_event',event:{kind:'agent_start'}});
   p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:id,name:'fill',params:{target:'#name',value:'海风'}}});
+
   if(status!=='pending')p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:id,name:'fill',isError:status==='unknown',resultText:status,executionFact:status==='unknown'?'unknown':'executed'}});
+
   return p;
 }
+
 function wrapped(sm:SessionManager){
   return new (BrowserAgentSession as any)({sessionManager:sm},null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
 }
+
 function disk(snapshot:TaskProgressSnapshot){
   const dir=mkdtempSync(join(tmpdir(),'p0-review-'));dirs.push(dir);
   const sm=SessionManager.create(process.cwd(),dir);
   sm.appendMessage({role:'assistant',content:[],timestamp:1,stopReason:'toolUse'} as any);
   wrapped(sm).persistTaskResults(snapshot);
+
   return {sm,file:sm.getSessionFile()!};
 }
+
 function runtime(reader:()=>TaskProgressSnapshot|null,emit:(message:ServerMessage)=>void){
   const resume=vi.fn(async()=>{emit({type:'agent_event',event:{kind:'agent_start'}});emit({type:'status',state:'running'});});
   const start=vi.fn();
+
   const session={available:true,modelName:()=> 'fixture',isHeld:()=>false,isStreaming:()=>false,
     readPersistedTaskResults:reader,persistTaskResults:vi.fn(),resumeInterruptedTask:resume,startTask:start,
     availableModels:vi.fn(async()=>[]),abort:vi.fn(),classifyVoiceInput:vi.fn()};
+
   return {session,resume,start,handleMessage:vi.fn(),dispose:vi.fn(),rpc:{call:vi.fn(),rejectAll:vi.fn()},
     fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[],abortTeam:vi.fn()}};
 }
@@ -76,9 +87,11 @@ describe('real program-step checkpoint identities',()=>{
   });
   it('accepts opaque bounded call ids without relaxing task and request ids',()=>{
     const e=task('root').snapshot().results![0]!.evidence!;
+
     for(const toolCallId of ['call_00_fixture/3','call_x|item_y/12','x'.repeat(512)]){
       expect(isTaskResultEvidence({...e,toolCallId}),toolCallId).toBe(true);
     }
+
     for(const toolCallId of ['',null,23,'has space','line\nbreak','nul\0byte','x'.repeat(513)])expect(isTaskResultEvidence({...e,toolCallId})).toBe(false);
     expect(taskId('call_00_fixture/3')).toBe(false);
     expect(isTaskResultEvidence({...e,runId:'run/3'})).toBe(false);
@@ -98,6 +111,7 @@ describe('actual panel task_action continuation',()=>{
   it('resumes the same run and returns the same receipt when the panel retries after agent_start',async()=>{
     const before=task('valid-id').snapshot();let r:ReturnType<typeof runtime>;
     const manager=new ConversationManager(async(_id,emit)=>(r=runtime(()=>before,emit)) as any,()=>{});
+
     try{
       await manager.ensureDefault();
       const request:TaskActionRequest={requestId:'panel-resume',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId!,text:'继续原任务',context:page};
@@ -113,6 +127,7 @@ describe('actual panel task_action continuation',()=>{
   it.each(['missing-page','stale-run','stale-control'] as const)('refuses %s without clearing the checkpoint',async issue=>{
     const before=task('valid-id').snapshot();let r:ReturnType<typeof runtime>;
     const manager=new ConversationManager(async(_id,emit)=>(r=runtime(()=>before,emit)) as any,()=>{});
+
     try{
       await manager.ensureDefault();
       const request:TaskActionRequest={requestId:issue,conversationId:'default',source:'text',action:'start',expectedRunId:issue==='stale-run'?'old-run':before.runId!,expectedControlVersion:issue==='stale-control'?99:0,text:'继续原任务',...(issue==='missing-page'?{}:{context:page})};
@@ -124,6 +139,7 @@ describe('actual panel task_action continuation',()=>{
   it('keeps an ordinary new task distinct from the narrow continuation phrase',async()=>{
     const before=task('valid-id').snapshot();let r:ReturnType<typeof runtime>;
     const manager=new ConversationManager(async(_id,emit)=>(r=runtime(()=>before,emit)) as any,()=>{});
+
     try{
       await manager.ensureDefault();
       const result=await manager.dispatchTaskAction({requestId:'new',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId!,text:'开始另一项只读调研',context:page});
@@ -136,6 +152,7 @@ describe('actual panel task_action continuation',()=>{
     p.observe({type:'agent_event',event:{kind:'agent_start'}});p.observe({type:'agent_event',event:{kind:'agent_end'}});
     const before=p.snapshot();let r:ReturnType<typeof runtime>;
     const manager=new ConversationManager(async(_id,emit)=>(r=runtime(()=>before,emit)) as any,()=>{});
+
     try{
       await manager.ensureDefault();
       expect(await manager.dispatchTaskAction({requestId:'followup',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId!,text:'继续'})).toMatchObject({action:'start',status:'accepted'});
@@ -145,9 +162,13 @@ describe('actual panel task_action continuation',()=>{
   it('keeps cancellation ahead of a slow panel continuation',async()=>{
     const before=task('valid-id').snapshot();let release!:()=>void;let r:ReturnType<typeof runtime>;
     const stopped=new Promise<void>(resolve=>{release=resolve;});
+
     const manager=new ConversationManager(async(_id,emit)=>{
-      r=runtime(()=>before,emit);return {...r,session:{...r.session,waitForStop:()=>stopped}} as any;
+      r=runtime(()=>before,emit);
+
+return {...r,session:{...r.session,waitForStop:()=>stopped}} as any;
     },()=>{});
+
     try{
       await manager.ensureDefault();
       const pending=manager.dispatchTaskAction({requestId:'slow-panel',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId!,text:'继续原任务',context:page});
@@ -162,10 +183,14 @@ it('quarantines only the corrupt conversation, replays its error and keeps the P
   const h=disk(task('valid-id').snapshot());h.sm.appendCustomEntry('sideagent-task-results-v1',{invalid:'private_checkpoint_fixture'});
   const before=readFileSync(h.file,'utf8'),messages:ServerMessage[]=[];
   const runtimes=new Map<string,ReturnType<typeof runtime>>();
+
   const manager=new ConversationManager(async(id,emit)=>{
     const r=runtime(id==='default'?()=>wrapped(SessionManager.open(h.file)).readPersistedTaskResults():()=>null,emit);
-    runtimes.set(id,r);return r as any;
+    runtimes.set(id,r);
+
+return r as any;
   },message=>messages.push(message));
+
   try{
     await manager.ensureDefault();
     expect(manager.get('default')?.summary.checkpoint).toBe('unavailable');

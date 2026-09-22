@@ -10,7 +10,9 @@ import { extname, join, resolve } from "node:path";
 import { launchIsolatedExtension, sleep } from "./isolated-extension.mts";
 
 const OUT = process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? "/tmp/sideagent-open-session";
+
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
 const check = (name: string, ok: boolean, detail?: string): void => {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -35,21 +37,28 @@ async function main(): Promise<void> {
   await mkdir(OUT, { recursive: true });
   const iso = await launchIsolatedExtension();
   const report: Record<string, unknown> = { ok: false, checks, outDir: iso.outDir };
+
   const server = createServer(async (req, res) => {
     const pathname = new URL(req.url ?? "/", "http://local").pathname;
+
     if (pathname === "/sidepanel.html") {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end((await readFile("extension/sidepanel.html", "utf8")).replace('<script type="module"', '<script src="mock.js"></script><script type="module"'));
+
       return;
     }
+
     if (pathname === "/mock.js") {
       res.setHeader("Content-Type", "text/javascript");
       res.end(MOCK);
+
       return;
     }
+
     if (/\.(js|css|woff2|svg|png)$/.test(pathname)) {
       try {
         const file = resolve("extension/dist", `.${pathname}`);
+
         if (!file.startsWith(`${resolve("extension/dist")}/`)) throw new Error("path");
         res.setHeader("Content-Type", ({ ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png" } as Record<string, string>)[extname(file)] ?? "application/octet-stream");
         res.end(await readFile(file));
@@ -57,22 +66,28 @@ async function main(): Promise<void> {
         res.statusCode = 404;
         res.end();
       }
+
       return;
     }
+
     res.statusCode = 404;
     res.end();
   });
+
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const panelUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/sidepanel.html`;
 
   const waitReady = async (targetId: string): Promise<void> => {
     for (let n = 0; n < 60; n += 1) {
       const ready = await iso.evalIn(targetId, `Boolean(document.querySelector('#conversation-new') && globalThis.uiEmit)`).catch(() => false);
+
       if (ready) return;
       await sleep(200);
     }
+
     throw new Error("面板没有就绪");
   };
+
   const snapshot = (targetId: string): Promise<Record<string, unknown>> => iso.evalIn(targetId, `(()=>{
     const bg=document.getElementById('conversation-background');
     return {

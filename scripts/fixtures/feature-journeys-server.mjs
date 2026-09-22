@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const HOST = "127.0.0.1";
+
 const PORT = Number(process.env.FIXTURE_PORT || 48765);
+
 const PAGE = fileURLToPath(new URL("./feature-journeys.html", import.meta.url));
 
 export function createFixtureServer() {
@@ -16,18 +18,21 @@ export function createFixtureServer() {
 
     if (url.pathname === "/favicon.ico") {
       res.writeHead(204).end();
+
       return;
     }
 
     if (url.pathname !== "/" && url.pathname !== "/feature-journeys.html") {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("404 - 只有 / 与 /feature-journeys.html 可用\n");
+
       return;
     }
 
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.writeHead(405, { "content-type": "text/plain; charset=utf-8", allow: "GET, HEAD" });
       res.end("405 - 只读模拟页面\n");
+
       return;
     }
 
@@ -62,6 +67,7 @@ if (isEntryPoint) {
     console.error(`无法绑定 ${HOST}:${PORT} - ${error.message}`);
     process.exitCode = 1;
   });
+
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => server.close(() => process.exit(0)));
   }

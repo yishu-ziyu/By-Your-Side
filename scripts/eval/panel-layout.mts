@@ -18,9 +18,13 @@ if (!process.argv.includes("--headless=new") && !process.argv.includes("--headle
 
 const CHROME =
   "/Users/mahaoxuan/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+
 const WIDTHS = [320, 400, 520] as const;
+
 const HEIGHTS = [600, 900] as const;
+
 const ZOOMS = [100, 200] as const;
+
 const PRIMARY = ["#input", "#send-btn", "#takeover-btn", "#conversation-new"];
 
 const mock = `globalThis.uiMessages=[];globalThis.uiListeners=[];
@@ -33,17 +37,23 @@ globalThis.uiEmit=e=>uiListeners.forEach(fn=>fn(e));`;
 const server = createServer(async (req, res) => {
   try {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
+
     if (path === "/mock.js") {
       res.setHeader("Content-Type", "text/javascript");
       res.end(mock);
+
       return;
     }
+
     if (path === "/" || path === "/sidepanel.html") {
       res.setHeader("Content-Type", "text/html");
       res.end((await readFile("extension/sidepanel.html", "utf8")).replace("<script type=\"module\"", "<script src=\"mock.js\"></script><script type=\"module\""));
+
       return;
     }
+
     const file = resolve("extension/dist", `.${path}`);
+
     if (!file.startsWith(`${resolve("extension/dist")}/`)) throw new Error("path");
     res.setHeader("Content-Type", ({ ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".woff2": "font/woff2", ".svg": "image/svg+xml" } as Record<string, string>)[extname(file)] ?? "application/octet-stream");
     res.end(await readFile(file));
@@ -64,17 +74,22 @@ const report: {
 } = { ok: false, cases: [], keyboard: [], errors: [] };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function until<T>(fn: () => Promise<T | undefined>, ms = 20_000): Promise<T> {
   const end = Date.now() + ms;
+
   while (Date.now() < end) {
     const value = await fn();
+
     if (value) return value;
     await sleep(100);
   }
+
   throw new Error("timeout");
 }
 
 let child: ReturnType<typeof spawn> | undefined;
+
 let cdp: ReturnType<typeof createCdp> | undefined;
 
 try {
@@ -82,6 +97,7 @@ try {
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/sidepanel.html`;
   const profile = await mkdtemp(join(tmpdir(), "ego-panel-layout-"));
   child = spawn(CHROME, ["--headless=new", `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", "about:blank"], { stdio: "ignore" });
+
   const port = await until(async () => {
     try {
       return (await readFile(join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
@@ -89,6 +105,7 @@ try {
       return undefined;
     }
   });
+
   const info = await fetch(`http://127.0.0.1:${port}/json/version`).then((r) => r.json()) as { webSocketDebuggerUrl: string };
   cdp = createCdp(info.webSocketDebuggerUrl);
   await cdp.ready();
@@ -100,11 +117,15 @@ try {
   await cdp.send("Runtime.enable", {}, sid);
   await cdp.send("Page.enable", {}, sid);
   await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, sid);
+
   const evaluate = async (expression: string): Promise<any> => {
     const r = await cdp!.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture: true }, sid);
+
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+
     return r.result?.value;
   };
+
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 400, height: 900, deviceScaleFactor: 1, mobile: false }, sid);
   await cdp.send("Page.navigate", { url }, sid);
   await until(async () => (await evaluate("!!document.querySelector('#composer-bar')&&uiListeners.length>0")) || undefined);
@@ -136,6 +157,7 @@ try {
   }
 
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 400, height: 900, deviceScaleFactor: 1, mobile: false }, sid);
+
   const inputTiming = await evaluate(`(async()=>{
     const box = document.getElementById('messages');
     const frag = document.createDocumentFragment();
@@ -162,6 +184,7 @@ try {
     const p95 = times[Math.ceil(times.length * 0.95) - 1];
     return { samples: samples.length, p95, allShown: samples.every((s) => s.shown), max: times[times.length - 1] };
   })()`);
+
   report.input_p95_ms = inputTiming.p95;
   report.input_samples = inputTiming.samples;
   report.keyboard.push({
@@ -187,6 +210,7 @@ try {
   report.keyboard.push({ name: "Escape closes conversation menu", ok: menuOpen && menuClosed, detail: `open=${menuOpen} closed=${menuClosed}` });
 
   const modelVisible = await evaluate(`!document.querySelector('#model-btn').hidden`);
+
   if (modelVisible) {
     await evaluate(`document.querySelector('#model-btn').click();`);
     await sleep(80);
@@ -221,15 +245,18 @@ try {
   console.log(JSON.stringify(report, null, 2));
 } finally {
   if (cdp) await cdp.close();
+
   if (child) {
     const exited = new Promise<void>((r) => child!.once("exit", () => r()));
     child.kill("SIGTERM");
     await Promise.race([exited, sleep(3000)]);
+
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
       await exited;
     }
   }
+
   server.closeAllConnections();
   await new Promise<void>((r) => server.close(() => r()));
 }

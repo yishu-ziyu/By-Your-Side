@@ -22,11 +22,15 @@ import { join, resolve } from "node:path";
 if (!process.argv.includes("--headless")) throw new Error("Required: --headless");
 
 const repo = resolve(import.meta.dirname, "../..");
+
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
 const out = resolve(repo, "out/acceptance", `v23-switch-verification-live-${stamp}`);
+
 await mkdir(out, { recursive: true });
 
 type Assertion = { id: string; ok: boolean; detail?: unknown };
+
 const record: {
   scope: string; status: "PASS" | "FAIL" | "BLOCKED"; reason?: string;
   build: Record<string, unknown>; setupReceipt?: unknown; receipt?: unknown;
@@ -41,8 +45,10 @@ const record: {
   assertions: [],
   modelRequests: 0,
 };
+
 const check = (id: string, ok: boolean, detail?: unknown): boolean => {
   record.assertions.push({ id, ok, ...(detail !== undefined ? { detail } : {}) });
+
   return ok;
 };
 
@@ -50,19 +56,24 @@ const check = (id: string, ok: boolean, detail?: unknown): boolean => {
 const dailyDistBefore = existsSync(join(repo, "extension/dist/background.js"))
   ? createHash("sha256").update(await readFile(join(repo, "extension/dist/background.js"))).digest("hex")
   : null;
+
 const isoRoot = await mkdtemp(join(tmpdir(), "sideagent-switch-dist-"));
+
 const buildDir = join(isoRoot, "extension", "dist");
+
 const build = spawnSync("node", ["build.mjs"], {
   cwd: join(repo, "extension"),
   env: { ...process.env, SIDEAGENT_BUILD_DIST: buildDir },
   encoding: "utf8",
 });
+
 record.build = {
   exitCode: build.status,
   outDir: buildDir,
   dailyDistBefore,
   stderrTail: (build.stderr ?? "").split("\n").slice(-5),
 };
+
 if (build.status !== 0) {
   record.status = "FAIL";
   record.reason = "隔离构建失败";
@@ -73,8 +84,11 @@ if (build.status !== 0) {
 
 // ── 2. 加载启动器（其 DIST 为 cwd 相对路径：先切到临时根，加载后切回）────────
 const prevCwd = process.cwd();
+
 process.chdir(isoRoot);
+
 let launchIsolatedExtension: typeof import("./isolated-extension.mts").launchIsolatedExtension;
+
 try {
   ({ launchIsolatedExtension } = await import("./isolated-extension.mts"));
 } finally {
@@ -82,6 +96,7 @@ try {
 }
 
 type Socket = EventEmitter & { readyState: number; sent: any[]; server(v: unknown): void; send(raw: string): void; close(): void };
+
 const makeSocket = (): Socket => {
   const socket = new EventEmitter() as Socket;
   socket.readyState = 1;
@@ -89,14 +104,20 @@ const makeSocket = (): Socket => {
   socket.send = function (raw: string): void {
     try { this.sent.push(JSON.parse(raw)); } catch { this.sent.push({ unparseable: true }); }
   };
+
   socket.close = function (): void { this.readyState = 3; };
+
   socket.server = function (v: unknown): void { this.emit("message", Buffer.from(JSON.stringify(v))); };
+
   return socket;
 };
 
 let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
+
 const voices: Array<{ close(): void }> = [];
+
 let manager: { dispose(): void } | undefined;
+
 try {
   iso = await launchIsolatedExtension({ localOnly: true });
   record.isolation = iso.diagnostics();
@@ -123,6 +144,7 @@ try {
       const b = await chrome.tabs.get(${tabB});
       return {tabId:t[0]?.id??null, windowId:t[0]?.windowId??null, focused:w?.focused??null, aActive:a.active, bActive:b.active};
     })()`) as { tabId: number | null; windowId: number | null; focused: boolean | null; aActive: boolean; bActive: boolean };
+
   const visibility = async (target: string): Promise<string> =>
     await iso!.evalIn(target, "document.visibilityState") as string;
 
@@ -148,6 +170,7 @@ try {
   const { MODEL, STEP_VOICE } = await import("../../agent/src/realtime-voice-connection.js");
 
   const bridgeEvents: Array<Record<string, unknown>> = [];
+
   const rpc = new ToolRpc((frame) => {
     bridgeEvents.push({ at: Date.now(), kind: "rpc-start", id: frame.id, name: frame.name });
     const args = [frame.id, frame.name, frame.params, frame.sessionId ?? "main", frame.programId ?? null, "default"];
@@ -164,12 +187,14 @@ try {
   const voiceEvents: any[] = [];
   const logs: any[] = [];
   let wrapper: any;
+
   const raw: any = {
     isStreaming: false,
     prompt: () => undefined,
     agent: { state: { tools: [], messages: [] } },
     sessionManager: { appendCustomEntry: () => {}, getBranch: () => [] },
   };
+
   const managerAny = new ConversationManager(async (_id, sink) => {
     // SAFETY: 与 agent/test/realtime-feedback-translation.test.ts 相同的宿主装配：真实
     // BrowserAgentSession/工具/ToolRpc，仅 Pi prompt 层为内存替身（本票不测模型层）。
@@ -182,12 +207,15 @@ try {
       canWrite: id => wrapper.canWriteCurrentInput(id),
       assertCall: (name, params, id) => wrapper.assertTaskResultExecution(name, params, id),
     });
+
     return { session: wrapper, rpc, fleet: { teamView: () => null, isGroupHeld: () => false }, dispose: () => {} } as any;
   }, (message) => messages.push(message));
+
   manager = managerAny;
   await managerAny.ensureDefault();
 
   const socket = makeSocket();
+
   const voice = new RealtimeVoiceSession({
     voiceSpokenResultGate: true,
     // 本地夹具判断（零网络）：胶囊足够，用于观察 request-gate 是否消费真实成功资格。
@@ -201,6 +229,7 @@ try {
       try { logs.push({ at: Date.now(), type, ...JSON.parse(String(fields?.detail ?? "{}")) }); } catch { logs.push({ at: Date.now(), type }); }
     },
   } as any);
+
   voices.push(voice);
   voice.start("offline-placeholder");
   socket.server({ type: "session.created", session: { model: MODEL } });
@@ -209,13 +238,18 @@ try {
   // ── 5. 一轮真实话轮：切到 B（经原宿主链，不经请求回显）────────────────────
   const outputs = () => socket.sent.filter(m => m.item?.type === "function_call_output");
   const creates = () => socket.sent.filter(m => m.type === "response.create");
+
   const feedbacks = () => messages.flatMap(m => {
     const event = (m as any)?.event;
+
     return m.type === "agent_event" && event?.kind === "execution_feedback" && event.feedback ? [event.feedback] : [];
   });
+
   const waitFor = async (label: string, fn: () => boolean, ms = 15_000): Promise<void> => {
     const end = Date.now() + ms;
+
     while (Date.now() < end) { if (fn()) return; await new Promise(r => setTimeout(r, 50)); }
+
     throw new Error(`等待超时：${label}`);
   };
 
@@ -290,6 +324,7 @@ try {
   record.status = record.assertions.every(a => a.ok) ? "PASS" : "FAIL";
 } catch (error) {
   const message = String(error instanceof Error ? error.message : error);
+
   if (record.status !== "BLOCKED") {
     record.status = "FAIL";
     record.reason = message;
@@ -299,11 +334,15 @@ try {
   }
 } finally {
   try { for (const v of voices) v.close(); } catch { /* 关闭失败不影响结论 */ }
+
   try { manager?.dispose(); } catch { /* 同上 */ }
+
   try { if (iso) record.cleanup = await iso.close(); } catch (e) { record.cleanup = { error: String(e) }; }
+
   const dailyDistAfter = existsSync(join(repo, "extension/dist/background.js"))
     ? createHash("sha256").update(await readFile(join(repo, "extension/dist/background.js"))).digest("hex")
     : null;
+
   record.build = { ...record.build, dailyDistAfter, dailyDistUnchanged: dailyDistBefore === dailyDistAfter };
   await writeFile(join(out, "result.json"), JSON.stringify(record, null, 2));
   console.log(JSON.stringify({ status: record.status, reason: record.reason, out, failed: record.assertions.filter(a => !a.ok) }, null, 2));

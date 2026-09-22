@@ -21,12 +21,15 @@ describe("overlay host sweep（扩展 reload 残留）", () => {
     const keep = { id: "keep", remove: () => removed.push("keep") };
     const cursorHost = { id: "cursor", remove: () => removed.push("cursor") };
     const marksHost = { id: "marks", remove: () => removed.push("marks") };
+
     const root = {
       querySelectorAll(sel: string) {
         expect(sel).toBe(`[${OVERLAY_ATTR}]`);
+
         return [cursorHost, marksHost];
       },
     };
+
     expect(sweepStaleOverlayHosts(root)).toBe(2);
     expect(removed).toEqual(["cursor", "marks"]);
     expect(keep.id).toBe("keep");

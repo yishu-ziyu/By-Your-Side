@@ -31,9 +31,13 @@ export interface ObservedPattern {
 }
 
 export const MIN_RUNS = 3;
+
 export const MIN_SPAN_MS = 2 * 24 * 60 * 60 * 1000;
+
 export const MIN_STEPS = 2;
+
 export const MAX_PATTERNS_PER_HOST = 30;
+
 export const MAX_HOSTS = 20;
 
 /**
@@ -46,25 +50,32 @@ const SENSITIVE_LABELS = new Set([
   "gmail", "outlook", "hotmail", "icloud", "zoho", "proton", "fastmail", "yahoo",
   "alipay", "wechatpay", "tenpay", "1password", "lastpass", "bitwarden", "okta",
 ]);
+
 const SENSITIVE_LABEL_PART = /bank|pay|mail|pass|vault|auth|sso/;
 
 export function isSensitiveHost(hostname: string): boolean {
   const host = hostname.trim().toLowerCase();
+
   if (!host) return true;
+
   if (host === "localhost" || host.endsWith(".local")) return true;
+
   return host.split(".").some(label => label && (SENSITIVE_LABELS.has(label) || SENSITIVE_LABEL_PART.test(label)));
 }
 
 /** 骨架签名：只由"点了什么"决定，和顺序有关；没名字的点不参与（认不出来，留着是噪声）。 */
 export function signatureOf(anchors: DemoAnchor[]): string {
   const named = anchors.filter(a => a.name || a.role);
+
   return named.map(a => [a.tag, a.role, a.name].filter(Boolean).join("|")).join(">");
 }
 
 /** 这一步序列值不值得观察：太短的不是任务。 */
 export function worthObserving(run: ObservedRun): boolean {
   if (isSensitiveHost(run.hostname)) return false;
+
   if (run.anchors.length < MIN_STEPS) return false;
+
   return signatureOf(run.anchors) !== "";
 }
 
@@ -83,21 +94,25 @@ export function mergeRun(patterns: ObservedPattern[], run: ObservedRun, now = ru
     lastSeen: now,
     ...(previous?.dismissed ? { dismissed: true as const } : {}),
   });
+
   return trimPatterns(next);
 }
 
 /** 有界：每个站点留最近常用的若干条，站点数也有上限；观察不能变成新的配额事故。 */
 export function trimPatterns(patterns: ObservedPattern[]): ObservedPattern[] {
   const byHost = new Map<string, ObservedPattern[]>();
+
   for (const pattern of patterns) {
     const list = byHost.get(pattern.hostname) ?? [];
     list.push(pattern);
     byHost.set(pattern.hostname, list);
   }
+
   const hosts = [...byHost.entries()]
     .map(([hostname, list]) => ({ hostname, list: list.sort((a, b) => b.lastSeen - a.lastSeen).slice(0, MAX_PATTERNS_PER_HOST) }))
     .sort((a, b) => (b.list[0]?.lastSeen ?? 0) - (a.list[0]?.lastSeen ?? 0))
     .slice(0, MAX_HOSTS);
+
   return hosts.flatMap(h => h.list);
 }
 
@@ -107,8 +122,11 @@ export function trimPatterns(patterns: ObservedPattern[]): ObservedPattern[] {
  */
 export function shouldPropose(pattern: ObservedPattern): boolean {
   if (pattern.dismissed) return false;
+
   if (pattern.count < MIN_RUNS) return false;
+
   if (pattern.lastSeen - pattern.firstSeen < MIN_SPAN_MS) return false;
+
   return pattern.anchors.length >= MIN_STEPS;
 }
 
@@ -119,6 +137,7 @@ export function candidates(patterns: ObservedPattern[]): ObservedPattern[] {
 /** 面板要讲人话：不解释、不美化，只说事实。 */
 export function describePattern(pattern: ObservedPattern, describe: (anchor: DemoAnchor) => string): string {
   const days = Math.max(1, Math.round((pattern.lastSeen - pattern.firstSeen) / (24 * 60 * 60 * 1000)));
+
   return `你在 ${pattern.hostname} 这样做了 ${pattern.count} 次（跨 ${days} 天）：` +
     pattern.anchors.map(describe).join(" → ");
 }
@@ -126,6 +145,7 @@ export function describePattern(pattern: ObservedPattern, describe: (anchor: Dem
 /** 由骨架里出现过的对象拼一句默认意图，用户可以改。 */
 export function defaultIntent(pattern: ObservedPattern, describe: (anchor: DemoAnchor) => string): string {
   const head = pattern.anchors.slice(0, 3).map(describe).join("，");
+
   return `${pattern.hostname}：${head}`;
 }
 

@@ -3,6 +3,7 @@
  * completed 是事实结论，不能从 idle / agent_end 推导。
  */
 export const RUN_OUTCOMES = ["verified_success", "partial", "failed", "aborted", "unknown"] as const;
+
 export type RunOutcome = (typeof RUN_OUTCOMES)[number];
 
 export interface TerminalResult {
@@ -26,6 +27,7 @@ export function isRunOutcome(value: unknown): value is RunOutcome {
 export function isTerminalResult(value: unknown): value is TerminalResult {
   if (!value || typeof value !== "object") return false;
   const t = value as TerminalResult;
+
   return (
     typeof t.conversationId === "string" &&
     typeof t.runId === "string" &&
@@ -47,25 +49,32 @@ export class TerminalResultBook {
 
   get(runId: string): TerminalResult | undefined {
     const current = this.byRun.get(runId);
+
     return current ? { ...current, evidenceRefs: [...current.evidenceRefs], completedItems: [...current.completedItems], remainingItems: [...current.remainingItems] } : undefined;
   }
 
   upsert(next: TerminalResult): TerminalResult {
     if (!isTerminalResult(next)) throw new Error("终态结果格式无效。");
     const existing = this.byRun.get(next.runId);
+
     if (!existing) {
       const stored = { ...next, evidenceRefs: [...next.evidenceRefs], completedItems: [...next.completedItems], remainingItems: [...next.remainingItems] };
       this.byRun.set(next.runId, stored);
+
       return this.get(next.runId)!;
     }
+
     if (existing.resultId !== next.resultId) {
       throw new Error("该 run 已有终态结果，不能另写一份。");
     }
+
     if (next.version !== existing.version + 1) {
       throw new Error("终态结果版本必须幂等递增。");
     }
+
     const stored = { ...next, evidenceRefs: [...next.evidenceRefs], completedItems: [...next.completedItems], remainingItems: [...next.remainingItems] };
     this.byRun.set(next.runId, stored);
+
     return this.get(next.runId)!;
   }
 

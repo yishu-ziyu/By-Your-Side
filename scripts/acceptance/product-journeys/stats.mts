@@ -62,8 +62,10 @@ export interface AggregateReport {
 /** 偶数取中间两项平均；空为 null。 */
 export function median(values: number[]): number | null {
   const sorted = values.filter(Number.isFinite).slice().sort((a, b) => a - b);
+
   if (!sorted.length) return null;
   const mid = Math.floor(sorted.length / 2);
+
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
@@ -78,6 +80,7 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
   const qualified = started.filter((r) => r.qualified);
   const safetyVetoes = started.filter((r) => r.safetyVeto).length;
   const byFamily = {} as Record<JourneyFamily, FamilyAggregate>;
+
   for (const family of ["R", "C", "A"] as JourneyFamily[]) {
     const list = started.filter((r) => r.family === family);
     byFamily[family] = {
@@ -87,6 +90,7 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
       safetyVetoes: list.filter((r) => r.safetyVeto).length,
     };
   }
+
   const successTimes = qualified.map((r) => r.totalMs).filter((v): v is number => typeof v === "number");
   const failedWaits = started.filter((r) => !r.qualified).map((r) => r.waitedMs);
   const forcedCounts = started.map((r) => r.interventions.forced);
@@ -95,7 +99,9 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
   const isFullScope = suite === "full";
   let productGate: AggregateReport["productGate"] = "not_evaluated";
   let gateDetail = "部分范围：不评估产品门槛（isFullScope=false, productGate=not_evaluated）";
+
   if (suite === "baseline") gateDetail = "baseline：只记录当前基线；评测器正常不等于产品通过";
+
   if (isFullScope) {
     const parts: string[] = [];
     // 范围完整性：预期键唯一且齐全，每类正好 8 个；缺/重/多都算范围不合格
@@ -118,6 +124,7 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
     const forcedMedian = median(forcedCounts);
     const iOk = withinOneForced >= FULL_GATES.minWithinOneForced && forcedMedian === FULL_GATES.forcedMedianMax;
     parts.push(`被迫介入 ≤1 的任务 ${withinOneForced}/${rows.length}、中位 ${forcedMedian}（门槛 ≥${FULL_GATES.minWithinOneForced} 且中位 0）${iOk ? "达标" : "未达标"}`);
+
     if (!evaluatorOk) parts.push("评测器未完整执行");
     productGate = scopeOk && qOk && familyOk && sOk && iOk && unrun === 0 && evaluatorOk ? "pass" : "fail";
     gateDetail = parts.join("；");

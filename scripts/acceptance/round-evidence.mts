@@ -7,6 +7,7 @@ export interface RoundDelivery {
   runId?: string | null;
   composedAt?: number;
 }
+
 export interface RoundReceipt {
   requestId?: string;
   status?: string;
@@ -19,12 +20,17 @@ export interface RoundReceipt {
 export function roundFinding<T extends RoundDelivery>(deliveries: readonly T[], runId: string | null | undefined, startedAtMs: number): T | undefined {
   if (typeof runId !== 'string' || !runId.trim() || !Number.isFinite(startedAtMs)) return undefined;
   const own = runId;
+
   for (let index = deliveries.length - 1; index >= 0; index -= 1) {
     const delivery = deliveries[index]!;
+
     if (delivery.kind !== 'finding' || (delivery.runId ?? null) !== own) continue;
+
     if (typeof delivery.composedAt !== 'number' || !Number.isFinite(delivery.composedAt) || delivery.composedAt < startedAtMs) continue;
+
     return delivery;
   }
+
   return undefined;
 }
 
@@ -35,7 +41,9 @@ export function roundFinding<T extends RoundDelivery>(deliveries: readonly T[], 
  */
 export function pairedAcceptedReceipt<T extends RoundReceipt>(receipts: readonly T[], requestIds: Iterable<string>): T | undefined {
   const ids = new Set(requestIds);
+
   if (ids.size === 0) return undefined;
+
   return receipts.find((receipt) =>
     typeof receipt.requestId === 'string' && ids.has(receipt.requestId)
     && (receipt.status === 'accepted' || receipt.status === 'applied'));

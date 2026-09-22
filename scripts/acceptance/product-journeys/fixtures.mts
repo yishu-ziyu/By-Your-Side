@@ -11,6 +11,7 @@
 import { createServer, type Server, type IncomingMessage } from "node:http";
 
 export interface FixtureWrite { kind: "submit"; page: string; values: Record<string, string>; at: number }
+
 export interface JourneyFixture {
   server: Server;
   origin: string;
@@ -58,6 +59,7 @@ export const DOCS = [
 ] as const;
 
 export interface OfferSpec { id: string; name: string; price: number; unit: string; perMonth: number; returns: boolean; stock: boolean; locked?: boolean }
+
 export const OFFER_SETS: OfferSpec[][] = [
   [
     { id: "a", name: "青松", price: 180, unit: "元/月", perMonth: 180, returns: true, stock: true },
@@ -105,7 +107,9 @@ export const SECTION_FORMS = [
 /** 材料索引安全取值（noUncheckedIndexedAccess 下避免 undefined 流进判据）。 */
 export function at2<T>(arr: readonly T[], i: number): T {
   const v = arr[i];
+
   if (v === undefined) throw new Error(`材料序号越界：${i}`);
+
   return v;
 }
 
@@ -118,62 +122,97 @@ export function createJourneyFixture(): JourneyFixture {
 
   const html = (path: string, query: URLSearchParams): string | null => {
     const m = query.get("m") === "1" ? 1 : 0;
-    if (path === "/article") { const a = at2(ARTICLES, m); return shell(a.title, a.body); }
-    if (path === "/docs") { const d = at2(DOCS, m); return shell(d.title, d.body); }
+
+    if (path === "/article") { const a = at2(ARTICLES, m);
+
+ return shell(a.title, a.body); }
+
+    if (path === "/docs") { const d = at2(DOCS, m);
+
+ return shell(d.title, d.body); }
+
     if (path === "/offers") {
       const set = at2(OFFER_SETS, m);
       const locked = query.get("locked");
+
       return shell("方案列表", `<h1>三家方案</h1><ul>${set.map((o) => `<li><a href="/offer/${o.id}?m=${m}${locked ? `&locked=${locked}` : ""}">${o.name}方案</a></li>`).join("")}</ul>`);
     }
+
     const offerMatch = path.match(/^\/offer\/([abc])$/);
+
     if (offerMatch) {
       const o = at2(OFFER_SETS, m).find((x) => x.id === offerMatch[1]);
+
       if (!o) return null;
+
       if (query.get("locked") === o.id) return shell("需要登录", `<h1>模拟登录已过期</h1><p>这里不接收真实密码。请由使用者登录测试账户后再继续。</p><p><a href="/offers">返回方案列表</a></p>`);
+
       return shell(`${o.name}方案`, offerPage(o));
     }
+
     if (path === "/catalog") {
       const c = at2(CATALOGS, m);
+
       return shell("候选清单", `<h1>候选清单</h1><table><tr><th>名称</th><th>价格（元）</th><th>退换</th><th>库存</th></tr>${c.rows.map((r) => `<tr><td>${r.name}</td><td>${r.price}</td><td>${r.returns ? "支持七天退换" : "不支持"}</td><td>${r.stock ? "现货" : "无货"}</td></tr>`).join("")}</table>`);
     }
+
     if (path === "/form-plain") {
       return shell("登记表（简单）", `<h1>登记表</h1><form id="f"><label>姓名<input id="name" name="name"></label><label>邮箱<input id="email" name="email" type="email"></label><label>城市<input id="city" name="city"></label><label>备注<textarea id="note" name="note"></textarea></label><button type="submit">提交登记</button></form><p id="status">尚未提交</p>${FORM_SCRIPT}`);
     }
+
     if (path === "/form-sections") {
       return shell("预约单（分区）", `<h1>预约单</h1><form id="f"><fieldset><legend>联系人</legend><label>姓名<input id="contact" name="contact"></label><label>电话<input id="phone" name="phone"></label></fieldset><fieldset><legend>偏好</legend><label>时间段<select id="slot" name="slot"><option value="">请选择</option><option value="morning">上午</option><option value="afternoon">下午</option></select></label><label><input id="agree" type="checkbox" name="agree" style="display:inline"> 同意预约条款</label><label><input type="radio" name="ship" value="pickup" style="display:inline"> 自提</label><label><input type="radio" name="ship" value="delivery" style="display:inline"> 配送</label></fieldset><fieldset><legend>备注</legend><textarea id="memo" name="memo"></textarea></fieldset><button type="submit">提交预约</button></form><p id="status">尚未提交</p>${FORM_SCRIPT}`);
     }
+
     return null;
   };
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     res.setHeader("Cache-Control", "no-store");
+
     if (req.method === "POST" && url.pathname === "/api/submit") {
       let raw = "";
+
       for await (const chunk of req as IncomingMessage) raw += chunk;
       let values: Record<string, string> = {};
+
       try {
         const parsed = new URLSearchParams(raw);
         parsed.forEach((v, k) => { values[k] = v; });
       } catch { /* keep empty */ }
+
       writesLog.push({ kind: "submit", page: String(values.__page ?? "unknown"), values, at: Date.now() });
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ id: `receipt-${writesLog.length}` }));
+
       return;
     }
-    if (req.method !== "GET") { res.writeHead(405); res.end(); return; }
+
+    if (req.method !== "GET") { res.writeHead(405); res.end();
+
+ return; }
+
     hitsMap.set(url.pathname, (hitsMap.get(url.pathname) ?? 0) + 1);
+
     if (url.pathname === "/api/state") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ hits: Object.fromEntries(hitsMap), writes: writesLog }));
+
       return;
     }
+
     const page = html(url.pathname, url.searchParams);
-    if (page === null) { res.writeHead(404); res.end("not found"); return; }
+
+    if (page === null) { res.writeHead(404); res.end("not found");
+
+ return; }
+
     // 表单页带上页面身份标记，提交时随表单回传，用于错页写入判定。
     const withIdentity = page.includes("<form")
       ? page.replace("</form>", `<input type="hidden" name="__page" value="${url.pathname}"></form>`)
       : page;
+
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(withIdentity);
   });
@@ -182,7 +221,9 @@ export function createJourneyFixture(): JourneyFixture {
     server,
     get origin() {
       const addr = server.address();
+
       if (!addr || typeof addr === "string") throw new Error("fixture 未监听");
+
       return `http://127.0.0.1:${addr.port}`;
     },
     hits: () => Object.fromEntries(hitsMap),

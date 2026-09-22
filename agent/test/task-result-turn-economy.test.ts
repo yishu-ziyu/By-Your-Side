@@ -16,6 +16,7 @@ function setup(goal = '测试任务'): TaskProgress {
   const p = new TaskProgress('default');
   p.request(goal);
   p.observe({type: 'agent_event', event: {kind: 'agent_start'}} as any);
+
   return p;
 }
 
@@ -33,6 +34,7 @@ async function executionGate(p: TaskProgress): Promise<(name: string, params?: R
   const {BrowserAgentSession} = await import('../src/session.js');
   const session: any = new (BrowserAgentSession as any)(null, null, {emit: () => {}, setStatus: () => {}}, null, null);
   session.bindConversationContext(() => p.snapshot());
+
   return (name, params = {}) => session.assertTaskResultExecution(name, params);
 }
 
@@ -41,10 +43,12 @@ const itemsOf = (p: TaskProgress) => p.snapshot().results ?? [];
 describe('记账下沉：执行事实驱动账本', () => {
   it('separate completed script invocations keep separate receipts and a complete audit',async()=>{
     const p=setup(),gate=await executionGate(p);
+
     for(const id of ['script-one','script-two']){
       expect(()=>gate('js',{code:'document.title'})).not.toThrow();
       start(p,id,'js',{code:'document.title'});end(p,id,'js',{executionFact:'executed'});
     }
+
     expect(itemsOf(p).map(item=>item.evidence?.toolCallId)).toEqual(['script-one','script-two']);
     expect(p.snapshot().executionAuditComplete).toBe(true);
     start(p,'script-two','js',{code:'document.title'});end(p,'script-two','js',{executionFact:'executed'});
@@ -200,12 +204,14 @@ describe('真实调用序列重放（A 候选：4 次记账只服务 1 次 click
     const p = setup('暂停视频');
     const gate = await executionGate(p);
     let legacyRejections = 0;
+
     for (const [index, call] of traceCalls.entries()) {
       legacyRejections += legacyRegistrationRejections(itemsOf(p), call.name);
       expect(() => gate(call.name, call.params)).not.toThrow();
       start(p, `call-${index}`, call.name, call.params);
       end(p, `call-${index}`, call.name);
     }
+
     // 旧规则下前两个调用（snapshot、click）都被拒：模型必须先花一轮登记才能动。
     // 原始运行为此花了 4 次 record_task_results（都在同一个 click 上）；新规则下 0 次。
     expect(legacyRejections).toBe(2);

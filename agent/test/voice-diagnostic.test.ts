@@ -9,12 +9,15 @@ class FakeSocket extends EventEmitter {
   constructor(private readonly throwOn:(type:string)=>boolean=()=>false){super();}
   send(raw:string){
     const event=JSON.parse(raw) as Record<string,any>;
+
     if(this.throwOn(String(event.type)))throw new Error('socket send failed');
     this.sent.push(event);
   }
   server(type:string,payload:Record<string,unknown>={}):void{this.emit('message',Buffer.from(JSON.stringify({type,...payload})));}
 }
+
 const pcm=(samples:number,value:number):string=>Buffer.from(new Int16Array(samples).fill(value).buffer).toString('base64');
+
 const snapshot=():TaskProgressSnapshot=>({conversationId:'conv-1',observedAt:1,state:'none',goal:null,startedAt:null,active:[],lastAction:null,successVerified:false});
 
 function build(options:{diagnostic?:boolean;capture?:boolean;throwOn?:(type:string)=>boolean}={}){
@@ -22,24 +25,32 @@ function build(options:{diagnostic?:boolean;capture?:boolean;throwOn?:(type:stri
   const events:VoiceEvent[]=[],records:VoiceDiagRecord[]=[];
   const route=vi.fn(async()=>({kind:'none' as const}));
   const steer=vi.fn(async()=>{});
+
   const session=new StepVoiceSession({
     ...(options.diagnostic?{diagnosticMode:true}:{}),
     ...(options.capture?{captureMode:true}:{}),
     getSnapshot:snapshot,
-    emit:event=>{events.push(event);if(event.kind==='diag')records.push(event.record)},
+    emit:event=>{events.push(event);
+
+if(event.kind==='diag')records.push(event.record)},
     route,steer,
     connect:()=>socket as never,
   });
+
   session.start('test-key');
   socket.server('session.created',{session:{model:'stepaudio-2.5-realtime'}});
   socket.server('session.updated',{session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:{type:'none'}}});
+
   return {socket,events,records,route,steer,session};
 }
+
 const take=(session:StepVoiceSession,turn=1,frames=2):void=>{
   session.command({kind:'interrupt',turn});
+
   for(let i=0;i<frames;i++)session.command({kind:'audio',turn,data:pcm(480,i+1),frame:i});
   session.command({kind:'commit',turn});
 };
+
 const of=(records:VoiceDiagRecord[],type:VoiceDiagRecord['type'])=>records.filter(record=>record.type===type);
 
 describe('diagnostic capture evidence from the real send path',()=>{
@@ -97,6 +108,7 @@ describe('diagnostic capture evidence from the real send path',()=>{
     const {records,events,session}=build({diagnostic:true});
     session.command({kind:'interrupt',turn:1});
     const frame=pcm(24576,500);
+
     for(let i=0;i<70;i++)session.command({kind:'audio',turn:1,data:frame,frame:i});
     expect(of(records,'append')).toHaveLength(58);
     expect(of(records,'gap').some(record=>record.type==='gap'&&record.code==='truncated')).toBe(true);
@@ -151,6 +163,7 @@ describe('diagnostic capture evidence from the real send path',()=>{
     const {records,events,session}=build({capture:true});
     session.command({kind:'interrupt',turn:1});
     const frame=pcm(24576,500);
+
     for(let i=0;i<70;i++)session.command({kind:'audio',turn:1,data:frame,frame:i});
     // 70 frames = 71.7s: past the diagnostic take bound, still inside the ordinary one.
     expect(of(records,'append')).toHaveLength(70);

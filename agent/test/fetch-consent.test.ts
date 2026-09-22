@@ -10,16 +10,22 @@ import type { ServerMessage } from "../../shared/protocol.js";
 
 /** 只用来通过 fetch 的私网拒绝；测试从不真的发请求（RPC 是替身）。 */
 const ORIGIN = "http://127.0.0.1:7799";
+
 const URL_ = `${ORIGIN}/count`;
+
 const POST = { url: URL_, method: "POST", body: '{"n":1}' } as const;
 
 let restoreTestOrigin = (): void => {};
+
 beforeEach(() => { restoreTestOrigin = installFetchTestOrigin(ORIGIN); });
+
 afterEach(() => restoreTestOrigin());
 
 type Frames = ServerMessage[];
+
 const consentRequests = (frames: Frames): FetchConsentRequest[] =>
   frames.flatMap((frame) => (frame.type === "consent_request" && frame.request.kind !== 'write' ? [frame.request] : []));
+
 const consentResults = (frames: Frames) => frames.flatMap((frame) => (frame.type === "consent_result" ? [frame] : []));
 
 /** request() 未获确认前不会落定；用 0ms 计时器区分「立刻拒绝」与「进入等待」。 */
@@ -30,16 +36,20 @@ function harness(options: { conversationId?: string; ttlMs?: number; wired?: boo
   const frames: Frames = [];
   const calls: Array<{ name: string; params: Record<string, unknown> }> = [];
   const state = { runId: "run-1" as string | null, controlVersion: 1, epoch: 1, canWrite: true };
+
   const broker = new FetchConsentBroker({
     conversationId: options.conversationId ?? "conv-a",
     emit: (message) => frames.push(message),
     ledger: new ConsentLedger(),
     ...(options.ttlMs !== undefined ? { ttlMs: options.ttlMs } : {}),
   });
+
   broker.bindContext(() => ({ runId: state.runId, controlVersion: state.controlVersion }));
+
   const rpc = {
     call: async (name: string, params: Record<string, unknown>) => {
       calls.push({ name, params: JSON.parse(JSON.stringify(params)) as Record<string, unknown> });
+
       return {
         url: String(params.url), status: 200, ok: true, contentType: "application/json",
         bytes: 2, readBytes: 2, totalBytes: 2, truncated: false, stoppedReason: "complete", text: "{}",
@@ -49,13 +59,17 @@ function harness(options: { conversationId?: string; ttlMs?: number; wired?: boo
     markCallRejected: vi.fn(),
     noteToolFact: vi.fn(),
   };
+
   const consumeConsent: ConsumeConsent = (_name, params, opts) => broker.request(params, opts);
+
   const execution = {
     epoch: () => state.epoch,
     canWrite: () => state.canWrite,
     ...(options.wired === false ? {} : { consumeConsent }),
   };
+
   const tools = createBrowserTools(rpc as never, undefined, undefined, () => true, execution);
+
   return {
     frames, calls, broker, state, rpc,
     fetch: tools.find((tool) => tool.name === "fetch")!,
@@ -66,6 +80,7 @@ function harness(options: { conversationId?: string; ttlMs?: number; wired?: boo
 /** 等侧栏卡片出现，返回它的 id。 */
 async function waitForRequest(frames: Frames): Promise<FetchConsentRequest> {
   await vi.waitFor(() => expect(consentRequests(frames)).toHaveLength(1));
+
   return consentRequests(frames)[0]!;
 }
 
@@ -94,9 +109,13 @@ describe("fetch consent broker", () => {
       const controller = new AbortController();
       const pending = h.fetch.execute("call-1", { ...POST }, controller.signal, undefined, {} as never);
       const request = await waitForRequest(h.frames);
+
       if (mutate === "reject") h.broker.decide(request.id, false);
+
       if (mutate === "run") { h.state.runId = "run-2"; h.broker.decide(request.id, true); }
+
       if (mutate === "control") { h.state.controlVersion = 8; h.broker.decide(request.id, true); }
+
       if (mutate === "abort") controller.abort();
       await expect(pending).rejects.toThrow(/未发送|未执行/);
       expect(h.calls).toHaveLength(0);
@@ -131,9 +150,11 @@ describe("fetch consent broker", () => {
       const h = harness();
       const controller = new AbortController();
       const tool = program ? h.program : h.fetch;
+
       const params = program
         ? { code: `return await browser.fetch(${JSON.stringify(POST)});` }
         : { ...POST };
+
       const pending = tool.execute("cancel-after-allow", params as never, controller.signal, undefined, {} as never);
       const request = await waitForRequest(h.frames);
       h.broker.decide(request.id, true);
@@ -148,6 +169,7 @@ describe("fetch consent broker", () => {
       const h = harness();
       const pending = h.fetch.execute("call-1", { ...POST }, undefined, undefined, {} as never);
       const request = await waitForRequest(h.frames);
+
       if (mutate === "epoch") h.state.epoch = 2;
       else h.state.canWrite = false;
       h.broker.decide(request.id, true);
@@ -170,10 +192,12 @@ describe("fetch consent broker", () => {
 
   it("侧栏看不到敏感 header 的原值，但票据仍按原值绑定", async () => {
     const h = harness();
+
     const pending = h.fetch.execute("call-1", {
       url: URL_, method: "POST", body: "{}",
       headers: { Authorization: "Bearer secret-token", "X-Trace": "keep", Cookie: "sid=1", Host: "evil.example" },
     }, undefined, undefined, {} as never);
+
     const request = await waitForRequest(h.frames);
     expect(request.headers).toEqual({ Authorization: "[已隐藏]", "X-Trace": "keep" });
     h.broker.decide(request.id, true);
@@ -196,11 +220,14 @@ describe("fetch consent broker", () => {
     const body = "z".repeat(60_000);
     let refused: ConsentOutcome | null = null;
     let created = 0;
+
     for (let index = 0; index < 40 && !refused; index += 1) {
       const state = await settle(h.broker.request({ url: `${ORIGIN}/n${index}`, method: "POST", body }));
+
       if (state === "pending") created += 1;
       else refused = state;
     }
+
     expect(created).toBeGreaterThan(1);
     expect(refused).toMatchObject({ allowed: false });
     expect(refused!.reason).toMatch(new RegExp(`KiB|${FETCH_CONSENT_LIST_LIMIT} 条`));
@@ -212,9 +239,11 @@ describe("fetch consent broker", () => {
 
   it("待确认请求条数超限也会拒绝新增", async () => {
     const h = harness();
+
     for (let index = 0; index < FETCH_CONSENT_LIST_LIMIT; index += 1) {
       expect(await settle(h.broker.request({ url: `${ORIGIN}/c${index}`, method: "POST", body: "{}" }))).toBe("pending");
     }
+
     const overflow = await h.broker.request({ url: `${ORIGIN}/over`, method: "POST", body: "{}" });
     expect(overflow).toMatchObject({ allowed: false });
     expect(overflow.reason).toContain(`${FETCH_CONSENT_LIST_LIMIT} 条`);
@@ -248,11 +277,13 @@ describe("fetch consent broker", () => {
 
   it("browser_run 里的 fetch 与独立 fetch 走同一条确认路", async () => {
     const h = harness();
+
     const pending = h.program.execute(
       "call-prog",
       { code: `return await browser.fetch({url: ${JSON.stringify(URL_)}, method: "POST", body: "{}"});` },
       undefined, undefined, {} as never,
     );
+
     const request = await waitForRequest(h.frames);
     expect(h.calls).toHaveLength(0);
     h.broker.decide(request.id, true);
@@ -305,11 +336,13 @@ describe("fetch consent broker", () => {
     const rpc = new ToolRpc((frame) => sent.push(frame));
     const broker = new FetchConsentBroker({ conversationId: "conv-a", emit: (message) => frames.push(message) });
     broker.bindContext(() => ({ runId: "run-1", controlVersion: 0 }));
+
     const tools = createBrowserTools(rpc, undefined, undefined, () => true, {
       epoch: () => 1,
       canWrite: () => true,
       consumeConsent: (_name, params, opts) => broker.request(params, opts),
     });
+
     const fetchTool = tools.find((tool) => tool.name === "fetch")!;
     const pending = fetchTool.execute("call-1", { ...POST }, undefined, undefined, {} as never);
     const request = await waitForRequest(frames);

@@ -6,14 +6,17 @@ type ScriptDetails = {
   func?: unknown;
   args?: unknown[];
 };
+
 type QueryGate = { promise: Promise<unknown>; resolve: (value: unknown) => void };
 
 /** 可手动放行的异步替身：用来把绘制卡在 await 中间，制造真实并发窗口。 */
 function deferred<T>() {
   let resolve!: (value: T) => void;
+
   const promise = new Promise<T>((res) => {
     resolve = res;
   });
+
   return { promise, resolve };
 }
 
@@ -22,21 +25,27 @@ function installChrome(opts: { titles?: Record<number, string>; cursorInjectGate
   /** 这些标签页上的光标注入（ensureCursor）会被卡住，用来把旧绘制停在「落笔之前」的真实 await 里。 */
   const gatedTabs = new Set(opts.cursorInjectGates ?? []);
   const cursorGates: Array<{ tabId: number; release: () => void }> = [];
+
   const executeScript = vi.fn(async (details: ScriptDetails) => {
     if (gatedTabs.has(details.target.tabId) && details.files?.includes("content-cursor.js")) {
       await new Promise<void>((release) => {
         cursorGates.push({ tabId: details.target.tabId, release });
       });
     }
+
     return [{ frameId: 0, result: undefined }];
   });
+
   /** 每次查「用户当前看哪一页」都被卡住，测试逐个放行。 */
   const gates: QueryGate[] = [];
+
   const query = vi.fn(() => {
     const gate = deferred<unknown>();
     gates.push({ promise: gate.promise, resolve: gate.resolve });
+
     return gate.promise;
   });
+
   const get = vi.fn(async (tabId: number) => ({ id: tabId, title: titles[tabId] ?? "" }));
   const activated: Array<() => void> = [];
   const removed: Array<(tabId: number) => void> = [];
@@ -53,6 +62,7 @@ function installChrome(opts: { titles?: Record<number, string>; cursorInjectGate
     },
     windows: { update: vi.fn(async () => ({})) },
   });
+
   return { executeScript, query, get, activated, removed, gates, cursorGates };
 }
 
@@ -63,6 +73,7 @@ async function waitForQuery(env: ReturnType<typeof installChrome>, times: number
 /** 放行第 n 次「用户当前看哪一页」的查询（0 起）。 */
 function resolveActive(env: ReturnType<typeof installChrome>, index: number, tabId: number | null): void {
   const gate = env.gates[index];
+
   if (!gate) throw new Error(`第 ${index} 次查询还没发生`);
   gate.resolve(tabId == null ? [] : [{ id: tabId }]);
 }
@@ -70,6 +81,7 @@ function resolveActive(env: ReturnType<typeof installChrome>, index: number, tab
 /** 放行第 n 次卡住的光标注入（0 起）。 */
 function releaseCursorInject(env: ReturnType<typeof installChrome>, index: number): void {
   const gate = env.cursorGates[index];
+
   if (!gate) throw new Error(`第 ${index} 次光标注入还没发生`);
   gate.release();
 }
@@ -78,6 +90,7 @@ function releaseCursorInject(env: ReturnType<typeof installChrome>, index: numbe
 function pillPaints(executeScript: ReturnType<typeof vi.fn>) {
   return executeScript.mock.calls.filter(([details]) => {
     const view = (details as ScriptDetails).args?.[1];
+
     return Boolean(view && typeof view === "object" && "title" in (view as object));
   }) as Array<[ScriptDetails]>;
 }
@@ -89,6 +102,7 @@ function paintsOn(executeScript: ReturnType<typeof vi.fn>, tabId: number) {
 function hidesOn(executeScript: ReturnType<typeof vi.fn>, tabId: number) {
   return executeScript.mock.calls.filter(([details]) => {
     const call = details as ScriptDetails;
+
     // 只认「往页面里执行无参函数」的隐藏调用，不把注入 content-cursor.js 算进来
     return call.target.tabId === tabId && call.files === undefined && (call.args ?? []).length === 0;
   });
@@ -103,6 +117,7 @@ describe("光标状态层跨页提示的异步残留", () => {
 
   it("绘制途中被 clear：旧 waiting 不能把胶囊重新画回来", async () => {
     const env = installChrome({ titles: { 21: "BOSS直聘" } });
+
     const { showCursorStatus, clearCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );
@@ -119,6 +134,7 @@ describe("光标状态层跨页提示的异步残留", () => {
 
   it("绘制途中被 suppress（用户接管）：旧 waiting 不能把胶囊重新画回来", async () => {
     const env = installChrome({ titles: { 21: "BOSS直聘" } });
+
     const { showCursorStatus, suppressCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );
@@ -149,6 +165,7 @@ describe("光标状态层跨页提示的异步残留", () => {
 
   it("接管期间被卡住的旧绘制：不重画自己的胶囊，也不动别处仍在干活的会话", async () => {
     const env = installChrome({ titles: { 21: "A 页", 31: "B 页" } });
+
     const { showCursorStatus, suppressCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );
@@ -186,6 +203,7 @@ describe("光标状态层跨页提示的异步残留", () => {
   it("绘制正卡在注入光标这段 await 时被接管：旧 waiting 不能把胶囊重新画回来", async () => {
     // 延迟发生在 pill 绘制内部真正落笔之前的那次注入（ensureCursor），不是外面的查 active 页
     const env = installChrome({ titles: { 21: "BOSS直聘" }, cursorInjectGates: [5] });
+
     const { showCursorStatus, suppressCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );
@@ -207,6 +225,7 @@ describe("光标状态层跨页提示的异步残留", () => {
 
   it("同一页被两个会话认领：清掉旧的后，仍在干活的那个不被连累", async () => {
     const env = installChrome({ titles: { 21: "A 页", 31: "B 页" } });
+
     const { showCursorStatus, clearCursorStatus, cursorStatusForTests } = await import(
       "../src/background/cursor-status.js"
     );

@@ -18,17 +18,22 @@ vi.mock("../src/run-trace.js", async importOriginal => ({
 
 async function setup(readFails = false) {
   let running = false;
+
   const raw = {
     model: { id: "fixture", provider: "fixture" },
     sessionManager: {appendCustomEntry: vi.fn(), getBranch: () => []},
     get isStreaming() { return running; },
     steer: vi.fn(async (_text: string, _images?: unknown[]) => {}),
   };
+
   const rpc = { call: vi.fn(async (_name: string, _params: unknown) => {
     if (readFails) throw new Error("original tab closed");
+
     return { text: "ORIGINAL_PAGE_A_FRESH_CONTENT", tabId: 101 };
   }) };
+
   let wrapped!: BrowserAgentSession;
+
   const manager = new ConversationManager(async (_id, emit) => {
     const Session = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
     wrapped = new Session(raw, null, {
@@ -39,7 +44,9 @@ async function setup(readFails = false) {
       running = true;
       emit({type: "agent_event", event: {kind: "agent_start"}});
     };
+
     wrapped.classifyVoiceInput = async text => ({steps: [{action: "steer", text, target: null}]});
+
     return {
       session: wrapped,
       fleet: {reset() {}, isGroupHeld: () => false},
@@ -47,10 +54,12 @@ async function setup(readFails = false) {
       dispose() {},
     } as any;
   }, () => {});
+
   await manager.ensureDefault();
   const started = await manager.dispatchTaskAction({requestId: "start", conversationId: "default", source: "text", action: "start", expectedRunId: null, text: "查看页面"});
   expect(started).toMatchObject({status: "accepted"});
   expect(manager.getTaskProgress("default")?.state).toBe("running");
+
   const route: VoiceRouteContext = {
     requestId: "voice-1", voiceId: "voice", turn: 1,
     runId: manager.getTaskProgress("default")!.runId ?? null,
@@ -60,15 +69,18 @@ async function setup(readFails = false) {
       attachments: [{id: "a", type: "image", name: "a.png", mimeType: "image/png", dataBase64: "QUFB"}],
     },
   };
+
   async function sendCorrection() {
     return manager.routeVoiceInput("default", "不是刚才那个，改看当前页面", null, () => true, route);
   }
+
   return { manager, raw, rpc, wrapped, sendCorrection };
 }
 
 describe("直接语音纠正的跨模块验收", () => {
   it("无需确认，真实 session 观察原页，向 SDK 交付原页事实和原图，并使旧写入代次失效", async () => {
     const h = await setup();
+
     try {
       const previousEpoch = h.wrapped.executionEpoch();
       expect(await h.sendCorrection()).toMatchObject({kind: "steer", ok: true});
@@ -86,6 +98,7 @@ describe("直接语音纠正的跨模块验收", () => {
 
   it("原页读不到时仍保留原页锚点，不读取或注入其他活动页", async () => {
     const h = await setup(true);
+
     try {
       expect(await h.sendCorrection()).toMatchObject({kind: "steer", ok: true});
       expect(h.rpc.call).toHaveBeenCalledExactlyOnceWith("snapshot", {tabId: 101}, 4000);

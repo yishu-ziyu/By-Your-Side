@@ -9,6 +9,7 @@ describe('任务身份与真实 wire 回执', () => {
       { conversationId: 'c', runId: 'old', kind: 'finding', text: '旧任务' },
       { conversationId: 'c', runId: 'current', kind: 'finding', text: '本任务' },
     ] } as RunEvidence;
+
     expect(ownDeliveries(evidence).map(d => d.text)).toEqual(['本任务']);
     expect(ownDeliveries({ ...evidence, runIds: [], deliveries: evidence.deliveries.slice(0, 1) })).toHaveLength(1);
   });
@@ -21,6 +22,7 @@ describe('任务身份与真实 wire 回执', () => {
       { at: 5, direction: 'server', message: { type: 'tool_call', conversationId: 'c', id: 'missing', name: 'fill', params: {} } },
       { at: 6, direction: 'server', message: { type: 'agent_event', conversationId: 'c', event: { kind: 'tool_end', name: 'fill', isError: false, executionFact: 'executed' } } },
     ];
+
     expect(pairCallsWithEnds(events, 'c')).toEqual([
       expect.objectContaining({ toolCallId: 'a', ok: false, executionFact: 'not_executed', confirmedAt: 4 }),
       expect.objectContaining({ toolCallId: 'b', ok: true, executionFact: 'executed', confirmedAt: 3 }),

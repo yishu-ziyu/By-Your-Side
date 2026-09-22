@@ -15,6 +15,7 @@ it('所有缺省页面动作都把任务目标传给原有归属检查，不能�
   const {navigate}=await import('../src/background/exec/navigate.js');
   const {evaluateJs}=await import('../src/background/exec/evaluate.js');
   const {screenshot}=await import('../src/background/exec/screenshot.js');
+
   const actions=[
     ()=>input.click({target:'#start',tabId:91},'main'),
     ()=>input.hover({target:'#start',tabId:91},'main'),
@@ -28,6 +29,7 @@ it('所有缺省页面动作都把任务目标传给原有归属检查，不能�
     ()=>evaluateJs({code:'1+1',tabId:91},'main'),
     ()=>screenshot({tabId:91},'main'),
   ];
+
   for(const action of actions){
     resolve.mockClear();
     await expect(action()).rejects.toThrow('指定页已关闭');
@@ -60,6 +62,7 @@ it.each(['dom-rebind','debugger-unavailable'] as const)('bound fill refuses %s b
   vi.spyOn(state,'maybeActivateTab').mockResolvedValue(undefined);
   const ax=await import('../src/background/axstate.js');
   ax.recordAxSnapshot(91,[4]);
+
   if(mode==='dom-rebind')ax.clearAxSnapshot(91);
   const debuggerApi=await import('../src/background/debugger.js');
   const send=vi.spyOn(debuggerApi,'sendCommand').mockRejectedValue(new Error('debugger detached'));

@@ -25,9 +25,11 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
 
   interrupt(): number {
     this.epoch += 1;
+
     for (const responseId of this.deliveryByResponse.keys()) this.ignored.add(responseId);
     this.deliveryByResponse.clear();
     this.waiting.clear();
+
     return this.epoch;
   }
 
@@ -64,6 +66,7 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
     const deliveryId = this.deliveryByResponse.get(responseId) ?? null;
     this.deliveryByResponse.delete(responseId);
     this.ignored.delete(responseId);
+
     return { deliveryId, ignored, epoch: this.epoch };
   }
 
@@ -78,6 +81,7 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
   silence(id: string): void {
     this.queue.delete(id);
     this.silenced.add(id);
+
     if (this.silenced.size > 100) this.silenced.delete(this.silenced.values().next().value!);
   }
 
@@ -102,8 +106,10 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
 
   markComplete(id: string): boolean {
     const queued = this.queue.get(id);
+
     if (!queued) return false;
     queued.complete = true;
+
     return true;
   }
 
@@ -123,6 +129,7 @@ export class VoicePlayback<T extends PlaybackStream = PlaybackStream> {
 
   someQueued(pred: (item: QueuedSpeech<T>) => boolean): boolean {
     for (const item of this.queue.values()) if (pred(item)) return true;
+
     return false;
   }
 

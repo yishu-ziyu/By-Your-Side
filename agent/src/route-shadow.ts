@@ -6,7 +6,9 @@ import {routeShadowDailyLimit, routeShadowEnabled} from "./config.js";
 
 /** Same endpoint/model as agent/src/goal-evidence-judge.ts and docs/evals/20260921-routing-experiment/route-compare.py. */
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+
 const MODEL = "jev-1.13.0";
+
 const TIMEOUT_MS = 4000;
 
 /** 8 lanes, copied verbatim from route-compare.py's LANES so a week of shadow data compares directly with the offline experiment. */
@@ -22,6 +24,7 @@ const LANES = {
 } as const;
 
 type RequestLane = keyof typeof LANES;
+
 function isRequestLane(value: string): value is RequestLane { return Object.hasOwn(LANES, value); }
 
 /** Same route-compare.py route_questions(1) plus one added judgment: lane_0 (choice over the 8 lanes),
@@ -107,17 +110,20 @@ export interface RouteShadowOptions {
 }
 
 interface JevAnswer {choice?: string; confidence?: number; probabilities?: Record<string, number>; noul?: number}
+
 interface JevResponse {answers?: {lane_0?: JevAnswer; pagechange_0?: JevAnswer; spoken_result_0?: JevAnswer}; usage?: Record<string, number>}
 
 /** Raw noul only when it is a real finite number; missing/invalid stays undefined (never fabricated to 0/1). */
 function rawNoul(answer: JevAnswer | undefined): number | undefined {
   const value = answer?.noul;
+
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function dayKey(at: number): string {
   const date = new Date(at);
   const pad = (value: number) => String(value).padStart(2, "0");
+
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
@@ -170,9 +176,17 @@ export class RouteShadow {
     const at = this.now();
     const base = {at, channel: input.channel, conversationId: input.conversationId, voiceId: input.voiceId, turn: input.turn, itemId: input.itemId, inputId: input.inputId, text: input.text};
     let key = "";
+
     try { key = this.key(); } catch { key = ""; }
-    if (!key) { this.write({type: "skipped", ...base, reason: "no_credential"}); return null; }
-    if (!this.reserveCallSlot(dayKey(at))) { this.write({type: "skipped", ...base, reason: "daily_limit"}); return null; }
+
+    if (!key) { this.write({type: "skipped", ...base, reason: "no_credential"});
+
+ return null; }
+
+    if (!this.reserveCallSlot(dayKey(at))) { this.write({type: "skipped", ...base, reason: "daily_limit"});
+
+ return null; }
+
     return this.callJev(input, base, key);
   }
 
@@ -186,19 +200,29 @@ export class RouteShadow {
     try {
       const started = this.now();
       const body = JSON.stringify({model: MODEL, state: buildState(input), questions: routeQuestions()});
+
       const response = await this.doFetch(ENDPOINT, {
         method: "POST",
         headers: {Authorization: `Bearer ${key}`, "Content-Type": "application/json"},
         body,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (!response.ok) { this.write({type: "skipped", ...base, reason: `http_${response.status}`}); return null; }
+
+      if (!response.ok) { this.write({type: "skipped", ...base, reason: `http_${response.status}`});
+
+ return null; }
+
       const data = await response.json() as JevResponse;
       const lane = data.answers?.lane_0;
-      if (!lane || typeof lane.choice !== "string") { this.write({type: "skipped", ...base, reason: "invalid_response"}); return null; }
+
+      if (!lane || typeof lane.choice !== "string") { this.write({type: "skipped", ...base, reason: "invalid_response"});
+
+ return null; }
+
       const pagechange = data.answers?.pagechange_0;
       const requestMs = this.now() - started;
       const completedAt = this.now();
+
       const audited = this.write({
         type: "utterance", at: base.at, channel: input.channel, conversationId: input.conversationId, voiceId: input.voiceId, turn: input.turn, itemId: input.itemId, inputId: input.inputId, completedAt,
         text: input.text, previous: input.previous, taskRunning: input.taskRunning, taskState: input.taskState, page: input.page,
@@ -209,16 +233,21 @@ export class RouteShadow {
           ms: requestMs, requestMs, usage: data.usage,
         },
       });
+
       const pageChange = rawNoul(pagechange), spokenResult = rawNoul(data.answers?.spoken_result_0);
+
       if (!audited || !isRequestLane(lane.choice) || pageChange === undefined || spokenResult === undefined
         || pageChange < 0 || pageChange > 1 || spokenResult < 0 || spokenResult > 1
         || !input.voiceId || !Number.isInteger(input.turn) || !input.itemId || !input.inputId) return null;
+
       if (!Number.isFinite(requestMs) || requestMs < 0 || !Number.isFinite(completedAt)) return null;
+
       return {lane: lane.choice, pageChange, spokenResult, requestMs, completedAt,
         voiceId: input.voiceId, turn: input.turn!, itemId: input.itemId, inputId: input.inputId};
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
       this.write({type: "skipped", ...base, reason: timedOut ? "timeout" : "fetch_error"});
+
       return null;
     }
   }
@@ -226,25 +255,32 @@ export class RouteShadow {
   /** True (and reserves a slot) while today's Jev-call budget has room; false once it is exhausted. */
   private reserveCallSlot(day: string): boolean {
     if (day !== this.countedDay) { this.countedDay = day; this.callsToday = this.countExistingCalls(day); }
+
     if (this.callsToday >= this.dailyLimit()) return false;
     this.callsToday++;
+
     return true;
   }
 
   /** Recovers today's already-spent call budget from disk, so a process restart mid-day does not reopen it. */
   private countExistingCalls(day: string): number {
     const path = this.pathFor(day);
+
     if (!existsSync(path)) return 0;
     let count = 0;
+
     try {
       for (const line of readFileSync(path, "utf8").split("\n")) {
         if (!line) continue;
+
         try {
           const record = JSON.parse(line) as {type?: string; reason?: string};
+
           if (record.type === "utterance" || (record.type === "skipped" && record.reason !== "daily_limit" && record.reason !== "no_credential")) count++;
         } catch { /* malformed line: ignore, do not fail the count */ }
       }
     } catch { return 0; }
+
     return count;
   }
 
@@ -256,14 +292,17 @@ export class RouteShadow {
     try {
       mkdirSync(this.root, {recursive: true});
       appendFileSync(this.pathFor(dayKey(record.at)), `${JSON.stringify(record)}\n`);
+
       return true;
     } catch { return false; /* Unaudited data cannot drive production behavior. */ }
   }
 }
 
 let shared: RouteShadow | null = null;
+
 /** One process-wide instance so voice and text entry points share the same daily Jev-call budget. */
 export function sharedRouteShadow(): RouteShadow {
   if (!shared) shared = new RouteShadow({enabled: routeShadowEnabled, dailyLimit: routeShadowDailyLimit});
+
   return shared;
 }

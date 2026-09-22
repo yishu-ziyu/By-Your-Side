@@ -1,8 +1,12 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/background/state.js',()=>({resolveWorkingTab:vi.fn(async()=>({id:12}))}));
+
 import {resolveWorkingTab} from '../src/background/state.js';
 import {pageTranslation} from '../src/background/exec/page-translation.js';
+
 afterEach(()=>vi.unstubAllGlobals());
+
 describe('page translation injection receipts',()=>{
   it('rejects invalid typography before injection without an unknown write',async()=>{
     const executeScript=vi.fn();

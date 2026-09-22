@@ -11,13 +11,16 @@ export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry
 export function historyUpdatedAt(value: unknown): number {
   if (Array.isArray(value)) return 0;
   const at = (value as { updatedAt?: unknown } | null | undefined)?.updatedAt;
+
   return typeof at === "number" && Number.isFinite(at) ? at : 0;
 }
 
 /** 超出保留数量的 history 键，即需要删除的那些。 */
 export function historyKeysToDrop(records: Array<{ key: string; updatedAt: number }>, keep: number): string[] {
   if (keep <= 0) return records.map((record) => record.key);
+
   if (records.length <= keep) return [];
+
   return [...records]
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(keep)
@@ -43,41 +46,61 @@ export class PanelHistory {
   record(item: PanelHistoryItem): PanelHistoryEntry {
     const stream=item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='user_delivery_stream'?item.msg.event.stream:null;
     const completed=item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='user_delivery'?item.msg.event.delivery:null;
+
     if(stream||completed){
       const id=stream?.id??completed!.id;
+
       for(let i=this.entries.length-1;i>=0;i--){
         const old=this.entries[i]!.item;
+
         if(old.kind==='server'&&old.msg.type==='agent_event'&&old.msg.event.kind==='user_delivery_stream'&&old.msg.event.stream.id===id&&item.kind==='server'&&old.msg.conversationId===item.msg.conversationId)this.entries.splice(i,1);
       }
     }
+
     const plan=taskPlan(item);
+
     if(plan){
-      const index=this.entries.findIndex(e=>{const old=taskPlan(e.item);return old?.id===plan.id&&old.conversationId===plan.conversationId;});
-      if(index>=0){const old=this.entries[index]!;if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(index,1);}
+      const index=this.entries.findIndex(e=>{const old=taskPlan(e.item);
+
+return old?.id===plan.id&&old.conversationId===plan.conversationId;});
+
+      if(index>=0){const old=this.entries[index]!;
+
+if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(index,1);}
     }
+
     const receipt = taskReceipt(item);
+
     if (receipt) {
       const index = this.entries.findIndex(e=>{
         const old=taskReceipt(e.item);
+
         return old?.requestId===receipt.requestId && old.conversationId===receipt.conversationId;
       });
+
       if (index>=0) {
         const existing=this.entries[index]!, old=taskReceipt(existing.item)!;
+
         if (old.updatedAt>=receipt.updatedAt) return existing;
         this.entries.splice(index,1);
       }
     }
+
     const delivery = userDelivery(item);
+
     if (delivery) {
       const index = this.entries.findIndex(e => {
         const old = userDelivery(e.item);
+
         return old?.id === delivery.id && old.conversationId === delivery.conversationId;
       });
+
       if (index >= 0) {
         const existing = this.entries[index]!;
         const old = userDelivery(existing.item)!;
         const oldRank = DELIVERY_STATUS_RANK[old.status] ?? -1;
         const newRank = DELIVERY_STATUS_RANK[delivery.status] ?? -1;
+
         if (newRank > oldRank && existing.item.kind === 'server' && existing.item.msg.type === 'agent_event') {
           const updated = { ...old, status: delivery.status };
           existing.item = {
@@ -91,19 +114,24 @@ export class PanelHistory {
             },
           };
         }
+
         return existing;
       }
     }
+
     const entry = { seq: this.nextSeq++, item, occurredAt: Date.now() };
     this.entries.push(entry);
+
     if (this.entries.length > this.limit) {
       this.entries.splice(0, this.entries.length - this.limit);
     }
+
     return entry;
   }
 
   markUndelivered(seq: number, original: import("../../../shared/protocol.js").ClientMessage): void {
     const entry = this.entries.find(item => item.seq === seq);
+
     if (entry?.item.kind === "user") entry.item.undelivered = { original };
   }
 
@@ -120,24 +148,30 @@ export class PanelHistory {
     const encoder = new TextEncoder();
     const out: PanelHistoryEntry[] = [];
     let bytes = 0;
+
     for (let index = this.entries.length - 1; index >= 0; index -= 1) {
       const entry = this.entries[index]!;
       const size = encoder.encode(JSON.stringify(entry)).length + 1;
+
       if (out.length > 0 && bytes + size > budgetBytes) break;
       out.push(entry);
       bytes += size;
     }
+
     return out.reverse();
   }
 
   restore(value: unknown): void {
     const list = Array.isArray(value) ? value : (value as StoredPanelHistory | null)?.entries;
+
     if (!Array.isArray(list)) return;
+
     for (const entry of list) {
       if (!entry || !Number.isInteger(entry.seq) || !entry.item || entry.seq < this.nextSeq) continue;
       this.entries.push(entry);
       this.nextSeq = entry.seq + 1;
     }
+
     if (this.entries.length > this.limit) this.entries.splice(0, this.entries.length - this.limit);
   }
 

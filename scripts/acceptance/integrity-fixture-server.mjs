@@ -30,13 +30,16 @@ export function startIntegrityFixtureServer() {
     if (!file || !existsSync(file)) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not Found in Integrity Fixture Server");
+
       return;
     }
 
     const resolved = normalize(file);
+
     if (!resolved.startsWith(normalize(FIXTURE_DIR))) {
       res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
       res.end("Forbidden");
+
       return;
     }
 
@@ -55,21 +58,26 @@ export function startIntegrityFixtureServer() {
   return new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
+
       if (!addr || typeof addr === "string") {
         reject(new Error("Integrity fixture server failed to bind 127.0.0.1"));
+
         return;
       }
+
       resolve({
         port: addr.port,
         origin: `http://127.0.0.1:${addr.port}`,
         close: () =>
           new Promise((res) => {
             const timer = setTimeout(res, 500);
+
             try {
               server.closeAllConnections?.();
             } catch {
               /* ignore */
             }
+
             server.close(() => {
               clearTimeout(timer);
               res();

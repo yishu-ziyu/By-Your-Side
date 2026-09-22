@@ -41,9 +41,13 @@ async function startStubAgent() {
   server.on("connection", (socket) => {
     socket.on("message", (raw) => {
       let msg;
+
       try { msg = JSON.parse(String(raw)); } catch { return; }
+
       seen.push(msg);
+
       if (msg.type === "hello") socket.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: "stub/demo" }));
+
       if (msg.type === "skill_compile") {
         const skill = compileSkill({
           id: "skill-acceptance0001",
@@ -52,11 +56,13 @@ async function startStubAgent() {
           hostname: msg.hostname,
           steps: msg.steps,
         });
+
         skills.push(skill);
         socket.send(JSON.stringify({ type: "skill_result", requestId: msg.requestId, conversationId: msg.conversationId, action: "compile", ok: true, skill }));
       }
     });
   });
+
   return {
     seen,
     skills,
@@ -71,11 +77,15 @@ async function startStubAgent() {
 }
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 const DIST = join(repoRoot, "extension", "dist");
+
 const CHROME = "/Users/mahaoxuan/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+
 const PORT = 9411;
 
 const SECRET = "hunter2-not-in-steps";
+
 const NOTE = "示范备注文本";
 
 const PAGE = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>示范验收夹具</title></head>
@@ -97,6 +107,7 @@ const PAGE = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
 </body></html>`;
 
 const timeline = [];
+
 function say(line) { timeline.push(line); console.log(line); }
 
 async function startFixture() {
@@ -104,12 +115,15 @@ async function startFixture() {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(PAGE);
   });
+
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const { port } = server.address();
+
   return { origin: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
 }
 
 const launchArgs = [];
+
 function launch(profile) {
   const args = [
     `--user-data-dir=${profile}`,
@@ -125,14 +139,20 @@ function launch(profile) {
     "--headless=new",
     "about:blank",
   ];
+
   launchArgs.splice(0, launchArgs.length, ...args);
+
   return spawn(CHROME, args, { stdio: "ignore", detached: false });
 }
 
 async function waitForPort() {
   const deadline = Date.now() + 20_000;
+
   for (;;) {
-    try { await fetchJson(`http://127.0.0.1:${PORT}/json/version`, 1000); return; } catch { /* 还没起来 */ }
+    try { await fetchJson(`http://127.0.0.1:${PORT}/json/version`, 1000);
+
+ return; } catch { /* 还没起来 */ }
+
     if (Date.now() > deadline) throw new Error("Chrome 调试端口 20 秒内没起来");
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -140,9 +160,12 @@ async function waitForPort() {
 
 async function waitFor(fn, label, timeoutMs = 15_000, intervalMs = 200) {
   const deadline = Date.now() + timeoutMs;
+
   for (;;) {
     const value = await fn();
+
     if (value) return value;
+
     if (Date.now() > deadline) throw new Error(`等待超时：${label}`);
     await new Promise((r) => setTimeout(r, intervalMs));
   }
@@ -151,22 +174,31 @@ async function waitFor(fn, label, timeoutMs = 15_000, intervalMs = 200) {
 function pageSession(cdp, sessionId) {
   const evalIn = async (expression) => {
     const r = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
+
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+
     return r.result?.value;
   };
+
   const centerOf = async (selector) => evalIn(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+
   const click = async (selector) => {
     const at = await waitFor(() => centerOf(selector), `元素可点 ${selector}`);
+
     for (const type of ["mousePressed", "mouseReleased"]) {
       await cdp.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, sessionId);
     }
+
     return at;
   };
+
   const type_ = async (text) => { await cdp.send("Input.insertText", { text }, sessionId); };
+
   const pressEnter = async () => {
     await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: "\r", unmodifiedText: "\r" }, sessionId);
     await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, sessionId);
   };
+
   return { evalIn, click, type: type_, pressEnter };
 }
 
@@ -176,17 +208,21 @@ const LOCK = join(tmpdir(), "sideagent-demo-record.lock");
 async function acquireLock() {
   try {
     const held = Number((await readFile(LOCK, "utf8")).trim());
+
     if (Number.isInteger(held) && held > 1 && processExists(held)) {
       throw new Error(`已有验收实例在跑（pid ${held}）。等它结束再跑，别叠着占内存。`);
     }
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("已有验收实例")) throw error;
   }
+
   await writeFile(LOCK, String(process.pid), "utf8");
 }
 
 function processExists(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try { process.kill(pid, 0);
+
+ return true; } catch { return false; }
 }
 
 async function main() {
@@ -200,14 +236,17 @@ async function main() {
 
   const fixture = await startFixture();
   const chrome = launch(profile);
+
   /**
    * 被信号打断时要自己收尸：否则会留下一个无头 Chrome 占着内存，
    * 而这台机器本来就常年在 23/24 GB 上跑。
    */
   const killChild = () => {
     try { chrome.kill("SIGKILL"); } catch { /* 已经退出 */ }
+
     void fixture.close();
   };
+
   process.once("SIGINT", () => { killChild(); process.exit(130); });
   process.once("SIGTERM", () => { killChild(); process.exit(143); });
   process.once("uncaughtException", (error) => { say(`未捕获异常：${error?.message ?? error}`); killChild(); process.exit(1); });
@@ -221,10 +260,13 @@ async function main() {
     cdp = browser;
 
     say(`扩展 ID ${extId}；夹具 ${fixture.origin}；证据 ${evidenceDir}`);
+
     const worker = await waitFor(async () => {
       const { targetInfos } = await cdp.send("Target.getTargets");
+
       return findServiceWorker(targetInfos, extId);
     }, "扩展 service worker 出现");
+
     const workerSession = await cdp.attachSession(worker.targetId);
     await evaluateInWorker(cdp, workerSession, "1+1");
 
@@ -247,11 +289,13 @@ async function main() {
 
     const isolated = (fnSource) => evaluateInWorker(cdp, workerSession,
       `chrome.tabs.query({url:${JSON.stringify(fixture.origin + "/*")}}).then(tabs=>{const t=tabs[0];if(!t)return null;return chrome.scripting.executeScript({target:{tabId:t.id},world:'ISOLATED',func:${fnSource}}).then(r=>r[0]?.result ?? null)})`);
+
     const pageRecording = () => isolated("() => window.__sideagent?.record?.recording?.() ?? null");
 
     // 1) 点「看我做」
     await panel.evalIn("document.querySelector('#record-toggle').click(), true");
     let recordingOnPage = false;
+
     try {
       recordingOnPage = await waitFor(async () => (await pageRecording()) === true, "页面进入示范模式", 8000) === true;
     } catch (error) {
@@ -263,11 +307,15 @@ async function main() {
       const body = await panel.evalIn("document.body.innerText.slice(-600)");
       say(`面板文本尾部：\n${body}`);
     }
+
     check("点「看我做」后页面进入示范模式", recordingOnPage === true);
+
     const titleAfterStart = await waitFor(async () => {
       const t = await panel.evalIn("document.querySelector('#demo-title').textContent");
+
       return /已记下/.test(t || "") ? t : null;
     }, "面板出现录制提示", 6000).catch(() => null);
+
     check("面板显示录制提示", Boolean(titleAfterStart), titleAfterStart ?? "没等到标题");
 
     // 2) 用户动作：筛选 → 输入关键词 → 回车 → 点第一条记录
@@ -294,11 +342,16 @@ async function main() {
     let steps = null;
     let last = null;
     const stableDeadline = Date.now() + 10_000;
+
     for (;;) {
       const text = await panel.evalIn("document.querySelector('#demo-steps').innerText");
+
       if (text && text === last && text.includes("保存")) { steps = text; break; }
+
       last = text;
+
       if (Date.now() > stableDeadline) { steps = text; break; }
+
       await new Promise((r) => setTimeout(r, 400));
     }
 
@@ -319,28 +372,35 @@ async function main() {
     // 4) 背景缓冲里也不能有密码明文
     const pageSelfCheck = await isolated("() => JSON.stringify(window.__sideagent?.record?.selfCheck?.() ?? null)");
     say(`页面侧自检（停止后）：${pageSelfCheck}`);
+
     const buffered = await evaluateInWorker(cdp, workerSession, `(async () => {
       const store = await chrome.storage.local.get(null);
       return JSON.stringify(store).includes(${JSON.stringify(SECRET)}) ? "LEAK" : "clean";
     })()`);
+
     check("扩展存储里没有密码明文", buffered === "clean", String(buffered));
 
     // 5) 结束后步骤仍留在面板，且是看得见的（不能被收走）
     check("结束后步骤仍留在面板", (steps || "").includes("筛选"));
+
     const afterStop = await waitFor(async () => {
       const view = await panel.evalIn("JSON.stringify({hidden: document.querySelector('#demo-strip').hidden, title: document.querySelector('#demo-title').textContent, lines: document.querySelector('#demo-steps').children.length})");
       const parsed = JSON.parse(view);
+
       return parsed.hidden === false && parsed.lines >= 10 ? parsed : null;
     }, "收工后步骤条仍在", 5000).catch(() => null);
+
     check("收工后步骤条仍然可见、步骤没有消失", Boolean(afterStop), afterStop ? afterStop.title : "步骤条被收走了");
 
     // 6) 编译成脚本：面板 → 后台 → 协议桩（真编译器）→ 回到面板
     let stub = null;
+
     try {
       stub = await startStubAgent();
     } catch (error) {
       say(`协议桩没起来（7758 被占用？）：${error.message}`);
     }
+
     if (stub) {
       await panel.evalIn("(() => { document.querySelector('#token-input').value = 'demo-acceptance-token'; document.querySelector('#setup-save').click(); return true; })()");
       await waitFor(() => Promise.resolve(stub.seen.some(m => m.type === 'hello')), "协议桩收到 hello", 10_000).catch(() => null);
@@ -353,8 +413,10 @@ async function main() {
 
       const cardText = await waitFor(async () => {
         const text = await panel.evalIn("document.querySelector('#demo-skill').innerText || ''");
+
         return text.includes("已编译") ? text : null;
       }, "面板出现编译结果卡", 10_000).catch(() => null);
+
       check("面板显示编译结果卡", Boolean(cardText), cardText?.split("\n")[0] ?? "没有结果卡");
 
       const card = JSON.parse(await panel.evalIn(`(() => {
@@ -368,6 +430,7 @@ async function main() {
           inputs: ${JSON.stringify(JSON.stringify(Object.keys({})))},
         });
       })()`));
+
       check("卡片给的是人话步骤，且与示范列表同一套说法", card.lines.length === 11 && card.lines[0] === "点击按钮「筛选」" && card.lines.includes("在搜索框「客户名」里输入「张三」"), `${card.lines.length} 行`);
       check("卡片写明完成凭证", /完成凭证/.test(card.check) && /保存/.test(card.check), card.check.slice(0, 40));
       check("脚本默认折起来，不铺在脸上", card.folded === true, String(card.folded));
@@ -383,9 +446,11 @@ async function main() {
     // 步骤条单独截一张：它是这次要给人看的东西
     try {
       const hasStrip = await panel.evalIn("(() => { const el = document.querySelector('#demo-strip'); if (!el) return false; el.scrollIntoView({ block: 'center' }); return true; })()");
+
       if (hasStrip) {
         await new Promise((r) => setTimeout(r, 400));
         const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, panelSessionId);
+
         if (shot?.data) await writeFile(join(evidenceDir, "panel-steps.png"), Buffer.from(shot.data, "base64"));
       }
     } catch (error) { say(`步骤条截图失败：${error.message}`); }
@@ -394,6 +459,7 @@ async function main() {
     for (const [name, sessionId] of [["panel", panelSessionId], ["page", pageSessionId]]) {
       try {
         const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, sessionId);
+
         if (shot?.data) await writeFile(join(evidenceDir, `${name}.png`), Buffer.from(shot.data, "base64"));
       } catch (error) { say(`截图失败（${name}）：${error.message}`); }
     }
@@ -409,12 +475,16 @@ async function main() {
     await writeFile(join(evidenceDir, "timeline.txt"), timeline.join("\n"), "utf8");
   } finally {
     try { await cdp?.close(); } catch { /* 已断开 */ }
+
     await rm(LOCK, { force: true }).catch(() => undefined);
     await fixture.close();
+
     if (!keep) {
       chrome.kill("SIGTERM");
       await new Promise((r) => setTimeout(r, 1200));
+
       try { chrome.kill("SIGKILL"); } catch { /* 已经退出 */ }
+
       await rm(profile, { recursive: true, force: true });
     }
   }

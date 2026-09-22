@@ -1,8 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 let stored: Record<string, unknown>;
+
 let tabs: Map<number, { id: number; windowId: number }>;
+
 let removed: number[];
+
 let removedListener: ((tabId: number) => void) | undefined;
 
 beforeEach(() => {
@@ -21,7 +24,9 @@ beforeEach(() => {
     tabs: {
       get: vi.fn(async (id: number) => {
         const tab = tabs.get(id);
+
         if (!tab) throw new Error(`No tab with id: ${id}`);
+
         return tab;
       }),
       update: vi.fn(async (id: number, props: { active?: boolean }) => ({ ...tabs.get(id), ...props })),
@@ -42,6 +47,7 @@ async function setup() {
   const lead = state.executionKey("A", "main");
   await state.setWorkingTab(1, lead);
   await state.setWorkingTab(2, lead);
+
   return { state, control, closeTab, lead };
 }
 
@@ -55,6 +61,7 @@ async function setupOnHandingOverTab() {
   await state.setWorkingTab(1, lead);
   await state.setWorkingTab(2, lead);
   await state.setWorkingTab(1, lead);
+
   return { state, control, switchTab, lead };
 }
 
@@ -72,6 +79,7 @@ it("旧工作指针已离开该页时，原所有者在移交窗口内的显式�
     if (++checks !== 2) return;
     oldOwnerRun = await control.run(lead, async () => {
       await state.guardToolAccess("close_tab", lead, 1);
+
       return closeTab({ tabId: 1 }, lead);
     }).then(() => undefined, (error: unknown) => error);
     oldOwnerDirect = await closeTab({ tabId: 1 }, lead).then(() => undefined, (error: unknown) => error);
@@ -89,7 +97,9 @@ it("移交先封锁该页新操作、排空已进入操作，最后才变更归�
   const { state, control, lead } = await setup();
   const b = state.executionKey("B", "main");
   let finish: () => void = () => {};
+
   let entered: () => void = () => {};
+
   const began = new Promise<void>((resolve) => { entered = resolve; });
   const inFlight = control.run(lead, async () => { entered(); await new Promise<void>((resolve) => { finish = resolve; }); });
   await began;
@@ -119,8 +129,11 @@ it("移交一个页面时，同一会话的另一页仍可操作", async () => {
     if (otherPage !== undefined || otherPageError !== undefined) return;
     otherPage = await control.run(lead, async () => {
       await state.guardToolAccess("fill", lead, 2);
+
       return "另一页完成";
-    }).then((value) => value, (error: unknown) => { otherPageError = error; return undefined; });
+    }).then((value) => value, (error: unknown) => { otherPageError = error;
+
+ return undefined; });
   });
 
   expect(otherPageError).toBeUndefined();
@@ -143,6 +156,7 @@ it("工作指针仍在待交页的原所有者，在别的页仍可完成操作�
     // run(A) 不按成员整体拦截：同一会话的非交接页照常进入执行。
     otherGuard = await control.run(lead, async () => {
       await state.guardToolAccess("fill", lead, 2);
+
       return "页2 guard 通过";
     }).then((value) => value, (error: unknown) => error);
     otherSwitch = await control.run(lead, () => switchTab({ tabId: 2 }, lead))
@@ -150,6 +164,7 @@ it("工作指针仍在待交页的原所有者，在别的页仍可完成操作�
     // 待交页在状态层（guard 与真实 handler 共用的解析链）被围栏拦下。
     samePageGuard = await control.run(lead, async () => {
       await state.guardToolAccess("fill", lead, 1);
+
       return "不应发生";
     }).then((value) => value, (error: unknown) => error);
     samePageSwitch = await control.run(lead, () => switchTab({ tabId: 1 }, lead))
@@ -171,6 +186,7 @@ it("两个会话同时接手同一页时只有一个成功，围栏随交接释�
   const b = state.executionKey("B", "main");
   const c = state.executionKey("C", "main");
   let release: () => void = () => {};
+
   const gate = new Promise<void>((resolve) => { release = resolve; });
 
   const first = control.manage({ action: "claim", tabId: 1, expectedConversationId: "A" }, b, () => {}, async () => { await gate; });

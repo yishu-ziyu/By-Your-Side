@@ -5,10 +5,13 @@ import type { ToolRpc } from "../src/rpc.js";
 function setup(result: unknown) {
   const call = vi.fn().mockResolvedValue(result);
   const tools = createBrowserTools({ call } as unknown as ToolRpc, "worker-a");
+
   const run = (name: string, params: Record<string, unknown>) => {
     const tool = tools.find((item) => item.name === name)!;
+
     return tool.execute("test-call", params as never, new AbortController().signal, undefined, {} as never);
   };
+
   return { call, run };
 }
 

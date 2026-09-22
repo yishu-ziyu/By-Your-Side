@@ -43,6 +43,7 @@ describe("result card copy", () => {
       remaining: ["保存"],
       speechFailed: true,
     });
+
     expect(card.visible).toBe(true);
     expect(card.primary).toBe("已填入林夏，尚未提交");
     expect(card.secondary).toContain("还剩保存");

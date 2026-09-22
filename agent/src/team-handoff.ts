@@ -5,6 +5,7 @@ export function frozenMembersFromTakeover(
   msg: Extract<ClientMessage, { type: "takeover" }>,
 ): ActiveMemberInput[] {
   if (!msg.members || msg.members.length === 0) return [];
+
   return msg.members.map((member) => ({
     sessionId: member.sessionId,
     role: member.role,

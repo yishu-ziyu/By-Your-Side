@@ -13,13 +13,19 @@ class FakeSocket extends EventEmitter {
   send(data: string): void { this.sent.push(String(data)); }
   close(): void { this.emit('close', 1000, Buffer.from('')); }
 }
+
 const deliver = (socket: FakeSocket, event: unknown): void => { void socket.emit('message', Buffer.from(JSON.stringify(event))); };
 
 function harness() {
   const sockets: FakeSocket[] = [];
-  const connect = vi.fn(() => { const socket = new FakeSocket(); sockets.push(socket); return socket as never; });
+
+  const connect = vi.fn(() => { const socket = new FakeSocket(); sockets.push(socket);
+
+ return socket as never; });
+
   const client: Array<Record<string, unknown>> = [];
   const logs: Array<Record<string, unknown>> = [];
+
   const connection = new RealtimeVoiceConnection({
     key: 'offline-key', voiceId: 'handshake', connect: connect as never,
     send: (event: Record<string, unknown>) => { client.push(event); },
@@ -30,10 +36,12 @@ function harness() {
       task_status: async () => ({ ok: true, tasks: [] }),
     },
   } as never);
+
   return { connection, sockets, connect, client, logs };
 }
 
 const cleanups: Array<() => void> = [];
+
 afterEach(() => cleanups.splice(0).forEach(fn => fn()));
 
 describe('建连阶段的瞬时供应商错误', () => {

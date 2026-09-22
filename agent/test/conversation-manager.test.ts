@@ -11,15 +11,20 @@ import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 function harness(routeShadow?: RouteShadow) {
   const emitted: ServerMessage[] = [];
   const runtimes = new Map<string, { emit: (message: ServerMessage) => void; runtime: any; history: string[] }>();
+
   const factory = vi.fn(async (id: string, emit: (message: ServerMessage) => void) => {
     const history: string[] = [];
     let streaming=false;
+
     const observe=(message:ServerMessage)=>{
       if(message.type==='status')streaming=message.state==='running';
+
       if(message.type==='agent_event'&&message.event.kind==='agent_start')streaming=true;
+
       if(message.type==='agent_event'&&message.event.kind==='agent_end')streaming=false;
       emit(message);
     };
+
     const runtime = {
       session: { modelName: () => "test/model", availableModels: async () => [], available:true, abort: vi.fn(), isHeld: () => false, isStreaming:()=>streaming,
         startTask:vi.fn((text:string)=>{history.push(text);observe({type:'agent_event',event:{kind:'agent_start'}});observe({type:'status',state:'running'});}) },
@@ -27,12 +32,16 @@ function harness(routeShadow?: RouteShadow) {
       rpc: { rejectAll: vi.fn() }, dispose: vi.fn(),
       handleMessage: vi.fn((message: ClientMessage) => {
         if (message.type === "user_message") { history.push(message.text); observe({ type: "status", state: "running" }); }
+
         if (message.type === "abort") runtime.session.abort();
       }),
     };
+
     runtimes.set(id, { emit:observe, runtime, history });
+
     return runtime;
   });
+
   return { manager: new ConversationManager(factory as never, (message) => emitted.push(message), undefined, undefined, undefined, undefined, routeShadow), emitted, runtimes, factory };
 }
 
@@ -76,7 +85,11 @@ describe("independent conversation runtimes", () => {
     let emitA!: (message: ServerMessage) => void;
     const messages: ServerMessage[] = [];
     const runtime = { session: { modelName: () => "model" }, fleet: { teamView: () => null } };
-    const manager = new ConversationManager((_id, emit) => { emitA = emit; return new Promise((done) => { resolve = done; }); }, (m) => messages.push(m));
+
+    const manager = new ConversationManager((_id, emit) => { emitA = emit;
+
+ return new Promise((done) => { resolve = done; }); }, (m) => messages.push(m));
+
     const pending = manager.ensureDefault();
     emitA({ type: "tool_call", id: "pending-a", name: "snapshot", params: {} });
     resolve(runtime);
@@ -89,6 +102,7 @@ it('主 Agent 跨会话接手只停本会话成员，不发旧 run release；用
   const coordinators = new Map<string, (owner: string, members: string[]) => Promise<void>>();
   const sessions = new Map<string, { session: any; fleet: Fleet; rpc: { call: any } }>();
   let held = false;
+
   const factory = async (id: string) => {
     const rpc = { call: vi.fn(async () => ({})), pendingSessionIds: () => [] };
     const fleet = new Fleet({ rpc: rpc as never, sink: { emit: vi.fn(), setStatus: vi.fn() } });
@@ -96,10 +110,13 @@ it('主 Agent 跨会话接手只停本会话成员，不发旧 run release；用
     fleet.attachLead(session as never);
     const original = fleet.setTabCoordinator.bind(fleet);
     fleet.setTabCoordinator = (fn: (owner: string, members: string[]) => Promise<void>) => { coordinators.set(id, fn); original(fn); };
+
     const runtime = { session, fleet, rpc: { rejectAll: vi.fn() } };
     sessions.set(id, { session, fleet, rpc });
+
     return runtime;
   };
+
   const manager = new ConversationManager(factory as never, () => {});
   await manager.ensureDefault();
   await manager.handleMessage({type:'conversation_create',requestId:'global-control'});
@@ -181,10 +198,12 @@ it('starts voice tasks once, separates chat/status/silence and preserves a runni
  expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,context)).toMatchObject({kind:'action',ok:true});
  expect(a.runtime.session.startTask).toHaveBeenCalledTimes(1);
  expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,{...context,requestId:'other',runId:h.manager.getTaskProgress('default')!.runId!})).toMatchObject({kind:'action',ok:true});
+
  for(const [action,kind] of [['chat','none'],['status','none'],['silence','silent']]) {
   a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action,text:'你好',target:null}]});
   expect(await h.manager.routeVoiceInput('default','你好',null,()=>true)).toMatchObject({kind});
  }
+
  expect(a.runtime.session.startTask).toHaveBeenCalledTimes(1);
 });
 
@@ -192,7 +211,12 @@ it('confirms control only after the extension applies it and saves paused edits 
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
  a.emit({type:'agent_event',event:{kind:'agent_start'}});const runId=h.manager.getTaskProgress('default')!.runId!;
  const request={requestId:'pause',conversationId:'default',source:'voice' as const,action:'pause' as const,expectedRunId:runId,text:'暂停任务'};
- let finished=false;const p=h.manager.dispatchTaskAction(request).then(r=>{finished=true;return r;});
+ let finished=false;
+
+const p=h.manager.dispatchTaskAction(request).then(r=>{finished=true;
+
+return r;});
+
  await vi.waitFor(()=>expect(h.emitted.some(e=>e.type==='task_control')).toBe(true));expect(finished).toBe(false);
  a.runtime.session.isHeld=()=>true;a.runtime.session.queueSteerForResume=vi.fn();a.runtime.session.steerCurrentTask=vi.fn();a.emit({type:'status',state:'user'});
  await h.manager.handleMessage({type:'task_control_result',conversationId:'default',requestId:'wrong',action:'pause',runId,ok:true});expect(finished).toBe(false);
@@ -203,6 +227,7 @@ it('confirms control only after the extension applies it and saves paused edits 
  await h.manager.handleMessage({type:'takeover',conversationId:'default',requestId:'expired',taskRequestId:'expired'});
  expect(h.emitted.at(-1)).toMatchObject({type:'control_result',ok:false});
 });
+
 it('passes the selected input to the shared idle conversation entry',async()=>{
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;
  const input={context:{tabId:7,title:'form',url:'https://example.com',selection:{text:'海风'}},attachments:[{id:'i',type:'image' as const,name:'fixture.png',mimeType:'image/png' as const,dataBase64:'AQID'}]};
@@ -293,6 +318,7 @@ it.each(['denial','different','expired'])('cancels a pending proposal after %s',
  await legacyProposal(h.manager,'pending','另找书桌');
  a.runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'chat',text:'你好',target:null}]});
  const clock=mode==='expired'?vi.spyOn(Date,'now').mockReturnValue(Date.now()+91000):undefined;
+
  try{
   await h.manager.routeVoiceInput('default',mode==='denial'?'不用':mode==='different'?'你好':'好的',null,()=>true,{...ctx,requestId:'next',turn:2});
   await h.manager.routeVoiceInput('default','好的',null,()=>true,{...ctx,requestId:'late-yes',turn:3});
@@ -313,7 +339,9 @@ it('keeps read-only page observation available during an active task',async()=>{
  expect(a.runtime.rpc.call.mock.calls.every((c:any)=>c[1].token==='grant1')).toBe(true);
  expect(a.runtime.session.answerVoiceObservation).toHaveBeenCalledWith('看看这是什么',evidence,expect.any(Function));
  expect(a.runtime.session.startTask).not.toHaveBeenCalled();expect(h.manager.dispatcher.store.list('default')).toEqual([]);
- let current=true;a.runtime.rpc.call.mockImplementation(async()=>{current=false;return {text:'old page'};});a.runtime.session.answerVoiceObservation.mockClear();
+ let current=true;a.runtime.rpc.call.mockImplementation(async()=>{current=false;
+
+return {text:'old page'};});a.runtime.session.answerVoiceObservation.mockClear();
  await h.manager.routeVoiceInput('default','看看这是什么',null,()=>current,{...route,requestId:'stale'});
  expect(a.runtime.session.answerVoiceObservation).not.toHaveBeenCalled();
 });
@@ -327,6 +355,7 @@ it('does not reclassify or execute a replayed voice plan',async()=>{
  expect(await h.manager.routeVoiceInput('default','找书桌',null,()=>true,ctx)).toEqual(first);
  expect(a.runtime.session.classifyVoiceInput).toHaveBeenCalledTimes(1);expect(a.runtime.session.startTask).toHaveBeenCalledTimes(1);
 });
+
 it('a new manual takeover invalidates the resume remaining in an older voice plan',async()=>{
  const h=harness();await h.manager.ensureDefault();const a=h.runtimes.get('default')!;a.emit({type:'agent_event',event:{kind:'agent_start'}});a.emit({type:'status',state:'user'});a.runtime.session.isHeld=()=>true;
  a.runtime.session.classifyVoiceInput=vi.fn(async()=>({steps:[{action:'steer',text:'预算600',target:null},{action:'resume',text:'继续',target:null}]}));
@@ -336,6 +365,7 @@ it('a new manual takeover invalidates the resume remaining in an older voice pla
  expect(h.emitted.some(e=>e.type==='task_control'&&e.action==='resume')).toBe(false);
  expect(result.plan?.steps.map(s=>s.receipt?.status)).toEqual(['accepted','rejected']);
 });
+
 it('resumes a named status query against the same target after an empty interruption',async()=>{
  const h=harness();await h.manager.ensureDefault();await h.manager.handleMessage({type:'conversation_create',requestId:'target-status',title:'阅读'});
  const b=h.manager.list().find(c=>c.title==='阅读')!.id,a=h.runtimes.get('default')!;h.runtimes.get(b)!.emit({type:'status',state:'user'});
@@ -360,9 +390,12 @@ it('routes a correction with the actual current task goal, not another conversat
 
 async function legacyProposal(manager:ConversationManager,id:string,text:string,turn=1){
  const proposal={id,conversationId:'legacy-'+id,voiceId:'v',turn,expiresAt:Date.now()+90000,text};
- await (manager as any).voicePlans.run('default',id,{},async()=>{(manager as any).voicePlans.update('default',id,{proposal});return {kind:'clarify',message:'要另开会话吗？'};});
+ await (manager as any).voicePlans.run('default',id,{},async()=>{(manager as any).voicePlans.update('default',id,{proposal});
+
+return {kind:'clarify',message:'要另开会话吗？'};});
  (manager as any).voiceConfirmations.set('default',proposal);
 }
+
 it('moves a rejected start to a new conversation without stopping the original task',async()=>{
  const h=harness();await h.manager.ensureDefault();const original=h.runtimes.get('default')!;
  original.emit({type:'agent_event',event:{kind:'agent_start'}});original.emit({type:'status',state:'running'});

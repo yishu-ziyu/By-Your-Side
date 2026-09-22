@@ -85,6 +85,7 @@ describe("交付事实链视图", () => {
       { url: "https://fixture.test/offer/a", title: "方案 A" },
       { url: "https://fixture.test/offer/b" },
     ] }));
+
     expect(view.headline).toBe("已交付 · 来源 2");
     expect(view.sources[0]?.label).toBe("方案 A");
     expect(view.sources[1]?.label).toBe("fixture.test/offer/b");
@@ -117,7 +118,9 @@ function installDom(): void {
 function flatten(root: MockEl | null, out: MockEl[] = []): MockEl[] {
   if (!root) return out;
   out.push(root);
+
   for (const child of root.children) flatten(child, out);
+
   return out;
 }
 
@@ -169,6 +172,7 @@ describe("交付/流的重放与晚到规则", () => {
 describe("交付呈现时序采样", () => {
   it("P95 取 nearest-rank，可见性一并记录，样本有界", () => {
     const timing = new DeliveryPresentationTiming();
+
     for (let i = 1; i <= 50; i += 1) timing.record(0, i <= 45, i);
     const summary = timing.summary();
     expect(summary.count).toBe(50);

@@ -2,7 +2,9 @@ import {describe, expect, it} from 'vitest';
 import {pairedAcceptedReceipt, roundFinding, type RoundReceipt} from '../../scripts/acceptance/round-evidence.mjs';
 
 const clickAtMs = 1_000;
+
 const runId = 'run-current';
+
 const delivery = (composedAt: number, extra: Record<string, unknown> = {}) => ({kind: 'finding', runId, composedAt, text: `answer@${composedAt}`, ...extra});
 
 describe('T05 接续轮次证据窗口', () => {
@@ -37,6 +39,7 @@ describe('T05 接续轮次证据窗口', () => {
       {requestId: 'resume-old', status: 'accepted'},
       {requestId: 'resume-clicked', status: 'accepted'},
     ];
+
     expect(pairedAcceptedReceipt(receipts, ['resume-clicked'])).toMatchObject({requestId: 'resume-clicked', status: 'accepted'});
     expect(pairedAcceptedReceipt([{requestId: 'resume-clicked', status: 'rejected'}], new Set(['resume-clicked']))).toBeUndefined();
   });

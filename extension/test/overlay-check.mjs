@@ -8,9 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 const cursorJs = path.join(root, "dist/content-cursor.js");
+
 const domopsJs = path.join(root, "dist/content-domops.js");
+
 const outDir = "/tmp/sideagent-overlay";
+
 const chrome =
   `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 
@@ -46,15 +50,20 @@ function fail(msg) {
 }
 
 await mkdir(outDir, { recursive: true });
+
 const browser = await chromium.launch({
   executablePath: chrome,
   headless: true,
 });
+
 const page = await browser.newPage({ viewport: { width: 900, height: 360 } });
+
 await page.setContent(HTML);
+
 await page.addScriptTag({ path: cursorJs });
 
 const hasApi = await page.evaluate(() => Boolean(window.__sideagent?.cursor));
+
 if (!hasApi) fail("content-cursor.js 未挂上 window.__sideagent.cursor");
 
 await page.evaluate(() => {
@@ -63,13 +72,17 @@ await page.evaluate(() => {
   c.for("worker-red").move(380, 110);
   c.for("worker-green").move(680, 110);
 });
+
 await page.waitForTimeout(520);
+
 await page.screenshot({ path: path.join(outDir, "cursors-three-bg.png") });
 
 const palette = await page.evaluate(() => {
   const labels = [...document.querySelectorAll("[data-sideagent-overlay='cursor']")];
+
   return labels.length;
 });
+
 if (palette !== 1) fail(`光标 host 应为 1，实际 ${palette}`);
 
 // 模拟扩展 reload：旧 world 已死，DOM host 还在 + 再塞两个假残留，然后重注
@@ -82,24 +95,33 @@ await page.evaluate(() => {
   staleM.id = "stale-marks";
   staleM.setAttribute("data-sideagent-overlay", "marks");
   document.documentElement.appendChild(staleM);
+
   if (window.__sideagent) window.__sideagent.cursor = undefined;
 });
+
 await page.addScriptTag({ path: cursorJs });
+
 const residue = await page.evaluate(() => ({
   staleCursor: Boolean(document.getElementById("stale-cursor")),
   staleMarks: Boolean(document.getElementById("stale-marks")),
   hosts: document.querySelectorAll("[data-sideagent-overlay]").length,
   api: Boolean(window.__sideagent?.cursor),
 }));
+
 if (residue.staleCursor || residue.staleMarks) fail(`重注后仍有残留节点 ${JSON.stringify(residue)}`);
+
 if (residue.hosts !== 0) fail(`重注后应清光 host（lazy create），实际 ${residue.hosts}`);
+
 if (!residue.api) fail("重注后 API 未重建");
 
 await page.evaluate(() => window.__sideagent.cursor.move(80, 110));
+
 await page.waitForTimeout(520);
+
 const afterReinject = await page.evaluate(
   () => document.querySelectorAll("[data-sideagent-overlay='cursor']").length,
 );
+
 if (afterReinject !== 1) fail(`重注后光标 host 应仅 1 个，实际 ${afterReinject}`);
 
 // mark + resize：盒子右移后 dispatch resize，标注文档坐标应跟随
@@ -112,17 +134,25 @@ await page.evaluate(() => {
     "#box",
   );
 });
+
 const before = await page.evaluate(() => window.__sideagent.markLayout()[0]);
+
 await page.evaluate(() => {
   const box = document.getElementById("box");
   box.style.left = "240px";
   window.dispatchEvent(new Event("resize"));
 });
+
 await page.waitForTimeout(40);
+
 const after = await page.evaluate(() => window.__sideagent.markLayout()[0]);
+
 if (!before || !after) fail("markLayout 为空");
+
 if (after.x <= before.x) fail(`resize 后 mark 未右移 before=${before.x} after=${after.x}`);
+
 const expectedShift = 200; // 40 → 240
+
 if (Math.abs(after.x - before.x - expectedShift) > 2) {
   fail(`mark 位移 ${after.x - before.x}，期望 ${expectedShift}`);
 }
@@ -144,23 +174,33 @@ await page.evaluate(() => {
     ],
   );
 });
+
 await page.waitForTimeout(600); // 等飞行到位 + 超过 pressing 自动摘除的 160ms
+
 const hold0 = await page.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return {
     state: window.__sideagent.holdState(),
     cx: Math.round(box.x + box.width / 2),
     cy: Math.round(box.y + box.height / 2),
   };
 });
+
 if (!hold0.state) fail("holdState 为空（光标实例不存在）");
+
 if (!hold0.state.holding) fail("mark 带 actions 后光标未进入拿住态");
+
 if (!hold0.state.pressing) fail("拿住态未保持按下（pressing 被自动摘掉）");
+
 if (hold0.state.hidden) fail("拿住态光标被隐藏");
+
 if (Math.abs(hold0.state.x - hold0.cx) > 2 || Math.abs(hold0.state.y - hold0.cy) > 2) {
   fail(`拿住位置应落在目标中心 (${hold0.cx},${hold0.cy})，实际 (${hold0.state.x},${hold0.state.y})`);
 }
+
 const actionLabels = await page.evaluate(() => window.__sideagent.holdActionLabels());
+
 if (
   !actionLabels ||
   actionLabels.length !== 2 ||
@@ -171,6 +211,7 @@ if (
 ) {
   fail(`名牌双键不对 ${JSON.stringify(actionLabels)}`);
 }
+
 await page.screenshot({ path: path.join(outDir, "one-hand-holding.png") });
 
 // 去重：模型再画一次带 actions 的 mark，名牌上仍只有一套键
@@ -187,25 +228,34 @@ await page.evaluate(() => {
     ],
   );
 });
+
 await page.waitForTimeout(40);
+
 const dedup = await page.evaluate(() => window.__sideagent.holdActionLabels());
+
 if (!dedup || dedup.length !== 2) fail(`两套 mark 叠加后名牌键应为 2 个，实际 ${JSON.stringify(dedup)}`);
 
 // resize 跟随：盒子右移后 dispatch resize，拿住的手应跟到目标最新位置
 const holdBeforeResize = await page.evaluate(() => window.__sideagent.holdState());
+
 await page.evaluate(() => {
   const box = document.getElementById("box");
   box.style.left = "440px";
   window.dispatchEvent(new Event("resize"));
 });
+
 await page.waitForTimeout(40);
+
 const holdAfterResize = await page.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return { state: window.__sideagent.holdState(), cx: Math.round(box.x + box.width / 2) };
 });
+
 if (!holdAfterResize.state.holding || holdAfterResize.state.hidden) {
   fail(`resize 后拿住态丢失 ${JSON.stringify(holdAfterResize.state)}`);
 }
+
 if (Math.abs(holdAfterResize.state.x - holdAfterResize.cx) > 2) {
   fail(`resize 后光标未跟随目标 before=${holdBeforeResize.x} after=${holdAfterResize.state.x} 期望=${holdAfterResize.cx}`);
 }
@@ -220,29 +270,40 @@ await page.evaluate(() => {
     },
   };
 });
+
 const clicked = await page.evaluate(() => window.__sideagent.clickHoldAction("confirm"));
+
 const msgs = await page.evaluate(() => window.__markMsgs);
+
 if (!clicked) fail("clickHoldAction(confirm) 未点到名牌按钮");
+
 if (!msgs || msgs.length !== 1 || msgs[0].type !== "mark_action" || msgs[0].action !== "confirm") {
   fail(`点名牌「删除」未发 mark_action ${JSON.stringify(msgs)}`);
 }
 
 // 取消路径：松开后名牌恢复成员名、不再是拿住态
 await page.evaluate(() => window.__sideagent.cursor.releaseHold());
+
 const released = await page.evaluate(() => window.__sideagent.holdState());
+
 if (released.holding || released.pressing) fail(`releaseHold 后仍在拿住 ${JSON.stringify(released)}`);
+
 const labelsAfterRelease = await page.evaluate(() => window.__sideagent.holdActionLabels());
+
 if (labelsAfterRelease.length !== 0) fail(`releaseHold 后名牌双键应消失 ${JSON.stringify(labelsAfterRelease)}`);
 
 // 确认锚框随拿住态一起撤，任务标注不受影响
 // （2026-09-10 真机：在 ChatGPT 上确认「发送」后，"待确认" 名牌一直挂在那颗按钮上）
 await page.evaluate(() => window.__sideagent.cursor.clearMarks());
+
 await page.evaluate(() => {
   const box = document.getElementById("box");
   const r = box.getBoundingClientRect();
+
   const task = {
     x: r.x, y: r.y, width: r.width, height: r.height,
   };
+
   // 1) 任务标注（模型画的）——不该被确认流程带走
   window.__sideagent.cursor.mark(task, "AMR 位置", "#box");
   // 2) 确认锚框——确认/取消后必须消失
@@ -253,23 +314,32 @@ await page.evaluate(() => {
     [{ id: "confirm", label: "发送" }, { id: "cancel", label: "取消" }],
   );
 });
+
 await page.waitForTimeout(60);
+
 const bothMarks = await page.evaluate(() => ({
   layer: window.__sideagent.markLayerCount(),
   labels: window.__sideagent.markDetails().map((m) => m.labelText),
   holding: window.__sideagent.holdState()?.holding,
 }));
+
 if (bothMarks.layer !== 2) fail(`应同时存在任务标注与确认锚框 ${JSON.stringify(bothMarks)}`);
+
 if (!bothMarks.holding) fail("带 actions 的锚框未进入拿住态");
+
 await page.evaluate(() => window.__sideagent.cursor.releaseHold());
+
 await page.waitForTimeout(40);
+
 const afterConfirm = await page.evaluate(() => ({
   layer: window.__sideagent.markLayerCount(),
   labels: window.__sideagent.markDetails().map((m) => m.labelText),
 }));
+
 if (afterConfirm.layer !== 1 || afterConfirm.labels[0] !== "AMR 位置") {
   fail(`确认后应只撤掉"待确认"锚框，实际 ${JSON.stringify(afterConfirm)}`);
 }
+
 await page.evaluate(() => window.__sideagent.cursor.clearMarks());
 
 // 待归档语义兜底测试：未显式传 actions 但 label 包含「待归档」时自动拿住并出双键
@@ -282,15 +352,21 @@ await page.evaluate(() => {
     "#box",
   );
 });
+
 await page.waitForTimeout(40);
+
 const implicitActions = await page.evaluate(() => window.__sideagent.holdActionLabels());
+
 if (!implicitActions || implicitActions.length !== 2 || implicitActions[0].label !== "归档") {
   fail(`待归档隐式推导拿住失败 ${JSON.stringify(implicitActions)}`);
 }
+
 const implicitHoldState = await page.evaluate(() => window.__sideagent.holdState());
+
 if (!implicitHoldState.holding || implicitHoldState.hidden) {
   fail(`待归档未能激活持久拿住态 ${JSON.stringify(implicitHoldState)}`);
 }
+
 await page.evaluate(() => window.__sideagent.cursor.releaseHold());
 
 
@@ -299,7 +375,9 @@ await page.evaluate(() => {
   c.move(80, 110);
   c.hide();
 });
+
 const hiddenAfterHide = await page.evaluate(() => window.__sideagent.cursorHidden?.());
+
 if (!hiddenAfterHide) fail("hide() 后光标仍可见");
 
 await page.evaluate(() => {
@@ -313,43 +391,64 @@ await page.evaluate(() => {
   };
   window.__sideagent.cursor.showUserControl();
 });
+
 const banner = await page.evaluate(() => window.__sideagent.controlBanner?.());
+
 if (!banner || banner.status !== "现在归你" || banner.action !== "交还") {
   fail(`页顶接管条不对 ${JSON.stringify(banner)}`);
 }
+
 if (banner.barWidth > 240) {
   fail(`接管条应为左侧紧凑 action cluster，实际宽 ${banner.barWidth}`);
 }
+
 if (banner.actionLeft - banner.statusRight > 16) {
   fail(`状态与交还按钮必须相邻，实际间距 ${banner.actionLeft - banner.statusRight}`);
 }
+
 if (banner.actionRight > banner.viewportWidth / 2) {
   fail(`交还按钮不得锚到右侧侧栏覆盖区 ${JSON.stringify(banner)}`);
 }
+
 await page.waitForTimeout(180);
+
 await page.screenshot({ path: path.join(outDir, "control-cluster.png") });
+
 const handed = await page.evaluate(() => window.__sideagent.clickHandback?.());
+
 const handMsgs = await page.evaluate(() => window.__handbackMsgs);
+
 if (!handed) fail("clickHandback 未点到交还");
+
 if (!handMsgs || handMsgs.length !== 1 || handMsgs[0].type !== "handback_click") {
   fail(`点交还未发 handback_click ${JSON.stringify(handMsgs)}`);
 }
+
 await page.evaluate(() => window.__sideagent.cursor.hideUserControl());
+
 const bannerGone = await page.evaluate(() => window.__sideagent.controlBanner?.());
+
 if (bannerGone) fail(`hideUserControl 后条还在 ${JSON.stringify(bannerGone)}`);
 
 await page.evaluate(() => window.__sideagent.cursor.showUserControl());
+
 await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+
 const afterPagehide = await page.evaluate(() => ({
   api: Boolean(window.__sideagent?.cursor?.showUserControl),
   banner: window.__sideagent?.controlBanner?.() ?? null,
 }));
+
 if (afterPagehide.api || afterPagehide.banner) {
   fail(`pagehide 后 overlay 应 teardown ${JSON.stringify(afterPagehide)}`);
 }
+
 await page.addScriptTag({ path: cursorJs });
+
 const afterReloadBare = await page.evaluate(() => window.__sideagent.controlBanner?.());
+
 if (afterReloadBare) fail(`重注后不应自己出现条 ${JSON.stringify(afterReloadBare)}`);
+
 await page.evaluate(() => {
   globalThis.chrome = {
     runtime: {
@@ -358,16 +457,21 @@ await page.evaluate(() => {
   };
   window.__sideagent.cursor.showUserControl();
 });
+
 const restoredBanner = await page.evaluate(() => window.__sideagent.controlBanner?.());
+
 if (!restoredBanner || restoredBanner.status !== "现在归你" || restoredBanner.action !== "交还") {
   fail(`load complete 后应恢复现在归你/交还 ${JSON.stringify(restoredBanner)}`);
 }
 
 const replayApi = await page.evaluate(() => {
   const c = window.__sideagent.cursor;
+
   return Boolean(c.replay) && Boolean(c.stopReplay);
 });
+
 if (!replayApi) fail("cursor.replay / stopReplay 未挂上");
+
 await page.evaluate(() => {
   window.__sideagent.cursor.replay([
     { x: 40, y: 40, click: false },
@@ -379,6 +483,7 @@ await page.evaluate(() => {
 // 内部滚动容器：window.scroll 不变，内容在 overflow:auto 里走。
 // 不监听 scroll 的话，absolute 文档坐标会停在视口原处。
 const nested = await browser.newPage({ viewport: { width: 720, height: 360 } });
+
 await nested.setContent(`<!doctype html>
 <meta charset="utf-8">
 <title>nested scroll</title>
@@ -395,7 +500,9 @@ await nested.setContent(`<!doctype html>
   <div id="spacer-bottom"></div>
 </div>
 `);
+
 await nested.addScriptTag({ path: cursorJs });
+
 await nested.addScriptTag({ path: domopsJs });
 
 function markOffsetFromBox(layout, box, scrollX, scrollY, pad) {
@@ -416,9 +523,12 @@ await nested.evaluate(() => {
     "#box",
   );
 });
+
 await nested.waitForTimeout(40);
+
 const nestedBefore = await nested.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return {
     layout: window.__sideagent.markLayout()[0],
     box: { x: box.x, y: box.y, width: box.width, height: box.height },
@@ -426,8 +536,11 @@ const nestedBefore = await nested.evaluate(() => {
     scrollY: window.scrollY,
   };
 });
+
 await nested.screenshot({ path: path.join(outDir, "mark-nested-scroll-before.png") });
+
 if (!nestedBefore.layout) fail("内部滚动前 markLayout 为空");
+
 const nestedOff0 = markOffsetFromBox(
   nestedBefore.layout,
   nestedBefore.box,
@@ -435,17 +548,22 @@ const nestedOff0 = markOffsetFromBox(
   nestedBefore.scrollY,
   6,
 );
+
 if (Math.abs(nestedOff0.dx) > 2 || Math.abs(nestedOff0.dy) > 2) {
   fail(`标记初始就没箍住目标 dx=${nestedOff0.dx} dy=${nestedOff0.dy}`);
 }
 
 const NESTED_DELTA = 90;
+
 await nested.evaluate((dy) => {
   document.getElementById("scroller").scrollTop = dy;
 }, NESTED_DELTA);
+
 await nested.waitForTimeout(40);
+
 const nestedAfter = await nested.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return {
     layout: window.__sideagent.markLayout()[0],
     box: { x: box.x, y: box.y, width: box.width, height: box.height },
@@ -453,18 +571,23 @@ const nestedAfter = await nested.evaluate(() => {
     scrollY: window.scrollY,
   };
 });
+
 await nested.screenshot({ path: path.join(outDir, "mark-nested-scroll-after.png") });
 
 if (nestedAfter.scrollY !== 0 || nestedBefore.scrollY !== 0) {
   fail(`内部滚动不应改变 window.scrollY before=${nestedBefore.scrollY} after=${nestedAfter.scrollY}`);
 }
+
 if (Math.abs(nestedBefore.box.y - nestedAfter.box.y - NESTED_DELTA) > 2) {
   fail(`目标未随内部滚动上移 before=${nestedBefore.box.y} after=${nestedAfter.box.y}`);
 }
+
 if (!nestedAfter.layout) fail("内部滚动后 markLayout 为空");
+
 if (Math.abs(nestedBefore.layout.y - nestedAfter.layout.y - NESTED_DELTA) > 2) {
   fail(`内部滚动后 mark 文档 y 未跟随 before=${nestedBefore.layout.y} after=${nestedAfter.layout.y}`);
 }
+
 const nestedOff = markOffsetFromBox(
   nestedAfter.layout,
   nestedAfter.box,
@@ -472,6 +595,7 @@ const nestedOff = markOffsetFromBox(
   nestedAfter.scrollY,
   6,
 );
+
 if (Math.abs(nestedOff.dx) > 2 || Math.abs(nestedOff.dy) > 2) {
   fail(`内部滚动后 mark 未箍住目标 dx=${nestedOff.dx} dy=${nestedOff.dy} layout=${JSON.stringify(nestedAfter.layout)} box=${JSON.stringify(nestedAfter.box)}`);
 }
@@ -491,31 +615,44 @@ await nested.evaluate(() => {
     ],
   );
 });
+
 await nested.waitForTimeout(600); // 等飞行到位
+
 const holdScrollBefore = await nested.evaluate(() => window.__sideagent.holdState());
+
 if (!holdScrollBefore || !holdScrollBefore.holding) fail("nested 页拿住态未建立");
+
 const HOLD_NESTED_DELTA = 60;
+
 await nested.evaluate((dy) => {
   document.getElementById("scroller").scrollTop += dy;
 }, HOLD_NESTED_DELTA);
+
 await nested.waitForTimeout(60);
+
 const holdScrollAfter = await nested.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return { state: window.__sideagent.holdState(), cy: Math.round(box.y + box.height / 2) };
 });
+
 if (!holdScrollAfter.state.holding || holdScrollAfter.state.hidden) {
   fail(`内部滚动后拿住态丢失 ${JSON.stringify(holdScrollAfter.state)}`);
 }
+
 if (Math.abs(holdScrollAfter.state.y - holdScrollAfter.cy) > 2) {
   fail(`内部滚动后光标未箍住目标 y=${holdScrollAfter.state.y} 期望=${holdScrollAfter.cy}`);
 }
+
 if (Math.abs(holdScrollBefore.y - holdScrollAfter.state.y - HOLD_NESTED_DELTA) > 2) {
   fail(`内部滚动后光标位移应≈${HOLD_NESTED_DELTA} before=${holdScrollBefore.y} after=${holdScrollAfter.state.y}`);
 }
+
 await nested.screenshot({ path: path.join(outDir, "hold-nested-scroll.png") });
 
 // window 滚动：文档坐标应保持（absolute 跟随或重算后与 rect+scroll 一致）
 const win = await browser.newPage({ viewport: { width: 720, height: 360 } });
+
 await win.setContent(`<!doctype html>
 <meta charset="utf-8">
 <title>window scroll</title>
@@ -527,8 +664,11 @@ await win.setContent(`<!doctype html>
 <div id="box">target</div>
 <div id="tail"></div>
 `);
+
 await win.addScriptTag({ path: cursorJs });
+
 await win.addScriptTag({ path: domopsJs });
+
 await win.evaluate(() => {
   const box = document.getElementById("box");
   const r = box.getBoundingClientRect();
@@ -538,11 +678,16 @@ await win.evaluate(() => {
     "#box",
   );
 });
+
 const winBefore = await win.evaluate(() => window.__sideagent.markLayout()[0]);
+
 await win.evaluate(() => window.scrollTo(0, 120));
+
 await win.waitForTimeout(40);
+
 const winAfter = await win.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return {
     layout: window.__sideagent.markLayout()[0],
     box: { x: box.x, y: box.y, width: box.width, height: box.height },
@@ -550,10 +695,13 @@ const winAfter = await win.evaluate(() => {
     scrollY: window.scrollY,
   };
 });
+
 const winOff = markOffsetFromBox(winAfter.layout, winAfter.box, winAfter.scrollX, winAfter.scrollY, 6);
+
 if (Math.abs(winOff.dx) > 2 || Math.abs(winOff.dy) > 2) {
   fail(`window 滚动后 mark 未箍住目标 dx=${winOff.dx} dy=${winOff.dy}`);
 }
+
 if (Math.abs(winAfter.layout.y - winBefore.y) > 2) {
   fail(`window 滚动后文档坐标不应漂 before=${winBefore.y} after=${winAfter.layout.y}`);
 }
@@ -573,21 +721,31 @@ await win.evaluate(() => {
     ],
   );
 });
+
 await win.waitForTimeout(600);
+
 const winHoldBefore = await win.evaluate(() => window.__sideagent.holdState());
+
 if (!winHoldBefore || !winHoldBefore.holding) fail("win 页拿住态未建立");
+
 await win.evaluate(() => window.scrollTo(0, 180));
+
 await win.waitForTimeout(60);
+
 const winHoldAfter = await win.evaluate(() => {
   const box = document.getElementById("box").getBoundingClientRect();
+
   return { state: window.__sideagent.holdState(), cy: Math.round(box.y + box.height / 2) };
 });
+
 if (!winHoldAfter.state.holding || winHoldAfter.state.hidden) {
   fail(`window 滚动后拿住态丢失 ${JSON.stringify(winHoldAfter.state)}`);
 }
+
 if (Math.abs(winHoldAfter.state.y - winHoldAfter.cy) > 2) {
   fail(`window 滚动后光标未箍住目标 y=${winHoldAfter.state.y} 期望=${winHoldAfter.cy}`);
 }
+
 if (Math.abs(winHoldBefore.y - winHoldAfter.state.y - 60) > 2) {
   fail(`window 滚动 60px 后光标位移不符 before=${winHoldBefore.y} after=${winHoldAfter.state.y}`);
 }
@@ -598,7 +756,9 @@ await win.evaluate(() => {
   window.__sideagent.cursor.releaseHold?.();
   window.__sideagent.cursor.hide();
 });
+
 await win.waitForTimeout(40);
+
 await win.evaluate(() => {
   window.__sideagent.cursor.clearMarks();
   const box = document.getElementById("box");
@@ -612,18 +772,23 @@ await win.evaluate(() => {
     { style: "sketch", motion: "grow", seed: 42 },
   );
 });
+
 await win.waitForTimeout(60);
 
 const sketchGrowInfo = await win.evaluate(() => {
   const list = window.__sideagent.markDetails?.() ?? [];
+
   return list[0] ?? null;
 });
+
 if (!sketchGrowInfo || !sketchGrowInfo.isSketch || !sketchGrowInfo.isGrow) {
   fail(`手绘 mark.sketch.grow 元素未渲染: ${JSON.stringify(sketchGrowInfo)}`);
 }
+
 if (!sketchGrowInfo.hasSvg || !sketchGrowInfo.hasEllipse || !sketchGrowInfo.hasArrow) {
   fail(`手绘 SVG 路径缺失: ${JSON.stringify(sketchGrowInfo)}`);
 }
+
 if (sketchGrowInfo.labelText !== "点击确认") {
   fail(`手绘 label 文字不对: ${sketchGrowInfo.labelText}`);
 }
@@ -641,15 +806,19 @@ await win.evaluate(() => {
     { style: "sketch", motion: "boil", seed: 99 },
   );
 });
+
 await win.waitForTimeout(60);
 
 const sketchBoilInfo = await win.evaluate(() => {
   const list = window.__sideagent.markDetails?.() ?? [];
+
   return list[0] ?? null;
 });
+
 if (!sketchBoilInfo || !sketchBoilInfo.isSketch || !sketchBoilInfo.isBoil) {
   fail(`手绘 mark.sketch.boil 元素未渲染: ${JSON.stringify(sketchBoilInfo)}`);
 }
+
 if (sketchBoilInfo.boilFrameCount !== 3) {
   fail(`boil 动效应包含 3 帧微动路径，实际 ${sketchBoilInfo.boilFrameCount}`);
 }
@@ -657,14 +826,20 @@ if (sketchBoilInfo.boilFrameCount !== 3) {
 await win.screenshot({ path: path.join(outDir, "teach-sketch-mark.png") });
 
 await nested.close();
+
 await win.close();
+
 await browser.close();
 
 if (process.exitCode) {
   console.error("overlay-check FAILED");
   process.exit(1);
 }
+
 console.log(`PASS overlay-check 截图 ${outDir}`);
+
 console.log(`  mark ${before.x},${before.y} → ${after.x},${after.y}`);
+
 console.log(`  nested-scroll dy=${nestedBefore.box.y - nestedAfter.box.y} markOff=${JSON.stringify(nestedOff)}`);
+
 console.log(`  window-scroll docY ${winBefore.y} → ${winAfter.layout.y}`);

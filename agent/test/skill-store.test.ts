@@ -9,11 +9,14 @@ import { learningFixture } from "./fixtures/skill-evidence.js";
 import type { Skill } from "../../shared/skill.js";
 
 const dirs: string[] = [];
+
 async function store() {
   const dir = await mkdtemp(join(tmpdir(), "sideagent-skills-"));
   dirs.push(dir);
+
   return { dir, store: new SkillStore(dir) };
 }
+
 afterEach(async () => { await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 
 function skill(id: string, hostname: string, now = 1_700_000_000_000): Skill {
@@ -26,9 +29,11 @@ describe("技能存储", () => {
     const learned = learningFixture().candidate()!.skill;
     await s.put(learned);
     expect(autoSkillEligible((await s.get(learned.id))!)).toBe(true);
+
     // 面板"重新示范"会整份替换步骤/凭证/程序；此刻旧认证必须作废。
     const updated = await s.update(learned.id, { intent: "把结果导出成表格", name: "导出结果",
       steps: [{ kind: "click", anchor: { tag: "button", name: "导出" } }] });
+
     expect(updated?.version).toBe(2);
     expect(updated?.learnedOutputContractVersion).toBeUndefined();
     expect(autoSkillEligible((await s.get(learned.id))!)).toBe(false);
@@ -102,6 +107,7 @@ describe("运行记录", () => {
   it("超出上限只留最近若干条，文件不无限长", async () => {
     const { store: s } = await store();
     await s.put(skill("skill-a", "example.com"));
+
     for (let i = 0; i < SkillStore.MAX_RUNS + 5; i += 1) await s.appendRun("skill-a", run(i, true));
     const runs = await s.listRuns("skill-a");
     expect(runs).toHaveLength(SkillStore.MAX_RUNS);

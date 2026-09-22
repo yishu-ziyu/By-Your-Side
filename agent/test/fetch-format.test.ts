@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { formatFetchReply, safeDownloadName, type FetchReply } from "../src/fetch-result.js";
 
 const dir = () => mkdtempSync(join(tmpdir(), "ego-fetch-"));
+
 const reply = (over: Partial<FetchReply> = {}): FetchReply => ({
   url: "https://api.example.com/items?p=1",
   status: 200,

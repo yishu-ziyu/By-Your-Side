@@ -13,15 +13,24 @@ function fx(){
   c.start();
   socket.server({type:'session.created',session:{model:MODEL}});
   socket.server({type:'session.updated',session:{model:MODEL,voice:STEP_VOICE,input_audio_format:'pcm16',output_audio_format:'pcm16',turn_detection:{type:'server_vad'}}});
+
   return {socket,client,c};
 }
+
 const notices=(s:Socket)=>s.sent.filter(m=>String(m.item?.id??'').startsWith('bys-notice-'));
+
 const creates=(s:Socket)=>s.sent.filter(m=>m.type==='response.create');
+
 const ack=(s:Socket,i:number)=>s.server({type:'conversation.item.created',item:notices(s)[i].item});
-const gen=(s:Socket,id:string,audio=false)=>{s.server({type:'response.created',response:{id}});if(audio)s.server({type:'response.audio.delta',response_id:id,delta:Buffer.alloc(960).toString('base64')});s.server({type:'response.done',response:{id,status:'completed'}});};
+
+const gen=(s:Socket,id:string,audio=false)=>{s.server({type:'response.created',response:{id}});
+
+if(audio)s.server({type:'response.audio.delta',response_id:id,delta:Buffer.alloc(960).toString('base64')});s.server({type:'response.done',response:{id,status:'completed'}});};
+
 const bindings=(c:any[])=>c.filter(e=>e.type==='delivery_response');
 
 let pass=0,fail=0;
+
 function check(name:string,cond:boolean,detail?:unknown){if(cond){pass++;console.log(`PASS ${name}`);}else{fail++;console.log(`FAIL ${name} :: ${JSON.stringify(detail)}`);}}
 
 // X1: B 在 A 的确认到达之前入队（A 已上路，pendingNotice 等待 ACK 中）
@@ -129,4 +138,5 @@ function check(name:string,cond:boolean,detail?:unknown){if(cond){pass++;console
 }
 
 console.log(JSON.stringify({pass,fail}));
+
 process.exit(fail?1:0);

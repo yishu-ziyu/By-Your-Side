@@ -2,22 +2,30 @@ import {afterEach,expect,it,vi} from 'vitest';
 import {reviewTaskGoal} from '../src/goal-reasoning-review.js';
 
 vi.mock('../src/typesafe-auth.js',()=>({readTypeSafeKey:()=> 'unit-test-key'}));
+
 afterEach(()=>vi.unstubAllGlobals());
+
 const first='Jev currently accepts text input only.';
+
 const last='Images are not supported.';
+
 const body=`${first} It evaluates strings. ${last}`;
+
 const other='System 1 is intuitive. System 2 is deliberate.';
+
 const url='https://fixture.test/source';
 
 async function check(value:string,part='first_sentence',relation='initial',container=body,confidence=.99) {
   vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({answers:{matched:{noul:.96},problem:{choice:'none',confidence:.99},part:{choice:part,confidence},source:{choice:relation,confidence:.99}}}),{status:200})));
   const completeSimple=vi.fn();
+
   const result=await reviewTaskGoal({runtime:{completeSimple} as never,model:{} as never,sessionId:'test',headers:undefined},'source',{
     requirements:[relation==='same'?'改成同一个 Note 的最后一句':'取 Note 第一句'],
     observation:{url,text:container,fragments:{truncated:false,fragments:[{id:'note',kind:'text',text:container}]}},
     material:{value,selection:{kind:'fragments',ids:['note']},observation:{url}},
     previousSources:relation==='same'?[{value:first,sourceText:body,purpose:'原 Note',observation:{url}}]:[],
   },new AbortController().signal);
+
   return {result,completeSimple};
 }
 

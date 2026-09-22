@@ -7,7 +7,9 @@ import {
 import type { DemoAnchor } from "../../shared/demo-record.js";
 
 const click = (name: string, tag = "a"): DemoAnchor => ({ tag, name });
+
 const run = (hostname: string, anchors: DemoAnchor[], at: number): ObservedRun => ({ hostname, anchors, at });
+
 const DAY = 24 * 60 * 60 * 1000;
 
 describe("骨架与签名", () => {
@@ -55,6 +57,7 @@ describe("重复检测", () => {
   it("三次都在同一天不算：频率不等于习惯", () => {
     let patterns: ObservedPattern[] = [];
     const anchors = [click("筛选"), click("第一条记录")];
+
     for (const at of [0, 60_000, 120_000]) patterns = mergeRun(patterns, run("x.com", anchors, at));
     expect(candidates(patterns)).toHaveLength(0);
   });
@@ -86,9 +89,11 @@ describe("重复检测", () => {
 describe("有界与文案", () => {
   it("站点数有上限：观察不能变成新的配额事故", () => {
     let patterns: ObservedPattern[] = [];
+
     for (let i = 0; i < MAX_HOSTS + 5; i += 1) {
       patterns = mergeRun(patterns, run(`host${i}.com`, [click("A"), click("B")], i * 1000));
     }
+
     const hosts = new Set(patterns.map(p => p.hostname));
     expect(hosts.size).toBe(MAX_HOSTS);
     // 留下的应该是最近用过的那些
@@ -100,6 +105,7 @@ describe("有界与文案", () => {
     const many: ObservedPattern[] = Array.from({ length: 40 }, (_, i) => ({
       hostname: "x.com", signature: `s${i}`, anchors: [click("A")], count: 1, firstSeen: i, lastSeen: i,
     }));
+
     expect(trimPatterns(many)).toHaveLength(30);
   });
 

@@ -13,7 +13,9 @@ import {isControlConfirm, isControlReject} from "../src/voice-confirm.js";
  */
 
 type SteerRecord = {text: string; context?: PageContext; attachments?: Attachment[]};
+
 type Plan = {steps: Array<{action: string; text: string; target: null}>};
+
 /** 已落动作的那一支：steer/action 才有 ok/status。 */
 const done = (result: VoiceRouteResult) => result as Extract<VoiceRouteResult, {kind: "steer" | "action"}>;
 
@@ -21,6 +23,7 @@ class RecordingDispatcher extends TaskDispatcher {
   readonly requests: TaskActionRequest[] = [];
   override dispatch(request: TaskActionRequest, title: string, execute: () => Promise<Pick<TaskReceipt, "status" | "message" | "runId">>): Promise<TaskReceipt> {
     this.requests.push(request);
+
     return super.dispatch(request, title, execute);
   }
 }
@@ -37,12 +40,14 @@ function setup() {
   let classifier = (text: string): Plan => ({steps: [{action: "steer", text, target: null}]});
   let running = false;
   let conversationEmit: (message: ServerMessage) => void = () => {};
+
   let session: {
     available: boolean; modelName: () => string; availableModels: () => Promise<never[]>; isHeld: () => boolean;
     isStreaming: () => boolean; classifyVoiceInput: (text: string) => Promise<Plan>;
     startTask: () => void; steerCurrentTask: (text: string, context?: PageContext, attachments?: Attachment[]) => Promise<void>;
     queueSteerForResume: () => void; persistTaskResults: () => void; abort: () => void;
   };
+
   const manager = new ConversationManager(async (_id, emitEvent) => {
     conversationEmit = emitEvent;
     session = {
@@ -58,6 +63,7 @@ function setup() {
       persistTaskResults: () => {},
       abort: () => { running = false; },
     };
+
     return {
       session,
       fleet: {isGroupHeld: () => false, reset: () => {}, teamView: () => null, list: () => []},
@@ -66,6 +72,7 @@ function setup() {
       dispose: () => {},
     } as never;
   }, (message) => { emitted.push(message); }, undefined, undefined, undefined, dispatcher);
+
   return {
     manager, dispatcher, received, emitted,
     setClassifier: (next: (text: string) => Plan) => { classifier = next; },
@@ -74,12 +81,14 @@ function setup() {
 }
 
 const context = (tabId: number, title: string, url: string): PageContext => ({tabId, title, url});
+
 const image = (id: string, name: string, dataBase64 = "AAAA"): Attachment => ({id, type: "image", name, dataBase64, mimeType: "image/png"});
 
 async function runningTask(manager: ConversationManager, requestId = "text-start", expectedRunId: string | null = null) {
   const started = await manager.dispatchTaskAction({requestId, conversationId: "default", source: "text", action: "start", expectedRunId, text: "在网页上查看内容"});
   expect(started.status).toBe("accepted");
   const snapshot = manager.getTaskProgress("default")!;
+
   return {runId: snapshot.runId!, controlVersion: snapshot.controlVersion ?? 0};
 }
 
@@ -129,12 +138,17 @@ describe("语音修改直接送达", () => {
   it.each(['ended','replaced','control-changed','old-voice'])('原任务 %s 不把要求送到旧执行；缺少续接页面时保留原任务',async mode=>{
     const {manager,received,endRun}=setup();await manager.ensureDefault();
     const {runId,controlVersion}=await runningTask(manager);
+
     if(mode==='ended'||mode==='replaced')endRun();
+
     if(mode==='replaced')await runningTask(manager,'next-run',runId);
+
     if(mode==='control-changed')await manager.handleMessage({type:'takeover',requestId:'takeover',conversationId:'default'});
     const call=manager.routeVoiceInput('default','改为宋体',null,()=>mode!=='old-voice',routeFor(manager,runId,controlVersion));
+
     if(mode==='old-voice')await expect(call).rejects.toThrow();
     else {const result=await call;expect(done(result).ok).not.toBe(true);}
+
     expect(received).toHaveLength(0);
   });
 
@@ -153,15 +167,18 @@ describe('保留终止任务读回',()=>{
     await manager.ensureDefault();
     const {runId, controlVersion} = await runningTask(manager);
     setClassifier((text) => ({steps: [{action: "abort", text, target: null}]}));
+
     const first = await manager.routeVoiceInput("default", "停下", null, () => true, routeFor(manager, runId, controlVersion, {
       input: {context: context(101, "A", "https://example.invalid/a"), attachments: [image("attach-a", "a.png")], observation: {token: "obs-secret", tabId: 101}},
     }));
+
     expect(first.kind).toBe("clarify");
     expect((first as {message: string}).message).toContain("停下");
 
     const confirming = manager.routeVoiceInput("default", "对", null, () => true, routeFor(manager, runId, controlVersion, {
       requestId: "voice-2", turn: 2, input: {context: context(202, "确认时另一页面", "https://example.invalid/b")},
     }));
+
     await waitFor(() => emitted.some((message) => (message as {type: string}).type === "task_control"));
     const control = emitted.find((message) => (message as {type: string}).type === "task_control") as unknown as {requestId: string; action: string; runId: string};
     await manager.handleMessage({type: "task_control_result", conversationId: "default", requestId: control.requestId, action: "abort", runId: control.runId, ok: true});
@@ -184,14 +201,19 @@ describe("已保存的旧版另开会话提案仍能确认和拒绝", () => {
     await manager.ensureDefault();
     const {runId, controlVersion} = await runningTask(manager);
     const seen: string[] = [];
-    setClassifier(text => { seen.push(text); return {steps:[{action:"start",text,target:null}]}; });
+    setClassifier(text => { seen.push(text);
+
+ return {steps:[{action:"start",text,target:null}]}; });
     // Compatibility with a proposal saved before independent requirements were queued automatically.
     const proposal={id:'voice-1',conversationId:'legacy-child',voiceId:'voice-a',turn:1,expiresAt:Date.now()+90000,text:'查另一个问题'};
-    await (manager as any).voicePlans.run('default','voice-1',{},async()=>{(manager as any).voicePlans.update('default','voice-1',{proposal});return {kind:'clarify',message:'要另开会话吗？'};});
+    await (manager as any).voicePlans.run('default','voice-1',{},async()=>{(manager as any).voicePlans.update('default','voice-1',{proposal});
+
+return {kind:'clarify',message:'要另开会话吗？'};});
     (manager as any).voiceConfirmations.set('default',proposal);
     const second = await manager.routeVoiceInput("default", reply, null, () => true, routeFor(manager, runId, controlVersion,{requestId:"voice-2",turn:2}));
     expect(seen).toEqual([]);
     const newStarts=dispatcher.requests.filter(r=>r.action==="start"&&r.conversationId!=="default");
+
     if(reply.startsWith("好的")) {
       expect(newStarts).toHaveLength(1);
       expect(newStarts[0]!.text).toBe("查另一个问题");
@@ -213,6 +235,7 @@ it.each(['expired','rejected'])('终止确认 %s 不执行',async mode=>{
   setClassifier(text=>({steps:[{action:'abort',text,target:null}]}));
   const first=await manager.routeVoiceInput('default','终止任务',null,()=>true,routeFor(manager,runId,controlVersion));
   expect(first.kind).toBe('clarify');
+
   if(mode==='expired')vi.setSystemTime(Date.now()+91000);
   const result=await manager.routeVoiceInput('default',mode==='expired'?'确认':'不用了',null,()=>true,routeFor(manager,runId,controlVersion,{requestId:'voice-2',turn:2}));
   expect(result.kind).toBe('clarify');

@@ -7,6 +7,7 @@ const inputFrame = (body: string): Buffer => {
   const payload = Buffer.from(body, "utf8");
   const header = Buffer.allocUnsafe(4);
   header.writeUInt32LE(payload.byteLength, 0);
+
   return Buffer.concat([header, payload]);
 };
 
@@ -49,6 +50,7 @@ describe("encodeFrame / FrameDecoder", () => {
     const frame = inputFrame(big);
     expect(frame.byteLength).toBeGreaterThan(MAX_OUTPUT_FRAME_BYTES);
     const results: string[] = [];
+
     for (let at = 0; at < frame.byteLength; at += 65_537) results.push(...decoder.push(frame.subarray(at, at + 65_537)));
     expect(results).toEqual([big]);
     expect(decoder.push(encodeFrame('{"type":"hello"}'))).toEqual(['{"type":"hello"}']);
@@ -115,6 +117,7 @@ describe("createStdioTransport", () => {
     let closes = 0;
     transport.onMessage((m) => received.push(m));
     transport.onClose(() => { closes += 1; });
+
     try {
       const header = Buffer.allocUnsafe(4);
       header.writeUInt32LE(MAX_INPUT_FRAME_BYTES + 1, 0);

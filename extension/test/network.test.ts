@@ -31,6 +31,7 @@ describe("network 事件 → 条目", () => {
       timestamp: 10.5,
       request: { url: "https://api.example.com/list", method: "post" },
     }, 1_000);
+
     expect(update).toMatchObject({
       kind: "start",
       entry: { requestId: "r1", method: "post", url: "https://api.example.com/list", resourceType: "xhr", startedTs: 10.5, startedAt: 1_000 },
@@ -81,6 +82,7 @@ describe("network 事件 → 条目", () => {
 
   it("超容量丢最旧并累计 dropped", () => {
     let ring = { entries: [] as NetworkEntry[], dropped: 0 };
+
     for (let i = 0; i < NETWORK_CAPACITY + 3; i += 1) ring = appendNetworkEntry(ring, entry({ requestId: `r${i}` }));
     expect(ring.entries).toHaveLength(NETWORK_CAPACITY);
     expect(ring.dropped).toBe(3);
@@ -172,6 +174,7 @@ describe("network 回执", () => {
       ],
       { total: 3, matched: 3, dropped: 2, capacity: 300 },
     );
+
     expect(text).toContain("dropped at capacity 300");
     expect(text).toContain("pending GET https://api.example.com/pending");
     expect(text).toContain("failed GET");

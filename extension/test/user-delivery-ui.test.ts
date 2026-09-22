@@ -37,6 +37,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("records initial user_delivery and assigns monotonic sequence number", () => {
     const history = new PanelHistory();
+
     const item: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -54,6 +55,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("deduplicates identical user_delivery without creating new sequence number", () => {
     const history = new PanelHistory();
+
     const item: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -72,6 +74,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("updates status in-place (composed -> speaking -> played) without creating new entry", () => {
     const history = new PanelHistory();
+
     const item1: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -80,6 +83,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA1 },
       },
     };
+
     const item2: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -88,6 +92,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA2 },
       },
     };
+
     const item3: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -109,6 +114,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("distinguishes deliveries with different ids or conversations", () => {
     const history = new PanelHistory();
+
     const item1: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -117,6 +123,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA1 },
       },
     };
+
     const item2: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -125,6 +132,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryB },
       },
     };
+
     const item3: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -144,6 +152,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("restores history and deduplicates subsequent replayed user delivery", () => {
     const history1 = new PanelHistory();
+
     const item: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -152,6 +161,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA1 },
       },
     };
+
     const e1 = history1.record(item);
 
     const history2 = new PanelHistory();
@@ -165,6 +175,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("preserves original text and advances status monotonically, ignoring regressions or text changes", () => {
     const history = new PanelHistory();
+
     const itemOriginal: PanelHistoryItem = {
       kind: "server",
       msg: {
@@ -173,6 +184,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA1 },
       },
     };
+
     history.record(itemOriginal);
 
     // Status advances to speaking
@@ -184,6 +196,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA2 },
       },
     };
+
     history.record(itemSpeaking);
     expect((history.since()[0]!.item as any).msg.event.delivery.status).toBe("speaking");
 
@@ -199,6 +212,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         },
       },
     };
+
     history.record(itemTampered);
     // Status must not regress, text must remain original
     const recorded = (history.since()[0]!.item as any).msg.event.delivery;
@@ -214,6 +228,7 @@ describe("PanelHistory user delivery deduplication & status update", () => {
         event: { kind: "user_delivery", delivery: deliveryA3 },
       },
     };
+
     history.record(itemPlayed);
     expect((history.since()[0]!.item as any).msg.event.delivery.status).toBe("played");
     expect((history.since()[0]!.item as any).msg.event.delivery.text).toBe(deliveryA1.text);
@@ -236,10 +251,12 @@ describe("PanelHistory user delivery deduplication & status update", () => {
 
   it("keeps fact-chain fields across status updates and history restore", () => {
     const facts = { outcome: "partial" as const, delivered: ["读了三家方案"], remaining: [{ id: "r-1", description: "预约页被登录墙挡住", status: "blocked" as const }], sources: [{ url: "https://fixture.test/offer/a" }] };
+
     const item = (status: "composed" | "played"): PanelHistoryItem => ({
       kind: "server",
       msg: { type: "agent_event", conversationId: "conv-1", event: { kind: "user_delivery", delivery: { ...deliveryA1, id: "d-facts", facts, status } } },
     });
+
     const history = new PanelHistory();
     history.record(item("composed"));
     history.record(item("played"));
@@ -259,6 +276,7 @@ describe("VoiceUI deliver consumption", () => {
     const children: any[] = [];
     const attrs = new Map<string, string>();
     const classList = new Set<string>();
+
     const element: any = {
       tagName: tag.toUpperCase(),
       className: "",
@@ -281,18 +299,24 @@ describe("VoiceUI deliver consumption", () => {
       }),
       querySelector: (sel: string) => {
         const found = children.find(c => c.matches?.(sel));
+
         if (found) return found;
         const created = createMockElement(sel.startsWith("canvas") ? "canvas" : sel.startsWith("button") ? "button" : "div");
+
         if (sel.startsWith(".")) created.className = sel.slice(1);
+
         if (sel.startsWith("#")) created.id = sel.slice(1);
         children.push(created);
+
         return created;
       },
       querySelectorAll: (sel: string) => children.filter(c => c.matches?.(sel)),
       before: (...nodes: any[]) => children.unshift(...nodes),
       after: (...nodes: any[]) => children.push(...nodes),
       append: (...nodes: any[]) => children.push(...nodes),
-      appendChild: (node: any) => { children.push(node); return node; },
+      appendChild: (node: any) => { children.push(node);
+
+ return node; },
       replaceChildren: (...nodes: any[]) => { children.length = 0; children.push(...nodes); },
       classList: {
         add: (c: string) => classList.add(c),
@@ -301,11 +325,15 @@ describe("VoiceUI deliver consumption", () => {
       },
       matches: (sel: string) => {
         if (sel.startsWith(".")) return classList.has(sel.slice(1)) || element.className.includes(sel.slice(1));
+
         if (sel.startsWith("#")) return element.id === sel.slice(1);
+
         return element.tagName.toLowerCase() === sel.toLowerCase();
       },
     };
+
     mockElements.push(element);
+
     return element;
   }
 
@@ -395,8 +423,10 @@ describe("Explicit user delivery UI bubble rendering contracts", () => {
         const existing = rendered.get(delivery.id)!;
         existing.status = delivery.status;
         existing.count += 1;
+
         return;
       }
+
       rendered.set(delivery.id, { text: delivery.text, status: delivery.status, count: 1 });
     }
 
@@ -468,6 +498,7 @@ describe("Explicit user delivery UI bubble rendering contracts", () => {
   it("does not call voiceUI.deliver on existing delivery status updates, preserving current voice answer", () => {
     const rendered = new Map<string, any>();
     const voiceDeliverCalls: any[] = [];
+
     const voiceUI = {
       deliver: (d: any) => voiceDeliverCalls.push(d),
     };
@@ -482,12 +513,15 @@ describe("Explicit user delivery UI bubble rendering contracts", () => {
       if (!delivery || typeof delivery.id !== "string" || !delivery.id) return;
 
       const existing = rendered.get(delivery.id);
+
       if (existing) {
         const oldRank = DELIVERY_STATUS_RANK[existing.dataset.deliveryStatus] ?? -1;
         const newRank = DELIVERY_STATUS_RANK[delivery.status] ?? -1;
+
         if (newRank > oldRank) {
           existing.dataset.deliveryStatus = delivery.status;
         }
+
         return;
       }
 

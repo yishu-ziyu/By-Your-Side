@@ -15,6 +15,7 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   const detail = document.createElement('p');
   detail.textContent = copy.detail;
   root.append(summary, detail);
+
   if (!receipt.newConversationRequest || receipt.status !== 'rejected') return root;
   summary.textContent = '查看原请求';
   root.className = 'msg receipt';
@@ -33,10 +34,14 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   const status = document.createElement('p'); status.setAttribute('role','status');
   create.onclick = async () => {
     create.disabled = true; dismiss.disabled = true; status.textContent = '正在转交新会话…';
+
     try { await fork(receipt); status.textContent = '已转交新会话'; }
     catch (error) { status.textContent = error instanceof Error ? error.message : '未能转交，原任务不变。'; create.disabled = false; dismiss.disabled = false; }
   };
+
   dismiss.onclick = () => { actions.hidden = true; title.textContent = '新请求暂不处理'; description.textContent = '原请求保留在下方记录中。'; };
+
   actions.append(create,dismiss); decision.append(title,description,actions,status,root);
+
   return decision;
 }

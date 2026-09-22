@@ -3,23 +3,30 @@ import {EventEmitter} from 'node:events';
 import {RealtimeVoiceSession} from '../src/realtime-voice-session.js';
 import {MODEL,STEP_VOICE} from '../src/realtime-voice-connection.js';
 import type {TaskProgressSnapshot,VoiceEvent} from '../../shared/voice.js';
+
 class Socket extends EventEmitter{
   readyState=1;sent:any[]=[];
   send(raw:string){this.sent.push(JSON.parse(raw));}
   close(){this.readyState=3;this.emit('close',1000,Buffer.from(''));}
   server(e:unknown){this.emit('message',Buffer.from(JSON.stringify(e)));}
 }
+
 const sessions:RealtimeVoiceSession[]=[];
+
 afterEach(()=>{sessions.splice(0).forEach(s=>s.close());vi.useRealTimers();});
+
 function fixture(diagnosticMode=false,structured=false,shadow?:{judge:ReturnType<typeof vi.fn>;actual:ReturnType<typeof vi.fn>}){
   const socket=new Socket(),events:VoiceEvent[]=[];
   const snapshot:TaskProgressSnapshot={conversationId:'A',runId:null,state:'none',goal:null,startedAt:null,observedAt:1,active:[],lastAction:null,successVerified:false};
   const route=vi.fn(async(..._args:unknown[])=>({kind:'action' as const,ok:true,message:'已接收，不代表完成'}));const readPage=vi.fn(async()=>({text:'真实页面'}));const dispatchTask=vi.fn(async(..._args:unknown[])=>({ok:true,status:'accepted'}));const onPlayback=vi.fn();
   const session=new RealtimeVoiceSession({voiceId:'voice3',diagnosticMode,getSnapshot:()=>snapshot,emit:e=>events.push(e),route,readPage,onPlayback,...(structured?{dispatchTask}:{}),...(shadow?{shadow:shadow as never}:{}),connect:()=>socket as any});sessions.push(session);session.start('not-a-real-key');
   const ready=()=>{socket.server({type:'session.created',session:{model:MODEL}});socket.server({type:'session.updated',session:{model:MODEL,voice:STEP_VOICE,input_audio_format:'pcm16',output_audio_format:'pcm16',turn_detection:diagnosticMode?{type:''}:{type:'server_vad'}}});};
+
   const begin=(item='u1',response='r1')=>{socket.server({type:'input_audio_buffer.speech_started',item_id:item});socket.server({type:'input_audio_buffer.speech_stopped',item_id:item});socket.server({type:'response.created',response:{id:response}});};
+
   return {session,socket,events,route,readPage,dispatchTask,onPlayback,ready,begin,snapshot};
 }
+
 describe('daily Realtime 3 native adapter',()=>{
  it('confirms 3, requests server VAD and does not cancel merely because the user speaks',()=>{
   const f=fixture();f.ready();expect(f.socket.sent[0].session.turn_detection.type).toBe('server_vad');
@@ -87,6 +94,7 @@ describe('daily Realtime 3 native adapter',()=>{
  it('surfaces provider warnings and stops visibly after bounded busy retries',()=>{
   const f=fixture();f.ready();f.socket.server({type:'error',error:{code:'temporary_warning',message:'暂时无法生成'}});
   expect(f.events).toContainEqual(expect.objectContaining({kind:'state',state:'answering',detail:'语音服务提示：暂时无法生成'}));
+
   for(let i=0;i<4;i++)f.socket.server({type:'error',event_id:`busy-${i}`,error:{code:'response_already_active',message:'busy'}});
   expect(f.events.some(e=>e.kind==='state'&&e.state==='error'&&e.detail?.includes('后台任务保留'))).toBe(true);expect(f.route).not.toHaveBeenCalled();
  });
@@ -138,6 +146,7 @@ describe('daily Realtime 3 native adapter',()=>{
   f.socket.server({type:'conversation.item.created',item:{id:notice.item.id,type:'message',role:'user'}});
   expect(f.socket.sent.some(x=>x.type==='response.create')).toBe(true);
   f.socket.server({type:'response.created',response:{id:'notice-response'}});
+
   if(audio)f.socket.server({type:'response.audio.delta',response_id:'notice-response',delta:Buffer.alloc(960).toString('base64')});
   f.socket.server({type:'response.done',response:{id:'notice-response',status:'completed'}});
   f.session.command({kind:'playback_done',responseId:'notice-response'});
@@ -174,6 +183,7 @@ describe('daily Realtime 3 native adapter',()=>{
   f.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'second',transcript:'不要保存，也不要提交'});
   f.socket.server({type:'response.function_call_arguments.done',response_id:'r2',name:'task_action',call_id:'current',arguments:JSON.stringify({action:'start',includePending:changed!=='new-request'})});
   await vi.advanceTimersByTimeAsync(30);
+
   if(changed===true)expect(f.dispatchTask).not.toHaveBeenCalled();
   else {expect(f.dispatchTask).toHaveBeenCalledTimes(1);expect(f.dispatchTask.mock.calls[0]?.[0]).toMatchObject({text:changed==='new-request'?'不要保存，也不要提交':'填写代号并勾选条件\n不要保存，也不要提交'});}
  });

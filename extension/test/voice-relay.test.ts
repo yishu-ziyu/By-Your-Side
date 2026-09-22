@@ -2,11 +2,17 @@ import { afterEach, expect, it, vi } from "vitest";
 import { VoiceRelay } from "../src/background/voice-relay.js";
 
 afterEach(()=>vi.unstubAllGlobals());
+
 function panel() {
-  let message: (m: any) => void = () => {}; let disconnected = () => {};
+  let message: (m: any) => void = () => {};
+
+ let disconnected = () => {};
+
   const port = { postMessage: vi.fn(), onMessage: { addListener: (f: typeof message) => { message = f; } }, onDisconnect: { addListener: (f: typeof disconnected) => { disconnected = f; } } };
+
   return { port: port as unknown as chrome.runtime.Port, received: port.postMessage, send: (m: any) => message(m), close: () => disconnected() };
 }
+
 it("binds one panel and conversation; selection/disconnect stop only voice, never task", () => {
   const send = vi.fn((_msg: unknown) => true); let selected = "A";
   const relay = new VoiceRelay(send, () => selected); const a = panel(), b = panel();
@@ -53,6 +59,7 @@ it('commits audio immediately and binds late context to its original turn and le
  expect(send.mock.calls.filter(([m]:any)=>m.command.kind==='commit')).toHaveLength(3);
  expect(send.mock.calls.filter(([m]:any)=>m.command.kind==='input_context')).toHaveLength(2);
 });
+
 it('invalidates page grants when a closed voice lease is replaced in the same conversation',async()=>{
  vi.stubGlobal('chrome',{tabs:{query:vi.fn(async()=>[{id:7,windowId:1,url:'https://page.test'}]),captureVisibleTab:vi.fn(async()=> 'data:image/png;base64,AQID')},scripting:{executeScript:vi.fn(async()=>[{frameId:0,documentId:'doc1',result:{text:'page',url:'https://page.test'}}])}});
  const send=vi.fn((_message:unknown)=>true),relay=new VoiceRelay(send,()=> 'A',async(_id,input)=>input),p=panel();relay.attach(p.port);

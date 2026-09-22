@@ -27,9 +27,11 @@ function fakeSession(rpc: unknown, streaming = false) {
     steer: vi.fn(async (_text: string) => {}),
     subscribe: vi.fn(() => () => {}),
   };
+
   const Session = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
   const callbacks = { emit: vi.fn(), setStatus: vi.fn() };
   const wrapped = new Session(raw, null, callbacks, null, null, undefined, null, rpc) as any;
+
   return { wrapped, raw };
 }
 

@@ -4,16 +4,23 @@ import {installReading} from '../src/background/reading.js';
 import type {ReadingSource} from '../../shared/reading.js';
 
 let listener: (raw:any,sender:any,reply:(v:any)=>void)=>unknown;
+
 let service: ReturnType<typeof installReading>;
+
 let send: Mock<(message: ClientMessage) => boolean>;
+
 const source:ReadingSource={text:'line 1\n  line 2',surrounding:'context',truncated:false,tabId:1,title:'page',url:'https://example.com/a'};
+
 const sender={tab:{id:1,title:'page',url:source.url},url:source.url,documentId:'document-a',frameId:0};
+
 const message=(raw:any,who=sender)=>new Promise<any>(resolve=>listener(raw,who,resolve));
+
 beforeEach(()=>{
   vi.useFakeTimers();send=vi.fn(()=>true);
   vi.stubGlobal('chrome',{storage:{session:{get:vi.fn(async()=>({})),set:vi.fn(async()=>{})}},runtime:{onMessage:{addListener:(fn:any)=>listener=fn}},tabs:{sendMessage:vi.fn(async()=>{}),onRemoved:{addListener:vi.fn()},onUpdated:{addListener:vi.fn()}},sidePanel:{open:vi.fn(async()=>{})}});
   service=installReading({send,selected:()=> 'main-task',import:vi.fn(async()=>{}),select:vi.fn()});
 });
+
 afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();vi.unstubAllGlobals();});
 
 it('routes only reading requests and rejects other documents using the same tab or thread',async()=>{

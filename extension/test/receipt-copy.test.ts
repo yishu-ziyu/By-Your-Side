@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { receiptCopy } from "../src/sidepanel/receipt-copy.js";
 import { isTaskReceipt, type TaskReceipt } from "../../shared/task-actions.js";
+
 const base: TaskReceipt = {requestId:"r",conversationId:"c",source:"text",action:"start",runId:"run",text:"打开页面",targetTitle:"测试任务",status:"accepted",message:"已接收新任务：打开页面",updatedAt:1};
+
 describe("receipt hierarchy", () => {
   it("keeps the original request inspectable without repeating it by default", () => {
     expect(receiptCopy(base,"c")).toEqual({summary:"任务已接收",detail:"测试任务 · 已接收新任务：打开页面",collapsed:true});

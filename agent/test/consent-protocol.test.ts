@@ -40,9 +40,11 @@ describe("consent protocol", () => {
     expect(parseServerMessage(parse({ type: "consent_request", conversationId: "other", request: REQUEST }))).toBeNull();
     expect(parseServerMessage(parse({ type: "consent_result", conversationId: "default", requestId: "consent-default-1", status: "allowed", message: "已允许本次请求。" })))
       .toMatchObject({ type: "consent_result", status: "allowed" });
+
     for (const status of ["rejected", "expired", "cancelled"]) {
       expect(parseServerMessage(parse({ type: "consent_result", conversationId: "default", requestId: "r", status, message: "未发送。" }))).toMatchObject({ status });
     }
+
     expect(parseServerMessage(parse({ type: "consent_result", conversationId: "default", requestId: "r", status: "sent", message: "已发送。" }))).toBeNull();
     expect(parseServerMessage(parse({ type: "consent_result", conversationId: "default", requestId: "r", status: "allowed", message: "" }))).toBeNull();
     expect(parseServerMessage(parse({ type: "consent_list", conversationId: "default", requests: [REQUEST] })))
@@ -58,11 +60,13 @@ function managerHarness() {
   const emitted: ServerMessage[] = [];
   const brokers = new Map<string, FetchConsentBroker>();
   const sessions = new Map<string, { streaming: boolean; emit: (message: ServerMessage) => void }>();
+
   const factory = async (id: string, emit: (message: ServerMessage) => void) => {
     const consent = new FetchConsentBroker({ conversationId: id, emit });
     brokers.set(id, consent);
     const state = { streaming: false };
     sessions.set(id, { get streaming() { return state.streaming; }, set streaming(value: boolean) { state.streaming = value; }, emit });
+
     return {
       consent,
       session: {
@@ -77,6 +81,7 @@ function managerHarness() {
       handleMessage: vi.fn(),
     };
   };
+
   return {
     manager: new ConversationManager(factory as never, (message) => emitted.push(message)),
     emitted,
@@ -113,12 +118,15 @@ describe("conversation manager consent routing", () => {
     await manager.handleMessage({ type: "user_message", text: "把订单提交了" });
     const broker = brokers.get("default")!;
     const runtime = sessions.get("default")!;
+
     // 返回对象而不是 promise：async 函数直接 return 一个 thenable 会被摊平，变成等确认结果。
     const start = async () => {
       const promise = broker.request(ORDER);
       await vi.waitFor(() => expect(broker.list()).toHaveLength(1));
+
       return { promise };
     };
+
     const cancelled = async (promise: Promise<unknown>) => {
       await expect(promise).resolves.toMatchObject({ allowed: false });
       expect(emitted.filter((message) => message.type === "consent_result").at(-1)).toMatchObject({ status: "cancelled" });

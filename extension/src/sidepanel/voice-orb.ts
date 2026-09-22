@@ -32,10 +32,12 @@ export interface OrbProps {
 }
 
 export const ERROR_COLOR_FROM = '#fb7185';
+
 export const ERROR_COLOR_TO = '#f43f5e';
 
 export const hexToRgb = (hex: string): [number, number, number] => {
   const clean = hex.replace('#', '');
+
   const full =
     clean.length === 3
       ? clean
@@ -43,7 +45,9 @@ export const hexToRgb = (hex: string): [number, number, number] => {
           .map((c) => c + c)
           .join('')
       : clean;
+
   const n = Number.parseInt(full, 16);
+
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 
@@ -99,31 +103,41 @@ export const createStateMix = (initial: OrbState = 'idle'): StateMix => {
     error: 0,
     disabled: 0,
   };
+
   weights[initial] = 1;
   const keys = Object.keys(weights) as OrbState[];
+
   const update = (state: OrbState, dt: number, rate = 6): StateWeights => {
     let total = 0;
+
     for (const key of keys) {
       const target = key === state ? 1 : 0;
       const next = approach(weights[key], target, rate, dt);
       weights[key] = target === 0 && next < 0.001 ? 0 : next;
       total += weights[key];
     }
+
     if (total > 0) {
       for (const key of keys) weights[key] /= total;
     }
+
     return weights;
   };
+
   return { weights, update };
 };
 
 
 const PARTICLE_COUNT = 720;
+
 const TWO_PI = Math.PI * 2;
+
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
 const STATIC_TIME = 1.7;
 
 const ERROR_FROM_RGB = hexToRgb(ERROR_COLOR_FROM);
+
 const ERROR_TO_RGB = hexToRgb(ERROR_COLOR_TO);
 
 type Rgb = [number, number, number];
@@ -145,6 +159,7 @@ interface SpherePoint {
 
 const buildSphere = (count: number): SpherePoint[] => {
   const points: SpherePoint[] = [];
+
   for (let i = 0; i < count; i += 1) {
     const y = 1 - (i / (count - 1)) * 2;
     const radiusAtY = Math.sqrt(1 - y * y);
@@ -158,6 +173,7 @@ const buildSphere = (count: number): SpherePoint[] => {
       tone: (i * 0.5436890126) % 1,
     });
   }
+
   return points;
 };
 
@@ -189,12 +205,15 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
       let ripple = 0;
       let pulse = 0;
       let flow = 0;
+
       for (const s of ORB_STATES) {
         const kind = stateMotion(s);
+
         if (kind === 'ripple') ripple += w[s];
         else if (kind === 'pulse') pulse += w[s];
         else if (kind === 'flow') flow += w[s];
       }
+
       const wIdle = w.idle;
       const wConn = w.connecting;
       const wError = w.error;
@@ -204,6 +223,7 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
       const rawLevel = isStatic
         ? stateEnergy(st, t)
         : getLevel();
+
       levelS = approach(levelS, rawLevel, 9, easeDt);
       const level = levelS;
 
@@ -250,15 +270,18 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
         const perspective = 0.65 + depth * 0.45;
 
         let pointRadius = radius;
+
         if (rippleAmp > 0.002) {
           pointRadius *= 1 + rippleAmp * Math.sin(p.y * 4.5 - t * 6.5 * spd);
         }
+
         if (pulseAmp > 0.002) {
           pointRadius *= 1 - pulseAmp * (0.5 + 0.5 * Math.sin(p.ringFrac * TWO_PI + t * 3.1 * spd));
         }
 
         let ox = shakeX;
         let oy = shakeY;
+
         if (idleAmp > 0.01) {
           ox +=
             idleAmp *
@@ -268,6 +291,7 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
             (Math.cos(t * 0.62 * spd + p.seed * 2.9) +
               0.5 * Math.sin(t * 1.05 * spd + p.seed * 5.1));
         }
+
         if (jitterAmp > 0.01) {
           ox += jitterAmp * Math.sin(t * 14 * spd + p.seed * 9.3);
           oy += jitterAmp * Math.cos(t * 17 * spd + p.seed * 6.1);
@@ -287,8 +311,10 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
           const base = (i / points.length) * TWO_PI;
           const jitter = 0.05 * Math.sin(t * 1.3 + p.seed);
           const ringAngle = base + connectingPhase + jitter;
+
           const ringR =
             center * (0.58 + 0.13 * p.ringFrac) * (1 + 0.05 * Math.sin(t + p.seed * 1.7));
+
           const circleX = center + Math.cos(ringAngle) * ringR;
           const circleY = center + Math.sin(ringAngle) * ringR;
           const ringAlpha = 0.35 + p.tone * 0.5;
@@ -314,5 +340,15 @@ const stateRef={current:getState()},speedRef={current:1},colorRef={current:{from
     };
 
 
-let last=0;let raf:number;function frame(now:number){stateRef.current=getState();let dt=last?Math.min((now-last)/1000,.05):0;last=now;if(!document.hidden && canvas.getClientRects().length){t+=reduce?0:dt;render(reduce?0:dt,reduce)}raf=requestAnimationFrame(frame)}raf=requestAnimationFrame(frame);return ()=>cancelAnimationFrame(raf);
+let last=0;let raf:number;
+
+function frame(now:number){stateRef.current=getState();let dt=last?Math.min((now-last)/1000,.05):0;last=now;
+
+if(!document.hidden && canvas.getClientRects().length){t+=reduce?0:dt;render(reduce?0:dt,reduce)}
+
+raf=requestAnimationFrame(frame)}
+
+raf=requestAnimationFrame(frame);
+
+return ()=>cancelAnimationFrame(raf);
 }

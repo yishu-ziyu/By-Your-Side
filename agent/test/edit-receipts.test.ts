@@ -6,13 +6,17 @@
  * 浏览器工具层走真实 createBrowserTools 闸门；Jev 决策脚本化，无模型调用。
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest';
+
 vi.mock('../src/display-fast-path.js', () => ({
   displayFastPathEnabled: () => true, displaySteerFastPathEnabled: () => true, decideDisplay: vi.fn(),
 }));
+
 vi.mock('../src/run-trace.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/run-trace.js')>();
+
   return {...actual, RunTrace: class {begin() {} correlate() {} record() {} event() {} stage() {return {end() {}}}}};
 });
+
 import {decideDisplay} from '../src/display-fast-path.js';
 import {STEER_CONTRACT_NOTE} from '../src/session.js';
 import {TaskActionRejected} from '../src/task-dispatcher.js';
@@ -209,7 +213,9 @@ describe('T04 差异展示：只来自宿主读回事实', () => {
     const original = h.rpc.call.getMockImplementation()!;
     h.rpc.call.mockImplementation(async (name: string, params: any, ...rest: unknown[]) => {
       const result = await original(name, params, ...rest);
+
       if (name === 'page_translation' && params?.action === 'display' && params.fontFamily && !params.mode) h.pageState.mode = 'bilingual';
+
       return result;
     });
     vi.mocked(decideDisplay).mockResolvedValue(candidate({fontFamily: 'songti'}));

@@ -22,6 +22,7 @@ function createFixture(deferReady = false) {
   const socket = new Socket();
   const client: Array<Record<string, unknown>> = [];
   const voiceLog: Array<Record<string, unknown>> = [];
+
   const connection = new RealtimeVoiceConnection({
     key: 'offline-placeholder',
     connect: () => socket as any,
@@ -33,26 +34,37 @@ function createFixture(deferReady = false) {
       read_page: async () => ({}),
     },
   });
+
   connection.start();
+
   const ready = () => {
     socket.server({type: 'session.created', session: {model: MODEL}});
     socket.server({type: 'session.updated', session: {model: MODEL, voice: STEP_VOICE, input_audio_format: 'pcm16', output_audio_format: 'pcm16', turn_detection: {type: 'server_vad'}}});
   };
+
   if (!deferReady) ready();
+
   return {connection, socket, client, voiceLog, ready};
 }
 
 const noticeItems = (socket: Socket): any[] => socket.sent.filter(e => String((e as any).item?.id ?? '').startsWith('bys-notice-'));
+
 const sessionNotice = (socket: Socket) => (socket.sent as any[]).find(x => String(x.item?.id ?? '').startsWith('bys-notice-'));
+
 const creates = (socket: Socket) => socket.sent.filter(e => e.type === 'response.create');
+
 const deliveryBindings = (client: Array<Record<string, unknown>>) => client.filter(e => e.type === 'delivery_response');
+
 const ackNotice = (socket: Socket, index: number, eventId?: string) => {
   const item = noticeItems(socket)[index]?.item;
+
   if (!item) throw new Error(`notice ${index} not sent yet`);
   socket.server({type: 'conversation.item.created', ...(eventId ? {event_id: eventId} : {}), item});
 };
+
 const finishResponse = (socket: Socket, id: string, audio: boolean, eventId?: string) => {
   socket.server({type: 'response.created', ...(eventId ? {event_id: `${eventId}-created`} : {}), response: {id}});
+
   if (audio) socket.server({type: 'response.audio.delta', response_id: id, delta: Buffer.alloc(960).toString('base64')});
   socket.server({type: 'response.done', ...(eventId ? {event_id: `${eventId}-done`} : {}), response: {id, status: 'completed'}});
 };
@@ -64,14 +76,17 @@ function createSessionFixture() {
   const onPlayback = vi.fn();
   const session = new RealtimeVoiceSession({voiceId: 'voice3', getSnapshot: () => snapshot, emit: e => events.push(e), onPlayback, connect: () => socket as any});
   session.start('offline-placeholder');
+
   const ready = () => {
     socket.server({type: 'session.created', session: {model: MODEL}});
     socket.server({type: 'session.updated', session: {model: MODEL, voice: STEP_VOICE, input_audio_format: 'pcm16', output_audio_format: 'pcm16', turn_detection: {type: 'server_vad'}}});
   };
+
   return {session, socket, events, onPlayback, ready, snapshot};
 }
 
 const live: Array<{close: () => void}> = [];
+
 afterEach(() => { live.splice(0).forEach(c => c.close()); vi.useRealTimers(); });
 
 describe('A1 普通通知只消费一次（不依赖可选 deliveryId）', () => {
@@ -139,6 +154,7 @@ describe('A2 批量通知按入队顺序处理，不覆盖前一条的回复关�
     finishResponse(fx.socket, 'second-response', false);
     const bindings = deliveryBindings(fx.client);
     expect(bindings).toHaveLength(second.id ? 1 : 1); // 只有正式通知产生绑定；数量恒为 1
+
     if (second.id) expect(bindings[0]).toMatchObject({deliveryId: 'delivery-b', responseId: 'second-response'});
     else expect(bindings[0]).toMatchObject({deliveryId: 'delivery-a', responseId: 'first-response'});
     expect(fx.client.some(e => e.type === 'error')).toBe(false);

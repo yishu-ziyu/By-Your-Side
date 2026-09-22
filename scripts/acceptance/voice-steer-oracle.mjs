@@ -8,5 +8,6 @@ export function judgeBudgetRun({mode, baseline, page, starts, receipts, receiptA
     receipt: mode === 'text' || receipts === 1,
     receiptBeforeAudio: mode === 'text' || (Number.isFinite(receiptAt) && Number.isFinite(firstAudioAt) && receiptAt <= firstAudioAt),
   };
+
   return {checks, ok: Object.values(checks).every(Boolean)};
 }

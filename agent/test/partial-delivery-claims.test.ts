@@ -15,9 +15,11 @@ import type { TaskNextStep } from '../../shared/task-next-step.js';
 vi.mock('../src/run-trace.js', () => ({ RunTrace: class {
   begin() {} correlate() {} record() {} event() {} stage() { return { end() {} }; }
 } }));
+
 vi.mock('../src/goal-reasoning-review.js', () => ({ reviewTaskGoal: vi.fn() }));
 
 const reviewMock = vi.mocked(reviewTaskGoal);
+
 const Session = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
 
 const REQUIREMENT = '在这篇文章中圈出关键词，并圈出词频最高的词。';
@@ -30,6 +32,7 @@ function accidentPlan(): TaskGoalPlan {
     { id: 'keywords-marked', description: '在页面上圈出文章的关键词', criterion: '页面正文中对每个选定关键词的实际出现位置都有可见标注', requirements: ['requirement-1'], kind: 'condition', status: 'pending' },
     { id: 'top-word-marked', description: '统计全文词频并圈出词频最高的词', criterion: '基于正文原文统计出词频最高的词及其次数，并在页面正文中圈出该词的实际出现位置', requirements: ['requirement-1'], kind: 'condition', status: 'pending', reason: '尚未确认当前页面对象满足这项目标' },
   ];
+
   return { revision: 'rev-1', coverage: 'verified', goals };
 }
 
@@ -40,25 +43,33 @@ function satisfiedPlan(): TaskGoalPlan {
 /** Real BrowserAgentSession + real goalToolHost(); only the network-calling reviewTaskGoal is stubbed. */
 function sessionFixture(goalPlan: TaskGoalPlan) {
   const branch: Array<{ type: string; customType?: string; data?: unknown }> = [];
+
   const raw = { sessionManager: {
     getBranch: () => branch,
-    appendCustomEntry: (customType: string, data: unknown) => { branch.push({ type: 'custom', customType, data }); return null; },
+    appendCustomEntry: (customType: string, data: unknown) => { branch.push({ type: 'custom', customType, data });
+
+ return null; },
   } };
+
   const callbacks = { emit: vi.fn(), setStatus: vi.fn() };
   const session = new Session(raw, null, callbacks, null, null);
+
   const snapshot: any = {
     conversationId: 'default', observedAt: 100, state: 'idle', goal: REQUIREMENT, startedAt: 100, runId: 'run-1',
     active: [], lastAction: null, successVerified: false,
     recoveryInput: { requirements: [REQUIREMENT] },
     results: [], goalPlan,
   };
+
   session.bindConversationContext(() => snapshot);
   session.bindTaskResults({ getSnapshot: () => snapshot, goals: {} as any, register: () => {}, verify: () => ({ ok: true }) });
+
   return { session, callbacks };
 }
 
 function deliveryTool(session: BrowserAgentSession, next: TaskNextStep, getDeliveryFacts?: () => any) {
   const events: AgentUiEvent[] = [];
+
   const tool = createSendUserMessageTool({
     conversationId: 'default',
     getRunId: () => 'run-1',
@@ -67,6 +78,7 @@ function deliveryTool(session: BrowserAgentSession, next: TaskNextStep, getDeliv
     getDeliveryFacts,
     verifyPartial: (text, signal) => (session as any).verifyPartialDelivery(text, signal),
   });
+
   return { tool, events };
 }
 
@@ -98,11 +110,13 @@ describe('outcome=partial overclaim gate (docs/evals/20260921-1441-log-review.md
     const { session } = sessionFixture(plan);
     reviewMock.mockResolvedValue({ matched: false, probability: 0.05, reason: '正文已把满足证据的目标与尚未核验的目标分开表述', reviewedBy: 'jev' });
     const honestText = '已在页面上执行高亮与圈注脚本，读回 136 个高亮节点；圈注是否覆盖全部关键词尚未核验。';
+
     const { tool, events } = deliveryTool(session, partialNext(plan.goals), () => ({
       delivered: ['已执行高亮与圈注脚本'],
       remaining: plan.goals.map(g => ({ id: g.id, description: g.description, status: 'pending' as const })),
       sources: [],
     }));
+
     const result = await tool.execute('call-1', { kind: 'finding', outcome: 'partial', content: honestText }, undefined, undefined, {} as any);
     expect(result.content[0]).toMatchObject({ text: expect.stringMatching(/^delivered:/) });
     expect(events).toHaveLength(1);

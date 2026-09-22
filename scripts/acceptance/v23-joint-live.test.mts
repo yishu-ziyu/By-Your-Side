@@ -17,6 +17,7 @@ test('预算固定且与票面一致；只含 S1/S2；import 不执行 main', ()
 function sample(id: 'S1' | 'S2') {
   const t = newTrace();
   t.judgments.push({type: 'judgment', at: 1, completedAt: 2, voiceId: id, judgment: {lane: 'task', pageChange: 0.9, spokenResult: id === 'S1' ? 0.1 : 0.9}} as never);
+
   for (const [n, action] of ['list', 'switch'].entries()) {
     const rid = `r${n}`, callId = `c${n}`, at = 10 + n * 10;
     t.outgoing.push({type: 'response.create', at});
@@ -25,9 +26,12 @@ function sample(id: 'S1' | 'S2') {
     t.tools.push({type: 'tool', name: 'tabs', callId, args: {action, tabId: 8}, at: at + 1});
     t.outgoing.push({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: callId, output: JSON.stringify(action === 'switch' ? {hostFeedback: {text: '切好了'}} : {})}, at: at + 3});
   }
+
   t.logs.push({type: 'spoken_result_gate', at: 24, callIds: ['c1'], applied: id === 'S1', reason: id === 'S1' ? 'capsule_only' : 'spoken_result_needed'});
+
   return t;
 }
+
 function answer(t: ReturnType<typeof sample>, text = '一加一等于二') {
   t.outgoing.push({type: 'response.create', at: 30});
   t.provider.push({type: 'response.created', response: {id: 'answer'}, at: 31},
@@ -37,9 +41,13 @@ function answer(t: ReturnType<typeof sample>, text = '一加一等于二') {
     {type: 'transcript', role: 'assistant', responseId: 'answer', text, final: true, at: 33},
     {type: 'response_done', responseId: 'answer', at: 34});
 }
+
 const receipt: Receipt = {tabId: 8, verification: {verified: true, activeTabId: 8, windowId: 1, windowFocused: true, workingTabId: 8}};
+
 const pre: ReadState = {tabId: 7, windowId: 1, focused: true, aActive: true, bActive: false};
+
 const post: ReadState = {tabId: 8, windowId: 1, focused: true, aActive: false, bActive: true};
+
 const base = (id: 'S1' | 'S2', summary: ReturnType<typeof summarize>) => ({
   id, summary, receipt, pre, post, vis: {a: 'hidden', b: 'visible'}, successCapsules: 1, tabA: 7, tabB: 8,
 });
@@ -58,8 +66,10 @@ test('S2 含已交付答案音频时全通过', () => {
 test('回显一致但无核验事实的回执不能通过（真实回执才可）', () => {
   const reasons = jointChecks({...base('S1', summarize('S1', sample('S1'), 'quiescent')), receipt: {tabId: 8}});
   assert.ok(reasons.includes('receipt_not_verified'));
+
   const lying = jointChecks({...base('S1', summarize('S1', sample('S1'), 'quiescent')),
     receipt: {tabId: 8, verification: {verified: false, activeTabId: 7, windowId: 1, windowFocused: true, workingTabId: 8}}});
+
   assert.ok(lying.includes('receipt_not_verified'));
 });
 

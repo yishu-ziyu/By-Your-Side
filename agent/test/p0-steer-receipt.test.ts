@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {pairedAcceptedReceipt, roundFinding, type RoundReceipt} from '../../scripts/acceptance/round-evidence.mjs';
 
 const steerAtMs = 2_000;
+
 const runId = 'run-before';
 
 describe('P0 receipt-loss 插话轮次证据窗口', () => {
@@ -14,6 +15,7 @@ describe('P0 receipt-loss 插话轮次证据窗口', () => {
       {requestId: 'start-1', status: 'accepted'},
       {requestId: 'steer-other', status: 'applied'},
     ];
+
     expect(pairedAcceptedReceipt(receipts, ['steer-1'])).toBeUndefined();
   });
 

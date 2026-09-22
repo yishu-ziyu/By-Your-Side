@@ -5,6 +5,7 @@ export interface SpeechOutput {
   finish(): void;
   cancel(): void;
 }
+
 export interface SpeechCallbacks {
   audio(data: string): void;
   end(): void;
@@ -28,9 +29,11 @@ export class StepTtsStream implements SpeechOutput {
     this.arm();
     this.socket.on('message', raw => {
       if (this.stopped) return;
+
       try {
         const event = JSON.parse(raw.toString()), data = event.data ?? {};
         this.arm();
+
         if (event.type === 'tts.connection.done') {
           this.sessionId = data.session_id;
           this.send('tts.create', {voice_id: this.voice, response_format: 'pcm', sample_rate: 24000, mode: 'default'});
@@ -38,7 +41,11 @@ export class StepTtsStream implements SpeechOutput {
           this.ready = true; this.flush();
         } else if (event.type === 'tts.response.audio.delta') {
           const bytes = Buffer.from(data.audio ?? '', 'base64');
-          if (bytes.length % 2) { this.fail(); return; }
+
+          if (bytes.length % 2) { this.fail();
+
+ return; }
+
           for (let i = 0; i < bytes.length && !this.stopped; i += 24000) this.callbacks.audio(bytes.subarray(i, i + 24000).toString('base64'));
         } else if (event.type === 'tts.response.audio.done') {
           this.cancel(); this.callbacks.end();
@@ -57,15 +64,19 @@ export class StepTtsStream implements SpeechOutput {
   cancel(): void {
     if (this.stopped) return;
     this.stopped = true; this.queued = [];
+
     if (this.timer) clearTimeout(this.timer);
     this.socket.close();
   }
   private flush(): void {
     if (!this.ready || this.stopped) return;
+
     for (const text of this.queued.splice(0)) {
       for (const part of text.match(/.{1,500}/gsu) ?? []) this.send('tts.text.delta', {text: part});
+
       if (/[。！？!?\n]$/.test(text)) this.send('tts.text.flush');
     }
+
     if (this.ending) this.send('tts.text.done');
   }
   private send(type: string, data: Record<string, unknown> = {}): void {
@@ -85,17 +96,23 @@ export class SpeechTextBuffer {
   append(text: string, done = false): string {
     this.text += text;
     let end = done ? this.text.length : this.sent;
+
     if (!done) {
       const matches = [...this.text.slice(this.sent).matchAll(/[。！？!?\n]/g)];
+
       if (matches.length) end = this.sent + matches.at(-1)!.index! + 1;
       // Do not flush inside an unfinished code fence or Markdown link.
       const candidate = this.text.slice(0, end);
+
       if ((candidate.match(/```/g)?.length ?? 0) % 2 || /\[[^\]]*$|\]\([^)]*$/.test(candidate)) end = this.sent;
     }
+
     const startsAtLine = this.sent === 0 || /[\r\n]/.test(this.text[this.sent - 1]!);
     const part = this.text.slice(this.sent, end); this.sent = end;
+
     const withoutQuotes = part.replace(/^[ \t]*(?:>[ \t]?)+/gm, (marker, offset: number) =>
       offset > 0 || startsAtLine ? '' : marker);
+
     return withoutQuotes.replace(/```[\s\S]*?(?:```|$)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
       .replace(/https?:\/\/[^\s，。！？、]+/g, '').replace(/[*#`]/g, '').replace(/^\s*[-+]\s+/gm, '').trim();
   }

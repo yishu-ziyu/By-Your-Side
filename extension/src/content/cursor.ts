@@ -59,8 +59,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
 (function () {
   const ns = (window.__sideagent ??= {});
+
   // 同一 world 重复注入：保留现有实例。新 world（扩展 reload）先清旧 DOM 再挂。
   if (!ns.cursor) sweepStaleOverlayHosts(document);
+
   if (ns.cursor) return;
 
   const SCALE = CURSOR_SVG_SIZE / 24;
@@ -151,9 +153,12 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   /** 静态 SVG 构造：避免拼 innerHTML；属性与原模板一致。 */
   const SVG_NS = "http://www.w3.org/2000/svg";
+
   function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
     const node = document.createElementNS(SVG_NS, tag);
+
     for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+
     return node;
   }
 
@@ -460,17 +465,21 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         inst.labelSize = undefined;
         continue;
       }
+
       if (inst.highlightEl) {
         inst.highlightEl.remove();
         inst.highlightEl = undefined;
       }
+
       cancelFly(inst);
+
       if (inst.visible && !inst.hold) {
         const home = restPoint(inst.restIndex, window.innerWidth);
         setPos(inst, home);
         setResting(inst, true);
       }
     }
+
     relayoutMarks();
     relayoutHolds();
     relayoutActions();
@@ -484,21 +493,29 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function liveAnchor(holder: { anchor: Element | null; target?: string }): Element | null {
     if (holder.anchor?.isConnected) return holder.anchor;
+
     if (holder.target) {
       const el = window.__sideagent?.dom?.resolve?.(holder.target) ?? null;
+
       if (el) holder.anchor = el;
+
       return el;
     }
+
     return null;
   }
 
   function relayoutMarks(): void {
     if (liveMarks.length === 0) return;
+
     for (const mark of liveMarks) {
       if (mark.observedNode) {
         const node = mark.observedNode;
+
         if (!node.isConnected) {mark.el.style.visibility = "hidden";continue;}
+
         let rect: DOMRect;
+
         if (node.nodeType === Node.TEXT_NODE) {
           const range = document.createRange();range.selectNodeContents(node);rect = range.getBoundingClientRect();
         } else rect = (node as Element).getBoundingClientRect();
@@ -506,11 +523,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         applyMarkBox(mark.el, rect, mark.pad, mark.label);
         continue;
       }
+
       const anchor = liveAnchor(mark);
+
       if (!anchor) {
         mark.el.style.visibility = "hidden";
         continue;
       }
+
       mark.el.style.visibility = "";
       const r = anchor.getBoundingClientRect();
       applyMarkBox(
@@ -526,12 +546,15 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   function relayoutHolds(): void {
     for (const inst of instances.values()) {
       const hold = inst.hold;
+
       if (!hold) continue;
       const anchor = liveAnchor(hold);
+
       if (anchor) {
         const r = anchor.getBoundingClientRect();
         hold.point = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
       }
+
       if (inst.visible) inst.el.classList.remove("hidden");
       cancelFly(inst);
       setPos(inst, hold.point);
@@ -540,6 +563,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function getInstance(id: string): Instance {
     const existing = instances.get(id);
+
     if (existing) return existing;
     ensureDom();
     const el = document.createElement("div");
@@ -561,6 +585,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     shadow!.appendChild(el);
     const restIndex = instances.size;
     const home = restPoint(restIndex, window.innerWidth);
+
     const inst: Instance = {
       el,
       color,
@@ -570,13 +595,16 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       resting: true,
       name: id === DEFAULT_ID ? DEFAULT_LABEL : displayNameFor(id),
     };
+
     instances.set(id, inst);
+
     return inst;
   }
 
   function setPos(inst: Instance, p: { x: number; y: number }): void {
     inst.pos = p;
     inst.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+
     if (inst.action) positionActionLabel(inst);
     else if (inst.status && !inst.hold) inst.el.classList.toggle("flip", p.x > window.innerWidth * 0.6);
   }
@@ -617,15 +645,20 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   /** 优先级：拿住双键 > 动作 > 状态 > 成员名。 */
   function refreshLabel(inst: Instance): void {
     if (inst.hold) return;
+
     if (inst.action) {
       inst.el.classList.remove("stating");
       renderActionLabel(inst);
+
       return;
     }
+
     if (inst.status) {
       renderStatusLabel(inst);
+
       return;
     }
+
     inst.el.classList.remove("stating");
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
     label.removeAttribute("style");
@@ -636,46 +669,59 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   function renderActionLabel(inst: Instance): void {
     const action = inst.action!;
     const verb = { click: "点击", fill: "填写", hover: "定位" }[action.kind];
+
     const text = action.phase === "active" ? `正在${verb}`
       : action.phase === "failed" ? "操作未完成"
       : action.phase === "unknown" ? "结果待确认"
       : action.kind === "click" ? "已点击" : `${verb}结束`;
+
     paintLabel(inst, text + (action.name ? ` · ${action.name}` : ""), inst.name);
   }
 
   function relayoutActions(): void {
     for (const inst of instances.values()) {
       const action = inst.action;
+
       if (!action) continue;
+
       if (action.anchor) {
         if (!action.anchor.isConnected) {
           clearAction(inst);
           schedulePark(inst);
           continue;
         }
+
         const r = action.anchor.getBoundingClientRect();
         action.rect = { x: r.x, y: r.y, width: r.width, height: r.height };
       }
+
       const r = action.rect;
+
       if (r && inst.highlightEl) {
         const b = highlightBounds(r);
         const visible = b && r.x + r.width > 0 && r.y + r.height > 0 && r.x < innerWidth && r.y < innerHeight;
         inst.highlightEl.style.visibility = visible ? "" : "hidden";
+
         if (b) Object.assign(inst.highlightEl.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, height: `${b.height}px` });
+
         // 飞行结束后随实际元素移动，不重新解析同名节点。
         if (visible && inst.action?.arrived && inst.raf === undefined) setPos(inst, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
       }
+
       positionActionLabel(inst);
     }
   }
 
   function followActions(): void {
     if (actionFrame !== undefined) return;
+
     const tick = () => {
       actionFrame = undefined;
       relayoutActions();
+
       if ([...instances.values()].some(inst => inst.action)) actionFrame = requestAnimationFrame(tick);
     };
+
     actionFrame = requestAnimationFrame(tick);
   }
 
@@ -685,8 +731,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const labelledBy = anchor?.getAttribute("aria-labelledby")?.split(/\s+/).map(id => root?.getElementById?.(id)?.textContent ?? "").join(" ");
     const labels = anchor && "labels" in anchor ? Array.from((anchor as HTMLInputElement).labels ?? []).map(el => el.textContent).join(" ") : "";
     const editable = anchor?.matches("input, textarea, [contenteditable]");
+
     const text = anchor?.getAttribute("aria-label") || labelledBy || labels || anchor?.getAttribute("title") ||
       anchor?.getAttribute("placeholder") || (!editable ? anchor?.textContent : "") || fallback || "";
+
     return text.trim().replace(/\s+/g, " ").slice(0, 40);
   }
 
@@ -700,6 +748,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function statusSub(inst: Instance): string {
     const status = inst.status!;
+
     return status.detail || status.sub || inst.name;
   }
 
@@ -722,6 +771,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const status = inst.status!;
     const copy = STATUS_COPY[status.state];
     const hideAfter = status.autoHideMs ?? copy.autoHideMs;
+
     if (hideAfter !== undefined) {
       status.clearTimer = setTimeout(() => {
         clearStatusInst(inst);
@@ -732,6 +782,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function setStatusInst(inst: Instance, view: CursorStatusView): void {
     const copy = STATUS_COPY[view.state];
+
     if (!copy) return;
     clearStatusTimers(inst);
     inst.status = {
@@ -741,13 +792,17 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       sub: copy.sub || "",
       autoHideMs: view.autoHideMs,
     };
+
     if (!inst.visible) showAtRest(inst);
+
     // 失败停在原地等处理：取消自动回角落，别把出错位置挪走
     if (view.state === "failed") {
       clearTimeout(inst.parkTimer);
       setResting(inst, false);
     }
+
     startStatusTimers(inst);
+
     // 拿住态（就地确认双键）优先，状态等松开后再画
     if (!inst.hold) renderStatusLabel(inst);
     renderAmbient();
@@ -780,24 +835,33 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     cancelFly(inst);
     const from = inst.pos;
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
+
     if (dist < 2 || reducedMotion.matches) {
       setPos(inst, to);
+
       if (inst.action) inst.action.arrived = true;
+
       return 0;
     }
+
     const ms = flightMs(from, to);
     const t0 = performance.now();
+
     const tick = (now: number) => {
       const t = Math.min(1, (now - t0) / ms);
       setPos(inst, pointOnArc(from, to, easeInOutCubic(t)));
+
       if (t < 1) inst.raf = requestAnimationFrame(tick);
       else {
         inst.raf = undefined;
+
         if (inst.action) inst.action.arrived = true;
         setPos(inst, to);
       }
     };
+
     inst.raf = requestAnimationFrame(tick);
+
     return ms;
   }
 
@@ -809,6 +873,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   /** 立刻回待命角落（状态收完就是这么走的，不再多等一次 park 延迟）。 */
   function parkNow(inst: Instance): void {
     if (inst.action?.phase === "active") return;
+
     if (inst.action?.phase === "done") clearAction(inst);
     const home = restPoint(inst.restIndex, window.innerWidth);
     setResting(inst, true);
@@ -827,12 +892,15 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function spawnHighlight(inst: Instance, rect: SideAgentRect): void {
     const bounds = highlightBounds(rect, HIGHLIGHT_PAD);
+
     if (!bounds) return;
     ensureDom();
+
     if (inst.highlightEl) {
       inst.highlightEl.remove();
       inst.highlightEl = undefined;
     }
+
     const el = document.createElement("div");
     el.className = "highlight";
     el.style.setProperty("--c", inst.color);
@@ -843,10 +911,12 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
     const remove = () => {
       el.remove();
+
       if (inst.highlightEl === el) {
         inst.highlightEl = undefined;
       }
     };
+
     el.addEventListener("animationend", remove, { once: true });
     setTimeout(remove, 1900);
     inst.highlightEl = el;
@@ -856,10 +926,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   function resolveAnchor(rect: SideAgentRect, target?: string): Element | null {
     if (target) {
       const el = window.__sideagent?.dom?.resolve?.(target);
+
       if (el) return el;
     }
+
     const cx = rect.x + rect.width / 2;
     const cy = rect.y + rect.height / 2;
+
     return document.elementFromPoint(cx, cy);
   }
 
@@ -870,12 +943,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     label?: string,
   ): void {
     const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
+
     if (!box) return;
     el.style.left = `${box.x}px`;
     el.style.top = `${box.y}px`;
     el.style.width = `${box.width}px`;
     el.style.height = `${box.height}px`;
     const labelEl = el.querySelector(".mark-label");
+
     if (labelEl && label) {
       labelEl.classList.toggle("below", markLabelPlacement(rect.y) === "below");
     }
@@ -884,6 +959,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   /** 拿住态名牌：成员色 pill 内嵌确认红 / 取消灰双键；点下去发 mark_action（与侧栏打字同一条路）。 */
   function armHoldLabel(inst: Instance, actions: MarkAction[]): void {
     const labelEl = inst.el.querySelector<HTMLDivElement>(".label");
+
     if (!labelEl) return;
     inst.el.classList.remove("stating"); // 拿住态压过状态层，别把状态底色带到双键上
     labelEl.replaceChildren();
@@ -892,6 +968,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     prompt.textContent = "确认执行此操作？";
     labelEl.appendChild(prompt);
     inst.el.dataset.armed = "1";
+
     for (const action of actions) {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -901,9 +978,12 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
+
         if (inst.el.dataset.armed === "0") return;
         inst.el.dataset.armed = "0";
+
         for (const b of labelEl.querySelectorAll("button")) b.disabled = true;
+
         try {
           chrome.runtime.sendMessage({ type: "mark_action", action: action.id }, () => {
             void chrome.runtime.lastError;
@@ -919,11 +999,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   /** 松开：摘掉按住姿态、名牌恢复成员名、清锚点。不动可见性。 */
   function releaseHoldInst(inst: Instance): void {
     const hold = inst.hold;
+
     if (!hold) return;
     inst.hold = undefined;
     clearTimeout(inst.pressTimer);
     inst.el.classList.remove("pressing", "holding");
     delete inst.el.dataset.armed;
+
     // 确认锚框跟着拿住态一起走：用户确认/取消或动作换手后，"待确认"不该留在页面上
     if (hold.mark) removeMark(hold.mark);
     refreshLabel(inst);
@@ -940,9 +1022,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     anchorMark?: HTMLDivElement | null,
   ): void {
     releaseHoldInst(inst);
+
     if (inst.action) clearAction(inst);
     clearTimeout(inst.parkTimer);
     clearTimeout(inst.pressTimer);
+
     if (!inst.visible) showAtRest(inst);
     setResting(inst, false);
     inst.el.classList.remove("hidden");
@@ -974,6 +1058,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const motion = opts.motion ?? "grow";
     const pad = isSketch ? 10 : MARK_PAD;
     const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
+
     if (!box) return null;
     ensureMarksDom();
     const el = document.createElement("div");
@@ -998,11 +1083,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
           const o = { seed, roughness: 1.1, boil: 0.45, boilSeed: seed + (i + 1) * 7919 };
           const e = roughEllipse(cx, cy, rx, ry, o);
           const a = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { ...o, seed: seed + 7 });
+
           return `${e} ${a}`;
         });
+
         const svg = svgEl("svg", { class: "sketch-svg", style: "left:0;top:0;width:100%;height:100%;" });
         frames.forEach((f, i) => svg.appendChild(svgEl("path", { class: `boil-path frame-${i}`, "data-i": i, d: f })));
         el.replaceChildren(svg);
+
         if (label) {
           const markLabel = document.createElement("div");
           markLabel.className = "mark-label sketch-label";
@@ -1014,6 +1102,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         const svg = svgEl("svg", { class: "sketch-svg anim-stroke-grow", style: "left:0;top:0;width:100%;height:100%;" });
         svg.append(svgEl("path", { class: "rough-ellipse-path", d: ellipsePath }), svgEl("path", { class: "sketch-arrow-path", d: arrowPath }));
         el.replaceChildren(svg);
+
         if (label) {
           const markLabel = document.createElement("div");
           markLabel.className = "mark-label sketch-label";
@@ -1024,6 +1113,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       const svg = svgEl("svg", { class: "mark-arrow", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none" });
       svg.appendChild(svgEl("path", { d: "M2 12h17m-6-6 6 6-6 6", "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }));
       el.replaceChildren(svg);
+
       if (label) {
         const markLabel = document.createElement("div");
         markLabel.className = "mark-label";
@@ -1034,6 +1124,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     if (label) {
       const labelEl = el.querySelector<HTMLElement>(".mark-label")!;
       labelEl.textContent = label;
+
       if (isSketch) {
         const cx = box.width / 2;
         const cy = box.height / 2;
@@ -1045,6 +1136,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         labelEl.style.top = `${arrowY1 - 16}px`;
       }
     }
+
     applyMarkBox(el, rect, pad, label);
     marksLayer!.appendChild(el);
     liveMarks.push({
@@ -1057,12 +1149,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       options: opts,
       seed,
     });
+
     return el;
   }
 
   /** 只撤指定的一条标注（拿住态的确认锚框），不碰模型画的其他标注。 */
   function removeMark(el: HTMLDivElement): void {
     const at = liveMarks.findIndex((mark) => mark.el === el);
+
     if (at >= 0) liveMarks.splice(at, 1);
     el.remove();
   }
@@ -1088,12 +1182,15 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     inst.replayGen = gen;
     cancelFly(inst);
     clearTimeout(inst.parkTimer);
+
     if (!inst.visible) showAtRest(inst);
     setResting(inst, false);
     inst.el.classList.remove("hidden");
     inst.visible = true;
+
     for (const p of points) {
       if (inst.replayGen !== gen) return;
+
       if (
         p.x - window.scrollX < 8 ||
         p.y - window.scrollY < 8 ||
@@ -1102,10 +1199,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       ) {
         window.scrollTo(Math.max(0, p.x - window.innerWidth / 2), Math.max(0, p.y - window.innerHeight / 2));
       }
+
       const to = { x: p.x - window.scrollX, y: p.y - window.scrollY };
       const ms = flyTo(inst, to);
       await waitReplay(inst, ms);
+
       if (inst.replayGen !== gen) return;
+
       if (p.click) {
         spawnRipple(to.x, to.y, "ripple", inst.color);
         spawnRipple(to.x, to.y, "ripple r2", inst.color);
@@ -1115,6 +1215,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         await waitReplay(inst, 180);
       }
     }
+
     if (inst.replayGen === gen) schedulePark(inst);
   }
 
@@ -1168,7 +1269,9 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     btn.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
+
       if (btn.disabled) return;
+
       try {
         chrome.runtime.sendMessage({ type: "handback_click" }, () => {
           void chrome.runtime.lastError;
@@ -1180,6 +1283,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     controlBar.append(status, btn);
     controlShadow.append(style, controlBar);
     (document.documentElement ?? document.body).appendChild(controlHost);
+
     return controlBar;
   }
 
@@ -1195,36 +1299,45 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const btn = bar.querySelector("button");
     let sub = bar.querySelector<HTMLElement>(".sub");
     let stack = bar.querySelector<HTMLElement>(".stack");
+
     if (status) status.textContent = view?.status || "现在归你";
     const subText = view?.sub?.trim() ?? "";
+
     if (subText) {
       if (!sub) {
         sub = document.createElement("span");
         sub.className = "sub";
         status?.after(sub);
       }
+
       sub.textContent = subText;
     } else {
       sub?.remove();
     }
+
     const members = view?.members ?? [];
+
     if (members.length > 0) {
       if (!stack) {
         stack = document.createElement("div");
         stack.className = "stack";
         (bar.querySelector(".sub") ?? status)?.after(stack);
       }
+
       stack.replaceChildren();
+
       for (const m of members) {
         const av = document.createElement("i");
         av.className = "avatar";
         av.textContent = m.initial || "?";
+
         if (m.color) av.style.background = m.color;
         stack.appendChild(av);
       }
     } else {
       stack?.remove();
     }
+
     if (btn) {
       const action = view?.action ?? "交还";
       btn.textContent = action;
@@ -1256,11 +1369,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     clearTimeout(inst.parkTimer);
     releaseHoldInst(inst);
     clearStatusInst(inst);
+
     if (inst.action) clearAction(inst);
     inst.el.classList.add("hidden");
     inst.el.classList.remove("pressing", "rest", "flip");
     inst.visible = false;
     inst.resting = true;
+
     if (inst.highlightEl) {
       inst.highlightEl.remove();
       inst.highlightEl = undefined;
@@ -1290,6 +1405,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     face.className = "xface";
     face.setAttribute("aria-hidden", "true");
     const person = personFor(member.sessionId);
+
     if (person?.kenney) {
       mountKenney(face, chrome.runtime.getURL(`cast/${person.kenney.body}`), chrome.runtime.getURL(`cast/${person.kenney.face}`), 22);
     } else if (person) {
@@ -1301,6 +1417,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       fallback.appendChild(group);
       face.replaceChildren(fallback);
     }
+
     const name = document.createElement("span");
     name.className = "xmain";
     name.textContent = displayNameFor(member.sessionId);
@@ -1315,35 +1432,44 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     button.title = `${name.textContent} · ${state} · ${member.title}`;
     button.setAttribute("aria-label", member.local ? `${name.textContent} · ${member.title}，查看详情` : `${button.title}，切换到工作页面`);
     button.append(face, name, title, arrow);
+
     if (member.local) {
       button.title = member.detail || member.title;
       button.setAttribute("aria-expanded", "false");
       button.onclick = () => {
         let detail = button.nextElementSibling as HTMLElement | null;
+
         if (!detail?.classList.contains("xdetail")) {
           detail = document.createElement("div"); detail.className = "xdetail xlist";
           detail.textContent = member.detail || member.title; detail.hidden = true; button.after(detail);
         }
+
         detail.hidden = !detail.hidden; detail.inert = detail.hidden; button.setAttribute("aria-expanded", String(!detail.hidden));
       };
     } else button.onclick = () => jumpToMember(member);
+
     return button;
   }
 
   function showCrossPill(view: CrossPageView): void {
     remoteMembers = view.members?.length ? view.members : [{ sessionId: view.sessionId ?? "main", title: view.title?.trim() || "另一个页面", tabId: view.tabId, state: view.state }];
     crossPillSession = view.sessionId ?? remoteMembers[0]!.sessionId;
+
     for (const member of remoteMembers) {
       const inst = instances.get(member.sessionId);
+
       if (inst && !inst.hold) hide(inst);
     }
+
     renderAmbient();
   }
 
   function renderAmbient(): void {
     const members: Array<CrossPageMember & { local?: boolean; detail?: string }> = [...remoteMembers];
+
     for (const [id, inst] of instances) {
       if (inst.hold || remoteMembers.some(m => m.sessionId === id)) continue;
+
       if (inst.action) {
         const a = inst.action;
         const verb = {click:"点击", fill:"填写", hover:"定位"}[a.kind];
@@ -1351,19 +1477,26 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         members.push({sessionId:id, title:text, local:true, detail:a.name ? `${text} · ${a.name}` : text});
       } else if (inst.status) members.push({sessionId:id, title:inst.status.text, local:true, detail:inst.status.detail || inst.status.sub || inst.status.text});
     }
-    if (!members.length) { crossPill?.classList.remove("on"); return; }
+
+    if (!members.length) { crossPill?.classList.remove("on");
+
+ return; }
+
     ensureDom();
+
     if (!crossPill?.isConnected) {
       crossPill = document.createElement("div");
       crossPill.className = "xpage";
       crossPill.addEventListener("click", ev => ev.stopPropagation());
       shadow!.appendChild(crossPill);
     }
+
     const previousText = new Map(Array.from(crossPill.querySelectorAll<HTMLButtonElement>("button[data-member]")).map(button => [button.dataset.member, button.querySelector(".xsub")?.textContent]));
     const wasOpen = crossPill.querySelector("button")?.getAttribute("aria-expanded") === "true";
     const hadFocus = crossPill.contains(shadow?.activeElement ?? null);
     crossPill.replaceChildren();
     const trigger = memberButton(members[0]!);
+
     if (members.length > 1) {
       trigger.querySelector(".xmain")!.textContent = `${members.length} 位助手`;
       trigger.querySelector(".xsub")!.textContent = "查看工作状态";
@@ -1373,26 +1506,33 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       const list = document.createElement("div");
       list.className = "xlist";
       list.hidden = !wasOpen;
+
       if (wasOpen) list.dataset.restored = "true";
       list.inert = list.hidden;
       trigger.setAttribute("aria-expanded", String(wasOpen));
       list.append(...members.map(memberButton));
       trigger.onclick = () => { delete list.dataset.restored; list.hidden = !list.hidden; list.inert = list.hidden; trigger.setAttribute("aria-expanded", String(!list.hidden)); };
+
       crossPill.onkeydown = ev => { if (ev.key === "Escape") { list.hidden = true; list.inert = true; trigger.setAttribute("aria-expanded", "false"); trigger.focus(); ev.stopPropagation(); } };
+
       crossPill.append(trigger, list);
     } else {
       crossPill.onkeydown = null;
       crossPill.append(trigger);
     }
+
     crossPill.classList.add("on");
+
     if (!reducedMotion.matches) {
       for (const button of crossPill.querySelectorAll<HTMLButtonElement>("button[data-member]")) {
         const text = button.querySelector<HTMLElement>(".xsub");
+
         if (text && previousText.has(button.dataset.member) && previousText.get(button.dataset.member) !== text.textContent) {
           text.animate([{opacity:.4, transform:"translateY(2px)"}, {opacity:1, transform:"translateY(0)"}], {duration:150, easing:"ease-out"});
         }
       }
     }
+
     if (hadFocus) trigger.focus();
   }
 
@@ -1417,27 +1557,33 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     if (!feedbackPillState) {
       feedbackPill?.classList.remove("on");
       positionCrossPill();
+
       return;
     }
+
     ensureDom();
+
     if (!feedbackPill?.isConnected) {
       feedbackPill = document.createElement("div");
       feedbackPill.className = "xpage xfeedback";
       feedbackPill.addEventListener("click", ev => { ev.stopPropagation(); hideFeedbackPill(); });
       shadow!.appendChild(feedbackPill);
     }
+
     const button = document.createElement("button");
     button.type = "button";
     const main = document.createElement("span");
     main.className = "xmain";
     main.textContent = feedbackPillState.text;
     button.append(main);
+
     if (feedbackPillState.kind !== "success") {
       const sub = document.createElement("span");
       sub.className = "xsub";
       sub.textContent = "详情在侧栏";
       button.append(sub);
     }
+
     button.title = feedbackPillState.detail || feedbackPillState.text;
     button.setAttribute("aria-label", feedbackPillState.text);
     feedbackPill.replaceChildren(button);
@@ -1453,12 +1599,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const played = bounce && !reducedMotion.matches;
     feedbackPillState = played || !bounce ? state : { ...state, bounces: 0 };
     renderFeedbackPill();
+
     if (played) {
       feedbackPill?.querySelector("button")?.animate(
         [{ transform: "scale(.94)" }, { transform: "scale(1.035)", offset: .55 }, { transform: "scale(1)" }],
         { duration: 340, easing: "cubic-bezier(.22,1,.36,1)" },
       );
     }
+
     if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
     feedbackTimer = window.setTimeout(() => hideFeedbackPill(), feedbackLifetimeMs(feedbackPillState.kind));
   }
@@ -1468,6 +1616,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       clearTimeout(feedbackTimer);
       feedbackTimer = undefined;
     }
+
     feedbackPillState = null;
     renderFeedbackPill();
   }
@@ -1475,6 +1624,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   function teardown(): void {
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
     actionFrame = undefined;
+
     for (const inst of instances.values()) {
       stopReplayInst(inst);
       cancelFly(inst);
@@ -1482,9 +1632,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       clearTimeout(inst.pressTimer);
       clearStatusTimers(inst);
     }
+
     remoteMembers = [];
     instances.clear();
     liveMarks.length = 0;
+
     if (feedbackTimer !== undefined) clearTimeout(feedbackTimer);
     feedbackTimer = undefined;
     feedbackPillState = null;
@@ -1530,11 +1682,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         releaseHoldInst(inst);
         clearTimeout(inst.parkTimer);
         stopReplayInst(inst);
+
         if (inst.action) clearAction(inst);
+
         if (!inst.visible) showAtRest(inst);
         inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label) };
         setResting(inst, false);
         inst.el.classList.add("acting");
+
         if (rect && anchor) {
           inst.highlightEl?.remove();
           inst.highlightEl = document.createElement("div");
@@ -1542,6 +1697,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
           inst.highlightEl.style.setProperty("--c", inst.color);
           highlightLayer!.appendChild(inst.highlightEl);
         }
+
         renderActionLabel(inst);
         renderAmbient();
         followActions();
@@ -1549,13 +1705,16 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
       endAction(actionId, outcome, point): void {
         const inst = instances.get(id);
+
         if (!inst?.action || inst.action.id !== actionId || inst.action.phase !== "active") return;
         cancelFly(inst);
         inst.action.phase = outcome;
+
         if (outcome === "done" && inst.action.kind === "click" && point) {
           setPos(inst, { x: point[0], y: point[1] });
           api(id).click(point[0], point[1]);
         }
+
         if (outcome !== "done") {
           inst.highlightEl?.remove();
           inst.highlightEl = undefined;
@@ -1567,14 +1726,17 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
           el.addEventListener("animationend", () => el.remove(), { once: true });
           window.setTimeout(() => el.remove(), 1200);
         }
+
         renderActionLabel(inst);
         renderAmbient();
         schedulePark(inst);
       },
       arrive(x, y): void {
         const inst = instances.get(id);
+
         if (!inst?.visible) return;
         cancelFly(inst);
+
         if (inst.action) inst.action.arrived = true;
         setPos(inst, { x, y });
       },
@@ -1582,10 +1744,12 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         const inst = getInstance(id);
         releaseHoldInst(inst);
         clearTimeout(inst.parkTimer);
+
         if (!inst.visible) showAtRest(inst);
         setResting(inst, false);
         inst.el.classList.remove("hidden");
         inst.visible = true;
+
         return flyTo(inst, { x, y });
       },
 
@@ -1602,23 +1766,29 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
       hold(x: number, y: number, actions: MarkAction[], target?: string): void {
         const parsed = parseMarkActions(actions);
+
         if (!parsed) return;
         holdInst(getInstance(id), x, y, parsed, target);
       },
 
       releaseHold(): void {
         const inst = instances.get(id);
+
         if (!inst) return;
         releaseHoldInst(inst);
+
         if (inst.visible) schedulePark(inst);
       },
 
       park(): void {
         const inst = getInstance(id);
+
         if (!inst.visible) {
           showAtRest(inst);
+
           return;
         }
+
         schedulePark(inst);
       },
 
@@ -1628,11 +1798,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
       stopReplay(): void {
         const inst = instances.get(id);
+
         if (inst) stopReplayInst(inst);
       },
 
       hide(): void {
         const inst = instances.get(id);
+
         if (inst) hide(inst);
       },
 
@@ -1643,7 +1815,10 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
       clearStatus(): void {
         const inst = instances.get(id);
-        if (inst) { clearStatusInst(inst); if (inst.action && inst.action.phase !== "active") clearAction(inst); }
+
+        if (inst) { clearStatusInst(inst);
+
+ if (inst.action && inst.action.phase !== "active") clearAction(inst); }
       },
 
       showCrossPage(view?: CrossPageView): void {
@@ -1693,6 +1868,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         const mark = spawnMark(inst, rect, label, target, options, observedNode);
         // 就地确认与 held 拦阻同一形态：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
+
         if (parsed) {
           holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target, mark);
         }
@@ -1712,23 +1888,30 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   ns.cursor = api(DEFAULT_ID);
   ns.cursorState = (id = DEFAULT_ID) => {
     const inst = instances.get(id);
+
     if (!inst) return null;
     const r = inst.el.querySelector(".label")?.getBoundingClientRect();
+
     return { action: inst.action?.id ?? null, phase: inst.action?.phase ?? null,
       label: inst.el.querySelector(".label")?.textContent ?? "", labelRect: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null,
       targetRect: inst.action?.rect ?? null, hidden: !inst.visible, resting: inst.resting, x: inst.pos.x, y: inst.pos.y, size: CURSOR_SVG_SIZE };
   };
+
   ns.cursorHidden = () => {
     const inst = instances.get(DEFAULT_ID);
+
     return !inst || !inst.visible;
   };
+
   ns.cursorStatus = (id = DEFAULT_ID) => {
     const inst = instances.get(id);
+
     if (!inst) return null;
     const label = inst.el.querySelector<HTMLDivElement>(".label");
     const rect = label?.getBoundingClientRect();
     const computed = label ? getComputedStyle(label) : null;
     const nameEl = inst.el.querySelector<HTMLDivElement>(".agent-name");
+
     return {
       state: inst.status?.state ?? null,
       text: inst.el.querySelector<HTMLDivElement>(".action-text")?.textContent ?? "",
@@ -1744,9 +1927,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       resting: inst.resting,
     };
   };
+
   ns.crossPageState = () => {
     if (!crossPill?.classList.contains("on")) return null;
     const rect = crossPill.getBoundingClientRect();
+
     return {
       main: crossPill.querySelector<HTMLSpanElement>(".xmain")?.textContent ?? "",
       sub: crossPill.querySelector<HTMLSpanElement>(".xsub")?.textContent ?? "",
@@ -1755,11 +1940,14 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       viewport: { width: window.innerWidth, height: window.innerHeight },
     };
   };
+
   ns.clickCrossPage = () => {
     if (!crossPill?.classList.contains("on")) return false;
     crossPill.querySelector("button")?.click();
+
     return true;
   };
+
   ns.feedbackState = () => feedbackPillState ? {
     id: feedbackPillState.id,
     text: feedbackPillState.text,
@@ -1774,6 +1962,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     const barRect = controlBar.getBoundingClientRect();
     const statusRect = statusEl?.getBoundingClientRect();
     const actionRect = actionEl?.getBoundingClientRect();
+
     return {
       status: statusEl?.textContent ?? "",
       action: actionEl?.textContent ?? "",
@@ -1784,12 +1973,16 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       viewportWidth: window.innerWidth,
     };
   };
+
   ns.clickHandback = () => {
     const btn = controlBar?.querySelector("button");
+
     if (!btn || !controlBar?.classList.contains("on")) return false;
     btn.click();
+
     return true;
   };
+
   ns.holdActionLabels = () =>
     [...instances.values()]
       .filter((inst) => inst.hold)
@@ -1801,17 +1994,23 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       );
   ns.clickHoldAction = (actionId: string) => {
     if (!isMarkActionId(actionId)) return false;
+
     const btn = [...instances.values()]
       .filter((inst) => inst.hold)
       .flatMap((inst) => [...inst.el.querySelectorAll<HTMLButtonElement>(".hold-action")])
       .find((b) => b.dataset.action === actionId);
+
     if (!btn) return false;
     btn.click();
+
     return true;
   };
+
   ns.holdState = (instanceId?: string) => {
     const inst = instances.get(instanceId ?? DEFAULT_ID);
+
     if (!inst) return null;
+
     return {
       holding: Boolean(inst.hold),
       pressing: inst.el.classList.contains("pressing"),
@@ -1820,6 +2019,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       y: inst.pos.y,
     };
   };
+
   ns.markLayout = () =>
     liveMarks.map((m) => ({
       x: parseFloat(m.el.style.left) || 0,
@@ -1832,6 +2032,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   ns.setMarkConfig = (opts: MarkOptions) => {
     defaultMarkOptions = { ...defaultMarkOptions, ...opts };
   };
+
   ns.getMarkConfig = () => ({ ...defaultMarkOptions });
   ns.markDetails = () =>
     liveMarks.map((m) => {
@@ -1840,6 +2041,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       const ellipsePath = svg?.querySelector(".rough-ellipse-path");
       const arrowPath = svg?.querySelector(".sketch-arrow-path");
       const labelEl = m.el.querySelector(".sketch-label") ?? m.el.querySelector(".mark-label");
+
       return {
         className: m.el.className,
         hasSvg: Boolean(svg),

@@ -14,6 +14,7 @@ import {workerExecution} from '../../agent/src/fleet.js';
 import {ControlGate,CONTROL_COMPLETED_MAX,applyControlSnapshot,snapshotControl} from '../../shared/control.js';
 
 const report:any={scope:'implementer module-integration probes for R1-R4 and the worker path; deterministic SDK events, not live model/browser',checks:[],sourceHashes:{}};
+
 const check=(name:string,ok:boolean,actual:unknown)=>{report.checks.push({name,ok,actual});console.log(`${ok?'PASS':'FAIL'} ${name}: ${JSON.stringify(actual)}`);};
 
 // ── R1: SDK call identity and execution facts ────────────────────────────────
@@ -25,6 +26,7 @@ const check=(name:string,ok:boolean,actual:unknown)=>{report.checks.push({name,o
  const first=await rpc.call('click',{target:'#append'},undefined,undefined,undefined,undefined,'sdk-1').then(()=>null,(e:any)=>e);
  check('R1 SDK id and transport id share one unknown fact',first?.executionFact==='unknown'&&rpc.getExecutionFact('sdk-1')==='unknown'&&rpc.getExecutionFact(transportId)==='unknown',{sdk:rpc.getExecutionFact('sdk-1'),transport:rpc.getExecutionFact(transportId)});
 }
+
 {
  const rpc=new ToolRpc();
  rpc.ensureToolCall('sdk-2','click');
@@ -37,10 +39,15 @@ function leadHarness(){
  p.registerResults([{id:'append',description:'新增一条记录',tool:'click',target:'#append'}]);
  const rpc=new ToolRpc();const events:any[]=[];
  let emit:any=()=>{};
- const raw:any={subscribe:(fn:any)=>{emit=fn;return()=>{};}};
+
+ const raw:any={subscribe:(fn:any)=>{emit=fn;
+
+return()=>{};}};
+
  const session:any=new (BrowserAgentSession as any)(raw,null,{emit:(event:any)=>{events.push(event);p.observe({type:'agent_event',event} as any);},setStatus:()=>{}},null,null,undefined,null,rpc);
  session.bindConversationContext(()=>p.snapshot());session.subscribeEvents();
  const tools=createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>0,canWrite:()=>true,assertCall:(name,params,id)=>session.assertTaskResultExecution(name,params,id)});
+
  return {p,rpc,events,session,tools,emit:()=>emit};
 }
 
@@ -55,6 +62,7 @@ function leadHarness(){
  const stepEnd=h.events.find(e=>e.kind==='tool_end'&&e.toolCallId==='br-1/1');
  check('R1 browser_run step fact reaches the registered result',stepEnd?.executionFact==='unknown'&&h.p.snapshot().resultState==='unknown',{stepFact:stepEnd?.executionFact??null,state:h.p.snapshot().resultState});
 }
+
 // A pre-dispatch rejection stays retryable even inside browser_run.
 {
  const h=leadHarness();
@@ -80,6 +88,7 @@ function leadHarness(){
  const matched=h.rpc.handleResult(transportId,true,{clicked:true},undefined,'executed');
  check('R2 late receipt resolves the original run through production wiring',before==='unknown'&&matched&&h.p.snapshot().resultState==='satisfied',{before,matched,after:h.p.snapshot().resultState,handlerInstalled:!!h.rpc.onLateResult});
 }
+
 // A late receipt for a different run cannot resolve the current unknown.
 {
  const h=leadHarness();
@@ -97,12 +106,14 @@ function leadHarness(){
  h.emit()({type:'tool_execution_end',toolCallId:'obs-1',toolName:'snapshot',isError:false,result:{content:[{type:'text',text:'隔离记录页 新增一条记录 0'}],details:{text:'隔离记录页 新增一条记录 0',tabId:7}}});
  h.emit()({type:'tool_execution_start',toolCallId:'w-1',toolName:'click',args:{target:'#append'}});
  h.emit()({type:'tool_execution_end',toolCallId:'w-1',toolName:'click',isError:true,result:{content:[{type:'text',text:'lost'}]}});
+
  const tool=createVerifyUnknownResultTool({
   getSnapshot:()=>h.p.snapshot(),
   read:async()=>({textContent:'隔离记录页 记录 1',tabId:7}),
   verify:input=>h.p.verifyUnknownResult(input),
   emit:h.session.callbacks?.emit,
  });
+
  const missing=await (tool.execute as any)('v-1',{id:'append',target:'body',expect:'记录 9'});
  const afterMissing=h.p.snapshot().resultState;
  const preExisting=await (tool.execute as any)('v-pre',{id:'append',target:'h1',expect:'隔离记录页'});
@@ -110,6 +121,7 @@ function leadHarness(){
  const matched=await (tool.execute as any)('v-2',{id:'append',target:'body',expect:'记录 1'});
  check('R3 fresh page change resolves unknown; missing or pre-existing text keeps it',missing.details.ok===false&&afterMissing==='unknown'&&preExisting.details.ok===false&&afterPre==='unknown'&&matched.details.ok===true&&h.p.snapshot().resultState==='satisfied',{afterMissing,preExisting:preExisting.details,matched:matched.details,after:h.p.snapshot().resultState});
 }
+
 // No pre-write read, another page, or another read scope cannot resolve unknown.
 {
  const h=leadHarness();
@@ -119,6 +131,7 @@ function leadHarness(){
  const out=await (tool.execute as any)('v-nb',{id:'append',target:'body',expect:'记录 1'});
  check('R3 recovery without a pre-write read stays unknown',out.details.ok===false&&h.p.snapshot().resultState==='unknown',{details:out.details,state:h.p.snapshot().resultState});
 }
+
 {
  const h=leadHarness();
  h.emit()({type:'tool_execution_start',toolCallId:'obs-2',toolName:'snapshot',args:{}});
@@ -129,6 +142,7 @@ function leadHarness(){
  const out=await (tool.execute as any)('v-page',{id:'append',target:'body',expect:'记录 1'});
  check('R3 evidence from another page cannot resolve unknown',out.details.ok===false&&h.p.snapshot().resultState==='unknown',{details:out.details,state:h.p.snapshot().resultState});
 }
+
 // A model cannot claim a result that is not unknown.
 {
  const h=leadHarness();
@@ -140,26 +154,47 @@ function leadHarness(){
 // ── R4: executor dedupe, interruption and eviction boundaries ────────────────
 {
  const gate=new ControlGate();let writes=0;
- const first=await gate.run('dup-a','click',async()=>{writes++;return {clicked:writes};},'main');
- const second=await gate.run('dup-a','click',async()=>{writes++;return {clicked:writes};},'main');
+
+ const first=await gate.run('dup-a','click',async()=>{writes++;
+
+return {clicked:writes};},'main');
+
+ const second=await gate.run('dup-a','click',async()=>{writes++;
+
+return {clicked:writes};},'main');
+
  check('R4 duplicate operation id replays the original result',writes===1&&(first as any).clicked===1&&(second as any).clicked===1,{writes,first,second});
 }
+
 {
  const gate=new ControlGate();let writes=0;
  await gate.run('dup-b','click',async()=>{writes++;throw new Error('动作后未知');},'main').catch(()=>{});
- const replay=await gate.run('dup-b','click',async()=>{writes++;return {};},'main').then(()=>null,(e:any)=>e);
+
+ const replay=await gate.run('dup-b','click',async()=>{writes++;
+
+return {};},'main').then(()=>null,(e:any)=>e);
+
  check('R4 duplicate of a failed operation replays the error without re-executing',writes===1&&replay?.message==='动作后未知',{writes,replay:replay?.message});
 }
+
 {
  const live=new ControlGate();let writes=0;
- await live.run('dup-c','click',async()=>{writes++;return {clicked:true};},'main');
+ await live.run('dup-c','click',async()=>{writes++;
+
+return {clicked:true};},'main');
  const restarted=new ControlGate();
  applyControlSnapshot(restarted,snapshotControl(live,'idle'));
- const replay=await restarted.run('dup-c','click',async()=>{writes++;return {clicked:true};},'main').then(()=>null,(e:any)=>e);
+
+ const replay=await restarted.run('dup-c','click',async()=>{writes++;
+
+return {clicked:true};},'main').then(()=>null,(e:any)=>e);
+
  check('R4 SW restart keeps the completed identity and refuses re-execution',writes===1&&/重复执行/.test(String(replay?.message)),{writes,replay:replay?.message});
 }
+
 {
  const gate=new ControlGate();
+
  for(let i=0;i<CONTROL_COMPLETED_MAX+4;i++)await gate.run(`evict-${i}`,'click',async()=>i,'main');
  const ids=gate.completedIds();
  const newest=ids.includes(`main::evict-${CONTROL_COMPLETED_MAX+3}`);
@@ -186,6 +221,7 @@ function leadHarness(){
  const after=await (tools.find(t=>t.name==='click')!.execute as any)('w-click-2',{target:'#append'}).then(()=>({ok:true}),(e:any)=>({ok:false,error:String(e)}));
  check('worker write proceeds after the lead unknown is resolved',resolved&&after.ok===true&&workerDispatches===2,{resolved,after,workerDispatches});
 }
+
 // The shared RPC routes late receipts to the owning member only.
 {
  const p=new TaskProgress('default');p.request('新增一条记录');
@@ -209,8 +245,15 @@ function leadHarness(){
 }
 
 for(const file of ['agent/src/rpc.ts','agent/src/tools.ts','agent/src/browser-program.ts','agent/src/session.ts','agent/src/task-progress.ts','agent/src/task-results.ts','agent/src/fleet.ts','agent/src/conversation-manager.ts','shared/control.ts','shared/task-results.ts','extension/src/background/index.ts','extension/src/background/exec/page-operation.ts'])report.sourceHashes[file]=createHash('sha256').update(await readFile(file)).digest('hex');
-report.passed=report.checks.filter((c:any)=>c.ok).length;report.total=report.checks.length;
+
+report.passed=report.checks.filter((c:any)=>c.ok).length;
+
+report.total=report.checks.length;
+
 await mkdir('docs/evals',{recursive:true});
+
 await writeFile('docs/evals/20260909-write-receipt-loss-r1-r4-boundaries.json',JSON.stringify(report,null,2)+'\n');
+
 console.log(JSON.stringify({passed:report.passed,total:report.total}));
+
 process.exitCode=report.passed===report.total?0:1;

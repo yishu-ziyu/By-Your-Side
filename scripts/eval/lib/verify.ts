@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type Verdict = "PASS" | "FAIL" | "BLOCKED";
+
 export type MeasurementMode =
   | "offline"
   | "tool_integration"
@@ -97,10 +98,15 @@ export interface VerifyResult {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
+
 export const REPO_ROOT = join(here, "..", "..", "..");
+
 export const PROTECTED_DIR = join(REPO_ROOT, "eval", "protected");
+
 export const GATES_PATH = join(PROTECTED_DIR, "quality-gates.json");
+
 export const GATES_SCHEMA_PATH = join(PROTECTED_DIR, "quality-gates.schema.json");
+
 export const MANIFEST_PATH = join(PROTECTED_DIR, "MANIFEST.json");
 
 export function sha256Bytes(data: Buffer | string): string {
@@ -123,30 +129,39 @@ export function assertProtectedGatesUntampered(path: string = GATES_PATH): { sha
   const manifest = loadManifest();
   const expected = manifest.files["quality-gates.json"]?.sha256;
   const actual = sha256File(path);
+
   if (!expected) throw new Error("protected manifest missing quality-gates.json sha256");
+
   if (actual !== expected) {
     throw new Error(`quality-gates sha256 mismatch: expected ${expected}, got ${actual}`);
   }
+
   if (path !== GATES_PATH && existsSync(GATES_PATH) && sha256File(GATES_PATH) !== actual) {
     throw new Error("candidate gates file does not match the protected revision");
   }
+
   return { sha256: actual };
 }
 
 function compare(operator: GateMetric["operator"], value: number, target: number): boolean {
   if (operator === "eq") return value === target;
+
   if (operator === "lte") return value <= target;
+
   return value >= target;
 }
 
 function asAbsolute(entry: Verdict | { verdict: Verdict; reason?: string } | undefined): { verdict: Verdict; reason: string } {
   if (!entry) return { verdict: "BLOCKED", reason: "absolute check missing" };
+
   if (typeof entry === "string") return { verdict: entry, reason: entry === "PASS" ? "reported" : "reported non-pass" };
+
   return { verdict: entry.verdict, reason: entry.reason ?? entry.verdict };
 }
 
 export function verifyReport(report: EvalReport, gates: QualityGates = loadGates()): VerifyResult {
   const { sha256 } = assertProtectedGatesUntampered();
+
   if (report.gates_sha256 && report.gates_sha256 !== sha256) {
     return {
       verdict: "FAIL",
@@ -158,8 +173,10 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
   }
 
   const observations = new Map((report.observations ?? []).map((o) => [o.id, o]));
+
   const metrics: MetricResult[] = gates.metrics.map((metric) => {
     const obs = observations.get(metric.id);
+
     if (!obs || obs.missing || obs.value === undefined || obs.value === null) {
       return {
         id: metric.id,
@@ -170,7 +187,9 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
         measurement_mode: metric.measurement_mode,
       };
     }
+
     const samples = obs.samples ?? 0;
+
     if (samples < metric.minimum_samples) {
       return {
         id: metric.id,
@@ -181,6 +200,7 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
         measurement_mode: obs.measurement_mode ?? metric.measurement_mode,
       };
     }
+
     if (obs.measurement_mode && obs.measurement_mode !== metric.measurement_mode) {
       return {
         id: metric.id,
@@ -191,7 +211,9 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
         measurement_mode: obs.measurement_mode,
       };
     }
+
     const pass = compare(metric.operator, obs.value, metric.target);
+
     return {
       id: metric.id,
       verdict: pass ? "PASS" : "FAIL",
@@ -205,11 +227,13 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
   });
 
   const absolute: Record<string, { verdict: Verdict; reason: string }> = {};
+
   for (const name of gates.absolute_checks_required) {
     absolute[name] = asAbsolute(report.absolute_checks?.[name]);
   }
 
   const human = absolute.human_review_signed_with_no_unresolved_release_blocker;
+
   if (!report.human_review?.signed) {
     absolute.human_review_signed_with_no_unresolved_release_blocker = {
       verdict: "BLOCKED",
@@ -218,6 +242,7 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
   }
 
   const protection = absolute.evaluation_policy_and_oracle_are_independently_protected;
+
   if (protection?.verdict === "PASS") {
     absolute.evaluation_policy_and_oracle_are_independently_protected = {
       verdict: "FAIL",
@@ -227,6 +252,7 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
 
   const all = [...metrics.map((m) => m.verdict), ...Object.values(absolute).map((a) => a.verdict)];
   const verdict: Verdict = all.includes("FAIL") ? "FAIL" : all.includes("BLOCKED") ? "BLOCKED" : "PASS";
+
   const reason =
     verdict === "PASS"
       ? "all required gates passed"

@@ -13,6 +13,7 @@ import {
 } from "../src/sidepanel/companion.js";
 
 const app = { top: 0, left: 0 };
+
 const box = (top: number, left: number, width: number, height: number): Box => ({
   top,
   left,

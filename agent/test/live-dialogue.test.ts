@@ -11,18 +11,29 @@ class Socket extends EventEmitter {
   close(){}
   server(e:object){this.emit('message',Buffer.from(JSON.stringify(e)));}
 }
+
 const sessions:StepVoiceSession[]=[];
+
 afterEach(()=>sessions.splice(0).forEach(s=>s.close()));
+
 const tick=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
+
 function harness(result:VoiceRouteResult={kind:'none'},earlyReplies=false) {
   const socket=new Socket(),events:any[]=[],outputs:Array<{cb:SpeechCallbacks;push:ReturnType<typeof vi.fn>;finish:ReturnType<typeof vi.fn>;cancel:ReturnType<typeof vi.fn>}>=[];
   let snapshot:TaskProgressSnapshot={conversationId:'default',runId:'run',controlVersion:0,state:'running',observedAt:1,goal:'列出标签页',startedAt:1,active:[],lastAction:null,successVerified:false};
   const route=vi.fn(async()=>result);
-  const s=new StepVoiceSession({earlyReplies,getSnapshot:()=>snapshot,connect:()=>socket as any,emit:e=>events.push(e),route,createSpeech:(_key,cb)=>{const o={cb,push:vi.fn(),finish:vi.fn(),cancel:vi.fn()};outputs.push(o);return o;}});
+
+  const s=new StepVoiceSession({earlyReplies,getSnapshot:()=>snapshot,connect:()=>socket as any,emit:e=>events.push(e),route,createSpeech:(_key,cb)=>{const o={cb,push:vi.fn(),finish:vi.fn(),cancel:vi.fn()};outputs.push(o);
+
+return o;}});
+
   sessions.push(s);s.start('test');socket.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});socket.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16'}});
   const input=async(turn:number,text:string)=>{s.command({kind:'interrupt',turn});s.command({kind:'audio',turn,data:'AQABAA=='});s.command({kind:'commit',turn});socket.server({type:'input_audio_buffer.committed',item_id:'u'+turn});socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u'+turn,transcript:text});await tick();};
+
   const reply=(id:string,text='好，我看看。')=>{socket.server({type:'response.created',response:{id}});socket.server({type:'response.audio.delta',response_id:id,item_id:'a'+id,delta:'AQABAA=='});socket.server({type:'response.audio_transcript.done',response_id:id,transcript:text});socket.server({type:'response.done',response:{id,status:'completed'}});};
+
   const finding=(id='result'):UserDeliveryStream=>({id,runId:'run',kind:'finding',phase:'streaming',text:'当前共有三个标签页。'});
+
   return {s,socket,events,outputs,route,input,reply,finding,setSnapshot:(next:Partial<TaskProgressSnapshot>)=>{snapshot={...snapshot,...next};}};
 }
 

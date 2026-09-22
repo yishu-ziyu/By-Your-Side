@@ -22,12 +22,14 @@ function installChrome(opts: { activeId?: number | null } = {}) {
     },
     windows: { update: vi.fn(async () => ({})) },
   });
+
   return { executeScript };
 }
 
 function feedbackPaints(executeScript: ReturnType<typeof vi.fn>) {
   return executeScript.mock.calls.filter(([details]) => {
     const view = (details as ScriptDetails).args?.[0];
+
     return Boolean(view && typeof view === 'object' && 'text' in (view as object));
   });
 }
@@ -89,6 +91,7 @@ describe('执行反馈胶囊（background 路由）', () => {
     const env = installChrome({ activeId: 5 });
     env.executeScript.mockImplementation(async (details: ScriptDetails) => {
       if (details.target.tabId === 5) throw new Error('cannot access contents of the page');
+
       return [{ frameId: 0, result: undefined }];
     });
     const { showExecutionFeedback } = await import('../src/background/cursor-status.js');

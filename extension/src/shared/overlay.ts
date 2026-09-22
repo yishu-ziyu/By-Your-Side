@@ -4,11 +4,15 @@
  */
 
 export const OVERLAY_ATTR = "data-sideagent-overlay";
+
 export const OVERLAY_KIND_CURSOR = "cursor";
+
 export const OVERLAY_KIND_MARKS = "marks";
+
 export const OVERLAY_KIND_CONTROL = "control";
 
 export const HIGHLIGHT_PAD = 3;
+
 export const MARK_PAD = 6;
 
 export function overlayHostSelector(): string {
@@ -21,7 +25,9 @@ export function sweepStaleOverlayHosts(root: {
 }): number {
   const nodes = root.querySelectorAll(overlayHostSelector());
   const len = nodes.length;
+
   for (let i = 0; i < len; i++) nodes[i]!.remove();
+
   return len;
 }
 
@@ -30,6 +36,7 @@ export function highlightBounds(
   pad = HIGHLIGHT_PAD,
 ): { left: number; top: number; width: number; height: number } | null {
   if (rect.width <= 0 || rect.height <= 0) return null;
+
   return {
     left: Math.round(rect.x - pad),
     top: Math.round(rect.y - pad),
@@ -46,6 +53,7 @@ export function viewportRectToDocumentBox(
   pad = MARK_PAD,
 ): { x: number; y: number; width: number; height: number } | null {
   if (rect.width <= 0 || rect.height <= 0) return null;
+
   return {
     x: Math.round(rect.x + scrollX) - pad,
     y: Math.round(rect.y + scrollY) - pad,

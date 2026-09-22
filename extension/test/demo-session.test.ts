@@ -6,15 +6,19 @@ afterEach(() => vi.unstubAllGlobals());
 
 function harness() {
   const calls: Array<{ files?: string[]; func?: unknown; args?: unknown[]; target: { tabId: number } }> = [];
+
   const chrome = {
     scripting: {
       executeScript: vi.fn(async (arg: { files?: string[]; func?: unknown; args?: unknown[]; target: { tabId: number } }) => {
         calls.push(arg);
+
         return [{ frameId: 0, documentId: "doc1", result: { ok: true } }];
       }),
     },
   };
+
   vi.stubGlobal("chrome", chrome);
+
   return { chrome, calls };
 }
 
@@ -27,7 +31,9 @@ function harnessWithPageCount(count: number) {
       executeScript: vi.fn(async (arg: { files?: string[] }) => [{ frameId: 0, documentId: "doc1", result: arg.files ? undefined : { ok: true, count } }]),
     },
   };
+
   vi.stubGlobal("chrome", chrome);
+
   return chrome;
 }
 
@@ -172,6 +178,7 @@ it("收工后的标签页也不再续录", async () => {
 describe("观察（background 侧）", () => {
   function observeHarness() {
     const local: Record<string, unknown> = {};
+
     const chrome = {
       storage: { local: {
         get: vi.fn(async (key: string) => ({ [key]: local[key] })),
@@ -181,9 +188,12 @@ describe("观察（background 侧）", () => {
       tabs: { query: vi.fn(async () => [{ id: 7 }]) },
       scripting: { executeScript: vi.fn(async () => [{ result: { ok: true } }]) },
     };
+
     vi.stubGlobal("chrome", chrome);
+
     return { chrome, local };
   }
+
   const anchors = [{ tag: "a", name: "筛选" }, { tag: "a", name: "第一条记录" }];
 
   it("默认关：不写任何东西", async () => {
@@ -215,12 +225,14 @@ describe("观察（background 侧）", () => {
     mod.resetObserveForTests();
     await mod.setObserving(true);
     const day = 24 * 60 * 60 * 1000;
+
     for (const at of [0, day, 3 * day]) await mod.recordRun({ hostname: "x.com", anchors, at });
     const first = (await mod.listCandidates())[0]!;
     await mod.dismissCandidate(first.signature, "x.com");
     expect(await mod.listCandidates()).toHaveLength(0);
     await mod.recordRun({ hostname: "y.com", anchors, at: 4 * day });
     const second = (await mod.listCandidates())[0];
+
     if (second) await mod.consumeCandidate(second.signature, "y.com");
     expect((await mod.listCandidates()).some(p => p.hostname === "y.com")).toBe(false);
     expect(h.local).toBeTruthy();
@@ -243,6 +255,7 @@ describe("观察（background 侧）", () => {
     mod.resetObserveForTests();
     await mod.setObserving(true);
     const day = 24 * 60 * 60 * 1000;
+
     for (const at of [0, day, 3 * day]) await mod.recordRun({ hostname: "x.com", anchors, at });
     const candidate = (await mod.listCandidates())[0]!;
     expect(candidate).toBeTruthy();

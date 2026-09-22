@@ -11,7 +11,9 @@ import { ToolRpc, type ToolCallFrame } from "../../agent/src/rpc.js";
 import { createBrowserTools } from "../../agent/src/tools.js";
 
 const OUT = process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? "/tmp/sideagent-merged-tools";
+
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
 const check = (name: string, ok: boolean, detail?: string): void => {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -22,6 +24,7 @@ async function main(): Promise<void> {
   const iso = await launchIsolatedExtension();
   const report: Record<string, unknown> = { ok: false, outDir: iso.outDir, checks };
   const cid = `merged-${Date.now()}`;
+
   const rpc = new ToolRpc((frame: ToolCallFrame) => {
     void iso.swEval(
       `globalThis.__saCall(${JSON.stringify(frame.id)}, ${JSON.stringify(frame.name)}, ${JSON.stringify(frame.params)}, ${JSON.stringify(frame.sessionId ?? "main")}, ${JSON.stringify(frame.programId ?? null)}, ${JSON.stringify(cid)})`,
@@ -30,7 +33,9 @@ async function main(): Promise<void> {
       rpc.handleResult(frame.id, reply?.ok === true, reply?.data, reply?.error);
     }, (error) => rpc.handleResult(frame.id, false, undefined, String(error)));
   });
+
   const tools = createBrowserTools(rpc);
+
   const run = (name: string, params: Record<string, unknown>) =>
     (tools.find((t) => t.name === name)!.execute(`merge-${name}-${Math.random().toString(36).slice(2, 7)}`, params, undefined, undefined, {} as never)) as Promise<{ content: { text: string }[] }>;
 
@@ -54,18 +59,22 @@ async function main(): Promise<void> {
     // 标注：画一个 → 页面出现 mark 画布 → clear 清掉。
     const marked = await run("mark", { target: "p", label: "验收" });
     await sleep(500);
+
     // 标注画布挂在页面 DOM 上（closed shadow，外部只能看到 host 本身）。
     const marksAfterDraw = await iso.swEval(
       `chrome.scripting.executeScript({target:{tabId:${tabId}},func:()=>({host:!!document.querySelector('[data-sideagent-overlay="marks"]'),rects:document.querySelector('[data-sideagent-overlay="marks"]')?1:0})}).then(r=>r[0].result)`,
     ) as { host: boolean; rects: number };
+
     check("mark 画标注（合并后仍走 mark RPC）", marked.content[0].text.includes("Marked"), marked.content[0].text.slice(0, 80));
     check("标注画布真的挂到页面上", marksAfterDraw?.host === true, `host ${marksAfterDraw?.host}`);
 
     const cleared = await run("mark", { clear: true });
     await sleep(400);
+
     const marksAfterClear = await iso.swEval(
       `chrome.scripting.executeScript({target:{tabId:${tabId}},func:()=>document.querySelectorAll('[data-sideagent-overlay="marks"] .mark').length}).then(r=>r[0].result)`,
     ) as number;
+
     check("mark clear 清除全部标注", cleared.content[0].text.includes("cleared") && marksAfterClear === 0, `visible mark nodes ${marksAfterClear}`);
 
     const closed = await run("tabs", { action: "close", tabId: secondId });

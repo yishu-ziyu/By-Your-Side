@@ -1,15 +1,23 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/display-fast-path.js',async importOriginal=>{
  const actual=await importOriginal<typeof import('../src/display-fast-path.js')>();
+
  return {...actual,displayFastPathEnabled:()=>true};
 });
+
 vi.mock('../src/fast-task.js',()=>({decideFastTask:vi.fn()}));
+
 import {decideFastTask} from '../src/fast-task.js';
 import {BrowserAgentSession} from '../src/session.js';
 import {TaskGoalBook} from '../src/task-goals.js';
+
 const context={tabId:7,url:'https://fixture.test',title:'fixture'};
+
 const state={document:'one',translated:1,displayValid:true,mode:'translated',fontFamily:'songti'};
+
 const observation={id:'observation-one',tabId:7,documentId:'one',url:context.url,observedAt:1,text:'译文',controls:[],truncated:false,source:'accessibility' as const,tabs:[]};
+
 function harness(){
  const emit=vi.fn(),setStatus=vi.fn(),display=vi.fn(async(_id:string,_params:Record<string,unknown>)=>({content:[{type:'text',text:'ok'}],details:{document:'one'}}));
  const snapshot=vi.fn(async(_id:string,_params:Record<string,unknown>)=>({content:[{type:'text',text:'译文'}],details:{text:'译文',tabId:7,translation:state}}));
@@ -21,9 +29,12 @@ function harness(){
  const goals=new TaskGoalBook();goals.require(['宋体']);
  const getSnapshot=()=>({runId:'run',state:'running',goalPlan:goals.snapshot(),recoveryInput:{requirements:['宋体']},results:[]});
  wrapper.bindConversationContext(getSnapshot);wrapper.bindTaskResults({getSnapshot,goals,register:vi.fn(),verify:vi.fn()});
+
  return {wrapper,session,rpc,emit,setStatus,display,snapshot,delivery,goals,getSnapshot};
 }
+
 beforeEach(()=>{vi.mocked(decideFastTask).mockReset().mockResolvedValue({kind:'miss',reason:'no_candidate'});});
+
 describe('display fast path task boundaries',()=>{
  it('rejects whole-page translation writes for the scoped run, not a later task',()=>{
   const h=harness();h.wrapper.displayScopeBlockedRun='run';
@@ -71,6 +82,7 @@ describe('display fast path task boundaries',()=>{
   vi.mocked(decideFastTask).mockResolvedValue({kind:'candidate',diagnostics:{},candidate:{kind:'display',params:{action:'display',fontFamily:'songti'}}});
   h.display.mockImplementationOnce(async()=>{
    h.goals.require(['changed requirement']);
+
    return {content:[{type:'text',text:'ok'}],details:{document:'one'}};
   });
   await h.wrapper.promptWithFreshPageObservation(h.session,'宋体',context,[]);
@@ -85,6 +97,7 @@ describe('display fast path task boundaries',()=>{
   vi.mocked(decideFastTask).mockResolvedValue({kind:'candidate',diagnostics:{},candidate:{kind:'display',params:{action:'display',fontFamily:'songti'}}});
   h.display.mockImplementationOnce(async()=>{
    h.wrapper.abort();
+
    return {content:[{type:'text',text:'ok'}],details:{document:'one'}};
   });
   await h.wrapper.promptWithFreshPageObservation(h.session,'宋体',context,[]);

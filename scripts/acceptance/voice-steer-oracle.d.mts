@@ -3,6 +3,7 @@ export interface BudgetObservation {
   prices: number[];
   sort?: string;
 }
+
 export function judgeBudgetRun(input: {
   mode: string;
   baseline?: BudgetObservation;

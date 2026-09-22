@@ -1,11 +1,19 @@
 // Controller-owned result evidence contract; never let model text mark a result done.
 import {describe, expect, it} from 'vitest';
 import {TaskProgress} from '../src/task-progress.js';
+
 const requirements=[{id:'observe-x',description:'核对X',tool:'snapshot',target:null},{id:'mark-x',description:'标出指定对象',tool:'mark',target:'#x'}];
-function setup(){const p:any=new TaskProgress('default');p.request('找到X再圈出，保持当前页。');p.observe({type:'agent_event',event:{kind:'agent_start'}});p.registerResults(requirements);return p;}
+
+function setup(){const p:any=new TaskProgress('default');p.request('找到X再圈出，保持当前页。');p.observe({type:'agent_event',event:{kind:'agent_start'}});p.registerResults(requirements);
+
+return p;}
+
 function event(p:any,event:any,runId=p.snapshot().runId){p.observe({type:'agent_event',runId,event});}
+
 function call(p:any,id:string,name:string,params:any={},failed=false,executionFact?:string){event(p,{kind:'tool_start',toolCallId:id,name,params});event(p,{kind:'tool_end',toolCallId:id,name,isError:failed,resultText:failed?'executor failed':'real execution receipt',...(executionFact?{executionFact}:{})});}
+
 const result=(p:any,id:string)=>p.snapshot().results.find((r:any)=>r.id===id);
+
 describe('S2 registered remaining results',()=>{
  it('observation satisfies only its registered result, while display and playback cannot satisfy mark',()=>{
   const p=setup();call(p,'read','snapshot');expect(result(p,'observe-x').status).toBe('satisfied');expect(result(p,'mark-x').status).toBe('pending');

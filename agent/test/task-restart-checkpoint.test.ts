@@ -20,6 +20,7 @@ function runningCheckpoint():TaskProgressSnapshot{
   progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'fill-one',name:'fill',params:{target:'#name',value:'海风'}}});
   progress.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'fill-one',name:'fill',isError:false,resultText:'filled',executionFact:'executed'}});
   progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'click-one',name:'click',params:{target:'#submit'}}});
+
   return progress.snapshot();
 }
 
@@ -72,14 +73,17 @@ describe('P0 restart checkpoints',()=>{
 
   it('reads the current page before prompting the restored session and keeps the original checkpoint in the prompt',async()=>{
     const events:AgentUiEvent[]=[];
+
     const session={
       model:{provider:'fixture',id:'model'},isStreaming:false,
       prompt:vi.fn(async(_text:string)=>{}),
     };
+
     const rpc={
       setPageTarget:vi.fn(),
       call:vi.fn(async()=>({tabId:7,text:'CURRENT_PAGE_MARKER\napi_key: Abcd1234EFGH5678\nSubmit is still disabled.'})),
     };
+
     const wrapper=new (BrowserAgentSession as any)(session,null,{emit:(event:AgentUiEvent)=>events.push(event),setStatus:vi.fn()},null,null,30_000,null,rpc) as BrowserAgentSession;
     const context:PageContext={tabId:7,title:'当前表单',url:'https://fixture.test/form'};
     const checkpoint=new TaskProgress('default');checkpoint.restoreResults(runningCheckpoint());
@@ -131,7 +135,9 @@ describe('P0 restart checkpoints',()=>{
     {entry:'task_action',text:'请继续原任务；预算改成七百，其余条件不变。',idle:true,complete:true},
   ])('keeps the original run and requirements for typed continuation $entry: $text',async({entry,text,idle=false,complete=false})=>{
     let persisted=runningCheckpoint();
+
     if(idle){const stopped=new TaskProgress('default');stopped.restoreResults(persisted);stopped.observe({type:'agent_event',event:{kind:'agent_end'}});persisted={...stopped.snapshot(),state:'idle',restartRecovery:undefined};}
+
     if(complete){
       const finished=new TaskProgress('default');finished.request('比较三家方案并填写最终选择');finished.recordRequirement('预算改成六百，只处理当前页');
       const revision=finished.snapshot().goalPlan!.revision;
@@ -139,18 +145,24 @@ describe('P0 restart checkpoints',()=>{
       finished.goals.verify(revision,'choice',{matched:true,reason:'页面已核对',evidence:{observationId:'read',tabId:7,verifiedAt:1}});
       finished.observe({type:'agent_event',event:{kind:'agent_start'}});finished.observe({type:'agent_event',event:{kind:'agent_end'}});persisted=finished.snapshot();
     }
+
     const emitted:ServerMessage[]=[];
     let runtimeEmit:(message:ServerMessage)=>void=()=>{};
+
     let streaming=false;
+
     const resumeInterruptedTask=vi.fn(async(_snapshot:TaskProgressSnapshot,_context:PageContext)=>{
       streaming=true;
       runtimeEmit({type:'agent_event',event:{kind:'agent_start'}});
       runtimeEmit({type:'status',state:'running'});
     });
+
     const handleMessage=vi.fn();
     const store={load:()=>[{id:'default',title:'恢复任务',createdAt:1,updatedAt:1,state:idle?'idle' as const:'running' as const,mode:'act' as const,runId:persisted.runId}],save:vi.fn()};
+
     const manager=new ConversationManager(async(_id,emit)=>{
       runtimeEmit=emit;
+
       return {
         session:{
           available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>streaming,
@@ -160,22 +172,28 @@ describe('P0 restart checkpoints',()=>{
         rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage,
       } as any;
     },message=>emitted.push(message),store as any);
+
     await manager.ensureDefault();
     const before=manager.getTaskProgress('default')!;
     expect(before.state).toBe(idle?'idle':'interrupted');
     expect(manager.get('default')?.summary.state).toBe('idle');
+
     if(!idle){
       expect(manager.get('default')?.summary.checkpoint).toBe('interrupted');
       expect(emitted.some(message=>message.type==='agent_event'&&message.event.kind==='notice'&&message.event.message.includes('继续原任务'))).toBe(true);
     }
+
     const context:PageContext={tabId:7,title:'当前表单',url:'https://fixture.test/form'};
+
     if(entry==='task_action')await manager.handleMessage({type:'task_action',request:{requestId:'typed-resume',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId??null,text,context}});
     else await manager.handleMessage({type:'user_message',text,context});
     expect(resumeInterruptedTask).toHaveBeenCalledWith(expect.objectContaining({state:'interrupted',runId:before.runId}),context,undefined);
     expect(handleMessage).not.toHaveBeenCalled();
     expect(manager.getTaskProgress('default')).toMatchObject({state:'running',runId:before.runId});
     expect(manager.getTaskProgress('default')!.recoveryInput!.requirements.slice(0,2)).toEqual(before.recoveryInput!.requirements);
+
     if(!complete)expect(manager.getTaskProgress('default')!.results?.find(item=>item.id==='uncertain')?.status).toBe('unknown');
+
     if(text.includes('七百'))expect(resumeInterruptedTask.mock.calls[0]![0].recoveryInput!.requirements.at(-1)).toBe('预算改成七百，其余条件不变。');
     expect(manager.get('default')?.summary.checkpoint).toBeUndefined();
     expect(emitted.some(message=>message.type==='conversation_updated'&&message.conversation.state==='running'&&message.conversation.checkpoint===undefined)).toBe(true);
@@ -186,14 +204,19 @@ describe('P0 restart checkpoints',()=>{
   it('passes the current page into an explicit voice continuation of the interrupted run',async()=>{
     const persisted=runningCheckpoint();
     let runtimeEmit:(message:ServerMessage)=>void=()=>{};
+
     let streaming=false;
+
     const resumeInterruptedTask=vi.fn(async()=>{
       streaming=true;
       runtimeEmit({type:'agent_event',event:{kind:'agent_start'}});
     });
+
     const classifyVoiceInput=vi.fn(async()=>({steps:[{action:'resume' as const,target:null,text:'继续原任务'}]}));
+
     const manager=new ConversationManager(async(_id,emit)=>{
       runtimeEmit=emit;
+
       return {
         session:{
           available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>streaming,
@@ -203,6 +226,7 @@ describe('P0 restart checkpoints',()=>{
         rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn(),
       } as any;
     },()=>{});
+
     await manager.ensureDefault();
     const before=manager.getTaskProgress('default')!;
     const context:PageContext={tabId:9,title:'恢复页',url:'https://fixture.test/recover'};
@@ -218,6 +242,7 @@ describe('P0 restart checkpoints',()=>{
     const persisted=runningCheckpoint();
     const runtimeHandle=vi.fn();
     const classifyVoiceInput=vi.fn(async()=>({steps:[{action:'abort' as const,target:null,text:'终止原任务'}]}));
+
     const manager=new ConversationManager(async()=>({
       session:{
         available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>false,
@@ -226,6 +251,7 @@ describe('P0 restart checkpoints',()=>{
       fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:runtimeHandle,
     } as any),()=>{});
+
     await manager.ensureDefault();
     const before=manager.getTaskProgress('default')!;
     const first=await manager.routeVoiceInput('default','终止原任务',null,()=>true,{requestId:'abort-plan',voiceId:'v',turn:1,runId:before.runId??null,input:{}});
@@ -244,6 +270,7 @@ describe('P0 restart checkpoints',()=>{
     const resumeInterruptedTask=vi.fn(()=>new Promise<void>(resolve=>{release=resolve;}));
     const runtimeHandle=vi.fn();
     const emitted:ServerMessage[]=[];
+
     const manager=new ConversationManager(async()=>({
       session:{
         available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>false,
@@ -252,6 +279,7 @@ describe('P0 restart checkpoints',()=>{
       fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:runtimeHandle,
     } as any),message=>emitted.push(message));
+
     await manager.ensureDefault();
     const checkpoint=manager.getTaskProgress('default')!;
     const context:PageContext={tabId:11,title:'恢复页',url:'https://fixture.test/recover'};
@@ -272,6 +300,7 @@ describe('P0 restart checkpoints',()=>{
   it('stops a resumed prompt when the checkpoint is aborted before agent_start',async()=>{
     const persisted=runningCheckpoint();
     const runtimeHandle=vi.fn();
+
     const manager=new ConversationManager(async()=>({
       session:{
         available:true,modelName:()=> 'fixture/model',isHeld:()=>false,isStreaming:()=>false,
@@ -280,6 +309,7 @@ describe('P0 restart checkpoints',()=>{
       fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:runtimeHandle,
     } as any),()=>{});
+
     await manager.ensureDefault();
     const checkpoint=manager.getTaskProgress('default')!;
     const context:PageContext={tabId:12,title:'恢复页',url:'https://fixture.test/recover'};

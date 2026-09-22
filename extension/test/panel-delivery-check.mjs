@@ -17,13 +17,17 @@ import { fileURLToPath } from "node:url";
 import { sideagentExtensionId } from "../../scripts/acceptance/constants.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 const extDir = join(repoRoot, "extension", "dist");
+
 const outDir = join(tmpdir(), "sideagent-panel-delivery");
+
 mkdirSync(outDir, { recursive: true });
 
 const chromeBin = `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 
 const ASK = { text: "E2E-引用文字", tabId: 1, title: "测试页", url: "https://example.com/page" };
+
 const SEND_TEXT = "E2E-发送正文-20260907";
 
 /** 注入到 sidepanel.html 的 Port 边界替身：窗口初建为正常 Port，测试随时切换故障形态。 */
@@ -36,26 +40,31 @@ const portBoundary = () => {
   window.__emitToPanel = (msg) => {
     for (const l of [...listeners]) l(msg);
   };
+
   window.__panelHasPort = () => listeners.length > 0;
   // 模拟 Port 对端死亡：触发面板 onDisconnect（真实断线时序）
   window.__dropPort = () => {
     for (const l of [...disconnects]) l();
   };
+
   window.__setFault = (f) => {
     window.__fault = f;
   };
+
   chrome.runtime.connect = (opts) => {
     // fault="null"：connect 抛错 → 面板 port 停留 null（重连退避循环里）
     if (window.__fault === "null") throw new Error("injected: connect unavailable");
     // 每次连接重置监听集合；fault="throw" 只对 client 信封抛错
     listeners = [];
     disconnects = [];
+
     return {
       name: opts?.name,
       postMessage(m) {
         if (window.__fault === "throw" && m?.kind === "client") {
           throw new Error("injected: postMessage failed");
         }
+
         sends.push(m);
       },
       onMessage: { addListener(l) { listeners.push(l); } },
@@ -70,6 +79,7 @@ async function scenario(ctx, extId, name, { fault, steer = false, expectDelivere
   const page = await ctx.newPage();
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
+
   try {
     await page.addInitScript(portBoundary);
     await page.goto(`chrome-extension://${extId}/sidepanel.html`);
@@ -81,11 +91,13 @@ async function scenario(ctx, extId, name, { fault, steer = false, expectDelivere
       window.__emitToPanel({ kind: "ask_selection", ask });
     }, ASK);
     await page.waitForSelector("#ask-cite:not([hidden])", { timeout: 5_000 });
+
     if (steer) {
       await page.evaluate(() =>
         window.__emitToPanel({ kind: "server", msg: { type: "status", state: "running" } }),
       );
     }
+
     await page.fill("#input", SEND_TEXT);
     await page.screenshot({ path: join(outDir, `${name}-1-before-send.png`) });
 
@@ -95,6 +107,7 @@ async function scenario(ctx, extId, name, { fault, steer = false, expectDelivere
         window.__setFault(f);
         window.__dropPort();
       }, fault);
+
       if (fault === "null") {
         await page.waitForTimeout(150); // onDisconnect → port=null，重连全部抛错
       } else {
@@ -107,10 +120,12 @@ async function scenario(ctx, extId, name, { fault, steer = false, expectDelivere
     await page.waitForTimeout(300); // 清空/保留均在此窗口内发生
 
     await page.screenshot({ path: join(outDir, `${name}-2-after-send.png`) });
+
     const state = await page.evaluate(async () => {
       const stored = await chrome.storage.session.get("pendingAsk");
       const bubble = document.querySelector("#messages .msg.user");
       const retryBtn = bubble?.querySelector("button[data-retry]") ?? null;
+
       return {
         input: document.getElementById("input").value,
         askHidden: document.getElementById("ask-cite").hidden,
@@ -125,6 +140,7 @@ async function scenario(ctx, extId, name, { fault, steer = false, expectDelivere
     });
 
     const expectType = steer ? "steer" : "user_message";
+
     const checks = expectDelivered
       ? [
           ["正文在成功后被清空（正常路径不受影响）", state.input === ""],
@@ -142,8 +158,10 @@ async function scenario(ctx, extId, name, { fault, steer = false, expectDelivere
           ["不伪造已发送气泡", state.userBubbleText === null],
           ["明确提示未发送", state.noticeShown],
         ];
+
     const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
     results.push({ scenario: name, fault, steer, expectDelivered, checks, failed, pageErrors });
+
     return state;
   } finally {
     // 层内交互的收尾断言在独立 scenario 中做，这里直接关页
@@ -156,6 +174,7 @@ async function receiptScenarios(ctx, extId, push) {
   // 1) 上行不可用回执：正常 Port 收下发 → background 层接受（history 回显）→ delivery ok:false → 气泡标记，重试恰发一条
   {
     const page = await ctx.newPage();
+
     try {
       await page.addInitScript(portBoundary, "record");
       await page.goto(`chrome-extension://${extId}/sidepanel.html`);
@@ -173,6 +192,7 @@ async function receiptScenarios(ctx, extId, push) {
         });
       }, "E2E-上行失败消息");
       let marked = true;
+
       try {
         await page.waitForSelector("#messages .msg.user[data-seq='7'][data-failed='true']", {
           timeout: 5_000,
@@ -180,7 +200,9 @@ async function receiptScenarios(ctx, extId, push) {
       } catch {
         marked = false;
       }
+
       let state = null;
+
       if (marked) {
         // 用户随即编辑新正文；点重试只应重发原消息，且不动新正文
         await page.fill("#input", "E2E-用户后来编辑的新正文");
@@ -189,6 +211,7 @@ async function receiptScenarios(ctx, extId, push) {
         await page.waitForTimeout(200);
         state = await page.evaluate((before) => {
           const all = window.__panelSends.filter((m) => m.kind === "client");
+
           return {
             input: document.getElementById("input").value,
             retried: document.querySelectorAll("#messages .msg.user[data-seq='7'][data-retried]").length,
@@ -197,6 +220,7 @@ async function receiptScenarios(ctx, extId, push) {
           };
         }, sendsBefore);
       }
+
       const checks = [
         ["delivery ok:false 后气泡标记未送达", marked],
         ["重试按钮存在且可点", marked && !!state],
@@ -205,15 +229,18 @@ async function receiptScenarios(ctx, extId, push) {
         ["重试信封携带 original 原文", state?.retrySends[0]?.msg?.text === "E2E-上行失败消息"],
         ["重试后原气泡标记已重试", state?.retried === 1],
       ];
+
       push("receipt-failed-marks-bubble-and-retry-once", checks, []);
       await page.screenshot({ path: join(outDir, "receipt-failed-marks-bubble-and-retry-once.png") });
     } finally {
       await page.close();
     }
   }
+
   // 2) 旧/未知回执与未知信封kind：不崩溃、不动输入框
   {
     const page = await ctx.newPage();
+
     try {
       await page.addInitScript(portBoundary, "record");
       await page.goto(`chrome-extension://${extId}/sidepanel.html`);
@@ -225,14 +252,17 @@ async function receiptScenarios(ctx, extId, push) {
         window.__emitToPanel({ kind: "delivery", seq: "not-a-number", ok: false });
       });
       await page.waitForTimeout(150);
+
       const state = await page.evaluate(() => ({
         input: document.getElementById("input").value,
         failedBubbles: document.querySelectorAll("#messages .msg.user[data-failed='true']").length,
       }));
+
       const checks = [
         ["未知 seq 回执不动输入框", state.input === "E2E-稳态正文"],
         ["从未出现的 seq 不产生失败气泡", state.failedBubbles === 0],
       ];
+
       push("unknown-and-late-receipts-tolerated", checks, []);
     } finally {
       await page.close();
@@ -241,7 +271,9 @@ async function receiptScenarios(ctx, extId, push) {
 }
 
 const userDataDir = mkdtempSync(join(tmpdir(), "sideagent-panel-delivery-profile-"));
+
 let ctx;
+
 try {
   ctx = await chromium.launchPersistentContext(userDataDir, {
     executablePath: chromeBin,
@@ -272,10 +304,12 @@ try {
   await ctx.close();
 } finally {
   if (ctx) await ctx.close().catch(() => {});
+
   if (!process.argv.includes("--keep")) rmSync(userDataDir, { recursive: true, force: true });
 }
 
 const failedScenarios = results.filter((r) => r.failed.length > 0 || (r.pageErrors ?? []).length > 0);
+
 const report = {
   when: new Date().toISOString(),
   scenarios: results.map((r) => ({
@@ -287,11 +321,17 @@ const report = {
   })),
   exit: failedScenarios.length === 0 ? 0 : 1,
 };
+
 writeFileSync(join(outDir, "result.json"), JSON.stringify(report, null, 2));
+
 for (const s of report.scenarios) {
   console.log(`${s.failed.length === 0 && s.pageErrors.length === 0 ? "PASS" : "FAIL"} ${s.scenario}`);
+
   for (const c of s.checks) console.log(`   ${c}`);
+
   for (const e of s.pageErrors) console.log(`   PAGEERROR ${e}`);
 }
+
 console.log(`\n结果与截图：${outDir}`);
+
 process.exit(report.exit);

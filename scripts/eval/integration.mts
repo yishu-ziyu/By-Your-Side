@@ -13,14 +13,18 @@ if (!process.argv.includes("--headless") && !process.argv.includes("--headless=n
 }
 
 const candidate = (process.argv.find((a) => a.startsWith("--candidate=")) ?? "--candidate=WORKTREE").slice("--candidate=".length);
+
 const runId = `integration-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+
 const outDir = join(REPO_ROOT, "eval", "runs", runId);
+
 mkdirSync(outDir, { recursive: true });
 
 const tests = spawnSync("npx", ["vitest", "run", "agent/test/effect-policy.test.ts", "agent/test/consent-ticket.test.ts", "agent/test/eval-gates.test.ts", "extension/test/fetch-guard.test.ts", "extension/test/fetch-effect-policy.test.ts"], {
   cwd: REPO_ROOT,
   encoding: "utf8",
 });
+
 writeFileSync(join(outDir, "integration.log"), `${tests.stdout}\n${tests.stderr}`);
 
 const report: EvalReport = {
@@ -47,7 +51,11 @@ const report: EvalReport = {
   },
   human_review: { signed: false },
 };
+
 const result = verifyReport(report);
+
 writeFileSync(join(outDir, "report.json"), JSON.stringify({ report, result, measurement_mode: "tool_integration" }, null, 2));
+
 console.log(`run_id=${runId} measurement_mode=tool_integration verify=${result.verdict}`);
+
 if (tests.status !== 0) process.exit(1);

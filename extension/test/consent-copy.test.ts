@@ -3,6 +3,7 @@ import {consentDetailsText, consentHeading, consentStatusText, consentTargetText
 import type {FetchConsentRequest, WriteConsentRequest} from '../../shared/consent.js';
 
 const fetchRequest: FetchConsentRequest = {id:'fetch-1',conversationId:'default',runId:'run-1',controlVersion:0,url:'https://example.test/api',method:'POST',headers:{'content-type':'application/json'},body:'{"n":1}',expiresAt:Date.now()+60_000};
+
 const writeRequest: WriteConsentRequest = {kind:'write',id:'write-1',conversationId:'default',runId:'run-1',controlVersion:0,expiresAt:Date.now()+60_000,goal:'填写方案并保存',description:'填写 方案',tool:'fill',target:'#choice',value:'远山'};
 
 describe('consent card copy',()=>{

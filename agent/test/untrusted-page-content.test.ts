@@ -3,16 +3,19 @@ import { createBrowserTools } from "../src/tools.js";
 
 function tool(name: string, data: unknown) {
   const rpc: any = { call: async () => data };
+
   const tools = createBrowserTools(rpc, undefined, undefined, undefined, {
     epoch: () => 0,
     canWrite: () => true,
     assertCall: () => {},
   });
+
   return tools.find((candidate) => candidate.name === name)!;
 }
 
 const run = async (name: string, data: unknown, params: Record<string, unknown> = {}) => {
   const result: any = await (tool(name, data).execute as any)("call-1", params);
+
   return result.content.map((part: any) => part.text).join("\n") as string;
 };
 

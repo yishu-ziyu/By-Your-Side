@@ -20,12 +20,17 @@ export class UserDeliveryLedger {
   /** 首次有效 true；重复 id、同 id 改文、越界（非法/别会话/旧 run）一律 false。 */
   record(delivery: UserDelivery): boolean {
     if (!isUserDelivery(delivery)) return false;
+
     if (delivery.conversationId !== this.conversationId) return false;
+
     if (delivery.runId !== this.runId) return false;
+
     if (this.deliveries.has(delivery.id)) return false;
     this.deliveries.set(delivery.id, { ...delivery });
     this.order.push(delivery.id);
+
     if (delivery.kind === "finding") this.sawFinding = true;
+
     return true;
   }
 
@@ -33,9 +38,12 @@ export class UserDeliveryLedger {
   latest(): UserDelivery | null {
     for (let i = this.order.length - 1; i >= 0; i--) {
       const d = this.deliveries.get(this.order[i]!)!;
+
       if (d.kind !== "ack") return { ...d };
     }
+
     const last = this.order.at(-1);
+
     return last ? { ...this.deliveries.get(last)! } : null;
   }
 
@@ -47,9 +55,12 @@ export class UserDeliveryLedger {
   /** 只更新本 run 已知 id 的播放状态；不倒退、不造正文，未知 id 返回 null。 */
   markPlayback(id: string, status: "speaking" | "played"): UserDelivery | null {
     const d = this.deliveries.get(id);
+
     if (!d) return null;
     const rank: Record<UserDelivery["status"], number> = { composed: 0, speaking: 1, played: 2 };
+
     if (rank[status] > rank[d.status]) d.status = status;
+
     return { ...d };
   }
 }

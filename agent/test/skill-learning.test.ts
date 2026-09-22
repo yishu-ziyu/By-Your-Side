@@ -9,8 +9,12 @@ import { parseClientMessage, parseServerMessage } from "../../shared/protocol.js
 import { learningFixture, searchEvidence, skillPage, target } from "./fixtures/skill-evidence.js";
 
 const roots: string[] = [];
+
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
-async function storeFixture() { const root = await mkdtemp(join(tmpdir(), "bys-candidates-")); roots.push(root); return { root, store: new SkillStore(root) }; }
+
+async function storeFixture() { const root = await mkdtemp(join(tmpdir(), "bys-candidates-")); roots.push(root);
+
+ return { root, store: new SkillStore(root) }; }
 
 describe("verified run to pending candidate", () => {
   it("extracts three real steps and a verified output, not old refs or input values", () => {
@@ -61,6 +65,7 @@ describe("verified run to pending candidate", () => {
     for (const freshProof of [false, true]) {
       const { trace, events } = learningFixture();
       trace.observe({ toolCallId: "bad-read", name: "read_element", params: {}, error: "invalid expect" });
+
       if (freshProof) trace.observe(events[3]!);
       expect(!!trace.finish("run-one", true)).toBe(freshProof);
     }
@@ -82,6 +87,7 @@ describe("verified run to pending candidate", () => {
       const trace = new SkillLearningTrace(); trace.begin("r", "搜索「张三」，地区「北京」", skillPage);
       searchEvidence().slice(0, 3).forEach(event => trace.observe(event));
       const read = trace.observe({ toolCallId: "snapshot", name: "snapshot", params: { tabId: 7 }, result: { tabId: 7, text } });
+
       if (text === '[ref=8] status "查询结果"') expect(read).toEqual({ tabId: 7, target: "@8", properties: ["textContent"] });
       else expect(read).toBeUndefined();
       expect(trace.finish("r", true)).toBeNull();

@@ -7,11 +7,17 @@ import { MemoryStore } from "../src/memory-store.js";
 import { validateMemoryDecision, type MemoryDecision } from "../src/memory-decision.js";
 
 const roots: string[] = [];
+
 const all = { kind: "all" } as const;
+
 const user = "我的邮箱是 lin@example.test，你可以记住这一点。";
+
 const fact = "用户的默认邮箱是 lin@example.test";
+
 const decision = (patch: Partial<MemoryDecision> = {}): MemoryDecision => ({ action: "save", text: fact, evidence: user, scope: all, targets: [], taskRequested: false, ...patch });
+
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+
 async function fixture(d = decision()) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-memory-runtime-")); roots.push(root);
   const store = new MemoryStore(root), emit = vi.fn();
@@ -20,11 +26,14 @@ async function fixture(d = decision()) {
   const runtime = new MemoryRuntime(store, "conversation-a", emit, complete);
   runtime.beginUserTurn(user);
   const execute = (params: Record<string, unknown> = { action: "change" }, signal?: AbortSignal) => (runtime.tools()[0] as any).execute("call", params, signal);
+
   return { root, store, runtime, emit, complete, execute };
 }
+
 function beforeStart(runtime: MemoryRuntime) {
   let handler: (event: any) => Promise<any>;
   runtime.extension()({ on: (name: string, fn: any) => { if (name === "before_agent_start") handler = fn; } } as any);
+
   return (event: any) => handler(event);
 }
 
@@ -107,6 +116,7 @@ describe("semantic personal memory boundary", () => {
     const f = await fixture(); const a = await f.store.create({ text: fact, scope: all, sourceConversationId: "old" });
     f.complete.mockImplementation(async () => {
       await f.store.update({ id: a.id, expectedVersion: 1, text: "UI edited", scope: all });
+
       return JSON.stringify(decision({ action: "update", targets: [{id:a.id,version:1}] }));
     });
     await expect(f.execute()).rejects.toThrow(/版本/);
@@ -151,13 +161,17 @@ describe("scope and on-demand retrieval", () => {
   it("drops memory deleted between selection and context preparation", async () => {
     const f = await fixture(); await f.execute(); const a = (await f.store.list())[0]!;
     const select = f.store.select.bind(f.store);
-    vi.spyOn(f.store,"select").mockImplementation(async query => {const entries=await select(query);await f.store.forget({id:a.id,expectedVersion:1});return entries;});
+    vi.spyOn(f.store,"select").mockImplementation(async query => {const entries=await select(query);await f.store.forget({id:a.id,expectedVersion:1});
+
+return entries;});
     f.runtime.beginUserTurn("邮箱"); expect(await beforeStart(f.runtime)({systemPrompt:"BASE"})).toBeUndefined();
   });
   it("drops an in-flight recall when the user takes over", async () => {
     const f = await fixture(); await f.execute();
     const select = f.store.select.bind(f.store);
-    vi.spyOn(f.store,"select").mockImplementation(async query => {const entries=await select(query);f.runtime.invalidateUserTurn();return entries;});
+    vi.spyOn(f.store,"select").mockImplementation(async query => {const entries=await select(query);f.runtime.invalidateUserTurn();
+
+return entries;});
     await expect(f.execute({action:"recall",query:"邮箱"})).rejects.toThrow(/取消/);
   });
 });

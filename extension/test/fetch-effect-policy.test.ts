@@ -11,16 +11,20 @@ import { createBrowserTools } from "../../agent/src/tools.js";
 
 async function withCounter<T>(fn: (origin: string, counts: { n: number }) => Promise<T>): Promise<T> {
   const counts = { n: 0 };
+
   const server = http.createServer((req, res) => {
     if (req.method === "POST" && req.url === "/count") counts.n += 1;
+
     if (req.method === "GET" && req.url === "/count") counts.n += 1;
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ n: counts.n }));
   });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   const origin = `http://127.0.0.1:${port}`;
   const restore = installFetchTestOrigin(origin);
+
   try {
     return await fn(origin, counts);
   } finally {
@@ -52,13 +56,17 @@ describe("fetch side-effect boundary", () => {
   it("does not let fetch POST through tools without a consent ticket", async () => {
     await withCounter(async (origin, counts) => {
       const calls: unknown[] = [];
+
       const tools = createBrowserTools(
-        { call: async (name: string, params: Record<string, unknown>) => { calls.push([name, params]); return { url: origin, status: 200, ok: true, contentType: "application/json", bytes: 2, truncated: false, text: "{}" }; } } as any,
+        { call: async (name: string, params: Record<string, unknown>) => { calls.push([name, params]);
+
+ return { url: origin, status: 200, ok: true, contentType: "application/json", bytes: 2, truncated: false, text: "{}" }; } } as any,
         undefined,
         undefined,
         undefined,
         { epoch: () => 1, canWrite: () => true },
       );
+
       const fetch = tools.find((t) => t.name === "fetch")!;
       await expect(fetch.execute("1", { url: `${origin}/count`, method: "POST", body: "{}" }, undefined, undefined, {} as any)).rejects.toThrow(CONSENT_REQUIRED_ERROR);
       expect(calls).toEqual([]);

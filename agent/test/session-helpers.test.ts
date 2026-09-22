@@ -31,17 +31,22 @@ function controlledBrowserSession(streaming = true, handbackRestoreTimeoutMs?: n
   let subscriber: ((event: any) => void) | null = null;
   let settleAbort!: () => void;
   let rejectAbort!: (error: Error) => void;
+
   const abortPending = new Promise<void>((resolve, reject) => {
     settleAbort = () => {
       isStreaming = false;
       resolve();
     };
+
     rejectAbort = reject;
   });
+
   let rejectPrompt!: (error: Error) => void;
+
   const promptPending = new Promise<void>((_resolve, reject) => {
     rejectPrompt = reject;
   });
+
   const raw = {
     get isStreaming() {
       return isStreaming;
@@ -53,13 +58,16 @@ function controlledBrowserSession(streaming = true, handbackRestoreTimeoutMs?: n
     steer: vi.fn(async (_text: string) => {}),
     subscribe: vi.fn((fn: (event: any) => void) => {
       subscriber = fn;
+
       return () => {};
     }),
   };
+
   const Session = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
   const callbacks = { emit: vi.fn(), setStatus: vi.fn() };
   const wrapped = new Session(raw, null, callbacks, null, null, handbackRestoreTimeoutMs);
   (wrapped as any).subscribeEvents();
+
   return {
     wrapped,
     raw,
@@ -90,10 +98,12 @@ describe("BrowserAgentSession handback serialization", () => {
     wrapped.holdForUser();
 
     expect(raw.abort).toHaveBeenCalledTimes(1);
+
     const started = wrapped.continueAfterHandback(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "HANDOFF-WORKER-20260905",
     ) as unknown as Promise<boolean>;
+
     expect(started).toBeInstanceOf(Promise);
     expect(raw.steer).not.toHaveBeenCalled();
     expect(raw.prompt).not.toHaveBeenCalled();
@@ -109,6 +119,7 @@ describe("BrowserAgentSession handback serialization", () => {
   it("abort reject 时 handback 不启动且仍归 user", async () => {
     const { wrapped, raw, rejectAbort } = controlledBrowserSession();
     wrapped.holdForUser();
+
     const started = wrapped.continueAfterHandback(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh worker page",
@@ -123,6 +134,7 @@ describe("BrowserAgentSession handback serialization", () => {
   it("prompt reject 时 handback 不算 restored，并重新归 user", async () => {
     const { wrapped, raw, settleAbort, rejectPrompt } = controlledBrowserSession();
     wrapped.holdForUser();
+
     const started = wrapped.continueAfterHandback(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh worker page",
@@ -138,6 +150,7 @@ describe("BrowserAgentSession handback serialization", () => {
   it("交还等待期间再次接管会取消排队续跑，且不会重复 abort", async () => {
     const { wrapped, raw, settleAbort } = controlledBrowserSession();
     wrapped.holdForUser();
+
     const started = wrapped.continueAfterHandback(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh worker page",
@@ -162,6 +175,7 @@ describe("BrowserAgentSession handback serialization", () => {
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh worker page",
     ) as unknown as Promise<boolean>;
+
     expect(raw.abort).toHaveBeenCalledTimes(1);
     expect(raw.prompt).not.toHaveBeenCalled();
 
@@ -175,6 +189,7 @@ describe("BrowserAgentSession handback serialization", () => {
   it("交还等待期间中止会取消排队续跑，不产生幽灵 prompt", async () => {
     const { wrapped, raw, settleAbort } = controlledBrowserSession();
     wrapped.holdForUser();
+
     const started = wrapped.continueAfterHandback(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh worker page",
@@ -193,6 +208,7 @@ describe("BrowserAgentSession handback serialization", () => {
   it("新一轮接管取消已发出的 handback prompt；迟到 agent_start 不得算 restored", async () => {
     const { wrapped, raw, settleAbort, setStreaming, agentStart, callbacks } = controlledBrowserSession();
     wrapped.holdForUser();
+
     const started = wrapped.continueAfterHandback(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh worker page",
@@ -234,6 +250,7 @@ describe("BrowserAgentSession 交还恢复超时", () => {
 
   it("provider 永不响应：恢复超时后交还失败、hold 归还 user、reason 表达超时语义", async () => {
     vi.useFakeTimers();
+
     try {
       const { wrapped, raw, settleAbort } = controlledBrowserSession(true, 1_000);
       wrapped.holdForUser();
@@ -256,6 +273,7 @@ describe("BrowserAgentSession 交还恢复超时", () => {
 
   it("超时后迟到的 agent_start 不得标 restored：按 stale 处理停掉旧流，仍归 user", async () => {
     vi.useFakeTimers();
+
     try {
       const { wrapped, raw, settleAbort, setStreaming, agentStart, callbacks } = controlledBrowserSession(true, 1_000);
       wrapped.holdForUser();
@@ -282,6 +300,7 @@ describe("BrowserAgentSession 交还恢复超时", () => {
 
   it("超时未触发前再次接管：清理恢复定时器，推进时间不误报超时", async () => {
     vi.useFakeTimers();
+
     try {
       const { wrapped, raw, settleAbort, callbacks } = controlledBrowserSession(true, 1_000);
       wrapped.holdForUser();
@@ -307,6 +326,7 @@ describe("BrowserAgentSession 交还恢复超时", () => {
 
   it("超时未触发前中止：清理恢复定时器，不误报超时", async () => {
     vi.useFakeTimers();
+
     try {
       const { wrapped, raw, settleAbort } = controlledBrowserSession(true, 1_000);
       wrapped.holdForUser();
@@ -339,12 +359,14 @@ describe("AcceptanceContinuity", () => {
       { tabId: 11, title: "Lead", url: "https://example.com/lead" },
       "user-lead-marker",
     );
+
     expect(wrong).toMatchObject({ step: "before", resumedTabId: 11, snapshotMarkerFound: false });
 
     const after = continuity.continue(
       { tabId: 21, title: "Worker", url: "https://example.com/worker" },
       "fresh user-worker-marker",
     );
+
     expect(after).toMatchObject({
       instanceId: "instance-worker",
       taskId: "task-worker",
@@ -367,6 +389,7 @@ describe("withPageContext", () => {
       title: "历史正在发生的地方",
       url: "https://zhuanlan.zhihu.com/p/1",
     });
+
     expect(out).toBe(
       '[User\'s current page: tab 12 "历史正在发生的地方" — https://zhuanlan.zhihu.com/p/1]\n这页面是关于什么',
     );
@@ -400,6 +423,7 @@ describe("withPageContext", () => {
       url: "https://en.wikipedia.org/wiki/MiroFish",
       selection: { text: "MiroFish is a made-up term." },
     });
+
     expect(out).toBe(
       '[User\'s current page: tab 3 "MiroFish" — https://en.wikipedia.org/wiki/MiroFish]\n[User\'s selected text]\nMiroFish is a made-up term.\n这是什么',
     );
@@ -419,6 +443,7 @@ describe("withPageContext", () => {
       url: "https://nature.com/x",
       selection: { text: "  contamination\nfraction  " },
     });
+
     expect(out).toContain("[User's selected text]");
     expect(out).toContain("contamination fraction");
     expect(out.endsWith("解释这段选中的文字。")).toBe(true);
@@ -446,6 +471,7 @@ describe("lastAssistantError", () => {
       { role: "user", content: [{ type: "text", text: "hi" }] },
       { role: "assistant", content: [], errorMessage: "fetch failed" },
     ];
+
     expect(lastAssistantError(messages)).toBe("fetch failed");
   });
 

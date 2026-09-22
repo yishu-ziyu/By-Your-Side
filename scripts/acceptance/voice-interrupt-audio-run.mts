@@ -2,8 +2,15 @@
 import {build} from 'esbuild';
 import {writeFile,unlink} from 'node:fs/promises';
 import {NativeVoiceHarness} from './native-voice-harness.mts';
+
 const meterName=`acceptance-meter-${Date.now()}.js`,meterFile=new URL(`../../extension/dist/${meterName}`,import.meta.url);
-let meterCreated=false;let h:NativeVoiceHarness|undefined;const report:any={ok:false,scope:'synthetic WebAudio graph; not human hearing or microphone',rounds:[]};
+
+let meterCreated=false;
+
+let h:NativeVoiceHarness|undefined;
+
+const report:any={ok:false,scope:'synthetic WebAudio graph; not human hearing or microphone',rounds:[]};
+
 try{
  await writeFile(meterFile,`class OutputMeter extends AudioWorkletProcessor { process(inputs){const input=inputs[0]?.[0];if(input){let sum=0;for(const x of input)sum+=x*x;const active=Math.sqrt(sum/input.length)>.0001;if(active!==this.active){this.active=active;this.port.postMessage({active,audioTime:currentTime});}}return true;}}registerProcessor('acceptance-output-meter',OutputMeter);`,{flag:'wx'});meterCreated=true;
  const bundle=await build({stdin:{contents:"export {VoiceClient} from './extension/src/sidepanel/voice-client.ts'",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',globalName:'ProductionVoice',platform:'browser'});
@@ -36,4 +43,6 @@ try{
 })()`,60000);
  const ordered=report.rounds.map((r:any)=>r.graphSilenceMs).sort((a:number,b:number)=>a-b);report.p95Ms=ordered[18];h.check('20 detected interruptions stop the production audio graph within 200ms P95',report.rounds.length===20&&report.p95Ms<=200);report.ok=true;
 }catch(error){report.error=String(error);process.exitCode=1;}
-finally{if(h){if(!report.ok)report.partial=await h.p('globalThis.interruptResults??[]').catch(()=>[]);await h.p('globalThis.interruptClient?.stop();globalThis.captureContext?.close()').catch(()=>{});await h.finishReport(report);await h.close();console.log(JSON.stringify({out:h.out,ok:report.ok,error:report.error,p95Ms:report.p95Ms}));}if(meterCreated)await unlink(meterFile).catch(()=>{});}
+finally{if(h){if(!report.ok)report.partial=await h.p('globalThis.interruptResults??[]').catch(()=>[]);await h.p('globalThis.interruptClient?.stop();globalThis.captureContext?.close()').catch(()=>{});await h.finishReport(report);await h.close();console.log(JSON.stringify({out:h.out,ok:report.ok,error:report.error,p95Ms:report.p95Ms}));}
+
+if(meterCreated)await unlink(meterFile).catch(()=>{});}

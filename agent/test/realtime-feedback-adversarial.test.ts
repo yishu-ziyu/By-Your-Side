@@ -16,6 +16,7 @@ import { MODEL, STEP_VOICE } from '../src/realtime-voice-connection.js';
 import type { ServerMessage } from '../../shared/protocol.js';
 
 const cleanup: Array<() => void> = [];
+
 afterEach(() => cleanup.splice(0).forEach(close => close()));
 
 class Socket extends EventEmitter {
@@ -31,24 +32,33 @@ async function harness() {
   const prompt = vi.fn();
   let wrapper!: BrowserAgentSession;
   const facts = new Map<string, string>();
+
   const rpc: any = {
     setPageTarget: () => {}, getPageTarget: () => 7, resolvePageParams: (_n: string, params: object) => ({ tabId: 7, ...params }),
     ensureToolCall: () => {}, markCallRejected: (id: string) => facts.set(id, 'not_executed'),
     getExecutionFact: (id: string) => facts.get(id), noteToolFact: (id: string, fact: string) => facts.set(id, fact),
     call: vi.fn(async (name: string, _params: any, _t?: unknown, _m?: unknown, _p?: unknown, _e?: unknown, id?: string) => {
       if (id) facts.set(id, 'executed');
+
       if (name === 'switch_tab') return { tabId: 8,
         verification: { verified: true, activeTabId: 8, windowId: 1, windowFocused: true, workingTabId: 8 } };
+
       if (name === 'list_tabs') return { tabs: [{ id: 7, url: 'https://example.test', title: 'page' }] };
+
       if (name === 'get_active_tab') return { tab: { id: 7, url: 'https://example.test', title: 'page' } };
+
       if (name === 'fill') return { filled: true, verified: true };
+
       if (name === 'snapshot') return { tabId: 7, url: 'https://example.test', text: 'page' };
+
       return {};
     }),
   };
+
   const manager = new ConversationManager(async (_id, sink) => {
     const raw: any = { isStreaming: false, prompt, agent: { state: { tools: [], messages: [] } },
       sessionManager: { appendCustomEntry: vi.fn(), getBranch: () => [] } };
+
     wrapper = new (BrowserAgentSession as any)(raw, null, {
       emit: (event: any) => sink({ type: 'agent_event', event }),
       setStatus: (state: any) => sink({ type: 'status', state }),
@@ -57,20 +67,25 @@ async function harness() {
       epoch: () => wrapper.executionEpoch(), canWrite: id => wrapper.canWriteCurrentInput(id),
       assertCall: (name, params, id) => wrapper.assertTaskResultExecution(name, params, id),
     });
+
     return { session: wrapper, rpc, fleet: { teamView: () => null, isGroupHeld: () => false }, dispose: vi.fn() } as any;
   }, message => messages.push(message));
+
   await manager.ensureDefault();
   cleanup.push(() => manager.dispose());
+
   const voice = new RealtimeVoiceSession({
     voiceId: 'acceptance', getSnapshot: () => manager.getTaskProgress('default'),
     emit: (event: any) => voiceEvents.push(event),
     browserTool: (call: any, input: any, signal: any) => manager.executeRealtimeBrowserTool('default', call, input, signal),
     connect: () => socket as any,
   } as any);
+
   cleanup.push(() => voice.close());
   voice.start('offline-placeholder');
   socket.server({ type: 'session.created', session: { model: MODEL } });
   socket.server({ type: 'session.updated', session: { model: MODEL, voice: STEP_VOICE, input_audio_format: 'pcm16', output_audio_format: 'pcm16', turn_detection: { type: 'server_vad' } } });
+
   // 一次用户话轮：开口 → 页面资料 → VAD 停 → 服务端创建本轮回复 t{n} → 转写
   const beginTurn = (n: number, text: string) => {
     socket.server({ type: 'input_audio_buffer.speech_started', item_id: `u${n}` });
@@ -79,23 +94,31 @@ async function harness() {
     socket.server({ type: 'response.created', response: { id: `t${n}` } });
     socket.server({ type: 'conversation.item.input_audio_transcription.completed', item_id: `u${n}`, transcript: text });
   };
+
   const callTool = (responseId: string, callId: string, name: string, args: unknown) =>
     socket.server({ type: 'response.function_call_arguments.done', response_id: responseId, call_id: callId, name, arguments: typeof args === 'string' ? args : JSON.stringify(args) });
+
   const finish = (responseId: string) => socket.server({ type: 'response.done', response: { id: responseId, status: 'completed' } });
   const continuationCreated = (id: string) => socket.server({ type: 'response.created', response: { id } });
+
   const speakInto = (id: string, text: string) => {
     socket.server({ type: 'response.audio.delta', response_id: id, delta: Buffer.alloc(960).toString('base64') });
     socket.server({ type: 'response.audio_transcript.delta', response_id: id, delta: text });
     finish(id);
   };
+
   const outputs = () => socket.sent.filter(m => m.item?.type === 'function_call_output');
+
   const feedbacks = () => messages.flatMap(m => {
     const event = (m as { event?: { kind?: string; feedback?: any } }).event;
+
     return m.type === 'agent_event' && event?.kind === 'execution_feedback' && event.feedback ? [event.feedback] : [];
   });
+
   const audioFor = (id: string) => voiceEvents.filter(e => e.kind === 'audio' && e.responseId === id);
   const transcriptsFor = (id: string) => voiceEvents.filter(e => e.kind === 'text' && e.role === 'assistant' && e.text);
   const awaitCreate = async () => { await vi.waitFor(() => expect(socket.sent.some(m => m.type === 'response.create')).toBe(true)); };
+
   return { manager, messages, voiceEvents, socket, rpc, beginTurn, callTool, finish, continuationCreated, speakInto, outputs, feedbacks, audioFor, transcriptsFor, awaitCreate };
 }
 

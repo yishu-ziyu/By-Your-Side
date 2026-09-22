@@ -2,6 +2,7 @@ import type { MemoryEntry, MemoryScope } from "../../../shared/memory.js";
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
 
 type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>;
+
 export type MemoryResult = Extract<ServerMessage, { type: "memory_result" }>;
 
 type PendingRequest = {
@@ -44,19 +45,23 @@ export class MemoryManagementState {
 
   get(id: string): MemoryEntry | undefined {
     const entry = this.entries.get(id);
+
     return entry ? cloneEntry(entry) : undefined;
   }
 
   beginList(conversationId: string): MemoryClientMessage {
     const requestId = this.requestId();
+
     const request: PendingRequest = {
       requestId,
       action: "list",
       conversationId,
       order: ++this.order,
     };
+
     this.pending.set(requestId, request);
     this.latestListRequestId = requestId;
+
     return { type: "memory_list", requestId, conversationId };
   }
 
@@ -76,6 +81,7 @@ export class MemoryManagementState {
       entryId: entry.id,
     });
     this.latestIssuedByEntry.set(entry.id, order);
+
     return {
       type: "memory_update",
       requestId,
@@ -98,6 +104,7 @@ export class MemoryManagementState {
       entryId: entry.id,
     });
     this.latestIssuedByEntry.set(entry.id, order);
+
     return {
       type: "memory_forget",
       requestId,
@@ -109,8 +116,10 @@ export class MemoryManagementState {
 
   rejectLocally(requestId: string, error: string): MemoryApplyResult {
     const request = this.pending.get(requestId);
+
     if (!request) return { kind: "ignored", reason: "unknown-request" };
     this.pending.delete(requestId);
+
     return {
       kind: "failure",
       action: request.action,
@@ -122,19 +131,24 @@ export class MemoryManagementState {
 
   receive(conversationId: string | undefined, result: MemoryResult): MemoryApplyResult {
     const request = this.pending.get(result.requestId);
+
     if (!request) return { kind: "ignored", reason: "unknown-request" };
+
     if ((conversationId ?? "default") !== request.conversationId) {
       return { kind: "ignored", reason: "wrong-conversation" };
     }
+
     if (result.action !== request.action) return { kind: "ignored", reason: "wrong-action" };
     this.pending.delete(result.requestId);
 
     if (request.action === "list" && result.requestId !== this.latestListRequestId) {
       return { kind: "ignored", reason: "superseded" };
     }
+
     if (request.entryId && this.latestIssuedByEntry.get(request.entryId) !== request.order) {
       return { kind: "ignored", reason: "superseded" };
     }
+
     if (!result.ok) {
       return {
         kind: "failure",
@@ -154,6 +168,7 @@ export class MemoryManagementState {
         error: "响应条目与修改请求不一致",
       };
     }
+
     if (request.action === "forget" && (!result.deletedId || request.entryId !== result.deletedId)) {
       return {
         kind: "failure",
@@ -167,6 +182,7 @@ export class MemoryManagementState {
     if (request.action === "update" && result.entry && request.entryId === result.entry.id) {
       const applied = this.latestAppliedByEntry.get(result.entry.id) ?? 0;
       const deleted = this.deletedAtOrder.get(result.entry.id) ?? 0;
+
       if (request.order < applied || request.order <= deleted) return { kind: "ignored", reason: "superseded" };
       this.entries.set(result.entry.id, cloneEntry(result.entry));
       this.latestAppliedByEntry.set(result.entry.id, request.order);
@@ -180,6 +196,7 @@ export class MemoryManagementState {
     }
 
     if (request.action === "list" && result.entries) this.applyList(request, result.entries);
+
     return {
       kind: "success",
       action: request.action,
@@ -190,11 +207,13 @@ export class MemoryManagementState {
 
   private applyList(request: PendingRequest, incoming: MemoryEntry[]): void {
     const incomingIds = new Set<string>();
+
     for (const entry of incoming) {
       incomingIds.add(entry.id);
       const latestIssued = this.latestIssuedByEntry.get(entry.id) ?? 0;
       const latestApplied = this.latestAppliedByEntry.get(entry.id) ?? 0;
       const deleted = this.deletedAtOrder.get(entry.id) ?? 0;
+
       if (request.order < latestIssued || request.order < latestApplied || request.order <= deleted) continue;
       this.entries.set(entry.id, cloneEntry(entry));
       this.latestAppliedByEntry.set(entry.id, request.order);
@@ -205,6 +224,7 @@ export class MemoryManagementState {
       if (incomingIds.has(id)) continue;
       const latestIssued = this.latestIssuedByEntry.get(id) ?? 0;
       const latestApplied = this.latestAppliedByEntry.get(id) ?? 0;
+
       if (request.order < latestIssued || request.order < latestApplied) continue;
       this.entries.delete(id);
       this.latestAppliedByEntry.set(id, request.order);

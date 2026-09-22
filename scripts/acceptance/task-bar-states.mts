@@ -22,18 +22,24 @@ if (!process.argv.includes("--headless")) {
   console.error("Required: --headless（本脚本只以无头隔离方式运行）");
   process.exit(2);
 }
+
 const arg = (name: string, fallback: string): string => {
   const hit = process.argv.find((a) => a.startsWith(`${name}=`));
+
   return hit ? hit.slice(name.length + 1) : fallback;
 };
+
 const outDir = resolve(arg("--out", join("out", "acceptance", `${new Date().toISOString().replace(/[:.]/g, "-")}-t03-states`)));
+
 mkdirSync(outDir, { recursive: true });
 
 const checks: { id: string; name: string; ok: boolean; detail?: string }[] = [];
+
 const check = (id: string, name: string, ok: boolean, detail?: string): void => {
   checks.push({ id, name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${id} ${name}${detail ? ` — ${detail}` : ""}`);
 };
+
 /** 运行中的已运行时长每秒都在动（真实数据）；比较信息等价时只归一化这个数字。 */
 const normalize = (text: string): string => text.replace(/\d+(\.\d+)?s/g, "<t>");
 
@@ -45,16 +51,20 @@ const report: Record<string, unknown> = {
   shots: {} as Record<string, string>,
   humanCheck: "A03-08 三态 5 秒读取：待 reviewer 看 01-running / 04-takeover-applied / 05-blocked 三张真实界面截图（本脚本不做人的裁决）",
 };
+
 const shots: Record<string, string> = report.shots as Record<string, string>;
 
 const h = await startTaskBarHarness({ controlled: true, receiptDelayMs: 400, outDir: join(outDir, "phase") });
+
 /** 面板真的发出去的那一条请求（供材料核对与回执用）。 */
 let sentRequest: { requestId: string; action: string; text: string; attachments: string[] } | null = null;
+
 const shot = async (name: string): Promise<void> => {
   const file = join(outDir, `${name}.png`);
   await h.screenshot(file);
   shots[name] = file;
 };
+
 const barText = async (): Promise<string> => (await h.panel("document.querySelector('#task-bar-root')?.textContent ?? ''")) as string;
 
 try {
@@ -74,6 +84,7 @@ try {
   })()`);
   await until(async () => ((await barText()).includes("窄栏截图.png") || undefined), 8_000, "草稿附件进入任务条").catch(() => undefined);
   await sleep(200);
+
   const narrow = (await h.panel(`(() => {
     const doc = document.documentElement;
     const bar = document.querySelector('.task-bar');
@@ -88,6 +99,7 @@ try {
       buttons: [...document.querySelectorAll('.task-bar button')].map((b) => { const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label') || b.textContent, left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom) }; }),
     };
   })()`)) as { overflow: number; barRight: number | null; barLeft: number | null; innerWidth: number; sendVisible: boolean; buttons: { label: string; left: number; right: number; bottom: number }[] };
+
   await shot("06-narrow-draft-320");
   check("A03-07", "320px 无横向溢出", narrow.overflow <= 0, `documentElement.scrollWidth - innerWidth = ${narrow.overflow}`);
   check("A03-07", "320px 任务条与发送按钮在视口内", (narrow.barRight ?? 999) <= narrow.innerWidth && (narrow.barLeft ?? -1) >= 0 && narrow.sendVisible, JSON.stringify({ barLeft: narrow.barLeft, barRight: narrow.barRight, innerWidth: narrow.innerWidth, sendVisible: narrow.sendVisible }));
@@ -99,9 +111,11 @@ try {
   await sleep(200);
   await h.panel("document.querySelector('#input').focus()");
   let removeFocused = false;
+
   for (let i = 0; i < 14 && !removeFocused; i += 1) {
     await h.key("Tab", "Tab");
     const state = (await h.panel("(() => { const a = document.activeElement; const s = getComputedStyle(a); return { cls: a.className || '', tag: a.tagName, label: a.getAttribute('aria-label') || '', outline: s.outlineStyle }; })()")) as { cls: string; tag: string; label: string; outline: string };
+
     if (state.cls.includes("tb-remove")) {
       removeFocused = true;
       check("A03-07", "键盘 Tab 到移除按钮，焦点可见", state.outline !== "none", `${state.label} outline=${state.outline}`);
@@ -116,6 +130,7 @@ try {
       check("A03-02", "被移除的附件没有进入实际请求", sentRequest.attachments.length === 0 && sentRequest.text.includes("把报名表里的电话补齐"), `attachments=${JSON.stringify(sentRequest.attachments)}`);
     }
   }
+
   if (!removeFocused) check("A03-07", "键盘 Tab 到移除按钮，焦点可见", false, "14 次 Tab 没到 tb-remove");
 
 
@@ -207,9 +222,11 @@ try {
   // 键盘 Tab 到「再试」→ Enter：走真实接管入口，且焦点可见。
   await h.panel("document.querySelector('#input').focus()");
   let retryFocused = false;
+
   for (let i = 0; i < 12 && !retryFocused; i += 1) {
     await h.key("Tab", "Tab");
     const state = (await h.panel("(() => { const a = document.activeElement; const s = getComputedStyle(a); return { cls: a.className || '', label: a.getAttribute('aria-label') || a.textContent || '', outline: s.outlineStyle }; })()")) as { cls: string; label: string; outline: string };
+
     if (state.cls.includes("tb-control-retry")) {
       retryFocused = true;
       check("A03-07", "键盘 Tab 到重试按钮，焦点可见", state.outline !== "none", `${state.label} outline=${state.outline}`);
@@ -219,10 +236,12 @@ try {
       check("A03-04", "键盘 Enter 触发重试，走真实接管入口", takeovers() > before, JSON.stringify(h.transcript.slice(-3)));
     }
   }
+
   if (!retryFocused) check("A03-07", "键盘 Tab 到重试按钮，焦点可见", false, "12 次 Tab 没到 tb-control-retry");
 
   // 受控服务按真实结构回控制结果：让 background/面板的真实接管流程收敛，不留「正在停住」横幅。
   const lastTakeover = h.takeoverRequests.at(-1);
+
   if (lastTakeover) h.ackTakeover(lastTakeover, true);
   progress.observe({ type: "status", state: "user" });
   const paused = projectTaskView({ ...progress.snapshot(), controlVersion: 1 });
@@ -252,6 +271,7 @@ try {
   const tabs = (await h.iso.swEval("chrome.tabs.query({}).then(t=>t.filter(x=>x.url&&x.url.startsWith('http')).map(x=>({id:x.id,title:x.title,url:x.url})))")) as { id: number; title: string; url: string }[];
   const tabA = tabs.find((tab) => tab.url.includes("/page-a"));
   const tabB = tabs.find((tab) => tab.url.includes("/page-b"));
+
   if (!tabA || !tabB) {
     check("A03-03", "准备真实 A/B 两页", false, JSON.stringify(tabs));
   } else {
@@ -277,14 +297,17 @@ try {
   report.finishedAt = new Date().toISOString();
   report.ok = checks.every((c) => c.ok);
   writeFileSync(join(outDir, "states.json"), `${JSON.stringify(report, null, 2)}\n`);
+
   const md = `# T03 界面态证据（tsx scripts/acceptance/task-bar-states.mts --headless）\n\n` +
     `时间：${report.startedAt} → ${report.finishedAt}\n\n` +
     `| 检查 | 结果 | 说明 |\n|---|---|---|\n` +
     checks.map((c) => `| ${c.id} ${c.name} | ${c.ok ? "PASS" : "FAIL"} | ${String(c.detail ?? "").replace(/\|/g, "\\|")} |`).join("\n") +
     `\n\n截图：${Object.entries(shots).map(([name, file]) => `${name}=${file}`).join("；")}\n\n` +
     `人的裁决（不由本脚本代填）：${report.humanCheck}\n`;
+
   writeFileSync(join(outDir, "states.md"), md);
   console.log(JSON.stringify({ outDir, ok: report.ok, failed: checks.filter((c) => !c.ok) }, null, 2));
   await h.close();
 }
+
 if (!(report.ok as boolean)) process.exitCode = 1;

@@ -5,19 +5,31 @@ import type {ServerMessage} from '../../shared/protocol.js';
 
 function harness(){
  const runtimes=new Map<string,any>(),events:ServerMessage[]=[];
+
  const manager=new ConversationManager(async(id,emit)=>{
   let running=false;
+
   const session={available:true,modelName:()=> 'fixture',availableModels:async()=>[],isHeld:()=>false,isStreaming:()=>running,
    classifyVoiceInput:async(text:string)=>({steps:[{action:'start',text,target:null}]}),persistTaskResults:()=>{},
    startTask:vi.fn(()=>{running=true;emit({type:'agent_event',event:{kind:'agent_start'}});emit({type:'status',state:'running'});}),
    steerCurrentTask:vi.fn(async()=>{}),
   };
+
   const runtime={session,fleet:{reset:vi.fn(),teamView:()=>null,isGroupHeld:()=>false,list:()=>[]},rpc:{rejectAll:()=>{}},dispose:()=>{},handleMessage:()=>{},
    finish:()=>{running=false;emit({type:'status',state:'idle'});emit({type:'agent_event',event:{kind:'agent_end'}});},emit,
-  };runtimes.set(id,runtime);return runtime as never;
+  };
+
+runtimes.set(id,runtime);
+
+return runtime as never;
  },e=>events.push(e));
+
  let turn=0;
- const say=async(text:string)=>{turn++;const snap=manager.getTaskProgress('default')!;return manager.routeVoiceInput('default',text,null,()=>true,{requestId:`voice-${turn}`,voiceId:'v',turn,runId:snap.runId??null,controlVersion:0,targets:manager.voiceTargets(),input:{context:{tabId:1,title:'原页面',url:'https://example.invalid'}}});};
+
+ const say=async(text:string)=>{turn++;const snap=manager.getTaskProgress('default')!;
+
+return manager.routeVoiceInput('default',text,null,()=>true,{requestId:`voice-${turn}`,voiceId:'v',turn,runId:snap.runId??null,controlVersion:0,targets:manager.voiceTargets(),input:{context:{tabId:1,title:'原页面',url:'https://example.invalid'}}});};
+
  return {manager,runtimes,events,say};
 }
 
@@ -57,7 +69,11 @@ it('routes only registered task results back to voice and reports playback to th
  const h=harness();await h.manager.ensureDefault();await h.say('读取原页面');
  const b:any=await h.say('同时在新标签页打开B站'),bid=b.receipts[0].conversationId;
  const streamDelivery=vi.fn(),completeDelivery=vi.fn(),playback=vi.fn();let deps:any;
- const service=new VoiceService(id=>h.manager.getTaskProgress(id),()=>{},async()=>'fixture',d=>{deps=d;return {start:()=>{},close:()=>{},streamDelivery,completeDelivery} as never;},undefined,undefined,undefined,undefined,playback,undefined,(origin,target)=>h.manager.isVoiceTask(origin,target));
+
+ const service=new VoiceService(id=>h.manager.getTaskProgress(id),()=>{},async()=>'fixture',d=>{deps=d;
+
+return {start:()=>{},close:()=>{},streamDelivery,completeDelivery} as never;},undefined,undefined,undefined,undefined,playback,undefined,(origin,target)=>h.manager.isVoiceTask(origin,target));
+
  try{
   await service.handle('default',{type:'voice',voiceId:'v',command:{kind:'start'}});
   const stream={id:'b-result',runId:h.manager.getTaskProgress(bid)!.runId!,kind:'finding' as const,text:'已打开',phase:'streaming' as const};
@@ -87,7 +103,9 @@ it('a related instruction during SDK teardown stays with the original run, indep
  const h=harness();await h.manager.ensureDefault();await h.say('读取第一条评论');
  const runtime=h.runtimes.get('default'),run=h.manager.getTaskProgress('default')!.runId;
  runtime.emit({type:'agent_event',event:{kind:'agent_end'}}); // SDK still owns the stream.
- runtime.session.classifyVoiceInput=vi.fn(async(text:string,state:string)=>{expect(state).toBe('running');return {steps:[{action:'steer',text,target:null}]};});
+ runtime.session.classifyVoiceInput=vi.fn(async(text:string,state:string)=>{expect(state).toBe('running');
+
+return {steps:[{action:'steer',text,target:null}]};});
  const reply:any=await h.say('然后把这条评论放进笔记');
  expect(reply.receipts[0].status).toBe('accepted');
  expect(runtime.session.steerCurrentTask).toHaveBeenCalledWith('然后把这条评论放进笔记',expect.objectContaining({tabId:1}),undefined);

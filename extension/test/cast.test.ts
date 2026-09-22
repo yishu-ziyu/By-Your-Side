@@ -55,6 +55,7 @@ describe("界面文案不含工人", () => {
       expect(describeTool("spawn_worker", { id }).full).not.toMatch(/工人/);
       expect(describeTool("stop_worker", { id }).full).not.toMatch(/工人/);
     }
+
     expect(describeTool("list_workers", {}).full).not.toMatch(/工人/);
   });
 });
@@ -65,6 +66,7 @@ describe("运行身份分配", () => {
     const a = assignedWorkerId("reader", "abcdef01", []);
     const b = assignedWorkerId("reader", "abcdef02", [a]);
     expect(personFor(a)?.key).not.toBe(personFor(b)?.key);
+
     for (const id of [a, b]) {
       expect(cursorColor(id)).toBe(personFor(id)?.color);
       expect(displayNameFor(JSON.parse(JSON.stringify(id)))).toBe(personFor(id)?.name);

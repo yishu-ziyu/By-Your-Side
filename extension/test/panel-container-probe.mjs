@@ -13,38 +13,47 @@ import { discoverChromeMain } from "../../scripts/acceptance/discover.mjs";
 const extId = process.argv[2]; // 可选：覆盖扩展 ID
 
 const hit = await discoverChromeMain();
+
 if (!hit) {
   console.error("no-target: ChromeMain 未运行");
   process.exit(2);
 }
+
 const list = await (await fetch(`http://127.0.0.1:${hit.port}/json/list`)).json();
+
 const panel = list.find(
   (t) => t.type === "page" && /\/sidepanel\.html$/.test(t.url) && (!extId || t.url.startsWith(`chrome-extension://${extId}/`)),
 );
+
 if (!panel) {
   console.error(`no-target: ChromeMain（:${hit.port}）当前没有打开的 sidepanel.html 目标（侧栏关闭即如此）`);
   process.exit(2);
 }
 
 const ws = new WebSocket(panel.webSocketDebuggerUrl);
+
 await new Promise((res, rej) => {
   ws.addEventListener("open", res, { once: true });
   ws.addEventListener("error", () => rej(new Error("CDP WebSocket 连接失败")), { once: true });
 });
+
 const call = (id, expr) =>
   new Promise((res) => {
     const onMsg = (raw) => {
       const m = JSON.parse(typeof raw === "string" ? raw : raw.toString());
+
       if (m.id === id) {
         ws.removeEventListener("message", onMsg);
         res(m.result?.result?.value);
       }
     };
+
     ws.addEventListener("message", onMsg);
     ws.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression: expr, returnByValue: true } }));
   });
 
 const FABRICATED = ["支持档位调节", "内置深度思考", "极速直接响应"];
+
 const expr = `(() => {
   const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height),right:Math.round(r.right),bottom:Math.round(r.bottom)}; };
   const inView = (r) => r && r.w>0 && r.h>0 && r.right<=window.innerWidth && r.bottom<=window.innerHeight;
@@ -60,15 +69,22 @@ const expr = `(() => {
     inputVisible: inView(rect("#input")), sendVisible: inView(rect("#send-btn")), modelBtnVisible: inView(rect("#model-btn")),
   };
 })()`;
+
 const snap = await call(1, expr);
+
 ws.close();
+
 console.log(JSON.stringify({ when: new Date().toISOString(), target: panel.url, snapshot: snap }, null, 2));
+
 const s = snap;
+
 const ok =
   s &&
   s.chipTagHidden === true &&
   !s.fabricatedInPage &&
   s.inputVisible &&
   s.sendVisible;
+
 console.log(ok ? "PASS 真实容器：无能力标签 + 核心控件完整可见" : "FAIL 见 snapshot");
+
 process.exit(ok ? 0 : 1);

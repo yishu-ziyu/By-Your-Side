@@ -46,6 +46,7 @@ describe("凭据隐去", () => {
       "联系 zhang.san@example.com 或 +86 13800138000",
       "总计 ¥1,299.00（含税）",
     ].join("\n");
+
     expect(redactCredentialText(text)).toBe(text);
   });
 

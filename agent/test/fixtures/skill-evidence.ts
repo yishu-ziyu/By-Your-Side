@@ -3,10 +3,12 @@ import { SkillLearningTrace, type SkillEvidence } from "../../src/skill-learning
 import type { ToolContract } from "../../../shared/protocol.js";
 
 export const skillPage = { tabId: 7, title: "客户查询", url: "https://example.com/search" };
+
 export function target(name: string, tag = "input", type = "text"): ToolContract["read_element"]["data"] {
   return { tabId: 7, target: "@1", tagName: tag, textContent: "", documentId: "document-one",
     anchorSource: { tag, type, ariaLabel: name } };
 }
+
 export function searchEvidence(query = "张三", region = "北京"): SkillEvidence[] {
   return [
     { toolCallId: "step-1", name: "fill", params: { tabId: 7, target: "@1", value: query }, target: target("客户名", "input", "search"), result: { filled: true } },
@@ -16,16 +18,21 @@ export function searchEvidence(query = "张三", region = "北京"): SkillEviden
       result: { ...target("查询结果", "div"), textContent: `找到客户 ${query} / ${region}`, check: { matched: true, property: "textContent", elapsedMs: 0 } } },
   ];
 }
+
 export function learningFixture(query = "张三", region = "北京", runId = "run-one") {
   const trace = new SkillLearningTrace();
   trace.begin(runId, `搜索「${query}」，地区「${region}」`, skillPage);
   const events = searchEvidence(query, region);
+
   for (const event of events) trace.observe(event);
+
   // Production marks this only after the deliverable-contract judgment passes
   // (BrowserAgentSession.completeSkillLearning); the fixture stands in for that verified learn.
   const candidate = () => {
     const value = trace.finish(runId, true)!;
+
     return value && { ...value, skill: { ...value.skill, learnedOutputContractVersion: SKILL_OUTPUT_CONTRACT_VERSION } };
   };
+
   return { trace, events, candidate };
 }

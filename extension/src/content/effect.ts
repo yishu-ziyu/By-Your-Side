@@ -19,6 +19,7 @@ import {
 
 (function () {
   const ns = (window.__sideagent ??= {});
+
   if (ns.effect) return;
 
   const sessions = new Map<string, { base: EffectBaseline; el: Element | null; at: number }>();
@@ -29,9 +30,11 @@ import {
     if (!el || !el.isConnected) return null;
     const tag = el.tagName.toLowerCase();
     const id = (el as HTMLElement).id ? `#${(el as HTMLElement).id}` : "";
+
     const cls = typeof el.className === "string" && el.className.trim()
       ? `.${el.className.trim().split(/\s+/)[0]}`
       : "";
+
     return `${tag}${id}${cls}`;
   }
 
@@ -39,6 +42,7 @@ import {
   function isSecretField(el: Element): boolean {
     if (el instanceof HTMLInputElement && el.type === "password") return true;
     const auto = String(el.getAttribute("autocomplete") ?? "").toLowerCase();
+
     return auto.includes("one-time-code") || auto.startsWith("cc-");
   }
 
@@ -47,12 +51,16 @@ import {
       const raw = el.value ?? "";
       const masked = isSecretField(el);
       const shown = raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
+
       return masked ? (raw ? `<${raw.length} chars>` : raw) : shown;
     }
+
     if ((el as HTMLElement).isContentEditable) {
       const text = (el.textContent ?? "").trim();
+
       return text.length > 60 ? `${text.slice(0, 60)}…` : text;
     }
+
     return undefined;
   }
 
@@ -63,6 +71,7 @@ import {
     const rendered = ((el as HTMLElement).innerText ?? "").replace(/\s+/g, " ").trim();
     const media = el as HTMLMediaElement;
     const isMedia = typeof media.paused === "boolean";
+
     const state: EffectTargetState = {
       gone: false,
       tag: el.tagName.toLowerCase(),
@@ -75,6 +84,7 @@ import {
       ...(isMedia ? { paused: String(media.paused), ended: String(media.ended) } : {}),
       cls: String((el as HTMLElement).className ?? "").slice(0, 200),
     };
+
     return state;
   }
 
@@ -82,13 +92,18 @@ import {
   function collectAlerts(): string[] {
     const out: string[] = [];
     const nodes = document.querySelectorAll('[role="alert"],[role="status"],[aria-live="polite"],[aria-live="assertive"]');
+
     for (const node of nodes) {
       const text = (node as HTMLElement).innerText?.replace(/\s+/g, " ").trim() ?? "";
+
       if (!text) continue;
       const clipped = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+
       if (!out.includes(clipped)) out.push(clipped);
+
       if (out.length >= 5) break;
     }
+
     return out;
   }
 
@@ -105,6 +120,7 @@ import {
 
   function stats(el: Element | null, c: ReturnType<typeof cheap>): EffectStats {
     const box = (el && el.isConnected ? el.closest(EFFECT_SCOPE_SEL) : null) ?? document.body;
+
     return {
       els: c.els,
       bodyKids: c.bodyKids,
@@ -123,18 +139,23 @@ import {
       if (Array.isArray(input.point) && Number.isFinite(input.point[0]) && Number.isFinite(input.point[1])) {
         return document.elementFromPoint(input.point[0], input.point[1]);
       }
+
       if (input.selector) return document.querySelector(input.selector);
     } catch {
       /* 解析失败就当没有目标，效果判定退化成全局观察 */
     }
+
     return null;
   }
 
   function prune(): void {
     const cutoff = Date.now() - SESSION_TTL_MS;
+
     for (const [token, session] of sessions) if (session.at < cutoff) sessions.delete(token);
+
     while (sessions.size > SESSION_KEEP) {
       const oldest = sessions.keys().next().value;
+
       if (oldest === undefined) break;
       sessions.delete(oldest);
     }
@@ -146,26 +167,32 @@ import {
       const first = cheap();
       await new Promise((resolve) => setTimeout(resolve, EFFECT_VOLATILE_WINDOW_MS));
       const second = cheap();
+
       const base: EffectBaseline = {
         ...stats(el, second),
         // 页面自己在这 60ms 里就动过 DOM：后面的全局数字不可信，只认强证据。
         volatile: Math.abs(second.els - first.els) >= EFFECT_VOLATILE_DELTA,
       };
+
       prune();
       sessions.set(input.token, { base, el, at: Date.now() });
+
       return { ok: true };
     },
 
     diff(token: string): EffectReport | null {
       const session = sessions.get(token);
+
       if (!session) return null;
       session.at = Date.now();
+
       // 目标引用保留原对象：被替换/移除本身就是强证据，重新查找会把它抹掉。
       return diffEffect(session.base, stats(session.el, cheap()));
     },
 
     end(token: string): { ok: true } {
       sessions.delete(token);
+
       return { ok: true };
     },
   };

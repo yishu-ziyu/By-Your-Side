@@ -5,6 +5,7 @@
  */
 
 export const LEAD_COLOR = "#2f6fed";
+
 export const LEAD_NAME = "By Your Side";
 
 export type CastShape = "blob" | "pebble" | "squircle" | "capsule" | "hex" | "triangle";
@@ -126,7 +127,9 @@ export const CAST: readonly Person[] = [
 
 function hash(id: string): number {
   let h = 0;
+
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+
   return h;
 }
 
@@ -139,6 +142,7 @@ export function personFor(id: string): Person | null {
   if (isLeadId(id)) return null;
   const key = /-cast-([a-z]+)-[a-f0-9]{8}$/.exec(id)?.[1];
   const person = CAST.find((p) => p.key === key) ?? CAST[hash(id) % CAST.length];
+
   return person ?? CAST[0] ?? null;
 }
 
@@ -156,9 +160,12 @@ export function displayNameFor(id: string): string {
 export function assignedWorkerId(base: string, nonce: string, occupiedIds: Iterable<string>): string {
   const occupied = new Set([...occupiedIds].map((id) => personFor(id)?.key));
   const start = hash(base) % CAST.length;
+
   for (let offset = 0; offset < CAST.length; offset++) {
     const person = CAST[(start + offset) % CAST.length]!;
+
     if (!occupied.has(person.key)) return `${base}-cast-${person.key}-${nonce}`;
   }
+
   throw new Error("没有可用的助手身份");
 }

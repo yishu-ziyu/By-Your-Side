@@ -8,9 +8,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
 const evidenceDir = await mkdtemp(join(tmpdir(), "sideagent-memory-persistence-"));
+
 const storeDir = join(evidenceDir, "synthetic-store");
+
 await mkdir(storeDir);
+
 const probe = `
 import { MemoryStore } from './agent/src/memory-store.ts';
 const chunks=[]; for await (const c of process.stdin) chunks.push(c);
@@ -25,22 +29,29 @@ const selected=await store.select(query);
 const resolved=input.old?await store.resolveSelected([{id:input.old.id,version:input.old.version}],query):null;
 console.log('MEMORY_EVAL_RESULT '+JSON.stringify({phase:input.phase,pid:process.pid,changed,records:await store.list(),selected,resolved}));
 `;
+
 const runs = [], checks = [];
+
 function phase(name, extra = {}) {
   const proc = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", probe], {
     cwd: repo, encoding: "utf8", timeout: 30_000,
     input: JSON.stringify({ phase: name, dir: storeDir, ...extra }),
   });
+
   if (proc.error) throw proc.error;
   assert.equal(proc.status, 0, `${name}: ${proc.stderr || proc.stdout}`);
   const line = proc.stdout.split("\n").find((entry) => entry.startsWith("MEMORY_EVAL_RESULT "));
   assert.ok(line, `${name}: no structured production-store result`);
   const result = JSON.parse(line.slice("MEMORY_EVAL_RESULT ".length));
   runs.push(result);
+
   return result;
 }
+
 function check(name, fn) { fn(); checks.push({ name, ok: true }); }
+
 let failure = null;
+
 try {
   const first = phase("create");
   const read = phase("read");
@@ -72,10 +83,13 @@ try {
   failure = String(error?.stack || error);
   process.exitCode = 1;
 }
+
 const report = {
   gate: "production memory store across independent Node processes", ok: failure === null,
   checks, runs, failure,
   notEvaluated: ["real model response", "visible save/update/forget UI", "browser restart", "takeover integration", "explicit user request authorization"],
 };
+
 await writeFile(join(evidenceDir, "result.json"), JSON.stringify(report, null, 2));
+
 console.log(JSON.stringify({ ok: report.ok, passed: checks.length, evidence: join(evidenceDir, "result.json"), notEvaluated: report.notEvaluated }, null, 2));

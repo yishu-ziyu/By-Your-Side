@@ -58,12 +58,14 @@ it('delivery 状态只保留 description/criterion/reason 与文本，不含 id/
     executionFacts: [{ tool: 'read_elements', target: 'article', status: 'ok' }],
     text: '页面已圈好。',
   };
+
   const state = goalReviewState('delivery', input) as any;
   expect(state.requirements).toEqual(input.requirements);
   expect(state.satisfiedGoals).toEqual([{ description: '取得文章正文原文', criterion: '完整正文原文' }]);
   expect(state.pendingGoals).toEqual([{ description: '在页面上圈出文章的关键词', criterion: '每个关键词的实际出现位置都有可见标注', reason: '尚未确认当前页面对象满足这项目标' }]);
   expect(state.executionFacts).toEqual([{ tool: 'read_elements', target: 'article', status: 'ok' }]);
   expect(state.text).toBe('页面已圈好。');
+
   for (const key of ['id', 'observationId', 'verifiedAt', 'evidence']) {
     expect(state.satisfiedGoals[0]).not.toHaveProperty(key);
     expect(state.pendingGoals[0]).not.toHaveProperty(key);

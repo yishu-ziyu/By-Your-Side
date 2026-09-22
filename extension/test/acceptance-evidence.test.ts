@@ -18,6 +18,7 @@ describe("evidence redaction", () => {
       steps: [{ name: "snapshot", ok: true, expected: "unique", actual: { unique: true } }],
       connection: { pid: 8103, port: 9222, wrapperBundleId: "local.yishu.chrome-main" },
     });
+
     expect(redacted.cookie).toBe("[redacted]");
     expect(redacted.cookies).toBe("[redacted]");
     expect(redacted.token).toBe("[redacted]");
@@ -43,6 +44,7 @@ describe("evidence redaction", () => {
       note: "Authorization: Bearer abc.def",
       query: "token=super-secret",
     });
+
     expect(redacted.note).toBe("[redacted]");
     expect(redacted.query).toBe("[redacted]");
   });
@@ -60,6 +62,7 @@ describe("evidence redaction", () => {
       evidenceDir: "/tmp/example",
       screenshots: ["before.png"],
     });
+
     expect(json).not.toHaveProperty("token");
     const run0 = (json as { runs: Array<Record<string, unknown>> }).runs[0];
     expect(run0?.cookie).toBe("[redacted]");

@@ -31,18 +31,25 @@ import { buildTeamResultJson, evaluateTeamRun, formatTeamRun } from "./team-resu
 
 function parseRuns(argv) {
   const flag = argv.find((a) => a.startsWith("--runs="));
+
   if (flag) {
     const n = Number(flag.slice("--runs=".length));
+
     if (!Number.isInteger(n) || n < 1 || n > 20) throw new Error("--runs 必须是 1..20 的整数");
+
     return n;
   }
+
   const env = Number(process.env.ACCEPT_TEAM_RUNS ?? process.env.ACCEPT_RUNS ?? DEFAULT_RUNS);
+
   if (!Number.isInteger(env) || env < 1) return DEFAULT_RUNS;
+
   return env;
 }
 
 function evidenceRoot() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
   return join(tmpdir(), `sideagent-accept-team-${stamp}`);
 }
 
@@ -55,6 +62,7 @@ async function main() {
   const say = (line) => console.log(line);
 
   let connection;
+
   try {
     connection = discoverChromeMain();
     say(`PASS connect ${connection.wrapperBundleId} pid=${connection.pid} port=${connection.port}`);
@@ -69,6 +77,7 @@ async function main() {
   }
 
   let extId;
+
   try {
     extId = sideagentExtensionId();
   } catch (e) {
@@ -77,6 +86,7 @@ async function main() {
   }
 
   let cdp;
+
   try {
     const browser = await connectBrowser(connection.port);
     cdp = browser.cdp;
@@ -100,6 +110,7 @@ async function main() {
   try {
     const targets = await cdp.send("Target.getTargets");
     let sw = findServiceWorker(targets.targetInfos ?? targets, extId);
+
     if (!sw) {
       try {
         const listed = await fetchJson(`http://127.0.0.1:${connection.port}/json/list`);
@@ -108,6 +119,7 @@ async function main() {
         sw = undefined;
       }
     }
+
     if (!sw) {
       say(`FAIL extension service worker`);
       say(recoveryExtension(extId));
@@ -116,6 +128,7 @@ async function main() {
       failureStage = "extension";
       throw new Error("extension_not_found");
     }
+
     const swId = sw.targetId ?? sw.id;
     say(`PASS extension ${extId} service_worker`);
     const sessionId = await cdp.attachSession(swId);
@@ -136,6 +149,7 @@ async function main() {
     for (let i = 1; i <= runs; i++) {
       const leadUrl = `${fixture.origin}/index.html?mark=${LEAD_MARK}&run=${i}&t=${Date.now()}`;
       const workerUrl = `${fixture.origin}/index.html?mark=${WORKER_MARK}&run=${i}&t=${Date.now()}`;
+
       const expression = buildTeamDriverExpression({
         leadUrl,
         workerUrl,
@@ -151,7 +165,9 @@ async function main() {
         workerFill: "team-worker-fill",
         capability: capabilities[i - 1],
       });
+
       let driver;
+
       try {
         driver = await evaluateInWorker(cdp, sessionId, expression, STEP_TIMEOUT_MS + 20_000);
       } catch (e) {
@@ -163,10 +179,12 @@ async function main() {
           elapsedMs: 0,
         };
       }
+
       if (driver?.extension) identity = driver.extension;
       const evaluated = evaluateTeamRun(driver);
       const runDir = join(root, `run-${i}`);
       await mkdir(runDir, { recursive: true });
+
       const payload = buildTeamResultJson({
         ok: evaluated.ok,
         startedAt: evaluated.startedAt,
@@ -199,9 +217,11 @@ async function main() {
         extension: driver?.extension ?? null,
         openTabAfterHandback: driver?.openTabAfterHandback ?? null,
       });
+
       await writeFile(join(runDir, "result.json"), `${JSON.stringify(payload, null, 2)}\n`);
       runRecords.push({ index: i, ok: evaluated.ok, failureCategory: evaluated.failureCategory, failureStage: evaluated.failureStage, evidenceDir: runDir });
       say(formatTeamRun(i, evaluated));
+
       if (!evaluated.ok) {
         overallOk = false;
         failureCategory = evaluated.failureCategory;
@@ -227,8 +247,10 @@ async function main() {
       failureStage,
       evidenceDir: root,
     });
+
     await writeFile(join(root, "result.json"), `${JSON.stringify(summary, null, 2)}\n`);
     say(overallOk ? `PASS ${runs} consecutive team runs` : `FAIL consecutive team runs`);
+
     if (identity) say(`identity extensionId=${identity.id} version=${identity.version}`);
     say(`evidence ${root}`);
     process.exitCode = overallOk ? 0 : 1;
@@ -256,6 +278,7 @@ async function main() {
     } catch {
       /* 最后一个令牌已由 Agent 消费，或文件本就不存在 */
     }
+
     if (fixture) {
       try {
         await fixture.close();
@@ -263,8 +286,10 @@ async function main() {
         /* 忽略 */
       }
     }
+
     if (cdp) await cdp.close();
   }
+
   process.exit(process.exitCode ?? 0);
 }
 

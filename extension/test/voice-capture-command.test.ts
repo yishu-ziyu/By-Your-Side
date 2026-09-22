@@ -6,18 +6,23 @@ import * as speechModule from '../src/sidepanel/voice-speech.js';
 
 vi.mock('../src/sidepanel/voice-speech.js',()=>{
   const state={probability:0.9,pushed:[] as Int16Array[],onFrame:null as null|((pcm:Int16Array,probability:number)=>void)};
+
   return {
     state,
     SpeechClassifier:{create:async(onFrame:(pcm:Int16Array,probability:number)=>void)=>{
       state.onFrame=onFrame;
+
       return {push:(pcm:Int16Array)=>{state.pushed.push(Int16Array.from(pcm));state.onFrame?.(pcm,state.probability);},close:()=>{}};
     }},
   };
 });
 
 const speech=speechModule as unknown as {state:{probability:number;pushed:Int16Array[]}};
+
 const b64=(values:number[]):string=>Buffer.from(new Int16Array(values).buffer).toString('base64');
+
 const message=(command:unknown)=>({type:'voice',voiceId:'v1',conversationId:'conv-1',command});
+
 const accepts=(command:unknown):boolean=>isVoiceClientMessage(message(command));
 
 describe('capture command boundary',()=>{
@@ -70,10 +75,13 @@ describe('capture command boundary',()=>{
 describe('normal voice capture on the client',()=>{
   class Audit {
     sent:any[]=[];
-    send=(message:any):boolean=>{this.sent.push(message);return true};
+    send=(message:any):boolean=>{this.sent.push(message);
+
+return true};
     kinds=():string[]=>this.sent.map(message=>message.command.kind);
     commands=():any[]=>this.sent.map(message=>message.command);
   }
+
   function audioContext(){
     const context={currentTime:0,destination:{},sampleRate:24000,resume:vi.fn(async()=>{}),close:vi.fn(async()=>{}),
       audioWorklet:{addModule:vi.fn(async()=>{})},
@@ -81,8 +89,10 @@ describe('normal voice capture on the client',()=>{
       createMediaStreamSource:()=>({connect:vi.fn()}),
       createBuffer:(_c:number,n:number)=>({getChannelData:()=>new Float32Array(n)}),
       createBufferSource:()=>({connect:vi.fn(),disconnect:vi.fn(),start:vi.fn(),stop:vi.fn(),onended:()=>{}})};
+
     return context as unknown as AudioContext;
   }
+
   let worklet:{port:{onmessage:null|((e:any)=>void)},connect:ReturnType<typeof vi.fn>,disconnect:ReturnType<typeof vi.fn>};
   beforeEach(()=>{
     speech.state.pushed.length=0;
@@ -97,16 +107,25 @@ describe('normal voice capture on the client',()=>{
   });
   afterEach(()=>vi.unstubAllGlobals());
   const frame=(value:number)=>worklet.port!.onmessage?.({data:{pcm:new Int16Array(480).fill(value).buffer,rms:.1}});
-  const decode=(data:string):Int16Array=>{const buf=Buffer.from(data,'base64');return new Int16Array(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.length));};
+
+  const decode=(data:string):Int16Array=>{const buf=Buffer.from(data,'base64');
+
+return new Int16Array(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.length));};
+
   async function session(audit:Audit,phase=vi.fn()){
     const client=new VoiceClient(audit.send,phase,()=>{});
     await client.start('conv-1');
     const voiceId=audit.sent[0]!.voiceId;
     client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'state',state:'ready',inputMode:'server_vad'}});
+
     return {client,voiceId};
   }
+
   const voiced=()=>{for(let i=0;i<5;i++)frame(1000);};
-  const silence=()=>{speech.state.probability=0.05;for(let i=0;i<35;i++)frame(0);speech.state.probability=0.9;};
+
+  const silence=()=>{speech.state.probability=0.05;
+
+for(let i=0;i<35;i++)frame(0);speech.state.probability=0.9;};
 
   it('starts without capture and streams continuously to server VAD, not a local classifier',async()=>{
     const audit=new Audit();
@@ -118,6 +137,7 @@ describe('normal voice capture on the client',()=>{
     frame(1000);frame(1000);
     expect(speech.state.pushed).toHaveLength(0);
     expect(audit.kinds().filter(kind=>kind==='audio')).toHaveLength(2);
+
     for(let i=0;i<3;i++)frame(1000);
     expect(audit.kinds().filter(kind=>kind==='audio')).toHaveLength(5);
     // Nothing is sent per frame beyond the ordinary upstream audio.

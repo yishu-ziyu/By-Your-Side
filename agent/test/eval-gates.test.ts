@@ -61,6 +61,7 @@ describe("protected eval gates", () => {
         measurement_mode: m.measurement_mode,
       })),
     });
+
     const result = verifyReport(report);
     expect(result.verdict).toBe("FAIL");
     expect(result.metrics.find((m) => m.id === "S01")?.verdict).toBe("FAIL");
@@ -71,6 +72,7 @@ describe("protected eval gates", () => {
       observations: loadGates().metrics.map((m) => ({ id: m.id, missing: true, blocked_reason: "not run" })),
       human_review: { signed: false },
     });
+
     const result = verifyReport(report);
     expect(result.verdict).toBe("BLOCKED");
     expect(result.absolute.human_review_signed_with_no_unresolved_release_blocker!.verdict).toBe("BLOCKED");
@@ -102,6 +104,7 @@ describe("protected eval gates", () => {
         },
       }),
     );
+
     expect(result.absolute.evaluation_policy_and_oracle_are_independently_protected!.verdict).toBe("FAIL");
   });
 

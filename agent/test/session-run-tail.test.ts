@@ -18,6 +18,7 @@ const toolCallBlock = (id = "t1", name = "send_user_message", args: Record<strin
 function fixture(opts: { explicitDelivery?: boolean } = {}) {
   let isStreaming = true;
   let subscriber: ((event: any) => void) | null = null;
+
   const raw = {
     get isStreaming() {
       return isStreaming;
@@ -29,19 +30,23 @@ function fixture(opts: { explicitDelivery?: boolean } = {}) {
     steer: vi.fn(async () => {}),
     subscribe: vi.fn((fn: (event: any) => void) => {
       subscriber = fn;
+
       return () => {};
     }),
   };
+
   const callbacks = { emit: vi.fn(), setStatus: vi.fn() };
   const Session = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
   const wrapped = new Session(raw, null, callbacks, null, null);
   (wrapped as any).explicitDelivery = !!opts.explicitDelivery;
   (wrapped as any).subscribeEvents();
   const event = (e: any) => subscriber?.(e);
+
   const notices = () => callbacks.emit.mock.calls
     .map(([e]) => e as { kind: string; message?: string })
     .filter(e => e.kind === "notice" || e.kind === "error")
     .map(e => e.message ?? "");
+
   /** 合成成功交付的完整事件顺序：参数生成、工具开始、校验后的正式交付、工具成功。 */
   const deliver = (id: string, kind: "finding" | "ack", content: string) => {
     event({
@@ -62,6 +67,7 @@ function fixture(opts: { explicitDelivery?: boolean } = {}) {
       result: { content: [{ type: "text", text: `delivered:${id}` }] },
     });
   };
+
   return {
     wrapped,
     raw,
@@ -122,12 +128,14 @@ describe("交付后的收尾不再误报空响应", () => {
 
   it.each(["ack", "failed-delivery", "snapshot"])("%s 工具消息留在收尾历史里也不替代正式交付", kind => {
     const h = fixture({ explicitDelivery: true });
+
     if (kind === "ack") h.deliver("only", "ack", "收到");
     else {
       const name = kind === "snapshot" ? "snapshot" : "send_user_message";
       h.event({ type: "tool_execution_start", toolCallId: "only", toolName: name, args: { kind: "finding" } });
       h.event({ type: "tool_execution_end", toolCallId: "only", toolName: name, isError: kind !== "snapshot", result: { content: [] } });
     }
+
     h.event({ type: "agent_end", willRetry: false, messages: [
       { role: "assistant", content: [toolCallBlock("only", kind === "snapshot" ? "snapshot" : "send_user_message", {kind: kind === "ack" ? "ack" : "finding"})] },
       { role: "assistant", content: [] },

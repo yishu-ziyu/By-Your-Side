@@ -19,6 +19,7 @@ import type {UserDeliveryStream} from '../../shared/voice.js';
 import type {ServerMessage} from '../../shared/protocol.js';
 
 const sessions:StepVoiceSession[]=[];
+
 afterEach(()=>{sessions.splice(0).forEach(s=>s.close());vi.useRealTimers();});
 
 class Socket extends EventEmitter{
@@ -32,6 +33,7 @@ class Socket extends EventEmitter{
 function managerHarness(){
   const emitted:ServerMessage[]=[];
   const runtimes=new Map<string,any>();
+
   const factory=async(id:string,emit:(m:ServerMessage)=>void)=>{
     const runtime:any={
       session:{modelName:()=>'test/model',availableModels:async()=>[],available:true,abort:vi.fn(),isHeld:()=>false,isStreaming:()=>false,persistTaskResults:vi.fn(),
@@ -40,11 +42,17 @@ function managerHarness(){
       fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn()},
       rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn(),
     };
-    runtimes.set(id,runtime);return runtime;
+
+    runtimes.set(id,runtime);
+
+return runtime;
   };
+
   const manager=new ConversationManager(factory as never,m=>emitted.push(m));
+
   return {manager,runtimes,emitted};
 }
+
 const greetingRoute={requestId:'greeting-1',voiceId:'voice-one',turn:1,runId:null};
 
 describe('A 应然：idle 闲聊仍交给有能力的会话，回答归属写清楚',()=>{
@@ -83,16 +91,21 @@ function voiceHarness(){
   const snapshot:any={conversationId:'A',observedAt:1,state:'running',goal:'嗨，晚上好。',startedAt:1,runId:'run-greeting',controlVersion:0,active:[],lastAction:null,successVerified:false};
   let resolveRoute!:(r:any)=>void;
   const route=vi.fn(()=>new Promise<any>(r=>resolveRoute=r));
+
   const session=new StepVoiceSession({earlyReplies:true,
     getSnapshot:()=>snapshot,
     route,
     emit:e=>events.push(e),
-    createSpeech:(_key,cb)=>{const o={cb,push:vi.fn(),finish:vi.fn(),cancel:vi.fn()};outputs.push(o);return o;},
+    createSpeech:(_key,cb)=>{const o={cb,push:vi.fn(),finish:vi.fn(),cancel:vi.fn()};outputs.push(o);
+
+return o;},
     connect:()=>socket as unknown as WebSocket});
+
   sessions.push(session);
   session.start('synthetic-secret');
   socket.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});
   socket.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:{type:''}}});
+
   const startTurn=(turn=1,text='嗨，晚上好。')=>{
     session.command({kind:'interrupt',turn});
     session.command({kind:'audio',turn,data:'AQABAA=='});
@@ -100,15 +113,19 @@ function voiceHarness(){
     socket.server({type:'input_audio_buffer.committed',item_id:`u${turn}`});
     socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:`u${turn}`,transcript:text});
   };
+
   const responseCreated=(id='r1')=>{
     const update=socket.sent.filter(e=>e.type==='session.update').at(-1);
+
     if(update?.session?.instructions)socket.server({type:'session.updated',session:{instructions:update.session.instructions}});
     socket.server({type:'response.created',response:{id}});
   };
+
   const audioFrames=()=>events.filter(e=>e.kind==='audio');
   const assistantText=()=>events.filter(e=>e.kind==='text'&&e.role==='assistant').map(e=>(e as any).text);
   const responseCreates=()=>socket.sent.filter(e=>e.type==='response.create').length;
   const delivery=(over:Partial<UserDeliveryStream>={}):UserDeliveryStream=>({id:'answer-1',runId:snapshot.runId,kind:'reply',text:'晚上好呀，我在。',phase:'streaming',...over});
+
   return {socket,events,outputs,session,route,startTurn,responseCreated,audioFrames,assistantText,responseCreates,delivery,resolve:(r:any)=>resolveRoute(r)};
 }
 
@@ -166,12 +183,14 @@ describe('B 应然：内容请求交给主 Agent 时，语音侧不抢答',()=>{
     const h=voiceHarness();h.startTurn();h.resolve({...acceptedGreeting});
     await Promise.resolve();await Promise.resolve();
     h.session.command({kind:'interrupt',turn:2});
+
     if(early)h.session.completeDelivery(h.delivery({id:'original-answer'}));
     h.session.command({kind:'audio',turn:2,data:'AQABAA=='});
     h.session.command({kind:'commit',turn:2});
     h.socket.server({type:'input_audio_buffer.committed',item_id:'u2'});
     h.socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:'u2',transcript:''});
     await Promise.resolve();await Promise.resolve();
+
     if(!early)h.session.completeDelivery(h.delivery({id:'original-answer'}));
     expect(h.route).toHaveBeenCalledTimes(1);
     expect(h.responseCreates()).toBe(0);
@@ -183,6 +202,7 @@ describe('B 应然：内容请求交给主 Agent 时，语音侧不抢答',()=>{
     const h=voiceHarness();h.startTurn();h.startTurn(2,'');
     h.session.streamDelivery(h.delivery({id:'early-ack',kind:'ack',text:'收到。'}));
     h.resolve({...acceptedGreeting});
+
     for(let i=0;i<6;i++)await Promise.resolve();
     h.session.completeDelivery(h.delivery({id:'original-answer'}));
     expect(h.route).toHaveBeenCalledTimes(1);
@@ -278,6 +298,7 @@ async function chatHarness(){
   await Promise.resolve();await Promise.resolve();
   h.responseCreated();
   await Promise.resolve();await Promise.resolve();
+
   return h;
 }
 
@@ -314,9 +335,11 @@ describe('C 应然：语音侧自己回答时的音频顺序',()=>{
 describe('continuous conversation while task results arrive',()=>{
  it('keeps the second queued result until the first actually finishes playing',async()=>{
   const h=voiceHarness();h.startTurn(1,'继续介绍');
+
   for(const [id,text] of [['queued-first','第一条结果。'],['queued-second','第二条结果。']] as const){
    h.session.completeDelivery({id,runId:'run-greeting',kind:'finding',text});
   }
+
   expect(h.outputs).toHaveLength(0);
   h.resolve({...acceptedGreeting});await Promise.resolve();await Promise.resolve();
   expect(h.outputs).toHaveLength(1);
@@ -398,7 +421,9 @@ it('holds task results while waiting for the rest of a sentence',async()=>{
 });
 
 it('does not dispatch an incomplete request through the production manager',async()=>{
- const h=managerHarness();try{
+ const h=managerHarness();
+
+try{
   await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
   runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'listen',text:'我想',target:null}]});
   expect(await h.manager.routeVoiceInput('default','我想',null,()=>true,{...greetingRoute,requestId:'unfinished-1'})).toMatchObject({kind:'listening'});
@@ -407,7 +432,9 @@ it('does not dispatch an incomplete request through the production manager',asyn
 });
 
 it('accepts conversational feedback without another model call or task action',async()=>{
- const h=managerHarness();try{
+ const h=managerHarness();
+
+try{
   await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
   const result=await h.manager.routeVoiceInput('default','嗯，对。',null,()=>true,{...greetingRoute,requestId:'backchannel',interruptedSpeech:true});
   expect(result).toMatchObject({kind:'silent'});expect('quiet' in result&&result.quiet).toBeFalsy();
@@ -417,7 +444,9 @@ it('accepts conversational feedback without another model call or task action',a
 });
 
 it('returns an unfinished-input decision without waiting for the next turn decision',async()=>{
- const h=managerHarness();try{
+ const h=managerHarness();
+
+try{
   await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
   runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'listen',text:'我想',target:null}]});
   const wait=vi.fn(()=>new Promise<void>(()=>{}));
@@ -443,7 +472,9 @@ it('joins a late listening decision before the following ASR completes',async()=
 });
 
 it('silences explicit speech-only control without waiting on a classifier',async()=>{
- const h=managerHarness();try{
+ const h=managerHarness();
+
+try{
   await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
   const result=await h.manager.routeVoiceInput('default','先别说了。',null,()=>true,{...greetingRoute,requestId:'speech-stop'});
   expect(result).toMatchObject({kind:'silent',quiet:true});
@@ -453,22 +484,28 @@ it('silences explicit speech-only control without waiting on a classifier',async
 });
 
 it('does not let an older idle chat start a task after a newer page question',async()=>{
- const h=managerHarness();try{
+ const h=managerHarness();
+
+try{
   await h.manager.ensureDefault();const runtime=h.runtimes.get('default');
   let current=true,durable=false,release!:()=>void,classified!:()=>void;
   const ready=new Promise<void>(r=>classified=r),gate=new Promise<void>(r=>release=r);
+
   const old=h.manager.routeVoiceInput('default','还不错，我现在在看这部剧。',null,()=>current||durable,{
    ...greetingRoute,requestId:'old-context-chat',
    onInputDecision:readOnly=>{durable=!readOnly;classified()},awaitInputDecision:()=>gate,
   });
+
   await ready;current=false;
   runtime.session.classifyVoiceInput.mockResolvedValue({steps:[{action:'observe',text:'你可以告诉我这部剧的内容吗？',target:null}]});
   runtime.session.answerVoiceObservation=vi.fn(async()=> '根据当前页的简介，这是一部校园短剧。');
   runtime.rpc.call=vi.fn(async()=>({tabId:7,url:'https://example.test/video',title:'校园短剧',text:'剧情简介',imageBase64:'image',documentId:'doc',capturedAt:Date.now(),scope:'viewport'}));
   release();await old;
+
   const result=await h.manager.routeVoiceInput('default','你可以告诉我这部剧的内容吗？',null,()=>true,{
    ...greetingRoute,turn:2,requestId:'new-page-question',pendingDelegation:true,input:{observation:{token:'observed',tabId:7}},
   });
+
   expect(runtime.session.startTask).not.toHaveBeenCalled();
   expect(result).toMatchObject({kind:'none',spokenText:'根据当前页的简介，这是一部校园短剧。'});
  }finally{h.manager.dispose()}
@@ -478,15 +515,22 @@ it.each(['before-next-text','after-next-text','after-third-text'])('assembles sp
  const h=voiceHarness();const resolutions:Array<(r:any)=>void>=[];
  h.route.mockImplementation(()=>new Promise(r=>resolutions.push(r)));
  h.startTurn(1,'我想');
+
  if(timing==='before-next-text'){resolutions[0]!({kind:'listening'});await Promise.resolve();await Promise.resolve();}
+
  h.startTurn(2,'你给我介绍一下');
+
  if(timing==='after-next-text'){resolutions[0]!({kind:'listening'});await Promise.resolve();await Promise.resolve();}
+
  if(timing!=='after-third-text'){
   await vi.waitFor(()=>expect(resolutions).toHaveLength(2));
   resolutions[1]!({kind:'listening'});await Promise.resolve();await Promise.resolve();
  }
+
  h.startTurn(3,'当前这篇文章');
+
  if(timing==='after-third-text'){resolutions[0]!({kind:'listening'});await Promise.resolve();await Promise.resolve();}
+
  await vi.waitFor(()=>expect((h.route.mock.calls as any[]).at(-1)[0]).toBe('我想 你给我介绍一下 当前这篇文章'));
 });
 

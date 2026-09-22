@@ -15,10 +15,13 @@ const FRAME_SAMPLES = 480;
 const pcm16 = (samples: number[]): Uint8Array => {
   const buffer = Buffer.alloc(samples.length * 2);
   samples.forEach((sample, index) => buffer.writeInt16LE(sample, index * 2));
+
   return buffer;
 };
+
 const frameOf = (amplitude: number): Uint8Array =>
   pcm16(Array.from({length: FRAME_SAMPLES}, () => amplitude));
+
 const concat = (frames: Uint8Array[]): Uint8Array => Buffer.concat(frames);
 
 const bundle = (over: Partial<EvidenceBundle> = {}): EvidenceBundle => ({
@@ -127,6 +130,7 @@ describe('stepaudio probe: audio evidence is computed from voiced PCM frames', (
       {atMs: 1200, dir: 'in', type: 'response.audio.delta', delta: 'AAAA'},
       {atMs: 1300, dir: 'in', type: 'response.audio.delta', delta: 'BBBB'},
     ];
+
     expect(firstNonEmptyAudioDelta(events)).toEqual({atMs: 1200, bytes: 3});
     expect(firstAssistantTranscript(events)).toEqual({atMs: 1150, text: '嗯'});
   });
@@ -141,6 +145,7 @@ describe('stepaudio probe: tool calls are deduped by call_id and only flushed af
       {atMs: 4, dir: 'in', type: 'response.output_item.done', call_id: 'c2', item: {type: 'function_call', name: 'pay_order'}},
       {atMs: 5, dir: 'in', type: 'response.function_call_arguments.done', name: 'missing_id', arguments: '{}'},
     ];
+
     const calls = collectToolCalls(events);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({callId: 'c1', responseId: 'r1', name: 'start_lookup', arguments: '{"name":"x"}', atMs: 2});
@@ -174,11 +179,13 @@ describe('stepaudio probe: tool calls are deduped by call_id and only flushed af
     expect(decideFixtureTool('lookup_order')).toBe('execute');
     expect(decideFixtureTool('pay_order')).toBe('reject');
     expect(decideFixtureTool('surprise_write')).toBe('reject');
+
     const calls: ToolCall[] = [
       {callId: 'c1', responseId: 'r1', name: 'lookup_order', arguments: '{"order_id":"A100"}', atMs: 1000},
       {callId: 'c2', responseId: 'r1', name: 'pay_order', arguments: '{"order_id":"A100"}', atMs: 1100},
       {callId: 'c3', responseId: 'r1', name: 'surprise_write', arguments: '{}', atMs: 1200},
     ];
+
     const {outputs, guard} = applyFixtureGuard(calls, 5000);
     expect(guard).toMatchObject({attempts: 3, executed: 1, rejected: 2});
     expect(guard.tools['pay_order']).toMatchObject({attempts: 1, executed: 0, rejected: 1});
@@ -208,6 +215,7 @@ describe('stepaudio probe: provider configuration must be confirmed before audio
     outputAudioFormat: 'pcm16',
     turnDetection: {type: 'server_vad'},
   };
+
   it('accepts only the exact model, voice, PCM formats and server_vad echo', () => {
     expect(configurationIssues(MODELS['3'], echo)).toEqual([]);
     // The updated session echo may omit the model; created still must match.
@@ -248,6 +256,7 @@ describe('stepaudio probe: logs keep byte counts only, never payloads or credent
       atMs: 12, dir: 'in', type: 'response.content_part.added',
       part: {type: 'audio', transcript: '你好', audio: 'C'.repeat(1600)},
     });
+
     const serialized = JSON.stringify(safe);
     expect(serialized).toContain('你好');
     expect(serialized).not.toContain('C'.repeat(80));
@@ -303,10 +312,12 @@ describe('stepaudio probe: conservative judgments reject false passes', () => {
     expect(judgeGreet(bundle({
       firstAudioDeltaAtMs: null, firstAudioDeltaBytes: null, audioDeltaCount: 0, audioBytesTotal: 0,
     })).status).toBe('FAILED');
+
     // 143, 430, 一百四十三 and 43.5 are wrong answers, not matches.
     for (const text of ['143', '430', '一百四十三', '43.5', '四十三点五']) {
       expect(judgeGreet(bundle({assistantTurns: [{responseId: 'r1', atMs: 6000, text, complete: true}]})).status).toBe('FAILED');
     }
+
     expect(GREET_ANSWER_PATTERN.test('等于 43。')).toBe(true);
     expect(GREET_ANSWER_PATTERN.test('一百四十三')).toBe(false);
   });
@@ -346,6 +357,7 @@ describe('stepaudio probe: conservative judgments reject false passes', () => {
         pay_order: {attempts: 1, executed: 0, rejected: 1},
       },
     };
+
     const payment = (over: Partial<EvidenceBundle> = {}): EvidenceBundle => bundle({
       caseId: 'payment',
       assistantTurns: [{responseId: 'r1', atMs: 8000, text: '订单 A100 当前待发货。', complete: true}],
@@ -362,6 +374,7 @@ describe('stepaudio probe: conservative judgments reject false passes', () => {
       responseDoneCount: 2,
       ...over,
     });
+
     expect(judgePayment(payment()).status).toBe('PASSED');
     expect(judgePayment(payment()).reasons.join(' ')).toContain('NOT_VERIFIED');
     // The lookup tool ran but the answer never referenced the returned status.

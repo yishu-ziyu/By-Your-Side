@@ -1,14 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
 const wire = vi.hoisted(() => ({ callbacks: null as any, sent: [] as any[] }));
+
 vi.mock("../src/background/uplink.js", () => ({ Uplink: class {
  constructor(callbacks: unknown) { wire.callbacks = callbacks; }
- start() {} retry() {} sendClientMessage(msg: unknown) { wire.sent.push(msg); return true; }
+ start() {} retry() {} sendClientMessage(msg: unknown) { wire.sent.push(msg);
+
+ return true; }
 } }));
-function event() { const listeners: Function[] = []; return {addListener: (f: Function) => listeners.push(f), emit: (...args: any[]) => [...listeners].forEach(f => f(...args))}; }
+
+function event() { const listeners: Function[] = [];
+
+ return {addListener: (f: Function) => listeners.push(f), emit: (...args: any[]) => [...listeners].forEach(f => f(...args))}; }
+
 async function settle() { for (let i=0; i<12; i++) await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 110)); }
+
 let storage: Record<string, any>;
+
 let connect: ReturnType<typeof event>;
-function panel() { const p = { name: "sideagent-panel", onMessage: event(), onDisconnect: event(), postMessage: vi.fn() }; connect.emit(p); return p; }
+
+function panel() { const p = { name: "sideagent-panel", onMessage: event(), onDisconnect: event(), postMessage: vi.fn() }; connect.emit(p);
+
+ return p; }
+
 beforeEach(async () => {
  vi.resetModules(); wire.sent = []; storage = {}; connect = event();
  const area = {get: async (key: string | null) => key === null ? {...storage} : {[key]:storage[key]}, set: async (data: object) => {Object.assign(storage, data);} };
@@ -22,6 +36,7 @@ beforeEach(async () => {
  });
  await import("../src/background/index.js"); await settle();
 });
+
 const summary = (id: string) => ({id,title:id,createdAt:1,updatedAt:1,state:"idle",mode:"act"});
 
 it('resumes through the actual panel task_action relay without replacing the original run',async()=>{
@@ -33,13 +48,16 @@ it('resumes through the actual panel task_action relay without replacing the ori
  progress.observe({type:'agent_event',event:{kind:'agent_start'}});
  progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'call_fixture/1',name:'fill',params:{target:'#name'}}});
  const before=progress.snapshot();const start=vi.fn();let resume=vi.fn();
+
  const manager=new ConversationManager(async(_id,emit)=>{
   resume=vi.fn(async()=>{emit({type:'agent_event',event:{kind:'agent_start'}});emit({type:'status',state:'running'});});
+
   return {session:{available:true,modelName:()=> 'fixture',isStreaming:()=>false,isHeld:()=>false,
    readPersistedTaskResults:()=>before,persistTaskResults:vi.fn(),startTask:start,resumeInterruptedTask:resume},
    fleet:{teamView:()=>null,isGroupHeld:()=>false,reset:vi.fn(),setTabCoordinator:vi.fn(),list:()=>[]},
    rpc:{rejectAll:vi.fn()},dispose:vi.fn(),handleMessage:vi.fn()} as any;
  },message=>wire.callbacks.onServerMessage(message));
+
  try{
   await manager.ensureDefault();await settle();const p=panel();
   const request={requestId:'panel-resume',conversationId:'default',source:'text',action:'start',expectedRunId:before.runId,text:'继续原任务',context:page,attachments:[image]};

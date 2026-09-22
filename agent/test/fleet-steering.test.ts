@@ -15,7 +15,9 @@ function member(options: { held?: boolean; streaming?: boolean; fail?: boolean }
 function fleetWith(members: Record<string, ReturnType<typeof member>>) {
   const rpc = { call: vi.fn(async () => ({})) };
   const fleet = new Fleet({ rpc: rpc as never, sink: { emit: vi.fn(), setStatus: vi.fn() } });
+
   for (const [id, session] of Object.entries(members)) (fleet as any).workers.set(id, session);
+
   return { fleet, rpc };
 }
 

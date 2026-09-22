@@ -10,9 +10,15 @@ import type {TaskActionRequest} from '../../shared/task-actions.js';
 import {projectTaskView} from '../../shared/task-view.js';
 
 const dirs:string[]=[];
+
 afterEach(()=>{for(const dir of dirs.splice(0))rmSync(dir,{recursive:true,force:true});});
-const tempDir=()=>{const dir=mkdtempSync(join(tmpdir(),'p0-acceptance-'));dirs.push(dir);return dir;};
+
+const tempDir=()=>{const dir=mkdtempSync(join(tmpdir(),'p0-acceptance-'));dirs.push(dir);
+
+return dir;};
+
 const page={tabId:7,title:'Fixture',url:'https://fixture.test/form'};
+
 const image={id:'acceptance-image',type:'image' as const,name:'fixture.png',mimeType:'image/png' as const,dataBase64:'AQ=='};
 
 function runtimeFor(session:BrowserAgentSession){
@@ -27,16 +33,21 @@ function runtimeFor(session:BrowserAgentSession){
 
 function managerOver(store:ConversationStore,dispatcher:TaskDispatcher,opts:{failCheckpoint?:boolean}={}){
   const sessions=new Map<string,{session:BrowserAgentSession;startTask:ReturnType<typeof vi.fn>;file:string}>();
+
   const manager=new ConversationManager(async id=>{
     const sessionManager=store.sessionManager(id);
     const session=new (BrowserAgentSession as any)({sessionManager},null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
+
     if(opts.failCheckpoint)(session as any).persistAcceptedTask=()=>{throw new Error('disk full');};
+
     Object.defineProperty(session,'available',{value:true,configurable:true});
     const startTask=vi.fn();
     (session as any).startTask=startTask;
     sessions.set(id,{session,startTask,file:sessionManager.getSessionFile()!});
+
     return runtimeFor(session);
   },()=>{},store,undefined,undefined,dispatcher);
+
   return {manager,sessions};
 }
 

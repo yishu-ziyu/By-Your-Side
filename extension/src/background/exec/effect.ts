@@ -20,7 +20,9 @@ async function callPage<Args extends unknown[], Result>(
 ): Promise<Awaited<Result>> {
   const results = await chrome.scripting.executeScript<Args, Result>({ target: { tabId }, world: "ISOLATED", func, args });
   const first = results[0];
+
   if (!first) throw new Error("页面脚本未返回结果");
+
   return first.result as Awaited<Result>;
 }
 
@@ -34,9 +36,11 @@ export async function beginEffect(
   input: { point?: [number, number]; selector?: string } = {},
 ): Promise<string | null> {
   const token = crypto.randomUUID();
+
   try {
     await ensureEffectScript(tabId);
     const payload: EffectInput = { token, ...input };
+
     // 必须拿到页面侧确认才算基线成立：脚本未注入/版本不符时不能给 token，
     // 否则后面的轮询会空转到超时，把「没采集」当成「没变化」。
     const ack = await callPage<[EffectInput], Promise<{ ok?: boolean } | undefined> | { ok?: boolean } | undefined>(
@@ -44,6 +48,7 @@ export async function beginEffect(
       (i: EffectInput) => window.__sideagent?.effect?.begin(i),
       [payload],
     );
+
     return ack?.ok ? token : null;
   } catch {
     return null;
@@ -53,6 +58,7 @@ export async function beginEffect(
 /** 动作后收集：有强证据立即返回，否则等到超时；拿不到任何读数返回 undefined。 */
 export async function collectEffect(tabId: number, token: string | null): Promise<EffectReport | undefined> {
   if (!token) return undefined;
+
   try {
     const report = await settleEffectReport(async () => {
       try {
@@ -61,6 +67,7 @@ export async function collectEffect(tabId: number, token: string | null): Promis
         return null;
       }
     });
+
     return report;
   } finally {
     try {

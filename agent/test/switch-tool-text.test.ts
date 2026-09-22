@@ -9,12 +9,15 @@ import { createBrowserTools } from '../src/tools.js';
 const executeSwitch = async (receipt: unknown): Promise<{ text: string; details: unknown }> => {
   const call = async (name: string) => {
     if (name !== 'switch_tab') throw new Error(`unexpected tool ${name}`);
+
     return receipt;
   };
+
   // 与 tool-surface.test.ts 同法：execute 走 Function 调用面，本测试只关注入参与返回内容。
   const tools = createBrowserTools({ call, ensureToolCall() {}, markCallRejected() {} } as never) as Array<{ name: string; execute: Function }>;
   const tool = tools.find(t => t.name === 'tabs')!;
   const result = await tool.execute('call-1', { action: 'switch', tabId: 8 }) as { content: { text: string }[]; details: unknown };
+
   return { text: result.content[0]!.text, details: result.details };
 };
 

@@ -9,16 +9,20 @@ export function consentHeading(request: ConsentRequest, pending: boolean): strin
     ? (pending ? "允许核对并在需要时重设这一项吗？" : "请求确认")
     : (pending ? "允许发送这次请求吗？" : "请求授权");
 }
+
 export function consentTargetText(request: ConsentRequest): string {
   return request.kind === "write" ? `任务：${request.goal}` : `${request.method} ${request.url}`;
 }
+
 export function consentDetailsText(request: ConsentRequest): { summary: string; content: string } {
   return request.kind === "write"
     ? { summary: "查看动作", content: `未确认的动作：${request.description}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${request.tool} ${request.target} = ${request.value}\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` }
     : { summary: "查看发送内容", content: `请求头：\n${JSON.stringify(request.headers, null, 2)}\n\n发送内容：\n${request.body ?? "（无请求正文）"}` };
 }
+
 export function consentStatusText(request: ConsentRequest, connected: boolean): string {
   if (!connected) return "连接已断开，本次请求尚未获准。请等待重新连接。";
+
   return request.kind === "write" ? "仅允许这一次核对/必要时重设；到期后不会执行。" : "仅允许这一次请求；到期后不会发送。";
 }
 
@@ -37,6 +41,7 @@ export class ConsentPanel {
   ) {
     this.timer = setInterval(() => {
       let changed = false;
+
       for (const entry of this.entries.values()) {
         if (entry.status === "pending" && Date.now() >= entry.request.expiresAt) {
           entry.status = "expired";
@@ -44,6 +49,7 @@ export class ConsentPanel {
           changed = true;
         }
       }
+
       if (changed) this.render();
     }, 1000);
   }
@@ -52,10 +58,13 @@ export class ConsentPanel {
 
   setConnected(connected: boolean): void {
     this.connected = connected;
+
     if (!connected) for (const entry of this.entries.values()) {
       if (entry.status === "pending" && entry.submitted) entry.message = "连接已断开，选择结果待核对。";
     }
+
     this.render();
+
     if (connected) this.refresh();
   }
 
@@ -69,17 +78,22 @@ export class ConsentPanel {
       this.remember(message.request);
     } else if (message.type === "consent_list") {
       const cid = message.conversationId;
+
       if (!cid) return true;
       const ids = new Set(message.requests.map(request => request.id));
+
       for (const [key, entry] of this.entries) {
         if (entry.request.conversationId === cid && entry.status === "pending" && !ids.has(entry.request.id)) this.entries.delete(key);
       }
+
       for (const request of message.requests) this.remember(request, true);
     } else if (message.type === "consent_result") {
       const entry = this.entries.get(this.key(message.conversationId ?? "default", message.requestId));
+
       if (entry) { entry.status = message.status; entry.message = message.message; }
     } else return false;
     this.render();
+
     return true;
   }
 
@@ -88,10 +102,13 @@ export class ConsentPanel {
   private remember(request: ConsentRequest, authoritativePending = false): void {
     const key = this.key(request.conversationId, request.id);
     const existing = this.entries.get(key);
+
     if (existing && existing.status !== "pending") return;
+
     for (const [key, entry] of this.entries) {
       if (entry.request.conversationId === request.conversationId && entry.status !== "pending") this.entries.delete(key);
     }
+
     this.entries.set(key, {
       request,
       status: Date.now() >= request.expiresAt ? "expired" : "pending",
@@ -102,6 +119,7 @@ export class ConsentPanel {
 
   private decide(entry: Entry, allow: boolean): void {
     if (!this.connected || entry.status !== "pending" || entry.submitted) return;
+
     if (Date.now() >= entry.request.expiresAt) {
       entry.status = "expired";
       entry.message = "确认已过期，本次请求未发送。";
@@ -124,10 +142,12 @@ export class ConsentPanel {
     this.root.hidden = own.length === 0 && others.length === 0;
     this.root.dataset.pending = String(own.some(entry => entry.status === "pending"));
     this.root.replaceChildren();
+
     for (const entry of own) {
       const card = document.createElement("section");
       card.className = "consent-card";
       card.dataset.requestId = entry.request.id;
+
       if (entry.status !== "pending") {
         card.classList.add("consent-complete");
         const outcome = document.createElement("p");
@@ -143,9 +163,11 @@ export class ConsentPanel {
         });
         card.append(outcome, dismiss);
         this.root.append(card);
+
         if (focusId === entry.request.id) outcome.focus({preventScroll: true});
         continue;
       }
+
       const request = entry.request;
       const heading = document.createElement("h2");
       heading.textContent = consentHeading(request, entry.status === "pending");
@@ -166,9 +188,11 @@ export class ConsentPanel {
       status.tabIndex = -1;
       status.textContent = entry.message ?? consentStatusText(request, this.connected);
       card.append(heading, target, details, status);
+
       if (entry.status === "pending") {
         const actions = document.createElement("div");
         actions.className = "consent-actions";
+
         for (const [allow, label] of [[false, "拒绝"], [true, "允许一次"]] as const) {
           const button = document.createElement("button");
           button.type = "button";
@@ -178,14 +202,18 @@ export class ConsentPanel {
           button.addEventListener("click", () => this.decide(entry, allow));
           actions.append(button);
         }
+
         card.append(actions);
       }
+
       this.root.append(card);
+
       if (focusId === entry.request.id) {
         const replacement = card.querySelector<HTMLElement>(focusSelector);
         (replacement && !(replacement instanceof HTMLButtonElement && replacement.disabled) ? replacement : status).focus({preventScroll: true});
       }
     }
+
     for (const other of others) {
       const button = document.createElement("button");
       button.type = "button";

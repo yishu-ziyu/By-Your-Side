@@ -30,12 +30,14 @@ export function demoSession(conversationId: string): DemoSession | undefined {
 
 export function isRecording(conversationId: string): boolean {
   const session = sessions.get(conversationId);
+
   return Boolean(session && !session.stopped);
 }
 
 /** 收工后仍留在内存里的这份记录（用户没点收起就一直留着）。 */
 export function finishedDemo(conversationId: string): DemoSession | undefined {
   const session = sessions.get(conversationId);
+
   return session?.stopped ? session : undefined;
 }
 
@@ -56,11 +58,13 @@ export function recordingTabId(conversationId: string): number | undefined {
  */
 export function conversationForRecordingTab(tabId: number): string | undefined {
   for (const session of sessions.values()) if (session.tabId === tabId && !session.stopped) return session.conversationId;
+
   return undefined;
 }
 
 export function demoHint(conversationId: string): string | undefined {
   const s = sessions.get(conversationId);
+
   return s ? recordingHint(s.steps, s.truncated) : undefined;
 }
 
@@ -70,10 +74,13 @@ export function demoHint(conversationId: string): string | undefined {
  */
 export async function resumeDemoIfRecording(tabId: number): Promise<void> {
   const conversationId = conversationForRecordingTab(tabId);
+
   if (!conversationId) return;
   const session = sessions.get(conversationId);
+
   if (!session) return;
   const seed = { steps: session.steps, elapsedMs: Date.now() - session.startedAt };
+
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ["content-record.js"], world: "ISOLATED" });
     await chrome.scripting.executeScript({
@@ -90,56 +97,73 @@ export async function resumeDemoIfRecording(tabId: number): Promise<void> {
 export async function startDemo(conversationId: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
   if (isRecording(conversationId)) return { ok: true };
   sessions.delete(conversationId); // 上一份已收工的记录让位给这次示范
+
   try {
     await chrome.scripting.executeScript({ target: { tabId }, files: ["content-record.js"], world: "ISOLATED" });
+
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "ISOLATED",
       func: () => window.__sideagent?.record?.start() ?? { ok: false },
     });
+
     if (results[0]?.result?.ok !== true) return { ok: false, error: "页面脚本没有进入示范模式" };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+
   sessions.set(conversationId, { conversationId, tabId, steps: [], truncated: false, startedAt: Date.now() });
+
   return { ok: true };
 }
 
 export async function stopDemo(conversationId: string): Promise<DemoSession | undefined> {
   const session = sessions.get(conversationId);
+
   if (!session || session.stopped) return undefined;
   let pageCount: number | undefined;
+
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: session.tabId },
       world: "ISOLATED",
       func: () => window.__sideagent?.record?.stop() ?? { ok: false, count: 0 },
     });
+
     const result = results[0]?.result as { ok?: boolean; count?: number } | undefined;
+
     if (result?.ok === true && typeof result.count === "number") pageCount = result.count;
   } catch {
     /* 页面已关闭/不可注入：示范结果仍然有效 */
   }
+
   // 页面 stop() 会立刻补发最后一批；先别删会话，否则这一批会被当成无主消息丢掉。
   if (pageCount !== undefined) {
     const deadline = Date.now() + 800;
+
     while (session.steps.length < pageCount && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 30));
     }
   }
+
   session.stopped = true; // 记录留着给用户看；点收起才清
+
   return session;
 }
 
 /** 页面侧上行的一批步骤：整批替换，避免丢包造成步骤错位。 */
 export function receiveSteps(conversationId: string, steps: DemoStep[], truncated: boolean): void {
   const session = sessions.get(conversationId);
+
   if (!session || session.stopped) return;
+
   if (steps.length > MAX_STEPS) {
     session.steps = steps.slice(0, MAX_STEPS);
     session.truncated = true;
+
     return;
   }
+
   session.steps = steps;
   session.truncated = session.truncated || truncated || byteLength(steps) > 512_000;
 }

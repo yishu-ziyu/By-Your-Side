@@ -2,14 +2,17 @@ import {expect,it} from 'vitest';
 import {TaskProgress} from '../src/task-progress.js';
 import {createSendUserMessageTool,projectDeliveryFacts} from '../src/user-delivery.js';
 import type {AgentUiEvent} from '../../shared/protocol.js';
+
 function fixture(){
  const p=new TaskProgress('answer');p.request('解释什么是质数');
  const revision=p.snapshot().goalPlan!.revision;
  p.goals.install(revision,[{id:'explain',description:'解释质数',criterion:'给出质数定义和例子',kind:'answer',requirements:['requirement-1']}],1);
  const events:AgentUiEvent[]=[];
  const tool=createSendUserMessageTool({conversationId:'answer',getRunId:()=>p.snapshot().runId!,getNextStep:()=>p.snapshot().nextStep!,getDeliveryFacts:()=>p.deliveryFacts(),emit:event=>{events.push(event);p.observe({type:'agent_event',event});}});
+
  return {p,tool,events};
 }
+
 it('纯文字目标不用虚构页面检查，正式交付前仍是待回答',async()=>{
  const {p,tool,events}=fixture();
  expect(p.snapshot().resultState).toBe('pending');
@@ -20,6 +23,7 @@ it('纯文字目标不用虚构页面检查，正式交付前仍是待回答',as
  expect((events[0] as any).delivery.facts).toMatchObject({outcome:'complete',remaining:[],delivered:['解释质数']});
  expect((events[0] as any).delivery.facts).not.toHaveProperty('pendingAnswers');
 });
+
 it('无效或明确部分交付不能把待回答目标记为完成',async()=>{
  const {p,tool}=fixture();
  await expect(tool.execute('empty',{kind:'finding',outcome:'complete',content:''},undefined,undefined,{} as never)).rejects.toThrow();

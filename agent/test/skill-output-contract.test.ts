@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { judgeDeliverableContract } from "../src/skill-output-contract.js";
 
 vi.mock("../src/typesafe-auth.js", () => ({ readTypeSafeKey: () => "test-key" }));
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("learning judgment response boundary", () => {

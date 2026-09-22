@@ -18,9 +18,13 @@ import { fileURLToPath } from "node:url";
 import { localBrowser, Stagehand } from "@browserbasehq/stagehand";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
+
 const OUT_DIR = path.join(DIR, "out");
+
 const BASE_URL = process.env.PROBE_BASE_URL ?? "http://127.0.0.1:8317/v1";
+
 const MODEL = process.env.PROBE_MODEL ?? "deepseek-v4.1-flash";
+
 const API_KEY = process.env.PROBE_API_KEY ?? "sk-probe";
 
 const log = (line) => process.stdout.write(`${line}\n`);
@@ -30,23 +34,31 @@ const llm = { calls: 0, inputTokens: 0, outputTokens: 0, caseCalls: [] };
 
 function textOf(content) {
   if (typeof content === "string") return content;
+
   if (Array.isArray(content)) return content.map((block) => block?.text ?? "").join("");
+
   return "";
 }
 
 /** Stagehand 的 Anthropic 风格消息 → OpenAI chat 格式。 */
 function toOpenAIMessages({ messages, systemPrompt }) {
   const out = [];
+
   if (systemPrompt) out.push({ role: "system", content: systemPrompt });
+
   for (const message of messages ?? []) {
     const blocks = Array.isArray(message.content) ? message.content : [message.content];
+
     if (message.role === "assistant") {
       const toolCalls = [];
       let text = "";
+
       for (const block of blocks) {
         if (block?.type === "tool_use") {
           let args;
+
           try { args = JSON.stringify(block.input ?? {}); } catch { args = "{}"; }
+
           toolCalls.push({
             id: block.id,
             type: "function",
@@ -54,11 +66,14 @@ function toOpenAIMessages({ messages, systemPrompt }) {
           });
         } else if (block?.type === "text") text += block.text;
       }
+
       const entry = { role: "assistant", content: text || null };
+
       if (toolCalls.length) entry.tool_calls = toolCalls;
       out.push(entry);
       continue;
     }
+
     for (const block of blocks) {
       if (block?.type === "tool_result") {
         out.push({ role: "tool", tool_call_id: block.toolUseId, content: textOf(block.content) });
@@ -72,27 +87,33 @@ function toOpenAIMessages({ messages, systemPrompt }) {
       }
     }
   }
+
   return out;
 }
 
 /** ClientLLM.generate：Stagehand 每要一次模型就来这里，转发到本机代理。 */
 async function generate(params) {
   const started = Date.now();
+
   const body = {
     model: MODEL,
     messages: toOpenAIMessages(params),
     temperature: params.temperature ?? 0,
   };
+
   if (params.tools?.length) {
     body.tools = params.tools.map((tool) => ({
       type: "function",
       function: { name: tool.name, description: tool.description ?? "", parameters: tool.inputSchema },
     }));
     const mode = params.toolChoice?.mode;
+
     if (mode && mode !== "auto") body.tool_choice = mode;
   }
+
   const wantsJson =
     params.responseFormat?.type === "json_schema";
+
   if (wantsJson) {
     body.response_format = {
       type: "json_schema",
@@ -106,6 +127,7 @@ async function generate(params) {
   }
 
   let response = await callProxy(body);
+
   if (response.status >= 400 && wantsJson) {
     // 部分代理/模型不支持 response_format：退回提示词内嵌 schema，重新要一次。
     delete body.response_format;
@@ -115,6 +137,7 @@ async function generate(params) {
     });
     response = await callProxy(body);
   }
+
   if (response.status >= 400) throw new Error(`LLM HTTP ${response.status}: ${response.data.slice(0, 300)}`);
 
   const data = response.json;
@@ -126,33 +149,41 @@ async function generate(params) {
 
   const choice = data.choices?.[0]?.message ?? {};
   const raw = textOf(choice.content);
+
   // 注意：键存在但值为 undefined 会让上层 z.json() 整体校验失败，必须只在有值时才挂键。
   const base = { role: "assistant", usage: {
     inputTokens: usage.prompt_tokens ?? 0,
     outputTokens: usage.completion_tokens ?? 0,
     totalTokens: usage.total_tokens ?? (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0),
   } };
+
   if (choice.finish_reason) base.stopReason = choice.finish_reason;
 
   if (wantsJson) {
     const structuredContent = parseJsonLoose(raw);
     const result = { ...base, content: [{ type: "text", text: raw }], outputFormat: "json_schema", structuredContent };
     log(`[gen] json_schema -> ${JSON.stringify(result).slice(0, 500)}`);
+
     return result;
   }
+
   if (choice.tool_calls?.length) {
     return {
       ...base,
       content: choice.tool_calls.map((call) => {
         let input = {};
+
         try { input = JSON.parse(call.function.arguments || "{}"); } catch { input = {}; }
+
         return { type: "tool_use", id: call.id, name: call.function.name, input };
       }),
       outputFormat: "text",
     };
   }
+
   const textResult = { ...base, content: raw, outputFormat: "text" };
   log(`[gen] text -> ${JSON.stringify(textResult).slice(0, 500)}`);
+
   return textResult;
 }
 
@@ -162,40 +193,52 @@ async function callProxy(body) {
     headers: { "content-type": "application/json", authorization: `Bearer ${API_KEY}` },
     body: JSON.stringify(body),
   });
+
   const data = await response.text();
   let json = null;
+
   try { json = JSON.parse(data); } catch { /* 保留在 text 里报错 */ }
+
   return { status: response.status, data, json };
 }
 
 function parseJsonLoose(raw) {
   const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+
   try { return JSON.parse(stripped); } catch { /* 继续尝试截取 */ }
+
   const start = stripped.search(/[[{]/);
+
   if (start >= 0) {
     try { return JSON.parse(stripped.slice(start)); } catch { /* 归为失败 */ }
   }
+
   throw new Error(`model did not return JSON: ${stripped.slice(0, 200)}`);
 }
 
 async function serveFixture() {
   const html = await readFile(path.join(DIR, "fixture", "form.html"), "utf8");
+
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(html);
   });
+
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
   const { port } = server.address();
+
   return { url: `http://127.0.0.1:${port}/`, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 async function state(page) {
   const raw = await page.locator("#probe-state").textContent();
   let parsed;
+
   try { parsed = JSON.parse(raw); } catch { throw new Error(`fixture 状态不可解析: ${String(raw).slice(0, 120)}`); }
+
   return { url: await page.url(), ...parsed };
 }
 
@@ -214,13 +257,16 @@ async function runCase(id, verify, action) {
   const started = Date.now();
   let status = "PASS";
   let detail = "";
+
   try {
     detail = (await verify(action())) ?? "ok";
   } catch (error) {
     status = "FAIL";
     detail = String(error?.message ?? error);
+
     if (error?.issues) detail += ` :: ${JSON.stringify(error.issues).slice(0, 8000)}`;
   }
+
   const ms = Date.now() - started;
   const caseCalls = llm.caseCalls.splice(callsBefore);
   record.cases.push({
@@ -237,6 +283,7 @@ async function main() {
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "stagehand-act-"));
   let browser;
   let stagehand;
+
   try {
     browser = await localBrowser.launch({ headless: true, userDataDir });
     stagehand = await Stagehand.create({ browser, model: { generate } });
@@ -248,35 +295,45 @@ async function main() {
     await runCase("act.fill.firstName", async (pending) => {
       await pending;
       const s = await state(page);
+
       if (s.values.firstName !== "Ada") throw new Error(`firstName=${JSON.stringify(s.values.firstName)}`);
+
       return "firstName=Ada";
     }, () => stagehand.act("在 First name 输入框填写 Ada"));
 
     await runCase("act.fill.lastName", async (pending) => {
       await pending;
       const s = await state(page);
+
       if (s.values.lastName !== "Lovelace") throw new Error(`lastName=${JSON.stringify(s.values.lastName)}`);
+
       return "lastName=Lovelace";
     }, () => stagehand.act("在 Last name 输入框填写 Lovelace"));
 
     await runCase("act.fill.email", async (pending) => {
       await pending;
       const s = await state(page);
+
       if (s.values.email !== "ada@example.com") throw new Error(`email=${JSON.stringify(s.values.email)}`);
+
       return "email=ada@example.com";
     }, () => stagehand.act("把邮箱 ada@example.com 填进 Email 输入框"));
 
     await runCase("act.click.save", async (pending) => {
       await pending;
       const s = await state(page);
+
       if (s.submits < 1) throw new Error(`submits=${s.submits}`);
+
       return `submits=${s.submits} url仍在fixture=${s.url.startsWith("http://127.0.0.1:")}`;
     }, () => stagehand.act("点击 Save 按钮提交表单"));
 
     await runCase("observe.actionable", async (pending) => {
       const result = await pending;
       const count = Array.isArray(result) ? result.length : JSON.stringify(result).length;
+
       if (!count) throw new Error("observe 返回空");
+
       return `返回 ${Array.isArray(result) ? result.length + " 项" : count + " 字符"}`;
     }, () => stagehand.observe("这个页面上有哪些可以操作的元素？"));
 
@@ -285,7 +342,9 @@ async function main() {
       const data = result?.data ?? result;
       const text = typeof data === "string" ? data : JSON.stringify(data);
       const hasFields = ["First name", "Last name", "Email", "City"].every((label) => text.includes(label));
+
       if (!hasFields) throw new Error(`extract 缺字段: ${text.slice(0, 200)}`);
+
       return `包含全部 4 个字段标签 (${text.length} 字符)`;
     }, () => stagehand.extract("列出表单里的所有输入字段和它们的标签文字"));
   } catch (error) {
@@ -293,7 +352,9 @@ async function main() {
     log(`FATAL ${record.fatal.slice(0, 400)}`);
   } finally {
     try { await stagehand?.close?.(); } catch { /* 忽略 */ }
+
     try { await browser?.close?.(); } catch { /* 忽略 */ }
+
     await fixture.close();
     await rm(userDataDir, { force: true, recursive: true }).catch(() => undefined);
   }

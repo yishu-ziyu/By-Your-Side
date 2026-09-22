@@ -2,8 +2,11 @@ import {expect,it,vi} from 'vitest';
 import {answerVoiceObservation,classifyVoiceEdit,classifyVoiceInput,type VoiceModelCall} from '../src/voice-model.js';
 
 const model={id:'fixture'} as unknown as VoiceModelCall['model'];
+
 const headers={'x-opencode-session':'session-1','x-opencode-client':'pi'};
+
 const stop=(text:string)=>({stopReason:'stop',content:[{type:'text',text}]});
+
 function harness(completeSimple:unknown):VoiceModelCall {
  return {runtime:{completeSimple} as VoiceModelCall['runtime'],model,sessionId:'session-1',headers};
 }
@@ -58,8 +61,13 @@ it('最小请求返回空正文就是确定失败，不退回计划提示词再�
 
 it('最小请求超时也是确定失败，不自动放行、不重试',async()=>{
  vi.useFakeTimers();
- const timeout=vi.spyOn(AbortSignal,'timeout').mockImplementation(ms=>{const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal;});
+
+ const timeout=vi.spyOn(AbortSignal,'timeout').mockImplementation(ms=>{const c=new AbortController();setTimeout(()=>c.abort(),ms);
+
+return c.signal;});
+
  const completeSimple=vi.fn().mockImplementation((_model:unknown,_context:unknown,opts:{signal:AbortSignal})=>new Promise((_resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(Error('stalled')))));
+
  try{
   const {prepareVoiceTurn}=await import('../src/voice-model.js');
   const pending=prepareVoiceTurn(harness(completeSimple),{text:'嗨，晚上好。',state:'idle'},{protocol:'free_reply'});
@@ -79,8 +87,13 @@ it('计划协议：候选不合法时重试一次后失败关闭',async()=>{
 
 it('计划协议超时给确定失败，不自动放行',async()=>{
  vi.useFakeTimers();
- const timeout=vi.spyOn(AbortSignal,'timeout').mockImplementation(ms=>{const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal;});
+
+ const timeout=vi.spyOn(AbortSignal,'timeout').mockImplementation(ms=>{const c=new AbortController();setTimeout(()=>c.abort(),ms);
+
+return c.signal;});
+
  const completeSimple=vi.fn().mockImplementation((_model:unknown,_context:unknown,opts:{signal:AbortSignal})=>new Promise((_resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(Error('stalled')))));
+
  try{
   const {prepareVoiceTurn}=await import('../src/voice-model.js');
   const pending=prepareVoiceTurn(harness(completeSimple),{text:'暂停任务',state:'idle'},{protocol:'plan'});

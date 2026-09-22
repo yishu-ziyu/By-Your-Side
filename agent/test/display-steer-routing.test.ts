@@ -12,6 +12,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const configState=vi.hoisted(()=>({value:{} as Record<string,unknown>}));
+
 vi.mock('../src/config.js',()=>({loadConfig:()=>configState.value}));
 
 import {composeDisplayDecision,decideDisplay,displayFastPathEnabled,displaySteerFastPathEnabled} from '../src/display-fast-path.js';
@@ -26,12 +27,17 @@ const baseAnswers=(over:Record<string,unknown>={})=>({
   mode:{choice:'unspecified',probabilities:{}},
   ...over,
 });
+
 const fontSongti={choice:'songti',probabilities:{songti:.96,original:.02,unspecified:.02}};
+
 const fontOriginal={choice:'original',probabilities:{songti:.05,original:.93,unspecified:.02}};
+
 const modeTranslated={choice:'translated',probabilities:{bilingual:.04,translated:.95,unspecified:.01}};
+
 const modeBilingual={choice:'bilingual',probabilities:{bilingual:.97,translated:.02,unspecified:.01}};
 
 const okResponse=(answers:unknown)=>({ok:true,status:200,json:async()=>({answers})});
+
 const fetchMock=vi.fn();
 
 beforeEach(()=>{
@@ -42,6 +48,7 @@ beforeEach(()=>{
   delete process.env.SIDEAGENT_DISPLAY_STEER_FASTPATH;
   configState.value={};
 });
+
 afterEach(()=>{
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -140,6 +147,7 @@ describe('decideDisplay request boundary',()=>{
   it('does not accept a response that arrived after the budget',async()=>{
     fetchMock.mockResolvedValue({ok:true,status:200,json:async()=>{
       await new Promise(resolve=>setTimeout(resolve,1050));
+
       return {answers:baseAnswers({font:fontSongti})};
     }});
     expect(await decideDisplay('宋体',new AbortController().signal)).toEqual({kind:'fallback',reason:'late_response'});

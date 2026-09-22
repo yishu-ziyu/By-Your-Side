@@ -4,10 +4,13 @@ export function matchSelectOption(
   wanted: string,
 ): { value: string; text: string } | null {
   const needle = wanted.trim();
+
   if (!needle) return null;
   const list = options.filter((o) => o.text.trim() !== "");
   const exact = list.find((o) => o.text.trim() === needle || o.value === needle);
+
   if (exact) return exact;
   const contains = list.find((o) => o.text.includes(needle) || needle.includes(o.text.trim()));
+
   return contains ?? null;
 }

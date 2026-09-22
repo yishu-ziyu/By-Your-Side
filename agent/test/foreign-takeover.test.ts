@@ -34,6 +34,7 @@ function testFleet(call = vi.fn(async () => ({}))) {
     rpc: { call, pendingSessionIds: () => [] } as never,
     sink: { emit: vi.fn(), setStatus: vi.fn() },
   });
+
   return { fleet, call };
 }
 
@@ -89,6 +90,7 @@ const IDENTITY_ERROR = "原任务已停止或发生变化，操作未执行。";
 function identityGate() {
   let published: string | null = null;
   const aborted = new Set<string>();
+
   return {
     publishConversation(runId: string | null): void {
       published = runId;
@@ -98,6 +100,7 @@ function identityGate() {
     },
     checkFrame(runId: string | null | undefined): string | null {
       if (runId && (aborted.has(runId) || published !== runId)) return IDENTITY_ERROR;
+
       return null;
     },
   };

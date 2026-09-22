@@ -13,12 +13,15 @@
 import type { ToolExecutionFact } from './protocol.js';
 
 export const EXECUTION_FEEDBACK_CHANNELS = ['capsule', 'voice', 'none'] as const;
+
 export type ExecutionFeedbackChannel = (typeof EXECUTION_FEEDBACK_CHANNELS)[number];
 
 export const EXECUTION_FEEDBACK_KINDS = ['success', 'pending', 'unknown', 'failure'] as const;
+
 export type ExecutionFeedbackKind = (typeof EXECUTION_FEEDBACK_KINDS)[number];
 
 export const EXECUTION_FEEDBACK_TEXT_MAX = 60;
+
 export const EXECUTION_FEEDBACK_DETAIL_MAX = 120;
 
 /**
@@ -87,6 +90,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 /** `${工具}:${动作}` 作为短语表键；没有动作时就是工具名。 */
 export function executionFeedbackKey(tool: string, args?: Record<string, unknown>): string {
   const action = asRecord(args ?? null)?.action;
+
   return typeof action === 'string' && action ? `${tool}:${action}` : tool;
 }
 
@@ -97,12 +101,15 @@ export function executionFeedbackKey(tool: string, args?: Record<string, unknown
 export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): ExecutionFeedback | null {
   const key = executionFeedbackKey(input.tool, input.args);
   const successText = CAPSULE_SUCCESS[key];
+
   if (!successText) return null;
   const identity = input.toolCallId ? `tool:${input.toolCallId}` : input.inputId ? `input:${input.inputId}` : null;
+
   if (!identity) return null;
   const action = asRecord(input.args ?? null)?.action;
   const receipt = asRecord(input.data);
   const tabId = typeof receipt?.tabId === 'number' && Number.isInteger(receipt.tabId) ? receipt.tabId : undefined;
+
   const base = {
     id: identity,
     facts: {
@@ -116,12 +123,15 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
     ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
     createdAt: input.at ?? Date.now(),
   };
+
   // 工具被拦下等用户确认：不是失败，也不是成功；让用户看到等待入口，语音照常解释。
   if (input.executionFact === 'not_executed' && asRecord(input.data)?.held === true) {
     return { ...base, channel: 'capsule', kind: 'pending', text: '等你确认', bounce: false, capsuleCanCloseAction: false };
   }
+
   if (input.executionFact !== 'executed') {
     const unknown = input.executionFact === 'unknown';
+
     return {
       ...base,
       channel: 'capsule',
@@ -131,13 +141,16 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
       capsuleCanCloseAction: false,
     };
   }
+
   // 执行已发生但后续处理失败：动作事实保留，也不改写成成功文案。
   if (input.failed) {
     return { ...base, channel: 'capsule', kind: 'unknown', text: '结果待确认', bounce: false, capsuleCanCloseAction: false };
   }
+
   // 证据门槛：执行事实只说明动作发生过，不等于目标达成。缺少具体结果或与要求矛盾时，
   // 不给成功文案也不回弹；保持中性待确认，执行事实原样保留（不改写成 not_executed）。
   const gate = successEvidence(key, input.args, receipt);
+
   if (!gate.ok) {
     return {
       ...base,
@@ -149,6 +162,7 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
       facts: { ...base.facts, ...(gate.detail ? { detail: gate.detail } : {}) },
     };
   }
+
   return {
     ...base,
     channel: 'capsule',
@@ -173,50 +187,80 @@ function successEvidence(key: string, args: Record<string, unknown> | undefined,
     const wanted = asRecord(args ?? null)?.tabId;
     const wantedId = typeof wanted === 'number' && Number.isInteger(wanted) ? wanted : null;
     const actual = receipt?.tabId;
+
     if (typeof actual !== 'number' || !Number.isInteger(actual)) return { ok: false, detail: '回执没有给出切换后的标签页' };
+
     if (wantedId != null && actual !== wantedId) {
       return { ok: false, detail: `要求切到标签 ${wantedId}，回执指向 ${actual}` };
     }
+
     if (wantedId == null) return { ok: false, detail: '请求没有给出目标标签，无法核验' };
     const verification = asRecord(receipt?.verification);
+
     if (!verification) return { ok: false, detail: '回执未附执行后读回，实际活动页未核验' };
     const activeTabId = typeof verification.activeTabId === 'number' && Number.isInteger(verification.activeTabId) ? verification.activeTabId : null;
+
     if (verification.verified !== true) {
       // 已知未激活 / 窗口未聚焦 / 读不回来：按事实分别如实说明，都不给成功资格。
       if (activeTabId != null && activeTabId !== wantedId) return { ok: false, detail: `核验时目标页不是活动页，实际活动页为 ${activeTabId}` };
+
       if (activeTabId != null && verification.windowFocused !== true) return { ok: false, detail: '核验时目标窗口未聚焦，用户当前看不到该页' };
+
       return { ok: false, detail: '执行后读回失败，未能核验实际活动页' };
     }
+
     // verified=true 仍逐项核对读回事实，与请求矛盾的回执不能授权成功。
     if (activeTabId == null || activeTabId !== wantedId) return { ok: false, detail: `核验与请求不一致，实际活动页为 ${activeTabId ?? '未知'}` };
+
     if (verification.windowFocused !== true) return { ok: false, detail: '核验时目标窗口未聚焦' };
+
     if (verification.workingTabId !== wantedId) return { ok: false, detail: '核验时工作目标已不在该标签页' };
+
     return { ok: true };
   }
+
   if (key === 'fill') {
     const verified = receipt?.verified;
+
     if (verified === true) return { ok: true };
+
     return { ok: false, detail: verified === false ? '填写已执行，写入后读回与要求不一致' : '填写已执行，内容未核对' };
   }
+
   return { ok: true };
 }
 
 export function isExecutionFeedback(value: unknown): value is ExecutionFeedback {
   const v = asRecord(value);
+
   if (!v) return false;
+
   if (typeof v.id !== 'string' || v.id.length < 1 || v.id.length > 160) return false;
+
   if (!EXECUTION_FEEDBACK_CHANNELS.includes(v.channel as ExecutionFeedbackChannel)) return false;
+
   if (!EXECUTION_FEEDBACK_KINDS.includes(v.kind as ExecutionFeedbackKind)) return false;
+
   if (typeof v.text !== 'string' || v.text.trim().length < 1 || v.text.length > EXECUTION_FEEDBACK_TEXT_MAX) return false;
+
   if (typeof v.bounce !== 'boolean' || typeof v.capsuleCanCloseAction !== 'boolean') return false;
+
   if (!Number.isFinite(v.createdAt)) return false;
+
   if (v.inputId !== undefined && (typeof v.inputId !== 'string' || v.inputId.length > 160)) return false;
+
   if (v.runId !== undefined && v.runId !== null && typeof v.runId !== 'string') return false;
+
   if (v.toolCallId !== undefined && (typeof v.toolCallId !== 'string' || v.toolCallId.length > 160)) return false;
   const facts = asRecord(v.facts);
+
   if (!facts || typeof facts.tool !== 'string' || !['executed', 'not_executed', 'unknown'].includes(facts.executionFact as string)) return false;
+
   if (facts.action !== undefined && typeof facts.action !== 'string') return false;
+
   if (facts.tabId !== undefined && !Number.isInteger(facts.tabId)) return false;
+
   if (facts.detail !== undefined && (typeof facts.detail !== 'string' || facts.detail.length > EXECUTION_FEEDBACK_DETAIL_MAX)) return false;
+
   return true;
 }

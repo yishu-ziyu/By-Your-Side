@@ -41,18 +41,24 @@ export interface FetchPagesReply {
  * `to` 给成超大整数时，先填满上限立刻报错，不把循环跑到底。 */
 export function pageNumbers(range: FetchPagesRange): number[] {
   const step = range.step ?? 1;
+
   if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || !Number.isInteger(step)) {
     throw new Error("fetch.pages 的 from/to/step 必须是整数。");
   }
+
   if (step < 1) throw new Error("fetch.pages.step 必须 >= 1。");
+
   if (range.to < range.from) throw new Error("fetch.pages 需要 from <= to。");
   const pages: number[] = [];
+
   for (let page = range.from; page <= range.to; page += step) {
     if (pages.length >= FETCH_PAGE_LIMIT) {
       throw new Error(`fetch.pages 一次最多 ${FETCH_PAGE_LIMIT} 页。请分批调用。`);
     }
+
     pages.push(page);
   }
+
   return pages;
 }
 
@@ -74,6 +80,7 @@ export async function fetchPages(
   dir: string = fetchDownloadsDir(),
 ): Promise<FetchPagesReply> {
   const pages = pageNumbers(params.pages);
+
   if (!params.url.includes("{page}") && !(typeof params.body === "string" && params.body.includes("{page}"))) {
     throw new Error("批量翻页需要 url 或 body 里带 {page} 占位符，例如 https://api.example.com/list?page={page}");
   }
@@ -89,6 +96,7 @@ export async function fetchPages(
   for (const page of pages) {
     const url = substitutePage(params.url, page);
     const body = params.body === undefined ? undefined : substitutePage(params.body, page);
+
     try {
       const reply = await fetchOne({ url, method: params.method, headers: params.headers, body });
       const name = paginatedSaveName(params.savePath, reply.url || url, reply.contentType, page);
@@ -109,5 +117,6 @@ export async function fetchPages(
   const succeeded = results.length - failed;
   const head = `Batch fetch ${succeeded}/${pages.length} pages (page ${params.pages.from}..${params.pages.to}${step === 1 ? "" : ` step ${step}`}); ${succeeded === 0 ? "nothing saved" : `${saved.length} file(s), ${totalBytes} bytes total on disk`}. Bodies are not in your context.`;
   const text = `${head}\n${lines.join("\n")}`;
+
   return { text, data: { pages: results, saved, failed, totalBytes, count: pages.length } };
 }

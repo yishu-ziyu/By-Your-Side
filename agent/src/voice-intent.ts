@@ -16,9 +16,11 @@ export interface VoiceIntentPlan {
 export function isVoiceSilenceRequest(text: string): boolean {
   return /^(?:先)?(?:别说了|停止播报|不用说了)$/.test(text.replace(/[\s\p{P}]/gu, ''));
 }
+
 /** Acknowledging a prior answer is not permission to resume or execute a task. */
 export function isVoiceBackchannel(text: string): boolean {
   const clean = text.replace(/[\s\p{P}]/gu, '');
+
   return /^(?:嗯|对|对的|是的|好的|没错|明白|知道了){1,3}$/.test(clean);
 }
 
@@ -37,94 +39,125 @@ target仅在用户明确说出某个会话或任务名称时填名称原文，�
 
 export function voiceClauses(text: string): string[] {
   const cuts = new Set([0, text.length]);
+
   for (const m of text.matchAll(/[，,；;。！？!?]+|然后|接着|再把|再将|再按|等我/g)) {
     const at = m.index!;
     cuts.add(/[，,；;。！？!?]/.test(m[0]) ? at + m[0].length : at);
   }
+
   const positions = [...cuts].sort((a, b) => a - b);
+
   return positions.slice(0, -1).map((start, i) => text.slice(start, positions[i + 1])).filter(p => !!p.trim());
 }
 
 export function parseVoiceIntent(raw: string, text: string, conversationTitles: readonly string[] = []): VoiceIntentPlan {
   const short = text.trim().replace(/[。.!！?？]+$/, '');
+
   if (['停止', '停', '停下'].includes(short)) {
     return { steps: [{ action: 'clarify', text, target: null }] };
   }
+
   if (isVoiceSilenceRequest(text)) {
     return { steps: [{ action: 'silence', text, target: null }] };
   }
+
   const invalid = (reason = 'semantics') => new VoiceIntentError('classifier_invalid_reply', reason);
   let value: any;
+
   try {
     value = JSON.parse(raw);
   }
   catch {
     throw invalid('json');
   }
+
   const actions: readonly string[] = [...TASK_ACTIONS, 'chat', 'clarify', 'silence', 'observe', 'listen'];
+
   if (!value || typeof value !== 'object' || Object.keys(value).some(k => k !== 'steps') || !Array.isArray(value.steps) || value.steps.length < 1 || value.steps.length > 3) {
     throw invalid();
   }
+
   const clauses = voiceClauses(text);
   const steps: VoiceIntentStep[] = [];
   let previousEnd = -1;
   const covered = new Set<number>();
+
   for (const s of value.steps) {
     if (!s || typeof s !== 'object' || Object.keys(s).some(k => !['action', 'parts', 'target'].includes(k)) || !actions.includes(s.action)
       || !Array.isArray(s.parts) || !s.parts.length || !s.parts.every((n: unknown, i: number) => Number.isInteger(n) && Number(n) >= 0 && Number(n) < clauses.length && (i === 0 || Number(n) > s.parts[i - 1]))) {
       throw invalid();
     }
+
     if (s.parts[0] <= previousEnd) {
       throw invalid();
     }
+
     previousEnd = s.parts.at(-1);
+
     for (let part = s.parts[0]; part <= previousEnd; part++) {
       covered.add(part);
     }
+
     const target = typeof s.target === 'string' ? s.target.replace(/会话$/, '') : s.target === undefined && !text.includes('会话') ? null : s.target;
+
     if (!(target === null || typeof target === 'string' && !!target.trim() && target.length <= 120 && text.includes(target))) {
       throw invalid();
     }
+
     const original = ['chat', 'clarify', 'silence', 'listen'].includes(s.action) ? text : clauses.slice(s.parts[0], s.parts.at(-1) + 1).join('');
     steps.push({ action: s.action, text: original, target });
   }
+
   if (covered.size !== clauses.length) {
     throw invalid('coverage');
   }
+
   const controlPatterns = { pause: /暂停|先停一下|停一会|接管/, resume: /继续|交还/, abort: /取消|终止|中止/ } as const;
   const nonImmediate = /(不要|不用|别|不必|不想|无需|不需要|等我|等到|如果|假如|假设|要是|他说|她说|说过|刚才说|引用|朗读|念一遍|念一下|读一遍|读一下|复述|能不能|可不可以|是否可以)/;
+
   for (const step of steps) {
     if (step.action === 'clarify' && !/(会话|停止|停下|那个任务|另一个任务|哪个任务)/.test(step.text)) {
       throw invalid('content_reference');
     }
+
     if (['chat', 'clarify', 'silence', 'observe', 'listen'].includes(step.action)) {
       continue;
     }
+
     const ownClauses = voiceClauses(step.text);
+
     if (['start', 'steer'].includes(step.action) && ownClauses.every(c => /^(等我|等到|等你|他说|她说|他刚才说|她刚才说|别人说|如果|假如|假设|要是|我昨天|请读出|请朗读)/.test(c.trim()))) {
       throw invalid();
     }
+
     if (step.target === null && conversationTitles.some(title => title && ownClauses.some(c => c.includes(title) && (/(名叫|名称是|名字是)/.test(c) || !/(当前|这个|本)会话/.test(c) && (c.includes(title + '会话') || c.includes(title + '的会话')))))) {
       throw invalid();
     }
+
     if (step.target === null && ownClauses.some(c => c.includes('会话') && !/(当前|这个|本|该|新|另开|另一个|那个)会话/.test(c))) {
       throw invalid();
     }
+
     if (['pause', 'resume', 'abort'].includes(step.action)) {
       const pattern = controlPatterns[step.action as keyof typeof controlPatterns];
+
       if (!ownClauses.some(c => {
         const immediate = c.replace(/(?:不要|不用|别|不必|不想|无需|不需要)(?:先)?(?:暂停|取消|终止|中止|继续)(?:当前任务|这个任务|任务)?/g, '');
+
         return pattern.test(immediate) && !nonImmediate.test(immediate);
       })) {
         throw invalid('non_immediate_control');
       }
     }
+
     // Explicit immediate controls may not be swallowed inside a parameter update or task start.
     for (const c of ownClauses) {
       if (nonImmediate.test(c)) {
         continue;
       }
+
       const clean = c.trim().replace(/^[然后接着再请先帮我把将]+/, '');
+
       for (const [action, pattern] of Object.entries(controlPatterns)) {
         if (pattern.test(clean) && /^(暂停|停一下|接管|继续|交还|取消|终止|中止)/.test(clean) && step.action !== action) {
           throw invalid();
@@ -132,19 +165,24 @@ export function parseVoiceIntent(raw: string, text: string, conversationTitles: 
       }
     }
   }
+
   if (steps.some(s => ['start', 'steer', 'pause'].includes(s.action)) && !steps.some(s => s.action === 'resume') && voiceClauses(text).some(c => /^(然后|接着|再)?(请)?(继续|继续原任务|交还给你继续)[。！!?？\s]*$/.test(c.trim()))) {
     throw invalid();
   }
+
   if (steps.length > 1 && steps.some(s => ['chat', 'clarify', 'silence', 'observe', 'listen'].includes(s.action))) {
     throw invalid();
   }
+
   return { steps };
 }
+
 /**
  * 控制类/需要事实的句子走精简协议：提示词与输出形状和原分类调用完全一致（只有 steps），
  * 由应用按 steps 走既有控制链与原派发。这样这些句子在控制链/派发之前的固定成本不因合并而增加。
  */
 export const VOICE_PLAN_PROMPT = VOICE_INTENT_PROMPT;
+
 /**
  * 白名单句子（问候/寒暄/致谢/告别/应答、纯算术）的独立最小请求。
  *
@@ -153,6 +191,7 @@ export const VOICE_PLAN_PROMPT = VOICE_INTENT_PROMPT;
  * 这条路径的价值就是快与稳：没有计划、没有 JSON、没有分支规则可被误读，只要一两句正文。
  */
 export const VOICE_FREE_REPLY_PROMPT = '你是用户身边的语音助手。用一两句自然口语直接回答用户这句话：不解释、不markdown、不朗读内部ID，不要提到浏览器页面或任务，也不要声称执行过任何操作。只输出要对人说的正文。';
+
 /**
  * 失败关闭（fail-closed）：默认认为这句话需要页面/任务/记忆等外部事实，必须交给有上下文与工具的主 Agent；
  * 只有**确定不需要任何外部事实**的封闭类别才允许走完整提案直接给出正文。
@@ -171,24 +210,30 @@ const GREETING_WORD = '(?:嗨|哈喽|哈啰|你好|您好|大家好|喂|早上�
 const GREETING_ONLY = new RegExp(`^(?:${GREETING_WORD}){1,3}(?:呀|啊|哦|嘛|呢|吧|了|啦|喽|哟|哈|的)?$`);
 
 const ARITHMETIC_ATOM = '[\\d零一二三四五六七八九十百千万两]+';
+
 /** 中文算符或符号算符：识别常把"十加七"转成"10+7"，符号算符必须一并接受。 */
 const ARITHMETIC_OP = '(?:加|加上|减|减去|乘以|乘|除以|除|\\+|-|\\*|/|×|÷)';
 
 const ARITHMETIC_ONLY = new RegExp(`^(?:请问)?${ARITHMETIC_ATOM}${ARITHMETIC_OP}${ARITHMETIC_ATOM}(?:等于|是|得)?(?:多少|几)?(?:呀|啊|呢)?$`);
+
 /** 匹配前保留的算符：ASCII 的 + - * / 在 Unicode 里就是标点，整类删掉会把"10+7"变成"107"、算子消失。 */
 const KEEP_OPERATOR = '+-×÷*/%=';
 
 export function isFactFreeClosedUtterance(text: string): boolean {
   // 只按整句判定：去掉空白与标点后，整句必须完全落在白名单类别里，多一个字都不算。
   const clean = (text ?? '').replace(/[\s\p{P}]/gu, ch => (KEEP_OPERATOR.includes(ch) ? ch : ''));
+
   if (!clean) {
     return false;
   }
+
   return GREETING_ONLY.test(clean) || ARITHMETIC_ONLY.test(clean);
 }
+
 /** A subordinate condition qualifies the preceding instruction, not a new control. */
 export function voiceDecisionClauses(text: string): string[] {
   const groups: string[] = [];
+
   for (const clause of voiceClauses(text)) {
     if (groups.length && /^(等我|等到|如果|假如|假设|要是)/.test(clause.trim())) {
       groups[groups.length - 1] += clause;
@@ -197,24 +242,31 @@ export function voiceDecisionClauses(text: string): string[] {
       groups.push(clause);
     }
   }
+
   return groups;
 }
+
 /** Model decisions describe boundaries; the application assigns all original text. */
 export function parseVoiceDecision(raw: string, text: string, conversationTitles: readonly string[] = []): VoiceIntentPlan {
   let value: any;
+
   try {
     value = JSON.parse(raw);
   }
   catch {
     throw new VoiceIntentError('classifier_invalid_reply', 'json');
   }
+
   const invalid = () => new VoiceIntentError('classifier_invalid_reply', 'partition');
+
   if (!value || typeof value !== 'object' || Object.keys(value).some(k => k !== 'steps') || !Array.isArray(value.steps) || !value.steps.length || value.steps.length > 3) {
     throw invalid();
   }
+
   const clauses = voiceDecisionClauses(text);
   let start = 0;
   let sourceStart = 0;
+
   const steps: Array<{
     action: VoiceIntentAction;
     target: string | null;
@@ -223,24 +275,31 @@ export function parseVoiceDecision(raw: string, text: string, conversationTitles
     if (!s || typeof s !== 'object' || Object.keys(s).some(k => !['action', 'through', 'target'].includes(k))) {
       throw invalid();
     }
+
     const last = i === value.steps.length - 1;
     const end = last ? clauses.length - 1 : s.through;
+
     if (last && s.through !== undefined && s.through !== end || !Number.isInteger(end) || end < start || end >= clauses.length) {
       throw invalid();
     }
+
     const count = voiceClauses(clauses.slice(start, end + 1).join('')).length;
     const parts = Array.from({ length: count }, (_, offset) => sourceStart + offset);
     sourceStart += count;
     start = end + 1;
+
     return { action: s.action, target: s.target, parts };
   });
+
   // Reading is part of a new browser task, not a separate voice-only action.
   // Preserve the complete delegation when the classifier splits that one task.
   if (steps.length > 1 && steps.filter(s => s.action === 'start').length === 1 && steps.some(s => s.action === 'observe')
     && steps.every(s => ['start', 'observe'].includes(s.action) && s.target === null)) {
     return parseVoiceIntent(JSON.stringify({ steps: [{ action: 'start', target: null, parts: steps.flatMap(s => s.parts) }] }), text, conversationTitles);
   }
+
   let parsed: VoiceIntentPlan;
+
   try {
     parsed = parseVoiceIntent(JSON.stringify({ steps }), text, conversationTitles);
   }
@@ -249,14 +308,19 @@ export function parseVoiceDecision(raw: string, text: string, conversationTitles
     if (error instanceof VoiceIntentError && error.reason === 'content_reference' && value.steps.length === 1 && value.steps[0]?.action === 'clarify') {
       return { steps: [{ action: 'chat', text, target: null }] };
     }
+
     throw error;
   }
+
   if (parsed.steps.some(s => s.target === null && !['chat', 'clarify', 'silence', 'listen'].includes(s.action) && /(另一个|那个|某个)会话/.test(s.text))) {
     return { steps: [{ action: 'clarify', text, target: null }] };
   }
+
   const merged: VoiceIntentStep[] = [];
+
   for (const step of parsed.steps) {
     const previous = merged.at(-1);
+
     if (previous && ['start', 'steer'].includes(step.action) && previous.action === step.action && previous.target === step.target && !/(另开|新建|独立|单独).{0,8}(任务|会话)/.test(step.text)) {
       previous.text += step.text;
     }
@@ -264,5 +328,6 @@ export function parseVoiceDecision(raw: string, text: string, conversationTitles
       merged.push({ ...step });
     }
   }
+
   return { steps: merged };
 }

@@ -17,8 +17,10 @@ const CID = "conv-a";
 function harness(id = CID) {
   let tick = 1000;
   const progress = new TaskProgress(id, () => tick++);
+
   const emit = (event: Record<string, unknown>, member = "main") =>
     progress.observe({ type: "agent_event", sessionId: member, event } as ServerMessage);
+
   return { progress, emit, tick: () => tick };
 }
 
@@ -28,6 +30,7 @@ function startedRun() {
   h.emit({ kind: "agent_start" });
   h.emit({ kind: "tool_start", toolCallId: "c1", name: "snapshot", params: {} });
   h.emit({ kind: "tool_end", toolCallId: "c1", name: "snapshot", isError: false, executionFact: "executed", resultText: "ok" });
+
   return h;
 }
 
@@ -119,6 +122,7 @@ describe("A02-04 状态与真实下一步一致", () => {
     const errored = projectTaskView(h.progress.snapshot());
     expect(errored.state).toBe("error");
     expect(errored.waiting?.reason).toBe("runtime_error");
+
     // 任何态都没有业务成功字段
     for (const v of [held, interrupted, errored]) expect(JSON.stringify(v)).not.toContain("successVerified\":true");
   });
@@ -216,12 +220,15 @@ describe("协议契约：task_view 消息校验", () => {
   it("正式结果状态、等待原因与交付类型保持兼容", () => {
     const base = projectTaskView(startedRun().progress.snapshot());
     const parse = (view: TaskView) => parseServerMessage(JSON.stringify({ type: "task_view", conversationId: CID, view }));
+
     for (const status of TASK_RESULT_ITEM_STATUSES) {
       expect(parse({ ...base, results: [{ id: "r1", description: "结果", status }] })).not.toBeNull();
     }
+
     for (const reason of TASK_NEXT_REASONS) {
       expect(parse({ ...base, waiting: { reason, detail: null } })).not.toBeNull();
     }
+
     for (const kind of USER_DELIVERY_KINDS) {
       expect(parse({ ...base, latestDelivery: { kind } })).not.toBeNull();
     }
@@ -241,8 +248,10 @@ describe("manager 集成：task_view 随真实状态变化下发与重放", () =
     const { ConversationManager } = await import("../src/conversation-manager.js");
     const emitted: ServerMessage[] = [];
     const runtimes = new Map<string, { emit: (m: ServerMessage) => void }>();
+
     const manager = new ConversationManager(async (id: string, emit: (m: ServerMessage) => void) => {
       runtimes.set(id, { emit });
+
       return {
         session: { modelName: () => "test/model", availableModels: async () => [], available: true, abort: () => {}, isHeld: () => false, isStreaming: () => false },
         consent: { list: () => [], cancelAll: () => {} },
@@ -250,6 +259,7 @@ describe("manager 集成：task_view 随真实状态变化下发与重放", () =
         rpc: { rejectAll: () => {} }, dispose: () => {}, handleMessage: () => {},
       } as never;
     }, (m) => emitted.push(m));
+
     await manager.ensureDefault();
     await manager.handleMessage({ type: "user_message", text: "读一下当前页面" } as ClientMessage);
     runtimes.get("default")!.emit({ type: "agent_event", event: { kind: "agent_start" } });
@@ -277,6 +287,7 @@ describe("outstanding 与 nextStep 同口径（review 修复）", () => {
   it("已被取代的 unknown 项不再列入未完成项", () => {
     const h = startedRun();
     const snap = h.progress.snapshot();
+
     const withSuperseded: TaskProgressSnapshot = {
       ...snap,
       results: [
@@ -284,16 +295,19 @@ describe("outstanding 与 nextStep 同口径（review 修复）", () => {
         { id: "r2", description: "写入备注（用户确认后重核对）", tool: "fill", target: null, status: "satisfied", evidence: null },
       ] as never,
     };
+
     const view = projectTaskView(withSuperseded);
     expect(view.results.map((r) => r.id)).toEqual(["user-request"]); // 已取代的执行未知不污染用户目标
     expect(view.outstanding.map((r) => r.id)).toEqual(["user-request"]); // 原始用户要求仍未核验
   });
   it("未被取代的 unknown 仍列入未完成项", () => {
     const h = startedRun();
+
     const snap: TaskProgressSnapshot = {
       ...h.progress.snapshot(),
       results: [{ id: "r1", description: "写入备注", tool: "fill", target: null, status: "unknown", evidence: null }] as never,
     };
+
     expect(projectTaskView(snap).outstanding.map((r) => r.id)).toEqual(["user-request", "r1"]);
   });
 });

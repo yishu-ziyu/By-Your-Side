@@ -23,13 +23,17 @@ const cases: Array<{ text: string; state: string; expect: string[] }> = [
 ];
 
 const session = await BrowserAgentSession.create(new ToolRpc(() => { throw Error('no tools'); }), { emit: () => {}, setStatus: () => {} }, { modelPattern: 'minimax-cn/MiniMax-M3' });
+
 if (!session.available) { console.log('MODEL_UNAVAILABLE'); process.exit(2); }
+
 let failed = 0;
+
 for (const c of cases) {
   try {
     const plan = await session.classifyVoiceInput(c.text, c.state, [], { goal: '看一下收件箱有什么新东西' }, conversation as any);
     const got = plan.steps.map(s => s.action);
     const ok = JSON.stringify(got) === JSON.stringify(c.expect);
+
     if (!ok) failed++;
     console.log(JSON.stringify({ text: c.text, state: c.state, expect: c.expect, got, ok }));
   } catch (error) {
@@ -37,6 +41,9 @@ for (const c of cases) {
     console.log(JSON.stringify({ text: c.text, state: c.state, expect: c.expect, error: String(error), ok: false }));
   }
 }
+
 session.dispose();
+
 console.log(JSON.stringify({ ok: failed === 0, total: cases.length, failed }));
+
 if (failed) process.exitCode = 1;

@@ -26,6 +26,7 @@ describe("groupModelsByProvider", () => {
       m("kimi-coding", "kimi-for-coding"),
       m("openai-codex", "gpt-5.6-luna"),
     ]);
+
     expect(groups.map((g) => g.provider)).toEqual(["kimi-coding", "openai-codex"]);
     expect(groups[0]!.models.map((x) => x.modelId)).toEqual(["k3", "kimi-for-coding"]);
     expect(groups[1]!.models.map((x) => x.modelId)).toEqual(["gpt-5.5", "gpt-5.6-luna"]);
@@ -155,6 +156,7 @@ describe("modelReasoningMeta 不凭名称/供应商输出肯定能力结论", ()
       m("minimax-cn", "MiniMax-M3"),
       m("kimi-coding", "kimi-for-coding"),
     ];
+
     for (const option of directory) {
       const meta = modelReasoningMeta(option.provider, option.modelId);
       expect(meta.tag).toBeNull();

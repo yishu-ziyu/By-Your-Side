@@ -15,15 +15,19 @@ export interface ModelGroup {
 export function groupModelsByProvider(models: readonly ModelOption[]): ModelGroup[] {
   const groups: ModelGroup[] = [];
   const byProvider = new Map<string, ModelGroup>();
+
   for (const m of models) {
     let g = byProvider.get(m.provider);
+
     if (!g) {
       g = { provider: m.provider, models: [] };
       byProvider.set(m.provider, g);
       groups.push(g);
     }
+
     g.models.push(m);
   }
+
   return groups;
 }
 
@@ -53,6 +57,7 @@ export function providerLabel(provider: string): string {
 export function displayName(m: ModelOption): string {
   const raw = (m.name || m.modelId).trim();
   const slash = raw.lastIndexOf("/");
+
   return (slash >= 0 ? raw.slice(slash + 1) : raw) || m.modelId;
 }
 
@@ -60,18 +65,23 @@ export function displayName(m: ModelOption): string {
 export function chipLabel(model: string | undefined, models: readonly ModelOption[]): string {
   if (!model) return "选择模型";
   const found = models.find((m) => m.id === model);
+
   if (found) return displayName(found);
   const slash = model.lastIndexOf("/");
+
   return slash >= 0 ? model.slice(slash + 1) : model;
 }
 
 export function filterModels(models: readonly ModelOption[], query: string): ModelOption[] {
   const q = query.trim().toLowerCase();
+
   if (!q) return [...models];
+
   return models.filter((m) => {
     const hay = [m.id, m.name, m.modelId, m.provider, providerLabel(m.provider), displayName(m)]
       .join("\n")
       .toLowerCase();
+
     return hay.includes(q);
   });
 }
@@ -81,7 +91,9 @@ export function providerMark(provider: string): { letter: string; hue: number } 
   const label = providerLabel(provider);
   const letter = [...label][0]?.toUpperCase() ?? "?";
   let h = 0;
+
   for (let i = 0; i < provider.length; i++) h = (h * 31 + provider.charCodeAt(i)) >>> 0;
+
   return { letter, hue: h % 360 };
 }
 
@@ -93,6 +105,7 @@ export function humanizeModelError(message: string): string {
   if (MODEL_NOT_FOUND.test(message)) {
     return "模型不可用（Not Found）：模型可能已下线或当前账号无访问权限，请在输入区切换模型后重试";
   }
+
   return message;
 }
 
@@ -114,5 +127,6 @@ export interface ModelReasoningMeta {
 export function modelReasoningMeta(provider: string, modelId: string): ModelReasoningMeta {
   void provider;
   void modelId;
+
   return { tier: "unknown", tag: null };
 }

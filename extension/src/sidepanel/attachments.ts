@@ -44,14 +44,18 @@ export interface AttachmentItem {
 
 export function parseDataUrl(dataUrl: string): { mimeType: SupportedImageMime; dataBase64: string } {
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.*)$/);
+
   if (match && match[1] && match[2]) {
     const rawMime = match[1].toLowerCase();
+
     const mimeType: SupportedImageMime =
       rawMime === "image/jpeg" || rawMime === "image/webp" || rawMime === "image/gif"
         ? rawMime
         : "image/png";
+
     return { mimeType, dataBase64: match[2] };
   }
+
   return { mimeType: "image/png", dataBase64: dataUrl.replace(/^data:[^;]+;base64,/, "") };
 }
 
@@ -80,7 +84,9 @@ export class AttachmentsManager {
   private set items(items: AttachmentItem[]) { this.itemsByScope.set(this.scopeId, items); }
   private scopeItems(scope: string): AttachmentItem[] {
     let items = this.itemsByScope.get(scope);
+
     if (!items) { items = []; this.itemsByScope.set(scope, items); }
+
     return items;
   }
 
@@ -95,6 +101,7 @@ export class AttachmentsManager {
       dom.pText.textContent = "100%";
       dom.path.style.strokeDashoffset = "0";
       this.stripEl.appendChild(dom.tile);
+
       return { ...att, dataUrl, dom };
     });
     this.updateVisibility();
@@ -158,24 +165,31 @@ export class AttachmentsManager {
     // 3. 文件选择触发
     this.fileInputEl.addEventListener("change", () => {
       const files = Array.from(this.fileInputEl.files || []);
+
       if (files.length > 0) {
         void this.addFiles(files);
       }
+
       this.fileInputEl.value = "";
     });
 
     // 4. 输入框剪贴板粘贴
     this.inputEl.addEventListener("paste", (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
+
       if (!items || items.length === 0) return;
       const imageFiles: File[] = [];
+
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
+
         if (item && item.type.startsWith("image/")) {
           const file = item.getAsFile();
+
           if (file) imageFiles.push(file);
         }
       }
+
       if (imageFiles.length > 0) {
         e.preventDefault();
         void this.addFiles(imageFiles);
@@ -195,6 +209,7 @@ export class AttachmentsManager {
     this.composerEl.addEventListener("dragleave", (e) => {
       e.preventDefault();
       dragCounter--;
+
       if (dragCounter <= 0) {
         dragCounter = 0;
         this.composerEl.classList.remove("drag-over");
@@ -205,6 +220,7 @@ export class AttachmentsManager {
       dragCounter = 0;
       this.composerEl.classList.remove("drag-over");
       const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/"));
+
       if (files.length > 0) {
         void this.addFiles(files);
       }
@@ -227,10 +243,12 @@ export class AttachmentsManager {
    */
   public async captureActiveTab(): Promise<void> {
     const scope = this.scopeId;
+
     try {
       if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
         throw new Error("Chrome 运行环境不可用");
       }
+
       const res = await new Promise<{ ok: boolean; dataUrl?: string; title?: string; error?: string }>((resolve) => {
         chrome.runtime.sendMessage({ type: "sidepanel_capture_tab" }, (response) => {
           if (chrome.runtime.lastError) {
@@ -249,6 +267,7 @@ export class AttachmentsManager {
       await this.addFromDataUrl(res.dataUrl, name, scope);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+
       if (this.onError) this.onError(`截屏失败: ${msg}`);
       else console.error("[sideagent-attachments] captureActiveTab failed:", err);
     }
@@ -259,12 +278,16 @@ export class AttachmentsManager {
    */
   public async addFiles(files: File[], staggerMs = 80): Promise<void> {
     const scope = this.scopeId;
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+
       if (!file) continue;
+
       if (i > 0 && staggerMs > 0) {
         await new Promise((r) => setTimeout(r, staggerMs));
       }
+
       try {
         const dataUrl = await readFileAsDataUrl(file);
         await this.addFromDataUrl(dataUrl, file.name, scope);
@@ -284,6 +307,7 @@ export class AttachmentsManager {
     const safeName = name || `image_${Date.now()}.png`;
 
     const dom = this.createTileDom(id, safeName, dataUrl, scope);
+
     const item: AttachmentItem = {
       id,
       name: safeName,
@@ -296,10 +320,12 @@ export class AttachmentsManager {
     };
 
     this.scopeItems(scope).push(item);
+
     if (scope === this.scopeId) {
       this.stripEl.appendChild(dom.tile);
       this.stripEl.scrollTo({ left: this.stripEl.scrollWidth, behavior: "smooth" });
     }
+
     this.updateVisibility(scope);
 
     // 运行 0% -> 100% 顺时针 Ring 描边与数字动效 (380ms 顺畅感知)
@@ -384,9 +410,11 @@ export class AttachmentsManager {
   public removeItem(id: string, scope = this.scopeId): void {
     const items = this.scopeItems(scope);
     const index = items.findIndex((item) => item.id === id);
+
     if (index === -1) return;
     const removed = items.splice(index, 1);
     const item = removed[0];
+
     if (!item) return;
     item.dom.tile.classList.add("removing");
     this.updateVisibility(scope);
@@ -397,6 +425,7 @@ export class AttachmentsManager {
     for (const item of this.items) {
       item.dom.tile.remove();
     }
+
     this.items = [];
     this.updateVisibility();
   }
@@ -417,7 +446,9 @@ export class AttachmentsManager {
 
   private updateVisibility(scope = this.scopeId): void {
     const items = this.scopeItems(scope);
+
     if (scope === this.scopeId) this.stripEl.hidden = items.length === 0;
+
     if (this.onChanged) this.onChanged(items.length, scope);
   }
 }

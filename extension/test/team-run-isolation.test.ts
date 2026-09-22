@@ -27,6 +27,7 @@ function team(phase: TeamView["phase"], capturedAt = 1): TeamView {
 function panelReceive(state: TeamRunState, msg: { kind: "run_started"; runId?: string } | { kind: "team_status"; team: TeamView; runId?: string }): TeamRunState {
   if (msg.kind === "run_started") return observeRunStarted(state, msg.runId);
   const decision = acceptTeamStatus(state, msg.team, msg.runId);
+
   return decision.accept ? decision.state : state;
 }
 

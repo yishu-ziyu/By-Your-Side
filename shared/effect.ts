@@ -13,13 +13,19 @@ export const EFFECT_SCOPE_SEL =
 
 /** 页面自身是否在动的采样间隔与阈值。 */
 export const EFFECT_VOLATILE_WINDOW_MS = 60;
+
 export const EFFECT_VOLATILE_DELTA = 3;
+
 /** 早停轮询：有强证据立即返回，否则最多等这么久。 */
 export const EFFECT_SETTLE_INTERVAL_MS = 100;
+
 export const EFFECT_SETTLE_TIMEOUT_MS = 600;
+
 /** 弱证据阈值：全局 DOM 节点数 / 全局正文长度。 */
 export const EFFECT_WEAK_DOM_DELTA = 3;
+
 export const EFFECT_WEAK_TEXT_DELTA = 4;
+
 /** 目标区块文本阈值：这块地方几乎不会漂来别的噪声。 */
 export const EFFECT_SCOPE_TEXT_DELTA = 2;
 
@@ -82,22 +88,27 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
 
   // ① 目标自身：最便宜也最强。展开下拉、勾选、受控组件回滚值都不改 DOM 节点数。
   const bt = base.target, nt = now.target;
+
   if (nt.gone && !bt.gone) evidence.push("target removed from the page");
   else if (!nt.gone) {
     for (const key of ["text", "expanded", "checked", "selected", "value", "disabled", "paused", "ended"] as const) {
       const before = bt[key], after = nt[key];
+
       if (before === undefined || before === after) continue;
       evidence.push(`${key} ${before || "(empty)"} → ${after || "(empty)"}`);
     }
+
     if (bt.cls !== undefined && bt.cls !== nt.cls) evidence.push("target class changed");
   }
 
   // ② 新增页面提示：表单流程最主要的失败模式（校验错误）常常在长页面下方。
   const fresh = now.alerts.filter((alert) => !base.alerts.includes(alert));
+
   if (fresh.length) evidence.push(`⚠ page notice: ${fresh.join(" / ")}`);
 
   // ③ body 直接子元素：弹窗、抽屉、toast 几乎都挂在这一层。
   const dBodyKids = now.bodyKids - base.bodyKids;
+
   if (dBodyKids !== 0) {
     evidence.push(
       dBodyKids > 0
@@ -108,9 +119,11 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
 
   // ④ 目标区块：局部变化几乎不可能是别处噪声漂过来的。
   const dScopeKids = now.scopeKids - base.scopeKids;
+
   if (dScopeKids !== 0) evidence.push(`target region DOM ${signed(dScopeKids)} node(s)`);
   else if (evidence.length === 0 || (evidence.length === 1 && evidence[0] === "target class changed")) {
     const dScopeText = now.scopeTextLen - base.scopeTextLen;
+
     if (isFiniteDelta(dScopeText, EFFECT_SCOPE_TEXT_DELTA)) {
       evidence.push(`target region text ${signed(dScopeText)} char(s)`);
     }
@@ -118,10 +131,13 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
 
   // ⑤ 弱证据：页面自己也会产生，不参与判定。
   const dEls = now.els - base.els;
+
   if (isFiniteDelta(dEls, EFFECT_WEAK_DOM_DELTA)) weak.push(`DOM ${signed(dEls)} node(s)`);
   const dText = now.bodyTextLen - base.bodyTextLen;
+
   if (dText !== 0 && isFiniteDelta(dText, EFFECT_WEAK_TEXT_DELTA)) weak.push(`body text ${signed(dText)} char(s)`);
   const focusMoved = now.active !== base.active && !now.targetActive;
+
   if (focusMoved) weak.push(`focus → ${now.active ?? "(none)"}`);
 
   return { changed: evidence.length > 0, evidence, weak, volatile: !!base.volatile, alerts: fresh };
@@ -131,11 +147,15 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
 export function formatEffectReport(report: EffectReport | undefined): string {
   if (!report) return "";
   const detail = [...report.evidence, ...report.weak].join("; ");
+
   if (report.changed) return ` Page reacted: ${detail}.`;
+
   const tail = report.volatile
     ? " The page itself keeps changing, but nothing was attributable to this click"
     : " Nothing on the page changed in a way attributable to this click";
+
   const weak = report.weak.length ? ` (${report.weak.join("; ")})` : "";
+
   return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Do not blindly click the same target again — observe the page first.`;
 }
 
@@ -154,10 +174,14 @@ export async function settleEffectReport(
   const intervalMs = opts.intervalMs ?? EFFECT_SETTLE_INTERVAL_MS;
   const deadline = now() + timeoutMs;
   let last: EffectReport | undefined;
+
   for (;;) {
     const report = await poll();
+
     if (report) last = report;
+
     if (last?.changed) return last;
+
     if (now() >= deadline) return last;
     await sleep(intervalMs);
   }

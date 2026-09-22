@@ -103,7 +103,9 @@ interface TypeSafeResponse {
 }
 
 const MIN_PROBABILITY = 0.9;
+
 const INPUT_MIN_PROBABILITY = 0.98;
+
 const CALL_TIMEOUT_MS = 1_000;
 
 function probability(value: unknown): value is number {
@@ -112,6 +114,7 @@ function probability(value: unknown): value is number {
 
 function numericProbabilities(value: Record<string, number> | undefined): Record<string, number> | undefined {
   if (!value) return undefined;
+
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => probability(entry[1])));
 }
 
@@ -126,6 +129,7 @@ function sameDisplayParams(left: DisplayParams, right: DisplayParams): boolean {
  */
 export async function decideFastTask(input: FastTaskDecisionInput, signal: AbortSignal): Promise<FastTaskDecision> {
   if (signal.aborted) return { kind: 'cancelled' };
+
   if (!input.request.trim() || input.request.length > 3_000) {
     return { kind: 'miss', reason: 'coverage_uncertain' };
   }
@@ -133,15 +137,19 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
   const tabs = input.allowSwitch && !input.observation.tabsTruncated
     ? (input.observation.tabs ?? [])
     : [];
+
   const displayAvailable = input.allowDisplay
     && input.translation?.translated
     && input.translation.displayValid;
+
   const skillOptions = (input.skills ?? []).slice(0, 12);
+
   if (!tabs.length && !displayAvailable && !skillOptions.length) {
     return { kind: 'miss', reason: input.observation.tabsTruncated ? 'tabs_truncated' : 'no_candidate' };
   }
 
   const key = readTypeSafeKey();
+
   if (!key) return { kind: 'miss', reason: 'missing_credentials' };
 
   const displayRoutes: Record<string, { params: DisplayParams; description: string }> = displayAvailable ? {
@@ -179,7 +187,9 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
     ])),
     normal: 'No direct candidate fully satisfies the request: it is a question, negative instruction, correction, ambiguous reference, compound task, or needs another operation or user-visible answer.',
   };
+
   const values = skillSourceValues(input.request);
+
   const questions: Record<string, unknown> = {
     action_requested: {
       type: 'noul',
@@ -203,6 +213,7 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
       criteria: candidates,
     },
   };
+
   if (displayAvailable) {
     questions.display_extra = displayQuestions.extra;
     questions.display_partial = displayQuestions.partial;
@@ -211,6 +222,7 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
     questions.font = displayQuestions.font;
     questions.mode = displayQuestions.mode;
   }
+
   skillOptions.forEach((option, index) => {
     if (option.selected) return;
     Object.keys(option.skill.inputs).forEach((name, inputIndex) => {
@@ -249,9 +261,11 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
     },
     questions,
   });
+
   if (Buffer.byteLength(body) > 64_000) return { kind: 'miss', reason: 'coverage_uncertain' };
 
   const startedAt = performance.now();
+
   try {
     const response = await fetch('https://api.typesafe.ai/v1/systemone', {
       method: 'POST',
@@ -259,21 +273,27 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
       body,
       signal: AbortSignal.any([signal, AbortSignal.timeout(CALL_TIMEOUT_MS)]),
     });
+
     if (signal.aborted) return { kind: 'cancelled' };
+
     if (!response.ok) return { kind: 'miss', reason: `http_${response.status}` };
 
     let raw: TypeSafeResponse;
+
     try {
       raw = await response.json() as TypeSafeResponse;
     } catch {
       return { kind: 'miss', reason: 'invalid_response' };
     }
+
     if (signal.aborted) return { kind: 'cancelled' };
+
     if (performance.now() - startedAt >= CALL_TIMEOUT_MS) return { kind: 'miss', reason: 'late_response' };
 
     const answers = raw.answers ?? {};
     const route = answers.route;
     const selectedProbability = route?.choice ? route.probabilities?.[route.choice] : undefined;
+
     const diagnostics: FastTaskDiagnostics = {
       actionRequested: answers.action_requested?.noul,
       complete: answers.complete?.noul,
@@ -294,22 +314,27 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
         },
       } : {}),
     };
+
     const miss = (reason: FastTaskMissReason): FastTaskDecision => ({ kind: 'miss', reason, diagnostics });
 
     if (!probability(diagnostics.actionRequested) || diagnostics.actionRequested < MIN_PROBABILITY) {
       return miss('request_uncertain');
     }
+
     if (!probability(diagnostics.complete) || diagnostics.complete < MIN_PROBABILITY) {
       return miss('coverage_uncertain');
     }
+
     if (!route?.choice || !Object.hasOwn(candidates, route.choice)
       || !probability(route.confidence) || route.confidence < MIN_PROBABILITY
       || !probability(selectedProbability) || selectedProbability < MIN_PROBABILITY) {
       return miss('route_uncertain');
     }
+
     if (route.choice === 'normal') return miss('normal_route');
 
     const displayRoute = displayRoutes[route.choice];
+
     if (displayRoute) {
       const display = composeDisplayDecision({
         direct: answers.action_requested,
@@ -320,18 +345,25 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
         font: answers.font,
         mode: answers.mode,
       }, true);
+
       if (display.kind === 'cancelled') return { kind: 'cancelled', diagnostics };
+
       if (display.kind === 'fallback') return miss(`display_${display.reason}`);
+
       if (!sameDisplayParams(display.params, displayRoute.params)) return miss('route_uncertain');
+
       return { kind: 'candidate', diagnostics, candidate: { kind: 'display', params: display.params } };
     }
 
     const skillMatch = /^skill_(\d+)$/.exec(route.choice);
+
     if (skillMatch) {
       const selectedIndex = Number(skillMatch[1]);
       const option = skillOptions[selectedIndex];
+
       if (!option) return miss('invalid_response');
       let inputs: Record<string, string>;
+
       if (option.selected) {
         try {
           inputs = bindSkillInputs(option.skill, option.suppliedInputs);
@@ -344,17 +376,21 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
           const answer = answers[`skill_input_${selectedIndex}_${inputIndex}`];
           const selected = /^value_(\d+)$/.exec(answer?.choice ?? '');
           const selectedInputProbability = answer?.choice ? answer.probabilities?.[answer.choice] : undefined;
+
           if (selected && probability(selectedInputProbability) && selectedInputProbability >= INPUT_MIN_PROBABILITY) {
             const value = values[Number(selected[1])];
+
             if (value !== undefined) extracted[name] = value;
           }
         });
+
         const skillInput: SkillRouterInput = {
           userText: input.request,
           hostname: option.skill.hostname,
           skills: skillOptions.map(item => item.skill),
           runs: Object.fromEntries(skillOptions.map(item => [item.skill.id, item.runs])),
         };
+
         const composed = composeSkillJudgment(skillInput, {
           direct: diagnostics.actionRequested,
           complete: diagnostics.complete,
@@ -364,10 +400,13 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
             inputs: index === selectedIndex ? extracted : {},
           })),
         });
+
         if (composed.status === 'needs_input') return miss('skill_needs_input');
+
         if (composed.status !== 'match' || composed.skillId !== option.skill.id) return miss('skill_unavailable');
         inputs = composed.inputs;
       }
+
       return {
         kind: 'candidate',
         diagnostics,
@@ -388,7 +427,9 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
 
     const tabMatch = /^tab_(\d+)$/.exec(route.choice);
     const tab = tabMatch ? tabs[Number(tabMatch[1])] : undefined;
+
     if (!tab) return miss('invalid_response');
+
     return {
       kind: 'candidate',
       diagnostics,
@@ -396,8 +437,10 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
     };
   } catch (error) {
     if (signal.aborted) return { kind: 'cancelled' };
+
     const timeout = error instanceof Error
       && (error.name === 'TimeoutError' || /timed? ?out/i.test(error.message));
+
     return { kind: 'miss', reason: timeout ? 'timeout' : 'network_error' };
   }
 }

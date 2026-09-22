@@ -9,9 +9,11 @@ async function loadReadElement(options: {
   sendCommand?: (tabId: number, method: string, params?: object) => Promise<unknown>;
 } = {}) {
   vi.resetModules();
+
   const resolveWorkingTab = options.resolveError
     ? vi.fn(async () => { throw new Error(options.resolveError); })
     : vi.fn(async (tabId: number) => ({ id: tabId }));
+
   vi.doMock("../src/background/state.js", () => ({
     getWorkingTabId: vi.fn(async () => 12),
     resolveReadableTab: resolveWorkingTab,
@@ -21,12 +23,14 @@ async function loadReadElement(options: {
     snapshotRefKind: () => options.refKind ?? (options.ax === true ? "ax" : "dom"),
   }));
   vi.doMock("../src/background/debugger.js", () => ({ sendCommand: vi.fn(options.sendCommand ?? (async () => ({}))) }));
+
   return import("../src/background/exec/read-element.js");
 }
 
 function installScriptExecution() {
   const executeScript = vi.fn(async (details: any) => [{ result: details.func(...details.args) }]);
   vi.stubGlobal("chrome", { scripting: { executeScript } });
+
   return executeScript;
 }
 
@@ -41,6 +45,7 @@ describe("read_element", () => {
   it('reads rich editor line boundaries without changing raw textContent or collapsing blank lines', async () => {
     const text=(value:string):any=>({nodeType:3,nodeName:'#text',textContent:value});
     const element=(tag:string,children:any[]=[],trailing=false):any=>({nodeType:1,nodeName:tag,tagName:tag,childNodes:children,textContent:children.map(c=>c.textContent).join(''),classList:{contains:(name:string)=>trailing&&name==='ProseMirror-trailingBreak'}});
+
     const cases:Array<[any[],string]>=[
       [[element('P',[text('First.')]),element('P',[text('https://source.test/')])],'First.\nhttps://source.test/'],
       [[text('First.\nhttps://source.test/')],'First.\nhttps://source.test/'],
@@ -51,10 +56,12 @@ describe("read_element", () => {
       [[element('P',[text('First.'),element('BR'),element('BR',[],true)])],'First.\n'],
       [[element('P',[text('First '),element('STRONG',[text('sentence.')])])],'First sentence.'],
     ];
+
     let editor:any;
     vi.stubGlobal('document',{querySelectorAll:()=>[editor]});
     installScriptExecution();
     const {readElement}=await loadReadElement();
+
     for(const [children,expected] of cases){
       editor={...element('DIV',children),isContentEditable:true,isConnected:true};
       const result=await readElement({target:'#editor'},KEY);
@@ -102,9 +109,11 @@ describe("read_element", () => {
   it("CSS missing、多匹配和非法selector明确失败", async () => {
     const querySelectorAll = vi.fn((selector: string) => {
       if (selector === "#missing") return [];
+
       if (selector === ".many") return [{}, {}];
       throw new Error("invalid selector");
     });
+
     vi.stubGlobal("document", { querySelectorAll });
     installScriptExecution();
     const { readElement } = await loadReadElement();
@@ -124,14 +133,18 @@ describe("read_element", () => {
     const calls: string[] = [];
     const textContent = "长正文".repeat(80);
     const value = "长值".repeat(40);
+
     const { readElement } = await loadReadElement({
       ax: true,
       sendCommand: async (_tabId, method) => {
         calls.push(method);
+
         if (method === "DOM.resolveNode") return { object: { objectId: "node-1" } };
+
         return { result: { value: { ok: true, data: { tagName: "textarea", textContent, value } } } };
       },
     });
+
     vi.stubGlobal("chrome", { scripting: { executeScript: vi.fn() } });
     const result = await readElement({ tabId: 12, target: "@42" }, KEY);
     expect(result).toMatchObject({ textContent, value });
@@ -183,29 +196,40 @@ describe('read_element state and bounded verification', () => {
 async function readbackPage(target='@4',ax=true) {
   const page={documentId:'original-document',value:'星河',type:'text',cancelled:false};
   const valueRead=vi.fn(()=>page.value);
+
   const element={tagName:'INPUT',nodeType:1,isConnected:true,textContent:'',parentElement:null,
     get type(){return page.type;},get value(){return valueRead();},
     getAttribute:(name:string)=>name==='type'?page.type:null,querySelector:()=>null,labels:[]};
+
   const refs=new Map([[4,element]]);
   const pageElements=[element];
   vi.stubGlobal('window',{__sideagent:{refs}});
   vi.stubGlobal('document',{readyState:'complete',querySelectorAll:()=>pageElements});
   vi.stubGlobal('location',{href:'https://same-url.test/'});
+
   const executeScript=vi.fn(async(details:any)=>{
     if(details.target.documentIds&&!details.target.documentIds.includes(page.documentId))throw Error('Document no longer exists');
+
     return [{documentId:page.documentId,result:details.func(...(details.args??[]))}];
   });
+
   vi.stubGlobal('chrome',{scripting:{executeScript}});
+
   const cdp=vi.fn(async(_tabId:number,method:string,params:any)=>{
     if(method==='DOM.resolveNode')return {object:{objectId:'original-node'}};
+
     if(method==='Runtime.callFunctionOn')return {result:{value:Function(`return (${params.functionDeclaration})`)().call(element)}};
+
     return {};
   });
+
   const {readElement}=await loadReadElement({ax,sendCommand:cdp});
   const before=await readElement({tabId:12,target},KEY);
   valueRead.mockClear();
+
   const read=()=>readElement({tabId:12,target:before.target,properties:['value'],readback:{documentId:before.documentId!,deadline:Date.now()+1500,nodeIdentity:before.nodeIdentity}},KEY,
     ()=>{if(page.cancelled)throw Error('READBACK_CANCELLED');});
+
   return {page,before,valueRead,executeScript,read,readElement,refs,pageElements,element,cdp};
 }
 
@@ -225,8 +249,10 @@ describe('host-bound adjunct read document and cancellation gates',()=>{
     const f=await readbackPage(target,false);
     f.element.isConnected=false;
     const replacementValue=vi.fn(()=>value);
+
     const replacement={...f.element,isConnected:true,get value(){return replacementValue();},
       getAttribute:(name:string)=>name==='name'?'record-B':name==='type'?'text':null};
+
     f.pageElements[0]=replacement;f.refs.set(4,replacement);
     f.valueRead.mockClear();
     await expect(f.read()).rejects.toThrow(/READBACK_/);
@@ -235,9 +261,13 @@ describe('host-bound adjunct read document and cancellation gates',()=>{
   });
   it.each(['document','password','cancelled','detached'] as const)('does not read a field after %s changes',async change=>{
     const f=await readbackPage();
+
     if(change==='document')f.page.documentId='new-document-at-same-url';
+
     if(change==='password')f.page.type='password';
+
     if(change==='cancelled')f.page.cancelled=true;
+
     if(change==='detached')f.element.isConnected=false;
     await expect(f.read()).rejects.toThrow(/READBACK_/);
     expect(f.valueRead).not.toHaveBeenCalled();
@@ -247,8 +277,10 @@ describe('host-bound adjunct read document and cancellation gates',()=>{
     let finish!:()=>void;
     f.executeScript.mockImplementationOnce(async(details:any)=>{
       await new Promise<void>(resolve=>{finish=resolve;});
+
       return [{documentId:f.page.documentId,result:details.func()}];
     });
+
     try {
       const pending=f.read();const rejected=expect(pending).rejects.toThrow('READBACK_TIMEOUT');
       await vi.waitFor(()=>expect(finish).toBeDefined());
@@ -261,7 +293,9 @@ describe('host-bound adjunct read document and cancellation gates',()=>{
     const f=await readbackPage(),execute=f.cdp.getMockImplementation()!;
     f.cdp.mockImplementation(async(...args)=>{
       const result=await execute(...args);
+
       if(args[1]==='Runtime.callFunctionOn')f.page.documentId='replacement-after-read';
+
       return result;
     });
     await expect(f.read()).rejects.toThrow('READBACK_DOCUMENT_CHANGED');

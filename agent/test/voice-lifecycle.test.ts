@@ -53,9 +53,11 @@ it('preserves an unfinished phrase across noise, then consumes it once',()=>{
  expect(input.takeTranscript('六百')).toBe('预算改成 六百');
  expect(input.takeTranscript('谢谢')).toBe('谢谢');
 });
+
 it('does not carry an unfinished phrase into a much later question',()=>{
  const input=new VoiceInputLedger();input.holdTranscript('预算改成');
  const now=Date.now;Date.now=()=>now()+21000;
+
  try{expect(input.takeTranscript('现在几点')).toBe('现在几点');}finally{Date.now=now;}
 });
 

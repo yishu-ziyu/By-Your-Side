@@ -33,9 +33,11 @@ describe("trail points", () => {
 
   it("超过上限丢掉最早的点", () => {
     let pts: ReturnType<typeof appendTrail> = [];
+
     for (let i = 0; i < 42; i++) {
       pts = appendTrail(pts, { tabId: 1, x: i, y: 0, click: true }, 40);
     }
+
     expect(pts).toHaveLength(40);
     expect(pts[0]?.x).toBe(2);
     expect(pts[39]?.x).toBe(41);
@@ -51,6 +53,7 @@ describe("trail points", () => {
         { tabId: 8, x: 3, y: 3, click: false },
       ],
     };
+
     expect(pointsOnTab(trail, 8)).toHaveLength(2);
   });
 });

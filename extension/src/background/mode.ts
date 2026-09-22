@@ -9,44 +9,56 @@ import type { AgentMode } from "../../../shared/protocol.js";
 const STORAGE_KEY = "agentMode";
 
 const modes = new Map<string, AgentMode>();
+
 export async function getMode(conversationId = "default"): Promise<AgentMode> {
  const cached = modes.get(conversationId);
+
  if (cached) return cached;
  const storageKey = conversationId === "default" ? STORAGE_KEY : `${STORAGE_KEY}:${conversationId}`;
  let stored: Record<string, unknown> = {};
+
  try { stored = await chrome.storage.session.get(storageKey); } catch { /* Chrome session API may be unavailable. */ }
+
  // A runtime summary or explicit user change may arrive while storage is loading.
  const latest = modes.get(conversationId);
+
  if (latest) return latest;
  const mode = stored[storageKey] === "teach" ? "teach" : "act";
  modes.set(conversationId, mode);
+
  return mode;
 }
+
 export async function setMode(mode: AgentMode, conversationId = "default"): Promise<void> {
  modes.set(conversationId, mode);
  const storageKey = conversationId === "default" ? STORAGE_KEY : `${STORAGE_KEY}:${conversationId}`;
+
  try { await chrome.storage.session.set({[storageKey]:mode}); } catch { /* Keep local mode. */ }
 }
 
 // ── 手绘标注动效偏好（grow = 420ms 生长后定格；boil = 1200ms 持续微动） ──
 export type MarkMotion = "grow" | "boil";
+
 export const MARK_MOTION_KEY = "sideagent_mark_motion";
 
 let cachedMotion: MarkMotion | undefined;
 
 export async function getMarkMotion(): Promise<MarkMotion> {
   if (cachedMotion !== undefined) return cachedMotion;
+
   try {
     const got = await chrome.storage.local.get(MARK_MOTION_KEY);
     cachedMotion = got[MARK_MOTION_KEY] === "grow" ? "grow" : "boil";
   } catch {
     cachedMotion = "boil";
   }
+
   return cachedMotion;
 }
 
 export async function setMarkMotion(motion: MarkMotion): Promise<void> {
   cachedMotion = motion;
+
   try {
     await chrome.storage.local.set({ [MARK_MOTION_KEY]: motion });
   } catch {
@@ -79,5 +91,6 @@ export function noteMarksCleared(conversationId = "default"): void {
 export function consumeTeachUrlChange(mode: AgentMode, conversationId = "default"): boolean {
   const hit = mode === "teach" && pendingTeachMarks.has(conversationId);
   pendingTeachMarks.delete(conversationId);
+
   return hit;
 }

@@ -48,11 +48,13 @@ describe("批量翻页执行", () => {
   it("顺序请求每页、每页落盘、只预览第一页", async () => {
     const target = dir();
     const requests: any[] = [];
+
     const result = await fetchPages(
       { url: "https://api.example.com/list?page={page}&size=2", headers: { "X-T": "1" }, pages: { from: 1, to: 3 }, savePath: "数据.json" },
       async (request) => {
         requests.push(request);
         const page = new URL(request.url).searchParams.get("page");
+
         return reply({
           url: request.url,
           text: page === "1" ? "FIRST_PAGE_BODY" : `SECOND_PAGE_BODY_${page}`,
@@ -84,6 +86,7 @@ describe("批量翻页执行", () => {
       { url: "https://api.example.com/search", method: "POST", body: '{"page":{page},"q":"x"}', pages: { from: 2, to: 3 }, savePath: "out" },
       async (request) => {
         requests.push(request);
+
         return reply({ contentType: "application/json", text: "{}" });
       },
       dir(),
@@ -95,7 +98,9 @@ describe("批量翻页执行", () => {
     let called = 0;
     await expect(fetchPages(
       { url: "https://api.example.com/list?page=9", pages: { from: 1, to: 2 }, savePath: "x.json" },
-      async () => { called += 1; return reply(); },
+      async () => { called += 1;
+
+ return reply(); },
       dir(),
     )).rejects.toThrow(/占位符/);
     expect(called).toBe(0);
@@ -103,15 +108,19 @@ describe("批量翻页执行", () => {
 
   it("单页失败不吞掉其它页：失败页写明原因，成功页照常落盘", async () => {
     const target = dir();
+
     const result = await fetchPages(
       { url: "https://api.example.com/list?page={page}", pages: { from: 1, to: 3 }, savePath: "x.json" },
       async (request) => {
         const page = Number(new URL(request.url).searchParams.get("page"));
+
         if (page === 3) throw new Error("fetch 请求失败（未送达或网络错误）：boom。");
+
         return reply({ text: `page-${page}`, status: page === 2 ? 404 : 200, ok: page !== 2 });
       },
       target,
     );
+
     expect(result.data.failed).toBe(1);
     expect(result.data.saved).toHaveLength(2);
     expect(result.text).toContain("3. request failed");
@@ -137,15 +146,19 @@ describe("fetch 工具接上 pages（模型看到的入口）", () => {
   it("带 pages 时走批量路径：每页一次 RPC、占位符替换、回执包不可信边界", async () => {
     const target = dir();
     process.env.SIDEAGENT_DOWNLOADS_DIR = target;
+
     try {
       const calls: any[] = [];
+
       const rpc: any = {
         call: async (name: string, params: any) => {
           calls.push({ name, params });
           const page = new URL(params.url).searchParams.get("page");
+
           return reply({ url: params.url, text: `{"page":${page}}`, bytes: 12 });
         },
       };
+
       const tools = createBrowserTools(rpc, undefined, undefined, undefined, { epoch: () => 0, canWrite: () => true, assertCall: () => {} });
       const fetchTool = tools.find((tool) => tool.name === "fetch")!;
       const result: any = await (fetchTool.execute as any)("call-1", { url: "https://api.example.com/list?page={page}", pages: { from: 1, to: 2 }, savePath: "unit-x.json" });

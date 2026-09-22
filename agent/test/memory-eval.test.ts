@@ -6,15 +6,22 @@ import { join } from "node:path";
 import { MemoryStore } from "../src/memory-store.js";
 
 const roots: string[] = [];
+
 const all = { kind: "all" } as const;
+
 const site = { kind: "site", hostname: "research.example" } as const;
+
 const query = { text: "整理会议摘要：讨论搜索改版与下周成本确认。", url: "https://research.example/notes" };
+
 const seed = { text: "会议摘要请用三条要点。", scope: all, sourceConversationId: "eval-conversation-a" };
+
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "sideagent-memory-eval-"));
   roots.push(dir);
+
   return { dir, store: new MemoryStore(dir) };
 }
+
 afterEach(async () => { await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 describe("independent cross-session memory contract", () => {
@@ -34,12 +41,15 @@ describe("independent cross-session memory contract", () => {
     const { store } = await fixture();
     const saved = await store.create({ ...seed, scope: site });
     expect(await store.list()).toEqual([saved]);
+
     for (const url of ["https://research.example/elsewhere", "http://research.example:8080/notes"]) {
       expect(await store.select({ ...query, url })).toEqual([saved]);
     }
+
     for (const url of [undefined, "https://travel.example", "https://sub.research.example", "https://research.example.evil.test", "https://research-example"]) {
       expect(await store.select({ ...query, url })).toEqual([]);
     }
+
     expect(await store.select({ ...query, text: "比较雨伞和雨衣，准备出行清单。" })).toEqual([]);
   });
 
@@ -111,6 +121,7 @@ describe("independent cross-session memory contract", () => {
     expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(settled.filter((result) => result.status === "rejected")).toHaveLength(1);
     const committed = settled.find((result) => result.status === "fulfilled");
+
     if (committed?.status !== "fulfilled") throw new Error("missing committed update");
     expect(await new MemoryStore(dir).list()).toEqual([committed.value]);
   });
@@ -118,9 +129,11 @@ describe("independent cross-session memory contract", () => {
   it("rejects malformed writes without changing acknowledged data", async () => {
     const { store } = await fixture();
     const saved = await store.create(seed);
+
     for (const invalid of [{ ...seed, text: "   " }, { ...seed, text: 42 }, { ...seed, scope: { kind: "site", hostname: "" } }, { ...seed, scope: { kind: "unknown" } }, { ...seed, sourceConversationId: 42 }]) {
       await expect(store.create(invalid as never)).rejects.toThrow();
     }
+
     await expect(store.update({ id: saved.id, expectedVersion: "1", text: seed.text, scope: all } as never)).rejects.toThrow();
     await expect(store.forget({ id: saved.id, expectedVersion: -1 })).rejects.toThrow();
     expect(await store.list()).toEqual([saved]);

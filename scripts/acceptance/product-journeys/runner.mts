@@ -50,10 +50,12 @@ export async function startHost(model: string, storeDir: string, events: RunnerE
   const store = new ConversationStore(join(storeDir, "conversations"));
   const memories = new MemoryStore(join(storeDir, "memory"));
   const host: HostHandle = { manager: undefined as unknown as ConversationManager, wss: undefined as unknown as WebSocketServer, port: 0, token, storeDir, events };
+
   const manager = new ConversationManager(
     (id, emit, summary) => createConversationRuntime(id, emit, model, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore: memories }),
     (message) => {
       events.push({ at: Date.now(), direction: "server", message: message as Record<string, unknown> });
+
       if (host.socket?.readyState === WebSocket.OPEN) host.socket.send(JSON.stringify(message));
     },
     store,
@@ -61,22 +63,30 @@ export async function startHost(model: string, storeDir: string, events: RunnerE
     undefined,
     new TaskDispatcher(new TaskReceiptStore(join(storeDir, "receipts"))),
   );
+
   host.manager = manager;
   const wss = new WebSocketServer({ host: "127.0.0.1", port: fixedPort ?? 0 });
   wss.on("connection", (client) => {
     client.on("message", async (raw) => {
       const message = parseClientMessage(raw.toString());
+
       if (!message) return;
+
       if (message.type === "hello") {
-        if (message.token !== token) { client.close(); return; }
+        if (message.token !== token) { client.close();
+
+ return; }
+
         host.socket = client;
         manager.reconnect();
         const session = manager.get("default")!.runtime.session;
         client.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models: await session.availableModels(), hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: "0.1.0" }));
         client.send(JSON.stringify({ type: "conversation_list", conversations: manager.list() }));
         manager.replayState((m) => client.send(JSON.stringify(m)));
+
         return;
       }
+
       if (host.socket !== client) return;
       events.push({ at: Date.now(), direction: "client", message: message as Record<string, unknown> });
       void manager.handleMessage(message).catch((e) => events.push({ at: Date.now(), direction: "error", message: { error: String(e) } }));
@@ -87,11 +97,13 @@ export async function startHost(model: string, storeDir: string, events: RunnerE
   host.wss = wss;
   host.port = (wss.address() as { port: number }).port;
   await manager.ensureDefault();
+
   return host;
 }
 
 export async function stopHost(host: HostHandle): Promise<void> {
   host.manager.dispose();
+
   for (const client of host.wss.clients) client.terminate();
   await new Promise<void>((r) => host.wss.close(() => r()));
 }
@@ -106,6 +118,7 @@ export async function startIsolatedPanel(host: HostHandle, options: Parameters<t
   await until(async () => (await iso.evalIn(panel, "!!document.querySelector('#input')")) || undefined, 10_000, "panel");
   await iso.evalIn(panel, "window.probePort=chrome.runtime.connect({name:'sideagent-panel'});probePort.postMessage({kind:'retry'});");
   await until(() => host.socket?.readyState === WebSocket.OPEN || undefined, 15_000, "host connected");
+
   return { iso, panel };
 }
 
@@ -121,7 +134,9 @@ async function probePage(iso: IsolatedExtension, tabId: number): Promise<PagePro
     `chrome.scripting.executeScript({target:{tabId:${tabId}},world:'MAIN',func:new Function(${JSON.stringify(`return ${PAGE_PROBE}`)})}).then(r=>r[0].result).catch(e=>({error:String(e)}))`,
     15_000,
   )) as PageProbe & { error?: string };
+
   if ("error" in result && result.error) throw new Error(`页面探针失败：${result.error}`);
+
   return result;
 }
 
@@ -129,6 +144,7 @@ interface EventView { at: number; direction: string; message: Record<string, unk
 
 function eventKind(e: EventView): string {
   const m = e.message as { type?: string; event?: { kind?: string } };
+
   return m.type === "agent_event" ? String(m.event?.kind ?? "") : String(m.type ?? "");
 }
 
@@ -137,6 +153,7 @@ function extractDeliveries(events: EventView[], conversationId: string) {
     .filter((e) => eventKind(e) === "user_delivery")
     .map((e) => {
       const m = e.message as { conversationId?: string; event?: { delivery?: { kind?: string; text?: string; runId?: string | null } } };
+
       return { kind: String(m.event?.delivery?.kind ?? ""), text: String(m.event?.delivery?.text ?? ""), runId: m.event?.delivery?.runId ?? null, conversationId: m.conversationId };
     })
     .filter((d) => d.kind && d.kind !== "ack" && d.text);
@@ -147,18 +164,22 @@ function extractReceipts(events: EventView[], conversationId: string) {
     .filter((e) => eventKind(e) === "notice" && (e.message as { conversationId?: string }).conversationId === conversationId && (e.message as { event?: { receipt?: unknown } }).event?.receipt)
     .map((e) => {
       const r = (e.message as { event: { receipt: { requestId?: string; status?: string; action?: string } } }).event.receipt;
+
       return { requestId: String(r.requestId ?? ""), status: String(r.status ?? ""), action: r.action };
     });
 }
 
 function extractRunIds(events: EventView[], conversationId: string): string[] {
   const ids = new Set<string>();
+
   for (const e of events) {
     if (e.message.type === "status" && (e.message as { conversationId?: string }).conversationId === conversationId) {
       const runId = (e.message as { runId?: string }).runId;
+
       if (runId) ids.add(runId);
     }
   }
+
   return [...ids];
 }
 
@@ -170,30 +191,40 @@ function extractToolCalls(events: EventView[], conversationId: string) {
 
 async function waitTerminal(events: EventView[], host: HostHandle, conversationId: string, deadlineMs: number, minIndex = 0): Promise<"ended" | "timeout"> {
   const deadline = Date.now() + deadlineMs;
+
   while (Date.now() < deadline) {
     const own = events.slice(minIndex).filter((e) => (e.message as { conversationId?: string }).conversationId === conversationId || (e.message as { event?: { conversationId?: string } }).event?.conversationId === conversationId);
     const ended = own.some((e) => ["agent_end", "error", "run_stopped"].includes(eventKind(e)));
     const streaming = host.manager.get(conversationId)?.runtime.session.isStreaming() === true;
+
     if (ended && !streaming) {
       // 静默期：吸收晚到的 turn 结束/交付，避免把上一轮的 agent_end 当终态
       const quietStart = events.length;
       await sleep(1_500);
+
       if (events.length !== quietStart) { await sleep(500); continue; }
+
       // 等正式交付补齐（最多 12s），与 live-suite 同一口径
       const makeup = Date.now() + 12_000;
+
       while (Date.now() < makeup) {
         const snap = host.manager.getTaskProgress(conversationId);
         const kind = snap?.conversationContext?.latestDelivery?.kind;
+
         if (kind === "finding" || kind === "reply") return "ended";
         // 普通 notice（如 accepted 回执）不终止补齐等待；只有明确「没有正式回答」才提前结束
         const noDelivery = own.some((e) => eventKind(e) === "notice" && String((e.message as { event?: { message?: string } }).event?.message ?? "").includes("正式回答还没有"));
+
         if (noDelivery) return "ended";
         await sleep(150);
       }
+
       return "ended";
     }
+
     await sleep(150);
   }
+
   return "timeout";
 }
 
@@ -209,35 +240,47 @@ async function runReadingCard(iso: IsolatedExtension, pageTarget: string, follow
   const records = async () => (await iso.swEval("chrome.storage.session.get('readingRecords').then(v=>v.readingRecords??[])")) as { turns: { state: string; text: string }[] }[];
   await until(async () => {
     const r = (await records()).at(-1);
+
     return r?.turns.length === 1 && r.turns[0].state === "done" ? r : undefined;
   }, deadlineMs, "reading turn 1");
   const first = (await records()).at(-1)?.turns[0]?.text ?? "";
   void first;
+
   if (!followup) return;
   // 卡片内追问（closed shadow root，走 CDP）
   const port = (await import("node:fs/promises")).readFile(join(iso.outDir, "profile", "DevToolsActivePort"), "utf8");
   const cdp = createCdp((await fetchJson(`http://127.0.0.1:${(await port).split("\n")[0]}/json/version`)).webSocketDebuggerUrl);
   await cdp.ready();
   const session = await cdp.attachSession(pageTarget);
+
   const find = (node: Record<string, any>): any => {
     if ((node.attributes as string[] | undefined)?.includes("data-sideagent-ask")) return node;
+
     for (const child of [...(node.children as any[] ?? []), ...(node.shadowRoots as any[] ?? [])]) {
       const found = find(child);
+
       if (found) return found;
     }
   };
+
   const doc = await cdp.send("DOM.getDocument", { depth: -1, pierce: true }, session);
   const hostNode = find(doc.root);
+
   if (!hostNode?.shadowRoots?.[0]) throw new Error("reading card shadow root missing");
   const resolved = await cdp.send("DOM.resolveNode", { backendNodeId: hostNode.shadowRoots[0].backendNodeId }, session);
+
   const ui = async (body: string) => {
     const result = await cdp.send("Runtime.callFunctionOn", { objectId: resolved.object.objectId, functionDeclaration: `function(){${body}}`, returnByValue: true, awaitPromise: true }, session);
+
     if (result.exceptionDetails) throw new Error(String(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text));
+
     return result.result.value;
   };
+
   await ui(`const t=this.querySelector('textarea');t.value=${JSON.stringify(followup)};t.dispatchEvent(new Event('input',{bubbles:true}));this.querySelector('.send').click();`);
   await until(async () => {
     const r = (await records()).at(-1);
+
     return r?.turns.length === 2 && r.turns[1]?.state === "done" ? r : undefined;
   }, deadlineMs, "reading turn 2");
   await cdp.close().catch(() => {});
@@ -276,10 +319,13 @@ export async function runOne(
     conversationId = (await iso.swEval("chrome.storage.session.get('selectedConversationId').then(s=>s.selectedConversationId??'default')")) as string;
     const pageTarget = await iso.newTarget(`${fixture.origin}${mat.startPath}`);
     pageTargetId = pageTarget;
+
     const tab = await until(async () => {
       const tabs = (await iso.swEval("chrome.tabs.query({})")) as { id: number; url: string }[];
+
       return tabs.find((t) => t.url.startsWith(`${fixture.origin}${new URL(mat.startPath, "http://x").pathname}`));
     }, 5_000, "fixture tab");
+
     tabId = tab.id;
     await iso.swEval(`chrome.tabs.update(${tabId},{active:true}).catch(()=>{})`).catch(() => {});
     await sleep(300);
@@ -292,29 +338,36 @@ export async function runOne(
       const followup = mat.plannedSteps.find((s) => s.kind === "ask")?.text;
       await runReadingCard(iso, pageTarget, followup, Math.max(30_000, deadline - Date.now() - 30_000));
       interventions.planned = followup ? 1 : 0;
+
       // 证据以权威 reading_event（state=done）为准，不读 storage 内部结构
       const readingTexts = events.slice(eventsBefore)
         .filter((e) => (e.message as { type?: string; state?: string }).type === "reading_event" && (e.message as { state?: string }).state === "done")
         .map((e) => String((e.message as { text?: string }).text ?? ""));
+
       deliveries = readingTexts.map((text) => ({ kind: "reply", text, runId: null, conversationId: "reading-card" }));
       conversationId = "reading-card";
       status = "pass"; // 终止状态以交付为准；具体对错交给 oracle
     } else {
       await panelSend(iso, panel, mat.userText);
       let lastInputIndex = events.length;
+
       // 计划步骤
       for (const step of mat.plannedSteps) {
         await runPlannedStep(env, step, tabId, pageTarget, conversationId, deadline, interventions, (w) => { takeoverWindow = w; }, (t) => { restartAtMs = t; });
         lastInputIndex = events.length;
+
         if (Date.now() > deadline) break;
       }
+
       const terminal = await waitTerminal(events, env.host.current, conversationId, Math.max(5_000, deadline - Date.now()), lastInputIndex);
+
       if (terminal === "timeout") {
         status = "timeout";
         reason = `超过时间上限 ${jc.timeLimitMs / 1000}s`;
       } else {
         status = "pass";
       }
+
       deliveries = extractDeliveries(events.slice(eventsBefore), conversationId);
     }
   } catch (error) {
@@ -325,15 +378,22 @@ export async function runOne(
   const endedAt = Date.now();
   // 独立证据：页面探针 + 夹具服务端状态
   let page: PageProbe | null = null;
+
   if (tabId !== null) {
-    page = await probePage(iso, tabId).catch((e) => { reason += `；探针失败:${e instanceof Error ? e.message : e}`; return null; });
+    page = await probePage(iso, tabId).catch((e) => { reason += `；探针失败:${e instanceof Error ? e.message : e}`;
+
+ return null; });
   }
+
   const hitsAfter = fixture.hits();
   const hits: Record<string, number> = {};
+
   for (const [k, v] of Object.entries(hitsAfter)) {
     const d = v - (hitsBefore[k] ?? 0);
+
     if (d > 0) hits[k] = d;
   }
+
   const writes = fixture.writes().slice(writesBefore).filter((w) => w.at >= startedAt).map((w) => ({ kind: w.kind, page: w.page, values: w.values, at: w.at, result: "ok" as const }));
 
   const evidence: RunEvidence = {
@@ -352,7 +412,9 @@ export async function runOne(
     ended: status !== "timeout",
     timedOut: status === "timeout",
   };
+
   const verdict = judgeCase(jc, mat, evidence);
+
   if (!verdict.qualified && status === "pass") {
     status = "fail";
     reason = verdict.checks.filter((c) => !c.ok).map((c) => `${c.id}:${c.detail}`).join(" | ");
@@ -362,17 +424,22 @@ export async function runOne(
   if (conversationId !== "reading-card") {
     try {
       const snap = env.host.current.manager.getTaskProgress(conversationId);
+
       if (snap && (snap.state === "running" || snap.state === "paused")) {
         interventions.forced += 1;
         interventions.reasons.push("臂末清理：任务未自行结束，执行终止");
         await env.host.current.manager.handleMessage({ type: "abort", conversationId } as never);
         const stopDeadline = Date.now() + 10_000;
+
         while (Date.now() < stopDeadline) {
           const s2 = env.host.current.manager.getTaskProgress(conversationId);
+
           if (!s2 || s2.state === "aborted" || s2.state === "idle" || s2.state === "error") break;
           await sleep(200);
         }
+
         const finalSnap = env.host.current.manager.getTaskProgress(conversationId);
+
         if (finalSnap && finalSnap.state === "running") {
           interventions.reasons.push("臂末清理：终止未确认，重启 host 隔离");
           await env.restartHost();
@@ -385,8 +452,10 @@ export async function runOne(
 
   const lastDeliveryAt = (() => {
     const own = events.slice(eventsBefore).filter((e) => eventKind(e) === "user_delivery" || eventKind(e) === "reading_event");
+
     return own.length ? own.at(-1)!.at : null;
   })();
+
   const row: JourneyRow = {
     caseId: jc.caseId,
     family: jc.family,
@@ -402,10 +471,13 @@ export async function runOne(
   };
 
   await iso.screenshot(panel, join(outDir, "panel-final.png")).catch(() => {});
+
   if (pageTargetId !== null) await iso.screenshot(pageTargetId, join(outDir, "page-final.png")).catch(() => {});
   writeFileSync(join(outDir, "events.json"), JSON.stringify(events.slice(eventsBefore), null, 2));
   writeFileSync(join(outDir, "run.json"), JSON.stringify({ row, verdict, evidence: { ...evidence, deliveries: deliveries.map((d) => ({ ...d, text: String(d.text ?? "").slice(0, 2000) })) }, model: env.model, startedAt, endedAt }, null, 2));
+
   if (tabId !== null) await iso.swEval(`chrome.tabs.remove(${tabId}).catch(()=>{})`).catch(() => {});
+
   return { row, verdict };
 }
 
@@ -422,17 +494,21 @@ async function runPlannedStep(
 ): Promise<void> {
   const { iso, panel } = env;
   const events = env.host.current.events;
+
   const waitCue = async () => {
     const base = events.length;
     await until(() => events.slice(base).some((e) => {
       if (step.after === "first-delivery") return eventKind(e) === "user_delivery";
+
       if (step.after === "first-fill") {
         // 已确认写入：fill 调用 + 顺序配对的 tool_end 且 ok/executed
         return pairCallsWithEnds(events.slice(base), armConversationId).some((t) => t.name === "fill" && t.ok === true && t.executionFact === "executed");
       }
+
       return eventKind(e) === "tool_start" || e.message.type === "tool_call";
     }) || undefined, Math.max(10_000, deadline - Date.now()), `cue:${step.after}`);
   };
+
   switch (step.kind) {
     case "steer":
     case "ask":
@@ -458,6 +534,7 @@ async function runPlannedStep(
       interventions.planned += 1;
       break;
     }
+
     case "restart-continue": {
       await waitCue();
       setRestartAt(Date.now());

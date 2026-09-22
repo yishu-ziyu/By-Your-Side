@@ -72,9 +72,11 @@ describe('whole-task fast selector', () => {
       complete: { noul: .42 },
       route: { choice: 'tab_1', confidence: .97, probabilities: { tab_1: .97, normal: .03 } },
     }));
+
     const result = await decideFastTask(baseInput({
       request: '切换到 Rainfall study，然后总结页面。',
     }), new AbortController().signal);
+
     expect(result).toMatchObject({ kind: 'miss', reason: 'coverage_uncertain' });
   });
 
@@ -94,6 +96,7 @@ describe('whole-task fast selector', () => {
       font: { choice: 'unspecified', probabilities: { unspecified: .45 } },
       mode: { choice: 'translated', probabilities: { translated: .97 } },
     }));
+
     const result = await decideFastTask(baseInput({
       request: '只显示译文，隐藏原文。',
       allowSwitch: false,
@@ -105,6 +108,7 @@ describe('whole-task fast selector', () => {
         fontFamily: 'original',
       },
     }), new AbortController().signal);
+
     expect(result).toMatchObject({
       kind: 'candidate',
       candidate: { kind: 'display', params: { action: 'display', mode: 'translated' } },
@@ -120,11 +124,13 @@ describe('whole-task fast selector', () => {
       skill_input_0_0: { choice: 'value_0', probabilities: { value_0: .99, missing: .01 } },
       skill_input_0_1: { choice: 'value_1', probabilities: { value_1: .99, missing: .01 } },
     }));
+
     const result = await decideFastTask(baseInput({
       request: '请在客户查询里查找「李四」，地区设为「深圳」',
       allowSwitch: false,
       skills: [{ skill, runs: [], selected: false }],
     }), new AbortController().signal);
+
     expect(result).toMatchObject({
       kind: 'candidate',
       candidate: {
@@ -142,6 +148,7 @@ describe('whole-task fast selector', () => {
       complete: { noul: .35 },
       route: { choice: 'skill_0', confidence: .96, probabilities: { skill_0: .96, normal: .04 } },
     }));
+
     const result = await decideFastTask(baseInput({
       request: '搜索「李四」，地区「深圳」，然后导出结果。',
       allowSwitch: false,
@@ -152,6 +159,7 @@ describe('whole-task fast selector', () => {
         suppliedInputs: { 客户名: '李四', 地区: '深圳' },
       }],
     }), new AbortController().signal);
+
     expect(result).toMatchObject({ kind: 'miss', reason: 'coverage_uncertain' });
   });
 });

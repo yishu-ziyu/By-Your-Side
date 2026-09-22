@@ -29,21 +29,29 @@ const GROUPS = [
 ] as const;
 
 const DAILY_LIMIT = 9;
+
 const RECORDED_WAIT_MS = 8_000; // Jev 内部超时 4s，留 2 倍余量等 skipped 记录落盘
 
 if (!readTypeSafeKey()) throw new Error('BLOCKED: 缺 Jev 凭据（TYPESAFE_API_KEY 或 ~/.sideagent/typesafe.env），不自行新建');
 
 const out = resolve(`out/acceptance/route-shadow-spoken-result-${Date.now()}`);
+
 const shadowRoot = join(out, 'shadow-log');
+
 await mkdir(shadowRoot, { recursive: true });
 
 const sha256 = async (path: string): Promise<string> => createHash('sha256').update(await readFile(path)).digest('hex');
+
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 const dayKey = (at: number): string => {
   const d = new Date(at);
+
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+
 const dayFile = (at: number): string => join(shadowRoot, `${dayKey(at)}.jsonl`);
+
 const readLines = async (at: number): Promise<Array<Record<string, unknown>>> => {
   try {
     return (await readFile(dayFile(at), 'utf8')).split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -52,9 +60,12 @@ const readLines = async (at: number): Promise<Array<Record<string, unknown>>> =>
 
 // A1 现场证据：包装 fetch 计数并抓取每次请求的 questions 键（不改请求内容）。
 const fetchProbe = { calls: 0, questionKeys: [] as string[][] };
+
 const probedFetch = (async (url: string | URL | Request, init?: RequestInit) => {
   fetchProbe.calls++;
+
   try { fetchProbe.questionKeys.push(Object.keys(JSON.parse(String(init?.body)).questions).sort()); } catch { fetchProbe.questionKeys.push(['<unparsable>']); }
+
   return fetch(url, init);
 }) as typeof fetch;
 
@@ -79,7 +90,9 @@ interface SentenceResult {
 }
 
 const results: SentenceResult[] = [];
+
 let id = 0;
+
 for (const bucket of GROUPS) {
   for (const text of bucket.texts) {
     id++;
@@ -91,11 +104,15 @@ for (const bucket of GROUPS) {
     });
     let record: Record<string, unknown> | null = null;
     const deadline = Date.now() + RECORDED_WAIT_MS;
+
     while (Date.now() < deadline) {
       const lines = await readLines(started);
+
       if (lines.length > before) { record = lines[lines.length - 1]!; break; }
+
       await sleep(100);
     }
+
     const waitedMs = Date.now() - started;
     const jev = (record?.jev ?? {}) as {lane?: string; pageChange?: number; spokenResult?: number; requestMs?: number};
     const spokenResult = typeof jev.spokenResult === 'number' ? jev.spokenResult : null;
@@ -117,8 +134,11 @@ for (const bucket of GROUPS) {
 
 // ── 结果裁决（只回答两个问题，不选生产阈值） ────────────────────────────────
 const valid = results.filter(r => r.spokenResult !== null);
+
 const latencies = valid.map(r => r.requestMs!).filter(v => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
+
 const median = latencies.length ? (latencies.length % 2 ? latencies[(latencies.length - 1) / 2]! : Math.round((latencies[latencies.length / 2 - 1]! + latencies[latencies.length / 2]!) / 2)) : null;
+
 const verdict = {
   recordsValid: `${valid.length}/${results.length}`,
   allRecorded: valid.length === results.length,
@@ -132,6 +152,7 @@ const verdict = {
 const version = (async () => {
   const headRef = (await readFile('.git/HEAD', 'utf8')).trim();
   const head = headRef.startsWith('ref: ') ? (await readFile(join('.git', headRef.slice(5)), 'utf8')).trim() : headRef;
+
   return {
     head,
     routeShadowSha256: await sha256(resolve('agent/src/route-shadow.ts')),
@@ -139,6 +160,7 @@ const version = (async () => {
     credentials: 'Jev 凭据存在（未打印）；未使用 STEPFUN_API_KEY；未连接 StepFun/浏览器',
   };
 })();
+
 const evidence = {
   markers: {
     model: 'jev-1.13.0（RouteShadow 原生端点）',
@@ -152,6 +174,9 @@ const evidence = {
   verdict,
   version: await version,
 };
+
 await writeFile(join(out, 'result.json'), JSON.stringify(evidence, null, 2));
+
 console.log(JSON.stringify({ out, fetchProbe, results, verdict }, null, 2));
+
 process.exitCode = verdict.allRecorded ? 0 : 1;

@@ -13,17 +13,21 @@ function installChrome(opts?: {
     if (details.files) {
       return [{ frameId: 0, result: undefined }];
     }
+
     if (typeof details.func === "function") {
       // 模拟页面 ISOLATED world 中执行
       // 若模拟 domops 抛错或未找到
       if (opts?.domError) {
         return [{ frameId: 0, result: { ok: false, error: opts.domError } }];
       }
+
       if (opts?.domRect !== undefined) {
         return [{ frameId: 0, result: { ok: true, rect: opts.domRect } }];
       }
+
       return [{ frameId: 0, result: undefined }];
     }
+
     return [{ frameId: 0, result: undefined }];
   });
 
@@ -38,6 +42,7 @@ function installChrome(opts?: {
       update: vi.fn(),
     },
   });
+
   return executeScript;
 }
 
@@ -84,6 +89,7 @@ describe("click & mark robustness", () => {
     const markCall = executeScript.mock.calls.find(([details]) =>
       Array.isArray(details.args) && details.args[1] === "待归档"
     );
+
     const passedActions = markCall![0].args?.[4];
     expect(passedActions).toEqual([
       { id: "confirm", label: "归档" },

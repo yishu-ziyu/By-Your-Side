@@ -18,6 +18,7 @@ interface ObserveApi {
 
 (function () {
   const existing = (window.__sideagent as unknown as { observe?: ObserveApi } | undefined)?.observe;
+
   if (existing) return;
   const store = (window.__sideagent ??= {}) as unknown as { observe?: ObserveApi };
 
@@ -41,7 +42,9 @@ interface ObserveApi {
     const bad = tainted;
     anchors = [];
     tainted = false;
+
     if (bad || steps.length < MIN_STEPS) return;
+
     try {
       void chrome.runtime.sendMessage({ type: "sideagent:observed-run", run: { hostname, anchors: steps, at: Date.now() } });
     } catch {
@@ -52,12 +55,20 @@ interface ObserveApi {
   function onClick(ev: MouseEvent): void {
     if (!running || ev.button !== 0 || insideOverlay(ev.target)) return;
     const hit = anchorOfTarget(ev.target);
+
     if (!hit) return;
+
     // 碰到敏感字段：这一段整个丢掉，不留半个骨架
-    if (hit.sensitive) { tainted = true; anchors = []; return; }
+    if (hit.sensitive) { tainted = true; anchors = [];
+
+ return; }
+
     const now = Date.now();
+
     if (now - lastAt > RUN_GAP_MS) { flush(); }
+
     lastAt = now;
+
     if (hit.anchor.name || hit.anchor.role) anchors.push(hit.anchor);
   }
 
@@ -67,6 +78,7 @@ interface ObserveApi {
     const fn = on ? document.addEventListener.bind(document) : document.removeEventListener.bind(document);
     fn("click", onClick as EventListener, true);
     fn("visibilitychange", onHidden);
+
     if (on) window.addEventListener("pagehide", flush);
     else window.removeEventListener("pagehide", flush);
   }
@@ -79,6 +91,7 @@ interface ObserveApi {
       tainted = false;
       lastAt = 0;
       attach(true);
+
       return { ok: true };
     },
     stop() {
@@ -86,6 +99,7 @@ interface ObserveApi {
       flush();
       running = false;
       attach(false);
+
       return { ok: true };
     },
     active() { return running; },

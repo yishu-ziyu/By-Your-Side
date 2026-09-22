@@ -107,6 +107,7 @@ export interface SkillCandidate {
 
 export function isSkillCandidate(value: unknown): value is SkillCandidate {
   const candidate = value as SkillCandidate | undefined;
+
   return !!candidate && validSkillId(candidate.skill?.id) && typeof candidate.sourceRunId === "string" && candidate.sourceRunId.length <= 128
     && typeof candidate.createdAt === "number" && typeof candidate.skill.program === "string" && candidate.skill.program.length <= 100_000
     && Array.isArray(candidate.skill.steps) && candidate.skill.steps.length <= 200 && isSkillInputs(candidate.skill.inputs)
@@ -122,6 +123,7 @@ export function skillRunSummary(runs: SkillRun[]): string {
   const seconds = Math.max(0.1, last.elapsedMs / 1000).toFixed(1);
   const head = last.ok ? `跑过 ${runs.length} 次 · 上次 ${seconds} 秒` : `跑过 ${runs.length} 次 · 上次失败`;
   const stalled = runs.filter(run => !run.ok && typeof run.failedStep === "number").length;
+
   return stalled > 0 ? `${head} · ${stalled} 次因为页面变了停下` : head;
 }
 
@@ -135,12 +137,16 @@ export const STALE_AFTER_STALLS = 3;
  */
 export function skillHealth(runs: SkillRun[]): { stale: boolean; stalls: number; reason?: string } {
   let stalls = 0;
+
   for (let i = runs.length - 1; i >= 0; i -= 1) {
     const run = runs[i]!;
+
     if (run.ok) break;
+
     if (typeof run.failedStep === "number") stalls += 1;
     else break; // 别的失败原因（被接管、超时）不算"页面变了"
   }
+
   return stalls >= STALE_AFTER_STALLS
     ? { stale: true, stalls, reason: `最近 ${stalls} 次都因为页面变了停下，可能已经过期` }
     : { stale: false, stalls };
@@ -158,6 +164,7 @@ const RESERVED_INPUT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 export function isSkillInputs(value: unknown): value is Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const entries = Object.entries(value);
+
   return entries.length <= 200 && entries.every(([key, input]) =>
     key.length > 0 && key.length <= 100 && !RESERVED_INPUT_KEYS.has(key)
     && typeof input === "string" && input.length <= 8_000)
@@ -177,20 +184,26 @@ export class SkillInputError extends Error {
 export function bindSkillInputs(skill: Skill, overrides: Record<string, string> = {}): Record<string, string> {
   if (!isSkillInputs(overrides) || !isSkillInputs(skill.inputs)) throw new SkillInputError("技能输入格式无效");
   const known = new Set(skill.steps.flatMap(step => step.inputKey ? [step.inputKey] : []));
+
   for (const key of Object.keys(overrides)) {
     if (!known.has(key) || !Object.hasOwn(skill.inputs, key)) throw new SkillInputError(`未知技能输入：${key}`);
   }
+
   const inputs: Record<string, string> = {};
   const missing: string[] = [];
+
   for (const key of known) {
     if (RESERVED_INPUT_KEYS.has(key) || !Object.hasOwn(skill.inputs, key)) throw new SkillInputError("技能输入定义无效");
     const supplied = Object.hasOwn(overrides, key);
     const sensitive = sensitiveSkillInput(skill, key);
     const value = supplied ? overrides[key]! : sensitive ? "" : skill.inputs[key]!;
+
     if ((sensitive && !value) || (!supplied && !value)) missing.push(key);
     inputs[key] = value;
   }
+
   if (missing.length) throw new SkillInputError(`请提供本次输入：${missing.join("、")}`, missing);
+
   return inputs;
 }
 
@@ -207,22 +220,29 @@ export const HIDDEN_MATERIAL = "[本次材料已隐藏]";
  */
 export function redactSkillMaterials(text: string, materials: readonly string[]): string {
   let out = text;
+
   for (const value of materials) if (value.length >= 2 && out.includes(value)) out = out.split(value).join(HIDDEN_MATERIAL);
+
   return out;
 }
 
 /** 步骤与凭证里都不允许出现坐标或 DOM 路径：那是会失效的东西。 */
 export function forbiddenInSkill(text: string): string | null {
   if (/nth-of-type|nth-child/.test(text)) return "DOM 路径";
+
   if (/\(\s*-?\d+\s*,\s*-?\d+\s*\)/.test(text)) return "坐标";
+
   // 运行时自带的那枚标记不是"写死的选择器"：它是脚本自己贴上去的，跟页面结构无关。
   const scrubbed = text
     .split('"[data-sideagent-target]"').join("()")
     .split("[data-sideagent-target]").join("")
     .split("data-sideagent-target").join("");
+
   // 写死的选择器才是红线：按语义解析（querySelectorAll(spec.tag)）不算
   if (/querySelector(All)?\(\s*['"][.#\[]/.test(scrubbed)) return "选择器";
+
   if (/#[A-Za-z_][\w-]*/.test(scrubbed)) return "id 选择器";
+
   return null;
 }
 
@@ -230,12 +250,15 @@ export function forbiddenInSkill(text: string): string | null {
 export function skillStepsText(skill: Skill): string[] {
   return skill.steps.map(step => {
     if (step.kind === "press") return `按 ${KEY_LABEL[step.key ?? ""] ?? step.key ?? ""}`;
+
     if (step.inputKey) {
       const value = skill.inputs[step.inputKey] ?? "";
+
       return step.redacted || !value
         ? `在${describeAnchor(step.anchor)}里输入（内容已隐藏）`
         : `在${describeAnchor(step.anchor)}里输入「${value}」`;
     }
+
     return `点击${describeAnchor(step.anchor)}`;
   });
 }
@@ -247,7 +270,9 @@ export function skillStepsText(skill: Skill): string[] {
 export function skillWorkflowActions(skill: Skill): string[] {
   return skill.steps.map(step => {
     if (step.kind === "press") return `按${KEY_LABEL[step.key ?? ""] ?? step.key ?? "键"}`;
+
     if (step.inputKey) return `在${describeAnchor(step.anchor)}里输入本次材料`;
+
     return `点击${describeAnchor(step.anchor)}`;
   });
 }
@@ -257,8 +282,12 @@ const KEY_LABEL: Record<string, string> = { Enter: "回车", Tab: "Tab", Escape:
 export function describeAnchor(anchor: SkillAnchor | undefined): string {
   if (!anchor) return "页面";
   const name = anchor.name ? `「${anchor.name}」` : "";
+
   if (anchor.tag === "input" || anchor.tag === "textarea") return `${anchor.inputType === "search" ? "搜索框" : "输入框"}${name}`;
+
   if (anchor.tag === "a") return `链接${name}`;
+
   if (anchor.tag === "button") return `按钮${name}`;
+
   return `${anchor.role ?? anchor.tag}${name}`;
 }

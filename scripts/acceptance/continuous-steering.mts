@@ -17,27 +17,46 @@ import { DEFAULT_PORT, PROTOCOL_VERSION, HOST_VERSION, STORAGE_SCHEMA_VERSION, p
 import { launchIsolatedExtension, until, sleep } from './isolated-extension.mts';
 
 if (!process.argv.includes('--headless')) throw new Error('Required: --headless');
+
 const out = resolve('out/acceptance', `continuous-steering-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+
 await mkdir(out, { recursive: true });
+
 const sourceFiles = ['agent/src/session.ts','agent/src/conversation-manager.ts','agent/src/fleet.ts','agent/src/task-dispatcher.ts','extension/dist/background.js','extension/dist/sidepanel.js','scripts/acceptance/continuous-steering.mts'];
+
 const hashes = Object.fromEntries(await Promise.all(sourceFiles.map(async p => [p, createHash('sha256').update(await readFile(p)).digest('hex')])));
+
 const model = loadConfig().model;
+
 const token = randomUUID();
+
 const fixtureHtml = `<!doctype html><meta charset="utf-8"><title>独立助手表单</title><h1>联系信息</h1><form><label for="name">姓名</label><input id="name"><label for="email">邮箱</label><input id="email" value="keep@example.com"><button>提交</button></form><script>window.writes=[];window.submits=0;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submits++};document.querySelectorAll('input').forEach(e=>e.addEventListener('input',()=>window.writes.push({field:e.id,value:e.value,at:Date.now()})));</script>`;
+
 const events: any[] = [];
+
 const cases: any[] = [];
+
 let socket: WebSocket | undefined;
+
 let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
+
 let panel = '';
+
 let holdNextSnapshot = false;
+
 let heldSnapshot: any = null;
+
 let barrier: { entered: boolean; release: () => void; promise: Promise<void> };
+
 function resetBarrier() {
   let release!: () => void;
   barrier = { entered: false, promise: new Promise<void>(r => { release = r; }), release: () => release() };
 }
+
 resetBarrier();
+
 const store = new ConversationStore(join(out, 'conversations'));
+
 const manager = new ConversationManager((id, emit, summary) => createConversationRuntime(id, emit, model, {
   sessionManager: store.sessionManager(id), mode: summary?.mode,
   customTools: [{
@@ -48,50 +67,73 @@ const manager = new ConversationManager((id, emit, summary) => createConversatio
       current.entered = true;
       await new Promise<void>((resolve, reject) => {
         const abort = () => { cleanup(); reject(new Error('Fixture wait cancelled')); };
+
         const cleanup = () => signal?.removeEventListener('abort', abort);
-        if (signal?.aborted) { abort(); return; }
+
+        if (signal?.aborted) { abort();
+
+ return; }
+
         signal?.addEventListener('abort', abort, { once: true });
         void current.promise.then(() => { cleanup(); resolve(); });
       });
+
       return { content: [{ type: 'text' as const, text: '资料已就绪。操作前处理所有最新补充要求。' }], details: {} };
     },
   }],
 }), message => {
   events.push({ at: Date.now(), direction: 'server', message });
+
   if (holdNextSnapshot && message.type === 'tool_call' && message.name === 'snapshot') {
     holdNextSnapshot = false;
     heldSnapshot = message;
+
     return;
   }
+
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 }, store, undefined, undefined, new TaskDispatcher(new TaskReceiptStore(join(out, 'receipts'))));
+
 const wss = new WebSocketServer({ host: '127.0.0.1', port: DEFAULT_PORT });
+
 const listening = new Promise<void>((resolve, reject) => { wss.once('listening', resolve); wss.once('error', reject); });
+
 wss.on('connection', client => {
   client.on('message', async raw => {
     const message = parseClientMessage(raw.toString());
+
     if (!message) return;
+
     if (message.type === 'hello') {
-      if (message.token !== token) { client.close(); return; }
+      if (message.token !== token) { client.close();
+
+ return; }
+
       socket = client;
       const session = manager.get('default')!.runtime.session;
       client.send(JSON.stringify({ type: 'hello_ok', version: PROTOCOL_VERSION, model: session.modelName(), models: await session.availableModels(), hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: '0.1.0' }));
       client.send(JSON.stringify({ type: 'conversation_list', conversations: manager.list() }));
       manager.replayState(m => client.send(JSON.stringify(m)));
+
       return;
     }
+
     if (client !== socket) return;
     events.push({ at: Date.now(), direction: 'client', message });
     void manager.handleMessage(message).catch(error => events.push({ at: Date.now(), error: String(error) }));
   });
   client.on('close', () => { if (socket === client) { socket = undefined; manager.disconnect(); } });
 });
+
 const panelEval = (expression: string) => iso!.evalIn(panel, expression);
+
 const send = async (text: string) => {
   await panelEval(`(()=>{const e=document.querySelector('#input');e.value=${JSON.stringify(text)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`);
   await until(async () => await panelEval("document.querySelector('#input').value === ''") || undefined, 5000, 'panel accepted input');
 };
+
 const receipt = (text: string) => events.map(e => e.message?.event?.receipt).find(r => r?.text === text);
+
 async function createCase(title: string) {
   resetBarrier();
   const requestId = randomUUID();
@@ -107,13 +149,17 @@ async function createCase(title: string) {
   const tab = tabs.find(t => t.url === `${iso!.fixtureOrigin}/${id}`);
   await iso!.swEval(`chrome.tabs.update(${tab.id},{active:true})`);
   const state = () => iso!.evalIn(target, "({name:document.querySelector('#name').value,email:document.querySelector('#email').value,city:document.querySelector('#city').value,note:document.querySelector('#note').value,submits:window.submits,writes:window.writes})");
+
   return { id, target, tab, state };
 }
+
 async function complete(id: string) {
   await until(() => manager.getTaskProgress(id)?.state === 'idle' && !manager.get(id)!.runtime.session.isStreaming() || undefined, 120000, 'task completed');
   await sleep(300);
 }
+
 const report: any = { passed: false, selection: process.argv.includes('--thinking-only') ? 'thinking-only' : process.argv.includes('--observation-only') ? 'observation-only' : process.argv.includes('--team-only') ? 'team-only' : process.argv.includes('--controls-only') ? 'controls-only' : 'all', scope: 'isolated headless production panel + Port + background + WS + actual Pi/model + production browser tools; guided barrier and assigned team setup, no native host or microphone', model, cases, hashes };
+
 try {
   await listening;
   const initial = await manager.ensureDefault();
@@ -133,7 +179,9 @@ try {
     await send('先调用 await_fixture_release 等待资料，等待结束后填写姓名为张三、城市为北京、备注为初稿。保留邮箱，不提交。只操作当前本地表单。');
     await until(() => barrier.entered || undefined, 60000, 'model at controlled wait');
     const edits = ['姓名改成李四。保留邮箱。', '城市改成上海。', '备注填写地铁附近。不要提交。'];
+
     for (const text of edits) { await send(text); await until(() => receipt(text) || undefined, 20000, 'steer receipt'); assert.equal(receipt(text).status, 'accepted'); }
+
     const acceptedAt = Date.now();
     barrier.release();
     await complete(continuous.id);
@@ -158,10 +206,12 @@ try {
     await send('先调用 await_fixture_release 等待资料，随后填写姓名为旧名字、城市为旧城市。保留邮箱，不提交。');
     const thinkingStart = await until(() => events.find(e => e.message?.conversationId === thinking.id && e.message.event?.kind === 'thinking_delta') || undefined, 60000, 'actual thinking stream');
     const thinkingTexts = ['姓名使用陈七。', '城市使用成都。', '备注使用安静房间。邮箱保留，不提交。'];
+
     for (const text of thinkingTexts) {
       await send(text); await until(() => receipt(text) || undefined, 20000, 'thinking edit receipt');
       assert.equal(receipt(text).status, 'accepted');
     }
+
     const inputEvents = thinkingTexts.map(text => events.find(e => e.direction === 'client' && e.message?.request?.text === text)!);
     barrier.release(); await complete(thinking.id);
     const firstTool = events.find(e => e.at >= thinkingStart.at && e.message?.conversationId === thinking.id && e.message.event?.kind === 'tool_start');
@@ -250,6 +300,7 @@ try {
     await until(() => barrier.entered || undefined, 60000, 'lead waits while team is assigned');
     const fleet = manager.get(team.id)!.runtime.fleet;
     const workers = [];
+
     for (const id of ['form_a', 'form_b']) workers.push(await fleet.spawn({
       id, url: `${iso.fixtureOrigin}/${id}`, task: `填写${id}表单`, output: '填写结果',
       goal: '你只负责自己的独立表单。先调用 await_message 等待 from=main、kind=fixture-ready、timeout=120 的资料，此前不要写入。收到后填写姓名为张三，保留原邮箱，不提交。读取字段核对，最后 post 给 main，kind=done，报告最终姓名和邮箱。',
@@ -262,6 +313,7 @@ try {
     await send(text); await until(() => receipt(text) || undefined, 20000, 'team correction receipt');
     assert.equal(receipt(text).status, 'accepted');
     const acceptedAt = Date.now();
+
     for (const w of workers) fleet.mailbox.post({ from: 'main', to: w.id, kind: 'fixture-ready', body: '资料就绪，按已收到的最新要求继续。' });
     barrier.release();
     await until(() => fleet.list().every(w => !w.streaming) || undefined, 120000, 'workers complete');
@@ -269,23 +321,28 @@ try {
     const results: any[] = [];
     const teamCase = { name: 'both actual workers receive common correction and avoid old writes', passed: false, setup: 'fleet.spawn assigns two independent local pages; correction uses production panel', results };
     cases.push(teamCase);
+
     for (const w of workers) {
       const result = await iso.swEval(`chrome.scripting.executeScript({target:{tabId:${w.tabId}},world:'MAIN',func:()=>({name:document.querySelector('#name').value,email:document.querySelector('#email').value,submits:window.submits,writes:window.writes})}).then(r=>r[0].result)`) as any;
       results.push({ id: w.id, result });
       assert.equal(result.name, '李四'); assert.equal(result.email, 'keep@example.com'); assert.equal(result.submits, 0);
       assert.equal(result.writes.filter((write: any) => write.at >= acceptedAt && write.value === '张三').length, 0, 'worker did not write old goal after correction receipt');
     }
+
     assert.deepEqual(await team.state(), leadBeforeCorrection, 'member correction does not write the lead page');
     teamCase.passed = true;
     await iso.screenshot(panel, join(out, 'team-panel.png'));
   }
+
   report.passed = cases.every(c => c.passed);
+
   if (!report.passed) process.exitCode = 1;
 } catch (error) { report.error = String(error); process.exitCode = 1; }
 finally {
   barrier.release();
   manager.dispose();
   await iso?.close();
+
   for (const client of wss.clients) client.terminate();
   await new Promise<void>(r => wss.close(() => r()));
   await writeFile(join(out, 'events.json'), JSON.stringify(events, null, 2));

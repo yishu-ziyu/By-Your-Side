@@ -19,20 +19,29 @@ import { fileURLToPath } from "node:url";
 import { sideagentExtensionId } from "../../scripts/acceptance/constants.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 const extDir = join(repoRoot, "extension", "dist");
+
 const outDir = join(repoRoot, "docs", "evidence", "20260907-send-delivery");
+
 mkdirSync(outDir, { recursive: true });
 
 const chromeBin = `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
+
 const SEND_TEXT = "E2E-真实扩展-断线保留-20260907";
+
 const ASK = { text: "E2E-真实引用", tabId: 1, title: "测试页", url: "https://example.com/page" };
 
 const check = [];
+
 const record = (label, ok, extra) => check.push({ label, ok, extra });
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const userDataDir = mkdtempSync(join(tmpdir(), "sideagent-e2e-profile-"));
+
 let ctx;
+
 try {
   ctx = await chromium.launchPersistentContext(userDataDir, {
     executablePath: chromeBin,
@@ -63,14 +72,17 @@ try {
   // 真实故障：经页面 CDP 会话找到并终止 service worker（等价 SW 被回收）→ 面板 Port onDisconnect
   const cdp = await ctx.newCDPSession(page);
   const { targetInfos } = await cdp.send("Target.getTargets");
+
   const swTarget = targetInfos.find(
     (t) => t.type === "service_worker" && t.url.startsWith(`chrome-extension://${extId}/`),
   );
+
   if (swTarget) {
     await cdp.send("Target.closeTarget", { targetId: swTarget.targetId });
   } else {
     await cdp.send("ServiceWorker.stopAllWorkers");
   }
+
   await page.waitForFunction(
     () => document.getElementById("status-text")?.textContent?.includes("重连"),
     null,
@@ -88,6 +100,7 @@ try {
     userBubbles: document.querySelectorAll("#messages .msg.user").length,
     status: document.getElementById("status-text")?.textContent ?? "",
   }));
+
   await page.screenshot({ path: join(outDir, "e2e-2-after-fault-preserved.png") });
   record("断线发送后正文保留", afterFault.input === SEND_TEXT, afterFault);
   record("断线发送后引用 UI 保留", !afterFault.askHidden);
@@ -99,6 +112,7 @@ try {
   await page.waitForFunction(
     () => {
       const t = document.getElementById("status-text")?.textContent ?? "";
+
       return !t.includes("重连") && t !== "";
     },
     null,
@@ -110,13 +124,16 @@ try {
   // 用户重试：此时 Port 已恢复，消息应被真实 background 接受并回显
   await page.press("#input", "Enter");
   let echoed = false;
+
   try {
     await page.waitForSelector("#messages .msg.user", { timeout: 8_000 });
     echoed = true;
   } catch {
     echoed = false;
   }
+
   await sleep(600); // 给可能的上行失败回执留时间
+
   const final = await page.evaluate(async () => ({
     input: document.getElementById("input").value,
     askHidden: document.getElementById("ask-cite").hidden,
@@ -125,6 +142,7 @@ try {
     bubbleFailed: document.querySelector("#messages .msg.user")?.dataset?.failed ?? null,
     status: document.getElementById("status-text")?.textContent ?? "",
   }));
+
   await page.screenshot({ path: join(outDir, "e2e-3-after-retry.png") });
   record("重试被真实 background 接受并回显", echoed && final.bubble?.includes(SEND_TEXT), final);
   record("成功后正文清空", final.input === "");
@@ -134,10 +152,12 @@ try {
   await ctx.close();
 } finally {
   if (ctx) await ctx.close().catch(() => {});
+
   if (!process.argv.includes("--keep")) rmSync(userDataDir, { recursive: true, force: true });
 }
 
 const failed = check.filter((c) => !c.ok);
+
 const report = {
   when: new Date().toISOString(),
   gitSha: execSync("git rev-parse HEAD", { cwd: repoRoot }).toString().trim(),
@@ -145,7 +165,11 @@ const report = {
   checks: check,
   failedCount: failed.length,
 };
+
 writeFileSync(join(outDir, "e2e-result.json"), JSON.stringify(report, null, 2));
+
 for (const c of check) console.log(`${c.ok ? "PASS" : "FAIL"} ${c.label}${c.extra ? ` :: ${JSON.stringify(c.extra)}` : ""}`);
+
 console.log(`\n证据目录：${outDir}`);
+
 process.exit(failed.length === 0 ? 0 : 1);

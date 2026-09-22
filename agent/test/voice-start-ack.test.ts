@@ -10,6 +10,7 @@ const receipt = (over: Partial<TaskReceipt> = {}): TaskReceipt => ({
   requestId: "req-1", conversationId: "A", source: "voice", action: "start", runId: "run-1",
   text: "帮我比较两款耳机", targetTitle: "新会话", status: "accepted", message: "已接收新任务：帮我比较两款耳机", updatedAt: 1, ...over,
 });
+
 const action = (receipts: TaskReceipt[], over: { plan?: VoicePlanSummary } = {}): VoiceRouteResult =>
   ({ kind: "action", ok: true, status: receipts.at(-1)?.status, message: receipts.map(r => r.message).join("；"), receipts, ...over });
 
@@ -22,10 +23,12 @@ describe("contextualStartAck", () => {
     expect(contextualStartAck(action([receipt({ status: "unknown" })]))).toBeNull();
     expect(contextualStartAck(action([receipt({ action: "steer" })]))).toBeNull();
     expect(contextualStartAck(action([receipt({}), receipt({ requestId: "req-2" })]))).toBeNull();
+
     const compound = { id: "p", conversationId: "A", updatedAt: 1, steps: [
       { action: "start" as const, text: "帮我比较两款耳机", targetId: "A", status: "complete" as const },
       { action: "start" as const, text: "再查天气", targetId: "A", status: "complete" as const },
     ] };
+
     expect(contextualStartAck(action([receipt({}), receipt({ requestId: "req-2", text: "再查天气" })], { plan: compound }))).toBeNull();
     expect(contextualStartAck({ kind: "action", ok: true, message: "已接收新任务" })).toBeNull(); // 无 receipts 证据
     expect(contextualStartAck({ kind: "none" })).toBeNull();
@@ -51,7 +54,9 @@ class Socket extends EventEmitter {
   close = vi.fn();
   server(event: object) { this.emit("message", Buffer.from(JSON.stringify(event))); }
 }
+
 const sessions: StepVoiceSession[] = [];
+
 afterEach(() => { sessions.splice(0).forEach(s => s.close()); });
 
 describe("single accepted start acknowledgement", () => {
@@ -59,11 +64,13 @@ describe("single accepted start acknowledgement", () => {
     const socket = new Socket();
     const events: VoiceEvent[] = [];
     const route = vi.fn(async (): Promise<VoiceRouteResult> => action([receipt({})]));
+
     const session = new StepVoiceSession({
       route,
       getSnapshot: (): TaskProgressSnapshot => ({ conversationId: "A", observedAt: Date.now(), state: "running", goal: null, startedAt: 1, active: [], lastAction: null, successVerified: false }),
       emit: e => events.push(e), connect: () => socket as unknown as WebSocket,
     });
+
     sessions.push(session);
     session.start("synthetic");
     socket.server({ type: "session.created", session: { model: "stepaudio-2.5-realtime" } });

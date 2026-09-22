@@ -1,8 +1,13 @@
 /** Accepted native task survives extension + native-host restart without replaying its effects. */
 import {createServer} from 'node:http';import {spawn} from 'node:child_process';import {randomUUID} from 'node:crypto';
 import {NativeVoiceHarness} from './native-voice-harness.mts';
+
 const server=createServer((_q,res)=>{res.setHeader('Content-Type','text/html;charset=utf-8');res.end('<!doctype html><title>请求回放测试</title><input id="value" value="initial">');});
-let h:NativeVoiceHarness|undefined;const report:any={ok:false};
+
+let h:NativeVoiceHarness|undefined;
+
+const report:any={ok:false};
+
 try{
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${(server.address() as any).port}/`;
  h=await NativeVoiceHarness.open('voice-restart');const id=await h.create('自动验收 · 重启回执'),tab=await h.openTab(id,url);await h.listen(id);
@@ -21,4 +26,6 @@ try{
  h.check('native task identity reset without resuming',await h.w(`(globalThis.__saServerEvents||[]).filter(e=>e.type==='conversation_list').at(-1)?.conversations.find(c=>c.id===${JSON.stringify(id)})?.runId===null`));
  h.check('restored task did not auto-run',await h.w(`${h.events(id)}.filter(e=>e.type==='agent_event'&&e.event.kind==='agent_start').length===0`));report.ok=true;
 }catch(e){report.error=String(e);process.exitCode=1;}
-finally{if(h){await h.finishReport(report);await h.close();console.log(JSON.stringify({out:h.out,ok:report.ok,error:report.error}));}server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}
+finally{if(h){await h.finishReport(report);await h.close();console.log(JSON.stringify({out:h.out,ok:report.ok,error:report.error}));}
+
+server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}

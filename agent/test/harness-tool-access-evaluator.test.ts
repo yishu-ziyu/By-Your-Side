@@ -3,12 +3,14 @@ import {createBrowserTools,modelToolOf} from '../src/tools.js';
 import {WRITE_TOOLS} from '../../shared/control.js';
 
 const execute = (tools:any[], name:string, params:any) => tools.find(t=>t.name===name).execute('access-check',params,undefined,undefined,{});
+
 const entry = (program:boolean, code:string) => program
  ? {name:'browser_run',params:{code:`return await browser.js({code:${JSON.stringify(code)}});`}}
  : {name:'js',params:{code}};
 
 // 能力开关按模型可见工具名判定（合并后：tabs / mark）。RPC 名到模型名的映射见 modelToolOf。
 const MODEL_WRITE_TOOLS=[...new Set(WRITE_TOOLS.map(name=>modelToolOf(name)))];
+
 for (const disabled of MODEL_WRITE_TOOLS) for (const program of [false,true]) {
  it(`${program?'program':'direct'} JS cannot bypass disabled ${disabled}`,async()=>{
   const rpc={call:vi.fn(async()=>({value:true}))};
@@ -22,6 +24,7 @@ for (const disabled of MODEL_WRITE_TOOLS) for (const program of [false,true]) {
 it('restrictions are live; constrained reads survive and full-access JS recovers',async()=>{
  const disabled=new Set<string>();const rpc={call:vi.fn(async(name:string)=>name==='snapshot'?{text:'fixture'}:{value:42})};
  const tools=createBrowserTools(rpc as any,undefined,undefined,name=>!disabled.has(name));
+
  for(const program of [false,true]){
   const request=entry(program,'return 42;');
   await execute(tools,request.name,request.params);
@@ -46,6 +49,7 @@ for(const program of [false,true])it(`full/default access and unrelated read res
   expect(rpc.call).toHaveBeenCalledTimes(1);
  }
 });
+
 it('disabled capabilities cannot execute through the direct tool or the browser program wrapper',async()=>{
  const call=vi.fn(async()=>({marked:true}));const tools=(createBrowserTools as any)({call},undefined,undefined,(name:string)=>name!=='mark');
  const direct=tools.find((t:any)=>t.name==='mark');await expect(direct.execute('direct',{target:'#target'},undefined,undefined,{})).rejects.toThrow(/不可用|未启用/);

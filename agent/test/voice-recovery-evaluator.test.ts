@@ -3,12 +3,16 @@ import {PassThrough} from 'node:stream';
 import {describe,it,expect,vi} from 'vitest';
 import {FrameDecoder,encodeFrame,createStdioTransport} from '../src/transport/stdio.js';
 
-function incomingFrame(text:string){const body=Buffer.from(text),header=Buffer.alloc(4);header.writeUInt32LE(body.length);return Buffer.concat([header,body]);}
+function incomingFrame(text:string){const body=Buffer.from(text),header=Buffer.alloc(4);header.writeUInt32LE(body.length);
+
+return Buffer.concat([header,body]);}
+
 describe('Evaluator: native screenshot frames do not kill a healthy transport',()=>{
  it('decodes a fragmented >1MiB screenshot-shaped input and its following small frame',()=>{
   const payload=JSON.stringify({type:'tool_result',id:'shot',ok:true,data:{imageBase64:'A'.repeat(1200000)}});
   const bytes=Buffer.concat([incomingFrame(payload),incomingFrame('{"next":true}')]);
   const decoder=new FrameDecoder();const result:string[]=[];
+
   for(let i=0;i<bytes.length;i+=64000)result.push(...decoder.push(bytes.subarray(i,i+64000)));
   expect(result).toEqual([payload,'{"next":true}']);
  });

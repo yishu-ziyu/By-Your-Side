@@ -37,8 +37,10 @@ export type ConsentStatus = "allowed" | "rejected" | "expired" | "cancelled";
 export function isFetchConsentRequest(value: unknown): value is FetchConsentRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const r = value as FetchConsentRequest;
+
   if (r.kind !== undefined && r.kind !== 'fetch') return false;
   const identity = (s: unknown) => typeof s === "string" && s.length > 0 && s.length <= 96;
+
   return identity(r.id) && identity(r.conversationId) && identity(r.runId)
     && Number.isSafeInteger(r.controlVersion) && r.controlVersion >= 0
     && typeof r.url === "string" && r.url.length > 0 && r.url.length <= 8192
@@ -56,6 +58,7 @@ export function isWriteConsentRequest(value: unknown): value is WriteConsentRequ
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const r = value as WriteConsentRequest;
   const identity = (s: unknown, max = 96) => typeof s === "string" && s.length > 0 && s.length <= max;
+
   return r.kind === 'write' && identity(r.id) && identity(r.conversationId) && identity(r.runId)
     && Number.isSafeInteger(r.controlVersion) && r.controlVersion >= 0
     && Number.isFinite(r.expiresAt) && r.expiresAt > 0

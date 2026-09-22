@@ -10,11 +10,13 @@ function task() {
   progress.request('切换到资料页');
   const emit = (event: AgentUiEvent) => progress.observe({type: 'agent_event', event});
   emit({kind: 'agent_start'});
+
   const read = (id: string, tabId: number) => {
     emit({kind: 'tool_start', toolCallId: id, name: 'snapshot', params: {tabId}});
     emit({kind: 'tool_end', toolCallId: id, name: 'snapshot', isError: false, executionFact: 'executed', resultText: '资料页'});
     emit({kind: 'tool_observation', toolCallId: id, name: 'snapshot', target: null, tabId, workingTab: true, text: '资料页', truncated: false});
   };
+
   return {progress, emit, read};
 }
 
@@ -46,11 +48,13 @@ describe('voice task delivery follows actual browser results', () => {
 
   it('does not reuse the successful result of one tab for a later switch to a different tab', () => {
     const h = task();
+
     for (const tabId of [9, 12]) {
       h.emit({kind: 'tool_start', toolCallId: `switch-${tabId}`, name: 'tabs', params: {action: 'switch', tabId}});
       h.emit({kind: 'tool_end', toolCallId: `switch-${tabId}`, name: 'tabs', isError: false, executionFact: 'executed', resultText: 'ok'});
       h.read(`read-${tabId}`, tabId);
     }
+
     const items = h.progress.snapshot().results!;
     expect(items).toHaveLength(2);
     expect(items[0]!.target).not.toBe(items[1]!.target);
@@ -59,8 +63,10 @@ describe('voice task delivery follows actual browser results', () => {
   it('rejects a complete message when the host would label its facts unverified, before emitting or speaking it', async () => {
     const h = task();
     const events: AgentUiEvent[] = [];
+
     const tool = createSendUserMessageTool({conversationId: 'default', getRunId: () => h.progress.snapshot().runId!,
       getNextStep: () => h.progress.snapshot().nextStep!, getDeliveryFacts: () => h.progress.deliveryFacts(), emit: e => events.push(e)});
+
     await expect(tool.execute('delivery', {kind: 'finding', outcome: 'complete', content: '已经切到资料页。'}, undefined, undefined, {} as never)).rejects.toThrow(/未核验/);
     expect(events).toEqual([]);
   });

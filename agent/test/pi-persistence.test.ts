@@ -3,8 +3,10 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 it("Pi native persistence survives process exit without replaying earlier prompts", () => {
   const dir = mkdtempSync(join(tmpdir(), "ego-pi-persistence-"));
+
   try {
     const run = (phase: string) => JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "agent/test/fixtures/pi-persistence-probe.ts", phase, dir], { encoding: "utf8", timeout: 60000 }).trim());
     const saved = run("write");

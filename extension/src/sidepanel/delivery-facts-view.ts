@@ -37,11 +37,13 @@ export interface DeliveryFactView {
     label: string;
   }[];
 }
+
 /** 链接文字只用地址本身：标题要另取证，不能由模型正文补。 */
 export function sourceLabel(url: string): string {
   try {
     const parsed = new URL(url);
     const path = decodeURI(parsed.pathname === "/" ? "" : parsed.pathname);
+
     return `${parsed.host}${path}`.slice(0, 120);
   }
   catch {
@@ -55,21 +57,26 @@ function remainingLine(item: {
 }): string {
   return `${item.description}（${item.statusLabel}）`;
 }
+
 /** 纯投影：没有事实链字段就没有这个块；缺字段不说成「没有未完成项」。 */
 export function buildDeliveryFactView(facts: UserDeliveryFacts | undefined | null): DeliveryFactView {
   const empty: DeliveryFactView = { visible: false, tone: "complete", headline: "", done: "", remaining: [], remainingTotal: 0, delivered: [], sources: [] };
+
   if (!facts) {
     return empty;
   }
+
   const remaining = facts.remaining
     .slice(0, DELIVERY_FACT_LIST_MAX)
     .map((item) => ({ id: item.id, description: item.description, statusLabel: REMAINING_STATUS_LABEL[item.status] ?? item.status }));
+
   const delivered = facts.delivered.slice(0, DELIVERY_FACT_LIST_MAX);
   const sources = facts.sources.map((source) => ({ url: source.url, label: source.title?.trim() || sourceLabel(source.url) }));
   const tone: DeliveryFactView["tone"] = facts.outcome === "partial" ? "partial" : "complete";
   const remainingTotal = facts.remaining.length + (facts.omittedRemaining ?? 0);
   const deliveredTotal = facts.delivered.length + (facts.omittedDelivered ?? 0);
   let headline: string;
+
   if (facts.outcome === "partial") {
     headline = remainingTotal ? `部分完成 · 还有 ${remainingTotal} 项未完成` : "部分完成";
   } else if (facts.outcome === "unverified") {
@@ -77,8 +84,10 @@ export function buildDeliveryFactView(facts: UserDeliveryFacts | undefined | nul
   } else {
     headline = sources.length ? `已交付 · 来源 ${sources.length}` : "已交付";
   }
+
   const done = delivered.length ? `已完成 ${deliveredTotal} 项：${delivered.join("、")}${deliveredTotal > delivered.length ? "…" : ""}` : "";
   const visible = facts.outcome !== "complete" || remaining.length > 0 || sources.length > 0 || delivered.length > 0;
+
   return { visible, tone, headline, done, remaining, remainingTotal, delivered, sources };
 }
 
@@ -86,6 +95,7 @@ export interface DeliveryFactViewOptions {
   /** 打开来源的真实页面；面板传 window.open，测试可注入替身。 */
   openSource?: (url: string) => void;
 }
+
 /** 面板已有的交付气泡状态（只按正式/流式/取消区分，不存正文）。 */
 export interface DeliveryBubbleState {
   official: boolean;
@@ -94,6 +104,7 @@ export interface DeliveryBubbleState {
 }
 
 export type DeliveryPresentation = "present" | "update_text" | "status" | "mark_cancelled" | "ignore";
+
 /**
  * 面板对一次交付／流事件的处理决定（纯函数）：
  * - 同 deliveryId 重放（含历史回放）只更新状态，不重复呈现；
@@ -108,28 +119,36 @@ export function deliveryPresentation(event: {
     if (!existing) {
       return "present";
     }
+
     if (existing.streaming || existing.cancelled) {
       return "update_text";
     }
+
     return "status";
   }
+
   if (event.phase === "cancelled") {
     return existing?.streaming ? "mark_cancelled" : "ignore";
   }
+
   if (!existing) {
     return "present";
   }
+
   return existing.streaming ? "update_text" : "ignore";
 }
+
 /**
  * 结果块的 DOM：标题行 + 已完成 + 未完成清单 + 来源清单。
  * 正文仍由调用方渲染；这里只加事实链能证明的部分。
  */
 export function renderDeliveryFacts(delivery: UserDelivery, options: DeliveryFactViewOptions = {}): HTMLElement | null {
   const view = buildDeliveryFactView(delivery.facts ?? null);
+
   if (!view.visible) {
     return null;
   }
+
   ensureStyles();
   const root = document.createElement("div");
   root.className = "delivery-facts";
@@ -139,29 +158,35 @@ export function renderDeliveryFacts(delivery: UserDelivery, options: DeliveryFac
   head.className = "delivery-facts-head";
   head.textContent = view.headline;
   root.append(head);
+
   if (view.done) {
     const done = document.createElement("p");
     done.className = "delivery-facts-done";
     done.textContent = view.done;
     root.append(done);
   }
+
   if (view.remaining.length) {
     const list = document.createElement("ul");
     list.className = "delivery-facts-remaining";
+
     for (const item of view.remaining) {
       const row = document.createElement("li");
       row.dataset.resultId = item.id;
       row.textContent = remainingLine(item);
       list.append(row);
     }
+
     if (view.remainingTotal > view.remaining.length) {
       const more = document.createElement("li");
       more.className = "delivery-facts-more";
       more.textContent = `…等共 ${view.remainingTotal} 项未完成`;
       list.append(more);
     }
+
     root.append(list);
   }
+
   if (view.sources.length) {
     const sources = document.createElement("div");
     sources.className = "delivery-facts-sources";
@@ -169,6 +194,7 @@ export function renderDeliveryFacts(delivery: UserDelivery, options: DeliveryFac
     label.className = "delivery-facts-sources-label";
     label.textContent = "来源";
     sources.append(label);
+
     for (const source of view.sources) {
       const link = document.createElement("a");
       link.className = "delivery-source";
@@ -177,18 +203,23 @@ export function renderDeliveryFacts(delivery: UserDelivery, options: DeliveryFac
       link.title = source.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
+
       if (options.openSource) {
         link.onclick = (event: Event) => {
           event.preventDefault();
           options.openSource!(source.url);
         };
       }
+
       sources.append(link);
     }
+
     root.append(sources);
   }
+
   return root;
 }
+
 /** 「收到正式交付 → 结果可见的下一帧」采样器；只在真实面板里被调用。 */
 export class DeliveryPresentationTiming {
   private readonly samples: {
@@ -197,6 +228,7 @@ export class DeliveryPresentationTiming {
   }[] = [];
   record(startedAt: number, visible: boolean, now: number = performance.now()): void {
     this.samples.push({ ms: Math.max(0, now - startedAt), visible });
+
     if (this.samples.length > DELIVERY_TIMING_SAMPLE_MAX) {
       this.samples.shift();
     }
@@ -210,6 +242,7 @@ export class DeliveryPresentationTiming {
     const considered = this.samples.map((sample) => ({ ...sample }));
     const sorted = considered.map((sample) => sample.ms).sort((a, b) => a - b);
     const all = [...this.samples].map((sample) => sample.ms).sort((a, b) => a - b);
+
     return {
       count: considered.length,
       visibleCount: considered.filter((sample) => sample.visible).length,
@@ -220,14 +253,17 @@ export class DeliveryPresentationTiming {
 }
 
 let stylesInjected = false;
+
 /** 侧栏样式已含同名规则时不再注入；单测环境不需要样式。 */
 function ensureStyles(): void {
   if (stylesInjected || typeof document === "undefined" || typeof document.createElement !== "function") {
     return;
   }
+
   if (document.getElementById("delivery-facts-styles")) {
     return;
   }
+
   stylesInjected = true;
   const style = document.createElement("style");
   style.id = "delivery-facts-styles";

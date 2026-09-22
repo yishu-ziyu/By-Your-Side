@@ -4,13 +4,17 @@ import {createBrowserTools} from "../src/tools.js";
 import {describe, expect, it, vi} from 'vitest';
 import {parseTranslations, runPageTranslation, translationModelBlocks, restoreTranslationWhitespace} from '../src/page-translation.js';
 import {validateTranslationCommand, type TranslationReceipt} from '../../shared/page-translation.js';
+
 const blocks = [{id: '1', segments: [{id: '1:0', text: 'Read '}, {id: '1:1', text: 'the source'}]}];
+
 const receipt: TranslationReceipt = {tabId: 12, document: 'doc-1', language: '简体中文', mode: 'bilingual', fontSize: null, translated: 0, remaining: 1, unsupported: 0, blocks: []};
+
 describe('document-bound page translation', () => {
   it('rejects missing, duplicate, empty or HTML-shaped model records', () => {
     for (const value of [[], [{id:'1:0',text:'阅读'}], [{id:'1:0',text:'阅读'},{id:'1:0',text:'来源'}], [{id:'1:0',text:''},{id:'1:1',text:'来源'}], '<p>译文</p>']) {
       expect(() => parseTranslations(typeof value === 'string' ? value : JSON.stringify(value), blocks)).toThrow();
     }
+
     expect(parseTranslations('```json\n[{"id":"1:0","text":"阅读 "},{"id":"1:1","text":"来源"}]\n```', blocks)).toEqual([{id:'1:0',text:'阅读 '},{id:'1:1',text:'来源'}]);
   });
   it('maps translated segments by identity even if the JSON array is reordered', () => {
@@ -36,6 +40,7 @@ describe('document-bound page translation', () => {
     const completeSimple=vi.fn()
       .mockResolvedValueOnce({stopReason:'stop',content:[{type:'text',text:'[] extra text'}]})
       .mockResolvedValueOnce({stopReason:'stop',content:[{type:'text',text:'[{"id":"1:0","text":"阅读"},{"id":"1:1","text":"来源"}]'}]});
+
     const host={session:{model:{provider:'fixture',id:'model'},sessionId:'s'},modelRuntime:{completeSimple}};
     const result=await BrowserAgentSession.prototype.translatePageBatch.call(host as never,blocks,'简体中文',new AbortController().signal);
     expect(result).toHaveLength(2);expect(completeSimple).toHaveBeenCalledTimes(2);
@@ -52,6 +57,7 @@ describe('document-bound page translation', () => {
     const translate = vi.fn().mockResolvedValue([{id:'1:0',text:'阅读 '},{id:'1:1',text:'来源'}]);
     await runPageTranslation({action:'translate',mode:'translated'},call,translate,new AbortController().signal);
     expect(call.mock.calls[0]![0]).toEqual({action:'begin',mode:'translated'});
+
     for (const [command] of call.mock.calls.slice(1)) expect(command).toMatchObject({tabId:12,document:'doc-1'});
     expect(translate).toHaveBeenCalledTimes(1);
   });
@@ -72,14 +78,22 @@ describe('document-bound page translation', () => {
   it('cancellation during model generation prevents the late batch from writing', async () => {
     const abort=new AbortController();
     const call=vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt,blocks});
-    const translate=vi.fn().mockImplementation(async()=>{abort.abort();return [{id:'1:0',text:'旧译文'}];});
+
+    const translate=vi.fn().mockImplementation(async()=>{abort.abort();
+
+return [{id:'1:0',text:'旧译文'}];});
+
     await expect(runPageTranslation({action:'translate'},call,translate,abort.signal)).rejects.toThrow();
     expect(call.mock.calls.map(([c])=>c.action)).toEqual(['begin','collect']);
   });
   it('a correction arriving during translation blocks the old batch at the real tool gate', async () => {
     let epoch=1;
     const rpc={call:vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt,blocks}),ensureToolCall:vi.fn(),markCallRejected:vi.fn()};
-    const tools=createBrowserTools(rpc as never,undefined,undefined,undefined,{epoch:()=>epoch,canWrite:()=>true},async()=>{epoch++;return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
+
+    const tools=createBrowserTools(rpc as never,undefined,undefined,undefined,{epoch:()=>epoch,canWrite:()=>true},async()=>{epoch++;
+
+return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
+
     const tool=tools.find(t=>t.name==='page_translation')!;
     await expect(tool.execute('translation-1',{action:'translate'},new AbortController().signal,undefined,{} as never)).rejects.toThrow('旧步骤未执行');
     expect(rpc.call).toHaveBeenCalledTimes(2);
@@ -93,10 +107,12 @@ describe('document-bound page translation', () => {
   });
   it('keeps an explicit pre-write page failure recoverable through the composed tool', async () => {
     let fail = true;
+
     const rpc = new ToolRpc(frame => queueMicrotask(() => {
       if (fail) rpc.handleResult(frame.id, false, undefined, '当前页面还没有译文，请先翻译页面。', 'not_executed');
       else rpc.handleResult(frame.id, true, receipt, undefined, 'executed');
     }));
+
     const tool = createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>1,canWrite:()=>true}).find(t => t.name === 'page_translation')!;
     await expect(tool.execute('missing-translation', {action:'display',fontFamily:'songti'}, new AbortController().signal, undefined, {} as never)).rejects.toThrow('还没有译文');
     expect(rpc.getExecutionFact('missing-translation')).toBe('not_executed');
@@ -108,6 +124,7 @@ describe('document-bound page translation', () => {
       .mockResolvedValueOnce({...receipt,blocks})
       .mockResolvedValueOnce({...receipt,applied:1,translated:0})
       .mockResolvedValueOnce({...receipt,blocks,translated:0});
+
     const translate = vi.fn().mockResolvedValueOnce([{id:'1:0',text:'阅读'},{id:'1:1',text:'原文'}]).mockRejectedValueOnce(Error('provider failed'));
     await expect(runPageTranslation({action:'translate'},call,translate,new AbortController().signal)).rejects.toMatchObject({executionFact:'executed'});
   });
@@ -132,13 +149,16 @@ describe('document-bound page translation', () => {
 describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', () => {
   const marker = '这批翻译未完成（aborted），已保留之前的译文。可以继续翻译。';
   const segments = [{id:'1:0',text:'阅读 '},{id:'1:1',text:'来源'}];
+
   const collectThenFinish = () => vi.fn(async (command: Record<string, unknown>) => {
     if (command.action === 'begin') return receipt;
+
     if (command.action === 'collect') {
       return (collectThenFinish as {n?: number}).n
         ? {...receipt, blocks: [], translated: 1, remaining: 0}
         : ((collectThenFinish as {n?: number}).n = 1, {...receipt, blocks});
     }
+
     return {...receipt, blocks: [], translated: 1, remaining: 0};
   });
 
@@ -148,6 +168,7 @@ describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', (
       .mockResolvedValueOnce({...receipt, blocks})
       .mockResolvedValueOnce({...receipt, translated: 1, remaining: 0, blocks: []})
       .mockResolvedValueOnce({...receipt, translated: 1, remaining: 0, blocks: []});
+
     const translate = vi.fn().mockRejectedValueOnce(new Error(marker)).mockResolvedValueOnce(segments);
     const result = await runPageTranslation({action:'translate'}, call as never, translate, new AbortController().signal);
     expect(translate).toHaveBeenCalledTimes(2);

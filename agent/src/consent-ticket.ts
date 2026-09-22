@@ -32,6 +32,7 @@ export interface ConsentIssue {
 
 export function hashConsentParams(params: Record<string, unknown>): string {
   const { consent: _consent, ...rest } = params;
+
   return createHash("sha256").update(canonicalValue(rest)).digest("hex");
 }
 
@@ -41,6 +42,7 @@ export class ConsentLedger {
 
   issue(input: ConsentIssue): ConsentTicket {
     const now = input.now ?? Date.now();
+
     const ticket: ConsentTicket = {
       id: `consent-${++this.seq}-${now.toString(36)}`,
       conversationId: input.conversationId,
@@ -52,7 +54,9 @@ export class ConsentLedger {
       expiresAt: now + (input.ttlMs ?? CONSENT_TTL_MS),
       consumed: false,
     };
+
     this.tickets.set(ticket.id, ticket);
+
     return { ...ticket };
   }
 
@@ -67,23 +71,32 @@ export class ConsentLedger {
     now?: number;
   }): { ok: true; ticket: ConsentTicket } | { ok: false; reason: string } {
     const ticket = this.tickets.get(opts.id);
+
     if (!ticket) return { ok: false, reason: "没有有效授权，操作未执行。" };
     const now = opts.now ?? Date.now();
+
     if (ticket.consumed) return { ok: false, reason: "授权已使用，操作未执行。" };
+
     if (now > ticket.expiresAt) return { ok: false, reason: "授权已过期，请重新确认。操作未执行。" };
+
     if (ticket.conversationId !== opts.conversationId || ticket.runId !== opts.runId) {
       return { ok: false, reason: "授权不属于当前任务，操作未执行。" };
     }
+
     if (ticket.controlVersion !== opts.controlVersion) {
       return { ok: false, reason: "页面控制权已变化，旧授权失效。操作未执行。" };
     }
+
     if (ticket.origin !== opts.origin || ticket.operation !== opts.operation) {
       return { ok: false, reason: "授权范围不匹配，操作未执行。" };
     }
+
     if (ticket.paramHash !== hashConsentParams(opts.params)) {
       return { ok: false, reason: "请求参数已变化，旧授权失效。操作未执行。" };
     }
+
     ticket.consumed = true;
+
     return { ok: true, ticket: { ...ticket } };
   }
 }

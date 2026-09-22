@@ -62,6 +62,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     composer,
     app,
   } = options.host;
+
   const sendSetModel = options.sendSetModel;
 
   /** 当前模型信息：model = "provider/id"，models = 可选列表（已配置凭据的 provider）。 */
@@ -76,8 +77,10 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   function paintMark(el: HTMLElement, provider: string | undefined): void {
     if (!provider) {
       el.hidden = true;
+
       return;
     }
+
     const { letter, hue } = providerMark(provider);
     el.hidden = false;
     el.textContent = letter;
@@ -86,7 +89,9 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function currentProvider(): string | undefined {
     const id = modelState?.model;
+
     if (!id) return undefined;
+
     return modelState?.models.find((m) => m.id === id)?.provider ?? id.split("/")[0];
   }
 
@@ -102,10 +107,12 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
    */
   function alignModelPopoverOrigin(): void {
     const parent = modelPopover.offsetParent as HTMLElement | null;
+
     if (!parent) return;
     const popLeft = parent.getBoundingClientRect().left + modelPopover.offsetLeft;
     const btn = modelBtn.getBoundingClientRect();
     const x = Math.round(btn.left - popLeft + btn.width / 2);
+
     if (x > 0 && x < modelPopover.offsetWidth) {
       modelPopover.style.transformOrigin = `${x}px bottom`;
     }
@@ -125,6 +132,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function ensurePopoverChrome(): HTMLElement {
     let list = modelPopover.querySelector(".model-list") as HTMLElement | null;
+
     if (list) return list;
     const search = document.createElement("div");
     search.className = "model-search";
@@ -156,6 +164,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     list.className = "model-list";
     list.setAttribute("role", "listbox");
     modelPopover.replaceChildren(search, list);
+
     return list;
   }
 
@@ -165,6 +174,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function moveModelHighlight(delta: number): void {
     const items = visibleModelButtons();
+
     if (items.length === 0) return;
     const idx = items.findIndex((el) => el.classList.contains("current-nav"));
     const next = items[(idx < 0 ? (delta > 0 ? 0 : items.length - 1) : idx + delta + items.length) % items.length]!;
@@ -176,18 +186,22 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     const list = ensurePopoverChrome();
     const models = filterModels(modelState?.models ?? [], modelQuery);
     list.replaceChildren();
+
     if (models.length === 0) {
       const empty = document.createElement("div");
       empty.className = "model-empty";
       empty.textContent = modelQuery.trim() ? "无匹配模型" : "暂无可用模型";
       list.appendChild(empty);
+
       return;
     }
+
     for (const group of groupModelsByProvider(models)) {
       const header = document.createElement("div");
       header.className = "model-group";
       header.textContent = providerLabel(group.provider);
       list.appendChild(header);
+
       for (const m of group.models) {
         const item = document.createElement("button");
         item.type = "button";
@@ -196,6 +210,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
         item.title = m.id;
         item.setAttribute("role", "option");
         item.setAttribute("aria-selected", String(m.id === modelState?.model));
+
         if (m.id === modelState?.model) item.classList.add("current");
         const mark = document.createElement("span");
         mark.className = "model-mark";
@@ -206,23 +221,29 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
         item.append(mark, label);
         // 无可信能力证据时不渲染能力标签（issue #2 / 验收 B2）
         const meta = modelReasoningMeta(m.provider, m.modelId);
+
         if (meta.tag) {
           const tag = document.createElement("span");
           tag.className = `reasoning-tag tag-${meta.tier}`;
           tag.textContent = meta.tag;
           item.append(tag);
         }
+
         const check = document.createElement("span");
         check.className = "model-check";
+
         if (m.id === modelState?.model) check.appendChild(icon(Check));
         item.append(check);
         item.onclick = () => {
           closeModelPopover();
+
           if (m.id !== modelState?.model) sendSetModel(m.id);
         };
+
         list.appendChild(item);
       }
     }
+
     const current = list.querySelector(".model-item.current") ?? list.querySelector(".model-item");
     current?.classList.add("current-nav");
   }
@@ -245,6 +266,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
         const meta = modelReasoningMeta(prov, modelId);
         // 无可信能力证据时芯片同样不显示能力标签（issue #2 / 验收 B2）
         modelReasoningTag.hidden = !meta.tag;
+
         if (meta.tag) {
           modelReasoningTag.textContent = meta.tag;
           modelReasoningTag.className = `reasoning-tag tag-${meta.tier}`;
@@ -256,8 +278,10 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
     if (models.length === 0) {
       closeModelPopover();
+
       return;
     }
+
     if (!modelPopover.hidden) renderModelList();
   }
 
@@ -270,9 +294,11 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   modelBtn.appendChild(icon(ChevronDown));
   modelBtn.onclick = () => {
     const opening = modelPopover.hidden;
+
     if (opening) {
       modelQuery = "";
       const input = modelSearchInput();
+
       if (input) input.value = "";
       renderModelList();
       positionModelPopover();
@@ -285,6 +311,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
       closeModelPopover();
     }
   };
+
   document.addEventListener("click", (e) => {
     if (!modelPopover.hidden && !modelPopover.contains(e.target as Node) && !modelBtn.contains(e.target as Node)) {
       closeModelPopover();
@@ -293,13 +320,16 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || modelPopover.hidden) return;
     const input = modelSearchInput();
+
     if (input && input.value) {
       input.value = "";
       modelQuery = "";
       renderModelList();
       input.focus();
+
       return;
     }
+
     closeModelPopover();
   });
 

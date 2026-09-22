@@ -12,6 +12,7 @@ const fakes = vi.hoisted(() => {
   g.getComputedStyle = () => ({ display: "block", visibility: "visible", opacity: "1" });
   g.CSS = { escape: (s: string) => s };
   g.document = { documentElement: undefined };
+
   return g;
 });
 
@@ -66,6 +67,7 @@ class FakeElement {
       height: 100,
       ...opts.rect,
     };
+
     for (const c of opts.children ?? []) this.append(c);
   }
 
@@ -106,7 +108,9 @@ interface FakeNs {
 function takeSnapshot(scope?: string): string {
   const w = fakes.window as unknown as { __sideagent?: FakeNs };
   const snap = w.__sideagent?.snapshot;
+
   if (!snap) throw new Error("content snapshot 未加载");
+
   return snap(scope);
 }
 
@@ -117,18 +121,23 @@ beforeEach(() => {
   const inFrameDoc = new FakeElement("div", {
     children: [textNode("InsideSecret"), new FakeElement("button", { text: "InsideBtn" })],
   });
+
   const outFrameDoc = new FakeElement("div", {
     children: [textNode("OutsideSecret"), new FakeElement("button", { text: "OutsideBtn" })],
   });
+
   const inFrame = new FakeElement("iframe", {
     attrs: { src: "https://in.example/" },
     rect: { top: 100, bottom: 300, left: 0, right: 200, width: 200, height: 200 },
   });
+
   inFrame.contentDocument = { documentElement: inFrameDoc, childNodes: [inFrameDoc] };
+
   const outFrame = new FakeElement("iframe", {
     attrs: { src: "https://out.example/" },
     rect: { top: 2000, bottom: 2200, left: 0, right: 200, width: 200, height: 200 },
   });
+
   outFrame.contentDocument = { documentElement: outFrameDoc, childNodes: [outFrameDoc] };
 
   const body = new FakeElement("body", {
@@ -139,6 +148,7 @@ beforeEach(() => {
       new FakeElement("div", { children: [textNode("AfterText")] }),
     ],
   });
+
   const html = new FakeElement("html", { children: [body] });
   docHolder.documentElement = html;
 });

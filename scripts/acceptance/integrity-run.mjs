@@ -31,18 +31,23 @@ import { installExecuteToolCallHook, normalizeServiceWorkerInspector } from "./s
 const parseArg = (name) => {
   const prefix = `--${name}=`;
   const found = process.argv.find((arg) => arg.startsWith(prefix));
+
   return found ? found.slice(prefix.length) : null;
 };
+
 const hasFlag = (name) => process.argv.includes(`--${name}`);
 
 const caseArg = parseArg("case") || "all";
+
 const validCases = ["screenshot", "viewport", "click", "move", "occlude", "duplicate", "handback", "all"];
+
 if (!validCases.includes(caseArg)) {
   console.error(`未知场景: ${caseArg}。有效选项: ${validCases.join(", ")}`);
   process.exit(1);
 }
 
 const isDryRun = hasFlag("dry-run");
+
 const outDir = parseArg("out-dir") || join(
   process.cwd(),
   "out/acceptance",
@@ -61,6 +66,7 @@ function sanitizeRecord(val) {
  */
 function decodePngDimensions(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 24) return null;
+
   const isPng =
     buf[0] === 0x89 &&
     buf[1] === 0x50 &&
@@ -70,9 +76,11 @@ function decodePngDimensions(buf) {
     buf[5] === 0x0a &&
     buf[6] === 0x1a &&
     buf[7] === 0x0a;
+
   if (!isPng) return null;
   const width = buf.readUInt32BE(16);
   const height = buf.readUInt32BE(20);
+
   return { width, height };
 }
 
@@ -116,6 +124,7 @@ async function main() {
 
   try {
     let connection;
+
     try {
       connection = discoverChromeMain();
     } catch (e) {
@@ -125,6 +134,7 @@ async function main() {
         reason: "ChromeMain 未运行或未开启 remote-debugging-port",
         error: String(e),
       };
+
       await writeFile(join(outDir, "result.json"), JSON.stringify(errReport, null, 2));
       console.error(`[Antigravity] BLOCKED: ${errReport.reason}`);
       process.exit(2);
@@ -136,6 +146,7 @@ async function main() {
     const extId = sideagentExtensionId();
     const { targetInfos } = await cdp.send("Target.getTargets");
     const sw = findServiceWorker(targetInfos, extId);
+
     if (!sw) {
       throw new Error(`未找到 SideAgent Service Worker (extId: ${extId})`);
     }
@@ -150,6 +161,7 @@ async function main() {
       swSession,
       "({ gate: globalThis.__saGate?.(), team: globalThis.__saTeamView?.() })",
     );
+
     await writeFile(join(outDir, "initial-gate-status.json"), JSON.stringify(gateStatus, null, 2));
 
     if (gateStatus.gate?.user || gateStatus.gate?.draining) {
@@ -168,12 +180,14 @@ async function main() {
       const rawCall = async (name, params = {}) => {
         const id = `${sessionId}-${++toolSeq}`;
         const t0 = Date.now();
+
         const res = await evaluateInWorker(
           cdp,
           swSession,
           `globalThis.__saCall(${JSON.stringify(id)}, ${JSON.stringify(name)}, ${JSON.stringify(params)}, ${JSON.stringify(sessionId)})`,
           65000,
         );
+
         const record = {
           id,
           name,
@@ -182,20 +196,25 @@ async function main() {
           elapsedMs: Date.now() - t0,
           ...res,
         };
+
         records.push(record);
         await appendFile(join(caseDir, "tools.jsonl"), JSON.stringify(sanitizeRecord(record)) + "\n");
+
         return res;
       };
 
       const toolCall = async (name, params = {}) => {
         const res = await rawCall(name, params);
+
         if (!res || !res.ok) {
           throw new Error(res?.error || `${name} 执行失败未返回 ok`);
         }
+
         return res.data;
       };
 
       console.log(`\n--- [Case: ${testCaseName}] 开始 ---`);
+
       const caseReport = {
         name: testCaseName,
         passed: false,
@@ -208,6 +227,7 @@ async function main() {
 
       try {
         await runnerFn({ rawCall, toolCall, caseDir, sessionId, caseReport });
+
         if (caseReport.status !== "NOT_COVERED") {
           caseReport.passed = caseReport.checks.length > 0 && caseReport.checks.every((c) => c.pass);
           caseReport.status = caseReport.passed ? "PASS" : "FAIL";
@@ -255,6 +275,7 @@ async function main() {
             swSession,
             `chrome.tabs.query({ active: true, currentWindow: true }).then(ts => ts[0])`,
           );
+
           const activeTabId = activeTabInfo?.id;
 
           caseReport.checks.push({
@@ -273,9 +294,11 @@ async function main() {
 
           // 触发生产截图工具 (单次真实调用)
           const shotRes = await rawCall("screenshot", {});
+
           if (!shotRes || !shotRes.ok) {
             throw new Error(`screenshot 工具执行失败: ${shotRes?.error || "未返回 ok"}`);
           }
+
           const shot = shotRes.data;
           caseReport.screenshotMeta = shot;
 
@@ -318,9 +341,11 @@ async function main() {
           // 断言 A1: 物理像素与 CSS 视口 * DPR 对应关系
           const expectedPxW = Math.round(primaryMetrics.innerWidth * primaryMetrics.dpr);
           const expectedPxH = Math.round(primaryMetrics.innerHeight * primaryMetrics.dpr);
+
           const dimMatches = decoded != null &&
             Math.abs(decoded.width - expectedPxW) <= 4 &&
             Math.abs(decoded.height - expectedPxH) <= 4;
+
           caseReport.checks.push({
             id: "A1_dpr_viewport_alignment",
             description: "独立解码物理像素与页面 CSS 视口 * DPR 匹配",
@@ -428,6 +453,7 @@ async function main() {
             swSession,
             `chrome.scripting.executeScript({ target: { tabId: ${tabId} }, world: 'MAIN', func: () => window.readClickEvidence() }).then(r => r[0].result)`,
           );
+
           caseReport.evidence = evidence;
 
           // 断言 B1: 目标计数恰好递增 1 次 (杜绝 dispatchEvent + .click 双发)
@@ -481,6 +507,7 @@ async function main() {
             swSession,
             `chrome.scripting.executeScript({ target: { tabId: ${tabId} }, world: 'MAIN', func: () => window.readClickEvidence() }).then(r => r[0].result)`,
           );
+
           caseReport.evidence = evidence;
           caseReport.clickRes = clickRes;
 
@@ -504,6 +531,7 @@ async function main() {
           const handledSafely =
             (clickRes.ok === false && evidence.targetCount === 0 && evidence.decoyCount === 0 && evidence.trapCount === 0) ||
             (clickRes.ok === true && evidence.targetCount === 1 && evidence.decoyCount === 0 && evidence.trapCount === 0);
+
           caseReport.checks.push({
             id: "B2_reconfirmed_or_safely_aborted",
             description: "位移后要么跟踪命中新目标，要么明确拒绝，杜绝误点与假成功",
@@ -537,6 +565,7 @@ async function main() {
             swSession,
             `chrome.scripting.executeScript({ target: { tabId: ${tabId} }, world: 'MAIN', func: () => window.readClickEvidence() }).then(r => r[0].result)`,
           );
+
           caseReport.evidence = evidence;
           caseReport.clickRes = clickRes;
 
@@ -588,6 +617,7 @@ async function main() {
 
           // 第一阶段: 用同时匹配两个同名按钮的选择器发起点击，验证系统拒绝歧义操作且不产生任何点击
           const ambiguousRes = await rawCall("click", { target: "button[aria-label='主计数按钮']" });
+
           const ambEvidence = await evaluateInWorker(
             cdp,
             swSession,
@@ -604,6 +634,7 @@ async function main() {
 
           // 第二阶段: 使用唯一确定性目标 (#target-counter) 发起点击，验证成功命中主目标
           const exactRes = await toolCall("click", { target: "#target-counter" });
+
           const exactEvidence = await evaluateInWorker(
             cdp,
             swSession,
@@ -637,6 +668,7 @@ async function main() {
     // 汇总结果
     const coveredResults = suiteResults.filter((r) => r.status !== "NOT_COVERED");
     const suitePassed = coveredResults.length > 0 && coveredResults.every((r) => r.passed);
+
     const finalReport = {
       suitePassed,
       case: caseArg,
@@ -675,6 +707,7 @@ async function main() {
     if (cdp) {
       await cdp.close().catch(() => {});
     }
+
     await fixtureServer.close().catch(() => {});
   }
 }

@@ -41,6 +41,7 @@ class FakeElement {
     this.kids = (spec.children ?? []).map(child => {
       const element = new FakeElement(child, doc);
       element.parent = this;
+
       return element;
     });
   }
@@ -84,12 +85,15 @@ class FakeDocument {
   all(): FakeElement[] {
     const out: FakeElement[] = [];
     const walk = (element: FakeElement) => { for (const kid of element.kids) { out.push(kid); walk(kid); } };
+
     walk(this.root);
+
     return out;
   }
 
   matchesUnder(host: FakeElement, selector: string): FakeElement[] {
     const pool = host === this.root ? this.all() : under(host);
+
     return pool.filter(element => testSelector(element, selector));
   }
 
@@ -101,22 +105,32 @@ class FakeDocument {
 function under(host: FakeElement): FakeElement[] {
   const out: FakeElement[] = [];
   const walk = (element: FakeElement) => { for (const kid of element.kids) { out.push(kid); walk(kid); } };
+
   walk(host);
+
   return out;
 }
 
 function testSelector(element: FakeElement, selector: string): boolean {
   const trimmed = selector.trim();
+
   if (trimmed === "*") return true;
   const attribute = /^\[([\w-]+)(?:([~|^$*]?=)"(.*)")?\]$/u.exec(trimmed);
+
   if (attribute) {
     const value = element.getAttribute(attribute[1]!);
+
     if (value === null) return false;
+
     if (attribute[3] === undefined) return true;
+
     if (attribute[2] === "=") return value === attribute[3];
+
     return false;
   }
+
   if (trimmed.startsWith("#")) return element.id === trimmed.slice(1);
+
   return element.tag === trimmed.toLowerCase();
 }
 
@@ -135,7 +149,9 @@ function createPage(extra: Spec[] = []) {
       ...extra,
     ],
   });
+
   const calls: Array<{ name: string; params: Record<string, unknown>; resolvedId?: string }> = [];
+
   const sandbox = {
     document,
     location: { href: "https://work.example/contact" },
@@ -146,48 +162,71 @@ function createPage(extra: Spec[] = []) {
     CSS: { escape: (value: string) => value.replace(/["\\]/gu, "\\$&") },
     XPathResult: {}, console: { log: () => undefined, warn: () => undefined, error: () => undefined },
   };
+
   const context = createContext(sandbox);
+
   const runPage = async (code: string): Promise<unknown> => {
     // 页面侧表达式（官方 runtime 生成）在隔离 context 里真求值；Node 宿主不受影响。
     const produced = await runInContext(`(async () => { return (${code}); })()`, context) as unknown;
+
     return JSON.parse(JSON.stringify(produced ?? null)) as unknown;
   };
+
   const element = (target: unknown): FakeElement => {
     const matches = document.querySelectorAll(String(target));
+
     if (matches.length === 0) throw new Error(`未找到目标元素：${String(target)}`);
+
     if (matches.length > 1) throw new Error(`CSS 选择器匹配 ${matches.length} 个元素`);
+
     return matches[0]!;
   };
+
   const extension = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
     if (name === "list_tabs") {
       calls.push({ name, params });
+
       return { tabs: [{ id: 12, title: "contact", url: "https://work.example/contact", active: false, windowId: 1, working: true }] };
     }
+
     if (name === "js") {
       calls.push({ name, params });
+
       return { value: await runPage(String(params.code)) };
     }
+
     const target = params.target === undefined ? undefined : element(params.target);
     const resolvedId = target?.id;
     calls.push({ name, params, ...(resolvedId === undefined ? {} : { resolvedId }) });
+
     if (name === "fill") {
       if (!target) throw new Error("fill 需要目标");
       target.value = String(params.value);
+
       return { filled: true };
     }
+
     if (name === "click") {
       if (target) target.click();
+
       return { clicked: true };
     }
+
     if (name === "hover") return { hovered: true };
+
     if (name === "press_key") return { pressed: true };
+
     if (name === "type_text") {
       (document.focus ?? target)!.value += String(params.text);
+
       return { typed: true };
     }
+
     throw new Error(`假扩展没有实现 ${name}`);
   };
+
   const value = (id: string): string => document.getElementById(id)?.value ?? "";
+
   return { document, calls, runPage, extension, value };
 }
 
@@ -196,11 +235,13 @@ function createPage(extra: Spec[] = []) {
 describe("browser_run api:'playwright'", () => {
   it("runs the vendored official runtime and writes through the real fill RPC", async () => {
     const page = createPage();
+
     const result = await runBrowserProgram({
       api: "playwright", pageTabId: 12,
       code: "await page.getByLabel('姓名',{exact:true}).fill('张三'); return {name: await page.locator('#name').inputValue(), email: await page.locator('#email').inputValue()};",
       call: (name, params) => page.extension(name, params),
     });
+
     expect(result.value).toEqual({ name: "张三", email: "" });
     expect(page.value("name")).toBe("张三");
     expect(page.value("email")).toBe("");
@@ -221,11 +262,13 @@ describe("browser_run api:'playwright'", () => {
 
   it("resolves getByRole for both a labelled textbox and a named button", async () => {
     const page = createPage();
+
     const result = await runBrowserProgram({
       api: "playwright", pageTabId: 12,
       code: "await page.getByRole('textbox',{name:'邮箱',exact:true}).fill('a@b.c'); await page.getByRole('button',{name:'提交',exact:true}).press('Enter'); return {email: await page.locator('#email').inputValue(), submitClicks: await page.evaluate(() => 0)};",
       call: (name, params) => page.extension(name, params),
     });
+
     expect((result.value as { email: string }).email).toBe("a@b.c");
     expect(page.value("email")).toBe("a@b.c");
     const fill = page.calls.find(call => call.name === "fill")!;
@@ -240,17 +283,21 @@ describe("browser_run api:'playwright'", () => {
 
   it("keeps every action on the task page even when the browser active tab is elsewhere", async () => {
     const page = createPage();
+
     // list_tabs 报的 working 页是 99（模拟用户此刻看着别的页），工具缺省页是 12。
     const extension = async (name: string, params: Record<string, unknown>) => {
       if (name === "list_tabs") {
         page.calls.push({ name, params });
+
         return { tabs: [
           { id: 12, title: "contact", url: "https://work.example/contact", active: false, windowId: 1, working: false },
           { id: 99, title: "other", url: "https://work.example/other", active: true, windowId: 1, working: true },
         ] };
       }
+
       return page.extension(name, params);
     };
+
     await runBrowserProgram({
       api: "playwright", pageTabId: 12,
       code: "await page.getByLabel('姓名',{exact:true}).fill('绑定页'); return null;",
@@ -274,10 +321,13 @@ describe("browser_run api:'playwright'", () => {
 
   it("refuses to run playwright mode without any bound task page", async () => {
     const page = createPage();
+
     const listOnly = async (name: string, params: Record<string, unknown>) => {
       if (name === "list_tabs") return { tabs: [{ id: 99, title: "other", url: "https://x/", active: true, windowId: 1, working: false }] };
+
       return page.extension(name, params);
     };
+
     await expect(runBrowserProgram({
       api: "playwright", pageTabId: null,
       code: "await page.getByLabel('姓名').fill('x'); return null;",
@@ -291,6 +341,7 @@ describe("browser_run api:'playwright'", () => {
       { tag: "label", attrs: { for: "name2" }, text: "姓名" },
       { tag: "input", attrs: { id: "name2" }, value: "" },
     ]);
+
     await expect(runBrowserProgram({
       api: "playwright", pageTabId: 12,
       code: "await page.getByLabel('姓名',{exact:true}).fill('x'); return null;",
@@ -303,11 +354,13 @@ describe("browser_run api:'playwright'", () => {
 
   it("keeps host capabilities out of the sandbox in playwright mode", async () => {
     const page = createPage();
+
     const result = await runBrowserProgram({
       api: "playwright", pageTabId: 12,
       code: "return [typeof process, typeof require, typeof fetch, typeof document, typeof __browserCall].join(',');",
       call: (name, params) => page.extension(name, params),
     });
+
     expect(result.value).toBe("undefined,undefined,undefined,undefined,undefined");
   });
 
@@ -335,6 +388,7 @@ describe("browser_run api:'playwright'", () => {
       ["await page.on('console',()=>{}); return 'ok';", /page\.on 未接入/u],
       ["await context.waitForEvent('page'); return 'ok';", /context\.waitForEvent 未接入/u],
     ];
+
     for (const [code, expected] of cases) {
       const page = createPage();
       await expect(runBrowserProgram({ api: "playwright", pageTabId: 12, code, call: (name, params) => page.extension(name, params) }))
@@ -346,6 +400,7 @@ describe("browser_run api:'playwright'", () => {
       expect(pageCode).not.toContain('"operation":"domClick"');
       expect(pageCode).not.toContain("fetch(");
     }
+
     // press 的 delay 选项：官方兼容层先点目标再发按键，所以点击本身会派发；
     // 桥不吞掉 delay，按键不派发，错误里说清未接入。
     const delayed = createPage();
@@ -365,20 +420,24 @@ describe("browser_run api:'playwright'", () => {
     expect(source).toContain("executeQueryInPage");
     expect(source).toContain("data-stagehand-pw-compat");
     const page = createPage();
+
     const result = await runBrowserProgram({
       api: "playwright", pageTabId: 12,
       code: "const a = await page.getByLabel('姓名',{exact:true}).isVisible(); const b = await page.getByRole('button',{name:'提交'}).count(); return {a,b};",
       call: (name, params) => page.extension(name, params),
     });
+
     expect(result.value).toEqual({ a: true, b: 1 });
   });
 
   it("keeps ego mode unchanged: no page/context without api", async () => {
     const page = createPage();
+
     const result = await runBrowserProgram({
       code: "return [typeof page, typeof context].join(',');",
       call: (name, params) => page.extension(name, params),
     });
+
     expect(result.value).toBe("undefined,undefined");
     expect(page.calls).toHaveLength(0);
   });
@@ -391,27 +450,35 @@ describe("browser_run api:'playwright' 控制闸门", () => {
     let epoch = 0;
     let workingTab = 12;
     const steps: ProgramStep[] = [];
+
     const rpc = new ToolRpc(frame => {
       frames.push({ id: frame.id, name: frame.name, params: frame.params });
+
       // 绑定页在程序第一步读一次；之后用户切到别的页也不该改变这个值。
       const listing = { tabs: [
         { id: 12, title: "contact", url: "https://work.example/contact", active: workingTab !== 12, windowId: 1, working: workingTab === 12 },
         { id: 99, title: "other", url: "https://work.example/other", active: workingTab === 99, windowId: 1, working: workingTab === 99 },
       ] };
+
       const answered = frame.name === "list_tabs"
         ? Promise.resolve(listing)
         : page.extension(frame.name, frame.params);
+
       void answered.then(
         data => rpc.handleResult(frame.id, true, data),
         error => rpc.handleResult(frame.id, false, undefined, String(error)),
       );
     });
+
     rpc.setPageTarget(undefined, 12);
+
     const tool = createBrowserTools(rpc, undefined, undefined, enabled, {
       isToolHiddenByMode: hidden, epoch: () => epoch, canWrite: () => true, onStep: step => { steps.push(step); observe(step); },
     }).find(candidate => candidate.name === "browser_run")!;
+
     const run = (code: string, signal?: AbortSignal) =>
       tool.execute("accept", { code, api }, signal, undefined, {} as never);
+
     return {
       page, frames, steps, run,
       bumpEpoch: () => { epoch += 1; },
@@ -431,13 +498,16 @@ describe("browser_run api:'playwright' 控制闸门", () => {
   it("stops a running program on abort, including a caught waitForTimeout", async () => {
     const controller = new AbortController();
     let before = 0;
+
     const harnessed = harness("playwright", step => {
       if (step.name === "sleep" && step.phase === "start") { before = harnessed.frames.length; controller.abort(); }
     });
+
     const promise = harnessed.run(
       "try { await page.waitForTimeout(1500); } catch {} await page.getByLabel('姓名',{exact:true}).fill('SHOULD_NOT_WRITE'); return 'done';",
       controller.signal,
     );
+
     await expect(promise).rejects.toThrow(/abort|中止/u);
     await new Promise(resolve => setTimeout(resolve, 200));
     expect(harnessed.frames.length).toBe(before);
@@ -457,17 +527,27 @@ describe("browser_run api:'playwright' 控制闸门", () => {
 
   it("does not let a caught held click continue the program", async () => {
     const page = createPage();
+
     const rpc = new ToolRpc(frame => {
-      if (frame.name === "list_tabs") { queueMicrotask(() => rpc.handleResult(frame.id, true, { tabs: [{ id: 12, working: true, active: true, windowId: 1, title: "t", url: "https://x/" }] })); return; }
-      if (frame.name === "click") { queueMicrotask(() => rpc.handleResult(frame.id, true, { clicked: false, held: true })); return; }
+      if (frame.name === "list_tabs") { queueMicrotask(() => rpc.handleResult(frame.id, true, { tabs: [{ id: 12, working: true, active: true, windowId: 1, title: "t", url: "https://x/" }] }));
+
+ return; }
+
+      if (frame.name === "click") { queueMicrotask(() => rpc.handleResult(frame.id, true, { clicked: false, held: true }));
+
+ return; }
+
       void page.extension(frame.name, frame.params).then(
         data => rpc.handleResult(frame.id, true, data),
         error => rpc.handleResult(frame.id, false, undefined, String(error)),
       );
     });
+
     rpc.setPageTarget(undefined, 12);
+
     const tool = createBrowserTools(rpc, undefined, undefined, () => true, { epoch: () => 0, canWrite: () => true })
       .find(candidate => candidate.name === "browser_run")!;
+
     await expect(tool.execute("accept", {
       api: "playwright",
       code: "try { await page.getByRole('button',{name:'提交'}).click(); } catch {} await page.getByLabel('姓名',{exact:true}).fill('SHOULD_NOT_WRITE'); return 'done';",
@@ -477,9 +557,11 @@ describe("browser_run api:'playwright' 控制闸门", () => {
 
   it("keeps the pinned tab when the user switches the active tab mid-program", async () => {
     const harnessed = harness("playwright", step => { if (step.name === "sleep" && step.phase === "start") harnessed.switchUserTab(99); });
+
     const promise = harnessed.run(
       "await page.waitForTimeout(50); await page.getByLabel('姓名',{exact:true}).fill('李明'); return await page.locator('#name').inputValue();",
     );
+
     // 用户程序等在 sleep 上时，用户把活动页切到 99（working 也跟着变）；绑定值必须仍是 12。
     const result = await promise as { details: { value: unknown } };
     expect(result.details.value).toBe("李明");

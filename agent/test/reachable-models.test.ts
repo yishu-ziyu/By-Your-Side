@@ -4,6 +4,7 @@ import type { ModelOption } from "../../shared/protocol.js";
 
 function option(id: string): ModelOption {
   const slash = id.indexOf("/");
+
   return { id, provider: id.slice(0, slash), modelId: id.slice(slash + 1), name: id.slice(slash + 1) };
 }
 
@@ -20,6 +21,7 @@ describe("filterReachableModels", () => {
       option("xiaomi-token-plan-cn/mimo-v2.5"),
       option("opencode-go/deepseek-flash"),
     ];
+
     expect(filterReachableModels(listed).map((m) => m.id)).toEqual([
       "minimax-cn/MiniMax-M3",
       "xai/grok-4.6",
@@ -43,7 +45,9 @@ describe("filterReachableModels", () => {
       "kimi-coding/kimi-for-coding",
       "openai-codex/gpt-5.6-luna",
     ];
+
     expect(filterReachableModels(hidden.map(option))).toEqual([]);
+
     for (const id of hidden) expect(REACHABLE_MODEL_IDS.has(id)).toBe(false);
   });
 

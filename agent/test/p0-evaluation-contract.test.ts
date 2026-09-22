@@ -1,9 +1,15 @@
 import {describe,expect,it} from 'vitest';
 import {emptyP0Report,validateP0Report,type P0Manifest,type P0Build} from '../../scripts/eval/lib/p0-contract.js';
+
 const manifest:P0Manifest={version:1,cases:[{id:'one',task:'test',fault:'restart',maxSideEffects:1,preserveRun:true}]};
+
 const build:P0Build={head:'a'.repeat(40),fingerprint:'b'.repeat(64),manifestHash:'c'.repeat(64)};
+
 function passing(){const report=emptyP0Report(manifest,build);report.environment={isolated:true,headless:true,realModelUsed:true,model:'test-fixture'};
-  Object.assign(report.cases[0]!,{status:'PASS',startedAt:'2026-09-17T00:00:00Z',endedAt:'2026-09-17T00:01:00Z',beforeRunId:'run',afterRunId:'run',metrics:{expectedOutcome:true,sideEffects:1,duplicateWrites:0,wrongPageWrites:0,recoveryFailures:0,userCorrections:0},evidence:[{kind:'trace',path:'trace.json',sha256:'d'.repeat(64)},{kind:'state',path:'state.json',sha256:'e'.repeat(64)}]});return report;}
+  Object.assign(report.cases[0]!,{status:'PASS',startedAt:'2026-09-17T00:00:00Z',endedAt:'2026-09-17T00:01:00Z',beforeRunId:'run',afterRunId:'run',metrics:{expectedOutcome:true,sideEffects:1,duplicateWrites:0,wrongPageWrites:0,recoveryFailures:0,userCorrections:0},evidence:[{kind:'trace',path:'trace.json',sha256:'d'.repeat(64)},{kind:'state',path:'state.json',sha256:'e'.repeat(64)}]});
+
+return report;}
+
 describe('P0 live evidence gate',()=>{
   it('cannot pass an untouched template',()=>expect(validateP0Report(emptyP0Report(manifest,build),manifest,build,()=>true).status).toBe('NOT_RUN'));
   it('accepts a complete report only with matching source and evidence',()=>expect(validateP0Report(passing(),manifest,build,()=>true).status).toBe('PASS'));

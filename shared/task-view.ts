@@ -16,6 +16,7 @@ import { isTaskMaterials, type TaskMaterialReference } from './task-recovery.js'
 export const TASK_VIEW_STATES = ["none", "running", "paused", "interrupted", "idle", "aborted", "error"] as const;
 
 export interface TaskViewPage { tabId: number; urlHash: string }
+
 export interface TaskViewResultItem { id: string; description: string; status: TaskResultItemStatus }
 
 export interface TaskView {
@@ -55,8 +56,11 @@ const OPEN_STATUSES = new Set(["pending", "blocked", "unknown"]);
 
 function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | undefined): TaskView["waiting"] {
   if (snapshot.state === "paused") return { reason: "human_control", detail: null };
+
   if (snapshot.state === "interrupted") return { reason: "restart_checkpoint", detail: snapshot.interruptionReason ?? null };
+
   if (snapshot.state === "aborted") return { reason: "cancelled", detail: null };
+
   // 与 decideTaskNextStep 同优先级：failure_limit/unknown 先于 runtime_error
   if (nextStep) {
     switch (nextStep.reason) {
@@ -75,7 +79,9 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
         break;
     }
   }
+
   if (snapshot.state === "error") return { reason: "runtime_error", detail: null };
+
   return null;
 }
 
@@ -86,6 +92,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const rawResults = snapshot.goalPlan ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
   const results = rawResults.map((item) => ({ id: item.id, description: item.description, status: item.status }));
   const outstanding=results.filter((item,i)=>OPEN_STATUSES.has(item.status)&&!('tool' in rawResults[i]!&&isSupersededUnknown(rawResults[i] as import('./task-results.js').TaskResultItem,executionResults)));
+
   return {
     conversationId: snapshot.conversationId,
     runId: snapshot.runId ?? null,
@@ -111,23 +118,40 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
 export function isTaskView(value: unknown): value is TaskView {
   if (!value || typeof value !== "object") return false;
   const v = value as TaskView;
+
   if (typeof v.conversationId !== "string" || !v.conversationId) return false;
+
   if (v.runId !== null && typeof v.runId !== "string") return false;
+
   if (typeof v.controlVersion !== "number" || !Number.isSafeInteger(v.controlVersion)) return false;
+
   if (typeof v.observedAt !== "number" || !Number.isFinite(v.observedAt)) return false;
+
   if (!TASK_VIEW_STATES.includes(v.state)) return false;
+
   if (v.goal !== null && typeof v.goal !== "string") return false;
+
   if (!Array.isArray(v.revisions) || v.revisions.length > 64 || !v.revisions.every((r) => typeof r === "string")) return false;
+
   if (v.page !== null && (!v.page || typeof v.page !== "object" || !Number.isSafeInteger(v.page.tabId) || typeof v.page.urlHash !== "string")) return false;
+
   if (v.materials !== undefined && !isTaskMaterials(v.materials)) return false;
   const itemOk = (x: unknown): boolean => !!x && typeof x === "object" && typeof (x as TaskViewResultItem).id === "string" && typeof (x as TaskViewResultItem).description === "string" && TASK_RESULT_ITEM_STATUSES.includes((x as TaskViewResultItem).status);
+
   if (!Array.isArray(v.results) || !v.results.every(itemOk)) return false;
+
   if (!Array.isArray(v.outstanding) || !v.outstanding.every(itemOk)) return false;
   const activeOk = (x: unknown): boolean => !!x && typeof x === "object" && typeof (x as { member?: unknown }).member === "string" && typeof (x as { action?: unknown }).action === "string" && typeof (x as { since?: unknown }).since === "number";
+
   if (!Array.isArray(v.active) || !v.active.every(activeOk)) return false;
+
   if (v.lastAction !== null && (!v.lastAction || typeof v.lastAction.action !== "string" || typeof v.lastAction.failed !== "boolean" || typeof v.lastAction.at !== "number")) return false;
+
   if (v.waiting !== null && v.waiting !== undefined && (typeof v.waiting !== "object" || !TASK_NEXT_REASONS.includes(v.waiting.reason) || (v.waiting.detail !== null && typeof v.waiting.detail !== "string"))) return false;
+
   if (v.latestDelivery !== null && (!v.latestDelivery || !USER_DELIVERY_KINDS.includes(v.latestDelivery.kind))) return false;
+
   if (typeof v.resumable !== "boolean") return false;
+
   return true;
 }

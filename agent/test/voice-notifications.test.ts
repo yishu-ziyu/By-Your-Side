@@ -2,6 +2,7 @@ import {expect,it,vi} from 'vitest';
 import {VoiceService} from '../src/voice-service.js';
 import {TaskProgress} from '../src/task-progress.js';
 import {progressSpeech} from '../src/voice-receipt.js';
+
 it('notifies once from current real task state, ignores foreign events, and waits for control acknowledgement',async()=>{
  const progress=new TaskProgress('A'),notify=vi.fn();
  progress.request('task');progress.observe({type:'agent_event',event:{kind:'agent_start'}});

@@ -14,12 +14,16 @@ export function insideOverlay(target: EventTarget | null): boolean {
 function labelText(el: Element): string | undefined {
   const labelled = el as unknown as { labels?: ArrayLike<{ textContent?: string | null }> };
   const first = labelled.labels?.[0]?.textContent;
+
   if (typeof first === "string" && first.trim()) return first;
   const by = el.getAttribute("aria-labelledby");
+
   if (by) {
     const parts = by.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? "").join(" ");
+
     if (parts.trim()) return parts;
   }
+
   return undefined;
 }
 
@@ -32,16 +36,20 @@ function labelText(el: Element): string | undefined {
 export function ancestorTextOf(el: Element): string | null {
   if ((el.textContent ?? "").replace(/\s+/g, " ").trim()) return null;
   let cur: Element | null = el.parentElement;
+
   for (let depth = 0; depth < 4 && cur; depth += 1) {
     const text = (cur.textContent ?? "").replace(/\s+/g, " ").trim();
+
     if (text) return text.length <= 120 ? text : text.slice(0, 120);
     cur = cur.parentElement;
   }
+
   return null;
 }
 
 export function descendantAlt(el: Element): string | null {
   const img = el.querySelector?.("img[alt], svg[aria-label]");
+
   return img?.getAttribute("alt") ?? img?.getAttribute("aria-label") ?? null;
 }
 
@@ -61,14 +69,19 @@ function hasName(el: Element): boolean {
 export function meaningful(el: Element | null): Element | null {
   let cur: Element | null = el;
   let named: Element | null = null;
+
   for (let depth = 0; cur && depth < 6; depth += 1) {
     const tag = cur.tagName.toLowerCase();
+
     if (tag === "button" || tag === "a" || tag === "input" || tag === "textarea" || tag === "select" || tag === "label" || tag === "summary") return cur;
     const role = cur.getAttribute("role");
+
     if (role && /button|link|tab|menuitem|option|checkbox|radio|switch|combobox|textbox|searchbox/.test(role)) return cur;
+
     if (!named && hasName(cur)) named = cur;
     cur = cur.parentElement;
   }
+
   return named ?? el;
 }
 
@@ -94,7 +107,9 @@ export function sourceOf(el: Element): AnchorSource {
 export function anchorOfTarget(target: EventTarget | null): { anchor: DemoAnchor; sensitive: boolean } | null {
   if (!(target instanceof Element)) return null;
   const el = meaningful(target);
+
   if (!el) return null;
   const source = sourceOf(el);
+
   return { anchor: anchorFor(source), sensitive: isSensitiveField(source) };
 }

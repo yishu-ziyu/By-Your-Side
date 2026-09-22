@@ -19,7 +19,9 @@ return {ok:true, snapshot: after.text};`;
 function stub(seen: string[]) {
   return async (name: string) => {
     seen.push(name);
+
     if (name === "js") return { value: { found: true, disabled: false } };
+
     if (name === "snapshot") return { text: 'RootWebArea "收件箱"' };
     throw new Error("unexpected method " + name);
   };

@@ -11,6 +11,7 @@ class Socket extends EventEmitter {
   close=vi.fn();
   server(type:string,data:any={}){this.emit('message',Buffer.from(JSON.stringify({type,data})));}
 }
+
 describe('production streaming speech output',()=>{
  it('forwards first audio before finish and forwards more than twenty seconds without a whole-answer gate',()=>{
   const socket=new Socket(),audio=vi.fn(),end=vi.fn(),error=vi.fn();
@@ -40,7 +41,11 @@ describe('production streaming speech output',()=>{
  });
  it('stops the active TTS on speech interruption, rejects its late audio, and never invokes page control',()=>{
   const events:any[]=[],route=vi.fn();let output:SpeechCallbacks;const cancel=vi.fn(),push=vi.fn(),finish=vi.fn();const socket=new Socket();
-  const s=new StepVoiceSession({getSnapshot:()=>null,emit:e=>events.push(e),route,connect:()=>socket as any,createSpeech:(_key,cb)=>{output=cb;return{push,finish,cancel};}});
+
+  const s=new StepVoiceSession({getSnapshot:()=>null,emit:e=>events.push(e),route,connect:()=>socket as any,createSpeech:(_key,cb)=>{output=cb;
+
+return{push,finish,cancel};}});
+
   s.start('test');s.streamDelivery({id:'d',runId:'r',kind:'finding',phase:'streaming',text:'这是第一句。'});
   output!.audio('AQABAA==');expect(push).toHaveBeenCalledWith('这是第一句。');expect(finish).not.toHaveBeenCalled();
   s.command({kind:'interrupt',turn:1});const count=events.filter(e=>e.kind==='audio').length;
@@ -48,7 +53,9 @@ describe('production streaming speech output',()=>{
   expect(events.filter(e=>e.kind==='audio')).toHaveLength(count);expect(cancel).toHaveBeenCalledOnce();expect(route).not.toHaveBeenCalled();s.close();
  });
  it('streams only validated final tool output, never ordinary text or unexecuted finding arguments',async()=>{
-  let subscriber:(e:any)=>void=()=>{};const emit=vi.fn();
+  let subscriber:(e:any)=>void=()=>{};
+
+const emit=vi.fn();
   const s:any=new (BrowserAgentSession as any)({subscribe:(f:any)=>subscriber=f},null,{emit,setStatus:vi.fn()},null,null);
   s.explicitDelivery=true;s.bindDeliveryRun(()=>'run');s.subscribeEvents();
   subscriber({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:'我要执行内部工具'}});
@@ -57,8 +64,10 @@ describe('production streaming speech output',()=>{
   expect(emit.mock.calls.filter(c=>c[0].kind==='user_delivery_stream')).toHaveLength(0);
   subscriber({type:'message_update',assistantMessageEvent:{type:'toolcall_delta',contentIndex:0,partial:{content:[{type:'toolCall',id:'d',name:'send_user_message',arguments:{kind:'finding',content:'已找到结果。'}}]}}});
   expect(emit.mock.calls.filter(c=>c[0].kind==='user_delivery_stream')).toHaveLength(0);
+
   const tool=createSendUserMessageTool({conversationId:'default',getRunId:()=> 'run',emit:event=>s.emitValidatedDelivery(event),
     getNextStep:()=>({action:'deliver',reason:'receipts_reviewed',allowWrites:true,delivery:'report',resultIds:[]})});
+
   await (tool.execute as any)('d',{kind:'finding',content:'已找到结果。'});
   expect(emit).toHaveBeenCalledWith({kind:'user_delivery_stream',stream:{id:toolDeliveryId('d'),runId:'run',kind:'finding',phase:'streaming',text:'已找到结果。'}});
  });

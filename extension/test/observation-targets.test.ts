@@ -5,6 +5,7 @@ it('every rendered content node can be addressed without guessing DOM structure'
   const roles=['heading','StaticText','image','button','listitem'];
   const nodes:AxNodeLite[]=roles.map((role,i)=>({nodeId:String(i),backendDOMNodeId:100+i,role:{value:role},name:{value:`内容${i}`}}));
   const snapshot=axTreeToText(nodes);
+
   for(let i=0;i<roles.length;i++)expect(snapshot.text).toContain(`[ref=${100+i}]`);
   expect(snapshot.backendIds).toEqual([100,101,102,103,104]);
 });

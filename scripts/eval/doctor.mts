@@ -23,25 +23,35 @@ function present(path: string): boolean {
 }
 
 const checks: Check[] = [];
+
 const node = process.version;
+
 checks.push({ name: "node", ok: Number(node.slice(1).split(".")[0]) >= 20, detail: node });
 
 const os = `${process.platform} ${run("sw_vers -productVersion") || process.arch}`.trim();
+
 checks.push({ name: "os", ok: process.platform === "darwin", detail: os, blocked: process.platform !== "darwin" });
 
 const cpu = run("sysctl -n machdep.cpu.brand_string") || process.arch;
+
 const ramGiB = Number(run("sysctl -n hw.memsize") || 0) / 1024 ** 3;
+
 checks.push({ name: "reference_machine", ok: true, detail: `${cpu}; ram_gib=${ramGiB.toFixed(1)}` });
 
 const sha = run("git rev-parse HEAD");
+
 const dirty = run("git status --porcelain");
+
 checks.push({ name: "git", ok: Boolean(sha), detail: `${sha}${dirty ? " dirty" : " clean"}` });
 
 const chrome = run(`"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version`);
+
 checks.push({ name: "chrome", ok: Boolean(chrome), detail: chrome || "not found", blocked: !chrome });
 
 const hostManifest = join(homedir(), "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sideagent.host.json");
+
 let hostDetail = "missing";
+
 if (present(hostManifest)) {
   try {
     const json = JSON.parse(readFileSync(hostManifest, "utf8")) as { name?: string; path?: string; allowed_origins?: string[] };
@@ -55,23 +65,33 @@ if (present(hostManifest)) {
 }
 
 const dist = join(REPO_ROOT, "extension", "dist", "manifest.json");
+
 checks.push({ name: "extension_build", ok: present(dist), detail: present(dist) ? "extension/dist present" : "run npm run build", blocked: !present(dist) });
 
 const piAuth = present(join(homedir(), ".pi", "agent", "auth.json"));
+
 checks.push({ name: "model_credentials", ok: piAuth, detail: piAuth ? "present (not printed)" : "missing ~/.pi/agent/auth.json", blocked: !piAuth });
 
 const sideagentConfig = present(join(homedir(), ".sideagent", "config.json"));
+
 checks.push({ name: "sideagent_config", ok: true, detail: sideagentConfig ? "present (not printed)" : "optional ~/.sideagent/config.json missing" });
 
 const stepKey = Boolean(process.env.STEPFUN_API_KEY || process.env.STEP_API_KEY);
+
 checks.push({ name: "step_plan_voice", ok: true, detail: stepKey ? "env credential present (not printed)" : "STEPFUN_API_KEY not in env; may still live in ~/.pi — live audio BLOCKED until proven", blocked: !stepKey });
 
 checks.push({ name: "microphone", ok: true, detail: "not probed (requires user gesture / OS permission UI)", blocked: true });
+
 checks.push({ name: "github_branch_protection", ok: false, detail: "main is not protected", blocked: true });
+
 checks.push({ name: "holdout_custodian", ok: false, detail: "no independent holdout custodian", blocked: true });
+
 const budgetPath = process.env.SIDEAGENT_EVAL_BUDGET_FILE || join(homedir(), ".sideagent", "eval-budget.json");
+
 let budgetOk = false;
+
 let budgetDetail = `missing ${budgetPath}`;
+
 if (present(budgetPath)) {
   try {
     const budget = JSON.parse(readFileSync(budgetPath, "utf8")) as { maximum_evaluation_cost?: number; maximum_model_calls?: number; maximum_audio_minutes?: number; currency?: string };
@@ -83,6 +103,7 @@ if (present(budgetPath)) {
     budgetDetail = "budget file unreadable (contents not printed)";
   }
 }
+
 checks.push({ name: "evaluation_budget", ok: budgetOk, detail: budgetDetail, blocked: !budgetOk });
 
 for (const check of checks) {
@@ -91,4 +112,5 @@ for (const check of checks) {
 }
 
 const failed = checks.filter((c) => !c.ok && !c.blocked);
+
 if (failed.length) process.exit(1);

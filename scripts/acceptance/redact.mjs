@@ -13,10 +13,13 @@ const MAX_STRING = 400;
 
 function redactString(value) {
   let out = value;
+
   for (const re of VALUE_DENY) {
     if (re.test(out)) return "[redacted]";
   }
+
   if (out.length > MAX_STRING) out = `${out.slice(0, MAX_STRING)}…`;
+
   return out;
 }
 
@@ -26,41 +29,56 @@ function redactString(value) {
  */
 export function redactEvidence(value, key = "") {
   if (value == null) return value;
+
   if (KEY_DENY.test(key)) return "[redacted]";
+
   if (typeof value === "string") return redactString(value);
+
   if (typeof value === "number" || typeof value === "boolean") return value;
+
   if (Array.isArray(value)) return value.map((item) => redactEvidence(item));
+
   if (typeof value === "object") {
     const out = {};
+
     for (const [k, v] of Object.entries(value)) {
       if (KEY_DENY.test(k)) {
         out[k] = "[redacted]";
         continue;
       }
+
       out[k] = redactEvidence(v, k);
     }
+
     return out;
   }
+
   return String(value);
 }
 
 export function assertNoSecrets(value, path = "$") {
   if (value == null) return;
+
   if (typeof value === "string") {
     for (const re of VALUE_DENY) {
       if (re.test(value)) throw new Error(`evidence leaked secret at ${path}`);
     }
+
     return;
   }
+
   if (Array.isArray(value)) {
     value.forEach((item, i) => assertNoSecrets(item, `${path}[${i}]`));
+
     return;
   }
+
   if (typeof value === "object") {
     for (const [k, v] of Object.entries(value)) {
       if (KEY_DENY.test(k) && v !== "[redacted]") {
         throw new Error(`evidence leaked ${k} at ${path}.${k}`);
       }
+
       assertNoSecrets(v, `${path}.${k}`);
     }
   }

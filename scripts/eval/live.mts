@@ -8,14 +8,17 @@ import { DEFAULT_BUDGET_FILE, loadBudget, loadSpend, remaining } from "./lib/bud
 
 function arg(name: string): string | undefined {
   const flag = process.argv.find((a) => a.startsWith(`${name}=`));
+
   return flag ? flag.slice(name.length + 1) : undefined;
 }
 
 const budgetFile = arg("--budget-file") ?? DEFAULT_BUDGET_FILE;
+
 const profile = arg("--profile") ?? "reference-macos";
 
 if (!existsSync(budgetFile)) {
   console.error("eval:live BLOCKED: missing --budget-file. Offline/integration work may continue; paid loops will not start.");
+
   const report: EvalReport = {
     profile,
     run_id: "live-blocked-no-budget",
@@ -27,14 +30,18 @@ if (!existsSync(budgetFile)) {
     })),
     human_review: { signed: false },
   };
+
   const result = verifyReport(report);
   console.log(JSON.stringify({ verdict: result.verdict, reason: result.reason }, null, 2));
   process.exit(0);
 }
 
 const budget = loadBudget(budgetFile);
+
 const spend = loadSpend();
+
 const left = remaining(budget, spend);
+
 console.log(JSON.stringify({
   budget_file: budgetFile,
   currency: budget.currency,
@@ -48,6 +55,7 @@ console.log(JSON.stringify({
   task_model: budget.task_model ?? null,
   profile,
 }, null, 2));
+
 if (left.cost <= 0 || left.model_calls <= 0 || left.audio_minutes <= 0) {
   console.error("eval:live stopped: budget already exhausted.");
   process.exit(0);

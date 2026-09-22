@@ -10,25 +10,39 @@ import {isTaskProgressSnapshot,type TaskProgressSnapshot} from '../../shared/voi
 import type {ServerMessage} from '../../shared/protocol.js';
 
 const cleanup:Array<()=>void>=[];
+
 afterEach(()=>{cleanup.splice(0).forEach(f=>f());vi.useRealTimers();});
+
 function managerHarness(){
  const runtimes=new Map<string,any>();
+
  const manager=new ConversationManager(async(id,emit)=>{
   let running=false;
-  const publish=(message:ServerMessage)=>{if(message.type==='agent_event'&&message.event.kind==='agent_start')running=true;if(message.type==='agent_event'&&message.event.kind==='agent_end')running=false;emit(message);};
+
+  const publish=(message:ServerMessage)=>{if(message.type==='agent_event'&&message.event.kind==='agent_start')running=true;
+
+if(message.type==='agent_event'&&message.event.kind==='agent_end')running=false;emit(message);};
+
   const runtime:any={session:{modelName:()=> 'test',availableModels:async()=>[],available:true,isStreaming:()=>running,isHeld:()=>false,
    classifyVoiceInput:vi.fn(async(text:string)=>({steps:[{action:'chat',text,target:null}]})),
    startTask:vi.fn(()=>publish({type:'agent_event',event:{kind:'agent_start'}})),abort:vi.fn()},
    fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn()},rpc:{rejectAll:vi.fn()},dispose:()=>{},
    handleMessage:(message:any)=>{if(message.type==='user_message')publish({type:'agent_event',event:{kind:'agent_start'}});}};
-  runtimes.set(id,{runtime,publish});return runtime;
+
+  runtimes.set(id,{runtime,publish});
+
+return runtime;
  },()=>{});
+
  cleanup.push(()=>manager.dispose());
  const event=(id:string,event:any,sessionId?:string)=>runtimes.get(id).publish({type:'agent_event',event,...(sessionId?{sessionId}:{})});
  const finish=(id:string,text:string)=>{event(id,{kind:'turn_start'});event(id,{kind:'text_delta',delta:text});event(id,{kind:'turn_end'});event(id,{kind:'agent_end'});};
+
  return {manager,runtimes,event,finish};
 }
+
 function context(snapshot:TaskProgressSnapshot|null):any{return (snapshot as any)?.conversationContext;}
+
 const resultText='我只查看了收件箱当前这批标题。青鹭工作坊发来活动邀请，橙湾研究发来访谈邀请，还有河岸周刊；尚未打开邮件正文。';
 
 describe('Evaluator: real manager event flow produces conversation evidence',()=>{
@@ -108,16 +122,25 @@ class Socket extends EventEmitter{
  send(data:string){this.sent.push(JSON.parse(data));}
  server(e:any){this.emit('message',Buffer.from(JSON.stringify(e)));}
 }
+
 function snapshot():TaskProgressSnapshot{return {conversationId:'A',observedAt:Date.now(),state:'idle',goal:'看邮件',startedAt:1,runId:'run-A',active:[],lastAction:null,successVerified:false,
  conversationContext:{recentTurns:[{role:'user',text:'看邮件'},{role:'assistant',text:resultText}],latestResult:{runId:'run-A',text:resultText,observedAt:2,source:'assistant_output'}}} as TaskProgressSnapshot;}
+
 function voiceHarness(getSnapshot:()=>TaskProgressSnapshot){
  const socket=new Socket();const events:any[]=[];
  const voice=new StepVoiceSession({getSnapshot,emit:e=>events.push(e),connect:()=>socket as unknown as WebSocket,route:async()=>({kind:'none'})});cleanup.push(()=>voice.close());
  voice.start('synthetic');socket.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});socket.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:{type:''}}});
  let acknowledged=0;
- const configure=()=>{for(let n=0;n<5;n++){const updates=socket.sent.filter(e=>e.type==='session.update');if(updates.length<=acknowledged)break;acknowledged=updates.length;const text=updates.at(-1)?.session.instructions;if(text)socket.server({type:'session.updated',session:{instructions:text}});}};
+
+ const configure=()=>{for(let n=0;n<5;n++){const updates=socket.sent.filter(e=>e.type==='session.update');
+
+if(updates.length<=acknowledged)break;acknowledged=updates.length;const text=updates.at(-1)?.session.instructions;
+
+if(text)socket.server({type:'session.updated',session:{instructions:text}});}};
+
  return {voice,socket,events,configure};
 }
+
 describe('Evaluator: result reaches production voice response selection',()=>{
  it('a retained report cannot override a paused, aborted or failed status receipt',()=>{
   for(const state of ['paused','aborted','error'] as const){
@@ -137,7 +160,12 @@ describe('Evaluator: result reaches production voice response selection',()=>{
  });
  it('does not autonomously replay old results after voice reopen and suppresses foreign notifications',async()=>{
   const notify=vi.fn();let captured:any;
-  const service=new VoiceService(snapshot,()=>{},async()=> 'synthetic',deps=>{captured=deps;return {start:()=>{},close:()=>{},command:()=>{},notify} as unknown as StepVoiceSession;});cleanup.push(()=>service.close());
+
+  const service=new VoiceService(snapshot,()=>{},async()=> 'synthetic',deps=>{captured=deps;
+
+return {start:()=>{},close:()=>{},command:()=>{},notify} as unknown as StepVoiceSession;});
+
+cleanup.push(()=>service.close());
   await service.handle('A',{type:'voice',voiceId:'v1',command:{kind:'start'}});
   expect(context(captured.getSnapshot()).latestResult.text).toBe(resultText);
   service.observe({type:'agent_event',conversationId:'B',event:{kind:'agent_end'}});
@@ -170,6 +198,7 @@ describe('Evaluator: result reaches production voice response selection',()=>{
  });
  it('rejects malformed or unbounded conversation evidence at the protocol boundary',()=>{
   const s=snapshot();expect(isTaskProgressSnapshot(s)).toBe(true);
+
   for(const bad of [{recentTurns:[],latestResult:{runId:'r',text:'x',observedAt:2,source:'verified_success'}},{recentTurns:[{role:'system',text:'do something'}],latestResult:null},{recentTurns:Array.from({length:13},()=>({role:'user',text:'x'})),latestResult:null},{recentTurns:[],latestResult:{runId:'r',text:'x'.repeat(6001),observedAt:2,source:'assistant_output'}}])expect(isTaskProgressSnapshot({...s,conversationContext:bad})).toBe(false);
  });
 });

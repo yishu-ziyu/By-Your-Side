@@ -42,7 +42,9 @@ const ENGLISH_STOP_WORDS = ["the", "please", "remember", "always", "use", "with"
 /** Loose relevance for explicit preferences: any shared term counts. */
 export function isRelevantMemory(memory: string, query: string): boolean {
   const queryTerms = memoryTerms(query);
+
   for (const term of memoryTerms(memory)) if (queryTerms.has(term)) return true;
+
   return false;
 }
 
@@ -51,10 +53,14 @@ export function isRelevantExperience(topic: string, query: string): boolean {
   const memory = memoryTerms(topic);
   const asked = memoryTerms(query);
   const shared = [...memory].filter((term) => asked.has(term));
+
   if (!shared.some((term) => !ACTION_TERMS.has(term))) return false;
   const memoryActions = [...memory].filter((term) => ACTION_TERMS.has(term));
+
   if (memoryActions.length === 0) return true;
+
   if (memoryActions.some((term) => asked.has(term))) return true;
+
   // A request that names no recognized action keeps matching by object alone.
   return ![...asked].some((term) => ACTION_TERMS.has(term));
 }
@@ -62,18 +68,22 @@ export function isRelevantExperience(topic: string, query: string): boolean {
 function memoryTerms(text: string): Set<string> {
   const normalized = text.normalize("NFKC").toLowerCase();
   const out = new Set<string>();
+
   // Split scripts before tokenizing: a project number must not swallow adjacent
   // Chinese words into one unmatchable token. Common request verbs are not topics.
   for (const word of normalized.match(/[\p{Script=Han}]+/gu) ?? []) {
     for (let size = 2; size <= Math.min(4, word.length); size += 1) {
       for (let i = 0; i + size <= word.length; i += 1) {
         const term = word.slice(i, i + size);
+
         if (!BOILERPLATE_TERMS.has(term)) out.add(term);
       }
     }
   }
+
   for (const word of normalized.replace(/[\p{Script=Han}]/gu, " ").match(/[\p{L}\p{N}]+/gu) ?? []) {
     if (word.length >= 3 && !ENGLISH_STOP_WORDS.includes(word)) out.add(word);
   }
+
   return out;
 }

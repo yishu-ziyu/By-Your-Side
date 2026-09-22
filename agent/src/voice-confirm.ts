@@ -29,6 +29,7 @@ export function createControlConfirmSnapshot(params: Omit<ControlConfirmSnapshot
   input?: VoiceInputContext;
 }): ControlConfirmSnapshot {
   const {input, ...control} = params;
+
   // 只复制执行资料；语音观察令牌不进入待确认请求，终止也不需要页面材料。
   return structuredClone({
     ...control,
@@ -59,11 +60,13 @@ export function isControlConfirm(text: string): boolean {
 
 export function isControlReject(text: string): boolean {
   const short = normalizeSpeech(text ?? "");
+
   return short === "不是" || NEGATIVE.test(short);
 }
 
 /** 复述用用户自己的原话：转写错了才看得见，比"确认修改吗"有用。 */
 export function controlConfirmMessage(text: string): string {
   const quoted = text.replace(/\s+/g, " ").trim().slice(0, 80);
+
   return `你是说“${quoted}”，对吗？确认后我就照做。`;
 }

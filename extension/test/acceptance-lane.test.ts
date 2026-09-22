@@ -81,6 +81,7 @@ describe("evaluateRun success / step failure", () => {
       ...successDriver,
       snapshots: { ...successDriver.snapshots, before: snap([COUNTER_BEFORE, PHASE_IDLE]) },
     });
+
     expect(evaluated.ok).toBe(false);
     expect(evaluated.failureStage).toBe("snapshot");
     expect(evaluated.failureCategory).toBe("snapshot_mismatch");
@@ -95,6 +96,7 @@ describe("evaluateRun success / step failure", () => {
         afterClick: snap([UNIQUE_TEXT, COUNTER_BEFORE, PHASE_IDLE]),
       },
     });
+
     expect(evaluated.ok).toBe(false);
     expect(evaluated.failureStage).toBe("click");
     expect(evaluated.failureCategory).toBe("click_no_change");
@@ -108,6 +110,7 @@ describe("evaluateRun success / step failure", () => {
         afterFill: snap([UNIQUE_TEXT, COUNTER_AFTER, FILL_BEFORE, PHASE_CHANGED]),
       },
     });
+
     expect(evaluated.ok).toBe(false);
     expect(evaluated.failureStage).toBe("fill");
     expect(evaluated.failureCategory).toBe("fill_mismatch");
@@ -121,6 +124,7 @@ describe("evaluateRun success / step failure", () => {
         afterFill: snap([UNIQUE_TEXT, COUNTER_AFTER, FILL_AFTER, PHASE_CLICKED]),
       },
     });
+
     expect(evaluated.ok).toBe(false);
     expect(evaluated.failureStage).toBe("resnapshot");
     expect(evaluated.failureCategory).toBe("resnapshot_mismatch");
@@ -132,6 +136,7 @@ describe("evaluateRun success / step failure", () => {
       stage: "sw_evaluate",
       snapshots: {},
     });
+
     expect(evaluated.ok).toBe(false);
     expect(evaluated.failureStage).toBe("sw_evaluate");
     expect(evaluated.failureCategory).toBe("extension_not_found");
@@ -159,10 +164,13 @@ describe("chrome-main discovery guards", () => {
   it("accepts ChromeMain and rejects default Chrome / Playwright / helpers", () => {
     const main =
       "8103 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=9222 --user-data-dir=/Users/me/Library/Application Support/Google/ChromeMain";
+
     const def =
       "9000 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/me/Library/Application Support/Google/Chrome";
+
     const helper =
       "59076 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.65/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) --user-data-dir=/Users/me/Library/Application Support/Google/ChromeMain --remote-debugging-port=9222";
+
     const testing =
       "90078 /Users/me/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing --remote-debugging-port=9223 --headless=new";
 
@@ -193,6 +201,7 @@ describe("chrome-main discovery guards", () => {
           if (file === "ps") {
             return "9000 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/me/Library/Application Support/Google/Chrome\n";
           }
+
           return "";
         },
         chromeMainDir: "/Users/me/Library/Application Support/Google/ChromeMain",
@@ -220,6 +229,7 @@ describe("executeToolCall path (no copied handlers)", () => {
       inputSelector: "#note-input",
       fillValue: FILL_VALUE,
     });
+
     expect(src).toContain("__saCall");
     expect(src).toContain('tool("snapshot"');
     expect(src).toContain('tool("click"');
@@ -233,6 +243,7 @@ describe("executeToolCall path (no copied handlers)", () => {
 describe("findServiceWorker", () => {
   it("picks SideAgent background.js and ignores other extensions", () => {
     const ext = "fnbjglhppbkgmjeehablkfilmmefjolo";
+
     const sw = findServiceWorker(
       [
         { type: "page", url: "https://example.com" },
@@ -241,6 +252,7 @@ describe("findServiceWorker", () => {
       ],
       ext,
     );
+
     expect(sw?.targetId).toBe("sw-1");
     expect(findServiceWorker([], ext)).toBeUndefined();
   });

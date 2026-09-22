@@ -40,6 +40,7 @@ describe("team acceptance fixture / hook", () => {
       leadId: TEAM_LEAD_SESSION,
       workerId: TEAM_WORKER_SESSION,
     });
+
     expect(src).toContain("__saCall");
     expect(src).toContain("__saTakeover");
     expect(src).toContain("__saHandback");
@@ -185,10 +186,12 @@ describe("evaluateTeamRun", () => {
 
   it("wrapper marker 前后相等但没有底层 AgentSession resume/tool RPC 时仍失败", () => {
     const bypass = structuredClone(success);
+
     for (const member of bypass.originalTask.after) {
       member.resumeAgentStarted = false;
       member.resumeSnapshotToolCalled = false;
     }
+
     const evaluated = evaluateTeamRun(bypass);
     expect(evaluated.ok).toBe(false);
     expect(evaluated.failureCategory).toBe(FAILURE.original_task_unproven);

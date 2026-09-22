@@ -15,6 +15,7 @@ import { createBrowserTools } from "../../agent/src/tools.js";
 const API = "https://api.github.com/repos/microsoft/vscode/issues?per_page=5&page={page}";
 
 const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
 function check(name: string, ok: boolean, detail?: string): void {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
@@ -26,18 +27,24 @@ async function main(): Promise<void> {
   const downloads = join(iso.outDir, "downloads");
   process.env.SIDEAGENT_DOWNLOADS_DIR = downloads;
   const report: Record<string, unknown> = { ok: false, api: API, outDir: iso.outDir, checks, batch: null, notFound: null, guard: null };
+
   try {
     const rpc = {
       call: async (name: string, params: Record<string, unknown>) => {
         const message = await iso.tool(name, params);
+
         if (message?.ok !== true) throw new Error(String(message?.error ?? `${name} failed`));
+
         return message.data;
       },
     };
+
     const tools = createBrowserTools(rpc as any, undefined, undefined, undefined, { epoch: () => 0, canWrite: () => true, assertCall: () => {} });
     const fetchTool = tools.find((tool) => tool.name === "fetch")!;
+
     const run = async (params: Record<string, unknown>) => {
       const result: any = await (fetchTool.execute as any)("acceptance-1", params);
+
       return { text: result.content.map((part: any) => part.text).join("\n"), details: result.details };
     };
 
@@ -77,9 +84,11 @@ async function main(): Promise<void> {
   } finally {
     await writeFile(join(iso.outDir, "result.json"), `${JSON.stringify(report, null, 2)}\n`);
     console.log(`evidence ${iso.outDir}`);
+
     if (outPath) await writeFile(resolve(outPath), `${JSON.stringify(report, null, 2)}\n`);
     await iso.close();
   }
+
   process.exit(report.ok === true ? 0 : 1);
 }
 

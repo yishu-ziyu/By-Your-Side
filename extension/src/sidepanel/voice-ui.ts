@@ -38,26 +38,34 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   // 「记录本轮问题」只写日志，不是纠错入口；改正仍走输入框或语音。
   // Frames arrive every 20ms; the block refreshes on a short throttle instead.
   let renderTimer: ReturnType<typeof setTimeout> | null = null;
+
   const scheduleDiag = (): void => {
     if (renderTimer) {
       return;
     }
+
     renderTimer = setTimeout(() => {
       renderTimer = null;
       renderDiag();
     }, 200);
   };
+
   const log = new VoiceDiagnosticLog(scheduleDiag);
+
   const node = (tag: string, className?: string, text?: string): HTMLElement => {
     const element = document.createElement(tag);
+
     if (className) {
       element.className = className;
     }
+
     if (text) {
       element.textContent = text;
     }
+
     return element;
   };
+
   const record = node('div', 'voice-record');
   const recordHead = node('div', 'voice-record-head');
   const markButton = node('button', 'voice-diag-mark', '记录本轮问题') as HTMLButtonElement;
@@ -86,6 +94,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const diagList = node('div', 'voice-diag-list');
   const diagDetail = node('div', 'voice-diag-detail');
   const fields = new Map<string, HTMLElement>();
+
   for (const label of ['状态', '连续收音 C0', '实际上行 C1', '原始转写（过滤前）', '服务端转发', '侧栏收到', '侧栏显示文字', '一致性', '异常']) {
     const row = node('div', 'voice-diag-row');
     const name = node('span', 'voice-diag-label', label);
@@ -94,6 +103,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     diagDetail.appendChild(row);
     fields.set(label, value);
   }
+
   const audioRow = node('div', 'voice-diag-audio');
   const loadC0 = node('button', 'voice-diag-load-c0', '载入C0') as HTMLButtonElement;
   loadC0.type = 'button';
@@ -111,34 +121,43 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   record.append(diag);
   composer.querySelector('#input')!.before(record);
   const audioUrls = new Map<string, string>();
+
   let diagNotice: {
     text: string;
     at: number;
   } | null = null;
+
   const notice = (text: string): void => {
     diagNotice = { text, at: Date.now() };
     renderDiag();
   };
+
   const releaseAudio = (): void => {
     for (const url of audioUrls.values()) {
       URL.revokeObjectURL?.(url);
     }
+
     audioUrls.clear();
     playerC0.removeAttribute?.('src');
     playerC1.removeAttribute?.('src');
   };
+
   const captureLine = (capture: VoiceDiagCapture): string => {
     const seconds = (capture.samples / capture.sampleRate).toFixed(1);
     const status = log.status(capture);
+
     return `第${capture.turn}段 · ${seconds}秒 · ${status.complete ? '完整' : '未完成：' + status.reasons.join('、')}`;
   };
+
   const text = (value: string | null | undefined): string => value && value.trim() ? value.trim() : '（无）';
+
   function renderDiag(): void {
     const latest = log.latest();
     // Idle retries stay available; while a session is open and unconfirmed the wait itself is the feedback.
     diagStart.disabled = client.diagnosticRecording || (client.active && !log.isConfirmed);
     diagStop.disabled = !client.diagnosticRecording;
     let diagnosticStatus: string;
+
     if (diagNotice && Date.now() - diagNotice.at < 5000) {
       diagnosticStatus = diagNotice.text;
     } else if (!log.isDiagnostic) {
@@ -150,9 +169,11 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     } else {
       diagnosticStatus = '已确认：可继续录音，或结束等待本轮转写。';
     }
+
     diagState.textContent = diagnosticStatus;
     diagList.replaceChildren?.();
     const items = log.captures();
+
     if (!items.length) {
       diagList.appendChild(node('div', 'voice-diag-empty', '暂无记录。'));
     }
@@ -161,12 +182,15 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
         diagList.appendChild(node('div', 'voice-diag-item', captureLine(capture)));
       }
     }
+
     if (!latest) {
       for (const value of fields.values()) {
         value.textContent = '';
       }
+
       return;
     }
+
     const status = log.status(latest);
     const checks = log.checks(latest);
     fields.get('状态')!.textContent = status.complete ? '完整' : `未完成：${status.reasons.join('、')}`;
@@ -186,26 +210,35 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     loadC0.disabled = !latest.frames.length;
     loadC1.disabled = !log.c1Ready(latest);
   }
+
   const loadAudio = (which: 'c0' | 'c1'): void => {
     const latest = log.latest();
+
     if (!latest) {
       return;
     }
+
     const blob = log.wav(latest.id, which);
+
     if (!blob) {
       notice(which === 'c1' ? '这条记录的 C1 尚未完整，暂不可播放。' : '这条记录的连续收音已释放。');
+
       return;
     }
+
     const previous = audioUrls.get(which);
+
     if (previous) {
       URL.revokeObjectURL?.(previous);
     }
+
     const url = URL.createObjectURL(blob);
     audioUrls.set(which, url);
     const player = which === 'c0' ? playerC0 : playerC1;
     player.src = url;
     notice(`已载入 ${which.toUpperCase()}（点播放键试听）。`);
   };
+
   loadC0.onclick = () => loadAudio('c0');
   loadC1.onclick = () => loadAudio('c1');
   diagClear.onclick = () => {
@@ -213,11 +246,14 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     log.clear();
     notice('已清空本地记录与音频。');
   };
+
   diagExport.onclick = () => {
     if (!log.captures().length) {
       notice('暂无记录可导出。');
+
       return;
     }
+
     const blob = new Blob([log.exportJSON()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a') as HTMLAnchorElement;
@@ -226,48 +262,63 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     link.click?.();
     URL.revokeObjectURL?.(url);
   };
+
   diagStart.onclick = () => {
     if (client.active && !client.diagnosticMode) {
       notice('普通语音正在使用，请先结束语音再开始诊断。');
+
       return;
     }
+
     if (client.active) {
       const started = client.beginDiagnosticRecording();
+
       if (!started.ok) {
         notice(started.detail ?? '暂时无法开始录音。');
       }
+
       return;
     }
+
     void client.startDiagnostic(getConversation());
   };
+
   diagStop.onclick = () => {
     if (!client.diagnosticRecording) {
       return;
     }
+
     log.displayText(question.textContent ?? '');
     notice('正在等待本轮转写…');
     client.finishDiagnostic();
   };
+
   // 一次点击完成：按钮只发一条标记命令，不弹输入、不打断录音、不停止语音、不改任何语音状态。
   markButton.onclick = () => {
     const marked = client.markLatest();
     markNote.textContent = marked.ok ? `已标记 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}` : (marked.detail ?? '标记未发送');
   };
+
   const client = new VoiceClient(send, (next, detail) => {
     phase = next;
+
     if (client.diagnosticMode) {
       region.hidden = true;
       button.setAttribute('aria-expanded', 'false');
       renderDiag();
+
       return;
     }
+
     region.hidden = next === 'idle';
     button.setAttribute('aria-expanded', String(next !== 'idle'));
     button.setAttribute('aria-label', next === 'idle' ? '打开语音问进度' : '结束语音问进度');
     status.textContent = detail ?? ({ idle: '', connecting: '正在连接', listening: '正在听你说', thinking: '正在处理这句话', speaking: '正在回答', error: '连接失败' }[next]);
+
     if (next === 'error' && client.needsMicrophonePermission) {
       status.textContent = '请在授权页开启麦克风，再回到这里重试。';
     }
+
     end.textContent = next === 'error' ? (client.needsMicrophonePermission ? '开启麦克风' : '重试') : '结束';
     region.dataset.state = next;
   }, event => {
@@ -277,8 +328,10 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       question.textContent = '';
       currentDeliveryKind = null;
     }
+
     if (event.kind === 'text') {
       log.textEvent(event.role, event.turn, event.text);
+
       if (event.role === 'user') {
         question.textContent = '你：' + event.text;
         log.displayText(question.textContent ?? '', true);
@@ -288,6 +341,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
         transcript.textContent = event.text;
       }
     }
+
     if (event.kind === 'facts') {
       facts.textContent = '依据当前任务状态 · ' + new Date(event.snapshot.observedAt).toLocaleTimeString('zh-CN', { hour12: false });
     }
@@ -295,9 +349,12 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     if (event.startsWith('voice_recover') || event === 'voice_reconnect_attempt') {
       console.info(`[voice] ${event}`, { event, turn: fields.turn, attempt: fields.attempt, at: fields.at });
     }
+
     diagnostic?.(event, fields);
   }, log);
+
   renderDiag();
+
   const start = () => {
     shownTurn = 0;
     question.textContent = '';
@@ -306,6 +363,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     currentDeliveryKind = null;
     void client.start(getConversation());
   };
+
   const retry = async () => {
     if (client.needsMicrophonePermission && await microphonePermissionState() !== 'granted') {
       try {
@@ -314,10 +372,13 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       catch {
         status.textContent = '无法打开授权页，请重新加载扩展后重试。';
       }
+
       return;
     }
+
     start();
   };
+
   button.onclick = () => client.active ? client.stop() : void retry();
   end.onclick = () => phase === 'error' ? void retry() : client.stop();
   stopSpeech.onclick = () => client.stopSpeaking();
@@ -338,11 +399,13 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     if (renderTimer) {
       clearTimeout(renderTimer);
     }
+
     releaseAudio();
     client.stop();
     disposeSmall();
     disposeLarge();
   }, { once: true });
+
   return {
     stop: () => client.stop(),
     disconnect: () => {
@@ -365,9 +428,11 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
           return;
         }
       }
+
       if (delivery.kind) {
         currentDeliveryKind = delivery.kind;
       }
+
       transcript.textContent = delivery.text;
     }
   };

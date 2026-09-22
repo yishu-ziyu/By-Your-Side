@@ -30,8 +30,11 @@ export class Mailbox {
   post(input: { from: string; to: string; kind: string; body: string }): Artifact {
     const to = input.to.trim();
     const kind = input.kind.trim();
+
     if (!to) throw new Error("post 需要 to");
+
     if (!kind) throw new Error("post 需要 kind");
+
     const art: Artifact = {
       from: input.from,
       to,
@@ -39,15 +42,20 @@ export class Mailbox {
       body: input.body,
       ts: Date.now(),
     };
+
     const idx = this.waiters.findIndex((w) => matches(w, art));
+
     if (idx >= 0) {
       const w = this.waiters.splice(idx, 1)[0]!;
       clearTimeout(w.timer);
       w.abort?.();
       w.resolve(art);
+
       return art;
     }
+
     this.queue.push(art);
+
     return art;
   }
 
@@ -59,14 +67,18 @@ export class Mailbox {
     signal?: AbortSignal;
   }): Promise<Artifact> {
     const kind = opts.kind.trim();
+
     if (!kind) return Promise.reject(new Error("await_message 需要 kind"));
     const from = opts.from?.trim() || undefined;
     const queued = this.queue.findIndex((a) => matches({ self: opts.self, from, kind }, a));
+
     if (queued >= 0) {
       return Promise.resolve(this.queue.splice(queued, 1)[0]!);
     }
+
     if (opts.signal?.aborted) return Promise.reject(new Error("await_message 已中止"));
     const timeoutMs = opts.timeoutMs ?? DEFAULT_AWAIT_MS;
+
     return new Promise((resolve, reject) => {
       const waiter: Waiter = {
         self: opts.self,
@@ -79,10 +91,12 @@ export class Mailbox {
           reject(new Error(`await_message timed out after ${timeoutMs}ms (kind=${kind})`));
         }, timeoutMs),
       };
+
       const onAbort = (): void => {
         this.removeWaiter(waiter);
         reject(new Error("await_message 已中止"));
       };
+
       waiter.abort = () => opts.signal?.removeEventListener("abort", onAbort);
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       this.waiters.push(waiter);
@@ -107,12 +121,14 @@ export class Mailbox {
       w.abort?.();
       w.reject(new Error("mailbox cleared"));
     }
+
     this.waiters = [];
     this.queue = [];
   }
 
   private removeWaiter(waiter: Waiter): void {
     const i = this.waiters.indexOf(waiter);
+
     if (i >= 0) {
       const w = this.waiters.splice(i, 1)[0]!;
       clearTimeout(w.timer);
@@ -123,7 +139,10 @@ export class Mailbox {
 
 function matches(w: { self: string; from?: string; kind: string }, a: Artifact): boolean {
   if (a.to !== w.self) return false;
+
   if (a.kind !== w.kind) return false;
+
   if (w.from && a.from !== w.from) return false;
+
   return true;
 }

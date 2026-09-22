@@ -15,6 +15,7 @@ describe("renderMarkdownHtml：裸网址自动链接", () => {
     const html = renderMarkdownHtml(
       "已在新标签页打开 https://example.com，页面显示 “Example Domain”，其他什么都没动。",
     );
+
     expect(hrefs(html)).toEqual(["https://example.com"]);
     expect(html).toContain(
       '<a href="https://example.com">https://example.com</a>，页面显示 “Example Domain”，其他什么都没动。',
@@ -44,6 +45,7 @@ describe("renderMarkdownHtml：裸网址自动链接", () => {
     const html = renderMarkdownHtml(
       "见 https://example.com/a?b=1&c=2#frag 与 https://en.wikipedia.org/wiki/Foo_(bar) 说明",
     );
+
     expect(hrefs(html)).toEqual([
       "https://example.com/a?b=1&c=2#frag",
       "https://en.wikipedia.org/wiki/Foo_(bar)",
@@ -112,6 +114,7 @@ describe("renderMarkdownHtml：裸网址自动链接", () => {
       "[链接](https://example.com/x) 和 ![图](https://example.com/i.png)\n",
       "<div>raw html</div>\n\n段落\n",
     ];
+
     for (const sample of samples) {
       expect(renderMarkdownHtml(sample)).toBe(baseline.parse(sample, { async: false }));
     }

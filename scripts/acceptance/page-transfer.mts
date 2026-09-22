@@ -4,22 +4,32 @@ import {resolve, join} from "node:path";
 import {launchIsolatedExtension, until} from "./isolated-extension.mts";
 
 if (!process.argv.includes("--headless")) throw new Error("Required: --headless");
+
 const out = resolve("out/acceptance", `page-transfer-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+
 await mkdir(out, {recursive: true});
+
 const iso = await launchIsolatedExtension();
+
 const evidence: Record<string, unknown> = {scope: "real built extension and isolated headless Chrome; controlled claim interleaving; no external model"};
+
 let seq = 0;
+
 const call = (cid: string, name: string, params: Record<string, unknown>) => iso.swEval(`globalThis.__saCall(${JSON.stringify(`transfer-${++seq}`)},${JSON.stringify(name)},${JSON.stringify(params)},"main",undefined,${JSON.stringify(cid)})`) as Promise<any>;
+
 try {
   const first = await iso.newTarget(`${iso.fixtureOrigin}/transfer-first`);
   const second = await iso.newTarget(`${iso.fixtureOrigin}/transfer-second`);
+
   for (const target of [first, second]) {
     await until(async () => await iso.evalIn(target, "document.readyState === 'complete'") ? true : undefined, 10000, "fixture loaded");
     await iso.evalIn(target, "document.body.innerHTML='<label>备注<input id=note value=original></label>'");
   }
+
   const tabs = await iso.swEval("chrome.tabs.query({})") as Array<{id: number; url: string}>;
   const a = tabs.find(tab => tab.url.endsWith("/transfer-first"))!.id;
   const b = tabs.find(tab => tab.url.endsWith("/transfer-second"))!.id;
+
   for (const tabId of [a, b, a]) assert.equal((await call("A", "switch_tab", {tabId})).ok, true);
   // A's working pointer is on the transferring page; its other page must still work.
   await iso.swEval(`globalThis.__saPauseClaim=true; globalThis.__auditClaimResult=null;

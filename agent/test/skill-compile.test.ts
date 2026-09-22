@@ -105,6 +105,7 @@ describe("卡片上的事实", () => {
       { at: 2, ok: false, elapsedMs: 900, steps: 4, failedStep: 3, error: "第 3 步的目标在页面上找不到了" },
       { at: 3, ok: true, elapsedMs: 2800, steps: 11 },
     ];
+
     expect(skillRunSummary(runs)).toBe("跑过 3 次 · 上次 2.8 秒 · 1 次因为页面变了停下");
   });
 
@@ -126,13 +127,19 @@ describe("编译出来的脚本真的能跑（真机教训：页面代码语法�
           pageCodes.push(code);
           // 真机上的失败就在这里：页面代码本身不是合法 JS
           new Function(code);
+
           // 让解析成功，返回定位结果（真实页面脚本返回 { hit, reason, count }）
           return { value: { hit: '[data-sideagent-target]', reason: null, count: 1 } };
         }
-        if (name === "click" || name === "fill" || name === "press_key") { clicked.push(name); return {}; }
+
+        if (name === "click" || name === "fill" || name === "press_key") { clicked.push(name);
+
+ return {}; }
+
         return {};
       },
     });
+
     return { pageCodes, clicked };
   }
 
@@ -140,6 +147,7 @@ describe("编译出来的脚本真的能跑（真机教训：页面代码语法�
     const skill = compileSkill(base);
     const { pageCodes } = await runAgainstStub(skill);
     expect(pageCodes.length).toBeGreaterThan(0);
+
     for (const code of pageCodes) {
       expect(code).toContain("data-sideagent-target");
       expect(code).not.toContain('\\"');
@@ -161,8 +169,12 @@ describe("编译出来的脚本真的能跑（真机教训：页面代码语法�
     await expect(runBrowserProgram({
       code: skill.program,
       call: async (name, params) => {
-        if (name === "js") { new Function(String((params as { code: string }).code)); return { value: null }; }
+        if (name === "js") { new Function(String((params as { code: string }).code));
+
+ return { value: null }; }
+
         clicked.push(name);
+
         return {};
       },
     })).rejects.toThrow(/第 1 步的目标在页面上找不到了/);
@@ -183,6 +195,7 @@ describe("记不到对象名的步骤", () => {
       { at: 900, kind: "click", anchor: { tag: "div" } },
       { at: 1800, kind: "click", anchor: { tag: "button", role: "button" } },
     ] });
+
     expect(skill.steps).toHaveLength(3);
     expect(skill.steps[1]).toMatchObject({ kind: "click", weak: true });
     expect(skill.weakSteps).toBe(1);
@@ -194,6 +207,7 @@ describe("记不到对象名的步骤", () => {
       { at: 0, kind: "click", anchor: { tag: "div" } },
       { at: 900, kind: "click", anchor: { tag: "a", name: "Labels" } },
     ] });
+
     expect(skill.program).toContain("const target0 = await tryResolveStep(0);");
     expect(skill.program).toContain("skipped.push(1)");
     expect(skill.program).toContain("const target1 = await resolveStep(1);");
@@ -211,6 +225,7 @@ describe("记不到对象名的步骤", () => {
       { at: 500, kind: "click", anchor: { tag: "div" } },
       { at: 900, kind: "click", anchor: { tag: "div" } },
     ] });
+
     expect(validateCompiledSkill(skill)).toBeNull();
     expect(skill.steps).toHaveLength(3);
     expect(skill.weakSteps).toBe(3);
@@ -247,6 +262,7 @@ describe("全军覆没不算成功", () => {
       { at: 0, kind: "click", anchor: { tag: "div" } },
       { at: 500, kind: "click", anchor: { tag: "div" } },
     ] });
+
     expect(skill.program).toContain("if (skipped.length >= 2)");
     expect(skill.program).toContain("技能什么都没做成");
   });
@@ -261,10 +277,14 @@ describe("全军覆没不算成功", () => {
       { at: 0, kind: "click", anchor: { tag: "div" } },
       { at: 600, kind: "click", anchor: { tag: "div" } },
     ] });
+
     await expect(runBrowserProgram({
       code: skill.program,
       call: async (name, params) => {
-        if (name === "js") { new Function(String((params as { code: string }).code)); return { value: null }; }
+        if (name === "js") { new Function(String((params as { code: string }).code));
+
+ return { value: null }; }
+
         return {};
       },
     })).rejects.toThrow(/什么都没做成/);
@@ -275,18 +295,23 @@ describe("全军覆没不算成功", () => {
       { at: 0, kind: "click", anchor: { tag: "div" } },
       { at: 600, kind: "click", anchor: { tag: "a", name: "Labels" } },
     ] });
+
     let resolveCount = 0;
+
     const result = await runBrowserProgram({
       code: skill.program,
       call: async (name, params) => {
         if (name === "js") {
           new Function(String((params as { code: string }).code));
           resolveCount += 1;
+
           return { value: resolveCount === 1 ? { hit: null, reason: "none", count: 0 } : { hit: '[data-sideagent-target]', reason: null, count: 1 } };
         }
+
         return {};
       },
     });
+
     expect((result.value as { skipped?: number[] }).skipped).toEqual([1]);
   });
 });
@@ -327,7 +352,9 @@ class DomDocument {
   querySelectorAll(selector: string): DomNode[] {
     if (selector === "[data-sideagent-target]") return this.nodes.filter(n => n.getAttribute("data-sideagent-target") !== null);
     const marker = /^\[data-sideagent-target=(skill-\d+)\]$/.exec(selector)?.[1];
+
     if (marker) return this.nodes.filter(n => n.getAttribute("data-sideagent-target") === marker);
+
     return this.nodes.filter(n => n.tagName.toLowerCase() === selector.toLowerCase());
   }
   getElementById(id: string): DomNode | null { return this.nodes.find(n => n.id === id) ?? null; }
@@ -345,35 +372,44 @@ function cityAndSaveFixture(): { doc: DomDocument; city: DomNode; save: DomNode;
   const field = new DomNode("div", { class: "field" }, "\n      保存到本页内存\n      \n      清空本场景状态\n    ");
   save.parent = field;
   reset.parent = field;
+
   return { doc: new DomDocument([city, nameInput, save, reset, field]), city, save, reset };
 }
 
 /** 把 browser.js 收到的页面代码丢进这份 DOM 求值；click/fill 只记录目标，不真点。 */
 function domBackedBrowser(doc: DomDocument, hostname = "example.com") {
   const actions: Array<{ name: string; target: DomNode | null; value?: unknown }> = [];
+
   const call = async (name: string, params: Record<string, unknown>) => {
     if (name === "js") {
       const code = String(params.code);
+
       return { value: new Function("document", "location", `return (${code});`)(doc, { hostname }) };
     }
+
     if (name === "click" || name === "fill") {
       const target = doc.querySelectorAll(String(params.target))[0] ?? null;
       actions.push({ name, target, value: params.value });
+
       return {};
     }
+
     return {};
   };
+
   return { actions, call };
 }
 
 describe("真实页面：label-only 输入 + 并排两个按钮", () => {
   it("生成的 program 在 DOM 上认得出 label 命名的城市输入框，并 fill/click 到对的元素", async () => {
     const { doc, city, save } = cityAndSaveFixture();
+
     const skill = compileSkill({ ...base, steps: [
       { at: 0, kind: "click", anchor: { tag: "input", name: "城市" } },
       { at: 60, kind: "type", anchor: { tag: "input", name: "城市" }, value: "复用城" },
       { at: 400, kind: "click", anchor: { tag: "button", name: "保存到本页内存" } },
     ] });
+
     const { actions, call } = domBackedBrowser(doc);
     const result = await runBrowserProgram({ code: skill.program, call });
     expect(result.value).toMatchObject({ done: true, steps: 3 });
@@ -388,6 +424,7 @@ describe("真实页面：label-only 输入 + 并排两个按钮", () => {
       new DomNode("button", { id: "a" }, "保存"),
       new DomNode("button", { id: "b" }, "保存"),
     ]);
+
     const skill = compileSkill({ ...base, steps: [{ at: 0, kind: "click", anchor: { tag: "button", name: "保存" } }] });
     const { actions, call } = domBackedBrowser(doc);
     await expect(runBrowserProgram({ code: skill.program, call })).rejects.toThrow(/2 个同名对象/);
@@ -396,9 +433,11 @@ describe("真实页面：label-only 输入 + 并排两个按钮", () => {
 
   it("拼了两个按钮的旧锚点在新页面上找不到任何目标，绝不退化成随便点一个", async () => {
     const { doc } = cityAndSaveFixture();
+
     const skill = compileSkill({ ...base, steps: [
       { at: 0, kind: "click", anchor: { tag: "button", name: "保存到本页内存 清空本场景状态" } },
     ] });
+
     const { actions, call } = domBackedBrowser(doc);
     await expect(runBrowserProgram({ code: skill.program, call })).rejects.toThrow(/第 1 步的目标在页面上找不到了/);
     expect(actions).toHaveLength(0);

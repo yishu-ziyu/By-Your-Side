@@ -17,6 +17,7 @@ export class RunOrbActivity {
       this.failed = false;
     } else if (event.kind === "tool_end") {
       this.tools.delete(event.toolCallId);
+
       if (event.isError) this.failed = true;
     } else if (event.kind === "error") {
       this.failed = true;
@@ -30,11 +31,17 @@ export class RunOrbActivity {
 
   state(userHasPage = false): RunOrbState {
     if (this.stopped) return "stopped";
+
     if (this.finished) return this.failed ? "failed" : "completed";
+
     if (userHasPage) return "user";
+
     if ([...this.tools.values()].some((tool) => !tool.waiting)) return "executing";
+
     if (this.tools.size) return "waiting";
+
     if (this.failed) return "failed";
+
     return this.finished ? "completed" : "thinking";
   }
 }

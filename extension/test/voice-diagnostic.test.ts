@@ -7,6 +7,7 @@ import * as speechModule from '../src/sidepanel/voice-speech.js';
 
 vi.mock('../src/sidepanel/voice-speech.js',()=>{
   const pushed:Int16Array[]=[];
+
   return {
     pushed,
     SpeechClassifier:{create:async(onFrame:(pcm:Int16Array,probability:number)=>void)=>({
@@ -17,6 +18,7 @@ vi.mock('../src/sidepanel/voice-speech.js',()=>{
 });
 
 const b64=(values:number[]):string=>Buffer.from(new Int16Array(values).buffer).toString('base64');
+
 const samples=(pcm:Int16Array):number[]=>Array.from(pcm);
 
 describe('diagnostic log evidence rules',()=>{
@@ -107,12 +109,14 @@ describe('diagnostic log evidence rules',()=>{
   it('keeps metadata bounded and releases older audio',()=>{
     const log=new VoiceDiagnosticLog();
     log.sessionStarted({voiceId:'v1',conversationId:'conv-1',diagnostic:true});
+
     for(let turn=1;turn<=VOICE_DIAG_MAX_CAPTURES+2;turn++){
       log.captureStarted({turn,sampleRate:24000,track:null});
       log.captureFrame(new Int16Array([turn]));
       log.apply({type:'append',seq:turn,eventId:`voice_${turn}`,turn,frame:0,samples:1,audio:b64([turn])});
       log.captureEnded('manual');
     }
+
     const items=log.captures();
     expect(items).toHaveLength(VOICE_DIAG_MAX_CAPTURES);
     const withAudio=items.filter(capture=>capture.frames.length);
@@ -151,9 +155,12 @@ describe('diagnostic log evidence rules',()=>{
 describe('diagnostic capture stays manual and confirmed',()=>{
   class Audit {
     sent:any[]=[];
-    send=(message:any):boolean=>{this.sent.push(message);return true};
+    send=(message:any):boolean=>{this.sent.push(message);
+
+return true};
     kinds=():string[]=>this.sent.map(message=>message.command.kind);
   }
+
   function audioContext(){
     const context={currentTime:0,destination:{},sampleRate:24000,resume:vi.fn(async()=>{}),close:vi.fn(async()=>{}),
       audioWorklet:{addModule:vi.fn(async()=>{})},
@@ -161,12 +168,16 @@ describe('diagnostic capture stays manual and confirmed',()=>{
       createMediaStreamSource:()=>({connect:vi.fn()}),
       createBuffer:(_c:number,n:number)=>({getChannelData:()=>new Float32Array(n)}),
       createBufferSource:()=>({connect:vi.fn(),disconnect:vi.fn(),start:vi.fn(),stop:vi.fn(),onended:()=>{}})};
+
     return context as unknown as AudioContext;
   }
+
   function stream(){
     const track={stop:vi.fn(),onended:null as null|(()=>void),getSettings:()=>({sampleRate:24000,channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true})};
+
     return {getTracks:()=>[track],getAudioTracks:()=>[track],track};
   }
+
   let worklet:{port:{onmessage:null|((e:any)=>void)},connect:ReturnType<typeof vi.fn>,disconnect:ReturnType<typeof vi.fn>};
   const classifierFrames=()=>((speechModule as unknown as {pushed:Int16Array[]}).pushed);
   beforeEach(()=>{
@@ -271,36 +282,51 @@ describe('diagnostic capture stays manual and confirmed',()=>{
 
 describe('voice diagnostics panel block',()=>{
   let mockElements:any[];
+
   function createMockElement(tag="div"):any{
     const children:any[]=[];const attrs=new Map<string,string>();const classList=new Set<string>();
+
     const element:any={
       tagName:tag.toUpperCase(),className:"",hidden:false,disabled:false,textContent:"",innerHTML:"",children,dataset:{},src:"",
       setAttribute:(k:string,v:string)=>attrs.set(k,v),getAttribute:(k:string)=>attrs.get(k)??null,removeAttribute:(k:string)=>attrs.delete(k),
       getContext:()=>({fillRect(){},clearRect(){},beginPath(){},arc(){},fill(){},save(){},restore(){},scale(){}}),
       querySelector:(sel:string)=>{
-        const found=children.find(child=>child.matches?.(sel));if(found)return found;
+        const found=children.find(child=>child.matches?.(sel));
+
+if(found)return found;
         const created=createMockElement(sel.startsWith("canvas")?"canvas":sel.startsWith("button")?"button":"div");
+
         if(sel.startsWith("."))created.className=sel.slice(1);
+
         if(sel.startsWith("#"))created.id=sel.slice(1);
-        children.push(created);return created;
+        children.push(created);
+
+return created;
       },
       querySelectorAll:(sel:string)=>children.filter(child=>child.matches?.(sel)),
       before:(...nodes:any[])=>children.unshift(...nodes),
       after:(...nodes:any[])=>children.push(...nodes),
       append:(...nodes:any[])=>children.push(...nodes),
-      appendChild:(child:any)=>{children.push(child);return child},
+      appendChild:(child:any)=>{children.push(child);
+
+return child},
       replaceChildren:(...nodes:any[])=>{children.length=0;children.push(...nodes)},
       click:()=>{element.clicked=true},
       classList:{add:(name:string)=>classList.add(name),remove:(name:string)=>classList.delete(name),contains:(name:string)=>classList.has(name)},
       matches:(sel:string)=>{
         if(sel.startsWith("."))return classList.has(sel.slice(1))||element.className.includes(sel.slice(1));
+
         if(sel.startsWith("#"))return element.id===sel.slice(1);
+
         return element.tagName.toLowerCase()===sel.toLowerCase();
       },
     };
+
     mockElements.push(element);
+
     return element;
   }
+
   beforeEach(()=>{
     mockElements=[];
     vi.stubGlobal("document",{createElement:(tag:string)=>createMockElement(tag)});
@@ -320,11 +346,13 @@ describe('voice diagnostics panel block',()=>{
     const spacer=createMockElement("div");spacer.id="composer-spacer";composer.appendChild(spacer);
     const send=vi.fn(()=>true);
     const voice=mountVoiceUI(composer,()=>"conv-1",send);
+
     try {
       byClass('voice-start').onclick();
       await Promise.resolve();
       expect(client).toBeDefined();
       const change=(client as unknown as {change:(phase:import('../src/sidepanel/voice-client.js').VoicePhase)=>void}).change;
+
       for(const [phase,label] of [['connecting','正在连接'],['listening','正在听你说'],['thinking','正在处理这句话'],['speaking','正在回答'],['error','连接失败']] as const){
         change(phase);
         expect(byClass('voice-progress').hidden).toBe(false);
@@ -332,6 +360,7 @@ describe('voice diagnostics panel block',()=>{
         expect(byClass('voice-end').textContent).toBe(phase==='error'?'重试':'结束');
         expect(byClass('voice-diag').open).toBeFalsy();
       }
+
       change('idle');
       expect(byClass('voice-progress').hidden).toBe(true);
       expect(send).not.toHaveBeenCalled();

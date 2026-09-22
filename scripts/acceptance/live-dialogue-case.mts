@@ -8,9 +8,15 @@ export async function runLiveDialogue(h:{out:string;report:any;messages:any[];ma
   const {report,messages,manager,until,check}=h;
   const runtime=(manager.get('default')!.runtime.session as any).modelRuntime;
   const originalComplete=runtime.completeSimple.bind(runtime);
-  runtime.completeSimple=async(...args:any[])=>{const r=await originalComplete(...args);if(String(args[1]?.systemPrompt).startsWith('你只分类'))(report.classifierReplies??=[]).push({at:Date.now(),input:args[1]?.messages?.[0]?.content,reply:r.content?.filter((p:any)=>p.type==='text').map((p:any)=>p.text).join('')});return r;};
+  runtime.completeSimple=async(...args:any[])=>{const r=await originalComplete(...args);
+
+if(String(args[1]?.systemPrompt).startsWith('你只分类'))(report.classifierReplies??=[]).push({at:Date.now(),input:args[1]?.messages?.[0]?.content,reply:r.content?.filter((p:any)=>p.type==='text').map((p:any)=>p.text).join('')});
+
+return r;};
+
   await h.listen();
   let index=0;
+
   const utter=async(text:string)=>{
     report.stage='live dialogue: '+text;console.log(report.stage);
     const base=join(h.out,'dialogue-input-'+(++index));
@@ -18,7 +24,15 @@ export async function runLiveDialogue(h:{out:string;report:any;messages:any[];ma
     execFileSync('/opt/homebrew/bin/ffmpeg',['-y','-v','error','-i',base+'.aiff','-ar','24000','-ac','1','-f','s16le',base+'.pcm']);
     const pcm=Buffer.concat([await readFile(base+'.pcm'),Buffer.alloc(48000)]),from=messages.length,at=Date.now();
     await h.panelEval(`injectSpeech(${JSON.stringify(pcm.toString('base64'))})`);
-    const end=await until(()=>{if(report.transportError)throw Error(report.transportError);if(report.stages.some((e:any)=>e.event==='turn_failed'&&e.at>=at))throw Error('Voice turn failed');const error=messages.slice(from).find(m=>m.type==='voice'&&m.event.kind==='state'&&m.event.state==='error');if(error)throw Error(error.event.detail);return messages.slice(from).find(m=>m.type==='voice'&&m.event.kind==='response_end');},60000);
+
+    const end=await until(()=>{if(report.transportError)throw Error(report.transportError);
+
+if(report.stages.some((e:any)=>e.event==='turn_failed'&&e.at>=at))throw Error('Voice turn failed');const error=messages.slice(from).find(m=>m.type==='voice'&&m.event.kind==='state'&&m.event.state==='error');
+
+if(error)throw Error(error.event.detail);
+
+return messages.slice(from).find(m=>m.type==='voice'&&m.event.kind==='response_end');},60000);
+
     await until(()=>report.clientTiming?.find((e:any)=>e.command==='playback_done'&&e.responseId===end.event.responseId),30000);
     // Early speech is deliberately independent of routing; observe the actual receipt separately.
     await until(()=>report.stages.find((e:any)=>e.event==='prepare_result'&&e.turn===end.event.turn&&e.at>=at),20000);
@@ -28,8 +42,10 @@ export async function runLiveDialogue(h:{out:string;report:any;messages:any[];ma
     const first=report.audioTiming?.find((e:any)=>e.firstAudioAt>=at);
     (report.dialogue??=[]).push({question:text,answers,runId:manager.getTaskProgress('default')?.runId,state:manager.getTaskProgress('default')?.state,commitAt:commit?.at,firstAudioAt:first?.firstAudioAt,commitToAudioMs:first&&commit?first.firstAudioAt-commit.at:null});
     check('turn '+index+' has actual audio before task completion',!!first&&manager.getTaskProgress('default')?.state==='running');
+
     return answers.join('\n');
   };
+
   const start=messages.length;
   const ack=await utter('帮我等测试资料准备好，再读一下当前页面，告诉我两种模型的有效期。');
   check('first response acknowledges this request without claiming a result',/看|查|读|资料|模型|等/.test(ack)&&!ack.includes(h.targetCode)&&!ack.includes(h.otherCode));

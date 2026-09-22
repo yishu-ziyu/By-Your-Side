@@ -25,25 +25,33 @@ type RouteContext = {requestId:string;voiceId:string;turn:number;runId:string|nu
 /** 计划协议替身：只判定计划（与旧分类调用同形）。 */
 function plan(step:Record<string,unknown>,text:string,protocol:'plan'|'free_reply'='plan'){
   const parsed=parseVoiceDecision(JSON.stringify({steps:[step]}),text);
+
   return {plan:{steps:parsed.steps},replyText:null,requestId:'prepared',attempts:1,elapsedMs:5,protocol};
 }
+
 /** 白名单句子的最小直答替身：正文直接来自模型，不经过计划解析。 */
 function freeReply(text:string,replyText:string|null=`回应：${text}`){
   return {plan:{steps:[{action:'chat',text,target:null}]},replyText,requestId:'prepared',attempts:1,elapsedMs:5,protocol:'free_reply' as const};
 }
+
 /** 会话替身带真实的轮次闸门：只有闸门放行才落线，和 session.ts 的 emitGatedUiEvent 一致。 */
 function harness(){
   const emitted:ServerMessage[]=[];
   const runtimes=new Map<string,any>();
+
   const factory=async(id:string,emit:(m:ServerMessage)=>void)=>{
     let streaming=false,held=false;
     let gate:VoiceTurnGate|null=null;
+
     const observe=(m:ServerMessage)=>{
       if(m.type==='status')streaming=m.state==='running';
+
       if(m.type==='agent_event'&&m.event.kind==='agent_start')streaming=true;
+
       if(m.type==='agent_event'&&m.event.kind==='agent_end')streaming=false;
       emit(m);
     };
+
     const session:any={
       modelName:()=>'test/model',availableModels:async()=>[],available:true,persistTaskResults:vi.fn(),
       isStreaming:()=>streaming,isHeld:()=>held,executionEpoch:()=>0,abort:vi.fn(),
@@ -53,10 +61,19 @@ function harness(){
       steerCurrentTask:vi.fn(async()=>{}),queueSteerForResume:vi.fn(),
       bindVoiceTurnGate:(g:VoiceTurnGate|null)=>{gate=g;},
       // 会话侧输出：先问闸门，held/dropped 都不落线。
-      deliverStream:(stream:UserDeliveryStream)=>{const decision=gate?gate.holdDeliveryStream(stream,id):'pass';if(decision==='pass')emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});return decision;},
-      deliver:(delivery:UserDelivery)=>{const decision=gate?gate.holdUserDelivery(delivery,id):'pass';if(decision==='pass')emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery',delivery}});return decision;},
+      deliverStream:(stream:UserDeliveryStream)=>{const decision=gate?gate.holdDeliveryStream(stream,id):'pass';
+
+if(decision==='pass')emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});
+
+return decision;},
+      deliver:(delivery:UserDelivery)=>{const decision=gate?gate.holdUserDelivery(delivery,id):'pass';
+
+if(decision==='pass')emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery',delivery}});
+
+return decision;},
       setHeld:(value:boolean)=>{held=value;},
     };
+
     const runtime:any={
       session,
       fleet:{teamView:()=>null,isGroupHeld:()=>false,abortTeam:vi.fn(),reset:vi.fn(),list:()=>[]},
@@ -64,18 +81,27 @@ function harness(){
       consent:{list:()=>[],cancelAll:vi.fn(),decide:vi.fn()},
       dispose:vi.fn(),handleMessage:vi.fn(),
     };
+
     runtimes.set(id,{runtime,session,observe,publish:emit});
+
     return runtime;
   };
+
   const manager=new ConversationManager(factory as never,m=>emitted.push(m));
+
   return {manager,emitted,runtimes,session:(id='default')=>runtimes.get(id)!.session,event:(id:string,event:any)=>{runtimes.get(id)!.observe({type:'agent_event',event});}};
 }
 
 type DeliveryEvent=Extract<ServerMessage,{type:'agent_event'}> & {event:{kind:'user_delivery';delivery:UserDelivery}};
+
 const streamsOf=(emitted:ServerMessage[])=>emitted.filter((m):m is Extract<ServerMessage,{type:'agent_event'}>=>m.type==='agent_event'&&m.event.kind==='user_delivery_stream');
+
 const deliveriesOf=(emitted:ServerMessage[])=>emitted.filter((m):m is DeliveryEvent=>m.type==='agent_event'&&m.event.kind==='user_delivery');
+
 const runIds=()=>new Set<string>();
+
 const replyStream=(id:string,runId:string|null,text:string):UserDeliveryStream=>({id,runId,kind:'reply',text,phase:'streaming'});
+
 const replyDelivery=(id:string,runId:string|null,text:string):UserDelivery=>({conversationId:'default',id,runId,kind:'reply',text,composedAt:Date.now(),status:'composed'});
 
 describe('反例1：校验很慢、模型很快，批准前不落地任何输出',()=>{
@@ -351,21 +377,30 @@ class VoiceSocket extends EventEmitter{
   close=vi.fn();
   server(event:object){this.emit('message',Buffer.from(JSON.stringify(event)));}
 }
+
 function voiceHarness(route:ConstructorParameters<typeof StepVoiceSession>[0]['route']){
   const socket=new VoiceSocket();
   const events:any[]=[];const diagnostics:any[]=[];
   const speeches:any[]=[];
   const snapshot:TaskProgressSnapshot={conversationId:'default',observedAt:Date.now(),state:'idle',goal:null,startedAt:1,runId:'run-1',active:[],lastAction:null,successVerified:false};
+
   const session=new StepVoiceSession({route,getSnapshot:()=>snapshot,emit:e=>events.push(e),connect:()=>socket as unknown as WebSocket,diagnostic:(event,fields)=>diagnostics.push({event,fields}),
-    createSpeech:(_key:any,callbacks:any)=>{const output={push:(text:string)=>{callbacks.audio('AQABAA==');callbacks.end();},cancel:()=>{},finish:()=>{}};speeches.push(output);return output;}});
+    createSpeech:(_key:any,callbacks:any)=>{const output={push:(text:string)=>{callbacks.audio('AQABAA==');callbacks.end();},cancel:()=>{},finish:()=>{}};speeches.push(output);
+
+return output;}});
+
   session.start('synthetic');
   socket.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});
   socket.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:{type:''}}});
   const input=(turn=1)=>{session.command({kind:'interrupt',turn});session.command({kind:'audio',turn,data:'AQABAA=='});session.command({kind:'commit',turn});};
+
   const speak=(turn:number,text:string)=>{input(turn);socket.server({type:'input_audio_buffer.committed',item_id:`u${turn}`});socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:`u${turn}`,transcript:text});};
+
   return {socket,events,diagnostics,speeches,session,speak,input};
 }
+
 afterEach(()=>{sessions.forEach(s=>s.close());sessions.splice(0);});
+
 const sessions:StepVoiceSession[]=[];
 
 describe('语音层：一轮一份回答，被停掉的候选不复活',()=>{
@@ -441,10 +476,12 @@ describe('真实会话的闸门接线与已批准续跑文案',()=>{
     const {BrowserAgentSession}=await import('../src/session.js');
     const emitted:any[]=[];
     const gate=new VoiceTurnGate();
+
     const session:any=Object.assign(Object.create(BrowserAgentSession.prototype),{
       session:{model:{id:'fixture'}},modelRuntime:null,voiceTurnGate:null,voiceConversationId:'default',
       callbacks:{emit:(event:any)=>emitted.push(event)},runTrace:{record:()=>{}},
     });
+
     session.bindVoiceTurnGate(gate);
     gate.begin('turn-1','default');
     session.emitDeliveryStream(replyStream('d1',null,'候选前缀'));
@@ -487,12 +524,14 @@ describe('第二轮要求7：observe 复用既有派发与页面预观察',()=>{
 describe('第二轮要求8：控制句的精简协议与旧分类调用同形',()=>{
   it('控制句与停播报一律不走完整提案（默认走与旧分类同形的精简协议）',async()=>{
     const {isFactFreeClosedUtterance}=await import('../src/voice-intent.js');
+
     for(const control of ['暂停任务','先停','停一停','别读了','安静点','不用念了','先等等','别说了','停止播报','停','继续','交还给你','取消任务','终止','把任务暂停'])expect(isFactFreeClosedUtterance(control)).toBe(false);
   });
   it('复核官点名的控制措辞在真实路由里都拿到精简协议',async()=>{
     const h=harness();await h.manager.ensureDefault();const session=h.session();
     session.prepareVoiceTurn.mockImplementation(async(input:any,options:any)=>({plan:{steps:[{action:'clarify',text:input.text,target:null}]},replyText:null,requestId:'p',attempts:1,elapsedMs:1,protocol:options?.protocol??'plan'}));
     const phrasings=['先停','停一停','别读了','安静点','不用念了','先等等'];
+
     for(const [index,text] of phrasings.entries()){
       const before=h.emitted.length;
       await h.manager.routeVoiceInput('default',text,null,()=>true,{requestId:`turn-phrase-${index}`,voiceId:'v',turn:index+1,runId:null});
@@ -533,6 +572,7 @@ describe('第二轮要求9：reply 只在不需要外部事实时使用',()=>{
   it('复核官列出的 13 句依赖页面/任务事实的问句全部不走 reply',async()=>{
     const {isFactFreeClosedUtterance}=await import('../src/voice-intent.js');
     const factDependent=['工资多少？','这个多少钱？','它要求几年经验？','公司叫什么名字？','招几年经验？','简历投了吗？','有没有回复？','面试流程是什么？','几点截止？','他回消息了吗？','要求什么学历？','需不需要作品集？','几号面试？'];
+
     for(const text of factDependent)expect(isFactFreeClosedUtterance(text)).toBe(false);
     // 验收句只是因为含"页面"两字被拦下，去掉后同样必须失败关闭。
     expect(isFactFreeClosedUtterance('它要求几年经验？')).toBe(false);
@@ -540,7 +580,9 @@ describe('第二轮要求9：reply 只在不需要外部事实时使用',()=>{
   });
   it('只有问候/寒暄/致谢/告别/应答与纯算术允许直答',async()=>{
     const {isFactFreeClosedUtterance}=await import('../src/voice-intent.js');
+
     for(const text of ['嗨，晚上好。','你好。','你好呀','嗨，晚上好','谢谢','辛苦了','再见','晚安','在吗','收到','十加七等于多少？','12乘以8等于几','100减37是多少','三加五'])expect(isFactFreeClosedUtterance(text)).toBe(true);
+
     // 带任何外部事实指代或额外请求的句子都不算封闭。
     for(const text of ['你好，请问工资多少？','谢谢，帮我看看页面','十加七等于多少？顺便看下页面'])expect(isFactFreeClosedUtterance(text)).toBe(false);
   });
@@ -557,7 +599,11 @@ describe('第二轮：只有不需要外部事实的句子才走完整提案',()
       ?{plan:{steps:[{action:'chat',text:input.text,target:null}]},replyText:`回应：${input.text}`,requestId:'p',attempts:1,elapsedMs:1,protocol:'free_reply'}
       :{plan:{steps:[{action:'chat',text:input.text,target:null}]},replyText:null,requestId:'p',attempts:1,elapsedMs:1,protocol:'plan'});
     const asked:string[]=[];
-    const run=async(text:string,turn:number)=>{const before=h.emitted.length;await h.manager.routeVoiceInput('default',text,null,()=>true,{requestId:`turn-${turn}`,voiceId:'v',turn,runId:null});asked.push(`${text}=>${session.prepareVoiceTurn.mock.calls.at(-1)![1]?.protocol}`);return h.emitted.slice(before);};
+
+    const run=async(text:string,turn:number)=>{const before=h.emitted.length;await h.manager.routeVoiceInput('default',text,null,()=>true,{requestId:`turn-${turn}`,voiceId:'v',turn,runId:null});asked.push(`${text}=>${session.prepareVoiceTurn.mock.calls.at(-1)![1]?.protocol}`);
+
+return h.emitted.slice(before);};
+
     await run('嗨，晚上好。',1);
     await run('十加七等于多少？',2);
     await run('暂停任务',3);
@@ -575,6 +621,7 @@ describe('第三轮必修1：reply 守卫失败关闭（模型不自律也编不
     // 模拟"模型/实现不自律"：不管协议如何都返回带正文的结果。
     session.prepareVoiceTurn.mockImplementation(async(input:any)=>({plan:{steps:[{action:'chat',text:input.text,target:null}]},replyText:'我猜是三年经验。',requestId:'p',attempts:1,elapsedMs:1,protocol:'free_reply'}));
     const factDependent=['工资多少？','这个多少钱？','它要求几年经验？','公司叫什么名字？','招几年经验？','简历投了吗？','有没有回复？','面试流程是什么？','几点截止？','他回消息了吗？','要求什么学历？','需不需要作品集？','几号面试？'];
+
     for(const [index,text] of factDependent.entries()){
       // 每一轮都从闲置态开始：这些句子都应该被派给能力会话，而不是直答。
       if(index>0)h.event('default',{kind:'agent_end'});
@@ -584,17 +631,20 @@ describe('第三轮必修1：reply 守卫失败关闭（模型不自律也编不
       expect(deliveriesOf(h.emitted.slice(before))).toHaveLength(0);
       expect(session.prepareVoiceTurn.mock.calls.at(-1)![1]).toMatchObject({protocol:'plan'});
     }
+
     expect(session.startTask).toHaveBeenCalledTimes(factDependent.length);
     expect(session.classifyVoiceInput).not.toHaveBeenCalled();
   });
   it('白名单类别仍走完整提案并直答',async()=>{
     const h=harness();await h.manager.ensureDefault();const session=h.session();
     session.prepareVoiceTurn.mockImplementation(async(input:any)=>freeReply(input.text));
+
     for(const [index,text] of ['嗨，晚上好。','你好。','十加七等于多少？'].entries()){
       const receipt=await h.manager.routeVoiceInput('default',text,null,()=>true,{requestId:`turn-free-${index}`,voiceId:'v',turn:index+1,runId:null});
       expect(receipt).toMatchObject({turn:{branch:'reply',phase:'COMMITTED',protocol:'free_reply'}});
       expect(session.prepareVoiceTurn.mock.calls.at(-1)![1]).toMatchObject({protocol:'free_reply'});
     }
+
     expect(deliveriesOf(h.emitted)).toHaveLength(3);
     expect(session.startTask).not.toHaveBeenCalled();
   });
@@ -624,12 +674,16 @@ describe('第四轮：白名单走独立最小请求，非白名单永远不走'
       :{plan:{steps:[{action:'chat',text:input.text,target:null}]},replyText:null,requestId:'p',attempts:1,elapsedMs:1,protocol:'plan'});
     const protocols=new Map<string,string>();
     const run=async(text:string,turn:number)=>{if(turn>1)h.event('default',{kind:'agent_end'});await h.manager.routeVoiceInput('default',text,null,()=>true,{requestId:`turn-r4-${turn}`,voiceId:'v',turn,runId:null});protocols.set(text,String(session.prepareVoiceTurn.mock.calls.at(-1)![1]?.protocol));};
+
     const whitelisted=['嗨，晚上好。','你好。','谢谢','再见','晚安','十加七等于多少？','12乘以8等于几'];
     const factDependent=['工资多少？','这个多少钱？','它要求几年经验？','公司叫什么名字？','招几年经验？','简历投了吗？','有没有回复？','面试流程是什么？','几点截止？','他回消息了吗？','要求什么学历？','需不需要作品集？','几号面试？'];
     const controls=['先停','停一停','别读了','安静点','不用念了','先等等'];
     let turn=0;
+
     for(const text of [...whitelisted,...factDependent,...controls])await run(text,++turn);
+
     for(const text of whitelisted)expect(protocols.get(text)).toBe('free_reply');
+
     for(const text of [...factDependent,...controls])expect(protocols.get(text)).toBe('plan');
     expect(session.prepareVoiceTurn).toHaveBeenCalledTimes(whitelisted.length+factDependent.length+controls.length);
   });

@@ -9,8 +9,11 @@ import {homedir} from "node:os";
 import {join, resolve} from "node:path";
 
 const argv = process.argv.slice(2);
+
 let root = join(homedir(), ".sideagent", "voice-capture");
+
 let dryRun = false;
+
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--root") root = resolve(argv[++i] ?? "");
   else if (argv[i] === "--dry-run") dryRun = true;
@@ -25,10 +28,12 @@ for (let i = 0; i < argv.length; i++) {
 
 const treeBytes = (path) => {
   let total = 0;
+
   for (const entry of readdirSync(path)) {
     const child = join(path, entry);
     total += statSync(child).isDirectory() ? treeBytes(child) : statSync(child).size;
   }
+
   return total;
 };
 
@@ -39,18 +44,26 @@ if (!existsSync(root)) {
 
 const entries = readdirSync(root).map((entry) => {
   const path = join(root, entry);
+
   return {path, bytes: statSync(path).isDirectory() ? treeBytes(path) : statSync(path).size};
 });
+
 const total = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+
 console.log(`语音记录目录：${root}`);
+
 console.log(`将删除 ${entries.length} 项，共 ${(total / 1024 / 1024).toFixed(1)} MB：`);
+
 for (const entry of entries) console.log(`  ${entry.path}（${(entry.bytes / 1024 / 1024).toFixed(1)} MB）`);
+
 if (dryRun) {
   console.log("--dry-run：未删除任何内容。");
   process.exit(0);
 }
+
 for (const entry of entries) {
   rmSync(entry.path, {recursive: true, force: true});
   console.log(`  已删除 ${entry.path}`);
 }
+
 console.log(`已清空 ${entries.length} 项；目录保留：${root}`);

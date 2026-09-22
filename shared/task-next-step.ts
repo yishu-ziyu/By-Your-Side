@@ -10,6 +10,7 @@ export const TOOL_FAILURE_LIMIT = 3;
 export const TASK_NEXT_ACTIONS = ['continue', 'change_method', 'verify_unknown', 'ask_user', 'verify_result', 'deliver', 'wait', 'stop'] as const;
 
 export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error'] as const;
+
 /** A host decision about execution and delivery, never a claim of business success. */
 export interface TaskNextStep {
   action: typeof TASK_NEXT_ACTIONS[number];
@@ -24,7 +25,9 @@ export function isTaskNextStep(value: unknown): value is TaskNextStep {
   if (!value || typeof value !== 'object') {
     return false;
   }
+
   const d = value as TaskNextStep;
+
   return TASK_NEXT_ACTIONS.includes(d.action) && TASK_NEXT_REASONS.includes(d.reason)
     && typeof d.allowWrites === 'boolean' && ['none', 'partial', 'report'].includes(d.delivery)
     && Array.isArray(d.resultIds) && d.resultIds.length <= 64 && d.resultIds.every(taskId);
@@ -37,58 +40,79 @@ export interface NextStepFacts {
   failureLimit?: boolean;
   toolFailed?: boolean;
 }
+
 /** Priority is shared by progress, model context, execution guards and final delivery. */
 export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextStepFacts = {}): TaskNextStep {
   const results = snapshot.results ?? [];
   const decide = (action: TaskNextStep['action'], reason: TaskNextStep['reason'], allowWrites: boolean, delivery: TaskNextStep['delivery'], resultIds: string[] = []): TaskNextStep => ({ action, reason, allowWrites, delivery, resultIds });
+
   if (snapshot.state === 'aborted') {
     return decide('stop', 'cancelled', false, 'none');
   }
+
   if (snapshot.state === 'paused') {
     return decide('wait', 'human_control', false, 'none');
   }
+
   if (snapshot.state === 'interrupted') {
     return decide('wait', 'restart_checkpoint', false, 'none');
   }
+
   const incompleteDelivery = facts.inFlight ? 'none' : 'partial';
+
   if (facts.failureLimit) {
     return decide('ask_user', 'failure_limit', false, incompleteDelivery);
   }
+
   if (snapshot.unresolvedEffect) {
     return decide('ask_user', 'unknown_without_baseline', false, incompleteDelivery);
   }
+
   const unknown = results.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, results));
+
   if (unknown.length) {
     const verifiable = unknown.filter(item => facts.verifiableUnknownIds?.includes(item.id));
+
     return decide(verifiable.length ? 'verify_unknown' : 'ask_user', verifiable.length ? 'unknown_with_baseline' : 'unknown_without_baseline', !unknown.some(resultHasWriteEffect), incompleteDelivery, unknown.map(item => item.id));
   }
+
   if (facts.inFlight) {
     return decide('wait', 'in_flight', true, 'none');
   }
+
   if (snapshot.state === 'error') {
     return decide('ask_user', 'runtime_error', false, 'partial');
   }
+
   if (snapshot.goalPlan) {
     // Goal verification supersedes obsolete known-failed attempts. Unknown effects and control
     // boundaries were handled above; they can never be cleared by an outcome judgment.
     if (goalsReadyForDelivery(snapshot.goalPlan)&&snapshot.goalPlan.goals.some(goal=>goal.kind!=='answer')) {
       return decide('deliver','receipts_reviewed',true,'report');
     }
+
     if (facts.toolFailed ?? snapshot.lastAction?.failed) return decide('change_method','tool_failed',true,'partial');
+
     if (!goalsReadyForDelivery(snapshot.goalPlan)) {
       return decide('continue','remaining',true,'partial',snapshot.goalPlan.goals.filter(goal=>goal.status!=='satisfied').map(goal=>goal.id));
     }
   } else {
     const blocked=results.filter(item=>item.status==='blocked');
+
     if(blocked.length)return decide('change_method','tool_failed',true,'partial',blocked.map(item=>item.id));
     const pending=results.filter(item=>item.status==='pending');
+
     if(pending.length)return decide('continue','remaining',true,'partial',pending.map(item=>item.id));
   }
+
   if (facts.readbackRequired) {
     return decide('verify_result', 'readback_required', true, 'partial');
   }
+
   if (facts.toolFailed ?? snapshot.lastAction?.failed) return decide('change_method','tool_failed',true,'partial');
+
   if (snapshot.goalPlan && goalsReadyForDelivery(snapshot.goalPlan)) return decide('deliver', 'receipts_reviewed', true, 'report');
+
   return results.length ? decide('deliver', 'receipts_reviewed', true, 'report') : decide('continue', 'open_task', true, 'report');
 }
 
@@ -112,6 +136,7 @@ export function nextStepInstruction(decision: TaskNextStep): string {
 
 export function partialResultNote(decision: TaskNextStep): string {
   let limit: string;
+
   if (decision.reason.startsWith('unknown_')) {
     limit = '有操作的结果仍无法确认，没有将其记为完成。';
   } else if (decision.reason === 'readback_required') {
@@ -121,8 +146,10 @@ export function partialResultNote(decision: TaskNextStep): string {
   } else {
     limit = '仍有未完成或未核验事项，未声明全部完成。';
   }
+
   return `任务状态：仅交付部分结果。${limit}`;
 }
+
 /** Both lead and worker use the same control/uncertainty policy; replay checks retain their original scope.
  * freshDirect：直连的新用户请求（display-* 调用）不为旧任务的“已取消”生命周期买单；
  * 只豁免 cancelled 这一条原因，未知写入、运行时错误、重复回执与失败边界照常生效。 */
@@ -130,41 +157,54 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
   if (!snapshot) {
     return;
   }
+
   const write = isWriteTool(name) || requiresControlGate(name, params);
+
   if (worker && !write) {
     return;
   }
+
   const decision = decideTaskNextStep(snapshot, { failureLimit: snapshot.nextStep?.reason === 'failure_limit' });
   const cancelledForFreshDirect = freshDirect && decision.reason === 'cancelled';
+
   if (write && !cancelledForFreshDirect && ['cancelled', 'human_control', 'restart_checkpoint', 'runtime_error', 'failure_limit'].includes(decision.reason)) {
     throw new Error(nextStepInstruction(decision));
   }
+
   const target = extractResultTarget(params, name);
+
   for (const item of snapshot.results ?? []) {
     if (item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results ?? [])) {
       if (!worker && item.tool === name && (item.target === null || item.target === target)) {
         throw new Error(`「${item.description}」的执行结果未知（结果 ${item.id}，调用 ${item.evidence?.toolCallId ?? '缺失'}），不能自动重做；请先查询结果或由用户决定。`);
       }
+
       if (write && resultHasWriteEffect(item)) {
         throw new Error(`任务中存在尚未确认结果的操作「${item.description}」（结果 ${item.id}，调用 ${item.evidence?.toolCallId ?? '缺失'}），当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
       }
     }
+
     if (!write || item.tool !== name || item.status !== 'satisfied' || item.target === null || item.target !== target) {
       continue;
     }
+
     const observedAfter = typeof snapshot.lastReadAt === 'number' && item.evidence?.observedAt !== undefined && snapshot.lastReadAt > item.evidence.observedAt;
+
     if (snapshot.restartRecovery || (!worker && !observedAfter)) {
       throw new Error(snapshot.restartRecovery && name === 'fill'
         ? `「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请定位当前字段并用 confirm_blocked_write 核对/确认一次恢复。`
         : `「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
     }
   }
+
   if (write && !cancelledForFreshDirect && !decision.allowWrites) {
     throw new Error(nextStepInstruction(decision));
   }
+
   if (write && (snapshot.results?.length ?? 0) >= MAX_TASK_RESULTS) {
     const binding = selectResultBinding(snapshot.results!, name, target);
     const ownsSlot = snapshot.results!.some(item => item.tool === name && item.target === target && item.status === 'pending');
+
     if (!ownsSlot && binding.kind !== 'exact' && binding.kind !== 'rebind') {
       throw new Error('结果账本已满，无法可靠记录新的写入结果；本次操作未执行，请先交付已有结果。');
     }

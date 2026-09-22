@@ -4,6 +4,7 @@ import { ToolRpc, type ToolCallFrame } from "../src/rpc.js";
 function makeRpc() {
   const sent: ToolCallFrame[] = [];
   const rpc = new ToolRpc((frame) => sent.push(frame));
+
   return { rpc, sent };
 }
 

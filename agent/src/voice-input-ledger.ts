@@ -22,11 +22,13 @@ export class VoiceInputLedger {
     let finish!:()=>void;
     const wait=new Promise<void>(resolve=>finish=resolve);
     const record:InputContextRecord={input,ready:!pending,wait,finish};
+
     if(record.ready)finish();
     else record.timer=setTimeout(()=>{
       record.error='页面资料准备超时，这句话尚未执行。';record.ready=true;finish();
     },5000);
     this.contexts.set(turn,record);
+
     for(const [oldTurn,old] of this.contexts)if(oldTurn<turn-20){
       if(old.timer)clearTimeout(old.timer);old.finish();this.contexts.delete(oldTurn);
     }
@@ -34,18 +36,24 @@ export class VoiceInputLedger {
 
   supplyContext(turn:number,input?:VoiceInputContext,error?:string):void {
     const record=this.contexts.get(turn);
+
     if(!record||record.ready)return;
     record.input=input;record.error=error;record.ready=true;
+
     if(record.timer)clearTimeout(record.timer);record.finish();
   }
 
   resolveContext(turn:number):{input?:VoiceInputContext;error?:string}|Promise<{input?:VoiceInputContext;error?:string}> {
     const current=this.contexts.get(turn),source=this.utteranceContext??current;
+
     const finish=()=>{
       this.contexts.delete(turn);this.utteranceContext??=current;this.utteranceContextTurn??=turn;
+
       return {input:source?.input??current?.input,error:source?.error??current?.error};
     };
+
     if((!source||source.ready)&&(!current||current.ready))return finish();
+
     return Promise.all([source?.wait,current?.wait]).then(finish);
   }
 
@@ -53,6 +61,7 @@ export class VoiceInputLedger {
 
   clear():void {
     for(const record of this.contexts.values()){if(record.timer)clearTimeout(record.timer);record.finish();}
+
     this.contexts.clear();this.finishUtterance();this.lateParts.clear();this.pendingLate.clear();
   }
 
@@ -62,16 +71,20 @@ export class VoiceInputLedger {
 
   interrupt(nextTurn: number, answerWasCut: boolean): void {
     const cutOffTurn = this.turn;
+
     if(answerWasCut&&nextTurn===cutOffTurn+1){
       this.pendingLate.set(cutOffTurn,Date.now()+LATE_TRANSCRIPT_MERGE_MS);
     }else{this.pendingLate.clear();this.lateParts.clear();}
+
     this.turn = nextTurn;
+
     for(const [turn,expiry] of this.pendingLate)if(turn<nextTurn-20||Date.now()>expiry)this.pendingLate.delete(turn);
   }
 
   commit(turn: number): boolean {
     if (this.committed.has(turn)) return false;
     this.committed.add(turn);
+
     return true;
   }
 
@@ -82,12 +95,16 @@ export class VoiceInputLedger {
   mergeLate(fromTurn: number, spoken: string, now = Date.now()): boolean {
     if (!spoken) return false;
     const expiry=this.pendingLate.get(fromTurn);
+
     if(expiry===undefined||now>expiry)return false;
     this.pendingLate.delete(fromTurn);
+
     if(this.utteranceContextTurn===undefined||fromTurn<this.utteranceContextTurn){
       this.utteranceContext=this.contexts.get(fromTurn);this.utteranceContextTurn=fromTurn;
     }
+
     this.lateParts.set(fromTurn,spoken);
+
     return true;
   }
 
@@ -99,6 +116,7 @@ export class VoiceInputLedger {
     const late=[...this.lateParts].sort(([a],[b])=>a-b).map(([,text])=>text).join(' ');
     const transcript = [prefix, late, spoken].filter(Boolean).join(" ").trim();
     this.lateParts.clear();this.pendingLate.clear();
+
     return transcript;
   }
 }

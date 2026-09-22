@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/background/debugger.js", () => ({ sendCommand: mocks.sendCommand }));
+
 vi.mock("../src/background/state.js", () => ({
   resolveWorkingTab: mocks.resolveWorkingTab,
   maybeActivateTab: mocks.maybeActivateTab,
@@ -42,6 +43,7 @@ import { isAxRef, recordAxSnapshot } from "../src/background/axstate.js";
 import { axTreeToText, type AxNodeLite } from "../src/background/axtree.js";
 
 const WORK_TAB = { id: 11, windowId: 1, url: "https://work.example/page", title: "Work Page" };
+
 const OTHER_TAB = { id: 99, windowId: 1, url: "https://other.example/", title: "Other" };
 
 const AX_NODES: AxNodeLite[] = [
@@ -68,6 +70,7 @@ beforeEach(() => {
 function mockCdpScreenshotOk() {
   mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
     if (method === "Page.captureScreenshot") return { data: "aVBORw0KGgo=" };
+
     if (method === "Runtime.evaluate") return { result: { value: { w: 1440, h: 900, dpr: 2.5 } } };
     throw new Error(`unexpected CDP method ${method}`);
   });
@@ -107,6 +110,7 @@ describe("A2 CDP 失败只回退已确认的工作页活动标签", () => {
   it("确认是工作页活动标签时才允许可见捕获回退", async () => {
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") throw new Error("No longer attached");
+
       if (method === "Runtime.evaluate") return { result: { value: { w: 1440, h: 900, dpr: 2.5 } } };
       throw new Error(`unexpected CDP method ${method}`);
     });
@@ -135,7 +139,9 @@ describe("A3 viewport 真做视口范围且 ref 登记正确切换", () => {
     // content script 两次调用：注入 + 取文本
     mocks.executeScript.mockImplementation(async (opts: unknown) => {
       const o = opts as { files?: string[] };
+
       if (o.files) return [{}];
+
       return [{ result: "[ref=1] button \"ViewportBtn\" loc=css:#vp" }];
     });
   });
@@ -173,7 +179,9 @@ describe("A3 截断反馈给出有效恢复方式", () => {
     const many: AxNodeLite[] = [
       { nodeId: "r", role: { value: "RootWebArea" }, childIds: [] as string[], backendDOMNodeId: 1 },
     ];
+
     const childIds: string[] = [];
+
     for (let i = 0; i < 3000; i++) {
       const id = `n${i}`;
       childIds.push(id);
@@ -185,6 +193,7 @@ describe("A3 截断反馈给出有效恢复方式", () => {
         backendDOMNodeId: 100 + i,
       });
     }
+
     (many[0] as AxNodeLite).childIds = childIds;
     const { text, truncated } = axTreeToText(many);
     expect(truncated).toBe(true);
@@ -206,12 +215,15 @@ describe("A1 解码失败明确失败，不返回 0 尺寸成功包", () => {  i
     let reads = 0;
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") return { data: "aVBORw0KGgo=" };
+
       if (method === "Runtime.evaluate") {
         reads += 1;
         // 捕获前 1440x900，捕获后 1440x700（侧栏/缩放改变视口）
         const h = reads === 1 ? 900 : 700;
+
         return { result: { value: { w: 1440, h, dpr: 2.5 } } };
       }
+
       throw new Error(`unexpected CDP method ${method}`);
     });
     await expect(screenshot({}, "main")).rejects.toThrow(/视口变化/);
@@ -242,6 +254,7 @@ describe("A2 捕获前后身份/URL 核对（复核补强）", () => {
   it("visible 回退前后一致时采用捕获后的 URL/title", async () => {
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") throw new Error("No longer attached");
+
       if (method === "Runtime.evaluate") return { result: { value: { w: 1440, h: 900, dpr: 2.5 } } };
       throw new Error(`unexpected CDP method ${method}`);
     });

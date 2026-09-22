@@ -22,8 +22,10 @@ export interface SkillRunOutcome extends SkillRun {
 /** 从脚本自己抛的错误里认出"停在第几步"。 */
 export function stepFromError(message: string): number | undefined {
   const match = /第\s*(\d+)\s*步/.exec(message);
+
   if (!match) return undefined;
   const step = Number(match[1]);
+
   return Number.isInteger(step) && step > 0 ? step : undefined;
 }
 
@@ -41,13 +43,16 @@ export async function runSkill(options: {
   const startedAt = now();
   const programId = `skill-${options.skill.id}-${startedAt}`;
   let done = 0;
+
   const onStep: Parameters<typeof runBrowserProgram>[0]["onStep"] = step => {
     if (step.phase === "end") done += 1;
     options.onStep?.(step);
   };
+
   try {
     // Validate all inputs before even observing the browser.
     const code = skillProgramWithInputs(options.skill, options.inputs);
+
     const result = options.execute ? await options.execute(code, programId, options.signal) : await runBrowserProgram({
       code,
       call: (name, params, stepId) => options.rpc.call(name, params, undefined, undefined, programId, undefined, stepId),
@@ -55,7 +60,9 @@ export async function runSkill(options: {
       id: programId,
       onStep,
     });
+
     const skipped = (result.value as { skipped?: number[] } | undefined)?.skipped ?? [];
+
     return {
       at: startedAt,
       ok: true,
@@ -67,6 +74,7 @@ export async function runSkill(options: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failedStep = stepFromError(message);
+
     return {
       at: startedAt,
       ok: false,

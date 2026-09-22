@@ -18,19 +18,25 @@ type ChromeDouble = {
 function installChrome(opts: { activeTabId?: number | null; holdNextShow?: boolean } = {}): ChromeDouble {
   const log: ChromeDouble["log"] = [];
   let release!: () => void;
+
   const gate = new Promise<void>((r) => {
     release = r;
   });
+
   let hold = opts.holdNextShow === true;
+
   const executeScript = vi.fn(async (details: ExecDetails) => {
     const show = Array.isArray(details.args) ? (details.args[0] as boolean) : undefined;
     log.push({ tabId: details.target.tabId, show, status: (details.args?.[1] as {status?:string} | undefined)?.status });
+
     if (hold && show === true) {
       hold = false;
       await gate;
     }
+
     return [{ frameId: 0, result: undefined }];
   });
+
   vi.stubGlobal("chrome", {
     debugger: { onDetach: { addListener: vi.fn() } },
     scripting: { executeScript },
@@ -40,6 +46,7 @@ function installChrome(opts: { activeTabId?: number | null; holdNextShow?: boole
       query: vi.fn(async () => (opts.activeTabId == null ? [] : [{ id: opts.activeTabId }])),
     },
   });
+
   return { executeScript, log, release };
 }
 
@@ -54,8 +61,10 @@ function hidden(log: ChromeDouble["log"]): number[] {
 function lastOp(log: ChromeDouble["log"], tabId: number): boolean | undefined {
   for (let i = log.length - 1; i >= 0; i -= 1) {
     const call = log[i];
+
     if (call && call.tabId === tabId && call.show !== undefined) return call.show;
   }
+
   return undefined;
 }
 
@@ -70,6 +79,7 @@ describe("控制条生命周期：按会话清除实际画过的条", () => {
 
   it("恢复完成清掉活动页残留（任务绑定 41，活动页 73）", async () => {
     const dou = installChrome({ activeTabId: 73 });
+
     const { showTeamControlBanners, hideControlBannersForOwner } = await import(
       "../src/background/exec/input.js"
     );
@@ -89,6 +99,7 @@ describe("控制条生命周期：按会话清除实际画过的条", () => {
 
   it("不误清另一暂停会话的条（A 恢复不影响 B 的活动页）", async () => {
     const dou = installChrome({ activeTabId: 73 });
+
     const { showTeamControlBanners, hideControlBannersForOwner } = await import(
       "../src/background/exec/input.js"
     );
@@ -107,6 +118,7 @@ describe("控制条生命周期：按会话清除实际画过的条", () => {
 
   it("迟到的异步展示不能令旧条复活", async () => {
     const dou = installChrome({ activeTabId: 73, holdNextShow: true });
+
     const { showTeamControlBanners, hideControlBannersForOwner } = await import(
       "../src/background/exec/input.js"
     );
@@ -122,6 +134,7 @@ describe("控制条生命周期：按会话清除实际画过的条", () => {
 
   it("成员页在恢复期间变化，仍按展示过的页清除", async () => {
     const dou = installChrome({ activeTabId: 73 });
+
     const { showTeamControlBanners, hideControlBannersForOwner } = await import(
       "../src/background/exec/input.js"
     );
@@ -140,6 +153,7 @@ it("旧页展示跨过清理和新页展示后，旧页仍然收起", async()=>{
   vi.resetModules(); const dou=installChrome({holdNextShow:true});
   const {showTeamControlBanners:show,hideControlBannersForOwner:hide}=await import("../src/background/exec/input.js");
   const old=show([41],{status:"旧状态"},"A");
+
   for(let i=0;i<30&&!shown(dou.log).length;i++)await Promise.resolve();
   expect(shown(dou.log)).toContain(41);
   const cleared=hide("A");
@@ -154,6 +168,7 @@ it("同页旧绘制迟到时，最终文案仍是新状态", async()=>{
   vi.resetModules(); const dou=installChrome({holdNextShow:true});
   const {showTeamControlBanners:show,hideControlBannersForOwner:hide}=await import("../src/background/exec/input.js");
   const old=show([41],{status:"正在恢复"},"A");
+
   for(let i=0;i<30&&!shown(dou.log).length;i++)await Promise.resolve();
   expect(shown(dou.log)).toContain(41);
   const cleared=hide("A"); const fresh=show([41],{status:"现在归你"},"A");

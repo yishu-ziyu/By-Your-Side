@@ -35,8 +35,11 @@ export function conflictingRuns(a: string | null | undefined, b: string | null |
  */
 export function observeRunStarted(state: TeamRunState, runId: string | null | undefined): TeamRunState {
   if (!isRunId(runId)) return state;
+
   if (state.runId === runId) return state;
+
   if (isRunId(state.runId)) return { team: null, runId };
+
   return { team: state.team, runId };
 }
 
@@ -59,10 +62,13 @@ export function acceptTeamStatus(
 ): TeamStatusDecision {
   // 旧版本存的无身份历史只用于展示，不重新施加到已知的新任务控制状态。
   if (historical && isRunId(state.runId) && !isRunId(runId)) return {accept:false, state};
+
   if (isRunId(runId)) {
     if (conflictingRuns(runId, state.runId)) return { accept: false, state };
+
     return { accept: true, state: { team, runId } };
   }
+
   return { accept: true, state: { team, runId: state.runId } };
 }
 
@@ -72,5 +78,6 @@ export function acceptTeamStatus(
  */
 export function staleTeamForRun(state: TeamRunState, currentRunId: string | null | undefined): boolean {
   if (!state.team) return false;
+
   return conflictingRuns(state.runId, currentRunId);
 }

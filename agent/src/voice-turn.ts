@@ -12,10 +12,14 @@ import type {UserDelivery, UserDeliveryStream} from '../../shared/voice.js';
  * 它是别轮的真实事实，不该跟着被丢弃的候选一起消失；被丢弃的是候选自己的前缀。
  */
 export const VOICE_TURN_PHASES = ['PREPARING', 'COMMITTED', 'COMPLETED', 'DISCARDED', 'INTERRUPTED'] as const;
+
 export type VoiceTurnPhase = (typeof VOICE_TURN_PHASES)[number];
+
 /** pass = 现在就能发；held = 被扣在缓冲区；dropped = 终态之后，永不复活。 */
 export type DeliveryStreamDecision = 'pass' | 'held' | 'dropped';
+
 export interface ReleasedVoiceOutput { streams: UserDeliveryStream[]; deliveries: UserDelivery[] }
+
 const EMPTY_OUTPUT = (): ReleasedVoiceOutput => ({streams: [], deliveries: []});
 
 interface Turn {
@@ -38,8 +42,10 @@ export class VoiceTurnGate {
   begin(turnId: string, conversationId: string): void {
     this.turns.set(turnId, { conversationId, phase: 'PREPARING', held: new Map(), heldDeliveries: new Map(), dropped: new Set() });
     this.order.push(turnId);
+
     while (this.order.length > MAX_TRACKED_TURNS) {
       const oldest = this.order.shift()!;
+
       if (oldest !== turnId) this.turns.delete(oldest);
     }
   }
@@ -64,26 +70,35 @@ export class VoiceTurnGate {
    */
   holdDeliveryStream(stream: UserDeliveryStream, conversationId?: string): DeliveryStreamDecision {
     const abandoned = [...this.turns.values()].some(turn => turn.dropped.has(stream.id));
+
     if (abandoned) return 'dropped';
     const preparing = this.preparing(conversationId);
+
     if (!preparing.length) return 'pass';
+
     for (const turnId of preparing) this.turns.get(turnId)!.held.set(stream.id, stream);
+
     return 'held';
   }
 
   /** 正式交付同样先扣住：PREPARING 期间不越过提交就对外发。 */
   holdUserDelivery(delivery: UserDelivery, conversationId?: string): DeliveryStreamDecision {
     const preparing = this.preparing(conversationId);
+
     if (!preparing.length) return 'pass';
+
     for (const turnId of preparing) this.turns.get(turnId)!.heldDeliveries.set(delivery.id, delivery);
+
     return 'held';
   }
 
   /** 校验通过：立即把扣住的输出按原本顺序放出去；轮次已被新话取代（不再处于 PREPARING）返回 null。 */
   commit(turnId: string): ReleasedVoiceOutput | null {
     const turn = this.turns.get(turnId);
+
     if (!turn || turn.phase !== 'PREPARING') return null;
     turn.phase = 'COMMITTED';
+
     return this.take(turn);
   }
 
@@ -94,6 +109,7 @@ export class VoiceTurnGate {
   /** 这一轮正常做完：之后到达的任何输出都不再属于它。 */
   complete(turnId: string): void {
     const turn = this.turns.get(turnId);
+
     if (!turn) return;
     turn.phase = 'COMPLETED';
     turn.held.clear();
@@ -102,12 +118,15 @@ export class VoiceTurnGate {
 
   private abandon(turnId: string, phase: VoiceTurnPhase): ReleasedVoiceOutput {
     const turn = this.turns.get(turnId);
+
     if (!turn) return EMPTY_OUTPUT();
     turn.phase = phase;
+
     for (const id of turn.held.keys()) turn.dropped.add(id);
     turn.held.clear();
     const deliveries = [...turn.heldDeliveries.values()];
     turn.heldDeliveries.clear();
+
     return {streams: [], deliveries};
   }
   private take(turn: Turn): ReleasedVoiceOutput {
@@ -115,6 +134,7 @@ export class VoiceTurnGate {
     const deliveries = [...turn.heldDeliveries.values()];
     turn.held.clear();
     turn.heldDeliveries.clear();
+
     return {streams, deliveries};
   }
 }

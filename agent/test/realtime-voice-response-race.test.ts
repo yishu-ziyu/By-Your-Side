@@ -19,20 +19,25 @@ function createFixture() {
   const voiceLog: Array<Record<string, unknown>> = [];
   let resolveRead!: (value: unknown) => void;
   let browserRequestCalls = 0;
+
   const connection = new RealtimeVoiceConnection({
     key: 'offline-placeholder',
     connect: () => socket as any,
     send: event => client.push(event),
     log: event => voiceLog.push(event),
     tools: {
-      browser_request: async () => { browserRequestCalls++; return {ok: true}; },
+      browser_request: async () => { browserRequestCalls++;
+
+ return {ok: true}; },
       task_status: async () => ({}),
       read_page: () => new Promise(resolve => { resolveRead = resolve; }),
     },
   });
+
   connection.start();
   socket.server({type: 'session.created', session: {model: MODEL}});
   socket.server({type: 'session.updated', session: {model: MODEL, voice: STEP_VOICE, input_audio_format: 'pcm16', output_audio_format: 'pcm16', turn_detection: {type: 'server_vad'}}});
+
   return {
     connection, socket, client, voiceLog,
     resolveRead: (value: unknown) => resolveRead(value),
@@ -41,7 +46,9 @@ function createFixture() {
 }
 
 type Fixture = ReturnType<typeof createFixture>;
+
 const sentToolOutputs = (socket: Socket) => socket.sent.filter(e => (e as any).item?.type === 'function_call_output').length;
+
 const sentCreates = (socket: Socket) => socket.sent.filter(e => e.type === 'response.create').length;
 
 /**
@@ -64,6 +71,7 @@ async function driveToRace(fx: Fixture): Promise<void> {
 }
 
 const live: RealtimeVoiceConnection[] = [];
+
 afterEach(() => { live.splice(0).forEach(c => c.close()); vi.useRealTimers(); });
 
 describe('voice response race: server_vad auto response pending gate', () => {

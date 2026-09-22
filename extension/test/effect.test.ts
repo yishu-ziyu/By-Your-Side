@@ -26,6 +26,7 @@ function base(over: Partial<EffectBaseline> = {}): EffectBaseline {
 
 function now(over: Partial<EffectStats> = {}): EffectStats {
   const { volatile: _volatile, ...rest } = base(over as Partial<EffectBaseline>);
+
   return rest;
 }
 
@@ -134,12 +135,14 @@ describe("早停轮询", () => {
     let t = 0;
     const sleeps: number[] = [];
     let calls = 0;
+
     const report = await settleEffectReport(async () => poll(++calls), {
       now: () => t,
       sleep: async (ms) => { sleeps.push(ms); t += ms; },
       timeoutMs,
       intervalMs: 100,
     });
+
     return { report, sleeps, calls };
   };
 
@@ -147,6 +150,7 @@ describe("早停轮询", () => {
     const { report, sleeps, calls } = await run(async (n) => (n >= 2
       ? { changed: true, evidence: ["checked false → true"], weak: [], volatile: false, alerts: [] }
       : unchanged()));
+
     expect(calls).toBe(2);
     expect(sleeps).toEqual([100]);
     expect(report?.evidence).toEqual(["checked false → true"]);

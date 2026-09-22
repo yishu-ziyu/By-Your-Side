@@ -30,6 +30,7 @@ export interface CompileInput {
 function anchorOf(step: DemoStep): SkillAnchor | undefined {
   if (!step.anchor) return undefined;
   const { tag, role, name, inputType } = step.anchor;
+
   return { tag, ...(role ? { role } : {}), ...(name ? { name } : {}), ...(inputType ? { inputType } : {}) };
 }
 
@@ -38,8 +39,11 @@ function inputKeyFor(anchor: SkillAnchor | undefined, taken: Set<string>): strin
   const base = ["__proto__", "prototype", "constructor"].includes(raw) ? "输入" : raw;
   let key = base;
   let n = 2;
+
   while (taken.has(key)) { key = `${base}${n}`; n += 1; }
+
   taken.add(key);
+
   return key;
 }
 
@@ -49,13 +53,17 @@ export function compileSkill(input: CompileInput): Skill {
   const inputs: Record<string, string> = {};
   const taken = new Set<string>();
   let weakCount = 0;
+
   for (const step of input.steps) {
     const anchor = anchorOf(step);
+
     if (step.kind === "submit") continue; // 示范里的那次点击已经做过提交
+
     if (step.kind === "click" && anchor) {
       // 没名字也没角色的点击（裸 div、跨导航的残影）标成弱步骤：
       // 运行期认不出来就跳过，而不是编译期直接丢掉——真机上 B 站视频卡全是这种。
       const weak = !anchor.name && !anchor.role;
+
       if (weak) weakCount += 1;
       steps.push({ kind: "click", anchor, ...(weak ? { weak: true as const } : {}) });
     }
@@ -66,17 +74,21 @@ export function compileSkill(input: CompileInput): Skill {
       steps.push({ kind: "type", anchor, inputKey: key, ...(step.redacted ? { redacted: true as const } : {}) });
     }
   }
+
   // 凭证要能被认出来：优先最后一个"有可访问名"的目标，全是裸标签时才退回最后一步。
   const reversed = [...steps].reverse();
   const last = reversed.find(s => s.anchor?.name) ?? reversed.find(s => s.anchor);
+
   const check: SkillCheck = input.check ?? {
     ...(last?.anchor ? { marker: last.anchor } : {}),
     text: last?.anchor
       ? `跑完后页面上必须还能找到${last.anchor.name ? `「${last.anchor.name}」` : ` ${last.anchor.tag} `}；找不到就说明这一页已经和示范时不一样，不算跑完。`
       : "跑完后每一步的目标都必须在；任何一步找不到目标就停。",
   };
+
   const host = normalizeSkillHost(input.hostname);
   const name = input.intent.trim().slice(0, 40) || `${host} 上的示范`;
+
   return {
     id: input.id,
     name,
@@ -107,6 +119,7 @@ function buildProgram(input: CompileInput, steps: SkillStep[], inputs: Record<st
   lines.push("const skipped = [];");
   // Domain is checked inside every semantic observation, before the next write.
   lines.push(`const expectedHost = ${JSON.stringify(host)};`);
+
   if (check.expect) lines.push(`let observedDocument;
 async function verifyDocument(target) {
   const observed = await browser.read_element({ target });
@@ -121,8 +134,10 @@ async function verifyDocument(target) {
   steps.forEach((step, index) => {
     if (step.kind === "press") {
       lines.push(`await browser.press_key({ key: ${JSON.stringify(step.key ?? "Enter")} });`);
+
       return;
     }
+
     if (step.weak) {
       // 弱步骤：认不出来就跳过并记一笔，不因为一个没名字的对象让整件事停摆。
       lines.push(`const target${index} = await tryResolveStep(${index});`);
@@ -130,8 +145,10 @@ async function verifyDocument(target) {
       lines.push(`  ${step.kind === "click" ? `await browser.click({ target: target${index} });` : `await browser.fill({ target: target${index}, value: inputs[${JSON.stringify(step.inputKey ?? "")}] ?? "" });`}`);
       lines.push("}");
       skips.push(String(index + 1));
+
       return;
     }
+
     lines.push(`const target${index} = await resolveStep(${index});`);
     lines.push(step.kind === "click"
       ? `await browser.click({ target: target${index} });`
@@ -140,30 +157,37 @@ async function verifyDocument(target) {
 
   lines.push("");
   const actionable = steps.filter(s => s.kind !== "press").length;
+
   if (actionable > 0) {
     lines.push(`if (skipped.length >= ${actionable}) {`);
     lines.push('  throw new Error("这一步都没认出来：技能什么都没做成，请重新示范一遍。");');
     lines.push("}");
   }
+
   if (marker) {
     lines.push("");
     lines.push(`if (!(await resolveAnchor(${JSON.stringify(marker)}))) {`);
     lines.push('  throw new Error("完成凭证不成立：跑完后没找到该有的对象，不算跑完。");');
     lines.push("}");
   }
+
   if (check.expect && marker) {
     lines.push(`const expected = ${JSON.stringify(check.expect)};`);
+
     if (check.inputKey) lines.push(`expected[${JSON.stringify("contains" in check.expect ? "contains" : "equals")}] = inputs[${JSON.stringify(check.inputKey)}];`);
     lines.push(`const proof = await browser.read_element({ target: await resolveAnchor(${JSON.stringify(marker)}), expect: expected, timeoutMs: 1500 });`);
     lines.push('if (!proof.check?.matched) throw new Error("完成条件未核验，不能报告成功。");');
+
     if (check.inputKeys?.length) {
       lines.push(`for (const key of ${JSON.stringify(check.inputKeys)}) {`);
       lines.push(`  const result = await browser.read_element({ target: await resolveAnchor(${JSON.stringify(marker)}), expect: { property: "textContent", contains: inputs[key] }, timeoutMs: 1500 });`);
       lines.push('  if (!result.check?.matched) throw new Error("部分材料没有在结果中核对通过。");');
       lines.push('}');
     }
+
     lines.push(`return { done: true, verified: true, steps: ${steps.length}, ...(skipped.length ? { skipped } : {}) };`);
   } else lines.push(`return { done: true, steps: ${steps.length}, ...(skipped.length ? { skipped } : {}) };`);
+
   return lines.join("\n");
 }
 
@@ -176,7 +200,9 @@ export function skillProgramWithInputs(skill: Skill, overrides?: Record<string, 
   const inputs = bindSkillInputs(skill, overrides);
   const declaration = `const inputs = ${JSON.stringify(skill.inputs, null, 2)};`;
   const parts = skill.program.split(declaration);
+
   if (parts.length !== 2) throw new Error("技能输入声明已变化，请重新示范；没有执行旧参数。");
+
   return `${parts[0]}const inputs = ${JSON.stringify(inputs, null, 2)};${parts[1]}`;
 }
 
@@ -279,15 +305,23 @@ async function tryResolveStep(index) {
 /** 编译产物必须守住的红线：不出现坐标与 DOM 路径。 */
 export function validateCompiledSkill(skill: Skill): string | null {
   if (!validSkillId(skill.id)) return "技能 id 非法";
+
   if (!skill.hostname) return "技能缺少站点";
+
   if (skill.steps.length === 0) return "示范里没有可编译的步骤";
+
   if (skill.check.expect) {
     if (!skill.check.marker?.name) return "技能完成条件缺少具名对象";
+
     try { validateElementRead({ expect: skill.check.expect }); } catch { return "技能完成条件无效"; }
+
     if (skill.check.inputKey && !Object.hasOwn(skill.inputs, skill.check.inputKey)) return "技能完成条件引用了未知输入";
+
     if (skill.check.inputKeys && (!Array.isArray(skill.check.inputKeys) || skill.check.inputKeys.length > 20
       || skill.check.inputKeys.some(key => typeof key !== "string" || !Object.hasOwn(skill.inputs, key)))) return "技能完成条件引用了未知输入";
   }
+
   const bad = forbiddenInSkill(JSON.stringify({ steps: skill.steps, program: skill.program, check: skill.check }));
+
   return bad ? `编译产物里出现了${bad}` : null;
 }

@@ -37,6 +37,7 @@ it("failure is distinct, recovery may proceed, and old completed events do not a
   a.finish();
   a.observe({ kind: "tool_start", toolCallId: "late", name: "read_element", params: {} });
   expect(a.state()).toBe("completed");
+
   for (const state of ["completed", "failed", "stopped", "user"] as const) expect(orbStateRuns(state)).toBe(false);
 });
 

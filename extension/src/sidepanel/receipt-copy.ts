@@ -4,6 +4,7 @@ import type { TaskReceipt, TaskReceiptDiff } from "../../../shared/task-actions.
 function diffLine(diff: TaskReceiptDiff): string {
   const changed = diff.changed.map((change) => `${change.attribute}：${change.from} → ${change.to}`).join("；");
   const preserved = diff.preserved.length ? `；${diff.preserved.join("、")}保持不变` : "";
+
   return `${diff.target}：${changed}${preserved}`;
 }
 
@@ -12,15 +13,20 @@ export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string
   const diff = receipt.diff ? diffLine(receipt.diff) : "";
   const detail = `${receipt.targetTitle} · ${receipt.message}${diff ? `\n${diff}` : ""}${receipt.text && !receipt.message.includes(receipt.text) ? `\n原话：${receipt.text}` : ""}`;
   const local = receipt.conversationId === selectedConversationId;
+
   if (local && receipt.status === "accepted" && receipt.action === "start") {
     return { summary: "任务已接收", detail, collapsed: true };
   }
+
   if (local && receipt.status === "accepted" && receipt.action === "steer") {
     const queued = receipt.message.includes("继续后生效");
+
     return { summary: queued ? "修改已保存，交还后生效" : "修改已送达当前任务", detail, collapsed: true };
   }
+
   if (local && receipt.status === "applied" && receipt.action === "steer") {
     return { summary: "修改已应用并核对", detail, collapsed: true };
   }
+
   return { summary: local ? receipt.message : `${receipt.targetTitle} · ${receipt.message}`, detail, collapsed: false };
 }

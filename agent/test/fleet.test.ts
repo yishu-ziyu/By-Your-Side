@@ -5,6 +5,7 @@ import type { BrowserAgentSession } from "../src/session.js";
 
 function fakeSession() {
   let held = false;
+
   return {
     session: {
       isStreaming: () => true,
@@ -15,6 +16,7 @@ function fakeSession() {
       continueAfterHandback: () => {
         if (!held) return false;
         held = false;
+
         return true;
       },
       abort: () => {
@@ -29,12 +31,14 @@ function fakeSession() {
 function deferredSession() {
   let held = false;
   let resolveContinue!: (ok: boolean) => void;
+
   const continued = new Promise<boolean>((resolve) => {
     resolveContinue = (ok) => {
       if (ok) held = false;
       resolve(ok);
     };
   });
+
   return {
     session: {
       isStreaming: () => true,
@@ -112,6 +116,7 @@ describe("Fleet 全队接管只接受真实会话", () => {
     const fleet = testFleet();
     const lead = deferredSession();
     fleet.attachLead(lead.session);
+
     const held = fleet.holdActiveGroup(
       [{ sessionId: LEAD_SESSION_ID, role: "lead", activity: "running", tabId: 11 }],
       { groupId: "restore-after-start", generation: 2 },
@@ -142,6 +147,7 @@ describe("Fleet 全队接管只接受真实会话", () => {
     const worker = deferredSession();
     fleet.attachLead(lead.session);
     (fleet as unknown as { workers: Map<string, BrowserAgentSession> }).workers.set("wiki", worker.session);
+
     const held = fleet.holdActiveGroup(
       [
         { sessionId: LEAD_SESSION_ID, role: "lead", activity: "running", tabId: 11 },
@@ -151,6 +157,7 @@ describe("Fleet 全队接管只接受真实会话", () => {
     );
 
     const updates: string[][] = [];
+
     const continuing = fleet.continueMembers(
       [
         {
@@ -191,12 +198,14 @@ describe("Fleet 全队接管只接受真实会话", () => {
     const fleet = testFleet();
     const lead = deferredSession();
     fleet.attachLead(lead.session);
+
     const held = fleet.holdActiveGroup(
       [{ sessionId: LEAD_SESSION_ID, role: "lead", activity: "running", tabId: 11 }],
       { groupId: "restore-timeout", generation: 5 },
     );
 
     const updates: string[][] = [];
+
     const continuing = fleet.continueMembers(
       [
         {
@@ -226,10 +235,12 @@ describe("Fleet 全队接管只接受真实会话", () => {
     const fleet = testFleet();
     const lead = deferredSession();
     fleet.attachLead(lead.session);
+
     const held = fleet.holdActiveGroup(
       [{ sessionId: LEAD_SESSION_ID, role: "lead", activity: "running", tabId: 11 }],
       { groupId: "cancelled-restore", generation: 4 },
     );
+
     const continuing = fleet.continueMembers(
       [
         {
@@ -256,6 +267,7 @@ describe("Fleet 全队接管只接受真实会话", () => {
     const worker = fakeSession();
     fleet.attachLead(lead.session);
     (fleet as unknown as { workers: Map<string, BrowserAgentSession> }).workers.set("wiki", worker.session);
+
     const held = fleet.holdActiveGroup(
       [
         { sessionId: LEAD_SESSION_ID, role: "lead", activity: "running", tabId: 11 },
@@ -263,6 +275,7 @@ describe("Fleet 全队接管只接受真实会话", () => {
       ],
       { groupId: "browser-frozen-group", generation: 7 },
     );
+
     expect(held).toMatchObject({ groupId: "browser-frozen-group", generation: 7 });
     (fleet as unknown as { workers: Map<string, BrowserAgentSession> }).workers.delete("wiki");
 
@@ -295,14 +308,18 @@ describe("Fleet 全队接管只接受真实会话", () => {
 describe("shared page worker registration", () => {
   it("registers each worker before binding the same tab without cloning it", async () => {
     const { BrowserAgentSession: Session } = await import("../src/session.js");
+
     const call = vi.fn(async (name: string) => {
       if (name !== "share_tab" && name !== "worker_tabs") throw new Error("SHARED_PAGE_REQUIRES_TRANSACTION");
+
       return { tabId: 42, collaborators: ["main", "writer"] };
     });
+
     const fleet = new Fleet({ rpc: { call } as never, sink: { emit: vi.fn(), setStatus: vi.fn() } });
     fleet.attachLead({ runtime: {}, modelName: () => "model" } as never);
     const worker = { available: true, sendUserMessage: vi.fn(), abort: vi.fn(), dispose: vi.fn() };
     const create = vi.spyOn(Session, "create").mockResolvedValue(worker as never);
+
     try {
       const result = await fleet.spawn({ id: "writer", goal: "prepare one independent field", sharedTabId: 42 });
       expect(result).toEqual({ id: expect.stringMatching(/^writer-cast-[a-z]+-[a-f0-9]{8}$/), tabId: 42 });
@@ -327,11 +344,13 @@ describe("真实创建身份与职责关联", () => {
     const fleet = new Fleet({ rpc: { call } as never, sink: { emit, setStatus: vi.fn() } });
     fleet.attachLead({ runtime: {}, modelName: () => "model" } as never);
     const create = vi.spyOn(Session, "create").mockImplementation(async () => ({ available: true, sendUserMessage: vi.fn(), abort: vi.fn(), dispose: vi.fn() }) as never);
+
     try {
       const [a, b] = await Promise.all([
         fleet.spawn({ id: "read", goal: "source A", task: "整理甲", output: "甲摘要", spawnToolCallId: "spawn-a" }),
         fleet.spawn({ id: "read", goal: "source B", task: "整理乙", output: "乙摘要", spawnToolCallId: "spawn-b" }),
       ]);
+
       expect(displayNameFor(a.id)).not.toBe(displayNameFor(b.id));
       expect(emit).toHaveBeenCalledWith({ kind: "worker_task", task: "整理甲", output: "甲摘要", spawnToolCallId: "spawn-a" }, a.id);
       expect(emit).toHaveBeenCalledWith({ kind: "worker_task", task: "整理乙", output: "乙摘要", spawnToolCallId: "spawn-b" }, b.id);

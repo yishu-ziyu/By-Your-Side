@@ -21,6 +21,7 @@ interface FakePanelPort {
 function fakePanelPort(): FakePanelPort {
   const sent: BgToPanel[] = [];
   const listeners: ((raw: unknown) => void)[] = [];
+
   return {
     name: "sideagent-panel",
     sent,
@@ -38,8 +39,10 @@ function fakePanelPort(): FakePanelPort {
 function installChromeStub() {
   const local = new Map<string, unknown>();
   const session = new Map<string, unknown>();
+
   const toObject = (map: Map<string, unknown>, keys: string | string[] | null | undefined) => {
     const out: Record<string, unknown> = {};
+
     if (typeof keys === "string") {
       if (map.has(keys)) out[keys] = map.get(keys);
     } else if (Array.isArray(keys)) {
@@ -47,9 +50,12 @@ function installChromeStub() {
     } else {
       for (const [k, v] of map) out[k] = v;
     }
+
     return out;
   };
+
   const onConnectListeners: ((port: FakePanelPort) => void)[] = [];
+
   const stub = {
     runtime: {
       onInstalled: { addListener: () => {} },
@@ -73,6 +79,7 @@ function installChromeStub() {
         },
         remove: async (keys: string | string[] | null) => {
           const list = keys == null ? [] : Array.isArray(keys) ? keys : [keys];
+
           for (const k of list) session.delete(k);
         },
       },
@@ -93,6 +100,7 @@ function installChromeStub() {
       setPanelBehavior: async () => {},
     },
   };
+
   return { stub, onConnectListeners };
 }
 
@@ -100,9 +108,11 @@ function firstUserEntry(sent: BgToPanel[], text?: string): PanelHistoryEntry {
   for (const e of sent) {
     if (e.kind === "history") {
       const entry = e.entries.find((x) => x.item.kind === "user" && (!text || x.item.text === text));
+
       if (entry) return entry;
     }
   }
+
   throw new Error("没有收到用户消息的 history 回显");
 }
 
@@ -161,12 +171,14 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
   it("steer：同样回执 delivery ok:false，original 保留 steer 类型与上下文", async () => {
     const port = fakePanelPort();
     connectPanel(port);
+
     const context = {
       tabId: 1,
       title: "测试页",
       url: "https://example.com/page",
       selection: { text: "E2E 引用" },
     };
+
     port.deliver({ kind: "client", msg: { type: "steer", text: "E2E 插话", context } });
 
     const entry = await vi.waitFor(() => firstUserEntry(port.sent, "E2E 插话"));
@@ -199,15 +211,18 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
     );
     const receipts = port.sent.filter((e) => e.kind === "delivery");
     const seqByText = new Map<string, number>();
+
     for (const r of receipts) {
       if (r.original.type === "user_message" || r.original.type === "steer") {
         seqByText.set(r.original.text, r.seq);
       }
     }
+
     const userEntries = port.sent
       .filter((e): e is Extract<BgToPanel, { kind: "history" }> => e.kind === "history")
       .flatMap((e) => e.entries)
       .filter((x) => x.item.kind === "user") as PanelHistoryEntry[];
+
     const first = userEntries.find((x) => x.item.kind === "user" && x.item.text === "第一条");
     const second = userEntries.find((x) => x.item.kind === "user" && x.item.text === "第二条");
     expect(seqByText.get("第一条")).toBe(first?.seq);
@@ -226,16 +241,20 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
 
   it("不同会话的回执保持隔离，失败状态持久保存", async () => {
     const port = fakePanelPort(); connectPanel(port);
+
     for (const id of ["delivery-A", "delivery-B"]) {
       port.deliver({ kind: "select_conversation", conversationId: id });
       port.deliver({ kind: "client", msg: { type: "user_message", conversationId: id, text: id } });
     }
+
     await vi.waitFor(() => expect(port.sent.filter(e => e.kind === "delivery")).toHaveLength(2));
+
     for (const id of ["delivery-A", "delivery-B"]) {
       expect(port.sent).toContainEqual(expect.objectContaining({kind:"delivery",conversationId:id,original:expect.objectContaining({conversationId:id,text:id})}));
       const stored = await chromeStub.storage.local.get(`history:${id}`);
       expect(stored[`history:${id}`].entries).toContainEqual(expect.objectContaining({item:expect.objectContaining({kind:"user",text:id,undelivered:{original:{type:"user_message",conversationId:id,text:id}}})}));
     }
+
     port.deliver({ kind: "select_conversation", conversationId: "default" });
   });
 

@@ -74,6 +74,7 @@ export function evaluateTeamRun(driver, expected = {}) {
   const workerSnap = workerPage?.snapshot ?? driver?.snapshots?.workerAfterUser ?? "";
   const leadTab = leadPage?.context?.tabId ?? leadPage?.tabId;
   const workerTab = workerPage?.context?.tabId ?? workerPage?.tabId;
+
   const independent =
     Boolean(leadPage) &&
     Boolean(workerPage) &&
@@ -128,9 +129,11 @@ export function evaluateTeamRun(driver, expected = {}) {
 
   const continuityBefore = driver?.originalTask?.before ?? [];
   const continuityAfter = driver?.originalTask?.after ?? [];
+
   function continuityAdvanced(sessionId, tabId) {
     const before = continuityBefore.find((item) => item.sessionId === sessionId);
     const after = continuityAfter.find((item) => item.sessionId === sessionId);
+
     return Boolean(
       before &&
         after &&
@@ -153,6 +156,7 @@ export function evaluateTeamRun(driver, expected = {}) {
         after.resumeContinuationMarkerFound === true
     );
   }
+
   const leadContinuity = continuityAdvanced(driver?.lead?.sessionId, driver?.lead?.tabId);
   const workerContinuity = continuityAdvanced(driver?.worker?.sessionId, driver?.worker?.tabId);
   const beforeTasks = new Set(continuityBefore.map((item) => item.taskId));
@@ -196,6 +200,7 @@ export function evaluateTeamRun(driver, expected = {}) {
   }
 
   const failed = steps.find((s) => !s.ok);
+
   return {
     ok: !failed && !driver?.error,
     startedAt: started,
@@ -210,9 +215,11 @@ export function evaluateTeamRun(driver, expected = {}) {
 export function formatTeamRun(index, evaluated) {
   const head = evaluated.ok ? `PASS team ${index}` : `FAIL team ${index} ${evaluated.failureStage ?? ""}`;
   const lines = [head];
+
   for (const step of evaluated.steps) {
     lines.push(`  ${step.ok ? "PASS" : "FAIL"} ${step.name}`);
   }
+
   return lines.join("\n");
 }
 

@@ -5,12 +5,14 @@ import { createBrowserTools } from '../src/tools.js';
 import type { ServerMessage } from '../../shared/protocol.js';
 
 const cleanup: Array<() => void> = [];
+
 afterEach(() => cleanup.splice(0).forEach(close => close()));
 
 async function harness() {
   const messages: ServerMessage[] = [], facts = new Map<string, string>();
   const prompt = vi.fn();
   let unknownWrite = false, wrapper!: BrowserAgentSession, emit!: (message: any) => void;
+
   const rpc: any = {
     setPageTarget: vi.fn(), getPageTarget: () => 7,
     resolvePageParams: (_: string, params: object) => ({ tabId: 7, ...params }),
@@ -18,17 +20,25 @@ async function harness() {
     getExecutionFact: (id: string) => facts.get(id), noteToolFact: (id: string, fact: string) => facts.set(id, fact),
     call: vi.fn(async (name: string, _params: unknown, _timeout: unknown, _member: unknown, _program: unknown, _epoch: unknown, id: string) => {
       facts.set(id, unknownWrite && name === 'fill' ? 'unknown' : 'executed');
+
       if (unknownWrite && name === 'fill') throw Object.assign(new Error('receipt timeout'), { executionFact: 'unknown' });
+
       if (name === 'snapshot') return { tabId: 7, url: 'https://example.test', text: 'page' };
+
       if (name === 'list_tabs') return { tabs: [{ id: 7, url: 'https://example.test', title: 'page' }] };
+
       if (name === 'get_active_tab') return { tab: { id: 7, url: 'https://example.test', title: 'page' } };
+
       return { tabId: 8 };
     }),
   };
+
   const manager = new ConversationManager(async (_id, sink) => {
     emit = sink;
+
     const raw: any = { isStreaming: false, prompt, agent: { state: { tools: [], messages: [] } },
       sessionManager: { appendCustomEntry: vi.fn(), getBranch: () => [] } };
+
     wrapper = new (BrowserAgentSession as any)(raw, null, {
       emit: (event: any) => sink({ type: 'agent_event', event }),
       setStatus: (state: any) => sink({ type: 'status', state }),
@@ -37,12 +47,16 @@ async function harness() {
       epoch: () => wrapper.executionEpoch(), canWrite: id => wrapper.canWriteCurrentInput(id),
       assertCall: (name, params, id) => wrapper.assertTaskResultExecution(name, params, id),
     });
+
     return { session: wrapper, rpc, fleet: { teamView: () => null, isGroupHeld: () => false }, dispose: vi.fn() } as any;
   }, message => messages.push(message));
+
   cleanup.push(() => manager.dispose());
   await manager.ensureDefault();
+
   const call = (inputId: string, name: string, args = {}, signal = new AbortController().signal) => manager.executeRealtimeBrowserTool('default',
     { inputId, callId: `${inputId}-${name}`, name, args, text: '本轮操作' }, {}, signal);
+
   return { manager, messages, prompt, rpc, call, emit: (event: any) => emit({ type: 'agent_event', event }),
     snap: () => manager.getTaskProgress('default')!, unknown: (value: boolean) => { unknownWrite = value; } };
 }
@@ -70,15 +84,18 @@ it('B: unknown write allows inspection but retains its run and blocks writes unt
   await expect(h.call('write', 'fill', { target: '#name', value: 'x' })).rejects.toThrow('receipt timeout');
   const runId = h.snap().runId, item = h.snap().results!.find(r => r.status === 'unknown')!;
   expect(item?.evidence?.toolCallId).toBeTruthy();
+
   for (const [name, args] of [['snapshot', {}], ['tabs', { action: 'list' }], ['tabs', { action: 'active' }]] as const) {
     await h.call(`inspect-${JSON.stringify(args)}`, name, args);
     expect(h.snap().runId).toBe(runId);
     expect(h.snap().results!.find(r => r.id === item.id)?.status).toBe('unknown');
   }
+
   for (const action of ['open', 'switch', 'close']) {
     await expect(h.call(`blocked-${action}`, 'tabs', { action, tabId: 8 })).rejects.toThrow();
     expect(h.snap().runId).toBe(runId);
   }
+
   await expect(h.call('retry', 'fill', { target: '#name', value: 'x' })).rejects.toThrow();
   h.emit({ kind: 'tool_late_result', toolCallId: 'unrelated', name: 'fill', ok: true, executionFact: 'executed' });
   expect(h.snap().results!.find(r => r.id === item.id)?.status).toBe('unknown');

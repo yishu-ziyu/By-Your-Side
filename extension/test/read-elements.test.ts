@@ -7,13 +7,16 @@ async function loadReadElements(options: {
   resolvedTab?: { id: number | undefined | null };
 } = {}) {
   vi.resetModules();
+
   const resolveReadableTab = options.resolveError
     ? vi.fn(async () => { throw new Error(options.resolveError); })
     : vi.fn(async (tabId: number) => options.resolvedTab ?? { id: tabId });
+
   vi.doMock("../src/background/state.js", () => ({
     getWorkingTabId: vi.fn(async () => 12),
     resolveReadableTab,
   }));
+
   return import("../src/background/exec/read-elements.js");
 }
 
@@ -22,7 +25,9 @@ function installScriptExecution(documentId?: string) {
   const executeScript = vi.fn(async (details: any) => [
     { result: details.func(...details.args), ...(documentId ? { documentId } : {}) },
   ]);
+
   vi.stubGlobal("chrome", { scripting: { executeScript } });
+
   return executeScript;
 }
 
@@ -230,9 +235,11 @@ describe("read_elements", () => {
 
   it("输出超过安全上限时报错，不返回部分内容", async () => {
     const huge = Array.from({ length: 5 }, (_, i) => makeElement({ textContent: `huge-${i}` }));
+
     for (const element of huge) {
       element.__style = { visibility: "visible", display: "block", backgroundColor: "x".repeat(60_000), color: "", outline: "", border: "", textDecoration: "", fontWeight: "" };
     }
+
     installDocument(huge);
     installComputedStyle();
     installScriptExecution();

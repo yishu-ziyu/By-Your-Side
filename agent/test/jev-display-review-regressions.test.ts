@@ -1,28 +1,38 @@
 /** Review regressions: scripted responses, production manager/tool gates, no model APIs. */
 import {beforeEach, describe, expect, it, vi} from 'vitest';
+
 vi.mock('../src/display-fast-path.js', () => ({
   displayFastPathEnabled: () => true, displaySteerFastPathEnabled: () => true, decideDisplay: vi.fn(),
 }));
+
 vi.mock('../src/run-trace.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/run-trace.js')>();
+
   return {...actual, RunTrace: class {begin() {} correlate() {} record() {} event() {} stage() {return {end() {}}}}};
 });
+
 import {decideDisplay} from '../src/display-fast-path.js';
 import {candidate, context, managerHarness, pageHarness} from './fixtures/display-steering-harness.js';
 
 beforeEach(() => vi.mocked(decideDisplay).mockReset());
+
 describe('Jev display review regressions', () => {
   it('R1: rejects a stale edit instead of sending it to the model on the replacement document', async () => {
     const {h, manager} = await managerHarness();
     vi.mocked(decideDisplay).mockImplementation(async () => {
-      h.pageState.document = 'replacement'; return candidate({fontFamily: 'songti'});
+      h.pageState.document = 'replacement';
+
+ return candidate({fontFamily: 'songti'});
     });
+
     const receipt = await manager.dispatchTaskAction({requestId: 'refresh', conversationId: 'default', source: 'text', action: 'steer',
       expectedRunId: manager.getTaskProgress('default')!.runId ?? null, text: '把译文改成宋体', context});
+
     if (h.steers.length) {
       h.messageStart(h.steers.at(-1)!);
       await h.tool('page_translation').execute('fallback-write', {action: 'display', fontFamily: 'songti', tabId: 7, document: h.pageState.document});
     }
+
     expect(h.translationCalls).toHaveLength(0);
     expect(h.steers).toHaveLength(0);
     expect(receipt.status).toBe('rejected');
@@ -51,11 +61,15 @@ describe('Jev display review regressions', () => {
     let release: (() => void) | undefined;
     h.rpc.call.mockImplementation(async (name: string, params: any, ...rest: any[]) => {
       const result = await original(name, params, ...rest);
+
       if (name === 'snapshot' && ++count === 3) await new Promise<void>(resolve => {release = resolve;});
+
       return result;
     });
+
     const pending = manager.dispatchTaskAction({requestId: 'late-readback', conversationId: 'default', source: 'text', action: 'steer',
       expectedRunId: manager.getTaskProgress('default')!.runId ?? null, text: '把译文改成宋体', context});
+
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     await manager.handleMessage({type: 'abort', conversationId: 'default'} as never);
     h.wrapper.abort(); h.setStreaming(false); h.agentEnd(); release!();
@@ -81,7 +95,9 @@ describe('Jev display review regressions', () => {
   it.each(['timeout', 'direct_uncertain'] as const)('R1: a %s fallback also expires on refresh, and a fresh request remains usable', async reason => {
     const h = pageHarness();
     vi.mocked(decideDisplay).mockImplementationOnce(async () => {
-      h.pageState.document = 'new-document'; return {kind: 'fallback', reason};
+      h.pageState.document = 'new-document';
+
+ return {kind: 'fallback', reason};
     });
     await expect(h.wrapper.steerCurrentTask('把译文改成宋体', context)).rejects.toThrow('页面实例已变化');
     expect(h.steers).toHaveLength(0);
@@ -116,10 +132,13 @@ describe('Jev display review regressions', () => {
     let release: (() => void) | undefined;
     vi.mocked(entry.runtime.fleet.reviseSharedRequirement).mockImplementationOnce(async () => {
       await new Promise<void>(resolve => {release = resolve;});
+
       return {notified: [], queued: [], skipped: [], failed: []};
     });
+
     const pending = manager.dispatchTaskAction({requestId: 'late-members', conversationId: 'default', source: 'text', action: 'steer',
       expectedRunId: manager.getTaskProgress('default')!.runId ?? null, text: '把译文改成宋体', context});
+
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     await manager.handleMessage({type: 'abort', conversationId: 'default'} as never);
     h.wrapper.abort(); h.setStreaming(false); h.agentEnd(); release!();
@@ -136,6 +155,7 @@ describe('Jev display review regressions', () => {
     await h.wrapper.steerCurrentTask('把译文改成宋体', context);
     vi.mocked(decideDisplay).mockResolvedValueOnce({kind: 'fallback', reason: 'extra_or_uncertain'});
     await h.wrapper.steerCurrentTask('稍后告诉我文章标题', context);
+
     if (reason === 'ended') {h.setStreaming(false); h.agentEnd();} else h.wrapper.abort();
     const notices = h.emitted.filter((event: any) => event.kind === 'notice').map((event: any) => event.message as string).join('\n');
     expect(notices).toContain('显示修改已核验');

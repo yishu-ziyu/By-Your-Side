@@ -101,9 +101,11 @@ describe("TaskProgress conversationContext", () => {
 
   it("bounds turns and text, and keeps old results only as turns", () => {
     const p = new TaskProgress("c");
+
     for (let i = 0; i < 15; i++) runWithResult(p, `任务${i} ${"长".repeat(2100)}`, `结果${i}`);
     const s = p.snapshot();
     expect(s.conversationContext?.recentTurns.length).toBeLessThanOrEqual(12);
+
     for (const t of s.conversationContext?.recentTurns ?? []) expect(t.text.length).toBeLessThanOrEqual(2000);
     expect(s.conversationContext?.latestResult?.text).toBe("结果14");
     expect(s.conversationContext?.latestResult!.text.length).toBeLessThanOrEqual(6000);
@@ -129,13 +131,17 @@ describe("voice user turns in recentTurns", () => {
 
   it("feeds processed voice chat/steer originals to the next classification, replay excluded", async () => {
     const runtimes = new Map<string, any>();
+
     const manager = new ConversationManager(async (id, emit) => {
       let running = false;
+
       const publish = (message: ServerMessage) => {
         if (message.type === "agent_event" && message.event.kind === "agent_start") running = true;
+
         if (message.type === "agent_event" && message.event.kind === "agent_end") running = false;
         emit(message);
       };
+
       const runtime: any = {
         session: {
           modelName: () => "test", availableModels: async () => [], available: true,
@@ -147,9 +153,12 @@ describe("voice user turns in recentTurns", () => {
         rpc: { rejectAll: vi.fn() }, dispose: () => {},
         handleMessage: (message: any) => { if (message.type === "user_message") publish({ type: "agent_event", event: { kind: "agent_start" } }); },
       };
+
       runtimes.set(id, { runtime, publish });
+
       return runtime;
     }, () => {});
+
     await manager.ensureDefault();
     await manager.handleMessage({ type: "user_message", text: "看最近邮件" });
     runtimes.get("default")!.publish({ type: "agent_event", event: { kind: "turn_start" } });

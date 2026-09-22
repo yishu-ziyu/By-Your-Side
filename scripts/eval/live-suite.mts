@@ -14,14 +14,18 @@ import { DEFAULT_BUDGET_FILE, assertWithinBudget, loadBudget, loadSpend, recordS
 import { REPO_ROOT } from "./lib/verify.js";
 
 const MODEL = "minimax-cn/MiniMax-M3";
+
 const TIMEOUT_MS = 180_000;
+
 const COST_PER_CALL_USD = 0.04;
+
 const ACTION_TOOLS = new Set([
   "click", "fill", "type_text", "press_key", "scroll", "navigate", "open_tab", "switch_tab", "close_tab",
   "page_operation", "js", "mark", "clear_marks", "hover",
 ]);
 
 export type Family = "read" | "form" | "multi";
+
 export interface Template {
   id: string;
   family: Family;
@@ -73,6 +77,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function arg(name: string, fallback: string): string {
   const flag = process.argv.find((a) => a.startsWith(`${name}=`));
+
   return flag ? flag.slice(name.length + 1) : fallback;
 }
 
@@ -85,12 +90,14 @@ export async function runLiveSuite(): Promise<{ ok: boolean; runId: string; path
   writeFileSync(join(outDir, "templates.json"), JSON.stringify(TEMPLATES.map((t) => ({ id: t.id, family: t.family, task: t.task })), null, 2));
 
   const htmlById = new Map(TEMPLATES.map((t) => [t.id, t.html]));
+
   const server: Server = createServer((req, res) => {
     const id = new URL(req.url ?? "/", "http://local").searchParams.get("t") ?? "";
     const html = htmlById.get(id) ?? page("<p>unknown</p>");
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.end(html);
   });
+
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const iso = await launchIsolatedExtension();
@@ -98,6 +105,7 @@ export async function runLiveSuite(): Promise<{ ok: boolean; runId: string; path
   let stopped: string | null = null;
 
   const work: Array<{ template: Template; replica: number }> = [];
+
   for (let replica = 1; replica <= replicas; replica += 1) {
     for (const template of TEMPLATES) work.push({ template, replica });
   }
@@ -110,7 +118,9 @@ export async function runLiveSuite(): Promise<{ ok: boolean; runId: string; path
         stopped = error instanceof Error ? error.message : String(error);
         break;
       }
+
       let row: Record<string, unknown>;
+
       try {
         row = await runOne(iso, origin, template, replica, join(outDir, `${template.id}-${replica}`));
       } catch (error) {
@@ -126,14 +136,17 @@ export async function runLiveSuite(): Promise<{ ok: boolean; runId: string; path
           totalMs: 0,
         };
       }
+
       rows.push(row);
       const calls = Number(row.modelCalls ?? 0);
+
       try {
         recordSpend({ model_calls: calls, cost: calls * COST_PER_CALL_USD, note: `${template.id}#${replica}` });
       } catch (error) {
         stopped = error instanceof Error ? error.message : String(error);
         break;
       }
+
       writeFileSync(join(outDir, "progress.json"), JSON.stringify({ runId, done: rows.length, total: work.length, stopped, remaining: remaining(budget, loadSpend()) }, null, 2));
       console.log(JSON.stringify({ id: template.id, replica, ok: row.ok, modelCalls: row.modelCalls, totalMs: row.totalMs, reason: row.reason }));
     }
@@ -144,6 +157,7 @@ export async function runLiveSuite(): Promise<{ ok: boolean; runId: string; path
 
   const byFamily = (family: Family) => rows.filter((r) => r.family === family);
   const rate = (list: Record<string, unknown>[]) => (list.length ? list.filter((r) => r.ok === true).length / list.length : null);
+
   const summary = {
     runId,
     model: MODEL,
@@ -157,7 +171,9 @@ export async function runLiveSuite(): Promise<{ ok: boolean; runId: string; path
     stopped,
     spend: loadSpend(),
   };
+
   writeFileSync(join(outDir, "summary.json"), JSON.stringify({ summary, rows }, null, 2));
+
   return { ok: stopped === null && rows.length === work.length, runId, path: outDir };
 }
 
@@ -168,10 +184,13 @@ async function runOne(iso: IsolatedExtension, origin: string, template: Template
   const messages: ServerMessage[] = [];
   const bridge = new Set<Promise<unknown>>();
   let manager!: ConversationManager;
+
   const emit = (message: ServerMessage): void => {
     messages.push(message);
+
     if (message.type !== "tool_call") return;
     const sessionId = message.sessionId ?? "main";
+
     const job = (iso.swEval(
       `globalThis.__saCall(${JSON.stringify(`${cid}-${message.id}`)}, ${JSON.stringify(message.name)}, ${JSON.stringify(message.params)}, ${JSON.stringify(sessionId)}, ${JSON.stringify((message as { programId?: string }).programId ?? null)}, ${JSON.stringify(cid)})`,
       60_000,
@@ -187,76 +206,99 @@ async function runOne(iso: IsolatedExtension, origin: string, template: Template
       .catch((error) => manager.handleMessage({
         type: "tool_result", conversationId: message.conversationId ?? cid, id: message.id, ok: false, error: String(error),
       } as ClientMessage));
+
     bridge.add(job);
     void job.finally(() => bridge.delete(job));
   };
+
   manager = new ConversationManager(
     (id, emitServer, summary) => createConversationRuntime(id, emitServer, MODEL, { sessionManager: store.sessionManager(id), mode: summary?.mode }),
     emit,
     store,
   );
   const entry = await manager.ensureDefault();
+
   if (!entry.runtime.session.available) throw new Error("模型会话不可用");
   let seq = 0;
+
   const call = (name: string, params: Record<string, unknown>) =>
     iso.swEval(`globalThis.__saCall(${JSON.stringify(`${cid}-setup-${++seq}`)}, ${JSON.stringify(name)}, ${JSON.stringify(params)}, "main", undefined, ${JSON.stringify(cid)})`, 60_000) as Promise<{ ok?: boolean; data?: { tabId?: number }; error?: string }>;
+
   const url = `${origin}/?t=${template.id}`;
   const opened = await call("open_tab", { url });
   const tabId = opened?.data?.tabId;
+
   if (opened?.ok !== true || typeof tabId !== "number") throw new Error(`open_tab 失败：${JSON.stringify(opened)}`);
   await call("switch_tab", { tabId });
   await iso.swEval(`chrome.tabs.update(${tabId},{active:true}).catch(()=>{})`).catch(() => {});
+
   if (template.id.includes("video") || template.html.includes("<video")) {
     for (let n = 0; n < 20; n += 1) {
       await iso.swEval(`chrome.scripting.executeScript({target:{tabId:${tabId}},world:'MAIN',func:()=>{const v=document.querySelector('video');if(!v)return;v.muted=true;return v.play().catch(()=>{});}})`).catch(() => {});
       await sleep(150);
     }
   }
+
   const context: PageContext = { tabId, url, title: template.title };
   const startedAt = Date.now();
   await manager.handleMessage({ type: "user_message", text: template.task, context } as ClientMessage);
+
   const waitIdle = async (): Promise<void> => {
     const deadline = Date.now() + TIMEOUT_MS;
+
     while (Date.now() < deadline) {
       const runtime = manager.get("default")?.runtime;
       const running = runtime?.session.isStreaming() === true || Boolean(runtime?.fleet.size);
       const ended = messages.some((m) => m.type === "agent_event" && m.event.kind === "agent_end");
       const erred = messages.some((m) => m.type === "agent_event" && m.event.kind === "error");
+
       if (!running && (ended || erred) && bridge.size === 0) {
         if (erred) return;
         const makeupDeadline = Date.now() + 12_000;
+
         while (Date.now() < makeupDeadline) {
           const snap = manager.getTaskProgress("default");
           const kind = snap?.conversationContext?.latestDelivery?.kind;
+
           if (kind === "finding" || kind === "reply") return;
           const notice = messages.some((m) => m.type === "agent_event" && m.event.kind === "notice" && String((m as { event?: { message?: string } }).event?.message ?? "").includes("正式回答还没有"));
+
           if (notice) return;
           await sleep(150);
         }
+
         return;
       }
+
       await sleep(150);
     }
   };
+
   await waitIdle();
+
   if (template.followup) {
     await manager.handleMessage({ type: "user_message", text: template.followup, context } as ClientMessage);
     await waitIdle();
   }
+
   await sleep(400);
+
   const oracle = await iso.swEval(
     `chrome.scripting.executeScript({target:{tabId:${tabId}},world:'MAIN',func:new Function(${JSON.stringify(`${template.verify}`)})}).then(r=>r[0].result).catch(e=>({ok:false,detail:String(e)}))`,
     15_000,
   ) as { ok?: boolean; detail?: string };
+
   const deliveries = messages
     .filter((m) => m.type === "agent_event" && m.event.kind === "user_delivery")
     .map((m) => (m as { event: { delivery?: { kind?: string; text?: string } } }).event.delivery)
     .filter((d) => d && d.kind !== "ack");
+
   const deliveryText = deliveries.map((d) => d?.text ?? "").join("\n");
   const deliveryOk = template.expectDelivery ? deliveryText.includes(template.expectDelivery) : deliveries.length >= 1;
   const modelCalls = messages.filter((m) => m.type === "agent_event" && m.event.kind === "turn_start").length;
   const firstAction = messages.find((m) => m.type === "tool_call" && ACTION_TOOLS.has((m as { name: string }).name));
   const ok = oracle?.ok === true && deliveryOk;
+
   const row = {
     id: template.id,
     family: template.family,
@@ -272,9 +314,11 @@ async function runOne(iso: IsolatedExtension, origin: string, template: Template
     tools: messages.filter((m) => m.type === "tool_call").map((m) => (m as { name: string }).name),
     firstAction: firstAction ? (firstAction as { name: string }).name : null,
   };
+
   writeFileSync(join(out, "run.json"), JSON.stringify(row, null, 2));
   entry.runtime.dispose();
   await iso.swEval(`chrome.tabs.remove(${tabId}).catch(()=>{})`).catch(() => {});
+
   return row;
 }
 

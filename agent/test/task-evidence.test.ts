@@ -24,6 +24,7 @@ it('精确选句拒绝改写和有歧义的重复文本，不扩大范围或猜�
   expect(() => store.prepareFragments('m','句子',observation,'note','note','Same sentence.')).toThrow('多处');
   expect(store.prepareFragments('m','句子',observation,'note','note','Another sentence.').value).toBe('Another sentence.');
 });
+
 it('跨页取用原文，持久化恢复不需要旧节点引用', () => {
   const evidence = new TaskEvidence(); evidence.observe(source);
   const start = source.text.indexOf('00:00'), end = source.text.indexOf('\n第二条');
@@ -36,6 +37,7 @@ it('跨页取用原文，持久化恢复不需要旧节点引用', () => {
   expect(restored.list(source.runId, 'new-revision').materials).toEqual([material]);
   expect(restored.list('another-run','new-revision').materials).toEqual([]);
 });
+
 it('拒绝跨任务来源、截断、重叠与替换同名材料', () => {
   const evidence = new TaskEvidence(); evidence.observe(source);
   expect(() => evidence.read(source.id, 'other-run')).toThrow('当前任务');
@@ -68,8 +70,10 @@ it('单份原文超过 8000 字符时报错含实际字符数、上限与可行�
   const evidence = new TaskEvidence();
   const long = { ...source, id: 'long-source', text: 'a'.repeat(9830) };
   let overLimit = '';
+
   try { evidence.prepare('long', '整篇正文', long, [{ start: 0, end: 9830 }]); }
   catch (error) { overLimit = (error as Error).message; }
+
   expect(overLimit).toContain('9830');
   expect(overLimit).toContain('8000');
   expect(overLimit).toContain('task_goals');
@@ -77,6 +81,7 @@ it('单份原文超过 8000 字符时报错含实际字符数、上限与可行�
   expect(() => evidence.prepare('blank', '空白', blank, [{ start: 2, end: 5 }])).toThrow('为空');
   expect(overLimit).not.toContain('为空');
 });
+
 it('restore 仍拒绝超过 8000 字符的材料', () => {
   const evidence = new TaskEvidence();
   const oversized = { id: 'm', purpose: '正文', value: 'a'.repeat(8001), source: 'observed', observation: { id: 'o', runId: 'r', revision: 'rv', tabId: 1, truncated: false, at: 1 }, selection: { kind: 'text', spans: [{ start: 0, end: 8001 }] } };

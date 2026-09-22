@@ -11,6 +11,7 @@ import { createBrowserTools } from "../src/tools.js";
 function makeRpc() {
   const sent: ToolCallFrame[] = [];
   const rpc = new ToolRpc((frame) => sent.push(frame));
+
   return { rpc, sent };
 }
 
@@ -140,6 +141,7 @@ describe("session sets the task default page", () => {
   function sessionWith(rpc: ToolRpc, streaming: boolean) {
     const prompts: string[] = [];
     const steers: string[] = [];
+
     const fake = {
       model: { id: "fake" },
       agent: { state: { messages: [], tools: [] } },
@@ -147,18 +149,22 @@ describe("session sets the task default page", () => {
       prompt: async (text: string) => { prompts.push(text); },
       steer: async (text: string) => { steers.push(text); },
     };
+
     const session = new (BrowserAgentSession as any)(
       fake, null, { emit: () => {}, setStatus: () => {} }, null, null, 30_000, null, rpc,
     );
+
     return { session, prompts, steers };
   }
 
   const autoRpc = () => {
     const sent: ToolCallFrame[] = [];
+
     const rpc = new ToolRpc((frame) => {
       sent.push(frame);
       queueMicrotask(() => rpc.handleResult(frame.id, true, { text: "page text", tabId: frame.params.tabId }));
     });
+
     return { rpc, sent };
   };
 
@@ -186,10 +192,12 @@ describe("session sets the task default page", () => {
 describe("default page reaches both tool paths", () => {
   const toolRpc = () => {
     const sent: ToolCallFrame[] = [];
+
     const rpc = new ToolRpc((frame) => {
       sent.push(frame);
       queueMicrotask(() => rpc.handleResult(frame.id, true, { text: "page text", tabId: frame.params.tabId ?? 0, clicked: true }));
     });
+
     return { rpc, sent };
   };
 

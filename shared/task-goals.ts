@@ -28,6 +28,7 @@ export function isTaskGoalPlan(value: unknown): value is TaskGoalPlan {
   const plan = value as TaskGoalPlan;
   const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
   const ids = (v: unknown): v is string[] => Array.isArray(v) && v.length <= 32 && v.every(id => text(id, 64));
+
   return text(plan.revision, 64) && ['unplanned', 'verified'].includes(plan.coverage)
     && Array.isArray(plan.goals) && plan.goals.length > 0 && plan.goals.length <= 32
     && new Set(plan.goals.map(g => g?.id)).size === plan.goals.length

@@ -31,13 +31,21 @@ const MAX_CHARS = 24;
  */
 export function safeEarlyText(raw: string): string | null {
   const text = (raw ?? "").replace(/\s+/g, " ").trim();
+
   if (!text) return null;
+
   if (text.length > MAX_CHARS) return null;
+
   if (/[0-9０-９]/.test(text)) return null;
+
   // 拉丁词多是专名（BOSS、Chrome、URL）或内部字段，接话不报专名。
   if (/[A-Za-z]{2,}/.test(text)) return null;
+
   if (CONTENT_TOKENS.test(text)) return null;
+
   if (CLAIM_TOKENS.test(text)) return null;
+
   if ((text.match(/[。！？!?]/g) ?? []).length > 1) return null;
+
   return text;
 }

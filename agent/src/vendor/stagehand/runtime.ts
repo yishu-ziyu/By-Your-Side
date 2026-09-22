@@ -139,6 +139,7 @@ export async function createPlaywrightCompatRuntime(
   stagehand: BatchStagehandRuntime,
 ): Promise<PlaywrightCompatRuntime> {
   type CompatStats = PlaywrightCompatTelemetry;
+
   type QueryResult = {
     count: number;
     value?: unknown;
@@ -150,6 +151,7 @@ export async function createPlaywrightCompatRuntime(
   };
 
   const stats: CompatStats = { calls: {}, misses: {} };
+
   const record = (bucket: "calls" | "misses", method: string): void => {
     stats[bucket][method] = (stats[bucket][method] ?? 0) + 1;
   };
@@ -169,7 +171,9 @@ export async function createPlaywrightCompatRuntime(
     new Proxy(target, {
       get(current, property, receiver) {
         if (property === "then") return undefined;
+
         if (Reflect.has(current, property)) return Reflect.get(current, property, receiver);
+
         return (..._args: unknown[]) => unsupported(surface, property);
       },
     });
@@ -213,47 +217,64 @@ export async function createPlaywrightCompatRuntime(
     type QueryRoot = Document | Element | ShadowRoot;
 
     const normalize = (value: string): string => value.replace(/\s+/gu, " ").trim();
+
     const matches = (value: string, expected: JsonMatcher): boolean => {
       const normalized = normalize(value);
+
       if (expected.kind === "regexp") {
         return new RegExp(expected.source, expected.flags).test(normalized);
       }
+
       const target = normalize(expected.value);
+
       return expected.exact
         ? normalized === target
         : normalized.toLocaleLowerCase().includes(target.toLocaleLowerCase());
     };
+
     const visible = (element: Element): boolean => {
       const style = getComputedStyle(element);
+
       if (style.visibility === "hidden" || style.display === "none") return false;
       const rect = element.getBoundingClientRect?.();
+
       return Boolean(rect && rect.width > 0 && rect.height > 0);
     };
+
     const dedupe = (elements: Element[]): Element[] => {
       const seen = new Set<Element>();
+
       return elements.filter((element) => {
         if (seen.has(element)) return false;
         seen.add(element);
+
         return true;
       });
     };
+
     const queryCssDeep = (root: QueryRoot, selector: string): Element[] => {
       const direct = [...root.querySelectorAll(selector)];
+
       const ownShadow =
         root instanceof Element && root.shadowRoot ? queryCssDeep(root.shadowRoot, selector) : [];
+
       const nested = [...root.querySelectorAll("*")].flatMap((element) =>
         element.shadowRoot ? queryCssDeep(element.shadowRoot, selector) : [],
       );
+
       return dedupe([...direct, ...ownShadow, ...nested]);
     };
+
     const smallestTextMatches = (elements: Element[], expected: JsonMatcher): Element[] =>
       elements.filter(
         (element) =>
           matches(element.textContent ?? "", expected) &&
           ![...element.children].some((child) => matches(child.textContent ?? "", expected)),
       );
+
     const queryXPath = (root: QueryRoot, expression: string): Element[] => {
       const documentNode = root instanceof Document ? root : root.ownerDocument;
+
       const result = documentNode.evaluate(
         expression,
         root,
@@ -261,24 +282,32 @@ export async function createPlaywrightCompatRuntime(
         XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
         null,
       );
+
       const elements: Element[] = [];
+
       for (let index = 0; index < result.snapshotLength; index += 1) {
         const node = result.snapshotItem(index);
+
         if (node instanceof Element) elements.push(node);
       }
+
       return elements;
     };
+
     const splitSelectorList = (selector: string): string[] => {
       const parts: string[] = [];
       let start = 0;
       let depth = 0;
       let quote = "";
+
       for (let index = 0; index < selector.length; index += 1) {
         const character = selector[index]!;
+
         if (quote) {
           if (character === quote && selector[index - 1] !== "\\") quote = "";
           continue;
         }
+
         if (character === '"' || character === "'") {
           quote = character;
         } else if (character === "(" || character === "[") {
@@ -290,20 +319,27 @@ export async function createPlaywrightCompatRuntime(
           start = index + 1;
         }
       }
+
       parts.push(selector.slice(start));
+
       return parts;
     };
+
     const querySelector = (root: QueryRoot, rawSelector: string): Element[] => {
       const selector = rawSelector.trim();
+
       if (selector === "..") {
         return root instanceof Element && root.parentElement ? [root.parentElement] : [];
       }
+
       if (/^(?:xpath=|\/|\()/u.test(selector)) {
         return queryXPath(root, selector.replace(/^xpath=/u, ""));
       }
+
       if (/^text=/iu.test(selector)) {
         const text = selector.replace(/^text=/iu, "").replace(/^(?:"(.*)"|'(.*)')$/u, "$1$2");
         const regexp = text.match(/^\/(.*)\/([dgimsuvy]*)$/u);
+
         return smallestTextMatches(
           queryCssDeep(root, "*"),
           regexp
@@ -311,12 +347,15 @@ export async function createPlaywrightCompatRuntime(
             : { kind: "string", value: text, exact: false },
         );
       }
+
       return dedupe(
         splitSelectorList(selector).flatMap((rawPart) => {
           let part = rawPart.trim().replace(/^css=/u, "");
+
           if (/^text=/iu.test(part)) {
             const text = part.replace(/^text=/iu, "").replace(/^(?:"(.*)"|'(.*)')$/u, "$1$2");
             const regexp = text.match(/^\/(.*)\/([dgimsuvy]*)$/u);
+
             return smallestTextMatches(
               queryCssDeep(root, "*"),
               regexp
@@ -324,10 +363,12 @@ export async function createPlaywrightCompatRuntime(
                 : { kind: "string", value: text, exact: false },
             );
           }
+
           const requireVisible = /:visible\b/u.test(part);
           part = part.replace(/:visible\b/gu, "").replace(/\s*>>>?\s*/gu, " ");
           const pseudo = part.match(/^(.*?):(has-text|text-is|text)\((['"])(.*?)\3\)(.*)$/u);
           let elements: Element[];
+
           if (pseudo) {
             const anchors = queryCssDeep(root, pseudo[1]?.trim() || "*").filter((element) =>
               matches(element.textContent ?? "", {
@@ -336,6 +377,7 @@ export async function createPlaywrightCompatRuntime(
                 exact: pseudo[2] === "text-is",
               }),
             );
+
             const suffix = pseudo[5]?.trim();
             elements = suffix
               ? dedupe(anchors.flatMap((anchor) => queryCssDeep(anchor, suffix)))
@@ -343,77 +385,119 @@ export async function createPlaywrightCompatRuntime(
           } else {
             elements = queryCssDeep(root, part || "*");
           }
+
           return requireVisible ? elements.filter(visible) : elements;
         }),
       );
     };
+
     const implicitRole = (element: Element): string | undefined => {
       const explicit = element.getAttribute("role")?.trim().split(/\s+/u)[0];
+
       if (explicit) return explicit;
       const tag = element.tagName.toLocaleLowerCase();
+
       if (tag === "button") return "button";
+
       if (tag === "a" && element.hasAttribute("href")) return "link";
+
       if (tag === "img") return "img";
+
       if (/^h[1-6]$/u.test(tag)) return "heading";
+
       if (tag === "textarea") return "textbox";
+
       if (tag === "select") return element.hasAttribute("multiple") ? "listbox" : "combobox";
+
       if (tag === "option") return "option";
+
       if (tag === "ul" || tag === "ol") return "list";
+
       if (tag === "li") return "listitem";
+
       if (tag === "table") return "table";
+
       if (tag === "tr") return "row";
+
       if (tag === "th") return "columnheader";
+
       if (tag === "td") return "cell";
+
       if (tag === "nav") return "navigation";
+
       if (tag === "main") return "main";
+
       if (tag === "form") return "form";
+
       if (tag === "input") {
         const type = (element.getAttribute("type") || "text").toLocaleLowerCase();
+
         if (["button", "submit", "reset", "image"].includes(type)) return "button";
+
         if (type === "checkbox") return "checkbox";
+
         if (type === "radio") return "radio";
+
         if (type === "range") return "slider";
+
         if (type === "number") return "spinbutton";
+
         if (type === "search") return "searchbox";
+
         if (!["hidden", "file"].includes(type)) return "textbox";
       }
+
       return undefined;
     };
+
     const labelText = (element: Element): string => {
       const labelledBy = element.getAttribute("aria-labelledby");
+
       if (labelledBy) {
         const text = labelledBy
           .split(/\s+/u)
           .map((id) => element.ownerDocument.getElementById(id)?.textContent ?? "")
           .join(" ");
+
         if (normalize(text)) return text;
       }
+
       const htmlElement = element as HTMLElement & { labels?: NodeListOf<HTMLLabelElement> };
+
       if (htmlElement.labels?.length) {
         return [...htmlElement.labels].map((label) => label.textContent ?? "").join(" ");
       }
+
       return "";
     };
+
     const accessibleName = (element: Element): string => {
       const ariaLabel = element.getAttribute("aria-label");
+
       if (ariaLabel) return ariaLabel;
       const label = labelText(element);
+
       if (normalize(label)) return label;
+
       if (element instanceof HTMLImageElement && element.alt) return element.alt;
+
       if (
         element instanceof HTMLInputElement &&
         ["button", "submit", "reset"].includes(element.type)
       ) {
         return element.value;
       }
+
       return element.textContent || element.getAttribute("title") || "";
     };
+
     const descendants = (roots: QueryRoot[]): Element[] =>
       dedupe(roots.flatMap((root) => queryCssDeep(root, "*")));
 
     const resolve = (steps: QueryStep[], initialRoots: QueryRoot[] = [document]): Element[] => {
       let current: Element[] = [];
       let roots = initialRoots;
+
       for (const step of steps) {
         if (step.kind === "selector") {
           current = dedupe(roots.flatMap((root) => querySelector(root, step.value)));
@@ -430,124 +514,165 @@ export async function createPlaywrightCompatRuntime(
         } else if (step.kind === "role") {
           current = descendants(roots).filter((element) => {
             if (implicitRole(element) !== step.role) return false;
+
             if (!step.includeHidden && !visible(element)) return false;
+
             if (step.name && !matches(accessibleName(element), step.name)) return false;
+
             if (
               step.checked !== undefined &&
               (element as HTMLInputElement).checked !== step.checked
             )
               return false;
+
             if (
               step.disabled !== undefined &&
               (element as HTMLInputElement).disabled !== step.disabled
             )
               return false;
+
             if (
               step.selected !== undefined &&
               (element as HTMLOptionElement).selected !== step.selected
             )
               return false;
+
             if (
               step.expanded !== undefined &&
               element.getAttribute("aria-expanded") !== String(step.expanded)
             )
               return false;
+
             if (
               step.pressed !== undefined &&
               element.getAttribute("aria-pressed") !== String(step.pressed)
             )
               return false;
+
             if (step.level !== undefined && Number(element.tagName.slice(1)) !== step.level)
               return false;
+
             return true;
           });
         } else if (step.kind === "filter") {
           current = current.filter((element) => {
             const text = element.textContent ?? "";
+
             if (step.hasText && !matches(text, step.hasText)) return false;
+
             if (step.hasNotText && matches(text, step.hasNotText)) return false;
+
             if (step.visible !== undefined && visible(element) !== step.visible) return false;
+
             if (step.has && resolve(step.has, [element]).length === 0) return false;
+
             if (step.hasNot && resolve(step.hasNot, [element]).length > 0) return false;
+
             return true;
           });
         } else if (step.kind === "nth") {
           const index = step.index < 0 ? current.length + step.index : step.index;
           current = index >= 0 && index < current.length ? [current[index]!] : [];
         }
+
         roots = current;
       }
+
       return current;
     };
 
     if (input.operation === "pageContent") {
       return { count: 1, value: document.documentElement.outerHTML };
     }
+
     if (input.operation === "pageEvaluateHandle") {
       const fn = (0, eval)(`(${input.functionSource})`) as (arg: unknown) => unknown;
       const result = await fn(input.argument);
+
       if (result instanceof Element) {
         const token = input.token!;
         result.setAttribute("data-stagehand-pw-compat", token);
+
         return { count: 1, token, handleKind: "element" };
       }
+
       return { count: 1, value: result, handleKind: "value" };
     }
 
     const elements = resolve(input.plan ?? []);
     const first = elements[0];
+
     if (input.operation === "inspect") {
       return { count: elements.length, visible: first ? visible(first) : false };
     }
+
     if (input.operation === "untag") {
       document
         .querySelectorAll(`[data-stagehand-pw-compat="${CSS.escape(input.token ?? "")}"]`)
         .forEach((element) => element.removeAttribute("data-stagehand-pw-compat"));
+
       return { count: 0 };
     }
+
     if (input.operation === "tag") {
       if (!first) return { count: 0 };
       first.setAttribute("data-stagehand-pw-compat", input.token!);
+
       return { count: elements.length, token: input.token };
     }
+
     if (input.operation === "tagAll") {
       const prefix = input.token!;
+
       const tokens = elements.map((element, index) => {
         const token = `${prefix}-${index}`;
         element.setAttribute("data-stagehand-pw-compat", token);
+
         return token;
       });
+
       return { count: elements.length, values: tokens };
     }
+
     if (input.operation === "allTextContents") {
       return {
         count: elements.length,
         values: elements.map((element) => element.textContent ?? ""),
       };
     }
+
     if (input.operation === "allInnerTexts") {
       return {
         count: elements.length,
         values: elements.map((element) => (element as HTMLElement).innerText),
       };
     }
+
     if (input.operation === "evaluateAll") {
       const fn = (0, eval)(`(${input.functionSource})`) as (
         elements: Element[],
         arg: unknown,
       ) => unknown;
+
       return { count: elements.length, value: await fn(elements, input.argument) };
     }
+
     if (!first) return { count: 0 };
+
     if (input.operation === "textContent")
       return { count: elements.length, value: first.textContent };
+
     if (input.operation === "innerText")
       return { count: elements.length, value: (first as HTMLElement).innerText };
+
     if (input.operation === "innerHTML") return { count: elements.length, value: first.innerHTML };
+
     if (input.operation === "inputValue")
       return { count: elements.length, value: (first as HTMLInputElement).value };
+
     if (input.operation === "isChecked")
       return { count: elements.length, value: Boolean((first as HTMLInputElement).checked) };
+
     if (input.operation === "isDisabled")
       return {
         count: elements.length,
@@ -555,6 +680,7 @@ export async function createPlaywrightCompatRuntime(
           first.matches(":disabled") ||
           first.getAttribute("aria-disabled")?.toLocaleLowerCase() === "true",
       };
+
     if (input.operation === "isEnabled")
       return {
         count: elements.length,
@@ -562,52 +688,71 @@ export async function createPlaywrightCompatRuntime(
           !first.matches(":disabled") &&
           first.getAttribute("aria-disabled")?.toLocaleLowerCase() !== "true",
       };
+
     if (input.operation === "getAttribute")
       return { count: elements.length, value: first.getAttribute(input.attribute!) };
+
     if (input.operation === "boundingBox") {
       const rect = first.getBoundingClientRect?.();
+
       return {
         count: elements.length,
         value: rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null,
       };
     }
+
     if (input.operation === "focus") {
       (first as HTMLElement).focus();
+
       return { count: elements.length };
     }
+
     if (input.operation === "blur") {
       (first as HTMLElement).blur();
+
       return { count: elements.length };
     }
+
     if (input.operation === "selectText") {
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(first);
       selection?.removeAllRanges();
       selection?.addRange(range);
+
       return { count: elements.length };
     }
+
     if (input.operation === "domClick") {
       (first as HTMLElement).click();
+
       return { count: elements.length };
     }
+
     if (input.operation === "scrollIntoView") {
       first.scrollIntoView({ block: "center", inline: "center" });
+
       return { count: elements.length };
     }
+
     if (input.operation === "evaluate" || input.operation === "elementEvaluateHandle") {
       const fn = (0, eval)(`(${input.functionSource})`) as (
         element: Element,
         arg: unknown,
       ) => unknown;
+
       const result = await fn(first, input.argument);
+
       if (input.operation === "elementEvaluateHandle" && result instanceof Element) {
         const token = input.token!;
         result.setAttribute("data-stagehand-pw-compat", token);
+
         return { count: elements.length, token, handleKind: "element" };
       }
+
       return { count: elements.length, value: result, handleKind: "value" };
     }
+
     return { count: elements.length };
   }
 
@@ -616,6 +761,7 @@ export async function createPlaywrightCompatRuntime(
   ): string => {
     const functionSource = JSON.stringify(Function.prototype.toString.call(executeQueryInPage));
     const querySource = JSON.stringify(query);
+
     return `(async () => {
       const identity = (target) => target;
       for (let index = 0; index <= 32; index += 1) {
@@ -638,19 +784,24 @@ export async function createPlaywrightCompatRuntime(
   };
 
   const rawContext = stagehand.context;
+
   type PageKey = string | RawPage;
+
   const pageKey = (page: RawPage): PageKey => page.pageId ?? page;
   const compatPages = new Map<PageKey, unknown>();
   const closedPages = new Set<PageKey>();
   let closeRequested = false;
   const contextPageListeners = new Map<unknown, boolean>();
   const screenshotArtifacts: Array<{ path: string; base64: string }> = [];
+
   const encodeBase64 = (bytes: Uint8Array): string => {
     let binary = "";
     const chunkSize = 0x8000;
+
     for (let offset = 0; offset < bytes.length; offset += chunkSize) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
     }
+
     return btoa(binary);
   };
 
@@ -680,16 +831,19 @@ export async function createPlaywrightCompatRuntime(
     locator(selector: string, options: Record<string, unknown> = {}): CompatLocator {
       record("calls", "locator.locator");
       const located = this.derived({ kind: "selector", value: selector });
+
       return Object.keys(options).length > 0 ? located.filter(options) : located;
     }
 
     getByText(value: unknown, options: { exact?: boolean } = {}): CompatLocator {
       record("calls", "locator.getByText");
+
       return this.derived({ kind: "text", matcher: matcher(value, options.exact) });
     }
 
     getByRole(role: string, options: Record<string, unknown> = {}): CompatLocator {
       record("calls", "locator.getByRole");
+
       return this.derived({
         kind: "role",
         role,
@@ -710,6 +864,7 @@ export async function createPlaywrightCompatRuntime(
 
     getByLabel(value: unknown, options: { exact?: boolean } = {}): CompatLocator {
       record("calls", "locator.getByLabel");
+
       return this.derived({ kind: "label", matcher: matcher(value, options.exact) });
     }
 
@@ -719,21 +874,25 @@ export async function createPlaywrightCompatRuntime(
 
     getByPlaceholder(value: unknown, options: { exact?: boolean } = {}): CompatLocator {
       record("calls", "locator.getByPlaceholder");
+
       return this.byAttribute("placeholder", value, options.exact);
     }
 
     getByAltText(value: unknown, options: { exact?: boolean } = {}): CompatLocator {
       record("calls", "locator.getByAltText");
+
       return this.byAttribute("alt", value, options.exact);
     }
 
     getByTitle(value: unknown, options: { exact?: boolean } = {}): CompatLocator {
       record("calls", "locator.getByTitle");
+
       return this.byAttribute("title", value, options.exact);
     }
 
     getByTestId(value: unknown): CompatLocator {
       record("calls", "locator.getByTestId");
+
       return this.byAttribute("data-testid", value, true);
     }
 
@@ -741,6 +900,7 @@ export async function createPlaywrightCompatRuntime(
       record("calls", "locator.filter");
       const has = options.has instanceof CompatLocator ? options.has.plan : undefined;
       const hasNot = options.hasNot instanceof CompatLocator ? options.hasNot.plan : undefined;
+
       return this.derived({
         kind: "filter",
         ...(options.hasText === undefined ? {} : { hasText: matcher(options.hasText) }),
@@ -753,21 +913,25 @@ export async function createPlaywrightCompatRuntime(
 
     first(): CompatLocator {
       record("calls", "locator.first");
+
       return this.derived({ kind: "nth", index: 0 });
     }
 
     last(): CompatLocator {
       record("calls", "locator.last");
+
       return this.derived({ kind: "nth", index: -1 });
     }
 
     nth(index: number): CompatLocator {
       record("calls", "locator.nth");
+
       return this.derived({ kind: "nth", index });
     }
 
     async count(): Promise<number> {
       record("calls", "locator.count");
+
       return (await this.state.execute(this.plan, "inspect")).count;
     }
 
@@ -775,6 +939,7 @@ export async function createPlaywrightCompatRuntime(
       record("calls", "locator.all");
       const prefix = crypto.randomUUID();
       const result = await this.state.execute(this.plan, "tagAll", { token: prefix });
+
       return (result.values as string[]).map((token) =>
         locatorProxy(
           new CompatLocator(
@@ -790,11 +955,13 @@ export async function createPlaywrightCompatRuntime(
 
     async allTextContents(): Promise<string[]> {
       record("calls", "locator.allTextContents");
+
       return (await this.state.execute(this.plan, "allTextContents")).values as string[];
     }
 
     async allInnerTexts(): Promise<string[]> {
       record("calls", "locator.allInnerTexts");
+
       return (await this.state.execute(this.plan, "allInnerTexts")).values as string[];
     }
 
@@ -803,59 +970,71 @@ export async function createPlaywrightCompatRuntime(
       extra: Record<string, unknown> = {},
     ): Promise<unknown> {
       const result = await this.state.execute(this.plan, operation, extra);
+
       if (result.count === 0) throw new Error(`locator.${operation}: no element matched`);
+
       return result.value;
     }
 
     async textContent(): Promise<string | null> {
       record("calls", "locator.textContent");
+
       return (await this.singleValue("textContent")) as string | null;
     }
 
     async innerText(): Promise<string> {
       record("calls", "locator.innerText");
+
       return (await this.singleValue("innerText")) as string;
     }
 
     async innerHTML(): Promise<string> {
       record("calls", "locator.innerHTML");
+
       return (await this.singleValue("innerHTML")) as string;
     }
 
     async inputValue(): Promise<string> {
       record("calls", "locator.inputValue");
+
       return (await this.singleValue("inputValue")) as string;
     }
 
     async getAttribute(name: string): Promise<string | null> {
       record("calls", "locator.getAttribute");
+
       return (await this.singleValue("getAttribute", { attribute: name })) as string | null;
     }
 
     async isVisible(): Promise<boolean> {
       record("calls", "locator.isVisible");
       const result = await this.state.execute(this.plan, "inspect");
+
       return result.count > 0 && result.visible === true;
     }
 
     async isChecked(): Promise<boolean> {
       record("calls", "locator.isChecked");
+
       return (await this.singleValue("isChecked")) as boolean;
     }
 
     async isDisabled(): Promise<boolean> {
       record("calls", "locator.isDisabled");
+
       return (await this.singleValue("isDisabled")) as boolean;
     }
 
     async isEnabled(): Promise<boolean> {
       record("calls", "locator.isEnabled");
+
       return (await this.singleValue("isEnabled")) as boolean;
     }
 
     async boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> {
       record("calls", "locator.boundingBox");
       const result = await this.state.execute(this.plan, "boundingBox");
+
       return result.count === 0
         ? null
         : (result.value as { x: number; y: number; width: number; height: number });
@@ -868,6 +1047,7 @@ export async function createPlaywrightCompatRuntime(
       height: number;
     } | null> {
       record("calls", "locator.getBoundingClientRect");
+
       return this.boundingBox();
     }
 
@@ -876,6 +1056,7 @@ export async function createPlaywrightCompatRuntime(
       arg?: unknown,
     ): Promise<Result> {
       record("calls", "locator.evaluate");
+
       return (await this.singleValue("evaluate", {
         functionSource: Function.prototype.toString.call(fn),
         ...(arg === undefined ? {} : { argument: arg }),
@@ -887,6 +1068,7 @@ export async function createPlaywrightCompatRuntime(
       arg?: unknown,
     ): Promise<Result> {
       record("calls", "locator.evaluateAll");
+
       return (
         await this.state.execute(this.plan, "evaluateAll", {
           functionSource: Function.prototype.toString.call(fn),
@@ -901,11 +1083,13 @@ export async function createPlaywrightCompatRuntime(
     ): Promise<unknown> {
       record("calls", "locator.evaluateHandle");
       const token = crypto.randomUUID();
+
       const result = await this.state.execute(this.plan, "elementEvaluateHandle", {
         functionSource: Function.prototype.toString.call(fn),
         ...(arg === undefined ? {} : { argument: arg }),
         token,
       });
+
       return jsHandle(result, this.state);
     }
 
@@ -929,8 +1113,10 @@ export async function createPlaywrightCompatRuntime(
       const state = options.state ?? "visible";
       const timeout = options.timeout ?? 30_000;
       const deadline = Date.now() + timeout;
+
       do {
         const result = await this.state.execute(this.plan, "inspect");
+
         const ready =
           state === "attached"
             ? result.count > 0
@@ -939,9 +1125,11 @@ export async function createPlaywrightCompatRuntime(
               : state === "hidden"
                 ? result.count === 0 || result.visible !== true
                 : result.count > 0 && result.visible === true;
+
         if (ready) return;
         await this.state.rawPage.waitForTimeout(50);
       } while (Date.now() < deadline);
+
       throw new Error(`locator.waitFor: timed out after ${timeout}ms waiting for ${state}`);
     }
 
@@ -960,11 +1148,14 @@ export async function createPlaywrightCompatRuntime(
       const deadline = Date.now() + timeout;
       let result: QueryResult = { count: 0 };
       let lastActionError: unknown;
+
       while (Date.now() <= deadline) {
         result = await this.state.execute(this.plan, "inspect");
+
         if (result.count > 1) {
           throw new Error(`${method}: strict mode violation: ${result.count} elements matched`);
         }
+
         if (result.count === 1) {
           // Playwright actions scroll their target into view. Do this before tagging so
           // Stagehand receives a unique, attached selector without imposing a viewport-
@@ -973,27 +1164,34 @@ export async function createPlaywrightCompatRuntime(
           const token = crypto.randomUUID();
           await this.state.execute(this.plan, "tag", { token });
           let actionSucceeded = false;
+
           try {
             await action(this.state.rawPage.locator(`[data-stagehand-pw-compat="${token}"]`));
             actionSucceeded = true;
           } catch (error) {
             lastActionError = error;
             const message = error instanceof Error ? error.message : String(error);
+
             const retryable =
               /(?:not found|could not find|no (?:element|node)|detached|not visible|(?:box model|layout object)|execution context|session|target closed|timed? out|timeout)/iu.test(
                 message,
               );
+
             if (!retryable || Date.now() >= deadline) throw error;
           } finally {
             await this.state.execute([], "untag", { token }).catch((): undefined => undefined);
           }
+
           if (actionSucceeded) {
             await this.state.refreshUrl();
+
             return;
           }
         }
+
         if (Date.now() < deadline) await this.state.rawPage.waitForTimeout(50);
       }
+
       if (lastActionError) throw lastActionError;
       throw new Error(`${method}: no element matched within ${timeout}ms`);
     }
@@ -1007,6 +1205,7 @@ export async function createPlaywrightCompatRuntime(
       allowed: readonly string[],
     ): void {
       const rejected = Object.keys(options).filter((key) => !allowed.includes(key));
+
       if (rejected.length > 0) {
         record("misses", method);
         throw new Error(
@@ -1017,17 +1216,23 @@ export async function createPlaywrightCompatRuntime(
 
     async click(options: Record<string, unknown> = {}): Promise<void> {
       this.assertActionOptions("locator.click", options, ["button", "clickCount", "timeout"]);
+
       if (options.force === true) {
         record("calls", "locator.click");
         const result = await this.state.execute(this.plan, "inspect");
+
         if (result.count === 0) throw new Error("locator.click: no element matched");
+
         if (result.count > 1) {
           throw new Error(`locator.click: strict mode violation: ${result.count} elements matched`);
         }
+
         await this.state.execute(this.plan, "domClick");
         await this.state.refreshUrl();
+
         return;
       }
+
       await this.withTaggedTarget(
         "locator.click",
         (locator) =>
@@ -1061,6 +1266,7 @@ export async function createPlaywrightCompatRuntime(
 
     pressSequentially(value: string, options: Record<string, unknown> = {}): Promise<void> {
       record("calls", "locator.pressSequentially");
+
       return this.type(value, options);
     }
 
@@ -1090,6 +1296,7 @@ export async function createPlaywrightCompatRuntime(
     ): Promise<string[]> {
       this.assertActionOptions("locator.selectOption", options, ["timeout"]);
       const requested = Array.isArray(values) ? values : [values];
+
       const indices = requested
         .map((value, position) =>
           typeof value === "object" && value !== null && typeof value.index === "number"
@@ -1097,24 +1304,31 @@ export async function createPlaywrightCompatRuntime(
             : null,
         )
         .filter((value): value is { position: number; index: number } => value !== null);
+
       const indexedValues =
         indices.length === 0
           ? []
           : await this.evaluate<Array<string | null>>((element, requestedIndices) => {
               const select = element as HTMLSelectElement;
+
               return (requestedIndices as Array<{ index: number }>).map(
                 ({ index }) => select.options[index]?.value ?? null,
               );
             }, indices);
+
       const normalized = requested.map((value, position) => {
         if (typeof value === "string") return value;
+
         if (typeof value.value === "string") return value.value;
+
         if (typeof value.label === "string") return value.label;
         const indexedPosition = indices.findIndex((entry) => entry.position === position);
         const indexedValue = indexedValues[indexedPosition];
+
         if (typeof indexedValue === "string") return indexedValue;
         throw new Error(`locator.selectOption: option index ${String(value.index)} did not match`);
       });
+
       let selected: string[] = [];
       await this.withTaggedTarget(
         "locator.selectOption",
@@ -1125,6 +1339,7 @@ export async function createPlaywrightCompatRuntime(
         },
         options,
       );
+
       return selected;
     }
 
@@ -1139,11 +1354,13 @@ export async function createPlaywrightCompatRuntime(
 
     async check(options: Record<string, unknown> = {}): Promise<void> {
       record("calls", "locator.check");
+
       if (!(await this.isChecked())) await this.click(options);
     }
 
     async uncheck(options: Record<string, unknown> = {}): Promise<void> {
       record("calls", "locator.uncheck");
+
       if (await this.isChecked()) await this.click(options);
     }
 
@@ -1155,11 +1372,13 @@ export async function createPlaywrightCompatRuntime(
     async $(selector: string): Promise<CompatLocator | null> {
       record("calls", "element.$");
       const locator = (await this.locator(selector).all())[0];
+
       return locator ? markElementHandle(locator, this.state) : null;
     }
 
     async $$(selector: string): Promise<CompatLocator[]> {
       record("calls", "element.$$");
+
       return (await this.locator(selector).all()).map((locator) =>
         markElementHandle(locator, this.state),
       );
@@ -1171,6 +1390,7 @@ export async function createPlaywrightCompatRuntime(
       arg?: unknown,
     ): Promise<Result> {
       record("calls", "element.$eval");
+
       return this.locator(selector).first().evaluate(fn, arg);
     }
 
@@ -1180,6 +1400,7 @@ export async function createPlaywrightCompatRuntime(
       arg?: unknown,
     ): Promise<Result> {
       record("calls", "element.$$eval");
+
       return this.locator(selector).evaluateAll(fn, arg);
     }
   }
@@ -1190,6 +1411,7 @@ export async function createPlaywrightCompatRuntime(
     object,
     { element: CompatLocator | null; result: QueryResult; state: PageState }
   >();
+
   const pageStateMetadata = new WeakMap<object, PageState>();
 
   const markElementHandle = (locator: CompatLocator, state: PageState): CompatLocator => {
@@ -1198,6 +1420,7 @@ export async function createPlaywrightCompatRuntime(
       result: { count: 1, handleKind: "element" },
       state,
     });
+
     return locator;
   };
 
@@ -1214,6 +1437,7 @@ export async function createPlaywrightCompatRuntime(
             ),
           )
         : null;
+
     const target = {
       asElement: () => element,
       jsonValue: async () => result.value,
@@ -1226,6 +1450,7 @@ export async function createPlaywrightCompatRuntime(
                   value: unknown,
                   argument: unknown,
                 ) => unknown;
+
                 return evaluate(payload.value, payload.argument);
               },
               {
@@ -1242,8 +1467,10 @@ export async function createPlaywrightCompatRuntime(
       $: (selector: string) => element?.$(selector) ?? null,
       $$: async (selector: string): Promise<CompatLocator[]> => element?.$$(selector) ?? [],
     };
+
     const handle = guard("jsHandle", target);
     handleMetadata.set(handle, { element, result, state });
+
     return handle;
   };
 
@@ -1252,7 +1479,9 @@ export async function createPlaywrightCompatRuntime(
   const createPage = async (page: RawPage): Promise<unknown> => {
     const key = pageKey(page);
     const existing = compatPages.get(key);
+
     if (existing) return existing;
+
     const state: PageState = {
       rawPage: page,
       cachedUrl: await page.url(),
@@ -1262,29 +1491,38 @@ export async function createPlaywrightCompatRuntime(
         const result = await page.evaluate<QueryResult>(
           buildQueryEvaluationExpression({ plan, operation, ...extra }),
         );
+
         if (result.error) {
           const error = new Error(result.error.message);
           error.name = result.error.name;
+
           if (result.error.stack) error.stack = result.error.stack;
           throw error;
         }
+
         return result;
       },
       refreshUrl: async () => {
         state.cachedUrl = await page.url();
+
         for (const candidate of await rawContext.pages()) await createPage(candidate);
       },
     };
+
     const root = (): CompatLocator => locatorProxy(new CompatLocator([], state));
+
     const requestFetch = async (
       url: string,
       options: Record<string, unknown> = {},
     ): Promise<unknown> => {
       record("calls", "request.fetch");
+
       if (rawContext.request) return await rawContext.request.fetch(url, options);
+
       const response = await page.evaluate(
         async (payload) => {
           const result = await fetch(payload.url, payload.options as RequestInit);
+
           return {
             body: await result.text(),
             headers: Object.fromEntries(result.headers.entries()),
@@ -1296,6 +1534,7 @@ export async function createPlaywrightCompatRuntime(
         },
         { url, options },
       );
+
       const value = response as {
         body: string;
         headers: Record<string, string>;
@@ -1304,6 +1543,7 @@ export async function createPlaywrightCompatRuntime(
         statusText: string;
         url: string;
       };
+
       return guard("apiResponse", {
         ok: () => value.ok,
         status: () => value.status,
@@ -1315,6 +1555,7 @@ export async function createPlaywrightCompatRuntime(
         body: async () => new TextEncoder().encode(value.body),
       });
     };
+
     const request = guard("request", {
       fetch: (url: string, options?: Record<string, unknown>) => requestFetch(url, options),
       get: (url: string, options: Record<string, unknown> = {}) =>
@@ -1322,27 +1563,35 @@ export async function createPlaywrightCompatRuntime(
       post: (url: string, options: Record<string, unknown> = {}) =>
         requestFetch(url, { ...options, method: "POST" }),
     });
+
     const eventSubscriptions = new Map<
       string,
       Map<unknown, Promise<{ unsubscribe(): Promise<void> }>>
     >();
+
     const routeSubscriptions: Array<{
       pattern: unknown;
       handler: unknown;
       subscription: Promise<{ unsubscribe(): Promise<void> }>;
     }> = [];
+
     const encodeTextBase64 = (value: string): string => {
       const bytes = new TextEncoder().encode(value);
       let binary = "";
+
       for (const byte of bytes) binary += String.fromCharCode(byte);
+
       return btoa(binary);
     };
+
     const networkRequests = new Map<string, unknown>();
+
     const requestFromEvent = (event: { params?: Record<string, unknown> }) => {
       const params = event.params ?? {};
       const descriptor = (params.request ?? {}) as Record<string, unknown>;
       const headers = (descriptor.headers ?? {}) as Record<string, unknown>;
       const requestId = String(params.requestId ?? "");
+
       const request = guard("request", {
         url: () => String(descriptor.url ?? ""),
         method: () => String(descriptor.method ?? "GET"),
@@ -1352,15 +1601,19 @@ export async function createPlaywrightCompatRuntime(
         resourceType: () => String(params.type ?? "other").toLowerCase(),
         isNavigationRequest: () => params.type === "Document",
       });
+
       if (requestId) networkRequests.set(requestId, request);
+
       return request;
     };
+
     const responseFromEvent = (event: { params?: Record<string, unknown> }) => {
       const params = event.params ?? {};
       const descriptor = (params.response ?? {}) as Record<string, unknown>;
       const headers = (descriptor.headers ?? {}) as Record<string, unknown>;
       const request = networkRequests.get(String(params.requestId ?? ""));
       const status = Number(descriptor.status ?? 0);
+
       return guard("response", {
         url: () => String(descriptor.url ?? ""),
         status: () => status,
@@ -1371,38 +1624,50 @@ export async function createPlaywrightCompatRuntime(
         request: () => request,
       });
     };
+
     const failedRequestFromEvent = (event: { params?: Record<string, unknown> }) => {
       const params = event.params ?? {};
       const request = networkRequests.get(String(params.requestId ?? ""));
+
       if (!request) return requestFromEvent(event);
+
       return new Proxy(request as object, {
         get(target, property, receiver) {
           if (property === "failure") {
             return () => ({ errorText: String(params.errorText ?? "Request failed") });
           }
+
           return Reflect.get(target, property, receiver);
         },
       });
     };
+
     const consoleMessageFromEvent = (event: { params?: Record<string, unknown> }) => {
       const params = event.params ?? {};
       const args = Array.isArray(params.args) ? params.args : [];
+
       const text = args
         .map((entry) => {
           const value = (entry ?? {}) as Record<string, unknown>;
+
           if (value.value !== undefined) return String(value.value);
+
           if (value.description !== undefined) return String(value.description);
+
           return String(value.type ?? "");
         })
         .join(" ");
+
       return guard("consoleMessage", {
         type: () => String(params.type ?? "log"),
         text: () => text,
       });
     };
+
     const downloadFromEvent = (event: { params?: Record<string, unknown> }) => {
       const params = event.params ?? {};
       const guid = String(params.guid ?? "");
+
       return guard("download", {
         url: () => String(params.url ?? ""),
         suggestedFilename: () => String(params.suggestedFilename ?? (guid || "download")),
@@ -1414,15 +1679,20 @@ export async function createPlaywrightCompatRuntime(
         saveAs: async (): Promise<never> => unsupported("download", "saveAs"),
       });
     };
+
     const pageErrorFromEvent = (event: { params?: Record<string, unknown> }) => {
       const details = (event.params?.exceptionDetails ?? {}) as Record<string, unknown>;
       const exception = (details.exception ?? {}) as Record<string, unknown>;
+
       const error = new Error(
         String(exception.description ?? exception.value ?? details.text ?? "Page error"),
       );
+
       error.name = String(exception.className ?? "Error");
+
       return error;
     };
+
     const subscribeEvent = (
       event: string,
       listener: (value: unknown) => unknown,
@@ -1439,15 +1709,18 @@ export async function createPlaywrightCompatRuntime(
       ) {
         unsupported("page", `on(${event})`);
       }
+
       let wrapped: (value: any) => unknown;
       wrapped = (value) => {
         if (once) {
           const subscriptions = eventSubscriptions.get(event);
           const subscription = subscriptions?.get(listener);
           subscriptions?.delete(listener);
+
           if (subscriptions?.size === 0) eventSubscriptions.delete(event);
           void subscription?.then((active) => active.unsubscribe());
         }
+
         const facadeValue =
           event === "download"
             ? downloadFromEvent(value)
@@ -1462,24 +1735,29 @@ export async function createPlaywrightCompatRuntime(
                     : event === "pageerror"
                       ? pageErrorFromEvent(value)
                       : pageProxy;
+
         return listener(facadeValue);
       };
+
       const primarySubscription =
         event === "pageerror"
           ? page.onCDP("Runtime.exceptionThrown", wrapped)
           : event === "framenavigated"
             ? page.onCDP("Page.frameNavigated", (value) => {
                 const frame = (value.params?.frame ?? {}) as Record<string, unknown>;
+
                 if (frame.parentId === undefined) return wrapped(value);
               })
             : page.on(
                 event as "console" | "download" | "request" | "response" | "requestfailed",
                 wrapped,
               );
+
       const requestSubscription =
         event === "response" || event === "requestfailed"
           ? page.onCDP("Network.requestWillBeSent", requestFromEvent)
           : undefined;
+
       const subscription = requestSubscription
         ? Promise.all([primarySubscription, requestSubscription]).then(([primary, requests]) => ({
             unsubscribe: async () => {
@@ -1487,119 +1765,146 @@ export async function createPlaywrightCompatRuntime(
             },
           }))
         : primarySubscription;
+
       const subscriptions = eventSubscriptions.get(event) ?? new Map();
       subscriptions.set(listener, subscription);
       eventSubscriptions.set(event, subscriptions);
+
       return subscription;
     };
+
     const waitForResponse = async (
       predicate: string | RegExp | ((response: any) => boolean | Promise<boolean>),
       options: { timeout?: number } = {},
     ): Promise<unknown> => {
       record("calls", "page.waitForResponse");
       const timeout = options.timeout ?? 30_000;
+
       return await new Promise((resolve, reject) => {
         let settled = false;
         let subscription: Promise<{ unsubscribe(): Promise<void> }>;
+
         const finish = (result: unknown, error?: Error) => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
           const subscriptions = eventSubscriptions.get("response");
           subscriptions?.delete(listener);
+
           if (subscriptions?.size === 0) eventSubscriptions.delete("response");
           void subscription
             .then((active) => active.unsubscribe())
             .catch((): undefined => undefined);
+
           if (error) reject(error);
           else resolve(result);
         };
+
         const listener = async (response: any) => {
           try {
             if (predicate instanceof RegExp) predicate.lastIndex = 0;
+
             const matched =
               typeof predicate === "function"
                 ? await predicate(response)
                 : predicate instanceof RegExp
                   ? predicate.test(response.url())
                   : response.url() === predicate;
+
             if (matched) finish(response);
           } catch (error) {
             finish(undefined, error instanceof Error ? error : new Error(String(error)));
           }
         };
+
         const timer = setTimeout(
           () => finish(undefined, new Error(`page.waitForResponse: timed out after ${timeout}ms`)),
           timeout,
         );
+
         subscription = subscribeEvent("response", listener, false);
         void subscription.catch((error) =>
           finish(undefined, error instanceof Error ? error : new Error(String(error))),
         );
       });
     };
+
     const waitForPageEvent = async (
       event: string,
       options: { timeout?: number } = {},
     ): Promise<unknown> => {
       if (event === "popup") return await waitForNewPage(options);
+
       if (event !== "download") return unsupported("page", `waitForEvent(${event})`);
       await page.sendCDP("Page.enable").catch((): undefined => undefined);
       await page
         .sendCDP("Page.setDownloadBehavior", { behavior: "allow" })
         .catch((): undefined => undefined);
       const timeout = options.timeout ?? 30_000;
+
       return await new Promise((resolve, reject) => {
         let subscription: Promise<{ unsubscribe(): Promise<void> }>;
+
         const listener = (download: unknown) => {
           clearTimeout(timer);
           resolve(download);
         };
+
         const timer = setTimeout(() => {
           const subscriptions = eventSubscriptions.get(event);
           subscriptions?.delete(listener);
+
           if (subscriptions?.size === 0) eventSubscriptions.delete(event);
           void subscription.then((active) => active.unsubscribe());
           reject(new Error(`page.waitForEvent(download): timed out after ${timeout}ms`));
         }, timeout);
+
         subscription = subscribeEvent("download", listener, true);
       });
     };
+
     const pageObject = {
       goto: async (url: string, options?: Record<string, unknown>) => {
         record("calls", "page.goto");
         const response = await page.goto(url, options);
         await state.refreshUrl();
+
         return response;
       },
       reload: async (options?: Record<string, unknown>) => {
         record("calls", "page.reload");
         const response = await page.reload(options);
         await state.refreshUrl();
+
         return response;
       },
       goBack: async (options?: Record<string, unknown>) => {
         record("calls", "page.goBack");
         const response = await page.goBack(options);
         await state.refreshUrl();
+
         return response;
       },
       goForward: async (options?: Record<string, unknown>) => {
         record("calls", "page.goForward");
         const response = await page.goForward(options);
         await state.refreshUrl();
+
         return response;
       },
       url: () => {
         record("calls", "page.url");
+
         return state.cachedUrl;
       },
       title: () => {
         record("calls", "page.title");
+
         return page.title();
       },
       content: async () => {
         record("calls", "page.content");
+
         return (await state.execute([], "pageContent")).value;
       },
       evaluate: <Result = unknown, Arg = unknown>(
@@ -1607,19 +1912,25 @@ export async function createPlaywrightCompatRuntime(
         arg?: Arg,
       ) => {
         record("calls", "page.evaluate");
+
         const metadata =
           arg && typeof arg === "object" ? handleMetadata.get(arg as object) : undefined;
+
         if (metadata?.element && typeof fn === "function") {
           return metadata.element.evaluate(fn as (element: Element) => Result) as Promise<Result>;
         }
+
         return page.evaluate(fn, arg);
       },
       evaluateHandle: async (fn: (arg: unknown) => unknown, arg?: unknown) => {
         record("calls", "page.evaluateHandle");
+
         const metadata =
           arg && typeof arg === "object" ? handleMetadata.get(arg as object) : undefined;
+
         if (metadata?.element) return metadata.element.evaluateHandle(fn);
         const token = crypto.randomUUID();
+
         return jsHandle(
           await state.execute([], "pageEvaluateHandle", {
             functionSource: Function.prototype.toString.call(fn),
@@ -1631,21 +1942,26 @@ export async function createPlaywrightCompatRuntime(
       },
       locator: (selector: string, options: Record<string, unknown> = {}) => {
         record("calls", "page.locator");
+
         const located = locatorProxy(
           new CompatLocator([{ kind: "selector", value: selector }], state),
         );
+
         return Object.keys(options).length > 0 ? located.filter(options) : located;
       },
       getByText: (value: unknown, options?: { exact?: boolean }) => {
         record("calls", "page.getByText");
+
         return root().getByText(value, options);
       },
       getByRole: (role: string, options?: Record<string, unknown>) => {
         record("calls", "page.getByRole");
+
         return root().getByRole(role, options);
       },
       getByLabel: (value: unknown, options?: { exact?: boolean }) => {
         record("calls", "page.getByLabel");
+
         return root().getByLabel(value, options);
       },
       getByPlaceholder: (value: unknown, options?: { exact?: boolean }) =>
@@ -1658,16 +1974,19 @@ export async function createPlaywrightCompatRuntime(
       $: async (selector: string) => {
         record("calls", "page.$");
         const locator = (await pageObject.locator(selector).all())[0];
+
         return locator ? markElementHandle(locator, state) : null;
       },
       $$: async (selector: string) => {
         record("calls", "page.$$");
+
         return (await pageObject.locator(selector).all()).map((locator) =>
           markElementHandle(locator, state),
         );
       },
       $x: async (expression: string) => {
         record("calls", "page.$x");
+
         return (await pageObject.locator(`xpath=${expression}`).all()).map((locator) =>
           markElementHandle(locator, state),
         );
@@ -1678,6 +1997,7 @@ export async function createPlaywrightCompatRuntime(
         arg?: unknown,
       ) => {
         record("calls", "page.$eval");
+
         return pageObject.locator(selector).first().evaluate(fn, arg);
       },
       $$eval: <Result = unknown>(
@@ -1686,6 +2006,7 @@ export async function createPlaywrightCompatRuntime(
         arg?: unknown,
       ) => {
         record("calls", "page.$$eval");
+
         return pageObject.locator(selector).evaluateAll(fn, arg);
       },
       click: (selector: string, options?: Record<string, unknown>) =>
@@ -1720,32 +2041,39 @@ export async function createPlaywrightCompatRuntime(
       screenshot: async (options: Record<string, unknown> = {}) => {
         record("calls", "page.screenshot");
         const { path: requestedPath, ...supported } = options;
+
         const inferredType =
           supported.type === undefined &&
           typeof requestedPath === "string" &&
           /\.jpe?g$/iu.test(requestedPath)
             ? "jpeg"
             : undefined;
+
         const bytes = await page.screenshot({
           ...supported,
           ...(inferredType ? { type: inferredType } : {}),
         });
+
         if (typeof requestedPath === "string") {
           screenshotArtifacts.push({ path: requestedPath, base64: encodeBase64(bytes) });
         }
+
         return bytes;
       },
       waitForTimeout: async (ms: number) => {
         record("calls", "page.waitForTimeout");
         await page.waitForTimeout(ms);
+
         for (const candidate of await rawContext.pages()) await createPage(candidate);
       },
       waitForLoadState: (state = "load", options: { timeout?: number } = {}) => {
         record("calls", "page.waitForLoadState");
+
         return page.waitForLoadState(state, options.timeout);
       },
       waitForSelector: async (selector: string, options?: Record<string, unknown>) => {
         record("calls", "page.waitForSelector");
+
         return (await page.waitForSelector(selector, options))
           ? pageObject.locator(selector).first()
           : null;
@@ -1756,15 +2084,21 @@ export async function createPlaywrightCompatRuntime(
         record("calls", "page.waitForNavigation");
         const before = state.cachedUrl;
         const deadline = Date.now() + (options.timeout ?? 30_000);
+
         while (Date.now() < deadline) {
           const next = await page.url();
+
           if (next !== before) {
             state.cachedUrl = next;
+
             if (options.waitUntil) await page.waitForLoadState(options.waitUntil, options.timeout);
+
             return null;
           }
+
           await page.waitForTimeout(50);
         }
+
         throw new Error("page.waitForNavigation: timed out");
       },
       waitForResponse,
@@ -1776,14 +2110,17 @@ export async function createPlaywrightCompatRuntime(
       },
       viewportSize: () => {
         record("calls", "page.viewportSize");
+
         return state.viewport;
       },
       setExtraHTTPHeaders: (headers: Record<string, string>) => {
         record("calls", "page.setExtraHTTPHeaders");
+
         return page.setExtraHTTPHeaders(headers);
       },
       addInitScript: (script: string | ((arg: unknown) => unknown), arg?: unknown) => {
         record("calls", "page.addInitScript");
+
         return page.addInitScript(script, arg);
       },
       close: async () => {
@@ -1801,16 +2138,19 @@ export async function createPlaywrightCompatRuntime(
       },
       frames: () => {
         record("calls", "page.frames");
+
         return [pageProxy];
       },
       on: (event: string, listener: (value: unknown) => unknown) => {
         record("calls", "page.on");
         subscribeEvent(event, listener, false);
+
         return pageProxy;
       },
       once: (event: string, listener: (value: unknown) => unknown) => {
         record("calls", "page.once");
         subscribeEvent(event, listener, true);
+
         return pageProxy;
       },
       off: (event: string, listener: unknown) => {
@@ -1818,8 +2158,10 @@ export async function createPlaywrightCompatRuntime(
         const subscriptions = eventSubscriptions.get(event);
         const subscription = subscriptions?.get(listener);
         subscriptions?.delete(listener);
+
         if (subscriptions?.size === 0) eventSubscriptions.delete(event);
         void subscription?.then((active) => active.unsubscribe());
+
         return pageProxy;
       },
       removeListener: (event: string, listener: unknown) => {
@@ -1827,20 +2169,24 @@ export async function createPlaywrightCompatRuntime(
         const subscriptions = eventSubscriptions.get(event);
         const subscription = subscriptions?.get(listener);
         subscriptions?.delete(listener);
+
         if (subscriptions?.size === 0) eventSubscriptions.delete(event);
         void subscription?.then((active) => active.unsubscribe());
+
         return pageProxy;
       },
       route: async (pattern: unknown, handler: (route: unknown) => unknown) => {
         record("calls", "page.route");
         const urlPattern = typeof pattern === "string" ? pattern : "*";
         await page.sendCDP("Fetch.enable", { patterns: [{ urlPattern }] });
+
         const subscription = page.onCDP("Fetch.requestPaused", async (event) => {
           const params = event.params ?? {};
           const requestId = String(params.requestId ?? "");
           const cdpRequest = (params.request ?? {}) as Record<string, unknown>;
           let handled = false;
           const requestHeaders = (cdpRequest.headers ?? {}) as Record<string, string>;
+
           const route = {
             request: () => ({
               url: () => String(cdpRequest.url ?? ""),
@@ -1871,15 +2217,18 @@ export async function createPlaywrightCompatRuntime(
             fulfill: async (options: Record<string, unknown> = {}): Promise<void> => {
               handled = true;
               const headers = { ...((options.headers ?? {}) as Record<string, string>) };
+
               const responseBody =
                 options.json === undefined
                   ? typeof options.body === "string"
                     ? options.body
                     : undefined
                   : JSON.stringify(options.json);
+
               if (options.json !== undefined && !("content-type" in headers)) {
                 headers["content-type"] = "application/json";
               }
+
               const body = responseBody === undefined ? undefined : encodeTextBase64(responseBody);
               await page.sendCDP("Fetch.fulfillRequest", {
                 requestId,
@@ -1889,9 +2238,12 @@ export async function createPlaywrightCompatRuntime(
               });
             },
           };
+
           await handler(route);
+
           if (!handled) await route.continue();
         });
+
         await subscription;
         routeSubscriptions.push({ pattern, handler, subscription });
       },
@@ -1900,10 +2252,12 @@ export async function createPlaywrightCompatRuntime(
           (entry) =>
             entry.pattern === pattern && (handler === undefined || entry.handler === handler),
         );
+
         for (const entry of matches) {
           routeSubscriptions.splice(routeSubscriptions.indexOf(entry), 1);
           await (await entry.subscription).unsubscribe();
         }
+
         if (routeSubscriptions.length === 0) await page.sendCDP("Fetch.disable");
       },
       request,
@@ -1919,6 +2273,7 @@ export async function createPlaywrightCompatRuntime(
         let x = 0;
         let y = 0;
         let down = false;
+
         return {
           click: (nextX: number, nextY: number, options?: Record<string, unknown>) =>
             page.click(nextX, nextY, options),
@@ -1938,95 +2293,120 @@ export async function createPlaywrightCompatRuntime(
         };
       })(),
     };
+
     const pageProxy = guard("page", pageObject);
     pageStateMetadata.set(pageProxy, state);
     compatPages.set(key, pageProxy);
     closedPages.delete(key);
+
     for (const [listener, once] of contextPageListeners) {
       (listener as (value: unknown) => unknown)(pageProxy);
+
       if (once) contextPageListeners.delete(listener);
     }
+
     return pageProxy;
   };
 
   const initialPage = await createPage(stagehand.page);
   const contextRequest = (initialPage as { request: unknown }).request;
   const initialRawPages = await rawContext.pages();
+
   for (const page of initialRawPages) await createPage(page);
 
   waitForNewPage = async (options: { timeout?: number } = {}): Promise<unknown> => {
     const existing = new Set(compatPages.keys());
     const timeout = options.timeout ?? 30_000;
     const deadline = Date.now() + timeout;
+
     do {
       for (const candidate of await rawContext.pages()) {
         const key = pageKey(candidate);
+
         if (!existing.has(key)) return await createPage(candidate);
       }
+
       await new Promise((resolve) => setTimeout(resolve, 50));
     } while (Date.now() < deadline);
+
     throw new Error(`context.waitForEvent(page): timed out after ${timeout}ms`);
   };
 
   const contextObject = {
     pages: () => {
       record("calls", "context.pages");
+
       return [...compatPages.entries()]
         .filter(([key]) => !closedPages.has(key))
         .map(([, page]) => page);
     },
     newPage: async () => {
       record("calls", "context.newPage");
+
       return await createPage(await rawContext.newPage());
     },
     cookies: (urls?: string | string[]) => {
       record("calls", "context.cookies");
+
       return rawContext.cookies(urls);
     },
     addCookies: (cookies: unknown[]) => rawContext.addCookies(cookies),
     clearCookies: (options?: Record<string, unknown>) => {
       record("calls", "context.clearCookies");
+
       return rawContext.clearCookies(options);
     },
     setExtraHTTPHeaders: (headers: Record<string, string>) =>
       rawContext.setExtraHTTPHeaders(headers),
     addInitScript: (script: string | ((arg: unknown) => unknown), arg?: unknown) => {
       record("calls", "context.addInitScript");
+
       return rawContext.addInitScript(script, arg);
     },
     waitForEvent: (event: string, options?: { timeout?: number }) => {
       if (event !== "page") return unsupported("context", `waitForEvent(${event})`);
+
       return waitForNewPage(options);
     },
     on: (event: string, listener: (value: unknown) => unknown) => {
       record("calls", "context.on");
+
       if (event !== "page") return unsupported("context", `on(${event})`);
       contextPageListeners.set(listener, false);
+
       return context;
     },
     once: (event: string, listener: (value: unknown) => unknown) => {
       record("calls", "context.once");
+
       if (event !== "page") return unsupported("context", `once(${event})`);
       contextPageListeners.set(listener, true);
+
       return context;
     },
     off: (event: string, listener: unknown) => {
       record("calls", "context.off");
+
       if (event !== "page") return unsupported("context", `off(${event})`);
       contextPageListeners.delete(listener);
+
       return context;
     },
     removeListener: (event: string, listener: unknown) => {
       record("calls", "context.removeListener");
+
       if (event !== "page") return unsupported("context", `removeListener(${event})`);
       contextPageListeners.delete(listener);
+
       return context;
     },
     newCDPSession: async (compatPage: object) => {
       record("calls", "context.newCDPSession");
       const target = pageStateMetadata.get(compatPage);
+
       if (!target) throw new Error("context.newCDPSession: page does not belong to this context");
       const subscriptions: Array<Promise<{ unsubscribe(): Promise<void> }>> = [];
+
       return guard("cdpSession", {
         send: (method: string, params?: Record<string, unknown>) =>
           target.rawPage.sendCDP(method, params),
@@ -2042,7 +2422,9 @@ export async function createPlaywrightCompatRuntime(
     },
     request: contextRequest,
   };
+
   const context = guard("context", contextObject);
+
   const browser = guard("browser", {
     contexts: () => [context],
     isConnected: () => !closeRequested,
@@ -2057,6 +2439,7 @@ export async function createPlaywrightCompatRuntime(
     // Playwright-shaped control flow without pretending an isolated context exists.
     newContext: async () => {
       record("calls", "browser.newContext");
+
       return context;
     },
     newPage: () => contextObject.newPage(),

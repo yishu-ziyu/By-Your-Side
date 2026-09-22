@@ -7,7 +7,9 @@ import {StepTtsStream} from '../../../agent/src/streaming-tts.js';
 import {readStepVoiceKey} from '../../../agent/src/voice-service.js';
 
 const TEXT = '晚上好，今天想聊点什么？';
+
 const key = await readStepVoiceKey();
+
 const runs: any[] = [];
 
 async function once(label: string, warmFirst: boolean) {
@@ -16,18 +18,22 @@ async function once(label: string, warmFirst: boolean) {
   let resolveFirst: (() => void) | undefined;
   const first = new Promise<void>(r => (resolveFirst = r));
   let bytes = 0;
+
   const stream = new StepTtsStream(key, 'voice-tone-T3kZb9MwL2', {
     audio: data => {
       if (!bytes) {
         t.firstAudio = Date.now() - t0;
         resolveFirst?.();
       }
+
       bytes += Buffer.from(data, 'base64').length;
     },
     end: () => (t.end = Date.now() - t0),
     error: () => (t.error = Date.now() - t0),
   });
+
   t.constructed = 0;
+
   // 预热 = 建连和 tts.create 先跑完，再送字；冷启动 = 立刻送字（现状）。
   if (warmFirst) await new Promise(r => setTimeout(r, 900));
   t.pushAt = Date.now() - t0;
@@ -40,5 +46,7 @@ async function once(label: string, warmFirst: boolean) {
 }
 
 for (let i = 0; i < 3; i++) await once(`cold-${i + 1}`, false);
+
 for (let i = 0; i < 2; i++) await once(`warm-${i + 1}`, true);
+
 console.log(JSON.stringify({ text: TEXT, runs }, null, 1));

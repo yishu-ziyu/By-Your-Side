@@ -24,79 +24,114 @@ interface GoalOperationInput {
   firstFragment?:string; lastFragment?:string; quote?:string; spans?:Array<{start:number;end:number}>;
   goalId?:string; tabId?:number; target?:string; elements?:{selector:string};
 }
+
 async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperationInput,cancel?:AbortSignal) {
   const host = getHost(), snapshot = host.snapshot(), revision = snapshot.goalPlan?.revision, runId = snapshot.runId;
+
   if (!runId || !revision || ['aborted', 'interrupted'].includes(snapshot.state)) throw new Error('当前没有可核验的任务');
   const current = host.current(), signal = cancel ?? new AbortController().signal;
   const assertCurrent = () => { if (signal.aborted || !current() || host.snapshot().runId !== runId || host.snapshot().goalPlan?.revision !== revision) throw new Error('任务已变化，旧核验未应用'); };
+
   const reviewEvidence=host.review;
   const requirements = snapshot.recoveryInput?.requirements ?? (snapshot.goal ? [snapshot.goal] : []);
   const result = (details: unknown,untrusted=false) => ({ content: [{ type: 'text' as const, text: untrusted?wrapPageContent(JSON.stringify(details),{}):JSON.stringify(details) }], details });
+
   const fieldValues = () => {
     const materials=host.evidence.list(runId,revision).materials;
+
     return (host.book().snapshot()?.goals??[]).filter(goal=>goal.kind==='field').flatMap(goal=>{
       const material=materials.find(item=>item.id===goal.materialId);
       const value=material&&fieldMaterialValue(goal,material);
+
       return value===undefined?[]:[{goalId:goal.id,materialId:goal.materialId,value}];
     });
   };
+
   assertCurrent();
+
   if (input.action === 'inspect') return result({ requirements:requirements.map((text,i)=>({id:taskRequirementId(i),text})), plan: snapshot.goalPlan, ...host.evidence.list(runId, revision),fieldValues:fieldValues() },true);
+
   if (input.action === 'read_observation') return result(host.evidence.read(input.observationId ?? '', runId),true);
+
   if (input.action === 'plan') {
     const goals = input.goals ?? [];
     const revising = snapshot.goalPlan?.coverage === 'verified';
+
     if (revising && !input.reason?.trim()) throw new Error('这版目标已固定；修订需要一个非空理由，说明为什么调整内部做法、用户要求如何仍被覆盖。');
     // Validate before invoking any model, without changing the live book.
     const candidate = new TaskGoalBook(); candidate.restore(snapshot.goalPlan, false);
+
     if (revising) candidate.amend(revision, goals as TaskGoalDefinition[], requirements.length, input.reason!);
     else candidate.install(revision, goals as TaskGoalDefinition[], requirements.length);
     const review = await reviewEvidence('plan', { requirements, goals }, signal);
     assertCurrent();
+
     if (!review.matched) return result(review);
+
     if (revising) host.book().amend(revision, goals as TaskGoalDefinition[], requirements.length, input.reason!);
     else host.book().install(revision, goals as TaskGoalDefinition[], requirements.length);
     host.persist();
+
     return result(host.book().snapshot());
   }
+
   if (input.action === 'capture') {
     if(!input.observationId)throw new Error('缺少 observationId：capture_page_material 必须引用 inspect/read_observation 返回的完整来源观察编号。');
     const goal=snapshot.goalPlan?.goals.find(g=>g.kind==='material'&&g.materialId===input.materialId);
+
     if(snapshot.goalPlan?.coverage!=='verified')throw new Error('先为这个来源材料登记完整目标');
+
     if(!goal)throw new Error('当前目标没有绑定这个材料编号；用 task_goals inspect 查看当前 materialId，不要重建已有目标');
+
     if(goal.status==='satisfied') {
       const saved=host.evidence.list(runId,revision).materials.find(material=>material.id===goal.materialId);
+
       if(!saved)throw new Error('已核验的来源材料不可用，请保留检查点');
+
       return result(saved,true);
     }
+
     const observation = host.evidence.read(input.observationId ?? '', runId);
+
     const material = input.firstFragment || input.lastFragment
       ? host.evidence.prepareFragments(input.materialId ?? '', input.purpose ?? '', observation, input.firstFragment ?? '', input.lastFragment ?? '',input.quote)
       : host.evidence.prepare(input.materialId ?? '', input.purpose ?? '', observation, input.spans ?? []);
+
     const previousSources=host.evidence.list(runId,revision).materials.filter(saved=>saved.observation.revision!==revision);
     const review = await reviewEvidence('source', { requirements, goal, observation, material, previousSources, historicalObservation:observation.revision!==revision }, signal);
     assertCurrent();
+
     if (!review.matched) return result(review);
     const currentGoal=host.book().snapshot()?.goals.find(current=>current.id===goal.id);
+
     if(currentGoal?.status==='satisfied') {
       const saved=host.evidence.list(runId,revision).materials.find(item=>item.id===currentGoal.materialId);
+
       if(!saved)throw new Error('已核验的来源材料不可用，请保留检查点');
+
       return result(saved,true);
     }
+
     const captured={...host.evidence.canonicalMaterial(material),verification:{goalId:goal.id,revision,criterion:goal.criterion,description:goal.description,probability:review.probability,at:Date.now(),reviewedBy:review.reviewedBy}};
     host.evidence.assertSave(captured); host.persist(captured); host.evidence.save(captured);
     host.book().bindPendingMaterial(revision,material.id,captured.id);
     host.book().verify(revision,goal.id,{...review,evidence:{observationId:observation.id,tabId:observation.tabId,verifiedAt:captured.verification.at,materialId:captured.id}});
     host.persist();
+
     return result({...captured,fieldValues:fieldValues()},true);
   }
+
   const goal = snapshot.goalPlan?.goals.find(g => g.id === input.goalId);
+
   if (!goal || snapshot.goalPlan?.coverage !== 'verified') throw new Error('先登记完整目标，再按目标标识核验');
+
   if(goal.kind==='answer')return result({pending:true,reason:'请正式交付答复；回答目标只在实际交付时完成。'});
   const material = host.evidence.list(runId, revision).materials.find(m => m.id === goal.materialId);
   let review: { matched: boolean; reason: string }, evidence;
+
   if (goal.kind === 'material') {
     if (!material) throw new Error('尚未取得这个目标的原文材料');
+
     if (!material.verification) throw new Error('材料尚未核对来源范围');
     review=material.verification.revision===revision&&material.verification.goalId===goal.id
       ?{matched:true,reason:'已捕获并核对本项目标的完整原文'}
@@ -104,16 +139,20 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
     evidence = { observationId: material.observation.id, tabId: material.observation.tabId, verifiedAt: Date.now(), materialId: material.id };
   } else {
     if (!input.tabId) throw new Error('核验缺少 tabId，请指定目标页；condition 可省略 target，用整页观察核验，不必猜选择器。');
+
     if (goal.kind === 'field' && !input.target) throw new Error('字段核验还需要 target，请指定已观察到的编辑器或字段。');
     const read = await host.read(input.tabId, input.target, signal, goal.kind === 'condition' ? input.elements : undefined);
     assertCurrent();
     const data = read.data;
     const actual = elementText(data);
+
     if (goal.kind === 'field' && (!material || typeof actual !== 'string' || actual !== fieldMaterialValue(goal,material))) review = { matched: false, reason: !material ? '缺少待写入的原文材料' : actual === '' ? '目标编辑器仍为空' : '目标内容与原文及所要求的来源网址不一致' };
     else review = await reviewEvidence(goal.kind==='field'?'target':'condition', { requirements, goal, target: input.target, page: data, material, executionFacts: host.snapshot().results, executionAuditComplete:host.snapshot().executionAuditComplete===true&&!host.snapshot().untrackedWritePending }, signal);
     evidence = { observationId: read.id, tabId: input.tabId, verifiedAt: Date.now(), ...(material ? { materialId: material.id } : {}) };
   }
+
   assertCurrent(); host.book().verify(revision, goal.id, { ...review, evidence }); host.persist();
+
   return result({ ...review, plan: host.book().snapshot() });
 }
 

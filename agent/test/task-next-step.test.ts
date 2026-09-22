@@ -14,17 +14,22 @@ function task(id='default') {
   progress.goals.clear(); // Legacy-checkpoint readback gates; goal-aware completion is tested in task-goal-tool.
   progress.observe({type:'agent_event',event:{kind:'agent_start'}});
   const emit=(event:any,member='main')=>progress.observe({type:'agent_event',sessionId:member,event} as ServerMessage);
+
   const step=(name:string,params:Record<string,unknown>,failed=false,fact:ToolExecutionFact='executed',member='main')=>{
     const toolCallId=`call-${++call}`;
     emit({kind:'tool_start',toolCallId,name,params},member);
     emit({kind:'tool_end',toolCallId,name,isError:failed,executionFact:fact,resultText:failed?'failed':'ok'},member);
+
     return toolCallId;
   };
+
   const read=(tabId=7,workingTab=true,truncated=false,member='main')=>{
     const toolCallId=step('snapshot',workingTab?{}:{tabId},false,'executed',member);
     emit({kind:'tool_observation',toolCallId,name:'snapshot',target:null,tabId,workingTab,text:'actual page state',truncated},member);
   };
+
   const next=()=> (progress.snapshot() as any).nextStep;
+
   return {progress,emit,step,read,next};
 }
 
@@ -201,10 +206,12 @@ describe('P0.3 production loop exits and projections',()=>{
   it('does not let the automatic fallback turn an unchecked write into a complete report',async()=>{
     const h=task();h.step('fill',{target:'#name'});h.emit({kind:'agent_end'});
     const composeUserDelivery=vi.fn(async()=> '全部完成。');
+
     const manager=new ConversationManager(async()=>({
       session:{modelName:()=> 'fixture',isStreaming:()=>false,isHeld:()=>false,composeUserDelivery},
       fleet:{teamView:()=>null,list:()=>[]},rpc:{rejectAll:vi.fn()},dispose:vi.fn(),
     } as any),()=>{});
+
     await manager.ensureDefault();(manager as any).progress.set('default',h.progress);
     await (manager as any).fulfillOwedDelivery('default');
     expect(composeUserDelivery).not.toHaveBeenCalled();
@@ -233,9 +240,12 @@ describe('P0.3 production loop exits and projections',()=>{
 
 function delivery(h:ReturnType<typeof task>) {
   const emit=vi.fn();
+
   const tool=createSendUserMessageTool({conversationId:'default',getRunId:()=>h.progress.snapshot().runId??null,emit,
     getNextStep:h.next,hasUnfinishedWork:()=>h.progress.snapshot().results?.some(r=>r.status!=='satisfied')??false} as any);
+
   const send=(outcome?:'complete'|'partial')=>(tool.execute as any)('finding-1',{kind:'finding',content:'当前执行结果。',...(outcome?{outcome}:{})});
+
   return {emit,send};
 }
 

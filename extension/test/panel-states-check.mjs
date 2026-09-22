@@ -20,8 +20,11 @@ import { fileURLToPath } from "node:url";
 import { sideagentExtensionId } from "../../scripts/acceptance/constants.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 const extDir = join(repoRoot, "extension", "dist");
+
 const outDir = join(repoRoot, "docs", "evidence", "20260907-model-labels-r1r2");
+
 mkdirSync(outDir, { recursive: true });
 
 const chromeBin = `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
@@ -33,6 +36,7 @@ const CATALOG = [
   { id: "unknown-provider/weird-model", provider: "unknown-provider", modelId: "weird-model", name: "Weird Model" },
   { id: "zhipu/glm-5", provider: "zhipu", modelId: "glm-5", name: "GLM-5" },
 ];
+
 const FABRICATED_TAGS = ["支持档位调节", "内置深度思考", "极速直接响应"];
 
 /** Port 边界替身：记录面板上行，暴露 __emitToPanel 下行真实格式信封。 */
@@ -43,8 +47,10 @@ const portBoundary = () => {
   window.__emitToPanel = (msg) => {
     for (const l of [...listeners]) l(msg);
   };
+
   chrome.runtime.connect = (opts) => {
     listeners = [];
+
     return {
       name: opts?.name,
       postMessage(m) {
@@ -57,6 +63,7 @@ const portBoundary = () => {
 };
 
 const results = [];
+
 const push = (scenario, checks, extra) => {
   const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
   results.push({ scenario, failed, extra: extra ?? {}, checks: checks.map(([label, ok]) => `${ok ? "PASS" : "FAIL"} ${label}`) });
@@ -71,6 +78,7 @@ async function openPanel(ctx, extId, { width = 360, scheme = "light" } = {}) {
   await page.setViewportSize({ width, height: 720 });
   await page.goto(`chrome-extension://${extId}/sidepanel.html`);
   await page.waitForSelector("#input", { timeout: 10_000 });
+
   return { page, pageErrors };
 }
 
@@ -90,19 +98,24 @@ async function stateMatrix(ctx, extId) {
   // ── R1-1 旧四字段目录 / 未知模型 ─────────────────────────────
   await emitHello(page, "minimax/MiniMax-M3");
   await page.waitForSelector("#model-btn:not([hidden])", { timeout: 5_000 });
+
   const s1 = await page.evaluate((tags) => {
     const name = document.getElementById("model-name")?.textContent ?? "";
+
     return {
       chip: name,
       chipTagHidden: document.getElementById("model-reasoning-tag")?.hidden,
       bodyHasFabricated: tags.some((t) => document.body.textContent.includes(t)),
     };
   }, FABRICATED_TAGS);
+
   await page.click("#model-btn");
   await page.waitForSelector("#model-popover:not([hidden])", { timeout: 3_000 });
+
   const s1m = await page.evaluate((tags) => {
     const pop = document.getElementById("model-popover");
     const items = [...pop.querySelectorAll(".model-item")];
+
     return {
       itemCount: items.length,
       hasUnknown: items.some((i) => i.dataset.model === "unknown-provider/weird-model"),
@@ -111,6 +124,7 @@ async function stateMatrix(ctx, extId) {
       popoverItemsHaveTag: items.some((i) => i.querySelector(".reasoning-tag")),
     };
   }, FABRICATED_TAGS);
+
   push(
     "R1-1 旧四字段目录+未知模型",
     [
@@ -129,9 +143,11 @@ async function stateMatrix(ctx, extId) {
   const before = await page.evaluate(() => window.__panelSends.length);
   await page.click("#model-popover .model-item[data-model='openai/gpt-5.2']");
   await page.waitForTimeout(150);
+
   const s2 = await page.evaluate(
     (n) => {
       const newSends = window.__panelSends.slice(n).filter((m) => m.kind === "client");
+
       return {
         chip: document.getElementById("model-name")?.textContent ?? "",
         popoverClosed: document.getElementById("model-popover")?.hidden,
@@ -141,10 +157,13 @@ async function stateMatrix(ctx, extId) {
     },
     before,
   );
+
   await page.click("#model-btn");
+
   const s2m = await page.evaluate(() => ({
     selected: document.querySelector("#model-popover .model-item[aria-selected='true']")?.dataset.model ?? null,
   }));
+
   push("R1-2 切换未回执不假更新", [
     ["恰发出一条 set_model 请求", s2.setModelSends.length === 1 && s2.setModelSends[0].msg.model === "openai/gpt-5.2"],
     ["芯片仍显示上一确认模型", s2.chip.includes("MiniMax")],
@@ -161,15 +180,19 @@ async function stateMatrix(ctx, extId) {
     { model: "openai/gpt-5.2", models: CATALOG },
   );
   await page.waitForTimeout(100);
+
   const s3 = await page.evaluate(() => ({
     chip: document.getElementById("model-name")?.textContent ?? "",
     tagHidden: document.getElementById("model-reasoning-tag")?.hidden,
   }));
+
   await page.click("#model-btn");
+
   const s3m = await page.evaluate(() => ({
     selected: document.querySelector("#model-popover .model-item[aria-selected='true']")?.dataset.model ?? null,
     current: document.querySelector("#model-popover .model-item.current")?.dataset.model ?? null,
   }));
+
   push("R1-3 model_info 回执后状态正确", [
     ["芯片显示新确认模型", s3.chip.includes("GPT-5.2")],
     ["菜单选中项更新为新模型", s3m.selected === "openai/gpt-5.2" && s3m.current === "openai/gpt-5.2"],
@@ -188,10 +211,12 @@ async function stateMatrix(ctx, extId) {
     }),
   );
   await page.waitForTimeout(100);
+
   const s4 = await page.evaluate(
     (n) => {
       const sends = window.__panelSends.slice(n).filter((m) => m.kind === "client");
       const err = [...document.querySelectorAll("#messages .msg.error")].pop()?.textContent ?? "";
+
       return {
         chip: document.getElementById("model-name")?.textContent ?? "",
         errorShown: err.length > 0,
@@ -202,6 +227,7 @@ async function stateMatrix(ctx, extId) {
     },
     before4,
   );
+
   push("R1-4 切换失败保留旧模型并显示错误", [
     ["失败请求已发出（断言请求而非 grep bundle）", s4.setModelSends.length === 1],
     ["芯片保留上一确认模型 GPT-5.2", s4.chip.includes("GPT-5.2")],
@@ -222,6 +248,7 @@ async function geometryTheme(ctx, extId) {
     { width: 360, scheme: "dark" },
     { width: 400, scheme: "dark" },
   ];
+
   for (const combo of combos) {
     const tag = `${combo.width}x720-${combo.scheme}`;
     const { page, pageErrors } = await openPanel(ctx, extId, combo);
@@ -229,13 +256,17 @@ async function geometryTheme(ctx, extId) {
     await page.waitForSelector("#model-btn:not([hidden])", { timeout: 5_000 });
     await page.click("#model-btn");
     await page.waitForSelector("#model-popover:not([hidden])", { timeout: 3_000 });
+
     const g = await page.evaluate(() => {
       const rect = (sel) => {
         const el = document.querySelector(sel);
+
         if (!el) return null;
         const r = el.getBoundingClientRect();
+
         return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom };
       };
+
       const overlap = (a, b) => a && b && a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
       const input = rect("#input");
       const send = rect("#send-btn");
@@ -244,6 +275,7 @@ async function geometryTheme(ctx, extId) {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       const inView = (r) => r && r.w > 0 && r.h > 0 && r.x >= 0 && r.y >= 0 && r.right <= vw && r.bottom <= vh;
+
       return {
         vw,
         vh,
@@ -258,18 +290,22 @@ async function geometryTheme(ctx, extId) {
         noOverlap: !overlap(input, send) && !overlap(input, modelBtn) && !overlap(send, modelBtn),
       };
     });
+
     // 可操作性：输入文本、点选另一个模型（真实点击路径）
     await page.fill("#input", "E2E-几何-输入");
     const before = await page.evaluate(() => window.__panelSends.length);
     await page.click("#model-popover .model-item[data-model='zhipu/glm-5']");
     await page.waitForTimeout(120);
+
     const acted = await page.evaluate((n) => {
       const sends = window.__panelSends.slice(n).filter((m) => m.kind === "client");
+
       return {
         input: document.getElementById("input")?.value ?? "",
         setModel: sends.filter((m) => m.msg?.type === "set_model").length,
       };
     }, before);
+
     push(`R2 几何与可操作 ${tag}`, [
       [`输入框完整可见（${g.inputOk ? `${Math.round(g.input.w)}px 宽` : "裁切"}）`, g.inputOk],
       ["发送按钮完整可见", g.sendOk],
@@ -286,7 +322,9 @@ async function geometryTheme(ctx, extId) {
 }
 
 const userDataDir = mkdtempSync(join(tmpdir(), "sideagent-states-profile-"));
+
 let ctx;
+
 try {
   ctx = await chromium.launchPersistentContext(userDataDir, {
     executablePath: chromeBin,
@@ -300,10 +338,12 @@ try {
   await ctx.close();
 } finally {
   if (ctx) await ctx.close().catch(() => {});
+
   if (!process.argv.includes("--keep")) rmSync(userDataDir, { recursive: true, force: true });
 }
 
 const failedScenarios = results.filter((r) => r.failed.length > 0);
+
 const report = {
   when: new Date().toISOString(),
   gitSha: execSync("git rev-parse HEAD", { cwd: repoRoot }).toString().trim(),
@@ -312,11 +352,17 @@ const report = {
   results,
   exit: failedScenarios.length === 0 ? 0 : 1,
 };
+
 writeFileSync(join(outDir, "result.json"), JSON.stringify(report, null, 2));
+
 for (const r of results) {
   console.log(`${r.failed.length === 0 ? "PASS" : "FAIL"} ${r.scenario}`);
+
   for (const c of r.checks) console.log(`   ${c}`);
 }
+
 console.log(`\ngit ${report.gitSha.slice(0, 8)}  dist sha256 ${report.distSha256.slice(0, 16)}…`);
+
 console.log(`结果与截图：${outDir}`);
+
 process.exit(report.exit);

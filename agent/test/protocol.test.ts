@@ -92,6 +92,7 @@ describe("parseClientMessage", () => {
       text: "这页面是关于什么内容的？",
       context: { tabId: 12, title: "历史正在发生的地方", url: "https://zhuanlan.zhihu.com/p/1" },
     });
+
     expect(parseClientMessage(raw)).toEqual({
       type: "user_message",
       text: "这页面是关于什么内容的？",
@@ -110,6 +111,7 @@ describe("parseClientMessage", () => {
         selection: { text: "MiroFish is a made-up term." },
       },
     });
+
     expect(parseClientMessage(raw)).toEqual({
       type: "user_message",
       text: "这是什么",
@@ -155,6 +157,7 @@ describe("parseClientMessage", () => {
         },
       ],
     });
+
     expect(parseClientMessage(raw)).toEqual({
       type: "user_message",
       text: "look at this",
@@ -201,6 +204,7 @@ describe("parseClientMessage", () => {
       text: "先点登录",
       context: { tabId: 7, title: "Locked", url: "https://example.com/a" },
     });
+
     expect(parseClientMessage(raw)).toEqual({
       type: "steer",
       text: "先点登录",
@@ -229,6 +233,7 @@ describe("parseClientMessage", () => {
       requestId: "take-1",
     });
     expect(parseClientMessage(JSON.stringify({ type: "abort" }))).toEqual({ type: "abort" });
+
     const frozen = {
       type: "takeover",
       requestId: "take-team",
@@ -239,6 +244,7 @@ describe("parseClientMessage", () => {
         { sessionId: "wiki", role: "worker", activity: "waiting_message", tabId: 21, title: "Wiki real page", url: "https://example.com/wiki" },
       ],
     };
+
     expect(parseClientMessage(JSON.stringify(frozen))).toEqual(frozen);
     expect(
       parseClientMessage(
@@ -304,6 +310,7 @@ describe("parseClientMessage", () => {
         },
       ],
     };
+
     expect(parseClientMessage(JSON.stringify(raw))).toEqual(raw);
     expect(
       parseClientMessage(
@@ -548,6 +555,7 @@ describe("parseServerMessage", () => {
         },
       ],
     };
+
     expect(parseServerMessage(JSON.stringify({ type: "team_status", team }))).toEqual({
       type: "team_status",
       team,
@@ -576,12 +584,14 @@ describe("parseServerMessage", () => {
         },
       }),
     );
+
     expect(msg).toMatchObject({
       type: "control_result",
       action: "handback",
       ok: true,
       team: { phase: "partial" },
     });
+
     if (msg?.type === "control_result" && msg.team) {
       expect(msg.team.members.some((m) => m.phase === "paused_tab_closed")).toBe(true);
       expect(msg.team.phase).not.toBe("restored");
@@ -678,6 +688,7 @@ describe("worker task metadata contract", () => {
   });
   it("rejects missing worker identity and unbounded or blank labels", () => {
     for (const sessionId of [undefined, "main"]) expect(parseServerMessage(JSON.stringify({ ...frame, sessionId }))).toBeNull();
+
     for (const task of ["", "  ", 12, "x".repeat(81)]) expect(parseServerMessage(JSON.stringify({ ...frame, event: { ...frame.event, task } }))).toBeNull();
   });
 });
@@ -686,6 +697,7 @@ it('validates asynchronous voice context with the same page and attachment guard
  const frame=(command:unknown)=>JSON.stringify({type:'voice',voiceId:'voice-1',conversationId:'default',command});
  expect(parseClientMessage(frame({kind:'commit',turn:1,contextPending:true}))).not.toBeNull();
  expect(parseClientMessage(frame({kind:'input_context',turn:1,input:{context:{tabId:7,title:'page',url:'https://example.test'}}}))).not.toBeNull();
+
  for(const command of [{kind:'commit',turn:1,contextPending:'yes'},{kind:'input_context',turn:1},{kind:'input_context',turn:1,error:99},{kind:'input_context',turn:1,input:{context:{tabId:'bad'}}},{kind:'input_context',turn:1,input:{observation:{token:'x',tabId:'bad'}}}])expect(parseClientMessage(frame(command))).toBeNull();
 });
 

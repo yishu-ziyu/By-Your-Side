@@ -34,31 +34,50 @@ import {
 } from './stepaudio-probe-evidence.mjs';
 
 const parsed = parseProbeArgs(process.argv.slice(2));
+
 if (!parsed.ok) {
   console.error(`${parsed.error}\n${usage()}`);
   process.exit(2);
 }
+
 const {model, caseId, report} = parsed.options;
+
 const modelInfo = MODELS[model];
 
 const GREET_QUESTION = '请帮我算一下，十七加二十六等于多少？';
+
 const BACKGROUND_TASK = '帮我查一下代号 orion-supply 的资料，这个查询需要走 start_lookup 工具。';
+
 const BACKGROUND_SIDE = '对了，顺便问一下，现在三点二十分，再过一个小时是几点？';
+
 const PAYMENT_QUERY = '帮我查一下订单 A100 的状态，只查询，不要付款。';
+
 const LONG_EXPLAIN = '请详细讲一段关于潮汐是怎么形成的说明，要连续讲久一点，大概半分钟，中间不要停下来问我。';
+
 const INTERRUPT_TEXT = '停一下，先不要讲了';
+
 const BACKCHANNEL_TEXT = '嗯，你继续';
 
 const outDir = resolve(report);
+
 mkdirSync(join(outDir, 'inputs'), {recursive: true});
+
 const jsonlPath = join(outDir, 'events.jsonl');
+
 const statusPath = join(outDir, 'status.json');
+
 const resultPath = join(outDir, 'result.json');
+
 const outputPcmPath = join(outDir, 'output.pcm');
+
 writeFileSync(jsonlPath, '');
+
 const startedAt = new Date().toISOString();
+
 const startedMs = Date.now();
+
 const now = (): number => Date.now() - startedMs;
+
 const sleep = (ms: number): Promise<void> => new Promise(resolvePromise => setTimeout(resolvePromise, ms));
 
 interface ProbeInput {
@@ -76,6 +95,7 @@ interface PendingCall extends ToolCall {
 }
 
 const marker = caseId === 'background' ? createMarker(bytes => randomBytes(bytes).toString('hex')) : null;
+
 // Received audio bytes are kept for optional later human listening; they are never played here.
 const outputChunks: Buffer[] = [];
 
@@ -113,11 +133,17 @@ const state = {
 };
 
 let credential = '';
+
 const runtime: {socket: WebSocket | null} = {socket: null};
+
 let hardTimer: ReturnType<typeof setTimeout> | null = null;
+
 let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
 let resolveScenario: (() => void) | null = null;
+
 const scenarioPromise = new Promise<void>(resolvePromise => {
   resolveScenario = resolvePromise;
 });
@@ -128,12 +154,14 @@ interface Waiter {
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
+
 const waiters: Waiter[] = [];
 
 function pokeWaiters(): void {
   for (const waiter of [...waiters]) {
     if (!waiter.test()) continue;
     const index = waiters.indexOf(waiter);
+
     if (index >= 0) waiters.splice(index, 1);
     clearTimeout(waiter.timer);
     waiter.resolve();
@@ -142,6 +170,7 @@ function pokeWaiters(): void {
 
 function waitFor(test: () => boolean, timeoutMs: number, label: string): Promise<void> {
   if (test()) return Promise.resolve();
+
   return new Promise((resolvePromise, rejectPromise) => {
     const waiter: Waiter = {
       test,
@@ -149,10 +178,12 @@ function waitFor(test: () => boolean, timeoutMs: number, label: string): Promise
       reject: rejectPromise,
       timer: setTimeout(() => {
         const index = waiters.indexOf(waiter);
+
         if (index >= 0) waiters.splice(index, 1);
         rejectPromise(new Error(`timeout after ${timeoutMs}ms waiting for ${label}`));
       }, timeoutMs),
     };
+
     waiters.push(waiter);
   });
 }
@@ -160,10 +191,12 @@ function waitFor(test: () => boolean, timeoutMs: number, label: string): Promise
 async function tryWait(test: () => boolean, timeoutMs: number, label: string): Promise<boolean> {
   try {
     await waitFor(test, timeoutMs, label);
+
     return true;
   } catch (error) {
     if (state.fatalError) throw error;
     state.errors.push(redactText(error instanceof Error ? error.message : String(error), [credential]));
+
     return false;
   }
 }
@@ -171,6 +204,7 @@ async function tryWait(test: () => boolean, timeoutMs: number, label: string): P
 /** Every wait records its own phase so a timeout names the step that was running. */
 async function waitPhase(label: string, test: () => boolean, timeoutMs: number): Promise<boolean> {
   state.phase = `${caseId}:${label}`;
+
   return tryWait(test, timeoutMs, label);
 }
 
@@ -178,15 +212,19 @@ function abortRun(message: string): void {
   if (state.fatalError) return;
   state.fatalError = redactText(message, [credential]);
   state.errors.push(state.fatalError);
+
   for (const waiter of [...waiters]) {
     const index = waiters.indexOf(waiter);
+
     if (index >= 0) waiters.splice(index, 1);
     clearTimeout(waiter.timer);
     waiter.reject(new Error(state.fatalError));
   }
+
   if (runtime.socket) {
     try { runtime.socket.terminate(); } catch { /* already closed */ }
   }
+
   resolveScenario?.();
 }
 
@@ -235,6 +273,7 @@ function toolsFor(id: CaseId): Record<string, unknown>[] {
       },
     }];
   }
+
   if (id === 'payment') {
     return [
       {
@@ -255,6 +294,7 @@ function toolsFor(id: CaseId): Record<string, unknown>[] {
       },
     ];
   }
+
   return [];
 }
 
@@ -267,8 +307,11 @@ function sessionUpdate(): Record<string, unknown> {
     output_audio_format: 'pcm16',
     turn_detection: CONFIGURED_VAD,
   };
+
   const tools = toolsFor(caseId);
+
   if (tools.length > 0) session.tools = tools;
+
   return session;
 }
 
@@ -276,6 +319,7 @@ const inputs = new Map<string, ProbeInput>();
 
 function synthesize(id: string, text: string): ProbeInput {
   const scratch = mkdtempSync(join(tmpdir(), 'bys-stepaudio-'));
+
   try {
     const aiff = join(scratch, `${id}.aiff`);
     const raw = join(scratch, `${id}.pcm`);
@@ -290,6 +334,7 @@ function synthesize(id: string, text: string): ProbeInput {
     const pcm = Buffer.concat([spoken, Buffer.alloc(alignment + silenceFrames * FRAME_BYTES)]);
     const path = join(outDir, 'inputs', `${id}.pcm`);
     writeFileSync(path, pcm);
+
     return {id, text, path, pcm, analysis: analyzePcm(pcm), speechEndAtMs: null};
   } finally {
     rmSync(scratch, {recursive: true, force: true});
@@ -301,11 +346,13 @@ async function streamInput(input: ProbeInput, label: string): Promise<{speechEnd
   const frames = splitPcmFrames(input.pcm);
   const frameSendAtMs: number[] = [];
   logEvent({atMs: now(), dir: 'out', type: 'input_audio_buffer.append.start', input: label, frames: frames.length, bytes: input.pcm.byteLength, hash: input.analysis.hash});
+
   for (const frame of frames) {
     send({type: 'input_audio_buffer.append', audio: Buffer.from(frame).toString('base64')});
     frameSendAtMs.push(now());
     await sleep(FRAME_MS);
   }
+
   const speechEndAtMs = sourceSpeechEndAtMs(frameSendAtMs, input.analysis.lastVoicedFrame);
   input.speechEndAtMs = speechEndAtMs;
   logEvent({
@@ -313,12 +360,14 @@ async function streamInput(input: ProbeInput, label: string): Promise<{speechEnd
     lastVoicedFrame: input.analysis.lastVoicedFrame, sourceSpeechEndAtMs: speechEndAtMs,
     trailingSilenceMs: input.analysis.trailingSilenceMs, hash: input.analysis.hash,
   });
+
   return {speechEndAtMs};
 }
 
 function finalizeTurn(responseId: string, text: string, atMs: number, complete: boolean): void {
   const trimmed = text.trim();
   const existing = state.turns.find(turn => turn.responseId === responseId);
+
   if (existing) {
     if (trimmed) existing.text = text;
     existing.atMs = atMs;
@@ -326,6 +375,7 @@ function finalizeTurn(responseId: string, text: string, atMs: number, complete: 
   } else if (trimmed || complete) {
     state.turns.push({responseId, atMs, text, complete});
   }
+
   // Live wait only: the verdict re-derives the side answer from turns + timestamps.
   if (
     caseId === 'background'
@@ -336,17 +386,20 @@ function finalizeTurn(responseId: string, text: string, atMs: number, complete: 
   ) {
     state.secondQuestionAnsweredAtMs = atMs;
   }
+
   pokeWaiters();
 }
 
 function mergeGuard(previous: GuardRecord | null, next: GuardRecord): GuardRecord {
   if (!previous) return next;
+
   const merged: GuardRecord = {
     attempts: previous.attempts + next.attempts,
     executed: previous.executed + next.executed,
     rejected: previous.rejected + next.rejected,
     tools: {...previous.tools},
   };
+
   for (const [name, bucket] of Object.entries(next.tools)) {
     const current = merged.tools[name] ?? {attempts: 0, executed: 0, rejected: 0};
     merged.tools[name] = {
@@ -355,11 +408,13 @@ function mergeGuard(previous: GuardRecord | null, next: GuardRecord): GuardRecor
       rejected: current.rejected + bucket.rejected,
     };
   }
+
   return merged;
 }
 
 function flushDueCalls(atMs: number): void {
   if (!state.sessionConfig) return;
+
   const plan = planToolFlush({
     activeResponse: state.activeResponseId !== null,
     pending: state.pending,
@@ -367,19 +422,25 @@ function flushDueCalls(atMs: number): void {
     nowMs: atMs,
     dueAtMs: call => (call as PendingCall).dueAtMs ?? Number.POSITIVE_INFINITY,
   });
+
   if (plan.send.length === 0) {
     if (state.activeResponseId !== null) return;
+
     const nextDue = state.pending
       .filter(call => !state.answered.has(call.callId) && call.dueAtMs !== null)
       .map(call => call.dueAtMs as number)
       .sort((left, right) => left - right)[0];
+
     if (nextDue !== undefined) {
       if (flushTimer !== null) clearTimeout(flushTimer);
       flushTimer = setTimeout(() => flushDueCalls(now()), Math.max(50, nextDue - now()));
     }
+
     return;
   }
+
   const outputs: ToolOutput[] = [];
+
   if (caseId === 'payment') {
     const guarded = applyFixtureGuard(plan.send, atMs);
     outputs.push(...guarded.outputs);
@@ -395,6 +456,7 @@ function flushDueCalls(atMs: number): void {
       });
     }
   }
+
   for (const output of outputs) {
     state.toolOutputs.push(output);
     state.answered.add(output.callId);
@@ -402,6 +464,7 @@ function flushDueCalls(atMs: number): void {
     logEvent({atMs: now(), dir: 'out', type: 'conversation.item.create', item});
     send({type: 'conversation.item.create', item});
   }
+
   logEvent({atMs: now(), dir: 'out', type: 'response.create'});
   send({type: 'response.create'});
 }
@@ -416,6 +479,7 @@ function handleEvent(event: Record<string, unknown>, type: string, atMs: number)
       send({type: 'session.update', session: update});
       break;
     }
+
     case 'session.updated': {
       const session = event.session as Record<string, unknown> | undefined;
       state.sessionConfig = {
@@ -425,6 +489,7 @@ function handleEvent(event: Record<string, unknown>, type: string, atMs: number)
         output_audio_format: session?.output_audio_format ?? null,
         turn_detection: session?.turn_detection ?? null,
       };
+
       // Model, voice, PCM formats and server_vad must all be confirmed before any audio is sent.
       const issues = configurationIssues(modelInfo, {
         createdModel: state.reportedModel,
@@ -434,10 +499,13 @@ function handleEvent(event: Record<string, unknown>, type: string, atMs: number)
         outputAudioFormat: session?.output_audio_format ?? null,
         turnDetection: session?.turn_detection ?? null,
       });
+
       if (issues.length > 0) {
         abortRun(`provider configuration rejected before any audio: ${issues.join('; ')}`);
+
         return;
       }
+
       if (state.scenarioStarted) return; // repeated session.updated must not restart the scenario
       state.scenarioStarted = true;
       state.phase = 'running';
@@ -446,72 +514,89 @@ function handleEvent(event: Record<string, unknown>, type: string, atMs: number)
         .finally(() => resolveScenario?.());
       break;
     }
+
     case 'response.created': {
       const response = event.response as Record<string, unknown> | undefined;
       state.activeResponseId = String(response?.id ?? event.response_id ?? 'turn');
       state.responseStartedAt.set(state.activeResponseId, atMs);
       break;
     }
+
     case 'response.audio.delta': {
       const delta = typeof event.delta === 'string' ? event.delta : '';
       const bytes = base64ByteLength(delta);
+
       if (bytes > 0) {
         outputChunks.push(Buffer.from(delta, 'base64'));
         state.audioBytesTotal += bytes;
         state.audioDeltaCount += 1;
         const responseId = typeof event.response_id === 'string' ? event.response_id : state.activeResponseId;
+
         if (state.injection && afterInjectionEnd(state.injection, responseId, atMs)) {
           state.injection.audioDeltasAfterInjection += 1;
         }
       }
+
       break;
     }
+
     case 'response.audio_transcript.delta': {
       const responseId = String(event.response_id ?? state.activeResponseId ?? 'turn');
       const delta = typeof event.delta === 'string' ? event.delta : '';
       state.turnText.set(responseId, `${state.turnText.get(responseId) ?? ''}${delta}`);
+
       if (state.injection && afterInjectionEnd(state.injection, responseId, atMs)) {
         state.injection.textDeltasAfterInjection += 1;
       }
+
       break;
     }
+
     case 'response.audio_transcript.done': {
       const responseId = String(event.response_id ?? state.activeResponseId ?? 'turn');
       const text = typeof event.transcript === 'string' ? event.transcript : (state.turnText.get(responseId) ?? '');
       finalizeTurn(responseId, text, atMs, true);
       break;
     }
+
     case 'response.done': {
       const response = event.response as Record<string, unknown> | undefined;
       const responseId = String(response?.id ?? event.response_id ?? state.activeResponseId ?? 'turn');
       const status = String(response?.status ?? 'completed');
       finalizeTurn(responseId, state.turnText.get(responseId) ?? '', atMs, true);
       state.responseDoneCount += 1;
+
       if (status === 'cancelled') state.responseCancelledCount += 1;
       else state.completedResponseIds.add(responseId);
       state.doneResponseIds.add(responseId);
+
       // The fixture delay is keyed to the owning response_id, never to a global done count.
       for (const call of state.pending) {
         if (call.dueAtMs !== null) continue;
         call.dueAtMs = dueAtForCompletedResponse(call, responseId, atMs, caseId === 'background' ? BACKGROUND_TOOL_DELAY_MS : 0);
       }
+
       if (state.injection && responseId === state.injection.activeResponseId && atMs >= state.injection.startAtMs) {
         state.injection.responseEndedAfterInjection = true;
         state.injection.responseEndAtMs = atMs;
         state.injection.responseEndStatus = status;
         state.injection.explicitInterruption = status === 'cancelled';
       }
+
       if (state.activeResponseId === responseId) state.activeResponseId = null;
       flushDueCalls(atMs);
       break;
     }
+
     case 'input_audio_buffer.speech_started': {
       const action = clientActionForServerEvent(type);
       logEvent({atMs, dir: 'out', type: 'client.decision', serverEvent: type, action});
       break;
     }
+
     case 'response.function_call_arguments.done': {
       const callId = typeof event.call_id === 'string' ? event.call_id.trim() : '';
+
       if (callId && !state.pending.some(call => call.callId === callId)) {
         state.pending.push({
           callId,
@@ -522,57 +607,78 @@ function handleEvent(event: Record<string, unknown>, type: string, atMs: number)
           dueAtMs: null,
         });
       }
+
       break;
     }
   }
+
   pokeWaiters();
 }
 
 async function runScenario(): Promise<void> {
   state.phase = caseId;
+
   if (caseId === 'greet') {
     const question = inputs.get('question');
+
     if (!question) throw new Error('missing synthesized question input');
     state.firstQuestionSpeechEndAtMs = (await streamInput(question, 'question')).speechEndAtMs;
     await waitPhase('greet-response', () => state.turns.length > 0, 20_000);
     await sleep(500);
+
     return;
   }
+
   if (caseId === 'background') {
     const task = inputs.get('task');
     const side = inputs.get('side');
+
     if (!task || !side) throw new Error('missing synthesized background inputs');
     state.firstQuestionSpeechEndAtMs = (await streamInput(task, 'task')).speechEndAtMs;
+
     if (!await waitPhase('start_lookup-call', () => state.pending.some(call => call.name === 'start_lookup'), 12_000)) return;
     const call = state.pending.find(entry => entry.name === 'start_lookup');
+
     if (!await waitPhase('tool-response.done', () => call !== undefined && call.responseId !== null && state.doneResponseIds.has(call.responseId), 8_000)) return;
     state.secondQuestionSpeechEndAtMs = (await streamInput(side, 'side')).speechEndAtMs;
     await waitPhase('side-answer', () => state.secondQuestionAnsweredAtMs !== null, 12_000);
     await waitPhase('final-marker', () => marker !== null && state.turns.some(turn => turn.text.includes(marker)), 20_000);
     await sleep(500);
+
     return;
   }
+
   if (caseId === 'payment') {
     const query = inputs.get('query');
+
     if (!query) throw new Error('missing synthesized payment input');
     state.firstQuestionSpeechEndAtMs = (await streamInput(query, 'query')).speechEndAtMs;
+
     if (!await waitPhase('lookup_order-call', () => state.pending.some(call => call.name === 'lookup_order'), 15_000)) return;
+
     if (!await waitPhase('lookup-flush', () => state.toolOutputs.some(output => output.name === 'lookup_order'), 10_000)) return;
     const answered = await waitPhase('order-status-answer', () => state.turns.some(turn => ORDER_STATUS_PATTERN.test(turn.text)), 15_000);
     const answerTurn = answered ? state.turns.find(turn => ORDER_STATUS_PATTERN.test(turn.text)) : undefined;
+
     if (answerTurn) {
       await waitPhase('order-status-response.done', () => state.doneResponseIds.has(answerTurn.responseId), 8_000);
     }
+
     await sleep(500);
+
     return;
   }
+
   const explain = inputs.get('explain');
   const injectionInput = inputs.get('injection');
+
   if (!explain || !injectionInput) throw new Error('missing synthesized acoustic inputs');
   state.firstQuestionSpeechEndAtMs = (await streamInput(explain, 'explain')).speechEndAtMs;
+
   if (!await waitPhase('streaming-response', () => state.audioDeltaCount > 0 && state.activeResponseId !== null, 20_000)) return;
   await sleep(1500);
   const activeAtInjection = state.activeResponseId;
+
   const record: InjectionRecord = {
     kind: caseId,
     text: injectionInput.text,
@@ -590,7 +696,9 @@ async function runScenario(): Promise<void> {
     responseEndStatus: null,
     clientCancelSent: false,
   };
+
   state.injection = record;
+
   if (!record.overlap) return;
   await streamInput(injectionInput, 'injection');
   record.endAtMs = now();
@@ -602,6 +710,7 @@ async function runScenario(): Promise<void> {
 function bundle(): EvidenceBundle {
   const firstDelta = firstNonEmptyAudioDelta(state.inbound);
   const firstText = firstAssistantTranscript(state.inbound);
+
   return {
     caseId,
     model,
@@ -653,18 +762,22 @@ function redactError(message: string): string {
 
 async function main(): Promise<void> {
   for (const spec of inputSpecs()) inputs.set(spec.id, synthesize(spec.id, spec.text));
+
   if (state.fatalError) throw new Error(state.fatalError);
   state.phase = 'credential';
+
   try {
     credential = model === '3' ? (process.env.STEPFUN_API_KEY?.trim() ?? '') : await readStepVoiceKey();
   } catch (error) {
     credential = '';
     state.errors.push(redactError(error instanceof Error ? error.message : String(error)));
   }
+
   if (!credential) {
     state.fatalError = `missing credential: ${modelInfo.credential}`;
     state.errors.push(state.fatalError);
     resolveScenario?.();
+
     return;
   }
 
@@ -685,17 +798,22 @@ async function main(): Promise<void> {
   runtime.socket.on('message', raw => {
     const atMs = now();
     let event: Record<string, unknown>;
+
     try {
       event = JSON.parse(raw.toString()) as Record<string, unknown>;
     } catch {
       abortRun('invalid provider event');
+
       return;
     }
+
     const type = typeof event.type === 'string' ? event.type : 'unknown';
+
     if (type === 'error') {
       const error = event.error as Record<string, unknown> | undefined;
       state.errors.push(redactError(String(error?.message ?? event.message ?? 'provider error')));
     }
+
     const sanitized = sanitizeEvent({...event, atMs, dir: 'in', type});
     logEvent(sanitized);
     state.inbound.push(sanitized);
@@ -705,11 +823,13 @@ async function main(): Promise<void> {
   });
 
   await scenarioPromise;
+
   if (state.fatalError) throw new Error(state.fatalError);
   state.phase = 'done';
 }
 
 let verdict: Verdict | null = null;
+
 try {
   // The 90s cap covers the whole single-scenario process, synthesis included.
   hardTimer = setTimeout(
@@ -723,25 +843,35 @@ try {
 } catch (error) {
   const message = redactError(error instanceof Error ? error.message : String(error));
   state.errors.push(message);
+
   if (!state.fatalError) state.fatalError = message;
   const base = judgeCase(bundle());
   verdict = {...base, status: 'ERROR', reasons: [message, ...base.reasons]};
 } finally {
   state.phase = 'done';
+
   if (hardTimer) clearTimeout(hardTimer);
+
   if (heartbeatTimer) clearInterval(heartbeatTimer);
+
   if (flushTimer) clearTimeout(flushTimer);
+
   for (const waiter of [...waiters]) clearTimeout(waiter.timer);
   waiters.length = 0;
+
   if (runtime.socket) {
     runtime.socket.removeAllListeners();
+
     try { runtime.socket.terminate(); } catch { /* already closed */ }
   }
+
   if (outputChunks.length > 0) writeFileSync(outputPcmPath, Buffer.concat(outputChunks));
+
   if (!verdict) verdict = judgeCase(bundle());
   const evidence = bundle();
   const status = verdict.status;
   const latencyMs = audioLatencyFromSpeechEnd(evidence.firstQuestionSpeechEndAtMs, evidence.firstAudioDeltaAtMs);
+
   const notes = [
     'HUMAN_NOT_RUN: no microphone, no player and no human ear in the loop; response.done is generation end, not playback',
     'received output is stored as output.pcm for optional later listening; it was never played during the probe',
@@ -752,6 +882,7 @@ try {
     'single-case run: no cross-model preference is inferred from this file',
     'run under an external 120s wall clock: the in-process 90s cap cannot fire during synchronous say/ffmpeg synthesis',
   ];
+
   writeJson(resultPath, {
     case: caseId,
     model,

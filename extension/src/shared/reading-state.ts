@@ -9,4 +9,5 @@ export interface ReadingRecord extends ReadingTranscript {
   transferredConversationId?: string;
   updatedAt: number;
 }
+
 export const readingBusy = (record?: ReadingTranscript): boolean => ['pending', 'streaming'].includes(record?.turns.at(-1)?.state ?? '');

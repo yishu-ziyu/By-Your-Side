@@ -56,6 +56,7 @@ describe("组成员快照 / 全组接管", () => {
         worker("done", { streaming: false, waitingTool: false, waitingMessage: false, tabId: 41 }),
       ],
     });
+
     const ids = members.map((m) => m.sessionId);
     expect(ids).toEqual([LEAD_SESSION_ID, "wiki", "notes"]);
     expect(ids).not.toContain("done");
@@ -68,17 +69,20 @@ describe("组成员快照 / 全组接管", () => {
       lead: lead({ streaming: false, tabId: 11 }),
       workers: [worker("wiki", { streaming: true, tabId: 21 })],
     });
+
     expect(members.map((m) => m.sessionId)).toEqual([LEAD_SESSION_ID, "wiki"]);
   });
 
   it("接管进行中不得把新成员悄悄加入或漏掉原成员", () => {
     const team = new TeamControl();
+
     const frozen = team.snapshotAndFreeze(
       snapshotActiveGroup({
         lead: lead(),
         workers: [worker("wiki")],
       }),
     );
+
     expect(frozen.members.map((m) => m.sessionId)).toEqual([LEAD_SESSION_ID, "wiki"]);
     expect(
       team.tryAddMember({
@@ -107,19 +111,25 @@ describe("组成员快照 / 全组接管", () => {
     expect(teamOwnerBanner(team.view()!).actionEnabled).toBe(false);
 
     let releaseLead!: () => void;
+
     const leadWrite = gate.run("lead-click", "click", async () => {
       await new Promise<void>((resolve) => {
         releaseLead = resolve;
       });
+
       return { clicked: true };
     });
+
     let releaseWorker!: () => void;
+
     const workerWrite = gate.run("wiki-fill", "fill", async () => {
       await new Promise<void>((resolve) => {
         releaseWorker = resolve;
       });
+
       return { filled: true };
     });
+
     await Promise.resolve();
 
     const takeoverP = gate.beginTakeover();
@@ -133,6 +143,7 @@ describe("组成员快照 / 全组接管", () => {
     await expect(
       gate.run("late-js", "js", async () => {
         lateLanded = true;
+
         return { value: 1 };
       }),
     ).rejects.toThrow(USER_BLOCKED_ERROR);
@@ -180,6 +191,7 @@ describe("组成员快照 / 全组接管", () => {
 describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
   it("交还按成员绑定页取 tab，不把当前活动标签复制给其他人", () => {
     const active = { id: 99, title: "User looking here", url: "http://127.0.0.1/active" };
+
     const leadPage = prepareMemberHandback({
       sessionId: LEAD_SESSION_ID,
       boundTab: { id: 11, title: "Lead now", url: "http://127.0.0.1/lead?v=2" },
@@ -187,6 +199,7 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       capturedAt: 100,
       activeTabId: active.id,
     });
+
     const wikiPage = prepareMemberHandback({
       sessionId: "wiki",
       boundTab: { id: 21, title: "Wiki now", url: "http://127.0.0.1/wiki?v=2" },
@@ -194,8 +207,10 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       capturedAt: 101,
       activeTabId: active.id,
     });
+
     expect(leadPage.ok).toBe(true);
     expect(wikiPage.ok).toBe(true);
+
     if (leadPage.ok && wikiPage.ok) {
       expect(leadPage.context.tabId).toBe(11);
       expect(wikiPage.context.tabId).toBe(21);
@@ -205,6 +220,7 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       expect(wikiPage.snapshot).toBe("wiki-fresh-v2");
       expect(leadPage.snapshot).not.toBe(wikiPage.snapshot);
     }
+
     expect(handbackPagesIndependent([leadPage, wikiPage])).toBe(true);
   });
 
@@ -216,6 +232,7 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       capturedAt: 1,
       activeTabId: 11,
     });
+
     const leadPage = prepareMemberHandback({
       sessionId: LEAD_SESSION_ID,
       boundTab: { id: 11, title: "Lead", url: "http://127.0.0.1/lead" },
@@ -223,6 +240,7 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       capturedAt: 1,
       activeTabId: 11,
     });
+
     expect(handbackPagesIndependent([leadPage, copied])).toBe(false);
   });
 
@@ -243,6 +261,7 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       snapshot: "lead-n2",
       capturedAt: 200,
     });
+
     team.applyHandback([leadPage]);
     expect(team.member(LEAD_SESSION_ID)?.phase).toBe("restoring");
     expect(team.member("wiki")?.phase).toBe("user");
@@ -259,6 +278,7 @@ describe("逐成员交还：各自绑定页的新鲜 snapshot", () => {
       snapshot: "wiki-n2",
       capturedAt: 201,
     });
+
     team.applyHandback([wikiPage]);
     team.markRestored("wiki");
     expect(team.view()?.phase).toBe("restored");
@@ -282,13 +302,16 @@ describe("关闭绑定标签：该成员保持暂停，不阻断其他人", () =
       snapshot: "lead-n3",
       capturedAt: 300,
     });
+
     const closed = prepareMemberHandback({
       sessionId: "wiki",
       boundTab: null,
       capturedAt: 301,
       activeTabId: 11,
     });
+
     expect(closed.ok).toBe(false);
+
     if (!closed.ok) {
       expect(closed.reason).toBe(TEAM_TAB_CLOSED);
       expect(closed.closed).toBe(true);
@@ -315,12 +338,14 @@ describe("关闭绑定标签：该成员保持暂停，不阻断其他人", () =
     team.abort();
     expect(team.view()?.phase).toBe("aborted");
     expect(team.canHandback()).toBe(false);
+
     const leadPage = prepareMemberHandback({
       sessionId: LEAD_SESSION_ID,
       boundTab: { id: 11, title: "Lead", url: "http://127.0.0.1/lead" },
       snapshot: "late",
       capturedAt: 1,
     });
+
     expect(team.applyHandback([leadPage])).toBe(false);
     expect(team.view()?.members.every((m) => m.phase === "aborted")).toBe(true);
     expect(team.view()?.members.some((m) => m.phase === "restored")).toBe(false);

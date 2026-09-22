@@ -6,13 +6,16 @@ vi.mock('../src/run-trace.js', () => ({ RunTrace: class { begin() {} correlate()
 it('团队工具切换不能重新启用SDK目录中被禁用的本地工具', () => {
   const permitted = ['snapshot', 'fill', 'spawn_worker', 'take_tab', 'post', 'await_message', 'list_workers', 'stop_worker', 'page_operation'];
   let active = [...permitted];
+
   const raw = {
     getAllTools: () => [...permitted, 'bash', 'read', 'edit', 'write', 'powershell'].map(name => ({ name })),
     getActiveToolNames: () => [...active],
     setActiveToolsByName: vi.fn((names: string[]) => { active = [...names]; }),
   };
+
   const Constructor = BrowserAgentSession as unknown as new (...args: any[]) => BrowserAgentSession;
   const session = new Constructor(raw, null, { emit() {}, setStatus() {} }, null, null);
+
   for (const mounted of [false, true, false, true]) {
     session.setTeamToolsMounted(mounted);
     expect(active.filter(name => !permitted.includes(name))).toEqual([]);

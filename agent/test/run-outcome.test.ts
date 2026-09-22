@@ -29,10 +29,12 @@ describe("terminal result book", () => {
 
   it("covers 500 synthetic runs with exactly one terminal record each", () => {
     const book = new TerminalResultBook();
+
     for (let i = 0; i < 500; i++) {
       const runId = `run-${i}`;
       book.upsert(result({ runId, resultId: `res-${i}`, outcome: i % 5 === 0 ? "unknown" : "verified_success" }));
     }
+
     expect(book.size()).toBe(500);
     expect(book.get("run-0")?.outcome).toBe("unknown");
     expect(book.get("run-1")?.outcome).toBe("verified_success");

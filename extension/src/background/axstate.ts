@@ -6,6 +6,7 @@
  */
 
 const byTab = new Map<number, Set<number>>();
+
 const latestKind = new Map<number, "ax" | "dom">();
 
 export function recordAxSnapshot(tabId: number, backendIds: number[]): void {
@@ -35,6 +36,7 @@ export function snapshotRefKind(tabId: number): "ax" | "dom" | undefined {
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === "loading") { byTab.delete(tabId); latestKind.delete(tabId); }
 });
+
 chrome.tabs.onRemoved.addListener((tabId) => {
   byTab.delete(tabId);
   latestKind.delete(tabId);

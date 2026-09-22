@@ -8,7 +8,9 @@ import { decideFastTask } from '../../agent/src/fast-task.js';
 import type { BrowserObservation } from '../../shared/browser-decision.js';
 
 const out = resolve('out/experiments', `fast-task-live-${Date.now()}`);
+
 await mkdir(out, { recursive: true });
+
 const observation: BrowserObservation = {
   id: 'fixture-observation', tabId: 1, documentId: 'fixture-document', url: 'https://fixture.invalid/desk',
   observedAt: Date.now(), text: 'Reading desk', controls: [], truncated: false, source: 'accessibility',
@@ -18,8 +20,11 @@ const observation: BrowserObservation = {
     { id: 3, title: 'Wind study', url: 'https://fixture.invalid/wind', active: false },
   ], tabsTruncated: false,
 };
+
 const savedSkill = learningFixture().candidate().skill;
+
 if (!autoSkillEligible(savedSkill)) throw new Error('Live skill fixture must satisfy production automatic replay eligibility');
+
 const cases = [
   { request: '切换到已经打开的 Rainfall study 标签页。', expected: 'switch_tab' },
   { request: '我想看 Rainfall study 那一页，帮我切过去。', expected: 'switch_tab' },
@@ -43,28 +48,42 @@ const cases = [
   { request: '查找客户「李四」', expected: 'miss', skill: true },
   { request: '已有译文只显示译文，隐藏原文。', expected: 'display', skill: true },
 ];
+
 const activeCases = process.argv.includes('--skills-only') ? cases.filter(test => test.skill) : cases;
+
 const realFetch = globalThis.fetch;
+
 let answers: unknown;
+
 globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
   const response = await realFetch(...args);
+
   if (String(args[0]).startsWith('https://api.typesafe.ai/')) answers = await response.clone().json().catch(() => undefined);
+
   return response;
 };
+
 const rows: any[] = [];
+
 try {
   for (const test of activeCases) {
     answers = undefined;
     const page = structuredClone(observation);
+
     if (test.skill) { page.url = 'https://example.com/search'; page.tabs![0]!.url = page.url; }
+
     if (test.duplicate) page.tabs!.push({ id: 4, title: 'Rainfall study', url: 'https://fixture.invalid/paper-other', active: false });
     const begin = performance.now();
+
     const result = await decideFastTask({ request: test.request, observation: page, allowSwitch: true, allowDisplay: true,
       ...(test.skill ? {skills:[{skill:savedSkill,runs:[],selected:false}]} : {}),
       translation: { document: 'translation-fixture', mode: 'bilingual', fontFamily: 'original', translated: 2, displayValid: true } }, new AbortController().signal);
+
     const actual = result.kind === 'candidate' ? result.candidate.kind : result.kind;
+
     const passed = actual === test.expected && (result.kind !== 'candidate' || result.candidate.kind !== 'switch_tab' || result.candidate.tab.id === 2)
       && (result.kind !== 'candidate' || result.candidate.kind !== 'display' || (test.request.includes('宋体') ? result.candidate.params.fontFamily === 'songti' : result.candidate.params.mode === 'translated'));
+
     const skillInputsMatch = result.kind !== 'candidate' || result.candidate.kind !== 'skill' || (result.candidate.skill.inputs['客户名'] === '李四' && result.candidate.skill.inputs['地区'] === '深圳');
     rows.push({ ...test, actual, passed: passed && skillInputsMatch, elapsedMs: performance.now() - begin, result, answers });
     console.log(JSON.stringify({ request: test.request, actual, passed: passed && skillInputsMatch, elapsedMs: rows.at(-1).elapsedMs }));
@@ -74,5 +93,6 @@ try {
   const report = { kind: 'development-regression-not-generalization', passed: rows.length === activeCases.length && rows.every(row => row.passed), rows };
   await writeFile(join(out, 'results.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ out, passed: report.passed, total: rows.length, failures: rows.filter(row => !row.passed).length }));
+
   if (!report.passed) process.exitCode = 1;
 }

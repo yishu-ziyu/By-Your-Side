@@ -3,39 +3,48 @@ import {TaskProgress} from '../src/task-progress.js';
 import {ConversationManager} from '../src/conversation-manager.js';
 
 const cleanup: Array<() => void> = [];
+
 afterEach(() => cleanup.splice(0).forEach(fn => fn()));
 
 function progress() {
   const p = new TaskProgress('default');
   p.request('先观察X再标注，保持只处理当前页。');
   p.observe({type: 'agent_event', event: {kind: 'agent_start'}});
+
   return p;
 }
 
 function managerHarness() {
   let sink: (m: any) => void = () => {};
+
   let paused = false;
   let started = false;
   const emitted: any[] = [];
+
   const startTask = vi.fn(() => {
     sink({type: 'agent_event', event: {kind: 'agent_start'}});
     sink({type: 'status', state: 'running'});
   });
+
   const session: any = {
     available: true, modelName: () => 'fixture', executionEpoch: () => 7,
     isHeld: () => paused, isStreaming: () => started && !paused,
     startTask, bindDeliveryRun: vi.fn(), bindConversationContext: vi.fn(),
     queueSteerForResume: vi.fn(), steerCurrentTask: vi.fn(async () => {}),
   };
+
   const manager = new ConversationManager(async (_id, emit) => {
     sink = emit;
+
     return {
       session, rpc: {rejectAll: vi.fn()},
       fleet: {reset: vi.fn(), isGroupHeld: () => paused, teamView: () => null, list: () => []},
       handleMessage: vi.fn(), dispose: () => {},
     } as any;
   }, message => emitted.push(message));
+
   cleanup.push(() => manager.dispose());
+
   return {
     manager, emitted, session, startTask,
     get sink() { return sink; },

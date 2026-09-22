@@ -15,6 +15,7 @@ import type { ServerMessage } from '../../shared/protocol.js';
 import type { ExecutionFeedback } from '../../shared/execution-feedback.js';
 
 const cleanup: Array<() => void> = [];
+
 afterEach(() => cleanup.splice(0).forEach(close => close()));
 
 class Socket extends EventEmitter {
@@ -31,29 +32,39 @@ async function harness(gate = false) {
   let wrapper!: BrowserAgentSession;
   const facts = new Map<string, string>();
   let unknownFill = false;
+
   const rpc: any = {
     setPageTarget: () => {}, getPageTarget: () => 7, resolvePageParams: (_name: string, params: object) => ({ tabId: 7, ...params }),
     ensureToolCall: () => {}, markCallRejected: (id: string) => facts.set(id, 'not_executed'),
     getExecutionFact: (id: string) => facts.get(id), noteToolFact: (id: string, fact: string) => facts.set(id, fact),
     call: vi.fn(async (name: string, params: any, _timeout?: unknown, _member?: unknown, _program?: unknown, _epoch?: unknown, id?: string) => {
       if (id) facts.set(id, 'executed');
+
       if (name === 'fill' && unknownFill) {
         const error = Object.assign(new Error('receipt timeout'), { executionFact: 'unknown' });
         throw error;
       }
+
       if (name === 'switch_tab') return { tabId: typeof params?.tabId === 'number' ? params.tabId : 8,
         verification: { verified: true, activeTabId: typeof params?.tabId === 'number' ? params.tabId : 8, windowId: 1, windowFocused: true,
           workingTabId: typeof params?.tabId === 'number' ? params.tabId : 8 } };
+
       if (name === 'list_tabs') return { tabs: [{ id: 7, url: 'https://example.test', title: 'page' }] };
+
       if (name === 'get_active_tab') return { tab: { id: 7, url: 'https://example.test', title: 'page' } };
+
       if (name === 'fill') return { filled: true, verified: true };
+
       if (name === 'read_element') return { text: '第 3 条评论原文' };
+
       return {};
     }),
   };
+
   const manager = new ConversationManager(async (_id, sink) => {
     const raw: any = { isStreaming: false, prompt, agent: { state: { tools: [], messages: [] } },
       sessionManager: { appendCustomEntry: vi.fn(), getBranch: () => [] } };
+
     wrapper = new (BrowserAgentSession as any)(raw, null, {
       emit: (event: any) => sink({ type: 'agent_event', event }),
       setStatus: (state: any) => sink({ type: 'status', state }),
@@ -62,12 +73,15 @@ async function harness(gate = false) {
       epoch: () => wrapper.executionEpoch(), canWrite: id => wrapper.canWriteCurrentInput(id),
       assertCall: (name, params, id) => wrapper.assertTaskResultExecution(name, params, id),
     });
+
     return { session: wrapper, rpc, fleet: { teamView: () => null, isGroupHeld: () => false }, dispose: vi.fn() } as any;
   }, message => messages.push(message));
+
   await manager.ensureDefault();
   cleanup.push(() => manager.dispose());
   const started: RealtimeVoiceSession[] = [];
   let live: RealtimeVoiceSession | null = null;
+
   const voice = async (turn = 1) => {
     if (!live) {
       live = new RealtimeVoiceSession({
@@ -84,27 +98,36 @@ async function harness(gate = false) {
       socket.server({ type: 'session.created', session: { model: MODEL } });
       socket.server({ type: 'session.updated', session: { model: MODEL, voice: STEP_VOICE, input_audio_format: 'pcm16', output_audio_format: 'pcm16', turn_detection: { type: 'server_vad' } } });
     }
+
     socket.server({ type: 'input_audio_buffer.speech_started', item_id: `u${turn}` });
     live.command({ kind: 'commit', turn: turn + 1, input: { context: { tabId: 7, url: 'https://example.test', title: 'Example' } } });
     socket.server({ type: 'input_audio_buffer.speech_stopped', item_id: `u${turn}` });
     socket.server({ type: 'response.created', response: { id: `r${turn}` } });
     socket.server({ type: 'conversation.item.input_audio_transcription.completed', item_id: `u${turn}`, transcript: '本轮要求' });
+
     return live;
   };
+
   const call = (seq: number, id: string, name: string, args: unknown) => socket.server({ type: 'response.function_call_arguments.done', response_id: `r${seq}`, call_id: id, name, arguments: typeof args === 'string' ? args : JSON.stringify(args) });
   const done = (seq: number) => socket.server({ type: 'response.done', response: { id: `r${seq}`, status: 'completed' } });
+
   const speak = (seq: number, text = '好的') => {
     socket.server({ type: 'response.audio.delta', response_id: `r${seq}`, delta: Buffer.from(text).toString('base64') });
     socket.server({ type: 'response.audio_transcript.delta', response_id: `r${seq}`, delta: text });
     socket.server({ type: 'response.done', response: { id: `r${seq}`, status: 'completed' } });
   };
+
   const outputs = () => socket.sent.filter(m => m.item?.type === 'function_call_output');
+
   const feedbacks = () => messages.flatMap(m => {
     const event = (m as { event?: { kind?: string; feedback?: ExecutionFeedback } }).event;
+
     return m.type === 'agent_event' && event?.kind === 'execution_feedback' && event.feedback ? [event.feedback] : [];
   });
+
   const audioFor = (responseId: string) => voiceEvents.filter(e => e.kind === 'audio' && e.responseId === responseId);
   const transcriptsFor = () => voiceEvents.filter(e => e.kind === 'text' && e.role === 'assistant' && e.text);
+
   return { manager, messages, voiceEvents, socket, prompt, rpc, voice, call, done, speak, outputs, feedbacks, audioFor, transcriptsFor, unknownFill: (value: boolean) => { unknownFill = value; } };
 }
 
@@ -200,6 +223,7 @@ it('A5 重复回执只反馈一次；两次独立操作各反馈一次', async (
 function normalConnection() {
   const socket = new Socket();
   const client: any[] = [];
+
   const connection = new RealtimeVoiceConnection({
     key: 'offline-placeholder',
     connect: () => socket as any,
@@ -221,6 +245,7 @@ function normalConnection() {
       read_page: async () => ({}),
     },
   });
+
   cleanup.push(() => connection.close());
   connection.start();
   socket.server({ type: 'session.created', session: { model: MODEL } });
@@ -234,11 +259,13 @@ function normalConnection() {
   socket.server({ type: 'response.done', response: { id: 'r1', status: 'completed' } });
   const audioFor = (responseId: string) => client.filter(e => e.type === 'audio' && e.responseId === responseId);
   const notice = () => socket.sent.find(m => String((m as any).item?.id ?? '').startsWith('bys-notice-')) as any;
+
   return { connection, socket, client, audioFor, notice };
 }
 
 it('缺陷1-a 续答 created 超时后，用户下一句的回答不再被静音', async () => {
   vi.useFakeTimers();
+
   try {
     const f = normalConnection();
     await vi.advanceTimersByTimeAsync(50);
@@ -258,6 +285,7 @@ it('缺陷1-a 续答 created 超时后，用户下一句的回答不再被静音
 
 it('缺陷1-c 只有 create-watch 超时（没有新话轮）时，后续音频仍直接交付', async () => {
   vi.useFakeTimers();
+
   try {
     const f = normalConnection();
     await vi.advanceTimersByTimeAsync(50);
@@ -273,6 +301,7 @@ it('缺陷1-c 只有 create-watch 超时（没有新话轮）时，后续音频�
 
 it('缺陷1-b 续答被 busy 拒绝后，排队中的交付通知仍然出声', async () => {
   vi.useFakeTimers();
+
   try {
     const f = normalConnection();
     await vi.advanceTimersByTimeAsync(50);

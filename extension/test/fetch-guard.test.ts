@@ -15,6 +15,7 @@ describe("fetch 边界", () => {
     for (const host of ["127.0.0.1", "localhost", "10.0.0.5", "192.168.1.2", "172.20.0.1", "169.254.1.1", "printer.local", "svc.internal", "[::1]"]) {
       expect(() => req({ url: `http://${host}/x` }), host).toThrow(/拒绝本地\/私网/);
     }
+
     expect(req({ url: "https://8.8.8.8/x" }).url).toContain("8.8.8.8");
   });
 
@@ -44,12 +45,14 @@ describe("fetch 边界", () => {
 
   it("stops an endless stream without buffering the whole body", async () => {
     let pulls = 0;
+
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         pulls += 1;
         controller.enqueue(new Uint8Array(64 * 1024).fill(97));
       },
     });
+
     const response = new Response(body);
     const result = await readCappedText(response, 8 * 1024);
     expect(result.retainedBytes).toBe(8 * 1024);
@@ -63,6 +66,7 @@ describe("fetch 边界", () => {
         controller.enqueue(new Uint8Array(1024).fill(98));
       },
     });
+
     const ac = new AbortController();
     const pending = readCappedText(new Response(body), FETCH_MAX_BYTES, { signal: ac.signal });
     ac.abort();
@@ -73,6 +77,7 @@ describe("fetch 边界", () => {
 
   it("decodes UTF-8 across chunk boundaries", async () => {
     const bytes = new TextEncoder().encode("你好");
+
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(bytes.subarray(0, 1));
@@ -80,6 +85,7 @@ describe("fetch 边界", () => {
         controller.close();
       },
     });
+
     const result = await readCappedText(new Response(body));
     expect(result.text).toBe("你好");
     expect(result.stoppedReason).toBe("complete");

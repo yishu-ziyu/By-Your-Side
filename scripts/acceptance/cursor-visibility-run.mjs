@@ -10,46 +10,84 @@ import { sideagentExtensionId } from './constants.mjs';
 import { installExecuteToolCallHook, normalizeServiceWorkerInspector } from './sw-hook.mjs';
 
 const out = process.env.CURSOR_EVIDENCE_DIR || '/tmp/ego-cursor-visibility-20260910';
+
 await mkdir(out, {recursive:true});
+
 const html = await readFile(new URL('../../extension/test/fixtures/acceptance/cursor-visibility.html',import.meta.url));
+
 const server = createServer((_req,res)=>{res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store'});res.end(html);});
+
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+
 const url=`http://127.0.0.1:${server.address().port}/`;
-const records=[];let cdp,session,tabId,previousTabId,windowId;let seq=0;
+
+const records=[];
+
+let cdp,session,tabId,previousTabId,windowId;
+
+let seq=0;
+
 const runId='cursor-'+Date.now();
+
 const frontmostBundle=()=>execFileSync('osascript',['-e','tell application "System Events" to get bundle identifier of first application process whose frontmost is true'],{encoding:'utf8',timeout:4000}).trim();
+
 let previousApp;
+
 const sid='acpt';
+
 const sw=expression=>evaluateInWorker(cdp,session,expression,45000);
+
 const call=async(name,params)=>{
   const start=Date.now();
   const r=await sw(`globalThis.__saCall(${JSON.stringify(runId+'-'+ ++seq)},${JSON.stringify(name)},${JSON.stringify(params)},${JSON.stringify(sid)})`);
   records.push({type:'tool',name,ok:r.ok,elapsedMs:Date.now()-start,error:r.error});
-  assert.equal(r.ok,true,r.error);return r.data;
+  assert.equal(r.ok,true,r.error);
+
+return r.data;
 };
+
 const page=async(fn,args=[],world='ISOLATED')=>sw(`chrome.scripting.executeScript({target:{tabId:${tabId}},world:${JSON.stringify(world)},func:${fn.toString()},args:${JSON.stringify(args)}}).then(r=>r[0]?.result)`);
+
 const state=()=>page(id=>window.__sideagent?.cursorState?.(id),[sid]);
+
 const check=(name,condition,data)=>{records.push({type:'check',name,passed:Boolean(condition),data});assert(condition,name);console.log('PASS '+name);};
+
 const shot=async(name)=>{
   const r=await sw(`chrome.debugger.sendCommand({tabId:${tabId}},'Page.captureScreenshot',{format:'png'})`);
   await writeFile(`${out}/${name}.png`,Buffer.from(r.data,'base64'));
 };
-const wait=async(test,ms=4000)=>{const end=Date.now()+ms;let value;do{value=await test();if(value)return value;await new Promise(r=>setTimeout(r,40));}while(Date.now()<end);throw Error('可视状态等待超时');};
+
+const wait=async(test,ms=4000)=>{const end=Date.now()+ms;let value;
+
+do{value=await test();
+
+if(value)return value;await new Promise(r=>setTimeout(r,40));}while(Date.now()<end);
+
+throw Error('可视状态等待超时');};
+
 async function runAndCapture(name,params,file){
   const pending=call(name,params);let error;pending.catch(e=>{error=e;});
-  const seen=await wait(async()=>{if(error)throw error;const s=await state();return s?.phase==='active'?s:null;});
+
+  const seen=await wait(async()=>{if(error)throw error;const s=await state();
+
+return s?.phase==='active'?s:null;});
+
   check(name+' shows actual action label',seen.label.includes(name==='fill'?'正在填写':'正在点击'),seen);
   await shot(file);await pending;
   const after=await state();check(name+' ends from execution receipt',after?.phase==='done',after);
+
   return after;
 }
+
 async function visualBegin(target,id='visual',kind='fill'){
   return page((sid,target,id,kind)=>{
     const el=document.querySelector(target),r=el.getBoundingClientRect(),c=window.__sideagent.cursor.for(sid);
     c.beginAction(id,kind,{x:r.x,y:r.y,width:r.width,height:r.height},el);
+
     return c.move(r.x+r.width/2,r.y+r.height/2);
   },[sid,target,id,kind]);
 }
+
 async function startRecording(){
   await sw(`(() => {
     const frames=[];
@@ -62,23 +100,28 @@ async function startRecording(){
     return chrome.debugger.sendCommand({tabId:${tabId}},'Page.startScreencast',{format:'jpeg',quality:65,maxWidth:1440,maxHeight:960,everyNthFrame:2});
   })()`);
 }
+
 async function stopRecording(){
   const frames=await sw(`(async()=>{
     const r=globalThis.__cursorRecording;if(!r)return [];
     await chrome.debugger.sendCommand({tabId:${tabId}},'Page.stopScreencast').catch(()=>{});
     chrome.debugger.onEvent.removeListener(r.listener);delete globalThis.__cursorRecording;return r.frames;
   })()`);
+
   if(frames.length<2)return;
   await mkdir(`${out}/frames`,{recursive:true});const lines=['ffconcat version 1.0'];
+
   for(let i=0;i<frames.length;i++){
     const name=`frame-${String(i).padStart(3,'0')}.jpg`;
     await writeFile(`${out}/frames/${name}`,Buffer.from(frames[i].data,'base64'));
     lines.push(`file '${name}'`,`duration ${Math.min(2,Math.max(.016,(frames[i+1]?.t??frames[i].t+.8)-frames[i].t))}`);
   }
+
   await writeFile(`${out}/frames/list.txt`,lines.join('\n')+'\n');
   execFileSync('ffmpeg',['-y','-loglevel','error','-f','concat','-safe','0','-i',`${out}/frames/list.txt`,'-vf','pad=ceil(iw/2)*2:ceil(ih/2)*2','-pix_fmt','yuv420p','-movflags','+faststart',`${out}/action.mp4`]);
   records.push({type:'recording',frames:frames.length,path:'action.mp4'});
 }
+
 try{
   ({cdp}=await connectBrowser(discoverChromeMain().port));
   const ext=sideagentExtensionId(),worker=findServiceWorker((await cdp.send('Target.getTargets')).targetInfos,ext);
@@ -113,15 +156,19 @@ try{
   check('snapshot exposes field AX ref',Boolean(ref),line);
   await call('fill',{target:ref,value:'测试联系人'});
   const ax=await state();check('AX action labels and anchors same node',ax?.label.includes('联系人姓名')&&ax.targetRect?.width>0,ax);
+
   // 以下为同一正式内容脚本的合成状态检查，不宣称为模型自主操作。
   for(const [target,file] of [['#email','04-light'],['#name','05-dark'],['#topic','06-busy']]){
     await visualBegin(target);
-    await wait(async()=>{const s=await state();return s?.targetRect&&Math.abs(s.x-(s.targetRect.x+s.targetRect.width/2))<2?s:null;});
+    await wait(async()=>{const s=await state();
+
+return s?.targetRect&&Math.abs(s.x-(s.targetRect.x+s.targetRect.width/2))<2?s:null;});
     const s=await state(),l=s.labelRect,t=s.targetRect;
     const viewport=await page(()=>({width:innerWidth,height:innerHeight}));
     check(file+' label avoids target and edges',l.x>=8&&l.y>=8&&l.x+l.width<=viewport.width-7&&l.y+l.height<=viewport.height-7&&(l.x>=t.x+t.width||l.y>=t.y+t.height||l.x+l.width<=t.x||l.y+l.height<=t.y),s);
     check(file+' cursor size',s.size===44);await shot(file);
   }
+
   await new Promise(r=>setTimeout(r,1600));check('active action survives old park/highlight deadlines',(await state())?.phase==='active');
   await page(id=>window.__sideagent.cursor.for(id).endAction('visual','done'),[sid]);
   await visualBegin('#email','new-action');
@@ -136,7 +183,9 @@ try{
   const interrupted=await state();
   check('new action interrupts old replay',interrupted?.action==='interrupt-replay'&&interrupted.phase==='active'&&Math.abs(interrupted.x-interrupted.targetRect.x-interrupted.targetRect.width/2)<2,interrupted);
   await visualBegin('#nested','scroll');
-  await wait(async()=>{const s=await state();return s?.targetRect&&Math.abs(s.y-(s.targetRect.y+s.targetRect.height/2))<2;});
+  await wait(async()=>{const s=await state();
+
+return s?.targetRect&&Math.abs(s.y-(s.targetRect.y+s.targetRect.height/2))<2;});
   const before=await state();await page(()=>{document.querySelector('#scroll').scrollTop=35;});
   await wait(async()=>Math.abs((await state()).targetRect.y-before.targetRect.y+35)<2);
   check('nested scrolling tracks same target',true);await shot('07-scroll');
@@ -157,12 +206,16 @@ try{
 finally{
   if(tabId&&cdp){
     await stopRecording().catch(()=>{});
+
     if(previousTabId&&previousTabId!==tabId)await sw(`chrome.tabs.query({active:true,windowId:${windowId}}).then(t=>t[0]?.id===${tabId}?chrome.tabs.update(${previousTabId},{active:true}):null)`).catch(()=>{});
     await sw(`chrome.tabs.remove(${tabId})`).catch(()=>{});
   }
+
   await cdp?.close();server.closeAllConnections();await new Promise(r=>server.close(r));
+
   if(previousApp&&/^[a-zA-Z0-9.-]+$/.test(previousApp)&&previousApp!=='com.google.Chrome'&&frontmostBundle()==='com.google.Chrome'){
     execFileSync('osascript',['-e',`tell application id "${previousApp}" to activate`],{timeout:4000});
   }
+
   await writeFile(`${out}/result.json`,JSON.stringify({ok:!process.exitCode,records},null,2)+'\n');console.log('evidence '+out);
 }

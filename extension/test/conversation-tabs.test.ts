@@ -25,7 +25,9 @@ describe("conversation tab ownership", () => {
       tabs: {
         get: vi.fn(async (id: number) => {
           const tab = tabs.get(id);
+
           if (!tab) throw new Error("No tab");
+
           return { ...tab };
         }),
         query: vi.fn(async () => [...tabs.values()].map((tab) => ({ ...tab }))),
@@ -33,6 +35,7 @@ describe("conversation tab ownership", () => {
         group: vi.fn(async ({ tabIds, groupId }: { tabIds: number; groupId?: number }) => {
           const id = groupId ?? nextGroup++;
           tabs.set(tabIds, { ...tabs.get(tabIds), groupId: id });
+
           return id;
         }),
         onRemoved: { addListener: vi.fn((listener: (tabId: number) => void) => { removedListener = listener; }) },
@@ -164,6 +167,7 @@ describe("conversation tab ownership", () => {
     const original = group.getMockImplementation() as (args: { tabIds: number; groupId?: number }) => Promise<number>;
     group.mockImplementation(async (args: any) => {
       if (args.groupId === staleGroup) throw new Error("No group with id");
+
       return original(args);
     });
     tabs.delete(1);
@@ -179,6 +183,7 @@ describe("conversation tab ownership", () => {
     const original = group.getMockImplementation() as (args: { tabIds: number; groupId?: number }) => Promise<number>;
     group.mockImplementation(async (args: any) => {
       await new Promise(resolve => setTimeout(resolve, 5));
+
       return original(args);
     });
     await Promise.all([

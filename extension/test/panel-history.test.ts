@@ -18,6 +18,7 @@ describe("PanelHistory", () => {
 
     const first = history.record({ kind: "user", text: "继续完成这一步" });
     const second = history.record({ kind: "server", msg: { type: "status", state: "running" } });
+
     const third = history.record({
       kind: "server",
       msg: { type: "agent_event", event: { kind: "notice", message: "正在读取页面" } },
@@ -81,6 +82,7 @@ describe("panel history relay contract", () => {
 
   it("retains attachments on user history items", () => {
     const history = new PanelHistory();
+
     const entry = history.record({
       kind: "user",
       text: "请分析这张截图",
@@ -97,6 +99,7 @@ describe("panel history relay contract", () => {
 
     expect(entry.seq).toBe(1);
     expect(entry.item.kind).toBe("user");
+
     if (entry.item.kind === "user") {
       expect(entry.item.attachments).toHaveLength(1);
       expect(entry.item.attachments?.[0]?.name).toBe("screenshot.png");
@@ -115,6 +118,7 @@ it('persists one source plan with pending and unexecuted steps across history re
 describe("落盘窗口与保留数量（存储配额）", () => {
   it("只落盘最近一段：累计超过预算即从最旧截断，且非空历史至少保留一条", () => {
     const history = new PanelHistory();
+
     for (let index = 0; index < 40; index += 1) {
       history.record({ kind: "user", text: `第 ${index} 条 ${"填".repeat(20_000)}` });
     }

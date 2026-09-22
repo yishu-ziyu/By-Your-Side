@@ -18,7 +18,9 @@ import { join } from "node:path";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 export const CLIPROXY_PROVIDER = "cliproxy";
+
 export const CLIPROXY_BASE_URL = "http://127.0.0.1:8317/v1";
+
 const PROBE_TIMEOUT_MS = 2000;
 
 /** 实际使用的 baseURL：SIDEAGENT_CLIPROXY_BASE_URL 可覆盖（调试/抓包用），默认本机池。 */
@@ -82,10 +84,13 @@ export const CLIPROXY_MODELS: readonly CliproxyModelSpec[] = [
 export function parseClientEnvKey(content: string): string | null {
   for (const line of content.split(/\r?\n/)) {
     const m = /^\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*(.*)$/.exec(line);
+
     if (!m) continue;
     const value = (m[1] ?? "").trim().replace(/^["']|["']$/g, "");
+
     if (value) return value;
   }
+
   return null;
 }
 
@@ -95,6 +100,7 @@ export function parseClientEnvKey(content: string): string | null {
  */
 export function selectCliproxyModels(advertised: readonly string[]): CliproxyModelSpec[] {
   const available = new Set(advertised);
+
   return CLIPROXY_MODELS.filter((spec) => available.has(spec.id));
 }
 
@@ -115,11 +121,14 @@ async function probeCliproxy(baseUrl: string, apiKey: string, timeoutMs: number)
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(timeoutMs),
     });
+
     if (!res.ok) return { alive: true, ids: null };
     const body = (await res.json()) as { data?: Array<{ id?: unknown }> };
+
     const ids = Array.isArray(body.data)
       ? body.data.map((m) => m?.id).filter((id): id is string => typeof id === "string")
       : null;
+
     return { alive: true, ids };
   } catch {
     return { alive: false, ids: null };
@@ -138,28 +147,40 @@ export async function registerCliproxyProvider(
   try {
     const envPath = options?.envPath ?? cliproxyEnvPath();
     let content: string;
+
     try {
       content = await readFile(envPath, "utf8");
     } catch {
       console.error(`[sideagent] 本地池未接入：${envPath} 不存在或不可读`);
+
       return false;
     }
+
     const apiKey = parseClientEnvKey(content);
+
     if (!apiKey) {
       console.error(`[sideagent] 本地池未接入：${envPath} 中没有 OPENAI_API_KEY`);
+
       return false;
     }
+
     const baseUrl = cliproxyBaseUrl();
     const probe = await probeCliproxy(baseUrl, apiKey, options?.timeoutMs ?? PROBE_TIMEOUT_MS);
+
     if (!probe.alive) {
       console.error(`[sideagent] 本地池未接入：${baseUrl} 不可达（池子未运行？），已跳过`);
+
       return false;
     }
+
     const specs = probe.ids ? selectCliproxyModels(probe.ids) : [...CLIPROXY_MODELS];
+
     if (specs.length === 0) {
       console.error(`[sideagent] 本地池未接入：/models 通告的模型与实测清单无交集`);
+
       return false;
     }
+
     modelRuntime.registerProvider(CLIPROXY_PROVIDER, {
       name: "本地池 (CLIProxyAPI)",
       baseUrl,
@@ -176,9 +197,11 @@ export async function registerCliproxyProvider(
       })),
     });
     console.error(`[sideagent] 本地池已接入：${CLIPROXY_PROVIDER} 注册 ${specs.length} 个模型`);
+
     return true;
   } catch (err) {
     console.error(`[sideagent] 本地池注册失败（已跳过）：${err instanceof Error ? err.message : String(err)}`);
+
     return false;
   }
 }

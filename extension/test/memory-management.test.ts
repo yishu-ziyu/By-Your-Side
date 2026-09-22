@@ -16,6 +16,7 @@ function entry(id: string, version = 1, text = `preference-${id}`): MemoryEntry 
 
 function manager() {
   let n = 0;
+
   return new MemoryManagementState(() => `request-${++n}`);
 }
 

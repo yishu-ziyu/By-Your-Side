@@ -27,9 +27,12 @@ vi.mock("../src/run-trace.js", () => ({ RunTrace: class {
 
 async function until<T>(probe: () => T | undefined | false, timeoutMs = 5000, what = "condition"): Promise<T> {
   const started = Date.now();
+
   for (;;) {
     const value = probe();
+
     if (value) return value;
+
     if (Date.now() - started > timeoutMs) throw new Error(`timeout waiting for ${what}`);
     await new Promise(resolve => setTimeout(resolve, 5));
   }
@@ -52,6 +55,7 @@ class ManualStream implements AsyncIterable<StreamEvent> {
   constructor() { this.finalPromise = new Promise(resolve => { this.resolveFinal = resolve; }); }
   push(event: StreamEvent): void {
     const waiter = this.waiters.shift();
+
     if (waiter) waiter({ done: false, value: event });
     else this.queue.push(event);
   }
@@ -60,6 +64,7 @@ class ManualStream implements AsyncIterable<StreamEvent> {
     this.ended = true;
     this.finalValue = value;
     this.resolveFinal(value);
+
     for (const waiter of this.waiters.splice(0)) waiter({ done: true, value: undefined });
   }
   result(): Promise<unknown> { return this.finalPromise; }
@@ -67,16 +72,22 @@ class ManualStream implements AsyncIterable<StreamEvent> {
     return {
       next: () => {
         const event = this.queue.shift();
+
         if (event) return Promise.resolve({ done: false, value: event });
+
         if (this.ended) return Promise.resolve({ done: true, value: undefined });
+
         return new Promise(resolve => this.waiters.push(resolve));
       },
-      return: () => { this.end(this.finalValue); return Promise.resolve({ done: true, value: undefined }); },
+      return: () => { this.end(this.finalValue);
+
+ return Promise.resolve({ done: true, value: undefined }); },
     };
   }
 }
 
 const PROBE_MODEL = "steering-probe/probe";
+
 const model = {
   id: "probe", name: "Steering probe", api: "steering-probe", provider: "steering-probe",
   baseUrl: "http://127.0.0.1", reasoning: false, input: ["text"],
@@ -95,8 +106,11 @@ function assistant(content: ProbePart[], stopReason: string) {
 
 function textOf(message: { content?: unknown }): string {
   const content = message?.content;
+
   if (typeof content === "string") return content;
+
   if (!Array.isArray(content)) return "";
+
   return content.map((part: { text?: string }) => part?.text ?? "").join("\n");
 }
 
@@ -109,9 +123,11 @@ async function realSteeringSession() {
   const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
   const calls: Array<{ messages: Array<{ role: string; text: string }> }> = [];
   const held: ManualStream[] = [];
+
   const stream = (_model: unknown, context: { messages?: Array<{ role: string }> }) => {
     calls.push({ messages: (context.messages ?? []).map(message => ({ role: message.role, text: textOf(message as { content?: unknown }) })) });
     const pipe = new ManualStream();
+
     if (calls.length === 1) {
       const partial = assistant([{ type: "text", text: "" }], "pending");
       pipe.push({ type: "start", partial });
@@ -126,28 +142,35 @@ async function realSteeringSession() {
       pipe.push({ type: "done", reason: "stop", message: done });
       pipe.end(done);
     }
+
     return pipe;
   };
+
   runtime.registerNativeProvider({
     id: model.provider, name: "Steering probe",
     auth: { apiKey: { name: "Local", resolve: async () => ({ auth: {} }) } },
     getModels: () => [model], stream, streamSimple: stream,
   } as never);
+
   const rpc = {
     call: vi.fn(async () => ({ text: "本地表单内容" })),
     resolvePageParams: (_name: string, params: Record<string, unknown>) => params,
     getPageTarget: () => null,
     setPageTarget: vi.fn(),
   };
+
   const emitted: AgentUiEvent[] = [];
+
   const session = await BrowserAgentSession.create(rpc as never, {
     emit: event => emitted.push(event),
     setStatus: vi.fn(),
   }, { modelRuntime: runtime, modelPattern: PROBE_MODEL } as never);
+
   return {
     session, calls, emitted, held,
     releaseHeldTurn: () => {
       const pipe = held[0];
+
       if (!pipe) throw new Error("第一轮模型调用没有挂起");
       const done = assistant([{ type: "text", text: "资料到了" }], "stop");
       pipe.push({ type: "done", reason: "stop", message: done });
@@ -160,11 +183,13 @@ async function realSteeringSession() {
 describe("连续插话进入同一轮模型输入（真实 Pi 队列语义）", () => {
   it("模型处理期间连续三条补充，都在下一次模型输入之前到达", async () => {
     const harness = await realSteeringSession();
+
     try {
       expect(harness.session.available).toBe(true);
       harness.session.startTask("先等待资料，之后填写本地表单。", pageContext());
       await until(() => harness.calls.length === 1, 10_000, "第一次模型调用");
       const edits = ["姓名改成李四。保留邮箱。", "城市改成上海。", "备注填写地铁附近。不要提交。"];
+
       for (const text of edits) await harness.session.steerCurrentTask(text, pageContext());
       harness.releaseHeldTurn();
       await until(() => harness.calls.length >= 2, 10_000, "下一次模型调用");
@@ -172,11 +197,13 @@ describe("连续插话进入同一轮模型输入（真实 Pi 队列语义）", 
       const messages = harness.calls[1]!.messages;
       const firstAssistant = messages.findIndex(message => message.role === "assistant");
       const inputs = messages.slice(firstAssistant + 1).filter(message => message.role === "user").map(message => message.text);
+
       for (const text of edits) expect(inputs.some(input => input.includes(text))).toBe(true);
       expect(inputs.findIndex(input => input.includes(edits[0]!)))
         .toBeLessThan(inputs.findIndex(input => input.includes(edits[1]!)));
       // 三条补充必须在同一次模型输入里，而不是等到各自下一轮。
       expect(inputs.filter(input => edits.some(text => input.includes(text)))).toHaveLength(3);
+
       // 回退路径的每条插话载荷都要携带「补充而非替换」契约：实测反例是模型把最新输入当成全部目标，
       // 只交付修改报告，原任务的答案再也不会被交付（docs/evals/20260918-prompt-budget-and-steer-contract.md）。
       for (const input of inputs.filter(input => edits.some(text => input.includes(text)))) {
@@ -196,6 +223,7 @@ function syntheticSession(options?: { observation?: Promise<unknown>; rpc?: Synt
   let subscriber: ((event: unknown) => void) | null = null;
   let settlePrompt!: () => void;
   const promptPending = new Promise<void>(resolve => { settlePrompt = resolve; });
+
   const raw = {
     get isStreaming() { return streaming; },
     model: { id: "test" },
@@ -204,16 +232,22 @@ function syntheticSession(options?: { observation?: Promise<unknown>; rpc?: Synt
     prompt: vi.fn(async (_text?: string) => { await promptPending; }),
     steer: vi.fn(async (_text: string) => {}),
     clearQueue: vi.fn(() => ({ steering: [], followUp: [] })),
-    subscribe: vi.fn((fn: (event: unknown) => void) => { subscriber = fn; return () => {}; }),
+    subscribe: vi.fn((fn: (event: unknown) => void) => { subscriber = fn;
+
+ return () => {}; }),
   };
+
   const emitted: AgentUiEvent[] = [];
   const callbacks = { emit: (event: AgentUiEvent) => emitted.push(event), setStatus: vi.fn() };
+
   const rpc: SyntheticRpc = options?.rpc ?? {
     call: vi.fn(async () => (options?.observation ? await options.observation : { text: "本地表单内容" })),
   };
+
   const Session = BrowserAgentSession as unknown as new (...args: unknown[]) => BrowserAgentSession;
   const wrapped = new Session(raw, null, callbacks, null, null, undefined, null, rpc);
   (wrapped as unknown as { subscribeEvents: () => void }).subscribeEvents();
+
   return {
     wrapped, raw, emitted, callbacks, rpc,
     setStreaming: (value: boolean) => { streaming = value; },

@@ -3,11 +3,14 @@
  * 动效与 DOM 在 content/cursor.ts；这里只决定「要不要回弹、展示多久、谁覆盖谁」。
  */
 export const EXECUTION_FEEDBACK_KINDS = ['success', 'pending', 'unknown', 'failure'] as const;
+
 export type FeedbackPillKind = (typeof EXECUTION_FEEDBACK_KINDS)[number];
 
 /** 成功短暂展示后收起；等待/未知/失败保留久一点，作为可找到的文字入口。 */
 export const FEEDBACK_SUCCESS_MS = 2400;
+
 export const FEEDBACK_PENDING_MS = 12_000;
+
 export const FEEDBACK_TEXT_MAX = 60;
 
 export interface FeedbackPillView {
@@ -36,7 +39,9 @@ export function beginFeedbackPill(
   if (!previous) {
     return { state: { ...next, bounces: 1, shownAt: at }, bounce: true };
   }
+
   const bounce = previous.id !== next.id;
+
   return {
     state: {
       ...next,

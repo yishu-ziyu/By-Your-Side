@@ -3,9 +3,13 @@ import { CollaborationProgress } from "../src/sidepanel/collaboration-progress.j
 import type { AgentUiEvent } from "../../shared/protocol.js";
 
 const a = "a-cast-kim-abcdef01";
+
 const b = "b-cast-mike-abcdef02";
+
 const task = (name: string): AgentUiEvent => ({ kind: "worker_task", task: `阅读方案${name}`, output: `方案${name}摘要` });
+
 const start = (id: string, name: string, params: Record<string, unknown>): AgentUiEvent => ({ kind: "tool_start", toolCallId: id, name, params });
+
 const end = (id: string, isError = false): AgentUiEvent => ({ kind: "tool_end", toolCallId: id, name: "post", isError, resultText: "" });
 
 describe("分工由真实事件恢复", () => {
@@ -51,7 +55,9 @@ describe("分工由真实事件恢复", () => {
   it("同一事件序列回放相同职责和终态，重复登记不覆盖已交付状态", () => {
     const events: AgentUiEvent[] = [task("甲"), start("post", "post", { to: "main", kind: "done" }), end("post"), { kind: "agent_end" }];
     const live = new CollaborationProgress(); const replay = new CollaborationProgress();
+
     for (const event of events) { live.apply(a, event); replay.apply(a, JSON.parse(JSON.stringify(event))); }
+
     replay.apply(a, task("甲"));
     expect([...replay.members]).toEqual([...live.members]);
   });

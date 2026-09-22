@@ -7,6 +7,7 @@ it('after interruption and a new run, VoiceService drops the old stream and its 
   const session={start:vi.fn(),close:vi.fn(),command:vi.fn(),streamDelivery:vi.fn(),completeDelivery:vi.fn(),notify:vi.fn()};
   const service=new VoiceService(()=>snapshot,()=>{},async()=>'test-key',()=>session as never);
   const stream=(runId:string):UserDeliveryStream=>({id:`answer-${runId}`,runId,kind:'finding',phase:'streaming',text:runId});
+
   try{
     await service.handle('A',{type:'voice',voiceId:'voice',command:{kind:'start'}});
     service.observe({type:'agent_event',conversationId:'A',event:{kind:'user_delivery_stream',stream:stream('run-A')}});

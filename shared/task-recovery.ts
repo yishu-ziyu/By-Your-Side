@@ -6,7 +6,9 @@ export interface TaskMaterialReference {
   kind: 'page' | 'selection' | 'attachment';
   label: string;
 }
+
 export const TASK_MATERIAL_MAX = 144;
+
 export function isTaskMaterials(value: unknown): value is TaskMaterialReference[] {
   return Array.isArray(value) && value.length <= TASK_MATERIAL_MAX && value.every(item =>
     !!item && typeof item === 'object'
@@ -24,11 +26,14 @@ export interface TaskRecoveryInput {
   /** 旧检查点缺省代表没有材料清单证据，不从页面哈希猜正文。 */
   materials?: TaskMaterialReference[];
 }
+
 export const RECOVERY_INPUT_MAX=64_000;
+
 export function isTaskRecoveryInput(value:unknown):value is TaskRecoveryInput {
   if(!value||typeof value!=='object')return false;
   const input=value as TaskRecoveryInput;
   const hash=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+
   return Array.isArray(input.requirements)&&input.requirements.length<=64
     &&input.requirements.every(text=>typeof text==='string'&&text.length<=12000)
     &&input.requirements.reduce((size,text)=>size+text.length,0)<=RECOVERY_INPUT_MAX

@@ -16,25 +16,49 @@ import {launchIsolatedExtension,sleep,until} from './isolated-extension.mts';
 import type {ServerMessage} from '../../shared/protocol.js';
 
 if(!process.argv.includes('--headless'))throw Error('Required --headless');
+
 const out=resolve('out/acceptance',`voice-greeting-live-${new Date().toISOString().replace(/[:.]/g,'-')}`);
+
 await mkdir(out,{recursive:true});
+
 const model='opencode-go/deepseek-flash';
+
 const sourcePaths=['agent/src/session.ts','agent/src/voice-session.ts','agent/src/conversation-manager.ts','agent/src/voice-model.ts','agent/src/voice-intent.ts','agent/src/voice-turn.ts','shared/voice.ts','agent/src/voice-receipt.ts','agent/src/voice-service.ts','agent/src/prompt.ts','extension/src/sidepanel/voice-player.ts'];
+
 const sourceHashes=async()=>Object.fromEntries(await Promise.all(sourcePaths.map(async p=>[p,createHash('sha256').update(await readFile(p)).digest('hex')])));
+
 const loadedHashes=await sourceHashes();
+
 const report:any={scope:'Synthetic PCM; real ASR, classifier, Pi, TTS and production VoicePlayer; isolated Chrome; harness transport; no human microphone',model,cases:[],ok:false};
+
 const browser=await launchIsolatedExtension();
-const events:any[]=[];const frames=new Map<number,Buffer[]>();
+
+const events:any[]=[];
+
+const frames=new Map<number,Buffer[]>();
+
 let manager:ConversationManager|undefined,voice:VoiceService|undefined,playerTarget='';
-let playbackWork=Promise.resolve();let playbackError:unknown;let turn=0;const voiceId=randomUUID();
+
+let playbackWork=Promise.resolve();
+
+let playbackError:unknown;
+
+let turn=0;
+
+const voiceId=randomUUID();
+
 const consume=(msg:ServerMessage)=>{
   const safe=msg.type==='voice'&&msg.event.kind==='audio'?{...msg,event:{...msg.event,data:undefined,bytes:Buffer.from(msg.event.data,'base64').length}}:msg;
   events.push({at:Date.now(),msg:safe});
+
   if(msg.type!=='voice')return;
   const e=msg.event;
+
   if(e.kind==='audio'){const list=frames.get(e.turn)??[];list.push(Buffer.from(e.data,'base64'));frames.set(e.turn,list);}
+
   if(['audio','reset_output','response_end'].includes(e.kind))playbackWork=playbackWork.then(()=>browser.evalIn(playerTarget,`globalThis.receiveVoice(${JSON.stringify(e)})`)).then(()=>{}).catch(err=>{playbackError=err;});
 };
+
 try{
   const fixture=await browser.newTarget(`${browser.fixtureOrigin}/job-fixture`);
   await until(async()=>await browser.evalIn(fixture,"document.readyState==='complete'")?true:undefined,10000,'fixture');
@@ -50,9 +74,11 @@ try{
     return createConversationRuntime(id,emit,model);
   },msg=>{
     voice?.observe(msg);consume(msg);
+
     if(msg.type==='tool_call'){
       void browser.tool(msg.name,msg.params,msg.sessionId??'main').then(result=>manager!.handleMessage({type:'tool_result',conversationId:msg.conversationId,id:msg.id,ok:result.ok,data:result.data,error:result.error,executionFact:result.executionFact} as any)).catch(error=>manager!.handleMessage({type:'tool_result',conversationId:msg.conversationId,id:msg.id,ok:false,error:String(error)}));
     }
+
     if(msg.type==='task_control'){
       // 测试台在这里扮演扩展的控制闸门，只为让"喊停"这条路走完、好量回执多久出声。
       // 它不检验授权、页面归属与执行版本，也不代表页面真的停了——那些由原生验收脚本覆盖。
@@ -71,12 +97,18 @@ try{
   await command({kind:'start'});
   await until(async()=>events.some(x=>x.msg?.type==='voice'&&x.msg.event.kind==='state'&&x.msg.event.state==='ready')?true:undefined,25000,'voice ready');
   let drained=0;
+
   async function drain(){
-    await playbackWork;if(playbackError)throw playbackError;
+    await playbackWork;
+
+if(playbackError)throw playbackError;
     const played=await browser.evalIn(playerTarget,'played');
+
     for(const item of played.slice(drained)){await command({kind:'playback_done',responseId:item.id});events.push({at:Date.now(),playerDrained:item.id});}
+
     drained=played.length;
   }
+
   /** 只把这句话说完，不等回答。用于"说完不等它答完"的场景，例如任务还在跑的时候插话。 */
   async function send(text:string){
     const current=++turn,start=Date.now();
@@ -91,14 +123,19 @@ try{
     // 中间补的 24000 字节（24kHz/16bit = 500ms 静音）是喂给服务端收尾用的，属于用户等待，不算说话。
     // 真人端的停句判断（服务端多久认定你说完了）本脚本测不到，真人验收时另计。
     let speechEnd=0;
+
     for(let offset=0;offset<pcm.length;offset+=4800){
       await command({kind:'audio',turn,data:pcm.subarray(offset,offset+4800).toString('base64')});
+
       if(offset+4800>=speech.length&&!speechEnd)speechEnd=Date.now();
       await sleep(100);
     }
+
     await command({kind:'commit',turn,input:{context}});
+
     return {current,start,speechEnd,commitAt:Date.now()};
   }
+
   /** 等这一轮说完并收集结果。 */
   async function settle(sent:{current:number;start:number;speechEnd:number;commitAt:number},text:string){
     const {current,start,speechEnd,commitAt}=sent;
@@ -109,8 +146,11 @@ try{
       const state=manager!.getTaskProgress('default');
       const completed=new Set(events.filter(x=>x.at>=start&&x.playerDrained).map(x=>x.playerDrained));
       const error=events.find(x=>x.at>=start&&x.msg?.type==='voice'&&x.msg.event.kind==='state'&&x.msg.event.state==='error');
+
       if(error)throw Error(error.msg.event.detail);
+
       if(events.some(x=>x.at>=start&&x.diagnostic==='tts_failed'))throw Error('TTS failed before completing the answer');
+
       return ends.length&&ends.every(e=>completed.has(e.responseId))&&state?.state!=='running'?true:undefined;
     },90000,'complete spoken answer');
     await sleep(1200);await drain();
@@ -119,22 +159,30 @@ try{
     const textUpdates=textEvents.filter(x=>x.msg.event.role==='assistant').map(x=>x.msg.event.text);
     const cumulative=textUpdates.every((text,index)=>index===0||text.startsWith(textUpdates[index-1]));
     const answer=cumulative&&textUpdates.length?[textUpdates.at(-1)]:textUpdates;
-    const audio=Buffer.concat(frames.get(current)??[]);let energy=0;for(let i=0;i<audio.length;i+=2)energy+=audio.readInt16LE(i)**2;
+    const audio=Buffer.concat(frames.get(current)??[]);let energy=0;
+
+for(let i=0;i<audio.length;i+=2)energy+=audio.readInt16LE(i)**2;
     const branch=events.filter(x=>x.at>=start&&x.diagnostic==='prepare_result'&&x.fields?.turn===current).map(x=>String(x.fields?.branch??'none')).at(-1)??'none';
     const protocol=events.filter(x=>x.at>=start&&x.diagnostic==='prepare_result'&&x.fields?.turn===current).map(x=>String(x.fields?.protocol??'none')).at(-1)??'none';
     const firstAudioAt=own.find(x=>x.msg.event.kind==='audio')?.at;
+
     const result={turn:current,input:text,branch,protocol,textUpdates,cumulative,recognized:textEvents.filter(x=>x.msg.event.role==='user').map(x=>x.msg.event.text),answer,responses:own.filter(x=>x.msg.event.kind==='response_end').map(x=>x.msg.event.responseId),audioBytes:audio.length,rms:audio.length?Math.sqrt(energy/(audio.length/2))/32768:0,
       // 体验口径：说完话 → 听到第一声。版本对照用上面这个（同一套送法，可比）。
       userWaitMs:firstAudioAt?firstAudioAt-speechEnd:undefined,
       // 工程口径：应用收到"说完了" → 出第一帧音频。
       firstAudioMs:firstAudioAt?firstAudioAt-commitAt:undefined};
+
     await writeFile(`${out}/output-${current}.pcm`,audio);
+
     if(audio.length)execFileSync('/opt/homebrew/bin/ffmpeg',['-y','-v','error','-f','s16le','-ar','24000','-ac','1','-i',`${out}/output-${current}.pcm`,`${out}/output-${current}.wav`]);
     report.cases.push(result);console.log(JSON.stringify(result));
     assert.ok(result.audioBytes>0&&result.rms>0.001,'non-silent audio drained by production player');
+
     return result;
   }
+
   async function speak(text:string){return settle(await send(text),text);}
+
   if(process.argv.includes('--post-page-greeting')){
     // Supply the fixture excerpt to isolate the transition back to chat.
     // Natural page reading is checked in the four-case mode separately.
@@ -150,8 +198,10 @@ try{
     assert.ok(r.answer.length===1,'one answer text');
     assert.ok(!/任务已收到|招聘|Builder|深圳|岗位/.test(r.answer.join('')),'greeting stays conversational');
   }
+
   const knowledge=await speak('十加七等于多少？');assert.ok(/17|十七/.test(knowledge.answer.join('')),'knowledge answer');assert.equal(knowledge.responses.length,1);
   const reading=await speak('当前招聘页面要求几年经验？');assert.ok(/三年|3年/.test(reading.answer.join('')),'page question retains browser context');
+
   // 控制句轮次：同一口径报首声。闲置态下"暂停任务"与"继续"都得到确定的拒绝回执，
   // 但都必须先过判定与控制链前的固定成本，用来核对第 8 条不因合并变慢。
   for(const control of ['暂停任务','继续']){
@@ -160,6 +210,7 @@ try{
     assert.equal(r.branch,'control',`control sentence stays on the control branch: ${control}`);
     assert.ok(r.audioBytes>0&&r.rms>0.001,`control receipt spoken aloud: ${control}`);
   }
+
   // 运行中的控制：先起一个真任务，趁它还在跑的时候说"暂停任务"。
   // 闲置态的"暂停任务"只会得到一句"没有正在执行的任务"，测不出"能不能真的停住"。
   // 这一轮量两件事：说完话 → 听到回执；以及任务是不是真的停了（不是只念一句没用的话）。
@@ -171,25 +222,33 @@ try{
       '把当前页面里每一句话都逐条读出来，然后写一段一百字的介绍，再逐句翻译成英文。',
       '把当前页面里每一句话都逐条读出来，写一段一百字的介绍，逐句翻译成英文，最后核对一遍有没有漏掉的话。',
     ];
+
     let exercised:{task:string;receipt:any;stateAfterPause:string|null}|null=null;
+
     for(const [index,runningTask] of tasks.entries()){
       await send(runningTask);
       const entered=await until(async()=>manager!.getTaskProgress('default')?.state==='running'?true:undefined,60000,'说暂停之前任务已进入运行').catch(()=>undefined);
+
       if(!entered){
         await until(async()=>manager!.getTaskProgress('default')?.state!=='running'?true:undefined,90000,'上一轮任务结束').catch(()=>undefined);
         continue;
       }
+
       const receipt=await speak('暂停任务');
       const after=manager!.getTaskProgress('default');
+
       if(/没有正在执行的任务|没有正在运行的任务/.test(receipt.answer.join(''))){
         await until(async()=>manager!.getTaskProgress('default')?.state!=='running'?true:undefined,90000,'上一轮任务结束').catch(()=>undefined);
         report.controlWhileRunningAttempts=(report.controlWhileRunningAttempts??[]).concat([{task:runningTask,missed:'任务在暂停落地前已结束'}]);
         continue;
       }
+
       exercised={task:runningTask,receipt,stateAfterPause:after?.state??null};
+
       if(index>0)report.controlWhileRunningAttempts=(report.controlWhileRunningAttempts??[]).concat([{task:tasks[index-1],missed:'任务在暂停落地前已结束'}]);
       break;
     }
+
     report.controlWhileRunning=exercised??{exercised:false,note:'三次都没能在任务运行中说成暂停'};
     assert.ok(exercised,'运行中暂停没有被真正测到（任务在暂停落地前就结束了）');
     assert.equal(exercised!.receipt.responses.length,1,'运行中的暂停只播一份回执');
@@ -200,24 +259,32 @@ try{
     assert.ok(exercised!.stateAfterPause!=='running','控制受理后本会话不再处于运行态');
   }
   }
+
   // Independently transcribe the returned greeting PCM. Non-routing diagnostic
   // session only: verifies spoken content, not just nonzero waveform energy.
   let readback='',readbackReady=false;
+
   const listener=new StepVoiceSession({diagnosticMode:true,
     getSnapshot:()=>manager!.getTaskProgress('default'),
-    emit:e=>{if(e.kind==='state'&&e.state==='ready')readbackReady=true;if(e.kind==='text'&&e.role==='user')readback=e.text;}});
+    emit:e=>{if(e.kind==='state'&&e.state==='ready')readbackReady=true;
+
+if(e.kind==='text'&&e.role==='user')readback=e.text;}});
+
   try{
     listener.start(await readStepVoiceKey());
     await until(async()=>readbackReady?true:undefined,25000,'audio readback ready');
     listener.command({kind:'interrupt',turn:1});
     const greetingTurn=report.cases.find((c:any)=>c.input==='嗨，晚上好。').turn;
     const pcm=Buffer.concat([await readFile(`${out}/output-${greetingTurn}.pcm`),Buffer.alloc(24000)]);
+
     for(let i=0;i<pcm.length;i+=4800){listener.command({kind:'audio',turn:1,data:pcm.subarray(i,i+4800).toString('base64')});await sleep(100);}
+
     listener.command({kind:'commit',turn:1});
     await until(async()=>readback||undefined,20000,'spoken greeting readback');
     report.spokenGreetingReadback=readback;
     assert.ok(/晚上好/.test(readback)&&!/任务已收到|招聘|岗位|深圳/.test(readback),'actual greeting audio matches the conversational answer');
   }finally{listener.close();}
+
   report.branchFirstAudioMs=Object.fromEntries(['reply','control','read_only','none'].map(branch=>[branch,report.cases.filter((c:any)=>c.branch===branch).map((c:any)=>c.firstAudioMs)]));
   report.branchUserWaitMs=Object.fromEntries(['reply','control','read_only','none'].map(branch=>[branch,report.cases.filter((c:any)=>c.branch===branch).map((c:any)=>c.userWaitMs)]));
   report.ok=true;
@@ -227,6 +294,8 @@ finally{
   report.events=events;
   report.sourceHashes=loadedHashes;report.finalSourceHashes=await sourceHashes();
   report.sourceStable=JSON.stringify(loadedHashes)===JSON.stringify(report.finalSourceHashes);
+
   if(!report.sourceStable){report.ok=false;report.error='Source changed during verification';process.exitCode=1;}
+
   await writeFile(`${out}/result.json`,JSON.stringify(report,null,2));await browser.close();console.log(JSON.stringify({out,ok:report.ok,error:report.error}));
 }

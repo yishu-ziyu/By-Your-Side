@@ -17,10 +17,12 @@ import {
 
 function arg(name: string): string | undefined {
   const flag = process.argv.find((a) => a.startsWith(`${name}=`));
+
   return flag ? flag.slice(name.length + 1) : undefined;
 }
 
 const runId = arg("--run");
+
 const artifact = arg("--artifact");
 
 if (!runId) {
@@ -36,14 +38,18 @@ try {
 }
 
 const reportPath = join(REPO_ROOT, "eval", "runs", runId, "report.json");
+
 if (!existsSync(reportPath)) {
   console.error(`BLOCKED: report missing at eval/runs/${runId}/report.json`);
   process.exit(2);
 }
 
 const payload = JSON.parse(readFileSync(reportPath, "utf8")) as { report: EvalReport };
+
 const report = payload.report;
+
 const missing = missingReportFields(report);
+
 if (missing.length) {
   console.error(`BLOCKED missing report fields: ${missing.join(", ")}`);
   process.exit(2);
@@ -54,7 +60,9 @@ if (artifact) {
     console.error(`FAIL artifact path does not exist: ${artifact}`);
     process.exit(1);
   }
+
   const actual = sha256File(artifact);
+
   if (report.artifact_sha256 && report.artifact_sha256 !== "not-built" && report.artifact_sha256 !== "integration-tests" && report.artifact_sha256 !== actual) {
     console.error(`FAIL artifact sha256 mismatch: report ${report.artifact_sha256} vs file ${actual}`);
     process.exit(1);
@@ -62,10 +70,14 @@ if (artifact) {
 }
 
 const result = verifyReport(report);
+
 console.log(JSON.stringify({ run_id: runId, verdict: result.verdict, reason: result.reason, gates_sha256: result.gates_sha256 }, null, 2));
+
 if (result.verdict === "PASS") {
   console.error("refusing to print PASS for formal release: human review and live metrics are required");
   process.exit(2);
 }
+
 if (result.verdict === "FAIL") process.exit(1);
+
 process.exit(0);

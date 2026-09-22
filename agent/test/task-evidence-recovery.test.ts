@@ -6,8 +6,13 @@ import {SessionManager} from '@earendil-works/pi-coding-agent';
 import {BrowserAgentSession} from '../src/session.js';
 import {TaskProgress} from '../src/task-progress.js';
 import {TaskEvidence} from '../src/task-evidence.js';
-const dirs:string[]=[];afterEach(()=>dirs.splice(0).forEach(dir=>rmSync(dir,{recursive:true,force:true})));
+
+const dirs:string[]=[];
+
+afterEach(()=>dirs.splice(0).forEach(dir=>rmSync(dir,{recursive:true,force:true})));
+
 const wrapped=(sessionManager:SessionManager)=>new (BrowserAgentSession as any)({sessionManager},null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
+
 it('真实会话文件恢复原文和来源目标，字段完成不能解除未知写入锁',()=>{
  const dir=mkdtempSync(join(tmpdir(),'bys-material-recovery-'));dirs.push(dir);
  const sm=SessionManager.create(process.cwd(),dir);sm.appendMessage({role:'assistant',content:[],timestamp:1} as any);

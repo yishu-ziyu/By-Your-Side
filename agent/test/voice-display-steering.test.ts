@@ -5,15 +5,19 @@
  * receipts and speech all come from the shared implementation. No microphone claims.
  */
 import {beforeEach,describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/display-fast-path.js',()=>({
   displayFastPathEnabled:()=>true,
   displaySteerFastPathEnabled:vi.fn(()=>true),
   decideDisplay:vi.fn(),
 }));
+
 vi.mock('../src/run-trace.js',async(importOriginal)=>{
  const actual=await importOriginal<typeof import('../src/run-trace.js')>();
+
  return {...actual,RunTrace:class{begin(){}correlate(){}record(){}event(){}stage(){return{end(){}}}}};
 });
+
 import {decideDisplay} from '../src/display-fast-path.js';
 import {receiptSpeech} from '../src/voice-receipt.js';
 import {candidate,context,managerHarness} from './fixtures/display-steering-harness.js';
@@ -25,6 +29,7 @@ async function voiceHarness(){
  h.wrapper.canPrepareVoiceTurn=()=>false;
  h.wrapper.classifyVoiceInput=vi.fn(async(text:string)=>({steps:[{action:/停止|终止/.test(text)?'abort':'steer',text,target:null}]}));
  const progress=()=>manager.getTaskProgress('default')!;
+
  const route=(over:Record<string,unknown>={})=>({
   requestId:'voice-1',voiceId:'voice-a',turn:1,
   runId:progress().runId,controlVersion:progress().controlVersion??0,
@@ -32,6 +37,7 @@ async function voiceHarness(){
   input:{context},
   ...over,
  } as never);
+
  return {...base,route,progress};
 }
 
@@ -98,6 +104,7 @@ describe('语音运行中显示修改',()=>{
   const original=h.rpc.call.getMockImplementation()!;
   h.rpc.call.mockImplementation(async(name:string,params:any,...rest:any[])=>{
    if(name==='snapshot'&&params?.tabId===9)return {text:'别的页面',tabId:9,translation:null};
+
    return original(name,params,...rest);
   });
   const result=await manager.routeVoiceInput('default','把译文改成宋体',null,()=>true,route({input:{context:other}}));

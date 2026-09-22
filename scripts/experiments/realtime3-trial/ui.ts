@@ -19,6 +19,7 @@ registerProcessor('realtime3-capture', Realtime3Capture);
 `;
 
 type TrialConfig = { url?: string; token?: string; workletUrl?: string };
+
 type ServerMessage =
   | { type: 'ready'; model: string }
   | { type: 'status'; text: string }
@@ -44,10 +45,12 @@ type PlaybackEntry = {
 type ClientMessage = Record<string, unknown>;
 
 const MODEL_RATE = 24000;
+
 const FRAME_SAMPLES = 480; // 20ms @ 24k
 
 const readConfig = (): TrialConfig | null => {
   const config = (globalThis as unknown as { __REALTIME3_TRIAL__?: TrialConfig }).__REALTIME3_TRIAL__;
+
   return config && typeof config.url === 'string' && config.url ? config : null;
 };
 
@@ -63,6 +66,7 @@ class Resampler24 {
     merged.set(this.buf, 0);
     merged.set(input, this.buf.length);
     const frames: Int16Array[] = [];
+
     while (Math.floor(this.pos) + 1 < merged.length) {
       const index = Math.floor(this.pos);
       const mix = this.pos - index;
@@ -70,34 +74,43 @@ class Resampler24 {
       const b = merged[index + 1] ?? 0;
       const value = Math.max(-1, Math.min(1, a + (b - a) * mix));
       this.frame[this.offset++] = Math.round(value * (value < 0 ? 32768 : 32767));
+
       if (this.offset === FRAME_SAMPLES) {
         frames.push(this.frame);
         this.frame = new Int16Array(FRAME_SAMPLES);
         this.offset = 0;
       }
+
       this.pos += this.ratio;
     }
+
     const consumed = Math.floor(this.pos);
+
     if (consumed > 0) {
       this.buf = merged.slice(consumed);
       this.pos -= consumed;
     } else {
       this.buf = merged;
     }
+
     return frames;
   }
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
+
   for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+
   return btoa(binary);
 }
 
 function base64ToBytes(text: string): Uint8Array {
   const binary = atob(text);
   const out = new Uint8Array(binary.length);
+
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+
   return out;
 }
 
@@ -108,16 +121,21 @@ export function mountRealtime3Trial(app: HTMLElement): void {
 
   const make = (tag: string, className?: string, text?: string): HTMLElement => {
     const element = document.createElement(tag);
+
     if (className) element.className = className;
+
     if (text !== undefined) element.textContent = text;
+
     return element;
   };
+
   const button = (className: string, label: string, title: string): HTMLButtonElement => {
     const element = document.createElement('button');
     element.type = 'button';
     element.className = className;
     element.textContent = label;
     element.title = title;
+
     return element;
   };
 
@@ -150,6 +168,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
   metricsFold.append(make('summary', undefined, '指标'));
   const metrics = make('div', 'r3-metrics');
   const metricValues = new Map<string, HTMLElement>();
+
   const metricRow = (key: string, label: string): void => {
     const row = make('div', 'r3-metric');
     const value = make('b', undefined, '—');
@@ -157,6 +176,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     metrics.append(row);
     metricValues.set(key, value);
   };
+
   metricRow('connect', '连接 → ready');
   metricRow('firstAudio', 'VAD 结束 → 服务端首音频');
   metricRow('playbackStart', 'VAD 结束 → 实际开始播放');
@@ -202,16 +222,21 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     root.dataset.state = phase;
     stateElement.textContent = text;
   };
+
   const flash = (text: string): void => {
     serverLine.textContent = text;
   };
+
   const setMetric = (key: string, value: string): void => {
     const element = metricValues.get(key);
+
     if (element) element.textContent = value;
   };
+
   const setLevel = (fraction: number): void => {
     levelFill.style.width = `${Math.max(0, Math.min(100, Math.round(fraction * 100)))}%`;
   };
+
   const refreshButtons = (): void => {
     const open = ws !== null && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN);
     startButton.disabled = starting || open || stream !== null;
@@ -223,19 +248,23 @@ export function mountRealtime3Trial(app: HTMLElement): void {
   const send = (message: ClientMessage): boolean => {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
     ws.send(JSON.stringify(message));
+
     return true;
   };
 
   const ensureContext = (): AudioContext | null => {
     if (!context) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
       if (!Ctor) return null;
       context = new Ctor();
       playbackGain = context.createGain();
       playbackGain.connect(context.destination);
       playHead = 0;
     }
+
     if (context.state === 'suspended') void context.resume().catch(() => undefined);
+
     return context;
   };
 
@@ -243,11 +272,14 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     for (const entry of entries.values()) {
       for (const source of entry.sources) {
         source.onended = null;
+
         try { source.stop(); } catch { /* 已停止 */ }
       }
+
       entry.sources.clear();
       entry.notified = true; // 主动停止/清空不补发 playback_done，避免与服务端 clear_audio/stop_speech 打架
     }
+
     if (context) playHead = context.currentTime;
   };
 
@@ -255,6 +287,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     if (!entry.done || entry.notified || entry.sources.size > 0) return;
     entry.notified = true;
     send({ type: 'playback_done', responseId });
+
     if (entry.chunks === 0) setMetric('playbackDone', '无音频，直接 playback_done');
     else if (entry.endedAt !== null) setMetric('playbackDone', `${Math.round(performance.now() - entry.endedAt)} ms`);
     window.setTimeout(() => entries.delete(responseId), 5000);
@@ -262,6 +295,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
 
   const ensureEntry = (responseId: string): PlaybackEntry => {
     let entry = entries.get(responseId);
+
     if (!entry) {
       entry = {
         sources: new Set(),
@@ -275,12 +309,15 @@ export function mountRealtime3Trial(app: HTMLElement): void {
       };
       entries.set(responseId, entry);
     }
+
     return entry;
   };
 
   const delta = (stamp: number | null, at: number | null): string => {
     if (at === null) return '—';
+
     if (stamp === null) return '—（缺用户转写 final 时间）';
+
     return `${Math.round(at - stamp)} ms`;
   };
 
@@ -288,54 +325,67 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     if (!context || !playbackGain) return;
     const bytes = base64ToBytes(data);
     const count = bytes.length >> 1;
+
     if (count === 0) return;
     const buffer = context.createBuffer(1, count, MODEL_RATE);
     const channel = buffer.getChannelData(0);
+
     for (let i = 0; i < count; i++) {
       const lo = bytes[2 * i] ?? 0;
       const hi = bytes[2 * i + 1] ?? 0;
       let value = (hi << 8) | lo;
+
       if (value & 0x8000) value -= 0x10000;
       channel[i] = value / 32768;
     }
+
     const entry = ensureEntry(responseId);
     entry.chunks += 1;
+
     if (entry.firstServerAt === null) {
       entry.firstServerAt = performance.now();
       setMetric('firstAudio', delta(entry.vadAt, entry.firstServerAt));
     }
+
     if (context.state === 'suspended') void context.resume().catch(() => undefined);
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(playbackGain);
     const startAt = Math.max(playHead, context.currentTime + 0.06);
     playHead = startAt + buffer.duration;
+
     if (entry.firstPlayAt === null) {
       entry.firstPlayAt = performance.now() + (startAt - context.currentTime) * 1000;
       setMetric('playbackStart', delta(entry.vadAt, entry.firstPlayAt));
     }
+
     entry.sources.add(source);
     source.onended = () => {
       entry.sources.delete(source);
       entry.endedAt = performance.now();
       maybeNotifyDone(responseId, entry);
     };
+
     source.start(startAt);
   };
 
   const onResponseDone = (responseId: string): void => {
     doneIds.add(responseId);
     const entry = entries.get(responseId);
+
     if (!entry) {
       // 整个 response 没有音频：也须通知服务端可以继续。
       const placeholder: PlaybackEntry = {
         sources: new Set(), done: true, notified: false, chunks: 0,
         vadAt: lastUserFinalAt, firstServerAt: null, firstPlayAt: null, endedAt: null,
       };
+
       entries.set(responseId, placeholder);
       maybeNotifyDone(responseId, placeholder);
+
       return;
     }
+
     entry.done = true;
     maybeNotifyDone(responseId, entry);
   };
@@ -343,6 +393,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
   const renderTranscript = (message: Extract<ServerMessage, { type: 'transcript' }>): void => {
     const key = `${message.role}:${message.responseId ?? 'none'}`;
     const label = message.role === 'user' ? '你' : '助手';
+
     if (lastTranscript && lastTranscript.key === key && !lastTranscript.final) {
       lastTranscript.textValue.textContent = message.text;
       lastTranscript.final = message.final;
@@ -353,18 +404,22 @@ export function mountRealtime3Trial(app: HTMLElement): void {
       body.textContent = message.text;
       transcriptList.append(item);
       lastTranscript = { key, textValue: body, final: message.final };
+
       while (transcriptList.childElementCount > 60) transcriptList.firstElementChild?.remove();
     }
+
     if (message.role === 'user' && message.final) lastUserFinalAt = performance.now();
   };
 
   const receive = (raw: string): void => {
     let message: ServerMessage;
+
     try {
       message = JSON.parse(raw) as ServerMessage;
     } catch {
       return;
     }
+
     switch (message.type) {
       case 'ready': {
         ready = true;
@@ -376,6 +431,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
         flash('服务端已 ready，本轮可直接听说或发文字。');
         break;
       }
+
       case 'status':
         flash(`服务端：${message.text}`);
         break;
@@ -397,9 +453,11 @@ export function mountRealtime3Trial(app: HTMLElement): void {
         row.append(make('span', undefined, `服务端 · ${message.name}`), make('b', undefined, `${message.value}${message.unit ? ` ${message.unit}` : ''}`));
         serverMetrics.append(row);
         serverMetricRows.push(row);
+
         if (serverMetricRows.length > 12) serverMetricRows.shift()?.remove();
         break;
       }
+
       case 'error':
         fail(`服务端错误：${message.message}`);
         break;
@@ -409,6 +467,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
       default:
         break;
     }
+
     refreshButtons();
   };
 
@@ -417,15 +476,24 @@ export function mountRealtime3Trial(app: HTMLElement): void {
       clearInterval(levelTimer);
       levelTimer = null;
     }
+
     stream?.getTracks().forEach((track) => track.stop());
     stream = null;
+
     try { captureSource?.disconnect(); } catch { /* 忽略 */ }
+
     captureSource = null;
+
     try { captureNode?.disconnect(); } catch { /* 忽略 */ }
+
     const worklet = typeof AudioWorkletNode !== 'undefined' && captureNode instanceof AudioWorkletNode ? captureNode : null;
+
     try { worklet?.port.close(); } catch { /* 忽略 */ }
+
     captureNode = null;
+
     try { captureMute?.disconnect(); } catch { /* 忽略 */ }
+
     captureMute = null;
     analyser = null;
     resampler = null;
@@ -438,13 +506,16 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     stopAllSources();
     const socket = ws;
     ws = null;
+
     try { socket?.close(1000, 'client stop'); } catch { /* 忽略 */ }
+
     if (context) {
       void context.close().catch(() => undefined);
       context = null;
       playbackGain = null;
       playHead = 0;
     }
+
     entries.clear();
     doneIds.clear();
     ready = false;
@@ -461,21 +532,30 @@ export function mountRealtime3Trial(app: HTMLElement): void {
   const tryLoadWorklet = async (audioContext: AudioContext): Promise<boolean> => {
     const config = readConfig();
     const candidates: string[] = [];
+
     if (config?.workletUrl) candidates.push(config.workletUrl);
+
     try { candidates.push(new URL('trial-capture-worklet.js', location.href).href); } catch { /* 忽略 */ }
+
     let blobUrl: string | null = null;
+
     try {
       blobUrl = URL.createObjectURL(new Blob([REALTIME3_CAPTURE_WORKLET_SOURCE], { type: 'text/javascript' }));
       candidates.push(blobUrl);
     } catch { /* 忽略 */ }
+
     for (const url of candidates) {
       try {
         await audioContext.audioWorklet.addModule(url);
+
         if (blobUrl) URL.revokeObjectURL(blobUrl);
+
         return true;
       } catch { /* 尝试下一个 */ }
     }
+
     if (blobUrl) URL.revokeObjectURL(blobUrl);
+
     return false;
   };
 
@@ -484,14 +564,18 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     const audioContext = context;
     const source = audioContext.createMediaStreamSource(stream);
     const meter = new Float32Array(256);
+
     const feed = (data: Float32Array): void => {
       // ready 之前、断开之后直接丢弃，不排队，避免积累巨大音频队列。
       if (!ready || ended || !resampler || !ws || ws.readyState !== WebSocket.OPEN) return;
+
       for (const frame of resampler.push(data)) {
         send({ type: 'audio', data: bytesToBase64(new Uint8Array(frame.buffer)) });
       }
     };
+
     let worklet: AudioWorkletNode | null = null;
+
     if (audioContext.audioWorklet && await tryLoadWorklet(audioContext)) {
       try {
         worklet = new AudioWorkletNode(audioContext, 'realtime3-capture');
@@ -500,11 +584,14 @@ export function mountRealtime3Trial(app: HTMLElement): void {
         worklet = null;
       }
     }
+
     // 等待 worklet 加载期间会话可能已结束，此时不再接线，避免资源残留。
     if (ended || context !== audioContext || !stream) {
       try { source.disconnect(); } catch { /* 忽略 */ }
+
       return;
     }
+
     if (!worklet) {
       // ScriptProcessor 已废弃，仅作短期兼容；采样转换与 Worklet 路径一致。
       const legacy = audioContext.createScriptProcessor(4096, 1, 1);
@@ -514,6 +601,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     } else {
       captureNode = worklet;
     }
+
     const mute = audioContext.createGain();
     mute.gain.value = 0; // 只为让采集节点被拉取，不把麦克风声音外放
     source.connect(captureNode);
@@ -530,6 +618,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
       if (!analyser) return;
       analyser.getFloatTimeDomainData(meter);
       let sum = 0;
+
       for (const value of meter) sum += value * value;
       setLevel(Math.sqrt(sum / meter.length) * 5);
     }, 120);
@@ -537,29 +626,40 @@ export function mountRealtime3Trial(app: HTMLElement): void {
 
   const start = async (withMicrophone: boolean): Promise<void> => {
     const config = readConfig();
+
     if (!config) {
       setState('error', '未找到试用配置 __REALTIME3_TRIAL__，请先加载 trial-config.js。');
+
       return;
     }
+
     if (starting || (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))) return;
+
     // Chrome side panels cannot reliably present the first microphone permission prompt.
     // Reuse the product's explicit full-tab permission page; it records nothing and closes on Done.
     if (withMicrophone) {
       const extension = (globalThis as unknown as {chrome?: {runtime: {getURL(path: string): string}; tabs: {create(options: {url: string}): Promise<unknown>}}}).chrome;
+
       if (extension) {
         starting = true;
+
         try {
           const permission = await navigator.permissions.query({name: 'microphone' as PermissionName});
+
           if (permission.state !== 'granted') {
             await extension.tabs.create({url: extension.runtime.getURL('voice-permission.html')});
             setState('idle', '请在新页授权麦克风，完成后回来点「开始交谈」。');
             flash('授权页只申请权限，不保存录音；点「完成」返回。');
+
             return;
           }
-        } catch (error) { fail(`无法申请麦克风权限：${errorText(error)}`); return; }
+        } catch (error) { fail(`无法申请麦克风权限：${errorText(error)}`);
+
+ return; }
         finally { starting = false; refreshButtons(); }
       }
     }
+
     ended = false;
     ready = false;
     started = true;
@@ -567,6 +667,7 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     startedAt = performance.now();
     refreshButtons();
     ensureContext(); // 在用户点击内先解锁 AudioContext，再申请麦克风
+
     if (withMicrophone) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -575,17 +676,22 @@ export function mountRealtime3Trial(app: HTMLElement): void {
       } catch (error) {
         starting = false;
         fail(`麦克风未授权或不可用：${errorText(error)}`);
+
         return;
       }
     }
+
     let socket: WebSocket;
+
     try {
       socket = new WebSocket(config.url!);
     } catch (error) {
       starting = false;
       fail(`无法创建连接：${errorText(error)}`);
+
       return;
     }
+
     starting = false;
     ws = socket;
     setState('connecting', withMicrophone ? '连接中（点击后已请求麦克风）…' : '连接中（不启用麦克风）…');
@@ -595,9 +701,12 @@ export function mountRealtime3Trial(app: HTMLElement): void {
     socket.onmessage = (event: MessageEvent) => {
       if (typeof event.data === 'string') receive(event.data);
     };
+
     socket.onerror = () => { if (!ended) fail('连接出错，已释放资源。'); };
+
     socket.onclose = () => {
       if (ws === socket) ws = null;
+
       if (!ended) fail('连接已断开，已释放资源。');
       else refreshButtons();
     };
@@ -621,11 +730,15 @@ export function mountRealtime3Trial(app: HTMLElement): void {
 
   const sendText = (): void => {
     const value = textInput.value.trim();
+
     if (!value) return;
+
     if (!ready) {
       flash('尚未 ready；先点“连接（不启用麦克风）”或“开始交谈”。');
+
       return;
     }
+
     if (send({ type: 'text', text: value })) {
       textInput.value = '';
       flash('已发送文字试问。');
@@ -665,14 +778,19 @@ function hideLegacyVoiceEntries(): void {
 
 function boot(attempt = 0): void {
   const app = document.getElementById('app');
+
   if (!app) {
     if (attempt < 40) window.setTimeout(() => boot(attempt + 1), 250);
+
     return;
   }
+
   mountRealtime3Trial(app);
 }
 
 (globalThis as unknown as Record<string, unknown>).__REALTIME3_CAPTURE_WORKLET_SOURCE__ = REALTIME3_CAPTURE_WORKLET_SOURCE;
+
 hideLegacyVoiceEntries();
+
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot(), { once: true });
 else boot();

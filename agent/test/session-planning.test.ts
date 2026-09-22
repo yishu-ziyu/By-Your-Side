@@ -1,5 +1,6 @@
 import { it, expect } from "vitest";
 import { SYSTEM_PROMPT, workerSystemPrompt } from "../src/prompt.js";
+
 it("planning is structural and communicates useful decomposition before spawning", () => {
   expect(SYSTEM_PROMPT).toContain("dependencies, transferable artifacts, shared live state, and coordination cost");
   expect(SYSTEM_PROMPT).toContain("Before spawn_worker, tell the user");

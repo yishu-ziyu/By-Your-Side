@@ -11,6 +11,7 @@
 import { createElement as icon, Settings } from "lucide";
 
 export type ReadingFont = "song" | "hei" | "system";
+
 export type ReadingSize = "small" | "normal" | "large";
 
 export interface ReadingPrefs {
@@ -41,6 +42,7 @@ export const READING_SIZE_OPTIONS: ReadonlyArray<{ value: ReadingSize; label: st
 export const READING_STORAGE_KEY = "sideagent_reading_appearance";
 
 const READING_FONTS: readonly ReadingFont[] = ["song", "hei", "system"];
+
 const READING_SIZES: readonly ReadingSize[] = ["small", "normal", "large"];
 
 /** 非默认字体才需要覆盖变量：宋体是默认，值在 styles.css 的 :root 里。 */
@@ -63,6 +65,7 @@ export interface ReadingStyleVars {
 /** 偏好 → CSS 变量。null 表示回到 styles.css 的默认值。 */
 export function readingStyleVars(prefs: ReadingPrefs): ReadingStyleVars {
   const normalized = normalizeReadingPrefs(prefs);
+
   return {
     "--reading-font": normalized.font === "song" ? null : READING_FONT_OVERRIDES[normalized.font],
     "--reading-size": normalized.size === "normal" ? null : READING_SIZE_OVERRIDES[normalized.size],
@@ -77,6 +80,7 @@ export function sameReadingPrefs(a: ReadingPrefs, b: ReadingPrefs): boolean {
 export function normalizeReadingPrefs(raw: unknown): ReadingPrefs {
   const source =
     raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+
   return {
     font: READING_FONTS.includes(source.font as ReadingFont)
       ? (source.font as ReadingFont)
@@ -93,6 +97,7 @@ export function applyReadingPrefs(
   root: Pick<HTMLElement, "style"> | null | undefined,
 ): void {
   if (!root) return;
+
   for (const [name, value] of Object.entries(readingStyleVars(prefs))) {
     if (value === null) root.style.removeProperty(name);
     else root.style.setProperty(name, value);
@@ -112,16 +117,19 @@ export interface ReadingSettingsPort {
 function createMemoryPort(): ReadingSettingsPort {
   let stored: unknown;
   const listeners = new Set<(raw: unknown) => void>();
+
   return {
     async load() {
       return stored;
     },
     async save(prefs) {
       stored = { ...prefs };
+
       for (const listener of listeners) listener({ ...prefs });
     },
     subscribe(listener) {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
   };
@@ -130,10 +138,13 @@ function createMemoryPort(): ReadingSettingsPort {
 /** 浏览器里的默认端口；缺 storage 事件时只退化为「无跨面板同步」，不报错。 */
 export function createChromeReadingPort(): ReadingSettingsPort {
   const local = typeof chrome === "undefined" ? undefined : chrome.storage?.local;
+
   if (!local) return createMemoryPort();
+
   return {
     async load() {
       const stored = await local.get(READING_STORAGE_KEY);
+
       return stored?.[READING_STORAGE_KEY];
     },
     async save(prefs) {
@@ -141,13 +152,18 @@ export function createChromeReadingPort(): ReadingSettingsPort {
     },
     subscribe(listener) {
       const onChanged = typeof chrome === "undefined" ? undefined : chrome.storage?.onChanged;
+
       if (!onChanged) return () => {};
+
       const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
         if (area !== "local") return;
         const change = changes[READING_STORAGE_KEY];
+
         if (change) listener(change.newValue);
       };
+
       onChanged.addListener(handler);
+
       return () => onChanged.removeListener(handler);
     },
   };
@@ -171,6 +187,7 @@ export interface ReadingSettingsDeps {
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   const text = typeof error === "string" ? error : "";
+
   return text || "无法写入本地存储";
 }
 
@@ -212,11 +229,13 @@ export class ReadingSettingsStore {
   async start(): Promise<void> {
     this.unsubscribe = this.deps.port.subscribe?.((raw) => this.receiveFromStorage(raw)) ?? null;
     let stored: unknown;
+
     try {
       stored = await this.deps.port.load();
     } catch {
       stored = undefined; // 读不到就按默认显示，不谎称读到了旧偏好
     }
+
     // 读取期间用户已改过、或已收到任何 storage 事件（含值等于默认的事件），
     // 都已有比这次读取更新的权威，不能再用可能过期的读取结果覆盖。
     if (this.revision > 0) return;
@@ -257,23 +276,28 @@ export class ReadingSettingsStore {
   private async drain(): Promise<void> {
     if (this.writing) return;
     this.writing = true;
+
     try {
       while (this.pending) {
         const target = this.pending;
         this.pending = null;
         this.setStatus("saving", "");
+
         try {
           await this.deps.port.save(target);
         } catch (error) {
           // 失败不自转重试：留下待写值，界面提示未保存，用户再改或点重试都会续上。
           if (!this.pending) this.pending = target;
           this.setStatus("error", errorMessage(error));
+
           return;
         }
+
         if (!this.pending) this.setStatus("saved", "");
       }
     } finally {
       this.writing = false;
+
       // 写入期间丢过远端事件：本地队列已空，回读一次权威存储来收敛。
       if (this.reloadPending && !this.pending) {
         this.reloadPending = false;
@@ -289,13 +313,16 @@ export class ReadingSettingsStore {
   private async reloadAuthority(): Promise<void> {
     const rev = this.revision;
     let stored: unknown;
+
     try {
       stored = await this.deps.port.load();
     } catch {
       return; // 读不到就保持当前显示，不谎称读到了权威值
     }
+
     if (this.revision !== rev || this.pending || this.writing) return;
     const incoming = normalizeReadingPrefs(stored);
+
     if (sameReadingPrefs(incoming, this.current)) return;
     this.current = incoming;
     this.deps.apply(this.current);
@@ -304,13 +331,17 @@ export class ReadingSettingsStore {
   private receiveFromStorage(raw: unknown): void {
     // 任何存储事件都算更新的事实：读取/回读的旧结果不得覆盖它，哪怕是读旧值。
     this.revision += 1;
+
     if (this.pending || this.writing) {
       // 本地还有未写回的改动：不轻信这一刻的事件（可能是自己的旧回声），
       // 记下来，等队列清空后回读权威存储。
       this.reloadPending = true;
+
       return;
     }
+
     const incoming = normalizeReadingPrefs(raw);
+
     if (sameReadingPrefs(incoming, this.current)) return; // 自己写入的回声，免得多余重绘
     this.current = incoming;
     this.deps.apply(this.current);
@@ -369,6 +400,7 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", "reading-settings-panel");
+
   if (!host.trigger) button.append(icon(Settings));
 
   const panel = doc.createElement("section");
@@ -397,13 +429,16 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
     const select = doc.createElement("select");
     select.id = selectId;
     select.className = "reading-settings-select";
+
     for (const option of options) {
       const el = doc.createElement("option");
       el.value = option.value;
       el.textContent = option.label;
       select.append(el);
     }
+
     row.append(label, select);
+
     return { row, select };
   }
 
@@ -434,6 +469,7 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   foot.append(resetBtn, status, retryBtn);
 
   panel.append(head, fontField.row, sizeField.row, hint, foot);
+
   if (!host.trigger) wrapper.append(button);
   wrapper.append(panel);
   host.topbar.append(wrapper);
@@ -475,6 +511,7 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
     button.setAttribute("aria-expanded", "false");
     // 关闭后焦点不该留在已隐藏的面板里：显式要求或焦点原本在面板内都回到可见入口。
     const active = doc.activeElement;
+
     if (returnFocus || (active && wrapper.contains(active))) focusTrigger();
   }
 
@@ -503,6 +540,7 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   function onOutsidePointerdown(event: Event): void {
     if (!open) return;
     const target = event.target as Node | null;
+
     if (target && (wrapper.contains(target) || button.contains(target))) return;
     closePanel(false);
   }
