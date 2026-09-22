@@ -82,3 +82,7 @@ Cua Driver 0.7.1（`/Applications/CuaDriver.app`，com.trycua.driver）daemon �
 - 已实证生效：改口继承（requirement 并列）、来源对象绑定与句子范围（同 Note 末句准确捕获）。未过：①「修订后改写已有成功回执的字段」——闸门按字段选择器+回执拒绝重放，`confirm_blocked_write` 对该字段无恢复态；需要以新 revision 为键的回执失效/确认路径，不能靠放松核验。② 中断任务续接：保留 tab 丢失+伴随进程重启后 run 已 dispose，「继续原任务」无后端事件。③ J5 接管/交还需真人路径复测（自动化点击只拿到「未确认」，含工具链瑕疵，不能定罪也不能记过）。
 - 复测消息发在面板原会话（记录 d505b83c）；c54da576 的历史（含「无法继续」finding 与中断快照）保留未动。复测后 Flomo 草稿为空（模型清空重填的副作用）。
 - 模型侧待决记录：默认模型现为 minimax-cn/MiniMax-M3（本日 J3 全链正常，2m0s）。候选 MiMo V2.6 Flash 经 Command Code（Provider 计划，OpenAI/Anthropic 兼容端点）——若要换，先走真实路径对比再定，不以价格/宣传替换验收。CUA-S1（trycua/cua `libs/cua-s1`，cua-s1-form-v0）当前为 source-only 研究版：无权重、无性能声明、代码 MIT 但未来权重商用条款未定，暂不可用；表单专用方向与本产品填写路径相关，条款明确后再评估。
+
+## anti-slop 规则集已接入（2026-09-23）
+
+lint 入口为 `npm run lint`（`npm run lint:fix` 仅空白行 autofix）；未并入 `npm run check`。规则集 vendor 在 `tools/oxlint/anti-slop/`，pinned revision 与更新方式见该目录 `VENDOR.md`；策略只在 `oxlint.config.ts` 改，上游规则实现保持未修改。**接入=只做度量，没有消红**：全仓 26,405 条 error（78% 是可 autofix 的空白行规则），oxlint 自带默认规则只有 199 条 warning。续接或改严苛度前先读[验收文件](evals/20260923-anti-slop-vendor.md)的基线与待决项；没有用户裁决前不要跑全量 `--fix`，也不要把 `lint` 并进 `check`。

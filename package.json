@@ -23,6 +23,10 @@
     "eval:report": "tsx scripts/eval/report.mts",
     "release:verify": "tsx scripts/eval/release-verify.mts",
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "lint:changed": "node scripts/lint-changed.mjs",
+    "lint:baseline": "node scripts/lint-changed.mjs --all --write-baseline",
     "check": "npm run check:architecture && npm run typecheck && npm test && npm run build",
     "test:unit": "vitest run --exclude \"agent/test/performance/**\"",
     "test:scale": "vitest run agent/test/performance --maxWorkers=1",
@@ -31,6 +35,8 @@
     "fixture:p0": "tsx scripts/acceptance/p0-fixture.mts"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.85.0",
+    "oxlint": "1.85.0",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }
