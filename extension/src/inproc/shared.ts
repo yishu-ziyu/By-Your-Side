@@ -27,7 +27,13 @@ export async function installVoiceHeaderRule(key: string): Promise<boolean> {
     addRules: configured ? [{
       id: VOICE_HEADER_RULE_ID, priority: 1,
       action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },
-      condition: { urlFilter: "||api.stepfun.com/v1/realtime", resourceTypes: [chrome.declarativeNetRequest.ResourceType.WEBSOCKET] },
+      // 只给本扩展自己发起、且不属于任何标签页的连接（offscreen / 侧栏）补头；网页自己连 StepFun 拿不到用户的 key。
+      condition: {
+        urlFilter: "||api.stepfun.com/v1/realtime",
+        resourceTypes: [chrome.declarativeNetRequest.ResourceType.WEBSOCKET],
+        initiatorDomains: [chrome.runtime.id],
+        tabIds: [chrome.tabs.TAB_ID_NONE],
+      },
     }] : [],
   });
 

@@ -20,6 +20,7 @@ import { REPO, launchRealPath, requireHeadless, siteAddress, until } from "./har
 import type { JsonRecord } from "./harness.mts";
 import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 import { STEP_VOICES, STEP_VOICE_STORAGE_KEY } from "../../../shared/voice.ts";
+import { MODEL } from "../../../agent/src/realtime-voice-connection.ts";
 
 requireHeadless();
 
@@ -240,6 +241,19 @@ try {
   verdicts.noVoiceError = verdict(!states.includes("error"), { states, status: final?.voiceStatus ?? "" });
 
   if (voiceArg) verdicts.providerUsedPickedVoice = verdict(voiceFrames.requested === voiceArg && voiceFrames.confirmed === voiceArg, { picked: voiceArg, ...voiceFrames });
+
+  if (!native) {
+    // 语音鉴权头规则只该作用于本扩展发起的连接：普通网页自己连 StepFun，服务端不应认出它已鉴权。
+    // SAFETY: 这段页面脚本只返回下面四种字符串之一。
+    const borrowed = await rp.evaluate(page, `new Promise((done) => {
+      const socket = new WebSocket("wss://api.stepfun.com/v1/realtime?model=${MODEL}");
+      const timer = setTimeout(() => { socket.close(); done("timeout"); }, 8000);
+      socket.onmessage = (e) => { clearTimeout(timer); socket.close(); done(String(e.data).includes("session.created") ? "session.created" : "other-message"); };
+      socket.onclose = (e) => { clearTimeout(timer); done("closed:" + e.code); };
+    })`, { timeoutMs: 15_000 }) as string;
+
+    verdicts.pageCannotBorrowKey = verdict(borrowed !== "session.created", { pageOrigin: new URL(pageUrl).origin, outcome: borrowed });
+  }
 
   if (caseName === "question") verdicts.answerFromPage = verdict(!!final?.answer.includes(NOTE), { answer: final?.answer ?? "" });
   else {
