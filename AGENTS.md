@@ -16,6 +16,21 @@
 - 区分用户要求与测量方法。不得为迁就实现降低要求、删除有效失败或把未跑记成通过；发现测量或测试错误时，可依据证据修正并补充反例，保留原记录、修改理由及新结果。改变成功定义或产品取舍仍由用户裁决；检查通过而真实结果失败时，必须复查检查方法。
 - 每条标准注明检查者及证据：可执行项由机器检查；体验、观感、设计意图等由人裁决。完成授权范围内能执行的验证后再交付，明确通过、失败和未跑；真实用户路径未满足时，不因测试通过或提交完成而宣称任务完成。
 - 实质性任务的标准和证据存 `docs/evals/YYYYMMDD-<任务名>.md`；小而可逆的修改可在回复中说明。提交相关实现时，commit message 引用验收文件。
+- 验收以【最接近真实用户、真实依赖、真实失败模式的关键路径】为准：优先跑用户实际会走的入口、接真实依赖、复现真实失败模式；隔离检查、合成输入只作辅助，不冒充验收结论。
+
+### 测试约定
+
+遵循家目录 `~/AGENTS.md` 的 Testing Rules（全局测试规范，冲突时以其为准）：
+
+- NEVER write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, FIRST write all the ways it could fail, THEN write the code.
+
+本项目补充（仅在符合上述规范的前提下适用）：
+
+- 只测对外结果：输入→输出、状态变化、副作用，不测内部实现路径。判据：纯重构后测试仍通过。
+- 断言须可证伪：期望值来自独立 oracle（手算例子、规范、可信参照），不用空断言、不用实现重算当期望值、不用只记录现状的快照。判据：引入真 bug 时测试失败。
+- 两条同时满足才写；否则删掉，或把隐含契约显式化成对外行为再测。外部代价（调用次数、缓存、耗时上限）与实现即交付物（算法复杂度、生成结构、序列化格式）属于结果，照测；行覆盖率不作为测试目标。
 
 ### 项目检查入口
 

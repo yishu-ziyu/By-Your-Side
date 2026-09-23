@@ -7,11 +7,12 @@
 export type HeldAction = "confirm" | "cancel";
 
 /**
- * 工具成功返回但操作没有真正派发（当前只有被拦下的 click）。
+ * 工具成功返回但操作没有真正派发（被拦下等确认的 click / double_click / drag）。
  * 这种回执必须按未执行上报：否则任务账本会把"等你确认"读成"已经点过"。
  */
 export function isHeldClickResult(name: string, data: unknown): boolean {
-  if (name !== "click" || !data || typeof data !== "object") return false;
+  if (name !== "click" && name !== "double_click" && name !== "drag") return false;
+  if (!data || typeof data !== "object") return false;
   return (data as { held?: unknown }).held === true;
 }
 

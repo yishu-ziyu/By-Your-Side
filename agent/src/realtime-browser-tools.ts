@@ -12,11 +12,11 @@ export const REALTIME_BROWSER_TOOL_NAMES = [
 ] as const;
 const names = new Set<string>(REALTIME_BROWSER_TOOL_NAMES);
 const guard = Type.Object({
-  observationId:Type.String(), operation:Type.Union(['click','fill','press_key','scroll'].map(op=>Type.Literal(op))),
+  observationId:Type.String(), operation:Type.Union(['click','fill','press_key','scroll','hover'].map(op=>Type.Literal(op))),
   target:Type.Optional(Type.String()),
 });
 const tools = createBrowserTools(new ToolRpc()).filter(tool => names.has(tool.name)).map(tool => {
-  if (!['click','fill','press_key','scroll'].includes(tool.name)) return tool;
+  if (!['click','fill','press_key','scroll','hover'].includes(tool.name)) return tool;
   return {...tool,parameters:{...tool.parameters,properties:{...(tool.parameters as {properties?: Record<string, unknown>}).properties,
     tabId:Type.Optional(Type.Number()),decisionGuard:Type.Optional(guard),
     ...(tool.name === 'press_key' ? {target:Type.Optional(Type.String())}:{})}}};

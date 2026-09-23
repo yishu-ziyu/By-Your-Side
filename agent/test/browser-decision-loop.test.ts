@@ -83,10 +83,15 @@ describe('general decision loop contracts, not a domain benchmark',()=>{
   expect(h.decide).toHaveBeenCalledTimes(1);
  });
  it('offers observed browser tabs even when the page controls are clipped',()=>{
-  const page={...observation(),controlsTruncated:true,tabs:[{id:9,title:'资料页',url:'https://reference.test/',active:false,windowId:1,working:false}]};
+  // Empty control window + incomplete collection: no click targets, tabs still reachable.
+  const page={...observation(),controls:[],controlsTruncated:true,tabs:[{id:9,title:'资料页',url:'https://reference.test/',active:false,windowId:1,working:false}]};
   const choices=browserCandidates(page,[]);
   expect(choices.find(c=>c.operation==='switch_tab')).toMatchObject({tabId:9});
   expect(choices.some(c=>c.operation==='click')).toBe(false);
+ });
+ it('keeps view click actions when collection is incomplete but the current window still has controls',()=>{
+  const page={...observation(),controlsTruncated:true,collectionComplete:false,hasMore:false};
+  expect(browserCandidates(page,[]).some(c=>c.operation==='click'&&c.target==='@1')).toBe(true);
  });
  it.each([true,false])('switches through the guarded tool and checks the actual active tab (matches=%s)',async(matches)=>{
   const tabs=[{id:9,title:'资料页',url:'https://reference.test/',active:false,windowId:1,working:false}];
@@ -184,5 +189,110 @@ describe('general decision loop contracts, not a domain benchmark',()=>{
   h.decide.mockImplementation(async(i)=>({observationId:i.page.id,candidateId:i.candidates.find((c:any)=>c.operation==='fill')!.id,confidence:.99,model:'test'}));
   const r=await runBrowserDecisionLoop({parentCallId:'parent',goal:'Fill provided text',materials:[{id:'v1',value:'example',source:'user',purpose:'field text'}],signal:h.abort.signal,call:h.call,decide:h.decide});
   expect(r.status).toBe('handoff');expect(r.receipts[0]?.executionFact).toBe('executed');expect(r.receipts[0]?.verification).toBe('unverified');
+ });
+ it('hover uses guarded RPC then reobserves before a revealed click; hover is mutating',async()=>{
+  let snapshots=0;
+  const closed={...observation('menu-closed'),controls:[{ref:'@1',role:'button',name:'Account',disabled:false}]};
+  const open={...observation('menu-open'),controls:[
+   {ref:'@1',role:'button',name:'Account',disabled:false,expanded:true},
+   {ref:'@2',role:'menuitem',name:'Settings',disabled:false},
+  ]};
+  const call=vi.fn(async(name:string)=>{
+   if(name==='snapshot'){snapshots++;return {observation:snapshots===1?closed:open};}
+   if(name==='hover')return {hovered:true};
+   return {effect:{changed:true}};
+  });
+  let round=0;
+  const decide=vi.fn(async(input:any)=>{
+   round++;
+   if(round===1){
+    const hover=input.candidates.find((c:any)=>c.operation==='hover'&&c.target==='@1');
+    expect(hover).toBeTruthy();
+    return {observationId:input.page.id,candidateId:hover.id,confidence:.99,model:'fixture'};
+   }
+   if(round===2){
+    const click=input.candidates.find((c:any)=>c.operation==='click'&&c.target==='@2');
+    expect(click).toBeTruthy();
+    return {observationId:input.page.id,candidateId:click.id,confidence:.99,model:'fixture'};
+   }
+   return {observationId:input.page.id,candidateId:'done',confidence:.99,model:'fixture'};
+  });
+  const result=await runBrowserDecisionLoop({parentCallId:'parent',goal:'Open account menu and click Settings',materials:[],signal:new AbortController().signal,call,decide});
+  expect(call.mock.calls.map(c=>c[0])).toEqual(['snapshot','hover','snapshot','click','snapshot']);
+  expect((call.mock.calls as unknown[][])[1]![1]).toMatchObject({tabId:7,target:'@1',decisionGuard:{observationId:'menu-closed',operation:'hover',target:'@1'}});
+  expect(result.receipts.map(r=>r.operation)).toEqual(['hover','click']);
+  expect(result.modelCalls).toBe(3);
+  expect(result.status).toBe('needs_verification');
+ });
+ it('30×12 focuses a material window then fills the original host value without exceeding decision budget',async()=>{
+  const controls=Array.from({length:30},(_,i)=>({ref:`@${i+1}`,role:'textbox',name:`Field ${i+1}`,value:'',disabled:false}));
+  const mats=Array.from({length:12},(_,i)=>({id:`m${i+1}`,value:`ORIGINAL-${i+1}-${'y'.repeat(20)}`,source:'user' as const,purpose:`p${i+1}`}));
+  const pageObs={...observation('big'),controls};
+  const call=vi.fn(async(name:string,params:Record<string,unknown>)=>{
+   if(name==='snapshot')return {observation:pageObs};
+   if(name==='read_element'){
+    const expect = params.expect as {equals?: string} | undefined;
+    return {tagName:'input',check:{matched:expect?.equals===mats[11]!.value}};
+   }
+   return {};
+  });
+  let round=0;
+  const decide=vi.fn(async(input:any)=>{
+   round++;
+   expect(input.candidates.length).toBeLessThanOrEqual(256);
+   if(round===1){
+    expect(input.candidates.some((c:any)=>c.operation==='select_materials')).toBe(true);
+    const win=input.candidates.find((c:any)=>c.operation==='select_materials'&&c.materialIds?.includes('m12'));
+    return {observationId:input.page.id,candidateId:win.id,confidence:.99,model:'fixture'};
+   }
+   if(round===2){
+    const fill=input.candidates.find((c:any)=>c.operation==='fill'&&c.target==='@30'&&c.valueId==='m12');
+    expect(fill).toBeTruthy();
+    return {observationId:input.page.id,candidateId:fill.id,confidence:.99,model:'fixture'};
+   }
+   return {observationId:input.page.id,candidateId:'done',confidence:.99,model:'fixture'};
+  });
+  const result=await runBrowserDecisionLoop({parentCallId:'parent',goal:'Fill field 30 with material 12 only',materials:mats,signal:new AbortController().signal,call,decide});
+  const fillCall=(call.mock.calls as unknown[][]).find(c=>c[0]==='fill')!;
+  expect(fillCall[1]).toMatchObject({target:'@30',value:mats[11]!.value});
+  expect(result.modelCalls).toBe(3);
+  expect(result.status).toBe('needs_verification');
+ });
+ it('continue_read counts against the same judgment budget and does not reset it',async()=>{
+  const first={...observation('v1'),hasMore:true,nextCursor:'c-next',collectedCount:200,visibleCount:100,controls:[{ref:'@1',role:'button',name:'Early',disabled:false}]};
+  const second={...observation('v2'),controls:[{ref:'@150',role:'button',name:'Late Target',disabled:false}]};
+  let snaps=0;
+  const call=vi.fn(async(name:string,params:Record<string,unknown>)=>{
+   if(name==='snapshot'){snaps++;return {observation:snaps===1?first:second};}
+   return {effect:{changed:true}};
+  });
+  let round=0;
+  const decide=vi.fn(async(input:any)=>{
+   round++;
+   if(round===1){
+    const cont=input.candidates.find((c:any)=>c.operation==='continue_read'&&c.cursor==='c-next');
+    return {observationId:input.page.id,candidateId:cont.id,confidence:.99,model:'fixture'};
+   }
+   if(round===2){
+    const click=input.candidates.find((c:any)=>c.operation==='click'&&c.target==='@150');
+    return {observationId:input.page.id,candidateId:click.id,confidence:.99,model:'fixture'};
+   }
+   return {observationId:input.page.id,candidateId:'done',confidence:.99,model:'fixture'};
+  });
+  const result=await runBrowserDecisionLoop({parentCallId:'parent',goal:'Click Late Target',materials:[],signal:new AbortController().signal,call,decide});
+  expect((call.mock.calls as unknown[][]).some(c=>c[0]==='snapshot'&&(c[1] as any).cursor==='c-next')).toBe(true);
+  expect(result.modelCalls).toBe(3);
+  expect(result.receipts.map(r=>r.operation)).toEqual(['click']);
+  expect(result.status).toBe('needs_verification');
+ });
+ it('disabled click tool never receives an executable click candidate',async()=>{
+  const h=harness();
+  h.decide.mockImplementation(async(i)=>{
+   expect(i.candidates.some((c:any)=>c.operation==='click')).toBe(false);
+   return {observationId:i.page.id,candidateId:'done',confidence:.99,model:'test'};
+  });
+  const result=await runBrowserDecisionLoop({parentCallId:'parent',goal:'Click something',materials:[],signal:h.abort.signal,call:h.call,decide:h.decide,canExecute:name=>name!=='click'});
+  expect(result.status).toBe('needs_verification');
+  expect(h.call.mock.calls.some(c=>c[0]==='click')).toBe(false);
  });
 });

@@ -7,8 +7,6 @@
  * ("旧步骤未执行") is exercised for real rather than asserted on a private queue.
  */
 import {beforeEach,describe,expect,it,vi} from 'vitest';
-import {readFileSync} from 'node:fs';
-import {resolve} from 'node:path';
 vi.mock('../src/display-fast-path.js',()=>({
   displayFastPathEnabled:()=>true,
   displaySteerFastPathEnabled:vi.fn(()=>true),
@@ -367,7 +365,6 @@ describe('连续修改与竞态（Ticket 4）',()=>{
  * 模型面（工具说明＋插话契约）必须要求只提交本次要求改变的字段。
  */
 describe('显示修改不得改变未指定属性（Ticket 7）',()=>{
- const toolSource=readFileSync(resolve(__dirname,'../src/tools.ts'),'utf8');
  it('执行层：只带字体时不改模式，只带模式时不改字体，组合请求两项都生效',async()=>{
   const h=pageHarness();
   // 行1：仅译文＋原字体 → 只改宋体 → 仍为仅译文。
@@ -381,12 +378,6 @@ describe('显示修改不得改变未指定属性（Ticket 7）',()=>{
   // 行4：明确组合请求两项都生效。
   await h.tool('page_translation').execute('row4',{action:'display',fontFamily:'songti',mode:'bilingual',tabId:7,document:'one'});
   expect(h.pageState).toMatchObject({fontFamily:'songti',mode:'bilingual'});
- });
- it('模型面：display 工具说明要求只提交本次改变的字段，省略即保持现状',()=>{
-  expect(toolSource).toMatch(/action:"display" switches existing results/);
-  expect(toolSource).toMatch(/submit ONLY the fields this request changes/i);
-  expect(toolSource).toMatch(/omitted fields keep the current page state/i);
-  expect(toolSource).toMatch(/must not carry mode or fontSize/i);
  });
  it('模型面：运行中插话契约要求显示修改只动本次要求的字段',()=>{
   expect(STEER_CONTRACT_NOTE).toContain('只提交本次要求改变的字段');

@@ -53,7 +53,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 # Locating elements
 - snapshot returns the page's real accessibility tree (roles, names, states, values); interactive elements carry [ref=N] handles.
 - Ref numbers are stable while a node persists, but @N must appear in the LATEST snapshot; navigation or node replacement invalidates old refs. On a stale-ref error, observe again and locate the target in the new output; never guess another number.
-- Supported locators: @N, loc=css: + native CSS, or native CSS directly. Playwright selectors such as :has-text() are not supported. Use a ref or screenshot coordinates when text cannot be expressed as native CSS. A snapshot starting with "[回退…]" is a degraded scrape (debugger busy); prefer retaking it once the debugger is free.
+- Supported locators: @N, loc=css: + native CSS (pierces open shadow; same-origin iframes are scoped — top first, then frames; multi-hit is ambiguous), loc=role:<role>[name="…"] / name*="…" (accessible name ≠ textContent), loc=href:…, xpath=, text=. Playwright selectors such as :has-text() are not supported. Use a ref or screenshot coordinates when text cannot be expressed as native CSS. A snapshot starting with "[回退…]" is a degraded scrape (debugger busy); prefer retaking it once the debugger is free.
 
 # Acting
 - After navigate, always snapshot before interacting.

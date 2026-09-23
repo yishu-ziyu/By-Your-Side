@@ -69,4 +69,16 @@ describe('immutable browser observation guards',()=>{
   vi.mocked(sendCommand).mockImplementation(async(_tab,method)=>({...(method==='DOM.getDocument'?{root:{nodeId:1}}:method==='DOM.querySelectorAll'?{nodeIds:[]}:{nodes:[{nodeId:'n',backendDOMNodeId:4,role:{value:'textbox'},name:{value:'Field'},value:{value:'original'}},{nodeId:'clock',role:{value:'StaticText'},name:{value:String(Date.now())}}]})}) as any);
   await expect(assertBrowserDecision('m','fill',{tabId:7,target:'@4',value:'new',decisionGuard:{observationId:p.id,operation:'fill',target:'@4'}})).resolves.toBeUndefined();
  });
+ it('allows guarded hover on an observed clickable control and keeps one-shot identity limits',()=>{
+  const r=new BrowserObservationRegistry();
+  const p=r.issue('m',{...page(),controls:[{ref:'@9',role:'button',name:'Account',disabled:false}]});
+  const params={tabId:7,target:'@9',decisionGuard:{observationId:p.id,operation:'hover',target:'@9'}};
+  expect(()=>r.consume('other',7,'hover',params)).toThrow('DECISION_STALE');
+  expect(r.consume('m',7,'hover',params).controls.some(c=>c.ref==='@9')).toBe(true);
+  expect(()=>r.consume('m',7,'hover',params)).toThrow('DECISION_STALE');
+ });
+ it('rejects guarded hover on unsupported roles without execution',()=>{
+  const r=new BrowserObservationRegistry(),p=r.issue('m',page());
+  expect(()=>r.consume('m',7,'hover',{tabId:7,target:'@4',decisionGuard:{observationId:p.id,operation:'hover',target:'@4'}})).toThrow('DECISION_INVALID');
+ });
 });

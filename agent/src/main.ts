@@ -34,6 +34,7 @@ import { VoiceService } from "./voice-service.js";
 import { readVoicePage } from './voice-page-reader.js';
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
+import { startClipboardDarwinHttpServer, type ClipboardHttpServer } from "./clipboard-darwin.js";
 
 interface CliArgs {
   ws: boolean;
@@ -137,6 +138,25 @@ async function main(): Promise<void> {
   }
   if (!cli.ws) enableFileLog();
 
+  let clipboardServer: ClipboardHttpServer | null = null;
+  if (process.platform === "darwin") {
+    try {
+      clipboardServer = await startClipboardDarwinHttpServer();
+      log(`clipboard HTTP ${clipboardServer.url}`);
+    } catch (error) {
+      log(`clipboard HTTP 未启动：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const stopClipboard = async () => {
+    if (!clipboardServer) return;
+    try {
+      await clipboardServer.close();
+    } catch {
+      /* 退出路径 */
+    }
+    clipboardServer = null;
+  };
+
   let current: ClientConn | null = null;
   const store = new ConversationStore(join(homedir(), ".sideagent", "conversations"));
   const memoryStore = new MemoryStore(join(homedir(), ".sideagent", "memory"));
@@ -188,7 +208,7 @@ async function main(): Promise<void> {
     conversations.disconnect();
     return true;
   };
-  const disposeAll = (): void => { voice.close(); conversations.dispose(); };
+  const disposeAll = (): void => { voice.close(); conversations.dispose(); void stopClipboard(); };
   const handleMessage = (msg: ClientMessage): void => {
     if (msg.type === "voice") {
       const conversationId = msg.conversationId ?? "default";

@@ -618,17 +618,3 @@ describe("任务条生命周期", () => {
 
   afterEach(() => vi.restoreAllMocks());
 });
-
-describe("集成接线防回归", () => {
-  it("main.ts 的 ServerMessage switch 里 task_view 只有一个 case（T03 与 T05 都必须收到视图）", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const src = readFileSync(resolve(__dirname, "../src/sidepanel/main.ts"), "utf8");
-    const matches = src.match(/case "task_view"/g) ?? [];
-    expect(matches.length).toBe(1);
-    // 两个消费者在同一分支内都被调用
-    const caseBody = src.slice(src.indexOf('case "task_view"'), src.indexOf('case "task_view"') + 800);
-    expect(caseBody).toContain("taskBar.updateView");
-    expect(caseBody).toContain("resumeEntry.apply");
-  });
-});

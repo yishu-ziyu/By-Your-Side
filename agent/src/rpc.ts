@@ -92,7 +92,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "network",
   "page_operation",
   "page_translation",
-  "close_tab", "click", "hover", "fill", "type_text", "press_key", "scroll",
+  "close_tab", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll",
   "js", "navigate", "screenshot", "mark", "clear_marks",
 ]);
 
@@ -207,7 +207,7 @@ export class ToolRpc {
     let tabId: number | null;
     if (name === "switch_tab") tabId = numberField(params, "tabId");
     else if (name === "worker_tabs") tabId = params?.action === "claim" ? numberField(data, "tabId") : null;
-    else if (name === "click") tabId = numberField((data as {newTab?:unknown} | undefined)?.newTab, "tabId");
+    else if (name === "click" || name === "double_click") tabId = numberField((data as {newTab?:unknown} | undefined)?.newTab, "tabId");
     else tabId = numberField(data, "tabId");
     if (tabId == null) return;
     this.pageTargets.set(key, { tabId, seq: targetSeq });

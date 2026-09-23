@@ -7,17 +7,20 @@ const FIXTURE_DIR = dirname(
   fileURLToPath(new URL("../../extension/test/fixtures/acceptance/index.html", import.meta.url)),
 );
 
+/** 验收页白名单：默认仍是 index.html；新增能力对齐页按名放行，不开放任意路径。 */
+const FIXTURE_FILES = new Set(["index.html", "cursor-visibility.html", "parity.html"]);
+
 export function startFixtureServer() {
   const server = createServer((req, res) => {
     const raw = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
     const name = raw === "/" ? "/index.html" : raw;
-    if (name !== "/index.html") {
+    const file = name.startsWith("/") ? name.slice(1) : name;
+    if (!FIXTURE_FILES.has(file)) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
       return;
     }
-    const file = join(FIXTURE_DIR, "index.html");
-    const resolved = normalize(file);
+    const resolved = normalize(join(FIXTURE_DIR, file));
     if (!resolved.startsWith(normalize(FIXTURE_DIR)) || !existsSync(resolved)) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");

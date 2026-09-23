@@ -139,7 +139,7 @@ function __egoRawBridge(browser, tabId, platform) {
         fail("locator.click 只支持左键（ego click 不派发右键/中键）");
       }
       if (typeof settings.clickCount === "number" && settings.clickCount !== 1) {
-        fail("locator.click 只支持单击（ego click 不派发多次点击）");
+        fail("locator.click 只支持单击；双击请用 locator.dblclick()（真实 CDP 双击）");
       }
       const result = await call("click", { target: target });
       if (result && result.newTab) {
@@ -148,12 +148,18 @@ function __egoRawBridge(browser, tabId, platform) {
       return undefined;
     };
     return {
+      dblclick: async () => { await call("double_click", { target: target }); return undefined; },
       click: click,
       fill: async (value) => { await call("fill", { target: target, value: String(value) }); return undefined; },
       hover: async () => { await call("hover", { target: target }); return undefined; },
       type: () => fail("locator.type/pressSequentially 未接入；请用 fill 写入，或用 locator.press/keyboard.press 发按键"),
       selectOption: () => fail("locator.selectOption 未接入（ego 没有下拉选择 RPC）；请在页面上点击选项"),
-      setInputFiles: () => fail("locator.setInputFiles 未接入（ego 没有文件选择 RPC）"),
+      setInputFiles: (paths) => {
+      // 合法上传入口之一：只走 upload_file RPC；宿主 call / browser-program 在派发前做同一授权。
+      // 此处不另写一套路径规则，也不经 raw CDP。
+      const list = Array.isArray(paths) ? paths.map(String) : [String(paths)];
+      return call("upload_file", { target: target, paths: list }).then(() => undefined);
+    },
     };
   };
   const rawPage = {

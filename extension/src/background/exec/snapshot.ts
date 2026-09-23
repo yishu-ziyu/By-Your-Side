@@ -2,7 +2,7 @@ import { axTextEvidence } from '../ax-text-evidence.js';
 import type { PageTextEvidence } from '../../../../shared/page-text-evidence.js';
 import type {TranslationDisplayState} from '../../../../shared/page-translation.js';
 import {withObservedDocumentIdentity} from "../observation-document.js";
-import {browserObservations,decisionControls,readDecisionTree,decisionDialogs,decisionControlsTruncated} from '../browser-observation.js';
+import {browserObservations,collectDecisionControls,readDecisionTree,decisionDialogs,selectObservationView} from '../browser-observation.js';
 import type {BrowserObservation,BrowserControl} from '../../../../shared/browser-decision.js';
 import {listTabs} from './tabs.js';
 import { sendCommand } from "../debugger.js";
@@ -20,12 +20,12 @@ import { withTimeout } from "../timeout.js";
  * 同处数字空间，不清会导致后续 @N 经 isAxRef 误走 CDP。
  */
 export async function snapshot(
-  params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean },
+  params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; translation?:TranslationDisplayState|null; observation?:BrowserObservation }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
   if (tab.id == null) throw new Error("工作标签页无效");
-  if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树。');
+  if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树，不能退回 viewport DOM 身份。');
   const captured=await withObservedDocumentIdentity(tab.id, sessionId, async () => {
     const result=await snapshotTab(tab.id!,params.scope,params.decision);
     const current=await chrome.tabs.get(tab.id!);
@@ -35,14 +35,66 @@ export async function snapshot(
     const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
     return {...result,tabId:tab.id!,...(translation?{translation}:{}),...(typeof current.url==='string'?{url:current.url}:{})};
   });
-  const {controls,truncated,controlsTruncated,dialogs,...value}=captured.value;
+  const {controls,truncated,controlsTruncated,dialogs,collectionComplete,collectionLimitReached,...value}=captured.value;
   const identified={...value,...(captured.documentId?{documentId:captured.documentId}:{})};
   if(!params.decision)return identified;
   if(!captured.documentId||!value.url||!controls)throw new Error('DECISION_UNSUPPORTED: 缺少文档身份或结构化控件。');
   const viewport=await chrome.scripting.executeScript({target:{tabId:tab.id},world:'ISOLATED',func:readDecisionViewport});
   if(viewport[0]?.documentId!==captured.documentId)throw new Error('DECISION_STALE: 页面在观察期间变化。');
   const tabs=(await listTabs(sessionId)).tabs.filter(t=>!t.url.startsWith(chrome.runtime.getURL('')));
-  const observation=browserObservations.issue(sessionId,{tabId:tab.id,documentId:captured.documentId,url:value.url,text:value.text,controls:controls.slice(0,100),truncated:!!truncated||controls.length>100,textTruncated:!!truncated,controlsTruncated:!!controlsTruncated||controls.length>100,dialogs:dialogs??[],source:'accessibility',viewport:viewport[0]?.result,visibleText:viewport[0]?.result?.text,tabs:tabs.slice(0,64),tabsTruncated:tabs.length>64});
+  const continuing = !!(params.cursor || params.viewScopeId);
+  const active = continuing ? browserObservations.readActive(sessionId, tab.id) : undefined;
+  if (continuing) {
+    if (!active) throw new Error('DECISION_CURSOR: 没有可续读的采集。');
+    if (active.page.documentId !== captured.documentId || active.page.url !== value.url) {
+      throw new Error('DECISION_STALE: 续读时页面身份已变化，请重新观察。');
+    }
+  }
+  const generation = active?.generation ?? crypto.randomUUID();
+  const collectedControls = active?.collected ?? controls;
+  const collectedTabs = active?.collectedTabs ?? tabs;
+  const view = selectObservationView({
+    collected: collectedControls,
+    tabs: collectedTabs,
+    collectionComplete: continuing
+      ? (active!.page.collectionComplete ?? true)
+      : (collectionComplete ?? !(controlsTruncated || false)),
+    collectionLimitReached: continuing ? active!.page.collectionLimitReached : collectionLimitReached,
+    generation,
+    textTruncated: continuing ? !!(active!.page.textTruncated ?? active!.page.truncated) : !!truncated,
+    cursor: params.cursor,
+    viewScopeId: params.viewScopeId,
+  });
+  // Register every collected AX identity for execution — not only text-rendered refs.
+  recordAxSnapshot(tab.id, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
+  const observation=browserObservations.issue(sessionId,{
+    tabId:tab.id,
+    documentId:captured.documentId,
+    url:value.url,
+    text: continuing ? active!.page.text : value.text,
+    controls:view.controls,
+    truncated:view.truncated,
+    textTruncated:view.textTruncated,
+    controlsTruncated:view.controlsTruncated,
+    collectedCount:view.collectedCount,
+    collectionComplete:view.collectionComplete,
+    ...(view.collectionLimitReached?{collectionLimitReached:true}:{}),
+    generation:view.generation,
+    ...(view.viewScopeId?{viewScopeId:view.viewScopeId,viewScopeLabel:view.viewScopeLabel}:{}),
+    viewComplete:view.viewComplete,
+    visibleCount:view.visibleCount,
+    hasMore:view.hasMore,
+    ...(view.nextCursor?{nextCursor:view.nextCursor}:{}),
+    ...(view.scopes?{scopes:view.scopes,scopesTruncated:view.scopesTruncated,scopesHasMore:view.scopesHasMore,...(view.scopesNextCursor?{scopesNextCursor:view.scopesNextCursor}:{})}:{}),
+    dialogs: continuing ? (active!.page.dialogs ?? []) : (dialogs??[]),
+    source:'accessibility',
+    viewport:viewport[0]?.result,
+    visibleText:viewport[0]?.result?.text,
+    tabs:view.tabs,
+    tabsTruncated:view.tabsTruncated,
+    tabsHasMore:view.tabsHasMore,
+    ...(view.tabsNextCursor?{tabsNextCursor:view.tabsNextCursor}:{}),
+  },{collectedControls,collectedTabs,generation:view.generation});
   return {...identified,observation};
 }
 
@@ -51,7 +103,7 @@ export async function snapshotTab(
   tabId: number,
   scope: "full_page" | "viewport" = "full_page",
   decision=false,
-): Promise<{ text: string; tabId: number; textEvidence?:PageTextEvidence; controls?:BrowserControl[];truncated?:boolean;controlsTruncated?:boolean;dialogs?:string[] }> {
+): Promise<{ text: string; tabId: number; textEvidence?:PageTextEvidence; controls?:BrowserControl[];truncated?:boolean;controlsTruncated?:boolean;dialogs?:string[];collectionComplete?:boolean;collectionLimitReached?:boolean }> {
   if (scope === "viewport") {
     const dom = await domSnapshot(tabId, scope);
     clearAxSnapshot(tabId);
@@ -74,7 +126,7 @@ export async function snapshotTab(
   }
 }
 
-async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[] }> {
+async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
   const result = decision?{nodes:await readDecisionTree(tabId)}:await withTimeout(
     sendCommand<{ nodes?: AxNodeLite[] }>(tabId, "Accessibility.getFullAXTree"),
     8_000,
@@ -82,12 +134,25 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   );
   const nodes = result.nodes ?? [];
   if (nodes.length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
-  const { text, backendIds,truncated } = axTreeToText(nodes);
+  const { text, backendIds, truncated } = axTreeToText(nodes);
   const textEvidence=axTextEvidence(nodes);
-  recordAxSnapshot(tabId, backendIds);
-  if(!decision)return {text,textEvidence,controls:[],truncated,controlsTruncated:false,dialogs:[]};
-  const controls=decisionControls(nodes,backendIds);
-  return { text,textEvidence,controls,truncated,controlsTruncated:decisionControlsTruncated(nodes,controls),dialogs:decisionDialogs(nodes) };
+  if(!decision){
+    recordAxSnapshot(tabId, backendIds);
+    return {text,textEvidence,controls:[],truncated,controlsTruncated:false,dialogs:[],collectionComplete:true,collectionLimitReached:false};
+  }
+  // Decision controls come from the AX tree itself — never from text-budget keptRefs.
+  const collected = collectDecisionControls(nodes);
+  recordAxSnapshot(tabId, collected.controls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
+  return {
+    text,
+    textEvidence,
+    controls: collected.controls,
+    truncated,
+    controlsTruncated: !collected.collectionComplete,
+    dialogs: decisionDialogs(nodes),
+    collectionComplete: collected.collectionComplete,
+    collectionLimitReached: collected.collectionLimitReached,
+  };
 }
 
 /** 旧实现：注入 content-snapshot.js（幂等）后调用 window.__sideagent.snapshot(scope)。 */

@@ -40,12 +40,20 @@ describe("browser programs", () => {
     expect(call).toHaveBeenCalledWith("read_element", { tabId: 12, target: "#field" }, "program/1");
   });
 
-  it("polls a real browser condition before continuing and reports a bounded timeout", async () => {
-    const call = vi.fn().mockResolvedValueOnce({ value: { ready: false, count: 0 } }).mockResolvedValue({ value: { ready: true, count: 1 } });
+  it("waits through read_element expect polls and reports a bounded timeout", async () => {
+    const conditionUnmet = new Error("NOT_READY: 条件未满足：目标属性未达成");
+    const call = vi.fn()
+      .mockRejectedValueOnce(conditionUnmet)
+      .mockResolvedValue({ check: { matched: true } });
     const result = await runBrowserProgram({ code: 'await browser.waitFor({selector:"#edit",timeoutMs:1000}); return "ready";', call });
     expect(result.value).toBe("ready");
-    expect(call).toHaveBeenCalledTimes(2);
-    await expect(runBrowserProgram({ code: 'await browser.waitFor({selector:"#missing",timeoutMs:30});', call: vi.fn().mockResolvedValue({ value: { ready: false, count: 0 } }) })).rejects.toThrow(/wait_for.*timed out/i);
+    // 1 次未达成 + visible + enabled + visible 复核 = 4 次只读 read_element 轮询
+    expect(call).toHaveBeenCalledTimes(4);
+    expect(call.mock.calls[0]?.[0]).toBe("read_element");
+    expect(call.mock.calls[0]?.[3]).toBe("readonly-poll");
+    await expect(runBrowserProgram({ code: 'await browser.waitFor({selector:"#missing",timeoutMs:30});', call: vi.fn().mockRejectedValue(conditionUnmet) })).rejects.toThrow(/wait_for.*timed out/i);
+    // 歧义是结构性错误：立即抛，不吞进轮询直到超时
+    await expect(runBrowserProgram({ code: 'await browser.waitFor({selector:"button",timeoutMs:500});', call: vi.fn().mockRejectedValue(new Error("AMBIGUOUS: 选择器匹配 3 个元素: button。操作未执行。")) })).rejects.toThrow(/AMBIGUOUS|匹配 3 个/);
   });
 
   it.each(["页面现在归你，操作未执行", "Extension disconnected", 'Tool call "click" timed out after 30000ms'])("does not let catch bypass a control stop: %s", async (message) => {
@@ -107,5 +115,57 @@ describe("browser programs", () => {
     expect(result.value).not.toHaveProperty("imageBase64");
     expect(JSON.stringify(result.value)).not.toContain("AAA");
     expect(result.images).toEqual([{ type: "image", data: "AAA", mimeType: "image/png" }]);
+  });
+
+  it("exposes camelCase real-input aliases and routes them to canonical RPC names", async () => {
+    const call = vi.fn(async () => ({ doubleClicked: true }));
+    const result = await runBrowserProgram({ code: 'return { dbl: await browser.doubleClick({target:"#a"}), upload: typeof browser.uploadFile, cdp: typeof browser.cdp, drag: typeof browser.drag };', call });
+    expect(result.value).toMatchObject({ dbl: { doubleClicked: true }, upload: "function", cdp: "function", drag: "function" });
+    expect(call).toHaveBeenCalledWith("double_click", { target: "#a" }, "program/1");
+  });
+
+  it("pageInfo composes list_tabs + js + dialog_info", async () => {
+    const call = vi.fn(async (name: string) => {
+      if (name === "list_tabs") return { tabs: [{ id: 7, title: "T", url: "https://x/", working: true }] };
+      if (name === "dialog_info") return { dialog: null };
+      return { value: { href: "https://x/", title: "T", readyState: "complete", viewport: { width: 10, height: 20 }, scroll: { x: 0, y: 0 }, timeOrigin: 1 } };
+    });
+    const result = await runBrowserProgram({ code: 'return await browser.pageInfo();', call });
+    expect(result.value).toMatchObject({ tabId: 7, tabTitle: "T", page: { href: "https://x/", readyState: "complete" }, dialog: null });
+    expect(call.mock.calls.map(c => c[0])).toEqual(["list_tabs", "js", "dialog_info", "list_tabs"]);
+    expect((call.mock.calls[1] as unknown as [string, Record<string, unknown>])?.[1]).toMatchObject({ tabId: 7 });
+  });
+
+  it("waitForLoad reaches readyState and rejects unsupported states", async () => {
+    const call = vi.fn(async () => ({ value: { readyState: "complete", href: "https://x/", timeOrigin: 9 } }));
+    const result = await runBrowserProgram({ code: 'return await browser.waitForLoad({state:"load",timeoutMs:1000});', call });
+    expect(result.value).toMatchObject({ readyState: "complete", state: "load" });
+    const idleReject = vi.fn();
+    await expect(runBrowserProgram({ code: 'return await browser.waitForLoad({state:"networkidle"});', call: idleReject })).rejects.toThrow(/waitForLoad/);
+    expect(idleReject).not.toHaveBeenCalled();
+  });
+
+  it("waitForNetworkIdle returns after scoped in-flight is quiet with complete capture", async () => {
+    const call = vi.fn(async () => ({
+      total: 5, dropped: 0, inFlight: 0, excludedInFlight: 0,
+      lastActivityAt: Date.now() - 500, generation: 1, integrity: "ok", attached: true,
+    }));
+    const result = await runBrowserProgram({ code: 'return await browser.waitForNetworkIdle({idleMs:100,timeoutMs:3000});', call });
+    expect(result.value).toMatchObject({ idle: true, integrity: "ok" });
+    expect(result.value).not.toHaveProperty("approximation");
+    expect(call).toHaveBeenCalledWith("network", { types: "all", limit: 1 }, expect.any(String), "readonly-poll");
+  });
+
+  it("scrollToBottomUntil stops at the bottom and reports unmatched honestly", async () => {
+    const call = vi.fn(async (name: string) => name === "scroll" ? { atBottom: true } : { value: false });
+    const result = await runBrowserProgram({ code: 'return await browser.scrollToBottomUntil({condition:"false",maxSteps:3});', call });
+    expect(result.value).toMatchObject({ matched: false, atBottom: true, steps: 1 });
+  });
+
+  it("scrollToBottomUntil matches a condition before the first scroll", async () => {
+    const call = vi.fn(async (name: string) => name === "js" ? { value: true } : { atBottom: false });
+    const result = await runBrowserProgram({ code: 'return await browser.scrollToBottomUntil({condition:"true",maxSteps:3});', call });
+    expect(result.value).toMatchObject({ matched: true, steps: 0 });
+    expect(call.mock.calls.map(c => c[0])).toEqual(["js"]);
   });
 });

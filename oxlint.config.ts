@@ -53,7 +53,7 @@ export default defineConfig({
     // --- anti-slop: boundary handling ---
     "anti-slop/no-reflect-apply": "error",
     "anti-slop/no-reflect-get": "error",
-    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-runtime-typeof": ["error", { allowInTypeGuards: true }],
     // --- anti-slop: naming ---
     "anti-slop/no-shape-in-symbol-names": "error",
     // --- anti-slop: test doubles ---

@@ -198,11 +198,6 @@ it('stop invalidates a request even when its judgment was already ready',async()
   h.done('r1',{status:'cancelled'});h.created('late');h.call('late',{action:'switch',tabId:8},'late');h.done('late');await drain();
   expect(h.logs.some(l=>l.type==='spoken_result_gate'&&l.applied)).toBe(false);
 });
-it('A7 source contains no production hold/judge mechanism',()=>{
-  const files=['realtime-voice-connection.ts','realtime-voice-session.ts','voice-service.ts'];
-  for(const file of files) expect(readFileSync(join('agent/src',file),'utf8')).not.toMatch(/quietJudge|heldQuiets|QUIET_HOLD_BUDGET_MS|audio_held_quiet_confirmation|quiet_budget_expired/);
-});
-
 it('stop before final ASR prevents a later same-turn judgment from closing an action',async()=>{
   const h=harness();
   h.socket.server({type:'input_audio_buffer.speech_started',item_id:'u1'});

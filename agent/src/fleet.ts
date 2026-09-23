@@ -78,6 +78,10 @@ export function workerExecution(
       const broker = getConsent?.();
       return broker ? broker.request(params, opts) : { allowed: false, reason: CONSENT_REQUIRED_ERROR };
     },
+    /** 工人会话自有账本；与 Lead 不共享，避免跨任务继承授权。 */
+    get uploadLedger() {
+      return getSession()?.uploadLedger;
+    },
   };
 }
 

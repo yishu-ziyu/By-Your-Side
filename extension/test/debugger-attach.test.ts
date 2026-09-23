@@ -102,13 +102,13 @@ describe("debugger 并发 attach", () => {
 
     if (results[0].status === "rejected") {
       expect((results[0].reason as Error).message).toBe(
-        "该标签页正被 DevTools 或其他调试器占用"
+        "PERMISSION_DENIED: 该标签页正被 DevTools 或其他调试器占用"
       );
     }
 
     if (results[1].status === "rejected") {
       expect((results[1].reason as Error).message).toBe(
-        "该标签页正被 DevTools 或其他调试器占用"
+        "PERMISSION_DENIED: 该标签页正被 DevTools 或其他调试器占用"
       );
     }
 
@@ -127,7 +127,7 @@ describe("debugger 并发 attach", () => {
     await detachAll();
   });
 
-  it('attach 抛 "already attached" 时视为已连接，不报错', async () => {
+  it('attach 抛 "already attached" 后以本扩展只读命令核对连接', async () => {
     const chromeStub = installChrome();
 
     const { ensureAttached, detachAll } = await import(
@@ -138,6 +138,8 @@ describe("debugger 并发 attach", () => {
     vi.mocked(chromeStub.attach).mockImplementation(async () => {
       throw new Error("Debugger session id UUID is already attached");
     });
+    vi.mocked(chromeStub.sendCommand).mockImplementation(async (...args: unknown[]) => args[1] === "Page.getFrameTree"
+      ? { frameTree: { frame: { id: "owned-frame" } } } : {});
 
     // 调用应该不报错
     await expect(ensureAttached(7)).resolves.toBeUndefined();

@@ -25,6 +25,10 @@ const ACTION_NAMES: Record<string, string> = {
   read_element: "读取完整内容",
   read_elements: "读回多个元素",
   click: "点击",
+  double_click: "双击",
+  drag: "拖动",
+  upload_file: "上传文件",
+  cdp: "CDP 调用",
   hover: "悬停",
   remember_user_preference: "记住偏好",
   browser_run: "连续操作",
@@ -99,6 +103,8 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
       return { short, full: label ? clip(label, 32) : short };
     }
     case "click":
+    case "double_click":
+    case "drag":
     case "hover": {
       const label = str(params.label);
       return { short, full: label ? `${short}「${clip(label)}」` : `${short}元素` };

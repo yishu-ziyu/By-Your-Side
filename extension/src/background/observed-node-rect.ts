@@ -17,5 +17,16 @@ export function observedNodeRect(this: Node, contentOnly = false) {
     r = range.getBoundingClientRect();
   } else r = el.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) throw new Error('元素不可见（零尺寸）');
-  return {x:r.x,y:r.y,width:r.width,height:r.height};
+  let x = r.x;
+  let y = r.y;
+  let win: Window | null = el.ownerDocument.defaultView;
+  while (win && win !== win.top) {
+    const frame = win.frameElement as Element | null;
+    if (!frame) break;
+    const fr = frame.getBoundingClientRect();
+    x += fr.x;
+    y += fr.y;
+    win = win.parent;
+  }
+  return {x,y,width:r.width,height:r.height};
 }

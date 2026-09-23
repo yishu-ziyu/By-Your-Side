@@ -39,16 +39,12 @@ function componentSurface(workerCount: number): string[] {
   return [...browser, ...ledger, ...delivery, ...memory, ...team];
 }
 
-describe("合成组件范围预算（非真实会话清单）", () => {
-  it("组件拼接：无 worker ≤23、有 worker ≤29", () => {
+describe("合成组件工具语义（非真实会话清单）", () => {
+  it("组件拼接没有重名，单人态不暴露团队操作", () => {
     const idle = componentSurface(0);
     const team = componentSurface(1);
-    // 2026-09-21: read_elements（宿主按选择器读回多元素，供圈注等 condition 目标核验取证）新增一个只读工具，见 docs/evals/20260921-1441-repair.md。
-    // 合成清单里无 worker 23 个，仍在原 23 上限内，不上调；只有有 worker 的合成清单因这一个新工具从 28 到 29，故只调这一处。
-    // 本用例只守组件拼接范围；真实会话 active 清单为 27/28/32/33（browser_loop 开关 × 无/有 worker），基线见下。
-    expect(idle.length).toBeLessThanOrEqual(23);
-    // User-requested in-page translation adds one tool; no extra display tools.
-    expect(team.length).toBeLessThanOrEqual(29);
+    expect(new Set(idle).size).toBe(idle.length);
+    expect(new Set(team).size).toBe(team.length);
     expect(idle).toContain("page_translation");
     expect(idle).not.toContain("await_message");
     expect(team).toContain("await_message");
@@ -119,33 +115,6 @@ function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[]
   return visible.sort();
 }
 
-/**
- * 真实会话 active 清单基线：2026-09-21 用 createConversationRuntime('default', …, {memoryStore}) 实测，
- * 证据与完整清单见 docs/evals/20260921-tool-surface-reconcile.md。这里记录真实数量，不沿用合成清单的 23/29 上限。
- */
-const REAL_SURFACE_BASELINE = {
-  loopOff: {
-    solo: {
-      count: 27,
-      names: ["browser_run", "capture_page_material", "click", "confirm_blocked_write", "fetch", "fill", "hover", "js", "mark", "navigate", "network", "page_translation", "press_key", "read_element", "read_elements", "record_task_results", "resolve_unknown_result", "screenshot", "scroll", "send_user_message", "snapshot", "spawn_worker", "tabs", "take_tab", "task_goals", "type_text", "user_memory"],
-    },
-    team: {
-      count: 32,
-      names: ["await_message", "browser_run", "capture_page_material", "click", "confirm_blocked_write", "fetch", "fill", "hover", "js", "list_workers", "mark", "navigate", "network", "page_operation", "page_translation", "post", "press_key", "read_element", "read_elements", "record_task_results", "resolve_unknown_result", "screenshot", "scroll", "send_user_message", "snapshot", "spawn_worker", "stop_worker", "tabs", "take_tab", "task_goals", "type_text", "user_memory"],
-    },
-  },
-  loopOn: {
-    solo: {
-      count: 28,
-      names: ["browser_loop", "browser_run", "capture_page_material", "click", "confirm_blocked_write", "fetch", "fill", "hover", "js", "mark", "navigate", "network", "page_translation", "press_key", "read_element", "read_elements", "record_task_results", "resolve_unknown_result", "screenshot", "scroll", "send_user_message", "snapshot", "spawn_worker", "tabs", "take_tab", "task_goals", "type_text", "user_memory"],
-    },
-    team: {
-      count: 33,
-      names: ["await_message", "browser_loop", "browser_run", "capture_page_material", "click", "confirm_blocked_write", "fetch", "fill", "hover", "js", "list_workers", "mark", "navigate", "network", "page_operation", "page_translation", "post", "press_key", "read_element", "read_elements", "record_task_results", "resolve_unknown_result", "screenshot", "scroll", "send_user_message", "snapshot", "spawn_worker", "stop_worker", "tabs", "take_tab", "task_goals", "type_text", "user_memory"],
-    },
-  },
-} as const;
-
 describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
   const originalLoopEnv = process.env.SIDEAGENT_GENERAL_BROWSER_LOOP;
   const tempDirs: string[] = [];
@@ -156,7 +125,7 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
   });
 
   for (const loopEnabled of [false, true]) {
-    it(`browser_loop ${loopEnabled ? "开" : "关"}：无/有 worker 的真实清单等于来源清单并匹配实测基线`, async () => {
+    it(`browser_loop ${loopEnabled ? "开" : "关"}：真实清单等于生产来源，角色工具按成员状态切换`, async () => {
       process.env.SIDEAGENT_GENERAL_BROWSER_LOOP = loopEnabled ? "1" : "0";
       const { createConversationRuntime } = await import("../src/conversation-runtime.js");
       const dir = mkdtempSync(join(tmpdir(), "bys-tool-surface-"));
@@ -164,10 +133,9 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
       const runtime = await createConversationRuntime("default", () => {}, undefined, { memoryStore: new MemoryStore(dir) });
       try {
         const inner = (runtime.session as unknown as { session: { getActiveToolNames(): string[] } }).session;
-        const baseline = loopEnabled ? REAL_SURFACE_BASELINE.loopOn : REAL_SURFACE_BASELINE.loopOff;
         for (const scenario of [
-          { name: "无 worker", key: "solo" as const, mounted: false },
-          { name: "有 worker", key: "team" as const, mounted: true },
+          { name: "无 worker", mounted: false },
+          { name: "有 worker", mounted: true },
         ]) {
           // 有 worker 走生产同一回调：conversation-runtime.ts 把 fleet.onMembersChange 接到 setTeamToolsMounted。
           if (scenario.mounted) runtime.fleet.onMembersChange?.(1);
@@ -175,8 +143,14 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
           const inventory = sourceInventory(loopEnabled, scenario.mounted);
           expect(inventory.filter((name) => !active.includes(name)), `${scenario.name}：真实清单漏挂来源工具`).toEqual([]);
           expect(active.filter((name) => !inventory.includes(name)), `${scenario.name}：真实清单有来源未覆盖的工具`).toEqual([]);
-          expect(active.length, `${scenario.name}：真实数量基线`).toBe(baseline[scenario.key].count);
-          expect(active, `${scenario.name}：真实清单基线`).toEqual([...baseline[scenario.key].names]);
+          expect(new Set(active).size, `${scenario.name}：工具名不得重复`).toBe(active.length);
+          expect(active.includes("browser_loop"), `${scenario.name}：browser_loop 开关`).toBe(loopEnabled);
+          for (const name of ["page_operation", "post", "await_message", "list_workers", "stop_worker"]) {
+            expect(active.includes(name), `${scenario.name}：${name} 只在团队态可见`).toBe(scenario.mounted);
+          }
+          expect(active).toContain("spawn_worker");
+          expect(active).toContain("take_tab");
+          expect(active).toContain("send_user_message");
         }
       } finally {
         runtime.dispose();

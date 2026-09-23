@@ -22,6 +22,9 @@ const READ_TOOLS = new Set([
   "network",
   "screenshot",
   "observe_page",
+  "consume_events",
+  "dialog_info",
+  "download_stat",
 ]);
 
 function methodOf(params?: Record<string, unknown>): string {
@@ -59,6 +62,30 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       requiresControlGate: true,
       needsConsent: false,
       reason: "通用页面 JS 不能用正则证明只读。",
+    };
+  }
+  if (name === "cdp") {
+    return {
+      class: "write",
+      requiresControlGate: true,
+      needsConsent: false,
+      reason: "通用 CDP escape hatch 是 power tool：不做 read/write 分类，全部按写操作走控制闸门。",
+    };
+  }
+  if (name === "upload_file" || name === "file_chooser_set_files") {
+    return {
+      class: "write",
+      requiresControlGate: true,
+      needsConsent: false,
+      reason: "文件上传改变页面状态，按写操作处理。",
+    };
+  }
+  if (name === "accept_dialog" || name === "dismiss_dialog") {
+    return {
+      class: "write",
+      requiresControlGate: true,
+      needsConsent: false,
+      reason: "处理网页 JS dialog 会解除页面阻塞并可能继续业务流，按写操作处理；不等于危险业务授权。",
     };
   }
   if (name === "press_key") {

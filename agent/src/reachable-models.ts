@@ -1,25 +1,54 @@
 import type { ModelOption } from "../../shared/protocol.js";
 
 /**
- * 选择器放行名单。2026-09-10 用户裁到五个：MiniMax M3、Grok 4.6、
- * 小米 MiMo V2.5 / V2.5 Pro、OpenCode Go 的 DeepSeek V4.1 Flash。
- * 本地 CLIProxyAPI 池（cli-proxy / cliproxy）、MiniMax M2.7 系列和 Grok 4.3 / 4.5
- * 为有意隐藏；名单外的模型连通过也不进选择器。
- * 2026-09-22 用户增补并经本地池（cliproxy→opencode-go 网关）实测：MiMo V2.6 Flash（Command Code 提供），
- * 同日设为默认模型（~/.sideagent/config.json model=cliproxy/mimo-v2.6-flash）。
- * 注意：SDK 内置 opencode-go provider 直连上游且未注册 v2.6-flash（会走 fallback 自定义模型，
- * 参数形状被上游 400 拒绝），故必须走本地池路由。
+ * 默认精选集：选择器默认只显示这些，其余模型仍可达，靠 UI 的「显示全部」展开。
+ *
+ * 2026-09-23 用户重新裁定为四项：阶跃星辰 Step 5，加三个入口的小米 MiMo V2.6 Flash。
+ * 2026-09-10 用户曾裁到五个（MiniMax M3 / Grok 4.6 / MiMo V2.5 / V2.5 Pro /
+ * OpenCode Go DeepSeek Flash），2026-09-22 增补 MiMo V2.6 Flash 并设为默认；
+ * 那批已从默认集移除，但没有从可达集删除——「不在默认集」和「不可达」是两件事。
+ *
+ * 三个 MiMo V2.6 Flash 入口都保留，是因为用户明确要求都能自己挑：
+ * - cliproxy：本地 CLIProxyAPI 池路由（当前 ~/.sideagent/config.json 默认值）
+ * - commandcode：Command Code 池
+ * - opencode-go：SDK 内置 provider 直连上游
+ * 注：历史注释曾记录 opencode-go 直连 v2.6-flash 被上游 400 拒绝、故必须走本地池；
+ * 该结论写于 models.json 注册 v2.6-flash 之前，现已过期，不要据此剔除，以实测为准。
  */
-export const REACHABLE_MODEL_IDS = new Set<string>([
-  "minimax-cn/MiniMax-M3",
-  "xai/grok-4.6",
-  "xiaomi-token-plan-cn/mimo-v2.5-pro",
-  "xiaomi-token-plan-cn/mimo-v2.5",
-  "opencode-go/deepseek-flash",
+export const FEATURED_MODEL_IDS = new Set<string>([
+  "step-plan/step-5-preview",
   "cliproxy/mimo-v2.6-flash",
+  "commandcode/xiaomi/mimo-v2.6-flash",
+  "opencode-go/mimo-v2.6-flash",
 ]);
 
-/** Keep catalog order. Always retain the session's current model so the user can switch away. */
+/**
+ * 兼容旧导出名。语义已变：不再是「唯一可达白名单」，而是「默认精选集」。
+ * 可达集由已配置凭据的 provider 决定（SDK ModelRuntime.getAvailable），本文件不再充当闸门。
+ */
+export const REACHABLE_MODEL_IDS = FEATURED_MODEL_IDS;
+
+/** 只留默认精选集（外加会话当前模型，确保用户能切走）。 */
 export function filterReachableModels(models: readonly ModelOption[], current?: string | null): ModelOption[] {
-  return models.filter((model) => REACHABLE_MODEL_IDS.has(model.id) || (current != null && model.id === current));
+  const featured = new Set(FEATURED_MODEL_IDS);
+
+  if (current != null) featured.add(current);
+
+  return models.filter((model) => featured.has(model.id));
+}
+
+/**
+ * 给全量可达列表打 featured 标记：agent 侧下发全量，UI 默认只显示精选、可展开看全部。
+ * 单一来源——过滤只发生在 UI，agent 不再替用户删模型。
+ * 当前会话模型一律标记 featured：否则用户切到一个非精选模型后，它会从默认视图里消失，再也切不回去。
+ */
+export function annotateReachableModels(
+  models: readonly ModelOption[],
+  current?: string | null,
+): ModelOption[] {
+  const featured = new Set(FEATURED_MODEL_IDS);
+
+  if (current != null) featured.add(current);
+
+  return models.map((model) => ({ ...model, featured: featured.has(model.id) }));
 }

@@ -281,6 +281,10 @@ async function unknownFillFixture(value='小明',target='@4',refKind:'ax'|'dom'=
   vi.doMock('../../extension/src/background/debugger.js',()=>({sendCommand:async(_tab:number,method:string,params:any)=>{
     if(method==='DOM.resolveNode')return {object:{objectId:'original-A'}};
 
+    // CSS now resolves an object handle through the unified resolver too; it
+    // still has no AX identity and must remain ineligible for adjunct readback.
+    if(method==='Runtime.evaluate')return {result:{objectId:'original-A'}};
+
     if(method==='Runtime.callFunctionOn')return {result:{value:Function(`return (${params.functionDeclaration})`)().call(element)}};
 
     return {};

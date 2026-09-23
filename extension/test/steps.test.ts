@@ -127,14 +127,4 @@ describe("执行中过程视窗限高", () => {
     expect(liveViewportOverflows(200, 320)).toBe(false);
   });
 
-  it("进行中展开的过程体 320px，流式思考 175px；完成后不限高", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const css = readFileSync(resolve(__dirname, "../src/sidepanel/styles.css"), "utf-8");
-    expect(css).toMatch(
-      /details\.run-steps:not\(\.done\)\[open\]\s+\.run-body\s*\{[^}]*max-height:\s*320px/,
-    );
-    expect(css).toMatch(/details\.thinking\.streaming\s+pre\s*\{[^}]*max-height:\s*175px/);
-    expect(css).not.toMatch(/details\.run-steps\.done[^{]*\.run-body\s*\{[^}]*max-height:\s*320px/);
-  });
 });

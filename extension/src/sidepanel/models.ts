@@ -36,6 +36,7 @@ const MODEL_NOT_FOUND = /模型请求最终失败：(?:.*\b404\b.*|Not Found)/i;
 /** provider id → 面板分组显示名；未收录的原样显示 id。 */
 const PROVIDER_LABELS: Record<string, string> = {
   cliproxy: "本地池",
+  "cli-proxy": "本地池",
   "minimax-cn": "MiniMax",
   minimax: "MiniMax",
   "openai-codex": "Codex",
@@ -47,6 +48,13 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   gemini: "Google",
   xai: "xAI",
+  commandcode: "Command Code",
+  "opencode-go": "OpenCode Go",
+  "step-plan": "阶跃星辰",
+  "zai-coding-cn": "智谱",
+  "xiaomi-token-plan-cn": "小米 MiMo",
+  deepseek: "DeepSeek",
+  antigravity: "Antigravity",
 };
 
 export function providerLabel(provider: string): string {
@@ -72,12 +80,23 @@ export function chipLabel(model: string | undefined, models: readonly ModelOptio
   return slash >= 0 ? model.slice(slash + 1) : model;
 }
 
-export function filterModels(models: readonly ModelOption[], query: string): ModelOption[] {
+/**
+ * 过滤 + 可选「只看常用」。
+ * featuredOnly=true 时只留 agent 打了 featured 标的模型（默认精选集 + 当前会话模型）；
+ * agent 下发的是全量，标记缺失（旧 agent）时视为非精选，此时若结果为空会让 UI 落到「暂无可用模型」，
+ * 所以调用方应在结果为空且确实没传 featured 时退回全量——由 picker 的 fallback 处理。
+ */
+export function filterModels(
+  models: readonly ModelOption[],
+  query: string,
+  featuredOnly = false,
+): ModelOption[] {
   const q = query.trim().toLowerCase();
+  const base = featuredOnly ? models.filter((m) => m.featured === true) : [...models];
 
-  if (!q) return [...models];
+  if (!q) return base;
 
-  return models.filter((m) => {
+  return base.filter((m) => {
     const hay = [m.id, m.name, m.modelId, m.provider, providerLabel(m.provider), displayName(m)]
       .join("\n")
       .toLowerCase();

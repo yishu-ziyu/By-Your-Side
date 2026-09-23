@@ -24,7 +24,9 @@ import { needsConsentTicket, requiresControlGate } from "../../shared/effect-pol
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
-import { runBrowserProgram, type ProgramStep } from "./browser-program.js";
+import { runBrowserProgram, BROWSER_PROGRAM_HELPERS, RPC_ALIASES, type ProgramStep } from "./browser-program.js";
+import { authorizeUploadPaths, type TaskUploadLedger } from "./upload-paths.js";
+import { createDownloadArmDir, hostDownloadDeleteTemp, hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
 import type { SkillEvidence } from "./skill-learning.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
@@ -99,7 +101,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
   return typeof result === "boolean" ? { allowed: result } : result;
 }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void } }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -178,6 +180,20 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       if (sdkId) rpc.markCallRejected?.(sdkId);
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
+    // 上传来源校验在共同调用边界：独立工具、browser.upload_file/uploadFile、Playwright setInputFiles 都经此关。
+    // 失败记 not_executed（外层 markCallRejected），禁止先派发再补审。
+    if (name === "upload_file" || name === "file_chooser_set_files") {
+      try {
+        const refs = Array.isArray(callParams.paths) ? (callParams.paths as unknown[]).map(String) : [];
+        callParams = { ...callParams, paths: authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }) };
+      } catch (error) {
+        rejectCall();
+        throw error;
+      }
+    }
+    if (name === "arm_event" && callParams.type === "download" && typeof callParams.downloadPath !== "string") {
+      callParams = { ...callParams, downloadPath: createDownloadArmDir("tool") };
+    }
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
       await takeTab(typeof callParams.tabId === "number" ? callParams.tabId : undefined);
     }
@@ -242,6 +258,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const original=executionScope.getStore();
         rpc.noteToolFact?.(id,'unknown');
         const run=()=>runBrowserDecisionLoop({parentCallId:id,goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
+          canExecute:canExecute?(name)=>canExecute(name as ToolName):undefined,
           call:async(name,args,childId)=>{
             const started=Date.now();
             execution?.onStep?.({parentId:id,id:childId,name,phase:'start',params:args});
@@ -326,7 +343,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled native-CSS target; browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
+      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/paste/html5Drag, and browser.uploadFile({target,paths}); browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + BROWSER_PROGRAM_HELPERS.map(h => h.name).join(", ") + ' (host-implemented, no new RPC). camelCase aliases: ' + Object.keys(RPC_ALIASES).join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -340,6 +357,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const pageTabId = api === "playwright" ? rpc.getPageTarget?.(sid) ?? null : null;
         const result = await runBrowserProgram({ code: params.code, api, pageTabId,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
+          authorizeUpload: (refs) => authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }),
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
         });
@@ -461,6 +479,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         point: Type.Optional(
           Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" }),
         ),
+        position: Type.Optional(
+          Type.Object(
+            { x: Type.Number({ description: "CSS px from target top-left" }), y: Type.Number() },
+            { description: "Offset inside target; ignored when point is set" },
+          ),
+        ),
+        button: Type.Optional(
+          Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")], {
+            description: 'Mouse button (default "left")',
+          }),
+        ),
+        clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "CDP clickCount (default 1)" })),
+        force: Type.Optional(Type.Boolean({ description: "Skip hit-target confirmation and still dispatch" })),
         label: Type.Optional(Type.String({ description: "Short human-readable description of what you click" })),
       }),
       execute: async (_id, params) => {
@@ -479,6 +510,402 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           return textResult(`Clicked ${what}. Event dispatch confirmed.${effectText}${newTabText}`, data);
         }
         return textResult(`Clicked ${what}. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
+      },
+    }),
+
+    defineTool({
+      name: "double_click",
+      label: "Double click",
+      description: 'Double-click an element in the working tab using REAL browser input (CDP clickCount 1→2), never synthetic DOM events. Provide target ("@N" ref, "loc=css:...", raw CSS, xpath=..., text=...) or point [x,y]. Destructive targets require user confirmation first, exactly like click. The result reports effect evidence when measurable and explicitly says when only input dispatch is confirmed.',
+      parameters: Type.Object({
+        target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:...", raw CSS, xpath=..., or text=...' })),
+        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+        position: Type.Optional(
+          Type.Object(
+            { x: Type.Number({ description: "CSS px from target top-left" }), y: Type.Number() },
+            { description: "Offset inside target; ignored when point is set" },
+          ),
+        ),
+        button: Type.Optional(
+          Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")], {
+            description: 'Mouse button (default "left")',
+          }),
+        ),
+        clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "CDP clickCount (double-click path still uses 1→2 when omitted)" })),
+        force: Type.Optional(Type.Boolean({ description: "Skip hit-target confirmation and still dispatch" })),
+        label: Type.Optional(Type.String({ description: "Short human-readable description of what you double-click" })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("double_click", params)) as ToolContract["double_click"]["data"];
+        const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
+        if ("held" in data && data.held) {
+          return textResult(
+            `Held double-click on ${what}. The cursor is holding the target with confirm/cancel buttons on its name pill. Wait for the user.`,
+            data,
+          );
+        }
+        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        const opened = "newTab" in data ? data.newTab : undefined;
+        const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
+        if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}`, data);
+        return textResult(`Double-clicked ${what}. This confirms native input dispatch only; observe the page to verify the intended change before reporting success.${newTabText}`, data);
+      },
+    }),
+
+    defineTool({
+      name: "drag",
+      label: "Drag",
+      description: 'Drag with the real browser pointer: press at from, move along a bounded path, release at to. from/to each take target ("@N", "loc=css:...", raw CSS, xpath=..., text=...) or viewport point [x,y]. Works for sortable lists, sliders, cards and pointer-driven canvases; never dispatches synthetic DOM drag events. Destructive source targets require user confirmation first. Effect evidence is measured at the drop point.',
+      parameters: Type.Object({
+        from: Type.Object({
+          target: Type.Optional(Type.String({ description: 'Source locator (@N / loc=css: / CSS / xpath= / text=)' })),
+          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+        }, { description: "Drag source: exactly one of target/point" }),
+        to: Type.Object({
+          target: Type.Optional(Type.String({ description: 'Drop locator (@N / loc=css: / CSS / xpath= / text=)' })),
+          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+        }, { description: "Drop destination: exactly one of target/point" }),
+        label: Type.Optional(Type.String({ description: "Short human-readable description of the drag" })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("drag", params)) as ToolContract["drag"]["data"];
+        if ("held" in data && data.held) {
+          return textResult("Held drag. The cursor is holding the source with confirm/cancel buttons on its name pill. Wait for the user.", data);
+        }
+        const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
+        const from = params.from.target ?? (params.from.point ? `(${params.from.point[0]}, ${params.from.point[1]})` : "?");
+        const to = params.to.target ?? (params.to.point ? `(${params.to.point[0]}, ${params.to.point[1]})` : "?");
+        if (effectText) return textResult(`Dragged ${from} → ${to}.${effectText}`, data);
+        return textResult(`Dragged ${from} → ${to}. Input sequence dispatched; observe the page to verify the intended state change.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "wheel",
+      label: "Mouse wheel",
+      description:
+        "Dispatch a real CDP mouseWheel at point, target(+optional position), or the session pointer. deltaX/deltaY are CSS-pixel scroll deltas. Does not set scrollTop= by script.",
+      parameters: Type.Object({
+        deltaX: Type.Optional(Type.Number()),
+        deltaY: Type.Optional(Type.Number()),
+        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+        target: Type.Optional(Type.String()),
+        position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
+        label: Type.Optional(Type.String()),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("wheel", params)) as ToolContract["wheel"]["data"];
+        const ack = data.ackMs != null ? `；手势 ACK ${data.ackMs}ms` : "";
+        const tries = data.attempts > 1 ? `；重试 ${data.attempts} 次后确认` : "";
+        return textResult(`Wheeled at (${data.point[0]}, ${data.point[1]})${ack}${tries}。`, data);
+      },
+    }),
+
+    defineTool({
+      name: "mouse_down",
+      label: "Mouse down",
+      description: "Press and hold a mouse button at point/target. Pair with mouse_up or release_held_inputs. Held across calls until released.",
+      parameters: Type.Object({
+        button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")])),
+        clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+        target: Type.Optional(Type.String()),
+        position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("mouse_down", params)) as ToolContract["mouse_down"]["data"];
+        return textResult(`Mouse ${data.button} down at (${data.point[0]}, ${data.point[1]}).`, data);
+      },
+    }),
+
+    defineTool({
+      name: "mouse_up",
+      label: "Mouse up",
+      description: "Release a mouse button at point or the session pointer.",
+      parameters: Type.Object({
+        button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")])),
+        clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("mouse_up", params)) as ToolContract["mouse_up"]["data"];
+        return textResult(`Mouse ${data.button} up at (${data.point[0]}, ${data.point[1]}).`, data);
+      },
+    }),
+
+    defineTool({
+      name: "key_down",
+      label: "Key down",
+      description: 'Press and hold a key (e.g. "Shift", "ControlOrMeta", "a"). Pair with key_up or release_held_inputs. Prefer press_key for ordinary typing chords.',
+      parameters: Type.Object({
+        key: Type.String({ minLength: 1, maxLength: 64 }),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("key_down", params)) as ToolContract["key_down"]["data"];
+        return textResult(`Key down: ${data.key}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "key_up",
+      label: "Key up",
+      description: "Release a previously held key.",
+      parameters: Type.Object({
+        key: Type.String({ minLength: 1, maxLength: 64 }),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("key_up", params)) as ToolContract["key_up"]["data"];
+        return textResult(`Key up: ${data.key}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "release_held_inputs",
+      label: "Release held inputs",
+      description: "Release all keys and mouse buttons still held for this session (safe after cancel/error).",
+      parameters: Type.Object({}),
+      execute: async (_id) => {
+        const data = (await call("release_held_inputs", {})) as ToolContract["release_held_inputs"]["data"];
+        return textResult(
+          `Released keys [${data.releasedKeys.join(", ") || "none"}], buttons [${data.releasedButtons.join(", ") || "none"}].`,
+          data,
+        );
+      },
+    }),
+
+    defineTool({
+      name: "paste",
+      label: "Paste",
+      description:
+        "Native paste of text and optional html via the host clipboard bridge, then ControlOrMeta+V. Without a clipboard bridge this fails as BLOCKED — do not invent success via innerHTML or synthetic paste events. Does not read the user's real clipboard.",
+      parameters: Type.Object({
+        content: Type.Union([
+          Type.String({ minLength: 0, maxLength: 100_000 }),
+          Type.Object({
+            text: Type.String({ minLength: 0, maxLength: 100_000 }),
+            html: Type.Optional(Type.String({ maxLength: 200_000 })),
+          }),
+        ]),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("paste", params)) as ToolContract["paste"]["data"];
+        return textResult(`Pasted (clipboard ${data.clipboard}).`, data);
+      },
+    }),
+
+    defineTool({
+      name: "html5_drag",
+      label: "HTML5 drag and drop",
+      description:
+        "HTML5 DataTransfer drag (intercept + dispatchDragEvent). Pointer-only drag is a different tool. If no intercept payload is available the receipt reports gap and must not be treated as success.",
+      parameters: Type.Object({
+        from: Type.Object({
+          target: Type.Optional(Type.String()),
+          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+          position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
+        }),
+        to: Type.Object({
+          target: Type.Optional(Type.String()),
+          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+          position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
+        }),
+        label: Type.Optional(Type.String()),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("html5_drag", params)) as ToolContract["html5_drag"]["data"];
+        if ("gap" in data && data.dragged === false) {
+          return textResult(`HTML5 drag gap (${data.gap}): ${data.detail}. Do not report success.`, data);
+        }
+        return textResult(`HTML5 drag completed via ${(data as { path: string }).path}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "select_option",
+      label: "Select option",
+      description:
+        "Select options on a native <select> by value, visible label, or 0-based index. Pass an array for multiple selects; null or [] clears the selection. Receipt returns the final selected value set and labels — do not treat single-value fill as a full selectOption.",
+      parameters: Type.Object({
+        target: Type.String({
+          description: 'Select locator ("@N", "loc=css:...", "loc=role:...", "loc=href:...", xpath=, text=, raw CSS)',
+        }),
+        values: Type.Union([
+          Type.Null(),
+          Type.String(),
+          Type.Object({
+            value: Type.Optional(Type.String()),
+            label: Type.Optional(Type.String()),
+            index: Type.Optional(Type.Integer({ minimum: 0 })),
+          }),
+          Type.Array(
+            Type.Union([
+              Type.String(),
+              Type.Object({
+                value: Type.Optional(Type.String()),
+                label: Type.Optional(Type.String()),
+                index: Type.Optional(Type.Integer({ minimum: 0 })),
+              }),
+            ]),
+            { maxItems: 64 },
+          ),
+        ]),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("select_option", params)) as ToolContract["select_option"]["data"];
+        return textResult(
+          `Selected [${data.selected.map((v, i) => `${v} (${data.labels[i] ?? ""})`).join(", ") || "(cleared)"}].`,
+          data,
+        );
+      },
+    }),
+
+    defineTool({
+      name: "upload_file",
+      label: "Upload file",
+      description: 'Set files on exactly one <input type=file> WITHOUT opening the OS file picker. Prefer task fileIds from the current task grant; absolute paths are accepted only when they resolve to the same grant record (user-provided or this-task artifacts under ~/.sideagent/uploads/ or ~/.sideagent/downloads/). Historical files in those directories are not authorized. Empty paths clears the input. target takes the same locator forms as click and must resolve to exactly one file input. The receipt lists the files actually applied, read back from the page after the upload — that list, not the command return, is the evidence. 上传文件必须走 upload_file；raw CDP 不能调用 DOM.setFileInputFiles，也不能读取任意磁盘文件。',
+      parameters: Type.Object({
+        target: Type.String({ description: 'File input locator ("@N", "loc=css:...", raw CSS, xpath=..., text=...)' }),
+        paths: Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { minItems: 0, maxItems: 8, description: "Task fileIds and/or absolute paths that resolve to this task's upload grant; empty clears the input" }),
+      }),
+      execute: async (_id, params) => {
+        // 授权在共同 call 边界完成；此处只负责派发与读回文案。
+        const data = (await call("upload_file", { target: params.target, paths: params.paths })) as ToolContract["upload_file"]["data"];
+        if (data.files.length === 0) return textResult("Cleared the file input (0 files read back).", data);
+        const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ");
+        return textResult(`Uploaded ${data.files.length} file(s) and read them back from the input: ${list}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "cdp",
+      label: "Raw CDP",
+      description: 'Raw CDP allows only a fixed read-only observation subset on the CURRENT working tab: Page.getLayoutMetrics, Page.getFrameTree, DOM.getDocument, DOM.describeNode, DOM.getAttributes, DOM.getBoxModel, DOM.getContentQuads, DOM.getNodeForLocation, DOM.querySelector, DOM.querySelectorAll. 上传文件必须走 upload_file；raw CDP 不能调用 DOM.setFileInputFiles，也不能读取任意磁盘文件。DOM.setFileInputFiles, Runtime.*, Input.*, Emulation.*, file read/write, and any other unlisted method are unsupported and refused before touching the browser. Other tabId/sessionId/targetId values are refused. Prefer dedicated tools; verify page state afterwards. Results are bounded (truncated flag when cut).',
+      parameters: Type.Object({
+        method: Type.String({ minLength: 3, maxLength: 120, description: 'CDP method, e.g. "Page.getLayoutMetrics" or "DOM.getDocument"' }),
+        params: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "CDP params object (no sessionId/targetId — the working tab session is implied)" })),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 30000, description: "Default 10000" })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("cdp", params)) as ToolContract["cdp"]["data"];
+        const raw = typeof data.result === "string" ? data.result : JSON.stringify(data.result, null, 2);
+        const rendered = truncate(raw ?? "null", MAX_JS_RESULT_CHARS);
+        return textResult(data.truncated ? `${rendered}\n(CDP result was truncated by the size bound)` : rendered, data);
+      },
+    }),
+
+    defineTool({
+      name: "arm_event",
+      label: "Arm page event",
+      description: 'Arm popup/download/filechooser BEFORE the triggering action. Returns a host-issued token (never invent tokens). Pattern: arm_event → click/action → wait_event(token). Required for ephemeral popups, blob downloads, and dynamic file inputs. For download, the host creates a task temp directory (no global Chromium download dir). Prefer browser_run helpers armEvent/waitEvent when composing multi-step scripts.',
+      parameters: Type.Object({
+        type: Type.Union([Type.Literal("popup"), Type.Literal("download"), Type.Literal("filechooser")]),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("arm_event", params)) as ToolContract["arm_event"]["data"];
+        return textResult(`Armed ${data.type}; token=${data.token}. Trigger the action, then wait_event.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "wait_event",
+      label: "Wait page event",
+      description: "Consume a previously armed host token. Fails on forged/expired tokens. One-shot.",
+      parameters: Type.Object({
+        token: Type.String({ minLength: 8, maxLength: 120 }),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("wait_event", params)) as ToolContract["wait_event"]["data"];
+        return textResult(`Event ${data.type} matched for token ${data.token}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "accept_dialog",
+      label: "Accept JS dialog",
+      description: "Accept the current webpage alert/confirm/prompt (optional promptText). Returns accepted:false when none. Does NOT click browser permission/device prompts. Confirm/prompt is not business authorization for dangerous ops.",
+      parameters: Type.Object({
+        promptText: Type.Optional(Type.String({ maxLength: 4000 })),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("accept_dialog", params)) as ToolContract["accept_dialog"]["data"];
+        return textResult(data.accepted ? `Accepted ${data.dialog?.type ?? "dialog"}.` : "No JS dialog to accept.", data);
+      },
+    }),
+
+    defineTool({
+      name: "dismiss_dialog",
+      label: "Dismiss JS dialog",
+      description: "Dismiss/cancel the current webpage JS dialog. Returns dismissed:false when none. Not for OS permission prompts.",
+      parameters: Type.Object({}),
+      execute: async (_id) => {
+        const data = (await call("dismiss_dialog", {})) as ToolContract["dismiss_dialog"]["data"];
+        return textResult(data.dismissed ? `Dismissed ${data.dialog?.type ?? "dialog"}.` : "No JS dialog to dismiss.", data);
+      },
+    }),
+
+    defineTool({
+      name: "file_chooser_set_files",
+      label: "Set file chooser files",
+      description: "After arm_event(filechooser)+click+wait_event, set authorized files on the intercepted chooser. Paths must be this-task grants (same ledger as upload_file). Receipt may include an immediate JS dialog.",
+      parameters: Type.Object({
+        chooserId: Type.String({ minLength: 3, maxLength: 80 }),
+        paths: Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { minItems: 0, maxItems: 8 }),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("file_chooser_set_files", params)) as ToolContract["file_chooser_set_files"]["data"];
+        const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ") || "(cleared)";
+        const dialog = data.dialog ? ` Dialog opened: ${data.dialog.type} — ${data.dialog.message}` : "";
+        return textResult(`Chooser set files: ${list}.${dialog}`, data);
+      },
+    }),
+
+    defineTool({
+      name: "download_save_as",
+      label: "Save download",
+      description: "After wait_event(download), wait for the page-generated download to finish and copy it to an absolute path (creates parents). Not fetch(GET). Requires the downloadId from wait_event.",
+      parameters: Type.Object({
+        downloadId: Type.String({ minLength: 3, maxLength: 80 }),
+        path: Type.String({ minLength: 2, maxLength: 1024, description: "Absolute destination path" }),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
+      }),
+      execute: async (_id, params) => {
+        const data = await hostDownloadSaveAs({
+          downloadId: params.downloadId,
+          path: params.path,
+          timeoutMs: params.timeoutMs,
+          stat: async () => call("download_stat", { downloadId: params.downloadId }) as Promise<DownloadStatLike>,
+        });
+        return textResult(`Saved download to ${data.path} (${data.bytes} B).`, data);
+      },
+    }),
+
+    defineTool({
+      name: "download_cancel",
+      label: "Cancel download",
+      description: "Cancel an in-progress page download by downloadId from wait_event.",
+      parameters: Type.Object({
+        downloadId: Type.String({ minLength: 3, maxLength: 80 }),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("download_cancel", params)) as ToolContract["download_cancel"]["data"];
+        return textResult(`Cancelled download ${data.downloadId}.`, data);
+      },
+    }),
+
+    defineTool({
+      name: "download_delete",
+      label: "Delete download artifact",
+      description: "Delete the round-local temp download directory after saveAs (or to discard).",
+      parameters: Type.Object({
+        downloadId: Type.String({ minLength: 3, maxLength: 80 }),
+      }),
+      execute: async (_id, params) => {
+        const before = (await call("download_stat", params).catch(() => null)) as DownloadStatLike | null;
+        const data = (await call("download_delete", params)) as ToolContract["download_delete"]["data"];
+        if (before?.downloadPath) hostDownloadDeleteTemp(before.downloadPath);
+        return textResult(`Deleted download artifact ${data.downloadId}.`, data);
       },
     }),
 
@@ -556,15 +983,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }, { description: "Fetch a numeric page range in one call; requires {page} in url or body" })),
       }),
       execute: async (_id, params) => {
+        const grantArtifact = (path: string) => {
+          execution?.uploadLedger?.grant({ path, source: "task_artifact" });
+        };
         if (params.pages) {
           const batch = await fetchPages(
             { url: params.url, method: params.method, headers: params.headers, body: params.body, savePath: params.savePath, pages: params.pages },
             (request) => call("fetch", request) as Promise<FetchReply>,
           );
+          for (const path of batch.data.saved) grantArtifact(path);
           return textResult(wrapPageContent(batch.text, { url: params.url }), batch.data);
         }
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
-        return textResult(formatFetchReply(data as FetchReply, params.savePath), data);
+        return textResult(formatFetchReply(data as FetchReply, params.savePath, undefined, true, grantArtifact), data);
       },
     }),
 
@@ -638,14 +1069,26 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "screenshot",
       label: "Screenshot",
       description:
-        "Capture a screenshot of the working tab. The result states the tab id/URL, the capture source, image pixels and the CSS viewport with DPR: click/point coordinates use CSS pixels (image_px / DPR ≈ css_px when the page fills the viewport). Fallback perception for canvas, complex visuals, or when a snapshot is not informative enough; prefer snapshot otherwise (cheaper).",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const data = (await call("screenshot", {})) as ToolContract["screenshot"]["data"];
+        "Capture a real screenshot of the working tab. clip uses DOCUMENT CSS coordinates; click point uses VIEWPORT CSS coordinates. Convert image pixels using coordinates: point = imagePixel / pixelsPerCssPixel + origin - scroll. Reobserve if document, viewport or scrolling changed; never click from an image with unknown coordinates. fullPage captures the document; scale:css outputs CSS pixels and scale:raw device pixels. An explicit clip.scale overrides the scale mode. A visible-tab fallback is honestly labeled raw, never a fabricated image. Prefer snapshot when it provides the needed information.",
+      parameters: Type.Object({
+        fullPage: Type.Optional(Type.Boolean()),
+        clip: Type.Optional(
+          Type.Object({
+            x: Type.Number(),
+            y: Type.Number(),
+            width: Type.Number({ exclusiveMinimum: 0 }),
+            height: Type.Number({ exclusiveMinimum: 0 }),
+            scale: Type.Optional(Type.Number()),
+          }),
+        ),
+        scale: Type.Optional(Type.Union([Type.Literal("css"), Type.Literal("raw")])),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("screenshot", params)) as ToolContract["screenshot"]["data"];
         const geometry =
           data.cssWidth > 0
-            ? ` Image pixels ${data.pixelWidth}x${data.pixelHeight}; CSS viewport ${data.cssWidth}x${data.cssHeight} @ DPR ${data.devicePixelRatio} — click/point coordinates use CSS pixels.`
-            : ` Image pixels ${data.pixelWidth}x${data.pixelHeight} (CSS viewport unknown; do not convert coordinates from this image).`;
+            ? ` Image pixels ${data.pixelWidth}x${data.pixelHeight}; capture CSS ${data.cssWidth}x${data.cssHeight}; actual scale=${data.scale ?? "custom"}. Coordinate mapping: ${JSON.stringify(data.coordinates ?? null)}. Convert image pixel to viewport point using density + origin - scroll; do not confuse clip/document coordinates with viewport coordinates.`
+            : ` Image pixels ${data.pixelWidth}x${data.pixelHeight} (CSS size unknown; do not convert coordinates from this image).`;
         return {
           content: [
             {

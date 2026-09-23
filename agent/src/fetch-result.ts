@@ -71,11 +71,19 @@ function preview(text: string): string {
 }
 
 /** 模型可见回执：状态行 + 内容或落盘摘要。内容一律过不可信边界与凭据隐去。 */
-export function formatFetchReply(reply: FetchReply, savePath?: string, dir: string = fetchDownloadsDir(), includePreview = true): string {
+export function formatFetchReply(
+  reply: FetchReply,
+  savePath?: string,
+  dir: string = fetchDownloadsDir(),
+  includePreview = true,
+  /** 刚写盘成功时回调绝对路径；调用方（持有任务账本）负责 grant，本函数不登记授权。 */
+  onSaved?: (path: string) => void,
+): string {
   const head = `HTTP ${reply.status}${reply.ok ? "" : " (not ok)"} ${reply.contentType || "unknown content-type"}; ${reply.bytes} bytes${reply.truncated ? " (truncated at the extension cap; the rest was not read)" : ""}.`;
   const wantFile = savePath !== undefined || reply.text.length > FETCH_INLINE_LIMIT;
   if (wantFile) {
     const saved = saveFetchBody(reply, savePath, dir);
+    onSaved?.(saved.path);
     const shown = saved.path.startsWith(homedir()) ? `~${saved.path.slice(homedir().length)}` : saved.path;
     const tail = includePreview ? ` Preview: ${preview(redactCredentialText(reply.text))}` : "";
     return `${head} Saved to ${shown} (${saved.bytes} bytes on disk); the body is not in your context.${tail}`;

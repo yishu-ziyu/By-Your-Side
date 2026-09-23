@@ -93,6 +93,14 @@ describe("send_user_message host tool", () => {
     expect(events[0]).toMatchObject({ kind: "user_delivery", delivery: { conversationId: "default", runId: "run-a", kind: "finding", text: speech, status: "composed", composedAt: 7 } });
   });
 
+  it("空的可选 reply_to 不阻止有效交付", async () => {
+    const events: AgentUiEvent[] = [];
+    const tool = createSendUserMessageTool({ conversationId: "default", getRunId: () => "run-a", emit: event => events.push(event) });
+    await tool.execute("call-empty-reply", { kind: "finding", content: speech, reply_to: "" } as any, undefined, undefined, {} as any);
+    expect(events).toHaveLength(1);
+    expect((events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery.replyTo).toBeUndefined();
+  });
+
   it("marks a finding delivery as run-ending, but never an acknowledgement", async () => {
     const tool = createSendUserMessageTool({ conversationId: "default", getRunId: () => "run-a", emit: () => {}, clock: () => 7 });
     const finding = await tool.execute("call-finding", { kind: "finding", content: speech }, undefined, undefined, {} as any);

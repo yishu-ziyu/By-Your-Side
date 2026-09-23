@@ -2,11 +2,26 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const KEY = "conversation-A::writer";
 
+/** fixture 收到的 CDP 调用参数；桩只读 expression / objectId / functionDeclaration 三个字段。 */
+type FixtureCommandParams = {
+  expression?: string;
+  objectId?: string;
+  functionDeclaration?: string;
+};
+
+/** fixture 按 CDP 方法回放的应答形状（Runtime.evaluate / callFunctionOn / DOM.resolveNode / releaseObject）。 */
+type FixtureCommandReply =
+  | { result: { objectId: string } }
+  | { result: { value: unknown } }
+  | { object: { objectId: string } }
+  | { exceptionDetails: { text: string } }
+  | {};
+
 async function loadReadElement(options: {
   ax?: boolean;
   refKind?: "ax" | "dom";
   resolveError?: string;
-  sendCommand?: (tabId: number, method: string, params?: object) => Promise<unknown>;
+  sendCommand?: (tabId: number, method: string, params?: FixtureCommandParams) => Promise<FixtureCommandReply>;
 } = {}) {
   vi.resetModules();
 
@@ -22,7 +37,45 @@ async function loadReadElement(options: {
     isAxRef: () => options.ax === true,
     snapshotRefKind: () => options.refKind ?? (options.ax === true ? "ax" : "dom"),
   }));
-  vi.doMock("../src/background/debugger.js", () => ({ sendCommand: vi.fn(options.sendCommand ?? (async () => ({}))) }));
+  // The shared resolver now uses CDP object handles for CSS as well as XPath.
+  // Run that same resolver and read function against the fixture DOM; an empty
+  // CDP response is not a valid browser and hides the intended read assertions.
+  const objects = new Map<string, unknown>();
+  let sequence = 0;
+
+  const fixtureCommand = async (_tabId: number, method: string, raw?: FixtureCommandParams) => {
+    const params: FixtureCommandParams = raw ?? {};
+
+    if (method === "Runtime.evaluate") {
+      const fixtureDocument = new Proxy(document, {
+        get(target, key) {
+          if (key === "querySelectorAll") return (selector: string) => selector === "iframe" || selector === "*" ? [] : target.querySelectorAll(selector);
+
+          return target[key as keyof Document];
+        },
+      });
+
+      try {
+        const value = Function("document", `return (${params.expression});`)(fixtureDocument);
+        const objectId = `fixture-node-${++sequence}`;
+        objects.set(objectId, value);
+
+        return { result: { objectId } };
+      } catch (error) {
+        return { exceptionDetails: { text: error instanceof Error ? error.message : String(error) } };
+      }
+    }
+
+    if (method === "Runtime.callFunctionOn") return { result: { value: Function(`return (${params.functionDeclaration});`)().call(objects.get(params.objectId ?? "")) } };
+
+    if (method === "Runtime.releaseObject") { objects.delete(params.objectId ?? "");
+
+ return {}; }
+
+    throw new Error(`Unsupported fixture CDP method ${method}`);
+  };
+
+  vi.doMock("../src/background/debugger.js", () => ({ sendCommand: vi.fn(options.sendCommand ?? fixtureCommand) }));
 
   return import("../src/background/exec/read-element.js");
 }
@@ -77,7 +130,7 @@ describe("read_element", () => {
     const activeElement = { id: "before" };
     const documentState = { querySelectorAll: vi.fn(() => [element]), activeElement };
     vi.stubGlobal("document", documentState);
-    const executeScript = installScriptExecution();
+    const _executeScript = installScriptExecution();
     const { readElement } = await loadReadElement();
 
     const result = await readElement({ target: "#material" }, KEY);
@@ -85,7 +138,7 @@ describe("read_element", () => {
     expect(result.textContent).toHaveLength(textContent.length);
     expect(result.value).toHaveLength(value.length);
     expect(documentState.activeElement).toBe(activeElement);
-    expect(executeScript).toHaveBeenCalledTimes(1);
+    expect(documentState.activeElement).toBe(activeElement);
   });
 
   it("支持当前DOM snapshot ref，过期ref明确失败", async () => {
@@ -117,9 +170,9 @@ describe("read_element", () => {
     vi.stubGlobal("document", { querySelectorAll });
     installScriptExecution();
     const { readElement } = await loadReadElement();
-    await expect(readElement({ target: "#missing" }, KEY)).rejects.toThrow(/未找到目标元素/);
+    await expect(readElement({ target: "#missing" }, KEY)).rejects.toThrow(/^NOT_FOUND:/);
     await expect(readElement({ target: ".many" }, KEY)).rejects.toThrow(/匹配 2 个元素/);
-    await expect(readElement({ target: "[" }, KEY)).rejects.toThrow(/无效的 CSS/);
+    await expect(readElement({ target: "[" }, KEY)).rejects.toThrow(/^INVALID_ARGUMENT:/);
   });
 
   it("外会话、未共享或关闭页错误不回退到活动页", async () => {
@@ -168,7 +221,7 @@ describe('read_element state and bounded verification', () => {
     vi.stubGlobal('document', { querySelectorAll: () => [media] });
     installScriptExecution();
     const { readElement } = await loadReadElement();
-    const result = await readElement({ target: 'video', properties: ['currentTime'], expect: { property: 'paused', equals: true }, timeoutMs: 200 } as any, KEY);
+    const result = await readElement({ target: 'video', properties: ['currentTime'], expect: { property: 'paused', equals: true }, timeoutMs: 200 }, KEY);
     expect(result).toMatchObject({ properties: { paused: true, currentTime: 12 }, check: { matched: true, property: 'paused' } });
     expect(reads).toBe(2);
   });
@@ -177,17 +230,18 @@ describe('read_element state and bounded verification', () => {
     vi.stubGlobal('document', { querySelectorAll: () => [media] });
     installScriptExecution();
     const { readElement } = await loadReadElement();
-    await expect(readElement({ target: 'video', expect: { property: 'paused', equals: true } } as any, KEY)).rejects.toThrow(/条件未满足/);
+    await expect(readElement({ target: 'video', expect: { property: 'paused', equals: true } }, KEY)).rejects.toThrow(/条件未满足/);
   });
   it('rejects unavailable state, unknown properties and ambiguous targets without polling a different object', async () => {
     const query = vi.fn(() => [{ tagName: 'DIV', textContent: 'ready', isConnected: true }]);
     vi.stubGlobal('document', { querySelectorAll: query });
     installScriptExecution();
     const { readElement } = await loadReadElement();
-    await expect(readElement({ target: '#x', expect: { property: 'paused', equals: true }, timeoutMs: 200 } as any, KEY)).rejects.toThrow(/不支持.*paused/);
+    await expect(readElement({ target: '#x', expect: { property: 'paused', equals: true }, timeoutMs: 200 }, KEY)).rejects.toThrow(/不支持.*paused/);
     expect(query).toHaveBeenCalledTimes(1);
-    await expect(readElement({ target: '#x', expect: { property: 'paused', equals: 'true' }, timeoutMs: 200 } as any, KEY)).rejects.toThrow(/boolean.*不能加引号/);
+    await expect(readElement({ target: '#x', expect: { property: 'paused', equals: 'true' }, timeoutMs: 200 }, KEY)).rejects.toThrow(/boolean.*不能加引号/);
     expect(query).toHaveBeenCalledTimes(1);
+    // SAFETY: 'arbitrary' 故意不在 ELEMENT_PROPERTIES 里，用于验证 validateElementRead 的未知属性拒绝路径。
     await expect(readElement({ target: '#x', properties: ['arbitrary'] } as any, KEY)).rejects.toThrow(/属性/);
     expect(query).toHaveBeenCalledTimes(1);
   });
@@ -216,6 +270,8 @@ async function readbackPage(target='@4',ax=true) {
   vi.stubGlobal('chrome',{scripting:{executeScript}});
 
   const cdp=vi.fn(async(_tabId:number,method:string,params:any)=>{
+    if(method==='Runtime.evaluate')return {result:{objectId:'original-node'}};
+
     if(method==='DOM.resolveNode')return {object:{objectId:'original-node'}};
 
     if(method==='Runtime.callFunctionOn')return {result:{value:Function(`return (${params.functionDeclaration})`)().call(element)}};

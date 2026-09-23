@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TaskProgress } from "../src/task-progress.js";
+import { progressSpeech } from "../src/voice-receipt.js";
 import { parseClientMessage, parseServerMessage } from "../../shared/protocol.js";
 
 describe("task progress facts", () => {
@@ -63,7 +64,6 @@ it('preserves a reported failure when the runtime settles to idle', () => {
 });
 
 it('语音进度与面板一样保留用户目标，不把成功动作当成已完成',async()=>{
- const {progressSpeech}=await import('../src/voice-receipt.js');
  const p=new TaskProgress('voice');p.request('复制第一条评论到笔记');
  p.observe({type:'agent_event',event:{kind:'agent_start'}});
  p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'click',name:'click',params:{target:'#editor'}}});
@@ -71,4 +71,19 @@ it('语音进度与面板一样保留用户目标，不把成功动作当成已�
  p.observe({type:'agent_event',event:{kind:'agent_end'}});
  expect(progressSpeech(p.snapshot())).toContain('还有未完成的要求：复制第一条评论到笔记');
  expect(progressSpeech(p.snapshot())).not.toContain('需要你读回');
+});
+
+it('冲突的完成文案不能覆盖仍未完成的登记结果',()=>{
+ const snapshot:any={conversationId:'default',runId:'run',state:'idle',observedAt:1,startedAt:1,goal:'先找再圈',active:[],lastAction:null,successVerified:false,results:[{id:'mark',description:'圈出Y',tool:'mark',target:'#y',status:'pending',evidence:null}],resultState:'pending',conversationContext:{recentTurns:[],latestResult:null,latestDelivery:{id:'d',conversationId:'default',runId:'run',kind:'finding',status:'played',composedAt:1,text:'全部完成了。'}}};
+ const text=progressSpeech(snapshot);
+ expect(text).toContain('圈出Y');
+ expect(text).toMatch(/未完成|没有.*完成|尚未/);
+ expect(text).not.toContain('全部完成了');
+});
+
+it('未知执行如实报告未知，并说明不会自动重做',()=>{
+ const snapshot:any={conversationId:'default',runId:'run',state:'idle',observedAt:1,startedAt:1,goal:'先找再圈',active:[],lastAction:null,successVerified:false,results:[{id:'mark',description:'圈出Y',tool:'mark',target:'#y',status:'unknown',evidence:null}],resultState:'unknown',conversationContext:{recentTurns:[],latestResult:null,latestDelivery:null}};
+ const text=progressSpeech(snapshot);
+ expect(text).toMatch(/未知|无法确认/);
+ expect(text).toMatch(/不会.*重做|不.*重放/);
 });

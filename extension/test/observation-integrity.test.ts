@@ -15,7 +15,15 @@ const mocks = vi.hoisted(() => ({
   executeScript: vi.fn(),
 }));
 
-vi.mock("../src/background/debugger.js", () => ({ sendCommand: mocks.sendCommand }));
+// These fixtures isolate image metadata and source identity. Real DPR scaling
+// and connection preservation are checked by browser-review-regressions.mts.
+vi.mock("../src/background/debugger.js", () => ({
+  sendCommand: mocks.sendCommand,
+  ensureAttached: vi.fn(async () => {}),
+  detach: vi.fn(async () => {}),
+  holdAttach: vi.fn(),
+  releaseAttachHold: vi.fn(),
+}));
 
 vi.mock("../src/background/state.js", () => ({
   resolveWorkingTab: mocks.resolveWorkingTab,
@@ -64,7 +72,7 @@ beforeEach(() => {
     "fetch",
     async () => ({ blob: async () => ({}) }) as unknown as Response,
   );
-  vi.stubGlobal("createImageBitmap", async () => ({ width: 2560, height: 1600, close() {} }));
+  vi.stubGlobal("createImageBitmap", async () => ({ width: 1440, height: 900, close() {} }));
 });
 
 function mockCdpScreenshotOk() {
@@ -81,10 +89,10 @@ describe("A1 截图携带真实像素/视口/DPR 与页面身份", () => {
     mockCdpScreenshotOk();
     const r = (await screenshot({}, "main")) as unknown as Record<string, unknown>;
     // 旧行为：width/height 固定为 0
-    expect(r.width).toBe(2560);
-    expect(r.height).toBe(1600);
-    expect(r.pixelWidth).toBe(2560);
-    expect(r.pixelHeight).toBe(1600);
+    expect(r.width).toBe(1440);
+    expect(r.height).toBe(900);
+    expect(r.pixelWidth).toBe(1440);
+    expect(r.pixelHeight).toBe(900);
     // 来自真实 Runtime.evaluate，不是固定值（用 1440x900@dpr2.5 这种非常值断言透传）
     expect(r.cssWidth).toBe(1440);
     expect(r.cssHeight).toBe(900);
@@ -108,6 +116,7 @@ describe("A2 CDP 失败只回退已确认的工作页活动标签", () => {
   });
 
   it("确认是工作页活动标签时才允许可见捕获回退", async () => {
+    vi.stubGlobal("createImageBitmap", async () => ({ width: 3600, height: 2250, close() {} }));
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") throw new Error("No longer attached");
 
@@ -119,7 +128,8 @@ describe("A2 CDP 失败只回退已确认的工作页活动标签", () => {
     expect(mocks.captureVisibleTab).toHaveBeenCalledTimes(1);
     expect(r.source).toBe("visible-tab");
     expect(r.tabId).toBe(11);
-    expect(r.width).toBe(2560);
+    expect(r.width).toBe(3600);
+    expect(r.scale).toBe("raw");
   });
 
   it("worker 截图不抢前台：透传 session 且成功路径不做可见捕获", async () => {
@@ -252,6 +262,7 @@ describe("A2 捕获前后身份/URL 核对（复核补强）", () => {
   });
 
   it("visible 回退前后一致时采用捕获后的 URL/title", async () => {
+    vi.stubGlobal("createImageBitmap", async () => ({ width: 3600, height: 2250, close() {} }));
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") throw new Error("No longer attached");
 
@@ -271,6 +282,7 @@ describe("A2 捕获前后身份/URL 核对（复核补强）", () => {
 
 describe("A1 debugger 不可用时用 scripting 读真实视口", () => {
   it("Runtime.evaluate 失败则回退 chrome.scripting，不固定 0", async () => {
+    vi.stubGlobal("createImageBitmap", async () => ({ width: 1366, height: 768, close() {} }));
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") return { data: "aVBORw0KGgo=" };
       throw new Error("debugger busy");
@@ -278,7 +290,7 @@ describe("A1 debugger 不可用时用 scripting 读真实视口", () => {
     mocks.executeScript.mockResolvedValue([{ result: { w: 1366, h: 768, dpr: 1 } }]);
     const r = (await screenshot({}, "main")) as unknown as Record<string, unknown>;
     expect(r.source).toBe("cdp");
-    expect(r.width).toBe(2560);
+    expect(r.width).toBe(1366);
     expect(r.cssWidth).toBe(1366);
     expect(r.cssHeight).toBe(768);
     expect(r.devicePixelRatio).toBe(1);
@@ -292,7 +304,7 @@ describe("A1 debugger 不可用时用 scripting 读真实视口", () => {
     });
     mocks.executeScript.mockRejectedValue(new Error("Cannot access chrome:// URL"));
     const r = (await screenshot({}, "main")) as unknown as Record<string, unknown>;
-    expect(r.width).toBe(2560);
+    expect(r.width).toBe(1440);
     expect(r.cssWidth).toBe(0);
     expect(r.devicePixelRatio).toBe(0);
   });

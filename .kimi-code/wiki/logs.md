@@ -10,3 +10,4 @@
 - 2026-09-11 | [示范录制第一刀真机模拟](../../docs/evals/20260911-skill-from-demo.md) | 新建 patterns/cross-process-session-closeout.md、patterns/gui-test-window-steals-focus.md、patterns/pi-opencode-missing-session-header.md，更新 index.md；核对既有 6 篇 pattern 与 3 份待审提案，无重复 | 新增 proposals/20260911-headless-acceptance-rule.md（验收脚本不得启动可见窗口，状态待审）
 - 2026-09-11 | 用户裁决（配置会话） | 无新 pattern；AGENTS.md「项目检查入口」采纳 proposals/20260911-headless-acceptance-rule.md（浏览器验收默认无头、脚本硬拒绝、可见动效检查先问用户），归档 proposal-archive/accepted/；逐文件核对现有验收脚本无启动可见窗口者 | 提案接受并落地
 - 2026-09-11 | [面板运行态 A+B 动效](../../docs/evals/20260911-panel-live-motion.md) | 新建 patterns/collapsed-details-animation-end.md（含 headless 探针实测表），更新 index.md；核对既有 10 篇 pattern 与 3 份待审提案，无重复 | 无新提案；动效规则沿用 oil-frontend skill 的动效与性能契约，未安装 skill（临时 clone 已删除）
+- 2026-09-22 | 用户裁决（测试约定会话） | 无新 pattern；AGENTS.md 新增「测试约定」（结果向、非同义反复），docs/architecture.md 两处“不删任何测试/实现细节不删”表述按其统一 | 无提案，按用户授权直接落地

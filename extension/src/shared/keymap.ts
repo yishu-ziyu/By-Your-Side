@@ -3,8 +3,11 @@
  * modifiers 位掩码：Alt=1, Ctrl=2, Meta=4, Shift=8。
  * 支持 "Control+A" / "Meta+A" / "Shift+Tab" 等组合（修饰键可用
  * Alt/Option、Control/Ctrl、Meta/Cmd/Command、Shift 别名）。
+ * ControlOrMeta 按平台解析为 Meta（mac）或 Control（其它）。
  * 未知键返回 null。
  */
+import { controlOrMetaKey } from "../../../shared/pointer-input.js";
+
 export interface KeyInfo {
   key: string;
   code: string;
@@ -23,6 +26,19 @@ const MODIFIER_BITS: Record<string, number> = {
   command: 4,
   shift: 8,
 };
+
+function hostPlatform(): string {
+  try {
+    return typeof navigator !== "undefined" ? navigator.platform : process.platform;
+  } catch {
+    return "unknown";
+  }
+}
+
+/** 把 ControlOrMeta 展开成当前平台的 Meta/Control。 */
+export function expandControlOrMeta(input: string, platform: string = hostPlatform()): string {
+  return input.replace(/\bControlOrMeta\b/gi, controlOrMetaKey(platform));
+}
 
 interface BaseKey {
   key: string;
@@ -46,6 +62,14 @@ const NAMED_KEYS: Record<string, BaseKey> = {
   pageup: { key: "PageUp", code: "PageUp", vk: 33 },
   pagedown: { key: "PageDown", code: "PageDown", vk: 34 },
   space: { key: " ", code: "Space", vk: 32, text: " " },
+  shift: { key: "Shift", code: "ShiftLeft", vk: 16 },
+  control: { key: "Control", code: "ControlLeft", vk: 17 },
+  ctrl: { key: "Control", code: "ControlLeft", vk: 17 },
+  meta: { key: "Meta", code: "MetaLeft", vk: 91 },
+  cmd: { key: "Meta", code: "MetaLeft", vk: 91 },
+  command: { key: "Meta", code: "MetaLeft", vk: 91 },
+  alt: { key: "Alt", code: "AltLeft", vk: 18 },
+  option: { key: "Alt", code: "AltLeft", vk: 18 },
 };
 
 /** Alt/Ctrl/Meta 按下时不生成文本（避免控制字符），仅 Shift 允许。 */
@@ -54,9 +78,10 @@ function withText(info: KeyInfo, text: string | undefined): KeyInfo {
   return info;
 }
 
-export function resolveKey(input: string): KeyInfo | null {
+export function resolveKey(input: string, platform: string = hostPlatform()): KeyInfo | null {
   if (typeof input !== "string") return null;
-  const parts = input.split("+").map((p) => p.trim());
+  const expanded = expandControlOrMeta(input, platform);
+  const parts = expanded.split("+").map((p) => p.trim());
   if (parts.length === 0 || parts.some((p) => p === "")) return null;
 
   const keyName = parts[parts.length - 1]!;

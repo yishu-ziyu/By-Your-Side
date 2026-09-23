@@ -259,6 +259,11 @@ export interface ModelOption {
   modelId: string;
   /** 展示名（SDK 目录里的 name） */
   name: string;
+  /**
+   * 是否在默认精选集内。agent 下发的是**全量**可达模型并逐个打标，
+   * UI 默认只显示 featured，用户可展开查看全部；缺失视为 false。
+   */
+  featured?: boolean;
 }
 
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
@@ -367,6 +372,33 @@ export const TOOL_NAMES = [
   "observe_page",
   "mark",
   "clear_marks",
+  "double_click",
+  "drag",
+  "upload_file",
+  "cdp",
+  /** CAP-02A：宿主签发 token 的事件订阅（popup/download/filechooser）。 */
+  "arm_event",
+  "wait_event",
+  "disarm_event",
+  "consume_events",
+  "accept_dialog",
+  "dismiss_dialog",
+  "dialog_info",
+  "file_chooser_set_files",
+  "download_stat",
+  "download_cancel",
+  "download_delete",
+  /** CAP-02B：扩展侧输入原语的正式 RPC（右键/偏移/wheel/按住/paste/HTML5 DnD）。 */
+  "wheel",
+  "mouse_down",
+  "mouse_up",
+  "key_down",
+  "key_up",
+  "release_held_inputs",
+  "paste",
+  "html5_drag",
+  /** CAP-02C：原生 select 的 value/label/index、多选、清空（≠ 单值 fill）。 */
+  "select_option",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -410,10 +442,8 @@ export interface SwitchTabVerification {
  * 各工具的 params 与成功时 tool_result.data 形状。
  * 失败时 ok=false，error 为人类可读的一行描述。
  *
- * click/fill 的 target 支持四种形式（与 ego 对齐）：
- *   "@N"          — snapshot 输出中的 ref
- *   "loc=css:..." — snapshot 输出中的稳定定位串
- *   其他字符串     — 原始 CSS 选择器
+ * click/fill/select_option 的 target 支持：
+ *   "@N" / "loc=css:..." / "loc=role:…[name=…]" / "loc=href:..." / "xpath=" / "text=" / 原生 CSS
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
 export interface ToolContract {
@@ -426,7 +456,21 @@ export interface ToolContract {
   /** 被动看当前工作页真实发出过哪些请求（CDP Network 域环形缓冲）；只读，不改页面。 */
   network: {
     params: { tabId?: number; urlContains?: string; types?: string[] | "all"; limit?: number; clear?: boolean };
-    data: { text: string; tabId: number; total: number; matched: number; shown: number; dropped: number };
+    /** inFlight/integrity：waitForNetworkIdle 的证据面；clear 只清展示 ring，不抹在途。 */
+    data: {
+      text: string;
+      tabId: number;
+      total: number;
+      matched: number;
+      shown: number;
+      dropped: number;
+      inFlight: number;
+      excludedInFlight: number;
+      lastActivityAt: number;
+      generation: number;
+      integrity: "none" | "ok" | "late" | "detached" | "gap" | "restart";
+      attached: boolean;
+    };
   };
   worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
   share_tab: { params: { tabId: number; collaborators: string[]; remove?: string[] }; data: { tabId: number; collaborators: string[] } };
@@ -456,11 +500,232 @@ export interface ToolContract {
   switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;observation?:import('./browser-decision.js').BrowserObservation } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;observation?:import('./browser-decision.js').BrowserObservation } };
   click: {
-    params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
+    params: {
+      tabId?: number;
+      target?: string;
+      point?: [number, number];
+      /** 相对 target 左上角的 CSS 像素；有绝对 point 时忽略。 */
+      position?: import('./pointer-input.js').ElementPosition;
+      button?: import('./pointer-input.js').MouseButton;
+      clickCount?: number;
+      force?: boolean;
+      label?: string;
+    };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。 */
     data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
+  };
+  /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2；destructive 目标同样先拿住等确认。 */
+  double_click: {
+    params: {
+      tabId?: number;
+      target?: string;
+      point?: [number, number];
+      position?: import('./pointer-input.js').ElementPosition;
+      button?: import('./pointer-input.js').MouseButton;
+      clickCount?: number;
+      force?: boolean;
+      label?: string;
+    };
+    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { doubleClicked: false; held: true };
+  };
+  /** 真实拖拽：from/to 各为 target 或视口 point；mousePressed→有界 mouseMoved 序列→release；destructive 源同样先拿住等确认。 */
+  drag: {
+    params: { tabId?: number; from: { target?: string; point?: [number, number] }; to: { target?: string; point?: [number, number] }; label?: string };
+    data: { dragged: true; effect?: import('./effect.js').EffectReport } | { dragged: false; held: true };
+  };
+  /** CAP-02B：真实 mouseWheel；坐标来自 point/target(+position) 或会话指针。 */
+  wheel: {
+    params: {
+      tabId?: number;
+      deltaX?: number;
+      deltaY?: number;
+      point?: [number, number];
+      target?: string;
+      position?: import('./pointer-input.js').ElementPosition;
+      label?: string;
+    };
+    /**
+     * wheeled:true 只在整段手势（mouseMoved → 主 mouseWheel → 零 delta 收尾）的
+     * blocking ACK 全部在预算内返回时出现。任何一步 ACK 超时都直接抛错、不返回成功包，
+     * 也不得以 scrollTop= 或合成事件冒充。ackMs/attempts 供验收判据核对真实性。
+     */
+    data: { wheeled: true; point: [number, number]; ackMs: number; attempts: number };
+  };
+  mouse_down: {
+    params: {
+      tabId?: number;
+      button?: import('./pointer-input.js').MouseButton;
+      clickCount?: number;
+      point?: [number, number];
+      target?: string;
+      position?: import('./pointer-input.js').ElementPosition;
+    };
+    data: { down: true; point: [number, number]; button: import('./pointer-input.js').MouseButton };
+  };
+  mouse_up: {
+    params: {
+      tabId?: number;
+      button?: import('./pointer-input.js').MouseButton;
+      clickCount?: number;
+      point?: [number, number];
+    };
+    data: { up: true; point: [number, number]; button: import('./pointer-input.js').MouseButton };
+  };
+  key_down: {
+    params: { tabId?: number; key: string };
+    data: { down: true; key: string };
+  };
+  key_up: {
+    params: { tabId?: number; key: string };
+    data: { up: true; key: string };
+  };
+  /** 松开本会话仍按住的键与鼠标键（取消/异常安全路径）。 */
+  release_held_inputs: {
+    params: Record<string, never>;
+    data: { releasedKeys: string[]; releasedButtons: import('./pointer-input.js').MouseButton[] };
+  };
+  /**
+   * 富文本粘贴：经剪贴板桥写入 text/html 再 ControlOrMeta+V。
+   * 无桥时扩展侧 BLOCKED；禁止合成 paste/innerHTML 冒充成功。
+   */
+  paste: {
+    params: { tabId?: number; content: import('./pointer-input.js').PasteContent };
+    data: { pasted: true; clipboard: import('./pointer-input.js').ClipboardFinishStatus };
+  };
+  /**
+   * HTML5 DataTransfer 拖放。无 intercept 载荷时 data.gap，不得报成功。
+   * syntheticData 仅测试桩，正式路径勿默认使用。
+   */
+  html5_drag: {
+    params: {
+      tabId?: number;
+      from: { target?: string; point?: [number, number]; position?: import('./pointer-input.js').ElementPosition };
+      to: { target?: string; point?: [number, number]; position?: import('./pointer-input.js').ElementPosition };
+      label?: string;
+      syntheticData?: {
+        items: Array<{ mimeType: string; data: string; title?: string }>;
+        files?: string[];
+        dragOperationsMask?: number;
+      };
+    };
+    data:
+      | { dragged: true; path: "intercept" | "synthetic-data"; effect?: import('./effect.js').EffectReport }
+      | { dragged: false; gap: "no_intercept_payload"; detail: string };
+  };
+  /** 给唯一 <input[type=file]> 设置授权路径（DOM.setFileInputFiles），以读回的 files 列表为证；不点系统文件选择器。 */
+  upload_file: {
+    params: { tabId?: number; target: string; paths: string[] };
+    data: { uploaded: true; files: Array<{ name: string; size: number }>; documentId?: string };
+  };
+  /** 通用 CDP escape hatch：只绑当前 working tab，按 power tool 全走写闸门；越权 method 拒绝；结果有界截断。
+   * （ToolContract 键名与 TOOL_NAMES、扩展 handlers、WRITE_TOOLS 同步扩展：double_click / drag / upload_file / cdp / CAP-02A 事件面 / CAP-02B 输入原语。） */
+  cdp: {
+    params: { tabId?: number; method: string; params?: Record<string, unknown>; timeoutMs?: number };
+    data: { result: unknown; truncated: boolean };
+  };
+  /**
+   * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
+   * download 必须带绝对 downloadPath（本任务临时目录）；不设全局下载目录。
+   */
+  arm_event: {
+    params: {
+      tabId?: number;
+      type: "popup" | "download" | "filechooser";
+      timeoutMs?: number;
+      /** download 专用：Chrome 写入的绝对临时目录（宿主创建）。 */
+      downloadPath?: string;
+    };
+    data: { token: string; type: "popup" | "download" | "filechooser"; tabId: number; timeoutMs: number; downloadPath?: string };
+  };
+  /** 等待已 arm 的 token 匹配并一次消费；未匹配前阻塞到超时。 */
+  wait_event: {
+    params: { token: string; timeoutMs?: number };
+    data: {
+      token: string;
+      type: "popup" | "download" | "filechooser";
+      tabId: number;
+      popup?: { tabId: number; url?: string; targetId?: string; label: string };
+      download?: {
+        downloadId: string;
+        url: string;
+        suggestedFilename: string;
+        tabId: number;
+        failure: string | null;
+        completed: boolean;
+      };
+      fileChooser?: { chooserId: string; multiple: boolean; backendNodeId: number };
+    };
+  };
+  /** 取消尚未消费的 arm；停止任务后迟到事件不得再匹配。 */
+  disarm_event: {
+    params: { token: string };
+    data: { disarmed: true; token: string; status: string };
+  };
+  /** 读清本页缓冲的协议事件（popup/download/dialog/filechooser），非常规 EventEmitter。 */
+  consume_events: {
+    params: { tabId?: number; clear?: boolean };
+    data: { tabId: number; events: Array<{ kind: string; at: number; payload: Record<string, unknown> }> };
+  };
+  /** 接受当前网页 JS dialog（alert/confirm/prompt）；无 dialog 返回 accepted:false。不等于危险业务授权。 */
+  accept_dialog: {
+    params: { tabId?: number; promptText?: string };
+    data: { accepted: boolean; dialog?: { type: string; message: string; tabId: number; url?: string } };
+  };
+  dismiss_dialog: {
+    params: { tabId?: number };
+    data: { dismissed: boolean; dialog?: { type: string; message: string; tabId: number; url?: string } };
+  };
+  /** 观察当前未处理的网页 JS dialog（类型/消息/页面归属）；不含浏览器权限/设备提示。 */
+  dialog_info: {
+    params: { tabId?: number };
+    data: { dialog: null | { type: string; message: string; tabId: number; url?: string; defaultPrompt?: string } };
+  };
+  /**
+   * 动态 file chooser：对已 wait 到的 chooser 设文件。路径须经宿主 TaskUploadLedger 授权；
+   * 禁止经 raw cdp DOM.setFileInputFiles 绕过。上传后若立刻弹 JS dialog，回执含 dialog。
+   */
+  file_chooser_set_files: {
+    params: { tabId?: number; chooserId: string; paths: string[] };
+    data: {
+      set: true;
+      multiple: boolean;
+      files: Array<{ name: string; size: number }>;
+      dialog?: { type: string; message: string; tabId: number; url?: string };
+    };
+  };
+  /**
+   * 宿主侧 download.saveAs（非 extension RPC）：等待下载完成后复制到获准绝对路径。
+   * browser_run helper / tools.ts 实现；不把 fetch(GET) 当下载。
+   */
+  download_save_as: {
+    params: { downloadId: string; path: string; timeoutMs?: number };
+    data: { saved: true; path: string; bytes: number; suggestedFilename: string; url: string; tabId: number };
+  };
+  download_stat: {
+    params: { downloadId: string };
+    data: {
+      downloadId: string;
+      tabId: number;
+      url: string;
+      suggestedFilename: string;
+      path: string | null;
+      failure: string | null;
+      completed: boolean;
+      cancelled: boolean;
+      /** 临时目录（Chrome 写入处）；agent saveAs 轮询用。 */
+      downloadPath?: string;
+      expectedPath?: string;
+    };
+  };
+  download_cancel: {
+    params: { downloadId: string };
+    data: { cancelled: true; downloadId: string; failure: string | null };
+  };
+  download_delete: {
+    params: { downloadId: string };
+    data: { deleted: true; downloadId: string };
   };
   /** 真实鼠标移动；hovered 仅表示事件已派发，页面变化需另行观察。 */
   hover: {
@@ -468,22 +733,41 @@ export interface ToolContract {
     data: { hovered: true };
   };
   fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true } };
+  /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
+  select_option: {
+    params: {
+      tabId?: number;
+      target: string;
+      values: string | { value?: string; label?: string; index?: number } | Array<string | { value?: string; label?: string; index?: number }> | null;
+      expectedDocumentId?: string;
+      expectedBackendNodeId?: number;
+    };
+    data: { selected: string[]; labels: string[] };
+  };
   type_text: { params: { tabId?: number; text: string }; data: { typed: true } };
   press_key: { params: { tabId?: number; key: string }; data: { pressed: true } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
   screenshot: {
-    params: {tabId?: number};
+    params: {
+      tabId?: number;
+      /** 可滚动全页；与 clip 互斥时 clip 优先。 */
+      fullPage?: boolean;
+      /** 文档 CSS 坐标矩形。click 的 point 使用视口坐标，须扣除当前滚动。 */
+      clip?: { x: number; y: number; width: number; height: number; scale?: number };
+      /** css=按 CSS 像素尺寸输出（默认）；raw=设备像素。 */
+      scale?: "css" | "raw";
+    };
     data: {
       imageBase64: string;
       mediaType: "image/png";
-      /** 图像像素宽/高（PNG 解码实测；解码失败为 0）。点击坐标系见 cssWidth/cssHeight。 */
+      /** PNG 解码实测的正数像素宽高；解码失败则整个调用失败。 */
       width: number;
       height: number;
       pixelWidth: number;
       pixelHeight: number;
-      /** CSS 视口宽/高，即 click point 坐标系；查不到为 0。 */
+      /** 捕获区域的 CSS 宽高；并非该区域在视口中的原点。查不到为 0。 */
       cssWidth: number;
       cssHeight: number;
       /** 查不到为 0。 */
@@ -494,6 +778,18 @@ export interface ToolContract {
       capturedAt: number;
       /** cdp = 后台页直接捕获；visible-tab = 已核对工作页在前台后的可见捕获。 */
       source: "cdp" | "visible-tab";
+      fullPage?: boolean;
+      clip?: { x: number; y: number; width: number; height: number; scale?: number };
+      scale?: "css" | "raw";
+      documentId?: string;
+      /** viewportPoint = imagePixel / density + origin - scroll。新文档/滚动后须重新观察。 */
+      coordinates?: {
+        origin: { x: number; y: number };
+        scroll: { x: number; y: number };
+        viewport: { width: number; height: number };
+        pixelsPerCssPixel: number;
+        space: "document";
+      } | null;
     };
   };
   /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */

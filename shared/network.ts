@@ -121,15 +121,21 @@ export function networkEventToUpdate(method: string, params: Record<string, unkn
   return null;
 }
 
-/** 追加一条；超容量丢最旧，并累计 dropped。 */
-export function appendNetworkEntry(ring: NetworkRing, entry: NetworkEntry, capacity: number = NETWORK_CAPACITY): NetworkRing {
+/** 追加一条；超容量丢最旧，并累计 dropped。返回被挤出的最旧条目（供在途集合保留）。 */
+export function appendNetworkEntry(
+  ring: NetworkRing,
+  entry: NetworkEntry,
+  capacity: number = NETWORK_CAPACITY,
+): NetworkRing & { evicted?: NetworkEntry[] } {
   const entries = [...ring.entries, entry];
   let dropped = ring.dropped;
+  const evicted: NetworkEntry[] = [];
   while (entries.length > capacity) {
-    entries.shift();
+    const old = entries.shift();
+    if (old) evicted.push(old);
     dropped += 1;
   }
-  return { entries, dropped };
+  return evicted.length ? { entries, dropped, evicted } : { entries, dropped };
 }
 
 /** 应用一条 patch；条目不在缓冲里则原样返回。 */
@@ -255,4 +261,203 @@ export function formatNetworkReport(shown: readonly NetworkEntry[], info: Networ
   const header = `Network requests observed on this tab: showing ${shown.length} of ${info.matched} matched (${info.total} recorded${dropped}${filters.length ? `, filter ${filters.join(", ")}` : ""}).`;
   const lines = shown.map((entry, index) => formatNetworkEntryLine(entry, index + 1));
   return `${header}\n${lines.join("\n")}\nUse fetch with the browser's login state to read the data behind one of these URLs.`;
+}
+
+/**
+ * network-idle 生命周期：展示 ring 与有界在途集合分离。
+ * 长连接排除类别显式列出（可测）；慢 xhr/fetch 不得被偷偷忽略。
+ * network-idle ≠ 页面业务完成。
+ */
+export const NETWORK_IDLE_EXCLUDED_TYPES = ["websocket", "eventsource"] as const;
+export const NETWORK_IN_FLIGHT_CAPACITY = 200;
+
+export type NetworkCaptureIntegrity = "none" | "ok" | "late" | "detached" | "gap" | "restart";
+
+export interface NetworkInFlightEntry {
+  requestId: string;
+  resourceType: string;
+  url: string;
+  startedAt: number;
+  excluded: boolean;
+}
+
+export interface NetworkLifecycle {
+  ring: NetworkRing;
+  capacity: number;
+  generation: number;
+  integrity: NetworkCaptureIntegrity;
+  lastActivityAt: number;
+  attached: boolean;
+  inFlight: Map<string, NetworkInFlightEntry>;
+}
+
+export function isIdleExcludedType(resourceType: string): boolean {
+  const type = resourceType.toLowerCase();
+  return (NETWORK_IDLE_EXCLUDED_TYPES as readonly string[]).includes(type);
+}
+
+export function createNetworkLifecycle(opts?: { capacity?: number; now?: number }): NetworkLifecycle {
+  return {
+    ring: { entries: [], dropped: 0 },
+    capacity: opts?.capacity ?? NETWORK_CAPACITY,
+    generation: 0,
+    integrity: "none",
+    lastActivityAt: opts?.now ?? 0,
+    attached: false,
+    inFlight: new Map(),
+  };
+}
+
+function cloneInFlight(source: Map<string, NetworkInFlightEntry>): Map<string, NetworkInFlightEntry> {
+  return new Map(source);
+}
+
+function rememberInFlight(life: NetworkLifecycle, entry: NetworkEntry): Map<string, NetworkInFlightEntry> {
+  const next = cloneInFlight(life.inFlight);
+  next.set(entry.requestId, {
+    requestId: entry.requestId,
+    resourceType: entry.resourceType,
+    url: entry.url,
+    startedAt: entry.startedAt,
+    excluded: isIdleExcludedType(entry.resourceType),
+  });
+  while (next.size > NETWORK_IN_FLIGHT_CAPACITY) {
+    const oldest = next.keys().next().value;
+    if (oldest === undefined) break;
+    next.delete(oldest);
+  }
+  return next;
+}
+
+export function markCaptureEnabled(life: NetworkLifecycle, opts: { mode: "fresh" | "late"; now?: number }): NetworkLifecycle {
+  if (life.attached && (life.integrity === "ok" || life.integrity === "late")) {
+    return life;
+  }
+  const now = opts.now ?? Date.now();
+  return {
+    ...life,
+    generation: life.generation + 1,
+    integrity: opts.mode === "fresh" ? "ok" : "late",
+    attached: true,
+    lastActivityAt: now,
+    inFlight: cloneInFlight(life.inFlight),
+  };
+}
+
+export function markCaptureDetached(life: NetworkLifecycle, now: number = Date.now()): NetworkLifecycle {
+  return {
+    ...life,
+    generation: life.generation + 1,
+    integrity: "detached",
+    attached: false,
+    lastActivityAt: now,
+    inFlight: cloneInFlight(life.inFlight),
+  };
+}
+
+export function markCaptureGap(life: NetworkLifecycle, now: number = Date.now()): NetworkLifecycle {
+  return {
+    ...life,
+    generation: life.generation + 1,
+    integrity: "gap",
+    attached: life.attached,
+    lastActivityAt: now,
+    inFlight: cloneInFlight(life.inFlight),
+  };
+}
+
+/** SW 重启：内存态清空；没有记录 ≠ 没有请求。 */
+export function markCaptureRestart(life: NetworkLifecycle, now: number = Date.now()): NetworkLifecycle {
+  return {
+    ring: { entries: [], dropped: 0 },
+    capacity: life.capacity,
+    generation: life.generation + 1,
+    integrity: "restart",
+    attached: false,
+    lastActivityAt: now,
+    inFlight: new Map(),
+  };
+}
+
+/** 清空展示 ring；仍在途的请求保留在 inFlight。 */
+export function clearNetworkDisplay(life: NetworkLifecycle, now: number = Date.now()): NetworkLifecycle {
+  return {
+    ...life,
+    ring: { entries: [], dropped: 0 },
+    lastActivityAt: now,
+    inFlight: cloneInFlight(life.inFlight),
+  };
+}
+
+function promoteIntegrity(life: NetworkLifecycle, entry: NetworkEntry): NetworkCaptureIntegrity {
+  if (life.integrity === "late" && entry.resourceType === "document") return "ok";
+  return life.integrity;
+}
+
+/** 将一条 CDP 更新写入 ring + 在途集合。patch 在 ring 已丢弃时仍结束在途项。 */
+export function applyNetworkLifecycle(life: NetworkLifecycle, update: NetworkEventUpdate, now: number = Date.now()): NetworkLifecycle {
+  if (update.kind === "start") {
+    const previous = life.ring.entries.find((candidate) => candidate.requestId === update.entry.requestId);
+    const ring = previous
+      ? restartNetworkEntry(life.ring, update.entry)
+      : appendNetworkEntry(life.ring, update.entry, life.capacity);
+    return {
+      ...life,
+      ring: { entries: ring.entries, dropped: ring.dropped },
+      integrity: promoteIntegrity(life, update.entry),
+      lastActivityAt: now,
+      inFlight: rememberInFlight(life, update.entry),
+    };
+  }
+
+  const ring = patchNetworkEntry(life.ring, update.requestId, update.patch);
+  const ended = update.patch.endedTs !== undefined || update.patch.failed !== undefined;
+  const inFlight = cloneInFlight(life.inFlight);
+  if (ended) inFlight.delete(update.requestId);
+  else if (inFlight.has(update.requestId)) {
+    const cur = inFlight.get(update.requestId)!;
+    inFlight.set(update.requestId, cur);
+  }
+  return {
+    ...life,
+    ring,
+    lastActivityAt: now,
+    inFlight,
+  };
+}
+
+export interface IdleObservation {
+  idle: boolean;
+  inFlight: number;
+  excludedInFlight: number;
+  lastActivityAt: number;
+  generation: number;
+  integrity: NetworkCaptureIntegrity;
+  attached: boolean;
+  reason: "idle" | "in-flight" | "quiet" | "incomplete" | NetworkCaptureIntegrity;
+}
+
+/** 纳入范围的在途为 0 且持续 idleMs 静默，且捕获完整时才 idle。 */
+export function idleObservation(life: NetworkLifecycle, opts: { now: number; idleMs: number }): IdleObservation {
+  let inFlight = 0;
+  let excludedInFlight = 0;
+  for (const item of life.inFlight.values()) {
+    if (item.excluded) excludedInFlight += 1;
+    else inFlight += 1;
+  }
+  const base = {
+    inFlight,
+    excludedInFlight,
+    lastActivityAt: life.lastActivityAt,
+    generation: life.generation,
+    integrity: life.integrity,
+    attached: life.attached,
+  };
+  if (life.integrity !== "ok" || !life.attached) {
+    const reason = life.integrity === "none" || life.integrity === "ok" ? "incomplete" : life.integrity;
+    return { ...base, idle: false, reason };
+  }
+  if (inFlight > 0) return { ...base, idle: false, reason: "in-flight" };
+  if (opts.now - life.lastActivityAt < opts.idleMs) return { ...base, idle: false, reason: "quiet" };
+  return { ...base, idle: true, reason: "idle" };
 }

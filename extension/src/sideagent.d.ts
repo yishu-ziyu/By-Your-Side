@@ -25,6 +25,11 @@ interface SideAgentDomOps {
   confirmPoint(x: number, y: number): { same: true };
   click(target: string): { clicked: true };
   fill(target: string, value: string): { filled: true };
+  /** CAP-02C：value/label/index、多选、清空；返回最终选中集合。 */
+  selectOption(
+    target: string,
+    values: string | { value?: string; label?: string; index?: number } | Array<string | { value?: string; label?: string; index?: number }> | null,
+  ): { selected: string[]; labels: string[] };
   scrollBy(dy: number | null): { atBottom: boolean };
   scrollToBottom(maxSteps?: number): Promise<{ atBottom: boolean }>;
 }

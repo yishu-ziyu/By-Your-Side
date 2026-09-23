@@ -1,7 +1,8 @@
 import {replaceEditableText} from "../shared/editable-text.js";
+import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/target.js";
 /**
  * DOM 操作 content script（ISOLATED world，重复注入幂等）。
- * 暴露 window.__sideagent.dom = { resolve, rectOf, confirmForClick, hitTestAt, rememberPoint, confirmPoint, click, fill, scrollBy, scrollToBottom }。
+ * 暴露 window.__sideagent.dom = { resolve, rectOf, confirmForClick, hitTestAt, rememberPoint, confirmPoint, click, fill, selectOption, scrollBy, scrollToBottom }。
  * 所有操作返回可序列化结果；失败抛带一行信息的 Error。
  */
 (function () {
@@ -16,21 +17,81 @@ import {replaceEditableText} from "../shared/editable-text.js";
       if (!el || !el.isConnected) throw new Error(`ref ${target} 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。`);
       return el;
     }
-    const sel = target.startsWith("loc=css:") ? target.slice("loc=css:".length) : target;
-    let matches: NodeListOf<Element>;
-    try {
-      matches = document.querySelectorAll(sel);
-    } catch {
-      throw new Error(`无效的选择器: ${sel}。操作未执行。target 支持 @N、loc=css:原生CSS 或原生 CSS；不支持 loc=h3...、:has-text() 等 Playwright 定位语法。请先 snapshot，从当前结果选择目标 ref 或 loc=css: 定位串后重试。`);
+    // 统一 target 解析层：loc=css: / loc=role: / loc=href: / 原生 CSS / xpath= / text=。
+    const parsed = parseTarget(target);
+    if (!parsed || parsed.kind === "ref") {
+      throw new Error(`无效的 target: ${target}。操作未执行。请重新 snapshot，从当前结果选择 @ref、loc=css:、loc=role:、loc=href:、原生 CSS、xpath= 或 text=。`);
     }
-    if (matches.length > 1) throw new Error(`选择器匹配 ${matches.length} 个元素: ${sel}。操作未执行。请 snapshot 确认目标，使用目标 ref 或更具体的唯一 CSS；不会自动选择第一个匹配。`);
-    const el = matches[0];
-    if (!el) throw new Error(`未找到元素: ${sel}。操作未执行。请 snapshot 确认当前页面中的目标，使用新的 ref 或有效 CSS；隐藏入口可先 hover 已确认的容器，再 snapshot。`);
-    return el;
+    const args = resolveArgs(parsed);
+    return resolveTargetSelector(args.kind, args.selector);
+  }
+
+
+  /** iframe 内 getBoundingClientRect 是 frame 视口坐标；CDP 鼠标要 top 视口坐标。 */
+  function topViewportRect(el: Element): { x: number; y: number; width: number; height: number } {
+    const r = el.getBoundingClientRect();
+    let x = r.x;
+    let y = r.y;
+    let win: Window | null = el.ownerDocument.defaultView;
+    while (win && win !== win.top) {
+      const frame = win.frameElement as Element | null;
+      if (!frame) break;
+      const fr = frame.getBoundingClientRect();
+      x += fr.x;
+      y += fr.y;
+      win = win.parent;
+    }
+    return { x, y, width: r.width, height: r.height };
+  }
+
+  type SelectSpec = string | { value?: string; label?: string; index?: number } | null;
+
+  function applySelectOption(select: HTMLSelectElement, values: SelectSpec | SelectSpec[]): {
+    selected: string[];
+    labels: string[];
+  } {
+    const requested: SelectSpec[] =
+      values === null ? [] : Array.isArray(values) ? values : [values];
+    const clear = requested.length === 0;
+    if (!select.multiple && requested.length > 1) {
+      throw new Error("非 multiple 的 select 不能一次选多项。操作未执行。");
+    }
+    for (let i = 0; i < select.options.length; i++) select.options[i]!.selected = false;
+    if (!clear) {
+      for (const item of requested) {
+        let match: HTMLOptionElement | undefined;
+        if (item === null) continue;
+        if (typeof item === "string") {
+          const wanted = item.trim();
+          match =
+            [...select.options].find((o) => o.value === wanted || o.text.trim() === wanted) ??
+            [...select.options].find((o) => o.text.includes(wanted) || (wanted && wanted.includes(o.text.trim())));
+        } else if (typeof item.index === "number") {
+          match = select.options[item.index];
+          if (!match) throw new Error(`select 没有 index=${item.index} 的选项。操作未执行。`);
+        } else if (typeof item.value === "string") {
+          match = [...select.options].find((o) => o.value === item.value);
+        } else if (typeof item.label === "string") {
+          const wanted = item.label.trim();
+          match =
+            [...select.options].find((o) => o.text.trim() === wanted) ??
+            [...select.options].find((o) => o.label === wanted || o.text.includes(wanted));
+        }
+        if (!match) throw new Error(`下拉框没有匹配选项: ${JSON.stringify(item)}。操作未执行。`);
+        match.selected = true;
+      }
+    }
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const selected = [...select.selectedOptions].map((o) => o.value);
+    const labels = [...select.selectedOptions].map((o) => o.text.trim());
+    return { selected, labels };
   }
 
   function scrollIntoView(el: Element): void {
-    const anyEl = el as unknown as { scrollIntoViewIfNeeded?: (o?: object) => void };
+    // SAFETY: Element 只保证标准 DOM 接口；scrollIntoViewIfNeeded 是 Chromium 的可选扩展方法，
+    // typeof 在运行时确认存在后才调用，形状不符时回退标准 scrollIntoView。
+    const anyEl = el as unknown as { scrollIntoViewIfNeeded?: (o?: Record<string, unknown>) => void };
     if (typeof anyEl.scrollIntoViewIfNeeded === "function") {
       anyEl.scrollIntoViewIfNeeded({ block: "center", inline: "center" });
     } else {
@@ -97,6 +158,25 @@ import {replaceEditableText} from "../shared/editable-text.js";
   }
 
   function assertHits(el: Element, x: number, y: number): void {
+    // 同源 iframe：top 视口坐标命中的是 <iframe> 本身；在目标文档内换算局部坐标再核验。
+    if (el.ownerDocument !== document) {
+      let localX = x;
+      let localY = y;
+      let win: Window | null = el.ownerDocument.defaultView;
+      while (win && win !== win.top) {
+        const frame = win.frameElement as Element | null;
+        if (!frame) break;
+        const fr = frame.getBoundingClientRect();
+        localX -= fr.x;
+        localY -= fr.y;
+        win = win.parent;
+      }
+      const inner = el.ownerDocument.elementFromPoint(localX, localY);
+      if (!inner || !ownsUpward(el, inner)) {
+        throw new Error("目标被其他元素覆盖，操作未执行。请重新 snapshot 确认当前可点击目标，不要点击原坐标处的其他对象。");
+      }
+      return;
+    }
     const top = document.elementFromPoint(x, y);
     if (!top) {
       throw new Error("目标处没有可命中的元素，操作未执行。请重新 snapshot 确认当前目标。");
@@ -131,7 +211,7 @@ import {replaceEditableText} from "../shared/editable-text.js";
     rectOf(target: string): SideAgentRect {
       const el = mustResolve(target);
       scrollIntoView(el);
-      const r = el.getBoundingClientRect();
+      const r = topViewportRect(el);
       if (r.width === 0 && r.height === 0) throw new Error("元素不可见（零尺寸）");
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     },
@@ -139,7 +219,7 @@ import {replaceEditableText} from "../shared/editable-text.js";
     confirmForClick(target: string): SideAgentRect {
       const el = mustResolve(target);
       scrollIntoView(el);
-      const r = el.getBoundingClientRect();
+      const r = topViewportRect(el);
       if (r.width === 0 && r.height === 0) throw new Error("元素不可见（零尺寸）");
       assertHits(el, r.x + r.width / 2, r.y + r.height / 2);
       return { x: r.x, y: r.y, width: r.width, height: r.height };
@@ -206,15 +286,8 @@ import {replaceEditableText} from "../shared/editable-text.js";
       el.focus();
       const tag = el.tagName.toLowerCase();
       if (tag === "select") {
-        const select = el as HTMLSelectElement;
-        const wanted = value.trim();
-        const opts = [...select.options].map((o) => ({ text: o.text, value: o.value }));
-        const exact = opts.find((o) => o.text.trim() === wanted || o.value === wanted);
-        const match = exact ?? opts.find((o) => o.text.includes(wanted) || (wanted && wanted.includes(o.text.trim())));
-        if (!match || match.text.trim() === "") throw new Error(`下拉框没有「${value}」这个选项。`);
-        select.value = match.value;
-        select.dispatchEvent(new Event("input", { bubbles: true }));
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+        // 单值 fill 保留既有模糊匹配；完整多选/index/清空请用 selectOption。
+        applySelectOption(el as HTMLSelectElement, value);
         return { filled: true };
       }
       if (tag === "input" || tag === "textarea") {
@@ -232,6 +305,19 @@ import {replaceEditableText} from "../shared/editable-text.js";
         return { filled: true };
       }
       throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");
+    },
+
+    /** CAP-02C：按 value/label/index 选择；数组=多选；null/[]=清空。返回最终选中 value 集合。 */
+    selectOption(
+      target: string,
+      values: SelectSpec | SelectSpec[],
+    ): { selected: string[]; labels: string[] } {
+      const el = mustResolve(target) as HTMLElement;
+      if (el.tagName.toLowerCase() !== "select") {
+        throw new Error("selectOption 仅用于原生 <select>。操作未执行。");
+      }
+      el.focus();
+      return applySelectOption(el as HTMLSelectElement, values);
     },
 
     scrollBy(dy: number | null): { atBottom: boolean } {

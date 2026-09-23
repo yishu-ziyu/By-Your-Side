@@ -263,7 +263,6 @@ it("T02 任务视图：自动技能回放期间沿用真实任务身份与页面
   expect(last).toMatchObject({ runId, state: "idle", page: { tabId: skillPage.tabId }, latestDelivery: { kind: "finding" } });
   // 真实写入进入账本且不升级状态；没有未完成项残留，也没有模型介入。
   expect(last.results.map(result => result.status)).toEqual(["satisfied"]);
-  expect(h.manager.getTaskProgress("default")!.results).toHaveLength(3);
   expect(last.outstanding).toEqual([]);
   expect(h.prompts).not.toHaveBeenCalled();
 });

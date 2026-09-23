@@ -57,13 +57,14 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
-import { filterReachableModels } from "./reachable-models.js";
+import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { registerCliproxyProvider } from "./cliproxy.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { createBrowserTools } from "./tools.js";
+import { TaskUploadLedger } from "./upload-paths.js";
 import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
 import type { ProgramStep } from "./browser-program.js";
@@ -207,7 +208,7 @@ const PRE_OBSERVATION_TEXT_MAX = 12_000;
  * 通用循环收尾的直接交付：改变页面状态或控制页的操作使“本轮只核对已有证据”不成立；
  * 滚动只改视口，仍由既有目标失效规则（写入即失效）决定能否直接交付。
  */
-const BROWSER_LOOP_MUTATING_OPERATIONS:ReadonlySet<BrowserOperation>=new Set(['click','fill','select','press_key','switch_tab']);
+const BROWSER_LOOP_MUTATING_OPERATIONS:ReadonlySet<BrowserOperation>=new Set(['click','fill','select','press_key','switch_tab','hover']);
 /** 直接交付只报告已核对目标的短摘要；超长说明需要主模型组织，交回原交接。 */
 const BROWSER_LOOP_DELIVERY_TEXT_MAX = 600;
 
@@ -251,6 +252,11 @@ export interface SessionCallbacks {
 export class BrowserAgentSession {
   private skillStore: SkillStore | undefined;
   private readonly skillLearning = new SkillLearningTrace();
+  /**
+   * 本会话本任务的上传授权账本：构造时新建，新任务开始时清空。
+   * 不是全局单例；工人会话各自持有，不与 Lead 共享。
+   */
+  readonly uploadLedger = new TaskUploadLedger();
   isLearningSkillRun(): boolean { return !!this.skillStore && this.skillLearning.active(); }
   observeSkillEvidence(event: SkillEvidence): ReturnType<SkillLearningTrace["observe"]> { return this.skillLearning.observe(event); }
   private deliverableJudge: DeliverableContractJudge = judgeDeliverableContract;
@@ -801,7 +807,12 @@ export class BrowserAgentSession {
         modelRuntime,
         noTools: "builtin",
         customTools: [
-          ...(options?.customTools ?? createBrowserTools(rpc, undefined, undefined, undefined, undefined, (blocks, language, signal) => { if (!resultHost) throw new Error("翻译会话不可用"); return resultHost.translatePageBatch(blocks, language, signal); })),
+          // 生产路径（conversation-runtime / fleet）会传入 customTools；此回退仍接账本，避免日后漏接线。
+          ...(options?.customTools ?? createBrowserTools(rpc, undefined, undefined, undefined, {
+            epoch: () => resultHost?.executionEpoch() ?? 0,
+            canWrite: () => resultHost?.canWriteCurrentInput() ?? false,
+            get uploadLedger() { return resultHost?.uploadLedger; },
+          }, (blocks, language, signal) => { if (!resultHost) throw new Error("翻译会话不可用"); return resultHost.translatePageBatch(blocks, language, signal); })),
           ...(memoryRuntime?.tools() ?? []),
           ...(leadConversationId ? [createCapturePageMaterialTool(() => { if (!resultHost) throw new Error("任务尚未接线"); return resultHost.goalToolHost(); }), createTaskGoalsTool(() => { if (!resultHost) throw new Error("任务尚未接线"); return resultHost.goalToolHost(); }), createTaskResultsTool({
             getSnapshot: () => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线"); return resultHost.taskResultsHost.getSnapshot(); },
@@ -964,12 +975,16 @@ export class BrowserAgentSession {
     return model ? `${model.provider}/${model.id}` : undefined;
   }
 
-  /** 已配置凭据的 provider 下的可选模型（SDK ModelRuntime.getAvailable，含 OAuth 自动刷新）。 */
+  /**
+   * 已配置凭据的 provider 下的可选模型（SDK ModelRuntime.getAvailable，含 OAuth 自动刷新）。
+   * 返回**全量**并打 featured 标记：过滤交给 UI（默认看精选、可展开全部），
+   * agent 不再替用户删模型。当前会话模型一律算 featured，否则切走后无法从默认视图切回。
+   */
   async availableModels(): Promise<ModelOption[]> {
     if (!this.modelRuntime) return [];
     try {
       const models = await this.modelRuntime.getAvailable();
-      return filterReachableModels(models.map((m) => ({
+      return annotateReachableModels(models.map((m) => ({
         id: `${m.provider}/${m.id}`,
         provider: m.provider,
         modelId: m.id,
@@ -1131,12 +1146,31 @@ export class BrowserAgentSession {
     const id = `jev-${randomUUID()}`, name = 'judge_browser_action';
     this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:args});
     try {
+      // Realtime surface never mounts browser_loop. Direct tools are present whenever judge is.
+      // Prefer task_action when the host offers structured dispatch; otherwise browser_request.
+      // Callers may override via continueMount for accurate voice-connection mounts.
+      const continueMount = args.continueMount && typeof args.continueMount === 'object'
+        ? args.continueMount as {directBrowser?:boolean;taskAction?:boolean;browserRequest?:boolean}
+        : {
+          directBrowser: true,
+          taskAction: true,
+          browserRequest: true,
+        };
       const result = await judgeRealtimeBrowserAction(this.rpc,{
         request:String(args.request),userTask:this.browserDecisionContext(),
         ...(typeof args.tabId === 'number'?{tabId:args.tabId}:{}),
         history:(this.conversationSnapshot()?.results??[]).slice(-8).map(r=>`${r.tool}: ${r.description} [${r.status}]`),
+        canExecute: name => this.isToolActive(name),
+        continueMount,
       },signal);
       if (!current()) throw new Error('用户要求已变化，旧页面判断已丢弃。');
+      // Never recommend a tool that is not on the continue.tools list (typed path, not Chinese reason).
+      if (result && typeof result === 'object' && 'continue' in result) {
+        const cont = (result as {continue?:{tools?:string[]}}).continue;
+        if (cont?.tools?.includes('browser_loop')) {
+          cont.tools = cont.tools.filter(t => t !== 'browser_loop');
+        }
+      }
       const text = JSON.stringify(result);
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:text,executionFact:'executed'});
       return {content:[{type:'text' as const,text}]};
@@ -1194,6 +1228,8 @@ export class BrowserAgentSession {
     if (!this.abandonUnconsumedCorrections("superseded")) {
       throw new TaskActionRejected('未读补充尚未清理，本次任务未启动。请重试或重新连接。');
     }
+    // 新任务不继承上一任务的上传授权（含 ~/.sideagent/downloads 历史文件）。
+    this.uploadLedger.clear();
     this.experience?.begin(text, context);
     this.memoryRuntime?.beginUserTurn(text, context, this.conversationSnapshot()?.conversationContext?.recentTurns);
     if (inputOptions?.pageObservation === "on-demand") {
@@ -1887,8 +1923,9 @@ export class BrowserAgentSession {
       const result=await this.invokeDisplayTool(session,'browser_loop',{goal:this.activeGoal??finalText,materials:[]},controller.signal,current,()=>{}) as {details?:BrowserLoopOutcome};
       if(!current())return;
       outcome=result.details;
-      this.runTrace.record('general_browser_initial',{status:outcome?.status,modelCalls:outcome?.modelCalls,steps:outcome?.receipts.length,reason:outcome?.reason});
-      handoff=`The shared browser loop ran BEFORE this reasoning-model turn. Its result is ${outcome?.status??'unknown'}. It has NOT certified the whole task complete. Independently verify all user requirements. Never replay successful or unknown writes; inspect current state and the task ledger. Only perform remaining work or address the specific handoff reason.\n${wrapPageContent(redactCredentialText(JSON.stringify(outcome??{})),{tabId:context.tabId})}`;
+      this.runTrace.record('general_browser_initial',{status:outcome?.status,modelCalls:outcome?.modelCalls,steps:outcome?.receipts.length,reason:outcome?.reason,reasonCode:outcome?.reasonCode,continue:outcome?.continue});
+      // Continue on the same session.prompt with the original request. Control uses reasonCode/continue, not Chinese reason text.
+      handoff=`The shared browser loop ran BEFORE this reasoning-model turn. Its result is ${outcome?.status??'unknown'}; reasonCode=${outcome?.reasonCode??'unspecified'}. It has NOT certified the whole task complete. Independently verify all user requirements. Never replay successful or unknown writes; inspect current state and the task ledger. Use the typed continue hint (continue.action / continue.tools / continue.checkedRange) for the next step — do not parse the human reason string.\n${wrapPageContent(redactCredentialText(JSON.stringify(outcome??{})),{tabId:context.tabId})}`;
     }catch(error){
       if(!current())return;
       this.runTrace.record('general_browser_initial_failed',{reason:error instanceof Error?error.message:String(error)});

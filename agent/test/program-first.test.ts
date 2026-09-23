@@ -27,8 +27,15 @@ describe("program-first host boundary", () => {
   it("labels only host-generated polling as read-only, never user-authored JavaScript", async () => {
     const origins: Array<string | undefined> = [];
     await runBrowserProgram({ code: 'await browser.waitFor({selector:"#ready"}); await browser.js({code:"arbitrary()"});',
-      call: async (_name, _params, _id, origin) => { origins.push(origin); return { value: { ready: true } }; } });
-    expect(origins).toEqual(["readonly-poll", undefined]);
+      call: async (name, _params, _id, origin) => {
+        origins.push(origin);
+        // waitFor 走宿主的 read_element expect 轮询；其它调用按原样返回。
+        return name === "read_element" ? { check: { matched: true } } : { value: { ready: true } };
+      } });
+    // 契约：宿主轮询一律 readonly-poll（且不止一次采样）；用户编写的页面 JS 永不标成 read-only。
+    expect(origins.at(-1)).toBeUndefined();
+    expect(origins.length).toBeGreaterThan(1);
+    expect(origins.slice(0, -1).every(origin => origin === "readonly-poll")).toBe(true);
   });
 });
 

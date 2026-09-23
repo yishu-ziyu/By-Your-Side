@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UserDeliveryLedger } from "../src/user-delivery-ledger.js";
-import { isUserDelivery, isTaskProgressSnapshot, type UserDelivery } from "../../shared/voice.js";
+import { isSpeakableDelivery, isUserDelivery, isTaskProgressSnapshot, type UserDelivery } from "../../shared/voice.js";
 import { parseServerMessage } from "../../shared/protocol.js";
 
 const delivery = (over: Partial<UserDelivery> = {}): UserDelivery => ({
@@ -18,6 +18,7 @@ describe("UserDeliveryLedger", () => {
     expect(l.record(delivery({ id: "d-2", conversationId: "other" }))).toBe(false); // 别会话
     expect(l.record(delivery({ id: "d-2", runId: "stale-run" }))).toBe(false); // 旧 run
     expect(l.record(delivery({ id: "d-2", text: "" }))).toBe(false); // 空文
+    expect(l.record(delivery({ id: "d-2", text: " \n\t " }))).toBe(false); // 纯空白
     expect(l.record(delivery({ id: "d-2", text: "长".repeat(2001) }))).toBe(false); // 越界
     expect(l.record(delivery({ id: "d-2", kind: "verified_success" as never }))).toBe(false);
     expect(l.latest()).toMatchObject({ id: "d-1", text: "竹海工作坊发来活动邀请。" });
@@ -125,5 +126,18 @@ describe("frozen delivery contract in shared", () => {
     const wire = JSON.stringify({ type: "agent_event", conversationId: "c1", event: { kind: "user_delivery", delivery: delivery() } });
     expect(parseServerMessage(wire)).not.toBeNull();
     expect(parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "other", event: { kind: "user_delivery", delivery: delivery() } }))).toBeNull();
+  });
+
+  it("snapshot 只接受同会话同 run 的当前交付", () => {
+    const base = { conversationId: "c1", observedAt: 1, state: "idle" as const, goal: null, startedAt: 1, runId: "run-1", active: [], lastAction: null, successVerified: false as const };
+    const snapshot = (latestDelivery: UserDelivery) => ({ ...base, conversationContext: { recentTurns: [], latestResult: null, latestDelivery } });
+    expect(isTaskProgressSnapshot(snapshot(delivery()))).toBe(true);
+    expect(isTaskProgressSnapshot(snapshot(delivery({ conversationId: "other" })))).toBe(false);
+    expect(isTaskProgressSnapshot(snapshot(delivery({ runId: "old-run" })))).toBe(false);
+  });
+
+  it("没有当前任务时不能把旧 finding 当作可播回答", () => {
+    expect(isSpeakableDelivery(delivery(), null)).toBe(false);
+    expect(isSpeakableDelivery(delivery({ runId: null, kind: "reply" }), null)).toBe(true);
   });
 });

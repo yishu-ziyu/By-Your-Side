@@ -625,6 +625,30 @@ html, body {
   height: 13px;
 }
 
+.model-scope-toggle {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--content-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.model-scope-toggle:hover {
+  color: var(--text-1);
+  border-color: var(--text-3);
+}
+
+.model-scope-toggle[aria-pressed="true"] {
+  background: var(--content-subtle);
+  color: var(--text-1);
+}
+
 .model-search-input {
   flex: 1;
   min-width: 0;

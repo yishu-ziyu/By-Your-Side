@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>capability parity fixture</title>
+<style>
+  body { font-family: sans-serif; margin: 16px; }
+  .row { display: flex; gap: 24px; margin-top: 12px; }
+  .slot { min-height: 72px; width: 180px; border: 1px dashed #999; padding: 6px; }
+  #dragcard { width: 150px; height: 40px; background: #4a90d9; color: #fff; text-align: center; line-height: 40px; user-select: none; }
+  #slider { width: 260px; }
+</style>
+</head>
+<body>
+<h1>能力对齐验收页</h1>
+
+<button id="dblzone" aria-label="双击区">双击区</button>
+<p id="dblmsg"></p>
+
+<button id="count-btn">计数按钮</button>
+<p id="count">0</p>
+
+<div class="row">
+  <div id="slot-a" class="slot" data-slot="a"><div id="dragcard">拖我到B</div></div>
+  <div id="slot-b" class="slot" data-slot="b"></div>
+</div>
+
+<input type="range" id="slider" min="0" max="100" value="0">
+<p>滑杆值：<span id="sliderval">0</span></p>
+
+<p><input id="name" type="text" placeholder="姓名"></p>
+<input type="file" id="file">
+<p id="upmsg"></p>
+
+<script>
+  window.__parityRan = true;
+  // Case 1：单击只累计隐藏计数（无可见变化），双击才写可见消息——判据是可见状态只由 dblclick 改变。
+  let hiddenClicks = 0;
+  const dblzone = document.getElementById('dblzone');
+  dblzone.addEventListener('click', () => { hiddenClicks += 1; });
+  dblzone.addEventListener('dblclick', () => {
+    document.getElementById('dblmsg').textContent = 'DOUBLE-' + hiddenClicks;
+  });
+
+  let count = 0;
+  document.getElementById('count-btn').addEventListener('click', () => {
+    count += 1;
+    document.getElementById('count').textContent = String(count);
+  });
+
+  // Case 2（卡片）：经典 mousedown/mousemove/mouseup 拖拽，CDP pointer 序列可驱动。
+  const card = document.getElementById('dragcard');
+  let dragging = false, startX = 0, startY = 0;
+  card.addEventListener('mousedown', (e) => {
+    dragging = true; startX = e.clientX; startY = e.clientY; e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    card.style.transform = 'translate(' + (e.clientX - startX) + 'px,' + (e.clientY - startY) + 'px)';
+  });
+  document.addEventListener('mouseup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    card.style.transform = '';
+    card.style.pointerEvents = 'none';
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    card.style.pointerEvents = '';
+    const slot = under && under.closest ? under.closest('.slot') : null;
+    if (slot && slot.getAttribute('data-slot') === 'b') {
+      document.getElementById('slot-b').appendChild(card);
+      card.textContent = '已到B';
+    }
+  });
+
+  // Case 2（滑杆）：原生 pointer 行为，无脚本。
+  const slider = document.getElementById('slider');
+  slider.addEventListener('input', () => { document.getElementById('sliderval').textContent = slider.value; });
+
+  // Case 3：input + change 都要被观察到。
+  document.getElementById('file').addEventListener('input', () => { window.__upEvents = (window.__upEvents || []).concat('input'); });
+  document.getElementById('file').addEventListener('change', (e) => {
+    window.__upEvents = (window.__upEvents || []).concat('change');
+    const f = e.target.files && e.target.files[0];
+    document.getElementById('upmsg').textContent = f
+      ? 'UP:' + e.target.files.length + ':' + f.name
+      : 'UP:empty';
+  });
+</script>
+</body>
+</html>

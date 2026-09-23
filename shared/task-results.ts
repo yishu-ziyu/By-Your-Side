@@ -49,7 +49,7 @@ export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "r
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "read_elements", "snapshot"] as const;
 
 /** 页面身份类工具：执行后当前文档/工作页可能改变，此前读数不能再当作前后对比基线。 */
-export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close_tab", "worker_tabs", "page_operation", "page_translation", "js"] as const;
+export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close_tab", "worker_tabs", "page_operation", "page_translation", "js", "cdp"] as const;
 
 /** 单条读数的完整文本上限；超过即标记截断，不能作为前后对比基线。 */
 export const RESULT_OBSERVATION_TEXT_MAX = 50_000;
@@ -191,8 +191,10 @@ export function selectResultBinding(items: readonly TaskResultItem[], tool: stri
 }
 
 const RESULT_ACTION_LABELS: Record<string, string> = {
-  click: "点击", hover: "悬停", fill: "填写", page_operation: "修改字段", page_translation: "翻译网页", type_text: "输入文字",
-  press_key: "按键", navigate: "打开页面", open_tab: "打开标签页", switch_tab: "切换标签页",
+  click: "点击", double_click: "双击", drag: "拖动", upload_file: "上传文件", cdp: "CDP 调用", hover: "悬停", fill: "填写", page_operation: "修改字段", page_translation: "翻译网页", type_text: "输入文字",
+  press_key: "按键", wheel: "滚轮", mouse_down: "按下鼠标", mouse_up: "松开鼠标", key_down: "按下键", key_up: "松开键",
+  release_held_inputs: "松开按住输入", paste: "粘贴", html5_drag: "HTML5 拖放", select_option: "选择选项",
+  navigate: "打开页面", open_tab: "打开标签页", switch_tab: "切换标签页",
   close_tab: "关闭标签页", scroll: "滚动页面", mark: "标注页面", clear_marks: "清除标注",
   js: "执行页面脚本", worker_tabs: "调整页面归属", share_tab: "设置协作页面",
 };
@@ -221,6 +223,8 @@ export function deriveResultDescription(name: string, params: Record<string, unk
       text = action;
       break;
     case "click":
+    case "double_click":
+    case "drag":
     case "hover":
     case "mark":
       text = label ? `${action}「${label}」` : shortText(target, 120) ? `${action} ${shortText(target, 120)}` : action;

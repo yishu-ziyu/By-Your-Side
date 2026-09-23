@@ -40,3 +40,45 @@ it('uncertainty or cancellation returns no executable suggestion and never write
   await expect(judgeRealtimeBrowserAction(rpc,input,cancelled.signal,decide)).rejects.toThrow();
   expect(rpc.call).toHaveBeenCalledTimes(1);expect(decide).toHaveBeenCalledTimes(1);
 });
+
+it('returns a guarded hover suggestion without executing; caller must reobserve before click',async()=>{
+  const page={id:'observation-hover',observedAt:1,tabId:7,documentId:'d1',url:'https://example.test',source:'accessibility',text:'menu',truncated:false,
+    controls:[{ref:'@3',role:'button',name:'Account',disabled:false}]};
+  const rpc={getPageTarget:()=>7,call:vi.fn(async(name:string)=>{
+    if(name==='snapshot')return {observation:page};
+    throw new Error(`unexpected ${name}`);
+  })} as unknown as ToolRpc;
+  const decide=vi.fn(async(input:BrowserDecisionInput)=>{
+    const hover=input.candidates.find(c=>c.operation==='hover'&&c.target==='@3');
+    expect(hover).toBeTruthy();
+    return {observationId:input.page.id,candidateId:hover!.id,confidence:.97,model:'fixture'};
+  });
+  const result=await judgeRealtimeBrowserAction(rpc,{request:'展开账户菜单',userTask:'悬停账户再点设置',history:[]},new AbortController().signal,decide);
+  expect(rpc.call).toHaveBeenCalledTimes(1);
+  expect(result.status).toBe('suggestion');
+  if (!('suggestion' in result)) throw new Error('Expected suggestion');
+  validateRealtimeBrowserTool(result.suggestion.tool,result.suggestion.arguments);
+  expect(result.suggestion.tool).toBe('hover');
+  expect(result.suggestion.arguments).toMatchObject({
+    tabId:7,target:'@3',decisionGuard:{observationId:'observation-hover',operation:'hover',target:'@3'},
+  });
+});
+
+it('disabled click tool yields no click suggestion on the realtime judge path',async()=>{
+  const page={id:'p-disable',observedAt:1,tabId:7,documentId:'d1',url:'https://example.test',source:'accessibility',text:'x',truncated:false,
+    controls:[{ref:'@8',role:'button',name:'中文',disabled:false}]};
+  const rpc={getPageTarget:()=>7,call:vi.fn(async()=>({observation:page}))} as unknown as ToolRpc;
+  const decide=vi.fn(async(input:BrowserDecisionInput)=>{
+    expect(input.candidates.some(c=>c.operation==='click')).toBe(false);
+    expect(input.candidates.some(c=>c.operation==='hover')).toBe(false);
+    return {observationId:input.page.id,candidateId:'done',confidence:.99,model:'fixture'};
+  });
+  const result=await judgeRealtimeBrowserAction(
+    rpc,
+    {request:'点中文',userTask:'点中文',history:[],canExecute:name=>name!=='click'&&name!=='hover'},
+    new AbortController().signal,
+    decide,
+  );
+  expect(result.status).toBe('needs_verification');
+  expect(result).not.toHaveProperty('suggestion');
+});

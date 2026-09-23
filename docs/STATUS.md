@@ -1,5 +1,9 @@
 # 当前状态
 
+2026-09-23 **Browser REV 中断续接收尾**：保留上轮源码和证据，末次检查已确认 exit 0。补验发现并修复截图小数区域像素损失、最后读回期间同 URL 刷新仍接受旧图两处边界。新增及受影响截图 **26/26**、聚焦回归 **15/15**、类型/架构/diff 检查通过；原始失败轮保留，源码与构建指纹绑定。26 项是过滤验收，未重复上轮输入/取消/S5，不宣称全量 v2 通过。S6 真实模型诊断仍待明确预算，下载后端、其他 CAP 缺口与上轮两条审计/恢复红灯仍打开；本执行者未 commit/push/重载。[唯一详细记录与证据](evals/20260922-browser-capability-integration-v2.md)。
+
+2026-09-23 **Browser REV-01～04 已实际执行，v2 总任务仍未关闭**：未知 CDP/滚轮回执不重放；按键清理保留原页与未知结果；截图不重置连接，fullPage/clip/viewport 的 CSS/DPR/文档身份与坐标换算修复。最新隔离核心验证 **18/18**，源码前后相同、日常 dist 未变、cleanup PASS；S5 删除脚本代点后，修复“只有三个控件仍强制分区”和 generic 完整性误报，两生产入口固定判断器正例通过、负例如实失败。真实模型请求 **0**，原请求/两组概率诊断已接，S5/S6 真实模型对照仍待明确预算，0.85 与聚合规则未改。全量 **3207：3205 PASS / 2 既有 FAIL**，类型与 243 文件边界通过；两条脚本审计/恢复红灯仍阻止仓库总门禁。C3 真实 popup/chooser 穿过截图/confirm 通过，但下载后端遭 Chrome 拒绝，不能算完整 EGO 对齐；OOPIF 等旧缺口未冒充完成。本执行者没有 commit/push/重载；并发 **845c3f2** 提交整份共享 index，已带入部分本轮 wheel 接线，不能将该提交单独视为完整发布。[修改、反例、真实证据及权限边界](evals/20260922-browser-capability-integration-v2.md)。
+
 2026-09-23（晚）**修复「点模型芯片没反应」三连**：用户实测点芯片后无法选模型。根因：目录为空时芯片静默禁用（点击零反馈）；SW 回放 hello_ok 丢 `models`（`lastModelInfo` 入库被 `conversationId==="default"` 闸门卡住，日常永假）；双层 conversationId 过滤把别会话捎来的整本目录（models=163）一起丢弃。修复：picker 空目录时保持可点并给空态原因；`lastHelloOk` 增存 `models` 且 syncPanel 回放带上；`model_info` 跨会话只放行目录、不放行模型；默认视图强制包含当前会话模型。已构建重载，真实侧栏菜单 5 项可点、当前项有标记。[验收](evals/20260923-model-picker-empty-catalog.md)。注：agent 侧空枚举本身未修（UI 已给原因、后续 model_info/重开自愈）；全量 vitest 11 项失败为并发在途改动预存（stash 隔离证明非本次引入）。
 
 2026-09-23 **模型选择器改为「默认精选 + 可展开全量」，并已构建重载**：原 `REACHABLE_MODEL_IDS` 是唯一闸门，实测 SDK 枚举到 163 个模型而选择器只放行 6 个，其余 157 个既不可见也不可切。现在 agent 侧 `availableModels()` 返回**全量并打 `featured` 标**（`annotateReachableModels`），过滤移到 UI：选择器默认只看精选，新增「显示全部」开关展开全部已配置凭据的模型（按 provider 分组 + 搜索）。`ModelOption` 加可选 `featured?: boolean`；`PROVIDER_LABELS` 补齐 commandcode/opencode-go/step-plan/zai-coding-cn/xiaomi-token-plan-cn/deepseek/antigravity/cli-proxy 的中文分组名。`REACHABLE_MODEL_IDS` 保留为 `FEATURED_MODEL_IDS` 的兼容别名，语义从「可达白名单」改为「默认精选集」——**可达集由已配置凭据的 provider 决定，不再由本文件充当闸门**。回落保护：旧 agent 不下发 featured 时「只看常用」会滤空，picker 此时退回全量，不把可达模型藏成不可见。
@@ -10,7 +14,7 @@
 
 **构建与重载**：`npm run build` + `npm run reload:ext` 已执行，日常 `extension/dist/background.js` = `c16a1626…`（与 19/19 验收轮隔离构建同哈希），`sidepanel.js` = `dd3a2320…`；Native 宿主 PID 13407 于 06:13:46 重启，晚于 agent 侧改动（06:09），tsx 直跑源码故新代码已生效。typecheck 0 错；7 个测试文件 111/111 通过。
 
-2026-09-23 **任务书 v2 收尾轮（QA-01 推进 + 修掉两起伪造 + 观测层补齐）**：整轮仍未关闭，但边界已从"靠占位图/谎报成功糊过去"改成"要么真跑通、要么如实记未跑"。
+历史｜2026-09-23 **任务书 v2 上一收尾轮（QA-01 推进 + 修掉两起伪造 + 观测层补齐）**：以下为 REV 执行前记录；其中“滚轮重挂重试”和 S5/19 全绿结论已由顶部新证据修正，不再作为当前完成判定。
 
 **修掉的两起伪造动作结果**（这是本轮重点，都不是判据问题而是产品说谎）：
 - `screenshot` 的局部 clip 路径曾画一块纯色 `#444` 灰图、把 `source` 标成 `visible-tab` 返回给调用方，而 C5 旧断言只核对"clip 参数被回传了"，占位图照样通过。已删除该分支，改走真实 CDP `Page.captureScreenshot`；`cropVisibleToClip` 随之成为死代码一并删除。原本"无头下 CDP 截图会拖死 SW"的借口已被实测否证：C2 真实 wheel 留下 ACK 之后，clip 截图 59ms 返回、`Runtime.evaluate` 读视口 0ms 返回。
