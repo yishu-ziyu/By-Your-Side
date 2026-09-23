@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, chmod, mkdir, readdir, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { dataDir } from "./config.js";
 
 const SECRET_KEY = /^(?:password|passwd|pwd|secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|authorization|cookie|set-cookie)$/i;
 
@@ -115,7 +115,7 @@ export class RunTrace {
   private closed = false;
   private dropped = 0;
 
-  constructor(private readonly directory = process.env.SIDEAGENT_TRACE_DIR || join(homedir(), ".sideagent", "traces"), private readonly maxBytes = 8 * 1024 * 1024) {
+  constructor(private readonly directory = process.env.SIDEAGENT_TRACE_DIR || join(dataDir(), "traces"), private readonly maxBytes = 8 * 1024 * 1024) {
     this.path = join(directory, `${Date.now()}-${this.sessionId}.jsonl`);
   }
 
@@ -239,8 +239,9 @@ export class RunTrace {
  return; }
 
     try {
-      let line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn,
-        type, data: sanitizeTrace(data), ...(this.dropped ? { droppedEvents: this.dropped } : {}) }) + "\n";
+      const droppedPiece = this.dropped ? { droppedEvents: this.dropped } : {};
+      const trace = { time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn, type, data: sanitizeTrace(data), ...droppedPiece };
+      let line = JSON.stringify(trace) + "\n";
 
       this.dropped = 0;
 

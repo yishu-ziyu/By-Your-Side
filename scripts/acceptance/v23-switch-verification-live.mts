@@ -47,7 +47,8 @@ const record: {
 };
 
 const check = (id: string, ok: boolean, detail?: unknown): boolean => {
-  record.assertions.push({ id, ok, ...(detail !== undefined ? { detail } : {}) });
+  const detailExtra = detail !== undefined ? { detail } : {};
+  record.assertions.push({ id, ok, ...detailExtra });
 
   return ok;
 };
@@ -319,7 +320,7 @@ try {
   const outputAt = receiptEvent?.at as number | undefined;
   check("batch settled right after tool receipt (no added wait window)",
     typeof outputAt === "number" && batchDone - outputAt < 2000, { outputAt, batchDone, deltaMs: typeof outputAt === "number" ? batchDone - outputAt : null });
-  record.gate = { ...(gateLog ?? {}), turnStart, batchDone };
+  record.gate = { ...gateLog, turnStart, batchDone };
 
   record.status = record.assertions.every(a => a.ok) ? "PASS" : "FAIL";
 } catch (error) {

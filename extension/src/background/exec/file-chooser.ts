@@ -31,10 +31,13 @@ export async function fileChooserSetFiles(
   const files = await setFilesOnBackendNodeId(tab.id, arm.backendNodeId, paths);
   const dialog = readDialogInfo(tab.id).dialog;
 
-  return {
+  const data: ToolContract["file_chooser_set_files"]["data"] = {
     set: true,
     multiple: Boolean(arm.multiple),
     files,
-    ...(dialog ? { dialog } : {}),
   };
+
+  if (dialog) data.dialog = dialog;
+
+  return data;
 }

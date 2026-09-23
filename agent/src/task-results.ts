@@ -9,7 +9,6 @@ import {
   RESULT_OBSERVATION_KEEP,
   RESULT_VERIFY_READ_TOOLS,
   deriveResultDescription,
-  extractResultTarget,
   isResultMetaTool,
   isTaskResultItem,
   normalizeResultEvidence,
@@ -21,6 +20,7 @@ import {
   resultToolHasWriteEffect,
   selectResultBinding,
   type ResultPageObservation,
+  type TaskResultEvidence,
   type TaskResultItem,
   type TaskResultRegistration,
   type TaskResultState,
@@ -44,7 +44,7 @@ export interface ConfirmedRecoveryRecord {
 }
 
 /** 协调、探针与位置类动作不产生用户可见结果，不自动建项；需要时模型仍可显式登记。 */
-export const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover"]);
+export const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover", "ask_user_to_point"]);
 
 export class TaskResultBook {
   private items: TaskResultItem[] = [];
@@ -85,7 +85,7 @@ export class TaskResultBook {
     const normalized = intents.map(normalizeTaskResultRegistration);
 
     if (normalized.some(item => !item)) throw new Error("结果登记格式无效");
-    const additions = new Set(normalized.filter(item => !this.items.some(existing => existing.id === item!.id)).map(item => item!.id));
+    const additions = new Set(normalized.flatMap(item => !this.items.some(existing => existing.id === item!.id) ? [item!.id] : []));
 
     if (this.items.length + additions.size > 64) throw new Error("结果登记最多64项，不能丢弃未完成项");
 
@@ -145,7 +145,11 @@ export class TaskResultBook {
 
       if (status === "pending") evidence = null;
 
-      return { id: item.id, description: item.description, tool: item.tool, target: item.target, status, evidence, ...(item.supersededBy ? { supersededBy: item.supersededBy } : {}) };
+      const mapped: TaskResultItem = { id: item.id, description: item.description, tool: item.tool, target: item.target, status, evidence };
+
+      if (item.supersededBy) mapped.supersededBy = item.supersededBy;
+
+      return mapped;
     });
   }
 
@@ -180,13 +184,19 @@ export class TaskResultBook {
 
     if (this.items.length >= MAX_TASK_RESULTS) throw new Error('结果账本已满，无法记录新的核对结果；本次操作未执行。');
 
+    const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.tool, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
+
+    if (input.effectful) evidence.effectful = true;
+
+    if (input.valueHash) evidence.valueHash = input.valueHash;
+
     const item: TaskResultItem = {
       id: `state-${++this.autoSeq}-${Math.random().toString(36).slice(2, 6)}`,
       description: input.description,
       tool: input.tool,
       target: input.target,
       status: input.satisfied ? 'satisfied' : 'unknown',
-      evidence: { toolCallId: input.toolCallId, tool: input.tool, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock(), ...(input.effectful ? { effectful: true as const } : {}),...(input.valueHash?{valueHash:input.valueHash}:{}) },
+      evidence,
     };
 
     this.items.push(item);
@@ -216,7 +226,12 @@ export class TaskResultBook {
     }
 
     item.status = "pending";
-    item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock(),...(input.effectful&&!isWriteTool(input.name)?{effectful:true as const}:{}),...(input.valueHash?{valueHash:input.valueHash}:{}) };
+    const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
+
+    if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;
+
+    if (input.valueHash) evidence.valueHash = input.valueHash;
+    item.evidence = evidence;
   }
 
   /**
@@ -265,8 +280,12 @@ export class TaskResultBook {
     // Auxiliary JS/scroll normally stays out of the visible obligations, but an
     // uncertain effect must never disappear just because no item was registered.
     if(!item&&write&&(input.failed||input.executionFact==='unknown')&&input.executionFact!=='not_executed'&&this.items.length<MAX_TASK_RESULTS){
-      item={id:this.nextAutoId(),description:deriveResultDescription(input.name,undefined,input.target),tool:input.name,target:input.target,status:'unknown',
-        evidence:{toolCallId:input.toolCallId,tool:input.name,target:input.target,member:input.member,runId:input.runId,...(!isWriteTool(input.name)?{effectful:true as const}:{}),...(input.valueHash?{valueHash:input.valueHash}:{})}};
+      const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId };
+
+      if (!isWriteTool(input.name)) evidence.effectful = true;
+
+      if (input.valueHash) evidence.valueHash = input.valueHash;
+      item={id:this.nextAutoId(),description:deriveResultDescription(input.name,undefined,input.target),tool:input.name,target:input.target,status:'unknown',evidence};
       this.items.push(item);
     }
 
@@ -301,7 +320,12 @@ export class TaskResultBook {
       }
     }
 
-    item.evidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock(),...(write&&!isWriteTool(input.name)?{effectful:true as const}:{}),...(input.valueHash?{valueHash:input.valueHash}:{}) };
+    const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
+
+    if (write && !isWriteTool(input.name)) evidence.effectful = true;
+
+    if (input.valueHash) evidence.valueHash = input.valueHash;
+    item.evidence = evidence;
   }
 
   resolveLateResult(input: { toolCallId: string; runId: string; ok: boolean; data?: unknown; executionFact?:import('../../shared/protocol.js').ToolExecutionFact }): boolean {
@@ -421,8 +445,6 @@ export function createTaskResultsTool(opts: {
   });
 }
 
-export const extractTarget = extractResultTarget;
-
 /**
  * 窄核查入口：宿主自己重新读取页面，只有读数中真的出现证据文本时才解除未知。
  * 模型只能提供结果 id、读取目标和证据文本，不能直接写状态。
@@ -521,7 +543,10 @@ export function createConfirmBlockedWriteTool(opts: {
     opts.emit({kind: 'tool_start', toolCallId: observationId, name: 'read_element', params});
 
     try {
-      const data = await opts.read({target, ...(tabId===undefined?{}:{tabId})});
+      const readParams: Parameters<typeof opts.read>[0] = { target };
+
+      if (tabId !== undefined) readParams.tabId = tabId;
+      const data = await opts.read(readParams);
       const text = String(data.displayValue ?? data.value ?? '');
       opts.emit({kind: 'tool_end', toolCallId: observationId, name: 'read_element', isError: false, resultText: text.slice(0, 500), executionFact: 'executed'});
 

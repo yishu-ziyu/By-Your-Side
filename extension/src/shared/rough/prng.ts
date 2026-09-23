@@ -14,7 +14,3 @@ export function mulberry32(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-export function randomSeed(): number {
-  return Math.floor(Math.random() * 0x100000000);
-}

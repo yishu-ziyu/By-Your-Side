@@ -19,6 +19,9 @@ type ElementsPage = Pick<ReadElementsResult, "total" | "truncated" | "elements">
 
 type ElementsReply = { ok: true; data: ElementsPage } | { ok: false; error: string };
 
+/** 一次批量读取的结果：页面返回的数据 + 本次读取到的文档身份。 */
+type ElementsRead = { data: ElementsPage; documentId?: string };
+
 /** Serialized unchanged into executeScript; no closure over outer imports or page-supplied code. */
 function readElementsInPage(selector: string, limit: number): ElementsReply {
   try {
@@ -53,11 +56,14 @@ function readElementsInPage(selector: string, limit: number): ElementsReply {
         if (name?.trim()) scopeLabels.push(`${role}: ${name.trim().slice(0, 180)}`);
       }
 
-      return {
+      const summary: ElementSummary = {
         index, tagName, text, visible, rect,
         style: { backgroundColor: style.backgroundColor, color: style.color, outline: style.outline, border: style.border, textDecoration: style.textDecoration, fontWeight: style.fontWeight },
-        ...(scopeLabels.length ? { scopeLabels } : {}),
       };
+
+      if (scopeLabels.length) summary.scopeLabels = scopeLabels;
+
+      return summary;
     });
 
     return { ok: true, data: { total, truncated, elements } };
@@ -120,7 +126,11 @@ async function readInDocument(tabId: number, member: string, css: string, limit:
 
   if (first.documentId) recordObservedDocument(tabId, member, first.documentId);
 
-  return { data, ...(first.documentId ? { documentId: first.documentId } : {}) };
+  const read: ElementsRead = { data };
+
+  if (first.documentId) read.documentId = first.documentId;
+
+  return read;
 }
 
 /** 宿主自己按选择器读取全部命中元素（有界），供任务核验取证；不改页面，只读。 */
@@ -138,5 +148,9 @@ export async function readElements(
   if (tab.id == null) throw new Error(`标签页 ${tabId} 已关闭`);
   const { data, documentId } = await readInDocument(tabId, executionKey, css, limit);
 
-  return { tabId, selector: normalized, ...data, ...(documentId ? { documentId } : {}) };
+  const result: ReadElementsResult = { tabId, selector: normalized, ...data };
+
+  if (documentId) result.documentId = documentId;
+
+  return result;
 }

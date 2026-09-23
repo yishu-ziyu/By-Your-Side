@@ -66,8 +66,8 @@ it.each(['fill','select','switch_tab'] as const)('links %s receipts to actual RP
  const f=fixture();
  const tab={id:9,title:'Reference',url:'https://reference.test/',active:false,windowId:1,working:false};
 
- const observed={...page,tabs:[tab],controls:[{ref:'@2',role:operation==='select'?'combobox':'textbox',name:'Field',value:'',disabled:false,
-  ...(operation==='select'?{options:[{ref:'@3',label:'original',disabled:false}]}:{})}]};
+ const controls=[operation==='select'?{ref:'@2',role:'combobox',name:'Field',value:'',disabled:false,options:[{ref:'@3',label:'original',disabled:false}]}:{ref:'@2',role:'textbox',name:'Field',value:'',disabled:false}];
+ const observed={...page,tabs:[tab],controls};
 
  f.rpc.call.mockImplementation(async(name)=>{
   if(name==='snapshot')return {observation:observed} as any;

@@ -259,12 +259,12 @@ describe("光标状态层", () => {
     const { showCursorStatus, clearCursorStatus } = await import("../src/background/cursor-status.js");
     await showCursorStatus({ key: "worker-a", state: "reading", tabId: 21 });
     await showCursorStatus({ key: "worker-b", state: "waiting", tabId: 22 });
-    expect((pillCalls(env.executeScript).at(-1)?.[0].args?.[1] as CrossPageView).members).toEqual([
+    expect((pillCalls(env.executeScript).at(-1)?.[0].args?.[1] as CrossPageView | undefined)?.members).toEqual([
       { sessionId: "worker-a", title: "文章", tabId: 21, state: "reading" },
       { sessionId: "worker-b", title: "视频", tabId: 22, state: "waiting" },
     ]);
     await clearCursorStatus("worker-b");
-    expect((pillCalls(env.executeScript).at(-1)?.[0].args?.[1] as CrossPageView).members).toHaveLength(1);
+    expect((pillCalls(env.executeScript).at(-1)?.[0].args?.[1] as CrossPageView | undefined)?.members).toHaveLength(1);
   });
 
   it("失败后的结束事件不能覆盖失败；新工作状态可开始下一轮", async () => {

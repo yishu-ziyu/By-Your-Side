@@ -365,22 +365,24 @@ export async function sessionManagementDriver(opts) {
     out.error = error && error.message ? error.message : String(error);
   } finally {
     if (originalModel && !out.modelRestore.ok) {
-      try {
-        globalThis.__saServerEvents = [];
+      await (async () => {
+        try {
+          globalThis.__saServerEvents = [];
 
-        if (!send({ type: "set_model", conversationId: DEFAULT_CONVERSATION, model: originalModel })) throw new Error("恢复消息未发出");
+          if (!send({ type: "set_model", conversationId: DEFAULT_CONVERSATION, model: originalModel })) throw new Error("恢复消息未发出");
 
-        const restored = await waitFor(
-          (event) => event.type === "model_info" && event.conversationId === DEFAULT_CONVERSATION && event.model === originalModel,
-          "finally default model restore",
-        );
+          const restored = await waitFor(
+            (event) => event.type === "model_info" && event.conversationId === DEFAULT_CONVERSATION && event.model === originalModel,
+            "finally default model restore",
+          );
 
-        out.modelRestore.after = restored.model;
-        out.modelRestore.ok = true;
-      } catch (restoreError) {
-        out.stage = "restore-original-model";
-        out.error = `${out.error ? `${out.error}; ` : ""}恢复 default 会话模型失败：${restoreError && restoreError.message ? restoreError.message : String(restoreError)}`;
-      }
+          out.modelRestore.after = restored.model;
+          out.modelRestore.ok = true;
+        } catch (restoreError) {
+          out.stage = "restore-original-model";
+          out.error = `${out.error ? `${out.error}; ` : ""}恢复 default 会话模型失败：${restoreError && restoreError.message ? restoreError.message : String(restoreError)}`;
+        }
+      })();
     }
 
     try { send?.({ type: "abort", conversationId: DEFAULT_CONVERSATION }); } catch {}

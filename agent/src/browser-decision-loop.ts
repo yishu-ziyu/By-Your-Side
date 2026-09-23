@@ -65,22 +65,24 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
     reason: string,
     reasonCode?: BrowserDecisionReasonCode,
     cont?: BrowserContinueHint,
-  ): BrowserLoopOutcome => ({
+  ): BrowserLoopOutcome => {
+    const outcome: BrowserLoopOutcome = {
     status,
     reason,
-    ...(reasonCode ? { reasonCode } : {}),
-    ...(cont
-      ? { continue: cont }
-      : reasonCode
-        ? { continue: piContinueHint(reasonCode, range(), hasUnknown()) }
-        : seenObservationIds.length
-          ? { continue: { action: 'session_prompt', checkedRange: range(), preserveFacts: hasUnknown() } }
-          : {}),
     receipts,
     lastObservation: page,
     modelCalls,
     decisions,
-  });
+    };
+
+    if (reasonCode) outcome.reasonCode = reasonCode;
+
+    if (cont) outcome.continue = cont;
+    else if (reasonCode) outcome.continue = piContinueHint(reasonCode, range(), hasUnknown());
+    else if (seenObservationIds.length) outcome.continue = { action: 'session_prompt', checkedRange: range(), preserveFacts: hasUnknown() };
+
+    return outcome;
+  };
 
   const finishCode = (status: BrowserLoopOutcome['status'], reasonCode: BrowserDecisionReasonCode, reason = humanReasonForCode(reasonCode)) =>
     finish(status, reason, reasonCode);
@@ -540,8 +542,16 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
         }
       }
 
-      const guard: BrowserActionGuard = { observationId: page.id, operation, ...(actionTarget ? { target: actionTarget } : {}) };
-      const params: Record<string, unknown> = { tabId: page.tabId, decisionGuard: guard, ...(actionTarget ? { target: actionTarget } : {}), ...(candidate.key ? { key: candidate.key } : {}), ...(candidate.dy ? { dy: candidate.dy } : {}) };
+      const guard: BrowserActionGuard = { observationId: page.id, operation };
+
+      if (actionTarget) guard.target = actionTarget;
+      const params: Record<string, unknown> = { tabId: page.tabId, decisionGuard: guard };
+
+      if (actionTarget) params.target = actionTarget;
+
+      if (candidate.key) params.key = candidate.key;
+
+      if (candidate.dy) params.dy = candidate.dy;
 
       if (operation === 'fill') {
         params.value = fillValue;

@@ -135,7 +135,7 @@ export function noteNetworkCaptureGap(tabId: number): void {
 
 /** 测试/SW 重启路径：清空内存态并记 restart。 */
 export function resetNetworkCaptureForTests(): void {
-  for (const tabId of [...lifecycles.keys()]) {
+  for (const tabId of lifecycles.keys()) {
     setLife(tabId, markCaptureRestart(lifeFor(tabId)));
   }
 

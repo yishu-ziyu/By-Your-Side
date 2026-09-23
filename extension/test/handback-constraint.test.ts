@@ -8,6 +8,8 @@ describe("交还约束只约束被恢复的原任务", () => {
   );
 
   it("保留原交还续写断言：继续原任务、不重做、当前页权威、不换页", () => {
+    // acceptance-model 按这个标记识别交还续写
+    expect(text).toContain("[HANDOFF BOUNDARY]");
     expect(text).toContain("Continue the original task");
     expect(text).toContain("Do not reopen");
     expect(text).toContain("Do not repeat completed steps");

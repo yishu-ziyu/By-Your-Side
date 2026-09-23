@@ -8,6 +8,8 @@ import {MODEL, STEP_VOICE} from '../src/realtime-voice-connection.js';
 import {RouteShadow} from '../src/route-shadow.js';
 import {classifyDirectExecutionFeedback} from '../../shared/execution-feedback.js';
 
+type Json = string | number | boolean | null | undefined | Json[] | { [key: string]: Json };
+
 class Socket extends EventEmitter {
   readyState = 1;
   sent: any[] = [];
@@ -47,11 +49,13 @@ function harness(options: {gate?: boolean; shadow?: boolean; fetch?: typeof fetc
     return {...result,feedback};
   });
 
-  const session = new RealtimeVoiceSession({voiceId:'v23',voiceSpokenResultGate:options.gate ?? true,shadow,
+  const sessionDeps: ConstructorParameters<typeof RealtimeVoiceSession>[0] = {voiceId:'v23',voiceSpokenResultGate:options.gate ?? true,shadow,
     getSnapshot:()=>({conversationId:'c',state:'idle'} as any),emit:e=>events.push(e),
-    ...(options.delegate?{dispatchTask:async()=>({ok:true,status:'accepted'})}:{}),
     diagnostic:(type,fields)=>logs.push({type,...JSON.parse(String(fields?.detail ?? '{}'))}),
-    browserTool:tool,connect:()=>socket as any});
+    browserTool:tool,connect:()=>socket as any};
+
+  if(options.delegate)sessionDeps.dispatchTask=async()=>({ok:true,status:'accepted'});
+  const session = new RealtimeVoiceSession(sessionDeps);
 
   cleanups.push(()=>session.close());session.start('offline-key');
   socket.server({type:'session.created',session:{model:MODEL}});
@@ -66,7 +70,7 @@ function harness(options: {gate?: boolean; shadow?: boolean; fetch?: typeof fetc
   };
 
   const call = (id='c1',args:unknown={action:'switch',tabId:8},rid='r1',name='tabs') => socket.server({type:'response.function_call_arguments.done',response_id:rid,call_id:id,name,arguments:JSON.stringify(args)});
-  const done = (id='r1',extra:object={}) => socket.server({type:'response.done',response:{id,status:'completed',...extra}});
+  const done = (id='r1',extra:Record<string, Json>={}) => socket.server({type:'response.done',response:{id,status:'completed',...extra}});
   const audio = (id='a1') => socket.server({type:'response.audio.delta',response_id:id,delta:'AAAA'});
   const final = (text:string,id='a1') => socket.server({type:'response.audio_transcript.done',response_id:id,transcript:text});
   const created = (id='a1') => socket.server({type:'response.created',response:{id}});

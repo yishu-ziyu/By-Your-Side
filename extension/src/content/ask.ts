@@ -45,8 +45,8 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   const paragraph = parent?.closest('p,li,pre,blockquote,h1,h2,h3,td');
 
   const surrounding = paragraph ? [paragraph.previousElementSibling, paragraph, paragraph.nextElementSibling]
-    .filter((e): e is HTMLElement => e instanceof HTMLElement && !isEditableTarget(e) && !e.querySelector('input,textarea,[contenteditable]') && e.checkVisibility())
-    .map(e => e.innerText).join('\n').slice(0, READING_CONTEXT_LIMIT) : '';
+    .flatMap((e): string[] => e instanceof HTMLElement && !isEditableTarget(e) && !e.querySelector('input,textarea,[contenteditable]') && e.checkVisibility() ? [e.innerText] : [])
+    .join('\n').slice(0, READING_CONTEXT_LIMIT) : '';
 
   return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }

@@ -199,9 +199,12 @@ export async function uploadFile(
     }
   });
 
-  return {
+  const result: ToolContract["upload_file"]["data"] = {
     uploaded: true,
     files: observed.value,
-    ...(observed.documentId ? { documentId: observed.documentId } : {}),
   };
+
+  if (observed.documentId) result.documentId = observed.documentId;
+
+  return result;
 }

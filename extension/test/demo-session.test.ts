@@ -86,7 +86,7 @@ it("结束示范返回这一步记录，并停掉页面录制；重复点不会�
 it("示范页没有任务绑定时也要收步骤：不能靠 tab→session 绑定找会话", async () => {
   harness();
   await startDemo("unbound", 42);
-  // 页面侧上行只有 sender.tab；这条路径不走 findSessionForTab
+  // 页面侧上行只有 sender.tab；这条路径不走 findSessionsForTab
   expect(conversationForRecordingTab(42)).toBe("unbound");
   receiveSteps("unbound", [step(0, "a")], false);
   expect(bufferedSteps("unbound")).toHaveLength(1);

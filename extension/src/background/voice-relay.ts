@@ -102,7 +102,9 @@ export class VoiceRelay {
             return;
           }
 
-          const source = { ...input, ...(!input.context || input.context.tabId === observation?.tabId ? { observation } : {}) };
+          const source: VoiceInputContext = { ...input };
+
+          if (!input.context || input.context.tabId === observation?.tabId) source.observation = observation;
 
           if (!this.send({ ...message, command: { kind: 'input_context', turn: command.turn, input: source } })) {
             this.disconnected();

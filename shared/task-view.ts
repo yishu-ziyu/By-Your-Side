@@ -93,7 +93,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const results = rawResults.map((item) => ({ id: item.id, description: item.description, status: item.status }));
   const outstanding=results.filter((item,i)=>OPEN_STATUSES.has(item.status)&&!('tool' in rawResults[i]!&&isSupersededUnknown(rawResults[i] as import('./task-results.js').TaskResultItem,executionResults)));
 
-  return {
+  const view: TaskView = {
     conversationId: snapshot.conversationId,
     runId: snapshot.runId ?? null,
     controlVersion: snapshot.controlVersion ?? 0,
@@ -102,7 +102,6 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     goal: snapshot.goal ?? requirements[0] ?? null,
     revisions: requirements.slice(1),
     page: snapshot.recoveryInput?.page ? { tabId: snapshot.recoveryInput.page.tabId, urlHash: snapshot.recoveryInput.page.urlHash } : null,
-    ...(snapshot.recoveryInput?.materials ? { materials: snapshot.recoveryInput.materials.map(item => ({ ...item })) } : {}),
     active: (snapshot.active ?? []).map((a) => ({ member: a.member, action: a.action, since: a.since })),
     lastAction: snapshot.lastAction ? { ...snapshot.lastAction } : null,
     waiting: waitingFor(snapshot, snapshot.nextStep),
@@ -112,6 +111,12 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     latestDelivery: snapshot.conversationContext?.latestDelivery ? { kind: snapshot.conversationContext.latestDelivery.kind } : null,
     resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && (snapshot.nextStep?.delivery === "partial"||outstanding.length>0))) && !!snapshot.recoveryInput,
   };
+
+  const materials = snapshot.recoveryInput?.materials;
+
+  if (materials) view.materials = materials.map(item => ({ ...item }));
+
+  return view;
 }
 
 /** 结构校验：供协议解析；坏数据明确失败，不回退到更早状态。 */

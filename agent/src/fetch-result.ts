@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
+import { dataDir } from "./config.js";
 
 /** 小于这个长度直接内联给模型；超过则落盘只给预览。 */
 export const FETCH_INLINE_LIMIT = 4_000;
@@ -25,7 +26,7 @@ export interface FetchReply {
 
 export function fetchDownloadsDir(): string {
   // 隔离/测试可指向临时目录；生产默认仍是 ~/.sideagent/downloads。
-  return process.env.SIDEAGENT_DOWNLOADS_DIR?.trim() || join(homedir(), ".sideagent", "downloads");
+  return process.env.SIDEAGENT_DOWNLOADS_DIR?.trim() || join(dataDir(), "downloads");
 }
 
 function extensionFor(contentType: string): string {

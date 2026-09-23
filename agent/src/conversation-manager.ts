@@ -115,7 +115,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
   private connected=true;
   reconnect():void { this.connected=true; }
   private pumpTasks(){if(!this.queueClosed&&this.connected)void this.taskQueue.pump().catch(()=>this.emit({type:'agent_event',conversationId:DEFAULT_CONVERSATION_ID,event:{kind:'error',message:'待办调度未能保存状态，请核对任务记录；不会自动重做。'}}));}
-  private runningTasks(){return new Set([...this.pendingStarts,...[...this.entries.values()].filter(e=>e.runtime.session.isStreaming()||this.getTaskProgress(e.summary.id)?.state==='running').map(e=>e.summary.id)]).size;}
+  private runningTasks(){return new Set([...this.pendingStarts,...[...this.entries.values()].flatMap(e => e.runtime.session.isStreaming()||this.getTaskProgress(e.summary.id)?.state==='running' ? [e.summary.id] : [])]).size;}
   readonly controls:TaskControlBroker;
   constructor(
     private readonly factory: (id: string, emit: (message: ServerMessage) => void, summary?: ConversationSummary) => Promise<Runtime>,
@@ -633,7 +633,7 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
    * 没有提案入口的会话（测试替身、工人）仍走原来的分类调用，行为不变。
    */
   private async proposeVoiceTurn(id:string,session:Runtime['session'],text:string,before:TaskProgressSnapshot,catalog:VoiceTarget[],route?:VoiceRouteContext):Promise<{plan:VoiceIntentPlan;replyText:string|null;protocol:'free_reply'|'plan'}>{
-    const titles=catalog.filter(c=>text.includes(c.title)).map(c=>c.title);
+    const titles=catalog.flatMap(c=>text.includes(c.title) ? [c.title] : []);
 
     if(typeof session.prepareVoiceTurn!=='function'||session.canPrepareVoiceTurn?.()===false){
       return {plan:await session.classifyVoiceInput(text,before.state,titles,{goal:before.goal,requestId:route?.requestId},before.conversationContext),replyText:null,protocol:'plan' as const};

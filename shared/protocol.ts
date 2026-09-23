@@ -296,7 +296,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
-  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 本伴随进程的剪贴板服务端口（127.0.0.1）；没有服务时省略 */ clipboardPort?: number }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
@@ -384,6 +384,7 @@ export const TOOL_NAMES = [
   "js",
   "screenshot",
   "observe_page",
+  "ask_user_to_point",
   "mark",
   "clear_marks",
   "double_click",
@@ -515,7 +516,7 @@ export interface ToolContract {
   switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;observation?:import('./browser-decision.js').BrowserObservation } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
   click: {
     params: {
       tabId?: number;
@@ -807,6 +808,8 @@ export interface ToolContract {
       } | null;
     };
   };
+  /** 等待用户指出主文档里的元素；选择本身不激活网页控件。 */
+  ask_user_to_point: { params: { tabId?: number; message?: string }; data: import("./point-selection.js").PointSelectionReceipt };
   /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */
   mark: { params: { tabId?: number; target: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
   /** 清除全部 mark 标注 */

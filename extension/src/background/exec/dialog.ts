@@ -17,7 +17,11 @@ export async function acceptDialog(
   await ensureAttached(tab.id);
   const result = await handleJsDialog(tab.id, true, params.promptText);
 
-  return { accepted: result.ok, ...(result.dialog ? { dialog: result.dialog } : {}) };
+  const data: ToolContract["accept_dialog"]["data"] = { accepted: result.ok };
+
+  if (result.dialog) data.dialog = result.dialog;
+
+  return data;
 }
 
 export async function dismissDialog(
@@ -30,7 +34,11 @@ export async function dismissDialog(
   await ensureAttached(tab.id);
   const result = await handleJsDialog(tab.id, false);
 
-  return { dismissed: result.ok, ...(result.dialog ? { dialog: result.dialog } : {}) };
+  const data: ToolContract["dismiss_dialog"]["data"] = { dismissed: result.ok };
+
+  if (result.dialog) data.dialog = result.dialog;
+
+  return data;
 }
 
 export async function dialogInfo(

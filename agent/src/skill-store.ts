@@ -190,7 +190,13 @@ export class SkillStore {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const { at, ok, elapsedMs, steps, failedStep, skipped } = run;
     // Runtime values and raw error messages can contain private input. Persist facts only.
-    const record: SkillRun = { at, ok, elapsedMs, steps, ...(failedStep === undefined ? {} : { failedStep }), ...(skipped ? { skipped } : {}), ...(!ok ? { error: failedStep ? "页面目标已变化" : "运行未完成，请核对本次任务记录" } : {}) };
+    const record: SkillRun = { at, ok, elapsedMs, steps };
+
+    if (failedStep !== undefined) record.failedStep = failedStep;
+
+    if (skipped) record.skipped = skipped;
+
+    if (!ok) record.error = failedStep ? "页面目标已变化" : "运行未完成，请核对本次任务记录";
     await appendFile(this.runsPath(id), `${JSON.stringify(record)}\n`, { mode: 0o600 });
     const runs = await this.listRuns(id);
 
@@ -288,9 +294,11 @@ export class SkillStore {
       version: current.version + 1,
       updatedAt: now,
       runCount: current.runCount,
-      ...(current.lastRunAt === undefined ? {} : { lastRunAt: current.lastRunAt }),
-      ...(current.notes ? { notes: current.notes } : {}),
     };
+
+    if (current.lastRunAt !== undefined) restored.lastRunAt = current.lastRunAt;
+
+    if (current.notes) restored.notes = current.notes;
 
     await this.put(restored);
 

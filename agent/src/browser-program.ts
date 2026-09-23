@@ -327,11 +327,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       throw new Error("INVALID_ARGUMENT: armEvent.type must be popup|download|filechooser");
     }
 
-    const callParams: Record<string, unknown> = {
-      type,
-      ...(typeof params.tabId === "number" ? { tabId: params.tabId } : {}),
-      ...(typeof params.timeoutMs === "number" ? { timeoutMs: params.timeoutMs } : {}),
-    };
+    const callParams: Record<string, unknown> = { type };
+
+    if (typeof params.tabId === "number") callParams.tabId = params.tabId;
+
+    if (typeof params.timeoutMs === "number") callParams.timeoutMs = params.timeoutMs;
 
     if (type === "download") {
       callParams.downloadPath = typeof params.downloadPath === "string" && params.downloadPath.startsWith("/")
@@ -374,10 +374,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const sub = nextSubId(stepId);
 
     const readDoc = async () => {
-      const data = await options.call("js", {
-        ...(typeof params.tabId === "number" ? { tabId: params.tabId } : {}),
-        code: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})",
-      }, sub(), "readonly-poll") as { value?: { readyState?: string; href?: string; timeOrigin?: number } | string };
+      const jsParams = typeof params.tabId === "number" ? { code: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})", tabId: params.tabId } : { code: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})" };
+      const data = await options.call("js", jsParams, sub(), "readonly-poll") as { value?: { readyState?: string; href?: string; timeOrigin?: number } | string };
 
       const value = data.value;
 

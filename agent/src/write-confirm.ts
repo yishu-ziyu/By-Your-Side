@@ -60,10 +60,6 @@ export function pageFingerprint(page: {tabId: number; urlHash: string} | null | 
   return page ? `${page.tabId}:${page.urlHash}` : null;
 }
 
-export function writeParamsFingerprint(tool: string, target: string, value: string): string {
-  return createHash('sha256').update(canonicalValue({tool, target, value})).digest('hex');
-}
-
 export class WriteConfirmBroker {
   private readonly pending = new Map<string, Pending>();
   constructor(private readonly emit: (message: ServerMessage) => void, private readonly now: () => number = Date.now) {}
@@ -92,7 +88,7 @@ export class WriteConfirmBroker {
   }
 
   list(conversationId: string): WriteConsentRequest[] {
-    return [...this.pending.values()].filter(pending => pending.conversationId === conversationId).map(pending => this.view(pending));
+    return [...this.pending.values()].flatMap(pending => pending.conversationId === conversationId ? [this.view(pending)] : []);
   }
 
   /** 用户的方向选择；只对仍然在等的这一条生效，重复决策不改变结果。 */

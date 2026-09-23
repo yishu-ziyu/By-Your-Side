@@ -21,7 +21,6 @@ vi.mock('../src/run-trace.js',async(importOriginal)=>{
 });
 
 import {decideDisplay,displaySteerFastPathEnabled} from '../src/display-fast-path.js';
-import {STEER_CONTRACT_NOTE} from '../src/session.js';
 import {TaskActionRejected} from '../src/task-dispatcher.js';
 import {candidate,context,managerHarness,pageHarness} from './fixtures/display-steering-harness.js';
 
@@ -390,16 +389,5 @@ describe('显示修改不得改变未指定属性（Ticket 7）',()=>{
   // 行4：明确组合请求两项都生效。
   await h.tool('page_translation').execute('row4',{action:'display',fontFamily:'songti',mode:'bilingual',tabId:7,document:'one'});
   expect(h.pageState).toMatchObject({fontFamily:'songti',mode:'bilingual'});
- });
- it('模型面：运行中插话契约要求显示修改只动本次要求的字段',()=>{
-  expect(STEER_CONTRACT_NOTE).toContain('只提交本次要求改变的字段');
-  expect(STEER_CONTRACT_NOTE).toContain('保持当前状态');
- });
- it('模型面：最新输入里明确的修改要求优先于任务早期限制，未指明属性仍受约束',()=>{
-  // MiniMax 实测反例（out/acceptance/jev-display-steering-17897389* pair-1-off）：模型以原任务“不要修改网页”
-  // 为由整体跳过“只显示译文”的显示修改。契约必须说明最新修改要求对其指明属性的优先语义。
-  expect(STEER_CONTRACT_NOTE).toContain('优先于任务早期的限制');
-  expect(STEER_CONTRACT_NOTE).toContain('按其指明的属性执行');
-  expect(STEER_CONTRACT_NOTE).toContain('未指明的属性仍受早期限制约束');
  });
 });

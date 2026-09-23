@@ -24,7 +24,6 @@ describe("program-first host boundary", () => {
     await expect(runBrowserProgram({ code: 'await Promise.all([browser.click({target:"@1"}),browser.fill({target:"@2",value:"must-not-write"})]).catch(()=>{});', call })).rejects.toThrow();
     expect(call).toHaveBeenCalledTimes(1);
   });
-  it("requires user-outcome verification rather than treating a returned program as success", () => { expect(PROGRAM_FIRST_GUIDANCE).toContain("not success"); expect(PROGRAM_FIRST_GUIDANCE).toContain("read_element expect"); });
   it("labels only host-generated polling as read-only, never user-authored JavaScript", async () => {
     const origins: Array<string | undefined> = [];
     await runBrowserProgram({ code: 'await browser.waitFor({selector:"#ready"}); await browser.js({code:"arbitrary()"});',

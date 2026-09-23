@@ -195,14 +195,19 @@ async function runOne(iso: IsolatedExtension, origin: string, template: Template
       `globalThis.__saCall(${JSON.stringify(`${cid}-${message.id}`)}, ${JSON.stringify(message.name)}, ${JSON.stringify(message.params)}, ${JSON.stringify(sessionId)}, ${JSON.stringify((message as { programId?: string }).programId ?? null)}, ${JSON.stringify(cid)})`,
       60_000,
     ) as Promise<{ ok?: boolean; data?: unknown; error?: string; executionFact?: "not_executed" | "unknown" | "executed" }>)
-      .then((reply) => manager.handleMessage({
-        type: "tool_result",
-        conversationId: message.conversationId ?? cid,
-        id: message.id,
-        ok: reply?.ok === true,
-        ...(reply?.ok === true ? { data: reply.data } : { error: String(reply?.error ?? "tool failed") }),
-        ...(reply?.executionFact ? { executionFact: reply.executionFact } : {}),
-      } as ClientMessage))
+      .then((reply) => {
+        const dataExtra = reply?.ok === true ? { data: reply.data } : { error: String(reply?.error ?? "tool failed") };
+        const factExtra = reply?.executionFact ? { executionFact: reply.executionFact } : {};
+
+        return manager.handleMessage({
+          type: "tool_result",
+          conversationId: message.conversationId ?? cid,
+          id: message.id,
+          ok: reply?.ok === true,
+          ...dataExtra,
+          ...factExtra,
+        } as ClientMessage);
+      })
       .catch((error) => manager.handleMessage({
         type: "tool_result", conversationId: message.conversationId ?? cid, id: message.id, ok: false, error: String(error),
       } as ClientMessage));
@@ -289,8 +294,7 @@ async function runOne(iso: IsolatedExtension, origin: string, template: Template
   ) as { ok?: boolean; detail?: string };
 
   const deliveries = messages
-    .filter((m) => m.type === "agent_event" && m.event.kind === "user_delivery")
-    .map((m) => (m as { event: { delivery?: { kind?: string; text?: string } } }).event.delivery)
+    .flatMap((m) => (m.type === "agent_event" && m.event.kind === "user_delivery") ? [(m as { event: { delivery?: { kind?: string; text?: string } } }).event.delivery] : [])
     .filter((d) => d && d.kind !== "ack");
 
   const deliveryText = deliveries.map((d) => d?.text ?? "").join("\n");
@@ -311,7 +315,7 @@ async function runOne(iso: IsolatedExtension, origin: string, template: Template
     totalMs: Date.now() - startedAt,
     deliveryText: deliveryText.slice(0, 500),
     pageDetail: oracle?.detail ?? "",
-    tools: messages.filter((m) => m.type === "tool_call").map((m) => (m as { name: string }).name),
+    tools: messages.flatMap((m) => m.type === "tool_call" ? [(m as { name: string }).name] : []),
     firstAction: firstAction ? (firstAction as { name: string }).name : null,
   };
 

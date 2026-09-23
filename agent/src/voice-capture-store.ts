@@ -1,7 +1,7 @@
 import {appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync} from "node:fs";
-import {homedir} from "node:os";
 import {join} from "node:path";
 import {VOICE_DIAG_SAMPLE_RATE,type VoiceCommand,type VoiceDiagRecord} from "../../shared/voice.js";
+import {dataDir} from "./config.js";
 
 /** Audio retention: whichever bound is reached first. */
 export const VOICE_CAPTURE_MAX_BYTES = 2 * 1024 ** 3;
@@ -101,7 +101,7 @@ export class VoiceCaptureStore {
   private readonly audioSessions = new Set<string>();
 
   constructor(options: VoiceCaptureStoreOptions = {}) {
-    this.root = options.root ?? join(homedir(), '.sideagent', 'voice-capture');
+    this.root = options.root ?? join(dataDir(), 'voice-capture');
     this.log = options.log ?? (() => {});
     this.now = options.now ?? Date.now;
     this.maxBytes = options.maxBytes ?? VOICE_CAPTURE_MAX_BYTES;
@@ -177,7 +177,10 @@ export class VoiceCaptureStore {
 
           return;
         case 'gap':
-          this.append({at, voiceId, conversationId, turn: record.turn, type: 'gap', code: record.code, ...(record.detail ? {detail: record.detail} : {})});
+          const gap: VoiceCaptureLine = {at, voiceId, conversationId, turn: record.turn, type: 'gap', code: record.code};
+
+          if (record.detail) gap.detail = record.detail;
+          this.append(gap);
 
           return;
       }
@@ -204,7 +207,12 @@ export class VoiceCaptureStore {
 
       if (command.displayText !== undefined) this.append({at, voiceId, conversationId, turn: command.turn, type: 'text', source: 'display', text: command.displayText});
 
-      if (command.mark === true) this.append({at, voiceId, conversationId, turn: command.turn, type: 'mark', ...(command.note ? {note: command.note} : {})});
+      if (command.mark === true) {
+        const mark: VoiceCaptureLine = {at, voiceId, conversationId, turn: command.turn, type: 'mark'};
+
+        if (command.note) mark.note = command.note;
+        this.append(mark);
+      }
     } catch (error) {
       this.gap(voiceId, conversationId, null, this.text(error));
     }
@@ -297,23 +305,4 @@ export class VoiceCaptureStore {
 
     this.log(`[voice-capture] 目录超过 ${this.maxBytes} 字节，已删除最旧的 ${deleted} 个音频文件（上次清理释放 ${removed} 字节）。`);
   }
-}
-
-/** One-key clear used by `npm run capture:clear`; the directory itself is kept. */
-export function clearVoiceCapture(root: string, log: (message: string) => void = console.log): {paths: string[]; bytes: number} {
-  const paths: string[] = [];
-  let bytes = 0;
-
-  if (!existsSync(root)) return {paths, bytes};
-
-  for (const entry of readdirSync(root)) {
-    const path = join(root, entry);
-    const size = treeBytes(path);
-    paths.push(path);
-    bytes += size;
-    rmSync(path, {recursive: true, force: true});
-    log(`已删除 ${path}（${size} 字节）`);
-  }
-
-  return {paths, bytes};
 }

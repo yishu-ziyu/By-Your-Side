@@ -2,6 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Stored = Record<string, unknown>;
 
+/** chrome.tabs.update 的替身只接受「一组要改的字段」，与 tabs 里的条目同形。 */
+type TabChange = {
+  id?: number;
+  url?: string;
+  title?: string;
+  windowId?: number;
+  active?: boolean;
+  groupId?: number;
+}
+
 describe("conversation tab ownership", () => {
   let stored: Stored;
   let removedListener: ((tabId: number) => void) | undefined;
@@ -31,7 +41,7 @@ describe("conversation tab ownership", () => {
           return { ...tab };
         }),
         query: vi.fn(async () => [...tabs.values()].map((tab) => ({ ...tab }))),
-        update: vi.fn(async (id: number, change: object) => ({ ...tabs.get(id), ...change })),
+        update: vi.fn(async (id: number, change: TabChange) => ({ ...tabs.get(id), ...change })),
         group: vi.fn(async ({ tabIds, groupId }: { tabIds: number; groupId?: number }) => {
           const id = groupId ?? nextGroup++;
           tabs.set(tabIds, { ...tabs.get(tabIds), groupId: id });

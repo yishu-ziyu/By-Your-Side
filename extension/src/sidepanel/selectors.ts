@@ -1,5 +1,5 @@
 /**
- * Panel selectors: the four questions the user should see immediately.
+ * Panel selectors: conversation state labels and the result card copy.
  */
 import type { ConversationSummary } from '../../../shared/protocol.js';
 
@@ -41,69 +41,6 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
   }
 
   return '已结束';
-}
-
-export function sessionQuestion(title: string | null | undefined): string {
-  return (title || "新会话").trim() || "新会话";
-}
-
-export function pageQuestion(title: string | null | undefined, host: string | null | undefined): string {
-  const name = (title || "").trim();
-  const site = (host || "").trim();
-
-  if (name && site) {
-    return `${name} / ${site}`;
-  }
-
-  return name || site || "当前页未知";
-}
-
-export function actionQuestion(opts: {
-  running: boolean;
-  action?: string | null;
-  elapsedSec?: number | null;
-  result?: string | null;
-}): string {
-  if (opts.running) {
-    const name = (opts.action || "正在处理").trim();
-    const sec = opts.elapsedSec != null && Number.isFinite(opts.elapsedSec) ? ` · ${opts.elapsedSec.toFixed(1)}秒` : "";
-
-    return `${name}${sec}`;
-  }
-
-  if (opts.result) {
-    return opts.result;
-  }
-
-  return "空闲";
-}
-
-export function controlQuestion(opts: {
-  userHasPage: boolean;
-  draining?: boolean;
-  running?: boolean;
-}): string {
-  if (opts.draining) {
-    return "正在交接";
-  }
-
-  if (opts.userHasPage) {
-    return "现在归你";
-  }
-
-  if (opts.running) {
-    return "Agent 在操作";
-  }
-
-  return "空闲";
-}
-
-export function micQuestion(listening: boolean): string {
-  return listening ? "麦克风：正在听" : "麦克风：已关";
-}
-
-export function speechQuestion(speaking: boolean): string {
-  return speaking ? "声音：正在说" : "声音：未说";
 }
 
 /** 结果卡：摘要是主信息，剩余项和声音失败弱化。没有摘要时整张卡不出现。 */

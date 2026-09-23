@@ -45,7 +45,7 @@ const portBoundary = () => {
   let listeners = [];
   window.__panelSends = sends;
   window.__emitToPanel = (msg) => {
-    for (const l of [...listeners]) l(msg);
+    for (const l of listeners) l(msg);
   };
 
   chrome.runtime.connect = (opts) => {

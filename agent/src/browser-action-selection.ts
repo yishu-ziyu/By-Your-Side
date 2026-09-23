@@ -120,13 +120,15 @@ export function viewNavigationCandidates(page: BrowserObservation): BrowserCandi
   const result: BrowserCandidate[] = [];
 
   if (page.hasMore && page.nextCursor) {
-    result.push({
+    const candidate: BrowserCandidate = {
       id: 'continue-controls',
       operation: 'continue_read',
       label: `Continue reading the next control window (currently ${page.visibleCount ?? page.controls.length} of ${page.collectedCount ?? page.controls.length} collected). This does not activate a control.`,
       cursor: page.nextCursor,
-      ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}),
-    });
+    };
+
+    if (page.viewScopeId) candidate.viewScopeId = page.viewScopeId;
+    result.push(candidate);
   }
 
   if (page.scopesHasMore && page.scopesNextCursor) {
@@ -484,11 +486,9 @@ export function nextObservationExpansion(
     const key = observationCheckKey('cursor', page.nextCursor);
 
     if (!checked.has(key)) {
-      return {
-        params: { cursor: page.nextCursor, ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}) },
-        checkKey: key,
-        reasonCode: 'observation_incomplete',
-      };
+      const params = page.viewScopeId ? { cursor: page.nextCursor, viewScopeId: page.viewScopeId } : { cursor: page.nextCursor };
+
+      return { params, checkKey: key, reasonCode: 'observation_incomplete' };
     }
   }
 
@@ -544,18 +544,34 @@ export function piContinueHint(
     || reasonCode === 'permission_required';
 
   if (reasonCode === 'permission_required') {
-    return { action: 'permission_path', preserveFacts: true, ...(checked ? { checkedRange: checked } : {}) };
+    const hint: BrowserContinueHint = { action: 'permission_path', preserveFacts: true };
+
+    if (checked) hint.checkedRange = checked;
+
+    return hint;
   }
 
   if (reasonCode === 'execution_unknown') {
-    return { action: 'readonly_verify', preserveFacts: true, ...(checked ? { checkedRange: checked } : {}) };
+    const hint: BrowserContinueHint = { action: 'readonly_verify', preserveFacts: true };
+
+    if (checked) hint.checkedRange = checked;
+
+    return hint;
   }
 
   if (reasonCode === 'observation_incomplete' || reasonCode === 'candidate_budget') {
-    return { action: 'planner_tools', tools: ['browser_loop', 'snapshot'], preserveFacts, ...(checked ? { checkedRange: checked } : {}) };
+    const hint: BrowserContinueHint = { action: 'planner_tools', tools: ['browser_loop', 'snapshot'], preserveFacts };
+
+    if (checked) hint.checkedRange = checked;
+
+    return hint;
   }
 
-  return { action: 'session_prompt', preserveFacts, ...(checked ? { checkedRange: checked } : {}) };
+  const hint: BrowserContinueHint = { action: 'session_prompt', preserveFacts };
+
+  if (checked) hint.checkedRange = checked;
+
+  return hint;
 }
 
 export type RealtimeContinueMount = {
@@ -612,14 +628,15 @@ export function realtimeContinueHint(
         : 'realtime_delegate')
       : 'realtime_direct';
 
-  return {
-    action,
-    tools: unique,
-    preserveFacts: reasonCode === 'execution_unknown' || reasonCode === 'permission_required' || reasonCode === 'stale_observation',
-    ...(page?.nextCursor ? { cursor: page.nextCursor } : {}),
-    ...(page?.viewScopeId ? { viewScopeId: page.viewScopeId } : {}),
-    ...(checked ? { checkedRange: checked } : {}),
-  };
+  const hint: BrowserContinueHint = { action, tools: unique, preserveFacts: reasonCode === 'execution_unknown' || reasonCode === 'permission_required' || reasonCode === 'stale_observation' };
+
+  if (page?.nextCursor) hint.cursor = page.nextCursor;
+
+  if (page?.viewScopeId) hint.viewScopeId = page.viewScopeId;
+
+  if (checked) hint.checkedRange = checked;
+
+  return hint;
 }
 
 export function humanReasonForCode(code: BrowserDecisionReasonCode): string {

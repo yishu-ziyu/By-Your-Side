@@ -428,7 +428,7 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
     const messages: ServerMessage[] = [];
     const resume = vi.fn(async () => {});
 
-    const manager = new ConversationManager(async (_id, emit) => ({
+    const manager = new ConversationManager(async (_id, _emit) => ({
       session: {
         available: true, modelName: () => 'fixture/model', isStreaming: () => false, isHeld: () => false,
         readPersistedTaskResults: () => before, persistTaskResults: vi.fn(), resumeInterruptedTask: resume, waitForStop: async () => {},

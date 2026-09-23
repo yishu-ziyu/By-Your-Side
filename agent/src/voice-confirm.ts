@@ -31,11 +31,13 @@ export function createControlConfirmSnapshot(params: Omit<ControlConfirmSnapshot
   const {input, ...control} = params;
 
   // 只复制执行资料；语音观察令牌不进入待确认请求，终止也不需要页面材料。
-  return structuredClone({
-    ...control,
-    ...(control.action === 'steer' && input?.context ? {context: input.context} : {}),
-    ...(control.action === 'steer' && input?.attachments?.length ? {attachments: input.attachments} : {}),
-  });
+  const snapshot: ControlConfirmSnapshot = { ...control };
+
+  if (control.action === 'steer' && input?.context) snapshot.context = input.context;
+
+  if (control.action === 'steer' && input?.attachments?.length) snapshot.attachments = input.attachments;
+
+  return structuredClone(snapshot);
 }
 
 /** 肯定的短回答。只在"上一轮确实问过"时才会被这样解读。 */

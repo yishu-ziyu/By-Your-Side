@@ -31,7 +31,7 @@ function fakePanelPort(): FakePanelPort {
     onMessage: { addListener: (l) => listeners.push(l) },
     onDisconnect: { addListener: () => {} },
     deliver(raw) {
-      for (const l of [...listeners]) l(raw);
+      for (const l of listeners) l(raw);
     },
   };
 }
@@ -138,7 +138,7 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
     vi.stubGlobal("chrome", built.stub);
     await import("../src/background/index.js");
     connectPanel = (port) => {
-      for (const l of [...built.onConnectListeners]) l(port);
+      for (const l of built.onConnectListeners) l(port);
     };
   });
 

@@ -257,8 +257,12 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     chars += size; segments += block.segments.length;
   }
 
-  return {document: current.token, language: current.language, mode: current.mode, fontSize: current.fontSize,
-    translated: current.blocks.size - pending.length, remaining: pending.length, unsupported, blocks, ...(command.action === 'apply' ? {applied} : {})};
+  const receipt: Omit<TranslationReceipt, 'tabId'> = {document: current.token, language: current.language, mode: current.mode, fontSize: current.fontSize,
+    translated: current.blocks.size - pending.length, remaining: pending.length, unsupported, blocks};
+
+  if (command.action === 'apply') receipt.applied = applied;
+
+  return receipt;
   } catch (error) {
     // Chrome omits a thrown injection's result. Return an explicit receipt instead.
     return {error: error instanceof Error ? error.message : String(error), executionFact: mutated ? 'unknown' : 'not_executed'};

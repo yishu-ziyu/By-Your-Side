@@ -51,14 +51,41 @@ export class VoiceObservation {
           const pieces: string[] = [];
           let size = 0;
           let count = 0;
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+          const onScreen = (rects: ArrayLike<DOMRect>) => Array.from(rects).some(r => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth);
 
-          while (walker.nextNode() && count++ < 1500 && size < 12000) {
+          const textRects = (node: Node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+
+            return range.getClientRects();
+          };
+
+          // Field contents are what the user sees, but they are not text nodes (a textarea's own text is only its default).
+          const fieldValue = (el: Element): string | undefined => {
+            if (el instanceof HTMLTextAreaElement) return el.value;
+
+            if (el instanceof HTMLSelectElement) return el.selectedOptions[0]?.textContent ?? '';
+
+            if (el instanceof HTMLInputElement && !['password', 'hidden', 'checkbox', 'radio', 'submit', 'button', 'reset', 'image', 'file'].includes(el.type)) return el.value;
+
+            return undefined;
+          };
+
+          while (walker.nextNode() && count < 1500 && size < 12000) {
             const node = walker.currentNode;
-            const parent = node.parentElement;
-            const text = node.textContent?.trim();
+            const element = node instanceof Element ? node : null;
+            const parent = element ?? node.parentElement;
+            const field = element ? fieldValue(element) : undefined;
 
-            if (!parent || !text || parent.closest('script,style,noscript,[aria-hidden="true"]')) {
+            if (element && field === undefined) {
+              continue;
+            }
+
+            count++;
+            const text = (field ?? node.textContent)?.trim();
+
+            if (!parent || !text || parent.closest('script,style,noscript,[aria-hidden="true"]') || (!element && parent.closest('textarea,select'))) {
               continue;
             }
 
@@ -68,10 +95,7 @@ export class VoiceObservation {
               continue;
             }
 
-            const range = document.createRange();
-            range.selectNodeContents(node);
-
-            if (!Array.from(range.getClientRects()).some(r => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth)) {
+            if (!onScreen(element ? [element.getBoundingClientRect()] : textRects(node))) {
               continue;
             }
 

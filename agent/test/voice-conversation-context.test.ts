@@ -4,8 +4,10 @@ import { ConversationManager } from "../src/conversation-manager.js";
 import { isTaskProgressSnapshot, isVoiceConversationContext } from "../../shared/voice.js";
 import type { ServerMessage } from "../../shared/protocol.js";
 
-const ev = (event: object, sessionId?: string): ServerMessage =>
-  ({ type: "agent_event", conversationId: "c", event, ...(sessionId ? { sessionId } : {}) }) as ServerMessage;
+type Json = string | number | boolean | null | undefined | Json[] | { [key: string]: Json };
+
+const ev = (event: Json, sessionId?: string): ServerMessage =>
+  (sessionId ? { type: "agent_event", conversationId: "c", event, sessionId } : { type: "agent_event", conversationId: "c", event }) as ServerMessage;
 
 function runWithResult(p: TaskProgress, text: string, result: string) {
   p.request(text);

@@ -51,10 +51,17 @@ export interface VoiceDiagCapture {
   serverText: { text: string; at: number } | null;
   /** Question text read from the panel DOM after it was assigned. */
   displayText: { text: string; at: number; final: boolean } | null;
-  notes: Array<{ code: string; detail?: string; at: number }>;
+  notes: VoiceDiagNote[];
 }
 
 export interface VoiceDiagStatus { complete: boolean; reasons: string[] }
+
+/** 一次诊断里的备注：code 是事实，detail 只在有额外说明时才带上。 */
+export interface VoiceDiagNote {
+  code: string;
+  detail?: string;
+  at: number;
+}
 
 export const decodePcm = (base64: string): Int16Array => {
   const binary = atob(base64);
@@ -111,7 +118,9 @@ export class VoiceDiagnosticLog {
     this.notify();
   }
   note(code: string, detail?: string): void {
-    const entry = { code, ...(detail ? { detail } : {}), at: Date.now() };
+    const entry: VoiceDiagNote = { code, at: Date.now() };
+
+    if (detail) entry.detail = detail;
 
     if (this.open) this.open.notes.push(entry); else this.looseNotes.push(entry);
     this.notify();
@@ -124,7 +133,10 @@ export class VoiceDiagnosticLog {
 
  return; }
 
-    capture.notes.push({ code, ...(detail ? { detail } : {}), at: Date.now() });
+    const entry: VoiceDiagNote = { code, at: Date.now() };
+
+    if (detail) entry.detail = detail;
+    capture.notes.push(entry);
     this.notify();
   }
   captureStarted(info: { turn: number; sampleRate: number; track: VoiceDiagTrack | null }): VoiceDiagCapture | null {
@@ -233,7 +245,14 @@ export class VoiceDiagnosticLog {
       case 'item': capture.itemId = record.itemId; break;
       case 'asr': capture.rawAsr = { text: record.text, outcome: record.outcome, turn: record.turn, at: Date.now() }; break;
       case 'forward': capture.forwarded = { text: record.text, itemId: record.itemId, at: Date.now() }; break;
-      case 'gap': capture.notes.push({ code: record.code, ...(record.detail ? { detail: record.detail } : {}), at: Date.now() }); break;
+      case 'gap': {
+        const entry: VoiceDiagNote = { code: record.code, at: Date.now() };
+
+        if (record.detail) entry.detail = record.detail;
+        capture.notes.push(entry);
+        break;
+      }
+
       default: break;
     }
 

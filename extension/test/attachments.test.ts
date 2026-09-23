@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   AttachmentsManager,
-  TILE_PERIMETER,
   parseDataUrl,
 } from "../src/sidepanel/attachments.js";
 import { isAttachment } from "../../shared/protocol.js";
@@ -34,9 +33,6 @@ describe("attachments utility functions", () => {
     expect(raw.dataBase64).toBe("AQID");
   });
 
-  it("specifies correct squircle perimeter of 194px", () => {
-    expect(TILE_PERIMETER).toBe(194);
-  });
 });
 
 describe("AttachmentsManager DOM & state management", () => {

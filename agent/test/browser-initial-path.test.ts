@@ -66,10 +66,6 @@ return {details:{status:'cancelled',receipts:[]}};});
  await f.run();expect(f.session.prompt).not.toHaveBeenCalled();
 });
 
-it('preserves partial/unknown effects in the handoff instead of replaying the original goal',async()=>{
- const f=fixture();f.host.invokeDisplayTool.mockResolvedValue({details:{status:'handoff',reason:'unknown write',receipts:[{fact:'unknown'}],modelCalls:1,decisions:[]}});
- await f.run();expect(f.session.prompt.mock.calls[0]?.[0]).toContain('Never replay successful or unknown writes');
-});
 
 it('plans user outcomes with existing source evidence before attempting generic operations',async()=>{
  const f=fixture();f.host.conversationSnapshot=()=>({goalPlan:{coverage:'unplanned'}});

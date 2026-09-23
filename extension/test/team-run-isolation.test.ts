@@ -5,7 +5,6 @@ import {
   acceptTeamStatus,
   emptyTeamRun,
   observeRunStarted,
-  staleTeamForRun,
   type TeamRunState,
 } from "../src/shared/team-run.js";
 import type { TeamView } from "../../shared/protocol.js";
@@ -71,13 +70,6 @@ describe("team/run 身份隔离", () => {
     expect(state).toBe(before);
     expect(state.team).toBeNull();
     expect(state.runId).toBe("run-b");
-  });
-
-  it("重开面板不回放旧 run 的缓存 team", () => {
-    const cached: TeamRunState = { team: team("aborted"), runId: "run-a" };
-    expect(staleTeamForRun(cached, "run-b")).toBe(true);
-    // 当前 run 未知（尚未拿到 summary）时不误判，旧路径仍能显示。
-    expect(staleTeamForRun(cached, null)).toBe(false);
   });
 
   it("没有 runId 的 team_status 仍被接受，并沿用已有绑定（兼容旧路径）", () => {

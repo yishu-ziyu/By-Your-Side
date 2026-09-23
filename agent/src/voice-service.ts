@@ -1,6 +1,5 @@
 import { realtimeBrowserError } from './realtime-browser-tools.js';
 import { projectTaskView } from '../../shared/task-view.js';
-import { VoiceAudioCache } from "./voice-audio-cache.js";
 import { RealtimeVoiceSession, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
 import { voiceSpokenResultGateEnabled } from './config.js';
 import { sharedRouteShadow } from './route-shadow.js';
@@ -9,11 +8,9 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
-import type { TaskProgressSnapshot, VoiceClientMessage, VoiceRouteContext, VoiceTarget } from "../../shared/voice.js";
-import type { StepVoiceSession } from "./voice-session.js";
-import { STEP_VOICE } from './realtime-voice-connection.js';
+import { DEFAULT_STEP_VOICE, STEP_VOICES, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
-type VoiceSession = Pick<StepVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'>;
+type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'>;
 
 export async function readStepVoiceKey(): Promise<string> {
   const environment = process.env.STEPFUN_API_KEY?.trim();
@@ -51,7 +48,6 @@ function hasUnresolvedObstacle(snapshot: TaskProgressSnapshot): boolean {
 /** One explicit human voice connection; background task sessions stay independent. */
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
-  private readonly receiptAudioCache = new VoiceAudioCache(STEP_VOICE);
   private active: {
     id: string;
     conversationId: string;
@@ -63,15 +59,13 @@ export class VoiceService {
     announcedDeliveries: Set<string>;
     streamedDeliveries: Set<string>;
   } | null = null;
-  constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null, private readonly emit: (msg: ServerMessage) => void, private readonly getKey = readStepVoiceKey, private readonly createSession = (deps: RealtimeVoiceDependencies): VoiceSession => new RealtimeVoiceSession(deps), private readonly steer?: (id: string, text: string, startedAt: number | null) => Promise<void>, private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<ConstructorParameters<typeof StepVoiceSession>[0]["route"]>>, private readonly diagnostic?: ConstructorParameters<typeof StepVoiceSession>[0]["diagnostic"], private readonly targets?: () => VoiceTarget[], private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void, private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void, private readonly relatedTask: (origin: string, target: string) => boolean = () => false, private readonly readPage?: (conversationId: string, input: import('../../shared/voice.js').VoiceInputContext) => Promise<unknown>, private readonly dispatchTask?: RealtimeVoiceDependencies['dispatchTask'], private readonly browserTool?: (id: string, ...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => Promise<unknown>) {
+  constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null, private readonly emit: (msg: ServerMessage) => void, private readonly getKey = readStepVoiceKey, private readonly createSession = (deps: RealtimeVoiceDependencies): VoiceSession => new RealtimeVoiceSession(deps), private readonly steer?: (id: string, text: string, startedAt: number | null) => Promise<void>, private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<RealtimeVoiceDependencies["route"]>>, private readonly diagnostic?: RealtimeVoiceDependencies["diagnostic"], private readonly targets?: () => VoiceTarget[], private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void, private readonly onSpokenAck?: (conversationId: string, text: string, runId: string | null) => void, private readonly relatedTask: (origin: string, target: string) => boolean = () => false, private readonly readPage?: (conversationId: string, input: import('../../shared/voice.js').VoiceInputContext) => Promise<unknown>, private readonly dispatchTask?: RealtimeVoiceDependencies['dispatchTask'], private readonly browserTool?: (id: string, ...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => Promise<unknown>) {
   }
   async handle(conversationId: string, message: VoiceClientMessage): Promise<void> {
     if (message.command.kind === "start") {
       // Diagnostic capture is an explicit, server-confirmed mode; it is built without
-      // any route or steer callable, so a diagnostic session cannot touch tasks or pages.
-      // `capture` alone only turns recording on: the session still answers, routes and steers as usual.
+      // any route callable, so a diagnostic session cannot touch tasks or pages.
       const diag = message.command.diagnostic === true;
-      const capture = diag || message.command.capture === true;
 
       if (this.active?.id === message.voiceId && this.active.conversationId === conversationId) {
         return;
@@ -92,12 +86,15 @@ export class VoiceService {
       const initialDelivery = initial.conversationContext?.latestDelivery;
       const announcedDeliveries = new Set<string>(initialDelivery?.id ? [initialDelivery.id] : []);
 
+      // 扩展与本机进程版本可能不同：不认识的音色退回默认，不拒绝整次开启。
+      const requestedVoice = message.command.voice;
+      const voice = STEP_VOICES.find(v => v.id === requestedVoice)?.id ?? DEFAULT_STEP_VOICE;
+
       const active = {
         id: message.voiceId, conversationId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
-          earlyReplies: !diag,
+          voice,
           ...(diag ? { diagnosticMode: true } : {}),
-          ...(capture ? { captureMode: true } : {}),
           getSnapshot: () => this.snapshot(conversationId),
           getDeliverySnapshot: stream => this.snapshot(this.deliveryOwners.get(stream.id) ?? conversationId),
           getTargets: this.targets,
@@ -106,7 +103,6 @@ export class VoiceService {
 
             return this.browserTool!(conversationId,...args);
           }} : {}),
-          receiptAudioCache: this.receiptAudioCache,
           // Shared across voice sessions so the daily Jev-call budget is counted once, not reset per session; never wired for diagnostic capture.
           ...(!diag ? { shadow: sharedRouteShadow() } : {}),
           // Explicit opt-in; shadow logging alone never enables product behavior.
@@ -115,15 +111,6 @@ export class VoiceService {
           ...(this.dispatchTask && !diag ? { dispatchTask: (request: import('../../shared/task-actions.js').TaskActionRequest, stillCurrent: () => boolean) => this.dispatchTask!(request, () => this.active?.id === message.voiceId && stillCurrent()) } : {}),
           diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),
           ...(this.route && !diag ? { route: (text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => this.route!(conversationId, text, startedAt, () => this.active?.id === message.voiceId && stillCurrent(), context) } : {}),
-          ...(this.steer && !diag ? {
-            steer: async (text: string, startedAt: number | null) => {
-              if (this.active?.id !== message.voiceId || this.active.conversationId !== conversationId) {
-                throw new Error("语音会话已结束，修改未发送。");
-              }
-
-              await this.steer!(conversationId, text, startedAt);
-            }
-          } : {}),
           emit: event => this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event }),
           onPlayback: (deliveryId, status) => {
             if (this.active !== active) {
@@ -131,13 +118,6 @@ export class VoiceService {
             }
 
             this.onPlayback?.(this.deliveryOwners.get(deliveryId) ?? conversationId, deliveryId, status);
-          },
-          onSpokenAck: (text, runId) => {
-            if (this.active !== active) {
-              return;
-            }
-
-            this.onSpokenAck?.(conversationId, text, runId);
           },
         })
       };

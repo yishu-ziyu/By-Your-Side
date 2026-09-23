@@ -10,6 +10,15 @@ import {readCurrentDocument} from '../src/background/exec/page-readiness.js';
 
 const page=()=>({tabId:7,documentId:'d1',url:'https://test.invalid',source:'accessibility' as const,text:'page',truncated:false,controls:[{ref:'@4',role:'textbox',name:'Field',value:'original',disabled:false}]});
 
+/** consume 的入参替身：target/value/key/decisionGuard 必有，point 只在 coordinate 模式下才带上。 */
+type ConsumeParams = {
+  target: string;
+  value: string;
+  key: string;
+  point?: [number, number];
+  decisionGuard: { observationId: string; operation: string; target: string };
+}
+
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
 
 describe('immutable browser observation guards',()=>{
@@ -62,19 +71,22 @@ describe('immutable browser observation guards',()=>{
 
   if(mode==='expiry')vi.spyOn(Date,'now').mockReturnValue(p.observedAt+15001);
   const operation=mode==='unfocused-key'?'press_key':'fill';
-  expect(()=>r.consume('m',7,operation,{target:mode==='different-target'?'@99':'@4',value:'new',...(mode==='coordinate'?{point:[1,2]}:{}),key:'Enter',decisionGuard:{observationId:p.id,operation,target:'@4'}})).toThrow();
+  const params: ConsumeParams={target:mode==='different-target'?'@99':'@4',value:'new',key:'Enter',decisionGuard:{observationId:p.id,operation,target:'@4'}};
+
+  if(mode==='coordinate')params.point=[1,2];
+  expect(()=>r.consume('m',7,operation,params)).toThrow();
  });
  it.each(['document','url','field','focus'])('rechecks %s at the extension execution boundary',async(mode)=>{
   const p=browserObservations.issue('m',page());
   vi.mocked(readCurrentDocument).mockResolvedValue({documentId:mode==='document'?'d2':'d1'} as any);
   vi.stubGlobal('chrome',{tabs:{get:async()=>({url:mode==='url'?'https://other.invalid':p.url})}});
-  vi.mocked(sendCommand).mockImplementation(async(_tab,method)=>({...(method==='DOM.getDocument'?{root:{nodeId:1}}:method==='DOM.querySelectorAll'?{nodeIds:[]}:{nodes:[{nodeId:'n',backendDOMNodeId:4,role:{value:'textbox'},name:{value:'Field'},value:{value:mode==='field'?'user edit':'original'},properties:mode==='focus'?[{name:'focused',value:{value:true}}]:[]}]})}) as any);
+  vi.mocked(sendCommand).mockImplementation(async(_tab,method)=>(method==='DOM.getDocument'?{root:{nodeId:1}}:method==='DOM.querySelectorAll'?{nodeIds:[]}:{nodes:[{nodeId:'n',backendDOMNodeId:4,role:{value:'textbox'},name:{value:'Field'},value:{value:mode==='field'?'user edit':'original'},properties:mode==='focus'?[{name:'focused',value:{value:true}}]:[]}]}) as any);
   await expect(assertBrowserDecision('m','fill',{tabId:7,target:'@4',value:'new',decisionGuard:{observationId:p.id,operation:'fill',target:'@4'}})).rejects.toThrow('DECISION_STALE');
  });
  it('ignores changing static text but keeps semantic control checks',async()=>{
   const p=browserObservations.issue('m',page());
   vi.mocked(readCurrentDocument).mockResolvedValue({documentId:'d1'} as any);vi.stubGlobal('chrome',{tabs:{get:async()=>({url:p.url})}});
-  vi.mocked(sendCommand).mockImplementation(async(_tab,method)=>({...(method==='DOM.getDocument'?{root:{nodeId:1}}:method==='DOM.querySelectorAll'?{nodeIds:[]}:{nodes:[{nodeId:'n',backendDOMNodeId:4,role:{value:'textbox'},name:{value:'Field'},value:{value:'original'}},{nodeId:'clock',role:{value:'StaticText'},name:{value:String(Date.now())}}]})}) as any);
+  vi.mocked(sendCommand).mockImplementation(async(_tab,method)=>(method==='DOM.getDocument'?{root:{nodeId:1}}:method==='DOM.querySelectorAll'?{nodeIds:[]}:{nodes:[{nodeId:'n',backendDOMNodeId:4,role:{value:'textbox'},name:{value:'Field'},value:{value:'original'}},{nodeId:'clock',role:{value:'StaticText'},name:{value:String(Date.now())}}]}) as any);
   await expect(assertBrowserDecision('m','fill',{tabId:7,target:'@4',value:'new',decisionGuard:{observationId:p.id,operation:'fill',target:'@4'}})).resolves.toBeUndefined();
  });
  it('allows guarded hover on an observed clickable control and keeps one-shot identity limits',()=>{

@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyTabBinding,
   bindExclusiveResource,
-  boundTabIds,
   executionKey,
   mayAccessResource,
   mayClaimReplacementTab,
   parseExecutionKey,
-  sessionForTab,
   sessionsForTab,
   shareResource,
 } from "../src/background/tab-bindings.js";
@@ -20,14 +18,6 @@ describe("tab bindings", () => {
     expect(map).toEqual({ [LEAD_SESSION_ID]: 1, wiki: 2 });
     map = applyTabBinding(map, "wiki", null);
     expect(map).toEqual({ [LEAD_SESSION_ID]: 1 });
-    expect(sessionForTab(map, 1)).toBe(LEAD_SESSION_ID);
-    expect(sessionForTab(map, 2)).toBeUndefined();
-  });
-
-  it("sessionForTab 与 boundTabIds", () => {
-    const map = applyTabBinding(applyTabBinding({}, "wiki", 10), "feishu", 20);
-    expect(sessionForTab(map, 20)).toBe("feishu");
-    expect([...boundTabIds(map)].sort()).toEqual([10, 20]);
   });
 
   it("复合执行 key 可逆，default 仍兼容旧键", () => {

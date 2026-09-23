@@ -1,20 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, micQuestion, pageQuestion, resultCardCopy, sessionQuestion, speechQuestion } from "../src/sidepanel/selectors.js";
-
-describe("panel four questions", () => {
-  it("names the session, page, action and controller", () => {
-    expect(sessionQuestion("整理资料")).toBe("整理资料");
-    expect(pageQuestion("Inbox", "mail.example")).toBe("Inbox / mail.example");
-    expect(actionQuestion({ running: true, action: "正在核对第 2 个条件", elapsedSec: 4.2 })).toBe("正在核对第 2 个条件 · 4.2秒");
-    expect(controlQuestion({ userHasPage: true })).toBe("现在归你");
-    expect(controlQuestion({ userHasPage: false, draining: true })).toBe("正在交接");
-  });
-
-  it("keeps mic and speech independent", () => {
-    expect(micQuestion(true)).toBe("麦克风：正在听");
-    expect(speechQuestion(false)).toBe("声音：未说");
-  });
-});
+import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "../src/sidepanel/selectors.js";
 
 describe('conversation checkpoint labels',()=>{
   it('shows checkpoint failure without promising continuation',()=>{

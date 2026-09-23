@@ -23,21 +23,6 @@ export const FEATURED_MODEL_IDS = new Set<string>([
 ]);
 
 /**
- * 兼容旧导出名。语义已变：不再是「唯一可达白名单」，而是「默认精选集」。
- * 可达集由已配置凭据的 provider 决定（SDK ModelRuntime.getAvailable），本文件不再充当闸门。
- */
-export const REACHABLE_MODEL_IDS = FEATURED_MODEL_IDS;
-
-/** 只留默认精选集（外加会话当前模型，确保用户能切走）。 */
-export function filterReachableModels(models: readonly ModelOption[], current?: string | null): ModelOption[] {
-  const featured = new Set(FEATURED_MODEL_IDS);
-
-  if (current != null) featured.add(current);
-
-  return models.filter((model) => featured.has(model.id));
-}
-
-/**
  * 给全量可达列表打 featured 标记：agent 侧下发全量，UI 默认只显示精选、可展开看全部。
  * 单一来源——过滤只发生在 UI，agent 不再替用户删模型。
  * 当前会话模型一律标记 featured：否则用户切到一个非精选模型后，它会从默认视图里消失，再也切不回去。

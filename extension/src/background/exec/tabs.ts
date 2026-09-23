@@ -86,13 +86,16 @@ async function readSwitchVerification(tabId: number, sessionId: string): Promise
     const activeTabId = active?.id;
     const windowFocused = win.focused === true;
 
-    return {
+    const verification: SwitchTabVerification = {
       verified: activeTabId === tabId && windowFocused && workingTabId === tabId,
-      ...(activeTabId != null ? { activeTabId } : {}),
       windowId: tab.windowId,
       windowFocused,
       workingTabId,
     };
+
+    if (activeTabId != null) verification.activeTabId = activeTabId;
+
+    return verification;
   } catch {
     return { verified: false };
   }

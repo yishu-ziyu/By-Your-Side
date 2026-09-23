@@ -5,6 +5,7 @@
  * 注意：模块顶层不触碰 chrome API，判定逻辑保持可单测。
  */
 import type { AgentMode } from "../../../shared/protocol.js";
+import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } from "../shared/mark-motion.js";
 
 const STORAGE_KEY = "agentMode";
 
@@ -36,33 +37,17 @@ export async function setMode(mode: AgentMode, conversationId = "default"): Prom
  try { await chrome.storage.session.set({[storageKey]:mode}); } catch { /* Keep local mode. */ }
 }
 
-// ── 手绘标注动效偏好（grow = 420ms 生长后定格；boil = 1200ms 持续微动） ──
-export type MarkMotion = "grow" | "boil";
-
-export const MARK_MOTION_KEY = "sideagent_mark_motion";
-
-let cachedMotion: MarkMotion | undefined;
-
+// ── 手绘标注动效偏好 ──
+// 侧栏右击直接写 storage，这里每次现读，不能缓存。
 export async function getMarkMotion(): Promise<MarkMotion> {
-  if (cachedMotion !== undefined) return cachedMotion;
-
   try {
     const got = await chrome.storage.local.get(MARK_MOTION_KEY);
-    cachedMotion = got[MARK_MOTION_KEY] === "grow" ? "grow" : "boil";
+
+    const motion = got[MARK_MOTION_KEY];
+
+    return isMarkMotion(motion) ? motion : DEFAULT_MARK_MOTION;
   } catch {
-    cachedMotion = "boil";
-  }
-
-  return cachedMotion;
-}
-
-export async function setMarkMotion(motion: MarkMotion): Promise<void> {
-  cachedMotion = motion;
-
-  try {
-    await chrome.storage.local.set({ [MARK_MOTION_KEY]: motion });
-  } catch {
-    /* 存储失败不阻塞主流程 */
+    return DEFAULT_MARK_MOTION;
   }
 }
 
@@ -71,10 +56,6 @@ export async function setMarkMotion(motion: MarkMotion): Promise<void> {
 // 仅 teach 模式且有待完成标注时，URL 变化才视为"用户可能已完成步骤"并通知 agent。
 
 const pendingTeachMarks = new Set<string>();
-
-export function hasPendingTeachMarks(conversationId = "default"): boolean {
-  return pendingTeachMarks.has(conversationId);
-}
 
 export function noteMarkDrawn(conversationId = "default"): void {
   pendingTeachMarks.add(conversationId);

@@ -60,9 +60,10 @@ export function skillBrowser() {
 
       if (expect && !elementMatches(actual, expect)) throw new Error("结果条件不成立");
 
-      return { tabId: 7, target: params.target, documentId: state.documentId, tagName: node.tagName.toLowerCase(), textContent: node.textContent, value: node.value,
+      return expect ? { tabId: 7, target: params.target, documentId: state.documentId, tagName: node.tagName.toLowerCase(), textContent: node.textContent, value: node.value,
         anchorSource: { tag: node.tagName.toLowerCase(), type: node.attrs.type, ariaLabel: node.attrs["aria-label"] },
-        ...(expect ? { check: { matched: true, property: expect.property, elapsedMs: 0 } } : {}) };
+        check: { matched: true, property: expect.property, elapsedMs: 0 } } : { tabId: 7, target: params.target, documentId: state.documentId, tagName: node.tagName.toLowerCase(), textContent: node.textContent, value: node.value,
+        anchorSource: { tag: node.tagName.toLowerCase(), type: node.attrs.type, ariaLabel: node.attrs["aria-label"] } };
     }
 
     return {};

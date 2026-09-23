@@ -60,13 +60,13 @@ export function isDestructiveLabel(text: string): boolean {
 export function confirmLabelForDestructive(text: string): string {
   const t = text.trim();
 
-  if (/^清空/.test(t) || /^clear/i.test(t)) return "清空";
+  if (t.startsWith("清空") || /^clear/i.test(t)) return "清空";
 
-  if (/^支付/.test(t) || /^pay/i.test(t)) return "支付";
+  if (t.startsWith("支付") || /^pay/i.test(t)) return "支付";
 
-  if (/^发送/.test(t) || /^send/i.test(t)) return "发送";
+  if (t.startsWith("发送") || /^send/i.test(t)) return "发送";
 
-  if (/^归档/.test(t) || /^archive/i.test(t)) return "归档";
+  if (t.startsWith("归档") || /^archive/i.test(t)) return "归档";
 
   if (/^(delete|remove)\b/i.test(t)) return "Delete";
 

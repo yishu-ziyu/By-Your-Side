@@ -96,29 +96,6 @@ export interface SessionAcceptanceContinuityEvidence {
   resumeContinuationMarkerFound: boolean;
 }
 
-/** @deprecated 旧的纯状态测试夹具；生产验收不再调用，续跑必须经过底层 AgentSession。 */
-export class AcceptanceContinuity {
-  private task: Omit<SessionAcceptanceContinuityEvidence, "preTaskPrompted" | "preTaskAgentStarted" | "contextTaskFound" | "resumeRequested" | "resumeAgentStarted" | "resumeSnapshotToolCalled" | "resumeSnapshotMarkerFound" | "resumeContinuationMarkerFound"> | null = null;
-
-  constructor(private readonly instanceId: string) {}
-
-  seed(taskId: string, expectedSnapshotMarker: string) {
-    this.task = { instanceId: this.instanceId, taskId, step: "before", active: true, expectedSnapshotMarker };
-
-    return { ...this.task };
-  }
-
-  continue(context: PageContext, snapshot: string) {
-    if (!this.task) return null;
-    this.task.resumedTabId = context.tabId;
-    this.task.snapshotMarkerFound = snapshot.includes(this.task.expectedSnapshotMarker);
-
-    if (this.task.snapshotMarkerFound) this.task.step = "continued";
-
-    return { ...this.task };
-  }
-}
-
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; selectedSkill?: SelectedSkillRun }
 

@@ -110,19 +110,25 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
   const receipt = asRecord(input.data);
   const tabId = typeof receipt?.tabId === 'number' && Number.isInteger(receipt.tabId) ? receipt.tabId : undefined;
 
-  const base = {
+  const facts: ExecutionFeedbackFacts = {
+    tool: input.tool,
+    executionFact: input.executionFact,
+  };
+
+  if (typeof action === 'string' && action) facts.action = action;
+
+  if (tabId != null) facts.tabId = tabId;
+
+  const base: Omit<ExecutionFeedback, 'channel' | 'kind' | 'text' | 'bounce' | 'capsuleCanCloseAction'> = {
     id: identity,
-    facts: {
-      tool: input.tool,
-      ...(typeof action === 'string' && action ? { action } : {}),
-      executionFact: input.executionFact,
-      ...(tabId != null ? { tabId } : {}),
-    } satisfies ExecutionFeedbackFacts,
-    ...(input.inputId ? { inputId: input.inputId } : {}),
+    facts,
     runId: input.runId ?? null,
-    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
     createdAt: input.at ?? Date.now(),
   };
+
+  if (input.inputId) base.inputId = input.inputId;
+
+  if (input.toolCallId) base.toolCallId = input.toolCallId;
 
   // 工具被拦下等用户确认：不是失败，也不是成功；让用户看到等待入口，语音照常解释。
   if (input.executionFact === 'not_executed' && asRecord(input.data)?.held === true) {
@@ -152,6 +158,10 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
   const gate = successEvidence(key, input.args, receipt);
 
   if (!gate.ok) {
+    const gatedFacts: ExecutionFeedbackFacts = { ...base.facts };
+
+    if (gate.detail) gatedFacts.detail = gate.detail;
+
     return {
       ...base,
       channel: 'capsule',
@@ -159,7 +169,7 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
       text: '结果待确认',
       bounce: false,
       capsuleCanCloseAction: false,
-      facts: { ...base.facts, ...(gate.detail ? { detail: gate.detail } : {}) },
+      facts: gatedFacts,
     };
   }
 

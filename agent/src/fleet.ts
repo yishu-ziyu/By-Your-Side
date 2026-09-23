@@ -387,12 +387,15 @@ export class Fleet {
     }
 
     console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
-    this.sink.emit({
+
+    const event: Extract<AgentUiEvent, {kind:"worker_task"}> = {
       kind: "worker_task",
       task: opts.task?.trim().slice(0, 80) || "处理分配任务",
       output: opts.output?.trim().slice(0, 80) || "处理结果",
-      ...(opts.spawnToolCallId ? { spawnToolCallId: opts.spawnToolCallId } : {}),
-    }, id);
+    };
+
+    if (opts.spawnToolCallId) event.spawnToolCallId = opts.spawnToolCallId;
+    this.sink.emit(event, id);
     session.sendUserMessage(goal);
 
     return { id, tabId };
@@ -598,7 +601,7 @@ export class Fleet {
 
   /** 先确认同会话归属，再停止相关成员；扩展确认旧调用排空后才允许父 Agent 继续。 */
   async takeTab(tabId?: number): Promise<{ tabId: number; stopped: string[] }> {
-    const info = await this.rpc.call("worker_tabs", { action: "inspect", ...(tabId != null ? { tabId } : {}) }) as { tabId: number; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] };
+    const info = await this.rpc.call("worker_tabs", tabId != null ? { action: "inspect", tabId } : { action: "inspect" }) as { tabId: number; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] };
 
     if (info.foreign) {
       if (!this.coordinateTab) throw new Error("页面协调器尚未就绪，请重连后再试");
@@ -608,10 +611,9 @@ export class Fleet {
       await Promise.all(info.workers.map(id => this.releaseWorker(id)));
     }
 
-    if (info.owned !== false || info.conversationId !== undefined) await this.rpc.call("worker_tabs", {
-      action: "claim", tabId: info.tabId,
-      ...(info.conversationId !== undefined ? { expectedConversationId: info.conversationId } : {}),
-    });
+    if (info.owned !== false || info.conversationId !== undefined) {
+      await this.rpc.call("worker_tabs", info.conversationId !== undefined ? { action: "claim", tabId: info.tabId, expectedConversationId: info.conversationId } : { action: "claim", tabId: info.tabId });
+    }
 
     return { tabId: info.tabId, stopped: info.workers };
   }

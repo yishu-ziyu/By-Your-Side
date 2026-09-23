@@ -30,6 +30,7 @@ import { createServer, type Server } from "node:http";
 import type { Writable } from "node:stream";
 import type { ClipboardFinishStatus, NormalizedPasteContent } from "../../shared/pointer-input.js";
 
+/** 首选端口：更新前构建的扩展写死连它。被占时伴随进程改用随机端口，经 hello_ok.clipboardPort 告诉扩展。 */
 export const DEFAULT_CLIPBOARD_HTTP_PORT = 7761;
 
 export type ClipboardTransactionStatus = ClipboardFinishStatus;

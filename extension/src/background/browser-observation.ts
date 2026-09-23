@@ -192,7 +192,7 @@ export function decisionControls(nodes: readonly AxNodeLite[], refs?: readonly n
 const scopeIdentity = (n: AxNodeLite) => `${n.frameId ?? 'page'}:${n.backendDOMNodeId ?? `ax-${n.nodeId}`}`;
 
 export function decisionDialogs(nodes: readonly AxNodeLite[]): string[] {
-  return nodes.filter(n => !n.ignored && ['dialog', 'alertdialog'].includes(n.role?.value ?? '')).map(n => `${scopeIdentity(n)}:${n.name?.value ?? ''}`).sort();
+  return nodes.flatMap(n => !n.ignored && ['dialog', 'alertdialog'].includes(n.role?.value ?? '') ? [`${scopeIdentity(n)}:${n.name?.value ?? ''}`] : []).sort();
 }
 
 export function decisionControlsTruncated(nodes: readonly AxNodeLite[], controls: readonly BrowserControl[]): boolean {
@@ -411,7 +411,8 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
   const tabSlice = tabs.slice(0, VIEW_TAB_BUDGET);
   const tabsHasMore = tabs.length > VIEW_TAB_BUDGET;
 
-  return {
+  // 分段构造：可选字段只在存在时才落到 view 上，保持"未提供就不带这个键"的语义。
+  const view: ObservationView = {
     controls,
     tabs: tabs.length ? tabSlice : undefined,
     truncated: textTruncated || !collectionComplete,
@@ -419,25 +420,37 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
     controlsTruncated: !collectionComplete,
     collectedCount: collected.length,
     collectionComplete,
-    ...(collectionLimitReached ? { collectionLimitReached: true } : {}),
     generation,
-    ...(viewScopeId ? { viewScopeId, viewScopeLabel } : {}),
     viewComplete: !hasMoreInPool,
     visibleCount: controls.length,
     hasMore,
-    ...(nextCursor ? { nextCursor } : {}),
-    ...(hasSemanticScopes || partitions.length > 1 ? {
-      scopes,
-      scopesTruncated: scopesHasMore,
-      scopesHasMore,
-      ...(scopesHasMore ? { scopesNextCursor: encodeCursor(generation, 'scopes', SCOPE_SUMMARY_BUDGET) } : {}),
-    } : {}),
-    ...(tabs.length ? {
-      tabsHasMore,
-      tabsTruncated: tabsHasMore,
-      ...(tabsHasMore ? { tabsNextCursor: encodeCursor(generation, 'tabs', VIEW_TAB_BUDGET) } : {}),
-    } : {}),
   };
+
+  if (collectionLimitReached) view.collectionLimitReached = true;
+
+  if (viewScopeId) {
+    view.viewScopeId = viewScopeId;
+    view.viewScopeLabel = viewScopeLabel;
+  }
+
+  if (nextCursor) view.nextCursor = nextCursor;
+
+  if (hasSemanticScopes || partitions.length > 1) {
+    view.scopes = scopes;
+    view.scopesTruncated = scopesHasMore;
+    view.scopesHasMore = scopesHasMore;
+
+    if (scopesHasMore) view.scopesNextCursor = encodeCursor(generation, 'scopes', SCOPE_SUMMARY_BUDGET);
+  }
+
+  if (tabs.length) {
+    view.tabsHasMore = tabsHasMore;
+    view.tabsTruncated = tabsHasMore;
+
+    if (tabsHasMore) view.tabsNextCursor = encodeCursor(generation, 'tabs', VIEW_TAB_BUDGET);
+  }
+
+  return view;
 }
 
 /** Collect interactive controls with an explicit host budget; never use text-render refs as existence. */

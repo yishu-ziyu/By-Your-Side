@@ -85,7 +85,7 @@ export function redactCredentialText(text: string): string {
   // 纯标识符字符串（selector、JS 片段）不动。token 按凭据字符集切，`"key":"值"` 里的值才抓得到。
   // `/` 不入字符集：它是 URL/路径分隔符，把它算进 token 会把路径段拼成长串，
   // 把 `https://api.github.com/repos/…/issues/335552` 这类正常 URL 隐成 `https://api.github.[redacted]`。
-  const structured = /[\s\u4e00-\u9fff"'{}\[\],:=]/.test(body);
+  const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
   if (structured) body = body.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token) ? MASK : token));
 

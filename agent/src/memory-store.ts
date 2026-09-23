@@ -133,7 +133,10 @@ export class MemoryStore {
 
       if (existing) return existing;
       const now = Date.now();
-      const entry: MemoryEntry = { id: randomUUID(), version: 1, text: input.text.trim(), scope: cloneScope(input.scope), sourceConversationId: input.sourceConversationId, createdAt: now, updatedAt: now, experience: { runId: input.runId, evidence: [...input.evidence], ...(input.topic ? { topic: input.topic } : {}) } };
+      const experience: NonNullable<MemoryEntry["experience"]> = { runId: input.runId, evidence: [...input.evidence] };
+
+      if (input.topic) experience.topic = input.topic;
+      const entry: MemoryEntry = { id: randomUUID(), version: 1, text: input.text.trim(), scope: cloneScope(input.scope), sourceConversationId: input.sourceConversationId, createdAt: now, updatedAt: now, experience };
       entries.push(entry);
 
       return entry;
@@ -372,7 +375,13 @@ function cloneScope(scope: MemoryScope): MemoryScope {
 }
 
 function cloneEntries(entries: MemoryEntry[]): MemoryEntry[] {
-  return entries.map((entry) => ({ ...entry, scope: cloneScope(entry.scope), ...(entry.experience ? { experience: { ...entry.experience, evidence: [...entry.experience.evidence] } } : {}) }));
+  return entries.map((entry) => {
+    const cloned = { ...entry, scope: cloneScope(entry.scope) };
+
+    if (entry.experience) cloned.experience = { ...entry.experience, evidence: [...entry.experience.evidence] };
+
+    return cloned;
+  });
 }
 
 function cloneValue<T>(value: T): T {

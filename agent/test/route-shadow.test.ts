@@ -215,9 +215,11 @@ describe('RouteShadow V2.2: spoken_result_0 recorded without regressing lane/pag
     for (const spoken of invalid) {
       const root = freshRoot();
 
-      const fetchMock = vi.fn(async () => okResponse({
+      const fetchMock = vi.fn(async () => okResponse(spoken !== undefined ? {
         lane_0: {choice: 'task'}, pagechange_0: {noul: 0.5},
-        ...(spoken !== undefined ? {spoken_result_0: spoken} : {}),
+        spoken_result_0: spoken,
+      } : {
+        lane_0: {choice: 'task'}, pagechange_0: {noul: 0.5},
       }));
 
       const shadow = new RouteShadow({enabled: () => true, dailyLimit: () => 400, root, key: () => 'k', fetch: fetchMock as unknown as typeof fetch, now: () => NOW});

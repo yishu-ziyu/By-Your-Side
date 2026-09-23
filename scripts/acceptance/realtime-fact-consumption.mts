@@ -138,7 +138,7 @@ throw Error(`${label} timeout`);
   execFileSync('/usr/bin/say',['-v','Tingting','-r','190','-o',aiff,phrases[scenario]],{timeout:15000});
   execFileSync('/opt/homebrew/bin/ffmpeg',['-y','-v','error','-i',aiff,'-af','adelay=400,apad=pad_dur=1','-ar','48000','-ac','1','-c:a','pcm_s16le',wav],{timeout:15000});check();
   const hostEvents:any[]=[];
-  hostEvents.push=(...rows:any[])=>{for(const row of rows){const {at,...data}=row;record('host',data);}
+  hostEvents.push=(...rows:any[])=>{for(const row of rows){const {at:_at,...data}=row;record('host',data);}
 
 return Array.prototype.push.apply(hostEvents,rows);};
 

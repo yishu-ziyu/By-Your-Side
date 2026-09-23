@@ -33,9 +33,6 @@ export const RIM_GAP = 38;
 
 export const LEAN_GAP = 28;
 
-/** 允许搭在边框上的最大重叠；必须小于气泡 padding（用户气泡 9px）。 */
-export const PAW_OVERLAP = 6;
-
 const BODY = "M 30 128 L 30 22 L 66 72 C 70 84 80 84 84 72 L 120 22 L 120 128";
 
 const STROKE = 46;
@@ -139,18 +136,6 @@ export function topRimAnchor(
   const clamped = Math.min(1, Math.max(0, t));
 
   return { top, left: minLeft + clamped * span };
-}
-
-/** actor 与卡片内文区是否相交。内文区 = 卡片减去 contentInset。 */
-export function overlapsContent(actor: Box, card: Box, contentInset = 8): boolean {
-  const cTop = card.top + contentInset;
-  const cLeft = card.left + contentInset;
-  const cRight = card.right - contentInset;
-  const cBottom = card.top + card.height - contentInset;
-  const aBottom = actor.top + actor.height;
-  const aRight = actor.left + actor.width;
-
-  return actor.left < cRight && aRight > cLeft && actor.top < cBottom && aBottom > cTop;
 }
 
 export class SideCompanion {

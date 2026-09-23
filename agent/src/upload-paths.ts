@@ -11,8 +11,8 @@
  */
 import { basename } from "node:path";
 import { realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, sep } from "node:path";
+import { dataDir } from "./config.js";
 import { fetchDownloadsDir } from "./fetch-result.js";
 
 export const MAX_UPLOAD_FILES = 8;
@@ -32,7 +32,7 @@ export interface TaskUploadRecord {
 
 export function defaultUploadRoots(): string[] {
   // downloads 根与 fetch 落盘目录对齐（含 SIDEAGENT_DOWNLOADS_DIR 隔离目录）。
-  return [join(homedir(), ".sideagent", "uploads"), fetchDownloadsDir()];
+  return [join(dataDir(), "uploads"), fetchDownloadsDir()];
 }
 
 function realOrLiteral(path: string): string {

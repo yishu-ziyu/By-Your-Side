@@ -84,43 +84,6 @@ describe("跨会话接手旧页面只停旧成员", () => {
   });
 });
 
-const IDENTITY_ERROR = "原任务已停止或发生变化，操作未执行。";
-
-/** extension/src/background/index.ts executeToolCall 的 checkIdentity() 等价复刻；真实闸门本轮未改。 */
-function identityGate() {
-  let published: string | null = null;
-  const aborted = new Set<string>();
-
-  return {
-    publishConversation(runId: string | null): void {
-      published = runId;
-    },
-    abortCurrentRun(): void {
-      if (published) aborted.add(published);
-    },
-    checkFrame(runId: string | null | undefined): string | null {
-      if (runId && (aborted.has(runId) || published !== runId)) return IDENTITY_ERROR;
-
-      return null;
-    },
-  };
-}
-
-describe("旧 run 的迟到帧仍被身份闸门拒收", () => {
-  it("旧任务中止后，旧 run 的 release 与接手后的迟到写都不能通过", () => {
-    const gate = identityGate();
-    gate.publishConversation("run-old");
-    gate.abortCurrentRun();
-
-    // 旧 run 的 worker_tabs release 正是这样被拒的——所以接手时不能再发。
-    expect(gate.checkFrame("run-old")).toBe(IDENTITY_ERROR);
-
-    gate.publishConversation("run-new");
-    expect(gate.checkFrame("run-old")).toBe(IDENTITY_ERROR);
-    expect(gate.checkFrame("run-new")).toBeNull();
-  });
-});
-
 it('跨会话接手必须等旧成员停止完成', async () => {
   const {fleet,call} = testFleet();
   const worker = fakeWorker();

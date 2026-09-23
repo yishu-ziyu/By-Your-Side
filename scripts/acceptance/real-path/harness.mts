@@ -107,8 +107,11 @@ async function dailyDistStamp(): Promise<string> {
   return stamps.join("|");
 }
 
-/** microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。 */
-export async function launchRealPath({ microphoneWav }: { microphoneWav?: string } = {}) {
+/**
+ * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
+ * withoutNativeHost：不注册伴随进程，模拟只装了扩展的电脑（扩展内 agent 实验）。
+ */
+export async function launchRealPath({ microphoneWav, withoutNativeHost = false }: { microphoneWav?: string; withoutNativeHost?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host") };
 
@@ -153,7 +156,8 @@ export async function launchRealPath({ microphoneWav }: { microphoneWav?: string
   ].join("\n"));
   await chmod(wrapper, 0o755);
   await mkdir(join(dirs.profile, "NativeMessagingHosts"), { recursive: true });
-  await writeFile(join(dirs.profile, "NativeMessagingHosts", "com.sideagent.host.json"), JSON.stringify({
+
+  if (!withoutNativeHost) await writeFile(join(dirs.profile, "NativeMessagingHosts", "com.sideagent.host.json"), JSON.stringify({
     name: "com.sideagent.host",
     description: "SideAgent real-path acceptance host",
     path: wrapper,
@@ -219,7 +223,7 @@ export async function launchRealPath({ microphoneWav }: { microphoneWav?: string
 
     try {
       const session = await attach(helper);
-      await until(async () => (await evaluate(session, "document.readyState")) === "complete", 10_000, "辅助页加载");
+      await until(async () => (await evaluate(session, `document.readyState === "complete" && !!globalThis.chrome?.windows`)) || undefined, 10_000, "辅助页加载");
       const windowId = Number(await evaluate(session, "chrome.windows.getCurrent().then((w) => w.id)"));
       const opened = await evaluate(session, `chrome.sidePanel.open({ windowId: ${windowId} }).then(() => "opened", (e) => "error: " + e.message)`, { userGesture: true });
 

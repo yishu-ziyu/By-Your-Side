@@ -154,7 +154,7 @@ export async function parityDriver(opts) {
     const dbl = await ok("c1-double-click", "double_click", { target: "#dblzone", label: "双击区" });
     const dblAfter = await ok("c1-after", "read_element", { target: "#dblmsg" });
 
-    if (!/^DOUBLE-/.test(String(dblAfter.textContent || ""))) {
+    if (!String(dblAfter.textContent || "").startsWith("DOUBLE-")) {
       throw new Error("Case 1 失败：double_click 后可见状态未改变，dblmsg=" + dblAfter.textContent);
     }
 

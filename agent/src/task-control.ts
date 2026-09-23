@@ -17,7 +17,14 @@ export class TaskControlBroker {
       const timer=setTimeout(()=>{this.pending.delete(key);reject(new Error('Page control confirmation timeout'));},this.timeoutMs);timer.unref?.();
       this.pending.set(key,{conversationId,requestId,action,runId,resolve,reject,timer});
 
-      try{this.emit({type:'task_control',conversationId,requestId,action,runId,...(scope?{scope}:{}),...(tabId?{tabId}:{})});}
+      try{
+        const message: Extract<ServerMessage, {type:'task_control'}> = {type:'task_control',conversationId,requestId,action,runId};
+
+        if(scope)message.scope=scope;
+
+        if(tabId)message.tabId=tabId;
+        this.emit(message);
+      }
       catch(error){clearTimeout(timer);this.pending.delete(key);reject(error instanceof Error?error:new Error('Control unavailable'));}
     });
   }

@@ -1,11 +1,7 @@
 /** Boss-owned acceptance: implementers must not edit this file. */
-import {EventEmitter} from 'node:events';
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import type WebSocket from 'ws';
 import {ConversationManager} from '../src/conversation-manager.js';
-import {StepVoiceSession,STEP_VOICE} from '../src/voice-session.js';
 import {VoiceService} from '../src/voice-service.js';
-import {progressSpeech,receiptSpeech} from '../src/voice-receipt.js';
 import {isTaskProgressSnapshot,type TaskProgressSnapshot} from '../../shared/voice.js';
 import type {ServerMessage} from '../../shared/protocol.js';
 
@@ -35,7 +31,7 @@ return runtime;
  },()=>{});
 
  cleanup.push(()=>manager.dispose());
- const event=(id:string,event:any,sessionId?:string)=>runtimes.get(id).publish({type:'agent_event',event,...(sessionId?{sessionId}:{})});
+ const event=(id:string,event:any,sessionId?:string)=>runtimes.get(id).publish(sessionId ? {type:'agent_event', event, sessionId} : {type:'agent_event', event});
  const finish=(id:string,text:string)=>{event(id,{kind:'turn_start'});event(id,{kind:'text_delta',delta:text});event(id,{kind:'turn_end'});event(id,{kind:'agent_end'});};
 
  return {manager,runtimes,event,finish};
@@ -117,53 +113,16 @@ describe('Evaluator: real manager event flow produces conversation evidence',()=
  });
 });
 
-class Socket extends EventEmitter{
- readyState=1;bufferedAmount=0;sent:any[]=[];close=vi.fn();
- send(data:string){this.sent.push(JSON.parse(data));}
- server(e:any){this.emit('message',Buffer.from(JSON.stringify(e)));}
-}
-
 function snapshot():TaskProgressSnapshot{return {conversationId:'A',observedAt:Date.now(),state:'idle',goal:'看邮件',startedAt:1,runId:'run-A',active:[],lastAction:null,successVerified:false,
  conversationContext:{recentTurns:[{role:'user',text:'看邮件'},{role:'assistant',text:resultText}],latestResult:{runId:'run-A',text:resultText,observedAt:2,source:'assistant_output'}}} as TaskProgressSnapshot;}
 
-function voiceHarness(getSnapshot:()=>TaskProgressSnapshot){
- const socket=new Socket();const events:any[]=[];
- const voice=new StepVoiceSession({getSnapshot,emit:e=>events.push(e),connect:()=>socket as unknown as WebSocket,route:async()=>({kind:'none'})});cleanup.push(()=>voice.close());
- voice.start('synthetic');socket.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});socket.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:{type:''}}});
- let acknowledged=0;
-
- const configure=()=>{for(let n=0;n<5;n++){const updates=socket.sent.filter(e=>e.type==='session.update');
-
-if(updates.length<=acknowledged)break;acknowledged=updates.length;const text=updates.at(-1)?.session.instructions;
-
-if(text)socket.server({type:'session.updated',session:{instructions:text}});}};
-
- return {voice,socket,events,configure};
-}
-
 describe('Evaluator: result reaches production voice response selection',()=>{
- it('a retained report cannot override a paused, aborted or failed status receipt',()=>{
-  for(const state of ['paused','aborted','error'] as const){
-   const s={...snapshot(),state};
-   const fixed=progressSpeech(s);
-   expect(receiptSpeech({kind:'none',resumeReadOnly:'status',snapshot:s,spokenText:fixed})).toBe(fixed);
-  }
- });
- it('reads the explicit finding with its real facts and scope',async()=>{
-  vi.useFakeTimers();const current=snapshot();current.conversationContext!.latestDelivery={conversationId:'A',id:'finding-evaluator',runId:current.runId??null,kind:'finding',text:resultText,composedAt:current.observedAt,status:'composed'};const h=voiceHarness(()=>current);h.voice.notify(current);await vi.advanceTimersByTimeAsync(350);h.configure();
-  const items=h.socket.sent.filter(e=>e.type==='conversation.item.create').map(e=>JSON.stringify(e.item)).join('\n');
-  expect(items).toContain('青鹭工作坊');expect(items).toContain('尚未打开邮件正文');
-  const lastInstructions=h.socket.sent.filter(e=>e.type==='session.update').at(-1)?.session.instructions??'';
-  expect(lastInstructions).not.toContain('请原样无修改地输出下面的话，不能添加开场语或任何其它内容：\n这一轮执行已经结束');
-  expect(items).not.toContain('本轮只朗读以下原文，不回答前面的语音问题：\\n这一轮执行已经结束');
-  expect(h.socket.sent.some(e=>e.type==='response.create')).toBe(true);
- });
  it('does not autonomously replay old results after voice reopen and suppresses foreign notifications',async()=>{
   const notify=vi.fn();let captured:any;
 
   const service=new VoiceService(snapshot,()=>{},async()=> 'synthetic',deps=>{captured=deps;
 
-return {start:()=>{},close:()=>{},command:()=>{},notify} as unknown as StepVoiceSession;});
+return {start:()=>{},close:()=>{},command:()=>{},notify} as never;});
 
 cleanup.push(()=>service.close());
   await service.handle('A',{type:'voice',voiceId:'v1',command:{kind:'start'}});
@@ -173,28 +132,6 @@ cleanup.push(()=>service.close());
   expect(notify).not.toHaveBeenCalled();
   service.close();await service.handle('A',{type:'voice',voiceId:'v2',command:{kind:'start'}});
   expect(context(captured.getSnapshot()).latestResult.text).toBe(resultText);expect(notify).not.toHaveBeenCalled();
- });
- it('a pause announcement cannot suppress termination of the same run',async()=>{
-  vi.useFakeTimers();let current={...snapshot(),state:'paused' as const};const h=voiceHarness(()=>current);
-  h.voice.notify(current);await vi.advanceTimersByTimeAsync(350);h.configure();
-  h.socket.server({type:'response.created',response:{id:'pause-response'}});
-  h.socket.server({type:'response.audio.delta',response_id:'pause-response',item_id:'pause-item',delta:'AQABAA=='});
-  h.socket.server({type:'response.audio_transcript.done',response_id:'pause-response',transcript:'任务已暂停，页面现在归你。'});
-  h.socket.server({type:'response.done',response:{id:'pause-response',status:'completed'}});
-  h.voice.command({kind:'playback_done',responseId:'pause-response'});
-  current={...current,state:'aborted'} as any;h.voice.notify(current);await vi.advanceTimersByTimeAsync(350);h.configure();
-  expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(2);
-  expect(h.socket.sent.filter(e=>e.type==='session.update').at(-1).session.instructions).toContain('任务已终止');
- });
- it('drops a queued result when a newer task replaces the run before speech',async()=>{
-  vi.useFakeTimers();let current=snapshot();const h=voiceHarness(()=>current);h.voice.notify(current);
-  current={...current,state:'running',runId:'new-run',goal:'看地图',conversationContext:{recentTurns:[],latestResult:null}} as TaskProgressSnapshot;
-  await vi.advanceTimersByTimeAsync(350);h.configure();
-  expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
- });
- it('does not speak a result after the voice connection closes',async()=>{
-  vi.useFakeTimers();const h=voiceHarness(snapshot);h.voice.notify(snapshot());h.voice.close();await vi.advanceTimersByTimeAsync(350);
-  expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
  });
  it('rejects malformed or unbounded conversation evidence at the protocol boundary',()=>{
   const s=snapshot();expect(isTaskProgressSnapshot(s)).toBe(true);

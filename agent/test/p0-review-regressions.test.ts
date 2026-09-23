@@ -130,7 +130,9 @@ describe('actual panel task_action continuation',()=>{
 
     try{
       await manager.ensureDefault();
-      const request:TaskActionRequest={requestId:issue,conversationId:'default',source:'text',action:'start',expectedRunId:issue==='stale-run'?'old-run':before.runId!,expectedControlVersion:issue==='stale-control'?99:0,text:'继续原任务',...(issue==='missing-page'?{}:{context:page})};
+      const request:TaskActionRequest={requestId:issue,conversationId:'default',source:'text',action:'start',expectedRunId:issue==='stale-run'?'old-run':before.runId!,expectedControlVersion:issue==='stale-control'?99:0,text:'继续原任务'};
+
+      if (issue !== 'missing-page') request.context = page;
       expect(await manager.dispatchTaskAction(request)).toMatchObject({status:'rejected'});
       expect(r!.start).not.toHaveBeenCalled();expect(r!.resume).not.toHaveBeenCalled();
       expect(manager.getTaskProgress('default')).toMatchObject({state:'interrupted',runId:before.runId,executionState:'unknown'});

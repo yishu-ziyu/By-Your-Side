@@ -49,16 +49,9 @@ export function applyTabBinding(map: TabBindingMap, key: string, tabId: number |
   return next;
 }
 
-/** 兼容旧调用；共享页请使用 sessionsForTab。 */
-export function sessionForTab(map: TabBindingMap, tabId: number): string | undefined {
-  return sessionsForTab(map, tabId)[0];
-}
-
 export function sessionsForTab(map: TabBindingMap, tabId: number): string[] {
   return Object.entries(map).filter(([, tid]) => tid === tabId).map(([key]) => key);
 }
-
-export function boundTabIds(map: TabBindingMap): Set<number> { return new Set(Object.values(map)); }
 
 export function resourceForTab(map: TabResourceMap, tabId: number): TabResource | undefined { return map[String(tabId)]; }
 

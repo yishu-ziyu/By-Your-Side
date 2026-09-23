@@ -19,7 +19,12 @@ function fixture(diagnosticMode=false,structured=false,shadow?:{judge:ReturnType
   const socket=new Socket(),events:VoiceEvent[]=[];
   const snapshot:TaskProgressSnapshot={conversationId:'A',runId:null,state:'none',goal:null,startedAt:null,observedAt:1,active:[],lastAction:null,successVerified:false};
   const route=vi.fn(async(..._args:unknown[])=>({kind:'action' as const,ok:true,message:'已接收，不代表完成'}));const readPage=vi.fn(async()=>({text:'真实页面'}));const dispatchTask=vi.fn(async(..._args:unknown[])=>({ok:true,status:'accepted'}));const onPlayback=vi.fn();
-  const session=new RealtimeVoiceSession({voiceId:'voice3',diagnosticMode,getSnapshot:()=>snapshot,emit:e=>events.push(e),route,readPage,onPlayback,...(structured?{dispatchTask}:{}),...(shadow?{shadow:shadow as never}:{}),connect:()=>socket as any});sessions.push(session);session.start('not-a-real-key');
+  const deps: ConstructorParameters<typeof RealtimeVoiceSession>[0] = {voiceId:'voice3',diagnosticMode,getSnapshot:()=>snapshot,emit:e=>events.push(e),route,readPage,onPlayback,connect:()=>socket as any};
+
+  if(structured)deps.dispatchTask=dispatchTask;
+
+  if(shadow)deps.shadow=shadow as never;
+  const session=new RealtimeVoiceSession(deps);sessions.push(session);session.start('not-a-real-key');
   const ready=()=>{socket.server({type:'session.created',session:{model:MODEL}});socket.server({type:'session.updated',session:{model:MODEL,voice:STEP_VOICE,input_audio_format:'pcm16',output_audio_format:'pcm16',turn_detection:diagnosticMode?{type:''}:{type:'server_vad'}}});};
 
   const begin=(item='u1',response='r1')=>{socket.server({type:'input_audio_buffer.speech_started',item_id:item});socket.server({type:'input_audio_buffer.speech_stopped',item_id:item});socket.server({type:'response.created',response:{id:response}});};

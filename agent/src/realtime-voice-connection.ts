@@ -23,14 +23,13 @@ import { REALTIME_BROWSER_TOOL_NAMES, realtimeBrowserError, REALTIME_BROWSER_TOO
 import { isExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
 import type { RequestJudgment } from './route-shadow.js';
 import WebSocket, {type RawData} from 'ws';
+import { DEFAULT_STEP_VOICE } from '../../shared/voice.js';
 
 export const MODEL = 'stepaudio-3-realtime-preview';
 
 const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${MODEL}`;
 
-export const STEP_VOICE = 'qingchunshaonv';
-
-const VOICE = STEP_VOICE;
+export const STEP_VOICE = DEFAULT_STEP_VOICE;
 
 const SAMPLE_RATE = 24_000;
 
@@ -96,6 +95,8 @@ export interface RealtimeVoiceConnectionOptions {
   tools: RealtimeVoiceTools;
   log?: (event: Record<string, unknown>) => void;
   voiceId?: string;
+  /** Step timbre id; defaults to STEP_VOICE. */
+  voice?: string;
   voiceSpokenResultGate?: boolean;
   /** Started alongside execution; never awaited by the tool path. Also serves shadow observation. */
   judgeRequest?: (input: VoiceRequestInput) => Promise<RequestJudgment | null>;
@@ -172,8 +173,8 @@ function serializeToolOutput(value: unknown, preserveExecution = false): string 
       reason:readback.reason,matchesExpected:readback.matchesExpected,truncated:true,
       ...(JSON.stringify(readback.target??null).length<=2000?{target:readback.target}:{identityTruncated:true})}:undefined;
 
-    const metadata = {ok:result.ok, toolCallId:result.toolCallId, transportId:result.transportId, executionFact:result.executionFact,
-      ...(readbackMeta?{readback:readbackMeta}:{}),truncated:true};
+    const readbackPiece = readbackMeta ? { readback: readbackMeta } : {};
+    const metadata = {ok:result.ok, toolCallId:result.toolCallId, transportId:result.transportId, executionFact:result.executionFact, truncated:true, ...readbackPiece};
 
     const field = typeof result.error === 'string' ? 'error' : 'contentPreview';
     const content = field === 'error' ? String(result.error) : JSON.stringify(result.content) ?? text;
@@ -195,7 +196,7 @@ function serializeToolOutput(value: unknown, preserveExecution = false): string 
 }
 
 /** session.updated 的 echo 必须和请求一致才允许 ready。纯函数，便于离线用反例检查。 */
-export function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true): string[] {
+export function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true, voice: string = STEP_VOICE): string[] {
   const issues: string[] = [];
 
   if (createdModel !== MODEL) issues.push(`session.created 返回的模型是 ${createdModel ?? '缺失'}`);
@@ -203,7 +204,7 @@ export function configurationIssues(createdModel: string | null, session: Record
 
   if (updatedModel !== null && updatedModel !== '' && updatedModel !== MODEL) issues.push(`session.updated 返回的模型是 ${updatedModel}`);
 
-  if (session.voice !== VOICE) issues.push(`音色未生效：${String(session.voice ?? '缺失')}`);
+  if (session.voice !== voice) issues.push(`音色未生效：${String(session.voice ?? '缺失')}`);
 
   if (session.input_audio_format !== 'pcm16') issues.push(`输入格式不是 pcm16：${String(session.input_audio_format ?? '缺失')}`);
 
@@ -531,7 +532,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       session: {
         modalities: ['text', 'audio'],
         instructions: this.options.diagnostic ? '只转写用户音频，不执行任务。' : (this.options.tools.browserTool ? INSTRUCTIONS.split('\n').filter(line => !line.startsWith('- 用户要求操作浏览器')).join('\n') : INSTRUCTIONS)+(this.options.tools.task_action&&!this.options.tools.browserTool?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务及需要原确认流程的请求仍用 browser_request。':'')+(this.options.tools.browserTool?REALTIME_BROWSER_INSTRUCTIONS:''),
-        voice: VOICE,
+        voice: this.options.voice ?? STEP_VOICE,
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
         turn_detection: this.options.diagnostic ? null : {type: 'server_vad', prefix_padding_ms: 500, silence_duration_ms: 300, energy_awakeness_threshold: 2500},
@@ -544,7 +545,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   private onSessionUpdated(event: Record<string, unknown>): void {
     if (this.phase === 'ready') return; // 重复 echo 不重启会话
     const session = asRecord(event.session) ?? {};
-    const issues = configurationIssues(this.createdModel, session, !this.options.diagnostic);
+    const issues = configurationIssues(this.createdModel, session, !this.options.diagnostic, this.options.voice ?? STEP_VOICE);
 
     if (issues.length > 0) return this.fatal(`语音配置未生效：${issues.join('；')}`);
     this.phase = 'ready';
@@ -818,9 +819,10 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     } catch (error) {
       const facts = asRecord(error);
       const rejectionFeedback = direct ? asRecord(facts?.feedback) : null;
-      result = {ok: false, error: errorMessage(error),
-        ...(direct ? {toolCallId:facts?.toolCallId, transportId:facts?.transportId, executionFact:facts?.executionFact,
-          ...(facts?.readback?{readback:facts.readback}:{}), ...(rejectionFeedback ? {feedback:rejectionFeedback} : {})} : {})};
+      const directReadbackPiece = direct && facts?.readback ? { readback: facts.readback } : {};
+      const directFeedbackPiece = direct && rejectionFeedback ? { feedback: rejectionFeedback } : {};
+      const directPiece = direct ? { toolCallId: facts?.toolCallId, transportId: facts?.transportId, executionFact: facts?.executionFact, ...directReadbackPiece, ...directFeedbackPiece } : {};
+      result = {ok: false, error: errorMessage(error), ...directPiece};
     }
 
     if (direct) {
@@ -845,7 +847,9 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     const failed=asRecord(result)?.ok===false;
     call.failed=failed;
     call.executionFact = asString(receipt?.executionFact) ?? undefined;
-    this.log({type: 'tool_output', callId: call.callId, name: call.name, ms: Date.now() - started,ok:!failed,...(failed?{error:asRecord(result)?.error}:{})});
+    const errorPiece = failed ? { error: asRecord(result)?.error } : {};
+    const logEntry = {type: 'tool_output', callId: call.callId, name: call.name, ms: Date.now() - started, ok:!failed, ...errorPiece};
+    this.log(logEntry);
 
     if(call.name==='read_page'&&failed)this.sendToClient({type:'status',text:`未读到页面：${asString(asRecord(result)?.error)??'页面资料不可用'}`});
     this.maybeFlush();

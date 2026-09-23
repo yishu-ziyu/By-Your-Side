@@ -239,7 +239,7 @@ export function forbiddenInSkill(text: string): string | null {
     .split("data-sideagent-target").join("");
 
   // 写死的选择器才是红线：按语义解析（querySelectorAll(spec.tag)）不算
-  if (/querySelector(All)?\(\s*['"][.#\[]/.test(scrubbed)) return "选择器";
+  if (/querySelector(All)?\(\s*['"][.#[]/.test(scrubbed)) return "选择器";
 
   if (/#[A-Za-z_][\w-]*/.test(scrubbed)) return "id 选择器";
 

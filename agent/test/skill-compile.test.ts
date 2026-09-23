@@ -233,7 +233,7 @@ describe("记不到对象名的步骤", () => {
 });
 
 describe("可能过期：只看证据", () => {
-  const fail = (failedStep?: number) => ({ at: 1, ok: false, elapsedMs: 10, steps: 1, ...(failedStep === undefined ? {} : { failedStep }), error: failedStep ? "第 N 步的目标在页面上找不到了" : "被接管，操作未执行" });
+  const fail = (failedStep?: number) => failedStep === undefined ? { at: 1, ok: false, elapsedMs: 10, steps: 1, error: "被接管，操作未执行" } : { at: 1, ok: false, elapsedMs: 10, steps: 1, failedStep, error: "第 N 步的目标在页面上找不到了" };
 
   it("连续三次因页面变了停下 → 可能过期", () => {
     const health = skillHealth([fail(1), fail(2), fail(3)]);

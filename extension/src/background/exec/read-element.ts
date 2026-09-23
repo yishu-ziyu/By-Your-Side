@@ -14,6 +14,9 @@ type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'docum
 
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
+/** 一次元素读取的结果：页面返回的数据 + 本次读取到的文档身份。 */
+interface ElementRead { data: ElementData; documentId?: string }
+
 /** FIX-02：把定位/读取失败收成稳定错误码，等待 helper 禁止用中文文案分支。 */
 export function typedReadElementError(error: unknown): Error {
   const text = error instanceof Error ? error.message : String(error);
@@ -191,7 +194,19 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       if(name?.trim())scopeLabels.push(`${role}: ${name.trim().slice(0,180)}`);
     }
 
-    return {ok:true,data:{tagName,textContent,...(editableText!==undefined?{editableText}:{}),...(scopeLabels.length?{scopeLabels}:{}),...(hasValue ? {value:maskValue(String(el.value ?? ''))} : {}),...(properties.length ? {properties:values} : {}),...(anchorSource ? {anchorSource} : {})}};
+    const data: ElementData = {tagName,textContent};
+
+    if(editableText!==undefined)data.editableText=editableText;
+
+    if(scopeLabels.length)data.scopeLabels=scopeLabels;
+
+    if(hasValue)data.value=maskValue(String(el.value ?? ''));
+
+    if(properties.length)data.properties=values;
+
+    if(anchorSource)data.anchorSource=anchorSource;
+
+    return {ok:true,data};
   } catch (error) { return {ok:false,error:error instanceof Error ? error.message : String(error)}; }
 }
 
@@ -309,17 +324,22 @@ async function readAxRef(tabId: number, ref: number, properties: ElementProperty
   } finally { await sendCommand(tabId, 'Runtime.releaseObject', {objectId}).catch(() => {}); }
 }
 
-async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<{data:ElementData;documentId?:string}> {
+async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, member: string, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementRead> {
   const isolatedRef = target.kind === "ref";
   check();
 
-  const results = await chrome.scripting.executeScript({
-    target: { tabId, ...(readback?{documentIds:[readback.documentId]}:{}) },
-    ...(readback?{injectImmediately:true}:{}),
+  const args: Parameters<typeof readInPage> = [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null];
+
+  const injection: chrome.scripting.ScriptInjection<Parameters<typeof readInPage>, ReadReply> = {
+    target: readback ? { tabId, documentIds: [readback.documentId] } : { tabId },
     world: isolatedRef ? "ISOLATED" : "MAIN",
     func: readInPage,
-    args: [target.kind === "ref" ? "ref" : "css", target.kind === "ref" ? (target.ref ?? null) : null, target.kind === "css" ? (target.selector ?? null) : null, properties, null, readback??null],
-  });
+    args,
+  };
+
+  if (readback) injection.injectImmediately = true;
+
+  const results = await chrome.scripting.executeScript(injection);
 
   check();
   const first = results[0] as (chrome.scripting.InjectionResult<ReadReply> & { error?: unknown }) | undefined;
@@ -338,7 +358,11 @@ async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, me
 
   if (first.documentId) recordObservedDocument(tabId, member, first.documentId);
 
-  return {data,...(first.documentId?{documentId:first.documentId}:{})};
+  const result: ElementRead = {data};
+
+  if (first.documentId) result.documentId=first.documentId;
+
+  return result;
 }
 
 export async function readElement(
@@ -406,14 +430,22 @@ async function readElementInner(
       const selector = target.selector ?? "";
       const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind, selector }, properties, check), check);
 
-      return {data:observed.value,...(observed.documentId?{documentId: observed.documentId}:{})};
+      const read: ElementRead = {data:observed.value};
+
+      if(observed.documentId)read.documentId=observed.documentId;
+
+      return read;
     }
 
     if (target.kind === 'css') {
       // CSS 也走统一 resolver（open shadow + 同源 frame），避免 readInPage 的浅 querySelectorAll。
       const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check), check);
 
-      return {data:observed.value,...(observed.documentId?{documentId: observed.documentId}:{})};
+      const read: ElementRead = {data:observed.value};
+
+      if(observed.documentId)read.documentId=observed.documentId;
+
+      return read;
     }
 
     if (target.kind === 'ref') {
@@ -423,7 +455,11 @@ async function readElementInner(
         const observed=await withObservedDocumentIdentity(tabId,executionKey,()=>readAxRef(tabId,ref,properties,readback,check),check);
         check();
 
-        return {data:observed.value,...(observed.documentId?{documentId:observed.documentId}:{})};
+        const read: ElementRead = {data:observed.value};
+
+        if(observed.documentId)read.documentId=observed.documentId;
+
+        return read;
       }
 
       if(readback)throw new Error('READBACK_NODE_IDENTITY_UNVERIFIABLE');
@@ -442,7 +478,11 @@ async function readElementInner(
 
     await checkDocument();
 
-    return {tabId,target:target.normalized,...observed.data,...(observed.documentId?{documentId:observed.documentId}:{})};
+    const result: ReadElementResult = {tabId,target:target.normalized,...observed.data};
+
+    if(observed.documentId)result.documentId=observed.documentId;
+
+    return result;
   }
 
   const expected = params.expect;
@@ -468,5 +508,9 @@ async function readElementInner(
 
   const documentId=observed.documentId??finalDocumentId;
 
-  return {...observed.value,...(documentId?{documentId}:{})};
+  const result: ReadElementResult = {...observed.value};
+
+  if(documentId)result.documentId=documentId;
+
+  return result;
 }

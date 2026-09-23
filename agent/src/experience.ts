@@ -131,7 +131,7 @@ export class ExperienceRuntime {
     }
   }
   used(entries: MemoryEntry[]): void {
-    if (this.active) this.active.used = entries.filter(e => e.experience).map(({ id, version }) => ({ id, version }));
+    if (this.active) this.active.used = entries.flatMap(e => e.experience ? [{ id: e.id, version: e.version }] : []);
   }
   observe(event: { type: string; [key: string]: unknown }): void {
     if (!this.active || event.type !== "tool_execution_end") return;

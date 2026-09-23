@@ -80,16 +80,21 @@ export function networkEventToUpdate(method: string, params: Record<string, unkn
 
     if (!url || !isRecordableUrl(url)) return null;
 
+    const entry: NetworkEntry = {
+      requestId,
+      method: text(request?.method) ?? "GET",
+      url,
+      resourceType: normalizeType(params.type),
+      startedAt: now,
+    };
+
+    const startedTs = numeric(params.timestamp);
+
+    if (startedTs !== undefined) entry.startedTs = startedTs;
+
     return {
       kind: "start",
-      entry: {
-        requestId,
-        method: text(request?.method) ?? "GET",
-        url,
-        resourceType: normalizeType(params.type),
-        startedAt: now,
-        ...(numeric(params.timestamp) !== undefined ? { startedTs: numeric(params.timestamp)! } : {}),
-      },
+      entry,
     };
   }
 

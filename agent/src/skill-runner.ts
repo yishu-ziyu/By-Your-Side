@@ -63,25 +63,31 @@ export async function runSkill(options: {
 
     const skipped = (result.value as { skipped?: number[] } | undefined)?.skipped ?? [];
 
-    return {
+    const run: SkillRunOutcome = {
       at: startedAt,
       ok: true,
       elapsedMs: Math.max(0, now() - startedAt),
       steps: result.steps,
-      ...(skipped.length ? { skipped } : {}),
       value: result.value,
     };
+
+    if (skipped.length) run.skipped = skipped;
+
+    return run;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failedStep = stepFromError(message);
 
-    return {
+    const run: SkillRunOutcome = {
       at: startedAt,
       ok: false,
       elapsedMs: Math.max(0, now() - startedAt),
       steps: done,
-      ...(failedStep === undefined ? {} : { failedStep }),
       error: message,
     };
+
+    if (failedStep !== undefined) run.failedStep = failedStep;
+
+    return run;
   }
 }

@@ -220,7 +220,7 @@ export class MemoryManagementState {
       this.deletedAtOrder.delete(entry.id);
     }
 
-    for (const id of [...this.entries.keys()]) {
+    for (const id of this.entries.keys()) {
       if (incomingIds.has(id)) continue;
       const latestIssued = this.latestIssuedByEntry.get(id) ?? 0;
       const latestApplied = this.latestAppliedByEntry.get(id) ?? 0;

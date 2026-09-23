@@ -7,7 +7,10 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 type FakeTab = { id: number; windowId: number; active: boolean };
 
-let stored: Record<string, unknown>;
+/** chrome.storage.session.set 的替身只接受「一组键值」，与本文件的 stored 同形。 */
+type SessionItems = Record<string, unknown>;
+
+let stored: SessionItems;
 
 let tabs: Map<number, FakeTab>;
 
@@ -45,7 +48,7 @@ beforeEach(() => {
     storage: {
       session: {
         get: vi.fn(async (key: string) => ({ [key]: stored[key] })),
-        set: vi.fn(async (data: object) => { Object.assign(stored, data); }),
+        set: vi.fn(async (data: SessionItems) => { Object.assign(stored, data); }),
       },
     },
     tabs: {

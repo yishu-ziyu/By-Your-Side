@@ -132,8 +132,9 @@ export class FetchConsentBroker {
         url: normalized.url,
         method: normalized.method,
         headers: { ...normalized.headers },
-        ...(normalized.body !== undefined ? { body: normalized.body } : {}),
       };
+
+      if (normalized.body !== undefined) frozen.body = normalized.body;
       origin = new URL(normalized.url).origin;
     } catch (error) {
       return { allowed: false, reason: error instanceof Error ? error.message : String(error) };
@@ -159,9 +160,10 @@ export class FetchConsentBroker {
       url: String(frozen.url),
       method: frozen.method as "GET" | "POST",
       headers: maskConsentHeaders(frozen.headers as Record<string, string>),
-      ...(typeof body === "string" ? { body } : {}),
       expiresAt: now + this.ttlMs,
     };
+
+    if (typeof body === "string") request.body = body;
 
     // 展示不出来的请求不进侧栏，也不能靠票据偷偷发出去。
     if (!isFetchConsentRequest(request)) return { allowed: false, reason: "这次请求的内容无法在侧栏完整展示，操作未执行。" };

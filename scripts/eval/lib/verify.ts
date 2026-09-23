@@ -257,8 +257,8 @@ export function verifyReport(report: EvalReport, gates: QualityGates = loadGates
     verdict === "PASS"
       ? "all required gates passed"
       : verdict === "FAIL"
-        ? `FAIL: ${[...metrics.filter((m) => m.verdict === "FAIL").map((m) => m.id), ...Object.entries(absolute).filter(([, v]) => v.verdict === "FAIL").map(([k]) => k)].join(", ")}`
-        : `BLOCKED: ${[...metrics.filter((m) => m.verdict === "BLOCKED").map((m) => m.id), ...Object.entries(absolute).filter(([, v]) => v.verdict === "BLOCKED").map(([k]) => k)].join(", ")}`;
+        ? `FAIL: ${[...metrics.flatMap((m) => m.verdict === "FAIL" ? [m.id] : []), ...Object.entries(absolute).flatMap(([k, v]) => v.verdict === "FAIL" ? [k] : [])].join(", ")}`
+        : `BLOCKED: ${[...metrics.flatMap((m) => m.verdict === "BLOCKED" ? [m.id] : []), ...Object.entries(absolute).flatMap(([k, v]) => v.verdict === "BLOCKED" ? [k] : [])].join(", ")}`;
 
   return { verdict, reason, gates_sha256: sha256, metrics, absolute };
 }

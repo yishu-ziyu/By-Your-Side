@@ -22,12 +22,13 @@ export function providerCalls(events: FactEvent[]) {
 }
 
 export function toolOutputs(events: FactEvent[]) {
-  return events.filter(e=>e.channel==='provider-out'&&e.data.item?.type==='function_call_output').map(e=>{
+  return events.flatMap(e=>{
+    if(!(e.channel==='provider-out'&&e.data.item?.type==='function_call_output')) return [];
     let result: any;
 
     try { result=JSON.parse(e.data.item.output); } catch { result={unparseable:true,raw:e.data.item.output}; }
 
-    return {seq:e.seq,at:e.at,callId:e.data.item.call_id,result};
+    return [{seq:e.seq,at:e.at,callId:e.data.item.call_id,result}];
   });
 }
 
@@ -106,7 +107,9 @@ function assessReadback(events:FactEvent[],expected:string) {
   const writeResult=write&&receipt(write);
   const target=write?.data.params;
 
-  const evidence=reads.filter(read=>!write||read.seq>write.seq||(receipt(read)?.seq??0)>write.seq).map(read=>{
+  const filteredReads=reads.filter(read=>!write||read.seq>write.seq||(receipt(read)?.seq??0)>write.seq);
+
+  const evidence=filteredReads.map(read=>{
     const result=receipt(read),params=read.data.params,field=result?.data.data;
     let observation:EvidenceStatus='UNDETERMINED',reason='missing write, dispatch identity, or receipt';
 
@@ -207,7 +210,7 @@ export function assessFactRun(scenario:FactScenario, events:FactEvent[], probe:F
     timing:{boundary:'last provider input_audio_buffer.speech_stopped receipt (all synthetic utterance segments); action = host→extension dispatch; audio = final response first server audio delta, not audible playback',speechStoppedAt:stopped?.at??null,
       firstToolMs:stopped&&firstTool?firstTool.at-stopped.at:null,firstActionMs:stopped&&firstAction?firstAction.at-stopped.at:null,resultAudioMs:stopped&&reply?.firstAudioAt?reply.firstAudioAt-stopped.at:null},
     counts:{providerToolCalls:calls.length,hostDirectCalls:events.filter(e=>e.channel==='direct-start').length,browserDispatches:events.filter(e=>e.channel==='extension-out').length,
-      realtimeResponses:new Set(events.filter(e=>e.channel==='provider-in'&&e.data.type==='response.created').map(e=>e.data.response?.id)).size,
+      realtimeResponses:new Set(events.flatMap(e=>e.channel==='provider-in'&&e.data.type==='response.created'?[e.data.response?.id]:[])).size,
       otherModelRequests:events.filter(e=>e.channel==='model-http-start').length},
     calls,outputs,
   };

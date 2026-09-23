@@ -26,7 +26,7 @@ return b.promise;}, e => events.push(e));
 
     late('old late'); a.resolve('old final'); await old;
     b.resolve('new final'); await next;
-    expect(events.filter(e=>e.requestId==='old').map(e=>e.text)).toEqual(['','old partial']);
+    expect(events.flatMap(e=>e.requestId==='old' ? [e.text] : [])).toEqual(['','old partial']);
     expect(events.at(-1)).toMatchObject({requestId:'new',state:'done',text:'new final'});
   });
   it('stop is scoped to both thread and request; other pages finish normally', async () => {

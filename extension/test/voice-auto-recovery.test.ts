@@ -175,7 +175,7 @@ it('recovers on server error marked as recoverable (e.g. 29min lifetime limit)',
 });
 
 it('does NOT recover on unrecoverable errors (permissions, model mismatch, credentials)', async () => {
-  const { getUserMedia, track, raw } = setupAudioMocks();
+  const { track, raw } = setupAudioMocks();
   const sent: any[] = [];
   const phaseHistory: Array<{ phase: string; detail?: string }> = [];
 
@@ -539,10 +539,3 @@ it('records recovery diagnostics with event, attempt and timestamp without sensi
 
 
 
-
-// Capture/transport fixtures provide speech probabilities; real model audio is checked separately.
-vi.mock('../src/sidepanel/voice-speech.js', () => ({ SpeechClassifier: {
- create: async (onFrame: (pcm: Int16Array, probability: number) => void) => ({
-  push: (pcm: Int16Array) => onFrame(pcm, pcm[0] ? 0.9 : 0), close: vi.fn(),
- }),
-} }));

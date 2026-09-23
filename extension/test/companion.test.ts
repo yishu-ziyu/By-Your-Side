@@ -1,16 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
-  PAW_OVERLAP,
   RIM_GAP,
   SPRITE_W,
   composerIdleAnchor,
   isLongMessage,
-  mascotSvg,
-  overlapsContent,
   rimAnchor,
   topRimAnchor,
   type Box,
 } from "../src/sidepanel/companion.js";
+
+/** 允许搭在边框上的最大重叠；必须小于气泡 padding（用户气泡 9px）。 */
+const PAW_OVERLAP = 6;
+
+/** actor 与卡片内文区是否相交。内文区 = 卡片减去 contentInset。 */
+function overlapsContent(actor: Box, card: Box, contentInset = 8): boolean {
+  const aBottom = actor.top + actor.height;
+  const aRight = actor.left + actor.width;
+
+  return actor.left < card.right - contentInset && aRight > card.left + contentInset
+    && actor.top < card.top + card.height - contentInset && aBottom > card.top + contentInset;
+}
 
 const app = { top: 0, left: 0 };
 
@@ -84,11 +93,4 @@ describe("companion message reactions", () => {
     ).toBe(true);
   });
 
-  it("renders a single-path M with punched eyes, not collage features", () => {
-    const svg = mascotSvg("test-eyes");
-    expect(svg).toContain("stroke-linejoin=\"round\"");
-    expect(svg).toContain("mask id=\"test-eyes\"");
-    expect(svg).not.toContain("circle");
-    expect(svg).not.toContain("ear");
-  });
 });

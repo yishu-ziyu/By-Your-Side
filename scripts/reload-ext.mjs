@@ -59,7 +59,8 @@ ws.addEventListener("message", (ev) => {
 
 function send(method, params = {}, sessionId) {
   const id = ++seq;
-  ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+  const sessionExtra = sessionId ? { sessionId } : {};
+  ws.send(JSON.stringify({ id, method, params, ...sessionExtra }));
 
   return new Promise((res) => pending.set(id, res));
 }

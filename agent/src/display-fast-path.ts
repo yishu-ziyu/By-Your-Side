@@ -38,7 +38,11 @@ export type DisplayRoutingResult=
   |{kind:'cancelled'};
 
 export function composeDisplayDecision(answers:Record<string,any>,hasTranslation:boolean):DisplayRoutingResult{
- const fallback=(reason:DisplayFallbackReason,partialScope=false):DisplayRoutingResult=>({kind:'fallback',reason,...(partialScope?{partialScope:true}:{})});
+ const fallback=(reason:DisplayFallbackReason,partialScope=false):DisplayRoutingResult=>{const result:Extract<DisplayRoutingResult,{kind:'fallback'}>={kind:'fallback',reason};
+
+if(partialScope)result.partialScope=true;
+
+return result;};
 
  if(!hasTranslation)return fallback('no_translation');
  const partialValue=answers?.partial?.noul;

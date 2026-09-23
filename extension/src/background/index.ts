@@ -10,6 +10,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  */
 import type { AgentRunState, ClientMessage, ModelOption, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
+import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import {
   ControlGate,
@@ -46,7 +47,7 @@ import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./cl
 
 // macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
 if (isDarwinClipboardHostPlatform()) {
-  setClipboardBridge(createDarwinClipboardBridge());
+  setClipboardBridge(createDarwinClipboardBridge(() => helloSnapshot?.clipboardPort));
 }
 
 (globalThis as typeof globalThis & { __saClipboardBridge?: () => ReturnType<typeof getClipboardBridge> }).__saClipboardBridge =
@@ -70,6 +71,7 @@ import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey
 import { pageOperation, pageOperationExecutionFact, takeoverTab, handbackTab } from "./exec/page-operation.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
+import { askUserToPoint } from "./exec/point.js";
 import { PendingControlTimeout } from "./control-pending.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
@@ -144,6 +146,7 @@ const handlers: Record<ToolName, Handler> = {
   js: (p, sid) => evaluateJs(p, sid),
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
   screenshot: (p, sid) => screenshot(p, sid),
+  ask_user_to_point: (p, sid) => askUserToPoint(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),
 };
@@ -247,6 +250,8 @@ chrome.runtime.onConnect.addListener(port => {
   if (msg.kind === "select_conversation") { voiceRelay.selectionChanged(msg.conversationId); selectedConversationId = msg.conversationId; setVisibleConversationId(selectedConversationId); controller(selectedConversationId); void chrome.storage.session.set({selectedConversationId}); broadcastConversations(); }
 
   if (msg.kind === "sync") { broadcastConversations(); transport.sendClientMessage({type:"conversation_list"}); }
+
+  if (msg.kind === "ping") port.postMessage({ kind: "pong" } satisfies BgToPanel);
  });
 });
 
@@ -534,11 +539,17 @@ function teamBannerView() {
   };
 }
 
+/** working tab 契约：只有 number 才算这个成员已绑定页面（chrome.tabs 的 id 契约）。 */
+const isWorkingTabId = (tabId: number | undefined): tabId is number => typeof tabId === "number";
+
 function emitTeam(): void {
   const view = team.view();
 
   if (!view || view.members.length === 0) return;
-  broadcastVisibleServer({ type: "team_status", team: view, ...(epochRunId ? {runId: epochRunId} : {}) });
+  const status: Extract<ServerMessage, { type: "team_status" }> = { type: "team_status", team: view };
+
+  if (epochRunId) status.runId = epochRunId;
+  broadcastVisibleServer(status);
 }
 
 function memberActivityForTakeover(phase: TeamMemberPhase, activity?: TeamMemberActivity): TeamMemberActivity {
@@ -573,13 +584,15 @@ async function localActiveMembers() {
   const workingTabs = await getWorkingTabMap();
 
   const activeIds = new Set([
-    ...statuses.filter(([, state]) => state === "running" || state === "user").map(([id]) => id),
+    ...statuses.flatMap(([id, state]) => state === "running" || state === "user" ? [id] : []),
     ...inflightSessionIds,
   ]);
 
-  const tabIds = [...activeIds]
-    .map((sessionId) => workingTabs[sessionId])
-    .filter((tabId): tabId is number => typeof tabId === "number");
+  const tabIds = [...activeIds].flatMap((sessionId) => {
+    const tabId = workingTabs[sessionId];
+
+    return isWorkingTabId(tabId) ? [tabId] : [];
+  });
 
   const tabs = (
     await Promise.all(
@@ -723,17 +736,15 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
     const requestId = pendingControl?.action === "takeover" ? pendingControl.requestId : nextControlRequestId("takeover");
 
     if (pendingControl?.action === "takeover") pendingControl.timeout.arm();
-    uplink.sendClientMessage({
-      type: "takeover",
-      requestId,
-      ...(view
-        ? {
-            groupId: view.groupId,
-            generation: view.generation,
-            members: view.members.map(freezeMemberForTakeover),
-          }
-        : {}),
-    });
+    const takeover: Extract<ClientMessage, { type: "takeover" }> = { type: "takeover", requestId };
+
+    if (view) {
+      takeover.groupId = view.groupId;
+      takeover.generation = view.generation;
+      takeover.members = view.members.map(freezeMemberForTakeover);
+    }
+
+    uplink.sendClientMessage(takeover);
     emitLocalStatus(gate.isUser() ? "user" : lastStatus);
     void showUserControlGuarded();
   }
@@ -1375,7 +1386,15 @@ async function executeToolCall(
                   throw new Error('操作所属控制轮次已失效，后续输入未执行。');
                 }
               })
-              : await handler(params, key(sid));
+              : name === 'ask_user_to_point'
+                ? await askUserToPoint(params, key(sid), () => {
+                  checkIdentity();
+
+                  if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
+                    throw new Error('点选所属任务已停止、被接管或发生变化。');
+                  }
+                })
+                : await handler(params, key(sid));
 
           executionFact = "executed";
 
@@ -1497,20 +1516,17 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   };
   pendingControl.timeout.arm();
 
-  if (
-    !uplink.sendClientMessage({
-      type: "takeover",
-      requestId,
-      ...(remoteRequestId?{taskRequestId:remoteRequestId}:{}),
-      ...(frozen
-        ? {
-            groupId: frozen.groupId,
-            generation: frozen.generation,
-            members: frozen.members.map(freezeMemberForTakeover),
-          }
-        : {}),
-    })
-  ) {
+  const takeover: Extract<ClientMessage, { type: "takeover" }> = { type: "takeover", requestId };
+
+  if (remoteRequestId) takeover.taskRequestId = remoteRequestId;
+
+  if (frozen) {
+    takeover.groupId = frozen.groupId;
+    takeover.generation = frozen.generation;
+    takeover.members = frozen.members.map(freezeMemberForTakeover);
+  }
+
+  if (!uplink.sendClientMessage(takeover)) {
     // 宿主没连上时仍关闭本地写入口；按钮到关闸不能等 Agent 往返。
     const pending = clearPendingControl(requestId);
 
@@ -1622,14 +1638,23 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   pendingControl.timeout.arm();
   const teamViewNow = team.view();
 
-  const payload = {
-    type: "handback" as const,
+  const payload: Extract<ClientMessage, { type: "handback" }> = {
+    type: "handback",
     requestId,
-    ...(remoteRequestId?{taskRequestId:remoteRequestId}:{}),
     members,
-    ...(teamViewNow ? { groupId: teamViewNow.groupId, generation: teamViewNow.generation } : {}),
-    ...(leadPage && leadPage.ok ? { context: leadPage.context, snapshot: leadPage.snapshot } : {}),
   };
+
+  if (remoteRequestId) payload.taskRequestId = remoteRequestId;
+
+  if (teamViewNow) {
+    payload.groupId = teamViewNow.groupId;
+    payload.generation = teamViewNow.generation;
+  }
+
+  if (leadPage && leadPage.ok) {
+    payload.context = leadPage.context;
+    payload.snapshot = leadPage.snapshot;
+  }
 
   if (!uplink.sendClientMessage(payload)) {
     failPendingControl(requestId, "当前没有连接到原会话，页面仍归你。");
@@ -1680,7 +1705,10 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   });
 
   abortDrain=completion.catch(()=>{});
-  const sent=uplink.sendClientMessage({ type: "abort",...(taskRequestId?{taskRequestId}:{}) });
+  const abort: Extract<ClientMessage, { type: "abort" }> = { type: "abort" };
+
+  if (taskRequestId) abort.taskRequestId = taskRequestId;
+  const sent=uplink.sendClientMessage(abort);
 
   if(taskRequestId&&!sent)throw new Error('终止请求未送达Agent。');
   await completion;
@@ -1734,7 +1762,11 @@ function requestPanelControl(action:'pause'|'resume'|'abort',tabId?:number):void
 return;
   }
 
-  if(!uplink.sendClientMessage({type:'task_action',request:{requestId:crypto.randomUUID(),conversationId,source:'text',action,expectedRunId:runId,scope:action==='pause'?'page':'task',...(tabId?{tabId}:{})}}))emitNotice('连接已断开，控制请求没有发送。','error');
+  const actionRequest: TaskActionRequest={requestId:crypto.randomUUID(),conversationId,source:'text',action,expectedRunId:runId,scope:action==='pause'?'page':'task'};
+
+  if(tabId) actionRequest.tabId = tabId;
+
+  if(!uplink.sendClientMessage({type:'task_action',request:actionRequest}))emitNotice('连接已断开，控制请求没有发送。','error');
 }
 
 /**
@@ -2003,7 +2035,13 @@ function attachPanel(port: chrome.runtime.Port) {
 
 function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
  reconcileControlRun();
- const port = { postMessage: (message: BgToPanel) => rawPort.postMessage({ ...message, conversationId, ...(message.kind === "server" ? {msg: {...message.msg, conversationId}} : {}) }) };
+
+ const port = {
+    postMessage: (message: BgToPanel) => rawPort.postMessage(message.kind === "server"
+      ? { ...message, conversationId, msg: { ...message.msg, conversationId } }
+      : { ...message, conversationId }),
+  };
+
         port.postMessage({ kind: "conn", ...lastConn } satisfies BgToPanel);
         void chrome.storage.session.get(ASK_STORE).then((stored) => {
           const ask = stored[ASK_STORE] as PendingAsk | undefined;
@@ -2032,7 +2070,10 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
 
         if (team.view()) {
-          port.postMessage({ kind: "server", msg: { type: "team_status", team: team.view()!, ...(epochRunId ? {runId: epochRunId} : {}) } } satisfies BgToPanel);
+          const status: Extract<ServerMessage, { type: "team_status" }> = { type: "team_status", team: team.view()! };
+
+          if (epochRunId) status.runId = epochRunId;
+          port.postMessage({ kind: "server", msg: status } satisfies BgToPanel);
         }
 
         // T03：任务视图只在真实状态变化时下发、不进历史。面板重开时把这一会话最近一次

@@ -1,15 +1,15 @@
 /**
  * SideAgent 伴随进程入口。
  * 默认 = native messaging 模式：stdio 帧通道，由 Chrome 拉起，鉴权靠 host manifest 的
- * allowed_origins，无 token；stdout 只写协议帧，日志走 stderr + ~/.sideagent/agent.log。
+ * allowed_origins，无 token；stdout 只写协议帧，日志走 stderr + <数据目录>/agent.log。
  * --ws = 调试模式：WS 服务端（127.0.0.1:7758）+ token，便于在终端直接看日志排障。
- * model/proxy 优先级：CLI 参数 > ~/.sideagent/config.json > 内置默认。
+ * model/proxy 优先级：CLI 参数 > <数据目录>/config.json > 内置默认。
+ * 数据目录默认 ~/.sideagent，SIDEAGENT_DATA_DIR 可整体改到别处（隔离验收用）。
  */
 import { appendFileSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { Agent, ProxyAgent, setGlobalDispatcher, type Dispatcher } from "undici";
+import { EnvHttpProxyAgent, setGlobalDispatcher, type Dispatcher } from "undici";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   DEFAULT_HOST,
@@ -21,7 +21,7 @@ import {
   type ClientMessage,
   type ServerMessage,
 } from "../../shared/protocol.js";
-import { loadConfig, resolveConfig, generalBrowserLoopEnabled } from "./config.js";
+import { dataDir, loadConfig, resolveConfig, generalBrowserLoopEnabled } from "./config.js";
 import { BrowserAgentSession } from "./session.js";
 import { createStdioTransport } from "./transport/stdio.js";
 import { ConversationStore } from "./conversation-store.js";
@@ -34,7 +34,7 @@ import { VoiceService } from "./voice-service.js";
 import { readVoicePage } from './voice-page-reader.js';
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
-import { startClipboardDarwinHttpServer, type ClipboardHttpServer } from "./clipboard-darwin.js";
+import { DEFAULT_CLIPBOARD_HTTP_PORT, startClipboardDarwinHttpServer, type ClipboardHttpServer } from "./clipboard-darwin.js";
 
 interface CliArgs {
   ws: boolean;
@@ -89,18 +89,11 @@ function parseCliArgs(argv: string[]): CliArgs {
  * 全局代理 dispatcher：回环地址（127.0.0.1/localhost/::1，如 CLIProxyAPI 本地池）直连，
  * 其余 origin 走代理。实测 undici ProxyAgent 经本地代理转发回环地址的流式 POST 会失败
  * （GET /models 正常），池子请求必须绕过代理。
+ * 不能用 Agent({ factory }) 返回共享的 Agent/ProxyAgent 来分流：某条连接断开后 undici 会 close
+ * 工厂返回的 dispatcher，共享的那个一关，此后请求全部 UND_ERR_DESTROYED（模型侧报 Connection error.）。
  */
 function createProxyDispatcher(proxyUrl: string): Dispatcher {
-  const proxyAgent = new ProxyAgent(proxyUrl);
-  const directAgent = new Agent();
-
-  return new Agent({
-    factory: (origin) => {
-      const hostname = typeof origin === "string" ? new URL(origin).hostname : origin.hostname;
-
-      return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1" ? directAgent : proxyAgent;
-    },
-  });
+  return new EnvHttpProxyAgent({ httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy: "localhost,127.0.0.1,::1" });
 }
 
 // ── 日志 ───────────────────────────────────────────────────────────// stderr 总是可写；stdio 模式下 Chrome 会吞掉 host 的 stderr，所以同时落一份文件。
@@ -109,7 +102,7 @@ let logFile: string | null = null;
 
 function enableFileLog(): void {
   try {
-    const dir = join(homedir(), ".sideagent");
+    const dir = dataDir();
     mkdirSync(dir, { recursive: true });
     logFile = join(dir, "agent.log");
   } catch {
@@ -153,7 +146,16 @@ async function main(): Promise<void> {
 
   if (process.platform === "darwin") {
     try {
-      clipboardServer = await startClipboardDarwinHttpServer();
+      // 7761 被另一个伴随进程（另一个浏览器或隔离验收实例）占着时换随机端口；
+      // 扩展按 hello_ok.clipboardPort 找自己的伴随进程，不会连到别人的服务上。
+      try {
+        clipboardServer = await startClipboardDarwinHttpServer(DEFAULT_CLIPBOARD_HTTP_PORT);
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "EADDRINUSE")) throw error;
+
+        clipboardServer = await startClipboardDarwinHttpServer(0);
+      }
+
       log(`clipboard HTTP ${clipboardServer.url}`);
     } catch (error) {
       log(`clipboard HTTP 未启动：${error instanceof Error ? error.message : String(error)}`);
@@ -173,13 +175,13 @@ async function main(): Promise<void> {
   };
 
   let current: ClientConn | null = null;
-  const store = new ConversationStore(join(homedir(), ".sideagent", "conversations"));
-  const memoryStore = new MemoryStore(join(homedir(), ".sideagent", "memory"));
-  const experienceStore = new ExperienceStore(join(homedir(), ".sideagent", "experiences"));
-  const skillStore = new SkillStore(join(homedir(), ".sideagent", "skills"));
+  const store = new ConversationStore(join(dataDir(), "conversations"));
+  const memoryStore = new MemoryStore(join(dataDir(), "memory"));
+  const experienceStore = new ExperienceStore(join(dataDir(), "experiences"));
+  const skillStore = new SkillStore(join(dataDir(), "skills"));
   let voice:VoiceService;
   // Normal-use capture: the session's send-path evidence and the extension's own facts land in
-  // ~/.sideagent/voice-capture/. Recording never gates anything the voice session does.
+  // <data dir>/voice-capture/. Recording never gates anything the voice session does.
   const voiceCapture = new VoiceCaptureStore({log: message => log(message)});
 
   const keepVoiceEvent = (msg: ServerMessage): void => {
@@ -192,7 +194,7 @@ async function main(): Promise<void> {
     store,
     memoryStore,
     skillStore,
-    new TaskDispatcher(new TaskReceiptStore(join(homedir(), '.sideagent', 'task-receipts'))),
+    new TaskDispatcher(new TaskReceiptStore(join(dataDir(), 'task-receipts'))),
   );
 
   const initial = await conversations.ensureDefault();
@@ -220,7 +222,7 @@ async function main(): Promise<void> {
 
   const sendHelloOk = (conn: ClientConn): void => {
     void session.availableModels().then((models) => {
-      conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+      conn.send(clipboardServer ? { type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION, clipboardPort: clipboardServer.port } : { type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
       conn.send({ type: "conversation_list", conversations: conversations.list() });
       conversations.replayState((msg) => conn.send(msg));
     });

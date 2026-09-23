@@ -45,7 +45,7 @@ export class WorkerTabControl {
       this.stopped.add(workerKey);
       discardPendingClicks(workerKey);
       await chrome.storage.session.set({ [`stoppedWorker:${workerKey}`]: true });
-      await Promise.allSettled([...(this.inflight.get(workerKey) ?? [])]);
+      await Promise.allSettled(this.inflight.get(workerKey) ?? []);
       discardPendingClicks(workerKey);
 
       return { tabIds: await reclaimWorkerTabs(leadKey, workerKey), workers: [] };

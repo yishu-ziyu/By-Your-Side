@@ -197,7 +197,7 @@ function createPage(extra: Spec[] = []) {
 
     const target = params.target === undefined ? undefined : element(params.target);
     const resolvedId = target?.id;
-    calls.push({ name, params, ...(resolvedId === undefined ? {} : { resolvedId }) });
+    calls.push(resolvedId === undefined ? { name, params } : { name, params, resolvedId });
 
     if (name === "fill") {
       if (!target) throw new Error("fill 需要目标");

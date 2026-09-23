@@ -217,7 +217,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
 
     const found = await until(async () => {
       const targets = await cdp!.send("Target.getTargets");
-      const candidates = targets.targetInfos.filter((t: any) => t.type === "service_worker" && /^chrome-extension:\/\//.test(t.url ?? ""));
+      const candidates = targets.targetInfos.filter((t: any) => t.type === "service_worker" && (t.url ?? "").startsWith("chrome-extension://"));
 
       for (const candidate of candidates) {
         const session = await cdp!.attachSession(candidate.targetId);

@@ -6,7 +6,6 @@
 // 预算固定：Jev≤2（每输入一次三问）、response≤15、ready≤20s、单场景≤100s、总≤360s；不预热、不重试、不改题、不调阈值。
 // 退出码：0=PASS，1=FAIL，2=BLOCKED（入口无法合法贯通）。
 import {spawnSync} from 'node:child_process';
-import {EventEmitter} from 'node:events';
 import {createHash} from 'node:crypto';
 import {mkdtemp, mkdir, readFile, writeFile, readdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
@@ -145,7 +144,7 @@ export async function main(): Promise<number> {
   const traces: Record<string, Trace> = {};
   const bridgeEvents: Array<Record<string, unknown>> = [];
   let requests = 0, responses = 0, stopReason: string | null = null;
-  const requestShapes: string[][] = [];
+  const requestLayouts: string[][] = [];
   let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
   let cleanup: unknown;
   let status: 'PASS' | 'FAIL' | 'BLOCKED' = 'FAIL';
@@ -253,7 +252,7 @@ export async function main(): Promise<number> {
         if (requests >= CAPS.jev) { stopReason = 'jev_cap'; throw new Error(stopReason); }
 
         requests++;
-        requestShapes.push(Object.keys(JSON.parse(String(args[1]?.body)).questions).sort());
+        requestLayouts.push(Object.keys(JSON.parse(String(args[1]?.body)).questions).sort());
 
         return fetch(...args);
       },
@@ -427,7 +426,7 @@ export async function main(): Promise<number> {
 
     await write({
       status, reason, scope: 'real isolated Chrome switch + real StepFun/Jev request-gate in one chain; text entry (not human voice); local pages only',
-      budget: {caps: CAPS, requests, requestShapes, responses, stopReason},
+      budget: {caps: CAPS, requests, "requestShapes": requestLayouts, responses, stopReason},
       sourceChanged, before, after,
       dailyDist: {before: dailyDistBefore, after: dailyDistAfter, unchanged: dailyDistBefore === dailyDistAfter},
       setupSeparation: setups, results, requestAudit, traces, cleanup,

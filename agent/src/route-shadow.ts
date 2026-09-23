@@ -1,8 +1,7 @@
 import {appendFileSync, existsSync, mkdirSync, readFileSync} from "node:fs";
-import {homedir} from "node:os";
 import {join} from "node:path";
 import {readTypeSafeKey} from "./typesafe-auth.js";
-import {routeShadowDailyLimit, routeShadowEnabled} from "./config.js";
+import {dataDir, routeShadowDailyLimit, routeShadowEnabled} from "./config.js";
 
 /** Same endpoint/model as agent/src/goal-evidence-judge.ts and docs/evals/20260921-routing-experiment/route-compare.py. */
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
@@ -129,15 +128,13 @@ function dayKey(at: number): string {
 
 /** Same state shape as route-compare.py: {channel, utterances:[{text, previous, taskRunning}]}; page/taskState are additive. */
 function buildState(input: RouteShadowObserveInput): Record<string, unknown> {
+  const utterance = { text: input.text, previous: input.previous, taskRunning: input.taskRunning };
+  const taskStatePiece = input.taskState !== undefined ? { taskState: input.taskState } : {};
+  const pagePiece = input.page !== undefined ? { page: input.page } : {};
+
   return {
     channel: input.channel,
-    utterances: [{
-      text: input.text,
-      previous: input.previous,
-      taskRunning: input.taskRunning,
-      ...(input.taskState !== undefined ? {taskState: input.taskState} : {}),
-      ...(input.page !== undefined ? {page: input.page} : {}),
-    }],
+    utterances: [{ ...utterance, ...taskStatePiece, ...pagePiece }],
   };
 }
 
@@ -159,7 +156,7 @@ export class RouteShadow {
   constructor(options: RouteShadowOptions) {
     this.enabled = options.enabled;
     this.dailyLimit = options.dailyLimit;
-    this.root = options.root ?? process.env.SIDEAGENT_ROUTE_SHADOW_DIR ?? join(homedir(), ".sideagent", "route-shadow");
+    this.root = options.root ?? process.env.SIDEAGENT_ROUTE_SHADOW_DIR ?? join(dataDir(), "route-shadow");
     this.key = options.key ?? readTypeSafeKey;
     this.doFetch = options.fetch ?? fetch;
     this.now = options.now ?? Date.now;

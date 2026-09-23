@@ -154,9 +154,13 @@ export async function trySkillFastLoop(options: {
 
       if (!options.current()) return stop();
 
+      const routeOpts: Parameters<typeof routeSkill>[1] = { signal };
+
+      if (!options.exactOnly) routeOpts.judge = options.judge ?? judgeSkill;
+
       const route = await routeSkill(
         { userText: options.request, hostname, skills, runs },
-        { signal, ...(options.exactOnly ? {} : { judge: options.judge ?? judgeSkill }) },
+        routeOpts,
       );
 
       if (!options.current()) return stop();

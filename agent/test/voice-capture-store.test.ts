@@ -2,7 +2,7 @@ import {existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, s
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {VoiceCaptureStore,clearVoiceCapture,wavBuffer} from '../src/voice-capture-store.js';
+import {VoiceCaptureStore,wavBuffer} from '../src/voice-capture-store.js';
 
 const roots:string[]=[];
 
@@ -156,18 +156,5 @@ describe('normal-use capture store',()=>{
     const store=new VoiceCaptureStore({root:join(root,'blocked','voice-capture'),now:()=>day,log});
     expect(()=>{store.begin('v1','conv-1');store.record('v1','conv-1',{type:'item',turn:1,itemId:'item-1'});}).not.toThrow();
     expect(log).toHaveBeenCalledWith(expect.stringContaining('记录失败'));
-  });
-  it('clears the capture contents while keeping the directory',()=>{
-    const root=tempRoot();
-    const store=new VoiceCaptureStore({root,now:()=>day});
-    store.begin('v1','conv-1',{persistAudio:true});
-    store.command('v1','conv-1',{kind:'capture',turn:1,sampleRate:24000,data:b64([1,2])});
-    const printed:any[]=[];
-    const cleared=clearVoiceCapture(root,(message:string)=>printed.push(message));
-    expect(cleared.paths.length).toBeGreaterThan(0);
-    expect(cleared.bytes).toBeGreaterThan(0);
-    expect(existsSync(root)).toBe(true);
-    expect(readdirSync(root)).toEqual([]);
-    expect(printed.some(message=>message.includes('已删除'))).toBe(true);
   });
 });

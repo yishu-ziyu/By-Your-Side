@@ -96,7 +96,15 @@ export class TaskProgress {
     const omittedRemaining = allRemaining.length - remaining.length;
     const pendingAnswers=plan?.goals.filter(g=>g.kind==='answer'&&g.status==='pending').map(g=>({id:g.id,description:shorten(g.description)}));
 
-    return { delivered, remaining, ...(pendingAnswers?.length?{pendingAnswers}:{}), sources: this.runSources.map((source) => ({ ...source })), ...(omittedDelivered ? { omittedDelivered } : {}), ...(omittedRemaining ? { omittedRemaining } : {}) };
+    const facts: DeliveryFactInput = { delivered, remaining, sources: this.runSources.map((source) => ({ ...source })) };
+
+    if (pendingAnswers?.length) facts.pendingAnswers = pendingAnswers;
+
+    if (omittedDelivered) facts.omittedDelivered = omittedDelivered;
+
+    if (omittedRemaining) facts.omittedRemaining = omittedRemaining;
+
+    return facts;
   }
   private noteRunSource(url: string): void {
     if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
@@ -127,7 +135,9 @@ export class TaskProgress {
     if(requirements.length>64||requirements.some(t=>t.length>12000)||requirements.reduce((n,t)=>n+t.length,0)>RECOVERY_INPUT_MAX||attachmentKeys.length>16)throw new Error('原任务补充内容已达到保留上限，这条修改未接收；请先交付已有结果或另开任务。');
     const page=context?pageRecoveryKey(context.tabId,context.url):prior.page;
     const materials=mergeTaskMaterials(prior.materials??[],context,attachments);
-    const recorded={requirements,attachmentKeys,materials,...(page?{page}:{})};
+    const recorded:TaskRecoveryInput={requirements,attachmentKeys,materials};
+
+    if(page)recorded.page=page;
     const runId=this.runId;
     const priorGoals = this.goals.snapshot();
     this.recoveryInput=recorded;
@@ -370,9 +380,13 @@ return;}
 
       if(!this.aborted&&write)this.readback.beginWrite();
 
-      if (!this.aborted && this.tools.size < 100) this.tools.set(`${member}:${e.toolCallId}`, { member, name: e.name, action: label(e.name), since: this.clock(), target,
-        tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction,
-        ...(valueHash?{valueHash}:{}) });
+      if (!this.aborted && this.tools.size < 100) {
+        const entry: Parameters<typeof this.tools.set>[1] = { member, name: e.name, action: label(e.name), since: this.clock(), target,
+        tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction };
+
+        if (valueHash) entry.valueHash = valueHash;
+        this.tools.set(`${member}:${e.toolCallId}`, entry);
+      }
 
       if (!this.aborted) {
         this.results.noteStart({ toolCallId: e.toolCallId, name: e.name, target, member, runId: this.runId, description: deriveResultDescription(e.name, e.params, target),effectful:durableEffect,recordResult:browserControl,valueHash });
@@ -488,11 +502,14 @@ if(page)this.recoveryInput.page=page;
     };
 
     const snapshot:TaskProgressSnapshot = { goalPlan: this.goals.snapshot(), conversationId: this.conversationId, observedAt: this.clock(), state, goal: this.goal, startedAt: this.startedAt, runId: this.runId,
-      ...(this.restartRecovery ? { restartRecovery: true } : {}),
-      ...(this.interrupted?{interruptionReason:this.interruptionReason}:{}),
-      ...(this.recoveryInput?{recoveryInput:structuredClone(this.recoveryInput)}:{}),
       active: [...this.tools.values()].slice(-12).map(({ member, action, since }) => ({ member, action, since })), lastAction: this.lastAction ? { ...this.lastAction } : null, lastReadAt: this.lastReadAt ?? undefined, successVerified: false, conversationContext,
       results: this.results.list(), executionState: this.results.state(), resultState: this.results.state() };
+
+    if (this.restartRecovery) snapshot.restartRecovery = true;
+
+    if (this.interrupted) snapshot.interruptionReason = this.interruptionReason;
+
+    if (this.recoveryInput) snapshot.recoveryInput = structuredClone(this.recoveryInput);
 
     if (snapshot.goalPlan) {
       snapshot.resultState = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results!)) ? 'unknown' : goalsSatisfied(snapshot.goalPlan) ? 'satisfied' : 'pending';

@@ -38,13 +38,13 @@ const portBoundary = () => {
   let listeners = [];
   let disconnects = [];
   window.__emitToPanel = (msg) => {
-    for (const l of [...listeners]) l(msg);
+    for (const l of listeners) l(msg);
   };
 
   window.__panelHasPort = () => listeners.length > 0;
   // 模拟 Port 对端死亡：触发面板 onDisconnect（真实断线时序）
   window.__dropPort = () => {
-    for (const l of [...disconnects]) l();
+    for (const l of disconnects) l();
   };
 
   window.__setFault = (f) => {

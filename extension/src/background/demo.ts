@@ -6,7 +6,7 @@
  *   - 缓冲只在内存：不写 chrome.storage（配额教训：按会话大量落盘会把扩展存储写满）。
  *   - 服务 worker 重启即丢：如实告诉用户「示范中断」，不静默补录。
  */
-import { byteLength, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
+import { byteLength, type DemoStep } from "../../../shared/demo-record.js";
 
 export interface DemoSession {
   conversationId: string;
@@ -46,11 +46,6 @@ export function dismissDemo(conversationId: string): void {
   sessions.delete(conversationId);
 }
 
-/** 录制中的标签页；工具闸门据此拦住"边示范边操作"。 */
-export function recordingTabId(conversationId: string): number | undefined {
-  return isRecording(conversationId) ? sessions.get(conversationId)?.tabId : undefined;
-}
-
 /**
  * 按标签页反查正在录的会话。
  * 页面侧上行只有 sender.tab，而示范页常常还没有任何任务绑定，
@@ -60,12 +55,6 @@ export function conversationForRecordingTab(tabId: number): string | undefined {
   for (const session of sessions.values()) if (session.tabId === tabId && !session.stopped) return session.conversationId;
 
   return undefined;
-}
-
-export function demoHint(conversationId: string): string | undefined {
-  const s = sessions.get(conversationId);
-
-  return s ? recordingHint(s.steps, s.truncated) : undefined;
 }
 
 /**

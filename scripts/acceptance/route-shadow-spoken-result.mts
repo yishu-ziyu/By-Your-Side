@@ -5,7 +5,6 @@
 // 不触碰 ~/.sideagent/route-shadow 的日常影子数据与日预算。
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { RouteShadow } from '../../agent/src/route-shadow.js';
 import { readTypeSafeKey } from '../../agent/src/typesafe-auth.js';
@@ -135,7 +134,9 @@ for (const bucket of GROUPS) {
 // ── 结果裁决（只回答两个问题，不选生产阈值） ────────────────────────────────
 const valid = results.filter(r => r.spokenResult !== null);
 
-const latencies = valid.map(r => r.requestMs!).filter(v => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
+const latencies = valid.flatMap(r => { const v = r.requestMs!;
+
+ return typeof v === 'number' && Number.isFinite(v) ? [v] : []; }).sort((a, b) => a - b);
 
 const median = latencies.length ? (latencies.length % 2 ? latencies[(latencies.length - 1) / 2]! : Math.round((latencies[latencies.length / 2 - 1]! + latencies[latencies.length / 2]!) / 2)) : null;
 
@@ -144,8 +145,8 @@ const verdict = {
   allRecorded: valid.length === results.length,
   group1AllBelow05: results.filter(r => r.group === 1).length === 3 && results.filter(r => r.group === 1).every(r => r.directionOk === true),
   groups23AllAtLeast05: results.filter(r => r.group >= 2).length === 6 && results.filter(r => r.group >= 2).every(r => r.directionOk === true),
-  directionErrors: results.filter(r => r.directionOk === false).map(r => ({ id: r.id, text: r.text, spokenResult: r.spokenResult })),
-  noResponseOrInvalid: results.filter(r => r.spokenResult === null).map(r => ({ id: r.id, text: r.text, skipReason: r.skipReason })),
+  directionErrors: results.flatMap(r => r.directionOk === false ? [{ id: r.id, text: r.text, spokenResult: r.spokenResult }] : []),
+  noResponseOrInvalid: results.flatMap(r => r.spokenResult === null ? [{ id: r.id, text: r.text, skipReason: r.skipReason }] : []),
   latencyMs: { min: latencies[0] ?? null, median, max: latencies[latencies.length - 1] ?? null, n: latencies.length },
 };
 

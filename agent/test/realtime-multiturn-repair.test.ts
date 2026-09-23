@@ -1,4 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
+
+type Json = string | number | boolean | null | undefined | Json[] | { [key: string]: Json };
+
 import { BrowserAgentSession } from '../src/session.js';
 import { ConversationManager } from '../src/conversation-manager.js';
 import { createBrowserTools } from '../src/tools.js';
@@ -15,7 +18,7 @@ async function harness() {
 
   const rpc: any = {
     setPageTarget: vi.fn(), getPageTarget: () => 7,
-    resolvePageParams: (_: string, params: object) => ({ tabId: 7, ...params }),
+    resolvePageParams: (_: string, params: Record<string, Json>) => ({ tabId: 7, ...params }),
     ensureToolCall: vi.fn(), markCallRejected: (id: string) => facts.set(id, 'not_executed'),
     getExecutionFact: (id: string) => facts.get(id), noteToolFact: (id: string, fact: string) => facts.set(id, fact),
     call: vi.fn(async (name: string, _params: unknown, _timeout: unknown, _member: unknown, _program: unknown, _epoch: unknown, id: string) => {

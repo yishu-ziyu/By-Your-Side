@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  AcceptanceContinuity,
   BrowserAgentSession,
   HANDBACK_RESTORE_TIMEOUT_MS,
   extractImages,
@@ -346,34 +345,6 @@ describe("BrowserAgentSession 交还恢复超时", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe("AcceptanceContinuity", () => {
-  it("同一实例只在自己的 fresh snapshot marker 出现后推进原任务 step", () => {
-    const continuity = new AcceptanceContinuity("instance-worker");
-    const before = continuity.seed("task-worker", "user-worker-marker");
-    expect(before).toMatchObject({ instanceId: "instance-worker", taskId: "task-worker", step: "before", active: true });
-
-    const wrong = continuity.continue(
-      { tabId: 11, title: "Lead", url: "https://example.com/lead" },
-      "user-lead-marker",
-    );
-
-    expect(wrong).toMatchObject({ step: "before", resumedTabId: 11, snapshotMarkerFound: false });
-
-    const after = continuity.continue(
-      { tabId: 21, title: "Worker", url: "https://example.com/worker" },
-      "fresh user-worker-marker",
-    );
-
-    expect(after).toMatchObject({
-      instanceId: "instance-worker",
-      taskId: "task-worker",
-      step: "continued",
-      resumedTabId: 21,
-      snapshotMarkerFound: true,
-    });
   });
 });
 

@@ -490,16 +490,18 @@ export async function installExecuteToolCallHook(cdp, sessionId, extensionId, pr
     offException(); offPause();
 
     // Debugger.disable removes our breakpoints and resumes even on trigger failure.
-    try {
-      await cdp.send('Debugger.disable', {}, sessionId, 4000);
+    await (async () => {
+      try {
+        await cdp.send('Debugger.disable', {}, sessionId, 4000);
 
-      if (trigger) await trigger.catch(() => {});
-      diagnose('probe-final-state', await evaluate('globalThis.__saProbeState'));
-      await evaluate(`(async()=>{if(globalThis.__saProbeTab != null){await chrome.tabs.remove(globalThis.__saProbeTab);delete globalThis.__saProbeTab;}})()`);
-      diagnose('hook-cleanup', { status: 'PASS', sessionId });
-    } catch (error) {
-      diagnose('hook-cleanup', { status: 'FAIL', sessionId, error: String(error) });
-      throw error;
-    }
+        if (trigger) await trigger.catch(() => {});
+        diagnose('probe-final-state', await evaluate('globalThis.__saProbeState'));
+        await evaluate(`(async()=>{if(globalThis.__saProbeTab != null){await chrome.tabs.remove(globalThis.__saProbeTab);delete globalThis.__saProbeTab;}})()`);
+        diagnose('hook-cleanup', { status: 'PASS', sessionId });
+      } catch (error) {
+        diagnose('hook-cleanup', { status: 'FAIL', sessionId, error: String(error) });
+        throw error;
+      }
+    })();
   }
 }

@@ -202,7 +202,7 @@ return originalFetch(input,init);
  let delivery:ReturnType<typeof createDeliveryQueue>|undefined,isolationCleanup:any;
  const resources=new Map<number,any>();
  const resourceHook=createHook({init(id,type,_,resource){if(['Timeout','MESSAGEPORT','TCPWRAP','FSEVENTWRAP','PIPEWRAP','WORKER'].includes(type))resources.set(id,{type,resource,stack:new Error().stack});},destroy(id){resources.delete(id);}}).enable();
- const resourceSnapshot=()=>({active:process.getActiveResourcesInfo(),owners:[...resources].filter(([,v])=>v.resource.hasRef?.()).map(([id,v])=>({id,type:v.type,stack:v.stack})),delivery:delivery?.snapshot(),isolation:iso?.diagnostics()});
+ const resourceSnapshot=()=>({active:process.getActiveResourcesInfo(),owners:[...resources].flatMap(([id,v])=>v.resource.hasRef?.()?[{id,type:v.type,stack:v.stack}]:[]),delivery:delivery?.snapshot(),isolation:iso?.diagnostics()});
  let probe:any,originalDocument:string|undefined,observed:any,fillError:any,drop:any,binding:any;
  const abort=new AbortController(),deadline=setTimeout(()=>abort.abort(),85000);
  const terminate=()=>abort.abort();
@@ -375,7 +375,8 @@ try{runtime.session.assertTaskResultExecution('fill',{tabId,target:fieldTarget,v
   resourceHook.disable();process.removeListener('SIGTERM',terminate);
   globalThis.fetch=originalFetch;net.Socket.prototype.connect=originalConnect;syncBuiltinESMExports();
   record('network-final',{modelCalls,blockedNetwork,forwardedModelRequests:0,allowedPorts:[...allowedPorts]});
-  const result={case:name,status,reason,stage,originalDocument,observed,binding,probe,readback:fillError?.readback,modelCalls,blockedNetwork,forwardedModelRequests:0,cleanup,deadlineExceeded:abort.signal.aborted,humanAcceptance:'NOT_RUN',realModelLanguage:'NOT_RUN',...(name==='C'?{originalC2:'NOT_FIXED'}:{})};
+  const cExtra = name==='C'?{originalC2:'NOT_FIXED'}:{};
+  const result={case:name,status,reason,stage,originalDocument,observed,binding,probe,readback:fillError?.readback,modelCalls,blockedNetwork,forwardedModelRequests:0,cleanup,deadlineExceeded:abort.signal.aborted,humanAcceptance:'NOT_RUN',realModelLanguage:'NOT_RUN',...cExtra};
   process.exitCode=workerExitCode(result);
   json(join(out,'result.json'),{...result,workerExitCode:process.exitCode});
   console.log(`${name} ${status}: ${reason}`);

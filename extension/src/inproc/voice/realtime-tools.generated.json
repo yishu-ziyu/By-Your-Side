@@ -1,0 +1,962 @@
+{
+ "names": [
+  "tabs",
+  "navigate",
+  "snapshot",
+  "read_element",
+  "read_elements",
+  "hover",
+  "click",
+  "fill",
+  "type_text",
+  "press_key",
+  "scroll",
+  "mark",
+  "page_translation"
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "page_translation",
+    "description": "Translate the current webpage IN PLACE, progressively, using the current model. action:\"translate\" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:\"translated\" when the user only wants translation. action:\"display\" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:\"songti\" for 宋体 or \"original\" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. Never use handwritten JS to change translation fonts. action:\"restore\" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation. Use this tool, never handwritten JS or a sidebar-only translation. Do not delegate page translation to workers.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "action"
+     ],
+     "properties": {
+      "action": {
+       "anyOf": [
+        {
+         "type": "string",
+         "const": "translate"
+        },
+        {
+         "type": "string",
+         "const": "display"
+        },
+        {
+         "type": "string",
+         "const": "restore"
+        }
+       ]
+      },
+      "tabId": {
+       "type": "number"
+      },
+      "language": {
+       "type": "string"
+      },
+      "mode": {
+       "anyOf": [
+        {
+         "type": "string",
+         "const": "bilingual"
+        },
+        {
+         "type": "string",
+         "const": "translated"
+        }
+       ]
+      },
+      "fontSize": {
+       "type": "number",
+       "minimum": 10,
+       "maximum": 48
+      },
+      "fontFamily": {
+       "anyOf": [
+        {
+         "type": "string",
+         "const": "original"
+        },
+        {
+         "type": "string",
+         "const": "songti"
+        }
+       ]
+      },
+      "document": {
+       "type": "string",
+       "description": "Observed translation instance; reject if the page changed."
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "read_element",
+    "description": "Read a unique current element without changing the page. By default return complete textContent and field value. Rich editors also return editableText with paragraph and hard-break newlines; raw textContent omits these breaks, so use editableText for copied rich-text content. Use target:'body' for full source text. For controls/media use properties (paused, currentTime, checked, enabled, visible, expanded, pressed, value), not handwritten JS probes. Native select has two different states: value is the option's internal value/id (for example 'c'), while displayValue is the visible label the user sees (for example '远山'). When the requested state is expressed as a human-visible option label, verify with displayValue, never compare that label to value or selected. To verify or wait, use expect:{property:'paused',equals:true}, expect:{property:'displayValue',equals:'远山'} for a select label, or expect:{property:'textContent',contains:'Saved'}, with timeoutMs up to 5000. Returns check.matched only when that exact condition holds; timeout is a failure, never success. Use a current snapshot @ref or unique observed native CSS; ambiguity/stale refs fail without switching targets. Works inside browser_run with the same parameters. Main may read any tab; workers only assigned tabs.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "target"
+     ],
+     "properties": {
+      "tabId": {
+       "type": "number",
+       "description": "Owned tab id; omit to use this member's working tab"
+      },
+      "target": {
+       "type": "string",
+       "description": "Current \"@N\" snapshot ref, \"loc=css:...\", or unique native CSS selector"
+      },
+      "properties": {
+       "type": "array",
+       "items": {
+        "anyOf": [
+         {
+          "type": "string",
+          "const": "textContent"
+         },
+         {
+          "type": "string",
+          "const": "value"
+         },
+         {
+          "type": "string",
+          "const": "displayValue"
+         },
+         {
+          "type": "string",
+          "const": "visible"
+         },
+         {
+          "type": "string",
+          "const": "enabled"
+         },
+         {
+          "type": "string",
+          "const": "checked"
+         },
+         {
+          "type": "string",
+          "const": "selected"
+         },
+         {
+          "type": "string",
+          "const": "expanded"
+         },
+         {
+          "type": "string",
+          "const": "pressed"
+         },
+         {
+          "type": "string",
+          "const": "paused"
+         },
+         {
+          "type": "string",
+          "const": "ended"
+         },
+         {
+          "type": "string",
+          "const": "currentTime"
+         },
+         {
+          "type": "string",
+          "const": "duration"
+         }
+        ]
+       },
+       "maxItems": 13,
+       "description": "Read these state properties; omit for complete text/value. Unsupported properties fail explicitly."
+      },
+      "expect": {
+       "anyOf": [
+        {
+         "type": "object",
+         "required": [
+          "property",
+          "equals"
+         ],
+         "properties": {
+          "property": {
+           "anyOf": [
+            {
+             "type": "string",
+             "const": "visible"
+            },
+            {
+             "type": "string",
+             "const": "enabled"
+            },
+            {
+             "type": "string",
+             "const": "checked"
+            },
+            {
+             "type": "string",
+             "const": "selected"
+            },
+            {
+             "type": "string",
+             "const": "paused"
+            },
+            {
+             "type": "string",
+             "const": "ended"
+            }
+           ]
+          },
+          "equals": {
+           "type": "boolean",
+           "description": "Boolean true/false, never a quoted string."
+          }
+         }
+        },
+        {
+         "type": "object",
+         "required": [
+          "property",
+          "equals"
+         ],
+         "properties": {
+          "property": {
+           "anyOf": [
+            {
+             "type": "string",
+             "const": "expanded"
+            },
+            {
+             "type": "string",
+             "const": "pressed"
+            }
+           ]
+          },
+          "equals": {
+           "anyOf": [
+            {
+             "type": "boolean"
+            },
+            {
+             "type": "string",
+             "const": "mixed"
+            }
+           ]
+          }
+         }
+        },
+        {
+         "type": "object",
+         "required": [
+          "property",
+          "equals"
+         ],
+         "properties": {
+          "property": {
+           "anyOf": [
+            {
+             "type": "string",
+             "const": "currentTime"
+            },
+            {
+             "type": "string",
+             "const": "duration"
+            }
+           ]
+          },
+          "equals": {
+           "type": "number"
+          }
+         }
+        },
+        {
+         "type": "object",
+         "required": [
+          "property",
+          "equals"
+         ],
+         "properties": {
+          "property": {
+           "anyOf": [
+            {
+             "type": "string",
+             "const": "textContent"
+            },
+            {
+             "type": "string",
+             "const": "value"
+            },
+            {
+             "type": "string",
+             "const": "displayValue"
+            }
+           ]
+          },
+          "equals": {
+           "type": "string"
+          }
+         }
+        },
+        {
+         "type": "object",
+         "required": [
+          "property",
+          "contains"
+         ],
+         "properties": {
+          "property": {
+           "anyOf": [
+            {
+             "type": "string",
+             "const": "textContent"
+            },
+            {
+             "type": "string",
+             "const": "value"
+            },
+            {
+             "type": "string",
+             "const": "displayValue"
+            }
+           ]
+          },
+          "contains": {
+           "type": "string",
+           "minLength": 1
+          }
+         }
+        }
+       ]
+      },
+      "timeoutMs": {
+       "type": "number",
+       "minimum": 0,
+       "maximum": 5000,
+       "description": "Optional bounded wait for expect; default 0 checks once. No model round trips while waiting."
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "read_elements",
+    "description": "Host-only, bounded readback of EVERY current element matching a native CSS selector, without changing the page: text, visibility, position and computed style for each match, plus total/truncated counts. Use to verify page-wide annotation/highlight/marking state that a single read_element cannot cover; the host reads this directly, it is never a model claim.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "selector"
+     ],
+     "properties": {
+      "tabId": {
+       "type": "number",
+       "description": "Owned tab id; omit to use this member's working tab"
+      },
+      "selector": {
+       "type": "string",
+       "minLength": 1,
+       "description": "Native CSS selector; every current match is read, up to limit."
+      },
+      "limit": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 200,
+       "description": "Maximum elements to read (1-200, matching the executor bound); excess are reported as truncated, not silently dropped."
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "tabs",
+    "description": "One tool for browser tabs, in one call: action:\"list\" lists ALL tabs (id, title, URL) including user-opened and other conversations' — reading does not claim them; action:\"active\" returns the tab the user is looking at right now (use it for \"this page\" when the message carries no page context, then action:\"switch\"); action:\"open\" opens url (omit for blank) and claims it as the working tab; action:\"switch\" makes tabId the working tab; action:\"close\" closes tabId or the working tab. Open returns when the document is interactive, not when all resources finish; a readiness timeout is not confirmed success — check the URL and snapshot before acting.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "action"
+     ],
+     "properties": {
+      "action": {
+       "anyOf": [
+        {
+         "type": "string",
+         "const": "list"
+        },
+        {
+         "type": "string",
+         "const": "active"
+        },
+        {
+         "type": "string",
+         "const": "open"
+        },
+        {
+         "type": "string",
+         "const": "switch"
+        },
+        {
+         "type": "string",
+         "const": "close"
+        }
+       ],
+       "description": "list | active | open | switch | close"
+      },
+      "tabId": {
+       "type": "number",
+       "description": "Tab id (required for \"switch\"; optional for \"close\", which defaults to the working tab)"
+      },
+      "url": {
+       "type": "string",
+       "description": "URL to open for \"open\"; omit for a blank tab"
+      },
+      "decisionGuard": {
+       "type": "object",
+       "required": [
+        "observationId",
+        "operation",
+        "sourceTabId"
+       ],
+       "properties": {
+        "observationId": {
+         "type": "string"
+        },
+        "operation": {
+         "type": "string",
+         "const": "switch_tab"
+        },
+        "sourceTabId": {
+         "type": "number"
+        }
+       },
+       "description": "Host-issued guard for a switch selected from a current browser observation."
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "navigate",
+    "description": "Navigate the working tab to a URL and wait for the new document to be interactive. Readiness timeout is not confirmed navigation success; verify the URL and take a snapshot before acting.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "url"
+     ],
+     "properties": {
+      "url": {
+       "type": "string",
+       "description": "Absolute URL"
+      },
+      "timeout": {
+       "type": "number",
+       "description": "Load timeout in seconds"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "snapshot",
+    "description": "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.\nTake a snapshot after every navigation and after actions that change the page.\nRef numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.\nViewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "tabId": {
+       "type": "number",
+       "description": "Tab to read without claiming or switching it"
+      },
+      "scope": {
+       "anyOf": [
+        {
+         "type": "string",
+         "const": "full_page"
+        },
+        {
+         "type": "string",
+         "const": "viewport"
+        }
+       ],
+       "description": "full_page (default) or viewport only"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "hover",
+    "description": "Move the real browser mouse over an element to reveal hover-only controls, menus or tooltips. Provide target (\"@N\" from the latest snapshot, \"loc=css:...\", or native CSS) or viewport point [x,y]. Then observe which controls appeared before clicking. JavaScript-dispatched mouse events do not activate CSS :hover.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "target": {
+       "type": "string",
+       "description": "\"@N\" from the latest snapshot, \"loc=css:...\", or native CSS; no :has-text()"
+      },
+      "point": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       },
+       "minItems": 2,
+       "maxItems": 2,
+       "description": "Viewport [x, y] coordinates"
+      },
+      "label": {
+       "type": "string",
+       "description": "Short description of the hover target"
+      },
+      "tabId": {
+       "type": "number"
+      },
+      "decisionGuard": {
+       "type": "object",
+       "required": [
+        "observationId",
+        "operation"
+       ],
+       "properties": {
+        "observationId": {
+         "type": "string"
+        },
+        "operation": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": "click"
+          },
+          {
+           "type": "string",
+           "const": "fill"
+          },
+          {
+           "type": "string",
+           "const": "press_key"
+          },
+          {
+           "type": "string",
+           "const": "scroll"
+          },
+          {
+           "type": "string",
+           "const": "hover"
+          }
+         ]
+        },
+        "target": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "click",
+    "description": "Click an element in the working tab. Provide target (\"@N\" ref, \"loc=css:...\" locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "target": {
+       "type": "string",
+       "description": "\"@N\" ref, \"loc=css:...\" locator, or raw CSS selector"
+      },
+      "point": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       },
+       "minItems": 2,
+       "maxItems": 2,
+       "description": "Viewport [x, y] coordinates"
+      },
+      "position": {
+       "type": "object",
+       "required": [
+        "x",
+        "y"
+       ],
+       "properties": {
+        "x": {
+         "type": "number",
+         "description": "CSS px from target top-left"
+        },
+        "y": {
+         "type": "number"
+        }
+       },
+       "description": "Offset inside target; ignored when point is set"
+      },
+      "button": {
+       "anyOf": [
+        {
+         "type": "string",
+         "const": "left"
+        },
+        {
+         "type": "string",
+         "const": "middle"
+        },
+        {
+         "type": "string",
+         "const": "right"
+        }
+       ],
+       "description": "Mouse button (default \"left\")"
+      },
+      "clickCount": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 10,
+       "description": "CDP clickCount (default 1)"
+      },
+      "force": {
+       "type": "boolean",
+       "description": "Skip hit-target confirmation and still dispatch"
+      },
+      "label": {
+       "type": "string",
+       "description": "Short human-readable description of what you click"
+      },
+      "tabId": {
+       "type": "number"
+      },
+      "decisionGuard": {
+       "type": "object",
+       "required": [
+        "observationId",
+        "operation"
+       ],
+       "properties": {
+        "observationId": {
+         "type": "string"
+        },
+        "operation": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": "click"
+          },
+          {
+           "type": "string",
+           "const": "fill"
+          },
+          {
+           "type": "string",
+           "const": "press_key"
+          },
+          {
+           "type": "string",
+           "const": "scroll"
+          },
+          {
+           "type": "string",
+           "const": "hover"
+          }
+         ]
+        },
+        "target": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "fill",
+    "description": "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). For a copied field, use the complete fieldValues value returned by task_goals/capture_page_material in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "target",
+      "value"
+     ],
+     "properties": {
+      "target": {
+       "type": "string",
+       "description": "\"@N\" ref, \"loc=css:...\" locator, or raw CSS selector"
+      },
+      "value": {
+       "type": "string",
+       "description": "Value to set"
+      },
+      "tabId": {
+       "type": "number"
+      },
+      "decisionGuard": {
+       "type": "object",
+       "required": [
+        "observationId",
+        "operation"
+       ],
+       "properties": {
+        "observationId": {
+         "type": "string"
+        },
+        "operation": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": "click"
+          },
+          {
+           "type": "string",
+           "const": "fill"
+          },
+          {
+           "type": "string",
+           "const": "press_key"
+          },
+          {
+           "type": "string",
+           "const": "scroll"
+          },
+          {
+           "type": "string",
+           "const": "hover"
+          }
+         ]
+        },
+        "target": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "type_text",
+    "description": "Type text as real keyboard input into the currently focused element of the working tab.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "text"
+     ],
+     "properties": {
+      "text": {
+       "type": "string",
+       "description": "Text to type"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "press_key",
+    "description": "Press a key in the working tab, e.g. Enter, Tab, Escape, ArrowDown, or combos like Control+A.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "key"
+     ],
+     "properties": {
+      "key": {
+       "type": "string",
+       "description": "Key name or combo, e.g. \"Enter\", \"Tab\", \"Control+A\""
+      },
+      "tabId": {
+       "type": "number"
+      },
+      "decisionGuard": {
+       "type": "object",
+       "required": [
+        "observationId",
+        "operation"
+       ],
+       "properties": {
+        "observationId": {
+         "type": "string"
+        },
+        "operation": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": "click"
+          },
+          {
+           "type": "string",
+           "const": "fill"
+          },
+          {
+           "type": "string",
+           "const": "press_key"
+          },
+          {
+           "type": "string",
+           "const": "scroll"
+          },
+          {
+           "type": "string",
+           "const": "hover"
+          }
+         ]
+        },
+        "target": {
+         "type": "string"
+        }
+       }
+      },
+      "target": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "scroll",
+    "description": "Scroll the working tab by dy pixels (positive = down) or jump to the bottom. Re-snapshot afterwards to see new content.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "dy": {
+       "type": "number",
+       "description": "Pixels to scroll, positive down"
+      },
+      "toBottom": {
+       "type": "boolean",
+       "description": "Scroll to the very bottom"
+      },
+      "tabId": {
+       "type": "number"
+      },
+      "decisionGuard": {
+       "type": "object",
+       "required": [
+        "observationId",
+        "operation"
+       ],
+       "properties": {
+        "observationId": {
+         "type": "string"
+        },
+        "operation": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": "click"
+          },
+          {
+           "type": "string",
+           "const": "fill"
+          },
+          {
+           "type": "string",
+           "const": "press_key"
+          },
+          {
+           "type": "string",
+           "const": "scroll"
+          },
+          {
+           "type": "string",
+           "const": "hover"
+          }
+         ]
+        },
+        "target": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "mark",
+    "description": "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + pointer arrow + optional label on target (\"look here\", highlights). For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "target": {
+       "type": "string",
+       "description": "\"@N\" ref, \"loc=css:...\" locator, or raw CSS selector; required unless clear is true"
+      },
+      "label": {
+       "type": "string",
+       "description": "Short label shown next to the mark, e.g. 待删除"
+      },
+      "actions": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "id",
+         "label"
+        ],
+        "properties": {
+         "id": {
+          "anyOf": [
+           {
+            "type": "string",
+            "const": "confirm"
+           },
+           {
+            "type": "string",
+            "const": "cancel"
+           }
+          ]
+         },
+         "label": {
+          "type": "string",
+          "description": "Button text, e.g. 删除 / 取消"
+         }
+        }
+       },
+       "maxItems": 2,
+       "description": "Confirm/cancel buttons shown on the cursor's name pill while it holds the marked element (draw only)"
+      },
+      "clear": {
+       "type": "boolean",
+       "description": "true clears every mark on the page instead of drawing; no target needed"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "judge_browser_action",
+    "description": "Ask Jev to identify the next browser action and its target from a fresh, host-observed page. Use when the intended element/tab is ambiguous or matching controls is difficult. Pass the complete local requirement including restrictions. The host supplies actual user context and page candidates; never supply invented candidates. Returns a suggestion, uncertainty or a need for more context, WITHOUT executing. To act, call the returned tool with its arguments including decisionGuard. Fill suggestions may require value from the user or existing material. If stale, observe/judge again; never drop decisionGuard to bypass rejection. Simple unambiguous operations need no judgment call.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "request"
+     ],
+     "properties": {
+      "request": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 3000
+      },
+      "tabId": {
+       "type": "number"
+      }
+     }
+    }
+   }
+  }
+ ]
+}

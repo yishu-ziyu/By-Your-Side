@@ -1,11 +1,14 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
-let stored: Record<string, unknown>;
+/** chrome.storage.session.set 的替身只接受「一组键值」，与本文件的 stored 同形。 */
+type SessionItems = Record<string, unknown>;
+
+let stored: SessionItems;
 
 beforeEach(() => {
   vi.resetModules(); stored={};
   vi.stubGlobal('chrome', {
-    storage:{session:{get:vi.fn(async(k:string)=>({[k]:stored[k]})),set:vi.fn(async(v:object)=>Object.assign(stored,v))}},
+    storage:{session:{get:vi.fn(async(k:string)=>({[k]:stored[k]})),set:vi.fn(async(v:SessionItems)=>Object.assign(stored,v))}},
     tabs:{query:vi.fn(async()=>[1,2,3].map(id=>({id,title:`page ${id}`,url:`https://test/${id}`}))),get:vi.fn(async(id:number)=>({id})),onRemoved:{addListener:vi.fn()}},
   });
 });

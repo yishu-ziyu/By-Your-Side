@@ -192,7 +192,9 @@ return value?this.store.receipt(value):undefined;
   }
   dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'> & Partial<Pick<TaskReceipt,'action'|'diff'>>>, options?:{deferredResume?:boolean}):Promise<TaskReceipt> {
     const key=keyOf(request), fingerprint=hash(canonicalValue(request));
-    const base:TaskReceipt={requestId:request.requestId,conversationId:request.conversationId,source:request.source,...(request.originConversationId?{originConversationId:request.originConversationId}:{}),action:request.action,runId:request.expectedRunId,text:request.text??'',targetTitle,status:'unknown',message:'执行结果尚无法确认。',updatedAt:Date.now()};
+    const base:TaskReceipt={requestId:request.requestId,conversationId:request.conversationId,source:request.source,action:request.action,runId:request.expectedRunId,text:request.text??'',targetTitle,status:'unknown',message:'执行结果尚无法确认。',updatedAt:Date.now()};
+
+    if (request.originConversationId) base.originConversationId = request.originConversationId;
     const conflict=()=>({...base,status:'rejected' as const,message:'同一请求编号的内容发生变化，操作未执行。'});
     const pending=this.active.get(key);
 
@@ -227,7 +229,9 @@ return value?this.store.receipt(value):undefined;
       let receipt:TaskReceipt;
 
       try { receipt={...base,...await execute(),updatedAt:Date.now()}; }
-      catch(error) { receipt={...base,...(error instanceof TaskActionRejected && error.allowNewConversation && request.action === 'start' ? {newConversationRequest:structuredClone(request)} : {}),status:error instanceof TaskActionRejected?'rejected':error instanceof TaskActionFailed?'failed':'unknown',message:error instanceof TaskActionRejected||error instanceof TaskActionFailed?error.message:'执行结果尚无法确认；不会自动重做。',updatedAt:Date.now()}; }
+      catch(error) { receipt={...base,status:error instanceof TaskActionRejected?'rejected':error instanceof TaskActionFailed?'failed':'unknown',message:error instanceof TaskActionRejected||error instanceof TaskActionFailed?error.message:'执行结果尚无法确认；不会自动重做。',updatedAt:Date.now()};
+
+ if (error instanceof TaskActionRejected && error.allowNewConversation && request.action === 'start') receipt.newConversationRequest = structuredClone(request); }
 
       try { this.store.finish(key,{fingerprint,pending:false,receipt}); }
       catch { return {...receipt,status:'unknown' as const,message:'回执未能保存，执行结果尚无法确认；不会自动重做。'}; }

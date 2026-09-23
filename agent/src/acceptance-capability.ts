@@ -1,8 +1,8 @@
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { dataDir } from "./config.js";
 
-export const ACCEPTANCE_CAPABILITY_PATH = join(homedir(), ".sideagent", "acceptance-team-capability.json");
+export const ACCEPTANCE_CAPABILITY_PATH = join(dataDir(), "acceptance-team-capability.json");
 
 export function consumeAcceptanceCapability(token: string, path = ACCEPTANCE_CAPABILITY_PATH): boolean {
   if (!token) return false;

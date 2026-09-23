@@ -120,7 +120,7 @@ function listenTabPopups(): void {
   chrome.tabs.onRemoved?.addListener((tabId) => {
     disposeTabArms(ledger, tabId, "page destroyed");
 
-    for (const [token, timer] of [...armTimers]) {
+    for (const [token, timer] of armTimers) {
       const arm = getArm(ledger, token);
 
       if (arm?.tabId === tabId) {
@@ -276,11 +276,21 @@ export async function armEventForTab(input: {
       // Never drop the authorized output path and pretend the same download
       // contract still holds. Unsupported browser-level configuration is a gap.
       try {
-        await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setDownloadBehavior", {
-          behavior: "allow",
-          ...(input.downloadPath ? { downloadPath: input.downloadPath } : {}),
-          eventsEnabled: true,
-        });
+        // Never drop the authorized output path and pretend the same download
+        // contract still holds. Unsupported browser-level configuration is a gap.
+        // downloadPath 只在已授权下载时才带上；缺省时这个键不出现。
+        if (input.downloadPath) {
+          await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setDownloadBehavior", {
+            behavior: "allow",
+            downloadPath: input.downloadPath,
+            eventsEnabled: true,
+          });
+        } else {
+          await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setDownloadBehavior", {
+            behavior: "allow",
+            eventsEnabled: true,
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`DOWNLOAD_ARM_CDP: Page.setDownloadBehavior failed (${message.slice(0, 160)}). Arm not active.`);
@@ -431,10 +441,14 @@ export async function handleJsDialog(
   const dialog = pendingDialog(ledger, tabId);
 
   if (!dialog) return { ok: false };
-  await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", {
-    accept,
-    ...(accept && promptText !== undefined ? { promptText } : {}),
-  });
+
+  // promptText 只在 accept 且调用方给了值时才带上；缺省时这个键不出现。
+  if (accept && promptText !== undefined) {
+    await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept, promptText });
+  } else {
+    await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept });
+  }
+
   clearPendingDialog(ledger, tabId);
 
   return {

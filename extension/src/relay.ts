@@ -13,7 +13,7 @@ export const PANEL_PORT_NAME = "sideagent-panel";
 export type ConnState = "connecting" | "connected" | "disconnected";
 
 /** 上行传输：native messaging（默认）或 ws（调试回退）。 */
-export type TransportKind = "native" | "ws";
+export type TransportKind = "native" | "inproc" | "ws";
 
 /** 侧栏能够回放的伴随进程消息；执行调用和握手/模型元数据不进入历史。 */
 export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" | "agent_event" | "team_status" }>;
@@ -44,7 +44,9 @@ export type PanelToBg =
   /** 示范录制开关；录制在 background 进行，面板只发指令、收结果。 */
   | { kind: "demo"; action: "start" | "stop" | "dismiss"; conversationId?: string }
   /** 观察开关与候选处置；默认关，打开才采（只采骨架）。 */
-  | { kind: "observe"; action: "on" | "off" | "list" | "dismiss" | "accept"; conversationId?: string; signature?: string; hostname?: string };
+  | { kind: "observe"; action: "on" | "off" | "list" | "dismiss" | "accept"; conversationId?: string; signature?: string; hostname?: string }
+  /** 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
+  | { kind: "ping" };
 
 export type BgToPanel = BgToPanelPayload & { conversationId?: string };
 
@@ -52,6 +54,8 @@ type BgToPanelPayload =
   | { kind: "conversations"; conversations: import("../../shared/protocol.js").ConversationSummary[]; selectedConversationId: string; resumeReading?: boolean }
   /** 来自伴随进程的协议消息（tool_call 不经面板，由 background 直接执行）。 */
   | { kind: "server"; msg: ServerMessage }
+  /** ping 的回应，证明这条端口还连着活的 service worker。 */
+  | { kind: "pong" }
   /** 连接状态变化。 */
   | { kind: "conn"; state: ConnState; transport?: TransportKind; detail?: string }
   /** 当前 Agent 运行模式（教学模式开关状态同步）。 */

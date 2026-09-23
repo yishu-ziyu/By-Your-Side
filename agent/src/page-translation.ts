@@ -8,7 +8,11 @@ const needsTranslation = (text: string) => /\p{L}/u.test(text);
 
 /** Layout whitespace and standalone punctuation belong to the DOM, not to the language model. */
 export function translationModelBlocks(blocks: TranslationBlock[]): TranslationBlock[] {
-  return blocks.map(block => ({...block, segments:block.segments.filter(s => needsTranslation(s.text)).map(s => ({id:s.id,text:s.text.trim()}))})).filter(b => b.segments.length > 0);
+  return blocks.flatMap(block => {
+    const mapped = {...block, segments:block.segments.filter(s => needsTranslation(s.text)).map(s => ({id:s.id,text:s.text.trim()}))};
+
+    return mapped.segments.length > 0 ? [mapped] : [];
+  });
 }
 
 export function restoreTranslationWhitespace(translations: TranslationSegment[], blocks: TranslationBlock[]): TranslationSegment[] {

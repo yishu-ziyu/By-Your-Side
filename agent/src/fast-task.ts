@@ -237,28 +237,32 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
     });
   });
 
+  const baseState = {
+    request: input.request,
+    candidateOutcomes: candidates,
+    browserTabs: tabs.map(tab => ({ id: tab.id, title: tab.title, url: tab.url, active: tab.active })),
+    currentPage: { tabId: input.observation.tabId, url: input.observation.url },
+  };
+
+  const displayPiece = displayAvailable ? {
+    existingTranslation: input.translation,
+    supportedDisplayEffects: Object.fromEntries(Object.entries(displayRoutes).map(([id, route]) => [id, route.description])),
+    displayCapabilities,
+  } : {};
+
+  const skillPiece = skillOptions.length ? {
+    savedSkills: skillOptions.map(option => ({
+      id: option.skill.id,
+      task: option.skill.requestTemplate ?? option.skill.intent,
+      requiredInputKeys: Object.keys(option.skill.inputs),
+      explicitlySelected: option.selected,
+    })),
+    explicitSourceValues: values,
+  } : {};
+
   const body = JSON.stringify({
     model: 'jev-1.13.0',
-    state: {
-      request: input.request,
-      candidateOutcomes: candidates,
-      browserTabs: tabs.map(tab => ({ id: tab.id, title: tab.title, url: tab.url, active: tab.active })),
-      currentPage: { tabId: input.observation.tabId, url: input.observation.url },
-      ...(displayAvailable ? {
-        existingTranslation: input.translation,
-        supportedDisplayEffects: Object.fromEntries(Object.entries(displayRoutes).map(([id, route]) => [id, route.description])),
-        displayCapabilities,
-      } : {}),
-      ...(skillOptions.length ? {
-        savedSkills: skillOptions.map(option => ({
-          id: option.skill.id,
-          task: option.skill.requestTemplate ?? option.skill.intent,
-          requiredInputKeys: Object.keys(option.skill.inputs),
-          explicitlySelected: option.selected,
-        })),
-        explicitSourceValues: values,
-      } : {}),
-    },
+    state: { ...baseState, ...displayPiece, ...skillPiece },
     questions,
   });
 
@@ -303,17 +307,16 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
         selectedProbability,
         probabilities: numericProbabilities(route?.probabilities),
       },
-      ...(displayAvailable ? {
-        display: {
+    };
+
+    if (displayAvailable) diagnostics.display = {
           extra: answers.display_extra?.noul,
           partial: answers.display_partial?.noul,
           fontRequested: answers.font_requested?.noul,
           modeRequested: answers.mode_requested?.noul,
           fontChoice: answers.font?.choice,
           modeChoice: answers.mode?.choice,
-        },
-      } : {}),
-    };
+        };
 
     const miss = (reason: FastTaskMissReason): FastTaskDecision => ({ kind: 'miss', reason, diagnostics });
 
@@ -412,14 +415,21 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
         diagnostics,
         candidate: {
           kind: 'skill',
-          skill: {
+          skill: option.allowStale ? {
             id: option.skill.id,
             version: option.skill.version,
             name: option.skill.name,
             description: option.skill.intent,
             criterion: option.skill.check.text,
             inputs,
-            ...(option.allowStale ? { allowStale: true } : {}),
+            allowStale: true,
+          } : {
+            id: option.skill.id,
+            version: option.skill.version,
+            name: option.skill.name,
+            description: option.skill.intent,
+            criterion: option.skill.check.text,
+            inputs,
           },
         },
       };

@@ -188,7 +188,7 @@ async function main() {
         const okCase =
           v.tabId === driver.tabId &&
           String(v.after) === String(Number(v.before) + 1) &&
-          /^DOUBLE-/.test(String(v.dbl)) &&
+          String(v.dbl).startsWith("DOUBLE-") &&
           v.name === "组合验证";
 
         if (!okCase) throw new Error(`组合程序结果不符: ${JSON.stringify(v).slice(0, 300)}`);

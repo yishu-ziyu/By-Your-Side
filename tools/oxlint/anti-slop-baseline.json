@@ -180,12 +180,17 @@
     "anti-slop(no-conditional-empty-object-spread)": 12,
     "anti-slop(require-safety-comment-for-type-assertion)": 4
   },
+  "agent/src/realtime-browser-tool-defs.ts": {
+    "anti-slop(require-safety-comment-for-type-assertion)": 3,
+    "anti-slop(no-unsafe-dictionary-type)": 4,
+    "anti-slop(no-unknown-parameters)": 1
+  },
   "agent/src/realtime-browser-tools.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 2,
-    "anti-slop(no-unknown-parameters)": 2,
+    "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unknown-returns)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 7,
-    "anti-slop(require-safety-comment-for-type-assertion)": 4
+    "anti-slop(no-unsafe-dictionary-type)": 3,
+    "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "agent/src/realtime-voice-connection.ts": {
     "anti-slop(no-chained-type-assertions)": 1,

@@ -148,24 +148,25 @@ function eventKind(e: EventView): string {
   return m.type === "agent_event" ? String(m.event?.kind ?? "") : String(m.type ?? "");
 }
 
-function extractDeliveries(events: EventView[], conversationId: string) {
+function extractDeliveries(events: EventView[], _conversationId: string) {
   return events
-    .filter((e) => eventKind(e) === "user_delivery")
-    .map((e) => {
+    .flatMap((e) => {
+      if (eventKind(e) !== "user_delivery") return [];
       const m = e.message as { conversationId?: string; event?: { delivery?: { kind?: string; text?: string; runId?: string | null } } };
 
-      return { kind: String(m.event?.delivery?.kind ?? ""), text: String(m.event?.delivery?.text ?? ""), runId: m.event?.delivery?.runId ?? null, conversationId: m.conversationId };
+      return [{ kind: String(m.event?.delivery?.kind ?? ""), text: String(m.event?.delivery?.text ?? ""), runId: m.event?.delivery?.runId ?? null, conversationId: m.conversationId }];
     })
     .filter((d) => d.kind && d.kind !== "ack" && d.text);
 }
 
 function extractReceipts(events: EventView[], conversationId: string) {
   return events
-    .filter((e) => eventKind(e) === "notice" && (e.message as { conversationId?: string }).conversationId === conversationId && (e.message as { event?: { receipt?: unknown } }).event?.receipt)
-    .map((e) => {
+    .flatMap((e) => {
+      if (!(eventKind(e) === "notice" && (e.message as { conversationId?: string }).conversationId === conversationId && (e.message as { event?: { receipt?: unknown } }).event?.receipt)) return [];
+
       const r = (e.message as { event: { receipt: { requestId?: string; status?: string; action?: string } } }).event.receipt;
 
-      return { requestId: String(r.requestId ?? ""), status: String(r.status ?? ""), action: r.action };
+      return [{ requestId: String(r.requestId ?? ""), status: String(r.status ?? ""), action: r.action }];
     });
 }
 

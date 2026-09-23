@@ -98,7 +98,9 @@
     }
 
     function isVisible(el: Element): boolean {
-      const anyEl = el as unknown as { checkVisibility?: (o?: object) => boolean };
+      // lib.dom 已把 checkVisibility 的参数契约声明为 CheckVisibilityOptions；这里仍保留结构声明，
+      // 因为运行时未必有这个方法（可选链 + typeof 走回退）。
+      const anyEl = el as unknown as { checkVisibility?: (o?: CheckVisibilityOptions) => boolean };
 
       if (typeof anyEl.checkVisibility === "function") {
         try {

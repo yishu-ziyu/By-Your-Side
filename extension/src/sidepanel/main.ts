@@ -15,7 +15,7 @@ import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
-import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, Play } from "lucide";
+import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, Plus, LoaderCircle, BookOpen, Database, Play, SlidersHorizontal } from "lucide";
 import { describeSteps, recordingHint, type DemoStep } from "../../../shared/demo-record.js";
 import { skillHealth, skillRunSummary, skillStepsText, sensitiveSkillInput, type Skill, type SkillRun, type SkillCandidate } from "../../../shared/skill.js";
 import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
@@ -61,15 +61,16 @@ import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
-import type { UserDelivery } from "../../../shared/voice.js";
+import { DEFAULT_STEP_VOICE, isStepVoice, STEP_VOICE_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
-import { actionQuestion, controlQuestion, conversationBackgroundLabel, conversationStateLabel, pageQuestion, resultCardCopy, sessionQuestion } from "./selectors.js";
+import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
 import { TaskBar } from "./task-bar.js";
 import { ResumeEntry } from "./resume-entry.js";
 import { DeliveryPresentationTiming, deliveryPresentation, renderDeliveryFacts } from "./delivery-facts-view.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
+import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } from "../shared/mark-motion.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryScopeLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { ConsentPanel } from "./consent.js";
@@ -118,6 +119,7 @@ app.innerHTML = `
       <button id="record-toggle" type="button" title="你亲手做一遍，AI 记录为可复用的技能" aria-pressed="false"><span>示范给 AI</span></button>
       <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>技能与记忆</span></button>
       <hr />
+      <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
     </div>
   </header>
@@ -1329,6 +1331,12 @@ memoryOpen.prepend(icon(Database));
 
 document.getElementById("reading-settings-btn")!.prepend(icon(BookOpen));
 
+const modelSettingsOpen = document.getElementById("model-settings-open")!;
+
+modelSettingsOpen.prepend(icon(SlidersHorizontal));
+
+modelSettingsOpen.addEventListener("click", () => void chrome.runtime.openOptionsPage());
+
 function clipTitle(text: string, max = 16): string {
   const t = text.trim();
 
@@ -1438,11 +1446,7 @@ const companion = mountCompanion({
 // 开关状态存 chrome.storage.local（面板重开恢复显示）；运行时权威在 background
 // （chrome.storage.session），background 推来的 mode 消息会反向收敛本地存储。
 
-const MARK_MOTION_KEY = "sideagent_mark_motion";
-
-type MarkMotion = "grow" | "boil";
-
-let markMotion: MarkMotion = "grow";
+let markMotion: MarkMotion = DEFAULT_MARK_MOTION;
 
 let teachMode = false;
 
@@ -1463,10 +1467,8 @@ function applyMode(mode: AgentMode, persist: boolean): void {
 }
 
 void chrome.storage.local.get([TEACH_MODE_KEY, MARK_MOTION_KEY]).then((stored) => {
-  if (stored[MARK_MOTION_KEY] === "boil" || stored[MARK_MOTION_KEY] === "grow") {
-    markMotion = stored[MARK_MOTION_KEY];
-  }
-
+  const motion = stored[MARK_MOTION_KEY];
+  markMotion = isMarkMotion(motion) ? motion : DEFAULT_MARK_MOTION;
   applyMode(stored[TEACH_MODE_KEY] === true ? "teach" : "act", false);
 });
 
@@ -1554,7 +1556,10 @@ async function refreshSkills(): Promise<void> {
 
   if (conversationId !== selectedConversationId) return;
   skillRequest = crypto.randomUUID();
-  send({ type: "skill_list", conversationId, requestId: skillRequest, ...(hostname ? { hostname } : {}) });
+  const skillList: Extract<ClientMessage, { type: "skill_list" }> = { type: "skill_list", conversationId, requestId: skillRequest };
+
+  if (hostname) skillList.hostname = hostname;
+  send(skillList);
   port?.postMessage({ kind: "observe", action: "list", conversationId: selectedConversationId } satisfies PanelToBg);
 }
 
@@ -1969,15 +1974,23 @@ demoCompile.onclick = () => {
   demoCompile.disabled = true;
   demoCompile.textContent = "编译中…";
   skillRequestId = crypto.randomUUID();
-  send({
+
+  const compile: Extract<ClientMessage, { type: "skill_compile" }> = {
     type: "skill_compile",
     requestId: skillRequestId,
     intent: demoIntent.value,
     hostname: host,
     demoId: `${selectedConversationId}-${steps.length}-${steps[0]?.at ?? 0}`,
     steps,
-    ...(redoSkillId ? { updateId: redoSkillId, ...(redoSkillVersion === null ? {} : { expectedVersion: redoSkillVersion }) } : {}),
-  });
+  };
+
+  if (redoSkillId) {
+    compile.updateId = redoSkillId;
+
+    if (redoSkillVersion !== null) compile.expectedVersion = redoSkillVersion;
+  }
+
+  send(compile);
 };
 
 function hostnameOf(steps: DemoStep[]): string | null {
@@ -2061,6 +2074,27 @@ const modelPicker = mountModelPicker({
 let port: chrome.runtime.Port | null = null;
 
 let reconnectAttempt = 0;
+
+/**
+ * service worker 被 Chrome 停掉（空闲、更新、崩溃）后，面板手里的端口不一定收到断开事件：
+ * 状态仍显示已连接，发出的任务落进死端口、静默丢失。不做一次往返就无法知道端口是否活着，所以：
+ * - 1 秒内收到过 pong 的端口直接发；否则消息先排队、发 ping，pong 回来再发出。
+ * - ping 1.5 秒没有回应就换端口重连，连上后发出排队的消息（消息没离开面板，重发不会重复执行）。
+ * - 每 5 秒也 ping 一次：空闲时提前发现死端口；面板开着时顺带让 service worker 保持存活。
+ */
+const PORT_PING_MS = 5_000;
+
+const PORT_FRESH_MS = 1_000;
+
+const PORT_PONG_TIMEOUT_MS = 1_500;
+
+let lastPong = 0;
+
+let pingSentAt: number | null = null;
+
+let portWatch: ReturnType<typeof setInterval> | null = null;
+
+const queuedSends: PanelToBg[] = [];
 
 let lastDisconnectDetail = "";
 
@@ -2189,8 +2223,10 @@ const toolChips = new Map<string, ToolChipEntry>();
  * 工具名 → 图标。
  * 05 之后 chip 的图标位换成了光球，这里暂时没有调用方；留着是因为"chip 要不要同时保留
  * 工具图标"还没最终定，回退时直接接回 onToolStart 即可。
+ *
+ * `_` 前缀表示"有意未使用"：这条回退路径随时可能接回，删掉会丢掉那个待定决定。
  */
-const TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
+const _TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
   ["click", MousePointerClick],
   ["fill", PenLine],
   ["page_operation", PenLine],
@@ -3462,6 +3498,13 @@ function send(msg: ClientMessage): boolean {
   if (!port || !transportConnected) return false;
   const envelope: PanelToBg = { kind: "client", msg: { ...msg, conversationId: msg.conversationId ?? selectedConversationId } };
 
+  if (queuedSends.length || performance.now() - lastPong > PORT_FRESH_MS) {
+    queuedSends.push(envelope);
+    pingPort();
+
+    return true;
+  }
+
   try {
     port.postMessage(envelope);
 
@@ -3515,10 +3558,28 @@ function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" 
   processMemoryOutcome(outcome);
 }
 
-const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send,()=>({
-  ...(pendingAsk?{context:{tabId:pendingAsk.tabId,title:pendingAsk.title,url:pendingAsk.url,selection:{text:pendingAsk.text}}}:{}),
-  attachments:attachments?.getAttachments()??[],
-}));
+const inputContext = (): VoiceInputContext => {
+  const context: VoiceInputContext = { attachments: attachments?.getAttachments() ?? [] };
+
+  if (pendingAsk) {
+    context.context = { tabId: pendingAsk.tabId, title: pendingAsk.title, url: pendingAsk.url, selection: { text: pendingAsk.text } };
+  }
+
+  return context;
+};
+
+const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send, inputContext);
+
+void chrome.storage.local.get(STEP_VOICE_STORAGE_KEY).then((stored) => {
+  const voice = stored[STEP_VOICE_STORAGE_KEY];
+  voiceUI.setVoice(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !(STEP_VOICE_STORAGE_KEY in changes)) return;
+  const voice = changes[STEP_VOICE_STORAGE_KEY].newValue;
+  voiceUI.setVoice(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
+});
 
 const diagnosticRecord = composerEl.querySelector<HTMLElement>('.voice-record');
 
@@ -3698,6 +3759,15 @@ function handleServerMessage(raw: string): void {
 }
 
 function handleBgMessage(envelope: BgToPanel): void {
+  if (envelope.kind === "pong") {
+    lastPong = performance.now();
+    pingSentAt = null;
+    reconnectAttempt = 0;
+    flushQueuedSends();
+
+    return;
+  }
+
   if (envelope.kind === "conversations") {
     if (envelope.resumeReading) finishBootSession();
 
@@ -3792,6 +3862,8 @@ function handleBgMessage(envelope: BgToPanel): void {
   renderConversations();
 
   if (envelope.state === "connected") {
+    // 换端口期间排队的消息：新端口已连上活的 service worker，补发。
+    flushQueuedSends();
     // 等 hello_ok 带模型名到达；先亮绿灯
     setStatus("on", "已连接");
     voiceUI.reconnected();
@@ -3925,6 +3997,8 @@ function connect(): void {
   }
 
   port = p;
+  lastPong = performance.now();
+  watchPort();
   p.onMessage.addListener((msg: BgToPanel) => handleBgMessage(msg));
   p.onDisconnect.addListener(() => {
     voiceUI.disconnect();
@@ -3932,7 +4006,55 @@ function connect(): void {
     if (port === p) port = null;
     scheduleReconnect();
   });
-  p.postMessage({ kind: "sync", ...(conversationReady ? { conversationId: selectedConversationId } : {}), afterSeq: lastHistorySeq } satisfies PanelToBg);
+  const sync: Extract<PanelToBg, { kind: "sync" }> = { kind: "sync", afterSeq: lastHistorySeq };
+
+  if (conversationReady) sync.conversationId = selectedConversationId;
+  p.postMessage(sync satisfies PanelToBg);
+}
+
+function watchPort(): void {
+  portWatch ??= setInterval(pingPort, PORT_PING_MS);
+}
+
+/** 同一时间只有一个 ping 在路上；超时没回 pong 就换端口。 */
+function pingPort(): void {
+  if (!port || pingSentAt !== null) return;
+  const sentAt = performance.now();
+  pingSentAt = sentAt;
+
+  try {
+    port.postMessage({ kind: "ping" } satisfies PanelToBg);
+  } catch {
+    replaceDeadPort();
+
+    return;
+  }
+
+  setTimeout(() => {
+    if (pingSentAt === sentAt) replaceDeadPort();
+  }, PORT_PONG_TIMEOUT_MS);
+}
+
+function flushQueuedSends(): void {
+  if (!port || !transportConnected) return;
+
+  for (const queued of queuedSends.splice(0)) port.postMessage(queued);
+}
+
+/** 主动断开可疑端口并立即重连；对自己调用 disconnect 不会触发本端的 onDisconnect。 */
+function replaceDeadPort(): void {
+  const dead = port;
+  port = null;
+  pingSentAt = null;
+  transportConnected = false;
+
+  try {
+    dead?.disconnect();
+  } catch {
+    /* 已断开 */
+  }
+
+  connect();
 }
 
 function scheduleReconnect(): void {

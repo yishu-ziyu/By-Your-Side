@@ -3,19 +3,6 @@ import {VoiceDiagnosticLog,VOICE_DIAG_MAX_CAPTURES} from '../src/sidepanel/voice
 import {VoiceClient} from '../src/sidepanel/voice-client.js';
 import {mountVoiceUI} from '../src/sidepanel/voice-ui.js';
 import {parseServerMessage} from '../../shared/protocol.js';
-import * as speechModule from '../src/sidepanel/voice-speech.js';
-
-vi.mock('../src/sidepanel/voice-speech.js',()=>{
-  const pushed:Int16Array[]=[];
-
-  return {
-    pushed,
-    SpeechClassifier:{create:async(onFrame:(pcm:Int16Array,probability:number)=>void)=>({
-      push:(pcm:Int16Array)=>{pushed.push(Int16Array.from(pcm));onFrame(pcm,0.9);},
-      close:vi.fn(),
-    })},
-  };
-});
 
 const b64=(values:number[]):string=>Buffer.from(new Int16Array(values).buffer).toString('base64');
 
@@ -179,9 +166,7 @@ return true};
   }
 
   let worklet:{port:{onmessage:null|((e:any)=>void)},connect:ReturnType<typeof vi.fn>,disconnect:ReturnType<typeof vi.fn>};
-  const classifierFrames=()=>((speechModule as unknown as {pushed:Int16Array[]}).pushed);
   beforeEach(()=>{
-    classifierFrames().length=0;
     const context=audioContext();
     vi.stubGlobal('AudioContext',function(){return context;});
     const media=stream();
@@ -203,7 +188,6 @@ return true};
     expect(client.beginDiagnosticRecording()).toMatchObject({ok:false});
     frame(1000);
     expect(audit.kinds()).toEqual(['start']);
-    expect(classifierFrames().flatMap(pcm=>Array.from(pcm)).every(value=>value===1000)).toBe(true);
     client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'diag',record:{type:'ready',sampleRate:24000,maxSeconds:60}}});
     expect(client.diagnosticConfirmed).toBe(true);
     expect(client.diagnosticRecording).toBe(true);
@@ -215,7 +199,7 @@ return true};
     const capture=log.latest()!;
     expect(capture.frames).toHaveLength(2);
     expect(samples(capture.frames[0]!)).toEqual(Array(480).fill(1000));
-    const events:any[]=[];const spy=vi.spyOn(client as any,'event').mockImplementation((event:any)=>events.push(event));
+    const events:any[]=[];vi.spyOn(client as any,'event').mockImplementation((event:any)=>events.push(event));
     client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'text',turn:1,role:'assistant',text:'诊断期间不应出现的回答'}});
     client.receive({type:'voice',voiceId,conversationId:'conv-1',event:{kind:'audio',turn:1,data:Buffer.from(new Int16Array([1,2]).buffer).toString('base64'),itemId:'item-1',responseId:'resp-1'}});
     expect(events).toHaveLength(0);
@@ -339,8 +323,8 @@ return child},
   const byClass=(name:string)=>mockElements.find(element=>element.className&&element.className.split(' ').includes(name));
   it('keeps live voice phases visible while diagnostics stay collapsed',async()=>{
     // Stub microphone startup only; drive the callback registered by the real mounted VoiceUI.
-    let client:VoiceClient|undefined;
-    const start=vi.spyOn(VoiceClient.prototype,'start').mockImplementation(async function(this:VoiceClient){client=this;});
+    const started:VoiceClient[]=[];
+    const start=vi.spyOn(VoiceClient.prototype,'start').mockImplementation(async function(this:VoiceClient){started.push(this);});
     const composer=createMockElement("div");
     const input=createMockElement("input");input.id="input";composer.appendChild(input);
     const spacer=createMockElement("div");spacer.id="composer-spacer";composer.appendChild(spacer);
@@ -350,6 +334,7 @@ return child},
     try {
       byClass('voice-start').onclick();
       await Promise.resolve();
+      const client=started.at(-1);
       expect(client).toBeDefined();
       const change=(client as unknown as {change:(phase:import('../src/sidepanel/voice-client.js').VoicePhase)=>void}).change;
 

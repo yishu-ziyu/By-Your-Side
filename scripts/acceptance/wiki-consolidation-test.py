@@ -1,6 +1,7 @@
 """Isolated hook regression tests; real CLI/event evidence is recorded in the eval."""
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,7 +17,7 @@ class ConsolidationHookTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="ego-wiki-hook-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
-        self.wiki = self.root / ".kimi-code/wiki"
+        self.wiki = self.root / "docs/knowledge"
         self.wiki.mkdir(parents=True)
         self.sessions = self.root / "sessions"
         wire = self.sessions / "wd/session_real/agents/main/wire.jsonl"
@@ -24,7 +25,7 @@ class ConsolidationHookTest(unittest.TestCase):
         wire.write_text('{}\n' * 60)
         self.wire = wire
         source = (ROOT / ".kimi-code/hooks/consolidate.sh").read_text()
-        source = source.replace(str(ROOT), str(self.root))
+        source = re.sub(r'^PROJECT="[^"]+"$', lambda _: f'PROJECT="{self.root}"', source, flags=re.MULTILINE)
         source = source.replace('$HOME/.kimi-code/sessions', str(self.sessions))
         self.hook = self.root / "hook.sh"
         self.hook.write_text(source)

@@ -15,7 +15,10 @@ function event() { const listeners: Function[] = [];
 
 async function settle() { for (let i=0; i<12; i++) await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 110)); }
 
-let storage: Record<string, any>;
+/** chrome.storage.* 的替身只接受「一组键值」，与本文件的 storage 同形。 */
+type SessionItems = Record<string, any>;
+
+let storage: SessionItems;
 
 let connect: ReturnType<typeof event>;
 
@@ -25,7 +28,7 @@ function panel() { const p = { name: "sideagent-panel", onMessage: event(), onDi
 
 beforeEach(async () => {
  vi.resetModules(); wire.sent = []; storage = {}; connect = event();
- const area = {get: async (key: string | null) => key === null ? {...storage} : {[key]:storage[key]}, set: async (data: object) => {Object.assign(storage, data);} };
+ const area = {get: async (key: string | null) => key === null ? {...storage} : {[key]:storage[key]}, set: async (data: SessionItems) => {Object.assign(storage, data);} };
  vi.stubGlobal("chrome", {
   storage:{session:area,local:area},
   runtime:{onConnect:connect,onMessage:event(),onInstalled:event()},
@@ -166,7 +169,7 @@ describe("mode hydration ordering", () => {
   const {getMode, setMode} = await import("../src/background/mode.js");
   const session = (globalThis as any).chrome.storage.session;
   const originalGet = session.get;
-  let release!: (value: object) => void;
+  let release!: (value: SessionItems) => void;
   session.get = (key: string) => key === "agentMode:slow" ? new Promise(resolve => {release=resolve;}) : originalGet(key);
   const pending = getMode("slow");
   await setMode("teach", "slow");

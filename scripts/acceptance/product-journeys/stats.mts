@@ -91,8 +91,9 @@ export function aggregateRows(rows: JourneyRow[], suite: string, evaluatorOk = t
     };
   }
 
-  const successTimes = qualified.map((r) => r.totalMs).filter((v): v is number => typeof v === "number");
-  const failedWaits = started.filter((r) => !r.qualified).map((r) => r.waitedMs);
+  const totals = qualified.map((r) => r.totalMs);
+  const successTimes = totals.filter((v): v is number => typeof v === "number");
+  const failedWaits = started.flatMap((r) => !r.qualified ? [r.waitedMs] : []);
   const forcedCounts = started.map((r) => r.interventions.forced);
   const withinOneForced = started.filter((r) => r.interventions.forced <= 1).length;
 

@@ -22,7 +22,7 @@ export async function dependencyViolations(file, source) {
     stdin: {
       contents: source,
       sourcefile: file,
-      loader: /\.tsx$/.test(file) ? 'tsx' : /\.[cm]?ts$/.test(file) ? 'ts' : 'js',
+      loader: file.endsWith('.tsx') ? 'tsx' : /\.[cm]?ts$/.test(file) ? 'ts' : 'js',
     },
     bundle: true,
     external: ['*'],

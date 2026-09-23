@@ -29,18 +29,18 @@ export async function createConversationRuntime(
     rpc,
     modelPattern,
     sink: {
-      emit: (event, sessionId) =>
-        sendCurrent({
-          type: "agent_event",
-          event,
-          ...(sessionId && !isLeadSession(sessionId) ? { sessionId } : {}),
-        }),
-      setStatus: (state, sessionId) =>
-        sendCurrent({
-          type: "status",
-          state,
-          ...(sessionId && !isLeadSession(sessionId) ? { sessionId } : {}),
-        }),
+      emit: (event, sessionId) => {
+        const message: Extract<ServerMessage, { type: "agent_event" }> = { type: "agent_event", event };
+
+        if (sessionId && !isLeadSession(sessionId)) message.sessionId = sessionId;
+        sendCurrent(message);
+      },
+      setStatus: (state, sessionId) => {
+        const message: Extract<ServerMessage, { type: "status" }> = { type: "status", state };
+
+        if (sessionId && !isLeadSession(sessionId)) message.sessionId = sessionId;
+        sendCurrent(message);
+      },
     },
   });
 
@@ -164,11 +164,10 @@ return toolSession.browserFieldMaterial(goal,control,signal);}, reserveDecision:
         sendCurrent({ type: "team_status", team });
 
         for (const member of team.members) {
-          sendCurrent({
-            type: "status",
-            state: "user",
-            ...(isLeadSession(member.sessionId) ? {} : { sessionId: member.sessionId }),
-          });
+          const message: Extract<ServerMessage, { type: "status" }> = { type: "status", state: "user" };
+
+          if (!isLeadSession(member.sessionId)) message.sessionId = member.sessionId;
+          sendCurrent(message);
         }
 
         break;
@@ -222,11 +221,10 @@ return toolSession.browserFieldMaterial(goal,control,signal);}, reserveDecision:
           sendCurrent({ type: "team_status", team });
 
           for (const member of team.members) {
-            sendCurrent({
-              type: "status",
-              state: member.phase === "restored" ? "running" : member.phase === "aborted" ? "idle" : "user",
-              ...(isLeadSession(member.sessionId) ? {} : { sessionId: member.sessionId }),
-            });
+            const message: Extract<ServerMessage, { type: "status" }> = { type: "status", state: member.phase === "restored" ? "running" : member.phase === "aborted" ? "idle" : "user" };
+
+            if (!isLeadSession(member.sessionId)) message.sessionId = member.sessionId;
+            sendCurrent(message);
           }
         };
 

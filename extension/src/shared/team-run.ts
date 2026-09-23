@@ -71,13 +71,3 @@ export function acceptTeamStatus(
 
   return { accept: true, state: { team, runId: state.runId } };
 }
-
-/**
- * 面板重开同步 / 后台回放：已绑定的 team 是否已经不属于当前 run。
- * 身份未知（无 runId）时无法判定，按"不算过期"处理，保证旧路径仍能显示。
- */
-export function staleTeamForRun(state: TeamRunState, currentRunId: string | null | undefined): boolean {
-  if (!state.team) return false;
-
-  return conflictingRuns(state.runId, currentRunId);
-}

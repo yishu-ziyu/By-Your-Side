@@ -1,10 +1,12 @@
-import {isVoiceDiagRecord,VOICE_DIAG_MAX_SECONDS,VOICE_DIAG_SAMPLE_RATE,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord} from '../../../shared/voice.js';
-import type { SpeechClassifier } from './voice-speech.js';
+import {isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice} from '../../../shared/voice.js';
 import { VoicePlayer } from './voice-player.js';
-import { VoiceTurnDetector, pcmBase64, pcmBase64Large } from './voice-signal.js';
+import { pcmBase64 } from './voice-signal.js';
 import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
 
 export type VoicePhase = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error';
+
+/** 可选字段「存在才带上」时按具名类型分步赋值。 */
+type CaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
 export class VoiceClient {
   private id: string | null = null;
@@ -12,7 +14,6 @@ export class VoiceClient {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private worklet: AudioWorkletNode | null = null;
-  private speechClassifier: SpeechClassifier | null = null;
   private player: VoicePlayer | null = null;
   private ready = false;
   private serverVad = false;
@@ -21,6 +22,8 @@ export class VoiceClient {
   private speaking = false;
   private phase: VoicePhase = 'idle';
   needsMicrophonePermission = false;
+  /** 用户在设置页选的音色，下次开启语音时生效。 */
+  voice: StepVoice | undefined;
   private analyser: AnalyserNode | null = null;
   private inputLevel = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -36,13 +39,6 @@ export class VoiceClient {
   private frameIndex = 0;
   private sentFrames = 0;
   private trackSettings: VoiceDiagTrack | null = null;
-
-  /** Normal-use C0: the same continuous 24k PCM, accumulated per turn and sent once when the turn ends. */
-  private captureTurn = 0;
-  private capturePrefix: Int16Array[] = [];
-  private captureFrames: Int16Array[] = [];
-  private captureSamples = 0;
-  private captureCapped = false;
 
   private userIntentActive = false;
   private recovering = false;
@@ -98,7 +94,6 @@ export class VoiceClient {
     this.recording = false;
     this.frameIndex = 0;
     this.sentFrames = 0;
-    this.resetCapture();
     const id = crypto.randomUUID(); this.id=id;
     this.log?.sessionStarted({voiceId:id,conversationId,diagnostic});
     this.setPhase('connecting', this.recovering ? '正在恢复语音连接…' : '正在开启麦克风');
@@ -154,34 +149,8 @@ export class VoiceClient {
           }
         }, this.analyser);
 
-        const detector = new VoiceTurnDetector({
-          start: turn => {
-            this.diagnostic?.('speech_detected', { turn, at: performance.now(), audioTime: this.context?.currentTime });
-            this.turn = turn;
-            this.speaking = true;
-            this.beginCaptureTurn(turn);
-            const played = this.player?.begin(turn);
-            this.diagnostic?.('playback_stopped', { turn, at: performance.now() });
-            this.command({ kind: 'interrupt', turn, ...(played ? { played } : {}) });
-
-            if (this.id === id) this.setPhase('listening');
-          },
-          audio: (turn, pcm) => this.command({ kind: 'audio', turn, data: pcmBase64(pcm) }),
-          end: turn => {
-            this.speaking = false;
-            const input = this.getInput();
-            this.command({ kind: 'commit', turn, ...(input.context || input.attachments?.length ? { input } : {}) });
-            this.finishCaptureTurn(turn);
-
-            if (this.id === id) this.setPhase('thinking', '正在识别');
-          },
-        });
-
-        // Reconnect transport immediately while the new local classifier initializes.
         // The old capture callback is session-bound and cannot submit into this turn.
         this.command(this.startCommand());
-
-        if (!await this.prepareSpeech(id, detector)) return;
         this.worklet.port.onmessage = ({ data }) => this.onCaptureFrame(id, data);
 
         return;
@@ -220,17 +189,6 @@ return;}
 
 if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
-      const detector=new VoiceTurnDetector({
-        start:turn=>{this.diagnostic?.('speech_detected',{turn,at:performance.now(),audioTime:this.context?.currentTime});this.turn=turn;this.speaking=true;this.beginCaptureTurn(turn);const played=this.player?.begin(turn);this.diagnostic?.('playback_stopped',{turn,at:performance.now()});this.command({kind:'interrupt',turn,...(played?{played}:{})});
-
-if(this.id===id)this.setPhase('listening');},
-        audio:(turn,pcm)=>this.command({kind:'audio',turn,data:pcmBase64(pcm)}),
-        end:turn=>{this.speaking=false;const input=this.getInput();this.command({kind:'commit',turn,...(input.context||input.attachments?.length?{input}:{})});this.finishCaptureTurn(turn);
-
-if(this.id===id)this.setPhase('thinking','正在识别');},
-      });
-
-      if (!await this.prepareSpeech(id, detector)) return;
       const worklet=new AudioWorkletNode(context,'voice-capture');this.worklet=worklet;
       worklet.port.onmessage=({data})=>this.onCaptureFrame(id,data);
       context.createMediaStreamSource(stream).connect(worklet);worklet.connect(context.destination);
@@ -242,92 +200,19 @@ if(this.id===id)this.setPhase('thinking','正在识别');},
     }
   }
 
-  /** One place where a raw 24k frame arrives; the capture copy is taken before any worker transfer. */
+  /** One place where a raw 24k frame arrives. */
   private onCaptureFrame(id: string, data: { pcm: ArrayBuffer; rms: number }): void {
     if (this.id !== id || !this.ready) return;
     this.inputLevel = data.rms;
     const source = new Int16Array(data.pcm);
 
     if (this.recording) this.captureDiagnosticFrame(source);
-    else if (!this.diagSession) this.captureContinuousFrame(source);
 
-    if(this.serverVad&&!this.diagSession){this.command({kind:'audio',turn:this.turn,data:pcmBase64(source)});
-
-return;}
-
-    this.speechClassifier?.push(new Int16Array(data.pcm));
+    if(this.serverVad&&!this.diagSession)this.command({kind:'audio',turn:this.turn,data:pcmBase64(source)});
   }
   /** Normal sessions do not persist PCM. Diagnostic capture is an explicit second mode. */
   private startCommand(): VoiceCommand {
-    return this.diagSession ? { kind: 'start', diagnostic: true } : { kind: 'start' };
-  }
-  private resetCapture(): void {
-    this.captureTurn = 0;
-    this.capturePrefix = [];
-    this.captureFrames = [];
-    this.captureSamples = 0;
-    this.captureCapped = false;
-  }
-  private captureMaxSamples(): number { return Math.floor(VOICE_DIAG_MAX_SECONDS * (this.context?.sampleRate ?? VOICE_DIAG_SAMPLE_RATE)); }
-  /**
-   * Continuous 24k PCM for the current turn, copied before the classifier sees it.
-   * While no turn is open the newest ~0.32s is kept, so a turn's capture starts with the same preroll
-   * the detector sends upstream instead of cutting the speech onset off. Nothing is sent per frame.
-   */
-  private captureContinuousFrame(source: Int16Array): void {
-    if (!this.diagSession) return;
-
-    if (this.captureTurn === 0) {
-      this.capturePrefix.push(Int16Array.from(source));
-
-      while (this.capturePrefix.reduce((sum, frame) => sum + frame.length, 0) > 7680) this.capturePrefix.shift();
-
-      return;
-    }
-
-    const room = this.captureMaxSamples() - this.captureSamples;
-
-    if (room <= 0) { this.captureCapped = true;
-
- return; }
-
-    const take = source.length <= room ? Int16Array.from(source) : Int16Array.from(source.subarray(0, room));
-    this.captureFrames.push(take);
-    this.captureSamples += take.length;
-
-    if (take.length < source.length) this.captureCapped = true;
-  }
-  private beginCaptureTurn(turn: number): void {
-    if (this.diagSession) return;
-    this.captureTurn = turn;
-    this.captureFrames = [];
-    // The preroll is part of what this turn played upstream, so it counts against the same 60-second cap.
-    this.captureSamples = this.capturePrefix.reduce((sum, frame) => sum + frame.length, 0);
-    this.captureCapped = false;
-  }
-  /** One command per turn, sent after the upstream commit and never a reason to change voice state. */
-  private finishCaptureTurn(turn: number): void {
-    if (this.diagSession) return;
-
-    if (!this.recording) { this.resetCapture();
-
- return; }
-
-    const frames = this.captureTurn === turn ? [...this.capturePrefix, ...this.captureFrames] : [];
-    const capped = this.captureCapped;
-    this.resetCapture();
-    const samples = frames.reduce((sum, frame) => sum + frame.length, 0);
-
-    if (!samples) return;
-    const pcm = new Int16Array(samples);
-    let at = 0;
-
-    for (const frame of frames) { pcm.set(frame, at); at += frame.length; }
-
-    this.command({
-      kind: 'capture', turn, sampleRate: this.context?.sampleRate ?? VOICE_DIAG_SAMPLE_RATE,
-      data: pcmBase64Large(pcm), ...(capped ? { note: 'capped' } : {}),
-    });
+    return this.diagSession ? { kind: 'start', diagnostic: true } : this.voice ? { kind: 'start', voice: this.voice } : { kind: 'start' };
   }
   /** The panel's rendered question text, sent once it is assigned; the agent keeps its own server record. */
   captureDisplay(turn: number, text: string): boolean {
@@ -342,7 +227,10 @@ return;}
     if (!this.id) return { ok: false, turn, detail: '语音未开启，标记未发送。' };
 
     if (!turn || this.serverVad&&!this.hasInputTurn) return { ok: false, turn, detail: '还没有可标记的一轮，先说一句再标记。' };
-    const ok = this.command({ kind: 'capture', turn, mark: true, ...(note ? { note } : {}) });
+    const capture: CaptureCommand = { kind: 'capture', turn, mark: true };
+
+    if (note) capture.note = note;
+    const ok = this.command(capture);
 
     return ok ? { ok: true, turn } : { ok: false, turn, detail: '语音连接未就绪，标记未发送。' };
   }
@@ -425,13 +313,6 @@ return;}
 
     this.diagWait = timer;
   }
-  private async prepareSpeech(id: string, _detector: VoiceTurnDetector): Promise<boolean> {
-    this.speechClassifier?.close(); this.speechClassifier = null;
-
-    // Realtime 3 owns segmentation; diagnostics are manually bounded.
-    return this.id === id;
-  }
-
   scheduleRecovery(detail = '语音连接已断开，正在恢复…'): void {
     if (!this.userIntentActive) return;
 
@@ -644,14 +525,12 @@ return;}
 
     if(this.recording){this.recording=false;this.log?.captureEnded('stopped');}
 
-    this.resetCapture();
     this.pendingAutoRecord=false;
 
     if(this.connectTimer)clearTimeout(this.connectTimer);this.connectTimer=null;
     const id=this.id;this.id=null;this.ready=false;this.speaking=false;this.inputLevel=0;
 
     if(id&&notify)this.send({type:'voice',voiceId:id,conversationId:this.conversationId,command:{kind:'stop'}});
-    this.speechClassifier?.close();this.speechClassifier=null;
 
     if(this.worklet){this.worklet.port.onmessage=null;this.worklet.disconnect();this.worklet=null;}
 

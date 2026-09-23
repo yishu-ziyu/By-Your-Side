@@ -121,15 +121,14 @@ export function createIsolatedClipboardBridge(): ClipboardBridge & {
   let text = "";
   let html: string | undefined;
   let saved: { text: string; html?: string } | null = null;
-  let temporaryChangeCount = 0;
 
   return {
     async beginTemporary(content) {
-      saved = { text, ...(html !== undefined ? { html } : {}) };
+      const htmlSnapshot = html !== undefined ? { html } : {};
+      saved = { text, ...htmlSnapshot };
       text = content.text;
       html = content.html;
       changeCount += 1;
-      temporaryChangeCount = changeCount;
 
       return { changeCount };
     },
@@ -150,7 +149,9 @@ export function createIsolatedClipboardBridge(): ClipboardBridge & {
       return "restored";
     },
     peek() {
-      return { changeCount, text, ...(html !== undefined ? { html } : {}) };
+      const htmlView = html !== undefined ? { html } : {};
+
+      return { changeCount, text, ...htmlView };
     },
     mutateExternal(nextText, nextHtml) {
       text = nextText;

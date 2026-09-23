@@ -2,22 +2,6 @@ import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {isVoiceClientMessage,validCapturePCM,VOICE_CAPTURE_MAX_BASE64,VOICE_DIAG_TEXT_MAX} from '../../shared/voice.js';
 import {parseClientMessage} from '../../shared/protocol.js';
 import {VoiceClient} from '../src/sidepanel/voice-client.js';
-import * as speechModule from '../src/sidepanel/voice-speech.js';
-
-vi.mock('../src/sidepanel/voice-speech.js',()=>{
-  const state={probability:0.9,pushed:[] as Int16Array[],onFrame:null as null|((pcm:Int16Array,probability:number)=>void)};
-
-  return {
-    state,
-    SpeechClassifier:{create:async(onFrame:(pcm:Int16Array,probability:number)=>void)=>{
-      state.onFrame=onFrame;
-
-      return {push:(pcm:Int16Array)=>{state.pushed.push(Int16Array.from(pcm));state.onFrame?.(pcm,state.probability);},close:()=>{}};
-    }},
-  };
-});
-
-const speech=speechModule as unknown as {state:{probability:number;pushed:Int16Array[]}};
 
 const b64=(values:number[]):string=>Buffer.from(new Int16Array(values).buffer).toString('base64');
 
@@ -95,8 +79,6 @@ return true};
 
   let worklet:{port:{onmessage:null|((e:any)=>void)},connect:ReturnType<typeof vi.fn>,disconnect:ReturnType<typeof vi.fn>};
   beforeEach(()=>{
-    speech.state.pushed.length=0;
-    speech.state.probability=0.9;
     const context=audioContext();
     vi.stubGlobal('AudioContext',function(){return context;});
     const track={stop:vi.fn(),onended:null as null|(()=>void),getSettings:()=>({sampleRate:24000,channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true})};
@@ -107,10 +89,6 @@ return true};
   });
   afterEach(()=>vi.unstubAllGlobals());
   const frame=(value:number)=>worklet.port!.onmessage?.({data:{pcm:new Int16Array(480).fill(value).buffer,rms:.1}});
-
-  const decode=(data:string):Int16Array=>{const buf=Buffer.from(data,'base64');
-
-return new Int16Array(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.length));};
 
   async function session(audit:Audit,phase=vi.fn()){
     const client=new VoiceClient(audit.send,phase,()=>{});
@@ -123,9 +101,7 @@ return new Int16Array(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.length)
 
   const voiced=()=>{for(let i=0;i<5;i++)frame(1000);};
 
-  const silence=()=>{speech.state.probability=0.05;
-
-for(let i=0;i<35;i++)frame(0);speech.state.probability=0.9;};
+  const silence=()=>{for(let i=0;i<35;i++)frame(0);};
 
   it('starts without capture and streams continuously to server VAD, not a local classifier',async()=>{
     const audit=new Audit();
@@ -135,7 +111,6 @@ for(let i=0;i<35;i++)frame(0);speech.state.probability=0.9;};
     expect(audit.commands()[0]).toEqual({kind:'start'});
     // Realtime 3 receives every frame after ready; local classifier is no longer part of the route.
     frame(1000);frame(1000);
-    expect(speech.state.pushed).toHaveLength(0);
     expect(audit.kinds().filter(kind=>kind==='audio')).toHaveLength(2);
 
     for(let i=0;i<3;i++)frame(1000);

@@ -11,6 +11,9 @@
  * A5 新话轮不继承旧静音。
  */
 import { afterEach, expect, it, vi } from 'vitest';
+
+type Json = string | number | boolean | null | undefined | Json[] | { [key: string]: Json };
+
 import { EventEmitter } from 'node:events';
 import { BrowserAgentSession } from '../src/session.js';
 import { ConversationManager } from '../src/conversation-manager.js';
@@ -69,7 +72,7 @@ async function harness() {
   const facts = new Map<string, string>();
 
   const rpc: any = {
-    setPageTarget: () => {}, getPageTarget: () => 7, resolvePageParams: (_n: string, params: object) => ({ tabId: 7, ...params }),
+    setPageTarget: () => {}, getPageTarget: () => 7, resolvePageParams: (_n: string, params: Record<string, Json>) => ({ tabId: 7, ...params }),
     ensureToolCall: () => {}, markCallRejected: (id: string) => facts.set(id, 'not_executed'),
     getExecutionFact: (id: string) => facts.get(id), noteToolFact: (id: string, fact: string) => facts.set(id, fact),
     call: vi.fn(async (name: string, params: any, ...rest: unknown[]) => {

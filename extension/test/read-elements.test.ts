@@ -20,11 +20,21 @@ async function loadReadElements(options: {
   return import("../src/background/exec/read-elements.js");
 }
 
+/** executeScript 替身的单条返回：result 必有，documentId 只在读到时才带上。 */
+interface ScriptExecutionEntry {
+  result: unknown;
+  documentId?: string;
+}
+
 /** Mirrors read-element.test.ts: executeScript runs the real serialized page function synchronously against stubbed globals. */
 function installScriptExecution(documentId?: string) {
-  const executeScript = vi.fn(async (details: any) => [
-    { result: details.func(...details.args), ...(documentId ? { documentId } : {}) },
-  ]);
+  const executeScript = vi.fn(async (details: any): Promise<ScriptExecutionEntry[]> => {
+    const entry: ScriptExecutionEntry = { result: details.func(...details.args) };
+
+    if (documentId) entry.documentId = documentId;
+
+    return [entry];
+  });
 
   vi.stubGlobal("chrome", { scripting: { executeScript } });
 

@@ -23,7 +23,6 @@ import { switchTab } from "./tabs.js";
 import type { EffectReport } from "../../../../shared/effect.js";
 import type { ToolExecutionFact } from "../../../../shared/protocol.js";
 import {
-  createIsolatedClipboardBridge,
   normalizePasteContent,
   pasteChord,
   pointInElementRect,
@@ -181,10 +180,8 @@ export async function callOnBackendNode<T>(
   executionContextId?: number,
   expectedDocumentId?: string,
 ): Promise<T> {
-  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", {
-    backendNodeId,
-    ...(executionContextId !== undefined ? {executionContextId} : {}),
-  });
+  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode",
+    executionContextId !== undefined ? { backendNodeId, executionContextId } : { backendNodeId });
 
   const objectId = resolved.object?.objectId;
 
@@ -198,12 +195,10 @@ export async function callOnBackendNode<T>(
   const result = await sendCommand<{
     result?: { value?: T };
     exceptionDetails?: { exception?: { description?: string }; text?: string };
-  }>(tabId, "Runtime.callFunctionOn", {
-    objectId,
-    functionDeclaration,
-    ...(args ? { arguments: args.map((value) => ({ value })) } : {}),
-    returnByValue: true,
-  });
+  }>(tabId, "Runtime.callFunctionOn",
+    args
+      ? { objectId, functionDeclaration, arguments: args.map((value) => ({ value })), returnByValue: true }
+      : { objectId, functionDeclaration, returnByValue: true });
 
   if (result.exceptionDetails) {
     throw new Error(
@@ -293,7 +288,7 @@ export async function callDom<Args extends unknown[], Result>(
   documentId?:string,
 ): Promise<Awaited<Result>> {
   const results = await chrome.scripting.executeScript<Args, Result>({
-    target: { tabId, ...(documentId?{documentIds:[documentId]}:{}) },
+    target: documentId ? { tabId, documentIds: [documentId] } : { tabId },
     world: "ISOLATED",
     func,
     args,
@@ -490,6 +485,20 @@ export type DragParams = {
 
 type HoldParams = ClickParams | DragParams;
 
+/** 跟随打开的新标签页：url 只在读到时才带上。 */
+type OpenedTab = { tabId: number; url?: string };
+
+/** CDP Input.dispatchKeyEvent 参数；commands / text 只在需要时才带上。 */
+type KeyEventParams = {
+  type: string;
+  key: string;
+  code: string;
+  windowsVirtualKeyCode: number;
+  modifiers: number;
+  commands?: string[];
+  text?: string;
+};
+
 type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
 
 /** held/arm 台账抽成纯数据层（shared/held-clicks.ts），决策逻辑可单测。 */
@@ -499,16 +508,8 @@ export function armDestructiveClick(sessionId: string = LEAD_SESSION_ID): void {
   heldClicks.arm(sessionId);
 }
 
-export function hasPendingDestructiveClick(sessionId: string = LEAD_SESSION_ID): boolean {
-  return heldClicks.hasPending(sessionId);
-}
-
 export function dropPendingClicks(sessionId: string = LEAD_SESSION_ID): void {
   heldClicks.drop(sessionId);
-}
-
-export function dropAllPendingClicks(): void {
-  heldClicks.dropAll();
 }
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
@@ -626,27 +627,6 @@ async function showControlBanners(ids: Set<number>, view: ControlBannerView | nu
   }
 
   await Promise.all([...ids].map(renderControlBanner));
-}
-
-export async function showUserControlBanner(tabId?: number, sessionId: string = LEAD_SESSION_ID, view?: ControlBannerView | null): Promise<void> {
-  const owner = bannerOwnerKey(sessionId);
-  const revision = beginBannerShow(owner);
-  const ids = new Set<number>();
-
-  if (tabId != null) ids.add(tabId);
-  else {
-    const fallback = await resolveOverlayTabId(sessionId);
-
-    if (fallback != null) ids.add(fallback);
-
-    try {
-      const [active] = await chrome.tabs.query({active: true, lastFocusedWindow: true});
-
-      if (active?.id != null) ids.add(active.id);
-    } catch { /* 无活动页 */ }
-  }
-
-  await showControlBanners(ids, view, owner, revision);
 }
 
 export async function showTeamControlBanners(tabIds: Iterable<number>, view?: ControlBannerView | null, owner?: string): Promise<void> {
@@ -1118,7 +1098,11 @@ async function followOpenedTab(before: ReadonlySet<number>, targetTabId: number,
       /* 新页归别人/坐不上就只报告，不抢 */
     }
 
-    return { tabId: opened.id, ...(opened.url ? { url: opened.url } : {}) };
+    const openedTab: OpenedTab = { tabId: opened.id };
+
+    if (opened.url) openedTab.url = opened.url;
+
+    return openedTab;
   } catch {
     return undefined;
   }
@@ -1338,7 +1322,11 @@ export async function click(
         await endCursorAction(tabId, cid, actionId, "done", [x, y]);
         await recordCursorTrail(tabId, sessionId, x, y, true);
 
-        return { clicked: true, ...(fallbackEffect ? { effect: fallbackEffect } : {}) };
+        const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
+
+        if (fallbackEffect) clicked.effect = fallbackEffect;
+
+        return clicked;
       }
 
       throw e;
@@ -1348,7 +1336,13 @@ export async function click(
     await recordCursorTrail(tabId, sessionId, x, y, true);
     const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, tabId, sessionId) : undefined;
 
-    return { clicked: true, ...(effect ? { effect } : {}), ...(newTab ? { newTab } : {}) };
+    const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
+
+    if (effect) clicked.effect = effect;
+
+    if (newTab) clicked.newTab = newTab;
+
+    return clicked;
   } catch (error) {
     const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
     await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");
@@ -1485,7 +1479,13 @@ export async function doubleClick(
     await recordCursorTrail(tabId, sessionId, x, y, true);
     const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, tabId, sessionId) : undefined;
 
-    return { doubleClicked: true, ...(effect ? { effect } : {}), ...(newTab ? { newTab } : {}) };
+    const doubleClicked: Extract<DoubleClickResult, { doubleClicked: true }> = { doubleClicked: true };
+
+    if (effect) doubleClicked.effect = effect;
+
+    if (newTab) doubleClicked.newTab = newTab;
+
+    return doubleClicked;
   } catch (error) {
     const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
     await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");
@@ -1641,7 +1641,11 @@ export async function drag(
     await endCursorAction(tabId, cid, actionId, "done", [tx, ty]);
     await recordCursorTrail(tabId, sessionId, tx, ty, false);
 
-    return { dragged: true, ...(effect ? { effect } : {}) };
+    const dragged: Extract<DragResult, { dragged: true }> = { dragged: true };
+
+    if (effect) dragged.effect = effect;
+
+    return dragged;
   } catch (error) {
     const unknown = /可能已送达|是否送达无法确认/.test(oneLine(error));
     await endCursorAction(tabId, cid, actionId, unknown ? "unknown" : "failed");
@@ -1924,16 +1928,20 @@ export async function pressKey(
     modifiers: info.modifiers | heldMods,
   };
 
-  await sendCommand(tab.id, "Input.dispatchKeyEvent", {
-    type: "rawKeyDown",
-    ...base,
-    // macOS editing shortcuts need the editor command as well as the synthesized key.
-    ...(info.code === "KeyA" && (info.modifiers | heldMods) === 4 && navigator.platform.startsWith("Mac")
-      ? { commands: ["selectAll"] } : {}),
-    ...(info.code === "KeyV" && ((info.modifiers | heldMods) & 6) !== 0
-      ? { commands: ["paste"] } : {}),
-    ...(info.text !== undefined ? { text: info.text } : {}),
-  });
+  const rawKeyDown: KeyEventParams = { type: "rawKeyDown", ...base };
+
+  // macOS editing shortcuts need the editor command as well as the synthesized key.
+  if (info.code === "KeyA" && (info.modifiers | heldMods) === 4 && navigator.platform.startsWith("Mac")) {
+    rawKeyDown.commands = ["selectAll"];
+  }
+
+  if (info.code === "KeyV" && ((info.modifiers | heldMods) & 6) !== 0) {
+    rawKeyDown.commands = ["paste"];
+  }
+
+  if (info.text !== undefined) rawKeyDown.text = info.text;
+
+  await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown);
   await sendCommand(tab.id, "Input.dispatchKeyEvent", { type: "keyUp", ...base });
 
   return { pressed: true };
@@ -2152,11 +2160,11 @@ export async function keyDown(
   heldOf(sessionId).keys.set(params.key, info);
 
   try {
-    await sendCommand(tab.id, "Input.dispatchKeyEvent", {
-      type: info.text ? "keyDown" : "rawKeyDown",
-      ...base,
-      ...(info.text !== undefined ? { text: info.text } : {}),
-    });
+    const keyDown: KeyEventParams = { type: info.text ? "keyDown" : "rawKeyDown", ...base };
+
+    if (info.text !== undefined) keyDown.text = info.text;
+
+    await sendCommand(tab.id, "Input.dispatchKeyEvent", keyDown);
 
     return { down: true, key: params.key };
   } catch (e) {
@@ -2208,7 +2216,7 @@ export async function releaseHeldInputs(
   const point = state.pointer ?? [0, 0];
 
   if (tabId != null) {
-    for (const [name, info] of [...state.keys.entries()]) {
+    for (const [name, info] of state.keys.entries()) {
       try {
         await sendCommand(tabId, "Input.dispatchKeyEvent", {
           type: "keyUp",
@@ -2222,7 +2230,7 @@ export async function releaseHeldInputs(
       } catch { /* retain the possible hold; do not claim a confirmed release */ }
     }
 
-    for (const button of [...state.mouseButtons]) {
+    for (const button of state.mouseButtons) {
       try {
         await sendCommand(tabId, "Input.dispatchMouseEvent", {
           type: "mouseReleased",

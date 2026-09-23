@@ -94,7 +94,8 @@ const record: {
 const sha256 = (buf: Buffer | string) => createHash("sha256").update(buf).digest("hex");
 
 function check(sc: ScenarioResult, id: string, ok: boolean, detail?: unknown): boolean {
-  sc.assertions.push({ id, ok, ...(detail !== undefined ? { detail } : {}) });
+  const detailExtra = detail !== undefined ? { detail } : {};
+  sc.assertions.push({ id, ok, ...detailExtra });
 
   return ok;
 }

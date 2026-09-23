@@ -56,7 +56,7 @@ writeFileSync(wrapperPath, wrapper);
 
 chmodSync(wrapperPath, 0o755);
 
-const hostManifestDir = join(homedir(), "Library/Application Support/Google/Chrome/NativeMessagingHosts");
+const _hostManifestDir = join(homedir(), "Library/Application Support/Google/Chrome/NativeMessagingHosts");
 // ── 目标 Chrome user-data-dir 列表 ─────────────────────────────────
 // Chrome 以自定义 --user-data-dir 运行时，只认 <user-data-dir>/NativeMessagingHosts，
 // 标准目录的清单对它无效。所以：默认装标准目录；同时探测正在运行的 Chrome 实例的

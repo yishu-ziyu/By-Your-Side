@@ -81,9 +81,14 @@ import {
       selected: attr("aria-selected"),
       expanded: attr("aria-expanded"),
       disabled: anyEl.disabled === undefined ? attr("aria-disabled") : String(anyEl.disabled),
-      ...(isMedia ? { paused: String(media.paused), ended: String(media.ended) } : {}),
-      cls: String((el as HTMLElement).className ?? "").slice(0, 200),
     };
+
+    if (isMedia) {
+      state.paused = String(media.paused);
+      state.ended = String(media.ended);
+    }
+
+    state.cls = String((el as HTMLElement).className ?? "").slice(0, 200);
 
     return state;
   }

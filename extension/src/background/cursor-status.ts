@@ -99,7 +99,7 @@ function renderPill(tabId: number): Promise<void> {
         const { entry, title } = view;
         await callDom(tabId, (id: string, value: CrossPageView) => {
           window.__sideagent?.cursor?.for(id)?.showCrossPage?.(value);
-        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].filter(v => isCurrentEntry(v.entry) && v.entry.tabId != null).map(v => ({ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId! })) }]);
+        }, [instanceIdFor(entry.key), { state: entry.state, title, sessionId: entry.sessionId, tabId: targetTabId, members: [...(pillOwners.get(tabId)?.values() ?? [])].flatMap(v => isCurrentEntry(v.entry) && v.entry.tabId != null ? [{ sessionId: v.entry.sessionId, title: v.title, state: v.entry.state, tabId: v.entry.tabId! }] : []) }]);
       } else {
         await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
       }
@@ -196,7 +196,7 @@ async function resyncPills(): Promise<void> {
 async function forgetTab(tabId: number): Promise<void> {
   pillOwners.delete(tabId);
 
-  for (const [key, entry] of [...living]) {
+  for (const [key, entry] of living) {
     if (entry.pillTabId === tabId) entry.pillTabId = undefined;
 
     if (entry.tabId === tabId) await clearCursorStatus(key);
@@ -276,14 +276,6 @@ export function workingTabBehindPill(senderTabId: number | null | undefined): nu
   return currentPill(senderTabId)?.entry.tabId ?? null;
 }
 
-export function resetCursorStatusForTests(): void {
-  living.clear();
-  suppressed.clear();
-  pillOwners.clear();
-  pillPaints.clear();
-  statusPaints.clear();
-}
-
 export function cursorStatusForTests(key: string): LivingStatus | null {
   const entry = living.get(key);
 
@@ -333,8 +325,9 @@ export async function showExecutionFeedback(feedback: ExecutionFeedback): Promis
     id: feedback.id,
     text: feedback.text,
     kind: feedback.kind,
-    ...(feedback.facts.detail ? { detail: feedback.facts.detail } : {}),
   };
+
+  if (feedback.facts.detail) view.detail = feedback.facts.detail;
 
   const active = await activeTabId();
   const targets = [...new Set([active, feedback.facts.tabId ?? null].filter((id): id is number => typeof id === "number"))];

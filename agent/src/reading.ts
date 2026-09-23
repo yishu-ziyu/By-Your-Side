@@ -24,7 +24,8 @@ export class ReadingRequests {
     const current = () => this.active.get(threadId) === run;
 
     const publish = (state: ReadingEvent['state'], error?: string) => {
-      if (current()) emit({type: 'reading_event', threadId, requestId, state, text, ...(error ? {error} : {})});
+      if (!current()) return;
+      emit(error ? {type: 'reading_event', threadId, requestId, state, text, error} : {type: 'reading_event', threadId, requestId, state, text});
     };
 
     publish('pending');

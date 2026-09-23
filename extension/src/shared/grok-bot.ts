@@ -3,9 +3,13 @@
  * 休息时身体不漂（bloub）；reduced-motion 停眼和过渡。
  */
 import { GROKBOT_ORIGINAL } from "./grok-original.js";
-import type { CastShape, Person } from "../../../shared/cast.js";
+import type { Person } from "../../../shared/cast.js";
 
-const SHAPES: Record<CastShape, string> = {
+/** 人的外形枚举（blob/pebble/…）：从 Person 上取，避免在本地复制一份枚举名。 */
+type PersonSilhouette = Person["shape"];
+
+/** 外形 → 身体轮廓的 path d；既做 clipPath 也做填充。 */
+const SILHOUETTE_PATHS: Record<PersonSilhouette, string> = {
   blob: "M228.541 114.228C228.541 130.133 225.184 145.994 218.738 160.534C212.674 174.217 203.904 186.669 193.065 196.988C155.933 232.34 99.497 238.596 55.5255 212.24C45.097 205.99 35.6851 198.072 27.7451 188.866C19.1926 178.953 12.3686 167.569 7.65781 155.351C2.60712 142.264 0 128.257 0 114.228C0 98.3219 3.35751 82.4611 9.80315 67.9215C15.8672 54.2382 24.6377 41.7862 35.4767 31.4668C72.6081 -3.88483 129.044 -10.1413 173.016 16.2153C183.444 22.4653 192.856 30.3829 200.796 39.5896C209.349 49.5018 216.173 60.8859 220.883 73.1037C225.934 86.1906 228.541 100.198 228.541 114.228Z",
   pebble: "M114 8C177 8 217 45 217 109C217 178 181 219 112 219C43 219 12 181 12 113C12 48 51 8 114 8Z",
   squircle: "M55 10H174Q219 10 219 55V174Q219 219 174 219H55Q10 219 10 174V55Q10 10 55 10Z",
@@ -232,7 +236,7 @@ class GrokBot {
 export function mountGrok(host: HTMLElement, person: Person, size = 28, options: { animate?: boolean } = {}): GrokHandle {
   host.replaceChildren();
   const id = `gb${++clip}`;
-  const d = SHAPES[person.shape];
+  const d = SILHOUETTE_PATHS[person.shape];
   host.innerHTML = `<svg class="gb" width="${size}" height="${size}" viewBox="0 0 229 229" aria-hidden="true">
     <defs><clipPath id="${id}"><path d="${d}"/></clipPath></defs>
     <path fill="${person.color}" d="${d}"/>
@@ -272,11 +276,4 @@ export function mountKenney(host: HTMLElement, bodyUrl: string, faceUrl: string,
   el.style.setProperty("--face", `url("${faceUrl}")`);
   el.innerHTML = "<i></i>";
   host.appendChild(el);
-}
-
-/** 表情插值（单测用）：t=0 起点，t=1 终点。 */
-export function lerpExpr(from: number[][][], to: number[][][], t: number): number[][][] {
-  const k = clamp(t, 0, 1);
-
-  return from.map((ring, e) => ring.map((p, j) => mixPt(p, to[e]?.[j], k)));
 }

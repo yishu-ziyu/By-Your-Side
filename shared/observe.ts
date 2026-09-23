@@ -85,15 +85,18 @@ export function mergeRun(patterns: ObservedPattern[], run: ObservedRun, now = ru
   const signature = signatureOf(run.anchors);
   const next = patterns.filter(p => !(p.hostname === hostname && p.signature === signature));
   const previous = patterns.find(p => p.hostname === hostname && p.signature === signature);
-  next.push({
+
+  const merged: ObservedPattern = {
     hostname,
     signature,
     anchors: run.anchors.filter(a => a.name || a.role),
     count: (previous?.count ?? 0) + 1,
     firstSeen: previous?.firstSeen ?? now,
     lastSeen: now,
-    ...(previous?.dismissed ? { dismissed: true as const } : {}),
-  });
+  };
+
+  if (previous?.dismissed) merged.dismissed = true;
+  next.push(merged);
 
   return trimPatterns(next);
 }

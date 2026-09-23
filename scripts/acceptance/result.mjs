@@ -85,13 +85,14 @@ export function evaluateRun(driverResult, expected = {}) {
   };
 
   function step(name, ok, expectedValue, actual, category, extra = {}) {
+    const failureExtra = ok ? {} : { failureCategory: category };
     steps.push({
       name,
       ok,
       expected: expectedValue,
       actual,
       durationMs: dur(name),
-      ...(ok ? {} : { failureCategory: category }),
+      ...failureExtra,
       ...extra,
     });
   }

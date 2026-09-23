@@ -19,7 +19,6 @@ vi.mock('../src/run-trace.js',async(importOriginal)=>{
 });
 
 import {decideDisplay} from '../src/display-fast-path.js';
-import {receiptSpeech} from '../src/voice-receipt.js';
 import {candidate,context,managerHarness} from './fixtures/display-steering-harness.js';
 import type {ServerMessage} from '../../shared/protocol.js';
 
@@ -53,7 +52,6 @@ describe('语音运行中显示修改',()=>{
   expect(h.translationCalls).toHaveLength(1);
   expect(h.steers).toHaveLength(1);
   expect(h.steers[0]).toContain('译文已改成宋体');
-  expect(receiptSpeech(result)).toContain('已直接应用并核对');
   const spoken=emitted.filter((message:ServerMessage)=>message.type==='agent_event'&&(message as never as {event:{kind:string;message?:string}}).event?.kind==='notice'&&String((message as never as {event:{message?:string}}).event.message).includes('已直接应用'));
   expect(spoken).toHaveLength(1);
   // 原任务保持运行；它自己的交付不被这条修改吞掉。

@@ -59,14 +59,14 @@ const ackNotice = (socket: Socket, index: number, eventId?: string) => {
   const item = noticeItems(socket)[index]?.item;
 
   if (!item) throw new Error(`notice ${index} not sent yet`);
-  socket.server({type: 'conversation.item.created', ...(eventId ? {event_id: eventId} : {}), item});
+  socket.server(eventId ? {type: 'conversation.item.created', event_id: eventId, item} : {type: 'conversation.item.created', item});
 };
 
 const finishResponse = (socket: Socket, id: string, audio: boolean, eventId?: string) => {
-  socket.server({type: 'response.created', ...(eventId ? {event_id: `${eventId}-created`} : {}), response: {id}});
+  socket.server(eventId ? {type: 'response.created', event_id: `${eventId}-created`, response: {id}} : {type: 'response.created', response: {id}});
 
   if (audio) socket.server({type: 'response.audio.delta', response_id: id, delta: Buffer.alloc(960).toString('base64')});
-  socket.server({type: 'response.done', ...(eventId ? {event_id: `${eventId}-done`} : {}), response: {id, status: 'completed'}});
+  socket.server(eventId ? {type: 'response.done', event_id: `${eventId}-done`, response: {id, status: 'completed'}} : {type: 'response.done', response: {id, status: 'completed'}});
 };
 
 function createSessionFixture() {

@@ -74,20 +74,78 @@ export interface EvaluatedRun {
   elapsedMs: number;
 }
 
+export interface ExpectedRun {
+  uniqueText?: string;
+  counterBefore?: string;
+  counterAfter?: string;
+  fillBefore?: string;
+  fillAfter?: string;
+  phaseIdle?: string;
+  phaseClicked?: string;
+  phaseChanged?: string;
+}
+
+export interface ResultPayload {
+  ok: boolean;
+  startedAt: number;
+  elapsedMs: number;
+  runs: unknown;
+  connection: unknown;
+  execution: unknown;
+  failureCategory?: string | null;
+  failureStage?: string | null;
+  evidenceDir: unknown;
+  screenshots?: unknown;
+}
+
+export interface DriverOptions {
+  sessionId?: string;
+  url?: string;
+  incSelector?: string;
+  inputSelector?: string;
+  fillValue?: string;
+}
+
+export interface TeamDriverOptions {
+  incSelector?: string;
+  inputSelector?: string;
+  inflightMs?: number;
+  capability?: string;
+  leadId?: string;
+  leadUrl?: string;
+  leadMark?: string;
+  leadFill?: string;
+  workerId?: string;
+  workerUrl?: string;
+  workerMark?: string;
+  workerFill?: string;
+  userLeadMark?: string;
+  userWorkerMark?: string;
+}
+
+export interface ExpectedTeamRun {
+  uniqueText?: string;
+  leadMark?: string;
+  workerMark?: string;
+  userLeadMark?: string;
+  userWorkerMark?: string;
+  blockedError?: string;
+}
+
 export function classifyFailure(err: unknown, stage?: string): string;
 export function containsNeedle(haystack: string, needle: string): boolean;
-export function evaluateRun(driverResult: unknown, expected?: object): EvaluatedRun;
+export function evaluateRun(driverResult: unknown, expected?: ExpectedRun): EvaluatedRun;
 export function formatStep(step: RunStep): string;
 export function formatRun(runIndex: number, evaluated: EvaluatedRun): string;
-export function buildResultJson(payload: object): object;
+export function buildResultJson(payload: ResultPayload): object;
 
 export function findServiceWorker(
   targets: unknown,
   extensionId: string,
 ): { url?: string; type?: string; targetId?: string; id?: string } | undefined;
 
-export function buildDriverExpression(opts: object): string;
-export function swDriver(opts: object): Promise<unknown>;
+export function buildDriverExpression(opts: DriverOptions): string;
+export function swDriver(opts: DriverOptions): Promise<unknown>;
 
 export const USER_BLOCKED_ERROR: string;
 
@@ -103,7 +161,7 @@ export const TEAM_LEAD_SESSION: string;
 
 export const TEAM_WORKER_SESSION: string;
 
-export function buildTeamDriverExpression(opts: object): string;
-export function teamDriver(opts: object): Promise<unknown>;
-export function evaluateTeamRun(driverResult: unknown, expected?: object): EvaluatedRun;
+export function buildTeamDriverExpression(opts: TeamDriverOptions): string;
+export function teamDriver(opts: TeamDriverOptions): Promise<unknown>;
+export function evaluateTeamRun(driverResult: unknown, expected?: ExpectedTeamRun): EvaluatedRun;
 export function formatTeamRun(runIndex: number, evaluated: EvaluatedRun): string;

@@ -1,6 +1,6 @@
 /** Frozen implementation / fresh-task ledger. No browser actions, model calls or hidden task generation. */
 import {createHash} from 'node:crypto';
-import {readFile,readdir,writeFile,mkdir,open,rename,unlink} from 'node:fs/promises';
+import {readFile,readdir,mkdir,open,rename,unlink} from 'node:fs/promises';
 import {join,relative,dirname} from 'node:path';
 
 export const CATEGORIES=['navigation','forms','filters','multi-page','dynamic-controls','correction-recovery'] as const;

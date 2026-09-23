@@ -125,10 +125,11 @@ async function persist(map: TabBindingMap, resources?: TabResourceMap): Promise<
   if (resources) cachedResources = resources;
 
   try {
-    await chrome.storage.session.set({
-      [STORAGE_KEY]: map,
-      ...(resources ? { [RESOURCE_STORAGE_KEY]: resources } : {}),
-    });
+    if (resources) {
+      await chrome.storage.session.set({ [STORAGE_KEY]: map, [RESOURCE_STORAGE_KEY]: resources });
+    } else {
+      await chrome.storage.session.set({ [STORAGE_KEY]: map });
+    }
   } catch { /* storage failure does not make a browser action fail */ }
 }
 
@@ -188,8 +189,6 @@ export async function getTabResource(tabId: number): Promise<TabResource | undef
 export async function findSessionsForTab(tabId: number): Promise<string[]> { return sessionsForTab(await loadMap(), tabId); }
 
 /** @deprecated 共享页会有多个成员；新代码使用 findSessionsForTab。 */
-export async function findSessionForTab(tabId: number): Promise<string | undefined> { return (await findSessionsForTab(tabId))[0]; }
-
 function groupTitle(conversationId: string): string {
   return titleByConversation.get(conversationId) ?? (conversationId === DEFAULT_CONVERSATION_ID ? "By Your Side" : "新会话");
 }
@@ -263,7 +262,11 @@ async function applyConversationGroup(tabId: number, conversationId: string): Pr
     if (groupId == null) groupId = await findConversationGroupId(conversationId, tabId);
 
     try {
-      groupId = await tabsApi.group({ tabIds: tabId, ...(groupId != null ? { groupId } : {}) });
+      if (groupId != null) {
+        groupId = await tabsApi.group({ tabIds: tabId, groupId });
+      } else {
+        groupId = await tabsApi.group({ tabIds: tabId });
+      }
     } catch (error) {
       if (groupId == null) throw error;
       // Chrome destroys a group after its last tab closes; the conversation survives.
@@ -397,7 +400,7 @@ export async function shareTab(
   return { tabId: params.tabId, collaborators: resource.collaborators.map((key) => parseExecutionKey(key).sessionId) };
 }
 
-const SHARED_UNSAFE_TOOLS = new Set(["page_translation", "open_tab", "switch_tab", "close_tab", "navigate", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll", "js", "mark", "clear_marks"]);
+const SHARED_UNSAFE_TOOLS = new Set(["page_translation", "open_tab", "switch_tab", "close_tab", "navigate", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll", "js", "mark", "clear_marks", "ask_user_to_point"]);
 
 /** controller 在每个工具执行前调用；共享页写入只能走完整 page_operation。 */
 export async function guardToolAccess(name: string, key: string, explicitTabId?: number): Promise<void> {

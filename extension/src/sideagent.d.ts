@@ -113,6 +113,10 @@ interface SideAgentCursor {
 
 interface SideAgentNamespace {
   refs?: Map<number, Element>;
+  point?: {
+    start(id: string, message: string, timeoutMs: number): Promise<import("../../shared/point-selection.js").PointSelection>;
+    cancel(id: string): void;
+  };
   snapshot?: (scope?: string) => string;
   dom?: SideAgentDomOps;
   /** 动作效果证据（按需注入 content-effect.js 后可用） */
@@ -133,6 +137,8 @@ interface SideAgentNamespace {
   markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
   /** overlay 自检：标注层真实子节点数 */
   markLayerCount?: () => number;
+  /** 宿主自画标注的只读读数，供核验「圈给用户看」；页面脚本读不到。 */
+  marksState?: () => import("../../shared/host-marks.js").HostDrawnMark[];
   /** overlay 自检：拿住态光标与名牌双键（生产路径不用） */
   holdState?: (instanceId?: string) => {
     holding: boolean;

@@ -244,7 +244,7 @@ function delivery(h:ReturnType<typeof task>) {
   const tool=createSendUserMessageTool({conversationId:'default',getRunId:()=>h.progress.snapshot().runId??null,emit,
     getNextStep:h.next,hasUnfinishedWork:()=>h.progress.snapshot().results?.some(r=>r.status!=='satisfied')??false} as any);
 
-  const send=(outcome?:'complete'|'partial')=>(tool.execute as any)('finding-1',{kind:'finding',content:'当前执行结果。',...(outcome?{outcome}:{})});
+  const send=(outcome?:'complete'|'partial')=>(tool.execute as any)('finding-1', outcome ? {kind:'finding',content:'当前执行结果。',outcome} : {kind:'finding',content:'当前执行结果。'});
 
   return {emit,send};
 }

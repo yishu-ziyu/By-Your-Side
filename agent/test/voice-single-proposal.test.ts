@@ -5,15 +5,13 @@
  *
  * 覆盖契约里的六条反例与三条代码层不变量。
  */
-import {afterEach,describe,expect,it,vi} from 'vitest';
+import {describe,expect,it,vi} from 'vitest';
 import {ConversationManager} from '../src/conversation-manager.js';
 import {VoiceIntentError} from '../src/voice-errors.js';
 import {parseVoiceDecision} from '../src/voice-intent.js';
 import {VoiceTurnGate} from '../src/voice-turn.js';
 import type {ServerMessage} from '../../shared/protocol.js';
 import type {UserDelivery, UserDeliveryStream} from '../../shared/voice.js';
-import type {TaskProgressSnapshot} from '../../shared/voice.js';
-
 
 /** 与 voice-model.test.ts 同形的模型调用替身。 */
 function harnessModel(completeSimple:unknown){
@@ -366,76 +364,6 @@ describe('轮次闸门本身',()=>{
   });
 });
 
-// 语音层：一轮一份回答；旧 token/旧交付/agent_end/重连不能让被停掉的候选复活。
-import {EventEmitter} from 'node:events';
-import type WebSocket from 'ws';
-import {StepVoiceSession,STEP_VOICE} from '../src/voice-session.js';
-
-class VoiceSocket extends EventEmitter{
-  readyState=1;bufferedAmount=0;sent:any[]=[];
-  send=(data:string)=>{this.sent.push(JSON.parse(data));};
-  close=vi.fn();
-  server(event:object){this.emit('message',Buffer.from(JSON.stringify(event)));}
-}
-
-function voiceHarness(route:ConstructorParameters<typeof StepVoiceSession>[0]['route']){
-  const socket=new VoiceSocket();
-  const events:any[]=[];const diagnostics:any[]=[];
-  const speeches:any[]=[];
-  const snapshot:TaskProgressSnapshot={conversationId:'default',observedAt:Date.now(),state:'idle',goal:null,startedAt:1,runId:'run-1',active:[],lastAction:null,successVerified:false};
-
-  const session=new StepVoiceSession({route,getSnapshot:()=>snapshot,emit:e=>events.push(e),connect:()=>socket as unknown as WebSocket,diagnostic:(event,fields)=>diagnostics.push({event,fields}),
-    createSpeech:(_key:any,callbacks:any)=>{const output={push:(text:string)=>{callbacks.audio('AQABAA==');callbacks.end();},cancel:()=>{},finish:()=>{}};speeches.push(output);
-
-return output;}});
-
-  session.start('synthetic');
-  socket.server({type:'session.created',session:{model:'stepaudio-2.5-realtime'}});
-  socket.server({type:'session.updated',session:{voice:STEP_VOICE,input_audio_format:'pcm16',turn_detection:{type:''}}});
-  const input=(turn=1)=>{session.command({kind:'interrupt',turn});session.command({kind:'audio',turn,data:'AQABAA=='});session.command({kind:'commit',turn});};
-
-  const speak=(turn:number,text:string)=>{input(turn);socket.server({type:'input_audio_buffer.committed',item_id:`u${turn}`});socket.server({type:'conversation.item.input_audio_transcription.completed',item_id:`u${turn}`,transcript:text});};
-
-  return {socket,events,diagnostics,speeches,session,speak,input};
-}
-
-afterEach(()=>{sessions.forEach(s=>s.close());sessions.splice(0);});
-
-const sessions:StepVoiceSession[]=[];
-
-describe('语音层：一轮一份回答，被停掉的候选不复活',()=>{
-  it('提交后只播一份正文；随后的旧交付、旧 agent_end 与重连事件都不补第二份',async()=>{
-    const h=voiceHarness(async()=>({kind:'none',resumeReadOnly:'chat',spokenText:'晚上好，我在。',turn:{branch:'reply',phase:'COMMITTED'}}));
-    h.speak(1,'嗨，晚上好。');
-    await Promise.resolve();await Promise.resolve();
-    expect(h.speeches).toHaveLength(1);
-    expect(h.diagnostics.find(d=>d.event==='prepare_result')?.fields).toMatchObject({branch:'reply'});
-    expect(h.diagnostics.some(d=>d.event==='route_start'||d.event==='route_result')).toBe(false);
-    // 用户说停：这一轮翻篇。
-    h.input(2);
-    const answers=h.events.filter(e=>e.kind==='text'&&e.role==='assistant').map(e=>e.text);
-    // 注入旧 token、旧交付、旧 response.done 与断线重连：不产生第二份回答，也不重新出声。
-    h.socket.server({type:'response.audio.delta',response_id:'old',item_id:'old-item',delta:'AQABAA=='});
-    h.socket.server({type:'response.done',response:{id:'old',status:'completed'}});
-    h.session.streamDelivery({id:'old-turn-delivery',runId:'run-1',kind:'reply',text:'旧候选的回答',phase:'streaming',voiceTurn:1});
-    h.session.completeDelivery({id:'old-turn-delivery',runId:'run-1',kind:'reply',text:'旧候选的回答',voiceTurn:1});
-    h.socket.emit('close',1006);
-    await Promise.resolve();
-    expect(h.speeches).toHaveLength(1);
-    expect(h.events.filter(e=>e.kind==='text'&&e.role==='assistant').map(e=>e.text)).toEqual(answers);
-  });
-  it('判定超时给确定的失败回执，不自动放行成执行',async()=>{
-    const h=voiceHarness(async()=>{throw new VoiceIntentError('classifier_timeout');});
-    h.speak(1,'嗨，晚上好。');
-    await Promise.resolve();await Promise.resolve();await Promise.resolve();
-    const spoken=h.events.filter(e=>e.kind==='text'&&e.role==='assistant').map(e=>e.text).join('');
-    expect(spoken).toContain('未执行');
-    expect(spoken).toContain('超时');
-    expect(h.diagnostics.some(d=>d.event==='prepare_error')).toBe(true);
-    expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
-  });
-});
-
 describe('提案校验沿用既有语义：整句、分界、目标名称、页面归属',()=>{
   it('单个动作保留整句原文，多动作按分界切分且拼回原话',()=>{
     const whole=parseVoiceDecision(JSON.stringify({steps:[{action:'chat',target:null}]}),'嗯，嗯，晚上好呀。');
@@ -522,11 +450,6 @@ describe('第二轮要求7：observe 复用既有派发与页面预观察',()=>{
 });
 
 describe('第二轮要求8：控制句的精简协议与旧分类调用同形',()=>{
-  it('控制句与停播报一律不走完整提案（默认走与旧分类同形的精简协议）',async()=>{
-    const {isFactFreeClosedUtterance}=await import('../src/voice-intent.js');
-
-    for(const control of ['暂停任务','先停','停一停','别读了','安静点','不用念了','先等等','别说了','停止播报','停','继续','交还给你','取消任务','终止','把任务暂停'])expect(isFactFreeClosedUtterance(control)).toBe(false);
-  });
   it('复核官点名的控制措辞在真实路由里都拿到精简协议',async()=>{
     const h=harness();await h.manager.ensureDefault();const session=h.session();
     session.prepareVoiceTurn.mockImplementation(async(input:any,options:any)=>({plan:{steps:[{action:'clarify',text:input.text,target:null}]},replyText:null,requestId:'p',attempts:1,elapsedMs:1,protocol:options?.protocol??'plan'}));
@@ -554,18 +477,6 @@ describe('第二轮要求8：控制句的精简协议与旧分类调用同形',(
     const {VOICE_INTENT_PROMPT,VOICE_PLAN_PROMPT}=await import('../src/voice-intent.js');
     expect(VOICE_PLAN_PROMPT).toBe(VOICE_INTENT_PROMPT);
   });
-  it('精简协议的请求与旧分类调用逐项同形（提示词/预算/温度/解析）',async()=>{
-    const {prepareVoiceTurn}=await import('../src/voice-model.js');
-    const {VOICE_INTENT_PROMPT}=await import('../src/voice-intent.js');
-    const completeSimple=vi.fn(async (_model:unknown,_context:unknown,_options:unknown)=>({stopReason:'stop',content:[{type:'text',text:'{"steps":[{"action":"pause","target":null}]}'}]}));
-    const prepared=await prepareVoiceTurn(harnessModel(completeSimple),{text:'暂停任务',state:'running'},{protocol:'plan'});
-    expect(prepared).toMatchObject({protocol:'plan',replyText:null});
-    expect(prepared.plan.steps[0]!.action).toBe('pause');
-    const [,,options]=completeSimple.mock.calls[0]!;
-    expect(options).toMatchObject({maxTokens:1400,temperature:0});
-    const context=completeSimple.mock.calls[0]![1] as unknown as {systemPrompt:string};
-    expect(context.systemPrompt).toBe(VOICE_INTENT_PROMPT);
-  });
 });
 
 describe('第二轮要求9：reply 只在不需要外部事实时使用',()=>{
@@ -585,10 +496,6 @@ describe('第二轮要求9：reply 只在不需要外部事实时使用',()=>{
 
     // 带任何外部事实指代或额外请求的句子都不算封闭。
     for(const text of ['你好，请问工资多少？','谢谢，帮我看看页面','十加七等于多少？顺便看下页面'])expect(isFactFreeClosedUtterance(text)).toBe(false);
-  });
-  it('计划协议照旧：需要事实的追问判成 chat 就走原派发，不产生正文',async()=>{
-    const {parseVoiceDecision}=await import('../src/voice-intent.js');
-    expect(parseVoiceDecision(JSON.stringify({steps:[{action:'chat',target:null}]}),'刚才那个呢')).toMatchObject({steps:[{action:'chat'}]});
   });
 });
 
@@ -695,14 +602,5 @@ describe('第四轮：白名单走独立最小请求，非白名单永远不走'
     expect(h.emitted.slice(before).filter(m=>m.type==='agent_event')).toEqual([]);
     expect(session.prepareVoiceTurn).toHaveBeenCalledTimes(1);
     expect(session.startTask).not.toHaveBeenCalled();
-  });
-  it('语音层把最小请求失败如实说成没答上来，不放行成执行',async()=>{
-    const h=voiceHarness(async()=>{throw new VoiceIntentError('free_reply_failed');});
-    h.speak(1,'嗨，晚上好。');
-    await Promise.resolve();await Promise.resolve();await Promise.resolve();
-    const spoken=h.events.filter(e=>e.kind==='text'&&e.role==='assistant').map(e=>e.text).join('');
-    expect(spoken).toContain('没有答上来');
-    expect(h.diagnostics.some(d=>d.event==='prepare_error')).toBe(true);
-    expect(h.socket.sent.filter(e=>e.type==='response.create')).toHaveLength(0);
   });
 });

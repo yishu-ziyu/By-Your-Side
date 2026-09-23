@@ -40,7 +40,7 @@ export function createCdp(webSocketDebuggerUrl) {
     if (closedError) return;
     closedError = error;
 
-    for (const entry of [...operations]) entry.finish(error);
+    for (const entry of operations) entry.finish(error);
     pending.clear(); sessions.clear(); eventHandlers.clear();
   }
 
@@ -93,7 +93,7 @@ export function createCdp(webSocketDebuggerUrl) {
         finish(message.error ? new Error(`${method}: ${message.error.message ?? JSON.stringify(message.error)}`) : null, message.result ?? {});
       });
 
-      try { ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })); }
+      try { const sessionExtra = sessionId ? { sessionId } : {}; ws.send(JSON.stringify({ id, method, params, ...sessionExtra })); }
       catch (error) { pending.delete(id); throw error; }
 
       return () => pending.delete(id);

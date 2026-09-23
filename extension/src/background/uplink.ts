@@ -1,7 +1,7 @@
 /**
  * 上行连接管理：background service worker ⇆ 伴随进程。
  * 优先 native messaging（connectNative，Chrome 自动拉起伴随进程）；
- * host 未安装/启动失败时回退 WebSocket 调试通道（127.0.0.1:7758，token 见 chrome.storage）。
+ * host 未安装/启动失败时，实验分支先回退到扩展内 agent（offscreen 文档，见 ../inproc/），再回退 WebSocket 调试通道。
  * 认证失败（hello_error）时停止自动重连，等面板更新配置后触发 retry()。
  */
 import {
@@ -14,6 +14,9 @@ import {
   type ServerMessage,
 } from "../../../shared/protocol.js";
 import type { ConnState, TransportKind } from "../relay.js";
+import {
+  INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
+} from "../inproc/shared.js";
 
 export const NATIVE_HOST_NAME = "com.sideagent.host";
 
@@ -27,6 +30,7 @@ export interface UplinkHandlers {
 export class Uplink {
   private readonly handlers: UplinkHandlers;
   private nativePort: chrome.runtime.Port | null = null;
+  private inprocPort: chrome.runtime.Port | null = null;
   private ws: WebSocket | null = null;
   private transport: TransportKind | null = null;
   private retryAttempt = 0;
@@ -38,6 +42,16 @@ export class Uplink {
   }
 
   start(): void {
+    // 设置里改了模型，立刻推给扩展内 agent，不用重连。
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      const keys = Object.keys(changes);
+
+      if (keys.some((key) => key === INPROC_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushModelConfig();
+
+      // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
+      if (keys.some((key) => key === INPROC_VOICE_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
+    });
     void this.connectNative();
   }
 
@@ -55,6 +69,12 @@ export class Uplink {
     try {
       if (this.transport === "native" && this.nativePort) {
         this.nativePort.postMessage(msg);
+
+        return true;
+      }
+
+      if (this.transport === "inproc" && this.inprocPort) {
+        this.inprocPort.postMessage(msg);
 
         return true;
       }
@@ -84,7 +104,14 @@ export class Uplink {
       /* 忽略 */
     }
 
+    try {
+      this.inprocPort?.disconnect();
+    } catch {
+      /* 忽略 */
+    }
+
     this.nativePort = null;
+    this.inprocPort = null;
     this.ws = null;
     this.transport = null;
   }
@@ -157,7 +184,7 @@ export class Uplink {
     this.transport = "native";
 
     let everConnected = false;
-    port.onMessage.addListener((raw: unknown) => {
+    port.onMessage.addListener((raw) => {
       everConnected = true;
       this.handleRaw(raw);
     });
@@ -172,12 +199,60 @@ export class Uplink {
         // 连 hello 都没回：host 未安装或启动失败，回退 ws 调试通道
         this.nativePort = null;
         this.transport = null;
-        void this.connectWs(detail ?? "native host 未安装");
+        void this.connectInproc(detail ?? "native host 未安装");
       }
     });
 
     // native 模式无 token，身份由 host manifest 的 allowed_origins 保证
     port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+  }
+
+  /** 没有本机伴随进程时，由 offscreen 文档里的扩展内 agent 接手，讲同一套协议。 */
+  private async connectInproc(reason: string): Promise<void> {
+    if (this.transport !== null) return;
+
+    try {
+      const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
+
+      if (existing.length === 0) {
+        await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS], justification: "Run the agent loop inside the extension" });
+      }
+    } catch (err) {
+      await this.connectWs(`${reason}；扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`);
+
+      return;
+    }
+
+    if (this.transport !== null) return;
+    const port = chrome.runtime.connect({ name: INPROC_PORT_NAME });
+    this.inprocPort = port;
+    this.transport = "inproc";
+    port.onMessage.addListener((raw) => {
+      // 心跳只为让 service worker 保持存活；刷新后的订阅令牌落盘。两者都不转给侧栏。
+      if (isKeepalive(raw)) return;
+
+      if (isCredentialWrite(raw)) void persistCredential(raw.providerId, raw.credential);
+      else this.handleRaw(raw);
+    });
+    port.onDisconnect.addListener(() => {
+      if (this.inprocPort !== port) return;
+      this.handleDisconnect(chrome.runtime.lastError?.message ?? "扩展内 agent 连接断开");
+    });
+    await this.pushModelConfig();
+    await this.pushVoiceKey();
+    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+  }
+
+  /** 模型选择与各家凭据一起发：offscreen 文档读不到 chrome.storage。 */
+  private async pushModelConfig(): Promise<void> {
+    if (!this.inprocPort) return;
+    const stored = await chrome.storage.local.get(null);
+    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, credentials: pickCredentials(Object.entries(stored)) });
+  }
+
+  private async pushVoiceKey(): Promise<void> {
+    const configured = await installVoiceHeaderRule(resolveVoiceKey(Object.entries(await chrome.storage.local.get(null)))).catch(() => false);
+    this.inprocPort?.postMessage({ type: "inproc_voice", configured });
   }
 
   private async connectWs(reason: string): Promise<void> {
@@ -234,4 +309,19 @@ export class Uplink {
       }
     };
   }
+}
+
+function isKeepalive(raw: unknown): raw is { type: "inproc_keepalive" } {
+  return typeof raw === "object" && raw !== null && "type" in raw && raw.type === "inproc_keepalive";
+}
+
+function isCredentialWrite(raw: unknown): raw is { type: "inproc_credential"; providerId: string; credential: StoredCredential | null } {
+  return typeof raw === "object" && raw !== null && "type" in raw && raw.type === "inproc_credential" && "providerId" in raw && typeof raw.providerId === "string";
+}
+
+async function persistCredential(providerId: string, credential: StoredCredential | null): Promise<void> {
+  const key = `${INPROC_CREDENTIAL_PREFIX}${providerId}`;
+
+  if (credential) await chrome.storage.local.set({ [key]: credential });
+  else await chrome.storage.local.remove(key);
 }

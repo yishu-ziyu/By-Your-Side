@@ -109,12 +109,17 @@ export class ConsentPanel {
       if (entry.request.conversationId === request.conversationId && entry.status !== "pending") this.entries.delete(key);
     }
 
-    this.entries.set(key, {
+    const expired = Date.now() >= request.expiresAt;
+
+    const entry: Entry = {
       request,
-      status: Date.now() >= request.expiresAt ? "expired" : "pending",
+      status: expired ? "expired" : "pending",
       submitted: authoritativePending ? false : existing?.submitted ?? false,
-      ...(Date.now() >= request.expiresAt ? {message: "确认已过期，本次请求未发送。"} : {}),
-    });
+    };
+
+    // 过期才带拒绝理由；未过期时这个键不出现。
+    if (expired) entry.message = "确认已过期，本次请求未发送。";
+    this.entries.set(key, entry);
   }
 
   private decide(entry: Entry, allow: boolean): void {
@@ -138,7 +143,7 @@ export class ConsentPanel {
     const expanded = new Set([...this.root.querySelectorAll("details[open]")].map(el => el.closest<HTMLElement>(".consent-card")?.dataset.requestId));
     const cid = this.selected();
     const own = [...this.entries.values()].filter(entry => entry.request.conversationId === cid);
-    const others = [...new Set([...this.entries.values()].filter(entry => entry.status === "pending" && entry.request.conversationId !== cid).map(entry => entry.request.conversationId))];
+    const others = [...new Set([...this.entries.values()].flatMap(entry => entry.status === "pending" && entry.request.conversationId !== cid ? [entry.request.conversationId] : []))];
     this.root.hidden = own.length === 0 && others.length === 0;
     this.root.dataset.pending = String(own.some(entry => entry.status === "pending"));
     this.root.replaceChildren();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt } from "../src/background/panel-history.js";
-import type { BgToPanel, PanelHistoryItem, PanelToBg } from "../src/relay.js";
+import type { PanelHistoryItem } from "../src/relay.js";
 
 describe("PanelHistory", () => {
   it('does not duplicate replayed task receipts and replaces an updated receipt',()=>{
@@ -71,14 +71,6 @@ describe("PanelHistory", () => {
 });
 
 describe("panel history relay contract", () => {
-  it("supports incremental sync and history delivery", () => {
-    const sync: PanelToBg = { kind: "sync", afterSeq: 41 };
-    const item: PanelHistoryItem = { kind: "user", text: "保留这一轮任务" };
-    const history: BgToPanel = { kind: "history", entries: [{ seq: 42, item }] };
-
-    expect(sync).toEqual({ kind: "sync", afterSeq: 41 });
-    expect(history).toEqual({ kind: "history", entries: [{ seq: 42, item }] });
-  });
 
   it("retains attachments on user history items", () => {
     const history = new PanelHistory();
@@ -131,7 +123,7 @@ describe("落盘窗口与保留数量（存储配额）", () => {
     expect(window.length).toBeLessThan(history.since().length);
     // 截断的是旧的一头，最新一条必须在
     expect(window[window.length - 1]!.seq).toBe(history.since().at(-1)!.seq);
-    expect(window.map((entry) => entry.seq)).toEqual([...window.map((entry) => entry.seq)].sort((a, b) => a - b));
+    expect(window.map((entry) => entry.seq)).toEqual(window.map((entry) => entry.seq).sort((a, b) => a - b));
   });
 
   it("单条就超预算时仍保留最新一条，不写成空数组", () => {

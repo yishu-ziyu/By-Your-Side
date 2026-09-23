@@ -62,7 +62,10 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
 
         if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，操作未执行。");
         assertRedirectAllowed(request.url, next);
-        request = { ...request, url: next, body: request.method === "GET" ? undefined : request.body };
+        // 重定向累计在同一份 request 上原地改，避免每跳都复制一份对象。
+        request.url = next;
+
+        if (request.method === "GET") request.body = undefined;
         continue;
       }
 

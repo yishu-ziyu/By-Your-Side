@@ -210,8 +210,9 @@ export function armPageEvent(
     createdAt: now,
     timeoutMs: clampTimeout(input.timeoutMs),
     status: "armed",
-    ...(input.kind === "download" ? { downloadPath: input.downloadPath } : {}),
   };
+
+  if (input.kind === "download") arm.downloadPath = input.downloadPath;
 
   ledger.arms.set(arm.token, arm);
 

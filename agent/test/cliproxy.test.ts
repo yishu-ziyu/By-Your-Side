@@ -38,11 +38,6 @@ describe("parseClientEnvKey", () => {
 });
 
 describe("CLIPROXY_MODELS 静态清单", () => {
-  it("含 gemini 对话模型（2026-09-04 区域限制恢复后注册）", () => {
-    expect(CLIPROXY_MODELS.some((s) => s.id === "gemini-3-flash")).toBe(true);
-    expect(CLIPROXY_MODELS.some((s) => s.id === "gemini-3.1-flash-lite")).toBe(true);
-    expect(CLIPROXY_MODELS.some((s) => s.id === "gemini-3.1-pro-low")).toBe(true);
-  });
 
   it("不含图像/视频生成模型", () => {
     expect(CLIPROXY_MODELS.some((s) => s.id.startsWith("gpt-image"))).toBe(false);

@@ -31,7 +31,15 @@ function anchorOf(step: DemoStep): SkillAnchor | undefined {
   if (!step.anchor) return undefined;
   const { tag, role, name, inputType } = step.anchor;
 
-  return { tag, ...(role ? { role } : {}), ...(name ? { name } : {}), ...(inputType ? { inputType } : {}) };
+  const anchor: SkillAnchor = { tag };
+
+  if (role) anchor.role = role;
+
+  if (name) anchor.name = name;
+
+  if (inputType) anchor.inputType = inputType;
+
+  return anchor;
 }
 
 function inputKeyFor(anchor: SkillAnchor | undefined, taken: Set<string>): string {
@@ -65,13 +73,19 @@ export function compileSkill(input: CompileInput): Skill {
       const weak = !anchor.name && !anchor.role;
 
       if (weak) weakCount += 1;
-      steps.push({ kind: "click", anchor, ...(weak ? { weak: true as const } : {}) });
+      const clickStep: SkillStep = { kind: "click", anchor };
+
+      if (weak) clickStep.weak = true;
+      steps.push(clickStep);
     }
     else if (step.kind === "press") steps.push({ kind: "press", key: step.key ?? "Enter" });
     else if (step.kind === "type" && anchor) {
       const key = inputKeyFor(anchor, taken);
       inputs[key] = step.redacted ? "" : step.value ?? "";
-      steps.push({ kind: "type", anchor, inputKey: key, ...(step.redacted ? { redacted: true as const } : {}) });
+      const typeStep: SkillStep = { kind: "type", anchor, inputKey: key };
+
+      if (step.redacted) typeStep.redacted = true;
+      steps.push(typeStep);
     }
   }
 
@@ -79,17 +93,16 @@ export function compileSkill(input: CompileInput): Skill {
   const reversed = [...steps].reverse();
   const last = reversed.find(s => s.anchor?.name) ?? reversed.find(s => s.anchor);
 
-  const check: SkillCheck = input.check ?? {
-    ...(last?.anchor ? { marker: last.anchor } : {}),
-    text: last?.anchor
-      ? `跑完后页面上必须还能找到${last.anchor.name ? `「${last.anchor.name}」` : ` ${last.anchor.tag} `}；找不到就说明这一页已经和示范时不一样，不算跑完。`
-      : "跑完后每一步的目标都必须在；任何一步找不到目标就停。",
-  };
+  const check: SkillCheck = input.check ?? { text: last?.anchor
+    ? `跑完后页面上必须还能找到${last.anchor.name ? `「${last.anchor.name}」` : ` ${last.anchor.tag} `}；找不到就说明这一页已经和示范时不一样，不算跑完。`
+    : "跑完后每一步的目标都必须在；任何一步找不到目标就停。" };
+
+  if (!input.check && last?.anchor) check.marker = last.anchor;
 
   const host = normalizeSkillHost(input.hostname);
   const name = input.intent.trim().slice(0, 40) || `${host} 上的示范`;
 
-  return {
+  const skill: Skill = {
     id: input.id,
     name,
     intent: input.intent.trim(),
@@ -103,9 +116,13 @@ export function compileSkill(input: CompileInput): Skill {
     updatedAt: now,
     sourceDemoId: input.demoId,
     runCount: 0,
-    ...(input.requestTemplate ? { requestTemplate: input.requestTemplate } : {}),
-    ...(weakCount > 0 ? { weakSteps: weakCount } : {}),
   };
+
+  if (input.requestTemplate) skill.requestTemplate = input.requestTemplate;
+
+  if (weakCount > 0) skill.weakSteps = weakCount;
+
+  return skill;
 }
 
 /** 生成 browser_run 可用的函数体：先解析、再动作，解析不到就停。 */

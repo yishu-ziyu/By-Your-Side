@@ -43,6 +43,7 @@ export const WRITE_TOOLS = [
   "js",
   "mark",
   "clear_marks",
+  "ask_user_to_point",
   "arm_event",
   "wait_event",
   "disarm_event",
@@ -216,14 +217,19 @@ export function parseControlSnapshot(raw: unknown): ControlSnapshot | null {
     ? completedRaw.filter((k): k is string => typeof k === "string" && k.length >= 1 && k.length <= 160).slice(-CONTROL_COMPLETED_MAX)
     : undefined;
 
-  return {
+  const snap: ControlSnapshot = {
     owner: o.owner,
     generation: o.generation,
     lastStatus: o.lastStatus,
-    ...(team ? { team } : {}),
-    ...(sessions && Object.keys(sessions).length > 0 ? { sessions } : {}),
-    ...(completed && completed.length > 0 ? { completed } : {}),
   };
+
+  if (team) snap.team = team;
+
+  if (sessions && Object.keys(sessions).length > 0) snap.sessions = sessions;
+
+  if (completed && completed.length > 0) snap.completed = completed;
+
+  return snap;
 }
 
 export function snapshotControl(
@@ -234,14 +240,19 @@ export function snapshotControl(
   const sessions = gate.sessionOwners();
   const completed = gate.completedIds();
 
-  return {
+  const snap: ControlSnapshot = {
     owner: gate.control,
     generation: gate.gen,
     lastStatus,
-    ...(team ? { team } : {}),
-    ...(Object.keys(sessions).length > 0 ? { sessions } : {}),
-    ...(completed.length > 0 ? { completed } : {}),
   };
+
+  if (team) snap.team = team;
+
+  if (Object.keys(sessions).length > 0) snap.sessions = sessions;
+
+  if (completed.length > 0) snap.completed = completed;
+
+  return snap;
 }
 
 export function applyControlSnapshot(

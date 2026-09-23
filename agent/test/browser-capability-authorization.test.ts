@@ -58,11 +58,13 @@ function harness(opts: {
     getPageTarget: () => 1,
   };
 
-  const tools = createBrowserTools(rpc as never, undefined, undefined, opts.canExecute ?? (() => true), {
+  const toolOpts: Parameters<typeof createBrowserTools>[4] = {
     epoch: opts.epoch ?? (() => 1),
     canWrite: opts.canWrite ?? (() => true),
-    ...(opts.ledger ? { uploadLedger: opts.ledger } : {}),
-  });
+  };
+
+  if (opts.ledger) toolOpts.uploadLedger = opts.ledger;
+  const tools = createBrowserTools(rpc as never, undefined, undefined, opts.canExecute ?? (() => true), toolOpts);
 
   return { rpc, tools, rejected };
 }

@@ -17,8 +17,6 @@ export const SCENARIOS = [
   {id:'S3',text:'切到测试标签页，看看页面还需要什么。'},
 ] as const;
 
-type Scenario = typeof SCENARIOS[number];
-
 type Event = Record<string, any> & {at:number;type:string};
 
 export type Trace = {provider:Event[];outgoing:Event[];client:Event[];logs:Event[];tools:Event[];judgments:Event[]};
@@ -108,7 +106,7 @@ export async function main():Promise<number> {
   const before=await sourceHashes(), startedAt=Date.now();
   const results:any[]=[], traces:Record<string,Trace>={};
   let requests=0,responses=0,stopReason:string|null=null;
-  const requestShapes:string[][]=[];
+  const requestLayouts:string[][]=[];
   const summaryPath=join(root,'result.json');
   let stepKey:string;
 
@@ -124,7 +122,7 @@ return 1;}
   const shadow=new RouteShadow({enabled:()=>false,dailyLimit:()=>3,root:shadowRoot,fetch:async(...args)=>{
     if(requests>=3){stopReason='jev_cap';throw new Error(stopReason);}
 
-requests++;requestShapes.push(Object.keys(JSON.parse(String(args[1]?.body)).questions).sort());
+requests++;requestLayouts.push(Object.keys(JSON.parse(String(args[1]?.body)).questions).sort());
 
 return fetch(...args);
   }});
@@ -177,7 +175,9 @@ if(!closed)connection.handle({type:'playback_done',responseId:e.responseId});},M
         const data=fixtureReceipt(scenario.id,call.name,call.args??{});
         const feedback=classifyDirectExecutionFeedback({tool:call.name,args:call.args,executionFact:'executed',data,toolCallId:call.callId,inputId:call.inputId});
 
-        return {ok:true,executionFact:'executed',...data,...(feedback?{feedback}:{})};
+        const feedbackExtra = feedback?{feedback}:{};
+
+        return {ok:true,executionFact:'executed',...data,...feedbackExtra};
       },browser_request:async()=>({ok:false,error:'隔离夹具未接委派任务'}),read_page:async()=>({ok:false,error:'请用 snapshot 读取夹具页面'}),task_status:async()=>({ok:true,tasks:[]})},
     });
 
@@ -228,7 +228,7 @@ for(const timer of playbackTimers)clearTimeout(timer);connection.close();}
   const requestAudit=(await Promise.all(audit.map(async f=>(await readFile(join(shadowRoot,f),'utf8')).trim().split('\n').filter(Boolean).map(l=>JSON.parse(l))))).flat();
   const sourceChanged=JSON.stringify(before)!==JSON.stringify(after);
   await writeFile(summaryPath,JSON.stringify({startedAt,endedAt:Date.now(),input:'text',browser:'receipt_fixture',audio:'PCM delivery; no speaker',
-    independentReview:'required_before_running',requests,requestShapes,responses,stopReason,sourceChanged,before,after,results,requestAudit,traces},null,2));
+    independentReview:'required_before_running',requests,"requestShapes":requestLayouts,responses,stopReason,sourceChanged,before,after,results,requestAudit,traces},null,2));
   console.log(summaryPath);
 
   return sourceChanged||stopReason||results.some(r=>r.status!=='PASS')?1:0;

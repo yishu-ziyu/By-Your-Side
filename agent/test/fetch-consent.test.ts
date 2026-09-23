@@ -37,12 +37,14 @@ function harness(options: { conversationId?: string; ttlMs?: number; wired?: boo
   const calls: Array<{ name: string; params: Record<string, unknown> }> = [];
   const state = { runId: "run-1" as string | null, controlVersion: 1, epoch: 1, canWrite: true };
 
-  const broker = new FetchConsentBroker({
+  const brokerOptions: ConstructorParameters<typeof FetchConsentBroker>[0] = {
     conversationId: options.conversationId ?? "conv-a",
     emit: (message) => frames.push(message),
     ledger: new ConsentLedger(),
-    ...(options.ttlMs !== undefined ? { ttlMs: options.ttlMs } : {}),
-  });
+  };
+
+  if (options.ttlMs !== undefined) brokerOptions.ttlMs = options.ttlMs;
+  const broker = new FetchConsentBroker(brokerOptions);
 
   broker.bindContext(() => ({ runId: state.runId, controlVersion: state.controlVersion }));
 
@@ -62,11 +64,9 @@ function harness(options: { conversationId?: string; ttlMs?: number; wired?: boo
 
   const consumeConsent: ConsumeConsent = (_name, params, opts) => broker.request(params, opts);
 
-  const execution = {
-    epoch: () => state.epoch,
-    canWrite: () => state.canWrite,
-    ...(options.wired === false ? {} : { consumeConsent }),
-  };
+  const execution = options.wired === false
+    ? { epoch: () => state.epoch, canWrite: () => state.canWrite }
+    : { epoch: () => state.epoch, canWrite: () => state.canWrite, consumeConsent };
 
   const tools = createBrowserTools(rpc as never, undefined, undefined, () => true, execution);
 

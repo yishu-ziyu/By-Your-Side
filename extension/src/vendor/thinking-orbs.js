@@ -18,7 +18,8 @@ function nt(n) {
 function G(n, s) {
   const t = Math.floor(n), r = Math.floor(s);
   let a = n - t, o = s - r;
-  a = a * a * (3 - 2 * a), o = o * o * (3 - 2 * o);
+  a = a * a * (3 - 2 * a);
+  o = o * o * (3 - 2 * o);
   const c = E(t, r), M = E(t + 1, r), h = E(t, r + 1), m = E(t + 1, r + 1);
 
   return c + (M - c) * a + (h - c) * o + (c - M - h + m) * a * o;
@@ -50,31 +51,47 @@ function _(n, s, t, r, a) {
   };
 }
 
-function rt(n, s, t, r = 0.3) {
+function rt(n, s, t, _r = 0.3) {
   for (const a of s) {
     const o = a.a ?? 1, c = Math.min(1, Math.max(0, a.white)), M = Math.round((t ? 1 - c : c) * 255);
-    n.fillStyle = `rgba(${M},${M},${M},${o})`, n.beginPath(), n.arc(a.x, a.y, a.r, 0, Math.PI * 2), n.fill();
+
+    n.fillStyle = `rgba(${M},${M},${M},${o})`;
+    n.beginPath();
+    n.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+    n.fill();
   }
 }
 
 function it(n, s, t) {
   for (const r of s) {
     const a = r.a ?? 1, o = Math.min(1, Math.max(0, r.white)), c = Math.round((t ? 1 - o : o) * 255);
-    n.strokeStyle = `rgba(${c},${c},${c},${a})`, n.lineWidth = r.w, n.beginPath(), n.moveTo(r.x1, r.y1), n.lineTo(r.x2, r.y2), n.stroke();
+
+    n.strokeStyle = `rgba(${c},${c},${c},${a})`;
+    n.lineWidth = r.w;
+    n.beginPath();
+    n.moveTo(r.x1, r.y1);
+    n.lineTo(r.x2, r.y2);
+    n.stroke();
   }
 }
 
 function L(n, s, t = 0.3) {
   const r = [];
 
-  for (const a of n)
-    (a.a ?? 1) < 0.02 || (a.r = Math.max(t, a.r), r.push(a));
+  for (const a of n) {
+    if (!((a.a ?? 1) < 0.02)) {
+      a.r = Math.max(t, a.r);
+      r.push(a);
+    }
+  }
 
   return r.sort((a, o) => a.z - o.z), { dots: r, lines: s.filter((a) => (a.a ?? 1) >= 0.02) };
 }
 
 function ht(n, s, t) {
-  s.lines.length && it(n, s.lines, t), rt(n, s.dots, t);
+  if (s.lines.length) it(n, s.lines, t);
+
+  rt(n, s.dots, t);
 }
 
 function $(n, s) {
@@ -111,7 +128,7 @@ const Mt = (n, s, t) => {
 };
 
 function lt(n, s, t, r) {
-  const a = 2 * s * t + r, o = n % a, c = new Array(s).fill(0);
+  const a = 2 * s * t + r, o = n % a, c = Array.from({ length: s }, () => 0);
   let M = -1;
 
   if (o < 2 * s * t) {
@@ -119,12 +136,14 @@ function lt(n, s, t, r) {
 
     if (h < s) {
       for (let e = 0; e < h; e++) c[e] = 1;
-      c[h] = p, M = h;
+      c[h] = p;
+      M = h;
     } else {
       const e = 2 * s - 1 - h;
 
       for (let l = 0; l < e; l++) c[l] = 1;
-      c[e] = 1 - p, M = e;
+      c[e] = 1 - p;
+      M = e;
     }
   }
 
@@ -139,18 +158,22 @@ function pt(n, s, t) {
     const h = s[M], m = h.axis === 0 ? r : h.axis === 1 ? a : o;
 
     if (m < h.lo || m >= h.hi) continue;
-    M === t.active && (c = !0);
+
+    if (M === t.active) c = !0;
     const D = h.ang * t.amount[M], p = Math.cos(D), e = Math.sin(D);
 
     if (h.axis === 0) {
       const l = a * p - o * e;
-      o = a * e + o * p, a = l;
+      o = a * e + o * p;
+      a = l;
     } else if (h.axis === 1) {
       const l = r * p + o * e;
-      o = -r * e + o * p, r = l;
+      o = -r * e + o * p;
+      r = l;
     } else {
       const l = r * p - a * e;
-      a = r * e + a * p, r = l;
+      a = r * e + a * p;
+      r = l;
     }
   }
 
@@ -239,14 +262,18 @@ function st(n) {
 
   for (let a = 0; a < s; a++) {
     const o = n[a], c = n[(a + 1) % s], M = Math.hypot(c[0] - o[0], c[1] - o[1]);
-    t.push(M), r += M;
+    t.push(M);
+    r += M;
   }
 
   return (a) => {
     let o = a * r, c = 0;
 
-    for (; o > t[c] && c < s - 1; )
-      o -= t[c], c++;
+    for (; o > t[c] && c < s - 1; ) {
+      o -= t[c];
+      c++;
+    }
+
     const M = n[c], h = n[(c + 1) % s], m = t[c] ? Math.min(1, o / t[c]) : 0;
 
     return [M[0] + (h[0] - M[0]) * m, M[1] + (h[1] - M[1]) * m];
@@ -286,7 +313,8 @@ const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
 
   for (let x = 0; x < p; x++) {
     const g = e[x], d = e[(x + 1) % p], v = Math.hypot(d[0] - g[0], d[1] - g[1]);
-    l.push(v), R += v;
+    l.push(v);
+    R += v;
   }
 
   const w = wt(t.iconD ?? 1), i = (t.rDot ?? 0.021) * 1.35 * h, u = 1 + 0.02 * Math.sin(c * 3.1), y = [], b = n / 2;
@@ -295,8 +323,11 @@ const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
   for (let x = 0; x < w; x++) {
     const g = x / w * R;
 
-    for (; P + l[f] < g && f < p - 1; )
-      P += l[f], f++;
+    for (; P + l[f] < g && f < p - 1; ) {
+      P += l[f];
+      f++;
+    }
+
     const d = e[f], v = e[(f + 1) % p], k = l[f] ? Math.min(1, (g - P) / l[f]) : 0, N = (d[0] + (v[0] - d[0]) * k) * u, z = (d[1] + (v[1] - d[1]) * k) * u;
     y.push({
       x: b + N * n,
@@ -315,7 +346,8 @@ const V = 1.4, ot = 0.9, Q = V + ot, Pt = (n, s, t) => {
     const l = E(e, 1.7), R = E(e, 5.2), w = E(e, 8.9), i = o * (0.45 + 0.52 * l), u = l * 2 * Math.PI, y = Math.acos(2 * R - 1), b = Math.sin(y) * Math.cos(u), f = Math.cos(y), P = Math.sin(y) * Math.sin(u);
     let x = -f, g = b;
     const d = 0, v = Math.max(1e-6, Math.sqrt(x * x + g * g));
-    x /= v, g /= v;
+    x /= v;
+    g /= v;
     const k = f * d - P * g, N = P * x - b * d, z = b * g - f * x, O = (0.25 + 0.55 * w) * (w > 0.5 ? 1 : -1);
 
     for (let B = 0; B < D; B++) {
@@ -473,17 +505,25 @@ function St(n, s) {
 
   for (const [o, c] of zt) {
     const M = t[o], h = t[c];
-    M != null && h != null && !r.has(o) && !r.has(c) && (t[o] = Math.max(2, Math.round(M * a)), t[c] = Math.max(2, Math.round(h * a)), r.add(o), r.add(c));
+
+    if (M != null && h != null && !r.has(o) && !r.has(c)) {
+      t[o] = Math.max(2, Math.round(M * a));
+      t[c] = Math.max(2, Math.round(h * a));
+      r.add(o);
+      r.add(c);
+    }
   }
 
   for (const o of Nt) {
     const c = t[o];
-    c != null && c !== 0 && !r.has(o) && (t[o] = Math.max(1, Math.round(c * s)));
+
+    if (c != null && c !== 0 && !r.has(o)) t[o] = Math.max(1, Math.round(c * s));
   }
 
   for (const o of It) {
     const c = t[o];
-    c != null && (t[o] = Math.max(0.02, c * s));
+
+    if (c != null) t[o] = Math.max(0.02, c * s);
   }
 
   return t;
@@ -494,7 +534,8 @@ function Bt(n, s) {
 
   for (const r of kt) {
     const a = t[r];
-    a != null && (t[r] = a * s);
+
+    if (a != null) t[r] = a * s;
   }
 
   return t.rSizeMul = (t.rSizeMul ?? 1) * s, t;
@@ -643,7 +684,12 @@ function Lt(n, s) {
   if (r) return r;
   const a = Ot[n], o = At[a][s];
   let c = { ...Et[a] };
-  o.count !== 1 && (c = St(c, o.count)), o.size !== 1 && (c = Bt(c, o.size)), o.extra && (c = { ...c, ...o.extra });
+
+  if (o.count !== 1) c = St(c, o.count);
+
+  if (o.size !== 1) c = Bt(c, o.size);
+
+  if (o.extra) c = { ...c, ...o.extra };
   const M = { mode: a, speed: o.speed, opts: c };
 
   return tt.set(t, M), M;

@@ -283,7 +283,7 @@ it.each([
   expect(await h.store.list()).toEqual([]);
 });
 
-const taskViews = (messages: ServerMessage[]) => messages.filter((message): message is Extract<ServerMessage, { type: "task_view" }> => message.type === "task_view").map(message => message.view);
+const taskViews = (messages: ServerMessage[]) => messages.flatMap(message => message.type === "task_view" ? [message.view] : []);
 
 it("T02 任务视图：自动技能回放期间沿用真实任务身份与页面，结束后只读收敛为 idle", async () => {
   const h = await harness();

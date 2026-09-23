@@ -1593,7 +1593,9 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   function showFeedbackPill(view?: FeedbackPillView): void {
     if (!view?.text) return;
-    const next: FeedbackPillView = { id: view.id || `f-${Date.now()}`, text: view.text, kind: view.kind ?? "success", ...(view.detail ? { detail: view.detail } : {}) };
+    const next: FeedbackPillView = { id: view.id || `f-${Date.now()}`, text: view.text, kind: view.kind ?? "success" };
+
+    if (view.detail) next.detail = view.detail;
     const { state, bounce } = beginFeedbackPill(feedbackPillState, next, Date.now());
     // 减少动态偏好：不回弹，但仍展示；成功仍算一次独立反馈（bounces 记 0）。
     const played = bounce && !reducedMotion.matches;
@@ -1659,6 +1661,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     ns.cursorState = undefined;
     ns.markLayout = undefined;
     ns.markLayerCount = undefined;
+    ns.marksState = undefined;
     ns.holdState = undefined;
     ns.holdActionLabels = undefined;
     ns.clickHoldAction = undefined;
@@ -2029,6 +2032,18 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     }));
   /** overlay 自检：标注层真实子节点数（不等于 liveMarks 记账） */
   ns.markLayerCount = () => marksLayer?.childElementCount ?? 0;
+  /** 核验读数：每个标注此刻圈住哪个元素、是否显示；只读，不改标注。 */
+  ns.marksState = () =>
+    liveMarks.map((m) => {
+      const node = m.observedNode;
+      const anchor = node ? (node instanceof Element ? node : node.parentElement) : liveAnchor(m);
+
+      return {
+        label: m.label ?? "",
+        element: anchor?.isConnected ? { tag: anchor.tagName.toLowerCase(), name: actionName(anchor) } : null,
+        shown: m.el.isConnected && m.el.style.visibility !== "hidden",
+      };
+    });
   ns.setMarkConfig = (opts: MarkOptions) => {
     defaultMarkOptions = { ...defaultMarkOptions, ...opts };
   };

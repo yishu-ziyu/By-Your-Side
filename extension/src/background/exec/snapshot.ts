@@ -1,6 +1,7 @@
 import { axTextEvidence } from '../ax-text-evidence.js';
 import type { PageTextEvidence } from '../../../../shared/page-text-evidence.js';
 import type {TranslationDisplayState} from '../../../../shared/page-translation.js';
+import type {HostDrawnMark} from '../../../../shared/host-marks.js';
 import {withObservedDocumentIdentity} from "../observation-document.js";
 import {browserObservations,collectDecisionControls,readDecisionTree,decisionDialogs,selectObservationView} from '../browser-observation.js';
 import type {BrowserObservation,BrowserControl} from '../../../../shared/browser-decision.js';
@@ -13,6 +14,28 @@ import { axTreeToText, type AxNodeLite } from "../axtree.js";
 import { clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
 
+/** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
+interface SnapshotBody {
+  text: string;
+  tabId: number;
+  documentId?: string;
+  textEvidence?: PageTextEvidence;
+  url?: string;
+  translation?: TranslationDisplayState | null;
+  /** 本扩展画在页面上的标注；没有标注时不带。 */
+  marks?: HostDrawnMark[];
+}
+
+/** 一次读取拿到的值：snapshot 正文 + 采集预算字段；url/translation 只在读到时才带上。 */
+interface SnapshotRead extends SnapshotBody {
+  controls?: BrowserControl[];
+  truncated?: boolean;
+  controlsTruncated?: boolean;
+  dialogs?: string[];
+  collectionComplete?: boolean;
+  collectionLimitReached?: boolean;
+}
+
 /**
  * snapshot 工具：scope=full_page（默认）走 CDP Accessibility 全量无障碍树；
  * scope=viewport 走已有 DOM 视口快照（真做视口过滤，明确声明降级）。
@@ -22,7 +45,7 @@ import { withTimeout } from "../timeout.js";
 export async function snapshot(
   params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string },
   sessionId: string = LEAD_SESSION_ID,
-): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; translation?:TranslationDisplayState|null; observation?:BrowserObservation }> {
+): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; translation?:TranslationDisplayState|null; marks?:HostDrawnMark[]; observation?:BrowserObservation }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -38,11 +61,23 @@ export async function snapshot(
     if(current.id!==tab.id||current.url!==tab.url)throw new Error('读取期间页面地址已变化，请重新读取当前页面。');
     const translation=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},world:'ISOLATED',func:readTranslationDisplay})).then(r=>r[0]?.result??null).catch(()=>null);
 
-    return {...result,tabId:tab.id!,...(translation?{translation}:{}),...(typeof current.url==='string'?{url:current.url}:{})};
+    const marks=await Promise.resolve().then(()=>chrome.scripting.executeScript({target:{tabId:tab.id!},world:'ISOLATED',func:readMarksDisplay})).then(r=>r[0]?.result??[]).catch(()=>[]);
+
+    const snapshotValue: SnapshotRead = {...result,tabId:tab.id!};
+
+    if(translation) snapshotValue.translation=translation;
+
+    if(marks.length) snapshotValue.marks=marks;
+
+    if(typeof current.url==='string') snapshotValue.url=current.url;
+
+    return snapshotValue;
   });
 
   const {controls,truncated,controlsTruncated,dialogs,collectionComplete,collectionLimitReached,...value}=captured.value;
-  const identified={...value,...(captured.documentId?{documentId:captured.documentId}:{})};
+  const identified: SnapshotBody = {...value};
+
+  if(captured.documentId) identified.documentId=captured.documentId;
 
   if(!params.decision)return identified;
 
@@ -82,7 +117,7 @@ export async function snapshot(
   // Register every collected AX identity for execution — not only text-rendered refs.
   recordAxSnapshot(tab.id, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
 
-  const observation=browserObservations.issue(sessionId,{
+  const page: Omit<BrowserObservation, "id" | "observedAt"> = {
     tabId:tab.id,
     documentId:captured.documentId,
     url:value.url,
@@ -93,14 +128,10 @@ export async function snapshot(
     controlsTruncated:view.controlsTruncated,
     collectedCount:view.collectedCount,
     collectionComplete:view.collectionComplete,
-    ...(view.collectionLimitReached?{collectionLimitReached:true}:{}),
     generation:view.generation,
-    ...(view.viewScopeId?{viewScopeId:view.viewScopeId,viewScopeLabel:view.viewScopeLabel}:{}),
     viewComplete:view.viewComplete,
     visibleCount:view.visibleCount,
     hasMore:view.hasMore,
-    ...(view.nextCursor?{nextCursor:view.nextCursor}:{}),
-    ...(view.scopes?{scopes:view.scopes,scopesTruncated:view.scopesTruncated,scopesHasMore:view.scopesHasMore,...(view.scopesNextCursor?{scopesNextCursor:view.scopesNextCursor}:{})}:{}),
     dialogs: continuing ? (active!.page.dialogs ?? []) : (dialogs??[]),
     source:'accessibility',
     viewport:viewport[0]?.result,
@@ -108,8 +139,28 @@ export async function snapshot(
     tabs:view.tabs,
     tabsTruncated:view.tabsTruncated,
     tabsHasMore:view.tabsHasMore,
-    ...(view.tabsNextCursor?{tabsNextCursor:view.tabsNextCursor}:{}),
-  },{collectedControls,collectedTabs,generation:view.generation});
+  };
+
+  if(view.collectionLimitReached) page.collectionLimitReached=true;
+
+  if(view.viewScopeId){
+    page.viewScopeId=view.viewScopeId;
+    page.viewScopeLabel=view.viewScopeLabel;
+  }
+
+  if(view.nextCursor) page.nextCursor=view.nextCursor;
+
+  if(view.scopes){
+    page.scopes=view.scopes;
+    page.scopesTruncated=view.scopesTruncated;
+    page.scopesHasMore=view.scopesHasMore;
+
+    if(view.scopesNextCursor) page.scopesNextCursor=view.scopesNextCursor;
+  }
+
+  if(view.tabsNextCursor) page.tabsNextCursor=view.tabsNextCursor;
+
+  const observation=browserObservations.issue(sessionId,page,{collectedControls,collectedTabs,generation:view.generation});
 
   return {...identified,observation};
 }
@@ -230,6 +281,11 @@ if(style.visibility==='hidden'||style.display==='none'||style.opacity==='0')cont
  }
 
  return {x:scrollX,y:scrollY,width:innerWidth,height:innerHeight,text:pieces.join('\n').slice(0,6000)};
+}
+
+/** 标注层在内容脚本的隔离环境里；页面写的文字不能冒充这里的读数。 */
+export function readMarksDisplay():HostDrawnMark[] {
+  return window.__sideagent?.marksState?.() ?? [];
 }
 
 /** Serialized read-only observation; never trust page-written text as a completion flag. */

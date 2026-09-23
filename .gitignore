@@ -5,6 +5,9 @@ dist/
 .kimi-code/local.toml
 .kimi-code/wiki/fold-archive/
 .kimi-code/wiki/consolidate.lock
+# Migrated knowledge: raw conversations and runtime locks stay local.
+docs/knowledge/fold-archive/
+docs/knowledge/consolidate.lock
 .playwright-mcp/
 /out/acceptance/
 /eval/runs/

@@ -81,35 +81,28 @@ async function runVoicePlan(
     const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
     const callAt = Date.now();
 
-    const diagnose = (outcome: string, reason?: string, actions?: string[]) =>
-      console.error(`${diagnosePrefix} ${JSON.stringify({
-        requestId,
-        attempt: attempt + 1,
-        elapsedMs: Date.now() - callAt,
-        outcome,
-        ...(diagnoseProtocol ? {protocol: diagnoseProtocol} : {}),
-        ...(reason ? {reason} : {}),
-        ...(actions ? {actions} : {}),
-      })}`);
+    const diagnose = (outcome: string, reason?: string, actions?: string[]) => {
+      const protocolPiece = diagnoseProtocol ? { protocol: diagnoseProtocol } : {};
+      const reasonPiece = reason ? { reason } : {};
+      const actionsPiece = actions ? { actions } : {};
+      const log = { requestId, attempt: attempt + 1, elapsedMs: Date.now() - callAt, outcome, ...protocolPiece, ...reasonPiece, ...actionsPiece };
+      console.error(`${diagnosePrefix} ${JSON.stringify(log)}`);
+    };
 
     let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
 
     try {
+      const conversationTitlesPiece = input.conversationTitles ? { conversationTitles: input.conversationTitles } : {};
+      const taskPiece = input.task ? { task: { goal: input.task.goal?.slice(0, 600) ?? null } } : {};
+      const conversationPiece = input.conversation ? { conversation: input.conversation } : {};
+      const planPayload = { state: input.state, text: input.text, clauses: voiceDecisionClauses(input.text), ...conversationTitlesPiece, ...taskPiece, ...conversationPiece };
       reply = await call.runtime.completeSimple(call.model, {
-        // 计划提示词与旧分类调用逐字相同：VOICE_PLAN_PROMPT === VOICE_INTENT_PROMPT（既有契约测试锁定）。
         systemPrompt: VOICE_PLAN_PROMPT
           + (rejection ? rejectionHint(rejection) : "")
           + (attempt ? VOICE_INTENT_RETRY_HINT : ""),
         messages: [{
           role: "user",
-          content: JSON.stringify({
-            state: input.state,
-            text: input.text,
-            clauses: voiceDecisionClauses(input.text),
-            ...(input.conversationTitles ? {conversationTitles: input.conversationTitles} : {}),
-            ...(input.task ? {task: {goal: input.task.goal?.slice(0, 600) ?? null}} : {}),
-            ...(input.conversation ? {conversation: input.conversation} : {}),
-          }),
+          content: JSON.stringify(planPayload),
           timestamp: Date.now(),
         }],
       }, {
@@ -266,8 +259,11 @@ async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput,
   const budget = AbortSignal.timeout(VOICE_FREE_REPLY_TIMEOUT_MS);
   const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
 
-  const diagnose = (outcome: string, reason?: string) =>
-    console.error(`[voice-turn] ${JSON.stringify({requestId, attempt: 1, elapsedMs: Date.now() - startedAt, outcome, protocol: 'free_reply', ...(reason ? {reason} : {})})}`);
+  const diagnose = (outcome: string, reason?: string) => {
+    const reasonPiece = reason ? { reason } : {};
+    const log = { requestId, attempt: 1, elapsedMs: Date.now() - startedAt, outcome, protocol: 'free_reply', ...reasonPiece };
+    console.error(`[voice-turn] ${JSON.stringify(log)}`);
+  };
 
   let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
 

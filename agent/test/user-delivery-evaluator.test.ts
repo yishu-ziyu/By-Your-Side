@@ -29,7 +29,7 @@ describe('delivery protocol',()=>{
 });
 
 import {VoiceService} from '../src/voice-service.js';
-import {progressSpeech,receiptSpeech} from '../src/voice-receipt.js';
+import {progressSpeech} from '../src/voice-receipt.js';
 
 it('old finding cannot override pause, abort or error status',()=>{
  const h=harness();
@@ -37,7 +37,6 @@ it('old finding cannot override pause, abort or error status',()=>{
 for(const [state,word] of [['paused','暂停'],['aborted','终止'],['error','问题']]){
   const snapshot:any={...h.p.snapshot(),state,conversationContext:{recentTurns:[],latestResult:{runId:h.runId,text:facts,observedAt:100,source:'assistant_output'},latestDelivery:h.delivery()}};
   expect(progressSpeech(snapshot)).toContain(word);
-  expect(receiptSpeech({kind:'none',resumeReadOnly:'status',snapshot,spokenText:progressSpeech(snapshot)})).toContain(word);
  }
 });
 

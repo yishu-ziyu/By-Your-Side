@@ -238,7 +238,10 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
 
       if (!repeatedText) {
         const prefix = hasRef ? `[ref=${backendId}] ` : "";
-        entries.push({ text: `${"  ".repeat(depth)}${prefix}${described}`, interactive: hasRef, ...(hasRef ? { ref: backendId } : {}) });
+        const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}`, interactive: hasRef };
+
+        if (hasRef) line.ref = backendId;
+        entries.push(line);
 
         if (name) { say(name); words.push(name); }
 

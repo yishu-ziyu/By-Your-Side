@@ -32,15 +32,6 @@ export function documentPoint(viewportX: number, viewportY: number, scrollX: num
   return { x: Math.round(viewportX + scrollX), y: Math.round(viewportY + scrollY) };
 }
 
-export function viewportPoint(
-  docX: number,
-  docY: number,
-  scrollX: number,
-  scrollY: number,
-): { x: number; y: number } {
-  return { x: Math.round(docX - scrollX), y: Math.round(docY - scrollY) };
-}
-
 export function pointsOnTab(trail: StoredTrail, tabId: number): TrailPoint[] {
   return trail.points.filter((p) => p.tabId === tabId);
 }

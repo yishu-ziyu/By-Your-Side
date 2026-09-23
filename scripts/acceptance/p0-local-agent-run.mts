@@ -151,7 +151,7 @@ class Recorder {
 
 const KEEP_CLIENT = new Set(['hello', 'user_message', 'steer', 'task_action', 'abort', 'takeover', 'handback', 'consent_decision', 'page_event', 'task_control_result']);
 
-const KEEP_SERVER = new Set(['hello_ok', 'hello_error', 'conversation_list', 'conversation_created', 'conversation_updated', 'status', 'task_control_result', 'model_info', 'consent_list', 'consent_request', 'team_status']);
+const _KEEP_SERVER = new Set(['hello_ok', 'hello_error', 'conversation_list', 'conversation_created', 'conversation_updated', 'status', 'task_control_result', 'model_info', 'consent_list', 'consent_request', 'team_status']);
 
 const KEEP_AGENT_KINDS = new Set(['agent_start', 'agent_end', 'error', 'notice', 'tool_start', 'tool_end', 'tool_observation', 'tool_late_result', 'user_delivery', 'user_delivery_stream', 'text_delta', 'thinking_delta', 'turn_start', 'turn_end']);
 
@@ -288,7 +288,7 @@ async function launchIso(opts: {token: string; profileDir?: string; extensionDir
     reattachSw: async () => {
       const found = await until(async () => {
         const targets = await cdp.send('Target.getTargets');
-        const candidates = targets.targetInfos.filter((t: any) => t.type === 'service_worker' && /^chrome-extension:\/\//.test(t.url ?? ''));
+        const candidates = targets.targetInfos.filter((t: any) => t.type === 'service_worker' && (t.url ?? '').startsWith('chrome-extension://'));
 
         for (const candidate of candidates) {
           const session = await cdp.attachSession(candidate.targetId);
@@ -338,7 +338,11 @@ class Host {
   async start(): Promise<void> {
     const store = new ConversationStore(join(this.opts.runtimeDir, 'conversations'));
     this.manager = new ConversationManager(
-      (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? model, {sessionManager: store.sessionManager(id), mode: summary?.mode, ...(this.opts.customTools ? {customTools: this.opts.customTools} : {})}),
+      (id, emit, summary) => {
+        const toolsExtra = this.opts.customTools ? {customTools: this.opts.customTools} : {};
+
+        return createConversationRuntime(id, emit, summary?.model ?? model, {sessionManager: store.sessionManager(id), mode: summary?.mode, ...toolsExtra});
+      },
       message => {
         this.opts.recorder.push('server_msg', {rawType: message?.type, msg: message?.type ? traceServerMessage(message) : message});
 
@@ -565,7 +569,9 @@ async function sessionResumeEvidence(c: Case, conversationId: string): Promise<a
     if (entry?.type === 'custom') {
       const snapshot=entry.customType==='sideagent-task-acceptance-v1'?entry.data?.snapshot:entry.data;
 
-      return {kind: 'custom', customType: entry.customType, ...(['sideagent-task-acceptance-v1','sideagent-task-results-v1'].includes(entry.customType) ? {requirements: snapshot?.recoveryInput?.requirements?.length ?? 0, attachmentKeys: snapshot?.recoveryInput?.attachmentKeys?.length ?? 0} : {})};
+      const customExtra = ['sideagent-task-acceptance-v1','sideagent-task-results-v1'].includes(entry.customType) ? {requirements: snapshot?.recoveryInput?.requirements?.length ?? 0, attachmentKeys: snapshot?.recoveryInput?.attachmentKeys?.length ?? 0} : {};
+
+      return {kind: 'custom', customType: entry.customType, ...customExtra};
     }
 
     const message = entry?.message ?? entry;
@@ -616,7 +622,8 @@ class Case {
 
   check(name: string, ok: boolean, detail?: unknown): boolean {
     const text = detail === undefined ? undefined : typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 800);
-    this.checks.push({name, ok, ...(text ? {detail: text} : {})});
+    const detailExtra = text ? {detail: text} : {};
+    this.checks.push({name, ok, ...detailExtra});
 
     if (!ok) console.log(`  FAIL-CHECK ${this.id}: ${name}${text ? ` — ${text.slice(0, 300)}` : ''}`);
 
@@ -632,7 +639,7 @@ class Case {
   }
 
   toolStarts(name?: string, events: TraceEvent[] = this.recorder.events): any[] {
-    return events.filter(e => e.kind === 'server_msg' && (e as any).msg?.type === 'agent_event' && (e as any).msg.event?.kind === 'tool_start' && (!name || (e as any).msg.event?.name === name)).map(e => (e as any).msg.event);
+    return events.flatMap(e => (e.kind === 'server_msg' && (e as any).msg?.type === 'agent_event' && (e as any).msg.event?.kind === 'tool_start' && (!name || (e as any).msg.event?.name === name)) ? [(e as any).msg.event] : []);
   }
 
   async say(text: string): Promise<void> {
@@ -839,9 +846,11 @@ class Case {
     const context = await this.activeContext();
     this.recorder.push('user_utterance', {text, via: 'voice', conversationId, context});
 
+    const inputExtra = context ? {input: {context}} : {};
+
     const route = {
       voiceId: 'test-voice', requestId: randomUUID(), turn: 1, runId: (await this.progress(conversationId))?.runId ?? null,
-      ...(context ? {input: {context}} : {}),
+      ...inputExtra,
       targets: this.host.manager.voiceTargets(),
       onInputDecision: () => {}, reportStage: () => {},
     };
@@ -1111,7 +1120,7 @@ const CASES: Record<string, (c: Case) => Promise<void>> = {
 
   async 'extension-reload'(c) {
     const form = await c.openPage('/form');
-    const formUrl = c.fixture!.origin + '/form';
+    const _formUrl = c.fixture!.origin + '/form';
     await c.say('把测试姓名填成「测试丙」，方案选「远山」，先不要保存；填好后把表单当前内容读一遍告诉我。');
     await c.waitProgress('default', p => p.state === 'running', 90_000, '任务开始运行');
     c.runIds.before = (await c.progress())?.runId ?? null;
@@ -1364,7 +1373,7 @@ const CASES: Record<string, (c: Case) => Promise<void>> = {
 
   async 'queue-recovery'(c) {
     const barrier = c.barrier!;
-    const researchUrl = c.fixture!.origin + '/research';
+    const _researchUrl = c.fixture!.origin + '/research';
     const research = await c.openPage('/research');
     await c.say('先调用 await_fixture_release 等待资料就绪，然后读取当前页面标题并回答。');
     await until(() => barrier.entered || undefined, 150_000, '任务一进入等待');
@@ -1685,7 +1694,8 @@ async function runCase(id: string): Promise<void> {
 
   try {
     c.fixture = await startFixture();
-    c.host = new Host({runtimeDir: c.runtimeDir, token: c.token, recorder: c.recorder, ...(id === 'queue-recovery' ? {customTools: [c.barrier!.tool]} : {})});
+    const customToolsExtra = id === 'queue-recovery' ? {customTools: [c.barrier!.tool]} : {};
+    c.host = new Host({runtimeDir: c.runtimeDir, token: c.token, recorder: c.recorder, ...customToolsExtra});
     await c.host.start();
     c.iso = await launchIso({token: c.token});
     await c.openPanel();
@@ -1792,5 +1802,3 @@ async function main(): Promise<void> {
 }
 
 await main();
-
-export {};

@@ -1,13 +1,26 @@
 import { realtimeBrowserError, type ExecuteRealtimeBrowserTool } from './realtime-browser-tools.js';
 import { progressSpeech } from './voice-receipt.js';
 import { randomUUID } from 'node:crypto';
+import type WebSocket from 'ws';
 import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voice-connection.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
-import type { StepVoiceSession } from './voice-session.js';
-import type { VoiceCommand, VoiceEvent, VoiceInputContext, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
+import type { VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import type { RouteShadow } from './route-shadow.js';
 
-export type RealtimeVoiceDependencies = ConstructorParameters<typeof StepVoiceSession>[0] & {
+export type RealtimeVoiceDependencies = {
+  voiceId?: string;
+  /** Step timbre id chosen by the user. */
+  voice?: string;
+  /** Diagnostic sessions are requested explicitly, lock out routing and never answer on their own. */
+  diagnosticMode?: boolean;
+  diagnostic?: (event: string, fields: Record<string, string | number | boolean | null>) => void;
+  getSnapshot: () => TaskProgressSnapshot | null;
+  getDeliverySnapshot?: (stream: UserDeliveryStream) => TaskProgressSnapshot | null;
+  getTargets?: () => VoiceTarget[];
+  emit: (event: VoiceEvent) => void;
+  route?: (text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => Promise<VoiceRouteResult>;
+  connect?: (key: string) => WebSocket;
+  onPlayback?: (deliveryId: string, status: "speaking" | "played") => void;
   browserTool?: ExecuteRealtimeBrowserTool;
   readPage?: (input: VoiceInputContext) => Promise<unknown>;
   dispatchTask?: (request: TaskActionRequest, stillCurrent: () => boolean) => Promise<unknown>;
@@ -57,6 +70,7 @@ export class RealtimeVoiceSession {
       send: e => this.receive(e),
       log: e => this.deps.diagnostic?.(String(e.type), { detail: JSON.stringify(e) }),
       voiceId: this.deps.voiceId,
+      voice: this.deps.voice,
       voiceSpokenResultGate: this.deps.voiceSpokenResultGate,
       judgeRequest: async identity => {
         if (this.deps.diagnosticMode || this.closed) return null;
@@ -67,9 +81,11 @@ export class RealtimeVoiceSession {
 
         if (!snapshot) return null;
 
-        return this.deps.shadow?.judge({channel: 'voice', conversationId: snapshot.conversationId,
+        return this.deps.shadow?.judge(page ? {channel: 'voice', conversationId: snapshot.conversationId,
           ...identity, previous, taskRunning: snapshot.state === 'running' || snapshot.state === 'paused',
-          taskState: snapshot.state, ...(page ? {page: {title: page.title, url: page.url}} : {})},
+          taskState: snapshot.state, page: {title: page.title, url: page.url}} : {channel: 'voice', conversationId: snapshot.conversationId,
+          ...identity, previous, taskRunning: snapshot.state === 'running' || snapshot.state === 'paused',
+          taskState: snapshot.state},
           this.deps.voiceSpokenResultGate === true) ?? null;
       },
       tools: {
@@ -171,9 +187,12 @@ export class RealtimeVoiceSession {
       throw new Error('不能在其他任务会话隐式开始新任务，请明确另开要求');
     }
 
-    const result = await this.deps.dispatchTask({
+    const result = await this.deps.dispatchTask((action.action === 'start' || action.action === 'steer') ? {
       requestId: randomUUID(), conversationId: target.id, originConversationId: origin.snapshot.conversationId, source: 'voice', action: action.action,
-      expectedRunId: target.runId ?? null, expectedControlVersion: target.controlVersion, text, ...((action.action === 'start' || action.action === 'steer') ? { context: origin.input?.context, attachments: origin.input?.attachments } : {})
+      expectedRunId: target.runId ?? null, expectedControlVersion: target.controlVersion, text, context: origin.input?.context, attachments: origin.input?.attachments
+    } : {
+      requestId: randomUUID(), conversationId: target.id, originConversationId: origin.snapshot.conversationId, source: 'voice', action: action.action,
+      expectedRunId: target.runId ?? null, expectedControlVersion: target.controlVersion, text
     }, current);
 
     this.recordDispatchActual(shadowTurn, shadowItemId, action.action, result);
@@ -186,7 +205,7 @@ export class RealtimeVoiceSession {
     const conversationId = this.deps.getSnapshot()?.conversationId;
 
     if (!conversationId) return;
-    this.deps.shadow?.actual({ channel: 'voice', conversationId, voiceId: this.deps.voiceId, turn, itemId, kind: 'tool', name, ...(action ? { action } : {}) });
+    this.deps.shadow?.actual(action ? { channel: 'voice', conversationId, voiceId: this.deps.voiceId, turn, itemId, kind: 'tool', name, action } : { channel: 'voice', conversationId, voiceId: this.deps.voiceId, turn, itemId, kind: 'tool', name });
   }
   /** Route-shadow only: the receipt status once a dispatched task action actually returns. */
   private recordDispatchActual(turn: number, itemId: string | undefined, action: string, result: unknown): void {
@@ -291,7 +310,10 @@ export class RealtimeVoiceSession {
     switch (event.type) {
       case 'ready':
         this.ready = true;
-        this.emit({ kind: 'state', state: 'ready', detail: 'Realtime 3 已连接', ...(!this.deps.diagnosticMode ? { inputMode: 'server_vad' as const } : {}) });
+        const ready: Extract<VoiceEvent, {kind:'state'}> = { kind: 'state', state: 'ready', detail: 'Realtime 3 已连接' };
+
+        if (!this.deps.diagnosticMode) ready.inputMode = 'server_vad';
+        this.emit(ready);
 
         if (this.deps.diagnosticMode) {
           this.emit({ kind: 'diag', record: { type: 'ready', sampleRate: 24000, maxSeconds: 60 } });

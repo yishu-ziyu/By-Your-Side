@@ -221,7 +221,7 @@ const JUDGES: Record<string, Judge> = {
   C04: (mat, ev) => {
     const checks = compareJudge(mat, ev);
     const raw = ownText(ev);
-    const expect = mat.expect as { lockedName: string; lockedFacts: { price: number; acceptPerMonth: string[] } };
+    const _expect = mat.expect as { lockedName: string; lockedFacts: { price: number; acceptPerMonth: string[] } };
     // 子句级归属：无名字的承接子句（但…/价格和退换政策…）归入上一个提到的方案
     const expectAll = mat.expect as { lockedName: string; lockedFacts: { price: number; acceptPerMonth: string[] }; compareOffers: { name: string }[] };
     const allNames = [...expectAll.compareOffers.map((o) => o.name), expectAll.lockedName];

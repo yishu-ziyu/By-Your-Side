@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   diffEffect,
-  formatEffectReport,
   settleEffectReport,
   type EffectBaseline,
   type EffectReport,
@@ -103,30 +102,6 @@ describe("动作效果证据：强/弱分级", () => {
     const report = diffEffect(base({ volatile: true }), now({ els: 160 }));
     expect(report.changed).toBe(false);
     expect(report.volatile).toBe(true);
-  });
-});
-
-describe("模型可见的回执文案", () => {
-  it("有变化时给变化清单", () => {
-    const text = formatEffectReport({ changed: true, evidence: ["expanded false → true"], weak: [], volatile: false, alerts: [] });
-    expect(text).toContain("Page reacted");
-    expect(text).toContain("expanded false → true");
-  });
-
-  it("无反应时明说归因失败并阻止盲目重试", () => {
-    const text = formatEffectReport({ changed: false, evidence: [], weak: ["DOM +7 node(s)"], volatile: false, alerts: [] });
-    expect(text).toContain("Nothing on the page changed");
-    expect(text).toContain("Do not blindly click the same target again");
-    expect(text).toContain("DOM +7 node(s)");
-  });
-
-  it("页面自己在动时换成对应措辞", () => {
-    const text = formatEffectReport({ changed: false, evidence: [], weak: [], volatile: true, alerts: [] });
-    expect(text).toContain("page itself keeps changing");
-  });
-
-  it("拿不到证据时不编文案", () => {
-    expect(formatEffectReport(undefined)).toBe("");
   });
 });
 

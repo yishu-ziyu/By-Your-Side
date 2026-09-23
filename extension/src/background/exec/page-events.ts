@@ -37,13 +37,17 @@ export async function armEvent(
     downloadPath: params.downloadPath,
   });
 
-  return {
+  const armed: ToolContract["arm_event"]["data"] = {
     token: arm.token,
     type,
     tabId: arm.tabId,
     timeoutMs: arm.timeoutMs,
-    ...(arm.downloadPath ? { downloadPath: arm.downloadPath } : {}),
   };
+
+  // 只有授权了下载路径时才带上 downloadPath；缺省时这个键不出现。
+  if (arm.downloadPath) armed.downloadPath = arm.downloadPath;
+
+  return armed;
 }
 
 export async function waitEvent(

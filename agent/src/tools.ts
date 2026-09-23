@@ -28,8 +28,17 @@ import { runBrowserProgram, BROWSER_PROGRAM_HELPERS, RPC_ALIASES, type ProgramSt
 import { authorizeUploadPaths, type TaskUploadLedger } from "./upload-paths.js";
 import { createDownloadArmDir, hostDownloadDeleteTemp, hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
 import type { SkillEvidence } from "./skill-learning.js";
+import { POINT_SELECTION_TIMEOUT_MS } from "../../shared/point-selection.js";
 
 const MAX_JS_RESULT_CHARS = 20_000;
+
+/**
+ * 视口坐标 [x, y]。不用 Type.Tuple：它生成的元组 schema（items 是数组）会让 MiMo V2.6 Flash 的网关
+ * 把整条请求拒成 400「Invalid request parameters」，工具列表里只要有一个，所有浏览器任务都发不出去。
+ */
+function viewportPoint(options: { description?: string } = {}) {
+  return Type.Unsafe<[number, number]>({ type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, ...options });
+}
 
 function textResult(text: string, details: unknown) {
   return { content: [{ type: "text" as const, text }], details };
@@ -234,7 +243,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       // learning evidence; failure disables learning without inventing an anchor.
       try {
         if (canExecute && !canExecute("read_element")) throw new Error("目标观察不可用");
-        target = await call("read_element", { target: callParams.target, ...(typeof callParams.tabId === "number" ? { tabId: callParams.tabId } : {}) }, programId, `${sdkId ?? "skill-observation"}/anchor`) as ToolContract["read_element"]["data"];
+        const readParams = typeof callParams.tabId === "number" ? { target: callParams.target, tabId: callParams.tabId } : { target: callParams.target };
+        target = await call("read_element", readParams, programId, `${sdkId ?? "skill-observation"}/anchor`) as ToolContract["read_element"]["data"];
       } catch {
         learning.observe({ toolCallId: sdkId ?? "", name, params: {}, error: "未取得稳定目标证据，不生成技能" });
       }
@@ -288,6 +298,24 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   };
 
   const definitions = [
+    defineTool({
+      name: "ask_user_to_point",
+      label: "请你指出元素",
+      description: "Ask the USER to point to one element on the working page when their reference is ambiguous or they explicitly offer to point. Shows a hover outline and waits up to 90 seconds for their physical click; the selection does NOT activate the page control. Call this tool instead of merely writing a request to point. Pass a short instruction in the user's language. A selected receipt provides the exact target for the user's already-requested next step (e.g. mark); pointing does NOT grant permission to click, submit or save. On cancelled or timed_out, report that fact and STOP this attempted selection: never guess the target, reuse a previous choice, or automatically reopen the picker. Main-document DOM only; frames and custom shadow controls are not supported in this version. Do not call from a background worker or when the user has taken control.",
+      parameters: Type.Object({ tabId: Type.Optional(Type.Number()), message: Type.Optional(Type.String({ maxLength: 300 })) }),
+      execute: async (_id, params) => {
+        // SAFETY: call 原样回传扩展对 ask_user_to_point 的响应体，其形状由 ToolContract 与扩展执行器共同约定。
+        const result = await call("ask_user_to_point", params, undefined, undefined, undefined, POINT_SELECTION_TIMEOUT_MS + 10_000) as ToolContract["ask_user_to_point"]["data"];
+
+        const explanation = result.status === "selected"
+          ? "The user selected this element; no page control was activated. Use only for the requested operation."
+          : result.status === "timed_out" ? "No selection: waiting timed out. Do not guess or reopen automatically."
+            : result.reason === "user" ? "The user cancelled selection with Escape. Do not mark or guess a target."
+              : "Selection was cancelled because the task or page changed. Do not continue the old operation.";
+
+        return textResult(`${explanation}\n${wrapPageContent(redactCredentialText(JSON.stringify(result)), {})}`, result);
+      },
+    }),
     ...((generalBrowserLoopEnabled()&&execution?.goal&&execution.reserveDecision)?[defineTool({
       name:'browser_loop',label:'通用网页操作',
       description:'Delegate a bounded browser interaction to a general observation/action loop. It dynamically selects observed controls, never site scripts. Prefer it for navigating controls, filling supplied values, changing filters/settings and other sequences supported by the current page. Supply the complete local goal and ALL constraints; the host also supplies original task context. When exact values are already prepared, pass them in materials (id, value, source, purpose). An empty array is allowed: the loop can request text after selecting a field, without restarting the task. Material values must come from the user, be explicitly generated to meet their request, or use source:"observed" with an exact id/value saved by capture_page_material. The host also supplies these saved materials when the array is empty; never guess personal information. If materials are not prepared, the loop can select a real field and ask the bounded text helper for that field only; missing facts hand back to you. Missing values/unsupported controls/uncertainty/failures hand control back to you. It can return needs_verification, never task success: independently inspect fresh state and verify ALL requirements before task_results or send_user_message completion. Do not repeatedly call the same failed loop; handle its specific reason using other permitted tools. Existing dangerous-action confirmation, user takeover, cancellation and task version apply to every step.',
@@ -375,7 +403,7 @@ return result;}
       execute: async (_id, params) => {
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
         // A state query does not need the element's entire descendant text in the model context.
-        const projected = params.properties?.length || params.expect ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, ...(params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined?{editableText:data.editableText}:{}) } : data;
+        const projected = params.properties?.length || params.expect ? (params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, editableText: data.editableText } : { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check }) : data;
 
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(projected)), { tabId: data.tabId }), data);
       },
@@ -467,10 +495,8 @@ return result;}
         if (params.action === "switch") {
           if (typeof params.tabId !== "number") throw new Error('tabs action:"switch" 需要 tabId。');
 
-          const data = (await call("switch_tab", {
-            tabId: params.tabId,
-            ...(params.decisionGuard ? { decisionGuard: params.decisionGuard } : {}),
-          })) as ToolContract["switch_tab"]["data"];
+          const switchParams = params.decisionGuard ? { tabId: params.tabId, decisionGuard: params.decisionGuard } : { tabId: params.tabId };
+          const data = (await call("switch_tab", switchParams)) as ToolContract["switch_tab"]["data"];
 
           return textResult(switchResultText(data), data);
         }
@@ -528,7 +554,7 @@ return result;}
         'Move the real browser mouse over an element to reveal hover-only controls, menus or tooltips. Provide target ("@N" from the latest snapshot, "loc=css:...", or native CSS) or viewport point [x,y]. Then observe which controls appeared before clicking. JavaScript-dispatched mouse events do not activate CSS :hover.',
       parameters: Type.Object({
         target: Type.Optional(Type.String({ description: '"@N" from the latest snapshot, "loc=css:...", or native CSS; no :has-text()' })),
-        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+        point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
         label: Type.Optional(Type.String({ description: "Short description of the hover target" })),
       }),
       execute: async (_id, params) => {
@@ -549,7 +575,7 @@ return result;}
           Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         ),
         point: Type.Optional(
-          Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" }),
+          viewportPoint({ description: "Viewport [x, y] coordinates" }),
         ),
         position: Type.Optional(
           Type.Object(
@@ -595,7 +621,7 @@ return result;}
       description: 'Double-click an element in the working tab using REAL browser input (CDP clickCount 1→2), never synthetic DOM events. Provide target ("@N" ref, "loc=css:...", raw CSS, xpath=..., text=...) or point [x,y]. Destructive targets require user confirmation first, exactly like click. The result reports effect evidence when measurable and explicitly says when only input dispatch is confirmed.',
       parameters: Type.Object({
         target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:...", raw CSS, xpath=..., or text=...' })),
-        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+        point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
         position: Type.Optional(
           Type.Object(
             { x: Type.Number({ description: "CSS px from target top-left" }), y: Type.Number() },
@@ -639,11 +665,11 @@ return result;}
       parameters: Type.Object({
         from: Type.Object({
           target: Type.Optional(Type.String({ description: 'Source locator (@N / loc=css: / CSS / xpath= / text=)' })),
-          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+          point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
         }, { description: "Drag source: exactly one of target/point" }),
         to: Type.Object({
           target: Type.Optional(Type.String({ description: 'Drop locator (@N / loc=css: / CSS / xpath= / text=)' })),
-          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()], { description: "Viewport [x, y] coordinates" })),
+          point: Type.Optional(viewportPoint({ description: "Viewport [x, y] coordinates" })),
         }, { description: "Drop destination: exactly one of target/point" }),
         label: Type.Optional(Type.String({ description: "Short human-readable description of the drag" })),
       }),
@@ -672,7 +698,7 @@ return result;}
       parameters: Type.Object({
         deltaX: Type.Optional(Type.Number()),
         deltaY: Type.Optional(Type.Number()),
-        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+        point: Type.Optional(viewportPoint()),
         target: Type.Optional(Type.String()),
         position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
         label: Type.Optional(Type.String()),
@@ -693,7 +719,7 @@ return result;}
       parameters: Type.Object({
         button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")])),
         clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+        point: Type.Optional(viewportPoint()),
         target: Type.Optional(Type.String()),
         position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
       }),
@@ -711,7 +737,7 @@ return result;}
       parameters: Type.Object({
         button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("middle"), Type.Literal("right")])),
         clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-        point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+        point: Type.Optional(viewportPoint()),
       }),
       execute: async (_id, params) => {
         const data = (await call("mouse_up", params)) as ToolContract["mouse_up"]["data"];
@@ -792,12 +818,12 @@ return result;}
       parameters: Type.Object({
         from: Type.Object({
           target: Type.Optional(Type.String()),
-          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+          point: Type.Optional(viewportPoint()),
           position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
         }),
         to: Type.Object({
           target: Type.Optional(Type.String()),
-          point: Type.Optional(Type.Tuple([Type.Number(), Type.Number()])),
+          point: Type.Optional(viewportPoint()),
           position: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
         }),
         label: Type.Optional(Type.String()),

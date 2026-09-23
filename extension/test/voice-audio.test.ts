@@ -1,21 +1,8 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {VoiceTurnDetector} from '../src/sidepanel/voice-signal.js';
 import {VoicePlayer} from '../src/sidepanel/voice-player.js';
 import {VoiceClient} from '../src/sidepanel/voice-client.js';
 
 afterEach(()=>vi.unstubAllGlobals());
-
-it('ignores brief noise, streams preroll and commits once after silence',()=>{
- const start=vi.fn(),audio=vi.fn(),end=vi.fn();const d=new VoiceTurnDetector({start,audio,end});const pcm=new Int16Array(480).fill(50);
-
- for(let i=0;i<3;i++)d.push(pcm,.9);d.push(pcm,0);expect(start).not.toHaveBeenCalled();
-
- for(let i=0;i<5;i++)d.push(pcm,.9);expect(start).toHaveBeenCalledExactlyOnceWith(1);expect(audio).toHaveBeenCalledTimes(9);
-
- for(let i=0;i<35;i++)d.push(pcm,0);expect(end).toHaveBeenCalledExactlyOnceWith(1);
-
- for(let i=0;i<50;i++)d.push(pcm,0);expect(end).toHaveBeenCalledTimes(1);
-});
 
 function audioContext(){
  const nodes:any[]=[];
@@ -105,10 +92,3 @@ return true;},change,event);
  c.receive({type:'voice',voiceId,conversationId:'A',event:{kind:'state',state:'ready'}});expect(change).toHaveBeenLastCalledWith('idle',undefined);
 });
 
-
-// Capture/transport fixtures provide speech probabilities; real model audio is checked separately.
-vi.mock('../src/sidepanel/voice-speech.js', () => ({ SpeechClassifier: {
- create: async (onFrame: (pcm: Int16Array, probability: number) => void) => ({
-  push: (pcm: Int16Array) => onFrame(pcm, pcm[0] ? 0.9 : 0), close: vi.fn(),
- }),
-} }));

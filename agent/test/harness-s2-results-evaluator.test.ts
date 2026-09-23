@@ -10,7 +10,7 @@ return p;}
 
 function event(p:any,event:any,runId=p.snapshot().runId){p.observe({type:'agent_event',runId,event});}
 
-function call(p:any,id:string,name:string,params:any={},failed=false,executionFact?:string){event(p,{kind:'tool_start',toolCallId:id,name,params});event(p,{kind:'tool_end',toolCallId:id,name,isError:failed,resultText:failed?'executor failed':'real execution receipt',...(executionFact?{executionFact}:{})});}
+function call(p:any,id:string,name:string,params:any={},failed=false,executionFact?:string){event(p,{kind:'tool_start',toolCallId:id,name,params});event(p, executionFact ? {kind:'tool_end',toolCallId:id,name,isError:failed,resultText:failed?'executor failed':'real execution receipt',executionFact} : {kind:'tool_end',toolCallId:id,name,isError:failed,resultText:failed?'executor failed':'real execution receipt'});}
 
 const result=(p:any,id:string)=>p.snapshot().results.find((r:any)=>r.id===id);
 

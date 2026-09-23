@@ -3,7 +3,7 @@ import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
 import { mountOrb } from './voice-orb.js';
 import { VoiceDiagnosticLog, type VoiceDiagCapture } from './voice-diagnostic.js';
-import type { UserDelivery, VoiceInputContext } from '../../../shared/voice.js';
+import { type StepVoice, type UserDelivery, type VoiceInputContext } from '../../../shared/voice.js';
 
 export function mountVoiceUI(composer: HTMLElement, getConversation: () => string, send: (m: ClientMessage) => boolean, getInput: () => VoiceInputContext = () => ({}), diagnostic?: (event: string, fields: Record<string, string | number | boolean | null | undefined>) => void) {
   const region = document.createElement('section');
@@ -353,6 +353,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     diagnostic?.(event, fields);
   }, log);
 
+
   renderDiag();
 
   const start = () => {
@@ -408,6 +409,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   return {
     stop: () => client.stop(),
+    /** 设置页选的音色：下次开启语音时带上，正在进行的会话不打断。 */
+    setVoice: (value: StepVoice) => { client.voice = value; },
     disconnect: () => {
       if (client.active) {
         client.onTransportDisconnected();

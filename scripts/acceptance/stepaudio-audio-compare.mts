@@ -856,7 +856,7 @@ try {
 
   if (flushTimer) clearTimeout(flushTimer);
 
-  for (const waiter of [...waiters]) clearTimeout(waiter.timer);
+  for (const waiter of waiters) clearTimeout(waiter.timer);
   waiters.length = 0;
 
   if (runtime.socket) {

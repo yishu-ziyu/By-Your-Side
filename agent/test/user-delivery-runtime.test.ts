@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { TaskProgress } from "../src/task-progress.js";
 import { VoiceService } from "../src/voice-service.js";
-import { progressSpeech, receiptSpeech } from "../src/voice-receipt.js";
+import { progressSpeech } from "../src/voice-receipt.js";
 import { ConversationManager } from "../src/conversation-manager.js";
 import { assertDeliveryText, createSendUserMessageTool, createUserDelivery, isLeadDeliveryHost } from "../src/user-delivery.js";
 import { UserDeliveryLedger } from "../src/user-delivery-ledger.js";
@@ -135,7 +135,6 @@ describe("voice consumption", () => {
     for (const [state, word] of [["paused", "暂停"], ["aborted", "终止"], ["error", "问题"]] as const) {
       const snapshot: any = { ...h.p.snapshot(), state, conversationContext: { recentTurns: [], latestResult: { runId: h.runId, text: facts, observedAt: 100, source: "assistant_output" }, latestDelivery: h.delivery() } };
       expect(progressSpeech(snapshot)).toContain(word);
-      expect(receiptSpeech({ kind: "none", resumeReadOnly: "status", snapshot, spokenText: progressSpeech(snapshot) })).toContain(word);
     }
   });
 
@@ -212,7 +211,9 @@ describe("delivery closure", () => {
 
  if (e.kind === "agent_end" || e.kind === "error") streaming = false; emit({ type: "agent_event", event: e }); };
 
-      return { session: { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, ...(verifyAnswerDelivery?{verifyAnswerDelivery}:{}), abort: () => { streaming = false; } }, fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
+      const session = verifyAnswerDelivery ? { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, verifyAnswerDelivery, abort: () => { streaming = false; } } : { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, abort: () => { streaming = false; } };
+
+      return { session, fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
     }, m => messages.push(m));
 
     return { manager, messages, compose, event: (e: any) => publish(e), resolve: (text: string) => answer(text) };

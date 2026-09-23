@@ -36,7 +36,8 @@ export class TaskEvidence {
       return {...fragment,text:filtered.text};
     })}:undefined;
 
-    const observed={...value,text:safe.text,truncated:value.truncated||safe.redacted,fragments,...(protectedFragmentIds.length?{protectedFragmentIds}:{})};
+    const protectedPiece = protectedFragmentIds.length ? { protectedFragmentIds } : {};
+    const observed={...value,text:safe.text,truncated:value.truncated||safe.redacted,fragments,...protectedPiece};
     this.observations = [...this.observations.filter(o => o.id !== value.id), structuredClone(observed)].slice(-12);
   }
   list(runId: string, revision: string) {
@@ -89,7 +90,7 @@ export class TaskEvidence {
     }
 
     const value=range?rawValue.slice(range.start,range.end):rawValue;
-    const material=this.material(id,purpose,value,observation,{kind:'fragments',ids:selected.map(f=>f.id),...(range?{range}:{})});
+    const material=this.material(id,purpose,value,observation, range ? {kind:'fragments',ids:selected.map(f=>f.id),range} : {kind:'fragments',ids:selected.map(f=>f.id)});
 
     return range&&rawValue.length<=MATERIAL_VALUE_MAX?{...material,sourceText:rawValue}:material;
   }

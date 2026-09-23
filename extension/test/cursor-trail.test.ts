@@ -4,7 +4,6 @@ import {
   documentPoint,
   isReplayRequest,
   pointsOnTab,
-  viewportPoint,
 } from "../src/shared/cursor-trail.js";
 import { commitTrail, recordTrailPoint, resetTrailsForTests, trailForReplay } from "../src/background/exec/trail.js";
 
@@ -25,10 +24,8 @@ describe("isReplayRequest", () => {
 });
 
 describe("trail points", () => {
-  it("视口加滚动得到文档坐标，回放时再减回去", () => {
-    const doc = documentPoint(90, 148, 0, 200);
-    expect(doc).toEqual({ x: 90, y: 348 });
-    expect(viewportPoint(doc.x, doc.y, 0, 200)).toEqual({ x: 90, y: 148 });
+  it("视口加滚动得到文档坐标", () => {
+    expect(documentPoint(90, 148, 0, 200)).toEqual({ x: 90, y: 348 });
   });
 
   it("超过上限丢掉最早的点", () => {

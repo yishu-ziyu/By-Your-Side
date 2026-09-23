@@ -85,9 +85,11 @@ export function createUserDelivery(input: {
     text: input.text,
     composedAt: input.composedAt ?? Date.now(),
     status: input.status ?? "composed",
-    ...(input.replyTo ? { replyTo: input.replyTo } : {}),
-    ...(input.facts ? { facts: input.facts } : {}),
   } as UserDelivery;
+
+  if (input.replyTo) delivery.replyTo = input.replyTo;
+
+  if (input.facts) delivery.facts = input.facts;
 
   if (!RECORD_KINDS.includes(input.kind as (typeof RECORD_KINDS)[number])) throw new Error("kind 必须是 ack、finding 或 reply。");
 
@@ -196,7 +198,7 @@ export function createSendUserMessageTool(opts: {
           throw new Error('任务结果尚未核验，本次完成正文未发送。请核对已有执行结果；仅能报告资料或仍有未确认部分时，用 outcome=partial 如实说明，不宣称全部完成。');
         }
 
-        const delivery = createUserDelivery({
+        const deliveryInput: Parameters<typeof createUserDelivery>[0] = {
           id: toolDeliveryId(_id),
           conversationId: opts.conversationId,
           runId,
@@ -204,14 +206,16 @@ export function createSendUserMessageTool(opts: {
           text,
           replyTo,
           composedAt: (opts.clock ?? Date.now)(),
-          ...(facts ? { facts } : {}),
-        });
+        };
+
+        if (facts) deliveryInput.facts = facts;
+        const delivery = createUserDelivery(deliveryInput);
 
         opts.emit({ kind: "user_delivery", delivery });
 
         return {
           content: [{ type: "text" as const, text: `delivered:${delivery.id}` }],
-          details: { id: delivery.id, ...(next?{outcome:facts?.outcome??outcome,nextAction:next.action,resultIds:next.resultIds}:{}) },
+          details: next ? { id: delivery.id, outcome:facts?.outcome??outcome, nextAction:next.action, resultIds:next.resultIds } : { id: delivery.id },
           // finding 就是任务的最终结果：这一批工具结果带 terminate 后，SDK 的批次早停规则
           // 让本轮结束，不再为"还要不要收尾"多问模型一次（省 1–3s）。
           // ack 只是开场应答，提前终止会掐断任务，因此不参与早停。

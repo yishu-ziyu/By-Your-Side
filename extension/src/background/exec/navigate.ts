@@ -28,6 +28,10 @@ export async function navigate(
   const after = await chrome.tabs.get(tab.id);
   const data = { url: after.url ?? params.url, title: after.title ?? "" };
 
+  const result: { url: string; title: string; note?: string } & PageReadiness = {...data,...ready};
+
   // 超时不算失败：页面可能已部分可用
-  return {...data,...ready,...(ready.readiness==='timeout'?{note:"document readiness timeout; page may still be loading"}:{})};
+  if (ready.readiness==='timeout') result.note = "document readiness timeout; page may still be loading";
+
+  return result;
 }

@@ -179,13 +179,11 @@ describe("TaskProgress.deliveryFacts", () => {
 
 describe("旧记录兼容", () => {
   it("快照里的旧交付记录（无 facts）仍然有效，带事实链的也有效", () => {
-    const base = { conversationId: "c1", observedAt: 1, state: "idle" as const, goal: null, startedAt: 1, runId: "run-1", active: [], lastAction: null, successVerified: false as const };
     const legacy: UserDelivery = { conversationId: "c1", id: "d-1", runId: "run-1", kind: "finding", text: "旧记录正文。", composedAt: 1, status: "composed" };
     const withFacts: UserDelivery = { ...legacy, id: "d-2", facts: { outcome: "partial", delivered: [], remaining: [{ id: "r-1", description: "还没做", status: "pending" }], sources: [] } };
     const wire = (delivery: UserDelivery) => parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "c1", event: { kind: "user_delivery", delivery } }));
     expect(wire(legacy)).not.toBeNull();
     expect(wire(withFacts)).not.toBeNull();
-    expect(base).toBeTruthy();
   });
 });
 

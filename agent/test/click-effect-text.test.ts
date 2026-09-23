@@ -31,6 +31,7 @@ describe("click 回执带效果证据", () => {
     const out = await text({ clicked: true, effect: { changed: false, evidence: [], weak: ["DOM +7 node(s)"], volatile: false, alerts: [] } });
     expect(out).toContain("Nothing on the page changed");
     expect(out).toContain("Do not blindly click the same target again");
+    expect(out).toContain("DOM +7 node(s)");
   });
 
   it("页面自己在动时按 volatile 措辞读", async () => {

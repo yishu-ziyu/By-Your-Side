@@ -40,7 +40,7 @@ export interface TaskResultItem extends TaskResultRegistration {
 
 /** Focus, scrolling and hovering require control, but do not create durable write obligations. */
 export function resultToolHasWriteEffect(tool:string):boolean {
-  return isWriteTool(tool)&&!['switch_tab','scroll','hover'].includes(tool);
+  return isWriteTool(tool)&&!['switch_tab','scroll','hover','ask_user_to_point'].includes(tool);
 }
 
 export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 function installChrome() {
-  const executeScript = vi.fn(async (details: {
+  const executeScript = vi.fn(async (_details: {
     target: { tabId: number };
     files?: string[];
     func?: unknown;
@@ -44,11 +44,11 @@ describe("hideUserControlBanners", () => {
   it("显式页只清理该页，不影响其他会话的内存追踪页", async () => {
     const executeScript = installChrome();
 
-    const { hideUserControlBanners, showUserControlBanner } = await import(
+    const { hideUserControlBanners, showTeamControlBanners } = await import(
       "../src/background/exec/input.js"
     );
 
-    await showUserControlBanner(41);
+    await showTeamControlBanners([41]);
     executeScript.mockClear();
 
     await hideUserControlBanners(73);

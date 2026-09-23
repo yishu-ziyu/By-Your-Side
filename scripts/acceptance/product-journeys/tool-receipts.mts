@@ -31,10 +31,12 @@ export function pairCallsWithEnds(events: EventView[], conversationId: string) {
       end = { at: x.at, ok: result.ok === true, executionFact: result.executionFact };
     }
 
+    const confirmedExtra = end ? { confirmedAt: end.at, ok: end.ok, executionFact: end.executionFact } : {};
+
     return {
       name, at: e.at, toolCallId: m.id,
       params: { target: m.params?.target, value: m.params?.value },
-      ...(end ? { confirmedAt: end.at, ok: end.ok, executionFact: end.executionFact } : {}),
+      ...confirmedExtra,
     };
   });
 }

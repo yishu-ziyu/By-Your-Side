@@ -22,7 +22,7 @@ if (!hit) {
 const list = await (await fetch(`http://127.0.0.1:${hit.port}/json/list`)).json();
 
 const panel = list.find(
-  (t) => t.type === "page" && /\/sidepanel\.html$/.test(t.url) && (!extId || t.url.startsWith(`chrome-extension://${extId}/`)),
+  (t) => t.type === "page" && t.url.endsWith("/sidepanel.html") && (!extId || t.url.startsWith(`chrome-extension://${extId}/`)),
 );
 
 if (!panel) {

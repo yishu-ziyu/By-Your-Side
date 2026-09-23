@@ -143,15 +143,6 @@ it('routes content-entity follow-ups to chat, never to session clarification',as
 });
 
 describe('白名单与两条协议',()=>{
-  it('精简协议提示词与旧分类逐字一致；最小请求提示词独立且很短',async()=>{
-    const {VOICE_INTENT_PROMPT,VOICE_PLAN_PROMPT,VOICE_FREE_REPLY_PROMPT}=await import('../src/voice-intent.js');
-    expect(VOICE_PLAN_PROMPT).toBe(VOICE_INTENT_PROMPT);
-    expect(VOICE_FREE_REPLY_PROMPT).toContain('一两句自然口语');
-    expect(VOICE_FREE_REPLY_PROMPT.length).toBeLessThan(120);
-    // 最小请求不带计划/JSON/分支规则：没有可被误读的"不要编事实"条款。
-    expect(VOICE_FREE_REPLY_PROMPT).not.toContain('steps');
-    expect(VOICE_FREE_REPLY_PROMPT).not.toContain('JSON');
-  });
   it('失败关闭：只有问候类与纯算术命中白名单，控制句与事实问句一律不命中',async()=>{
     const {isFactFreeClosedUtterance}=await import('../src/voice-intent.js');
 

@@ -191,7 +191,10 @@ export class TaskQueue {
       return;
     }
 
-    this.update(job, { state: 'queued', request: { ...job.request, ...(job.request.context && context ? { context } : {}) }, receipt: { ...job.receipt, status: 'queued', message: `已重新排队：${job.title}`, updatedAt: Date.now() } });
+    const nextRequest = { ...job.request };
+
+    if (job.request.context && context) nextRequest.context = context;
+    this.update(job, { state: 'queued', request: nextRequest, receipt: { ...job.receipt, status: 'queued', message: `已重新排队：${job.title}`, updatedAt: Date.now() } });
     this.options.changed(job);
 
     return job.receipt;

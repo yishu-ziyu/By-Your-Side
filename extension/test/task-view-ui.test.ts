@@ -7,7 +7,7 @@
  * 不制造进度（A03-05）、切会话与重放不串（A03-06）、控件可键盘到达（A03-07 的结构面）。
  * 320px 窄栏、帧级时序与真人可读性在 scripts/acceptance/task-bar-*.mts 里单列。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskView } from "../../shared/task-view.js";
 import type { TaskReceipt } from "../../shared/task-actions.js";
 import { TaskProgress } from "../../agent/src/task-progress.js";
@@ -127,14 +127,15 @@ class FakeElement {
   }
   querySelector(selector: string): FakeElement | null { return this.querySelectorAll(selector)[0] ?? null; }
   closest(selector: string): FakeElement | null {
-    let node: FakeElement | null = this;
+    const walk = (node: FakeElement | null): FakeElement | null => {
+      if (node === null) return null;
 
-    while (node) {
       if (node.matches(selector)) return node;
-      node = node.parent;
-    }
 
-    return null;
+      return walk(node.parent);
+    };
+
+    return walk(this);
   }
 }
 

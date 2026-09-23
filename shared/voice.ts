@@ -173,9 +173,31 @@ export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBr
   | {kind:'clarify';message:string}
   | {kind:'steer'|'action';awaitDelivery?:boolean;ok:boolean;status?:TaskReceipt['status'];message:string;receipts?:TaskReceipt[];snapshot?:TaskProgressSnapshot});
 
+/** 阶跃官方音色里挑出的三个，用户在设置页切换；第一个是默认。 */
+export const STEP_VOICES = [
+  { id: "wenroushunv", label: "温柔淑女" },
+  { id: "qingchunshaonv", label: "青春少女" },
+  { id: "jingdiannvsheng", label: "经典女声" },
+] as const;
+
+export type StepVoice = typeof STEP_VOICES[number]["id"];
+
+export const DEFAULT_STEP_VOICE: StepVoice = "wenroushunv";
+
+/** 扩展 chrome.storage.local 里存用户所选音色的键。 */
+export const STEP_VOICE_STORAGE_KEY = "step_voice";
+
+/** 存储读出的值先过这里；不认识的值由调用方换成默认，不把任意字符串发给供应商。 */
+export function isStepVoice(value: unknown): value is StepVoice {
+  return STEP_VOICES.some(v => v.id === value);
+}
+
 export type VoiceCommand =
-  /** Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio. */
-  | { kind: "start"; diagnostic?: true; capture?: true }
+  /**
+   * Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio.
+   * `voice` is the user's chosen timbre; it applies to the session being started.
+   */
+  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
@@ -280,7 +302,7 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   const c = m.command;
 
   switch (c.kind) {
-    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true);
+    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64);
     case "stop": return true;
     case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
     case "commit": return turn(c.turn)&&(c.contextPending===undefined||typeof c.contextPending==='boolean');

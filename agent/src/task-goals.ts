@@ -70,11 +70,11 @@ export class TaskGoalBook {
 
     if (missing.length) throw new Error(`修订不能删除或改动这些目标；改变做法不能删除用户要求：${missing.map(g => g.id).join(', ')}`);
     const removedIds = current.filter(g => !proposed.has(g.id)).map(g => g.id);
-    const addedIds = definitions.filter(d => !current.some(g => g.id === d.id)).map(d => d.id);
+    const addedIds = definitions.flatMap(d => current.some(g => g.id === d.id) ? [] : [d.id]);
 
     const goals: TaskGoal[] = [
       ...current.filter(g => proposed.has(g.id)).map(g => removable(g) ? { ...proposed.get(g.id)!, status: 'pending' as const } : structuredClone(g)),
-      ...definitions.filter(d => addedIds.includes(d.id)).map(d => ({ ...d, status: 'pending' as const })),
+      ...definitions.flatMap(d => addedIds.includes(d.id) ? [{ ...d, status: 'pending' as const }] : []),
     ];
 
     this.assertCoverage(revision, goals, requirementCount);
@@ -88,13 +88,31 @@ export class TaskGoalBook {
   /** Shared by install/amend: every requirement covered, field->material references resolve, material ids unique. */
   private assertCoverage(revision: string, goals: TaskGoal[], requirementCount: number): void {
     const required = Array.from({ length: requirementCount }, (_, i) => taskRequirementId(i));
+    // The model revises its plan from this message alone: name only the violated rules and the offending ids.
+    const problems: string[] = [];
+    const unknown = [...new Set(goals.flatMap(g => g.requirements.filter(id => !required.includes(id))))];
+    const uncovered = required.filter(id => !goals.some(g => g.requirements.includes(id)));
+    const materialIds = goals.flatMap(g => g.kind === 'material' ? [g.materialId] : []);
+    const duplicated = [...new Set(materialIds.filter((id, i) => materialIds.indexOf(id) !== i))];
 
-    if (!isTaskGoalPlan({ revision, coverage: 'verified', goals }) || goals.some(g => g.requirements.some(id => !required.includes(id)))
-      || required.some(id => !goals.some(g => g.requirements.includes(id)))
-      || goals.some(g=>g.kind==='field'&&!goals.some(source=>source.kind==='material'&&source.materialId===g.materialId))
-      || new Set(goals.filter(g=>g.kind==='material').map(g=>g.materialId)).size!==goals.filter(g=>g.kind==='material').length) {
-      throw new Error(`目标方案无效或遗漏用户要求。requirements 必须引用这些用户要求编号：${required.join(', ')}；不是目标序号。material/field 必须提供 materialId。`);
+    if (unknown.length) problems.push(`requirements 只能引用用户要求编号 ${required.join(', ')}（不是目标序号），不认识：${unknown.join(', ')}`);
+
+    if (uncovered.length) problems.push(`遗漏用户要求：${uncovered.join(', ')}`);
+
+    for (const g of goals) {
+      if ((g.kind === 'material' || g.kind === 'field') && !g.materialId) problems.push(`${g.kind} 目标 ${g.id} 缺少 materialId`);
+      else if (g.kind === 'field' && !goals.some(source => source.kind === 'material' && source.materialId === g.materialId)) {
+        problems.push(`field 目标 ${g.id} 引用的 materialId「${g.materialId}」在本方案里没有同编号的 material 来源目标；field 只用于把页面原文复制过去，用户直接给出或需要生成的值改用 kind=condition`);
+      }
     }
+
+    if (duplicated.length) problems.push(`material 目标的 materialId 重复：${duplicated.join(', ')}`);
+
+    if (!problems.length && !isTaskGoalPlan({ revision, coverage: 'verified', goals })) {
+      problems.push('目标格式不符：id 不能重复且不超过 64 字，description 不超过 160 字，criterion 不超过 2000 字，每个目标至少引用一项 requirements');
+    }
+
+    if (problems.length) throw new Error(`目标方案无效：${problems.join('；')}。`);
   }
 
   verify(revision: string, id: string, result: { matched: boolean; reason: string; evidence: NonNullable<TaskGoal['evidence']> }): void {

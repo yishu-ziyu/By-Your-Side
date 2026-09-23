@@ -96,7 +96,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "page_operation",
   "page_translation",
   "close_tab", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll",
-  "js", "navigate", "screenshot", "mark", "clear_marks",
+  "js", "navigate", "screenshot", "mark", "clear_marks", "ask_user_to_point",
 ]);
 
 /** 成功后就明确改变工作目标的调用；失败不改缺省页。 */
@@ -153,7 +153,7 @@ export class ToolRpc {
 
     if (!call?.id || call.name !== 'fill' || !call.prepareFillReadback) return;
 
-    return {transportId:call.id, ...(call.fillTarget ? {target:{...call.fillTarget}} : {})};
+    return call.fillTarget ? {transportId: call.id, target: {...call.fillTarget}} : {transportId: call.id};
   }
 
   getTransportId(id: string): string | undefined { return this.dispatched.get(id)?.id || undefined; }
@@ -167,11 +167,14 @@ export class ToolRpc {
       || typeof call.targetParams?.target !== 'string' || normalizeResultTarget(field.target) !== normalizeResultTarget(call.targetParams.target)
       || field.truncated || typeof field.value !== 'string' || !['input','textarea','select'].includes(field.tagName??'') || !source || typeof source !== 'object'
       || !(source.type===null||typeof source.type==='string') || !(source.autocomplete===null||typeof source.autocomplete==='string')) return;
-    call.readTarget = {tabId:field.tabId, documentId:field.documentId, target:field.target,
-      ...(field.nodeIdentity?.kind==='ax' && Number.isSafeInteger(field.nodeIdentity.backendNodeId) && field.nodeIdentity.backendNodeId>0
-        && field.target===`@${field.nodeIdentity.backendNodeId}` ? {nodeIdentity:{...field.nodeIdentity}} : {}),
+
+    const readTarget: FillReadbackTarget = {tabId:field.tabId, documentId:field.documentId, target:field.target,
       protected:String(source.type??'').toLowerCase() === 'password' || /one-time-code|cc-(number|csc|exp)/i.test(String(source.autocomplete ?? '')),
       sourceToolCallId:call.sdkId, sourceTransportId:call.id};
+
+    if (field.nodeIdentity?.kind==='ax' && Number.isSafeInteger(field.nodeIdentity.backendNodeId) && field.nodeIdentity.backendNodeId>0
+      && field.target===`@${field.nodeIdentity.backendNodeId}`) readTarget.nodeIdentity = {...field.nodeIdentity};
+    call.readTarget = readTarget;
   }
 
   private targetKey(sessionId?: string): string {
@@ -284,7 +287,9 @@ export class ToolRpc {
 
       if (target && typeof outParams.target === 'string' && normalizeResultTarget(target.target) === normalizeResultTarget(outParams.target)) {
         prepared.fillTarget = {...target};
-        outParams = {...outParams, expectedDocumentId:target.documentId, ...(target.nodeIdentity?{expectedBackendNodeId:target.nodeIdentity.backendNodeId}:{})};
+        outParams = {...outParams, expectedDocumentId:target.documentId};
+
+        if (target.nodeIdentity) outParams.expectedBackendNodeId = target.nodeIdentity.backendNodeId;
       }
     }
 
@@ -319,8 +324,10 @@ export class ToolRpc {
         reject(err);
       }, timeout);
 
-      this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId,
-        ...(signal ? {cleanup:()=>signal.removeEventListener('abort',abort)} : {}) });
+      const pendingEntry: Pending = { resolve, reject, timer, name, startedAt: Date.now(), sessionId };
+
+      if (signal) pendingEntry.cleanup = () => signal.removeEventListener('abort', abort);
+      this.pending.set(id, pendingEntry);
       signal?.addEventListener('abort',abort,{once:true});
 
       if (signal?.aborted) { abort();
@@ -328,7 +335,9 @@ export class ToolRpc {
  return; }
 
       try {
-        const frame: ToolCallFrame = { type: "tool_call", id, name, params: outParams, ...(sdkId ? { sdkId } : {}) };
+        const frame: ToolCallFrame = { type: "tool_call", id, name, params: outParams };
+
+        if (sdkId) frame.sdkId = sdkId;
 
         if (programId) frame.programId = programId;
 
