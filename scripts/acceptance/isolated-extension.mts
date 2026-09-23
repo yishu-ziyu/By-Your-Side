@@ -184,13 +184,17 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       `--load-extension=${extDir}`,
       "--no-first-run",
       "--no-default-browser-check",
+      // Ubuntu 24.04 runners block unprivileged user namespaces, so Chrome's sandbox cannot start there.
+      ...(process.platform === "linux" ? ["--no-sandbox"] : []),
       "--autoplay-policy=no-user-gesture-required",
       ...(options.hostResolverRules ? [`--host-resolver-rules=${options.hostResolverRules}`, "--no-proxy-server"] : []),
       "about:blank",
-    ], { stdio: "ignore", env:{...process.env,STEPFUN_API_KEY:undefined,SIDEAGENT_STEP_PLAN_KEY:undefined,TYPESAFE_API_KEY:undefined} });
+    ], { stdio: ["ignore", "ignore", "pipe"], env:{...process.env,STEPFUN_API_KEY:undefined,SIDEAGENT_STEP_PLAN_KEY:undefined,TYPESAFE_API_KEY:undefined} });
 
     let spawnError: Error | undefined;
+    let stderrTail = "";
     child.on("error", error => { spawnError = error; });
+    child.stderr?.on("data", (chunk: Buffer) => { stderrTail = (stderrTail + chunk.toString()).slice(-4000); });
     options.diagnose?.("isolation-started", { outDir, pid: child.pid, fixtureOrigin });
 
     const port = await until(async () => {
@@ -203,7 +207,9 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       } catch {
         return undefined;
       }
-    }, 20_000, "Chrome 调试端口");
+    }, 20_000, "Chrome 调试端口").catch((error: Error) => {
+      throw new Error(`${error.message}\nChrome stderr (tail):\n${stderrTail}`);
+    });
 
     const version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
     cdp = createCdp(version.webSocketDebuggerUrl);
