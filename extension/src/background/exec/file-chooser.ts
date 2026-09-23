@@ -13,13 +13,16 @@ export async function fileChooserSetFiles(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["file_chooser_set_files"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
   await ensureAttached(tab.id);
 
   const arm = getChooserArmById(params.chooserId);
+
   if (arm.tabId !== tab.id) {
     throw new Error("INVALID_ARGUMENT: file chooser does not belong to the working tab");
   }
+
   if (typeof arm.backendNodeId !== "number") {
     throw new Error("INVALID_ARGUMENT: file chooser has no backendNodeId");
   }
@@ -27,6 +30,7 @@ export async function fileChooserSetFiles(
   const paths = Array.isArray(params.paths) ? params.paths : [];
   const files = await setFilesOnBackendNodeId(tab.id, arm.backendNodeId, paths);
   const dialog = readDialogInfo(tab.id).dialog;
+
   return {
     set: true,
     multiple: Boolean(arm.multiple),

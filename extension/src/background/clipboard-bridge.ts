@@ -28,13 +28,16 @@ function clipboardBaseUrl(): string {
   // SAFETY: 该覆盖点是宿主（伴随进程 / 验收脚本 initScript）注入的可选全局，读取方下一步按 typeof 判空；
   // 断言只把 globalThis 收窄成具名接口以断掉自指类型环，运行期读写的仍是 globalThis.__SIDEAGENT_CLIPBOARD_URL__。
   const override = (globalThis as ClipboardUrlGlobal).__SIDEAGENT_CLIPBOARD_URL__;
+
   if (typeof override === "string" && override.length > 0) return override.replace(/\/$/, "");
+
   return DEFAULT_CLIPBOARD_URL;
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const url = `${clipboardBaseUrl()}${path}`;
   let response: Response;
+
   try {
     response = await fetch(url, {
       method: "POST",
@@ -46,12 +49,15 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
       `剪贴板宿主不可达（${url}）：${error instanceof Error ? error.message : String(error)}。请确认伴随进程已启动 macOS clipboard HTTP 服务。`,
     );
   }
+
   const data = (await response.json()) as T & { ok?: boolean; error?: string };
+
   if (!response.ok || (data as { ok?: boolean }).ok === false) {
     throw new Error(
       (data as { error?: string }).error || `clipboard host HTTP ${response.status}`,
     );
   }
+
   return data;
 }
 
@@ -63,18 +69,22 @@ export function createDarwinClipboardBridge(): ClipboardBridge {
         text: content.text,
         ...(content.html !== undefined ? { html: content.html } : {}),
       });
+
       if (!Number.isFinite(result.changeCount)) {
         throw new Error("clipboard host did not return changeCount");
       }
+
       return { changeCount: result.changeCount };
     },
     async finish(expectedChangeCount: number): Promise<ClipboardFinishStatus> {
       const result = await postJson<{ status: ClipboardFinishStatus }>("/finish", {
         expectedChangeCount,
       });
+
       if (result.status !== "restored" && result.status !== "changed") {
         throw new Error(`clipboard host returned unexpected status`);
       }
+
       return result.status;
     },
   };

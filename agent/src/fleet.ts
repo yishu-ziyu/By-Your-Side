@@ -36,13 +36,16 @@ export const MAX_WORKERS = 2;
 export function sanitizeWorkerId(raw: string | undefined, taken: Iterable<string>): string {
   const takenSet = new Set(taken);
   let base = (raw ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24);
+
   if (!base || base === LEAD_SESSION_ID) base = "worker";
   let id = base;
   let n = 2;
+
   while (takenSet.has(id) || id === LEAD_SESSION_ID) {
     id = `${base}-${n}`;
     n += 1;
   }
+
   return id;
 }
 
@@ -76,6 +79,7 @@ export function workerExecution(
     onStep: (step: import('./browser-program.js').ProgramStep) => getSession()?.observeProgramStep(step),
     consumeConsent: (name: string, params: Record<string, unknown>, opts?: { signal?: AbortSignal }) => {
       const broker = getConsent?.();
+
       return broker ? broker.request(params, opts) : { allowed: false, reason: CONSENT_REQUIRED_ERROR };
     },
     /** 工人会话自有账本；与 Lead 不共享，避免跨任务继承授权。 */
@@ -122,6 +126,7 @@ export class Fleet {
   /** 与 Lead 共享同一会话进度；worker 写操作据此看到同一未决写入。 */
   bindConversationContext(snapshot: () => import("../../shared/voice.js").TaskProgressSnapshot | null): void {
     this.conversationSnapshot = snapshot;
+
     for (const session of this.workers.values()) session.bindConversationContext(snapshot);
   }
 
@@ -153,6 +158,7 @@ export class Fleet {
 
   abortAll(): void {
     this.generation += 1;
+
     for (const id of this.workers.keys()) this.stop(id);
   }
 
@@ -162,6 +168,7 @@ export class Fleet {
 
   isGroupHeld(): boolean {
     const phase = this.team.view()?.phase;
+
     return phase === "user" || phase === "draining" || phase === "restoring" || phase === "partial";
   }
 
@@ -175,6 +182,7 @@ export class Fleet {
     const queued: string[] = [];
     const skipped: string[] = [];
     const failed: Array<{ id: string; reason: string }> = [];
+
     for (const [id, session] of [...this.workers]) {
       try {
         if (session.isHeld()) {
@@ -188,17 +196,21 @@ export class Fleet {
         }
       } catch (error) {
         let reason = error instanceof Error ? error.message : String(error);
+
         try { await this.stopAndRelease(id); }
         catch (releaseError) { reason += `；页面移交未确认：${String(releaseError)}`; }
+
         failed.push({ id, reason });
       }
     }
+
     return { notified, queued, skipped, failed };
   }
 
   snapshotActive(): ActiveMemberInput[] {
     const waitingMsg = new Set(this.mailbox.waitingSessionIds());
     const waitingTool = new Set(this.rpc.pendingSessionIds());
+
     return snapshotActiveGroup({
       lead: {
         sessionId: LEAD_SESSION_ID,
@@ -223,9 +235,11 @@ export class Fleet {
   ): TeamView {
     const members = frozen && frozen.length > 0 ? frozen : this.snapshotActive();
     const missing = members.find((member) => !this.get(member.sessionId));
+
     if (missing) {
       throw new Error(`接管组成员 ${missing.sessionId} 的原会话不存在`);
     }
+
     return holdFrozenGroup({
       team: this.team,
       frozen: members,
@@ -246,51 +260,68 @@ export class Fleet {
     onTeamUpdate?: (team: TeamView) => void,
   ): Promise<{ ok: boolean; team: TeamView }> {
     const current = this.team.view();
+
     if (!current || current.phase === "aborted") {
       return { ok: false, team: current ?? this.team.abort() };
     }
+
     if (current.phase === "user") this.team.beginRestore();
+
     if (!this.team.applyHandback(pages, meta)) {
       return { ok: false, team: this.team.view()! };
     }
+
     onTeamUpdate?.(this.team.view()!);
     const expected = this.team.view()!;
+
     const results = await Promise.all(
       pages.map(async (page) => {
         if (!page.ok) return false;
         const session = this.get(page.sessionId);
         let ok = false;
+
         try {
           ok = session ? await session.continueAfterHandback(page.context, page.snapshot) : false;
         } catch {
           ok = false;
         }
+
         if (!ok) {
           const reason = session
             ? (session.handbackFailureReason ?? "恢复失败，原会话仍归你。")
             : "恢复失败：原会话已不存在，仍归你。";
+
           const next = this.team.markRestoreFailed(page.sessionId, reason, expected);
           onTeamUpdate?.(next);
+
           return false;
         }
+
         const next = this.team.markRestored(page.sessionId, expected);
+
         if (next.members.find((member) => member.sessionId === page.sessionId)?.phase !== "restored") {
           onTeamUpdate?.(next);
+
           return false;
         }
+
         this.lastContinue.set(page.sessionId, {
           tabId: page.context.tabId,
           url: page.context.url,
           snapshot: page.snapshot,
         });
         onTeamUpdate?.(next);
+
         return true;
       }),
     );
+
     const team = this.team.view()!;
+
     const paused = team.members.some(
       (m) => m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed",
     );
+
     return { ok: results.some(Boolean) || paused, team };
   }
 
@@ -298,6 +329,7 @@ export class Fleet {
     this.mailbox.clear();
     this.abortAll();
     this.lastContinue.clear();
+
     return this.team.abort();
   }
 
@@ -308,7 +340,9 @@ export class Fleet {
   async spawn(opts: { id?: string; goal: string; task?: string; output?: string; spawnToolCallId?: string; url?: string; peers?: string[]; sharedTabId?: number }): Promise<{ id: string; tabId?: number }> {
     assertCanSpawn(this.workers.size + this.spawning.size);
     const goal = opts.goal.trim();
+
     if (!goal) throw new Error("spawn_worker 需要 goal");
+
     if (!this.lead?.runtime) throw new Error("Lead 会话不可用，无法请人");
 
     const occupied = [...this.workers.keys(), ...this.spawning];
@@ -318,6 +352,7 @@ export class Fleet {
     const peers = (opts.peers ?? []).map((p) => p.trim()).filter(Boolean);
 
     let tabId: number | undefined;
+
     try {
       if (opts.sharedTabId !== undefined) {
         await this.rpc.call("share_tab", { tabId: opts.sharedTabId, collaborators: [LEAD_SESSION_ID, id] });
@@ -329,6 +364,7 @@ export class Fleet {
         undefined,
         id,
       )) as { tabId: number };
+
       tabId = opened.tabId;
       }
     } catch (err) {
@@ -338,14 +374,18 @@ export class Fleet {
     }
 
     let session: BrowserAgentSession;
+
     try {
       if (generation !== this.generation) throw new Error("Worker start cancelled");
       session = await this.createWorkerSession({ id, peers, tabId,shared:opts.sharedTabId!==undefined });
+
       if (generation !== this.generation) { this.stop(id); throw new Error("Worker start cancelled"); }
     } finally {
       this.spawning.delete(id);
+
       if (!this.workers.has(id)) this.releaseWorker(id);
     }
+
     console.error(`[sideagent] spawn worker=${id} tab=${tabId ?? "?"} peers=${peers.join(",") || "-"}`);
     this.sink.emit({
       kind: "worker_task",
@@ -354,6 +394,7 @@ export class Fleet {
       ...(opts.spawnToolCallId ? { spawnToolCallId: opts.spawnToolCallId } : {}),
     }, id);
     session.sendUserMessage(goal);
+
     return { id, tabId };
   }
 
@@ -366,51 +407,72 @@ export class Fleet {
     live?:{leadGoal:string;workerGoal:string;leadContext?:PageContext;workerContext?:PageContext};
   }): Promise<AcceptanceContinuityEvidence[]> {
     const { id, tabId } = opts;
+
     if (!this.workers.has(id)) {
       assertCanSpawn(this.workers.size);
+
       if (sanitizeWorkerId(id, []) !== id) throw new Error(`验收 worker id 无效：${id}`);
       await this.createWorkerSession({ id, peers: [], tabId });
     }
+
     const lead = this.lead;
     const worker = this.workers.get(id);
+
     if (!lead || !worker) throw new Error("验收会话装配不完整");
+
     if (!lead.runtime) throw new Error("Lead runtime 不可用，无法注册本地验收模型");
+
     if(opts.live){
       lead.startTask(opts.live.leadGoal,opts.live.leadContext);worker.startTask(opts.live.workerGoal,opts.live.workerContext);
+
       return []; // Real configured provider, no acceptance-model substitution.
     }
+
     const acceptanceModel = registerAcceptanceModel(lead.runtime);
     await Promise.all([lead.setModel(acceptanceModel), worker.setModel(acceptanceModel)]);
+
     const evidence: AcceptanceContinuityEvidence[] = [
       { sessionId: LEAD_SESSION_ID, ...(await lead.beginAcceptanceTask(opts.leadTask.taskId, opts.leadTask.expectedSnapshotMarker)) },
       { sessionId: id, ...(await worker.beginAcceptanceTask(opts.workerTask.taskId, opts.workerTask.expectedSnapshotMarker)) },
     ];
+
     console.error(`[sideagent] acceptance worker=${id} tab=${tabId}`);
+
     return evidence;
   }
 
   acceptanceContinuityEvidence(): AcceptanceContinuityEvidence[] {
     const out: AcceptanceContinuityEvidence[] = [];
     const lead = this.lead?.acceptanceContinuityEvidence();
+
     if (lead) out.push({ sessionId: LEAD_SESSION_ID, ...lead });
+
     for (const [sessionId, session] of this.workers) {
       const evidence = session.acceptanceContinuityEvidence();
+
       if (evidence) out.push({ sessionId, ...evidence });
     }
+
     return out;
   }
 
   async waitForAcceptanceContinuity(timeoutMs = 15_000): Promise<AcceptanceContinuityEvidence[]> {
     const traced: Array<[string, BrowserAgentSession]> = [];
+
     if (this.lead?.acceptanceContinuityEvidence()) traced.push([LEAD_SESSION_ID, this.lead]);
+
     for (const [sessionId, session] of this.workers) {
       if (session.acceptanceContinuityEvidence()) traced.push([sessionId, session]);
     }
+
     if (traced.length === 0) return [];
+
     return Promise.all(
       traced.map(async ([sessionId, session]) => {
         const evidence = await session.waitForAcceptanceResume(timeoutMs);
+
         if (!evidence) throw new Error(`验收会话 ${sessionId} 没有续跑证据`);
+
         return { sessionId, ...evidence };
       }),
     );
@@ -426,13 +488,16 @@ export class Fleet {
     const { id, peers, tabId } = opts;
     let started = false;
     let workerSession: BrowserAgentSession | undefined;
+
     const session = await BrowserAgentSession.create(
       this.rpc,
       {
         emit: (event) => this.sink.emit(event, id),
         setStatus: (state) => {
           this.sink.setStatus(state, id);
+
           if (state === "running") started = true;
+
           if (state === "idle" && started) {
             queueMicrotask(() => {
               if (this.workers.get(id)?.isHeld()) return;
@@ -448,36 +513,46 @@ export class Fleet {
         appendPrompt: () => [],
         memberId: id,
         customTools: [
-          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined), (blocks, language, signal) => { if (!workerSession) throw new Error("翻译会话不可用"); return workerSession.translatePageBatch(blocks, language, signal); }),
+          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined), (blocks, language, signal) => { if (!workerSession) throw new Error("翻译会话不可用");
+
+ return workerSession.translatePageBatch(blocks, language, signal); }),
           ...createFleetTools(this, id),
         ],
       },
     );
+
     if (!session.available) {
       throw new Error(`${displayNameFor(id)} 会话创建失败`);
     }
+
     workerSession = session;
+
     if (this.conversationSnapshot) session.bindConversationContext(this.conversationSnapshot);
     this.workers.set(id, session);
     this.announceMembers();
+
     return session;
   }
 
   stop(id: string): boolean {
     const retired = this.retireWorker(id);
+
     if (retired) this.releaseWorker(id);
+
     return retired;
   }
 
   /** 只做本地退休：中止、销毁、摘除、状态回 idle。页面归属与 release 交给调用方决定。 */
   private retireWorker(id: string): boolean {
     const session = this.workers.get(id);
+
     if (!session) return false;
     session.abort();
     session.dispose();
     this.workers.delete(id);
     this.announceMembers();
     this.sink.setStatus("idle", id);
+
     return true;
   }
 
@@ -489,22 +564,27 @@ export class Fleet {
    */
   async stopMembersForForeignTakeover(members: readonly string[]): Promise<string[]> {
     const stopped: string[] = [];
+
     for (const member of members) {
       if (member === LEAD_SESSION_ID) {
         if (!this.lead) continue;
         await this.lead.yieldTab();
       } else {
         const worker = this.workers.get(member);
+
         if (!worker || !this.retireWorker(member)) continue;
         await worker.waitForStop();
       }
+
       stopped.push(member);
     }
+
     return stopped;
   }
 
   private releaseWorker(id: string): Promise<unknown> {
     const pending = this.releases.get(id);
+
     if (pending) return pending;
     const release = this.rpc.call("worker_tabs", { action: "release", workerId: id });
     this.releases.set(id, release);
@@ -512,12 +592,14 @@ export class Fleet {
       this.releases.delete(id);
       this.sink.emit({ kind: "notice", message: `worker 已停止，页面移交尚未完成：${error instanceof Error ? error.message : String(error)}。可再次 take_tab 重试。` });
     });
+
     return release;
   }
 
   /** 先确认同会话归属，再停止相关成员；扩展确认旧调用排空后才允许父 Agent 继续。 */
   async takeTab(tabId?: number): Promise<{ tabId: number; stopped: string[] }> {
     const info = await this.rpc.call("worker_tabs", { action: "inspect", ...(tabId != null ? { tabId } : {}) }) as { tabId: number; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] };
+
     if (info.foreign) {
       if (!this.coordinateTab) throw new Error("页面协调器尚未就绪，请重连后再试");
       await this.coordinateTab(info.conversationId!, info.members ?? info.workers);
@@ -525,16 +607,19 @@ export class Fleet {
       for (const id of info.workers) this.stop(id);
       await Promise.all(info.workers.map(id => this.releaseWorker(id)));
     }
+
     if (info.owned !== false || info.conversationId !== undefined) await this.rpc.call("worker_tabs", {
       action: "claim", tabId: info.tabId,
       ...(info.conversationId !== undefined ? { expectedConversationId: info.conversationId } : {}),
     });
+
     return { tabId: info.tabId, stopped: info.workers };
   }
 
   async stopAndRelease(id: string): Promise<boolean> {
     const stopped = this.stop(id);
     await this.releaseWorker(id);
+
     return stopped;
   }
 
@@ -558,6 +643,7 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
         kind: String(params.kind),
         body: String(params.body ?? ""),
       });
+
       return textResult(`Posted kind=${art.kind} to ${art.to} (${art.body.length} chars).`, art);
     },
   });
@@ -577,6 +663,7 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
         typeof params.timeout === "number" && params.timeout > 0
           ? Math.min(params.timeout, 300) * 1000
           : DEFAULT_AWAIT_MS;
+
       const art = await fleet.mailbox.awaitMessage({
         self: selfId,
         from: typeof params.from === "string" ? params.from : undefined,
@@ -584,6 +671,7 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
         timeoutMs,
         signal: signal as AbortSignal | undefined,
       });
+
       return textResult(`Received kind=${art.kind} from ${art.from}:\n${art.body}`, art);
     },
   });
@@ -615,6 +703,7 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
         peers: Array.isArray(params.peers) ? params.peers.map(String) : undefined,
         sharedTabId: typeof params.sharedTabId === "number" ? params.sharedTabId : undefined,
       });
+
       return textResult(
         `Spawned worker ${result.id}${result.tabId != null ? ` on tab ${result.tabId}` : ""}. It is running in parallel.`,
         result,
@@ -629,8 +718,10 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     parameters: Type.Object({}),
     execute: async () => {
       const rows = fleet.list();
+
       if (rows.length === 0) return textResult("No live workers.", { workers: rows });
       const text = rows.map((r) => `${r.id}: ${r.streaming ? "running" : "idle"}`).join("\n");
+
       return textResult(text, { workers: rows });
     },
   });
@@ -645,6 +736,7 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     execute: async (_id, params) => {
       const id = String(params.id);
       const ok = await fleet.stopAndRelease(id);
+
       return textResult(ok ? `Stopped worker ${id}.` : `No live worker named ${id}.`, { stopped: ok });
     },
   });
@@ -656,8 +748,10 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     parameters: Type.Object({ tabId: Type.Number() }),
     execute: async (_id, params) => {
       const result = await fleet.takeTab(params.tabId);
+
       return textResult(`页面 ${result.tabId} 已交回父 Agent。`, result);
     },
   });
+
   return [spawnTool, listTool, stopTool, takeTool, postTool, awaitTool];
 }

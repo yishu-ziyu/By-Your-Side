@@ -75,6 +75,7 @@ const NAMED_KEYS: Record<string, BaseKey> = {
 /** Alt/Ctrl/Meta 按下时不生成文本（避免控制字符），仅 Shift 允许。 */
 function withText(info: KeyInfo, text: string | undefined): KeyInfo {
   if (text !== undefined && (info.modifiers & 7) === 0) info.text = text;
+
   return info;
 }
 
@@ -82,12 +83,15 @@ export function resolveKey(input: string, platform: string = hostPlatform()): Ke
   if (typeof input !== "string") return null;
   const expanded = expandControlOrMeta(input, platform);
   const parts = expanded.split("+").map((p) => p.trim());
+
   if (parts.length === 0 || parts.some((p) => p === "")) return null;
 
   const keyName = parts[parts.length - 1]!;
   let modifiers = 0;
+
   for (const part of parts.slice(0, -1)) {
     const bit = MODIFIER_BITS[part.toLowerCase()];
+
     if (bit === undefined) return null;
     modifiers |= bit;
   }
@@ -95,6 +99,7 @@ export function resolveKey(input: string, platform: string = hostPlatform()): Ke
   const lower = keyName.toLowerCase();
 
   const named = NAMED_KEYS[lower];
+
   if (named) {
     return withText(
       { key: named.key, code: named.code, windowsVirtualKeyCode: named.vk, modifiers },
@@ -106,6 +111,7 @@ export function resolveKey(input: string, platform: string = hostPlatform()): Ke
     const upper = lower.toUpperCase();
     const shift = (modifiers & 8) !== 0;
     const key = shift ? upper : lower;
+
     return withText(
       { key, code: `Key${upper}`, windowsVirtualKeyCode: upper.charCodeAt(0), modifiers },
       key,

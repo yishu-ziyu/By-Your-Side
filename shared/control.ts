@@ -86,10 +86,13 @@ export function isWriteTool(name: string): name is ToolName {
 
 export function aggregateRunState(states: Iterable<AgentRunState>): AgentRunState {
   let sawUser = false;
+
   for (const s of states) {
     if (s === "running") return "running";
+
     if (s === "user") sawUser = true;
   }
+
   return sawUser ? "user" : "idle";
 }
 
@@ -119,8 +122,10 @@ export function panelLive(
         composer: "idle",
       };
     }
+
     if (team.phase === "restored") {
       const running = aggregateRunState(states) === "running";
+
       return {
         running,
         userHasPage: false,
@@ -132,9 +137,11 @@ export function panelLive(
         composer: running ? "running" : "idle",
       };
     }
+
     const restoring = team.phase === "restoring" || team.phase === "partial";
     const held = team.phase === "user" || team.phase === "draining" || restoring;
     const someRunning = team.members.some((m) => m.phase === "restored" || m.phase === "running");
+
     return {
       running: someRunning && team.phase !== "user" && team.phase !== "draining",
       userHasPage: held,
@@ -146,10 +153,12 @@ export function panelLive(
       composer: "user",
     };
   }
+
   const agg = aggregateRunState(states);
   const running = agg === "running";
   const userHasPage = agg === "user";
   const live = running || userHasPage;
+
   return {
     running,
     userHasPage,
@@ -183,22 +192,30 @@ export type ControlSnapshot = {
 export function parseControlSnapshot(raw: unknown): ControlSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as { owner?: unknown; generation?: unknown; lastStatus?: unknown; team?: unknown };
+
   if (o.owner !== "agent" && o.owner !== "user") return null;
+
   if (typeof o.generation !== "number" || !Number.isFinite(o.generation)) return null;
+
   if (o.lastStatus !== "idle" && o.lastStatus !== "running" && o.lastStatus !== "user") return null;
   const team = isTeamView(o.team) ? o.team : undefined;
   const sessionsRaw = (o as { sessions?: unknown }).sessions;
   let sessions: Record<string, ControlOwner> | undefined;
+
   if (sessionsRaw && typeof sessionsRaw === "object" && !Array.isArray(sessionsRaw)) {
     sessions = {};
+
     for (const [k, v] of Object.entries(sessionsRaw as Record<string, unknown>)) {
       if (v === "agent" || v === "user") sessions[k] = v;
     }
   }
+
   const completedRaw = (o as { completed?: unknown }).completed;
+
   const completed = Array.isArray(completedRaw)
     ? completedRaw.filter((k): k is string => typeof k === "string" && k.length >= 1 && k.length <= 160).slice(-CONTROL_COMPLETED_MAX)
     : undefined;
+
   return {
     owner: o.owner,
     generation: o.generation,
@@ -216,6 +233,7 @@ export function snapshotControl(
 ): ControlSnapshot {
   const sessions = gate.sessionOwners();
   const completed = gate.completedIds();
+
   return {
     owner: gate.control,
     generation: gate.gen,
@@ -232,10 +250,14 @@ export function applyControlSnapshot(
   team?: TeamControl,
 ): { restoredUser: boolean; lastStatus: AgentRunState } {
   const snap = parseControlSnapshot(raw);
+
   if (!snap) return { restoredUser: false, lastStatus: "idle" };
   gate.hydrate(snap.owner, snap.generation, snap.sessions, snap.completed);
+
   if (team && snap.team) team.hydrate(snap.team);
+
   if (snap.owner === "user") return { restoredUser: true, lastStatus: "user" };
+
   return { restoredUser: false, lastStatus: snap.lastStatus === "running" ? "running" : "idle" };
 }
 
@@ -248,6 +270,7 @@ export function uplinkLostWhileHeld(owner: ControlOwner): {
   if (owner === "user") {
     return { abortGate: false, hideBanner: false, lastStatus: "user" };
   }
+
   return { abortGate: true, hideBanner: true, lastStatus: "idle" };
 }
 
@@ -263,6 +286,7 @@ export function applyFirstUplinkState(opts: {
   if (!opts.hydrateDone) {
     return { applyLost: false, abortGate: false, hideBanner: false, lastStatus: "idle" };
   }
+
   if (opts.connState === "connected") {
     return {
       applyLost: false,
@@ -271,7 +295,9 @@ export function applyFirstUplinkState(opts: {
       lastStatus: opts.owner === "user" ? "user" : "idle",
     };
   }
+
   const lost = uplinkLostWhileHeld(opts.owner);
+
   return { applyLost: true, ...lost };
 }
 
@@ -285,22 +311,27 @@ export function bootWithStoredControl(
 ): { gate: ControlGate; lastStatus: AgentRunState; persisted: ControlSnapshot } {
   const gate = new ControlGate();
   const applied = applyControlSnapshot(gate, stored);
+
   const first = applyFirstUplinkState({
     hydrateDone: true,
     owner: gate.control,
     connState: firstConn,
   });
+
   let lastStatus: AgentRunState = applied.restoredUser ? "user" : applied.lastStatus;
+
   if (first.applyLost && first.abortGate) {
     gate.abort();
     lastStatus = first.lastStatus;
   }
+
   return { gate, lastStatus, persisted: snapshotControl(gate, lastStatus) };
 }
 
 /** Agent 客户端断开：held 时不得清 hold（扩展可能只是 SW 重启）。 */
 export function clientGoneWhileHeld(held: boolean): { clearHold: boolean; abortStream: boolean } {
   if (held) return { clearHold: false, abortStream: false };
+
   return { clearHold: true, abortStream: true };
 }
 
@@ -320,6 +351,7 @@ export function prepareHandback(
   if (!active || typeof active.id !== "number" || !Number.isFinite(active.id)) {
     return { ok: false, reason: HANDBACK_NO_PAGE };
   }
+
   return {
     ok: true,
     context: {
@@ -332,6 +364,7 @@ export function prepareHandback(
 
 export function handbackContinueText(context: PageContext, snapshot: string,originalGoal?:string): string {
   const title = (context.title || "(untitled)").replace(/\s+/g, " ");
+
   return [
     "[HANDOFF BOUNDARY]",
     "[The CURRENT page and snapshot are authoritative. Stay on this tab. Do not switch tabs, navigate, reload, or reopen any page. Do not reopen the site. These stay-on-page instructions apply only to this restored original task and expire when that original task ends.]",
@@ -389,7 +422,9 @@ export class ControlGate {
 
   sessionOwners(): Record<string, ControlOwner> {
     const out: Record<string, ControlOwner> = {};
+
     for (const [id, blocked] of this.sessionBlocked) out[id] = blocked ? "user" : "agent";
+
     return out;
   }
 
@@ -404,9 +439,11 @@ export class ControlGate {
 
   isSessionBlocked(sessionId?: string | null): boolean {
     if (this.draining) return true;
+
     if (sessionId != null && this.sessionBlocked.has(sessionKey(sessionId))) {
       return this.sessionBlocked.get(sessionKey(sessionId)) === true;
     }
+
     return this.owner === "user";
   }
 
@@ -420,44 +457,59 @@ export class ControlGate {
 
   canLand(name: ToolName, sessionId?: string | null, params?: Record<string, unknown>): boolean {
     if (!WRITE_TOOL_SET.has(name) && !requiresControlGate(name, params)) return true;
+
     if (this.draining) return false;
+
     if (sessionId != null && this.sessionBlocked.has(sessionKey(sessionId))) {
       return this.sessionBlocked.get(sessionKey(sessionId)) === false;
     }
+
     return this.owner !== "user";
   }
 
   async run<T>(id: string, name: ToolName, fn: () => Promise<T>, sessionId?: string | null, params?: Record<string, unknown>): Promise<T> {
     if (!WRITE_TOOL_SET.has(name) && !requiresControlGate(name, params)) {
       if (!this.canLand(name, sessionId, params)) throw new Error(USER_BLOCKED_ERROR);
+
       return fn();
     }
+
     const key = `${sessionKey(sessionId)}::${id}`;
     // 重复投递先于控制权检查：已完成的回执原样回传，绝不二次落地。
     const done = this.completed.get(key);
+
     if (done) return this.replayCompleted<T>(done, name);
     const active = this.inflight.get(key);
+
     if (active) {
       await active.settled.catch(() => {});
       const settled = this.completed.get(key);
+
       if (settled) return this.replayCompleted<T>(settled, name);
     }
+
     if (!this.canLand(name, sessionId, params)) {
       throw new Error(USER_BLOCKED_ERROR);
     }
+
     let release: () => void = () => {};
+
     const sentinel = new Promise<void>((resolve) => {
       release = resolve;
     });
+
     this.inflight.set(key, { settled: sentinel, sessionId: sessionKey(sessionId) });
+
     if (!this.canLand(name, sessionId, params)) {
       this.inflight.delete(key);
       release();
       throw new Error(USER_BLOCKED_ERROR);
     }
+
     try {
       const value = await fn();
       this.rememberCompleted(key, { status: "resolved", name, value });
+
       return value;
     } catch (error) {
       this.rememberCompleted(key, { status: "rejected", name, error });
@@ -472,7 +524,9 @@ export class ControlGate {
     if (done.name !== null && done.name !== name) {
       throw new Error("操作编号已用于其他操作，本次未执行。");
     }
+
     if (done.status === "resolved") return done.value as T;
+
     if (done.status === "rejected") throw done.error;
     const error = new Error("该操作已在之前的扩展进程中执行过，本次未重复执行；结果以原回执为准。");
     // 跨进程只能证明“执行过”，不能证明结果；沿错误对象携带结构化事实。
@@ -483,8 +537,10 @@ export class ControlGate {
   private rememberCompleted(key: string, outcome: CompletedOutcome): void {
     this.completed.delete(key);
     this.completed.set(key, outcome);
+
     while (this.completed.size > CONTROL_COMPLETED_MAX) {
       const oldest = this.completed.keys().next().value;
+
       if (oldest === undefined) break;
       this.completed.delete(oldest);
     }
@@ -494,24 +550,31 @@ export class ControlGate {
     if (this.owner === "user") {
       return { generation: this.generation, superseded: false };
     }
+
     this.draining = true;
     const gen = ++this.generation;
     await Promise.allSettled([...this.inflight.values()].map((entry) => entry.settled));
+
     if (this.generation !== gen) {
       return { generation: this.generation, superseded: true };
     }
+
     return { generation: gen, superseded: false };
   }
 
   commitTakeover(generation: number, sessionIds?: string[]): boolean {
     if (this.owner === "user") return this.generation === generation;
+
     if (!this.draining || this.generation !== generation) return false;
     this.owner = "user";
     this.draining = false;
+
     if (sessionIds) {
       this.sessionBlocked.clear();
+
       for (const id of sessionIds) this.sessionBlocked.set(sessionKey(id), true);
     }
+
     return true;
   }
 
@@ -521,6 +584,7 @@ export class ControlGate {
     this.owner = "agent";
     this.draining = false;
     this.sessionBlocked.clear();
+
     return true;
   }
 
@@ -528,9 +592,12 @@ export class ControlGate {
     if (this.owner === "user") {
       return { generation: this.generation, superseded: false };
     }
+
     const pending = await this.beginTakeover();
+
     if (pending.superseded) return pending;
     const committed = this.commitTakeover(pending.generation);
+
     return { generation: this.generation, superseded: !committed };
   }
 
@@ -539,6 +606,7 @@ export class ControlGate {
     this.owner = "agent";
     this.draining = false;
     this.sessionBlocked.clear();
+
     return { generation: this.generation };
   }
 
@@ -549,6 +617,7 @@ export class ControlGate {
     this.draining = false;
     this.inflight.clear();
     this.sessionBlocked.clear();
+
     return { generation: this.generation, settled };
   }
 
@@ -559,13 +628,16 @@ export class ControlGate {
     this.draining = false;
     this.inflight.clear();
     this.sessionBlocked.clear();
+
     if (sessions) {
       for (const [id, who] of Object.entries(sessions)) {
         this.sessionBlocked.set(sessionKey(id), who === "user");
       }
     }
+
     if (completed) {
       this.completed.clear();
+
       for (const key of completed.slice(-CONTROL_COMPLETED_MAX)) this.completed.set(key, { status: "replayed", name: null });
     }
   }
@@ -581,6 +653,7 @@ export class SessionHold {
 
   holdForUser(): AgentRunState {
     this.held = true;
+
     return "user";
   }
 
@@ -594,7 +667,9 @@ export class SessionHold {
 
   statusAfterAgentEnd(willRetry: boolean): AgentRunState | null {
     if (this.held) return "user";
+
     if (willRetry) return null;
+
     return "idle";
   }
 
@@ -604,8 +679,11 @@ export class SessionHold {
 }
 
 export const TEAM_TAB_CLOSED = "绑定页已关闭，未续跑";
+
 export const TEAM_SNAPSHOT_FAILED = "页面还在，但没读到新状态，未续跑";
+
 export const TEAM_ALL_RESTORED = "全队已恢复";
+
 export const CLAIM_BLOCKED_ERROR = "绑定页已关闭，未认领其他标签";
 
 export type TeamMemberActivity = "running" | "waiting_tool" | "waiting_message";
@@ -644,15 +722,20 @@ type SessionActivity = {
 
 function activityOf(s: SessionActivity): TeamMemberActivity | null {
   if (s.waitingMessage) return "waiting_message";
+
   if (s.waitingTool) return "waiting_tool";
+
   if (s.streaming || s.held) return "running";
+
   return null;
 }
 
 export function snapshotActiveGroup(opts: { lead: SessionActivity; workers: SessionActivity[] }): ActiveMemberInput[] {
   const workers: ActiveMemberInput[] = [];
+
   for (const w of opts.workers) {
     const activity = activityOf(w);
+
     if (!activity || !w.sessionId) continue;
     workers.push({
       sessionId: w.sessionId,
@@ -663,8 +746,11 @@ export function snapshotActiveGroup(opts: { lead: SessionActivity; workers: Sess
       url: w.url,
     });
   }
+
   const leadActivity = activityOf(opts.lead) ?? (workers.length > 0 ? "running" : null);
+
   if (!leadActivity) return [];
+
   return [
     {
       sessionId: opts.lead.sessionId && !isLeadSession(opts.lead.sessionId) ? opts.lead.sessionId : LEAD_SESSION_ID,
@@ -686,20 +772,26 @@ export function mergeActiveMembersForTakeover(opts: {
   tabs: Iterable<{ id: number; title?: string; url?: string }>;
 }): ActiveMemberInput[] {
   const statuses = new Map(opts.statuses);
+
   const activities = new Map(
     [...(opts.activities ?? [])].map(([sessionId, activity]) => [sessionKey(sessionId), activity] as const),
   );
+
   const active = new Set<string>();
+
   for (const [sessionId, state] of statuses) {
     if (state === "running" || state === "user") active.add(sessionKey(sessionId));
   }
+
   for (const sessionId of opts.inflightSessionIds) active.add(sessionKey(sessionId));
   const tabs = new Map([...opts.tabs].map((tab) => [tab.id, tab]));
+
   const activity = (sessionId: string): SessionActivity => {
     const state = statuses.get(sessionId);
     const currentActivity = activities.get(sessionId);
     const tabId = opts.workingTabs[sessionId];
     const tab = typeof tabId === "number" ? tabs.get(tabId) : undefined;
+
     return {
       sessionId,
       streaming: state === "running" || active.has(sessionId),
@@ -711,7 +803,9 @@ export function mergeActiveMembersForTakeover(opts: {
       url: tab?.url ?? "",
     };
   };
+
   const workerIds = [...active].filter((sessionId) => !isLeadSession(sessionId));
+
   return snapshotActiveGroup({
     lead: activity(LEAD_SESSION_ID),
     workers: workerIds.map(activity),
@@ -727,14 +821,17 @@ export function prepareMemberHandback(opts: {
   activeTabId?: number;
 }): MemberHandbackPage {
   const capturedAt = opts.capturedAt ?? Date.now();
+
   if (!opts.boundTab || typeof opts.boundTab.id !== "number" || !Number.isFinite(opts.boundTab.id)) {
     return { ok: false, sessionId: opts.sessionId, reason: TEAM_TAB_CLOSED, closed: true, capturedAt };
   }
+
   const context = {
     tabId: opts.boundTab.id,
     title: opts.boundTab.title ?? "",
     url: opts.boundTab.url ?? "",
   };
+
   if (opts.snapshotError) {
     return {
       ok: false,
@@ -746,6 +843,7 @@ export function prepareMemberHandback(opts: {
       capturedAt,
     };
   }
+
   return {
     ok: true,
     sessionId: opts.sessionId,
@@ -766,8 +864,10 @@ export function toTeamMemberHandback(page: MemberHandbackPage): TeamMemberHandba
         capturedAt: page.capturedAt,
       };
     }
+
     return { sessionId: page.sessionId, closed: true, reason: page.reason, capturedAt: page.capturedAt };
   }
+
   return {
     sessionId: page.sessionId,
     context: page.context,
@@ -786,6 +886,7 @@ export function fromTeamMemberHandback(m: TeamMemberHandback): MemberHandbackPag
       capturedAt: m.capturedAt ?? Date.now(),
     };
   }
+
   if ("snapshotFailed" in m && m.snapshotFailed) {
     return {
       ok: false,
@@ -797,7 +898,9 @@ export function fromTeamMemberHandback(m: TeamMemberHandback): MemberHandbackPag
       capturedAt: m.capturedAt ?? Date.now(),
     };
   }
+
   const open = m as Extract<TeamMemberHandback, { context: PageContext; snapshot: string }>;
+
   return {
     ok: true,
     sessionId: open.sessionId,
@@ -811,6 +914,7 @@ export function handbackPagesIndependent(pages: MemberHandbackPage[]): boolean {
   const ok = pages.filter((p): p is Extract<MemberHandbackPage, { ok: true }> => p.ok);
   const tabIds = new Set(ok.map((p) => p.context.tabId));
   const snaps = new Set(ok.map((p) => p.snapshot));
+
   return ok.length > 0 && tabIds.size === ok.length && snaps.size === ok.length;
 }
 
@@ -828,22 +932,33 @@ function nextGroupId(): string {
 export function teamSummaryLabel(team: TeamView): string {
   const n = team.members.length;
   const restored = team.members.filter((m) => m.phase === "restored").length;
+
   const paused = team.members.filter(
     (m) => m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed" || m.phase === "user" || m.phase === "restoring",
   ).length;
+
   const closed = team.members.filter((m) => m.phase === "paused_tab_closed").length;
+
   if (team.phase === "draining") {
     const stopped = team.members.filter((m) => m.phase === "user").length;
+
     return `正在停住 ${stopped} / ${n}`;
   }
+
   if (team.phase === "user") return `${n} 个 Agent 已暂停`;
+
   if (team.phase === "restoring") return "正在恢复";
+
   if (team.phase === "partial") {
     if (closed > 0) return `${restored} 个已恢复 · ${closed} 个未续跑`;
+
     return `${restored} 个已恢复 · ${paused} 个仍暂停`;
   }
+
   if (team.phase === "restored") return TEAM_ALL_RESTORED;
+
   if (team.phase === "aborted") return "已中止";
+
   return `${n} 个 Agent`;
 }
 
@@ -856,15 +971,19 @@ export function teamOwnerBanner(team: TeamView): {
   const n = team.members.length;
   const restored = team.members.filter((m) => m.phase === "restored").length;
   const paused = n - restored;
+
   if (team.phase === "draining") {
     return { status: "正在停住全队", sub: `${n} 个`, action: "请稍候", actionEnabled: false };
   }
+
   if (team.phase === "user") {
     return { status: "现在归你", sub: `${n} 个已暂停`, action: "交还", actionEnabled: true };
   }
+
   if (team.phase === "restoring") {
     return { status: "正在恢复", sub: `${restored} / ${n}`, action: "请稍候", actionEnabled: false };
   }
+
   if (team.phase === "partial") {
     return {
       status: `${restored} 个已恢复`,
@@ -873,12 +992,15 @@ export function teamOwnerBanner(team: TeamView): {
       actionEnabled: false,
     };
   }
+
   if (team.phase === "aborted") {
     return { status: "已中止", sub: "", action: "", actionEnabled: false };
   }
+
   if (team.phase === "restored") {
     return { status: TEAM_ALL_RESTORED, sub: `${n} 个`, action: "", actionEnabled: false };
   }
+
   return { status: "Agent 在工作", sub: `${n}`, action: "接管", actionEnabled: true };
 }
 
@@ -917,6 +1039,7 @@ export function memberStatusLabel(m: Pick<TeamMemberView, "phase" | "reason">): 
   ) {
     return m.reason;
   }
+
   return memberPhaseLabel(m.phase);
 }
 
@@ -930,18 +1053,24 @@ export function memberBoundPageLabel(
   if (m.phase === "paused_tab_closed") return (m.title || m.url || "已关闭页面").trim() || "已关闭页面";
   const title = (m.title || "").trim();
   const url = (m.url || "").trim();
+
   return title || url || "绑定页";
 }
 
 export function applyMemberGates(gate: ControlGate, team: TeamView): { globalHandback: boolean } {
   const held = team.members.filter((m) => m.phase !== "restored" && m.phase !== "aborted");
   const restored = team.members.filter((m) => m.phase === "restored");
+
   if (held.length === 0) {
     gate.handback();
+
     return { globalHandback: true };
   }
+
   for (const m of restored) gate.releaseSession(m.sessionId);
+
   for (const m of held) gate.blockSession(m.sessionId);
+
   return { globalHandback: false };
 }
 
@@ -950,6 +1079,7 @@ export function reconcileTeamProgress(
   team: TeamView,
 ): { statuses: Map<string, AgentRunState>; hideBanners: boolean } {
   const applied = applyMemberGates(gate, team);
+
   return {
     statuses: new Map(
       team.members.map((member) => [
@@ -974,9 +1104,11 @@ export function onUplinkLostDuringControl(opts: {
       lastStatus: opts.owner === "user" ? "user" : "running",
     };
   }
+
   if (opts.pendingAction === "handback") {
     return { abortGate: false, cancelTakeover: false, hideBanner: false, lastStatus: "user" };
   }
+
   return { abortGate: true, cancelTakeover: false, hideBanner: true, lastStatus: "idle" };
 }
 
@@ -993,12 +1125,16 @@ export function acceptIncomingTeam(opts: {
   ) {
     return { accept: false, restoreUser: false };
   }
+
   if (opts.local) {
     if (opts.incoming.groupId !== opts.local.groupId) return { accept: false, restoreUser: false };
+
     if (opts.incoming.generation !== opts.local.generation) return { accept: false, restoreUser: false };
   }
+
   const restoreUser =
     opts.incoming.phase === "user" || opts.incoming.phase === "partial" || opts.incoming.phase === "draining";
+
   return { accept: true, restoreUser };
 }
 
@@ -1010,12 +1146,16 @@ export function holdFrozenGroup(opts: {
   holdMember: (sessionId: string, abortStream: boolean) => void;
 }): TeamView {
   const view = opts.team.snapshotAndFreeze(opts.frozen, Date.now(), opts.group);
+
   for (const m of view.members) {
     opts.holdMember(m.sessionId, m.phase !== "waiting_message");
   }
+
   opts.team.beginDrain();
+
   for (const m of view.members) opts.team.markDrained(m.sessionId);
   opts.team.commitUser(opts.team.view()!.generation);
+
   return opts.team.view()!;
 }
 
@@ -1029,6 +1169,7 @@ export class TeamControl {
 
   member(sessionId: string): TeamMemberView | undefined {
     const found = this.frozen?.members.find((m) => m.sessionId === sessionId);
+
     return found ? { ...found } : undefined;
   }
 
@@ -1063,6 +1204,7 @@ export class TeamControl {
         capturedAt: now,
       })),
     };
+
     return this.view()!;
   }
 
@@ -1074,26 +1216,33 @@ export class TeamControl {
     if (!this.frozen || this.frozen.phase === "aborted") {
       throw new Error("no frozen team");
     }
+
     this.frozen.phase = "draining";
+
     for (const m of this.frozen.members) m.phase = "draining";
     this.drained.clear();
+
     return this.view()!;
   }
 
   markDrained(sessionId: string): TeamView {
     if (this.frozen?.members.some((m) => m.sessionId === sessionId)) this.drained.add(sessionId);
+
     return this.view()!;
   }
 
   canCommitUser(): boolean {
     if (!this.frozen || this.frozen.phase !== "draining") return false;
+
     return this.frozen.members.every((m) => this.drained.has(m.sessionId));
   }
 
   commitUser(generation: number): boolean {
     if (!this.canCommitUser() || !this.frozen || this.frozen.generation !== generation) return false;
     this.frozen.phase = "user";
+
     for (const m of this.frozen.members) m.phase = "user";
+
     return true;
   }
 
@@ -1101,7 +1250,9 @@ export class TeamControl {
     if (!this.frozen || (this.frozen.phase !== "user" && this.frozen.phase !== "partial")) {
       throw new Error("team is not held by user");
     }
+
     this.frozen.phase = "restoring";
+
     return this.view()!;
   }
 
@@ -1110,25 +1261,35 @@ export class TeamControl {
     meta?: { groupId?: string; generation?: number },
   ): boolean {
     if (!this.frozen || this.frozen.phase === "aborted") return false;
+
     if (meta?.groupId && meta.groupId !== this.frozen.groupId) return false;
+
     if (meta?.generation != null && meta.generation !== this.frozen.generation) return false;
+
     if (this.frozen.phase !== "restoring" && this.frozen.phase !== "partial" && this.frozen.phase !== "user") {
       return false;
     }
+
     if (this.frozen.phase === "user") this.frozen.phase = "restoring";
+
     for (const page of pages) {
       const m = this.frozen.members.find((row) => row.sessionId === page.sessionId);
+
       if (!m || m.phase === "restored" || m.phase === "aborted") continue;
+
       if (!page.ok) {
         m.phase = page.closed ? "paused_tab_closed" : "paused_snapshot_failed";
         m.reason = page.reason;
+
         if (page.context) {
           m.tabId = page.context.tabId;
           m.title = page.context.title;
           m.url = page.context.url;
         }
+
         continue;
       }
+
       m.phase = "restoring";
       m.tabId = page.context.tabId;
       m.title = page.context.title;
@@ -1136,7 +1297,9 @@ export class TeamControl {
       m.capturedAt = page.capturedAt;
       m.reason = undefined;
     }
+
     this.recomputePhase();
+
     return true;
   }
 
@@ -1145,10 +1308,13 @@ export class TeamControl {
     meta?: { groupId?: string; generation?: number },
   ): TeamView {
     if (meta?.groupId && meta.groupId !== this.frozen?.groupId) return this.view()!;
+
     if (meta?.generation != null && meta.generation !== this.frozen?.generation) return this.view()!;
     const m = this.frozen?.members.find((row) => row.sessionId === sessionId);
+
     if (m && (m.phase === "restoring" || m.phase === "user")) m.phase = "restored";
     this.recomputePhase();
+
     return this.view()!;
   }
 
@@ -1158,13 +1324,17 @@ export class TeamControl {
     meta?: { groupId?: string; generation?: number },
   ): TeamView {
     if (meta?.groupId && meta.groupId !== this.frozen?.groupId) return this.view()!;
+
     if (meta?.generation != null && meta.generation !== this.frozen?.generation) return this.view()!;
     const m = this.frozen?.members.find((row) => row.sessionId === sessionId);
+
     if (m && (m.phase === "restoring" || m.phase === "user")) {
       m.phase = "paused_snapshot_failed";
       m.reason = reason;
     }
+
     this.recomputePhase();
+
     return this.view()!;
   }
 
@@ -1178,10 +1348,13 @@ export class TeamControl {
         members: [],
       };
     }
+
     this.frozen.generation += 1;
     this.frozen.phase = "aborted";
+
     for (const m of this.frozen.members) m.phase = "aborted";
     this.drained.clear();
+
     return this.view()!;
   }
 
@@ -1198,13 +1371,17 @@ export class TeamControl {
     if (!this.frozen || this.frozen.phase === "aborted") return;
     const members = this.frozen.members;
     const allRestored = members.every((m) => m.phase === "restored");
+
     const someClosed = members.some(
       (m) => m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed",
     );
+
     const someRestored = members.some((m) => m.phase === "restored");
+
     const stillHeld = members.some(
       (m) => m.phase === "user" || m.phase === "restoring" || m.phase === "paused_snapshot_failed",
     );
+
     if (allRestored) this.frozen.phase = "restored";
     else if (someRestored || someClosed) this.frozen.phase = stillHeld || someClosed ? "partial" : "partial";
     else if (members.some((m) => m.phase === "restoring")) this.frozen.phase = "restoring";

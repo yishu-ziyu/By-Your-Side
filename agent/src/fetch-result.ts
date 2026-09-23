@@ -10,6 +10,7 @@ import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js
 
 /** 小于这个长度直接内联给模型；超过则落盘只给预览。 */
 export const FETCH_INLINE_LIMIT = 4_000;
+
 export const FETCH_PREVIEW_CHARS = 300;
 
 export interface FetchReply {
@@ -29,10 +30,15 @@ export function fetchDownloadsDir(): string {
 
 function extensionFor(contentType: string): string {
   if (/json/i.test(contentType)) return ".json";
+
   if (/html/i.test(contentType)) return ".html";
+
   if (/csv/i.test(contentType)) return ".csv";
+
   if (/text\/plain/i.test(contentType)) return ".txt";
+
   if (/xml/i.test(contentType)) return ".xml";
+
   return ".bin";
 }
 
@@ -40,12 +46,15 @@ function extensionFor(contentType: string): string {
 export function safeDownloadName(savePath: string | undefined, url: string, contentType: string): string {
   const fallback = `${Date.now().toString(36)}-${basename(new URL(url).pathname || "response").replace(/[^\w.-]+/g, "_").slice(0, 60) || "response"}`;
   const raw = (savePath ?? "").trim();
+
   if (!raw || raw.includes("/") || raw.includes("\\") || raw.includes("..")) {
     // 只当文件名的输入：去掉任何目录成分，拿不到就退回生成名。
     const clean = raw ? basename(raw).replace(/[^\w.-]+/g, "_") : "";
     const withExt = clean && clean !== "." && clean !== ".." ? clean : fallback;
+
     return extname(withExt) ? withExt : `${withExt}${extensionFor(contentType)}`;
   }
+
   return extname(raw) ? raw : `${raw}${extensionFor(contentType)}`;
 }
 
@@ -54,6 +63,7 @@ export function saveFetchBody(reply: FetchReply, savePath?: string, dir: string 
   mkdirSync(dir, { recursive: true });
   const path = join(dir, name);
   writeFileSync(path, reply.text, { mode: 0o600 });
+
   return { path, bytes: Buffer.byteLength(reply.text) };
 }
 
@@ -62,11 +72,13 @@ export function paginatedSaveName(savePath: string | undefined, url: string, con
   const base = savePath?.trim() ? safeDownloadName(savePath, url, contentType) : safeDownloadName(undefined, url, contentType);
   const ext = extname(base);
   const stem = ext ? base.slice(0, -ext.length) : base;
+
   return `${stem}-p${page}${ext}`;
 }
 
 function preview(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
+
   return oneLine.length > FETCH_PREVIEW_CHARS ? `${oneLine.slice(0, FETCH_PREVIEW_CHARS)}…` : oneLine;
 }
 
@@ -81,14 +93,19 @@ export function formatFetchReply(
 ): string {
   const head = `HTTP ${reply.status}${reply.ok ? "" : " (not ok)"} ${reply.contentType || "unknown content-type"}; ${reply.bytes} bytes${reply.truncated ? " (truncated at the extension cap; the rest was not read)" : ""}.`;
   const wantFile = savePath !== undefined || reply.text.length > FETCH_INLINE_LIMIT;
+
   if (wantFile) {
     const saved = saveFetchBody(reply, savePath, dir);
     onSaved?.(saved.path);
     const shown = saved.path.startsWith(homedir()) ? `~${saved.path.slice(homedir().length)}` : saved.path;
     const tail = includePreview ? ` Preview: ${preview(redactCredentialText(reply.text))}` : "";
+
     return `${head} Saved to ${shown} (${saved.bytes} bytes on disk); the body is not in your context.${tail}`;
   }
+
   const body = reply.text.trim();
+
   if (!body) return `${head} Empty body.`;
+
   return `${head}\n${wrapPageContent(redactCredentialText(body), { url: reply.url })}`;
 }

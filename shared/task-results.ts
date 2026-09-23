@@ -2,8 +2,11 @@ import { taskId } from "./task-actions.js";
 import {isWriteTool} from './control.js';
 
 export const TASK_RESULT_STATES = ["unregistered", "pending", "satisfied", "blocked", "unknown"] as const;
+
 export type TaskResultState = (typeof TASK_RESULT_STATES)[number];
+
 export const TASK_RESULT_ITEM_STATUSES = ["pending", "satisfied", "blocked", "unknown"] as const;
+
 export type TaskResultItemStatus = (typeof TASK_RESULT_ITEM_STATUSES)[number];
 
 /** Intent-only registration. Status/completion cannot be declared here. */
@@ -39,6 +42,7 @@ export interface TaskResultItem extends TaskResultRegistration {
 export function resultToolHasWriteEffect(tool:string):boolean {
   return isWriteTool(tool)&&!['switch_tab','scroll','hover'].includes(tool);
 }
+
 export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {
   return resultToolHasWriteEffect(item.tool)||item.evidence?.effectful===true;
 }
@@ -53,6 +57,7 @@ export const PAGE_IDENTITY_TOOLS = ["navigate", "open_tab", "switch_tab", "close
 
 /** 单条读数的完整文本上限；超过即标记截断，不能作为前后对比基线。 */
 export const RESULT_OBSERVATION_TEXT_MAX = 50_000;
+
 /** 账本保留的最近读数条数。 */
 export const RESULT_OBSERVATION_KEEP = 8;
 
@@ -88,6 +93,7 @@ export function isToolCallId(value: unknown): value is string {
 export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
   if (!v || typeof v !== "object") return false;
   const e = v as TaskResultEvidence;
+
   return isToolCallId(e.toolCallId) && text(e.tool, 100) && text(e.member, 128) && taskId(e.runId)
     && (e.target === null || text(e.target, 500))
     && (e.observedAt === undefined || Number.isFinite(e.observedAt))
@@ -98,6 +104,7 @@ export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
 export function isTaskResultItem(v: unknown): v is TaskResultItem {
   if (!v || typeof v !== "object") return false;
   const r = v as TaskResultItem;
+
   return taskId(r.id) && text(r.description, 600) && text(r.tool, 100)
     && (r.target === null || text(r.target, 500))
     && TASK_RESULT_ITEM_STATUSES.includes(r.status)
@@ -117,9 +124,13 @@ export function isTaskResultState(v: unknown): v is TaskResultState {
 
 export function resultStateOf(items: readonly TaskResultItem[]): TaskResultState {
   if (items.length === 0) return "unregistered";
+
   if (items.some(item => item.status === "unknown" && !isSupersededUnknown(item, items))) return "unknown";
+
   if (items.some(item => item.status === "blocked")) return "blocked";
+
   if (items.some(item => item.status === "pending")) return "pending";
+
   return "satisfied";
 }
 
@@ -130,25 +141,31 @@ export function isResultMetaTool(name: string): boolean {
 export function normalizeTaskResultRegistration(v: unknown): TaskResultRegistration | null {
   if (!v || typeof v !== "object") return null;
   const r = v as TaskResultRegistration;
+
   if (!taskId(r.id) || !text(r.description, 600) || !text(r.tool, 100) || isResultMetaTool(r.tool)) return null;
   const rawTarget = r.target == null || r.target === 'null' || r.target === '' ? null : r.target;
+
   if (!(rawTarget === null || text(rawTarget, 500))) return null;
+
   return { id: r.id, description: r.description.trim(), tool: r.tool, target: typeof rawTarget === "string" ? normalizeResultTarget(rawTarget) : null };
 }
 
 export function normalizeResultTarget(target: string): string {
   const clean = target.trim();
+
   return clean.startsWith('loc=css:') ? clean.slice('loc=css:'.length).trim() : clean;
 }
 
 export function extractResultTarget(params: Record<string, unknown> | undefined, tool?: string): string | null {
   if ((tool === 'switch_tab' || tool === 'tabs' && params?.action === 'switch') && Number.isSafeInteger(params?.tabId)) return `tab:${params!.tabId}`;
   const target = params?.target;
+
   return typeof target === "string" && target.trim() ? normalizeResultTarget(target) : null;
 }
 
 export function resultCanUseExecution(item: Pick<TaskResultItem, "tool" | "target" | "status">, tool: string, target: string | null): boolean {
   if (item.status !== "pending" || item.tool !== tool || isResultMetaTool(tool)) return false;
+
   return item.target === target;
 }
 
@@ -178,15 +195,20 @@ export type ResultBinding =
  */
 export function selectResultBinding(items: readonly TaskResultItem[], tool: string, target: string | null): ResultBinding {
   if (isResultMetaTool(tool)) return { kind: "none" };
+
   const exact = items.find(item => (!item.evidence || item.status === "blocked")
     && resultCanUseExecution(item.status === "blocked" ? { ...item, status: "pending" } : item, tool, target));
+
   if (exact) return { kind: "exact", itemId: exact.id };
+
   // A completed receipt describes one invocation, not every later call at that
   // target. The execution gate owns replay permission; an allowed new call must
   // get its own receipt so audit coverage does not silently become incomplete.
   if (items.some(item => item.tool === tool && item.target === target && item.status !== 'satisfied')) return { kind: "none" };
   const unlocated = items.filter(item => item.status === "pending" && item.evidence === null && item.tool === tool && item.target === null);
+
   if (unlocated.length === 1) return { kind: "rebind", itemId: unlocated[0]!.id };
+
   return { kind: "create" };
 }
 
@@ -202,7 +224,9 @@ const RESULT_ACTION_LABELS: Record<string, string> = {
 function shortText(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
   const clean = value.trim().replace(/\s+/g, " ");
+
   if (!clean) return null;
+
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
@@ -218,6 +242,7 @@ export function deriveResultDescription(name: string, params: Record<string, unk
   const url = shortText(p.url, 80);
   const key = shortText(p.key, 20);
   let text: string;
+
   switch (name) {
     case 'tabs':
       text = action;
@@ -240,5 +265,6 @@ export function deriveResultDescription(name: string, params: Record<string, unk
       text = shortText(target, 120) ? `${action} ${shortText(target, 120)}` : action;
       break;
   }
+
   return text.length > 600 ? text.slice(0, 599) : text;
 }

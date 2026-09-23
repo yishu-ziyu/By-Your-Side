@@ -1,6 +1,9 @@
 import {describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/background/debugger.js',()=>({sendCommand:vi.fn()}));
+
 vi.mock('../src/background/exec/page-readiness.js',()=>({readCurrentDocument:vi.fn()}));
+
 import {decisionControls,decisionControlsTruncated,selectObservationView,VIEW_CONTROL_BUDGET,VIEW_TAB_BUDGET,MAX_COLLECTED_CONTROLS,SCOPE_SUMMARY_BUDGET,BrowserObservationRegistry} from '../src/background/browser-observation.js';
 import {axTreeToText,type AxNodeLite} from '../src/background/axtree.js';
 import {browserCandidates,isBrowserObservation} from '../../shared/browser-decision.js';
@@ -13,30 +16,37 @@ function page240(): {nodes: AxNodeLite[]; targetRef: string; targetIndex: number
     {nodeId:'ra',parentId:'root',role:{value:'region'},name:{value:'Region A'},backendDOMNodeId:2,childIds:[]},
     {nodeId:'rb',parentId:'root',role:{value:'region'},name:{value:'Region B'},backendDOMNodeId:3,childIds:[]},
   ];
+
   const aKids: string[] = [];
   const bKids: string[] = [];
   let id = 10;
+
   for (let i = 0; i < 80; i++) {
     const n = `a${i}`;
     aKids.push(n);
     nodes.push({nodeId:n,parentId:'ra',role:{value:'button'},name:{value:`A-${i}`},backendDOMNodeId:id++});
   }
+
   let targetRef = '';
   let targetIndex = -1;
+
   for (let i = 0; i < 160; i++) {
     const n = `b${i}`;
     bKids.push(n);
     const backend = id++;
     nodes.push({nodeId:n,parentId:'rb',role:{value:'button'},name:{value:i === 40 ? 'Submit' : `B-${i}`},backendDOMNodeId:backend});
+
     // Overall control index: 80 + i; need > 99 (after first 100-view). Pick B-40 → index 120.
     if (i === 40) {
       targetRef = `@${backend}`;
       targetIndex = 80 + i;
     }
   }
+
   (nodes[1] as AxNodeLite).childIds = aKids;
   (nodes[2] as AxNodeLite).childIds = bKids;
   expect(targetIndex).toBeGreaterThan(99);
+
   return {nodes,targetRef,targetIndex};
 }
 
@@ -61,6 +71,7 @@ describe('SEL-01 collection vs view coverage',()=>{
       generation: 'gen-1',
       textTruncated: false,
     });
+
     expect(first.controls.length).toBeLessThanOrEqual(VIEW_CONTROL_BUDGET);
     expect(first.controls.some(c => c.ref === targetRef)).toBe(false);
     expect(first.hasMore).toBe(true);
@@ -76,6 +87,7 @@ describe('SEL-01 collection vs view coverage',()=>{
       textTruncated: false,
       cursor: first.nextCursor,
     });
+
     expect(cont.controls.some(c => c.ref === targetRef)).toBe(true);
     expect(cont.controls.find(c => c.ref === targetRef)?.scopeLabel).toContain('Region B');
     // Other region must not silently replace the target action set for this view's Submit.
@@ -90,11 +102,13 @@ describe('SEL-01 collection vs view coverage',()=>{
     // Enough long-named buttons that text budget must drop interactive refs; collection must keep all.
     const nodes: AxNodeLite[] = [{nodeId:'root',role:{value:'RootWebArea'},childIds:[],backendDOMNodeId:1}];
     const kids: string[] = [];
+
     for (let i = 0; i < 800; i++) {
       const id = `b${i}`;
       kids.push(id);
       nodes.push({nodeId:id,parentId:'root',role:{value:'button'},name:{value:`Late-${i}-${'长标签'.repeat(40)}`},backendDOMNodeId:5000+i});
     }
+
     (nodes[0] as AxNodeLite).childIds = kids;
     const text = axTreeToText(nodes);
     expect(text.truncated).toBe(true);
@@ -120,6 +134,7 @@ describe('SEL-01 collection vs view coverage',()=>{
       {nodeId:'c2',parentId:'f2',role:{value:'button'},name:{value:'Count 1'},backendDOMNodeId:22},
       {nodeId:'src',parentId:'f2',role:{value:'textbox'},name:{value:'Source'},value:{value:'old'},backendDOMNodeId:23},
     ]);
+
     const leftSave = beforeControls.find(c => c.ref === '@11')!;
     const rightSave = beforeControls.find(c => c.ref === '@21')!;
     expect(leftSave.scopeLabel).toContain('Left');
@@ -167,6 +182,7 @@ describe('SEL-01 collection vs view coverage',()=>{
     const scopes = Array.from({length:SCOPE_SUMMARY_BUDGET+20},(_,s)=>
       Array.from({length:3},(_,i)=>({ref:`@${s*3+i+1}`,role:'button',name:`S${s}-${i}`,disabled:false,scopeId:`scope-${s}`,scopeLabel:`Region ${s}`})),
     ).flat();
+
     const scoped = selectObservationView({collected:scopes,tabs:[],collectionComplete:true,generation:'gen-scopes',textTruncated:false});
     expect(scoped.scopes!.length).toBeLessThanOrEqual(SCOPE_SUMMARY_BUDGET);
     expect(scoped.scopesTruncated).toBe(true);
@@ -179,6 +195,7 @@ describe('SEL-01 collection vs view coverage',()=>{
   it('resource budget and incomplete collection are reported; silent drop is forbidden',()=>{
     const over = Array.from({length:MAX_COLLECTED_CONTROLS+40},(_,i)=>({ref:`@${i+1}`,role:'button',name:`X${i}`,disabled:false}));
     const limited = over.slice(0,MAX_COLLECTED_CONTROLS);
+
     const view = selectObservationView({
       collected:limited,
       tabs:[],
@@ -187,6 +204,7 @@ describe('SEL-01 collection vs view coverage',()=>{
       generation:'gen-budget',
       textTruncated:false,
     });
+
     expect(view.collectionComplete).toBe(false);
     expect(view.collectionLimitReached).toBe(true);
     expect(view.collectedCount).toBe(MAX_COLLECTED_CONTROLS);
@@ -199,11 +217,13 @@ describe('SEL-01 collection vs view coverage',()=>{
   it('registry keeps collected baseline for verify while view stays bounded; continue-read shares generation and invalidates old guard',()=>{
     const collected = Array.from({length:240},(_,i)=>({ref:`@${i+1}`,role:'button',name:`N${i}`,disabled:false,scopeId:i<100?'s1':'s2',scopeLabel:i<100?'One':'Two'}));
     const r = new BrowserObservationRegistry();
+
     const first = r.issue('m',{
       tabId:7,documentId:'d1',url:'https://t.invalid',source:'accessibility',text:'page',truncated:false,
       controls:collected.slice(0,100),controlsTruncated:false,collectionComplete:true,collectedCount:240,
       hasMore:true,nextCursor:'gen-x:controls:100',generation:'gen-x',visibleCount:100,viewComplete:true,
     },{collectedControls:collected,generation:'gen-x'});
+
     expect(first.controls.length).toBe(100);
     expect(isBrowserObservation(first)).toBe(true);
     const stored = r.peekCollected('m',7);
@@ -217,6 +237,7 @@ describe('SEL-01 collection vs view coverage',()=>{
       {documentId:'d1',url:'https://t.invalid',controls:collected},
       '@150',
     )).toBeNull();
+
     const contView = selectObservationView({
       collected: active!.collected,
       tabs: [],
@@ -225,13 +246,16 @@ describe('SEL-01 collection vs view coverage',()=>{
       textTruncated: false,
       cursor: 'gen-x:controls:s2:0',
     });
+
     expect(contView.generation).toBe('gen-x');
     expect(contView.controls.some(c => c.ref === '@150')).toBe(true);
+
     const cont = r.issue('m',{
       tabId:7,documentId:'d1',url:'https://t.invalid',source:'accessibility',text:'page',truncated:false,
       controls:contView.controls,controlsTruncated:false,collectionComplete:true,collectedCount:240,
       generation:'gen-x',visibleCount:contView.visibleCount,viewComplete:contView.viewComplete,hasMore:contView.hasMore,
     },{collectedControls:collected,generation:'gen-x'});
+
     expect(cont.id).not.toBe(first.id);
     expect(cont.generation).toBe('gen-x');
     expect(()=>r.consume('m',7,'click',{target:'@50',decisionGuard:{observationId:first.id,operation:'click',target:'@50'}})).toThrow('DECISION_STALE');

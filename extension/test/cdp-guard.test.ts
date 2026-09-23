@@ -26,6 +26,7 @@ function installChrome(tabsGet?: ReturnType<typeof vi.fn>) {
 }
 
 let assertCdpMethodAllowed: (method: unknown) => void;
+
 let CDP_DENY_PREFIXES: readonly string[];
 
 beforeEach(async () => {
@@ -53,6 +54,7 @@ const HANDWRITTEN_SAFE_ALLOWLIST = [
 describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之前被拒）", () => {
   it("手写允许集与导出常量一致，且全部放行", () => {
     expect([...CDP_SAFE_READONLY_METHODS]).toEqual([...HANDWRITTEN_SAFE_ALLOWLIST]);
+
     for (const method of HANDWRITTEN_SAFE_ALLOWLIST) {
       expect(() => assertCdpMethodAllowed(method)).not.toThrow();
       expect(decideCdpMethod(method)).toEqual({ allowed: true });
@@ -63,6 +65,7 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
     for (const prefix of CDP_DENY_PREFIXES) {
       const method = `${prefix}close`;
       expect(() => assertCdpMethodAllowed(method)).toThrow(/被拒绝/);
+
       try {
         assertCdpMethodAllowed(method);
       } catch (error) {
@@ -79,14 +82,17 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
 
   it("DOM.setFileInputFiles 指向 upload_file，且记 not_executed", () => {
     expect(() => assertCdpMethodAllowed("DOM.setFileInputFiles")).toThrow(/upload_file/);
+
     try {
       assertCdpMethodAllowed("DOM.setFileInputFiles");
     } catch (error) {
       expect((error as { executionFact?: string }).executionFact).toBe("not_executed");
       expect(String(error)).toMatch(/upload_file/);
     }
+
     const decision = decideCdpMethod("DOM.setFileInputFiles");
     expect(decision.allowed).toBe(false);
+
     if (!decision.allowed) expect(decision.kind).toBe("upload_via_cdp");
   });
 
@@ -102,6 +108,7 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
       "Emulation.setEmulatedMedia",
     ]) {
       expect(() => assertCdpMethodAllowed(method)).toThrow(/动态代码|未支持|被拒绝/);
+
       try {
         assertCdpMethodAllowed(method);
       } catch (error) {
@@ -115,6 +122,7 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
       expect(() => assertCdpMethodAllowed(method)).toThrow(/Input/);
       const decision = decideCdpMethod(method);
       expect(decision.allowed).toBe(false);
+
       if (!decision.allowed) expect(decision.kind).toBe("input_injection");
     }
   });
@@ -131,6 +139,7 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
       "Storage.setCookies",
     ]) {
       expect(() => assertCdpMethodAllowed(method)).toThrow(/被拒绝|未支持/);
+
       try {
         assertCdpMethodAllowed(method);
       } catch (error) {
@@ -156,6 +165,7 @@ describe("cdp escape hatch 策略（结果：越权 method 在触碰浏览器之
     const names: string[] = ["cdp", "upload_file", "double_click", "drag"];
     const toolNames = TOOL_NAMES as readonly string[];
     const writeTools = WRITE_TOOLS as readonly string[];
+
     for (const name of names) {
       expect(requiresControlGate(name)).toBe(true);
       expect(needsConsentTicket(name)).toBe(false);
@@ -179,6 +189,7 @@ describe("cdp() 在 sendCommand 之前拒绝（not_executed）", () => {
       assertObservedDocument: vi.fn(async () => undefined),
     }));
     const mod = await import("../src/background/exec/cdp.js");
+
     return { cdp: mod.cdp, sendCommand };
   }
 

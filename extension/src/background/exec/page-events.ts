@@ -19,12 +19,16 @@ export async function armEvent(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["arm_event"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
   const type = params.type;
+
   if (type !== "popup" && type !== "download" && type !== "filechooser") {
     throw new Error("INVALID_ARGUMENT: arm_event.type must be popup|download|filechooser");
   }
+
   await ensureAttached(tab.id);
+
   const arm = await armEventForTab({
     tabId: tab.id,
     sessionKey: sessionId,
@@ -32,6 +36,7 @@ export async function armEvent(
     timeoutMs: params.timeoutMs,
     downloadPath: params.downloadPath,
   });
+
   return {
     token: arm.token,
     type,
@@ -49,8 +54,10 @@ export async function waitEvent(
   const type = payload.kind as "popup" | "download" | "filechooser";
   const tabId = Number(payload.tabId);
   const base = { token: String(payload.token), type, tabId };
+
   if (type === "popup") {
     const popupTabId = Number(payload.popupTabId);
+
     return {
       ...base,
       popup: {
@@ -61,6 +68,7 @@ export async function waitEvent(
       },
     };
   }
+
   if (type === "download") {
     return {
       ...base,
@@ -74,6 +82,7 @@ export async function waitEvent(
       },
     };
   }
+
   return {
     ...base,
     fileChooser: {
@@ -89,6 +98,7 @@ export async function disarmEvent(
   _sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["disarm_event"]["data"]> {
   const arm = await disarmArmedEvent(params.token);
+
   return { disarmed: true, token: arm.token, status: arm.status };
 }
 
@@ -97,6 +107,8 @@ export async function consumeEvents(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["consume_events"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
+
   return consumeTabEvents(tab.id, params.clear !== false);
 }

@@ -16,6 +16,7 @@ import { join, sep } from "node:path";
 import { fetchDownloadsDir } from "./fetch-result.js";
 
 export const MAX_UPLOAD_FILES = 8;
+
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export type TaskUploadSource = "user_provided" | "task_artifact";
@@ -45,6 +46,7 @@ function realOrLiteral(path: string): string {
 function assertUnderRoots(real: string, roots: string[]): void {
   const realRoots = roots.map(realOrLiteral);
   const allowed = realRoots.some((root) => real === root || real.startsWith(root + sep));
+
   if (!allowed) {
     throw new Error(
       `路径不在授权目录内，未上传：${real.slice(0, 200)}。只允许 ~/.sideagent/uploads/ 与 ~/.sideagent/downloads/；无法浏览或读取其他磁盘位置。`,
@@ -56,10 +58,13 @@ function inspectFile(raw: string, roots: string[]): { real: string; size: number
   if (typeof raw !== "string" || !raw.startsWith("/") || raw.includes("\0")) {
     throw new Error(`文件路径必须是绝对路径：${String(raw).slice(0, 200)}`);
   }
+
   if (raw.includes("..")) {
     throw new Error(`文件路径不能包含 ..：${raw.slice(0, 200)}`);
   }
+
   let real: string;
+
   try {
     real = realpathSync(raw);
   } catch {
@@ -67,19 +72,25 @@ function inspectFile(raw: string, roots: string[]): { real: string; size: number
       `文件不存在或不可读，未上传：${raw.slice(0, 200)}（只允许本任务已授权、且位于 ~/.sideagent/uploads/ 或 ~/.sideagent/downloads/ 的文件）`,
     );
   }
+
   let stat;
+
   try {
     stat = statSync(real);
   } catch {
     throw new Error(`文件不可读，未上传：${real.slice(0, 200)}`);
   }
+
   if (!stat.isFile()) {
     throw new Error(`不是普通文件，未上传：${real.slice(0, 200)}`);
   }
+
   if (stat.size > MAX_UPLOAD_BYTES) {
     throw new Error(`文件超过 ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB，未上传：${real.slice(0, 200)}`);
   }
+
   assertUnderRoots(real, roots);
+
   return { real, size: stat.size, name: basename(real) };
 }
 
@@ -101,16 +112,21 @@ export class TaskUploadLedger {
   grant(input: { path: string; source: TaskUploadSource; fileId?: string }): TaskUploadRecord {
     const inspected = inspectFile(input.path, this.roots);
     const existing = this.byPath.get(inspected.real);
+
     if (existing) {
       if (input.fileId && input.fileId !== existing.fileId) {
         throw new Error(`同一文件已登记为 ${existing.fileId}，不能改记为 ${input.fileId.slice(0, 64)}`);
       }
+
       return existing;
     }
+
     const fileId = input.fileId?.trim() || `task-file-${++this.seq}`;
+
     if (this.byId.has(fileId)) {
       throw new Error(`fileId 已占用：${fileId.slice(0, 64)}`);
     }
+
     const record: TaskUploadRecord = {
       fileId,
       path: inspected.real,
@@ -118,8 +134,10 @@ export class TaskUploadLedger {
       size: inspected.size,
       source: input.source,
     };
+
     this.byId.set(fileId, record);
     this.byPath.set(inspected.real, record);
+
     return record;
   }
 
@@ -169,9 +187,11 @@ export function authorizeUploadPaths(
   if (!Array.isArray(refs)) {
     throw new Error(`upload_file 需要 0–${MAX_UPLOAD_FILES} 个 paths/fileIds，未执行`);
   }
+
   if (refs.length > MAX_UPLOAD_FILES) {
     throw new Error(`upload_file 需要 0–${MAX_UPLOAD_FILES} 个 paths/fileIds，未执行`);
   }
+
   // 空数组 = 清空 input；不要求任务文件记录。
   if (refs.length === 0) return [];
 
@@ -180,17 +200,22 @@ export function authorizeUploadPaths(
   }
 
   const out: string[] = [];
+
   for (const raw of refs) {
     if (typeof raw !== "string" || raw.length === 0 || raw.includes("\0")) {
       throw new Error(`无效的文件引用：${String(raw).slice(0, 200)}`);
     }
+
     let record: TaskUploadRecord | undefined;
+
     if (raw.startsWith("/")) {
       if (raw.includes("..")) {
         throw new Error(`文件路径不能包含 ..：${raw.slice(0, 200)}`);
       }
+
       const inspected = inspectFile(raw, roots);
       record = ledger.getByPath(inspected.real);
+
       if (!record) {
         throw new Error(
           `文件不属于本任务授权，未上传：${inspected.real.slice(0, 200)}。目录内历史文件不等于本任务授权；请使用任务 fileId 或已登记路径。`,
@@ -201,14 +226,19 @@ export function authorizeUploadPaths(
       if (raw.includes("/") || raw.includes("\\") || raw.includes("..")) {
         throw new Error(`无效的 fileId：${raw.slice(0, 200)}`);
       }
+
       record = ledger.getById(raw);
+
       if (!record) {
         throw new Error(`未知的任务 fileId，未上传：${raw.slice(0, 200)}`);
       }
+
       // 再次核对磁盘事实，防止登记后被替换/删掉。
       inspectFile(record.path, roots);
     }
+
     if (!out.includes(record.path)) out.push(record.path);
   }
+
   return out;
 }

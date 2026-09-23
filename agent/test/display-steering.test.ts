@@ -7,15 +7,19 @@
  * ("旧步骤未执行") is exercised for real rather than asserted on a private queue.
  */
 import {beforeEach,describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/display-fast-path.js',()=>({
   displayFastPathEnabled:()=>true,
   displaySteerFastPathEnabled:vi.fn(()=>true),
   decideDisplay:vi.fn(),
 }));
+
 vi.mock('../src/run-trace.js',async(importOriginal)=>{
  const actual=await importOriginal<typeof import('../src/run-trace.js')>();
+
  return {...actual,RunTrace:class{begin(){}correlate(){}record(){}event(){}stage(){return{end(){}}}}};
 });
+
 import {decideDisplay,displaySteerFastPathEnabled} from '../src/display-fast-path.js';
 import {STEER_CONTRACT_NOTE} from '../src/session.js';
 import {TaskActionRejected} from '../src/task-dispatcher.js';
@@ -243,7 +247,9 @@ describe('连续修改与竞态（Ticket 4）',()=>{
 
  it('invalidates the request, without a model fallback, when the same-URL document changes while Jev decides',async()=>{
   const h=pageHarness();
-  vi.mocked(decideDisplay).mockImplementation(async()=>{h.pageState.document='two';return candidate({fontFamily:'songti'});});
+  vi.mocked(decideDisplay).mockImplementation(async()=>{h.pageState.document='two';
+
+return candidate({fontFamily:'songti'});});
   await expect(h.wrapper.steerCurrentTask('把译文改成宋体',context)).rejects.toThrow('页面实例已变化');
   expect(h.translationCalls).toHaveLength(0);
   expect(h.steers).toHaveLength(0);
@@ -258,10 +264,13 @@ describe('连续修改与竞态（Ticket 4）',()=>{
   let snapshots=0;
   h.rpc.call.mockImplementation(async(name:string,params:any,...rest:any[])=>{
    const result=await original(name,params,...rest);
+
    if(name==='snapshot'){
     snapshots+=1;
+
     if(snapshots===3)return {...result,translation:{...result.translation,document:'two'}};
    }
+
    return result;
   });
   const outcome=await h.wrapper.steerCurrentTask('把译文改成宋体',context);
@@ -331,10 +340,13 @@ describe('连续修改与竞态（Ticket 4）',()=>{
   let snapshots=0;
   h.rpc.call.mockImplementation(async(name:string,params:any,...rest:any[])=>{
    const result=await original(name,params,...rest);
+
    if(name==='snapshot'){
     snapshots+=1;
+
     if(snapshots===3)throw new Error('核对读数失败');
    }
+
    return result;
   });
   const outcome=await h.wrapper.steerCurrentTask('只显示译文',context);

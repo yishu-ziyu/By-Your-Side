@@ -12,7 +12,9 @@ export type HeldAction = "confirm" | "cancel";
  */
 export function isHeldClickResult(name: string, data: unknown): boolean {
   if (name !== "click" && name !== "double_click" && name !== "drag") return false;
+
   if (!data || typeof data !== "object") return false;
+
   return (data as { held?: unknown }).held === true;
 }
 
@@ -67,23 +69,31 @@ export class HeldClicks<P> {
   /** 找该放行的 session：优先调用方给的，其次 lead，再次任意一个 pending。 */
   pendingSession(preferred: string): string | undefined {
     if (this.pending.has(preferred)) return preferred;
+
     if (this.pending.has(this.leadId)) return this.leadId;
+
     return this.pending.keys().next().value;
   }
 
   resolve(action: HeldAction, preferred: string): HeldResolution<P> {
     const sid = this.pendingSession(preferred);
+
     if (action === "cancel") {
       if (sid) this.drop(sid);
+
       return { kind: "cancelled", sessionId: sid };
     }
+
     if (!sid) {
       this.armed.add(preferred);
+
       return { kind: "armOnce", sessionId: preferred };
     }
+
     const params = this.pending.get(sid)!;
     this.pending.delete(sid);
     this.armed.add(sid);
+
     return { kind: "dispatch", sessionId: sid, params };
   }
 }

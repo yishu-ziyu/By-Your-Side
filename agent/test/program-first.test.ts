@@ -5,6 +5,7 @@ import { PROGRAM_FIRST_GUIDANCE, programFirstGuidance } from "../src/program-fir
 describe("program-first host boundary", () => {
   it("does not silently enable an execution-policy experiment that failed its paired gate", () => {
     const previous = process.env.SIDEAGENT_PROGRAM_FIRST;
+
     try {
       delete process.env.SIDEAGENT_PROGRAM_FIRST; expect(programFirstGuidance()).toBe("");
       process.env.SIDEAGENT_PROGRAM_FIRST = "1"; expect(programFirstGuidance()).toBe(PROGRAM_FIRST_GUIDANCE);
@@ -29,6 +30,7 @@ describe("program-first host boundary", () => {
     await runBrowserProgram({ code: 'await browser.waitFor({selector:"#ready"}); await browser.js({code:"arbitrary()"});',
       call: async (name, _params, _id, origin) => {
         origins.push(origin);
+
         // waitFor 走宿主的 read_element expect 轮询；其它调用按原样返回。
         return name === "read_element" ? { check: { matched: true } } : { value: { ready: true } };
       } });
@@ -43,15 +45,25 @@ describe("ten deterministic multi-step execution fixtures (not a model benchmark
   it.each(Array.from({ length: 10 }, (_, i) => i + 1))("fixture %i preserves actions and proof in one program", async fixture => {
     const calls: string[] = [];
     let value = "", submitted = false;
+
     const result = await runBrowserProgram({ id: `fixture-${fixture}`, code: `await browser.fill({target:"@1",value:${JSON.stringify(`material-${fixture}`)}}); await browser.click({target:"@2"}); const proof=await browser.read_element({target:"@3",expect:{property:"textContent",contains:${JSON.stringify(`material-${fixture}`)}}}); if(!proof.check.matched)throw new Error("unverified"); return {verified:true};`,
       call: async (name, params) => {
         calls.push(name);
-        if (name === "fill") { value = String(params.value); return { filled: true }; }
-        if (name === "click") { submitted = true; return { clicked: true }; }
+
+        if (name === "fill") { value = String(params.value);
+
+ return { filled: true }; }
+
+        if (name === "click") { submitted = true;
+
+ return { clicked: true }; }
+
         if (!submitted || value !== `material-${fixture}`) throw new Error("not complete");
+
         return { check: { matched: true }, textContent: value };
       },
     });
+
     expect(result.value).toEqual({ verified: true }); expect(calls).toEqual(["fill", "click", "read_element"]); expect(result.steps).toBe(3);
   });
 });

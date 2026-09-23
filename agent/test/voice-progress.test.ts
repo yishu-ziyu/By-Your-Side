@@ -42,13 +42,16 @@ describe("task progress facts", () => {
     expect(p.snapshot()).toMatchObject({ goal: "B goal", state: "running" });
   });
 });
+
 describe("bounded voice protocol", () => {
   it("rejects malformed audio, unknown commands, foreign identity and forged facts", () => {
     const m = { type: "voice", conversationId: "A", voiceId: "voice-1", command: { kind: "audio", turn: 1, data: "AAAA" } };
     expect(parseClientMessage(JSON.stringify(m))).not.toBeNull();
+
     for (const command of [{ kind: "audio", turn: 0, data: "AAAA" }, { kind: "audio", turn: 1, data: "x".repeat(70000) }, { kind: "execute", code: "click" }]) {
       expect(parseClientMessage(JSON.stringify({ ...m, command }))).toBeNull();
     }
+
     expect(parseClientMessage(JSON.stringify({ ...m, conversationId: {} }))).toBeNull();
     expect(parseServerMessage(JSON.stringify({ type: "voice", voiceId: "v", event: { kind: "facts", turn: 1, snapshot: { successVerified: true } } }))).toBeNull();
   });

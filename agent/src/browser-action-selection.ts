@@ -11,8 +11,11 @@ import {
 
 /** Existing loop/judge threshold; do not change to paper over candidate problems. */
 export const BROWSER_DECISION_CONFIDENCE_THRESHOLD = 0.85;
+
 export const BROWSER_DECISION_CANDIDATE_LIMIT = 256;
+
 export const BROWSER_DECISION_PAYLOAD_BYTES = 64000;
+
 /** Prefer this many materials per bounded fill window before falling back to handoff. */
 const MATERIAL_WINDOW_SIZE = 3;
 
@@ -94,6 +97,7 @@ export function modelToolForOperation(operation: BrowserOperation): string | nul
 
 function selectAllowed(canExecute?: BrowserToolGate): boolean {
   if (!canExecute) return true;
+
   return canExecute('fill') || canExecute('click');
 }
 
@@ -102,9 +106,11 @@ export function filterExecutableCandidates(
   canExecute?: BrowserToolGate,
 ): BrowserCandidate[] {
   if (!canExecute) return [...candidates];
+
   return candidates.filter(candidate => {
     if (candidate.operation === 'select') return selectAllowed(canExecute);
     const tool = modelToolForOperation(candidate.operation);
+
     return tool === null || canExecute(tool);
   });
 }
@@ -112,6 +118,7 @@ export function filterExecutableCandidates(
 /** Host continue-read / partition candidates derived from observation coverage fields. */
 export function viewNavigationCandidates(page: BrowserObservation): BrowserCandidate[] {
   const result: BrowserCandidate[] = [];
+
   if (page.hasMore && page.nextCursor) {
     result.push({
       id: 'continue-controls',
@@ -121,6 +128,7 @@ export function viewNavigationCandidates(page: BrowserObservation): BrowserCandi
       ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}),
     });
   }
+
   if (page.scopesHasMore && page.scopesNextCursor) {
     result.push({
       id: 'continue-scopes',
@@ -129,6 +137,7 @@ export function viewNavigationCandidates(page: BrowserObservation): BrowserCandi
       cursor: page.scopesNextCursor,
     });
   }
+
   if (page.tabsHasMore && page.tabsNextCursor) {
     result.push({
       id: 'continue-tabs',
@@ -137,6 +146,7 @@ export function viewNavigationCandidates(page: BrowserObservation): BrowserCandi
       cursor: page.tabsNextCursor,
     });
   }
+
   for (const scope of page.scopes ?? []) {
     if (scope.id === page.viewScopeId) continue;
     result.push({
@@ -146,12 +156,14 @@ export function viewNavigationCandidates(page: BrowserObservation): BrowserCandi
       viewScopeId: scope.id,
     });
   }
+
   return result;
 }
 
 function materialWindowCandidates(materials: readonly BrowserMaterial[]): BrowserCandidate[] {
   if (materials.length <= MATERIAL_WINDOW_SIZE) return [];
   const result: BrowserCandidate[] = [];
+
   for (let offset = 0; offset < materials.length; offset += MATERIAL_WINDOW_SIZE) {
     const slice = materials.slice(offset, offset + MATERIAL_WINDOW_SIZE);
     const ids = slice.map(m => m.id);
@@ -160,11 +172,13 @@ function materialWindowCandidates(materials: readonly BrowserMaterial[]): Browse
       operation: 'select_materials',
       label: `Focus supplied materials ${ids.map(id => {
         const m = slice.find(item => item.id === id)!;
+
         return `${id} (${m.purpose}; ${m.value.length} chars; source=${m.source})`;
       }).join('; ')} for the next fill decision. Host keeps full original values; do not treat this summary as fill text.`,
       materialIds: ids,
     });
   }
+
   return result;
 }
 
@@ -226,9 +240,11 @@ export function estimateDecisionPayloadBytes(input: {
   history: readonly string[];
 }): number {
   const groups: Record<string, BrowserCandidate[]> = {};
+
   for (const candidate of input.candidates) {
     (groups[candidate.operation] ??= []).push(candidate);
   }
+
   const questions: Record<string, unknown> = {
     operation: {
       type: 'choice',
@@ -236,6 +252,7 @@ export function estimateDecisionPayloadBytes(input: {
       criteria: Object.fromEntries(Object.keys(groups).map(k => [k, k])),
     },
   };
+
   for (const [operation, members] of Object.entries(groups)) {
     if (members.length > 1) {
       questions[`${operation}_target`] = {
@@ -245,6 +262,7 @@ export function estimateDecisionPayloadBytes(input: {
       };
     }
   }
+
   return Buffer.byteLength(JSON.stringify({
     model: 'jev-1.13.0',
     state: {
@@ -275,6 +293,7 @@ function fitsBudget(
   history: readonly string[],
 ): boolean {
   if (candidates.length > BROWSER_DECISION_CANDIDATE_LIMIT) return false;
+
   return estimateDecisionPayloadBytes({ goal, page, candidates, materials, history }) <= BROWSER_DECISION_PAYLOAD_BYTES;
 }
 
@@ -282,6 +301,7 @@ function metaOnly(page: BrowserObservation, materials: readonly BrowserMaterial[
   const base = browserCandidates(page, [], false).filter(c =>
     c.operation === 'scroll' || c.operation === 'wait' || c.operation === 'reobserve'
     || c.operation === 'handoff' || c.operation === 'done' || c.operation === 'switch_tab');
+
   return [...viewNavigationCandidates(page), ...materialWindowCandidates(materials), ...base];
 }
 
@@ -293,6 +313,7 @@ export function selectBrowserActionCandidates(input: BrowserActionSelectionInput
   const focused = input.focusedMaterialIds?.length
     ? input.materials.filter(m => input.focusedMaterialIds!.includes(m.id))
     : [...input.materials];
+
   /** A window the caller (or the model) already chose: answering it must not re-offer other windows. */
   const windowed = !!input.focusedMaterialIds?.length;
   /**
@@ -309,6 +330,7 @@ export function selectBrowserActionCandidates(input: BrowserActionSelectionInput
     return candidates.filter(candidate => {
       // "Switch" to the tab this observation was taken from cannot change anything.
       if (candidate.operation === 'switch_tab' && candidate.tabId === input.page.tabId) return false;
+
       // Finish the in-progress search before offering to leave the observed page.
       if (candidate.operation === 'switch_tab' && input.searchInProgress === true) return false;
 
@@ -333,6 +355,7 @@ export function selectBrowserActionCandidates(input: BrowserActionSelectionInput
   // `usable` drops windows the caller already read, so a chosen window is never re-offered.
   const offerableWindows = materialWindowCandidates(input.materials);
   const viewNavigation = viewNavigationCandidates(input.page);
+
   // Full fan-out: one request keeps operation plus every target question for the current view.
   const withFills = usable(filterExecutableCandidates(
     [...browserCandidates(input.page, focused, !!input.canGenerateText), ...viewNavigation],
@@ -342,6 +365,7 @@ export function selectBrowserActionCandidates(input: BrowserActionSelectionInput
   if (!windowed && fitsBudget(input.goal, input.page, withFills, focused, input.history)) {
     return { candidates: orderActionCandidates(withFills), decisionMaterials: focused, bounded: false };
   }
+
   // Over budget. A focused material window keeps that window's field actions, so the one
   // field+material pair the goal needs is still nameable; the host resolves the full original value,
   // never a summary. While the caller walks windows itself, the unread ones stay selectable so the
@@ -349,6 +373,7 @@ export function selectBrowserActionCandidates(input: BrowserActionSelectionInput
   const searchableWindows = input.materialWindowSearch === true
     ? offerableWindows
     : [];
+
   const windowedSet = usable(filterExecutableCandidates(
     [
       ...browserCandidates(input.page, focused, !!input.canGenerateText),
@@ -422,19 +447,25 @@ export function resolveBrowserDecision(
   if (decision.observationId !== pageId) {
     return { kind: 'reject', reasonCode: 'stale_observation', reason: 'Decision belongs to a stale observation; not executed.' };
   }
+
   if (!Number.isFinite(decision.confidence) || decision.confidence < 0 || decision.confidence > 1) {
     return { kind: 'reject', reasonCode: 'invalid_decision', reason: 'Decision confidence is not a finite probability; not executed.' };
   }
+
   if (decision.candidateId === 'none') {
     return { kind: 'reject', reasonCode: 'no_match', reason: 'No supported target matches current candidates; not executed.' };
   }
+
   const candidate = candidates.find(c => c.id === decision.candidateId);
+
   if (!candidate) {
     return { kind: 'reject', reasonCode: 'invalid_decision', reason: 'Decision named an unknown candidate id; not executed.' };
   }
+
   if (!isReliableDecisionConfidence(decision.confidence)) {
     return { kind: 'reject', reasonCode: 'low_confidence', reason: 'Decision confidence is below the reliable threshold; not executed.' };
   }
+
   return { kind: 'execute', candidate };
 }
 
@@ -451,6 +482,7 @@ export function nextObservationExpansion(
 ): { params: { cursor?: string; viewScopeId?: string }; checkKey: ObservationCheckKey; reasonCode: 'observation_incomplete' | 'no_match' } | null {
   if (page.hasMore && page.nextCursor) {
     const key = observationCheckKey('cursor', page.nextCursor);
+
     if (!checked.has(key)) {
       return {
         params: { cursor: page.nextCursor, ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}) },
@@ -459,34 +491,44 @@ export function nextObservationExpansion(
       };
     }
   }
+
   if (page.scopesHasMore && page.scopesNextCursor) {
     const key = observationCheckKey('cursor', page.scopesNextCursor);
+
     if (!checked.has(key)) {
       return { params: { cursor: page.scopesNextCursor }, checkKey: key, reasonCode: 'observation_incomplete' };
     }
   }
+
   if (page.tabsHasMore && page.tabsNextCursor) {
     const key = observationCheckKey('cursor', page.tabsNextCursor);
+
     if (!checked.has(key)) {
       return { params: { cursor: page.tabsNextCursor }, checkKey: key, reasonCode: 'observation_incomplete' };
     }
   }
+
   for (const scope of page.scopes ?? []) {
     if (scope.id === page.viewScopeId) continue;
     const key = observationCheckKey('scope', scope.id);
+
     if (checked.has(key)) continue;
+
     return { params: { viewScopeId: scope.id }, checkKey: key, reasonCode: 'no_match' };
   }
+
   return null;
 }
 
 export function checkedRangeFromKeys(keys: Iterable<ObservationCheckKey>, observationIds: readonly string[]): NonNullable<BrowserContinueHint['checkedRange']> {
   const cursors: string[] = [];
   const scopeIds: string[] = [];
+
   for (const key of keys) {
     if (key.startsWith('cursor:')) cursors.push(key.slice('cursor:'.length));
     else if (key.startsWith('scope:')) scopeIds.push(key.slice('scope:'.length));
   }
+
   return { observationIds: [...observationIds], cursors, scopeIds };
 }
 
@@ -500,15 +542,19 @@ export function piContinueHint(
     || reasonCode === 'execution_unknown'
     || reasonCode === 'stale_observation'
     || reasonCode === 'permission_required';
+
   if (reasonCode === 'permission_required') {
     return { action: 'permission_path', preserveFacts: true, ...(checked ? { checkedRange: checked } : {}) };
   }
+
   if (reasonCode === 'execution_unknown') {
     return { action: 'readonly_verify', preserveFacts: true, ...(checked ? { checkedRange: checked } : {}) };
   }
+
   if (reasonCode === 'observation_incomplete' || reasonCode === 'candidate_budget') {
     return { action: 'planner_tools', tools: ['browser_loop', 'snapshot'], preserveFacts, ...(checked ? { checkedRange: checked } : {}) };
   }
+
   return { action: 'session_prompt', preserveFacts, ...(checked ? { checkedRange: checked } : {}) };
 }
 
@@ -530,17 +576,22 @@ export function realtimeContinueHint(
   checked?: NonNullable<BrowserContinueHint['checkedRange']>,
 ): BrowserContinueHint {
   const tools: string[] = [];
+
   if (mount.directBrowser) {
     if (reasonCode === 'observation_incomplete' || reasonCode === 'no_match' || reasonCode === 'low_confidence' || reasonCode === 'stale_observation') {
       if (page?.hasMore && page.nextCursor) tools.push('snapshot');
       else if (page?.scopes?.some(s => s.id !== page.viewScopeId)) tools.push('snapshot');
       else {
         tools.push('snapshot');
+
         if (reasonCode === 'no_match') tools.push('scroll');
       }
+
       tools.push('judge_browser_action');
     }
+
     if (reasonCode === 'execution_unknown') tools.push('snapshot', 'read_element');
+
     if (reasonCode === 'unsupported_action' || reasonCode === 'candidate_budget' || reasonCode === 'provider_error'
       || ((reasonCode === 'no_match' || reasonCode === 'low_confidence') && !(page?.hasMore && page.nextCursor) && !(page?.scopes?.length))) {
       if (mount.taskAction) tools.push('task_action');
@@ -550,14 +601,17 @@ export function realtimeContinueHint(
     if (mount.taskAction) tools.push('task_action');
     else if (mount.browserRequest) tools.push('browser_request');
   }
+
   // Deduplicate while preserving order.
   const unique = [...new Set(tools)];
+
   const action: BrowserContinueHint['action'] =
     unique.includes('task_action') || unique.includes('browser_request')
       ? (unique.some(t => t === 'snapshot' || t === 'scroll' || t === 'judge_browser_action' || t === 'read_element')
         ? 'realtime_direct'
         : 'realtime_delegate')
       : 'realtime_direct';
+
   return {
     action,
     tools: unique,

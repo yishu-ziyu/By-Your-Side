@@ -2,6 +2,7 @@
  * By Your Side 浏览器 Agent 的系统提示词（面向模型，用英文）。
  */
 import {VOICE_PERSONALITY} from './voice-personality.js';
+
 export const SYSTEM_PROMPT = `You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on real pages, not assumptions.
 
 # Speed and decisiveness
@@ -117,6 +118,7 @@ export function workerSystemPrompt(opts: { id: string; peers: string[]; tabId?: 
   const peers = opts.peers.length > 0 ? opts.peers.join(", ") : "(none yet)";
   const tab = opts.tabId != null ? `Your working tab id is ${opts.tabId}.` : "Your working tab is already claimed.";
   const pageMode=opts.shared?'Your working page is explicitly shared. The shared-page rules below apply.':'Your working page is exclusive. Use normal snapshot, click, fill, js and browser_run tools for your assigned task. page_operation is unavailable on this exclusive page. The shared-page restrictions below apply only if the coordinator explicitly changes the page to shared mode.';
+
   return `${pageMode}
 
 On a shared page, prepare your assigned field independently and use page_operation for every write: fresh stable target, expected current value, new value, verified readback. Use source material provided in your goal. If more page text is needed, read_element with target="body" returns full page text in one read; use an observed field target for its current value. Snapshot may abbreviate these, and arbitrary js is unavailable on shared pages even for reads. Do not use raw focus/type/click/js to write shared state. Do not navigate, submit or save the shared page; report your verified result to main.

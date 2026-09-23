@@ -41,9 +41,11 @@ function truncate(text: string, max: number): string {
 
 function formatTabs(tabs: TabInfo[]): string {
   if (tabs.length === 0) return "No open tabs.";
+
   return tabs
     .map((t) => {
       const marks = [t.active ? "active" : "", t.working ? "working" : ""].filter(Boolean).join(", ");
+
       return `[${t.id}] ${t.title || "(untitled)"} — ${t.url}${marks ? ` (${marks})` : ""}`;
     })
     .join("\n");
@@ -57,16 +59,21 @@ function formatTabs(tabs: TabInfo[]): string {
 function switchResultText(data: ToolContract["switch_tab"]["data"]): string {
   const base = `Working tab is now ${data.tabId}.`;
   const verification = data.verification;
+
   if (!verification) return `${base} Whether the user can see it was not verified.`;
+
   if (verification.verified === true && verification.activeTabId === data.tabId && verification.windowFocused === true) {
     return `${base} Read-back right after: it was the active tab of its focused window at that moment, so the user was on this page.`;
   }
+
   if (typeof verification.activeTabId === "number" && verification.activeTabId !== data.tabId) {
     return `${base} Read-back right after: it was NOT the active tab (the active tab is ${verification.activeTabId}); the user may still be on another page.`;
   }
+
   if (verification.activeTabId === data.tabId && verification.windowFocused !== true) {
     return `${base} Read-back right after: its window was not focused, so the user may not be looking at it.`;
   }
+
   return `${base} The current active tab could not be read back; visibility is unconfirmed.`;
 }
 
@@ -104,6 +111,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
 export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
+
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
   // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
   const unavailableWriteTools = (): ToolName[] =>
@@ -112,35 +120,43 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
   const assertGenericJsAllowed = () => {
     const missing = unavailableWriteTools();
+
     if (missing.length === 0) return;
     throw new Error(
       `通用页面 JS 不可用：工具 ${missing.join("、")} 当前未启用，操作未执行。请改用 snapshot 或 read_element 观察页面。`,
     );
   };
+
   const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number): Promise<unknown> => {
     const scope = executionScope.getStore();
     const epoch = scope?.epoch;
     const signal = scope?.signal;
     // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
     const sdkId = execution ? (stepId ?? scope?.toolCallId) : undefined;
+
     if (sdkId) rpc.ensureToolCall?.(sdkId, name, sid);
     const recoveryRead = name === 'read_element' ? (params as {readback?:{documentId:string;deadline:number}}).readback : undefined;
     const gated = !!(execution && (requiresControlGate(name, params) || recoveryRead));
     const rejectCall = () => { if (sdkId) rpc.markCallRejected?.(sdkId); };
+
     const assertNotAborted = () => {
       if (!signal?.aborted) return;
       rejectCall();
       throw new Error("本次调用已取消，操作未执行。");
     };
+
     assertNotAborted();
     // 进入这一步时的执行闸门状态；等用户确认之后再复核一次，避免 TOCTOU。
     const staleStep = () => gated && (!execution!.canWrite(scope?.toolCallId) || epoch !== execution!.epoch());
+
     if (staleStep()) {
       rejectCall();
       throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。");
     }
+
     // 需要确认的请求：先等用户选择，获准后才发 RPC。参数用获准的副本，不再读外部对象。
     let callParams = rpc.resolvePageParams?.(name, params, sid) ?? params;
+
     const assertCall = (target: Record<string, unknown>) => {
       try {
         execution?.assertCall?.(name, target, sdkId);
@@ -149,37 +165,47 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         throw error;
       }
     };
+
     if (needsConsentTicket(name, params)) {
       const consumeConsent = execution?.consumeConsent;
+
       if (!consumeConsent) {
         rejectCall();
         throw new Error(CONSENT_REQUIRED_ERROR);
       }
+
       // 明知会被执行闸门拒绝的请求，不拿去占用户的确认。
       assertCall(callParams);
       const outcome = consentOutcome(await consumeConsent(name, params, { signal }));
+
       if (!outcome.allowed) {
         rejectCall();
         throw new Error(outcome.reason ?? CONSENT_REQUIRED_ERROR);
       }
+
       if (outcome.params) callParams = outcome.params;
+
       if (staleStep()) {
         rejectCall();
         throw new Error("用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。");
       }
+
       // 等用户点完可能已经有新的执行事实到达，再核一次。
       assertCall(callParams);
     } else {
       assertCall(callParams);
     }
+
     if (name === "js") {
       try { assertGenericJsAllowed(); }
       catch (error) { if (sdkId) rpc.markCallRejected?.(sdkId); throw error; }
     }
+
     if (canExecute && !canExecute(modelToolOf(name) as ToolName)) {
       if (sdkId) rpc.markCallRejected?.(sdkId);
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
     }
+
     // 上传来源校验在共同调用边界：独立工具、browser.upload_file/uploadFile、Playwright setInputFiles 都经此关。
     // 失败记 not_executed（外层 markCallRejected），禁止先派发再补审。
     if (name === "upload_file" || name === "file_chooser_set_files") {
@@ -191,14 +217,18 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         throw error;
       }
     }
+
     if (name === "arm_event" && callParams.type === "download" && typeof callParams.downloadPath !== "string") {
       callParams = { ...callParams, downloadPath: createDownloadArmDir("tool") };
     }
+
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
       await takeTab(typeof callParams.tabId === "number" ? callParams.tabId : undefined);
     }
+
     let target: ToolContract["read_element"]["data"] | undefined;
     const learning = execution?.learning;
+
     if (learning?.active() && (name === "fill" || name === "click") && typeof callParams.target === "string") {
       // Observe the actual target, not a model-authored description. This is optional
       // learning evidence; failure disables learning without inventing an anchor.
@@ -208,35 +238,48 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       } catch {
         learning.observe({ toolCallId: sdkId ?? "", name, params: {}, error: "未取得稳定目标证据，不生成技能" });
       }
+
       // The read above is an await boundary: recheck control and task state before writing.
       assertNotAborted();
+
       if (staleStep()) { rejectCall(); throw new Error("用户已修改要求，旧步骤未执行。"); }
+
       assertCall(callParams);
     }
+
     // 获准或页面移交的 await 返回后，取消信号仍可能先于 RPC 到达。
     assertNotAborted();
+
     const invoke = (executionEpoch?: number) => {
       if(recoveryRead) {
         const remaining=recoveryRead.deadline-Date.now();
+
         if(remaining<=0)throw new Error('Readback deadline elapsed');
+
         return rpc.call(name,callParams,remaining,sid,programId,executionEpoch,sdkId,signal);
       }
+
       // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
       if (sdkId === undefined) {
         if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch);
+
         return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId) : rpc.call(name, callParams, rpcTimeoutMs, sid);
       }
+
       return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId);
     };
+
     try {
       const result = await invoke(gated ? epoch : undefined);
       const verify = origin !== "readonly-poll" ? learning?.observe({ toolCallId: sdkId ?? "", name, params: callParams, result, target }) : undefined;
+
       if (name === "snapshot" && verify) {
         // One bounded, read-only observation using the same tool/control chain.
         // An absent/stale result node disables learning, never fails the user's snapshot.
         try { await call("read_element", { ...verify }, programId, `${sdkId ?? "skill"}/proof`, undefined, 1500); }
         catch { /* failed read already cleared the learning proof */ }
       }
+
       return result;
     } catch (error) {
       learning?.observe({ toolCallId: sdkId ?? "", name, params: {}, origin, error: error instanceof Error ? error.message : String(error) });
@@ -252,21 +295,28 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute:async(id,params,signal)=>{
         if(params.materials.some(m=>m.source==='user'&&(!execution?.userText||!execution.userText().includes(m.value))))throw new Error('用户材料没有匹配到本轮原文，未执行；不得把生成内容标成用户提供。');
         const observed=execution?.observedMaterials?.()??[];
+
         if(params.materials.some(m=>m.source==='observed'&&!observed.some(saved=>saved.id===m.id&&saved.value===m.value)))throw new Error('原文材料没有匹配宿主保存的来源');
         const materials=[...params.materials,...observed.filter(m=>!params.materials.some(p=>p.id===m.id))].slice(0,12);
         const stop=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(90000)]);
         const original=executionScope.getStore();
         rpc.noteToolFact?.(id,'unknown');
+
         const run=()=>runBrowserDecisionLoop({parentCallId:id,goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
           canExecute:canExecute?(name)=>canExecute(name as ToolName):undefined,
           call:async(name,args,childId)=>{
             const started=Date.now();
             execution?.onStep?.({parentId:id,id:childId,name,phase:'start',params:args});
-            try{const result=await call(name,args,id,childId);execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,result,elapsedMs:Date.now()-started});return result;}
+
+            try{const result=await call(name,args,id,childId);execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,result,elapsedMs:Date.now()-started});
+
+return result;}
             catch(e){execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,error:e instanceof Error?e.message:String(e),elapsedMs:Date.now()-started});throw e;}
           }});
+
         const result=original?await executionScope.run({...original,signal:stop},run):await run();
         rpc.noteToolFact?.(id,result.receipts.some(r=>r.executionFact==='unknown')?'unknown':'executed');
+
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(result)),{}),result);
       },
     })]:[]),
@@ -284,9 +334,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params, signal) => {
         const stop = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(240_000)]);
+
         const result = await runPageTranslation(params as TranslationRequest,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
           translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), stop);
+
         return textResult(JSON.stringify(result), result);
       },
     }),
@@ -299,6 +351,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const result = await call("page_operation", params);
+
         return textResult(JSON.stringify(result), result);
       },
     }),
@@ -323,6 +376,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
         // A state query does not need the element's entire descendant text in the model context.
         const projected = params.properties?.length || params.expect ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, ...(params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined?{editableText:data.editableText}:{}) } : data;
+
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(projected)), { tabId: data.tabId }), data);
       },
     }),
@@ -337,6 +391,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("read_elements", params)) as ToolContract["read_elements"]["data"];
+
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(data)), { tabId: data.tabId }), data);
       },
     }),
@@ -355,13 +410,16 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const api = params.api === "playwright" ? "playwright" : "ego";
         // playwright 模式在发起这一刻锁定任务缺省页；程序第一步还会用 list_tabs 读一次绑定页。
         const pageTabId = api === "playwright" ? rpc.getPageTarget?.(sid) ?? null : null;
+
         const result = await runBrowserProgram({ code: params.code, api, pageTabId,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
           authorizeUpload: (refs) => authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }),
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
         });
+
         rpc.noteToolFact?.(id, "executed");
+
         return { content: [{ type: "text" as const, text: truncate(JSON.stringify({ value: result.value, steps: result.steps }), MAX_JS_RESULT_CHARS) }, ...result.images], details: { value: result.value, steps: result.steps } };
       },
     }),
@@ -388,26 +446,37 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         if (params.action === "list") {
           const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
+
           return textResult(formatTabs(data.tabs), data);
         }
+
         if (params.action === "active") {
           const data = (await call("get_active_tab", {})) as ToolContract["get_active_tab"]["data"];
+
           if (!data.tab) return textResult("No active tab found.", data);
+
           return textResult(formatTabs([data.tab]), data);
         }
+
         if (params.action === "open") {
           const data = (await call("open_tab", params.url ? { url: params.url } : {})) as ToolContract["open_tab"]["data"];
+
           return textResult(`Created tab ${data.tabId}: ${data.title || "(loading)"} — ${data.url}; document: ${data.readiness ?? "not checked"}`, data);
         }
+
         if (params.action === "switch") {
           if (typeof params.tabId !== "number") throw new Error('tabs action:"switch" 需要 tabId。');
+
           const data = (await call("switch_tab", {
             tabId: params.tabId,
             ...(params.decisionGuard ? { decisionGuard: params.decisionGuard } : {}),
           })) as ToolContract["switch_tab"]["data"];
+
           return textResult(switchResultText(data), data);
         }
+
         const data = (await call("close_tab", typeof params.tabId === "number" ? { tabId: params.tabId } : {})) as ToolContract["close_tab"]["data"];
+
         return textResult("Tab closed.", data);
       },
     }),
@@ -422,6 +491,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
+
         return textResult(`Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}`, data);
       },
     }),
@@ -446,6 +516,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("snapshot", params)) as ToolContract["snapshot"]["data"];
+
         return textResult(wrapPageContent(redactCredentialText(data.text), { tabId: data.tabId }), data);
       },
     }),
@@ -463,6 +534,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = await call("hover", params);
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
+
         return textResult(`Mouse moved over ${what}. Observe the page to check whether the intended control appeared.`, data);
       },
     }),
@@ -497,18 +569,22 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("click", params)) as ToolContract["click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
+
         if ("held" in data && data.held) {
           return textResult(
             `Held click on ${what}. The cursor is holding the target with confirm/cancel buttons on its name pill. Wait for the user. Do not click the site's own delete control again, and do not claim you already marked it.`,
             data,
           );
         }
+
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
+
         if (effectText) {
           return textResult(`Clicked ${what}. Event dispatch confirmed.${effectText}${newTabText}`, data);
         }
+
         return textResult(`Clicked ${what}. This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}`, data);
       },
     }),
@@ -538,16 +614,20 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("double_click", params)) as ToolContract["double_click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
+
         if ("held" in data && data.held) {
           return textResult(
             `Held double-click on ${what}. The cursor is holding the target with confirm/cancel buttons on its name pill. Wait for the user.`,
             data,
           );
         }
+
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
+
         if (effectText) return textResult(`Double-clicked ${what}.${effectText}${newTabText}`, data);
+
         return textResult(`Double-clicked ${what}. This confirms native input dispatch only; observe the page to verify the intended change before reporting success.${newTabText}`, data);
       },
     }),
@@ -569,13 +649,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("drag", params)) as ToolContract["drag"]["data"];
+
         if ("held" in data && data.held) {
           return textResult("Held drag. The cursor is holding the source with confirm/cancel buttons on its name pill. Wait for the user.", data);
         }
+
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const from = params.from.target ?? (params.from.point ? `(${params.from.point[0]}, ${params.from.point[1]})` : "?");
         const to = params.to.target ?? (params.to.point ? `(${params.to.point[0]}, ${params.to.point[1]})` : "?");
+
         if (effectText) return textResult(`Dragged ${from} → ${to}.${effectText}`, data);
+
         return textResult(`Dragged ${from} → ${to}. Input sequence dispatched; observe the page to verify the intended state change.`, data);
       },
     }),
@@ -597,6 +681,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("wheel", params)) as ToolContract["wheel"]["data"];
         const ack = data.ackMs != null ? `；手势 ACK ${data.ackMs}ms` : "";
         const tries = data.attempts > 1 ? `；重试 ${data.attempts} 次后确认` : "";
+
         return textResult(`Wheeled at (${data.point[0]}, ${data.point[1]})${ack}${tries}。`, data);
       },
     }),
@@ -614,6 +699,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("mouse_down", params)) as ToolContract["mouse_down"]["data"];
+
         return textResult(`Mouse ${data.button} down at (${data.point[0]}, ${data.point[1]}).`, data);
       },
     }),
@@ -629,6 +715,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("mouse_up", params)) as ToolContract["mouse_up"]["data"];
+
         return textResult(`Mouse ${data.button} up at (${data.point[0]}, ${data.point[1]}).`, data);
       },
     }),
@@ -642,6 +729,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("key_down", params)) as ToolContract["key_down"]["data"];
+
         return textResult(`Key down: ${data.key}.`, data);
       },
     }),
@@ -655,6 +743,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("key_up", params)) as ToolContract["key_up"]["data"];
+
         return textResult(`Key up: ${data.key}.`, data);
       },
     }),
@@ -666,6 +755,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       parameters: Type.Object({}),
       execute: async (_id) => {
         const data = (await call("release_held_inputs", {})) as ToolContract["release_held_inputs"]["data"];
+
         return textResult(
           `Released keys [${data.releasedKeys.join(", ") || "none"}], buttons [${data.releasedButtons.join(", ") || "none"}].`,
           data,
@@ -689,6 +779,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("paste", params)) as ToolContract["paste"]["data"];
+
         return textResult(`Pasted (clipboard ${data.clipboard}).`, data);
       },
     }),
@@ -713,9 +804,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("html5_drag", params)) as ToolContract["html5_drag"]["data"];
+
         if ("gap" in data && data.dragged === false) {
           return textResult(`HTML5 drag gap (${data.gap}): ${data.detail}. Do not report success.`, data);
         }
+
         return textResult(`HTML5 drag completed via ${(data as { path: string }).path}.`, data);
       },
     }),
@@ -752,6 +845,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("select_option", params)) as ToolContract["select_option"]["data"];
+
         return textResult(
           `Selected [${data.selected.map((v, i) => `${v} (${data.labels[i] ?? ""})`).join(", ") || "(cleared)"}].`,
           data,
@@ -770,8 +864,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         // 授权在共同 call 边界完成；此处只负责派发与读回文案。
         const data = (await call("upload_file", { target: params.target, paths: params.paths })) as ToolContract["upload_file"]["data"];
+
         if (data.files.length === 0) return textResult("Cleared the file input (0 files read back).", data);
         const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ");
+
         return textResult(`Uploaded ${data.files.length} file(s) and read them back from the input: ${list}.`, data);
       },
     }),
@@ -789,6 +885,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("cdp", params)) as ToolContract["cdp"]["data"];
         const raw = typeof data.result === "string" ? data.result : JSON.stringify(data.result, null, 2);
         const rendered = truncate(raw ?? "null", MAX_JS_RESULT_CHARS);
+
         return textResult(data.truncated ? `${rendered}\n(CDP result was truncated by the size bound)` : rendered, data);
       },
     }),
@@ -803,6 +900,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("arm_event", params)) as ToolContract["arm_event"]["data"];
+
         return textResult(`Armed ${data.type}; token=${data.token}. Trigger the action, then wait_event.`, data);
       },
     }),
@@ -817,6 +915,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("wait_event", params)) as ToolContract["wait_event"]["data"];
+
         return textResult(`Event ${data.type} matched for token ${data.token}.`, data);
       },
     }),
@@ -830,6 +929,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("accept_dialog", params)) as ToolContract["accept_dialog"]["data"];
+
         return textResult(data.accepted ? `Accepted ${data.dialog?.type ?? "dialog"}.` : "No JS dialog to accept.", data);
       },
     }),
@@ -841,6 +941,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       parameters: Type.Object({}),
       execute: async (_id) => {
         const data = (await call("dismiss_dialog", {})) as ToolContract["dismiss_dialog"]["data"];
+
         return textResult(data.dismissed ? `Dismissed ${data.dialog?.type ?? "dialog"}.` : "No JS dialog to dismiss.", data);
       },
     }),
@@ -857,6 +958,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("file_chooser_set_files", params)) as ToolContract["file_chooser_set_files"]["data"];
         const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ") || "(cleared)";
         const dialog = data.dialog ? ` Dialog opened: ${data.dialog.type} — ${data.dialog.message}` : "";
+
         return textResult(`Chooser set files: ${list}.${dialog}`, data);
       },
     }),
@@ -877,6 +979,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           timeoutMs: params.timeoutMs,
           stat: async () => call("download_stat", { downloadId: params.downloadId }) as Promise<DownloadStatLike>,
         });
+
         return textResult(`Saved download to ${data.path} (${data.bytes} B).`, data);
       },
     }),
@@ -890,6 +993,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("download_cancel", params)) as ToolContract["download_cancel"]["data"];
+
         return textResult(`Cancelled download ${data.downloadId}.`, data);
       },
     }),
@@ -904,7 +1008,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const before = (await call("download_stat", params).catch(() => null)) as DownloadStatLike | null;
         const data = (await call("download_delete", params)) as ToolContract["download_delete"]["data"];
+
         if (before?.downloadPath) hostDownloadDeleteTemp(before.downloadPath);
+
         return textResult(`Deleted download artifact ${data.downloadId}.`, data);
       },
     }),
@@ -920,6 +1026,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
+
         return textResult(`Filled ${params.target}.`, data);
       },
     }),
@@ -933,6 +1040,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("type_text", params)) as ToolContract["type_text"]["data"];
+
         return textResult(`Typed ${params.text.length} character(s).`, data);
       },
     }),
@@ -946,6 +1054,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("press_key", params)) as ToolContract["press_key"]["data"];
+
         return textResult(`Pressed ${params.key}.`, data);
       },
     }),
@@ -961,6 +1070,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("scroll", params)) as ToolContract["scroll"]["data"];
+
         return textResult(data.atBottom ? "Scrolled; reached the bottom." : "Scrolled.", data);
       },
     }),
@@ -986,15 +1096,20 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const grantArtifact = (path: string) => {
           execution?.uploadLedger?.grant({ path, source: "task_artifact" });
         };
+
         if (params.pages) {
           const batch = await fetchPages(
             { url: params.url, method: params.method, headers: params.headers, body: params.body, savePath: params.savePath, pages: params.pages },
             (request) => call("fetch", request) as Promise<FetchReply>,
           );
+
           for (const path of batch.data.saved) grantArtifact(path);
+
           return textResult(wrapPageContent(batch.text, { url: params.url }), batch.data);
         }
+
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
+
         return textResult(formatFetchReply(data as FetchReply, params.savePath, undefined, true, grantArtifact), data);
       },
     }),
@@ -1013,6 +1128,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("network", params)) as ToolContract["network"]["data"];
+
         return textResult(wrapPageContent(redactCredentialText(data.text), { tabId: data.tabId }), data);
       },
     }),
@@ -1028,9 +1144,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("js", params)) as ToolContract["js"]["data"];
+
         const rendered = data.value === undefined
           ? "JavaScript returned undefined. No observable value was returned; this does not confirm a page change. For extraction, use one IIFE with an explicit return of JSON-serializable findings. For hover-only controls, use hover, then observe the page."
           : wrapPageContent(redactCredentialText(truncate(typeof data.value === "string" ? data.value : JSON.stringify(data.value, null, 2), MAX_JS_RESULT_CHARS)));
+
         return textResult(rendered, data);
       },
     }),
@@ -1057,10 +1175,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         if (params.clear === true) {
           const data = (await call("clear_marks", {})) as ToolContract["clear_marks"]["data"];
+
           return textResult("All marks cleared.", data);
         }
+
         if (typeof params.target !== "string" || !params.target.trim()) throw new Error("mark 需要 target；只想清除标注时传 clear:true。");
         const data = (await call("mark", { target: params.target, label: params.label, actions: params.actions })) as ToolContract["mark"]["data"];
+
         return textResult(`Marked ${params.target}.`, data);
       },
     }),
@@ -1085,10 +1206,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("screenshot", params)) as ToolContract["screenshot"]["data"];
+
         const geometry =
           data.cssWidth > 0
             ? ` Image pixels ${data.pixelWidth}x${data.pixelHeight}; capture CSS ${data.cssWidth}x${data.cssHeight}; actual scale=${data.scale ?? "custom"}. Coordinate mapping: ${JSON.stringify(data.coordinates ?? null)}. Convert image pixel to viewport point using density + origin - scroll; do not confuse clip/document coordinates with viewport coordinates.`
             : ` Image pixels ${data.pixelWidth}x${data.pixelHeight} (CSS size unknown; do not convert coordinates from this image).`;
+
         return {
           content: [
             {
@@ -1102,14 +1225,17 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
   ];
+
   return execution ? definitions.map(tool => ({ ...tool, execute: (...args: Parameters<ToolDefinition["execute"]>) => executionScope.run({epoch: execution.epoch(), toolCallId: args[0], signal: args[2]}, async () => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);
+
     try {
       return await (tool as ToolDefinition).execute(...args);
     } catch (error) {
       const fact = error && typeof error === "object" && "executionFact" in error
         ? (error as { executionFact?: import("../../shared/protocol.js").ToolExecutionFact }).executionFact
         : undefined;
+
       if (fact) rpc.noteToolFact?.(args[0], fact);
       else rpc.markCallRejected?.(args[0]);
       throw error;

@@ -42,9 +42,11 @@ describe("控制句先复述确认（#1）", () => {
     for (const yes of ["对", "对的", "是", "嗯", "确认", "好的", "可以", "没错", "就这样。", "照做"]) {
       expect(isControlConfirm(yes), yes).toBe(true);
     }
+
     for (const no of ["不", "不是", "不对", "算了", "取消", "先别", "别动。"]) {
       expect(isControlReject(no), no).toBe(true);
     }
+
     for (const other of ["打开邮箱", "再改一下预算", "这是什么"]) {
       expect(isControlConfirm(other), other).toBe(false);
       expect(isControlReject(other), other).toBe(false);

@@ -15,6 +15,7 @@ import {
 
 function joinPath(dir: string, name: string): string {
   if (dir.endsWith("/")) return `${dir}${name}`;
+
   return `${dir}/${name}`;
 }
 
@@ -24,6 +25,7 @@ export async function downloadStat(
 ): Promise<ToolContract["download_stat"]["data"]> {
   const download = getDownloadRecord(params.downloadId);
   const expected = joinPath(download.downloadPath, download.suggestedFilename);
+
   return {
     downloadId: download.downloadId,
     tabId: download.tabId,
@@ -44,6 +46,7 @@ export async function downloadCancel(
   _sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["download_cancel"]["data"]> {
   const download = await cancelDownloadRecord(params.downloadId);
+
   return { cancelled: true, downloadId: download.downloadId, failure: download.failure };
 }
 
@@ -52,5 +55,6 @@ export async function downloadDelete(
   _sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["download_delete"]["data"]> {
   deleteDownloadRecord(params.downloadId);
+
   return { deleted: true, downloadId: params.downloadId };
 }

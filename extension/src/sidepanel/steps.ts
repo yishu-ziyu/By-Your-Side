@@ -10,6 +10,7 @@ export interface ToolAction {
   /** 工具卡标题，带得上关键参数就带，如 "点击「结算服务」"。 */
   full: string;
 }
+
 /** 工具名 → 中文动作；未知名称回退原始名。 */
 const ACTION_NAMES: Record<string, string> = {
   tabs: "标签页",
@@ -55,6 +56,7 @@ const ACTION_NAMES: Record<string, string> = {
 
 function clip(text: string, max = 16): string {
   const t = text.trim();
+
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
@@ -62,6 +64,7 @@ function hostOf(url: unknown): string | null {
   if (typeof url !== "string" || !url) {
     return null;
   }
+
   try {
     return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host;
   }
@@ -73,82 +76,113 @@ function hostOf(url: unknown): string | null {
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
+
 /** 工具调用 → 人性化动作描述。 */
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
   const short = ACTION_NAMES[name] ?? name;
+
   switch (name) {
     case "page_translation": {
       const full = params.action === 'restore' ? '恢复网页原文'
         : params.action === 'display' ? [params.mode === 'translated' ? '只显示译文' : params.mode === 'bilingual' ? '显示双语' : '调整译文', typeof params.fontSize === 'number' ? `字号 ${params.fontSize}` : ''].filter(Boolean).join(' · ')
           : short;
+
       return { short: full, full };
     }
+
     case "tabs": {
       const action = str(params.action);
+
       if (action === "open") {
         const host = hostOf(params.url);
+
         return { short: "打开标签页", full: host ? `打开标签页 ${host}` : "打开标签页" };
       }
+
       const byAction: Record<string, string> = {
         list: "列出标签页",
         active: "定位当前页",
         switch: "切换标签页",
         close: "关闭标签页",
       };
+
       const full = action ? byAction[action] : undefined;
+
       return { short, full: full ?? short };
     }
+
     case "browser_run": {
       const label = str(params.label);
+
       return { short, full: label ? clip(label, 32) : short };
     }
+
     case "click":
     case "double_click":
     case "drag":
     case "hover": {
       const label = str(params.label);
+
       return { short, full: label ? `${short}「${clip(label)}」` : `${short}元素` };
     }
+
     case "navigate": {
       const host = hostOf(params.url);
+
       return { short, full: host ? `打开页面 ${host}` : short };
     }
+
     case "open_tab": {
       const host = hostOf(params.url);
+
       return { short, full: host ? `打开标签页 ${host}` : short };
     }
+
     case "press_key": {
       const key = str(params.key);
+
       return { short, full: key ? `按键「${clip(key, 8)}」` : short };
     }
+
     case "mark": {
       if (params.clear === true) {
         return { short: "清除标注", full: "清除标注" };
       }
+
       const label = str(params.label);
+
       return { short, full: label ? `标注「${clip(label)}」` : short };
     }
+
     case "spawn_worker": {
       return { short, full: "安排助手" };
     }
+
     case "stop_worker": {
       const id = str(params.id);
       const name = id ? personFor(id)?.name : null;
+
       return { short, full: name ? `让 ${name} 停下` : short };
     }
+
     case "post": {
       const to = str(params.to);
       const who = to === "main" ? "主助手" : to ? displayNameFor(to) : null;
+
       return { short: "发送消息", full: who ? `发送消息给 ${who}` : "发送消息" };
     }
+
     case "await_message": {
       const from = str(params.from);
+
       return { short: "等待结果", full: from ? `等待 ${from === "main" ? "主助手" : displayNameFor(from)} 的消息` : "等待助手结果" };
     }
+
     default:
       return { short, full: short };
   }
 }
+
 /**
  * 步骤链：相邻重复去重，超长时只保留最近几步（前缀 "…"）。
  * 例：思考 → 读取页面结构 → 思考 → 点击
@@ -165,11 +199,14 @@ export class StepChain {
     if (this.steps.length === 0) {
       return "";
     }
+
     const shown = this.steps.slice(-keep);
     const prefix = this.steps.length > keep ? "… → " : "";
+
     return prefix + shown.join(" → ");
   }
 }
+
 /** chip 状态：tool_end 前运行中；结束后按 isError 分完成/失败。 */
 export type ChipState = "running" | "done" | "error";
 
@@ -177,24 +214,32 @@ export function chipState(ended: boolean, isError: boolean): ChipState {
   if (!ended) {
     return "running";
   }
+
   return isError ? "error" : "done";
 }
+
 /** 运行状态行的动作名：最近一个工具的中文动作，尚无工具时为"思考"。 */
 export function loaderSubtitle(lastToolShort: string | null): string {
   return lastToolShort ?? "思考";
 }
+
 /** 耗时格式化：<10s 一位小数（"1.3s"），<60s 整数（"12s"），否则 "2m 28s"。 */
 export function formatDuration(ms: number): string {
   const s = Math.max(0, ms) / 1000;
+
   if (s < 9.95) {
     return `${(Math.round(s * 10) / 10).toFixed(1)}s`;
   }
+
   if (s < 59.5) {
     return `${Math.round(s)}s`;
   }
+
   const m = Math.floor(s / 60);
+
   return `${m}m ${Math.round(s % 60)}s`;
 }
+
 /**
  * 工人事件该进哪一块执行步骤。
  * 全员 idle 时 finishRun 会清掉 currentRun；Pi 的 agent_end 紧随 idle 到达，
@@ -210,28 +255,35 @@ export function workerEventRunPolicy(input: {
   if (input.hasCurrentRun) {
     return "current";
   }
+
   if (input.graphRunning) {
     return "new";
   }
+
   if (input.hasLastRun) {
     return "reuse-last";
   }
+
   return "drop";
 }
+
 /** Legacy history has no reliable clock; never use replay wall time for it. */
 export function historyEventTime(applyingHistory: boolean, occurredAt?: number): number {
   if (applyingHistory) {
     if (typeof occurredAt === "number" && Number.isFinite(occurredAt)) {
       return occurredAt;
     }
+
     return Number.NaN;
   }
+
   return Date.now();
 }
 
 export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }
+
 /** 执行中过程窗是否钉在底部；程序滚动不要走这条，只认人滚。 */
 export const LIVE_VIEWPORT_SLOP_PX = 12;
 

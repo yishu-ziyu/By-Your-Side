@@ -350,8 +350,11 @@ async function buildResult(opts: {
 
   // 可选字段：保留「未提供即不带这个键」的语义，不用 `...(cond ? {k} : {})` 掩盖省略。
   if (opts.fullPage) result.fullPage = true;
+
   if (opts.clip) result.clip = opts.clip;
+
   if (opts.scale) result.scale = opts.scale;
+
   if (opts.documentId) result.documentId = opts.documentId;
 
   return result;

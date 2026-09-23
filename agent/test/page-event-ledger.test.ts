@@ -51,30 +51,35 @@ describe("CAP-02A page-event ledger", () => {
 
   it("两页同名下载：各 tab 独立 downloadPath / downloadId，不串任务", () => {
     const ledger = createPageEventLedger();
+
     const a = armPageEvent(ledger, {
       kind: "download",
       tabId: 1,
       sessionKey: "s",
       downloadPath: "/tmp/bys-dl-a",
     });
+
     const b = armPageEvent(ledger, {
       kind: "download",
       tabId: 2,
       sessionKey: "s",
       downloadPath: "/tmp/bys-dl-b",
     });
+
     const ma = matchDownloadBegin(ledger, {
       tabId: 1,
       guid: "g1",
       url: "blob:https://example/a",
       suggestedFilename: "report.pdf",
     });
+
     const mb = matchDownloadBegin(ledger, {
       tabId: 2,
       guid: "g2",
       url: "blob:https://example/b",
       suggestedFilename: "report.pdf",
     });
+
     expect(ma?.download.downloadPath).toBe("/tmp/bys-dl-a");
     expect(mb?.download.downloadPath).toBe("/tmp/bys-dl-b");
     expect(ma?.download.downloadId).not.toBe(mb?.download.downloadId);
@@ -87,12 +92,14 @@ describe("CAP-02A page-event ledger", () => {
   it("下载失败与取消分别留证", () => {
     const ledger = createPageEventLedger();
     armPageEvent(ledger, { kind: "download", tabId: 3, sessionKey: "s", downloadPath: "/tmp/bys-dl-c" });
+
     const matched = matchDownloadBegin(ledger, {
       tabId: 3,
       guid: "gc",
       url: "https://example/f.bin",
       suggestedFilename: "f.bin",
     });
+
     applyDownloadProgress(ledger, { guid: "gc", state: "canceled" });
     const dl = findDownload(ledger, matched!.download.downloadId);
     expect(dl.failure).toBe("canceled");

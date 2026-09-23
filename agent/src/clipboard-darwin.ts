@@ -52,7 +52,9 @@ type ActiveTxn = {
 };
 
 let transactionQueue: Promise<void> = Promise.resolve();
+
 let active: ActiveTxn | null = null;
+
 let releaseActiveQueue: (() => void) | null = null;
 
 /**
@@ -65,35 +67,43 @@ export async function darwinClipboardBegin(
   if (process.platform !== "darwin") {
     throw new Error("clipboard bridge requires macOS");
   }
+
   let release!: () => void;
   const previous = transactionQueue;
   transactionQueue = new Promise<void>((resolve) => {
     release = resolve;
   });
   await previous;
+
   try {
     if (active) throw new Error("clipboard transaction already active");
+
     const child = spawn(
       "/usr/bin/osascript",
       ["-l", "JavaScript", "-e", DARWIN_CLIPBOARD_HOST],
       { stdio: ["pipe", "pipe", "pipe", "pipe"] },
     );
+
     const messages = clipboardMessages(child.stdout);
     let stderr = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       if (stderr.length < 16_384) stderr += chunk;
     });
+
     const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
       child.once("error", reject);
       child.once("exit", (code, signal) => resolve({ code, signal }));
     });
+
     child.stdin.end(JSON.stringify(content), "utf8");
     const first = await nextHostMessage(messages, exit, () => stderr);
+
     if (first.state !== "ready" || typeof first.changeCount !== "number") {
       release();
       throw new Error(first.message || "could not prepare the macOS clipboard");
     }
+
     releaseActiveQueue = release;
     active = {
       child,
@@ -103,6 +113,7 @@ export async function darwinClipboardBegin(
       changeCount: first.changeCount,
       finished: false,
     };
+
     return { changeCount: first.changeCount };
   } catch (error) {
     release();
@@ -114,25 +125,32 @@ export async function darwinClipboardFinish(
   expectedChangeCount: number,
 ): Promise<ClipboardTransactionStatus> {
   const txn = active;
+
   if (!txn) throw new Error("no clipboard transaction");
+
   if (txn.finished) throw new Error("clipboard transaction already finished");
   txn.finished = true;
   active = null;
   const release = releaseActiveQueue;
   releaseActiveQueue = null;
+
   try {
     void expectedChangeCount;
     const signalPipe = txn.child.stdio[3] as Writable | null;
+
     if (!signalPipe) throw new Error("clipboard restore pipe is unavailable");
     signalPipe.end("1");
     const result = await nextHostMessage(txn.messages, txn.exit, txn.stderr);
     const completion = await txn.exit;
+
     if (completion.code !== 0) {
       throw clipboardHostExitError(completion, txn.stderr());
     }
+
     if (result.state === "restored" || result.state === "changed") {
       return result.state;
     }
+
     throw new Error(result.message || "could not restore the macOS clipboard");
   } finally {
     release?.();
@@ -144,7 +162,9 @@ export async function darwinPasteboardChangeCount(): Promise<number> {
   if (process.platform !== "darwin") throw new Error("macOS only");
   const out = await runJxaOnce(DARWIN_CHANGECOUNT_SCRIPT);
   const parsed = JSON.parse(out) as { changeCount: number };
+
   if (!Number.isFinite(parsed.changeCount)) throw new Error("invalid changeCount");
+
   return parsed.changeCount;
 }
 
@@ -153,6 +173,7 @@ export async function darwinPasteboardWriteText(text: string): Promise<number> {
   if (process.platform !== "darwin") throw new Error("macOS only");
   const out = await runJxaOnce(DARWIN_WRITE_TEXT_SCRIPT, JSON.stringify({ text }));
   const parsed = JSON.parse(out) as { changeCount: number };
+
   return parsed.changeCount;
 }
 
@@ -164,37 +185,47 @@ export type PasteboardGuard = {
 /** 保存当前 pasteboard 全部条目；正文不进入日志。 */
 export async function capturePasteboardGuard(): Promise<PasteboardGuard> {
   if (process.platform !== "darwin") throw new Error("macOS only");
+
   const child = spawn(
     "/usr/bin/osascript",
     ["-l", "JavaScript", "-e", DARWIN_GUARD_HOST],
     { stdio: ["pipe", "pipe", "pipe", "pipe"] },
   );
+
   const messages = clipboardMessages(child.stdout);
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk) => {
     if (stderr.length < 16_384) stderr += chunk;
   });
+
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
     child.once("error", reject);
     child.once("exit", (code, signal) => resolve({ code, signal }));
   });
+
   child.stdin.end("{}", "utf8");
   const first = await nextHostMessage(messages, exit, () => stderr);
+
   if (first.state !== "ready") {
     throw new Error(first.message || "could not capture pasteboard");
   }
+
   let restored = false;
+
   return {
     async restore() {
       if (restored) return;
       restored = true;
       const signalPipe = child.stdio[3] as Writable | null;
+
       if (!signalPipe) throw new Error("pasteboard guard pipe unavailable");
       signalPipe.end("1");
       const result = await nextHostMessage(messages, exit, () => stderr);
       const completion = await exit;
+
       if (completion.code !== 0) throw clipboardHostExitError(completion, stderr);
+
       if (result.state !== "restored") {
         throw new Error(result.message || "pasteboard guard restore failed");
       }
@@ -215,6 +246,7 @@ export function startClipboardDarwinHttpServer(
   if (process.platform !== "darwin") {
     return Promise.reject(new Error("clipboard HTTP server requires macOS"));
   }
+
   const server: Server = createServer(async (req, res) => {
     const respond = (status: number, body: unknown) => {
       const raw = JSON.stringify(body);
@@ -224,38 +256,53 @@ export function startClipboardDarwinHttpServer(
       });
       res.end(raw);
     };
+
     try {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
+
       if (req.method === "GET" && url.pathname === "/health") {
         respond(200, { ok: true });
+
         return;
       }
+
       if (req.method === "POST" && url.pathname === "/begin") {
         const body = await readJson(req);
         const text = typeof body.text === "string" ? body.text : "";
         const html = typeof body.html === "string" ? body.html : undefined;
+
         const result = await darwinClipboardBegin(
           html === undefined ? { text } : { text, html },
         );
+
         respond(200, { ok: true, changeCount: result.changeCount });
+
         return;
       }
+
       if (req.method === "POST" && url.pathname === "/finish") {
         const body = await readJson(req);
         const expected = Number(body.expectedChangeCount);
+
         if (!Number.isFinite(expected)) {
           respond(400, { ok: false, error: "expectedChangeCount required" });
+
           return;
         }
+
         const status = await darwinClipboardFinish(expected);
         respond(200, { ok: true, status });
+
         return;
       }
+
       if (req.method === "GET" && url.pathname === "/changeCount") {
         const changeCount = await darwinPasteboardChangeCount();
         respond(200, { ok: true, changeCount });
+
         return;
       }
+
       respond(404, { ok: false, error: "not found" });
     } catch (error) {
       respond(500, {
@@ -270,8 +317,10 @@ export function startClipboardDarwinHttpServer(
     server.listen(port, "127.0.0.1", () => {
       server.removeListener("error", reject);
       const address = server.address();
+
       const bound =
         address && typeof address === "object" ? address.port : port;
+
       resolve({
         port: bound,
         url: `http://127.0.0.1:${bound}`,
@@ -286,10 +335,13 @@ export function startClipboardDarwinHttpServer(
 
 async function readJson(req: import("node:http").IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
+
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
+
   if (chunks.length === 0) return {};
+
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
 }
 
@@ -298,6 +350,7 @@ function runJxaOnce(script: string, stdin = "{}"): Promise<string> {
     const child = spawn("/usr/bin/osascript", ["-l", "JavaScript", "-e", script], {
       stdio: ["pipe", "pipe", "pipe"],
     });
+
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -319,51 +372,65 @@ function runJxaOnce(script: string, stdin = "{}"): Promise<string> {
 
 function clipboardMessages(stream: NodeJS.ReadableStream) {
   const queued: ClipboardHostMessage[] = [];
+
   const waiters: Array<{
     resolve: (message: ClipboardHostMessage) => void;
     reject: (error: unknown) => void;
   }> = [];
+
   let buffer = "";
   let ended = false;
   stream.setEncoding?.("utf8");
   stream.on("data", (chunk) => {
     buffer += String(chunk);
+
     while (true) {
       const newline = buffer.indexOf("\n");
+
       if (newline < 0) break;
       const line = buffer.slice(0, newline).trim();
       buffer = buffer.slice(newline + 1);
+
       if (!line) continue;
       let message: ClipboardHostMessage;
+
       try {
         message = JSON.parse(line);
       } catch {
         const waiter = waiters.shift();
+
         if (waiter) waiter.reject(new Error(`invalid clipboard host response`));
         continue;
       }
+
       const waiter = waiters.shift();
+
       if (waiter) waiter.resolve(message);
       else queued.push(message);
     }
   });
   stream.on("error", (error) => {
     const waiter = waiters.shift();
+
     if (waiter) waiter.reject(error);
   });
   stream.on("end", () => {
     ended = true;
     const waiter = waiters.shift();
+
     if (waiter) waiter.reject(new Error("clipboard host closed without a response"));
   });
 
   return {
     next(): Promise<ClipboardHostMessage> {
       const message = queued.shift();
+
       if (message) return Promise.resolve(message);
+
       if (ended) {
         return Promise.reject(new Error("clipboard host closed without a response"));
       }
+
       return new Promise((resolve, reject) => {
         waiters.push({ resolve, reject });
       });
@@ -380,9 +447,11 @@ async function nextHostMessage(
     return await messages.next();
   } catch (error) {
     const completion = await exit;
+
     if (completion.code !== 0 || completion.signal) {
       throw clipboardHostExitError(completion, stderr());
     }
+
     throw error;
   }
 }
@@ -392,6 +461,7 @@ function clipboardHostExitError(
   stderr: string,
 ) {
   const detail = stderr.trim();
+
   return new Error(
     `clipboard host exited ${
       completion.signal ? `on ${completion.signal}` : `with code ${completion.code}`

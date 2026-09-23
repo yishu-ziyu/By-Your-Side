@@ -1,11 +1,17 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
+
 vi.mock('../src/background/debugger.js',()=>({sendCommand:vi.fn()}));
+
 vi.mock('../src/background/exec/page-readiness.js',()=>({readCurrentDocument:vi.fn()}));
+
 import {BrowserObservationRegistry,decisionControls,browserObservations,assertBrowserDecision} from '../src/background/browser-observation.js';
 import {sendCommand} from '../src/background/debugger.js';
 import {readCurrentDocument} from '../src/background/exec/page-readiness.js';
+
 const page=()=>({tabId:7,documentId:'d1',url:'https://test.invalid',source:'accessibility' as const,text:'page',truncated:false,controls:[{ref:'@4',role:'textbox',name:'Field',value:'original',disabled:false}]});
+
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks();});
+
 describe('immutable browser observation guards',()=>{
  it('binds a browser-tab candidate to the source observation, member and observed target',()=>{
   const r=new BrowserObservationRegistry(),p=r.issue('m',{...page(),tabs:[{id:9,title:'资料页',url:'https://reference.test/',active:false,windowId:1,working:false}]});
@@ -33,6 +39,7 @@ describe('immutable browser observation guards',()=>{
    {nodeId:'option',parentId:'select',backendDOMNodeId:2,role:{value:'option'},name:{value:'Gold'}},
    {nodeId:'field',parentId:'form',backendDOMNodeId:3,role:{value:'textbox'},name:{value:'Read only'},properties:[{name:'readonly',value:{value:true}}]},
   ]);
+
   expect(controls.find(c=>c.ref==='@1')).toMatchObject({scopeId:'page:10',scopeLabel:'form Settings',options:[{ref:'@2',label:'Gold',disabled:false}]});
   expect(controls.find(c=>c.ref==='@3')?.readOnly).toBe(true);
  });
@@ -52,6 +59,7 @@ describe('immutable browser observation guards',()=>{
  });
  it.each(['different-target','coordinate','unfocused-key','expiry'])('rejects %s without execution',mode=>{
   const r=new BrowserObservationRegistry(),p=r.issue('m',page());
+
   if(mode==='expiry')vi.spyOn(Date,'now').mockReturnValue(p.observedAt+15001);
   const operation=mode==='unfocused-key'?'press_key':'fill';
   expect(()=>r.consume('m',7,operation,{target:mode==='different-target'?'@99':'@4',value:'new',...(mode==='coordinate'?{point:[1,2]}:{}),key:'Enter',decisionGuard:{observationId:p.id,operation,target:'@4'}})).toThrow();

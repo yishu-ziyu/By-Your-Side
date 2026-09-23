@@ -10,17 +10,22 @@ export const REALTIME_BROWSER_TOOL_NAMES = [
   'tabs', 'navigate', 'snapshot', 'read_element', 'read_elements', 'hover',
   'click', 'fill', 'type_text', 'press_key', 'scroll', 'mark', 'page_translation',
 ] as const;
+
 const names = new Set<string>(REALTIME_BROWSER_TOOL_NAMES);
+
 const guard = Type.Object({
   observationId:Type.String(), operation:Type.Union(['click','fill','press_key','scroll','hover'].map(op=>Type.Literal(op))),
   target:Type.Optional(Type.String()),
 });
+
 const tools = createBrowserTools(new ToolRpc()).filter(tool => names.has(tool.name)).map(tool => {
   if (!['click','fill','press_key','scroll','hover'].includes(tool.name)) return tool;
+
   return {...tool,parameters:{...tool.parameters,properties:{...(tool.parameters as {properties?: Record<string, unknown>}).properties,
     tabId:Type.Optional(Type.Number()),decisionGuard:Type.Optional(guard),
     ...(tool.name === 'press_key' ? {target:Type.Optional(Type.String())}:{})}}};
 });
+
 const judge = {
   name:'judge_browser_action',
   description:'Ask Jev to identify the next browser action and its target from a fresh, host-observed page. Use when the intended element/tab is ambiguous or matching controls is difficult. Pass the complete local requirement including restrictions. The host supplies actual user context and page candidates; never supply invented candidates. Returns a suggestion, uncertainty or a need for more context, WITHOUT executing. To act, call the returned tool with its arguments including decisionGuard. Fill suggestions may require value from the user or existing material. If stale, observe/judge again; never drop decisionGuard to bypass rejection. Simple unambiguous operations need no judgment call.',
@@ -48,8 +53,10 @@ export const REALTIME_BROWSER_TOOLS = [...tools,judge].map(tool => ({
 
 export function validateRealtimeBrowserTool(name: string, args: Record<string, unknown>): void {
   const tool = [...tools,judge].find(tool => tool.name === name);
+
   if (!tool || !Check(tool.parameters, args)) throw realtimeBrowserError(`浏览器工具 ${name} 参数无效，未执行。`, 'not_executed');
   const properties = (tool.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+
   if (Object.keys(args).some(key => !(key in properties))) throw realtimeBrowserError(`浏览器工具 ${name} 含未知参数，未执行。`, 'not_executed');
 }
 
@@ -62,6 +69,7 @@ export interface RealtimeBrowserExecution {
 }
 
 export const REALTIME_FILL_READBACK_TIMEOUT_MS = 1500;
+
 export interface RealtimeFillReadback {
   status: 'observed' | 'failed' | 'skipped';
   reason?: string;
@@ -87,6 +95,7 @@ export interface RealtimeBrowserCall {
   inputId: string;
   text: string;
 }
+
 export type ExecuteRealtimeBrowserTool = (
   call: RealtimeBrowserCall,
   input: VoiceInputContext,

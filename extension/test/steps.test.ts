@@ -57,6 +57,7 @@ describe("StepChain 步骤链", () => {
   });
   it("超长只保留最近几步并加省略前缀", () => {
     const c = new StepChain();
+
     for (const s of ["思考", "点击", "滚动页面", "思考", "截图"]) c.push(s);
     expect(c.render(3)).toBe("… → 思考 → 思考 → 截图".replace("思考 → 思考", "滚动页面 → 思考"));
   });

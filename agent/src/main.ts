@@ -50,16 +50,21 @@ function parseCliArgs(argv: string[]): CliArgs {
   let token: string | undefined;
   let model: string | undefined;
   let proxy: string | undefined;
+
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
+
     if (arg === "--ws") {
       ws = true;
       continue;
     }
+
     const [flag, inline] = arg.split("=", 2);
     const value = inline ?? argv[++i];
+
     if (flag === "--port") {
       const n = Number(value);
+
       if (!Number.isInteger(n) || n <= 0 || n > 65535) throw new Error(`--port 无效：${value}`);
       port = n;
     } else if (flag === "--token") {
@@ -72,9 +77,11 @@ function parseCliArgs(argv: string[]): CliArgs {
       if (!value || !/^https?:\/\//.test(value)) {
         throw new Error("--proxy 无效：需要 http(s)://host:port 形式（如 http://127.0.0.1:7897）");
       }
+
       proxy = value;
     }
   }
+
   return { ws, port, token, model, proxy };
 }
 
@@ -86,9 +93,11 @@ function parseCliArgs(argv: string[]): CliArgs {
 function createProxyDispatcher(proxyUrl: string): Dispatcher {
   const proxyAgent = new ProxyAgent(proxyUrl);
   const directAgent = new Agent();
+
   return new Agent({
     factory: (origin) => {
       const hostname = typeof origin === "string" ? new URL(origin).hostname : origin.hostname;
+
       return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1" ? directAgent : proxyAgent;
     },
   });
@@ -110,6 +119,7 @@ function enableFileLog(): void {
 
 function log(message: string): void {
   console.error(`[sideagent] ${message}`);
+
   if (logFile) {
     try {
       appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`);
@@ -136,9 +146,11 @@ async function main(): Promise<void> {
   if (proxy) {
     setGlobalDispatcher(createProxyDispatcher(proxy));
   }
+
   if (!cli.ws) enableFileLog();
 
   let clipboardServer: ClipboardHttpServer | null = null;
+
   if (process.platform === "darwin") {
     try {
       clipboardServer = await startClipboardDarwinHttpServer();
@@ -147,13 +159,16 @@ async function main(): Promise<void> {
       log(`clipboard HTTP 未启动：${error instanceof Error ? error.message : String(error)}`);
     }
   }
+
   const stopClipboard = async () => {
     if (!clipboardServer) return;
+
     try {
       await clipboardServer.close();
     } catch {
       /* 退出路径 */
     }
+
     clipboardServer = null;
   };
 
@@ -166,9 +181,11 @@ async function main(): Promise<void> {
   // Normal-use capture: the session's send-path evidence and the extension's own facts land in
   // ~/.sideagent/voice-capture/. Recording never gates anything the voice session does.
   const voiceCapture = new VoiceCaptureStore({log: message => log(message)});
+
   const keepVoiceEvent = (msg: ServerMessage): void => {
     if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record);
   };
+
   const conversations = new ConversationManager(
     (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore, skillStore }),
     (msg) => {keepVoiceEvent(msg);voice?.observe(msg);current?.send(msg);},
@@ -177,23 +194,30 @@ async function main(): Promise<void> {
     skillStore,
     new TaskDispatcher(new TaskReceiptStore(join(homedir(), '.sideagent', 'task-receipts'))),
   );
+
   const initial = await conversations.ensureDefault();
   // The voice session emits its own messages (including `diag` evidence), so this path must also
   // reach the capture store; otherwise normal-use recording would silently write nothing.
   voice = new VoiceService(id => conversations.getTaskProgress(id), msg => {keepVoiceEvent(msg);current?.send(msg);}, undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId), (origin,target)=>conversations.isVoiceTask(origin,target), async(id,input)=>{
     const runtime=conversations.get(id)?.runtime;
+
     if(!runtime)throw new Error('会话已关闭，未读取页面。');
+
     return readVoicePage(runtime.rpc,input);
   },generalBrowserLoopEnabled()?async(request,stillCurrent)=>{
     const receipt=await conversations.dispatchTaskAction(request,stillCurrent);
+
     return {ok:['queued','accepted','applied'].includes(receipt.status),status:receipt.status,message:receipt.message,receipt};
   }:undefined, (id,call,input,signal)=>conversations.executeRealtimeBrowserTool(id,call,input,signal));
   const session = initial.runtime.session;
+
   const adoptClient = (conn: ClientConn): void => {
     if (current && current !== conn) { voice.close(); current.close(); }
+
     current = conn;
     conversations.reconnect();
   };
+
   const sendHelloOk = (conn: ClientConn): void => {
     void session.availableModels().then((models) => {
       conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
@@ -201,23 +225,33 @@ async function main(): Promise<void> {
       conversations.replayState((msg) => conn.send(msg));
     });
   };
+
   const onClientGone = (conn: ClientConn): boolean => {
     if (conn !== current) return false;
     current = null;
     voice.close();
     conversations.disconnect();
+
     return true;
   };
+
   const disposeAll = (): void => { voice.close(); conversations.dispose(); void stopClipboard(); };
+
   const handleMessage = (msg: ClientMessage): void => {
     if (msg.type === "voice") {
       const conversationId = msg.conversationId ?? "default";
+
       // Extension-side capture facts never reach the upstream voice session.
-      if (msg.command.kind === "capture") { voiceCapture.command(msg.voiceId, conversationId, msg.command); return; }
+      if (msg.command.kind === "capture") { voiceCapture.command(msg.voiceId, conversationId, msg.command);
+
+ return; }
+
       if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId, { persistAudio: msg.command.diagnostic === true || msg.command.capture === true });
       void voice.handle(conversationId, msg);
+
       return;
     }
+
     void conversations.handleMessage(msg).catch((err: unknown) => current?.send({
       type: "agent_event", conversationId: msg.conversationId,
       event: { kind: "error", message: err instanceof Error ? err.message : String(err) },
@@ -248,12 +282,14 @@ function runStdioMode(
   hooks: ModeHooks,
 ): void {
   const transport = createStdioTransport();
+
   const conn: ClientConn = {
     send: (msg) => transport.send(JSON.stringify(msg)),
     close: () => shutdown(0),
   };
 
   let authed = false;
+
   const helloTimer = setTimeout(() => {
     if (!authed) {
       log("10 秒内未收到 hello，退出");
@@ -263,31 +299,42 @@ function runStdioMode(
 
   transport.onMessage((raw) => {
     const msg = parseClientMessage(raw);
+
     if (!msg) return;
+
     if (!authed) {
       clearTimeout(helloTimer);
+
       // stdio 通道由 allowed_origins 鉴权，只检查客户端身份，token 忽略
       if (msg.type !== "hello" || msg.client !== "sidepanel") {
         conn.send({ type: "hello_error", error: '首帧必须是 hello{client:"sidepanel"}' });
         shutdown(1);
+
         return;
       }
+
       if (msg.protocol !== undefined && msg.protocol !== PROTOCOL_VERSION) {
         conn.send({ type: "hello_error", error: `协议版本不兼容：扩展 ${msg.protocol}，伴随进程 ${PROTOCOL_VERSION}。请重载扩展并使用同一仓库构建，不要带着未知协议执行旧动作。` });
         shutdown(1);
+
         return;
       }
+
       if (msg.storageSchema !== undefined && msg.storageSchema !== STORAGE_SCHEMA_VERSION) {
         conn.send({ type: "hello_error", error: `存储 schema 不兼容：扩展 ${msg.storageSchema}，伴随进程 ${STORAGE_SCHEMA_VERSION}。请升级后重试。` });
         shutdown(1);
+
         return;
       }
+
       authed = true;
       hooks.adoptClient(conn);
       hooks.sendHelloOk(conn);
       log("面板已连接（native messaging）");
+
       return;
     }
+
     hooks.handleMessage(msg);
   });
 
@@ -297,6 +344,7 @@ function runStdioMode(
   });
 
   let shuttingDown = false;
+
   function shutdown(code: number): void {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -307,6 +355,7 @@ function runStdioMode(
     // 等 stdout 缓冲 flush 后退出
     setTimeout(() => process.exit(code), 50).unref();
   }
+
   process.on("SIGINT", () => shutdown(0));
   process.on("SIGTERM", () => shutdown(0));
 
@@ -335,21 +384,26 @@ function runWsMode(
     if (!origin || !origin.startsWith("chrome-extension://")) {
       return "Origin 校验失败：仅允许 chrome-extension:// 来源";
     }
+
     if (msg.type !== "hello" || msg.client !== "sidepanel") {
       return '首帧必须是 hello{token, client:"sidepanel"}';
     }
+
     if (msg.token !== token) {
       return "token 不匹配";
     }
+
     if (msg.protocol !== undefined && msg.protocol !== PROTOCOL_VERSION) {
       return `协议版本不兼容：扩展 ${msg.protocol}，伴随进程 ${PROTOCOL_VERSION}。请重载扩展并使用同一仓库构建。`;
     }
+
     return null;
   };
 
   wss.on("connection", (ws, req) => {
     const origin = req.headers.origin;
     let authed = false;
+
     const helloTimer = setTimeout(() => {
       if (!authed) ws.close();
     }, 10_000);
@@ -363,26 +417,34 @@ function runWsMode(
 
     ws.on("message", (data) => {
       const msg = parseClientMessage(data.toString());
+
       if (!msg) return;
+
       if (!authed) {
         clearTimeout(helloTimer);
         const error = checkHello(msg, origin);
+
         if (error) {
           conn.send({ type: "hello_error", error });
           ws.close();
+
           return;
         }
+
         authed = true;
         hooks.adoptClient(conn);
         hooks.sendHelloOk(conn);
         log(`面板已连接（origin: ${origin}）`);
+
         return;
       }
+
       hooks.handleMessage(msg);
     });
 
     ws.on("close", () => {
       clearTimeout(helloTimer);
+
       if (hooks.onClientGone(conn)) {
         log("面板已断开");
       }
@@ -407,15 +469,18 @@ function runWsMode(
   );
 
   let shuttingDown = false;
+
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
     log("正在退出…");
     hooks.disposeAll();
+
     for (const client of wss.clients) client.close();
     wss.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1000).unref();
   };
+
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }

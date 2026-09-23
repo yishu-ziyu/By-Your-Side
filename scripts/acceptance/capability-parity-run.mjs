@@ -22,15 +22,21 @@ import { buildParityExpression, CASE7_CODE } from "./capability-parity.mjs";
 import { runBrowserProgram } from "../../agent/src/browser-program.js";
 
 const CASES = ["case1", "case2", "case3", "case4", "case5", "case6", "case7"];
+
 const UPLOAD_NAME = "capability-parity-upload.txt";
+
 const DRIVER_TIMEOUT_MS = 120_000;
+
 const PORT = 9417;
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 const DIST = join(repoRoot, "extension", "dist");
 
 function evidenceRoot() {
   if (process.env.ACCEPT_EVIDENCE_DIR) return process.env.ACCEPT_EVIDENCE_DIR;
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
   return join(repoRoot, "out", "acceptance", `capability-parity-${stamp}`);
 }
 
@@ -43,13 +49,16 @@ async function chromeForTestingBinary() {
   const base = join(homedir(), "Library", "Caches", "ms-playwright");
   const entries = (await readdir(base)).filter((name) => name.startsWith("chromium-")).sort();
   const latest = entries.at(-1);
+
   if (!latest) throw new Error(`找不到 Chrome for Testing（${base}/chromium-*）`);
+
   return join(base, latest, "chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing");
 }
 
 async function launchIsolated() {
   const profile = await mkdir(join(tmpdir(), `bys-parity-profile-${Date.now()}`), { recursive: true });
   const binary = await chromeForTestingBinary();
+
   const args = [
     `--user-data-dir=${profile}`,
     `--remote-debugging-port=${PORT}`,
@@ -63,8 +72,10 @@ async function launchIsolated() {
     "--headless=new",
     "about:blank",
   ];
+
   const proc = spawn(binary, args, { stdio: "ignore", detached: false });
   const deadline = Date.now() + 20_000;
+
   for (;;) {
     try {
       await fetchJson(`http://127.0.0.1:${PORT}/json/version`, 1000);
@@ -74,6 +85,7 @@ async function launchIsolated() {
       await new Promise((r) => setTimeout(r, 250));
     }
   }
+
   return { proc, profile };
 }
 
@@ -105,18 +117,22 @@ async function main() {
     const extId = extensionIdFromKey(manifest.key);
     const targets = await cdp.send("Target.getTargets");
     let sw = findServiceWorker(targets.targetInfos ?? targets, extId);
+
     if (!sw) {
       try {
         const listed = await fetchJson(`http://127.0.0.1:${PORT}/json/list`);
         sw = findServiceWorker(listed, extId);
       } catch { /* 走下面统一报错 */ }
     }
+
     if (!sw) {
       say(`FAIL extension service worker (extId=${extId})`);
       await writeResult(root, { ok: false, blocked: true, stage: "extension", extId, evidenceDir: root });
       process.exitCode = 2;
+
       return;
     }
+
     const sessionId = await cdp.attachSession(sw.targetId ?? sw.id);
     await cdp.send("Runtime.enable", {}, sessionId);
 
@@ -133,6 +149,7 @@ async function main() {
     });
 
     let driver;
+
     try {
       driver = await evaluateInWorker(cdp, sessionId, expression, DRIVER_TIMEOUT_MS);
     } catch (e) {
@@ -143,6 +160,7 @@ async function main() {
       if (key === "case7") continue;
       const passed = driver.cases && driver.cases[key] && !driver.error;
       say(`${passed ? "PASS" : "FAIL"} ${key}${passed ? "" : ` (stage=${driver.stage}${driver.error ? `; ${driver.error}` : ""})`}`);
+
       if (!passed && driver.error) break;
     }
 
@@ -150,22 +168,29 @@ async function main() {
     // 每个子调用经 SW 的 __saCall → executeToolCall 走真实 Harness（带 programId 入账）。
     let case7 = null;
     let case7Error = null;
+
     if (!driver.error && driver.cases && driver.cases.case1 && driver.cases.case2 && driver.cases.case3 && driver.cases.case4 && driver.cases.case5 && driver.cases.case6) {
       const swCall = async (name, params, stepId) => {
         const expr = `globalThis.__saCall(${JSON.stringify(stepId)}, ${JSON.stringify(name)}, ${JSON.stringify(params)}, "acpt-parity", "parity-program")`;
         const msg = await evaluateInWorker(cdp, sessionId, expr, 35_000);
+
         if (!msg || msg.type !== "tool_result") throw new Error(`${name} 未回 tool_result`);
+
         if (msg.ok === false) throw new Error(msg.error || `${name} failed`);
+
         return msg.data;
       };
+
       try {
         const prog = await runBrowserProgram({ code: CASE7_CODE, call: swCall, id: "parity-c7", timeoutMs: 60_000 });
         const v = prog.value || {};
+
         const okCase =
           v.tabId === driver.tabId &&
           String(v.after) === String(Number(v.before) + 1) &&
           /^DOUBLE-/.test(String(v.dbl)) &&
           v.name === "组合验证";
+
         if (!okCase) throw new Error(`组合程序结果不符: ${JSON.stringify(v).slice(0, 300)}`);
         case7 = { value: v, steps: prog.steps };
         say(`PASS case7 (steps=${prog.steps})`);
@@ -186,7 +211,9 @@ async function main() {
         await evaluateInWorker(cdp, sessionId, `globalThis.__saCall("parity-close-final", "close_tab", { tabId: ${Number(driver.tabId)} }, "acpt-parity")`, 15_000);
       } catch { /* 标签可能已关 */ }
     }
+
     if (case7) driver.cases.case7 = case7;
+
     if (driver.snapshots && driver.snapshots.before) {
       await mkdir(root, { recursive: true });
       await writeFile(join(root, "snapshot-before.txt"), driver.snapshots.before);
@@ -220,13 +247,18 @@ async function main() {
     process.exitCode = 1;
   } finally {
     if (uploadCreated) await rm(uploadPath, { force: true }).catch(() => {});
+
     if (fixture) await fixture.close().catch(() => {});
+
     if (cdp) await cdp.close();
+
     if (isolated) {
       try { isolated.proc.kill("SIGTERM"); } catch { /* 已退出 */ }
+
       await rm(isolated.profile, { recursive: true, force: true }).catch(() => {});
     }
   }
+
   process.exit(process.exitCode ?? 0);
 }
 

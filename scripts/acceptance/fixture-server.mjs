@@ -15,17 +15,23 @@ export function startFixtureServer() {
     const raw = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
     const name = raw === "/" ? "/index.html" : raw;
     const file = name.startsWith("/") ? name.slice(1) : name;
+
     if (!FIXTURE_FILES.has(file)) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
+
       return;
     }
+
     const resolved = normalize(join(FIXTURE_DIR, file));
+
     if (!resolved.startsWith(normalize(FIXTURE_DIR)) || !existsSync(resolved)) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("not found");
+
       return;
     }
+
     const { size } = statSync(resolved);
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
@@ -37,24 +43,30 @@ export function startFixtureServer() {
 
   server.keepAliveTimeout = 1;
   server.headersTimeout = 2000;
+
   return new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
+
       if (!addr || typeof addr === "string") {
         reject(new Error("fixture server 未绑定 127.0.0.1"));
+
         return;
       }
+
       resolve({
         port: addr.port,
         origin: `http://127.0.0.1:${addr.port}`,
         close: () =>
           new Promise((res) => {
             const timer = setTimeout(res, 500);
+
             try {
               server.closeAllConnections?.();
             } catch {
               /* Node 旧版本没有 closeAllConnections */
             }
+
             server.close(() => {
               clearTimeout(timer);
               res();

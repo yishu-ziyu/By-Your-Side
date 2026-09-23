@@ -24,12 +24,15 @@ function findDownloadedFile(directory: string): string | undefined {
   try {
     const entries = readdirSync(directory, { withFileTypes: true });
     const files = entries.filter((e) => e.isFile() && !e.name.endsWith(".crdownload"));
+
     if (files.length > 1) {
       throw new Error(`download completed with ${files.length} files in its temporary directory`);
     }
+
     return files.length === 1 ? join(directory, files[0]!.name) : undefined;
   } catch (error) {
     if (error instanceof Error && /download completed with/.test(error.message)) throw error;
+
     return undefined;
   }
 }
@@ -39,6 +42,7 @@ export function createDownloadArmDir(tokenHint = "arm"): string {
   mkdirSync(root, { recursive: true });
   const dir = join(root, `${tokenHint}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
   mkdirSync(dir, { recursive: true });
+
   return dir;
 }
 
@@ -46,6 +50,7 @@ export function assertAbsoluteSavePath(path: string): void {
   if (typeof path !== "string" || path.length === 0 || !isAbsolute(path) || path.includes("\0")) {
     throw new Error("INVALID_ARGUMENT: download.saveAs requires an absolute file path");
   }
+
   if (path.includes("..")) {
     throw new Error("INVALID_ARGUMENT: download.saveAs path must not contain ..");
   }
@@ -58,18 +63,24 @@ export async function waitForDownloadFile(
 ): Promise<{ path: string; stat: DownloadStatLike }> {
   const started = Date.now();
   let current = stat;
+
   while (Date.now() - started < timeoutMs) {
     if (current.failure) throw new Error(`download failed: ${current.failure}`);
+
     if (current.cancelled) throw new Error("download failed: canceled");
     const dir = current.downloadPath;
+
     if (dir) {
       const found = findDownloadedFile(dir);
+
       if (found) return { path: found, stat: current };
     }
+
     if (current.path) return { path: current.path, stat: current };
     await new Promise((r) => setTimeout(r, 50));
     current = await poll();
   }
+
   throw new Error(`download did not complete within ${timeoutMs}ms`);
 }
 
@@ -86,6 +97,7 @@ export async function hostDownloadSaveAs(input: {
   mkdirSync(dirname(input.path), { recursive: true });
   copyFileSync(source, input.path);
   const bytes = statSync(input.path).size;
+
   return {
     saved: true,
     path: input.path,
@@ -98,6 +110,7 @@ export async function hostDownloadSaveAs(input: {
 
 export function hostDownloadDeleteTemp(downloadPath: string | undefined): void {
   if (!downloadPath || !downloadPath.startsWith(fetchDownloadsDir())) return;
+
   try {
     rmSync(downloadPath, { recursive: true, force: true });
   } catch {

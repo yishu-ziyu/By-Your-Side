@@ -35,6 +35,7 @@ export interface NetworkResult {
 
 export async function network(params: NetworkParams, sessionId: string = LEAD_SESSION_ID): Promise<NetworkResult> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
 
   // 尽量从现在起有记录；attach 失败不影响读已有缓冲。中途接入标 late，不冒充完整。
@@ -47,9 +48,11 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
 
   if (params.clear === true) {
     const cleared = clearNetworkRing(tab.id);
+
     const idle = networkIdleFor(tab.id, 0) ?? {
       inFlight: 0, excludedInFlight: 0, lastActivityAt: 0, generation: 0, integrity: "none" as const, attached: false,
     };
+
     return {
       text: `Network buffer cleared (${cleared} request${cleared === 1 ? "" : "s"} dropped). In-flight tracking retained (${idle.inFlight} pending). Do the action you want to observe, then call network again.`,
       tabId: tab.id,
@@ -67,11 +70,14 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
   }
 
   const ring = networkRingFor(tab.id) ?? { entries: [], dropped: 0 };
+
   const idle = networkIdleFor(tab.id, 0) ?? {
     inFlight: 0, excludedInFlight: 0, lastActivityAt: 0, generation: 0, integrity: "none" as const, attached: false,
   };
+
   const query: NetworkQuery = { urlContains: params.urlContains, types: params.types, limit: params.limit };
   const { shown, matched } = selectNetworkEntries(ring.entries, query);
+
   const text = formatNetworkReport(shown, {
     total: ring.entries.length,
     matched,
@@ -79,6 +85,7 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
     types: params.types,
     urlContains: params.urlContains,
   });
+
   return {
     text,
     tabId: tab.id,

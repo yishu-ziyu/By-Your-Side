@@ -43,7 +43,9 @@ export function cdpMouseButton(button: MouseButton): MouseButton {
 /** 按下某键时 CDP `buttons` 位掩码：left=1, right=2, middle=4。 */
 export function pressedButtonsMask(button: MouseButton): number {
   if (button === "left") return 1;
+
   if (button === "right") return 2;
+
   if (button === "middle") return 4;
   throw new Error(`unsupported mouse button: ${button}`);
 }
@@ -62,28 +64,36 @@ export function pointInElementRect(
       Math.round(rect.y + rect.height / 2),
     ];
   }
+
   if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
     throw new Error("position.x / position.y 必须是有限数字（CSS 像素）");
   }
+
   return [Math.round(rect.x + position.x), Math.round(rect.y + position.y)];
 }
 
 export function normalizePasteContent(input: unknown): NormalizedPasteContent {
   if (typeof input === "string") return { text: input };
+
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new TypeError("paste 需要 string 或 { text, html? }");
   }
+
   const value = input as Record<string, unknown>;
   const unknown = Object.keys(value).find((key) => key !== "text" && key !== "html");
+
   if (unknown) {
     throw new TypeError(`paste 未知字段: ${unknown}`);
   }
+
   if (typeof value.text !== "string") {
     throw new TypeError("paste content.text 必须是 string");
   }
+
   if (value.html !== undefined && typeof value.html !== "string") {
     throw new TypeError("paste content.html 必须是 string");
   }
+
   return value.html === undefined
     ? { text: value.text }
     : { text: value.text, html: value.html };
@@ -120,19 +130,23 @@ export function createIsolatedClipboardBridge(): ClipboardBridge & {
       html = content.html;
       changeCount += 1;
       temporaryChangeCount = changeCount;
+
       return { changeCount };
     },
     async finish(expectedChangeCount) {
       if (changeCount !== expectedChangeCount) {
         saved = null;
+
         return "changed";
       }
+
       if (saved) {
         text = saved.text;
         html = saved.html;
         changeCount += 1;
         saved = null;
       }
+
       return "restored";
     },
     peek() {

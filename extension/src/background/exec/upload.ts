@@ -31,9 +31,11 @@ async function callWithObject<T>(tabId: number, objectId: string, declaration: s
     arguments: args.map((value) => ({ value })),
     returnByValue: true,
   });
+
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "页面内执行失败");
   }
+
   return result.result?.value as T;
 }
 
@@ -44,11 +46,13 @@ export async function setFilesOnObjectId(
   paths: string[],
 ): Promise<Array<{ name: string; size: number }>> {
   const clearing = paths.length === 0;
+
   for (const raw of paths) {
     if (typeof raw !== "string" || !raw.startsWith("/") || raw.includes("..") || raw.includes("\0")) {
       throw notExecuted(new Error(`文件路径必须是不含 .. 的绝对路径（授权目录内）：${String(raw).slice(0, 200)}`));
     }
   }
+
   if (paths.length > MAX_FILES) {
     throw notExecuted(new Error(`最多 ${MAX_FILES} 个文件，未执行`));
   }
@@ -116,7 +120,9 @@ export async function setFilesOnBackendNodeId(
 ): Promise<Array<{ name: string; size: number }>> {
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId });
   const objectId = resolved.object?.objectId;
+
   if (!objectId) throw notExecuted(new Error("file chooser 目标无法解析，上传未执行"));
+
   try {
     return await setFilesOnObjectId(tabId, objectId, paths);
   } finally {
@@ -129,14 +135,17 @@ export async function uploadFile(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["upload_file"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
 
   const paths = params.paths;
+
   if (!Array.isArray(paths) || paths.length > MAX_FILES) {
     throw notExecuted(new Error(`upload_file 需要 0–${MAX_FILES} 个 paths，未执行`));
   }
+
   for (const raw of paths) {
     if (typeof raw !== "string" || !raw.startsWith("/") || raw.includes("..") || raw.includes("\0")) {
       throw notExecuted(new Error(`文件路径必须是不含 .. 的绝对路径（授权目录内）：${String(raw).slice(0, 200)}`));
@@ -144,37 +153,46 @@ export async function uploadFile(
   }
 
   const parsed = parseTarget(params.target);
+
   if (!parsed) throw notExecuted(new Error(`无效的 target: ${String(params.target).slice(0, 200)}`));
 
   const observed = await withObservedDocumentIdentity(tabId, sessionId, async () => {
     const effectToken = await beginEffect(tabId, {});
     let objectId: string | undefined;
+
     if (parsed.kind === "ref") {
       if (!isAxRef(tabId, parsed.n)) {
         throw notExecuted(new Error(
           "upload_file 的 @ref 只支持 full_page（AX）快照的 ref；视口 DOM ref 无法经 CDP 定位，请改用唯一 CSS、xpath= 或 text=。",
         ));
       }
+
       const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: parsed.n });
       objectId = resolved.object?.objectId;
+
       if (!objectId) throw notExecuted(new Error("ref 目标无法解析（页面可能已变化），上传未执行"));
     } else {
       const args = resolveArgs(parsed);
       const expression = `(${resolveTargetSelector.toString()})(${JSON.stringify(args.kind)}, ${JSON.stringify(args.selector)})`;
+
       const evaluated = await sendCommand<{
         result?: { objectId?: string };
         exceptionDetails?: { exception?: { description?: string }; text?: string };
       }>(tabId, "Runtime.evaluate", { expression, returnByValue: false });
+
       if (evaluated.exceptionDetails) {
         throw notExecuted(new Error(evaluated.exceptionDetails.exception?.description ?? evaluated.exceptionDetails.text ?? "目标解析失败"));
       }
+
       objectId = evaluated.result?.objectId;
+
       if (!objectId) throw notExecuted(new Error("目标不是元素，上传未执行"));
     }
 
     try {
       const files = await setFilesOnObjectId(tabId, objectId, paths);
       await collectEffect(tabId, effectToken);
+
       return files;
     } finally {
       await sendCommand(tabId, "Runtime.releaseObject", { objectId }).catch(() => { /* 已释放 */ });

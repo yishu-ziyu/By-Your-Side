@@ -30,16 +30,23 @@ if (process.platform !== "darwin") {
 }
 
 const repo = resolve(import.meta.dirname, "../..");
+
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
 const out = resolve(repo, "out/acceptance", `browser-capability-paste-${stamp}`);
+
 await mkdir(out, { recursive: true });
 
 const PASTE_TEXT = "cap02b-paste-link";
+
 const PASTE_HREF = "https://example.com/cap02b-paste-fixture";
+
 const PASTE_HTML = `<a href="${PASTE_HREF}">${PASTE_TEXT}</a>`;
 
 type Verdict = "yes" | "no" | "未破坏用户剪贴板" | "BLOCKED";
+
 type Assertion = { id: string; ok: boolean; detail?: unknown };
+
 type ScenarioResult = {
   id: string;
   verdict: Verdict;
@@ -50,6 +57,7 @@ type ScenarioResult = {
 };
 
 const scenarios: ScenarioResult[] = [];
+
 const record: {
   ok: boolean;
   status: "PASS" | "FAIL" | "BLOCKED";
@@ -87,6 +95,7 @@ const sha256 = (buf: Buffer | string) => createHash("sha256").update(buf).digest
 
 function check(sc: ScenarioResult, id: string, ok: boolean, detail?: unknown): boolean {
   sc.assertions.push({ id, ok, ...(detail !== undefined ? { detail } : {}) });
+
   return ok;
 }
 
@@ -116,11 +125,14 @@ const fixture = createServer((req: IncomingMessage, res: ServerResponse) => {
   if ((req.url ?? "/") === "/" || (req.url ?? "").startsWith("/paste")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(fixtureHtml);
+
     return;
   }
+
   res.writeHead(404);
   res.end("missing");
 });
+
 await new Promise<void>((resolveListen, reject) => {
   fixture.once("error", reject);
   fixture.listen(0, "127.0.0.1", () => {
@@ -128,7 +140,9 @@ await new Promise<void>((resolveListen, reject) => {
     resolveListen();
   });
 });
+
 const fixturePort = (fixture.address() as { port: number }).port;
+
 const fixtureOrigin = `http://127.0.0.1:${fixturePort}`;
 
 const {
@@ -141,7 +155,9 @@ const {
 } = await import("../../agent/src/clipboard-darwin.js");
 
 let clipboardHttp: Awaited<ReturnType<typeof startClipboardDarwinHttpServer>> | undefined;
+
 let pasteboardGuard: Awaited<ReturnType<typeof capturePasteboardGuard>> | undefined;
+
 let iso: Awaited<ReturnType<typeof import("./isolated-extension.mts").launchIsolatedExtension>> | undefined;
 
 try {
@@ -155,11 +171,13 @@ try {
 
   const isoRoot = await mkdtemp(join(tmpdir(), "sideagent-paste-dist-"));
   const buildDir = join(isoRoot, "extension", "dist");
+
   const build = spawnSync("node", ["build.mjs"], {
     cwd: join(repo, "extension"),
     env: { ...process.env, SIDEAGENT_BUILD_DIST: buildDir },
     encoding: "utf8",
   });
+
   const builtBg = join(buildDir, "background.js");
   const dailyDistAfterBuild = existsSync(dailyDistPath) ? sha256(await readFile(dailyDistPath)) : null;
   record.build = {
@@ -172,12 +190,14 @@ try {
     stderrTail: (build.stderr ?? "").split("\n").slice(-8),
     clipboardHttpPort: clipboardHttp.port,
   };
+
   if (build.status !== 0 || !existsSync(builtBg)) {
     record.status = "FAIL";
     record.error = "隔离构建失败";
     record.exitCode = 1;
     throw new Error("隔离构建失败");
   }
+
   if (dailyDistBefore !== dailyDistAfterBuild) {
     record.status = "FAIL";
     record.error = "日常 extension/dist 被改写";
@@ -188,6 +208,7 @@ try {
   const prevCwd = process.cwd();
   process.chdir(isoRoot);
   let launchIsolatedExtension: typeof import("./isolated-extension.mts").launchIsolatedExtension;
+
   try {
     ({ launchIsolatedExtension } = await import("./isolated-extension.mts"));
   } finally {
@@ -202,9 +223,11 @@ try {
   await iso.swEval(
     `globalThis.__SIDEAGENT_CLIPBOARD_URL__ = ${JSON.stringify(clipboardHttp.url)}`,
   );
+
   const bridgePresent = await iso.swEval(
     `typeof globalThis.__saClipboardBridge === "function" && !!globalThis.__saClipboardBridge()`,
   );
+
   record.identity = {
     extensionId: await iso.swEval("chrome.runtime.id"),
     bridgePresent,
@@ -215,6 +238,7 @@ try {
   };
 
   const rpcEvents: Array<Record<string, unknown>> = [];
+
   const rpc = new ToolRpc((frame) => {
     rpcEvents.push({ at: Date.now(), kind: "rpc-start", id: frame.id, name: frame.name });
     const args = [frame.id, frame.name, frame.params, frame.sessionId ?? "main", frame.programId ?? null, "paste"];
@@ -228,10 +252,14 @@ try {
       },
     );
   });
+
   const tools = createBrowserTools(rpc);
+
   const runTool = async (name: string, params: Record<string, unknown>) => {
     const tool = tools.find((t) => t.name === name);
+
     if (!tool) throw new Error(`missing tool ${name}`);
+
     return tool.execute(`paste-${name}-${Date.now()}`, params as never, undefined, undefined, {} as never) as Promise<{
       content: Array<{ text: string }>;
       details?: any;
@@ -247,6 +275,7 @@ try {
       assertions: [],
       independent: {},
     };
+
     scenarios.push(sc);
 
     check(sc, "bridge registered in SW", bridgePresent === true, bridgePresent);
@@ -266,11 +295,13 @@ try {
 
     let pasteError = "";
     let pasteDetails: any;
+
     try {
       const pasted = await runTool("paste", {
         content: { text: PASTE_TEXT, html: PASTE_HTML },
         tabId,
       });
+
       pasteDetails = pasted.details;
       check(sc, "paste RPC ok", true, {
         clipboard: pasteDetails?.clipboard,
@@ -282,6 +313,7 @@ try {
     }
 
     const afterPaste = await darwinPasteboardChangeCount();
+
     const oracle = await iso.swEval(`(async()=>{
       const tabs=await chrome.tabs.query({url:${JSON.stringify(`${fixtureOrigin}/paste*`)}});
       if(!tabs.length) return null;
@@ -335,12 +367,14 @@ try {
       assertions: [],
       independent: {},
     };
+
     scenarios.push(sc);
 
     const { changeCount } = await darwinClipboardBegin({
       text: "sideagent-temp-should-not-stick",
       html: "<b>sideagent-temp-should-not-stick</b>",
     });
+
     const afterBegin = await darwinPasteboardChangeCount();
     check(sc, "begin returns changeCount", Number.isFinite(changeCount), { changeCount, afterBegin });
 
@@ -383,11 +417,13 @@ try {
       record.cleanup = { error: String(e) };
     }
   }
+
   try {
     await new Promise<void>((res, rej) => fixture.close((err) => (err ? rej(err) : res())));
   } catch (e) {
     record.clipboard.restoreError = `fixture close: ${String(e)}`;
   }
+
   if (clipboardHttp) {
     try {
       await clipboardHttp.close();
@@ -395,6 +431,7 @@ try {
       /* */
     }
   }
+
   if (pasteboardGuard) {
     try {
       await pasteboardGuard.restore();
@@ -414,6 +451,7 @@ try {
     record.status = "FAIL";
     record.exitCode = 1;
   }
+
   record.finishedAt = new Date().toISOString();
   await writeFile(join(out, "result.json"), JSON.stringify(record, null, 2));
   console.log(

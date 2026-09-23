@@ -14,7 +14,9 @@ const SECRET = "UNAUTH_SECRET_BODY_should_never_appear";
 
 function execute(tools: ReturnType<typeof createBrowserTools>, name: string, params: unknown, signal?: AbortSignal) {
   const tool = tools.find((t) => t.name === name);
+
   if (!tool) throw new Error(`missing tool ${name}`);
+
   return tool.execute(`${name}-call`, params as never, signal, undefined, {} as never);
 }
 
@@ -25,6 +27,7 @@ function harness(opts: {
   epoch?: () => number;
 }) {
   const rejected: string[] = [];
+
   const rpc = {
     call: vi.fn(async (name: string, params: Record<string, unknown>) => {
       if (name === "upload_file") {
@@ -33,14 +36,18 @@ function harness(opts: {
           files: (params.paths as string[]).map((p) => ({ name: p.split("/").pop() ?? p, size: 5 })),
         };
       }
+
       if (name === "fill") return { filled: true };
+
       if (name === "list_tabs") {
         return { tabs: [{ id: 1, title: "t", url: "https://x/", active: true, working: true }] };
       }
+
       if (name === "js") {
         // Playwright 兼容层在 setInputFiles 前会 inspect/tag；本测试只证明授权边界，返回“目标存在”。
         return { value: { count: 1, visible: true, token: "bys-auth", handleKind: "element", values: ["bys-auth"] } };
       }
+
       return {};
     }),
     ensureToolCall: vi.fn(),
@@ -50,11 +57,13 @@ function harness(opts: {
     noteToolFact: vi.fn(),
     getPageTarget: () => 1,
   };
+
   const tools = createBrowserTools(rpc as never, undefined, undefined, opts.canExecute ?? (() => true), {
     epoch: opts.epoch ?? (() => 1),
     canWrite: opts.canWrite ?? (() => true),
     ...(opts.ledger ? { uploadLedger: opts.ledger } : {}),
   });
+
   return { rpc, tools, rejected };
 }
 
@@ -84,6 +93,7 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
 
   it("同一未授权文件：browser.upload_file / uploadFile 别名拦下且浏览器未接收", async () => {
     const { rpc, tools } = harness({ ledger });
+
     for (const code of [
       `await browser.upload_file({target:"#file",paths:${JSON.stringify([unauthorized])}});`,
       `await browser.uploadFile({target:"#file",paths:${JSON.stringify([unauthorized])}});`,
@@ -137,9 +147,11 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
 
     const uploads = rpc.call.mock.calls.filter((c) => c[0] === "upload_file");
     expect(uploads.length).toBe(5);
+
     for (const [, params] of uploads) {
       expect(params.paths).toEqual([expected]);
     }
+
     expect(record.path).toBe(expected);
   });
 
@@ -148,6 +160,7 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
       ledger,
       canExecute: (name) => name !== "upload_file",
     });
+
     await expect(
       execute(tools, "browser_run", {
         code: `await browser.uploadFile({target:"#file",paths:["task-ok"]});`,
@@ -161,6 +174,7 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
       ledger,
       canExecute: (name) => name !== "fill",
     });
+
     await expect(
       execute(tools, "browser_run", {
         code: `await browser.fill({target:"#name",value:"x"});`,
@@ -189,6 +203,7 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
           resolveFirst = resolve;
         }),
     );
+
     const first = execute(
       tools,
       "browser_run",
@@ -197,6 +212,7 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
       },
       controller.signal,
     );
+
     // 等第一次 upload 已进入 rpc.call
     await vi.waitFor(() => expect(rpc.call).toHaveBeenCalledTimes(1));
     controller.abort();
@@ -226,6 +242,7 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
     const downloads = mkdtempSync(join(tmpdir(), "bys-auth-dl-"));
     const prev = process.env.SIDEAGENT_DOWNLOADS_DIR;
     process.env.SIDEAGENT_DOWNLOADS_DIR = downloads;
+
     try {
       // 与生产会话一致：账本根含当前 downloads 目录（defaultUploadRoots / fetchDownloadsDir）。
       const { defaultUploadRoots } = await import("../src/upload-paths.js");
@@ -250,12 +267,14 @@ describe("FIX-01 上传共同调用边界（宿主链）", () => {
             text: body,
           };
         }
+
         if (name === "upload_file") {
           return {
             uploaded: true,
             files: (params.paths as string[]).map((p) => ({ name: p.split("/").pop() ?? p, size: 5 })),
           };
         }
+
         return {};
       });
 

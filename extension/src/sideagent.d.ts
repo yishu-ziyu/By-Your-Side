@@ -51,6 +51,7 @@ interface MarkOptions {
 interface CrossPageMember {
   sessionId: string; title: string; tabId?: number; state?: "waiting" | "reading" | "done" | "failed";
 }
+
 interface CrossPageView {
   sessionId?: string; title?: string; tabId?: number; state?: CrossPageMember["state"]; members?: CrossPageMember[];
 }

@@ -49,6 +49,7 @@ class FakeElement {
   }
   set textContent(value: string) {
     this.text = value ?? "";
+
     for (const child of this.children) child.parent = null;
     this.children = [];
   }
@@ -60,7 +61,9 @@ class FakeElement {
   set title(value: string) { this.attributes.set("title", value); }
 
   append(...nodes: FakeElement[]): void { for (const node of nodes) this.appendChild(node); }
-  appendChild(node: FakeElement): FakeElement { node.parent = this; this.children.push(node); return node; }
+  appendChild(node: FakeElement): FakeElement { node.parent = this; this.children.push(node);
+
+ return node; }
   replaceChildren(...nodes: FakeElement[]): void {
     for (const child of this.children) child.parent = null;
     this.children = [];
@@ -82,6 +85,7 @@ class FakeElement {
   /** 冒泡派发：任务条在根节点上监听 click。 */
   dispatch(type: string, target: FakeElement = this): void {
     let node: FakeElement | null = target;
+
     while (node) {
       for (const listener of node.listeners.get(type) ?? []) listener({ target, type });
       node = node.parent;
@@ -89,35 +93,47 @@ class FakeElement {
   }
   private matches(selector: string): boolean {
     const attrMatch = /^([a-z]*)\[([^=\]]+)(?:=([^\]]+))?\]$/i.exec(selector);
+
     if (attrMatch) {
       const [, tag, name, value] = attrMatch;
+
       if (tag && this.tagName !== tag.toUpperCase()) return false;
       const actual = this.getAttribute(name!);
+
       if (actual === null) return false;
+
       return value === undefined || actual === value.replace(/^["']|["']$/g, "");
     }
+
     if (selector.startsWith(".")) return this.className.split(/\s+/).includes(selector.slice(1));
+
     if (selector.startsWith("#")) return this.id === selector.slice(1);
+
     return this.tagName === selector.toUpperCase();
   }
   querySelectorAll(selector: string): FakeElement[] {
     const found: FakeElement[] = [];
+
     const walk = (node: FakeElement) => {
       for (const child of node.children) {
         if (child.matches(selector)) found.push(child);
         walk(child);
       }
     };
+
     walk(this);
+
     return found;
   }
   querySelector(selector: string): FakeElement | null { return this.querySelectorAll(selector)[0] ?? null; }
   closest(selector: string): FakeElement | null {
     let node: FakeElement | null = this;
+
     while (node) {
       if (node.matches(selector)) return node;
       node = node.parent;
     }
+
     return null;
   }
 }
@@ -193,6 +209,7 @@ function mount(options: Partial<ConstructorParameters<typeof TaskBar>[0]> = {}) 
   const removeDraftAttachment = vi.fn();
   const removeDraftSelection = vi.fn();
   const onRetryControl = vi.fn();
+
   const bar = new TaskBar({
     root: root as unknown as HTMLElement,
     resolvePage: async () => ({ title: "报名表", url: "https://forms.example/edit" }),
@@ -205,7 +222,9 @@ function mount(options: Partial<ConstructorParameters<typeof TaskBar>[0]> = {}) 
     doc: fakeDocument(),
     ...options,
   });
+
   const text = () => root.querySelector(".task-bar")!.textContent;
+
   return { root, bar, removeDraftAttachment, removeDraftSelection, onRetryControl, text, element: () => root.querySelector(".task-bar")! };
 }
 
@@ -220,6 +239,7 @@ describe("任务条文案：真实原因，不合并成含糊状态", () => {
     const restored = new TaskProgress(CONV);
     restored.restoreResults(JSON.parse(JSON.stringify(progress.snapshot())));
     const message = parseServerMessage(JSON.stringify({ type: 'task_view', conversationId: CONV, view: projectTaskView(restored.snapshot()) }));
+
     if (message?.type !== 'task_view') throw new Error('材料未通过协议');
     const h = mount();
     h.bar.updateView(message.view);
@@ -389,6 +409,7 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
     expect(text()).toContain("截图.png");
     const removable = element().querySelectorAll(".tb-remove").map((button) => button.getAttribute("data-remove-key"));
     expect(removable).toEqual(["draft:sel", "draft:att:att-1"]);
+
     for (const button of element().querySelectorAll(".tb-remove")) {
       expect(button.tagName).toBe("BUTTON");
       expect(button.getAttribute("aria-label")).toContain("移除");
@@ -464,6 +485,7 @@ describe("A03-03 作用页：以任务绑定页为准，不跟随当前标签页
       activeTabId: 99,
       taskMaterials: { runId: "run-1", items: [{ key: "task:page", kind: "page", label: "报名表（forms.example）" }] },
     }));
+
     expect(model.page?.mismatch).toBe(true);
     expect(model.materials?.rows.map((row) => row.label)).toEqual(["报名表（forms.example）"]);
     const { bar, text } = mount({ getActiveTabId: async () => 99, resolvePage: async () => ({ title: "报名表", url: "https://forms.example/edit" }) });
@@ -497,6 +519,7 @@ describe("A03-05 不制造进度：没有新事实就不出现新数字", () => 
 
   it("非运行态不排动画/计时器，界面也不依赖动效", () => {
     vi.useFakeTimers();
+
     try {
       const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
       const { bar, element } = mount();
@@ -514,6 +537,7 @@ describe("A03-05 不制造进度：没有新事实就不出现新数字", () => 
     const model = buildTaskBarModel(inputs({
       view: view({ state: "interrupted", waiting: { reason: "restart_checkpoint", detail: "host_restart" }, resumable: true }),
     }));
+
     expect(model.waiting?.text).toContain("检查点");
     expect(model.waiting?.detail).toContain("伴随进程");
     expect(model.headline).toContain("已中断");
@@ -538,6 +562,7 @@ describe("A03-06 切会话与重放：身份一致、渲染幂等", () => {
     bar.noteReceipt(receipt({ requestId: "req-1" }));
     const before = element().querySelectorAll(".tb-mat").length;
     const textBefore = element().textContent;
+
     for (let i = 0; i < 3; i += 1) bar.updateView(view());
     expect(element().querySelectorAll(".tb-mat")).toHaveLength(before);
     expect(element().querySelectorAll(".tb-remove")).toHaveLength(0);
@@ -579,11 +604,13 @@ describe("A03-07 可达性结构面：真实 button、屏幕阅读器有名字�
     bar.noteControlResult("takeover", false, "页面控制没有生效");
     const buttons = [...element().querySelector(".tb-materials")!.querySelectorAll("button"), element().querySelector(".tb-control-retry")!];
     expect(buttons.length).toBeGreaterThanOrEqual(3);
+
     for (const button of buttons) {
       expect(button.tagName).toBe("BUTTON");
       expect(button.getAttribute("type")).toBe("button");
       expect(button.getAttribute("tabindex")).toBeNull();
     }
+
     expect(element().querySelector(".tb-status")!.getAttribute("role")).toBe("status");
     expect(element().querySelector(".tb-status")!.getAttribute("aria-live")).toBe("polite");
     expect(element().getAttribute("aria-label")).toBe("当前任务");
@@ -603,6 +630,7 @@ describe("A03-07 可达性结构面：真实 button、屏幕阅读器有名字�
 describe("任务条生命周期", () => {
   it("dispose 之后不再改 DOM、不再定时", () => {
     vi.useFakeTimers();
+
     try {
       const { bar, text } = mount();
       bar.updateView(view());

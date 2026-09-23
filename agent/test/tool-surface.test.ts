@@ -17,7 +17,9 @@ import { TaskProgress } from "../src/task-progress.js";
 import { ToolRpc } from "../src/rpc.js";
 
 const rpc = () => ({ call: vi.fn(async () => ({})), ensureToolCall() {}, markCallRejected() {}, noteToolFact() {} });
+
 const fleetStub = () => ({ mailbox: {}, list: () => [], get: () => undefined, takeTab: async () => ({}), spawn: async () => ({}) }) as never;
+
 const execute = (tools: { name: string; execute: Function }[], name: string, params: unknown) =>
   tools.find((t) => t.name === name)!.execute("call-1", params, undefined, undefined, {}) as Promise<{ content: { text: string }[]; details: unknown }>;
 
@@ -30,12 +32,15 @@ function componentSurface(workerCount: number): string[] {
   const browser = createBrowserTools(rpc() as never)
     .map((t) => t.name)
     .filter((name) => workerCount > 0 || name !== "page_operation");
+
   const ledger = ["record_task_results", "resolve_unknown_result"];
   const delivery = ["send_user_message"];
   const memory = ["user_memory"];
+
   const team = createFleetTools(fleetStub(), "main")
     .map((t) => t.name)
     .filter((name) => workerCount > 0 || name === "spawn_worker");
+
   return [...browser, ...ledger, ...delivery, ...memory, ...team];
 }
 
@@ -50,6 +55,7 @@ describe("合成组件工具语义（非真实会话清单）", () => {
     expect(team).toContain("await_message");
     expect(idle).not.toContain("page_operation");
     expect(team).toContain("page_operation");
+
     for (const name of TEAM_COORDINATION_TOOLS) expect(idle).not.toContain(name);
   });
 
@@ -81,6 +87,7 @@ describe("合成组件工具语义（非真实会话清单）", () => {
  */
 function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[] {
   process.env.SIDEAGENT_GENERAL_BROWSER_LOOP = loopEnabled ? "1" : "0";
+
   const browser = createBrowserTools(
     rpc() as never,
     undefined,
@@ -89,6 +96,7 @@ function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[]
     { goal: () => "goal", reserveDecision: () => {}, epoch: () => 0, canWrite: () => true } as never,
     (async () => ({})) as never,
   ).map((t) => t.name);
+
   const lead = [
     createCapturePageMaterialTool(() => ({} as never)),
     createTaskGoalsTool(() => ({} as never)),
@@ -105,13 +113,16 @@ function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[]
     }),
     createSendUserMessageTool({ conversationId: "default", getRunId: () => null, emit: () => {} }),
   ].map((t) => t.name);
+
   // 只取工具名，不需要真实存储。
   const memory = new MemoryRuntime({} as never, "default", () => {}).tools().map((t) => t.name);
   const team = createFleetTools(fleetStub(), LEAD_SESSION_ID).map((t) => t.name);
   const names = [...browser, ...lead, ...memory, ...team];
+
   const visible = workerMounted
     ? names
     : names.filter((name) => !TEAM_COORDINATION_TOOLS.has(name) && name !== "page_operation");
+
   return visible.sort();
 }
 
@@ -121,6 +132,7 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
   afterAll(() => {
     if (originalLoopEnv === undefined) delete process.env.SIDEAGENT_GENERAL_BROWSER_LOOP;
     else process.env.SIDEAGENT_GENERAL_BROWSER_LOOP = originalLoopEnv;
+
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   });
 
@@ -131,8 +143,10 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
       const dir = mkdtempSync(join(tmpdir(), "bys-tool-surface-"));
       tempDirs.push(dir);
       const runtime = await createConversationRuntime("default", () => {}, undefined, { memoryStore: new MemoryStore(dir) });
+
       try {
         const inner = (runtime.session as unknown as { session: { getActiveToolNames(): string[] } }).session;
+
         for (const scenario of [
           { name: "无 worker", mounted: false },
           { name: "有 worker", mounted: true },
@@ -145,9 +159,11 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
           expect(active.filter((name) => !inventory.includes(name)), `${scenario.name}：真实清单有来源未覆盖的工具`).toEqual([]);
           expect(new Set(active).size, `${scenario.name}：工具名不得重复`).toBe(active.length);
           expect(active.includes("browser_loop"), `${scenario.name}：browser_loop 开关`).toBe(loopEnabled);
+
           for (const name of ["page_operation", "post", "await_message", "list_workers", "stop_worker"]) {
             expect(active.includes(name), `${scenario.name}：${name} 只在团队态可见`).toBe(scenario.mounted);
           }
+
           expect(active).toContain("spawn_worker");
           expect(active).toContain("take_tab");
           expect(active).toContain("send_user_message");
@@ -164,14 +180,17 @@ describe("单人页不挂载 page_operation", () => {
     const { BrowserAgentSession } = await import("../src/session.js");
     const names = ["fill", "snapshot", "page_operation", "post", "await_message", "spawn_worker", "take_tab"];
     let active = [...names];
+
     const session = {
       getActiveToolNames: () => active,
       getAllTools: () => names.map((name) => ({ name })),
       setActiveToolsByName: (next: string[]) => { active = [...next]; },
     };
+
     const wrapper: { setTeamToolsMounted: (mounted: boolean) => void } = new (BrowserAgentSession as unknown as new (...args: unknown[]) => { setTeamToolsMounted: (mounted: boolean) => void })(
       session, null, { emit() {}, setStatus() {} }, null, null,
     );
+
     wrapper.setTeamToolsMounted(false);
     expect(active).not.toContain("page_operation");
     expect(active).not.toContain("post");
@@ -187,26 +206,34 @@ describe("单人页不挂载 page_operation", () => {
 async function taskSurfaceSession() {
   const { BrowserAgentSession } = await import('../src/session.js');
   const dir = mkdtempSync(join(tmpdir(), 'bys-result-surface-'));
+
   const modelRuntime = await ModelRuntime.create({authPath:join(dir,'auth.json'),modelsPath:null,
     modelsStorePath:join(dir,'models.json'),allowModelNetwork:false,refreshOnCreate:false});
+
   type Input = {systemPrompt?:string;tools?:{name:string;description:string}[];messages:unknown[]};
+
   const inputs:Input[] = [];
   const replies:Array<(input:Input)=>unknown[]> = [];
+
   const model = {id:'probe',name:'Local surface probe',api:'surface-probe',provider:'surface-probe',
     baseUrl:'http://127.0.0.1',reasoning:false,input:['text'],contextWindow:32000,maxTokens:1024,
     cost:{input:0,output:0,cacheRead:0,cacheWrite:0}};
+
   const stream = (_model:unknown, context:Input) => {
     // Pi also keeps executor functions on context.tools; capture model-facing metadata only.
     inputs.push({systemPrompt:context.systemPrompt,tools:context.tools?.map(({name,description})=>({name,description})),
       messages:structuredClone(context.messages)});
     const content = replies.shift()?.(inputs.at(-1)!) ?? [];
     const reason = content.length ? 'toolUse' : 'stop';
+
     const message = {role:'assistant',content,api:model.api,provider:model.provider,model:model.id,
       stopReason:reason,timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,
         cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}};
+
     return {async *[Symbol.asyncIterator]() {yield {type:'start',partial:message};yield {type:'done',reason,message};},
       result:async()=>message};
   };
+
   modelRuntime.registerNativeProvider({id:model.provider,name:model.name,
     auth:{apiKey:{name:'Local only',resolve:async()=>({auth:{}})}},getModels:()=>[model],stream,streamSimple:stream
   } as unknown as Parameters<ModelRuntime['registerNativeProvider']>[0]);
@@ -215,16 +242,19 @@ async function taskSurfaceSession() {
   wire.setPageTarget(undefined,7);
   wire.setSend(frame=>{frames.push(frame);wire.handleResult(frame.id,frame.name!=='fill',
     {tabId:7,value:'星河'},frame.name==='fill'?'receipt lost':undefined,frame.name==='fill'?'unknown':'executed');});
+
   const host = await BrowserAgentSession.create(wire, {
     emit:event=>progress.observe({type:'agent_event',event}),setStatus:()=>{},
   }, {conversationId:'default',modelRuntime,modelPattern:'surface-probe/probe',customTools:createBrowserTools(wire,
     undefined,undefined,undefined,{epoch:()=>host.executionEpoch(),canWrite:id=>host.canWriteCurrentInput(id),
       assertCall:(name,params,id)=>host.assertTaskResultExecution(name,params,id)})});
+
   expect(host.available).toBe(true);
   host.bindConversationContext(()=>progress.snapshot());
   host.bindTaskResults({getSnapshot:()=>progress.snapshot(),goals:progress.goals,
     register:items=>progress.registerResults(items),verify:input=>progress.verifyUnknownResult(input)});
   const inner = (host as unknown as {session:{prompt(text:string):Promise<void>}}).session;
+
   return {host,progress,inputs,replies,frames,prompt:()=>inner.prompt('检查本轮工具契约'),
     close:()=>{host.dispose();rmSync(dir,{recursive:true,force:true});}};
 }
@@ -232,20 +262,24 @@ async function taskSurfaceSession() {
 describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览器）',()=>{
   it('模型后续输入拿到自动结果 ID，现有核查工具不依赖手工登记且不凭缺基线读数解除 unknown',async()=>{
     const h=await taskSurfaceSession();
+
     try {
       h.progress.request('填写星河，不提交');
       h.replies.push(()=>[{type:'toolCall',id:'actual-write',name:'fill',arguments:{target:'#code',value:'星河'}}]);
       h.replies.push(input=>{
         const texts=(input.messages as {content?:unknown}[]).map(message=>typeof message.content==='string'?message.content:
           Array.isArray(message.content)?message.content.map(part=>part.text??'').join(''): '');
+
         const text=texts.find(t=>t.startsWith('应用状态快照，不是新用户消息'))!;
         const projection=JSON.parse(text.slice(text.indexOf('{'),text.indexOf('。下一步由宿主计算')));
         const item=projection.results.find((r:{status:string})=>r.status==='unknown');
         expect(item.evidence.toolCallId).toBe('actual-write');
+
         return [{type:'toolCall',id:'check-result',name:'resolve_unknown_result',arguments:{id:item.id,target:'#code',expect:'星河',tabId:7}}];
       });
       await h.prompt();
       expect(h.inputs).toHaveLength(3);
+
       for(const input of h.inputs)expect(input.tools?.map(t=>t.name)).not.toContain('record_task_results');
       expect(h.frames.map(f=>f.name)).toEqual(['fill','read_element']);
       expect(h.progress.snapshot()).toMatchObject({executionState:'unknown',successVerified:false});
@@ -256,6 +290,7 @@ describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览�
 
   it('每次输入按当前 run 收起手工入口，模式与团队切换不重新暴露',async()=>{
     const h=await taskSurfaceSession();
+
     try {
       expect(h.host.isToolActive('record_task_results')).toBe(true);
       h.progress.request('把代号填成星河，不要保存或提交');
@@ -265,12 +300,14 @@ describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览�
       expect(input.tools?.map(t=>t.name)).toEqual(expect.arrayContaining(['task_goals','capture_page_material','resolve_unknown_result','confirm_blocked_write','send_user_message']));
       expect(input.systemPrompt).not.toContain('record_task_results');
       expect(input.tools?.find(t=>t.name==='resolve_unknown_result')?.description).not.toContain('record_task_results');
+
       for(const mounted of [false,true,false]){
         h.host.setTeamToolsMounted(mounted);
         await h.host.setMode(mounted?'teach':'act');
         expect(h.host.isToolActive('record_task_results')).toBe(false);
         expect(h.host.isToolActive('page_operation')).toBe(mounted);
       }
+
       h.progress.request('下一项任务');
       await h.prompt();
       expect(h.inputs.at(-1)!.tools?.map(t=>t.name)).not.toContain('record_task_results');
@@ -279,6 +316,7 @@ describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览�
 
   it('旧检查点与已有手工槽位保留兼容，恢复后新建任务重新隐藏',async()=>{
     const h=await taskSurfaceSession();
+
     try {
       h.progress.request('旧任务');
       h.progress.registerResults([{id:'legacy-slot',description:'填写草稿',tool:'fill',target:null}]);
@@ -301,20 +339,27 @@ describe('新任务自动记账工具面（真实 Pi、本地模型、无浏览�
 
   it.each(['restart','no-plan','manual-blocked','auto-unknown'] as const)('兼容条件独立生效：%s',async kind=>{
     const h=await taskSurfaceSession();
+
     try {
       h.progress.request('原任务');
       const saved=h.progress.snapshot();
+
       if(kind==='restart')h.progress.restoreResults({...saved,state:'running'});
+
       if(kind==='no-plan')h.progress.restoreResults({...saved,goalPlan:undefined,state:'idle'});
+
       if(kind==='manual-blocked')h.progress.restoreResults({...saved,state:'idle',results:[
         {id:'legacy',description:'旧执行方法',tool:'click',target:'#old',status:'blocked',evidence:null},
       ]});
+
       if(kind==='auto-unknown'){
         h.progress.observe({type:'agent_event',event:{kind:'tool_start',name:'fill',toolCallId:'unknown-write',params:{target:'#code',value:'星河'}}});
         h.progress.observe({type:'agent_event',event:{kind:'tool_end',name:'fill',toolCallId:'unknown-write',isError:true,executionFact:'unknown',resultText:'timeout'}});
       }
+
       await h.prompt();
       expect(h.inputs.at(-1)!.tools?.some(tool=>tool.name==='record_task_results')).toBe(kind!=='auto-unknown');
+
       if(kind==='auto-unknown')expect(h.progress.snapshot().results![0]!.status).toBe('unknown');
     } finally {h.close();}
   },15000);
@@ -324,11 +369,16 @@ describe("合并工具的行为", () => {
   it("tabs 的每个 action 落到对应 RPC 名；switch/close 仍是同一模型工具", async () => {
     const call = vi.fn(async (name: string) => {
       if (name === "list_tabs") return { tabs: [{ id: 1, title: "t", url: "https://x/", active: true, working: false }] };
+
       if (name === "get_active_tab") return { tab: { id: 1, title: "t", url: "https://x/", active: true, working: false } };
+
       if (name === "open_tab") return { tabId: 2, title: "", url: "https://y/", readiness: "interactive" };
+
       if (name === "switch_tab") return { tabId: 2 };
+
       return { closed: true };
     });
+
     const tools = createBrowserTools({ call, ensureToolCall() {}, markCallRejected() {}, noteToolFact() {} } as never);
     await execute(tools, "tabs", { action: "list" });
     await execute(tools, "tabs", { action: "active" });

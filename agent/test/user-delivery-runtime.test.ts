@@ -9,18 +9,23 @@ import type { AgentUiEvent } from "../../shared/protocol.js";
 import type { UserDelivery } from "../../shared/voice.js";
 
 const facts = "内部工作记录：竹海工作坊活动邀请；星浦研究访谈邀请。仅读标题，未打开正文。";
+
 const speech = "竹海工作坊发来活动邀请，星浦研究发来访谈邀请。我目前只看了标题，还没打开正文。";
 
 function harness() {
   const p = new TaskProgress("default", () => 100);
   p.request("看看最近邮件，先不打开正文");
   const runId = p.snapshot().runId!;
+
   const emit = (event: AgentUiEvent, extra: Record<string, unknown> = {}) =>
     p.observe({ type: "agent_event", conversationId: "default", runId, event, ...extra } as any);
+
   emit({ kind: "agent_start", deliveryMode: "explicit" });
+
   const delivery = (extra: Partial<UserDelivery> = {}): UserDelivery => ({
     conversationId: "default", id: "delivery-one", runId, kind: "finding", text: speech, composedAt: 100, status: "composed", ...extra,
   });
+
   return { p, runId, emit, delivery };
 }
 
@@ -117,6 +122,7 @@ describe("send_user_message host tool", () => {
       clock: () => 7,
       hasUnfinishedWork: () => true,
     });
+
     const finding = await tool.execute("call-finding-open", { kind: "finding", content: speech }, undefined, undefined, {} as any);
     expect(finding.terminate).toBe(false);
   });
@@ -125,6 +131,7 @@ describe("send_user_message host tool", () => {
 describe("voice consumption", () => {
   it("does not let a finding override pause, abort or error speech", () => {
     const h = harness();
+
     for (const [state, word] of [["paused", "暂停"], ["aborted", "终止"], ["error", "问题"]] as const) {
       const snapshot: any = { ...h.p.snapshot(), state, conversationContext: { recentTurns: [], latestResult: { runId: h.runId, text: facts, observedAt: 100, source: "assistant_output" }, latestDelivery: h.delivery() } };
       expect(progressSpeech(snapshot)).toContain(word);
@@ -137,6 +144,7 @@ describe("voice consumption", () => {
     let current: any = { ...h.p.snapshot(), state: "running", conversationContext: { recentTurns: [], latestResult: null, latestDelivery: null } };
     const notifications: any[] = [];
     const service = new VoiceService(() => current, () => {}, async () => "synthetic", () => ({ start() {}, command() {}, close() {}, notify(s: any) { notifications.push(s); } } as any));
+
     try {
       await service.handle("default", { type: "voice", voiceId: "voice-running", command: { kind: "start" } });
       current = { ...current, conversationContext: { ...current.conversationContext, latestDelivery: h.delivery() } };
@@ -155,6 +163,7 @@ describe("voice consumption", () => {
     let current: any = { ...h.p.snapshot(), state: "idle", conversationContext: { recentTurns: [], latestResult: { runId: h.runId, text: facts, observedAt: 100, source: "assistant_output" }, latestDelivery: null } };
     const notified: any[] = [];
     const service = new VoiceService(() => current, () => {}, async () => "synthetic", () => ({ start() {}, command() {}, close() {}, notify(s: any) { notified.push(s); } } as any));
+
     try {
       await service.handle("default", { type: "voice", voiceId: "voice-first", command: { kind: "start" } });
       expect(notified).toHaveLength(0);
@@ -192,19 +201,32 @@ describe("delivery closure", () => {
   function fixture(verifyAnswerDelivery?: (text:string)=>Promise<void>) {
     const messages: any[] = [];
     let publish: (e: any) => void = () => {};
+
     let streaming = false;
     let answer: (text: string) => void = () => {};
+
     const compose = vi.fn(() => new Promise<string>(resolve => { answer = resolve; }));
+
     const manager = new ConversationManager(async (_id, emit) => {
-      publish = e => { if (e.kind === "agent_start") streaming = true; if (e.kind === "agent_end" || e.kind === "error") streaming = false; emit({ type: "agent_event", event: e }); };
+      publish = e => { if (e.kind === "agent_start") streaming = true;
+
+ if (e.kind === "agent_end" || e.kind === "error") streaming = false; emit({ type: "agent_event", event: e }); };
+
       return { session: { available: true, modelName: () => "test", isStreaming: () => streaming, isHeld: () => false, classifyVoiceInput: async (text: string) => ({ steps: [{ action: "chat", text, target: null }] }), composeUserDelivery: compose, ...(verifyAnswerDelivery?{verifyAnswerDelivery}:{}), abort: () => { streaming = false; } }, fleet: { teamView: () => null, isGroupHeld: () => false, abortTeam: () => {}, reset: () => {} }, rpc: { rejectAll: () => {} }, handleMessage: (m: any) => { if (m.type === "user_message") publish({ kind: "agent_start" }); }, dispose: () => {} } as any;
     }, m => messages.push(m));
+
     return { manager, messages, compose, event: (e: any) => publish(e), resolve: (text: string) => answer(text) };
   }
+
   it.each(['valid','rejected','cancelled'] as const)('reviews the existing final answer without generating it again: %s',async(outcome)=>{
     let release!:()=>void;
-    const verify=vi.fn(async()=>{if(outcome==='rejected')throw new Error('答案不满足目标');if(outcome==='cancelled')await new Promise<void>(resolve=>{release=resolve;});});
+
+    const verify=vi.fn(async()=>{if(outcome==='rejected')throw new Error('答案不满足目标');
+
+if(outcome==='cancelled')await new Promise<void>(resolve=>{release=resolve;});});
+
     const h=fixture(verify);
+
     try {
       await h.manager.ensureDefault();
       await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'Jev目前支持哪些输入？'});
@@ -214,9 +236,12 @@ describe("delivery closure", () => {
       h.event({kind:'text_delta',delta:answer});h.event({kind:'agent_end'});
       expect(verify).toHaveBeenCalledWith(answer);
       expect(h.compose).not.toHaveBeenCalled();
+
       if(outcome==='cancelled'){h.event({kind:'error',message:'用户已终止'});release();}
+
       await new Promise(resolve=>setTimeout(resolve,0));
       const deliveries=h.messages.filter(m=>m.event?.kind==='user_delivery');
+
       if(outcome==='valid'){
         expect(deliveries).toHaveLength(1);expect(deliveries[0].event.delivery.text).toBe(answer);
         expect(p.snapshot().goalPlan!.goals[0]!.status).toBe('satisfied');
@@ -225,6 +250,7 @@ describe("delivery closure", () => {
   });
   it("drops a late makeup finding after the run errors", async () => {
     const h = fixture();
+
     try {
       await h.manager.ensureDefault();
       await h.manager.handleMessage({ type: "user_message", conversationId: "default", text: "只读邮件标题" });
@@ -241,6 +267,7 @@ describe("delivery closure", () => {
   });
   it("does not retag a late delivery onto a newer text-started run", async () => {
     const h = fixture();
+
     try {
       await h.manager.ensureDefault();
       await h.manager.handleMessage({type:"user_message",conversationId:"default",text:"只读邮件标题"});

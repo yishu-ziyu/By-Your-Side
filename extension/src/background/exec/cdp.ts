@@ -28,6 +28,7 @@ const MAX_RESULT_CHARS = 200_000;
 /** 纯函数，可单测：非法格式与越权方法在触碰浏览器之前就拒绝（not_executed）。 */
 export function assertCdpMethodAllowed(method: unknown): asserts method is string {
   const decision = decideCdpMethod(method);
+
   if (!decision.allowed) {
     throw notExecuted(new Error(decision.message));
   }
@@ -35,6 +36,7 @@ export function assertCdpMethodAllowed(method: unknown): asserts method is strin
 
 function assertCdpParamsAllowed(params: Record<string, unknown> | undefined): void {
   const decision = decideCdpCommandParams(params);
+
   if (!decision.allowed) {
     throw notExecuted(new Error(decision.message));
   }
@@ -45,19 +47,24 @@ export async function cdp(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["cdp"]["data"]> {
   const workingId = await getWorkingTabId(sessionId);
+
   if (workingId == null) {
     throw notExecuted(new Error("当前没有工作标签页；cdp 只能操作已认领的工作标签页"));
   }
+
   if (params.tabId !== undefined && params.tabId !== workingId) {
     throw notExecuted(new Error(`cdp 只能操作当前工作标签页（${workingId}），拒绝指定其他 tabId`));
   }
+
   assertCdpMethodAllowed(params.method);
   assertCdpParamsAllowed(params.params);
   const tab = await chrome.tabs.get(workingId).catch(() => null);
+
   if (!tab) throw notExecuted(new Error("工作标签页已关闭，cdp 未执行"));
   await assertObservedDocument(workingId, sessionId);
 
   const timeoutMs = params.timeoutMs ?? 10_000;
+
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
     throw notExecuted(new Error("cdp.timeoutMs 必须在 1–30000 之间，未执行"));
   }
@@ -66,6 +73,7 @@ export async function cdp(
   // 竞速失败方晚到的拒绝不算未处理 rejection；底层命令可能仍在完成，结果不回填。
   command.catch(() => { /* 已由竞速超时路径上报 */ });
   let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
     const result = await Promise.race([
       command,
@@ -73,8 +81,11 @@ export async function cdp(
         timer = setTimeout(() => reject(new Error(`CDP ${params.method} 超过 ${timeoutMs}ms 未返回；命令可能仍在执行，请 snapshot 核验页面状态`)), timeoutMs);
       }),
     ]);
+
     const json = JSON.stringify(result ?? null);
+
     if (json.length <= MAX_RESULT_CHARS) return { result, truncated: false };
+
     return { result: `${json.slice(0, MAX_RESULT_CHARS)}… [truncated]`, truncated: true };
   } catch (error) {
     // 已触碰浏览器的失败不能标 not_executed：如实报一行错误，由账本按 unknown 处理。

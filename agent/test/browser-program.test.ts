@@ -8,17 +8,21 @@ describe("browser programs", () => {
   it("tags every nested production RPC and emits one completed step per action", async () => {
     const frames: Array<Record<string, unknown>> = [];
     const updates: any[] = [];
+
     const rpc = new ToolRpc(frame => {
       frames.push(frame as unknown as Record<string, unknown>);
       setTimeout(() => rpc.handleResult(frame.id, true, { text: "ready" }), 0);
     });
+
     const tool = createBrowserTools(rpc, "worker-program").find(t => t.name === "browser_run")!;
     await tool.execute("parent-program", { code: 'await browser.snapshot(); return (await browser.snapshot()).text;' }, new AbortController().signal, update => updates.push(update), {} as never);
     expect(frames).toHaveLength(2);
+
     for (const frame of frames) {
       expect(frame).toMatchObject({ sessionId: "worker-program", programId: "parent-program", name: "snapshot" });
       expect(parseServerMessage(JSON.stringify(frame))).toEqual(frame);
     }
+
     expect(updates.map(u => u.details.programStep.phase)).toEqual(["start", "end", "start", "end"]);
     expect(parseServerMessage(JSON.stringify({ ...frames[0], programId: 42 }))).toBeNull();
   });
@@ -42,9 +46,11 @@ describe("browser programs", () => {
 
   it("waits through read_element expect polls and reports a bounded timeout", async () => {
     const conditionUnmet = new Error("NOT_READY: 条件未满足：目标属性未达成");
+
     const call = vi.fn()
       .mockRejectedValueOnce(conditionUnmet)
       .mockResolvedValue({ check: { matched: true } });
+
     const result = await runBrowserProgram({ code: 'await browser.waitFor({selector:"#edit",timeoutMs:1000}); return "ready";', call });
     expect(result.value).toBe("ready");
     // 1 次未达成 + visible + enabled + visible 复核 = 4 次只读 read_element 轮询
@@ -105,6 +111,7 @@ describe("browser programs", () => {
       cssWidth: 1440, cssHeight: 900, devicePixelRatio: 2.5,
       tabId: 11, url: "https://work.example/page", title: "Work", capturedAt: 123, source: "cdp",
     };
+
     const call = vi.fn(async () => shot);
     const result = await runBrowserProgram({ code: "return await browser.screenshot();", call });
     expect(result.value).toMatchObject({
@@ -127,9 +134,12 @@ describe("browser programs", () => {
   it("pageInfo composes list_tabs + js + dialog_info", async () => {
     const call = vi.fn(async (name: string) => {
       if (name === "list_tabs") return { tabs: [{ id: 7, title: "T", url: "https://x/", working: true }] };
+
       if (name === "dialog_info") return { dialog: null };
+
       return { value: { href: "https://x/", title: "T", readyState: "complete", viewport: { width: 10, height: 20 }, scroll: { x: 0, y: 0 }, timeOrigin: 1 } };
     });
+
     const result = await runBrowserProgram({ code: 'return await browser.pageInfo();', call });
     expect(result.value).toMatchObject({ tabId: 7, tabTitle: "T", page: { href: "https://x/", readyState: "complete" }, dialog: null });
     expect(call.mock.calls.map(c => c[0])).toEqual(["list_tabs", "js", "dialog_info", "list_tabs"]);
@@ -150,6 +160,7 @@ describe("browser programs", () => {
       total: 5, dropped: 0, inFlight: 0, excludedInFlight: 0,
       lastActivityAt: Date.now() - 500, generation: 1, integrity: "ok", attached: true,
     }));
+
     const result = await runBrowserProgram({ code: 'return await browser.waitForNetworkIdle({idleMs:100,timeoutMs:3000});', call });
     expect(result.value).toMatchObject({ idle: true, integrity: "ok" });
     expect(result.value).not.toHaveProperty("approximation");

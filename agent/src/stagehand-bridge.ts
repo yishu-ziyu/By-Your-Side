@@ -20,13 +20,16 @@ import { createPlaywrightCompatRuntime } from "./vendor/stagehand/runtime.js";
 export function stagehandRuntimeSource(): string {
   if (cachedRuntimeSource === null) {
     const source = Function.prototype.toString.call(createPlaywrightCompatRuntime);
+
     if (!source.startsWith("async function createPlaywrightCompatRuntime")) {
       throw new Error(
         "Stagehand 兼容层源码序列化失败：Function#toString 没有返回自包含的 createPlaywrightCompatRuntime（构建过程可能改写了函数名）。",
       );
     }
+
     cachedRuntimeSource = source;
   }
+
   return cachedRuntimeSource;
 }
 
@@ -290,6 +293,7 @@ export function buildPlaywrightProgram(options: PlaywrightProgramOptions): strin
   const runtimeSource = stagehandRuntimeSource();
   const hint = typeof options.pageTabId === "number" ? String(options.pageTabId) : "null";
   const platform = JSON.stringify(options.platform);
+
   return [
     PRELUDE,
     runtimeSource,

@@ -41,6 +41,7 @@ export const READ_POST_CAPABILITIES: readonly string[] = [];
 export function classifyToolEffect(name: string, params?: Record<string, unknown>): EffectDecision {
   if (name === "fetch") {
     const method = methodOf(params);
+
     if (method === "POST" || hasBody(params)) {
       return {
         class: "write",
@@ -49,6 +50,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
         reason: "fetch POST（或带 body）可能改变服务端状态，不能当只读。",
       };
     }
+
     return {
       class: "unknown",
       requiresControlGate: true,
@@ -56,6 +58,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: "GET 名字不能证明业务无副作用；带着登录态的请求仍走控制闸门。",
     };
   }
+
   if (name === "js") {
     return {
       class: "write",
@@ -64,6 +67,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: "通用页面 JS 不能用正则证明只读。",
     };
   }
+
   if (name === "cdp") {
     return {
       class: "write",
@@ -72,6 +76,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: "通用 CDP escape hatch 是 power tool：不做 read/write 分类，全部按写操作走控制闸门。",
     };
   }
+
   if (name === "upload_file" || name === "file_chooser_set_files") {
     return {
       class: "write",
@@ -80,6 +85,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: "文件上传改变页面状态，按写操作处理。",
     };
   }
+
   if (name === "accept_dialog" || name === "dismiss_dialog") {
     return {
       class: "write",
@@ -88,9 +94,11 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: "处理网页 JS dialog 会解除页面阻塞并可能继续业务流，按写操作处理；不等于危险业务授权。",
     };
   }
+
   if (name === "press_key") {
     const key = String(params?.key ?? params?.keys ?? "").toLowerCase();
     const submits = key === "enter" || key === "return" || key.includes("enter");
+
     return {
       class: submits ? "write" : "write",
       requiresControlGate: true,
@@ -98,6 +106,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: submits ? "回车/提交可能提交表单。" : "键盘输入按写操作处理。",
     };
   }
+
   if (READ_TOOLS.has(name)) {
     return {
       class: "read",
@@ -106,6 +115,7 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       reason: "声明式只读。",
     };
   }
+
   return {
     class: "unknown",
     requiresControlGate: true,

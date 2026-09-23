@@ -8,7 +8,9 @@ import { normalizeResultTarget } from '../../shared/task-results.js';
 import { LEAD_SESSION_ID, isLeadSession, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
+
 export const SLOW_TOOL_TIMEOUT_MS = 60_000;
+
 /** navigate/screenshot 涉及页面加载或渲染，放宽到 60s（见 docs/protocol.md）。 */
 const SLOW_TOOLS: ReadonlySet<string> = new Set(["navigate", "screenshot"]);
 
@@ -23,6 +25,7 @@ export interface ToolCallFrame {
   sdkId?: string;
   epochs?: Record<string, number>;
 }
+
 export type RpcSend = (frame: ToolCallFrame) => void;
 
 export interface ToolExecutionError extends Error {
@@ -102,6 +105,7 @@ const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_
 function numberField(source: unknown, field: string): number | null {
   if (!source || typeof source !== "object") return null;
   const value = (source as Record<string, unknown>)[field];
+
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
@@ -125,6 +129,7 @@ export class ToolRpc {
   /** 绑定/解绑当前客户端连接。解绑时 reject 所有 pending 调用。 */
   setSend(send: RpcSend | null): void {
     this.sendFn = send;
+
     if (send === null) {
       const err: ToolExecutionError = new Error("Extension disconnected");
       err.executionFact = "unknown";
@@ -145,7 +150,9 @@ export class ToolRpc {
 
   getFillReadback(id: string): {transportId: string; target?: FillReadbackTarget} | undefined {
     const call = this.dispatched.get(id);
+
     if (!call?.id || call.name !== 'fill' || !call.prepareFillReadback) return;
+
     return {transportId:call.id, ...(call.fillTarget ? {target:{...call.fillTarget}} : {})};
   }
 
@@ -154,6 +161,7 @@ export class ToolRpc {
   private recordReadTarget(call: DispatchedCall, data: unknown): void {
     if (call.name !== 'read_element' || !call.sdkId || !data || typeof data !== 'object') return;
     const field = data as Partial<ToolContract['read_element']['data']> & {truncated?:boolean}, source = field.anchorSource;
+
     if (typeof field.tabId !== 'number' || !Number.isSafeInteger(field.tabId) || field.tabId !== call.targetParams?.tabId
       || typeof field.documentId !== 'string' || !field.documentId || typeof field.target !== 'string'
       || typeof call.targetParams?.target !== 'string' || normalizeResultTarget(field.target) !== normalizeResultTarget(call.targetParams.target)
@@ -187,6 +195,7 @@ export class ToolRpc {
   resolvePageParams(name: ToolName, params: Record<string, unknown>, sessionId?: string): Record<string, unknown> {
     if (!DEFAULT_TAB_TOOLS.has(name) || params.tabId !== undefined) return params;
     const tabId = this.getPageTarget(sessionId);
+
     return tabId == null ? params : { ...params, tabId };
   }
 
@@ -203,12 +212,15 @@ export class ToolRpc {
   ): void {
     if (targetSeq === undefined || !TARGET_CHANGING_TOOLS.has(name)) return;
     const key = this.targetKey(sessionId);
+
     if ((this.pageTargets.get(key)?.seq ?? 0) > targetSeq) return;
     let tabId: number | null;
+
     if (name === "switch_tab") tabId = numberField(params, "tabId");
     else if (name === "worker_tabs") tabId = params?.action === "claim" ? numberField(data, "tabId") : null;
     else if (name === "click" || name === "double_click") tabId = numberField((data as {newTab?:unknown} | undefined)?.newTab, "tabId");
     else tabId = numberField(data, "tabId");
+
     if (tabId == null) return;
     this.pageTargets.set(key, { tabId, seq: targetSeq });
   }
@@ -227,79 +239,105 @@ export class ToolRpc {
   /** 动作前被拒绝：只改状态，不改变已记录的执行事实。 */
   markCallRejected(id: string): void {
     const entry = this.dispatched.get(id);
+
     if (entry && entry.state === "preparing") entry.state = "rejected";
   }
 
   /** 组合调用进入执行时更新事实（例如 browser_run 整体）。 */
   noteToolFact(id: string, fact: ToolExecutionFact): void {
     const entry = this.dispatched.get(id);
+
     if (entry) entry.fact = fact;
   }
 
   /** 新增晚到回执监听；返回解绑函数。多个会话可共用一个 RPC。 */
   addLateResultListener(handler: LateResultHandler): () => void {
     this.lateListeners.add(handler);
+
     return () => { this.lateListeners.delete(handler); };
   }
 
   /** 发起一次工具调用；超时或断连时 reject。工人调用传入 sessionId，扩展按 session 绑 tab/光标。 */
   call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal): Promise<unknown> {
     const send = this.sendFn;
+
     if (!send) {
       const err: ToolExecutionError = new Error("Extension is not connected");
       err.executionFact = "not_executed";
       this.ensureToolCall(sdkId ?? "", name, sessionId);
+
       return Promise.reject(err);
     }
+
     const timeout = timeoutMs ?? (SLOW_TOOLS.has(name) ? SLOW_TOOL_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS);
     const id = randomUUID();
     // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
     let outParams = this.resolvePageParams(name, params, sessionId);
     const prepared = sdkId ? this.dispatched.get(sdkId) : undefined;
+
     if (name === 'fill' && prepared?.prepareFillReadback) {
       // Reuse the last actual call on this page, never a post-timeout observation.
       const previous = [...new Set(this.dispatched.values())].reverse().find(call => call !== prepared && call.id
         && call.sessionId === sessionId && call.targetParams?.tabId === outParams.tabId);
+
       const target = previous?.state === 'resolved' ? previous.readTarget : undefined;
+
       if (target && typeof outParams.target === 'string' && normalizeResultTarget(target.target) === normalizeResultTarget(outParams.target)) {
         prepared.fillTarget = {...target};
         outParams = {...outParams, expectedDocumentId:target.documentId, ...(target.nodeIdentity?{expectedBackendNodeId:target.nodeIdentity.backendNodeId}:{})};
       }
     }
+
     // 可能改变缺省页的调用先占一个序号，回执按序号判断自己是否已被更新设置超越。
     const targetSeq = TARGET_CHANGING_TOOLS.has(name) ? ++this.pageTargetSeq : undefined;
+
     return new Promise<unknown>((resolve, reject) => {
       const abort = () => {
         const pending = this.pending.get(id);
+
         if (!pending) return;
         clearTimeout(pending.timer); pending.cleanup?.(); this.pending.delete(id);
         const disp = this.dispatched.get(id);
+
         if (disp) { disp.state = 'timed_out'; disp.fact = 'unknown'; }
+
         reject(Object.assign(new Error('Readback cancelled'), {executionFact:'unknown'}));
       };
+
       const timer = setTimeout(() => {
         this.pending.get(id)?.cleanup?.();
         this.pending.delete(id);
         const disp = this.dispatched.get(id);
+
         if (disp) {
           disp.state = "timed_out";
           disp.fact = "unknown";
         }
+
         const err: ToolExecutionError = new Error(`Tool call "${name}" timed out after ${timeout}ms`);
         err.executionFact = "unknown";
         reject(err);
       }, timeout);
+
       this.pending.set(id, { resolve, reject, timer, name, startedAt: Date.now(), sessionId,
         ...(signal ? {cleanup:()=>signal.removeEventListener('abort',abort)} : {}) });
       signal?.addEventListener('abort',abort,{once:true});
-      if (signal?.aborted) { abort(); return; }
+
+      if (signal?.aborted) { abort();
+
+ return; }
+
       try {
         const frame: ToolCallFrame = { type: "tool_call", id, name, params: outParams, ...(sdkId ? { sdkId } : {}) };
+
         if (programId) frame.programId = programId;
+
         if (executionEpoch !== undefined) frame.epochs = { [sessionId ?? "main"]: executionEpoch };
+
         if (sessionId && !isLeadSession(sessionId) && sessionId !== LEAD_SESSION_ID) {
           frame.sessionId = sessionId;
         }
+
         this.registerDispatch(id, sdkId, name, sessionId, targetSeq, outParams);
         send(frame);
       } catch (err) {
@@ -309,10 +347,12 @@ export class ToolRpc {
         const e: ToolExecutionError = err instanceof Error ? err : new Error(String(err));
         e.executionFact = "not_executed";
         const disp = this.dispatched.get(id);
+
         if (disp) {
           disp.state = "rejected";
           disp.fact = "not_executed";
         }
+
         reject(e);
       }
     });
@@ -336,8 +376,10 @@ export class ToolRpc {
     // Only existing target-changing receipts need full params. Observation binding
     // retains identity, never field values, scripts or other page content.
     entry.targetParams = targetSeq !== undefined ? targetParams : targetParams ? {tabId:targetParams.tabId,target:targetParams.target} : undefined;
+
     if (targetSeq !== undefined) entry.targetSeq = targetSeq;
     this.dispatched.set(transportId, entry);
+
     if (sdkId) this.dispatched.set(sdkId, entry);
     this.pruneDispatched();
   }
@@ -346,14 +388,19 @@ export class ToolRpc {
     if (this.dispatched.size <= DISPATCHED_MAX) return;
     const pendingIds = new Set(this.pending.keys());
     const droppable: string[] = [];
+
     for (const [key, entry] of this.dispatched) {
       if (pendingIds.has(key) || pendingIds.has(entry.id)) continue;
+
       if (entry.state === "resolved" || entry.state === "rejected") droppable.push(key);
     }
+
     for (const key of droppable) {
       if (this.dispatched.size <= DISPATCHED_MAX) break;
       const entry = this.dispatched.get(key);
+
       if (!entry) continue;
+
       for (const [alias, candidate] of [...this.dispatched]) if (candidate === entry) this.dispatched.delete(alias);
     }
   }
@@ -361,12 +408,15 @@ export class ToolRpc {
   /** 处理扩展回传的 tool_result；返回是否匹配到 pending 调用或晚到调用。 */
   handleResult(id: string, ok: boolean, data?: unknown, error?: string, executionFact?: ToolExecutionFact): boolean {
     const entry = this.pending.get(id);
+
     if (!entry) {
       // 检查是否为晚到/重复回执
       const disp = this.dispatched.get(id);
+
       if (disp && (disp.state === "timed_out" || disp.state === "disconnected" || disp.state === "sent" || disp.state === "preparing")) {
         disp.state = ok ? "resolved" : "rejected";
         disp.fact = executionFact ?? (ok ? "executed" : "unknown");
+
         if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
         this.fireLateResult({
           id,
@@ -378,24 +428,32 @@ export class ToolRpc {
           error,
           executionFact: disp.fact,
         });
+
         return true;
       }
+
       return false;
     }
+
     clearTimeout(entry.timer);
     entry.cleanup?.();
     this.pending.delete(id);
     const fact: ToolExecutionFact = executionFact ?? (ok ? "executed" : "unknown");
     const disp = this.dispatched.get(id);
+
     if (disp) {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
+
       if (ok) this.applyTargetReceipt(disp.name, disp.targetParams, data, disp.sessionId, disp.targetSeq);
+
       if (ok && fact === 'executed') this.recordReadTarget(disp, data);
     }
+
     const ms = Date.now() - entry.startedAt;
     const who = entry.sessionId ?? "main";
     console.error(`[sideagent] tool ${entry.name} session=${who} ${ok ? "ok" : "err"} ${ms}ms${error ? ` ${error}` : ""}`);
+
     if (ok) {
       entry.resolve(data);
     } else {
@@ -403,11 +461,13 @@ export class ToolRpc {
       err.executionFact = fact;
       entry.reject(err);
     }
+
     return true;
   }
 
   private fireLateResult(info: Parameters<LateResultHandler>[0]): void {
     try { this.onLateResult?.(info); } catch { /* 监听者异常不影响 RPC */ }
+
     for (const listener of [...this.lateListeners]) {
       try { listener(info); } catch { /* 监听者异常不影响 RPC */ }
     }
@@ -418,12 +478,15 @@ export class ToolRpc {
       clearTimeout(entry.timer);
       entry.cleanup?.();
       const disp = this.dispatched.get(id);
+
       if (disp) {
         disp.state = "disconnected";
         disp.fact = err.executionFact ?? "unknown";
       }
+
       entry.reject(err);
     }
+
     this.pending.clear();
   }
 
@@ -433,9 +496,11 @@ export class ToolRpc {
 
   pendingSessionIds(): string[] {
     const ids = new Set<string>();
+
     for (const entry of this.pending.values()) {
       ids.add(entry.sessionId && !isLeadSession(entry.sessionId) ? entry.sessionId : LEAD_SESSION_ID);
     }
+
     return [...ids];
   }
 }

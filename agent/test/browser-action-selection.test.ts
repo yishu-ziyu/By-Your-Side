@@ -39,7 +39,9 @@ describe('SEL-02 bounded action selection', () => {
       { ref: '@1', role: 'button', name: 'Save', disabled: false },
       { ref: '@2', role: 'textbox', name: 'Name', value: '', disabled: false },
     ]);
+
     const mats = materials(2);
+
     const selection = selectBrowserActionCandidates({
       goal: 'fill name',
       page: obs,
@@ -47,6 +49,7 @@ describe('SEL-02 bounded action selection', () => {
       history: [],
       canGenerateText: false,
     });
+
     expect(selection.bounded).toBe(false);
     expect(selection.candidates.some(c => c.operation === 'click' && c.target === '@1')).toBe(true);
     expect(selection.candidates.filter(c => c.operation === 'fill' && c.valueId).length).toBe(2);
@@ -69,6 +72,7 @@ describe('SEL-02 bounded action selection', () => {
       value: '',
       disabled: false,
     }));
+
     const mats = materials(12);
     const cartesian = browserCandidates(page(controls), mats, false);
     expect(cartesian.filter(c => c.operation === 'fill').length).toBe(360);
@@ -81,6 +85,7 @@ describe('SEL-02 bounded action selection', () => {
       history: [],
       canGenerateText: true,
     });
+
     expect(selection.bounded).toBe(true);
     expect(selection.candidates.length).toBeLessThanOrEqual(BROWSER_DECISION_CANDIDATE_LIMIT);
     expect(estimateDecisionPayloadBytes({
@@ -95,6 +100,7 @@ describe('SEL-02 bounded action selection', () => {
     // Focused window restores cartesian fills for only those materials; host originals untouched.
     const focus = selection.candidates.find(c => c.operation === 'select_materials' && c.materialIds?.includes('m12'))!;
     expect(focus.materialIds?.every(id => mats.some(m => m.id === id && m.value.startsWith('FULL-ORIGINAL')))).toBe(true);
+
     const focused = selectBrowserActionCandidates({
       goal: 'fill field 30 with material 12',
       page: page(controls),
@@ -103,6 +109,7 @@ describe('SEL-02 bounded action selection', () => {
       canGenerateText: false,
       focusedMaterialIds: focus.materialIds,
     });
+
     const fill = focused.candidates.find(c => c.operation === 'fill' && c.target === '@30' && c.valueId === 'm12');
     expect(fill).toBeTruthy();
     expect(mats.find(m => m.id === 'm12')!.value).toBe(`FULL-ORIGINAL-VALUE-12-${'x'.repeat(40)}`);
@@ -113,6 +120,7 @@ describe('SEL-02 bounded action selection', () => {
       { ref: '@1', role: 'button', name: 'Go', disabled: false },
       { ref: '@2', role: 'textbox', name: 'Q', value: '', disabled: false },
     ]);
+
     const selection = selectBrowserActionCandidates({
       goal: 'click go',
       page: obs,
@@ -121,11 +129,13 @@ describe('SEL-02 bounded action selection', () => {
       canGenerateText: false,
       canExecute: name => name !== 'click',
     });
+
     expect(selection.candidates.some(c => c.operation === 'click')).toBe(false);
     // hover is a separate tool; disabling click must not remove an allowed hover capability.
     expect(selection.candidates.some(c => c.operation === 'hover')).toBe(true);
     expect(selection.candidates.some(c => c.operation === 'fill')).toBe(true);
     expect(selection.candidates.some(c => c.operation === 'scroll')).toBe(true);
+
     const noHover = selectBrowserActionCandidates({
       goal: 'click go',
       page: obs,
@@ -134,6 +144,7 @@ describe('SEL-02 bounded action selection', () => {
       canGenerateText: false,
       canExecute: name => name !== 'hover',
     });
+
     expect(noHover.candidates.some(c => c.operation === 'hover')).toBe(false);
     expect(noHover.candidates.some(c => c.operation === 'click')).toBe(true);
   });
@@ -155,6 +166,7 @@ describe('SEL-02 bounded action selection', () => {
       materials: [],
       history: [],
     });
+
     expect(selection.candidates.some(c => c.operation === 'continue_read' && c.cursor === 'cursor-controls-2')).toBe(true);
     expect(selection.candidates.some(c => c.operation === 'select_scope' && c.viewScopeId === 'page:region-b')).toBe(true);
   });

@@ -12,9 +12,11 @@ export async function acceptDialog(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["accept_dialog"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
   await ensureAttached(tab.id);
   const result = await handleJsDialog(tab.id, true, params.promptText);
+
   return { accepted: result.ok, ...(result.dialog ? { dialog: result.dialog } : {}) };
 }
 
@@ -23,9 +25,11 @@ export async function dismissDialog(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["dismiss_dialog"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
   await ensureAttached(tab.id);
   const result = await handleJsDialog(tab.id, false);
+
   return { dismissed: result.ok, ...(result.dialog ? { dialog: result.dialog } : {}) };
 }
 
@@ -34,6 +38,8 @@ export async function dialogInfo(
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<ToolContract["dialog_info"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
+
   if (tab.id == null) throw new Error("工作标签页无效");
+
   return readDialogInfo(tab.id);
 }

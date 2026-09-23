@@ -182,6 +182,7 @@ export function decideCdpMethod(method: unknown): CdpMethodDecision {
 /** 模型不得用 CDP 参数里的 sessionId/targetId 换到其他 target。 */
 export function decideCdpCommandParams(params: Record<string, unknown> | undefined): CdpMethodDecision {
   if (!params) return { allowed: true };
+
   if (Object.prototype.hasOwnProperty.call(params, "sessionId") || Object.prototype.hasOwnProperty.call(params, "targetId")) {
     return {
       allowed: false,
@@ -189,5 +190,6 @@ export function decideCdpCommandParams(params: Record<string, unknown> | undefin
       message: "cdp 拒绝模型提供的 sessionId/targetId：只能绑定当前工作标签页，公共 raw CDP 不获得任意 Target 控制权",
     };
   }
+
   return { allowed: true };
 }
