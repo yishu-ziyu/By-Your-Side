@@ -20,7 +20,7 @@
 - 真实开发源：`session_236968c3-8bae-437a-9311-3bdccc4df91b`，2371 行；本轮只读复核会话：`session_f0b4980d-5078-4b2d-9712-034c6553c988`。
 - 一次性 `kimi -p` 正常退出未产生 SessionEnd，不能算自动触发。随后用 `kimi --session session_f0b4980d-5078-4b2d-9712-034c6553c988` 进入交互会话，执行 `/exit`，终端退出 0。未手工发送正式 hook payload。
 - 本地 `.kimi-code/wiki/consolidate.log` 记录该会话于 13:16:06 UTC 收到 SessionEnd 并开始；父终端退出后后台仍运行。13:20:26 UTC 记录 `finished exit=0`。复盘子会话为 `session_fd901a66-d6d8-4345-a0fb-79c1f4e0e1ff`，没有递归启动下一轮复盘。
-- 自动产出：两条 [pattern](../../.kimi-code/wiki/index.md)、一条 [待审提案](../../.kimi-code/wiki/proposals/20260909-probe-script-convention-skill.md)，以及索引与演化日志。没有创建 `.kimi-code/skills/`。
+- 自动产出：两条 [pattern](../knowledge/index.md)、一条 [待审提案](../knowledge/proposals/20260909-probe-script-convention-skill.md)，以及索引与演化日志。没有创建 `.kimi-code/skills/`。
 - 产物并非未经审阅即通过：初稿把源轨迹 1546 的 `Cannot find module` 误归纳为内联 import 不可用。主代理读取完整错误，并执行 `npx tsx -e 'import { readFileSync } from "node:fs"; console.log("INLINE_IMPORT", typeof readFileSync)'`，输出 `INLINE_IMPORT function`、退出 0。已修正 pattern、索引、提案，并区分脚本执行与网页重载成功，限定 Chrome profile 结论。初稿保留在被 git 忽略的 `consolidate-first-draft.log`；原复盘轨迹和报告保留。
 - 基于这次失败加强 consolidator 指令：原代理总结只能作线索，必须核对原始调用和完整错误，不从截断预览推广根因。这是提示词约束，不是保证所有未来经验正确的技术机制；候选提案仍须用户裁决。
 - 写入范围审计：只读复核会话无 Write/Edit；复盘会话只有 3 次 Write、2 次 Edit，全部指向上述 wiki 文件，Bash 调用为读取和检索。主代理另行修改启动脚本、专项测试、复盘指令、规范中的触发范围及本次记录。

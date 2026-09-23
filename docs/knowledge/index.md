@@ -1,6 +1,6 @@
-# Wiki Patterns 索引
+# 经验索引
 
-> 本目录是项目唯一经验库，`.kimi-code` 是历史路径名。Codex 主代理在开发任务验证后、最终交付前，按 [项目收尾规范](../../AGENTS.md#经验沉淀闭环codex-任务收尾)直接维护这里。
+> 本目录 `docs/knowledge/` 是项目唯一经验库，由旧 `.kimi-code/wiki/` 迁入。当前主代理在开发任务验证后、最终交付前，按 [项目收尾规范](../../AGENTS.md#经验沉淀闭环codex-任务收尾)直接维护这里。
 > 历史 Kimi 离线复盘也使用此库；Codex 收尾不依赖它。经验一事一页，纠正时保留依据；日常实现使用已生效规则和 skills，复盘与裁决时才定点读 wiki。
 
 - `patterns/`：经过核对的经验及其适用条件、证据；不自动成为指令。
@@ -21,3 +21,9 @@
 | [gui-test-window-steals-focus](patterns/gui-test-window-steals-focus.md) | 可见 GUI 测试窗口会抢用户前台；浏览器验收走 `--headless=new`，脚本自带拒绝 | 同上（用户反馈） | 2026-09-11 |
 | [pi-opencode-missing-session-header](patterns/pi-opencode-missing-session-header.md) | Prime Agent 的 refine/子代理请求缺 `x-opencode-session` 被 400 拒；别假设 refine 成功 | 用户截图报错排查 | 2026-09-11 |
 | [collapsed-details-animation-end](patterns/collapsed-details-animation-end.md) | 关闭的 `details` 里动画不启动，`animationend` 不会来；靠动画结束清状态要用定时器兜底，判断是否在跑看 `getAnimations()` | 面板运行态 A+B 动效 | 2026-09-11 |
+| [extension-harness-changes-observed-state](patterns/extension-harness-changes-observed-state.md) | 一直挂着的调试会话让扩展后台永不回收；标签页里的面板把自己当成当前页；要在真侧栏里测、会话只短暂挂 | 端到端测试基础设施小实验 | 2026-09-23 |
+| [chrome-fake-audio-file-sandbox](patterns/chrome-fake-audio-file-sandbox.md) | WAV 假麦克风默认静音，因为音频服务沙箱读不到文件；加 `--disable-features=AudioServiceSandbox`，用已知频率验 | 同上 | 2026-09-23 |
+| [model-gateway-check-with-real-tools](patterns/model-gateway-check-with-real-tools.md) | 新模型只用纯对话验会漏掉 schema 拒绝；带真实工具列表发一次，笼统 400 就录请求体二分 | 第一条真实路径样板用例 | 2026-09-23 |
+| [stray-js-shadows-ts-in-esbuild](patterns/stray-js-shadows-ts-in-esbuild.md) | 同名旧 `.js` 被 esbuild 打进扩展、tsx 却用 `.ts`，两边跑的代码不同；构建前列出并比较时间 | 同上 | 2026-09-23 |
+| [setting-label-effect-divergence](patterns/setting-label-effect-divergence.md) | 侧栏和后台各有一份默认值、后台还缓存，提示说 A 实际做 B；默认值只定义一处、跨进程现读，验收断言提示 == 效果 | 仓库清理 | 2026-09-23 |
+| [host-overlay-invisible-to-verification](patterns/host-overlay-invisible-to-verification.md) | 标注画在封闭 shadow root，核验看不到，复核又不认回执，agent 空转到超时；给核验留隔离层只读读数，并随 snapshot 带出 | 圈画完成证据 | 2026-09-23 |

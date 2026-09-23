@@ -20,7 +20,7 @@
 - 本机目录 `/Users/mahaoxuan/.sideagent/everos`，独立虚拟环境及已验证上游源码，不依赖 /tmp。服务名 `local.by-your-side.everos`，LaunchAgent 配置保存于 `~/Library/LaunchAgents`。本地绑定 127.0.0.1:50705；无公网部署。
 - 正式 main 已挂接 ExperienceStore，无需修改正在运行的浏览器宿主。服务读取启用后的已完成记录；本轮没有刷新日常扩展，也不打断其他任务。
 - 仓库实现：`scripts/everos/bridge.py`、`manage.py`；安装副本分别为 `~/.sideagent/everos/service.py`、`control.py`，逐字核对一致。部署环境锁定清单在安装目录 requirements.lock。
-- [使用与关闭说明](../../scripts/everos/README.md)。用户也可以直接让助手关闭。关闭保留已有积累，停止接收与整理；重新开启不追溯停用期间的记录。
+- [使用与关闭说明](../integrations/everos.md)。用户也可以直接让助手关闭。关闭保留已有积累，停止接收与整理；重新开启不追溯停用期间的记录。
 
 ## 验证证据
 

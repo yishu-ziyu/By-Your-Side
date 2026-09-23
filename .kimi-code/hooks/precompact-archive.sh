@@ -1,6 +1,6 @@
 #!/bin/bash
 # PreCompact hook：上下文压缩前归档完整轨迹（可恢复 fold，ContextPilot foldHistory 的穷人版）。
-# 压缩后若需找回早期细节，可查 .kimi-code/wiki/fold-archive/。
+# 压缩后若需找回早期细节，可查 docs/knowledge/fold-archive/。
 # 注意：PreCompact 返回值被完全忽略，本 hook 只做归档，无法干预压缩本身。
 PROJECT="/Users/mahaoxuan/Desktop/ego"
 
@@ -13,7 +13,7 @@ sid=$(printf '%s' "$input" | sed -n 's/.*"session_id": *"\([^"]*\)".*/\1/p' | he
 wire=$(find "$HOME/.kimi-code/sessions" -path "*${sid}/agents/main/wire.jsonl" 2>/dev/null | head -1)
 [ -f "$wire" ] || exit 0
 
-dest="$PROJECT/.kimi-code/wiki/fold-archive"
+dest="$PROJECT/docs/knowledge/fold-archive"
 mkdir -p "$dest"
 cp "$wire" "$dest/$(date +%Y%m%d-%H%M%S)-${sid}.jsonl"
 exit 0

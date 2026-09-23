@@ -2,7 +2,7 @@
 # SessionEnd hook：会话结束后自动拉起 consolidator 做离线经验复盘。
 # 试点期只对 ego 项目生效（按事件 payload 的 cwd 门控）；推广时放开门控即可。
 PROJECT="/Users/mahaoxuan/Desktop/ego"
-WIKI="$PROJECT/.kimi-code/wiki"
+WIKI="$PROJECT/docs/knowledge"
 
 input=$(cat)
 

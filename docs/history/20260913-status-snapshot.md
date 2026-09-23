@@ -316,7 +316,7 @@ DeepSeek已完成隔离候选和离线修复，见[报告](../tasks/20260910-bin
 
 ## 开发维护：Codex 任务收尾经验沉淀
 
-2026-09-09：用户明确目的为当前 Codex 开发中的经验沉淀，并批准以任务收尾约定落地。当前主代理已更新规范与 [经验库入口](../../.kimi-code/wiki/index.md)，用本次“验收入口错位”完成提炼、核对、记录和待审；下一步由用户判断是否采纳 [模板入口字段提案](../../.kimi-code/wiki/proposals/20260909-acceptance-entry-field.md)。不依赖 Kimi 退出事件，未新增后台机制或启用 skill。验证与范围见 [本轮验收](../evals/20260909-codex-experience-closeout.md)。
+2026-09-09：用户明确目的为当前 Codex 开发中的经验沉淀，并批准以任务收尾约定落地。当前主代理已更新规范与 [经验库入口](../knowledge/index.md)，用本次“验收入口错位”完成提炼、核对、记录和待审；下一步由用户判断是否采纳 [模板入口字段提案](../knowledge/proposals/20260909-acceptance-entry-field.md)。不依赖 Kimi 退出事件，未新增后台机制或启用 skill。验证与范围见 [本轮验收](../evals/20260909-codex-experience-closeout.md)。
 
 旧 Kimi 接线的实测、候选纠错及工程检查保留在 [前轮记录](../evals/20260909-wiki-consolidation-repair.md)，不将其当成当前 Codex 路径的验收证据。原 probe-scripts 提案仍待审。
 

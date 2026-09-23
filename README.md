@@ -1,198 +1,40 @@
 # By Your Side
 
-**陪你阅读，也帮你操作网页的 Chrome AI 助手。**
+陪你阅读，也帮你操作网页的 Chrome AI 助手。复用当前浏览器的登录状态，在侧栏对话、阅读网页并执行任务。
 
-By Your Side 是一个 Chrome 侧栏助手。它复用你当前浏览器的登录状态，能查看网页、查找资料、操作表单，也能在你阅读时解释选中的文字、翻译整页。任务运行时，你可以继续提问、修改要求或接管页面。
+开发预览版。现有源码安装面向 macOS + Chrome；三系统成品分发仍是待完成目标。最新验证范围与已知问题只在 [当前状态](docs/STATUS.md) 维护。
 
-**当前为开发预览版**，通过源码加载使用。安装流程目前面向 macOS + Chrome，需要自行配置模型服务；语音另需阶跃星辰服务。
+## 文档导航
 
-[快速开始](#安装) · [功能](#可以做什么) · [语音](#语音交互) · [架构](docs/architecture.md) · [当前问题与验收](docs/STATUS.md)
-
-以下介绍已实现的能力与安装方式，不承诺所有路径都稳定。日常试用仍有语音工具选错、长回复和音色稳定性反馈；最新问题、加载范围与未完成验证统一见 STATUS。
-
-<p align="center">
-  <img src="docs/evals/20260916-composer-cleanup/05-answer.png" width="360" alt="By Your Side 侧栏：任务过程、阅读回答与语音入口">
-</p>
-
-<p align="center"><sub>真实侧栏界面，截图中的对话使用演示内容。</sub></p>
-
-## 可以做什么
-
-| 场景 | 你可以这样说 | 当前能力 |
-|---|---|---|
-| 理解网页 | “读一下这篇文章，总结主要观点。” | 读取页面、整理回答，按需展开执行过程 |
-| 阅读时追问 | 选中文字后按 `⌘J` | 在页面内解释、翻译和连续追问；可转入侧栏继续 |
-| 整页翻译 | “把这页翻译成中文，只保留译文。” | 双语或仅译文，切换显示、字体与恢复原文 |
-| 操作浏览器 | “把这几条结果的标题和链接整理给我。” | 导航、搜索、点击、填写、截图及多步网页操作 |
-| 修改执行中的要求 | “预算改成六百，其他条件不变。” | 将修改送到原任务，保留页面与任务归属 |
-| 增加独立任务 | “同时在新标签页打开另一个网站。” | 登记独立要求，安排执行，并把结果送回当前语音 |
-| 记住明确偏好 | “请记住，我希望先看中文摘要。” | 保存、修改和忘记显式记忆，支持网站范围 |
-
-页面内阅读问答有独立的上下文，不会把每一次阅读追问都当作对后台任务的修改。整页翻译目前面向可访问的网页 DOM，不覆盖图片 OCR、PDF 或跨域 iframe。
-
-## 显示操作更快一步
-
-在已经翻译的页面上，“改成宋体”“只显示译文”“切回双语”可以交给可选的 **TypeSafe Jev** 判断，直接调用原有浏览器工具，减少一次主模型规划。没有配置 Jev 时，仍使用原有任务模型。
-
-本地真实侧栏的 10 组配对验收中，9 组直接执行；这 9 组的页面变更耗时中位数由 **2.60 秒降到 0.77 秒**。这只是显示操作的结果，不代表所有浏览器任务都加速 70%。判断不确定或超过 1 秒时回到原流程；恢复网站字体暂由主模型处理。详见[接入与验收](docs/evals/20260918-jev-display-integration.md)。
-
-## 语音交互
-
-点击输入区的“语音”，首次使用时允许麦克风访问。文字输入仍然可用。
-
-- **补充原任务**：普通修改直接送达，任务保持原有身份。
-- **提出独立要求**：当前采用最多 2 个根任务执行、8 个独立要求等待的准入限制。使用同一来源页面的要求会等待，名额满时有明确反馈。
-- **停止播报**：“别说了”控制声音，不等于取消网页任务。
-- **控制指定任务**：可以按明确任务名称查询、修改或取消；页面接管与任务控制另有执行回执。
-- **接收多个结果**：关联任务的结果回到原语音，按各自任务身份校验、排队播报。尚未听到首声的结果不会因为下一次插话而丢失。
-
-日常语音只使用 StepAudio 3 Realtime 开放平台 API，负责连续对话、理解和工具选择；网页任务的控制、规划和执行仍接现有任务引擎。不提供 2.5 切换或回退。开口不会由本地程序强制截断播报；“停声”按钮只停声音，不取消后台任务。
-
-原任务隔离与多结果机制的历史验证保留；Realtime 3 的证据单列在[日常迁移验收](docs/evals/20260920-realtime3-daily.md)，不把旧语音测试当作新版本真人体验通过。真人设备上的收音、回声和接话自然度仍在持续验证；已听到一半的精确续播、全部任务统一控制、稳定的“第二项”编号指代仍是后续工作。重启会保留待办记录，但不会自动重跑旧页面动作。
-
-详见[语音架构](docs/voice-architecture.md)和[多任务验收](docs/evals/20260916-voice-multi-request.md)。
+| 要做什么 | 从这里开始 |
+|---|---|
+| 找项目资料 | [文档总入口](docs/README.md) |
+| 安装与配置 | [源码安装](docs/guides/getting-started.md) |
+| 了解交互与权限 | [使用说明](docs/guides/usage.md) |
+| 找代码职责和调用链 | [架构](docs/architecture.md) · [协议](docs/protocol.md) |
+| 接着开发 | [当前状态](docs/STATUS.md) · [续接要点](docs/NOTES.md) |
+| 修改与验证 | [开发检查](docs/development/checks.md) · [文档维护](docs/development/documentation.md) |
 
 ## 安装
 
-### 1. 准备环境
+环境准备、模型凭据、扩展加载与可选语音设置见[安装步骤](docs/guides/getting-started.md)。
 
-- macOS、Google Chrome。
-- Node.js **22.19 或更高版本**、npm、Git。
-- 一个 Pi 支持且已配置凭据的模型服务。模型用量由对应服务计费。
+## 可以做什么
 
-```bash
-git clone https://github.com/yishu-ziyu/By-Your-Side.git
-cd By-Your-Side
-npm ci
-npm run build
-npm run install:host
-```
+页面理解、选区追问、翻译、浏览器操作、会话与记忆见[使用说明](docs/guides/usage.md)。
 
-`build` 生成 `extension/dist/`；`install:host` 安装 Chrome Native Messaging 清单与本地启动脚本。仓库移动位置或更换 Node 路径后，重新运行安装命令。
+## 语音交互
 
-### 2. 配置任务模型
-
-本地进程使用 Pi 的模型配置与凭据，通常位于 `~/.pi/agent/`。尚未配置时，可以运行：
-
-```bash
-npx @earendil-works/pi-coding-agent
-```
-
-在 Pi 中完成对应服务的登录或凭据设置，再选择模型。也可以通过 `~/.sideagent/config.json` 指定任务模型，例如：
-
-```json
-{
-  "model": "kimi-coding/kimi-for-coding"
-}
-```
-
-这是模型标识示例，需要对应账号具备访问权限。省略 `model` 时沿用 Pi 的首选配置。需要网络代理时，可在同一文件增加 `proxy`，值为可用代理 URL；不要把账号密钥写入这个文件。配置变更后重载扩展。
-
-### 3. 加载扩展
-
-1. 打开 `chrome://extensions`，开启“开发者模式”。
-2. 点击“加载已解压的扩展程序”，选择本仓库的 `extension/dist/`。
-3. 点击工具栏的 **By Your Side** 图标，打开侧栏。
-
-Chrome 会自动启动本地伴随进程。正常使用不需要手动启动服务或粘贴连接 token。默认扩展 ID 与 Native Messaging 白名单由仓库 manifest 对应生成。
-
-### 4. 可选：启用语音
-
-将自己的 StepFun **开放平台 API Key** 写入本机文件 `~/.sideagent/stepfun-api.key`（不是 Step Plan 套餐 Key），并限制其权限：
-
-```bash
-chmod 600 ~/.sideagent/stepfun-api.key
-```
-
-文件只保存 Key 本身，不加 JSON 包装。也支持 `STEPFUN_API_KEY` 环境变量，但它必须对 Chrome 启动的伴随进程可见。唯一语音模型为 `stepaudio-3-realtime-preview`，连接 `wss://api.stepfun.com/v1/realtime`；不再调用 2.5 Realtime 或旧 TTS。Key 只由本地进程读取，不发送到侧栏。开放平台按账号规则计费；未配置语音 Key 不影响文字功能。
-
-### 5. 可选：启用 Jev 显示操作加速
-
-在 `~/.sideagent/typesafe.env` 中填写自己的 TypeSafe API Key：
-
-```dotenv
-TYPESAFE_API_KEY=填写你自己的密钥
-```
-
-将文件权限设为仅自己可读写：
-
-```bash
-chmod 600 ~/.sideagent/typesafe.env
-```
-
-在已有的 `~/.sideagent/config.json` 中增加 `"displayFastPath": true`，保留其他配置，然后重载扩展。设为 `false` 即可关闭。服务使用 `jev-1.13.0`；启用后，符合入口条件的显示请求及能力说明会发送给 TypeSafe。Key 保存在本机，不写入仓库。配置与数据处理说明见 [TypeSafe 官方文档](https://docs.typesafe.ai/introduction)。
-
-### 6. 可选：通用浏览器循环（实验）
-
-使用同一 TypeSafe 凭据，在本地配置增加 `"generalBrowserLoop": true` 后重载扩展。缺省关闭；它与显示加速、运行中显示修改是不同开关。开启后，符合条件的任务先由 Jev 在当前页面候选中选动作，仍经原浏览器工具、权限和结果账本执行；需要内容时由任务模型准备，之后交主模型核验或继续。
-
-这是实验能力，不能保证减少总耗时或完成任意网页任务。具体进入条件见[架构](docs/architecture.md)，本机是否已开、真实试用结果只在[STATUS](docs/STATUS.md)维护。
-
-## 会话、页面和记忆
-
-**会话与任务。** 多个会话分别保存聊天、目标、草稿与附件。切换侧栏会话不会取消后台任务；关闭语音也不会停止网页执行。本地进程在任务中途停止后，会话会标为“已中断”并保留目标与结果账本，但不会自动重放旧动作；明确说“继续原任务”后，助手会先重新读取当前页面再续接。
-
-**页面归属。** 网页操作携带会话、任务与控制版本。同页共享或移交通过已有协调机制处理，不能仅凭一个 `tabId` 绕过页面归属。你可以接管页面，再交还给助手。
-
-**显式记忆。** 明确说“请记住……”保存偏好，可在记忆管理中查看、修改或忘记。网站范围内的记忆只用于相关站点；忘记会停止后续检索和注入，不删除既有聊天记录。
-
-**经历积累。** 仓库包含可选的 [EverOS 桥接](scripts/everos/README.md)，需要单独部署。它可以整理已完成任务的经历，生成的内容目前不直接注入日常执行，也不会覆盖显式记忆。普通安装不会自动启用该服务。
-
-回答正文支持宋体、黑体、系统字体及字号设置，详见[阅读外观](docs/reading-appearance.md)。
+使用方式见[语音交互](docs/guides/usage.md#语音交互)，实现边界见[语音架构](docs/voice-architecture.md)。
 
 ## 数据和权限
 
-扩展需要页面访问、标签页、脚本执行、调试和 Native Messaging 等权限，以完成观察与操作。使用 `chrome.debugger` 时，Chrome 可能显示正在调试的提示条。
-
-任务所需的文字、页面内容或截图会发送给你配置的模型服务；语音输入会发送给阶跃服务；可选的 Jev 显示判断与通用浏览器循环使用 TypeSafe 服务。**本地伴随进程不意味着模型推理离线。**
-
-会话、任务回执、记忆和日志主要保存在 `~/.sideagent/`；模型凭据由对应配置管理。提交、发布、删除等行为受任务指令、授权与接管流程约束，具体执行边界见[协议](docs/protocol.md)和[人机协作约定](docs/human-ai-contract.md)。
+见[数据和权限](docs/guides/usage.md#数据和权限)。本地伴随进程不意味着模型推理离线。
 
 ## 实现结构
 
-```mermaid
-flowchart LR
-  U[文字 / 语音 / 选区] --> E[Chrome 扩展]
-  E <-->|Native Messaging| A[本地 Node.js 进程]
-  A --> Q[会话 / 要求登记 / 任务调度]
-  Q --> R[每会话运行时：技能、显示判断、可选通用循环]
-  R --> P[Pi 与任务模型：规划、材料、核验]
-  R <-->|工具 RPC| E
-  P <-->|浏览器工具| E
-  A <--> V[StepAudio 3 Realtime]
-  Q --> D[交付记录与播报协调]
-  D --> E
-```
-
-| 目录 | 职责 |
-|---|---|
-| `extension/` | 侧栏、页面内阅读、收音播放、浏览器工具与页面控制 |
-| `agent/` | 本地进程、Pi 会话、任务调度、语音协调与记忆 |
-| `shared/` | 两端共享的消息、任务、阅读与翻译契约 |
-| `scripts/acceptance/` | 隔离浏览器和真实服务验收入口 |
-| `docs/evals/` | 完成标准、失败复现与验收证据 |
-
-模块边界见[架构与维护](docs/architecture.md)，资料入口见[文档导航](docs/README.md)。
+`extension/` 负责浏览器与侧栏；`agent/` 负责本地运行时；`shared/` 保存共享契约。详细职责只在[架构](docs/architecture.md)维护。
 
 ## 开发与验证
 
-```bash
-npm run build                # 构建扩展
-npm run typecheck            # 前后端类型检查
-npm run test:unit            # 普通测试
-npm run test:scale           # 规模测试
-npm run check:architecture   # 模块依赖边界
-npm run check                # 边界、类型、全部测试、构建
-```
-
-网页和语音改动还应验证实际使用路径。仓库已有[连续纠正](docs/evals/20260915-continuous-steering.md)、[阅读问答](docs/evals/20260916-selection-reading.md)、[页面翻译](docs/evals/20260916-page-translation-failure.md)及[语音多任务](docs/evals/20260916-voice-multi-request.md)的专项记录。自动化与真实服务探针不替代真人麦克风和听感验收。
-
-需要调试传输时：
-
-```bash
-npm run dev:agent            # WebSocket 调试模式，默认监听 127.0.0.1:7758
-```
-
-该模式打印连接 token，扩展在 Native Messaging 不可用时可回退连接。Native 模式日志位于 `~/.sideagent/agent.log` 和 `~/.sideagent/wrapper-err.log`。`npm run reload:ext` 需要 Chrome 开启远程调试端口，不是普通安装的前置条件。
-
-当前状态、已知问题和下一步统一维护在 [STATUS](docs/STATUS.md)。
+先读 [AGENTS.md](AGENTS.md)，按[开发检查](docs/development/checks.md)选择验证范围。文档检查入口：`npm run check:docs`。
