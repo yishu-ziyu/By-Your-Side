@@ -14,8 +14,7 @@
   "agent/src/browser-action-selection.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 9,
     "anti-slop(no-known-value-widening)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 54
+    "anti-slop(no-unsafe-dictionary-type)": 1
   },
   "agent/src/browser-decision-budget.ts": {
     "anti-slop(no-runtime-typeof)": 1,
@@ -27,7 +26,6 @@
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-returns)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 5,
-    "anti-slop(require-readable-spacing)": 112,
     "anti-slop(require-safety-comment-for-type-assertion)": 15,
     "eslint(no-unused-vars)": 1
   },
@@ -48,7 +46,6 @@
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unknown-returns)": 7,
     "anti-slop(no-unsafe-dictionary-type)": 13,
-    "anti-slop(require-readable-spacing)": 120,
     "anti-slop(require-safety-comment-for-type-assertion)": 17
   },
   "agent/src/canonical-value.ts": {
@@ -61,7 +58,6 @@
     "anti-slop(no-runtime-typeof)": 4,
     "anti-slop(no-unknown-parameters)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 70,
     "anti-slop(require-safety-comment-for-type-assertion)": 5
   },
   "agent/src/cliproxy.ts": {
@@ -89,8 +85,7 @@
   "agent/src/conversation-runtime.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 4,
     "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(no-unknown-parameters)": 2,
-    "anti-slop(require-readable-spacing)": 36
+    "anti-slop(no-unknown-parameters)": 2
   },
   "agent/src/conversation-store.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 1
@@ -103,8 +98,7 @@
     "oxc(const-comparisons)": 1
   },
   "agent/src/download-artifacts.ts": {
-    "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(require-readable-spacing)": 13
+    "anti-slop(no-runtime-typeof)": 1
   },
   "agent/src/experience.ts": {
     "anti-slop(no-array-filter-map)": 1,
@@ -132,8 +126,7 @@
     "unicorn(no-useless-spread)": 1
   },
   "agent/src/fetch-result.ts": {
-    "anti-slop(no-known-value-widening)": 1,
-    "anti-slop(require-readable-spacing)": 17
+    "anti-slop(no-known-value-widening)": 1
   },
   "agent/src/fleet.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 3,
@@ -141,7 +134,6 @@
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unknown-returns)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 93,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
     "unicorn(no-useless-spread)": 1
   },
@@ -163,8 +155,7 @@
   },
   "agent/src/main.ts": {
     "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-readable-spacing)": 64
+    "anti-slop(no-unknown-parameters)": 1
   },
   "agent/src/memory-decision.ts": {
     "anti-slop(no-runtime-typeof)": 3,
@@ -182,15 +173,11 @@
     "anti-slop(no-runtime-typeof)": 2,
     "eslint(no-useless-catch)": 1
   },
-  "agent/src/prompt.ts": {
-    "anti-slop(require-readable-spacing)": 2
-  },
   "agent/src/reading.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1
   },
   "agent/src/realtime-browser-judge.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 12,
-    "anti-slop(require-readable-spacing)": 29,
     "anti-slop(require-safety-comment-for-type-assertion)": 4
   },
   "agent/src/realtime-browser-tools.ts": {
@@ -198,7 +185,6 @@
     "anti-slop(no-unknown-parameters)": 2,
     "anti-slop(no-unknown-returns)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 7,
-    "anti-slop(require-readable-spacing)": 9,
     "anti-slop(require-safety-comment-for-type-assertion)": 4
   },
   "agent/src/realtime-voice-connection.ts": {
@@ -233,7 +219,6 @@
     "anti-slop(no-unknown-parameters)": 5,
     "anti-slop(no-unknown-returns)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 8,
-    "anti-slop(require-readable-spacing)": 64,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
     "unicorn(no-useless-spread)": 2
   },
@@ -253,7 +238,6 @@
     "anti-slop(no-unknown-parameters)": 16,
     "anti-slop(no-unknown-returns)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 28,
-    "anti-slop(require-readable-spacing)": 645,
     "anti-slop(require-safety-comment-for-type-assertion)": 46,
     "unicorn(no-useless-spread)": 1
   },
@@ -298,8 +282,7 @@
     "anti-slop(require-safety-comment-for-type-assertion)": 7
   },
   "agent/src/stagehand-bridge.ts": {
-    "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(require-readable-spacing)": 4
+    "anti-slop(no-runtime-typeof)": 1
   },
   "agent/src/streaming-tts.ts": {
     "anti-slop(no-unsafe-dictionary-type)": 1
@@ -361,13 +344,11 @@
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unknown-returns)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 4,
-    "anti-slop(require-readable-spacing)": 125,
     "anti-slop(require-safety-comment-for-type-assertion)": 57
   },
   "agent/src/upload-paths.ts": {
     "anti-slop(no-known-value-widening)": 1,
-    "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(require-readable-spacing)": 30
+    "anti-slop(no-runtime-typeof)": 2
   },
   "agent/src/user-delivery.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 4,
@@ -438,18 +419,11 @@
     "anti-slop(no-array-filter-map)": 1,
     "unicorn(no-useless-spread)": 1
   },
-  "agent/test/browser-action-selection.test.ts": {
-    "anti-slop(require-readable-spacing)": 12
-  },
   "agent/test/browser-capability-authorization.test.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 19,
     "anti-slop(require-safety-comment-for-type-assertion)": 6
-  },
-  "agent/test/browser-decision-context.test.ts": {
-    "anti-slop(require-readable-spacing)": 15
   },
   "agent/test/browser-decision-continue.test.ts": {
     "anti-slop(no-chained-type-assertions)": 2,
@@ -457,12 +431,10 @@
   },
   "agent/test/browser-decision-input.test.ts": {
     "anti-slop(no-module-mocking)": 1,
-    "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-readable-spacing)": 5
+    "anti-slop(no-unknown-parameters)": 1
   },
   "agent/test/browser-decision-loop.test.ts": {
     "anti-slop(no-unsafe-dictionary-type)": 3,
-    "anti-slop(require-readable-spacing)": 64,
     "anti-slop(require-safety-comment-for-type-assertion)": 22,
     "eslint(no-unused-vars)": 1
   },
@@ -491,7 +463,6 @@
   "agent/test/browser-program.test.ts": {
     "anti-slop(no-chained-type-assertions)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 3,
-    "anti-slop(require-readable-spacing)": 11,
     "anti-slop(require-safety-comment-for-type-assertion)": 5
   },
   "agent/test/browser-recovery-tools.test.ts": {
@@ -503,7 +474,6 @@
   "agent/test/cap02a-events.test.ts": {
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 18,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "agent/test/cap02b-input-wiring.test.ts": {
@@ -556,7 +526,6 @@
   },
   "agent/test/display-steering.test.ts": {
     "anti-slop(no-module-mocking)": 2,
-    "anti-slop(require-readable-spacing)": 11,
     "anti-slop(require-safety-comment-for-type-assertion)": 7,
     "eslint(no-unused-vars)": 1
   },
@@ -677,9 +646,6 @@
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 12
   },
-  "agent/test/page-event-ledger.test.ts": {
-    "anti-slop(require-readable-spacing)": 7
-  },
   "agent/test/page-translation.test.ts": {
     "anti-slop(no-known-value-widening)": 2,
     "anti-slop(no-runtime-typeof)": 1,
@@ -706,9 +672,6 @@
   "agent/test/product-journeys-pairing.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
-  "agent/test/program-first.test.ts": {
-    "anti-slop(require-readable-spacing)": 10
-  },
   "agent/test/protocol.test.ts": {
     "anti-slop(no-unknown-parameters)": 1
   },
@@ -719,7 +682,6 @@
   "agent/test/realtime-browser-judge.test.ts": {
     "anti-slop(no-chained-type-assertions)": 4,
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 16,
     "anti-slop(require-safety-comment-for-type-assertion)": 10
   },
   "agent/test/realtime-direct-tools.test.ts": {
@@ -775,7 +737,6 @@
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-object-parameters)": 1,
     "anti-slop(no-unknown-parameters)": 3,
-    "anti-slop(require-readable-spacing)": 29,
     "anti-slop(require-safety-comment-for-type-assertion)": 3
   },
   "agent/test/realtime-voice-response-race.test.ts": {
@@ -852,7 +813,6 @@
     "anti-slop(no-unknown-parameters)": 3,
     "anti-slop(no-unknown-returns)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 31,
     "anti-slop(require-safety-comment-for-type-assertion)": 10
   },
   "agent/test/stagehand-playwright.test.ts": {
@@ -939,7 +899,6 @@
     "anti-slop(no-known-value-widening)": 1,
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 2,
-    "anti-slop(require-readable-spacing)": 50,
     "anti-slop(require-safety-comment-for-type-assertion)": 26
   },
   "agent/test/untrusted-page-content.test.ts": {
@@ -962,7 +921,6 @@
   "agent/test/user-delivery-runtime.test.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 23,
     "anti-slop(require-safety-comment-for-type-assertion)": 20
   },
   "agent/test/user-delivery-speech-evaluator.test.ts": {
@@ -1024,9 +982,6 @@
   "agent/test/voice-intent.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 2
   },
-  "agent/test/voice-listen-back.test.ts": {
-    "anti-slop(require-readable-spacing)": 2
-  },
   "agent/test/voice-load-boundaries.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
@@ -1049,9 +1004,6 @@
   },
   "agent/test/voice-notifications.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 2
-  },
-  "agent/test/voice-progress.test.ts": {
-    "anti-slop(require-readable-spacing)": 3
   },
   "agent/test/voice-session.test.ts": {
     "anti-slop(no-chained-type-assertions)": 9,
@@ -1150,7 +1102,6 @@
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-readable-spacing)": 10,
     "anti-slop(require-safety-comment-for-type-assertion)": 3
   },
   "extension/src/background/cursor-context.ts": {
@@ -1171,15 +1122,12 @@
   },
   "extension/src/background/exec/cdp.ts": {
     "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 11
+    "anti-slop(no-unsafe-dictionary-type)": 1
   },
   "extension/src/background/exec/dialog.ts": {
-    "anti-slop(no-conditional-empty-object-spread)": 2,
-    "anti-slop(require-readable-spacing)": 6
+    "anti-slop(no-conditional-empty-object-spread)": 2
   },
   "extension/src/background/exec/download.ts": {
-    "anti-slop(require-readable-spacing)": 4,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "extension/src/background/exec/effect.ts": {
@@ -1191,8 +1139,7 @@
   },
   "extension/src/background/exec/file-chooser.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
-    "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(require-readable-spacing)": 4
+    "anti-slop(no-runtime-typeof)": 1
   },
   "extension/src/background/exec/input.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 14,
@@ -1207,13 +1154,9 @@
   "extension/src/background/exec/navigate.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1
   },
-  "extension/src/background/exec/network.ts": {
-    "anti-slop(require-readable-spacing)": 7
-  },
   "extension/src/background/exec/page-events.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(require-readable-spacing)": 12,
     "anti-slop(require-safety-comment-for-type-assertion)": 2
   },
   "extension/src/background/exec/page-operation.ts": {
@@ -1240,14 +1183,12 @@
     "anti-slop(no-runtime-typeof)": 2,
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 3,
     "anti-slop(require-safety-comment-for-type-assertion)": 2
   },
   "extension/src/background/exec/snapshot.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 9,
     "anti-slop(no-known-value-widening)": 1,
     "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(require-readable-spacing)": 43,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "extension/src/background/exec/tabs.ts": {
@@ -1256,7 +1197,6 @@
   "extension/src/background/exec/upload.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(require-readable-spacing)": 18,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "extension/src/background/index.ts": {
@@ -1268,7 +1208,6 @@
     "anti-slop(no-unknown-parameters)": 11,
     "anti-slop(no-unknown-returns)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 386,
     "anti-slop(require-safety-comment-for-type-assertion)": 26
   },
   "extension/src/background/mode.ts": {
@@ -1276,7 +1215,6 @@
   },
   "extension/src/background/network-log.ts": {
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 15,
     "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "unicorn(no-useless-spread)": 1
   },
@@ -1287,7 +1225,6 @@
   "extension/src/background/observed-node-rect.ts": {
     "anti-slop(no-object-parameters)": 1,
     "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(require-readable-spacing)": 10,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
     "typescript(no-this-alias)": 1
   },
@@ -1311,7 +1248,6 @@
   "extension/src/background/state.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 2,
     "anti-slop(no-runtime-typeof)": 5,
-    "anti-slop(require-readable-spacing)": 92,
     "anti-slop(require-safety-comment-for-type-assertion)": 3
   },
   "extension/src/background/tab-bindings.ts": {
@@ -1355,7 +1291,6 @@
     "anti-slop(no-known-value-widening)": 10,
     "anti-slop(no-runtime-typeof)": 11,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 83,
     "anti-slop(require-safety-comment-for-type-assertion)": 18
   },
   "extension/src/content/effect.ts": {
@@ -1397,13 +1332,11 @@
   "extension/src/shared/held-clicks.ts": {
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-readable-spacing)": 10,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "extension/src/shared/keymap.ts": {
     "anti-slop(no-known-value-widening)": 2,
-    "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(require-readable-spacing)": 6
+    "anti-slop(no-runtime-typeof)": 1
   },
   "extension/src/shared/mark-actions.ts": {
     "anti-slop(no-runtime-typeof)": 2,
@@ -1419,14 +1352,10 @@
     "anti-slop(no-known-value-widening)": 4,
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-readable-spacing)": 89,
     "anti-slop(require-safety-comment-for-type-assertion)": 10
   },
   "extension/src/shared/team-run.ts": {
     "anti-slop(no-known-value-widening)": 5
-  },
-  "extension/src/sideagent.d.ts": {
-    "anti-slop(require-readable-spacing)": 1
   },
   "extension/src/sidepanel/attachments.ts": {
     "anti-slop(no-known-value-widening)": 2,
@@ -1490,8 +1419,7 @@
     "anti-slop(no-known-value-widening)": 2,
     "anti-slop(no-runtime-typeof)": 4,
     "anti-slop(no-unknown-parameters)": 2,
-    "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 52
+    "anti-slop(no-unsafe-dictionary-type)": 1
   },
   "extension/src/sidepanel/task-bar.ts": {
     "anti-slop(no-chained-type-assertions)": 1,
@@ -1543,7 +1471,6 @@
   "extension/test/browser-observation.test.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-module-mocking)": 2,
-    "anti-slop(require-readable-spacing)": 8,
     "anti-slop(require-safety-comment-for-type-assertion)": 5,
     "unicorn(no-useless-spread)": 2
   },
@@ -1553,7 +1480,6 @@
   "extension/test/cdp-guard.test.ts": {
     "anti-slop(no-module-mocking)": 3,
     "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(require-readable-spacing)": 11,
     "anti-slop(require-safety-comment-for-type-assertion)": 7
   },
   "extension/test/click-integrity.test.ts": {
@@ -1599,7 +1525,6 @@
     "anti-slop(no-known-value-widening)": 1,
     "anti-slop(no-module-mocking)": 2,
     "anti-slop(no-runtime-typeof)": 3,
-    "anti-slop(require-readable-spacing)": 24,
     "anti-slop(require-safety-comment-for-type-assertion)": 3
   },
   "extension/test/delivery-facts-view.test.ts": {
@@ -1736,9 +1661,6 @@
     "anti-slop(no-unsafe-dictionary-type)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 5
   },
-  "extension/test/steps.test.ts": {
-    "anti-slop(require-readable-spacing)": 1
-  },
   "extension/test/switch-verification.test.ts": {
     "anti-slop(no-object-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 4,
@@ -1746,7 +1668,6 @@
   },
   "extension/test/task-view-ui.test.ts": {
     "anti-slop(no-chained-type-assertions)": 2,
-    "anti-slop(require-readable-spacing)": 27,
     "anti-slop(require-safety-comment-for-type-assertion)": 7,
     "eslint(no-unused-vars)": 1,
     "typescript(no-this-alias)": 1
@@ -1805,16 +1726,13 @@
     "anti-slop(no-known-value-widening)": 1,
     "anti-slop(no-unknown-parameters)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 5,
-    "anti-slop(require-readable-spacing)": 38,
     "anti-slop(require-safety-comment-for-type-assertion)": 7
   },
   "scripts/acceptance/capability-parity-run.mjs": {
-    "anti-slop(require-readable-spacing)": 32,
     "unicorn(prefer-string-starts-ends-with)": 1
   },
   "scripts/acceptance/capability-parity.mjs": {
     "anti-slop(no-runtime-typeof)": 3,
-    "anti-slop(require-readable-spacing)": 50,
     "unicorn(prefer-string-starts-ends-with)": 1
   },
   "scripts/acceptance/cdp.mjs": {
@@ -1876,8 +1794,7 @@
     "anti-slop(require-safety-comment-for-type-assertion)": 2
   },
   "scripts/acceptance/fixture-server.mjs": {
-    "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(require-readable-spacing)": 12
+    "anti-slop(no-runtime-typeof)": 1
   },
   "scripts/acceptance/general-browser-dev.mts": {
     "anti-slop(no-runtime-typeof)": 1
@@ -2486,7 +2403,6 @@
   },
   "shared/browser-decision.ts": {
     "anti-slop(no-runtime-typeof)": 10,
-    "anti-slop(require-readable-spacing)": 14,
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "shared/cast.ts": {
@@ -2495,8 +2411,7 @@
   "shared/cdp-method-policy.ts": {
     "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 2
+    "anti-slop(no-unsafe-dictionary-type)": 1
   },
   "shared/consent.ts": {
     "anti-slop(no-runtime-typeof)": 3,
@@ -2509,7 +2424,6 @@
     "anti-slop(no-runtime-typeof)": 8,
     "anti-slop(no-unknown-parameters)": 3,
     "anti-slop(no-unsafe-dictionary-type)": 3,
-    "anti-slop(require-readable-spacing)": 177,
     "anti-slop(require-safety-comment-for-type-assertion)": 8
   },
   "shared/demo-record.ts": {
@@ -2518,8 +2432,7 @@
   },
   "shared/effect-policy.ts": {
     "anti-slop(no-runtime-typeof)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 5,
-    "anti-slop(require-readable-spacing)": 10
+    "anti-slop(no-unsafe-dictionary-type)": 5
   },
   "shared/element-state.ts": {
     "anti-slop(no-runtime-typeof)": 4
@@ -2547,7 +2460,6 @@
     "anti-slop(no-runtime-typeof)": 5,
     "anti-slop(no-unknown-parameters)": 3,
     "anti-slop(no-unsafe-dictionary-type)": 3,
-    "anti-slop(require-readable-spacing)": 62,
     "anti-slop(require-safety-comment-for-type-assertion)": 3
   },
   "shared/observe.ts": {
@@ -2558,8 +2470,7 @@
     "anti-slop(no-known-value-widening)": 4,
     "anti-slop(no-runtime-typeof)": 3,
     "anti-slop(no-unknown-parameters)": 4,
-    "anti-slop(no-unsafe-dictionary-type)": 3,
-    "anti-slop(require-readable-spacing)": 64
+    "anti-slop(no-unsafe-dictionary-type)": 3
   },
   "shared/page-text-evidence.ts": {
     "anti-slop(no-runtime-typeof)": 2,
@@ -2573,7 +2484,6 @@
     "anti-slop(no-runtime-typeof)": 4,
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-readable-spacing)": 14,
     "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "eslint(no-unused-vars)": 1
   },
@@ -2581,7 +2491,6 @@
     "anti-slop(no-runtime-typeof)": 56,
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 5,
-    "anti-slop(require-readable-spacing)": 190,
     "anti-slop(require-safety-comment-for-type-assertion)": 18
   },
   "shared/reading.ts": {
@@ -2620,7 +2529,6 @@
     "anti-slop(no-runtime-typeof)": 5,
     "anti-slop(no-unknown-parameters)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 2,
-    "anti-slop(require-readable-spacing)": 26,
     "anti-slop(require-safety-comment-for-type-assertion)": 6,
     "eslint(no-control-regex)": 1
   },
