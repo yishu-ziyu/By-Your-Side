@@ -15,7 +15,10 @@ export const FETCH_ALLOWED_METHODS = ["GET", "POST"] as const;
 
 export type FetchMethod = (typeof FETCH_ALLOWED_METHODS)[number];
 
-export class FetchRefused extends Error {}
+/** Refused before any request is sent: the extension reports it as not executed. */
+export class FetchRefused extends Error {
+  readonly executionFact = "not_executed";
+}
 
 /** Tests may allow one exact origin (loopback fixture). Production never calls this. */
 let fetchTestOrigin: string | null = null;
@@ -72,7 +75,7 @@ export function normalizeFetchRequest(raw: {
   const isTestOrigin = fetchTestOrigin !== null && parsed.origin === fetchTestOrigin;
 
   if (!isTestOrigin && (PRIVATE_HOST.test(host) || PRIVATE_V4.some((re) => re.test(host)) || host === "::1" || /^f[cd][0-9a-f]{2}:/i.test(host))) {
-    throw new FetchRefused(`fetch 拒绝本地/私网地址（${host}）：带着登录态的请求不能指向本机服务。操作未执行。`);
+    throw new FetchRefused(`fetch 拒绝本地/私网地址（${host}）：带着登录态的请求不能指向本机服务，没有发出请求。要读这个页面，请用 open_tab 或 navigate 打开它，再用 snapshot 阅读。`);
   }
 
   const method = String(raw.method ?? "GET").toUpperCase();

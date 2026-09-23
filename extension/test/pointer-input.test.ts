@@ -401,6 +401,18 @@ describe("真实 wheel：派发 mouseWheel，不用 scrollTop=", () => {
     expect(mocks.sendCommand.mock.calls.some((c) => String(c[1]).includes("scrollTop"))).toBe(false);
   });
 
+  it("工作页在后台时明确不执行，不派发任何滚轮事件", async () => {
+    installPage({ "#a": makeEl("a", { x: 0, y: 0, width: 10, height: 10 }) });
+    const { wheel } = await import("../src/background/exec/input.js");
+    const base = mocks.sendCommand.getMockImplementation();
+    mocks.sendCommand.mockImplementation((tab: number, method: string, params: { expression?: string }) =>
+      method === "Runtime.evaluate" && params?.expression === "document.visibilityState"
+        ? Promise.resolve({ result: { value: "hidden" } })
+        : base!(tab, method, params));
+    await expect(wheel({ point: [20, 20], deltaY: 50 })).rejects.toMatchObject({ executionFact: "not_executed" });
+    expect(mouseCalls()).toHaveLength(0);
+  });
+
   it("两个相邻容器用不同 point 滚，坐标互不相同", async () => {
     const left = makeEl("left", { x: 0, y: 0, width: 100, height: 100 });
     const right = makeEl("right", { x: 200, y: 0, width: 100, height: 100 });

@@ -1983,6 +1983,14 @@ export async function wheel(
     throw notExecuted(new Error("wheel deltaX/deltaY 必须是有限数字；未执行"));
   }
 
+  // 窗口未聚焦时不抢前台（见 foreground.ts），工作页可能留在后台；Chrome 不给隐藏页处理滚轮，
+  // 发出去只会等到超时、落成「是否滚过未知」。先查可见性，隐藏就明确不执行。
+  const visibility = await sendCommand<{ result?: { value?: unknown } }>(tab.id, "Runtime.evaluate", { expression: "document.visibilityState", returnByValue: true });
+
+  if (visibility.result?.value === "hidden") {
+    throw notExecuted(new Error("工作标签页在后台（窗口未聚焦时不抢前台），浏览器不会处理滚轮；未执行。可改用 scroll 工具，或请用户切回这个窗口后再试"));
+  }
+
   const [x, y] = point;
   const modifiers = modifierMaskFor(sessionId, tab.id);
   const tabId = tab.id;

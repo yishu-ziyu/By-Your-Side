@@ -1,0 +1,31 @@
+name: E2E (isolated, no credentials)
+# Manual trigger until the first green run on Linux; then add pull_request/push.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx --yes playwright install --with-deps chromium
+      - name: Locate Chrome for Testing
+        run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
+      - run: mkdir -p ~/.sideagent/uploads
+      - run: npm run build
+      # Regression gate = scenarios green on macOS 2026-09-23. C3 fails (download backend gap), C4/C5/S3/S7 are
+      # known gaps, S4-S6 need credentials. Filtered runs report ok=false by design; the exit code covers the executed set.
+      - run: npm run accept:isolated -- --only=F1,F2,F3,F4,F4b,F5,C1,C2,S1,S2
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-isolated-evidence
+          path: out/
+          if-no-files-found: ignore

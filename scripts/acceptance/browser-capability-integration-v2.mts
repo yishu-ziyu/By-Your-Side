@@ -1535,6 +1535,18 @@ try {
 
     try { await runTool("click", { target: "#mid", button: "middle", tabId }); } catch (e) { errs.push("mid:"+String(e)); }
 
+    // 无头窗口从不聚焦，产品按设计不抢前台，工作页留在后台：滚轮必须快速、明确地不执行。
+    const hiddenStarted = Date.now();
+    let hiddenErr = "";
+
+    try { await runTool("wheel", { target: "#w1", deltaY: 120, tabId }); } catch (e) { hiddenErr = String(e); }
+
+    const hiddenMs = Date.now() - hiddenStarted;
+    const hiddenPage = await pageEval(tabId, `({vis:document.visibilityState,...window.__c2})`);
+    check(sc, "hidden tab wheel refused fast, nothing dispatched", /后台/.test(hiddenErr) && hiddenMs < 2000 && hiddenPage?.anyWheel === 0 && hiddenPage?.wheel1 === 0, { hiddenErr: hiddenErr.slice(0, 160), hiddenMs, hiddenPage });
+
+    // 相当于用户切回这个窗口：之后的滚轮要落在 w1。
+    await json(`chrome.tabs.update(${tabId},{active:true}).then(()=>true)`);
     let wheelRes: any = null;
 
     try { wheelRes = await runTool("wheel", { target: "#w1", deltaY: 120, tabId }); }
