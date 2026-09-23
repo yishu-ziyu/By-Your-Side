@@ -68,7 +68,36 @@ baseline 快照（生成时 10,681 条 / 548 文件）分布见上表；其中 `
 - 闸门判据是「文件×规则」计数不超过 baseline，不是逐行对比：改文件不会释放它的历史额度，只有真正修掉违规才会。代价是「修掉一条旧违规、新增一条同规则新违规」会算通过——这是棘轮的有意取舍。
 - **baseline 是快照，工作树是活水。** 生成 baseline 时（03:29）之后仍有文件在被继续修改，再次运行 `npm run lint:changed` 立刻报出 `hover-recovery` / `click-integrity` / `pointer-input` / `clipboard-bridge` / `cap02c-locator` 等文件各多出 1–2 条新违规（mtime 03:34–03:35，晚于 baseline）。这不是误报，是闸门在抓真实新增。WIP 稳定后可用 `npm run lint:baseline` 重算，但重算等于把当时的新违规一并认成历史额度，要有意识地做。
 
-## 分批收紧计划（剩余 10,681 条）
+## 在途清理结果（2026-09-23，提交 `1e3ae6f`，已 push）
+
+WIP 从 8 条涨到 231 条超额后做了全量清理，闸门回到 0，并把这轮在途的 CAP-02 工作一并落库。
+
+**策略**：只把「文件×规则」计数压回 baseline 之下即可提交；但实际修得比下限更多——21 个文件里修掉的不只是超额那几条。修完重算 baseline：**10,681 → 9,071（546 文件）**。
+
+**验证（都是前后对比，不是单次通过）**
+- `npm run lint:changed`：0 条新增（101 个在途文件）。
+- `npm run typecheck`：0 错（修改前也是 0）。
+- `npm run test:unit`：2 failed / 3205 passed（3207），与修改前快照**逐条一致**；两条失败 (`task-goals`、`task-recovery-matrix`) 是既有红灯。
+- `npm run check:architecture`：243 production files passed。
+- 两个 `.mts` 验收脚本只做静态复核，**未运行**（需真实 Chrome + 构建产物）。
+
+**主要修法**
+- 159 处间距：空白 autofix，逐文件验证剥离空白后与 HEAD token 一致。
+- 测试契约：未用参数改名 `_name`；`Record<string, unknown>` 桩换成从生产类型推导的具名接口；7 处 `as any` 直接删除，其余补真实 `// SAFETY:` 不变量。
+- 边界解析：`parseViewport` 收 `RawViewportReading` 出 `ViewportMetrics | null`；两处 rect 校验合并为 `isDomRect`；tabIds 走 `isTabId`（正整数，即 chrome.tabs 的 id 契约，比原来的 `typeof === "number"` 更严，已在提交说明中披露）。
+- `no-module-mocking`：`decision-view-integrity.test.ts` 直接删掉 `vi.mock`；`browser-decision-trace.test.ts` 改用真实 `readTypeSafeKey` + `TYPESAFE_API_KEY`（沿用 `display-steer-routing.test.ts` 的做法）。
+
+**两个必须记住的坑**
+1. `debugger.ts` 的模块级监听登记包了 `typeof chrome !== "undefined"` 守卫，好让模块能在 Node 下被 import。第一版把 `chrome.debugger?.onEvent?.addListener` 写成了硬访问，**一下挂掉 7 个测试文件**——那些测试只桩了 `chrome.debugger` 的一部分 API。逐 API 的 `?.` 必须保留。
+2. `no-runtime-typeof` 开了 `allowInTypeGuards: true`（见下）。这是有意的策略决定，不是顺手放宽。
+
+## 策略变更：`no-runtime-typeof` 允许类型谓词内的 typeof
+
+`oxlint.config.ts` 里该规则现为 `["error", { allowInTypeGuards: true }]`。
+
+理由：本仓库既有的边界解析约定就是 `isXxx(value: unknown): value is Xxx` 谓词（`shared/*.ts`、`extension/src/shared/*.ts` 大量存在），上游也为无 schema 项目提供这个开关。开启后 **197 处谓词内部的 typeof 不再计入，749 处业务逻辑里的临时 typeof 仍然全数拒绝**——是让规则贴合仓库约定，不是放水。要回退只需删掉这个 option。
+
+## 分批收紧计划（剩余 9,071 条）
 
 按「价值/风险比」排序，每批独立可 review，完成后必须同步下调 baseline（`npm run lint:baseline`）——不下调就等于没做。
 

@@ -87,4 +87,6 @@ Cua Driver 0.7.1（`/Applications/CuaDriver.app`，com.trycua.driver）daemon �
 
 ## anti-slop 规则集已接入（2026-09-23）
 
-lint 入口为 `npm run lint`（`npm run lint:fix` 仅空白行 autofix）；未并入 `npm run check`。规则集 vendor 在 `tools/oxlint/anti-slop/`，pinned revision 与更新方式见该目录 `VENDOR.md`；策略只在 `oxlint.config.ts` 改，上游规则实现保持未修改。**已落地三步**（提交 `f71dfef` 空白行机械消红 611 文件 / `1d5fd33` 新改动闸门 / `2e49428` vendor+config）：`require-readable-spacing` 只剩 86 个 WIP 文件里的 4,694 条，`npm run lint:changed` + pre-commit 钩子（`core.hooksPath`）已挡住真实新增，baseline 10,681 条。续接先读[验收文件](evals/20260923-anti-slop-vendor.md)的分批计划与「baseline 是快照、工作树是活水」提醒；每批修完必须 `npm run lint:baseline` 下调，否则等于没做。
+lint 入口为 `npm run lint`（`npm run lint:fix` 仅空白行 autofix）；未并入 `npm run check`。规则集 vendor 在 `tools/oxlint/anti-slop/`，pinned revision 与更新方式见该目录 `VENDOR.md`；策略只在 `oxlint.config.ts` 改，上游规则实现保持未修改。**已收尾一轮并 push**（`1e3ae6f`，连带把在途的 CAP-02 WIP 一并落库）：在途 231 条超额清零，闸门 0 新增，typecheck 0 错，全量 vitest 与修改前快照逐条一致（2 条既有红灯），baseline 10,681 → 9,071。
+- **两个坑**：① `debugger.ts` 模块级监听登记的 `typeof chrome !== "undefined"` 守卫必须保留逐 API 的 `?.`，写成硬访问会挂掉 7 个只桩了部分 API 的测试文件。② `no-runtime-typeof` 开了 `allowInTypeGuards: true`（贴合仓库既有的 `isXxx(value: unknown): value is Xxx` 谓词约定，197 处谓词内 typeof 出圈、749 处业务逻辑临时 typeof 仍全拒），要回退只删 config 里那个 option。
+- 续接先读[验收文件](evals/20260923-anti-slop-vendor.md)的「分批收紧计划（剩余 9,071 条）」与「baseline 是快照、工作树是活水」提醒；每批修完必须 `npm run lint:baseline` 下调，否则等于没做。
