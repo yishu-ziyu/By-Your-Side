@@ -12,7 +12,7 @@
 - [x] 6. 阶跃语音（文件麦克风、真实 StepFun Realtime）：问页面内容、语音圈画、终止任务都通过。— 谁检查：`inproc-voice.mts --case=question|mark|stop-task --model=stepfun/step-3.7-flash`。
 - [x] 9. 只装扩展时留下诊断记录（用户 2026-09-25 选「照本机模式记录」）：行格式与本机相同，设置页能导出、能清空，导出不含 API key。— 谁检查：`everyday-baseline.mts --inproc` 的 `traceCheck`，[产物](../../out/acceptance/real-path/2026-09-24T19-45-41-997Z-everyday-baseline-inproc/summary.json)：10 个会话、360 行，清空后导出为空。
 - [x] 10. ref 属于另一个标签页时，动作说明来源标签页、记为未执行，不误报「已失效」，也不锁住后续写入。— 谁检查：`extension/test/click-robustness.test.ts` 新增两条（修复前都失败）；修复后阶跃 10/10。
-- [ ] 11. 语音记录在扩展里落地（用户选的方案里包含语音）。— 未做。
+- [x] 11. 语音记录在扩展里落地：与本机日常模式同一套行（`shared/voice-capture-core.ts`），写进同一个 IndexedDB，设置页导出为单独的 jsonl；不存录音（本机也只在诊断模式存）。— 谁检查：`inproc-voice.mts` 新增 `voiceRecordExported`：导出文件有 asr、text 行，与侧栏听到的句子一致、不含语音密钥；[产物](../../out/acceptance/real-path/2026-09-24T19-59-49-391Z-inproc-voice-question/result.json)。第一次按「必须有 ready/append/commit」判失败，查明这三类只在诊断模式产生、本机 09-20 以来的日常记录也没有，属于判据写错，已改。
 - [ ] 7. 两项修复进入日常 Chrome。— 谁检查：用户重载扩展后跑 `everyday-baseline.mts --daily`。
 - [ ] 8. 真人语音试用和观感判断。— 谁检查：人。
 
@@ -52,7 +52,7 @@
 | # | 现象 | 出在产品哪一块 | 依赖什么 | 方案 | 状态 |
 |---|---|---|---|---|---|
 | A | 纯扩展下的使用记录无法分析 | `extension/src/inproc/shims/run-trace.ts` 曾把 RunTrace 换成空实现 | 迁移第一版为去掉 Node 文件系统而关掉诊断 | 行格式与限额抽到 `shared/run-trace-core.ts`，本机写文件、扩展写 IndexedDB（`extension/src/shared/trace-store.ts`）；设置页「诊断记录」导出、清空。语音记录尚未搬 | 任务记录已完成并验证；语音未做 |
-| B | 语音开口前几秒可能丢字 | 扩展语音会话：Realtime 已连接到开始收听之间有一段空档，这段时间麦克风的声音不进识别 | StepFun Realtime 的会话建立顺序；测试用的文件麦克风只放一遍 | 先用 A 的语音记录或 `stop-task` 那样的原始帧时间线，量清空档里发生了什么；如果是会话配置没下发完，就先把麦克风音频缓冲起来，就绪后补发 | 未查 |
+| B | 语音开口前几秒可能丢字（隔离环境 1/4 复现：「这个页面上的备注写的是什么」只识别出「的是什么？」） | 扩展语音会话的轮次切分：导出的语音记录显示这句落在 turn 2，turn 1 没有任何识别结果，推断前半句被切进第一个轮次后丢了 | StepFun Realtime 的断句与会话建立顺序；文件麦克风只放一遍 | 下一步在诊断模式下复现，拿逐帧 append/commit 时间线确认第一个轮次的音频去向；确认后再定是合并轮次还是缓冲首段音频 | 有线索，未修（[记录](../../out/acceptance/real-path/2026-09-24T19-58-53-888Z-inproc-voice-question/result.json)） |
 | C | 「你好」在日常完整轮里 25.8 秒（冒烟轮 6.6 秒） | 未知：当时扩展里没有记录，无法区分模型首字节、核心启动还是排队 | 智谱供应商延迟、offscreen 冷启动 | 已让 `--daily` 挂上观察器；下次日常跑会记下这条的请求时间。隔离环境里阶跃 4.3 秒、智谱 5.1–6.0 秒，都没复现 | 等日常复测 |
 | D | 复制不保存 100–160 秒 | 任务目标协议（`task_goals`）固定 7 轮，外加参数契约容易调错造成的重试；阶跃这次发了 22 次模型请求，单次首字节只有 0.6–2.8 秒 | 模型每轮首字节约 1.5–4 秒 × 轮数 | 按[已有调查](20260924-copy-task-latency.md)的前三项：宿主补 plan 的 id、错误信息写清是哪个字段；field verify 默认用刚才 fill 的 target；把观察编号直接放进首条提示。预计从约 7 轮降到 4 轮 | 方案已定，未实施 |
 | E | 圈画标签盖住旁边的「32%」 | `extension/src/content/cursor.ts` 的名牌放置（`sketchLabelPosition`）：固定放框外右侧，只检查视口宽度，不检查右边有没有内容 | 模型选中的元素（这次选了「五小时用量」小元素，而不是整行） | 放名牌前用 `document.elementsFromPoint` 检测候选位置下有没有文字，按右、上、下、左依次选第一个不压字的位置；「标签 + 数值」这类成对内容，框取两者共同的行 | 待用户看过再改（影响页面观感） |

@@ -314,6 +314,66 @@ export async function watchInproc(rp: { cdp: ReturnType<typeof createCdp>; targe
 }
 
 /**
+ * 像用户一样在设置页「诊断记录」点导出（可选再点清空），返回页面上的状态文字和下载下来的文件内容。
+ * 判据由调用方对文件本身做，不读产品内部存储。
+ */
+export async function exportDiagnosticsViaSettings(
+  rp: { cdp: ReturnType<typeof createCdp>; attach: (targetId: string) => Promise<string>; evaluate: (sessionId: string, expression: string) => Promise<Json>; click: (sessionId: string, selector: string) => Promise<void> },
+  extensionId: string,
+  downloads: string,
+  { clearAfter = false } = {},
+) {
+  await mkdir(downloads, { recursive: true });
+  await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+  const { targetId } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${extensionId}/settings.html` });
+  const settings = await rp.attach(targetId);
+  const status = async () => String(await rp.evaluate(settings, `document.querySelector("#trace-status")?.textContent ?? ""`));
+
+  const exportOnce = async () => {
+    await rp.evaluate(settings, `document.querySelector("#trace-status").textContent = ""; document.querySelector("#trace-export").scrollIntoView({ block: "center" }); true`);
+    await rp.click(settings, "#trace-export");
+
+    return until(async () => {
+      const text = await status();
+
+      return text.startsWith("已导出") || text.includes("失败") || text.startsWith("还没有") ? text : undefined;
+    }, 15_000, "导出结果");
+  };
+
+  try {
+    await until(async () => (await rp.evaluate(settings, `!!document.querySelector("#trace-export")`)) || undefined, 15_000, "设置页诊断记录区");
+    const exportStatus = await exportOnce();
+    const expectFiles = (exportStatus.match(/(\d+) 条任务记录/)?.[1] !== "0" ? 1 : 0) + (exportStatus.match(/(\d+) 条语音记录/)?.[1] !== "0" ? 1 : 0);
+
+    const names = exportStatus.startsWith("已导出")
+      ? await until(async () => { const found = (await readdir(downloads)).filter((name) => name.endsWith(".jsonl"));
+
+        return found.length >= expectFiles ? found : undefined; }, 15_000, "导出文件落地")
+      : [];
+
+    const read = async (prefix: string) => {
+      const name = names.find((file) => file.startsWith(prefix));
+
+      return name ? readFile(join(downloads, name), "utf8") : "";
+    };
+
+    const traces = await read("by-your-side-traces-");
+    const voice = await read("by-your-side-voice-");
+    let clearedStatus: string | null = null;
+
+    if (clearAfter) {
+      await rp.click(settings, "#trace-clear");
+      await until(async () => (await status()) === "已清空。" || undefined, 10_000, "清空");
+      clearedStatus = await exportOnce();
+    }
+
+    return { exportStatus, traces, voice, clearedStatus };
+  } finally {
+    await rp.cdp.send("Target.closeTarget", { targetId }).catch(() => {});
+  }
+}
+
+/**
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
  * withoutNativeHost：不注册伴随进程，模拟只装了扩展的电脑（扩展内 agent 实验）。
  */

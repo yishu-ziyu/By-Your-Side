@@ -19,13 +19,30 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, until, type Json } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, until, type Json } from "./harness.mts";
+import { Type, type Static } from "typebox";
+import { Check } from "typebox/value";
 import type { JsonRecord } from "./harness.mts";
 import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 import { STEP_VOICES, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS } from "../../../shared/voice.ts";
 import { MODEL } from "../../../agent/src/realtime-voice-connection.ts";
 
 requireHeadless();
+
+/** 导出的语音记录一行：本机同格式的公共字段；text 只在 asr / text / forward 行上有。 */
+const VoiceLineSchema = Type.Object({ at: Type.Number(), voiceId: Type.String(), type: Type.String(), text: Type.Optional(Type.String()) });
+
+type VoiceLine = Static<typeof VoiceLineSchema>;
+
+function parseVoiceLine(raw: string): VoiceLine | null {
+  try {
+    const value = JSON.parse(raw);
+
+    return Check(VoiceLineSchema, value) ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 
 const isText = (value: Json | undefined): value is string => typeof value === "string";
@@ -519,6 +536,20 @@ try {
     })`, { timeoutMs: 15_000 }) as string;
 
     verdicts.pageCannotBorrowKey = verdict(borrowed !== "session.created", { pageOrigin: new URL(pageUrl).origin, outcome: borrowed });
+  }
+
+  if (!native) {
+    // 语音日常记录：像用户一样从设置页导出，读下载下来的文件。日常模式与本机一致只记 asr / forward / text
+    // （逐帧的 ready / append / commit 只在诊断模式产生，见 realtime-voice-session.ts）；识别文字要写进记录，
+    // 每行可解析，且不含语音密钥。
+    const { exportStatus, voice } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
+    const lines = voice.split("\n").filter(Boolean).map(parseVoiceLine);
+    const types = new Set(lines.map((line) => line?.type));
+    const recognized = lines.filter((line) => line && (line.type === "asr" || line.type === "text") && line.text).map((line) => line?.text ?? "");
+    // 记录要如实反映侧栏听到的那句话；听得准不准由 heardQuestion 单独判。
+    const heard = (final?.heard ?? "").replace(/^你：/, "").trim();
+    const pass = ["asr", "text"].every((type) => types.has(type)) && !!heard && recognized.some((text) => text.includes(heard)) && !lines.includes(null) && !voice.includes(voiceKey);
+    verdicts.voiceRecordExported = verdict(pass, { heard, exportStatus, lines: lines.length, types: [...types].map(String), recognized: recognized.slice(0, 4), malformed: lines.filter((line) => !line).length });
   }
 
   if (caseName === "question") verdicts.answerFromPage = verdict(!!final?.answer.includes(NOTE), { answer: final?.answer ?? "" });

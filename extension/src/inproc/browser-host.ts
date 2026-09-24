@@ -5,6 +5,8 @@ import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-action
 import type { createModelRuntime, ModelRuntime } from "./model-runtime.js";
 import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { BrowserSocket } from "./voice/browser-socket.js";
+import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
+import { createVoiceCaptureSink } from "../shared/trace-store.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; credentials: StoredCredentials }
@@ -25,6 +27,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let helloReceived = false;
   /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
   const deferredCreates: ClientMessage[] = [];
+
+  const log = (message: string) => console.debug("[sideagent]", message);
+  // 语音日常记录：与本机同一套行，写进扩展的 IndexedDB；扩展不保存音频，所以会话一律不开 persistAudio。
+  const voiceCapture = new VoiceCaptureRecorder(createVoiceCaptureSink(log), log);
 
   const models: ModelRuntime = deps.createRuntime((providerId, credential) => {
     port?.postMessage({ type: "inproc_credential", providerId, credential: credential ?? null });
@@ -67,7 +73,20 @@ export function startInprocHost(deps: InprocHostDeps): void {
         connect: () => new BrowserSocket() as never,
       }),
       enableVoiceTaskDispatch: true,
-      log: message => console.debug("[sideagent]", message),
+      observe: msg => { if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record); },
+      onVoiceCommand: (msg, conversationId) => {
+        // 只属于扩展的记录事实（capture）不送往上游语音会话。
+        if (msg.command.kind === "capture") {
+          voiceCapture.command(msg.voiceId, conversationId, msg.command);
+
+          return true;
+        }
+
+        if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId, { persistAudio: false });
+
+        return false;
+      },
+      log,
     }).then(value => {
       core = value;
 

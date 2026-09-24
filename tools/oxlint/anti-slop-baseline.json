@@ -363,12 +363,6 @@
     "anti-slop(require-safety-comment-for-type-assertion)": 54,
     "eslint(no-eval)": 4
   },
-  "agent/src/voice-capture-store.ts": {
-    "anti-slop(no-conditional-empty-object-spread)": 2,
-    "anti-slop(no-known-value-widening)": 2,
-    "anti-slop(no-unknown-parameters)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 1
-  },
   "agent/src/voice-confirm.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 2
   },
@@ -2549,6 +2543,10 @@
   },
   "shared/untrusted.ts": {
     "eslint(no-useless-escape)": 1
+  },
+  "shared/voice-capture-core.ts": {
+    "anti-slop(no-unknown-parameters)": 1,
+    "anti-slop(no-unsafe-dictionary-type)": 1
   },
   "shared/voice.ts": {
     "anti-slop(no-runtime-typeof)": 7,

@@ -1,15 +1,22 @@
 /**
  * 扩展内的诊断记录存储（IndexedDB，扩展源下 offscreen 与设置页共用）。
- * 行内容与本机 `~/.sideagent/traces/*.jsonl` 相同（格式由 shared/run-trace-core.ts 决定）；
- * 保留最近 TRACE_SESSIONS_KEPT 个会话，设置页可导出为一个 jsonl 文件或清空。
+ * - 任务记录：行内容与本机 `~/.sideagent/traces/*.jsonl` 相同（shared/run-trace-core.ts），保留最近 TRACE_SESSIONS_KEPT 个会话。
+ * - 语音记录：行内容与本机 `~/.sideagent/voice-capture/<日期>.jsonl` 相同（shared/voice-capture-core.ts），保留 VOICE_CAPTURE_MAX_AGE_DAYS 天；
+ *   扩展不保存音频（本机也只在用户开启诊断时保存）。
+ * 设置页可以导出（任务、语音各一个 jsonl）或清空。
  */
 import { TRACE_SESSIONS_KEPT, type TraceSink } from "../../../shared/run-trace-core.js";
+import { VOICE_CAPTURE_MAX_AGE_DAYS, voiceCaptureDayKey, type VoiceCaptureSink } from "../../../shared/voice-capture-core.js";
 
 const DB_NAME = "sideagent-diagnostics";
 
 const SESSIONS = "trace-sessions";
 
 const LINES = "trace-lines";
+
+const VOICE = "voice-lines";
+
+interface VoiceRow { day: string; line: string }
 
 interface SessionRow { name: string }
 
@@ -19,12 +26,16 @@ let opening: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   opening ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    // 版本 1：任务记录；版本 2：加语音记录。按表名补建，旧库升级不丢任务记录。
+    const request = indexedDB.open(DB_NAME, 2);
     request.onupgradeneeded = () => {
       const db = request.result;
 
-      db.createObjectStore(SESSIONS, { keyPath: "name" });
-      db.createObjectStore(LINES, { autoIncrement: true }).createIndex("session", "session");
+      if (!db.objectStoreNames.contains(SESSIONS)) db.createObjectStore(SESSIONS, { keyPath: "name" });
+
+      if (!db.objectStoreNames.contains(LINES)) db.createObjectStore(LINES, { autoIncrement: true }).createIndex("session", "session");
+
+      if (!db.objectStoreNames.contains(VOICE)) db.createObjectStore(VOICE, { autoIncrement: true }).createIndex("day", "day");
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -97,20 +108,67 @@ export function createTraceSink(sessionName: string): TraceSink {
   };
 }
 
-/** 全部行按写入顺序拼成一个 jsonl（每行自带 sessionId，可按会话拆回）；另给会话数与行数。 */
-export async function exportTraces(): Promise<{ text: string; sessions: number; lines: number }> {
-  const db = await openDb();
-  const names = await sessionNames(db);
-  // 一次请求读完：自增主键即写入顺序；分多次 await 会让只读事务中途失效。
-  // SAFETY: LINES 里只写 LineRow（createTraceSink.append）。
-  const rows = await result(db.transaction(LINES).objectStore(LINES).getAll()) as LineRow[];
+/**
+ * 语音记录的存储端。写入是异步的：appendLine 立即返回，失败只进日志，不影响语音链路。
+ * 扩展不保存音频，writeAudio 抛错由记录器记成一条 gap（正常路径不会调用：会话开始时不开 persistAudio）。
+ */
+export function createVoiceCaptureSink(log: (message: string) => void): VoiceCaptureSink {
+  const fail = (error: Error) => log(`[voice-capture] 写入失败：${error.message}`);
 
-  return { text: rows.map((row) => row.line).join(""), sessions: names.length, lines: rows.length };
+  return {
+    appendLine(day, line) {
+      void openDb().then((db) => {
+        const tx = db.transaction(VOICE, "readwrite");
+        const row: VoiceRow = { day, line };
+        tx.objectStore(VOICE).add(row);
+
+        return done(tx);
+      }).catch(fail);
+    },
+    writeAudio() {
+      throw new Error("扩展暂不保存语音音频");
+    },
+    cleanup(now) {
+      const cutoff = voiceCaptureDayKey(now - VOICE_CAPTURE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+
+      void openDb().then((db) => {
+        const tx = db.transaction(VOICE, "readwrite");
+        const cursor = tx.objectStore(VOICE).index("day").openKeyCursor(IDBKeyRange.upperBound(cutoff, true));
+        cursor.onsuccess = () => {
+          const at = cursor.result;
+
+          if (!at) return;
+          tx.objectStore(VOICE).delete(at.primaryKey);
+          at.continue();
+        };
+
+        return done(tx);
+      }).catch(fail);
+    },
+  };
 }
 
-export async function clearTraces(): Promise<void> {
-  const tx = (await openDb()).transaction([SESSIONS, LINES], "readwrite");
+export interface DiagnosticsExport { traces: string; sessions: number; traceLines: number; voice: string; voiceLines: number }
+
+/** 任务记录与语音记录各拼成一个 jsonl，按写入顺序；每行自带会话或语音编号，可再拆开。 */
+export async function exportDiagnostics(): Promise<DiagnosticsExport> {
+  const db = await openDb();
+  const names = await sessionNames(db);
+  // 一次事务、每张表一次请求读完：自增主键即写入顺序；分多次 await 会让只读事务中途失效。
+  const tx = db.transaction([LINES, VOICE]);
+  // SAFETY: 两张表里只写 LineRow / VoiceRow（见本文件的写入函数）。
+  const [traceRows, voiceRows] = await Promise.all([result(tx.objectStore(LINES).getAll()) as Promise<LineRow[]>, result(tx.objectStore(VOICE).getAll()) as Promise<VoiceRow[]>]);
+
+  return {
+    traces: traceRows.map((row) => row.line).join(""), sessions: names.length, traceLines: traceRows.length,
+    voice: voiceRows.map((row) => row.line).join(""), voiceLines: voiceRows.length,
+  };
+}
+
+export async function clearDiagnostics(): Promise<void> {
+  const tx = (await openDb()).transaction([SESSIONS, LINES, VOICE], "readwrite");
   tx.objectStore(SESSIONS).clear();
   tx.objectStore(LINES).clear();
+  tx.objectStore(VOICE).clear();
   await done(tx);
 }

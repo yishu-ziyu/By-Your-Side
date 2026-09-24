@@ -10,12 +10,12 @@
  * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
  * 以及该条的结果判据（答案内容、页面圈画、新标签页、草稿框原文且未保存）。练习页全在本机，不碰真实账号。
  */
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
-import { REPO, attachDailyChrome, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
+import { REPO, attachDailyChrome, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
 import { configureViaSettings, loadModelPlan, type ModelPlan } from "./inproc-config.mts";
 
 const daily = process.argv.includes("--daily");
@@ -132,41 +132,18 @@ function parseTraceLine(raw: string): TraceLine | null {
  * 可能的失败：扩展没写记录；漏会话；行缺字段；密钥进了记录；清空不彻底。
  */
 async function checkTraceExport(modelPlan: ModelPlan) {
-  const downloads = join(artifacts, "downloads");
-  await mkdir(downloads, { recursive: true });
-  await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
-  const { targetId } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` });
-  const settings = await rp.attach(targetId);
-  const status = async () => String(await rp.evaluate(settings, `document.querySelector("#trace-status")?.textContent ?? ""`));
-  await until(async () => (await rp.evaluate(settings, `!!document.querySelector("#trace-export")`)) || undefined, 15_000, "设置页诊断记录区");
-  await rp.evaluate(settings, `document.querySelector("#trace-export").scrollIntoView({ block: "center" }); true`);
-  await rp.click(settings, "#trace-export");
-
-  const exportStatus = await until(async () => { const text = await status();
-
-    return text.startsWith("已导出") || text.includes("失败") || text.startsWith("还没有") ? text : undefined; }, 15_000, "导出结果");
-
-  const file = await until(async () => (await readdir(downloads)).find((name) => name.endsWith(".jsonl")), 15_000, "导出文件落地").catch(() => null);
-  const text = file ? await readFile(join(downloads, file), "utf8") : "";
+  const { exportStatus, traces: text, clearedStatus } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"), { clearAfter: true });
   const lines = text.split("\n").filter(Boolean).map(parseTraceLine);
   const starts = lines.filter((line) => line?.type === "run_start").map((line) => line?.data?.text ?? "");
   const missing = selected.filter((item) => !starts.some((started) => started.includes(item.prompt))).map((item) => item.id);
   const malformed = lines.filter((line) => !line).length;
   const key = String(modelPlan.credential.key ?? "");
   const leaked = key.length > 8 && text.includes(key);
-  await rp.click(settings, "#trace-clear");
-  await until(async () => (await status()) === "已清空。" || undefined, 10_000, "清空");
-  await rp.click(settings, "#trace-export");
-
-  const clearedStatus = await until(async () => { const t = await status();
-
-    return t !== "已清空。" ? t : undefined; }, 10_000, "清空后导出");
-
-  await rp.cdp.send("Target.closeTarget", { targetId });
   const sessions = new Set(lines.map((line) => line?.sessionId)).size;
-  const reason = !file ? `没有导出文件（${exportStatus}）` : missing.length ? `缺少这些用例的记录：${missing.join(", ")}` : malformed ? `${malformed} 行缺字段或不是 JSON` : leaked ? "导出里出现了 API key" : !clearedStatus.startsWith("还没有") ? `清空后导出仍有内容：${clearedStatus}` : null;
+  const cleared = clearedStatus ?? "";
+  const reason = !text ? `没有导出任务记录（${exportStatus}）` : missing.length ? `缺少这些用例的记录：${missing.join(", ")}` : malformed ? `${malformed} 行缺字段或不是 JSON` : leaked ? "导出里出现了 API key" : !cleared.startsWith("还没有") ? `清空后导出仍有内容：${cleared}` : null;
 
-  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus };
+  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared };
 }
 
 /** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */

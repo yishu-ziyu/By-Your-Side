@@ -42,6 +42,8 @@
 
 分开测：说完→服务端判停，判停→实际工具调用，工具调用→结果就绪，就绪→结果送回，后续生成→浏览器首声/播完。`first_audio_since_vad_stop` 是服务端判停后的音频到达指标，不是用户实际听到答案的时间。
 
+日常记录（两种入口相同，行格式见 `shared/voice-capture-core.ts`）：每轮留 asr、forward、text 三类行，本机写 `~/.sideagent/voice-capture/`，只装扩展时写进扩展 IndexedDB、设置页导出。逐帧的 ready、append、commit 以及录音只在诊断模式产生，查轮次切分（如开口丢字）要在诊断模式下复现。
+
 Native Messaging 是本地消息传输，不是另一次模型推理。代码或拓扑不能证明它零开销；归因需要同轮时间戳。旧分类/主模型/TTS 串行数据只适用于旧版本。
 
 源码入口：[连接](../agent/src/realtime-voice-connection.ts)、[会话](../agent/src/realtime-voice-session.ts)、[读页](../agent/src/voice-page-reader.ts)、[服务装配](../agent/src/voice-service.ts)。任务控制另见[调度](voice-dispatch.md)。
