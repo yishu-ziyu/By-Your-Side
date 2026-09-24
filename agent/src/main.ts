@@ -14,24 +14,20 @@ import { WebSocket, WebSocketServer } from "ws";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
-  HOST_VERSION,
   PROTOCOL_VERSION,
   STORAGE_SCHEMA_VERSION,
   parseClientMessage,
   type ClientMessage,
-  type ServerMessage,
 } from "../../shared/protocol.js";
-import { dataDir, loadConfig, resolveConfig, generalBrowserLoopEnabled } from "./config.js";
+import { dataDir, loadConfig, resolveConfig } from "./config.js";
 import { BrowserAgentSession } from "./session.js";
 import { createStdioTransport } from "./transport/stdio.js";
 import { ConversationStore } from "./conversation-store.js";
-import { ConversationManager } from "./conversation-manager.js";
 import { createConversationRuntime } from "./conversation-runtime.js";
+import { startHostCore, type ClientConn } from "./host-core.js";
 import { ExperienceStore } from "./experience.js";
 import { MemoryStore } from "./memory-store.js";
 import { SkillStore } from "./skill-store.js";
-import { VoiceService } from "./voice-service.js";
-import { readVoicePage } from './voice-page-reader.js';
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
 import { DEFAULT_CLIPBOARD_HTTP_PORT, startClipboardDarwinHttpServer, type ClipboardHttpServer } from "./clipboard-darwin.js";
@@ -124,10 +120,6 @@ function log(message: string): void {
 
 // ── 传输无关的客户端连接 ───────────────────────────────────────────
 
-interface ClientConn {
-  send(msg: ServerMessage): void;
-  close(): void;
-}
 
 async function main(): Promise<void> {
   const cli = parseCliArgs(process.argv.slice(2));
@@ -174,91 +166,39 @@ async function main(): Promise<void> {
     clipboardServer = null;
   };
 
-  let current: ClientConn | null = null;
   const store = new ConversationStore(join(dataDir(), "conversations"));
   const memoryStore = new MemoryStore(join(dataDir(), "memory"));
   const experienceStore = new ExperienceStore(join(dataDir(), "experiences"));
   const skillStore = new SkillStore(join(dataDir(), "skills"));
-  let voice:VoiceService;
   // Normal-use capture: the session's send-path evidence and the extension's own facts land in
   // <data dir>/voice-capture/. Recording never gates anything the voice session does.
   const voiceCapture = new VoiceCaptureStore({log: message => log(message)});
 
-  const keepVoiceEvent = (msg: ServerMessage): void => {
-    if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record);
-  };
-
-  const conversations = new ConversationManager(
-    (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore, skillStore }),
-    (msg) => {keepVoiceEvent(msg);voice?.observe(msg);current?.send(msg);},
+  const core = await startHostCore({
+    createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore, skillStore }),
     store,
     memoryStore,
     skillStore,
-    new TaskDispatcher(new TaskReceiptStore(join(dataDir(), 'task-receipts'))),
-  );
-
-  const initial = await conversations.ensureDefault();
-  // The voice session emits its own messages (including `diag` evidence), so this path must also
-  // reach the capture store; otherwise normal-use recording would silently write nothing.
-  voice = new VoiceService(id => conversations.getTaskProgress(id), msg => {keepVoiceEvent(msg);current?.send(msg);}, undefined, undefined, undefined, (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context), (event, fields) => log(`[voice] ${event} ${JSON.stringify(fields)}`), () => conversations.voiceTargets(), (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status), (id, text, runId) => conversations.recordSpokenAck(id, text, runId), (origin,target)=>conversations.isVoiceTask(origin,target), async(id,input)=>{
-    const runtime=conversations.get(id)?.runtime;
-
-    if(!runtime)throw new Error('会话已关闭，未读取页面。');
-
-    return readVoicePage(runtime.rpc,input);
-  },generalBrowserLoopEnabled()?async(request,stillCurrent)=>{
-    const receipt=await conversations.dispatchTaskAction(request,stillCurrent);
-
-    return {ok:['queued','accepted','applied'].includes(receipt.status),status:receipt.status,message:receipt.message,receipt};
-  }:undefined, (id,call,input,signal)=>conversations.executeRealtimeBrowserTool(id,call,input,signal));
-  const session = initial.runtime.session;
-
-  const adoptClient = (conn: ClientConn): void => {
-    if (current && current !== conn) { voice.close(); current.close(); }
-
-    current = conn;
-    conversations.reconnect();
-  };
-
-  const sendHelloOk = (conn: ClientConn): void => {
-    void session.availableModels().then((models) => {
-      conn.send(clipboardServer ? { type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION, clipboardPort: clipboardServer.port } : { type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
-      conn.send({ type: "conversation_list", conversations: conversations.list() });
-      conversations.replayState((msg) => conn.send(msg));
-    });
-  };
-
-  const onClientGone = (conn: ClientConn): boolean => {
-    if (conn !== current) return false;
-    current = null;
-    voice.close();
-    conversations.disconnect();
-
-    return true;
-  };
-
-  const disposeAll = (): void => { voice.close(); conversations.dispose(); void stopClipboard(); };
-
-  const handleMessage = (msg: ClientMessage): void => {
-    if (msg.type === "voice") {
-      const conversationId = msg.conversationId ?? "default";
-
+    dispatcher: new TaskDispatcher(new TaskReceiptStore(join(dataDir(), 'task-receipts'))),
+    // The voice session emits its own messages (including `diag` evidence), so this path must also
+    // reach the capture store; otherwise normal-use recording would silently write nothing.
+    observe: msg => { if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record); },
+    onVoiceCommand: (msg, conversationId) => {
       // Extension-side capture facts never reach the upstream voice session.
       if (msg.command.kind === "capture") { voiceCapture.command(msg.voiceId, conversationId, msg.command);
 
- return; }
+ return true; }
 
       if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId, { persistAudio: msg.command.diagnostic === true || msg.command.capture === true });
-      void voice.handle(conversationId, msg);
 
-      return;
-    }
+      return false;
+    },
+    helloExtras: () => (clipboardServer ? { clipboardPort: clipboardServer.port } : {}),
+    log,
+  });
 
-    void conversations.handleMessage(msg).catch((err: unknown) => current?.send({
-      type: "agent_event", conversationId: msg.conversationId,
-      event: { kind: "error", message: err instanceof Error ? err.message : String(err) },
-    }));
-  };
+  const { session, adoptClient, onClientGone, handleMessage, sendHelloOk } = core;
+  const disposeAll = (): void => { core.disposeAll(); void stopClipboard(); };
 
   if (cli.ws) {
     runWsMode(cli, session, { adoptClient, onClientGone, handleMessage, sendHelloOk, disposeAll, proxy });

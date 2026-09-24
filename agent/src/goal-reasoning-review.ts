@@ -2,14 +2,18 @@ import { reviewGoalEvidence, goalReviewState, GOAL_REVIEW_QUESTIONS, GOAL_REVIEW
 import type { VoiceModelCall } from './voice-model.js';
 
 /** A separate bounded review gets actual requirements/evidence, never the executor's claimed success. */
-export async function reviewAmbiguousGoal(call: VoiceModelCall | null, stage: Exclude<GoalReviewStage,'plan'>, data: unknown, signal: AbortSignal): Promise<{ matched: boolean; reason: string }> {
+export async function reviewAmbiguousGoal(call: VoiceModelCall | null, stage: GoalReviewStage, data: unknown, signal: AbortSignal): Promise<{ matched: boolean; reason: string }> {
   if (!call) throw new Error('核验模型不可用，目标保持未完成');
-  const reviewedData=['reuse','target'].includes(stage)?goalReviewState(stage,data):data;
+  const reviewedData=goalReviewState(stage,data);
   const content = JSON.stringify(reviewedData);
 
   if (content.length > 110000) throw new Error('核验资料超过预算，请缩小到完整的目标范围');
 
-  const scope = stage === 'reuse'
+  const scope = stage === 'plan'
+    ? 'Review the proposed plan against every original user outcome and restriction before execution. No action evidence is expected yet. Reject missing, changed or invented outcomes; an intermediate click is not a user goal.'
+    : stage === 'delivery'
+    ? 'Review a PARTIAL delivery only for overclaims. Return matched=true if it says a pending goal is completed; honest uncertainty is allowed. Do not infer completion from an action receipt.'
+    : stage === 'reuse'
     ? 'The prior source certificate is a trusted host record. Decide only whether the current user requirement still refers to that same source. Its text has already been verified; do not ask to re-prove it or infer its type from content.'
     : stage === 'target'
     ? 'Verify destination identity only. Exact text equality was checked by code and is NOT evidence of which form/dialog/row owns this field. Reject a different scope even if the same text is present. Do not borrow a title from elsewhere on the page.'
@@ -35,7 +39,16 @@ export async function reviewAmbiguousGoal(call: VoiceModelCall | null, stage: Ex
 
 /** Uncertainty hands the same evidence to the current task model exactly once. */
 export async function reviewTaskGoal(call:VoiceModelCall|null,stage:GoalReviewStage,data:unknown,signal:AbortSignal,onFallback?:()=>void):Promise<GoalEvidenceReview> {
-  const reviewed=await reviewGoalEvidence(stage,data,signal);
+  let reviewed: GoalEvidenceReview;
+
+  try {
+    reviewed=await reviewGoalEvidence(stage,data,signal);
+  } catch (error) {
+    if (signal.aborted || (error instanceof Error && error.message.includes('核验资料超过预算'))) throw error;
+    const resolved=await reviewAmbiguousGoal(call,stage,data,signal);
+
+    return {...resolved,probability:resolved.matched?1:0,reviewedBy:'main'};
+  }
 
   if(stage!=='plan'&&reviewed.reviewedBy!=='code'&&!reviewed.matched&&reviewed.probability>(stage==='target'?.5:GOAL_REVIEW_NO_MAX)
     &&(!reviewed.issue||reviewed.issue.kind==='none'||reviewed.issue.confidence<.75)) {

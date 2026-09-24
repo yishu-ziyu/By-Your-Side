@@ -61,7 +61,7 @@ import { mountReadingSettings } from "./reading-settings.js";
 import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
-import { DEFAULT_STEP_VOICE, isStepVoice, STEP_VOICE_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
+import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
@@ -292,6 +292,8 @@ const composerEl = document.getElementById("composer") as HTMLElement;
 const inputEl = document.getElementById("input") as HTMLTextAreaElement;
 
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+
+sendBtn.disabled = true;
 
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 
@@ -627,6 +629,8 @@ function resetConversationRender(): void {
 }
 
 function selectConversation(id: string, notify = true): void {
+  const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
+
   if (id !== selectedConversationId) voiceUI.stop();
   completedConversations.delete(id);
   conversationMenu.hidden = true;
@@ -636,6 +640,9 @@ function selectConversation(id: string, notify = true): void {
     if (conversationReady) saveDraft();
     selectedConversationId = id;
     conversationReady = true;
+    sendBtn.disabled = false;
+
+    if (preserveInitialDraft) saveDraft();
     draftRevision += 1;
     resetConversationRender();
     restoringDraft = true;
@@ -719,7 +726,8 @@ function armBootDecisionTimeout(): void {
 /** 新开会话的请求；返回是否真的发出（未连接或端口不可用时不动状态，留给下一次重试）。 */
 function requestNewConversation(): boolean {
   if (conversationRequest) return true;
-  saveDraft();
+
+  if (conversationReady) saveDraft();
   conversationRequest = crypto.randomUUID();
   renderConversations();
 
@@ -3579,6 +3587,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !(STEP_VOICE_STORAGE_KEY in changes)) return;
   const voice = changes[STEP_VOICE_STORAGE_KEY].newValue;
   voiceUI.setVoice(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
+});
+
+void chrome.storage.local.get(VOICE_PERSONA_STORAGE_KEY).then((stored) => voiceUI.setPersona(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY])));
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && VOICE_PERSONA_STORAGE_KEY in changes) voiceUI.setPersona(parseVoicePersona(changes[VOICE_PERSONA_STORAGE_KEY].newValue));
 });
 
 const diagnosticRecord = composerEl.querySelector<HTMLElement>('.voice-record');

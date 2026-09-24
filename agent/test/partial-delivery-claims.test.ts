@@ -1,9 +1,7 @@
 // Regression for docs/evals/20260921-1441-log-review.md §3: outcome=partial delivered text that
-// claimed "页面已圈好" while two condition goals were still pending. verifyPartialDelivery
-// (session.ts) plus the delivery review stage (goal-evidence-judge.ts) must catch this before
-// send_user_message emits anything. reviewTaskGoal is the one external dependency of
-// BrowserAgentSession.goalToolHost().review, so it is stubbed here; goal-evidence-judge-state.test.ts
-// separately covers the real goalReviewState('delivery', ...) projection.
+// said "页面已圈好" while two condition goals were still pending. The delivery review that used to
+// reject this text is gone: words are never withheld. The host instead labels the delivery partial
+// and appends its own open-item note, so the user sees the text and what is still unconfirmed.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserAgentSession } from '../src/session.js';
 import { createSendUserMessageTool, deliveryMetrics, resetDeliveryMetrics } from '../src/user-delivery.js';
@@ -76,7 +74,6 @@ function deliveryTool(session: BrowserAgentSession, next: TaskNextStep, getDeliv
     emit: e => events.push(e),
     getNextStep: () => next,
     getDeliveryFacts,
-    verifyPartial: (text, signal) => (session as any).verifyPartialDelivery(text, signal),
   });
 
   return { tool, events };
@@ -92,17 +89,18 @@ beforeEach(() => {
 });
 
 describe('outcome=partial overclaim gate (docs/evals/20260921-1441-log-review.md §3)', () => {
-  it('rejects the exact accident text: Jev flags an overclaim, error names both pending condition goals, nothing is delivered', async () => {
+  it('delivers the exact accident text, labelled partial with the host note, without any review', async () => {
     const plan = accidentPlan();
     const { session } = sessionFixture(plan);
-    reviewMock.mockResolvedValue({ matched: true, probability: 0.9, reason: '正文把尚未核验的目标说成已完成', reviewedBy: 'jev' });
     const { tool, events } = deliveryTool(session, partialNext(plan.goals));
-    await expect(tool.execute('call-1', { kind: 'finding', outcome: 'partial', content: TRACE_182_TEXT }, undefined, undefined, {} as any))
-      .rejects.toThrow(/在页面上圈出文章的关键词/);
-    await expect(tool.execute('call-2', { kind: 'finding', outcome: 'partial', content: TRACE_182_TEXT }, undefined, undefined, {} as any))
-      .rejects.toThrow(/统计全文词频并圈出词频最高的词/);
-    expect(events).toHaveLength(0);
-    expect(deliveryMetrics.toolRejected).toBe(2);
+    const result = await tool.execute('call-1', { kind: 'finding', outcome: 'partial', content: TRACE_182_TEXT }, undefined, undefined, {} as any);
+    expect(result.content[0]).toMatchObject({ text: expect.stringMatching(/^delivered:/) });
+    expect(events).toHaveLength(1);
+    const delivery = (events[0] as any).delivery;
+    expect(delivery.text).toContain('页面已圈好');
+    expect(delivery.text).toContain('仅交付部分结果');
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(deliveryMetrics.toolRejected).toBe(0);
   });
 
   it('lets an honest partial report through: attempted-but-unconfirmed wording is not an overclaim', async () => {
@@ -138,26 +136,22 @@ describe('outcome=partial overclaim gate (docs/evals/20260921-1441-log-review.md
     expect(reviewMock).not.toHaveBeenCalled();
   });
 
-  it('outcome=complete still only runs verifyAnswer; verifyPartial is never called', async () => {
-    const verifyAnswer = vi.fn(async () => {});
-    const verifyPartial = vi.fn(async () => {});
+  it('outcome=complete with a settled host step delivers directly', async () => {
     const next: TaskNextStep = { action: 'deliver', reason: 'receipts_reviewed', allowWrites: true, delivery: 'report', resultIds: [] };
     const events: AgentUiEvent[] = [];
-    const tool = createSendUserMessageTool({ conversationId: 'default', getRunId: () => 'run-1', emit: e => events.push(e), getNextStep: () => next, verifyAnswer, verifyPartial });
+    const tool = createSendUserMessageTool({ conversationId: 'default', getRunId: () => 'run-1', emit: e => events.push(e), getNextStep: () => next });
     await tool.execute('call-1', { kind: 'finding', outcome: 'complete', content: '词频最高的词是 harness，已在页面圈出并读回确认。' }, undefined, undefined, {} as any);
-    expect(verifyAnswer).toHaveBeenCalledTimes(1);
-    expect(verifyPartial).not.toHaveBeenCalled();
     expect(events).toHaveLength(1);
+    expect((events[0] as any).delivery.text).not.toContain('仅交付部分结果');
   });
 
-  it('rejects the partial delivery when the delivery review call fails (Jev unavailable), with a readable error', async () => {
+  it('an unavailable reviewer can no longer block the delivery', async () => {
     const plan = accidentPlan();
     const { session } = sessionFixture(plan);
     reviewMock.mockRejectedValue(new Error('Jev 核验未完成（HTTP 500）'));
     const { tool, events } = deliveryTool(session, partialNext(plan.goals));
-    await expect(tool.execute('call-1', { kind: 'finding', outcome: 'partial', content: '已执行圈注脚本，覆盖范围尚未核验。' }, undefined, undefined, {} as any))
-      .rejects.toThrow('Jev 核验未完成');
-    expect(events).toHaveLength(0);
-    expect(deliveryMetrics.toolRejected).toBe(1);
+    await tool.execute('call-1', { kind: 'finding', outcome: 'partial', content: '已执行圈注脚本，覆盖范围尚未核验。' }, undefined, undefined, {} as any);
+    expect(events).toHaveLength(1);
+    expect(reviewMock).not.toHaveBeenCalled();
   });
 });

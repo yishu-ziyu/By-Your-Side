@@ -250,14 +250,16 @@ function delivery(h:ReturnType<typeof task>) {
 }
 
 describe('P0.3 actual finding tool boundary',()=>{
-  it('rejects complete delivery while a registered requirement remains',async()=>{
+  it('delivers but labels partial while a registered requirement remains',async()=>{
     const h=task();h.progress.registerResults([{id:'todo',description:'填表',tool:'fill',target:'#name'}]);
-    const d=delivery(h);await expect(d.send()).rejects.toThrow();expect(d.emit).not.toHaveBeenCalled();
+    const d=delivery(h);const result=await d.send();expect(d.emit).toHaveBeenCalledOnce();
+    expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('部分结果');expect(result.details).toMatchObject({outcome:'partial'});
   });
-  it('rejects complete delivery after a write until actual readback',async()=>{
+  it('labels a complete claim partial after a write until actual readback',async()=>{
     const h=task();h.step('fill',{target:'#name'});const d=delivery(h);
-    await expect(d.send('complete')).rejects.toThrow();expect(d.emit).not.toHaveBeenCalled();
+    await d.send('complete');expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('部分结果');
     h.read();expect(await d.send('complete')).toMatchObject({terminate:true});
+    expect(d.emit.mock.calls[1]?.[0].delivery.text).not.toContain('部分结果');
   });
   it('can explicitly report partial results and terminate despite unknown work, with host limitations',async()=>{
     const h=task();h.step('click',{target:'#submit'},true,'unknown');const d=delivery(h);
@@ -266,9 +268,10 @@ describe('P0.3 actual finding tool boundary',()=>{
     expect(result.details).toMatchObject({outcome:'partial',nextAction:'ask_user'});
     expect(h.progress.snapshot().resultState).toBe('unknown');
   });
-  it('cannot terminate a partial result while a browser call is still in flight',async()=>{
+  it('delivers the words but cannot terminate while a browser call is still in flight',async()=>{
     const h=task();h.emit({kind:'tool_start',toolCallId:'still-running',name:'click',params:{target:'#submit'}});
-    await expect(delivery(h).send('partial')).rejects.toThrow();
+    const d=delivery(h);const result=await d.send('partial');
+    expect(d.emit).toHaveBeenCalledOnce();expect(result.terminate).toBe(false);
   });
   it('still allows final pure conversational answers with no browser mutation',async()=>{
     const d=delivery(task());expect(await d.send()).toMatchObject({terminate:true});expect(d.emit).toHaveBeenCalledOnce();

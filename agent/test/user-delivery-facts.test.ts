@@ -1,6 +1,6 @@
 /**
  * T06 交付事实链接线：send_user_message 只从宿主投影取事实，TaskProgress 只记真实读到的页面；
- * 漏项却报 complete 在工具边界被拒（不发事件）。旧记录/未接线时保持旧形状。
+ * 漏项却报 complete 时照常交付，但宿主事实标为 partial 并附未完成说明；模型的 complete 不能升级宿主事实。旧记录/未接线时保持旧形状。
  */
 import { describe, expect, it } from "vitest";
 import { TaskProgress } from "../src/task-progress.js";
@@ -10,6 +10,8 @@ import type { AgentUiEvent } from "../../shared/protocol.js";
 import type { TaskNextStep } from "../../shared/task-next-step.js";
 import type { UserDelivery } from "../../shared/voice.js";
 import { buildDeliveryFactView } from "../../extension/src/sidepanel/delivery-facts-view.js";
+
+const deliveredFacts = (event: AgentUiEvent | undefined) => (event?.kind === "user_delivery" ? event.delivery.facts : undefined);
 
 const COMPLETE: TaskNextStep = { action: "deliver", reason: "receipts_reviewed", allowWrites: true, delivery: "report", resultIds: ["r-1"] };
 
@@ -38,11 +40,12 @@ describe("send_user_message 事实链", () => {
       getDeliveryFacts: () => ({ delivered: [], remaining: [], sources: [] }),
     });
 
-    await expect(h.tool.execute("unverified", { kind: "finding", outcome: "complete", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never)).rejects.toThrow(/尚未核验/);
-    expect(h.events).toHaveLength(0);
+    // SAFETY: 这个工具的 execute 不读取第五个参数（扩展上下文）。
+    await h.tool.execute("unverified", { kind: "finding", outcome: "complete", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never);
+    expect(deliveredFacts(h.events[0])?.outcome).toBe("unverified");
+    // SAFETY: 同上，execute 不读取扩展上下文。
     await h.tool.execute("partial", { kind: "finding", outcome: "partial", content: "只完成了第一项，第二项还没有处理。" }, undefined, undefined, {} as never);
-    const event = h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>;
-    expect(event.delivery.facts?.outcome).toBe("partial");
+    expect(deliveredFacts(h.events[1])?.outcome).toBe("partial");
   });
 
   it("十五项义务的省略计数穿过正式交付与 wire 解析后仍在界面显示十五项", async () => {
@@ -79,13 +82,17 @@ describe("send_user_message 事实链", () => {
     expect(parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "default", event: { kind: "user_delivery", delivery } }))).not.toBeNull();
   });
 
-  it("漏项却报 complete：工具边界拒绝，不发任何交付事件", async () => {
+  it("漏项却报 complete：照常交付，宿主事实标 partial 并列出剩余项", async () => {
     const h = tool({
       getDeliveryFacts: () => ({ delivered: [], remaining: [{ id: "r-2", description: "还剩一项", status: "pending" }], sources: [] }),
     });
 
-    await expect(h.tool.execute("call-2", { kind: "finding", content: "全部完成。" }, undefined, undefined, {} as never)).rejects.toThrow(/事实链无效/);
-    expect(h.events).toHaveLength(0);
+    // SAFETY: 这个工具的 execute 不读取第五个参数（扩展上下文）。
+    await h.tool.execute("call-2", { kind: "finding", content: "全部完成。" }, undefined, undefined, {} as never);
+    const event = h.events[0];
+    expect(deliveredFacts(event)?.outcome).toBe("partial");
+    expect(deliveredFacts(event)?.remaining.map(item => item.id)).toEqual(["r-2"]);
+    expect(event?.kind === "user_delivery" ? event.delivery.text : "").toContain("部分结果");
   });
 
   it("未接线时不附 facts（旧记录形状）；ack 永远不带事实链", async () => {

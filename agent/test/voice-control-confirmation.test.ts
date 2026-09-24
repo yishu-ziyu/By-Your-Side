@@ -161,39 +161,31 @@ describe("语音修改直接送达", () => {
   });
 });
 
-describe('保留终止任务读回',()=>{
-  it("终止句沿用原确认规则：确认后按原调度下发，且不扩大页面输入", async () => {
+describe('终止任务直接送达',()=>{
+  it("终止句不读回：一次下发到原任务，且不扩大页面输入", async () => {
     const {manager, dispatcher, received, emitted, setClassifier} = setup();
     await manager.ensureDefault();
     const {runId, controlVersion} = await runningTask(manager);
     setClassifier((text) => ({steps: [{action: "abort", text, target: null}]}));
 
-    const first = await manager.routeVoiceInput("default", "停下", null, () => true, routeFor(manager, runId, controlVersion, {
+    const routing = manager.routeVoiceInput("default", "停下", null, () => true, routeFor(manager, runId, controlVersion, {
       input: {context: context(101, "A", "https://example.invalid/a"), attachments: [image("attach-a", "a.png")], observation: {token: "obs-secret", tabId: 101}},
-    }));
-
-    expect(first.kind).toBe("clarify");
-    expect((first as {message: string}).message).toContain("停下");
-
-    const confirming = manager.routeVoiceInput("default", "对", null, () => true, routeFor(manager, runId, controlVersion, {
-      requestId: "voice-2", turn: 2, input: {context: context(202, "确认时另一页面", "https://example.invalid/b")},
     }));
 
     await waitFor(() => emitted.some((message) => (message as {type: string}).type === "task_control"));
     const control = emitted.find((message) => (message as {type: string}).type === "task_control") as unknown as {requestId: string; action: string; runId: string};
     await manager.handleMessage({type: "task_control_result", conversationId: "default", requestId: control.requestId, action: "abort", runId: control.runId, ok: true});
-    const second = await confirming;
-    expect(second.kind).toBe("action");
-    expect(done(second).ok).toBe(true);
+    const result = await routing;
+    expect(result.kind).toBe("action");
+    expect(done(result).ok).toBe(true);
     expect(received).toHaveLength(0);
-    const abortRequest = dispatcher.requests.find((request) => request.action === "abort")!;
-    expect(abortRequest.text).toBe("停下");
-    expect(abortRequest.context).toBeUndefined();
-    expect(abortRequest.attachments).toBeUndefined();
-    expect(abortRequest.expectedControlVersion).toBe(controlVersion);
+    const aborts = dispatcher.requests.filter((request) => request.action === "abort");
+    expect(aborts).toHaveLength(1);
+    expect(aborts[0]).toMatchObject({text: "停下", expectedRunId: runId, expectedControlVersion: controlVersion});
+    expect(aborts[0]!.context).toBeUndefined();
+    expect(aborts[0]!.attachments).toBeUndefined();
   });
-
- });
+});
 
 describe("已保存的旧版另开会话提案仍能确认和拒绝", () => {
   it.each(["好的，另开会话", "算了，不用了", "不用了，谢谢"])("接住 %s，不再分类这句回应", async reply => {
@@ -226,20 +218,6 @@ return {kind:'clarify',message:'要另开会话吗？'};});
 
 it.each(["不是不行", "不是不可以", "谢谢", "好了", "不对，城市改为南京"])("不把双重否定或新要求误作撤销：%s", text => {
   expect(isControlReject(text)).toBe(false);
-});
-
-it.each(['expired','rejected'])('终止确认 %s 不执行',async mode=>{
-  vi.useFakeTimers({toFake:['Date']});
-  const {manager,dispatcher,setClassifier}=setup();await manager.ensureDefault();
-  const {runId,controlVersion}=await runningTask(manager);
-  setClassifier(text=>({steps:[{action:'abort',text,target:null}]}));
-  const first=await manager.routeVoiceInput('default','终止任务',null,()=>true,routeFor(manager,runId,controlVersion));
-  expect(first.kind).toBe('clarify');
-
-  if(mode==='expired')vi.setSystemTime(Date.now()+91000);
-  const result=await manager.routeVoiceInput('default',mode==='expired'?'确认':'不用了',null,()=>true,routeFor(manager,runId,controlVersion,{requestId:'voice-2',turn:2}));
-  expect(result.kind).toBe('clarify');
-  expect(dispatcher.requests.filter(r=>r.action==='abort')).toHaveLength(0);
 });
 
 it('registers an independent request without asking the user to open another conversation',async()=>{

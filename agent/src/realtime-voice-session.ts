@@ -3,6 +3,7 @@ import { progressSpeech } from './voice-receipt.js';
 import { randomUUID } from 'node:crypto';
 import type WebSocket from 'ws';
 import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voice-connection.js';
+import { isExplicitTaskAbort } from './voice-confirm.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
 import type { VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import type { RouteShadow } from './route-shadow.js';
@@ -12,6 +13,8 @@ export type RealtimeVoiceDependencies = {
   voiceId?: string;
   /** Step timbre id chosen by the user. */
   voice?: string;
+  /** 用户所选人设的描述正文；空串表示默认，不附加人设。 */
+  persona?: string;
   /** Diagnostic sessions are requested explicitly, lock out routing and never answer on their own. */
   diagnosticMode?: boolean;
   diagnostic?: (event: string, fields: Record<string, string | number | boolean | null>) => void;
@@ -72,7 +75,11 @@ export class RealtimeVoiceSession {
       log: e => this.deps.diagnostic?.(String(e.type), { detail: JSON.stringify(e) }),
       voiceId: this.deps.voiceId,
       voice: this.deps.voice,
+      persona: this.deps.persona,
       voiceSpokenResultGate: this.deps.voiceSpokenResultGate,
+      holdForTranscript: () => !!this.deps.dispatchTask && this.controllable(),
+      claimTranscript: text => !!this.deps.dispatchTask && this.controllable() && isExplicitTaskAbort(text),
+      runClaimed: text => this.abortCurrent(text),
       judgeRequest: async identity => {
         if (this.deps.diagnosticMode || this.closed) return null;
         const snapshot = this.deps.getSnapshot();
@@ -146,6 +153,31 @@ export class RealtimeVoiceSession {
       }
     });
     this.connection.start();
+  }
+  /**
+   * 明确的“终止任务”：按用户开口时看到的任务身份直接下发，不经模型或分类器。
+   * 成功时不在这里宣称，由语音服务按终止回执和真实状态播报；失败如实说没停。
+   */
+  private async abortCurrent(text: string): Promise<string | null> {
+    const origin = this.input;
+    const snapshot = origin.snapshot;
+
+    if (!snapshot || !this.deps.dispatchTask) return '任务没有停止：当前没有可终止的任务。';
+
+    try {
+      // SAFETY: dispatchTask 由宿主注入，解析为 shared/task-actions 的 TaskReceipt；这里只读 status 与 message。
+      const receipt = await this.deps.dispatchTask({
+        requestId: randomUUID(), conversationId: snapshot.conversationId, source: 'voice', action: 'abort',
+        expectedRunId: snapshot.runId ?? null, expectedControlVersion: snapshot.controlVersion, text,
+      }, () => !this.closed) as { status?: string; message?: string } | undefined;
+
+      return receipt?.status === 'applied' || receipt?.status === 'accepted' ? null : `任务没有停止：${receipt?.message ?? '终止未生效'}`;
+    } catch (error) {
+      return `任务没有停止：${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  private controllable(): boolean {
+    return ['running', 'paused', 'interrupted'].includes(this.deps.getSnapshot()?.state ?? '');
   }
   private assertInputSources(origin: Input, sequences?: number[]): void {
     if (!sequences || sequences.length <= 1) {

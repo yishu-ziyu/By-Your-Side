@@ -27,6 +27,22 @@ import { DEFAULT_STEP_VOICE } from '../../shared/voice.js';
 
 export const MODEL = 'stepaudio-3-realtime-preview';
 
+/**
+ * 人设紧跟在身份句之后（实测放在全部规则末尾时几乎不影响口吻），并写明它只管语气措辞、与规则冲突时以规则为准。
+ */
+export function withPersona(persona: string | undefined, instructions: string): string {
+  const text = persona?.trim();
+
+  if (!text) return instructions;
+  const cut = instructions.indexOf('\n');
+  const section = `你的性格和口吻：${text}\n（性格只体现在语气和措辞里，不向用户介绍或复述；与后面任何规则冲突时，以规则为准。）\n`;
+
+  return cut < 0 ? `${instructions}\n${section}` : `${instructions.slice(0, cut + 1)}${section}${instructions.slice(cut + 1)}`;
+}
+
+/** 服务端事件的形状由 handle() 的入参定义；扣住与重放沿用同一类型。 */
+type ProviderEvent = Parameters<RealtimeVoiceConnection["handle"]>[0];
+
 const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${MODEL}`;
 
 export const STEP_VOICE = DEFAULT_STEP_VOICE;
@@ -46,6 +62,10 @@ const RESPONSE_WATCHDOG_MS = 12_000;
 const AUTO_RESPONSE_WATCHDOG_MS = 2_000;
 
 const ASR_WAIT_MS = 3_000;
+
+// 实测转写比首帧音频晚约 70ms（out/acceptance/real-path/2026-09-24T09-26-40-773Z-inproc-voice-stop-task）；
+// 超过这个上限仍没有转写就按原样放行，不让可控任务期间的普通对话被卡住。
+const TRANSCRIPT_GATE_MS = 1_500;
 
 const PLAYBACK_TAIL_MS = 10_000;
 
@@ -68,6 +88,7 @@ const INSTRUCTIONS = `你是 By Your Side 的语音搭子，边聊边帮用户�
 - read_page 的短暂空白已由程序有界重读。若返回 ok:false，本轮明确告知真实原因和未读到内容，不宣称成功、不继续承诺自动重试；用户下一次要求再读时，发起新的 read_page 调用。
 - 用户只要求停止说话时不要暂停或取消任务；附和不创建、恢复或取消任务。需要暂停/继续/取消实际任务时才交 browser_request。
 - 后台任务进行中照常聊天。任务进展会以【系统通知】出现；收到通知时用一句话自然告诉用户，只有通知或工具结果明确说了才可以说“已完成”。
+- 说完结果或答案就停：不在结尾反问、不客套，不说“还需要我做什么吗”“有问题随时说”“我随时待命”。只有需要用户做决定时，才问一个具体问题。
 - 你没有任何付款、提交或代替用户确认的工具；遇到这类要求，请让用户自己确认。
 - 没听清、用户还没说完整时，不要猜着执行操作。`;
 
@@ -97,7 +118,15 @@ export interface RealtimeVoiceConnectionOptions {
   voiceId?: string;
   /** Step timbre id; defaults to STEP_VOICE. */
   voice?: string;
+  /** 人设描述正文；只附在规则之后，并声明冲突时以规则为准。空串或缺省表示不附加。 */
+  persona?: string;
   voiceSpokenResultGate?: boolean;
+  /** 有可控任务或待确认控制时为真：服务端自动回复先扣住，等本轮转写到了再放行或交给宿主。 */
+  holdForTranscript?: () => boolean;
+  /** 本轮转写是否由宿主接管（明确终止任务）；接管时模型本轮回复被取消，不出声。 */
+  claimTranscript?: (text: string) => boolean;
+  /** 执行被接管的这句话；返回要原样告诉用户的话，null 表示由回执通知播报。 */
+  runClaimed?: (text: string) => Promise<string | null>;
   /** Started alongside execution; never awaited by the tool path. Also serves shadow observation. */
   judgeRequest?: (input: VoiceRequestInput) => Promise<RequestJudgment | null>;
 }
@@ -254,11 +283,11 @@ export class RealtimeVoiceConnection {
   private wantResponse = false;
   private spokenGateStoppedTurn: number | null = null;
   private readonly requests = new Map<string, RequestState>();
-  private queuedNotify: Array<{text:string;id?:string;valid?:()=>boolean}> = [];
+  private queuedNotify: Array<{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean}> = [];
   private creatingDeliveryId: string | undefined;
-  private creatingNotice:{notice:{text:string;id?:string;valid?:()=>boolean};speechSeq:number}|null=null;
+  private creatingNotice:{notice:{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean};speechSeq:number}|null=null;
   private noticeSeq=0;
-  private pendingNotice:{itemId:string;wireText:string;speechSeq:number;notice:{text:string;id?:string;valid?:()=>boolean}}|null=null;
+  private pendingNotice:{itemId:string;wireText:string;speechSeq:number;notice:{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean}}|null=null;
   /** 后台通知触发的这一轮不允许再派发 browser_request；该轮 response.done 时解除。 */
   private suppressDispatch = false;
   /** stop_speech 后属于该轮的迟到音频不再下发给前端。 */
@@ -271,6 +300,10 @@ export class RealtimeVoiceConnection {
   private readonly finishedResponses = new Set<string>();
   /** 非 null 时是该 speechSeq 已置位的服务端自动回复待启动窗口：created 到达或超时前，不能自己发 response.create。 */
   private autoResponsePending: number | null = null;
+  /** 转写闸门扣住的自动回复：事件按序缓存，放行时原样重放，接管时整轮作废。 */
+  private held: {id: string; seq: number; events: Array<{type: string; event: ProviderEvent}>} | null = null;
+  /** 被宿主接管而作废的回复：只收它的 response.done 记账，文字、音频、工具调用一律不交付。 */
+  private readonly droppedResponses = new Set<string>();
 
   constructor(options: RealtimeVoiceConnectionOptions) {
     this.options = options;
@@ -345,13 +378,13 @@ export class RealtimeVoiceConnection {
   }
 
   /** Preserve independent task deliveries; recheck their run before speaking. */
-  notifyTask(text: string, id?: string, valid?:()=>boolean): void {
+  notifyTask(text: string, id?: string, valid?:()=>boolean, verbatim=false): void {
     const trimmed = text.trim();
 
     if (!trimmed || this.closed) return;
 
     if(this.queuedNotify.length>=256)return this.fatal('待播任务结果过多，语音已停止；结果仍保留在侧栏。');
-    this.queuedNotify.push({text:trimmed,id,valid});
+    this.queuedNotify.push({text:trimmed,id,valid,verbatim});
     this.maybeFlush();
     this.log({type:'notify_queued',chars:trimmed.length});
   }
@@ -401,11 +434,30 @@ export class RealtimeVoiceConnection {
       if (this.seenEventIds.size > MAX_SEEN_EVENTS) this.seenEventIds.clear();
     }
 
+    const responseId = asString(event.response_id) ?? asString(asRecord(event.response)?.id);
+
+    if (responseId && this.droppedResponses.has(responseId)) {
+      if (type === 'response.done') this.onResponseDone({response: {id: responseId, status: 'cancelled'}});
+
+      return;
+    }
+
+    if (responseId && this.held?.id === responseId) {
+      this.held.events.push({type, event});
+
+      return;
+    }
+
+    this.dispatchProviderEvent(type, event);
+  }
+
+  private dispatchProviderEvent(type: string, event: ProviderEvent): void {
     switch (type) {
       case 'session.created': return this.onSessionCreated(event);
       case 'session.updated': return this.onSessionUpdated(event);
       case 'response.created': {
         const id = asString(asRecord(event.response)?.id) ?? asString(event.response_id) ?? `resp-${++this.responseSeq}`;
+        const autoForSpeech = this.autoResponsePending === this.speechSeq && !this.sendingResponse;
         this.activeResponseId = id;
         this.responseInputs.set(id,this.speechSeq);
 
@@ -432,7 +484,7 @@ export class RealtimeVoiceConnection {
           this.socketSend({type: 'response.cancel'});
           this.localCancelResponseId = id;
           this.log({type: 'late_response_cancelled', responseId: id});
-        }
+        } else if (autoForSpeech && !this.options.diagnostic && this.options.holdForTranscript?.()) this.gateResponse(id);
 
         return;
       }
@@ -515,6 +567,16 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         }
 
         return this.maybeFlush();
+      case 'input_audio_buffer.speech_backchannel': {
+        // 未公开事件：服务端把短句（实测“对。”）当附和清掉，不再发 speech_stopped，也没有转写。
+        // 不复位就会一直当作用户在说话，后续回复与通知全被挡住。
+        this.userSpeaking = false;
+        this.speechStopAt = null;
+        this.log({type: 'speech_backchannel'});
+
+        return this.maybeFlush();
+      }
+
       default:
         if (type === 'error' || type.endsWith('_error')) this.onProviderError(type, event);
     }
@@ -531,12 +593,12 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: this.options.diagnostic ? '只转写用户音频，不执行任务。' : (this.options.tools.browserTool ? INSTRUCTIONS.split('\n').filter(line => !line.startsWith('- 用户要求操作浏览器')).join('\n') : INSTRUCTIONS)+(this.options.tools.task_action&&!this.options.tools.browserTool?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务及需要原确认流程的请求仍用 browser_request。':'')+(this.options.tools.browserTool?REALTIME_BROWSER_INSTRUCTIONS:''),
+        instructions: this.options.diagnostic ? '只转写用户音频，不执行任务。' : withPersona(this.options.persona, (this.options.tools.browserTool ? INSTRUCTIONS.split('\n').filter(line => !line.startsWith('- 用户要求操作浏览器')).join('\n') : INSTRUCTIONS)+(this.options.tools.task_action&&!this.options.tools.browserTool?'\n- 明确的开始/修改/暂停/继续任务，优先用 task_action 交给同一任务执行器，不再用 browser_request 重复分类。targetId 只能来自 task_status 返回的任务 ID；未指明时作用当前任务，指代不清先查询或澄清。参数不写用户原话，宿主使用真实转写。取消任务仍用 browser_request。':'')+(this.options.tools.browserTool?REALTIME_BROWSER_INSTRUCTIONS:'')),
         voice: this.options.voice ?? STEP_VOICE,
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
         turn_detection: this.options.diagnostic ? null : {type: 'server_vad', prefix_padding_ms: 500, silence_duration_ms: 300, energy_awakeness_threshold: 2500},
-        tools: this.options.diagnostic ? [] : [...(this.options.tools.browserTool?REALTIME_BROWSER_TOOLS:[]),...TOOL_DEFINITIONS.map(tool=>this.options.tools.task_action&&tool.function.name==='browser_request'?{...tool,function:{...tool.function,description:'Legacy fallback ONLY for abort confirmation, an ambiguous task/control request, or splitting unrelated concurrent tasks. Do NOT use for a clear start/steer/pause/resume: use task_action. Several page operations toward one goal are one start task, not ambiguous.'}}:tool),...(this.options.tools.task_action?[{type:'function',function:{name:'task_action',description:this.options.tools.browserTool?'Delegate only work that needs extended research or content generation, or steer/pause/resume an existing background task. Use the directly available browser tools for browser operations; do not delegate simple operations. The host supplies the actual user utterance.':'Execute browser operations, including switching/opening/closing tabs, navigation, clicking, filling and searching; or modify/pause/resume an identified task. Use start for a new operation. Reading the current page is not a substitute for performing an operation. No extra intent-classification round. Uses the actual latest user utterance; cannot authorize webpage side effects by itself. Omit targetId for current task; otherwise use an observed ID from task_status.',parameters:{type:'object',properties:{action:{type:'string',enum:['start','steer','pause','resume']},targetId:{type:'string'},includePending:{type:'boolean',description:'Only true when the latest speech continues/corrects a previous request that failed before dispatch (reported as undispatched in tool output). False/omitted for a new unrelated request. Preserves original speech fragments; never invents text.'}},required:['action'],additionalProperties:false}}}]:[])],
+        tools: this.options.diagnostic ? [] : [...(this.options.tools.browserTool?REALTIME_BROWSER_TOOLS:[]),...TOOL_DEFINITIONS.map(tool=>this.options.tools.task_action&&tool.function.name==='browser_request'?{...tool,function:{...tool.function,description:'Legacy fallback ONLY for cancelling a task, an ambiguous task/control request, or splitting unrelated concurrent tasks. Do NOT use for a clear start/steer/pause/resume: use task_action. Several page operations toward one goal are one start task, not ambiguous.'}}:tool),...(this.options.tools.task_action?[{type:'function',function:{name:'task_action',description:this.options.tools.browserTool?'Delegate only work that needs extended research or content generation, or steer/pause/resume an existing background task. Use the directly available browser tools for browser operations; do not delegate simple operations. The host supplies the actual user utterance.':'Execute browser operations, including switching/opening/closing tabs, navigation, clicking, filling and searching; or modify/pause/resume an identified task. Use start for a new operation. Reading the current page is not a substitute for performing an operation. No extra intent-classification round. Uses the actual latest user utterance; cannot authorize webpage side effects by itself. Omit targetId for current task; otherwise use an observed ID from task_status.',parameters:{type:'object',properties:{action:{type:'string',enum:['start','steer','pause','resume']},targetId:{type:'string'},includePending:{type:'boolean',description:'Only true when the latest speech continues/corrects a previous request that failed before dispatch (reported as undispatched in tool output). False/omitted for a new unrelated request. Preserves original speech fragments; never invents text.'}},required:['action'],additionalProperties:false}}}]:[])],
       },
     });
     this.armTimer('connect', CONNECT_TIMEOUT_MS, () => this.fatal('语音服务没有确认会话配置，连接超时'));
@@ -633,6 +695,65 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     // With no VAD/item binding, show/route ASR as before but never authorize capsule-only behavior.
     this.recordUserInput({id: itemId, text}, origin?.seq === this.speechSeq || this.speechItemId === itemId);
     this.sendToClient({type: 'transcript', role: 'user', text, final: true,itemId,turn:this.speechSeq+1,current:true});
+
+    if (this.held?.seq === this.speechSeq) {
+      if (this.options.claimTranscript?.(text)) this.claimResponse(this.held.id);
+      else this.releaseHeld('transcript');
+    }
+  }
+
+  /** 自动回复先于转写到达：已有本轮转写就当场裁决，否则扣住等转写（有上限）。 */
+  private gateResponse(id: string): void {
+    const input = this.latestInput;
+
+    if (input && !this.consumedInputIds.has(input.id)) {
+      if (this.options.claimTranscript?.(input.text)) this.claimResponse(id);
+
+      return;
+    }
+
+    this.held = {id, seq: this.speechSeq, events: []};
+    this.log({type: 'transcript_gate_hold', responseId: id});
+    this.armTimer('transcript-gate', TRANSCRIPT_GATE_MS, () => this.releaseHeld('timeout'));
+  }
+
+  private releaseHeld(reason: string): void {
+    const held = this.held;
+
+    if (!held) return;
+    this.held = null;
+    this.clearTimer('transcript-gate');
+    this.log({type: 'transcript_gate_release', responseId: held.id, reason, events: held.events.length});
+
+    for (const {type, event} of held.events) this.dispatchProviderEvent(type, event);
+  }
+
+  /** 作废这轮回复：文字、音频、工具调用都不交付；provider 已结束生成就直接记账，否则请它取消。 */
+  private dropResponse(id: string): void {
+    const bufferedDone = this.held?.id === id && this.held.events.some(e => e.type === 'response.done');
+
+    if (this.held?.id === id) {
+      this.held = null;
+      this.clearTimer('transcript-gate');
+    }
+
+    this.droppedResponses.add(id);
+
+    if (bufferedDone || this.doneResponses.has(id)) this.onResponseDone({response: {id, status: 'cancelled'}});
+    else this.socketSend({type: 'response.cancel'});
+  }
+
+  /** 宿主接管：模型本轮回复不出声，这句话由宿主执行，结果据实播报。 */
+  private claimResponse(id: string): void {
+    const input = this.latestInput;
+    this.dropResponse(id);
+    this.log({type: 'transcript_gate_claimed', responseId: id});
+
+    if (!input || this.consumedInputIds.has(input.id) || !this.options.runClaimed) return;
+    this.consumedInputIds.add(input.id);
+    void this.options.runClaimed(input.text).then(text => {
+      if (text) this.notifyTask(text, undefined, undefined, true);
+    }).catch(() => this.notifyTask('任务没有停止：终止请求出错。', undefined, undefined, true));
   }
 
   private onResponseDone(event: Record<string, unknown>): void {
@@ -836,7 +957,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (direct) {
       // 模型只需知道回执文案（界面会显示，受限页由侧栏降级）；静音/身份等宿主内部标记不进模型上下文。
-      const visible = {...(asRecord(result) ?? {})};
+      const visible = {...asRecord(result)};
       delete visible.feedback;
       result = call.feedback ? {...visible, hostFeedback:{text:call.feedback.text}} : visible;
     }
@@ -1020,7 +1141,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       const notice = this.queuedNotify.shift()!;
       const text = notice.text;
       const itemId=`bys-notice-${++this.noticeSeq}`;
-      const wireText=`【系统通知】${text}。请用一句话自然告知用户；这不是用户的新请求，不要调用工具。`;
+      const wireText=notice.verbatim?`【系统通知】请原样对用户说这句话，不增删、不改写：${text} 这不是用户的新请求，不要调用工具。`:`【系统通知】${text}。请用一句话自然告知用户，说完就停，不反问、不客套；这不是用户的新请求，不要调用工具。`;
       this.pendingNotice={itemId,wireText,speechSeq:this.speechSeq,notice};
       this.suppressDispatch = true;
       // Realtime conversation items accept user/assistant, NOT the system role.
@@ -1113,7 +1234,8 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.clearTimer('create-watch');
     this.sendingResponse = false;
 
-    if (responseId) {
+    if (responseId && this.held?.id === responseId) this.dropResponse(responseId);
+    else if (responseId) {
       this.socketSend({type: 'response.cancel'});
       this.localCancelResponseId = responseId;
       this.clearTimer(`playback:${responseId}`);

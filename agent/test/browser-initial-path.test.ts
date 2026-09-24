@@ -67,10 +67,11 @@ return {details:{status:'cancelled',receipts:[]}};});
 });
 
 
-it('plans user outcomes with existing source evidence before attempting generic operations',async()=>{
+it('offers the copy-task goal plan with existing source evidence, without forcing it on every request',async()=>{
  const f=fixture();f.host.conversationSnapshot=()=>({goalPlan:{coverage:'unplanned'}});
  f.host.readUserPageForPrompt.mockResolvedValue('Complete first comment already observed');
  await f.run();expect(f.order).toEqual(['reasoning']);
- expect(f.session.prompt.mock.calls[0]?.[0]).toContain('task_goals inspect then plan');
+ expect(f.session.prompt.mock.calls[0]?.[0]).toContain('copies text from a page into a field');
+ expect(f.session.prompt.mock.calls[0]?.[0]).toContain('need no goal plan');
  expect(f.session.prompt.mock.calls[0]?.[0]).toContain('Complete first comment');
 });

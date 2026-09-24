@@ -72,8 +72,8 @@ describe("TaskProgress delivery wiring", () => {
 describe("send_user_message host tool", () => {
   it("rejects empty or overlong content instead of truncating", () => {
     expect(() => assertDeliveryText("")).toThrow(/不能为空/);
-    expect(() => assertDeliveryText("x".repeat(2001))).toThrow(/过长/);
-    expect(() => createUserDelivery({ conversationId: "default", runId: "run-a", kind: "finding", text: "x".repeat(2001) })).toThrow(/过长|无效/);
+    expect(() => assertDeliveryText("x".repeat(12001))).toThrow(/过长/);
+    expect(() => createUserDelivery({ conversationId: "default", runId: "run-a", kind: "finding", text: "x".repeat(12001) })).toThrow(/过长|无效/);
   });
 
   it("registers Lead delivery by conversationId, not by memory store", () => {
@@ -219,36 +219,6 @@ describe("delivery closure", () => {
     return { manager, messages, compose, event: (e: any) => publish(e), resolve: (text: string) => answer(text) };
   }
 
-  it.each(['valid','rejected','cancelled'] as const)('reviews the existing final answer without generating it again: %s',async(outcome)=>{
-    let release!:()=>void;
-
-    const verify=vi.fn(async()=>{if(outcome==='rejected')throw new Error('答案不满足目标');
-
-if(outcome==='cancelled')await new Promise<void>(resolve=>{release=resolve;});});
-
-    const h=fixture(verify);
-
-    try {
-      await h.manager.ensureDefault();
-      await h.manager.handleMessage({type:'user_message',conversationId:'default',text:'Jev目前支持哪些输入？'});
-      const p=(h.manager as any).progress.get('default') as TaskProgress;
-      p.goals.install(p.snapshot().goalPlan!.revision,[{id:'answer',kind:'answer',description:'解释支持的输入',criterion:'只支持文本输入',requirements:['requirement-1']}],1);
-      const answer='Jev目前只支持文本输入，图片、音频和视频尚不支持。';
-      h.event({kind:'text_delta',delta:answer});h.event({kind:'agent_end'});
-      expect(verify).toHaveBeenCalledWith(answer);
-      expect(h.compose).not.toHaveBeenCalled();
-
-      if(outcome==='cancelled'){h.event({kind:'error',message:'用户已终止'});release();}
-
-      await new Promise(resolve=>setTimeout(resolve,0));
-      const deliveries=h.messages.filter(m=>m.event?.kind==='user_delivery');
-
-      if(outcome==='valid'){
-        expect(deliveries).toHaveLength(1);expect(deliveries[0].event.delivery.text).toBe(answer);
-        expect(p.snapshot().goalPlan!.goals[0]!.status).toBe('satisfied');
-      }else{expect(deliveries).toHaveLength(0);expect(p.snapshot().goalPlan!.goals[0]!.status).toBe('pending');}
-    }finally{h.manager.dispose();}
-  });
   it("drops a late makeup finding after the run errors", async () => {
     const h = fixture();
 

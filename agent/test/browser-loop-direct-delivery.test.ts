@@ -120,11 +120,6 @@ function harness(options:HarnessOptions={}){
 
   const wrapped=new Session(raw,null,callbacks,null,null,undefined,null,rpc) as unknown as Wrapped;
 
-  const internal=wrapped as unknown as {
-    verifyAnswerDelivery:(text:string,signal?:AbortSignal)=>Promise<void>;
-    verifyPartialDelivery:(text:string,signal?:AbortSignal)=>Promise<void>;
-  };
-
   wrapped.explicitDelivery=true;
   wrapped.skillStore=null;
   wrapped.modeState={value:'act'};
@@ -153,9 +148,6 @@ function harness(options:HarnessOptions={}){
       emit:event=>record(event),
       getNextStep:()=>progress.snapshot().nextStep??null,
       getDeliveryFacts:()=>progress.deliveryFacts(),
-      // 与生产接线一致：完整交付不触发答复复核，部分交付才走 delivery 复核。
-      verifyAnswer:(text,signal)=>internal.verifyAnswerDelivery(text,signal),
-      verifyPartial:(text,signal)=>internal.verifyPartialDelivery(text,signal),
     }),
   ];
   const decisions=options.decisions??['done'];

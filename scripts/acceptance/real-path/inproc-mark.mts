@@ -47,12 +47,16 @@ const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice(8
 
 const viaSettings = process.argv.find((arg) => arg === "--via-settings" || arg.startsWith("--via-settings="));
 
+const earlyDraft = process.argv.includes("--early-draft");
+
 const plan = await loadModelPlan(modelArg);
 
 const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
   return {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
+    ready: q("#send-btn")?.disabled === false,
+    input: q("#input")?.value ?? "",
     pill: q("#tab-title-text")?.textContent?.trim() ?? null,
     busy: !!(q("#status-pill")?.classList.contains("running") || q("#send-btn")?.classList.contains("stopping") || q(".msg.assistant.streaming")),
     userMessages: [...document.querySelectorAll(".msg.user")].map((el) => el.innerText.trim()),
@@ -61,7 +65,7 @@ const PANEL_STATE = `(() => {
   };
 })()`;
 
-type PanelState = { connected: boolean; pill: string | null; busy: boolean; userMessages: string[]; replies: number; transcript: string };
+type PanelState = { connected: boolean; ready: boolean; input: string; pill: string | null; busy: boolean; userMessages: string[]; replies: number; transcript: string };
 
 type DomNode = { backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 
@@ -77,7 +81,7 @@ const verdict = (pass: boolean, evidence: Evidence): Verdict => ({ status: pass 
 
 interface MarkResult {
   case: "inproc-mark"; startedAt: string; model: string | undefined; viaSettings: string | null; verdicts: Record<string, Verdict>;
-  idle?: Evidence; killWorker?: Evidence; taskSeconds?: number; error?: string; finishedAt?: string; ok?: boolean;
+  idle?: Evidence; killWorker?: Evidence; taskSeconds?: number; error?: string; panelFailure?: Evidence; finishedAt?: string; ok?: boolean;
 }
 
 const result: MarkResult = { case: "inproc-mark", startedAt: startedAt.toISOString(), model: modelArg, viaSettings: viaSettings ?? null, verdicts };
@@ -97,6 +101,17 @@ try {
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const panelSession = panel;
 
+  if (earlyDraft) {
+    const before: PanelState = await rp.evaluate(panelSession, PANEL_STATE);
+
+    if (before.ready) throw new Error("会话已经就绪，未复现启动前输入场景");
+    await rp.click(panelSession, "#input");
+    await rp.typeText(panelSession, INSTRUCTION);
+    await rp.pressEnter(panelSession);
+    const pending: PanelState = await rp.evaluate(panelSession, PANEL_STATE);
+    verdicts.preReadyDraft = verdict(!pending.ready && pending.input === INSTRUCTION && pending.userMessages.length === 0, { ready: pending.ready, input: pending.input, messages: pending.userMessages });
+  }
+
   if (viaSettings) {
     const asCustom = viaSettings === "--via-settings=custom";
     const run = await configureViaSettings(rp, panelSession, plan, { asCustom });
@@ -115,8 +130,8 @@ try {
   await until(async () => {
     const state: PanelState = await rp.evaluate(panelSession, PANEL_STATE);
 
-    return state.connected && state.pill?.includes("订单备注") ? state : undefined;
-  }, 60_000, "侧栏连上扩展内 agent 并认出练习页", 500);
+    return state.connected && state.ready && state.pill?.includes("订单备注") ? state : undefined;
+  }, 60_000, "侧栏会话就绪并认出练习页", 500);
 
   const marks = new Map<number, number[]>();
 
@@ -164,8 +179,14 @@ try {
   }
 
   const began = Date.now();
+  const beforeSend: PanelState = await rp.evaluate(panelSession, PANEL_STATE);
+
+  if (earlyDraft) verdicts.earlyDraftRetained = verdict(beforeSend.input === INSTRUCTION && beforeSend.userMessages.length === 0, { input: beforeSend.input, messages: beforeSend.userMessages });
+
+  if (earlyDraft && verdicts.earlyDraftRetained?.status !== "yes") throw new Error("会话就绪后早输入草稿未保留，停止发送");
   await rp.click(panelSession, "#input");
-  await rp.typeText(panelSession, INSTRUCTION);
+
+  if (!earlyDraft) await rp.typeText(panelSession, INSTRUCTION);
   await rp.pressEnter(panelSession);
   // SAFETY: PANEL_STATE 是本文件写的页面脚本，返回 PanelState。
   await until(async () => ((await rp.evaluate(panelSession, PANEL_STATE)) as PanelState).userMessages.some((t) => t.includes(INSTRUCTION)), 15_000, "指令进入对话");
@@ -203,6 +224,8 @@ try {
   result.error = error instanceof Error ? error.stack ?? error.message : String(error);
 
   if (panel) {
+    // SAFETY: 表达式返回的对象字段与 Evidence 一致；读取失败时回退为空对象。
+    result.panelFailure = await rp.evaluate(panel, `({ input: document.querySelector('#input')?.value ?? null, sendDisabled: document.querySelector('#send-btn')?.disabled ?? null, title: document.querySelector('#conversation-switcher')?.textContent ?? null })`).catch(() => ({})) as Evidence;
     await rp.screenshot(panel, join(artifacts, "panel-failed.png")).catch(() => {});
     // SAFETY: PANEL_STATE 返回 PanelState；读失败时只用到 transcript 字段。
     await writeFile(join(artifacts, "panel-transcript.txt"), ((await rp.evaluate(panel, PANEL_STATE).catch(() => ({ transcript: "" }))) as PanelState).transcript).catch(() => {});

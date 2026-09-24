@@ -66,6 +66,17 @@ export function isControlReject(text: string): boolean {
   return short === "不是" || NEGATIVE.test(short);
 }
 
+/**
+ * 明确要求终止当前任务的整句：宿主据此接管这一轮，送入读回确认。只认短句里的"终止/取消…任务"，
+ * 否定（"别终止任务"）和只停说话（"停一下""别说了"）都不算；含糊的句子仍交给模型与分类器。
+ */
+export function isExplicitTaskAbort(text: string): boolean {
+  const short = normalizeSpeech(text ?? "");
+
+  return short.length <= 16 && /(?:终止|中止|取消|停止|结束|停掉)(?:掉)?(?:当前|这个|这项|刚才的?)?任务|任务(?:给我)?(?:终止|中止|取消|停止|结束|停掉)/.test(short)
+    && !/(?:不要|别|不用|先别|不想)(?:把)?(?:当前|这个|这项)?(?:任务)?(?:给我)?(?:终止|中止|取消|停止|结束|停掉)/.test(short);
+}
+
 /** 复述用用户自己的原话：转写错了才看得见，比"确认修改吗"有用。 */
 export function controlConfirmMessage(text: string): string {
   const quoted = text.replace(/\s+/g, " ").trim().slice(0, 80);

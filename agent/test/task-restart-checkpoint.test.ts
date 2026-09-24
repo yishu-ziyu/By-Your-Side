@@ -238,7 +238,7 @@ describe('P0 restart checkpoints',()=>{
     manager.dispose();
   });
 
-  it('keeps the existing voice read-back confirmation before deleting an interrupted checkpoint',async()=>{
+  it('aborts an interrupted checkpoint directly on an explicit voice abort, without a read-back',async()=>{
     const persisted=runningCheckpoint();
     const runtimeHandle=vi.fn();
     const classifyVoiceInput=vi.fn(async()=>({steps:[{action:'abort' as const,target:null,text:'终止原任务'}]}));
@@ -254,11 +254,8 @@ describe('P0 restart checkpoints',()=>{
 
     await manager.ensureDefault();
     const before=manager.getTaskProgress('default')!;
-    const first=await manager.routeVoiceInput('default','终止原任务',null,()=>true,{requestId:'abort-plan',voiceId:'v',turn:1,runId:before.runId??null,input:{}});
-    expect(first).toMatchObject({kind:'clarify',message:expect.stringContaining('对吗')});
-    expect(runtimeHandle).not.toHaveBeenCalled();
-    const confirmed=await manager.routeVoiceInput('default','对',null,()=>true,{requestId:'abort-confirm',voiceId:'v',turn:2,runId:before.runId??null,input:{}});
-    expect(confirmed).toMatchObject({kind:'action',ok:true,receipts:[{action:'abort',status:'applied'}]});
+    const result=await manager.routeVoiceInput('default','终止原任务',null,()=>true,{requestId:'abort-plan',voiceId:'v',turn:1,runId:before.runId??null,input:{}});
+    expect(result).toMatchObject({kind:'action',ok:true,receipts:[{action:'abort',status:'applied'}]});
     expect(runtimeHandle).toHaveBeenCalledWith({type:'abort'});
     expect(manager.getTaskProgress('default')?.state).toBe('aborted');
     manager.dispose();

@@ -18,7 +18,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -58,6 +58,10 @@ export async function createConversationRuntime(
       modelPattern,
       ...options,
       conversationId,
+      onModelFailover: (from, to) => {
+        options?.onModelFailover?.(from, to);
+        void toolSession?.availableModels().then(models => sendCurrent({ type: "model_info", model: to, models }));
+      },
       customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { observedMaterials:()=>toolSession?.browserObservedMaterials()??[], getMaterial:async(goal,control,signal)=>{if(!toolSession)throw new Error('任务尚未就绪');reserveBrowserMaterial(options?.sessionManager?.getSessionFile(),toolSession.browserDecisionRunId());
 
 return toolSession.browserFieldMaterial(goal,control,signal);}, reserveDecision:()=>reserveBrowserDecision(options?.sessionManager?.getSessionFile(),toolSession?.browserDecisionRunId()??null), goal:()=>toolSession?.browserDecisionContext()??'', userText:()=>toolSession?.browserDecisionUserText()??'', isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) }, get uploadLedger() { return toolSession?.uploadLedger; } }, (blocks, language, signal) => { if (!toolSession) throw new Error("翻译会话不可用");

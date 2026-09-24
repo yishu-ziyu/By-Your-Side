@@ -45,6 +45,8 @@ export async function dependencyViolations(file, source) {
     else if (target && inside(file, 'shared') && !inside(target, 'shared')) reason = 'shared must not depend on host implementations';
     else if (target && inside(file, 'agent/src') && inside(target, 'extension')) reason = 'agent must communicate with extension through shared contracts';
     else if (target && inside(file, 'extension/src') && inside(target, 'agent')) reason = 'extension must communicate with agent through shared contracts';
+    else if (inside(file, 'extension/src') && specifier.startsWith('@sideagent/agent')
+      && !(inside(file, 'extension/src/inproc') && specifier === '@sideagent/agent/browser-core')) reason = 'extension may use only the browser core package API from inproc';
     else if (sourceSurface && targetSurface && surfaces.includes(targetSurface) && sourceSurface !== targetSurface) reason = 'extension surfaces communicate through relay/contracts, not implementation imports';
     else if (target && !sourceRoots.some(root => inside(target, root))) reason = 'production must not import tests, scripts or generated artifacts';
     else if ((inside(file, 'shared') || inside(file, 'extension/src')) && isBuiltin(specifier)) reason = 'Node-only implementation belongs in agent';

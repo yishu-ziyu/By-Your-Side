@@ -31,7 +31,7 @@ import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
 import type {TaskReceiptDiff} from '../../shared/task-actions.js';
 import {pageRecoveryKey,attachmentRecoveryKey} from './task-recovery.js';
-import {assertTaskStepExecution} from '../../shared/task-next-step.js';
+import {assertTaskStepExecution, nextStepIgnoringPlaceholder} from '../../shared/task-next-step.js';
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
 import {type VoiceIntentPlan} from './voice-intent.js';
 import {answerVoiceObservation, classifyVoiceEdit, classifyVoiceInput, prepareVoiceTurn, type VoiceModelCall, type VoiceTurnPrepareInput, type VoiceTurnPrepareOptions, type VoiceTurnPreparation} from "./voice-model.js";
@@ -43,12 +43,12 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
  * - sendUserMessage / steer / abort 均异步不阻塞调用方，错误转成 error 事件
  */
 import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { AgentLoop, ModelPort } from "./agent-loop.js";
+import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
-import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput } from "./user-delivery.js";
+import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { createNodeLoop, createNodeModelRuntime } from "./node-agent-loop.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
@@ -155,6 +155,10 @@ export interface VoiceTurnDeliveryGate {
 
 export interface SessionCreateOptions {
   modelPattern?: string;
+  /** 可用且有凭据时，在主模型可重试故障耗尽后仅自动切换一次。 */
+  fallbackModelPattern?: string;
+  /** 宿主同步当前模型信息与任务摘要；只在真正切换后调用。 */
+  onModelFailover?: (from: string, to: string) => void;
   mode?: AgentMode;
   sessionManager?: SessionManager;
   /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
@@ -312,6 +316,8 @@ export class BrowserAgentSession {
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[]}>=[];
   private deliveryRunId: () => string | null = () => null;
   private explicitDelivery = false;
+  /** 主会话的交付选项；为 null 时（工人会话）没有面向用户的交付。 */
+  private sendOptions: SendUserMessageOptions | null = null;
   private readonly deliveryPrefixes = new Map<string,string>();
   private productContext: ProductContext | null = null;
   private failurePolicy: RepeatedToolFailurePolicy | null = null;
@@ -342,7 +348,7 @@ export class BrowserAgentSession {
         if(!snapshot.runId||!snapshot.goalPlan)throw new Error('任务目标已变化');
         reserveEvidenceWork(this.session?.sessionManager,{runId:snapshot.runId,revision:snapshot.goalPlan.revision,resource:'goal-review',id:randomUUID()});
 
-        return reviewTaskGoal(this.voiceModelCall(),stage,data,signal,()=>this.callbacks.emit({kind:'notice',message:'这份目标证据仍有不确定处，正在独立复核同一份观察。'}));
+        return reviewTaskGoal(this.voiceModelCall(),stage,data,signal,()=>this.callbacks.emit({kind:'notice',message:'这份目标证据需要再次核对，正在用任务模型复核同一份观察。'}));
       },
       current: () => { const epoch = this.controlEpoch;
 
@@ -878,6 +884,25 @@ if(required.includes(key))candidates.set(key,attachment);
       const runIdSlot: { current: () => string | null } = { current: () => null };
       const leadConversationId = isLeadDeliveryHost(options?.conversationId) ? options!.conversationId : undefined;
 
+      // 工具交付与“最后一段普通正文”交付共用同一套选项，事实链与部分完成标注一致。
+      const sendOptions: SendUserMessageOptions | null = leadConversationId ? {
+        conversationId: leadConversationId,
+        getRunId: () => runIdSlot.current(),
+        emit: event => (deliveryEmit.current ?? callbacks.emit)(event),
+        getNextStep: () => {
+          const snapshot = resultHost?.conversationSnapshot();
+
+          return snapshot ? nextStepIgnoringPlaceholder(snapshot) : null;
+        },
+        // 没列目标计划时没有“用户目标清单”可对照：不附完成/未完成事实，也不拿动作回执冒充完成。
+        getDeliveryFacts: () => resultHost?.conversationSnapshot()?.goalPlan?.coverage === 'verified' ? resultHost.taskResultsHost?.deliveryFacts?.() ?? null : null,
+        hasUnfinishedWork: () => {
+          const snapshot = resultHost?.taskResultsHost?.getSnapshot();
+
+          return (snapshot?.results ?? []).some(item => item.status === "pending" || item.status === "unknown");
+        },
+      } : null;
+
       const customTools: ToolDefinition[] = [
           // 生产路径（conversation-runtime / fleet）会传入 customTools；此回退仍接账本，避免日后漏接线。
           ...(options?.customTools ?? createBrowserTools(rpc, undefined, undefined, undefined, {
@@ -943,20 +968,7 @@ if(required.includes(key))candidates.set(key,attachment);
             persist: () => { if (resultHost?.taskResultsHost) resultHost.persistTaskResults?.(resultHost.taskResultsHost.getSnapshot()); },
             emit: callbacks.emit,
           })] : []),
-          ...(leadConversationId ? [createSendUserMessageTool({
-            conversationId: leadConversationId,
-            getRunId: () => runIdSlot.current(),
-            emit: event => (deliveryEmit.current ?? callbacks.emit)(event),
-            getNextStep: () => resultHost?.conversationSnapshot()?.nextStep ?? null,
-            getDeliveryFacts: () => resultHost?.taskResultsHost?.deliveryFacts?.() ?? null,
-            verifyAnswer: (text,signal)=>resultHost?.verifyAnswerDelivery(text,signal)??Promise.resolve(),
-            verifyPartial: (text,signal)=>resultHost?.verifyPartialDelivery(text,signal)??Promise.resolve(),
-            hasUnfinishedWork: () => {
-              const snapshot = resultHost?.taskResultsHost?.getSnapshot();
-
-              return (snapshot?.results ?? []).some(item => item.status === "pending" || item.status === "unknown");
-            },
-          })] : []),
+          ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
         ];
 
       let session: AgentLoop;
@@ -977,12 +989,20 @@ if(required.includes(key))candidates.set(key,attachment);
         }));
       }
 
+      session = withModelFailover(session, models, options?.fallbackModelPattern, (from, to) => {
+        const message = `模型服务暂时不可用，已由 ${from} 切换到 ${to}，正在接着执行。`;
+        callbacks.emit({ kind: "notice", message });
+        resultHost?.runTrace.record("model_fallback", { from, to });
+        options?.onModelFailover?.(from, to);
+      });
+
       memoryHost = session;
       const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, models, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
       wrapper.nodeRuntime = modelRuntime;
       resultHost = wrapper;
       wrapper.skillStore = options?.skillStore;
       wrapper.explicitDelivery = !!leadConversationId;
+      wrapper.sendOptions = sendOptions;
       wrapper.voiceConversationId = options?.conversationId ?? null;
       deliveryEmit.current = event => wrapper.emitValidatedDelivery(event);
       wrapper.productContext = productContext;
@@ -1541,9 +1561,7 @@ return;}
               goalRevision: this.conversationSnapshot()?.goalPlan?.revision,
             });
 
-            verification.end(result.kind === 'done' && result.outcome.ok ? 'verified' : 'failed', {
-              ...(result.kind === 'done' && result.outcome.error ? { reason: result.outcome.error } : {}),
-            });
+            verification.end(result.kind === 'done' && result.outcome.ok ? 'verified' : 'failed', (result.kind === 'done' && result.outcome.error ? { reason: result.outcome.error } : {}));
           }
 
           this.runTrace.record('skill_fast_path', {
@@ -1736,7 +1754,8 @@ return;}
 
     if(!preparationCurrent())return;
     const scopeNote=this.displayScopeBlockedRun!==null&&this.displayScopeBlockedRun===this.deliveryRunId()?"\n[Current request is scoped to part of the page. page_translation changes the entire page and is blocked for this request. Do not modify the page. Explain the whole-page-only limitation and report this request as partial.]":"";
-    const goalGuidance=this.conversationSnapshot()?.goalPlan ? '\n[Use task_goals inspect then plan to cover all user outcomes before acting. Reuse host observations with read_observation then capture_page_material for literal source text; never re-extract already captured content. Verify each goal against fresh evidence before delivery. Execution receipts do not establish task completion.]' : '';
+    // 只有把页面原文搬进输入框/文档的任务需要目标账本（写入前由宿主核对原文）；提问、闲聊、读页直接回答。
+    const goalGuidance=this.conversationSnapshot()?.goalPlan ? '\n[If this request copies text from a page into a field or document, first use task_goals inspect and plan (material + field goals) and capture_page_material, so the host checks the exact source before writing. Questions, chat, page reading and simple page actions need no goal plan: act or answer directly.]' : '';
 
     const promptText = goalGuidance+(observation ? `${finalText}\n\n${observation}` : finalText)+scopeNote+skillFallback
       +(this.modeState.value === "act" && context && typeof context.tabId === "number" ? programFirstGuidance() : "");
@@ -2623,56 +2642,6 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
     }, {triggerTurn: false});
   }
 
-  async verifyAnswerDelivery(text:string,signal?:AbortSignal):Promise<void> {
-    const snapshot=this.conversationSnapshot();
-    const goals=snapshot?.goalPlan?.goals.filter(goal=>goal.kind==='answer'&&goal.status==='pending')??[];
-
-    if(!snapshot?.runId||!snapshot.goalPlan||!goals.length||snapshot.nextStep?.delivery!=='report')return;
-    const host=this.goalToolHost(),current=host.current();
-    const evidence=host.evidence.list(snapshot.runId,snapshot.goalPlan.revision);
-    const sources=evidence.materials.map(material=>({value:material.value,sourceUrl:material.observation.url,truncated:false}));
-
-    // Read-only answers often use the initial page observation without capturing a
-    // copy material. Give the reviewer that real evidence, not an empty source list.
-    if(!sources.length){
-      const latest=evidence.observations.at(-1);
-
-      if(latest){const observed=host.evidence.read(latest.id,snapshot.runId);sources.push({value:observed.text.slice(0,32000),sourceUrl:observed.url,truncated:observed.truncated||observed.text.length>32000});}
-    }
-
-    const result=await host.review('answer',{requirements:snapshot.recoveryInput?.requirements,goals,answer:text,
-      verifiedGoals:snapshot.goalPlan.goals.filter(goal=>goal.status==='satisfied'),sources},signal??new AbortController().signal);
-
-    if(!current()||this.conversationSnapshot()?.runId!==snapshot.runId||this.conversationSnapshot()?.goalPlan?.revision!==snapshot.goalPlan.revision)throw new Error('任务已变化，旧答复未交付');
-
-    if(!result.matched)throw new Error(`答复尚未满足目标：${result.reason}`);
-  }
-
-  /**
-   * Gate for send_user_message outcome=partial: no goal ledger means nothing to contradict, and
-   * no pending goal means there is nothing left to overclaim. Otherwise ask the delivery review
-   * stage whether this exact partial text claims a still-pending goal is done. Unlike
-   * verifyAnswerDelivery, `result.matched===true` here IS the rejection (see goal-evidence-judge.ts).
-   */
-  private async verifyPartialDelivery(text:string,signal?:AbortSignal):Promise<void> {
-    const snapshot=this.conversationSnapshot();
-
-    if(!snapshot?.runId||!snapshot.goalPlan||snapshot.goalPlan.coverage!=='verified')return;
-    const pending=snapshot.goalPlan.goals.filter(goal=>goal.status==='pending');
-
-    if(!pending.length)return;
-    const satisfied=snapshot.goalPlan.goals.filter(goal=>goal.status==='satisfied');
-    const host=this.goalToolHost(),current=host.current();
-    const result=await host.review('delivery',{requirements:snapshot.recoveryInput?.requirements,satisfiedGoals:satisfied,pendingGoals:pending,executionFacts:snapshot.results,text},signal??new AbortController().signal);
-
-    if(!current()||this.conversationSnapshot()?.runId!==snapshot.runId||this.conversationSnapshot()?.goalPlan?.revision!==snapshot.goalPlan.revision)throw new Error('任务已变化，旧正文未交付');
-
-    if(result.matched){
-      const names=pending.map(goal=>goal.description).join('、');
-      throw new Error(`部分交付正文把未核验目标说成已完成：${names}。请改为只报告已执行的动作与实际读回，明确哪些尚未核验，不使用"已圈好/已完成/已确认"等结论词。`);
-    }
-  }
-
   async composeUserDelivery(input: {
     question?: string | null;
     facts: string;
@@ -2690,10 +2659,9 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
 
     const controller=new AbortController();
     const options={maxTokens:400,reasoning:'minimal' as const,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)]),sessionId:this.session.sessionId,headers:opencodeSessionHeaders(this.session.model,this.session.sessionId)};
-    const reviewAnswer=this.conversationSnapshot()?.goalPlan?.goals.some(goal=>goal.kind==='answer'&&goal.status==='pending')===true;
     let reply;
 
-    if(onText&&!reviewAnswer){
+    if(onText){
       const stream=this.modelRuntime.streamSimple(this.session.model,inputContext,options);let text='';
 
       for await(const event of stream){
@@ -2710,9 +2678,6 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
 
     if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("正式回答没有完成。");
     const text=assertDeliveryText(reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim());
-    await this.verifyAnswerDelivery(text,options.signal);
-
-    if(onText&&reviewAnswer&&onText(text)===false)throw new Error('正式回答已取消。');
 
     return text;
   }
@@ -3734,6 +3699,20 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             this.emitGatedUiEvent({kind:"user_delivery",delivery:toolFailure});
           }
 
+          // 模型最后写下的普通正文就是给用户的回答：没走交付工具时由宿主原样交付，不再扣下等复核。
+          if (!toolFailure && !stoppedByUser && !this.hold.isHeld() && this.sendOptions && !this.deliveredResultThisRun && !lastAssistantError(event.messages)) {
+            const finalText = finalAssistantText(event.messages);
+
+            if (finalText) {
+              try {
+                deliverUserMessage(this.sendOptions, { id: toolDeliveryId(`final-${randomUUID()}`), kind: "finding", content: finalText });
+                this.deliveredResultThisRun = true;
+              } catch (error) {
+                console.error(`[sideagent] 最终正文交付失败：${error instanceof Error ? error.message : String(error)}`);
+              }
+            }
+          }
+
           emit({ kind: "agent_end" });
 
           const learnableEnd = correctionsCleared && !toolFailure && !stoppedByUser && !this.hold.isHeld()
@@ -3935,6 +3914,16 @@ const STEER_PAGE_REFERENCE = /(这|那|当前|刚才|上面|页面|标签|网页
 
 export function steerNeedsPageObservation(text: string): boolean {
   return STEER_PAGE_REFERENCE.test(text ?? "");
+}
+
+/** 本轮最后一条助手消息里的正文（不含思考与工具调用）；没有正文时为空串。 */
+function finalAssistantText(messages: ReadonlyArray<{ role: string; content?: unknown }>): string {
+  const last = messages.filter(message => message.role === "assistant").at(-1);
+
+  if (!last || !Array.isArray(last.content)) return "";
+
+  return last.content.filter((part): part is { type: "text"; text: string } => part?.type === "text" && typeof part.text === "string")
+    .map(part => part.text).join("").trim();
 }
 
 export function lastAssistantError(messages: unknown): string | null {

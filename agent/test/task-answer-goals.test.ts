@@ -38,11 +38,11 @@ it('普通插话回复不能替原任务的待回答目标销账',()=>{
  expect(p.snapshot().resultState).toBe('pending');
 });
 
-it('答复验证失败时不发布 finding，也不把目标记为完成',async()=>{
+it('答复不经复核直接交付，回答目标随交付完成',async()=>{
  const {p,events}=fixture();
- const tool=createSendUserMessageTool({conversationId:'answer',getRunId:()=>p.snapshot().runId!,getNextStep:()=>p.snapshot().nextStep!,getDeliveryFacts:()=>p.deliveryFacts(),verifyAnswer:async()=>{throw new Error('只说完成不能代替解释');},emit:event=>events.push(event)});
- await expect(tool.execute('wrong',{kind:'finding',outcome:'complete',content:'已完成。'},undefined,undefined,{} as never)).rejects.toThrow('不能代替解释');
- expect(events).toEqual([]);expect(p.snapshot().resultState).toBe('pending');
+ const tool=createSendUserMessageTool({conversationId:'answer',getRunId:()=>p.snapshot().runId!,getNextStep:()=>p.snapshot().nextStep!,getDeliveryFacts:()=>p.deliveryFacts(),emit:event=>{events.push(event);p.observe({type:'agent_event',event});}});
+ await tool.execute('short',{kind:'finding',outcome:'complete',content:'已完成。'},undefined,undefined,{} as never);
+ expect(events).toHaveLength(1);expect(p.snapshot().resultState).toBe('satisfied');
 });
 
 it('答复尚未正式交付时仍可继续原任务',async()=>{

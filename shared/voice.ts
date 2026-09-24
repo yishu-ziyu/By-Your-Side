@@ -13,7 +13,7 @@ export const USER_DELIVERY_STATUSES = ["composed", "speaking", "played"] as cons
 
 export type UserDeliveryStatus = (typeof USER_DELIVERY_STATUSES)[number];
 
-export const USER_DELIVERY_TEXT_MAX = 2000;
+export const USER_DELIVERY_TEXT_MAX = 12000;
 
 /** 交付事实链数组上限：足够覆盖真实任务，又不让一条交付记录拖垮历史存储。 */
 export const USER_DELIVERY_FACT_ITEM_MAX = 12;
@@ -192,12 +192,55 @@ export function isStepVoice(value: unknown): value is StepVoice {
   return STEP_VOICES.some(v => v.id === value);
 }
 
+/**
+ * 语音人设：只改变语气和措辞，不改变行为规则（如实报结果、不反问、不客套仍然优先）。
+ * 方向见 docs/voice-interaction.md。自定义内容由用户在设置页填写，长度有上限。
+ */
+export const VOICE_PERSONAS = [
+  { id: "default", label: "默认", summary: "简洁利落的搭子", text: "" },
+  {
+    id: "robin", label: "罗宾式", summary: "沉静博学，话少，偶尔冷幽默",
+    text: "沉静、从容、博学，像一位见多识广的考古学者。说话温和、不急，话少而准。不用“好呀”“好啊”这类热情开头，不连串追问；常用一句简短的观察或见解代替寒暄。偶尔一句轻描淡写、略带冷意的幽默，可以轻轻一笑。关心对方，但点到为止，不黏人、不夸张赞美。口吻示例（只示范语气，不要照搬）：“结论其实藏在最后一段，前面都是铺垫。”“找到了，在页面最底下，藏得还挺深。”",
+  },
+] as const;
+
+export const CUSTOM_PERSONA_MAX_CHARS = 300;
+
+export type VoicePersona = { id: typeof VOICE_PERSONAS[number]["id"] } | { id: "custom"; text: string };
+
+export const DEFAULT_VOICE_PERSONA: VoicePersona = { id: "default" };
+
+/** 扩展 chrome.storage.local 里存用户所选人设的键。 */
+export const VOICE_PERSONA_STORAGE_KEY = "voice_persona";
+
+/** 存储或消息里读出的人设先过这里；不认识、空白或超长的自定义内容都退回默认。 */
+const isPersonaRecord = (value: unknown): value is { id?: unknown; text?: unknown } => !!value && typeof value === "object";
+
+const isCustomPersona = (value: { id?: unknown; text?: unknown }): value is { id: "custom"; text: string } => value.id === "custom" && typeof value.text === "string";
+
+export function parseVoicePersona(value: {} | null | undefined): VoicePersona {
+  if (!isPersonaRecord(value)) return DEFAULT_VOICE_PERSONA;
+  const preset = VOICE_PERSONAS.find(p => p.id === value.id);
+
+  if (preset) return { id: preset.id };
+
+  if (!isCustomPersona(value)) return DEFAULT_VOICE_PERSONA;
+  const text = value.text.trim();
+
+  return text && text.length <= CUSTOM_PERSONA_MAX_CHARS ? { id: "custom", text } : DEFAULT_VOICE_PERSONA;
+}
+
+/** 人设描述正文；默认人设为空，表示不附加任何人设。 */
+export function voicePersonaText(persona: VoicePersona): string {
+  return persona.id === "custom" ? persona.text : VOICE_PERSONAS.find(p => p.id === persona.id)?.text ?? "";
+}
+
 export type VoiceCommand =
   /**
    * Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio.
    * `voice` is the user's chosen timbre; it applies to the session being started.
    */
-  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string }
+  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }

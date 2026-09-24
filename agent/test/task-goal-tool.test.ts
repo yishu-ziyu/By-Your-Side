@@ -68,15 +68,14 @@ it('原文取得后目标仍未完成，空字段与错误字段拒绝，正确�
   expect(f.progress.deliveryFacts().remaining).toEqual([]);
 });
 
-it('遗漏目标不能通过审核，迟到的计划不能覆盖改口或取消', async () => {
-  const f = fixture(); f.completeSimple.mockResolvedValueOnce({ stopReason: 'stop', content: [{ type: 'text', text: '{"matched":false,"reason":"缺少目的地"}' }] });
-  await f.call({ action: 'plan', goals: goals.slice(0, 1) });
-  expect(f.progress.snapshot().goalPlan!.coverage).toBe('unplanned');
-  f.completeSimple.mockImplementationOnce(async () => { f.cancel();
-
- return { stopReason: 'stop', content: [{ type: 'text', text: '{"matched":true,"reason":"匹配"}' }] }; });
-  await expect(f.call({ action: 'plan', goals })).rejects.toThrow('任务已变化');
-  expect(f.progress.snapshot().goalPlan!.coverage).toBe('unplanned');
+it('计划只做确定性覆盖检查、不调用模型复核；取消后的迟到计划不能写入', async () => {
+  const f = fixture();
+  await f.call({ action: 'plan', goals });
+  expect(f.progress.snapshot().goalPlan!.coverage).toBe('verified');
+  expect(f.completeSimple).not.toHaveBeenCalled();
+  const late = fixture(); late.cancel();
+  await expect(late.call({ action: 'plan', goals })).rejects.toThrow('任务已变化');
+  expect(late.progress.snapshot().goalPlan!.coverage).toBe('unplanned');
 });
 
 it('未取得材料时仍能如实记录目标未完成，不把无材料核验当成已完成',async()=>{
@@ -131,12 +130,11 @@ it('已固定方案带 reason 且核验通过时移除未引用的内部材料�
  expect(plan.amendments).toMatchObject([{reason:expect.stringContaining('反复超限'),removed:['scratch-source'],added:[]}]);
 });
 
-it('修订未通过 Jev 审核时不应用，原方案保留',async()=>{
+it('修订计划不再调用模型复核',async()=>{
  const f=fixture();await f.call({action:'plan',goals:removableGoals});
- f.completeSimple.mockResolvedValueOnce({stopReason:'stop',content:[{type:'text',text:'{"matched":false,"reason":"仍需要原文"}'}]});
- const result=await f.call({action:'plan',goals:[removableGoals[1]!],reason:'尝试移除来源'});
- expect(JSON.parse((result as any).content[0].text).matched).toBe(false);
- expect(f.progress.snapshot().goalPlan!.goals.map(g=>g.id)).toEqual(['scratch-source','body-marked']);
+ await f.call({action:'plan',goals:[removableGoals[1]!],reason:'尝试移除来源'});
+ expect(f.completeSimple).not.toHaveBeenCalled();
+ expect(f.progress.snapshot().goalPlan!.goals.map(g=>g.id)).toEqual(['body-marked']);
 });
 
 it('condition 核验带 elements 时，host.read 收到选择器，证据并入交给 Jev 的状态',async()=>{

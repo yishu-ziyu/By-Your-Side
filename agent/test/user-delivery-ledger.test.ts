@@ -19,7 +19,7 @@ describe("UserDeliveryLedger", () => {
     expect(l.record(delivery({ id: "d-2", runId: "stale-run" }))).toBe(false); // 旧 run
     expect(l.record(delivery({ id: "d-2", text: "" }))).toBe(false); // 空文
     expect(l.record(delivery({ id: "d-2", text: " \n\t " }))).toBe(false); // 纯空白
-    expect(l.record(delivery({ id: "d-2", text: "长".repeat(2001) }))).toBe(false); // 越界
+    expect(l.record(delivery({ id: "d-2", text: "长".repeat(12001) }))).toBe(false); // 越界
     expect(l.record(delivery({ id: "d-2", kind: "verified_success" as never }))).toBe(false);
     expect(l.latest()).toMatchObject({ id: "d-1", text: "竹海工作坊发来活动邀请。" });
   });

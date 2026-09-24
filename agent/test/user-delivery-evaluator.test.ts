@@ -24,7 +24,7 @@ for(const [record,extra] of [[h.delivery(),{sessionId:'worker-1'}],[h.delivery({
 
 describe('delivery protocol',()=>{
  it('accepts a bounded explicit delivery record',()=>{const h=harness(),d=h.delivery();expect(parseServerMessage(JSON.stringify({type:'agent_event',conversationId:'default',event:{kind:'user_delivery',delivery:d}}))).not.toBeNull();expect(isTaskProgressSnapshot({...h.p.snapshot(),conversationContext:{recentTurns:[],latestResult:null,latestDelivery:d}})).toBe(true);});
- it.each([{text:''},{text:'x'.repeat(2001)},{id:''},{kind:'verified_success'},{status:'heard_by_human'},{runId:42},{composedAt:'yesterday'}])('rejects malformed delivery %j',(extra)=>{const h=harness(),d=h.delivery(extra);expect(parseServerMessage(JSON.stringify({type:'agent_event',conversationId:'default',event:{kind:'user_delivery',delivery:d}}))).toBeNull();expect(isTaskProgressSnapshot({...h.p.snapshot(),conversationContext:{recentTurns:[],latestResult:null,latestDelivery:d}})).toBe(false);});
+ it.each([{text:''},{text:'x'.repeat(12001)},{id:''},{kind:'verified_success'},{status:'heard_by_human'},{runId:42},{composedAt:'yesterday'}])('rejects malformed delivery %j',(extra)=>{const h=harness(),d=h.delivery(extra);expect(parseServerMessage(JSON.stringify({type:'agent_event',conversationId:'default',event:{kind:'user_delivery',delivery:d}}))).toBeNull();expect(isTaskProgressSnapshot({...h.p.snapshot(),conversationContext:{recentTurns:[],latestResult:null,latestDelivery:d}})).toBe(false);});
  it('rejects a server record routed into another conversation',()=>{const h=harness();expect(parseServerMessage(JSON.stringify({type:'agent_event',conversationId:'other',event:{kind:'user_delivery',delivery:h.delivery()}}))).toBeNull();});
 });
 

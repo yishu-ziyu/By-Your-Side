@@ -8,7 +8,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
-import { DEFAULT_STEP_VOICE, STEP_VOICES, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
+import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
 type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'>;
 
@@ -89,11 +89,13 @@ export class VoiceService {
       // 扩展与本机进程版本可能不同：不认识的音色退回默认，不拒绝整次开启。
       const requestedVoice = message.command.voice;
       const voice = STEP_VOICES.find(v => v.id === requestedVoice)?.id ?? DEFAULT_STEP_VOICE;
+      const persona = voicePersonaText(parseVoicePersona(message.command.persona));
 
       const active = {
         id: message.voiceId, conversationId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
           voice,
+          persona,
           ...(diag ? { diagnosticMode: true } : {}),
           getSnapshot: () => this.snapshot(conversationId),
           getDeliverySnapshot: stream => this.snapshot(this.deliveryOwners.get(stream.id) ?? conversationId),

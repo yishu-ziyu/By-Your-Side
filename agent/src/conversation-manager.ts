@@ -9,14 +9,14 @@ import {join} from "node:path";
 import {displayNameFor} from '../../shared/cast.js';
 import type {UserInputOptions} from "./session.js";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
-import {CONTROL_CONFIRM_TTL_MS,controlConfirmMessage,createControlConfirmSnapshot,isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
+import {isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
   type ClientMessage, type ConversationSummary, type ServerMessage,
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
-import { createUserDelivery, projectDeliveryFacts, factsForDelivery, assertDeliveryText } from "./user-delivery.js";
+import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./user-delivery.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -519,22 +519,7 @@ return target?{kind:'none',resumeReadOnly:'status',resumeTargetId:targetId,snaps
 
       const sharesInput=targetId===id||/(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text);
 
-      // 普通语音修改与文字同路，具体危险动作仍由执行层确认；终止任务保留读回。
-      if(step.action==='abort'&&plan.steps.length===1&&targetId===id&&['running','interrupted'].includes(before.state)&&route){
-        this.controlConfirmations.set(id,createControlConfirmSnapshot({
-          voiceId: route.voiceId,
-          turn: route.turn,
-          expiresAt: Date.now()+CONTROL_CONFIRM_TTL_MS,
-          action: step.action,
-          text: step.text,
-          expectedRunId: expected.get(targetId) ?? null,
-          expectedControlVersion: versions.get(targetId) ?? 0,
-          input: route.input,
-        }));
-        journal[index]!.status='unexecuted';save();
-
-        return {kind:'clarify',message:controlConfirmMessage(step.text)};
-      }
+      // 普通修改与终止都直接送达（2026-09-24 用户决定不再读回）；具体危险网页动作仍由执行层确认。
 
       if(['pause','resume','abort'].includes(step.action))route?.reportStage?.('controlling');
       journal[index]!.status='pending';save();
@@ -820,21 +805,9 @@ return { kind: "silent" };}
     const streaming=this.beginDeliveryStream(id,'finding',snap,()=>this.getTaskProgress(id)?.state==='idle');
 
     try {
-      let spoken:string;
-
-      if(snap.conversationContext?.latestResult?.source==='assistant_output'
-        &&snap.goalPlan?.goals.some(goal=>goal.kind==='answer'&&goal.status==='pending')
-        &&typeof session.verifyAnswerDelivery==='function') {
-        spoken=assertDeliveryText(facts);
-        await session.verifyAnswerDelivery(spoken);
-
-        if(streaming.onText(spoken)===false){streaming.cancel();
-
-return;}
-      }else{
-        spoken=await session.composeUserDelivery({question:snap.goal,facts,
-          recentTurns:snap.conversationContext?.recentTurns??[],latestDelivery:snap.conversationContext?.latestDelivery??null},streaming.onText);
-      }
+      // 模型正文通常已由会话在本轮结束时直接交付；走到这里的是没有正文或正文未能交付的兜底。
+      const spoken=await session.composeUserDelivery({question:snap.goal,facts,
+        recentTurns:snap.conversationContext?.recentTurns??[],latestDelivery:snap.conversationContext?.latestDelivery??null},streaming.onText);
 
       const now = this.getTaskProgress(id);
 

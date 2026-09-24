@@ -1,5 +1,11 @@
 # 当前主链路与一项简化提案
 
+## 扩展宿主边界（2026-09-24）
+
+无本机伴随进程时，background 仍负责页面执行、身份与权限闸门；offscreen 经公开的 `@sideagent/agent/browser-core` 入口装配 `ConversationManager`、`BrowserAgentSession`、`ToolRpc` 与 `VoiceService`。本机入口与扩展入口共用任务和回执逻辑，分别提供传输、模型凭据与语音 WebSocket。扩展先收到并载入配置，再建会话；当前页、任务 ID 和 `executionFact` 仍由协议传递，不由模型叙述补造。Jev 不可用时，目标审核改用当前任务模型对同一份要求和宿主观察做有界复核；未获得有效复核仍保持未完成。实际完成状态见[STATUS](STATUS.md)和[迁移工作流](work/20260924-core-into-extension.md)。
+
+下文是 2026-09-22 的主链路快照与简化提案，不能替代以上新入口的验收结论。
+
 2026-09-22，依据 `main@94b1782` 的**当前工作树，含未提交改动**。本轮只读源码与七个测试文件，未执行测试、浏览器、模型请求、构建或重载。图描述源码能力，不代表日常已加载。
 
 [配置源码](../agent/src/config.ts#L27)的通用循环、显示快路与影子路由均缺省关闭；本机 `~/.sideagent/config.json` 四项开关目前均为 true，模型为 `minimax-cn/MiniMax-M3`。会话保存的模型可覆盖全局配置（[装配](../agent/src/main.ts#L153)）。[STATUS](STATUS.md)含旧加载记录，本轮未核对日常进程。新 A 保留“实现方报告通过，最新独立 review 待完成”。

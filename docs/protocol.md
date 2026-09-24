@@ -1,11 +1,13 @@
 # SideAgent 桥接协议
 
-background service worker 与本地伴随进程（Node + Pi SDK）之间的协议；默认走 native messaging，WebSocket 用于调试回退。侧栏通过扩展内部 Port 连接 background。
+background service worker 与任务宿主之间的协议；优先走本地伴随进程的 native messaging，未安装时接扩展 offscreen 里的同一任务核心，WebSocket 用于调试回退。侧栏通过扩展内部 Port 连接 background。
 权威类型定义见 `shared/protocol.ts`，本文档描述流程与语义。任务身份、持久回执、语音连接及只读页面问答另见[语音与任务调度](voice-dispatch.md)，对应类型也包括`shared/task-actions.ts`与`shared/voice.ts`。
 
 ## 传输与握手
 
 以下 token、Origin 与单客户端握手规则适用于 WebSocket 回退通道。native messaging 由 Chrome 拉起伴随进程，通过 host 的扩展白名单限制访问。
+
+offscreen 入口使用扩展内部 runtime Port；background 先送模型配置与凭据，再送 `hello`。任务、工具结果、会话和语音控制继续使用下面同一套消息与身份，`inproc_config`、`inproc_voice` 和保活帧只在扩展内部传递。配置前的只读查询不会被误报为任务失败；真正的任务输入会返回明确拒绝回执。
 
 - WebSocket 模式监听 `ws://127.0.0.1:7758`（仅回环地址）。
 - 启动时生成随机 token 并打印到终端；用户在面板首次设置中粘贴一次，存 `chrome.storage.local`。

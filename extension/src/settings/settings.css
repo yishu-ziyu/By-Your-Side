@@ -31,8 +31,10 @@ html, body.settings-page { height: auto; min-height: 100%; font-size: 14px; }
 #provider-form { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--content-border); padding-top: 12px; }
 .settings-field { display: flex; flex-direction: column; gap: 4px; }
 .settings-field > span { font-size: 13px; color: var(--text-secondary); }
-.settings-field input, .oauth-prompt input { font: inherit; padding: 7px 10px; color: var(--text-primary); background: var(--glass-surface-elevated); border: 1px solid var(--content-border); border-radius: var(--radius-sm); }
-.settings-field input:focus-visible, .oauth-prompt input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-field input, .settings-field textarea, .oauth-prompt input { font: inherit; padding: 7px 10px; color: var(--text-primary); background: var(--glass-surface-elevated); border: 1px solid var(--content-border); border-radius: var(--radius-sm); }
+.settings-field textarea { resize: vertical; line-height: 1.5; }
+.settings-field[hidden] { display: none; }
+.settings-field input:focus-visible, .settings-field textarea:focus-visible, .oauth-prompt input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .settings-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .settings-card button:not(.provider-option) { font: inherit; padding: 6px 14px; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--content-border); border-radius: var(--radius-sm); cursor: pointer; }

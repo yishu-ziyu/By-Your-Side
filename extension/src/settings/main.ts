@@ -11,7 +11,7 @@ import {
   CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
-import { DEFAULT_STEP_VOICE, isStepVoice, STEP_VOICE_STORAGE_KEY, STEP_VOICES } from "../../../shared/voice.js";
+import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
 
 /** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
 const TEST_TIMEOUT_MS = 60_000;
@@ -92,6 +92,17 @@ document.getElementById("settings")!.innerHTML = `
     <h3 id="timbre-title">音色</h3>
     <p class="settings-sub">点一下就换，下次开启语音时生效。</p>
     <div id="timbre-list" class="timbre-list" role="radiogroup" aria-labelledby="timbre-title"></div>
+    <h3 id="persona-title">人设</h3>
+    <p class="settings-sub">只改变语音的语气和措辞；如实汇报、不乱问这些规则不受影响。下次开启语音时生效。</p>
+    <div id="persona-list" class="timbre-list" role="radiogroup" aria-labelledby="persona-title"></div>
+    <div id="persona-custom" class="settings-field" hidden>
+      <textarea id="persona-text" rows="3" maxlength="${CUSTOM_PERSONA_MAX_CHARS}" placeholder="用几句话描述你想要的性格，比如：说话干脆，带点幽默"></textarea>
+      <div class="settings-inline">
+        <button id="persona-save" type="button" class="settings-primary">保存</button>
+        <span id="persona-count" class="settings-hint"></span>
+      </div>
+    </div>
+    <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
 `;
 
@@ -485,6 +496,7 @@ async function reload(): Promise<void> {
   voiceClear.hidden = !ownVoiceKey;
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
+  renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   renderCurrent();
   refreshProviderMarks();
   renderCredentialState();
@@ -523,6 +535,68 @@ function renderTimbres(current: string): void {
   }));
 }
 
+const personaList = $("persona-list");
+
+const personaCustom = $("persona-custom");
+
+const personaText = $<HTMLTextAreaElement>("persona-text");
+
+const personaStatus = $("persona-status");
+
+const personaCount = $("persona-count");
+
+const PERSONA_OPTIONS = [...VOICE_PERSONAS.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的描述" }] as const;
+
+/** 预设点一下就保存；自定义先展开输入框，点保存才生效。 */
+function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.id): void {
+  personaList.replaceChildren(...PERSONA_OPTIONS.map((option) => {
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "provider-option persona-option";
+    pick.dataset.persona = option.id;
+    pick.setAttribute("role", "radio");
+    pick.setAttribute("aria-checked", String(option.id === picked));
+    const name = document.createElement("span");
+    name.className = "provider-option-name";
+    name.textContent = option.label;
+    const note = document.createElement("span");
+    note.className = "provider-option-note";
+    note.textContent = option.summary;
+    pick.append(name, note);
+    pick.addEventListener("click", () => {
+      if (option.id === "custom") {
+        renderPersonas(saved, "custom");
+        personaText.focus();
+
+        return;
+      }
+
+      void savePersona({ id: option.id });
+    });
+
+    return pick;
+  }));
+  personaCustom.hidden = picked !== "custom";
+
+  if (saved.id === "custom" && document.activeElement !== personaText) personaText.value = saved.text;
+  personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`;
+}
+
+async function savePersona(persona: VoicePersona): Promise<void> {
+  await chrome.storage.local.set({ [VOICE_PERSONA_STORAGE_KEY]: persona });
+  renderPersonas(persona);
+  setStatus(personaStatus, "已保存，下次开启语音时生效。", "ok");
+}
+
+personaText.addEventListener("input", () => { personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
+
+$("persona-save").addEventListener("click", () => {
+  const text = personaText.value.trim();
+
+  if (!text) return setStatus(personaStatus, "先写几句你想要的性格。", "err");
+  void savePersona({ id: "custom", text });
+});
+
 oauthLogin.addEventListener("click", () => void startLogin());
 
 oauthCancel.addEventListener("click", () => login?.abort());
@@ -539,7 +613,7 @@ voiceClear.addEventListener("click", () => void clearVoiceKey());
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 renderProviders();

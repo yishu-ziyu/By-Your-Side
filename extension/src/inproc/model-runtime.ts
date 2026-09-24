@@ -15,6 +15,7 @@ import { githubCopilotOAuth } from "@earendil-works/pi-ai/auth/oauth/github-copi
 import { kimiCodingOAuth } from "@earendil-works/pi-ai/auth/oauth/kimi-coding";
 import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex";
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
+import type { ModelPort } from "../../../agent/src/agent-loop.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
@@ -95,6 +96,8 @@ export interface ModelRuntime {
   resolveModel(config: InprocModelConfig | null): Model<Api>;
   /** 某些服务商要求的额外请求头。 */
   headersFor(model: Model<Api>): Record<string, string> | undefined;
+  /** 供同一任务核心使用，当前设置由 offscreen 宿主提供。 */
+  createCoreModels(selectedConfig: () => InprocModelConfig | null): ModelPort;
   /** 设置页里能选的服务商，常用套餐在前。 */
   providerChoices(): ProviderChoice[];
 }
@@ -171,5 +174,45 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     return choices.sort((a, b) => (featured.get(a.id) ?? 99) - (featured.get(b.id) ?? 99) || a.name.localeCompare(b.name));
   }
 
-  return { sessionId, credentials, models, resolveModel, headersFor, providerChoices };
+  const runtime: ModelRuntime = {
+    sessionId, credentials, models, resolveModel, headersFor, providerChoices,
+    createCoreModels: selectedConfig => createCoreModelPort(runtime, selectedConfig),
+  };
+
+  return runtime;
+}
+
+/** 让扩展模型目录满足任务核心的模型接口，保留当前设置页的模型解析与 OpenCode 请求头。 */
+function createCoreModelPort(runtime: ModelRuntime, selectedConfig: () => InprocModelConfig | null): ModelPort {
+  const selectedModel = (provider: string, id: string): Model<Api> | undefined => {
+    const config = selectedConfig();
+
+    return config?.provider === provider && config.modelId === id ? runtime.resolveModel(config) : undefined;
+  };
+
+  const withHeaders = (model: Model<Api>, options: Parameters<ModelPort["streamSimple"]>[2]) => {
+    const headers = runtime.headersFor(model);
+
+    return headers ? { ...options, headers: { ...options?.headers, ...headers } } : options;
+  };
+
+  return {
+    getModel: (provider, id) => selectedModel(provider, id) ?? runtime.models.getModel(provider, id),
+    async getAvailable(provider, options) {
+      const available = await runtime.models.getAvailable(provider, options);
+      const config = selectedConfig();
+
+      if (!config || (provider && provider !== config.provider)) return available;
+      const selected = runtime.resolveModel(config);
+
+      if (available.some(model => model.provider === selected.provider && model.id === selected.id)) return available;
+
+      // 自定义地址可以不需要 key；其他目录外模型只有该服务商鉴权可用时才展示。
+      if (config.provider !== CUSTOM_PROVIDER_ID && !available.some(model => model.provider === config.provider)) return available;
+
+      return [...available, selected];
+    },
+    streamSimple: (model, context, options) => runtime.models.streamSimple(model, context, withHeaders(model, options)),
+    completeSimple: (model, context, options) => runtime.models.completeSimple(model, context, withHeaders(model, options)),
+  };
 }

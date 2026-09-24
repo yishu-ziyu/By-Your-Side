@@ -1,4 +1,4 @@
-import {isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice} from '../../../shared/voice.js';
+import {isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
 import { VoicePlayer } from './voice-player.js';
 import { pcmBase64 } from './voice-signal.js';
 import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
@@ -24,6 +24,8 @@ export class VoiceClient {
   needsMicrophonePermission = false;
   /** 用户在设置页选的音色，下次开启语音时生效。 */
   voice: StepVoice | undefined;
+  /** 用户在设置页选的人设，下次开启语音时生效。 */
+  persona: VoicePersona = DEFAULT_VOICE_PERSONA;
   private analyser: AnalyserNode | null = null;
   private inputLevel = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -212,7 +214,14 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   }
   /** Normal sessions do not persist PCM. Diagnostic capture is an explicit second mode. */
   private startCommand(): VoiceCommand {
-    return this.diagSession ? { kind: 'start', diagnostic: true } : this.voice ? { kind: 'start', voice: this.voice } : { kind: 'start' };
+    if (this.diagSession) return { kind: 'start', diagnostic: true };
+    const command: Extract<VoiceCommand, { kind: 'start' }> = { kind: 'start' };
+
+    if (this.voice) command.voice = this.voice;
+
+    if (this.persona.id !== 'default') command.persona = this.persona;
+
+    return command;
   }
   /** The panel's rendered question text, sent once it is assigned; the agent keeps its own server record. */
   captureDisplay(turn: number, text: string): boolean {

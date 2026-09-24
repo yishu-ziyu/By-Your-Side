@@ -1,5 +1,5 @@
 /**
- * 入口行为契约：同一组协议消息，分别经过本机伴随进程（ConversationManager）与扩展内 agent（extension/src/inproc/host.ts）。
+ * 入口行为契约：同一组协议消息，分别经过本机伴随进程（ConversationManager）与扩展内 agent（extension/src/inproc/browser-host.ts）。
  *
  * 两边都用同一个脚本化本地模型和同一个假浏览器，只比较协议上看得到的结果：
  * - 等待确认的点击，交给模型的回执不能说已经点了；
@@ -7,7 +7,6 @@
  * - 同一 requestId 重复投递只启动一次；
  * - 指向过期任务的修订被拒绝，也不进入模型输入。
  *
- * 扩展内入口目前是简化循环，已知不满足的契约用 it.fails 标出（修好后会变红，提醒去掉标记）。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -198,11 +197,11 @@ async function nativeEntry(script: ScriptedModel, useLoop = false): Promise<Entr
 }
 
 async function inprocEntry(script: ScriptedModel): Promise<Entry> {
-  const { startInprocHost } = await import("../src/inproc/host.js");
+  const { startInprocHost } = await import("../src/inproc/browser-host.js");
   const frames: ServerMessage[] = [];
   let onMessage: ((message: ClientMessage | InprocConfig) => void) | null = null;
   const send = (message: ClientMessage | InprocConfig) => onMessage?.(message);
-  const emit = answerToolCalls(frames, send, () => "A");
+  const emit = answerToolCalls(frames, send, () => "default");
 
   const port = {
     name: "inproc-host",
@@ -214,14 +213,20 @@ async function inprocEntry(script: ScriptedModel): Promise<Entry> {
 
   const runtime = {
     sessionId: "contract", resolveModel: () => model, headersFor: () => undefined,
-    models: { streamSimple: script.stream }, credentials: { load: async () => {} },
+    createCoreModels: () => ({
+      getModel: () => model,
+      getAvailable: async () => [model],
+      streamSimple: script.stream,
+      completeSimple: async (_model: typeof model, context: Parameters<typeof script.stream>[1]) => script.stream(_model, context).result(),
+    }),
+    credentials: { load: async () => {} },
   };
 
-  // SAFETY: host 只用到 runtime 的这几个成员和端口的 name / postMessage / onMessage / onDisconnect。
+  // SAFETY: browser-host 只用到 runtime 的这些成员和端口的 name / postMessage / onMessage / onDisconnect。
   startInprocHost({ createRuntime: () => runtime as never, onConnect: (listener) => listener(port as never) });
   send({ type: "inproc_config", config: { provider: model.provider, modelId: model.id }, credentials: {} });
 
-  return { name: "扩展内 agent", conversationId: "A", frames, send, cleanup: () => {} };
+  return { name: "扩展内 agent", conversationId: "default", frames, send, cleanup: () => {} };
 }
 
 interface HostOnlyFrame { type: "inproc_keepalive" | "inproc_credential" }
@@ -259,16 +264,13 @@ const idle = (entry: Entry) => entry.frames.some(f => f.type === "status" && f.s
 
 type Build = (script: ScriptedModel) => Promise<Entry>;
 
-/** 扩展内入口已知不满足的契约；④ 把任务核心搬进扩展后应当全部去掉。 */
-const INPROC_KNOWN_GAPS = new Set(["heldClick", "ownership", "duplicate", "staleSteer"]);
-
-const entries: Array<[string, Build, Set<string>]> = [
-  ["本机伴随进程", nativeEntry, new Set()],
-  ["本机核心 + 扩展循环", script => nativeEntry(script, true), new Set()],
-  ["扩展内 agent", inprocEntry, INPROC_KNOWN_GAPS],
+const entries: Array<[string, Build]> = [
+  ["本机伴随进程", nativeEntry],
+  ["本机核心 + 扩展循环", script => nativeEntry(script, true)],
+  ["扩展内 agent", inprocEntry],
 ];
 
-describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
+describe.each(entries)("入口契约：%s", (_name, build) => {
   let entry: Entry | null = null;
   afterEach(() => {
     entry?.cleanup();
@@ -276,9 +278,7 @@ describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
     vi.restoreAllMocks();
   });
 
-  const contract = (key: string, title: string, body: () => Promise<void>) => (gaps.has(key) ? it.fails : it)(title, body, 20_000);
-
-  contract("heldClick", "等待确认的点击，交给模型的回执不说已经点了", async () => {
+  it("等待确认的点击，交给模型的回执不说已经点了", async () => {
     const script = new ScriptedModel();
     entry = await build(script);
     entry.send({ type: "task_action", conversationId: entry.conversationId, request: request(entry, { requestId: "held-1" }) });
@@ -287,9 +287,9 @@ describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
     const reply = seen.text;
     expect(reply).not.toMatch(/^Clicked/);
     expect(reply).toMatch(/held|wait|confirm|等待|确认/i);
-  });
+  }, 20_000);
 
-  contract("ownership", "其他会话的消息不改变正在执行任务的归属", async () => {
+  it("其他会话的消息不改变正在执行任务的归属", async () => {
     const script = new ScriptedModel();
     entry = await build(script);
     script.holdNext = true;
@@ -302,9 +302,9 @@ describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
 
     const call = await until(() => entry!.frames.find(f => f.type === "tool_call"), "任务发出工具调用");
     expect(call.conversationId).toBe(entry.conversationId);
-  });
+  }, 20_000);
 
-  contract("duplicate", "同一 requestId 重复投递只启动一次任务", async () => {
+  it("同一 requestId 重复投递只启动一次任务", async () => {
     const script = new ScriptedModel();
     entry = await build(script);
     const message: ClientMessage = { type: "task_action", conversationId: entry.conversationId, request: request(entry, { requestId: "dup-1", text: "只做一次" }) };
@@ -316,9 +316,9 @@ describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
     entry.send(message);
     await new Promise(resolve => setTimeout(resolve, 300));
     expect(script.calls.length).toBe(callsBefore);
-  });
+  }, 20_000);
 
-  contract("staleSteer", "指向过期任务的修订被拒绝，也不进入模型输入", async () => {
+  it("指向过期任务的修订被拒绝，也不进入模型输入", async () => {
     const script = new ScriptedModel();
     entry = await build(script);
     script.holdNext = true;
@@ -332,7 +332,7 @@ describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
 
     expect(receipt.status).toBe("rejected");
     expect(script.calls.flat().some(m => m.text.includes("改成取消按钮"))).toBe(false);
-  });
+  }, 20_000);
 });
 
 /** 每次运行都不同的编号与时间，比较前换成占位。 */

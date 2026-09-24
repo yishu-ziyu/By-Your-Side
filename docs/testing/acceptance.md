@@ -38,9 +38,14 @@ npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless    # 打字
 npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless  # 圈画动效默认值与右击切换
 npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless # 语音问页面内容（say 合成的 WAV 当麦克风）
 npx tsx scripts/acceptance/real-path/point-then-mark.mts --headless    # 用户点选、Esc 取消、侧栏停止
+npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 只装扩展，设置页到圈画交付
+npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --voice=qingchunshaonv # 只装扩展，语音到页面标注
+npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录
 ```
 
 `real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、经 Native Messaging 拉起当前源码的伴随进程、真模型。伴随进程的数据写进临时目录（`SIDEAGENT_DATA_DIR`），凭据从 `~/.sideagent` 原位只读；不碰日常 Chrome、`extension/dist` 和日常伴随进程。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录），产物在 `out/acceptance/real-path/<时间>-<用例>/`。`launchRealPath({ microphoneWav })` 用 WAV 充当麦克风（只放一遍），语音模型和断句都是真的。加 `--model=provider/id` 只替换测试伴随进程的模型（例如 `kimi-coding/kimi-for-coding`），日常配置不动。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
+
+`inproc-*` 用例则不注册 Native Messaging：模型凭据只写进隔离扩展存储。圈画判据同时要求页面圈住目标、未点击、侧栏交付无错误；只看到圈画但目标账本报未完成，仍为失败。`inproc-mark --via-settings` 等待新会话可发送后才输入，避免把启动中的草稿切换误判为任务失败。
 
 **过滤轮的三个信号别混用**：
 
@@ -59,4 +64,3 @@ npx tsx scripts/acceptance/real-path/point-then-mark.mts --headless    # 用户�
 3. 属于当前发布门禁，并会产出可复验 artifact。
 
 一次性探针在任务完成后应合入共用驱动，或随 Git 历史保留后从 HEAD 删除。评测文档记录命令、结论和证据位置，不靠永久堆积脚本保存历史。
-

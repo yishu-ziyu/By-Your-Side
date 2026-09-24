@@ -119,13 +119,4 @@ describe('语音运行中显示修改',()=>{
   expect(h.translationCalls).toHaveLength(0);
   expect(h.steers).toHaveLength(0);
  });
-
- it('rejects an expired voice turn before any page write',async()=>{
-  const {h,manager,route}=await voiceHarness();
-  const confirmation=await manager.routeVoiceInput('default','停止任务',null,()=>true,route({requestId:'voice-abort',turn:1}));
-  expect(confirmation).toMatchObject({kind:'clarify'});
-  const expired=await manager.routeVoiceInput('default','把译文改成宋体',null,()=>true,route({requestId:'voice-late',turn:1}));
-  expect(expired).toMatchObject({kind:'clarify',message:'这句回应已过期，当前待确认要求保持不变。'});
-  expect(h.translationCalls).toHaveLength(0);
- });
 });

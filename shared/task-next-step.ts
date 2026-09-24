@@ -116,6 +116,20 @@ export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextSt
   return results.length ? decide('deliver', 'receipts_reviewed', true, 'report') : decide('continue', 'open_task', true, 'report');
 }
 
+/**
+ * The next step as the model and the delivery should see it. An unplanned goal plan is only a
+ * placeholder, not a user goal list: when it is the sole reason for "remaining" and no real
+ * execution is still open, judge from execution results alone instead of demanding a plan.
+ */
+export function nextStepIgnoringPlaceholder(snapshot: TaskProgressSnapshot): TaskNextStep {
+  const next = snapshot.nextStep ?? decideTaskNextStep(snapshot);
+
+  if (snapshot.goalPlan?.coverage === 'verified' || next.reason !== 'remaining') return next;
+  const openWork = (snapshot.results ?? []).some(item => ['pending', 'blocked', 'unknown'].includes(item.status));
+
+  return openWork ? next : decideTaskNextStep({ ...snapshot, goalPlan: undefined });
+}
+
 export function nextStepInstruction(decision: TaskNextStep): string {
   switch (decision.reason) {
     case 'cancelled': return '原任务已取消，操作未执行。';

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./browser-core": "./src/browser-core.ts"
+  },
   "bin": {
     "sideagent": "src/main.ts"
   },

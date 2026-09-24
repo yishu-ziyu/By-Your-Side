@@ -60,14 +60,17 @@ describe('voice task delivery follows actual browser results', () => {
     expect(items[0]!.target).not.toBe(items[1]!.target);
   });
 
-  it('rejects a complete message when the host would label its facts unverified, before emitting or speaking it', async () => {
+  it('delivers a complete-claimed message but keeps the host facts from saying complete', async () => {
     const h = task();
     const events: AgentUiEvent[] = [];
 
     const tool = createSendUserMessageTool({conversationId: 'default', getRunId: () => h.progress.snapshot().runId!,
       getNextStep: () => h.progress.snapshot().nextStep!, getDeliveryFacts: () => h.progress.deliveryFacts(), emit: e => events.push(e)});
 
-    await expect(tool.execute('delivery', {kind: 'finding', outcome: 'complete', content: '已经切到资料页。'}, undefined, undefined, {} as never)).rejects.toThrow(/未核验/);
-    expect(events).toEqual([]);
+    // SAFETY: 这个工具的 execute 不读取第五个参数（扩展上下文）。
+    await tool.execute('delivery', {kind: 'finding', outcome: 'complete', content: '已经切到资料页。'}, undefined, undefined, {} as never);
+    expect(events).toHaveLength(1);
+    const event = events[0];
+    expect(event?.kind === 'user_delivery' ? event.delivery.facts?.outcome : 'missing').not.toBe('complete');
   });
 });
