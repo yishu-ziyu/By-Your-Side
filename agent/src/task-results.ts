@@ -1,6 +1,6 @@
 import {isWriteTool} from "../../shared/control.js";
 import {createHash, randomUUID} from "node:crypto";
-import { type AgentToolResult, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";

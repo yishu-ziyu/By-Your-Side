@@ -4,7 +4,7 @@ import type {Attachment, PageContext} from '../../shared/protocol.js';
  * spawn 非阻塞；工人之间经 Mailbox 传工件。工人无 spawn 工具。
  */
 import { randomUUID } from "node:crypto";
-import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import {

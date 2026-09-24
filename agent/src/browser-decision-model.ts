@@ -1,6 +1,7 @@
 import { readTypeSafeKey } from './typesafe-auth.js';
 import { createHash } from 'node:crypto';
 import type { BrowserCandidate, BrowserDecision, BrowserMaterial, BrowserObservation } from '../../shared/browser-decision.js';
+import { utf8ByteLength } from '../../shared/bytes.js';
 
 export interface BrowserDecisionInput {
   goal: string;
@@ -76,11 +77,11 @@ export async function decideBrowserCandidate(input: BrowserDecisionInput, signal
 
   // The loop caps calls, this caps each payload: <=64K bytes, no retries. At pinned model's
   // documented $0.042/M input tokens, even one token per byte + 1024 overhead is < $0.003/call.
-  if (Buffer.byteLength(body) > 64000) {
+  if (utf8ByteLength(body) > 64000) {
     throw new Error('候选资料超过当前决策预算，交回任务模型');
   }
 
-  emit({ phase: 'request', body, bytes: Buffer.byteLength(body), sha256: createHash('sha256').update(body).digest('hex') });
+  emit({ phase: 'request', body, bytes: utf8ByteLength(body), sha256: createHash('sha256').update(body).digest('hex') });
   const started = Date.now();
   let response: Response;
 

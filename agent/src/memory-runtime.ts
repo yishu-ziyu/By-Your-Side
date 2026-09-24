@@ -1,4 +1,4 @@
-import { type ExtensionFactory, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import { memoryTaskUrl, normalizeMemoryHostname, type MemoryEntry } from "../../shared/memory.js";

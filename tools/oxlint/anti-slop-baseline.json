@@ -229,12 +229,10 @@
   },
   "agent/src/run-trace.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1,
-    "anti-slop(no-known-value-widening)": 6,
-    "anti-slop(no-runtime-typeof)": 6,
-    "anti-slop(no-unknown-parameters)": 4,
-    "anti-slop(no-unknown-returns)": 2,
-    "anti-slop(no-unsafe-dictionary-type)": 9,
-    "anti-slop(require-safety-comment-for-type-assertion)": 2
+    "anti-slop(no-known-value-widening)": 2,
+    "anti-slop(no-unknown-parameters)": 2,
+    "anti-slop(no-unsafe-dictionary-type)": 6,
+    "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "agent/src/session.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 23,
@@ -350,6 +348,14 @@
     "anti-slop(no-unknown-returns)": 2,
     "anti-slop(no-unsafe-dictionary-type)": 4,
     "anti-slop(require-safety-comment-for-type-assertion)": 57
+  },
+  "agent/src/trace-sanitize.ts": {
+    "anti-slop(no-unknown-parameters)": 2,
+    "anti-slop(no-unknown-returns)": 2,
+    "anti-slop(no-known-value-widening)": 4,
+    "anti-slop(no-runtime-typeof)": 6,
+    "anti-slop(require-safety-comment-for-type-assertion)": 1,
+    "anti-slop(no-unsafe-dictionary-type)": 3
   },
   "agent/src/upload-paths.ts": {
     "anti-slop(no-known-value-widening)": 1,

@@ -6,7 +6,7 @@ import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_D
 import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
-import { sanitizeTrace } from "./run-trace.js";
+import { sanitizeTrace } from "./trace-sanitize.js";
 import { createHash, randomUUID } from "node:crypto";
 import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';

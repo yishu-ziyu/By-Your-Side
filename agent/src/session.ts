@@ -42,14 +42,7 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
  * - subscribe SDK 事件并映射为协议 AgentUiEvent 吐出
  * - sendUserMessage / steer / abort 均异步不阻塞调用方，错误转成 error 事件
  */
-import {
-  type AgentToolResult,
-  type DefaultResourceLoader,
-  type ModelRuntime,
-  type SessionManager,
-  type PromptOptions,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";

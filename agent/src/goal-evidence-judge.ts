@@ -1,5 +1,6 @@
 import type { PageTextEvidence } from '../../shared/page-text-evidence.js';
 import { readTypeSafeKey } from './typesafe-auth.js';
+import { utf8ByteLength } from '../../shared/bytes.js';
 
 export type GoalReviewStage = 'plan' | 'source' | 'target' | 'condition' | 'answer' | 'reuse' | 'delivery';
 
@@ -233,7 +234,7 @@ export async function reviewGoalEvidence(stage: GoalReviewStage, state: unknown,
   const reviewedState=goalReviewState(stage,state);
   const body=JSON.stringify({model:'jev-1.13.0',state:reviewedState,questions});
 
-  if(Buffer.byteLength(body)>180000)throw new Error('核验资料超过预算，请取得更小且完整的来源范围');
+  if(utf8ByteLength(body)>180000)throw new Error('核验资料超过预算，请取得更小且完整的来源范围');
   const response=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body,signal:AbortSignal.any([signal,AbortSignal.timeout(6000)])});
 
   if(!response.ok)throw new Error(`Jev 核验未完成（HTTP ${response.status}）`);

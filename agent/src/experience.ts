@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { memoryTaskUrl, normalizeMemoryHostname, validMemoryId, type MemoryEntry } from "../../shared/memory.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 import { MemoryStore } from "./memory-store.js";
-import { sanitizeTrace } from "./run-trace.js";
+import { sanitizeTrace } from "./trace-sanitize.js";
 
 export interface ExperienceObservation { id: string; tool: string; text: string; failed: boolean }
 

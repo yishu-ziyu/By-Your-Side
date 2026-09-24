@@ -6,6 +6,7 @@ import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voi
 import type { TaskActionRequest } from '../../shared/task-actions.js';
 import type { VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import type { RouteShadow } from './route-shadow.js';
+import { base64Bytes } from '../../shared/bytes.js';
 
 export type RealtimeVoiceDependencies = {
   voiceId?: string;
@@ -241,7 +242,7 @@ export class RealtimeVoiceSession {
         this.connection?.handle({ type: 'audio', data: command.data });
 
         if (this.deps.diagnosticMode) {
-          this.emit({ kind: 'diag', record: { type: 'append', seq: ++this.seq, eventId: `pcm-${this.seq}`, turn: command.turn, frame: command.frame ?? null, samples: Math.floor(Buffer.from(command.data, 'base64').length / 2), audio: command.data } });
+          this.emit({ kind: 'diag', record: { type: 'append', seq: ++this.seq, eventId: `pcm-${this.seq}`, turn: command.turn, frame: command.frame ?? null, samples: Math.floor(base64Bytes(command.data).length / 2), audio: command.data } });
         }
 
         return;

@@ -11,6 +11,7 @@ import {
 import { skillSourceValues } from './skill-judge.js';
 import { composeSkillJudgment, type SkillRouterInput } from './skill-router.js';
 import { readTypeSafeKey } from './typesafe-auth.js';
+import { utf8ByteLength } from '../../shared/bytes.js';
 
 export interface FastTaskSkillOption {
   skill: Skill;
@@ -266,7 +267,7 @@ export async function decideFastTask(input: FastTaskDecisionInput, signal: Abort
     questions,
   });
 
-  if (Buffer.byteLength(body) > 64_000) return { kind: 'miss', reason: 'coverage_uncertain' };
+  if (utf8ByteLength(body) > 64_000) return { kind: 'miss', reason: 'coverage_uncertain' };
 
   const startedAt = performance.now();
 

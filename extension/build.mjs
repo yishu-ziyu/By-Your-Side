@@ -54,8 +54,14 @@ const browserSwaps = {
     swap(/^\.\/route-shadow\.js$/, path.join(shims, "route-shadow.ts"), true);
     swap(/^\.\/config\.js$/, path.join(shims, "config.ts"), true);
     swap(/^ws$/, path.join(shims, "ws.ts"), false);
+    // 任务核心（agent/src）里只在本机才用的两个模块：诊断记录写文件；AgentSession 会话循环。
+    swap(/^\.\/run-trace\.js$/, path.join(shims, "run-trace.ts"), true);
+    swap(/^\.\/node-agent-loop\.js$/, path.join(shims, "node-agent-loop.ts"), true);
     swap(/^node:crypto$/, path.join(shims, "node-crypto.ts"), false);
-    swap(/^node:(fs\/promises|os|path)$/, path.join(shims, "node-fs.ts"), false);
+    swap(/^node:fs(\/promises)?$/, path.join(shims, "node-fs.ts"), false);
+    swap(/^node:path$/, path.join(shims, "node-path.ts"), false);
+    swap(/^node:os$/, path.join(shims, "node-os.ts"), false);
+    swap(/^node:perf_hooks$/, path.join(shims, "node-perf-hooks.ts"), false);
   },
 };
 
@@ -67,6 +73,8 @@ await esbuild.build({
   // 订阅登录模块里有 Node 环境才走的动态 import（回调服务），浏览器里不会执行。
   external: ["node:*"],
   plugins: [browserSwaps],
+  // 任务核心里个别开关在调用时读 process.env；扩展里没有 process，统一当作未设置。
+  define: { "process.env": "{}" },
   alias: { "@earendil-works/pi-ai": path.join(pi, "pi-ai/dist"), "@earendil-works/pi-agent-core": path.join(pi, "pi-agent-core/dist") },
   logLevel: "warning",
 });

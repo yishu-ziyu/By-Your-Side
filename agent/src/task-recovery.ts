@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import type {Attachment, PageContext} from '../../shared/protocol.js';
 import { TASK_MATERIAL_MAX, type TaskMaterialReference, type TaskRecoveryInput } from '../../shared/task-recovery.js';
-import { sanitizeTrace } from './run-trace.js';
+import { sanitizeTrace } from './trace-sanitize.js';
+import { base64Bytes } from '../../shared/bytes.js';
 
 /** 记录接收事实，UI 不靠本地缓存恢复材料；同一来源去重，不将不同页面的选区混合。 */
 export function mergeTaskMaterials(prior: readonly TaskMaterialReference[], context?: PageContext, attachments?: Attachment[]): TaskMaterialReference[] {
@@ -48,5 +49,5 @@ export function pageRecoveryKey(tabId:number,url:string):NonNullable<TaskRecover
 }
 
 export function attachmentRecoveryKey(attachment:Attachment):string {
-  return createHash('sha256').update(attachment.mimeType).update('\0').update(Buffer.from(attachment.dataBase64,'base64')).digest('hex');
+  return createHash('sha256').update(attachment.mimeType).update('\0').update(base64Bytes(attachment.dataBase64)).digest('hex');
 }

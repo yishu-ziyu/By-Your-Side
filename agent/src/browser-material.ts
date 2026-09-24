@@ -1,5 +1,6 @@
 import type { BrowserControl, BrowserMaterial } from '../../shared/browser-decision.js';
 import type { VoiceModelCall } from './voice-model.js';
+import { utf8ByteLength } from '../../shared/bytes.js';
 
 export interface BrowserMaterialRequest {
   goal: string;
@@ -61,7 +62,7 @@ export async function generateBrowserMaterial(call: VoiceModelCall, input: Brows
 
   const content = JSON.stringify(input);
 
-  if (Buffer.byteLength(content) > 32000) {
+  if (utf8ByteLength(content) > 32000) {
     return { kind: 'missing', reason: '资料超过字段生成预算，交回任务模型处理' };
   }
 

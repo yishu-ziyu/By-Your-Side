@@ -8,6 +8,7 @@ import {
   type BrowserObservation,
   type BrowserOperation,
 } from '../../shared/browser-decision.js';
+import { utf8ByteLength } from '../../shared/bytes.js';
 
 /** Existing loop/judge threshold; do not change to paper over candidate problems. */
 export const BROWSER_DECISION_CONFIDENCE_THRESHOLD = 0.85;
@@ -265,7 +266,7 @@ export function estimateDecisionPayloadBytes(input: {
     }
   }
 
-  return Buffer.byteLength(JSON.stringify({
+  return utf8ByteLength(JSON.stringify({
     model: 'jev-1.13.0',
     state: {
       goal: input.goal,
