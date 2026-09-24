@@ -89,7 +89,7 @@ beforeEach(() => {
 });
 
 describe('outcome=partial overclaim gate (docs/evals/20260921-1441-log-review.md §3)', () => {
-  it('delivers the exact accident text, labelled partial with the host note, without any review', async () => {
+  it('delivers the exact accident text as written, labelled partial without a host sentence or any review', async () => {
     const plan = accidentPlan();
     const { session } = sessionFixture(plan);
     const { tool, events } = deliveryTool(session, partialNext(plan.goals));
@@ -97,8 +97,8 @@ describe('outcome=partial overclaim gate (docs/evals/20260921-1441-log-review.md
     expect(result.content[0]).toMatchObject({ text: expect.stringMatching(/^delivered:/) });
     expect(events).toHaveLength(1);
     const delivery = (events[0] as any).delivery;
-    expect(delivery.text).toContain('页面已圈好');
-    expect(delivery.text).toContain('仅交付部分结果');
+    expect(delivery.text).toBe(TRACE_182_TEXT);
+    expect(result.details ?? result.content[0]).toBeTruthy();
     expect(reviewMock).not.toHaveBeenCalled();
     expect(deliveryMetrics.toolRejected).toBe(0);
   });
@@ -119,8 +119,7 @@ describe('outcome=partial overclaim gate (docs/evals/20260921-1441-log-review.md
     expect(result.content[0]).toMatchObject({ text: expect.stringMatching(/^delivered:/) });
     expect(events).toHaveLength(1);
     const delivery = (events[0] as any).delivery;
-    expect(delivery.text).toContain(honestText);
-    expect(delivery.text).toContain('仅交付部分结果');
+    expect(delivery.text).toBe(honestText);
     expect(delivery.facts.outcome).toBe('partial');
   });
 

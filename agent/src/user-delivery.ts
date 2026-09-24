@@ -157,7 +157,9 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   const projected = hostFacts ? projectDeliveryFacts(hostFacts, next, !complete) : undefined;
   const facts = projected && isUserDeliveryFacts(projected) ? projected : undefined;
 
-  if (input.kind === "finding" && !complete) {
+  // 模型自己说了没做完：正文原样，部分完成记在 outcome/facts 上，由侧栏续做行说明。
+  // 模型声称做完而宿主知道没做完：正文会误导用户（语音里也会被念出来），这时才补一句纠正。
+  if (input.kind === "finding" && !complete && requested === "complete") {
     text = clampDeliveryText(`${text}\n\n${next ? partialResultNote(next) : "任务状态：仅交付部分结果，未声明全部完成。"}`);
   }
 
@@ -209,7 +211,7 @@ export function createSendUserMessageTool(opts: SendUserMessageOptions): ToolDef
   });
 }
 
-/** 附加的状态说明不能把一条合法正文挤成超长而被丢弃；超出时截掉正文尾部并标明。 */
+/** 附加的纠正说明不能把一条合法正文挤成超长而被丢弃；超出时截掉正文尾部并标明。 */
 function clampDeliveryText(text: string): string {
   if (text.length <= USER_DELIVERY_TEXT_MAX) return text;
 

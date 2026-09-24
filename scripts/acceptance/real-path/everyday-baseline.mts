@@ -116,6 +116,7 @@ const PANEL_STATE = `(() => {
       taskBar: visible(q("#task-bar-root")),
       resumeEntry: visible(q("#resume-entry-root")),
       processRows: document.querySelectorAll("#messages .run-steps").length,
+      toolSteps: document.querySelectorAll("#messages .chip").length,
       footers: document.querySelectorAll("#messages .delivery-facts").length,
     },
   };
@@ -124,7 +125,7 @@ const PANEL_STATE = `(() => {
 type PanelState = {
   connected: boolean; running: boolean; stopping: boolean; streaming: boolean; inputValue: string | null;
   userMessages: string[]; answers: string[];
-  noise: { notices: string[]; errors: string[]; receipts: number; taskCard: boolean; taskBar: boolean; resumeEntry: boolean; processRows?: number; footers?: number };
+  noise: { notices: string[]; errors: string[]; receipts: number; taskCard: boolean; taskBar: boolean; resumeEntry: boolean; processRows?: number; footers?: number; toolSteps?: number };
 };
 
 type DomNode = { attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
@@ -181,6 +182,19 @@ try {
       return state.userMessages.length === 0 && !state.running ? state : undefined;
     }, 20_000, `${item.id} 新会话`, 500);
     await sleep(1000);
+    await rp.screenshot(panel, join(artifacts, `${item.id}-starter.png`)).catch(() => {});
+
+    if (process.env.STARTER_DEBUG) {
+      console.log("starter-debug", JSON.stringify(await rp.evaluate(panel, `(() => ({
+        app: document.getElementById("app")?.className,
+        messages: [...document.getElementById("messages").children].map((c) => c.id + ":" + c.childElementCount + ":" + c.className),
+        starter: getComputedStyle(document.getElementById("starter")).display,
+        input: document.getElementById("input").value,
+        placeholderShown: document.getElementById("input").matches(":placeholder-shown"),
+        running: !!document.querySelector("#status-pill.running"),
+        actions: document.getElementById("starter-actions").innerText,
+      }))()`)));
+    }
 
     await rp.click(panel, "#input");
     await rp.typeText(panel, item.prompt);
@@ -190,6 +204,8 @@ try {
     let doneMs: number | null = null;
     let idle = 0;
     let last: PanelState | null = null;
+    let pageShots = 0;
+    let nextPageShotAt = 0;
 
     while (Date.now() - sentAt < CASE_LIMIT_MS) {
       const state = await readPanel().catch(() => null);
@@ -200,6 +216,14 @@ try {
         if (state.inputValue?.includes(item.prompt) && !state.userMessages.length) await rp.pressEnter(panel);
 
         if (firstVisibleMs === null && state.answers.length) firstVisibleMs = Date.now() - sentAt;
+
+        // 助手运行期间每 2.5 秒给网页本身拍一张（最多 4 张）：验收页面边缘光、光标与标注。
+        if (pageShots < 4 && state.running && (state.noise.toolSteps ?? 0) > 0 && Date.now() >= nextPageShotAt) {
+          pageShots += 1;
+          nextPageShotAt = Date.now() + 1500;
+          await rp.screenshot(work, join(artifacts, `${item.id}-page-running-${pageShots}.png`)).catch(() => {});
+        }
+
         const busy = state.running || state.stopping || state.streaming;
         idle = !busy && state.userMessages.length > 0 && Date.now() - sentAt > 3000 ? idle + 1 : 0;
 

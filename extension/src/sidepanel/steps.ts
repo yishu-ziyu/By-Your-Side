@@ -280,6 +280,25 @@ export function historyEventTime(applyingHistory: boolean, occurredAt?: number):
   return Date.now();
 }
 
+/** 结束后的过程行用中文读数：「15 秒」「1 分 53 秒」。 */
+export function spokenDuration(start: number, end: number): string | null {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  const s = Math.max(1, Math.round((end - start) / 1000));
+
+  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+}
+
+/** 过程行标题：做了几步，以及失败/停止。 */
+export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed"): string {
+  const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
+
+  if (outcome === "failed") return `${done}，有一步没成功`;
+
+  if (outcome === "stopped") return `已停止 · ${done}`;
+
+  return done;
+}
+
 export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }

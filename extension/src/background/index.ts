@@ -29,8 +29,10 @@ import {
   type TeamMemberActivity,
   toTeamMemberHandback,
   uplinkLostWhileHeld,
+  isWriteTool,
   WRITE_TOOL_SET,
 } from "../../../shared/control.js";
+import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryServerMessage } from "../relay.js";
 import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
@@ -366,6 +368,11 @@ async function statusTabId(sid: string, explicit?: unknown): Promise<number | nu
   }
 }
 
+/** 接管、停止时光标与页面边缘光一起收起。 */
+async function hidePresence(keys: string[]): Promise<void> {
+  await Promise.all([hideCursorsForSessions(keys), ...keys.map(dimPage)]);
+}
+
 /** 读页面的工具：光标显示「正在读这个页面」。 */
 const READ_TOOLS = new Set(["snapshot", "read_element", "read_elements", "screenshot", "observe_page", "network"]);
 
@@ -396,6 +403,8 @@ async function applyCursorStatusEvent(
     case "tool_start": {
       const name = event.name;
 
+      if (READ_TOOLS.has(name) || isWriteTool(name)) void statusTabId(sid, event.params?.tabId).then(tabId => glowPage(key(sid), tabId));
+
       if (READ_TOOLS.has(name)) {
         await setCursorStatus(sid, "reading", event.params?.tabId);
 
@@ -414,10 +423,12 @@ async function applyCursorStatusEvent(
 
       return;
     case "agent_end":
+      void dimPage(key(sid));
       await setCursorStatus(sid, "done");
 
       return;
     case "error":
+      void dimPage(key(sid));
       await setCursorStatus(sid, "failed");
 
       return;
@@ -1498,7 +1509,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     return;
   }
 
-  await hideCursorsForSessions(members.map((m) => key(m.sessionId)));
+  await hidePresence(members.map((m) => key(m.sessionId)));
 
   for (const m of members) void suppressCursorStatus(key(m.sessionId));
   const requestId = remoteRequestId ?? nextControlRequestId("takeover");
@@ -1689,7 +1700,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
 
   for (const sid of sessions) { dropPendingClicks(key(sid)); setSessionClaimBlocked(sid, false); }
 
-  void hideCursorsForSessions(sessions.map(key));
+  void hidePresence(sessions.map(key));
 
   for (const sid of sessions) void suppressCursorStatus(key(sid));
   void memberTabIds().then(ids => hideControlBannersForOwner(conversationId, ids));
@@ -1699,7 +1710,7 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
     if (gate.gen !== aborted.generation) return;
 
     for (const tabId of await abortedTabs) handbackTab(tabId);
-    await hideCursorsForSessions(sessions.map(key));
+    await hidePresence(sessions.map(key));
     await hideControlBannersForOwner(conversationId, await memberTabIds());
     await stopTrailReplay(key());
   });

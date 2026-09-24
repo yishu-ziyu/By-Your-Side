@@ -178,6 +178,17 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         will-change: transform;
       }
       .cursor.hidden { opacity: 0; }
+      /* 页面边缘光：助手正在操作这一页。颜色跟随成员光标，结束后淡出。 */
+      .edge {
+        position: absolute; inset: 0; pointer-events: none;
+        opacity: 0; transition: opacity 420ms ease;
+        box-shadow:
+          inset 0 0 0 2px color-mix(in srgb, var(--c) 70%, transparent),
+          inset 0 0 36px 4px color-mix(in srgb, var(--c) 34%, transparent);
+      }
+      .edge.on { opacity: 1; animation: edge-breathe 2.6s ease-in-out infinite; }
+      @keyframes edge-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
+      @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge.on { animation: none; } }
       .cursor.rest { opacity: .86; }
       .cursor.rest .label { opacity: 0; }
       .cursor.flip .label { left: auto; right: 18px; }
@@ -1385,6 +1396,32 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   // ── 跨页胶囊：它在别的标签页干活时，当前页右上角的可点入口 ──────────────
 
   let crossPill: HTMLDivElement | null = null;
+  let edge: HTMLDivElement | null = null;
+  /** 正在操作这一页的成员；第一个成员的颜色决定边缘光颜色。 */
+  const glowing = new Set<string>();
+
+  function renderGlow(): void {
+    const first = glowing.values().next().value;
+
+    if (first === undefined) {
+      edge?.classList.remove("on");
+
+      return;
+    }
+
+    ensureDom();
+
+    if (!edge?.isConnected) {
+      edge = document.createElement("div");
+      edge.className = "edge";
+      shadow!.prepend(edge);
+    }
+
+    edge.style.setProperty("--c", cursorColor(first));
+    const target = edge;
+    requestAnimationFrame(() => { if (glowing.size) target.classList.add("on"); });
+  }
+
   let crossPillSession = "";
   let remoteMembers: CrossPageMember[] = [];
 
@@ -1830,6 +1867,12 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
       hideCrossPage(): void {
         hideCrossPill();
+      },
+
+      setGlow(on: boolean): void {
+        if (on) glowing.add(id);
+        else glowing.delete(id);
+        renderGlow();
       },
 
       showFeedback(view?: FeedbackPillView): void {

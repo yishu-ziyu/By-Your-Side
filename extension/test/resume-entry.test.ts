@@ -19,7 +19,7 @@ import { Uplink } from '../src/background/uplink.js';
 
 interface MockEl {
   tagName: string; id: string; children: MockEl[]; dataset: Record<string, string>;
-  className: string; textContent: string; hidden: boolean; disabled: boolean; type: string;
+  className: string; textContent: string; hidden: boolean; disabled: boolean; type: string; title?: string;
   onclick: (() => void) | null;
   append(...nodes: MockEl[]): void;
   replaceChildren(...nodes: MockEl[]): void;
@@ -93,14 +93,12 @@ describe('A05-02/A05-03 正向接续摘要与恢复入口', () => {
     entry.apply(viewOf());
     const section = root.children[0]!;
     const text = section.children.map((child) => child.textContent).join('\n');
-    expect(text).toContain('已中断 · 可继续');
-    expect(text).toContain('帮我填登记表');
-    expect(text).toContain('已完成 1 项：填写姓名');
-    expect(text).toContain('剩余 1 项：填写邮箱（未完成）');
-    expect(text).toContain('任务中断在检查点');
-    expect(text).toContain('先重新读取当前页面');
+    // 只一行：还要用户处理什么；目标、已完成清单、下一步说明不再铺在侧栏上。
+    expect(find(section, 'resume-line')!.textContent).toBe('任务中断了，还有 1 项没完成：填写邮箱');
+    expect(text).not.toContain('已完成');
+    expect(find(section, 'resume-line')!.title).toContain('先重新读取当前页面');
     const button = find(section, 'resume-action')!;
-    expect(button.textContent).toBe('继续原任务');
+    expect(button.textContent).toBe('继续');
     button.onclick!();
     await flush();
     expect(sent).toHaveLength(1);
@@ -205,7 +203,7 @@ describe('A05-04/A05-05/D10 诚实阻塞与缺口说明', () => {
     expect(find(section, 'resume-action')).toBeUndefined();
     const text = section.children.map((child) => child.textContent).join('\n');
     expect(text).toContain('已停止');
-    expect(text).toContain('不会自动复活');
+    expect(text).toContain('不会自动继续');
     // 迟到的旧中断视图不得把停止状态改回可继续（agent 侧视图本身以真实状态为准；
     // 这里验证 UI 只按当前视图说话——重新 apply 旧快照才会画旧状态，由协议身份过滤负责）。
     expect(buildResumeSummary(viewOf({ state: 'aborted', resumable: false })).resume.available).toBe(false);

@@ -66,6 +66,8 @@ interface SideAgentCursor {
   /** 跨页：它在别的标签页干活时，当前页右上角显示可点胶囊（点了切过去） */
   showCrossPage?(view?: CrossPageView): void;
   hideCrossPage?(): void;
+  /** 页面边缘光：这个成员正在操作本页时亮，结束时灭。 */
+  setGlow?(on: boolean): void;
   /** 执行反馈胶囊（V2）：宿主事实短语；成功一次轻微回弹，不抢焦点、不配音、不循环。 */
   showFeedback?(view?: import("./shared/feedback-pill.js").FeedbackPillView): void;
   hideFeedback?(): void;

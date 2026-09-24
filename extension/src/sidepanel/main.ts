@@ -11,6 +11,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
  */
 import { renderMarkdownHtml } from "./markdown.js";
 import { attachAnswerActions } from "./answer-actions.js";
+import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
@@ -44,6 +45,8 @@ import {
   describeTool,
   historyEventTime,
   recordedDuration,
+  finishedRunTitle,
+  spokenDuration,
   loaderSubtitle,
   workerEventRunPolicy,
   isLiveViewportPinned,
@@ -67,7 +70,7 @@ import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, should
 import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
 import { TaskBar } from "./task-bar.js";
 import { ResumeEntry } from "./resume-entry.js";
-import { DeliveryPresentationTiming, deliveryPresentation, renderDeliveryFacts } from "./delivery-facts-view.js";
+import { DeliveryPresentationTiming, deliveryPresentation } from "./delivery-facts-view.js";
 import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg } from "../relay.js";
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } from "../shared/mark-motion.js";
@@ -524,9 +527,13 @@ function starterReady(): boolean {
 
 function updateStarterVisibility(): void {
   app.classList.toggle("starter-ready", starterReady());
+
+  const tabId = starterTab();
+
+  if (starterReady() && tabId != null) void refreshStarterSuggestions(tabId);
 }
 
-document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").forEach((button) => {
+function bindStarterButton(button: HTMLButtonElement): void {
   button.onclick = () => {
     // 还没恢复完就点（引导不可见时的键盘/事件竞态）：不写草稿，别覆盖正在恢复的原草稿。
     if (!starterReady()) return;
@@ -539,7 +546,45 @@ document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").fo
 
     inputEl.focus();
   };
-});
+}
+
+document.querySelectorAll<HTMLButtonElement>("#starter button[data-starter]").forEach(bindStarterButton);
+
+/** 会话里还没有任何回合：续做卡挂载点常驻在 #messages 里，它没内容时不算。 */
+function conversationEmpty(): boolean {
+  return !Array.from(messagesEl.children).some((child) => child.id !== "resume-entry-root" || child.childElementCount > 0);
+}
+
+new MutationObserver(() => app.classList.toggle("conversation-empty", conversationEmpty())).observe(messagesEl, { childList: true, subtree: true });
+
+app.classList.toggle("conversation-empty", conversationEmpty());
+
+/** 空白新对话时按当前页面结构换一组建议；探测失败（受限页等）沿用默认建议。 */
+async function refreshStarterSuggestions(tabId: number): Promise<void> {
+  if (!conversationEmpty() || typeof chrome === "undefined" || !chrome.scripting?.executeScript) return;
+  const probe = beginStarterProbe();
+  let profile: PageProfile | null = null;
+
+  try {
+    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func: probePageProfile });
+    profile = frame?.result ?? null;
+  } catch {
+    profile = null;
+  }
+
+  if (!isLatestStarterProbe(probe)) return;
+  const box = document.getElementById("starter-actions");
+
+  box?.replaceChildren(...suggestionsFor(profile).map((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.starter = item.prompt;
+    button.textContent = item.label;
+    bindStarterButton(button);
+
+    return button;
+  }));
+}
 
 function upsertConversation(c: ConversationSummary): void {
   if (conversations.get(c.id)?.state === "running" && c.state === "idle" && !c.checkpoint && c.id !== selectedConversationId) completedConversations.add(c.id);
@@ -1366,7 +1411,12 @@ async function refreshActiveTabPill(): Promise<void> {
 
     if (!tab) return;
 
-    if (tab.id != null) activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
+    if (tab.id != null) {
+      activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
+      noteStarterTab(tab.id);
+      void refreshStarterSuggestions(tab.id);
+    }
+
     const title = tab.title || tab.url || "未知页面";
     let host = "";
 
@@ -2884,16 +2934,32 @@ function finishRun(): void {
 
   if (title) {
     const outcome = run.orbActivity.state();
-    title.textContent = outcome === "failed" ? "执行失败 · 查看过程" : outcome === "stopped" ? "已停止 · 查看过程" : "查看执行过程";
+    title.textContent = finishedRunTitle(run.body.querySelectorAll(".chip").length, outcome === "failed" || outcome === "stopped" ? outcome : "completed");
   }
 
-  // Keep the process in its original position above the final response.
-  const duration = recordedDuration(run.start, eventTime());
-  run.timeEl.textContent = duration ? `耗时 ${duration}` : "";
+  run.timeEl.textContent = spokenDuration(run.start, eventTime()) ?? "";
   run.root.open = false;
+  placeProcessBeforeAnswer(run.root);
 
   if (!applyingHistory) companion.onRunFinish();
   scrollToEnd();
+}
+
+/**
+ * 过程行放在这一轮用户消息（和「收到」这类确认语）之后、回答之前：先看到做了什么，再看结论。
+ * 回答可能在过程块创建前就已开始渲染，所以结束时按位置规则摆放，而不是依赖事件先后。
+ */
+function placeProcessBeforeAnswer(root: HTMLElement): void {
+  let anchor: Element | null = root.previousElementSibling;
+
+  while (anchor && !anchor.classList.contains("user")) anchor = anchor.previousElementSibling;
+
+  if (!anchor) return;
+  let next = anchor.nextElementSibling;
+
+  while (next instanceof HTMLElement && next !== root && next.dataset.deliveryKind === "ack") next = next.nextElementSibling;
+
+  if (next && next !== root) messagesEl.insertBefore(root, next);
 }
 
 /** 步骤容器：run 进行中进聚合块，否则直接进消息流。 */
@@ -3458,7 +3524,6 @@ function handleUserDelivery(delivery: UserDelivery): void {
   if (plan === 'update_text') {
     existing!.innerHTML = renderMarkdown(delivery.text);
     delete existing!.dataset.streaming;
-    appendDeliveryFacts(existing!, delivery);
 
     if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(existing!);
     existing!.dataset.deliveryKind = delivery.kind;
@@ -3475,7 +3540,6 @@ function handleUserDelivery(delivery: UserDelivery): void {
 
   const bubble = addMsg("msg assistant markdown", "");
   bubble.innerHTML = renderMarkdown(delivery.text);
-  appendDeliveryFacts(bubble, delivery);
 
   if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble);
   bubble.dataset.deliveryId = delivery.id;
@@ -3485,13 +3549,6 @@ function handleUserDelivery(delivery: UserDelivery): void {
   placeStartAcknowledgement(bubble, delivery.kind);
   scrollToEnd();
   scheduleDeliveryVisible(bubble, receivedAt);
-}
-
-/** 事实链块只加在结果正文之后；没有字段就不加，不回填旧记录。 */
-function appendDeliveryFacts(bubble: HTMLElement, delivery: UserDelivery): void {
-  const facts = renderDeliveryFacts(delivery, { openSource: (url) => { window.open(url, "_blank", "noopener"); } });
-
-  if (facts) bubble.append(facts);
 }
 
 /** 收到正式交付 → 结果可见的下一帧；历史回放不算新的呈现。 */

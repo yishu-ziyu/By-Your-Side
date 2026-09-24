@@ -94,6 +94,32 @@ export interface ResumeSummary {
   nextStep: string;
   resume: ResumeAvailability;
   gaps: string[];
+  /** 侧栏上唯一的一行：这一轮还要用户处理什么。细节留在回答正文里。 */
+  line: string;
+  /** 这次「继续」被拒或未确认的原因；需要用户知道，所以单独一行。 */
+  note: string | null;
+}
+
+function clipText(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: ResumeSummary["remaining"], blocking: string | null): string {
+  if (checkpointUnavailable) return "原任务检查点无法恢复，不会自动重做";
+
+  if (view.state === "paused") return "页面现在归你，在页面上点「交还」后继续";
+  const first = remaining[0];
+  const left = first ? `还有 ${remaining.length} 项没完成：${clipText(first.description, 24)}` : null;
+
+  if (view.state === "aborted") return left ? `已停止，${left}，不会自动继续` : "已停止";
+
+  if (view.state === "interrupted") return left ? `任务中断了，${left}` : "任务中断了";
+
+  if (view.state === "error") return left ? `运行出错，${left}` : "运行出错";
+
+  if (left) return remaining.some(r => r.status === "unknown") ? `${left}（结果待确认）` : left;
+
+  return blocking ?? "这一轮还需要你看一下";
 }
 
 function headlineFor(view: TaskView, checkpointUnavailable: boolean): { tone: ResumeSummary["tone"]; headline: string } {
@@ -118,7 +144,7 @@ function headlineFor(view: TaskView, checkpointUnavailable: boolean): { tone: Re
  */
 export function buildResumeSummary(view: TaskView | null, checkpointUnavailable = false, resumeNote: string | null = null): ResumeSummary {
   if (!view) {
-    return { visible: false, tone: "running", headline: "", goal: null, revisions: [], done: [], remaining: [], blocking: null, interruptionDetail: null, nextStep: "", resume: { available: false, reason: null }, gaps: [] };
+    return { visible: false, tone: "running", headline: "", goal: null, revisions: [], done: [], remaining: [], blocking: null, interruptionDetail: null, nextStep: "", resume: { available: false, reason: null }, gaps: [], line: "", note: null };
   }
 
   const tone = headlineFor(view, checkpointUnavailable);
@@ -184,6 +210,8 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
     nextStep,
     resume,
     gaps: [...new Set([...gaps, ...(resumeNote ? [resumeNote] : [])].filter(Boolean))],
+    line: compactLine(view, checkpointUnavailable, remaining, blocking),
+    note: resumeNote,
   };
 }
 
@@ -361,50 +389,18 @@ export class ResumeEntry {
     ensureStyles();
     const section = document.createElement(ELEMENT_TAG);
     section.dataset.tone = summary.tone;
+    const line = document.createElement("p");
+    line.className = "resume-line";
+    line.textContent = summary.line;
+    // 完整说明（下一步、缺口）只在悬停时给，默认一行。
+    line.title = [summary.nextStep, ...summary.gaps.filter(gap => gap !== summary.note)].filter(Boolean).join("\n");
+    section.append(line);
 
-    if (summary.goal) {
-      const goal = document.createElement("p");
-      goal.className = "resume-goal";
-      goal.textContent = summary.revisions.length ? `${summary.goal}（另 ${summary.revisions.length} 条修改）` : summary.goal;
-      section.append(goal);
-    }
-
-    const head = document.createElement("p");
-    head.className = "resume-headline";
-    head.textContent = summary.headline;
-    section.append(head);
-
-    if (summary.done.length) {
-      const line = document.createElement("p");
-      line.className = "resume-line resume-done";
-      line.textContent = `已完成 ${summary.done.length} 项：${summary.done.slice(0, 3).map((d) => d.description).join("、")}${summary.done.length > 3 ? "…" : ""}`;
-      section.append(line);
-    }
-
-    if (summary.remaining.length) {
-      const line = document.createElement("p");
-      line.className = "resume-line resume-remaining";
-      line.textContent = `剩余 ${summary.remaining.length} 项：${summary.remaining.slice(0, 3).map((r) => `${r.description}（${r.statusLabel}）`).join("、")}${summary.remaining.length > 3 ? "…" : ""}`;
-      section.append(line);
-    }
-
-    if (summary.blocking) {
-      const line = document.createElement("p");
-      line.className = "resume-line resume-blocking";
-      line.textContent = summary.blocking;
-      section.append(line);
-    }
-
-    const next = document.createElement("p");
-    next.className = "resume-next";
-    next.textContent = summary.nextStep;
-    section.append(next);
-
-    if (summary.gaps.length) {
-      const gap = document.createElement("p");
-      gap.className = "resume-gap";
-      gap.textContent = summary.gaps.join("；");
-      section.append(gap);
+    if (summary.note) {
+      const note = document.createElement("p");
+      note.className = "resume-note";
+      note.textContent = summary.note;
+      section.append(note);
     }
 
     if (summary.resume.available) {
@@ -413,7 +409,7 @@ export class ResumeEntry {
       button.className = "resume-action";
       button.dataset.pending = String(!!this.pendingRequestId);
       button.disabled = !!this.pendingRequestId;
-      button.textContent = this.pendingRequestId ? "正在继续…" : "继续原任务";
+      button.textContent = this.pendingRequestId ? "正在继续…" : "继续";
       button.onclick = () => void this.requestResume();
       section.append(button);
     }
@@ -433,22 +429,13 @@ function ensureStyles(): void {
   const style = document.createElement("style");
   style.id = "resume-entry-styles";
   style.textContent = [
-    "resume-entry{display:flex;flex-direction:column;margin:10px 0 8px;padding:12px 14px;border:1px solid var(--content-border,#ded8cd);border-radius:14px;background:var(--content-bg,#fcfaf5);box-shadow:0 2px 8px rgba(0,0,0,.02);font-size:12px;line-height:1.5;color:var(--text-secondary,#686459);align-self:stretch;box-sizing:border-box}",
-    "resume-entry .resume-headline{display:inline-flex;align-items:center;align-self:flex-start;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--warn-soft,rgba(155,104,43,.1));color:var(--warn,#9b682b);margin:0 0 6px}",
-    "resume-entry[data-tone=running] .resume-headline{background:var(--apple-blue-soft,rgba(121,82,59,.08));color:var(--accent,#79523b)}",
-    "resume-entry[data-tone=blocked] .resume-headline{background:var(--err-soft,rgba(183,69,54,.08));color:var(--err,#b74536)}",
-    "resume-entry[data-tone=stopped] .resume-headline{background:var(--content-subtle,#ece7de);color:var(--text-tertiary,#807b70)}",
-    "resume-entry .resume-goal{margin:0 0 8px;color:var(--text-primary,#292821);font-size:13.5px;font-weight:600;line-height:1.45}",
-    "resume-entry .resume-line{margin:3px 0;padding:6px 10px;border-radius:8px;background:var(--content-subtle,#ece7de);color:var(--text-primary,#292821);display:flex;align-items:flex-start;gap:6px;line-height:1.45}",
-    "resume-entry .resume-line.resume-done{color:var(--text-secondary,#686459)}",
-    "resume-entry .resume-line.resume-done::before{content:'✓';color:var(--ok,#438558);font-weight:bold;flex-shrink:0}",
-    "resume-entry .resume-line.resume-remaining::before{content:'○';color:var(--warn,#9b682b);font-weight:bold;flex-shrink:0}",
-    "resume-entry .resume-line.resume-blocking{background:var(--warn-soft,rgba(155,104,43,.1));color:var(--warn,#9b682b)}",
-    "resume-entry .resume-line.resume-blocking::before{content:'!';font-weight:bold;flex-shrink:0}",
-    "resume-entry .resume-next,resume-entry .resume-gap{margin:8px 0 0;font-size:11.5px;color:var(--text-tertiary,#807b70);line-height:1.4}",
-    "resume-entry .resume-action{align-self:flex-end;margin-top:10px;padding:6px 14px;border-radius:8px;border:none;background:var(--accent,#79523b);color:#fff;font:inherit;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:background .15s ease,transform .1s ease}",
-    "resume-entry .resume-action:hover:not([disabled]){background:var(--accent-hover,#62412e)}",
-    "resume-entry .resume-action:active:not([disabled]){transform:scale(.98)}",
+    "resume-entry{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:6px 0 8px;font-size:12.5px;line-height:1.5;color:var(--text-secondary,#686459)}",
+    "resume-entry .resume-line{margin:0;flex:1 1 auto;min-width:0}",
+    "resume-entry[data-tone=blocked] .resume-line{color:var(--err,#b74536)}",
+    "resume-entry .resume-note{margin:0;flex-basis:100%;order:3;font-size:11.5px;color:var(--warn,#9b682b)}",
+    "resume-entry .resume-action{flex:none;padding:3px 12px;border-radius:999px;border:1px solid var(--content-border,#ded8cd);background:transparent;color:var(--text-primary,#292821);font:inherit;font-size:12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}",
+    "resume-entry .resume-action:hover:not([disabled]){background:var(--content-subtle,#ece7de)}",
+    "resume-entry .resume-action:focus-visible{outline:2px solid var(--accent,#79523b);outline-offset:2px}",
     "resume-entry .resume-action[disabled]{opacity:.6;cursor:default}",
   ].join("");
   document.head.append(style);

@@ -78,7 +78,7 @@ describe("send_user_message 事实链", () => {
       remaining: [{ id: "r-2", description: "备注还没核对", status: "pending" }],
       sources: [{ url: "https://fixture.test/offer/a" }],
     });
-    expect(delivery.text).toContain("仅交付部分结果");
+    expect(delivery.text).toBe("三家方案已比较，备注还没核对。"); // 部分完成记在 facts 上，不往正文追加宿主句子
     expect(parseServerMessage(JSON.stringify({ type: "agent_event", conversationId: "default", event: { kind: "user_delivery", delivery } }))).not.toBeNull();
   });
 
@@ -110,7 +110,7 @@ describe("send_user_message 事实链", () => {
     const delivery = (h.events[0] as Extract<AgentUiEvent, { kind: "user_delivery" }>).delivery;
     expect(delivery.facts?.outcome).toBe("partial");
     expect(delivery.facts?.remaining[0]?.status).toBe("unknown");
-    expect(delivery.text).toContain("有操作的结果仍无法确认");
+    expect(delivery.text).toBe("订单状态还没确认。"); // 模型已如实说明，宿主不再追加
   });
 });
 
