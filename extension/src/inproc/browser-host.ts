@@ -23,6 +23,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let selected: InprocModelConfig | null = null;
   let voiceConfigured = false;
   let helloReceived = false;
+  /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
+  const deferredCreates: ClientMessage[] = [];
 
   const models: ModelRuntime = deps.createRuntime((providerId, credential) => {
     port?.postMessage({ type: "inproc_credential", providerId, credential: credential ?? null });
@@ -35,11 +37,22 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (pendingCore) return pendingCore;
 
-    const model = models.resolveModel(selected);
-    const pattern = `${model.provider}/${model.id}`;
     const modelPort = models.createCoreModels(() => selected);
+    let pattern = "";
+
+    // 新对话按建立时的设置取模型；核心启动后设置页可能已经换过（恢复的对话沿用自己记下的模型）。
+    const currentPattern = () => {
+      if (selected) {
+        const model = models.resolveModel(selected);
+        pattern = `${model.provider}/${model.id}`;
+      }
+
+      return pattern;
+    };
+
+    currentPattern();
     pendingCore = startHostCore({
-      createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? pattern, {
+      createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/" }, mode: summary?.mode,
         fallbackModelPattern: "zai-coding-cn/glm-5.3-flash",
       }),
@@ -76,6 +89,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (message.type === "conversation_list") {
       connection?.send({ type: "conversation_list", requestId: message.requestId, conversations: [] });
+
+      return;
+    }
+
+    if (message.type === "conversation_create") {
+      deferredCreates.push(message);
 
       return;
     }
@@ -128,6 +147,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
         const started = await ensureCore();
 
         if (helloReceived && connection) started.sendHelloOk(connection);
+
+        for (const create of deferredCreates.splice(0)) started.handleMessage(create);
       }
 
       return;

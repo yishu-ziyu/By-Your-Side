@@ -2,6 +2,10 @@
  * 日常请求底线：10 条取自真实使用记录的请求，逐条在新会话里发出，只看用户看得到的结果。
  *
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math]
+ *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
+ *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash   # 只装扩展，设置页配模型
+ *
+ * --inproc 时每条另记扩展内 agent 发出的模型请求（地址、首字节、结束），并判定请求都发往所选服务商。
  *
  * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
  * 以及该条的结果判据（答案内容、页面圈画、新标签页、草稿框原文且未保存）。练习页全在本机，不碰真实账号。
@@ -9,15 +13,21 @@
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, attachDailyChrome, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
+import { configureViaSettings, loadModelPlan } from "./inproc-config.mts";
 
-requireHeadless();
+const daily = process.argv.includes("--daily");
+
+/** --inproc=provider/id：不注册伴随进程，从设置页配置这个模型。 */
+const inprocModel = process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
+
+if (!daily) requireHeadless();
 
 const CASE_LIMIT_MS = 240_000;
 
 const startedAt = new Date();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline${daily ? "-daily" : inprocModel ? "-inproc" : ""}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -96,6 +106,18 @@ const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split("
 
 const selected = only ? CASES.filter((c) => only.includes(c.id)) : CASES;
 
+/** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
+const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn" } satisfies Record<string, string>;
+
+const hostOf = (provider: string): string | undefined => Object.entries(PROVIDER_HOSTS).find(([id]) => id === provider)?.[1];
+
+const expectedHost = inprocModel ? hostOf(inprocModel.split("/")[0] ?? "") : undefined;
+
+if (inprocModel && !expectedHost) throw new Error(`不知道 ${inprocModel} 的 API 主机，先补进 PROVIDER_HOSTS`);
+
+/** 模型调用：发往已知服务商主机的 POST（排除练习站、扩展自身资源和语音握手）。 */
+const isModelCall = (r: InprocRequest) => r.method === "POST" && Object.values(PROVIDER_HOSTS).includes(new URL(r.url).host);
+
 const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
   const visible = (el) => !!el && !el.hidden && el.getClientRects().length > 0 && el.innerText.trim().length > 0;
@@ -133,14 +155,18 @@ type DomNode = { attributes?: string[]; children?: DomNode[]; shadowRoots?: DomN
 type CaseResult = {
   id: string; prompt: string; replied: boolean; firstVisibleMs: number | null; doneMs: number | null; noiseCount: number;
   noise: PanelState["noise"] | null; outcome: "pass" | "fail"; reason: string | null; answer: string;
+  /** 只在 --inproc：本条发出的模型请求（毫秒相对发送时刻）。 */
+  modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
 };
 
 const results: CaseResult[] = [];
 
-const rp = await launchRealPath();
+const rp = daily ? await attachDailyChrome() : await launchRealPath({ withoutNativeHost: !!inprocModel });
+
+let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 
 try {
-  const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
+  const blank = "workTargetId" in rp ? { targetId: rp.workTargetId } : await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
   const work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.enable", {}, work);
   await rp.cdp.send("Page.navigate", { url: `${origin}/article` }, work);
@@ -149,6 +175,18 @@ try {
 
   // SAFETY: PANEL_STATE 返回的对象字段与 PanelState 一一对应。
   const readPanel = async () => (await rp.evaluate(panel, PANEL_STATE)) as PanelState;
+
+  // 日常 Chrome 若在跑扩展内 agent（无本机伴随进程），同样从外部记录它的请求。
+  if (daily && (await rp.targets()).some((t) => t.url === `chrome-extension://${rp.extensionId}/inproc.html`)) inproc = await watchInproc(rp, rp.extensionId);
+
+  if (inprocModel) {
+    inproc = await watchInproc(rp, rp.extensionId);
+    const run = await configureViaSettings(rp, panel, await loadModelPlan(inprocModel));
+
+    if (!run.testStatus.startsWith("连接正常")) throw new Error(`设置页测试连接失败：${run.testStatus}`);
+    await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
+    await rp.cdp.send("Page.bringToFront", {}, work);
+  }
 
   await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上伴随进程", 500);
 
@@ -199,6 +237,7 @@ try {
     await rp.click(panel, "#input");
     await rp.typeText(panel, item.prompt);
     const sentAt = Date.now();
+    const sentAtInproc = inproc?.now() ?? 0;
     await rp.pressEnter(panel);
     let firstVisibleMs: number | null = null;
     let doneMs: number | null = null;
@@ -257,19 +296,31 @@ try {
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
-    results.push({ id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: reason ? "fail" : "pass", reason, answer: answer.slice(0, 600) });
+
+    const modelCalls = inproc?.requestsBetween(sentAtInproc).filter(isModelCall).map((r) => ({
+      host: new URL(r.url).host, startMs: r.startMs - sentAtInproc, firstByteMs: r.firstByteMs === null ? null : r.firstByteMs - sentAtInproc,
+      endMs: r.endMs === null ? null : r.endMs - sentAtInproc, status: r.status, failed: r.failed,
+    }));
+
+    // 设置页选的是哪家，请求就只能发往哪家：防「换了模型却仍用旧模型」。
+    const wrongHost = inprocModel && modelCalls?.find((c) => c.host !== expectedHost);
+    const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
+    results.push({ id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls });
     await rp.screenshot(panel, join(artifacts, `${item.id}-panel.png`)).catch(() => {});
-    console.log(`${item.id}\t${reason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms\tnoise=${noiseCount}\t${reason ?? ""}`);
+    const calls = modelCalls ? `\tcalls=${modelCalls.length} ttfb=${modelCalls.map((c) => (c.firstByteMs === null ? "-" : c.firstByteMs - c.startMs)).join(",")}` : "";
+    console.log(`${item.id}\t${finalReason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms\tnoise=${noiseCount}${calls}\t${finalReason ?? ""}`);
   }
 } finally {
-  await writeFile(join(artifacts, "hostlog.txt"), await rp.hostLog()).catch(() => {});
+  await writeFile(join(artifacts, "hostlog.txt"), inproc ? inproc.logs() : await rp.hostLog()).catch(() => {});
+
+  if (inproc) await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
   await cp(join(rp.dirs.data, "traces"), join(artifacts, "traces"), { recursive: true }).catch(() => {});
   await rp.close();
   site.close();
 }
 
 const summary = {
-  case: "everyday-baseline", startedAt: startedAt.toISOString(), model: process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? "daily config",
+  case: "everyday-baseline", startedAt: startedAt.toISOString(), model: process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? (inprocModel ?? (daily ? "daily extension settings" : "daily config")), browser: daily ? "daily Chrome" : inprocModel ? "isolated headless, extension only" : "isolated headless",
   passed: results.filter((r) => r.outcome === "pass").length, total: results.length, results,
 };
 

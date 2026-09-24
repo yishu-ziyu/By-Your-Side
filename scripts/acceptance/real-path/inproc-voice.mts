@@ -169,6 +169,8 @@ try {
 
     return state.connected && state.pill?.includes("订单备注") ? state : undefined;
   }, 60_000, "侧栏连上扩展内 agent 并认出练习页", 500);
+  // 侧栏启动时发的新建会话要等配置后才建好；在它切换会话之前点语音，会和会话切换撞在一起。
+  await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.getAttribute("aria-busy") !== "true"`)) || undefined, 20_000, "启动时的新会话建好", 300);
 
   // --voice=<id>：像用户一样在设置页点选音色；判据取服务端 session.updated 回显的音色，不看产品自己的日志。
   if (voiceArg) {

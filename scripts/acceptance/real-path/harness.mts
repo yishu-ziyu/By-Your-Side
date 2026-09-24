@@ -107,6 +107,197 @@ async function dailyDistStamp(): Promise<string> {
   return stamps.join("|");
 }
 
+/** 两种入口共用的 CDP 操作：列目标、附着、执行脚本、打开真侧栏、点击、输入、截图。 */
+function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
+  const targets = async (): Promise<TargetInfo[]> => (await cdp.send("Target.getTargets")).targetInfos;
+  const attach = async (targetId: string): Promise<string> => (await cdp.send("Target.attachToTarget", { targetId, flatten: true })).sessionId;
+  const detach = (sessionId: string) => cdp.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+
+  const evaluate = async (sessionId: string, expression: string, { userGesture = false, timeoutMs = 30_000 } = {}) => {
+    const reply = await cdp.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture }, sessionId, timeoutMs);
+
+    if (reply.exceptionDetails) throw new Error(`页面脚本出错：${reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text}`);
+
+    return reply.result?.value;
+  };
+
+  /**
+   * sidePanel.open 要求用户手势，后台 service worker 里调用会被拒；扩展页面加 CDP userGesture 可以。
+   * 辅助页只在点击时申请麦克风，打开不会触发任何动作。
+   */
+  const openSidePanel = async (): Promise<string> => {
+    const helper = (await cdp.send("Target.createTarget", { url: `chrome-extension://${id}/voice-permission.html`, background: true })).targetId;
+
+    try {
+      const session = await attach(helper);
+      await until(async () => (await evaluate(session, `document.readyState === "complete" && !!globalThis.chrome?.windows`)) || undefined, 10_000, "辅助页加载");
+      const windowId = Number(await evaluate(session, "chrome.windows.getCurrent().then((w) => w.id)"));
+      const opened = await evaluate(session, `chrome.sidePanel.open({ windowId: ${windowId} }).then(() => "opened", (e) => "error: " + e.message)`, { userGesture: true });
+
+      if (opened !== "opened") throw new Error(`打开侧栏失败：${opened}`);
+    } finally {
+      await cdp.send("Target.closeTarget", { targetId: helper }).catch(() => {});
+    }
+
+    const panel = await until(
+      async () => (await targets()).find((t) => t.type === "page" && t.url.startsWith(`chrome-extension://${id}/sidepanel.html`)),
+      15_000,
+      "真侧栏出现",
+    );
+
+    return panel.targetId;
+  };
+
+  const click = async (sessionId: string, selector: string, button: "left" | "right" = "left") => {
+    const point = await evaluate(sessionId, `(() => {
+      const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+      return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+    })()`);
+
+    if (!point) throw new Error(`找不到 ${selector}`);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y }, sessionId);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount: 1 }, sessionId);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount: 1 }, sessionId);
+  };
+
+  const typeText = (sessionId: string, text: string) => cdp.send("Input.insertText", { text }, sessionId);
+
+  const pressEnter = async (sessionId: string) => {
+    const key = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", text: "\r", ...key }, sessionId);
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }, sessionId);
+  };
+
+  const screenshot = async (sessionId: string, file: string) => {
+    const { data } = await cdp.send("Page.captureScreenshot", { format: "png" }, sessionId);
+    await writeFile(file, Buffer.from(data, "base64"));
+  };
+
+  return {
+    targets,
+    attach,
+    detach,
+    evaluate,
+    openSidePanel,
+    click,
+    typeText,
+    pressEnter,
+    screenshot,
+    serviceWorker: async (): Promise<TargetInfo | undefined> => findServiceWorker(await targets(), id),
+  };
+}
+
+/**
+ * 连到用户已开着的日常 Chrome（--remote-debugging-port，默认 9222），驱动已加载的 extension/dist。
+ * 不构建、不注册伴随进程、不改配置；close 只关本次新开的标签页，不关浏览器、不动用户原有标签页。
+ * 用于「日常 Chrome 里验收」：会在用户窗口里开新标签页和侧栏，必须先取得用户同意。
+ */
+export async function attachDailyChrome({ port = Number(process.env.CDP_PORT ?? 9222) } = {}) {
+  const manifest = JSON.parse(await readFile(join(REPO, "extension/manifest.json"), "utf8"));
+  const der = Buffer.from(String(manifest.key), "base64");
+
+  const id = [...createHash("sha256").update(der).digest().subarray(0, 16)]
+    .map((byte) => String.fromCharCode(97 + (byte >> 4)) + String.fromCharCode(97 + (byte & 15)))
+    .join("");
+
+  const version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
+  const cdp = createCdp(version.webSocketDebuggerUrl);
+  await cdp.ready();
+  const rp = browserControls(cdp, id);
+  // 日常数据目录不复制进产物：给一个空目录，调用方的 traces 拷贝自然落空。
+  const dirs = { data: await mkdtemp(join(tmpdir(), "sideagent-daily-")) };
+  const before = new Set((await rp.targets()).map((t) => t.targetId));
+
+  // 日常 Chrome 没有 about:blank 初始页：在当前窗口前台开一个，侧栏跟着这个窗口。
+  const { targetId: workTargetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
+
+  const close = async () => {
+    for (const t of await rp.targets()) {
+      if (t.type === "page" && !before.has(t.targetId) && !t.url.startsWith(`chrome-extension://${id}/sidepanel.html`)) await cdp.send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
+    }
+
+    await cdp.close().catch(() => {});
+
+    const none: number[] = [];
+
+    return { hostPids: none, exitedWithChrome: true, killed: none };
+  };
+
+  return {
+    ...rp,
+    extensionId: id,
+    browser: String(version.Browser),
+    cdp,
+    dirs,
+    /** 本次新开的工作标签页；用户可能另有 about:blank 标签页，不能按网址找。 */
+    workTargetId: String(workTargetId),
+    hostLog: async () => "",
+    close,
+    remove: () => rm(dirs.data, { recursive: true, force: true }),
+  };
+}
+
+/** 扩展内 agent 发出的一次 HTTP 请求：相对观察开始的毫秒数。 */
+export type InprocRequest = { url: string; method: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null };
+
+/**
+ * 从外部观察 offscreen 里的扩展内 agent：扩展内没有 RunTrace，诊断只能靠这里。
+ * 记录 console 输出与全部网络请求（模型服务、语音 WebSocket 握手），不改产品行为。
+ */
+export async function watchInproc(rp: { cdp: ReturnType<typeof createCdp>; targets: () => Promise<TargetInfo[]>; attach: (targetId: string) => Promise<string> }, extensionId: string) {
+  const target = await until(async () => (await rp.targets()).find((t) => t.url === `chrome-extension://${extensionId}/inproc.html`), 30_000, "扩展内 agent 的 offscreen 文档");
+  const session = await rp.attach(target.targetId);
+  const origin = Date.now();
+  const logs: string[] = [];
+  const requests = new Map<string, InprocRequest>();
+  const now = () => Date.now() - origin;
+
+  /** 只收本 offscreen 会话的事件；参数形状由调用处按 CDP 规范声明。 */
+  const on = <P,>(method: string, fn: (params: P) => void) => rp.cdp.onEvent(method, (message: { sessionId?: string; params: P }) => {
+    if (message.sessionId === session) fn(message.params);
+  });
+
+  on<{ type: string; args?: Array<{ value?: Json; description?: string }> }>("Runtime.consoleAPICalled", (p) => {
+    logs.push(`${now()}\t${p.type}\t${(p.args ?? []).map((a) => (a.value !== undefined ? String(a.value) : a.description ?? "")).join(" ")}`);
+  });
+
+  on<{ requestId: string; request: { url: string; method: string } }>("Network.requestWillBeSent", (p) => {
+    requests.set(p.requestId, { url: p.request.url, method: p.request.method, startMs: now(), firstByteMs: null, endMs: null, status: null, failed: null });
+  });
+
+  on<{ requestId: string; response: { status: number } }>("Network.responseReceived", (p) => {
+    const entry = requests.get(p.requestId);
+
+    if (!entry) return;
+    entry.firstByteMs = now();
+    entry.status = p.response.status;
+  });
+
+  on<{ requestId: string }>("Network.loadingFinished", (p) => {
+    const entry = requests.get(p.requestId);
+
+    if (entry) entry.endMs = now();
+  });
+
+  on<{ requestId: string; errorText: string }>("Network.loadingFailed", (p) => {
+    const entry = requests.get(p.requestId);
+
+    if (!entry) return;
+    entry.endMs = now();
+    entry.failed = p.errorText;
+  });
+
+  await rp.cdp.send("Runtime.enable", {}, session);
+  await rp.cdp.send("Network.enable", {}, session);
+
+  return {
+    now,
+    logs: () => logs.join("\n"),
+    /** 某个时间窗内开始的请求，按开始时间排序。 */
+    requestsBetween: (fromMs: number, toMs = Number.POSITIVE_INFINITY) => [...requests.values()].filter((r) => r.startMs >= fromMs && r.startMs <= toMs).sort((a, b) => a.startMs - b.startMs),
+  };
+}
+
 /**
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
  * withoutNativeHost：不注册伴随进程，模拟只装了扩展的电脑（扩展内 agent 实验）。
@@ -202,69 +393,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false 
   const cdp = createCdp(version.webSocketDebuggerUrl);
   await cdp.ready();
 
-  const targets = async (): Promise<TargetInfo[]> => (await cdp.send("Target.getTargets")).targetInfos;
-  const attach = async (targetId: string): Promise<string> => (await cdp.send("Target.attachToTarget", { targetId, flatten: true })).sessionId;
-  const detach = (sessionId: string) => cdp.send("Target.detachFromTarget", { sessionId }).catch(() => {});
-
-  const evaluate = async (sessionId: string, expression: string, { userGesture = false, timeoutMs = 30_000 } = {}) => {
-    const reply = await cdp.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture }, sessionId, timeoutMs);
-
-    if (reply.exceptionDetails) throw new Error(`页面脚本出错：${reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text}`);
-
-    return reply.result?.value;
-  };
-
-  /**
-   * sidePanel.open 要求用户手势，后台 service worker 里调用会被拒；扩展页面加 CDP userGesture 可以。
-   * 辅助页只在点击时申请麦克风，打开不会触发任何动作。
-   */
-  const openSidePanel = async (): Promise<string> => {
-    const helper = (await cdp.send("Target.createTarget", { url: `chrome-extension://${id}/voice-permission.html`, background: true })).targetId;
-
-    try {
-      const session = await attach(helper);
-      await until(async () => (await evaluate(session, `document.readyState === "complete" && !!globalThis.chrome?.windows`)) || undefined, 10_000, "辅助页加载");
-      const windowId = Number(await evaluate(session, "chrome.windows.getCurrent().then((w) => w.id)"));
-      const opened = await evaluate(session, `chrome.sidePanel.open({ windowId: ${windowId} }).then(() => "opened", (e) => "error: " + e.message)`, { userGesture: true });
-
-      if (opened !== "opened") throw new Error(`打开侧栏失败：${opened}`);
-    } finally {
-      await cdp.send("Target.closeTarget", { targetId: helper }).catch(() => {});
-    }
-
-    const panel = await until(
-      async () => (await targets()).find((t) => t.type === "page" && t.url.startsWith(`chrome-extension://${id}/sidepanel.html`)),
-      15_000,
-      "真侧栏出现",
-    );
-
-    return panel.targetId;
-  };
-
-  const click = async (sessionId: string, selector: string, button: "left" | "right" = "left") => {
-    const point = await evaluate(sessionId, `(() => {
-      const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
-      return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
-    })()`);
-
-    if (!point) throw new Error(`找不到 ${selector}`);
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y }, sessionId);
-    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount: 1 }, sessionId);
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount: 1 }, sessionId);
-  };
-
-  const typeText = (sessionId: string, text: string) => cdp.send("Input.insertText", { text }, sessionId);
-
-  const pressEnter = async (sessionId: string) => {
-    const key = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", text: "\r", ...key }, sessionId);
-    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }, sessionId);
-  };
-
-  const screenshot = async (sessionId: string, file: string) => {
-    const { data } = await cdp.send("Page.captureScreenshot", { format: "png" }, sessionId);
-    await writeFile(file, Buffer.from(data, "base64"));
-  };
+  const controls = browserControls(cdp, id);
 
   const hostLog = () => readFile(join(dirs.data, "agent.log"), "utf8").catch(() => "");
 
@@ -316,17 +445,8 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false 
     extensionId: id,
     browser: String(version.Browser),
     cdp,
-    targets,
-    attach,
-    detach,
-    evaluate,
-    openSidePanel,
-    click,
-    typeText,
-    pressEnter,
-    screenshot,
+    ...controls,
     hostLog,
-    serviceWorker: async (): Promise<TargetInfo | undefined> => findServiceWorker(await targets(), id),
     chromeStderr: () => chromeStderr,
     close,
     remove: () => rm(root, { recursive: true, force: true }),

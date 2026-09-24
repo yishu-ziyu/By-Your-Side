@@ -46,6 +46,10 @@ npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-tas
 
 `real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、经 Native Messaging 拉起当前源码的伴随进程、真模型。伴随进程的数据写进临时目录（`SIDEAGENT_DATA_DIR`），凭据从 `~/.sideagent` 原位只读；不碰日常 Chrome、`extension/dist` 和日常伴随进程。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录），产物在 `out/acceptance/real-path/<时间>-<用例>/`。`launchRealPath({ microphoneWav })` 用 WAV 充当麦克风（只放一遍），语音模型和断句都是真的。加 `--model=provider/id` 只替换测试伴随进程的模型（例如 `kimi-coding/kimi-for-coding`），日常配置不动。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
 
+`everyday-baseline.mts --headless --inproc=provider/id` 在隔离 Chrome 里只装扩展，像用户一样从设置页填 key、测试连接、保存，再跑 10 条日常请求。扩展内没有诊断记录，所以用 `watchInproc()` 从外部记录 offscreen 的 console 和每次网络请求（首字节、结束），写进 `hostlog.txt` 和 `inproc-requests.json`；每条还要求模型请求只发往所选服务商的主机，发错就判失败。`--daily` 在日常 Chrome 跑扩展内 agent 时也挂同一个观察器。
+
+`everyday-baseline.mts --daily` 改用 `attachDailyChrome()`：连到用户已开的日常 Chrome（9222），驱动已加载的 `extension/dist` 和日常设置，不构建、不注册伴随进程；在用户窗口里新开标签页和侧栏，结束只关自己开的标签页。只在用户同意后运行。要测「只装扩展」，先停用该 Chrome 用户目录下 `NativeMessagingHosts/com.sideagent.host.json`（日常用的是 `ChromeMain` 目录）并重载扩展；清单还在时扩展优先连本机伴随进程。
+
 `inproc-*` 用例则不注册 Native Messaging：模型凭据只写进隔离扩展存储。圈画判据同时要求页面圈住目标、未点击、侧栏交付无错误；只看到圈画但目标账本报未完成，仍为失败。`inproc-mark --via-settings` 等待新会话可发送后才输入，避免把启动中的草稿切换误判为任务失败。
 
 **过滤轮的三个信号别混用**：
