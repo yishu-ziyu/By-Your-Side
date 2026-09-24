@@ -14,6 +14,15 @@ export function recordAxSnapshot(tabId: number, backendIds: number[]): void {
   latestKind.set(tabId, "ax");
 }
 
+/** 同一次 AX 采集的补充登记（续读、控件清单）：并入而不是替换，正文里给过的 ref 仍可执行。 */
+export function addAxRefs(tabId: number, backendIds: number[]): void {
+  const known = byTab.get(tabId) ?? new Set<number>();
+
+  for (const id of backendIds) known.add(id);
+  byTab.set(tabId, known);
+  latestKind.set(tabId, "ax");
+}
+
 export function isAxRef(tabId: number, ref: number): boolean {
   return byTab.get(tabId)?.has(ref) ?? false;
 }

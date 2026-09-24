@@ -79,6 +79,21 @@ describe("click & mark robustness", () => {
     expect(resEn).toEqual({ clicked: false, held: true });
   });
 
+  it("mark 定位失败还没画任何东西：记为未执行，不能变成结果未知而锁住重画", async () => {
+    installChrome({ domError: "ref 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。" });
+    const { mark } = await import("../src/background/exec/input.js");
+
+    let fact: string | null = null;
+
+    try {
+      await mark({ target: "#usage", label: "五小时用量" });
+    } catch (error) {
+      if (error instanceof Error && "executionFact" in error) fact = String(error.executionFact);
+    }
+
+    expect(fact).toBe("not_executed");
+  });
+
   it("mark 未带 actions 但 label 为「待归档」时自动注入隐式 actions", async () => {
     const executeScript = installChrome({ domRect: { x: 150, y: 250, width: 90, height: 36 } });
     const { mark } = await import("../src/background/exec/input.js");

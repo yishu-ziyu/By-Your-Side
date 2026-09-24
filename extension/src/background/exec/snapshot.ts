@@ -11,7 +11,7 @@ import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
 import { axTreeToText, type AxNodeLite } from "../axtree.js";
-import { clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
+import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
 
 /** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
@@ -115,7 +115,8 @@ export async function snapshot(
   });
 
   // Register every collected AX identity for execution — not only text-rendered refs.
-  recordAxSnapshot(tab.id, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
+  // Merge: the text refs of this capture were registered by axSnapshot and stay executable (e.g. mark on a text node).
+  addAxRefs(tab.id, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
 
   const page: Omit<BrowserObservation, "id" | "observedAt"> = {
     tabId:tab.id,
@@ -217,8 +218,9 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   }
 
   // Decision controls come from the AX tree itself — never from text-budget keptRefs.
+  // Text refs shown to the model are executable too (mark/read a text node), so register both.
   const collected = collectDecisionControls(nodes);
-  recordAxSnapshot(tabId, collected.controls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
+  recordAxSnapshot(tabId, [...backendIds, ...collected.controls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n))]);
 
   return {
     text,

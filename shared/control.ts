@@ -79,6 +79,9 @@ export const TEAM_COORDINATION_TOOLS: ReadonlySet<string> = new Set([
 
 export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 
+/** 页归另一会话时的拦截文案前缀；宿主据此在对方空闲时自动接手。 */
+export const FOREIGN_TAB_ERROR = "该页正在由其他会话使用";
+
 export const HANDBACK_NO_PAGE = "取不到当前页面，控制权仍归你。没有回到之前的工作标签。";
 
 export function isWriteTool(name: string): name is ToolName {

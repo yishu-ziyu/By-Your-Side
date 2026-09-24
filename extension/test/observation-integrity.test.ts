@@ -47,7 +47,7 @@ vi.hoisted(() => {
 
 import { screenshot } from "../src/background/exec/screenshot.js";
 import { snapshotTab } from "../src/background/exec/snapshot.js";
-import { isAxRef, recordAxSnapshot } from "../src/background/axstate.js";
+import { addAxRefs, isAxRef, recordAxSnapshot } from "../src/background/axstate.js";
 import { axTreeToText, type AxNodeLite } from "../src/background/axtree.js";
 
 const WORK_TAB = { id: 11, windowId: 1, url: "https://work.example/page", title: "Work Page" };
@@ -181,6 +181,15 @@ describe("A3 viewport 真做视口范围且 ref 登记正确切换", () => {
     const r = await snapshotTab(WORK_TAB.id, "full_page");
     expect(r.text).toContain("回退");
     expect(isAxRef(WORK_TAB.id, 777)).toBe(false);
+  });
+});
+
+describe("观察里给过的文字 ref 可以直接执行", () => {
+  it("控件清单并入同一次采集的登记，不把正文里的文字 ref 挤掉（mark 文字节点不再误报已失效）", () => {
+    recordAxSnapshot(WORK_TAB.id, [1332, 1333]);
+    addAxRefs(WORK_TAB.id, [2001]);
+    expect(isAxRef(WORK_TAB.id, 1332)).toBe(true);
+    expect(isAxRef(WORK_TAB.id, 2001)).toBe(true);
   });
 });
 

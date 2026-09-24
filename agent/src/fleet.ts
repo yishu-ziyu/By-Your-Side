@@ -99,6 +99,9 @@ export class Fleet {
   private generation = 0;
   private coordinateTab?: (owner: string, members: string[]) => Promise<void>;
   setTabCoordinator(coordinate: (owner: string, members: string[]) => Promise<void>): void { this.coordinateTab = coordinate; }
+  private ownerIdle?: (conversationId: string) => boolean;
+  private readonly idleReleases = new Map<number | "working", Promise<boolean>>();
+  setIdleOwnerCheck(check: (conversationId: string) => boolean): void { this.ownerIdle = check; }
   private readonly rpc: ToolRpc;
   private readonly sink: FleetSink;
   private readonly modelPattern?: string;
@@ -617,6 +620,50 @@ export class Fleet {
     }
 
     return { tabId: info.tabId, stopped: info.workers };
+  }
+
+  /** 另一会话已空闲（没有进行中的任务、在途调用或未知写入）时接手它占着的页；否则不动，返回 false。 */
+  async releaseIdleForeignTab(tabId?: number): Promise<boolean> {
+    // 并行的几个调用同时被拦时共用一次接手，不让后到的那个因「归属已变化」报错。
+    const key = tabId ?? "working";
+    const inflight = this.idleReleases.get(key);
+
+    if (inflight) return inflight;
+    const release = this.releaseIdleForeignTabOnce(tabId).finally(() => this.idleReleases.delete(key));
+    this.idleReleases.set(key, release);
+
+    return release;
+  }
+
+  private async releaseIdleForeignTabOnce(tabId?: number): Promise<boolean> {
+    if (!this.ownerIdle) return false;
+
+    type TabInfo = { tabId: number; foreign?: boolean; conversationId?: string | null };
+
+    // SAFETY: worker_tabs inspect resolves with WorkerTabControl.manage's result shape; every field is re-checked before use.
+    const inspect = () => this.rpc.call("worker_tabs", tabId != null ? { action: "inspect", tabId } : { action: "inspect" }) as Promise<TabInfo>;
+    let info: TabInfo;
+
+    try {
+      info = await inspect();
+    } catch {
+      return false;
+    }
+
+    if (!info.conversationId) return false;
+
+    if (!info.foreign) return true;
+
+    if (!this.ownerIdle(info.conversationId)) return false;
+
+    try {
+      await this.rpc.call("worker_tabs", { action: "claim", tabId: info.tabId, expectedConversationId: info.conversationId });
+    } catch {
+      // 期间别的调用已经接手：页面已归本会话就算成功，否则保持拦截。
+      return inspect().then(now => now.foreign === false && !!now.conversationId, () => false);
+    }
+
+    return true;
   }
 
   async stopAndRelease(id: string): Promise<boolean> {

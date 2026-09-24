@@ -19,7 +19,7 @@ import { formatFetchReply, type FetchReply } from "./fetch-result.js";
 import { fetchPages } from "./fetch-batch.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
-import { WRITE_TOOLS } from "../../shared/control.js";
+import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { needsConsentTicket, requiresControlGate } from "../../shared/effect-policy.js";
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
@@ -120,7 +120,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
 
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -283,8 +283,26 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId);
     };
 
+    // 页被另一会话占着且那边已空闲：直接接手并重试这一次，不让模型绕 take_tab。
+    // 只对执行前就被拦下的调用这样做；那边还在执行时照旧拦住，由用户决定。
+    const invokeReleasingIdleOwner = async (executionEpoch?: number) => {
+      try {
+        return await invoke(executionEpoch);
+      } catch (error) {
+        const blockedByIdleOwner = !sid && error instanceof Error && error.message.includes(FOREIGN_TAB_ERROR)
+          && "executionFact" in error && error.executionFact === "not_executed";
+
+        if (!blockedByIdleOwner || !execution?.releaseIdleTab) throw error;
+
+        if (!await execution.releaseIdleTab(Number.isSafeInteger(callParams.tabId) ? Number(callParams.tabId) : undefined)) throw error;
+        assertNotAborted();
+
+        return invoke(executionEpoch);
+      }
+    };
+
     try {
-      const result = await invoke(gated ? epoch : undefined);
+      const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
       const verify = origin !== "readonly-poll" ? learning?.observe({ toolCallId: sdkId ?? "", name, params: callParams, result, target }) : undefined;
 
       if (name === "snapshot" && verify) {

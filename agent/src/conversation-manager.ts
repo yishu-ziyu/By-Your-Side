@@ -81,6 +81,19 @@ function shadowActualForReceipt(receipt: TaskReceipt): {action: string; note: st
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
 /** Identity is captured by each runtime's emitter, never read from the selected panel. */
+/** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用、没有未知结果的写入。 */
+export function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
+  if (input.busy) return false;
+  const snapshot = input.snapshot;
+
+  if (!snapshot) return true;
+
+  if (['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length) return false;
+  const results = snapshot.results ?? [];
+
+  return !results.some(item => item.status === 'unknown' && !isSupersededUnknown(item, results));
+}
+
 export class ConversationManager {
   private readonly taskQueue:TaskQueue;
   private readonly pendingStarts=new Set<string>();
@@ -175,6 +188,15 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
       this.emitTaskView(conversationId);
     });
   }
+  private conversationIdle(conversationId: string): boolean {
+    const entry = this.entries.get(conversationId);
+
+    return tabOwnerIdle({
+      busy: entry?.summary.state === 'running' || !!entry?.runtime.session.isStreaming() || !!entry?.runtime.session.isHeld(),
+      snapshot: this.progress.get(conversationId)?.snapshot() ?? null,
+    });
+  }
+
   private emitTaskView(conversationId: string, force = false): void {
     const progress = this.progress.get(conversationId);
 
@@ -1480,6 +1502,7 @@ return true;}
         // 也会把页面交回旧父 Agent。页面归属由接手方的 claim 与排空动作收敛。
         await source.fleet.stopMembersForForeignTakeover(members);
       });
+      runtime.fleet.setIdleOwnerCheck?.(owner => this.conversationIdle(owner));
       const entry = { summary, runtime };
       let restoredResults: TaskProgressSnapshot | null | undefined;
 

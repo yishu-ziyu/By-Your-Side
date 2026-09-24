@@ -1,7 +1,7 @@
 /** 工作标签页和会话页资源；storage.session 让扩展 SW 重启后可恢复。 */
 import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession } from "../../../shared/protocol.js";
 import { mayActivateTabInWindow } from "./foreground.js";
-import { CLAIM_BLOCKED_ERROR } from "../../../shared/control.js";
+import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.js";
 import {
   applyTabBinding,
   bindExclusiveResource,
@@ -285,7 +285,7 @@ export function assertResourceAccess(resource: TabResource | undefined, key: str
   if (mayAccessResource(resource, key)) return;
   const who = parseExecutionKey(key);
 
-  if (resource?.conversationId !== who.conversationId) throw new Error(isLeadSession(who.sessionId) ? "该页正在由其他会话使用，请调用 take_tab 协调接手后操作" : "标签页属于其他会话，未分配给当前 worker");
+  if (resource?.conversationId !== who.conversationId) throw new Error(isLeadSession(who.sessionId) ? `${FOREIGN_TAB_ERROR}，请调用 take_tab 协调接手后操作` : "标签页属于其他会话，未分配给当前 worker");
 
   if (isLeadSession(who.sessionId)) throw new Error("该页由同会话 worker 使用；请用 take_tab 接管后操作");
   throw new Error("标签页未向当前成员共享，请由父 Agent 分配页面");

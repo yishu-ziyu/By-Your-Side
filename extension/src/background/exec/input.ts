@@ -2617,12 +2617,13 @@ export async function mark(
       [params.target],
     );
 
+    // 只是定位，还没画任何东西：失败一律是「未执行」，不能记成结果未知而锁住重画。
     if (!res || !res.ok) {
-      throw new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`);
+      throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
     }
 
     if (!res.rect || typeof res.rect.x !== "number") {
-      throw new Error(`未找到目标元素：${params.target}`);
+      throw notExecuted(new Error(`未找到目标元素：${params.target}`));
     }
 
     rect = res.rect;
