@@ -74,7 +74,14 @@ export class TaskEvidence {
     if (!isPageTextEvidence(raw)||raw.truncated) throw new Error('原文片段不完整，请取得目标范围的完整来源');
     const first=raw.fragments.findIndex(f=>f.id===firstId), last=raw.fragments.findIndex(f=>f.id===lastId);
 
-    if (first<0||last<first) throw new Error('来源片段范围无效');
+    if (first<0||last<first) {
+      // 常见误用是把原文当编号传入：列出可用编号和开头原文，一次就能改对。
+      const known=raw.fragments.slice(0,12).map(f=>`${f.id}「${f.text.slice(0,24)}」`).join('、');
+      const problem=first<0||last<0?`first/last 必须是这份观察的片段编号，${first<0?firstId:lastId} 不是`:'last 排在 first 之前';
+
+      throw new Error(`来源片段范围无效：${problem}。可用编号：${known}${raw.fragments.length>12?' 等':''}。只要片段里的一句时，first/last 用同一个编号，再用 quote 写出那句原文。`);
+    }
+
     const selected=raw.fragments.slice(first,last+1), rawValue=selected.map(f=>f.text).join('');
 
     if(selected.some(fragment=>observation.protectedFragmentIds?.includes(fragment.id)))throw new Error('所选原文含已隐去的凭据，不能把遮蔽内容当成完整原文复制');

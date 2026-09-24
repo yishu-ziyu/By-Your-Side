@@ -158,3 +158,45 @@ it('condition 核验不带 elements 时行为与现在一致，host.read 收到 
  const conditionReview=f.reviewCalls.find(c=>c.stage==='condition')!;
  expect((conditionReview.data as any).page.elements).toBeUndefined();
 });
+
+// 契约容错（2026-09-25，阶跃复制任务的导出记录：verify 连续 4 次传 goals 数组被拒；capture 把原文当片段编号传入）。
+// 可能的失败：单个目标的 goals 数组仍被拒或核验到别的目标；多个目标时被随便挑一个；
+// 错误信息不给出可用的目标编号或片段编号；inspect 不附小观察的片段，模型只能再调 read_observation 或猜编号。
+
+it('verify 只给了一个目标的 goals 数组时按这个目标核验；多个目标或编号不存在时列出可用编号', async () => {
+  const f = fixture(); await f.call({ action: 'plan', goals });
+  await f.capture({ observationId: 'source', materialId: 'comment', purpose: '第一条评论正文', selection:{kind:'text',spans: [{ start: 6, end: 23 }]} });
+  const material = f.evidence.list(f.progress.snapshot().runId!, f.progress.snapshot().goalPlan!.revision).materials[0]!;
+  f.read.mockResolvedValue({ id: 'fresh', data: { value: material.value, page: { url: 'https://notes.example', text: '笔记编辑器' } } });
+
+  await f.call({ action: 'verify', goals: [goals[1]!], tabId: 8, target: '#editor' });
+  expect(f.progress.snapshot().goalPlan!.goals.find(g => g.id === 'paste-goal')!.status).toBe('satisfied');
+
+  await expect(f.call({ action: 'verify', goals, tabId: 8, target: '#editor' })).rejects.toThrow(/goalId.*source-goal.*paste-goal/s);
+  await expect(f.call({ action: 'verify', goalId: 'no-such-goal', tabId: 8, target: '#editor' })).rejects.toThrow(/source-goal.*paste-goal/s);
+});
+
+it('inspect 直接附上小观察的片段编号与原文，大观察只给数量', async () => {
+  const f = fixture();
+  const snap = f.progress.snapshot();
+  f.evidence.observe({ id: 'note', runId: snap.runId!, revision: snap.goalPlan!.revision, tabId: 3, text: 'Note Jev currently accepts text input only.', truncated: false, at: 2,
+    fragments: { truncated: false, fragments: [{ id: 'ax-1', kind: 'text', text: 'Note' }, { id: 'ax-2', kind: 'text', text: 'Jev currently accepts text input only.' }] } });
+  const big = Array.from({ length: 60 }, (_, i) => ({ id: `big-${i}`, kind: 'text' as const, text: 'x'.repeat(100) }));
+  f.evidence.observe({ id: 'big', runId: snap.runId!, revision: snap.goalPlan!.revision, tabId: 4, text: 'x'.repeat(6000), truncated: false, at: 3, fragments: { truncated: false, fragments: big } });
+
+  const details = (await f.call({ action: 'inspect' })).details as { observations: Array<{ id: string; fragments?: Array<{ id: string; text: string }> }> };
+  expect(details.observations.find(o => o.id === 'note')!.fragments).toEqual([{ id: 'ax-1', text: 'Note' }, { id: 'ax-2', text: 'Jev currently accepts text input only.' }]);
+  expect(details.observations.find(o => o.id === 'big')!.fragments).toBeUndefined();
+});
+
+it('capture 的 first/last 不是片段编号时，错误里列出可用编号和开头原文', async () => {
+  const f = fixture();
+  const snap = f.progress.snapshot();
+  f.evidence.observe({ id: 'note', runId: snap.runId!, revision: snap.goalPlan!.revision, tabId: 3, text: 'Note Jev currently accepts text input only.', truncated: false, at: 2,
+    fragments: { truncated: false, fragments: [{ id: 'ax-1', kind: 'text', text: 'Note' }, { id: 'ax-2', kind: 'text', text: 'Jev currently accepts text input only.' }] } });
+  await f.call({ action: 'plan', goals });
+  const quote = 'Jev currently accepts text input only.';
+
+  await expect(f.capture({ observationId: 'note', materialId: 'comment', purpose: '第一句', selection: { kind: 'fragments', first: quote, last: quote } }))
+    .rejects.toThrow(/ax-1.*Note.*ax-2.*Jev currently/s);
+});

@@ -5,7 +5,7 @@ import { Type } from 'typebox';
 import type { TaskProgressSnapshot } from '../../shared/voice.js';
 import { taskRequirementId, type TaskGoalDefinition } from '../../shared/task-goals.js';
 import { TaskGoalBook } from './task-goals.js';
-import { TaskEvidence, elementText, fieldMaterialValue, type ObservedMaterial } from './task-evidence.js';
+import { TaskEvidence, elementText, fieldMaterialValue, type ObservedMaterial, type TaskObservation } from './task-evidence.js';
 
 export interface GoalToolHost {
   snapshot(): TaskProgressSnapshot;
@@ -23,6 +23,21 @@ interface GoalOperationInput {
   observationId?:string; materialId?:string; purpose?:string;
   firstFragment?:string; lastFragment?:string; quote?:string; spans?:Array<{start:number;end:number}>;
   goalId?:string; tabId?:number; target?:string; elements?:{selector:string};
+}
+
+/** inspect 里直接附片段的上限：片段数与总字数都小才附，大页面仍用 read_observation。 */
+const INLINE_FRAGMENTS_MAX = 24;
+
+const INLINE_FRAGMENT_CHARS_MAX = 2000;
+
+function inlineFragments(observation: TaskObservation): Array<{ id: string; text: string }> | undefined {
+  const raw = observation.fragments;
+
+  if (!raw || raw.truncated || raw.fragments.length > INLINE_FRAGMENTS_MAX) return undefined;
+
+  if (raw.fragments.reduce((sum, fragment) => sum + fragment.text.length, 0) > INLINE_FRAGMENT_CHARS_MAX) return undefined;
+
+  return raw.fragments.map(fragment => ({ id: fragment.id, text: fragment.text }));
 }
 
 async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperationInput,cancel?:AbortSignal) {
@@ -49,7 +64,18 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
 
   assertCurrent();
 
-  if (input.action === 'inspect') return result({ requirements:requirements.map((text,i)=>({id:taskRequirementId(i),text})), plan: snapshot.goalPlan, ...host.evidence.list(runId, revision),fieldValues:fieldValues() },true);
+  if (input.action === 'inspect') {
+    const listed=host.evidence.list(runId, revision);
+
+    // 小观察直接附上片段编号与原文：capture 要的正是这些编号，免得再调一次 read_observation 或去猜。
+    const observations=listed.observations.map(observation=>{
+      const fragments=observation.historical?undefined:inlineFragments(host.evidence.read(observation.id,runId));
+
+      return fragments?{...observation,fragments}:observation;
+    });
+
+    return result({ requirements:requirements.map((text,i)=>({id:taskRequirementId(i),text})), plan: snapshot.goalPlan, ...listed, observations, fieldValues:fieldValues() },true);
+  }
 
   if (input.action === 'read_observation') return result(host.evidence.read(input.observationId ?? '', runId),true);
 
@@ -120,9 +146,16 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
     return result({...captured,fieldValues:fieldValues()},true);
   }
 
-  const goal = snapshot.goalPlan?.goals.find(g => g.id === input.goalId);
+  if (snapshot.goalPlan?.coverage !== 'verified') throw new Error('先用 plan 登记完整目标，再按目标标识核验');
+  const planned = snapshot.goalPlan.goals;
+  const known = planned.map(g => g.id).join('、');
+  // verify 按单个目标核验；只给了一个目标的 goals 数组时，它的 id 就是要核验的目标。
+  const goalId = input.goalId ?? (input.goals?.length === 1 ? input.goals[0]!.id : undefined);
 
-  if (!goal || snapshot.goalPlan?.coverage !== 'verified') throw new Error('先登记完整目标，再按目标标识核验');
+  if (!goalId) throw new Error(`verify 一次核验一个目标：传 goalId，可选 ${known}。不要传 goals 数组。`);
+  const goal = planned.find(g => g.id === goalId);
+
+  if (!goal) throw new Error(`没有目标 ${goalId}；goalId 可选 ${known}。`);
 
   if(goal.kind==='answer')return result({pending:true,reason:'直接写出回答即可；回答交付时这个目标自动完成。'});
   const material = host.evidence.list(runId, revision).materials.find(m => m.id === goal.materialId);
@@ -158,7 +191,7 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
 export function createTaskGoalsTool(getHost: () => GoalToolHost) {
   return defineTool({
     name: 'task_goals', label: '核对任务目标',
-    description: 'Track USER OUTCOMES separately from action receipts. Use this when a task copies page text into a field or document, or when a multi-step page task benefits from tracked outcomes; questions, chat and page reading do not need it. Call inspect, then plan with all requirements. An unplanned user-request is only a placeholder: replace it with concrete goals; do not retain it as an extra umbrella goal. Cover all constraints, including source acquisition and destination content for copying. Both material and field goals MUST have materialId; a copied field references the same materialId as its source. Use condition for user-provided/generated values and other page states. For an information-only question use one answer goal, with the question and restrictions as its criterion. Read host observations directly; do not invent a material capture requirement or materialId for an answer. An answer completes when your reply is delivered. Never substitute answer for a requested browser change or copied source. Do not create click/switch goals as intermediate steps. Plan is checked for coverage and fixed for this requirement revision: do not replace unmet goals with successful actions. To revise an already-fixed plan without a new user requirement (for example dropping an internal-only source that keeps failing), call plan again with a non-empty reason explaining the method change. Every existing condition/field/answer goal and any already-satisfied goal, including material, then carries over unchanged and cannot be removed or altered; only a still-pending material goal with no field referencing its materialId may be dropped or replaced; new goals may be added. Omitting reason, or touching a locked goal, is rejected before any model review. Inspect lists host-recorded observations and exact saved materials; read_observation retrieves source text. Use capture_page_material with REQUIRED observationId and a selection; it copies the inclusive first/last fragment range from observation.fragments, preserving original text and explicit line breaks. These IDs are immutable source labels, NEVER live click/fill targets. Prefer fragments over compact snapshot text, which may normalize or clip content. For raw read_element text only, ordered character spans are also supported (joined with newline); code copies exact text after independent source/completeness review. Materials survive task amendments. To reuse an earlier captured source, reference its materialId in the new source goal and verify that goal; the host checks the old source certificate against the new requirement before accepting it. Reuse saved material values verbatim in fill/browser_loop. verify reads a fresh target/page itself, independently checks the specific goal, and for fields requires exact material equality. For a condition goal only, optionally pass elements:{selector} to have the host itself freshly read every element currently matching that selector (text, visibility, position, computed style, bounded count) as evidence for an on-page annotation/highlight; never fabricate this evidence yourself, and the selector alone does not prove the goal. Marks drawn by the mark tool live in a private host layer that page selectors, read_elements and page JS cannot see; every condition verify automatically includes them as host-read marks, so after marking call verify directly instead of searching the DOM for them. It cannot resolve unknown writes or authorize retries. Never mark yourself done using action receipts. If evidence is insufficient, keep the goal pending and report partial with the actual missing requirement.',
+    description: 'Track USER OUTCOMES separately from action receipts. Use this when a task copies page text into a field or document, or when a multi-step page task benefits from tracked outcomes; questions, chat and page reading do not need it. Call inspect, then plan with all requirements. An unplanned user-request is only a placeholder: replace it with concrete goals; do not retain it as an extra umbrella goal. Cover all constraints, including source acquisition and destination content for copying. Both material and field goals MUST have materialId; a copied field references the same materialId as its source. Use condition for user-provided/generated values and other page states. For an information-only question use one answer goal, with the question and restrictions as its criterion. Read host observations directly; do not invent a material capture requirement or materialId for an answer. An answer completes when your reply is delivered. Never substitute answer for a requested browser change or copied source. Do not create click/switch goals as intermediate steps. Plan is checked for coverage and fixed for this requirement revision: do not replace unmet goals with successful actions. To revise an already-fixed plan without a new user requirement (for example dropping an internal-only source that keeps failing), call plan again with a non-empty reason explaining the method change. Every existing condition/field/answer goal and any already-satisfied goal, including material, then carries over unchanged and cannot be removed or altered; only a still-pending material goal with no field referencing its materialId may be dropped or replaced; new goals may be added. Omitting reason, or touching a locked goal, is rejected before any model review. Inspect lists host-recorded observations and exact saved materials; small observations include their fragments (id + text) inline, so capture directly from those ids; read_observation retrieves source text for larger ones. Use capture_page_material with REQUIRED observationId and a selection; it copies the inclusive first/last fragment range from observation.fragments, preserving original text and explicit line breaks. These IDs are immutable source labels, NEVER live click/fill targets. Prefer fragments over compact snapshot text, which may normalize or clip content. For raw read_element text only, ordered character spans are also supported (joined with newline); code copies exact text after independent source/completeness review. Materials survive task amendments. To reuse an earlier captured source, reference its materialId in the new source goal and verify that goal; the host checks the old source certificate against the new requirement before accepting it. Reuse saved material values verbatim in fill/browser_loop. verify checks ONE goal: pass goalId (not a goals array). It reads a fresh target/page itself, independently checks that goal, and for fields requires exact material equality. For a condition goal only, optionally pass elements:{selector} to have the host itself freshly read every element currently matching that selector (text, visibility, position, computed style, bounded count) as evidence for an on-page annotation/highlight; never fabricate this evidence yourself, and the selector alone does not prove the goal. Marks drawn by the mark tool live in a private host layer that page selectors, read_elements and page JS cannot see; every condition verify automatically includes them as host-read marks, so after marking call verify directly instead of searching the DOM for them. It cannot resolve unknown writes or authorize retries. Never mark yourself done using action receipts. If evidence is insufficient, keep the goal pending and report partial with the actual missing requirement.',
     parameters: Type.Object({
       action: Type.Union([Type.Literal('inspect'),Type.Literal('plan'),Type.Literal('read_observation'),Type.Literal('verify')]),
       goals: Type.Optional(Type.Array(Type.Object({ id: Type.String(), description: Type.String(), criterion: Type.String(), requirements: Type.Array(Type.String({description:"Copy requirement IDs from inspect.requirements, e.g. requirement-1. These refer to USER inputs, not goal numbers."})), kind: Type.Union([Type.Literal('material'), Type.Literal('field'), Type.Literal('condition'),Type.Literal('answer')]), materialId: Type.Optional(Type.String()), appendSourceUrl:Type.Optional(Type.Boolean({description:'Field goals only: set true when the user requests the source URL. Expected field value is exact material.value + newline + its observed source URL; no other additions.'})) }), { maxItems: 32 })),
