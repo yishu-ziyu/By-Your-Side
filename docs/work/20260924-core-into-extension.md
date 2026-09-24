@@ -16,6 +16,9 @@
 - [x] 4a 会话层接口：`agent/src/agent-loop.ts` 的 `AgentLoop`（按 TS 类型检查器统计的真实访问：AgentSession 16 个成员 + `agent.state.tools/messages`、`agent.waitForIdle`、`sessionManager.appendCustomEntry/getBranch`）。本机直接传 AgentSession，纯类型改动；session 相关 40 个测试文件 520 通过，2 个失败与改动前相同（repository-boundaries、task-recovery-matrix）
 - [x] 4b 工具调用身份显式传递：`tools.ts` 用 `makeCall(scope)` 绑定每次执行的身份，每次执行按需生成绑定身份的工具定义（定义内部无跨调用状态，已核对）。新测试 `agent/test/tool-execution-scope.test.ts`（交错的 download_delete；换成全局变量实现会变红，已做变异验证）。工具/会话相关 61 个文件 844 通过；失败 3 个：两个与改动前相同，browser-program 超时用例单独连跑 3 次都过（负载下计时不稳）。本机真实路径 point-then-mark 通过（首跑遇供应商 500 ×8 失败，改动前代码同时段通过，重跑通过）
 - [ ] 4c 浏览器版会话实现：pi-agent-core `Agent` + 钩子适配 + 自定义消息 + 条目存储 + 系统提示词重建
+  - [x] 4c-1 `ModelPort`：核心只用 ModelRuntime 的 completeSimple / getAvailable / getModel / streamSimple（TS 检查器统计；acceptance-model、cliproxy 属本机专用）。纯类型改动；`voice-model.ts` 已改用它（browser-material、goal-reasoning-review 经它取得运行时）。session.ts 的运行时字段在 4c-2 一并改
+  - [ ] 4c-2 循环创建可注入：`BrowserAgentSession.create` 的 createAgentSession 一步抽成 `createLoop`，本机默认不变；系统提示词拼装（systemPrompt + 模式附加 + 工具 promptSnippet/Guidelines）抽成共用函数；`resolveCliModel` 换成基于 ModelPort 的解析
+  - [ ] 4c-3 浏览器版 AgentLoop（pi-agent-core Agent + hooks 适配 + 自定义消息 + 条目 + 重试）；系统提示词逐字一致测试；浏览器循环跑本机入口契约 4/4
 - [ ] 4d 浏览器替身：同步 sha256、Buffer、`crypto.randomUUID`、`process.env` 不读；回执/队列内存存储；轨迹、记忆、技能、下载空实现
 - [ ] 4e 扩展改用同一核心：`inproc/main.ts` 启动 ConversationManager；语音调度走 `dispatchTaskAction`（修语音停止）；删除 `host.ts` 简化循环
 - [ ] 4f 真实路径 + 架构检查 + 文档（STATUS、handoff）

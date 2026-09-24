@@ -1,4 +1,4 @@
-import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
 /**
  * 会话层（session.ts）对底层 agent 循环的全部依赖，按实际访问的成员列出。
@@ -16,3 +16,9 @@ export interface AgentLoop extends Pick<
   };
   readonly sessionManager: Pick<SessionManager, "appendCustomEntry" | "getBranch">;
 }
+
+/**
+ * 任务核心对模型运行时的依赖（TS 检查器统计，2026-09-24）。本机实现是 pi-coding-agent 的 ModelRuntime；
+ * 扩展里用 pi-ai 的模型目录包一层。注册验收模型、cliproxy 这类本机专用能力不在这里。
+ */
+export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "getModel" | "streamSimple">;

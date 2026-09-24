@@ -1,5 +1,5 @@
 import {randomUUID} from "node:crypto";
-import type {ModelRuntime} from "@earendil-works/pi-coding-agent";
+import type {ModelPort} from "./agent-loop.js";
 import type {VoiceConversationContext} from "../../shared/voice.js";
 import {VoiceIntentError} from "./voice-errors.js";
 import {VOICE_FREE_REPLY_PROMPT, VOICE_PLAN_PROMPT, parseVoiceDecision, voiceDecisionClauses, type VoiceIntentPlan} from "./voice-intent.js";
@@ -11,8 +11,8 @@ import {VOICE_FREE_REPLY_PROMPT, VOICE_PLAN_PROMPT, parseVoiceDecision, voiceDec
  * 这里不回看会话、也不保存模型，模型切换后下一次调用拿到的一定是当前值。
  */
 export interface VoiceModelCall {
-  runtime: ModelRuntime;
-  model: Parameters<ModelRuntime["completeSimple"]>[0];
+  runtime: ModelPort;
+  model: Parameters<ModelPort["completeSimple"]>[0];
   /** 供 provider 侧稳定会话头使用的会话 ID。 */
   sessionId: string | undefined;
   /** 由调用方按当前 model/sessionId 算好的 provider headers。 */
@@ -89,7 +89,7 @@ async function runVoicePlan(
       console.error(`${diagnosePrefix} ${JSON.stringify(log)}`);
     };
 
-    let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+    let reply: Awaited<ReturnType<ModelPort["completeSimple"]>>;
 
     try {
       const conversationTitlesPiece = input.conversationTitles ? { conversationTitles: input.conversationTitles } : {};
@@ -265,7 +265,7 @@ async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput,
     console.error(`[voice-turn] ${JSON.stringify(log)}`);
   };
 
-  let reply: Awaited<ReturnType<ModelRuntime["completeSimple"]>>;
+  let reply: Awaited<ReturnType<ModelPort["completeSimple"]>>;
 
   try {
     reply = await call.runtime.completeSimple(call.model, {
