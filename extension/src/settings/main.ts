@@ -11,6 +11,8 @@ import {
   CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
+import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
+import { clearTraces, exportTraces } from "../shared/trace-store.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
 
 /** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
@@ -103,6 +105,15 @@ document.getElementById("settings")!.innerHTML = `
       </div>
     </div>
     <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="settings-card" aria-labelledby="trace-title">
+    <h2 id="trace-title">诊断记录</h2>
+    <p class="settings-sub">每次任务的步骤、耗时和页面文字留在这台电脑的浏览器里（密码、密钥已去掉），只保留最近 ${TRACE_SESSIONS_KEPT} 个会话，不会上传。排查问题时导出给开发者。</p>
+    <div class="settings-inline">
+      <button id="trace-export" type="button" class="settings-primary">导出</button>
+      <button id="trace-clear" type="button">清空</button>
+    </div>
+    <p id="trace-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
 `;
 
@@ -623,3 +634,35 @@ await reload();
 const initial = choices.find((c) => c.id === config?.provider);
 
 if (initial) select(initial);
+
+const traceStatus = document.getElementById("trace-status")!;
+
+document.getElementById("trace-export")!.addEventListener("click", async () => {
+  try {
+    const { text, sessions, lines } = await exportTraces();
+
+    if (!lines) {
+      traceStatus.textContent = "还没有记录。";
+
+      return;
+    }
+
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+    link.download = `by-your-side-traces-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.jsonl`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    traceStatus.textContent = `已导出 ${sessions} 个会话、${lines} 条记录。`;
+  } catch (error) {
+    traceStatus.textContent = `导出失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+});
+
+document.getElementById("trace-clear")!.addEventListener("click", async () => {
+  try {
+    await clearTraces();
+    traceStatus.textContent = "已清空。";
+  } catch (error) {
+    traceStatus.textContent = `清空失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+});

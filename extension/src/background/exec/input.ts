@@ -6,7 +6,7 @@ import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
 import { getWorkingTabId, maybeActivateTab, resolveWorkingTab } from "../state.js";
 import { resolveKey, type KeyInfo } from "../../shared/keymap.js";
-import { isAxRef } from "../axstate.js";
+import { axBackendNodeFor, isAxRef } from "../axstate.js";
 import { observedNodeRect } from "../observed-node-rect.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
@@ -787,7 +787,7 @@ async function nameOfClickTarget(
 
   if (!target) return "";
   const ref = parseRef(target);
-  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  const backendNodeId = axBackendNodeFor(tabId, ref);
 
   const read = `function() {
     const el = this;
@@ -822,7 +822,19 @@ async function nameOfClickTarget(
   }
 }
 
+/** 定位目标只读页面、不发任何输入：这里的任何失败都意味着操作没有执行。 */
 async function resolvePointerTarget(
+  tabId: number,
+  params: ClickParams,
+): Promise<{ point: [number, number]; targetRect?: DomRect }> {
+  try {
+    return await locatePointerTarget(tabId, params);
+  } catch (error) {
+    throw notExecuted(error);
+  }
+}
+
+async function locatePointerTarget(
   tabId: number,
   params: ClickParams,
 ): Promise<{ point: [number, number]; targetRect?: DomRect }> {
@@ -841,7 +853,7 @@ async function resolvePointerTarget(
     // target → 元素中心视口坐标与包围盒。@N 若来自 AX 快照（ref 即 backendDOMNodeId）走 CDP；
     // 否则（DOM 回退快照的 ref 或 CSS/loc 形式）或 debugger 被占用时走 domops 页面内解析。
     const ref = parseRef(target);
-    const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+    const backendNodeId = axBackendNodeFor(tabId, ref);
     let resolvedViaCdp = false;
 
     if (backendNodeId !== undefined) {
@@ -971,7 +983,7 @@ async function confirmPointerTarget(
   target: string,
 ): Promise<{ point: [number, number]; targetRect: DomRect }> {
   const ref = parseRef(target);
-  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  const backendNodeId = axBackendNodeFor(tabId, ref);
 
   if (backendNodeId !== undefined) {
     try {
@@ -1032,7 +1044,7 @@ async function confirmPointerTarget(
 /** 在即将按下的坐标确认仍是同一目标。不滚动，避免把命中检查做成另一次布局扰动。 */
 async function hitTestPointerTarget(tabId: number, target: string, x: number, y: number): Promise<void> {
   const ref = parseRef(target);
-  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  const backendNodeId = axBackendNodeFor(tabId, ref);
 
   if (backendNodeId !== undefined) {
     try {
@@ -1673,7 +1685,7 @@ export async function fill(
 
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
-  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  const backendNodeId = axBackendNodeFor(tabId, ref);
 
   if(params.expectedBackendNodeId!==undefined && backendNodeId!==params.expectedBackendNodeId) {
     throw notExecuted(new Error('原 AX 对象身份无法核对，填写未执行。'));
@@ -1819,7 +1831,7 @@ export async function selectOption(
   await maybeActivateTab(tab, sessionId);
 
   const ref = parseRef(params.target);
-  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  const backendNodeId = axBackendNodeFor(tabId, ref);
 
   if (params.expectedBackendNodeId !== undefined && backendNodeId !== params.expectedBackendNodeId) {
     throw notExecuted(new Error("原 AX 对象身份无法核对，选择未执行。"));
@@ -2581,7 +2593,7 @@ export async function mark(
 
   // 与 click 同样的解析策略：AX 快照 ref 走 CDP，其余走 domops 页面内解析
   const ref = parseRef(params.target);
-  const backendNodeId = ref !== null && isAxRef(tabId, ref) ? ref : undefined;
+  const backendNodeId = axBackendNodeFor(tabId, ref);
   let rect: DomRect | undefined;
 
   if (backendNodeId !== undefined) {

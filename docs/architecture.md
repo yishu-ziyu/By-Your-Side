@@ -2,7 +2,7 @@
 
 ## 扩展宿主边界（2026-09-24）
 
-无本机伴随进程时，background 仍负责页面执行、身份与权限闸门；offscreen 经公开的 `@sideagent/agent/browser-core` 入口装配 `ConversationManager`、`BrowserAgentSession`、`ToolRpc` 与 `VoiceService`。本机入口与扩展入口共用任务和回执逻辑，分别提供传输、模型凭据与语音 WebSocket。扩展先收到并载入配置，再建会话；当前页、任务 ID 和 `executionFact` 仍由协议传递，不由模型叙述补造。Jev 不可用时，目标审核改用当前任务模型对同一份要求和宿主观察做有界复核；未获得有效复核仍保持未完成。实际完成状态见[STATUS](STATUS.md)和[迁移工作流](work/20260924-core-into-extension.md)。
+无本机伴随进程时，background 仍负责页面执行、身份与权限闸门；offscreen 经公开的 `@sideagent/agent/browser-core` 入口装配 `ConversationManager`、`BrowserAgentSession`、`ToolRpc` 与 `VoiceService`。本机入口与扩展入口共用任务和回执逻辑，分别提供传输、模型凭据与语音 WebSocket。扩展先收到并载入配置，再建会话：配置到达前侧栏发来的新建会话先记下，核心启动后补处理；新会话按建立时的设置取模型。诊断记录与本机同一套行格式（`shared/run-trace-core.ts`），本机写文件、扩展写 IndexedDB。AX ref 按标签页登记：动作落到的标签页不是该 ref 的来源页时直接拒绝并指明来源 tabId，不再误报「ref 已失效」。当前页、任务 ID 和 `executionFact` 仍由协议传递，不由模型叙述补造。Jev 不可用时，目标审核改用当前任务模型对同一份要求和宿主观察做有界复核；未获得有效复核仍保持未完成。实际完成状态见[STATUS](STATUS.md)和[迁移工作流](work/20260924-core-into-extension.md)。
 
 下文是 2026-09-22 的主链路快照与简化提案，不能替代以上新入口的验收结论。
 

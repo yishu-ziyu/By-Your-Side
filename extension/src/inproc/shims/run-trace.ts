@@ -1,20 +1,11 @@
-/** 扩展内构建替换 agent/src/run-trace.ts：诊断记录写本机文件，扩展里不记（脱敏函数已拆到 trace-sanitize.ts，不受影响）。 */
-interface TraceStage { end: () => void }
+/** 扩展内构建替换 agent/src/run-trace.ts：行格式与本机相同（shared/run-trace-core.ts），写进扩展的 IndexedDB。 */
+import { TraceRecorder } from "../../../../shared/run-trace-core.js";
+import { createTraceSink } from "../../shared/trace-store.js";
 
-export class RunTrace {
-  begin(): void {}
+export { sanitizeTrace } from "../../../../shared/trace-sanitize.js";
 
-  correlate(): void {}
-
-  stage(): TraceStage {
-    return { end: () => {} };
-  }
-
-  event(): void {}
-
-  record(): void {}
-
-  flush(): Promise<void> {
-    return Promise.resolve();
+export class RunTrace extends TraceRecorder {
+  constructor() {
+    super(createTraceSink);
   }
 }

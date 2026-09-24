@@ -287,6 +287,21 @@ export async function watchInproc(rp: { cdp: ReturnType<typeof createCdp>; targe
     entry.failed = p.errorText;
   });
 
+  // service worker 重启会清掉它内存里的状态（如 AX ref 登记表）：记下扩展后台的起停。
+  const workerUrl = `chrome-extension://${extensionId}/background.js`;
+  const workers = new Set<string>();
+
+  rp.cdp.onEvent("Target.targetCreated", (message: { params: { targetInfo: TargetInfo } }) => {
+    if (message.params.targetInfo.url !== workerUrl) return;
+    workers.add(message.params.targetInfo.targetId);
+    logs.push(`${now()}\tworker\tcreated ${message.params.targetInfo.targetId}`);
+  });
+
+  // targetDestroyed 只带 targetId：只记之前见过的后台 worker。
+  rp.cdp.onEvent("Target.targetDestroyed", (message: { params: { targetId: string } }) => {
+    if (workers.delete(message.params.targetId)) logs.push(`${now()}\tworker\tdestroyed ${message.params.targetId}`);
+  });
+  await rp.cdp.send("Target.setDiscoverTargets", { discover: true });
   await rp.cdp.send("Runtime.enable", {}, session);
   await rp.cdp.send("Network.enable", {}, session);
 

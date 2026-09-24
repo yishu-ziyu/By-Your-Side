@@ -94,6 +94,44 @@ describe("click & mark robustness", () => {
     expect(fact).toBe("not_executed");
   });
 
+  it("click 定位失败时鼠标还没按下：记为未执行，不能变成结果未知而暂停后续写入", async () => {
+    installChrome({ domError: "ref @1572 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。" });
+    const { click } = await import("../src/background/exec/input.js");
+
+    let fact: string | null = null;
+
+    try {
+      await click({ target: "@1572", label: "聚焦草稿框" });
+    } catch (error) {
+      if (error instanceof Error && "executionFact" in error) fact = String(error.executionFact);
+    }
+
+    expect(fact).toBe("not_executed");
+  });
+
+  it("ref 来自另一个标签页的快照：点明是哪个标签页，不说「已失效」，也不去工作标签页里找", async () => {
+    // 工作标签页是 101（tabs.query 返回）；快照读的是明确指定的 202。
+    const executeScript = installChrome({ domError: "ref @1572 已失效，操作未执行。请重新 snapshot，在当前页面确认目标并使用新的 ref；不要继续重试旧 ref。" });
+    const { recordAxSnapshot } = await import("../src/background/axstate.js");
+    const { click } = await import("../src/background/exec/input.js");
+    recordAxSnapshot(202, [1572]);
+    const domCallsBefore = executeScript.mock.calls.length;
+
+    let caught: (Error & { executionFact?: string }) | null = null;
+
+    try {
+      await click({ target: "@1572", label: "聚焦草稿框" });
+    } catch (error) {
+      if (error instanceof Error) caught = error;
+    }
+
+    expect(caught?.message).toMatch(/标签页 202/);
+    expect(caught?.message).toMatch(/tabId=202/);
+    expect(caught?.message).not.toMatch(/已失效/);
+    expect(caught?.executionFact).toBe("not_executed");
+    expect(executeScript.mock.calls.slice(domCallsBefore).some(([details]) => details.args?.[0] === "@1572")).toBe(false);
+  });
+
   it("mark 未带 actions 但 label 为「待归档」时自动注入隐式 actions", async () => {
     const executeScript = installChrome({ domRect: { x: 150, y: 250, width: 90, height: 36 } });
     const { mark } = await import("../src/background/exec/input.js");

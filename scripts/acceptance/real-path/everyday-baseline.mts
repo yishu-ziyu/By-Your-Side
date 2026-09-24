@@ -10,11 +10,13 @@
  * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
  * 以及该条的结果判据（答案内容、页面圈画、新标签页、草稿框原文且未保存）。练习页全在本机，不碰真实账号。
  */
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
+import { Type, type Static } from "typebox";
+import { Check } from "typebox/value";
 import { REPO, attachDailyChrome, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
-import { configureViaSettings, loadModelPlan } from "./inproc-config.mts";
+import { configureViaSettings, loadModelPlan, type ModelPlan } from "./inproc-config.mts";
 
 const daily = process.argv.includes("--daily");
 
@@ -106,6 +108,67 @@ const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split("
 
 const selected = only ? CASES.filter((c) => only.includes(c.id)) : CASES;
 
+/** 导出文件的一行必须带本机记录的公共字段（time、sessionId、type、整数 turn）；data.text 可缺省。 */
+const TraceLineSchema = Type.Object({
+  time: Type.String(), sessionId: Type.String(), type: Type.String(), turn: Type.Integer(),
+  data: Type.Optional(Type.Object({ text: Type.Optional(Type.String()) })),
+});
+
+type TraceLine = Static<typeof TraceLineSchema>;
+
+/** 解析失败或缺字段返回 null，由调用方计为缺字段。 */
+function parseTraceLine(raw: string): TraceLine | null {
+  try {
+    const value = JSON.parse(raw);
+
+    return Check(TraceLineSchema, value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 用户路径：设置页点「导出」拿到 jsonl，再点「清空」。判据独立于产品实现：直接读下载下来的文件。
+ * 可能的失败：扩展没写记录；漏会话；行缺字段；密钥进了记录；清空不彻底。
+ */
+async function checkTraceExport(modelPlan: ModelPlan) {
+  const downloads = join(artifacts, "downloads");
+  await mkdir(downloads, { recursive: true });
+  await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+  const { targetId } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` });
+  const settings = await rp.attach(targetId);
+  const status = async () => String(await rp.evaluate(settings, `document.querySelector("#trace-status")?.textContent ?? ""`));
+  await until(async () => (await rp.evaluate(settings, `!!document.querySelector("#trace-export")`)) || undefined, 15_000, "设置页诊断记录区");
+  await rp.evaluate(settings, `document.querySelector("#trace-export").scrollIntoView({ block: "center" }); true`);
+  await rp.click(settings, "#trace-export");
+
+  const exportStatus = await until(async () => { const text = await status();
+
+    return text.startsWith("已导出") || text.includes("失败") || text.startsWith("还没有") ? text : undefined; }, 15_000, "导出结果");
+
+  const file = await until(async () => (await readdir(downloads)).find((name) => name.endsWith(".jsonl")), 15_000, "导出文件落地").catch(() => null);
+  const text = file ? await readFile(join(downloads, file), "utf8") : "";
+  const lines = text.split("\n").filter(Boolean).map(parseTraceLine);
+  const starts = lines.filter((line) => line?.type === "run_start").map((line) => line?.data?.text ?? "");
+  const missing = selected.filter((item) => !starts.some((started) => started.includes(item.prompt))).map((item) => item.id);
+  const malformed = lines.filter((line) => !line).length;
+  const key = String(modelPlan.credential.key ?? "");
+  const leaked = key.length > 8 && text.includes(key);
+  await rp.click(settings, "#trace-clear");
+  await until(async () => (await status()) === "已清空。" || undefined, 10_000, "清空");
+  await rp.click(settings, "#trace-export");
+
+  const clearedStatus = await until(async () => { const t = await status();
+
+    return t !== "已清空。" ? t : undefined; }, 10_000, "清空后导出");
+
+  await rp.cdp.send("Target.closeTarget", { targetId });
+  const sessions = new Set(lines.map((line) => line?.sessionId)).size;
+  const reason = !file ? `没有导出文件（${exportStatus}）` : missing.length ? `缺少这些用例的记录：${missing.join(", ")}` : malformed ? `${malformed} 行缺字段或不是 JSON` : leaked ? "导出里出现了 API key" : !clearedStatus.startsWith("还没有") ? `清空后导出仍有内容：${clearedStatus}` : null;
+
+  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus };
+}
+
 /** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
 const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn" } satisfies Record<string, string>;
 
@@ -165,6 +228,11 @@ const rp = daily ? await attachDailyChrome() : await launchRealPath({ withoutNat
 
 let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 
+let plan: ModelPlan | null = null;
+
+/** 只在 --inproc：设置页导出的诊断记录是否覆盖每条用例、不含密钥、清空后为空。 */
+let traceCheck: { outcome: "pass" | "fail"; reason: string | null; sessions: number; lines: number; missing: string[]; exportStatus: string; clearedStatus: string } | null = null;
+
 try {
   const blank = "workTargetId" in rp ? { targetId: rp.workTargetId } : await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
   const work = await rp.attach(blank.targetId);
@@ -181,7 +249,8 @@ try {
 
   if (inprocModel) {
     inproc = await watchInproc(rp, rp.extensionId);
-    const run = await configureViaSettings(rp, panel, await loadModelPlan(inprocModel));
+    plan = await loadModelPlan(inprocModel);
+    const run = await configureViaSettings(rp, panel, plan);
 
     if (!run.testStatus.startsWith("连接正常")) throw new Error(`设置页测试连接失败：${run.testStatus}`);
     await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
@@ -212,6 +281,8 @@ try {
   for (const item of selected) {
     saveRequests = 0;
     await rp.cdp.send("Page.navigate", { url: `${origin}${item.path}` }, work);
+    // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
+    await rp.cdp.send("Page.bringToFront", {}, work);
     await sleep(1500);
     await rp.click(panel, "#conversation-new");
     await until(async () => {
@@ -310,6 +381,8 @@ try {
     const calls = modelCalls ? `\tcalls=${modelCalls.length} ttfb=${modelCalls.map((c) => (c.firstByteMs === null ? "-" : c.firstByteMs - c.startMs)).join(",")}` : "";
     console.log(`${item.id}\t${finalReason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms\tnoise=${noiseCount}${calls}\t${finalReason ?? ""}`);
   }
+
+  if (inprocModel && plan) traceCheck = await checkTraceExport(plan);
 } finally {
   await writeFile(join(artifacts, "hostlog.txt"), inproc ? inproc.logs() : await rp.hostLog()).catch(() => {});
 
@@ -321,10 +394,12 @@ try {
 
 const summary = {
   case: "everyday-baseline", startedAt: startedAt.toISOString(), model: process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? (inprocModel ?? (daily ? "daily extension settings" : "daily config")), browser: daily ? "daily Chrome" : inprocModel ? "isolated headless, extension only" : "isolated headless",
-  passed: results.filter((r) => r.outcome === "pass").length, total: results.length, results,
+  passed: results.filter((r) => r.outcome === "pass").length, total: results.length, results, traceCheck,
 };
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify(summary, null, 2));
+
+if (traceCheck) console.log(`traces\t${traceCheck.outcome}\tsessions=${traceCheck.sessions} lines=${traceCheck.lines}\t${traceCheck.reason ?? traceCheck.exportStatus}`);
 
 console.log(`\n${summary.passed}/${summary.total} pass · ${artifacts}`);
 

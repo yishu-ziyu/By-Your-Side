@@ -28,6 +28,25 @@ export function isAxRef(tabId: number, ref: number): boolean {
 }
 
 /**
+ * 执行动作前取 AX ref 的 backendDOMNodeId：属于当前标签页就返回它，DOM 快照的 ref 或非 ref 返回 undefined（走 domops）。
+ * ref 不在当前标签页、却是另一个标签页 AX 快照里的 ref 时直接拒绝：动作没带 tabId 落到了工作标签页，
+ * 若照旧走 domops 只会报「ref 已失效」，模型重新 snapshot 拿到的还是同一个 ref，陷入循环。
+ */
+export function axBackendNodeFor(tabId: number, ref: number | null): number | undefined {
+  if (ref === null) return undefined;
+
+  if (isAxRef(tabId, ref)) return ref;
+
+  if (latestKind.get(tabId) === "dom") return undefined;
+  const owner = [...byTab].find(([otherTab, refs]) => otherTab !== tabId && refs.has(ref))?.[0];
+
+  if (owner === undefined) return undefined;
+  const error = new Error(`ref @${ref} 来自标签页 ${owner} 的快照，这次操作落在标签页 ${tabId}，未执行。请带 tabId=${owner} 重试；ref 本身仍有效，不必重新 snapshot。`);
+
+  throw Object.assign(error, { executionFact: "not_executed" as const });
+}
+
+/**
  * DOM 回退/视口快照后调用：旧 AX ref 不再适用，必须作废。
  * DOM 快照的 ref 是自增小编号，与 backendDOMNodeId 同处一个数字空间；
  * 不清表会导致 click/fill 经 isAxRef 误判、把 DOM ref 当旧 AX ref 走 CDP。
