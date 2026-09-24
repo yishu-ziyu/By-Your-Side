@@ -195,8 +195,7 @@ interface SideAgentNamespace {
     isGrow: boolean;
     isBoil: boolean;
     isSketch: boolean;
-    hasEllipse: boolean;
-    hasArrow: boolean;
+    hasFrame: boolean;
     boilFrameCount: number;
     labelText: string;
   }>;

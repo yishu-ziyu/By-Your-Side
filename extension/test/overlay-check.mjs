@@ -785,7 +785,7 @@ if (!sketchGrowInfo || !sketchGrowInfo.isSketch || !sketchGrowInfo.isGrow) {
   fail(`手绘 mark.sketch.grow 元素未渲染: ${JSON.stringify(sketchGrowInfo)}`);
 }
 
-if (!sketchGrowInfo.hasSvg || !sketchGrowInfo.hasEllipse || !sketchGrowInfo.hasArrow) {
+if (!sketchGrowInfo.hasSvg || !sketchGrowInfo.hasFrame) {
   fail(`手绘 SVG 路径缺失: ${JSON.stringify(sketchGrowInfo)}`);
 }
 

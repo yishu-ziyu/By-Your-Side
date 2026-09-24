@@ -54,7 +54,7 @@ import {
   sweepStaleOverlayHosts,
   viewportRectToDocumentBox,
 } from "../shared/overlay.js";
-import { roughArrow, roughEllipse } from "../shared/rough/index.js";
+import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type FeedbackPillView } from "../shared/feedback-pill.js";
 
 (function () {
@@ -1078,47 +1078,31 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
     const seed = opts.seed ?? (Math.floor(Math.random() * 1000000) + 1);
 
-    if (isSketch) {
-      const cx = box.width / 2;
-      const cy = box.height / 2;
-      const rx = box.width / 2 + 8;
-      const ry = box.height / 2 + 6;
+    // 目标在外框里的位置：box 四周各留了 pad。
+    const targetBox = { x: pad, y: pad, w: rect.width, h: rect.height };
+    let frame = targetBox;
 
-      const arrowX1 = cx - rx - 36;
-      const arrowY1 = cy - ry - 14;
-      const arrowX2 = cx - rx + 3;
-      const arrowY2 = cy - 4;
+    if (isSketch) {
+      const svg = svgEl("svg", { class: motion === "boil" ? "sketch-svg" : "sketch-svg anim-stroke-grow", style: "left:0;top:0;width:100%;height:100%;" });
 
       if (motion === "boil") {
-        const frames = [0, 1, 2].map((i) => {
-          const o = { seed, roughness: 1.1, boil: 0.45, boilSeed: seed + (i + 1) * 7919 };
-          const e = roughEllipse(cx, cy, rx, ry, o);
-          const a = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { ...o, seed: seed + 7 });
-
-          return `${e} ${a}`;
+        [0, 1, 2].forEach((i) => {
+          const outline = sketchFrame(targetBox, { seed, roughness: 0.9, boil: 0.45, boilSeed: seed + (i + 1) * 7919 });
+          frame = outline.frame;
+          svg.appendChild(svgEl("path", { class: `boil-path sketch-frame-path frame-${i}`, "data-i": i, d: outline.d }));
         });
-
-        const svg = svgEl("svg", { class: "sketch-svg", style: "left:0;top:0;width:100%;height:100%;" });
-        frames.forEach((f, i) => svg.appendChild(svgEl("path", { class: `boil-path frame-${i}`, "data-i": i, d: f })));
-        el.replaceChildren(svg);
-
-        if (label) {
-          const markLabel = document.createElement("div");
-          markLabel.className = "mark-label sketch-label";
-          el.appendChild(markLabel);
-        }
       } else {
-        const ellipsePath = roughEllipse(cx, cy, rx, ry, { seed, roughness: 1.1 });
-        const arrowPath = roughArrow(arrowX1, arrowY1, arrowX2, arrowY2, { seed: seed + 7, roughness: 1.0 });
-        const svg = svgEl("svg", { class: "sketch-svg anim-stroke-grow", style: "left:0;top:0;width:100%;height:100%;" });
-        svg.append(svgEl("path", { class: "rough-ellipse-path", d: ellipsePath }), svgEl("path", { class: "sketch-arrow-path", d: arrowPath }));
-        el.replaceChildren(svg);
+        const outline = sketchFrame(targetBox, { seed, roughness: 0.9 });
+        frame = outline.frame;
+        svg.appendChild(svgEl("path", { class: "sketch-frame-path", d: outline.d }));
+      }
 
-        if (label) {
-          const markLabel = document.createElement("div");
-          markLabel.className = "mark-label sketch-label";
-          el.appendChild(markLabel);
-        }
+      el.replaceChildren(svg);
+
+      if (label) {
+        const markLabel = document.createElement("div");
+        markLabel.className = "mark-label sketch-label";
+        el.appendChild(markLabel);
       }
     } else {
       const svg = svgEl("svg", { class: "mark-arrow", width: 24, height: 24, viewBox: "0 0 24 24", fill: "none" });
@@ -1137,14 +1121,12 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       labelEl.textContent = label;
 
       if (isSketch) {
-        const cx = box.width / 2;
-        const cy = box.height / 2;
-        const rx = box.width / 2 + 8;
-        const ry = box.height / 2 + 6;
-        const arrowX1 = cx - rx - 36;
-        const arrowY1 = cy - ry - 14;
-        labelEl.style.left = `${arrowX1 - 70}px`;
-        labelEl.style.top = `${arrowY1 - 16}px`;
+        // 名牌放框外右侧、不压文字；右边放不下才退到框外左上，并留在可见区域内。
+        const labelWidth = label.length * 12 + 22;
+        const roomRight = window.scrollX + window.innerWidth - (box.x + frame.x + frame.w) - 4;
+        const at = sketchLabelPosition(frame, labelWidth, roomRight, window.scrollX + 4 - box.x);
+        labelEl.style.left = `${at.left}px`;
+        labelEl.style.top = `${at.top}px`;
       }
     }
 
@@ -2096,8 +2078,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     liveMarks.map((m) => {
       const svg = m.el.querySelector("svg.sketch-svg");
       const boilPaths = svg ? [...svg.querySelectorAll(".boil-path")] : [];
-      const ellipsePath = svg?.querySelector(".rough-ellipse-path");
-      const arrowPath = svg?.querySelector(".sketch-arrow-path");
+      const framePath = svg?.querySelector(".sketch-frame-path");
       const labelEl = m.el.querySelector(".sketch-label") ?? m.el.querySelector(".mark-label");
 
       return {
@@ -2106,8 +2087,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         isGrow: m.el.classList.contains("grow"),
         isBoil: m.el.classList.contains("boil"),
         isSketch: m.el.classList.contains("sketch"),
-        hasEllipse: Boolean(ellipsePath),
-        hasArrow: Boolean(arrowPath),
+        hasFrame: Boolean(framePath),
         boilFrameCount: boilPaths.length,
         labelText: labelEl?.textContent ?? "",
       };
