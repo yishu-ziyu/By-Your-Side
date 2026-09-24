@@ -1,5 +1,5 @@
 /** 文末操作只在回答落定时添加，复制文本不包含按钮文案。 */
-export function attachAnswerActions(answer: HTMLElement, composer: HTMLTextAreaElement): void {
+export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector('.answer-actions') || !answer.textContent?.trim()) return;
   const text = answer.innerText;
   const actions = document.createElement('div');
@@ -23,10 +23,6 @@ export function attachAnswerActions(answer: HTMLElement, composer: HTMLTextAreaE
     }
   };
 
-  const followup = document.createElement('button');
-  followup.type = 'button';
-  followup.textContent = '继续追问';
-  followup.onclick = () => composer.focus();
-  actions.append(copy, followup, feedback);
+  actions.append(copy, feedback);
   answer.append(actions);
 }

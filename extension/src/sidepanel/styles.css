@@ -2552,12 +2552,18 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 14px;
-  margin-top: 13px;
-  padding-top: 10px;
-  border-top: 1px solid var(--content-border);
+  margin-top: 8px;
   font: 12px/1.5 var(--font);
   color: var(--text-secondary);
+  /* 回答以外默认不出现：悬停、键盘聚焦或刚复制时才显示。 */
+  opacity: 0;
+  transition: opacity .15s ease;
 }
+.msg:hover .answer-actions,
+.answer-actions:focus-within,
+.answer-actions:has(.answer-action-feedback:not(:empty)) { opacity: 1; }
+@media (hover: none) { .answer-actions { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .answer-actions { transition: none; } }
 .answer-actions button {
   border: 0;
   border-radius: 3px;
@@ -2966,11 +2972,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 #composer-menu button { background:none; border:0; color:inherit; font:12px/1.6 var(--font); text-align:left; padding:7px; width:100%; cursor:pointer; }
 #composer-menu button:hover { background:var(--content-subtle); }
 .voice-record[hidden] { display:none; }
-.receipt-archive { color:var(--text-secondary); font-size:12px; }
-.receipt-archive > summary { cursor:pointer; }
-.receipt-run { padding:8px 0; border-bottom:1px solid var(--content-border); }
-.receipt-run:last-child { border:0; }
-.receipt-run .receipt { margin:5px 0; }
 .receipt-decision { font:12px/1.6 var(--font); padding:8px 0; }
 .receipt-decision strong { font-weight:550; font-size:13px; }
 .receipt-decision p { color:var(--text-secondary); margin:4px 0 10px; }

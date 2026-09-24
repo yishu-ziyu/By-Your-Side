@@ -276,14 +276,17 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     : null;
 
   const controlNote = controlCopy(control, view?.state ?? null, now);
+  // 已结束(idle/aborted/error)的任务不在顶部留痕：结论在回答里，要用户处理的事由接续入口负责。
+  const isOngoing = !!view && (view.state === "running" || view.state === "paused" || view.state === "interrupted");
 
   // ── 材料区：已确认送入的任务材料 + 这一条还没确认接收的材料；草稿只在没有前两者时出现 ──
   let materials: TaskBarModel["materials"] = null;
   const pendingEntry = unresolved.length ? unresolved[unresolved.length - 1]! : null;
-  const confirmedRows = taskMaterials ? taskRows(taskMaterials, view?.page ? page?.label ?? null : null) : [];
+  const liveTaskMaterials = isOngoing ? taskMaterials : null;
+  const confirmedRows = liveTaskMaterials ? taskRows(liveTaskMaterials, view?.page ? page?.label ?? null : null) : [];
   const pendingRows = pendingEntry ? sentRows(pendingEntry) : [];
 
-  if (taskMaterials || pendingEntry || confirmedRows.length || pendingRows.length) {
+  if (liveTaskMaterials || pendingEntry || confirmedRows.length || pendingRows.length) {
     const rows = [...confirmedRows, ...pendingRows];
     // 普通发送的页面材料要等页面快照回来才认识；这段时间也必须先有「发送中」，
     // 不能因为还没行就整块不显示（本地反馈不能靠异步查页面来决定有没有）。
@@ -311,9 +314,8 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     materials = { rows: [], head: "材料", status: `未接收：${clip(failedSend.note ?? "", 40)}`, note: null };
   }
 
-  // ── 可见性：没有任何可说的事就整条隐藏；已结束(idle)的任务不再在顶部常驻 ──
-  const isOngoing = !!view && view.state !== "none" && view.state !== "idle";
-  const hasViewStory = isOngoing && (!!view.goal || view.state === "running" || view.state === "paused" || view.state === "interrupted");
+  // ── 可见性：没有任何可说的事就整条隐藏；已结束的任务不再在顶部常驻 ──
+  const hasViewStory = isOngoing;
   const visible = !!materials || hasViewStory || !!controlNote;
 
   if (!visible) {

@@ -86,7 +86,8 @@ export function buildDeliveryFactView(facts: UserDeliveryFacts | undefined | nul
   }
 
   const done = delivered.length ? `已完成 ${deliveredTotal} 项：${delivered.join("、")}${deliveredTotal > delivered.length ? "…" : ""}` : "";
-  const visible = facts.outcome !== "complete" || remaining.length > 0 || sources.length > 0 || delivered.length > 0;
+  // 只有没做完才需要用户注意；完成、未核验、来源、已完成清单都是内部记录，不附在回答后面。
+  const visible = facts.outcome === "partial" || remaining.length > 0;
 
   return { visible, tone, headline, done, remaining, remainingTotal, delivered, sources };
 }

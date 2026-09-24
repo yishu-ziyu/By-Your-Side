@@ -9,7 +9,7 @@
  * - 作用页面来自任务绑定的 recoveryInput.page，不跟随当前选中 tab。
  */
 import { USER_DELIVERY_KINDS, type TaskProgressSnapshot, type UserDeliveryKind } from "./voice.js";
-import { TASK_NEXT_REASONS, type TaskNextStep } from "./task-next-step.js";
+import { nextStepIgnoringPlaceholder, TASK_NEXT_REASONS, type TaskNextStep } from "./task-next-step.js";
 import { isSupersededUnknown, TASK_RESULT_ITEM_STATUSES, type TaskResultItemStatus } from "./task-results.js";
 import { isTaskMaterials, type TaskMaterialReference } from './task-recovery.js';
 
@@ -89,7 +89,8 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
 export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const requirements = snapshot.recoveryInput?.requirements ?? [];
   const executionResults = snapshot.results ?? [];
-  const rawResults = snapshot.goalPlan ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
+  // 未列计划时的占位目标不是用户目标清单：只看执行记录，占位目标不算未完成项（与 nextStepIgnoringPlaceholder 同口径）。
+  const rawResults = snapshot.goalPlan?.coverage === 'verified' ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
   const results = rawResults.map((item) => ({ id: item.id, description: item.description, status: item.status }));
   const outstanding=results.filter((item,i)=>OPEN_STATUSES.has(item.status)&&!('tool' in rawResults[i]!&&isSupersededUnknown(rawResults[i] as import('./task-results.js').TaskResultItem,executionResults)));
 
@@ -109,7 +110,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
     outstanding,
     latestDelivery: snapshot.conversationContext?.latestDelivery ? { kind: snapshot.conversationContext.latestDelivery.kind } : null,
-    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && (snapshot.nextStep?.delivery === "partial"||outstanding.length>0))) && !!snapshot.recoveryInput,
+    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && ((snapshot.nextStep ? nextStepIgnoringPlaceholder(snapshot).delivery : undefined) === "partial"||outstanding.length>0))) && !!snapshot.recoveryInput,
   };
 
   const materials = snapshot.recoveryInput?.materials;

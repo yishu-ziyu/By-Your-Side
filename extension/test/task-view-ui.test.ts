@@ -357,6 +357,7 @@ describe("A03-01 本地反馈：没有 accepted 证据不写已接收", () => {
 
   it("回执 accepted 才升级为「已随任务送入」，并带上 run", () => {
     const { bar, text } = mount();
+    bar.updateView(view());
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
     bar.noteReceipt(receipt());
     expect(text()).toContain("已随任务送入");
@@ -441,6 +442,7 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
 
   it("被移除的材料不会再出现在送给任务的材料里", () => {
     const { bar, text } = mount();
+    bar.updateView(view({ page: null }));
     // 用户移除了附件 att-2：发送时快照里就没有它
     bar.setDraft({
       page: { tabId: 7, title: "报名表", url: "https://forms.example/edit" },
@@ -463,6 +465,7 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
 
   it("运行中补发的插话和原任务材料并排展示，且标明还有多少项在等回执", () => {
     const { bar, text } = mount();
+    bar.updateView(view());
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
     bar.noteReceipt(receipt({ requestId: "req-1" }));
     bar.noteRequestSent({ requestId: "req-2", action: "steer", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit", selection: { text: "电话列也补上" } }, attachments: [] });
@@ -474,9 +477,20 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
 
   it("运行中材料不给移除按钮（改材料必须走输入框插话）", () => {
     const { bar, element } = mount();
+    bar.updateView(view());
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit", selection: { text: "只保留前三行" } }, attachments: [{ id: "att-1", name: "截图.png" } as never] });
     bar.noteReceipt(receipt({ requestId: "req-1" }));
     expect(element().querySelectorAll(".tb-remove")).toHaveLength(0);
+  });
+
+  it("任务结束后顶部不留任务条：结论在回答里，已送入的材料不再常驻", () => {
+    const { bar } = mount();
+    bar.updateView(view());
+    bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
+    bar.noteReceipt(receipt({ requestId: "req-1" }));
+    expect(bar.getModel()?.visible).toBe(true);
+    bar.updateView(view({ state: "idle", outstanding: [{ id: "r1", description: "填写邮箱", status: "pending" }], resumable: true }));
+    expect(bar.getModel()?.visible).toBe(false);
   });
 });
 

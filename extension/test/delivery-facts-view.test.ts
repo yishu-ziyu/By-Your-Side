@@ -127,9 +127,16 @@ function flatten(root: MockEl | null, out: MockEl[] = []): MockEl[] {
 beforeEach(() => vi.unstubAllGlobals());
 
 describe("交付事实链 DOM", () => {
+  it("完成或未核验的回答不附页脚：来源和已完成清单不打扰普通回合", () => {
+    installDom();
+    expect(renderDeliveryFacts(delivery({ facts: facts() }))).toBeNull();
+    expect(renderDeliveryFacts(delivery({ facts: facts({ outcome: "unverified" }) }))).toBeNull();
+    expect(renderDeliveryFacts(delivery({ facts: facts({ outcome: "partial", remaining: [{ id: "r-1", description: "预约页被登录墙挡住", status: "blocked" }] }) }))).not.toBeNull();
+  });
+
   it("来源链接指向宿主记录的真实地址并新开标签页", () => {
     installDom();
-    const root = renderDeliveryFacts(delivery({ facts: facts({ sources: [{ url: "https://fixture.test/offer/a", title: "方案 A" }] }) })) as unknown as MockEl | null;
+    const root = renderDeliveryFacts(delivery({ facts: facts({ outcome: "partial", sources: [{ url: "https://fixture.test/offer/a", title: "方案 A" }] }) })) as unknown as MockEl | null;
     const links = flatten(root).filter((node) => node.tagName === "A");
     expect(links).toHaveLength(1);
     expect(links[0]).toMatchObject({ href: "https://fixture.test/offer/a", textContent: "方案 A", target: "_blank", rel: "noopener noreferrer" });

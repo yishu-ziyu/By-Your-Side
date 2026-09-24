@@ -297,8 +297,8 @@ describe("outstanding 与 nextStep 同口径（review 修复）", () => {
     };
 
     const view = projectTaskView(withSuperseded);
-    expect(view.results.map((r) => r.id)).toEqual(["user-request"]); // 已取代的执行未知不污染用户目标
-    expect(view.outstanding.map((r) => r.id)).toEqual(["user-request"]); // 原始用户要求仍未核验
+    expect(view.results.map((r) => r.id)).toEqual(["r1", "r2"]); // 未列计划：只看执行记录，占位目标不算用户目标
+    expect(view.outstanding.map((r) => r.id)).toEqual([]); // 已取代的执行未知不再算未完成
   });
   it("未被取代的 unknown 仍列入未完成项", () => {
     const h = startedRun();
@@ -308,6 +308,6 @@ describe("outstanding 与 nextStep 同口径（review 修复）", () => {
       results: [{ id: "r1", description: "写入备注", tool: "fill", target: null, status: "unknown", evidence: null }] as never,
     };
 
-    expect(projectTaskView(snap).outstanding.map((r) => r.id)).toEqual(["user-request", "r1"]);
+    expect(projectTaskView(snap).outstanding.map((r) => r.id)).toEqual(["r1"]);
   });
 });

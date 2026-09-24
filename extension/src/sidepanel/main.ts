@@ -63,7 +63,7 @@ import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../sha
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
-import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
+import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
 import { TaskBar } from "./task-bar.js";
 import { ResumeEntry } from "./resume-entry.js";
@@ -2180,6 +2180,8 @@ interface RunHost {
   /** 当前 chip 分组；思考块插入后另起一组。 */
   chipGroup: ChipGroup | null;
   workers: Map<string, WorkerLane>;
+  /** 这一轮动过页面（标注、开标签、填写等）；只读回合结束后不留过程行。 */
+  changedPage: boolean;
 }
 
 /** 当前 run；run 外为 null。 */
@@ -2521,6 +2523,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
     orbMark,
     collaboration: new CollaborationProgress(),
     collaborationEl,
+    changedPage: false,
   };
 
   if (!applyingHistory) companion.onStepStart(root);
@@ -2855,10 +2858,14 @@ function finishRun(): void {
   lastRun = run;
   // 耗时读数 interval 立即停掉：run 完成/中断/空 run 都不留泄漏
   clearInterval(run.timer);
-  // 空 run（纯文本回复，无思考/工具步骤）不留壳：状态行之外没有别的内容就整块撤掉
+  // 空 run（纯文本回复，无思考/工具步骤）不留壳；只读回合（问答、读页）正常结束也不留过程行，
+  // 用户看回答和页面本身即可。动过页面、失败或被停止时才保留「查看执行过程」。
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
+  run.orbActivity.finish();
+  const outcome = run.orbActivity.state();
+  const keepProcess = run.changedPage || outcome === "failed" || outcome === "stopped";
 
-  if (!hasSteps) {
+  if (!hasSteps || !keepProcess) {
     run.root.remove();
 
     if (lastRun === run) lastRun = null;
@@ -2895,7 +2902,7 @@ function stepsContainer(): HTMLElement {
 }
 
 function closeBlocks(): void {
-  if (currentAssistant) attachAnswerActions(currentAssistant, inputEl);
+  if (currentAssistant) attachAnswerActions(currentAssistant);
   // 流式光标移除；进行中的思考块折叠并落定文案（带耗时）
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
 
@@ -3075,6 +3082,13 @@ function toggleChipDetail(entry: ToolChipEntry): void {
   scrollToEnd();
 }
 
+/** 用户能在页面上看到后果的动作；滚动、悬停、事件监听只是为了读页。 */
+const PAGE_VIEWING_TOOLS = new Set(["scroll", "wheel", "hover", "arm_event", "wait_event", "disarm_event"]);
+
+function changesPage(name: string): boolean {
+  return isWriteTool(name) && !PAGE_VIEWING_TOOLS.has(name);
+}
+
 function onToolStart(
   ev: { toolCallId: string; name: string; params: Record<string, unknown> },
   sessionId?: string,
@@ -3124,6 +3138,8 @@ function onToolStart(
 
   run.orbActivity.observe({ kind: "tool_start", ...ev }, sessionId ?? "main");
   syncRunOrb(run);
+
+  if (changesPage(ev.name)) run.changedPage = true;
 
   if (live && orbStateRuns(run.orbActivity.state(lastUserHasPage))) run.titleEl.textContent = `正在${action.full}`;
 
@@ -3362,27 +3378,19 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         resumeEntry.noteReceipt(ev.receipt);
         const key=`${ev.receipt.conversationId}:${ev.receipt.requestId}`;
         const previous = receiptMessages.get(key);
+
+        // 普通接收/送达回执不进消息流：用户已看到自己的消息，任务条讲运行状态；只有拒绝、失败、需要决定的回执才展示。
+        if (receiptCopy(ev.receipt, selectedConversationId).collapsed) {
+          previous?.remove();
+          receiptMessages.delete(key);
+          break;
+        }
+
         const restoreFocus = previous?.contains(document.activeElement);
         const receipt = renderReceipt(ev.receipt, selectedConversationId, previous, forkReceipt);
-        const ordinary = receiptCopy(ev.receipt, selectedConversationId).collapsed;
 
         if (previous) previous.replaceWith(receipt);
-
-        if (ordinary) {
-          let archive = messagesEl.querySelector<HTMLDetailsElement>('.receipt-archive');
-
-          if (!archive) {
-            archive = document.createElement('details'); archive.className = 'receipt-archive';
-            const summary = document.createElement('summary'); summary.textContent = '查看任务回执'; archive.append(summary); messagesEl.append(archive);
-          }
-
-          const runKey = ev.receipt.runId ?? ev.receipt.requestId;
-          let run = Array.from(archive.querySelectorAll<HTMLElement>('.receipt-run')).find(el => el.dataset.runId === runKey);
-
-          if (!run) { run = document.createElement('div'); run.className = 'receipt-run'; run.dataset.runId = runKey; archive.append(run); }
-
-          run.append(receipt);
-        } else messagesEl.append(receipt);
+        else messagesEl.append(receipt);
         receiptMessages.set(key, receipt);
 
         if (restoreFocus) receipt.querySelector<HTMLElement>('summary,button')?.focus({preventScroll:true});
@@ -3452,7 +3460,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     delete existing!.dataset.streaming;
     appendDeliveryFacts(existing!, delivery);
 
-    if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(existing!, inputEl);
+    if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(existing!);
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
     existing!.dataset.deliveryStatus = delivery.status;
@@ -3469,7 +3477,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   bubble.innerHTML = renderMarkdown(delivery.text);
   appendDeliveryFacts(bubble, delivery);
 
-  if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble, inputEl);
+  if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble);
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
   bubble.dataset.deliveryStatus = delivery.status;

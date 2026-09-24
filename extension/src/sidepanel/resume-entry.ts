@@ -165,8 +165,9 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
 
   if (blocked) gaps.push(`${blocked} 项执行受阻，需要换方法`);
 
+  // 运行中由顶部任务条负责；这张卡只在需要用户处理时出现（页面归你、中断、出错、停止或结束后仍有剩余）。
   const visible = checkpointUnavailable
-    || ["running", "paused", "interrupted", "error"].includes(view.state)
+    || ["paused", "interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
     || (view.state === "idle" && (remaining.length > 0 || !!view.waiting));
 

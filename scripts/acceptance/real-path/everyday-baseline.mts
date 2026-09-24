@@ -111,10 +111,12 @@ const PANEL_STATE = `(() => {
     noise: {
       notices: [...document.querySelectorAll("#messages .msg.notice")].map((el) => el.innerText.trim()),
       errors: [...document.querySelectorAll("#messages .msg.error")].map((el) => el.innerText.trim()),
-      receipts: document.querySelectorAll("#messages > .msg.receipt, #messages > details").length,
+      receipts: document.querySelectorAll("#messages > .msg.receipt, #messages > details:not(.run-steps)").length,
       taskCard: visible(q("#task-result-card")),
       taskBar: visible(q("#task-bar-root")),
       resumeEntry: visible(q("#resume-entry-root")),
+      processRows: document.querySelectorAll("#messages .run-steps").length,
+      footers: document.querySelectorAll("#messages .delivery-facts").length,
     },
   };
 })()`;
@@ -122,7 +124,7 @@ const PANEL_STATE = `(() => {
 type PanelState = {
   connected: boolean; running: boolean; stopping: boolean; streaming: boolean; inputValue: string | null;
   userMessages: string[]; answers: string[];
-  noise: { notices: string[]; errors: string[]; receipts: number; taskCard: boolean; taskBar: boolean; resumeEntry: boolean };
+  noise: { notices: string[]; errors: string[]; receipts: number; taskCard: boolean; taskBar: boolean; resumeEntry: boolean; processRows?: number; footers?: number };
 };
 
 type DomNode = { attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
@@ -229,7 +231,7 @@ try {
     const answer = final?.answers.join("\n\n") ?? "";
     const ctx: Ctx = { answer, pageText, marks: await countMarks().catch(() => 0), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests };
     const noise = final?.noise ?? null;
-    const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) : 0;
+    const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
     results.push({ id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: reason ? "fail" : "pass", reason, answer: answer.slice(0, 600) });
     await rp.screenshot(panel, join(artifacts, `${item.id}-panel.png`)).catch(() => {});

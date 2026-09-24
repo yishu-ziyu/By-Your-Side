@@ -289,9 +289,9 @@ describe('A05-08 呈现时序与请求去重', () => {
     expect(sent).toHaveLength(1);
     // 状态真的开始执行：本地等待解除。
     entry.apply(viewOf({ state: 'running', waiting: null, outstanding: [{ id: 'r2', description: '填写邮箱', status: 'pending' }] }));
-    const runningSection = root.children[0]!;
-    expect(find(runningSection, 'resume-action')).toBeUndefined();
-    expect(runningSection.children.map((child) => child.textContent).join('\n')).toContain('正在执行');
+    // 运行中由顶部任务条讲进度，接续卡收起。
+    expect(root.hidden).toBe(true);
+    expect(root.children).toHaveLength(0);
     // 之后再次中断：新一次请求是允许的（新 requestId，不重放旧动作）。
     entry.apply(viewOf({ observedAt: 2000 }));
     find(root.children[0]!, 'resume-action')!.onclick!();
