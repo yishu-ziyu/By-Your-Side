@@ -19,6 +19,7 @@
 - [ ] 4d 浏览器替身：同步 sha256、Buffer、`crypto.randomUUID`、`process.env` 不读；回执/队列内存存储；轨迹、记忆、技能、下载空实现
 - [ ] 4e 扩展改用同一核心：`inproc/main.ts` 启动 ConversationManager；语音调度走 `dispatchTaskAction`（修语音停止）；删除 `host.ts` 简化循环
 - [ ] 4f 真实路径 + 架构检查 + 文档（STATUS、handoff）
+- [ ] 4g 备用模型（用户 2026-09-24 选定「自动切到备用模型」）：放在 `AgentLoop` 层，两种实现共用规则。可重试错误用 pi-ai 的 `isRetryableAssistantError` 判定；同一模型重试用尽后 `setModel(备用)` 再 `agent.continue()`（同一上下文续跑，不重放已执行的工具）；任务记录与界面写明「中途换过模型」。上下文溢出不走这条（归压缩）
 
 ## 每步验收
 
@@ -45,6 +46,16 @@
 3. **同步哈希**：`createHash('sha256')` 分布在 12 个模块；`subtle.digest` 是异步的，不能直接替换。
 4. **真实路径要屏幕解锁**：锁屏时无窗口 Chrome 的侧栏视口是 0×0，连干净 HEAD 也失败，不是代码问题。
 5. **不要直接跑 `extension/build.mjs`**：会重写日常 Chrome 加载的 `extension/dist`；验收脚本会构建到独立目录。
+
+## 模型服务（2026-09-24）
+
+- 现状：日常本机进程用 `cliproxy/mimo-v2.6-flash`（本地 CLIProxy → 代理 7897 → OpenCode Go）。一次本机真实路径里连续 8 次 500，原文是转发 OpenCode 时连接 EOF。STATUS 已定「不再使用 cliproxy，改用用户套餐」，日常配置尚未切换，改前要问用户。
+- 用户定的选择标准：可靠完成优先。对比对象：阶跃 `step-3.7-flash`、智谱 `glm-5.3-flash`。
+- 本机 Pi 目录里阶跃只有 `step-plan/step-5-preview`，没有 `step-3.7-flash`（扩展自己注册），所以阶跃只能在扩展路径上比。
+- 结果（2026-09-24，样本小，只说明「都能用、阶跃更快」）：
+  - 扩展路径（设置页配置 → 圈出保存按钮、不点）：阶跃 3/3，任务 6–8 秒；智谱 3/3，任务 14–17 秒。
+  - 本机完整核心（point-then-mark）：智谱 2/2，供应商报错 0（记录里 3 次 aborted 是我们自己的取消）；cliproxy/mimo 当天 1 次因 500×8 失败。
+- 决定（用户选定）：日常本机 `~/.sideagent/config.json` 的 model 改为 `zai-coding-cn/glm-5.3-flash`（备份 `config.json.bak-glm-20260924-093814`，重载扩展后生效）；扩展里阶跃主力、智谱备用（4g 实现自动切换后生效）。④ 完成后先在完整核心上复测阶跃。
 
 ## 参考
 
