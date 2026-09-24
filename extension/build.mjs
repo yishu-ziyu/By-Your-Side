@@ -13,8 +13,8 @@ await rm(dist, { recursive: true, force: true });
 
 await mkdir(dist, { recursive: true });
 
-// 实验：Pi 的浏览器端库只装在 pi-coding-agent 的嵌套依赖里，直接指到它们的 dist。
-const pi = path.join(root, "../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works");
+// Pi 的浏览器端库是扩展的直接依赖（package.json 锁定版本）。订阅登录等子路径不在包的导出表里，所以直接指到 dist。
+const pi = path.join(root, "../node_modules/@earendil-works");
 
 const common = {
   absWorkingDir: root,
