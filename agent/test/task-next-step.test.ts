@@ -264,7 +264,7 @@ describe('P0.3 actual finding tool boundary',()=>{
   it('can explicitly report partial results and terminate despite unknown work, with host limitations',async()=>{
     const h=task();h.step('click',{target:'#submit'},true,'unknown');const d=delivery(h);
     const result=await d.send('partial');expect(result.terminate).toBe(true);
-    expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('部分结果');
+    expect(d.emit.mock.calls[0]?.[0].delivery.text).not.toContain('任务状态'); // 模型已声明部分完成：正文原样，记在 outcome 上
     expect(result.details).toMatchObject({outcome:'partial',nextAction:'ask_user'});
     expect(h.progress.snapshot().resultState).toBe('unknown');
   });

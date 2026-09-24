@@ -1020,7 +1020,8 @@ return receipt;
         request={...request,action:'resume'};
       }
 
-      if(['idle','error'].includes(snapshot.state)&&projectTaskView(snapshot).resumable
+      // 刚登记的修订本身就是待做的事：已结束的任务带修订继续时，不依赖未完成项才能接续。
+      if(['idle','error'].includes(snapshot.state)&&(projectTaskView(snapshot).resumable||explicitAmendment)
         &&(request.action==='resume'||request.action==='start'&&isInterruptedResumeText(request.text??''))){
         if(request.action!=='resume')throw new TaskActionRejected('请继续原任务，不要将未完成事项重新登记为新任务。');
 

@@ -72,8 +72,11 @@ it('语音进度与面板一样保留用户目标，不把成功动作当成已�
  p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'click',name:'click',params:{target:'#editor'}}});
  p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'click',name:'click',isError:false,executionFact:'executed',resultText:'clicked'}});
  p.observe({type:'agent_event',event:{kind:'agent_end'}});
- expect(progressSpeech(p.snapshot())).toContain('还有未完成的要求：复制第一条评论到笔记');
- expect(progressSpeech(p.snapshot())).not.toContain('需要你读回');
+ // 未列计划时原话只是占位目标，不复述成待办（与侧栏同口径）；但点击成功也不能说成已完成。
+ const speech=progressSpeech(p.snapshot());
+ expect(speech).toContain('结果还没有确认');
+ expect(speech).not.toMatch(/已完成|完成了/);
+ expect(speech).not.toContain('需要你读回');
 });
 
 it('冲突的完成文案不能覆盖仍未完成的登记结果',()=>{
