@@ -3441,7 +3441,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "turn_start":
       break;
     case "notice":
-      if(ev.plan){
+      if (ev.progress) {
+        // 进度说明只属于正在跑的这一轮：放进过程行标题，不在对话里留下一句过时的话。
+        // 不为它新建过程行：压缩可能发生在回合结束后，新建的行不会再收尾。
+        if (currentRun && !applyingHistory) currentRun.titleEl.textContent = ev.message;
+      } else if(ev.plan){
         const key=`plan:${ev.plan.conversationId}:${ev.plan.id}`;
         const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果待确认':'未执行')}\n${s.text}`).join('\n');
         const previous=receiptMessages.get(key);

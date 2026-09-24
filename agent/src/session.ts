@@ -348,7 +348,7 @@ export class BrowserAgentSession {
         if(!snapshot.runId||!snapshot.goalPlan)throw new Error('任务目标已变化');
         reserveEvidenceWork(this.session?.sessionManager,{runId:snapshot.runId,revision:snapshot.goalPlan.revision,resource:'goal-review',id:randomUUID()});
 
-        return reviewTaskGoal(this.voiceModelCall(),stage,data,signal,()=>this.callbacks.emit({kind:'notice',message:'这份目标证据需要再次核对，正在用任务模型复核同一份观察。'}));
+        return reviewTaskGoal(this.voiceModelCall(),stage,data,signal,()=>this.callbacks.emit({kind:'notice',message:'正在复核目标证据',progress:true}));
       },
       current: () => { const epoch = this.controlEpoch;
 
@@ -3753,13 +3753,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         }
 
         case "compaction_start":
-          emit({ kind: "notice", message: "正在压缩上下文…" });
+          emit({ kind: "notice", message: "正在压缩上下文", progress: true });
           break;
         case "auto_retry_start":
           // 接管/中止的尾声与"本轮已经交付过结果"的自动重试都不再刷"请求失败"：
           // 前者会把用户主动停下当成模型故障，后者的真实结局由最终 agent_end 的错误/空响应判断。
           if (this.hold.isHeld() || this.expectedStoppedAgentEnd || this.deliveredResultThisRun) break;
-          emit({ kind: "notice", message: `请求失败，正在重试（${event.attempt}/${event.maxAttempts}）…` });
+          emit({ kind: "notice", message: `正在重试（${event.attempt}/${event.maxAttempts}）`, progress: true });
           break;
         default:
           break;

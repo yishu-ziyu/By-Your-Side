@@ -34,7 +34,7 @@ server → conversation_updated{conversation}
 
 ### 对话
 
-当前任务与控制入口还包括共享 `task_action`、`task_view` 和独立交付消息；见[任务调度](voice-dispatch.md)。`task_view.latestDelivery.unfinished` 是模型在部分交付里列出的未完成项，只用于侧栏那一行文字，不参与 `resumable` 判定或结果核验。下面保留基础/兼容帧说明，不是完整协议清单。
+当前任务与控制入口还包括共享 `task_action`、`task_view` 和独立交付消息；见[任务调度](voice-dispatch.md)。`notice` 带 `progress: true` 时只是运行中的进度，面板只替换过程行标题，不进消息流、历史回放忽略。`task_view.latestDelivery.unfinished` 是模型在部分交付里列出的未完成项，只用于侧栏那一行文字，不参与 `resumable` 判定或结果核验。下面保留基础/兼容帧说明，不是完整协议清单。
 
 以下帧均可携带 `conversationId`。
 

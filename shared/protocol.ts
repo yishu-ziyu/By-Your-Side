@@ -354,7 +354,9 @@ export type AgentUiEvent =
   | { kind: "run_stopped" }
   | { kind: "user_delivery"; delivery: UserDelivery }
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
-  | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary }
+  | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary;
+      /** 运行中的进度说明：只替换过程行标题，不进消息流，回合结束即被结果标题取代。 */
+      progress?: true }
   | { kind: "error"; message: string };
 
 // ── 工具契约 ───────────────────────────────────────────────────────
