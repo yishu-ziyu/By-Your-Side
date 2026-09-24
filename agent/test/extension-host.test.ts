@@ -81,7 +81,7 @@ describe("ExtensionHost 组合规则", () => {
     const stops: string[] = [];
     const policy = new RepeatedToolFailurePolicy(failure => stops.push(failure.toolName));
     const { value, aborted } = host([policy.extension()]);
-    const failure = { toolName: "click", toolCallId: "c", input: { target: "@3" }, content: [{ type: "text", text: "找不到元素" }], isError: true };
+    const failure = { toolName: "click", toolCallId: "c", input: { target: "@3" }, content: [{ type: "text" as const, text: "找不到元素" }], isError: true };
 
     for (let i = 0; i < TOOL_FAILURE_LIMIT; i += 1) await value.toolResult({ ...failure, toolCallId: `c${i}` });
 

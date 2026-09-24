@@ -17,8 +17,8 @@
 - [x] 4b 工具调用身份显式传递：`tools.ts` 用 `makeCall(scope)` 绑定每次执行的身份，每次执行按需生成绑定身份的工具定义（定义内部无跨调用状态，已核对）。新测试 `agent/test/tool-execution-scope.test.ts`（交错的 download_delete；换成全局变量实现会变红，已做变异验证）。工具/会话相关 61 个文件 844 通过；失败 3 个：两个与改动前相同，browser-program 超时用例单独连跑 3 次都过（负载下计时不稳）。本机真实路径 point-then-mark 通过（首跑遇供应商 500 ×8 失败，改动前代码同时段通过，重跑通过）
 - [ ] 4c 浏览器版会话实现：pi-agent-core `Agent` + 钩子适配 + 自定义消息 + 条目存储 + 系统提示词重建
   - [x] 4c-1 `ModelPort`：核心只用 ModelRuntime 的 completeSimple / getAvailable / getModel / streamSimple（TS 检查器统计；acceptance-model、cliproxy 属本机专用）。纯类型改动；`voice-model.ts` 已改用它（browser-material、goal-reasoning-review 经它取得运行时）。session.ts 的运行时字段在 4c-2 一并改
-  - [ ] 4c-2 循环创建可注入（进行中：系统提示词拼装 `agent/src/system-prompt.ts` 已完成，与 Pi 会话实际提示词逐字一致，act/teach 两种模式，已做变异验证。发现：我们总传自定义提示词，Pi 在该分支只拼「提示词 + 模式附加 + 工作目录行」，不拼工具规则，风险 2 比调研估计小；但 product-context 与 memory-runtime 的 `before_agent_start` 每轮追加系统提示词，浏览器循环要按顺序执行并只对本轮生效）：`BrowserAgentSession.create` 的 createAgentSession 一步抽成 `createLoop`，本机默认不变；系统提示词拼装（systemPrompt + 模式附加 + 工具 promptSnippet/Guidelines）抽成共用函数；`resolveCliModel` 换成基于 ModelPort 的解析
-  - [ ] 4c-3 浏览器版 AgentLoop（进行中：钩子执行器 `agent/src/extension-host.ts` 已完成，组合规则照 Pi ExtensionRunner：before_agent_start/context/tool_result 接力、tool_call 首个 block 生效、钩子抛错只记录；用真实的产品上下文与失败策略钩子测过，5/5）（pi-agent-core Agent + hooks 适配 + 自定义消息 + 条目 + 重试）；系统提示词逐字一致测试；浏览器循环跑本机入口契约 4/4
+  - [x] 4c-2 循环创建可注入：`SessionCreateOptions.loop = { models, cwd }` 时 `BrowserAgentSession.create` 用浏览器循环，否则照旧走 createAgentSession；`nodeRuntime` 只给 Fleet（请人、验收模型）；setMode 无 resourceLoader 时也重建提示词。系统提示词拼装 `system-prompt.ts` 与 Pi 逐字一致（发现：我们总传自定义提示词，Pi 在该分支不拼工具规则，风险 2 比预估小；before_agent_start 每轮追加的内容由钩子执行器照 Pi 规则处理）
+  - [x] 4c-3 浏览器版 `agent/src/pi-agent-loop.ts`（照 agent-session.js 复刻 prompt 流程、重试、sendCustomMessage 五分支、插话记账、agent_end.willRetry；不做压缩）+ 钩子执行器 `extension-host.ts`。验证：契约新增入口「本机核心 + 扩展循环」4/4（变异验证确实走浏览器循环）；真实跑一轮时两种实现发给模型的系统提示词归一化后逐字一致（变异验证）；重试 3 条单测；相关 939 通过、2 个老失败
 - [ ] 4d 浏览器替身：同步 sha256、Buffer、`crypto.randomUUID`、`process.env` 不读；回执/队列内存存储；轨迹、记忆、技能、下载空实现
 - [ ] 4e 扩展改用同一核心：`inproc/main.ts` 启动 ConversationManager；语音调度走 `dispatchTaskAction`（修语音停止）；删除 `host.ts` 简化循环
 - [ ] 4f 真实路径 + 架构检查 + 文档（STATUS、handoff）
@@ -48,6 +48,7 @@
 2. **系统提示词悄悄变了**：AgentSession 的 `setActiveToolsByName` 会重建系统提示词，把工具的 `promptSnippet`/`promptGuidelines` 拼进去（`agent-session.js:659-770`）。浏览器实现只过滤工具不会报错但指令变了 → 4c 的逐字一致测试。
 3. **同步哈希**：`createHash('sha256')` 分布在 12 个模块；`subtle.digest` 是异步的，不能直接替换。
 4. **真实路径要屏幕解锁**：锁屏时无窗口 Chrome 的侧栏视口是 0×0，连干净 HEAD 也失败，不是代码问题。
+6. **rolldown 的 macOS 二进制不在 lock 里**：`npm dedupe`／重装会把 `@rolldown/binding-darwin-arm64` 当多余包删掉，vitest 随之启动失败。恢复：`npm install --no-save @rolldown/binding-darwin-arm64@<rolldown 的版本>`。不要跑 `npm dedupe`（还会顺手升级无关包）。
 5. **不要直接跑 `extension/build.mjs`**：会重写日常 Chrome 加载的 `extension/dist`；验收脚本会构建到独立目录。
 
 ## 模型服务（2026-09-24）

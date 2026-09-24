@@ -97,10 +97,12 @@ function assistant(content: StreamValue[], stopReason: string) {
  */
 class ScriptedModel {
   readonly calls: SeenMessage[][] = [];
+  readonly systemPrompts: string[] = [];
   holdNext = false;
   private held: (() => void) | null = null;
 
-  readonly stream = (_model: typeof model, context: { messages?: Array<{ role: string; content?: StreamValue }> }) => {
+  readonly stream = (_model: typeof model, context: { systemPrompt?: string; messages?: Array<{ role: string; content?: StreamValue }> }) => {
+    this.systemPrompts.push(context.systemPrompt ?? "");
     const messages = (context.messages ?? []).map(m => ({ role: m.role, text: textOf(m.content ?? null) }));
     this.calls.push(messages);
     const pipe = new ManualStream();
@@ -164,7 +166,7 @@ function answerToolCalls(frames: ServerMessage[], send: (message: ClientMessage)
   };
 }
 
-async function nativeEntry(script: ScriptedModel): Promise<Entry> {
+async function nativeEntry(script: ScriptedModel, useLoop = false): Promise<Entry> {
   const dir = mkdtempSync(join(tmpdir(), "bys-entry-contract-"));
   const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
   // SAFETY: 与 pi-coding-agent 的 native provider 同形；本测试只用到 stream。
@@ -185,12 +187,14 @@ async function nativeEntry(script: ScriptedModel): Promise<Entry> {
 
   const emit = answerToolCalls(frames, send, () => "default");
 
-  manager = new ConversationManager((id, sink) => createConversationRuntime(id, sink, PROBE, {}), emit, undefined, undefined, undefined, new TaskDispatcher());
+  // useLoop：同一份本机任务核心，底层换成扩展将要使用的 pi-agent-core 循环。
+  const options = useLoop ? { loop: { models: runtime, cwd: process.cwd() } } : {};
+  manager = new ConversationManager((id, sink) => createConversationRuntime(id, sink, PROBE, options), emit, undefined, undefined, undefined, new TaskDispatcher());
   await manager.ensureDefault();
   // 与 main.ts 接入侧栏时一致：有客户端连着，任务队列才会启动任务。
   manager.reconnect();
 
-  return { name: "本机伴随进程", conversationId: "default", frames, send, cleanup: () => { void manager?.dispose(); rmSync(dir, { recursive: true, force: true }); } };
+  return { name: useLoop ? "本机核心 + 扩展循环" : "本机伴随进程", conversationId: "default", frames, send, cleanup: () => { void manager?.dispose(); rmSync(dir, { recursive: true, force: true }); } };
 }
 
 async function inprocEntry(script: ScriptedModel): Promise<Entry> {
@@ -260,6 +264,7 @@ const INPROC_KNOWN_GAPS = new Set(["heldClick", "ownership", "duplicate", "stale
 
 const entries: Array<[string, Build, Set<string>]> = [
   ["本机伴随进程", nativeEntry, new Set()],
+  ["本机核心 + 扩展循环", script => nativeEntry(script, true), new Set()],
   ["扩展内 agent", inprocEntry, INPROC_KNOWN_GAPS],
 ];
 
@@ -328,4 +333,29 @@ describe.each(entries)("入口契约：%s", (_name, build, gaps) => {
     expect(receipt.status).toBe("rejected");
     expect(script.calls.flat().some(m => m.text.includes("改成取消按钮"))).toBe(false);
   });
+});
+
+/** 每次运行都不同的编号与时间，比较前换成占位。 */
+const normalize = (text: string) => text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<id>").replace(/\d{10,}/g, "<t>").replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "<iso>");
+
+describe("系统提示词：本机会话与扩展循环逐字一致", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("同一个任务第一次调用模型时，两种实现给出的系统提示词相同", async () => {
+    const prompts: string[] = [];
+
+    for (const useLoop of [false, true]) {
+      const script = new ScriptedModel();
+      const entry = await nativeEntry(script, useLoop);
+
+      entry.send({ type: "task_action", conversationId: entry.conversationId, request: request(entry, { requestId: "prompt-1" }) });
+      await until(() => script.systemPrompts.length > 0, "第一次模型调用");
+      prompts.push(normalize(script.systemPrompts[0]!));
+      entry.cleanup();
+      vi.restoreAllMocks();
+    }
+
+    expect(prompts[0]!.length).toBeGreaterThan(1000);
+    expect(prompts[1]).toBe(prompts[0]);
+  }, 20_000);
 });

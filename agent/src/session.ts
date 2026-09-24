@@ -50,13 +50,13 @@ import {
   resolveCliModel,
   SessionManager,
   SettingsManager,
-  type AgentSession,
   type AgentToolResult,
   type CreateAgentSessionOptions,
   type PromptOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentLoop } from "./agent-loop.js";
+import type { AgentLoop, ModelPort } from "./agent-loop.js";
+import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
@@ -171,6 +171,8 @@ export interface SessionCreateOptions {
   sessionManager?: SessionManager;
   /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
   modelRuntime?: ModelRuntime;
+  /** 给定时用 pi-agent-core 的循环（扩展里）代替 pi-coding-agent 的 AgentSession；modelPattern 此时必填。 */
+  loop?: { models: ModelPort; cwd: string };
   customTools?: ToolDefinition[];
   systemPrompt?: string;
   appendPrompt?: (base: string[]) => string[];
@@ -238,6 +240,16 @@ export interface SessionCallbacks {
   emit(event: AgentUiEvent): void;
   /** 运行状态变化（对应 WS status 帧）。idle / running / user（现在归你）。 */
   setStatus(state: AgentRunState): void;
+}
+
+/** 扩展里的循环按「服务商/模型」从模型目录取模型。 */
+function loopModel(models: ModelPort, pattern: string | undefined) {
+  const slash = pattern?.indexOf("/") ?? -1;
+  const model = pattern && slash > 0 ? models.getModel(pattern.slice(0, slash), pattern.slice(slash + 1)) : undefined;
+
+  if (!model) throw new Error(`模型不可用：${pattern ?? "未指定"}`);
+
+  return model;
 }
 
 export class BrowserAgentSession {
@@ -697,7 +709,7 @@ if(required.includes(key))candidates.set(key,attachment);
     private readonly initError: string | null,
     private readonly callbacks: SessionCallbacks,
     private readonly resourceLoader: DefaultResourceLoader | null,
-    private readonly modelRuntime: ModelRuntime | null,
+    private readonly modelRuntime: ModelPort | null,
     private readonly handbackRestoreTimeoutMs = HANDBACK_RESTORE_TIMEOUT_MS,
     private readonly memoryRuntime: MemoryRuntime | null = null,
     private readonly rpc: ToolRpc | null = null,
@@ -819,8 +831,11 @@ if(required.includes(key))candidates.set(key,attachment);
     return this.hold.isHeld();
   }
 
+  /** 本机专用的完整模型运行时（请人、本地验收模型）；扩展里的循环没有它。 */
+  nodeRuntime: ModelRuntime | null = null;
+
   get runtime(): ModelRuntime | null {
-    return this.modelRuntime;
+    return this.nodeRuntime;
   }
 
   static async create(
@@ -829,13 +844,17 @@ if(required.includes(key))candidates.set(key,attachment);
     options?: SessionCreateOptions,
   ): Promise<BrowserAgentSession> {
     try {
-      let modelRuntime = options?.modelRuntime ?? null;
+      let modelRuntime = options?.loop ? null : options?.modelRuntime ?? null;
 
-      if (!modelRuntime) {
+      if (!options?.loop && !modelRuntime) {
         modelRuntime = await ModelRuntime.create();
         // 本地 CLIProxyAPI 池：key 运行时从 client.env 读取，端口不通时自动跳过，不影响启动
         await registerCliproxyProvider(modelRuntime);
       }
+
+      const models: ModelPort | null = options?.loop?.models ?? modelRuntime;
+
+      if (!models) throw new Error("模型运行时不可用");
 
       // steeringMode "all"：一次 drain 交付全部未读插话，用户连发的几条补充进同一轮模型输入；
       // pi 默认的 "one-at-a-time" 每条分别等到下一轮，实测让同一批补充被拆散到多次模型输入
@@ -844,13 +863,13 @@ if(required.includes(key))candidates.set(key,attachment);
       const systemPrompt = options?.systemPrompt ?? SYSTEM_PROMPT;
       const modeState: { value: AgentMode } = { value: options?.mode ?? "act" };
       const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(modeState.value, base));
-      let memoryHost: AgentSession | null = null;
+      let memoryHost: AgentLoop | null = null;
 
       const memoryRuntime = options?.memoryStore && options.conversationId
         ? new MemoryRuntime(options.memoryStore, options.conversationId, callbacks.emit, async (systemPrompt, input, signal) => {
           if (!memoryHost?.model) throw new Error("记忆判断模型不可用");
 
-          const reply = await modelRuntime!.completeSimple(memoryHost.model, {
+          const reply = await models.completeSimple(memoryHost.model, {
             systemPrompt, messages: [{ role: "user", content: input, timestamp: Date.now() }],
           }, { signal, maxTokens: 1600, reasoning: "minimal", sessionId: memoryHost.sessionId, headers: opencodeSessionHeaders(memoryHost.model, memoryHost.sessionId) });
 
@@ -866,33 +885,37 @@ if(required.includes(key))candidates.set(key,attachment);
 
       const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure));
 
-      const resourceLoader = new DefaultResourceLoader({
-        cwd: process.cwd(),
-        agentDir: getAgentDir(),
-        settingsManager,
-        noExtensions: true,
-        noContextFiles: true,
-        extensionFactories: [
-          { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
-          ...(memoryRuntime ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }] : []),
-          ...(productContext ? [{ name: "sideagent-product-context", hidden: true, factory: productContext.extension() }] : []),
-        ],
-        systemPromptOverride: () => systemPrompt,
-        skillsOverride: () => ({ skills: [], diagnostics: [] }),
-        // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
-        appendSystemPromptOverride: (base) => appendPrompt(base),
-      });
+      const extensionFactories = [
+        { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
+        ...(memoryRuntime ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }] : []),
+        ...(productContext ? [{ name: "sideagent-product-context", hidden: true, factory: productContext.extension() }] : []),
+      ];
 
-      await resourceLoader.reload();
+      let resourceLoader: DefaultResourceLoader | null = null;
+
+      if (!options?.loop) {
+        resourceLoader = new DefaultResourceLoader({
+          cwd: process.cwd(),
+          agentDir: getAgentDir(),
+          settingsManager,
+          noExtensions: true,
+          noContextFiles: true,
+          extensionFactories,
+          systemPromptOverride: () => systemPrompt,
+          skillsOverride: () => ({ skills: [], diagnostics: [] }),
+          // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
+          appendSystemPromptOverride: (base) => appendPrompt(base),
+        });
+
+        await resourceLoader.reload();
+      }
+
       // send_user_message 的正式交付也走轮次闸门：接线完成前按原样发出。
       const deliveryEmit: {current: ((event: AgentUiEvent) => void) | null} = {current: null};
       const runIdSlot: { current: () => string | null } = { current: () => null };
       const leadConversationId = isLeadDeliveryHost(options?.conversationId) ? options!.conversationId : undefined;
 
-      const createOptions: CreateAgentSessionOptions = {
-        modelRuntime,
-        noTools: "builtin",
-        customTools: [
+      const customTools: ToolDefinition[] = [
           // 生产路径（conversation-runtime / fleet）会传入 customTools；此回退仍接账本，避免日后漏接线。
           ...(options?.customTools ?? createBrowserTools(rpc, undefined, undefined, undefined, {
             epoch: () => resultHost?.executionEpoch() ?? 0,
@@ -971,11 +994,28 @@ if(required.includes(key))candidates.set(key,attachment);
               return (snapshot?.results ?? []).some(item => item.status === "pending" || item.status === "unknown");
             },
           })] : []),
-        ],
-        resourceLoader,
-        sessionManager: options?.sessionManager ?? SessionManager.inMemory(process.cwd()),
-        settingsManager,
-      };
+        ];
+
+      let session: AgentLoop;
+
+      if (options?.loop) {
+        session = new PiAgentLoop({
+          models, model: loopModel(models, options.modelPattern), tools: customTools, systemPrompt,
+          appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
+          extensionFactories: extensionFactories.map(entry => entry.factory),
+          onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
+        });
+      } else {
+        if (!modelRuntime || !resourceLoader) throw new Error("本机模型运行时不可用");
+
+        const createOptions: CreateAgentSessionOptions = {
+          modelRuntime,
+          noTools: "builtin",
+          customTools,
+          resourceLoader,
+          sessionManager: options?.sessionManager ?? SessionManager.inMemory(process.cwd()),
+          settingsManager,
+        };
 
       if (options?.modelPattern) {
         const slash = options.modelPattern.indexOf("/");
@@ -996,9 +1036,12 @@ if(required.includes(key))candidates.set(key,attachment);
         if (resolved.thinkingLevel) createOptions.thinkingLevel = resolved.thinkingLevel;
       }
 
-      const { session } = await createAgentSession(createOptions);
+        ({ session } = await createAgentSession(createOptions));
+      }
+
       memoryHost = session;
-      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, modelRuntime, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
+      const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, models, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
+      wrapper.nodeRuntime = modelRuntime;
       resultHost = wrapper;
       wrapper.skillStore = options?.skillStore;
       wrapper.explicitDelivery = !!leadConversationId;
@@ -1027,7 +1070,7 @@ if(required.includes(key))candidates.set(key,attachment);
           async (systemPrompt, input, signal) => {
             if (!session.model) throw new Error("Model unavailable");
 
-            const reply = await modelRuntime!.completeSimple(session.model, {
+            const reply = await models.completeSimple(session.model, {
               systemPrompt,
               messages: [{ role: "user", content: input, timestamp: Date.now() }],
             }, { signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]), maxTokens: 2200, sessionId: session.sessionId, headers: opencodeSessionHeaders(session.model, session.sessionId) });
@@ -3420,10 +3463,11 @@ return true;}
   async setMode(mode: AgentMode): Promise<void> {
     this.modeState.value = mode;
 
-    if (!this.session || !this.resourceLoader) return;
+    if (!this.session) return;
 
     try {
-      await this.resourceLoader.reload();
+      // 本机由 resourceLoader 重新求值模式附加段；扩展里的循环在 setActiveToolsByName 时直接重新求值。
+      if (this.resourceLoader) await this.resourceLoader.reload();
       this.applyActiveTools();
     } catch (err) {
       console.error(`[sideagent] 切换模式后重建系统 prompt 失败：${err instanceof Error ? err.message : String(err)}`);

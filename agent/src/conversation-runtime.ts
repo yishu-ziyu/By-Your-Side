@@ -18,7 +18,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));

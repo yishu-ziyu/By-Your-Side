@@ -8,7 +8,9 @@
  * - tool_call：第一个返回 block 的钩子立即生效；
  * - 除 tool_call 外，钩子抛错只记录，不中断任务。
  */
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { TSchema } from "typebox";
 
 type Handler = (event: HookEvent, ctx: HookContext) => HookResult | void | Promise<HookResult | void>;
 
@@ -42,12 +44,12 @@ export type HookValue = string | number | boolean | null | undefined | readonly 
 
 export interface HookArgs { readonly [key: string]: HookValue }
 
-export interface HookContent { type: string; text?: string }
+export type HookContent = TextContent | ImageContent;
 
 export interface HookMessage { role: string; customType?: string; content?: HookValue; timestamp?: number; display?: boolean }
 
 /** 钩子能看到的工具信息。 */
-export interface HookTool { name: string; description: string; parameters: HookValue; promptGuidelines?: readonly string[] }
+export interface HookTool { name: string; description: string; parameters: TSchema; promptGuidelines?: readonly string[] }
 
 export interface ExtensionHostOptions {
   factories: readonly ExtensionFactory[];
