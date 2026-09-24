@@ -11,6 +11,7 @@ import { createOrb, type OrbHandle } from "./orb.js";
  */
 import { renderMarkdownHtml } from "./markdown.js";
 import { attachAnswerActions } from "./answer-actions.js";
+import { revealText } from "./stream-reveal.js";
 import { beginStarterProbe, isLatestStarterProbe, noteStarterTab, probePageProfile, starterTab, suggestionsFor, type PageProfile } from "./starter-suggestions.js";
 import { renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
@@ -2968,7 +2969,12 @@ function stepsContainer(): HTMLElement {
 }
 
 function closeBlocks(): void {
-  if (currentAssistant) attachAnswerActions(currentAssistant);
+  if (currentAssistant) {
+    const answer = currentAssistant;
+    // 最终稿放完后再挂复制按钮：放字期间每帧重渲染正文，先挂的按钮会被冲掉。
+    revealText(answer, currentAssistantText, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd, after: () => attachAnswerActions(answer) });
+  }
+
   // 流式光标移除；进行中的思考块折叠并落定文案（带耗时）
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
 
@@ -3036,7 +3042,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
     // 流式 Markdown：累积原文，每个 delta 重渲染（marked 为同步解析，量小无压力）
     if (!currentAssistant) currentAssistant = addMsg("msg assistant markdown streaming", "");
     currentAssistantText += delta;
-    currentAssistant.innerHTML = renderMarkdown(currentAssistantText);
+    revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !applyingHistory, final: false, onProgress: scrollToEnd });
   } else {
     if (!currentThinking) {
       addChainStep("思考");
@@ -3148,6 +3154,8 @@ function toggleChipDetail(entry: ToolChipEntry): void {
   scrollToEnd();
 }
 
+const BOOKKEEPING_TOOLS = new Set(["send_user_message", "task_goals"]);
+
 /** 用户能在页面上看到后果的动作；滚动、悬停、事件监听只是为了读页。 */
 const PAGE_VIEWING_TOOLS = new Set(["scroll", "wheel", "hover", "arm_event", "wait_event", "disarm_event"]);
 
@@ -3195,6 +3203,15 @@ function onToolStart(
   } else {
     run = ensureRun();
     closeBlocks();
+
+    // 交付回答、核对目标清单是助手的内部记账，不算用户看得懂的一步。
+    if (BOOKKEEPING_TOOLS.has(ev.name)) {
+      run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
+      syncRunOrb(run);
+
+      return;
+    }
+
     addChainStep(action.short);
     run.lastToolShort = action.short;
 
@@ -3418,7 +3435,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if(!bubble){target.dataset.deliveryId=s.id;target.dataset.deliveryKind=s.kind;deliveredBubbles.set(s.id,target);}
 
       target.dataset.streaming='true';
-      target.innerHTML=renderMarkdown(s.text);placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
+      revealText(target, s.text, { render: renderMarkdown, live: !applyingHistory, final: false, onProgress: scrollToEnd });placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
     }
 
     case "turn_start":
@@ -3522,10 +3539,10 @@ function handleUserDelivery(delivery: UserDelivery): void {
   }
 
   if (plan === 'update_text') {
-    existing!.innerHTML = renderMarkdown(delivery.text);
-    delete existing!.dataset.streaming;
-
-    if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(existing!);
+    const answer = existing!;
+    delete answer.dataset.streaming;
+    revealText(answer, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
+      after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(answer); } });
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
     existing!.dataset.deliveryStatus = delivery.status;
@@ -3539,9 +3556,9 @@ function handleUserDelivery(delivery: UserDelivery): void {
   voiceUI.deliver?.(delivery);
 
   const bubble = addMsg("msg assistant markdown", "");
-  bubble.innerHTML = renderMarkdown(delivery.text);
-
-  if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble);
+  // 整段一次送达的回答也按同样节奏放出来，不一下子整块冒出。
+  revealText(bubble, delivery.text, { render: renderMarkdown, live: !applyingHistory, final: true, onProgress: scrollToEnd,
+    after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') attachAnswerActions(bubble); } });
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
   bubble.dataset.deliveryStatus = delivery.status;

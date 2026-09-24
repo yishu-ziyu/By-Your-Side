@@ -8,6 +8,7 @@ import type { AgentUiEvent } from "../../shared/protocol.js";
 import {
   USER_DELIVERY_TEXT_MAX,
   USER_DELIVERY_FACT_ITEM_MAX,
+  USER_DELIVERY_FACT_DESCRIPTION_MAX,
   isUserDelivery,
   isUserDeliveryFacts,
   type UserDelivery,
@@ -77,6 +78,7 @@ export function createUserDelivery(input: {
   composedAt?: number;
   status?: UserDelivery["status"];
   facts?: UserDeliveryFacts;
+  unfinished?: string[];
 }): UserDelivery {
   const delivery = {
     conversationId: input.conversationId,
@@ -91,6 +93,8 @@ export function createUserDelivery(input: {
   if (input.replyTo) delivery.replyTo = input.replyTo;
 
   if (input.facts) delivery.facts = input.facts;
+
+  if (input.unfinished?.length) delivery.unfinished = input.unfinished;
 
   if (!RECORD_KINDS.includes(input.kind as (typeof RECORD_KINDS)[number])) throw new Error("kind 必须是 ack、finding 或 reply。");
 
@@ -133,7 +137,17 @@ export type SendUserMessageOptions = {
 /** 交付结果与宿主实际判定的完成度（模型请求 complete 也可能被标成 partial）。 */
 export type DeliveredMessage = { delivery: UserDelivery; outcome: "complete" | "partial" };
 
-export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: string; kind: string; content: string; outcome?: string; replyTo?: string }): DeliveredMessage {
+/** 模型列出的未完成项：去空、截长、限条数；格式不对的整体忽略，不因此拒绝交付。 */
+function cleanUnfinished(raw: string[] | undefined): string[] {
+  if (!raw) return [];
+
+  const items = raw.map((item) => item.trim()).filter(Boolean)
+    .map((item) => (item.length > USER_DELIVERY_FACT_DESCRIPTION_MAX ? `${item.slice(0, USER_DELIVERY_FACT_DESCRIPTION_MAX - 1)}…` : item));
+
+  return [...new Set(items)].slice(0, USER_DELIVERY_FACT_ITEM_MAX);
+}
+
+export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: string; kind: string; content: string; outcome?: string; replyTo?: string; unfinished?: string[] }): DeliveredMessage {
   if (!HOST_TOOL_KINDS.includes(input.kind as (typeof HOST_TOOL_KINDS)[number])) {
     throw new Error("kind 必须是 ack 或 finding。任务最终结果用 finding，不要发 reply。");
   }
@@ -168,6 +182,14 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   };
 
   if (facts) deliveryInput.facts = facts;
+
+  // 只有模型自己说没做完时才记它列的未完成项；声称完成却附带清单的，以宿主判定为准，不采信。
+  if (input.kind === "finding" && requested === "partial") {
+    const unfinished = cleanUnfinished(input.unfinished);
+
+    if (unfinished.length) deliveryInput.unfinished = unfinished;
+  }
+
   const delivery = createUserDelivery(deliveryInput);
   opts.emit({ kind: "user_delivery", delivery });
 
@@ -184,6 +206,7 @@ export function createSendUserMessageTool(opts: SendUserMessageOptions): ToolDef
       kind: Type.Unsafe<"ack" | "finding">(Type.String({ description: "ack or finding." })),
       content: Type.String({ description: "Exact user-facing text. Do not truncate trailing limits." }),
       outcome: Type.Optional(Type.Union([Type.Literal('complete'),Type.Literal('partial')],{description:'For finding: partial reports limits without claiming unfinished work is done.'})),
+      unfinished: Type.Optional(Type.Array(Type.String(), { description: "With outcome=partial: each part of the user's request you did not get done, phrased as the user asked it (e.g. 圈出「升级套餐」按钮). Not internal steps or tool names." })),
       reply_to: Type.Optional(Type.String({ description: "Optional user utterance or previous delivery id this answers" })),
     }),
     execute: async (_id, params) => {
@@ -191,7 +214,7 @@ export function createSendUserMessageTool(opts: SendUserMessageOptions): ToolDef
 
       try {
         const { delivery, outcome } = deliverUserMessage(opts, { id: toolDeliveryId(_id), kind: params.kind, content: String(params.content ?? ""), outcome: params.outcome,
-          replyTo: params.reply_to == null ? undefined : String(params.reply_to) });
+          replyTo: params.reply_to == null ? undefined : String(params.reply_to), unfinished: params.unfinished });
 
         const next = params.kind === "finding" ? opts.getNextStep?.() : undefined;
 

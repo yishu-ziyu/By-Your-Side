@@ -46,7 +46,7 @@ const PANEL_STATE = `(() => {
     pill: q("#tab-title-text")?.textContent?.trim() ?? null,
     setupVisible: q("#setup") ? !q("#setup").hidden : false,
     toggleTitle: q("#teach-toggle")?.title ?? null,
-    busy: !!(q("#status-pill")?.classList.contains("running") || q("#send-btn")?.classList.contains("stopping") || q(".msg.assistant.streaming")),
+    busy: !!(q("#status-pill")?.classList.contains("running") || q("#send-btn")?.classList.contains("stopping") || q(".msg.assistant.streaming, .msg.assistant[data-revealing]")),
     userMessages: [...document.querySelectorAll(".msg.user")].map((el) => el.innerText.trim()),
     replies: document.querySelectorAll("#messages .msg:not(.user)").length,
     transcript: q("#messages")?.innerText ?? "",

@@ -70,6 +70,9 @@ export function resumeAvailability(view: TaskView | null, checkpointUnavailable:
 
   if (view.state === "aborted") return { available: false, reason: "任务已停止，这个入口不会把它复活" };
 
+  // 模型已在回答里说明哪些没做完：接下来要你补信息或换页面，直接在输入框回复，不给「继续」重跑。
+  if (declaredUnfinished(view).length) return { available: false, reason: "回答里已说明没做完的部分，直接回复就行" };
+
   if (view.state === "interrupted" || ["idle", "error"].includes(view.state)) {
     if (!view.resumable) return { available: false, reason: "没有可恢复的原始依据，不会自动继续" };
 
@@ -100,6 +103,11 @@ export interface ResumeSummary {
   note: string | null;
 }
 
+/** 回合正常结束时，模型自己列出的未完成项；中断、出错、停止仍按宿主账本说。 */
+function declaredUnfinished(view: TaskView): string[] {
+  return view.state === "idle" ? view.latestDelivery?.unfinished ?? [] : [];
+}
+
 function clipText(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
@@ -108,8 +116,16 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   if (checkpointUnavailable) return "原任务检查点无法恢复，不会自动重做";
 
   if (view.state === "paused") return "页面现在归你，在页面上点「交还」后继续";
+  const declared = declaredUnfinished(view);
+
+  // 用户要的哪件事没做成，比中途哪个工具失败更有用；中途失败留在步骤清单里。
+  if (declared.length) return `还有 ${declared.length} 项没完成：${clipText(declared[0]!, 24)}`;
   const first = remaining[0];
-  const left = first ? `还有 ${remaining.length} 项没完成：${clipText(first.description, 24)}` : null;
+
+  // 没列目标时账本里只有动作记录：如实说是哪一步没做成，不把它说成用户要的事没完成。
+  const left = !first ? null : view.goalsListed === false
+    ? `有 ${remaining.length} 步没做成：${clipText(first.description, 24)}`
+    : `还有 ${remaining.length} 项没完成：${clipText(first.description, 24)}`;
 
   if (view.state === "aborted") return left ? `已停止，${left}，不会自动继续` : "已停止";
 
@@ -195,7 +211,7 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   const visible = checkpointUnavailable
     || ["paused", "interrupted", "error"].includes(view.state)
     || (view.state === "aborted" && (remaining.length > 0 || !!view.waiting))
-    || (view.state === "idle" && (remaining.length > 0 || !!view.waiting));
+    || (view.state === "idle" && (remaining.length > 0 || !!view.waiting || declaredUnfinished(view).length > 0));
 
   return {
     visible,

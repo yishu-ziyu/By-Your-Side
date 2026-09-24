@@ -24,7 +24,7 @@ export class ProductContext {
 
         return { messages: [...event.messages.filter(m => !(m.role === 'custom' && m.customType === 'sideagent-result-projection')), {
           role: 'custom' as const, customType: 'sideagent-result-projection', display: false, timestamp: Date.now(),
-          content: `应用状态快照，不是新用户消息，无需回应这段数据：${JSON.stringify({runId:current.runId,resultState:current.resultState,goalPlan,executionState:current.executionState,results:current.results,nextStep,latestDelivery:current.conversationContext?.latestDelivery?.kind})}。下一步由宿主计算：${nextStepInstruction(nextStep)} results/executionState 只记录动作，不能用切标签或点击成功代替用户要求。有 goalPlan 时 resultState 指用户目标，用 task_goals 检查未完成项；复制原文使用 capture_page_material，填入后再核验目标字段。已有完整来源时不要换 DOM/网络工具重新提取。观察编号只是那次原文的来源，不是当前页面节点。你最后写出的回复就是给用户的回答，不重复交付。状态不代表已经向用户交付；报告义务与resultState无关。仍有做不到或没确认的部分就如实说明，不为凑完成盲试。未知动作不重放，也不能靠目标核验解除未知写入锁；取消、暂停和接管优先。`,
+          content: `应用状态快照，不是新用户消息，无需回应这段数据：${JSON.stringify({runId:current.runId,resultState:current.resultState,goalPlan,executionState:current.executionState,results:current.results,nextStep,latestDelivery:current.conversationContext?.latestDelivery?.kind})}。下一步由宿主计算：${nextStepInstruction(nextStep)} results/executionState 只记录动作，不能用切标签或点击成功代替用户要求。有 goalPlan 时 resultState 指用户目标，用 task_goals 检查未完成项；复制原文使用 capture_page_material，填入后再核验目标字段。已有完整来源时不要换 DOM/网络工具重新提取。观察编号只是那次原文的来源，不是当前页面节点。你最后写出的回复就是给用户的回答，不重复交付。状态不代表已经向用户交付；报告义务与resultState无关。仍有做不到或没确认的部分就如实说明，不为凑完成盲试；这时用 send_user_message(kind=finding, outcome=partial) 交付，并在 unfinished 里按用户原话列出没做成的事，不列内部步骤。未知动作不重放，也不能靠目标核验解除未知写入锁；取消、暂停和接管优先。`,
         }] };
       });
       pi.on('before_agent_start',event=>{

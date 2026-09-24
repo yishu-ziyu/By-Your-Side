@@ -104,7 +104,7 @@ const PANEL_STATE = `(() => {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
     running: q("#status-pill")?.classList.contains("running") ?? false,
     stopping: q("#send-btn")?.classList.contains("stopping") ?? false,
-    streaming: !!q(".msg.assistant.streaming"),
+    streaming: !!q(".msg.assistant.streaming, .msg.assistant[data-revealing]"),
     inputValue: q("#input")?.value ?? null,
     userMessages: [...document.querySelectorAll(".msg.user")].map((el) => el.innerText.trim()),
     answers,

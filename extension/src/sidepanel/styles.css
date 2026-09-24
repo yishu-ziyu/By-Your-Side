@@ -831,6 +831,22 @@ html, body {
   }
 }
 
+/* 回答逐字浮现：透明度与轻微模糊一起收；时长与 stream-reveal.ts 的 FADE_MS 一致 */
+.reveal-fade {
+  animation: revealFade 500ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes revealFade {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
 .msg.notice,
 .msg.error {
   align-self: center;
@@ -1432,14 +1448,16 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   }
 }
 
-/* 结束后的过程：每一步是一行人话 + 细线状态标记（✓ / ✗），不再是一排工具按钮。 */
+/* 结束后的过程：每一步是一行人话 + 细线状态标记（✓ / ✗），全部平铺在同一条竖线下。
+   思考与中间草稿不再分组显示，单步耗时也不显示；总耗时在过程行上。 */
+details.run-steps.done .run-body { gap: 2px; }
+details.run-steps.done .run-body > details.thinking { display: none; }
+details.run-steps.done .chip-group { gap: 2px; }
+details.run-steps.done .chip .dur { display: none; }
 details.run-steps.done .chip-row {
   flex-direction: column;
   flex-wrap: nowrap;
   gap: 2px;
-  margin-left: 7px;
-  padding-left: 12px;
-  border-left: 1px solid var(--content-border);
 }
 details.run-steps.done .chip {
   align-self: flex-start;
@@ -2430,6 +2448,7 @@ details.run-steps.done .chip.error { background: transparent; }
   }
 
   .msg.assistant.streaming::after,
+  .reveal-fade,
   .dot.retry,
   .chip-dot.running {
     animation: none;

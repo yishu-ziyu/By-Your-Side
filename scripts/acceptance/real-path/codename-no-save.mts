@@ -102,7 +102,7 @@ const PANEL_STATE = `(() => {
     inputValue: q("#input")?.value ?? null,
     running: q("#status-pill")?.classList.contains("running") ?? false,
     stopping: q("#send-btn")?.classList.contains("stopping") ?? false,
-    streaming: !!q(".msg.assistant.streaming"),
+    streaming: !!q(".msg.assistant.streaming, .msg.assistant[data-revealing]"),
     userMessages: texts(".msg.user"),
     replies: [...document.querySelectorAll("#messages .msg:not(.user)")].map((el) => ({ kind: el.className, text: el.innerText.trim() })),
     errorMessages: texts(".msg.error"),

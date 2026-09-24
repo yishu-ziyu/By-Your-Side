@@ -73,6 +73,8 @@ export interface UserDelivery {
   status: UserDeliveryStatus;
   /** 宿主事实链；旧记录缺省。 */
   facts?: UserDeliveryFacts;
+  /** 模型自己说没做完的部分（按用户原话描述）；只出现在 outcome=partial 的 finding 上，不是宿主核验结果。 */
+  unfinished?: string[];
 }
 
 /** Cumulative text of an explicitly user-facing answer; not ordinary model text_delta. */
@@ -401,6 +403,9 @@ export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
   return true;
 }
 
+/** 模型列出的一条未完成项：非空、不超过事实条目长度。 */
+export const isUnfinishedItem = (v: unknown): v is string => shortText(v, USER_DELIVERY_FACT_DESCRIPTION_MAX);
+
 export function isUserDelivery(v: unknown): v is UserDelivery {
   if (!v || typeof v !== "object") return false;
   const d = v as UserDelivery;
@@ -411,7 +416,9 @@ export function isUserDelivery(v: unknown): v is UserDelivery {
     && Number.isFinite(d.composedAt)
     && USER_DELIVERY_STATUSES.includes(d.status)
     && (d.replyTo === undefined || typeof d.replyTo === "string" && d.replyTo.length >= 1 && d.replyTo.length <= USER_DELIVERY_TEXT_MAX)
-    && (d.facts === undefined || isUserDeliveryFacts(d.facts));
+    && (d.facts === undefined || isUserDeliveryFacts(d.facts))
+    && (d.unfinished === undefined || Array.isArray(d.unfinished) && d.unfinished.length >= 1 && d.unfinished.length <= USER_DELIVERY_FACT_ITEM_MAX
+      && d.unfinished.every(isUnfinishedItem));
 }
 
 export function isSpeakableDelivery(d: UserDelivery | null | undefined, runId?: string | null): d is UserDelivery {

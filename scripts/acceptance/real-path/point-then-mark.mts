@@ -39,7 +39,7 @@ type Panel = { connected: boolean; title: string; busy: boolean; users: string[]
 
 const panelState = `(() => ({
   connected: !!document.querySelector('#status-dot.on'), title: document.querySelector('#tab-title-text')?.textContent ?? '',
-  busy: !!document.querySelector('#status-pill.running, #send-btn.stopping, .msg.assistant.streaming'),
+  busy: !!document.querySelector('#status-pill.running, #send-btn.stopping, .msg.assistant.streaming, .msg.assistant[data-revealing]'),
   users: [...document.querySelectorAll('.msg.user')].map(x=>x.innerText),
   replies: document.querySelectorAll('#messages .msg:not(.user)').length,
   transcript: document.querySelector('#messages')?.innerText ?? ''

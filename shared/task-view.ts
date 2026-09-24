@@ -8,7 +8,7 @@
  * - 旧快照缺新增字段时按未知处理，不用猜测填满；
  * - 作用页面来自任务绑定的 recoveryInput.page，不跟随当前选中 tab。
  */
-import { USER_DELIVERY_KINDS, type TaskProgressSnapshot, type UserDeliveryKind } from "./voice.js";
+import { isUnfinishedItem, USER_DELIVERY_KINDS, type TaskProgressSnapshot, type UserDelivery, type UserDeliveryKind } from "./voice.js";
 import { nextStepIgnoringPlaceholder, TASK_NEXT_REASONS, type TaskNextStep } from "./task-next-step.js";
 import { isSupersededUnknown, TASK_RESULT_ITEM_STATUSES, type TaskResultItemStatus } from "./task-results.js";
 import { isTaskMaterials, type TaskMaterialReference } from './task-recovery.js';
@@ -46,8 +46,10 @@ export interface TaskView {
   results: TaskViewResultItem[];
   /** 未完成项（pending/blocked/unknown，未被取代者） */
   outstanding: TaskViewResultItem[];
-  /** 最近一次正式交付引用；没有则为 null */
-  latestDelivery: { kind: UserDeliveryKind } | null;
+  /** outstanding 是否来自用户目标清单；false 表示没有列目标，里面只是动作记录。旧视图缺省按目标处理。 */
+  goalsListed?: boolean;
+  /** 最近一次正式交付引用；没有则为 null。unfinished 是模型自己列的未完成项（用户原话口吻），不是宿主核验结果。 */
+  latestDelivery: { kind: UserDeliveryKind; unfinished?: string[] } | null;
   /** 是否有可恢复的真实依据（中断并留有恢复输入；或已结束但只交付了部分结果）；「继续」按钮只能以此为凭 */
   resumable: boolean;
 }
@@ -109,7 +111,8 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     results,
     // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
     outstanding,
-    latestDelivery: snapshot.conversationContext?.latestDelivery ? { kind: snapshot.conversationContext.latestDelivery.kind } : null,
+    goalsListed: snapshot.goalPlan?.coverage === 'verified',
+    latestDelivery: latestDeliveryRef(snapshot.conversationContext?.latestDelivery),
     resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && ((snapshot.nextStep ? nextStepIgnoringPlaceholder(snapshot).delivery : undefined) === "partial"||outstanding.length>0))) && !!snapshot.recoveryInput,
   };
 
@@ -118,6 +121,12 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   if (materials) view.materials = materials.map(item => ({ ...item }));
 
   return view;
+}
+
+function latestDeliveryRef(delivery: UserDelivery | null | undefined): TaskView["latestDelivery"] {
+  if (!delivery) return null;
+
+  return delivery.unfinished?.length ? { kind: delivery.kind, unfinished: [...delivery.unfinished] } : { kind: delivery.kind };
 }
 
 /** 结构校验：供协议解析；坏数据明确失败，不回退到更早状态。 */
@@ -157,7 +166,11 @@ export function isTaskView(value: unknown): value is TaskView {
 
   if (v.latestDelivery !== null && (!v.latestDelivery || !USER_DELIVERY_KINDS.includes(v.latestDelivery.kind))) return false;
 
+  if (v.latestDelivery?.unfinished !== undefined && !(Array.isArray(v.latestDelivery.unfinished) && v.latestDelivery.unfinished.every(isUnfinishedItem))) return false;
+
   if (typeof v.resumable !== "boolean") return false;
+
+  if (v.goalsListed !== undefined && v.goalsListed !== true && v.goalsListed !== false) return false;
 
   return true;
 }

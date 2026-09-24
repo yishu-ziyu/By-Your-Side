@@ -9,7 +9,7 @@
 3. 语音模型可以只读当前页、查询任务、直接操作浏览器或委派任务。`read_page` 通过本轮观察令牌读取页面；只读问答与修改页面分开，不把口头翻译当成已翻译网页。
 4. 简单浏览器操作经 `browserTool` 直接进入 `ConversationManager.executeRealtimeBrowserTool`，复用正式工具、页面身份与执行回执。工具列表与参数只在[Realtime 工具定义](../agent/src/realtime-browser-tools.ts)维护；不经过另一个主模型规划循环。目标含糊时可调用 `judge_browser_action` 获取 Jev 建议，它本身不执行操作。
 5. 需要复杂研究、内容生成或直连工具不能继续时，仍可通过 `task_action` 或 `browser_request` 委派给任务系统。宿主等待本轮页面资料、核对输入和取消信号；诊断连接不装配这些可写入口。
-6. 直连工具结果或委派任务的正式交付回到原语音会话。Realtime 3 生成音频，浏览器播放并返回 `playback_done`；操作已执行、目标已核验和用户已听见分别记账。点选工具 `ask_user_to_point` 当前不在语音工具列表中。
+6. 直连工具结果或委派任务的正式交付回到原语音会话。Realtime 3 生成音频，浏览器播放并返回 `playback_done`；操作已执行、目标已核验和用户已听见分别记账。交付上的 `unfinished` 只供侧栏显示，不改变播报内容。点选工具 `ask_user_to_point` 当前不在语音工具列表中。
 
 ## 请求级开口
 

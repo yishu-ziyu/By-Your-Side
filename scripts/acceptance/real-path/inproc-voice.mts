@@ -89,7 +89,7 @@ const PANEL_STATE = `(() => {
     heard: q(".voice-question")?.textContent?.trim() ?? "",
     answer: q(".voice-answer")?.textContent?.trim() ?? "",
     transcript: q("#messages")?.innerText ?? "",
-    taskBusy: !!q("#status-pill.running, #send-btn.stopping, .msg.assistant.streaming"),
+    taskBusy: !!q("#status-pill.running, #send-btn.stopping, .msg.assistant.streaming, .msg.assistant[data-revealing]"),
   };
 })()`;
 
