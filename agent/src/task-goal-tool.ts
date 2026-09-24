@@ -1,6 +1,6 @@
 import { wrapPageContent } from '../../shared/untrusted.js';
 import type { GoalReviewStage, GoalEvidenceReview } from './goal-evidence-judge.js';
-import { defineTool } from '@earendil-works/pi-coding-agent';
+import { defineTool } from './define-tool.js';
 import { Type } from 'typebox';
 import type { TaskProgressSnapshot } from '../../shared/voice.js';
 import { taskRequirementId, type TaskGoalDefinition } from '../../shared/task-goals.js';

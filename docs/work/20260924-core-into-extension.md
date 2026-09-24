@@ -19,7 +19,7 @@
   - [x] 4c-1 `ModelPort`：核心只用 ModelRuntime 的 completeSimple / getAvailable / getModel / streamSimple（TS 检查器统计；acceptance-model、cliproxy 属本机专用）。纯类型改动；`voice-model.ts` 已改用它（browser-material、goal-reasoning-review 经它取得运行时）。session.ts 的运行时字段在 4c-2 一并改
   - [x] 4c-2 循环创建可注入：`SessionCreateOptions.loop = { models, cwd }` 时 `BrowserAgentSession.create` 用浏览器循环，否则照旧走 createAgentSession；`nodeRuntime` 只给 Fleet（请人、验收模型）；setMode 无 resourceLoader 时也重建提示词。系统提示词拼装 `system-prompt.ts` 与 Pi 逐字一致（发现：我们总传自定义提示词，Pi 在该分支不拼工具规则，风险 2 比预估小；before_agent_start 每轮追加的内容由钩子执行器照 Pi 规则处理）
   - [x] 4c-3 浏览器版 `agent/src/pi-agent-loop.ts`（照 agent-session.js 复刻 prompt 流程、重试、sendCustomMessage 五分支、插话记账、agent_end.willRetry；不做压缩）+ 钩子执行器 `extension-host.ts`。验证：契约新增入口「本机核心 + 扩展循环」4/4（变异验证确实走浏览器循环）；真实跑一轮时两种实现发给模型的系统提示词归一化后逐字一致（变异验证）；重试 3 条单测；相关 939 通过、2 个老失败
-- [ ] 4d 浏览器替身：同步 sha256、Buffer、`crypto.randomUUID`、`process.env` 不读；回执/队列内存存储；轨迹、记忆、技能、下载空实现
+- [ ] 4d 浏览器替身（进行中：defineTool 改用 `agent/src/define-tool.ts`；本机专用的会话创建搬到 `agent/src/node-agent-loop.ts`，session.ts 对 pi-coding-agent 只剩类型导入；相关 1028 通过、2 个老失败）：同步 sha256、Buffer、`crypto.randomUUID`、`process.env` 不读；回执/队列内存存储；轨迹、记忆、技能、下载空实现
 - [ ] 4e 扩展改用同一核心：`inproc/main.ts` 启动 ConversationManager；语音调度走 `dispatchTaskAction`（修语音停止）；删除 `host.ts` 简化循环
 - [ ] 4f 真实路径 + 架构检查 + 文档（STATUS、handoff）
 - [ ] 4g 备用模型（用户 2026-09-24 选定「自动切到备用模型」）：放在 `AgentLoop` 层，两种实现共用规则。可重试错误用 pi-ai 的 `isRetryableAssistantError` 判定；同一模型重试用尽后 `setModel(备用)` 再 `agent.continue()`（同一上下文续跑，不重放已执行的工具）；任务记录与界面写明「中途换过模型」。上下文溢出不走这条（归压缩）

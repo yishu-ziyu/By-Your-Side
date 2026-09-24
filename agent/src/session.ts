@@ -43,15 +43,10 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
  * - sendUserMessage / steer / abort 均异步不阻塞调用方，错误转成 error 事件
  */
 import {
-  createAgentSession,
-  DefaultResourceLoader,
-  getAgentDir,
-  ModelRuntime,
-  resolveCliModel,
-  SessionManager,
-  SettingsManager,
   type AgentToolResult,
-  type CreateAgentSessionOptions,
+  type DefaultResourceLoader,
+  type ModelRuntime,
+  type SessionManager,
   type PromptOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -62,7 +57,7 @@ import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
-import { registerCliproxyProvider } from "./cliproxy.js";
+import { createNodeLoop, createNodeModelRuntime } from "./node-agent-loop.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
 import { createBrowserTools } from "./tools.js";
 import { TaskUploadLedger } from "./upload-paths.js";
@@ -846,20 +841,12 @@ if(required.includes(key))candidates.set(key,attachment);
     try {
       let modelRuntime = options?.loop ? null : options?.modelRuntime ?? null;
 
-      if (!options?.loop && !modelRuntime) {
-        modelRuntime = await ModelRuntime.create();
-        // 本地 CLIProxyAPI 池：key 运行时从 client.env 读取，端口不通时自动跳过，不影响启动
-        await registerCliproxyProvider(modelRuntime);
-      }
+      if (!options?.loop && !modelRuntime) modelRuntime = await createNodeModelRuntime();
 
       const models: ModelPort | null = options?.loop?.models ?? modelRuntime;
 
       if (!models) throw new Error("模型运行时不可用");
 
-      // steeringMode "all"：一次 drain 交付全部未读插话，用户连发的几条补充进同一轮模型输入；
-      // pi 默认的 "one-at-a-time" 每条分别等到下一轮，实测让同一批补充被拆散到多次模型输入
-      // （见 out/acceptance/continuous-steering-2026-09-15T15-32-14-585Z：最终值对但同轮交付为 false）。
-      const settingsManager = SettingsManager.inMemory({ compaction: { enabled: true }, steeringMode: "all" });
       const systemPrompt = options?.systemPrompt ?? SYSTEM_PROMPT;
       const modeState: { value: AgentMode } = { value: options?.mode ?? "act" };
       const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(modeState.value, base));
@@ -892,23 +879,6 @@ if(required.includes(key))candidates.set(key,attachment);
       ];
 
       let resourceLoader: DefaultResourceLoader | null = null;
-
-      if (!options?.loop) {
-        resourceLoader = new DefaultResourceLoader({
-          cwd: process.cwd(),
-          agentDir: getAgentDir(),
-          settingsManager,
-          noExtensions: true,
-          noContextFiles: true,
-          extensionFactories,
-          systemPromptOverride: () => systemPrompt,
-          skillsOverride: () => ({ skills: [], diagnostics: [] }),
-          // 闭包读 mode ref；注意 SDK 只在 reload() 时求值并缓存（见 setMode 注释）
-          appendSystemPromptOverride: (base) => appendPrompt(base),
-        });
-
-        await resourceLoader.reload();
-      }
 
       // send_user_message 的正式交付也走轮次闸门：接线完成前按原样发出。
       const deliveryEmit: {current: ((event: AgentUiEvent) => void) | null} = {current: null};
@@ -1006,37 +976,12 @@ if(required.includes(key))candidates.set(key,attachment);
           onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
         });
       } else {
-        if (!modelRuntime || !resourceLoader) throw new Error("本机模型运行时不可用");
+        if (!modelRuntime) throw new Error("本机模型运行时不可用");
 
-        const createOptions: CreateAgentSessionOptions = {
-          modelRuntime,
-          noTools: "builtin",
-          customTools,
-          resourceLoader,
-          sessionManager: options?.sessionManager ?? SessionManager.inMemory(process.cwd()),
-          settingsManager,
-        };
-
-      if (options?.modelPattern) {
-        const slash = options.modelPattern.indexOf("/");
-
-        const resolved = resolveCliModel({
-          cliProvider: slash > 0 ? options.modelPattern.slice(0, slash) : undefined,
-          cliModel: slash > 0 ? options.modelPattern.slice(slash + 1) : options.modelPattern,
-          modelRuntime,
-        });
-
-        if (resolved.error || !resolved.model) {
-          throw new Error(resolved.error ?? `模型不可用：${options.modelPattern}`);
-        }
-
-        if (resolved.warning) console.error(`[sideagent] ${resolved.warning}`);
-        createOptions.model = resolved.model;
-
-        if (resolved.thinkingLevel) createOptions.thinkingLevel = resolved.thinkingLevel;
-      }
-
-        ({ session } = await createAgentSession(createOptions));
+        ({ session, resourceLoader } = await createNodeLoop({
+          modelRuntime, customTools, extensionFactories, systemPrompt, appendPrompt,
+          sessionManager: options?.sessionManager, modelPattern: options?.modelPattern,
+        }));
       }
 
       memoryHost = session;

@@ -10,7 +10,8 @@ import type { TranslationReceipt, TranslationRequest } from "../../shared/page-t
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
  * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
  */
-import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { formatEffectReport } from "../../shared/effect.js";

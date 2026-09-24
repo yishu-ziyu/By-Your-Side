@@ -1,7 +1,8 @@
 import { randomUUID, createHash } from "node:crypto";
 import { VOICE_PERSONALITY } from './voice-personality.js';
 import {nextStepInstruction, partialResultNote, type TaskNextStep} from '../../shared/task-next-step.js';
-import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import {
