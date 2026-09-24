@@ -56,6 +56,7 @@ import {
   type PromptOptions,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import type { AgentLoop } from "./agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
@@ -692,7 +693,7 @@ if(required.includes(key))candidates.set(key,attachment);
     }
   }
   private constructor(
-    private readonly session: AgentSession | null,
+    private readonly session: AgentLoop | null,
     private readonly initError: string | null,
     private readonly callbacks: SessionCallbacks,
     private readonly resourceLoader: DefaultResourceLoader | null,
@@ -1439,7 +1440,7 @@ return;}
    * 读不到（无 tabId、扩展未连接、超时、页面为空）时不注入，消息照常发送。
    */
   private async promptWithFreshPageObservation(
-    session: AgentSession,
+    session: AgentLoop,
     finalText: string,
     context: PageContext | undefined,
     images: SessionImageContent[],
@@ -1884,7 +1885,7 @@ return;}
   }
 
   private async executeFastTaskCandidate(
-    session: AgentSession,
+    session: AgentLoop,
     decision: Extract<FastTaskDecision, { kind: 'candidate' }>,
     observation: FastRequestObservation,
     signal: AbortSignal,
@@ -2095,7 +2096,7 @@ return;}
   }
 
   private async persistAndDeliverFastTask(
-    session: AgentSession,
+    session: AgentLoop,
     signal: AbortSignal,
     current: () => boolean,
     binding: FastTaskGoalBinding,
@@ -2143,7 +2144,7 @@ return;}
   }
 
   private async deliverFastTaskFailure(
-    session: AgentSession,
+    session: AgentLoop,
     signal: AbortSignal,
     current: () => boolean,
     text: string,
@@ -2208,7 +2209,7 @@ return;}
    * then the existing formal delivery channel ends this turn with zero reasoning-model prompts.
    * No domain/keyword routing, no new semantic judgment call and no direct RPC write bypass is introduced here.
    */
-  private async runInitialBrowserLoop(session:AgentSession,finalText:string,context:PageContext):Promise<void>{
+  private async runInitialBrowserLoop(session:AgentLoop,finalText:string,context:PageContext):Promise<void>{
     const controller=new AbortController();this.displayAbort=controller;
     const epoch=this.controlEpoch,runId=this.deliveryRunId();
     const current=()=>!controller.signal.aborted&&epoch===this.controlEpoch&&runId===this.deliveryRunId()&&!this.hold.isHeld();
@@ -2247,7 +2248,7 @@ return;}
    * 证据有效性沿用既有失效规则（后续写入、页面身份变化、检查点恢复都会把目标变回待核验）；
    * 这里不新增语义判断调用，也不放宽 send_user_message 自身的门槛。
    */
-  private async deliverVerifiedBrowserLoopOutcome(session:AgentSession,outcome:BrowserLoopOutcome|undefined,context:PageContext,controller:AbortController,current:()=>boolean):Promise<boolean>{
+  private async deliverVerifiedBrowserLoopOutcome(session:AgentLoop,outcome:BrowserLoopOutcome|undefined,context:PageContext,controller:AbortController,current:()=>boolean):Promise<boolean>{
     const text=this.verifiedBrowserLoopDeliveryText(outcome,context);
 
     if(!text)return false;
@@ -2337,7 +2338,7 @@ return;}
    * 可复用的显示执行：走已注册工具 + 读回核验，只返回真实结果。
    * 不结束任务、不打空闲、不发交付；新任务收尾留在 runDisplayCommand，运行中修改的收尾在 steerCurrentTask。
    */
-  private async executeDisplayCommand(session:AgentSession,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,before?:TranslationDisplayState):Promise<DisplayExecutionOutcome>{
+  private async executeDisplayCommand(session:AgentLoop,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,before?:TranslationDisplayState):Promise<DisplayExecutionOutcome>{
     if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'not_executed'};
     let lastCallId:string|null=null;
     let writeAttempted=false,writeSucceeded=false;
@@ -2404,7 +2405,7 @@ return;}
    * `display` 只给出对外形状：技能程序把本次材料内联在代码里，公开事件、面板历史与诊断
    * 不得携带运行代码或材料原文，执行仍用真实 input。
    */
-  private async invokeDisplayTool(session:AgentSession,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void,display?:{params:Record<string,unknown>;materials?:string[]}):Promise<unknown>{
+  private async invokeDisplayTool(session:AgentLoop,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void,display?:{params:Record<string,unknown>;materials?:string[]}):Promise<unknown>{
     if(!current())throw new Error('显示操作已取消。');
     const tool=session.agent.state.tools.find(t=>t.name===name);
 
@@ -3058,7 +3059,7 @@ return {kind:'model'};
    * 任一阶段失效都不写入；命中但执行过/结果未知的情况不自动重做，而是把真实事实交回原任务。
    */
   private async tryDisplaySteering(
-    session:AgentSession,
+    session:AgentLoop,
     record:CorrectionRecord,
     text:string,
     context:PageContext,
@@ -3175,7 +3176,7 @@ return {kind:'model'};
 
   /** 把"要求 + 运行时事实"作为插话交回原任务；任务已失效时释放登记，不留下悬空闸门。 */
   private async returnDisplayFactToModel(
-    session:AgentSession,
+    session:AgentLoop,
     record:CorrectionRecord,
     text:string,
     context:PageContext,
