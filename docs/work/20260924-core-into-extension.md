@@ -14,7 +14,7 @@
 - [x] ② 语音 key 只给本扩展发起的连接（`d19cb33`，判据 `pageCannotBorrowKey`）
 - [x] ③ 双入口契约（`6ede6ab`）；构建改用直接依赖（`b662dc7`）
 - [x] 4a 会话层接口：`agent/src/agent-loop.ts` 的 `AgentLoop`（按 TS 类型检查器统计的真实访问：AgentSession 16 个成员 + `agent.state.tools/messages`、`agent.waitForIdle`、`sessionManager.appendCustomEntry/getBranch`）。本机直接传 AgentSession，纯类型改动；session 相关 40 个测试文件 520 通过，2 个失败与改动前相同（repository-boundaries、task-recovery-matrix）
-- [ ] 4b 工具调用身份显式传递：去掉 `tools.ts` 的 AsyncLocalStorage
+- [x] 4b 工具调用身份显式传递：`tools.ts` 用 `makeCall(scope)` 绑定每次执行的身份，每次执行按需生成绑定身份的工具定义（定义内部无跨调用状态，已核对）。新测试 `agent/test/tool-execution-scope.test.ts`（交错的 download_delete；换成全局变量实现会变红，已做变异验证）。工具/会话相关 61 个文件 844 通过；失败 3 个：两个与改动前相同，browser-program 超时用例单独连跑 3 次都过（负载下计时不稳）。本机真实路径 point-then-mark 通过（首跑遇供应商 500 ×8 失败，改动前代码同时段通过，重跑通过）
 - [ ] 4c 浏览器版会话实现：pi-agent-core `Agent` + 钩子适配 + 自定义消息 + 条目存储 + 系统提示词重建
 - [ ] 4d 浏览器替身：同步 sha256、Buffer、`crypto.randomUUID`、`process.env` 不读；回执/队列内存存储；轨迹、记忆、技能、下载空实现
 - [ ] 4e 扩展改用同一核心：`inproc/main.ts` 启动 ConversationManager；语音调度走 `dispatchTaskAction`（修语音停止）；删除 `host.ts` 简化循环

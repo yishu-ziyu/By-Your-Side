@@ -10,7 +10,6 @@ import type { TranslationReceipt, TranslationRequest } from "../../shared/page-t
  * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
  * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
  */
-import { AsyncLocalStorage } from "node:async_hooks";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
@@ -117,8 +116,10 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
   return typeof result === "boolean" ? { allowed: result } : result;
 }
 
+/** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
+interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
+
 export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
-  const executionScope = new AsyncLocalStorage<{epoch: number; toolCallId: string; signal?: AbortSignal}>();
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
 
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -136,8 +137,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     );
   };
 
+  // 每次工具执行的身份（轮次、调用 ID、停止信号）显式绑定到一个 call 上，不靠 AsyncLocalStorage：
+  // 浏览器里没有它，而工具可能并行执行，全局变量会串号。
+  const makeCall = (scope: ExecutionScope | undefined) => {
   const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number): Promise<unknown> => {
-    const scope = executionScope.getStore();
     const epoch = scope?.epoch;
     const signal = scope?.signal;
     // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
@@ -297,7 +300,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }
   };
 
-  const definitions = [
+  return call;
+  };
+
+  const call = makeCall(undefined);
+
+  const makeDefinitions = (call: ReturnType<typeof makeCall>, scope: ExecutionScope | undefined) => [
     defineTool({
       name: "ask_user_to_point",
       label: "请你指出元素",
@@ -327,10 +335,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         if(params.materials.some(m=>m.source==='observed'&&!observed.some(saved=>saved.id===m.id&&saved.value===m.value)))throw new Error('原文材料没有匹配宿主保存的来源');
         const materials=[...params.materials,...observed.filter(m=>!params.materials.some(p=>p.id===m.id))].slice(0,12);
         const stop=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(90000)]);
-        const original=executionScope.getStore();
+        const original=scope;
         rpc.noteToolFact?.(id,'unknown');
 
-        const run=()=>runBrowserDecisionLoop({parentCallId:id,goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
+        const run=(call:ReturnType<typeof makeCall>)=>runBrowserDecisionLoop({parentCallId:id,goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
           canExecute:canExecute?(name)=>canExecute(name as ToolName):undefined,
           call:async(name,args,childId)=>{
             const started=Date.now();
@@ -342,7 +350,7 @@ return result;}
             catch(e){execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,error:e instanceof Error?e.message:String(e),elapsedMs:Date.now()-started});throw e;}
           }});
 
-        const result=original?await executionScope.run({...original,signal:stop},run):await run();
+        const result=original?await run(makeCall({...original,signal:stop})):await run(call);
         rpc.noteToolFact?.(id,result.receipts.some(r=>r.executionFact==='unknown')?'unknown':'executed');
 
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(result)),{}),result);
@@ -1252,11 +1260,16 @@ return result;}
     }),
   ];
 
-  return execution ? definitions.map(tool => ({ ...tool, execute: (...args: Parameters<ToolDefinition["execute"]>) => executionScope.run({epoch: execution.epoch(), toolCallId: args[0], signal: args[2]}, async () => {
+  const definitions = makeDefinitions(call, undefined);
+
+  return execution ? definitions.map(tool => ({ ...tool, execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);
+    // 本次执行用绑定了自己身份的一份工具定义；定义内部没有跨调用的状态（2026-09-24 核对）。
+    const scope: ExecutionScope = {epoch: execution.epoch(), toolCallId: args[0], signal: args[2]};
+    const scoped = makeDefinitions(makeCall(scope), scope).find(candidate => candidate.name === tool.name) ?? tool;
 
     try {
-      return await (tool as ToolDefinition).execute(...args);
+      return await (scoped as ToolDefinition).execute(...args);
     } catch (error) {
       const fact = error && typeof error === "object" && "executionFact" in error
         ? (error as { executionFact?: import("../../shared/protocol.js").ToolExecutionFact }).executionFact
@@ -1266,5 +1279,5 @@ return result;}
       else rpc.markCallRejected?.(args[0]);
       throw error;
     }
-  }) })) : definitions;
+  } })) : definitions;
 }
