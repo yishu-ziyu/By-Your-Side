@@ -1,8 +1,8 @@
 /**
  * CAP-02A page event arm / wait / consume ledger (pure state).
  *
- * Portions of the download arming / Page.setDownloadBehavior-per-session
- * approach are adapted from citrolabs/ego-lite
+ * Portions of the per-tab download arming approach are adapted from
+ * citrolabs/ego-lite
  * @ dca7003349c5f7132189ba00547cbbd7ff8e597e (MIT License).
  *
  * Copyright (c) 2026 CitroLabs
@@ -27,6 +27,10 @@
  *
  * Host generates tokens; models must not mint them. Arms are page/tab scoped so
  * two tabs with the same filename cannot cross-consume.
+ *
+ * Downloads: Page.downloadWillBegin ties a download to the armed tab; the file itself
+ * is written by Chrome into the user's download folder and its outcome comes only from
+ * chrome.downloads (joined by URL). CDP progress is never taken as completion.
  */
 
 export type PageEventKind = "popup" | "download" | "filechooser";
@@ -65,15 +69,8 @@ export interface ArmedPageEvent {
   createdAt: number;
   timeoutMs: number;
   status: ArmStatus;
-  /** Download-only: absolute temp directory for Page.setDownloadBehavior. */
-  downloadPath?: string;
+  /** Download-only: the ledger record lives in PageEventLedger.downloads. */
   downloadId?: string;
-  downloadGuid?: string;
-  downloadUrl?: string;
-  suggestedFilename?: string;
-  downloadFailure?: string | null;
-  downloadTempFile?: string;
-  downloadCompleted?: boolean;
   /** File-chooser-only */
   backendNodeId?: number;
   multiple?: boolean;
@@ -87,6 +84,8 @@ export interface ArmedPageEvent {
   disposedReason?: string;
 }
 
+export type ChromeDownloadState = "in_progress" | "complete" | "interrupted";
+
 export interface DownloadRecord {
   downloadId: string;
   token: string;
@@ -94,9 +93,16 @@ export interface DownloadRecord {
   guid: string;
   url: string;
   suggestedFilename: string;
-  downloadPath: string;
-  tempFile?: string;
+  /** chrome.downloads id; set once the CDP begin event and the chrome.downloads item are joined by URL. */
+  chromeId?: number;
+  /** Absolute path Chrome wrote (chrome.downloads filename); only trusted once completed. */
+  path?: string;
+  bytes?: number;
+  /** chrome.downloads danger other than safe/accepted: Chrome holds the file until the user keeps it. */
+  danger?: string;
+  /** chrome.downloads error code (e.g. NETWORK_FAILED, USER_CANCELED) once interrupted. */
   failure: string | null;
+  /** True only after chrome.downloads reported state "complete". */
   completed: boolean;
   cancelled: boolean;
   deleted: boolean;
@@ -176,7 +182,6 @@ export function armPageEvent(
     tabId: number;
     sessionKey: string;
     timeoutMs?: number;
-    downloadPath?: string;
     now?: number;
   },
 ): ArmedPageEvent {
@@ -194,12 +199,6 @@ export function armPageEvent(
     }
   }
 
-  if (input.kind === "download") {
-    if (typeof input.downloadPath !== "string" || !input.downloadPath.startsWith("/") || input.downloadPath.includes("\0")) {
-      throw new Error("INVALID_ARGUMENT: download arm requires an absolute downloadPath");
-    }
-  }
-
   const now = input.now ?? Date.now();
 
   const arm: ArmedPageEvent = {
@@ -211,8 +210,6 @@ export function armPageEvent(
     timeoutMs: clampTimeout(input.timeoutMs),
     status: "armed",
   };
-
-  if (input.kind === "download") arm.downloadPath = input.downloadPath;
 
   ledger.arms.set(arm.token, arm);
 
@@ -280,17 +277,10 @@ export function matchDownloadBegin(
 
   for (const arm of ledger.arms.values()) {
     if (arm.kind !== "download" || arm.status !== "armed" || arm.tabId !== input.tabId) continue;
-
-    if (!arm.downloadPath) continue;
     const downloadId = mintDownloadId(ledger);
     arm.status = "matched";
     arm.matchedAt = now;
     arm.downloadId = downloadId;
-    arm.downloadGuid = input.guid;
-    arm.downloadUrl = input.url;
-    arm.suggestedFilename = input.suggestedFilename;
-    arm.downloadFailure = null;
-    arm.downloadCompleted = false;
 
     const download: DownloadRecord = {
       downloadId,
@@ -299,7 +289,6 @@ export function matchDownloadBegin(
       guid: input.guid,
       url: input.url,
       suggestedFilename: input.suggestedFilename,
-      downloadPath: arm.downloadPath,
       failure: null,
       completed: false,
       cancelled: false,
@@ -326,43 +315,60 @@ export function matchDownloadBegin(
   return undefined;
 }
 
-export function applyDownloadProgress(
+/**
+ * Join a chrome.downloads item to the tab-attributed record with the same URL.
+ * Only records that are not yet joined or finished qualify; the oldest wins.
+ */
+export function bindChromeDownload(
   ledger: PageEventLedger,
-  input: { guid: string; state: "inProgress" | "completed" | "canceled"; tempFile?: string; now?: number },
+  input: { chromeId: number; url: string; finalUrl?: string },
+): DownloadRecord | undefined {
+  for (const download of ledger.downloads.values()) if (download.chromeId === input.chromeId) return download;
+
+  for (const download of ledger.downloads.values()) {
+    if (download.chromeId !== undefined || download.deleted) continue;
+
+    if (download.url !== input.url && download.url !== input.finalUrl) continue;
+    download.chromeId = input.chromeId;
+
+    return download;
+  }
+
+  return undefined;
+}
+
+/** Apply a chrome.downloads state. Completion needs state "complete"; nothing else counts. */
+export function applyChromeDownload(
+  ledger: PageEventLedger,
+  input: { chromeId: number; state?: ChromeDownloadState; error?: string; filename?: string; bytes?: number; danger?: string },
 ): DownloadRecord | undefined {
   for (const download of ledger.downloads.values()) {
-    if (download.guid !== input.guid) continue;
+    if (download.chromeId !== input.chromeId) continue;
 
-    if (download.deleted) return download;
+    if (download.deleted || download.completed || download.failure) return download;
 
-    if (input.state === "completed") {
+    if (input.filename) download.path = input.filename;
+
+    if (typeof input.bytes === "number" && input.bytes >= 0) download.bytes = input.bytes;
+
+    if (input.danger !== undefined) download.danger = input.danger === "safe" || input.danger === "accepted" ? undefined : input.danger;
+
+    if (input.state === "complete") {
       download.completed = true;
-      download.failure = null;
-
-      if (input.tempFile) download.tempFile = input.tempFile;
-      const arm = ledger.arms.get(download.token);
-
-      if (arm) {
-        arm.downloadCompleted = true;
-        arm.downloadFailure = null;
-
-        if (input.tempFile) arm.downloadTempFile = input.tempFile;
-      }
-    } else if (input.state === "canceled") {
-      download.cancelled = true;
-      download.failure = "canceled";
-      const arm = ledger.arms.get(download.token);
-
-      if (arm) {
-        arm.downloadCompleted = false;
-        arm.downloadFailure = "canceled";
-      }
+      download.danger = undefined;
+    } else if (input.state === "interrupted") {
+      download.failure = input.error || "INTERRUPTED";
+      download.cancelled = input.error === "USER_CANCELED";
     }
 
     return download;
   }
 
   return undefined;
+}
+
+export function downloadSettled(download: DownloadRecord): boolean {
+  return download.completed || download.failure !== null || download.deleted;
 }
 
 export function matchFileChooser(
@@ -552,7 +558,7 @@ export function markDownloadDeleted(ledger: PageEventLedger, downloadId: string)
   download.deleted = true;
 }
 
-export function armPayload(arm: ArmedPageEvent): Record<string, unknown> {
+export function armPayload(arm: ArmedPageEvent, downloads?: PageEventLedger["downloads"]): Record<string, unknown> {
   const base: Record<string, unknown> = {
     token: arm.token,
     kind: arm.kind,
@@ -573,15 +579,18 @@ export function armPayload(arm: ArmedPageEvent): Record<string, unknown> {
   }
 
   if (arm.kind === "download") {
+    const download = arm.downloadId ? downloads?.get(arm.downloadId) : undefined;
+
     return {
       ...base,
       downloadId: arm.downloadId,
-      url: arm.downloadUrl,
-      suggestedFilename: arm.suggestedFilename,
-      downloadPath: arm.downloadPath,
-      failure: arm.downloadFailure ?? null,
-      completed: Boolean(arm.downloadCompleted),
-      tempFile: arm.downloadTempFile,
+      url: download?.url,
+      suggestedFilename: download?.suggestedFilename,
+      path: download?.completed ? download.path : undefined,
+      bytes: download?.completed ? download.bytes : undefined,
+      danger: download?.danger,
+      failure: download?.failure ?? null,
+      completed: Boolean(download?.completed),
     };
   }
 

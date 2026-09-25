@@ -4,8 +4,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  applyDownloadProgress,
+  applyChromeDownload,
   armPageEvent,
+  bindChromeDownload,
   cancelArm,
   consumeArm,
   consumeBufferedEvents,
@@ -49,21 +50,19 @@ describe("CAP-02A page-event ledger", () => {
     expect(() => consumeArm(ledger, armed.token)).toThrow(/already consumed/);
   });
 
-  it("两页同名下载：各 tab 独立 downloadPath / downloadId，不串任务", () => {
+  it("两页同名下载：各 tab 独立 downloadId，不串任务", () => {
     const ledger = createPageEventLedger();
 
     const a = armPageEvent(ledger, {
       kind: "download",
       tabId: 1,
       sessionKey: "s",
-      downloadPath: "/tmp/bys-dl-a",
     });
 
     const b = armPageEvent(ledger, {
       kind: "download",
       tabId: 2,
       sessionKey: "s",
-      downloadPath: "/tmp/bys-dl-b",
     });
 
     const ma = matchDownloadBegin(ledger, {
@@ -80,8 +79,6 @@ describe("CAP-02A page-event ledger", () => {
       suggestedFilename: "report.pdf",
     });
 
-    expect(ma?.download.downloadPath).toBe("/tmp/bys-dl-a");
-    expect(mb?.download.downloadPath).toBe("/tmp/bys-dl-b");
     expect(ma?.download.downloadId).not.toBe(mb?.download.downloadId);
     expect(ma?.arm.token).toBe(a.token);
     expect(mb?.arm.token).toBe(b.token);
@@ -89,22 +86,37 @@ describe("CAP-02A page-event ledger", () => {
     expect(findDownload(ledger, mb!.download.downloadId).tabId).toBe(2);
   });
 
-  it("下载失败与取消分别留证", () => {
+  it("下载失败与取消分别留证：只认 chrome.downloads 的中断码", () => {
     const ledger = createPageEventLedger();
-    armPageEvent(ledger, { kind: "download", tabId: 3, sessionKey: "s", downloadPath: "/tmp/bys-dl-c" });
+    armPageEvent(ledger, { kind: "download", tabId: 3, sessionKey: "s" });
+    armPageEvent(ledger, { kind: "download", tabId: 13, sessionKey: "s" });
+    const broken = matchDownloadBegin(ledger, { tabId: 3, guid: "gc", url: "https://example/f.bin", suggestedFilename: "f.bin" })!.download;
+    const stopped = matchDownloadBegin(ledger, { tabId: 13, guid: "gd", url: "https://example/g.bin", suggestedFilename: "g.bin" })!.download;
+    bindChromeDownload(ledger, { chromeId: 7, url: "https://example/f.bin" });
+    bindChromeDownload(ledger, { chromeId: 8, url: "https://example/g.bin" });
 
-    const matched = matchDownloadBegin(ledger, {
-      tabId: 3,
-      guid: "gc",
-      url: "https://example/f.bin",
-      suggestedFilename: "f.bin",
-    });
+    applyChromeDownload(ledger, { chromeId: 7, state: "interrupted", error: "NETWORK_FAILED", filename: "/Users/u/Downloads/f.bin" });
+    applyChromeDownload(ledger, { chromeId: 8, state: "interrupted", error: "USER_CANCELED" });
+    expect(findDownload(ledger, broken.downloadId)).toMatchObject({ failure: "NETWORK_FAILED", cancelled: false, completed: false });
+    expect(findDownload(ledger, stopped.downloadId)).toMatchObject({ failure: "USER_CANCELED", cancelled: true, completed: false });
+    // 中断之后的迟到「complete」不能把失败改写成成功。
+    applyChromeDownload(ledger, { chromeId: 7, state: "complete" });
+    expect(findDownload(ledger, broken.downloadId).completed).toBe(false);
+  });
 
-    applyDownloadProgress(ledger, { guid: "gc", state: "canceled" });
-    const dl = findDownload(ledger, matched!.download.downloadId);
-    expect(dl.failure).toBe("canceled");
-    expect(dl.cancelled).toBe(true);
-    expect(dl.completed).toBe(false);
+  it("完成只在 chrome.downloads 报 complete 时成立；按 URL 把 Chrome 记录接到本页下载", () => {
+    const ledger = createPageEventLedger();
+    armPageEvent(ledger, { kind: "download", tabId: 30, sessionKey: "s" });
+    const dl = matchDownloadBegin(ledger, { tabId: 30, guid: "g30", url: "https://example/r.csv", suggestedFilename: "r.csv" })!.download;
+
+    // 别的地址的 Chrome 下载不接到这条记录上。
+    expect(bindChromeDownload(ledger, { chromeId: 1, url: "https://example/other.csv" })).toBeUndefined();
+    expect(bindChromeDownload(ledger, { chromeId: 2, url: "https://example/redirect", finalUrl: "https://example/r.csv" })?.downloadId).toBe(dl.downloadId);
+
+    applyChromeDownload(ledger, { chromeId: 2, state: "in_progress", filename: "/Users/u/Downloads/r.csv", bytes: 3 });
+    expect(findDownload(ledger, dl.downloadId).completed).toBe(false);
+    applyChromeDownload(ledger, { chromeId: 2, state: "complete", filename: "/Users/u/Downloads/r.csv", bytes: 8 });
+    expect(findDownload(ledger, dl.downloadId)).toMatchObject({ completed: true, failure: null, path: "/Users/u/Downloads/r.csv", bytes: 8 });
   });
 
   it("动态 filechooser：arm 后匹配，暴露 multiple 与 chooserId", () => {
@@ -151,9 +163,9 @@ describe("CAP-02A page-event ledger", () => {
 
   it("同一 tab 不能并行两个同 kind arm（防串听）", () => {
     const ledger = createPageEventLedger();
-    armPageEvent(ledger, { kind: "download", tabId: 8, sessionKey: "s", downloadPath: "/tmp/a" });
+    armPageEvent(ledger, { kind: "download", tabId: 8, sessionKey: "s" });
     expect(() =>
-      armPageEvent(ledger, { kind: "download", tabId: 8, sessionKey: "s", downloadPath: "/tmp/b" }),
+      armPageEvent(ledger, { kind: "download", tabId: 8, sessionKey: "s" }),
     ).toThrow(/already has an active download/);
   });
 });

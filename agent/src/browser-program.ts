@@ -1,7 +1,7 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "quickjs-emscripten";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
 import { buildPlaywrightProgram } from "./stagehand-bridge.js";
-import { createDownloadArmDir, hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
+import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
 
 export interface ProgramStep {
   parentId: string;
@@ -69,7 +69,7 @@ export const BROWSER_PROGRAM_HELPERS = [
   { name: "waitForLoad", summary: "等当前文档的 domcontentloaded / load 就绪", composed: "js(document.readyState+timeOrigin)" },
   { name: "waitForNetworkIdle", summary: "纳入范围的在途请求为 0 且持续静默；捕获不完整不冒充空闲（≠业务完成）", composed: "network 在途集合轮询" },
   { name: "scrollToBottomUntil", summary: "滚动直到条件成立或到底", composed: "scroll + read_element / js 条件" },
-  { name: "armEvent", summary: "触发前订阅 popup/download/filechooser；返回宿主 token（串行队列不阻塞）", composed: "arm_event + 下载临时目录" },
+  { name: "armEvent", summary: "触发前订阅 popup/download/filechooser；返回宿主 token（串行队列不阻塞）", composed: "arm_event" },
   { name: "waitEvent", summary: "消费已 arm 的 token；须先 arm 再动作再 wait", composed: "wait_event" },
   { name: "disarmEvent", summary: "取消尚未消费的 arm", composed: "disarm_event" },
   { name: "consumeEvents", summary: "读清本页缓冲事件", composed: "consume_events" },
@@ -317,7 +317,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
   /**
    * armEvent：立即返回宿主 token，不阻塞串行队列。
-   * download 时由宿主创建临时目录再交给扩展 Page.setDownloadBehavior（不设全局目录）。
+   * download 由 Chrome 存进用户的下载文件夹，完成与否由扩展按 chrome.downloads 判定。
    */
   async function armEvent(params: Record<string, unknown>, stepId: string): Promise<unknown> {
     guard();
@@ -332,12 +332,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (typeof params.tabId === "number") callParams.tabId = params.tabId;
 
     if (typeof params.timeoutMs === "number") callParams.timeoutMs = params.timeoutMs;
-
-    if (type === "download") {
-      callParams.downloadPath = typeof params.downloadPath === "string" && params.downloadPath.startsWith("/")
-        ? params.downloadPath
-        : createDownloadArmDir(String(stepId).replace(/\W+/g, "").slice(-12) || "arm");
-    }
 
     return options.call("arm_event", callParams, stepId);
   }

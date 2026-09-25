@@ -42,6 +42,7 @@ npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless # 语音
 npx tsx scripts/acceptance/real-path/point-then-mark.mts --headless    # 用户点选、Esc 取消、侧栏停止
 npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项做不到：未完成行写用户原话、无「继续」、步骤清单平铺
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 只装扩展，设置页到圈画交付
+npx tsx scripts/acceptance/real-path/page-download.mts --headless --case=complete|broken # 只装扩展，下载页面提供的文件：完整下完 / 下载中断
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --voice=qingchunshaonv # 只装扩展，语音到页面标注
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in --model=zai-coding-cn/glm-5.3-flash # 长回答念到一半插话：旧回答停声、不抢话，新问题照常回答
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录
@@ -52,6 +53,8 @@ npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-tas
 `everyday-baseline.mts --headless --inproc=provider/id` 在隔离 Chrome 里只装扩展，像用户一样从设置页填 key、测试连接、保存，再跑 10 条日常请求。扩展内没有诊断记录，所以用 `watchInproc()` 从外部记录 offscreen 的 console 和每次网络请求（首字节、结束），写进 `hostlog.txt` 和 `inproc-requests.json`；每条还要求模型请求只发往所选服务商的主机，发错就判失败。跑完后再像用户一样在设置页点「导出」「清空」：导出的 jsonl 必须覆盖每条用例、每行带 time/sessionId/type/turn、不含 API key，清空后再导出为空（结果在 `summary.json` 的 `traceCheck`）。观察器也记下扩展后台 worker 的起停，用来排除「worker 重启丢了内存状态」这类原因。每条用例导航后把工作页切回前台，上一条新开的标签页不会变成下一条的当前页。`inproc-voice` 跑完同样从设置页导出语音记录，判 `voiceRecordExported`：有 asr、text 行，与侧栏听到的句子一致，不含语音密钥（逐帧行只在诊断模式有，不作要求）。问答、圈画、闲聊用例另记开口时间线（`result.opening`：开麦、握手帧、首帧音频、服务端断句与转写相对开麦的毫秒数和发出音频的响度），并判 `speechDelivered`：WAV 里的人声时长与实际发给服务端的人声时长比较，不依赖服务端断句。`--lead=300` 模拟点完麦克风马上开口；假麦克风在 `getUserMedia` 时开始放。时间线还记服务端回显的 `turn_detection`，以及每个回复的创建、首段文字、工具调用（含参数）、取消/结束和宿主回传的工具结果；`receivedBySecond` 按秒统计收到的事件类型，用来看挂住时服务端还在发什么。`--daily` 在日常 Chrome 跑扩展内 agent 时也挂同一个观察器。圈画这条（`/quota`）要求有一个框同时圈住「五小时用量」和「32%」，并且名牌不压页面文字：框和名牌画在扩展的封闭 shadow root 里，用 CDP 穿透读出位置，再和页面每个文字节点对照。标注渲染的离线自检是 `node extension/test/overlay-check.mjs`（本机 Playwright Chromium 版本变了时用 `OVERLAY_CHROME` 指向当前那一份），through 用例量的是手绘框线本身，不是外层盒子。
 
 `everyday-baseline.mts --daily` 改用 `attachDailyChrome()`：连到用户已开的日常 Chrome（9222），驱动已加载的 `extension/dist` 和日常设置，不构建、不注册伴随进程；在用户窗口里新开标签页和侧栏，结束只关自己开的标签页。只在用户同意后运行。要测「只装扩展」，先停用该 Chrome 用户目录下 `NativeMessagingHosts/com.sideagent.host.json`（日常用的是 `ChromeMain` 目录）并重载扩展；清单还在时扩展优先连本机伴随进程。
+
+两个隔离启动器（`real-path/harness.mts`、`isolated-extension.mts`）都把 Chrome 配置目录的下载文件夹指到临时目录，页面下载不进用户真实的下载文件夹。`page-download` 的练习页是夹具服务器的 `downloads.html`：一个文件完整返回，另一个声明 64 KB、发 4 KB 后断开；判据看临时下载文件夹里的实际文件、Chrome 下载记录（`chrome.downloads.search`）和侧栏回答。
 
 `inproc-*` 用例则不注册 Native Messaging：模型凭据只写进隔离扩展存储。圈画判据同时要求页面圈住目标、未点击、侧栏交付无错误；只看到圈画但目标账本报未完成，仍为失败。`inproc-mark --via-settings` 等待新会话可发送后才输入，避免把启动中的草稿切换误判为任务失败。
 

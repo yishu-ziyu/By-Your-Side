@@ -47,6 +47,8 @@ const ACTION_NAMES: Record<string, string> = {
   screenshot: "截图",
   mark: "标注元素",
   clear_marks: "清除标注",
+  arm_event: "准备接收页面事件",
+  wait_event: "等待页面事件",
   spawn_worker: "请了人",
   list_workers: "名册",
   stop_worker: "停下",
@@ -125,6 +127,9 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
 
       return { short, full: label ? `${short}「${clip(label)}」` : `${short}元素` };
     }
+
+    case "arm_event":
+      return params.type === "download" ? { short: "准备接收下载", full: "准备接收下载" } : { short, full: short };
 
     case "navigate": {
       const host = hostOf(params.url);

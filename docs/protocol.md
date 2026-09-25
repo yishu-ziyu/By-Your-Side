@@ -134,6 +134,8 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
 
+页面下载：`arm_event{type:"download"}` → 点页面的下载入口 → `wait_event`。`Page.downloadWillBegin` 把下载归到已 arm 的标签页，文件由 Chrome 存进用户的下载文件夹；是否下完只看 `chrome.downloads`（两者按 URL 对上）。`wait_event` 匹配后再等下载结束（默认最多 60 秒），`download.completed` 只在 Chrome 报 `complete` 时为真并带 `path`/`bytes`；中断时 `failure` 是 Chrome 的错误码，模型工具把它作为失败返回。`download_cancel` 不取消已下完的文件，`download_delete` 只忘掉记录、不删文件；本机伴随进程的 `download_save_as` 在完成后复制到指定路径。扩展调试通道拒绝浏览器级 `Page.setDownloadBehavior`，所以不再用它（[09-23 记录](evals/20260923-ci-gate-failures.md)）。
+
 `mark` 可选 `through: "@N"`：同一行的结束 ref，一个框从 `target` 圈到它（用于「名称 + 数值」这类成对内容，先后顺序不限）。两者都必须是同一张快照的 ref；不在同一行、不在同一页面或不是 ref 时报错并记为未执行。框随两端之间的内容重排而重画。名牌依次试框的右、上、下、左，选第一处不压页面文字、图片或控件的位置；四处都压字时沿框的上沿、下沿往右找空白。
 
 `mark` 可选 `actions: [{id:"confirm"|"cancel", label}]`：就地确认。带 actions 时光标飞到目标拿住，删除/取消一类按钮长在光标名牌上（不在框外）。用户点按钮时，content script 发内部 `mark_action`，background 转成 `user_message` 文本「确认」或「取消」（与侧栏打字同一条路）。点取消会先 `clear_marks`。

@@ -379,9 +379,13 @@ export async function exportDiagnosticsViaSettings(
  */
 export async function launchRealPath({ microphoneWav, withoutNativeHost = false }: { microphoneWav?: string; withoutNativeHost?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
-  const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host") };
+  const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host"), downloads: join(root, "downloads") };
 
   for (const dir of Object.values(dirs)) await mkdir(dir, { recursive: true });
+
+  // 这个配置目录的「下载」文件夹指到临时目录：页面下载不进用户真实的下载文件夹，也不弹保存对话框。
+  await mkdir(join(dirs.profile, "Default"), { recursive: true });
+  await writeFile(join(dirs.profile, "Default", "Preferences"), JSON.stringify({ download: { default_directory: dirs.downloads, prompt_for_download: false, directory_upgrade: true } }));
 
   // build.mjs 会先清空输出目录；不带 SIDEAGENT_BUILD_DIST 就会清掉日常 Chrome 正在加载的 extension/dist。
   const distBefore = await dailyDistStamp();

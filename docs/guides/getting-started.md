@@ -44,6 +44,8 @@ npx @earendil-works/pi-coding-agent
 2. 点击“加载已解压的扩展程序”，选择本仓库的 `extension/dist/`。
 3. 点击工具栏的 **By Your Side** 图标，打开侧栏。
 
+扩展从 2026-09-26 起多申请下载权限（`downloads`），用来确认页面下载是否完成。已加载旧版的，在 `chrome://extensions` 里对 By Your Side 点“重新加载”后才会拿到它。
+
 Chrome 会自动启动本地伴随进程。正常使用不需要手动启动服务或粘贴连接 token。默认扩展 ID 与 Native Messaging 白名单由仓库 manifest 对应生成。
 
 没有安装伴随进程时，扩展会在 offscreen 文档中运行同一份任务核心。打开侧栏「更多 → 模型与语音」，配置文字模型和凭据；阶跃语音可单独填 Key，也可沿用阶跃文字模型的 Key。阶跃文字模型（step-3.7-flash、step-3.5-flash、step-5-preview）走 Step Plan 通道 `https://api.stepfun.com/step_plan/v1`，消耗套餐 Credit；按开放平台 API 计费的只有实时语音 `stepaudio-3-realtime-preview`（不在 Step Plan 模型列表里）。同一个 Key 两个通道都能调用，扣哪边只由请求地址决定。扩展凭据保存在 Chrome 的本地扩展存储中，不从 `~/.pi/agent/` 或 `~/.sideagent/` 自动读取。扩展入口目前的恢复与持久化边界见[当前状态](../STATUS.md)。

@@ -3,11 +3,11 @@
  * 反例：阻塞式先 wait 再 click 会死锁；arm 必须立即返回 token。
  */
 import { describe, expect, it, vi } from "vitest";
-import { writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runBrowserProgram } from "../src/browser-program.js";
-import { hostDownloadSaveAs, createDownloadArmDir, assertAbsoluteSavePath } from "../src/download-artifacts.js";
+import { hostDownloadSaveAs, assertAbsoluteSavePath } from "../src/download-artifacts.js";
 
 describe("CAP-02A arm/wait 串行队列", () => {
   it("armEvent 立即返回 token，不阻塞后续 click；再 waitEvent 消费", async () => {
@@ -72,13 +72,12 @@ describe("CAP-02A arm/wait 串行队列", () => {
     ).rejects.toThrow(/model-minted|unknown/i);
   });
 
-  it("armEvent(download) 由宿主补 downloadPath 再 RPC", async () => {
+  it("armEvent(download) 不再造临时目录：Chrome 存进用户的下载文件夹", async () => {
     const call = vi.fn(async (name: string, params: Record<string, unknown>) => {
       if (name === "arm_event") {
-        expect(typeof params.downloadPath).toBe("string");
-        expect(String(params.downloadPath).startsWith("/")).toBe(true);
+        expect(params).toEqual({ type: "download" });
 
-        return { token: "evt_download_1_1_aabbccdd", type: "download", tabId: 1, timeoutMs: 10_000, downloadPath: params.downloadPath };
+        return { token: "evt_download_1_1_aabbccdd", type: "download", tabId: 1, timeoutMs: 10_000 };
       }
 
       throw new Error(`unexpected ${name}`);
@@ -90,14 +89,13 @@ describe("CAP-02A arm/wait 串行队列", () => {
     });
 
     expect(result.value).toMatchObject({ type: "download", token: expect.stringMatching(/^evt_download_/) });
-    rmSync(String((result.value as { downloadPath?: string }).downloadPath), { recursive: true, force: true });
   });
 });
 
 describe("CAP-02A download 宿主 saveAs", () => {
-  it("轮询临时目录复制到绝对路径；拒绝相对路径", async () => {
+  it("Chrome 报完成后把文件复制到绝对路径；拒绝相对路径", async () => {
     expect(() => assertAbsoluteSavePath("relative.bin")).toThrow(/absolute/);
-    const dir = createDownloadArmDir("test");
+    const dir = mkdtempSync(join(tmpdir(), "bys-cap02a-"));
     writeFileSync(join(dir, "report.pdf"), "PDFDATA");
     const dest = join(tmpdir(), `bys-cap02a-save-${Date.now()}.pdf`);
 
@@ -111,11 +109,10 @@ describe("CAP-02A download 宿主 saveAs", () => {
           tabId: 9,
           url: "blob:https://example/x",
           suggestedFilename: "report.pdf",
-          path: null,
+          path: join(dir, "report.pdf"),
           failure: null,
           completed: true,
           cancelled: false,
-          downloadPath: dir,
         }),
       });
 
@@ -143,7 +140,6 @@ describe("CAP-02A download 宿主 saveAs", () => {
           failure: "canceled",
           completed: false,
           cancelled: true,
-          downloadPath: join(tmpdir(), "missing-cap02a"),
         }),
       }),
     ).rejects.toThrow(/canceled|failed/i);

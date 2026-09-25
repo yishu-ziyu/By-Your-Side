@@ -1616,7 +1616,7 @@ try {
       dlErr = String(e);
     }
 
-    const downloadId = dlWait?.details?.downloadId ?? dlWait?.details?.event?.downloadId;
+    const downloadId = dlWait?.details?.download?.downloadId;
     let savePath: string | null = null;
     let saveErr = "";
 
@@ -1633,9 +1633,8 @@ try {
     let savedBody = "";
 
     if (savePath && existsSync(savePath)) savedBody = await readFile(savePath, "utf8");
-    const dlCdpDenied = /DOWNLOAD_ARM_CDP/i.test(dlErr);
     check(sc, "download wait survived screenshot", !!dlWait?.details && !dlErr, { dlWait: dlWait?.details, dlErr: dlErr.slice(0, 200) });
-    check(sc, "saved actual page-generated blob", savedBody.includes("BLOB-DL-CONTENT"), { savedBody: savedBody.slice(0, 80), saveErr: saveErr.slice(0, 160), dlCdpDenied });
+    check(sc, "saved actual page-generated blob", savedBody.includes("BLOB-DL-CONTENT"), { savedBody: savedBody.slice(0, 80), saveErr: saveErr.slice(0, 160) });
 
     // second same-name download isolation
     let dl2: any = null;
@@ -1645,7 +1644,7 @@ try {
       const armDl2 = await runTool("arm_event", { type: "download" });
       await runTool("click", { target: "#dl", tabId });
       dl2 = await runTool("wait_event", { token: armDl2.details?.token, timeoutMs: 10000 });
-      id2 = dl2?.details?.downloadId ?? dl2?.details?.event?.downloadId;
+      id2 = dl2?.details?.download?.downloadId;
     } catch (e) {
       dlErr = dlErr || String(e);
     }

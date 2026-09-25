@@ -649,19 +649,20 @@ export interface ToolContract {
   };
   /**
    * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
-   * download 必须带绝对 downloadPath（本任务临时目录）；不设全局下载目录。
+   * download 由 Chrome 存进用户的下载文件夹；完成与否只看 chrome.downloads。
    */
   arm_event: {
     params: {
       tabId?: number;
       type: "popup" | "download" | "filechooser";
       timeoutMs?: number;
-      /** download 专用：Chrome 写入的绝对临时目录（宿主创建）。 */
-      downloadPath?: string;
     };
-    data: { token: string; type: "popup" | "download" | "filechooser"; tabId: number; timeoutMs: number; downloadPath?: string };
+    data: { token: string; type: "popup" | "download" | "filechooser"; tabId: number; timeoutMs: number };
   };
-  /** 等待已 arm 的 token 匹配并一次消费；未匹配前阻塞到超时。 */
+  /**
+   * 等待已 arm 的 token 匹配并一次消费；未匹配前阻塞到超时。
+   * download 匹配后再等 chrome.downloads 报完成或中断（默认最多 60 秒）；completed 只在 Chrome 报 complete 时为 true。
+   */
   wait_event: {
     params: { token: string; timeoutMs?: number };
     data: {
@@ -674,8 +675,14 @@ export interface ToolContract {
         url: string;
         suggestedFilename: string;
         tabId: number;
+        /** chrome.downloads 的错误码（如 NETWORK_FAILED、USER_CANCELED）；null 表示没有中断。 */
         failure: string | null;
         completed: boolean;
+        /** 完成后 Chrome 写入的绝对路径与字节数。 */
+        path?: string;
+        bytes?: number;
+        /** Chrome 判为可能有害、等用户确认保留时的 danger 值。 */
+        danger?: string;
       };
       fileChooser?: { chooserId: string; multiple: boolean; backendNodeId: number };
     };
@@ -736,14 +743,14 @@ export interface ToolContract {
       failure: string | null;
       completed: boolean;
       cancelled: boolean;
-      /** 临时目录（Chrome 写入处）；agent saveAs 轮询用。 */
-      downloadPath?: string;
-      expectedPath?: string;
+      bytes?: number;
+      danger?: string;
     };
   };
   download_cancel: {
     params: { downloadId: string };
-    data: { cancelled: true; downloadId: string; failure: string | null };
+    /** cancelled 只在 Chrome 报 USER_CANCELED 时为 true；已下完的不会被取消。 */
+    data: { cancelled: boolean; completed: boolean; downloadId: string; failure: string | null };
   };
   download_delete: {
     params: { downloadId: string };
