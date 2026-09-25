@@ -1,0 +1,37 @@
+# 任务: 看 Sitegeist 宣传能做的事，我们的产品能不能做到
+
+## 背景
+
+2026-09-25 用户要求参考 [badlogic/sitegeist](https://github.com/badlogic/sitegeist)，并在我们的产品上复现它列出的功能。Sitegeist 同样是只装扩展的 Chrome 侧栏助手（同作者的 pi-mono 为底），核心工具很少：`repl`（在页面里执行代码）、`navigate`、`ask_user_which_element`、`extract_image`，加上按网站自动加载的「技能」、会话内可下载的「产物」（Markdown、HTML、CSV、PDF、Word）、每会话费用统计和全部数据导出导入。官网与新手教程演示的任务：多页调研汇总成带来源的文档、网页数据导出表格、改可编辑文字的错别字、YouTube 字幕总结、消息里提取会议写入日历、按份数换算配方的交互小工具。
+
+## 完成标准
+
+- [x] 1. 把能在本机练习页复现的 5 类任务做成可重复的真实路径用例 — 谁检查: `everyday-baseline.mts --suite=sitegeist`
+- [x] 2. 每条如实记录结果与失败原因（读工具调用记录，不只看判据） — 谁检查: 本文件
+- [x] 3. 修复只装扩展时 `browser_run` 每次都报 wasm 加载失败 — 谁检查: 重跑后工具调用记录里 `browser_run` 正常返回
+- [ ] 4. 导出文件、在页面上做小工具 — 未做，需产品决定（见下）
+
+## 边界与不做
+
+- 需要真实账号或外部网站的（写日历、YouTube、LinkedIn）不跑。
+- 全部在隔离无头 Chrome、本机练习页上，模型 `stepfun/step-3.7-flash`（Step Plan）。
+
+## 证据
+
+| 用例 | 第一次（`11-27-11`） | 修 wasm 后（`11-36-02`） | 说明 |
+|---|---|---|---|
+| 多页调研：三家公司的年份、城市、人数，带来源 | 通过，50 秒，12 次模型调用 | — | 表格全对；结尾误加「任务状态：仅交付部分结果」 |
+| 导出 CSV 并下载 | 240 秒超时，无文件 | 105 秒结束，无文件 | 第一次：`browser_run` 报 wasm 失败、`js` 被拦，改用材料提取被核验拒 3 次（理由之一是原文「没有逗号分隔」）后空转；第二次如实说做不到，把 CSV 文本贴在回答里 |
+| 改草稿框错别字，不发送 | 通过，48 秒，7 次 | — | 三处全改对，其余不动，未发送 |
+| 从聊天提取会议日期、时间、地点、参会人 | 通过，6 秒，1 次 | — | |
+| 做按份数换算用料的小工具 | 失败：说「环境阻止页面脚本执行」 | 失败：**声称「换算器已经就位」，页面上什么都没有** | `js` 被拦、`browser_run` 执行 0 步；截图 `calculator-page-running-2.png` 只有原配方 |
+
+原因：
+
+1. **`browser_run` 在只装扩展时无法运行**：QuickJS 的 `emscripten-module.wasm` 没有打进 `extension/dist`，扩展页 CSP 也不允许编译 WebAssembly。已修：`build.mjs` 复制该文件到 dist 根目录（打包后的代码按 `new URL("emscripten-module.wasm", import.meta.url)` 取），manifest 的 `extension_pages` 加 `'wasm-unsafe-eval'`（只放行 WebAssembly 编译，不放行 `eval`）。修后 `browser_run` 正常返回，但有一次报 `process is not defined`，扩展环境里仍有缺口。
+2. **`js`（通用页面脚本）在只装扩展时被整体拦下**：规则是任何写工具不可用就禁止通用页面 JS（防绕过），扩展里 `disarm_event` 不可用，于是连带禁用。Sitegeist 的核心恰恰是页面内执行代码。
+3. **没有产出文件的能力**：没有生成文件并下载的工具，CSV、HTML 小工具都只能靠页面脚本凑。
+4. **没做成却声称做成**：小工具那次在没有任何页面变化的情况下回答「已经就位」。
+5. 多页调研与改错字都要 50 秒左右；调研回答结尾误标「仅交付部分结果」。
+
+产物在 `out/acceptance/real-path/`，未入库。

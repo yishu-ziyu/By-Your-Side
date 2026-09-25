@@ -109,6 +109,10 @@ for (const [from, to] of [
   await copyFile(path.join(root, from), path.join(dist, to));
 }
 
+// browser_run 的 QuickJS 沙箱：打包后的代码按 new URL("emscripten-module.wasm", import.meta.url) 取，
+// 所以放在 dist 根目录；缺了它，只装扩展时 browser_run 每次都报 wasm 加载失败。
+await copyFile(path.join(root, "../node_modules/@jitl/quickjs-wasmfile-release-sync/dist/emscripten-module.wasm"), path.join(dist, "emscripten-module.wasm"));
+
 // 图标：manifest 里以 icons/ 前缀引用，保持目录结构拷入 dist
 await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
 

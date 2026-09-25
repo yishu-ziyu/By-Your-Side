@@ -4,13 +4,14 @@
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math]
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash   # 只装扩展，设置页配模型
+ *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash --suite=sitegeist   # Sitegeist 宣传的 5 类任务
  *
  * --inproc 时每条另记扩展内 agent 发出的模型请求（地址、首字节、结束），并判定请求都发往所选服务商。
  *
  * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
  * 以及该条的结果判据（答案内容、页面圈画、新标签页、草稿框原文且未保存）。练习页全在本机，不碰真实账号。
  */
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { Type, type Static } from "typebox";
@@ -23,13 +24,16 @@ const daily = process.argv.includes("--daily");
 /** --inproc=provider/id：不注册伴随进程，从设置页配置这个模型。 */
 const inprocModel = process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
 
+/** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
+const suite = process.argv.find((a) => a.startsWith("--suite="))?.slice(8) === "sitegeist" ? "sitegeist" : "everyday";
+
 if (!daily) requireHeadless();
 
 const CASE_LIMIT_MS = 240_000;
 
 const startedAt = new Date();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline${daily ? "-daily" : inprocModel ? "-inproc" : ""}`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-everyday-baseline${suite === "sitegeist" ? "-sitegeist" : ""}${daily ? "-daily" : inprocModel ? "-inproc" : ""}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -60,6 +64,20 @@ const PAGES = {
 <div class="note" style="background:#e8f0ff;border:1px solid #6b8cff;padding:12px"><div><strong>Note</strong></div><p>${NOTE_FIRST} Image input is planned for a later release. Audio is not on the roadmap.</p></div>
 <h2>我的草稿</h2><form method="post" action="/save"><textarea id="draft" name="draft" rows="4" cols="60" aria-label="草稿"></textarea>
 <button type="submit" id="save">保存</button></form></main>`),
+  "/companies": page("三家候选供应商", `<main><h1>三家候选供应商</h1><p>详细资料在各自页面。</p>
+<ul><li><a href="/company/lumen">Lumen 光子</a></li><li><a href="/company/harbor">Harbor 港湾</a></li><li><a href="/company/kite">Kite 风筝</a></li></ul></main>`),
+  "/company/lumen": page("Lumen 光子", `<main><h1>Lumen 光子</h1><p>成立于 2016 年，总部在苏州，目前员工 120 人。</p></main>`),
+  "/company/harbor": page("Harbor 港湾", `<main><h1>Harbor 港湾</h1><p>成立于 2019 年，总部在厦门，目前员工 45 人。</p></main>`),
+  "/company/kite": page("Kite 风筝", `<main><h1>Kite 风筝</h1><p>成立于 2012 年，总部在成都，目前员工 310 人。</p></main>`),
+  "/products": page("家居小物", `<main><h1>家居小物</h1><table><thead><tr><th>商品</th><th>价格</th></tr></thead><tbody>
+<tr><td>竹纤维毛巾</td><td>¥39</td></tr><tr><td>陶瓷马克杯</td><td>¥58</td></tr><tr><td>亚麻抱枕套</td><td>¥89</td></tr><tr><td>香薰蜡烛</td><td>¥66</td></tr></tbody></table></main>`),
+  "/compose": page("写通知", `<main><h1>写通知</h1><form method="post" action="/save"><textarea id="draft" name="draft" rows="4" cols="60" aria-label="通知草稿">各位好：我们明天下午三点在会议是开会，讨论新版本的上线计画，请大家准时参加，不要迟道。</textarea>
+<button type="submit" id="save">发送</button></form></main>`),
+  "/chat": page("新版本群", `<main><h1>新版本群</h1><ul>
+<li><b>小林</b>：下周三下午两点半碰一下新版本的事？</li>
+<li><b>阿杰</b>：可以，地点就定望京 SOHO T3 12 层的小会议室吧</li>
+<li><b>我</b>：好，那就 10 月 8 日（周三）14:30，小林、阿杰和我三个人</li></ul></main>`),
+  "/recipe": page("巧克力曲奇", `<main><h1>巧克力曲奇（24 块）</h1><ul><li>黄油 115 克</li><li>红糖 100 克</li><li>白砂糖 50 克</li><li>鸡蛋 1 个</li><li>面粉 190 克</li><li>巧克力豆 170 克</li></ul></main>`),
 } satisfies Record<string, string>;
 
 const PAGE_BY_PATH = new Map<string, string>(Object.entries(PAGES));
@@ -91,7 +109,7 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { answer: string; pageText: string; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number };
+type Ctx = { answer: string; pageText: string; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }> };
 
 type Case = { id: string; path: string; prompt: string; check: (c: Ctx) => string | null };
 
@@ -129,9 +147,44 @@ const CASES: Case[] = [
     check: (c) => (c.saves > 0 ? "点了保存" : c.draft?.trim() === NOTE_FIRST ? null : `草稿框内容不对：${JSON.stringify(c.draft)}`) },
 ];
 
+const flat = (text: string) => text.replace(/\s+/g, "");
+
+/** Sitegeist 宣传的任务，全部换成本机练习页；判据只看用户拿到的结果。 */
+const SITEGEIST_CASES: Case[] = [
+  { id: "research", path: "/companies", prompt: "打开这页列出的三家公司，把每家的成立年份、城市和员工人数整理成一张表，每行注明来源网址。",
+    check: (c) => {
+      const missing = ["2016", "苏州", "120", "2019", "厦门", "45", "2012", "成都", "310", "/company/lumen", "/company/harbor", "/company/kite"].filter((n) => !c.answer.includes(n));
+
+      return missing.length ? `回答缺少：${missing.join("、")}` : null;
+    } },
+  { id: "export-csv", path: "/products", prompt: "把这页的商品名称和价格导出成 CSV 文件下载给我。",
+    check: (c) => {
+      const csv = c.files.find((f) => f.name.toLowerCase().endsWith(".csv"));
+
+      if (!csv) return `没有下载到 CSV（下载了：${c.files.map((f) => f.name).join("、") || "无"}）`;
+      const missing = ["竹纤维毛巾", "陶瓷马克杯", "亚麻抱枕套", "香薰蜡烛", "39", "58", "89", "66"].filter((n) => !csv.text.includes(n));
+
+      return missing.length ? `CSV 缺少：${missing.join("、")}` : null;
+    } },
+  { id: "fix-typos", path: "/compose", prompt: "帮我把草稿框里的错别字改好，其他字不要动，不要发送。",
+    check: (c) => (c.saves > 0 ? "点了发送" : c.draft === "各位好：我们明天下午三点在会议室开会，讨论新版本的上线计划，请大家准时参加，不要迟到。" ? null : `草稿框内容不对：${JSON.stringify(c.draft)}`) },
+  { id: "meeting", path: "/chat", prompt: "从这段聊天里整理出会议的日期、时间、地点和参会人。",
+    check: (c) => {
+      const a = flat(c.answer);
+      const missing = [["10月8日"], ["14:30", "两点半", "2:30"], ["望京SOHOT3"], ["12层"], ["小林"], ["阿杰"]].flatMap((alts) => (alts.some((n) => a.includes(n)) ? [] : [alts[0]]));
+
+      return missing.length ? `回答缺少：${missing.join("、")}` : null;
+    } },
+  { id: "calculator", path: "/recipe", prompt: "根据这页的配方做一个小工具：我输入想做几块饼干，它自动换算每样用料。",
+    check: (c) => (c.files.some((f) => /\.html?$/i.test(f.name) && /<input/i.test(f.text)) || /<input/i.test(c.answer) || c.tabs.some((u) => !u.startsWith(origin) && !u.startsWith("about:") && !u.startsWith("chrome"))
+      ? null : "没有生成可输入份数的小工具（无 HTML 文件、回答里无输入框、也没新开页面）") },
+];
+
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 
-const selected = only ? CASES.filter((c) => only.includes(c.id)) : CASES;
+const pool = suite === "sitegeist" ? SITEGEIST_CASES : CASES;
+
+const selected = only ? pool.filter((c) => only.includes(c.id)) : pool;
 
 /** 导出文件的一行必须带本机记录的公共字段（time、sessionId、type、整数 turn）；data.text 可缺省。 */
 const TraceLineSchema = Type.Object({
@@ -319,6 +372,11 @@ try {
 
   for (const item of selected) {
     saveRequests = 0;
+    // 每条用例单独一个下载目录：判据只看这一条下载了什么。
+    const caseDownloads = join(artifacts, `downloads-${item.id}`);
+
+    await mkdir(caseDownloads, { recursive: true });
+    await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: caseDownloads });
     await rp.cdp.send("Page.navigate", { url: `${origin}${item.path}` }, work);
     // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
     await rp.cdp.send("Page.bringToFront", {}, work);
@@ -402,7 +460,9 @@ try {
     const draftValue = await rp.evaluate(work, "document.querySelector('#draft')?.value ?? null").catch(() => null);
     const tabs = (await rp.targets()).filter((t) => t.type === "page").map((t) => t.url);
     const answer = final?.answers.join("\n\n") ?? "";
-    const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests };
+    const downloaded = (await readdir(caseDownloads)).filter((name) => !name.endsWith(".crdownload"));
+    const files = await Promise.all(downloaded.map(async (name) => ({ name, text: await readFile(join(caseDownloads, name), "utf8").catch(() => "") })));
+    const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
