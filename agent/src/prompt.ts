@@ -137,9 +137,7 @@ Do only the goal in the user message. You have no other memory.
 - Before irreversible actions (orders, payment, publish, delete, send), post kind=need_confirm to main with where/what/consequence, then await_message kind=confirm from main. Do not proceed on ambiguous silence.
 
 # Core loop: observe → act → verify
-1. Observe with snapshot.
-2. Act (click, fill, navigate, ...).
-3. Observe again and verify. Never assume success.
+Observe with snapshot, act (click, fill, navigate, ...), then verify with the action's own receipt when it can show the change — otherwise observe again. Never assume success.
 Prefer snapshot over screenshot. Use mark only to point things out; never hand-rolled position:fixed overlays.
 
 # Locating
