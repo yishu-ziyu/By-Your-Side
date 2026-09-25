@@ -526,6 +526,7 @@ try {
   let appended = false;
   const firstText = new Set<string>();
   const receivedBySecond = new Map<string, number>();
+  const sessionIds: string[] = [];
   // 服务端回显的断句参数，确认 session.update 里的取值真的生效。
   let turnDetection: Json | undefined;
   const wire = { appends: 0, lastAppendAt: 0, received: 0, lastReceivedAt: 0, lastReceivedType: "", spokenSentMs: 0 };
@@ -539,6 +540,11 @@ try {
     try { e = JSON.parse(message.params?.response?.payloadData ?? ""); } catch { return; }
 
     const type = String(e.type ?? "");
+
+    if (dir === "received" && type === "session.created") {
+      // SAFETY: StepFun 的 session.created 按协议带 session 对象；只读 id，给供应商排查用。
+      sessionIds.push(String((e.session as JsonRecord | undefined)?.id ?? ""));
+    }
 
     if (dir === "received" && type === "session.updated") {
       // SAFETY: StepFun 的 session.updated 按协议带 session 对象；只读 turn_detection 字段。
@@ -632,6 +638,7 @@ try {
     // 开口没被丢：发给服务端的人声至少是 WAV 里人声的八成（浏览器自动增益会让个别音节过线或不过线）。
     verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
     result.receivedBySecond = [...receivedBySecond].map(([key, count]) => `${key}×${count}`).join(" ");
+    result.providerSessionIds = sessionIds;
     result.opening = { turnDetection: turnDetection ?? null, leadMs: lead, micOpened: micOpenedAt !== null, wire: { ...wire, lastAppendAt: wire.lastAppendAt - t0, lastReceivedAt: wire.lastReceivedAt - t0 }, loudness: loudness.map((c) => `${c.at - t0}:${c.peak}`).join(" "), voiceOnsetMs: voiceOnsetAt === null ? null : voiceOnsetAt - t0, events: opening.map((o) => ({ ms: o.at - t0, event: o.event, text: o.text })) };
   };
 
