@@ -97,6 +97,9 @@ const MODEL_TOOL_OF: Record<string, string> = {
   switch_tab: "tabs",
   close_tab: "tabs",
   clear_marks: "mark",
+  // disarm_event 只在 browser_run 里组合使用，没有单独的模型工具；它和 arm_event 同属事件订阅，随 arm_event 启停。
+  // 缺这条映射时它永远算「未启用」，通用页面 JS 在所有模式下都被拒（docs/evals/20260925-sitegeist-parity.md）。
+  disarm_event: "arm_event",
   // worker_tabs 是扩展侧 RPC 名；模型可见的入口是常驻的 take_tab。
   worker_tabs: "take_tab",
 };

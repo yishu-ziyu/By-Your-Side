@@ -464,6 +464,8 @@ try {
     const downloaded = (await readdir(caseDownloads)).filter((name) => !name.endsWith(".crdownload"));
     const files = await Promise.all(downloaded.map(async (name) => ({ name, text: await readFile(join(caseDownloads, name), "utf8").catch(() => "") })));
     const pageInputs = Number(await rp.evaluate(work, "document.querySelectorAll('input').length").catch(() => 0));
+    // 用户最后看到的页面：运行中截图可能拍不到最终结果（如注入的小工具）。
+    await rp.screenshot(work, join(artifacts, `${item.id}-page-final.png`)).catch(() => {});
     const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
