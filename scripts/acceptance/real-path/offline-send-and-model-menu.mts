@@ -106,9 +106,11 @@ const rp = await launchRealPath({ withoutNativeHost: true });
 
 result.browser = rp.browser;
 
-const shot = async (session: string, name: string) => { await rp.screenshot(session, join(artifacts, name));
+const shot = async (session: string, name: string) => {
+  await rp.screenshot(session, join(artifacts, name));
 
- return name; };
+  return name;
+};
 
 /** 封闭 shadow root 里的按钮：CDP 穿透找到后按实际位置点击，和鼠标点一样。 */
 const clickShadowButton = async (session: string, text: string, timeoutMs = 15_000) => {
