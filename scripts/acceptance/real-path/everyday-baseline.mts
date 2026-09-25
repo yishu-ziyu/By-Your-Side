@@ -109,7 +109,7 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { answer: string; pageText: string; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }> };
+type Ctx = { answer: string; pageText: string; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
 
 type Case = { id: string; path: string; prompt: string; check: (c: Ctx) => string | null };
 
@@ -176,8 +176,9 @@ const SITEGEIST_CASES: Case[] = [
       return missing.length ? `回答缺少：${missing.join("、")}` : null;
     } },
   { id: "calculator", path: "/recipe", prompt: "根据这页的配方做一个小工具：我输入想做几块饼干，它自动换算每样用料。",
-    check: (c) => (c.files.some((f) => /\.html?$/i.test(f.name) && /<input/i.test(f.text)) || /<input/i.test(c.answer) || c.tabs.some((u) => !u.startsWith(origin) && !u.startsWith("about:") && !u.startsWith("chrome"))
-      ? null : "没有生成可输入份数的小工具（无 HTML 文件、回答里无输入框、也没新开页面）") },
+    // 只认用户拿来就能用的：页面上出现了输入框，或下载到带输入框的 HTML。回答里贴代码让用户自己存文件不算（09-25 两次这样被旧判据误判通过）。
+    check: (c) => (c.pageInputs > 0 || c.files.some((f) => /\.html?$/i.test(f.name) && /<input/i.test(f.text))
+      ? null : "没有生成可用的小工具（页面上没有输入框，也没有下载到 HTML 文件）") },
 ];
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
@@ -462,7 +463,8 @@ try {
     const answer = final?.answers.join("\n\n") ?? "";
     const downloaded = (await readdir(caseDownloads)).filter((name) => !name.endsWith(".crdownload"));
     const files = await Promise.all(downloaded.map(async (name) => ({ name, text: await readFile(join(caseDownloads, name), "utf8").catch(() => "") })));
-    const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files };
+    const pageInputs = Number(await rp.evaluate(work, "document.querySelectorAll('input').length").catch(() => 0));
+    const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
