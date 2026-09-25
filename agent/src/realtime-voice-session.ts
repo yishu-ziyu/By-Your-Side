@@ -287,6 +287,10 @@ export class RealtimeVoiceSession {
         this.connection?.handle({ type: 'stop_speech' });
 
         return;
+      case 'barge_in':
+        if (!this.deps.diagnosticMode) this.connection?.handle({ type: 'barge_in' });
+
+        return;
       case 'commit':
         if (this.deps.diagnosticMode) {
           this.emit({ kind: 'diag', record: { type: 'commit', seq: ++this.seq, eventId: `commit-${this.seq}`, turn: command.turn } });

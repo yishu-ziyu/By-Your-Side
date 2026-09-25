@@ -317,6 +317,8 @@ export class RealtimeVoiceConnection {
   private suppressDispatch = false;
   /** stop_speech 后属于该轮的迟到音频不再下发给前端。 */
   private localCancelResponseId: string | null = null;
+  /** 用户开口时已在播的回复：之后迟到的音频不再下发，回复本身与工具调用照常。 */
+  private readonly silencedResponses = new Set<string>();
   /** stop 时 response.created 还没到：迟到的 created 立即取消、音频不下发，下一次真实用户输入解锁。 */
   private pendingStop = false;
   private browserAbort = new AbortController();
@@ -357,6 +359,8 @@ export class RealtimeVoiceConnection {
     if (type === 'stop') return this.close();
 
     if (type === 'stop_speech') return this.stopSpeech();
+
+    if (type === 'barge_in') return this.bargeIn();
 
     if (type === 'commit_audio' && this.options.diagnostic) { this.socketSend({type:'input_audio_buffer.commit'});
 
@@ -556,6 +560,7 @@ return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
         this.browserAbort.abort(); this.browserAbort = new AbortController();
         // 全双工交给 provider 判断：不清队列、不发 response.cancel、不动后台任务。
         this.userSpeaking = true;
+        this.silenceOutput();
 
         if(this.creatingNotice){this.queuedNotify.unshift(this.creatingNotice.notice);this.creatingNotice=null;this.creatingDeliveryId=undefined;this.suppressDispatch=false;}
 
@@ -689,6 +694,8 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
 
     if (this.localCancelResponseId === responseId) return this.log({type: 'audio_after_stop_skipped', responseId});
+
+    if (this.silencedResponses.has(responseId)) return;
     const bytes = Math.floor((delta.length * 3) / 4);
     this.audioBytes.set(responseId, (this.audioBytes.get(responseId) ?? 0) + bytes);
 
@@ -1285,6 +1292,34 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     }
 
     return false;
+  }
+
+  /** 用户开口：已下发和还在生成的旧回复音频都作废，侧栏同时停播；不作废请求，不拦下一轮。 */
+  private silenceOutput(): void {
+    for (const id of this.audioBytes.keys()) {
+      this.silencedResponses.add(id);
+      this.playedResponses.add(id);
+      this.clearTimer(`playback:${id}`);
+    }
+
+    if (this.activeResponseId) this.silencedResponses.add(this.activeResponseId);
+  }
+
+  /**
+   * 侧栏在回答播放中本地听出用户开口。StepFun 生成回答期间几乎不断句（实测 75 秒长回答里用户开口始终没有
+   * speech_started），所以要取消这轮生成，它才会听到这句新话。与停声不同：不作废最新请求，也不拦下一轮。
+   */
+  private bargeIn(): void {
+    const responseId = this.activeResponseId;
+    this.silenceOutput();
+
+    if (responseId && this.held?.id === responseId) this.dropResponse(responseId);
+    else if (responseId) {
+      this.socketSend({type: 'response.cancel'});
+      this.localCancelResponseId = responseId;
+    }
+
+    this.log({type: 'barge_in', responseId});
   }
 
   /** 明确停声：只 cancel 当前语音并清播放队列，不取消后台任务，也不清输入缓冲。 */

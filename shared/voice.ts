@@ -249,6 +249,8 @@ export type VoiceCommand =
   | { kind: "input_context"; turn:number;input?:VoiceInputContext;error?:string }
   | { kind: "interrupt"; turn: number; played?: { itemId: string; ms: number } }
   | { kind: "playback_done"; responseId: string }
+  /** 回答播放中侧栏本地听出用户开口：停掉旧回答，但不作废这句新话。 */
+  | { kind: "barge_in"; turn: number }
   /**
    * Facts only the extension can observe for one turn: the continuous PCM it captured, the text the
    * panel rendered, or a user mark. One turn may arrive as several commands; the agent merges them by
@@ -354,6 +356,7 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     case "input_context": return turn(c.turn)&&(c.input!==undefined||c.error!==undefined)&&(c.error===undefined||typeof c.error==='string'&&c.error.length>0&&c.error.length<=500);
     case "interrupt": return turn(c.turn) && (c.played === undefined || !!c.played && id(c.played.itemId) && Number.isFinite(c.played.ms) && c.played.ms >= 0);
     case "playback_done": return id(c.responseId);
+    case "barge_in": return turn(c.turn);
     /** A capture must carry at least one real fact; `note` alone is not evidence and is always optional. */
     case "capture": return turn(c.turn)
       && (c.data !== undefined || c.mark === true || c.serverText !== undefined || c.displayText !== undefined)

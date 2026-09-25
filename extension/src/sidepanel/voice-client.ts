@@ -14,6 +14,14 @@ const PRE_READY_MAX_SAMPLES = 24000 * 15;
  */
 const BACKLOG_FRAMES_PER_TICK = 4;
 
+/**
+ * 本地插话判定：回答播放中，回声消除后的麦克风累计约 240 ms 有人声（约 -38 dBFS 以上）就算用户开口。
+ * StepFun 生成回答期间几乎不断句，等它的 speech_started 会一直念下去（OS 项目实测晚 4–5 秒，长回答不来）。
+ */
+const BARGE_IN_RMS = 0.012;
+
+const BARGE_IN_FRAMES = 12;
+
 /** 可选字段「存在才带上」时按具名类型分步赋值。 */
 type CaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
@@ -45,6 +53,8 @@ export class VoiceClient {
   private drainTimer: ReturnType<typeof setInterval> | null = null;
   /** 语音服务挂住后自动重连：连上后提示用户刚才那句没听到、请再说一遍。 */
   private sayAgainAfterRecovery = false;
+  /** 回答播放中连续有人声的帧数（20 ms 一帧，静音帧扣回）。 */
+  private loudFrames = 0;
 
   /** Diagnostic capture is manual, bounded, and never sends audio before the backend confirms the mode. */
   private diagSession = false;
@@ -234,6 +244,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     }
 
     this.inputLevel = data.rms;
+    this.watchBargeIn(data.rms);
 
     if (this.drainTimer) {
       this.backlog.push(source);
@@ -244,6 +255,22 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     if (this.recording) this.captureDiagnosticFrame(source);
 
     if(this.serverVad&&!this.diagSession)this.command({kind:'audio',turn:this.turn,data:pcmBase64(source)});
+  }
+  private watchBargeIn(rms: number): void {
+    if (!this.serverVad || this.diagSession || !this.player?.playing) {
+      this.loudFrames = 0;
+
+      return;
+    }
+
+    this.loudFrames = rms > BARGE_IN_RMS ? this.loudFrames + 1 : Math.max(0, this.loudFrames - 1);
+
+    if (this.loudFrames < BARGE_IN_FRAMES) return;
+    this.loudFrames = 0;
+    this.player.stop();
+    this.command({ kind: 'barge_in', turn: this.turn });
+    this.diagnostic?.('local_barge_in', { turn: this.turn, rms });
+    this.setPhase('listening');
   }
   /** 就绪后把就绪前留下的声音按到达顺序、按 4 倍实时发给服务端，由服务端照常断句。 */
   private drainBacklog(): void {
@@ -494,6 +521,10 @@ return;}
 
     if(e.kind==='input_turn'){
       if(!this.serverVad||this.diagSession||e.turn<=this.turn)return;
+
+      // 服务端听到用户开口：旧回答立即停播（本地没听出来时的兜底）。
+      if(this.player?.playing){this.player.stop();this.setPhase('listening');}
+
       this.turn=e.turn;this.hasInputTurn=true;this.player?.follow(this.turn);
       const input=this.getInput();this.command({kind:'commit',turn:this.turn,input});
 

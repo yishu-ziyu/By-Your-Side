@@ -5,6 +5,7 @@
  *   --case=mark      语音操作："帮我把保存按钮圈出来，不要点它"，圈要盖住「保存」且按钮没被点
  *   --case=chat      闲聊："我今天有点累，陪我聊两句吧。"，只留回答原文，供人判断人设语气
  *   --case=opinion   闲聊："你觉得这个页面做得怎么样？"，同上，是人设示例之外的留出题
+ *   --case=barge-in   插话：先请它讲个长故事，回答播到一半时问备注；旧回答要在开口后马上停声，新问题照常回答
  *   --case=stop-task  点选等待中：问候照常回答、停声不停任务；说“终止任务”直接终止原任务，回执前不宣称已停，旧要求不能复活
  *
  * 麦克风是 macOS say 合成的中文 WAV（Chrome 假设备只放一遍）。语音密钥来自 ~/.sideagent/stepfun-api.key，
@@ -53,7 +54,7 @@ const isText = (value: Json | undefined): value is string => typeof value === "s
 
 const caseName = process.argv.find((arg) => arg.startsWith("--case="))?.slice("--case=".length) ?? "question";
 
-const QUESTIONS = new Map([["question", "这个页面上的备注写的是什么"], ["mark", "帮我把保存按钮圈出来，不要点它"], ["stop-task", "终止任务"], ["chat", "我今天有点累，陪我聊两句吧。"], ["opinion", "你觉得这个页面做得怎么样？"]]);
+const QUESTIONS = new Map([["question", "这个页面上的备注写的是什么"], ["mark", "帮我把保存按钮圈出来，不要点它"], ["stop-task", "终止任务"], ["chat", "我今天有点累，陪我聊两句吧。"], ["opinion", "你觉得这个页面做得怎么样？"], ["barge-in", "等一下，先不讲了，我想问你这个页面上的备注写的是什么"]]);
 
 const QUESTION = QUESTIONS.get(caseName);
 
@@ -79,7 +80,10 @@ const leadArg = process.argv.find((arg) => arg.startsWith("--lead="))?.slice(7);
 
 const lead = leadArg ? Number(leadArg) : process.argv.some((arg) => arg.startsWith("--voice=") || arg.startsWith("--persona=")) ? 14000 : 6000;
 
-const speech = caseName === "stop-task" ? `[[slnc ${lead}]]你好。[[slnc 12000]]${QUESTION}[[slnc 8000]]` : `[[slnc ${lead}]]${QUESTION}[[slnc 4000]]`;
+/** 插话用例的第一句：要一段足够长的回答，第二句开口时它还在念。 */
+const STORY = "给我讲一个长一点的故事，慢慢讲。";
+
+const speech = caseName === "stop-task" ? `[[slnc ${lead}]]你好。[[slnc 12000]]${QUESTION}[[slnc 8000]]` : caseName === "barge-in" ? `[[slnc ${lead}]]${STORY}[[slnc 20000]]${QUESTION}[[slnc 8000]]` : `[[slnc ${lead}]]${QUESTION}[[slnc 4000]]`;
 
 execFileSync("say", ["-v", "Tingting", "-o", wav, "--data-format=LEI16@24000", speech]);
 
@@ -194,6 +198,9 @@ const providerTimeline: JsonRecord[] = [];
 
 /** 问答/圈画用例的开口时间线；失败超时也要落盘，所以在 finally 里调用。 */
 let recordOpening: (() => Promise<void>) | null = null;
+
+/** 插话用例的出声/开口判定；StepFun 挂住导致超时也要落盘，所以同样在 finally 里调用。 */
+let recordBargeIn: (() => Promise<void>) | null = null;
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -627,7 +634,82 @@ try {
     };
     return true;
   })()`);
+
+  if (caseName === "barge-in") {
+    // 测试自己的两只耳朵，都不读产品状态：
+    // 出声——侧栏把回答接到扬声器的那个节点上旁挂一个音量计，每 20 ms 记一次实际输出音量；
+    // 开口——麦克风流上另挂音量计，记每段人声的起止（停顿超过 800 ms 才算新一段）。
+    await rp.evaluate(panel, `(() => {
+      window.__out = [];
+      window.__segments = [];
+      const connect = AudioNode.prototype.connect;
+      AudioNode.prototype.connect = function (target, ...rest) {
+        if (this instanceof AnalyserNode && target instanceof AudioDestinationNode && !this.__tapped) {
+          this.__tapped = true;
+          const tap = this.context.createAnalyser();
+          tap.fftSize = 512;
+          connect.call(this, tap);
+          const buf = new Float32Array(tap.fftSize);
+          const timer = setInterval(() => {
+            if (this.context.state === "closed") return clearInterval(timer);
+            tap.getFloatTimeDomainData(buf);
+            let sum = 0;
+            for (const x of buf) sum += x * x;
+            window.__out.push([Date.now(), Math.sqrt(sum / buf.length)]);
+          }, 20);
+        }
+        return connect.call(this, target, ...rest);
+      };
+      const media = navigator.mediaDevices;
+      const open = media.getUserMedia.bind(media);
+      media.getUserMedia = async (constraints) => {
+        const stream = await open(constraints);
+        const context = new AudioContext();
+        const meter = context.createAnalyser();
+        context.createMediaStreamSource(stream.clone()).connect(meter);
+        const buf = new Float32Array(meter.fftSize);
+        let lastVoice = 0;
+        setInterval(() => {
+          meter.getFloatTimeDomainData(buf);
+          const rms = Math.sqrt(buf.reduce((s, x) => s + x * x, 0) / buf.length);
+          const now = Date.now();
+          if (rms <= 0.01) return;
+          const open = window.__segments.at(-1);
+          if (open && now - lastVoice <= 800) open[1] = now;
+          else window.__segments.push([now, now]);
+          lastVoice = now;
+        }, 20);
+        return stream;
+      };
+      return true;
+    })()`);
+  }
+
   const began = Date.now();
+
+  if (caseName === "barge-in") recordBargeIn = async () => {
+    // SAFETY: 上面注入的音量计只写 [Date.now(), rms] 数对和 [开始, 结束] 毫秒数对。
+    const out = await rp.evaluate(panel, "window.__out") as Array<[number, number]>;
+    // SAFETY: 同上。
+    const segments = await rp.evaluate(panel, "window.__segments") as Array<[number, number]>;
+    const LOUD = 0.005;
+    const audibleMs = (from: number, to: number) => out.filter(([at, rms]) => at >= from && at < to && rms > LOUD).length * 20;
+    const [onset, spokenEnd] = segments[1] ?? [0, 0];
+    // 开口后从哪一刻起直到用户说完都没有声音（只看 400 ms 空档会被回答的句间停顿骗过，改前基线实测如此）。
+    const silentFrom = onset ? out.find(([at]) => at >= onset && audibleMs(at, spokenEnd) === 0)?.[0] : undefined;
+    // 看开口前 1.5 秒：长回答句与句之间的停顿会超过半秒。
+    const playingAtOnset = onset ? audibleMs(onset - 1500, onset) : 0;
+    const talkOverMs = onset ? audibleMs(onset + 1500, spokenEnd) : null;
+    // 输出音量计的采样数和峰值：确认它真录到过回答的声音。
+    const outPeak = Math.round(Math.max(0, ...out.map(([, rms]) => rms)) * 1000) / 1000;
+    const timeline = { segments: segments.map(([a, b]) => [a - began, b - began]), playingAtOnsetMs: playingAtOnset, silencedAfterMs: silentFrom === undefined ? null : silentFrom - onset, talkOverMs, secondUtteranceMs: spokenEnd - onset, outSamples: out.length, outPeak };
+    result.bargeIn = timeline;
+    // 开口前旧回答没在出声时，后两条没有意义，一并判不通过，不算作停声成功。
+    const valid = segments.length >= 2 && playingAtOnset >= 200;
+    verdicts.answerPlayingWhenUserSpoke = verdict(valid, timeline);
+    verdicts.oldAnswerSilenced = verdict(valid && silentFrom !== undefined && silentFrom - onset <= 1500, timeline);
+    verdicts.noTalkOver = verdict(valid && talkOverMs !== null && talkOverMs <= 200, timeline);
+  };
 
   recordOpening = async () => {
     // SAFETY: 上面注入的包装只把 __micOpenedAt 设成 null 或 Date.now() 数值。
@@ -660,7 +742,9 @@ try {
     }
 
     if (state.voiceState === "error") return true;
-    const answered = !!state.answer && state.voiceState === "listening" && states.includes("speaking");
+    // 插话用例要等第二句的回答：假麦克风放完、侧栏听到的是第二句之后才开始算回答稳定。
+    const secondTurn = caseName !== "barge-in" || (state.heard.includes("备注") && Date.now() - began > lead + 40_000);
+    const answered = secondTurn && !!state.answer && state.voiceState === "listening" && states.includes("speaking");
     settled = answered ? settled + 1 : 0;
 
     return settled >= 4 ? true : undefined;
@@ -711,7 +795,7 @@ try {
     verdicts.voiceRecordExported = verdict(pass, { heard, exportStatus, lines: lines.length, types: [...types].map(String), recognized: recognized.slice(0, 4), malformed: lines.filter((line) => !line).length });
   }
 
-  if (caseName === "question") verdicts.answerFromPage = verdict(!!final?.answer.includes(NOTE), { answer: final?.answer ?? "" });
+  if (caseName === "question" || caseName === "barge-in") verdicts.answerFromPage = verdict(!!final?.answer.includes(NOTE), { answer: final?.answer ?? "" });
   else if (caseName === "chat" || caseName === "opinion") {
     // 闲聊只留回答原文给人判断人设语气；机器只查有回答。
     verdicts.answered = verdict(!!final?.answer.trim(), { answer: final?.answer ?? "" });
@@ -744,6 +828,7 @@ try {
   if (panelSession) await rp.screenshot(panelSession, join(artifacts, "panel-failed.png")).catch(() => {});
 } finally {
   await recordOpening?.().catch(() => {});
+  await recordBargeIn?.().catch((error: Error) => { result.bargeInError = String(error); });
   await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   const closed = await rp.close();
 

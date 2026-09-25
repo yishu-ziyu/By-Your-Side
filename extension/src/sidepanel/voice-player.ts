@@ -43,6 +43,8 @@ export class VoicePlayer {
 
     node.start(start);
   }
+  /** 还有排着或正在播的回答音频。 */
+  get playing(): boolean { return this.sources.size > 0; }
   responseEnd(responseId: string): void { this.ended.add(responseId); this.checkDrained(responseId); }
   private checkDrained(id: string): void {
     if (this.ended.has(id) && ![...this.sources].some(s => s.responseId === id)) { this.ended.delete(id); this.drained(id); }
