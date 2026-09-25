@@ -48,7 +48,7 @@ import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
-import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type SendUserMessageOptions } from "./user-delivery.js";
+import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { createNodeLoop, createNodeModelRuntime } from "./node-agent-loop.js";
 import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
@@ -243,6 +243,12 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
 
   return model;
 }
+
+/**
+ * 会改变页面的工具（模型可见名）。滚动、悬停、等待事件、切标签等只看不改的不算；
+ * browser_run 另按执行步数判断。用于交付时纠正「页面没变却说做完了」。
+ */
+const PAGE_CHANGE_TOOLS = new Set(["page_operation", "page_translation", "navigate", "open_tab", "click", "double_click", "drag", "fill", "type_text", "press_key", "js", "mark", "upload_file", "file_chooser_set_files", "accept_dialog", "dismiss_dialog"]);
 
 export class BrowserAgentSession {
   private skillStore: SkillStore | undefined;
@@ -820,6 +826,21 @@ if(required.includes(key))candidates.set(key,attachment);
    * 有效交付后的收尾轮误判成"模型空响应"。纯 ack（开场应答）不算交付。
    */
   private deliveredResultThisRun = false;
+  /** 本轮尝试改页面的次数与真正生效的次数；交付时据此纠正「没做却说做了」。随 deliveredResultThisRun 一起按轮清零。 */
+  private pageChangeTally = { attempts: 0, changes: 0 };
+
+  /** 交付用：本轮改页面的尝试与生效次数（宿主事实，不看正文）。 */
+  pageChangeFacts(): PageChangeTally {
+    return { ...this.pageChangeTally };
+  }
+
+  /** 改页面的工具：出错不算生效；browser_run 只有真的执行了浏览器步骤才算。 */
+  private tallyPageChange(toolName: string, isError: boolean, steps: number): void {
+    if (toolName !== "browser_run" && !PAGE_CHANGE_TOOLS.has(toolName)) return;
+    this.pageChangeTally.attempts += 1;
+
+    if (!isError && steps > 0) this.pageChangeTally.changes += 1;
+  }
 
   isHeld(): boolean {
     return this.hold.isHeld();
@@ -896,6 +917,7 @@ if(required.includes(key))candidates.set(key,attachment);
         },
         // 没列目标计划时没有“用户目标清单”可对照：不附完成/未完成事实，也不拿动作回执冒充完成。
         getDeliveryFacts: () => resultHost?.conversationSnapshot()?.goalPlan?.coverage === 'verified' ? resultHost.taskResultsHost?.deliveryFacts?.() ?? null : null,
+        getPageChanges: () => resultHost?.pageChangeFacts() ?? null,
         hasUnfinishedWork: () => {
           const snapshot = resultHost?.taskResultsHost?.getSnapshot();
 
@@ -1388,6 +1410,7 @@ return;}
     this.failurePolicy?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。
     this.deliveredResultThisRun = false;
+    this.pageChangeTally = { attempts: 0, changes: 0 };
     const images = extractImages(attachments);
 
     if (session.isStreaming) this.runTrace.record("steer", { text, context, attachments });
@@ -2725,6 +2748,7 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
 
     this.failurePolicy?.reset();
     this.deliveredResultThisRun = false;
+    this.pageChangeTally = { attempts: 0, changes: 0 };
     this.activeGoal = snapshot.goal;
     this.activeGoalPage=context?{tabId:context.tabId,url:context.url}:null;
     this.rpc.setPageTarget?.(this.memberId, context.tabId);
@@ -2949,6 +2973,7 @@ return {kind:'model'};
     this.failurePolicy?.reset();
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
+    this.pageChangeTally = { attempts: 0, changes: 0 };
     this.runTrace.record("steer", { text, context, attachments });
     this.experience?.feedback(text);
     this.memoryRuntime?.invalidateUserTurn();
@@ -3436,6 +3461,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.hold.releaseToAgent();
       // 交还后是新的一次续跑要求：重新判断这一轮有没有真正交付。
       this.deliveredResultThisRun = false;
+    this.pageChangeTally = { attempts: 0, changes: 0 };
       this.handbackPromptEpoch = epoch;
       this.armHandbackRestoreTimer(epoch);
 
@@ -3614,6 +3640,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           }
 
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
+
+          // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
+          this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
 
           if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot" && !event.isError) {
             this.acceptanceTrace.resumeSnapshotMarkerFound = firstText(event.result).includes(

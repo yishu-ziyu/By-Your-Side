@@ -128,7 +128,17 @@ export type SendUserMessageOptions = {
   getNextStep?: () => TaskNextStep | null;
   /** 宿主事实链：已满足项、未完成项、本 run 真实读到的页面；未接线时不附 facts。 */
   getDeliveryFacts?: () => DeliveryFactInput | null;
+  /** 本轮尝试改页面的次数与真正生效的次数；未接线时不做这项纠正。 */
+  getPageChanges?: () => PageChangeTally | null;
 };
+
+/** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计，不看正文）。 */
+export type PageChangeTally = { attempts: number; changes: number };
+
+/** 尝试过改页面、一次都没生效时补在回答后的事实。 */
+export function pageUnchangedNote(attempts: number): string {
+  return `页面没有变化：本轮 ${attempts} 次改动页面的尝试都没有生效。`;
+}
 
 /**
  * 把一段要对人说的话交给用户。只拒绝格式无效的正文；账本里仍有未完成或未核验的项时，
@@ -166,7 +176,10 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   const rawFacts = input.kind === "finding" ? opts.getDeliveryFacts?.() ?? null : null;
   const settled = !next || next.delivery === "report";
   const open = rawFacts ? factsForDelivery(rawFacts, next) : null;
-  const complete = requested === "complete" && settled && (!open || open.remaining.length + (open.omittedRemaining ?? 0) === 0);
+  const pageChanges = input.kind === "finding" ? opts.getPageChanges?.() ?? null : null;
+  // 宿主事实：本轮试过改页面却一次都没生效。正文说做完了也不能记成完成。
+  const pageUnchanged = !!pageChanges && pageChanges.attempts > 0 && pageChanges.changes === 0;
+  const complete = requested === "complete" && settled && (!open || open.remaining.length + (open.omittedRemaining ?? 0) === 0) && !pageUnchanged;
   const hostFacts = rawFacts ? (complete ? open : rawFacts) : null;
   const projected = hostFacts ? projectDeliveryFacts(hostFacts, next, !complete) : undefined;
   const facts = projected && isUserDeliveryFacts(projected) ? projected : undefined;
@@ -174,7 +187,9 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   // 模型自己说了没做完：正文原样，部分完成记在 outcome/facts 上，由侧栏续做行说明。
   // 模型声称做完而宿主知道没做完：正文会误导用户（语音里也会被念出来），这时才补一句纠正。
   if (input.kind === "finding" && !complete && requested === "complete") {
-    text = clampDeliveryText(`${text}\n\n${next ? partialResultNote(next) : "任务状态：仅交付部分结果，未声明全部完成。"}`);
+    const note = pageUnchanged ? pageUnchangedNote(pageChanges!.attempts) : next ? partialResultNote(next) : "任务状态：仅交付部分结果，未声明全部完成。";
+
+    text = clampDeliveryText(`${text}\n\n${note}`);
   }
 
   const deliveryInput: Parameters<typeof createUserDelivery>[0] = {
