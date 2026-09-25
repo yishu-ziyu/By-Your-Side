@@ -7,8 +7,8 @@ describe("名册", () => {
   it("Lead 不是名册上的人", () => {
     expect(personFor("main")).toBeNull();
     expect(displayNameFor("main")).toBe("By Your Side");
-    expect(displayColor("main")).toBe("#2f6fed");
-    expect(cursorColor("main")).toBe("#2f6fed");
+    expect(displayColor("main")).toBe("#2d4a86");
+    expect(cursorColor("main")).toBe("#2d4a86");
   });
 
   it("同一 id 总是同一个人", () => {

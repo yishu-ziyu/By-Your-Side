@@ -4,7 +4,7 @@
  * Lead（main）不是这张名册。
  */
 
-export const LEAD_COLOR = "#2f6fed";
+export const LEAD_COLOR = "#2d4a86";
 
 export const LEAD_NAME = "By Your Side";
 
@@ -146,7 +146,7 @@ export function personFor(id: string): Person | null {
   return person ?? CAST[0] ?? null;
 }
 
-/** 光标/色条颜色。Lead 品牌蓝，人用自己的色。 */
+/** 光标/色条颜色。Lead 墨蓝（AI 专属色，与侧栏 --accent 同色），人用自己的色。 */
 export function displayColor(id: string): string {
   return personFor(id)?.color ?? LEAD_COLOR;
 }

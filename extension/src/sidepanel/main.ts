@@ -125,6 +125,7 @@ app.innerHTML = `
       <hr />
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
+      <button id="companion-toggle" type="button" aria-pressed="true"><span>显示小伙伴 M</span></button>
     </div>
   </header>
   <div id="conversation-bar">
@@ -1499,6 +1500,26 @@ const companion = mountCompanion({
   inputEl,
   messagesEl,
   pagePillEl: pagePill,
+});
+
+// ── 小伙伴 M 显示开关：存 chrome.storage.local，面板重开保持；默认显示 ──
+const COMPANION_VISIBLE_KEY = "sideagent_companion_visible";
+
+// SAFETY: #companion-toggle 在上面的面板模板里写死为 <button>。
+const companionToggle = document.getElementById("companion-toggle") as HTMLButtonElement;
+
+function applyCompanionVisible(visible: boolean): void {
+  app.dataset.companion = visible ? "on" : "off";
+  companionToggle.setAttribute("aria-pressed", String(visible));
+}
+
+void chrome.storage.local.get(COMPANION_VISIBLE_KEY).then((stored) => applyCompanionVisible(stored[COMPANION_VISIBLE_KEY] !== false));
+
+companionToggle.addEventListener("click", () => {
+  const visible = app.dataset.companion === "off";
+
+  applyCompanionVisible(visible);
+  void chrome.storage.local.set({ [COMPANION_VISIBLE_KEY]: visible });
 });
 
 // ── 教学模式开关 ───────────────────────────────────────────────────

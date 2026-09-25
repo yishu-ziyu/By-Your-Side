@@ -1,27 +1,27 @@
 /* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
 :root {
-  --wallpaper: #f5f2eb;
+  --wallpaper: #faf9f5;
 
-  /* 顶部、输入框和弹层共用暖纸表面，兼容已有 token 名。 */
-  --glass-surface: #f5f2eb;
-  --glass-surface-elevated: #fcfaf5;
-  --glass-border: #dcd6cb;
-  --glass-border-subtle: #e4dfd5;
+  /* 顶部、输入框和弹层共用近白表面（对齐 Claude 的浅底，不再偏黄），兼容已有 token 名。 */
+  --glass-surface: #faf9f5;
+  --glass-surface-elevated: #ffffff;
+  --glass-border: #e3e1d9;
+  --glass-border-subtle: #ecebe4;
   --glass-specular: 0 0 0 transparent;
-  --glass-shadow: 0 3px 14px rgba(48, 40, 28, .035);
+  --glass-shadow: 0 3px 14px rgba(20, 20, 19, .04);
   --glass-blur: none;
 
   /* 2. 消息流与内容主体：坚实实体材质 (Solid Surface，保证 100% 清晰阅读) */
-  --content-bg: #fcfaf5;
-  --content-subtle: #ece7de;
-  --content-subtle-hover: #e6dfd3;
-  --content-border: #ded8cd;
+  --content-bg: #ffffff;
+  --content-subtle: #f0eee6;
+  --content-subtle-hover: #e8e6dc;
+  --content-border: #e3e1d9;
 
   /* 文字色彩层级 (Apple HIG) */
-  --text-primary: #292821;
-  --text-secondary: #686459;
-  --text-tertiary: #807b70;
-  --text-quaternary: #b9b2a5;
+  --text-primary: #141413;
+  --text-secondary: #5f5e58;
+  --text-tertiary: #77756d;
+  --text-quaternary: #b0aea5;
   /* 光球专用墨色：比 text-secondary 深一档。球是细线，用次要色会被 alpha 稀释到看不清。 */
   --orb-ink: #454139;
 
@@ -35,8 +35,9 @@
   --border: var(--content-border);
 
   /* Apple 状态强调色 */
-  --apple-blue: #79523b;
-  --apple-blue-soft: rgba(121, 82, 59, .08);
+  /* 墨蓝：AI 的专属色，页面圈画、名牌、边缘光同色（见 content/cursor.ts）。 */
+  --apple-blue: #2d4a86;
+  --apple-blue-soft: rgba(45, 74, 134, .08);
   --apple-green: #438558;
   --apple-green-soft: rgba(67, 133, 88, .1);
   --apple-orange: #9b682b;
@@ -59,7 +60,7 @@
   --tag-slider-color: var(--text-secondary);
   --chip-active-bg: var(--content-bg);
   --btn-border-hover: rgba(0, 0, 0, 0.14);
-  --popover-shadow: 0 10px 28px rgba(48, 40, 28, .1);
+  --popover-shadow: 0 10px 28px rgba(20, 20, 19, .1);
 
   /* ── Motion Language：3 个时长 + 3 条曲线 ──────────────────────────
      quick  手指一碰就该有反应（按下 / 悬停 / 开关）
@@ -408,6 +409,8 @@ html, body {
 #header-menu button svg { width: 16px; height: 16px; flex-shrink: 0; }
 #header-menu hr { border: 0; border-top: 1px solid var(--content-border); margin: 4px 8px; }
 #header-menu #record-toggle.on { color: var(--accent); }
+#header-menu #companion-toggle[aria-pressed="true"]::after { content: "✓"; margin-left: auto; color: var(--text-secondary); }
+#app[data-companion="off"] #pix-companion { display: none; }
 #operation-bar { padding: 0 14px 8px; flex-shrink: 0; }
 #teach-toggle {
   max-width: 100%;
@@ -2857,7 +2860,7 @@ details.run-steps.done .chip.error { background: transparent; }
 /* 观察开关与候选 */
 #observe-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 #observe-toggle { font: inherit; padding: 3px 8px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line, rgba(127,127,127,0.25)); background: transparent; color: inherit; }
-#observe-toggle[aria-pressed="true"] { border-color: #2f6fed; color: #2f6fed; }
+#observe-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 #observe-hint { opacity: 0.7; }
 .observe-card { margin-top: 8px; padding: 8px; border-radius: 10px; background: var(--surface-2, rgba(127,127,127,0.08)); border: 1px solid var(--line, rgba(127,127,127,0.16)); }
 .observe-card p { margin: 0 0 6px; line-height: 1.5; }

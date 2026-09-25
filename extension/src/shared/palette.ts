@@ -1,5 +1,5 @@
 /**
- * 光标/步骤行颜色。Lead 品牌蓝；人用名册上自己的色（shared/cast.ts）。
+ * 光标/步骤行颜色。Lead 墨蓝（AI 专属色，与侧栏 --accent 同色）；人用名册上自己的色（shared/cast.ts）。
  */
 import { LEAD_COLOR, displayColor } from "../../../shared/cast.js";
 

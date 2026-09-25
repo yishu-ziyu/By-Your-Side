@@ -72,7 +72,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   /** 状态文案与颜色是页面侧的唯一来源，background 只给状态名与目标标签页。 */
   const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; autoHideMs?: number }> = {
     waiting: { text: "处理中", color: "#f59e0b" },
-    reading: { text: "正在读这个页面", color: "#2f6fed" },
+    reading: { text: "正在读这个页面", color: "#2d4a86" },
     done: { text: "本轮已结束", color: "#16a34a", autoHideMs: 1500 },
     failed: { text: "这一步没做成", sub: "可以让我重试", color: "#e2554f" },
   };
@@ -230,7 +230,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .agent-name { display: block; color: #d5dbea; font-size: 9.5px; font-weight: 500; }
       /* 状态层：等待 / 读页面 / 完成 / 失败。与动作名牌同一块，左侧色条按状态上色 */
       .cursor.stating .label {
-        background: #172033; color: #fff; border-left: 3px solid var(--s, #2f6fed);
+        background: #172033; color: #fff; border-left: 3px solid var(--s, #2d4a86);
         padding: 4px 8px; border-radius: 10px;
         width: max-content; max-width: min(260px, calc(100vw - 16px)); box-sizing: border-box;
         font-size: 11px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
@@ -269,34 +269,34 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       .xpage {
         position: absolute; right: 20px; top: 20px; display: none;
         max-width: min(280px, calc(100vw - 40px)); pointer-events: auto;
-        color: #292821; font: 400 12px/1.5 -apple-system, "PingFang SC", sans-serif;
+        color: #141413; font: 400 12px/1.5 -apple-system, "PingFang SC", sans-serif;
       }
       .xpage.on { display: block; }
       .cursor:not(.holding) .label { display: none !important; }
       .cursor.rest:not(.holding) { visibility: hidden; }
-      .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#fcfaf5; color:#292821; border:1px solid #dcd6cb; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
+      .cursor.holding .label { display:flex; flex-wrap:wrap; gap:6px; width:170px; max-width:calc(100vw - 48px); background:#ffffff; color:#141413; border:1px solid #e3e1d9; border-radius:8px; padding:8px 10px; box-shadow:0 2px 8px #2928210d; }
       .hold-prompt { flex-basis:100%; font-size:12px; white-space:normal; }
-      .hold-action.confirm { background:#292821; color:#fff; }
-      .hold-action.cancel { background:#ece7de; color:#514b42; }
-      .hold-action:focus-visible { outline:2px solid #79523b; outline-offset:2px; }
+      .hold-action.confirm { background:#141413; color:#fff; }
+      .hold-action.cancel { background:#f0eee6; color:#514b42; }
+      .hold-action:focus-visible { outline:2px solid #2d4a86; outline-offset:2px; }
       .xdetail { color:inherit; font-size:11px; padding:8px; overflow-wrap:anywhere; }
       .xdetail[hidden] { display:none; }
       .xpage button {
         font: inherit; color: inherit; cursor: pointer; display: flex; align-items: center;
         gap: 7px; min-width: 0; width: 100%; box-sizing: border-box;
-        background: #fcfaf5; border: 1px solid #dcd6cb; border-radius: 20px;
+        background: #ffffff; border: 1px solid #e3e1d9; border-radius: 20px;
         padding: 6px 10px; box-shadow: 0 2px 8px #2928210d;
       }
-      .xpage button:hover { background: #f1ede4; }
-      .xpage button:focus-visible { outline: 2px solid #79523b; outline-offset: 3px; }
+      .xpage button:hover { background: #f0eee6; }
+      .xpage button:focus-visible { outline: 2px solid #2d4a86; outline-offset: 3px; }
       .xface { display: inline-flex; width: 22px; height: 22px; flex-shrink: 0; align-items:center; justify-content:center; }
       .xface svg { width: 22px; height: 22px; }
       .xface .kn { position:relative; display:block; background:var(--body) center / contain no-repeat; }
       .xface .kn i { position:absolute; left:18%; right:18%; top:24%; bottom:30%; background:var(--face) center / contain no-repeat; }
       .xmain { white-space: nowrap; flex-shrink: 0; font-weight: 500; }
-      .xsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #686459; }
+      .xsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #5f5e58; }
       .xarrow { margin-left: auto; }
-      .xlist { margin-top: 6px; padding: 5px; border: 1px solid #dcd6cb; border-radius: 12px; background: #fcfaf5; max-height: 240px; overflow-y:auto; }
+      .xlist { margin-top: 6px; padding: 5px; border: 1px solid #e3e1d9; border-radius: 12px; background: #ffffff; max-height: 240px; overflow-y:auto; }
       .xlist {
         transform-origin: top right;
         opacity: 1; transform: scale(1);

@@ -91,7 +91,7 @@ describe("cursor visual / palette", () => {
   it("保持页面与侧栏当前使用的名册配色，不回到退役的按序五色轮换", () => {
     // 清理前从生产 palette.cursorColor 捕获，旧的 cursor-visual 配色函数没有生产调用方。
     expect(["main", "wiki", "worker-1", "worker-2", "worker-3", "worker-4", "worker-5", ""].map(cursorColor)).toEqual([
-      "#2f6fed", "#000000", "#ff6a00", "#000000", "#ff3347", "#8656f6", "#9a6737", "#2f6fed",
+      "#2d4a86", "#000000", "#ff6a00", "#000000", "#ff3347", "#8656f6", "#9a6737", "#2d4a86",
     ]);
   });
 });
