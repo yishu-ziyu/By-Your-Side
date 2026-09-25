@@ -140,11 +140,13 @@ try{
     expect(progress.snapshot()).toMatchObject({state:'interrupted',interruptionReason:'connection_lost'});
     expect(progress.snapshot().conversationContext?.latestResult).toBeNull();
   });
-  it('keeps an interrupted auxiliary script uncertain although it had no result slot',()=>{
+  // ce4ecee 起有副作用的 js 在开始时就自动记一条待定结果，不再算「未记账的写入」（untrackedWritePending 不再置位）。
+  // 这个内部标记换了记法；本用例保护的是对外结果：断线恢复后必须问用户、禁止写入，读取仍可用。
+  it('keeps an interrupted auxiliary script uncertain after resume',()=>{
     const progress=new TaskProgress('default');progress.request('执行页面步骤',page);
     progress.observe({type:'agent_event',event:{kind:'agent_start'}});
     progress.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'script',name:'js',params:{code:'fixture()'}}});
-    const persisted=progress.snapshot();expect(persisted.untrackedWritePending).toBe(true);
+    const persisted=progress.snapshot();
     const restored=new TaskProgress('default');restored.restoreResults(persisted);restored.prepareResume();
     restored.observe({type:'agent_event',event:{kind:'agent_start'}});
     expect(restored.snapshot().nextStep).toMatchObject({action:'ask_user',allowWrites:false});

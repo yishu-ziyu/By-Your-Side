@@ -366,7 +366,8 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
       runtime: { connectNative: () => { if (!nativeAvailable) throw new Error('native host 不可用'); const port = nativePort(); ports.push(port);
 
  return port; }, lastError: undefined },
-      storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) } },
+      // de381b0 起 Uplink.start 会监听设置变化（改模型时推给扩展内 agent）；这里不测那条路径，只补上入口。
+      storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) }, onChanged: { addListener: () => {} } },
     });
     const states: string[] = [];
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: (state) => { states.push(state); } });
@@ -396,7 +397,8 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
       runtime: { connectNative: () => { const port = nativePort(); ports.push(port);
 
  return port; }, lastError: undefined },
-      storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) } },
+      // de381b0 起 Uplink.start 会监听设置变化（改模型时推给扩展内 agent）；这里不测那条路径，只补上入口。
+      storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) }, onChanged: { addListener: () => {} } },
     });
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: () => {} });
     uplink.start();

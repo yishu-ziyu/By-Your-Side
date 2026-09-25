@@ -19,7 +19,12 @@ vi.mock("../src/background/state.js", () => ({
   getWorkingTabId: vi.fn(),
 }));
 
-vi.mock("../src/background/axstate.js", () => ({ isAxRef: mocks.isAxRef }));
+// 73260b6 起输入路径改用 axBackendNodeFor（多了「ref 属于别的标签页就拒绝」）。这些用例只测单标签页的点击/指针送达，
+// 按它在单标签页下的原行为（ref 是 AX ref 才用作 backendNodeId）模拟；跨标签页拒绝不在本文件范围。
+vi.mock("../src/background/axstate.js", () => ({
+  isAxRef: mocks.isAxRef,
+  axBackendNodeFor: (tabId: number, ref: number | null) => (ref !== null && mocks.isAxRef(tabId, ref) ? ref : undefined),
+}));
 
 class FakeMouseEvent {
   type: string;
