@@ -439,10 +439,15 @@ export class RealtimeVoiceSession {
         this.emit({ kind: 'reset_output', turn: this.turn });
 
         return;
-      case 'error':
-        this.emit({ kind: 'state', state: 'error', detail: String(event.message), recoverable: event.recoverable === true });
+      case 'error': {
+        const failed: Extract<VoiceEvent, {kind:'state'}> = { kind: 'state', state: 'error', detail: String(event.message), recoverable: event.recoverable === true };
+
+        if (event.sayAgain === true) failed.sayAgain = true;
+        this.emit(failed);
 
         return;
+      }
+
       case 'closed':
         this.closed = true;
         this.ready = false;

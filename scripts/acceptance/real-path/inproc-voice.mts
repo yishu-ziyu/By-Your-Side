@@ -525,6 +525,7 @@ try {
   await rp.cdp.send("Network.enable", {}, off);
   let appended = false;
   const firstText = new Set<string>();
+  const receivedBySecond = new Map<string, number>();
   // 服务端回显的断句参数，确认 session.update 里的取值真的生效。
   let turnDetection: Json | undefined;
   const wire = { appends: 0, lastAppendAt: 0, received: 0, lastReceivedAt: 0, lastReceivedType: "", spokenSentMs: 0 };
@@ -544,7 +545,12 @@ try {
       turnDetection = (e.session as JsonRecord | undefined)?.turn_detection;
     }
 
-    if (dir === "received") Object.assign(wire, { received: wire.received + 1, lastReceivedAt: Date.now(), lastReceivedType: type });
+    if (dir === "received") {
+      Object.assign(wire, { received: wire.received + 1, lastReceivedAt: Date.now(), lastReceivedType: type });
+      // 按秒记收到的事件类型：分清「挂住」时服务端到底还在发什么。
+      const second = Math.floor((Date.now() - startedAt.getTime()) / 1000);
+      receivedBySecond.set(`${second}:${type}`, (receivedBySecond.get(`${second}:${type}`) ?? 0) + 1);
+    }
 
     if (type === "input_audio_buffer.append") {
       Object.assign(wire, { appends: wire.appends + 1, lastAppendAt: Date.now() });
@@ -625,20 +631,25 @@ try {
     const voiceOnsetAt = await rp.evaluate(panel, "window.__voiceOnsetAt") as number | null;
     // 开口没被丢：发给服务端的人声至少是 WAV 里人声的八成（浏览器自动增益会让个别音节过线或不过线）。
     verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
+    result.receivedBySecond = [...receivedBySecond].map(([key, count]) => `${key}×${count}`).join(" ");
     result.opening = { turnDetection: turnDetection ?? null, leadMs: lead, micOpened: micOpenedAt !== null, wire: { ...wire, lastAppendAt: wire.lastAppendAt - t0, lastReceivedAt: wire.lastReceivedAt - t0 }, loudness: loudness.map((c) => `${c.at - t0}:${c.peak}`).join(" "), voiceOnsetMs: voiceOnsetAt === null ? null : voiceOnsetAt - t0, events: opening.map((o) => ({ ms: o.at - t0, event: o.event, text: o.text })) };
   };
 
   await rp.click(panel, ".voice-start");
   let settled = 0;
+  let lastPanelStatus = "";
   await until(async () => {
     await readMarks().catch(() => {});
     // SAFETY: PANEL_STATE 返回 PanelState。
     const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
     last = state;
 
-    if (state.voiceState && states.at(-1) !== state.voiceState) {
-      states.push(state.voiceState);
-      opening.push({ at: Date.now(), event: `panel:${state.voiceState}` });
+    if (state.voiceState && states.at(-1) !== state.voiceState) states.push(state.voiceState);
+
+    // 状态和状态文字都记：挂住重连后「请再说一遍」是同一个 listening 状态下的文字变化。
+    if (state.voiceState && `${state.voiceState}|${state.voiceStatus}` !== lastPanelStatus) {
+      lastPanelStatus = `${state.voiceState}|${state.voiceStatus}`;
+      opening.push({ at: Date.now(), event: `panel:${state.voiceState}`, text: state.voiceStatus });
     }
 
     if (state.voiceState === "error") return true;

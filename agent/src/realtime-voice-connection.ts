@@ -63,6 +63,24 @@ const AUTO_RESPONSE_WATCHDOG_MS = 2_000;
 
 const ASR_WAIT_MS = 3_000;
 
+/**
+ * 会话挂住的判定（2026-09-25 实测 StepFun 偶发整体挂住：开口后不再回任何事件，对 commit 和 response.create 也不回应，
+ * 约 60 秒后才断线）。说了一段像样的话（累计 STALL_MIN_SPEECH_MS 以上人声）或服务端给了「开始说话」，却没给出「说完/附和/转写」，
+ * 距最后一次人声和最后一个服务端事件又都过了 STALL_MS，就断开重连，请用户重说。服务端正常时断句最晚约比人声晚 8 秒。
+ */
+const STALL_MS = 12_000;
+
+/**
+ * 能直接操作页面时附在 read_page 结果上：2026-09-25 实测要圈按钮时模型先 read_page，
+ * 说一句「我先获取快照找到它的 ref」就结束（同时段 5/7），通用指令又要求读页后直接回答。
+ */
+const READ_PAGE_ACTION_HINT = '这里只有页面文字，没有元素引用。若用户要操作或圈画页面元素，现在就调用 snapshot，拿到 ref 后直接调用对应工具；只是问页面内容就直接回答。';
+
+const STALL_MIN_SPEECH_MS = 600;
+
+/** 一帧 PCM16 峰值超过它算人声；静音与底噪远低于它。 */
+const STALL_SPEECH_PEAK = 3_000;
+
 /** 调用发出后用户又开口（常见于 StepAudio 3 按语义把一句话切成两轮）：如实说明没执行，并让模型合起来重新调用。 */
 const SUPERSEDED_BY_SPEECH = '用户在你调用后又接着说了话，这次调用没有执行，也没有动页面。把前后几句合起来理解完整要求，然后直接重新调用需要的工具；不要只说要去做。';
 
@@ -269,6 +287,10 @@ export class RealtimeVoiceConnection {
   private readonly assistantText = new Map<string, string>();
   private readonly finalizedText = new Map<string, string>(); // 已确认并交付的完整终稿（按值幂等，增量前缀不算）
   private userSpeaking = false;
+  /** 挂住判定：还没得到服务端回应的人声时长、最后一次人声与最后一个服务端事件的时刻。 */
+  private unansweredSpeechMs = 0;
+  private lastSpeechAt = 0;
+  private lastProviderEventAt = 0;
   private speechStopAt: number | null = null;
   private firstTextNoted = false;
   private firstAudioNoted = false;
@@ -344,7 +366,10 @@ export class RealtimeVoiceConnection {
       if (this.phase !== 'ready') return this.log({type: 'audio_before_ready_ignored'});
       const data = asString(message.data);
 
-      if (data) this.socketSend({type: 'input_audio_buffer.append', audio: data});
+      if (data) {
+        this.socketSend({type: 'input_audio_buffer.append', audio: data});
+        this.watchForStall(data);
+      }
 
       return;
     }
@@ -429,6 +454,11 @@ export class RealtimeVoiceConnection {
 
     const type = asString(event.type) ?? '';
     const eventId = asString(event.event_id);
+
+    // 转写片段不算回应：实测挂住时服务端仍每秒发两三条 transcription.delta，却始终不给「说完」。
+    if (!type.endsWith('input_audio_transcription.delta')) this.lastProviderEventAt = Date.now();
+
+    if (type === 'input_audio_buffer.speech_stopped' || type === 'input_audio_buffer.speech_backchannel' || type.endsWith('input_audio_transcription.completed')) this.unansweredSpeechMs = 0;
 
     if (eventId) {
       if (this.seenEventIds.has(eventId)) return this.log({type: 'provider_event_duplicate', providerType: type});
@@ -583,6 +613,36 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       default:
         if (type === 'error' || type.endsWith('_error')) this.onProviderError(type, event);
     }
+  }
+
+  /** 服务端整体挂住时快速发现：可恢复错误带 sayAgain，侧栏重连后请用户重说；不补发旧音频，避免重复执行。 */
+  private watchForStall(data: string): void {
+    if (this.options.diagnostic || this.phase !== 'ready') return;
+    const bytes = atob(data);
+    let peak = 0;
+
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      const sample = ((bytes.charCodeAt(i) | (bytes.charCodeAt(i + 1) << 8)) << 16) >> 16;
+
+      peak = Math.max(peak, Math.abs(sample));
+    }
+
+    const now = Date.now();
+
+    if (peak > STALL_SPEECH_PEAK) {
+      this.unansweredSpeechMs += (bytes.length / 2 / SAMPLE_RATE) * 1000;
+      this.lastSpeechAt = now;
+
+      return;
+    }
+
+    // 服务端说过「开始说话」却没给「说完」，同样欠着回应（前一段的转写晚到会把人声计数清零）。
+    const owed = this.unansweredSpeechMs >= STALL_MIN_SPEECH_MS || this.userSpeaking;
+
+    if (!owed || now - this.lastSpeechAt < STALL_MS || now - this.lastProviderEventAt < STALL_MS) return;
+    this.log({type: 'provider_stalled', speechMs: Math.round(this.unansweredSpeechMs), quietMs: now - this.lastSpeechAt, silentMs: now - this.lastProviderEventAt});
+    this.sendToClient({type: 'error', message: '语音服务没有响应，正在重新连接；连上后请再说一遍。', recoverable: true, sayAgain: true});
+    this.close();
   }
 
   private onSessionCreated(event: Record<string, unknown>): void {
@@ -931,7 +991,12 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         // 运行时形状已满足 RealtimeTaskAction，这里只是让编译器接受已验证的 JSON 记录。
         result=await this.runBrowserRequest(call.speechSeq,args as unknown as RealtimeTaskAction);
       }
-      else if (call.name === 'read_page') result = await this.options.tools.read_page();
+      else if (call.name === 'read_page') {
+        const page = await this.options.tools.read_page();
+        const record = asRecord(page);
+
+        result = this.options.tools.browserTool && record?.ok === true ? {...record, next: READ_PAGE_ACTION_HINT} : page;
+      }
       else if (call.name === 'task_status') result = await this.options.tools.task_status();
       else if (this.options.tools.browserTool && REALTIME_BROWSER_TOOLS.some(t => t.function.name === call.name)) {
         const signal = this.browserAbort.signal;

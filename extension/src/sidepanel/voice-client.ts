@@ -43,6 +43,8 @@ export class VoiceClient {
   private backlog: Int16Array[] = [];
   private backlogSamples = 0;
   private drainTimer: ReturnType<typeof setInterval> | null = null;
+  /** 语音服务挂住后自动重连：连上后提示用户刚才那句没听到、请再说一遍。 */
+  private sayAgainAfterRecovery = false;
 
   /** Diagnostic capture is manual, bounded, and never sends audio before the backend confirms the mode. */
   private diagSession = false;
@@ -501,6 +503,7 @@ return;}
     if(e.kind==='state'){
       if(e.state==='error'){
         if(e.recoverable && this.userIntentActive && !this.needsMicrophonePermission) {
+          this.sayAgainAfterRecovery = e.sayAgain === true;
           this.scheduleRecovery(e.detail ?? '语音连接已断开，正在恢复…');
 
           return;
@@ -537,7 +540,9 @@ return;}
 
         if(this.recoveryTimer){clearTimeout(this.recoveryTimer);this.recoveryTimer=null;}
 
-        if(!this.speaking&&this.phase!=='speaking')this.setPhase('listening',e.detail);
+        if(!this.speaking&&this.phase!=='speaking')this.setPhase('listening',this.sayAgainAfterRecovery?'刚才语音服务没有响应，请再说一遍':e.detail);
+
+        this.sayAgainAfterRecovery=false;
         this.diagnostic?.('voice_recovered', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
 
         // An older backend never confirms diagnostic mode; refuse to send audio instead of guessing.

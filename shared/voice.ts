@@ -291,7 +291,7 @@ export type VoiceDiagRecord =
 
 export type VoiceEvent =
   | {kind:'reset_output';turn:number}
-  | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean; inputMode?: 'server_vad' }
+  | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean; /** 语音服务挂住后重连：刚才那句没被听到，连上后请用户重说。 */ sayAgain?: boolean; inputMode?: 'server_vad' }
   | { kind: "input_turn"; turn: number }
   | { kind: "audio"; turn: number; data: string; itemId: string; responseId: string }
   | { kind: "text"; turn: number; role: "user" | "assistant"; text: string }
