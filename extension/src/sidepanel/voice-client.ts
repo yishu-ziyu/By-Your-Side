@@ -554,6 +554,13 @@ return;}
     // A diagnostic session must never answer or play: anything the backend still sends is dropped here too.
     if(this.diagSession&&(e.kind==='audio'||e.kind==='reset_output'||e.kind==='response_end'||e.kind==='text'&&e.role==='assistant'))return;
 
+    // 上一轮晚到的用户转写只用于显示（被切开的前半句），其余旧轮次事件一律丢弃。
+    if(e.kind==='text'&&e.role==='user'&&e.turn===this.turn-1){
+      this.event(e);
+
+      return;
+    }
+
     if(e.turn!==this.turn)return;
 
     if(e.kind==='reset_output'){this.player?.stop();this.player?.begin(this.turn);}

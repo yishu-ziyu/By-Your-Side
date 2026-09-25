@@ -582,7 +582,7 @@ try {
     const callName = isText(e.name) ? e.name : isText(item?.name) ? item.name : undefined;
 
     if (["response.created", "response.cancel", "response.cancelled", "response.done", "response.create", "response.function_call_arguments.done"].includes(type) || (type === "conversation.item.create" && item?.type === "function_call_output")) {
-      opening.push({ at: Date.now(), event: `${dir}:${type}`, text: [responseId, callName, isText(item?.output) ? item.output.slice(0, 80) : undefined].filter(Boolean).join(" ") || undefined });
+      opening.push({ at: Date.now(), event: `${dir}:${type}`, text: [responseId, callName, isText(e.arguments) ? e.arguments.slice(0, 160) : undefined, isText(item?.output) ? item.output.slice(0, 160) : undefined].filter(Boolean).join(" ") || undefined });
     }
 
     if ((type === "response.audio_transcript.delta" || type === "response.text.delta") && !firstText.has(`${type}:${responseId}`)) {

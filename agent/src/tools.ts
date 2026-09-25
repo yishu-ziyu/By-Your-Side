@@ -438,7 +438,7 @@ return result;}
     defineTool({
       name: "read_elements",
       label: "Read matching elements",
-      description: "Host-only, bounded readback of EVERY current element matching a native CSS selector, without changing the page: text, visibility, position and computed style for each match, plus total/truncated counts. Use to verify page-wide annotation/highlight/marking state that a single read_element cannot cover; the host reads this directly, it is never a model claim.",
+      description: "Host-only, bounded readback of EVERY current element matching a native CSS selector, without changing the page: text, visibility, position and computed style for each match, plus total/truncated counts. Each match carries target, a locator for that one element: pass it to click/mark/read_element instead of the shared selector, which matches them all. Use to verify page-wide annotation/highlight/marking state that a single read_element cannot cover; the host reads this directly, it is never a model claim.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use this member's working tab" })),
         selector: Type.String({ minLength: 1, description: "Native CSS selector; every current match is read, up to limit." }),

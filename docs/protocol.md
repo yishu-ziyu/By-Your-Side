@@ -106,7 +106,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 `read_element{tabId?, target}` 按当前 ref 或唯一 CSS 定位返回完整 `textContent` 与表单 `value`，用于补读快照缩略的材料和填写前的原值。读取不滚动、不聚焦、不修改页面，不接受任意脚本；归属和协作者检查仍生效。超过安全上限时明确报错，不把截断值用于原值核对。独立读取可在用户接管时进行，已停止的 browser program 不能借此继续执行。
 
-`read_elements{tabId?, selector, limit?}` 按 CSS 选择器（或 `loc=css:...`）一次性读取全部命中元素（按文档顺序取前 `limit` 个，默认 60，1–200），返回每个元素的标签、文字（截 200 字）、可见性、位置矩形与六项计算样式，供圈注、标注一类结果核验取证；不接受 `@ref`。零命中返回 `total:0` 与空列表，不算错误；输出超过安全上限时明确报错，不返回部分内容。只读，不修改页面、不注入样式。
+`read_elements{tabId?, selector, limit?}` 按 CSS 选择器（或 `loc=css:...`）一次性读取全部命中元素（按文档顺序取前 `limit` 个，默认 60，1–200），返回每个元素的标签、文字（截 200 字）、可见性、位置矩形与六项计算样式，以及只指向这一个元素的 `target`（`loc=css:` 路径：唯一 id 优先，否则逐层 `:nth-child`，页面内核对只命中它一个；算不出来就缺省），可直接交给 click/mark/read_element，供圈注、标注一类结果核验取证；不接受 `@ref`。零命中返回 `total:0` 与空列表，不算错误；输出超过安全上限时明确报错，不返回部分内容。只读，不修改页面、不注入样式。
 
 ## 面板恢复与 Pi 持久化
 

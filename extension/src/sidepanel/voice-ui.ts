@@ -33,6 +33,17 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const facts = region.querySelector<HTMLElement>('.voice-facts')!;
   let phase: VoicePhase = 'idle';
   let shownTurn = 0;
+  /**
+   * 「你：」这一行的各段。StepAudio 3 会按语义把一句带停顿的话切成几轮，前半句的转写常在后半句开口后才到：
+   * 同一轮里的几段按到达顺序拼起来；最后一段之后助手还没回答就又开口，也接着拼，答过了才换新问题。
+   */
+  let questionParts: string[] = [];
+  let answeredSinceQuestion = true;
+
+  const showQuestion = () => {
+    question.textContent = questionParts.length ? '你：' + questionParts.reduce((all, part) => (all && !/[。！？!?，,、；;…]$/.test(all) ? `${all}，${part}` : all + part), '') : '';
+  };
+
   let currentDeliveryKind: UserDelivery['kind'] | null = null;
   // 语音诊断：正常语音自动留证（agent 落盘），这里保留手动复现、导出、清空与一次点击的问题标记。
   // 「记录本轮问题」只写日志，不是纠错入口；改正仍走输入框或语音。
@@ -322,10 +333,22 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     end.textContent = next === 'error' ? (client.needsMicrophonePermission ? '开启麦克风' : '重试') : '结束';
     region.dataset.state = next;
   }, event => {
+    // 上一轮晚到的那段话是先说的：拼在当前各段前面，不切换轮次。
+    if (event.kind === 'text' && event.role === 'user' && event.turn === shownTurn - 1) {
+      if (!questionParts.includes(event.text)) questionParts = [event.text, ...questionParts].slice(0, 3);
+      answeredSinceQuestion = false;
+      showQuestion();
+      log.displayText(question.textContent ?? '', true);
+
+      return;
+    }
+
     if ('turn' in event && event.turn !== shownTurn) {
       shownTurn = event.turn;
       transcript.textContent = '';
-      question.textContent = '';
+
+      if (answeredSinceQuestion) questionParts = [];
+      showQuestion();
       currentDeliveryKind = null;
     }
 
@@ -333,12 +356,15 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
       log.textEvent(event.role, event.turn, event.text);
 
       if (event.role === 'user') {
-        question.textContent = '你：' + event.text;
+        if (questionParts.at(-1) !== event.text) questionParts = [...questionParts, event.text].slice(-3);
+        answeredSinceQuestion = false;
+        showQuestion();
         log.displayText(question.textContent ?? '', true);
         client.captureDisplay(event.turn, question.textContent ?? '');
       }
       else {
         transcript.textContent = event.text;
+        answeredSinceQuestion = true;
       }
     }
 
@@ -358,6 +384,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   const start = () => {
     shownTurn = 0;
+    questionParts = [];
+    answeredSinceQuestion = true;
     question.textContent = '';
     transcript.textContent = '';
     facts.textContent = '';

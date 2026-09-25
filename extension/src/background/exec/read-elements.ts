@@ -56,10 +56,34 @@ function readElementsInPage(selector: string, limit: number): ElementsReply {
         if (name?.trim()) scopeLabels.push(`${role}: ${name.trim().slice(0, 180)}`);
       }
 
+      // 只指向这一个元素的 CSS 路径：唯一 id 优先，否则逐层加 :nth-child，直到整页只匹配它一个；算不出来就不给。
+      let target: string | undefined;
+
+      try {
+        const parts: string[] = [];
+        const unique = (path: string) => document.querySelectorAll(path).length === 1 && document.querySelector(path) === element;
+
+        for (let node: Element | null = element; node && node !== document.documentElement && !target; node = node.parentElement) {
+          const id = node.getAttribute("id");
+
+          if (id && document.querySelectorAll(`#${CSS.escape(id)}`).length === 1) parts.unshift(`#${CSS.escape(id)}`);
+          else {
+            const parent = node.parentElement;
+            parts.unshift(parent ? `${node.tagName.toLowerCase()}:nth-child(${Array.prototype.indexOf.call(parent.children, node) + 1})` : node.tagName.toLowerCase());
+          }
+
+          if (unique(parts.join(" > "))) target = `loc=css:${parts.join(" > ")}`;
+        }
+      } catch {
+        target = undefined;
+      }
+
       const summary: ElementSummary = {
         index, tagName, text, visible, rect,
         style: { backgroundColor: style.backgroundColor, color: style.color, outline: style.outline, border: style.border, textDecoration: style.textDecoration, fontWeight: style.fontWeight },
       };
+
+      if (target) summary.target = target;
 
       if (scopeLabels.length) summary.scopeLabels = scopeLabels;
 

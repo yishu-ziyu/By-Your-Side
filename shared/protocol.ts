@@ -505,6 +505,8 @@ export interface ToolContract {
       total: number; truncated: boolean;
       elements: Array<{
         index: number; tagName: string; text: string; visible: boolean;
+        /** 只指向这一个元素的定位串（loc=css:），可直接交给 click/mark/read_element；页面上生成不出唯一路径时缺省。 */
+        target?: string;
         rect: { x: number; y: number; width: number; height: number };
         style: { backgroundColor: string; color: string; outline: string; border: string; textDecoration: string; fontWeight: string };
         scopeLabels?: string[];

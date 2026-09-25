@@ -63,6 +63,9 @@ const AUTO_RESPONSE_WATCHDOG_MS = 2_000;
 
 const ASR_WAIT_MS = 3_000;
 
+/** 调用发出后用户又开口（常见于 StepAudio 3 按语义把一句话切成两轮）：如实说明没执行，并让模型合起来重新调用。 */
+const SUPERSEDED_BY_SPEECH = '用户在你调用后又接着说了话，这次调用没有执行，也没有动页面。把前后几句合起来理解完整要求，然后直接重新调用需要的工具；不要只说要去做。';
+
 // 实测转写比首帧音频晚约 70ms（out/acceptance/real-path/2026-09-24T09-26-40-773Z-inproc-voice-stop-task）；
 // 超过这个上限仍没有转写就按原样放行，不让可控任务期间的普通对话被卡住。
 const TRANSCRIPT_GATE_MS = 1_500;
@@ -978,14 +981,16 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
   private async runDirectBrowserTool(call: PendingToolCall, signal: AbortSignal): Promise<unknown> {
     const current = () => !this.closed && !signal.aborted && !this.pendingStop && !this.suppressDispatch && call.speechSeq === this.speechSeq;
+    // 新一轮开口或打字会中止在途调用并推进轮次，所以这里不看 signal：轮次变了且未关闭、未停声，就是被用户的新输入作废。
+    const superseded = () => !this.closed && !this.pendingStop && call.speechSeq !== this.speechSeq;
 
-    if (!current()) throw realtimeBrowserError('这轮浏览器请求已取消或过期，未执行。', 'not_executed');
+    if (!current()) throw realtimeBrowserError(superseded() ? SUPERSEDED_BY_SPEECH : '这轮浏览器请求已取消或过期，未执行。', 'not_executed');
 
     if (!call.arguments) throw realtimeBrowserError('工具参数不是有效 JSON，未执行。', 'not_executed');
     validateRealtimeBrowserTool(call.name, call.arguments);
     const input = await this.resolveUserInput(false);
 
-    if (!current() || !input) throw realtimeBrowserError('尚无本轮真实用户要求，未执行浏览器操作。', 'not_executed');
+    if (!current() || !input) throw realtimeBrowserError(superseded() ? SUPERSEDED_BY_SPEECH : '尚无本轮真实用户要求，未执行浏览器操作。', 'not_executed');
 
     if (this.consumedInputIds.has(input.id)) throw realtimeBrowserError('本轮已交给后台任务，不能同时直接操作。', 'not_executed');
     call.inputId = input.id;
