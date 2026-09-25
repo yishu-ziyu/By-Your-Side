@@ -353,6 +353,8 @@ export type AgentUiEvent =
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
   | { kind: "user_delivery"; delivery: UserDelivery }
+  /** 模型为用户写的文本文件（artifacts 工具）：saved 带全文，侧栏画成可下载的卡片；deleted 只带文件名。 */
+  | { kind: "artifact"; action: "saved" | "deleted"; filename: string; content?: string }
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
   | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary;
       /** 运行中的进度说明：只替换过程行标题，不进消息流，回合结束即被结果标题取代。 */

@@ -122,6 +122,8 @@ Pi 上下文保存在 `~/.sideagent/conversations/{conversationId}/` 下的会�
 
 当前 Lead 工具为 `user_memory`：`recall` 查询任务所需资料，`change` 按当前直接用户请求解释保存、修改或忘记。语义解释由 `memory-decision.ts` 完成，运行时核对输入当前性；网页、附件、工具输出及 worker 不能自行授予记忆修改权限。检索由 `MemoryStore.select / resolveSelected` 选择并复核版本，通过 Pi 单轮提示使用。`agent_event` 中的 `memory` 事件记录 saved/used 及条目快照，历史回执不随之后的修改而重写。
 
+Lead 工具 `artifacts` 为用户写文本文件（csv、md、txt、json、html、svg、js、css），命令沿用 Pi web-ui 的约定：`create`（同名已存在则失败）、`update`（`old_str` → `new_str`，找不到时返回全文）、`rewrite`、`get`、`delete`。文件只存在本会话内存，单个上限 256 000 字符，文件名只许一层并带扩展名。每次保存发 `agent_event{kind:"artifact",action:"saved",filename,content}`，删除发 `action:"deleted"`；侧栏画成带「下载」按钮的卡片，回合结束时挪到回答下面，CSV 下载时加 BOM。事件随侧栏历史回放；宿主重启后模型不再能 `get` 旧文件。
+
 数据当前存于操作系统用户目录 `~/.sideagent/memory/memories.json`；原子替换与写锁保护并发修改。忘记会移除有效条目，后续新轮次不再读取它；原聊天仍保留。当前没有按 Chrome 配置分别选择存储目录，不能宣称已实现浏览器配置隔离。
 
 ## target 定位串

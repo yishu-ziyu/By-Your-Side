@@ -57,6 +57,7 @@ import { cursorColor } from "../shared/palette.js";
 import { LEAD_COLOR, displayColor, displayNameFor, personFor } from "../../../shared/cast.js";
 import { mountGrok, mountKenney, type GrokHandle } from "../shared/grok-bot.js";
 import { mountCompanion } from "./companion.js";
+import { ArtifactCards } from "./artifact-card.js";
 import {
   humanizeModelError,
 } from "./models.js";
@@ -2472,6 +2473,12 @@ function appendToMessages(node: HTMLElement): void {
   }
 }
 
+/** 模型写给用户的文件：一张卡片一个文件名，点「下载」保存。 */
+const artifactCards = new ArtifactCards((el) => {
+  appendToMessages(el);
+  scrollToEnd();
+});
+
 function addMsg(cls: string, text: string): HTMLElement {
   if (cls.split(/\s+/).includes("user")) {
     return addUserMsg(text);
@@ -3437,9 +3444,13 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "agent_end":
       closeBlocks();
       leadDeliveryMode = null;
+      artifactCards.settleAfterTurn();
       break;
     case "user_delivery":
       handleUserDelivery(ev.delivery);
+      break;
+    case "artifact":
+      artifactCards.apply(ev);
       break;
     case 'user_delivery_stream': {
       const s=ev.stream;

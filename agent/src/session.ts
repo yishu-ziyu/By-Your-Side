@@ -48,6 +48,7 @@ import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
+import { createArtifactsTool } from "./artifacts-tool.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { createNodeLoop, createNodeModelRuntime } from "./node-agent-loop.js";
@@ -999,6 +1000,7 @@ if(required.includes(key))candidates.set(key,attachment);
             emit: callbacks.emit,
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
+          ...(sendOptions ? [createArtifactsTool({ emit: event => callbacks.emit(event) })] : []),
         ];
 
       let session: AgentLoop;

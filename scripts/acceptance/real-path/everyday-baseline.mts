@@ -461,6 +461,18 @@ try {
     const draftValue = await rp.evaluate(work, "document.querySelector('#draft')?.value ?? null").catch(() => null);
     const tabs = (await rp.targets()).filter((t) => t.type === "page").map((t) => t.url);
     const answer = final?.answers.join("\n\n") ?? "";
+    // 像用户一样点侧栏文件卡片上的「下载」，文件才会落到下载目录。
+    // SAFETY: 这段页面脚本只返回卡片 data-filename 组成的字符串数组。
+    const cardNames = (await rp.evaluate(panel, "[...document.querySelectorAll('.artifact-card')].filter((c) => !c.querySelector('.artifact-download')?.disabled).map((c) => c.dataset.filename)").catch(() => [])) as string[];
+
+    for (const name of cardNames) {
+      const button = `.artifact-card[data-filename="${name}"] .artifact-download`;
+
+      await rp.evaluate(panel, `document.querySelector(${JSON.stringify(button)})?.scrollIntoView({ block: "center" })`).catch(() => {});
+      await rp.click(panel, button).catch(() => {});
+    }
+
+    if (cardNames.length) await sleep(1500);
     const downloaded = (await readdir(caseDownloads)).filter((name) => !name.endsWith(".crdownload"));
     const files = await Promise.all(downloaded.map(async (name) => ({ name, text: await readFile(join(caseDownloads, name), "utf8").catch(() => "") })));
     const pageInputs = Number(await rp.evaluate(work, "document.querySelectorAll('input').length").catch(() => 0));
