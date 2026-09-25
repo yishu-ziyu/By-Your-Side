@@ -524,6 +524,9 @@ try {
   const off = await rp.attach(offscreen.targetId);
   await rp.cdp.send("Network.enable", {}, off);
   let appended = false;
+  const firstText = new Set<string>();
+  // 服务端回显的断句参数，确认 session.update 里的取值真的生效。
+  let turnDetection: Json | undefined;
   const wire = { appends: 0, lastAppendAt: 0, received: 0, lastReceivedAt: 0, lastReceivedType: "", spokenSentMs: 0 };
   // 发给服务端的音频有多响：每 500 ms 一格记峰值（int16），判断是服务端没断句还是浏览器把声音压低了。
   const loudness: Array<{ at: number; peak: number }> = [];
@@ -535,6 +538,11 @@ try {
     try { e = JSON.parse(message.params?.response?.payloadData ?? ""); } catch { return; }
 
     const type = String(e.type ?? "");
+
+    if (dir === "received" && type === "session.updated") {
+      // SAFETY: StepFun 的 session.updated 按协议带 session 对象；只读 turn_detection 字段。
+      turnDetection = (e.session as JsonRecord | undefined)?.turn_detection;
+    }
 
     if (dir === "received") Object.assign(wire, { received: wire.received + 1, lastReceivedAt: Date.now(), lastReceivedType: type });
 
@@ -564,6 +572,22 @@ try {
 
     if (type.startsWith("session.") || type.startsWith("input_audio_buffer.") || type.endsWith("transcription.completed")) {
       opening.push({ at: Date.now(), event: `${dir}:${type}`, text: isText(e.transcript) ? e.transcript : undefined });
+    }
+
+    // 回复与工具：看被切成两轮时第一轮的工具调用去了哪；文字通道只记每个回复的第一段，区分是读出来的还是只有文字。
+    // SAFETY: StepFun Realtime 事件是 JSON 对象，response/item 字段按其事件协议为对象或缺省；只读取可选字段。
+    const item = e.item as JsonRecord | undefined;
+    // SAFETY: 同上。
+    const responseId = String(e.response_id ?? (e.response as JsonRecord | undefined)?.id ?? "");
+    const callName = isText(e.name) ? e.name : isText(item?.name) ? item.name : undefined;
+
+    if (["response.created", "response.cancel", "response.cancelled", "response.done", "response.create", "response.function_call_arguments.done"].includes(type) || (type === "conversation.item.create" && item?.type === "function_call_output")) {
+      opening.push({ at: Date.now(), event: `${dir}:${type}`, text: [responseId, callName, isText(item?.output) ? item.output.slice(0, 80) : undefined].filter(Boolean).join(" ") || undefined });
+    }
+
+    if ((type === "response.audio_transcript.delta" || type === "response.text.delta") && !firstText.has(`${type}:${responseId}`)) {
+      firstText.add(`${type}:${responseId}`);
+      opening.push({ at: Date.now(), event: `${dir}:${type}`, text: `${responseId} ${isText(e.delta) ? e.delta : ""}` });
     }
   };
 
@@ -601,7 +625,7 @@ try {
     const voiceOnsetAt = await rp.evaluate(panel, "window.__voiceOnsetAt") as number | null;
     // 开口没被丢：发给服务端的人声至少是 WAV 里人声的八成（浏览器自动增益会让个别音节过线或不过线）。
     verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
-    result.opening = { leadMs: lead, micOpened: micOpenedAt !== null, wire: { ...wire, lastAppendAt: wire.lastAppendAt - t0, lastReceivedAt: wire.lastReceivedAt - t0 }, loudness: loudness.map((c) => `${c.at - t0}:${c.peak}`).join(" "), voiceOnsetMs: voiceOnsetAt === null ? null : voiceOnsetAt - t0, events: opening.map((o) => ({ ms: o.at - t0, event: o.event, text: o.text })) };
+    result.opening = { turnDetection: turnDetection ?? null, leadMs: lead, micOpened: micOpenedAt !== null, wire: { ...wire, lastAppendAt: wire.lastAppendAt - t0, lastReceivedAt: wire.lastReceivedAt - t0 }, loudness: loudness.map((c) => `${c.at - t0}:${c.peak}`).join(" "), voiceOnsetMs: voiceOnsetAt === null ? null : voiceOnsetAt - t0, events: opening.map((o) => ({ ms: o.at - t0, event: o.event, text: o.text })) };
   };
 
   await rp.click(panel, ".voice-start");
