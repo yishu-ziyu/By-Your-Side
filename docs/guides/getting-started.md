@@ -46,7 +46,7 @@ npx @earendil-works/pi-coding-agent
 
 Chrome 会自动启动本地伴随进程。正常使用不需要手动启动服务或粘贴连接 token。默认扩展 ID 与 Native Messaging 白名单由仓库 manifest 对应生成。
 
-没有安装伴随进程时，扩展会在 offscreen 文档中运行同一份任务核心。打开侧栏「更多 → 模型与语音」，配置文字模型和凭据；阶跃语音可单独填 Key，也可沿用阶跃文字模型的 Key。扩展凭据保存在 Chrome 的本地扩展存储中，不从 `~/.pi/agent/` 或 `~/.sideagent/` 自动读取。扩展入口目前的恢复与持久化边界见[当前状态](../STATUS.md)。
+没有安装伴随进程时，扩展会在 offscreen 文档中运行同一份任务核心。打开侧栏「更多 → 模型与语音」，配置文字模型和凭据；阶跃语音可单独填 Key，也可沿用阶跃文字模型的 Key。阶跃文字模型（step-3.7-flash、step-3.5-flash、step-5-preview）走 Step Plan 通道 `https://api.stepfun.com/step_plan/v1`，消耗套餐 Credit；按开放平台 API 计费的只有实时语音 `stepaudio-3-realtime-preview`（不在 Step Plan 模型列表里）。同一个 Key 两个通道都能调用，扣哪边只由请求地址决定。扩展凭据保存在 Chrome 的本地扩展存储中，不从 `~/.pi/agent/` 或 `~/.sideagent/` 自动读取。扩展入口目前的恢复与持久化边界见[当前状态](../STATUS.md)。
 在设置页更换文字模型后，当前扩展会话也会更新模型；运行中的任务下一次模型调用可能使用新选择，界面会收到模型信息更新。
 
 要让阶跃文字任务在主模型可重试故障耗尽后切换到智谱，需先在设置页保存智谱 GLM 编程版的凭据，再切回阶跃作为当前模型；备用凭据缺失时不会假装已切换。自动换模只保护任务循环内的模型失败，目标复核等独立模型调用的限制见[本轮验收](../evals/20260924-core-into-extension.md)。

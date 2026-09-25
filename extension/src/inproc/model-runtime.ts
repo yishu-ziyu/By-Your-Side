@@ -123,10 +123,16 @@ function openAICompatible(id: string, name: string, baseUrl: string, modelIds: r
 
 const STEPFUN_MODELS = ["step-3.7-flash", "step-3.5-flash", "step-5-preview"];
 
+/**
+ * 文字模型只走 Step Plan 通道，扣套餐 Credit。同一个 key 发到普通 `/v1` 也能成功，但扣的是 API 余额，
+ * 所以通道只由地址决定。按 API 计费的只有实时语音（`/v1/realtime`，stepaudio-3 不在 Step Plan 里）。
+ */
+const STEPFUN_STEP_PLAN_BASE_URL = "https://api.stepfun.com/step_plan/v1";
+
 export function createModelRuntime(persist: (providerId: string, credential: Credential | undefined) => Promise<void> | void): ModelRuntime {
   const credentials = new MirroredCredentialStore(persist);
   const models = builtinModels({ credentials });
-  models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", "https://api.stepfun.com/v1", STEPFUN_MODELS).provider);
+  models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
   /** OpenCode 按会话路由，缺 x-opencode-session 会直接 400；Pi 的 coding-agent 层会补，直接用 pi-ai 时要自己补。 */
   const sessionId = crypto.randomUUID();
 
