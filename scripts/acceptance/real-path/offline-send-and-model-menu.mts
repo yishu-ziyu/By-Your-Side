@@ -19,20 +19,28 @@ import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type 
 requireHeadless();
 
 const startedAt = new Date().toISOString();
+
 const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.replace(/[:.]/g, "-")}-offline-send-and-model-menu`);
+
 await mkdir(artifacts, { recursive: true });
 
 const UNKNOWN_MODEL = "unseen-model-7x";
+
 const QUOTE = "海獭睡觉时会手牵着手，免得被水流冲散。";
+
 const DRAFT = "把这句改写成适合讲给小朋友听的话";
+
 const QUOTE2 = "一只海獭每天要吃掉相当于体重四分之一的食物。";
+
 const DRAFT2 = "这个比例和人类比起来算多吗";
+
 const ANSWER = "这是本机假模型的固定回答。";
 
 type DomNode = { nodeName: string; nodeValue?: string; backendNodeId: number; children?: DomNode[]; shadowRoots?: DomNode[] };
 
 // ── 本机假模型 + 练习页 ─────────────────────────────────────────
 const modelRequests: string[] = [];
+
 const readBody = (req: IncomingMessage) => new Promise<string>((done) => { let body = ""; req.on("data", (c) => (body += c)); req.on("end", () => done(body)); });
 
 const server = createServer(async (req, res) => {
@@ -69,6 +77,7 @@ const server = createServer(async (req, res) => {
 });
 
 await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+
 const origin = `http://127.0.0.1:${siteAddress(server).port}`;
 
 const PANEL = `(() => {
@@ -90,11 +99,16 @@ const PANEL = `(() => {
 type PanelState = { connected: boolean; status: string; input: string; quoteVisible: boolean; quote: string; notices: string[]; userMessages: string[]; modelName: string; transcript: string };
 
 const paths: Record<string, JsonRecord> = {};
+
 const result: JsonRecord = { case: "offline-send-and-model-menu", startedAt, modelOrigin: origin, unknownModel: UNKNOWN_MODEL };
+
 const rp = await launchRealPath({ withoutNativeHost: true });
+
 result.browser = rp.browser;
 
-const shot = async (session: string, name: string) => { await rp.screenshot(session, join(artifacts, name)); return name; };
+const shot = async (session: string, name: string) => { await rp.screenshot(session, join(artifacts, name));
+
+ return name; };
 
 /** 封闭 shadow root 里的按钮：CDP 穿透找到后按实际位置点击，和鼠标点一样。 */
 const clickShadowButton = async (session: string, text: string, timeoutMs = 15_000) => {
@@ -191,6 +205,7 @@ try {
 
     return state.connected && state.modelName.includes(UNKNOWN_MODEL) ? state : undefined;
   }, 30_000, "侧栏连上扩展内 agent 并显示未知模型", 300);
+
   result.ready = ready;
 
   // ── 路径 #2：打开模型菜单 ───────────────────────────────────
@@ -203,6 +218,7 @@ try {
     await rp.click(panel, "#model-popover .model-scope-toggle");
     await until(async () => (await rp.evaluate(panel, `document.querySelectorAll('#model-popover .model-item[data-model^="openai/"]').length`)) > 0 || undefined, 5_000, "显示全部后出现 OpenAI 模型").catch(() => undefined);
     await sleep(500);
+
     const menu = await rp.evaluate(panel, `(() => {
       const pop = document.querySelector("#model-popover");
       const tag = document.querySelector("#model-reasoning-tag");
@@ -215,6 +231,7 @@ try {
         chipText: document.querySelector("#model-btn").innerText.trim(),
       };
     })()`);
+
     const screenshot = await shot(panel, "2-model-menu-all.png");
     // SAFETY: 上面页面脚本返回的形状。
     const m = menu as { items: Array<{ id: string; text: string; tags: number }>; groups: string[]; popoverTags: number; popoverText: string; chipTagVisible: boolean; chipText: string };
@@ -238,6 +255,7 @@ try {
 
     try {
       await rp.cdp.send("Page.bringToFront", {}, work);
+
       // 先点一下页面空白处，收起上一轮页内的阅读框（焦点留在框里时不会弹出新的划词工具条）。
       for (const type of ["mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, x: 600, y: 700, button: "left", clickCount: 1 }, work);
       await sleep(300);
@@ -260,6 +278,7 @@ try {
 
         return state.quoteVisible && state.quote.includes(quoteText.slice(0, 8)) ? state : undefined;
       }, 20_000, "侧栏出现引用", 300);
+
       steps.quoted = quoted;
 
       await rp.click(panel, "#input");
@@ -292,6 +311,7 @@ try {
 
           return state.connected ? undefined : state;
         }, 10_000, "侧栏显示连接断开", 100);
+
         steps.statusWhileDown = down.status;
         await rp.pressEnter(panel);
         await sleep(800);
@@ -318,8 +338,10 @@ try {
 
         return state.connected ? state : undefined;
       }, 45_000, "连接恢复", 300);
+
       steps.reconnectedScreenshot = await shot(panel, `4-${kind}-3-reconnected.png`);
       steps.back = back;
+
       if (kind !== "worker") {
         steps.keptAfterReconnect = back.input === draft && back.quoteVisible && back.quote === quoted.quote;
         await rp.click(panel, "#input");
@@ -348,6 +370,7 @@ try {
         }
       }
 
+      // SAFETY: PANEL 是本文件写的页面脚本，返回 PanelState。
       const final: PanelState = await rp.evaluate(panel, PANEL);
       steps.afterRetry = final;
       steps.retry = {
@@ -369,12 +392,13 @@ try {
     const all = (key: string) => !!steps[key] && Object.values(steps[key] as Record<string, boolean>).every(Boolean);
     const pass = !steps.error && Number(steps.crashes) > 0 && (kind === "worker" || (all("keptWhileDown") && steps.keptAfterReconnect === true)) && all("retry");
     paths[`offlineSend-${kind}`] = { issue: "#4", pass, ...steps };
-    // 下一种断线从已连接的状态开始。
+    // 下一种断线从已连接的状态开始。SAFETY: PANEL 返回 PanelState。
     await until(async () => (await rp.evaluate(panel, PANEL) as PanelState).connected || undefined, 45_000, "下一轮前连接恢复", 300).catch(() => undefined);
   };
 
   // 后台 worker：用 DevTools 的 stopAllWorkers 停掉（和 Chrome 空闲回收、更新时一样），侧栏重连会再拉起它。
   await rp.cdp.send("ServiceWorker.enable", {}, work);
+
   const stopWorker = async () => {
     if (!(await rp.serviceWorker())) return false;
     await rp.cdp.send("ServiceWorker.stopAllWorkers", {}, work);
@@ -402,12 +426,17 @@ try {
 }
 
 result.paths = paths;
+
 result.pass = !result.error && Object.keys(paths).length === 3 && Object.values(paths).every((p) => p.pass === true);
+
 await writeFile(join(artifacts, "result.json"), JSON.stringify(result, null, 2));
 
 for (const [name, p] of Object.entries(paths)) console.log(`${name}\t${p.pass ? "pass" : "FAIL"}`);
 
 if (result.error) console.log(`ERROR ${result.error}`);
+
 console.log(`${result.pass ? "PASS" : "FAIL"} · ${artifacts}`);
+
 process.exitCode = result.pass ? 0 : 1;
+
 await rp.remove();
