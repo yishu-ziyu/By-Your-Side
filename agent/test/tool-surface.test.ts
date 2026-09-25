@@ -6,6 +6,7 @@ import { createBrowserTools, modelToolOf } from "../src/tools.js";
 import { createFleetTools } from "../src/fleet.js";
 import { createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool } from "../src/task-results.js";
 import { createSendUserMessageTool } from "../src/user-delivery.js";
+import { createArtifactsTool } from "../src/artifacts-tool.js";
 import { createCapturePageMaterialTool, createTaskGoalsTool } from "../src/task-goal-tool.js";
 import { MemoryRuntime } from "../src/memory-runtime.js";
 import { MemoryStore } from "../src/memory-store.js";
@@ -112,6 +113,7 @@ function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[]
       emit: () => {},
     }),
     createSendUserMessageTool({ conversationId: "default", getRunId: () => null, emit: () => {} }),
+    createArtifactsTool({ emit: () => {} }),
   ].map((t) => t.name);
 
   // 只取工具名，不需要真实存储。

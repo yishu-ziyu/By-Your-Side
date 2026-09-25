@@ -49,6 +49,7 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, P
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { createArtifactsTool } from "./artifacts-tool.js";
+import { isCopyRequest } from "../../shared/copy-request.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { createNodeLoop, createNodeModelRuntime } from "./node-agent-loop.js";
@@ -249,12 +250,6 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
  * 会改变页面的工具（模型可见名）。滚动、悬停、等待事件、切标签等只看不改的不算；
  * browser_run 另按执行步数判断。用于交付时纠正「页面没变却说做完了」。
  */
-/**
- * 用户原话明确要求照原文搬运时，才要求填写内容与已保存原文逐字一致（2026-09-25 用户裁决「只管复制任务」）。
- * 改错字、填数字、写新内容不受这条约束；说法不在这张词表里时不保护，是已知局限。
- */
-const COPY_REQUEST = /复制|拷贝|粘贴|照抄|抄到|抄进|抄下|原文|原封不动|一字不差|搬到|搬进|搬过去|贴到|贴进|贴过去|copy|paste/i;
-
 const PAGE_CHANGE_TOOLS = new Set(["page_operation", "page_translation", "navigate", "open_tab", "click", "double_click", "drag", "fill", "type_text", "press_key", "js", "mark", "upload_file", "file_chooser_set_files", "accept_dialog", "dismiss_dialog"]);
 
 export class BrowserAgentSession {
@@ -693,7 +688,7 @@ if(required.includes(key))candidates.set(key,attachment);
     // display-* 前缀即直连用户请求（语音/显示命令）：不继承旧任务的“已取消”生命周期；其余约束照旧。
     assertTaskStepExecution(snapshot,name,params,false,_toolCallId?.startsWith('display-')===true);
 
-    const copyRequested=(snapshot?.recoveryInput?.requirements??[]).some(text=>COPY_REQUEST.test(text));
+    const copyRequested=isCopyRequest(snapshot?.recoveryInput?.requirements??[]);
 
     if (copyRequested && snapshot?.goalPlan?.goals.some(g=>g.kind==='field'&&g.status!=='satisfied') && ['fill','type_text'].includes(name)) {
       const value=typeof params.value==='string'?params.value:typeof params.text==='string'?params.text:'';
