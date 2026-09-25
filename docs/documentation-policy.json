@@ -12,6 +12,7 @@
   "locationExceptions": {
     "README.md": "仓库概览与文档目录",
     "AGENTS.md": "编码代理自动读取的规则入口",
+    "CLAUDE.md": "Claude Code 自动读取的入口，只导入 AGENTS.md",
     ".github/pull_request_template.md": "GitHub 自动读取的复核入口",
     ".agents/skills/typesafe-ai/SKILL.md": "工具技能加载约定",
     ".kimi-code/agents/consolidator.md": "已有代理角色加载入口",
