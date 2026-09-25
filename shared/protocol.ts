@@ -812,8 +812,8 @@ export interface ToolContract {
   };
   /** 等待用户指出主文档里的元素；选择本身不激活网页控件。 */
   ask_user_to_point: { params: { tabId?: number; message?: string }; data: import("./point-selection.js").PointSelectionReceipt };
-  /** 在元素处画持久标注（描边框+箭头+名牌），锚定文档坐标，滚动不漂移 */
-  mark: { params: { tabId?: number; target: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
+  /** 在元素处画持久标注（描边框+名牌），锚定文档坐标，滚动不漂移；through 为同一行的结束 ref，一个框从 target 圈到它 */
+  mark: { params: { tabId?: number; target: string; through?: string; label?: string; actions?: MarkAction[] }; data: { marked: true } };
   /** 清除全部 mark 标注 */
   clear_marks: { params: {tabId?: number}; data: { cleared: true } };
 }

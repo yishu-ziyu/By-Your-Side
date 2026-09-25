@@ -101,7 +101,7 @@ interface SideAgentCursor {
     target?: string,
     actions?: Array<{ id: "confirm" | "cancel"; label: string }>,
     options?: MarkOptions,
-    observedNode?: Node,
+    observedNode?: Node | Range,
   ): void;
   /** 拿住目标：飞到 (x,y) 进入持久按住态（不弹回、不 park），名牌变双键；scroll/resize 按 target 锚点跟随 */
   hold?(x: number, y: number, actions: Array<{ id: "confirm" | "cancel"; label: string }>, target?: string): void;
@@ -136,7 +136,7 @@ interface SideAgentNamespace {
     targetRect: SideAgentRect | null; hidden: boolean; resting: boolean; x: number; y: number; size: number;
   } | null;
   /** overlay 自检：当前 mark 的文档坐标盒（生产路径不用） */
-  markLayout?: () => Array<{ x: number; y: number; width: number; height: number }>;
+  markLayout?: () => Array<{ x: number; y: number; width: number; height: number; stroke: SideAgentRect | null; label: SideAgentRect | null }>;
   /** overlay 自检：标注层真实子节点数 */
   markLayerCount?: () => number;
   /** 宿主自画标注的只读读数，供核验「圈给用户看」；页面脚本读不到。 */

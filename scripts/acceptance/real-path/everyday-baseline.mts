@@ -84,11 +84,36 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
-type Ctx = { answer: string; pageText: string; marks: number; draft: string | null; tabs: string[]; saves: number };
+type Box = { x: number; y: number; w: number; h: number };
+
+/** 页面上一个标注的外框和名牌（视口坐标）；文字框取页面每个文字节点的行框。 */
+type DrawnMark = { frame: Box; label: Box | null };
+
+type TextBox = Box & { text: string };
+
+type Ctx = { answer: string; pageText: string; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number };
 
 type Case = { id: string; path: string; prompt: string; check: (c: Ctx) => string | null };
 
 const has = (text: string, ...needles: string[]) => needles.every((n) => text.includes(n));
+
+const contains = (outer: Box, inner: Box) => inner.x >= outer.x - 1 && inner.y >= outer.y - 1 && inner.x + inner.w <= outer.x + outer.w + 1 && inner.y + inner.h <= outer.y + outer.h + 1;
+
+const overlaps = (a: Box, b: Box) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1;
+
+/** 圈「名称 + 数值」：一个框同时盖住两者，任何名牌都不压页面文字。 */
+function checkPairMark(c: Ctx, name: string, value: string): string | null {
+  if (c.marks.length === 0) return "页面上没有圈画";
+  const nameBox = c.texts.find((t) => t.text === name);
+  const valueBox = c.texts.find((t) => t.text === value);
+
+  if (!nameBox || !valueBox) return `页面上找不到「${name}」或「${value}」`;
+
+  if (!c.marks.some((m) => contains(m.frame, nameBox) && contains(m.frame, valueBox))) return `没有一个框同时圈住「${name}」和「${value}」`;
+  const covered = c.marks.flatMap((m) => (m.label ? c.texts.filter((t) => overlaps(m.label!, t)).map((t) => t.text) : []));
+
+  return covered.length ? `名牌压住了页面文字：${covered.join("、")}` : null;
+}
 
 const CASES: Case[] = [
   { id: "hello", path: "/article", prompt: "你好", check: (c) => (c.answer ? null : "没有回答") },
@@ -98,7 +123,7 @@ const CASES: Case[] = [
   { id: "page-fields", path: "/job", prompt: "这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。", check: (c) => (has(c.answer, "前端", "杭州") ? null : "缺岗位名或城市") },
   { id: "three-repos", path: "/projects", prompt: "找到这三个项目的 GitHub 仓库地址。", check: (c) => (has(c.answer, "alpha-kit", "beta-flow", "gamma-db") ? null : "三个仓库没有全部给出") },
   { id: "translate", path: "/en", prompt: "把这个页面翻译成中文。", check: (c) => ((c.pageText.match(/[一-鿿]/g) ?? []).length >= 20 ? null : "页面上没有出现中文译文") },
-  { id: "mark", path: "/quota", prompt: "在页面上圈出五小时用量。", check: (c) => (c.marks > 0 ? null : "页面上没有圈画") },
+  { id: "mark", path: "/quota", prompt: "在页面上圈出五小时用量。", check: (c) => checkPairMark(c, "五小时用量", "32%") },
   { id: "open-tab", path: "/article", prompt: `在新标签页打开 ${origin}/job`, check: (c) => (c.tabs.some((u) => u.startsWith(`${origin}/job`)) ? null : "没有打开新标签页") },
   { id: "copy-no-save", path: "/note", prompt: "把蓝色 Note 框里的第一句英文原文复制到下面的草稿框里，不要保存。",
     check: (c) => (c.saves > 0 ? "点了保存" : c.draft?.trim() === NOTE_FIRST ? null : `草稿框内容不对：${JSON.stringify(c.draft)}`) },
@@ -190,7 +215,7 @@ type PanelState = {
   noise: { notices: string[]; errors: string[]; receipts: number; taskCard: boolean; taskBar: boolean; resumeEntry: boolean; processRows?: number; footers?: number; toolSteps?: number };
 };
 
-type DomNode = { attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
+type DomNode = { nodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 
 type CaseResult = {
   id: string; prompt: string; replied: boolean; firstVisibleMs: number | null; doneMs: number | null; noiseCount: number;
@@ -236,24 +261,61 @@ try {
 
   await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上伴随进程", 500);
 
-  const countMarks = async (): Promise<number> => {
+  const boxOf = async (nodeId: number): Promise<Box | null> => {
+    // SAFETY: CDP 规范里 DOM.getBoxModel 返回 { model: { border: Quad } }，Quad 为 4 个点 8 个数。
+    const { model } = (await rp.cdp.send("DOM.getBoxModel", { nodeId }, work)) as { model: { border: number[] } };
+    const xs = [0, 2, 4, 6].map((i) => model.border[i]!);
+    const ys = [1, 3, 5, 7].map((i) => model.border[i]!);
+
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  };
+
+  /** 标注画在扩展的封闭 shadow root 里，页面脚本看不到；用 CDP 穿透读外框和名牌。 */
+  const readMarks = async (): Promise<DrawnMark[]> => {
     // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
     const { root } = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)) as { root: DomNode };
-    let count = 0;
+    const found: Array<{ frame: number; label: number | null }> = [];
 
-    const walk = (node: DomNode) => {
+    const classOf = (node: DomNode) => {
       const attrs = node.attributes ?? [];
       const at = attrs.indexOf("class");
 
-      if (at >= 0 && /(^|\s)mark(\s|$)/.test(attrs[at + 1] ?? "")) count += 1;
+      return at >= 0 ? attrs[at + 1] ?? "" : "";
+    };
+
+    const walk = (node: DomNode) => {
+      if (/(^|\s)mark(\s|$)/.test(classOf(node))) {
+        found.push({ frame: node.nodeId, label: node.children?.find((c) => /(^|\s)mark-label(\s|$)/.test(classOf(c)))?.nodeId ?? null });
+      }
 
       for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) walk(child);
     };
 
     walk(root);
+    const drawn: DrawnMark[] = [];
 
-    return count;
+    for (const f of found) {
+      const frame = await boxOf(f.frame);
+
+      if (frame) drawn.push({ frame, label: f.label === null ? null : await boxOf(f.label) });
+    }
+
+    return drawn;
   };
+
+  // SAFETY: 下面这段页面脚本只返回 { text, x, y, w, h } 数组，字段与 TextBox 一致。
+  const readTexts = async (): Promise<TextBox[]> => (await rp.evaluate(work, `(() => {
+    const out = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const text = n.textContent.trim();
+      if (!text) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) if (r.width && r.height) out.push({ text, x: r.x, y: r.y, w: r.width, h: r.height });
+    }
+    return out;
+  })()`)) as TextBox[];
 
   for (const item of selected) {
     saveRequests = 0;
@@ -340,7 +402,7 @@ try {
     const draftValue = await rp.evaluate(work, "document.querySelector('#draft')?.value ?? null").catch(() => null);
     const tabs = (await rp.targets()).filter((t) => t.type === "page").map((t) => t.url);
     const answer = final?.answers.join("\n\n") ?? "";
-    const ctx: Ctx = { answer, pageText, marks: await countMarks().catch(() => 0), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests };
+    const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);

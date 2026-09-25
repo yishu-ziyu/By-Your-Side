@@ -1210,9 +1210,10 @@ return result;}
       name: "mark",
       label: "Mark elements",
       description:
-        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + optional label on target (\"look here\", highlights). One thing gets one mark: pick the single ref that best identifies it (for a name/value pair such as 五小时用量 32%, the value) and do not add a second mark on its adjacent label; overlapping marks look like a scribble. Use refs already in the snapshot; do not search for a wrapping container. For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
+        "Draw or clear annotations on the working tab. Draw: a persistent hand-drawn outline + optional label on target (\"look here\", highlights). One thing gets one mark; overlapping marks look like a scribble. When the user names a field that shows a value beside it (存储空间 → 3.2 GB), they want to see the value: pass the name ref as target and the value ref as through so one frame holds both. The same applies to any run of adjacent refs on one line. Never draw a second mark on the adjacent part. Use refs already in the snapshot; do not search for a wrapping container. For irreversible confirmation, pass actions: the cursor flies over and grabs the element, and the user clicks 删除/取消 on the cursor's name pill instead of only typing in the sidebar. The mark is anchored to the document, so it stays on its target when the user scrolls. target accepts the same locator forms as click. Marks persist until cleared or page navigation (clear:true removes all marks). Prefer the specific content ref from the latest snapshot (text refs mark the text bounds). Do not infer CSS sibling positions from snapshot order. Never use body/html as a placeholder for an object.",
       parameters: Type.Object({
         target: Type.Optional(Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector; required unless clear is true' })),
+        through: Type.Optional(Type.String({ description: '"@N" ref ending a group on the same line as target (both must be snapshot refs); one frame covers target through this ref' })),
         label: Type.Optional(Type.String({ description: "Short label shown next to the mark, e.g. 待删除" })),
         actions: Type.Optional(
           Type.Array(
@@ -1233,7 +1234,7 @@ return result;}
         }
 
         if (typeof params.target !== "string" || !params.target.trim()) throw new Error("mark 需要 target；只想清除标注时传 clear:true。");
-        const data = (await call("mark", { target: params.target, label: params.label, actions: params.actions })) as ToolContract["mark"]["data"];
+        const data = (await call("mark", { target: params.target, through: params.through, label: params.label, actions: params.actions })) as ToolContract["mark"]["data"];
 
         return textResult(`Marked ${params.target}.`, data);
       },

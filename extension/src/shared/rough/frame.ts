@@ -52,15 +52,23 @@ export function sketchFrame(target: Box, o: RoughOptions): SketchOutline {
   return { d: toPath(boilPass(jitter(ellipsePoints(cx, cy, rx, ry, 0, Math.PI * 2, n).slice(0, -1), rand, amp), o), true), frame: { x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2 } };
 }
 
+/** 候选名牌位置的判定：是否整块在可见区域内、底下是否没有页面内容（坐标与 frame 相同）。 */
+export interface LabelRoom { inView(b: Box): boolean; clear(b: Box): boolean }
+
 /**
- * 名牌摆在框外右侧、与框垂直居中，不压住任何文字；右边放不下才退到框外左上。
- * roomRight：框右边到可见区域右边的距离；minLeft：左上时名牌最左能放到哪（保持在可见区域内）。
+ * 名牌不压字：依次试框外右侧（垂直居中）、上方、下方、左侧；四处都压字时沿框的上沿、下沿往右找空白。
+ * 都找不到空白时取第一个在可见区域内的候选（右侧优先），再不行放右侧。
  */
-export function sketchLabelPosition(frame: Box, labelWidth: number, roomRight: number, minLeft: number): LabelPosition {
+export function sketchLabelPosition(frame: Box, label: { w: number; h: number }, room: LabelRoom): LabelPosition {
   const gap = 8;
-  const labelHeight = 20;
+  const above = frame.y - label.h - 2;
+  const below = frame.y + frame.h + 2;
+  const right = { left: frame.x + frame.w + gap, top: frame.y + frame.h / 2 - label.h / 2 };
+  const candidates = [right, { left: frame.x, top: above }, { left: frame.x, top: below }, { left: frame.x - gap - label.w, top: right.top }];
 
-  if (roomRight >= labelWidth + gap * 2) return { left: frame.x + frame.w + gap, top: frame.y + frame.h / 2 - labelHeight / 2 };
+  for (let dx = 16; dx <= 480; dx += 16) candidates.push({ left: frame.x + dx, top: above }, { left: frame.x + dx, top: below });
+  const boxOf = (c: LabelPosition) => ({ x: c.left, y: c.top, w: label.w, h: label.h });
+  const visible = candidates.filter((c) => room.inView(boxOf(c)));
 
-  return { left: Math.max(frame.x, minLeft), top: frame.y - labelHeight - 2 };
+  return visible.find((c) => room.clear(boxOf(c))) ?? visible[0] ?? right;
 }

@@ -7,7 +7,7 @@ import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
 import { getWorkingTabId, maybeActivateTab, resolveWorkingTab } from "../state.js";
 import { resolveKey, type KeyInfo } from "../../shared/keymap.js";
 import { axBackendNodeFor, isAxRef } from "../axstate.js";
-import { observedNodeRect } from "../observed-node-rect.js";
+import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
 import {
@@ -171,6 +171,11 @@ function parseRef(target: string): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+/** callOnBackendNode 参数里的页面对象：按 objectId 原样传入，不做 JSON 序列化。 */
+class CdpObjectArg {
+  constructor(readonly objectId: string) {}
+}
+
 /** 把 backendDOMNodeId 解析成页面内元素并执行函数（CDP Runtime.callFunctionOn）。 */
 export async function callOnBackendNode<T>(
   tabId: number,
@@ -197,7 +202,7 @@ export async function callOnBackendNode<T>(
     exceptionDetails?: { exception?: { description?: string }; text?: string };
   }>(tabId, "Runtime.callFunctionOn",
     args
-      ? { objectId, functionDeclaration, arguments: args.map((value) => ({ value })), returnByValue: true }
+      ? { objectId, functionDeclaration, arguments: args.map((value) => (value instanceof CdpObjectArg ? { objectId: value.objectId } : { value })), returnByValue: true }
       : { objectId, functionDeclaration, returnByValue: true });
 
   if (result.exceptionDetails) {
@@ -2577,6 +2582,7 @@ export async function mark(
   params: {
     tabId?: number;
     target: string;
+    through?: string;
     label?: string;
     actions?: unknown;
     style?: "rect" | "sketch";
@@ -2594,6 +2600,12 @@ export async function mark(
   // 与 click 同样的解析策略：AX 快照 ref 走 CDP，其余走 domops 页面内解析
   const ref = parseRef(params.target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
+  const throughNodeId = params.through === undefined ? undefined : axBackendNodeFor(tabId, parseRef(params.through));
+
+  if (params.through !== undefined && (backendNodeId === undefined || throughNodeId === undefined)) {
+    throw notExecuted(new Error(`through 只能配合当前快照里的 @ref：target 和 through 都要是同一张快照的 @N（收到 ${params.target} → ${params.through}）`));
+  }
+
   let rect: DomRect | undefined;
 
   if (backendNodeId !== undefined) {
@@ -2646,6 +2658,26 @@ export async function mark(
   const motion = await getMarkMotion();
   const style = params.style ?? "sketch";
   await assertSameDocument(tabId, observedDocument);
+
+  if (backendNodeId !== undefined && throughNodeId !== undefined) {
+    const contextId = await cursorContext(tabId);
+    const end = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: throughNodeId, executionContextId: contextId });
+
+    if (!end.object?.objectId) throw notExecuted(new Error(`ref ${params.through} 已失效，操作未执行。请重新 snapshot 后使用新的 ref`));
+    await assertSameDocument(tabId, observedDocument);
+
+    // 同一行、同一页面的校验在页面里做；没通过时什么都还没画，如实记为未执行。
+    try {
+      await callOnBackendNode(tabId, backendNodeId, `function(end,label,target,id,actions,options) {
+        const {range, rect} = (${observedNodeRange.toString()}).call(this,end,(${observedNodeRect.toString()}));
+        window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,range);
+      }`, [new CdpObjectArg(end.object.objectId), params.label ?? null, params.target, cid, actions, { style, motion }], contextId);
+    } catch (error) {
+      throw notExecuted(error);
+    }
+
+    return { marked: true };
+  }
 
   if (backendNodeId !== undefined) {
     const contextId = await cursorContext(tabId);

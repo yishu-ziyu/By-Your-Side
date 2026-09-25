@@ -15,7 +15,8 @@ const domopsJs = path.join(root, "dist/content-domops.js");
 
 const outDir = "/tmp/sideagent-overlay";
 
-const chrome =
+// 本机 Playwright 缓存的版本号会随升级变化；OVERLAY_CHROME 可指向当前那一份。
+const chrome = process.env.OVERLAY_CHROME ??
   `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 
 const HTML = `<!doctype html>
@@ -828,6 +829,66 @@ await win.screenshot({ path: path.join(outDir, "teach-sketch-mark.png") });
 await nested.close();
 
 await win.close();
+
+// mark 带 through：一个框从名称圈到数值（Range）；名称变长后框线跟着重画，名牌不压住右边的文字
+const pair = await browser.newPage({ viewport: { width: 720, height: 360 } });
+
+await pair.setContent(`<!doctype html><meta charset="utf-8"><style>body{margin:0;font:16px/22px sans-serif}p{margin:0;padding:8px}</style>
+<p>本月请求数<strong>1,204</strong></p><p id="row"><span id="name">五小时用量</span><strong id="value">32%</strong><span id="tail">（刷新于 10:02）</span></p><p>剩余额度<strong>$12.40</strong></p>`);
+
+await pair.addScriptTag({ path: cursorJs });
+
+// 用户看到的是手绘框线和名牌（视口坐标），不是外层盒子。
+const readPairMark = () => pair.evaluate(() => {
+  const range = document.createRange();
+  range.setStartBefore(document.getElementById("name"));
+  range.setEndAfter(document.getElementById("value"));
+  const r = range.getBoundingClientRect();
+
+  const texts = [...document.querySelectorAll("p")].flatMap((p) => [...p.childNodes].flatMap((n) => {
+    const t = document.createRange();
+    t.selectNodeContents(n);
+
+    return [...t.getClientRects()].map((b) => ({ text: n.textContent, x: b.x, y: b.y, width: b.width, height: b.height }));
+  }));
+
+  return { text: { x: r.x, y: r.y, width: r.width, height: r.height }, texts, mark: window.__sideagent.markLayout()[0] ?? null };
+});
+
+const inside = (outer, inner) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
+
+const hits = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 1;
+
+const checkPair = (seen, when) => {
+  if (!seen.mark?.stroke || !inside(seen.mark.stroke, seen.text)) fail(`${when}：手绘框线没有圈住名称到数值 ${JSON.stringify(seen.mark)} text=${JSON.stringify(seen.text)}`);
+
+  const covered = seen.mark?.label ? seen.texts.filter((t) => hits(seen.mark.label, t)).map((t) => t.text) : ["（没有名牌）"];
+
+  if (covered.length) fail(`${when}：名牌压住了 ${covered.join("、")}`);
+};
+
+await pair.evaluate(() => {
+  const range = document.createRange();
+  range.setStartBefore(document.getElementById("name"));
+  range.setEndAfter(document.getElementById("value"));
+  const r = range.getBoundingClientRect();
+  window.__sideagent.cursor.mark({ x: r.x, y: r.y, width: r.width, height: r.height }, "五小时用量", undefined, undefined, { style: "sketch", seed: 7 }, range);
+});
+
+checkPair(await readPairMark(), "刚画好");
+
+await pair.evaluate(() => {
+  document.getElementById("name").textContent = "近五个小时的用量";
+  window.dispatchEvent(new Event("resize"));
+});
+
+await pair.waitForTimeout(40);
+
+checkPair(await readPairMark(), "名称变长后");
+
+await pair.screenshot({ path: path.join(outDir, "mark-through-pair.png") });
+
+await pair.close();
 
 await browser.close();
 

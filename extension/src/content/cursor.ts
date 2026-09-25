@@ -127,12 +127,15 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   interface LiveMark {
     el: HTMLDivElement;
     anchor: Element | null;
-    observedNode?: Node;
+    /** 画框时的目标：单个节点，或 mark 带 through 时从起点到终点的 Range。 */
+    observedNode?: Node | Range;
     target?: string;
     pad: number;
     label?: string;
     options?: MarkOptions;
     seed?: number;
+    /** 手绘框线按这个目标尺寸画的；目标变宽变高后重画框线、重摆名牌。 */
+    drawn?: { w: number; h: number };
   }
 
   let defaultMarkOptions: MarkOptions = { style: "rect", motion: "grow" };
@@ -523,15 +526,16 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       if (mark.observedNode) {
         const node = mark.observedNode;
 
-        if (!node.isConnected) {mark.el.style.visibility = "hidden";continue;}
+        if (node instanceof Range ? !node.startContainer.isConnected : !node.isConnected) {mark.el.style.visibility = "hidden";continue;}
 
         let rect: DOMRect;
 
-        if (node.nodeType === Node.TEXT_NODE) {
+        if (node instanceof Range) rect = node.getBoundingClientRect();
+        else if (node.nodeType === Node.TEXT_NODE) {
           const range = document.createRange();range.selectNodeContents(node);rect = range.getBoundingClientRect();
         } else rect = (node as Element).getBoundingClientRect();
         mark.el.style.visibility = rect.width && rect.height ? "" : "hidden";
-        applyMarkBox(mark.el, rect, mark.pad, mark.label);
+        placeMark(mark, rect);
         continue;
       }
 
@@ -544,13 +548,21 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
       mark.el.style.visibility = "";
       const r = anchor.getBoundingClientRect();
-      applyMarkBox(
-        mark.el,
-        { x: r.x, y: r.y, width: r.width, height: r.height },
-        mark.pad,
-        mark.label,
-      );
+      placeMark(mark, { x: r.x, y: r.y, width: r.width, height: r.height });
     }
+  }
+
+  function placeMark(mark: LiveMark, rect: SideAgentRect): void {
+    applyMarkBox(mark.el, rect, mark.pad, mark.label);
+
+    if (!mark.drawn || !rect.width || !rect.height) return;
+
+    if (Math.abs(mark.drawn.w - rect.width) <= 1 && Math.abs(mark.drawn.h - rect.height) <= 1) return;
+    mark.drawn = { w: rect.width, h: rect.height };
+    const frame = drawSketchPaths(mark.el, { x: mark.pad, y: mark.pad, w: rect.width, h: rect.height }, mark.seed ?? 1);
+    const labelEl = mark.el.querySelector<HTMLElement>(".sketch-label");
+
+    if (labelEl) placeSketchLabel(mark.el, labelEl, frame);
   }
 
   /** 拿住期间手跟目标走：若锚点有效则跟随目标最新位置；若锚点暂不可解（如 AX ref 或外部滚动），保持当前拿住点不误隐藏。 */
@@ -947,6 +959,36 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     return document.elementFromPoint(cx, cy);
   }
 
+  /** 视口里这块区域下面有没有页面内容（文字、图片、控件）；标注层和光标层不参与命中。 */
+  function coversPageContent(r: { x: number; y: number; w: number; h: number }): boolean {
+    const seen = new Set<Element>();
+
+    for (let i = 0; i <= 4; i++) {
+      for (let j = 0; j <= 2; j++) {
+        const px = r.x + 1 + ((r.w - 2) * i) / 4;
+        const py = r.y + 1 + ((r.h - 2) * j) / 2;
+        const hit = document.elementsFromPoint(px, py).find((e) => !e.closest(`[${OVERLAY_ATTR}]`));
+
+        if (!hit || seen.has(hit)) continue;
+        seen.add(hit);
+
+        if (hit.matches("img,svg,video,canvas,input,textarea,select,button,iframe")) return true;
+
+        for (const node of hit.childNodes) {
+          if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+
+          for (const t of range.getClientRects()) {
+            if (Math.min(t.right, r.x + r.w) > Math.max(t.left, r.x) && Math.min(t.bottom, r.y + r.h) > Math.max(t.top, r.y)) return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   function applyMarkBox(
     el: HTMLDivElement,
     rect: SideAgentRect,
@@ -1062,7 +1104,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
     label?: string,
     target?: string,
     options?: MarkOptions,
-    observedNode?: Node,
+    observedNode?: Node | Range,
   ): HTMLDivElement | null {
     const opts = { ...defaultMarkOptions, ...options };
     const isSketch = opts.style === "sketch";
@@ -1086,18 +1128,11 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       const svg = svgEl("svg", { class: motion === "boil" ? "sketch-svg" : "sketch-svg anim-stroke-grow", style: "left:0;top:0;width:100%;height:100%;" });
 
       if (motion === "boil") {
-        [0, 1, 2].forEach((i) => {
-          const outline = sketchFrame(targetBox, { seed, roughness: 0.9, boil: 0.45, boilSeed: seed + (i + 1) * 7919 });
-          frame = outline.frame;
-          svg.appendChild(svgEl("path", { class: `boil-path sketch-frame-path frame-${i}`, "data-i": i, d: outline.d }));
-        });
-      } else {
-        const outline = sketchFrame(targetBox, { seed, roughness: 0.9 });
-        frame = outline.frame;
-        svg.appendChild(svgEl("path", { class: "sketch-frame-path", d: outline.d }));
-      }
+        [0, 1, 2].forEach((i) => svg.appendChild(svgEl("path", { class: `boil-path sketch-frame-path frame-${i}`, "data-i": i })));
+      } else svg.appendChild(svgEl("path", { class: "sketch-frame-path" }));
 
       el.replaceChildren(svg);
+      frame = drawSketchPaths(el, targetBox, seed);
 
       if (label) {
         const markLabel = document.createElement("div");
@@ -1116,22 +1151,13 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       }
     }
 
-    if (label) {
-      const labelEl = el.querySelector<HTMLElement>(".mark-label")!;
-      labelEl.textContent = label;
+    const labelEl = label ? el.querySelector<HTMLElement>(".mark-label") : null;
 
-      if (isSketch) {
-        // 名牌放框外右侧、不压文字；右边放不下才退到框外左上，并留在可见区域内。
-        const labelWidth = label.length * 12 + 22;
-        const roomRight = window.scrollX + window.innerWidth - (box.x + frame.x + frame.w) - 4;
-        const at = sketchLabelPosition(frame, labelWidth, roomRight, window.scrollX + 4 - box.x);
-        labelEl.style.left = `${at.left}px`;
-        labelEl.style.top = `${at.top}px`;
-      }
-    }
-
+    if (labelEl && label) labelEl.textContent = label;
     applyMarkBox(el, rect, pad, label);
     marksLayer!.appendChild(el);
+
+    if (labelEl && isSketch) placeSketchLabel(el, labelEl, frame);
     liveMarks.push({
       el,
       anchor: observedNode ? null : resolveAnchor(rect, target),
@@ -1141,9 +1167,45 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
       label,
       options: opts,
       seed,
+      drawn: isSketch ? { w: rect.width, h: rect.height } : undefined,
     });
 
     return el;
+  }
+
+  /** 按目标框（标注内坐标）画手绘框线：grow 一笔，boil 三帧；返回框线实际占的范围。 */
+  function drawSketchPaths(el: HTMLElement, targetBox: { x: number; y: number; w: number; h: number }, seed: number) {
+    const paths = [...el.querySelectorAll<SVGPathElement>(".sketch-frame-path")];
+    const boil = paths.length > 1;
+    let frame = targetBox;
+
+    paths.forEach((path, i) => {
+      const outline = sketchFrame(targetBox, boil ? { seed, roughness: 0.9, boil: 0.45, boilSeed: seed + (i + 1) * 7919 } : { seed, roughness: 0.9 });
+      frame = outline.frame;
+      path.setAttribute("d", outline.d);
+    });
+
+    return frame;
+  }
+
+  /** 名牌挂上之后才量得到真实大小；按标注当前的文档位置换算到视口，检查底下有没有页面文字。 */
+  function placeSketchLabel(el: HTMLElement, labelEl: HTMLElement, frame: { x: number; y: number; w: number; h: number }): void {
+    const size = labelEl.getBoundingClientRect();
+    const originX = (parseFloat(el.style.left) || 0) - window.scrollX;
+    const originY = (parseFloat(el.style.top) || 0) - window.scrollY;
+    const toView = (b: { x: number; y: number; w: number; h: number }) => ({ x: originX + b.x, y: originY + b.y, w: b.w, h: b.h });
+
+    const at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
+      inView: (b) => {
+        const v = toView(b);
+
+        return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
+      },
+      clear: (b) => !coversPageContent(toView(b)),
+    });
+
+    labelEl.style.left = `${at.left}px`;
+    labelEl.style.top = `${at.top}px`;
   }
 
   /** 只撤指定的一条标注（拿住态的确认锚框），不碰模型画的其他标注。 */
@@ -1890,7 +1952,7 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
         target?: string,
         actions?: MarkAction[],
         options?: MarkOptions,
-        observedNode?: Node,
+        observedNode?: Node | Range,
       ): void {
         const inst = getInstance(id);
         const mark = spawnMark(inst, rect, label, target, options, observedNode);
@@ -2049,18 +2111,28 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
   };
 
   ns.markLayout = () =>
-    liveMarks.map((m) => ({
-      x: parseFloat(m.el.style.left) || 0,
-      y: parseFloat(m.el.style.top) || 0,
-      width: parseFloat(m.el.style.width) || 0,
-      height: parseFloat(m.el.style.height) || 0,
-    }));
+    liveMarks.map((m) => {
+      const viewRect = (e: Element | null) => {
+        const r = e?.getBoundingClientRect();
+
+        return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null;
+      };
+
+      return {
+        x: parseFloat(m.el.style.left) || 0,
+        y: parseFloat(m.el.style.top) || 0,
+        width: parseFloat(m.el.style.width) || 0,
+        height: parseFloat(m.el.style.height) || 0,
+        stroke: viewRect(m.el.querySelector(".sketch-frame-path")),
+        label: viewRect(m.el.querySelector(".mark-label")),
+      };
+    });
   /** overlay 自检：标注层真实子节点数（不等于 liveMarks 记账） */
   ns.markLayerCount = () => marksLayer?.childElementCount ?? 0;
   /** 核验读数：每个标注此刻圈住哪个元素、是否显示；只读，不改标注。 */
   ns.marksState = () =>
     liveMarks.map((m) => {
-      const node = m.observedNode;
+      const node = m.observedNode instanceof Range ? m.observedNode.commonAncestorContainer : m.observedNode;
       const anchor = node ? (node instanceof Element ? node : node.parentElement) : liveAnchor(m);
 
       return {

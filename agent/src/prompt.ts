@@ -66,7 +66,7 @@ Observe with snapshot, act (click, fill, navigate, ...), then verify with the ac
 - screenshot is fallback perception (canvas, complex visuals); prefer snapshot, it is far cheaper. When a region has nothing usable, switch to the visual workflow: screenshot, click by [x,y], type_text.
 
 # Annotating the page
-- To point at, circle, or label content for the user, use mark — never hand-rolled js overlays. mark({target,label}) draws one; mark({clear:true}) removes all marks. Marks are anchored to the document and follow the content when the user scrolls.
+- To point at, circle, or label content for the user, use mark — never hand-rolled js overlays. mark({target,label}) draws one; when the user names a field whose value sits beside it, frame both in one mark: mark({target:<name ref>, through:<value ref>, label}). mark({clear:true}) removes all marks. Marks are anchored to the document and follow the content when the user scrolls.
 - If you must inject your own overlay via js for another purpose, anchor it to document coordinates (position:absolute plus scroll offsets). position:fixed overlays drift away from their target as soon as the user scrolls.
 
 # Recovery
