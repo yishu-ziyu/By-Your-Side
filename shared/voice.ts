@@ -114,6 +114,8 @@ export interface TaskProgressSnapshot {
   unresolvedEffect?:boolean;
   /** All dispatched durable effects in this run have entries in the execution ledger. */
   executionAuditComplete?:boolean;
+  /** 本 run 执行过效果看不出的工具（页面 JS、原始 CDP）：账本记了这一笔，但说不清它改了什么。 */
+  opaqueEffectRan?:boolean;
   controlVersion?:number;
   active: Array<{ member: string; action: string; since: number }>;
   lastAction: { action: string; failed: boolean; at: number } | null;
@@ -440,6 +442,15 @@ export function isVoiceConversationContext(v: unknown): v is VoiceConversationCo
     && (c.latestDelivery === undefined || c.latestDelivery === null || isUserDelivery(c.latestDelivery));
 }
 
+/**
+ * 核对「没保存 / 没提交」这类约束时，能否只凭执行账本：每次改动都记了账，而且每一笔都看得出改了什么。
+ * 执行过页面 JS 或原始 CDP 后为否，核对须重读页面（用户 2026-09-25 裁决，见 docs/evals/20260925-unit-suite-failures.md）。
+ * 写入闸门仍只看 executionAuditComplete（每次改动是否都记了账），不受此影响。
+ */
+export function executionEffectsFullyKnown(s: Pick<TaskProgressSnapshot, 'executionAuditComplete' | 'untrackedWritePending' | 'opaqueEffectRan'>): boolean {
+  return s.executionAuditComplete === true && s.untrackedWritePending !== true && s.opaqueEffectRan !== true;
+}
+
 export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
   if (!v || typeof v !== "object") return false;
   const s = v as TaskProgressSnapshot;
@@ -453,6 +464,7 @@ export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
     && (s.untrackedWritePending === undefined || typeof s.untrackedWritePending==='boolean')
     && (s.unresolvedEffect === undefined || typeof s.unresolvedEffect==='boolean')
     && (s.executionAuditComplete === undefined || typeof s.executionAuditComplete==='boolean')
+    && (s.opaqueEffectRan === undefined || typeof s.opaqueEffectRan==='boolean')
     && (s.nextStep === undefined || isTaskNextStep(s.nextStep))
     && (s.goalPlan === undefined || isTaskGoalPlan(s.goalPlan))
     && s.successVerified === false && Array.isArray(s.active) && s.active.length <= 12 && s.active.every(a => a && typeof a.member === "string" && typeof a.action === "string" && a.action.length <= 100 && Number.isFinite(a.since))

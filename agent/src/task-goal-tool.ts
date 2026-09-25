@@ -1,3 +1,4 @@
+import { executionEffectsFullyKnown } from '../../shared/voice.js';
 import { isCopyRequest } from '../../shared/copy-request.js';
 import { wrapPageContent } from '../../shared/untrusted.js';
 import type { GoalReviewStage, GoalEvidenceReview } from './goal-evidence-judge.js';
@@ -186,7 +187,7 @@ async function executeGoalOperation(getHost:()=>GoalToolHost,input:GoalOperation
     const actual = elementText(data);
 
     if (goal.kind === 'field' && (!material || typeof actual !== 'string' || actual !== fieldMaterialValue(goal,material))) review = { matched: false, reason: !material ? '缺少待写入的原文材料' : actual === '' ? '目标编辑器仍为空' : '目标内容与原文及所要求的来源网址不一致' };
-    else review = await reviewEvidence(goal.kind==='field'?'target':'condition', { requirements, goal, target: input.target, page: data, material, executionFacts: host.snapshot().results, executionAuditComplete:host.snapshot().executionAuditComplete===true&&!host.snapshot().untrackedWritePending }, signal);
+    else review = await reviewEvidence(goal.kind==='field'?'target':'condition', { requirements, goal, target: input.target, page: data, material, executionFacts: host.snapshot().results, executionAuditComplete:executionEffectsFullyKnown(host.snapshot()) }, signal);
     evidence = material ? { observationId: read.id, tabId: input.tabId, verifiedAt: Date.now(), materialId: material.id } : { observationId: read.id, tabId: input.tabId, verifiedAt: Date.now() };
   }
 

@@ -17,6 +17,9 @@ import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recov
 import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
 import type { DeliveryFactInput } from './user-delivery.js';
 
+/** 效果无法从参数与回执看出的工具：页面 JS 与原始 CDP 命令。 */
+const OPAQUE_EFFECT_TOOLS: ReadonlySet<string> = new Set(["js", "cdp"]);
+
 const labels: Record<string, string> = { judge_browser_action: "判断页面操作", capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 
 const label = (name: string) => labels[name] ?? name.slice(0, 100);
@@ -36,6 +39,7 @@ export class TaskProgress {
   private recoveryInput:TaskRecoveryInput|undefined;
   private unresolvedEffect=false;
   private executionAuditComplete=false;
+  private opaqueEffectRan=false;
   private lastAction: TaskProgressSnapshot["lastAction"] = null;
   private lastReadAt: number | null = null;
   /** Lead-only conversation evidence: bounded turns, the current turn's streamed text, the run's final report. */
@@ -171,6 +175,7 @@ export class TaskProgress {
     this.recoveryInput=snapshot.recoveryInput?structuredClone(snapshot.recoveryInput):undefined;
     this.unresolvedEffect=snapshot.unresolvedEffect===true||snapshot.untrackedWritePending===true;
     this.executionAuditComplete=snapshot.executionAuditComplete===true&&!snapshot.untrackedWritePending;
+    this.opaqueEffectRan=snapshot.opaqueEffectRan===true;
     this.members.clear();
     this.tools.clear();
     this.lastAction = snapshot.lastAction ? { ...snapshot.lastAction } : null;
@@ -239,6 +244,7 @@ return;}
     this.goals.clear();
     this.unresolvedEffect=false;
     this.executionAuditComplete=true;
+    this.opaqueEffectRan=false;
     this.recordRequirement(text,context,attachments);
     this.members.clear();
     this.tools.clear();
@@ -455,6 +461,9 @@ if(page)this.recoveryInput.page=page;
 
         if((started.durableEffect||e.name==='fetch')&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
+        // 页面 JS、原始 CDP 即使记了账，也只写着「执行过一段脚本」，看不出改了什么（见 executionEffectsFullyKnown）。
+        if(started.durableEffect&&OPAQUE_EFFECT_TOOLS.has(e.name)&&e.executionFact!=='not_executed')this.opaqueEffectRan=true;
+
         if(started.durableEffect&&e.isError&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
       }
     } else if (e.kind === "tool_late_result") {
@@ -516,6 +525,8 @@ if(page)this.recoveryInput.page=page;
     }
 
     snapshot.executionAuditComplete=this.executionAuditComplete;
+
+    if(this.opaqueEffectRan)snapshot.opaqueEffectRan=true;
 
     if(this.unresolvedEffect)snapshot.unresolvedEffect=true;
 

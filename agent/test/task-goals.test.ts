@@ -1,3 +1,4 @@
+import { executionEffectsFullyKnown } from '../../shared/voice.js';
 import { expect, it } from 'vitest';
 import { TaskGoalBook, goalRevision } from '../src/task-goals.js';
 import { goalsSatisfied } from '../../shared/task-goals.js';
@@ -164,14 +165,16 @@ it('实际目标已核验时，失败的旧方法不再阻塞；未知写入仍�
  expect(p.snapshot().results![0]!.status).toBe('blocked');
 });
 
+// 2026-09-25 用户裁决：执行过通用脚本后，核对「未保存」不能只凭账本。ce4ecee 起 js 会自动记账，
+// executionAuditComplete 表示「每次改动都记了账」并被写入闸门使用；核对用的是 executionEffectsFullyKnown。
 it('审计完整性不能把成功的通用脚本冒充没有其他变更',()=>{
  const p=new TaskProgress('audit');p.request('核对未保存');p.observe({type:'agent_event',event:{kind:'agent_start'}});
- expect(p.snapshot().executionAuditComplete).toBe(true);
+ expect(executionEffectsFullyKnown(p.snapshot())).toBe(true);
  p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'script',name:'js',params:{code:'opaque'}}});
  p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'script',name:'js',isError:false,executionFact:'executed',resultText:'ok'}});
- expect(p.snapshot().executionAuditComplete).toBe(false);
+ expect(executionEffectsFullyKnown(p.snapshot())).toBe(false);
  const restored=new TaskProgress('audit');restored.restoreResults(p.snapshot());
- expect(restored.snapshot().executionAuditComplete).toBe(false);
+ expect(executionEffectsFullyKnown(restored.snapshot())).toBe(false);
 });
 
 it('明确继续旧任务时用完整原要求建立目标，旧回执仍保留',()=>{
