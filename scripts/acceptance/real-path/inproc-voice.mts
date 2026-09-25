@@ -11,6 +11,10 @@
  * 文字模型来自 ~/.sideagent/providers.local.json（--model=provider/id，默认 kimi-coding/kimi-for-coding）。
  *
  *   --voice=<音色>   先在设置页点选音色，再核对服务端 session.updated 回显的就是它
+ *   --lead=<ms>      开头静音时长（默认 6000）；--lead=300 相当于点完麦克风马上开口，会话此时还没就绪
+ *
+ * 问答、圈画、闲聊用例另记开口时间线（result.opening）：开麦、握手帧、首帧音频、服务端断句与转写相对开麦的毫秒数，
+ * 以及发给服务端的音频响度。判据 speechDelivered 比较 WAV 里的人声时长和实际发给服务端的人声时长，不依赖服务端断句。
  *
  *   npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark
  */
@@ -65,16 +69,38 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOStrin
 
 await mkdir(artifacts, { recursive: true });
 
-// 前面垫静音：语音连上之前到的音频帧会被丢弃；后面垫静音让服务端断句。
+// 前面垫静音，后面垫静音让服务端断句。就绪前的人声由侧栏缓冲、就绪后补发。
 const wav = join(artifacts, "microphone.wav");
 
 // 终止用例两句：先问候（闸门放行、停声不停任务），再说终止（直接终止，不读回）。
-// 先去设置页选音色或人设会多耗几秒；Chrome 假麦克风从启动就开始放，开头静音要跟着加长。
-const lead = process.argv.some((arg) => arg.startsWith("--voice=") || arg.startsWith("--persona=")) ? 14000 : 6000;
+// 先去设置页选音色或人设会多耗几秒，开头静音跟着加长。假麦克风在 getUserMedia 时开始放（实测人声出现在开麦后 lead 毫秒）。
+// --lead=<ms>：开头静音。用 --lead=300 模拟用户点完麦克风马上开口（会话还没就绪）。
+const leadArg = process.argv.find((arg) => arg.startsWith("--lead="))?.slice(7);
+
+const lead = leadArg ? Number(leadArg) : process.argv.some((arg) => arg.startsWith("--voice=") || arg.startsWith("--persona=")) ? 14000 : 6000;
 
 const speech = caseName === "stop-task" ? `[[slnc ${lead}]]你好。[[slnc 12000]]${QUESTION}[[slnc 8000]]` : `[[slnc ${lead}]]${QUESTION}[[slnc 4000]]`;
 
 execFileSync("say", ["-v", "Tingting", "-o", wav, "--data-format=LEI16@24000", speech]);
+
+/** 人声判定：20 ms 一窗，峰值超过它算有人声。静音和底噪都远低于它。 */
+const SPEECH_PEAK = 5000;
+
+/** WAV 里有人声的总时长（毫秒），与发给服务端的音频比较，判断开口有没有被丢。 */
+const spokenMs = await readFile(wav).then((bytes) => {
+  const data = bytes.indexOf("data") + 8;
+  let ms = 0;
+
+  for (let at = data; at + 960 <= bytes.length; at += 960) {
+    let peak = 0;
+
+    for (let i = at; i < at + 960; i += 2) peak = Math.max(peak, Math.abs(bytes.readInt16LE(i)));
+
+    if (peak > SPEECH_PEAK) ms += 20;
+  }
+
+  return ms;
+});
 
 const PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>订单备注</title>
 <style>body{font:15px/1.6 -apple-system,"PingFang SC",sans-serif;max-width:520px;margin:40px auto;padding:0 20px}
@@ -165,6 +191,9 @@ let last: PanelState | null = null;
 let panelSession: string | null = null;
 
 const providerTimeline: JsonRecord[] = [];
+
+/** 问答/圈画用例的开口时间线；失败超时也要落盘，所以在 finally 里调用。 */
+let recordOpening: (() => Promise<void>) | null = null;
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -489,7 +518,92 @@ try {
     // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
     await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
   } else {
+  // 开口时间线：假麦克风从 getUserMedia 起放 WAV，就绪前的帧被侧栏丢弃；记下开麦、握手、首帧音频、断句与转写的时刻。
+  const opening: Array<{ at: number; event: string; text?: string }> = [];
+  const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "扩展内 agent 文档");
+  const off = await rp.attach(offscreen.targetId);
+  await rp.cdp.send("Network.enable", {}, off);
+  let appended = false;
+  const wire = { appends: 0, lastAppendAt: 0, received: 0, lastReceivedAt: 0, lastReceivedType: "", spokenSentMs: 0 };
+  // 发给服务端的音频有多响：每 500 ms 一格记峰值（int16），判断是服务端没断句还是浏览器把声音压低了。
+  const loudness: Array<{ at: number; peak: number }> = [];
+
+  const onFrame = (dir: "sent" | "received") => (message: { sessionId?: string; params?: { response?: { payloadData?: string } } }) => {
+    if (message.sessionId !== off) return;
+    let e: JsonRecord;
+
+    try { e = JSON.parse(message.params?.response?.payloadData ?? ""); } catch { return; }
+
+    const type = String(e.type ?? "");
+
+    if (dir === "received") Object.assign(wire, { received: wire.received + 1, lastReceivedAt: Date.now(), lastReceivedType: type });
+
+    if (type === "input_audio_buffer.append") {
+      Object.assign(wire, { appends: wire.appends + 1, lastAppendAt: Date.now() });
+      const pcm = Buffer.from(isText(e.audio) ? e.audio : "", "base64");
+      let peak = 0;
+
+      for (let i = 0; i + 1 < pcm.length; i += 2) peak = Math.max(peak, Math.abs(pcm.readInt16LE(i)));
+
+      for (let at = 0; at + 960 <= pcm.length; at += 960) {
+        let windowPeak = 0;
+
+        for (let i = at; i < at + 960; i += 2) windowPeak = Math.max(windowPeak, Math.abs(pcm.readInt16LE(i)));
+
+        if (windowPeak > SPEECH_PEAK) wire.spokenSentMs += 20;
+      }
+
+      const cell = loudness.at(-1);
+
+      if (cell && Date.now() - cell.at < 500) cell.peak = Math.max(cell.peak, peak);
+      else if (loudness.length < 60) loudness.push({ at: Date.now(), peak });
+
+      if (appended) return;
+      appended = true;
+    }
+
+    if (type.startsWith("session.") || type.startsWith("input_audio_buffer.") || type.endsWith("transcription.completed")) {
+      opening.push({ at: Date.now(), event: `${dir}:${type}`, text: isText(e.transcript) ? e.transcript : undefined });
+    }
+  };
+
+  rp.cdp.onEvent("Network.webSocketFrameSent", onFrame("sent"));
+  rp.cdp.onEvent("Network.webSocketFrameReceived", onFrame("received"));
+  await rp.evaluate(panel, `(() => {
+    const media = navigator.mediaDevices;
+    const open = media.getUserMedia.bind(media);
+    window.__micOpenedAt = null;
+    window.__voiceOnsetAt = null;
+    media.getUserMedia = async (constraints) => {
+      const stream = await open(constraints);
+      window.__micOpenedAt = Date.now();
+      // 测试自己的音量计：麦克风里第一次出现人声的时刻（与产品丢不丢帧无关）。
+      const context = new AudioContext();
+      const meter = context.createAnalyser();
+      context.createMediaStreamSource(stream.clone()).connect(meter);
+      const buf = new Float32Array(meter.fftSize);
+      const timer = setInterval(() => {
+        meter.getFloatTimeDomainData(buf);
+        const rms = Math.sqrt(buf.reduce((s, x) => s + x * x, 0) / buf.length);
+        if (rms > 0.01) { window.__voiceOnsetAt = Date.now(); clearInterval(timer); context.close(); }
+      }, 20);
+      return stream;
+    };
+    return true;
+  })()`);
   const began = Date.now();
+
+  recordOpening = async () => {
+    // SAFETY: 上面注入的包装只把 __micOpenedAt 设成 null 或 Date.now() 数值。
+    const micOpenedAt = await rp.evaluate(panel, "window.__micOpenedAt") as number | null;
+    const t0 = micOpenedAt ?? began;
+    // SAFETY: 同上，__voiceOnsetAt 只会是 null 或 Date.now() 数值。
+    const voiceOnsetAt = await rp.evaluate(panel, "window.__voiceOnsetAt") as number | null;
+    // 开口没被丢：发给服务端的人声至少是 WAV 里人声的八成（浏览器自动增益会让个别音节过线或不过线）。
+    verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
+    result.opening = { leadMs: lead, micOpened: micOpenedAt !== null, wire: { ...wire, lastAppendAt: wire.lastAppendAt - t0, lastReceivedAt: wire.lastReceivedAt - t0 }, loudness: loudness.map((c) => `${c.at - t0}:${c.peak}`).join(" "), voiceOnsetMs: voiceOnsetAt === null ? null : voiceOnsetAt - t0, events: opening.map((o) => ({ ms: o.at - t0, event: o.event, text: o.text })) };
+  };
+
   await rp.click(panel, ".voice-start");
   let settled = 0;
   await until(async () => {
@@ -498,7 +612,10 @@ try {
     const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
     last = state;
 
-    if (state.voiceState && states.at(-1) !== state.voiceState) states.push(state.voiceState);
+    if (state.voiceState && states.at(-1) !== state.voiceState) {
+      states.push(state.voiceState);
+      opening.push({ at: Date.now(), event: `panel:${state.voiceState}` });
+    }
 
     if (state.voiceState === "error") return true;
     const answered = !!state.answer && state.voiceState === "listening" && states.includes("speaking");
@@ -584,6 +701,7 @@ try {
 
   if (panelSession) await rp.screenshot(panelSession, join(artifacts, "panel-failed.png")).catch(() => {});
 } finally {
+  await recordOpening?.().catch(() => {});
   await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   const closed = await rp.close();
 

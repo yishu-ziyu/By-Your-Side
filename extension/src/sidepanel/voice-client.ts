@@ -5,6 +5,15 @@ import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
 
 export type VoicePhase = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error';
 
+/** 会话就绪前最多留多少采样（24 kHz × 15 秒）；超出后不再留，保住最早开口的那段。 */
+const PRE_READY_MAX_SAMPLES = 24000 * 15;
+
+/**
+ * 补发速度：每 20 ms 发 4 帧（每帧 20 ms），即 4 倍实时。实测整句一次性灌给 StepFun 时，
+ * 服务端断句有时认不出开口或一直等不到说完，所以按接近实时的节奏补发。
+ */
+const BACKLOG_FRAMES_PER_TICK = 4;
+
 /** 可选字段「存在才带上」时按具名类型分步赋值。 */
 type CaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
@@ -30,6 +39,10 @@ export class VoiceClient {
   private inputLevel = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private meter = new Float32Array(256);
+  /** 麦克风已开、会话还没就绪时说的话：普通会话就绪后按顺序补发，不丢开口那几秒；补完之前新来的帧排在后面。 */
+  private backlog: Int16Array[] = [];
+  private backlogSamples = 0;
+  private drainTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Diagnostic capture is manual, bounded, and never sends audio before the backend confirms the mode. */
   private diagSession = false;
@@ -96,6 +109,7 @@ export class VoiceClient {
     this.recording = false;
     this.frameIndex = 0;
     this.sentFrames = 0;
+    this.dropBacklog();
     const id = crypto.randomUUID(); this.id=id;
     this.log?.sessionStarted({voiceId:id,conversationId,diagnostic});
     this.setPhase('connecting', this.recovering ? '正在恢复语音连接…' : '正在开启麦克风');
@@ -204,13 +218,52 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
   /** One place where a raw 24k frame arrives. */
   private onCaptureFrame(id: string, data: { pcm: ArrayBuffer; rms: number }): void {
-    if (this.id !== id || !this.ready) return;
-    this.inputLevel = data.rms;
+    if (this.id !== id) return;
     const source = new Int16Array(data.pcm);
+
+    // 诊断会话只在服务端确认后录音，就绪前的声音不留。
+    if (!this.ready) {
+      if (!this.diagSession && this.backlogSamples + source.length <= PRE_READY_MAX_SAMPLES) {
+        this.backlog.push(source);
+        this.backlogSamples += source.length;
+      }
+
+      return;
+    }
+
+    this.inputLevel = data.rms;
+
+    if (this.drainTimer) {
+      this.backlog.push(source);
+
+      return;
+    }
 
     if (this.recording) this.captureDiagnosticFrame(source);
 
     if(this.serverVad&&!this.diagSession)this.command({kind:'audio',turn:this.turn,data:pcmBase64(source)});
+  }
+  /** 就绪后把就绪前留下的声音按到达顺序、按 4 倍实时发给服务端，由服务端照常断句。 */
+  private drainBacklog(): void {
+    if (!this.serverVad || this.diagSession || this.backlog.length === 0) {
+      this.dropBacklog();
+
+      return;
+    }
+
+    if (this.drainTimer) return;
+
+    this.drainTimer = setInterval(() => {
+      for (const frame of this.backlog.splice(0, BACKLOG_FRAMES_PER_TICK)) this.command({ kind: 'audio', turn: this.turn, data: pcmBase64(frame) });
+
+      if (this.backlog.length === 0) this.dropBacklog();
+    }, 20);
+  }
+  private dropBacklog(): void {
+    if (this.drainTimer) clearInterval(this.drainTimer);
+    this.drainTimer = null;
+    this.backlog = [];
+    this.backlogSamples = 0;
   }
   /** Normal sessions do not persist PCM. Diagnostic capture is an explicit second mode. */
   private startCommand(): VoiceCommand {
@@ -357,6 +410,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     this.id = null;
     this.ready = false;
+    this.dropBacklog();
     this.speaking = false;
     this.player?.stop();
     this.setPhase('connecting', detail);
@@ -476,6 +530,7 @@ return;}
 
         if(this.connectTimer)clearTimeout(this.connectTimer);
         this.ready=true;
+        this.drainBacklog();
         this.recovering=false;
         this.recoveryAttempts=0;
         this.recoveryStartTime=0;
@@ -538,6 +593,7 @@ return;}
 
     if(this.connectTimer)clearTimeout(this.connectTimer);this.connectTimer=null;
     const id=this.id;this.id=null;this.ready=false;this.speaking=false;this.inputLevel=0;
+    this.dropBacklog();
 
     if(id&&notify)this.send({type:'voice',voiceId:id,conversationId:this.conversationId,command:{kind:'stop'}});
 
