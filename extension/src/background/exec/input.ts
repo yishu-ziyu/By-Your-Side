@@ -517,6 +517,18 @@ export function dropPendingClicks(sessionId: string = LEAD_SESSION_ID): void {
   heldClicks.drop(sessionId);
 }
 
+/**
+ * 页面交给另一个会话时，旧会话留在页面上的「确认 / 取消」一并收起：
+ * 台账里的待放行动作已经作废，留着按钮只会让用户点了没反应。
+ */
+export function withdrawPendingClicks(sessionId: string): void {
+  const had = heldClicks.hasPending(sessionId);
+  heldClicks.drop(sessionId);
+
+  if (!had) return;
+  void clearMarks(sessionId).catch(() => {}).then(() => releaseHold(sessionId)).catch(() => {});
+}
+
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   try {
     const claimed = await getWorkingTabId(sessionId);
@@ -785,9 +797,20 @@ async function nameOfClickTarget(
   tabId: number,
   params: ClickParams,
 ): Promise<string> {
-  const labeled = params.label?.trim();
+  const labeled = params.label?.trim() ?? "";
+  const onPage = String((await pageNameOfClickTarget(tabId, params)) ?? "");
 
-  if (labeled) return labeled;
+  // 要不要先等用户确认，看页面上这个元素自己的名字：模型写的 label 只是说明，
+  // 「点击发送按钮」这样的描述不能让「发送」键绕过确认（2026-09-26 真实模型 5 次里 3 次这样直接发出）。
+  if (isDestructiveLabel(onPage)) return onPage;
+
+  return labeled || onPage;
+}
+
+async function pageNameOfClickTarget(
+  tabId: number,
+  params: ClickParams,
+): Promise<string> {
   const target = params.target;
 
   if (!target) return "";

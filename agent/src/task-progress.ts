@@ -12,6 +12,7 @@ import {isWriteTool} from '../../shared/control.js';
 import {classifyToolEffect} from '../../shared/effect-policy.js';
 import {isResultMetaTool} from '../../shared/task-results.js';
 import {decideTaskNextStep} from '../../shared/task-next-step.js';
+import {plainStep, toolAction} from '../../shared/user-facing.js';
 import {TaskReadback} from './task-readback.js';
 import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recovery.js';
 import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
@@ -22,7 +23,7 @@ const OPAQUE_EFFECT_TOOLS: ReadonlySet<string> = new Set(["js", "cdp"]);
 
 const labels: Record<string, string> = { judge_browser_action: "判断页面操作", capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 
-const label = (name: string) => labels[name] ?? name.slice(0, 100);
+const label = (name: string) => labels[name] ?? toolAction(name);
 
 /** Runtime receipts drive progress; bounded target bindings are retained, page contents are excluded. */
 export class TaskProgress {
@@ -109,6 +110,24 @@ export class TaskProgress {
     if (omittedRemaining) facts.omittedRemaining = omittedRemaining;
 
     return facts;
+  }
+  /**
+   * 「结果未知」全部来自被拦下、等用户在页面上确认的点击时，返回这些点击（人话说明）和其余没了结的项数；否则 null。
+   * 只用来把补在回答后的那句话说对：它们没失败，也不是结果未知，是在等用户。
+   */
+  awaitingConfirmationOnly(): { items: Array<{ id: string; description: string }>; others: number } | null {
+    const executionItems = this.results.list();
+    const plan = this.goals.snapshot();
+    const items = plan ? [...plan.goals, ...executionItems.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionItems))] : executionItems;
+    const open = items.filter((item) => ["pending", "blocked", "unknown"].includes(item.status) && !('tool' in item && isSupersededUnknown(item, executionItems)));
+    const unknown = open.filter((item) => item.status === "unknown");
+    const awaiting = unknown.filter((item) => 'tool' in item && !!item.evidence && 'awaitingConfirmation' in item.evidence && item.evidence.awaitingConfirmation);
+
+    if (!awaiting.length || awaiting.length !== unknown.length) return null;
+    // 其余没了结的执行项（失败、受阻）要另说；模型列的目标（如「点发送」）要等用户确认后才算数，按同一件事处理。
+    const others = open.filter((item) => 'tool' in item && !awaiting.includes(item)).length;
+
+    return { items: awaiting.map((item) => ({ id: item.id, description: plainStep(item.description) })), others };
   }
   private noteRunSource(url: string): void {
     if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
@@ -432,6 +451,15 @@ if(page)this.recoveryInput.page=page;
         this.pendingNavUrls.delete(key);
 
         if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
+      }
+
+      // 用户拒绝授权：这一步按用户的意思不做了。不算失败，也不留成待办。
+      if (!this.aborted && e.declined) {
+        this.lastAction = { action: started.action, failed: false, at: this.clock() };
+        this.lastBrowserFailed = false;
+        this.results.noteDeclined({ toolCallId: e.toolCallId, member, runId: this.runId });
+
+        return;
       }
 
       if (!this.aborted) {

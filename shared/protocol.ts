@@ -280,6 +280,9 @@ export interface ModelOption {
   featured?: boolean;
 }
 
+/** 宿主能提供的可选功能：没有存储的功能，侧栏不给入口。 */
+export interface HostFeatures { memory: boolean; skills: boolean }
+
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number}
@@ -296,7 +299,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
-  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 本伴随进程的剪贴板服务端口（127.0.0.1）；没有服务时省略 */ clipboardPort?: number }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 本伴随进程的剪贴板服务端口（127.0.0.1）；没有服务时省略 */ clipboardPort?: number; /** 这个宿主有没有记忆、技能存储（只装扩展时都没有）；缺省按有处理 */ features?: HostFeatures }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
@@ -336,7 +339,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 用户在授权卡上拒绝了这一步：没执行，但不是失败。 */ declined?: true }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在伴随进程内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
@@ -649,19 +652,20 @@ export interface ToolContract {
   };
   /**
    * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
-   * download 必须带绝对 downloadPath（本任务临时目录）；不设全局下载目录。
+   * download 由 Chrome 存进用户的下载文件夹；完成与否只看 chrome.downloads。
    */
   arm_event: {
     params: {
       tabId?: number;
       type: "popup" | "download" | "filechooser";
       timeoutMs?: number;
-      /** download 专用：Chrome 写入的绝对临时目录（宿主创建）。 */
-      downloadPath?: string;
     };
-    data: { token: string; type: "popup" | "download" | "filechooser"; tabId: number; timeoutMs: number; downloadPath?: string };
+    data: { token: string; type: "popup" | "download" | "filechooser"; tabId: number; timeoutMs: number };
   };
-  /** 等待已 arm 的 token 匹配并一次消费；未匹配前阻塞到超时。 */
+  /**
+   * 等待已 arm 的 token 匹配并一次消费；未匹配前阻塞到超时。
+   * download 匹配后再等 chrome.downloads 报完成或中断（默认最多 60 秒）；completed 只在 Chrome 报 complete 时为 true。
+   */
   wait_event: {
     params: { token: string; timeoutMs?: number };
     data: {
@@ -674,8 +678,14 @@ export interface ToolContract {
         url: string;
         suggestedFilename: string;
         tabId: number;
+        /** chrome.downloads 的错误码（如 NETWORK_FAILED、USER_CANCELED）；null 表示没有中断。 */
         failure: string | null;
         completed: boolean;
+        /** 完成后 Chrome 写入的绝对路径与字节数。 */
+        path?: string;
+        bytes?: number;
+        /** Chrome 判为可能有害、等用户确认保留时的 danger 值。 */
+        danger?: string;
       };
       fileChooser?: { chooserId: string; multiple: boolean; backendNodeId: number };
     };
@@ -736,14 +746,14 @@ export interface ToolContract {
       failure: string | null;
       completed: boolean;
       cancelled: boolean;
-      /** 临时目录（Chrome 写入处）；agent saveAs 轮询用。 */
-      downloadPath?: string;
-      expectedPath?: string;
+      bytes?: number;
+      danger?: string;
     };
   };
   download_cancel: {
     params: { downloadId: string };
-    data: { cancelled: true; downloadId: string; failure: string | null };
+    /** cancelled 只在 Chrome 报 USER_CANCELED 时为 true；已下完的不会被取消。 */
+    data: { cancelled: boolean; completed: boolean; downloadId: string; failure: string | null };
   };
   download_delete: {
     params: { downloadId: string };

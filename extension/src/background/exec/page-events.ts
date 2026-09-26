@@ -34,20 +34,9 @@ export async function armEvent(
     sessionKey: sessionId,
     type,
     timeoutMs: params.timeoutMs,
-    downloadPath: params.downloadPath,
   });
 
-  const armed: ToolContract["arm_event"]["data"] = {
-    token: arm.token,
-    type,
-    tabId: arm.tabId,
-    timeoutMs: arm.timeoutMs,
-  };
-
-  // 只有授权了下载路径时才带上 downloadPath；缺省时这个键不出现。
-  if (arm.downloadPath) armed.downloadPath = arm.downloadPath;
-
-  return armed;
+  return { token: arm.token, type, tabId: arm.tabId, timeoutMs: arm.timeoutMs };
 }
 
 export async function waitEvent(
@@ -74,17 +63,23 @@ export async function waitEvent(
   }
 
   if (type === "download") {
-    return {
-      ...base,
-      download: {
-        downloadId: String(payload.downloadId),
-        url: String(payload.url ?? ""),
-        suggestedFilename: String(payload.suggestedFilename ?? ""),
-        tabId,
-        failure: (payload.failure as string | null) ?? null,
-        completed: Boolean(payload.completed),
-      },
+    const download: NonNullable<ToolContract["wait_event"]["data"]["download"]> = {
+      downloadId: String(payload.downloadId),
+      url: String(payload.url ?? ""),
+      suggestedFilename: String(payload.suggestedFilename ?? ""),
+      tabId,
+      failure: (payload.failure as string | null) ?? null,
+      completed: Boolean(payload.completed),
     };
+
+    // armPayload 只在 Chrome 报完成后填 path/bytes，有 danger 才填 danger；没有时键值为 undefined。
+    if (payload.path !== undefined) download.path = String(payload.path);
+
+    if (payload.bytes !== undefined) download.bytes = Number(payload.bytes);
+
+    if (payload.danger !== undefined) download.danger = String(payload.danger);
+
+    return { ...base, download };
   }
 
   return {

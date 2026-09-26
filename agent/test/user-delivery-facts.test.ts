@@ -92,7 +92,7 @@ describe("send_user_message 事实链", () => {
     const event = h.events[0];
     expect(deliveredFacts(event)?.outcome).toBe("partial");
     expect(deliveredFacts(event)?.remaining.map(item => item.id)).toEqual(["r-2"]);
-    expect(event?.kind === "user_delivery" ? event.delivery.text : "").toContain("部分结果");
+    expect(event?.kind === "user_delivery" ? event.delivery.text : "").toContain("（还有没做完或没核对的部分。）");
   });
 
   it("未接线时不附 facts（旧记录形状）；ack 永远不带事实链", async () => {

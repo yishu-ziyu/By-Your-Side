@@ -2,9 +2,11 @@
  * CAP-02A：Page / Target 事件订阅与 arm 账本。
  * 独立于 network-log 的 Network.* listener（不建第二套网络监听）。
  *
- * Download arming uses Page.setDownloadBehavior on the page session only
- * (never Browser-level global download directory), adapted from
- * citrolabs/ego-lite@dca7003349c5f7132189ba00547cbbd7ff8e597e (MIT).
+ * Download arming ties Page.downloadWillBegin to the armed tab, adapted from
+ * citrolabs/ego-lite@dca7003349c5f7132189ba00547cbbd7ff8e597e (MIT). The file is
+ * written by Chrome into the user's download folder; whether it finished is read
+ * only from chrome.downloads (Page.setDownloadBehavior is browser-level and the
+ * extension debugger channel rejects it).
  *
  * Copyright (c) 2026 CitroLabs
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -24,9 +26,10 @@
  * SOFTWARE.
  */
 import {
-  applyDownloadProgress,
+  applyChromeDownload,
   armPageEvent,
   armPayload,
+  bindChromeDownload,
   cancelArm,
   clearPendingDialog,
   consumeArm,
@@ -34,6 +37,7 @@ import {
   createPageEventLedger,
   disposeSessionArms,
   disposeTabArms,
+  downloadSettled,
   findDownload,
   getArm,
   markArmTimedOut,
@@ -45,6 +49,7 @@ import {
   requireArm,
   setPendingDialog,
   type ArmedPageEvent,
+  type ChromeDownloadState,
   type DownloadRecord,
   type JsDialogType,
   type PageEventKind,
@@ -63,6 +68,18 @@ const heldArmTokens = new Set<string>();
 let listening = false;
 
 let tabsListening = false;
+
+let downloadsListening = false;
+
+/** 下载结束前 wait_event 最多再等多久；只有 chrome.downloads 报 complete 才算下载完成。 */
+const DOWNLOAD_SETTLE_MS = 60_000;
+
+/** chrome.downloads 先于 Page.downloadWillBegin 到达时暂存，按 URL 等对方。 */
+const unboundChromeDownloads = new Map<number, { url: string; finalUrl?: string; at: number }>();
+
+const UNBOUND_TTL_MS = 30_000;
+
+const downloadWaiters = new Map<string, Array<() => void>>();
 
 type AttachHoldFn = (tabId: number) => void;
 
@@ -179,21 +196,97 @@ async function onDebuggerEvent(tabId: number, method: string, params: Record<str
     if (typeof guid !== "string" || typeof url !== "string" || typeof suggestedFilename !== "string") return;
     const matched = matchDownloadBegin(ledger, { tabId, guid, url, suggestedFilename });
 
-    if (matched) notifyWaiters(matched.arm);
+    if (!matched) return;
 
-    return;
+    for (const [chromeId, item] of unboundChromeDownloads) {
+      if (bindChromeDownload(ledger, { chromeId, url: item.url, finalUrl: item.finalUrl })?.downloadId !== matched.download.downloadId) continue;
+      unboundChromeDownloads.delete(chromeId);
+      await refreshChromeDownload(chromeId);
+      break;
+    }
+
+    notifyWaiters(matched.arm);
   }
 
-  if (method === "Page.downloadProgress") {
-    const guid = params.guid;
-    const state = params.state;
+  // Page.downloadProgress 故意不处理：CDP 把中断也报成 canceled，完成与否只认 chrome.downloads。
+}
 
-    if (typeof guid !== "string") return;
+function listenDownloads(): void {
+  if (downloadsListening) return;
 
-    if (state !== "completed" && state !== "canceled" && state !== "inProgress") return;
-    // 临时文件落在宿主 downloadPath；扩展 SW 无 Node fs，由 agent 侧轮询目录。
-    applyDownloadProgress(ledger, { guid, state });
-  }
+  if (!chrome.downloads?.onCreated?.addListener) return;
+  downloadsListening = true;
+  chrome.downloads.onCreated.addListener((item) => {
+    const now = Date.now();
+
+    for (const [id, pending] of unboundChromeDownloads) if (now - pending.at > UNBOUND_TTL_MS) unboundChromeDownloads.delete(id);
+
+    if (bindChromeDownload(ledger, { chromeId: item.id, url: item.url, finalUrl: item.finalUrl })) {
+      void refreshChromeDownload(item.id);
+
+      return;
+    }
+
+    unboundChromeDownloads.set(item.id, { url: item.url, finalUrl: item.finalUrl, at: now });
+  });
+  chrome.downloads.onChanged.addListener((delta) => {
+    if (delta.state || delta.error || delta.filename || delta.danger) void refreshChromeDownload(delta.id);
+  });
+}
+
+/** 按 chrome.downloads 当前记录更新账本；完成时的路径和字节数也从这里读。 */
+async function refreshChromeDownload(chromeId: number): Promise<void> {
+  const [item] = await chrome.downloads.search({ id: chromeId }).catch(() => []);
+
+  if (!item) return;
+
+  // SAFETY: chrome.downloads.State 只有 in_progress / interrupted / complete 三个值，与 ChromeDownloadState 相同。
+  const download = applyChromeDownload(ledger, {
+    chromeId,
+    state: item.state as ChromeDownloadState,
+    error: item.error,
+    filename: item.filename || undefined,
+    bytes: item.fileSize >= 0 ? item.fileSize : item.bytesReceived,
+    danger: item.danger,
+  });
+
+  if (download && downloadSettled(download)) notifyDownloadWaiters(download.downloadId);
+}
+
+function notifyDownloadWaiters(downloadId: string): void {
+  const list = downloadWaiters.get(downloadId);
+
+  if (!list?.length) return;
+  downloadWaiters.delete(downloadId);
+
+  for (const done of list) done();
+}
+
+/** 等到 chrome.downloads 报完成或中断；超时就原样返回，由调用方如实说「还没下完」。 */
+async function waitDownloadSettled(downloadId: string, timeoutMs: number): Promise<void> {
+  const download = ledger.downloads.get(downloadId);
+
+  if (!download || downloadSettled(download)) return;
+
+  if (download.chromeId !== undefined) await refreshChromeDownload(download.chromeId);
+
+  if (downloadSettled(download)) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(finish, timeoutMs);
+
+    function finish(): void {
+      clearTimeout(timer);
+      const list = downloadWaiters.get(downloadId);
+      const index = list?.indexOf(finish) ?? -1;
+
+      if (list && index >= 0) list.splice(index, 1);
+      resolve();
+    }
+
+    const list = downloadWaiters.get(downloadId) ?? [];
+    list.push(finish);
+    downloadWaiters.set(downloadId, list);
+  });
 }
 
 function notifyWaiters(arm: ArmedPageEvent): void {
@@ -225,6 +318,7 @@ function clearArmTimer(token: string): void {
 export async function enablePageEventCapture(tabId: number, _opts?: { mode?: "fresh" | "late" }): Promise<void> {
   listenPageEvents();
   listenTabPopups();
+  listenDownloads();
 
   if (enabled.has(tabId)) return;
   enabled.add(tabId);
@@ -257,8 +351,12 @@ export async function armEventForTab(input: {
   sessionKey: string;
   type: PageEventKind;
   timeoutMs?: number;
-  downloadPath?: string;
 }): Promise<ArmedPageEvent> {
+  // 没有 downloads 权限就收不到完成与否，不能接下载。
+  if (input.type === "download" && !chrome.downloads?.onCreated) {
+    throw new Error("DOWNLOAD_API_UNAVAILABLE: chrome.downloads is not available; page downloads cannot be confirmed.");
+  }
+
   await enablePageEventCapture(input.tabId);
 
   const arm = armPageEvent(ledger, {
@@ -266,37 +364,11 @@ export async function armEventForTab(input: {
     tabId: input.tabId,
     sessionKey: input.sessionKey,
     timeoutMs: input.timeoutMs,
-    downloadPath: input.downloadPath,
   });
 
   hold(arm);
 
   try {
-    if (input.type === "download") {
-      // Never drop the authorized output path and pretend the same download
-      // contract still holds. Unsupported browser-level configuration is a gap.
-      try {
-        // Never drop the authorized output path and pretend the same download
-        // contract still holds. Unsupported browser-level configuration is a gap.
-        // downloadPath 只在已授权下载时才带上；缺省时这个键不出现。
-        if (input.downloadPath) {
-          await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setDownloadBehavior", {
-            behavior: "allow",
-            downloadPath: input.downloadPath,
-            eventsEnabled: true,
-          });
-        } else {
-          await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setDownloadBehavior", {
-            behavior: "allow",
-            eventsEnabled: true,
-          });
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`DOWNLOAD_ARM_CDP: Page.setDownloadBehavior failed (${message.slice(0, 160)}). Arm not active.`);
-      }
-    }
-
     if (input.type === "filechooser") {
       await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setInterceptFileChooserDialog", {
         enabled: true,
@@ -332,12 +404,6 @@ async function resetArmSideEffects(arm: ArmedPageEvent): Promise<void> {
   clearArmTimer(arm.token);
 
   try {
-    if (arm.kind === "download") {
-      await chrome.debugger.sendCommand({ tabId: arm.tabId }, "Page.setDownloadBehavior", {
-        behavior: "default",
-      });
-    }
-
     if (arm.kind === "filechooser") {
       await chrome.debugger.sendCommand({ tabId: arm.tabId }, "Page.setInterceptFileChooserDialog", {
         enabled: false,
@@ -356,7 +422,9 @@ export async function waitArmedEvent(token: string, timeoutMs?: number): Promise
     await resetArmSideEffects(consumed);
     release(consumed);
 
-    return armPayload(consumed);
+    if (consumed.downloadId) await waitDownloadSettled(consumed.downloadId, downloadSettleMs(timeoutMs));
+
+    return armPayload(consumed, ledger.downloads);
   }
 
   if (arm.status !== "armed") {
@@ -403,7 +471,14 @@ export async function waitArmedEvent(token: string, timeoutMs?: number): Promise
   await resetArmSideEffects(consumed);
   release(consumed);
 
-  return armPayload(consumed);
+  if (consumed.downloadId) await waitDownloadSettled(consumed.downloadId, downloadSettleMs(timeoutMs));
+
+  return armPayload(consumed, ledger.downloads);
+}
+
+/** 下载开始后另给一段等完成的时间；调用方给了更长的 timeoutMs 就按它。 */
+function downloadSettleMs(timeoutMs?: number): number {
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? Math.min(Math.max(timeoutMs, DOWNLOAD_SETTLE_MS), 120_000) : DOWNLOAD_SETTLE_MS;
 }
 
 export async function disarmArmedEvent(token: string): Promise<ArmedPageEvent> {
@@ -491,17 +566,14 @@ export function getChooserArmById(chooserId: string): ArmedPageEvent {
 export async function cancelDownloadRecord(downloadId: string): Promise<DownloadRecord> {
   const download = findDownload(ledger, downloadId);
 
-  if (download.completed || download.cancelled) return download;
+  if (downloadSettled(download)) return download;
 
-  try {
-    await chrome.debugger.sendCommand({ tabId: download.tabId }, "Browser.cancelDownload", {
-      guid: download.guid,
-    });
-  } catch (error) {
-    if (!download.completed) throw error;
+  if (download.chromeId === undefined) {
+    throw new Error("DOWNLOAD_NOT_TRACKED: Chrome downloads has not reported this download yet; nothing was cancelled.");
   }
 
-  applyDownloadProgress(ledger, { guid: download.guid, state: "canceled" });
+  await chrome.downloads.cancel(download.chromeId);
+  await refreshChromeDownload(download.chromeId);
 
   return findDownload(ledger, downloadId);
 }

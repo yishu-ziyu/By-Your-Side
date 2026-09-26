@@ -895,7 +895,8 @@ import { beginFeedbackPill, feedbackLifetimeMs, type FeedbackPillState, type Fee
 
   /** 立刻回待命角落（状态收完就是这么走的，不再多等一次 park 延迟）。 */
   function parkNow(inst: Instance): void {
-    if (inst.action?.phase === "active") return;
+    // 拿住等确认时不回角落：这一轮结束了，页面上的「发送 / 取消」仍要留给用户点。
+    if (inst.action?.phase === "active" || inst.hold) return;
 
     if (inst.action?.phase === "done") clearAction(inst);
     const home = restPoint(inst.restIndex, window.innerWidth);

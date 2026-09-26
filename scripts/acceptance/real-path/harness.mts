@@ -376,12 +376,17 @@ export async function exportDiagnosticsViaSettings(
 /**
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
  * withoutNativeHost：不注册伴随进程，模拟只装了扩展的电脑（扩展内 agent 实验）。
+ * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  */
-export async function launchRealPath({ microphoneWav, withoutNativeHost = false }: { microphoneWav?: string; withoutNativeHost?: boolean } = {}) {
+export async function launchRealPath({ microphoneWav, withoutNativeHost = false, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
-  const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host") };
+  const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host"), downloads: join(root, "downloads") };
 
   for (const dir of Object.values(dirs)) await mkdir(dir, { recursive: true });
+
+  // 这个配置目录的「下载」文件夹指到临时目录：页面下载不进用户真实的下载文件夹，也不弹保存对话框。
+  await mkdir(join(dirs.profile, "Default"), { recursive: true });
+  await writeFile(join(dirs.profile, "Default", "Preferences"), JSON.stringify({ download: { default_directory: dirs.downloads, prompt_for_download: false, directory_upgrade: true } }));
 
   // build.mjs 会先清空输出目录；不带 SIDEAGENT_BUILD_DIST 就会清掉日常 Chrome 正在加载的 extension/dist。
   const distBefore = await dailyDistStamp();
@@ -449,6 +454,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false 
     "--window-size=1280,900",
     // macOS 上音频服务的沙箱不让它读任意路径，文件麦克风会变成一片静音。
     ...(microphoneWav ? ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${microphoneWav}%noloop`, "--disable-features=AudioServiceSandbox"] : []),
+    ...chromeArgs,
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"], env });
 

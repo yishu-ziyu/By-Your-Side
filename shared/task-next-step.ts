@@ -148,20 +148,15 @@ export function nextStepInstruction(decision: TaskNextStep): string {
   }
 }
 
+/** 模型说做完了、宿主知道没做完时补在回答后的一句：说用户能理解的事实，不用账本口吻。 */
 export function partialResultNote(decision: TaskNextStep): string {
-  let limit: string;
+  if (decision.reason.startsWith('unknown_')) return '（有一步已经做了，但还没确认结果，所以没算作完成。）';
 
-  if (decision.reason.startsWith('unknown_')) {
-    limit = '有操作的结果仍无法确认，没有将其记为完成。';
-  } else if (decision.reason === 'readback_required') {
-    limit = '执行结果尚未完成页面核对。';
-  } else if (decision.reason === 'failure_limit' || decision.reason === 'tool_failed') {
-    limit = '仍有步骤执行失败，未声明全部完成。';
-  } else {
-    limit = '仍有未完成或未核验事项，未声明全部完成。';
-  }
+  if (decision.reason === 'readback_required') return '（改动还没在页面上核对过。）';
 
-  return `任务状态：仅交付部分结果。${limit}`;
+  if (decision.reason === 'failure_limit' || decision.reason === 'tool_failed') return '（有一步没做成，这件事还没全部完成。）';
+
+  return '（还有没做完或没核对的部分。）';
 }
 
 /** Both lead and worker use the same control/uncertainty policy; replay checks retain their original scope.

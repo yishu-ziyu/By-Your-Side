@@ -8,7 +8,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * - side panel 经 chrome.runtime Port 接入，只做渲染与用户输入转发
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
-import type { AgentRunState, ClientMessage, ModelOption, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
+import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
@@ -44,7 +44,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
+import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
 import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
 
 // macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
@@ -97,7 +97,7 @@ type Handler = (params: any, sessionId: string) => Promise<unknown>;
 const handlers: Record<ToolName, Handler> = {
   fetch: (p) => fetchUrl(p),
   network: (p, sid) => network(p, sid),
-  worker_tabs: (p, sid) => workerTabControl.manage(p, sid, dropPendingClicks, async keys => {
+  worker_tabs: (p, sid) => workerTabControl.manage(p, sid, withdrawPendingClicks, async keys => {
 
     for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready;
 
@@ -472,7 +472,7 @@ function flushHistory() {
 
 /** 缓存的连接上下文，用于面板重开后的状态同步。 */
 let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } = { state: "connecting" };
-let lastHelloOk: { version: number; model?: string; models?: ModelOption[] } | null = null;
+let lastHelloOk: { version: number; model?: string; models?: ModelOption[]; features?: HostFeatures } | null = null;
 let lastStatus: AgentRunState = "idle";
 const statusBySession = new Map<string, AgentRunState>();
 const executionEpochs=new Map<string,number>();
@@ -1149,7 +1149,7 @@ return;}
       // 目录（models）是全局事实，与会话归属无关：必须随 hello_ok 一起缓存，
       // 否则面板重开/重连后回放只剩 model、拿不到可选列表，芯片会退化成死按钮
       // （用户实测：点了模型芯片没反应）。model 仍按会话归属取，不回写别会话的默认值。
-      lastHelloOk = { version: msg.version, model: conversationId === "default" ? msg.model : lastModelInfo?.model, models: msg.models };
+      lastHelloOk = { version: msg.version, model: conversationId === "default" ? msg.model : lastModelInfo?.model, models: msg.models, features: msg.features };
 
       if (msg.models && conversationId === "default" && !lastModelInfo) lastModelInfo = { type: "model_info", model: msg.model, models: msg.models };
       // 会话模式由 runtime 的 conversation summary 恢复；握手不回写本地默认值。
@@ -2068,6 +2068,8 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
 
           // 目录跟随 hello_ok 回放：否则面板重开只剩模型名、没有可选列表。
           if (lastHelloOk.models) helloReplay.models = lastHelloOk.models;
+
+          if (lastHelloOk.features) helloReplay.features = lastHelloOk.features;
           port.postMessage({ kind: "server", msg: helloReplay } satisfies BgToPanel);
 
           if (lastModelInfo) {

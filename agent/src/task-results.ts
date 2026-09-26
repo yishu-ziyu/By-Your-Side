@@ -273,9 +273,19 @@ export class TaskResultBook {
     return item;
   }
 
+  /** 用户拒绝授权的那一步：从待办里拿掉（没执行，也不会再做），不改其他项。 */
+  noteDeclined(input: { toolCallId: string; member: string; runId: string | null }): void {
+    if (!input.runId) return;
+    const index = this.items.findIndex(item => item.evidence?.toolCallId === input.toolCallId && item.evidence.member === input.member && item.evidence.runId === input.runId && item.status === "pending");
+
+    if (index >= 0 && this.items[index]!.id.startsWith(AUTO_RESULT_ID_PREFIX)) this.items.splice(index, 1);
+    else if (index >= 0) this.items[index]!.evidence = null;
+  }
+
   noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
     const write=resultToolHasWriteEffect(input.name)||input.effectful===true;
+    let heldForConfirmation = false;
     let item = this.items.find(candidate => (candidate.status === "pending" || candidate.status === "unknown") && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.member === input.member && candidate.evidence.tool === input.name && candidate.evidence.runId === input.runId && candidate.evidence.target === input.target);
 
     // Auxiliary JS/scroll normally stays out of the visible obligations, but an
@@ -300,6 +310,7 @@ export class TaskResultBook {
         // 写作项转"结果未定"，只能靠真实页面读数核查解除；只读项退回待做。
         if (write) {
           item.status = "unknown";
+          heldForConfirmation = true;
         } else {
           item.status = "pending";
           item.evidence = null;
@@ -326,6 +337,8 @@ export class TaskResultBook {
     if (write && !isWriteTool(input.name)) evidence.effectful = true;
 
     if (input.valueHash) evidence.valueHash = input.valueHash;
+
+    if (heldForConfirmation) evidence.awaitingConfirmation = true;
     item.evidence = evidence;
   }
 

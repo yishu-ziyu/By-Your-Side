@@ -67,7 +67,7 @@ export class RealtimeVoiceSession {
       return;
     }
 
-    this.emit({ kind: 'state', state: 'connecting', detail: '正在连接 Realtime 3' });
+    this.emit({ kind: 'state', state: 'connecting', detail: '正在连接语音服务' });
     const create = this.deps.createConnection ?? (o => new RealtimeVoiceConnection(o));
     this.connection = create({
       key, connect: this.deps.connect, diagnostic: this.deps.diagnosticMode,
@@ -347,7 +347,7 @@ export class RealtimeVoiceSession {
     switch (event.type) {
       case 'ready':
         this.ready = true;
-        const ready: Extract<VoiceEvent, {kind:'state'}> = { kind: 'state', state: 'ready', detail: 'Realtime 3 已连接' };
+        const ready: Extract<VoiceEvent, {kind:'state'}> = { kind: 'state', state: 'ready', detail: '已连接，可以说了' };
 
         if (!this.deps.diagnosticMode) ready.inputMode = 'server_vad';
         this.emit(ready);

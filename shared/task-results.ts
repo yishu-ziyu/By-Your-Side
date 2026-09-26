@@ -29,6 +29,8 @@ export interface TaskResultEvidence {
   effectful?: true;
   /** SHA-256 of the original fill value. Raw field contents are not copied into the result ledger. */
   valueHash?: string;
+  /** 动作被拦下、正等用户在页面上确认（没派发）。等确认的会话不再算占着页面。 */
+  awaitingConfirmation?: true;
 }
 
 export interface TaskResultItem extends TaskResultRegistration {
@@ -98,7 +100,8 @@ export function isTaskResultEvidence(v: unknown): v is TaskResultEvidence {
     && (e.target === null || text(e.target, 500))
     && (e.observedAt === undefined || Number.isFinite(e.observedAt))
     && (e.effectful === undefined || e.effectful === true)
-    && (e.valueHash === undefined || typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash));
+    && (e.valueHash === undefined || typeof e.valueHash === 'string' && /^[a-f0-9]{64}$/.test(e.valueHash))
+    && (e.awaitingConfirmation === undefined || e.awaitingConfirmation === true);
 }
 
 export function isTaskResultItem(v: unknown): v is TaskResultItem {

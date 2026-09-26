@@ -346,7 +346,10 @@ export class RealtimeVoiceConnection {
     this.ws = socket;
     socket.on('message', (data: RawData) => this.onProviderMessage(data));
     socket.on('error', (error: Error) => {
-      if (!this.closed) this.fatal(`语音服务连接出错：${error.message}`);
+      // 底层原因只进诊断日志；用户面前只说连不上和能做什么。
+      this.log({type: 'socket_error', message: error.message});
+
+      if (!this.closed) this.fatal('连不上语音服务：检查网络，或在「更多 → 模型与语音」里核对语音 key，再试一次。');
     });
     socket.on('close', (code: number, reason: Buffer) => this.onSocketClose(code, reason.toString()));
     this.armTimer('connect', CONNECT_TIMEOUT_MS, () => this.fatal('连接语音服务超时，请重试'));
@@ -1205,7 +1208,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (batch.length && this.canCloseWithCapsule(batch)) {
       replyNeeded = false;
-      this.sendToClient({type: 'status', phase: 'idle', text: 'Realtime 3 已连接'});
+      this.sendToClient({type: 'status', phase: 'idle', text: '已连接，可以说了'});
     }
 
     if(!replyNeeded&&this.playbackBusy())return;

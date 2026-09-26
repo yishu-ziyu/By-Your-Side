@@ -20,13 +20,14 @@ import { fetchPages } from "./fetch-batch.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
+import { plainDownloadError } from "../../shared/user-facing.js";
 import { needsConsentTicket, requiresControlGate } from "../../shared/effect-policy.js";
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, BROWSER_PROGRAM_HELPERS, RPC_ALIASES, type ProgramStep } from "./browser-program.js";
 import { authorizeUploadPaths, type TaskUploadLedger } from "./upload-paths.js";
-import { createDownloadArmDir, hostDownloadDeleteTemp, hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
+import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
 import type { SkillEvidence } from "./skill-learning.js";
 import { POINT_SELECTION_TIMEOUT_MS } from "../../shared/point-selection.js";
 
@@ -42,6 +43,29 @@ function viewportPoint(options: { description?: string } = {}) {
 
 function textResult(text: string, details: unknown) {
   return { content: [{ type: "text" as const, text }], details };
+}
+
+/**
+ * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
+ * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
+ */
+function downloadReceipt(download: NonNullable<ToolContract["wait_event"]["data"]["download"]>): string {
+  const name = download.suggestedFilename || download.url;
+
+  if (download.completed && download.path) {
+    return `Download complete, confirmed by Chrome's downloads API: "${name}" saved to ${download.path}${download.bytes !== undefined ? ` (${download.bytes} B)` : ""}.`;
+  }
+
+  if (download.failure) {
+    // Chrome 的错误码留在回执数据里供排查；给模型的是人话原因，它照着对用户说时不会念出错误码。
+    throw new Error(`Download failed for "${name}": ${plainDownloadError(download.failure)}. No complete file was saved.`);
+  }
+
+  if (download.danger) {
+    return `Download of "${name}" is on hold: Chrome flagged it as ${download.danger} and it stays unsaved until the user chooses Keep in Chrome's downloads. Not saved yet.`;
+  }
+
+  return `Download of "${name}" started but Chrome has not reported it finished yet (downloadId ${download.downloadId}). It is not saved yet.`;
 }
 
 function truncate(text: string, max: number): string {
@@ -195,7 +219,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       const outcome = consentOutcome(await consumeConsent(name, params, { signal }));
 
       if (!outcome.allowed) {
-        rejectCall();
+        if (outcome.declined && sdkId) rpc.markCallDeclined?.(sdkId);
+        else rejectCall();
         throw new Error(outcome.reason ?? CONSENT_REQUIRED_ERROR);
       }
 
@@ -232,10 +257,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         rejectCall();
         throw error;
       }
-    }
-
-    if (name === "arm_event" && callParams.type === "download" && typeof callParams.downloadPath !== "string") {
-      callParams = { ...callParams, downloadPath: createDownloadArmDir("tool") };
     }
 
     if (!sid && takeTab && (name === "switch_tab" || name === "close_tab")) {
@@ -949,7 +970,7 @@ return result;}
     defineTool({
       name: "arm_event",
       label: "Arm page event",
-      description: 'Arm popup/download/filechooser BEFORE the triggering action. Returns a host-issued token (never invent tokens). Pattern: arm_event → click/action → wait_event(token). Required for ephemeral popups, blob downloads, and dynamic file inputs. For download, the host creates a task temp directory (no global Chromium download dir). Prefer browser_run helpers armEvent/waitEvent when composing multi-step scripts.',
+      description: 'Arm popup/download/filechooser BEFORE the triggering action. Returns a host-issued token (never invent tokens). Pattern: arm_event → click/action → wait_event(token). Required for ephemeral popups, page downloads, and dynamic file inputs. To download a file the page offers: arm_event(download) → click the download link or button on the page → wait_event; Chrome saves it into the download folder of the user. Do not use fetch to fake a page download. Prefer browser_run helpers armEvent/waitEvent when composing multi-step scripts.',
       parameters: Type.Object({
         type: Type.Union([Type.Literal("popup"), Type.Literal("download"), Type.Literal("filechooser")]),
         timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
@@ -964,13 +985,15 @@ return result;}
     defineTool({
       name: "wait_event",
       label: "Wait page event",
-      description: "Consume a previously armed host token. Fails on forged/expired tokens. One-shot.",
+      description: "Consume a previously armed host token. Fails on forged/expired tokens. One-shot. For a download it then waits (up to 60 s, or timeoutMs if longer) until Chrome's downloads API reports the file complete or interrupted; only a completed receipt means the file was saved.",
       parameters: Type.Object({
         token: Type.String({ minLength: 8, maxLength: 120 }),
         timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
       }),
       execute: async (_id, params) => {
         const data = (await call("wait_event", params)) as ToolContract["wait_event"]["data"];
+
+        if (data.download) return textResult(downloadReceipt(data.download), data);
 
         return textResult(`Event ${data.type} matched for token ${data.token}.`, data);
       },
@@ -1043,31 +1066,30 @@ return result;}
     defineTool({
       name: "download_cancel",
       label: "Cancel download",
-      description: "Cancel an in-progress page download by downloadId from wait_event.",
+      description: "Cancel an in-progress page download by downloadId from wait_event. A download Chrome already finished is not cancelled; the receipt says which.",
       parameters: Type.Object({
         downloadId: Type.String({ minLength: 3, maxLength: 80 }),
       }),
       execute: async (_id, params) => {
         const data = (await call("download_cancel", params)) as ToolContract["download_cancel"]["data"];
 
-        return textResult(`Cancelled download ${data.downloadId}.`, data);
+        if (data.completed) return textResult(`Download ${data.downloadId} had already finished; nothing was cancelled.`, data);
+
+        return textResult(data.cancelled ? `Cancelled download ${data.downloadId}.` : `Download ${data.downloadId} was not cancelled (failure: ${data.failure ?? "none"}).`, data);
       },
     }),
 
     defineTool({
       name: "download_delete",
-      label: "Delete download artifact",
-      description: "Delete the round-local temp download directory after saveAs (or to discard).",
+      label: "Forget download",
+      description: "Forget a download record. The file Chrome saved in the user's download folder is left untouched.",
       parameters: Type.Object({
         downloadId: Type.String({ minLength: 3, maxLength: 80 }),
       }),
       execute: async (_id, params) => {
-        const before = (await call("download_stat", params).catch(() => null)) as DownloadStatLike | null;
         const data = (await call("download_delete", params)) as ToolContract["download_delete"]["data"];
 
-        if (before?.downloadPath) hostDownloadDeleteTemp(before.downloadPath);
-
-        return textResult(`Deleted download artifact ${data.downloadId}.`, data);
+        return textResult(`Forgot download ${data.downloadId}; the saved file was not deleted.`, data);
       },
     }),
 

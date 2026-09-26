@@ -215,7 +215,7 @@ describe('P0.3 production loop exits and projections',()=>{
     await manager.ensureDefault();(manager as any).progress.set('default',h.progress);
     await (manager as any).fulfillOwedDelivery('default');
     expect(composeUserDelivery).not.toHaveBeenCalled();
-    expect(h.progress.snapshot().conversationContext?.latestDelivery?.text).toContain('部分结果');
+    expect(h.progress.snapshot().conversationContext?.latestDelivery?.text).toBe('做成了 1 步。（改动还没在页面上核对过。）');
     expect(h.progress.snapshot().successVerified).toBe(false);
     const runId=h.progress.snapshot().runId;
     await manager.handleMessage({type:'user_message',text:'继续原任务'});
@@ -253,13 +253,13 @@ describe('P0.3 actual finding tool boundary',()=>{
   it('delivers but labels partial while a registered requirement remains',async()=>{
     const h=task();h.progress.registerResults([{id:'todo',description:'填表',tool:'fill',target:'#name'}]);
     const d=delivery(h);const result=await d.send();expect(d.emit).toHaveBeenCalledOnce();
-    expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('部分结果');expect(result.details).toMatchObject({outcome:'partial'});
+    expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('（还有没做完或没核对的部分。）');expect(result.details).toMatchObject({outcome:'partial'});
   });
   it('labels a complete claim partial after a write until actual readback',async()=>{
     const h=task();h.step('fill',{target:'#name'});const d=delivery(h);
-    await d.send('complete');expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('部分结果');
+    await d.send('complete');expect(d.emit.mock.calls[0]?.[0].delivery.text).toContain('（改动还没在页面上核对过。）');
     h.read();expect(await d.send('complete')).toMatchObject({terminate:true});
-    expect(d.emit.mock.calls[1]?.[0].delivery.text).not.toContain('部分结果');
+    expect(d.emit.mock.calls[1]?.[0].delivery.text).not.toContain('还没在页面上核对');
   });
   it('can explicitly report partial results and terminate despite unknown work, with host limitations',async()=>{
     const h=task();h.step('click',{target:'#submit'},true,'unknown');const d=delivery(h);

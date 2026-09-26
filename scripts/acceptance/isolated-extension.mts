@@ -4,8 +4,8 @@
  * 暴露 __saCall。供多个真实站点验收脚本共用；不碰用户的 ChromeMain 与扩展。
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer, type Server } from "node:http";
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -133,7 +133,7 @@ export async function closeIsolatedResources(
   return result;
 }
 
-export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fakeMedia?: boolean; localOnly?: boolean; diagnose?: (kind: string, data: unknown) => void} = {}): Promise<IsolatedExtension> {
+export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fixture?: (req: IncomingMessage, res: ServerResponse) => boolean; downloadDir?: string; fakeMedia?: boolean; localOnly?: boolean; diagnose?: (kind: string, data: unknown) => void} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
@@ -162,8 +162,17 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
 
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-    fixture = createServer((_req, res) => {
+    // 页面下载一律落到临时目录（可由调用方指定），不进用户真实的「下载」文件夹；不弹保存对话框。
+    const downloadDir = options.downloadDir ?? join(outDir, "downloads");
+    await mkdir(downloadDir, { recursive: true });
+    await mkdir(join(profile, "Default"), { recursive: true });
+    await writeFile(join(profile, "Default", "Preferences"), JSON.stringify({ download: { default_directory: downloadDir, prompt_for_download: false, directory_upgrade: true } }));
+
+    fixture = createServer((req, res) => {
       hits += 1;
+
+      // 调用方自己应答的路径（下载文件、故意中断的响应等）；返回 false 时回落到默认页面。
+      if (options.fixture?.(req, res)) return;
       res.setHeader("content-type", "text/html; charset=utf-8");
       res.end(options.fixtureHtml ?? "<!doctype html><meta charset='utf-8'><title>isolated probe</title><p>probe</p>");
     });

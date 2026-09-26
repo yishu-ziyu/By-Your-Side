@@ -4,6 +4,7 @@ import { judgeRealtimeBrowserAction } from './realtime-browser-judge.js';
 import { reviewTaskGoal } from './goal-reasoning-review.js';
 import { reserveEvidenceWork } from './task-evidence-budget.js';
 import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
+import { toolAction } from '../../shared/user-facing.js';
 import { isBrowserObservation, type BrowserMaterial, type BrowserObservation } from '../../shared/browser-decision.js';
 import { createCapturePageMaterialTool, createTaskGoalsTool, type GoalToolHost } from './task-goal-tool.js';
 import { TaskEvidence, elementText, redactObservedText, fieldMaterialValue } from './task-evidence.js';
@@ -341,6 +342,7 @@ export class BrowserAgentSession {
     recordConfirmedRecovery?: (input: ConfirmedRecoveryRecord) => TaskResultItem | null;
     /** T06：交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
     deliveryFacts?: () => DeliveryFactInput;
+    awaitingConfirmationOnly?: () => { items: Array<{ id: string; description: string }>; others: number } | null;
   } | null = null;
   private readonly taskEvidence = new TaskEvidence();
   private goalToolHost(): GoalToolHost {
@@ -921,6 +923,7 @@ if(required.includes(key))candidates.set(key,attachment);
         },
         // 没列目标计划时没有“用户目标清单”可对照：不附完成/未完成事实，也不拿动作回执冒充完成。
         getDeliveryFacts: () => resultHost?.conversationSnapshot()?.goalPlan?.coverage === 'verified' ? resultHost.taskResultsHost?.deliveryFacts?.() ?? null : null,
+        getAwaitingConfirmation: () => resultHost?.taskResultsHost?.awaitingConfirmationOnly?.() ?? null,
         getPageChanges: () => resultHost?.pageChangeFacts() ?? null,
         hasUnfinishedWork: () => {
           const snapshot = resultHost?.taskResultsHost?.getSnapshot();
@@ -1037,7 +1040,7 @@ if(required.includes(key))candidates.set(key,attachment);
       onRepeatedFailure = failure => {
         wrapper.taskResultsHost?.stopAfterFailures?.();
         wrapper.runTrace.record("repeated_tool_failure", {...failure});
-        const text = `工具「${failure.toolName}」连续三次返回相同错误，已停止重试。这一步没有完成。`;
+        const text = `「${toolAction(failure.toolName)}」连续三次出同样的错，已停止重试。这一步没有完成。`;
 
         // T06：工具失败也必须带事实链（partial + 剩余项）；终止前的 nextStep 已因 failure_limit 变成 partial。
         if (leadConversationId) {
@@ -3668,6 +3671,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             isError: event.isError,
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
+            ...(event.isError && this.rpc?.wasDeclined(event.toolCallId) ? { declined: true as const } : {}),
           });
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
           this.toolArgs.delete(event.toolCallId);
@@ -3793,7 +3797,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // 接管/中止的尾声与"本轮已经交付过结果"的自动重试都不再刷"请求失败"：
           // 前者会把用户主动停下当成模型故障，后者的真实结局由最终 agent_end 的错误/空响应判断。
           if (this.hold.isHeld() || this.expectedStoppedAgentEnd || this.deliveredResultThisRun) break;
-          emit({ kind: "notice", message: `正在重试（${event.attempt}/${event.maxAttempts}）`, progress: true });
+          emit({ kind: "notice", message: `模型服务没有正常回应，正在重试（${event.attempt}/${event.maxAttempts}）`, progress: true });
           break;
         default:
           break;

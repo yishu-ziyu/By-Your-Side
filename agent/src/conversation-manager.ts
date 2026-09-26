@@ -91,7 +91,8 @@ export function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnaps
   if (['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length) return false;
   const results = snapshot.results ?? [];
 
-  return !results.some(item => item.status === 'unknown' && !isSupersededUnknown(item, results));
+  // 被拦下等用户在页面上确认的动作没有派发：它不妨碍别的会话接手这一页（接手时页面上的确认会一并收起）。
+  return !results.some(item => item.status === 'unknown' && !item.evidence?.awaitingConfirmation && !isSupersededUnknown(item, results));
 }
 
 export class ConversationManager {
@@ -807,7 +808,10 @@ return { kind: "silent" };}
       // A fallback must not bypass the same decision that rejected a premature
       // finding tool. No extra completion request or unsafe spoken prefix here.
       const count=(snap.results??[]).filter(item=>item.status==='satisfied').length;
-      this.publishDelivery(id,'finding',`${count?`已保留 ${count} 项执行回执。`:''}${partialResultNote(snap.nextStep)}`,
+
+      // 一步都没做成（常见于模型报错）：出错原因已在侧栏，单独一句「没做完」只是账本的话。
+      if(!count)return;
+      this.publishDelivery(id,'finding',`做成了 ${count} 步。${partialResultNote(snap.nextStep)}`,
         undefined,{runId:snap.runId,controlVersion:snap.controlVersion,states:['idle']});
 
       return;
@@ -1556,6 +1560,7 @@ return true;}
           return item;
         },
         deliveryFacts: () => progress.deliveryFacts(),
+        awaitingConfirmationOnly: () => progress.awaitingConfirmationOnly(),
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。

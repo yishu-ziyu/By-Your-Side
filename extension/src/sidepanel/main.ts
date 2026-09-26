@@ -262,6 +262,18 @@ app.innerHTML = `
   </div>
 `;
 
+/**
+ * 宿主没有记忆、技能存储时（只装扩展），不给只会报「存储不可用」的入口：
+ * 「示范给 AI」要把示范编译成技能，「技能与记忆」要读这两个存储。旧宿主不报时按有处理。
+ */
+function applyHostFeatures(features: { memory: boolean; skills: boolean } | undefined): void {
+  const skills = features?.skills ?? true;
+  const memory = features?.memory ?? true;
+  document.getElementById("record-toggle")!.hidden = !skills;
+  document.getElementById("memory-open")!.hidden = !skills && !memory;
+  document.querySelector<HTMLElement>("#header-menu hr")!.hidden = !skills && !memory;
+}
+
 // 原生 popover 负责外部点击和 Escape；各入口复用已有行为。
 const headerMore = document.getElementById("header-more") as HTMLButtonElement;
 
@@ -3296,7 +3308,7 @@ function onToolStart(
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; declined?: true }): void {
   const run = currentRun ?? lastRun;
 
   if (run) {
@@ -3318,7 +3330,9 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   toolChips.delete(ev.toolCallId);
 
   if (!entry) return;
-  entry.dot.className = `chip-dot ${chipState(true, ev.isError)}`;
+  // 用户拒绝授权的那一步照你的意思没做：不画成失败。
+  const failed = ev.isError && !ev.declined;
+  entry.dot.className = `chip-dot ${chipState(true, failed)}`;
   // B：收束——蓝边底色按 --m-move 退回常态
   entry.chip.classList.remove("running");
   // 球停下并定格：完成是收束，不是把球换掉
@@ -3334,7 +3348,11 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   entry.dur.hidden = duration === null;
   entry.dur.textContent = duration ?? "";
 
-  if (ev.isError) entry.chip.classList.add("error");
+  if (failed) entry.chip.classList.add("error");
+
+  const label = entry.chip.querySelector(".chip-label");
+
+  if (ev.declined && label) label.textContent = `${label.textContent}（你没有允许）`;
   const text = ev.resultText ?? "";
 
   if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;
@@ -3858,6 +3876,7 @@ function handleServerMessage(raw: string): void {
   switch (msg.type) {
     case "hello_ok":
       setStatus("on", "已连接");
+      applyHostFeatures(msg.features);
       modelPicker.apply(msg.model, msg.models);
       setupEl.hidden = true;
       break;

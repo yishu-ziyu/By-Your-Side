@@ -8,11 +8,40 @@ const FIXTURE_DIR = dirname(
 );
 
 /** 验收页白名单：默认仍是 index.html；新增能力对齐页按名放行，不开放任意路径。 */
-const FIXTURE_FILES = new Set(["index.html", "cursor-visibility.html", "parity.html"]);
+const FIXTURE_FILES = new Set(["index.html", "cursor-visibility.html", "parity.html", "downloads.html"]);
+
+/** downloads.html 上的两个文件：一个完整下完；一个声明 64 KB、发 4 KB 后断开，Chrome 记为下载中断。 */
+export const DOWNLOAD_FIXTURES = {
+  complete: { path: "/files/quarterly-report.csv", filename: "quarterly-report.csv", body: "quarter,revenue\nQ1,120\nQ2,135\nQ3,150\n" },
+  broken: { path: "/files/project-archive.zip", filename: "project-archive.zip", declaredBytes: 65_536, sentBytes: 4096 },
+};
+
+function serveDownload(path, res) {
+  const { complete, broken } = DOWNLOAD_FIXTURES;
+
+  if (path === complete.path) {
+    res.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${complete.filename}"`, "content-length": Buffer.byteLength(complete.body), "cache-control": "no-store" });
+    res.end(complete.body);
+
+    return true;
+  }
+
+  if (path === broken.path) {
+    res.writeHead(200, { "content-type": "application/zip", "content-disposition": `attachment; filename="${broken.filename}"`, "content-length": broken.declaredBytes, "cache-control": "no-store" });
+    res.write(Buffer.alloc(broken.sentBytes, 1));
+    setTimeout(() => res.destroy(), 300);
+
+    return true;
+  }
+
+  return false;
+}
 
 export function startFixtureServer() {
   const server = createServer((req, res) => {
     const raw = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
+
+    if (serveDownload(raw, res)) return;
     const name = raw === "/" ? "/index.html" : raw;
     const file = name.startsWith("/") ? name.slice(1) : name;
 

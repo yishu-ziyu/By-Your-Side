@@ -5,6 +5,7 @@
  * - humanizeModelError：把模型请求失败的裸错误（如 Not Found）改写成可行动的中文提示
  */
 import type { ModelOption } from "../../../shared/protocol.js";
+import { plainModelError } from "../../../shared/user-facing.js";
 
 export interface ModelGroup {
   provider: string;
@@ -30,8 +31,6 @@ export function groupModelsByProvider(models: readonly ModelOption[]): ModelGrou
 
   return groups;
 }
-
-const MODEL_NOT_FOUND = /模型请求最终失败：(?:.*\b404\b.*|Not Found)/i;
 
 /** provider id → 面板分组显示名；未收录的原样显示 id。 */
 const PROVIDER_LABELS: Record<string, string> = {
@@ -117,15 +116,11 @@ export function providerMark(provider: string): { letter: string; hue: number } 
 }
 
 /**
- * 模型不存在/404 类错误改为人话；其他错误原文返回。
- * agent 透传的错误形如 "模型请求最终失败：Not Found"（见 agent/src/session.ts）。
+ * 模型服务的报错改成人话（状态码、原始 JSON 不上侧栏，原文留在诊断记录里）；其他错误本来就是中文说明，原样返回。
+ * agent 透传的模型错误形如 "模型请求最终失败：503: {...}"（见 agent/src/session.ts）。
  */
 export function humanizeModelError(message: string): string {
-  if (MODEL_NOT_FOUND.test(message)) {
-    return "模型不可用（Not Found）：模型可能已下线或当前账号无访问权限，请在输入区切换模型后重试";
-  }
-
-  return message;
+  return message.startsWith("模型请求最终失败：") ? plainModelError(message) : message;
 }
 
 export type ReasoningTier = "unknown" | "native" | "effort" | "direct";

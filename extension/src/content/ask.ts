@@ -108,6 +108,8 @@ function boot(): void {
 
   const drafts = new Map<string, string>();
   let pinned = false;
+  /** 卡片放在选区哪一边：打开时定一次，之后回答变长也不换边，免得卡片跳位。 */
+  let side: 'above' | 'below' | null = null;
   const highlightName = `by-your-side-reading`;
 
   const highlights = (CSS as typeof CSS & {
@@ -156,16 +158,17 @@ function boot(): void {
     }
 
     const margin = 12;
-    const available = Math.max(r.top - margin - 8, innerHeight - r.bottom - margin - 8);
-    surface.style.maxHeight = expanded ? `${Math.min(innerHeight - margin * 2, pinned ? 540 : Math.max(220, available))}px` : '';
+    const room = { above: r.top - margin - 8, below: innerHeight - r.bottom - margin - 8 };
+    // 默认放在选区下方：顺着阅读方向，不盖住上面的标题和正文；下方放不下一张展开卡片时才放上方。
+    side ??= room.below >= 220 || room.below >= room.above ? 'below' : 'above';
+    surface.style.maxHeight = expanded ? `${Math.min(innerHeight - margin * 2, pinned ? 540 : Math.max(220, room[side]))}px` : '';
     const box = surface.getBoundingClientRect();
     const left = Math.max(margin, Math.min(r.left + r.width / 2 - box.width / 2, innerWidth - box.width - margin));
-    const above = r.top - box.height - 8;
-    const below = r.bottom + 8;
-    const top = pinned ? margin : above >= margin ? above : below + box.height <= innerHeight - margin ? below : Math.max(margin, Math.min(r.top, innerHeight - box.height - margin));
+    const bottomLimit = innerHeight - box.height - margin;
+    const top = pinned ? margin : side === 'below' ? Math.max(margin, Math.min(r.bottom + 8, bottomLimit)) : Math.max(margin, Math.min(r.top - box.height - 8, bottomLimit));
     surface.style.left = `${left}px`;
     surface.style.top = `${top}px`;
-    surface.style.transformOrigin = above >= margin ? 'bottom center' : 'top center';
+    surface.style.transformOrigin = side === 'above' ? 'bottom center' : 'top center';
   }
 
   function highlight(): void {
@@ -315,6 +318,7 @@ function boot(): void {
     input.value = drafts.get(record!.threadId) ?? '';
     expanded = true;
     pinned = false;
+    side = null;
     lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     render();
     show(keyboard);
@@ -453,6 +457,7 @@ function boot(): void {
     snapshot = next;
     expanded = false;
     pinned = false;
+    side = null;
     report();
     render();
     show(keyboard);

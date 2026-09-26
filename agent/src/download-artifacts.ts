@@ -1,11 +1,10 @@
 /**
- * CAP-02A：宿主侧下载制品 — 轮询临时目录、saveAs、删除。
- * 扩展只负责 Page.setDownloadBehavior + CDP 事件；文件 I/O 在伴随进程。
+ * CAP-02A：宿主侧下载制品 — 等 Chrome 报完成后 saveAs。
+ * 扩展只负责事件归属与 chrome.downloads 状态；文件 I/O 在伴随进程。
  * 不将 fetch(GET) 冒充为页面下载。
  */
-import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
-import { fetchDownloadsDir } from "./fetch-result.js";
+import { copyFileSync, mkdirSync, statSync } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
 
 export type DownloadStatLike = {
   downloadId: string;
@@ -16,35 +15,9 @@ export type DownloadStatLike = {
   failure: string | null;
   completed: boolean;
   cancelled: boolean;
-  downloadPath?: string;
-  expectedPath?: string;
+  bytes?: number;
+  danger?: string;
 };
-
-function findDownloadedFile(directory: string): string | undefined {
-  try {
-    const entries = readdirSync(directory, { withFileTypes: true });
-    const files = entries.filter((e) => e.isFile() && !e.name.endsWith(".crdownload"));
-
-    if (files.length > 1) {
-      throw new Error(`download completed with ${files.length} files in its temporary directory`);
-    }
-
-    return files.length === 1 ? join(directory, files[0]!.name) : undefined;
-  } catch (error) {
-    if (error instanceof Error && /download completed with/.test(error.message)) throw error;
-
-    return undefined;
-  }
-}
-
-export function createDownloadArmDir(tokenHint = "arm"): string {
-  const root = join(fetchDownloadsDir(), "cap02a");
-  mkdirSync(root, { recursive: true });
-  const dir = join(root, `${tokenHint}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
-  mkdirSync(dir, { recursive: true });
-
-  return dir;
-}
 
 export function assertAbsoluteSavePath(path: string): void {
   if (typeof path !== "string" || path.length === 0 || !isAbsolute(path) || path.includes("\0")) {
@@ -56,6 +29,7 @@ export function assertAbsoluteSavePath(path: string): void {
   }
 }
 
+/** 只认 Chrome 报完成的记录；中断、取消、超时都如实报错。 */
 export async function waitForDownloadFile(
   stat: DownloadStatLike,
   timeoutMs: number,
@@ -65,18 +39,11 @@ export async function waitForDownloadFile(
   let current = stat;
 
   while (Date.now() - started < timeoutMs) {
+    if (current.cancelled) throw new Error("download failed: canceled");
+
     if (current.failure) throw new Error(`download failed: ${current.failure}`);
 
-    if (current.cancelled) throw new Error("download failed: canceled");
-    const dir = current.downloadPath;
-
-    if (dir) {
-      const found = findDownloadedFile(dir);
-
-      if (found) return { path: found, stat: current };
-    }
-
-    if (current.path) return { path: current.path, stat: current };
+    if (current.completed && current.path) return { path: current.path, stat: current };
     await new Promise((r) => setTimeout(r, 50));
     current = await poll();
   }
@@ -106,14 +73,4 @@ export async function hostDownloadSaveAs(input: {
     url: stat.url,
     tabId: stat.tabId,
   };
-}
-
-export function hostDownloadDeleteTemp(downloadPath: string | undefined): void {
-  if (!downloadPath || !downloadPath.startsWith(fetchDownloadsDir())) return;
-
-  try {
-    rmSync(downloadPath, { recursive: true, force: true });
-  } catch {
-    /* 已清理 */
-  }
 }

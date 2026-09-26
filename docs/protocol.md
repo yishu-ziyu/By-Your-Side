@@ -13,7 +13,7 @@ offscreen 入口使用扩展内部 runtime Port；background 先送模型配置�
 - 启动时生成随机 token 并打印到终端；用户在面板首次设置中粘贴一次，存 `chrome.storage.local`。
 - 连接后客户端第一帧必须是 `hello{token, client:"sidepanel"}`。
 - 服务端校验：token 匹配 + WS 握手的 `Origin` 头以 `chrome-extension://` 开头。
-- 成功回 `hello_ok{version, model}`；失败回 `hello_error{error}` 并关闭连接。
+- 成功回 `hello_ok{version, model, features?}`；失败回 `hello_error{error}` 并关闭连接。`features{memory, skills}` 说这个宿主有没有记忆、技能存储（只装扩展时都是 false），侧栏据此收起只会失败的入口；旧宿主不带时按有处理。
 - 单客户端策略：新连接握手成功则顶替旧连接（旧连接收到 `agent_event{kind:"notice"}` 后被关闭）。
 
 ## 消息流
@@ -62,7 +62,7 @@ server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_
 worker 事件带自己的 `sessionId`，面板把它们显示在所属用户会话的团队状态中。`abort` 只中止指定用户会话；停止单个 worker 只撤销该成员。`takeover` / `handback` 保留会话与标签绑定：接管先阻止目标页新写入，等待已在途短动作到安全停止点，再暂停该页全部协作者。其他会话的独立页继续。交还为各成员读取绑定页的新快照；关闭或读取失败的页面保持暂停，不把当前活动页替代进去。
 
 
-`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。
+`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。`tool_end.declined`：用户在授权卡上点了「拒绝」，没执行但不是失败，账本不留待办。任务视图里带 `awaitingConfirmation` 的项是被拦下、等页面确认的点击；它不妨碍别的会话接手这一页，接手时旧确认一并收起。
 
 ### 工具调用（RPC）
 
@@ -133,6 +133,8 @@ Lead 工具 `artifacts` 为用户写文本文件（csv、md、txt、json、html�
 ref 编号随节点保持稳定，但必须出现在最新快照中；新快照替换可用引用集合。无效、失效、未找到或匹配多个元素时明确报错并要求重新定位，不猜测另一个目标。Playwright 的 `:has-text()` 和 `loc=h3...` 不受支持。
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
+
+页面下载：`arm_event{type:"download"}` → 点页面的下载入口 → `wait_event`。`Page.downloadWillBegin` 把下载归到已 arm 的标签页，文件由 Chrome 存进用户的下载文件夹；是否下完只看 `chrome.downloads`（两者按 URL 对上）。`wait_event` 匹配后再等下载结束（默认最多 60 秒），`download.completed` 只在 Chrome 报 `complete` 时为真并带 `path`/`bytes`；中断时 `failure` 是 Chrome 的错误码，模型工具把它作为失败返回。`download_cancel` 不取消已下完的文件，`download_delete` 只忘掉记录、不删文件；本机伴随进程的 `download_save_as` 在完成后复制到指定路径。扩展调试通道拒绝浏览器级 `Page.setDownloadBehavior`，所以不再用它（[09-23 记录](evals/20260923-ci-gate-failures.md)）。
 
 `mark` 可选 `through: "@N"`：同一行的结束 ref，一个框从 `target` 圈到它（用于「名称 + 数值」这类成对内容，先后顺序不限）。两者都必须是同一张快照的 ref；不在同一行、不在同一页面或不是 ref 时报错并记为未执行。框随两端之间的内容重排而重画。名牌依次试框的右、上、下、左，选第一处不压页面文字、图片或控件的位置；四处都压字时沿框的上沿、下沿往右找空白。
 

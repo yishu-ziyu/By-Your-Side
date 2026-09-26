@@ -128,12 +128,22 @@ export type SendUserMessageOptions = {
   getNextStep?: () => TaskNextStep | null;
   /** 宿主事实链：已满足项、未完成项、本 run 真实读到的页面；未接线时不附 facts。 */
   getDeliveryFacts?: () => DeliveryFactInput | null;
+  /** 没了结的只剩等用户在页面上确认的动作时返回它们；否则 null。 */
+  getAwaitingConfirmation?: () => { items: Array<{ id: string; description: string }>; others: number } | null;
   /** 本轮尝试改页面的次数与真正生效的次数；未接线时不做这项纠正。 */
   getPageChanges?: () => PageChangeTally | null;
 };
 
 /** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计，不看正文）。 */
 export type PageChangeTally = { attempts: number; changes: number };
+
+/** 有动作被拦下等用户在页面上确认时补的一句：它没失败，也不是结果未知，是在等你。others 是另外没了结的执行项数。 */
+export function awaitingConfirmationNote(awaiting: { items: ReadonlyArray<{ description: string }>; others: number }): string {
+  const first = awaiting.items[0]?.description ?? "这一步";
+  const more = awaiting.items.length > 1 ? ` 等 ${awaiting.items.length} 步` : "";
+
+  return `（还等你在页面上确认：${first}${more}。${awaiting.others ? "另外还有没做成的步骤。" : ""}）`;
+}
 
 /** 尝试过改页面、一次都没生效时补在回答后的事实。 */
 export function pageUnchangedNote(attempts: number): string {
@@ -187,7 +197,8 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   // 模型自己说了没做完：正文原样，部分完成记在 outcome/facts 上，由侧栏续做行说明。
   // 模型声称做完而宿主知道没做完：正文会误导用户（语音里也会被念出来），这时才补一句纠正。
   if (input.kind === "finding" && !complete && requested === "complete") {
-    const note = pageUnchanged ? pageUnchangedNote(pageChanges!.attempts) : next ? partialResultNote(next) : "任务状态：仅交付部分结果，未声明全部完成。";
+    const awaiting = opts.getAwaitingConfirmation?.() ?? null;
+    const note = awaiting ? awaitingConfirmationNote(awaiting) : pageUnchanged ? pageUnchangedNote(pageChanges!.attempts) : next ? partialResultNote(next) : "（这件事还没全部完成。）";
 
     text = clampDeliveryText(`${text}\n\n${note}`);
   }

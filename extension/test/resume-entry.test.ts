@@ -94,7 +94,7 @@ describe('A05-02/A05-03 正向接续摘要与恢复入口', () => {
     const section = root.children[0]!;
     const text = section.children.map((child) => child.textContent).join('\n');
     // 只一行：还要用户处理什么；目标、已完成清单、下一步说明不再铺在侧栏上。
-    expect(find(section, 'resume-line')!.textContent).toBe('任务中断了，还有 1 项没完成：填写邮箱');
+    expect(find(section, 'resume-line')!.textContent).toBe('任务中断了，还没做：填写邮箱');
     expect(text).not.toContain('已完成');
     expect(find(section, 'resume-line')!.title).toContain('先重新读取当前页面');
     const button = find(section, 'resume-action')!;
