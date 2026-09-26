@@ -192,3 +192,124 @@ describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', (
     expect(translate).toHaveBeenCalledTimes(1);
   });
 });
+
+/** 最小页面替身：按 collect 协议返回未译且未被排除的段落，apply 记录写入顺序。 */
+function fakePage(total: number, perBatch = 8) {
+  const done = new Set<string>();
+  const applied: string[][] = [];
+  const ids = Array.from({length: total}, (_, i) => String(i + 1));
+  const counts = () => ({translated: done.size, remaining: total - done.size});
+
+  const call = vi.fn(async (command: {action: string; exclude?: string[]; translations?: {id: string}[]}): Promise<TranslationReceipt> => {
+    if (command.action === 'apply') {
+      const blockIds = [...new Set(command.translations!.map(t => t.id.split(':')[0]!))];
+      blockIds.forEach(id => done.add(id)); applied.push(blockIds);
+
+      return {...receipt, ...counts(), applied: blockIds.length, blocks: []};
+    }
+
+    const skip = new Set(command.exclude ?? []);
+    const next = command.action === 'collect' ? ids.filter(id => !done.has(id) && !skip.has(id)).slice(0, perBatch) : [];
+
+    return {...receipt, ...counts(), blocks: next.map(id => ({id, segments: [{id: `${id}:0`, text: `Paragraph ${id}`}]}))};
+  });
+
+  return {call, applied, done};
+}
+
+const echo = (blocks: {segments: {id: string}[]}[]) => blocks.flatMap(b => b.segments.map(s => ({id: s.id, text: '译文'})));
+
+describe('并发请求池、按进度判断时限、length 拆批', () => {
+  it('同时在途的批次不超过池宽，且同一段不会同时翻两份', async () => {
+    const page = fakePage(40, 4);
+    const inFlight = new Set<string>(); let peak = 0;
+
+    const translate = vi.fn(async (blocks: {id: string; segments: {id: string}[]}[]) => {
+      for (const b of blocks) { expect(inFlight.has(b.id)).toBe(false); inFlight.add(b.id); }
+      peak = Math.max(peak, translate.mock.calls.length - page.applied.length);
+      await new Promise(r => setTimeout(r, 5));
+      for (const b of blocks) inFlight.delete(b.id);
+
+      return echo(blocks);
+    });
+
+    const result = await runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal, {concurrency: 3});
+    expect(result).toMatchObject({translated: 40, remaining: 0});
+    expect(peak).toBe(3);
+    expect(translate).toHaveBeenCalledTimes(10);
+  });
+
+  it('先写完的批次立刻落页，不等最慢的一批', async () => {
+    const page = fakePage(16, 8);
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>(r => { releaseSlow = r; });
+
+    const translate = vi.fn(async (blocks: {id: string; segments: {id: string}[]}[]) => {
+      if (blocks[0]!.id === '1') await slow;
+
+      return echo(blocks);
+    });
+
+    const running = runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal, {concurrency: 2});
+    await vi.waitFor(() => expect(page.applied).toEqual([['9', '10', '11', '12', '13', '14', '15', '16']]));
+    releaseSlow();
+    await expect(running).resolves.toMatchObject({translated: 16, remaining: 0});
+  });
+
+  it('length 时对半拆小重试，不原样重发；拆两层后仍失败就如实报错', async () => {
+    const page = fakePage(8, 8);
+    const sizes: number[] = [];
+
+    const translate = vi.fn(async (blocks: {id: string; segments: {id: string}[]}[]) => {
+      sizes.push(blocks.length);
+
+      if (blocks.length > 2) throw Object.assign(new Error('这批翻译未完成（length），已保留之前的译文。可以继续翻译。'), {stopReason: 'length'});
+
+      return echo(blocks);
+    });
+
+    await expect(runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal)).resolves.toMatchObject({translated: 8, remaining: 0});
+    expect(sizes).toEqual([8, 4, 2, 2, 4, 2, 2]);
+
+    const always = vi.fn(async (blocks: unknown[]) => { sizes.push(blocks.length); throw Object.assign(new Error('这批翻译未完成（length）'), {stopReason: 'length'}); });
+    sizes.length = 0;
+    await expect(runPageTranslation({action: 'translate'}, fakePage(8, 8).call as never, always, new AbortController().signal)).rejects.toThrow('翻译生成失败');
+    // 8 → 4 → 2；到 2 段只允许原样重试一次，随后停止启动新批次。
+    expect(sizes.slice(0, 4)).toEqual([8, 4, 2, 2]);
+    expect(always.mock.calls.length).toBeLessThanOrEqual(4);
+  });
+
+  it('持续有进展就不因总时长被截断；卡住不动时按空闲时限停止并报告进度', async () => {
+    const page = fakePage(12, 1);
+    const slowButSteady = vi.fn(async (blocks: {segments: {id: string}[]}[]) => { await new Promise(r => setTimeout(r, 30)); return echo(blocks); });
+    // 12 批串行约 360 ms，远超 100 ms 的空闲时限，但每批都在时限内落页。
+    await expect(runPageTranslation({action: 'translate'}, page.call as never, slowButSteady, new AbortController().signal, {concurrency: 1, idleMs: 100}))
+      .resolves.toMatchObject({translated: 12, remaining: 0});
+
+    const stuckPage = fakePage(12, 4);
+    let first = true;
+
+    const stuck = vi.fn(async (blocks: {segments: {id: string}[]}[], _l: string, signal: AbortSignal) => {
+      if (first) { first = false; return echo(blocks); }
+
+      return await new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('这批翻译未完成（aborted）'), {stopReason: 'aborted'}))));
+    });
+
+    await expect(runPageTranslation({action: 'translate'}, stuckPage.call as never, stuck, new AbortController().signal, {concurrency: 1, idleMs: 60}))
+      .rejects.toMatchObject({message: expect.stringContaining('长时间没有进展'), executionFact: 'executed'});
+    expect(stuckPage.done.size).toBe(4);
+  });
+
+  it('每次请求带上批次序号、拆分层数和是否重试，供诊断记录使用', async () => {
+    const page = fakePage(2, 2);
+    const translate = vi.fn().mockRejectedValueOnce(Object.assign(new Error('这批翻译未完成（aborted）'), {stopReason: 'aborted'})).mockImplementation(async (blocks: {segments: {id: string}[]}[]) => echo(blocks));
+    await runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal);
+    expect(translate.mock.calls.map(c => c[3])).toEqual([{batch: 1, depth: 0, retry: false}, {batch: 1, depth: 0, retry: true}]);
+  });
+
+  it('collect 的排除列表只允许用于 collect', () => {
+    expect(() => validateTranslationCommand({action: 'collect', document: 'd', exclude: ['1', '2']})).not.toThrow();
+    expect(() => validateTranslationCommand({action: 'apply', document: 'd', translations: [], exclude: ['1']})).toThrow();
+    expect(() => validateTranslationCommand({action: 'collect', exclude: [1 as never]})).toThrow();
+  });
+});

@@ -17,7 +17,7 @@
 | 范围 | 说明 |
 |---|---|
 | 总体职责、运行时与记忆 | [架构](architecture.md) · [EverOS](integrations/everos.md) |
-| 消息、页面归属、工具与核验 | [协议](protocol.md) · [组合执行](browser-program.md) |
+| 消息、页面归属、工具与核验 | [协议](protocol.md) · [组合执行](browser-program.md) · [整页翻译](page-translation.md) |
 | 语音与任务协调 | [语音链路](voice-architecture.md) · [任务调度](voice-dispatch.md) · [多要求设计](voice-multi-request-design.md) |
 | 用户可见交互 | [人机协作](human-ai-contract.md) · [语音交互与人设](voice-interaction.md) · [阅读外观](reading-appearance.md) |
 | 为什么采用某个方向 | [路线与决定](ROADMAP.md) · [开发日志](devlog/) |

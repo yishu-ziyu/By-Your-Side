@@ -75,17 +75,14 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 - background 从上行连接直接接收和执行 `tool_call`，结果原路回传；工具执行不经过侧栏，关闭侧栏不会停止任务。
 - 伴随进程侧 RPC 默认超时 30s（`navigate`/`screenshot` 60s），超时/断连即以错误结果结束该工具调用。
 - 扩展侧任何异常都必须回 `ok:false` + 一行人类可读 error，不允许挂断不回。
+- `page_translation` 的 `translate` 由 agent 分批调用 `begin`/`collect`/`apply`，不受单次工具时限约束，而是按落页进度判断何时停止；请求池、`collect.exclude` 与逐批诊断见[整页翻译](page-translation.md)。
 - 发出前就拒绝的调用回 `not_executed`，并在 error 里说明可行的替代做法：`fetch` 指向本机或私网地址时，提示改用 `open_tab`/`navigate` 打开后再 `snapshot`；`wheel` 的工作页处于隐藏状态时（窗口未聚焦、不抢前台），不派发任何滚轮事件，提示改用 `scroll` 或请用户切回窗口。
 
 `browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。生产装配中，内部开始/结束直接同步转成既有步骤事件，先登记子调用再执行权限检查，使用 `父调用ID/序号` 关联；独立工具包装器仍可回传SDK进度，但不能把异步进度队列当作权限登记前置。详见[组合执行](browser-program.md)。
 
 ## 用户指出元素
 
-文字任务的主会话可调用 `ask_user_to_point`，请用户在工作页指出一个主文档 DOM 元素。点选层显示悬停轮廓和说明，吞掉用于选择的鼠标输入；Esc 取消，普通键盘输入也不穿透到网页按钮。此工具需要页面控制权，但不产生持久写入义务，后台成员与共享页不能占用它。
-
-点选回执是 `selected`、`cancelled` 或 `timed_out`，准确类型见 `shared/point-selection.ts`。选中时返回可直接用于后续已授权操作的定位串和文档身份；这不构成点击、提交或保存授权。取消或超时不能猜目标，也不能自动重新请求点选。等待期间绑定具体文档和控制轮次，停止任务会撤掉点选层；之后页面变化时仍须重新观察、重新定位，不能跨文档复用选择。
-
-等待用户的期限为 90 秒；独立工具给 RPC 留 100 秒传输预算，不改变其他工具的默认超时。当前没有接入 Realtime 语音工具表，不支持 iframe 与自定义 Shadow DOM 内部点选。[实现范围与真实路径证据](evals/20260923-user-points-element.md)。
+`ask_user_to_point` 的点选回执、期限与边界见[用户指出元素](point-selection.md)。
 
 ## 工作标签页语义
 

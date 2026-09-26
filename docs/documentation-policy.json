@@ -27,7 +27,7 @@
     {"name": "文档与开发工具", "sources": ["^scripts/maintenance/", "^scripts/acceptance/.*documentation", "^scripts/acceptance/wiki-", "^\\.kimi-code/", "^\\.github/", "^package(-lock)?\\.json$"], "documents": ["docs/development/documentation.md", "docs/development/checks.md"]},
     {"name": "安装与构建", "sources": ["^scripts/install", "^scripts/reload", "^extension/(build\\.mjs|manifest\\.json|package\\.json)$", "^agent/package\\.json$"], "documents": ["docs/guides/getting-started.md"]},
     {"name": "语音与派发", "sources": ["^agent/src/(voice|realtime|streaming|route-shadow)", "^extension/src/(sidepanel/voice|background/voice)", "^shared/voice"], "documents": ["docs/voice-architecture.md", "docs/voice-dispatch.md"]},
-    {"name": "阅读与翻译", "sources": ["^agent/src/(reading|page-translation|display-)", "^extension/src/(content/ask|shared/(reading|page-translation))", "^shared/(reading|page-translation)"], "documents": ["docs/reading-appearance.md", "docs/protocol.md"]},
+    {"name": "阅读与翻译", "sources": ["^agent/src/(reading|page-translation|display-)", "^extension/src/(content/ask|shared/(reading|page-translation))", "^shared/(reading|page-translation)"], "documents": ["docs/page-translation.md", "docs/reading-appearance.md", "docs/protocol.md"]},
     {"name": "浏览器与共享契约", "sources": ["^extension/src/(background|content)/", "^shared/", "^agent/src/(tools|rpc|browser-)"], "documents": ["docs/protocol.md", "docs/browser-program.md"]},
     {"name": "侧栏交互", "sources": ["^extension/src/", "^extension/.*\\.(html|css)$"], "documents": ["docs/human-ai-contract.md", "docs/guides/usage.md"]},
     {"name": "运行时与记忆", "sources": ["^agent/src/", "^scripts/everos/"], "documents": ["docs/architecture.md", "docs/integrations/everos.md"]},

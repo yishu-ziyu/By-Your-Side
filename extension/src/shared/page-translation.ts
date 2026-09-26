@@ -249,7 +249,10 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   const blocks: TranslationReceipt['blocks'] = [];
   let chars = 0, segments = 0;
 
+  const busy = new Set(command.exclude ?? []);
+
   if (command.action === 'collect') for (const block of pending) {
+    if (busy.has(block.id)) continue;
     const size = block.segments.reduce((n, s) => n + s.original.length, 0);
 
     if (blocks.length && (blocks.length >= 8 || chars + size > 3000 || segments + block.segments.length > 24)) break;

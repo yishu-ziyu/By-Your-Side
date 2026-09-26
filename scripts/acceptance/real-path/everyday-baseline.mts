@@ -29,7 +29,8 @@ const suite = process.argv.find((a) => a.startsWith("--suite="))?.slice(8) === "
 
 if (!daily) requireHeadless();
 
-const CASE_LIMIT_MS = 240_000;
+/** 长文翻译要跑几分钟：CASE_LIMIT_MS 可临时放宽单条时限。 */
+const CASE_LIMIT_MS = Number(process.env.CASE_LIMIT_MS) || 240_000;
 
 const startedAt = new Date();
 
@@ -41,7 +42,38 @@ const NOTE_FIRST = "Jev currently accepts text input only.";
 
 const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title></head><body>${body}</body></html>`;
 
+/**
+ * 长文翻译练习页：1 个标题 + 96 段 + 12 个列表项 = 109 个段落块，全部是脚本拼出来的原创英文，
+ * 每段约 370–410 字符，块数与 2026-09-26 慢翻译调查（R1/R2）的页面一致。
+ */
+const LONG_TOPICS = ["river maintenance", "library budgets", "bus schedules", "school gardens", "bridge inspections", "street lighting", "recycling rules", "park benches",
+  "water meters", "bike lanes", "museum hours", "fire drills"];
+
+const LONG_SENTENCES = [
+  (t: string, i: number) => `In week ${i + 3}, the committee reviewed ${t} again and found that the old notes no longer matched what residents saw on the ground.`,
+  (t: string, i: number) => `Volunteers counted ${i * 7 + 12} separate complaints about ${t}, most of them about slow replies rather than the work itself.`,
+  (t: string) => `A short survey suggested that people care less about perfect ${t} than about knowing when the next change will happen.`,
+  (t: string, i: number) => `The draft plan for ${t} sets aside ${i + 2} hours each month for public questions and publishes every answer on the notice board.`,
+  (t: string) => `Critics argued that the schedule for ${t} is too optimistic, since two of the contractors have not confirmed their dates yet.`,
+  (t: string, i: number) => `By the end of quarter ${(i % 4) + 1}, the team expects to close the oldest requests about ${t} and report what it learned.`,
+];
+
+const longParagraph = (i: number) => {
+  const topic = LONG_TOPICS[i % LONG_TOPICS.length]!;
+  const pick = [i, i + 2, i + 4].map((k) => LONG_SENTENCES[k % LONG_SENTENCES.length]!(topic, i));
+
+  return pick.join(" ");
+};
+
+const LONG_BODY = `<article><h1>Notes from a year of small civic fixes</h1>
+${Array.from({ length: 96 }, (_, i) => `<p>${longParagraph(i)}</p>`).join("\n")}
+<ul>${LONG_TOPICS.map((t, i) => `<li>Follow-up ${i + 1}: publish the ${t} timeline and name one contact person for questions.</li>`).join("")}</ul></article>`;
+
+/** 长文用例的判据：109 个段落块都要出现中文（双语或仅译文都算）。 */
+const LONG_BLOCKS = 109;
+
 const PAGES = {
+  "/long": page("Notes from a year of small civic fixes", LONG_BODY),
   "/article": page("远程办公的代价", `<article><h1>远程办公的代价</h1>
 <p>过去三年，我们团队全员远程。本文的核心观点是：远程办公明显提高了资深成员的专注时间，但严重削弱了新人的成长速度。</p>
 <p>资深工程师每周不被打断的整块时间从 9 小时增加到 21 小时；新人第一次独立交付功能的时间却从 6 周拖长到 14 周。</p>
@@ -109,7 +141,7 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { answer: string; pageText: string; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
+type Ctx = { answer: string; pageText: string; translatedBlocks: number; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
 
 type Case = { id: string; path: string; prompt: string; check: (c: Ctx) => string | null };
 
@@ -141,6 +173,8 @@ const CASES: Case[] = [
   { id: "page-fields", path: "/job", prompt: "这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。", check: (c) => (has(c.answer, "前端", "杭州") ? null : "缺岗位名或城市") },
   { id: "three-repos", path: "/projects", prompt: "找到这三个项目的 GitHub 仓库地址。", check: (c) => (has(c.answer, "alpha-kit", "beta-flow", "gamma-db") ? null : "三个仓库没有全部给出") },
   { id: "translate", path: "/en", prompt: "把这个页面翻译成中文。", check: (c) => ((c.pageText.match(/[一-鿿]/g) ?? []).length >= 20 ? null : "页面上没有出现中文译文") },
+  { id: "translate-long", path: "/long", prompt: "把这个页面翻译成中文。",
+    check: (c) => (c.translatedBlocks >= LONG_BLOCKS ? null : `只有 ${c.translatedBlocks}/${LONG_BLOCKS} 段出现了译文`) },
   { id: "mark", path: "/quota", prompt: "在页面上圈出五小时用量。", check: (c) => checkPairMark(c, "五小时用量", "32%") },
   { id: "open-tab", path: "/article", prompt: `在新标签页打开 ${origin}/job`, check: (c) => (c.tabs.some((u) => u.startsWith(`${origin}/job`)) ? null : "没有打开新标签页") },
   { id: "copy-no-save", path: "/note", prompt: "把蓝色 Note 框里的第一句英文原文复制到下面的草稿框里，不要保存。",
@@ -222,7 +256,19 @@ async function checkTraceExport(modelPlan: ModelPlan) {
   const cleared = clearedStatus ?? "";
   const reason = !text ? `没有导出任务记录（${exportStatus}）` : missing.length ? `缺少这些用例的记录：${missing.join(", ")}` : malformed ? `${malformed} 行缺字段或不是 JSON` : leaked ? "导出里出现了 API key" : !cleared.startsWith("还没有") ? `清空后导出仍有内容：${cleared}` : null;
 
-  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared };
+  return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text) };
+}
+
+/** 从导出文件读出翻译过程：每次翻译请求（批次、拆分层数、停止原因、耗时、用量）和每次 page_translation 工具调用的结果。 */
+function translationFacts(text: string) {
+  const rows = text.split("\n").filter(Boolean).flatMap((raw) => { try { return [JSON.parse(raw) as { type: string; data?: Record<string, unknown> }]; } catch { return []; } });
+  const requests = rows.filter((r) => r.type === "page_translation_request").map((r) => r.data ?? {});
+
+  const tools = rows.filter((r) => r.type === "tool_execution_end" && r.data?.toolName === "page_translation").map((r) => ({
+    elapsedMs: r.data?.elapsedMs, isError: r.data?.isError, text: JSON.stringify(r.data?.result ?? "").slice(0, 240),
+  }));
+
+  return { requests, tools };
 }
 
 /** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
@@ -236,6 +282,9 @@ if (inprocModel && !expectedHost) throw new Error(`不知道 ${inprocModel} 的 
 
 /** 模型调用：发往已知服务商主机的 POST（排除练习站、扩展自身资源和语音握手）。 */
 const isModelCall = (r: InprocRequest) => r.method === "POST" && Object.values(PROVIDER_HOSTS).includes(new URL(r.url).host);
+
+/** 已经显示中文的段落块数：双语模式下译文附在段落里，仅译文模式下段落文字被替换，两种都算。 */
+const TRANSLATED_BLOCKS = "[...document.querySelectorAll('h1,h2,h3,p,li')].filter((el) => (el.textContent.match(/[\\u4e00-\\u9fff]/g) ?? []).length >= 2).length";
 
 const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
@@ -274,6 +323,8 @@ type DomNode = { nodeId: number; attributes?: string[]; children?: DomNode[]; sh
 type CaseResult = {
   id: string; prompt: string; replied: boolean; firstVisibleMs: number | null; doneMs: number | null; noiseCount: number;
   noise: PanelState["noise"] | null; outcome: "pass" | "fail"; reason: string | null; answer: string;
+  /** 翻译用例：页面上第一段译文出现的时刻，以及译文段数随时间的变化（毫秒相对发送时刻）。 */
+  firstTranslatedMs?: number | null; translatedTimeline?: Array<{ ms: number; blocks: number }>;
   /** 只在 --inproc：本条发出的模型请求（毫秒相对发送时刻）。 */
   modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
 };
@@ -287,7 +338,7 @@ let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 let plan: ModelPlan | null = null;
 
 /** 只在 --inproc：设置页导出的诊断记录是否覆盖每条用例、不含密钥、清空后为空。 */
-let traceCheck: { outcome: "pass" | "fail"; reason: string | null; sessions: number; lines: number; missing: string[]; exportStatus: string; clearedStatus: string } | null = null;
+let traceCheck: Awaited<ReturnType<typeof checkTraceExport>> | null = null;
 
 try {
   const blank = "workTargetId" in rp ? { targetId: rp.workTargetId } : await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -414,6 +465,9 @@ try {
     let last: PanelState | null = null;
     let pageShots = 0;
     let nextPageShotAt = 0;
+    const translating = item.id.startsWith("translate");
+    let firstTranslatedMs: number | null = null;
+    const translatedTimeline: Array<{ ms: number; blocks: number }> = [];
 
     while (Date.now() - sentAt < CASE_LIMIT_MS) {
       const state = await readPanel().catch(() => null);
@@ -424,6 +478,15 @@ try {
         if (state.inputValue?.includes(item.prompt) && !state.userMessages.length) await rp.pressEnter(panel);
 
         if (firstVisibleMs === null && state.answers.length) firstVisibleMs = Date.now() - sentAt;
+
+        // 用户在页面上看到译文的时刻：数页面里的译文节点，变化时记一笔。
+        if (translating) {
+          const blocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
+
+          if (blocks !== (translatedTimeline.at(-1)?.blocks ?? 0)) translatedTimeline.push({ ms: Date.now() - sentAt, blocks });
+
+          if (firstTranslatedMs === null && blocks > 0) firstTranslatedMs = Date.now() - sentAt;
+        }
 
         // 助手运行期间每 2.5 秒给网页本身拍一张（最多 4 张）：验收页面边缘光、光标与标注。
         if (pageShots < 4 && state.running && (state.noise.toolSteps ?? 0) > 0 && Date.now() >= nextPageShotAt) {
@@ -478,7 +541,8 @@ try {
     const pageInputs = Number(await rp.evaluate(work, "document.querySelectorAll('input').length").catch(() => 0));
     // 用户最后看到的页面：运行中截图可能拍不到最终结果（如注入的小工具）。
     await rp.screenshot(work, join(artifacts, `${item.id}-page-final.png`)).catch(() => {});
-    const ctx: Ctx = { answer, pageText, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
+    const translatedBlocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
+    const ctx: Ctx = { answer, pageText, translatedBlocks, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
@@ -491,10 +555,12 @@ try {
     // 设置页选的是哪家，请求就只能发往哪家：防「换了模型却仍用旧模型」。
     const wrongHost = inprocModel && modelCalls?.find((c) => c.host !== expectedHost);
     const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
-    results.push({ id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls });
+    results.push({ id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls,
+      ...(translating ? { firstTranslatedMs, translatedTimeline } : {}) });
     await rp.screenshot(panel, join(artifacts, `${item.id}-panel.png`)).catch(() => {});
     const calls = modelCalls ? `\tcalls=${modelCalls.length} ttfb=${modelCalls.map((c) => (c.firstByteMs === null ? "-" : c.firstByteMs - c.startMs)).join(",")}` : "";
-    console.log(`${item.id}\t${finalReason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms\tnoise=${noiseCount}${calls}\t${finalReason ?? ""}`);
+    const onPage = translating ? `\tfirstTranslated=${firstTranslatedMs ?? "-"}ms blocks=${translatedBlocks}` : "";
+    console.log(`${item.id}\t${finalReason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms${onPage}\tnoise=${noiseCount}${calls}\t${finalReason ?? ""}`);
   }
 
   if (inprocModel && plan) traceCheck = await checkTraceExport(plan);
