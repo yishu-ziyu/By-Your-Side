@@ -1,7 +1,7 @@
 /**
  * QA-01 隔离无头验收（任务书 v2 §9/§12）：
  * F1–F5、C1–C5、S1–S7；C6 由另一会话做剪贴板桥（本表记「另一会话」）。
- * S4/S5/S6（及依赖判断的 S7）各一次真实 Jev（decideBrowserCandidate / realtime judge）。
+ * S4/S5/S6（及依赖判断的 S7）各一次真实 Jev（窄问题 askJev / realtime judge）。
  *
  * 隔离构建：SIDEAGENT_BUILD_DIST → 临时目录，不覆盖日常 extension/dist。
  * 宿主链：createBrowserTools → ToolRpc → __saCall → 扩展。
@@ -822,22 +822,45 @@ const { TaskUploadLedger } = await import("../../agent/src/upload-paths.js");
 
 const { runBrowserDecisionLoop } = await import("../../agent/src/browser-decision-loop.js");
 
-const { decideBrowserCandidate: providerDecide } = await import("../../agent/src/browser-decision-model.js");
+const { askJev: providerAsk } = await import("../../agent/src/jev-client.js");
 
-const decideBrowserCandidate: typeof providerDecide = async (input, signal) => {
+type JevAsk = typeof providerAsk;
+
+/** Real Jev with the run's request budget; every request and answer is written next to the result. */
+const askJev: JevAsk = async (request, signal) => {
   if (providerRequests >= jevBudget) throw new Error("MODEL_BUDGET_EXHAUSTED: no further provider request sent");
+  // SAFETY: `state.page` is written by agent/src/browser-questions.ts as { url, part_shown } when present.
+  const pageUrl = (request.state.page as { url?: string } | undefined)?.url;
 
-  if (!input.page.url.startsWith(`${fixtureOrigin}/`)) throw new Error("Full decision traces are restricted to this non-sensitive fixture server");
+  if (pageUrl !== undefined && !pageUrl.startsWith(`${fixtureOrigin}/`)) throw new Error("Full decision traces are restricted to this non-sensitive fixture server");
   providerRequests += 1;
   const requestNumber = providerRequests;
-  const trace: import('../../agent/src/browser-decision-model.js').BrowserDecisionTrace[] = [];
-  const actualInput = structuredClone(input);
+  const trace: import('../../agent/src/jev-client.js').JevTrace[] = [];
 
   try {
-    return await providerDecide(input, signal, { onTrace: event => trace.push(event) });
+    return await providerAsk(request, signal, { onTrace: event => trace.push(event) });
   } finally {
-    await writeFile(join(out, `jev-request-${requestNumber}.json`), JSON.stringify({ requestNumber, input: actualInput, trace }, null, 2));
+    await writeFile(join(out, `jev-request-${requestNumber}.json`), JSON.stringify({ requestNumber, trace }, null, 2));
   }
+};
+
+/** Fixed judge by question name (no provider call); `pickTarget` names the control to act on, if any. */
+const scriptedAsk = (pickTarget: (controls: Record<string, string>) => { name?: string; confidence?: number; opener?: string }): JevAsk => async request => {
+  // SAFETY: browser-questions.ts writes `controls` as id → one-line description and `actions_done` as strings.
+  const controls = (request.state.controls ?? {}) as Record<string, string>;
+  const done = ((request.state.actions_done ?? []) as string[]).some(fact => fact.startsWith("Clicked"));
+  const plan = pickTarget(controls);
+  const idOf = (criteria: Record<string, string> | undefined, name?: string) => (name ? Object.entries(criteria ?? {}).find(([key, d]) => key !== "none" && d.includes(`"${name}"`))?.[0] : undefined) ?? "none";
+  // SAFETY: every locate/act question built by browser-questions.ts is an object with optional `criteria`.
+  const criteriaOf = (q: string) => (request.questions[q] as { criteria?: Record<string, string> } | undefined)?.criteria;
+
+  return {
+    target: { choice: idOf(criteriaOf("target"), plan.name), confidence: plan.confidence ?? 0.99 },
+    target_listed: { noul: plan.name && Object.values(controls).some(d => d.includes(`"${plan.name}"`)) ? 0.99 : 0.02 },
+    opener: { choice: idOf(criteriaOf("opener"), plan.opener), confidence: 0.99 },
+    goal_done: { noul: done ? 0.95 : 0.03 },
+    risky: { noul: 0.02 },
+  };
 };
 
 const { judgeRealtimeBrowserAction } = await import("../../agent/src/realtime-browser-judge.js");
@@ -2010,24 +2033,16 @@ try {
         materials: mats,
         signal: AbortSignal.timeout(120_000),
         call: loopCall,
-        decide: async (input, signal) => {
+        ask: async (request, signal) => {
           modelRequests += 1;
           record.modelRequests += 1;
           const started = Date.now();
 
           try {
-            const d = await decideBrowserCandidate(input, signal);
-            decisions.push({
-              at: Date.now(),
-              ms: Date.now() - started,
-              observationId: d.observationId,
-              candidateId: d.candidateId,
-              confidence: d.confidence,
-              model: d.model,
-              // no secrets
-            });
+            const answers = await askJev(request, signal);
+            decisions.push({ at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers });
 
-            return d;
+            return answers;
           } catch (e) {
             jevErr = String(e);
             throw e;
@@ -2075,25 +2090,20 @@ try {
     let modelRequests = 0;
     let jevErr = "";
 
-    const decideOnce = async (input: any, signal: AbortSignal) => {
+    // Fixed judgments: first the Account opener, then Settings (unsure at 0.72, or not picked at all).
+    const s5Script = scriptedAsk(controls => Object.values(controls).some(d => d.includes('"Settings"'))
+      ? (s5Fixture === "nonclick-second" ? { opener: "Account" } : { name: "Settings", confidence: s5Fixture === "uncertain-second" ? 0.72 : 0.99 })
+      : { opener: "Account" });
+
+    const decideOnce: JevAsk = async (request, signal) => {
       modelRequests += 1;
 
       if (!s5Fixture) record.modelRequests += 1;
       const started = Date.now();
+      const answers = s5Fixture ? await s5Script(request, signal) : await askJev(request, signal);
+      decisions.push({ at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers, model: s5Fixture ? `fixture-${s5Fixture}` : "jev" });
 
-      const selected = s5Fixture && modelRequests > 2 ? input.candidates.find((candidate: any) => candidate.operation === "done") : s5Fixture ? input.candidates.find((candidate: any) =>
-        candidate.operation === (modelRequests === 1 || s5Fixture === "nonclick-second" ? "hover" : "click")
-        && input.page.controls.some((control: any) => control.ref === candidate.target && (modelRequests === 1
-          ? control.role === "generic" && control.name === "Account"
-          : control.role === "menuitem" && control.name === "Settings"))) : undefined;
-
-      const d = s5Fixture
-        ? { observationId: input.page.id, candidateId: selected?.id ?? "none", confidence: modelRequests > 1 && s5Fixture === "uncertain-second" ? .72 : .99, model: `fixture-${s5Fixture}` }
-        : await decideBrowserCandidate(input, signal);
-
-      decisions.push({ at: Date.now(), ms: Date.now() - started, candidateId: d.candidateId, confidence: d.confidence, model: d.model });
-
-      return d;
+      return answers;
     };
 
     if (s5Entry === "loop") {
@@ -2101,7 +2111,7 @@ try {
 
       const outcome = await runBrowserDecisionLoop({
         parentCallId: "qa01-s5-loop", goal: "Open Account hover menu then click Settings", materials: [],
-        signal: AbortSignal.timeout(40_000), call: loopCall, decide: decideOnce,
+        signal: AbortSignal.timeout(40_000), call: loopCall, ask: decideOnce,
       });
 
       const oracle = await pageEval(tabId, `({...window.__s5,log:document.getElementById('s5log')?.textContent})`);
@@ -2219,24 +2229,21 @@ try {
         materials: [],
         signal: AbortSignal.timeout(120_000),
         call: loopCall,
-        decide: async (input, signal) => {
+        ask: async (request, signal) => {
           modelRequests += 1;
           record.modelRequests += 1;
           const started = Date.now();
-          const d = await decideBrowserCandidate(input, signal);
-          // 诊断字段：全跑环境里 S6 的置信度长期卡在 0.78–0.84（阈值 0.85），
-          // 而隔离探针同代码能到 0.91–0.97。需要分辨是候选噪声（switch_tab 泄漏）
-          // 还是视图/scope 差异，才能定位，所以把候选构成一并记进制品。
+          const answers = await askJev(request, signal);
+          // SAFETY: browser-questions.ts writes `controls` as id → description and `page` as { url, part_shown }.
+          const controls = Object.values((request.state.controls ?? {}) as Record<string, string>);
           decisions.push({
-            at: Date.now(), ms: Date.now() - started, candidateId: d.candidateId, confidence: d.confidence, model: d.model,
-            candidates: input.candidates.length,
-            switchTabs: input.candidates.filter((c: any) => c.operation === 'switch_tab').length,
-            viewScopeId: input.page?.viewScopeId,
-            lateTargetInView: input.page?.controls?.some((c) => c.name === 'Late-Target') ?? false,
-            controlsInView: input.page?.controls?.length ?? 0,
+            at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers,
+            partShown: (request.state.page as { part_shown?: string } | undefined)?.part_shown,
+            lateTargetInView: controls.some(d => d.includes('"Late-Target"')),
+            controlsInView: controls.length,
           });
 
-          return d;
+          return answers;
         },
       });
     } catch (e) {
@@ -2264,14 +2271,11 @@ try {
       materials: [],
       signal: AbortSignal.timeout(60_000),
       call: loopCall,
-      decide: async (input) => {
+      ask: async (request, signal) => {
         noneCalls += 1;
-        // choose handoff/done/none rather than random click
-        const handoff = input.candidates.find((c: any) => c.operation === "handoff");
-        const none = input.candidates.find((c: any) => c.id === "none");
-        const pick = handoff ?? none ?? input.candidates.find((c: any) => c.operation === "done");
 
-        return { observationId: input.page.id, candidateId: pick?.id ?? "done", confidence: 0.99, model: "fixture-none" };
+        // Never picks a control: the loop must read every window and hand back without clicking.
+        return scriptedAsk(() => ({}))(request, signal);
       },
     });
     const noneOracle = await pageEval(tabNone, `window.__s6n.total`);
@@ -2306,14 +2310,14 @@ try {
           materials: [],
           signal: AbortSignal.timeout(60_000),
           call: loopCall,
-          decide: async (input, signal) => {
+          ask: async (request, signal) => {
             modelRequests += 1;
             record.modelRequests += 1;
             const started = Date.now();
-            const d = await decideBrowserCandidate(input, signal);
-            decisions.push({ at: Date.now(), ms: Date.now() - started, candidateId: d.candidateId, confidence: d.confidence, model: d.model });
+            const answers = await askJev(request, signal);
+            decisions.push({ at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers });
 
-            return d;
+            return answers;
           },
         });
         sc.realJev = { used: true, modelRequests, decisions, reasonCodes: handoffOutcome?.reasonCode ? [handoffOutcome.reasonCode] : [], elapsedMs: Date.now() - t0 };
@@ -2328,11 +2332,7 @@ try {
         materials: [],
         signal: AbortSignal.timeout(30_000),
         call: loopCall,
-        decide: async (input) => {
-          const h = input.candidates.find((c: any) => c.operation === "handoff");
-
-          return { observationId: input.page.id, candidateId: h?.id ?? "done", confidence: 0.99, model: "fixture" };
-        },
+        ask: scriptedAsk(() => ({})),
       });
     }
 
@@ -2354,7 +2354,9 @@ try {
   });
 
   record.productFilesChanged = [
-    "agent/src/browser-decision-model.ts",
+    "agent/src/browser-decision-loop.ts",
+    "agent/src/browser-questions.ts",
+    "agent/src/jev-client.ts",
     "agent/src/browser-action-selection.ts",
     "extension/src/background/page-events.ts",
     "extension/src/background/debugger.ts",

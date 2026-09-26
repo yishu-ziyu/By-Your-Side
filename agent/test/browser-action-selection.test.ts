@@ -1,180 +1,68 @@
 import {describe,expect,it} from 'vitest';
-import {
-  BROWSER_DECISION_CANDIDATE_LIMIT,
-  BROWSER_DECISION_CONFIDENCE_THRESHOLD,
-  BROWSER_DECISION_PAYLOAD_BYTES,
-  estimateDecisionPayloadBytes,
-  isReliableDecisionConfidence,
-  selectBrowserActionCandidates,
-} from '../src/browser-action-selection.js';
-import {browserCandidates,type BrowserMaterial,type BrowserObservation} from '../../shared/browser-decision.js';
+import {BROWSER_DECISION_CONFIDENCE_THRESHOLD,goalConcernsBrowserTabs} from '../src/browser-action-selection.js';
+import {ACT_THRESHOLD,GOAL_DONE_THRESHOLD,actionableControls,describeControl,sectionName} from '../src/browser-questions.js';
+import type {BrowserObservation} from '../../shared/browser-decision.js';
 
 function page(controls: BrowserObservation['controls'], extra: Partial<BrowserObservation> = {}): BrowserObservation {
-  return {
-    id: 'obs-1',
-    tabId: 7,
-    documentId: 'd1',
-    url: 'https://form.test/',
-    observedAt: Date.now(),
-    source: 'accessibility',
-    text: 'form',
-    truncated: false,
-    controls,
-    ...extra,
-  };
+  return {id: 'obs-1', tabId: 7, documentId: 'd1', url: 'https://form.test/', observedAt: Date.now(), source: 'accessibility', text: 'form', truncated: false, controls, ...extra};
 }
 
-function materials(count: number): BrowserMaterial[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: `m${i + 1}`,
-    value: `FULL-ORIGINAL-VALUE-${i + 1}-${'x'.repeat(40)}`,
-    source: 'user' as const,
-    purpose: `field material ${i + 1}`,
-  }));
-}
-
-describe('SEL-02 bounded action selection', () => {
-  it('keeps fan-out operation+target candidates in one request when under budget', () => {
-    const obs = page([
-      { ref: '@1', role: 'button', name: 'Save', disabled: false },
-      { ref: '@2', role: 'textbox', name: 'Name', value: '', disabled: false },
-    ]);
-
-    const mats = materials(2);
-
-    const selection = selectBrowserActionCandidates({
-      goal: 'fill name',
-      page: obs,
-      materials: mats,
-      history: [],
-      canGenerateText: false,
-    });
-
-    expect(selection.bounded).toBe(false);
-    expect(selection.candidates.some(c => c.operation === 'click' && c.target === '@1')).toBe(true);
-    expect(selection.candidates.filter(c => c.operation === 'fill' && c.valueId).length).toBe(2);
-    expect(selection.decisionMaterials).toEqual(mats);
-    expect(selection.candidates.length).toBeLessThanOrEqual(BROWSER_DECISION_CANDIDATE_LIMIT);
-    expect(estimateDecisionPayloadBytes({
-      goal: 'fill name',
-      page: obs,
-      candidates: selection.candidates,
-      materials: selection.decisionMaterials,
-      history: [],
-    })).toBeLessThanOrEqual(BROWSER_DECISION_PAYLOAD_BYTES);
-  });
-
-  it('30 fields × 12 materials does not throw and stays within candidate/byte budgets', () => {
-    const controls = Array.from({ length: 30 }, (_, i) => ({
-      ref: `@${i + 1}`,
-      role: 'textbox',
-      name: `Field ${i + 1}`,
-      value: '',
-      disabled: false,
-    }));
-
-    const mats = materials(12);
-    const cartesian = browserCandidates(page(controls), mats, false);
-    expect(cartesian.filter(c => c.operation === 'fill').length).toBe(360);
-    expect(cartesian.length).toBeGreaterThan(BROWSER_DECISION_CANDIDATE_LIMIT);
-
-    const selection = selectBrowserActionCandidates({
-      goal: 'fill field 30 with material 12',
-      page: page(controls),
-      materials: mats,
-      history: [],
-      canGenerateText: true,
-    });
-
-    expect(selection.bounded).toBe(true);
-    expect(selection.candidates.length).toBeLessThanOrEqual(BROWSER_DECISION_CANDIDATE_LIMIT);
-    expect(estimateDecisionPayloadBytes({
-      goal: 'fill field 30 with material 12',
-      page: page(controls),
-      candidates: selection.candidates,
-      materials: selection.decisionMaterials,
-      history: [],
-    })).toBeLessThanOrEqual(BROWSER_DECISION_PAYLOAD_BYTES);
-    expect(selection.candidates.some(c => c.operation === 'select_materials')).toBe(true);
-    expect(selection.candidates.some(c => c.operation === 'handoff')).toBe(true);
-    // Focused window restores cartesian fills for only those materials; host originals untouched.
-    const focus = selection.candidates.find(c => c.operation === 'select_materials' && c.materialIds?.includes('m12'))!;
-    expect(focus.materialIds?.every(id => mats.some(m => m.id === id && m.value.startsWith('FULL-ORIGINAL')))).toBe(true);
-
-    const focused = selectBrowserActionCandidates({
-      goal: 'fill field 30 with material 12',
-      page: page(controls),
-      materials: mats,
-      history: [],
-      canGenerateText: false,
-      focusedMaterialIds: focus.materialIds,
-    });
-
-    const fill = focused.candidates.find(c => c.operation === 'fill' && c.target === '@30' && c.valueId === 'm12');
-    expect(fill).toBeTruthy();
-    expect(mats.find(m => m.id === 'm12')!.value).toBe(`FULL-ORIGINAL-VALUE-12-${'x'.repeat(40)}`);
-  });
-
-  it('disabled tools do not become executable candidates; other direct actions stay', () => {
-    const obs = page([
-      { ref: '@1', role: 'button', name: 'Go', disabled: false },
-      { ref: '@2', role: 'textbox', name: 'Q', value: '', disabled: false },
-    ]);
-
-    const selection = selectBrowserActionCandidates({
-      goal: 'click go',
-      page: obs,
-      materials: materials(1),
-      history: [],
-      canGenerateText: false,
-      canExecute: name => name !== 'click',
-    });
-
-    expect(selection.candidates.some(c => c.operation === 'click')).toBe(false);
-    // hover is a separate tool; disabling click must not remove an allowed hover capability.
-    expect(selection.candidates.some(c => c.operation === 'hover')).toBe(true);
-    expect(selection.candidates.some(c => c.operation === 'fill')).toBe(true);
-    expect(selection.candidates.some(c => c.operation === 'scroll')).toBe(true);
-
-    const noHover = selectBrowserActionCandidates({
-      goal: 'click go',
-      page: obs,
-      materials: materials(1),
-      history: [],
-      canGenerateText: false,
-      canExecute: name => name !== 'hover',
-    });
-
-    expect(noHover.candidates.some(c => c.operation === 'hover')).toBe(false);
-    expect(noHover.candidates.some(c => c.operation === 'click')).toBe(true);
-  });
-
-  it('offers continue_read / select_scope when observation reports more windows', () => {
-    const selection = selectBrowserActionCandidates({
-      goal: 'find late control',
-      page: page(
-        [{ ref: '@1', role: 'button', name: 'A', disabled: false }],
-        {
-          hasMore: true,
-          nextCursor: 'cursor-controls-2',
-          collectedCount: 240,
-          visibleCount: 100,
-          scopes: [{ id: 'page:region-b', label: 'Region B', count: 140, complete: true }],
-          viewScopeId: 'page:region-a',
-        },
-      ),
-      materials: [],
-      history: [],
-    });
-
-    expect(selection.candidates.some(c => c.operation === 'continue_read' && c.cursor === 'cursor-controls-2')).toBe(true);
-    expect(selection.candidates.some(c => c.operation === 'select_scope' && c.viewScopeId === 'page:region-b')).toBe(true);
-  });
-
-  it('preserves 0.85 confidence threshold and raw probabilities are not rewritten here', () => {
+describe('thresholds', () => {
+  it('keeps the 0.85 action and completion thresholds', () => {
     expect(BROWSER_DECISION_CONFIDENCE_THRESHOLD).toBe(0.85);
-    expect(isReliableDecisionConfidence(0.84)).toBe(false);
-    expect(isReliableDecisionConfidence(0.85)).toBe(true);
-    expect(isReliableDecisionConfidence(NaN)).toBe(false);
+    expect(ACT_THRESHOLD).toBe(0.85);
+    expect(GOAL_DONE_THRESHOLD).toBe(0.85);
+  });
+});
+
+describe('what Jev reads about controls', () => {
+  // Failure modes: wrapper roles ("generic", "none") read as section names; disabled, protected or
+  // dropdown-owned options become targets; a text field's current value is hidden.
+  it('names sections only when they have a name', () => {
+    expect(sectionName('generic')).toBeUndefined();
+    expect(sectionName('none')).toBeUndefined();
+    expect(sectionName('listitem')).toBeUndefined();
+    expect(sectionName('generic Account')).toBe('"Account"');
+    expect(sectionName('region Late')).toBe('region "Late"');
+    expect(describeControl({ref: '@1', role: 'button', name: 'Go', disabled: false, scopeLabel: 'none'})).toBe('button "Go"');
+    expect(describeControl({ref: '@2', role: 'textbox', name: 'Name', disabled: false, value: 'Ada', scopeLabel: 'form Profile'})).toBe('textbox "Name" in form "Profile" (value "Ada")');
+    expect(describeControl({ref: '@3', role: 'checkbox', name: 'SMS', disabled: false, checked: false})).toBe('checkbox "SMS" (not checked)');
+  });
+
+  it('offers only enabled, unprotected controls that are not options owned by a dropdown', () => {
+    const controls = actionableControls(page([
+      {ref: '@1', role: 'button', name: 'Off', disabled: true},
+      {ref: '@2', role: 'textbox', name: 'Password', disabled: false, protected: true},
+      {ref: '@3', role: 'combobox', name: 'Country', disabled: false, options: [{ref: '@4', label: 'Japan', disabled: false}]},
+      {ref: '@4', role: 'option', name: 'Japan', disabled: false},
+      {ref: '@5', role: 'textbox', name: 'Notes', disabled: false, readOnly: true},
+      {ref: '@6', role: 'link', name: 'Docs', disabled: false},
+    ]));
+
+    expect(controls.map(c => c.ref)).toEqual(['@3', '@6']);
+  });
+});
+
+describe('browser tabs follow the goal', () => {
+  // Failure modes: unrelated tabs dilute an in-page choice; a goal that names a tab loses the switch;
+  // "table"/"tablet" count as tab words; a host or title mention is ignored.
+  const tabs = [
+    { id: 7, title: 'Account settings', url: 'https://form.test/', active: true, windowId: 1, working: true },
+    { id: 9, title: 'Reference Docs', url: 'https://docs.example.org/guide', active: false, windowId: 1, working: false },
+    { id: 11, title: 'about:blank', url: 'about:blank', active: false, windowId: 1, working: false },
+  ];
+
+  const obs = page([{ ref: '@1', role: 'menuitem', name: 'Settings', disabled: false }], { tabs });
+
+  it('ignores tabs when the goal is about the current page', () => {
+    expect(goalConcernsBrowserTabs('Open Account hover menu then click Settings', obs)).toBe(false);
+    expect(goalConcernsBrowserTabs('Sort the table by date\nclick the tablet filter', obs)).toBe(false);
+  });
+
+  it('asks about tabs when the goal refers to tabs or names one', () => {
+    expect(goalConcernsBrowserTabs('Switch to the Reference Docs tab', obs)).toBe(true);
+    expect(goalConcernsBrowserTabs('切到另一个标签页', obs)).toBe(true);
+    expect(goalConcernsBrowserTabs('go back to reference docs', obs)).toBe(true);
+    expect(goalConcernsBrowserTabs('open the guide on docs.example.org', obs)).toBe(true);
   });
 });

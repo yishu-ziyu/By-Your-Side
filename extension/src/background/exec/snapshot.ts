@@ -43,7 +43,7 @@ interface SnapshotRead extends SnapshotBody {
  * 同处数字空间，不清会导致后续 @N 经 isAxRef 误走 CDP。
  */
 export async function snapshot(
-  params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string },
+  params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string; fresh?: boolean },
   sessionId: string = LEAD_SESSION_ID,
 ): Promise<{ text: string; tabId: number; documentId?:string; textEvidence?:PageTextEvidence; url?:string; translation?:TranslationDisplayState|null; marks?:HostDrawnMark[]; observation?:BrowserObservation }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
@@ -86,7 +86,10 @@ export async function snapshot(
 
   if(viewport[0]?.documentId!==captured.documentId)throw new Error('DECISION_STALE: 页面在观察期间变化。');
   const tabs=(await listTabs(sessionId)).tabs.filter(t=>!t.url.startsWith(chrome.runtime.getURL('')));
-  const continuing = !!(params.cursor || params.viewScopeId);
+
+  if (params.fresh && params.cursor) throw new Error('DECISION_CURSOR: 新采集不能带续读游标。');
+  // fresh + viewScopeId: collect again, then show that partition if it still exists.
+  const continuing = !params.fresh && !!(params.cursor || params.viewScopeId);
   const active = continuing ? browserObservations.readActive(sessionId, tab.id) : undefined;
 
   if (continuing) {
@@ -101,7 +104,7 @@ export async function snapshot(
   const collectedControls = active?.collected ?? controls;
   const collectedTabs = active?.collectedTabs ?? tabs;
 
-  const view = selectObservationView({
+  const viewInput = {
     collected: collectedControls,
     tabs: collectedTabs,
     collectionComplete: continuing
@@ -112,7 +115,17 @@ export async function snapshot(
     textTruncated: continuing ? !!(active!.page.textTruncated ?? active!.page.truncated) : !!truncated,
     cursor: params.cursor,
     viewScopeId: params.viewScopeId,
-  });
+  };
+
+  let view: ReturnType<typeof selectObservationView>;
+
+  try {
+    view = selectObservationView(viewInput);
+  } catch (e) {
+    // The acted-on partition can disappear (navigation, closed menu); the fresh page's default view is still true.
+    if (!params.fresh || !params.viewScopeId) throw e;
+    view = selectObservationView({ ...viewInput, viewScopeId: undefined });
+  }
 
   // Register every collected AX identity for execution — not only text-rendered refs.
   // Merge: the text refs of this capture were registered by axSnapshot and stay executable (e.g. mark on a text node).

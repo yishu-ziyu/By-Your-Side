@@ -1,22 +1,35 @@
-import { isBrowserObservation, type BrowserMaterial, type BrowserObservation, type BrowserLoopOutcome, type BrowserStepReceipt, type BrowserActionGuard, type BrowserDecisionReasonCode, type BrowserContinueHint } from '../../shared/browser-decision.js';
-import type { ToolName, ToolExecutionFact } from '../../shared/protocol.js';
-import { decideBrowserCandidate, type BrowserDecisionInput } from './browser-decision-model.js';
-import type { BrowserDecision, BrowserControl } from '../../shared/browser-decision.js';
+import { isBrowserObservation, type BrowserActionGuard, type BrowserContinueHint, type BrowserControl, type BrowserDecisionReasonCode, type BrowserLoopOutcome, type BrowserMaterial, type BrowserObservation, type BrowserOperation, type BrowserStepReceipt } from '../../shared/browser-decision.js';
 import { browserContextChange } from '../../shared/browser-decision-context.js';
-import type { BrowserMaterialResult } from './browser-material.js';
+import type { ToolExecutionFact, ToolName } from '../../shared/protocol.js';
 import {
   checkedRangeFromKeys,
+  goalConcernsBrowserTabs,
   humanReasonForCode,
-  materialWindowKey,
+  modelToolForOperation,
   nextObservationExpansion,
-  nextMaterialWindow,
   observationCheckKey,
   piContinueHint,
-  resolveBrowserDecision,
-  selectBrowserActionCandidates,
   type BrowserToolGate,
   type ObservationCheckKey,
 } from './browser-action-selection.js';
+import type { BrowserMaterialResult } from './browser-material.js';
+import {
+  InvalidAnswer,
+  RISK_BLOCK,
+  actKind,
+  actionableControls,
+  buildActRequest,
+  buildLocateRequest,
+  composeAct,
+  composeLocate,
+  controlKey,
+  controlSetSignature,
+  describeControl,
+  loopQuestionRequest,
+  markControl,
+  nameControl,
+} from './browser-questions.js';
+import { JEV_MODEL, askJev, type AskJev, type JevAnswers, type JevRequest, type JevTrace } from './jev-client.js';
 
 export interface BrowserLoopOptions {
   /** Actual host tool call ID; child IDs are shared with RPC and step events. */
@@ -25,7 +38,10 @@ export interface BrowserLoopOptions {
   materials: BrowserMaterial[];
   signal: AbortSignal;
   call: (name: ToolName, params: Record<string, unknown>, toolCallId: string) => Promise<unknown>;
-  decide?: (input: BrowserDecisionInput, signal: AbortSignal) => Promise<BrowserDecision>;
+  /** Jev judgment; tests and diagnostics replace it. */
+  ask?: AskJev;
+  /** Diagnostics only (fixture inputs): every Jev request/response of this loop. */
+  onTrace?: (event: JevTrace) => void;
   reserveDecision?: () => void;
   getMaterial?: (goal: string, control: BrowserControl, signal: AbortSignal) => Promise<BrowserMaterialResult>;
   onStep?: (receipt: BrowserStepReceipt) => void;
@@ -33,68 +49,61 @@ export interface BrowserLoopOptions {
   canExecute?: BrowserToolGate;
 }
 
-/** Bounded general action loop. DONE never marks the task complete: the caller must verify. */
+/** Jev requests per loop, including the small per-action requests. */
+const DECISION_CALL_BUDGET = 16;
+
+const TEXT_HELPER_BUDGET = 8;
+
+/**
+ * Bounded browser loop built on narrow Jev questions (browser-questions.ts). Code owns the flow and every
+ * side effect; `needs_verification` means Jev judged the request done from code-written action facts,
+ * which the caller still treats as a proposal unless direct delivery is switched on.
+ */
 export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promise<BrowserLoopOutcome> {
-  const receipts: BrowserStepReceipt[] = [];
-  const history: string[] = [];
-  /** Host keeps full original materials; decision windows never replace these values. */
+  const ask = options.ask ?? askJev;
+  const request = loopQuestionRequest(options.goal);
+  const goalText = typeof request.whole_task === 'string' ? `${request.task as string}\n${request.whole_task}` : request.task as string;
   const hostMaterials = options.materials.map(m => ({ ...m }));
-  let focusedMaterialIds: string[] | undefined;
-  /** Material windows this task already inspected; a window is never re-offered as fresh progress. */
-  const checkedMaterialWindows = new Set<string>();
-  /** True while the loop — not the model — is choosing which material window to read next. */
-  let materialWindowSearch = false;
-  let textCalls = 0;
-  let page: BrowserObservation | undefined;
-  let modelCalls = 0;
-  let stale = 0;
-  let noProgress = 0;
-  let waits = 0;
-  let seq = 0;
+  const receipts: BrowserStepReceipt[] = [];
   const decisions: BrowserLoopOutcome['decisions'] = [];
+  /** Code-written facts for Jev: what happened, never advice to an executor. */
+  const actionsDone: string[] = [];
+  const acted = new Set<string>();
+  const hovered = new Set<string>();
+  const hoverShowedNothing = new Set<string>();
   const checkedKeys = new Set<ObservationCheckKey>();
+  const readSignatures = new Set<string>();
   const seenObservationIds: string[] = [];
+  const clicks: Array<{ name: string; risk: number }> = [];
+  let page: BrowserObservation | undefined;
+  let fromRead = false;
+  let lastSearchFill: BrowserControl | undefined;
+  let modelCalls = 0;
+  let textCalls = 0;
+  let stale = 0;
+  let seq = 0;
   const start = Date.now();
   const hasUnknown = () => receipts.some(r => r.executionFact === 'unknown');
 
-  const range = (): NonNullable<BrowserContinueHint['checkedRange']> =>
-    checkedRangeFromKeys(checkedKeys, seenObservationIds);
-
-  const finish = (
-    status: BrowserLoopOutcome['status'],
-    reason: string,
-    reasonCode?: BrowserDecisionReasonCode,
-    cont?: BrowserContinueHint,
-  ): BrowserLoopOutcome => {
-    const outcome: BrowserLoopOutcome = {
-    status,
-    reason,
-    receipts,
-    lastObservation: page,
-    modelCalls,
-    decisions,
-    };
+  const finish = (status: BrowserLoopOutcome['status'], reason: string, reasonCode?: BrowserDecisionReasonCode, cont?: BrowserContinueHint): BrowserLoopOutcome => {
+    const outcome: BrowserLoopOutcome = { status, reason, receipts, lastObservation: page, modelCalls, decisions };
 
     if (reasonCode) outcome.reasonCode = reasonCode;
+    const range = checkedRangeFromKeys(checkedKeys, seenObservationIds);
 
     if (cont) outcome.continue = cont;
-    else if (reasonCode) outcome.continue = piContinueHint(reasonCode, range(), hasUnknown());
-    else if (seenObservationIds.length) outcome.continue = { action: 'session_prompt', checkedRange: range(), preserveFacts: hasUnknown() };
+    else if (reasonCode) outcome.continue = piContinueHint(reasonCode, range, hasUnknown());
+    else if (seenObservationIds.length) outcome.continue = { action: 'session_prompt', checkedRange: range, preserveFacts: hasUnknown() };
 
     return outcome;
   };
 
-  const finishCode = (status: BrowserLoopOutcome['status'], reasonCode: BrowserDecisionReasonCode, reason = humanReasonForCode(reasonCode)) =>
-    finish(status, reason, reasonCode);
+  const finishCode = (status: BrowserLoopOutcome['status'], reasonCode: BrowserDecisionReasonCode, reason = humanReasonForCode(reasonCode)) => finish(status, reason, reasonCode);
 
   const active = () => {
-    if (options.signal.aborted) {
-      throw new Error('调用已取消');
-    }
+    if (options.signal.aborted) throw new Error('调用已取消');
 
-    if (Date.now() - start > 90000) {
-      throw new Error('任务循环时长预算已用完');
-    }
+    if (Date.now() - start > 90000) throw new Error('任务循环时长预算已用完');
   };
 
   const nextCallId = () => `${options.parentCallId}/decision-${++seq}`;
@@ -107,55 +116,73 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
 
   const note = (r: BrowserStepReceipt) => {
     receipts.push(r);
-    // Preserve the decision model's history text while receipts use separate facts.
-    const historyLabel = r.executionFact === 'executed' ? (r.verification === 'verified' ? 'verified' : 'executed_unverified') : r.executionFact;
-    history.push(`${r.operation}: ${r.detail} [${historyLabel}]`);
     options.onStep?.(r);
   };
 
-  /**
-   * Register an observation for identity/continue bookkeeping. Deliberately does not assign `page`:
-   * `page` is only assigned in this function body so control-flow narrowing stays valid.
-   */
-  const trackObservation = (next: BrowserObservation) => {
+  const track = (next: BrowserObservation) => {
     if (!seenObservationIds.includes(next.id)) seenObservationIds.push(next.id);
     checkedKeys.add(observationCheckKey('observation', next.id));
+
+    if (next.viewScopeId) checkedKeys.add(observationCheckKey('scope', next.viewScopeId));
+
+    // The whole page in one complete view already shows every partition: none is left to read.
+    if (!next.viewScopeId && !next.hasMore) for (const scope of next.scopes ?? []) checkedKeys.add(observationCheckKey('scope', scope.id));
   };
 
-  /** Host-owned view label for history, so the model sees which range it is looking at. */
-  const viewLabel = (next: BrowserObservation) => `"${next.viewScopeLabel ?? 'current view'}" (${next.visibleCount ?? next.controls.length} controls)`;
-
-  /**
-   * Read the next unread observation window without inventing a miss.
-   * Returns the new observation; the caller records how the range was searched.
-   */
-  const expandObservation = async (): Promise<BrowserObservation | undefined> => {
-    if (!page) return undefined;
-    const expansion = nextObservationExpansion(page, checkedKeys);
-
-    if (!expansion) return undefined;
-    checkedKeys.add(expansion.checkKey);
-    const raw = await call('snapshot', { decision: true, ...expansion.params });
+  const observe = async (params: Record<string, unknown>): Promise<BrowserObservation | undefined> => {
+    const raw = await call('snapshot', { decision: true, ...params });
     const next = (raw as { observation?: unknown })?.observation;
 
     return isBrowserObservation(next) ? next : undefined;
   };
 
+  /** Fresh capture of the partition the action happened in, so its result is judged in the same view. */
+  const reobserve = (from: BrowserObservation) => observe(from.viewScopeId ? { viewScopeId: from.viewScopeId, fresh: true } : {});
+
+  const allowed = (operation: BrowserOperation) => {
+    const tool = modelToolForOperation(operation);
+
+    return !options.canExecute || !tool || options.canExecute(tool);
+  };
+
+  /** One Jev request under the shared budget; the answer is recorded as a decision. */
+  const judge = async (jevRequest: JevRequest): Promise<JevAnswers> => {
+    if (modelCalls >= DECISION_CALL_BUDGET) throw new BudgetSpent();
+    active();
+    options.reserveDecision?.();
+    modelCalls++;
+
+    return ask(jevRequest, options.signal, options.onTrace ? { onTrace: options.onTrace } : undefined);
+  };
+
+  const record = (observationId: string, what: string, confidence: number, startedAt: number) => {
+    decisions.push({ observationId, candidateId: what, confidence, model: JEV_MODEL, elapsedMs: Date.now() - startedAt });
+  };
+
   /**
-   * Read the next uninspected material window, in supplied order. Windows are host-owned ranges, so
-   * walking them continues the same search under the same budget instead of guessing or repeating.
-   * Never executes anything: the model still answers every window request.
+   * Execute one guarded write/hover. Stale guards re-observe (bounded); anything else unknown stops.
+   * Returns the executor result, or a finished outcome.
    */
-  const advanceMaterialWindow = (): boolean => {
-    const next = nextMaterialWindow(hostMaterials, checkedMaterialWindows);
+  const execute = async (operation: 'click' | 'fill' | 'hover' | 'press_key', control: BrowserControl, params: Record<string, unknown>, reported: BrowserOperation = operation): Promise<{ result: unknown; toolCallId: string } | { stop: BrowserLoopOutcome } | { retry: true }> => {
+    const current = page!;
+    const guard: BrowserActionGuard = { observationId: current.id, operation, target: control.ref };
+    const toolCallId = nextCallId();
 
-    if (!next) return false;
-    checkedMaterialWindows.add(materialWindowKey(next));
-    focusedMaterialIds = [...next];
-    materialWindowSearch = true;
-    history.push(`Checked material window ${next.join('+')}: no candidate satisfied the goal.`);
+    try {
+      const result = await call(operation, { tabId: current.tabId, target: control.ref, decisionGuard: guard, ...params }, toolCallId);
 
-    return true;
+      return { result, toolCallId };
+    } catch (e) {
+      const error = e as Error & { executionFact?: string };
+      const executionFact: ToolExecutionFact = error.executionFact === 'not_executed' ? 'not_executed' : 'unknown';
+      note({ toolCallId, observationId: current.id, candidateId: control.ref, operation: reported, executionFact, verification: 'unverified', detail: error.message });
+
+      if (executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) return { retry: true };
+
+      if (options.signal.aborted) return { stop: finish('cancelled', '任务已取消') };
+
+      return { stop: finishCode('handoff', executionFact === 'not_executed' ? 'stale_observation' : 'execution_unknown', '动作失败或结果未知，已停止；核对真实状态后再规划，不重放写入') };
+    }
   };
 
   if (!options.goal.trim() || options.goal.length > 12000 || options.materials.length > 12 || new Set(options.materials.map(m => m.id)).size !== options.materials.length || options.materials.some(m => !m.id || typeof m.value !== 'string' || m.value.length > 8000 || !['user', 'generated', 'observed'].includes(m.source))) {
@@ -167,516 +194,337 @@ export async function runBrowserDecisionLoop(options: BrowserLoopOptions): Promi
       active();
 
       if (!page) {
-        const raw = await call('snapshot', { decision: true });
+        const next = await observe({});
 
-        const next = (raw as {
-          observation?: unknown;
-        })?.observation;
-
-        if (!isBrowserObservation(next)) {
-          return finishCode('handoff', 'observation_incomplete', '浏览器未返回带身份的结构化观察');
-        }
-
+        if (!next) return finishCode('handoff', 'observation_incomplete', '浏览器未返回带身份的结构化观察');
         page = next;
-        trackObservation(next);
+        track(next);
+        fromRead = false;
       }
 
-      // Legacy conflated truncated (no split flags) still hand off. Prose-only clip and
-      // view pagination (hasMore) must not erase a usable control/tab window.
+      // A clipped collection with nothing in view is not "no target": read the next window or hand back.
       const legacyConflated = page.truncated && page.textTruncated === undefined && page.controlsTruncated === undefined;
 
-      if ((legacyConflated || page.controlsTruncated) && !page.controls.length && !page.tabs?.length) {
-        const expanded = await expandObservation();
+      if ((legacyConflated || page.controlsTruncated) && !page.controls.length && !page.tabs?.length || legacyConflated && !page.tabs?.length) {
+        const expansion = nextObservationExpansion(page, checkedKeys);
+        const next = expansion ? (checkedKeys.add(expansion.checkKey), await observe(expansion.params)) : undefined;
 
-        if (expanded) {
-          history.push(`Read observation window ${viewLabel(expanded)} because the control view was truncated.`);
-          page = expanded;
-          trackObservation(expanded);
-          waits = 0;
-          continue;
-        }
-
-        return finishCode('handoff', 'observation_incomplete', '控件观察被截断，不能把缺失候选当成全部页面');
-      }
-
-      if (legacyConflated && !page.tabs?.length) {
-        const expanded = await expandObservation();
-
-        if (expanded) {
-          history.push(`Read observation window ${viewLabel(expanded)} because the control view was truncated.`);
-          page = expanded;
-          trackObservation(expanded);
-          waits = 0;
-          continue;
-        }
-
-        return finishCode('handoff', 'observation_incomplete', '控件观察被截断，不能把缺失候选当成全部页面');
-      }
-
-      const selection = selectBrowserActionCandidates({
-        goal: options.goal,
-        page,
-        materials: hostMaterials,
-        history,
-        canGenerateText: !!options.getMaterial,
-        canExecute: options.canExecute,
-        focusedMaterialIds,
-        checkedRanges: checkedKeys,
-        checkedMaterialWindows,
-        materialWindowSearch,
-        // Unread ranges of this task are read before any other browser tab is considered.
-        searchInProgress: !!nextObservationExpansion(page, checkedKeys)
-          || !!nextMaterialWindow(hostMaterials, checkedMaterialWindows)
-          || !!focusedMaterialIds,
-      });
-
-      const candidates = selection.candidates;
-      const decisionMaterials = selection.decisionMaterials;
-
-      if (modelCalls >= 16) {
-        return finishCode('handoff', 'candidate_budget', '已达到 16 次决策调用预算');
-      }
-
-      active();
-      options.reserveDecision?.();
-      modelCalls++;
-      const decidedAt = Date.now();
-      let decision: BrowserDecision;
-
-      try {
-        decision = await (options.decide ?? decideBrowserCandidate)({ goal: options.goal, page, candidates, materials: decisionMaterials, history }, options.signal);
-      } catch (e) {
-        if (options.signal.aborted) throw e;
-        const message = e instanceof Error ? e.message : '决策服务不可用';
-
-        // Payload budget is a local constraint, not a page miss.
-        if (message.includes('候选资料超过当前决策预算')) {
-          return finishCode('handoff', 'candidate_budget', message);
-        }
-
-        return finishCode('handoff', 'provider_error', message);
-      }
-
-      decisions.push({ ...decision, elapsedMs: Date.now() - decidedAt });
-      active();
-      const verdict = resolveBrowserDecision(decision, candidates, page.id);
-
-      if (verdict.kind === 'reject') {
-        // Incomplete / no local match: read unobserved windows before claiming absence. A model-named
-        // material window is read next even when the naming decision itself was under-confident — it
-        // chooses the range, never an action. Stale/invalid decisions never execute or retry here.
-        if (verdict.reasonCode === 'no_match' || verdict.reasonCode === 'low_confidence' || verdict.reasonCode === 'observation_incomplete') {
-          const expanded = await expandObservation();
-
-          if (expanded) {
-            history.push(`Checked partition ${viewLabel(page)}: no matching target.`);
-            page = expanded;
-            trackObservation(expanded);
-            history.push(`Read observation window ${viewLabel(expanded)}.`);
-            waits = 0;
-            continue;
-          }
-
-          if (advanceMaterialWindow()) continue;
-        }
-
-        return finishCode('handoff', verdict.reasonCode, verdict.reason);
-      }
-
-      const candidate = verdict.candidate;
-
-      if (candidate.operation === 'done') {
-        return finish('needs_verification', '决策模型建议完成；必须根据新观察独立核对用户全部要求，不能直接报完成');
-      }
-
-      if (candidate.operation === 'handoff') {
-        const code: BrowserDecisionReasonCode = selection.bounded ? 'candidate_budget' : 'unsupported_action';
-
-        return finishCode('handoff', code, '当前步骤需要补充材料、能力或开放式推理');
-      }
-
-      if (candidate.operation === 'select_materials') {
-        if (!candidate.materialIds?.length || candidate.materialIds.some(id => !hostMaterials.some(m => m.id === id))) {
-          return finishCode('handoff', 'invalid_decision', '材料窗口不在宿主材料中');
-        }
-
-        focusedMaterialIds = [...candidate.materialIds];
-        checkedMaterialWindows.add(materialWindowKey(focusedMaterialIds));
-        materialWindowSearch = false;
-        history.push(`select_materials: focused ${focusedMaterialIds.join(',')} [prepared]`);
-        continue;
-      }
-
-      if (candidate.operation === 'continue_read' || candidate.operation === 'select_scope') {
-        if (candidate.cursor) checkedKeys.add(observationCheckKey('cursor', candidate.cursor));
-
-        if (candidate.viewScopeId) checkedKeys.add(observationCheckKey('scope', candidate.viewScopeId));
-        const params: Record<string, unknown> = { decision: true };
-
-        if (candidate.cursor) params.cursor = candidate.cursor;
-
-        if (candidate.viewScopeId) params.viewScopeId = candidate.viewScopeId;
-        const raw = await call('snapshot', params);
-        const next = (raw as { observation?: unknown })?.observation;
-
-        if (!isBrowserObservation(next)) {
-          return finishCode('handoff', 'observation_incomplete', '续读未返回带身份的结构化观察');
-        }
-
-        history.push(`Read observation window ${viewLabel(next)} via ${candidate.operation}.`);
+        if (!next) return finishCode('handoff', 'observation_incomplete', '控件观察被截断，不能把缺失候选当成全部页面');
         page = next;
-        trackObservation(next);
-        waits = 0;
+        track(next);
+        fromRead = true;
         continue;
       }
 
-      if (candidate.operation === 'wait' || candidate.operation === 'reobserve') {
-        if (++waits > 2) {
-          return finishCode('handoff', 'no_match', '连续等待/重读没有取得进展');
-        }
+      const signature = controlSetSignature(actionableControls(page, acted));
+      const repeatRead = fromRead && readSignatures.has(signature);
+      readSignatures.add(signature);
+      let verdict: ReturnType<typeof composeLocate> | undefined;
 
-        await new Promise<void>((resolve, reject) => {
-          const done = () => {
-            options.signal.removeEventListener('abort', abort);
-            resolve();
-          };
-
-          const timer = setTimeout(done, 200);
-
-          const abort = () => {
-            clearTimeout(timer);
-            reject(new Error('调用已取消'));
-          };
-
-          options.signal.addEventListener('abort', abort, { once: true });
-
-          if (options.signal.aborted) {
-            abort();
-          }
-        });
-        page = undefined;
-        continue;
-      }
-
-      if (candidate.operation === 'switch_tab') {
-        const target = page.tabs?.find(t => t.id === candidate.tabId);
-
-        if (!target) {
-          return finishCode('handoff', 'no_match', '目标标签页不在当前观察中');
-        }
-
-        const toolCallId = nextCallId();
-        let executed = false;
-
-        try {
-          await call('switch_tab', { tabId: target.id, decisionGuard: { observationId: page.id, operation: 'switch_tab', sourceTabId: page.tabId } }, toolCallId);
-          executed = true;
-          active();
-          const verificationToolCallId = nextCallId();
-
-          const actual = await call('get_active_tab', {}, verificationToolCallId) as {
-            tab?: {
-              id: number;
-              url: string;
-              title: string;
-            } | null;
-          };
-
-          active();
-
-          if (actual.tab?.id !== target.id || actual.tab.url !== target.url || actual.tab.title !== target.title) {
-            throw new Error('当前活动标签页与目标不一致');
-          }
-
-          note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: 'switch_tab', executionFact: 'executed', verification: 'verified', verificationToolCallId, detail: `已切到「${target.title}」，活动标签页与原观察一致；完整任务仍需核验` });
-        }
-        catch (e) {
-          const error = e as Error & {
-            executionFact?: string;
-          };
-
-          let executionFact: ToolExecutionFact;
-
-          if (executed) {
-            executionFact = 'executed';
-          } else if (error.executionFact === 'not_executed') {
-            executionFact = 'not_executed';
-          } else {
-            executionFact = 'unknown';
-          }
-
-          note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: 'switch_tab', executionFact, verification: 'unverified', detail: error.message });
-
-          if (executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
-            page = undefined;
-            continue;
-          }
-
-          if (options.signal.aborted) return finish('cancelled', '任务已取消');
-          const code: BrowserDecisionReasonCode = executionFact === 'unknown' ? 'execution_unknown' : 'stale_observation';
-
-          return finishCode('handoff', code, '标签切换未核验，保留回执并交回任务模型');
-        }
-
-        // The common next observation lets a mixed goal continue on the chosen tab.
-        page = undefined;
-        stale = 0;
-        noProgress = 0;
-        waits = 0;
-        continue;
-      }
-
-      if (candidate.operation === 'hover') {
-        if (!candidate.target) {
-          return finishCode('handoff', 'invalid_decision', '悬停目标不在当前观察中');
-        }
-
-        const guard: BrowserActionGuard = { observationId: page.id, operation: 'hover', target: candidate.target };
-        const toolCallId = nextCallId();
-
-        try {
-          await call('hover', { tabId: page.tabId, target: candidate.target, decisionGuard: guard }, toolCallId);
-        }
-        catch (e) {
-          const error = e as Error & { executionFact?: string };
-          note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: 'hover', executionFact: error.executionFact === 'not_executed' ? 'not_executed' : 'unknown', verification: 'unverified', detail: error.message });
-
-          if (error.executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
-            page = undefined;
-            continue;
-          }
-
-          if (options.signal.aborted) return finish('cancelled', '任务已取消');
-          const code: BrowserDecisionReasonCode = error.executionFact === 'not_executed' ? 'stale_observation' : 'execution_unknown';
-
-          return finishCode('handoff', code, '悬停失败或结果未知，已停止');
-        }
-
-        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: 'hover', executionFact: 'executed', verification: 'unverified', detail: `${candidate.label}：已悬停，必须用新观察再选点击目标；不代表任务完成` });
-        // Force a fresh observation so revealed controls can enter the next candidate set.
-        const afterRaw = await call('snapshot', { decision: true });
-        const after = (afterRaw as { observation?: unknown })?.observation;
-
-        if (!isBrowserObservation(after)) {
-          return finishCode('handoff', 'observation_incomplete', '悬停后没有取得可靠的新观察');
-        }
-
-        page = after;
-        trackObservation(after);
-        stale = 0;
-        waits = 0;
-        noProgress = 0;
-        continue;
-      }
-
-      let fillValue: string | undefined = candidate.optionLabel ?? hostMaterials.find(m => m.id === candidate.valueId)?.value;
-
-      if (candidate.operation === 'fill' && fillValue === undefined) {
-        const control = page.controls.find(c => c.ref === candidate.target);
-
-        if (!control || !options.getMaterial || textCalls >= 8) {
-          return finishCode('handoff', 'unsupported_action', '缺少字段资料或已用完字段生成预算');
-        }
-
-        textCalls++;
-        const generated = await options.getMaterial(options.goal, control, options.signal);
+      if (!repeatRead) {
+        const unreadScopes = (page.scopes ?? []).filter(s => s.id !== page!.viewScopeId && !checkedKeys.has(observationCheckKey('scope', s.id)));
+        const otherTabs = goalConcernsBrowserTabs(goalText, page) && allowed('switch_tab') ? (page.tabs ?? []).filter(t => t.id !== page!.tabId) : [];
+        const located = buildLocateRequest({ request, page, actionsDone, acted, unreadScopes, tabs: otherTabs });
+        const startedAt = Date.now();
+        const answers = await judge(located.request);
         active();
+        verdict = composeLocate(answers, located, { hasActions: actionsDone.length > 0, hovered, hoverShowedNothing });
+        record(page.id, 'control' in verdict ? `${verdict.kind}:${verdict.control.ref}` : verdict.kind === 'switch_tab' ? `switch_tab:${verdict.tab.id}` : verdict.kind, verdict.confidence, startedAt);
 
-        if (generated.kind === 'missing') {
-          return finishCode('handoff', 'unsupported_action', generated.reason);
+        if (verdict.kind === 'done') {
+          const outcome = finish('needs_verification', '完成判断达到门槛（依据代码记录的动作事实）；未经主模型复核');
+          outcome.completion = { confidence: verdict.confidence, facts: [...actionsDone], lowRiskWrites: clicks.every(c => c.risk < RISK_BLOCK), clicked: clicks.map(c => c.name) };
+
+          return outcome;
         }
 
-        const afterRaw = await call('snapshot', { decision: true });
+        if (verdict.kind === 'unsure') return finishCode('handoff', 'low_confidence', `不确定是否是 ${describeControl(verdict.control)}（${verdict.confidence.toFixed(2)}），未执行`);
 
-        const refreshed = (afterRaw as {
-          observation?: unknown;
-        })?.observation;
+        if (verdict.kind === 'switch_tab') {
+          const target = verdict.tab;
+          const toolCallId = nextCallId();
+          let executed = false;
+          let inFront = false;
 
-        if (!isBrowserObservation(refreshed) || (refreshed.controlsTruncated && !refreshed.controls.length)) {
-          return finishCode('handoff', 'observation_incomplete', '字段资料已准备，但新观察不完整，未写入');
-        }
+          try {
+            const switched = await call('switch_tab', { tabId: target.id, decisionGuard: { observationId: page.id, operation: 'switch_tab', sourceTabId: page.tabId } }, toolCallId) as { verification?: { workingTabId?: number | null; activeTabId?: number } } | undefined;
+            executed = true;
 
-        const changed = browserContextChange(page, refreshed, candidate.target);
-        page = refreshed;
-        trackObservation(refreshed);
+            // The executor reads back which tab the agent now works in; bringing it to front depends on whether the conversation is visible.
+            if (switched?.verification?.workingTabId !== target.id) throw new Error('工作标签页没有切到目标');
+            inFront = switched.verification.activeTabId === target.id;
+            note({ toolCallId, observationId: page.id, candidateId: `browser-tab-${target.id}`, operation: 'switch_tab', executionFact: 'executed', verification: 'unverified', detail: `已把工作标签页切到「${target.title}」${inFront ? '，并在窗口中显示' : ''}` });
+          } catch (e) {
+            const error = e as Error & { executionFact?: string };
+            const executionFact: ToolExecutionFact = executed ? 'executed' : error.executionFact === 'not_executed' ? 'not_executed' : 'unknown';
+            note({ toolCallId, observationId: page.id, candidateId: `browser-tab-${target.id}`, operation: 'switch_tab', executionFact, verification: 'unverified', detail: error.message });
 
-        if (changed) {
-          history.push(`Prepared field text was not written: ${changed}`);
+            if (executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
+              page = undefined;
+              continue;
+            }
 
-          if (++stale > 2) {
-            return finishCode('handoff', 'stale_observation', '生成期间页面持续变化，未写入');
+            if (options.signal.aborted) return finish('cancelled', '任务已取消');
+
+            return finishCode('handoff', executionFact === 'unknown' ? 'execution_unknown' : 'stale_observation', '标签切换未核验，保留回执并交回任务模型');
           }
 
-          continue;
-        }
-
-        fillValue = generated.material.value;
-        hostMaterials.push({ ...generated.material, id: `prepared-${textCalls}-${control.ref}` });
-
-        if (fillValue === control.value) {
-          history.push(`Field ${control.name} already has the requested value; no write performed`);
-
-          if (++noProgress >= 2) {
-            return finishCode('handoff', 'no_match', '字段已经满足但没有其他可执行进展');
-          }
-
-          continue;
-        }
-      }
-
-      let operation: 'click' | 'fill' | 'press_key' | 'scroll' = candidate.operation === 'select' ? 'fill' : candidate.operation as 'click' | 'fill' | 'press_key' | 'scroll';
-      let actionTarget = candidate.target;
-
-      if (candidate.operation === 'select') {
-        const element = await call('read_element', { tabId: page.tabId, target: candidate.target }) as {
-          tagName?: string;
-        };
-
-        if (element.tagName?.toLowerCase() !== 'select') {
-          if (!candidate.optionRef || !page.controls.some(c => c.ref === candidate.optionRef && !c.disabled)) {
-            return finishCode('handoff', 'no_match', '选项没有可执行的当前对象引用');
-          }
-
-          operation = 'click';
-          actionTarget = candidate.optionRef;
-        }
-      }
-
-      const guard: BrowserActionGuard = { observationId: page.id, operation };
-
-      if (actionTarget) guard.target = actionTarget;
-      const params: Record<string, unknown> = { tabId: page.tabId, decisionGuard: guard };
-
-      if (actionTarget) params.target = actionTarget;
-
-      if (candidate.key) params.key = candidate.key;
-
-      if (candidate.dy) params.dy = candidate.dy;
-
-      if (operation === 'fill') {
-        params.value = fillValue;
-      }
-
-      const toolCallId = nextCallId();
-      let result: unknown;
-
-      try {
-        result = await call(operation, params, toolCallId);
-      }
-      catch (e) {
-        const error = e as Error & {
-          executionFact?: string;
-        };
-
-        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: error.executionFact === 'not_executed' ? 'not_executed' : 'unknown', verification: 'unverified', detail: error.message });
-
-        if (error.executionFact === 'not_executed' && error.message.includes('DECISION_STALE:') && ++stale <= 2) {
+          actionsDone.push(`Switched to the browser tab "${target.title}" (${target.url})${inFront ? '; it is now the active tab' : '; the agent now works in it'}.`);
           page = undefined;
+          stale = 0;
           continue;
         }
 
-        if (options.signal.aborted) return finish('cancelled', '任务已取消');
-        const code: BrowserDecisionReasonCode = error.executionFact === 'not_executed' ? 'stale_observation' : 'execution_unknown';
+        if (verdict.kind === 'reveal') {
+          const control = verdict.control;
 
-        return finishCode('handoff', code, '动作失败或结果未知，已停止；核对真实状态后再规划，不重放写入');
+          if (!allowed('hover')) return finishCode('handoff', 'unsupported_action', '需要悬停展开菜单，但悬停工具当前不可用');
+          const done = await execute('hover', control, {});
+
+          if ('stop' in done) return done.stop;
+
+          if ('retry' in done) { page = undefined; continue; }
+
+          note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: control.ref, operation: 'hover', executionFact: 'executed', verification: 'unverified', detail: `${describeControl(control)}：已悬停` });
+          const before = new Set(page.controls.map(c => `${c.role}|${c.name}`));
+          const after = await reobserve(page);
+
+          if (!after) return finishCode('handoff', 'observation_incomplete', '悬停后没有取得可靠的新观察');
+          markControl(hovered, control);
+          const revealed = after.controls.filter(c => !before.has(`${c.role}|${c.name}`)).map(c => `${c.role} "${c.name}"`);
+
+          if (!revealed.length) markControl(hoverShowedNothing, control);
+          actionsDone.push(revealed.length
+            ? `Opened ${nameControl(control)} by hovering; it now shows ${revealed.slice(0, 12).join(', ')}${revealed.length > 12 ? ` and ${revealed.length - 12} more` : ''}.`
+            : `Hovered ${nameControl(control)}; nothing new appeared.`);
+          page = after;
+          track(after);
+          fromRead = false;
+          stale = 0;
+          continue;
+        }
       }
 
-      const data = result as {
-        held?: boolean;
-        effect?: {
-          changed?: boolean;
-        };
-        newTab?: unknown;
-      };
+      if (verdict && (verdict.kind === 'act' || verdict.kind === 'open')) {
+        const control = verdict.control;
+        const kind = verdict.kind === 'open' ? 'click' : actKind(control);
+        const asked = buildActRequest({ request, control, kind, actionsDone, materials: hostMaterials });
+        let act: ReturnType<typeof composeAct>;
 
-      if (data?.held) {
-        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: 'not_executed', verification: 'unverified', detail: '等待现有权限/用户确认，未执行点击' });
+        if (asked) {
+          const startedAt = Date.now();
+          const answers = await judge(asked.request);
+          active();
+          act = composeAct(kind, control, answers, asked);
+          record(page.id, `${act.kind}:${control.ref}`, 'confidence' in act ? act.confidence : 'risk' in act ? 1 - act.risk : 1, startedAt);
+        } else {
+          act = composeAct(kind, control, {}, null);
+        }
 
-        return finishCode('handoff', 'permission_required', '当前动作等待用户确认');
-      }
+        if (act.kind === 'risky') return finishCode('handoff', 'permission_required', `${describeControl(control)} 可能删除、付款、发送或发布内容（${act.risk.toFixed(2)}），需用户确认，未执行`);
 
-      if (options.signal.aborted) {
-        note({ toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: 'executed', verification: 'unverified', detail: '执行回执到达时任务已取消；保留写入事实，不再执行后续动作' });
+        if (act.kind === 'unsure') return finishCode('handoff', 'low_confidence', `不确定要对 ${describeControl(control)} 做什么（${act.confidence.toFixed(2)}），未执行`);
 
-        return finish('cancelled', '任务已取消');
-      }
+        if (act.kind === 'already') {
+          markControl(acted, control);
+          actionsDone.push(`${nameControl(control)} is already ${act.on ? 'on' : 'off'}; it was not clicked.`);
+          fromRead = false;
+          continue;
+        }
 
-      stale = 0;
-      waits = 0;
-      let receipt: BrowserStepReceipt = { toolCallId, observationId: page.id, candidateId: candidate.id, operation: candidate.operation, executionFact: 'executed', verification: 'unverified', detail: `${candidate.label}：已执行，最终目标尚未核验` };
-      let progress = data?.effect?.changed === true;
+        if (act.kind === 'click' || act.kind === 'toggle') {
+          if (!allowed('click')) return finishCode('handoff', 'unsupported_action', '点击工具当前不可用');
+          const done = await execute('click', control, {});
 
-      if (candidate.operation === 'fill' || candidate.operation === 'select') {
-        try {
-          const state = await call('read_element', { tabId: page.tabId, target: candidate.target }) as {
-            tagName?: string;
-            value?: string;
-            properties?: Record<string, unknown>;
-          };
+          if ('stop' in done) return done.stop;
 
-          const property = state.tagName?.toLowerCase() === 'select' ? 'displayValue' : 'value';
-          const expected = fillValue;
-          const verificationToolCallId = nextCallId();
+          if ('retry' in done) { page = undefined; continue; }
 
-          const verified = await call('read_element', { tabId: page.tabId, target: candidate.target, expect: { property, equals: expected } }, verificationToolCallId) as {
-            check?: {
-              matched?: boolean;
-            };
-          };
+          const data = done.result as { clicked?: boolean; held?: boolean; effect?: { evidence?: string[] } } | undefined;
 
-          if (verified.check?.matched !== true) {
-            throw new Error('字段读回与目标值不一致');
+          if (data?.held) {
+            note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: control.ref, operation: 'click', executionFact: 'not_executed', verification: 'unverified', detail: '等待现有权限/用户确认，未执行点击' });
+
+            return finishCode('handoff', 'permission_required', '当前动作等待用户确认');
           }
 
-          receipt = { ...receipt, executionFact: 'executed', verification: 'verified', verificationToolCallId, detail: `${candidate.label}：本次字段值读回一致；不代表整个任务完成` };
-          progress = true;
+          note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: control.ref, operation: 'click', executionFact: 'executed', verification: 'unverified', detail: `${describeControl(control)}：已点击一次，浏览器确认送达` });
+
+          if (options.signal.aborted) return finish('cancelled', '任务已取消');
+          markControl(acted, control);
+          clicks.push({ name: control.name, risk: act.risk });
+          const after = await reobserve(page);
+
+          if (!after) return finishCode('handoff', 'observation_incomplete', '动作已发生，但没有取得可靠的新观察');
+          const now = after.controls.find(c => controlKey(c) === controlKey(control));
+          const state = act.kind === 'toggle' && now?.checked !== undefined ? ` It is now ${now.checked === true ? 'checked' : 'not checked'}.` : '';
+          const reaction = data?.effect?.evidence?.length ? ` The page reacted: ${data.effect.evidence.slice(0, 3).join('; ')}.` : '';
+          actionsDone.push(`Clicked ${nameControl(control)} once; the browser confirmed the click was delivered.${state}${reaction}`);
+          page = after;
+          track(after);
+          fromRead = false;
+          stale = 0;
+          continue;
         }
-        catch (e) {
-          note({ ...receipt, detail: '字段已写入但读回未通过' });
+
+        // select / fill: write, then read the field back before recording the fact.
+        let value: string;
+        let clickOption: string | undefined;
+
+        if (act.kind === 'select') {
+          const element = await call('read_element', { tabId: page.tabId, target: control.ref }) as { tagName?: string };
+
+          if (element.tagName?.toLowerCase() === 'select') value = act.option.label;
+          else {
+            if (!page.controls.some(c => c.ref === act.option.ref && !c.disabled)) return finishCode('handoff', 'no_match', '选项没有可执行的当前对象引用');
+            clickOption = act.option.ref;
+            value = act.option.label;
+          }
+        } else if (act.kind === 'fill') {
+          value = act.material.value;
+        } else {
+          if (!options.getMaterial || textCalls >= TEXT_HELPER_BUDGET) return finishCode('handoff', 'unsupported_action', '缺少字段资料或已用完字段生成预算');
+          textCalls++;
+          const generated = await options.getMaterial(options.goal, control, options.signal);
+          active();
+
+          if (generated.kind === 'missing') return finishCode('handoff', 'unsupported_action', generated.reason);
+          const refreshed = await observe({});
+
+          if (!refreshed || (refreshed.controlsTruncated && !refreshed.controls.length)) return finishCode('handoff', 'observation_incomplete', '字段资料已准备，但新观察不完整，未写入');
+          const changed = browserContextChange(page, refreshed, control.ref);
+          page = refreshed;
+          track(refreshed);
+
+          if (changed) {
+            if (++stale > 2) return finishCode('handoff', 'stale_observation', '生成期间页面持续变化，未写入');
+            continue;
+          }
+
+          value = generated.material.value;
+          hostMaterials.push({ ...generated.material, id: `prepared-${textCalls}-${control.ref}` });
+        }
+
+        const target = clickOption ? { ...control, ref: clickOption } : control;
+        const operation = clickOption ? 'click' : 'fill';
+
+        if (!allowed(operation)) return finishCode('handoff', 'unsupported_action', `${operation} 工具当前不可用`);
+
+        if (!clickOption && value === control.value) {
+          markControl(acted, control);
+          actionsDone.push(`${nameControl(control)} already contains the requested text; nothing was typed.`);
+          continue;
+        }
+
+        const reported: BrowserOperation = act.kind === 'select' ? 'select' : 'fill';
+        const done = await execute(operation, target, clickOption ? {} : { value }, reported);
+
+        if ('stop' in done) return done.stop;
+
+        if ('retry' in done) { page = undefined; continue; }
+
+        if ((done.result as { held?: boolean } | undefined)?.held) {
+          note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: control.ref, operation: reported, executionFact: 'not_executed', verification: 'unverified', detail: '等待现有权限/用户确认，未执行' });
+
+          return finishCode('handoff', 'permission_required', '当前动作等待用户确认');
+        }
+
+        try {
+          const element = await call('read_element', { tabId: page.tabId, target: control.ref }) as { tagName?: string };
+          const property = element.tagName?.toLowerCase() === 'select' ? 'displayValue' : 'value';
+          const verificationToolCallId = nextCallId();
+          const verified = await call('read_element', { tabId: page.tabId, target: control.ref, expect: { property, equals: value } }, verificationToolCallId) as { check?: { matched?: boolean } };
+
+          if (verified.check?.matched !== true) throw new Error('字段读回与目标值不一致');
+          note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: control.ref, operation: reported, executionFact: 'executed', verification: 'verified', verificationToolCallId, detail: `${describeControl(control)}：本次字段值读回一致` });
+        } catch {
+          note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: control.ref, operation: reported, executionFact: 'executed', verification: 'unverified', detail: '字段已写入但读回未通过' });
 
           if (options.signal.aborted) return finish('cancelled', '任务已取消');
 
           return finishCode('handoff', 'execution_unknown', '写入后的核验失败，不自动重复填写');
         }
+
+        markControl(acted, control);
+        actionsDone.push(act.kind === 'select'
+          ? `Chose "${value}" in ${nameControl(control)}; the field reads back "${value}".`
+          : `Typed "${value.length > 120 ? `${value.slice(0, 119)}…` : value}" into ${nameControl(control)}; the field reads it back.`);
+        lastSearchFill = control.role === 'searchbox' || control.role === 'combobox' ? control : undefined;
+        const after = await reobserve(page);
+
+        if (!after) return finishCode('handoff', 'observation_incomplete', '动作已发生，但没有取得可靠的新观察');
+        page = after;
+        track(after);
+        fromRead = false;
+        stale = 0;
+        continue;
       }
 
-      note(receipt);
-      // Capture after every mutation. A changed page is progress evidence, never success evidence.
-      const afterRaw = await call('snapshot', { decision: true });
+      // Nothing to act on in this view. A search box just filled is submitted with Enter once (code rule).
+      if (lastSearchFill && allowed('press_key')) {
+        const field = page.controls.find(c => controlKey(c) === controlKey(lastSearchFill!)) ?? lastSearchFill;
+        lastSearchFill = undefined;
+        const done = await execute('press_key', field, { key: 'Enter' });
 
-      const after = (afterRaw as {
-        observation?: unknown;
-      })?.observation;
+        if ('stop' in done) return done.stop;
 
-      if (!isBrowserObservation(after)) {
-        return finishCode('handoff', 'observation_incomplete', '动作已发生，但没有取得可靠的新观察');
+        if ('retry' in done) { page = undefined; continue; }
+
+        note({ toolCallId: done.toolCallId, observationId: page.id, candidateId: field.ref, operation: 'press_key', executionFact: 'executed', verification: 'unverified', detail: `${describeControl(field)}：已按回车` });
+        actionsDone.push(`Pressed Enter in ${nameControl(field)} to submit it.`);
+        const after = await observe({});
+
+        if (!after) return finishCode('handoff', 'observation_incomplete', '动作已发生，但没有取得可靠的新观察');
+        page = after;
+        track(after);
+        fromRead = false;
+        continue;
       }
 
-      progress ||= after.url !== page.url || JSON.stringify(after.controls) !== JSON.stringify(page.controls);
+      // Not in this view: read the next unread window — cursor pages first, then the most likely part.
+      const order = verdict?.kind === 'read' ? verdict.order : [];
+      const preferred = order.find(id => !checkedKeys.has(observationCheckKey('scope', id)) && id !== page!.viewScopeId);
+      let params: Record<string, unknown> | undefined;
 
-      if (candidate.operation === 'scroll') {
-        progress ||= !!after.viewport && !!page.viewport && (after.viewport.x !== page.viewport.x || after.viewport.y !== page.viewport.y);
+      if (page.hasMore && page.nextCursor && !checkedKeys.has(observationCheckKey('cursor', page.nextCursor))) {
+        checkedKeys.add(observationCheckKey('cursor', page.nextCursor));
+        params = { cursor: page.nextCursor, ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}) };
+      } else if (preferred) {
+        checkedKeys.add(observationCheckKey('scope', preferred));
+        params = { viewScopeId: preferred };
+      } else {
+        const expansion = nextObservationExpansion(page, checkedKeys);
+
+        if (expansion) {
+          checkedKeys.add(expansion.checkKey);
+          params = expansion.params;
+        }
       }
 
-      noProgress = progress ? 0 : noProgress + 1;
-      page = after;
-      trackObservation(after);
+      if (!params) return finishCode('handoff', 'no_match', actionsDone.length ? '已读完全部范围，没有找到下一步要操作的控件，完成判断未过门槛' : '已读完全部范围，未找到用户要的控件');
+      const next = await observe(params);
 
-      if (noProgress >= 2) {
-        return finishCode('handoff', 'no_match', '连续两次动作没有可核对的进展');
-      }
+      if (!next) return finishCode('handoff', 'observation_incomplete', '续读未返回带身份的结构化观察');
+      page = next;
+      track(next);
+      fromRead = true;
     }
 
     return finishCode('handoff', 'candidate_budget', '动作预算已用完');
-  }
-  catch (e) {
+  } catch (e) {
     if (options.signal.aborted) return finish('cancelled', e instanceof Error ? e.message : '任务已取消');
+
+    if (e instanceof BudgetSpent) return finishCode('handoff', 'candidate_budget', `已达到 ${DECISION_CALL_BUDGET} 次决策调用预算`);
+
+    if (e instanceof InvalidAnswer) return finishCode('handoff', 'invalid_decision', e.message);
     const message = e instanceof Error ? e.message : '决策服务不可用';
 
-    if (message.includes('任务循环时长预算已用完') || message.includes('已达到')) {
-      return finishCode('handoff', 'candidate_budget', message);
-    }
+    if (message.includes('任务循环时长预算已用完')) return finishCode('handoff', 'candidate_budget', message);
+
+    if (message.includes('候选资料超过当前决策预算')) return finishCode('handoff', 'candidate_budget', message);
 
     return finishCode('handoff', 'provider_error', message);
   }
 }
+
+class BudgetSpent extends Error {}

@@ -202,6 +202,17 @@ export type BrowserLoopOutcome = {
   decisions: Array<BrowserDecision & {
     elapsedMs: number;
   }>;
+  /**
+   * Only with `needs_verification`: the loop's own completion judgment. `facts` are the code-written
+   * action facts it was judged from; `lowRiskWrites` is true when every click was judged a low-risk write;
+   * `clicked` names the clicked controls in order.
+   */
+  completion?: {
+    confidence: number;
+    facts: string[];
+    lowRiskWrites: boolean;
+    clicked: string[];
+  };
 };
 
 /**

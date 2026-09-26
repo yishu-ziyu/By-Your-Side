@@ -31,6 +31,16 @@ npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --on
 
 无头窗口从不聚焦，产品按设计不把工作页切到前台，所以工作页默认是隐藏状态。C2 先验证隐藏页上的滚轮被快速拒绝、页面没收到事件，再把页切到前台（模拟用户切回窗口）验证落点。
 
+## Jev 做法对照（jev-compare）
+
+```bash
+npx tsx scripts/acceptance/jev-compare/run.mts --headless --tasks=S5rt,S5loop,S6,S6N,H1,H2,H3,H4,H5,H6,H7,H8 --arms=current,new --rounds=30 --name=<批次> [--extra-tabs=3]
+npx tsx scripts/acceptance/jev-compare/run.mts --headless --tasks=E5,E6,E6N --arms=split,direct --rounds=30 --name=<批次>
+python3 scripts/acceptance/jev-compare/analyze.py out/jev-compare/<批次> [...]
+```
+
+决策层 `current` 从 main（`--base`）`git archive` 出当时的循环原样运行，`new` 是本工作树的[窄问题循环](../browser-decision-loop.md)；页面、执行器、门槛和 Jev 模型相同，两臂轮流，每次新起隔离无头 Chrome。端到端 `split` 是循环后交主模型核对，`direct` 另外允许循环自己判定完成时直接交付。成功、错误写和误报完成只看夹具计数器（`jev-compare/fixtures.mts`）；H1–H8 是留出任务，D1–D5 只供调试（样本内）。执行器以默认可见会话调用，切换的标签页会调到前台。`analyze.py` 按[验收记录](../evals/20260926-jev-narrow-questions.md)的门槛汇总，网络故障单列。
+
 ## 真实路径用例（real-path）
 
 ```bash

@@ -8,6 +8,8 @@ export const voiceSpokenResultGateEnabled = () => false;
 
 export const generalBrowserLoopEnabled = () => false;
 
+export const browserLoopDirectDeliveryEnabled = () => false;
+
 export const routeShadowEnabled = () => false;
 
 export const routeShadowDailyLimit = () => 0;

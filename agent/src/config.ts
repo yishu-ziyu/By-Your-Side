@@ -10,6 +10,8 @@ import { join } from "node:path";
 export interface AgentConfig {
   /** Experimental general browser decision loop; never enabled by merely building the project. */
   generalBrowserLoop?: boolean;
+  /** Let the loop's own low-risk click completion end the task without a main-model check. Off by default. */
+  browserLoopDirectDelivery?: boolean;
   /** Opt-in small display-command fast path; credentials stay in typesafe.env. */
   displayFastPath?: boolean;
   /** Opt-in display fast path while a task is already running; off by default and constrained by displayFastPath. */
@@ -32,6 +34,15 @@ export function generalBrowserLoopEnabled():boolean {
   if(process.env.SIDEAGENT_GENERAL_BROWSER_LOOP==='1')return true;
 
   return loadConfig().generalBrowserLoop===true;
+}
+
+/** Off unless configured: turn on only after an acceptance run shows zero false completions. */
+export function browserLoopDirectDeliveryEnabled():boolean {
+  if(process.env.SIDEAGENT_BROWSER_LOOP_DIRECT_DELIVERY==='0')return false;
+
+  if(process.env.SIDEAGENT_BROWSER_LOOP_DIRECT_DELIVERY==='1')return true;
+
+  return loadConfig().browserLoopDirectDelivery===true;
 }
 
 export function routeShadowEnabled():boolean {
@@ -77,6 +88,8 @@ export function loadConfig(path = configPath()): AgentConfig {
     const config: AgentConfig = {};
 
     if(typeof json.generalBrowserLoop === "boolean")config.generalBrowserLoop=json.generalBrowserLoop;
+
+    if(typeof json.browserLoopDirectDelivery === "boolean")config.browserLoopDirectDelivery=json.browserLoopDirectDelivery;
 
     if(typeof json.displayFastPath === "boolean")config.displayFastPath=json.displayFastPath;
 
