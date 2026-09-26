@@ -5,7 +5,7 @@
  */
 import { PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, HOST_VERSION, type ClientMessage, type ServerMessage } from "../../shared/protocol.js";
 import { generalBrowserLoopEnabled } from "./config.js";
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationPersistence } from "./conversation-persistence.js";
 import { ConversationManager } from "./conversation-manager.js";
 import type { MemoryStore } from "./memory-store.js";
 import type { SkillStore } from "./skill-store.js";
@@ -21,7 +21,7 @@ export interface ClientConn {
 
 export interface HostCoreOptions {
   createRuntime: ConstructorParameters<typeof ConversationManager>[0];
-  store?: ConversationStore;
+  store?: ConversationPersistence;
   memoryStore?: MemoryStore;
   skillStore?: SkillStore;
   dispatcher?: TaskDispatcher;
@@ -47,6 +47,13 @@ export interface HostCore {
   handleMessage(msg: ClientMessage): void;
   sendHelloOk(conn: ClientConn): void;
   disposeAll(): void;
+}
+
+/** 内部错误码不直接给用户看：会话找不到时说清楚发生了什么、该怎么办。 */
+function userFacingError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+
+  return message.startsWith("CONVERSATION_NOT_FOUND") ? "这个会话在助手这边已经找不到了（助手可能刚重启过），这条没有发出去。请点右上角「＋」新建会话后再发。" : message;
 }
 
 export async function startHostCore(options: HostCoreOptions): Promise<HostCore> {
@@ -127,7 +134,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
 
       void conversations.handleMessage(msg).catch((err) => current?.send({
         type: "agent_event", conversationId: msg.conversationId,
-        event: { kind: "error", message: err instanceof Error ? err.message : String(err) },
+        event: { kind: "error", message: userFacingError(err) },
       }));
     },
     sendHelloOk(conn) {

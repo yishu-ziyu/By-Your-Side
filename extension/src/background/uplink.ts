@@ -218,7 +218,12 @@ export class Uplink {
         await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS], justification: "Run the agent loop inside the extension" });
       }
     } catch (err) {
-      await this.connectWs(`${reason}；扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`);
+      const detail = `${reason}；扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`;
+
+      // 配了 ws 调试 token 才走调试通道；否则按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），
+      // 不能停在「未连接」等用户重载扩展。
+      if (await hasWsToken()) await this.connectWs(detail);
+      else this.handleDisconnect(detail);
 
       return;
     }
@@ -309,6 +314,12 @@ export class Uplink {
       }
     };
   }
+}
+
+async function hasWsToken(): Promise<boolean> {
+  const stored = await chrome.storage.local.get(TOKEN_KEY);
+
+  return typeof stored[TOKEN_KEY] === "string" && stored[TOKEN_KEY].length > 0;
 }
 
 function isKeepalive(raw: unknown): raw is { type: "inproc_keepalive" } {

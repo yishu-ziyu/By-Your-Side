@@ -3985,6 +3985,9 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
 
   if (envelope.kind === "demo") {
+    // 同步回放总以 demo 收尾（background syncPanel）：此时历史已补齐，可以判断旧端口上的消息是否丢了。
+    restoreLostSend();
+
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId) return;
     demoState = { recording: envelope.recording, steps: envelope.steps, truncated: envelope.truncated };
     renderDemo();
@@ -4102,6 +4105,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
       if (entry.item.kind === "user") {
         if (!running) runStartAt = eventTime();
+        confirmSentText(entry.item.text);
         const bubble = addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
@@ -4189,7 +4193,11 @@ function pingPort(): void {
 function flushQueuedSends(): void {
   if (!port || !transportConnected) return;
 
-  for (const queued of queuedSends.splice(0)) port.postMessage(queued);
+  for (const queued of queuedSends.splice(0)) {
+    port.postMessage(queued);
+
+    if (unconfirmedSend?.postedOn === "queued" && queued.kind === "client" && queued.msg.type === "task_action" && queued.msg.request.text === unconfirmedSend.text) unconfirmedSend.postedOn = port;
+  }
 }
 
 /** 主动断开可疑端口并立即重连；对自己调用 disconnect 不会触发本端的 onDisconnect。 */
@@ -4373,13 +4381,47 @@ function clearPendingAsk(): void {
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
 
-/** 断线发送失败提示：同一轮只提示一次，成功发送后复位。 */
-let sendFailNotified = false;
+/** 断线发送失败提示：同一会话连续失败只提示一次，成功发送后复位。 */
+let sendFailNotifiedFor: string | null = null;
 
 function noticeSendFailed(): void {
-  if (sendFailNotified) return;
-  sendFailNotified = true;
+  if (sendFailNotifiedFor === selectedConversationId) return;
+  sendFailNotifiedFor = selectedConversationId;
   addMsg("msg notice", "这条没有发出去：与后台的连接断了。正文和引用都还在，恢复连接后重新发送即可。");
+}
+
+/**
+ * 已交出端口、还没在历史里见到的那一条。service worker 恰好在收到前停掉时，消息随旧端口消失，
+ * background 没有记下它；换端口重新同步后历史里仍没有，就把正文、引用和附件放回输入框并提示没发出去。
+ * 还排在面板队列里的消息会在新端口上补发，不算丢失。
+ */
+let unconfirmedSend: { text: string; ask: PendingAsk | null; attachments: ReturnType<typeof attachments.getAttachments>; conversationId: string; postedOn: chrome.runtime.Port | "queued" } | null = null;
+
+function confirmSentText(text: string): void {
+  if (unconfirmedSend && unconfirmedSend.text === text) unconfirmedSend = null;
+}
+
+/** 换端口后的同步回放已结束：旧端口上交出的消息若仍未出现在历史里，就是没送到 background。 */
+function restoreLostSend(): void {
+  const lost = unconfirmedSend;
+
+  if (!lost || lost.postedOn === "queued" || lost.postedOn === port || lost.conversationId !== selectedConversationId) return;
+  unconfirmedSend = null;
+
+  // 用户已经在写新内容就不覆盖，只提示。
+  if (!inputEl.value.trim() && !pendingAsk) {
+    inputEl.value = lost.text;
+
+    if (lost.attachments.length > 0) attachments.restore(lost.attachments, selectedConversationId);
+
+    if (lost.ask) applyPendingAsk(lost.ask);
+    autoResize();
+    saveDraft();
+    syncTaskBarDraft();
+  }
+
+  sendFailNotifiedFor = null;
+  noticeSendFailed();
 }
 
 function sendInput(): void {
@@ -4422,6 +4464,9 @@ function sendInput(): void {
 
  return; }
 
+  const queued = queuedSends.some((e) => e.kind === "client" && e.msg.type === "task_action" && e.msg.request.requestId === request.requestId);
+  unconfirmedSend = { text, ask: pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
+
   // 本地反馈：快照这次真正送出的材料；回执 accepted 之前只显示「发送中」
   taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
 
@@ -4439,7 +4484,7 @@ function sendInput(): void {
     })();
   }
 
-  sendFailNotified = false;
+  sendFailNotifiedFor = null;
   inputEl.value = "";
   clearPendingAsk();
   attachments.clear();

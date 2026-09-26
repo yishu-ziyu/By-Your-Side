@@ -3,6 +3,8 @@ export { startHostCore } from "./host-core.js";
 
 export type { HostCore, HostCoreOptions, ClientConn } from "./host-core.js";
 
+export type { ConversationPersistence } from "./conversation-persistence.js";
+
 export { createConversationRuntime } from "./conversation-runtime.js";
 
 export { RealtimeVoiceSession } from "./realtime-voice-session.js";

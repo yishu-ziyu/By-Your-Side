@@ -9,6 +9,7 @@
  * #4 断线发送：网页上划一句 → 页内「解释」→「在侧栏继续」把引用带进侧栏 → 侧栏写好一句话 → 扩展内 agent 反复崩溃期间按回车。
  *    判据：正文和引用都还在、侧栏出现「没有发出去」提示、没有冒出已发送的用户消息、假服务没收到这句；
  *    恢复连接后再按一次回车，这句只送达一次（没送到而侧栏给出「继续」时点一次，分开记录 deliveredWithoutHelp）。
+ * 普通会话：问一句 → 扩展内 agent 崩溃重启 → 接着问。判据：第二问送达一次、第一轮问答还在、没有错误字样。
  * #2 模型菜单：点模型芯片打开菜单，再点「显示全部」。判据：未知模型和 OpenAI 模型旁都没有任何能力标签，芯片上也没有。
  */
 import { createServer, type IncomingMessage } from "node:http";
@@ -35,6 +36,10 @@ const QUOTE2 = "一只海獭每天要吃掉相当于体重四分之一的食物�
 const DRAFT2 = "这个比例和人类比起来算多吗";
 
 const ANSWER = "这是本机假模型的固定回答。";
+
+const ORDINARY_Q1 = "海獭用什么敲开贝壳？";
+
+const ORDINARY_Q2 = "那它们睡觉时怎么防止被冲走？";
 
 type DomNode = { nodeName: string; nodeValue?: string; backendNodeId: number; children?: DomNode[]; shadowRoots?: DomNode[] };
 
@@ -112,6 +117,8 @@ const shot = async (session: string, name: string) => {
   return name;
 };
 
+const elementClickFallbacks: string[] = [];
+
 /** 封闭 shadow root 里的按钮：CDP 穿透找到后按实际位置点击，和鼠标点一样。 */
 const clickShadowButton = async (session: string, text: string, timeoutMs = 15_000) => {
   const textOf = (node: DomNode): string => (node.nodeValue ?? "") + (node.children ?? []).map(textOf).join("");
@@ -138,7 +145,14 @@ const clickShadowButton = async (session: string, text: string, timeoutMs = 15_0
 
     if (!box) return undefined;
 
-    for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, ...box }, session);
+    // 无头 Chrome 的工作页是隐藏页，鼠标事件要等下一帧才回执，偶尔整整 30 秒没有回应（9 轮里 2 次，都在「解释」这一下）。
+    // 超时就改为直接点这个按钮元素，并记进结果，不把这类基础设施卡顿算成产品失败。
+    try {
+      for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, ...box }, session);
+    } catch {
+      await rp.cdp.send("Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function(){this.click()}" }, session);
+      elementClickFallbacks.push(text);
+    }
 
     return true;
   }, timeoutMs, `页面上的「${text}」按钮`);
@@ -271,8 +285,8 @@ try {
       await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: span.x2, y: span.y2, button: "left", clickCount: 1 }, work);
       steps.selected = String(await rp.evaluate(work, `getSelection().toString()`));
 
-      await clickShadowButton(work, "解释");
-      await clickShadowButton(work, "在侧栏继续", 30_000);
+      await clickShadowButton(work, "解释", 70_000);
+      await clickShadowButton(work, "在侧栏继续", 70_000);
       steps.pageAfterHandoff = await shot(work, `4-${kind}-0-page-handoff.png`);
 
       const quoted: PanelState = await until(async () => {
@@ -348,6 +362,21 @@ try {
         steps.keptAfterReconnect = back.input === draft && back.quoteVisible && back.quote === quoted.quote;
         await rp.click(panel, "#input");
         await rp.pressEnter(panel);
+      } else if (await until(async () => {
+        // 重连后的历史同步完成时，没送到后台的那一条会被放回输入框：等它送达或放回，最多 10 秒。
+        const state: PanelState = await rp.evaluate(panel, PANEL);
+
+        return draftRequests() > requestsBefore ? "delivered" : state.input === draft ? "restored" : undefined;
+      }, 10_000, "送达或放回输入框", 300).catch(() => "neither") === "restored") {
+        // SAFETY: PANEL 返回 PanelState。
+        const restored = await rp.evaluate(panel, PANEL) as PanelState;
+        // 正文还在输入框（那一下回车没反应，或没送到后台被放回来）：用户会再按一次。
+        steps.neededSecondEnter = true;
+        steps.restoredWithNotice = restored.notices.some((text) => text.includes("没有发出去"));
+        steps.restoredQuote = restored.quoteVisible && restored.quote === quoted.quote;
+        steps.restoredScreenshot = await shot(panel, `4-${kind}-3b-restored.png`);
+        await rp.click(panel, "#input");
+        await rp.pressEnter(panel);
       }
 
       // 重发后等回答结束或出错；不管送没送达都留下画面。
@@ -418,6 +447,64 @@ try {
     return true;
   };
 
+  // 普通会话（侧栏打开时新建的那个）：问一句 → 扩展内 agent 崩溃一次 → 恢复后接着问。
+  // 判据：第二问送到模型且只一次、第一轮问答仍在视图里、没有错误字样。
+  const ordinaryAfterRestart = async (label: string, fromPlus: boolean) => {
+    const steps: JsonRecord = { conversation: fromPlus ? "点「＋」新建" : "侧栏打开时的会话" };
+    const received = (text: string) => modelRequests.filter((body) => body.includes(text)).length;
+
+    try {
+      if (fromPlus) {
+        await rp.click(panel, "#conversation-new");
+        await until(async () => ((await rp.evaluate(panel, PANEL)) as PanelState).userMessages.length === 0 || undefined, 15_000, "新会话打开", 300);
+        await sleep(1500);
+      }
+
+      await rp.click(panel, "#input");
+      await rp.typeText(panel, ORDINARY_Q1);
+      await rp.pressEnter(panel);
+      await until(async () => {
+        const state: PanelState = await rp.evaluate(panel, PANEL);
+
+        return state.transcript.includes(ORDINARY_Q1) && state.transcript.slice(state.transcript.indexOf(ORDINARY_Q1)).includes(ANSWER) ? state : undefined;
+      }, 30_000, "第一问得到回答", 300);
+      await sleep(1500);
+      steps.beforeScreenshot = await shot(panel, `3-${label}-1-before-restart.png`);
+
+      await crashAgent();
+      await until(async () => ((await rp.evaluate(panel, PANEL)) as PanelState).connected ? undefined : true, 10_000, "侧栏显示连接断开", 100).catch(() => undefined);
+      await until(async () => ((await rp.evaluate(panel, PANEL)) as PanelState).connected || undefined, 45_000, "连接恢复", 300);
+      await sleep(1000);
+      steps.reconnectedScreenshot = await shot(panel, `3-${label}-2-reconnected.png`);
+
+      const before = received(ORDINARY_Q2);
+      await rp.click(panel, "#input");
+      await rp.typeText(panel, ORDINARY_Q2);
+      await rp.pressEnter(panel);
+      await until(async () => received(ORDINARY_Q2) > before || undefined, 30_000, "第二问送到模型", 300).catch(() => undefined);
+      await sleep(3000);
+      steps.afterScreenshot = await shot(panel, `3-${label}-3-after-restart.png`);
+      // SAFETY: PANEL 返回 PanelState。
+      const final = await rp.evaluate(panel, PANEL) as PanelState;
+      steps.final = final;
+      steps.checks = {
+        secondDeliveredOnce: received(ORDINARY_Q2) - before === 1,
+        firstTurnStillVisible: final.transcript.includes(ORDINARY_Q1),
+        secondVisible: final.userMessages.some((text) => text.includes(ORDINARY_Q2)),
+        noErrorShown: !/CONVERSATION_NOT_FOUND|出错|失败/.test(final.transcript),
+      };
+    } catch (error) {
+      steps.error = error instanceof Error ? error.message : String(error);
+      steps.errorScreenshot = await shot(panel, `3-${label}-error.png`).catch(() => null);
+    }
+
+    // SAFETY: checks 是上面写入的布尔记录。
+    const pass = !steps.error && !!steps.checks && Object.values(steps.checks as Record<string, boolean>).every(Boolean);
+    paths[`${label}AfterAgentRestart`] = { issue: "#4 follow-up", pass, ...steps };
+  };
+
+  await ordinaryAfterRestart("firstConversation", false);
+  await ordinaryAfterRestart("plusConversation", true);
   await offlineSend("worker", stopWorker, "quote", QUOTE, DRAFT);
   await offlineSend("agent", crashAgent, "quote2", QUOTE2, DRAFT2);
 } catch (error) {
@@ -428,8 +515,9 @@ try {
 }
 
 result.paths = paths;
+result.elementClickFallbacks = elementClickFallbacks;
 
-result.pass = !result.error && Object.keys(paths).length === 3 && Object.values(paths).every((p) => p.pass === true);
+result.pass = !result.error && Object.keys(paths).length === 5 && Object.values(paths).every((p) => p.pass === true);
 
 await writeFile(join(artifacts, "result.json"), JSON.stringify(result, null, 2));
 
