@@ -59,3 +59,4 @@ npx vitest run agent/test/browser-program.test.ts agent/test/run-trace.test.ts
 - ego lite 的一段 Node 脚本组合 browser helpers、观察后验证：本机 `/Applications/ego lite.app/Contents/Resources/ego-browser/SKILL.md`。
 - [ego lite 执行器](https://github.com/citrolabs/ego-lite/tree/main/package/ego-browser/src/driver)。本轮借鉴组合操作形式，未移植整个 Node 运行环境。
 - [QuickJS 嵌入、异步桥接与资源限制](https://github.com/justjake/quickjs-emscripten)。本轮不使用 `node:vm` 作为权限隔离依据。
+- 另一条浏览器执行路径是 Jev 有界循环（`browser_loop`）与实时判断：代码每次观察只问 Jev 几个窄问题（要操作的控件、要先打开的菜单、是否已完成、是否高风险写入），由代码决定悬停、续读、执行或停止。规则见[决策循环](browser-decision-loop.md)。
