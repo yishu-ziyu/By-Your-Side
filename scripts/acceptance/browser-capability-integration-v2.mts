@@ -21,6 +21,7 @@ import { tmpdir, homedir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import type { ToolExecutionFact, ToolName } from "../../shared/protocol.js";
 import type { IsolationCleanup } from "./isolated-extension.mts";
+import { trackTempDir } from "./temp-profile.mjs";
 
 if (!process.argv.includes("--headless")) {
   console.error("Required: --headless（本脚本只以 --headless=new 隔离无头运行）");
@@ -232,7 +233,11 @@ type ScenarioResult = {
 
 const secretBody = `UNAUTH_SECRET_${randomBytes(8).toString("hex")}`;
 
-const unauthorizedPath = join(await mkdtemp(join(tmpdir(), "bys-qa01-unauth-")), "leak.txt");
+const unauthorizedRoot = await mkdtemp(join(tmpdir(), "bys-qa01-unauth-"));
+
+trackTempDir(unauthorizedRoot);
+
+const unauthorizedPath = join(unauthorizedRoot, "leak.txt");
 
 await writeFile(unauthorizedPath, secretBody);
 
@@ -766,6 +771,9 @@ record.sourceFingerprint = await fingerprintSources();
 record.gitHead = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
 
 const isoRoot = await mkdtemp(join(tmpdir(), "sideagent-qa01-dist-"));
+
+// Isolated build folder: removed when this process ends, however it ends.
+trackTempDir(isoRoot);
 
 const buildDir = join(isoRoot, "extension", "dist");
 
@@ -1621,7 +1629,9 @@ try {
     let saveErr = "";
 
     if (downloadId) {
-      savePath = join(await mkdtemp(join(tmpdir(), "qa01-dl-")), "qa01-blob.txt");
+      const downloadRoot = await mkdtemp(join(tmpdir(), "qa01-dl-"));
+      trackTempDir(downloadRoot);
+      savePath = join(downloadRoot, "qa01-blob.txt");
 
       try {
         await runTool("download_save_as", { downloadId, path: savePath });
