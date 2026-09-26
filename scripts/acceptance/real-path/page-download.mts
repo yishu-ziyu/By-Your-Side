@@ -108,7 +108,8 @@ try {
   await rp.screenshot(panelSession, join(artifacts, "panel.png"));
   const final: PanelState = await rp.evaluate(panelSession, PANEL_STATE);
   await writeFile(join(artifacts, "panel-transcript.txt"), final.transcript);
-  const reply = final.transcript.slice(final.transcript.lastIndexOf(INSTRUCTION) + INSTRUCTION.length).trim();
+  // 回答接在用户那条消息后面；未完成行可能原样引用用户原话，不能按最后一次出现切。
+  const reply = final.transcript.slice(final.transcript.indexOf(INSTRUCTION) + INSTRUCTION.length).trim();
   result.reply = reply;
 
   // Chrome 自己的下载记录：从扩展 service worker 读，不经产品代码。
