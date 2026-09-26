@@ -139,7 +139,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     },
     sendHelloOk(conn) {
       void session.availableModels().then((models) => {
-        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION, features: { memory: !!options.memoryStore, skills: !!options.skillStore }, ...options.helloExtras?.() });
+        conn.send({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION, features: { memory: !!options.memoryStore, skills: !!options.skillStore }, ...options.helloExtras?.() });
         conn.send({ type: "conversation_list", conversations: conversations.list() });
         conversations.replayState((msg) => conn.send(msg));
       });

@@ -103,7 +103,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
   function sendUnavailable(message: ClientMessage): void {
     if (message.type === "hello") {
-      connection?.send({ type: "hello_ok", version: PROTOCOL_VERSION, models: [], hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+      connection?.send({ type: "hello_ok", version: PROTOCOL_VERSION, models: [], hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
       connection?.send({ type: "conversation_list", conversations: [] });
 
       return;

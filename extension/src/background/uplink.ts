@@ -204,7 +204,7 @@ export class Uplink {
     });
 
     // native 模式无 token，身份由 host manifest 的 allowed_origins 保证
-    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
   /** 没有本机伴随进程时，由 offscreen 文档里的扩展内 agent 接手，讲同一套协议。 */
@@ -245,7 +245,7 @@ export class Uplink {
     });
     await this.pushModelConfig();
     await this.pushVoiceKey();
-    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
   /** 模型选择与各家凭据一起发：offscreen 文档读不到 chrome.storage。 */
@@ -294,7 +294,7 @@ export class Uplink {
     this.transport = "ws";
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION }));
+      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION }));
     };
 
     ws.onmessage = (e) => {

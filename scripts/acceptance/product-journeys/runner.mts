@@ -80,7 +80,7 @@ export async function startHost(model: string, storeDir: string, events: RunnerE
         host.socket = client;
         manager.reconnect();
         const session = manager.get("default")!.runtime.session;
-        client.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models: await session.availableModels(), hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: "0.1.0" }));
+        client.send(JSON.stringify({ type: "hello_ok", version: PROTOCOL_VERSION, model: session.modelName(), models: await session.availableModels(), hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: "0.2.0" }));
         client.send(JSON.stringify({ type: "conversation_list", conversations: manager.list() }));
         manager.replayState((m) => client.send(JSON.stringify(m)));
 
