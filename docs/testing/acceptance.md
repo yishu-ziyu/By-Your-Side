@@ -46,7 +46,11 @@ npx tsx scripts/acceptance/real-path/page-download.mts --headless --case=complet
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --voice=qingchunshaonv # 只装扩展，语音到页面标注
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in --model=zai-coding-cn/glm-5.3-flash # 长回答念到一半插话：旧回答停声、不抢话，新问题照常回答
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录
+npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after [--only=main,demo,voice-nokey,voice-mic,voice-conn,voice-ready] # 09-26 实拍的 10 个界面问题，每步截图
+npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only=real-confirm --real-model=stepfun/step-3.7-flash # 真实模型：等页面确认时这一轮会不会结束
 ```
+
+`ux-fixes.mts` 只装扩展，模型换成本机脚本模型 `real-path/scripted-model.mts`（OpenAI 兼容，按任务原话里的关键词回写好的正文、工具调用或错误码），像用户一样在设置页选「自定义地址」填写，所以工具调用、宿主核验、账本和页面标注都是产品自己在跑。判据只看用户看得到的东西：侧栏文字里不得出现工具名、元素编号、内部占位、原始错误和账本口吻，页面上的确认按钮要在「发送」键旁边看得见且点了真的提交。语音组填真 key 或一把服务端不认的 key 看连不上的样子；`demo` 组注册伴随进程（有技能存储）看示范记录。产物在 `out/acceptance/ux-fixes/<phase>/`。
 
 `real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、经 Native Messaging 拉起当前源码的伴随进程、真模型。伴随进程的数据写进临时目录（`SIDEAGENT_DATA_DIR`），凭据从 `~/.sideagent` 原位只读；不碰日常 Chrome、`extension/dist` 和日常伴随进程。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录），产物在 `out/acceptance/real-path/<时间>-<用例>/`。`launchRealPath({ microphoneWav })` 用 WAV 充当麦克风（只放一遍），语音模型和断句都是真的。加 `--model=provider/id` 只替换测试伴随进程的模型（例如 `kimi-coding/kimi-for-coding`），日常配置不动。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
 

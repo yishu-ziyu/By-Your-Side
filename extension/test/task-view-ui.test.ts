@@ -374,12 +374,13 @@ describe("A03-01 本地反馈：没有 accepted 证据不写已接收", () => {
     expect(text()).not.toContain("已接收");
   });
 
-  it("被拒绝：写明未接收，不留下发送中", () => {
+  it("被拒绝：不留下发送中，也不另起一张只有占位字的卡（原因在消息流里）", () => {
     const { bar, text } = mount();
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
     bar.noteReceipt(receipt({ status: "rejected", message: "连接尚未恢复" }));
-    expect(text()).toContain("未接收");
     expect(text()).not.toContain("发送中");
+    expect(text()).not.toMatch(/目标未记录|新任务|材料/);
+    expect(bar.getModel()?.visible).toBe(false);
   });
 
   it("还没拿到页面快照的普通发送：先只有「发送中」，不因为没行就整块消失", () => {
@@ -406,7 +407,8 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
       selection: "只保留前三行",
       attachments: [{ id: "att-1", name: "截图.png" }],
     });
-    expect(text()).toContain("待发送材料 · 3 项");
+    expect(text()).toContain("发送时一起带上 · 3 项");
+    expect(text()).not.toMatch(/目标未记录|新任务|准备中|待发送材料/);
     expect(text()).toContain("只保留前三行");
     expect(text()).toContain("截图.png");
     const removable = element().querySelectorAll(".tb-remove").map((button) => button.getAttribute("data-remove-key"));
@@ -635,10 +637,14 @@ describe("A03-07 可达性结构面：真实 button、屏幕阅读器有名字�
     expect(element().querySelector(".tb-goal")!.getAttribute("title")).toBe(long);
   });
 
-  it("有目标就有目标行，没有目标也不留空标题", () => {
-    const { bar, element } = mount();
+  it("有目标就有目标行，没有目标就不显示这一行，也不放占位字", () => {
+    const { bar, element, text } = mount();
     bar.updateView(view({ goal: null }));
-    expect(element().querySelector(".tb-goal")!.textContent).toContain("目标未记录");
+    expect(element().querySelector(".tb-head")!.hidden).toBe(true);
+    expect(text()).not.toContain("目标未记录");
+    bar.updateView(view({ goal: "填写报名表" }));
+    expect(element().querySelector(".tb-head")!.hidden).toBe(false);
+    expect(element().querySelector(".tb-goal")!.textContent).toBe("填写报名表");
   });
 });
 

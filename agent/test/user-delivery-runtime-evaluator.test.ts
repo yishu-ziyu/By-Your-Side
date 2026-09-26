@@ -39,7 +39,7 @@ it('reports only a partial result when a write finished without readback or mode
     h.event({kind:'tool_end',toolCallId:'t1',name:'click',isError:false,resultText:'clicked',executionFact:'executed'});
     h.event({kind:'agent_end'});
     expect(h.compose).not.toHaveBeenCalled();
-    expect(h.messages.find(m=>m.event?.kind==='user_delivery'&&m.event.delivery.kind==='finding')?.event.delivery.text).toContain('仅交付部分结果');
+    expect(h.messages.find(m=>m.event?.kind==='user_delivery'&&m.event.delivery.kind==='finding')?.event.delivery.text).toBe('做成了 1 步。（改动还没在页面上核对过。）');
     expect(h.manager.getTaskProgress('default')?.successVerified).toBe(false);
   }finally{h.manager.dispose();}
 });

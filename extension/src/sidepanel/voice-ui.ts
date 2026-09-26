@@ -27,6 +27,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   stopSpeech.className = 'voice-stop-speech';
   stopSpeech.textContent = '停声';
   stopSpeech.title = '只停止说话，后台任务继续';
+  stopSpeech.hidden = true;
   end.before(stopSpeech);
   const transcript = region.querySelector<HTMLElement>('.voice-answer')!;
   const question = region.querySelector<HTMLElement>('.voice-question')!;
@@ -331,6 +332,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     }
 
     end.textContent = next === 'error' ? (client.needsMicrophonePermission ? '开启麦克风' : '重试') : '结束';
+    // 「停声」只在正在说时有用；其他时候收起，也不和右上角的「开启麦克风」叠在一起。
+    stopSpeech.hidden = next !== 'speaking';
     region.dataset.state = next;
   }, event => {
     // 上一轮晚到的那段话是先说的：拼在当前各段前面，不切换轮次。

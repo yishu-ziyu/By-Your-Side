@@ -29,7 +29,10 @@ describe("describeTool 人性化动作描述", () => {
   it("静态动作名与未知工具回退", () => {
     expect(describeTool("snapshot", {}).full).toBe("读取页面结构");
     expect(describeTool("clear_marks", {}).full).toBe("清除标注");
-    expect(describeTool("mystery_tool", {}).full).toBe("mystery_tool");
+    // 没登记的工具不露原始名
+    expect(describeTool("mystery_tool", {}).full).toBe("处理这一步");
+    expect(describeTool("fetch", {}).full).toBe("发送网络请求");
+    expect(describeTool("ask_user_to_point", {}).full).toBe("等你在页面上点选");
   });
   it("并行请人：创建前不猜名字，等待不暴露协议类别", () => {
     const spawn = describeTool("spawn_worker", { id: "wiki" }).full;

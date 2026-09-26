@@ -13,7 +13,7 @@ offscreen 入口使用扩展内部 runtime Port；background 先送模型配置�
 - 启动时生成随机 token 并打印到终端；用户在面板首次设置中粘贴一次，存 `chrome.storage.local`。
 - 连接后客户端第一帧必须是 `hello{token, client:"sidepanel"}`。
 - 服务端校验：token 匹配 + WS 握手的 `Origin` 头以 `chrome-extension://` 开头。
-- 成功回 `hello_ok{version, model}`；失败回 `hello_error{error}` 并关闭连接。
+- 成功回 `hello_ok{version, model, features?}`；失败回 `hello_error{error}` 并关闭连接。`features{memory, skills}` 说这个宿主有没有记忆、技能存储（只装扩展时都是 false），侧栏据此收起只会失败的入口；旧宿主不带时按有处理。
 - 单客户端策略：新连接握手成功则顶替旧连接（旧连接收到 `agent_event{kind:"notice"}` 后被关闭）。
 
 ## 消息流
@@ -62,7 +62,7 @@ server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_
 worker 事件带自己的 `sessionId`，面板把它们显示在所属用户会话的团队状态中。`abort` 只中止指定用户会话；停止单个 worker 只撤销该成员。`takeover` / `handback` 保留会话与标签绑定：接管先阻止目标页新写入，等待已在途短动作到安全停止点，再暂停该页全部协作者。其他会话的独立页继续。交还为各成员读取绑定页的新快照；关闭或读取失败的页面保持暂停，不把当前活动页替代进去。
 
 
-`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。
+`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。`tool_end.declined`：用户在授权卡上点了「拒绝」，没执行但不是失败，账本不留待办。任务视图里带 `awaitingConfirmation` 的项是被拦下、等页面确认的点击；它不妨碍别的会话接手这一页，接手时旧确认一并收起。
 
 ### 工具调用（RPC）
 

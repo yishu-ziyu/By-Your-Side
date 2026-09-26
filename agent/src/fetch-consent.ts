@@ -40,6 +40,8 @@ export interface ConsentOutcome {
   allowed: boolean;
   params?: Record<string, unknown>;
   reason?: string;
+  /** 用户亲手点了「拒绝」：这是用户的选择，不是执行失败（过期、取消、断线不算）。 */
+  declined?: true;
 }
 
 export interface FetchConsentBrokerOptions {
@@ -282,6 +284,6 @@ export class FetchConsentBroker {
     this.pending.delete(id);
     const text = message ?? STATUS_MESSAGE[status];
     this.emit({ type: "consent_result", conversationId: this.conversationId, requestId: id, status, message: text });
-    entry.resolve(status === "allowed" ? { allowed: true, params: entry.params } : { allowed: false, reason: text });
+    entry.resolve(status === "allowed" ? { allowed: true, params: entry.params } : status === "rejected" ? { allowed: false, reason: text, declined: true } : { allowed: false, reason: text });
   }
 }

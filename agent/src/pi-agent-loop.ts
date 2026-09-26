@@ -89,7 +89,8 @@ export class PiAgentLoop implements AgentLoop {
   private idleWaiters: Array<() => void> = [];
 
   constructor(private readonly options: PiAgentLoopOptions) {
-    this.retry = options.retry ?? { maxRetries: 3, baseDelayMs: 2000 };
+    // 1、2、4 秒三次重试：服务真坏了约 7 秒就告诉用户，而不是让人干等半分钟。
+    this.retry = options.retry ?? { maxRetries: 3, baseDelayMs: 1000 };
     this.definitions = new Map(options.tools.map(tool => [tool.name, tool]));
     this.active = options.tools.map(tool => tool.name);
 

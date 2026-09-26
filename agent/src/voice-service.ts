@@ -133,11 +133,13 @@ export class VoiceService {
           active.session.start(key);
         }
       }
-      catch {
+      catch (error) {
         if (this.active === active) {
           active.session.close(false);
           this.active = null;
-          this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail: "请先配置本机 StepFun 开放平台 API Key，再重试。" } });
+          // 取 key 的一方最清楚去哪儿配（扩展里是设置页，本机伴随进程是 ~/.sideagent）。
+          const detail = error instanceof Error && error.message ? error.message : "请先配置本机 StepFun 开放平台 API Key，再重试。";
+          this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail } });
         }
       }
 

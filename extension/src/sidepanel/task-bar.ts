@@ -265,7 +265,6 @@ function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): Mater
 export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   const { view, draft, sending, taskMaterials, control, now } = input;
   const unresolved = sending.filter((s) => s.status === "sending" || s.status === "unknown");
-  const failedSend = sending.find((s) => s.status === "rejected" || s.status === "failed");
   const pageTabId = input.pageTabId ?? view?.page?.tabId ?? null;
 
   const page = pageTabId != null
@@ -290,7 +289,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     const rows = [...confirmedRows, ...pendingRows];
     // 普通发送的页面材料要等页面快照回来才认识；这段时间也必须先有「发送中」，
     // 不能因为还没行就整块不显示（本地反馈不能靠异步查页面来决定有没有）。
-    const head = confirmedRows.length ? `已随任务送入 · ${confirmedRows.length} 项` : rows.length ? `材料 · ${rows.length} 项` : "材料";
+    const head = confirmedRows.length ? `已随任务送入 · ${confirmedRows.length} 项` : rows.length ? `随这条消息发送 · ${rows.length} 项` : "正在发送";
     materials = {
       rows,
       head: pendingRows.length && confirmedRows.length ? `${head}（另有 ${pendingRows.length} 项材料待确认）` : head,
@@ -306,13 +305,11 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     const rows = onlyPage ? [] : draftRows(draft);
 
     if (rows.length) {
-      materials = { rows, head: `待发送材料 · ${rows.length} 项`, status: null, note: "发送前可移除" };
+      materials = { rows, head: `发送时一起带上 · ${rows.length} 项`, status: null, note: "发送前可移除" };
     }
   }
 
-  if (!materials && failedSend) {
-    materials = { rows: [], head: "材料", status: `未接收：${clip(failedSend.note ?? "", 40)}`, note: null };
-  }
+  // 没被接收的消息不在顶部另起一张卡：原因已经在消息流里（如「还没有配置模型」），卡上只会剩下空的目标和占位。
 
   // ── 可见性：没有任何可说的事就整条隐藏；已结束的任务不再在顶部常驻 ──
   const hasViewStory = isOngoing;
@@ -323,7 +320,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   }
 
   const goal = view?.goal ?? null;
-  const headline = view?.state === 'idle' && view.outstanding.length ? '尚未完成 · 可继续' : view ? stateHeadline(view.state, view.resumable) : "新任务";
+  const headline = view?.state === 'idle' && view.outstanding.length ? '尚未完成 · 可继续' : view ? stateHeadline(view.state, view.resumable) : "";
   let activity: string | null = null;
 
   if (view?.state === "running") {
@@ -742,12 +739,15 @@ export class TaskBar {
     }
 
     this.el.setAttribute("data-state", model.state);
-    this.goalEl.textContent = model.goal ?? "（目标未记录）";
+    // 还没有任务（只是草稿或发送中）时没有目标可说，整行不显示，不放占位字。
+    this.headEl.hidden = !model.goal && !this.view?.revisions.length;
+    this.goalEl.textContent = model.goal ?? "";
     this.goalEl.title = model.goalTitle ?? model.goal ?? "";
     this.revisionsEl.textContent = this.view?.revisions.length ? `+${this.view.revisions.length} 修订` : "";
     this.revisionsEl.title = this.view?.revisions.length ? this.view.revisions.join("\n") : "";
     const statusBits = [model.headline, model.activity, model.idleAge].filter(Boolean);
-    this.statusEl.textContent = statusBits.join(" · ") || "准备中";
+    this.statusEl.textContent = statusBits.join(" · ");
+    this.statusEl.hidden = !statusBits.length;
     this.waitingEl.hidden = !model.waiting;
     this.waitingEl.textContent = model.waiting ? `等待：${model.waiting.text}${model.waiting.detail ? `（${model.waiting.detail}）` : ""}` : "";
     this.pageEl.hidden = !model.page;

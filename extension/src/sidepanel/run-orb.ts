@@ -18,7 +18,7 @@ export class RunOrbActivity {
     } else if (event.kind === "tool_end") {
       this.tools.delete(event.toolCallId);
 
-      if (event.isError) this.failed = true;
+      if (event.isError && !event.declined) this.failed = true;
     } else if (event.kind === "error") {
       this.failed = true;
     } else if (event.kind === "agent_end") {

@@ -103,17 +103,22 @@ describe("providerMark", () => {
 
 describe("humanizeModelError", () => {
   it("rewrites a bare Not Found model failure with actionable guidance", () => {
-    expect(humanizeModelError("模型请求最终失败：Not Found")).toBe(
-      "模型不可用（Not Found）：模型可能已下线或当前账号无访问权限，请在输入区切换模型后重试",
-    );
+    expect(humanizeModelError("模型请求最终失败：Not Found")).toBe("找不到这个模型：可能已下线或当前账号没有权限，在下方换一个模型后重试。");
   });
 
   it("rewrites 404-shaped model failures", () => {
-    expect(humanizeModelError("模型请求最终失败：HTTP 404: model not found")).toContain("请在输入区切换模型");
+    expect(humanizeModelError("模型请求最终失败：HTTP 404: model not found")).toContain("换一个模型");
+  });
+
+  it("never shows status codes or raw provider JSON", () => {
+    const shown = humanizeModelError('模型请求最终失败：503: {"message":"upstream overloaded"}');
+    expect(shown).toContain("模型服务暂时出错");
+    expect(shown).not.toMatch(/503|\{|message/);
+    expect(humanizeModelError("模型请求最终失败：Connection error.")).toBe("连不上模型服务，检查网络后再试。");
+    expect(humanizeModelError("模型请求最终失败：401 Unauthorized")).toContain("key 无效");
   });
 
   it("leaves other errors untouched", () => {
-    expect(humanizeModelError("模型请求最终失败：Connection error.")).toBe("模型请求最终失败：Connection error.");
     expect(humanizeModelError("切换模型失败：模型不存在或未配置凭据：foo/bar")).toBe(
       "切换模型失败：模型不存在或未配置凭据：foo/bar",
     );

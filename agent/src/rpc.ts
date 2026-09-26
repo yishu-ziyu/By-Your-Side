@@ -59,7 +59,7 @@ interface DispatchedCall {
   name: ToolName;
   sessionId?: string;
   startedAt: number;
-  state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected";
+  state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected" | "declined";
   fact?: ToolExecutionFact;
   /** 缺省页可能变化的调用：发出时的设置序号与出站参数，供回执比对新旧。 */
   targetSeq?: number;
@@ -246,6 +246,17 @@ export class ToolRpc {
     if (entry && entry.state === "preparing") entry.state = "rejected";
   }
 
+  /** 用户在授权卡上点了「拒绝」：动作前被拒，且是用户的选择。 */
+  markCallDeclined(id: string): void {
+    const entry = this.dispatched.get(id);
+
+    if (entry && entry.state === "preparing") entry.state = "declined";
+  }
+
+  wasDeclined(id: string): boolean {
+    return this.dispatched.get(id)?.state === "declined";
+  }
+
   /** 组合调用进入执行时更新事实（例如 browser_run 整体）。 */
   noteToolFact(id: string, fact: ToolExecutionFact): void {
     const entry = this.dispatched.get(id);
@@ -401,7 +412,7 @@ export class ToolRpc {
     for (const [key, entry] of this.dispatched) {
       if (pendingIds.has(key) || pendingIds.has(entry.id)) continue;
 
-      if (entry.state === "resolved" || entry.state === "rejected") droppable.push(key);
+      if (entry.state === "resolved" || entry.state === "rejected" || entry.state === "declined") droppable.push(key);
     }
 
     for (const key of droppable) {

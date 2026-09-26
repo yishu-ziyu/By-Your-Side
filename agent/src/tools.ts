@@ -20,6 +20,7 @@ import { fetchPages } from "./fetch-batch.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type TabInfo, type ToolContract, type ToolName } from "../../shared/protocol.js";
 import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
+import { plainDownloadError } from "../../shared/user-facing.js";
 import { needsConsentTicket, requiresControlGate } from "../../shared/effect-policy.js";
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
@@ -56,7 +57,8 @@ function downloadReceipt(download: NonNullable<ToolContract["wait_event"]["data"
   }
 
   if (download.failure) {
-    throw new Error(`Download failed: Chrome reported ${download.failure} for "${name}" (downloadId ${download.downloadId}). No complete file was saved.`);
+    // Chrome 的错误码留在回执数据里供排查；给模型的是人话原因，它照着对用户说时不会念出错误码。
+    throw new Error(`Download failed for "${name}": ${plainDownloadError(download.failure)}. No complete file was saved.`);
   }
 
   if (download.danger) {
@@ -217,7 +219,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       const outcome = consentOutcome(await consumeConsent(name, params, { signal }));
 
       if (!outcome.allowed) {
-        rejectCall();
+        if (outcome.declined && sdkId) rpc.markCallDeclined?.(sdkId);
+        else rejectCall();
         throw new Error(outcome.reason ?? CONSENT_REQUIRED_ERROR);
       }
 

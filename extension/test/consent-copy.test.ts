@@ -22,7 +22,8 @@ describe('consent card copy',()=>{
     const details=consentDetailsText(writeRequest);
     expect(details.summary).toBe('查看动作');
     expect(details.content).toContain('未确认的动作：填写 方案');
-    expect(details.content).toContain('fill #choice = 远山');
+    expect(details.content).toContain('只执行这一次：填写「远山」');
+    expect(details.content).not.toMatch(/\bfill\b|#choice/);
     expect(details.content).toContain('若当前对象已经满足，不写入');
     expect(details.content).toContain('当前页面');
     expect(details.content).toContain('自动保存');

@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
 import type { ConsentRequest, ConsentStatus } from "../../../shared/consent.js";
+import { plainStep, toolAction } from "../../../shared/user-facing.js";
 
 type Entry = { request: ConsentRequest; status: "pending" | ConsentStatus; submitted: boolean; message?: string };
 
@@ -14,10 +15,31 @@ export function consentTargetText(request: ConsentRequest): string {
   return request.kind === "write" ? `任务：${request.goal}` : `${request.method} ${request.url}`;
 }
 
-export function consentDetailsText(request: ConsentRequest): { summary: string; content: string } {
-  return request.kind === "write"
-    ? { summary: "查看动作", content: `未确认的动作：${request.description}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${request.tool} ${request.target} = ${request.value}\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` }
-    : { summary: "查看发送内容", content: `请求头：\n${JSON.stringify(request.headers, null, 2)}\n\n发送内容：\n${request.body ?? "（无请求正文）"}` };
+/** 表单编码的正文按字段逐行解码显示（发出去的仍是原文）；解不开就原样给出。 */
+function readableBody(headers: Record<string, string>, body: string | undefined): string {
+  if (body === undefined) return "（无请求正文）";
+  const type = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type")?.[1] ?? "";
+
+  if (!/application\/x-www-form-urlencoded/i.test(type)) return body;
+
+  try {
+    return [...new URLSearchParams(body)].map(([name, value]) => `${name}：${value}`).join("\n") || body;
+  } catch {
+    return body;
+  }
+}
+
+/** 授权卡上可展开的那一块：摘要行和展开后的正文。 */
+export interface ConsentDetails { summary: string; content: string }
+
+export function consentDetailsText(request: ConsentRequest): ConsentDetails {
+  if (request.kind === "write") {
+    return { summary: "查看动作", content: `未确认的动作：${plainStep(request.description)}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${toolAction(request.tool)}「${request.value}」\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` };
+  }
+
+  const headers = Object.entries(request.headers).map(([name, value]) => `${name}: ${value}`).join("\n") || "（无）";
+
+  return { summary: "查看发送内容", content: `请求头：\n${headers}\n\n发送内容：\n${readableBody(request.headers, request.body)}` };
 }
 
 export function consentStatusText(request: ConsentRequest, connected: boolean): string {

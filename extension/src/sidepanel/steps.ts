@@ -3,6 +3,7 @@
  * 与 DOM 解耦，便于单测；main.ts 负责渲染。
  */
 import { displayNameFor, personFor } from "../../../shared/cast.js";
+import { toolAction } from "../../../shared/user-facing.js";
 
 export interface ToolAction {
   /** 步骤链里用的短动作名，如 "读取页面结构"。 */
@@ -11,7 +12,7 @@ export interface ToolAction {
   full: string;
 }
 
-/** 工具名 → 中文动作；未知名称回退原始名。 */
+/** 工具名 → 中文动作；未登记的名称用共用的人话动作，不露原始名。 */
 const ACTION_NAMES: Record<string, string> = {
   tabs: "标签页",
   // 合并前的旧名保留：历史会话回放里仍会出现。
@@ -29,7 +30,7 @@ const ACTION_NAMES: Record<string, string> = {
   double_click: "双击",
   drag: "拖动",
   upload_file: "上传文件",
-  cdp: "CDP 调用",
+  cdp: "调用浏览器",
   hover: "悬停",
   remember_user_preference: "记住偏好",
   browser_run: "连续操作",
@@ -81,7 +82,7 @@ function str(v: unknown): string | null {
 
 /** 工具调用 → 人性化动作描述。 */
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
-  const short = ACTION_NAMES[name] ?? name;
+  const short = ACTION_NAMES[name] ?? toolAction(name);
 
   switch (name) {
     case "page_translation": {

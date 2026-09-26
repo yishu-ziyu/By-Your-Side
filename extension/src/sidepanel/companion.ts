@@ -199,6 +199,8 @@ export class SideCompanion {
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(() => this.onResize());
       this.resizeObserver.observe(this.composerEl);
+
+      for (const el of this.shelfCandidates()) this.resizeObserver.observe(el);
     }
 
     requestAnimationFrame(() =>
@@ -272,6 +274,39 @@ export class SideCompanion {
     this.hostEl.style.top = `${Math.round(pos.top)}px`;
     this.hostEl.style.left = `${Math.round(pos.left)}px`;
     this.hostEl.style.transform = rot ? `rotate(${rot}deg)` : "none";
+  }
+
+  /** 紧贴在输入框上方的卡片（团队状态、示范记录）：它们上面有按钮，M 不能趴在它们上面挡住。 */
+  private shelfCandidates(): HTMLElement[] {
+    return ["#demo-strip", "#team-card"].flatMap((selector) => {
+      const el = this.appEl.querySelector<HTMLElement>(selector);
+
+      return el ? [el] : [];
+    });
+  }
+
+  /**
+   * M 趴的那条沿：默认是输入框；输入框正上方叠着带按钮的卡片时，改趴到最上面那张卡片的上沿。
+   * 只认紧挨着的一摞（间距 40px 内），远处的卡片不影响。
+   */
+  private shelf(): HTMLElement {
+    let floor = this.composerEl;
+    let floorTop = this.boxOf(floor).top;
+
+    const stacked = this.shelfCandidates()
+      .filter((el) => !el.hidden && el.getClientRects().length > 0)
+      .sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom);
+
+    for (const el of stacked) {
+      const box = el.getBoundingClientRect();
+
+      if (box.height > 0 && box.bottom <= floorTop + 2 && box.bottom >= floorTop - 40) {
+        floor = el;
+        floorTop = box.top;
+      }
+    }
+
+    return floor;
   }
 
   private topPos(el: HTMLElement, t: number): { top: number; left: number } {
@@ -371,10 +406,12 @@ export class SideCompanion {
     this.visitTarget = null;
     this.hostEl.classList.remove("walking", "surprise", "nod");
 
+    const shelf = this.shelf();
+
     const pos = composerIdleAnchor(
-      this.boxOf(this.composerEl),
+      this.boxOf(shelf),
       this.appOrigin(),
-      this.pagePillEl ? this.boxOf(this.pagePillEl) : null,
+      shelf === this.composerEl && this.pagePillEl ? this.boxOf(this.pagePillEl) : null,
     );
 
     this.put(pos);
@@ -383,9 +420,10 @@ export class SideCompanion {
   public triggerLean(): void {
     if (this.isVisiting) return;
     const token = this.seq;
-    const composer = this.boxOf(this.composerEl);
+    const shelf = this.shelf();
+    const composer = this.boxOf(shelf);
     const app = this.appOrigin();
-    const pill = this.pagePillEl ? this.boxOf(this.pagePillEl) : null;
+    const pill = shelf === this.composerEl && this.pagePillEl ? this.boxOf(this.pagePillEl) : null;
     const idle = composerIdleAnchor(composer, app, pill);
     let lean = rimAnchor(composer, app, "lean");
 
@@ -568,15 +606,15 @@ export class SideCompanion {
       await this.wait(640);
       this.hostEl.classList.remove("rebounding");
     } else if (pick === "peek") {
-      await this.animateTo(this.topPos(this.composerEl, 0), token, 500, -11);
+      await this.animateTo(this.topPos(this.shelf(), 0), token, 500, -11);
       await this.wait(520);
 
       if (this.alive(token) && !this.isVisiting) this.resetToComposer();
     } else if (pick === "wander") {
-      await this.alongTop(this.composerEl, 0.12, 0.55, token);
+      await this.alongTop(this.shelf(), 0.12, 0.55, token);
 
       if (this.alive(token) && !this.isVisiting) {
-        await this.alongTop(this.composerEl, 0.55, 0.18, token);
+        await this.alongTop(this.shelf(), 0.55, 0.18, token);
       }
     }
   }

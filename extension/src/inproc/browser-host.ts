@@ -63,7 +63,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         fallbackModelPattern: "zai-coding-cn/glm-5.3-flash",
       }),
       voiceKey: async () => {
-        if (!voiceConfigured) throw new Error("语音密钥未配置");
+        if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「实时语音」里填阶跃星辰的 key。");
 
         return "injected-by-extension";
       },

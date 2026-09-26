@@ -12,6 +12,7 @@
 import type { TaskView } from "../../../shared/task-view.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import type { PageContext } from "../../../shared/protocol.js";
+import { plainStep } from "../../../shared/user-facing.js";
 
 const STATUS_LABEL: Record<string, string> = { pending: "未完成", blocked: "执行受阻", unknown: "结果未知", satisfied: "已完成" };
 
@@ -70,6 +71,9 @@ export function resumeAvailability(view: TaskView | null, checkpointUnavailable:
 
   if (view.state === "aborted") return { available: false, reason: "任务已停止，这个入口不会把它复活" };
 
+  // 剩下的只是等你在页面上确认的动作：去页面上点，不给「继续」重跑。
+  if (view.state === "idle" && awaitingOnly(view)) return { available: false, reason: "在页面上点确认或取消就行" };
+
   // 模型已在回答里说明哪些没做完：接下来要你补信息或换页面，直接在输入框回复，不给「继续」重跑。
   if (declaredUnfinished(view).length) return { available: false, reason: "回答里已说明没做完的部分，直接回复就行" };
 
@@ -108,6 +112,13 @@ function declaredUnfinished(view: TaskView): string[] {
   return view.state === "idle" ? view.latestDelivery?.unfinished ?? [] : [];
 }
 
+/** 「结果未知」的项全是被拦下、等用户在页面上确认的点击（模型列的目标要等用户确认后才算数，按同一件事处理）。 */
+function awaitingOnly(view: TaskView): boolean {
+  const unknown = view.outstanding.filter((item) => item.status === "unknown");
+
+  return unknown.length > 0 && unknown.every((item) => item.awaitingConfirmation) && view.outstanding.every((item) => item.status !== "blocked");
+}
+
 function clipText(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
@@ -119,13 +130,21 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   const declared = declaredUnfinished(view);
 
   // 用户要的哪件事没做成，比中途哪个工具失败更有用；中途失败留在步骤清单里。
-  if (declared.length) return `还有 ${declared.length} 项没完成：${clipText(declared[0]!, 24)}`;
-  const first = remaining[0];
+  // 只说是哪件事，不报账本的计数口吻；多于一件时补「等 N 件」。
+  // 中断或停下的任务不是「没做成」，只是还没做到。
+  const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : "没做成";
+  const notDone = (items: string[]) => `${verb}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
 
-  // 没列目标时账本里只有动作记录：如实说是哪一步没做成，不把它说成用户要的事没完成。
-  const left = !first ? null : view.goalsListed === false
-    ? `有 ${remaining.length} 步没做成：${clipText(first.description, 24)}`
-    : `还有 ${remaining.length} 项没完成：${clipText(first.description, 24)}`;
+  // 剩下的只是等你在页面上确认的动作：它没失败，模型怎么描述都一样，说清在等你。
+  if (view.state === "idle" && awaitingOnly(view)) {
+    const held = view.outstanding.find((item) => item.awaitingConfirmation)!;
+
+    return `等你在页面上确认：${clipText(plainStep(held.description), 24)}`;
+  }
+
+  if (declared.length) return notDone(declared);
+  // 描述已在 buildResumeSummary 里翻成人话（不带工具名、元素编号）。
+  const left = remaining.length ? notDone(remaining.map((r) => r.description)) : null;
 
   if (view.state === "aborted") return left ? `已停止，${left}，不会自动继续` : "已停止";
 
@@ -164,8 +183,8 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
   }
 
   const tone = headlineFor(view, checkpointUnavailable);
-  const done = view.results.filter((r) => r.status === "satisfied").map((r) => ({ id: r.id, description: r.description }));
-  const remaining = view.outstanding.map((r) => ({ id: r.id, description: r.description, status: r.status, statusLabel: resultStatusLabel(r.status) }));
+  const done = view.results.filter((r) => r.status === "satisfied").map((r) => ({ id: r.id, description: plainStep(r.description) }));
+  const remaining = view.outstanding.map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: resultStatusLabel(r.status) }));
   const unknown = remaining.filter((r) => r.status === "unknown").length;
   const blocked = remaining.filter((r) => r.status === "blocked").length;
   const interruptionDetail = view.waiting?.reason === "restart_checkpoint" && view.waiting.detail ? (INTERRUPTION_DETAIL[view.waiting.detail] ?? view.waiting.detail) : null;
