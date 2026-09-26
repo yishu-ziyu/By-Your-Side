@@ -15,7 +15,7 @@ import {
 } from "../../../shared/protocol.js";
 import type { ConnState, TransportKind } from "../relay.js";
 import {
-  INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
+  INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 
 export const NATIVE_HOST_NAME = "com.sideagent.host";
@@ -47,7 +47,7 @@ export class Uplink {
       if (area !== "local") return;
       const keys = Object.keys(changes);
 
-      if (keys.some((key) => key === INPROC_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushModelConfig();
+      if (keys.some((key) => key === INPROC_CONFIG_KEY || key === INPROC_FAST_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushModelConfig();
 
       // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
       if (keys.some((key) => key === INPROC_VOICE_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
@@ -251,7 +251,7 @@ export class Uplink {
   private async pushModelConfig(): Promise<void> {
     if (!this.inprocPort) return;
     const stored = await chrome.storage.local.get(null);
-    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, credentials: pickCredentials(Object.entries(stored)) });
+    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, fast: stored[INPROC_FAST_CONFIG_KEY] ?? null, credentials: pickCredentials(Object.entries(stored)) });
   }
 
   private async pushVoiceKey(): Promise<void> {

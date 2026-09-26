@@ -3,6 +3,9 @@ export const INPROC_PORT_NAME = "inproc-host";
 
 export const INPROC_CONFIG_KEY = "inproc_model_config";
 
+/** 即时动作（划词解释、网页翻译）用的快速模型，形状同 InprocModelConfig；不存在时沿用主模型。 */
+export const INPROC_FAST_CONFIG_KEY = "inproc_fast_model_config";
+
 export const INPROC_DOCUMENT = "inproc.html";
 
 /**

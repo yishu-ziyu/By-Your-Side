@@ -2,11 +2,12 @@
 
 [返回协议](protocol.md) · [使用说明](guides/usage.md)
 
-用户说“把这页翻译成中文”时，主模型调用 `page_translation` 的 `translate`。agent 里的 `runPageTranslation`（[`agent/src/page-translation.ts`](../agent/src/page-translation.ts)）负责分批和调用模型；页面一侧只提供 `begin`、`collect`、`apply` 三个动作（[`extension/src/shared/page-translation.ts`](../extension/src/shared/page-translation.ts)），准确类型见 [`shared/page-translation.ts`](../shared/page-translation.ts)。
+用户说“把这页翻译成中文”时，主模型调用 `page_translation` 的 `translate`；配了快速模型时，先由快速模型判断意图，是就直接调用同一个工具，不经主模型（[`agent/src/translate-intent.ts`](../agent/src/translate-intent.ts)，见[使用说明](guides/usage.md#快速模型与即时动作)）。agent 里的 `runPageTranslation`（[`agent/src/page-translation.ts`](../agent/src/page-translation.ts)）负责分批和调用模型；页面一侧只提供 `begin`、`collect`、`apply` 三个动作（[`extension/src/shared/page-translation.ts`](../extension/src/shared/page-translation.ts)），准确类型见 [`shared/page-translation.ts`](../shared/page-translation.ts)。
 
 ## 分批与顺序
 
-- `collect` 先给当前视口里的段落，再按离视口的距离排序；每批最多 8 块、3000 字符、24 个片段。
+- `collect` 先给当前视口里的段落，再按离视口的距离排序；每批最多 8 块、3000 字符、24 个片段。最先并行发出的 4 批每批只取 2 块（`maxBlocks`，`PAGE_TRANSLATION_FIRST_BATCH_BLOCKS`），当前一屏分几路先落页，不等一整批。
+- 翻译批次优先用快速模型（`ModelPort.fastModel`），不开思考；没配时用会话主模型。
 - `collect` 带 `exclude`（正在翻译的块号）时跳过这些块，并发的批次因此不重叠；agent 也会丢掉页面仍返回的在途块。
 - `apply` 只写入完整且原文未变的段落；页面在翻译期间换掉的段落留给下一次 `collect`。
 

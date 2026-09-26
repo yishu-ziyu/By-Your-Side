@@ -97,7 +97,7 @@ export interface ModelRuntime {
   /** 某些服务商要求的额外请求头。 */
   headersFor(model: Model<Api>): Record<string, string> | undefined;
   /** 供同一任务核心使用，当前设置由 offscreen 宿主提供。 */
-  createCoreModels(selectedConfig: () => InprocModelConfig | null): ModelPort;
+  createCoreModels(selectedConfig: () => InprocModelConfig | null, fastConfig?: () => InprocModelConfig | null): ModelPort;
   /** 设置页里能选的服务商，常用套餐在前。 */
   providerChoices(): ProviderChoice[];
 }
@@ -182,14 +182,14 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
 
   const runtime: ModelRuntime = {
     sessionId, credentials, models, resolveModel, headersFor, providerChoices,
-    createCoreModels: selectedConfig => createCoreModelPort(runtime, selectedConfig),
+    createCoreModels: (selectedConfig, fastConfig) => createCoreModelPort(runtime, selectedConfig, fastConfig),
   };
 
   return runtime;
 }
 
 /** 让扩展模型目录满足任务核心的模型接口，保留当前设置页的模型解析与 OpenCode 请求头。 */
-function createCoreModelPort(runtime: ModelRuntime, selectedConfig: () => InprocModelConfig | null): ModelPort {
+function createCoreModelPort(runtime: ModelRuntime, selectedConfig: () => InprocModelConfig | null, fastConfig: () => InprocModelConfig | null = () => null): ModelPort {
   const selectedModel = (provider: string, id: string): Model<Api> | undefined => {
     const config = selectedConfig();
 
@@ -204,6 +204,14 @@ function createCoreModelPort(runtime: ModelRuntime, selectedConfig: () => Inproc
 
   return {
     getModel: (provider, id) => selectedModel(provider, id) ?? runtime.models.getModel(provider, id),
+    // 设置里没选或选的模型解析不了时回到主模型，不让即时动作因为快速模型配置出错而失败。
+    fastModel: () => {
+      const config = fastConfig();
+
+      if (!config) return undefined;
+
+      try { return runtime.resolveModel(config); } catch { return undefined; }
+    },
     async getAvailable(provider, options) {
       const available = await runtime.models.getAvailable(provider, options);
       const config = selectedConfig();

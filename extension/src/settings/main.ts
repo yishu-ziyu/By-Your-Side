@@ -8,7 +8,8 @@
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { createModelRuntime, FEATURED_PROVIDERS, type ProviderChoice } from "../inproc/model-runtime.js";
 import {
-  CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
+  CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, pickCredentials, resolveVoiceKey,
+  STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
 import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
@@ -79,6 +80,15 @@ document.getElementById("settings")!.innerHTML = `
       </div>
       <p id="model-status" class="settings-status" role="status" aria-live="polite"></p>
     </div>
+  </section>
+  <section class="settings-card" aria-labelledby="fast-title">
+    <h2 id="fast-title">快速模型</h2>
+    <p class="settings-sub">划词解释、网页翻译这类要当场出结果的动作用它，并且不让它先思考。不选就用上面的主模型。</p>
+    <label class="settings-field">
+      <span>即时动作用的模型</span>
+      <select id="fast-model"></select>
+    </label>
+    <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="settings-card" aria-labelledby="voice-title">
     <h2 id="voice-title">实时语音</h2>
@@ -162,6 +172,12 @@ const voiceClear = $<HTMLButtonElement>("voice-clear");
 const voiceStatus = $("voice-status");
 
 let config: InprocModelConfig | null = null;
+
+let fastConfig: InprocModelConfig | null = null;
+
+const fastSelect = $<HTMLSelectElement>("fast-model");
+
+const fastStatus = $("fast-status");
 
 let credentials: StoredCredentials = {};
 
@@ -495,10 +511,51 @@ async function clearVoiceKey(): Promise<void> {
   setStatus(voiceStatus, "已清除。", "");
 }
 
+/** 阶跃的文字模型每次都先思考，官方接口关不掉；用作即时动作会让解释、翻译等十几秒才出字。 */
+const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
+
+/** 只列已填 key 或已登录的服务商的模型，选了就能用；另保留当前已存的选择。 */
+function renderFastModels(): void {
+  const options = [new Option("和主模型相同", "")];
+
+  for (const choice of choices) {
+    if (choice.id === CUSTOM_PROVIDER_ID || !credentialNote(choice.id)) continue;
+
+    for (const modelId of choice.models) options.push(new Option(`${choice.name} · ${modelId}`, JSON.stringify({ provider: choice.id, modelId })));
+  }
+
+  const current = fastConfig ? JSON.stringify({ provider: fastConfig.provider, modelId: fastConfig.modelId }) : "";
+
+  if (current && !options.some((o) => o.value === current)) options.push(new Option(`${labelOf(fastConfig!.provider)} · ${fastConfig!.modelId}`, current));
+  fastSelect.replaceChildren(...options);
+  fastSelect.value = current;
+  const slow = fastConfig ? alwaysThinks(fastConfig) : alwaysThinks(config);
+
+  // 保存会触发存储变化、重新渲染：只增减「会很慢」的提醒，不清掉刚显示的「已保存」。
+  if (slow) setStatus(fastStatus, "阶跃模型每次回答前都会先思考，解释和翻译要十几秒才出字。换一个快速模型会快很多。", "err");
+  else if (fastStatus.dataset.tone === "err") setStatus(fastStatus, "");
+}
+
+async function saveFastModel(): Promise<void> {
+  // SAFETY: 选项值只由 renderFastModels 生成，是 {provider, modelId} 的 JSON 或空串。
+  const next = fastSelect.value ? (JSON.parse(fastSelect.value) as InprocModelConfig) : null;
+
+  if (next) await chrome.storage.local.set({ [INPROC_FAST_CONFIG_KEY]: next });
+  else await chrome.storage.local.remove(INPROC_FAST_CONFIG_KEY);
+  fastConfig = next;
+  renderFastModels();
+
+  if (!alwaysThinks(next ?? config)) setStatus(fastStatus, next ? "已保存，下一次解释或翻译就用它。" : "已改回主模型。", "ok");
+}
+
+fastSelect.addEventListener("change", () => void saveFastModel());
+
 async function reload(): Promise<void> {
   const stored = await chrome.storage.local.get(null);
   // SAFETY: 这个键只由本页 save() 写入，写入值就是 InprocModelConfig。
   config = (stored[INPROC_CONFIG_KEY] as InprocModelConfig | undefined) ?? null;
+  // SAFETY: 这个键只由本页 saveFastModel() 写入，写入值就是 InprocModelConfig。
+  fastConfig = (stored[INPROC_FAST_CONFIG_KEY] as InprocModelConfig | undefined) ?? null;
   credentials = pickCredentials(Object.entries(stored));
   await runtime.credentials.load(credentials);
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
@@ -512,6 +569,7 @@ async function reload(): Promise<void> {
   renderCurrent();
   refreshProviderMarks();
   renderCredentialState();
+  renderFastModels();
 }
 
 const timbreList = $("timbre-list");
@@ -625,7 +683,7 @@ voiceClear.addEventListener("click", () => void clearVoiceKey());
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 renderProviders();

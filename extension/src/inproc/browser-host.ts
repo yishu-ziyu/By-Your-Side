@@ -10,7 +10,7 @@ import { createVoiceCaptureSink } from "../shared/trace-store.js";
 import { openConversationStore } from "./conversation-store.js";
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; credentials: StoredCredentials }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; credentials: StoredCredentials }
   | { type: "inproc_voice"; configured: boolean };
 
 export interface InprocHostDeps {
@@ -24,6 +24,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let core: HostCore | null = null;
   let pendingCore: Promise<HostCore> | null = null;
   let selected: InprocModelConfig | null = null;
+  let fastSelected: InprocModelConfig | null = null;
   let voiceConfigured = false;
   let helloReceived = false;
   /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
@@ -44,7 +45,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (pendingCore) return pendingCore;
 
-    const modelPort = models.createCoreModels(() => selected);
+    const modelPort = models.createCoreModels(() => selected, () => fastSelected);
     let pattern = "";
 
     // 新对话按建立时的设置取模型；核心启动后设置页可能已经换过（恢复的对话沿用自己记下的模型）。
@@ -156,6 +157,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (message.type === "inproc_config") {
       selected = message.config;
+      fastSelected = message.fast ?? null;
       await models.credentials.load(message.credentials ?? {});
 
       if (!selected) return;

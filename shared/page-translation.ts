@@ -34,6 +34,8 @@ export interface TranslationCommand {
   translations?: TranslationSegment[];
   /** collect only: block ids already being translated elsewhere; skip them so concurrent batches never overlap. */
   exclude?: string[];
+  /** collect only: at most this many blocks (1–8). The first batches stay small so the visible paragraphs land first. */
+  maxBlocks?: number;
 }
 
 export interface TranslationRequest {
@@ -60,7 +62,9 @@ export function validateTranslationCommand(p: TranslationCommand): void {
 
   if (p.document !== undefined && (typeof p.document !== 'string' || p.document.length > 100)) throw new Error('无效的文档身份');
 
-  if (p.exclude !== undefined && (p.action !== 'collect' || !Array.isArray(p.exclude) || p.exclude.length > 512 || p.exclude.some(id => typeof id !== 'string' || id.length > 20))) throw new Error('无效的排除段落');
+  if (p.exclude !== undefined && (p.action !== 'collect' || !Array.isArray(p.exclude) || p.exclude.length > 512 || p.exclude.some(id => String(id) !== id || !/^\d{1,20}$/.test(id)))) throw new Error('无效的排除段落');
+
+  if (p.maxBlocks !== undefined && (p.action !== 'collect' || !Number.isInteger(p.maxBlocks) || p.maxBlocks < 1 || p.maxBlocks > 8)) throw new Error('无效的批次上限');
 
   if (p.action === 'apply' && (!p.document || !Array.isArray(p.translations) || p.translations.length > 64 || p.translations.some(s => !s || typeof s.id !== 'string' || s.id.length > 80 || typeof s.text !== 'string' || s.text.length > 24000))) throw new Error('无效的译文批次');
 }
