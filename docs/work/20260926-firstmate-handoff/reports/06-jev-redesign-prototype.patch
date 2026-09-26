@@ -1,0 +1,542 @@
+From 32f5103d3f1b67335b29ec576021f7c4b15c42fa Mon Sep 17 00:00:00 2001
+From: yishu-ziyu <yishuziyu@gmail.com>
+Date: Sat, 26 Sep 2026 19:28:17 +0800
+Subject: [PATCH] test: prototype narrow Jev questions for S5/S6 (scratch,
+ bys-jev-design-r1)
+
+---
+ agent/src/browser-question-loop.ts     | 416 +++++++++++++++++++++++++
+ scripts/acceptance/jev-compare/run.mts |  59 +++-
+ 2 files changed, 469 insertions(+), 6 deletions(-)
+ create mode 100644 agent/src/browser-question-loop.ts
+
+diff --git a/agent/src/browser-question-loop.ts b/agent/src/browser-question-loop.ts
+new file mode 100644
+index 0000000..dea1181
+--- /dev/null
++++ b/agent/src/browser-question-loop.ts
+@@ -0,0 +1,416 @@
++/**
++ * PROTOTYPE (bys-jev-design-r1, scratch only). Redesigned way of asking Jev about the browser:
++ * code owns control flow (reveal, keep reading, stop, never repeat a write); Jev answers a few narrow
++ * typed questions per observation, composed by code by situation. Mirrors runBrowserDecisionLoop's
++ * executor calls, guards, 3 s provider timeout and 0.85 action threshold so only the questions differ.
++ */
++import { createHash } from 'node:crypto';
++import { controlRoles, isBrowserObservation, type BrowserControl, type BrowserLoopOutcome, type BrowserObservation, type BrowserStepReceipt, type BrowserDecisionReasonCode, type BrowserActionGuard } from '../../shared/browser-decision.js';
++import type { ToolName } from '../../shared/protocol.js';
++import { readTypeSafeKey } from './typesafe-auth.js';
++import { BROWSER_DECISION_CONFIDENCE_THRESHOLD, nextObservationExpansion, observationCheckKey } from './browser-action-selection.js';
++
++export const ACT_THRESHOLD = BROWSER_DECISION_CONFIDENCE_THRESHOLD;
++/** Noul P(yes) needed to propose done. */
++export const DONE_THRESHOLD = 0.85;
++/** Noul P(yes) at or above which a click is treated as a risky write and never auto-executed. */
++export const RISK_BLOCK = 0.5;
++/** Noul P(yes) that the requested control is listed; below it the target Choice is not trusted. */
++export const PRESENT_MIN = 0.5;
++
++export type JevAnswer = { type?: string; choice?: string; confidence?: number; probabilities?: Record<string, number>; noul?: number };
++export type JevRequest = { state: Record<string, unknown>; questions: Record<string, unknown> };
++export type JevTrace = { phase: 'request'; body: string; bytes: number; sha256: string; questions: number }
++  | { phase: 'response'; data: unknown; elapsedMs: number }
++  | { phase: 'error'; message: string; elapsedMs: number };
++export type AskJev = (request: JevRequest, signal: AbortSignal, onTrace?: (e: JevTrace) => void) => Promise<Record<string, JevAnswer>>;
++
++/** Same endpoint, pinned model, 3 s cap and no retry as decideBrowserCandidate. */
++export const askJev: AskJev = async (request, signal, onTrace) => {
++  const key = readTypeSafeKey();
++
++  if (!key) throw new Error('Jev 凭据不可用');
++  const body = JSON.stringify({ model: 'jev-1.13.0', ...request });
++
++  if (Buffer.byteLength(body) > 64000) throw new Error('候选资料超过当前决策预算，交回任务模型');
++  onTrace?.({ phase: 'request', body, bytes: Buffer.byteLength(body), sha256: createHash('sha256').update(body).digest('hex'), questions: Object.keys(request.questions).length });
++  const started = Date.now();
++  let response: Response;
++
++  try {
++    response = await fetch('https://api.typesafe.ai/v1/systemone', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body, signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) });
++  } catch (error) {
++    onTrace?.({ phase: 'error', message: error instanceof Error ? error.message : String(error), elapsedMs: Date.now() - started });
++    throw error;
++  }
++
++  if (!response.ok) {
++    onTrace?.({ phase: 'error', message: `Jev HTTP ${response.status}`, elapsedMs: Date.now() - started });
++    throw new Error(`Jev HTTP ${response.status}`);
++  }
++
++  const data = await response.json() as { answers?: Record<string, JevAnswer> };
++  onTrace?.({ phase: 'response', data, elapsedMs: Date.now() - started });
++
++  return data.answers ?? {};
++};
++
++/** Controls a click/hover can target (same roles the current candidate builder offers). */
++export function actionableControls(page: BrowserObservation): BrowserControl[] {
++  const owned = new Set(page.controls.flatMap(c => c.options?.map(o => o.ref) ?? []));
++
++  return page.controls.filter(c => !c.disabled && !c.protected && (controlRoles.has(c.role) || c.role === 'combobox') && !owned.has(c.ref));
++}
++
++/** One plain line per control: role, quoted name, scope and state. No page prose. */
++export function describeControl(c: BrowserControl): string {
++  const state = [c.checked !== undefined ? `checked=${c.checked}` : '', c.selected !== undefined ? `selected=${c.selected}` : '', c.expanded !== undefined ? `expanded=${c.expanded}` : '', c.value ? `value "${c.value}"` : ''].filter(Boolean).join(', ');
++
++  return `${c.role} "${c.name}"${c.scopeLabel ? ` in ${c.scopeLabel}` : ''}${state ? ` (${state})` : ''}`;
++}
++
++export interface LocateInput {
++  /** `{ task }` for the loop; `{ step, whole_task }` for the realtime judge. */
++  request: Record<string, string>;
++  /** Backticked path the questions judge against, e.g. `request.task`. */
++  ask: string;
++  page: BrowserObservation;
++  actionsDone: readonly string[];
++  /** Partitions already read; only unread ones are offered to the `part` question. */
++  unreadScopes: ReadonlyArray<{ id: string; label: string; count: number }>;
++}
++
++/**
++ * Situation-composed question set for one observation. All questions share one small state and run
++ * in parallel; code consumes only the answers that apply (speculative fan-out).
++ */
++export function buildLocateRequest(input: LocateInput): { request: JevRequest; ids: Map<string, BrowserControl> } {
++  const controls = actionableControls(input.page);
++  const ids = new Map(controls.map((c, i) => [`c${i + 1}`, c] as const));
++  const described = Object.fromEntries([...ids].map(([id, c]) => [id, describeControl(c)]));
++  const state: Record<string, unknown> = {
++    request: input.request,
++    page: { url: input.page.url, part_shown: input.page.viewScopeLabel ?? 'whole page' },
++    controls: described,
++  };
++
++  if (input.actionsDone.length) state.actions_done = input.actionsDone;
++  const a = input.ask;
++  const questions: Record<string, unknown> = {
++    target: {
++      type: 'choice',
++      instructions: {
++        question: `Which control in \`controls\` is the one ${a} asks to click, press or select?`,
++        not_the_target: 'A menu, dropdown or section that only has to be opened to reach that control.',
++      },
++      criteria: { ...described, none: `The control ${a} asks to click, press or select is not listed in \`controls\`.` },
++    },
++    target_listed: {
++      type: 'noul',
++      instructions: `Is the control that ${a} asks to click, press or select listed in \`controls\`?`,
++    },
++    opener: {
++      type: 'choice',
++      instructions: `Which control in \`controls\` is the menu, dropdown or section that ${a} says to open, or that has to be opened to reach the control ${a} asks to click?`,
++      criteria: { ...described, none: 'No listed control is such a menu, dropdown or section.' },
++    },
++  };
++
++  for (const [id] of ids) {
++    questions[`risky_${id}`] = {
++      type: 'noul',
++      instructions: `Would clicking \`controls.${id}\` delete, pay, buy, send, publish or submit something, or make another change that is hard to undo?`,
++    };
++  }
++
++  if (input.unreadScopes.length > 1) {
++    questions.part = {
++      type: 'choice',
++      instructions: `Which part of the page most likely contains the control ${a} asks to click?`,
++      criteria: Object.fromEntries(input.unreadScopes.map(s => [s.id, `${s.label} (${s.count} controls)`])),
++    };
++  }
++
++  if (input.actionsDone.length) {
++    questions.goal_done = {
++      type: 'noul',
++      instructions: `Do the actions in \`actions_done\` complete everything ${a} asks for?`,
++      criteria: {
++        true: 'Every control the request asks to click has been clicked, and every menu it asks to open has been opened.',
++        false: 'A click or opening the request asks for has not happened yet, or a different control was acted on.',
++      },
++    };
++  }
++
++  return { request: { state, questions }, ids };
++}
++
++export type LocateVerdict =
++  | { kind: 'done'; p: number }
++  | { kind: 'click'; control: BrowserControl; confidence: number; risk: number }
++  | { kind: 'risky'; control: BrowserControl; confidence: number; risk: number }
++  | { kind: 'repeat'; control: BrowserControl; confidence: number }
++  | { kind: 'unsure_target'; control?: BrowserControl; confidence: number }
++  | { kind: 'reveal'; control: BrowserControl; confidence: number }
++  | { kind: 'read'; order: string[] };
++
++/**
++ * Code composition of one answer set. Order: done → click a confident listed target → reveal via a
++ * confident opener → stop if the listed target is unsure → keep reading unread parts. Structural rules (never repeat a delivered click, never click a risky
++ * write, hover only to reveal) live here, not in the questions.
++ */
++export function composeLocate(answers: Record<string, JevAnswer>, ids: Map<string, BrowserControl>, ctx: { clicked: ReadonlySet<string>; hovered: ReadonlySet<string>; hasActions: boolean }): LocateVerdict {
++  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : NaN);
++
++  if (ctx.hasActions) {
++    const done = num(answers.goal_done?.noul);
++
++    if (!Number.isFinite(done)) throw new Error('Jev 未回答 goal_done');
++
++    if (done >= DONE_THRESHOLD) return { kind: 'done', p: done };
++  }
++
++  const target = answers.target;
++  const listed = num(answers.target_listed?.noul);
++  const tConf = num(target?.confidence);
++
++  if (!target?.choice || !Number.isFinite(listed) || !Number.isFinite(tConf)) throw new Error('Jev 未回答 target');
++  const tControl = target.choice !== 'none' ? ids.get(target.choice) : undefined;
++
++  if (target.choice !== 'none' && !tControl) throw new Error('Jev 选了未知控件');
++
++  const opener = answers.opener;
++  const oControl = opener?.choice && opener.choice !== 'none' ? ids.get(opener.choice) : undefined;
++  const canReveal = !!oControl && num(opener!.confidence) >= ACT_THRESHOLD && !ctx.hovered.has(oControl.ref);
++
++  // A control that is both the confident opener and the target is something to open: reveal it first
++  // (hover changes nothing), and only click it on a later observation if it is still the target.
++  if (tControl && listed >= PRESENT_MIN && tConf >= ACT_THRESHOLD && !(canReveal && oControl!.ref === tControl.ref)) {
++    if (ctx.clicked.has(tControl.ref)) return { kind: 'repeat', control: tControl, confidence: tConf };
++    const risk = num(answers[`risky_${target.choice}`]?.noul);
++
++    if (!Number.isFinite(risk) || risk >= RISK_BLOCK) return { kind: 'risky', control: tControl, confidence: tConf, risk };
++
++    return { kind: 'click', control: tControl, confidence: tConf, risk };
++  }
++
++  if (canReveal) return { kind: 'reveal', control: oControl!, confidence: num(opener!.confidence) };
++
++  if (tControl && listed >= PRESENT_MIN) return { kind: 'unsure_target', control: tControl, confidence: tConf };
++
++  const part = answers.part?.probabilities;
++  const order = part ? Object.entries(part).sort((x, y) => y[1] - x[1]).map(([id]) => id) : [];
++
++  // A pick the presence Noul disagrees with is not acted on: keep reading; if nothing is left the loop hands off.
++  return { kind: 'read', order };
++}
++
++export interface QuestionLoopOptions {
++  parentCallId: string;
++  goal: string;
++  signal: AbortSignal;
++  call: (name: ToolName, params: Record<string, unknown>, toolCallId: string) => Promise<unknown>;
++  ask?: AskJev;
++  onTrace?: (e: JevTrace & { answers?: Record<string, JevAnswer>; verdict?: LocateVerdict['kind'] }) => void;
++}
++
++/** Redesigned bounded loop for S5/S6-shaped tasks (click / hover-to-reveal / keep reading). */
++export async function runQuestionLoop(options: QuestionLoopOptions): Promise<BrowserLoopOutcome & { verdicts: string[] }> {
++  const receipts: BrowserStepReceipt[] = [];
++  const actionsDone: string[] = [];
++  const clicked = new Set<string>();
++  const hovered = new Set<string>();
++  const checked = new Set<string>();
++  const verdicts: string[] = [];
++  let page: BrowserObservation | undefined;
++  let modelCalls = 0;
++  let seq = 0;
++  const start = Date.now();
++  const ask = options.ask ?? askJev;
++  const nextId = () => `${options.parentCallId}/q-${++seq}`;
++  const active = () => {
++    if (options.signal.aborted) throw new Error('调用已取消');
++
++    if (Date.now() - start > 90000) throw new Error('任务循环时长预算已用完');
++  };
++  const finish = (status: BrowserLoopOutcome['status'], reason: string, reasonCode?: BrowserDecisionReasonCode) =>
++    ({ status, reason, ...(reasonCode ? { reasonCode } : {}), receipts, lastObservation: page, modelCalls, decisions: [], verdicts });
++  const observe = async (params: Record<string, unknown>) => {
++    active();
++    const raw = await options.call('snapshot', params, nextId()) as { observation?: unknown };
++
++    return isBrowserObservation(raw?.observation) ? raw.observation : undefined;
++  };
++  const reobserve = (p: BrowserObservation) => observe(p.viewScopeId ? { decision: true, viewScopeId: p.viewScopeId, fresh: true } : { decision: true });
++  const markRead = (p: BrowserObservation) => {
++    checked.add(observationCheckKey('observation', p.id));
++
++    if (p.viewScopeId) checked.add(observationCheckKey('scope', p.viewScopeId));
++  };
++
++  try {
++    for (let step = 0; step < 24; step++) {
++      if (!page) {
++        page = await observe({ decision: true });
++
++        if (!page) return finish('handoff', '浏览器未返回带身份的结构化观察', 'observation_incomplete');
++        markRead(page);
++      }
++
++      if (modelCalls >= 16) return finish('handoff', '已达到 16 次决策调用预算', 'candidate_budget');
++      const unreadScopes = (page.scopes ?? []).filter(s => !checked.has(observationCheckKey('scope', s.id)));
++      const { request, ids } = buildLocateRequest({ request: { task: options.goal }, ask: '`request.task`', page, actionsDone, unreadScopes });
++      let answers: Record<string, JevAnswer>;
++      const traceEvents: JevTrace[] = [];
++
++      active();
++      modelCalls++;
++
++      try {
++        answers = await ask(request, options.signal, e => traceEvents.push(e));
++      } catch (e) {
++        for (const ev of traceEvents) options.onTrace?.(ev);
++
++        if (options.signal.aborted) throw e;
++
++        return finish('handoff', e instanceof Error ? e.message : '决策服务不可用', 'provider_error');
++      }
++
++      const verdict = composeLocate(answers, ids, { clicked, hovered, hasActions: actionsDone.length > 0 });
++
++      for (const ev of traceEvents) options.onTrace?.(ev.phase === 'response' ? { ...ev, answers, verdict: verdict.kind } : ev);
++      verdicts.push(verdict.kind);
++
++      if (verdict.kind === 'done') return finish('needs_verification', '目标完成判断达到门槛；仍需独立核对');
++
++      if (verdict.kind === 'unsure_target') return finish('handoff', `不确定目标（${verdict.confidence.toFixed(2)}），未执行`, 'low_confidence');
++
++      if (verdict.kind === 'repeat') return finish('handoff', '唯一目标已点击过一次，完成判断未过门槛；不重复写入', 'low_confidence');
++
++      if (verdict.kind === 'risky') return finish('handoff', '目标可能是难以撤销的写入，需用户确认', 'permission_required');
++
++      if (verdict.kind === 'click' || verdict.kind === 'reveal') {
++        const operation = verdict.kind === 'click' ? 'click' : 'hover';
++        const control = verdict.control;
++        const guard: BrowserActionGuard = { observationId: page.id, operation, target: control.ref };
++        const toolCallId = nextId();
++        let result: { clicked?: boolean; effect?: { evidence?: string[] } } | undefined;
++
++        try {
++          active();
++          result = await options.call(operation, { tabId: page.tabId, target: control.ref, decisionGuard: guard }, toolCallId) as typeof result;
++        } catch (e) {
++          const err = e as Error & { executionFact?: string };
++          receipts.push({ toolCallId, observationId: page.id, candidateId: control.ref, operation, executionFact: err.executionFact === 'not_executed' ? 'not_executed' : 'unknown', verification: 'unverified', detail: err.message });
++
++          return finish('handoff', '动作失败或结果未知，已停止', err.executionFact === 'not_executed' ? 'stale_observation' : 'execution_unknown');
++        }
++
++        receipts.push({ toolCallId, observationId: page.id, candidateId: control.ref, operation, executionFact: 'executed', verification: 'unverified', detail: `${describeControl(control)}：已执行` });
++        const before = new Set(page.controls.map(c => `${c.role}|${c.name}`));
++        const after = await reobserve(page);
++
++        if (!after) return finish('handoff', '动作后没有取得可靠的新观察', 'observation_incomplete');
++
++        if (operation === 'click') {
++          clicked.add(control.ref);
++          const reaction = result?.effect?.evidence?.length ? ` The page reacted: ${result.effect.evidence.join('; ')}.` : '';
++          actionsDone.push(`Clicked ${describeControl(control)} once; the browser confirmed the click was delivered.${reaction}`);
++        } else {
++          hovered.add(control.ref);
++          const revealed = after.controls.filter(c => !before.has(`${c.role}|${c.name}`)).map(c => `${c.role} "${c.name}"`);
++          actionsDone.push(revealed.length
++            ? `Opened ${describeControl(control)} by hovering; it now shows ${revealed.join(', ')}.`
++            : `Hovered ${describeControl(control)}; nothing new appeared.`);
++        }
++
++        page = after;
++        markRead(after);
++        continue;
++      }
++
++      // Target not listed here: read the next unread part, most likely part first; cursor windows before other parts.
++      let params: Record<string, unknown> | undefined;
++      const preferred = verdict.kind === 'read' ? verdict.order.find(id => unreadScopes.some(s => s.id === id)) : undefined;
++
++      if (page.hasMore && page.nextCursor && !checked.has(observationCheckKey('cursor', page.nextCursor))) {
++        checked.add(observationCheckKey('cursor', page.nextCursor));
++        params = { decision: true, cursor: page.nextCursor, ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}) };
++      } else if (preferred) {
++        checked.add(observationCheckKey('scope', preferred));
++        params = { decision: true, viewScopeId: preferred };
++      } else {
++        const expansion = nextObservationExpansion(page, checked);
++
++        if (expansion) {
++          checked.add(expansion.checkKey);
++          params = { decision: true, ...expansion.params };
++        }
++      }
++
++      if (!params) return finish('handoff', '已读完全部范围，未找到用户要的控件', 'no_match');
++      const next = await observe(params);
++
++      if (!next) return finish('handoff', '续读未返回带身份的结构化观察', 'observation_incomplete');
++      page = next;
++      markRead(next);
++    }
++
++    return finish('handoff', '动作预算已用完', 'candidate_budget');
++  } catch (e) {
++    if (options.signal.aborted) return finish('cancelled', '任务已取消');
++
++    return finish('handoff', e instanceof Error ? e.message : '决策服务不可用', 'provider_error');
++  }
++}
++
++/**
++ * Redesigned realtime judge: one snapshot, one narrow question set, a suggestion or a typed reason.
++ * Never executes. `history` becomes `actions_done` only when the voice layer supplied it.
++ */
++export async function judgeRealtimeWithQuestions(
++  rpc: { call(name: string, params: Record<string, unknown>): Promise<unknown> },
++  input: { request: string; userTask: string; tabId: number; history: string[] },
++  signal: AbortSignal,
++  ask: AskJev = askJev,
++  onTrace?: QuestionLoopOptions['onTrace'],
++) {
++  const raw = await rpc.call('snapshot', { tabId: input.tabId, decision: true }) as { observation?: unknown };
++  const page = raw?.observation;
++
++  if (!isBrowserObservation(page)) throw new Error('页面没有返回有效观察，未调用 Jev。');
++  const unreadScopes = (page.scopes ?? []).filter(s => s.id !== page.viewScopeId);
++  const { request, ids } = buildLocateRequest({ request: { step: input.request, whole_task: input.userTask }, ask: '`request.step`', page, actionsDone: input.history, unreadScopes });
++  const events: JevTrace[] = [];
++  let answers: Record<string, JevAnswer>;
++
++  try {
++    answers = await ask(request, signal, e => events.push(e));
++  } catch (e) {
++    for (const ev of events) onTrace?.(ev);
++
++    return { status: 'uncertain' as const, reasonCode: 'provider_error' as const, reason: e instanceof Error ? e.message : String(e) };
++  }
++
++  const verdict = composeLocate(answers, ids, { clicked: new Set(), hovered: new Set(), hasActions: input.history.length > 0 });
++
++  for (const ev of events) onTrace?.(ev.phase === 'response' ? { ...ev, answers, verdict: verdict.kind } : ev);
++
++  if (verdict.kind === 'done') return { status: 'needs_verification' as const };
++
++  if (verdict.kind === 'click') {
++    return { status: 'suggestion' as const, suggestion: { tool: 'click', arguments: { tabId: page.tabId, target: verdict.control.ref, decisionGuard: { observationId: page.id, operation: 'click', target: verdict.control.ref } } } };
++  }
++
++  if (verdict.kind === 'reveal') {
++    return { status: 'suggestion' as const, suggestion: { tool: 'hover', arguments: { tabId: page.tabId, target: verdict.control.ref, decisionGuard: { observationId: page.id, operation: 'hover', target: verdict.control.ref } } } };
++  }
++
++  if (verdict.kind === 'read') {
++    const scope = verdict.order[0] ?? unreadScopes[0]?.id;
++
++    return { status: 'needs_context' as const, reasonCode: 'observation_incomplete' as const, continue: { action: scope ? 'select_scope' : 'continue_read', ...(scope ? { viewScopeId: scope } : page.nextCursor ? { cursor: page.nextCursor } : {}) } };
++  }
++
++  return { status: 'uncertain' as const, reasonCode: (verdict.kind === 'risky' ? 'permission_required' : 'low_confidence') as BrowserDecisionReasonCode };
++}
+diff --git a/scripts/acceptance/jev-compare/run.mts b/scripts/acceptance/jev-compare/run.mts
+index c2c5432..646ecb3 100644
+--- a/scripts/acceptance/jev-compare/run.mts
++++ b/scripts/acceptance/jev-compare/run.mts
+@@ -51,7 +51,7 @@ const E2E_TASKS = ["E5", "E6", "E6N"];
+ 
+ for (const t of tasks) if (![...DECISION_TASKS, ...E2E_TASKS].includes(t)) throw new Error(`unknown task ${t}`);
+ 
+-for (const a of arms) if (!["jev", "main", "split", "alone"].includes(a)) throw new Error(`unknown arm ${a}`);
++for (const a of arms) if (!["jev", "main", "split", "alone", "q"].includes(a)) throw new Error(`unknown arm ${a}`);
+ 
+ if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 60) throw new Error("--rounds must be 1..60");
+ 
+@@ -94,13 +94,14 @@ const { createBrowserTools } = await import("../../../agent/src/tools.js");
+ const { runBrowserDecisionLoop } = await import("../../../agent/src/browser-decision-loop.js");
+ const model = await import("../../../agent/src/browser-decision-model.js");
+ const { judgeRealtimeBrowserAction } = await import("../../../agent/src/realtime-browser-judge.js");
++const qloop = await import("../../../agent/src/browser-question-loop.js");
+ const { readTypeSafeKey } = await import("../../../agent/src/typesafe-auth.js");
+ const { SYSTEM_PROMPT } = await import("../../../agent/src/prompt.js");
+ const { programFirstGuidance } = await import("../../../agent/src/program-first.js");
+ const { freshPageObservationText, withPageContext } = await import("../../../agent/src/session.js");
+ const { wrapPageContent, redactCredentialText } = await import("../../../shared/untrusted.js");
+ 
+-if (arms.some(a => a === "jev" || a === "split") && !readTypeSafeKey()) throw new Error("BLOCKED: Jev credential unavailable");
++if (arms.some(a => a === "jev" || a === "split" || a === "q") && !readTypeSafeKey()) throw new Error("BLOCKED: Jev credential unavailable");
+ 
+ // Measurement only (never for gate batches): lift the provider's 3 s abort to see the natural latency tail.
+ const timeoutProbe = Number(arg("jev-timeout-probe", "0"));
+@@ -153,7 +154,7 @@ function parseJsonObject(text: string): any {
+ }
+ 
+ // ── one run ───────────────────────────────────────────────────────────────
+-type DecisionRecord = { arm: string; ms: number; bytes?: number; candidateId?: string; operation?: string; label?: string; confidence?: number; operationProbabilities?: Record<string, number>; error?: string; timeout?: boolean; cost: number; inputTokens?: number; view?: string; controls?: string[] };
++type DecisionRecord = { questions?: number; verdict?: string; answers?: Record<string, unknown>; arm: string; ms: number; bytes?: number; candidateId?: string; operation?: string; label?: string; confidence?: number; operationProbabilities?: Record<string, number>; error?: string; timeout?: boolean; cost: number; inputTokens?: number; view?: string; controls?: string[] };
+ 
+ const JEV_INPUT_PER_TOKEN = 0.042 / 1_000_000;
+ 
+@@ -266,7 +267,53 @@ async function runOnce(task: string, arm: string, round: number) {
+ 
+       const loopCall = async (toolName: ToolName, params: Record<string, unknown>) => rpc.call(toolName, params);
+ 
+-      if (task === "S5rt") {
++      /** Redesign arm: one DecisionRecord per Jev request, with every answer kept for offline analysis. */
++      let qPending: DecisionRecord | undefined;
++      let qStart = 0;
++      const qTrace = (e: any) => {
++        if (e.phase === "request") {
++          qStart = Date.now();
++          qPending = { arm: "q", ms: 0, cost: 0, bytes: e.bytes, questions: e.questions };
++          decisions.push(qPending);
++          trace.push({ request: JSON.parse(e.body) });
++        } else if (qPending) {
++          qPending.ms = e.elapsedMs ?? Date.now() - qStart;
++
++          if (e.phase === "response") {
++            const usage = e.data?.usage;
++            qPending.inputTokens = usage?.input_tokens ?? Math.ceil((qPending.bytes ?? 0) / 4);
++            qPending.cost = qPending.inputTokens! * JEV_INPUT_PER_TOKEN;
++            qPending.answers = e.answers;
++            qPending.verdict = e.verdict;
++            qPending.operation = e.verdict;
++            trace.push({ response: e.data, verdict: e.verdict });
++          } else {
++            qPending.error = e.message;
++            qPending.timeout = /timeout|aborted due to timeout|TimeoutError/i.test(e.message);
++            trace.push({ error: e.message });
++          }
++        }
++      };
++
++      if (arm === "q" && task === "S5rt") {
++        const userTask = "Open Account hover menu then click Settings";
++        const judge1: any = await qloop.judgeRealtimeWithQuestions(rpc, { request: "Open the Account menu", userTask, tabId, history: [] }, AbortSignal.timeout(30_000), undefined, qTrace);
++        result.judge = [{ status: judge1.status, tool: judge1.suggestion?.tool, reasonCode: judge1.reasonCode }];
++
++        if (judge1.status === "suggestion" && judge1.suggestion?.tool === "hover") {
++          await runTool("hover", judge1.suggestion.arguments);
++          const judge2: any = await qloop.judgeRealtimeWithQuestions(rpc, { request: "Click Settings in the open Account menu", userTask, tabId, history: ["Executed hover on Account; menu independently observed visible"] }, AbortSignal.timeout(30_000), undefined, qTrace);
++          result.judge.push({ status: judge2.status, tool: judge2.suggestion?.tool, reasonCode: judge2.reasonCode });
++
++          if (judge2.status === "suggestion" && judge2.suggestion) await runTool(judge2.suggestion.tool, judge2.suggestion.arguments);
++        }
++      } else if (arm === "q" && DECISION_TASKS.includes(task)) {
++        const goal = { S5loop: "Open Account hover menu then click Settings", S6: "Click Late-Target", S6N: "Click Absolutely-Missing-Target-XYZ" }[task as "S5loop"];
++
++        if (!goal) throw new Error(`redesign arm has no prototype for ${task}`);
++        const outcome = await qloop.runQuestionLoop({ parentCallId: `jevcmp-${task}`, goal, signal: AbortSignal.timeout(task === "S6" ? 120_000 : 90_000), call: loopCall, onTrace: qTrace });
++        result.loop = { status: outcome.status, reasonCode: outcome.reasonCode, reason: outcome.reason, receipts: outcome.receipts.map(r => `${r.operation}:${r.executionFact}/${r.verification}`), modelCalls: outcome.modelCalls, verdicts: outcome.verdicts };
++      } else if (task === "S5rt") {
+         const decide = selector(arm);
+         const userTask = "Open Account hover menu then click Settings";
+         const judge1: any = await judgeRealtimeBrowserAction(rpc, { request: "Open the Account menu", userTask, tabId, history: [] }, AbortSignal.timeout(30_000), decide);
+@@ -372,9 +419,9 @@ async function runOnce(task: string, arm: string, round: number) {
+     result.totalMs = Date.now() - started;
+     result.decisions = decisions;
+     result.agentTurns = agentTurns;
+-    result.jevRequests = decisions.filter(d => d.arm === "jev").length;
++    result.jevRequests = decisions.filter(d => d.arm === "jev" || d.arm === "q").length;
+     result.mainRequests = decisions.filter(d => d.arm === "main").length + agentTurns.length;
+-    result.jevCost = decisions.filter(d => d.arm === "jev").reduce((s, d) => s + d.cost, 0);
++    result.jevCost = decisions.filter(d => d.arm === "jev" || d.arm === "q").reduce((s, d) => s + d.cost, 0);
+     result.mainCost = decisions.filter(d => d.arm === "main").reduce((s, d) => s + d.cost, 0) + agentTurns.reduce((s, t) => s + t.cost, 0);
+     result.timeouts = decisions.filter(d => d.timeout).length;
+ 
+-- 
+2.39.5 (Apple Git-154)
+

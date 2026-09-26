@@ -1,0 +1,236 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>By Your Side 功能一览</title><style>
+body{margin:0;background:#fff;color:#222;font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:32px 28px 80px}
+h1{font-size:22px;margin:0 0 6px}h2{font-size:18px;margin:0}
+p{margin:6px 0}.muted{color:#666;font-size:13px}
+nav ol{columns:3;padding-left:20px;margin:12px 0 0}nav li{margin:2px 0}
+a{color:#1f4e8c;text-decoration:none}a:hover{text-decoration:underline}
+section{border-top:1px solid #ddd;padding:28px 0 12px}
+.head{display:flex;gap:12px;align-items:baseline}
+.st{font-size:13px;padding:1px 8px;border:1px solid #999;border-radius:3px;color:#333}
+.st.partial{border-color:#b7791f;color:#8a5a12}.st.todo{border-color:#999;color:#777}
+dl{display:grid;grid-template-columns:5em 1fr;gap:2px 10px;margin:10px 0 14px}dt{color:#777}dd{margin:0}
+.prob{color:#8a3b12}
+.figs{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+figure{margin:0}figure img{display:block;border:1px solid #ddd;cursor:zoom-in}
+figure.panel img{width:250px}figure.page img{width:540px;max-width:100%}
+figcaption{font-size:13px;margin-top:4px;max-width:540px}figure.panel figcaption{max-width:250px}
+figcaption .src{display:block;color:#888;font-size:12px}
+.note{font-size:13px;color:#666}
+table{border-collapse:collapse;margin-top:10px}td{border-top:1px solid #e3e3e3;padding:8px 12px 8px 0;vertical-align:top}
+td:first-child{white-space:nowrap;font-weight:600}td:last-child{color:#777;font-size:13px}
+</style></head><body><main>
+<h1>By Your Side 功能一览</h1>
+<p class="muted">版本 0.1.0 开发预览 · 源码 0c40421 · 2026-09-26 在隔离的无头 Chrome 里加载扩展实拍。状态依据仓库里的验收记录和本次实拍。</p>
+<p class="muted">图下的「模型回复由本地脚本提供」指界面是真实扩展，模型换成了本机按脚本回复的假模型；「语音服务为本地模拟」同理。没有用任何真实账号、登录或密钥。点图可看原图。</p>
+<nav><ol>
+<li><a href="#chat">侧栏对话与读页问答</a> <span class="muted">可用</span></li>
+<li><a href="#model">模型与语音设置</a> <span class="muted">可用</span></li>
+<li><a href="#mark">在页面上圈出来</a> <span class="muted">可用</span></li>
+<li><a href="#translate">整页翻译</a> <span class="muted">可用</span></li>
+<li><a href="#ask">选中文字追问（⌘J）</a> <span class="muted">可用</span></li>
+<li><a href="#act">替你操作网页（填写、点击）</a> <span class="muted">部分可用</span></li>
+<li><a href="#confirm">危险动作在页面上确认</a> <span class="muted">部分可用</span></li>
+<li><a href="#consent">发送请求前请你授权</a> <span class="muted">部分可用</span></li>
+<li><a href="#point">请你在页面上点一下</a> <span class="muted">可用</span></li>
+<li><a href="#stop">停止与接管</a> <span class="muted">部分可用</span></li>
+<li><a href="#voice">语音对话</a> <span class="muted">部分可用</span></li>
+<li><a href="#file">生成文件</a> <span class="muted">可用</span></li>
+<li><a href="#attach">附件与截屏</a> <span class="muted">部分可用</span></li>
+<li><a href="#conv">多个会话</a> <span class="muted">可用</span></li>
+<li><a href="#read">阅读外观</a> <span class="muted">可用</span></li>
+<li><a href="#demo">示范给 AI</a> <span class="muted">未完成</span></li>
+<li><a href="#mem">技能与记忆</a> <span class="muted">未完成</span></li>
+<li><a href="#teach">指导我操作（教学模式）</a> <span class="muted">未完成</span></li>
+<li><a href="#companion">小伙伴 M</a> <span class="muted">可用</span></li>
+<li><a href="#ready">接下来已准备好可以做的</a></li></ol></nav>
+<section id="chat"><div class="head"><h2>侧栏对话与读页问答</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>打开侧栏，在输入框里问当前页面的问题，回车发送。</dd><dt>你看到</dt><dd>提问后先出现一张任务卡和「正在思考」行，回答写完后整段淡入；回答下方有「复制回答」。</dd>
+<dt>已知问题</dt><dd class="prob">模型出错时约 30 秒后才显示，结果写「仅交付部分结果」，并直接贴出原始 JSON 报错（图 4，本次实拍）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/chat-1-idle.jpg"><img src="img/chat-1-idle.jpg" alt="空闲：新会话" loading="lazy"></a><figcaption>1. 空闲：新会话<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/chat-2-waiting.jpg"><img src="img/chat-2-waiting.jpg" alt="进行中：发送后 0.9 秒" loading="lazy"></a><figcaption>2. 进行中：发送后 0.9 秒<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/chat-3-answer.jpg"><img src="img/chat-3-answer.jpg" alt="结果：回答" loading="lazy"></a><figcaption>3. 结果：回答<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/chat-4-error.jpg"><img src="img/chat-4-error.jpg" alt="出错：模型接口返回 503" loading="lazy"></a><figcaption>4. 出错：模型接口返回 503<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="model"><div class="head"><h2>模型与语音设置</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>侧栏右上角「更多 → 模型与语音」打开设置页，选服务商、填 key、测试连接、保存。输入框下方的模型名可以切换模型。</dd><dt>你看到</dt><dd>设置页分模型、实时语音、音色、人设、诊断记录几块；保存后显示「已保存。侧栏接下来的任务会使用……」。</dd>
+<dt>已知问题</dt><dd class="prob">没配模型就发消息时，任务卡显示「（目标未记录）」「新任务」「材料」这类内部字样（图 1，本次实拍）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/model-1-none.jpg"><img src="img/model-1-none.jpg" alt="空：没配模型时发消息" loading="lazy"></a><figcaption>1. 空：没配模型时发消息<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/model-2-menu.jpg"><img src="img/model-2-menu.jpg" alt="「更多」菜单" loading="lazy"></a><figcaption>2. 「更多」菜单<span class="src">实拍</span></figcaption></figure>
+<figure class="page"><a href="img/model-3-settings.jpg"><img src="img/model-3-settings.jpg" alt="设置页：选服务商" loading="lazy"></a><figcaption>3. 设置页：选服务商<span class="src">实拍</span></figcaption></figure>
+<figure class="page"><a href="img/model-4-saved.jpg"><img src="img/model-4-saved.jpg" alt="结果：测试连接后保存" loading="lazy"></a><figcaption>4. 结果：测试连接后保存<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/model-5-picker.jpg"><img src="img/model-5-picker.jpg" alt="侧栏里的模型菜单" loading="lazy"></a><figcaption>5. 侧栏里的模型菜单<span class="src">实拍</span></figcaption></figure>
+<figure class="page"><a href="img/model-6-voice-diag.jpg"><img src="img/model-6-voice-diag.jpg" alt="设置页下半：音色、人设、诊断记录" loading="lazy"></a><figcaption>6. 设置页下半：音色、人设、诊断记录<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="mark"><div class="head"><h2>在页面上圈出来</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>说「在页面上圈出五小时用量」。</dd><dt>你看到</dt><dd>页面四周出现一圈淡色边缘光，右上角出现「By Your Side 处理中」胶囊；手绘框同时圈住名称和数值，名牌放在旁边空白处。侧栏留一行「做了 1 步 · 耗时」，展开是步骤清单。</dd>
+<dt>已知问题</dt><dd class="prob">用真实模型时圈画要 13–51 秒，离「当场出现」还远（docs/ROADMAP.md:18）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/mark-1-panel-running.jpg"><img src="img/mark-1-panel-running.jpg" alt="进行中：侧栏" loading="lazy"></a><figcaption>1. 进行中：侧栏<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="page"><a href="img/mark-2-page-running.jpg"><img src="img/mark-2-page-running.jpg" alt="进行中：页面" loading="lazy"></a><figcaption>2. 进行中：页面<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/mark-3-panel-done.jpg"><img src="img/mark-3-panel-done.jpg" alt="结果：侧栏，展开步骤" loading="lazy"></a><figcaption>3. 结果：侧栏，展开步骤<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="page"><a href="img/mark-4-page-done.jpg"><img src="img/mark-4-page-done.jpg" alt="结果：页面" loading="lazy"></a><figcaption>4. 结果：页面<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="translate"><div class="head"><h2>整页翻译</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>说「把这页翻译成中文」。</dd><dt>你看到</dt><dd>译文逐段插在原文下面（双语）；还可以说「只显示译文」「改成宋体」「恢复原文」。页面没真的变化时，侧栏会如实写「页面没有变化」，不算完成。</dd>
+<dt>已知问题</dt><dd class="prob">用真实模型整页翻译约 20 秒（docs/ROADMAP.md:18）。</dd>
+</dl>
+<div class="figs">
+<figure class="page"><a href="img/tr-1-before.jpg"><img src="img/tr-1-before.jpg" alt="翻译前" loading="lazy"></a><figcaption>1. 翻译前<span class="src">实拍</span></figcaption></figure>
+<figure class="page"><a href="img/tr-2-after.jpg"><img src="img/tr-2-after.jpg" alt="结果：双语对照（译文由脚本给出）" loading="lazy"></a><figcaption>2. 结果：双语对照（译文由脚本给出）<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/tr-3-panel.jpg"><img src="img/tr-3-panel.jpg" alt="结果：侧栏" loading="lazy"></a><figcaption>3. 结果：侧栏<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/tr-4-not-effective.jpg"><img src="img/tr-4-not-effective.jpg" alt="出错：翻译结果不可用时，侧栏写「页面没有变化」" loading="lazy"></a><figcaption>4. 出错：翻译结果不可用时，侧栏写「页面没有变化」<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="ask"><div class="head"><h2>选中文字追问（⌘J）</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>在网页上选中一段文字，按 ⌘J，在弹出的小卡片里提问。</dd><dt>你看到</dt><dd>小卡片显示来源和被选中的原文，回答直接出现在卡片里，可以接着追问。这个问答不进入侧栏任务。</dd>
+<dt>已知问题</dt><dd class="prob">卡片先出现在选区上方、盖住了标题；提问后卡片跳到选区下方（图 1 → 图 2，本次实拍）。</dd>
+</dl>
+<p class="note">无头浏览器收不到 Chrome 快捷键，这里用 ⌘J 触发后发出的同一条消息打开卡片。</p>
+<div class="figs">
+<figure class="page"><a href="img/ask-1-open.jpg"><img src="img/ask-1-open.jpg" alt="空闲：卡片刚打开" loading="lazy"></a><figcaption>1. 空闲：卡片刚打开<span class="src">实拍</span></figcaption></figure>
+<figure class="page"><a href="img/ask-2-answer.jpg"><img src="img/ask-2-answer.jpg" alt="结果：回答出现在卡片里" loading="lazy"></a><figcaption>2. 结果：回答出现在卡片里<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="act"><div class="head"><h2>替你操作网页（填写、点击）</h2><span class="st partial">部分可用</span></div><dl>
+<dt>你做什么</dt><dd>说「帮我改错字，然后点发送」这类要动页面的话。</dd><dt>你看到</dt><dd>运行中顶部有任务卡（作用于哪一页、送入了什么），输入框变成「插话」，旁边有「接管」和红色停止键。结束后留一行「做了 N 步」，没做完的写在回答下方。</dd>
+<dt>已知问题</dt><dd class="prob">过程行和未完成行直接露出内部名字，如「正在fetch」「正在ask_user_to_point」「有 2 步没做成：填写 @1443」（图 3，本次实拍）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/act-1-running.jpg"><img src="img/act-1-running.jpg" alt="进行中：正在点击「发送」" loading="lazy"></a><figcaption>1. 进行中：正在点击「发送」<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/act-2-unfinished.jpg"><img src="img/act-2-unfinished.jpg" alt="结果：一项没做到，回答下方写出来" loading="lazy"></a><figcaption>2. 结果：一项没做到，回答下方写出来<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/act-3-tab-busy.jpg"><img src="img/act-3-tab-busy.jpg" alt="出错：这一页被另一个没收尾的会话占着" loading="lazy"></a><figcaption>3. 出错：这一页被另一个没收尾的会话占着<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="confirm"><div class="head"><h2>危险动作在页面上确认</h2><span class="st partial">部分可用</span></div><dl>
+<dt>你做什么</dt><dd>任务要点「发送」「删除」「支付」这类按钮时，助手先不点，把按钮圈住，等你在页面上确认。</dd><dt>你看到</dt><dd>按钮被圈住，旁边是「待确认」名牌和「确认执行此操作？ 发送 / 取消」。点「发送」后表单才真正提交。</dd>
+<dt>已知问题</dt><dd class="prob">这一轮结束后，页面上的「发送 / 取消」会收起，只剩「待确认」名牌，点它没有反应（图 3，本次实拍；脚本模型在等你确认时结束了这一轮）。</dd>
+</dl>
+<div class="figs">
+<figure class="page"><a href="img/confirm-1-held.jpg"><img src="img/confirm-1-held.jpg" alt="等待确认：按钮被拿住" loading="lazy"></a><figcaption>1. 等待确认：按钮被拿住<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="page"><a href="img/confirm-2-sent.jpg"><img src="img/confirm-2-sent.jpg" alt="结果：点页面上的「发送」后表单提交" loading="lazy"></a><figcaption>2. 结果：点页面上的「发送」后表单提交<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="page"><a href="img/confirm-3-after-run.jpg"><img src="img/confirm-3-after-run.jpg" alt="这一轮结束后：只剩「待确认」" loading="lazy"></a><figcaption>3. 这一轮结束后：只剩「待确认」<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="consent"><div class="head"><h2>发送请求前请你授权</h2><span class="st partial">部分可用</span></div><dl>
+<dt>你做什么</dt><dd>助手要替你向网站发请求（例如 POST 提交）时，侧栏弹出授权卡。</dd><dt>你看到</dt><dd>卡片写明方法和地址，可以展开看请求头和发送内容，选「拒绝」或「允许一次」；拒绝后请求不会发出。</dd>
+<dt>已知问题</dt><dd class="prob">点「拒绝」后结果显示「执行失败」「有 1 步没做成：fetch」和「继续」按钮；发送内容以 URL 编码原样显示，读不懂（本次实拍）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/consent-1-card.jpg"><img src="img/consent-1-card.jpg" alt="等待授权：展开发送内容" loading="lazy"></a><figcaption>1. 等待授权：展开发送内容<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/consent-2-denied.jpg"><img src="img/consent-2-denied.jpg" alt="结果：拒绝后" loading="lazy"></a><figcaption>2. 结果：拒绝后<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="point"><div class="head"><h2>请你在页面上点一下</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>助手说不清你指的是哪个元素时，会请你在页面上点一下。</dd><dt>你看到</dt><dd>页面顶部出现提示「请在页面上点一下你说的那一项 · 只选择，不触发网页操作 · 按 Esc 取消」；鼠标移到哪里就框住哪里，点下后这个元素交给助手用。</dd>
+<dt>已知问题</dt><dd class="prob">等你点选时，侧栏任务卡写「正在执行 · ask_user_to_point」（本次实拍）；语音、刷新和接管下的点选还没验收（docs/STATUS.md:15）。</dd>
+</dl>
+<div class="figs">
+<figure class="page"><a href="img/point-1-ask.jpg"><img src="img/point-1-ask.jpg" alt="等待：请你点一下" loading="lazy"></a><figcaption>1. 等待：请你点一下<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="page"><a href="img/point-2-hover.jpg"><img src="img/point-2-hover.jpg" alt="进行中：鼠标悬停框住目标" loading="lazy"></a><figcaption>2. 进行中：鼠标悬停框住目标<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/point-3-done.jpg"><img src="img/point-3-done.jpg" alt="结果：侧栏回答" loading="lazy"></a><figcaption>3. 结果：侧栏回答<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="stop"><div class="head"><h2>停止与接管</h2><span class="st partial">部分可用</span></div><dl>
+<dt>你做什么</dt><dd>任务运行中按红色停止键，或按「接管」把页面拿回来自己操作。</dd><dt>你看到</dt><dd>停止后显示「已停止 · 任务已终止」。接管后侧栏写「页面现在归你」，页面左上角出现「现在归你 · 交还」浮条。</dd>
+<dt>已知问题</dt><dd class="prob">改口后的续做、重启后的续接和接管后交还仍有缺口（docs/STATUS.md:25）；接管时底部「详情」被小伙伴 M 挡住（图 3，本次实拍）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/stop-1-running.jpg"><img src="img/stop-1-running.jpg" alt="进行中" loading="lazy"></a><figcaption>1. 进行中<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/stop-2-stopped.jpg"><img src="img/stop-2-stopped.jpg" alt="结果：按停止后" loading="lazy"></a><figcaption>2. 结果：按停止后<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="panel"><a href="img/stop-3-takeover-panel.jpg"><img src="img/stop-3-takeover-panel.jpg" alt="接管：侧栏" loading="lazy"></a><figcaption>3. 接管：侧栏<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+<figure class="page"><a href="img/stop-4-takeover-page.jpg"><img src="img/stop-4-takeover-page.jpg" alt="接管：页面上的浮条" loading="lazy"></a><figcaption>4. 接管：页面上的浮条<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="voice"><div class="head"><h2>语音对话</h2><span class="st partial">部分可用</span></div><dl>
+<dt>你做什么</dt><dd>点输入框右侧的圆形语音键，直接开口；「停声」只停声音，「结束」关掉语音。</dd><dt>你看到</dt><dd>输入框上方展开语音区：一个会动的点阵球、状态文字（已连接 / 正在听你说 / 正在回答），下面是「你：……」和回答文字。</dd>
+<dt>已知问题</dt><dd class="prob">阶跃语音服务端会整段没反应，傍晚 6 次卡住 4 次，产品侧约 22 秒后才发现、请你重说（docs/STATUS.md:34）。</dd>
+</dl>
+<p class="note">语音服务换成了本地模拟：只在临时构建里把语音地址改到本机，模拟服务按脚本回一句转写和一段回答。点阵球的动效和真人说话时不同。</p>
+<div class="figs">
+<figure class="panel"><a href="img/voice-1-ready.jpg"><img src="img/voice-1-ready.jpg" alt="空闲：已连接" loading="lazy"></a><figcaption>1. 空闲：已连接<span class="src">实拍 · 语音服务为本地模拟</span></figcaption></figure>
+<figure class="panel"><a href="img/voice-2-answering.jpg"><img src="img/voice-2-answering.jpg" alt="进行中：转写出现，正在回答" loading="lazy"></a><figcaption>2. 进行中：转写出现，正在回答<span class="src">实拍 · 语音服务为本地模拟</span></figcaption></figure>
+<figure class="panel"><a href="img/voice-3-after.jpg"><img src="img/voice-3-after.jpg" alt="结果：回答完回到「正在听你说」" loading="lazy"></a><figcaption>3. 结果：回答完回到「正在听你说」<span class="src">实拍 · 语音服务为本地模拟</span></figcaption></figure>
+<figure class="panel"><a href="img/voice-4-nokey.jpg"><img src="img/voice-4-nokey.jpg" alt="出错：没填语音 key" loading="lazy"></a><figcaption>4. 出错：没填语音 key<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/voice-5-mic.jpg"><img src="img/voice-5-mic.jpg" alt="出错：麦克风未授权，右上角两段文字叠在一起" loading="lazy"></a><figcaption>5. 出错：麦克风未授权，右上角两段文字叠在一起<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/voice-6-conn-error.jpg"><img src="img/voice-6-conn-error.jpg" alt="出错：连不上语音服务，原因文字重复了一遍" loading="lazy"></a><figcaption>6. 出错：连不上语音服务，原因文字重复了一遍<span class="src">实拍</span></figcaption></figure>
+<figure class="page"><a href="img/voice-7-permission-page.jpg"><img src="img/voice-7-permission-page.jpg" alt="首次使用：麦克风授权页" loading="lazy"></a><figcaption>7. 首次使用：麦克风授权页<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="file"><div class="head"><h2>生成文件</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>说「把这页的商品和价格导出成 CSV」。</dd><dt>你看到</dt><dd>回答下方出现一张文件卡片（名字、类型、大小），点「下载」保存。</dd>
+<dt>已知问题</dt><dd class="prob">回答末尾可能误报「仅交付部分结果」「还有 2 项没完成」，其实已经做完（docs/evals/20260925-artifacts-files.md:25）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/file-1-card.jpg"><img src="img/file-1-card.jpg" alt="结果：文件卡片" loading="lazy"></a><figcaption>1. 结果：文件卡片<span class="src">实拍 · 模型回复由本地脚本提供</span></figcaption></figure>
+</div>
+</section>
+<section id="attach"><div class="head"><h2>附件与截屏</h2><span class="st partial">部分可用</span></div><dl>
+<dt>你做什么</dt><dd>点输入框左下角「+」，选「截取当前网页视口」或「上传本地图片」。</dd><dt>你看到</dt><dd>缩略图出现在输入框里，任务卡列出「待发送材料」，发送前可以移除。</dd>
+<dt>已知问题</dt><dd class="prob">本次只实拍到附上截图，没有验证发出后模型是否读了图；任务卡同样显示「（目标未记录）」。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/attach-1-menu.jpg"><img src="img/attach-1-menu.jpg" alt="「+」菜单" loading="lazy"></a><figcaption>1. 「+」菜单<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/attach-2-added.jpg"><img src="img/attach-2-added.jpg" alt="已附上截图，尚未发送" loading="lazy"></a><figcaption>2. 已附上截图，尚未发送<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="conv"><div class="head"><h2>多个会话</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>点顶部会话名切换，点「+」新建。</dd><dt>你看到</dt><dd>下拉列表列出全部会话和状态（空闲 / 运行中）；切换会话不会取消后台任务。</dd>
+<dt>已知问题</dt><dd class="prob">上一个会话留着没确认的动作时，新会话在同一个标签页里操作会失败，只看到「执行失败」（见「替你操作网页」图 3，本次实拍）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/conv-1-list.jpg"><img src="img/conv-1-list.jpg" alt="会话列表" loading="lazy"></a><figcaption>1. 会话列表<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="read"><div class="head"><h2>阅读外观</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>「更多 → 阅读外观」，选字体和字号。</dd><dt>你看到</dt><dd>只改回答正文的字体和字号，关掉侧栏再打开仍保留。</dd>
+</dl>
+<div class="figs">
+<figure class="page"><a href="img/read-1-settings.jpg"><img src="img/read-1-settings.jpg" alt="阅读外观面板" loading="lazy"></a><figcaption>1. 阅读外观面板<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="demo"><div class="head"><h2>示范给 AI</h2><span class="st todo">未完成</span></div><dl>
+<dt>你做什么</dt><dd>「更多 → 示范给 AI」，自己在页面上做一遍，再写一句话点「编译成脚本」。</dd><dt>你看到</dt><dd>侧栏逐条记下你的动作（点击输入框、输入、点击按钮）。</dd>
+<dt>已知问题</dt><dd class="prob">只装扩展时点「编译成脚本」显示「编译没成：技能存储不可用」（本次实拍）；技能复用已按路线图暂停（docs/ROADMAP.md:17）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/demo-1-recording.jpg"><img src="img/demo-1-recording.jpg" alt="进行中：示范中记下 4 步" loading="lazy"></a><figcaption>1. 进行中：示范中记下 4 步<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/demo-2-compile-failed.jpg"><img src="img/demo-2-compile-failed.jpg" alt="出错：编译失败" loading="lazy"></a><figcaption>2. 出错：编译失败<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="mem"><div class="head"><h2>技能与记忆</h2><span class="st todo">未完成</span></div><dl>
+<dt>你做什么</dt><dd>「更多 → 技能与记忆」。</dd><dt>你看到</dt><dd>抽屉分「技能」「记忆」两页，另有「观察」开关。</dd>
+<dt>已知问题</dt><dd class="prob">只装扩展时记忆页显示「未能读取记忆：记忆存储不可用」（本次实拍）；显式记忆已按路线图暂停（docs/ROADMAP.md:17）。</dd>
+</dl>
+<div class="figs">
+<figure class="panel"><a href="img/mem-1-skills.jpg"><img src="img/mem-1-skills.jpg" alt="空：技能页" loading="lazy"></a><figcaption>1. 空：技能页<span class="src">实拍</span></figcaption></figure>
+<figure class="panel"><a href="img/mem-2-memory.jpg"><img src="img/mem-2-memory.jpg" alt="出错：记忆页" loading="lazy"></a><figcaption>2. 出错：记忆页<span class="src">实拍</span></figcaption></figure>
+</div>
+</section>
+<section id="teach"><div class="head"><h2>指导我操作（教学模式）</h2><span class="st todo">未完成</span></div><dl>
+<dt>你做什么</dt><dd>把会话下方的「帮我操作」切成「指导我操作」。</dd><dt>你看到</dt><dd>设计上由助手用手绘圈和箭头指给你看、你自己动手。本次没有拍到这个模式下的实际效果。</dd>
+<dt>已知问题</dt><dd class="prob">真机效果裁决至今没过（docs/evals/20260907-hand-drawn-teach-marks.md:11），当前使用说明里也没有这个模式。</dd>
+</dl>
+</section>
+<section id="companion"><div class="head"><h2>小伙伴 M</h2><span class="st">可用</span></div><dl>
+<dt>你做什么</dt><dd>侧栏右下角的紫色 M；「更多 → 显示小伙伴 M」可以关掉。</dd><dt>你看到</dt><dd>M 停在输入框右上方，关掉后重开侧栏仍然关着。</dd>
+<dt>已知问题</dt><dd class="prob">M 会盖住下方的按钮，例如接管时的「详情」、示范里的「编译成脚本」（本次实拍，见上面两处截图）。</dd>
+</dl>
+</section>
+<section id="ready"><h2>接下来已准备好可以做的</h2><p class="muted">只列仓库文档里已写成「下一步」或「未做的下一步」的项，顺序照 docs/STATUS.md。</p><table>
+<tr><td>错误分析</td><td>从本地会话和导出的诊断记录里挑约 30 条真实记录，做一个查看页，逐条写一句哪里不对，再归类计数，得出错误清单。</td><td>docs/STATUS.md:33；docs/ROADMAP.md 第 7 条</td></tr>
+<tr><td>语音服务对比实验</td><td>用同一批语音用例比较候选服务的卡住率、插话反应、中文效果和工具调用，决定继续用阶跃还是换。</td><td>docs/STATUS.md:34</td></tr>
+<tr><td>按错误清单修</td><td>先修出现次数多、影响即时交互的错误；同时验证陌生人能否自己装好扩展并配好模型。</td><td>docs/STATUS.md:35</td></tr>
+<tr><td>在日常 Chrome 里重载复验</td><td>扩展内任务核心的一批修复（换模型、跨标签页、复制提速、圈名称加数值、开麦不丢字）只在隔离环境通过，还没在日常浏览器里复验。</td><td>docs/STATUS.md:21</td></tr>
+<tr><td>网页文件在侧栏里预览</td><td>生成文件的第二步：做出来的网页（HTML）直接在侧栏里打开运行，现在只能下载后自己打开。</td><td>docs/evals/20260925-artifacts-files.md:13</td></tr>
+</table><p class="note">路线图写明暂停、不在此列：显式记忆、技能复用、EverOS、多会话协作（docs/ROADMAP.md:17）。下载能力（C3）还在等权限决定（docs/STATUS.md:14）。</p></section>
+</main></body></html>
