@@ -16,3 +16,4 @@
 - 2026-09-23 | [仓库清理](../../docs/evals/20260923-repo-cleanup.md) | 新建 patterns/setting-label-effect-divergence.md；修订 patterns/chrome-fake-audio-file-sandbox.md（`AudioServiceOutOfProcess` 实测无效已删，保留依据；记下 `say` 直出 WAV 可用与复用）；更新 index.md；语音 read_page 漏表单值的教训写在 `voice-observation.ts` 修复处注释，不另立页；核对既有 15 篇 pattern 无重复 | 无新提案
 - 2026-09-23 | [圈画完成证据](../../docs/evals/20260923-mark-completion-evidence.md) | 新建 patterns/host-overlay-invisible-to-verification.md，更新 index.md
 - 2026-09-26 | [界面问题 10 项修复](../../docs/evals/20260926-ux-fixes.md) | 新建 patterns/model-label-decides-safety-gate.md，更新 index.md；「宿主文字直接漏到用户面前」的做法写在 `shared/user-facing.ts` 与架构文档，不另立页 | 无新提案
+- 2026-09-26 | [装日常前的端到端](../../docs/evals/20260926-e2e-before-daily-install.md) | 新建 patterns/restart-loses-in-memory-state.md，更新 index.md；核对 extension-harness-changes-observed-state 与 quota-limited-storage-silent-failure，无重复 | 无新提案

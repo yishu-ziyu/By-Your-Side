@@ -28,3 +28,4 @@
 | [setting-label-effect-divergence](patterns/setting-label-effect-divergence.md) | 侧栏和后台各有一份默认值、后台还缓存，提示说 A 实际做 B；默认值只定义一处、跨进程现读，验收断言提示 == 效果 | 仓库清理 | 2026-09-23 |
 | [host-overlay-invisible-to-verification](patterns/host-overlay-invisible-to-verification.md) | 标注画在封闭 shadow root，核验看不到，复核又不认回执，agent 空转到超时；给核验留隔离层只读读数，并随 snapshot 带出 | 圈画完成证据 | 2026-09-23 |
 | [model-label-decides-safety-gate](patterns/model-label-decides-safety-gate.md) | 模型写的 label 顶替了元素真名，「点击发送按钮」绕过了发送确认；闸门只看页面事实，并用真实模型验 | 界面问题 10 项修复 | 2026-09-26 |
+| [restart-loses-in-memory-state](patterns/restart-loses-in-memory-state.md) | 扩展内 agent 的会话只在内存、交给停机 worker 的消息无声消失；端到端里主动关 offscreen / 停 worker，送达以回显为准 | 装日常前的端到端 | 2026-09-26 |
