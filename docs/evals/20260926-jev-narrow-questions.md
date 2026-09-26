@@ -12,10 +12,10 @@
 
 ## 完成标准
 
-- [ ] 1. `runBrowserDecisionLoop` 与实时判断入口对外返回类型不变（`BrowserLoopOutcome`；suggestion / needs_context / uncertain / needs_verification） — 谁检查: `npm run typecheck` + 现有调用方测试
-- [ ] 2. 修掉原型三处缺陷（分区标签噪声、重复读同一批控件、每个控件都问风险），补上填写、下拉、开关、切标签页模板；风险措辞按报告调整 — 谁检查: 定点单测（先写失败方式） + 下面的实测
-- [ ] 3. 只对连接层失败重试一次，keep-alive 加长；报告重试救回的请求数 — 谁检查: 单测 + 验收批次统计
-- [ ] 4. 直接交付路径在开关后面，默认关闭 — 谁检查: 真实会话入口测试（`browser-loop-direct-delivery`）
+- [x] 1. `runBrowserDecisionLoop` 与实时判断入口对外返回类型不变（`BrowserLoopOutcome`；suggestion / needs_context / uncertain / needs_verification） — 谁检查: `npm run typecheck` + 现有调用方测试
+- [x] 2. 修掉原型三处缺陷（分区标签噪声、重复读同一批控件、每个控件都问风险），补上填写、下拉、开关、切标签页模板；风险措辞按报告调整 — 谁检查: 定点单测（先写失败方式） + 下面的实测
+- [x] 3. 只对连接层失败重试一次，keep-alive 加长；报告重试救回的请求数 — 谁检查: 单测 + 验收批次统计
+- [x] 4. 直接交付路径在开关后面，默认关闭 — 谁检查: 真实会话入口测试（`browser-loop-direct-delivery`）
 - [x] 5. 30 轮对照（一次一个测试 Chrome，两臂轮流）：S5 两个入口、S6、S6N、H1–H8、多标签条件；E5/E6/E6N 端到端，直接交付关与开 — 谁检查: `scripts/acceptance/jev-compare/run.mts` + `analyze.py`
 - [x] 6. 门槛全部满足：无网络故障的运行里新做法每个任务不低于现有做法，且 S5、S6、H1–H8 合计 ≥ 90%；错误写 0；误报完成 0；成功运行中 ≥ 90% 由循环自己以 `needs_verification` 结束；Jev 单次请求 p90 ≤ 1 s；网络故障单列 — 谁检查: `analyze.py` 输出，人复核
 - [x] 7. 门槛通过才开 PR 并写入数字；不通过则不开 PR，如实报告 — 谁检查: 人
@@ -78,5 +78,7 @@
 `main` 臂 15 次失败里 12 次是主模型服务 `Connection error`（按网络故障单列，去掉后 E5 21/22、E6 24/26），3 次是同一按钮点了两次。主模型 `zai-coding-cn/glm-5.3-flash`。
 
 **「日常侧栏是否打开 Jev」的参考标准：未全部满足。** 成功率与错误写两条在三个任务上都满足；耗时一条在 E5、E6 满足（`direct` 快约 15–19 倍），在 E6N 不满足：目标不存在时，循环 1 次 Jev 请求读完全页后交回，主模型又从头核实一遍，比主模型自己干慢 7–14 秒。`split` 在 E6 上与 `main` 同速，提速只来自直接交付。按事先写下的规则，不建议现在打开，交用户裁决。
+
+第 1–4 条：变基到 main 后在干净工作树跑 `check:docs --base main`、`check:architecture`、`typecheck`、`npm test`（3089 项）全部通过；`task-receipt-scale` 性能测试在负载 126 时超时一次，单独重跑通过。扩展构建以本分支代码在每个验收批次开始时各做一次隔离构建，均成功。重试救回 5 次见上表。
 
 第 7 条：合并门槛通过，据此开 PR。直接交付开关仍默认关闭；扩展内 `generalBrowserLoop` 仍关，日常侧栏行为不变，受影响的是语音的实时判断入口和本机模式的网页循环。
