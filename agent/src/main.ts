@@ -30,6 +30,7 @@ import { MemoryStore } from "./memory-store.js";
 import { SkillStore } from "./skill-store.js";
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
+import { useJevProxy } from "./jev-transport.js";
 import { DEFAULT_CLIPBOARD_HTTP_PORT, startClipboardDarwinHttpServer, type ClipboardHttpServer } from "./clipboard-darwin.js";
 
 interface CliArgs {
@@ -130,6 +131,7 @@ async function main(): Promise<void> {
   // 不要默认读取代理环境变量：挂全局 dispatcher 会干扰部分 provider（如 kimi-coding）的传输。
   if (proxy) {
     setGlobalDispatcher(createProxyDispatcher(proxy));
+    useJevProxy(proxy);
   }
 
   if (!cli.ws) enableFileLog();

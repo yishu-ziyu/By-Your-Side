@@ -53,6 +53,7 @@ const browserSwaps = {
     swap(/^\.\/realtime-browser-tool-defs\.js$/, path.join(root, "src/inproc/voice/tool-defs.ts"), true);
     swap(/^\.\/route-shadow\.js$/, path.join(shims, "route-shadow.ts"), true);
     swap(/^\.\/config\.js$/, path.join(shims, "config.ts"), true);
+    swap(/^\.\/jev-transport\.js$/, path.join(shims, "jev-transport.ts"), true);
     swap(/^ws$/, path.join(shims, "ws.ts"), false);
     // 任务核心（agent/src）里只在本机才用的两个模块：诊断记录写文件；AgentSession 会话循环。
     swap(/^\.\/run-trace\.js$/, path.join(shims, "run-trace.ts"), true);

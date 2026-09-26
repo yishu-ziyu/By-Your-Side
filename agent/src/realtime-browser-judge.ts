@@ -1,18 +1,40 @@
-import { isBrowserObservation, type BrowserActionGuard, type BrowserDecisionReasonCode } from '../../shared/browser-decision.js';
-import { decideBrowserCandidate } from './browser-decision-model.js';
+import { isBrowserObservation, type BrowserActionGuard, type BrowserContinueHint, type BrowserDecisionReasonCode, type BrowserObservation } from '../../shared/browser-decision.js';
 import {
+  goalConcernsBrowserTabs,
   humanReasonForCode,
+  nextObservationExpansion,
+  observationCheckKey,
   realtimeContinueHint,
-  resolveBrowserDecision,
-  selectBrowserActionCandidates,
   type BrowserToolGate,
+  type ObservationCheckKey,
   type RealtimeContinueMount,
 } from './browser-action-selection.js';
+import { InvalidAnswer, actKind, buildActRequest, buildLocateRequest, composeAct, composeLocate, questionRequest } from './browser-questions.js';
+import { JEV_MODEL, askJev, type AskJev, type JevTrace } from './jev-client.js';
 import type { ToolRpc } from './rpc.js';
 
 export type RealtimeJudgeContinueMount = RealtimeContinueMount;
 
-/** One read + one existing Jev judgment. Never executes the suggested action. */
+/** What the voice layer receives: one guarded suggestion, or a typed reason with a continue hint. */
+export type RealtimeBrowserJudgment = {
+  observationId: string;
+  tabId: number;
+  confidence: number;
+  model: string;
+  status: 'suggestion' | 'needs_context' | 'uncertain' | 'needs_verification';
+  reasonCode?: BrowserDecisionReasonCode;
+  reason?: string;
+  continue?: BrowserContinueHint;
+  suggestion?: { tool: string; arguments: Record<string, unknown>; note?: string; missingArguments?: string[] };
+};
+
+/** Jev requests one judgment may spend, including reads of unread windows and the per-action request. */
+const JUDGE_CALL_BUDGET = 6;
+
+/**
+ * Reads the page (and its unread windows) and answers with one guarded suggestion or a typed reason.
+ * Never executes the suggested action; the voice layer runs it with the existing tool afterwards.
+ */
 export async function judgeRealtimeBrowserAction(
   rpc: ToolRpc,
   input: {
@@ -30,23 +52,18 @@ export async function judgeRealtimeBrowserAction(
     continueMount?: Partial<RealtimeContinueMount>;
   },
   signal: AbortSignal,
-  decide = decideBrowserCandidate,
-) {
+  ask: AskJev = askJev,
+  diagnostics?: { onTrace?: (event: JevTrace) => void },
+): Promise<RealtimeBrowserJudgment> {
   signal.throwIfAborted();
   let tabId = input.tabId ?? rpc.getPageTarget();
 
   if (!tabId) {
-    const active = await rpc.call('get_active_tab', {}) as {tab?: {id: number}};
+    const active = await rpc.call('get_active_tab', {}) as { tab?: { id: number } };
     tabId = active.tab?.id ?? null;
   }
 
   if (!tabId) throw new Error('没有可观察的浏览器页面。');
-  signal.throwIfAborted();
-  const raw = await rpc.call('snapshot', {tabId, decision:true}) as {observation?: unknown};
-  signal.throwIfAborted();
-  const page = raw.observation;
-
-  if (!isBrowserObservation(page) || page.tabId !== tabId) throw new Error('页面没有返回有效候选，未调用 Jev。');
 
   const mount: RealtimeContinueMount = {
     directBrowser: input.continueMount?.directBrowser ?? true,
@@ -54,162 +71,153 @@ export async function judgeRealtimeBrowserAction(
     browserRequest: input.continueMount?.browserRequest ?? true,
   };
 
-  const selection = selectBrowserActionCandidates({
-    goal: JSON.stringify({userTask:input.userTask,localGoal:input.request}),
-    page,
-    materials: [],
-    history: input.history,
-    canGenerateText: true,
-    canExecute: input.canExecute,
-  });
+  const observe = async (params: Record<string, unknown>): Promise<BrowserObservation> => {
+    signal.throwIfAborted();
+    const raw = await rpc.call('snapshot', { tabId, decision: true, ...params }) as { observation?: unknown };
+    signal.throwIfAborted();
 
-  const candidates = selection.candidates;
-  let decision;
+    if (!isBrowserObservation(raw?.observation) || raw.observation.tabId !== tabId) throw new Error('页面没有返回有效候选，未调用 Jev。');
+
+    return raw.observation;
+  };
+
+  const request = questionRequest(input.request, input.userTask);
+  const goalText = `${input.request}\n${input.userTask}`;
+  const allowed = (tool: string) => !input.canExecute || input.canExecute(tool);
+  const checked = new Set<ObservationCheckKey>();
+  let page = await observe({});
+  let calls = 0;
+  let confidence = 0;
+
+  const evidence = () => ({ observationId: page.id, tabId: page.tabId, confidence, model: JEV_MODEL });
+
+  const uncertain = (reasonCode: BrowserDecisionReasonCode, reason = humanReasonForCode(reasonCode)) =>
+    ({ ...evidence(), status: 'uncertain' as const, reasonCode, reason, continue: realtimeContinueHint(reasonCode, page, mount) });
+
+  const guard = (operation: BrowserActionGuard['operation'], target: string): BrowserActionGuard => ({ observationId: page.id, operation, target });
+
+  const judge = async (jevRequest: Parameters<AskJev>[0]) => {
+    calls++;
+
+    return ask(jevRequest, signal, diagnostics?.onTrace ? { onTrace: diagnostics.onTrace } : undefined);
+  };
+
+  const track = (next: BrowserObservation) => {
+    checked.add(observationCheckKey('observation', next.id));
+
+    if (next.viewScopeId) checked.add(observationCheckKey('scope', next.viewScopeId));
+
+    // The whole page in one complete view already shows every partition: none is left to read.
+    if (!next.viewScopeId && !next.hasMore) for (const scope of next.scopes ?? []) checked.add(observationCheckKey('scope', scope.id));
+  };
+
+  track(page);
 
   try {
-    decision = await decide({
-      goal:JSON.stringify({userTask:input.userTask,localGoal:input.request}),
-      page,candidates,materials:selection.decisionMaterials,history:input.history,
-    },signal);
-  } catch (e) {
-    signal.throwIfAborted();
-    const reasonCode: BrowserDecisionReasonCode = 'provider_error';
+    for (;;) {
+      if (calls >= JUDGE_CALL_BUDGET) {
+        const hint = realtimeContinueHint('observation_incomplete', page, mount);
 
-    return {
-      observationId: page.id,
-      tabId: page.tabId,
-      status: 'uncertain' as const,
-      reasonCode,
-      reason: e instanceof Error ? e.message : humanReasonForCode(reasonCode),
-      continue: realtimeContinueHint(reasonCode, page, mount),
-    };
-  }
-
-  signal.throwIfAborted();
-  const evidence = {observationId:page.id,tabId:page.tabId,confidence:decision.confidence,model:decision.model};
-  const verdict = resolveBrowserDecision(decision, candidates, page.id);
-
-  if (verdict.kind === 'reject') {
-    return {
-      ...evidence,
-      status: 'uncertain' as const,
-      reasonCode: verdict.reasonCode,
-      reason: verdict.reason,
-      continue: realtimeContinueHint(verdict.reasonCode, page, mount),
-    };
-  }
-
-  const candidate = verdict.candidate;
-
-  if (['done','handoff','wait','reobserve','continue_read','select_scope','select_materials'].includes(candidate.operation)) {
-    if (candidate.operation === 'done') {
-      return {
-        ...evidence,
-        status: 'needs_verification' as const,
-        reason: 'Jev建议结果已满足，但这不是完成证明，请根据页面核对。',
-      };
-    }
-
-    const reasonCode: BrowserDecisionReasonCode =
-      candidate.operation === 'handoff'
-        ? (selection.bounded ? 'candidate_budget' : 'unsupported_action')
-        : candidate.operation === 'select_materials'
-          ? 'candidate_budget'
-          : 'observation_incomplete';
-
-    const tools: string[] = [];
-
-    if (mount.directBrowser && (candidate.operation === 'continue_read' || candidate.operation === 'select_scope' || candidate.operation === 'reobserve' || candidate.operation === 'wait')) {
-      tools.push('snapshot');
-    }
-
-    if (reasonCode === 'unsupported_action' || reasonCode === 'candidate_budget') {
-      if (mount.taskAction) tools.push('task_action');
-      else if (mount.browserRequest) tools.push('browser_request');
-    }
-
-    return {
-      ...evidence,
-      status: 'needs_context' as const,
-      reasonCode,
-      reason: humanReasonForCode(reasonCode),
-      continue: {
-        ...realtimeContinueHint(reasonCode, page, mount),
-        ...(candidate.cursor ? { cursor: candidate.cursor } : {}),
-        ...(candidate.viewScopeId ? { viewScopeId: candidate.viewScopeId } : {}),
-        tools: [...new Set([...(realtimeContinueHint(reasonCode, page, mount).tools ?? []), ...tools])],
-      },
-      ...(candidate.cursor || candidate.viewScopeId || candidate.materialIds
-        ? { view: {
-          ...(candidate.cursor ? { cursor: candidate.cursor } : {}),
-          ...(candidate.viewScopeId ? { viewScopeId: candidate.viewScopeId } : {}),
-          ...(candidate.materialIds ? { materialIds: candidate.materialIds } : {}),
-        } }
-        : {}),
-    };
-  }
-
-  if (candidate.operation === 'switch_tab') {
-    return {...evidence,status:'suggestion',suggestion:{tool:'tabs',arguments:{action:'switch',tabId:candidate.tabId,
-      decisionGuard:{observationId:page.id,operation:'switch_tab',sourceTabId:page.tabId}}}};
-  }
-
-  if (candidate.operation === 'hover') {
-    if (!candidate.target) {
-      return {
-        ...evidence,
-        status: 'uncertain' as const,
-        reasonCode: 'invalid_decision' as const,
-        reason: '悬停目标不在当前观察中，未执行。',
-        continue: realtimeContinueHint('invalid_decision', page, mount),
-      };
-    }
-
-    const guard: BrowserActionGuard = {observationId:page.id,operation:'hover',target:candidate.target};
-
-    return {...evidence,status:'suggestion',suggestion:{tool:'hover',arguments:{tabId:page.tabId,target:candidate.target,decisionGuard:guard},
-      note:'悬停只为揭示控件；采纳后必须重新观察再点击，不能把悬停前的证据当作完成。'}};
-  }
-
-  let operation = candidate.operation === 'select' ? 'fill' : candidate.operation;
-  let target = candidate.target;
-
-  if (candidate.operation === 'select') {
-    const element = await rpc.call('read_element',{tabId:page.tabId,target}) as {tagName?:string};
-    signal.throwIfAborted();
-
-    if (element.tagName?.toLowerCase() !== 'select') {
-      if (!candidate.optionRef || !page.controls.some(c => c.ref === candidate.optionRef && !c.disabled)) {
-        return {
-          ...evidence,
-          status: 'uncertain' as const,
-          reasonCode: 'no_match' as const,
-          reason: '选项不是当前可执行对象，未执行。',
-          continue: realtimeContinueHint('no_match', page, mount),
-        };
+        return { ...evidence(), status: 'needs_context' as const, reasonCode: 'observation_incomplete' as const, reason: humanReasonForCode('observation_incomplete'), continue: hint };
       }
 
-      operation = 'click'; target = candidate.optionRef;
+      const unreadScopes = (page.scopes ?? []).filter(s => s.id !== page.viewScopeId && !checked.has(observationCheckKey('scope', s.id)));
+      const tabs = goalConcernsBrowserTabs(goalText, page) && allowed('tabs') ? (page.tabs ?? []).filter(t => t.id !== page.tabId) : [];
+      const located = buildLocateRequest({ request, page, actionsDone: input.history, acted: new Set(), unreadScopes, tabs });
+      const verdict = composeLocate(await judge(located.request), located, { hasActions: input.history.length > 0, hovered: new Set(), hoverShowedNothing: new Set() });
+      signal.throwIfAborted();
+      confidence = verdict.confidence;
+
+      if (verdict.kind === 'done') return { ...evidence(), status: 'needs_verification' as const, reason: 'Jev判断已有动作完成了这一步，但这不是完成证明，请根据页面核对。' };
+
+      if (verdict.kind === 'unsure') return uncertain('low_confidence');
+
+      if (verdict.kind === 'switch_tab') {
+        if (!allowed('tabs')) return uncertain('unsupported_action');
+
+        return { ...evidence(), status: 'suggestion' as const, suggestion: { tool: 'tabs', arguments: { action: 'switch', tabId: verdict.tab.id, decisionGuard: { observationId: page.id, operation: 'switch_tab', sourceTabId: page.tabId } } } };
+      }
+
+      if (verdict.kind === 'reveal') {
+        if (!allowed('hover')) return uncertain('unsupported_action');
+
+        return { ...evidence(), status: 'suggestion' as const, suggestion: { tool: 'hover', arguments: { tabId: page.tabId, target: verdict.control.ref, decisionGuard: guard('hover', verdict.control.ref) },
+          note: '悬停只为展开菜单；采纳后重新判断再点击，不能把悬停当作完成。' } };
+      }
+
+      if (verdict.kind === 'act' || verdict.kind === 'open') {
+        const control = verdict.control;
+        const kind = verdict.kind === 'open' ? 'click' : actKind(control);
+
+        if (kind === 'fill') {
+          // No materials on the voice surface: Jev never writes the text; the caller supplies it.
+          if (!allowed('fill')) return uncertain('unsupported_action');
+
+          return { ...evidence(), status: 'suggestion' as const, suggestion: { tool: 'fill', arguments: { tabId: page.tabId, target: control.ref, decisionGuard: guard('fill', control.ref) },
+            missingArguments: ['value'], note: '由用户原话或已有材料提供填写内容，Jev未生成内容。' } };
+        }
+
+        const asked = buildActRequest({ request, control, kind, actionsDone: input.history, materials: [] })!;
+        const act = composeAct(kind, control, await judge(asked.request), asked);
+        signal.throwIfAborted();
+
+        if (act.kind === 'risky') return uncertain('permission_required', `${control.name} 可能删除、付款、发送或发布内容，需要用户确认。`);
+
+        if (act.kind === 'unsure') return uncertain('low_confidence');
+
+        if (act.kind === 'already') return { ...evidence(), status: 'needs_verification' as const, reason: `「${control.name}」已经是${act.on ? '开启' : '关闭'}状态，不需要点击；请根据页面核对。` };
+
+        if (act.kind === 'select') {
+          const element = await rpc.call('read_element', { tabId: page.tabId, target: control.ref }) as { tagName?: string };
+          signal.throwIfAborted();
+
+          if (element.tagName?.toLowerCase() === 'select') {
+            if (!allowed('fill')) return uncertain('unsupported_action');
+
+            return { ...evidence(), status: 'suggestion' as const, suggestion: { tool: 'fill', arguments: { tabId: page.tabId, target: control.ref, value: act.option.label, decisionGuard: guard('fill', control.ref) } } };
+          }
+
+          if (!allowed('click')) return uncertain('unsupported_action');
+
+          if (!page.controls.some(c => c.ref === act.option.ref && !c.disabled)) return uncertain('no_match', '选项不是当前可执行对象，未执行。');
+
+          return { ...evidence(), status: 'suggestion' as const, suggestion: { tool: 'click', arguments: { tabId: page.tabId, target: act.option.ref, decisionGuard: guard('click', act.option.ref) } } };
+        }
+
+        if (!allowed('click')) return uncertain('unsupported_action');
+
+        return { ...evidence(), status: 'suggestion' as const, suggestion: { tool: 'click', arguments: { tabId: page.tabId, target: control.ref, decisionGuard: guard('click', control.ref) } } };
+      }
+
+      // Not in this view: read the next unread window (read-only), most likely part first.
+      const preferred = verdict.kind === 'read' ? verdict.order.find(id => !checked.has(observationCheckKey('scope', id))) : undefined;
+      let params: Record<string, unknown> | undefined;
+
+      if (page.hasMore && page.nextCursor && !checked.has(observationCheckKey('cursor', page.nextCursor))) {
+        checked.add(observationCheckKey('cursor', page.nextCursor));
+        params = { cursor: page.nextCursor, ...(page.viewScopeId ? { viewScopeId: page.viewScopeId } : {}) };
+      } else if (preferred) {
+        checked.add(observationCheckKey('scope', preferred));
+        params = { viewScopeId: preferred };
+      } else {
+        const expansion = nextObservationExpansion(page, checked);
+
+        if (expansion) {
+          checked.add(expansion.checkKey);
+          params = expansion.params;
+        }
+      }
+
+      if (!params) return uncertain('no_match');
+      page = await observe(params);
+      track(page);
     }
+  } catch (e) {
+    signal.throwIfAborted();
+
+    if (e instanceof InvalidAnswer) return uncertain('invalid_decision', e.message);
+    const reasonCode: BrowserDecisionReasonCode = e instanceof Error && e.message.includes('候选资料超过当前决策预算') ? 'candidate_budget' : 'provider_error';
+
+    return uncertain(reasonCode, e instanceof Error ? e.message : humanReasonForCode(reasonCode));
   }
-
-  if (operation !== 'click' && operation !== 'fill' && operation !== 'press_key' && operation !== 'scroll') {
-    // drag/upload/CDP are not Jev candidates — hand back via approved delegate, never claim the product lacks the capability.
-    const reasonCode: BrowserDecisionReasonCode = 'unsupported_action';
-
-    return {
-      ...evidence,
-      status: 'uncertain' as const,
-      reasonCode,
-      reason: humanReasonForCode(reasonCode),
-      continue: realtimeContinueHint(reasonCode, page, mount),
-    };
-  }
-
-  const guard: BrowserActionGuard = {observationId:page.id,operation:operation as BrowserActionGuard['operation'],...(target?{target}:{})};
-
-  return {...evidence,status:'suggestion',suggestion:{tool:operation,arguments:{tabId:page.tabId,
-    ...(target?{target}:{}),...(candidate.key?{key:candidate.key}:{}),...(candidate.dy?{dy:candidate.dy}:{}),
-    ...(operation === 'fill' && candidate.optionLabel !== undefined ? {value:candidate.optionLabel}:{}),decisionGuard:guard},
-    ...(operation === 'fill' && candidate.optionLabel === undefined ? {missingArguments:['value'],note:'由用户原话或已有材料提供填写内容，Jev未生成内容。'}:{})}};
 }

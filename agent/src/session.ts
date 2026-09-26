@@ -14,7 +14,8 @@ import {decideFastTask,type FastTaskDecision,type FastTaskSkillOption} from './f
 import {generateBrowserMaterial,type BrowserMaterialResult} from './browser-material.js';
 import type {BrowserControl,BrowserLoopOutcome,BrowserOperation} from '../../shared/browser-decision.js';
 import {goalsSatisfied} from '../../shared/task-goals.js';
-import {generalBrowserLoopEnabled} from './config.js';
+import {browserLoopDirectDeliveryEnabled,generalBrowserLoopEnabled} from './config.js';
+import {browserLoopSelfDeliveryText} from './browser-loop-delivery.js';
 import type {TranslationDisplayState} from '../../shared/page-translation.js';
 import { TRANSLATION_PROMPT, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
@@ -2318,6 +2319,15 @@ return;}
     if(!outcome||outcome.status!=='needs_verification')return null;
 
     if(this.deliveredResultThisRun)return null;
+
+    // 开关打开时：循环自己判定完成、只做过执行器确认送达的低风险点击，直接交付（见 browser-loop-delivery.ts）。
+    if(browserLoopDirectDeliveryEnabled()){
+      const snapshot=this.conversationSnapshot();
+      const blocked=!snapshot||['aborted','paused','interrupted'].includes(snapshot.state)||snapshot.unresolvedEffect||snapshot.untrackedWritePending||(snapshot.results??[]).some(item=>item.status==='unknown');
+      const text=blocked?null:browserLoopSelfDeliveryText(outcome,context.tabId);
+
+      if(text)return text;
+    }
 
     // 本轮循环已经执行过改变页面或控制页的动作：先按真实事实交回主模型，不重复执行也不提前交付。
     if((outcome.receipts??[]).some(receipt=>BROWSER_LOOP_MUTATING_OPERATIONS.has(receipt.operation)))return null;

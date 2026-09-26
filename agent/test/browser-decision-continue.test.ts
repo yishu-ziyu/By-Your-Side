@@ -4,11 +4,9 @@
  */
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {
-  BROWSER_DECISION_CONFIDENCE_THRESHOLD,
   humanReasonForCode,
   piContinueHint,
   realtimeContinueHint,
-  resolveBrowserDecision,
 } from '../src/browser-action-selection.js';
 import {runBrowserDecisionLoop} from '../src/browser-decision-loop.js';
 import {judgeRealtimeBrowserAction} from '../src/realtime-browser-judge.js';
@@ -17,7 +15,7 @@ import {createBrowserTools} from '../src/tools.js';
 import {REALTIME_BROWSER_TOOL_NAMES} from '../src/realtime-browser-tools.js';
 import type {BrowserActionGuard, BrowserObservation} from '../../shared/browser-decision.js';
 import type {ToolRpc} from '../src/rpc.js';
-import type {BrowserDecisionInput} from '../src/browser-decision-model.js';
+import type {JevAnswers, JevRequest} from '../src/jev-client.js';
 
 /**
  * Host tool arguments that `runBrowserDecisionLoop`'s call() sites actually build
@@ -51,59 +49,27 @@ const page = (over: Partial<BrowserObservation> = {}): BrowserObservation => ({
   ...over,
 });
 
-describe('SEL-03 reasonCode classification (hand-written expectations)', () => {
-  const candidates = [
-    {id: 'c1', operation: 'click' as const, label: 'Click Open', target: '@1'},
-    {id: 'c2', operation: 'click' as const, label: 'Click Other', target: '@2'},
-  ];
+/** Scripted Jev by question name; a choice names a criteria key, resolved by control name. */
+function jev(policy: (q: string, state: Record<string, any>, id: (name: string) => string) => unknown) {
+  return vi.fn(async (request: JevRequest): Promise<JevAnswers> => Object.fromEntries(Object.entries(request.questions).map(([name, question]) => {
+    const criteria = ((question as {criteria?: Record<string, string>}).criteria ?? {}) as Record<string, string>;
+    const id = (n: string) => Object.entries(criteria).find(([key, d]) => key !== 'none' && d.includes(`"${n}"`))?.[0] ?? 'none';
 
-  it('none → no_match; never execute', () => {
-    const v = resolveBrowserDecision(
-      {observationId: 'o1', candidateId: 'none', confidence: 0.99, model: 'fixture'},
-      candidates, 'o1',
-    );
+    return [name, policy(name, request.state, id)];
+  })) as JevAnswers);
+}
 
-    expect(v).toEqual({kind: 'reject', reasonCode: 'no_match', reason: expect.any(String)});
-  });
+const pick = (choice: string, confidence = 0.99) => ({choice, confidence});
 
-  it('confidence below 0.85 → low_confidence; threshold unchanged', () => {
-    expect(BROWSER_DECISION_CONFIDENCE_THRESHOLD).toBe(0.85);
+const yes = (noul: number) => ({noul});
 
-    const v = resolveBrowserDecision(
-      {observationId: 'o1', candidateId: 'c1', confidence: 0.84, model: 'fixture'},
-      candidates, 'o1',
-    );
+const listed = (state: Record<string, any>, name: string) => yes(Object.values(state.controls ?? {}).some(d => String(d).includes(`"${name}"`)) ? 0.99 : 0.02);
 
-    expect(v).toEqual({kind: 'reject', reasonCode: 'low_confidence', reason: expect.any(String)});
-  });
+/** Clicks `name` when it is in view (low risk); done once anything was clicked. */
+const clickWhenSeen = (name: string, doneAfterClick = true) => (q: string, state: Record<string, any>, id: (n: string) => string) =>
+  ({target: pick(id(name)), target_listed: listed(state, name), opener: pick('none'), risky: yes(0.02), goal_done: yes(doneAfterClick && (state.actions_done ?? []).length ? 0.95 : 0.03)} as Record<string, unknown>)[q];
 
-  it('fabricated id → invalid_decision', () => {
-    const v = resolveBrowserDecision(
-      {observationId: 'o1', candidateId: 'fabricated', confidence: 0.99, model: 'f'},
-      candidates, 'o1',
-    );
-
-    expect(v).toMatchObject({kind: 'reject', reasonCode: 'invalid_decision'});
-  });
-
-  it('NaN confidence → invalid_decision', () => {
-    const v = resolveBrowserDecision(
-      {observationId: 'o1', candidateId: 'c1', confidence: NaN, model: 'f'},
-      candidates, 'o1',
-    );
-
-    expect(v).toMatchObject({kind: 'reject', reasonCode: 'invalid_decision'});
-  });
-
-  it('stale observationId → stale_observation', () => {
-    const v = resolveBrowserDecision(
-      {observationId: 'old', candidateId: 'c1', confidence: 0.99, model: 'f'},
-      candidates, 'o1',
-    );
-
-    expect(v).toMatchObject({kind: 'reject', reasonCode: 'stale_observation'});
-  });
-
+describe('SEL-03 typed reasons', () => {
   it('continue hints are typed actions/tools, independent of Chinese reason copy', () => {
     const pi = piContinueHint('no_match', {observationIds: ['o1'], cursors: [], scopeIds: []}, false);
     expect(pi.action).toBe('session_prompt');
@@ -115,7 +81,7 @@ describe('SEL-03 reasonCode classification (hand-written expectations)', () => {
 });
 
 describe('SEL-03 loop: typed reasons and real continue_read', () => {
-  it('no_match with unread cursor actually continues reading before handoff', async () => {
+  it('a miss with an unread cursor actually continues reading before handoff', async () => {
     const first = page({
       id: 'v1', hasMore: true, nextCursor: 'c-next', collectedCount: 200, visibleCount: 1,
       controls: [{ref: '@1', role: 'button', name: 'Early', disabled: false}],
@@ -132,28 +98,12 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
         return {observation: first};
       }
 
-      return {effect: {changed: true}};
-    });
-
-    let round = 0;
-
-    const decide = vi.fn(async (input: {page: BrowserObservation; candidates: Array<{id: string; operation: string; target?: string}>}) => {
-      round++;
-
-      if (round === 1) {
-        return {observationId: input.page.id, candidateId: 'none', confidence: 0.95, model: 'fixture'};
-      }
-
-      const click = input.candidates.find(c => c.operation === 'click' && c.target === '@150');
-
-      if (click) return {observationId: input.page.id, candidateId: click.id, confidence: 0.99, model: 'fixture'};
-
-      return {observationId: input.page.id, candidateId: 'done', confidence: 0.99, model: 'fixture'};
+      return {clicked: true};
     });
 
     const result = await runBrowserDecisionLoop({
       parentCallId: 'parent', goal: 'Click Late Target', materials: [],
-      signal: new AbortController().signal, call, decide,
+      signal: new AbortController().signal, call, ask: jev(clickWhenSeen('Late Target')),
     });
 
     expect(call.mock.calls.some(c => c[0] === 'snapshot' && (c[1] as {cursor?: string})?.cursor === 'c-next')).toBe(true);
@@ -167,12 +117,8 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
     const only = page({id: 'only', hasMore: false});
     const call = vi.fn(async (_name: string, _params: BrowserLoopToolParams = {}, _id?: string) => ({observation: only}));
 
-    const decide = vi.fn(async (i: {page: BrowserObservation}) => ({
-      observationId: i.page.id, candidateId: 'none', confidence: 0.9, model: 'f',
-    }));
-
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'Find missing', materials: [], signal: new AbortController().signal, call, decide,
+      parentCallId: 'p', goal: 'Find missing', materials: [], signal: new AbortController().signal, call, ask: jev(clickWhenSeen('Missing')),
     });
 
     expect(result.status).toBe('handoff');
@@ -183,18 +129,15 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
   });
 
   it.each([
-    ['low-confidence', 'c1', 0.5, 'low_confidence'],
+    ['low-confidence', 'Open', 0.5, 'low_confidence'],
     ['fabricated', 'nope', 0.99, 'invalid_decision'],
-    ['nan', 'c1', NaN, 'invalid_decision'],
-  ] as const)('%s decision yields %s and zero writes', async (_label, candidateId, confidence, code) => {
+    ['nan', 'Open', NaN, 'invalid_decision'],
+  ] as const)('%s pick yields %s and zero writes', async (_label, name, confidence, code) => {
     const call = vi.fn(async (_name: string, _params: BrowserLoopToolParams = {}, _id?: string) => ({observation: page()}));
-
-    const decide = vi.fn(async (i: {page: BrowserObservation}) => ({
-      observationId: i.page.id, candidateId, confidence, model: 'f',
-    }));
+    const ask = jev((q, state, id) => q === 'target' ? pick(name === 'nope' ? 'c7' : id(name), confidence) : clickWhenSeen('Open')(q, state, id));
 
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'x', materials: [], signal: new AbortController().signal, call, decide,
+      parentCallId: 'p', goal: 'x', materials: [], signal: new AbortController().signal, call, ask,
     });
 
     expect(result.reasonCode).toBe(code);
@@ -203,10 +146,10 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
 
   it('provider timeout/error → provider_error, not a page miss', async () => {
     const call = vi.fn(async (_name: string, _params: BrowserLoopToolParams = {}, _id?: string) => ({observation: page()}));
-    const decide = vi.fn(async () => { throw new Error('Jev HTTP 503'); });
+    const ask = vi.fn(async () => { throw new Error('Jev HTTP 503'); });
 
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'x', materials: [], signal: new AbortController().signal, call, decide,
+      parentCallId: 'p', goal: 'x', materials: [], signal: new AbortController().signal, call, ask,
     });
 
     expect(result.reasonCode).toBe('provider_error');
@@ -218,15 +161,11 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
     const call = vi.fn(async (name: string) => {
       if (name === 'snapshot') return {observation: page()};
 
-      return {held: true};
+      return {clicked: false, held: true};
     });
 
-    const decide = vi.fn(async (i: {page: BrowserObservation}) => ({
-      observationId: i.page.id, candidateId: 'c1', confidence: 0.99, model: 'f',
-    }));
-
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'click', materials: [], signal: new AbortController().signal, call, decide,
+      parentCallId: 'p', goal: 'click', materials: [], signal: new AbortController().signal, call, ask: jev(clickWhenSeen('Open')),
     });
 
     expect(result.reasonCode).toBe('permission_required');
@@ -241,12 +180,8 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
       throw Object.assign(new Error('timeout'), {executionFact: 'unknown'});
     });
 
-    const decide = vi.fn(async (i: {page: BrowserObservation}) => ({
-      observationId: i.page.id, candidateId: 'c1', confidence: 0.99, model: 'f',
-    }));
-
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'click', materials: [], signal: new AbortController().signal, call, decide,
+      parentCallId: 'p', goal: 'click', materials: [], signal: new AbortController().signal, call, ask: jev(clickWhenSeen('Open')),
     });
 
     expect(result.reasonCode).toBe('execution_unknown');
@@ -256,48 +191,35 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
     expect(call.mock.calls.filter(c => c[0] === 'click')).toHaveLength(1);
   });
 
-  it('successful step then handoff keeps the receipt once', async () => {
+  it('a successful step that does not finish the request hands back with the receipt kept once', async () => {
     let snaps = 0;
 
     const call = vi.fn(async (name: string) => {
       if (name === 'snapshot') return {observation: page({id: `o${++snaps}`})};
 
-      return {effect: {changed: true}};
-    });
-
-    let round = 0;
-
-    const decide = vi.fn(async (input: {page: BrowserObservation; candidates: Array<{id: string; operation: string}>}) => {
-      round++;
-
-      if (round === 1) return {observationId: input.page.id, candidateId: 'c1', confidence: 0.99, model: 'f'};
-      const handoff = input.candidates.find(c => c.operation === 'handoff');
-
-      return {observationId: input.page.id, candidateId: handoff!.id, confidence: 0.99, model: 'f'};
+      return {clicked: true};
     });
 
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'partial', materials: [], signal: new AbortController().signal, call, decide,
+      parentCallId: 'p', goal: 'partial', materials: [], signal: new AbortController().signal, call, ask: jev(clickWhenSeen('Open', false)),
     });
 
-    expect(result.reasonCode).toBe('unsupported_action');
+    expect(result.reasonCode).toBe('no_match');
     expect(result.receipts.filter(r => r.operation === 'click')).toHaveLength(1);
     expect(result.receipts[0]?.executionFact).toBe('executed');
     expect(call.mock.calls.filter(c => c[0] === 'click')).toHaveLength(1);
   });
 
-  it('cancel during decide → cancelled with no business side effects', async () => {
+  it('cancel during a judgment → cancelled with no business side effects', async () => {
     const abort = new AbortController();
     const call = vi.fn(async (_name: string, _params: BrowserLoopToolParams = {}, _id?: string) => ({observation: page()}));
 
-    const decide = vi.fn(async (i: {page: BrowserObservation}) => {
-      abort.abort();
+    const ask = jev((q, state, id) => { abort.abort();
 
-      return {observationId: i.page.id, candidateId: 'c1', confidence: 0.99, model: 'f'};
-    });
+      return clickWhenSeen('Open')(q, state, id); });
 
     const result = await runBrowserDecisionLoop({
-      parentCallId: 'p', goal: 'x', materials: [], signal: abort.signal, call, decide,
+      parentCallId: 'p', goal: 'x', materials: [], signal: abort.signal, call, ask,
     });
 
     expect(result.status).toBe('cancelled');
@@ -306,24 +228,17 @@ describe('SEL-03 loop: typed reasons and real continue_read', () => {
 });
 
 describe('SEL-03 Realtime continue mounts (no phantom tools)', () => {
-  it('with task_action mounted, unsupported_action recommends task_action not browser_loop', async () => {
-    const rpc = {getPageTarget: () => 7, call: vi.fn(async () => ({observation: page({controls: []})}))} as unknown as ToolRpc;
-
-    const decide = vi.fn(async (input: BrowserDecisionInput) => {
-      const handoff = input.candidates.find(c => c.operation === 'handoff');
-
-      return {observationId: input.page.id, candidateId: handoff!.id, confidence: 0.99, model: 'f'};
-    });
+  it('with task_action mounted, an action the voice session cannot run recommends task_action not browser_loop', async () => {
+    const rpc = {getPageTarget: () => 7, call: vi.fn(async () => ({observation: page()}))} as unknown as ToolRpc;
 
     const result = await judgeRealtimeBrowserAction(
       rpc,
-      {request: 'do drag', userTask: 'drag file', history: [], continueMount: {directBrowser: true, taskAction: true, browserRequest: true}},
+      {request: 'click open', userTask: 'click open', history: [], canExecute: tool => tool !== 'click', continueMount: {directBrowser: true, taskAction: true, browserRequest: true}},
       new AbortController().signal,
-      decide,
+      jev(clickWhenSeen('Open')),
     );
 
-    expect(result.status).toBe('needs_context');
-    expect(result).toMatchObject({reasonCode: 'unsupported_action'});
+    expect(result).toMatchObject({status: 'uncertain', reasonCode: 'unsupported_action'});
     expect(result.continue?.tools).toContain('task_action');
     expect(result.continue?.tools ?? []).not.toContain('browser_loop');
   });
@@ -338,16 +253,15 @@ describe('SEL-03 Realtime continue mounts (no phantom tools)', () => {
     expect(hint.tools).not.toContain('task_action');
   });
 
-  it('no_match with hasMore recommends snapshot continue', async () => {
+  it('no_match after reading the next window still recommends snapshot continue', async () => {
     const obs = page({hasMore: true, nextCursor: 'more-1'});
     const rpc = {getPageTarget: () => 7, call: vi.fn(async () => ({observation: obs}))} as unknown as ToolRpc;
-    const decide = vi.fn(async () => ({observationId: 'o1', candidateId: 'none', confidence: 0.92, model: 'f'}));
 
     const result = await judgeRealtimeBrowserAction(
       rpc,
       {request: 'find late', userTask: 'find late', history: [], continueMount: {directBrowser: true, taskAction: false, browserRequest: true}},
       new AbortController().signal,
-      decide,
+      jev(clickWhenSeen('Late')),
     );
 
     expect(result).toMatchObject({status: 'uncertain', reasonCode: 'no_match'});

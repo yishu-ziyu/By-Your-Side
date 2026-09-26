@@ -10,7 +10,7 @@ vi.mock('../src/fast-task.js',()=>({decideFastTask:vi.fn(async()=>({kind:'miss',
 vi.mock('../src/run-trace.js',()=>({RunTrace:class{begin(){}correlate(){}record(){}event(){}stage(){return{end(){}}}},
   sanitizeTrace:(text:string)=>String(text)}));
 
-vi.mock('../src/browser-decision-model.js',()=>({decideBrowserCandidate:vi.fn()}));
+vi.mock('../src/jev-client.js',async original=>({...await original<typeof import('../src/jev-client.js')>(),askJev:vi.fn()}));
 
 // 语义复核替身：直接交付不得新增一次裁决调用（只计调用，不改变交付门槛）。
 vi.mock('../src/goal-reasoning-review.js',()=>({reviewTaskGoal:vi.fn(async()=>({matched:true,probability:.99,reason:'test'}))}));
@@ -19,7 +19,7 @@ import {BrowserAgentSession} from '../src/session.js';
 import {TaskProgress} from '../src/task-progress.js';
 import {createBrowserTools} from '../src/tools.js';
 import {createSendUserMessageTool} from '../src/user-delivery.js';
-import {decideBrowserCandidate} from '../src/browser-decision-model.js';
+import {askJev,type JevAnswers,type JevRequest} from '../src/jev-client.js';
 import {reviewTaskGoal} from '../src/goal-reasoning-review.js';
 import type {AgentUiEvent,PageContext} from '../../shared/protocol.js';
 import type {TaskGoalDefinition} from '../../shared/task-goals.js';
@@ -32,13 +32,13 @@ import type {TaskProgressSnapshot} from '../../shared/voice.js';
  * 目标方案由 task_goals 工具写入账本的同一组 API 建立（install/verify），不构造无法产生的新状态。
  */
 
-afterEach(()=>{vi.unstubAllEnvs();vi.clearAllMocks();vi.mocked(decideBrowserCandidate).mockReset();vi.mocked(reviewTaskGoal).mockClear();});
+afterEach(()=>{vi.unstubAllEnvs();vi.clearAllMocks();vi.mocked(askJev).mockReset();vi.mocked(reviewTaskGoal).mockClear();});
 
 const REQUEST='把当前页第一条置顶评论的正文填到笔记编辑器，不要保存';
 
 const CONTEXT:PageContext={tabId:77,title:'评论页',url:'https://test.invalid/comments'};
 
-const page={id:'obs-1',tabId:77,documentId:'doc-1',url:CONTEXT.url,observedAt:Date.now(),source:'accessibility' as const,text:'页面文本',truncated:false,controls:[{ref:'@1',role:'button',name:'保存',disabled:false}]};
+const page={id:'obs-1',tabId:77,documentId:'doc-1',url:CONTEXT.url,observedAt:Date.now(),source:'accessibility' as const,text:'页面文本',truncated:false,controls:[{ref:'@1',role:'button',name:'保存',disabled:false},{ref:'@2',role:'checkbox',name:'只看可用项目',disabled:false,checked:true}]};
 
 interface Wrapped {
   explicitDelivery:boolean;
@@ -54,6 +54,7 @@ interface Wrapped {
   abort():void;
 }
 
+/** done = 循环看到要求已满足（复选框已勾选，不点）；click = 先点「保存」再判定完成。 */
 type DecisionKind='done'|'click';
 
 /** satisfied-conditions=已规划且全部满足；material-*=带原文材料目标的复制任务；pending=仍有未完成项。 */
@@ -65,8 +66,10 @@ interface HarnessOptions {
    *  material-captured/material-missing=带材料目标的复制任务，材料在本轮材料库/不在；
    *  none=没有目标方案。 */
   plan?:PlanVariant|'none';
-  /** 决策模型给循环的动作顺序；默认直接提议完成。 */
+  /** 循环里 Jev 的判断；默认看到要求已满足、不写页面。 */
   decisions?:DecisionKind[];
+  /** 点击后 Jev 的完成判断概率（默认 0.95）。 */
+  doneAfterClick?:number;
   /** 每次决策前的钩子：用于在循环中途取消/接管。 */
   onDecide?:(h:ReturnType<typeof harness>)=>void;
 }
@@ -93,7 +96,7 @@ function harness(options:HarnessOptions={}){
 
       if(name==='snapshot')return {tabId:CONTEXT.tabId,url:CONTEXT.url,text:'页面文本'};
 
-      if(name==='click')return {effect:{changed:false}};
+      if(name==='click')return {clicked:true,effect:{changed:false}};
       throw new Error(`unexpected rpc ${name}`);
     }),
     setPageTarget:vi.fn(),
@@ -151,12 +154,27 @@ function harness(options:HarnessOptions={}){
     }),
   ];
   const decisions=options.decisions??['done'];
-  let decisionIndex=0;
-  vi.mocked(decideBrowserCandidate).mockImplementation(async input=>{
+  const kind=decisions[0]!;
+  // 按问题名作答的 Jev 替身：只能选各问题 criteria 里的选项，与真实接口一致。
+  vi.mocked(askJev).mockImplementation(async(request:JevRequest)=>{
     options.onDecide?.(handle);
-    const kind=decisions[Math.min(decisionIndex++,decisions.length-1)]!;
+    const answers:JevAnswers={};
 
-    return {observationId:input.page.id,candidateId:kind==='click'?'c1':'done',confidence:.99,model:'test'};
+    for(const [name,question] of Object.entries(request.questions)){
+      const criteria=((question as {criteria?:Record<string,string>}).criteria??{}) as Record<string,string>;
+      const id=(label:string)=>Object.entries(criteria).find(([key,d])=>key!=='none'&&d.includes(`"${label}"`))?.[0]??'none';
+      const acted=((request.state.actions_done??[]) as string[]).length>0;
+      answers[name]=({
+        target:{choice:id(kind==='click'?'保存':'只看可用项目'),confidence:.99},
+        target_listed:{noul:.99},
+        opener:{choice:'none',confidence:.99},
+        risky:{noul:.03},
+        turn_on:{noul:.98},
+        goal_done:{noul:acted?(options.doneAfterClick??.95):.02},
+      } as JevAnswers)[name]!;
+    }
+
+    return answers;
   });
 
   /** task_goals 写账本的同一组 API（install/verify）建立目标方案；材料与 capture_page_material 落账形状一致。 */
@@ -247,8 +265,8 @@ describe('浏览器循环收尾：已有完整有效宿主证据时直接交付'
     expect(delivery.delivery.text).toContain('「笔记」编辑器含完整评论正文，未保存');
     expect(delivery.delivery.facts?.outcome).toBe('complete');
     expect(delivery.delivery.facts?.remaining).toEqual([]);
-    // 没有新增裁决调用来假装省下主模型：只有循环自己那一次 Jev 决策，目标/材料复核一次没调。
-    expect(vi.mocked(decideBrowserCandidate)).toHaveBeenCalledTimes(1);
+    // 没有新增裁决调用来假装省下主模型：只有循环自己的 Jev 判断（找控件、开关方向、完成判断），目标/材料复核一次没调。
+    expect(vi.mocked(askJev)).toHaveBeenCalledTimes(3);
     expect(vi.mocked(reviewTaskGoal)).not.toHaveBeenCalled();
     // 正式交付走既有通道：同一轮只交付一次（已发出的交付不会因后续记录失败改成重复交付），交付后本轮结束。
     expect(h.toolNames.filter(name=>name==='send_user_message')).toHaveLength(1);
@@ -350,6 +368,38 @@ describe('浏览器循环收尾：已有完整有效宿主证据时直接交付'
 
     await h.send();
     expect(h.raw.prompt).not.toHaveBeenCalled();
+    expect(h.deliveries()).toHaveLength(0);
+  });
+});
+
+describe('开关打开时：循环自己判定完成的低风险点击直接交付',()=>{
+  // 失败方式：开关关着也直接交付；完成判断不到 0.85 仍交付；交付文字说成别的控件；交付后又 prompt 主模型。
+  it('开关关闭（默认）：点击后仍交主模型核对',async()=>{
+    const h=started({plan:'none',decisions:['click']});
+    await h.send();
+    expect(h.raw.prompt).toHaveBeenCalledTimes(1);
+    expect(h.deliveries()).toHaveLength(0);
+  });
+
+  it('开关打开、完成判断达到门槛：真实入口直接交付，主模型 prompt 为 0',async()=>{
+    vi.stubEnv('SIDEAGENT_BROWSER_LOOP_DIRECT_DELIVERY','1');
+    const h=started({plan:'none',decisions:['click']});
+    await h.send();
+    expect(h.raw.prompt).not.toHaveBeenCalled();
+    const deliveries=h.deliveries();
+    expect(deliveries).toHaveLength(1);
+    const delivery=deliveries[0]!;
+
+    if(delivery.kind!=='user_delivery')throw new Error('expected a delivery');
+expect(delivery.delivery.text).toContain('已完成：点击了「保存」。');
+    expect(h.events.filter(event=>event.kind==='agent_end')).toHaveLength(1);
+  });
+
+  it('开关打开、完成判断不到门槛：交主模型核对，不交付',async()=>{
+    vi.stubEnv('SIDEAGENT_BROWSER_LOOP_DIRECT_DELIVERY','1');
+    const h=started({plan:'none',decisions:['click'],doneAfterClick:.84});
+    await h.send();
+    expect(h.raw.prompt).toHaveBeenCalledTimes(1);
     expect(h.deliveries()).toHaveLength(0);
   });
 });

@@ -525,7 +525,7 @@ export interface ToolContract {
   switch_tab: { params: { tabId: number }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
   navigate: { params: { tabId?: number; url: string; timeout?: number }; data: { url: string; title: string; readiness?: "interactive" | "complete" | "timeout"; waitMs?:number; documentId?:string } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string; /** With viewScopeId: collect the page again, then show that partition if it still exists. */ fresh?: boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
   click: {
     params: {
       tabId?: number;
