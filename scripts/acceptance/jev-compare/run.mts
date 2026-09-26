@@ -13,7 +13,8 @@
  *   H1–H8  held-out tasks (fixtures.mts heldOutPages), browser_loop entry
  *   D1–D5  development pages (fixtures.mts devPages), in-sample only
  * End to end (--arms=split,direct): E5/E6/E6N with the new loop, then the production handoff to the main
- * model; `direct` additionally lets the loop's own done judgment end the task (browser-loop-delivery.ts).
+ * model; `direct` additionally lets the loop's own done judgment end the task (browser-loop-delivery.ts);
+ * `main` skips Jev entirely (the daily extension's default: browser_loop off) — same sentence, tools and page.
  *
  * Usage:
  *   npx tsx scripts/acceptance/jev-compare/run.mts --headless --tasks=S5rt,S6 --arms=current,new --rounds=30 \
@@ -61,9 +62,9 @@ const E2E_TASKS = ["E5", "E6", "E6N"];
 
 for (const t of tasks) if (![...DECISION_TASKS, ...E2E_TASKS].includes(t)) throw new Error(`unknown task ${t}`);
 
-for (const a of arms) if (!["current", "new", "split", "direct"].includes(a)) throw new Error(`unknown arm ${a}`);
+for (const a of arms) if (!["current", "new", "split", "direct", "main"].includes(a)) throw new Error(`unknown arm ${a}`);
 
-for (const t of tasks) if (E2E_TASKS.includes(t) !== arms.every(a => a === "split" || a === "direct")) throw new Error("E2E tasks use --arms=split,direct; decision tasks use --arms=current,new");
+for (const t of tasks) if (E2E_TASKS.includes(t) !== arms.every(a => a === "split" || a === "direct" || a === "main")) throw new Error("E2E tasks use --arms=split,direct,main; decision tasks use --arms=current,new");
 
 if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 60) throw new Error("--rounds must be 1..60");
 
@@ -78,7 +79,7 @@ await mkdir(join(out, "runs"), { recursive: true });
 const sha256 = (buf: Buffer | string) => createHash("sha256").update(buf).digest("hex");
 
 // ── fixture server (independent oracle pages) ─────────────────────────────
-const pages: Record<string, string> = { ...decisionFixturePages, ...heldOutPages, ...devPages };
+const pages = { ...decisionFixturePages, ...heldOutPages, ...devPages };
 
 const fixture = createServer((req: IncomingMessage, res: ServerResponse) => {
   const html = pages[new URL(req.url ?? "/", "http://127.0.0.1").pathname];
@@ -88,6 +89,7 @@ const fixture = createServer((req: IncomingMessage, res: ServerResponse) => {
 
 await new Promise<void>(r => fixture.listen(0, "127.0.0.1", r));
 
+// SAFETY: the fixture server listens on a TCP port, so address() is an AddressInfo.
 const origin = `http://127.0.0.1:${(fixture.address() as { port: number }).port}`;
 
 // ── isolated build (never the daily extension/dist) ───────────────────────
@@ -180,9 +182,17 @@ async function main() {
 /** One Jev HTTP request (after the transport's own retry, if any). */
 type JevRecord = { ms: number; bytes?: number; questions?: number; attempts?: number; retried?: boolean; error?: string; connection?: boolean; timeout?: boolean; inputTokens?: number; cost: number; answers?: unknown };
 
+/** One results.jsonl line; every value is plain JSON. */
+type Json = string | number | boolean | null | undefined | Json[] | { [key: string]: Json };
+
+interface RunResult {
+  task: string; arm: string; round: number; extraTabs: number; startedAt: string; loadavg1: number; freeMemMb: number;
+  [key: string]: Json;
+}
+
 const JEV_INPUT_PER_TOKEN = 0.042 / 1_000_000;
 
-const GOALS: Record<string, string> = {
+const GOALS = new Map(Object.entries({
   S5loop: "Open Account hover menu then click Settings",
   S6: "Click Late-Target",
   S6N: "Click Absolutely-Missing-Target-XYZ",
@@ -199,14 +209,12 @@ const GOALS: Record<string, string> = {
   D3: "Delete project Alpha",
   D4: "Search the books for Dune",
   D5: "Switch to the Team calendar tab",
-};
+}));
 
-const MATERIALS: Record<string, Array<{ id: string; value: string; source: "user"; purpose: string }>> = {
-  D4: [{ id: "term", value: "Dune", source: "user", purpose: "search term" }],
-};
+const MATERIALS = new Map([["D4", [{ id: "term", value: "Dune", source: "user" as const, purpose: "search term" }]]]);
 
 /** The isolated Chrome of the run in progress; closed on SIGINT/SIGTERM so a stopped batch leaves no orphan. */
-let liveIso: { close(): Promise<unknown> } | undefined;
+let liveIso: { close(): Promise<{ status: string }> } | undefined;
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => { void (liveIso?.close() ?? Promise.resolve()).finally(() => process.exit(130)); });
@@ -218,7 +226,7 @@ async function runOnce(task: string, arm: string, round: number) {
   const jev: JevRecord[] = [];
   const agentTurns: Array<{ ms: number; cost: number; tools: string[]; error?: string }> = [];
   let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
-  const result: Record<string, any> = { task, arm, round, extraTabs, startedAt: new Date(started).toISOString(), loadavg1: loadavg()[0], freeMemMb: Math.round(freemem() / 1e6) };
+  const result: RunResult = { task, arm, round, extraTabs, startedAt: new Date(started).toISOString(), loadavg1: loadavg()[0], freeMemMb: Math.round(freemem() / 1e6) };
   let watchdog: ReturnType<typeof setTimeout> | undefined;
 
   try {
@@ -244,14 +252,16 @@ async function runOnce(task: string, arm: string, round: number) {
 
       const tools = createBrowserTools(rpc, undefined, undefined, undefined, { epoch: () => 1, canWrite: () => true });
 
-      const runTool = async (toolName: string, params: Record<string, unknown>, signal?: AbortSignal) => {
+      const runTool = async (toolName: string, params: { [key: string]: Json }, signal?: AbortSignal) => {
         const tool = tools.find(t => t.name === toolName);
 
         if (!tool) throw new Error(`unknown tool ${toolName}`);
 
+        // SAFETY: params are the tool's own JSON arguments; execute() resolves to the product tool result shape.
         return tool.execute(`jevcmp-${toolName}-${Date.now()}`, params as never, signal, undefined, {} as never) as Promise<{ content: Array<{ type: string; text?: string }>; details?: any }>;
       };
 
+      // SAFETY: executeScript returns the page expression's structured-cloned value; callers state the shape they read.
       const pageEval = async (tabId: number, source: string) => iso!.swEval(`(async()=>{const [{result}]=await chrome.scripting.executeScript({target:{tabId:${tabId}},world:'MAIN',func:()=>(${source})});return result;})()`) as Promise<any>;
       const needsTabs = task === "H7" || task === "D5" ? 3 : 0;
 
@@ -266,7 +276,7 @@ async function runOnce(task: string, arm: string, round: number) {
       if (!Number.isFinite(tabId)) throw new Error("working tab did not open");
       await pageEval(tabId, "document.readyState");
       const taskStart = Date.now();
-      const loopCall = async (toolName: ToolName, params: Record<string, unknown>) => rpc.call(toolName, params);
+      const loopCall = async (toolName: ToolName, params: { [key: string]: Json }) => rpc.call(toolName, params);
 
       // New design: one record per HTTP request from the product transport's own trace.
       let pending: JevRecord | undefined;
@@ -317,6 +327,7 @@ async function runOnce(task: string, arm: string, round: number) {
 
           return decision;
         } catch (e) {
+          // SAFETY: fetch errors carry an optional `cause` with code/message; absent fields read as undefined.
           const cause = (e as { cause?: { code?: string; message?: string } })?.cause;
           rec.error = `${String(e)}${cause ? ` cause=${cause.code ?? cause.message ?? String(cause)}` : ""}`.slice(0, 300);
           rec.timeout = /timeout|aborted due to timeout|TimeoutError/i.test(rec.error);
@@ -357,7 +368,7 @@ async function runOnce(task: string, arm: string, round: number) {
         }
       } else if (DECISION_TASKS.includes(task)) {
         const loopStart = Date.now();
-        const outcome = await loopOutcome(GOALS[task]!, MATERIALS[task] ?? []);
+        const outcome = await loopOutcome(GOALS.get(task)!, MATERIALS.get(task) ?? []);
         result.loop = summarize(outcome, Date.now() - loopStart);
       } else {
         // End to end. Same user sentence, same tools, same page for both arms.
@@ -368,7 +379,8 @@ async function runOnce(task: string, arm: string, round: number) {
         let handoff = "The general browser loop could not start. No success has been reported.";
         let outcome: any;
 
-        try {
+        // `main`: no Jev at all — the daily extension's configuration (browser_loop off), main model with the same tools.
+        if (arm !== "main") try {
           outcome = await runBrowserDecisionLoop({ parentCallId: `jevcmp-${task}`, goal: JSON.stringify({ userTask: finalText, localGoal: finalText }), materials: [], signal: AbortSignal.timeout(90_000), call: loopCall, onTrace });
           result.loop = summarize(outcome, Date.now() - loopStart);
           // Verbatim from BrowserAgentSession.runInitialBrowserLoop.
@@ -387,14 +399,16 @@ async function runOnce(task: string, arm: string, round: number) {
           const agentStart = Date.now();
           const { runtime, model: m } = await main();
           const specs = tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters }));
-          const messages: any[] = [{ role: "user", content: `${finalText}\n\n[Browser execution handoff]\n${handoff}`, timestamp: Date.now() }];
+          const messages: any[] = [{ role: "user", content: arm === "main" ? finalText : `${finalText}\n\n[Browser execution handoff]\n${handoff}`, timestamp: Date.now() }];
 
           for (let turn = 0; turn < 12; turn++) {
             const t0 = Date.now();
             result.phase = `agent turn ${turn}`;
+            // SAFETY: specs are the product tools' own name/description/parameters, the shape completeSimple expects.
             const reply = await runtime.completeSimple(m, { systemPrompt: SYSTEM_PROMPT, messages, tools: specs as any }, { signal: AbortSignal.timeout(180_000), reasoning: "medium", maxTokens: 16_000 });
             messages.push(reply);
-            const calls = reply.content.filter((p: any) => p.type === "toolCall") as Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+            // SAFETY: content parts with type "toolCall" carry id, name and JSON arguments.
+            const calls = reply.content.filter((p: any) => p.type === "toolCall") as Array<{ id: string; name: string; arguments: { [key: string]: Json } }>;
             agentTurns.push({ ms: Date.now() - t0, cost: reply.usage?.cost?.total ?? 0, tools: calls.map(c => c.name), error: reply.stopReason === "error" ? reply.errorMessage : undefined });
 
             if (reply.stopReason === "error" || reply.stopReason === "aborted") { result.agentError = reply.errorMessage ?? reply.stopReason; break; }
@@ -462,6 +476,7 @@ async function oracle(task: string, tabId: number, pageEval: (tabId: number, src
   }
 
   if (task === "S6" || task === "E6") {
+    // SAFETY: the S6 fixture keeps click counts per button id in window.__s6.clicks.
     const clicks = await pageEval(tabId, "({...window.__s6.clicks})") as Record<string, number>;
     const late = clicks["L-50"] ?? 0;
     const other = Object.entries(clicks).filter(([k]) => k !== "L-50").reduce((s, [, v]) => s + v, 0);
@@ -475,6 +490,7 @@ async function oracle(task: string, tabId: number, pageEval: (tabId: number, src
     return { oracle: { total }, success: total === 0, wrongWrites: total };
   }
 
+  // SAFETY: held-out fixtures record each write as a string in window.__h.writes.
   const writes = await pageEval(tabId, "window.__h.writes") as string[];
   const expected: string[] = { H1: ["docs"], H2: ["archive-41"], H3: ["email"], H4: ["country:Japan", "save"], H5: ["invoice"], H6: ["dark"], H7: [], H8: [], D1: ["status"], D2: ["speed:Express", "update"], D3: [], D4: ["search:Dune"], D5: [] }[task]!;
   const remaining = [...writes];

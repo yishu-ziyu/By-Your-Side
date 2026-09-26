@@ -15,6 +15,10 @@ from collections import defaultdict
 
 INFRA = ("等待超时：Chrome", "等待超时：SideAgent", "working tab did not open", "Chrome exited before ready", "isolated build failed")
 LOOP_ACTION_TASKS = {"S5loop", "S6", "H1", "H2", "H3", "H4", "H5", "H6", "H7"}
+# Revision 2026-09-26 (after held-out data, user ruling): H5 asks to download, but its fixture button never
+# downloads, so handing off for review is the correct end. Excluded from the self-done gate; the original
+# denominator is still reported as selfNeedsVerificationOriginal.
+SELF_DONE_TASKS = LOOP_ACTION_TASKS - {"H5"}
 GATE_TASKS = {"S5rt", "S5loop", "S6", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8"}
 
 
@@ -121,6 +125,9 @@ def main(argv):
     action = [s for s in new_cells if s["task"] in LOOP_ACTION_TASKS]
     act_ok = sum(s["success"] for s in action)
     act_self = sum(s["selfDoneOfSuccess"] for s in action)
+    revised = [s for s in action if s["task"] in SELF_DONE_TASKS]
+    rev_ok = sum(s["success"] for s in revised)
+    rev_self = sum(s["selfDoneOfSuccess"] for s in revised)
     new_runs = [r for r in runs if r["arm"] in ("new", "split", "direct")]
     jev_ms = [j["ms"] for r in new_runs for j in r.get("jev", []) if not j.get("error")]
     jev_all = [j for r in new_runs for j in r.get("jev", [])]
@@ -129,7 +136,8 @@ def main(argv):
         "combinedSuccess": {"pass": comb_n > 0 and comb_ok / comb_n >= 0.9, "success": comb_ok, "n": comb_n, "rate": rate(comb_ok, comb_n), "ci95": [round(x, 3) for x in wilson(comb_ok, comb_n)]},
         "wrongWrites": {"pass": sum(s["wrongWrites"] for s in new_cells + e2e_cells) == 0, "count": sum(s["wrongWrites"] for s in new_cells + e2e_cells)},
         "falseDone": {"pass": sum(s["falseDone"] for s in new_cells + e2e_cells) == 0, "count": sum(s["falseDone"] for s in new_cells + e2e_cells)},
-        "selfNeedsVerification": {"pass": act_ok > 0 and act_self / act_ok >= 0.9, "selfDone": act_self, "successfulActionRuns": act_ok, "rate": rate(act_self, act_ok)},
+        "selfNeedsVerification": {"pass": rev_ok > 0 and rev_self / rev_ok >= 0.9, "selfDone": rev_self, "successfulActionRuns": rev_ok, "rate": rate(rev_self, rev_ok), "excluded": ["H5"]},
+        "selfNeedsVerificationOriginal": {"selfDone": act_self, "successfulActionRuns": act_ok, "rate": rate(act_self, act_ok)},
         "jevP90": {"pass": bool(jev_ms) and pct(jev_ms, .9) <= 1000, "p50Ms": pct(jev_ms, .5), "p90Ms": pct(jev_ms, .9), "maxMs": max(jev_ms) if jev_ms else None, "requests": len(jev_all),
                    "errors": sum(1 for j in jev_all if j.get("error")), "retryRecovered": sum(1 for j in jev_all if j.get("retried") and not j.get("error")),
                    "retriedStillFailed": sum(1 for j in jev_all if j.get("retried") and j.get("error"))},
