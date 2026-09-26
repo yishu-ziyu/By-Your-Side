@@ -42,7 +42,7 @@ npx @earendil-works/pi-coding-agent
 
 1. 打开 `chrome://extensions`，开启“开发者模式”。
 2. 点击“加载已解压的扩展程序”，选择本仓库的 `extension/dist/`。
-3. 点击工具栏的 **By Your Side** 图标，打开侧栏。
+3. 点击工具栏的 **By Your Side** 图标，打开侧栏。扩展页显示的版本应与 `extension/manifest.json` 一致（当前 0.2.0）；更新源码后重新 `npm run build` 并在扩展页点「重新加载」。
 
 扩展从 2026-09-26 起多申请下载权限（`downloads`），用来确认页面下载是否完成。已加载旧版的，在 `chrome://extensions` 里对 By Your Side 点“重新加载”后才会拿到它。
 

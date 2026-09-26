@@ -17,7 +17,7 @@ import {
 } from "../../shared/protocol.js";
 import type { UserDelivery, UserDeliveryKind, UserDeliveryStream } from "../../shared/voice.js";
 import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./user-delivery.js";
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationPersistence } from "./conversation-persistence.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
 import type { SkillStore } from "./skill-store.js";
@@ -134,7 +134,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
   constructor(
     private readonly factory: (id: string, emit: (message: ServerMessage) => void, summary?: ConversationSummary) => Promise<Runtime>,
     private readonly emit: (message: ServerMessage) => void,
-    private readonly store?: ConversationStore,
+    private readonly store?: ConversationPersistence,
     private readonly memoryStore?: MemoryStore,
     private readonly skillStore?: SkillStore,
     readonly dispatcher = new TaskDispatcher(),
@@ -165,7 +165,13 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     });}
 
   async ensureDefault(): Promise<ConversationEntry> {
-    for (const summary of this.store?.load() ?? []) await this.create(summary.id, summary.title, summary);
+    for (const summary of this.store?.load() ?? []) {
+      const restoring = !this.entries.has(summary.id) && !this.pending.has(summary.id);
+      const entry = await this.create(summary.id, summary.title, summary);
+      const reading = restoring ? this.store?.readingFor?.(summary.id) : undefined;
+
+      if (reading) await entry.runtime.session.importReading(reading);
+    }
 
     return this.create(DEFAULT_CONVERSATION_ID, "新会话");
   }

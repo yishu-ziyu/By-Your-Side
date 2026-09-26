@@ -66,6 +66,7 @@ function installChromeStub() {
       },
     },
     storage: {
+      onChanged: { addListener: () => {} },
       local: {
         get: async (keys: string | string[] | null) => toObject(local, keys),
         set: async (items: Record<string, unknown>) => {

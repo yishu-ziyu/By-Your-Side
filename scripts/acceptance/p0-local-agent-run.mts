@@ -392,7 +392,7 @@ class Host {
         const models = await session.availableModels();
 
         const frames = [
-          {type: 'hello_ok', version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: '0.1.0'},
+          {type: 'hello_ok', version: PROTOCOL_VERSION, model: session.modelName(), models, hostVersion: HOST_VERSION, storageSchema: STORAGE_SCHEMA_VERSION, extensionVersion: '0.2.0'},
           {type: 'conversation_list', conversations: this.manager.list()},
         ];
 

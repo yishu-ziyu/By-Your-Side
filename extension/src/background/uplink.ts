@@ -204,7 +204,7 @@ export class Uplink {
     });
 
     // native 模式无 token，身份由 host manifest 的 allowed_origins 保证
-    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
   /** 没有本机伴随进程时，由 offscreen 文档里的扩展内 agent 接手，讲同一套协议。 */
@@ -218,7 +218,11 @@ export class Uplink {
         await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS], justification: "Run the agent loop inside the extension" });
       }
     } catch (err) {
-      await this.connectWs(`${reason}；扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`);
+      const detail = `${reason}；扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`;
+
+      // 配了 ws 调试 token 才走调试通道；否则按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），
+      // 不能停在「未连接」等用户重载扩展。
+      await this.connectWs(detail, { retryInprocWithoutToken: true });
 
       return;
     }
@@ -240,7 +244,7 @@ export class Uplink {
     });
     await this.pushModelConfig();
     await this.pushVoiceKey();
-    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
   /** 模型选择与各家凭据一起发：offscreen 文档读不到 chrome.storage。 */
@@ -255,7 +259,7 @@ export class Uplink {
     this.inprocPort?.postMessage({ type: "inproc_voice", configured });
   }
 
-  private async connectWs(reason: string): Promise<void> {
+  private async connectWs(reason: string, { retryInprocWithoutToken = false } = {}): Promise<void> {
     if (this.authFailed) return;
 
     if (this.transport !== null) return;
@@ -263,6 +267,12 @@ export class Uplink {
 
     if (this.transport !== null) return;
     const token = typeof stored[TOKEN_KEY] === "string" ? stored[TOKEN_KEY] : "";
+
+    if (!token && retryInprocWithoutToken) {
+      this.handleDisconnect(reason);
+
+      return;
+    }
 
     if (!token) {
       // 没 token 连 ws 也必败，直接停住等用户在面板里设置
@@ -289,7 +299,7 @@ export class Uplink {
     this.transport = "ws";
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION }));
+      ws.send(JSON.stringify({ type: "hello", token, client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION }));
     };
 
     ws.onmessage = (e) => {

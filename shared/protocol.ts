@@ -18,7 +18,7 @@ export const PROTOCOL_VERSION = 1;
 
 export const STORAGE_SCHEMA_VERSION = 1;
 
-export const HOST_VERSION = "0.1.0";
+export const HOST_VERSION = "0.2.0";
 
 export const DEFAULT_PORT = 7758;
 
@@ -1378,7 +1378,7 @@ function isTeamMemberHandback(v: unknown): v is TeamMemberHandback {
 
 export function validConversationId(value: unknown): value is string { return typeof value === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(value); }
 
-function isConversationSummary(value: unknown): value is ConversationSummary {
+export function isConversationSummary(value: unknown): value is ConversationSummary {
   if (!value || typeof value !== "object") return false;
   const item = value as ConversationSummary;
 

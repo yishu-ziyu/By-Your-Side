@@ -7,6 +7,7 @@ import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, type InprocModelConfig, type Sto
 import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
+import { openConversationStore } from "./conversation-store.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; credentials: StoredCredentials }
@@ -57,7 +58,9 @@ export function startInprocHost(deps: InprocHostDeps): void {
     };
 
     currentPattern();
-    pendingCore = startHostCore({
+    // 会话目录先读进内存：核心启动时按它重建会话，offscreen 重启后侧栏的会话编号仍然有效。
+    pendingCore = openConversationStore(log).then(store => startHostCore({
+      store,
       createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/" }, mode: summary?.mode,
         fallbackModelPattern: "zai-coding-cn/glm-5.3-flash",
@@ -87,7 +90,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         return false;
       },
       log,
-    }).then(value => {
+    })).then(value => {
       core = value;
 
       if (connection) core.adoptClient(connection);
@@ -100,7 +103,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
   function sendUnavailable(message: ClientMessage): void {
     if (message.type === "hello") {
-      connection?.send({ type: "hello_ok", version: PROTOCOL_VERSION, models: [], hostVersion: HOST_VERSION, extensionVersion: "0.1.0", storageSchema: STORAGE_SCHEMA_VERSION });
+      connection?.send({ type: "hello_ok", version: PROTOCOL_VERSION, models: [], hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
       connection?.send({ type: "conversation_list", conversations: [] });
 
       return;
