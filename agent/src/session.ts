@@ -16,7 +16,7 @@ import type {BrowserControl,BrowserLoopOutcome,BrowserOperation} from '../../sha
 import {goalsSatisfied} from '../../shared/task-goals.js';
 import {generalBrowserLoopEnabled} from './config.js';
 import type {TranslationDisplayState} from '../../shared/page-translation.js';
-import { TRANSLATION_PROMPT, parseTranslations, translationModelBlocks, restoreTranslationWhitespace } from "./page-translation.js";
+import { TRANSLATION_PROMPT, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, type ConfirmedRecoveryRecord} from "./task-results.js";
@@ -938,9 +938,9 @@ if(required.includes(key))candidates.set(key,attachment);
             epoch: () => resultHost?.executionEpoch() ?? 0,
             canWrite: () => resultHost?.canWriteCurrentInput() ?? false,
             get uploadLedger() { return resultHost?.uploadLedger; },
-          }, (blocks, language, signal) => { if (!resultHost) throw new Error("翻译会话不可用");
+          }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
- return resultHost.translatePageBatch(blocks, language, signal); })),
+ return resultHost.translatePageBatch(blocks, language, signal, meta); })),
           ...(memoryRuntime?.tools() ?? []),
           ...(leadConversationId ? [createCapturePageMaterialTool(() => { if (!resultHost) throw new Error("任务尚未接线");
 
@@ -2594,7 +2594,7 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
   }
 
   /** Separate no-tool completion; shares only model configuration, not task state/history. */
-  async translatePageBatch(blocks: TranslationBlock[], language: string, signal: AbortSignal): Promise<TranslationSegment[]> {
+  async translatePageBatch(blocks: TranslationBlock[], language: string, signal: AbortSignal, meta?: TranslateMeta): Promise<TranslationSegment[]> {
     if (!this.session?.model || !this.modelRuntime) throw new Error('当前翻译模型不可用。');
     const model = this.session.model;
     const sessionId = `${this.session.sessionId}-translation`;
@@ -2611,16 +2611,23 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
         messages: [{role: 'user', content: JSON.stringify({language, blocks:modelBlocks}), timestamp: Date.now()}],
       }, {signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]), maxTokens: 10000, sessionId, headers: opencodeSessionHeaders(model, sessionId)});
 
-      console.error('[page-translation]', JSON.stringify({phase:'model', attempt, stopReason:reply.stopReason, elapsedMs:Date.now()-startedAt,
-        inputChars:JSON.stringify(modelBlocks).length, segments:modelBlocks.reduce((n,b)=>n+b.segments.length,0), usage:reply.usage,
-        ...(reply.errorMessage ? {error:redactCredentialText(reply.errorMessage).slice(0,600)} : {})}));
+      // 逐请求记录进导出的诊断记录：下次慢了可以直接从导出文件读出每批用时、停止原因和用量。
+      const record = {...meta, phase:'model', attempt, stopReason:reply.stopReason, elapsedMs:Date.now()-startedAt,
+        blocks:modelBlocks.length, inputChars:JSON.stringify(modelBlocks).length, segments:modelBlocks.reduce((n,b)=>n+b.segments.length,0), usage:reply.usage,
+        ...(reply.errorMessage ? {error:redactCredentialText(reply.errorMessage).slice(0,600)} : {})};
 
-      if (reply.stopReason === 'error' || reply.stopReason === 'aborted' || reply.stopReason === 'length') throw new Error(`这批翻译未完成（${reply.stopReason}），已保留之前的译文。可以继续翻译。`);
+      console.error('[page-translation]', JSON.stringify(record));
+      this.runTrace?.record('page_translation_request', record);
+
+      if (reply.stopReason === 'error' || reply.stopReason === 'aborted' || reply.stopReason === 'length') throw Object.assign(new Error(`这批翻译未完成（${reply.stopReason}），已保留之前的译文。可以继续翻译。`), {stopReason: reply.stopReason});
 
       try {
         return restoreTranslationWhitespace(parseTranslations(reply.content.filter(part => part.type === 'text').map(part => part.text).join(''), modelBlocks), blocks);
       } catch (error) {
-        console.error('[page-translation]', JSON.stringify({phase:'validation', attempt, reason: error instanceof SyntaxError ? 'invalid_json' : 'segment_mismatch'}));
+        const invalid = {...meta, phase:'validation', attempt, reason: error instanceof SyntaxError ? 'invalid_json' : 'segment_mismatch'};
+
+        console.error('[page-translation]', JSON.stringify(invalid));
+        this.runTrace?.record('page_translation_request', invalid);
 
         // Regenerating text is safe: neither attempt has been sent to the page yet.
         if (attempt === 1) throw new Error('模型未返回完整对应的译文，本批未写入。可以继续翻译。');

@@ -412,11 +412,10 @@ return result;}
         document: Type.Optional(Type.String({description:'Observed translation instance; reject if the page changed.'})),
       }),
       execute: async (_id, params, signal) => {
-        const stop = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(240_000)]);
-
+        // 时限按进度判断（runPageTranslation 内的看门狗），不再固定 240 s 一刀切。
         const result = await runPageTranslation(params as TranslationRequest,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
-          translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), stop);
+          translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal);
 
         return textResult(JSON.stringify(result), result);
       },

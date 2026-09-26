@@ -520,9 +520,9 @@ export class Fleet {
         appendPrompt: () => [],
         memberId: id,
         customTools: [
-          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined), (blocks, language, signal) => { if (!workerSession) throw new Error("翻译会话不可用");
+          ...createBrowserTools(this.rpc, id, undefined, name => workerSession?.isToolActive(name) ?? false, workerExecution(() => workerSession, () => this.consentBroker ?? undefined), (blocks, language, signal, meta) => { if (!workerSession) throw new Error("翻译会话不可用");
 
- return workerSession.translatePageBatch(blocks, language, signal); }),
+ return workerSession.translatePageBatch(blocks, language, signal, meta); }),
           ...createFleetTools(this, id),
         ],
       },
