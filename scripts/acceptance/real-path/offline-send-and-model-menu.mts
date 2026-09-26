@@ -103,6 +103,9 @@ const PANEL = `(() => {
 
 type PanelState = { connected: boolean; status: string; input: string; quoteVisible: boolean; quote: string; notices: string[]; userMessages: string[]; modelName: string; transcript: string };
 
+/** 读侧栏当前状态。SAFETY: PANEL 是本文件写的页面脚本，返回 PanelState。 */
+const panelState = async (session: string): Promise<PanelState> => (await rp.evaluate(session, PANEL)) as PanelState;
+
 const paths: Record<string, JsonRecord> = {};
 
 const result: JsonRecord = { case: "offline-send-and-model-menu", startedAt, modelOrigin: origin, unknownModel: UNKNOWN_MODEL };
@@ -456,7 +459,7 @@ try {
     try {
       if (fromPlus) {
         await rp.click(panel, "#conversation-new");
-        await until(async () => ((await rp.evaluate(panel, PANEL)) as PanelState).userMessages.length === 0 || undefined, 15_000, "新会话打开", 300);
+        await until(async () => (await panelState(panel)).userMessages.length === 0 || undefined, 15_000, "新会话打开", 300);
         await sleep(1500);
       }
 
@@ -472,8 +475,8 @@ try {
       steps.beforeScreenshot = await shot(panel, `3-${label}-1-before-restart.png`);
 
       await crashAgent();
-      await until(async () => ((await rp.evaluate(panel, PANEL)) as PanelState).connected ? undefined : true, 10_000, "侧栏显示连接断开", 100).catch(() => undefined);
-      await until(async () => ((await rp.evaluate(panel, PANEL)) as PanelState).connected || undefined, 45_000, "连接恢复", 300);
+      await until(async () => (await panelState(panel)).connected ? undefined : true, 10_000, "侧栏显示连接断开", 100).catch(() => undefined);
+      await until(async () => (await panelState(panel)).connected || undefined, 45_000, "连接恢复", 300);
       await sleep(1000);
       steps.reconnectedScreenshot = await shot(panel, `3-${label}-2-reconnected.png`);
 
@@ -515,6 +518,7 @@ try {
 }
 
 result.paths = paths;
+
 result.elementClickFallbacks = elementClickFallbacks;
 
 result.pass = !result.error && Object.keys(paths).length === 5 && Object.values(paths).every((p) => p.pass === true);

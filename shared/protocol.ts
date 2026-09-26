@@ -1378,7 +1378,7 @@ function isTeamMemberHandback(v: unknown): v is TeamMemberHandback {
 
 export function validConversationId(value: unknown): value is string { return typeof value === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(value); }
 
-function isConversationSummary(value: unknown): value is ConversationSummary {
+export function isConversationSummary(value: unknown): value is ConversationSummary {
   if (!value || typeof value !== "object") return false;
   const item = value as ConversationSummary;
 

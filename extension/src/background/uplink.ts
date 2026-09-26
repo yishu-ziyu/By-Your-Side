@@ -222,8 +222,7 @@ export class Uplink {
 
       // 配了 ws 调试 token 才走调试通道；否则按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），
       // 不能停在「未连接」等用户重载扩展。
-      if (await hasWsToken()) await this.connectWs(detail);
-      else this.handleDisconnect(detail);
+      await this.connectWs(detail, { retryInprocWithoutToken: true });
 
       return;
     }
@@ -260,7 +259,7 @@ export class Uplink {
     this.inprocPort?.postMessage({ type: "inproc_voice", configured });
   }
 
-  private async connectWs(reason: string): Promise<void> {
+  private async connectWs(reason: string, { retryInprocWithoutToken = false } = {}): Promise<void> {
     if (this.authFailed) return;
 
     if (this.transport !== null) return;
@@ -268,6 +267,12 @@ export class Uplink {
 
     if (this.transport !== null) return;
     const token = typeof stored[TOKEN_KEY] === "string" ? stored[TOKEN_KEY] : "";
+
+    if (!token && retryInprocWithoutToken) {
+      this.handleDisconnect(reason);
+
+      return;
+    }
 
     if (!token) {
       // 没 token 连 ws 也必败，直接停住等用户在面板里设置
@@ -314,12 +319,6 @@ export class Uplink {
       }
     };
   }
-}
-
-async function hasWsToken(): Promise<boolean> {
-  const stored = await chrome.storage.local.get(TOKEN_KEY);
-
-  return typeof stored[TOKEN_KEY] === "string" && stored[TOKEN_KEY].length > 0;
 }
 
 function isKeepalive(raw: unknown): raw is { type: "inproc_keepalive" } {

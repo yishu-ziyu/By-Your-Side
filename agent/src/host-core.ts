@@ -50,9 +50,7 @@ export interface HostCore {
 }
 
 /** 内部错误码不直接给用户看：会话找不到时说清楚发生了什么、该怎么办。 */
-function userFacingError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-
+function userFacingError(message: string): string {
   return message.startsWith("CONVERSATION_NOT_FOUND") ? "这个会话在助手这边已经找不到了（助手可能刚重启过），这条没有发出去。请点右上角「＋」新建会话后再发。" : message;
 }
 
@@ -134,7 +132,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
 
       void conversations.handleMessage(msg).catch((err) => current?.send({
         type: "agent_event", conversationId: msg.conversationId,
-        event: { kind: "error", message: userFacingError(err) },
+        event: { kind: "error", message: userFacingError(err instanceof Error ? err.message : String(err)) },
       }));
     },
     sendHelloOk(conn) {

@@ -6,7 +6,7 @@
  * 核心的 load() 是同步的，所以先用 openConversationStore() 读进内存；写入是后台的，失败只记日志。
  */
 import type { ConversationPersistence } from "@sideagent/agent/browser-core";
-import { validConversationId, type ConversationSummary } from "../../../shared/protocol.js";
+import { isConversationSummary, validConversationId, type ConversationSummary } from "../../../shared/protocol.js";
 import { isReadingTranscript, type ReadingTranscript } from "../../../shared/reading.js";
 
 const DB_NAME = "sideagent-conversations";
@@ -15,7 +15,10 @@ const STORE = "kv";
 
 const INDEX_KEY = "index";
 
-const readingKey = (id: string) => `reading:${id}`;
+/** 阅读交接按会话编号放在一条记录里，读的时候不用逐个枚举键。 */
+const READINGS_KEY = "readings";
+
+type StoredValue = ConversationSummary[] | Record<string, ReadingTranscript>;
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -27,18 +30,20 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
+
     req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE); };
+
     req.onsuccess = () => resolve(req.result);
+
     req.onerror = () => reject(req.error ?? new Error("会话目录打不开"));
   });
 }
 
-/** 与本机 ConversationStore.load 同样的形状校验；重启后一律回到空闲，不续跑旧的外部动作。 */
-function validSummaries(value: unknown): ConversationSummary[] {
+/** 用协议的会话形状校验；重启后一律回到空闲，不续跑旧的外部动作（与本机 ConversationStore.load 相同）。 */
+function validSummaries(value: ConversationSummary[] | undefined): ConversationSummary[] {
   if (!Array.isArray(value)) return [];
 
-  return value.filter((entry): entry is ConversationSummary => entry && validConversationId(entry.id) && typeof entry.title === "string" && typeof entry.createdAt === "number" && typeof entry.updatedAt === "number" && (entry.mode === "act" || entry.mode === "teach"))
-    .map((entry) => ({ ...entry, state: "idle" }));
+  return value.filter(isConversationSummary).map((entry) => ({ ...entry, state: "idle" }));
 }
 
 export async function openConversationStore(log: (message: string) => void): Promise<ConversationPersistence> {
@@ -48,23 +53,20 @@ export async function openConversationStore(log: (message: string) => void): Pro
 
   try {
     db = await openDb();
-    const tx = db.transaction(STORE);
-    const store = tx.objectStore(STORE);
-    const [index, keys] = await Promise.all([request(store.get(INDEX_KEY)), request(store.getAllKeys())]);
+    const store = db.transaction(STORE).objectStore(STORE);
+    // SAFETY: 这两个键只由下面的 save / saveReading 写入，形状见 StoredValue；读出后仍逐条校验。
+    const [index, stored] = await Promise.all([request(store.get(INDEX_KEY)) as Promise<ConversationSummary[] | undefined>, request(store.get(READINGS_KEY)) as Promise<Record<string, ReadingTranscript> | undefined>]);
     summaries = validSummaries(index);
 
-    for (const key of keys) {
-      if (typeof key !== "string" || !key.startsWith("reading:")) continue;
-      const value: unknown = await request(db.transaction(STORE).objectStore(STORE).get(key));
-
-      if (isReadingTranscript(value)) readings.set(key.slice("reading:".length), value);
+    for (const [id, transcript] of Object.entries(stored ?? {})) {
+      if (validConversationId(id) && isReadingTranscript(transcript)) readings.set(id, transcript);
     }
   } catch (error) {
     // 打不开就退回只在内存里的会话（与改前相同），任务照常可用。
     log(`会话目录读取失败：${error instanceof Error ? error.message : String(error)}`);
   }
 
-  const write = (key: string, value: unknown) => {
+  const write = (key: string, value: StoredValue) => {
     if (!db) return;
 
     try {
@@ -85,7 +87,7 @@ export async function openConversationStore(log: (message: string) => void): Pro
     saveReading(id, transcript) {
       if (!validConversationId(id) || !isReadingTranscript(transcript)) throw new Error("Invalid reading handoff");
       readings.set(id, transcript);
-      write(readingKey(id), transcript);
+      write(READINGS_KEY, Object.fromEntries(readings));
     },
     readingFor: (id) => readings.get(id),
   };
