@@ -77,13 +77,14 @@ document.getElementById("settings")!.innerHTML = `
       <div class="settings-inline">
         <button id="model-test" type="button">测试连接</button>
         <button id="model-save" type="button" class="settings-primary">保存并使用</button>
+        <button id="model-fast" type="button">用作快速模型</button>
       </div>
       <p id="model-status" class="settings-status" role="status" aria-live="polite"></p>
     </div>
   </section>
   <section class="settings-card" aria-labelledby="fast-title">
     <h2 id="fast-title">快速模型</h2>
-    <p class="settings-sub">划词解释、网页翻译这类要当场出结果的动作用它，并且不让它先思考。不选就用上面的主模型。</p>
+    <p class="settings-sub">划词解释、网页翻译、找东西这类要当场出结果的动作用它，并且不让它先思考。不选就用上面的主模型。还没填过 key 的服务商：在上面选中它、填好 key 和模型，点「用作快速模型」，主模型不变。</p>
     <label class="settings-field">
       <span>即时动作用的模型</span>
       <select id="fast-model"></select>
@@ -368,6 +369,18 @@ async function save(): Promise<void> {
   await chrome.storage.local.set({ [INPROC_CONFIG_KEY]: value.config });
   keyInput.value = "";
   setStatus(modelStatus, `已保存。侧栏接下来的任务会使用 ${labelOf(value.config.provider)} · ${value.config.modelId}。`, "ok");
+}
+
+/** 保存这家的凭据并把所填模型设为快速模型；主模型不变。 */
+async function saveAsFast(): Promise<void> {
+  const value = draft();
+
+  if (!value.ok) return setStatus(modelStatus, value.error, "err");
+
+  if (value.key) await runtime.credentials.modify(value.config.provider, async () => ({ type: "api_key", key: value.key }));
+  await chrome.storage.local.set({ [INPROC_FAST_CONFIG_KEY]: value.config });
+  keyInput.value = "";
+  setStatus(modelStatus, `已设为快速模型：${labelOf(value.config.provider)} · ${value.config.modelId}。主模型不变。`, "ok");
 }
 
 function flowLine(text: string, className = "oauth-line"): HTMLElement {
@@ -676,6 +689,8 @@ oauthLogout.addEventListener("click", () => void logout());
 $("model-test").addEventListener("click", () => void testConnection());
 
 $("model-save").addEventListener("click", () => void save());
+
+$("model-fast").addEventListener("click", () => void saveAsFast());
 
 $("voice-save").addEventListener("click", () => void saveVoiceKey());
 

@@ -15,7 +15,7 @@ import type { AddressInfo } from "node:net";
 import { loadavg } from "node:os";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, sleep, until, watchInproc } from "./harness.mts";
-import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { configureViaSettings, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
@@ -153,17 +153,14 @@ async function runOnce(action: string, round: number): Promise<Run> {
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
 
     if (fastPlan) {
-      await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ [`inproc_cred:${fastPlan.providerId}`]: fastPlan.credential })}).then(() => true)`);
-      // SAFETY: CDP 规范里 Target.createTarget 返回 { targetId }。
-      const { targetId } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` }) as { targetId: string };
-      const settings = await rp.attach(targetId);
-      const value = JSON.stringify({ provider: fastPlan.providerId, modelId: fastPlan.modelId });
-      await until(async () => (await rp.evaluate(settings, `[...document.querySelectorAll("#fast-model option")].some((o) => o.value === ${JSON.stringify(value)})`)) || undefined, 15_000, "设置页列出快速模型");
-      await rp.evaluate(settings, `(() => { const s = document.querySelector("#fast-model"); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
-      run.fastStatus = await until(async () => (await rp.evaluate(settings, `document.querySelector("#fast-status").textContent`)) || undefined, 10_000, "设置页保存快速模型");
-      run.fastStored = await rp.evaluate(panel, `chrome.storage.local.get("inproc_fast_model_config").then((s) => s.inproc_fast_model_config ?? null)`);
-      await rp.screenshot(settings, join(artifacts, `settings-fast-r${round}.png`));
-      await rp.cdp.send("Target.closeTarget", { targetId });
+      // 像用户一样：设置页选服务商、填 key 和模型、测试连接，点「用作快速模型」；主模型应保持不变。
+      const settings = await configureViaSettings(rp, panel, fastPlan, { asFast: true });
+      run.fastStatus = settings.saveStatus;
+      run.fastTest = settings.testStatus;
+      run.fastStored = settings.stored;
+      run.mainAfterFast = await rp.evaluate(panel, `chrome.storage.local.get("inproc_model_config").then((s) => s.inproc_model_config ?? null)`);
+      await rp.screenshot(await rp.attach(settings.settingsTargetId), join(artifacts, `settings-fast-r${round}.png`));
+      await rp.cdp.send("Target.closeTarget", { targetId: settings.settingsTargetId });
       await rp.cdp.send("Page.bringToFront", {}, page);
     }
 
