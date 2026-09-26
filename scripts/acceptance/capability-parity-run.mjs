@@ -20,6 +20,7 @@ import { startFixtureServer } from "./fixture-server.mjs";
 import { installExecuteToolCallHook } from "./sw-hook.mjs";
 import { buildParityExpression, CASE7_CODE } from "./capability-parity.mjs";
 import { runBrowserProgram } from "../../agent/src/browser-program.js";
+import { trackTempDir } from "./temp-profile.mjs";
 
 const CASES = ["case1", "case2", "case3", "case4", "case5", "case6", "case7"];
 
@@ -74,6 +75,8 @@ async function launchIsolated() {
   ];
 
   const proc = spawn(binary, args, { stdio: "ignore", detached: false });
+  // Removed in main()'s finally, or at process end if the run is interrupted first.
+  trackTempDir(profile, proc);
   const deadline = Date.now() + 20_000;
 
   for (;;) {

@@ -11,12 +11,13 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { createCdp, fetchJson, findServiceWorker } from "../cdp.mjs";
+import { trackTempDir } from "../temp-profile.mjs";
 
 export const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../..");
 
@@ -206,6 +207,7 @@ export async function attachDailyChrome({ port = Number(process.env.CDP_PORT ?? 
   const rp = browserControls(cdp, id);
   // 日常数据目录不复制进产物：给一个空目录，调用方的 traces 拷贝自然落空。
   const dirs = { data: await mkdtemp(join(tmpdir(), "sideagent-daily-")) };
+  const tempDir = trackTempDir(dirs.data);
   const before = new Set((await rp.targets()).map((t) => t.targetId));
 
   // 日常 Chrome 没有 about:blank 初始页：在当前窗口前台开一个，侧栏跟着这个窗口。
@@ -233,7 +235,7 @@ export async function attachDailyChrome({ port = Number(process.env.CDP_PORT ?? 
     workTargetId: String(workTargetId),
     hostLog: async () => "",
     close,
-    remove: () => rm(dirs.data, { recursive: true, force: true }),
+    remove: async () => tempDir.release(),
   };
 }
 
@@ -380,6 +382,8 @@ export async function exportDiagnosticsViaSettings(
  */
 export async function launchRealPath({ microphoneWav, withoutNativeHost = false, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
+  // Removed by remove(), or at process end if the case fails or is interrupted before that.
+  const tempDir = trackTempDir(root);
   const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host"), downloads: join(root, "downloads") };
 
   for (const dir of Object.values(dirs)) await mkdir(dir, { recursive: true });
@@ -457,6 +461,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
     ...chromeArgs,
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"], env });
+  tempDir.setChild(chrome);
 
   let chromeStderr = "";
   chrome.stderr.on("data", (chunk) => {
@@ -530,7 +535,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
     hostLog,
     chromeStderr: () => chromeStderr,
     close,
-    remove: () => rm(root, { recursive: true, force: true }),
+    remove: async () => tempDir.release(),
   };
 }
 

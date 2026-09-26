@@ -33,6 +33,7 @@ import {TaskDispatcher, TaskReceiptStore} from '../../agent/src/task-dispatcher.
 import {DEFAULT_PORT, PROTOCOL_VERSION, HOST_VERSION, STORAGE_SCHEMA_VERSION, parseClientMessage} from '../../shared/protocol.js';
 import {createP0Fixture} from '../eval/lib/p0-fixture.js';
 import {assertWithinBudget, loadBudget, loadSpend, recordSpend, remaining} from '../eval/lib/budget.js';
+import {trackTempDir} from './temp-profile.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -220,6 +221,8 @@ interface Iso {
 
 async function launchIso(opts: {token: string; profileDir?: string; extensionDir?: string}): Promise<Iso> {
   const outDir = opts.profileDir ? dirname(opts.profileDir) : await mkdtemp(join(tmpdir(), 'sideagent-p0-'));
+  // A folder created here is removed on close() or at process end; a caller-supplied profile stays the caller's.
+  const tempDir = opts.profileDir ? undefined : trackTempDir(outDir);
   const profile = opts.profileDir ?? join(outDir, 'profile');
   const extDir = opts.extensionDir ?? join(outDir, 'extension');
 
@@ -241,6 +244,7 @@ async function launchIso(opts: {token: string; profileDir?: string; extensionDir
     '--no-first-run', '--no-default-browser-check',
     '--autoplay-policy=no-user-gesture-required', 'about:blank',
   ], {stdio: 'ignore'});
+  tempDir?.setChild(child);
 
   const port = await until(async () => {
     try { return (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; } catch { return undefined; }
@@ -311,7 +315,10 @@ async function launchIso(opts: {token: string; profileDir?: string; extensionDir
       child.kill('SIGKILL');
       await cdp.close().catch(() => {});
 
-      if (!closeOpts?.keepDir) await rm(outDir, {recursive: true, force: true}).catch(() => {});
+      if (!closeOpts?.keepDir) {
+        if (tempDir) tempDir.release();
+        else await rm(outDir, {recursive: true, force: true}).catch(() => {});
+      }
     },
   };
 

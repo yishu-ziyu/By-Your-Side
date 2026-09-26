@@ -61,6 +61,8 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only
 
 两个隔离启动器（`real-path/harness.mts`、`isolated-extension.mts`）都把 Chrome 配置目录的下载文件夹指到临时目录，页面下载不进用户真实的下载文件夹。`page-download` 的练习页是夹具服务器的 `downloads.html`：一个文件完整返回，另一个声明 64 KB、发 4 KB 后断开；判据看临时下载文件夹里的实际文件、Chrome 下载记录（`chrome.downloads.search`）和侧栏回答。
 
+临时配置目录由 `temp-profile.mjs` 统一登记：`isolated-extension.mts` 在 `close()` 时删除，real-path 在 `remove()` 时删除；用例抛错、`process.exit()` 或收到 SIGINT/SIGTERM/SIGHUP 时，先杀掉对应 Chrome 再删除。`p0-local-agent-run.mts`、`capability-parity-run.mjs` 与 QA-01 的隔离构建目录同样登记。2026-09-26 之前每次隔离运行都留下配置目录，约 880 个（11 GB）占满了磁盘。
+
 `inproc-*` 用例则不注册 Native Messaging：模型凭据只写进隔离扩展存储。圈画判据同时要求页面圈住目标、未点击、侧栏交付无错误；只看到圈画但目标账本报未完成，仍为失败。`inproc-mark --via-settings` 等待新会话可发送后才输入，避免把启动中的草稿切换误判为任务失败。
 
 **过滤轮的三个信号别混用**：

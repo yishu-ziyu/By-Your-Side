@@ -11,6 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createCdp, fetchJson } from "./cdp.mjs";
 import { installExecuteToolCallHook } from "./sw-hook.mjs";
+import { trackTempDir } from "./temp-profile.mjs";
 
 /** 本机 Chrome for Testing。缓存目录名带版本号，浏览器更新后旧目录会被清掉，因此按实际存在的最高版本解析。 */
 function resolveChrome(): string {
@@ -110,7 +111,10 @@ export async function closeIsolatedResources(
       const timer = setTimeout(() => {
         child.removeListener('close', stopped);
         child.kill('SIGKILL');
-        reject(new Error('Chrome graceful close timed out; SIGKILL fallback sent'));
+        // Wait for the killed Chrome to exit so its profile is no longer written when it is removed.
+        const fail = () => reject(new Error('Chrome graceful close timed out; SIGKILL fallback sent'));
+        const guard = setTimeout(fail, 3000);
+        child.once('close', () => { clearTimeout(guard); fail(); });
       }, 5000);
 
       child.once('close', stopped);
@@ -135,6 +139,8 @@ export async function closeIsolatedResources(
 
 export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fixture?: (req: IncomingMessage, res: ServerResponse) => boolean; downloadDir?: string; fakeMedia?: boolean; localOnly?: boolean; diagnose?: (kind: string, data: unknown) => void} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
+  // Profile, extension copy and default downloads live here; removed on close() and at process end.
+  const tempDir = trackTempDir(outDir);
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
   let child: ChildProcess | undefined, fixture: Server | undefined;
@@ -142,6 +148,15 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
   let hits = 0, closing: Promise<IsolationCleanup> | undefined;
 
   const close = () => closing ??= closeIsolatedResources({ child, cdp, fixture }).then(result => {
+    try {
+      tempDir.release();
+      result.resources.profile = 'REMOVED';
+    } catch (error) {
+      result.resources.profile = 'FAILED';
+      result.errors.push(`profile: ${error}`);
+      result.status = 'FAIL';
+    }
+
     options.diagnose?.('isolation-cleanup', { outDir, ...result });
 
     return result;
@@ -200,6 +215,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       "about:blank",
     ], { stdio: ["ignore", "ignore", "pipe"], env:{...process.env,STEPFUN_API_KEY:undefined,SIDEAGENT_STEP_PLAN_KEY:undefined,TYPESAFE_API_KEY:undefined} });
 
+    tempDir.setChild(child);
     let spawnError: Error | undefined;
     let stderrTail = "";
     child.on("error", error => { spawnError = error; });
