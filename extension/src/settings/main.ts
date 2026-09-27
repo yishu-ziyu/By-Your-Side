@@ -15,6 +15,7 @@ import {
 import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
+import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
 
 /** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
@@ -117,6 +118,15 @@ document.getElementById("settings")!.innerHTML = `
       </div>
     </div>
     <p id="persona-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="settings-card" aria-labelledby="selection-title">
+    <h2 id="selection-title">划词</h2>
+    <label class="settings-check">
+      <input id="selection-bar" type="checkbox" />
+      <span>选中文字后显示「问 AI / 解释」</span>
+    </label>
+    <p class="settings-sub">关掉后选中文字不再弹出工具条；选中后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。</p>
+    <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="settings-card" aria-labelledby="trace-title">
     <h2 id="trace-title">诊断记录</h2>
@@ -579,6 +589,7 @@ async function reload(): Promise<void> {
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
+  selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   renderCurrent();
   refreshProviderMarks();
   renderCredentialState();
@@ -680,6 +691,22 @@ $("persona-save").addEventListener("click", () => {
   void savePersona({ id: "custom", text });
 });
 
+const selectionBar = $<HTMLInputElement>("selection-bar");
+
+const selectionStatus = $("selection-status");
+
+selectionBar.addEventListener("change", () => {
+  const enabled = selectionBar.checked;
+
+  chrome.storage.local.set({ [SELECTION_BAR_KEY]: enabled }).then(
+    () => setStatus(selectionStatus, enabled ? "已开启。" : "已关闭。", "ok"),
+    (error) => {
+      selectionBar.checked = !enabled;
+      setStatus(selectionStatus, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+    },
+  );
+});
+
 oauthLogin.addEventListener("click", () => void startLogin());
 
 oauthCancel.addEventListener("click", () => login?.abort());
@@ -698,7 +725,7 @@ voiceClear.addEventListener("click", () => void clearVoiceKey());
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_VOICE_KEY || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 renderProviders();

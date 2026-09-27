@@ -9,6 +9,14 @@ export const MAX_ASK_CHARS = READING_SELECTION_LIMIT;
 
 export const ASK_MENU_ID = "ask-sideagent";
 
+/** chrome.storage.local 键：选中文字后是否自动弹出「问 AI / 解释」工具条。 */
+export const SELECTION_BAR_KEY = "sideagent_selection_bar";
+
+/** 只有明确存了 false 才算关闭；没存过或存了别的值都算开启。 */
+export function isSelectionBarOff(stored: unknown): stored is false {
+  return stored === false;
+}
+
 export const EXPLAIN_PROMPT = "解释这段选中的文字。用读者能懂的话说它在主张什么。不要操作页面。";
 
 export interface PendingAsk {
