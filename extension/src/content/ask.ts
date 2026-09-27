@@ -1,7 +1,7 @@
 /** Selection → local reading conversation. UI never sends task/steer messages. */
 import { createElement as icon, Sparkles, ArrowUp, Square, X, Copy, PanelRight, RotateCcw } from 'lucide';
 import DOMPurify from 'dompurify';
-import { clipSelection, isEditableTarget, EXPLAIN_PROMPT } from '../shared/ask-selection.js';
+import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
@@ -445,7 +445,30 @@ function boot(): void {
     }
   });
 
+  // 设置页的「划词工具条」开关：只管选中后自动弹出；⌘J 与右键菜单是用户主动发起，不受影响。
+  let barEnabled = true;
+
+  const applyBarSetting = (off: boolean) => {
+    barEnabled = !off;
+
+    if (!barEnabled && visible && !expanded) {
+      hide();
+    }
+  };
+
+  void chrome.storage.local.get(SELECTION_BAR_KEY).then(stored => applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]))).catch(() => {
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && SELECTION_BAR_KEY in changes) {
+      applyBarSetting(isSelectionBarOff(changes[SELECTION_BAR_KEY]!.newValue));
+    }
+  });
+
   function changedSelection(keyboard = false): void {
+    if (!barEnabled) {
+      return;
+    }
+
     const next = selectionSnapshot();
 
     if (!next || root.activeElement || next.source.text === snapshot?.source.text && visible) {

@@ -55,3 +55,6 @@ html, body.settings-page { height: auto; min-height: 100%; font-size: 14px; }
 .timbre-list { display: flex; flex-direction: column; gap: 8px; }
 .timbre-row { display: flex; align-items: stretch; gap: 8px; }
 .timbre-option { flex: 1; }
+
+.settings-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.settings-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
