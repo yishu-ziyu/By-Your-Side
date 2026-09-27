@@ -73,7 +73,7 @@ export interface SettingsRun {
  * 从侧栏菜单打开设置页，用真实点击和输入完成配置。asCustom 时把该服务当成「自定义地址」填写。
  * 返回设置页上看到的测试与保存结果；任何一步卡住都会抛错。
  */
-export async function configureViaSettings(rp: RealPath, panel: string, plan: ModelPlan, { asCustom = false } = {}): Promise<SettingsRun> {
+export async function configureViaSettings(rp: RealPath, panel: string, plan: ModelPlan, { asCustom = false, asFast = false } = {}): Promise<SettingsRun> {
   if (plan.credential.type !== "api_key") throw new Error("设置页路径只支持填 key 的套餐；订阅登录要真人在服务商网页上确认");
   const key = String(plan.credential.key);
   const baseUrl = asCustom ? await catalogBaseUrl(plan) : null;
@@ -119,17 +119,19 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
     return tone === "ok" || tone === "err" ? text : undefined;
   }, 45_000, "测试连接出结果", 300);
 
-  await rp.click(page, "#model-save");
+  // asFast：点「用作快速模型」，只存这家的 key 并设为快速模型，主模型不动。
+  await rp.click(page, asFast ? "#model-fast" : "#model-save");
 
   const saveStatus = await until(async () => {
     // SAFETY: textContent 是字符串。
     const text = await rp.evaluate(page, `document.querySelector("#model-status").textContent`) as string;
 
-    return text.startsWith("已保存") ? text : undefined;
+    return text.startsWith(asFast ? "已设为快速模型" : "已保存") ? text : undefined;
   }, 10_000, "保存完成", 200);
 
-  // SAFETY: 这个键由设置页 save() 写入 InprocModelConfig 对象。
-  const stored = await rp.evaluate(page, `chrome.storage.local.get("inproc_model_config").then((s) => s.inproc_model_config)`) as JsonRecord;
+  const storageKey = asFast ? "inproc_fast_model_config" : "inproc_model_config";
+  // SAFETY: 这个键由设置页 save() / saveAsFast() 写入 InprocModelConfig 对象。
+  const stored = await rp.evaluate(page, `chrome.storage.local.get("${storageKey}").then((s) => s["${storageKey}"])`) as JsonRecord;
 
   return { testStatus, saveStatus, stored, settingsTargetId: target.targetId, menuClicks, menuToggles };
 }

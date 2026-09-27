@@ -1,5 +1,5 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, RealtimeVoiceSession, startHostCore, type ClientConn, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, type ClientConn, type HostCore } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import type { createModelRuntime, ModelRuntime } from "./model-runtime.js";
@@ -8,9 +8,10 @@ import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
 import { openConversationStore } from "./conversation-store.js";
+import { IdbDocument } from "./document-idb.js";
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; credentials: StoredCredentials }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; credentials: StoredCredentials }
   | { type: "inproc_voice"; configured: boolean };
 
 export interface InprocHostDeps {
@@ -24,6 +25,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let core: HostCore | null = null;
   let pendingCore: Promise<HostCore> | null = null;
   let selected: InprocModelConfig | null = null;
+  let fastSelected: InprocModelConfig | null = null;
   let voiceConfigured = false;
   let helloReceived = false;
   /** 配置模型前侧栏发来的新建会话：核心启动后补处理，否则侧栏一直「正在新建会话」。 */
@@ -44,7 +46,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (pendingCore) return pendingCore;
 
-    const modelPort = models.createCoreModels(() => selected);
+    const modelPort = models.createCoreModels(() => selected, () => fastSelected);
     let pattern = "";
 
     // 新对话按建立时的设置取模型；核心启动后设置页可能已经换过（恢复的对话沿用自己记下的模型）。
@@ -59,11 +61,18 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     currentPattern();
     // 会话目录先读进内存：核心启动时按它重建会话，offscreen 重启后侧栏的会话编号仍然有效。
+    // 个人记忆存在扩展本地（IndexedDB），和本机宿主同一套判断与读写规则。
+    const memoryStore = new MemoryStore(new IdbDocument("memories"));
+    const taskHistory = new TaskHistoryStore(new IdbDocument("tasks"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
       store,
+      memoryStore,
+      taskHistory,
       createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/" }, mode: summary?.mode,
         fallbackModelPattern: "zai-coding-cn/glm-5.3-flash",
+        memoryStore,
+        taskHistory,
       }),
       voiceKey: async () => {
         if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「实时语音」里填阶跃星辰的 key。");
@@ -156,6 +165,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
     if (message.type === "inproc_config") {
       selected = message.config;
+      fastSelected = message.fast ?? null;
       await models.credentials.load(message.credentials ?? {});
 
       if (!selected) return;

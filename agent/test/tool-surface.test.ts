@@ -9,7 +9,8 @@ import { createSendUserMessageTool } from "../src/user-delivery.js";
 import { createArtifactsTool } from "../src/artifacts-tool.js";
 import { createCapturePageMaterialTool, createTaskGoalsTool } from "../src/task-goal-tool.js";
 import { MemoryRuntime } from "../src/memory-runtime.js";
-import { MemoryStore } from "../src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
+import { FileDocument } from "../src/document-file.js";
 import { SYSTEM_PROMPT, workerSystemPrompt } from "../src/prompt.js";
 import { LEAD_SESSION_ID } from "../../shared/protocol.js";
 import { TEAM_COORDINATION_TOOLS } from "../../shared/control.js";
@@ -144,7 +145,7 @@ describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
       const { createConversationRuntime } = await import("../src/conversation-runtime.js");
       const dir = mkdtempSync(join(tmpdir(), "bys-tool-surface-"));
       tempDirs.push(dir);
-      const runtime = await createConversationRuntime("default", () => {}, undefined, { memoryStore: new MemoryStore(dir) });
+      const runtime = await createConversationRuntime("default", () => {}, undefined, { memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
 
       try {
         const inner = (runtime.session as unknown as { session: { getActiveToolNames(): string[] } }).session;

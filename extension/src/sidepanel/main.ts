@@ -68,6 +68,7 @@ import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../sha
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
+import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
 import { TaskBar } from "./task-bar.js";
@@ -111,14 +112,12 @@ const app = document.getElementById("app")!;
 
 app.innerHTML = `
   <header id="topbar">
-    <div class="brand-cluster">
-      <img id="logo" src="icons/brand-mark.svg" alt="" />
-      <span id="brand">By Your Side</span>
-    </div>
+    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
     <div id="status-pill" class="activity-island" title="当前连接与执行状态">
       <span id="status-dot" class="dot island-pulse-dot"></span>
       <span id="status-text">未连接</span>
     </div>
+    <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
       <button id="record-toggle" type="button" title="你亲手做一遍，AI 记录为可复用的技能" aria-pressed="false"><span>示范给 AI</span></button>
@@ -129,19 +128,8 @@ app.innerHTML = `
       <button id="companion-toggle" type="button" aria-pressed="true"><span>显示小伙伴 M</span></button>
     </div>
   </header>
-  <div id="conversation-bar">
-    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
-    <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
-  </div>
-  <div id="operation-bar">
-    <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
-      <option value="act">帮我操作</option>
-      <option value="teach">指导我操作</option>
-    </select>
-  </div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="consent-requests" aria-label="请求授权" hidden></div>
-  <div id="task-bar-root"></div>
   <div id="task-strip" aria-label="当前会话与结果">
     <div id="task-result-card" hidden>
       <div id="task-result-primary"></div>
@@ -220,6 +208,7 @@ app.innerHTML = `
       </div>
       <div id="demo-skill" hidden></div>
     </div>
+    <div id="task-bar-root"></div>
     <div id="composer" class="composer-glass-dock">
       <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
         <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -240,6 +229,10 @@ app.innerHTML = `
           <span id="model-name"></span>
           <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
         </button>
+        <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
+          <option value="act">帮我操作</option>
+          <option value="teach">指导我操作</option>
+        </select>
         <span id="composer-spacer"></span>
         <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
         <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
@@ -272,6 +265,13 @@ function applyHostFeatures(features: { memory: boolean; skills: boolean } | unde
   document.getElementById("record-toggle")!.hidden = !skills;
   document.getElementById("memory-open")!.hidden = !skills && !memory;
   document.querySelector<HTMLElement>("#header-menu hr")!.hidden = !skills && !memory;
+  // 只装扩展时有记忆、没有技能：抽屉只留「记忆」，不出现空的技能页和观察开关。
+  document.getElementById("seg-skills")!.hidden = !skills;
+  document.getElementById("observe-toggle")!.hidden = !skills;
+  document.getElementById("observe-hint")!.hidden = !skills;
+  document.querySelector("#memory-open span")!.textContent = skills ? (memory ? "技能与记忆" : "技能") : "记忆";
+
+  if (!skills && memory) knowledgeSegment = "memory";
 }
 
 // 原生 popover 负责外部点击和 Escape；各入口复用已有行为。
@@ -1104,6 +1104,129 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
 }
 
 function renderMemoryDrawer(): void {
+  renderMemoryFacts();
+  memoryBody.appendChild(renderPastTasks());
+}
+
+// ── 过往任务：每个动手做过的任务结束时留的一条摘要，可删单条或全部清空 ──
+let pastTasks: TaskHistoryEntry[] = [];
+
+let pastTasksRequestId: string | null = null;
+
+let pastTasksError = "";
+
+let pastTasksConfirmClear = false;
+
+const PAST_TASK_OUTCOME: Record<TaskHistoryEntry["outcome"], string> = { complete: "做完了", partial: "还差一些", stopped: "你停止了", error: "出错" };
+
+function requestPastTasks(forget?: string | null): void {
+  pastTasksRequestId = crypto.randomUUID();
+  pastTasksError = "";
+
+  const message: ClientMessage = forget === undefined
+    ? { type: "task_history_list", requestId: pastTasksRequestId, conversationId: selectedConversationId }
+    : { type: "task_history_forget", requestId: pastTasksRequestId, conversationId: selectedConversationId, id: forget };
+
+  if (!send(message)) {
+    pastTasksRequestId = null;
+    pastTasksError = "连接不可用，请重试";
+  }
+}
+
+function renderPastTasks(): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "past-tasks";
+  const head = document.createElement("div");
+  head.className = "past-tasks-head";
+  const title = document.createElement("h3");
+  title.textContent = pastTasks.length ? `过往任务 · ${pastTasks.length}` : "过往任务";
+  head.appendChild(title);
+
+  if (pastTasks.length) {
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = pastTasksConfirmClear ? "memory-danger" : "";
+    clear.textContent = pastTasksConfirmClear ? "确认全部清空" : "全部清空";
+    clear.onclick = () => {
+      if (!pastTasksConfirmClear) { pastTasksConfirmClear = true; renderMemoryDrawer();
+
+ return; }
+
+      pastTasksConfirmClear = false;
+      requestPastTasks(null);
+      renderMemoryDrawer();
+    };
+
+    head.appendChild(clear);
+  }
+
+  section.appendChild(head);
+  const intro = document.createElement("p");
+  intro.className = "memory-quiet";
+  intro.textContent = "动手做过的任务结束后留一条摘要，之后它能想起做过什么、在哪做的。只存在这台电脑上。";
+  section.appendChild(intro);
+
+  if (pastTasksError) {
+    const failure = document.createElement("p");
+    failure.className = "memory-error";
+    failure.textContent = pastTasksError;
+    section.appendChild(failure);
+  }
+
+  if (!pastTasks.length) {
+    const empty = document.createElement("p");
+    empty.className = "memory-quiet past-tasks-empty";
+    empty.textContent = pastTasksRequestId ? "正在读取…" : "还没有记录。";
+    section.appendChild(empty);
+
+    return section;
+  }
+
+  for (const task of pastTasks) {
+    const row = document.createElement("article");
+    row.className = "memory-row past-task";
+    row.dataset.taskId = task.id;
+    const goal = document.createElement("p");
+    goal.className = "memory-row-text";
+    goal.textContent = task.goal;
+    const meta = document.createElement("div");
+    meta.className = "memory-row-meta";
+    const info = document.createElement("span");
+    info.className = "memory-quiet";
+    info.textContent = [formatMemoryTime(task.endedAt), PAST_TASK_OUTCOME[task.outcome], task.page ?? task.hosts[0]].filter(Boolean).join(" · ");
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "memory-danger";
+    remove.textContent = "删除";
+    remove.onclick = () => { requestPastTasks(task.id); renderMemoryDrawer(); };
+
+    meta.append(info, remove);
+    row.append(goal, meta);
+
+    if (task.unfinished.length) {
+      const open = document.createElement("p");
+      open.className = "memory-quiet";
+      open.textContent = `还差：${task.unfinished.join("；")}`;
+      row.appendChild(open);
+    }
+
+    section.appendChild(row);
+  }
+
+  return section;
+}
+
+function handlePastTasksResult(msg: Extract<ServerMessage, { type: "task_history_result" }>): void {
+  if (msg.requestId !== pastTasksRequestId) return;
+  pastTasksRequestId = null;
+
+  if (msg.ok) pastTasks = msg.tasks ?? [];
+  else pastTasksError = `未能读取过往任务：${msg.error ?? "未知原因"}`;
+
+  if (!memoryDrawer.hidden) renderMemoryDrawer();
+}
+
+function renderMemoryFacts(): void {
   const entries = memoryState.getEntries();
   memoryTitle.textContent = entries.length ? `记忆 · ${entries.length}` : "记忆";
   memoryBody.replaceChildren();
@@ -1113,7 +1236,7 @@ function renderMemoryDrawer(): void {
 
   const intro = document.createElement("p");
   intro.className = "memory-quiet memory-intro";
-  intro.textContent = "你可以查看、纠正或忘记自己的全部记忆。站点范围只决定何时使用。";
+  intro.textContent = "你在对话里说过的邮箱、姓名、偏好会自动记在这里，每轮都会用上。可以纠正或忘记；站点范围只决定何时使用。";
   memoryBody.appendChild(intro);
 
   if (memoryListError) {
@@ -1149,7 +1272,7 @@ function renderMemoryDrawer(): void {
     const heading = document.createElement("strong");
     heading.textContent = "还没有保存的记忆";
     const text = document.createElement("p");
-    text.textContent = "在聊天里明确说「请记住」，保存成功后会出现在这里。";
+    text.textContent = "你在对话里说过的邮箱、姓名等资料会自动记在这里。";
     empty.append(heading, text);
     memoryBody.appendChild(empty);
 
@@ -1163,8 +1286,18 @@ function renderMemoryDrawer(): void {
   memoryBody.appendChild(list);
 }
 
+/** 回执上的「撤销」各自等自己的结果。 */
+const receiptUndos = new Map<string, (ok: boolean, error?: string) => void>();
+
 function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (outcome.kind === "ignored") return;
+  const undo = receiptUndos.get(outcome.requestId);
+
+  if (undo) {
+    receiptUndos.delete(outcome.requestId);
+    undo(outcome.kind === "success", outcome.kind === "failure" ? outcome.error : undefined);
+  }
+
   const uiRequest = memoryUiRequests.get(outcome.requestId);
   memoryUiRequests.delete(outcome.requestId);
 
@@ -1209,6 +1342,7 @@ function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_l
 }
 
 function requestMemoryList(): void {
+  requestPastTasks();
   const message = memoryState.beginList(selectedConversationId);
   memoryListRequestId = message.requestId;
   memoryListError = "";
@@ -2412,6 +2546,7 @@ function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): 
 messagesEl.addEventListener("scroll", () => {
   pinned = nearBottom();
   toBottomBtn.hidden = pinned;
+  app.classList.toggle("messages-scrolled", messagesEl.scrollTop > 0);
 });
 
 function scrollToEnd(force = false): void {
@@ -2525,8 +2660,36 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
   const snapshots = event.entries.map((entry) => ({ ...entry, scope: { ...entry.scope } }));
   button.onclick = () => openMemoryDrawer({ action: event.action, entries: snapshots, message: event.message });
   receipt.append(mark, button);
+  const saved = event.action === "saved" && event.entries.length === 1 && !event.entries[0]!.experience ? event.entries[0]! : null;
 
-  if (event.entries.length === 1) {
+  // 自动记下的资料：回执直接写出记了什么，旁边给「撤销」（用户 2026-09-27 选择「自动记，给撤销」）。
+  if (saved) {
+    const text = document.createElement("span");
+    text.className = "memory-receipt-text";
+    text.textContent = `已记住：${saved.text}`;
+    button.textContent = "查看";
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.dataset.memoryUndo = saved.id;
+    undo.textContent = "撤销";
+    undo.onclick = () => {
+      undo.disabled = true;
+      const message = memoryState.beginForget(selectedConversationId, saved);
+      receiptUndos.set(message.requestId, (ok, error) => {
+        if (ok) { text.textContent = "已撤销，不再记住这条"; undo.remove(); button.remove();
+
+ return; }
+
+        undo.disabled = false;
+        text.textContent = `没能撤销：${error ?? "请重试"}`;
+      });
+      dispatchMemoryRequest(message, { action: "forget", entryId: saved.id });
+    };
+
+    receipt.replaceChildren(mark, text, undo, button);
+  }
+
+  if (event.entries.length === 1 && !saved) {
     const scope = document.createElement("span");
     scope.className = "memory-receipt-scope";
     scope.textContent = memoryScopeLabel(event.entries[0]!.scope);
@@ -3770,6 +3933,12 @@ function handleServerMessage(raw: string): void {
     return;
   }
 
+  if (msg.type === "task_history_result") {
+    handlePastTasksResult(msg);
+
+    return;
+  }
+
   if (msg.type === "skill_result") {
     if (msg.conversationId && msg.conversationId !== selectedConversationId) return;
 
@@ -3936,7 +4105,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result"
+      && !envelope.msg.type.startsWith("conversation_") && !envelope.msg.type.startsWith("consent_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result"
       // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 放行进内层，
       // 由内层只收目录、不收模型。live 复现：225 条 models=163 在这里被整条丢弃。
       && envelope.msg.type !== "model_info") return;

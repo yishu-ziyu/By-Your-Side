@@ -276,9 +276,9 @@ export class SideCompanion {
     this.hostEl.style.transform = rot ? `rotate(${rot}deg)` : "none";
   }
 
-  /** 紧贴在输入框上方的卡片（团队状态、示范记录）：它们上面有按钮，M 不能趴在它们上面挡住。 */
+  /** 紧贴在输入框上方的卡片（团队状态、示范记录、任务条）：它们上面有按钮，M 不能趴在它们上面挡住。 */
   private shelfCandidates(): HTMLElement[] {
-    return ["#demo-strip", "#team-card"].flatMap((selector) => {
+    return ["#demo-strip", "#team-card", "#task-bar-root"].flatMap((selector) => {
       const el = this.appEl.querySelector<HTMLElement>(selector);
 
       return el ? [el] : [];
@@ -402,6 +402,8 @@ export class SideCompanion {
   }
 
   public resetToComposer(): void {
+    // 先作废还在跑的动画（例如聚焦输入框时的「趴」），不然它下一帧会把 M 拉回旧位置，压住刚出现的任务条。
+    this.bump();
     this.isVisiting = false;
     this.visitTarget = null;
     this.hostEl.classList.remove("walking", "surprise", "nod");

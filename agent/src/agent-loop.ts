@@ -24,7 +24,10 @@ export interface AgentLoop extends Pick<
  * 任务核心对模型运行时的依赖（TS 检查器统计，2026-09-24）。本机实现是 pi-coding-agent 的 ModelRuntime；
  * 扩展里用 pi-ai 的模型目录包一层。注册验收模型、cliproxy 这类本机专用能力不在这里。
  */
-export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "getModel" | "streamSimple">;
+export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "getModel" | "streamSimple"> & {
+  /** 即时动作（划词解释、网页翻译批次）用的快速模型，调用时不开思考；没有设置时返回 undefined，沿用会话主模型。 */
+  fastModel?: () => Model<Api> | undefined;
+};
 
 /** A completed provider failure may continue once on an explicitly configured, credentialed backup. */
 export function withModelFailover(

@@ -69,12 +69,19 @@ export const PAGE_TRANSLATION_IDLE_MS = 180_000;
 /** 整个工具调用的硬上限，防止持续变化的页面永远跑下去。 */
 export const PAGE_TRANSLATION_MAX_MS = 900_000;
 
+/** 最先并行发出的几批每批只装这么多段：当前一屏的段落分散到几路同时翻、各自先写进页面，而不是等一整批 8 段。 */
+export const PAGE_TRANSLATION_FIRST_BATCH_BLOCKS = 2;
+
 /** 写满输出上限（length）时对半拆开重试，最多拆两层（8 → 4 → 2 段）。 */
 const MAX_SPLIT_DEPTH = 2;
 
 export interface PageTranslationOptions { concurrency?: number; idleMs?: number; maxMs?: number }
 
-const stopReasonOf = (error: unknown) => (error as {stopReason?: string} | null)?.stopReason;
+/** 批次失败时模型的停止原因（session.translatePageBatch 把它挂在 Error 上）；其他错误没有。 */
+const stopReasonOf = (error: Error | undefined): string | undefined => (error && 'stopReason' in error ? String(error.stopReason) : undefined);
+
+/** 第一次失败：原样保留错误，并记下它来自模型还是页面调用。 */
+interface TranslationFailure { error: Error; model: boolean }
 
 /** Every batch crosses the existing execution gate, including after model awaits. */
 export async function runPageTranslation(
@@ -103,7 +110,8 @@ export async function runPageTranslation(
     const target = {tabId: latest.tabId, document: latest.document};
     let stalledBatches = 0, started = 0, acknowledgedWrite = false, halt = false;
     // 第一个失败原样保留：页面调用的失败（执行事实未知）不能改写成模型失败。
-    let failure = null as {error: unknown; model: boolean} | null;
+    // SAFETY: 只在下面的 fail() 闭包里赋值；显式联合类型防止 TS 把它收窄成永远为 null。
+    let failure = null as TranslationFailure | null;
     const inFlight = new Map<number, {ids: string[]; done: Promise<number>}>();
 
     const inFlightBlocks = () => [...inFlight.values()].reduce((n, t) => n + t.ids.length, 0);
@@ -115,7 +123,7 @@ export async function runPageTranslation(
       } catch (cause) {
         const interrupted = cause instanceof Error && cause.message.includes('这批翻译未完成');
 
-        if (stop.aborted || !interrupted || (stopReasonOf(cause) === 'length' && blocks.length > 1 && meta.depth < MAX_SPLIT_DEPTH)) throw cause;
+        if (stop.aborted || !interrupted || (stopReasonOf(cause instanceof Error ? cause : undefined) === 'length' && blocks.length > 1 && meta.depth < MAX_SPLIT_DEPTH)) throw cause;
 
         return await translate(blocks, language, stop, {...meta, retry: true});
       }
@@ -127,7 +135,7 @@ export async function runPageTranslation(
       try {
         translations = await translateOnce(blocks, language, meta);
       } catch (cause) {
-        if (stop.aborted || stopReasonOf(cause) !== 'length' || blocks.length < 2 || meta.depth >= MAX_SPLIT_DEPTH) throw Object.assign(new ModelFailure(), {cause});
+        if (stop.aborted || stopReasonOf(cause instanceof Error ? cause : undefined) !== 'length' || blocks.length < 2 || meta.depth >= MAX_SPLIT_DEPTH) throw Object.assign(new ModelFailure(), {cause});
         // 思考写满输出上限：换更小的批次，而不是原样再发一次。
         const middle = Math.ceil(blocks.length / 2);
         await runBatch(blocks.slice(0, middle), language, before, {...meta, depth: meta.depth + 1, retry: false});
@@ -149,7 +157,7 @@ export async function runPageTranslation(
       if (stalledBatches >= 3) halt = true;
     };
 
-    const fail = (error: unknown, model: boolean) => { failure ??= {error, model}; halt = true; };
+    const fail = (error: Error, model: boolean) => { failure ??= {error, model}; halt = true; };
 
     for (;;) {
       while (!halt && !stop.aborted && inFlight.size < width && started < 128) {
@@ -159,8 +167,13 @@ export async function runPageTranslation(
         let collected: TranslationReceipt;
 
         try {
-          collected = await call({...target, action: 'collect', ...(busy.size ? {exclude: [...busy]} : {})});
-        } catch (error) { fail(error, false); break; }
+          const command: TranslationCommand = {...target, action: 'collect'};
+
+          if (busy.size) command.exclude = [...busy];
+
+          if (started < width) command.maxBlocks = PAGE_TRANSLATION_FIRST_BATCH_BLOCKS;
+          collected = await call(command);
+        } catch (error) { fail(error instanceof Error ? error : new Error(String(error)), false); break; }
 
         latest = collected;
         // 同一段绝不同时翻两份，即使页面没有排除它。
@@ -174,7 +187,12 @@ export async function runPageTranslation(
         const batch = ++started;
 
         const done = runBatch(fresh, collected.language, collected, {batch, depth: 0, retry: false})
-          .catch(error => fail(error instanceof ModelFailure ? error.cause : error, error instanceof ModelFailure))
+          .catch(error => {
+            // 页面调用的错误原样保留（带执行事实）；模型失败取其原因。
+            const cause = error instanceof ModelFailure ? error.cause : error;
+
+            fail(cause instanceof Error ? cause : new Error(String(cause)), error instanceof ModelFailure);
+          })
           .then(() => batch);
 
         inFlight.set(batch, {ids: fresh.map(b => b.id), done});

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 import { ConversationManager } from "../src/conversation-manager.js";
-import { MemoryStore } from "../src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
+import { FileDocument } from "../src/document-file.js";
 
 const roots: string[] = [];
 
@@ -15,7 +16,7 @@ afterEach(async () => {
 async function harness() {
   const root = await mkdtemp(join(tmpdir(), "sideagent-memory-manager-"));
   roots.push(root);
-  const memoryStore = new MemoryStore(root);
+  const memoryStore = new MemoryStore(new FileDocument(root, MEMORY_STORE_FILE));
   const emitted: ServerMessage[] = [];
 
   const runtime = {

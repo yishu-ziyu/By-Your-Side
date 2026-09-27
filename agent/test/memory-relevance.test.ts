@@ -2,7 +2,8 @@ import {afterEach,expect,it} from 'vitest';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {MemoryStore} from '../src/memory-store.js';
+import {MEMORY_STORE_FILE, MemoryStore} from '../src/memory-store.js';
+import {FileDocument} from '../src/document-file.js';
 
 const dirs:string[]=[];
 
@@ -10,7 +11,7 @@ afterEach(async()=>{await Promise.all(dirs.splice(0).map(p=>rm(p,{recursive:true
 
 async function store(){const dir=await mkdtemp(join(tmpdir(),'memory-relevance-'));dirs.push(dir);
 
-return new MemoryStore(dir);}
+return new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE));}
 
 it('retrieves a named meeting even when Han text touches an identifier',async()=>{
  const s=await store();const m=await s.create({text:'整理北岸会议205974的会议摘要时，请用三条要点。',scope:{kind:'all'},sourceConversationId:'a'});

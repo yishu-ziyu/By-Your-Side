@@ -57,6 +57,20 @@ export function isDestructiveLabel(text: string): boolean {
   return false;
 }
 
+const SUBMIT_ZH = /^(提交|订阅|注册|报名|立即订阅|立即注册|确认提交|下单)/;
+
+const SUBMIT_EN = /^(submit|sign ?up|subscribe|register|join|place order)(\s|$|!|\.)/i;
+
+/**
+ * 提交类控件（提交 / 订阅 / 注册 / 报名 / Sign up / Subscribe …）。平时不拦；
+ * 用户在任务里说了「提交前让我确认」时，宿主给这一任务的点击带上 confirmSubmit，这类点击就像删除一样先拿住等确认。
+ */
+export function isSubmitLabel(text: string): boolean {
+  const t = text.trim().replace(/\s+/g, " ");
+
+  return !!t && (SUBMIT_ZH.test(t) || SUBMIT_EN.test(t));
+}
+
 export function confirmLabelForDestructive(text: string): string {
   const t = text.trim();
 
@@ -69,6 +83,8 @@ export function confirmLabelForDestructive(text: string): string {
   if (t.startsWith("归档") || /^archive/i.test(t)) return "归档";
 
   if (/^(delete|remove)\b/i.test(t)) return "Delete";
+
+  if (isSubmitLabel(t)) return "提交";
 
   return "删除";
 }
@@ -110,7 +126,8 @@ export function resolveImplicitMarkActions(label?: string, actions?: unknown): M
 
 /** 侧栏里这句话算放行刚才拦住的那一下。 */
 export function isAffirmativeReply(text: string): boolean {
-  return /^(确认|是的?|继续|好的?|yes|ok|okay|confirm)\s*[。.!！]?$/i.test(text.trim());
+  // 「可以，提交吧」「没问题」这类明确的同意也算（2026-09-27：用户常这么回，原来只认「确认」时会卡在页面确认上）。
+  return /^(确认|是的?|继续|好的?|可以|行|没问题|(?:确认|可以|好的?)?[，,]?\s*提交吧?|yes|ok|okay|confirm|go ahead|submit(?: it)?)\s*[。.!！]?$/i.test(text.trim());
 }
 
 /** 侧栏里这句话算撤销刚才拦住的那一下（与点名牌「取消」同效）。 */

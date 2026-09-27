@@ -255,7 +255,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     if (busy.has(block.id)) continue;
     const size = block.segments.reduce((n, s) => n + s.original.length, 0);
 
-    if (blocks.length && (blocks.length >= 8 || chars + size > 3000 || segments + block.segments.length > 24)) break;
+    if (blocks.length && (blocks.length >= (command.maxBlocks ?? 8) || chars + size > 3000 || segments + block.segments.length > 24)) break;
     blocks.push({id: block.id, segments: block.segments.map(s => ({id: s.id, text: s.original}))});
     chars += size; segments += block.segments.length;
   }

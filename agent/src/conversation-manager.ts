@@ -39,6 +39,10 @@ import type {VoiceTurnPreparation} from './voice-model.js';
 import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
 import {partialResultNote} from '../../shared/task-next-step.js';
+import type {TaskHistoryStore} from './task-history.js';
+import {asksUser} from './goal-check.js';
+import {resultHasWriteEffect} from '../../shared/task-results.js';
+import type {TaskHistoryEntry} from '../../shared/task-history.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -797,6 +801,64 @@ return { kind: "silent" };}
 
     return null;
   }
+  /** 文字新消息是否接着做上一个没做完的任务。只在确有没做完的任务、且能按补充续接时才花一次快速模型判断。 */
+  private async continuesOpenTask(request:TaskActionRequest,snapshot:TaskProgressSnapshot,entry:ConversationEntry):Promise<boolean>{
+    if(request.source!=='text'||request.action!=='start'||request.forkedFrom||!request.text?.trim())return false;
+
+    if(!['idle','error'].includes(snapshot.state)||!snapshot.runId||!snapshot.goal||!snapshot.recoveryInput||!request.context?.tabId)return false;
+    const view=projectTaskView(snapshot);
+
+    if(!view.resumable)return false;
+    const session=entry.runtime.session;
+
+    if(typeof session.followUpContinuesTask!=='function'||!session.available||session.isStreaming())return false;
+    const unfinished=view.goalStatus?.remaining?[view.goalStatus.remaining]:view.latestDelivery?.unfinished?.length?view.latestDelivery.unfinished:view.outstanding.map(item=>item.description);
+    const lastReply=[...(snapshot.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
+
+    const decided=await session.followUpContinuesTask({goal:snapshot.goal,unfinished,lastReply},request.text,AbortSignal.timeout(12_000)).catch(()=>null);
+
+    // 判断不了（慢模型超时等）时：任务正等用户回话，这句多半就是回答，按接着做（09-27 阶跃判断超时，回的邮箱被当成了新任务）。
+    return decided??(view.goalStatus?.status==='waiting'||asksUser(lastReply));
+  }
+  /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
+  taskHistory?: TaskHistoryStore;
+  /**
+   * 任务一轮结束时留一条摘要。只记动手做过事的任务（列过目标或有执行记录），纯聊天和读页问答不记。
+   * 同一任务接着做（恢复同一 runId）时覆盖原条目。写失败只丢这条摘要，不影响任务。
+   */
+  private recordTaskHistory(id: string): void {
+    const history=this.taskHistory,progress=this.progress.get(id),snap=this.getTaskProgress(id);
+
+    if(!history||!progress||!snap?.runId||!snap.goal||!['idle','aborted','error'].includes(snap.state))return;
+
+    // 只记动手做过事的任务（有改动页面的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
+    // 09-27 阶跃实测「我的手机号是 …」被记成一条过往任务，撤销记忆后号码仍留在过往任务里。
+    const acted=(snap.results??[]).some(item=>resultHasWriteEffect(item));
+
+    if(!acted&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
+    const view=projectTaskView(snap);
+    const delivery=snap.conversationContext?.latestDelivery;
+    const lastReply=[...(snap.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
+
+    const hosts=[...new Set(progress.visitedUrls().flatMap(url=>{try{const host=new URL(url).hostname;
+
+return host?[host]:[];}catch{return [];}}))].slice(0,16);
+
+    const clip=(text:string,max:number)=>text.length>max?`${text.slice(0,max-1)}…`:text;
+    const unfinished=(snap.goalCheck?(snap.goalCheck.status!=='done'&&snap.goalCheck.remaining?[snap.goalCheck.remaining]:[]):delivery?.unfinished?.length?delivery.unfinished:view.outstanding.map(item=>item.description)).slice(0,16).map(text=>clip(text,300));
+
+    const entry:TaskHistoryEntry={
+      id:snap.runId,conversationId:id,goal:clip(snap.goal,600),
+      revisions:(snap.recoveryInput?.requirements??[]).filter(text=>text!==snap.goal).slice(-16).map(text=>clip(text,600)),
+      hosts,
+      outcome:snap.state==='aborted'?'stopped':snap.state==='error'?'error':snap.goalCheck?(snap.goalCheck.status==='done'?'complete':'partial'):view.resumable||unfinished.length?'partial':'complete',
+      summary:clip((delivery?.text||lastReply).replace(/\s+/g,' ').trim(),600),
+      unfinished,startedAt:snap.startedAt,endedAt:Date.now(),
+    };
+
+    if(snap.goalPage?.title)entry.page=clip(snap.goalPage.title,200);
+    void history.record(entry).catch(()=>{});
+  }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);
     const session = this.entries.get(id)?.runtime.session;
@@ -987,6 +1049,10 @@ return receipt;
         && continuation
         && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable||explicitAmendment))
         ? { ...originalRequest, action: 'resume' as const } : originalRequest;
+
+      // 任务不随一轮结束：上一个任务还没做完时，随口补的一句（不必说「继续」）由快速模型判断是不是接着做它；
+      // 是就按补充交给原任务（下面 steer 分支：登记为修订、从原任务接着做），目标不变。
+      if (request===originalRequest&&await this.continuesOpenTask(originalRequest,snapshot,entry))request={...originalRequest,action:'steer' as const};
 
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
 
@@ -1478,7 +1544,7 @@ return true;}
       this.emit(scoped);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
-        void this.fulfillOwedDelivery(id);
+        void this.fulfillOwedDelivery(id).finally(()=>this.recordTaskHistory(id));
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
@@ -1754,6 +1820,24 @@ return;}
 
     if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget") {
       await this.handleMemoryMessage(message, id);
+
+      return;
+    }
+
+    if (message.type === "held_click_result") {
+      this.entries.get(id)?.runtime.rpc.confirmHeldResult(message.id, message.ok);
+
+      return;
+    }
+
+    if (message.type === "task_history_list" || message.type === "task_history_forget") {
+      try {
+        if (!this.taskHistory) throw new Error("过往任务记录不可用");
+        const tasks = message.type === "task_history_list" ? await this.taskHistory.list() : await this.taskHistory.forget(message.id);
+        this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: true, tasks });
+      } catch (error) {
+        this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
 
       return;
     }

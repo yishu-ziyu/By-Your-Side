@@ -8,6 +8,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
  */
 
 import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
@@ -196,6 +197,11 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
+  /** 被拿住的点击经用户确认后，扩展已按原参数补上：id 是原 tool_call 的编号，宿主据此把账本里那一下从「未知」改为已执行。 */
+  | { type: "held_click_result"; id: string; ok: boolean }
+  /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
+  | { type: "task_history_list"; requestId: string }
+  | { type: "task_history_forget"; requestId: string; id: string | null }
   /** 示范录制编译成技能；steps 是示范期间用户自己的动作记录。
    *  updateId 存在时是"重新示范同一个技能"：内容替换、版本 +1，旧版本归档。 */
   | { type: "skill_compile"; requestId: string; intent: string; hostname: string; demoId: string; steps: import('./demo-record.js').DemoStep[]; updateId?: string; expectedVersion?: number }
@@ -295,6 +301,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
+  /** 过往任务列表（删除后返回剩下的），从新到旧。 */
+  | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
   | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback" | "candidate_save" | "candidate_dismiss"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; candidates?: import('./skill.js').SkillCandidate[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
@@ -355,6 +363,8 @@ export type AgentUiEvent =
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
+  /** 目标核对（宿主用快速模型判断用户要的结果达成没有）：done 做完；needs_user 等用户（回答、确认、登录）；continue 宿主让助手接着做；open 催满仍没做完。 */
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open"; remaining?: string }
   | { kind: "user_delivery"; delivery: UserDelivery }
   /** 模型为用户写的文本文件（artifacts 工具）：saved 带全文，侧栏画成可下载的卡片；deleted 只带文件名。 */
   | { kind: "artifact"; action: "saved" | "deleted"; filename: string; content?: string }
@@ -836,6 +846,11 @@ export interface ToolContract {
 
 const CONSENT_STATUSES: ReadonlySet<string> = new Set(["allowed", "rejected", "expired", "cancelled"]);
 
+/** 协议里的可选说明文字（错误原因等）。 */
+function isShortText(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 2000;
+}
+
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
     const msg = JSON.parse(raw) as ClientMessage;
@@ -888,6 +903,12 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
       if (msg.type === "memory_update" && (!validMemoryText(msg.text) || !isMemoryScope(msg.scope))) return null;
     }
+
+    if (msg.type === "held_click_result" && (!validRequestId(msg.id) || (msg.ok !== true && msg.ok !== false))) return null;
+
+    if (msg.type === "task_history_list" && !validRequestId(msg.requestId)) return null;
+
+    if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
 
     if (msg.type === "skill_compile") {
       if (!validRequestId(msg.requestId) || typeof msg.intent !== "string" || msg.intent.length > 500) return null;
@@ -1090,6 +1111,14 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (input.context !== undefined && !isPageContext(input.context)) return null;
 
       if (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment))) return null;
+    }
+
+    if (msg.type === "task_history_result") {
+      if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
+
+      if (msg.tasks !== undefined && (!Array.isArray(msg.tasks) || !msg.tasks.every(isTaskHistoryEntry))) return null;
+
+      if (msg.error !== undefined && !isShortText(msg.error)) return null;
     }
 
     if (msg.type === "memory_result") {

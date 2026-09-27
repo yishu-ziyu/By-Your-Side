@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryRuntime } from "../src/memory-runtime.js";
-import { MemoryStore } from "../src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
+import { FileDocument } from "../src/document-file.js";
 import { validateMemoryDecision, type MemoryDecision } from "../src/memory-decision.js";
 
 const roots: string[] = [];
@@ -20,7 +21,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 
 async function fixture(d = decision()) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-memory-runtime-")); roots.push(root);
-  const store = new MemoryStore(root), emit = vi.fn();
+  const store = new MemoryStore(new FileDocument(root, MEMORY_STORE_FILE)), emit = vi.fn();
   // Stub only the semantic interpreter. Language recognition is tested by the live model cases.
   const complete = vi.fn(async (_system: string, _input: string, _signal: AbortSignal) => JSON.stringify(d));
   const runtime = new MemoryRuntime(store, "conversation-a", emit, complete);
@@ -141,10 +142,12 @@ describe("scope and on-demand retrieval", () => {
     expect(() => validateMemoryDecision(decision({ action:"update",targets:[{id:a.id,version:a.version}] }),user,[a])).toThrow(/范围/);
     expect(await f.store.select({text:"邮箱",url:"https://other.example"})).toEqual([]);
   });
-  it("recalls the needed form field without another model call and respects site scope", async () => {
+  it("brings the user's own facts into a task that never names them, without another model call, and respects site scope", async () => {
     const f = await fixture(); await f.execute(); f.complete.mockClear();
+    await f.store.create({text:"只在 shop.example 用会员号 A-77",scope:{kind:"site",hostname:"shop.example"},sourceConversationId:"conversation-a"});
     f.runtime.beginUserTurn("帮我报名", {tabId:1,title:"Form",url:"https://forms.example"});
-    expect(await beforeStart(f.runtime)({systemPrompt:"BASE"})).toBeUndefined();
+    const injected = await beforeStart(f.runtime)({systemPrompt:"BASE"});
+    expect(injected.systemPrompt).toContain("lin@example.test"); expect(injected.systemPrompt).not.toContain("A-77");
     const response = await f.execute({action:"recall",query:"邮箱 email"});
     expect(response.content[0].text).toContain("lin@example.test"); expect(f.complete).not.toHaveBeenCalled();
     expect((await f.execute({action:"recall",query:"雨伞 雨衣"})).details.entries).toEqual([]);
