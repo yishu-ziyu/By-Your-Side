@@ -18,11 +18,15 @@ import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import { REPO, attachDailyChrome, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc, type InprocRequest } from "./harness.mts";
 import { configureViaSettings, loadModelPlan, type ModelPlan } from "./inproc-config.mts";
+import { startScriptedModel } from "./scripted-model.mts";
 
 const daily = process.argv.includes("--daily");
 
 /** --inproc=provider/id：不注册伴随进程，从设置页配置这个模型。 */
-const inprocModel = process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
+/** --scripted-throttle：本机脚本服务商代替真实模型，翻译同一时间只接 1 个请求，超出回 403（复刻 Kimi 编程套餐的并发上限）。 */
+const scriptedThrottle = process.argv.includes("--scripted-throttle");
+
+const inprocModel = scriptedThrottle ? "custom/demo-model" : process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
 
 /** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
 const suite = process.argv.find((a) => a.startsWith("--suite="))?.slice(8) === "sitegeist" ? "sitegeist" : "everyday";
@@ -141,9 +145,10 @@ type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { answer: string; pageText: string; translatedBlocks: number; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
+type Ctx = { answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; files: Array<{ name: string; text: string }>; pageInputs: number };
 
-type Case = { id: string; path: string; prompt: string; check: (c: Ctx) => string | null };
+/** stopAfterMs：发出后这么久像用户一样点停止（只在仍在运行时）。 */
+type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; check: (c: Ctx) => string | null };
 
 const has = (text: string, ...needles: string[]) => needles.every((n) => text.includes(n));
 
@@ -174,7 +179,19 @@ const CASES: Case[] = [
   { id: "three-repos", path: "/projects", prompt: "找到这三个项目的 GitHub 仓库地址。", check: (c) => (has(c.answer, "alpha-kit", "beta-flow", "gamma-db") ? null : "三个仓库没有全部给出") },
   { id: "translate", path: "/en", prompt: "把这个页面翻译成中文。", check: (c) => ((c.pageText.match(/[一-鿿]/g) ?? []).length >= 20 ? null : "页面上没有出现中文译文") },
   { id: "translate-long", path: "/long", prompt: "把这个页面翻译成中文。",
-    check: (c) => (c.translatedBlocks >= LONG_BLOCKS ? null : `只有 ${c.translatedBlocks}/${LONG_BLOCKS} 段出现了译文`) },
+    check: (c) => (c.translatedBlocks < LONG_BLOCKS ? `只有 ${c.translatedBlocks}/${LONG_BLOCKS} 段出现了译文` : c.pendingMarks ? `译完后还留着 ${c.pendingMarks} 个待翻占位` : null) },
+  // 用户 2026-09-27 日常试用失败的那一页（约 720 段）：几乎全部译完，占位只减不增，结束不留占位。
+  // 服务商并发上限为 1（--scripted-throttle）：一次调用内译完，占位只减不增，结束不留。
+  { id: "translate-throttle", path: "/long", prompt: "把这个页面翻译成中文。",
+    check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
+  // 第一次调用中途出错（可继续），模型再调用一次：两次调用之间占位不能成片消失又出现。
+  { id: "translate-resume", path: "/long", prompt: "把这个页面翻译成中文，没译完就接着译。", failTranslations: 2,
+    check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
+  { id: "translate-real-hamel", path: "https://hamel.dev/blog/posts/evals-faq/", prompt: "把这个页面翻译成中文。",
+    check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
+  // 翻到一半按停止：没翻的段落要在 3 秒内收掉占位、恢复原样。
+  { id: "translate-long-stop", path: "/long", prompt: "把这个页面翻译成中文。", stopAfterMs: scriptedThrottle ? 5_000 : 30_000,
+    check: (c) => (c.translatedBlocks >= LONG_BLOCKS ? "停止前已全部译完，没测到停止" : c.stopClearMs === null ? `停止后仍留着 ${c.pendingMarks} 个待翻占位` : c.stopClearMs > 3000 ? `停止后 ${c.stopClearMs} ms 才收掉占位` : null) },
   { id: "mark", path: "/quota", prompt: "在页面上圈出五小时用量。", check: (c) => checkPairMark(c, "五小时用量", "32%") },
   { id: "open-tab", path: "/article", prompt: `在新标签页打开 ${origin}/job`, check: (c) => (c.tabs.some((u) => u.startsWith(`${origin}/job`)) ? null : "没有打开新标签页") },
   { id: "copy-no-save", path: "/note", prompt: "把蓝色 Note 框里的第一句英文原文复制到下面的草稿框里，不要保存。",
@@ -291,14 +308,26 @@ const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigm
 
 const hostOf = (provider: string): string | undefined => Object.entries(PROVIDER_HOSTS).find(([id]) => id === provider)?.[1];
 
-const expectedHost = inprocModel ? hostOf(inprocModel.split("/")[0] ?? "") : undefined;
+const expectedHost = inprocModel && !scriptedThrottle ? hostOf(inprocModel.split("/")[0] ?? "") : undefined;
 
-if (inprocModel && !expectedHost) throw new Error(`不知道 ${inprocModel} 的 API 主机，先补进 PROVIDER_HOSTS`);
+if (inprocModel && !scriptedThrottle && !expectedHost) throw new Error(`不知道 ${inprocModel} 的 API 主机，先补进 PROVIDER_HOSTS`);
 
 /** 模型调用：发往已知服务商主机的 POST（排除练习站、扩展自身资源和语音握手）。 */
 const isModelCall = (r: InprocRequest) => r.method === "POST" && Object.values(PROVIDER_HOSTS).includes(new URL(r.url).host);
 
 /** 已经显示中文的段落块数：双语模式下译文附在段落里，仅译文模式下段落文字被替换，两种都算。 */
+/** 页面上还在等译文的段落占位（产品的待翻标记）。 */
+const PENDING_MARKS = "document.querySelectorAll('[data-bys-translation=\"pending\"]').length";
+
+/**
+ * 页面里装一个监听：占位数量每变一次都记下（定时采样会漏掉几十毫秒的「消失又出现」）。
+ * 闪烁 = 占位回升而「占位 + 译文」总数没超过此前最高值；翻译途中网页新出现的段落会让总数变多，不算闪烁。
+ */
+const WATCH_PENDING = "(() => { const log = [], flickers = []; window.__bysPendingLog = log; window.__bysPendingFlickers = flickers; let maxTotal = 0; const q = (v) => document.querySelectorAll('[data-bys-translation=\\\"' + v + '\\\"]').length; new MutationObserver(() => { const n = q('pending'), total = n + q('true'); if (log.length && n > log.at(-1) && total <= maxTotal) flickers.push({ from: log.at(-1), to: n, total, maxTotal }); maxTotal = Math.max(maxTotal, total); if (n !== log.at(-1)) log.push(n); }).observe(document.documentElement, { subtree: true, childList: true }); return true; })()";
+
+/** 有成段英文的段落总数，以及其中还没有中文译文的数量。 */
+const READABLE_BLOCKS = "(() => { const all = [...document.querySelectorAll('h1,h2,h3,p,li')].filter((el) => !el.closest('pre,code,nav,footer') && (el.textContent.match(/[A-Za-z]/g) ?? []).length >= 20); return { readable: all.length, untranslated: all.filter((el) => (el.textContent.match(/[\\u4e00-\\u9fff]/g) ?? []).length < 2).length }; })()";
+
 const TRANSLATED_BLOCKS = "[...document.querySelectorAll('h1,h2,h3,p,li')].filter((el) => (el.textContent.match(/[\\u4e00-\\u9fff]/g) ?? []).length >= 2).length";
 
 const PANEL_STATE = `(() => {
@@ -339,7 +368,7 @@ type CaseResult = {
   id: string; prompt: string; replied: boolean; firstVisibleMs: number | null; doneMs: number | null; noiseCount: number;
   noise: PanelState["noise"] | null; outcome: "pass" | "fail"; reason: string | null; answer: string;
   /** 翻译用例：页面上第一段译文出现的时刻，以及译文段数随时间的变化（毫秒相对发送时刻）。 */
-  firstTranslatedMs?: number | null; translatedTimeline?: Array<{ ms: number; blocks: number }>;
+  firstTranslatedMs?: number | null; firstMarkMs?: number | null; stopClearMs?: number | null; pendingMarks?: number; translatedTimeline?: Array<{ ms: number; blocks: number; pending: number }>;
   /** 只在 --inproc：本条发出的模型请求（毫秒相对发送时刻）。 */
   modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
 };
@@ -351,6 +380,8 @@ const rp = daily ? await attachDailyChrome() : await launchRealPath({ withoutNat
 let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 
 let plan: ModelPlan | null = null;
+
+let scripted: Awaited<ReturnType<typeof startScriptedModel>> | null = null;
 
 /** 只在 --inproc：设置页导出的诊断记录是否覆盖每条用例、不含密钥、清空后为空。 */
 let traceCheck: Awaited<ReturnType<typeof checkTraceExport>> | null = null;
@@ -371,8 +402,9 @@ try {
 
   if (inprocModel) {
     inproc = await watchInproc(rp, rp.extensionId);
-    plan = await loadModelPlan(inprocModel);
-    const run = await configureViaSettings(rp, panel, plan);
+    scripted = scriptedThrottle ? await startScriptedModel([{ match: "没译完就接着译", steps: [{ tool: { name: "page_translation", args: { action: "translate" } } }, { tool: { name: "page_translation", args: { action: "translate" } } }, { text: "已把这页翻译成中文。" }] }, { match: "翻译成中文", steps: [{ tool: { name: "page_translation", args: { action: "translate" } } }, { text: "已把这页翻译成中文。" }] }], { maxConcurrent: 1, delayMs: 800 }) : null;
+    plan = scripted ? { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } } : await loadModelPlan(inprocModel);
+    const run = await configureViaSettings(rp, panel, plan, scripted ? { baseUrl: scripted.baseUrl } : {});
 
     if (!run.testStatus.startsWith("连接正常")) throw new Error(`设置页测试连接失败：${run.testStatus}`);
     await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
@@ -444,7 +476,7 @@ try {
 
     await mkdir(caseDownloads, { recursive: true });
     await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: caseDownloads });
-    await rp.cdp.send("Page.navigate", { url: `${origin}${item.path}` }, work);
+    await rp.cdp.send("Page.navigate", { url: item.path.startsWith("https://") ? item.path : `${origin}${item.path}` }, work);
     // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
     await rp.cdp.send("Page.bringToFront", {}, work);
     await sleep(1500);
@@ -472,6 +504,10 @@ try {
     await rp.click(panel, "#input");
     await rp.typeText(panel, item.prompt);
     const sentAt = Date.now();
+
+    if (scripted?.translate && item.failTranslations) scripted.translate.failNext = item.failTranslations;
+
+    if (item.id.startsWith("translate")) await rp.evaluate(work, WATCH_PENDING).catch(() => {});
     const sentAtInproc = inproc?.now() ?? 0;
     await rp.pressEnter(panel);
     let firstVisibleMs: number | null = null;
@@ -482,7 +518,11 @@ try {
     let nextPageShotAt = 0;
     const translating = item.id.startsWith("translate");
     let firstTranslatedMs: number | null = null;
-    const translatedTimeline: Array<{ ms: number; blocks: number }> = [];
+    const translatedTimeline: Array<{ ms: number; blocks: number; pending: number }> = [];
+    let firstMarkMs: number | null = null;
+    let stoppedAt: number | null = null;
+    let stopClearMs: number | null = null;
+    const markShots = new Set<string>();
 
     while (Date.now() - sentAt < CASE_LIMIT_MS) {
       const state = await readPanel().catch(() => null);
@@ -497,10 +537,28 @@ try {
         // 用户在页面上看到译文的时刻：数页面里的译文节点，变化时记一笔。
         if (translating) {
           const blocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
+          const pending = Number(await rp.evaluate(work, PENDING_MARKS).catch(() => 0));
+          const previous = translatedTimeline.at(-1);
 
-          if (blocks !== (translatedTimeline.at(-1)?.blocks ?? 0)) translatedTimeline.push({ ms: Date.now() - sentAt, blocks });
+          if (blocks !== (previous?.blocks ?? 0) || pending !== (previous?.pending ?? 0)) translatedTimeline.push({ ms: Date.now() - sentAt, blocks, pending });
 
           if (firstTranslatedMs === null && blocks > 0) firstTranslatedMs = Date.now() - sentAt;
+
+          if (firstMarkMs === null && pending > 0) firstMarkMs = Date.now() - sentAt;
+
+          if (stoppedAt !== null && stopClearMs === null && pending === 0) stopClearMs = Date.now() - stoppedAt;
+          // 用户看到的三个时刻：只有占位、占位与译文并存、停止之后。
+          const moment = stoppedAt !== null ? (stopClearMs !== null ? "after-stop" : null) : pending > 0 && blocks === 0 ? "marks-only" : pending > 0 && blocks > 0 ? "marks-and-text" : null;
+
+          if (moment && !markShots.has(moment)) {
+            markShots.add(moment);
+            await rp.screenshot(work, join(artifacts, `${item.id}-page-${moment}.png`)).catch(() => {});
+          }
+
+          if (item.stopAfterMs && stoppedAt === null && state.running && Date.now() - sentAt >= item.stopAfterMs) {
+            await rp.click(panel, "#send-btn").catch(() => {});
+            stoppedAt = Date.now();
+          }
         }
 
         // 助手运行期间每 2.5 秒给网页本身拍一张（最多 4 张）：验收页面边缘光、光标与标注。
@@ -557,7 +615,15 @@ try {
     // 用户最后看到的页面：运行中截图可能拍不到最终结果（如注入的小工具）。
     await rp.screenshot(work, join(artifacts, `${item.id}-page-final.png`)).catch(() => {});
     const translatedBlocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
-    const ctx: Ctx = { answer, pageText, translatedBlocks, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
+    const pendingMarks = Number(await rp.evaluate(work, PENDING_MARKS).catch(() => 0));
+    // SAFETY: READABLE_BLOCKS 返回 { readable, untranslated } 两个数字。
+    const coverage = (await rp.evaluate(work, READABLE_BLOCKS).catch(() => ({ readable: 0, untranslated: 0 }))) as { readable: number; untranslated: number };
+    // SAFETY: WATCH_PENDING 在页面上写入的记录：数字数组与对象数组。
+    const pendingLog = ((await rp.evaluate(work, "window.__bysPendingLog ?? []").catch(() => [])) as number[]);
+    // SAFETY: 同上，闪烁记录是对象数组，这里只数个数。
+    const pendingFlickers = ((await rp.evaluate(work, "window.__bysPendingFlickers ?? []").catch(() => [])) as unknown[]);
+    const pendingRose = pendingFlickers.length > 0;
+    const ctx: Ctx = { answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, files, pageInputs };
     const noise = final?.noise ?? null;
     const noiseCount = noise ? noise.notices.length + noise.errors.length + noise.receipts + Number(noise.taskCard) + Number(noise.taskBar) + Number(noise.resumeEntry) + (noise.processRows ?? 0) + (noise.footers ?? 0) : 0;
     const reason = doneMs === null ? `超过 ${CASE_LIMIT_MS / 1000} 秒未结束` : item.check(ctx);
@@ -572,11 +638,11 @@ try {
     const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
     const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls };
 
-    if (translating) Object.assign(result, { firstTranslatedMs, translatedTimeline });
+    if (translating) Object.assign(result, { firstTranslatedMs, firstMarkMs, stopClearMs, pendingMarks, pendingRose, pendingLog: pendingLog.slice(0, 200), pendingFlickers: pendingFlickers.slice(0, 20), ...coverage, translatedTimeline });
     results.push(result);
     await rp.screenshot(panel, join(artifacts, `${item.id}-panel.png`)).catch(() => {});
     const calls = modelCalls ? `\tcalls=${modelCalls.length} ttfb=${modelCalls.map((c) => (c.firstByteMs === null ? "-" : c.firstByteMs - c.startMs)).join(",")}` : "";
-    const onPage = translating ? `\tfirstTranslated=${firstTranslatedMs ?? "-"}ms blocks=${translatedBlocks}` : "";
+    const onPage = translating ? `\tfirstMark=${firstMarkMs ?? "-"}ms firstTranslated=${firstTranslatedMs ?? "-"}ms blocks=${translatedBlocks} pending=${pendingMarks} stopClear=${stopClearMs ?? "-"}ms` : "";
     console.log(`${item.id}\t${finalReason ? "FAIL" : "pass"}\treply=${answer.length > 0}\tfirst=${firstVisibleMs ?? "-"}ms\tdone=${doneMs ?? "-"}ms${onPage}\tnoise=${noiseCount}${calls}\t${finalReason ?? ""}`);
   }
 
@@ -588,6 +654,7 @@ try {
   await cp(join(rp.dirs.data, "traces"), join(artifacts, "traces"), { recursive: true }).catch(() => {});
   await rp.close();
   site.close();
+  await scripted?.close();
 }
 
 const summary = {

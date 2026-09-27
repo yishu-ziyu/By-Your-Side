@@ -415,7 +415,9 @@ return result;}
         // 时限按进度判断（runPageTranslation 内的看门狗），不再固定 240 s 一刀切。
         const result = await runPageTranslation(params as TranslationRequest,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
-          translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal);
+          translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal,
+          // Only removes our own placeholders: outside the step gate and the task ledger, so it still runs after a stop.
+          {settle: async command => { await rpc.call('page_translation', {...command}, 5_000, sid); }});
 
         return textResult(JSON.stringify(result), result);
       },

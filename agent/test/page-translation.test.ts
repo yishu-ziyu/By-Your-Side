@@ -87,7 +87,8 @@ describe('document-bound page translation', () => {
 return [{id:'1:0',text:'旧译文'}];});
 
     await expect(runPageTranslation({action:'translate'},call,translate,abort.signal)).rejects.toThrow();
-    expect(call.mock.calls.map(([c])=>c.action)).toEqual(['begin','collect']);
+    // No apply after the stop; the run still settles so waiting paragraphs lose their placeholder.
+    expect(call.mock.calls.map(([c])=>c.action)).toEqual(['begin','collect','settle']);
   });
   it('a correction arriving during translation blocks the old batch at the real tool gate', async () => {
     let epoch=1;
@@ -101,7 +102,9 @@ return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
     const tool=tools.find(t=>t.name==='page_translation')!;
     // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(tool.execute('translation-1',{action:'translate'},new AbortController().signal,undefined,{} as never)).rejects.toThrow('旧步骤未执行');
-    expect(rpc.call).toHaveBeenCalledTimes(2);
+    // The old batch never applies; settle still reaches the page although the step gate now refuses this run.
+    // SAFETY: rpc.call 的第二个参数就是发给页面的 TranslationCommand。
+    expect(rpc.call.mock.calls.map(([,params])=>(params as {action:string}).action)).toEqual(['begin','collect','settle']);
   });
   it.each([0, 2])('records known generation failure after %s acknowledged paragraphs', async (translated) => {
     const rpc = new ToolRpc(frame => queueMicrotask(() => rpc.handleResult(frame.id, true, {...receipt, translated, blocks:frame.params.action==='collect'?blocks:[]}, undefined, 'executed')));
@@ -144,7 +147,7 @@ return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
     const call=vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt,blocks}).mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt,blocks});
     const translate=vi.fn().mockResolvedValueOnce([{id:'1:0',text:'阅读 '},{id:'1:1',text:'来源'}]).mockRejectedValueOnce(new Error('provider failed'));
     await expect(runPageTranslation({action:'translate'},call,translate,new AbortController().signal)).rejects.toThrow('provider failed');
-    expect(call.mock.calls.map(([c])=>c.action)).toEqual(['begin','collect','apply','collect']);
+    expect(call.mock.calls.map(([c])=>c.action)).toEqual(['begin','collect','apply','collect','settle']);
   });
   it('validates mode, size and apply identity at the extension boundary', () => {
     expect(()=>validateTranslationCommand({action:'display',fontSize:0})).toThrow();

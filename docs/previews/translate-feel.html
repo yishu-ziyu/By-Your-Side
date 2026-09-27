@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>翻译过程的样子：四种对照</title>
+<style>
+  :root { --ink:#1f1e1c; --muted:#8a867f; --line:#e8e4dc; --bg:#faf9f6; --mark:#6b8cc7; --skel:#ece8df; --skel2:#f6f3ec; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.6 -apple-system, "PingFang SC", sans-serif; }
+  header { padding:20px 28px 8px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0; }
+  .bar { display:flex; gap:12px; align-items:center; padding:10px 28px 16px; position:sticky; top:0; background:var(--bg); z-index:5; border-bottom:1px solid var(--line); }
+  button { font:inherit; padding:6px 14px; border-radius:999px; border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--ink); border-color:var(--line); }
+  .clock { font-variant-numeric:tabular-nums; font-size:18px; font-weight:600; min-width:90px; }
+  .said { color:var(--muted); }
+  .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; padding:18px 28px; }
+  .grid2 { grid-template-columns:repeat(2, minmax(0, 420px)); }
+  .col h2 { font-size:15px; margin:0; }
+  .col .what { color:var(--muted); font-size:12.5px; margin:2px 0 8px; min-height:40px; }
+  .col.pick h2::after { content:" ◀ 推荐"; color:var(--mark); font-size:12px; }
+  .page { position:relative; height:520px; overflow:auto; background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  .page h3 { font-size:17px; margin:0 0 10px; }
+  .status { position:sticky; top:-16px; margin:-16px -18px 10px; padding:6px 18px; font-size:12px; color:var(--muted); background:#fffffff0; border-bottom:1px solid var(--line); z-index:2; }
+  p.src { margin:0; font-size:13.5px; line-height:1.6; position:relative; }
+  .blk { margin-bottom:12px; position:relative; padding-left:0; transition:padding .3s; }
+  .blk.pending { padding-left:10px; }
+  .blk.pending::before { content:""; position:absolute; left:0; top:3px; bottom:3px; width:2px; border-radius:2px; background:var(--mark); opacity:.55; animation:breathe 1.6s ease-in-out infinite; }
+  .skel { height:10px; margin:6px 0 2px; border-radius:5px; width:78%; background:linear-gradient(90deg, var(--skel) 0%, var(--skel2) 50%, var(--skel) 100%); background-size:200% 100%; animation:shimmer 1.4s linear infinite; }
+  .zh { display:block; line-height:1.6; margin:.35em 0 .65em; font-size:13.5px; animation:fadein .45s ease-out; }
+  .failed { display:inline-block; margin-top:4px; font-size:11.5px; color:#a0614a; background:#f7ece6; border-radius:999px; padding:0 8px; }
+  .blk.failed-blk::before { content:""; position:absolute; left:0; top:3px; bottom:3px; width:2px; background:#c98b73; border-radius:2px; }
+  .blk.failed-blk { padding-left:10px; }
+  @keyframes breathe { 0%,100% { opacity:.25 } 50% { opacity:.8 } }
+  @keyframes shimmer { from { background-position:200% 0 } to { background-position:0 0 } }
+  @keyframes fadein { from { opacity:0; transform:translateY(-2px) } to { opacity:1; transform:none } }
+  section { border-top:1px solid var(--line); margin-top:8px; }
+  section > header { padding-top:22px; }
+  .note { color:var(--muted); font-size:12px; padding:0 28px 28px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>① 你说「把这页翻译成中文」之后，页面上看到什么</h1>
+  <p class="sub">同一篇文章、同一时刻开始，四个版本同时播放。左边第一列就是现在的样子。可以在每列里往下滚，看还没翻到的段落。</p>
+</header>
+<div class="bar">
+  <button id="play1">▶ 重新播放</button>
+  <span class="clock" id="clock1">0.0 秒</span>
+  <span class="said">用户刚说完：「把这页翻译成中文」</span>
+</div>
+<div class="grid" id="grid1"></div>
+
+<section>
+  <header>
+    <h1>② 翻不成的段落（这里演示：翻到一半你按了停止）</h1>
+    <p class="sub">两边都是「待翻段落有标记」的版本。第 4 秒按停止，看剩下的段落怎么收。</p>
+  </header>
+  <div class="bar">
+    <button id="play2">▶ 重新播放</button>
+    <span class="clock" id="clock2">0.0 秒</span>
+    <span class="said" id="said2">翻译进行中…</span>
+  </div>
+  <div class="grid grid2" id="grid2"></div>
+</section>
+
+<p class="note">时间是示意：开头「先想一轮」取的是 9 月 26 日那次真实翻译的 8.6 秒，之后每批落页的间隔是估的，不是实测。侧栏的样子四个版本一样，这里没画。标记的具体颜色和粗细到实现时再细调。</p>
+
+<script>
+const PARAS = [
+  ['Small teams spend less time coordinating and more time building.', '小团队花在协调上的时间更少，花在做事上的时间更多。'],
+  ['Every additional person adds communication paths that grow quadratically.', '每多一个人，沟通路径就按平方增长。'],
+  ['In our survey of forty startups, teams under six people shipped twice as often.', '我们调查了四十家创业公司，六人以下的团队发布频率是其他团队的两倍。'],
+  ['The lesson is not that big teams are bad.', '结论不是大团队不好。'],
+  ['It is that each team should own a narrow problem end to end.', '而是每个团队都应该从头到尾负责一个窄问题。'],
+  ['Ownership removes the handoffs where work usually stalls.', '负责到底，就去掉了工作最容易卡住的交接环节。'],
+  ['We also found that meetings grew faster than headcount.', '我们还发现，会议数量比人数增长得更快。'],
+  ['Teams that capped recurring meetings kept their pace.', '给例会设上限的团队保住了节奏。'],
+  ['Documentation mattered less than we expected.', '文档的作用比我们预想的小。'],
+  ['What mattered was that decisions were written down once.', '重要的是每个决定只写下一次。'],
+  ['New hires ramped up faster on small teams, too.', '新人在小团队里上手也更快。'],
+  ['They could see the whole system instead of one corner of it.', '他们能看到整个系统，而不只是其中一角。'],
+  ['None of this means you should never grow.', '这些都不意味着你永远不该扩张。'],
+  ['Grow by adding teams, not by making teams bigger.', '要扩张就加团队，而不是把团队做大。'],
+];
+
+// Timeline per version (seconds). think = when translation actually starts; batches land every few seconds, viewport first.
+const BATCHES = [3.8, 6.2, 8.9, 11.5]; // offsets after start, 4 paragraphs each (last partial)
+const VERSIONS = [
+  { name:'现在', what:'先空等模型想 8.6 秒；没有标记，译文突然冒出来', start:8.6, marks:false },
+  { name:'A 第一块：待翻段落有标记', what:'开头照样空 8.6 秒；一开始翻，所有待翻段落都标出，译文到了原地替换', start:8.6, marks:true },
+  { name:'B 缩小：只做「一说就开始」', what:'不到 1 秒就开始翻；但过程和现在一样看不出', start:0.8, marks:false },
+  { name:'A 做完第二块以后', what:'不到 1 秒就标出待翻段落，译文陆续原地替换', start:0.8, marks:true, pick:true },
+];
+
+function buildPage(title) {
+  const page = document.createElement('div'); page.className = 'page';
+  page.innerHTML = `<div class="status">页面</div><h3>Why small teams ship faster</h3>`;
+  const blocks = PARAS.map(([en]) => {
+    const b = document.createElement('div'); b.className = 'blk';
+    b.innerHTML = `<p class="src">${en}</p>`;
+    page.append(b); return b;
+  });
+  return { page, blocks, status: page.querySelector('.status') };
+}
+
+function column(host, v) {
+  const col = document.createElement('div'); col.className = 'col' + (v.pick ? ' pick' : '');
+  col.innerHTML = `<h2>${v.name}</h2><div class="what">${v.what}</div>`;
+  const p = buildPage(); col.append(p.page); host.append(col);
+  return { v, ...p };
+}
+
+function reset(c) {
+  c.blocks.forEach(b => { b.className = 'blk'; b.querySelector('.skel')?.remove(); b.querySelector('.zh')?.remove(); b.querySelector('.failed')?.remove(); });
+  c.page.scrollTop = 0;
+}
+function mark(b) { b.classList.add('pending'); const s = document.createElement('div'); s.className = 'skel'; b.append(s); }
+function land(c, b, i) {
+  b.classList.remove('pending'); b.querySelector('.skel')?.remove();
+  const zh = document.createElement('span'); zh.className = 'zh'; zh.textContent = PARAS[i][1]; b.append(zh);
+}
+
+// ---------- demo 1 ----------
+const grid1 = document.getElementById('grid1');
+const cols1 = VERSIONS.map(v => column(grid1, v));
+let timers1 = [];
+function play1() {
+  timers1.forEach(clearTimeout); timers1 = [];
+  cols1.forEach(reset);
+  const t0 = performance.now();
+  const clock = document.getElementById('clock1');
+  const tick = () => { const t = (performance.now() - t0) / 1000; clock.textContent = t.toFixed(1) + ' 秒'; if (t < 22) timers1.push(setTimeout(tick, 100)); };
+  tick();
+  for (const c of cols1) {
+    const { v } = c;
+    c.status.textContent = '页面：还没有任何变化';
+    timers1.push(setTimeout(() => {
+      if (v.marks) { c.blocks.forEach(mark); c.status.textContent = '页面：待翻段落已标出'; }
+    }, v.start * 1000));
+    BATCHES.forEach((off, k) => {
+      timers1.push(setTimeout(() => {
+        for (let i = k * 4; i < Math.min(k * 4 + 4, PARAS.length); i++) land(c, c.blocks[i], i);
+        const done = Math.min((k + 1) * 4, PARAS.length);
+        c.status.textContent = done === PARAS.length ? '页面：全部翻完' : `页面：已翻 ${done} 段`;
+      }, (v.start + off) * 1000));
+    });
+  }
+}
+document.getElementById('play1').onclick = play1;
+
+// ---------- demo 2 ----------
+const FAIL = [
+  { name:'A 标记收掉，恢复原样', what:'停下后，没翻的段落回到原来的样子；侧栏说还剩几段', pick:true, keep:false },
+  { name:'B 留一个「没翻成」的小标记', what:'停下后，没翻的段落留一个小标记，一眼看出漏了哪几段', keep:true },
+];
+const grid2 = document.getElementById('grid2');
+const cols2 = FAIL.map(v => column(grid2, v));
+let timers2 = [];
+function play2() {
+  timers2.forEach(clearTimeout); timers2 = [];
+  cols2.forEach(reset);
+  const said = document.getElementById('said2'); said.textContent = '翻译进行中…';
+  const t0 = performance.now(); const clock = document.getElementById('clock2');
+  const tick = () => { const t = (performance.now() - t0) / 1000; clock.textContent = t.toFixed(1) + ' 秒'; if (t < 8) timers2.push(setTimeout(tick, 100)); };
+  tick();
+  for (const c of cols2) {
+    c.blocks.forEach(mark); c.status.textContent = '页面：待翻段落已标出';
+    timers2.push(setTimeout(() => { for (let i = 0; i < 4; i++) land(c, c.blocks[i], i); c.status.textContent = '页面：已翻 4 段'; }, 2000));
+    timers2.push(setTimeout(() => {
+      said.textContent = '你按了停止';
+      c.blocks.forEach(b => {
+        if (!b.classList.contains('pending')) return;
+        b.classList.remove('pending'); b.querySelector('.skel')?.remove();
+        if (c.v.keep) { b.classList.add('failed-blk'); const f = document.createElement('span'); f.className = 'failed'; f.textContent = '没翻成'; b.append(f); }
+      });
+      c.status.textContent = c.v.keep ? '页面：已翻 4 段，10 段标着没翻成' : '页面：已翻 4 段，其余恢复原样';
+    }, 4000));
+  }
+}
+document.getElementById('play2').onclick = play2;
+
+play1(); play2();
+</script>
+</body>
+</html>

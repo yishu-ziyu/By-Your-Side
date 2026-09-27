@@ -17,7 +17,7 @@ import {goalsSatisfied} from '../../shared/task-goals.js';
 import {browserLoopDirectDeliveryEnabled,generalBrowserLoopEnabled} from './config.js';
 import {browserLoopSelfDeliveryText} from './browser-loop-delivery.js';
 import type {TranslationDisplayState} from '../../shared/page-translation.js';
-import { TRANSLATION_PROMPT, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
+import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, type ConfirmedRecoveryRecord} from "./task-results.js";
@@ -2629,7 +2629,7 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
       console.error('[page-translation]', JSON.stringify(record));
       this.runTrace?.record('page_translation_request', record);
 
-      if (reply.stopReason === 'error' || reply.stopReason === 'aborted' || reply.stopReason === 'length') throw Object.assign(new Error(`这批翻译未完成（${reply.stopReason}），已保留之前的译文。可以继续翻译。`), {stopReason: reply.stopReason});
+      if (reply.stopReason === 'error' || reply.stopReason === 'aborted' || reply.stopReason === 'length') throw Object.assign(new Error(`这批翻译未完成（${reply.stopReason}），已保留之前的译文。可以继续翻译。`), {stopReason: reply.stopReason, throttled: reply.stopReason === 'error' && isProviderThrottle(reply.errorMessage)});
 
       try {
         return restoreTranslationWhitespace(parseTranslations(reply.content.filter(part => part.type === 'text').map(part => part.text).join(''), modelBlocks), blocks);

@@ -69,13 +69,48 @@ export const PAGE_TRANSLATION_IDLE_MS = 180_000;
 /** 整个工具调用的硬上限，防止持续变化的页面永远跑下去。 */
 export const PAGE_TRANSLATION_MAX_MS = 900_000;
 
+/** 可继续的失败之后，占位保留这么久等模型再次调用翻译。 */
+export const RESUME_GRACE_MS = 15_000;
+
 /** 写满输出上限（length）时对半拆开重试，最多拆两层（8 → 4 → 2 段）。 */
 const MAX_SPLIT_DEPTH = 2;
 
-export interface PageTranslationOptions { concurrency?: number; idleMs?: number; maxMs?: number }
+export interface PageTranslationOptions {
+  concurrency?: number; idleMs?: number; maxMs?: number;
+  /** Removes the pending placeholders when the run ends. A user stop refuses further page steps, so this must not depend on them. */
+  settle?: (command: TranslationCommand) => Promise<void>;
+}
 
 /** 模型层把停止原因（length、aborted、error）标在抛出的 Error 上。 */
 const stoppedFor = (error: Error, reason: string) => 'stopReason' in error && error.stopReason === reason;
+
+/**
+ * 服务商因为同时在途的请求太多而拒绝（Kimi 编程套餐：403 "concurrent request limit"）。
+ * 只认限流；额度用完、余额不足、鉴权失败不是等一等就能好的，照旧按失败报告。
+ */
+export function isProviderThrottle(message: string | undefined): boolean {
+  if (!message || /quota|balance|insufficient|billing|余额|额度/i.test(message)) return false;
+
+  return /concurrent request|concurrency limit|rate[ _-]?limit|too many requests|\b429\b/i.test(message);
+}
+
+/** 连续被限流这么多次（已降到 1 路仍被拒）就停下，如实报告。 */
+const MAX_THROTTLES = 8;
+
+/** 模型层把限流标在抛出的 Error 上（session.translatePageBatch）。 */
+const throttledOf = (error: Error) => 'throttled' in error && error.throttled === true;
+
+/** 可被停止打断的等待。 */
+const pause = (ms: number, signal: AbortSignal) => new Promise<void>(resolve => {
+  if (signal.aborted) {
+    resolve();
+
+    return;
+  }
+
+  const timer = setTimeout(resolve, ms);
+  signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, {once: true});
+});
 
 /** Every batch crosses the existing execution gate, including after model awaits. */
 export async function runPageTranslation(
@@ -86,7 +121,7 @@ export async function runPageTranslation(
   options: PageTranslationOptions = {},
 ): Promise<TranslationReceipt> {
   if (request.action !== 'translate') return call({...request, action: request.action});
-  const width = Math.min(8, Math.max(1, Math.floor(options.concurrency ?? PAGE_TRANSLATION_CONCURRENCY)));
+  let width = Math.min(8, Math.max(1, Math.floor(options.concurrency ?? PAGE_TRANSLATION_CONCURRENCY)));
   const watchdog = new AbortController();
   const stop = AbortSignal.any([signal, watchdog.signal]);
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -97,12 +132,16 @@ export async function runPageTranslation(
   };
 
   const hardTimer = setTimeout(() => watchdog.abort(new Error('limit')), options.maxMs ?? PAGE_TRANSLATION_MAX_MS);
+  let settle: TranslationCommand | undefined;
+  // 「没译完、可继续」时模型通常几秒内再调用一次：占位多留一会，别在两次调用之间成片消失又出现。
+  let resumable = false;
 
   try {
     arm();
     let latest = await call({...request, action: 'begin'});
     const target = {tabId: latest.tabId, document: latest.document};
-    let stalledBatches = 0, started = 0, acknowledgedWrite = false, halt = false;
+    settle = {...target, action: 'settle'};
+    let stalledBatches = 0, started = 0, acknowledgedWrite = false, halt = false, throttles = 0, cooldownUntil = 0;
     // 第一个失败原样保留：页面调用的失败（执行事实未知）不能改写成模型失败。
     // SAFETY: 由下方闭包赋值；写成断言是为了不让 TypeScript 把它收窄成永远的 null。
     let failure = null as {error: Error | undefined; model: boolean} | null;
@@ -115,6 +154,8 @@ export async function runPageTranslation(
       try {
         return await translate(blocks, language, stop, meta);
       } catch (cause) {
+        // 限流时立刻原样重发只会再被拒；交给请求池降并发、稍等再发。
+        if (cause instanceof Error && throttledOf(cause)) throw cause;
         const interrupted = cause instanceof Error && cause.message.includes('这批翻译未完成');
 
         if (stop.aborted || !interrupted || (cause instanceof Error && stoppedFor(cause, 'length') && blocks.length > 1 && meta.depth < MAX_SPLIT_DEPTH)) throw cause;
@@ -129,6 +170,8 @@ export async function runPageTranslation(
       try {
         translations = await translateOnce(blocks, language, meta);
       } catch (cause) {
+        if (!stop.aborted && cause instanceof Error && throttledOf(cause)) throw new Throttled(cause);
+
         if (stop.aborted || !(cause instanceof Error && stoppedFor(cause, 'length')) || blocks.length < 2 || meta.depth >= MAX_SPLIT_DEPTH) throw Object.assign(new ModelFailure(), {cause});
         // 思考写满输出上限：换更小的批次，而不是原样再发一次。
         const middle = Math.ceil(blocks.length / 2);
@@ -146,15 +189,35 @@ export async function runPageTranslation(
       const progressed = receipt.applied !== undefined ? receipt.applied > 0 : receipt.translated > before.translated || receipt.remaining < before.remaining;
       stalledBatches = progressed ? 0 : stalledBatches + 1;
 
-      if (progressed) arm();
+      if (progressed) { arm(); throttles = 0; }
 
       if (stalledBatches >= 3) halt = true;
     };
 
     const fail = (error: Error | undefined, model: boolean) => { failure ??= {error, model}; halt = true; };
 
+    // 被限流：这批段落不写页面，下次 collect 自然重新取到；同时在途的批数降到仍在跑的数量，退避后再发。
+    const throttled = (reason: Error) => {
+      throttles++;
+
+      if (throttles > MAX_THROTTLES) {
+        fail(Object.assign(new Error('模型服务商一直以「同时请求太多」拒绝，已停止。'), {cause: reason}), true);
+
+        return;
+      }
+
+      width = Math.max(1, Math.min(width - 1, inFlight.size - 1));
+      cooldownUntil = Math.max(cooldownUntil, Date.now() + Math.min(8000, 1000 * 2 ** (throttles - 1)));
+    };
+
     for (;;) {
       while (!halt && !stop.aborted && inFlight.size < width && started < 128) {
+        if (Date.now() < cooldownUntil) {
+          if (inFlight.size) break;
+          await pause(cooldownUntil - Date.now(), stop);
+          continue;
+        }
+
         // 页面报告的剩余段都已在翻译中时，不必再问页面。
         if (inFlight.size && latest.remaining <= inFlightBlocks()) break;
         const busy = new Set([...inFlight.values()].flatMap(t => t.ids));
@@ -180,6 +243,12 @@ export async function runPageTranslation(
 
         const done = runBatch(fresh, collected.language, collected, {batch, depth: 0, retry: false})
           .catch(error => {
+            if (error instanceof Throttled) {
+              throttled(error.reason);
+
+              return;
+            }
+
             const reason = error instanceof ModelFailure ? error.cause : error;
 
             fail(reason instanceof Error ? reason : undefined, error instanceof ModelFailure);
@@ -210,7 +279,10 @@ export async function runPageTranslation(
         : `翻译已达单次时长上限，已停止，${progress}；可从已完成处继续翻译。`, failure?.error);
     }
 
-    if (failure) throw reported(`翻译生成失败，${progress}。可继续翻译。${failure.error instanceof Error ? failure.error.message : ''}`, failure.error);
+    if (failure) {
+      resumable = true;
+      throw reported(`翻译生成失败，${progress}。可继续翻译。${failure.error instanceof Error ? failure.error.message : ''}`, failure.error);
+    }
 
     if (stalledBatches >= 3) return {...latest, blocks: [], incompleteReason: 'page-changing'};
 
@@ -219,7 +291,15 @@ export async function runPageTranslation(
   } finally {
     clearTimeout(idleTimer);
     clearTimeout(hardTimer);
+
+    // Done, failed or stopped: paragraphs still waiting lose their placeholder. Best effort; the page also expires them.
+    // A failed cleanup must never replace the run's real outcome.
+    if (settle) { const command: TranslationCommand = resumable && !signal.aborted ? {...settle, delayMs: RESUME_GRACE_MS} : settle; await Promise.resolve().then(async () => { await (options.settle ?? call)(command); }).catch(() => undefined); }
   }
 }
 
 class ModelFailure extends Error {}
+
+class Throttled extends Error {
+  constructor(readonly reason: Error) { super(reason.message); }
+}
