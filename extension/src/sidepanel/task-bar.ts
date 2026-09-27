@@ -71,6 +71,11 @@ function hostOf(url: string): string {
   }
 }
 
+/** 任务条摘要行上的网站名：只要主机名，标题留给展开后的「作用于」。 */
+export function pageHostOf(info: { url?: string }): string | null {
+  return info.url ? hostOf(info.url) || null : null;
+}
+
 export function pageLabelOf(info: { title?: string; url?: string }): string {
   const host = info.url ? hostOf(info.url) : "";
   const title = clip(info.title ?? "", 24);
@@ -188,7 +193,7 @@ export interface TaskBarModel {
   /** 距上次真实动作的时长（长时间无进展时的诚实信号）；无依据为 null。 */
   idleAge: string | null;
   waiting: { text: string; detail: string | null } | null;
-  page: { label: string; mismatch: boolean } | null;
+  page: { label: string; host: string | null; mismatch: boolean } | null;
   materials: {
     rows: MaterialRow[];
     head: string;
@@ -210,6 +215,8 @@ export interface TaskBarInputs {
   taskMaterials: TaskMaterialSet | null;
   control: ControlState;
   pageLabel: string | null;
+  /** 任务页的主机名，摘要行只显示它；还没查到为 null。 */
+  pageHost?: string | null;
   /** 当前活动标签页；与 task_view.page 不一致时如实提示（A03-03）。 */
   activeTabId: number | null;
   pageTabId: number | null;
@@ -270,6 +277,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   const page = pageTabId != null
     ? {
         label: input.pageLabel ?? `标签页 ${pageTabId}`,
+        host: input.pageHost ?? null,
         mismatch: input.activeTabId != null && input.activeTabId !== pageTabId,
       }
     : null;
@@ -390,7 +398,7 @@ export class TaskBar {
   private taskMaterials: TaskMaterialSet | null = null;
   private control: ControlState = { takeover: { pending: false, since: null, failReason: null }, stop: { pending: false, since: null, accepted: false, failReason: null } };
   private draftHasText = false;
-  private readonly pageCache = new Map<number, { label: string | null; at: number }>();
+  private readonly pageCache = new Map<number, { label: string | null; host: string | null; at: number }>();
   private activeTab: { id: number | null; at: number } = { id: null, at: 0 };
   private model: TaskBarModel | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -403,6 +411,10 @@ export class TaskBar {
   private readonly goalEl: HTMLElement;
   private readonly headEl: HTMLElement;
   private readonly revisionsEl: HTMLElement;
+  private readonly siteEl: HTMLElement;
+  private readonly expandEl: HTMLButtonElement;
+  /** 目标、作用页全名与已送入材料默认收起，摘要行只留状态、耗时与网站名。 */
+  private expanded = false;
   private readonly now: () => number;
   private readonly doc: Document;
   private disposed = false;
@@ -416,19 +428,30 @@ export class TaskBar {
     this.el = doc.createElement("section");
     this.el.className = "task-bar";
     this.el.setAttribute("aria-label", "当前任务");
-    this.headEl = doc.createElement("div");
-    this.headEl.className = "tb-head";
+    const summary = doc.createElement("div");
+    summary.className = "tb-summary";
     const dot = doc.createElement("span");
     dot.className = "tb-dot";
-    this.goalEl = doc.createElement("span");
-    this.goalEl.className = "tb-goal";
-    this.revisionsEl = doc.createElement("span");
-    this.revisionsEl.className = "tb-revisions";
-    this.headEl.append(dot, this.goalEl, this.revisionsEl);
     this.statusEl = doc.createElement("p");
     this.statusEl.className = "tb-status";
     this.statusEl.setAttribute("role", "status");
     this.statusEl.setAttribute("aria-live", "polite");
+    this.siteEl = doc.createElement("span");
+    this.siteEl.className = "tb-site";
+    this.expandEl = doc.createElement("button");
+    this.expandEl.type = "button";
+    this.expandEl.className = "tb-expand";
+    this.expandEl.setAttribute("aria-expanded", "false");
+    this.expandEl.setAttribute("aria-label", "展开任务详情");
+    this.expandEl.title = "展开任务详情";
+    summary.append(dot, this.statusEl, this.siteEl, this.expandEl);
+    this.headEl = doc.createElement("div");
+    this.headEl.className = "tb-head";
+    this.goalEl = doc.createElement("span");
+    this.goalEl.className = "tb-goal";
+    this.revisionsEl = doc.createElement("span");
+    this.revisionsEl.className = "tb-revisions";
+    this.headEl.append(this.goalEl, this.revisionsEl);
     this.waitingEl = doc.createElement("p");
     this.waitingEl.className = "tb-waiting";
     this.pageEl = doc.createElement("p");
@@ -437,7 +460,7 @@ export class TaskBar {
     this.materialsEl.className = "tb-materials";
     this.controlEl = doc.createElement("p");
     this.controlEl.className = "tb-control";
-    this.el.append(this.headEl, this.statusEl, this.waitingEl, this.pageEl, this.materialsEl, this.controlEl);
+    this.el.append(summary, this.headEl, this.waitingEl, this.pageEl, this.materialsEl, this.controlEl);
     this.el.addEventListener("click", (event) => this.onClick(event));
     opts.root.replaceChildren(this.el);
     this.render();
@@ -660,6 +683,16 @@ export class TaskBar {
       return;
     }
 
+    if (target.closest(".tb-expand")) {
+      this.expanded = !this.expanded;
+      const label = this.expanded ? "收起任务详情" : "展开任务详情";
+      this.expandEl.setAttribute("aria-label", label);
+      this.expandEl.title = label;
+      this.render();
+
+      return;
+    }
+
     const retry = target.closest("button[data-retry-control]") as HTMLButtonElement | null;
 
     if (retry) {
@@ -680,12 +713,12 @@ export class TaskBar {
         if (this.disposed) return;
         const label = info ? pageLabelOf(info) : null;
         const before = this.pageCache.get(tabId)?.label ?? undefined;
-        this.pageCache.set(tabId, { label, at: this.now() });
+        this.pageCache.set(tabId, { label, host: info ? pageHostOf(info) : null, at: this.now() });
 
         if (before !== label) this.render();
       }).catch(() => {
         if (this.disposed) return;
-        this.pageCache.set(tabId, { label: null, at: this.now() });
+        this.pageCache.set(tabId, { label: null, host: null, at: this.now() });
       });
     }
 
@@ -710,6 +743,7 @@ export class TaskBar {
       control: this.control,
       draftHasText: this.draftHasText,
       pageLabel: tabId != null ? this.pageCache.get(tabId)?.label ?? null : null,
+      pageHost: tabId != null ? this.pageCache.get(tabId)?.host ?? null : null,
       activeTabId: this.now() - this.activeTab.at < 30_000 ? this.activeTab.id : null,
       pageTabId: tabId,
       now: this.now(),
@@ -724,6 +758,11 @@ export class TaskBar {
       this.goalEl.textContent = "";
       this.revisionsEl.textContent = "";
       this.statusEl.textContent = "";
+      this.siteEl.textContent = "";
+      this.siteEl.hidden = true;
+      this.expandEl.hidden = true;
+      this.expanded = false;
+      this.el.removeAttribute("data-expanded");
       this.waitingEl.hidden = true;
       this.waitingEl.textContent = "";
       this.pageEl.hidden = true;
@@ -746,13 +785,31 @@ export class TaskBar {
     this.revisionsEl.textContent = this.view?.revisions.length ? `+${this.view.revisions.length} 修订` : "";
     this.revisionsEl.title = this.view?.revisions.length ? this.view.revisions.join("\n") : "";
     const statusBits = [model.headline, model.activity, model.idleAge].filter(Boolean);
-    this.statusEl.textContent = statusBits.join(" · ");
-    this.statusEl.hidden = !statusBits.length;
+    // 还没有任务状态（草稿、发送中）时，摘要行说材料那一句，材料区不再重复这句标题。
+    const materialsHead = statusBits.length ? null : model.materials?.head ?? null;
+    this.statusEl.textContent = materialsHead ?? statusBits.join(" · ");
+    this.statusEl.hidden = !this.statusEl.textContent;
+    flag(this.el, "data-head-in-summary", materialsHead !== null);
+    // 任务页就是输入框上方显示的当前页时不再重复网站名；不是同一页才在摘要行点出任务在哪。
+    this.siteEl.textContent = model.page?.mismatch ? `任务在 ${model.page.host ?? model.page.label}` : "";
+    this.siteEl.hidden = !model.page?.mismatch;
+    this.siteEl.title = model.page?.mismatch ? "你现在看的是别的页，任务仍作用于这一页" : "";
+    flag(this.siteEl, "data-mismatch", !!model.page?.mismatch);
     this.waitingEl.hidden = !model.waiting;
     this.waitingEl.textContent = model.waiting ? `等待：${model.waiting.text}${model.waiting.detail ? `（${model.waiting.detail}）` : ""}` : "";
     this.pageEl.hidden = !model.page;
     this.pageEl.textContent = model.page ? `作用于：${model.page.label}${model.page.mismatch ? "（你现在看的是别的页，任务仍作用于上面这页）" : ""}` : "";
+    flag(this.pageEl, "data-mismatch", !!model.page?.mismatch);
     this.renderMaterials(model.materials);
+    // 只有已送入、不可再改的材料才收进详情；发送中、可移除的草稿材料要一直看得见。
+    const settledMaterials = !!model.materials && !model.materials.status && !model.materials.rows.some((row) => row.removable);
+    flag(this.materialsEl, "data-settled", settledMaterials);
+    // 材料里已经列出这一页时，展开后不再另写一行「作用于」；页面不一致的提示除外。
+    flag(this.el, "data-page-in-materials", !!model.materials?.rows.some((row) => row.kind === "page"));
+    const hasDetail = !this.headEl.hidden || !!model.page || (settledMaterials && !this.materialsEl.hidden);
+    this.expandEl.hidden = !hasDetail;
+    flag(this.el, "data-expanded", this.expanded && hasDetail);
+    this.expandEl.setAttribute("aria-expanded", String(this.expanded && hasDetail));
     this.renderControl(model.control);
 
     if (changed) this.resolvePages();
@@ -861,6 +918,12 @@ export class TaskBar {
     if (this.tickTimer !== null) clearInterval(this.tickTimer);
     this.tickTimer = null;
   }
+}
+
+/** 布尔属性开关：只用 set/removeAttribute，单测注入的简化 DOM 也能跑。 */
+function flag(el: Element, name: string, on: boolean): void {
+  if (on) el.setAttribute(name, "");
+  else el.removeAttribute(name);
 }
 
 function shallowEqualModel(a: TaskBarModel, b: TaskBarModel): boolean {

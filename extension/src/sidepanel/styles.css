@@ -10,6 +10,8 @@
   --glass-specular: 0 0 0 transparent;
   --glass-shadow: 0 3px 14px rgba(20, 20, 19, .04);
   --glass-blur: none;
+  /* Chrome 自己画的侧栏标题栏（图标、名字、图钉、关闭）的底色；扩展读不到，按默认主题取值，让顶栏接在它下面像同一块。 */
+  --chrome-frame: #ffffff;
 
   /* 2. 消息流与内容主体：坚实实体材质 (Solid Surface，保证 100% 清晰阅读) */
   --content-bg: #ffffff;
@@ -99,6 +101,7 @@
     --glass-specular: 0 0 0 transparent;
     --glass-shadow: 0 3px 14px rgba(0,0,0,.12);
     --glass-blur: none;
+    --chrome-frame: #1f1f1f;
 
     --content-bg: #2b2822;
     --content-subtle: #353027;
@@ -163,18 +166,18 @@ body {
 }
 #task-session-q { color: var(--text-primary); font-weight: 600; }
 
-/* ── 任务条（T03）：目标＋当前活动的两层常态，阻塞时露出真实原因 ── */
+/* ── 任务条（T03）：贴在输入框上方，一行说清「在做什么、多久了、作用在哪个网站」；目标与已送入材料点开再看 ── */
 #task-bar-root { min-width: 0; }
 #task-bar-root:empty { display: none; }
 .task-bar[hidden] { display: none; }
 .task-bar {
   display: grid;
   gap: 3px;
-  margin: 0 12px 8px;
-  padding: 8px 10px;
+  margin: 0 0 6px;
+  padding: 5px 6px 5px 10px;
   min-width: 0;
   border: 1px solid var(--content-border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--glass-surface-elevated);
   color: var(--text-secondary);
   font-size: 12px;
@@ -183,6 +186,45 @@ body {
 }
 /* 组件内的 hidden 一律生效：状态行/材料区都自带 display，不能靠默认规则。 */
 .task-bar [hidden] { display: none; }
+.tb-summary { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 22px; }
+.tb-summary .tb-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-site {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--content-subtle);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+.tb-site[data-mismatch] { color: var(--apple-orange); }
+.tb-expand {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  cursor: pointer;
+}
+.tb-expand::before { content: "⌄"; display: inline-block; font-size: 14px; line-height: 1; transform: translateY(-3px); }
+.task-bar[data-expanded] .tb-expand::before { transform: translateY(2px) rotate(180deg); }
+.tb-expand:hover { background: var(--content-subtle); color: var(--text-primary); }
+.tb-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 收起时：目标在对话里已有，作用页全名、已送入的材料都收进详情；页面不一致由摘要行的网站名提示，待处理的材料照常显示。 */
+.task-bar:not([data-expanded]) .tb-head,
+.task-bar:not([data-expanded]) .tb-page,
+.task-bar:not([data-expanded]) .tb-materials[data-settled] { display: none; }
+.task-bar[data-head-in-summary] .tb-mat-head { display: none; }
+.task-bar[data-page-in-materials] .tb-page:not([data-mismatch]) { display: none; }
 .tb-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .tb-dot {
   flex: none;
@@ -287,40 +329,23 @@ html, body {
   flex-shrink: 0;
 }
 
-/* ── 顶栏 (Liquid Glass Chrome) ─────────────────────────────────── */
+/* ── 顶栏：只回答「在哪个会话」。品牌由 Chrome 标题栏给出，这里不重复；底色接住标题栏，平时不画分隔线。 ── */
 #topbar {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 4px;
+  height: 38px;
+  padding: 0 8px 0 6px;
   min-width: 0;
-  border-bottom: 0.5px solid var(--glass-border-subtle);
-  background: var(--glass-surface);
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--glass-specular);
+  border-bottom: 1px solid transparent;
+  background: var(--chrome-frame);
   flex-shrink: 0;
   z-index: 10;
+  transition: border-color var(--m-quick) var(--e-swift);
 }
-
-.brand-cluster {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#logo {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-#brand {
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
+/* 对话滚到顶栏下面时才出现分隔线，区分顶栏与内容。 */
+#app.messages-scrolled #topbar { border-bottom-color: var(--glass-border-subtle); }
 
 /* Normal connectivity stays quiet; failure and active execution remain readable. */
 #status-pill.activity-island {
@@ -332,7 +357,8 @@ html, body {
   color: var(--text-secondary);
 }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#status-pill.status-on #status-text { display: none; }
+/* 连上是常态，不占位置；只有连接中、断开时才出现。执行状态由输入框上方的任务条说明。 */
+#status-pill.status-on { display: none; }
 #status-pill.status-retry, #status-pill.status-off { color: var(--text-secondary); }
 .island-pulse-dot {
   width: 6px;
@@ -349,16 +375,15 @@ html, body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 50%;
-  background: var(--glass-surface-elevated);
+  border-radius: 7px;
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   transition: transform var(--m-quick) var(--e-swift);
 }
-#header-more { margin-left: auto; }
 #header-more:active, #conversation-new:active:not(:disabled) { transform: scale(.95); }
 #header-more:focus-visible, #header-menu button:focus-visible, #teach-toggle:focus-visible {
   outline: 2px solid var(--accent);
@@ -366,7 +391,7 @@ html, body {
 }
 #header-menu {
   position: fixed;
-  inset: 48px 14px auto auto;
+  inset: 40px 8px auto auto;
   margin: 0;
   width: 188px;
   max-width: calc(100vw - 28px);
@@ -412,19 +437,23 @@ html, body {
 #header-menu [hidden] { display: none; }
 #header-menu #companion-toggle[aria-pressed="true"]::after { content: "✓"; margin-left: auto; color: var(--text-secondary); }
 #app[data-companion="off"] #pix-companion { display: none; }
-#operation-bar { padding: 0 14px 8px; flex-shrink: 0; }
+/* 操作方式决定下一条消息怎么执行，放在输入框里、模型旁边。 */
 #teach-toggle {
+  flex-shrink: 0;
   max-width: 100%;
+  height: 24px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 5px;
+  appearance: none;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 3l2.5 2.5L6.5 3' fill='none' stroke='%2377756d' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 4px center;
   color: var(--text-secondary);
-  padding: 4px 2px;
+  padding: 0 15px 0 4px;
   font: inherit;
   font-size: 11px;
   cursor: pointer;
   color-scheme: light dark;
 }
+#teach-toggle:hover { background: var(--content-subtle); color: var(--text-primary); }
 #teach-toggle.on { color: var(--accent); }
 #demo-stop { border: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
 #demo-title { flex: 1; }
@@ -777,10 +806,6 @@ html, body {
   line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-@media (prefers-color-scheme: dark) {
-  #logo { filter: invert(.9); }
 }
 
 /* 断线确定未送达的用户消息（issue #4）：弱化边框 + 原文重试，不隐藏内容 */
@@ -2485,29 +2510,30 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 
 /* 会话入口：沿用现有侧栏材质，历史按需展开。 */
-#conversation-bar { display:flex; align-items:center; gap:6px; padding:7px 10px; flex-shrink:0; min-width:0; }
 @media (max-width: 360px) {
-  #brand { font-size: 12px; }
   #status-text { max-width: 4.5em; overflow: hidden; text-overflow: ellipsis; }
 }
-#conversation-switcher { border:0; background:transparent; color:var(--text-primary); border-radius:7px; padding:7px 6px; font:inherit; cursor:pointer; }
-#conversation-switcher { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-weight:550; }
+/* 会话名是「我在哪」的指示，不是标题：常规字重、次要色，别像要点的大按钮。 */
+#conversation-switcher { border:0; background:transparent; color:var(--text-secondary); border-radius:7px; height:28px; padding:0 6px; font:inherit; font-size:12.5px; cursor:pointer; }
+#conversation-switcher { flex:0 1 auto; min-width:0; margin-right:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-weight:450; }
+#conversation-switcher:hover { color:var(--text-primary); }
 
 #conversation-new:disabled { opacity:.45; cursor:default; }
 #conversation-switcher:hover, #conversation-new:hover:not(:disabled) { background:var(--content-subtle-hover); }
 #conversation-background { display:block; width:calc(100% - 28px); margin:0 14px 4px; padding:7px 0; text-align:left; border:0; border-bottom:1px solid var(--content-border); background:none; color:var(--text-secondary); font:inherit; font-size:11px; cursor:pointer; }
 #conversation-background[hidden], #conversation-menu[hidden] { display:none; }
-#conversation-menu { position:absolute; top:96px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius:11px; box-shadow:var(--popover-shadow); }
+#conversation-menu { position:absolute; top:40px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius:11px; box-shadow:var(--popover-shadow); }
 #conversation-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:11px 9px; border:0; border-radius:6px; font:inherit; color:var(--text-primary); background:none; text-align:left; cursor:pointer; }
 #conversation-menu button span { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 #conversation-menu button small { color:var(--text-secondary); font-size:10px; white-space:nowrap; }
 #conversation-menu button:hover { background:var(--content-subtle-hover); }
 #conversation-menu button[aria-checked=true] { background:var(--accent-soft); }
-#conversation-bar button:focus-visible, #conversation-menu button:focus-visible, #conversation-background:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+#topbar #conversation-switcher:focus-visible, #topbar #conversation-new:focus-visible, #conversation-menu button:focus-visible, #conversation-background:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 
 #conversation-switcher { display:flex; align-items:center; gap:7px; }
 #conversation-switcher .conversation-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#conversation-switcher .lucide { flex-shrink:0; width:12px; height:12px; }
+/* lucide 的 createElement 不带 .lucide 类名，按元素选中图标，否则是默认的 24px 粗箭头。 */
+#conversation-switcher svg, #model-btn svg { flex-shrink:0; width:12px; height:12px; stroke-width:1.75; color:var(--text-tertiary); }
 
 /* 跨会话记忆 A：会话内回执 + 管理抽屉。 */
 #memory-shade { position:absolute; inset:0; z-index:34; border:0; padding:0; background:rgba(23,34,52,.18); cursor:default; }
