@@ -32,6 +32,7 @@ describe('document-bound page translation', () => {
   it('does not request optional reasoning for paragraph translation', async () => {
     const completeSimple=vi.fn().mockResolvedValue({stopReason:'stop',content:[{type:'text',text:'[{"id":"1:0","text":"阅读"},{"id":"1:1","text":"来源"}]'}]});
     const host={session:{model:{provider:'fixture',id:'model'},sessionId:'s'},modelRuntime:{completeSimple}};
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     const result=await BrowserAgentSession.prototype.translatePageBatch.call(host as never,blocks,'简体中文',new AbortController().signal);
     expect(result[0]?.text).toBe('阅读 ');
     expect(completeSimple.mock.calls[0]?.[2].reasoning).toBeUndefined();
@@ -42,6 +43,7 @@ describe('document-bound page translation', () => {
       .mockResolvedValueOnce({stopReason:'stop',content:[{type:'text',text:'[{"id":"1:0","text":"阅读"},{"id":"1:1","text":"来源"}]'}]});
 
     const host={session:{model:{provider:'fixture',id:'model'},sessionId:'s'},modelRuntime:{completeSimple}};
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     const result=await BrowserAgentSession.prototype.translatePageBatch.call(host as never,blocks,'简体中文',new AbortController().signal);
     expect(result).toHaveLength(2);expect(completeSimple).toHaveBeenCalledTimes(2);
     expect(completeSimple.mock.calls[1]?.[1].systemPrompt).toContain('previous answer was malformed');
@@ -49,6 +51,7 @@ describe('document-bound page translation', () => {
   it('keeps the regeneration bounded when both model outputs are invalid', async () => {
     const completeSimple=vi.fn().mockResolvedValue({stopReason:'stop',content:[{type:'text',text:'[] extra text'}]});
     const host={session:{model:{provider:'fixture',id:'model'},sessionId:'s'},modelRuntime:{completeSimple}};
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(BrowserAgentSession.prototype.translatePageBatch.call(host as never,blocks,'简体中文',new AbortController().signal)).rejects.toThrow('本批未写入');
     expect(completeSimple).toHaveBeenCalledTimes(2);
   });
@@ -90,11 +93,13 @@ return [{id:'1:0',text:'旧译文'}];});
     let epoch=1;
     const rpc={call:vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt,blocks}),ensureToolCall:vi.fn(),markCallRejected:vi.fn()};
 
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     const tools=createBrowserTools(rpc as never,undefined,undefined,undefined,{epoch:()=>epoch,canWrite:()=>true},async()=>{epoch++;
 
 return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
 
     const tool=tools.find(t=>t.name==='page_translation')!;
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(tool.execute('translation-1',{action:'translate'},new AbortController().signal,undefined,{} as never)).rejects.toThrow('旧步骤未执行');
     expect(rpc.call).toHaveBeenCalledTimes(2);
   });
@@ -102,6 +107,7 @@ return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
     const rpc = new ToolRpc(frame => queueMicrotask(() => rpc.handleResult(frame.id, true, {...receipt, translated, blocks:frame.params.action==='collect'?blocks:[]}, undefined, 'executed')));
     const tools=createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>1,canWrite:()=>true},async()=>{throw Error('provider output limit');});
     const tool=tools.find(t=>t.name==='page_translation')!;
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(tool.execute('known-failure',{action:'translate'},new AbortController().signal,undefined,{} as never)).rejects.toThrow('provider output limit');
     expect(rpc.getExecutionFact('known-failure')).toBe(translated?'executed':'not_executed');
   });
@@ -114,9 +120,11 @@ return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
     }));
 
     const tool = createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>1,canWrite:()=>true}).find(t => t.name === 'page_translation')!;
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(tool.execute('missing-translation', {action:'display',fontFamily:'songti'}, new AbortController().signal, undefined, {} as never)).rejects.toThrow('还没有译文');
     expect(rpc.getExecutionFact('missing-translation')).toBe('not_executed');
     fail = false;
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(tool.execute('retry-translation', {action:'translate'}, new AbortController().signal, undefined, {} as never)).resolves.toBeDefined();
   });
   it('retains acknowledged writes when the live page later removes their paragraphs', async () => {
@@ -140,6 +148,7 @@ return [{id:'1:0',text:'旧的'},{id:'1:1',text:'译文'}];});
   });
   it('validates mode, size and apply identity at the extension boundary', () => {
     expect(()=>validateTranslationCommand({action:'display',fontSize:0})).toThrow();
+    // SAFETY: 故意传入不合法的值，检查校验会拒绝它。
     expect(()=>validateTranslationCommand({action:'display',fontFamily:'invalid' as never})).toThrow();
     expect(()=>validateTranslationCommand({action:'apply',translations:[]})).toThrow();
     expect(()=>validateTranslationCommand({action:'display',mode:'translated',fontSize:20})).not.toThrow();
@@ -154,6 +163,7 @@ describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', (
     if (command.action === 'begin') return receipt;
 
     if (command.action === 'collect') {
+      // SAFETY: 测试替身只实现被测代码实际调用的部分。
       return (collectThenFinish as {n?: number}).n
         ? {...receipt, blocks: [], translated: 1, remaining: 0}
         : ((collectThenFinish as {n?: number}).n = 1, {...receipt, blocks});
@@ -170,6 +180,7 @@ describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', (
       .mockResolvedValueOnce({...receipt, translated: 1, remaining: 0, blocks: []});
 
     const translate = vi.fn().mockRejectedValueOnce(new Error(marker)).mockResolvedValueOnce(segments);
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     const result = await runPageTranslation({action:'translate'}, call as never, translate, new AbortController().signal);
     expect(translate).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({translated: 1, remaining: 0});
@@ -178,6 +189,7 @@ describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', (
   it('连续两次中断如实报整批故障（重试有界）', async () => {
     const call = vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt, blocks});
     const translate = vi.fn().mockRejectedValue(new Error(marker));
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(runPageTranslation({action:'translate'}, call as never, translate, new AbortController().signal))
       .rejects.toThrow('翻译生成失败');
     expect(translate).toHaveBeenCalledTimes(2);
@@ -187,6 +199,7 @@ describe('瞬时生成中断与用户主动停止（试用问题 3 反例）', (
     const abort = new AbortController();
     const call = vi.fn().mockResolvedValueOnce(receipt).mockResolvedValueOnce({...receipt, blocks});
     const translate = vi.fn().mockImplementation(async () => { abort.abort(); throw new Error(marker); });
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(runPageTranslation({action:'translate'}, call as never, translate, abort.signal))
       .rejects.toThrow('已停止翻译请求');
     expect(translate).toHaveBeenCalledTimes(1);
@@ -226,13 +239,16 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
 
     const translate = vi.fn(async (blocks: {id: string; segments: {id: string}[]}[]) => {
       for (const b of blocks) { expect(inFlight.has(b.id)).toBe(false); inFlight.add(b.id); }
+
       peak = Math.max(peak, translate.mock.calls.length - page.applied.length);
       await new Promise(r => setTimeout(r, 5));
+
       for (const b of blocks) inFlight.delete(b.id);
 
       return echo(blocks);
     });
 
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     const result = await runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal, {concurrency: 3});
     expect(result).toMatchObject({translated: 40, remaining: 0});
     expect(peak).toBe(3);
@@ -250,6 +266,7 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
       return echo(blocks);
     });
 
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     const running = runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal, {concurrency: 2});
     await vi.waitFor(() => expect(page.applied).toEqual([['9', '10', '11', '12', '13', '14', '15', '16']]));
     releaseSlow();
@@ -268,11 +285,13 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
       return echo(blocks);
     });
 
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal)).resolves.toMatchObject({translated: 8, remaining: 0});
     expect(sizes).toEqual([8, 4, 2, 2, 4, 2, 2]);
 
     const always = vi.fn(async (blocks: unknown[]) => { sizes.push(blocks.length); throw Object.assign(new Error('这批翻译未完成（length）'), {stopReason: 'length'}); });
     sizes.length = 0;
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(runPageTranslation({action: 'translate'}, fakePage(8, 8).call as never, always, new AbortController().signal)).rejects.toThrow('翻译生成失败');
     // 8 → 4 → 2；到 2 段只允许原样重试一次，随后停止启动新批次。
     expect(sizes.slice(0, 4)).toEqual([8, 4, 2, 2]);
@@ -281,8 +300,15 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
 
   it('持续有进展就不因总时长被截断；卡住不动时按空闲时限停止并报告进度', async () => {
     const page = fakePage(12, 1);
-    const slowButSteady = vi.fn(async (blocks: {segments: {id: string}[]}[]) => { await new Promise(r => setTimeout(r, 30)); return echo(blocks); });
+
+    const slowButSteady = vi.fn(async (blocks: {segments: {id: string}[]}[]) => {
+      await new Promise(r => setTimeout(r, 30));
+
+      return echo(blocks);
+    });
+
     // 12 批串行约 360 ms，远超 100 ms 的空闲时限，但每批都在时限内落页。
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(runPageTranslation({action: 'translate'}, page.call as never, slowButSteady, new AbortController().signal, {concurrency: 1, idleMs: 100}))
       .resolves.toMatchObject({translated: 12, remaining: 0});
 
@@ -290,11 +316,16 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
     let first = true;
 
     const stuck = vi.fn(async (blocks: {segments: {id: string}[]}[], _l: string, signal: AbortSignal) => {
-      if (first) { first = false; return echo(blocks); }
+      if (first) {
+        first = false;
+
+        return echo(blocks);
+      }
 
       return await new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('这批翻译未完成（aborted）'), {stopReason: 'aborted'}))));
     });
 
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await expect(runPageTranslation({action: 'translate'}, stuckPage.call as never, stuck, new AbortController().signal, {concurrency: 1, idleMs: 60}))
       .rejects.toMatchObject({message: expect.stringContaining('长时间没有进展'), executionFact: 'executed'});
     expect(stuckPage.done.size).toBe(4);
@@ -303,6 +334,7 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
   it('每次请求带上批次序号、拆分层数和是否重试，供诊断记录使用', async () => {
     const page = fakePage(2, 2);
     const translate = vi.fn().mockRejectedValueOnce(Object.assign(new Error('这批翻译未完成（aborted）'), {stopReason: 'aborted'})).mockImplementation(async (blocks: {segments: {id: string}[]}[]) => echo(blocks));
+    // SAFETY: 测试替身只实现被测代码实际调用的部分。
     await runPageTranslation({action: 'translate'}, page.call as never, translate, new AbortController().signal);
     expect(translate.mock.calls.map(c => c[3])).toEqual([{batch: 1, depth: 0, retry: false}, {batch: 1, depth: 0, retry: true}]);
   });
@@ -310,6 +342,7 @@ describe('并发请求池、按进度判断时限、length 拆批', () => {
   it('collect 的排除列表只允许用于 collect', () => {
     expect(() => validateTranslationCommand({action: 'collect', document: 'd', exclude: ['1', '2']})).not.toThrow();
     expect(() => validateTranslationCommand({action: 'apply', document: 'd', translations: [], exclude: ['1']})).toThrow();
+    // SAFETY: 故意传入不合法的值，检查校验会拒绝它。
     expect(() => validateTranslationCommand({action: 'collect', exclude: [1 as never]})).toThrow();
   });
 });

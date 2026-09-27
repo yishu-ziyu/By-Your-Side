@@ -74,7 +74,8 @@ const MAX_SPLIT_DEPTH = 2;
 
 export interface PageTranslationOptions { concurrency?: number; idleMs?: number; maxMs?: number }
 
-const stopReasonOf = (error: unknown) => (error as {stopReason?: string} | null)?.stopReason;
+/** 模型层把停止原因（length、aborted、error）标在抛出的 Error 上。 */
+const stoppedFor = (error: Error, reason: string) => 'stopReason' in error && error.stopReason === reason;
 
 /** Every batch crosses the existing execution gate, including after model awaits. */
 export async function runPageTranslation(
@@ -103,7 +104,8 @@ export async function runPageTranslation(
     const target = {tabId: latest.tabId, document: latest.document};
     let stalledBatches = 0, started = 0, acknowledgedWrite = false, halt = false;
     // 第一个失败原样保留：页面调用的失败（执行事实未知）不能改写成模型失败。
-    let failure = null as {error: unknown; model: boolean} | null;
+    // SAFETY: 由下方闭包赋值；写成断言是为了不让 TypeScript 把它收窄成永远的 null。
+    let failure = null as {error: Error | undefined; model: boolean} | null;
     const inFlight = new Map<number, {ids: string[]; done: Promise<number>}>();
 
     const inFlightBlocks = () => [...inFlight.values()].reduce((n, t) => n + t.ids.length, 0);
@@ -115,7 +117,7 @@ export async function runPageTranslation(
       } catch (cause) {
         const interrupted = cause instanceof Error && cause.message.includes('这批翻译未完成');
 
-        if (stop.aborted || !interrupted || (stopReasonOf(cause) === 'length' && blocks.length > 1 && meta.depth < MAX_SPLIT_DEPTH)) throw cause;
+        if (stop.aborted || !interrupted || (cause instanceof Error && stoppedFor(cause, 'length') && blocks.length > 1 && meta.depth < MAX_SPLIT_DEPTH)) throw cause;
 
         return await translate(blocks, language, stop, {...meta, retry: true});
       }
@@ -127,7 +129,7 @@ export async function runPageTranslation(
       try {
         translations = await translateOnce(blocks, language, meta);
       } catch (cause) {
-        if (stop.aborted || stopReasonOf(cause) !== 'length' || blocks.length < 2 || meta.depth >= MAX_SPLIT_DEPTH) throw Object.assign(new ModelFailure(), {cause});
+        if (stop.aborted || !(cause instanceof Error && stoppedFor(cause, 'length')) || blocks.length < 2 || meta.depth >= MAX_SPLIT_DEPTH) throw Object.assign(new ModelFailure(), {cause});
         // 思考写满输出上限：换更小的批次，而不是原样再发一次。
         const middle = Math.ceil(blocks.length / 2);
         await runBatch(blocks.slice(0, middle), language, before, {...meta, depth: meta.depth + 1, retry: false});
@@ -149,7 +151,7 @@ export async function runPageTranslation(
       if (stalledBatches >= 3) halt = true;
     };
 
-    const fail = (error: unknown, model: boolean) => { failure ??= {error, model}; halt = true; };
+    const fail = (error: Error | undefined, model: boolean) => { failure ??= {error, model}; halt = true; };
 
     for (;;) {
       while (!halt && !stop.aborted && inFlight.size < width && started < 128) {
@@ -159,8 +161,11 @@ export async function runPageTranslation(
         let collected: TranslationReceipt;
 
         try {
-          collected = await call({...target, action: 'collect', ...(busy.size ? {exclude: [...busy]} : {})});
-        } catch (error) { fail(error, false); break; }
+          const request: TranslationCommand = {...target, action: 'collect'};
+
+          if (busy.size) request.exclude = [...busy];
+          collected = await call(request);
+        } catch (error) { fail(error instanceof Error ? error : new Error(String(error)), false); break; }
 
         latest = collected;
         // 同一段绝不同时翻两份，即使页面没有排除它。
@@ -174,7 +179,11 @@ export async function runPageTranslation(
         const batch = ++started;
 
         const done = runBatch(fresh, collected.language, collected, {batch, depth: 0, retry: false})
-          .catch(error => fail(error instanceof ModelFailure ? error.cause : error, error instanceof ModelFailure))
+          .catch(error => {
+            const reason = error instanceof ModelFailure ? error.cause : error;
+
+            fail(reason instanceof Error ? reason : undefined, error instanceof ModelFailure);
+          })
           .then(() => batch);
 
         inFlight.set(batch, {ids: fresh.map(b => b.id), done});

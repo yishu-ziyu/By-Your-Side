@@ -60,7 +60,8 @@ export function validateTranslationCommand(p: TranslationCommand): void {
 
   if (p.document !== undefined && (typeof p.document !== 'string' || p.document.length > 100)) throw new Error('无效的文档身份');
 
-  if (p.exclude !== undefined && (p.action !== 'collect' || !Array.isArray(p.exclude) || p.exclude.length > 512 || p.exclude.some(id => typeof id !== 'string' || id.length > 20))) throw new Error('无效的排除段落');
+  // exclude 的每一项必须本身就是字符串（String(id) !== id 拒绝数字等其他值）。
+  if (p.exclude !== undefined && (p.action !== 'collect' || !Array.isArray(p.exclude) || p.exclude.length > 512 || p.exclude.some(id => String(id) !== id || id.length > 20))) throw new Error('无效的排除段落');
 
   if (p.action === 'apply' && (!p.document || !Array.isArray(p.translations) || p.translations.length > 64 || p.translations.some(s => !s || typeof s.id !== 'string' || s.id.length > 80 || typeof s.text !== 'string' || s.text.length > 24000))) throw new Error('无效的译文批次');
 }

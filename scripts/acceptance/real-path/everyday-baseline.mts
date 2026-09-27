@@ -261,7 +261,22 @@ async function checkTraceExport(modelPlan: ModelPlan) {
 
 /** 从导出文件读出翻译过程：每次翻译请求（批次、拆分层数、停止原因、耗时、用量）和每次 page_translation 工具调用的结果。 */
 function translationFacts(text: string) {
-  const rows = text.split("\n").filter(Boolean).flatMap((raw) => { try { return [JSON.parse(raw) as { type: string; data?: Record<string, unknown> }]; } catch { return []; } });
+  /** 这里读到的诊断记录字段：翻译请求行（shared/run-trace-core 与 session.translatePageBatch）与工具结束行。 */
+  type TraceData = {
+    toolName?: string; elapsedMs?: number; isError?: boolean; result?: object;
+    batch?: number; depth?: number; retry?: boolean; attempt?: number; phase?: string; reason?: string;
+    stopReason?: string; blocks?: number; segments?: number; inputChars?: number; usage?: object; error?: string;
+  };
+
+  const rows = text.split("\n").filter(Boolean).flatMap((raw) => {
+    try {
+      // SAFETY: 导出文件每行是 run-trace-core 写的 { type, data } 对象；解析失败的行丢弃。
+      return [JSON.parse(raw) as { type: string; data?: TraceData }];
+    } catch {
+      return [];
+    }
+  });
+
   const requests = rows.filter((r) => r.type === "page_translation_request").map((r) => r.data ?? {});
 
   const tools = rows.filter((r) => r.type === "tool_execution_end" && r.data?.toolName === "page_translation").map((r) => ({
@@ -555,8 +570,10 @@ try {
     // 设置页选的是哪家，请求就只能发往哪家：防「换了模型却仍用旧模型」。
     const wrongHost = inprocModel && modelCalls?.find((c) => c.host !== expectedHost);
     const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
-    results.push({ id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls,
-      ...(translating ? { firstTranslatedMs, translatedTimeline } : {}) });
+    const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls };
+
+    if (translating) Object.assign(result, { firstTranslatedMs, translatedTimeline });
+    results.push(result);
     await rp.screenshot(panel, join(artifacts, `${item.id}-panel.png`)).catch(() => {});
     const calls = modelCalls ? `\tcalls=${modelCalls.length} ttfb=${modelCalls.map((c) => (c.firstByteMs === null ? "-" : c.firstByteMs - c.startMs)).join(",")}` : "";
     const onPage = translating ? `\tfirstTranslated=${firstTranslatedMs ?? "-"}ms blocks=${translatedBlocks}` : "";
