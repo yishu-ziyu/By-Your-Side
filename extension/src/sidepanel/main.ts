@@ -111,14 +111,12 @@ const app = document.getElementById("app")!;
 
 app.innerHTML = `
   <header id="topbar">
-    <div class="brand-cluster">
-      <img id="logo" src="icons/brand-mark.svg" alt="" />
-      <span id="brand">By Your Side</span>
-    </div>
+    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
     <div id="status-pill" class="activity-island" title="当前连接与执行状态">
       <span id="status-dot" class="dot island-pulse-dot"></span>
       <span id="status-text">未连接</span>
     </div>
+    <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
     <button id="header-more" type="button" popovertarget="header-menu" aria-label="更多" title="更多"></button>
     <div id="header-menu" popover="auto" aria-label="更多功能">
       <button id="record-toggle" type="button" title="你亲手做一遍，AI 记录为可复用的技能" aria-pressed="false"><span>示范给 AI</span></button>
@@ -129,19 +127,8 @@ app.innerHTML = `
       <button id="companion-toggle" type="button" aria-pressed="true"><span>显示小伙伴 M</span></button>
     </div>
   </header>
-  <div id="conversation-bar">
-    <button id="conversation-switcher" type="button" aria-haspopup="menu" aria-expanded="false">新会话 ▾</button>
-    <button id="conversation-new" type="button" aria-label="新会话" title="新会话">＋</button>
-  </div>
-  <div id="operation-bar">
-    <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
-      <option value="act">帮我操作</option>
-      <option value="teach">指导我操作</option>
-    </select>
-  </div>
   <button id="conversation-background" type="button" hidden></button>
   <div id="consent-requests" aria-label="请求授权" hidden></div>
-  <div id="task-bar-root"></div>
   <div id="task-strip" aria-label="当前会话与结果">
     <div id="task-result-card" hidden>
       <div id="task-result-primary"></div>
@@ -220,6 +207,7 @@ app.innerHTML = `
       </div>
       <div id="demo-skill" hidden></div>
     </div>
+    <div id="task-bar-root"></div>
     <div id="composer" class="composer-glass-dock">
       <div id="page-pill" class="morphing-page-pill" title="当前活动标签页（点击展开检查面板）">
         <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -240,6 +228,10 @@ app.innerHTML = `
           <span id="model-name"></span>
           <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
         </button>
+        <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
+          <option value="act">帮我操作</option>
+          <option value="teach">指导我操作</option>
+        </select>
         <span id="composer-spacer"></span>
         <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
         <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
@@ -2412,6 +2404,7 @@ function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): 
 messagesEl.addEventListener("scroll", () => {
   pinned = nearBottom();
   toBottomBtn.hidden = pinned;
+  app.classList.toggle("messages-scrolled", messagesEl.scrollTop > 0);
 });
 
 function scrollToEnd(force = false): void {
