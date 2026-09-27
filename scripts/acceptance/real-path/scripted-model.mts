@@ -81,10 +81,19 @@ async function body(req: IncomingMessage): Promise<string> {
   return text;
 }
 
-export async function startScriptedModel(rules: Rule[]) {
+/**
+ * 整页翻译请求（产品的翻译提示词）：逐段回「中文译文：<原文>」。
+ * maxConcurrent 模仿服务商的并发上限（Kimi 编程套餐超限时回 403 concurrent request limit）。
+ */
+export type TranslateOptions = { maxConcurrent?: number; delayMs?: number; /** 接下来这么多个翻译请求回 500（普通故障，不是限流）。 */ failNext?: number };
+
+const THROTTLE_BODY = JSON.stringify({ error: { type: "permission_error", message: "You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again." }, type: "error" });
+
+export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions) {
   const origin = Date.now();
   const requests: ModelRequest[] = [];
   let calls = 0;
+  let translating = 0;
 
   const server = createServer(async (req, res) => {
     const path = (req.url ?? "/").split("?")[0] ?? "/";
@@ -104,6 +113,44 @@ export async function startScriptedModel(rules: Rule[]) {
     // SAFETY: OpenAI 兼容请求体，messages 为消息数组。
     const payload = JSON.parse(await body(req)) as { messages?: ChatMessage[]; stream?: boolean };
     const messages = payload.messages ?? [];
+
+    if (translate && messages.some((m) => m.role === "system" && textOf(m.content).startsWith("Translate the supplied webpage text"))) {
+      const atMs = Date.now() - origin;
+
+      if (translating >= (translate.maxConcurrent ?? Infinity)) {
+        requests.push({ atMs, rule: "translate", step: 0, status: 403 });
+        res.writeHead(403, { "content-type": "application/json" }).end(THROTTLE_BODY);
+
+        return;
+      }
+
+      if (translate.failNext) {
+        translate.failNext -= 1;
+        requests.push({ atMs, rule: "translate", step: 0, status: 500 });
+        res.writeHead(500, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "scripted upstream failure" } }));
+
+        return;
+      }
+
+      translating += 1;
+      requests.push({ atMs, rule: "translate", step: 0, status: 200 });
+
+      try {
+        await new Promise((done) => setTimeout(done, translate.delayMs ?? 800));
+        // SAFETY: 产品的翻译请求体是 {language, blocks:[{id, segments:[{id, text}]}]}。
+        const input = JSON.parse(textOf(messages.find((m) => m.role === "user")?.content)) as { blocks: Array<{ segments: Array<{ id: string; text: string }> }> };
+        const out = input.blocks.flatMap((b) => b.segments.map((seg) => ({ id: seg.id, text: `中文译文：${seg.text}` })));
+        const step = { text: JSON.stringify(out) };
+
+        if (payload.stream === false) json(res, step, `call_${++calls}`);
+        else stream(res, step, `call_${++calls}`);
+      } finally {
+        translating -= 1;
+      }
+
+      return;
+    }
+
     const found = pick(rules, messages);
     const step: Step = found ? found.rule.steps[found.step]! : { text: textOf(messages.at(-1)?.content).includes("Reply with the single word OK") ? "OK" : "好的。" };
     const atMs = Date.now() - origin;
@@ -129,6 +176,7 @@ export async function startScriptedModel(rules: Rule[]) {
   return {
     baseUrl: `http://127.0.0.1:${siteAddress(server).port}/v1`,
     requests,
+    translate,
     close: () => new Promise<void>((done) => { server.closeAllConnections(); server.close(() => done()); }),
   };
 }

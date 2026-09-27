@@ -73,10 +73,12 @@ export interface SettingsRun {
  * 从侧栏菜单打开设置页，用真实点击和输入完成配置。asCustom 时把该服务当成「自定义地址」填写。
  * 返回设置页上看到的测试与保存结果；任何一步卡住都会抛错。
  */
-export async function configureViaSettings(rp: RealPath, panel: string, plan: ModelPlan, { asCustom = false, asFast = false } = {}): Promise<SettingsRun> {
+export async function configureViaSettings(rp: RealPath, panel: string, plan: ModelPlan, { asCustom = false, asFast = false, baseUrl: customUrl }: { asCustom?: boolean; asFast?: boolean; baseUrl?: string } = {}): Promise<SettingsRun> {
+  if (customUrl) asCustom = true;
+
   if (plan.credential.type !== "api_key") throw new Error("设置页路径只支持填 key 的套餐；订阅登录要真人在服务商网页上确认");
   const key = String(plan.credential.key);
-  const baseUrl = asCustom ? await catalogBaseUrl(plan) : null;
+  const baseUrl = customUrl ?? (asCustom ? await catalogBaseUrl(plan) : null);
 
   await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#header-more")`)) || undefined, 15_000, "侧栏渲染");
   // 侧栏刚渲染时第一下偶尔没打开菜单（未复现出原因）：像用户一样再点一次，次数记进结果。
@@ -95,21 +97,27 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   const page = await rp.attach(target.targetId);
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
 
+  // 「自定义地址」收在「更多服务商」里。
+  if (asCustom) await rp.evaluate(page, `(() => { const more = document.querySelector("#provider-more"); if (more) more.open = true; return true; })()`);
   await rp.click(page, `.provider-option[data-provider="${asCustom ? "custom" : plan.providerId}"]`);
   await until(async () => (await rp.evaluate(page, `!document.querySelector("#provider-form").hidden`)) || undefined, 5_000, "服务商表单展开");
 
   if (baseUrl) {
-    await rp.click(page, "#base-url");
+    await rp.evaluate(page, `document.querySelector("#base-url").scrollIntoView({ block: "center" }); true`);
+  await rp.click(page, "#base-url");
     await rp.typeText(page, baseUrl);
   }
 
+  await rp.evaluate(page, `document.querySelector("#api-key").scrollIntoView({ block: "center" }); true`);
   await rp.click(page, "#api-key");
   await rp.typeText(page, key);
   // 模型框预填了默认模型：全选后覆盖成要测的那个。
+  await rp.evaluate(page, `document.querySelector("#model-id").scrollIntoView({ block: "center" }); true`);
   await rp.click(page, "#model-id");
   await rp.evaluate(page, `document.querySelector("#model-id").select()`);
   await rp.typeText(page, plan.modelId);
 
+  await rp.evaluate(page, `document.querySelector("#model-test").scrollIntoView({ block: "center" }); true`);
   await rp.click(page, "#model-test");
 
   const testStatus = await until(async () => {
@@ -120,7 +128,9 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   }, 45_000, "测试连接出结果", 300);
 
   // asFast：点「用作快速模型」，只存这家的 key 并设为快速模型，主模型不动。
-  await rp.click(page, asFast ? "#model-fast" : "#model-save");
+  const saveButton = asFast ? "#model-fast" : "#model-save";
+  await rp.evaluate(page, `document.querySelector(${JSON.stringify(saveButton)}).scrollIntoView({ block: "center" }); true`);
+  await rp.click(page, saveButton);
 
   const saveStatus = await until(async () => {
     // SAFETY: textContent 是字符串。

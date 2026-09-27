@@ -25,13 +25,16 @@ export interface TranslationReceipt {
 
 export interface TranslationCommand {
   tabId?: number;
-  action: 'begin' | 'collect' | 'apply' | 'display' | 'restore';
+  /** settle: the translation run ended (done, failed or stopped); remove every pending-paragraph mark. */
+  action: 'begin' | 'collect' | 'apply' | 'display' | 'restore' | 'settle';
   document?: string;
   language?: string;
   mode?: TranslationMode;
   fontSize?: number;
   fontFamily?: TranslationFont;
   translations?: TranslationSegment[];
+  /** settle only: remove the placeholders after this many ms unless another translation call starts first. */
+  delayMs?: number;
   /** collect only: block ids already being translated elsewhere; skip them so concurrent batches never overlap. */
   exclude?: string[];
   /** collect only: at most this many blocks (1–8). The first batches stay small so the visible paragraphs land first. */
@@ -50,7 +53,7 @@ export interface TranslationRequest {
 }
 
 export function validateTranslationCommand(p: TranslationCommand): void {
-  if (!p || !['begin', 'collect', 'apply', 'display', 'restore'].includes(p.action)) throw new Error('未知翻译操作');
+  if (!p || !['begin', 'collect', 'apply', 'display', 'restore', 'settle'].includes(p.action)) throw new Error('未知翻译操作');
 
   if (p.mode !== undefined && !['bilingual', 'translated'].includes(p.mode)) throw new Error('无效的翻译显示方式');
 
@@ -61,6 +64,8 @@ export function validateTranslationCommand(p: TranslationCommand): void {
   if (p.fontFamily !== undefined && !['original', 'songti'].includes(p.fontFamily)) throw new Error('无效的译文字体');
 
   if (p.document !== undefined && (typeof p.document !== 'string' || p.document.length > 100)) throw new Error('无效的文档身份');
+
+  if (p.delayMs !== undefined && (p.action !== 'settle' || !Number.isFinite(p.delayMs) || p.delayMs < 0 || p.delayMs > 60_000)) throw new Error('无效的收尾延迟');
 
   if (p.exclude !== undefined && (p.action !== 'collect' || !Array.isArray(p.exclude) || p.exclude.length > 512 || p.exclude.some(id => String(id) !== id || !/^\d{1,20}$/.test(id)))) throw new Error('无效的排除段落');
 
