@@ -26,7 +26,9 @@ import { ConversationStore } from "./conversation-store.js";
 import { createConversationRuntime } from "./conversation-runtime.js";
 import { startHostCore, type ClientConn } from "./host-core.js";
 import { ExperienceStore } from "./experience.js";
-import { MemoryStore } from "./memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "./memory-store.js";
+import { FileDocument } from "./document-file.js";
+import { TASK_HISTORY_FILE, TaskHistoryStore } from "./task-history.js";
 import { SkillStore } from "./skill-store.js";
 import { VoiceCaptureStore } from "./voice-capture-store.js";
 import { TaskDispatcher, TaskReceiptStore } from "./task-dispatcher.js";
@@ -169,7 +171,8 @@ async function main(): Promise<void> {
   };
 
   const store = new ConversationStore(join(dataDir(), "conversations"));
-  const memoryStore = new MemoryStore(join(dataDir(), "memory"));
+  const memoryStore = new MemoryStore(new FileDocument(join(dataDir(), "memory"), MEMORY_STORE_FILE));
+  const taskHistory = new TaskHistoryStore(new FileDocument(join(dataDir(), "memory"), TASK_HISTORY_FILE));
   const experienceStore = new ExperienceStore(join(dataDir(), "experiences"));
   const skillStore = new SkillStore(join(dataDir(), "skills"));
   // Normal-use capture: the session's send-path evidence and the extension's own facts land in
@@ -177,9 +180,10 @@ async function main(): Promise<void> {
   const voiceCapture = new VoiceCaptureStore({log: message => log(message)});
 
   const core = await startHostCore({
-    createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, experienceStore, skillStore }),
+    createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? modelPattern, { sessionManager: store.sessionManager(id), mode: summary?.mode, memoryStore, taskHistory, experienceStore, skillStore }),
     store,
     memoryStore,
+    taskHistory,
     skillStore,
     dispatcher: new TaskDispatcher(new TaskReceiptStore(join(dataDir(), 'task-receipts'))),
     // The voice session emits its own messages (including `diag` evidence), so this path must also

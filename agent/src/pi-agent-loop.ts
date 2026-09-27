@@ -11,6 +11,7 @@
  * 不做：上下文压缩、扩展命令、提示词模板、技能命令（我们都没用）。
  */
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { isProviderBusyError } from "../../shared/provider-busy.js";
 import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
@@ -276,7 +277,7 @@ export class PiAgentLoop implements AgentLoop {
   private retryable(message: AssistantMessage): boolean {
     if (isContextOverflow(message, this.model?.contextWindow ?? 0)) return false;
 
-    return isRetryableAssistantError(message);
+    return isRetryableAssistantError(message) || (message.stopReason === "error" && isProviderBusyError(message.errorMessage));
   }
 
   private async prepareRetry(message: AssistantMessage): Promise<boolean> {

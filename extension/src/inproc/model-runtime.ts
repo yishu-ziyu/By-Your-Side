@@ -16,6 +16,7 @@ import { kimiCodingOAuth } from "@earendil-works/pi-ai/auth/oauth/kimi-coding";
 import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex";
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
 import type { ModelPort } from "../../../agent/src/agent-loop.js";
+import { retryWhenBusy } from "../../../shared/provider-busy.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
@@ -227,6 +228,7 @@ function createCoreModelPort(runtime: ModelRuntime, selectedConfig: () => Inproc
       return [...available, selected];
     },
     streamSimple: (model, context, options) => runtime.models.streamSimple(model, context, withHeaders(model, options)),
-    completeSimple: (model, context, options) => runtime.models.completeSimple(model, context, withHeaders(model, options)),
+    // 记忆判断、目标核对这些短调用常和主模型同时发出：服务商回「忙」就等一下再试，不让判断悄悄失败。
+    completeSimple: (model, context, options) => retryWhenBusy(() => runtime.models.completeSimple(model, context, withHeaders(model, options)), options?.signal),
   };
 }

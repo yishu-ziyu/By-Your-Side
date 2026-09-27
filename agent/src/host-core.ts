@@ -8,6 +8,7 @@ import { generalBrowserLoopEnabled } from "./config.js";
 import type { ConversationPersistence } from "./conversation-persistence.js";
 import { ConversationManager } from "./conversation-manager.js";
 import type { MemoryStore } from "./memory-store.js";
+import type { TaskHistoryStore } from "./task-history.js";
 import type { SkillStore } from "./skill-store.js";
 import type { BrowserAgentSession } from "./session.js";
 import { TaskDispatcher } from "./task-dispatcher.js";
@@ -23,6 +24,8 @@ export interface HostCoreOptions {
   createRuntime: ConstructorParameters<typeof ConversationManager>[0];
   store?: ConversationPersistence;
   memoryStore?: MemoryStore;
+  /** 过往任务（每个动手做过的任务结束时一条摘要）；不给就不记。 */
+  taskHistory?: TaskHistoryStore;
   skillStore?: SkillStore;
   dispatcher?: TaskDispatcher;
   /** 语音密钥与会话工厂；不给时用本机默认（读 ~/.sideagent 的密钥、ws 连接）。 */
@@ -71,6 +74,8 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     options.skillStore,
     options.dispatcher ?? new TaskDispatcher(),
   );
+
+  conversations.taskHistory = options.taskHistory;
 
   const initial = await conversations.ensureDefault();
 

@@ -134,6 +134,10 @@ export interface TaskProgressSnapshot {
   goalPlan?: TaskGoalPlan;
   /** Recomputed by the host; persisted projections are never resumed as commands. */
   nextStep?: import('./task-next-step.js').TaskNextStep;
+  /** 这一任务最近一次目标核对（宿主快速模型判断，不是业务成功证明）；没核对过时缺省。 */
+  goalCheck?: { status: "done" | "needs_user" | "continue" | "open"; remaining: string | null; at: number };
+  /** 用户说出目标时所在的页面：「订阅这个页面的邮件」的「这个页面」。接着做和目标核对都要知道是哪一页。 */
+  goalPage?: { title: string; url: string };
 }
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}

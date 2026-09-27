@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExperienceRuntime, ExperienceStore, isUserCorrection, validateLesson, type ExperienceComplete } from "../src/experience.js";
-import { MemoryStore } from "../src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
+import { FileDocument } from "../src/document-file.js";
 import { memoryTaskUrl } from "../../shared/memory.js";
 import { MemoryRuntime } from "../src/memory-runtime.js";
 
@@ -35,7 +36,7 @@ const complete: ExperienceComplete = async (_system, raw) => {
 async function fixture(extract = complete, conversationId = "a") {
   const root = await mkdtemp(join(tmpdir(), "ego-experience-")); roots.push(root);
   const store = new ExperienceStore(join(root, "experiences"));
-  const memory = new MemoryStore(join(root, "memories"));
+  const memory = new MemoryStore(new FileDocument(join(root, "memories"), MEMORY_STORE_FILE));
   const emit = vi.fn();
   const runtime = new ExperienceRuntime(store, memory, conversationId, extract, emit); runtimes.push(runtime);
 
@@ -127,7 +128,7 @@ describe("browser experience contract", () => {
     const changed = await memory.update({ id: entry!.id, expectedVersion: 1, text: "导出前让我核对范围", scope: entry!.scope });
     expect(await memory.createExperience(input)).toEqual(changed);
     await memory.forget({ id: changed.id, expectedVersion: changed.version });
-    expect(await new MemoryStore(join(root, "memories")).createExperience(input)).toBeNull();
+    expect(await new MemoryStore(new FileDocument(join(root, "memories"), MEMORY_STORE_FILE)).createExperience(input)).toBeNull();
     expect(await memory.list()).toEqual([]);
   });
   it("recovers a persisted pending correction through the production extraction path", async () => {

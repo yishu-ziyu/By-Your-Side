@@ -122,6 +122,9 @@ export class ToolRpc {
   private pageTargets = new Map<string, { tabId: number | null; seq: number }>();
   private pageTargetSeq = 0;
 
+  /** 出站前由会话补的宿主参数（例如用户要求提交前确认时给点击带上 confirmSubmit）；模型不能自己设。 */
+  decorateParams?: (name: ToolName, params: Parameters<ToolRpc["call"]>[1], sessionId?: string) => Parameters<ToolRpc["call"]>[1];
+
   constructor(send?: RpcSend) {
     this.sendFn = send ?? null;
   }
@@ -286,7 +289,7 @@ export class ToolRpc {
     const timeout = timeoutMs ?? (SLOW_TOOLS.has(name) ? SLOW_TOOL_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS);
     const id = randomUUID();
     // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
-    let outParams = this.resolvePageParams(name, params, sessionId);
+    let outParams = this.decorateParams ? this.decorateParams(name, this.resolvePageParams(name, params, sessionId), sessionId) : this.resolvePageParams(name, params, sessionId);
     const prepared = sdkId ? this.dispatched.get(sdkId) : undefined;
 
     if (name === 'fill' && prepared?.prepareFillReadback) {
@@ -481,6 +484,19 @@ export class ToolRpc {
       err.executionFact = fact;
       entry.reject(err);
     }
+
+    return true;
+  }
+
+  /**
+   * 被拿住等确认的点击，用户确认后由扩展补上了：按原调用身份发一条晚到回执，账本把那一下从「未知」改为已执行。
+   * 只认已正常返回（拿住）的那次调用；找不到就忽略。
+   */
+  confirmHeldResult(id: string, ok: boolean): boolean {
+    const disp = this.dispatched.get(id);
+
+    if (!disp || disp.state !== "resolved" || (disp.name !== "click" && disp.name !== "double_click")) return false;
+    this.fireLateResult({ id, toolCallId: disp.sdkId, name: disp.name, sessionId: disp.sessionId, ok, data: undefined, error: ok ? undefined : "用户确认后补点没有完成", executionFact: ok ? "executed" : "not_executed" });
 
     return true;
   }

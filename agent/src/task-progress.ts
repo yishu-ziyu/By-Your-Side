@@ -129,6 +129,10 @@ export class TaskProgress {
 
     return { items: awaiting.map((item) => ({ id: item.id, description: plainStep(item.description) })), others };
   }
+  private startUrl: string | null = null;
+  private goalPage: { title: string; url: string } | null = null;
+  /** 最近一次目标核对；新任务开始、助手重新开跑时清掉，等这一轮结束的核对。 */
+  private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
   private noteRunSource(url: string): void {
     if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
     this.runSources.push({ url });
@@ -186,6 +190,8 @@ export class TaskProgress {
     this.goal = snapshot.goal;
     this.startedAt = snapshot.startedAt;
     this.runId = snapshot.runId ?? null;
+    this.goalCheck = snapshot.goalCheck ? { ...snapshot.goalCheck } : null;
+    this.goalPage = snapshot.goalPage ? { ...snapshot.goalPage } : null;
     this.aborted = snapshot.state === "aborted";
     this.interrupted = !!this.runId && !!this.goal && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
@@ -277,8 +283,13 @@ return;}
     this.failureLimit=false;
     this.lastBrowserFailed=false;
     this.runSources = [];
+    this.startUrl = context?.url ?? null;
+    this.goalPage = context?.url ? { title: String(context.title ?? "").slice(0, 200), url: context.url.slice(0, 500) } : null;
+    this.goalCheck = null;
     this.ledger.beginRun(this.runId);
   }
+  /** 这个任务碰过的网页：发起时所在的页面，加上读过、打开过的页面（过往任务按它记网站）。 */
+  visitedUrls(): string[] { return [...(this.startUrl ? [this.startUrl] : []), ...this.runSources.map(source => source.url)]; }
   abort(): void { this.aborted = true; this.interrupted = false; this.restartRecovery = false;
 
  for (const member of new Set([...this.tools.values()].map(t=>t.member))) this.results.abandonMember(member); this.tools.clear(); this.members.clear(); this.turnText = ""; }
@@ -329,7 +340,10 @@ return;}
       if (lead) {
         this.turnText = "";
         this.latestResult = null;
+        this.goalCheck = null;
       }
+    } else if (e.kind === "goal_check") {
+      if (lead) this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() };
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
         this.pushTurn("assistant", e.delivery.text);
@@ -547,6 +561,10 @@ if(page)this.recoveryInput.page=page;
     if (this.interrupted) snapshot.interruptionReason = this.interruptionReason;
 
     if (this.recoveryInput) snapshot.recoveryInput = structuredClone(this.recoveryInput);
+
+    if (this.goalCheck) snapshot.goalCheck = { ...this.goalCheck };
+
+    if (this.goalPage) snapshot.goalPage = { ...this.goalPage };
 
     if (snapshot.goalPlan) {
       snapshot.resultState = snapshot.results?.some(item => item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results!)) ? 'unknown' : goalsSatisfied(snapshot.goalPlan) ? 'satisfied' : 'pending';

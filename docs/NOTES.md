@@ -20,6 +20,7 @@
 | 真入口与验收环境 | [验收入口](testing/acceptance.md) · [环境会改变被测状态](knowledge/patterns/extension-harness-changes-observed-state.md) |
 | 修改后如何收尾 | [文档维护](development/documentation.md) · [经验索引](knowledge/index.md) |
 | 用户面前的文字从哪来 | [界面问题 10 项](evals/20260926-ux-fixes.md)：内部文字只在 `shared/user-facing.ts` 翻译；「另开会话接手即收起旧确认」是本轮执行者的取舍，待用户认可 |
+| 记忆、主动与多模型验收 | [验收](evals/20260927-memory-proactive-task.md) · [开发日志](devlog/20260927-01-目标核对和提交条件由宿主兜住.md)：判断放在宿主，不靠主模型自觉。同时跑几家验收前先看机器负载（09-27 负载约 100 时，超时被误当成模型问题）；Kimi 主模型和快速模型共用账号，会撞到同时请求数上限 |
 | anti-slop 的现有约束 | [接入验收](evals/20260923-anti-slop-vendor.md)；不要通过重置 baseline 隐藏新问题 |
 
 更早的逐次语音、GUI、模型和任务记录见[整理前原文](history/20260923-notes-before-governance.txt)。按问题读取，不把整份旧笔记注入每次开发。

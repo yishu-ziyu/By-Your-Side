@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   confirmLabelForDestructive,
   isAffirmativeReply,
+  isSubmitLabel,
   isCancelReply,
   isDestructiveLabel,
   isMarkActionId,
@@ -121,6 +122,16 @@ describe("resolveImplicitMarkActions", () => {
   });
 });
 
+describe("isSubmitLabel：用户要求提交前确认时要拿住的按钮", () => {
+  it("提交 / 订阅 / 注册 / Sign up / Subscribe 算提交类", () => {
+    for (const t of ["SIGN UP", "Sign up", "Subscribe", "Submit", "提交", "立即订阅", "注册"]) expect(isSubmitLabel(t), t).toBe(true);
+  });
+
+  it("确认邮件里的链接、普通按钮不算", () => {
+    for (const t of ["Confirm subscription", "Track package", "Your email", "更多", "Subscribers list"]) expect(isSubmitLabel(t), t).toBe(false);
+  });
+});
+
 describe("isAffirmativeReply", () => {
   it("确认 / 是 / 继续 算放行", () => {
     expect(isAffirmativeReply("确认")).toBe(true);
@@ -129,7 +140,12 @@ describe("isAffirmativeReply", () => {
     expect(isAffirmativeReply("yes")).toBe(true);
   });
 
+  it("「可以，提交吧」「没问题」这类明确同意也算放行（用户常这么回）", () => {
+    for (const t of ["可以", "可以，提交吧", "确认，提交吧", "提交吧", "没问题", "go ahead"]) expect(isAffirmativeReply(t), t).toBe(true);
+  });
+
   it("含糊回复不算放行", () => {
+    expect(isAffirmativeReply("可以先别提交吗")).toBe(false);
     expect(isAffirmativeReply("嗯")).toBe(false);
     expect(isAffirmativeReply("好吧")).toBe(false);
     expect(isAffirmativeReply("取消")).toBe(false);

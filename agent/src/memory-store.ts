@@ -1,7 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { access, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
 import {
   isMemoryEntry,
   isMemoryScope,
@@ -14,6 +10,7 @@ import {
 } from "../../shared/memory.js";
 import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 import { sameMemoryScope, validateMemoryDecision, type MemoryDecision } from "./memory-decision.js";
+import type { DocumentPersistence } from "./document-persistence.js";
 
 interface StoreFile {
   format: 1;
@@ -26,23 +23,18 @@ export interface MemoryQuery {
   url?: string;
 }
 
-const STORE_FILE = "memories.json";
+/** 本机宿主的记忆文件名；扩展版存在 IndexedDB 里，内容格式相同。 */
+export const MEMORY_STORE_FILE = "memories.json";
 
-const LOCK_DIR = ".memories.lock";
+const randomUUID = () => globalThis.crypto.randomUUID();
 
-const LOCK_WAIT_MS = 10_000;
+/** 每轮带上的个人资料上限：够放邮箱、姓名、地址、常用偏好，不挤占任务上下文。 */
+const PROFILE_MAX_ENTRIES = 40;
 
-const STALE_LOCK_MS = 30_000;
+const PROFILE_MAX_CHARS = 4000;
 
 export class MemoryStore {
-  private readonly file: string;
-  private readonly lockDirectory: string;
-
-  constructor(private readonly directory: string) {
-    if (typeof directory !== "string" || directory.trim().length === 0) throw new Error("Memory directory is required");
-    this.file = join(directory, STORE_FILE);
-    this.lockDirectory = join(directory, LOCK_DIR);
-  }
+  constructor(private readonly doc: DocumentPersistence) {}
 
   async list(): Promise<MemoryEntry[]> {
     return cloneEntries(await this.read());
@@ -193,6 +185,30 @@ export class MemoryStore {
     return cloneEntries((await this.read()).filter((entry) => scopeAllows(entry.scope, hostname) && isEntryRelevant(entry, query.text)));
   }
 
+  /**
+   * 你的个人资料：每轮都带上（像 ChatGPT 的已存记忆），不再要求和这句话有字面重合。
+   * 「帮我订阅」和「邮箱 …」没有共同的词，按词匹配会漏掉最该用的那条。
+   * 网站做法（experience）仍按任务对象严格匹配，见 select。
+   */
+  async profile(url?: string): Promise<MemoryEntry[]> {
+    const hostname = hostnameFromUrl(url);
+
+    const entries = (await this.read())
+      .filter((entry) => !entry.experience && scopeAllows(entry.scope, hostname))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    const kept: MemoryEntry[] = [];
+    let chars = 0;
+
+    for (const entry of entries) {
+      if (kept.length >= PROFILE_MAX_ENTRIES || chars + entry.text.length > PROFILE_MAX_CHARS) break;
+      kept.push(entry);
+      chars += entry.text.length;
+    }
+
+    return cloneEntries(kept);
+  }
+
   async resolveSelected(selected: Array<{ id: string; version: number }>, query: MemoryQuery): Promise<MemoryEntry[]> {
     assertQuery(query);
 
@@ -211,14 +227,9 @@ export class MemoryStore {
   private async read(): Promise<MemoryEntry[]> { return (await this.readState()).entries; }
 
   private async readState(): Promise<StoreFile> {
-    let raw: string;
+    const raw = await this.doc.read();
 
-    try {
-      raw = await readFile(this.file, "utf8");
-    } catch (error) {
-      if (isCode(error, "ENOENT")) return { format: 1, entries: [] };
-      throw error;
-    }
+    if (raw === null) return { format: 1, entries: [] };
 
     let parsed: unknown;
 
@@ -247,79 +258,17 @@ export class MemoryStore {
   }
 
   private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[]) => Promise<T> | T, commitGuard?: () => boolean): Promise<T> {
-    await mkdir(this.directory, { recursive: true });
-    await access(this.directory, constants.R_OK | constants.W_OK);
-    const release = await acquireDirectoryLock(this.lockDirectory);
-
-    try {
+    return this.doc.exclusive(async () => {
       const state = await this.readState();
       const entries = state.entries;
       const forgotten = state.forgottenExperiences ?? [];
       const result = await mutate(entries, forgotten);
 
       if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-      await this.write(entries, forgotten, commitGuard);
+      await this.doc.write(JSON.stringify({ format: 1, entries, forgottenExperiences: forgotten } satisfies StoreFile) + "\n", commitGuard);
 
       return cloneValue(result);
-    } finally {
-      await release();
-    }
-  }
-
-  private async write(entries: MemoryEntry[], forgottenExperiences: string[], commitGuard?: () => boolean): Promise<void> {
-    const temporary = join(this.directory, `.${STORE_FILE}.${process.pid}.${randomUUID()}.tmp`);
-    const handle = await open(temporary, "wx", 0o600);
-
-    try {
-      if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-      await handle.writeFile(JSON.stringify({ format: 1, entries, forgottenExperiences } satisfies StoreFile) + "\n", "utf8");
-      await handle.sync();
-    } catch (error) {
-      await handle.close().catch(() => {});
-      await rm(temporary, { force: true }).catch(() => {});
-      throw error;
-    }
-
-    await handle.close();
-
-    try {
-      if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-      await rename(temporary, this.file);
-    } catch (error) {
-      await rm(temporary, { force: true }).catch(() => {});
-      throw error;
-    }
-  }
-}
-
-async function acquireDirectoryLock(directory: string): Promise<() => Promise<void>> {
-  const startedAt = Date.now();
-  let delay = 4;
-
-  for (;;) {
-    try {
-      await mkdir(directory);
-
-      return async () => { await rm(directory, { recursive: true, force: true }); };
-    } catch (error) {
-      if (!isCode(error, "EEXIST")) throw error;
-
-      try {
-        const info = await stat(directory);
-
-        if (Date.now() - info.mtimeMs > STALE_LOCK_MS) {
-          await rm(directory, { recursive: true, force: true });
-          continue;
-        }
-      } catch (statError) {
-        if (isCode(statError, "ENOENT")) continue;
-        throw statError;
-      }
-
-      if (Date.now() - startedAt >= LOCK_WAIT_MS) throw new Error("Timed out waiting for the memory store lock");
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay = Math.min(delay * 2, 64);
-    }
+    });
   }
 }
 
@@ -390,6 +339,3 @@ function cloneValue<T>(value: T): T {
   return value;
 }
 
-function isCode(error: unknown, code: string): boolean {
-  return !!error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === code;
-}

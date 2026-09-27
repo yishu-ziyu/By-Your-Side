@@ -238,6 +238,8 @@ body {
 .task-bar[data-state="paused"] .tb-dot { background: var(--apple-orange); }
 .task-bar[data-state="interrupted"] .tb-dot { background: var(--warn); }
 .task-bar[data-state="error"] .tb-dot { background: var(--err); }
+.task-bar[data-outcome="open"] .tb-dot { background: var(--apple-orange); }
+.task-bar[data-outcome="done"] .tb-dot { background: var(--ok); }
 .tb-goal {
   min-width: 0;
   color: var(--text-primary);
@@ -2588,6 +2590,13 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-mark { color:var(--ok); font-size:11px; display:inline-flex; align-items:center; flex-shrink:0; }
 .memory-receipt button { border:0; border-radius:5px; background:transparent; color:var(--accent); padding:2px 1px; font:inherit; font-size:11px; cursor:pointer; }
 .memory-receipt button:hover { text-decoration:underline; }
+.memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.past-tasks { margin-top:22px; padding-top:14px; border-top:1px solid var(--content-border); }
+.past-tasks-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.past-tasks-head h3 { margin:0; color:var(--text-primary); font-size:12.5px; font-weight:600; }
+.past-tasks-head button, .past-task button { border:0; background:transparent; color:var(--text-secondary); font:inherit; font-size:10.5px; padding:4px 6px; cursor:pointer; }
+.past-task .memory-row-text { font-size:12px; }
+.past-task > .memory-quiet { margin:6px 0 0; }
 @media (max-height: 560px) { #memory-drawer { top:92px; } }
 @media (prefers-reduced-motion: reduce) { #memory-drawer { animation:none; } }
 

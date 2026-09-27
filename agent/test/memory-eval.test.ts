@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryStore } from "../src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
+import { FileDocument } from "../src/document-file.js";
 
 const roots: string[] = [];
 
@@ -19,7 +20,7 @@ async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "sideagent-memory-eval-"));
   roots.push(dir);
 
-  return { dir, store: new MemoryStore(dir) };
+  return { dir, store: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) };
 }
 
 afterEach(async () => { await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
@@ -33,8 +34,8 @@ describe("independent cross-session memory contract", () => {
     expect(saved.id.length).toBeGreaterThan(0);
     expect(Number.isInteger(saved.version) && saved.version > 0).toBe(true);
     expect(Number.isFinite(saved.createdAt) && Number.isFinite(saved.updatedAt)).toBe(true);
-    expect(await new MemoryStore(dir).list()).toEqual([saved]);
-    expect(await new MemoryStore(dir).select(query)).toEqual([saved]);
+    expect(await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).list()).toEqual([saved]);
+    expect(await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).select(query)).toEqual([saved]);
   });
 
   it("keeps management global while site scope restricts relevant retrieval to the exact hostname", async () => {
@@ -75,26 +76,26 @@ describe("independent cross-session memory contract", () => {
     const { dir, store } = await fixture();
     const saved = await store.create(seed);
     const selected = await store.select(query);
-    const changed = await new MemoryStore(dir).update({ id: saved.id, expectedVersion: saved.version, text: "会议摘要请用一段话。", scope: all });
+    const changed = await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).update({ id: saved.id, expectedVersion: saved.version, text: "会议摘要请用一段话。", scope: all });
     expect(changed.version).toBeGreaterThan(saved.version);
     expect(changed.id).toBe(saved.id);
     expect(changed.sourceConversationId).toBe(saved.sourceConversationId);
     expect(await store.resolveSelected(selected.map(({ id, version }) => ({ id, version })), query)).toEqual([]);
     expect(await store.select(query)).toEqual([changed]);
     await expect(store.update({ id: saved.id, expectedVersion: saved.version, text: seed.text, scope: all })).rejects.toThrow();
-    expect(await new MemoryStore(dir).list()).toEqual([changed]);
+    expect(await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).list()).toEqual([changed]);
   });
 
   it("forget invalidates pending selection and rejects stale updates after reopening", async () => {
     const { dir, store } = await fixture();
     const saved = await store.create(seed);
     const selection = await store.select(query);
-    await new MemoryStore(dir).forget({ id: saved.id, expectedVersion: saved.version });
+    await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).forget({ id: saved.id, expectedVersion: saved.version });
     expect(await store.resolveSelected(selection.map(({ id, version }) => ({ id, version })), query)).toEqual([]);
     expect(await store.list()).toEqual([]);
-    expect(await new MemoryStore(dir).select(query)).toEqual([]);
+    expect(await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).select(query)).toEqual([]);
     await expect(store.update({ id: saved.id, expectedVersion: saved.version, text: "会议摘要请用一段话。", scope: all })).rejects.toThrow();
-    expect(await new MemoryStore(dir).list()).toEqual([]);
+    expect(await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).list()).toEqual([]);
   });
 
   it("rechecks the current page scope when resolving an otherwise valid selection", async () => {
@@ -106,9 +107,9 @@ describe("independent cross-session memory contract", () => {
 
   it("retains every acknowledged concurrent create across two instances of one directory", async () => {
     const { dir, store } = await fixture();
-    const other = new MemoryStore(dir);
+    const other = new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE));
     const saved = await Promise.all(Array.from({ length: 20 }, (_, n) => (n % 2 ? other : store).create({ ...seed, text: `会议摘要偏好 ${n}：采用三条要点。`, sourceConversationId: `eval-${n}` })));
-    const read = await new MemoryStore(dir).list();
+    const read = await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).list();
     expect(new Set(saved.map((entry) => entry.id)).size).toBe(20);
     expect(read.map((entry) => entry.id).sort()).toEqual(saved.map((entry) => entry.id).sort());
     expect(read).toEqual(expect.arrayContaining(saved));
@@ -117,13 +118,13 @@ describe("independent cross-session memory contract", () => {
   it("allows only one update to commit against the same version", async () => {
     const { dir, store } = await fixture();
     const saved = await store.create(seed);
-    const settled = await Promise.allSettled([store, new MemoryStore(dir)].map((instance, n) => instance.update({ id: saved.id, expectedVersion: saved.version, text: `会议摘要请用${n ? "一段话" : "两条要点"}。`, scope: all })));
+    const settled = await Promise.allSettled([store, new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE))].map((instance, n) => instance.update({ id: saved.id, expectedVersion: saved.version, text: `会议摘要请用${n ? "一段话" : "两条要点"}。`, scope: all })));
     expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(settled.filter((result) => result.status === "rejected")).toHaveLength(1);
     const committed = settled.find((result) => result.status === "fulfilled");
 
     if (committed?.status !== "fulfilled") throw new Error("missing committed update");
-    expect(await new MemoryStore(dir).list()).toEqual([committed.value]);
+    expect(await new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)).list()).toEqual([committed.value]);
   });
 
   it("rejects malformed writes without changing acknowledged data", async () => {
@@ -143,6 +144,6 @@ describe("independent cross-session memory contract", () => {
     const { dir } = await fixture();
     const blocked = join(dir, "file-not-directory");
     await writeFile(blocked, "fixture");
-    await expect(Promise.resolve().then(() => new MemoryStore(blocked).create(seed))).rejects.toThrow();
+    await expect(Promise.resolve().then(() => new MemoryStore(new FileDocument(blocked, MEMORY_STORE_FILE)).create(seed))).rejects.toThrow();
   });
 });

@@ -44,7 +44,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
+import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, hasPendingClick, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
 import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
 
 // macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
@@ -115,8 +115,9 @@ const handlers: Record<ToolName, Handler> = {
   close_tab: (p, sid) => closeTab(p, sid),
   navigate: (p, sid) => navigate(p, sid),
   snapshot: (p, sid) => snapshot(p, sid),
-  click: (p, sid) => click(p, sid),
-  double_click: (p, sid) => doubleClick(p, sid),
+  // fromUserConfirm 只由扩展在用户确认后重放时设置；从外面来的调用一律去掉，不能借它绕过「不点助手自己的按钮」。
+  click: (p, sid) => click({ ...p, fromUserConfirm: undefined }, sid),
+  double_click: (p, sid) => doubleClick({ ...p, fromUserConfirm: undefined }, sid),
   drag: (p, sid) => drag(p, sid),
   wheel: (p, sid) => wheel(p, sid),
   mouse_down: (p, sid) => mouseDown(p, sid),
@@ -349,6 +350,23 @@ void (async () => {
 
 function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
+/** 被拿住等确认的点击是哪一次 tool_call（按会话）：用户确认后补点了，要按这个编号告诉宿主。 */
+const heldCallIds = new Map<string, string>();
+
+/**
+ * 用户确认（名牌「确认」或侧栏回「确认 / 可以，提交吧」）：由扩展按原参数补上拿住的那一下，
+ * 再告诉宿主那次调用已执行，账本才不会一直停在「结果未知」、挡住后面的操作（09-27 Kimi 实测提交后去不了邮箱）。
+ */
+async function confirmHeldClick(): Promise<void> {
+  const callId = heldCallIds.get(key());
+  const outcome = await resolveHeldClick("confirm", key());
+
+  if (!callId) return;
+  heldCallIds.delete(key());
+
+  if (outcome.clicked) uplink.sendClientMessage({ type: "held_click_result", conversationId, id: callId, ok: true });
+}
+
 const getWorkingTabId = (sid: string = LEAD_SESSION_ID) => workingTabForKey(key(sid));
 const setSessionClaimBlocked = (sid: string, blocked: boolean) => blockKey(key(sid), blocked);
 
@@ -1430,6 +1448,8 @@ async function executeToolCall(
       data,
       executionFact: isHeldClickResult(name, data) ? "not_executed" : "executed",
     };
+
+    if (isHeldClickResult(name, data)) heldCallIds.set(key(sid), id);
   } catch (e) {
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
@@ -1995,15 +2015,21 @@ function attachPanel(port: chrome.runtime.Port) {
 
           void stopTrailReplay(key());
 
-          if (isAffirmativeReply(client.text)) armDestructiveClick(key());
-          else if (isCancelReply(client.text)) {
+          // 侧栏回「确认 / 可以，提交吧」与点名牌「确认」同效：有拿住的点击就由扩展直接补上这一下，再把话交给助手。
+          // 只 arm 不够：那次点击在宿主账本里是「结果未知」，模型不能重做它（2026-09-27 智谱实测连错三次卡住）。
+          let heldConfirmed: Promise<unknown> = Promise.resolve();
+
+          if (isAffirmativeReply(client.text)) {
+            if (hasPendingClick(key())) heldConfirmed = confirmHeldClick().catch(() => undefined);
+            else armDestructiveClick(key());
+          } else if (isCancelReply(client.text)) {
             // 侧栏打「取消」与点名牌「取消」同效：清 pending、松开拿住的手、收起标注
             void resolveHeldClick("cancel", key()).catch(() => {
               /* 清理失败不挡住把「取消」送进对话 */
             });
           }
 
-          void attachPageContext(client).then((enriched) => {
+          void heldConfirmed.then(() => attachPageContext(client)).then((enriched) => {
             // 上行传输不可用 = 确定未发给伴随进程：回执面板标记未送达，
             // original 保留原始消息（含选区上下文）供用户明确重试。
             const original:ClientMessage = wireClient.type==='task_action'
@@ -2147,7 +2173,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
   const action = msg.action;
   void (async () => {
     try {
-      await resolveHeldClick(action, key());
+      if (action === "confirm") await confirmHeldClick();
+      else await resolveHeldClick(action, key());
     } catch {
       /* 放行失败不挡住把「确认/取消」送进对话 */
     }

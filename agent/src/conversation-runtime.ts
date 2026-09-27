@@ -10,6 +10,7 @@ import { consumeAcceptanceCapability } from "./acceptance-capability.js";
 import { frozenMembersFromTakeover } from "./team-handoff.js";
 import type { ExperienceStore } from "./experience.js";
 import type { MemoryStore } from "./memory-store.js";
+import type { TaskHistoryStore } from "./task-history.js";
 import type { SkillStore } from "./skill-store.js";
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
@@ -18,7 +19,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover"> & { memoryStore?: MemoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -71,6 +72,8 @@ return toolSession.browserFieldMaterial(goal,control,signal);}, reserveDecision:
   );
 
   toolSession = session;
+  // 用户在任务里设的条件由宿主兜住：要求提交前确认时，这个会话里（含助手）的点击都带上 confirmSubmit，扩展先拿住提交类按钮。
+  rpc.decorateParams = (name, params) => session.decorateToolParams(name, params);
   fleet.attachLead(session);
   // 协作工具按需挂载：没有 worker 时模型只看到常驻工具，请到人（或拿到同伴工件）后再出现。
   fleet.onMembersChange = (count) => session.setTeamToolsMounted(count > 0);

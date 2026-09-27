@@ -1,3 +1,4 @@
+import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import {replaceEditableText} from "../../shared/editable-text.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
@@ -13,6 +14,7 @@ import { oneLine } from "../util.js";
 import {
   confirmLabelForDestructive,
   isDestructiveLabel,
+  isSubmitLabel,
   resolveImplicitMarkActions,
 } from "../../shared/mark-actions.js";
 import { HeldClicks } from "../../shared/held-clicks.js";
@@ -472,6 +474,10 @@ type ClickParams = {
   label?: string;
   /** 只在 held 台账里出现：确认后要重放的动作类型；click 调用本身不带。 */
   kind?: "double_click";
+  /** 宿主加的：用户要求提交前确认，这一任务里提交类按钮先拿住等确认。 */
+  confirmSubmit?: boolean;
+  /** 扩展内部：用户点了确认后重放拿住的那一下；模型发来的参数里不会有（见 click 入口）。 */
+  fromUserConfirm?: boolean;
 };
 
 type DragEndpoint = {
@@ -511,6 +517,11 @@ const heldClicks = new HeldClicks<HoldParams>(LEAD_SESSION_ID);
 
 export function armDestructiveClick(sessionId: string = LEAD_SESSION_ID): void {
   heldClicks.arm(sessionId);
+}
+
+/** 这个会话有没有拿住、正等用户确认的点击。 */
+export function hasPendingClick(sessionId: string = LEAD_SESSION_ID): boolean {
+  return heldClicks.hasPending(sessionId);
 }
 
 export function dropPendingClicks(sessionId: string = LEAD_SESSION_ID): void {
@@ -722,9 +733,9 @@ export async function resolveHeldClick(
     if ("from" in stored) {
       await drag(stored, decision.sessionId);
     } else if (stored.kind === "double_click") {
-      await doubleClick(stored, decision.sessionId);
+      await doubleClick({ ...stored, fromUserConfirm: true }, decision.sessionId);
     } else {
-      await click(stored, decision.sessionId);
+      await click({ ...stored, fromUserConfirm: true }, decision.sessionId);
     }
 
     return { clicked: true };
@@ -803,6 +814,9 @@ async function nameOfClickTarget(
   // 要不要先等用户确认，看页面上这个元素自己的名字：模型写的 label 只是说明，
   // 「点击发送按钮」这样的描述不能让「发送」键绕过确认（2026-09-26 真实模型 5 次里 3 次这样直接发出）。
   if (isDestructiveLabel(onPage)) return onPage;
+
+  // 用户要求提交前确认时同理：按页面上的「SIGN UP」判断，不按模型写的「填完后点按钮」。
+  if (params.confirmSubmit === true && isSubmitLabel(onPage)) return onPage;
 
   return labeled || onPage;
 }
@@ -1148,6 +1162,21 @@ async function followOpenedTab(before: ReadonlySet<number>, targetTabId: number,
   }
 }
 
+/**
+ * 助手不能点我们自己画在页面上的界面（名牌上的「确认 / 提交」、控制条等）：那些是留给用户的。
+ * 09-27 Kimi 实测去点名牌上自己起名为「提交订阅」的确认键：若没被别的检查挡住，就等于自己批准自己。
+ * 看真正派发的落点：按编号、选择器、坐标点都一样。用户确认后由扩展重放的那一下不经过这里。
+ */
+async function assertNotOwnOverlay(tabId: number, x: number, y: number): Promise<void> {
+  const hit = await callDom(
+    tabId,
+    (px: number, py: number, attr: string): boolean => !!document.elementFromPoint(px, py)?.closest(`[${attr}]`),
+    [x, y, OVERLAY_ATTR],
+  ).catch(() => false);
+
+  if (hit === true) throw notExecuted(new Error("这里是助手自己在页面上画的确认按钮或状态条，只能由用户来点，操作未执行。请在回复里请用户确认，不要点它。"));
+}
+
 async function callPointGuard(
   tabId: number,
   x: number,
@@ -1235,16 +1264,20 @@ export async function click(
 
   const { point, targetRect } = await resolvePointerTarget(tabId, params);
 
+  if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
+
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = heldClicks.isArmed(sessionId);
 
-  if (isDestructiveLabel(name) && !wasArmed) {
+  const needsConfirm = isDestructiveLabel(name) || (params.confirmSubmit === true && isSubmitLabel(name));
+
+  if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params }, { target: params.target, targetRect, point });
 
     return { clicked: false, held: true };
   }
 
-  if (isDestructiveLabel(name) && wasArmed) {
+  if (needsConfirm && wasArmed) {
     heldClicks.drop(sessionId);
   }
 
@@ -1422,16 +1455,20 @@ export async function doubleClick(
   })());
 
   const { point, targetRect } = await resolvePointerTarget(tabId, params);
+
+  if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = heldClicks.isArmed(sessionId);
 
-  if (isDestructiveLabel(name) && !wasArmed) {
+  const needsConfirm = isDestructiveLabel(name) || (params.confirmSubmit === true && isSubmitLabel(name));
+
+  if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params, kind: "double_click" }, { target: params.target, targetRect, point });
 
     return { doubleClicked: false, held: true };
   }
 
-  if (isDestructiveLabel(name) && wasArmed) {
+  if (needsConfirm && wasArmed) {
     heldClicks.drop(sessionId);
   }
 

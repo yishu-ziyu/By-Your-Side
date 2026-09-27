@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryRuntime } from "../src/memory-runtime.js";
 import { isRelevantExperience, isRelevantMemory } from "../src/memory-relevance.js";
-import { MemoryStore } from "../src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../src/memory-store.js";
+import { FileDocument } from "../src/document-file.js";
 
 const roots: string[] = [];
 
@@ -14,7 +15,7 @@ async function store() {
   const root = await mkdtemp(join(tmpdir(), "sideagent-experience-relevance-"));
   roots.push(root);
 
-  return new MemoryStore(root);
+  return new MemoryStore(new FileDocument(root, MEMORY_STORE_FILE));
 }
 
 const customerProcedure = "待验证的做法：导出客户名单\n下次参考：进入客户管理，按客户手机号去重，并核对客户总数。";

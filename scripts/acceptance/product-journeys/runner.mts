@@ -12,7 +12,8 @@ import { ConversationManager } from "../../../agent/src/conversation-manager.js"
 import { ConversationStore } from "../../../agent/src/conversation-store.js";
 import { createConversationRuntime } from "../../../agent/src/conversation-runtime.js";
 import { TaskDispatcher, TaskReceiptStore } from "../../../agent/src/task-dispatcher.js";
-import { MemoryStore } from "../../../agent/src/memory-store.js";
+import { MEMORY_STORE_FILE, MemoryStore } from "../../../agent/src/memory-store.js";
+import { FileDocument } from "../../../agent/src/document-file.js";
 import { parseClientMessage, PROTOCOL_VERSION, HOST_VERSION, STORAGE_SCHEMA_VERSION, DEFAULT_PORT } from "../../../shared/protocol.js";
 import { launchIsolatedExtension, sleep, until, type IsolatedExtension } from "../isolated-extension.mts";
 import { createCdp, fetchJson } from "../cdp.mjs";
@@ -48,7 +49,7 @@ export interface HostHandle {
 export async function startHost(model: string, storeDir: string, events: RunnerEnv["events"], existingToken?: string, fixedPort?: number): Promise<HostHandle> {
   const token = existingToken ?? randomUUID();
   const store = new ConversationStore(join(storeDir, "conversations"));
-  const memories = new MemoryStore(join(storeDir, "memory"));
+  const memories = new MemoryStore(new FileDocument(join(storeDir, "memory"), MEMORY_STORE_FILE));
   const host: HostHandle = { manager: undefined as unknown as ConversationManager, wss: undefined as unknown as WebSocketServer, port: 0, token, storeDir, events };
 
   const manager = new ConversationManager(

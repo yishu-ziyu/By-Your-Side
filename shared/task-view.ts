@@ -52,6 +52,8 @@ export interface TaskView {
   latestDelivery: { kind: UserDeliveryKind; unfinished?: string[] } | null;
   /** 是否有可恢复的真实依据（中断并留有恢复输入；或已结束但只交付了部分结果）；「继续」按钮只能以此为凭 */
   resumable: boolean;
+  /** 最近一次目标核对：done 做完；waiting 等用户（回答、确认、登录）；open 还差、助手没做成。remaining 是用户口吻的一句。没核对过时缺省。 */
+  goalStatus?: { status: "done" | "waiting" | "open"; remaining: string | null };
 }
 
 const OPEN_STATUSES = new Set(["pending", "blocked", "unknown"]);
@@ -117,7 +119,8 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     outstanding,
     goalsListed: snapshot.goalPlan?.coverage === 'verified',
     latestDelivery: latestDeliveryRef(snapshot.conversationContext?.latestDelivery),
-    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && ((snapshot.nextStep ? nextStepIgnoringPlaceholder(snapshot).delivery : undefined) === "partial"||outstanding.length>0))) && !!snapshot.recoveryInput,
+    resumable: (snapshot.state === "interrupted" || (["idle", "error"].includes(snapshot.state) && ((snapshot.nextStep ? nextStepIgnoringPlaceholder(snapshot).delivery : undefined) === "partial"||outstanding.length>0||(!!snapshot.goalCheck&&snapshot.goalCheck.status!=="done")))) && !!snapshot.recoveryInput,
+    ...(snapshot.goalCheck ? { goalStatus: { status: snapshot.goalCheck.status === "done" ? "done" as const : snapshot.goalCheck.status === "needs_user" ? "waiting" as const : "open" as const, remaining: snapshot.goalCheck.remaining } } : {}),
   };
 
   const materials = snapshot.recoveryInput?.materials;
@@ -182,6 +185,8 @@ export function isTaskView(value: unknown): value is TaskView {
   if (typeof v.resumable !== "boolean") return false;
 
   if (v.goalsListed !== undefined && v.goalsListed !== true && v.goalsListed !== false) return false;
+
+  if (v.goalStatus !== undefined && (!v.goalStatus || !["done", "waiting", "open"].includes(v.goalStatus.status) || (v.goalStatus.remaining !== null && (typeof v.goalStatus.remaining !== "string" || v.goalStatus.remaining.length > 200)))) return false;
 
   return true;
 }

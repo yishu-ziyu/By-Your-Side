@@ -48,6 +48,7 @@ npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless    # 打字
 npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless  # 圈画动效默认值与右击切换
 npx tsx scripts/acceptance/real-path/companion-toggle.mts --headless    # 「更多 → 显示小伙伴 M」关掉、重开侧栏仍关、再打开
 npx tsx scripts/acceptance/real-path/sidebar-header.mts --headless      # 只装扩展、本机假模型：顶部一行会话导航，任务条在输入框上方收起/展开，断线时才露连接状态，M 不挡按钮
+npx tsx scripts/acceptance/real-path/memory-proactive.mts --headless --model=kimi-coding/kimi-for-coding --fast-model=kimi-coding/kimi-for-coding-highspeed  # 只装扩展、真实模型、本机假订阅站与假 Gmail：自动记邮箱与撤销、新对话直接用、提交前拦、提交后自己去邮箱确认、任务跨轮、过往任务、后台重启后记忆还在；换 --model 跑每家
 npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash --suite=sitegeist # Sitegeist 宣传的 5 类任务：多页汇总、导出 CSV、改错字、提取会议、做小工具
 npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless # 语音问页面内容（say 合成的 WAV 当麦克风）
 npx tsx scripts/acceptance/real-path/point-then-mark.mts --headless    # 用户点选、Esc 取消、侧栏停止

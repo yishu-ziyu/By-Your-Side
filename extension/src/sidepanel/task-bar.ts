@@ -186,6 +186,8 @@ export interface MaterialRow {
 export interface TaskBarModel {
   visible: boolean;
   state: TaskView["state"] | "draft";
+  /** 已结束的任务：open = 还差一些、接着说就行；done = 做完了。进行中和纯聊天为 null。 */
+  outcome?: "open" | "done" | null;
   goal: string | null;
   goalTitle: string | null;
   headline: string;
@@ -319,8 +321,16 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
   // 没被接收的消息不在顶部另起一张卡：原因已经在消息流里（如「还没有配置模型」），卡上只会剩下空的目标和占位。
 
-  // ── 可见性：没有任何可说的事就整条隐藏；已结束的任务不再在顶部常驻 ──
-  const hasViewStory = isOngoing;
+  // ── 任务不随一轮结束（2026-09-27）：没做完的任务留在输入框上方写「还差：…」，做完写「已完成」；
+  // 纯聊天、读页问答（没列目标）结束后照旧不留痕。
+  // 目标核对的结论优先：宿主判断「做完了 / 还差」，不靠模型自己列没列目标。
+  const openTask = view?.state === "idle" && (view.goalStatus ? view.goalStatus.status !== "done" : view.resumable);
+  const waitingOnUser = openTask && view?.goalStatus?.status === "waiting";
+  const doneTask = view?.state === "idle" && !openTask && (view.goalStatus?.status === "done" || (view.goalsListed === true && !view.outstanding.length && !!view.goal));
+  const stillOpen = view?.goalStatus?.remaining ?? view?.latestDelivery?.unfinished?.[0] ?? view?.outstanding[0]?.description ?? null;
+
+  // ── 可见性：没有任何可说的事就整条隐藏 ──
+  const hasViewStory = isOngoing || openTask || doneTask;
   const visible = !!materials || hasViewStory || !!controlNote;
 
   if (!visible) {
@@ -328,7 +338,12 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   }
 
   const goal = view?.goal ?? null;
-  const headline = view?.state === 'idle' && view.outstanding.length ? '尚未完成 · 可继续' : view ? stateHeadline(view.state, view.resumable) : "";
+
+  const headline = openTask ? (stillOpen ? `${waitingOnUser ? "等你" : "还差"}：${clip(stillOpen, 28)}` : "还没做完 · 接着说就行")
+    : doneTask ? "已完成"
+      : view?.state === "idle" ? ""
+        : view ? stateHeadline(view.state, view.resumable) : "";
+
   let activity: string | null = null;
 
   if (view?.state === "running") {
@@ -357,6 +372,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   return {
     visible: true,
     state: view?.state ?? "draft",
+    outcome: openTask ? "open" : doneTask ? "done" : null,
     goal: goal ? clip(goal, 48) : null,
     goalTitle: goal && goal.length > 48 ? goal : null,
     headline,
@@ -778,6 +794,9 @@ export class TaskBar {
     }
 
     this.el.setAttribute("data-state", model.state);
+
+    if (model.outcome) this.el.setAttribute("data-outcome", model.outcome);
+    else this.el.removeAttribute("data-outcome");
     // 还没有任务（只是草稿或发送中）时没有目标可说，整行不显示，不放占位字。
     this.headEl.hidden = !model.goal && !this.view?.revisions.length;
     this.goalEl.textContent = model.goal ?? "";

@@ -485,13 +485,23 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
     expect(element().querySelectorAll(".tb-remove")).toHaveLength(0);
   });
 
-  it("任务结束后顶部不留任务条：结论在回答里，已送入的材料不再常驻", () => {
+  it("任务没做完就结束：留一行「还差：…」，已送入的材料不再常驻（2026-09-27 用户要求任务不随一轮结束）", () => {
     const { bar } = mount();
     bar.updateView(view());
     bar.noteRequestSent({ requestId: "req-1", action: "start", context: { tabId: 7, title: "报名表", url: "https://forms.example/edit" }, attachments: [] });
     bar.noteReceipt(receipt({ requestId: "req-1" }));
     expect(bar.getModel()?.visible).toBe(true);
     bar.updateView(view({ state: "idle", outstanding: [{ id: "r1", description: "填写邮箱", status: "pending" }], resumable: true }));
+    expect(bar.getModel()?.visible).toBe(true);
+    expect(bar.getModel()?.headline).toBe("还差：填写邮箱");
+    expect(bar.getModel()?.materials).toBeNull();
+  });
+
+  it("列过目标的任务做完：写「已完成」；纯聊天结束照旧不留痕", () => {
+    const { bar } = mount();
+    bar.updateView(view({ state: "idle", outstanding: [], resumable: false, goalsListed: true }));
+    expect(bar.getModel()?.headline).toBe("已完成");
+    bar.updateView(view({ state: "idle", outstanding: [], resumable: false, goalsListed: false }));
     expect(bar.getModel()?.visible).toBe(false);
   });
 });
