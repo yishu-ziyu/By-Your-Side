@@ -10,12 +10,12 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   type FontOverride = {element: HTMLElement; value: string; priority: string; hadStyle: boolean; applied: string};
 
-  type Block = {families?: FontOverride[]; hadStyles?: Map<HTMLElement, boolean>; id: string; element: HTMLElement; segments: Segment[]; output?: HTMLElement; font?: {value: string; priority: string; hadStyle: boolean; applied: string}};
+  type Block = {pendingMark?: HTMLElement; families?: FontOverride[]; hadStyles?: Map<HTMLElement, boolean>; id: string; element: HTMLElement; segments: Segment[]; output?: HTMLElement; font?: {value: string; priority: string; hadStyle: boolean; applied: string}};
 
   type State = {
     token: string; url: string; language: string; mode: TranslationMode; fontSize: number | null; fontFamily: TranslationFont;
     next: number; blocks: Map<HTMLElement, Block>; observer: MutationObserver;
-    restore: () => void;
+    restore: () => void; markTimer?: ReturnType<typeof setTimeout>;
   };
 
   const documentUrl = () => { const url = new URL(location.href); url.hash = '';
@@ -65,7 +65,11 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     restoreFamily(block);
   };
 
+  const unmark = (block: Block) => { if (block.pendingMark) { mutated = true; block.pendingMark.remove(); block.pendingMark = undefined; } };
+
   const undo = (block: Block) => {
+    unmark(block);
+
     if (block.output || block.segments.some(s => s.translation !== undefined && s.node.data === s.translation)) mutated = true;
 
     for (const s of block.segments) if (s.translation !== undefined && s.node.data === s.translation) s.node.data = s.original;
@@ -82,6 +86,20 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     return {document: '', language: '', mode: 'bilingual', fontSize: null, translated: 0, remaining: 0, unsupported: 0, blocks: []};
   }
 
+  if (command.action === 'settle') {
+    if (state && (!command.document || command.document === state.token)) {
+      clearTimeout(state.markTimer);
+      const owned = state;
+      const release = () => { for (const b of owned.blocks.values()) { b.pendingMark?.remove(); b.pendingMark = undefined; } };
+
+      // A resumable failure: the model usually calls translate again within seconds; that call cancels this timer, so marks do not flash.
+      if (command.delayMs) owned.markTimer = setTimeout(release, command.delayMs);
+      else { for (const b of owned.blocks.values()) unmark(b); }
+    }
+
+    return {document: state?.token ?? '', language: state?.language ?? '', mode: state?.mode ?? 'bilingual', fontSize: state?.fontSize ?? null, translated: 0, remaining: 0, unsupported: 0, blocks: []};
+  }
+
   if (command.action === 'begin' && state && command.language && state.language !== command.language) { clear(); state = undefined; }
 
   if (!state) {
@@ -92,7 +110,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       blocks: new Map(), observer: new MutationObserver(() => {}), restore: () => {},
     };
     const owned = state;
-    state.restore = () => { owned.observer.disconnect();
+    state.restore = () => { clearTimeout(owned.markTimer); owned.observer.disconnect();
 
  for (const b of owned.blocks.values()) undo(b); owned.blocks.clear(); };
 
@@ -125,6 +143,8 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   const render = (block: Block) => {
     mutated = true;
+
+    if (block.segments.every(s => s.translation !== undefined)) unmark(block);
     // Keep original nodes and listeners; translated-only changes their text, not innerHTML.
     block.output?.remove(); block.output = undefined;
 
@@ -246,6 +266,32 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
     return distance(a.element) - distance(b.element);
   });
+
+  if (command.action === 'begin' || command.action === 'collect' || command.action === 'apply') {
+    // A paragraph waiting for its translation shows a quiet placeholder where the text will land.
+    if (command.action !== 'apply') for (const block of pending) {
+      if (block.pendingMark?.isConnected) continue;
+
+      if (!document.getElementById('sideagent-translation-style')) {
+        const style = document.createElement('style'); style.id = 'sideagent-translation-style';
+        style.textContent = '@keyframes sideagent-translation-wait{from{background-position:200% 0}to{background-position:0 0}}@media (prefers-reduced-motion:reduce){[data-bys-translation="pending"]{animation:none!important}}';
+        (document.head ?? document.documentElement).append(style);
+      }
+
+      const mark = document.createElement('span');
+      mark.dataset.bysTranslation = 'pending'; mark.setAttribute('aria-hidden', 'true');
+      mark.style.cssText = 'display:block;height:0.6em;width:min(78%,36em);margin-block:0.45em 0.55em;border-radius:999px;background:linear-gradient(90deg,rgba(107,140,199,.22),rgba(107,140,199,.07),rgba(107,140,199,.22));background-size:200% 100%;animation:sideagent-translation-wait 1.4s linear infinite;pointer-events:none;';
+      block.element.append(mark); block.pendingMark = mark; mutated = true;
+    }
+
+    // If the run dies without settling, marks must not stay forever; the agent itself gives up after 180 s idle.
+    clearTimeout(current.markTimer);
+    const owned = current;
+    current.markTimer = setTimeout(() => {
+      for (const b of owned.blocks.values()) { b.pendingMark?.remove(); b.pendingMark = undefined; }
+    }, 185_000);
+  }
+
   const blocks: TranslationReceipt['blocks'] = [];
   let chars = 0, segments = 0;
 

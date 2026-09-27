@@ -1329,6 +1329,8 @@ async function executeToolCall(
   const sid = normalizeSessionId(sessionId);
 
   const checkIdentity=()=>{
+    // Removing our own translation placeholders changes no page content and is needed exactly when a run has stopped.
+    if(name==='page_translation'&&params.action==='settle')return;
     const current=conversationSummaries.find(c=>c.id===conversationId)?.runId;
 
     if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
