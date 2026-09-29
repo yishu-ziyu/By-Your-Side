@@ -17,6 +17,16 @@
 - 请求已明确目标和范围时，说明理解后推进，不另设一次确认。只有需要用户裁决的产品取舍、实质性范围变化或必要授权缺口时才暂停；换用未经授权的执行环境不能视为普通实现细节。已授权范围内连续推进，不把内部步骤变成审批点。
 - 当前用户要求优先于旧记录；需求修订后同步更新目标、完成标准和交付内容，并保留修订依据。文档只记录状态，不能自行授予权限；流程授权不能代替无关外部、破坏性或特权操作的授权。
 
+## Exploration & Semantic Compression
+
+Explore broadly. Implement simply. Abstract late.
+
+- Read existing code and proven prior art before inventing.
+- When uncertain, run small disposable experiments before changing production architecture.
+- Write the concrete version first; abstract only after a real pattern appears.
+- Every new abstraction must remove more complexity than it adds.
+- Use LLMs to explore more possibilities, not to produce more code.
+
 ## 协作协议：完成标准先于实现
 
 - 实现前先确认用户要解决的问题及可观察结果，再写完成标准。故障先复现原路径或定点失败；无法复现时记录已有证据和缺口，不把推测写成已确认原因。
