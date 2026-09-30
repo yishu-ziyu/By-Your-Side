@@ -24,3 +24,5 @@
 | anti-slop 的现有约束 | [接入验收](evals/20260923-anti-slop-vendor.md)；不要通过重置 baseline 隐藏新问题 |
 
 更早的逐次语音、GUI、模型和任务记录见[整理前原文](history/20260923-notes-before-governance.txt)。按问题读取，不把整份旧笔记注入每次开发。
+
+- 09-30 MDN 阅读：扩展 shim 与真实 Node 测试不是同一能力环境。大响应落盘异常可在已有 GET 回执后被错计未知；[验收](evals/20260930-mdn-reading-recovery.md)区分已复现路径与原真人会话仍缺的诊断证据。

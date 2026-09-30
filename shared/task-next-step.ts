@@ -136,8 +136,8 @@ export function nextStepInstruction(decision: TaskNextStep): string {
     case 'human_control': return '页面现在归你，等待明确交还，不执行写入。';
     case 'restart_checkpoint': return '原任务保留在重启检查点，等待用户明确继续，不自动执行。';
     case 'failure_limit': return '已达到重复失败边界，停止重试，说明卡点并请用户决定。';
-    case 'unknown_with_baseline': return '操作结果未知；先用 resolve_unknown_result 核查，不能重复写入或换工具绕过。核查不足时报告部分结果。';
-    case 'unknown_without_baseline': return '操作结果未知且缺少可用的写入前基线；不要用一次读数猜旧动作成功，也不要直接重做。若未决项是低风险 fill，先定位当前字段并调用 confirm_blocked_write：它会核对当前值，必要时只为这一项向用户确认一次；保存/发送/支付/删除等仍须可靠回执或用户决定。';
+    case 'unknown_with_baseline': return '旧操作结果未知；当前页读取、scroll 滚动与 mark 圈画仍可继续，不等于解锁写入；先用 resolve_unknown_result 核查，不能重复写入或换工具绕过。核查不足时报告部分结果。';
+    case 'unknown_without_baseline': return '旧操作结果未知且缺少可用的写入前基线；这不是页面接管或整项阅读任务暂停。可以继续当前页 snapshot/read_element 读取、scroll 滚动和 mark 圈画，旧未知记录保留，不能声称它已核实。不要为这些阅读步骤重复要求用户确认；不要用一次读数猜旧动作成功，也不要直接重做。若未决项是低风险 fill，先定位当前字段并调用 confirm_blocked_write：它会核对当前值，必要时只为这一项向用户确认一次；保存/发送/支付/删除等仍须可靠回执或用户决定。';
     case 'in_flight': return '仍有浏览器步骤在执行，等待真实回执后再交付，不能提前结束。';
     case 'runtime_error': return '运行遇到错误，保留已有事实，只能如实交付部分结果。';
     case 'tool_failed': return '存在失败步骤；依据新观察修正目标或换方法，复用原待办 id。不能盲试同一失败；无法恢复时明确交付部分结果。';
@@ -168,6 +168,11 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
   }
 
   const write = isWriteTool(name) || requiresControlGate(name, params);
+  // These dedicated tools only present the current page; they cannot replay a
+  // network request or submit a form. They STILL require page ownership and all
+  // lifecycle gates below. Do not extend this to JS, clicks, hover or navigation.
+  const readingPresentation = ['scroll', 'mark', 'clear_marks'].includes(name);
+  const blockedByUnknownWrite = write && !readingPresentation;
 
   if (worker && !write) {
     return;
@@ -184,11 +189,11 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
 
   for (const item of snapshot.results ?? []) {
     if (item.status === 'unknown' && !isSupersededUnknown(item, snapshot.results ?? [])) {
-      if (!worker && item.tool === name && (item.target === null || item.target === target)) {
+      if ((!worker || readingPresentation) && item.tool === name && (item.target === null || item.target === target)) {
         throw new Error(`「${item.description}」的执行结果未知（结果 ${item.id}，调用 ${item.evidence?.toolCallId ?? '缺失'}），不能自动重做；请先查询结果或由用户决定。`);
       }
 
-      if (write && resultHasWriteEffect(item)) {
+      if (blockedByUnknownWrite && resultHasWriteEffect(item)) {
         throw new Error(`任务中存在尚未确认结果的操作「${item.description}」（结果 ${item.id}，调用 ${item.evidence?.toolCallId ?? '缺失'}），当前写入已暂停。请先用 snapshot 或 read_element 观察核查页面，不得盲目重试。`);
       }
     }
@@ -206,7 +211,7 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     }
   }
 
-  if (write && !cancelledForFreshDirect && !decision.allowWrites) {
+  if (write && !cancelledForFreshDirect && !decision.allowWrites && !(readingPresentation && decision.reason.startsWith('unknown_'))) {
     throw new Error(nextStepInstruction(decision));
   }
 

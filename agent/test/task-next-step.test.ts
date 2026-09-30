@@ -144,6 +144,38 @@ describe('P0.3 next-step decision from production progress',()=>{
     expect(h.next()).toMatchObject({action:'verify_result',delivery:'partial'});
     expect(h.progress.snapshot().results?.[0]?.evidence?.effectful).toBe(true);
   });
+  it('does not turn a confirmed GET receipt with a local formatting failure into an unknown write',()=>{
+    const h=task();h.step('fetch',{url:'https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal',method:'GET'},true,'executed');
+    expect(h.progress.snapshot().results?.some(item=>item.status==='unknown')).toBe(false);
+    expect(h.next()).toMatchObject({action:'change_method',allowWrites:true});
+  });
+  it('retains uncertain POST protection even when response processing fails after execution',()=>{
+    const h=task();h.step('fetch',{url:'https://fixture.test/save',method:'POST',body:'{}'},true,'executed');
+    expect(h.next()).toMatchObject({action:'ask_user',allowWrites:false});
+  });
+  it('allows reading presentation after an unknown fetch without releasing writes or takeover',()=>{
+    const h=task();h.step('fetch',{url:'https://fixture.test'},true,'unknown');
+    const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
+    wrapper.bindConversationContext(()=>h.progress.snapshot());
+    for(const name of ['scroll','mark','clear_marks'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#timeout'})).not.toThrow();
+    for(const name of ['fetch','click','fill','js','navigate','switch_tab'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#other'})).toThrow();
+    expect(h.progress.snapshot().results?.[0]?.status).toBe('unknown');
+    h.progress.observe({type:'status',state:'user'});
+    for(const name of ['scroll','mark','clear_marks'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#timeout'})).toThrow();
+  });
+  it('preserves cancelled, restart and unknown-presentation replay boundaries',()=>{
+    const h=task();h.step('mark',{target:'#timeout'},true,'unknown');
+    const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
+    wrapper.bindConversationContext(()=>h.progress.snapshot());
+    expect(()=>wrapper.assertTaskResultExecution('mark',{target:'#timeout'})).toThrow();
+    expect(()=>wrapper.assertWorkerWriteAllowed('mark',{target:'#timeout'})).toThrow();
+    h.progress.abort();
+    expect(()=>wrapper.assertTaskResultExecution('scroll',{})).toThrow();
+    const saved=task();saved.step('fetch',{},true,'unknown');
+    const restored=new TaskProgress('default');restored.restoreResults(saved.progress.snapshot());
+    wrapper.bindConversationContext(()=>restored.snapshot());
+    expect(()=>wrapper.assertTaskResultExecution('scroll',{})).toThrow();
+  });
   it('keeps a non-targeted tabs mutation uncertain across persistence',()=>{
     const h=task();h.emit({kind:'tool_start',toolCallId:'open',name:'tabs',params:{action:'open'}});
     const restored=new TaskProgress('default');restored.restoreResults(h.progress.snapshot());restored.observe({type:'agent_event',event:{kind:'agent_start'}});
