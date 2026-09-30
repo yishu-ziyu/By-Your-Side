@@ -11,6 +11,10 @@ function entry(id: string, version = 1, text = `preference-${id}`): MemoryEntry 
     sourceConversationId: "conversation-A",
     createdAt: 100,
     updatedAt: 100 + version,
+    kind: "profile",
+    useCount: 0,
+    status: "active",
+    formatVersion: 2,
   };
 }
 
@@ -210,7 +214,7 @@ describe("memory presentation helpers", () => {
   it("shows exact all/site scope and compares immutable historical snapshots", () => {
     const old = entry("format");
     const current = { ...entry("format", 2, "one paragraph"), scope: { kind: "site", hostname: "research.example" } as const };
-    expect(memoryScopeLabel(old.scope)).toBe("所有会话");
+    expect(memoryScopeLabel(old.scope)).toBe("所有网站");
     expect(memoryScopeLabel(current.scope)).toBe("仅 research.example");
     expect(sameMemorySnapshot(old, current)).toBe(false);
     expect(sameMemorySnapshot(current, { ...current, scope: { ...current.scope } })).toBe(true);

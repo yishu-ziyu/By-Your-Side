@@ -7,7 +7,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
  * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
  */
 
-import { isMemoryEntry, isMemoryScope, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+import { isMemoryScope, isStoredMemoryEntry, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
@@ -178,6 +178,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
+  /** 撤销替换：id 是被替换的旧条目；它恢复生效，替换它的新条目改为失效。 */
+  | { type: "memory_restore"; requestId: string; id: string; expectedVersion: number }
   /** 被拿住的点击经用户确认后，扩展已按原参数补上：id 是原 tool_call 的编号，宿主据此把账本里那一下从「未知」改为已执行。 */
   | { type: "held_click_result"; id: string; ok: boolean }
   /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
@@ -269,7 +271,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   /** 本会话仍在等待的授权请求；按请求即时的期限，不被这次查询延长。 */
   | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
-  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
+  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
   | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback" | "candidate_save" | "candidate_dismiss"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; candidates?: import('./skill.js').SkillCandidate[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
@@ -850,7 +852,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if((msg.type==='takeover'||msg.type==='handback'||msg.type==='abort')&&msg.taskRequestId!==undefined&&!validRequestId(msg.taskRequestId))return null;
 
     if (msg.type.startsWith("memory_")) {
-      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget") return null;
+      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget" && msg.type !== "memory_restore") return null;
 
       if (!validRequestId(msg.requestId)) return null;
 
@@ -988,6 +990,14 @@ function isPageContext(v: unknown): v is PageContext {
   return typeof text === "string" && text.length >= 1 && text.length <= 2000;
 }
 
+/** 逐条核对记忆条目；旧格式条目就地补上默认值。有一条不合格就整体不收。 */
+function upgradeMemoryEntries(value: unknown): value is MemoryEntry[] {
+  if (!Array.isArray(value) || !value.every(isStoredMemoryEntry)) return false;
+  value.forEach((entry, i) => { value[i] = upgradeMemoryEntry(entry); });
+
+  return true;
+}
+
 export function parseServerMessage(raw: string): ServerMessage | null {
   try {
     const msg = JSON.parse(raw) as ServerMessage;
@@ -1061,17 +1071,19 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
 
     if (msg.type === "memory_result") {
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget"].includes(msg.action)) return null;
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore"].includes(msg.action)) return null;
 
-      if (msg.entries !== undefined && (!Array.isArray(msg.entries) || !msg.entries.every(isMemoryEntry))) return null;
+      if (msg.entries !== undefined && !upgradeMemoryEntries(msg.entries)) return null;
 
-      if (msg.entry !== undefined && !isMemoryEntry(msg.entry)) return null;
+      if (msg.entry !== undefined && !isStoredMemoryEntry(msg.entry)) return null;
+
+      if (msg.entry !== undefined) msg.entry = upgradeMemoryEntry(msg.entry);
 
       if (msg.deletedId !== undefined && !validMemoryId(msg.deletedId)) return null;
 
       if (msg.error !== undefined && typeof msg.error !== "string") return null;
 
-      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId))) return null;
+      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length))) return null;
 
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
     }
@@ -1109,7 +1121,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;
 
-      if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !Array.isArray(event.entries) || !event.entries.every(isMemoryEntry)) return null;
+      // 升级前保存的回执里是旧格式条目：补默认值后照常显示。
+      if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !upgradeMemoryEntries(event.entries)) return null;
 
       if (event.message !== undefined && typeof event.message !== "string") return null;
     }

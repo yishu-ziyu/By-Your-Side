@@ -15,7 +15,7 @@
 - [ ] 1. 下列 12 个场景在只装扩展的隔离真侧栏里全部符合期望（D1–D4 真实模型，DeepSeek v4.1-flash 与 GLM-5.3-flash 各一遍；其余脚本模型）— 谁检查: `scripts/acceptance/real-path/memory-foundation.mts --headless`
 - [ ] 2. 每条记忆按[记忆模型](../memory-model.md)「每条记忆存什么」存齐字段，带格式版本号；旧格式数据自动转换且不丢 — 谁检查: 脚本读扩展数据库 + 转换的定点检查（用一份真实旧格式样本）
 - [ ] 3. 每轮带了哪些记忆、为什么带（总是带 / 按网站 / 有效期内）留一条决定记录，设置页导出的诊断记录里可见 — 谁检查: 脚本读导出
-- [ ] 4. 扩展申请「不限存储」权限，安装无额外提示 — 谁检查: 脚本读 manifest + 构建产物
+- [x] 4. 扩展申请「不限存储」权限，安装无额外提示 — 谁检查: 脚本读 manifest + 构建产物
 - [ ] 5. 类型检查、全部单元测试、隔离构建、侧栏回归 23/23、流水线隔离检查通过；[记忆与任务跨轮](../memory-and-tasks.md)、[记忆模型](../memory-model.md)现状标注、使用说明同步 — 谁检查: 命令 + `npm run check:docs`
 - [ ] 6. 「记忆」面板的新样子与「决定点」样板给用户看，用户判断 — 谁检查: 人
 
@@ -47,3 +47,21 @@
 - 不改变已有的「用户原话自动记 + 撤销」行为，只补字段与有效期。
 - 不做跨设备同步。
 - 真实模型按提供方分线串行，跑完报告用量。
+
+## 证据
+
+2026-10-01 实现方（第一块）。修订：主会话中途改为实现与验收分开，本块实现方不写、不跑 D1–D12 验收脚本（`memory-foundation.mts` 由另一方按本文件独立编写）；因此完成标准 1–3 留给独立验收，这里只记实现方跑过的检查。
+
+| 检查 | 结果 |
+|---|---|
+| 旧格式转换定点检查 `agent/test/memory-migration.test.ts`（样本按 0c7152b 的格式手写：资料 5 条含网站范围、纠正做法、改过一次的条目；过往任务 3 条；先列 7 种出错方式再写转换） | 4/4 通过 |
+| `npm run typecheck` | 通过 |
+| `npm run test:unit` | 全量两次在机器负载 35 左右时各有 1–9 条超时（每次不同文件，都与记忆无关）；这些文件单线程重跑 108/108 通过；记忆相关 9 个测试文件全部通过 |
+| 隔离构建 `SIDEAGENT_BUILD_DIST=/tmp/bys-mem-dist`，产物 manifest 含 `unlimitedStorage` | 通过（标准 4；Chrome 对该权限不弹安装提示） |
+| `node scripts/lint-changed.mjs`、`npm run check:architecture` | 无新违规；272 个文件通过 |
+| 侧栏回归 `sidebar-interaction.mts --headless --run=mem-foundation` | 23/23，`out/acceptance/sidebar-interaction/mem-foundation` |
+| `npm run check:docs` | 只有既有 `.ship/` 5 条位置错误 |
+| 一次性截图脚本（不进仓库）：只装扩展的无窗口 Chrome + 脚本模型，预置记忆后说「我邮箱换成 b@example.com」、再说「帮我订那天成都的酒店」，打开面板，点「撤销替换」，导出诊断记录 | a@ 标「被替换」→ 撤销后 a@ 生效（版本 3）、b@ 失效；明天的行程与带日期的过往任务按 `in-validity` 带上、昨天的不带、别的网站的做法不带；`memory_decision` 与 `memory_context` 两类记录出现在导出里。截图与读数：`out/memory-foundation-panel/`（`02-panel.png` `03-history.png` `04-after-undo.png` `result.json`） |
+
+未跑：D1–D12 验收（改由独立验收方）；真实模型（本块实现方未用真实模型额度）。
+

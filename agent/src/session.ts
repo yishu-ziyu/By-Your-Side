@@ -59,6 +59,8 @@ import { MemoryRuntime } from "./memory-runtime.js";
 import { followUpContinuesTask } from "./follow-up-intent.js";
 import { asksConfirmBeforeSubmit, asksUser, checkGoal, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
+import type { TaskHistoryEntry } from "../../shared/task-history.js";
+import type { MemoryValidity } from "../../shared/memory.js";
 import { ExperienceRuntime, type ExperienceStore } from "./experience.js";
 import type { SkillStore } from "./skill-store.js";
 import { SkillLearningTrace, type SkillEvidence } from "./skill-learning.js";
@@ -921,6 +923,9 @@ if(required.includes(key))candidates.set(key,attachment);
 
       memoryHost = session;
       const wrapper = new BrowserAgentSession(session, null, callbacks, resourceLoader, models, HANDBACK_RESTORE_TIMEOUT_MS, memoryRuntime, rpc, options?.memberId);
+
+      // 记忆的两个决定点（记成哪种 / 这一轮带哪些）各写一条决定记录进诊断记录。
+      if (memoryRuntime) memoryRuntime.onRecord = (type, data) => wrapper.runTrace.record(type, data);
       wrapper.nodeRuntime = modelRuntime;
       resultHost = wrapper;
       wrapper.skillStore = options?.skillStore;
@@ -2030,6 +2035,11 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
   }
 
   /** 上一个任务没做完时，这句话是不是在接着做它。快速模型不开思考；没有快速模型时用主模型。判断不了按「不是」。 */
+  /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
+  async datePastTask(task: Pick<TaskHistoryEntry, "id" | "goal" | "revisions" | "summary">): Promise<{ date: string; validity: MemoryValidity } | null> {
+    return this.memoryRuntime?.datePastTask(task) ?? null;
+  }
+
   async followUpContinuesTask(task: { goal: string; unfinished: string[]; lastReply: string }, text: string, signal: AbortSignal): Promise<boolean | null> {
     const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
 

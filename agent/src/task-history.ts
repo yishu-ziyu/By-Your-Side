@@ -26,6 +26,14 @@ export class TaskHistoryStore {
     });
   }
 
+  /** 这几条刚被带给助手：用过次数加 1、记下时间；已不存在的 id 跳过。 */
+  async markUsed(ids: readonly string[], now: number): Promise<void> {
+    if (!ids.length) return;
+    const wanted = new Set(ids);
+
+    await this.mutate(tasks => tasks.map(task => (wanted.has(task.id) ? { ...task, useCount: (task.useCount ?? 0) + 1, lastUsedAt: now } : task)));
+  }
+
   /** 删一条；id 为 null 时全部清空。 */
   async forget(id: string | null): Promise<TaskHistoryEntry[]> {
     return this.mutate(tasks => (id === null ? [] : tasks.filter(task => task.id !== id)));

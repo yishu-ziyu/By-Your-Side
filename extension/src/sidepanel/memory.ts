@@ -1,7 +1,7 @@
-import type { MemoryEntry, MemoryScope } from "../../../shared/memory.js";
+import { MEMORY_KIND_LABEL, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
 
-type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>;
+type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>;
 
 export type MemoryResult = Extract<ServerMessage, { type: "memory_result" }>;
 
@@ -19,7 +19,11 @@ export type MemoryApplyResult =
   | { kind: "success"; action: MemoryResult["action"]; requestId: string; entryId?: string };
 
 function cloneEntry(entry: MemoryEntry): MemoryEntry {
-  return { ...entry, scope: { ...entry.scope } };
+  const cloned = { ...entry, scope: { ...entry.scope } };
+
+  if (entry.validity) cloned.validity = { ...entry.validity };
+
+  return cloned;
 }
 
 /**
@@ -114,6 +118,16 @@ export class MemoryManagementState {
     };
   }
 
+  /** 撤销替换：对被替换的旧条目发，结果里带回恢复的旧条目和改为失效的新条目。 */
+  beginRestore(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">): MemoryClientMessage {
+    const requestId = this.requestId();
+    const order = ++this.order;
+    this.pending.set(requestId, { requestId, action: "restore", conversationId, order, entryId: entry.id });
+    this.latestIssuedByEntry.set(entry.id, order);
+
+    return { type: "memory_restore", requestId, conversationId, id: entry.id, expectedVersion: entry.version };
+  }
+
   rejectLocally(requestId: string, error: string): MemoryApplyResult {
     const request = this.pending.get(requestId);
 
@@ -169,6 +183,16 @@ export class MemoryManagementState {
       };
     }
 
+    if (request.action === "restore" && (!result.entries?.length || result.entries[0]!.id !== request.entryId)) {
+      return {
+        kind: "failure",
+        action: request.action,
+        requestId: result.requestId,
+        entryId: request.entryId,
+        error: "响应条目与撤销请求不一致",
+      };
+    }
+
     if (request.action === "forget" && (!result.deletedId || request.entryId !== result.deletedId)) {
       return {
         kind: "failure",
@@ -193,6 +217,16 @@ export class MemoryManagementState {
       this.entries.delete(result.deletedId);
       this.latestAppliedByEntry.set(result.deletedId, request.order);
       this.deletedAtOrder.set(result.deletedId, request.order);
+    }
+
+    if (request.action === "restore" && result.entries) {
+      for (const changed of result.entries) {
+        const current = this.entries.get(changed.id);
+
+        if (current && current.version > changed.version) continue;
+        this.entries.set(changed.id, cloneEntry(changed));
+        this.latestAppliedByEntry.set(changed.id, request.order);
+      }
     }
 
     if (request.action === "list" && result.entries) this.applyList(request, result.entries);
@@ -233,7 +267,22 @@ export class MemoryManagementState {
 }
 
 export function memoryScopeLabel(scope: MemoryScope): string {
-  return scope.kind === "all" ? "所有会话" : `仅 ${scope.hostname}`;
+  return scope.kind === "all" ? "所有网站" : `仅 ${scope.hostname}`;
+}
+
+export function memoryKindLabel(entry: Pick<MemoryEntry, "kind">): string {
+  return MEMORY_KIND_LABEL[entry.kind];
+}
+
+/** 用在哪：有结束日的写「到 10 月 3 日为止」（已过写「10 月 3 日已过」），否则写范围。 */
+export function memoryUseLabel(entry: Pick<MemoryEntry, "scope" | "validity">, now = Date.now()): string {
+  const end = entry.validity?.end;
+
+  if (end === undefined) return memoryScopeLabel(entry.scope);
+  const day = new Date(end);
+  const label = `${day.getMonth() + 1} 月 ${day.getDate()} 日`;
+
+  return end < now ? `${label}已过` : `到 ${label}为止`;
 }
 
 export function sameMemorySnapshot(a: MemoryEntry, b: MemoryEntry): boolean {

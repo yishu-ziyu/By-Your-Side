@@ -119,7 +119,7 @@ Pi 上下文保存在 `~/.sideagent/conversations/{conversationId}/` 下的会�
 
 ## 跨会话记忆与任务跨轮
 
-个人记忆（`memory_list / memory_update / memory_forget → memory_result`）、过往任务（`task_history_list / task_history_forget → task_history_result`）、目标核对（`agent_event{kind:"goal_check"}`）、用户设的提交条件（点击参数 `confirmSubmit`）与没做完任务的跨轮续接，见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
+个人记忆（`memory_list / memory_update / memory_forget / memory_restore → memory_result`）、过往任务（`task_history_list / task_history_forget → task_history_result`）、目标核对（`agent_event{kind:"goal_check"}`）、用户设的提交条件（点击参数 `confirmSubmit`）与没做完任务的跨轮续接，见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
 
 ## 文件卡片
 

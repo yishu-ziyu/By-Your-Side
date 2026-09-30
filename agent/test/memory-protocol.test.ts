@@ -4,6 +4,9 @@ import { normalizeMemoryHostname } from "../../shared/memory.js";
 
 const entry = { id: "memory-1", version: 1, text: "会议摘要用三条要点", scope: { kind: "site", hostname: "example.com" }, sourceConversationId: "conversation-a", createdAt: 1, updatedAt: 1 };
 
+/** 升级后线上的条目：旧格式补上的默认值（种类按来源推断、生效、用过 0 次、格式版本 2）。 */
+const upgraded = { ...entry, kind: "profile", status: "active", useCount: 0, formatVersion: 2 };
+
 const client = (value: unknown) => parseClientMessage(JSON.stringify(value));
 
 const server = (value: unknown) => parseServerMessage(JSON.stringify(value));
@@ -34,7 +37,10 @@ describe("memory transport contract", () => {
   });
   it("rejects corrupted persisted memory snapshots before rendering receipts", () => {
     const message = { type: "agent_event", conversationId: "conversation-a", event: { kind: "memory", action: "used", entries: [entry] } };
-    expect(server(message)).toEqual(message);
+    // 升级前保存的回执照常显示：条目补上默认值。
+    expect(server(message)).toEqual({ ...message, event: { ...message.event, entries: [upgraded] } });
+    expect(server({ ...message, event: { ...message.event, entries: [upgraded] } })).toEqual({ ...message, event: { ...message.event, entries: [upgraded] } });
+    expect(server({ ...message, event: { ...message.event, entries: [{ ...upgraded, status: "gone" }] } })).toBeNull();
     expect(server({ ...message, event: { ...message.event, entries: [{ ...entry, version: -1 }] } })).toBeNull();
     expect(server({ ...message, event: { ...message.event, entries: [{ ...entry, sourceConversationId: "a".repeat(65) }] } })).toBeNull();
     expect(server({ ...message, event: { ...message.event, action: "unknown" } })).toBeNull();

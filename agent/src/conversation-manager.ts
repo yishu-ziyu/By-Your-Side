@@ -844,7 +844,12 @@ return host?[host]:[];}catch{return [];}}))].slice(0,16);
     };
 
     if(snap.goalPage?.title)entry.page=clip(snap.goalPage.title,200);
-    void history.record(entry).catch(()=>{});
+    // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
+    const session=this.entries.get(id)?.runtime.session;
+    const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
+    void dating.then(dated=>{if(dated){entry.date=dated.date;entry.validity=dated.validity;}
+
+return history.record(entry);}).catch(()=>{});
   }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);
@@ -1752,7 +1757,7 @@ return;}
       return;
     }
 
-    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget") {
+    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget" || message.type === "memory_restore") {
       await this.handleMemoryMessage(message, id);
 
       return;
@@ -1859,10 +1864,10 @@ return;
   }
 
   private async handleMemoryMessage(
-    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>,
+    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>,
     conversationId: string,
   ): Promise<void> {
-    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : "forget";
+    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : message.type === "memory_restore" ? "restore" : "forget";
 
     try {
       if (!this.memoryStore) throw new Error("记忆存储不可用");
@@ -1883,6 +1888,13 @@ return;
         });
 
         this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entry: changed });
+
+        return;
+      }
+
+      if (message.type === "memory_restore") {
+        const entries = await this.memoryStore.restore({ id: message.id, expectedVersion: message.expectedVersion });
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries });
 
         return;
       }

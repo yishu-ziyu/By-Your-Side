@@ -61,7 +61,7 @@ import { PANEL_PORT_NAME, type BgToPanel, type PanelHistoryEntry, type PanelToBg
 import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } from "../shared/mark-motion.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
-import { MemoryManagementState, memoryScopeLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
+import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
@@ -837,7 +837,7 @@ type MemoryEdit = {
 
 type MemoryForget = { id: string; pendingRequestId: string | null; error: string };
 
-type MemoryUiRequest = { action: "list" | "update" | "forget"; entryId?: string };
+type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore"; entryId?: string };
 
 const memoryState = new MemoryManagementState();
 
@@ -854,6 +854,9 @@ let memoryInspection: MemoryInspection | null = null;
 let memoryEdit: MemoryEdit | null = null;
 
 let memoryForget: MemoryForget | null = null;
+
+/** 历史里正在撤销替换的那条。 */
+let memoryRestore: { id: string; pendingRequestId: string | null; error: string } | null = null;
 
 let currentMemoryHostname = "";
 
@@ -960,7 +963,7 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
   select.dataset.memoryId = entry.id;
   select.disabled = edit.pendingRequestId !== null;
 
-  for (const [value, label] of [["all", "所有会话"], ["site", "指定站点"]] as const) {
+  for (const [value, label] of [["all", "所有网站"], ["site", "指定网站"]] as const) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = label;
@@ -1012,6 +1015,36 @@ function renderMemoryEdit(entry: MemoryEntry): HTMLElement {
   return form;
 }
 
+function renderMemoryForgetConfirm(entry: MemoryEntry, state: MemoryForget): HTMLElement {
+  const confirm = document.createElement("div");
+  confirm.className = "memory-forget-confirm";
+  const heading = document.createElement("strong");
+  heading.textContent = "忘记这条记忆？";
+  const explanation = document.createElement("p");
+  explanation.textContent = "以后不再从记忆中使用它。旧聊天和已经生成的回复仍会保留。";
+  const error = document.createElement("p");
+  error.className = "memory-error";
+  error.hidden = !state.error;
+  error.textContent = state.error;
+  const confirmActions = document.createElement("div");
+  confirmActions.className = "memory-actions";
+  const cancel = memoryButton("取消", "cancel-forget", entry.id);
+  cancel.disabled = state.pendingRequestId !== null;
+
+  const forget = memoryButton(
+    state.pendingRequestId ? "正在忘记…" : state.error ? "重试忘记" : "确认忘记",
+    "confirm-forget",
+    entry.id,
+  );
+
+  forget.className = "memory-danger memory-forget-submit";
+  forget.disabled = state.pendingRequestId !== null;
+  confirmActions.append(cancel, forget);
+  confirm.append(heading, explanation, error, confirmActions);
+
+  return confirm;
+}
+
 function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   const card = document.createElement("article");
   card.className = "memory-row";
@@ -1028,9 +1061,19 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   text.textContent = entry.text;
   const meta = document.createElement("div");
   meta.className = "memory-row-meta";
+  const facts = document.createElement("span");
+  facts.className = "memory-facts";
+  const kind = document.createElement("span");
+  kind.className = "memory-kind";
+  kind.dataset.kind = entry.kind;
+  kind.textContent = memoryKindLabel(entry);
   const scope = document.createElement("span");
   scope.className = "memory-scope";
-  scope.textContent = memoryScopeLabel(entry.scope);
+  scope.textContent = memoryUseLabel(entry);
+  const used = document.createElement("span");
+  used.className = "memory-used";
+  used.textContent = entry.useCount ? `用过 ${entry.useCount} 次` : "还没用过";
+  facts.append(kind, scope, used);
   const actions = document.createElement("div");
   actions.append(
     memoryButton(card.classList.contains("show-source") ? "收起来源" : "查看来源", "source", entry.id),
@@ -1038,8 +1081,17 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
     memoryButton("忘记", "forget", entry.id),
   );
   actions.lastElementChild?.classList.add("memory-danger");
-  meta.append(scope, actions);
-  card.append(text, meta);
+  meta.append(facts, actions);
+  card.append(text);
+
+  if (entry.sourceQuote && entry.sourceQuote !== entry.text) {
+    const quote = document.createElement("p");
+    quote.className = "memory-quote";
+    quote.textContent = `你说：「${entry.sourceQuote}」`;
+    card.appendChild(quote);
+  }
+
+  card.appendChild(meta);
 
   const source = document.createElement("details");
   source.className = "memory-source";
@@ -1053,34 +1105,7 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   source.append(summary, detail);
   card.appendChild(source);
 
-  if (memoryForget?.id === entry.id) {
-    const confirm = document.createElement("div");
-    confirm.className = "memory-forget-confirm";
-    const heading = document.createElement("strong");
-    heading.textContent = "忘记这条记忆？";
-    const explanation = document.createElement("p");
-    explanation.textContent = "以后不再从记忆中使用它。旧聊天和已经生成的回复仍会保留。";
-    const error = document.createElement("p");
-    error.className = "memory-error";
-    error.hidden = !memoryForget.error;
-    error.textContent = memoryForget.error;
-    const confirmActions = document.createElement("div");
-    confirmActions.className = "memory-actions";
-    const cancel = memoryButton("取消", "cancel-forget", entry.id);
-    cancel.disabled = memoryForget.pendingRequestId !== null;
-
-    const forget = memoryButton(
-      memoryForget.pendingRequestId ? "正在忘记…" : memoryForget.error ? "重试忘记" : "确认忘记",
-      "confirm-forget",
-      entry.id,
-    );
-
-    forget.className = "memory-danger memory-forget-submit";
-    forget.disabled = memoryForget.pendingRequestId !== null;
-    confirmActions.append(cancel, forget);
-    confirm.append(heading, explanation, error, confirmActions);
-    card.appendChild(confirm);
-  }
+  if (memoryForget?.id === entry.id) card.appendChild(renderMemoryForgetConfirm(entry, memoryForget));
 
   return card;
 }
@@ -1175,7 +1200,7 @@ function renderPastTasks(): HTMLElement {
     meta.className = "memory-row-meta";
     const info = document.createElement("span");
     info.className = "memory-quiet";
-    info.textContent = [formatMemoryTime(task.endedAt), PAST_TASK_OUTCOME[task.outcome], task.page ?? task.hosts[0]].filter(Boolean).join(" · ");
+    info.textContent = [formatMemoryTime(task.endedAt), PAST_TASK_OUTCOME[task.outcome], task.page ?? task.hosts[0], task.validity?.end ? memoryUseLabel({ scope: { kind: "all" }, validity: task.validity }) : ""].filter(Boolean).join(" · ");
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "memory-danger";
@@ -1208,8 +1233,80 @@ function handlePastTasksResult(msg: Extract<ServerMessage, { type: "task_history
   if (!memoryDrawer.hidden) renderMemoryDrawer();
 }
 
+/** 被替换、失效的旧记忆：留作历史，不再带给助手；被替换的可以撤销替换。 */
+function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
+  const section = document.createElement("details");
+  section.className = "memory-history";
+  section.open = !!memoryRestore;
+  const summary = document.createElement("summary");
+  summary.textContent = `历史 · ${history.length}`;
+  const intro = document.createElement("p");
+  intro.className = "memory-quiet";
+  intro.textContent = "换成新值后，旧的留在这里，不再带给助手。";
+  section.append(summary, intro);
+
+  for (const entry of history) {
+    const row = document.createElement("article");
+    row.className = "memory-row memory-history-row";
+    row.dataset.memoryId = entry.id;
+    row.dataset.status = entry.status;
+    const text = document.createElement("p");
+    text.className = "memory-row-text";
+    text.textContent = entry.text;
+    const meta = document.createElement("div");
+    meta.className = "memory-row-meta";
+    const facts = document.createElement("span");
+    facts.className = "memory-facts";
+    const status = document.createElement("span");
+    status.className = "memory-status";
+    const replacer = entry.replacedBy ? memoryState.get(entry.replacedBy) : undefined;
+    status.textContent = entry.status === "replaced" ? "已被替换" : "已失效";
+    const kind = document.createElement("span");
+    kind.className = "memory-kind";
+    kind.dataset.kind = entry.kind;
+    kind.textContent = memoryKindLabel(entry);
+    facts.append(status, kind);
+
+    if (replacer) {
+      const by = document.createElement("span");
+      by.className = "memory-quiet";
+      by.textContent = `换成了「${replacer.text.length > 24 ? `${replacer.text.slice(0, 23)}…` : replacer.text}」`;
+      facts.append(by);
+    }
+
+    const actions = document.createElement("div");
+    const pending = memoryRestore?.id === entry.id && memoryRestore.pendingRequestId !== null;
+
+    if (entry.status === "replaced") {
+      const restore = memoryButton(pending ? "正在撤销…" : "撤销替换", "restore", entry.id);
+      restore.disabled = pending;
+      actions.append(restore);
+    }
+
+    const forget = memoryButton("删除", "forget", entry.id);
+    forget.classList.add("memory-danger");
+    actions.append(forget);
+    meta.append(facts, actions);
+    row.append(text, meta);
+
+    if (memoryRestore?.id === entry.id && memoryRestore.error) {
+      const error = document.createElement("p");
+      error.className = "memory-error";
+      error.textContent = memoryRestore.error;
+      row.appendChild(error);
+    }
+
+    if (memoryForget?.id === entry.id) row.appendChild(renderMemoryForgetConfirm(entry, memoryForget));
+    section.appendChild(row);
+  }
+
+  return section;
+}
+
 function renderMemoryFacts(): void {
-  const entries = memoryState.getEntries();
+  const all = memoryState.getEntries();
+  const entries = all.filter(entry => entry.status === "active");
+  const history = all.filter(entry => entry.status !== "active");
   memoryTitle.textContent = entries.length ? `记忆 · ${entries.length}` : "记忆";
   memoryBody.replaceChildren();
   const inspection = renderMemoryInspection();
@@ -1218,7 +1315,7 @@ function renderMemoryFacts(): void {
 
   const intro = document.createElement("p");
   intro.className = "memory-quiet memory-intro";
-  intro.textContent = "你在对话里说过的邮箱、姓名、偏好会自动记在这里，每轮都会用上。可以纠正或忘记；站点范围只决定何时使用。";
+  intro.textContent = "你在对话里说过的邮箱、姓名、偏好和带日期的安排会自动记在这里。关于你的每轮都会用上；带日期的到那天过后不再主动用，仍能查到。可以纠正或忘记。";
   memoryBody.appendChild(intro);
 
   if (memoryListError) {
@@ -1248,7 +1345,7 @@ function renderMemoryFacts(): void {
     return;
   }
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && history.length === 0) {
     const empty = document.createElement("div");
     empty.className = "memory-empty";
     const heading = document.createElement("strong");
@@ -1266,6 +1363,8 @@ function renderMemoryFacts(): void {
 
   for (const entry of entries) list.appendChild(renderMemoryEntry(entry));
   memoryBody.appendChild(list);
+
+  if (history.length) memoryBody.appendChild(renderMemoryHistory(history));
 }
 
 /** 回执上的「撤销」各自等自己的结果。 */
@@ -1304,6 +1403,13 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
       if (outcome.kind === "success") memoryEdit = null;
       else memoryEdit.error = `修改未保存：${outcome.error}`;
     }
+  } else if (outcome.action === "restore" && uiRequest?.entryId) {
+    if (memoryRestore?.id === uiRequest.entryId && memoryRestore.pendingRequestId === outcome.requestId) {
+      memoryRestore.pendingRequestId = null;
+
+      if (outcome.kind === "success") memoryRestore = null;
+      else memoryRestore.error = `没有撤销：${outcome.error}`;
+    }
   } else if (outcome.action === "forget" && uiRequest?.entryId) {
     if (memoryForget?.id === uiRequest.entryId && memoryForget.pendingRequestId === outcome.requestId) {
       memoryForget.pendingRequestId = null;
@@ -1316,7 +1422,7 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (!memoryDrawer.hidden) renderMemoryDrawer();
 }
 
-function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" }>, ui: MemoryUiRequest): void {
+function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>, ui: MemoryUiRequest): void {
   memoryUiRequests.set(message.requestId, ui);
 
   if (send(message)) return;
@@ -1457,6 +1563,15 @@ memoryBody.addEventListener("click", (event) => {
     memoryEdit.error = "";
     renderMemoryDrawer();
     dispatchMemoryRequest(message, { action: "update", entryId: id });
+
+    return;
+  }
+
+  if (action === "restore") {
+    const message = memoryState.beginRestore(selectedConversationId, entry);
+    memoryRestore = { id, pendingRequestId: message.requestId, error: "" };
+    renderMemoryDrawer();
+    dispatchMemoryRequest(message, { action: "restore", entryId: id });
 
     return;
   }

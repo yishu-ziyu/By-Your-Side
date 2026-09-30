@@ -2484,6 +2484,16 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-row-meta > div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:1px; }
 .memory-row-meta button, .memory-actions button { padding:4px 6px; }
 .memory-scope, .memory-receipt-scope { border-radius:5px; background:var(--content-subtle); color:var(--text-secondary); font-size:9.5px; line-height:1.4; padding:3px 6px; white-space:nowrap; }
+/* 每条记忆的说明行：种类 · 用在哪（或到哪天为止）· 用过几次；安静、不抢正文。 */
+.memory-facts { display:flex; flex:1; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; }
+.memory-row-meta > .memory-facts + div { flex-wrap:nowrap; flex-shrink:0; }
+.memory-kind { color:var(--text-secondary); font-size:9.5px; line-height:1.4; white-space:nowrap; }
+.memory-used, .memory-status { color:var(--text-tertiary); font-size:9.5px; line-height:1.4; white-space:nowrap; }
+.memory-quote { margin:4px 0 0; color:var(--text-tertiary); font-size:10.5px; line-height:1.6; overflow-wrap:anywhere; }
+.memory-history { margin-top:14px; }
+.memory-history > summary { cursor:pointer; color:var(--text-secondary); font-size:11px; padding:4px 0; }
+.memory-history > .memory-quiet { margin:2px 0 0; }
+.memory-history-row .memory-row-text { color:var(--text-secondary); }
 .memory-source { margin-top:9px; border-radius:8px; background:var(--content-subtle); color:var(--text-secondary); font-size:10.5px; }
 .memory-source:not([open]) { display:none; }
 .memory-source summary { display:none; }
@@ -2520,6 +2530,7 @@ details.run-steps.done .chip.error { background: transparent; }
 .past-tasks-head h3 { margin:0; color:var(--text-primary); font-size:12.5px; font-weight:600; }
 .past-tasks-head button, .past-task button { border:0; background:transparent; color:var(--text-secondary); font:inherit; font-size:10.5px; padding:4px 6px; cursor:pointer; }
 .past-task .memory-row-text { font-size:12px; }
+.past-task .memory-row-meta > button { flex-shrink:0; white-space:nowrap; }
 .past-task > .memory-quiet { margin:6px 0 0; }
 @media (max-height: 560px) { #memory-drawer { top:92px; } }
 @media (prefers-reduced-motion: reduce) { #memory-drawer { animation:none; } }
