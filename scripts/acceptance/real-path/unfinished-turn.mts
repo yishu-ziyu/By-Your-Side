@@ -6,17 +6,24 @@
  * 判据：侧栏那一行说的是用户没拿到的事（升级套餐），不是中途失败的内部步骤；没有「继续」；
  * 展开后只有动作清单，没有思考/草稿分组、单步耗时和交付工具。
  * 练习页在本机，不碰真实账号。产物：panel-collapsed.png、panel-expanded.png、summary.json。
+ * 只装扩展、不注册伴随进程：agent 跑在扩展的 offscreen 文档里，模型配置写进扩展存储（与设置页写入的格式相同）。
  */
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc } from "./harness.mts";
+import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
 const LIMIT_MS = 600_000;
 
 const PROMPT = "在页面上圈出五小时用量和「升级套餐」按钮。";
+
+// 模型来自 ~/.sideagent/providers.local.json（用户选的套餐）；--model=provider/id 指定。
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice(8) ?? "zai-coding-cn/glm-5.3-flash";
+
+const plan = await loadModelPlan(modelArg);
 
 const startedAt = new Date();
 
@@ -43,6 +50,7 @@ const PANEL_STATE = `(() => {
   const resume = q("#resume-entry-root");
   return {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
+    ready: q("#send-btn")?.disabled === false,
     running: q("#status-pill")?.classList.contains("running") ?? false,
     stopping: q("#send-btn")?.classList.contains("stopping") ?? false,
     streaming: !!q(".msg.assistant.streaming, .msg.assistant[data-revealing]"),
@@ -57,11 +65,15 @@ const PANEL_STATE = `(() => {
 })()`;
 
 type PanelState = {
-  connected: boolean; running: boolean; stopping: boolean; streaming: boolean; userMessages: number;
+  connected: boolean; ready: boolean; running: boolean; stopping: boolean; streaming: boolean; userMessages: number;
   answers: string[]; resumeText: string; resumeButton: string[]; processTitles: string[]; steps: string[]; visibleGroups: number;
 };
 
-const rp = await launchRealPath();
+const rp = await launchRealPath({ withoutNativeHost: true });
+
+let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
+
+let closed: Awaited<ReturnType<typeof rp.close>> | null = null;
 
 let final: PanelState | null = null;
 
@@ -78,7 +90,12 @@ try {
   // SAFETY: PANEL_STATE 返回的对象字段与 PanelState 一一对应。
   const readPanel = async () => (await rp.evaluate(panel, PANEL_STATE)) as PanelState;
 
-  await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上伴随进程", 500);
+  // 与设置页写入的格式相同，background 会把它推给扩展内 agent。
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+  inproc = await watchInproc(rp, rp.extensionId);
+  await until(async () => { const state = await readPanel();
+
+    return (state.connected && state.ready) || undefined; }, 90_000, "侧栏会话就绪", 500);
   await sleep(1500);
   await rp.click(panel, "#input");
   await rp.typeText(panel, PROMPT);
@@ -112,9 +129,17 @@ try {
   await rp.screenshot(work, join(artifacts, "page.png")).catch(() => {});
   final = (await readPanel().catch(() => null)) ?? final;
 } finally {
-  await writeFile(join(artifacts, "hostlog.txt"), await rp.hostLog()).catch(() => {});
-  await cp(join(rp.dirs.data, "traces"), join(artifacts, "traces"), { recursive: true }).catch(() => {});
-  await rp.close();
+  // 原来留伴随进程的 host log 和数据目录里的 traces；扩展模式下没有这些文件，
+  // 改为像用户一样从设置页导出诊断记录（downloads/），并留下扩展内 agent 的 console 与请求。
+  await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).catch(async (error) => writeFile(join(artifacts, "diagnostics-export-error.txt"), String(error)));
+
+  if (inproc) {
+    await writeFile(join(artifacts, "inproc-console.log"), inproc.logs()).catch(() => {});
+    await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
+  }
+
+  await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
+  closed = await rp.close();
   site.close();
 }
 
@@ -130,7 +155,7 @@ if (final?.visibleGroups) failures.push(`展开后仍显示 ${final.visibleGroup
 
 if (final?.steps.some((step) => /send_user_message|task_goals|\d+\.\ds/.test(step))) failures.push(`步骤里有交付工具或单步耗时：${final.steps.join(" | ")}`);
 
-const summary = { case: "unfinished-turn", startedAt: startedAt.toISOString(), prompt: PROMPT, doneMs, outcome: failures.length ? "fail" : "pass", failures, final };
+const summary = { case: "unfinished-turn", startedAt: startedAt.toISOString(), model: modelArg, prompt: PROMPT, doneMs, localHostPids: closed?.hostPids ?? null, outcome: failures.length ? "fail" : "pass", failures, final };
 
 await writeFile(join(artifacts, "summary.json"), JSON.stringify(summary, null, 2));
 

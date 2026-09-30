@@ -3,15 +3,19 @@
  * 判定只看结果：侧栏悬浮提示写的动效，和页面上实际画出来的圈是不是同一种。
  * 默认值以 2026-09-09 的用户决定为准：圈画手绘并持续轻微抖动（boil）。
  *
- *   npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless
+ * 只装扩展、不注册伴随进程：agent 跑在扩展的 offscreen 文档里，模型配置写进扩展存储（与设置页写入的格式相同）。
+ * 动效开关本来就存在扩展存储（sideagent_mark_motion），由扩展后台读取，不依赖伴随进程。
+ *
+ *   npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless [--model=provider/id]
  *
  * 验收文件：docs/evals/20260923-repo-cleanup.md
  */
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, snapshotDir, until } from "./harness.mts";
+import { join } from "node:path";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, watchInproc } from "./harness.mts";
 import type { JsonRecord } from "./harness.mts";
+import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
@@ -20,6 +24,11 @@ const TASK_LIMIT_MS = 4 * 60_000;
 const FIRST = "在页面上圈出「保存」按钮给我看，不要点它";
 
 const SECOND = "再圈出「取消」按钮给我看，不要点它";
+
+// 模型来自 ~/.sideagent/providers.local.json（用户选的套餐）；--model=provider/id 指定。
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice(8) ?? "zai-coding-cn/glm-5.3-flash";
+
+const plan = await loadModelPlan(modelArg);
 
 const startedAt = new Date();
 
@@ -43,6 +52,7 @@ const PANEL_STATE = `(() => {
   const q = (s) => document.querySelector(s);
   return {
     connected: q("#status-dot")?.classList.contains("on") ?? false,
+    ready: q("#send-btn")?.disabled === false,
     pill: q("#tab-title-text")?.textContent?.trim() ?? null,
     setupVisible: q("#setup") ? !q("#setup").hidden : false,
     toggleTitle: q("#teach-toggle")?.title ?? null,
@@ -53,7 +63,7 @@ const PANEL_STATE = `(() => {
   };
 })()`;
 
-type PanelState = { connected: boolean; pill: string | null; setupVisible: boolean; toggleTitle: string | null; busy: boolean; userMessages: string[]; replies: number; transcript: string };
+type PanelState = { connected: boolean; ready: boolean; pill: string | null; setupVisible: boolean; toggleTitle: string | null; busy: boolean; userMessages: string[]; replies: number; transcript: string };
 
 type DomNode = { backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[]; contentDocument?: DomNode };
 
@@ -63,7 +73,7 @@ type Verdict = { status: "yes" | "no" | "未确定"; evidence: JsonRecord };
 
 const verdict = (pass: boolean | null, evidence: JsonRecord): Verdict => ({ status: pass === null ? "未确定" : pass ? "yes" : "no", evidence });
 
-const result: JsonRecord = { case: "mark-motion-toggle", command: "npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless", startedAt: startedAt.toISOString() };
+const result: JsonRecord = { case: "mark-motion-toggle", command: `npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless --model=${modelArg}`, model: modelArg, startedAt: startedAt.toISOString() };
 
 const verdicts: Record<string, Verdict> = {};
 
@@ -73,9 +83,11 @@ result.verdicts = verdicts;
 
 result.observations = observations;
 
-const rp = await launchRealPath();
+const rp = await launchRealPath({ withoutNativeHost: true });
 
 let panelSession: string | null = null;
+
+let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -106,14 +118,17 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   panelSession = panel;
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
+  // 与设置页写入的格式相同，background 会把它推给扩展内 agent。
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+  inproc = await watchInproc(rp, rp.extensionId);
 
   const ready: PanelState = await until(async () => {
     const state: PanelState = await rp.evaluate(panel, PANEL_STATE);
 
     if (state.setupVisible) throw new Error("侧栏打开了调试通道设置页");
 
-    return state.connected && state.pill?.includes("订单备注") ? state : undefined;
-  }, 90_000, "侧栏连上伴随进程并认出练习页", 500);
+    return state.connected && state.ready && state.pill?.includes("订单备注") ? state : undefined;
+  }, 90_000, "侧栏会话就绪并认出练习页", 500);
 
   const ask = async (instruction: string) => {
     const before: PanelState = await rp.evaluate(panel, PANEL_STATE);
@@ -179,15 +194,20 @@ try {
     await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panelSession, PANEL_STATE).catch(() => ({ transcript: "" })) as PanelState).transcript).catch(() => {});
   }
 } finally {
-  // 成败都留下测试伴随进程的会话与轨迹，用来复查完成依据（快照已跳过凭据文件）。
-  for (const file of (await snapshotDir(rp.dirs.data)).keys()) {
-    await mkdir(dirname(join(artifacts, "data", file)), { recursive: true });
-    await copyFile(join(rp.dirs.data, file), join(artifacts, "data", file)).catch(() => {});
+  // 成败都留下复查完成依据的记录。原来复制伴随进程数据目录（会话 JSONL、轨迹）和 host.log；
+  // 扩展模式下没有这些文件，改为像用户一样从设置页导出诊断记录，并留下扩展内 agent 的 console 与请求。
+  const diag = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).catch((error) => ({ exportStatus: `导出失败：${String(error)}` }));
+  observations.diagnosticsExport = diag.exportStatus;
+
+  if (inproc) {
+    await writeFile(join(artifacts, "inproc-console.log"), inproc.logs()).catch(() => {});
+    await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
   }
 
-  await writeFile(join(artifacts, "host.log"), await rp.hostLog()).catch(() => {});
+  await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   const closed = await rp.close();
-  verdicts.hostExited = verdict(closed?.exitedWithChrome ?? false, closed ?? {});
+  // 原判据 hostExited（伴随进程随 Chrome 退出）改为 noLocalHost：扩展模式下整个运行过程都不应拉起本机进程。
+  verdicts.noLocalHost = verdict((closed?.hostPids ?? []).length === 0, closed ?? {});
   site.close();
 }
 

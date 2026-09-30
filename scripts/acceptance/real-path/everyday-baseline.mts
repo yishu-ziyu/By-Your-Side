@@ -1,12 +1,13 @@
 /**
  * 日常请求底线：10 条取自真实使用记录的请求，逐条在新会话里发出，只看用户看得到的结果。
  *
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math]
+ *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math]   # 只装扩展，设置页配模型
+ *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --model=stepfun/step-3.7-flash --suite=sitegeist   # Sitegeist 宣传的 5 类任务
  *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash   # 只装扩展，设置页配模型
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash --suite=sitegeist   # Sitegeist 宣传的 5 类任务
  *
- * --inproc 时每条另记扩展内 agent 发出的模型请求（地址、首字节、结束），并判定请求都发往所选服务商。
+ * 隔离运行只装扩展（不注册伴随进程）：像用户一样从设置页填 key、测试连接、保存 --model 指定的模型
+ * （默认 opencode-go/deepseek-v4.1-flash，凭据取自 ~/.sideagent/providers.local.json）。旧参数 --inproc=provider/id 等同 --model。
+ * 每条另记扩展内 agent 发出的模型请求（地址、首字节、结束），并判定请求都发往所选服务商；结束后从设置页导出诊断记录核对。
  *
  * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
  * 以及该条的结果判据（答案内容、页面圈画、新标签页、草稿框原文且未保存）。练习页全在本机，不碰真实账号。
@@ -22,11 +23,15 @@ import { startScriptedModel } from "./scripted-model.mts";
 
 const daily = process.argv.includes("--daily");
 
-/** --inproc=provider/id：不注册伴随进程，从设置页配置这个模型。 */
+/** --model=provider/id（旧名 --inproc=）：隔离运行只装扩展，从设置页配置这个模型；--daily 时只有显式 --inproc= 才去改日常设置。 */
 /** --scripted-throttle：本机脚本服务商代替真实模型，翻译同一时间只接 1 个请求，超出回 403（复刻 Kimi 编程套餐的并发上限）。 */
 const scriptedThrottle = process.argv.includes("--scripted-throttle");
 
-const inprocModel = scriptedThrottle ? "custom/demo-model" : process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
+const inprocArg = process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
+
+const modelArg = process.argv.find((a) => a.startsWith("--model="))?.slice(8);
+
+const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg : inprocArg ?? modelArg ?? "opencode-go/deepseek-v4.1-flash";
 
 /** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
 const suite = process.argv.find((a) => a.startsWith("--suite="))?.slice(8) === "sitegeist" ? "sitegeist" : "everyday";
@@ -304,7 +309,7 @@ function translationFacts(text: string) {
 }
 
 /** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
-const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn" } satisfies Record<string, string>;
+const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn", "opencode-go": "opencode.ai" } satisfies Record<string, string>;
 
 const hostOf = (provider: string): string | undefined => Object.entries(PROVIDER_HOSTS).find(([id]) => id === provider)?.[1];
 
@@ -375,7 +380,7 @@ type CaseResult = {
 
 const results: CaseResult[] = [];
 
-const rp = daily ? await attachDailyChrome() : await launchRealPath({ withoutNativeHost: !!inprocModel });
+const rp = daily ? await attachDailyChrome() : await launchRealPath({ withoutNativeHost: true });
 
 let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
 
@@ -411,7 +416,7 @@ try {
     await rp.cdp.send("Page.bringToFront", {}, work);
   }
 
-  await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上伴随进程", 500);
+  await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上 agent", 500);
 
   const boxOf = async (nodeId: number): Promise<Box | null> => {
     // SAFETY: CDP 规范里 DOM.getBoxModel 返回 { model: { border: Quad } }，Quad 为 4 个点 8 个数。
@@ -651,6 +656,7 @@ try {
   await writeFile(join(artifacts, "hostlog.txt"), inproc ? inproc.logs() : await rp.hostLog()).catch(() => {});
 
   if (inproc) await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
+  // 伴随进程的 traces 目录只在旧本机模式存在；只装扩展时诊断记录由 checkTraceExport 从设置页导出到 downloads/。
   await cp(join(rp.dirs.data, "traces"), join(artifacts, "traces"), { recursive: true }).catch(() => {});
   await rp.close();
   site.close();
@@ -658,7 +664,7 @@ try {
 }
 
 const summary = {
-  case: "everyday-baseline", startedAt: startedAt.toISOString(), model: process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? (inprocModel ?? (daily ? "daily extension settings" : "daily config")), browser: daily ? "daily Chrome" : inprocModel ? "isolated headless, extension only" : "isolated headless",
+  case: "everyday-baseline", startedAt: startedAt.toISOString(), model: inprocModel ?? (daily ? "daily extension settings" : "unknown"), browser: daily ? "daily Chrome" : "isolated headless, extension only",
   passed: results.filter((r) => r.outcome === "pass").length, total: results.length, results, traceCheck,
 };
 

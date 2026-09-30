@@ -1,11 +1,23 @@
-/** 真侧栏 → 真模型请求点选 → 可信鼠标指向 → 真标注；Esc 分支不得猜目标。 */
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+/**
+ * 真侧栏 → 真模型请求点选 → 可信鼠标指向 → 真标注；Esc 分支不得猜目标。
+ *
+ * 只装扩展、不注册伴随进程：agent 跑在扩展的 offscreen 文档里，模型配置写进扩展存储（与设置页写入的格式相同）。
+ *
+ *   npx tsx scripts/acceptance/real-path/point-then-mark.mts --headless [--model=provider/id]
+ */
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
-import { REPO, launchRealPath, modelReplies, requireHeadless, sha256File, siteAddress, snapshotDir, until } from "./harness.mts";
+import { join } from "node:path";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, sha256File, siteAddress, until, watchInproc } from "./harness.mts";
 import type { JsonRecord } from "./harness.mts";
+import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
+
+// 模型来自 ~/.sideagent/providers.local.json（用户选的套餐）；--model=provider/id 指定。
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice(8) ?? "zai-coding-cn/glm-5.3-flash";
+
+const plan = await loadModelPlan(modelArg);
 
 const startedAt = new Date().toISOString();
 
@@ -35,10 +47,10 @@ const url = `http://127.0.0.1:${siteAddress(site).port}/point`;
 
 type Node = { backendNodeId: number; attributes?: string[]; children?: Node[]; shadowRoots?: Node[] };
 
-type Panel = { connected: boolean; title: string; busy: boolean; users: string[]; replies: number; transcript: string };
+type Panel = { connected: boolean; ready: boolean; title: string; busy: boolean; users: string[]; replies: number; transcript: string };
 
 const panelState = `(() => ({
-  connected: !!document.querySelector('#status-dot.on'), title: document.querySelector('#tab-title-text')?.textContent ?? '',
+  connected: !!document.querySelector('#status-dot.on'), ready: document.querySelector('#send-btn')?.disabled === false, title: document.querySelector('#tab-title-text')?.textContent ?? '',
   busy: !!document.querySelector('#status-pill.running, #send-btn.stopping, .msg.assistant.streaming, .msg.assistant[data-revealing]'),
   users: [...document.querySelectorAll('.msg.user')].map(x=>x.innerText),
   replies: document.querySelectorAll('#messages .msg:not(.user)').length,
@@ -51,8 +63,10 @@ let page: string | undefined;
 
 let panel: string | undefined;
 
+let inproc: Awaited<ReturnType<typeof watchInproc>> | undefined;
+
 try {
-  rp = await launchRealPath();
+  rp = await launchRealPath({ withoutNativeHost: true });
   const run = rp;
   const blank = await until(async () => (await run.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "初始页");
   page = await run.attach(blank.targetId);
@@ -63,10 +77,13 @@ try {
   panel = await run.attach(await run.openSidePanel());
   const panelSession = panel;
   await run.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panelSession);
+  // 与设置页写入的格式相同，background 会把它推给扩展内 agent。
+  await run.evaluate(panelSession, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+  inproc = await watchInproc(run, run.extensionId);
   await until(async () => {
     const state: Panel = await run.evaluate(panelSession, panelState);
 
-    return state.connected && state.title.includes("点选练习");
+    return state.connected && state.ready && state.title.includes("点选练习");
   }, 90_000, "真侧栏认出工作页");
   checks.pageIdentity = await run.evaluate(pageSession, `location.href === ${JSON.stringify(url)} && document.title === '点选练习'`);
   checks.meaningfulPage = await run.evaluate(pageSession, "document.querySelector('h1').textContent === '订单操作'");
@@ -182,7 +199,9 @@ try {
   }, 15_000, "停止后没有继续执行", 500);
   checks.noNewMarkAfterStop = [...marks.keys()].every(id => marksBeforeStop.has(id));
   checks.stopDidNotActivatePage = await run.evaluate(pageSession, "receipts.save.length === 0 && receipts.cancel.length === 0");
-  evidence.models = await modelReplies(run.dirs.data);
+  // 原来读伴随进程 Pi 会话 JSONL 里每条模型回复的 provider/model/stopReason；扩展模式没有这些文件，
+  // 改为从外部记下扩展内 agent 发往模型服务的请求（地址与 HTTP 状态）。
+  evidence.models = { configured: modelArg, calls: inproc.requestsBetween(0).filter(r => r.method === "POST" && !r.url.startsWith("http://127.0.0.1")).map(r => ({ url: r.url, status: r.status, failed: r.failed })) };
 } catch (error) {
   failure = error instanceof Error ? error.stack ?? error.message : String(error);
 } finally {
@@ -195,14 +214,20 @@ try {
 
     if (page) await rp.screenshot(page, join(artifacts, "page-final.png")).catch(() => {});
 
-    for (const file of (await snapshotDir(rp.dirs.data)).keys()) {
-      await mkdir(dirname(join(artifacts, "data", file)), { recursive: true });
-      await copyFile(join(rp.dirs.data, file), join(artifacts, "data", file)).catch(() => {});
+    // 原来复制伴随进程数据目录（会话 JSONL、轨迹）和 host.log；扩展模式下没有这些文件，
+    // 改为像用户一样从设置页导出诊断记录，并留下扩展内 agent 的 console 与请求。
+    const diag = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).catch(error => ({ exportStatus: `导出失败：${String(error)}` }));
+    evidence.diagnosticsExport = diag.exportStatus;
+
+    if (inproc) {
+      await writeFile(join(artifacts, "inproc-console.log"), inproc.logs()).catch(() => {});
+      await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
     }
 
-    await writeFile(join(artifacts, "host.log"), await rp.hostLog());
+    await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
     const closed = await rp.close();
-    checks.hostExitedWithChrome = closed.exitedWithChrome;
+    // 原判据 hostExitedWithChrome（伴随进程随 Chrome 退出）改为 noLocalHost：扩展模式下整个运行过程都不应拉起本机进程。
+    checks.noLocalHost = closed.hostPids.length === 0;
     evidence.cleanup = closed;
     await rp.remove();
   }
@@ -214,7 +239,7 @@ checks.dailyBuildUnchanged = dailyDistBefore === await sha256File(join(REPO, "ex
 
 const ok = !failure && Object.keys(checks).length >= 13 && Object.values(checks).every(Boolean);
 
-await writeFile(join(artifacts, "result.json"), JSON.stringify({ startedAt, finishedAt: new Date().toISOString(), ok, failure, checks, evidence }, null, 2));
+await writeFile(join(artifacts, "result.json"), JSON.stringify({ startedAt, model: modelArg, finishedAt: new Date().toISOString(), ok, failure, checks, evidence }, null, 2));
 
 console.log(JSON.stringify({ ok, failure, checks, artifacts }, null, 2));
 

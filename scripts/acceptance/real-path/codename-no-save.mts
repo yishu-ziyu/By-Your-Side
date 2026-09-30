@@ -3,16 +3,21 @@
  * 判定只看结果：练习页「代号」框的值、练习站收到的请求、侧栏状态，以及日常数据目录有没有被写。
  * 不对模型的措辞做断言；回复有没有把做了什么说清楚，由人看截图判断。
  *
- *   npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless
+ * 只装扩展：不注册伴随进程，agent 跑在扩展的 offscreen 文档里；模型配置写进扩展存储（与设置页写入格式相同），
+ * 凭据取自 ~/.sideagent/providers.local.json。原先靠伴随进程数据目录（会话 JSONL、agent.log）的判据，
+ * 改用设置页导出的诊断记录、offscreen 发出的网络请求和扩展后台的剪贴板桥读数，逐条注明在判据旁。
+ *
+ *   npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless [--model=provider/id]
  *
  * 验收文件：docs/evals/20260923-real-path-first-case.md
  */
 import { randomBytes } from "node:crypto";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { DAILY_DATA_DIR, REPO, changedFiles, filesContaining, launchRealPath, listenerPids, modelReplies, requireHeadless, sha256File, shadowedSources, siteAddress, sleep, snapshotDir, until } from "./harness.mts";
+import { DAILY_DATA_DIR, REPO, changedFiles, exportDiagnosticsViaSettings, filesContaining, launchRealPath, listenerPids, requireHeadless, sha256File, shadowedSources, siteAddress, sleep, snapshotDir, until, watchInproc } from "./harness.mts";
 import type { JsonRecord } from "./harness.mts";
+import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
 
@@ -23,6 +28,11 @@ const TASK_LIMIT_MS = 5 * 60_000;
 const DAILY_CLIPBOARD_PORT = 7761;
 
 const nonce = `rp${randomBytes(6).toString("hex")}`;
+
+// 模型来自 ~/.sideagent/providers.local.json；--model=provider/id 指定，默认 OpenCode Go 的 deepseek-v4.1-flash。
+const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? "opencode-go/deepseek-v4.1-flash";
+
+const plan = await loadModelPlan(modelArg);
 
 const startedAt = new Date();
 
@@ -135,10 +145,12 @@ const PAGE_STATE = `(() => ({
   owner: document.querySelector("#owner")?.value ?? null,
 }))()`;
 
-type Verdict = { status: "yes" | "no" | "未确定"; evidence: JsonRecord };
+/** n/a：只装扩展时没有对应对象（如伴随进程自己的剪贴板服务），照实记下原因，不算通过也不算失败。 */
+type Verdict = { status: "yes" | "no" | "未确定" | "n/a"; evidence: JsonRecord };
 
 const verdict = (pass: boolean | null, evidence: JsonRecord): Verdict => ({ status: pass === null ? "未确定" : pass ? "yes" : "no", evidence });
 
+// 日常配置里的模型只作环境记录；只装扩展时答话的是 --model 指定、写进扩展存储的那个。
 const dailyModel = await readFile(join(DAILY_DATA_DIR, "config.json"), "utf8").then((text) => {
   const model = String(JSON.parse(text).model ?? "");
 
@@ -155,6 +167,8 @@ const dailyClipboardHolders = listenerPids(DAILY_CLIPBOARD_PORT);
 
 const environment: JsonRecord = {
   node: process.version,
+  mode: "extension only (no native host)",
+  model: modelArg,
   dailyModel,
   dailyClipboardHolders,
   staleJsInExtensionBuild: shadowed.filter((s) => s.sourceNewer).map((s) => s.file),
@@ -165,7 +179,7 @@ const result: JsonRecord = {
   case: "codename-no-save",
   instruction: INSTRUCTION,
   acceptance: "docs/evals/20260923-real-path-first-case.md",
-  command: "npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless",
+  command: `npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless --model=${modelArg}`,
   startedAt: startedAt.toISOString(),
   nonce,
   environment,
@@ -179,13 +193,20 @@ result.verdicts = verdicts;
 
 result.observations = observations;
 
-const rp = await launchRealPath();
+const rp = await launchRealPath({ withoutNativeHost: true });
 
 environment.browser = rp.browser;
 
 environment.extensionId = rp.extensionId;
 
 let closed: Awaited<ReturnType<typeof rp.close>> | null = null;
+
+let inproc: Awaited<ReturnType<typeof watchInproc>> | null = null;
+
+/** 设置页「诊断记录 → 导出」下载的任务记录（jsonl）；代替伴随进程数据目录里的会话记录。 */
+let exportedTraces = "";
+
+let storedModel: JsonRecord | null = null;
 
 try {
   // ── 1. 练习页 ──
@@ -199,9 +220,14 @@ try {
     return state?.codename === ORIGINAL.codename ? state : undefined;
   }, 15_000, "练习页加载");
 
-  // ── 2. 真侧栏连上测试伴随进程，并认出当前页 ──
+  // ── 2. 真侧栏连上扩展内 agent，并认出当前页 ──
   const panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
+  // 与设置页保存写入的格式相同：相当于用户已在设置里选好服务商、填好 key。
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
+  // SAFETY: inproc_model_config 由上一行写入，形状是 { provider, modelId }。
+  storedModel = await rp.evaluate(panel, `chrome.storage.local.get("inproc_model_config").then((s) => s.inproc_model_config ?? null)`) as JsonRecord | null;
+  inproc = await watchInproc(rp, rp.extensionId);
 
   const ready = await until(async () => {
     const state: PanelState = await rp.evaluate(panel, PANEL_STATE);
@@ -209,7 +235,7 @@ try {
     if (state.setupVisible) throw new Error(`侧栏打开了调试通道设置页：${state.setupError || "没有错误信息"}`);
 
     return state.connected && state.pill?.includes("项目设置") ? state : undefined;
-  }, 90_000, "侧栏连上伴随进程并认出练习页", 500);
+  }, 90_000, "侧栏连上扩展内 agent 并认出练习页", 500);
 
   observations.panelReady = { statusText: ready.statusText, pill: ready.pill, model: ready.model };
 
@@ -296,26 +322,31 @@ try {
   } else {
     observations.clipboardRouting = { error: "找不到扩展后台" };
   }
+
+  // ── 5b. 像用户一样从设置页导出诊断记录：代替伴随进程的会话 JSONL 作为「谁答的话」和含 nonce 的正对照 ──
+  const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "diagnostics"));
+  exportedTraces = exported.traces;
+  observations.diagnosticsExport = exported.exportStatus;
 } catch (error) {
   result.error = error instanceof Error ? error.stack ?? error.message : String(error);
 } finally {
+  if (inproc) {
+    await writeFile(join(artifacts, "inproc-console.log"), inproc.logs()).catch(() => {});
+    await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
+  }
+
+  await writeFile(join(artifacts, "chrome-stderr.log"), rp.chromeStderr()).catch(() => {});
   closed = await rp.close();
   site.close();
 }
 
-// ── 6. 结束后的核对：测试伴随进程日志、构建产物、日常数据目录 ──
-const hostLog = await rp.hostLog();
-
-const clipboardLine = hostLog.split("\n").find((line) => line.includes("clipboard HTTP")) ?? null;
-
-const hostClipboardPort = Number(clipboardLine?.match(/clipboard HTTP http:\/\/127\.0\.0\.1:(\d+)/)?.[1] ?? NaN);
-
-const nativeConnected = hostLog.includes("面板已连接（native messaging）");
-
-verdicts.c4_ownClipboardServer = verdict(
-  dailyClipboardHolders.length === 0 ? null : Number.isInteger(hostClipboardPort) && hostClipboardPort !== DAILY_CLIPBOARD_PORT && !hostLog.includes("clipboard HTTP 未启动"),
-  { dailyClipboardHolders, testHostLine: clipboardLine?.replace(/^\S+ /, "") ?? null },
-);
+// ── 6. 结束后的核对：构建产物、扩展侧读数、日常数据目录 ──
+// c4 原判据读测试伴随进程的 agent.log，确认它的剪贴板服务没占日常的 7761。只装扩展时根本不起伴随进程，
+// 也就没有自己的剪贴板服务可查；「不拉起本机进程」由 noLocalHost 判定，这条照实记 n/a。
+verdicts.c4_ownClipboardServer = {
+  status: "n/a",
+  evidence: { reason: "只装扩展，没有伴随进程，也就没有它自己的剪贴板 HTTP 服务；是否拉起本机进程见 noLocalHost", dailyClipboardHolders },
+};
 
 const bundleFiles = (await readdir(rp.dirs.extension)).filter((file) => file.endsWith(".js"));
 
@@ -324,36 +355,61 @@ const bundleWith7761 = (await filesContaining(rp.dirs.extension, bundleFiles, St
 // SAFETY: clipboardRouting 只在上面两处写入，形状就是下面这个。
 const routing = observations.clipboardRouting as { reply?: { bridge?: boolean; error?: string; status?: string }; requestUrls?: string[] } | undefined;
 
-const expectedFinishUrl = Number.isInteger(hostClipboardPort) ? `http://127.0.0.1:${hostClipboardPort}/finish` : null;
-
+// c5 原判据：请求只发往测试伴随进程报的剪贴板端口。只装扩展时没有伴随进程端口可发，
+// 改判：构建产物不含 7761，剪贴板桥调用不发出任何请求（尤其不回退到日常的 7761），并明确报错。
 verdicts.c5_clipboardRouting = verdict(
-  !routing?.requestUrls?.length ? (bundleWith7761.length === 0 ? null : false)
+  !routing?.reply?.bridge ? (bundleWith7761.length === 0 ? null : false)
     : bundleWith7761.length === 0
-      && routing.requestUrls.every((url) => url === expectedFinishUrl)
-      && routing.reply?.error === "no clipboard transaction",
-  { bundleFilesContaining7761: bundleWith7761, expectedFinishUrl, ...routing },
+      && (routing.requestUrls ?? []).length === 0
+      && (routing.reply.error ?? "").length > 0,
+  { bundleFilesContaining7761: bundleWith7761, expectedRequests: 0, ...routing },
 );
 
-// 用会话记录证明答话的是日常配置里的那个模型，而且至少有一条回复不是报错。
-const [provider, ...modelParts] = (dailyModel ?? "").split("/");
+// 原判据读伴随进程的 Pi 会话 JSONL；只装扩展时改读设置页导出的诊断记录：
+// message_end 行带整条助手消息（provider、model、stopReason），run_start 行带当时的模型名。
+type TraceRow = { type?: string; data?: { model?: string; message?: { role?: string; provider?: string; model?: string; stopReason?: string } } };
 
-const modelId = modelParts.join("/");
+const traceRows = exportedTraces.split("\n").filter(Boolean).flatMap((line): TraceRow[] => {
+  try {
+    // SAFETY: 导出文件每行是 run-trace-core 写的 { type, data } 对象；解析失败的行丢弃。
+    return [JSON.parse(line) as TraceRow];
+  } catch {
+    return [];
+  }
+});
 
-const replies = await modelReplies(rp.dirs.data);
+const replies = traceRows.flatMap((row) => {
+  const message = row.type === "message_end" ? row.data?.message : undefined;
+
+  return message?.role === "assistant" ? [{ provider: String(message.provider), model: String(message.model), stopReason: String(message.stopReason) }] : [];
+});
+
+const runStartModels = [...new Set(traceRows.filter((row) => row.type === "run_start").map((row) => String(row.data?.model ?? "")))];
+
+const { providerId: provider, modelId } = plan;
 
 const repliesByOutcome = Object.fromEntries(
   [...new Set(replies.map((r) => `${r.provider}/${r.model} ${r.stopReason}`))].map((key) => [key, replies.filter((r) => `${r.provider}/${r.model} ${r.stopReason}` === key).length]),
 );
 
-const answeredByDailyModel = replies.some((r) => r.provider === provider && r.model === modelId && r.stopReason !== "error" && r.stopReason !== "aborted");
+const answeredByChosenModel = replies.some((r) => r.provider === provider && r.model === modelId && r.stopReason !== "error" && r.stopReason !== "aborted");
+
+// 原判据里的「面板经 native messaging 连上伴随进程」换成：扩展存储里的模型就是所选的那个，
+// 且 offscreen 里的 agent 确实向外发出了成功的模型请求（非扩展自身、非练习站）。
+const storedMatches = storedModel?.provider === provider && storedModel?.modelId === modelId;
+
+const siteOrigin = new URL(pageUrl).origin;
+
+const outboundCalls = (inproc?.requestsBetween(0) ?? []).filter((r) => r.method === "POST" && /^https?:/.test(r.url) && !r.url.startsWith(siteOrigin))
+  .map((r) => ({ host: new URL(r.url).host, status: r.status, failed: r.failed }));
+
+const okModelCalls = outboundCalls.filter((c) => c.status !== null && c.status >= 200 && c.status < 300).length;
 
 verdicts.c2_realServices = verdict(
-  nativeConnected && answeredByDailyModel && verdicts.c6_fillWithoutSave?.status === "yes",
+  storedMatches && okModelCalls > 0 && answeredByChosenModel && verdicts.c6_fillWithoutSave?.status === "yes",
   // SAFETY: observations.panel 只在任务结束时写入，带 model 字段。
-  { nativeConnected, dailyModel, repliesByOutcome, panelModelChip: (observations.panel as { model?: string } | undefined)?.model ?? null },
+  { model: modelArg, storedModel, runStartModels, repliesByOutcome, outboundHosts: [...new Set(outboundCalls.map((c) => c.host))], okModelCalls, failedModelCalls: outboundCalls.length - okModelCalls, panelModelChip: (observations.panel as { model?: string } | undefined)?.model ?? null },
 );
-
-const testDataFiles = [...(await snapshotDir(rp.dirs.data)).keys()];
 
 const dailyAfter = await snapshotDir(DAILY_DATA_DIR);
 
@@ -361,7 +417,8 @@ const dailyChanged = changedFiles(dailyBefore, dailyAfter);
 
 const dailyScan = await filesContaining(DAILY_DATA_DIR, dailyChanged, nonce);
 
-const positiveControl = (await filesContaining(rp.dirs.data, testDataFiles, nonce)).hits;
+// 正对照原先是「测试伴随进程数据目录里能找到 nonce」；只装扩展时测试侧的记录就是导出的诊断记录（run_start 带当前页网址）。
+const positiveControl = exportedTraces.includes(nonce) ? ["diagnostics/by-your-side-traces-*.jsonl"] : [];
 
 const dailyConfigHashAfter = await sha256File(join(DAILY_DATA_DIR, "config.json"));
 
@@ -370,7 +427,7 @@ verdicts.c1_dataIsolation = verdict(
     ? null
     : dailyScan.hits.length === 0 && dailyConfigHashBefore === dailyConfigHashAfter,
   {
-    testDataFilesWithNonce: positiveControl,
+    testRecordsWithNonce: positiveControl,
     dailyChangedFiles: dailyChanged,
     dailyChangedFilesWithNonce: dailyScan.hits,
     dailyChangedFilesUnreadable: dailyScan.unreadable,
@@ -378,20 +435,17 @@ verdicts.c1_dataIsolation = verdict(
   },
 );
 
-verdicts.hostExited = verdict(closed?.exitedWithChrome ?? false, closed ?? {});
+// 原判据 hostExited：伴随进程随 Chrome 退出。只装扩展时改判：整个运行没有拉起任何本机伴随进程。
+verdicts.noLocalHost = verdict(closed !== null && closed.hostPids.length === 0, closed ?? {});
 
-// ── 7. 产物 ──
-await cp(rp.dirs.data, join(artifacts, "host-data"), { recursive: true });
-
-await cp(join(rp.dirs.host, "wrapper-err.log"), join(artifacts, "host-wrapper-err.log")).catch(() => {});
-
+// ── 7. 产物（诊断记录已在 diagnostics/，offscreen 日志与请求在 inproc-*.{log,json}）──
 observations.siteRequests = requests;
 
 observations.chromeStderrTail = rp.chromeStderr().split("\n").filter((line) => /native|messaging|side.?panel|error/i.test(line)).slice(-20);
 
 result.finishedAt = new Date().toISOString();
 
-result.ok = !result.error && Object.values(verdicts).every((v) => v.status === "yes");
+result.ok = !result.error && Object.values(verdicts).every((v) => v.status === "yes" || v.status === "n/a");
 
 await writeFile(join(artifacts, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
 
