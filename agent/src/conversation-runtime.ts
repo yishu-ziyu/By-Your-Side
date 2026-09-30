@@ -5,7 +5,6 @@ import { FetchConsentBroker } from "./fetch-consent.js";
 import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
-import {reserveBrowserDecision,reserveBrowserMaterial} from './browser-decision-budget.js';
 import { frozenMembersFromTakeover } from "./team-handoff.js";
 import type { ExperienceStore } from "./experience.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -62,9 +61,7 @@ export async function createConversationRuntime(
         options?.onModelFailover?.(from, to);
         void toolSession?.availableModels().then(models => sendCurrent({ type: "model_info", model: to, models }));
       },
-      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => fleet.releaseIdleForeignTab(tabId), observedMaterials:()=>toolSession?.browserObservedMaterials()??[], getMaterial:async(goal,control,signal)=>{if(!toolSession)throw new Error('任务尚未就绪');reserveBrowserMaterial(options?.sessionManager?.getSessionFile(),toolSession.browserDecisionRunId());
-
-return toolSession.browserFieldMaterial(goal,control,signal);}, reserveDecision:()=>reserveBrowserDecision(options?.sessionManager?.getSessionFile(),toolSession?.browserDecisionRunId()??null), goal:()=>toolSession?.browserDecisionContext()??'', userText:()=>toolSession?.browserDecisionUserText()??'', isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) }, get uploadLedger() { return toolSession?.uploadLedger; } }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
+      customTools: [...createBrowserTools(rpc, undefined, tabId => fleet.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => fleet.releaseIdleForeignTab(tabId), isToolHiddenByMode: name => toolSession?.isToolHiddenByMode(name) ?? false, epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), consumeConsent: (_name, params, opts) => consent.request(params, opts), learning: { active: () => toolSession?.isLearningSkillRun() ?? false, observe: event => toolSession?.observeSkillEvidence(event) }, get uploadLedger() { return toolSession?.uploadLedger; } }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
  return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), ...createFleetTools(fleet, LEAD_SESSION_ID)],
     },

@@ -29,13 +29,6 @@ const tools = createBrowserTools(new ToolRpc()).filter(tool => names.has(tool.na
   return tool.name === 'press_key' ? {...base,parameters:{...base.parameters,properties:{...base.parameters.properties,target:Type.Optional(Type.String())}}} : base;
 });
 
-const judge = {
-  name:'judge_browser_action',
-  description:'Ask Jev to identify the next browser action and its target from a fresh, host-observed page. Use when the intended element/tab is ambiguous or matching controls is difficult. Pass the complete local requirement including restrictions. The host supplies actual user context and page candidates; never supply invented candidates. Returns a suggestion, uncertainty or a need for more context, WITHOUT executing. To act, call the returned tool with its arguments including decisionGuard. Fill suggestions may require value from the user or existing material. If stale, observe/judge again; never drop decisionGuard to bypass rejection. Simple unambiguous operations need no judgment call.',
-  parameters:Type.Object({request:Type.String({minLength:1,maxLength:3000}),tabId:Type.Optional(Type.Number())}),
-  promptGuidelines:[],
-};
-
 /** 交给 provider 的纯 JSON 参数：TypeBox 生成的对象无循环；序列化失败时退回原对象，不让一次模板异常炸掉整张工具表。 */
 function providerParameters(value: unknown): Record<string, unknown> {
   try {
@@ -45,7 +38,7 @@ function providerParameters(value: unknown): Record<string, unknown> {
   }
 }
 
-export const REALTIME_BROWSER_TOOLS = [...tools,judge].map(tool => ({
+export const REALTIME_BROWSER_TOOLS = tools.map(tool => ({
   type: 'function' as const,
   function: {
     name: tool.name,

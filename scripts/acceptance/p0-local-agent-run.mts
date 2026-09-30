@@ -244,6 +244,7 @@ async function launchIso(opts: {token: string; profileDir?: string; extensionDir
     '--no-first-run', '--no-default-browser-check',
     '--autoplay-policy=no-user-gesture-required', 'about:blank',
   ], {stdio: 'ignore'});
+
   tempDir?.setChild(child);
 
   const port = await until(async () => {
@@ -325,6 +326,8 @@ async function launchIso(opts: {token: string; profileDir?: string; extensionDir
   await iso.reattachSw();
 
   if (!iso.swSession) throw new Error('未找到隔离扩展的 service worker');
+  // 扩展默认连 offscreen 里的扩展内 agent；关掉它并让它建不起来，uplink 才回退到 ws 调试通道接上进程内宿主。
+  await iso.swEval(`(async()=>{chrome.offscreen.createDocument=async()=>{throw new Error('test: WS host only');};const until=Date.now()+10000;while(Date.now()<until){await chrome.offscreen.closeDocument().catch(()=>{});const left=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']});if(!left.length)return true;await new Promise(r=>setTimeout(r,100));}throw new Error('offscreen 文档没能关掉，无法回退到 ws 调试通道');})()`, 15_000);
   await iso.swEval(`chrome.storage.local.set({sideagent_token:${JSON.stringify(opts.token)}})`, 15_000);
 
   return iso;

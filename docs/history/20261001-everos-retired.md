@@ -1,4 +1,6 @@
-# 日常经历积累
+# 日常经历积累（EverOS，已退役）
+
+> 2026-10-01 移出主线：仓库里的桥接与管理脚本（`scripts/everos/`）已删除（[退役验收](../evals/20261001-retire-native-and-dead-code.md)）。它读取的 `~/.sideagent/experiences/` 只由已退役的本机伴随进程写入，退役后不再有新记录。已安装在本机的服务与 LaunchAgent 不随仓库删除，仍可用下文 `control.py off` 停用。以下是退役前原文，只作历史参考。
 
 [文档导航](../README.md) · [架构](../architecture.md)
 

@@ -1,4 +1,4 @@
-import type { TabInfo, ToolExecutionFact } from './protocol.js';
+import type { TabInfo } from './protocol.js';
 
 /** Cross-provider observation/decision contract. Page strings are evidence, never instructions. */
 export const BROWSER_OPERATIONS = ['click', 'fill', 'select', 'press_key', 'scroll', 'switch_tab', 'hover', 'continue_read', 'select_scope', 'select_materials', 'wait', 'reobserve', 'handoff', 'done'] as const;
@@ -112,108 +112,12 @@ export interface BrowserMaterial {
   purpose: string;
 }
 
-export interface BrowserDecision {
-  observationId: string;
-  candidateId: string;
-  confidence: number;
-  operationConfidence?: number;
-  targetConfidence?: number;
-  operationProbabilities?: Record<string, number>;
-  targetProbabilities?: Record<string, number>;
-  model: string;
-}
-
 export interface BrowserActionGuard {
   observationId: string;
   operation: 'click' | 'fill' | 'press_key' | 'scroll' | 'switch_tab' | 'hover';
   target?: string;
   sourceTabId?: number;
 }
-
-export type BrowserStepReceipt = {
-  /** Host call identity for this action attempt; not proof of execution. */
-  toolCallId: string;
-  /** Observation used to choose the action, not post-action evidence. */
-  observationId: string;
-  candidateId: string;
-  operation: BrowserOperation;
-  detail: string;
-} & (
-  | { executionFact: ToolExecutionFact; verification: 'unverified'; verificationToolCallId?: never }
-  // Verification covers this action only, never completion of the user's goal.
-  | { executionFact: Extract<ToolExecutionFact, 'executed'>; verification: 'verified'; verificationToolCallId: string }
-);
-
-/**
- * Typed failure/continue cause. Control logic must branch on this code, never on Chinese `reason` text.
- * `none` from Jev maps to `no_match`. Illegal IDs / NaN / missing fields use `invalid_decision` and never execute.
- */
-export const BROWSER_DECISION_REASON_CODES = [
-  'observation_incomplete',
-  'candidate_budget',
-  'no_match',
-  'low_confidence',
-  'invalid_decision',
-  'unsupported_action',
-  'stale_observation',
-  'permission_required',
-  'execution_unknown',
-  'provider_error',
-] as const;
-
-export type BrowserDecisionReasonCode = (typeof BROWSER_DECISION_REASON_CODES)[number];
-
-/** Machine-readable continue hint. Entries must name tools/paths that actually exist for the caller. */
-export type BrowserContinueHint = {
-  /** Preferred next host action; callers ignore unknown kinds. */
-  action:
-    | 'continue_read'
-    | 'select_scope'
-    | 'reobserve'
-    | 'readonly_verify'
-    | 'permission_path'
-    | 'session_prompt'
-    | 'planner_tools'
-    | 'realtime_delegate'
-    | 'realtime_direct';
-  cursor?: string;
-  viewScopeId?: string;
-  /** Only tools/entries that are mounted for this caller. */
-  tools?: string[];
-  /** Observation/scopes/cursors already inspected — do not re-judge without progress. */
-  checkedRange?: {
-    observationIds: string[];
-    cursors: string[];
-    scopeIds: string[];
-  };
-  /** When true, receipts and unknown writes must stay on the ledger. */
-  preserveFacts?: boolean;
-};
-
-export type BrowserLoopOutcome = {
-  status: 'needs_verification' | 'handoff' | 'blocked' | 'cancelled';
-  reason: string;
-  /** Present on every non-success finish that has a classified cause. */
-  reasonCode?: BrowserDecisionReasonCode;
-  continue?: BrowserContinueHint;
-  receipts: BrowserStepReceipt[];
-  lastObservation?: BrowserObservation;
-  modelCalls: number;
-  decisions: Array<BrowserDecision & {
-    elapsedMs: number;
-  }>;
-  /**
-   * Only with `needs_verification`: the loop's own completion judgment. `facts` are the code-written
-   * action facts it was judged from; `lowRiskWrites` is true when every click was judged a low-risk write;
-   * `clicked` names the clicked controls in order.
-   */
-  completion?: {
-    confidence: number;
-    facts: string[];
-    lowRiskWrites: boolean;
-    clicked: string[];
-  };
-};
 
 /**
  * 会生成 click/hover 候选的角色。

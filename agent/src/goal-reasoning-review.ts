@@ -1,4 +1,4 @@
-import { reviewGoalEvidence, goalReviewState, GOAL_REVIEW_QUESTIONS, GOAL_REVIEW_NO_MAX, type GoalReviewStage, type GoalEvidenceReview } from './goal-evidence-judge.js';
+import { goalReviewState, GOAL_REVIEW_QUESTIONS, type GoalReviewStage, type GoalEvidenceReview } from './goal-evidence-judge.js';
 import type { VoiceModelCall } from './voice-model.js';
 
 /** A separate bounded review gets actual requirements/evidence, never the executor's claimed success. */
@@ -37,26 +37,9 @@ export async function reviewAmbiguousGoal(call: VoiceModelCall | null, stage: Go
 }
 
 
-/** Uncertainty hands the same evidence to the current task model exactly once. */
-export async function reviewTaskGoal(call:VoiceModelCall|null,stage:GoalReviewStage,data:unknown,signal:AbortSignal,onFallback?:()=>void):Promise<GoalEvidenceReview> {
-  let reviewed: GoalEvidenceReview;
+/** The current task model reviews the actual requirements and evidence (the Jev first pass retired with the native mode). */
+export async function reviewTaskGoal(call:VoiceModelCall|null,stage:GoalReviewStage,data:unknown,signal:AbortSignal):Promise<GoalEvidenceReview> {
+  const resolved=await reviewAmbiguousGoal(call,stage,data,signal);
 
-  try {
-    reviewed=await reviewGoalEvidence(stage,data,signal);
-  } catch (error) {
-    if (signal.aborted || (error instanceof Error && error.message.includes('核验资料超过预算'))) throw error;
-    const resolved=await reviewAmbiguousGoal(call,stage,data,signal);
-
-    return {...resolved,probability:resolved.matched?1:0,reviewedBy:'main'};
-  }
-
-  if(stage!=='plan'&&reviewed.reviewedBy!=='code'&&!reviewed.matched&&reviewed.probability>(stage==='target'?.5:GOAL_REVIEW_NO_MAX)
-    &&(!reviewed.issue||reviewed.issue.kind==='none'||reviewed.issue.confidence<.75)) {
-    onFallback?.();
-    const resolved=await reviewAmbiguousGoal(call,stage,data,signal);
-
-    return {...reviewed,...resolved,reviewedBy:'main'};
-  }
-
-  return {...reviewed,reviewedBy:reviewed.reviewedBy??'jev'};
+  return {...resolved,probability:resolved.matched?1:0,reviewedBy:'main'};
 }

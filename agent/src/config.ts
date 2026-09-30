@@ -8,62 +8,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface AgentConfig {
-  /** Experimental general browser decision loop; never enabled by merely building the project. */
-  generalBrowserLoop?: boolean;
-  /** Let the loop's own low-risk click completion end the task without a main-model check. Off by default. */
-  browserLoopDirectDelivery?: boolean;
-  /** Opt-in small display-command fast path; credentials stay in typesafe.env. */
-  displayFastPath?: boolean;
-  /** Opt-in display fast path while a task is already running; off by default and constrained by displayFastPath. */
-  displaySteerFastPath?: boolean;
-  /** Opt-in shadow routing: ask Jev which lane an utterance belongs to and record it, without changing any routing. Off by default. */
-  routeShadow?: boolean;
-  /** Request-level spoken result gate; off unless explicitly enabled. */
-  voiceSpokenResultGate?: boolean;
-  /** Shared daily cap on request judgments (shadow and voice gate); 1-5000, default 400. */
-  routeShadowDailyLimit?: number;
   /** provider/id 格式，如 kimi-coding/kimi-for-coding */
   model?: string;
   /** http(s)://host:port 形式的代理地址 */
   proxy?: string;
 }
 
-export function generalBrowserLoopEnabled():boolean {
-  if(process.env.SIDEAGENT_GENERAL_BROWSER_LOOP==='0')return false;
-
-  if(process.env.SIDEAGENT_GENERAL_BROWSER_LOOP==='1')return true;
-
-  return loadConfig().generalBrowserLoop===true;
-}
-
-/** Off unless configured: turn on only after an acceptance run shows zero false completions. */
-export function browserLoopDirectDeliveryEnabled():boolean {
-  if(process.env.SIDEAGENT_BROWSER_LOOP_DIRECT_DELIVERY==='0')return false;
-
-  if(process.env.SIDEAGENT_BROWSER_LOOP_DIRECT_DELIVERY==='1')return true;
-
-  return loadConfig().browserLoopDirectDelivery===true;
-}
-
-export function routeShadowEnabled():boolean {
-  if(process.env.SIDEAGENT_ROUTE_SHADOW==='0')return false;
-
-  if(process.env.SIDEAGENT_ROUTE_SHADOW==='1')return true;
-
-  return loadConfig().routeShadow===true;
-}
-
-export function voiceSpokenResultGateEnabled(): boolean {
-  return loadConfig().voiceSpokenResultGate === true;
-}
-
-export function routeShadowDailyLimit():number {
-  return loadConfig().routeShadowDailyLimit??400;
-}
-
 /**
  * 伴随进程自己写的数据（会话、记忆、日志、回执、配置……）的根目录。
- * 凭据文件不跟着走：StepFun、TypeSafe 等密钥始终从 ~/.sideagent 原位只读。
+ * 凭据文件不跟着走：StepFun 等密钥始终从 ~/.sideagent 原位只读。
  */
 export function dataDir(): string {
   return process.env.SIDEAGENT_DATA_DIR?.trim() || join(homedir(), ".sideagent");
@@ -86,20 +39,6 @@ export function loadConfig(path = configPath()): AgentConfig {
   try {
     const json = JSON.parse(raw) as Record<string, unknown>;
     const config: AgentConfig = {};
-
-    if(typeof json.generalBrowserLoop === "boolean")config.generalBrowserLoop=json.generalBrowserLoop;
-
-    if(typeof json.browserLoopDirectDelivery === "boolean")config.browserLoopDirectDelivery=json.browserLoopDirectDelivery;
-
-    if(typeof json.displayFastPath === "boolean")config.displayFastPath=json.displayFastPath;
-
-    if(typeof json.displaySteerFastPath === "boolean")config.displaySteerFastPath=json.displaySteerFastPath;
-
-    if(typeof json.voiceSpokenResultGate === "boolean")config.voiceSpokenResultGate=json.voiceSpokenResultGate;
-
-    if(typeof json.routeShadow === "boolean")config.routeShadow=json.routeShadow;
-
-    if(typeof json.routeShadowDailyLimit === "number" && Number.isInteger(json.routeShadowDailyLimit) && json.routeShadowDailyLimit>=1 && json.routeShadowDailyLimit<=5000)config.routeShadowDailyLimit=json.routeShadowDailyLimit;
 
     if (typeof json.model === "string" && json.model) config.model = json.model;
 

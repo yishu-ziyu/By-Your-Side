@@ -231,7 +231,7 @@ app.innerHTML = `
   <div id="model-popover" hidden></div>
   <div id="setup" hidden>
     <h2>By Your Side 设置</h2>
-    <p class="hint">native host 未安装时的调试通道：先跑 <code>npm run dev:agent</code>，把终端里的 token 粘贴到下面（只需设置一次）。正常用法：<code>npm run install:host</code> 后无需本页。</p>
+    <p class="hint">开发检查用的调试通道：把检查脚本给出的 token 粘贴到下面。正常使用无需本页。</p>
     <input id="token-input" type="text" placeholder="token" autocomplete="off" />
     <div id="setup-err" class="err"></div>
     <button id="setup-save" type="button">保存并连接</button>

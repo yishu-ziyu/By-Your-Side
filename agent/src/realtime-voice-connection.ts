@@ -21,7 +21,6 @@
  */
 import { REALTIME_BROWSER_TOOL_NAMES, realtimeBrowserError, REALTIME_BROWSER_TOOLS, REALTIME_BROWSER_INSTRUCTIONS, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
 import { isExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
-import type { RequestJudgment } from './route-shadow.js';
 import WebSocket, {type RawData} from 'ws';
 import { DEFAULT_STEP_VOICE } from '../../shared/voice.js';
 
@@ -141,15 +140,12 @@ export interface RealtimeVoiceConnectionOptions {
   voice?: string;
   /** 人设描述正文；只附在规则之后，并声明冲突时以规则为准。空串或缺省表示不附加。 */
   persona?: string;
-  voiceSpokenResultGate?: boolean;
   /** 有可控任务或待确认控制时为真：服务端自动回复先扣住，等本轮转写到了再放行或交给宿主。 */
   holdForTranscript?: () => boolean;
   /** 本轮转写是否由宿主接管（明确终止任务）；接管时模型本轮回复被取消，不出声。 */
   claimTranscript?: (text: string) => boolean;
   /** 执行被接管的这句话；返回要原样告诉用户的话，null 表示由回执通知播报。 */
   runClaimed?: (text: string) => Promise<string | null>;
-  /** Started alongside execution; never awaited by the tool path. Also serves shadow observation. */
-  judgeRequest?: (input: VoiceRequestInput) => Promise<RequestJudgment | null>;
 }
 
 export interface VoiceRequestInput {
@@ -162,8 +158,6 @@ export interface VoiceRequestInput {
 
 interface RequestState {
   input: VoiceRequestInput;
-  judgment?: RequestJudgment;
-  invalidated: boolean;
 }
 
 type Phase = 'idle' | 'connecting' | 'configuring' | 'ready' | 'closed';
@@ -306,7 +300,6 @@ export class RealtimeVoiceConnection {
   private inputWaiters: Array<(input: UserInput | null) => void> = [];
   private readonly pendingToolCalls = new Map<string, PendingToolCall>();
   private wantResponse = false;
-  private spokenGateStoppedTurn: number | null = null;
   private readonly requests = new Map<string, RequestState>();
   private queuedNotify: Array<{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean}> = [];
   private creatingDeliveryId: string | undefined;
@@ -766,7 +759,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     this.pendingInputs.set(itemId,{seq:this.speechSeq,at:origin?.at??Date.now(),text});
     // With no VAD/item binding, show/route ASR as before but never authorize capsule-only behavior.
-    this.recordUserInput({id: itemId, text}, origin?.seq === this.speechSeq || this.speechItemId === itemId);
+    this.recordUserInput({id: itemId, text});
     this.sendToClient({type: 'transcript', role: 'user', text, final: true,itemId,turn:this.speechSeq+1,current:true});
 
     if (this.held?.seq === this.speechSeq) {
@@ -1143,30 +1136,14 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     });
   }
 
-  private recordUserInput(input: UserInput, identityKnown = true): void {
+  private recordUserInput(input: UserInput): void {
     if (this.consumedInputIds.has(input.id)) return; // 旧回合的重复/迟到结果不算新候选，也不打断正在等新 ASR 的调用
-    const existing = this.requests.get(input.id);
 
-    if (existing) {
-      if (existing.input.text !== input.text || !identityKnown) existing.invalidated = true;
-    } else {
+    if (!this.requests.has(input.id)) {
       const identity: VoiceRequestInput = {voiceId: this.options.voiceId ?? '', turn: this.speechSeq + 1,
         itemId: input.id, inputId: input.id, text: input.text};
 
-      const request: RequestState = {input: identity, invalidated: !identityKnown || this.spokenGateStoppedTurn === this.speechSeq};
-      this.requests.set(input.id, request);
-      const seq = this.speechSeq;
-
-      // Invocation is synchronous; completion cannot gate input delivery or tool execution.
-      try {
-        void this.options.judgeRequest?.(identity).then(judgment => {
-          if (!judgment || this.closed || this.pendingStop || seq !== this.speechSeq || request.invalidated) return;
-
-          if (judgment.voiceId !== identity.voiceId || judgment.turn !== identity.turn
-            || judgment.itemId !== identity.itemId || judgment.inputId !== identity.inputId) return;
-          request.judgment = judgment;
-        }).catch(() => {});
-      } catch { /* Judgment unavailable: normal voice continues. */ }
+      this.requests.set(input.id, {input: identity});
     }
 
     this.latestInput = input;
@@ -1204,11 +1181,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       batch.push(call);
       replyNeeded ||= !call.deferReply;
       this.log({type: 'tool_output_sent', callId: call.callId, name: call.name});
-    }
-
-    if (batch.length && this.canCloseWithCapsule(batch)) {
-      replyNeeded = false;
-      this.sendToClient({type: 'status', phase: 'idle', text: '已连接，可以说了'});
     }
 
     if(!replyNeeded&&this.playbackBusy())return;
@@ -1249,44 +1221,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         this.maybeFlush();
       });
     }
-  }
-
-  /** No wait, no rolling eligibility: every result in this batch must be a confirmed closable action. */
-  private canCloseWithCapsule(batch: PendingToolCall[]): boolean {
-    if (!this.options.voiceSpokenResultGate) return false;
-    const inputId = batch[0]?.inputId;
-    const request = inputId ? this.requests.get(inputId) : undefined;
-    const judgment = request?.judgment;
-    let reason = 'judgment_unavailable';
-
-    if (inputId && judgment && !request?.invalidated) {
-      const current = judgment.voiceId === this.options.voiceId && judgment.turn === this.speechSeq + 1
-        && judgment.itemId === inputId && judgment.inputId === inputId && this.latestInput?.id === inputId;
-
-      const valid = Number.isFinite(judgment.pageChange) && judgment.pageChange >= 0 && judgment.pageChange <= 1
-        && Number.isFinite(judgment.spokenResult) && judgment.spokenResult >= 0 && judgment.spokenResult <= 1
-        && Number.isFinite(judgment.completedAt) && judgment.completedAt <= Date.now();
-
-      const requestAllows = judgment.lane === 'task' && judgment.pageChange >= 0.80 && judgment.spokenResult <= 0.20;
-
-      const resultsAllow = batch.every(call => call.inputId === inputId && call.speechSeq === this.speechSeq
-        && !call.failed && !call.deferReply && call.executionFact === 'executed'
-        && call.feedback?.channel === 'capsule' && call.feedback.kind === 'success'
-        && call.feedback.capsuleCanCloseAction === true && call.feedback.facts.executionFact === 'executed');
-
-      if (this.wantResponse || this.creatingNotice) reason = 'reply_already_pending';
-      else if (this.spokenGateStoppedTurn === this.speechSeq) reason = 'user_stopped';
-      else if (!current) reason = 'stale_input';
-      else if (!valid) reason = 'invalid_judgment';
-      else if (!requestAllows) reason = 'spoken_result_needed';
-      else if (!resultsAllow) reason = 'execution_requires_continuation';
-      else reason = 'capsule_only';
-    }
-
-    const applied = reason === 'capsule_only';
-    this.log({type: 'spoken_result_gate', inputId, applied, reason, judgment, callIds: batch.map(call => call.callId)});
-
-    return applied;
   }
 
   private playbackBusy(): boolean {
@@ -1333,10 +1267,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     // 也要拦住这轮，等下一次真实用户输入解锁。
     if (responseId === null) this.pendingStop = true;
     this.wantResponse = false;
-    this.spokenGateStoppedTurn = this.speechSeq;
-    const request = this.latestInput ? this.requests.get(this.latestInput.id) : undefined;
-
-    if (request) request.invalidated = true;
     this.busyRetries = 0;
     this.clearTimer('busy-retry');
     this.clearTimer('create-watch');

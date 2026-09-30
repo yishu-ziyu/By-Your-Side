@@ -22,22 +22,12 @@ npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless
 
 # 只跑指定场景（迭代用，约 8 秒；整轮约 7 分钟）
 ONLY=C5 npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless
-npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --only=S4,S6
+npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --only=S1,S2
 ```
 
-场景 ID：`F1 F2 F3 F4 F4b F5 C1 C2 C3 C4 C5 S1 S2 S3 S4 S5 S6 S7`（`C6` 富文本粘贴原走单独通道 `browser-capability-paste.mts`，依赖本机伴随进程的剪贴板服务，已随本机模式删除）。
+场景 ID：`F1 F2 F3 F4 F4b F5 C1 C2 C3 C4 C5 S1 S2 S3`，零模型请求（原 S4–S7 走真实 Jev，已随 Jev 于 10-01 删除；`C6` 富文本粘贴原走单独通道 `browser-capability-paste.mts`，依赖本机伴随进程的剪贴板服务，已随本机模式删除）。
 
 无头窗口从不聚焦，产品按设计不把工作页切到前台，所以工作页默认是隐藏状态。C2 先验证隐藏页上的滚轮被快速拒绝、页面没收到事件，再把页切到前台（模拟用户切回窗口）验证落点。
-
-## Jev 做法对照（jev-compare）
-
-```bash
-npx tsx scripts/acceptance/jev-compare/run.mts --headless --tasks=S5rt,S5loop,S6,S6N,H1,H2,H3,H4,H5,H6,H7,H8 --arms=current,new --rounds=30 --name=<批次> [--extra-tabs=3]
-npx tsx scripts/acceptance/jev-compare/run.mts --headless --tasks=E5,E6,E6N --arms=split,direct --rounds=30 --name=<批次>
-python3 scripts/acceptance/jev-compare/analyze.py out/jev-compare/<批次> [...]
-```
-
-决策层 `current` 从 main（`--base`）`git archive` 出当时的循环原样运行，`new` 是本工作树的[窄问题循环](../browser-decision-loop.md)；页面、执行器、门槛和 Jev 模型相同，两臂轮流，每次新起隔离无头 Chrome。端到端 `split` 是循环后交主模型核对，`direct` 另外允许循环自己判定完成时直接交付。成功、错误写和误报完成只看夹具计数器（`jev-compare/fixtures.mts`）；H1–H8 是留出任务，D1–D5 只供调试（样本内）。执行器以默认可见会话调用，切换的标签页会调到前台。`analyze.py` 按[验收记录](../evals/20260926-jev-narrow-questions.md)的门槛汇总，网络故障单列。
 
 ## 真实路径用例（real-path）
 
@@ -61,19 +51,19 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=after [--on
 npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only=real-confirm --real-model=stepfun/step-3.7-flash # 真实模型：等页面确认时这一轮会不会结束
 ```
 
-`ux-fixes.mts` 只装扩展，模型换成本机脚本模型 `real-path/scripted-model.mts`（OpenAI 兼容，按任务原话里的关键词回写好的正文、工具调用或错误码），像用户一样在设置页选「自定义地址」填写，所以工具调用、宿主核验、账本和页面标注都是产品自己在跑。判据只看用户看得到的东西：侧栏文字里不得出现工具名、元素编号、内部占位、原始错误和账本口吻，页面上的确认按钮要在「发送」键旁边看得见且点了真的提交。语音组填真 key 或一把服务端不认的 key 看连不上的样子；`demo` 组注册伴随进程（有技能存储）看示范记录。产物在 `out/acceptance/ux-fixes/<phase>/`。
+`ux-fixes.mts` 只装扩展，模型换成本机脚本模型 `real-path/scripted-model.mts`（OpenAI 兼容，按任务原话里的关键词回写好的正文、工具调用或错误码），像用户一样在设置页选「自定义地址」填写，所以工具调用、宿主核验、账本和页面标注都是产品自己在跑。判据只看用户看得到的东西：侧栏文字里不得出现工具名、元素编号、内部占位、原始错误和账本口吻，页面上的确认按钮要在「发送」键旁边看得见且点了真的提交。语音组填真 key 或一把服务端不认的 key 看连不上的样子；`demo` 组原靠注册伴随进程取得技能存储看示范记录；本机模式退役后驱动不再注册，扩展里没有技能存储、示范入口隐藏，这一组要等技能接进扩展后改写。产物在 `out/acceptance/ux-fixes/<phase>/`。
 
-`real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、经 Native Messaging 拉起当前源码的伴随进程、真模型。伴随进程的数据写进临时目录（`SIDEAGENT_DATA_DIR`），凭据从 `~/.sideagent` 原位只读；不碰日常 Chrome、`extension/dist` 和日常伴随进程。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录），产物在 `out/acceptance/real-path/<时间>-<用例>/`。`launchRealPath({ microphoneWav })` 用 WAV 充当麦克风（只放一遍），语音模型和断句都是真的。加 `--model=provider/id` 只替换测试伴随进程的模型（例如 `kimi-coding/kimi-for-coding`），日常配置不动。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
+`real-path/harness.mts` 是共用驱动：隔离的无窗口 Chrome、真侧栏、只装扩展（从当前源码构建到临时目录，agent 跑在 offscreen 文档里，不注册本机伴随进程）、真模型或脚本模型。不碰日常 Chrome 和 `extension/dist`。每条用例只看结果（页面、练习站收到的请求、侧栏状态、日常数据目录），产物在 `out/acceptance/real-path/<时间>-<用例>/`。`launchRealPath({ microphoneWav })` 用 WAV 充当麦克风（只放一遍），语音模型和断句都是真的。`withoutNativeHost` 参数保留只为兼容，传不传都一样；`close()` 返回的 `hostPids` 恒为空。验收文件：`docs/evals/20260923-real-path-first-case.md`、`docs/evals/20260923-repo-cleanup.md`。
 
 `everyday-baseline.mts --headless --inproc=provider/id` 在隔离 Chrome 里只装扩展，像用户一样从设置页填 key、测试连接、保存，再跑 10 条日常请求。扩展内没有诊断记录，所以用 `watchInproc()` 从外部记录 offscreen 的 console 和每次网络请求（首字节、结束），写进 `hostlog.txt` 和 `inproc-requests.json`；每条还要求模型请求只发往所选服务商的主机，发错就判失败。跑完后再像用户一样在设置页点「导出」「清空」：导出的 jsonl 必须覆盖每条用例、每行带 time/sessionId/type/turn、不含 API key，清空后再导出为空（结果在 `summary.json` 的 `traceCheck`）。观察器也记下扩展后台 worker 的起停，用来排除「worker 重启丢了内存状态」这类原因。长文翻译用 `--only=translate-long`（`/long` 页：脚本拼出的 109 个原创英文段落块；判据是 109 块都出现译文），需要 `CASE_LIMIT_MS=900000` 放宽单条时限；翻译用例另记页面上第一段译文出现的时刻和译文块数随时间的变化（`firstTranslatedMs`、`translatedTimeline`），`traceCheck.translation` 列出导出文件里的每次翻译请求和每次翻译工具调用的结果。每条用例导航后把工作页切回前台，上一条新开的标签页不会变成下一条的当前页。`inproc-voice` 跑完同样从设置页导出语音记录，判 `voiceRecordExported`：有 asr、text 行，与侧栏听到的句子一致，不含语音密钥（逐帧行只在诊断模式有，不作要求）。问答、圈画、闲聊用例另记开口时间线（`result.opening`：开麦、握手帧、首帧音频、服务端断句与转写相对开麦的毫秒数和发出音频的响度），并判 `speechDelivered`：WAV 里的人声时长与实际发给服务端的人声时长比较，不依赖服务端断句。`--lead=300` 模拟点完麦克风马上开口；假麦克风在 `getUserMedia` 时开始放。时间线还记服务端回显的 `turn_detection`，以及每个回复的创建、首段文字、工具调用（含参数）、取消/结束和宿主回传的工具结果；`receivedBySecond` 按秒统计收到的事件类型，用来看挂住时服务端还在发什么。`--daily` 在日常 Chrome 跑扩展内 agent 时也挂同一个观察器。圈画这条（`/quota`）要求有一个框同时圈住「五小时用量」和「32%」，并且名牌不压页面文字：框和名牌画在扩展的封闭 shadow root 里，用 CDP 穿透读出位置，再和页面每个文字节点对照。标注渲染的离线自检是 `node extension/test/overlay-check.mjs`（本机 Playwright Chromium 版本变了时用 `OVERLAY_CHROME` 指向当前那一份），through 用例量的是手绘框线本身，不是外层盒子。
 
-`everyday-baseline.mts --daily` 改用 `attachDailyChrome()`：连到用户已开的日常 Chrome（9222），驱动已加载的 `extension/dist` 和日常设置，不构建、不注册伴随进程；在用户窗口里新开标签页和侧栏，结束只关自己开的标签页。只在用户同意后运行。要测「只装扩展」，先停用该 Chrome 用户目录下 `NativeMessagingHosts/com.sideagent.host.json`（日常用的是 `ChromeMain` 目录）并重载扩展；清单还在时扩展优先连本机伴随进程。
+`everyday-baseline.mts --daily` 改用 `attachDailyChrome()`：连到用户已开的日常 Chrome（9222），驱动已加载的 `extension/dist` 和日常设置，不构建；在用户窗口里新开标签页和侧栏，结束只关自己开的标签页。只在用户同意后运行。
 
 两个隔离启动器（`real-path/harness.mts`、`isolated-extension.mts`）都把 Chrome 配置目录的下载文件夹指到临时目录，页面下载不进用户真实的下载文件夹。`page-download` 的练习页是夹具服务器的 `downloads.html`：一个文件完整返回，另一个声明 64 KB、发 4 KB 后断开；判据看临时下载文件夹里的实际文件、Chrome 下载记录（`chrome.downloads.search`）和侧栏回答。
 
 临时配置目录由 `temp-profile.mjs` 统一登记：`isolated-extension.mts` 在 `close()` 时删除，real-path 在 `remove()` 时删除；用例抛错、`process.exit()` 或收到 SIGINT/SIGTERM/SIGHUP 时，先杀掉对应 Chrome 再删除。`p0-local-agent-run.mts`、`capability-parity-run.mjs` 与 QA-01 的隔离构建目录同样登记。2026-09-26 之前每次隔离运行都留下配置目录，约 880 个（11 GB）占满了磁盘。
 
-`inproc-*` 用例则不注册 Native Messaging：模型凭据只写进隔离扩展存储。圈画判据同时要求页面圈住目标、未点击、侧栏交付无错误；只看到圈画但目标账本报未完成，仍为失败。`inproc-mark --via-settings` 等待新会话可发送后才输入，避免把启动中的草稿切换误判为任务失败。
+`inproc-*` 用例的模型凭据只写进隔离扩展存储。圈画判据同时要求页面圈住目标、未点击、侧栏交付无错误；只看到圈画但目标账本报未完成，仍为失败。`inproc-mark --via-settings` 等待新会话可发送后才输入，避免把启动中的草稿切换误判为任务失败。
 
 **过滤轮的三个信号别混用**：
 

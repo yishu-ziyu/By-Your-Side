@@ -1,8 +1,7 @@
 /**
  * Shared harness for the runtime display-steering tests.
  *
- * Test files must mock `../src/display-fast-path.js` (decideDisplay / displaySteerFastPathEnabled)
- * and `../src/run-trace.js` before importing this module; the harness uses the production
+ * Test files must mock `../src/run-trace.js` before importing this module; the harness uses the production
  * `createBrowserTools` gate so the correction fence is exercised for real.
  */
 import {vi} from 'vitest';
@@ -14,11 +13,7 @@ import type {AgentUiEvent,PageContext,ServerMessage} from '../../../shared/proto
 
 export type DisplayState={document:string;translated:number;displayValid:boolean;mode:'bilingual'|'translated';fontFamily:'original'|'songti'};
 
-export type DecisionParams=Record<string,unknown>;
-
 export const context:PageContext={tabId:7,title:'文章',url:'https://fixture.test/a'};
-
-export const candidate=(params:DecisionParams)=>({kind:'candidate' as const,params:{action:'display' as const,...params},reason:'accepted' as const});
 
 export function pageHarness(options?:{streaming?:boolean;emit?:(event:AgentUiEvent)=>void;setStatus?:(state:any)=>void}){
  const pageState:DisplayState={document:'one',translated:1,displayValid:true,mode:'translated',fontFamily:'original'};

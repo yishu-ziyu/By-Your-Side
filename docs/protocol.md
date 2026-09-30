@@ -1,16 +1,16 @@
 # SideAgent 桥接协议
 
-background service worker 与任务宿主之间的协议；优先走本地伴随进程的 native messaging，未安装时接扩展 offscreen 里的同一任务核心，WebSocket 用于调试回退。侧栏通过扩展内部 Port 连接 background。
+background service worker 与任务宿主之间的协议；任务宿主是扩展 offscreen 文档里的任务核心（本机伴随进程与 Native Messaging 已于 2026-10-01 退役）。WebSocket 调试回退只给在 Node 里托管会话的检查用，那些检查改到扩展里跑之后删除（见 [STATUS](STATUS.md)）。侧栏通过扩展内部 Port 连接 background。
 权威类型定义见 `shared/protocol.ts`，本文档描述流程与语义。任务身份、持久回执、语音连接及只读页面问答另见[语音与任务调度](voice-dispatch.md)，对应类型也包括`shared/task-actions.ts`与`shared/voice.ts`。
 
 ## 传输与握手
 
-以下 token、Origin 与单客户端握手规则适用于 WebSocket 回退通道。native messaging 由 Chrome 拉起伴随进程，通过 host 的扩展白名单限制访问。
+以下 token、Origin 与单客户端握手规则适用于 WebSocket 回退通道：offscreen 文档建不起来且存储里有 token 时才会走到它，检查脚本靠让 offscreen 建不起来来强制这条路。
 
 offscreen 入口使用扩展内部 runtime Port；offscreen 建立失败且无 ws 调试 token 时按重连退避再建。background 先送模型配置与凭据，再送 `hello`。任务、工具结果、会话和语音控制继续使用下面同一套消息与身份，`inproc_config`、`inproc_voice` 和保活帧只在扩展内部传递。配置前的只读查询不会被误报为任务失败；真正的任务输入会返回明确拒绝回执。
 
 - WebSocket 模式监听 `ws://127.0.0.1:7758`（仅回环地址）。
-- 启动时生成随机 token 并打印到终端；用户在面板首次设置中粘贴一次，存 `chrome.storage.local`。
+- 托管会话的检查脚本生成随机 token，写入扩展的 `chrome.storage.local`（原本机 `dev:agent` 打印 token、在面板粘贴的用法已随本机模式退役）。
 - 连接后客户端第一帧必须是 `hello{token, client:"sidepanel"}`。
 - 服务端校验：token 匹配 + WS 握手的 `Origin` 头以 `chrome-extension://` 开头。
 - 成功回 `hello_ok{version, model, features?}`；失败回 `hello_error{error}` 并关闭连接。`features{memory, skills}` 说这个宿主有没有记忆、技能存储（只装扩展时都是 false），侧栏据此收起只会失败的入口；旧宿主不带时按有处理。
@@ -146,16 +146,16 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 ## 本地诊断轨迹
 
-`~/.sideagent/traces/*.jsonl` 按会话、任务、轮次与工具调用标识记录目标、模型、参数、返回、错误和耗时，以及接管/交还事件。日志写入失败不改变任务结果。只装扩展时，同样的行写进扩展的 IndexedDB（`sideagent-diagnostics`，格式由 `shared/run-trace-core.ts` 统一），同样只保留最近 20 个会话；设置页「诊断记录」可以导出成一个 jsonl 或清空。语音日常记录同理：行格式由 `shared/voice-capture-core.ts` 统一，扩展写进同一个库、导出为单独的 jsonl、保留 14 天，不存录音。输入工具的填写值默认隐藏；图片只留元数据，其他文本按敏感字段与模式脱敏。任务和页面文本仍属于本地私密数据。
+诊断轨迹按会话、任务、轮次与工具调用标识记录目标、模型、参数、返回、错误和耗时，以及接管/交还事件。日志写入失败不改变任务结果。行写进扩展的 IndexedDB（`sideagent-diagnostics`，格式由 `shared/run-trace-core.ts` 统一），同样只保留最近 20 个会话；设置页「诊断记录」可以导出成一个 jsonl 或清空。语音日常记录同理：行格式由 `shared/voice-capture-core.ts` 统一，扩展写进同一个库、导出为单独的 jsonl、保留 14 天，不存录音。输入工具的填写值默认隐藏；图片只留元数据，其他文本按敏感字段与模式脱敏。任务和页面文本仍属于本地私密数据。
 
-目录权限 0700、文件权限 0600；每会话最多约 8 MiB，创建文件时清理到最近约 20 份。单条记录限制总字符和节点数，达到上限明确标记截断。日志是诊断证据，不作为自动停止任务或判定业务成功的条件。
+在 Node 里托管会话的检查写 `~/.sideagent/traces/*.jsonl`（可用 `SIDEAGENT_TRACE_DIR` 改到别处）：目录权限 0700、文件权限 0600；每会话最多约 8 MiB，创建文件时清理到最近约 20 份。单条记录限制总字符和节点数，达到上限明确标记截断。日志是诊断证据，不作为自动停止任务或判定业务成功的条件。
 
 
 ## 经历、显式记忆与技能
 
 它们分别由 `ExperienceStore`、`MemoryStore`、`SkillStore` 持有，不能把自动整理建议等同于用户已确认的事实或可自动执行的技能。经历采集与模型整理不是网页执行权限；保存做法后的匹配与复用仍须核对材料、页面和结果。
 
-EverOS 是独立可选桥接，安装与边界见[桥接说明](integrations/everos.md)；普通源码安装不自动启用。本机启用历史见[记录](evals/20260916-everos-enable.md)，当前服务运行状态需要另行核对，不能再笼统写成“未接入”。
+EverOS 桥接已于 2026-10-01 移出主线，原说明见[历史](history/20261001-everos-retired.md)。
 
 ### 主 Agent 全局查看与页面调度
 

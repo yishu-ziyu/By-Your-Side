@@ -4,16 +4,16 @@
 
 ## 一次语音请求
 
-1. `sidepanel/voice-client.ts` 收音并输出 PCM，经 `background/voice-relay.ts` 和 Native Messaging 交给本地 Agent。
-2. `main.ts → VoiceService → RealtimeVoiceSession → RealtimeVoiceConnection` 接到 StepAudio 3。服务端判断话轮；当前日常工厂实例化 Realtime 3，不提供 2.5 运行时切换。
+1. `sidepanel/voice-client.ts` 收音并输出 PCM，经 `background/voice-relay.ts` 和扩展内部 Port 交给 offscreen 文档里的 Agent。
+2. `extension/src/inproc/browser-host.ts` → `host-core.ts` → `VoiceService → RealtimeVoiceSession → RealtimeVoiceConnection` 接到 StepAudio 3。服务端判断话轮；当前日常工厂实例化 Realtime 3，不提供 2.5 运行时切换。
 3. 语音模型可以只读当前页、查询任务、直接操作浏览器或委派任务。`read_page` 通过本轮观察令牌读取页面；只读问答与修改页面分开，不把口头翻译当成已翻译网页。
-4. 简单浏览器操作经 `browserTool` 直接进入 `ConversationManager.executeRealtimeBrowserTool`，复用正式工具、页面身份与执行回执。工具列表与参数只在[Realtime 工具定义](../agent/src/realtime-browser-tools.ts)维护；不经过另一个主模型规划循环。目标含糊时可调用 `judge_browser_action` 获取 Jev 建议：它自己读完未读分区，只返回一个带守卫的建议或原因，本身不执行操作（见[决策循环](browser-decision-loop.md)）。
+4. 简单浏览器操作经 `browserTool` 直接进入 `ConversationManager.executeRealtimeBrowserTool`，复用正式工具、页面身份与执行回执。工具列表与参数只在[Realtime 工具定义](../agent/src/realtime-browser-tools.ts)维护；不经过另一个主模型规划循环。原先目标含糊时可调用的 `judge_browser_action`（Jev 建议）已于 2026-10-01 随 Jev 退役，语音工具列表里不再有它（[历史](history/20261001-browser-decision-loop-retired.md)）。
 5. 需要复杂研究、内容生成或直连工具不能继续时，仍可通过 `task_action` 或 `browser_request` 委派给任务系统。宿主等待本轮页面资料、核对输入和取消信号；诊断连接不装配这些可写入口。
 6. 直连工具结果或委派任务的正式交付回到原语音会话。Realtime 3 生成音频，浏览器播放并返回 `playback_done`；操作已执行、目标已核验和用户已听见分别记账。交付上的 `unfinished` 只供侧栏显示，不改变播报内容。点选工具 `ask_user_to_point` 当前不在语音工具列表中。
 
 ## 请求级开口
 
-`VoiceService` 显式读取 `voiceSpokenResultGate` 配置，影子记录本身不启用行为改变。请求判断经过话轮/输入身份核对后交给连接层；只有当前成功回执允许结束、且请求不再需要口头结果时才有省略续答的资格。缺判断或证据时保守保留语音，不能把普通工具成功直接当成“无需回答”。设计与逐次验证见 [V2.3 记录](evals/20260922-v22-spoken-result-shadow.md)；本机启用与加载状态不在此复制。
+原「请求级播报闸门」（`voiceSpokenResultGate`：由 Jev 判断本次请求是否还需要口头结果，成功胶囊足够时省略续答）与影子路由已于 2026-10-01 随 Jev 删除；扩展里它一直是关的。现在直连工具的结果回传后照常请求一次续答。设计与验证记录见 [V2.3 记录](evals/20260922-v22-spoken-result-shadow.md)。
 
 ## 四种生命周期
 
@@ -48,8 +48,8 @@
 
 分开测：说完→服务端判停，判停→实际工具调用，工具调用→结果就绪，就绪→结果送回，后续生成→浏览器首声/播完。`first_audio_since_vad_stop` 是服务端判停后的音频到达指标，不是用户实际听到答案的时间。
 
-日常记录（两种入口相同，行格式见 `shared/voice-capture-core.ts`）：每轮留 asr、forward、text 三类行，本机写 `~/.sideagent/voice-capture/`，只装扩展时写进扩展 IndexedDB、设置页导出。逐帧的 ready、append、commit 以及录音只在诊断模式产生。日常记录里的 turn 从 1 开始，服务端检测到第一段说话才进入 2，所以识别结果落在 turn 2 是正常的；查开口问题用 `inproc-voice.mts` 的开口时间线（见[验收入口](testing/acceptance.md)）。
+日常记录（两种入口相同，行格式见 `shared/voice-capture-core.ts`）：每轮留 asr、forward、text 三类行，写进扩展 IndexedDB，从设置页导出（原本机模式写 `~/.sideagent/voice-capture/`，已退役）。逐帧的 ready、append、commit 以及录音只在诊断模式产生。日常记录里的 turn 从 1 开始，服务端检测到第一段说话才进入 2，所以识别结果落在 turn 2 是正常的；查开口问题用 `inproc-voice.mts` 的开口时间线（见[验收入口](testing/acceptance.md)）。
 
-Native Messaging 是本地消息传输，不是另一次模型推理。代码或拓扑不能证明它零开销；归因需要同轮时间戳。旧分类/主模型/TTS 串行数据只适用于旧版本。
+扩展内部 Port 是本地消息传输，不是另一次模型推理。代码或拓扑不能证明它零开销；归因需要同轮时间戳。旧分类/主模型/TTS 串行数据只适用于旧版本。
 
 源码入口：[连接](../agent/src/realtime-voice-connection.ts)、[会话](../agent/src/realtime-voice-session.ts)、[读页](../agent/src/voice-page-reader.ts)、[服务装配](../agent/src/voice-service.ts)。任务控制另见[调度](voice-dispatch.md)。

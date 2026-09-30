@@ -1,8 +1,6 @@
 import { realtimeBrowserError } from './realtime-browser-tools.js';
 import { projectTaskView } from '../../shared/task-view.js';
 import { RealtimeVoiceSession, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
-import { voiceSpokenResultGateEnabled } from './config.js';
-import { sharedRouteShadow } from './route-shadow.js';
 import { isLeadSession } from '../../shared/protocol.js';
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -105,10 +103,6 @@ export class VoiceService {
 
             return this.browserTool!(conversationId,...args);
           }} : {}),
-          // Shared across voice sessions so the daily Jev-call budget is counted once, not reset per session; never wired for diagnostic capture.
-          ...(!diag ? { shadow: sharedRouteShadow() } : {}),
-          // Explicit opt-in; shadow logging alone never enables product behavior.
-          ...(!diag ? { voiceSpokenResultGate: voiceSpokenResultGateEnabled() } : {}),
           ...(this.readPage && !diag ? { readPage: (input: import('../../shared/voice.js').VoiceInputContext) => this.readPage!(conversationId, input) } : {}),
           ...(this.dispatchTask && !diag ? { dispatchTask: (request: import('../../shared/task-actions.js').TaskActionRequest, stillCurrent: () => boolean) => this.dispatchTask!(request, () => this.active?.id === message.voiceId && stillCurrent()) } : {}),
           diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),

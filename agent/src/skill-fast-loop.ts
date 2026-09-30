@@ -4,7 +4,6 @@ import type { ToolRpc } from "./rpc.js";
 import type { SkillStore } from "./skill-store.js";
 import { autoSkillEligible } from "./skill-learning.js";
 import { routeSkill, type SkillJudge } from "./skill-router.js";
-import { judgeSkill } from "./skill-judge.js";
 import { runSkill, type SkillRunOutcome } from "./skill-runner.js";
 import type { FastTaskSkillOption } from "./fast-task.js";
 
@@ -156,7 +155,8 @@ export async function trySkillFastLoop(options: {
 
       const routeOpts: Parameters<typeof routeSkill>[1] = { signal };
 
-      if (!options.exactOnly) routeOpts.judge = options.judge ?? judgeSkill;
+      // 语义匹配（原 Jev 判断）已随本机模式退役：没有注入判断时只做精确/模板匹配。
+      if (!options.exactOnly && options.judge) routeOpts.judge = options.judge;
 
       const route = await routeSkill(
         { userText: options.request, hostname, skills, runs },

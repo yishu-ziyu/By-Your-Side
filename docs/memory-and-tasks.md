@@ -10,11 +10,11 @@
 
 当前 Lead 工具为 `user_memory`：`recall` 查询任务所需资料，`change` 按当前直接用户请求解释保存、修改或忘记，`history` 查过往任务。语义解释由 `memory-decision.ts` 完成，运行时核对输入当前性；网页、附件、工具输出及 worker 不能自行授予记忆修改权限。产品会话开启自动模式（`MemoryRuntime` 的 `auto`）：可能在说个人资料的用户消息一到，就用快速模型按同一边界判断一次，只收用户自己说的、关于自己的长期资料，不收一次性参数、别人的事、网页内容和任何密码验证码；这句被新消息、停止或接管作废时不落盘。模型再调用 `change` 时复用这次结果，不判断第二次。个人资料（非经验条目）每轮全部带上（`MemoryStore.profile`，最多 40 条、4000 字）；网站做法仍由 `select / resolveSelected` 按任务对象选择并复核版本。`agent_event` 中的 `memory` 事件记录 saved/updated/forgotten/used 及条目快照，历史回执不随之后的修改而重写；侧栏在单条 saved 回执上给「撤销」，发的就是 `memory_forget`。
 
-存储经 `DocumentPersistence` 抽象：本机宿主为 `~/.sideagent/memory/memories.json`（目录锁、临时文件改名，原子替换），只装扩展时为扩展 IndexedDB `sideagent-memory` 的 `memories` 键，格式相同。忘记会移除有效条目，后续新轮次不再读取它；原聊天仍保留。当前没有按 Chrome 配置分别选择存储目录，不能宣称已实现浏览器配置隔离。
+存储经 `DocumentPersistence` 抽象：扩展 IndexedDB `sideagent-memory` 的 `memories` 键（原本机宿主的 `~/.sideagent/memory/memories.json` 随本机模式退役；文件实现 `FileDocument` 只留给在 Node 里托管会话的检查）。忘记会移除有效条目，后续新轮次不再读取它；原聊天仍保留。当前没有按 Chrome 配置分别选择存储目录，不能宣称已实现浏览器配置隔离。
 
 ## 过往任务
 
-列过目标或有执行记录的任务在 Lead 的 `agent_end` 后留一条摘要 `TaskHistoryEntry{id=runId,conversationId,goal,revisions,hosts,outcome:"complete"|"partial"|"stopped"|"error",summary,unfinished,startedAt,endedAt}`；同一 runId 接着做完时覆盖。最多 200 条，存在同一处（本机 `tasks.json`，扩展 IndexedDB `tasks` 键）。每轮开始时带上当前网站最近 3 条；`user_memory history` 按词或网站查。侧栏用 `task_history_list{conversationId,requestId}` 读取、`task_history_forget{conversationId,requestId,id|null}` 删一条或全部清空，响应为 `task_history_result{conversationId,requestId,ok,tasks?,error?}`（删除后返回剩下的）。
+列过目标或有执行记录的任务在 Lead 的 `agent_end` 后留一条摘要 `TaskHistoryEntry{id=runId,conversationId,goal,revisions,hosts,outcome:"complete"|"partial"|"stopped"|"error",summary,unfinished,startedAt,endedAt}`；同一 runId 接着做完时覆盖。最多 200 条，存在同一处（扩展 IndexedDB `tasks` 键）。每轮开始时带上当前网站最近 3 条；`user_memory history` 按词或网站查。侧栏用 `task_history_list{conversationId,requestId}` 读取、`task_history_forget{conversationId,requestId,id|null}` 删一条或全部清空，响应为 `task_history_result{conversationId,requestId,ok,tasks?,error?}`（删除后返回剩下的）。
 
 ## 目标核对
 

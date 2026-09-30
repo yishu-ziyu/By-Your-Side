@@ -16,12 +16,12 @@
 | 记忆与任务感 | 接回记忆与过往任务，跨轮续接，提交前确认由扩展拦下 | 智谱、阶跃不稳；扩展模式重启后不记得之前的对话 | [验收](evals/20260927-memory-proactive-task.md) · [端到端](evals/20260926-e2e-before-daily-install.md) |
 | 页面操作 | 圈画、下载完成/中断如实回报，发送类点击先确认 | 失败时露出 Chrome 错误码；备用模型真实切换未验 | [下载](evals/20260926-page-download.md) · [界面 10 项](evals/20260926-ux-fixes.md) · [扩展内核](evals/20260924-core-into-extension.md) |
 | 语音 | 插话约 0.25 秒停声；StepFun 挂住约 22 秒发现并请用户重说 | StepFun 傍晚挂住率高；外放回声阈值未经真人 | [插话](evals/20260925-voice-barge-in.md) · [日常纯扩展](evals/20260925-pure-extension-daily.md) |
-| Jev 窄问题 | 10-01 随本机模式退役（只在本机模式可用，扩展读不到凭据）；门槛曾全过 | 代码待检查脚本切完后删除 | [验收](evals/20260926-jev-narrow-questions.md) |
+| Jev 窄问题 | 10-01 随本机模式退役（只在本机模式可用，扩展读不到凭据）；门槛曾全过 | 代码 10-01 已删除 | [验收](evals/20260926-jev-narrow-questions.md) |
 
 ## 仍需解决
 
 - 改口后改写已有成功回执、重启后的检查点续接、真人接管/交还仍有缺口；不靠放松核验消除失败。见[Computer Use 复测](evals/20260922-computer-use-product-path.md)。
-- 本机模式退役后仍有 4 组检查（发布评测 `eval:live`、用户旅程、P0、语音 v23）在电脑上直接跑任务核心，用的循环不是扩展里实际运行的那套，并经扩展里带口令的调试通道连入；要改成在扩展里测，完成后删除该循环与调试通道。见[退役验收](evals/20261001-retire-native-and-dead-code.md)。
+- 本机模式退役后仍有 3 组检查（发布评测 `eval:live`、用户旅程、P0）在电脑上直接跑任务核心，用的循环不是扩展里实际运行的那套；用户旅程与 P0 还经扩展里带口令的调试通道连入（脚本先让扩展内 agent 建不起来），`eval:live` 直接调扩展执行器。原语音 v23 检查依赖 Jev 播报闸门，已随 Jev 删除；要改成在扩展里测，完成后删除该循环与调试通道。见[退役验收](evals/20261001-retire-native-and-dead-code.md)。
 - 只装扩展时富文本粘贴不可用（原依赖本机剪贴板服务，退役前即如此）。
 - CAP-02 的 filechooser 停止清理、疑似重复测试未处理；见[清理记录](evals/20260923-repo-cleanup.md)。
 - 长任务、技能复用与旧票组不因新专项通过自动关闭；见[产品复核](evals/20260919-product-review-repair.md)。

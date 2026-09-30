@@ -1,7 +1,7 @@
 /**
  * QA-01 隔离无头验收（任务书 v2 §9/§12）：
- * F1–F5、C1–C5、S1–S7；C6 由另一会话做剪贴板桥（本表记「另一会话」）。
- * S4/S5/S6（及依赖判断的 S7）各一次真实 Jev（窄问题 askJev / realtime judge）。
+ * F1–F5、C1–C5、S1–S3；C6 由另一会话做剪贴板桥（本表记「另一会话」）。
+ * 原 S4–S7（真实 Jev 窄问题循环 / realtime judge）已随 Jev 退役删除；本验收零模型请求。
  *
  * 隔离构建：SIDEAGENT_BUILD_DIST → 临时目录，不覆盖日常 extension/dist。
  * 宿主链：createBrowserTools → ToolRpc → __saCall → 扩展。
@@ -19,7 +19,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile, readdir, stat } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, basename } from "node:path";
-import type { ToolExecutionFact, ToolName } from "../../shared/protocol.js";
+import type { ToolExecutionFact } from "../../shared/protocol.js";
 import type { IsolationCleanup } from "./isolated-extension.mts";
 import { trackTempDir } from "./temp-profile.mjs";
 
@@ -31,8 +31,8 @@ if (!process.argv.includes("--headless")) {
 /**
  * ONLY=<逗号分隔场景 ID>：只执行列出的场景，其余一律不执行任何工具调用，
  * 记成 verdict="未跑" 并进 notRun。用法：
- *   npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --only=S4,S6
- *   ONLY=S4,S6 npx tsx ... --headless
+ *   npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --only=S1,S2
+ *   ONLY=S1,S2 npx tsx ... --headless
  *
  * 存在的理由：整轮 19 个场景约 7 分钟，改一个场景也要等整轮，迭代太慢。
  *
@@ -55,21 +55,6 @@ const onlyIds = new Set(
 );
 
 const filterNote = onlyIds.size > 0 ? `ONLY=${[...onlyIds].join(",")}` : "";
-
-// A credential is not spending authority. Explicit invocation budget defaults to zero.
-const jevBudget = Number(process.argv.find(a => a.startsWith("--jev-budget="))?.split("=")[1] ?? 0);
-
-if (!Number.isSafeInteger(jevBudget) || jevBudget < 0 || jevBudget > 100) throw new Error("--jev-budget must be an integer in 0..100");
-
-const s5Fixture = process.argv.find(a => a.startsWith("--s5-fixture="))?.split("=")[1];
-
-if (s5Fixture && !["uncertain-second", "nonclick-second", "valid"].includes(s5Fixture)) throw new Error("Unknown S5 fixture judgment");
-
-const s5Entry = process.argv.find(a => a.startsWith("--s5-entry="))?.split("=")[1] ?? "realtime";
-
-if (!["realtime", "loop"].includes(s5Entry)) throw new Error("--s5-entry must be realtime or loop");
-
-let providerRequests = 0;
 
 const repo = resolve(import.meta.dirname, "../..");
 
@@ -203,7 +188,6 @@ interface RunRecord {
   error?: string;
   fixtureCloseError?: string;
   rpcEvents?: unknown;
-  realJevScenes?: string[];
   productFilesChanged?: string[];
 }
 
@@ -221,14 +205,6 @@ type ScenarioResult = {
   error?: string;
   notes?: string;
   requiredNotRun?: string[];
-  realJev?: {
-    used: boolean;
-    modelRequests: number;
-    decisions?: unknown[];
-    reasonCodes?: string[];
-    elapsedMs?: number;
-    error?: string;
-  };
 };
 
 const secretBody = `UNAUTH_SECRET_${randomBytes(8).toString("hex")}`;
@@ -257,7 +233,6 @@ const record: RunRecord = {
     { id: "reload:ext", reason: "本会话授权可用但先不执行；clipboard 另一会话落地后由协调者统一重载" },
   ],
   modelRequests: 0,
-  realJevScenes: [],
   productFilesChanged: [],
 };
 
@@ -820,54 +795,7 @@ const { createBrowserTools } = await import("../../agent/src/tools.js");
 
 const { TaskUploadLedger } = await import("../../agent/src/upload-paths.js");
 
-const { runBrowserDecisionLoop } = await import("../../agent/src/browser-decision-loop.js");
-
-const { askJev: providerAsk } = await import("../../agent/src/jev-client.js");
-
-type JevAsk = typeof providerAsk;
-
-/** Real Jev with the run's request budget; every request and answer is written next to the result. */
-const askJev: JevAsk = async (request, signal) => {
-  if (providerRequests >= jevBudget) throw new Error("MODEL_BUDGET_EXHAUSTED: no further provider request sent");
-  // SAFETY: `state.page` is written by agent/src/browser-questions.ts as { url, part_shown } when present.
-  const pageUrl = (request.state.page as { url?: string } | undefined)?.url;
-
-  if (pageUrl !== undefined && !pageUrl.startsWith(`${fixtureOrigin}/`)) throw new Error("Full decision traces are restricted to this non-sensitive fixture server");
-  providerRequests += 1;
-  const requestNumber = providerRequests;
-  const trace: import('../../agent/src/jev-client.js').JevTrace[] = [];
-
-  try {
-    return await providerAsk(request, signal, { onTrace: event => trace.push(event) });
-  } finally {
-    await writeFile(join(out, `jev-request-${requestNumber}.json`), JSON.stringify({ requestNumber, trace }, null, 2));
-  }
-};
-
-/** Fixed judge by question name (no provider call); `pickTarget` names the control to act on, if any. */
-const scriptedAsk = (pickTarget: (controls: Record<string, string>) => { name?: string; confidence?: number; opener?: string }): JevAsk => async request => {
-  // SAFETY: browser-questions.ts writes `controls` as id → one-line description and `actions_done` as strings.
-  const controls = (request.state.controls ?? {}) as Record<string, string>;
-  const done = ((request.state.actions_done ?? []) as string[]).some(fact => fact.startsWith("Clicked"));
-  const plan = pickTarget(controls);
-  const idOf = (criteria: Record<string, string> | undefined, name?: string) => (name ? Object.entries(criteria ?? {}).find(([key, d]) => key !== "none" && d.includes(`"${name}"`))?.[0] : undefined) ?? "none";
-  // SAFETY: every locate/act question built by browser-questions.ts is an object with optional `criteria`.
-  const criteriaOf = (q: string) => (request.questions[q] as { criteria?: Record<string, string> } | undefined)?.criteria;
-
-  return {
-    target: { choice: idOf(criteriaOf("target"), plan.name), confidence: plan.confidence ?? 0.99 },
-    target_listed: { noul: plan.name && Object.values(controls).some(d => d.includes(`"${plan.name}"`)) ? 0.99 : 0.02 },
-    opener: { choice: idOf(criteriaOf("opener"), plan.opener), confidence: 0.99 },
-    goal_done: { noul: done ? 0.95 : 0.03 },
-    risky: { noul: 0.02 },
-  };
-};
-
-const { judgeRealtimeBrowserAction } = await import("../../agent/src/realtime-browser-judge.js");
-
 const { browserContextChange } = await import("../../shared/browser-decision-context.js");
-
-const { readTypeSafeKey } = await import("../../agent/src/typesafe-auth.js");
 
 let iso: Awaited<ReturnType<typeof launchIsolatedExtension>> | undefined;
 
@@ -1308,8 +1236,6 @@ try {
 
     return parseTabId(opened);
   };
-
-  const jevAvailable = jevBudget > 0 && !!readTypeSafeKey();
 
   const wrapScenario = async (
     id: string,
@@ -1998,366 +1924,7 @@ try {
     sc.requiredNotRun = ["production-guard-after-source-change"];
   });
 
-  // helper: bind loop call to rpc
-  const loopCall = async (name: ToolName, params: ToolParams, _id?: string) => rpc.call(name, params);
-
-  // ── S4 30×12 real Jev once ─────────────────────────────────────────────
-  await wrapScenario("S4", "30×12 真实 Jev 一次；完整原文写入", async (sc) => {
-    if (!jevAvailable) {
-      sc.verdict = "BLOCKED";
-      sc.notes = "Jev 凭据不可用";
-
-      return;
-    }
-
-    const tabId = await openWorking(`${fixtureOrigin}/s4`);
-
-    const mats = Array.from({ length: 12 }, (_, i) => ({
-      id: `m${i + 1}`,
-      value: `ORIGINAL-${i + 1}-${"y".repeat(20)}`,
-      source: "user" as const,
-      purpose: `p${i + 1}`,
-    }));
-
-    const t0 = Date.now();
-    const decisions: unknown[] = [];
-    const reasonCodes: string[] = [];
-    let modelRequests = 0;
-    let outcome: any = null;
-    let jevErr = "";
-
-    try {
-      outcome = await runBrowserDecisionLoop({
-        parentCallId: "qa01-s4",
-        goal: "Fill field 30 with material 12 only; do not change other fields",
-        materials: mats,
-        signal: AbortSignal.timeout(120_000),
-        call: loopCall,
-        ask: async (request, signal) => {
-          modelRequests += 1;
-          record.modelRequests += 1;
-          const started = Date.now();
-
-          try {
-            const answers = await askJev(request, signal);
-            decisions.push({ at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers });
-
-            return answers;
-          } catch (e) {
-            jevErr = String(e);
-            throw e;
-          }
-        },
-      });
-
-      if (outcome?.reasonCode) reasonCodes.push(outcome.reasonCode);
-    } catch (e) {
-      jevErr = String(e);
-    }
-
-    const elapsedMs = Date.now() - t0;
-    sc.realJev = { used: true, modelRequests, decisions, reasonCodes, elapsedMs, error: jevErr ? jevErr.slice(0, 240) : undefined };
-
-    if (/Jev HTTP|凭据|timeout|AbortError/i.test(jevErr) && !outcome) {
-      check(sc, "real Jev provider", false, jevErr.slice(0, 200));
-      sc.notes = "provider_error";
-      sc.independent = { jevErr: jevErr.slice(0, 300), modelRequests };
-
-      return;
-    }
-
-    const values = await pageEval(tabId, `Object.fromEntries([...document.querySelectorAll('input')].map(i=>[i.id,i.value]))`);
-    const expected = mats[11]!.value;
-    check(sc, "field 30 has full original", values?.f30 === expected, { f30: values?.f30?.slice?.(0, 40), expected: expected.slice(0, 40) });
-    const othersOk = Array.from({ length: 29 }, (_, i) => values?.[`f${i + 1}`] === `INIT-${i + 1}`).every(Boolean);
-    check(sc, "other fields unchanged", othersOk, { sample: { f1: values?.f1, f29: values?.f29 } });
-    check(sc, "modelRequests bounded", modelRequests >= 1 && modelRequests <= 16, modelRequests);
-    sc.independent = { outcomeStatus: outcome?.status, reasonCode: outcome?.reasonCode, modelRequests, elapsedMs, valuesF30: values?.f30?.slice?.(0, 60) };
-  });
-
-  // ── S5 hover real Jev via realtime judge ────────────────────────────────
-  await wrapScenario("S5", "CSS hover 菜单：真实 hover→新观察→真实 Jev 再选", async (sc) => {
-    if (!jevAvailable && !s5Fixture) {
-      sc.verdict = "BLOCKED";
-      sc.notes = "Jev 凭据不可用";
-
-      return;
-    }
-
-    const tabId = await openWorking(`${fixtureOrigin}/s5`);
-    const t0 = Date.now();
-    const decisions: unknown[] = [];
-    let modelRequests = 0;
-    let jevErr = "";
-
-    // Fixed judgments: first the Account opener, then Settings (unsure at 0.72, or not picked at all).
-    const s5Script = scriptedAsk(controls => Object.values(controls).some(d => d.includes('"Settings"'))
-      ? (s5Fixture === "nonclick-second" ? { opener: "Account" } : { name: "Settings", confidence: s5Fixture === "uncertain-second" ? 0.72 : 0.99 })
-      : { opener: "Account" });
-
-    const decideOnce: JevAsk = async (request, signal) => {
-      modelRequests += 1;
-
-      if (!s5Fixture) record.modelRequests += 1;
-      const started = Date.now();
-      const answers = s5Fixture ? await s5Script(request, signal) : await askJev(request, signal);
-      decisions.push({ at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers, model: s5Fixture ? `fixture-${s5Fixture}` : "jev" });
-
-      return answers;
-    };
-
-    if (s5Entry === "loop") {
-      sc.entry = "browser_loop → real hover → fresh observation → original browser executor";
-
-      const outcome = await runBrowserDecisionLoop({
-        parentCallId: "qa01-s5-loop", goal: "Open Account hover menu then click Settings", materials: [],
-        signal: AbortSignal.timeout(40_000), call: loopCall, ask: decideOnce,
-      });
-
-      const oracle = await pageEval(tabId, `({...window.__s5,log:document.getElementById('s5log')?.textContent})`);
-      check(sc, "loop executed a hover then a click from separate observations", outcome.receipts.some(r => r.operation === "hover") && outcome.receipts.some(r => r.operation === "click")
-        && new Set(outcome.receipts.filter(r => r.operation === "hover" || r.operation === "click").map(r => r.observationId)).size >= 2, outcome.receipts);
-      check(sc, "settings clicked once without test rescue", oracle?.settings === 1 && oracle?.forbidden === 0, oracle);
-      // SAFETY: BrowserLoopOutcome is recorded in result.json, so store exactly the JSON
-      // projection that will be serialized; its own field types live in
-      // agent/src/browser-decision-loop.ts and shared/browser-decision.ts.
-      sc.independent = { outcome: JSON.parse(JSON.stringify(outcome)), oracle, testRescueActions: 0 };
-      sc.realJev = { used: !s5Fixture, modelRequests: s5Fixture ? 0 : modelRequests, decisions, elapsedMs: Date.now() - t0, reasonCodes: outcome.reasonCode ? [outcome.reasonCode] : [] };
-
-      if (s5Fixture) sc.notes = `Fixed-judge causal regression: ${s5Fixture}; no provider call; not model-quality evidence`;
-
-      return;
-    }
-
-    let judge1: any = null;
-
-    try {
-      judge1 = await judgeRealtimeBrowserAction(
-        rpc,
-        { request: "Open the Account menu", userTask: "Open Account hover menu then click Settings", tabId, history: [] },
-        AbortSignal.timeout(30_000),
-        decideOnce,
-      );
-    } catch (e) {
-      jevErr = String(e);
-    }
-
-    if (!judge1 || jevErr) {
-      sc.realJev = { used: true, modelRequests, decisions, elapsedMs: Date.now() - t0, error: (jevErr || "no judge").slice(0, 240) };
-      check(sc, "real Jev judge1", false, jevErr.slice(0, 200));
-      sc.notes = "provider_error";
-
-      return;
-    }
-
-    check(sc, "judge1 suggests hover", judge1.status === "suggestion" && judge1.suggestion?.tool === "hover", {
-      status: judge1.status,
-      tool: judge1.suggestion?.tool,
-      reasonCode: judge1.reasonCode,
-    });
-
-    if (judge1.suggestion?.tool === "hover") {
-      await runTool("hover", judge1.suggestion.arguments);
-    } else {
-      // No made-up 'hovered account' history and no second action without step one.
-      sc.independent = { judge1, actualActions: [], modelRequests };
-
-      return;
-    }
-
-    const afterHover = await pageEval(tabId, `(()=>{const s=document.getElementById('settings');const r=s.getBoundingClientRect();return {display:getComputedStyle(s).display,width:r.width,height:r.height,hovered:document.getElementById('menu')?.matches(':hover')}})()`);
-    check(sc, "real hover revealed the menu before the next observation", afterHover?.display !== "none" && afterHover?.width > 0 && afterHover?.height > 0, afterHover);
-    // fresh observe + second judgment for Settings — ONE more real call total path uses second decide
-    let judge2: any = null;
-
-    try {
-      judge2 = await judgeRealtimeBrowserAction(
-        rpc,
-        { request: "Click Settings in the open Account menu", userTask: "Open Account hover menu then click Settings", tabId, history: ["Executed hover on Account; menu independently observed visible"] },
-        AbortSignal.timeout(30_000),
-        decideOnce,
-      );
-    } catch (e) {
-      jevErr = String(e);
-    }
-
-    const actualActions = [{ tool: "hover", arguments: judge1.suggestion.arguments, origin: "production-suggestion" }];
-
-    if (judge2?.status === "suggestion" && judge2.suggestion) {
-      await runTool(judge2.suggestion.tool, judge2.suggestion.arguments);
-      actualActions.push({ ...judge2.suggestion, origin: "production-suggestion" });
-    }
-
-    check(sc, "second decision authorized the actual click", judge2?.status === "suggestion" && judge2.suggestion?.tool === "click", judge2);
-    const oracle = await pageEval(tabId, `({...window.__s5,log:document.getElementById('s5log')?.textContent})`);
-    sc.realJev = {
-      used: !s5Fixture,
-      modelRequests,
-      decisions,
-      reasonCodes: [judge1?.reasonCode, judge2?.reasonCode].filter(Boolean),
-      elapsedMs: Date.now() - t0,
-      error: jevErr ? jevErr.slice(0, 240) : undefined,
-    };
-
-    if (s5Fixture) sc.notes = `Fixed-judge causal regression: ${s5Fixture}; no provider call; not model-quality evidence`;
-    check(sc, "settings clicked once", oracle?.settings === 1, oracle);
-    check(sc, "forbidden not clicked", oracle?.forbidden === 0, oracle);
-    check(sc, "fresh observation after hover", judge1.observationId !== judge2?.observationId, { before: judge1.observationId, after: judge2?.observationId });
-    sc.independent = { judge1, judge2, afterHover, actualActions, oracle, modelRequests, testRescueActions: 0 };
-  });
-
-  // ── S6 continue_read real Jev once + none case ─────────────────────────
-  await wrapScenario("S6", "首区无目标后续找到（真实 Jev）；全无目标不乱点", async (sc) => {
-    if (!jevAvailable) {
-      sc.verdict = "BLOCKED";
-      sc.notes = "Jev 凭据不可用";
-
-      return;
-    }
-
-    const tabId = await openWorking(`${fixtureOrigin}/s6`);
-    const t0 = Date.now();
-    const decisions: unknown[] = [];
-    let modelRequests = 0;
-    let jevErr = "";
-    let outcome: any = null;
-
-    try {
-      outcome = await runBrowserDecisionLoop({
-        parentCallId: "qa01-s6",
-        goal: "Click Late-Target",
-        materials: [],
-        signal: AbortSignal.timeout(120_000),
-        call: loopCall,
-        ask: async (request, signal) => {
-          modelRequests += 1;
-          record.modelRequests += 1;
-          const started = Date.now();
-          const answers = await askJev(request, signal);
-          // SAFETY: browser-questions.ts writes `controls` as id → description and `page` as { url, part_shown }.
-          const controls = Object.values((request.state.controls ?? {}) as Record<string, string>);
-          decisions.push({
-            at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers,
-            partShown: (request.state.page as { part_shown?: string } | undefined)?.part_shown,
-            lateTargetInView: controls.some(d => d.includes('"Late-Target"')),
-            controlsInView: controls.length,
-          });
-
-          return answers;
-        },
-      });
-    } catch (e) {
-      jevErr = String(e);
-    }
-
-    const oracle = await pageEval(tabId, `({clicks:{...window.__s6.clicks},late:window.__s6.clicks['L-50']||0,other:Object.entries(window.__s6.clicks).filter(([k,v])=>k!=='L-50'&&v>0)})`);
-    sc.realJev = { used: true, modelRequests, decisions, reasonCodes: outcome?.reasonCode ? [outcome.reasonCode] : [], elapsedMs: Date.now() - t0, error: jevErr ? jevErr.slice(0, 240) : undefined };
-
-    if (jevErr && !outcome) {
-      check(sc, "real Jev", false, jevErr.slice(0, 200));
-      sc.notes = "provider_error";
-    } else {
-      check(sc, "Late-Target clicked", oracle?.late === 1, oracle);
-      check(sc, "no other clicks", (oracle?.other?.length ?? 0) === 0, oracle);
-    }
-
-    // none case — fixed judge proving no infinite click; separate from real Jev
-    const tabNone = await openWorking(`${fixtureOrigin}/s6none`);
-    let noneOutcome: any = null;
-    let noneCalls = 0;
-    noneOutcome = await runBrowserDecisionLoop({
-      parentCallId: "qa01-s6none",
-      goal: "Click Absolutely-Missing-Target-XYZ",
-      materials: [],
-      signal: AbortSignal.timeout(60_000),
-      call: loopCall,
-      ask: async (request, signal) => {
-        noneCalls += 1;
-
-        // Never picks a control: the loop must read every window and hand back without clicking.
-        return scriptedAsk(() => ({}))(request, signal);
-      },
-    });
-    const noneOracle = await pageEval(tabNone, `window.__s6n.total`);
-    check(sc, "no-target did not click randomly", noneOracle === 0, { noneOracle, noneOutcome: noneOutcome?.status, noneCalls });
-    check(sc, "no-target bounded decisions", noneCalls <= 16, noneCalls);
-    sc.independent = { late: oracle, noneOracle, noneStatus: noneOutcome?.status, modelRequests, outcomeStatus: outcome?.status };
-  });
-
-  // ── S7 handoff + unknown write ─────────────────────────────────────────
-  await wrapScenario("S7", "一步成功后 handoff；丢失写回执不盲重写", async (sc) => {
-    const tabId = await openWorking(`${fixtureOrigin}/s7`);
-    // first: successful fill once via tools
-    await runTool("fill", { target: "#field", value: "ONCE-VALUE", tabId });
-    const afterFill = await pageEval(tabId, `document.getElementById('field').value`);
-    check(sc, "filled once", afterFill === "ONCE-VALUE", afterFill);
-    await runTool("click", { target: "#once", tabId });
-    const afterClick = await pageEval(tabId, `({...window.__s7})`);
-    check(sc, "success step once", afterClick?.writes === 1 && afterClick?.last === "ONCE-VALUE", afterClick);
-
-    // handoff path with optional one real Jev if available
-    let handoffOutcome: any = null;
-    let modelRequests = 0;
-    const decisions: unknown[] = [];
-
-    if (jevAvailable) {
-      const t0 = Date.now();
-
-      try {
-        handoffOutcome = await runBrowserDecisionLoop({
-          parentCallId: "qa01-s7",
-          goal: "After the field is already written, hand off for broader planning; do not write again",
-          materials: [],
-          signal: AbortSignal.timeout(60_000),
-          call: loopCall,
-          ask: async (request, signal) => {
-            modelRequests += 1;
-            record.modelRequests += 1;
-            const started = Date.now();
-            const answers = await askJev(request, signal);
-            decisions.push({ at: Date.now(), ms: Date.now() - started, questions: Object.keys(request.questions), answers });
-
-            return answers;
-          },
-        });
-        sc.realJev = { used: true, modelRequests, decisions, reasonCodes: handoffOutcome?.reasonCode ? [handoffOutcome.reasonCode] : [], elapsedMs: Date.now() - t0 };
-      } catch (e) {
-        sc.realJev = { used: true, modelRequests, decisions, elapsedMs: Date.now() - t0, error: String(e).slice(0, 240) };
-        sc.notes = "provider_error on handoff judgment";
-      }
-    } else {
-      handoffOutcome = await runBrowserDecisionLoop({
-        parentCallId: "qa01-s7-fix",
-        goal: "Hand off for missing capability",
-        materials: [],
-        signal: AbortSignal.timeout(30_000),
-        call: loopCall,
-        ask: scriptedAsk(() => ({})),
-      });
-    }
-
-    const writesAfter = await pageEval(tabId, `window.__s7.writes`);
-    check(sc, "no second write after success/handoff", writesAfter === 1, writesAfter);
-
-    // lost receipt / unknown: simulate by noting executionFact unknown should not blindly rewrite
-    // Use rpc fact if fill marked unknown — attempt confirm path not available; ensure we don't fill again
-    const _beforeBlind = await pageEval(tabId, `document.getElementById('field').value`);
-    // Not asking for another write does not test recovery from an unknown receipt.
-    sc.requiredNotRun = ["actual-lost-receipt-and-production-continuation"];
-    sc.independent = {
-      afterClick,
-      handoffStatus: handoffOutcome?.status,
-      handoffReason: handoffOutcome?.reasonCode,
-      writesAfter,
-      realJevUsed: !!sc.realJev?.used,
-    };
-  });
-
   record.productFilesChanged = [
-    "agent/src/browser-decision-loop.ts",
-    "agent/src/browser-questions.ts",
-    "agent/src/jev-client.ts",
-    "agent/src/browser-action-selection.ts",
     "extension/src/background/page-events.ts",
     "extension/src/background/debugger.ts",
     "extension/src/background/observed-node-rect.ts",
@@ -2390,13 +1957,12 @@ try {
   // 三个信号各有明确含义，别混用：
   //   exitCode / status = 本次**实际执行**的 yes/no 场景是否全 yes（过滤集内是否干净）
   //   ok              = 整轮（无 ONLY）且全 yes，才是「这套验收通过」；过滤轮永远是 false，
-  //                     防止把 ONLY=C5 的单场景绿误当成 19 场景的绿
-  record.ok = allYes && onlyIds.size === 0 && !s5Fixture;
+  //                     防止把 ONLY=C5 的单场景绿误当成 15 场景的绿
+  record.ok = allYes && onlyIds.size === 0;
   record.status = allYes ? "PASS" : hard.some(s => s.verdict === "no") || hard.length === 0 ? "FAIL" : "BLOCKED";
   record.runKind = onlyIds.size > 0 ? "filtered" : "full";
   record.executed = scenarios.flatMap((s) => (s.verdict === "yes" || s.verdict === "no" ? [s.id] : []));
   record.filteredOut = scenarios.flatMap((s) => (s.verdict === "未跑" && s.notes?.startsWith("filtered out") ? [s.id] : []));
-  record.realJevScenes = scenarios.flatMap((s) => (s.realJev?.used ? [s.id] : []));
   record.rpcEvents = rpcEvents;
 } catch (error) {
   record.status = "FAIL";
@@ -2435,7 +2001,7 @@ try {
   }
 
   record.finishedAt = new Date().toISOString();
-  record.modelRequests = providerRequests;
+  record.modelRequests = 0;
   record.exitCode = record.status === "PASS" ? 0 : record.status === "BLOCKED" ? 2 : 1;
   await writeFile(join(out, "result.json"), JSON.stringify(record, null, 2));
   await writeFile(
@@ -2446,7 +2012,7 @@ try {
       `- status: ${record.status}`,
       `- exitCode: ${record.exitCode}`,
       `- runKind: ${record.runKind ?? "full"}`,
-      `- ok: ${record.ok}${record.runKind === "filtered" ? "（过滤轮恒为 false：本 PASS 只代表跑过的子集，不代表 19 场景全过）" : ""}`,
+      `- ok: ${record.ok}${record.runKind === "filtered" ? "（过滤轮恒为 false：本 PASS 只代表跑过的子集，不代表 15 场景全过）" : ""}`,
       ...(record.runKind === "filtered"
         ? [
             `- executed: ${(record.executed ?? []).join(", ") || "(无)"}`,

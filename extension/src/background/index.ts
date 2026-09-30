@@ -3,7 +3,7 @@ import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
 /**
  * background service worker 入口：
- * - 持有到伴随进程的上行连接（native messaging 优先，ws 调试回退，见 uplink.ts）
+ * - 持有到扩展内任务核心（offscreen）的上行连接；ws 调试通道仅供检查脚本回退，见 uplink.ts
  * - tool_call 由本层直接执行并回 tool_result（不经过面板，关面板任务也不断）
  * - side panel 经 chrome.runtime Port 接入，只做渲染与用户输入转发
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。

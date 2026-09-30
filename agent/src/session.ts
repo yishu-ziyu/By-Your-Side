@@ -1,6 +1,5 @@
 import { realtimeBrowserError, REALTIME_FILL_READBACK_TIMEOUT_MS, type RealtimeFillReadback } from './realtime-browser-tools.js';
 import { classifyDirectExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
-import { judgeRealtimeBrowserAction } from './realtime-browser-judge.js';
 import { reviewTaskGoal } from './goal-reasoning-review.js';
 import { reserveEvidenceWork } from './task-evidence-budget.js';
 import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
@@ -9,15 +8,8 @@ import { isBrowserObservation, type BrowserMaterial, type BrowserObservation } f
 import { createCapturePageMaterialTool, createTaskGoalsTool, type GoalToolHost } from './task-goal-tool.js';
 import { TaskEvidence, elementText, redactObservedText, fieldMaterialValue } from './task-evidence.js';
 import type { TaskGoalBook } from './task-goals.js';
-import {decideDisplay,displayFastPathEnabled,displaySteerFastPathEnabled,type DisplayParams} from './display-fast-path.js';
 import {asksWhere,decideFind} from './find-intent.js';
 import {decideTranslateIntent,mentionsTranslation,translationSummary} from './translate-intent.js';
-import {decideFastTask,type FastTaskDecision,type FastTaskSkillOption} from './fast-task.js';
-import {generateBrowserMaterial,type BrowserMaterialResult} from './browser-material.js';
-import type {BrowserControl,BrowserLoopOutcome,BrowserOperation} from '../../shared/browser-decision.js';
-import {goalsSatisfied} from '../../shared/task-goals.js';
-import {browserLoopDirectDeliveryEnabled,generalBrowserLoopEnabled} from './config.js';
-import {browserLoopSelfDeliveryText} from './browser-loop-delivery.js';
 import type {TranslationDisplayState} from '../../shared/page-translation.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
@@ -33,7 +25,6 @@ import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
-import type {TaskReceiptDiff} from '../../shared/task-actions.js';
 import {pageRecoveryKey,attachmentRecoveryKey} from './task-recovery.js';
 import {assertTaskStepExecution, nextStepIgnoringPlaceholder} from '../../shared/task-next-step.js';
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
@@ -71,9 +62,9 @@ import type { TaskHistoryStore } from "./task-history.js";
 import { ExperienceRuntime, type ExperienceStore } from "./experience.js";
 import type { SkillStore } from "./skill-store.js";
 import { SkillLearningTrace, type SkillEvidence } from "./skill-learning.js";
-import { DELIVERABLE_MIN, deliverableContractInput, judgeDeliverableContract, type DeliverableContractJudge } from "./skill-output-contract.js";
+import { DELIVERABLE_MIN, deliverableContractInput, unavailableDeliverableJudge, type DeliverableContractJudge } from "./skill-output-contract.js";
 import { SKILL_OUTPUT_CONTRACT_VERSION, HIDDEN_MATERIAL, redactSkillMaterials, type Skill } from "../../shared/skill.js";
-import { loadFastSkillOptions, trySkillFastLoop, type FastSkillGoalBinding, type SelectedSkillRun } from "./skill-fast-loop.js";
+import { trySkillFastLoop, type FastSkillGoalBinding, type SelectedSkillRun } from "./skill-fast-loop.js";
 import { programFirstGuidance } from "./program-first.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
@@ -82,13 +73,7 @@ export interface UserInputOptions { conversationOnly?: boolean; pageObservation?
 /** Reusable display execution result. `executed` says whether a page write may have landed. */
 export type DisplayExecutionFact='not_executed'|'executed'|'unknown';
 
-export type DisplayExecutionOutcome=
-  |{kind:'applied';text:string;after:TranslationDisplayState;verificationId:string;verifiedAt:number}
-  |{kind:'failed';reason:string;executed:DisplayExecutionFact};
-
 type FastTaskGoalSpec =
-  | { kind: 'switch_tab'; sourceObservationId: string; tab: { id: number; title: string; url: string } }
-  | { kind: 'display'; sourceObservationId: string; tabId: number; document: string; params: DisplayParams }
   | { kind: 'skill'; sourceObservationId: string; tabId: number; skill: FastSkillGoalBinding };
 
 type FastTaskGoalBinding = {
@@ -99,13 +84,7 @@ type FastTaskGoalBinding = {
 };
 
 type FastTaskProof =
-  | { kind: 'switch_tab'; observationId: string; verifiedAt: number; tab: { id: number; title: string; url: string } }
-  | { kind: 'display'; observationId: string; verifiedAt: number; state: TranslationDisplayState }
   | { kind: 'skill'; observationId: string; verifiedAt: number; skillId: string; version: number; verified: true };
-
-type FastTaskExecutionOutcome =
-  | { kind: 'verified'; text: string; proof: FastTaskProof }
-  | { kind: 'handoff'; reason: string; executionFact: DisplayExecutionFact };
 
 interface FastRequestObservation {
   id: string;
@@ -121,18 +100,10 @@ interface FastRequestObservation {
 }
 
 /** What a runtime steering request actually did; the manager turns it into a receipt. */
-export type SteerOutcome=
-  |{kind:'model'}
-  |{kind:'display-applied';text:string;params:DisplayParams;diff?:TaskReceiptDiff}
-  |{kind:'display-handoff-failed';text:string}
-  |{kind:'display-failed';reason:string}
-  |{kind:'display-unknown';reason:string};
-
-type DisplayCorrectionFact = {state:'verified'|'unverified'|'unknown';text:string};
+export type SteerOutcome={kind:'model'};
 
 type CorrectionRecord = {
   id:string;input:string|null;text:string;attachments?:Attachment[];
-  displayFact?:DisplayCorrectionFact;displayConsumed?:boolean;
 };
 
 /**
@@ -176,15 +147,6 @@ const RESULT_TEXT_MAX = 500;
 const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
-
-/**
- * 通用循环收尾的直接交付：改变页面状态或控制页的操作使“本轮只核对已有证据”不成立；
- * 滚动只改视口，仍由既有目标失效规则（写入即失效）决定能否直接交付。
- */
-const BROWSER_LOOP_MUTATING_OPERATIONS:ReadonlySet<BrowserOperation>=new Set(['click','fill','select','press_key','switch_tab','hover']);
-
-/** 直接交付只报告已核对目标的短摘要；超长说明需要主模型组织，交回原交接。 */
-const BROWSER_LOOP_DELIVERY_TEXT_MAX = 600;
 
 /** 交还 prompt 发出后等待同 epoch agent_start 的窗口；超时按恢复失败处理，hold 归还 user。 */
 export const HANDBACK_RESTORE_TIMEOUT_MS = 30_000;
@@ -253,8 +215,8 @@ export class BrowserAgentSession {
   readonly uploadLedger = new TaskUploadLedger();
   isLearningSkillRun(): boolean { return !!this.skillStore && this.skillLearning.active(); }
   observeSkillEvidence(event: SkillEvidence): ReturnType<SkillLearningTrace["observe"]> { return this.skillLearning.observe(event); }
-  private deliverableJudge: DeliverableContractJudge = judgeDeliverableContract;
-  /** 只给测试/验收注入确定判断用；生产默认走 TypeSafe。 */
+  private deliverableJudge: DeliverableContractJudge = unavailableDeliverableJudge;
+  /** 只给测试/验收注入确定判断用；生产默认没有判断（Jev 已退役），学习资格按不可用处理。 */
   setDeliverableJudge(judge: DeliverableContractJudge): void { this.deliverableJudge = judge; }
   /**
    * 学习资格：这条要求必须被做法本身完整覆盖。判断不通过、超时或服务不可用时都不生成候选
@@ -304,13 +266,11 @@ export class BrowserAgentSession {
   private activeGoal:string|null=null;
   private activeGoalPage:{tabId:number;url:string}|null=null;
   private displayAbort:AbortController|null=null;
-  private steerDisplayAbort:AbortController|null=null;
   private authorizedDisplayCall:string|null=null;
   /** >0 表示正在跑技能自带程序：子步骤对外事件只发脱敏形状。 */
   private skillProgramDepth=0;
   /** 正在跑的技能程序本次材料：公开/持久化的文本里出现就直接替换，不靠猜测。 */
   private skillMaterials: string[]=[];
-  private displayScopeBlockedRun:string|null=null;
   private displayWork:Promise<void>|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[]}>=[];
   private deliveryRunId: () => string | null = () => null;
@@ -348,7 +308,7 @@ export class BrowserAgentSession {
         if(!snapshot.runId||!snapshot.goalPlan)throw new Error('任务目标已变化');
         reserveEvidenceWork(this.session?.sessionManager,{runId:snapshot.runId,revision:snapshot.goalPlan.revision,resource:'goal-review',id:randomUUID()});
 
-        return reviewTaskGoal(this.voiceModelCall(),stage,data,signal,()=>this.callbacks.emit({kind:'notice',message:'正在复核目标证据',progress:true}));
+        return reviewTaskGoal(this.voiceModelCall(),stage,data,signal);
       },
       current: () => { const epoch = this.controlEpoch;
 
@@ -416,29 +376,13 @@ export class BrowserAgentSession {
     let description: string;
     let criterion: string;
 
-    if (spec.kind === 'switch_tab') {
-      goalId = 'fast-switch-tab';
-      description = `切换到「${spec.tab.title || spec.tab.url}」`;
-      criterion = `执行后浏览器活动标签必须同时匹配 tabId=${spec.tab.id}、title=${JSON.stringify(spec.tab.title)}、url=${JSON.stringify(spec.tab.url)}。`;
-    } else if (spec.kind === 'display') {
-      goalId = 'fast-translation-display';
-      description = '调整当前页已有译文显示';
-
-      const expected = [
-        spec.params.fontFamily ? `fontFamily=${spec.params.fontFamily}` : '',
-        spec.params.mode ? `mode=${spec.params.mode}` : '',
-      ].filter(Boolean).join('、');
-
-      criterion = `执行后同一 tabId=${spec.tabId}、translation document=${JSON.stringify(spec.document)} 的实际显示状态必须有效并满足 ${expected}；未要求的显示属性必须保持原值。`;
-    } else {
-      if (!spec.skill.structurallyComplete) {
-        throw new Error('这份技能没有结构化证明覆盖整条要求，交回普通流程。');
-      }
-
-      goalId = `skill-${spec.skill.skillId}`.slice(0, 64);
-      description = `按已保存做法完成「${spec.skill.name}」`;
-      criterion = `技能版本 ${spec.skill.version} 的预绑定核验条件：${spec.skill.criterion}`;
+    if (!spec.skill.structurallyComplete) {
+      throw new Error('这份技能没有结构化证明覆盖整条要求，交回普通流程。');
     }
+
+    goalId = `skill-${spec.skill.skillId}`.slice(0, 64);
+    description = `按已保存做法完成「${spec.skill.name}」`;
+    criterion = `技能版本 ${spec.skill.version} 的预绑定核验条件：${spec.skill.criterion}`;
 
     host.goals.install(plan.revision, [{
       id: goalId,
@@ -467,27 +411,7 @@ export class BrowserAgentSession {
     let tabId: number;
     let reason: string;
 
-    if (binding.spec.kind === 'switch_tab' && proof.kind === 'switch_tab') {
-      const expected = binding.spec.tab;
-
-      if (proof.tab.id !== expected.id || proof.tab.title !== expected.title || proof.tab.url !== expected.url) {
-        throw new Error('活动标签页读回与预绑定目标不一致。');
-      }
-
-      tabId = expected.id;
-      reason = `活动标签页已读回为「${expected.title || expected.url}」`;
-    } else if (binding.spec.kind === 'display' && proof.kind === 'display') {
-      const expected = binding.spec;
-
-      if (!proof.state.displayValid || proof.state.document !== expected.document
-        || (expected.params.fontFamily !== undefined && proof.state.fontFamily !== expected.params.fontFamily)
-        || (expected.params.mode !== undefined && proof.state.mode !== expected.params.mode)) {
-        throw new Error('译文显示读回与预绑定目标不一致。');
-      }
-
-      tabId = expected.tabId;
-      reason = displayFactText({ ...expected.params });
-    } else if (binding.spec.kind === 'skill' && proof.kind === 'skill') {
+    if (binding.spec.kind === 'skill' && proof.kind === 'skill') {
       if (!proof.verified || proof.skillId !== binding.spec.skill.skillId
         || proof.version !== binding.spec.skill.version || !binding.spec.skill.structurallyComplete) {
         throw new Error('技能核验结果与预绑定版本或完整要求不一致。');
@@ -535,26 +459,6 @@ export class BrowserAgentSession {
     });
 
     return [...materials,...cited];
-  }
-  browserDecisionRunId():string|null {return this.deliveryRunId();}
-  async browserFieldMaterial(goal:string,control:BrowserControl,signal:AbortSignal):Promise<BrowserMaterialResult>{
-    const call=this.voiceModelCall();
-
-if(!call)return {kind:'missing',reason:'当前没有可用的文字生成模型'};
-    this.callbacks.emit({kind:'notice',message:`正在准备“${control.name||'当前字段'}”的填写内容`});
-    const started=Date.now();
-    const result=await generateBrowserMaterial(call,{goal,userText:this.browserDecisionUserText(),control},signal);
-    this.runTrace.record('browser_field_material',{kind:result.kind,ref:control.ref,model:`${call.model.provider}/${call.model.id}`,elapsedMs:Date.now()-started});
-
-    return result;
-  }
-  browserDecisionUserText():string {
-    return [this.activeGoal,...(this.conversationSnapshot()?.conversationContext?.recentTurns??[]).filter(t=>t.role==='user').map(t=>t.text),...this.pendingCorrections.map(r=>r.input)].filter(Boolean).join('\n');
-  }
-  browserDecisionContext():string {
-    const snapshot=this.conversationSnapshot();
-
-    return JSON.stringify({originalGoal:this.activeGoal,originPage:this.activeGoalPage,goal:snapshot?.goal,latestUserInputs:snapshot?.conversationContext?.recentTurns?.filter(t=>t.role==='user'),pendingCorrections:this.pendingCorrections.map(r=>r.input)});
   }
   /**
    * browser_run 子步骤对外事件。技能程序把本次材料内联在参数里（fill value、read_element expect…），
@@ -673,8 +577,6 @@ if(required.includes(key))candidates.set(key,attachment);
    * 不再要求模型先登记，也不再用登记项精确匹配本次 target。
    */
   assertTaskResultExecution(name: string, params: Record<string, unknown>, _toolCallId?: string): void {
-    if(name==='page_translation'&&params.action!=='collect'&&this.displayScopeBlockedRun!==null&&this.displayScopeBlockedRun===this.deliveryRunId())throw new Error('当前要求只修改页面的一部分，翻译显示工具只能修改整页。本次操作未执行，请说明此限制，不要更改整页来代替局部要求。');
-
     if (this.checkpointReadFailed) throw new Error(TASK_CHECKPOINT_UNAVAILABLE);
     const snapshot=this.conversationSnapshot();
     // display-* 前缀即直连用户请求（语音/显示命令）：不继承旧任务的“已取消”生命周期；其余约束照旧。
@@ -1222,9 +1124,7 @@ if(required.includes(key))candidates.set(key,attachment);
         } catch { readback={status:'failed',reason:'readback_unavailable'}; }
       };
 
-      const work = name === 'judge_browser_action'
-        ? this.judgeRealtimeBrowserTool(args,stop,current)
-        : (async()=>{
+      const work = (async()=>{
           try {
             const result=await this.invokeDisplayTool(this.session!,name,args,stop,current,id=>{
               toolCallId=id;
@@ -1252,10 +1152,10 @@ if(required.includes(key))candidates.set(key,attachment);
 
       try {
         const result = await work;
-        const feedback = name === 'judge_browser_action' ? null : feedbackFor(executionFact(), (result as {details?:unknown}).details, false);
+        const feedback = feedbackFor(executionFact(), (result as {details?:unknown}).details, false);
 
         return {ok:true, content:(result as {content:unknown}).content,
-          ...(name === 'judge_browser_action' ? {} : {toolCallId, executionFact:executionFact()}),
+          toolCallId, executionFact:executionFact(),
           ...(readback?{readback,transportId:toolCallId?this.rpc?.getTransportId?.(toolCallId):undefined}:{}),
           ...(feedback?{feedback}:{})};
       } finally {
@@ -1266,7 +1166,6 @@ if(required.includes(key))candidates.set(key,attachment);
         }
       }
     } catch (error) {
-      if (name === 'judge_browser_action') throw error;
       const fact = executionFact();
       const rejection = realtimeBrowserError(error, fact, toolCallId);
 
@@ -1327,52 +1226,6 @@ if(required.includes(key))candidates.set(key,attachment);
         :message.includes('READBACK_DOCUMENT')?'document_changed':message.includes('READBACK_NODE')?'original_node_unverifiable':'read_failed';
 
       return {...ids(),status:['input_no_longer_current','original_call_fact_missing','original_receipt_arrived','protected_field','document_changed','original_node_unverifiable'].includes(reason)?'skipped':'failed',reason};
-    }
-  }
-
-  private async judgeRealtimeBrowserTool(args: Record<string,unknown>, signal: AbortSignal, current:()=>boolean) {
-    if (!this.rpc || !current()) throw new Error('页面判断已取消。');
-    const id = `jev-${randomUUID()}`, name = 'judge_browser_action';
-    this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:args});
-
-    try {
-      // Realtime surface never mounts browser_loop. Direct tools are present whenever judge is.
-      // Prefer task_action when the host offers structured dispatch; otherwise browser_request.
-      // Callers may override via continueMount for accurate voice-connection mounts.
-      const continueMount = args.continueMount && typeof args.continueMount === 'object'
-        ? args.continueMount as {directBrowser?:boolean;taskAction?:boolean;browserRequest?:boolean}
-        : {
-          directBrowser: true,
-          taskAction: true,
-          browserRequest: true,
-        };
-
-      const result = await judgeRealtimeBrowserAction(this.rpc,{
-        request:String(args.request),userTask:this.browserDecisionContext(),
-        ...(typeof args.tabId === 'number'?{tabId:args.tabId}:{}),
-        history:(this.conversationSnapshot()?.results??[]).slice(-8).map(r=>`${r.tool}: ${r.description} [${r.status}]`),
-        canExecute: name => this.isToolActive(name),
-        continueMount,
-      },signal);
-
-      if (!current()) throw new Error('用户要求已变化，旧页面判断已丢弃。');
-
-      // Never recommend a tool that is not on the continue.tools list (typed path, not Chinese reason).
-      if (result && typeof result === 'object' && 'continue' in result) {
-        const cont = (result as {continue?:{tools?:string[]}}).continue;
-
-        if (cont?.tools?.includes('browser_loop')) {
-          cont.tools = cont.tools.filter(t => t !== 'browser_loop');
-        }
-      }
-
-      const text = JSON.stringify(result);
-      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:false,resultText:text,executionFact:'executed'});
-
-      return {content:[{type:'text' as const,text}]};
-    } catch (error) {
-      this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:error instanceof Error?error.message:String(error),executionFact:'not_executed'});
-      throw error;
     }
   }
 
@@ -1473,14 +1326,12 @@ return;}
     let skillFallback = "";
     const preparationEpoch=this.controlEpoch,preparationRun=this.deliveryRunId();
     const preparationCurrent=()=>preparationEpoch===this.controlEpoch&&preparationRun===this.deliveryRunId()&&!this.hold.isHeld();
-    const needsGoalPlan=this.conversationSnapshot()?.goalPlan?.coverage==='unplanned';
 
     const fastEntry = allowDisplay && !!context && !context.selection && !images.length
       && this.explicitDelivery && this.modeState.value === 'act'
-      && (this.skillStore !== null || displayFastPathEnabled() || generalBrowserLoopEnabled());
+      && this.skillStore !== null;
 
     let reusedObservation: FastRequestObservation | null = null;
-    let fastSkills: FastTaskSkillOption[] = [];
 
     if (fastEntry) {
       const controller = new AbortController();
@@ -1646,103 +1497,7 @@ return;}
           }
         }
 
-        if (!skillFallback && reusedObservation && this.skillStore) {
-          fastSkills = await loadFastSkillOptions(this.skillStore, context, selectedSkill);
-
-          if (!current()) {
-            total.end('cancelled');
-
-            return;
-          }
-        }
-
-        if (!skillFallback && reusedObservation?.data.observation && needsGoalPlan) {
-          const judgment = this.runTrace.stage('judgment', {
-            branch: 'fast_task',
-            goalRevision: this.conversationSnapshot()?.goalPlan?.revision,
-          });
-
-          const decision = await decideFastTask({
-            request: this.activeGoal ?? finalText,
-            observation: reusedObservation.data.observation,
-            translation: reusedObservation.data.translation,
-            allowSwitch: generalBrowserLoopEnabled(),
-            allowDisplay: displayFastPathEnabled(),
-            skills: fastSkills,
-          }, controller.signal);
-
-          judgment.end(decision.kind, {
-            ...(decision.kind === 'miss' ? { reason: decision.reason } : {}),
-            ...(decision.diagnostics ? { diagnostics: decision.diagnostics } : {}),
-          });
-
-          if (!current() || decision.kind === 'cancelled') {
-            total.end('cancelled');
-
-            return;
-          }
-
-          if (decision.kind === 'miss' && decision.reason === 'display_partial_or_uncertain') {
-            this.displayScopeBlockedRun = this.deliveryRunId();
-          }
-
-          if (decision.kind === 'candidate') {
-            let binding: FastTaskGoalBinding | null = null;
-
-            try {
-              binding = this.bindFastTaskCandidate(decision, reusedObservation, context.tabId);
-            } catch (error) {
-              const reason = error instanceof Error ? error.message : '快捷任务没有通过目标绑定';
-              skillFallback = this.fastTaskHandoff(reason, 'not_executed');
-              total.end('miss', { branch: decision.candidate.kind, executionFact: 'not_executed', reason });
-            }
-
-            if (binding) {
-              let outcome: FastTaskExecutionOutcome | null = null;
-              const bindingCurrent = () => current() && this.fastTaskBindingCurrent(binding!);
-
-              try {
-                outcome = await this.executeFastTaskCandidate(
-                  session,
-                  decision,
-                  reusedObservation,
-                  controller.signal,
-                  bindingCurrent,
-                  selectedSkill,
-                );
-              } catch (error) {
-                const reason = error instanceof Error ? error.message : '快捷任务执行状态未知';
-                reusedObservation = null;
-                skillFallback = this.fastTaskHandoff(reason, 'unknown');
-                total.end('handoff', { branch: decision.candidate.kind, executionFact: 'unknown', reason });
-              }
-
-              if (outcome?.kind === 'verified') {
-                try {
-                await this.persistAndDeliverFastTask(session, controller.signal, current, binding, outcome.proof, outcome.text, 'fast-task-result');
-                total.end('verified', { branch: decision.candidate.kind });
-
-                return;
-                } catch (error) {
-                  const reason = error instanceof Error ? error.message : '快捷任务已执行，但交付失败';
-                  reusedObservation = null;
-                  skillFallback = this.fastTaskHandoff(reason, 'executed');
-                  total.end('handoff', { branch: decision.candidate.kind, executionFact: 'executed', reason });
-                }
-              } else if (outcome?.kind === 'handoff') {
-                if (outcome.executionFact !== 'not_executed') reusedObservation = null;
-                skillFallback = this.fastTaskHandoff(outcome.reason, outcome.executionFact);
-                total.end('handoff', {
-                  branch: decision.candidate.kind,
-                  executionFact: outcome.executionFact,
-                  reason: outcome.reason,
-                });
-              }
-            }
-          } else {
-            total.end('miss', { reason: decision.reason });
-          }
-        } else if (!skillFallback) {
+        if (!skillFallback) {
           total.end('miss', { reason: reusedObservation ? 'no_structured_candidate' : 'observation_unavailable' });
         }
       } catch (error) {
@@ -1763,14 +1518,6 @@ return;}
     }
 
     if(!preparationCurrent())return;
-    const currentNeedsGoalPlan=this.conversationSnapshot()?.goalPlan?.coverage==='unplanned';
-    const generalEligible=!currentNeedsGoalPlan&&generalBrowserLoopEnabled()&&session.agent.state.tools.some(t=>t.name==='browser_loop')&&allowDisplay&&!selectedSkill&&!!context&&!context.selection&&!images.length&&this.explicitDelivery&&this.modeState.value==='act';
-
-    if(generalEligible&&!skillFallback&&context&&this.displayScopeBlockedRun!==this.deliveryRunId()){
-      await this.runInitialBrowserLoop(session,finalText,context);
-
-      return;
-    }
 
     // 「把这页翻译成中文」这类整页翻译：配了快速模型时先让它判断意图，是就直接调用翻译工具，省掉主模型一整轮（阶跃约 5–12 s）。
     const translateEntry=allowDisplay&&context?.tabId!==undefined&&!context.selection&&!images.length&&!selectedSkill&&!skillFallback
@@ -1803,11 +1550,10 @@ return;}
     const observation = reusedObservation?.promptText ?? await this.readUserPageForPrompt(context, "task");
 
     if(!preparationCurrent())return;
-    const scopeNote=this.displayScopeBlockedRun!==null&&this.displayScopeBlockedRun===this.deliveryRunId()?"\n[Current request is scoped to part of the page. page_translation changes the entire page and is blocked for this request. Do not modify the page. Explain the whole-page-only limitation and report this request as partial.]":"";
     // 只有把页面原文搬进输入框/文档的任务需要目标账本（写入前由宿主核对原文）；提问、闲聊、读页直接回答。
     const goalGuidance=this.conversationSnapshot()?.goalPlan ? '\n[If this request copies text from a page into a field or document, first use task_goals inspect and plan (material + field goals) and capture_page_material, so the host checks the exact source before writing. Questions, chat, page reading and simple page actions need no goal plan: act or answer directly.]' : '';
 
-    const promptText = goalGuidance+(observation ? `${finalText}\n\n${observation}` : finalText)+scopeNote+skillFallback
+    const promptText = goalGuidance+(observation ? `${finalText}\n\n${observation}` : finalText)+skillFallback
       +(this.modeState.value === "act" && context && typeof context.tabId === "number" ? programFirstGuidance() : "");
 
     const learningRun = this.deliveryRunId();
@@ -1887,261 +1633,6 @@ return;}
       });
 
       return null;
-    }
-  }
-
-  private bindFastTaskCandidate(
-    decision: Extract<FastTaskDecision, { kind: 'candidate' }>,
-    observation: FastRequestObservation,
-    tabId: number,
-  ): FastTaskGoalBinding {
-    if (decision.candidate.kind === 'switch_tab') {
-      return this.bindFastTaskGoal({
-        kind: 'switch_tab',
-        sourceObservationId: observation.data.observation!.id,
-        tab: decision.candidate.tab,
-      });
-    }
-
-    if (decision.candidate.kind === 'skill') {
-      return this.bindFastTaskGoal({
-        kind: 'skill',
-        sourceObservationId: observation.id,
-        tabId,
-        skill: {
-          skillId: decision.candidate.skill.id,
-          version: decision.candidate.skill.version,
-          name: decision.candidate.skill.name,
-          description: decision.candidate.skill.description,
-          criterion: decision.candidate.skill.criterion,
-          structurallyComplete: true,
-        },
-      });
-    }
-
-    const translation = observation.data.translation;
-
-    if (!translation?.translated || !translation.displayValid || !translation.document) {
-      throw new Error('当前页没有可绑定的有效译文显示状态。');
-    }
-
-    return this.bindFastTaskGoal({
-      kind: 'display',
-      sourceObservationId: observation.data.observation!.id,
-      tabId,
-      document: translation.document,
-      params: decision.candidate.params,
-    });
-  }
-
-  private async executeFastTaskCandidate(
-    session: AgentLoop,
-    decision: Extract<FastTaskDecision, { kind: 'candidate' }>,
-    observation: FastRequestObservation,
-    signal: AbortSignal,
-    current: () => boolean,
-    selectedSkill?: SelectedSkillRun,
-  ): Promise<FastTaskExecutionOutcome> {
-    if (decision.candidate.kind === 'skill') {
-      if (!this.skillStore || !this.rpc) {
-        return { kind: 'handoff', reason: '已保存做法当前不可用。', executionFact: 'not_executed' };
-      }
-
-      const selected = decision.candidate.skill;
-
-      const execution = this.runTrace.stage('execution', {
-        branch: 'skill',
-        skillId: selected.id,
-        goalRevision: this.conversationSnapshot()?.goalPlan?.revision,
-      });
-
-      let executionId: string | null = null;
-      let result;
-
-      try {
-        result = await trySkillFastLoop({
-          store: this.skillStore,
-          rpc: this.rpc,
-          request: this.activeGoal ?? '',
-          context: {
-            tabId: observation.data.tabId!,
-            url: observation.data.url ?? this.activeGoalPage?.url ?? '',
-            title: '',
-          },
-          signal,
-          current,
-          selected: {
-            id: selected.id,
-            expectedVersion: selected.version,
-            inputs: selected.inputs,
-            allowStale: selected.allowStale,
-            ...(selectedSkill?.id === selected.id && selectedSkill.onResult
-              ? { onResult: selectedSkill.onResult }
-              : {}),
-          },
-          observedPage: observation.data,
-          bindGoal: skill => {
-            if (skill.skillId !== selected.id || skill.version !== selected.version) {
-              throw new Error('技能版本在执行前发生变化。');
-            }
-          },
-          execute: async (name, params, display) => await this.invokeDisplayTool(
-            session,
-            name,
-            params,
-            signal,
-            current,
-            id => { executionId = id; },
-            display,
-          ) as { details?: unknown },
-          notice: message => this.callbacks.emit({ kind: 'notice', message }),
-        });
-      } catch (error) {
-        const fact = this.fastTaskExecutionFact(executionId, executionId !== null);
-        const reason = error instanceof Error ? error.message : '技能执行失败';
-        execution.end('failed', { executionFact: fact, reason });
-
-        return { kind: 'handoff', reason, executionFact: fact };
-      }
-
-      const fact = this.fastTaskExecutionFact(executionId, executionId !== null);
-      execution.end(executionId ? 'executed' : 'not_executed', { executionFact: fact });
-
-      if (!current() || result.kind === 'stopped') {
-        return { kind: 'handoff', reason: '任务在技能执行期间已取消或改变。', executionFact: fact };
-      }
-
-      if (result.kind !== 'done' || !result.outcome.ok || !executionId) {
-        const reason = result.kind === 'done'
-          ? result.outcome.error ?? '技能没有确认完成'
-          : result.kind === 'fallback' || result.kind === 'miss'
-            ? result.reason
-            : '技能没有确认完成';
-
-        return { kind: 'handoff', reason, executionFact: fact };
-      }
-
-      const verification = this.runTrace.stage('verification', {
-        branch: 'skill',
-        skillId: selected.id,
-        goalRevision: this.conversationSnapshot()?.goalPlan?.revision,
-      });
-
-      if (!current()) {
-        verification.end('cancelled');
-
-        return { kind: 'handoff', reason: '技能已执行，但任务版本在核验时变化。', executionFact: 'executed' };
-      }
-
-      verification.end('verified');
-
-      return {
-        kind: 'verified',
-        text: `已完成 · 使用「${result.skillName}」· ${(result.outcome.elapsedMs / 1000).toFixed(1)} 秒，结果已核对。`,
-        proof: {
-          kind: 'skill',
-          observationId: executionId,
-          verifiedAt: Date.now(),
-          skillId: selected.id,
-          version: selected.version,
-          verified: true,
-        },
-      };
-    }
-
-    if (decision.candidate.kind === 'display') {
-      const before = observation.data.translation;
-
-      if (!before?.translated || !before.displayValid) {
-        return { kind: 'handoff', reason: '当前页译文状态已经失效。', executionFact: 'not_executed' };
-      }
-
-      const outcome = await this.executeDisplayCommand(session, {
-        ...decision.candidate.params,
-        tabId: observation.data.tabId,
-        document: before.document,
-      }, signal, current, before);
-
-      if (outcome.kind === 'failed') {
-        return { kind: 'handoff', reason: outcome.reason, executionFact: outcome.executed };
-      }
-
-      return {
-        kind: 'verified',
-        text: outcome.text,
-        proof: {
-          kind: 'display',
-          observationId: outcome.verificationId,
-          verifiedAt: outcome.verifiedAt,
-          state: outcome.after,
-        },
-      };
-    }
-
-    const execution = this.runTrace.stage('execution', {
-      branch: 'switch_tab',
-      tabId: decision.candidate.tab.id,
-      goalRevision: this.conversationSnapshot()?.goalPlan?.revision,
-    });
-
-    let switchId: string | null = null;
-
-    try {
-      await this.invokeDisplayTool(session, 'tabs', {
-        action: 'switch',
-        tabId: decision.candidate.tab.id,
-        decisionGuard: {
-          observationId: observation.data.observation!.id,
-          operation: 'switch_tab',
-          sourceTabId: observation.data.observation!.tabId,
-        },
-      }, signal, current, id => { switchId = id; });
-      execution.end('executed', { executionFact: 'executed' });
-    } catch (error) {
-      const fact = this.fastTaskExecutionFact(switchId, switchId !== null);
-      const reason = error instanceof Error ? error.message : '标签页切换失败';
-      execution.end('failed', { executionFact: fact, reason });
-
-      return { kind: 'handoff', reason, executionFact: fact };
-    }
-
-    const verification = this.runTrace.stage('verification', {
-      branch: 'switch_tab',
-      tabId: decision.candidate.tab.id,
-      goalRevision: this.conversationSnapshot()?.goalPlan?.revision,
-    });
-
-    let verificationId = '';
-
-    try {
-      const result = await this.invokeDisplayTool(
-        session,
-        'tabs',
-        { action: 'active' },
-        signal,
-        current,
-        id => { verificationId = id; },
-      ) as { details?: { tab?: { id: number; title: string; url: string } | null } };
-
-      const tab = result.details?.tab;
-      const expected = decision.candidate.tab;
-
-      if (!tab || tab.id !== expected.id || tab.title !== expected.title || tab.url !== expected.url) {
-        throw new Error('当前活动标签页与预绑定目标不一致。');
-      }
-
-      verification.end('verified');
-
-      return {
-        kind: 'verified',
-        text: `已切换到「${expected.title || expected.url}」。`,
-        proof: { kind: 'switch_tab', observationId: verificationId, verifiedAt: Date.now(), tab },
-      };
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : '活动标签页核验失败';
-      verification.end('failed', { reason });
-
-      return { kind: 'handoff', reason, executionFact: 'executed' };
     }
   }
 
@@ -2374,212 +1865,6 @@ return;}
     return `\n[Fast task handoff: reason=${JSON.stringify(reason)}; executionFact=${executionFact}. `
       + 'Use the current goal and task ledger. Preserve completed or unknown actions; never replay them. '
       + 'No full-request success has been reported.]';
-  }
-
-  /** The task entry, not the reasoning model, starts the general browser loop.
-   * The main model is called afterward for independent verification or a concrete handoff,
-   * unless the host ledger already holds complete current evidence for this exact request:
-   * then the existing formal delivery channel ends this turn with zero reasoning-model prompts.
-   * No domain/keyword routing, no new semantic judgment call and no direct RPC write bypass is introduced here.
-   */
-  private async runInitialBrowserLoop(session:AgentLoop,finalText:string,context:PageContext):Promise<void>{
-    const controller=new AbortController();this.displayAbort=controller;
-    const epoch=this.controlEpoch,runId=this.deliveryRunId();
-    const current=()=>!controller.signal.aborted&&epoch===this.controlEpoch&&runId===this.deliveryRunId()&&!this.hold.isHeld();
-    this.callbacks.setStatus('running');this.callbacks.emit(this.startEvent());
-    let handoff='The general browser loop could not start. No success has been reported.';
-    let outcome:BrowserLoopOutcome|undefined;
-
-    try{
-      const result=await this.invokeDisplayTool(session,'browser_loop',{goal:this.activeGoal??finalText,materials:[]},controller.signal,current,()=>{}) as {details?:BrowserLoopOutcome};
-
-      if(!current())return;
-      outcome=result.details;
-      this.runTrace.record('general_browser_initial',{status:outcome?.status,modelCalls:outcome?.modelCalls,steps:outcome?.receipts.length,reason:outcome?.reason,reasonCode:outcome?.reasonCode,continue:outcome?.continue});
-      // Continue on the same session.prompt with the original request. Control uses reasonCode/continue, not Chinese reason text.
-      handoff=`The shared browser loop ran BEFORE this reasoning-model turn. Its result is ${outcome?.status??'unknown'}; reasonCode=${outcome?.reasonCode??'unspecified'}. It has NOT certified the whole task complete. Independently verify all user requirements. Never replay successful or unknown writes; inspect current state and the task ledger. Use the typed continue hint (continue.action / continue.tools / continue.checkedRange) for the next step — do not parse the human reason string.\n${wrapPageContent(redactCredentialText(JSON.stringify(outcome??{})),{tabId:context.tabId})}`;
-    }catch(error){
-      if(!current())return;
-      this.runTrace.record('general_browser_initial_failed',{reason:error instanceof Error?error.message:String(error)});
-      handoff='The shared browser loop failed. Some steps may have executed; inspect current state and the task ledger before proceeding. No success was reported.';
-    }
-    finally{if(!current()&&this.displayAbort===controller)this.displayAbort=null;}
-
-    if(!current())return;
-
-    // Keep the preparation cancellation barrier until the SDK takes over streaming.
-    if(this.displayAbort===controller)this.displayAbort=null;
-
-    if(await this.deliverVerifiedBrowserLoopOutcome(session,outcome,context,controller,current))return;
-    await session.prompt(`${finalText}\n\n[Browser execution handoff]\n${handoff}`);
-  }
-
-  /**
-   * 循环只提出核验，没有完成状态：needs_verification 也不是任务完成的证明。
-   * 只有宿主目标账本已为本轮这条要求保存当前有效证据、本轮循环没有改变页面或控制页时，
-   * 才复用既有 send_user_message 正式交付通道结束本轮（主模型 prompt 0 次）。
-   * 证据有效性沿用既有失效规则（后续写入、页面身份变化、检查点恢复都会把目标变回待核验）；
-   * 这里不新增语义判断调用，也不放宽 send_user_message 自身的门槛。
-   */
-  private async deliverVerifiedBrowserLoopOutcome(session:AgentLoop,outcome:BrowserLoopOutcome|undefined,context:PageContext,controller:AbortController,current:()=>boolean):Promise<boolean>{
-    const text=this.verifiedBrowserLoopDeliveryText(outcome,context);
-
-    if(!text)return false;
-    let delivered=false;
-
-    try{
-      await this.invokeDisplayTool(session,'send_user_message',{kind:'finding',outcome:'complete',content:text},controller.signal,current,()=>{});
-      delivered=true;
-    }catch(error){
-      this.runTrace.record('general_browser_direct_delivery_rejected',{reason:error instanceof Error?error.message:String(error)});
-    }
-
-    if(!delivered)return false;
-    // 交付已经发出：之后的记录失败也不能再交回主模型，避免同一轮重复交付。
-    this.deliveredResultThisRun=true;
-    this.runTrace.record('general_browser_direct_delivery',{status:outcome?.status,mainModelPrompts:0,goals:this.conversationSnapshot()?.goalPlan?.goals.length??0});
-
-    try{
-      await session.sendCustomMessage({customType:'browser-loop-direct-delivery',content:`用户请求：${this.activeGoal}\n${text}`,display:false});
-    }catch(error){
-      this.runTrace.record('general_browser_direct_delivery_history_failed',{reason:error instanceof Error?error.message:String(error)});
-    }
-
-    if(current()){
-      this.callbacks.setStatus('idle');
-      this.callbacks.emit({kind:'agent_end'});
-    }
-
-    this.experience?.finish({extract:false});
-
-    return true;
-  }
-
-  /** 只有这份目标方案覆盖的正是本轮要求时，账本证据才能代表本次请求；否则交回主模型。 */
-  private verifiedBrowserLoopDeliveryText(outcome:BrowserLoopOutcome|undefined,context:PageContext):string|null{
-    if(!outcome||outcome.status!=='needs_verification')return null;
-
-    if(this.deliveredResultThisRun)return null;
-
-    // 开关打开时：循环自己判定完成、只做过执行器确认送达的低风险点击，直接交付（见 browser-loop-delivery.ts）。
-    if(browserLoopDirectDeliveryEnabled()){
-      const snapshot=this.conversationSnapshot();
-      const blocked=!snapshot||['aborted','paused','interrupted'].includes(snapshot.state)||snapshot.unresolvedEffect||snapshot.untrackedWritePending||(snapshot.results??[]).some(item=>item.status==='unknown');
-      const text=blocked?null:browserLoopSelfDeliveryText(outcome,context.tabId);
-
-      if(text)return text;
-    }
-
-    // 本轮循环已经执行过改变页面或控制页的动作：先按真实事实交回主模型，不重复执行也不提前交付。
-    if((outcome.receipts??[]).some(receipt=>BROWSER_LOOP_MUTATING_OPERATIONS.has(receipt.operation)))return null;
-    const snapshot=this.conversationSnapshot();
-    const plan=snapshot?.goalPlan;
-
-    if(!snapshot?.runId||!plan||plan.coverage!=='verified'||!plan.goals.length)return null;
-
-    if(['aborted','paused','interrupted'].includes(snapshot.state))return null;
-
-    if(!goalsSatisfied(plan))return null;
-
-    // 回答目标由正式答复本身完成，代码不能替它重新作答。
-    if(plan.goals.some(goal=>goal.kind==='answer'))return null;
-    const requirements=snapshot.recoveryInput?.requirements??[];
-
-    if(!requirements.length||(this.activeGoal??'').trim()!==requirements.at(-1))return null;
-
-    // 未知写入、未审完的执行和未决结果都与“证据完整”矛盾。
-    if(snapshot.unresolvedEffect||snapshot.untrackedWritePending||snapshot.executionAuditComplete===false)return null;
-
-    if((snapshot.results??[]).some(item=>item.status==='pending'||item.status==='unknown'))return null;
-    // 本条要求的每条目标都要有属于本次请求页面的宿主证据；材料目标的证据由本轮材料库核对。
-    const tabId=outcome.lastObservation?.tabId;
-
-    if(!tabId||tabId!==context.tabId)return null;
-    const materials=this.taskEvidence.list(snapshot.runId,plan.revision).materials;
-
-    for(const goal of plan.goals){
-      if(goal.kind==='material'){
-        const materialId=goal.evidence?.materialId;
-
-        if(!materialId||!materials.some(material=>material.id===materialId))return null;
-        continue;
-      }
-
-      if(goal.evidence?.tabId!==tabId)return null;
-    }
-
-    const descriptions=plan.goals.map(goal=>goal.description.trim()).filter(Boolean);
-
-    if(!descriptions.length)return null;
-    const text=`已核对完成：${descriptions.join('；')}。`;
-
-    return text.length<=BROWSER_LOOP_DELIVERY_TEXT_MAX?text:null;
-  }
-
-  /**
-   * 可复用的显示执行：走已注册工具 + 读回核验，只返回真实结果。
-   * 不结束任务、不打空闲、不发交付；新任务收尾留在 runDisplayCommand，运行中修改的收尾在 steerCurrentTask。
-   */
-  private async executeDisplayCommand(session:AgentLoop,params:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,before?:TranslationDisplayState):Promise<DisplayExecutionOutcome>{
-    if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'not_executed'};
-    let lastCallId:string|null=null;
-    let writeAttempted=false,writeSucceeded=false;
-    let verification:{end:(outcome:string,details?:Record<string,unknown>)=>void}|null=null;
-    const execute=(name:string,input:Record<string,unknown>)=>this.invokeDisplayTool(session,name,input,signal,current,id=>{lastCallId=id;});
-    const execution=this.runTrace.stage('execution',{branch:'display',tabId:params.tabId,goalRevision:this.conversationSnapshot()?.goalPlan?.revision});
-
-    try{
-      writeAttempted=true;
-      await execute('page_translation',params);
-      writeSucceeded=true;
-      execution.end('executed',{executionFact:'executed'});
-      // 执行事实先于后续观察落账：即使核对读数失败，也不能把这次执行抹掉。
-      this.runTrace.record('display_executed',{params});
-
-      if(!current())return {kind:'failed',reason:'显示操作已取消。',executed:'executed'};
-      verification=this.runTrace.stage('verification',{branch:'display',tabId:params.tabId,goalRevision:this.conversationSnapshot()?.goalPlan?.revision});
-      const result=await execute('snapshot',{tabId:params.tabId});
-      const verificationId=lastCallId;
-
-      if(!current()){
-        verification.end('cancelled');
-
-        return {kind:'failed',reason:'显示已执行，但核对期间任务已停止或控制状态已变化；没有确认继续。',executed:'executed'};
-      }
-
-      const after=(result as {details?:{translation?:TranslationDisplayState|null}}|undefined)?.details?.translation;
-
-      if(!after?.displayValid||after.document!==params.document||(params.mode&&after.mode!==params.mode)||(params.fontFamily&&after.fontFamily!==params.fontFamily)){
-        verification.end('failed',{reason:'postcondition_mismatch'});
-
-        return {kind:'failed',reason:'没有核对到要求的显示结果。',executed:'executed'};
-      }
-
-      // T04 修改范围：未要求改变的属性必须读回为原值，否则不核对为成功、不产生差异展示。
-      if(before&&(params.mode===undefined&&after.mode!==before.mode||params.fontFamily===undefined&&after.fontFamily!==before.fontFamily)){
-        verification.end('failed',{reason:'unspecified_attribute_changed'});
-
-        return {kind:'failed',reason:'出现了未要求改变的显示变化，这次修改未核对为成功。',executed:'executed'};
-      }
-
-      verification.end('verified');
-
-      return {kind:'applied',text:displayFactText(params),after,verificationId:verificationId!,verifiedAt:Date.now()};
-    }catch(error){
-      const reason=error instanceof Error?error.message:'显示操作未完成。';
-      const fact=lastCallId?this.rpc?.getExecutionFact(lastCallId):undefined;
-
-      // 已发出的写入、明确执行过的回执都不允许自动重做；只有确定没执行才回原路径。
-      const executed:DisplayExecutionFact=writeSucceeded||fact==='executed'?'executed'
-        :fact==='not_executed'?'not_executed'
-        :writeAttempted?'unknown'
-        :'not_executed';
-
-      verification?.end('failed',{executionFact:executed,reason});
-      execution.end('failed',{executionFact:executed,reason});
-
-      return {kind:'failed',reason,executed};
-    }
   }
 
   /**
@@ -3116,7 +2401,7 @@ return;}
   private abandonUnconsumedCorrections(reason:"ended"|"stopped"|"superseded"):boolean{
     // 尚在预观察中的请求没有进入 Pi，不需要清队列；取消它的登记即可。
     for (let i = this.pendingCorrections.length - 1; i >= 0; i--) {
-      if (this.pendingCorrections[i]!.input === null && !this.pendingCorrections[i]!.displayFact) this.pendingCorrections.splice(i, 1);
+      if (this.pendingCorrections[i]!.input === null) this.pendingCorrections.splice(i, 1);
     }
 
     if(this.pendingCorrections.length===0)return true;
@@ -3136,19 +2421,10 @@ return;}
     const prefix=reason==="stopped"?"任务已停止，":reason==="superseded"?"新任务开始前，":"这一轮结束前没读到你的补充：";
     this.runTrace.record("steer_unconsumed",{reason,count:dropped.length,texts:dropped.map(record=>record.input)});
 
-    const displayFacts=dropped.filter(record=>record.displayFact).map(record=>{
-      const fact=record.displayFact!;
-      const label=fact.state==='verified'?'显示修改已核验':fact.state==='unknown'?'显示修改结果未知':'显示修改尚未通过核验';
-
-      return `${label}：${fact.text}`;
-    });
-
-    const notExecuted=dropped.filter(record=>!record.displayFact).map(record=>record.text.replace(/\s+/g,' ').trim().slice(0,40)).join('；');
+    const notExecuted=dropped.map(record=>record.text.replace(/\s+/g,' ').trim().slice(0,40)).join('；');
     this.callbacks.emit({
       kind:"notice",
-      message:displayFacts.length
-        ? `${reason==='ended'?'这一轮结束前模型未读到以下补充。':prefix}${displayFacts.join('；')}。没有自动重做。${notExecuted?`其他补充尚未执行：${notExecuted}。`:''}`
-        : reason==="ended"
+      message:reason==="ended"
         ? `这一轮结束前没读到你的补充：${notExecuted}。它们没有被执行；需要的话请重新发送。`
         : `${prefix}尚未被模型读到的补充没有执行：${notExecuted}。需要的话请重新发送。`,
     });
@@ -3157,8 +2433,7 @@ return;}
   }
 
   /**
-   * 运行中修改统一入口：先登记（挡住在途旧写入），命中显示直达时直接执行并核验，
-   * 未命中则按原路交给 Pi。语音与文字都走这里，不另开任务。
+   * 运行中修改统一入口：先登记（挡住在途旧写入），再按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
   async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[]): Promise<SteerOutcome> {
     this.skillLearning.cancel();
@@ -3188,7 +2463,7 @@ return {kind:'model'};
     this.experience?.feedback(text);
     this.memoryRuntime?.invalidateUserTurn();
     const images = extractImages(attachments);
-    // 先登记再观察/判断：预观察与 Jev 判断期间旧计划的写入必須已经被挡住。
+    // 先登记再观察：预观察期间旧计划的写入必須已经被挡住。
     const record = this.reserveCorrection(text, attachments);
     const runId = this.deliveryRunId();
     const epoch = this.controlEpoch;
@@ -3200,20 +2475,6 @@ return {kind:'model'};
     const current = () => this.pendingCorrections.includes(record) && taskCurrent();
 
     try{
-      if(displaySteerFastPathEnabled()&&this.explicitDelivery&&this.modeState?.value==='act'&&context&&typeof context.tabId==='number'&&!context.selection&&!images.length){
-        const fast=await this.tryDisplaySteering(session,record,text,context,current,taskCurrent);
-
-        if(fast.kind==='applied')return {kind:'display-applied',text:fast.text,params:fast.params,...(fast.diff?{diff:fast.diff}:{})};
-
-        if(fast.kind==='handoff-failed')return {kind:'display-handoff-failed',text:fast.text};
-
-        if(fast.kind==='failed')return {kind:'display-failed',reason:fast.reason};
-
-        if(fast.kind==='unknown')return {kind:'display-unknown',reason:fast.reason};
-
-        if(fast.kind==='cancelled')throw new TaskActionRejected(fast.reason??'原任务已停止或发生变化，修改未发送。');
-      }
-
       // 纠正类插话常靠"这个页面/不是这个/刚才那个"指代：先补一次只读观察，
       // 否则模型会拿自己上一轮的前提继续推理（实测把 ChatGPT 页当成扩展管理页讲了四轮）。
       const observation = steerNeedsPageObservation(text) ? await this.readUserPageForPrompt(context, "steer") : null;
@@ -3232,156 +2493,6 @@ return {kind:'model'};
     }catch(error){
       this.unreserveCorrection(record);
       throw error;
-    }
-  }
-
-  /**
-   * 运行中显示直达：读翻译状态 → Jev 判断 → 前后文档身份一致才执行 → 读回核验。
-   * 任一阶段失效都不写入；命中但执行过/结果未知的情况不自动重做，而是把真实事实交回原任务。
-   */
-  private async tryDisplaySteering(
-    session:AgentLoop,
-    record:CorrectionRecord,
-    text:string,
-    context:PageContext,
-    current:()=>boolean,
-    taskCurrent:()=>boolean=current,
-  ):Promise<
-    |{kind:'applied';text:string;params:DisplayParams;diff?:TaskReceiptDiff}
-    |{kind:'handoff-failed';text:string}
-    |{kind:'failed';reason:string}
-    |{kind:'unknown';reason:string}
-    |{kind:'fallback';partialScope?:true}
-    |{kind:'cancelled';reason?:string}>{
-    if(!this.rpc)return {kind:'fallback'};
-    const tabId=context.tabId as number;
-    const controller=new AbortController();
-    const previousAbort=this.steerDisplayAbort;
-    this.steerDisplayAbort=controller;
-    const active=()=>current()&&!controller.signal.aborted;
-    const taskActive=()=>taskCurrent()&&!controller.signal.aborted;
-    const stalePage=()=>({kind:'cancelled' as const,reason:'页面实例已变化或无法核对，这条显示修改已失效，没有转交模型重做。请在当前页面重新发起。'});
-
-    try{
-      let before:{translation?:TranslationDisplayState|null};
-
-      try{before=await this.rpc.call('snapshot',{tabId},PRE_OBSERVATION_TIMEOUT_MS) as {translation?:TranslationDisplayState|null};}
-      catch{return {kind:'fallback'};}
-
-      if(!active())return {kind:'cancelled'};
-
-      if(!before.translation?.translated||!before.translation.displayValid)return {kind:'fallback'};
-      const decision=await decideDisplay(text,controller.signal);
-
-      if(!active())return {kind:'cancelled'};
-
-      if(decision.kind==='cancelled')return {kind:'cancelled'};
-      // 连回退也绑定原页面：刷新/换文档不等于允许主模型在新页面重放旧要求。
-      let latest:{translation?:TranslationDisplayState|null};
-
-      try{latest=await this.rpc.call('snapshot',{tabId},PRE_OBSERVATION_TIMEOUT_MS) as {translation?:TranslationDisplayState|null};}
-      catch{return active()?stalePage():{kind:'cancelled'};}
-
-      if(!active())return {kind:'cancelled'};
-
-      if(latest.translation?.document!==before.translation.document||!latest.translation?.displayValid)return stalePage();
-
-      if(decision.kind==='fallback'){
-        if(decision.partialScope)this.displayScopeBlockedRun=this.deliveryRunId();
-
-        return {kind:'fallback',...(decision.partialScope?{partialScope:true as const}:{})};
-      }
-
-      // 只有同一文档上的新明确要求能解除原局部范围限制。
-      this.displayScopeBlockedRun=null;
-
-      // 决策只消费一次：在真正执行之前就标记已消费，重入/重试不能把同一条候选再执行一遍。
-      if(record.displayConsumed)return {kind:'cancelled'};
-      record.displayConsumed=true;
-      const params:Record<string,unknown>={...decision.params,tabId,document:before.translation.document};
-      const outcome=await this.executeDisplayCommand(session,params,controller.signal,active,latest.translation??undefined);
-
-      if(outcome.kind==='applied'){
-        // 旧值、新值、保留项全部来自宿主读回；没有依据（基础快照缺失）就不产生差异展示。
-        const diff=latest.translation?receiptDisplayDiff(latest.translation,params,outcome.after,context.title??'当前页面'):undefined;
-        const delivered=await this.returnDisplayFactToModel(session,record,text,context,{state:'verified',text:outcome.text},`[运行时的显示修改已经直接执行并核对：${outcome.text}这条修改不需要再由你执行一次；继续原任务其余部分，不要用旧设置覆盖它。]`,active);
-        this.runTrace.record('display_steer_applied',{params,delivered});
-
-        if(!taskActive())return {kind:'failed',reason:`${outcome.text}但原任务或控制状态已变化，未确认继续。`};
-
-        if(!delivered)return {kind:'handoff-failed',text:`${outcome.text}但原任务尚未收到修改事实，旧计划写入仍被阻止；接管后交还可恢复交接，不会重新执行显示操作。`};
-
-        return {kind:'applied',text:outcome.text,params:decision.params,...(diff?{diff}:{})};
-      }
-
-      if(outcome.executed==='not_executed'){
-        if(!active())return {kind:'cancelled'};
-
-        // 执行闸门拒绝也可能是最后一刻刷新；只有核实仍为同一文档才允许普通回退。
-        try{
-          const now=await this.rpc.call('snapshot',{tabId},PRE_OBSERVATION_TIMEOUT_MS) as {translation?:TranslationDisplayState|null};
-
-          if(!active())return {kind:'cancelled'};
-
-          if(now.translation?.document!==before.translation.document||!now.translation?.displayValid)return stalePage();
-        }catch{return active()?stalePage():{kind:'cancelled'};}
-
-        return {kind:'fallback'};
-      }
-
-      const reason=outcome.reason;
-
-      if(outcome.executed==='unknown'){
-        const delivered=await this.returnDisplayFactToModel(session,record,text,context,{state:'unknown',text:reason},`[运行时的显示修改已尝试执行，但结果未知：${reason}。不要自动重做这条修改；先按现有核查流程确认页面结果，再继续。]`,active);
-        this.runTrace.record('display_steer_unknown',{params,reason,delivered});
-
-        return {kind:'unknown',reason};
-      }
-
-      const delivered=await this.returnDisplayFactToModel(session,record,text,context,{state:'unverified',text:reason},`[运行时的显示修改没有通过读回核对：${reason}。这条修改没有被确认为完成；请先读取当前页面，再决定是否需要处理，不要盲目重复执行。]`,active);
-      this.runTrace.record('display_steer_unverified',{params,reason,delivered});
-
-      return {kind:'failed',reason};
-    }catch(error){
-      // 候选一旦被消费，异常不能使这条修改回到原模型再次执行。
-      if(record.displayConsumed)return {kind:'unknown',reason:error instanceof Error?error.message:String(error)};
-
-      if(!active())return {kind:'cancelled'};
-      this.runTrace.record('display_steer_failed',{reason:error instanceof Error?error.message:String(error)});
-
-      return {kind:'fallback'};
-    }finally{
-      if(this.steerDisplayAbort===controller)this.steerDisplayAbort=previousAbort;
-    }
-  }
-
-  /** 把"要求 + 运行时事实"作为插话交回原任务；任务已失效时释放登记，不留下悬空闸门。 */
-  private async returnDisplayFactToModel(
-    session:AgentLoop,
-    record:CorrectionRecord,
-    text:string,
-    context:PageContext,
-    fact:DisplayCorrectionFact,
-    note:string,
-    active:()=>boolean,
-  ):Promise<boolean>{
-    record.displayFact=fact;
-
-    if(!active()){this.unreserveCorrection(record);
-
-return false;}
-
-    const input=`${withPageContext(text,context)}\n\n${note}`;
-    record.input=input;
-
-    try{await session.steer(input);
-
-return true;}
-    catch(error){
-      // 交接失败不等于修改消失。保留 input 与登记，旧计划仍被阻止；现有接管/交还流程只补交接。
-      this.runTrace.record('display_handoff_failed',{reason:error instanceof Error?error.message:String(error)});
-
-      return false;
     }
   }
 
@@ -3406,7 +2517,6 @@ return true;}
 
   abort(): void {
     this.abandonUnconsumedCorrections("stopped");
-    this.steerDisplayAbort?.abort();
     this.deferredSteers=[];
     this.runTrace.record("abort");
     this.controlEpoch += 1;
@@ -3430,7 +2540,6 @@ return true;}
     this.experience?.interrupt();
     this.runTrace.record("takeover", { abortStream: opts?.abortStream });
     // 预观察还没回来的补充一个字都没进 Pi，不能按"已接受"留给交还：暂停时直接取消。
-    this.steerDisplayAbort?.abort();
 
     for(const record of this.pendingCorrections.filter(candidate=>candidate.input===null))this.unreserveCorrection(record);
 
@@ -3549,7 +2658,6 @@ return true;}
 
   dispose(): void {
     this.displayAbort?.abort();
-    this.steerDisplayAbort?.abort();
     this.experience?.dispose();
     this.runTrace.record("dispose");
     this.session?.dispose();
@@ -3956,7 +3064,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private finishAgentEnd(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): void {
     const { emit, setStatus } = this.callbacks;
     // 这一轮真的结束了：运行中显示直达已没有归属，中止在途调用，不再写入。
-    this.steerDisplayAbort?.abort();
     // 这一轮真的结束了：还没被模型读到的补充要有明确结局，不能留在队列里悄悄影响下一轮。
     // 暂停（页面归用户）例外：那些补充是留给交还后续跑的，不能被这一轮收尾清掉。
     const correctionsCleared = this.hold.isHeld() || this.abandonUnconsumedCorrections("ended");
@@ -4267,44 +3374,3 @@ function hiddenProgramParams(params: Record<string, unknown>): Record<string, un
   return hidden;
 }
 
-/** User-facing fact for a verified display change; never claims more than the verified parameters. */
-export function displayFactText(params:Record<string,unknown>):string{
-  return [params.fontFamily==='songti'?'译文已改成宋体':'',params.mode==='bilingual'?'已显示原文和译文':params.mode==='translated'?'已切换为仅译文':''].filter(Boolean).join('，')+'。';
-}
-
-const DISPLAY_ATTRIBUTE_LABELS:Record<string,string>={fontFamily:'字体',mode:'显示模式'};
-
-const displayValueLabel=(attribute:string,value:unknown):string=>{
-  if(typeof value!=='string'||!value)return '未知';
-
-  if(attribute==='fontFamily')return value==='songti'?'宋体':value==='original'?'原字体':value.slice(0,64);
-
-  if(attribute==='mode')return value==='translated'?'仅译文':value==='bilingual'?'双语':value.slice(0,64);
-
-  return value.slice(0,64);
-};
-
-/**
- * T04 回执差异：只把本次要求改变的字段列为变化；未提到的字段只有在读回里观测到未变时才进保留项。
- * 旧值取写入前最后一次宿主快照，新值取核对读回，均非模型自报；缺依据返回 undefined，不伪造「其他不变」。
- */
-export function receiptDisplayDiff(before:TranslationDisplayState,params:Record<string,unknown>,after:TranslationDisplayState,target:string):TaskReceiptDiff|undefined{
-  const changed:TaskReceiptDiff['changed']=[];const preserved:string[]=[];
-
-  for(const attribute of ['fontFamily','mode'] as const){
-    const label=DISPLAY_ATTRIBUTE_LABELS[attribute]!;
-
-    if(params[attribute]!==undefined){
-      // 要求值读回后与旧值相同不算一次变化：不制造「宋体 → 宋体」式的假差异。
-      const from=displayValueLabel(attribute,before[attribute]),to=displayValueLabel(attribute,after[attribute]);
-
-      if(from!==to)changed.push({attribute:label,from,to});
-    }
-    else if(after[attribute]===before[attribute])preserved.push(label);
-  }
-
-  if(!changed.length)return undefined;
-  const clean=target.trim().slice(0,120);
-
-  return {target:clean||'当前页面',changed,preserved};
-}

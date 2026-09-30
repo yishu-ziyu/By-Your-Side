@@ -1,6 +1,6 @@
 /**
  * product-journeys 单臂运行器：真实侧栏入口 → 生产 host（真模型）→ 隔离无头扩展 → 夹具页面。
- * 参考 everos-enable-live.mts（真面板 + WebSocketServer）与 selection-reading.mts（划词卡片 CDP）。
+ * 参考 selection-reading.mts（划词卡片 CDP）；真面板 + WebSocketServer 的接法沿用原 EverOS 启用验收。
  * 每臂：新会话 + 独立页面；计划步骤（steer/追问/接管改字段/重启继续）按用例定义执行。
  */
 import { randomUUID } from "node:crypto";
@@ -113,6 +113,8 @@ export async function stopHost(host: HostHandle): Promise<void> {
 export async function startIsolatedPanel(host: HostHandle, options: Parameters<typeof launchIsolatedExtension>[0] = {}): Promise<{ iso: IsolatedExtension; panel: string }> {
   const iso = await launchIsolatedExtension(options);
   await iso.swEval(`globalThis.WebSocket=class extends WebSocket { constructor(url, protocols){super(url==='ws://127.0.0.1:${DEFAULT_PORT}'?'ws://127.0.0.1:${host.port}':url,protocols)} };`);
+  // 扩展默认连 offscreen 里的扩展内 agent；关掉它并让它建不起来，uplink 才回退到 ws 调试通道接上这里的 host。
+  await iso.swEval(`(async()=>{chrome.offscreen.createDocument=async()=>{throw new Error('test: WS host only');};const until=Date.now()+10000;while(Date.now()<until){await chrome.offscreen.closeDocument().catch(()=>{});const left=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']});if(!left.length)return true;await new Promise(r=>setTimeout(r,100));}throw new Error('offscreen 文档没能关掉，无法回退到 ws 调试通道');})()`);
   await iso.swEval(`chrome.storage.local.set({sideagent_token:${JSON.stringify(host.token)}})`);
   const id = (await iso.swEval("chrome.runtime.id")) as string;
   const panel = await iso.newTarget(`chrome-extension://${id}/sidepanel.html`);

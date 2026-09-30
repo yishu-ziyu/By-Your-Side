@@ -3,7 +3,6 @@ import { isSupersededUnknown } from '../../shared/task-results.js';
 import type { VoiceInputContext } from '../../shared/voice.js';
 import {TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
-import {type RouteShadow, sharedRouteShadow} from './route-shadow.js';
 import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import {displayNameFor} from '../../shared/cast.js';
@@ -75,13 +74,6 @@ function continuationInput(text:string):{amendment?:string}|null {
 
 function isInterruptedResumeText(text:string):boolean { return continuationInput(text)!==null; }
 
-/** Map a real task_action receipt to the shadow `actual` vocabulary: start/steer/resume stay as they were settled, any rejection collapses to `rejected`. */
-function shadowActualForReceipt(receipt: TaskReceipt): {action: string; note: string} {
-  return receipt.status === 'rejected' || receipt.status === 'failed'
-    ? {action: 'rejected', note: `${receipt.action}_${receipt.status}`}
-    : {action: receipt.action, note: receipt.status};
-}
-
 export interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
 /** Identity is captured by each runtime's emitter, never read from the selected panel. */
@@ -105,10 +97,6 @@ export class ConversationManager {
   /** Narrow fence while an interrupted run re-reads the page before agent_start. */
   private readonly checkpointResumes=new Set<string>();
   private readonly taskPages=new Map<string,number>();
-  /** Route-shadow only: last up-to-3 text utterances (user_message or panel task_action) per conversation, for Jev's `previous` context. */
-  private readonly textShadowHistory=new Map<string,string[]>();
-  /** Route-shadow only: text task_action requestIds already observed, so a replayed request is not counted twice. */
-  private readonly shadowedTaskRequests=new Map<string,true>();
   private readonly reading = new ReadingRequests();
   private readonly entries = new Map<string, ConversationEntry>();
   private readonly pending = new Map<string, Promise<ConversationEntry>>();
@@ -142,7 +130,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     private readonly memoryStore?: MemoryStore,
     private readonly skillStore?: SkillStore,
     readonly dispatcher = new TaskDispatcher(),
-    private readonly routeShadow: RouteShadow = sharedRouteShadow(),
   ) {this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
     this.writeConfirm=new WriteConfirmBroker(message=>this.emit(message));
     this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,maxRunning:2,maxWaiting:8,
@@ -955,7 +942,7 @@ return;}
     if (!entry || !progress || !this.connected || signal.aborted) throw realtimeBrowserError('语音会话或浏览器连接已失效，未执行。', 'not_executed');
     const snapshot = progress.snapshot();
 
-    const readOnly = ['snapshot','read_element','read_elements','judge_browser_action'].includes(call.name)
+    const readOnly = ['snapshot','read_element','read_elements'].includes(call.name)
       || call.name === 'tabs' && ['list','active'].includes(String(call.args.action));
 
     if (entry.runtime.session.isStreaming() || entry.runtime.session.isHeld() || this.pendingStarts.has(id) || ['running','paused'].includes(snapshot.state)
@@ -1292,9 +1279,8 @@ return receipt;
       const originRun=snapshot.runId;
       const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
       entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
-      let steerOutcome:Awaited<ReturnType<Runtime['session']['steerCurrentTask']>>;
 
-      try{steerOutcome=await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);}
+      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);}
       catch(error){
         if(error instanceof TaskActionRejected){
           revokeRequirement();
@@ -1320,64 +1306,12 @@ return receipt;
       const memberNote = members ? memberRevisionNotice(members) : '';
       const note = memberNote?`；${memberNote}`:'';
 
-      if(steerOutcome?.kind==='display-applied'){
-        const latest=this.getTaskProgress(request.conversationId);
-
-        if(latest?.runId!==originRun||latest.state!=='running'||entry.runtime.session.isHeld()||(latest.controlVersion??0)!==(snapshot.controlVersion??0))
-          return {status:'failed',runId:originRun,message:`显示修改已核对：${steerOutcome.text}但原任务或控制状态已变化，未确认继续。`};
-
-        return {status:'applied',runId:originRun,...(steerOutcome.diff?{diff:steerOutcome.diff}:{}),message:`${request.source==='voice'?'语音修改':'修改'}已直接应用并核对：${steerOutcome.text}原任务继续。${note}`};
-      }
-
-      if(steerOutcome?.kind==='display-handoff-failed')return {status:'failed',runId:originRun,message:steerOutcome.text};
-
-      if(steerOutcome?.kind==='display-unknown')return {status:'unknown',runId:originRun,message:`修改已尝试执行，但结果未能确认：${steerOutcome.reason}没有自动重做。${note}`};
-
-      if(steerOutcome?.kind==='display-failed')return {status:'failed',runId:originRun,message:`修改未能核对成功：${steerOutcome.reason}没有把它记为完成。${note}`};
-
       return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}${note}`};
     },{deferredResume:request.action==='resume'&&['interrupted','idle','error'].includes(this.getTaskProgress(request.conversationId)?.state??'')});
 
     this.emitReceipt(receipt);
 
     return receipt;
-  }
-  /**
-   * 真实侧栏文字以 `task_action` 到达（不是 `user_message`），所以文字影子必须在这个入口接线：
-   * 先在真实消息类型上 observe 一次，再让 actual 跟着真实回执的 status/action 走。
-   * 语音 task_action 由实时语音层自己记录，这里不重复计为 text；重放的 requestId 只记一次。
-   * 只做日志，不改路由：dispatchTaskAction 的返回值原样交给调用方。
-   */
-  private async handleShadowedTaskAction(request: TaskActionRequest): Promise<TaskReceipt> {
-    const utterance = request.source === 'text' ? request.text ?? '' : '';
-    const shadowKey = `${request.conversationId}:${request.requestId}`;
-    const shadowed = !!utterance.trim() && !this.shadowedTaskRequests.has(shadowKey);
-
-    if (shadowed) {
-      this.shadowedTaskRequests.set(shadowKey, true);
-
-      if (this.shadowedTaskRequests.size > 200) {
-        const oldest = this.shadowedTaskRequests.keys().next().value;
-
-        if (oldest !== undefined) this.shadowedTaskRequests.delete(oldest);
-      }
-
-      const previous = this.textShadowHistory.get(request.conversationId) ?? [];
-      const progress = this.getTaskProgress(request.conversationId);
-      this.routeShadow.observe({channel:'text',conversationId:request.conversationId,text:utterance,previous,taskRunning:progress?(progress.state==='running'||progress.state==='paused'):'unknown',taskState:progress?.state,...(request.context?{page:{title:request.context.title,url:request.context.url}}:{})});
-      this.textShadowHistory.set(request.conversationId,[...previous,utterance].slice(-3));
-    }
-
-    try {
-      const receipt = await this.dispatchTaskAction(request);
-
-      if (shadowed) this.routeShadow.actual({channel:'text',conversationId:request.conversationId,kind:'entry',...shadowActualForReceipt(receipt)});
-
-      return receipt;
-    } catch (error) {
-      if (shadowed) this.routeShadow.actual({channel:'text',conversationId:request.conversationId,kind:'entry',action:'rejected',note:'dispatch_error'});
-      throw error;
-    }
   }
   /**
    * 只向领任务开放一次有边界的重设确认：绑定由宿主自己从当前进度与页面算出，
@@ -1724,7 +1658,7 @@ return true;}
 
     const id = normalizeConversationId(message.conversationId);
 
-    if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.handleShadowedTaskAction(message.request);
+    if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
 return;}
 
@@ -1801,7 +1735,7 @@ return;}
       }
     }
 
-    if (message.type === 'task_action') { await this.handleShadowedTaskAction(message.request);
+    if (message.type === 'task_action') { await this.dispatchTaskAction(message.request);
 
  return; }
 
@@ -1851,20 +1785,9 @@ return;}
     }
 
     if(message.type==='user_message'){
-      // Shadow routing only: ask Jev which lane this text utterance belongs to, in parallel, purely for offline comparison.
-      const previous=this.textShadowHistory.get(id)??[];
-      const shadowProgress=this.getTaskProgress(id);
-      this.routeShadow.observe({channel:'text',conversationId:id,text:message.text,previous,taskRunning:shadowProgress?(shadowProgress.state==='running'||shadowProgress.state==='paused'):'unknown',taskState:shadowProgress?.state,...(message.context?{page:{title:message.context.title,url:message.context.url}}:{})});
-      this.textShadowHistory.set(id,[...previous,message.text].slice(-3));
-    } else if(message.type==='steer'){
-      this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'steer'});
-    }
-
-    if(message.type==='user_message'){
       const checkpoint=this.getTaskProgress(id);
 
       if(checkpoint&&(checkpoint.state==='interrupted'||['idle','error'].includes(checkpoint.state)&&checkpoint.nextStep?.delivery==='partial')&&isInterruptedResumeText(message.text)){
-        this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'resume',note:'checkpoint_resume'});
         const requestId=`restart-${randomUUID()}`;
         this.progress.get(id)?.recordUserTurn(message.text,requestId);
         entry.summary.updatedAt=Date.now();
@@ -1875,7 +1798,6 @@ return;}
       }
 
       if(checkpoint?.state==='interrupted'&&!this.checkpointResumes.has(id)){
-        this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'steer',note:'interrupted_amend'});
         await this.dispatchTaskAction({requestId:`amend-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:checkpoint.runId??null,text:message.text,context:message.context,attachments:message.attachments});
 
         return;
@@ -1883,14 +1805,12 @@ return;}
     }
 
     if(message.type==='user_message'&&this.checkpointResumes.has(id)&&!entry.runtime.session.isStreaming()){
-      this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'checkpoint_starting'});
       this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'当前任务正在启动或恢复检查点，这条新要求尚未发送；请等它进入运行后再补充。'}});
 
       return;
     }
 
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()&&this.runningTasks()>=2){
-      this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'slots_full'});
       this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'当前执行名额已满，这项新任务尚未接收；请等待运行中的任务完成。'}});
 
 return;
@@ -1927,16 +1847,6 @@ return;
       await this.dispatchTaskAction({requestId:`steer-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:this.getTaskProgress(id)?.runId??null,text:message.text,context:message.context,attachments:message.attachments});
 
       return;
-    }
-
-    if(message.type==='user_message'){
-      // actual 必须反映这条消息真正进入的路径：接管中只得到「页面归你」提示，运行中会转为插话，只有空闲且会话可用才开新任务。
-      const shadowSession=entry.runtime.session;
-
-      if(shadowSession.isHeld())this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'page_held'});
-      else if(shadowSession.isStreaming())this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'steer',note:'runtime_steer'});
-      else if(!shadowSession.available)this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'rejected',note:'session_unavailable'});
-      else this.routeShadow.actual({channel:'text',conversationId:id,kind:'entry',action:'start',note:'runtime_handle'});
     }
 
     try{entry.runtime.handleMessage(message);}catch(error){this.pendingStarts.delete(id);throw error;}

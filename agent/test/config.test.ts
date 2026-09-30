@@ -31,12 +31,10 @@ describe("loadConfig", () => {
     expect(loadConfig(p)).toEqual({ model: "kimi-coding/kimi-for-coding", proxy: "http://127.0.0.1:7897" });
   });
 
-  it("reads both display fast-path switches independently", () => {
+  it("ignores the retired Jev switches left in older config files", () => {
     const p = join(dir, "config.json");
-    writeFileSync(p, JSON.stringify({ displayFastPath: true, displaySteerFastPath: false }));
-    expect(loadConfig(p)).toEqual({ displayFastPath: true, displaySteerFastPath: false });
-    writeFileSync(p, JSON.stringify({ displaySteerFastPath: "yes" }));
-    expect(loadConfig(p)).toEqual({});
+    writeFileSync(p, JSON.stringify({ model: "kimi-coding/kimi-for-coding", generalBrowserLoop: true, browserLoopDirectDelivery: true, displayFastPath: true, displaySteerFastPath: true, routeShadow: true, routeShadowDailyLimit: 200, voiceSpokenResultGate: true }));
+    expect(loadConfig(p)).toEqual({ model: "kimi-coding/kimi-for-coding" });
   });
 
   it("ignores malformed fields", () => {
@@ -44,36 +42,6 @@ describe("loadConfig", () => {
     writeFileSync(p, JSON.stringify({ model: 42, proxy: "socks5://x", extra: true }));
     expect(loadConfig(p)).toEqual({});
   });
-
-  it("reads routeShadow and routeShadowDailyLimit independently, rejecting out-of-range or wrong-typed limits", () => {
-    const p = join(dir, "config.json");
-    writeFileSync(p, JSON.stringify({ routeShadow: true, routeShadowDailyLimit: 200 }));
-    expect(loadConfig(p)).toEqual({ routeShadow: true, routeShadowDailyLimit: 200 });
-    writeFileSync(p, JSON.stringify({ routeShadow: false, routeShadowDailyLimit: 1 }));
-    expect(loadConfig(p)).toEqual({ routeShadow: false, routeShadowDailyLimit: 1 });
-    writeFileSync(p, JSON.stringify({ routeShadowDailyLimit: 5000 }));
-    expect(loadConfig(p)).toEqual({ routeShadowDailyLimit: 5000 });
-
-    for (const bad of [0, 5001, 3.5, -1, "200"]) {
-      writeFileSync(p, JSON.stringify({ routeShadowDailyLimit: bad }));
-      expect(loadConfig(p)).toEqual({});
-    }
-
-    writeFileSync(p, JSON.stringify({ routeShadow: "yes" }));
-    expect(loadConfig(p)).toEqual({});
-  });
-});
-
-it('voiceSpokenResultGate is opt-in and independent of routeShadow', () => {
-  const p = join(dir, 'config.json');
-
-  for (const gate of [undefined, false, 'true', 1]) {
-    writeFileSync(p, JSON.stringify({routeShadow:true,voiceSpokenResultGate:gate}));
-    expect(loadConfig(p).voiceSpokenResultGate === true).toBe(false);
-  }
-
-  writeFileSync(p, JSON.stringify({routeShadow:false,voiceSpokenResultGate:true}));
-  expect(loadConfig(p)).toMatchObject({routeShadow:false,voiceSpokenResultGate:true});
 });
 
 describe("resolveConfig", () => {

@@ -94,7 +94,7 @@ if(force)clearTimeout(force);killGroup('SIGKILL'); // Only this test's process g
 
 async function runCase(scenario:FactScenario,attempt:number,out:string) {
  process.env.EGO_ACCEPTANCE_CHROME=chrome;
- process.env.SIDEAGENT_TRACE_DIR=join(out,'trace');process.env.SIDEAGENT_ROUTE_SHADOW_DIR=join(out,'route-shadow');
+ process.env.SIDEAGENT_TRACE_DIR=join(out,'trace');
  const events:FactEvent[]=[];let seq=0;
  const record=(channel:string,data:Record<string,any>)=>{const event={seq:++seq,at:Date.now(),channel,data};events.push(event);appendFileSync(join(out,'events.jsonl'),JSON.stringify(event)+'\n');};
 

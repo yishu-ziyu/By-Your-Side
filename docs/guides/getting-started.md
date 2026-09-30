@@ -41,4 +41,4 @@ npm run build
 
 ## 开发者：本机模式正在退役
 
-旧的本机伴随进程（原 `npm run install:host`，已删除；`~/.sideagent/` 下的配置与 Key 文件、Jev 显示加速与通用浏览器循环）不再作为使用方式提供。部分浏览器检查脚本仍临时依赖它，逐套切到只装扩展后连同代码删除；进度见[退役验收](../evals/20261001-retire-native-and-dead-code.md)。原安装步骤见本文件 2026-10-01 之前的 Git 历史。
+旧的本机伴随进程（原 `npm run install:host`、`~/.sideagent/` 下的配置与 Key 文件、Jev 显示加速与通用浏览器循环）已于 2026-10-01 删除，不再作为使用方式提供；见[退役验收](../evals/20261001-retire-native-and-dead-code.md)。原安装步骤见本文件 2026-10-01 之前的 Git 历史。

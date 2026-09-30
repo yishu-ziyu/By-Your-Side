@@ -5,7 +5,7 @@ import type { BgToPanel, PanelHistoryEntry, PanelToBg } from "../src/relay.js";
  * 生产 background 路由回归（issue #4 C1/C3）。
  * 直接导入真实 extension/src/background/index.ts，在其注册的真实
  * chrome.runtime.onConnect 处理器上驱动 Port 消息；chrome.* 只做最小替身。
- * 测试环境 native host 不可用（connectNative 抛错）且无 ws token，
+ * 测试环境建不起扩展内 agent（替身没有 offscreen 接口）且无 ws token，
  * uplink 上行确定失败 —— 即「面板已连接但 background→agent 上行不可用」边界。
  */
 
@@ -61,9 +61,6 @@ function installChromeStub() {
       onInstalled: { addListener: () => {} },
       onConnect: { addListener: (l: (port: FakePanelPort) => void) => onConnectListeners.push(l) },
       onMessage: { addListener: () => {} },
-      connectNative: () => {
-        throw new Error("native host not registered in test");
-      },
     },
     storage: {
       onChanged: { addListener: () => {} },
@@ -122,11 +119,13 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let chromeStub: any;
 
-  /** 把 stub 的 connectNative 换成返回假 native port，使 uplink 传输层打开。 */
-  function installActiveNativeHost(nativeSent: unknown[]): void {
-    chromeStub.runtime.connectNative = () => ({
+  /** 给 stub 补上 offscreen 文档与 port，使 uplink 连上扩展内 agent。 */
+  function installActiveInproc(inprocSent: unknown[]): void {
+    chromeStub.runtime.ContextType = { OFFSCREEN_DOCUMENT: "OFFSCREEN_DOCUMENT" };
+    chromeStub.runtime.getContexts = async () => [{}];
+    chromeStub.runtime.connect = () => ({
       postMessage: (m: unknown) => {
-        nativeSent.push(m);
+        inprocSent.push(m);
       },
       onMessage: { addListener: () => {} },
       onDisconnect: { addListener: () => {} },
@@ -259,19 +258,18 @@ describe("background 面板路由 × 上行不可用（issue #4）", () => {
     port.deliver({ kind: "select_conversation", conversationId: "default" });
   });
 
-  it("上行传输可用（native port 在线）时不发失败回执，不误报未送达", async () => {
+  it("上行传输可用（扩展内 agent 在线）时不发失败回执，不误报未送达", async () => {
     // 本文件共享一次模块导入，前面用例已把 transport 留在失败态；
-    // 这里经真实 retry 语义重新 connectNative，使 stub 返回假 native port 打开传输。
-    const nativeSent: unknown[] = [];
-    installActiveNativeHost(nativeSent);
+    // 这里经真实 retry 语义重新连接扩展内 agent，使 stub 返回假 port 打开传输。
+    const inprocSent: unknown[] = [];
+    installActiveInproc(inprocSent);
     const port = fakePanelPort();
     connectPanel(port);
     port.deliver({
-      kind: "retry", // 面板「保存并连接」同款信封：uplink.retry() → 重新 connectNative
+      kind: "retry", // 面板「保存并连接」同款信封：uplink.retry() → 重新连接扩展内 agent
     });
-    // 等传输层建立（connectNative 同步返回，hello 已发出）
-    await new Promise((r) => setTimeout(r, 50));
-    expect(nativeSent.length).toBeGreaterThan(0);
+    // 等传输层建立（hello 已发出）
+    await vi.waitFor(() => expect(inprocSent).toContainEqual(expect.objectContaining({ type: "hello" })), { timeout: 3_000 });
 
     port.deliver({
       kind: "client",

@@ -29,7 +29,7 @@ class Socket extends EventEmitter {
   server(event: unknown) { this.emit('message', Buffer.from(JSON.stringify(event))); }
 }
 
-async function harness(gate = false) {
+async function harness() {
   const messages: ServerMessage[] = [], voiceEvents: any[] = [], socket = new Socket();
   const prompt = vi.fn();
   let wrapper!: BrowserAgentSession;
@@ -88,13 +88,10 @@ async function harness(gate = false) {
   const voice = async (turn = 1) => {
     if (!live) {
       live = new RealtimeVoiceSession({
-        voiceSpokenResultGate: gate,
-        shadow: {judge: async (input: any) => ({...input,lane:'task',pageChange:0.95,spokenResult:0.1,requestMs:1,completedAt:Date.now()}),actual:()=>{}},
         voiceId: 'feedback', getSnapshot: () => manager.getTaskProgress('default'),
         emit: (event: any) => voiceEvents.push(event),
         browserTool: (call: any, input: any, signal: any) => manager.executeRealtimeBrowserTool('default', call, input, signal),
         connect: () => socket as any,
-        // 判断数据是供应商边界替身，工具、反馈与续答出口使用生产实现。
       } as any);
       started.push(live); cleanup.push(() => live?.close());
       live.start('offline-placeholder');
@@ -134,8 +131,8 @@ async function harness(gate = false) {
   return { manager, messages, voiceEvents, socket, prompt, rpc, voice, call, done, speak, outputs, feedbacks, audioFor, transcriptsFor, unknownFill: (value: boolean) => { unknownFill = value; } };
 }
 
-it('A1 切标签成功：只发一次胶囊、不创建语音续答，工具结果照常回传', async () => {
-  const h = await harness(true);
+it('A1 切标签成功：只发一次胶囊，工具结果照常回传并正常续答', async () => {
+  const h = await harness();
   await h.voice(1);
   h.call(1, 'provider-switch', 'tabs', { action: 'switch', tabId: 8 });
   h.done(1);
@@ -151,9 +148,8 @@ it('A1 切标签成功：只发一次胶囊、不创建语音续答，工具结�
   expect(feedback).toMatchObject({ channel: 'capsule', kind: 'success', text: '切好了', bounce: true, capsuleCanCloseAction: true });
   expect(feedback.id).toMatch(/tool:display-/);
   expect(feedback.facts).toMatchObject({ tool: 'tabs', action: 'switch', executionFact: 'executed', tabId: 8 });
-  // V2.3：不创建续答，因此不让供应商生成成功确认音频。
-  expect(h.socket.sent.filter(m => m.type === 'response.create')).toHaveLength(0);
-  expect(h.audioFor('r2')).toHaveLength(0);
+  // 原 Jev 播报闸门（成功胶囊直接收尾、不续答）已随本机模式退役：工具结果回传后照常请求一次续答。
+  expect(h.socket.sent.filter(m => m.type === 'response.create')).toHaveLength(1);
   // 下一次真实问答仍然出声（不是全局静音）
   await h.voice(2);
   h.socket.server({ type: 'response.created', response: { id: 'r3' } });

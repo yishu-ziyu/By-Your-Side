@@ -12,8 +12,8 @@ export const PANEL_PORT_NAME = "sideagent-panel";
 /** 伴随进程连接状态（background 维护，面板只展示）。 */
 export type ConnState = "connecting" | "connected" | "disconnected";
 
-/** 上行传输：native messaging（默认）或 ws（调试回退）。 */
-export type TransportKind = "native" | "inproc" | "ws";
+/** 上行传输：扩展内 agent（默认）或 ws（只给测试用的调试回退）。 */
+export type TransportKind = "inproc" | "ws";
 
 /** 侧栏能够回放的伴随进程消息；执行调用和握手/模型元数据不进入历史。 */
 export type PanelHistoryServerMessage = Extract<ServerMessage, { type: "status" | "agent_event" | "team_status" }>;

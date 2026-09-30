@@ -1,5 +1,8 @@
 /**
- * 本机伴随进程专用：用 pi-coding-agent 的 AgentSession 作为会话循环。
+ * 只给测试用（本机伴随进程已退役）：eval:live、用户旅程、P0 在 Node 里托管会话时走这里。
+ * 这些检查改到扩展里跑之后删除本文件与 cliproxy.ts，见 docs/STATUS.md。
+ *
+ * 原本机伴随进程专用：用 pi-coding-agent 的 AgentSession 作为会话循环。
  * 扩展里的构建把本文件换成 extension/src/inproc/shims/node-agent-loop.ts（调用即报错），
  * 那里的会话一律走 SessionCreateOptions.loop（pi-agent-core 循环）。
  */

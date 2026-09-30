@@ -21,7 +21,7 @@ import type { DeliveryFactInput } from './user-delivery.js';
 /** 效果无法从参数与回执看出的工具：页面 JS 与原始 CDP 命令。 */
 const OPAQUE_EFFECT_TOOLS: ReadonlySet<string> = new Set(["js", "cdp"]);
 
-const labels: Record<string, string> = { judge_browser_action: "判断页面操作", capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
+const labels: Record<string, string> = { capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 
 const label = (name: string) => labels[name] ?? toolAction(name);
 

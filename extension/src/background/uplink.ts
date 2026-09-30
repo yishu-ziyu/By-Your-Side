@@ -1,7 +1,7 @@
 /**
- * 上行连接管理：background service worker ⇆ 伴随进程。
- * 优先 native messaging（connectNative，Chrome 自动拉起伴随进程）；
- * host 未安装/启动失败时，实验分支先回退到扩展内 agent（offscreen 文档，见 ../inproc/），再回退 WebSocket 调试通道。
+ * 上行连接管理：background service worker ⇆ 扩展内 agent（offscreen 文档，见 ../inproc/）。
+ * 本机伴随进程（Native Messaging）已随本机模式退役；offscreen 文档建不起来且配了 token 时，
+ * 才回退 WebSocket 调试通道（只给测试用，见 connectWs）。
  * 认证失败（hello_error）时停止自动重连，等面板更新配置后触发 retry()。
  */
 import {
@@ -18,8 +18,6 @@ import {
   INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 
-export const NATIVE_HOST_NAME = "com.sideagent.host";
-
 const TOKEN_KEY = "sideagent_token";
 
 export interface UplinkHandlers {
@@ -29,13 +27,14 @@ export interface UplinkHandlers {
 
 export class Uplink {
   private readonly handlers: UplinkHandlers;
-  private nativePort: chrome.runtime.Port | null = null;
   private inprocPort: chrome.runtime.Port | null = null;
   private ws: WebSocket | null = null;
   private transport: TransportKind | null = null;
   private retryAttempt = 0;
   private authFailed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 正在建 offscreen 文档：同时到达的第二次连接不再重复创建（重复创建会失败并误拆活连接）。 */
+  private connecting = false;
 
   constructor(handlers: UplinkHandlers) {
     this.handlers = handlers;
@@ -52,7 +51,7 @@ export class Uplink {
       // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
       if (keys.some((key) => key === INPROC_VOICE_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
     });
-    void this.connectNative();
+    void this.connectInproc();
   }
 
   /** 面板请求重连（如更新了 ws token）。 */
@@ -61,18 +60,12 @@ export class Uplink {
     this.retryAttempt = 0;
     this.clearReconnectTimer();
     this.teardown();
-    void this.connectNative();
+    void this.connectInproc();
   }
 
   /** 已建立连接时发送并返回 true；控制权事务用 false 阻止本地提前提交。 */
   sendClientMessage(msg: ClientMessage): boolean {
     try {
-      if (this.transport === "native" && this.nativePort) {
-        this.nativePort.postMessage(msg);
-
-        return true;
-      }
-
       if (this.transport === "inproc" && this.inprocPort) {
         this.inprocPort.postMessage(msg);
 
@@ -93,12 +86,6 @@ export class Uplink {
 
   private teardown(): void {
     try {
-      this.nativePort?.disconnect();
-    } catch {
-      /* 忽略 */
-    }
-
-    try {
       this.ws?.close();
     } catch {
       /* 忽略 */
@@ -110,14 +97,13 @@ export class Uplink {
       /* 忽略 */
     }
 
-    this.nativePort = null;
     this.inprocPort = null;
     this.ws = null;
     this.transport = null;
   }
 
   private handleRaw(raw: unknown): void {
-    // native 通道收到的是已反序列化的对象；统一 stringify 后走协议守卫
+    // port 通道收到的是已反序列化的对象；统一 stringify 后走协议守卫
     const msg = parseServerMessage(typeof raw === "string" ? raw : JSON.stringify(raw));
 
     if (!msg) return;
@@ -158,58 +144,19 @@ export class Uplink {
       this.reconnectTimer = null;
 
       if (this.transport !== null) return;
-      void this.connectNative();
+      void this.connectInproc();
     }, delay);
   }
 
-  private async connectNative(): Promise<void> {
-    if (this.authFailed) return;
+  /** offscreen 文档里的扩展内 agent 讲同一套协议。 */
+  private async connectInproc(): Promise<void> {
+    if (this.authFailed || this.connecting) return;
 
     // 重连定时器或面板 retry 到达时，已有一个活的传输就不再拆掉它重建。
     if (this.transport !== null) return;
     this.teardown();
     this.handlers.onConnState("connecting", undefined);
-
-    let port: chrome.runtime.Port;
-
-    try {
-      port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
-    } catch (err) {
-      await this.connectWs(`native host 不可用：${err instanceof Error ? err.message : String(err)}`);
-
-      return;
-    }
-
-    this.nativePort = port;
-    this.transport = "native";
-
-    let everConnected = false;
-    port.onMessage.addListener((raw) => {
-      everConnected = true;
-      this.handleRaw(raw);
-    });
-    port.onDisconnect.addListener(() => {
-      if (this.nativePort !== port) return;
-      const detail = chrome.runtime.lastError?.message;
-
-      if (everConnected) {
-        // 曾经连上过：host 崩溃或被回收，走重连
-        this.handleDisconnect(detail ?? "伴随进程连接断开");
-      } else {
-        // 连 hello 都没回：host 未安装或启动失败，回退 ws 调试通道
-        this.nativePort = null;
-        this.transport = null;
-        void this.connectInproc(detail ?? "native host 未安装");
-      }
-    });
-
-    // native 模式无 token，身份由 host manifest 的 allowed_origins 保证
-    port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
-  }
-
-  /** 没有本机伴随进程时，由 offscreen 文档里的扩展内 agent 接手，讲同一套协议。 */
-  private async connectInproc(reason: string): Promise<void> {
-    if (this.transport !== null) return;
+    this.connecting = true;
 
     try {
       const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
@@ -218,14 +165,17 @@ export class Uplink {
         await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS], justification: "Run the agent loop inside the extension" });
       }
     } catch (err) {
-      const detail = `${reason}；扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`;
+      this.connecting = false;
+      const detail = `扩展内 agent 启动失败：${err instanceof Error ? err.message : String(err)}`;
 
       // 配了 ws 调试 token 才走调试通道；否则按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），
       // 不能停在「未连接」等用户重载扩展。
-      await this.connectWs(detail, { retryInprocWithoutToken: true });
+      await this.connectWs(detail);
 
       return;
     }
+
+    this.connecting = false;
 
     if (this.transport !== null) return;
     const port = chrome.runtime.connect({ name: INPROC_PORT_NAME });
@@ -259,7 +209,11 @@ export class Uplink {
     this.inprocPort?.postMessage({ type: "inproc_voice", configured });
   }
 
-  private async connectWs(reason: string, { retryInprocWithoutToken = false } = {}): Promise<void> {
+  /**
+   * WebSocket 调试回退：只给测试用。accept:journeys、P0 本地运行把 Node 里的会话管理接到隔离扩展上，
+   * 靠这条通道（脚本先让 offscreen 文档建不起来、再写 token）。这些检查改到扩展里跑之后删除，见 docs/STATUS.md。
+   */
+  private async connectWs(reason: string): Promise<void> {
     if (this.authFailed) return;
 
     if (this.transport !== null) return;
@@ -268,19 +222,8 @@ export class Uplink {
     if (this.transport !== null) return;
     const token = typeof stored[TOKEN_KEY] === "string" ? stored[TOKEN_KEY] : "";
 
-    if (!token && retryInprocWithoutToken) {
-      this.handleDisconnect(reason);
-
-      return;
-    }
-
     if (!token) {
-      // 没 token 连 ws 也必败，直接停住等用户在面板里设置
-      this.handlers.onConnState(
-        "disconnected",
-        undefined,
-        `${reason}；且未配置 ws 调试 token。安装 native host（npm run install:host）或在面板设置 token`,
-      );
+      this.handleDisconnect(reason);
 
       return;
     }

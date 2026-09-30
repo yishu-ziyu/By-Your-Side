@@ -349,43 +349,55 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
     close(): void { if (this.readyState === FakeWebSocket.CLOSED) return; this.readyState = FakeWebSocket.CLOSED; this.onclose?.(); }
   }
 
-  function nativePort(): FakePort {
+  function inprocPort(): FakePort {
     return {
-      name: 'com.sideagent.host', sent: [], disconnectCalls: 0,
+      name: 'sideagent-inproc', sent: [], disconnectCalls: 0,
       onMessage: { addListener: () => {} }, onDisconnect: { addListener: () => {} },
       postMessage(m: unknown) { this.sent.push(m); },
       disconnect() { this.disconnectCalls += 1; },
     };
   }
 
-  it('旧连接留下的重连定时器不会把已建立的新传输拆掉', async () => {
-    const ports: FakePort[] = [];
-    let nativeAvailable = false;
-    vi.stubGlobal('WebSocket', FakeWebSocket);
+  /** offscreen 文档能否建起来由 offscreenAvailable 决定；建不起来且有 token 时走 ws 调试回退。 */
+  function stubChrome(ports: FakePort[], offscreen: { available: boolean }) {
     vi.stubGlobal('chrome', {
-      runtime: { connectNative: () => { if (!nativeAvailable) throw new Error('native host 不可用'); const port = nativePort(); ports.push(port);
+      runtime: {
+        ContextType: { OFFSCREEN_DOCUMENT: 'OFFSCREEN_DOCUMENT' },
+        getContexts: async () => [],
+        connect: () => { const port = inprocPort(); ports.push(port);
 
- return port; }, lastError: undefined },
+ return port; },
+        lastError: undefined,
+      },
+      offscreen: { Reason: { WORKERS: 'WORKERS' }, createDocument: async () => { if (!offscreen.available) throw new Error('offscreen 不可用'); } },
       // de381b0 起 Uplink.start 会监听设置变化（改模型时推给扩展内 agent）；这里不测那条路径，只补上入口。
       storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) }, onChanged: { addListener: () => {} } },
     });
+  }
+
+  it('旧连接留下的重连定时器不会把已建立的新传输拆掉', async () => {
+    const ports: FakePort[] = [];
+    const offscreen = { available: false };
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    stubChrome(ports, offscreen);
     const states: string[] = [];
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: (state) => { states.push(state); } });
     FakeWebSocket.instances = [];
     uplink.start();
 
-    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
     const first = FakeWebSocket.instances[0]!;
     first.open();
     first.close(); // 旧连接断开 → 留下 1s 后的重连定时器
-    // 新连接从另一条通道先建立（生产里 panel retry / native 通道）
-    nativeAvailable = true;
+    // 新连接从另一条通道先建立（生产里 panel retry / 扩展内 agent）
+    offscreen.available = true;
     uplink.start();
-    expect(ports).toHaveLength(1);
+    await vi.waitFor(() => expect(ports).toHaveLength(1));
     await new Promise((resolve) => setTimeout(resolve, 1250));
     // 定时器到点时不得拆掉活连接，也不得再开第二条通道。
     expect(ports[0]!.disconnectCalls).toBe(0);
     expect(ports).toHaveLength(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
     expect(states).toContain('connecting');
     expect(uplink.sendClientMessage({ type: 'conversation_list' } as ClientMessage)).toBe(true);
   }, 10_000);
@@ -393,23 +405,15 @@ describe('A05-02 重连不得掐断刚建立的连接（A04 挂起根因）', ()
   it('显式 retry 仍然重连：先有意拆掉活连接再建立新的', async () => {
     const ports: FakePort[] = [];
     vi.stubGlobal('WebSocket', FakeWebSocket);
-    vi.stubGlobal('chrome', {
-      runtime: { connectNative: () => { const port = nativePort(); ports.push(port);
-
- return port; }, lastError: undefined },
-      // de381b0 起 Uplink.start 会监听设置变化（改模型时推给扩展内 agent）；这里不测那条路径，只补上入口。
-      storage: { local: { get: async () => ({ sideagent_token: 'fixture-token' }) }, onChanged: { addListener: () => {} } },
-    });
+    stubChrome(ports, { available: true });
     const uplink = new Uplink({ onServerMessage: () => {}, onConnState: () => {} });
     uplink.start();
 
-    for (let i = 0; i < 4; i += 1) await Promise.resolve();
-    expect(ports).toHaveLength(1);
+    await vi.waitFor(() => expect(ports).toHaveLength(1));
     uplink.retry();
 
-    for (let i = 0; i < 4; i += 1) await Promise.resolve();
+    await vi.waitFor(() => expect(ports).toHaveLength(2));
     expect(ports[0]!.disconnectCalls).toBe(1);
-    expect(ports).toHaveLength(2);
   });
 });
 

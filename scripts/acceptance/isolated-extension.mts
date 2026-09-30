@@ -169,9 +169,8 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
     delete manifest.key;
 
     // Test-only transport isolation, applied before the service worker starts.
-    // __saCall still enters the real executor; no native host or network uplink can connect.
+    // __saCall still enters the real executor; no network uplink can connect (the manifest no longer asks for nativeMessaging).
     if (options.localOnly) {
-      manifest.permissions = manifest.permissions.filter((permission: string) => permission !== 'nativeMessaging');
       manifest.content_security_policy = {extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'"};
     }
 

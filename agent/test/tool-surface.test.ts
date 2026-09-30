@@ -87,15 +87,13 @@ describe("合成组件工具语义（非真实会话清单）", () => {
  * 调用同一批工厂，用来核对真实 active 清单有没有漏挂或多挂。任一侧新增工具都会与真实清单对不上，
  * 失败信息会点名具体工具，避免再出现「合成清单漏掉 take_tab/task_goals/... 却仍算通过」。
  */
-function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[] {
-  process.env.SIDEAGENT_GENERAL_BROWSER_LOOP = loopEnabled ? "1" : "0";
-
+function sourceInventory(workerMounted: boolean): string[] {
   const browser = createBrowserTools(
     rpc() as never,
     undefined,
     async () => ({}),
     () => true,
-    { goal: () => "goal", reserveDecision: () => {}, epoch: () => 0, canWrite: () => true } as never,
+    { epoch: () => 0, canWrite: () => true } as never,
     (async () => ({})) as never,
   ).map((t) => t.name);
 
@@ -130,52 +128,45 @@ function sourceInventory(loopEnabled: boolean, workerMounted: boolean): string[]
 }
 
 describe("真实会话 active 清单（BrowserAgentSession 注册）", () => {
-  const originalLoopEnv = process.env.SIDEAGENT_GENERAL_BROWSER_LOOP;
   const tempDirs: string[] = [];
   afterAll(() => {
-    if (originalLoopEnv === undefined) delete process.env.SIDEAGENT_GENERAL_BROWSER_LOOP;
-    else process.env.SIDEAGENT_GENERAL_BROWSER_LOOP = originalLoopEnv;
-
     for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   });
 
-  for (const loopEnabled of [false, true]) {
-    it(`browser_loop ${loopEnabled ? "开" : "关"}：真实清单等于生产来源，角色工具按成员状态切换`, async () => {
-      process.env.SIDEAGENT_GENERAL_BROWSER_LOOP = loopEnabled ? "1" : "0";
-      const { createConversationRuntime } = await import("../src/conversation-runtime.js");
-      const dir = mkdtempSync(join(tmpdir(), "bys-tool-surface-"));
-      tempDirs.push(dir);
-      const runtime = await createConversationRuntime("default", () => {}, undefined, { memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
+  it("真实清单等于生产来源，角色工具按成员状态切换", async () => {
+    const { createConversationRuntime } = await import("../src/conversation-runtime.js");
+    const dir = mkdtempSync(join(tmpdir(), "bys-tool-surface-"));
+    tempDirs.push(dir);
+    const runtime = await createConversationRuntime("default", () => {}, undefined, { memoryStore: new MemoryStore(new FileDocument(dir, MEMORY_STORE_FILE)) });
 
-      try {
-        const inner = (runtime.session as unknown as { session: { getActiveToolNames(): string[] } }).session;
+    try {
+      const inner = (runtime.session as unknown as { session: { getActiveToolNames(): string[] } }).session;
 
-        for (const scenario of [
-          { name: "无 worker", mounted: false },
-          { name: "有 worker", mounted: true },
-        ]) {
-          // 有 worker 走生产同一回调：conversation-runtime.ts 把 fleet.onMembersChange 接到 setTeamToolsMounted。
-          if (scenario.mounted) runtime.fleet.onMembersChange?.(1);
-          const active = inner.getActiveToolNames().slice().sort();
-          const inventory = sourceInventory(loopEnabled, scenario.mounted);
-          expect(inventory.filter((name) => !active.includes(name)), `${scenario.name}：真实清单漏挂来源工具`).toEqual([]);
-          expect(active.filter((name) => !inventory.includes(name)), `${scenario.name}：真实清单有来源未覆盖的工具`).toEqual([]);
-          expect(new Set(active).size, `${scenario.name}：工具名不得重复`).toBe(active.length);
-          expect(active.includes("browser_loop"), `${scenario.name}：browser_loop 开关`).toBe(loopEnabled);
+      for (const scenario of [
+        { name: "无 worker", mounted: false },
+        { name: "有 worker", mounted: true },
+      ]) {
+        // 有 worker 走生产同一回调：conversation-runtime.ts 把 fleet.onMembersChange 接到 setTeamToolsMounted。
+        if (scenario.mounted) runtime.fleet.onMembersChange?.(1);
+        const active = inner.getActiveToolNames().slice().sort();
+        const inventory = sourceInventory(scenario.mounted);
+        expect(inventory.filter((name) => !active.includes(name)), `${scenario.name}：真实清单漏挂来源工具`).toEqual([]);
+        expect(active.filter((name) => !inventory.includes(name)), `${scenario.name}：真实清单有来源未覆盖的工具`).toEqual([]);
+        expect(new Set(active).size, `${scenario.name}：工具名不得重复`).toBe(active.length);
+        expect(active.includes("browser_loop"), `${scenario.name}：browser_loop 已随 Jev 退役`).toBe(false);
 
-          for (const name of ["page_operation", "post", "await_message", "list_workers", "stop_worker"]) {
-            expect(active.includes(name), `${scenario.name}：${name} 只在团队态可见`).toBe(scenario.mounted);
-          }
-
-          expect(active).toContain("spawn_worker");
-          expect(active).toContain("take_tab");
-          expect(active).toContain("send_user_message");
+        for (const name of ["page_operation", "post", "await_message", "list_workers", "stop_worker"]) {
+          expect(active.includes(name), `${scenario.name}：${name} 只在团队态可见`).toBe(scenario.mounted);
         }
-      } finally {
-        runtime.dispose();
+
+        expect(active).toContain("spawn_worker");
+        expect(active).toContain("take_tab");
+        expect(active).toContain("send_user_message");
       }
-    }, 30_000);
-  }
+    } finally {
+      runtime.dispose();
+    }
+  }, 30_000);
 });
 
 describe("单人页不挂载 page_operation", () => {

@@ -1,8 +1,4 @@
 import { runPageTranslation, type TranslateBatch } from "./page-translation.js";
-import {runBrowserDecisionLoop} from './browser-decision-loop.js';
-import type {BrowserMaterial, BrowserControl} from '../../shared/browser-decision.js';
-import type {BrowserMaterialResult} from './browser-material.js';
-import {generalBrowserLoopEnabled} from './config.js';
 import type { TranslationReceipt, TranslationRequest } from "../../shared/page-translation.js";
 /**
  * 浏览器工具的 defineTool 封装。
@@ -147,7 +143,7 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { observedMaterials?:()=>BrowserMaterial[]; goal?:()=>string; userText?:()=>string; reserveDecision?:()=>void; getMaterial?:(goal:string,control:BrowserControl,signal:AbortSignal)=>Promise<BrowserMaterialResult>; epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
 
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
@@ -348,7 +344,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
   const call = makeCall(undefined);
 
-  const makeDefinitions = (call: ReturnType<typeof makeCall>, scope: ExecutionScope | undefined) => [
+  const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
     defineTool({
       name: "ask_user_to_point",
       label: "请你指出元素",
@@ -367,38 +363,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return textResult(`${explanation}\n${wrapPageContent(redactCredentialText(JSON.stringify(result)), {})}`, result);
       },
     }),
-    ...((generalBrowserLoopEnabled()&&execution?.goal&&execution.reserveDecision)?[defineTool({
-      name:'browser_loop',label:'通用网页操作',
-      description:'Delegate a bounded browser interaction to a general observation/action loop. It dynamically selects observed controls, never site scripts. Prefer it for navigating controls, filling supplied values, changing filters/settings and other sequences supported by the current page. Supply the complete local goal and ALL constraints; the host also supplies original task context. When exact values are already prepared, pass them in materials (id, value, source, purpose). An empty array is allowed: the loop can request text after selecting a field, without restarting the task. Material values must come from the user, be explicitly generated to meet their request, or use source:"observed" with an exact id/value saved by capture_page_material. The host also supplies these saved materials when the array is empty; never guess personal information. If materials are not prepared, the loop can select a real field and ask the bounded text helper for that field only; missing facts hand back to you. Missing values/unsupported controls/uncertainty/failures hand control back to you. It can return needs_verification, never task success: independently inspect fresh state and verify ALL requirements before task_results or send_user_message completion. Do not repeatedly call the same failed loop; handle its specific reason using other permitted tools. Existing dangerous-action confirmation, user takeover, cancellation and task version apply to every step.',
-      parameters:Type.Object({goal:Type.String({minLength:1,maxLength:12000}),materials:Type.Array(Type.Object({id:Type.String({minLength:1}),value:Type.String({maxLength:8000}),source:Type.Union([Type.Literal('user'),Type.Literal('generated'),Type.Literal('observed')]),purpose:Type.String()}),{maxItems:12})}),
-      execute:async(id,params,signal)=>{
-        if(params.materials.some(m=>m.source==='user'&&(!execution?.userText||!execution.userText().includes(m.value))))throw new Error('用户材料没有匹配到本轮原文，未执行；不得把生成内容标成用户提供。');
-        const observed=execution?.observedMaterials?.()??[];
-
-        if(params.materials.some(m=>m.source==='observed'&&!observed.some(saved=>saved.id===m.id&&saved.value===m.value)))throw new Error('原文材料没有匹配宿主保存的来源');
-        const materials=[...params.materials,...observed.filter(m=>!params.materials.some(p=>p.id===m.id))].slice(0,12);
-        const stop=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(90000)]);
-        const original=scope;
-        rpc.noteToolFact?.(id,'unknown');
-
-        const run=(call:ReturnType<typeof makeCall>)=>runBrowserDecisionLoop({parentCallId:id,goal:JSON.stringify({userTask:execution?.goal?.()??null,localGoal:params.goal}),materials,signal:stop,getMaterial:execution?.getMaterial,reserveDecision:()=>{if(!execution?.reserveDecision)throw new Error('没有任务决策预算，未调用模型');execution.reserveDecision();},
-          canExecute:canExecute?(name)=>canExecute(name as ToolName):undefined,
-          call:async(name,args,childId)=>{
-            const started=Date.now();
-            execution?.onStep?.({parentId:id,id:childId,name,phase:'start',params:args});
-
-            try{const result=await call(name,args,id,childId);execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,result,elapsedMs:Date.now()-started});
-
-return result;}
-            catch(e){execution?.onStep?.({parentId:id,id:childId,name,phase:'end',params:args,error:e instanceof Error?e.message:String(e),elapsedMs:Date.now()-started});throw e;}
-          }});
-
-        const result=original?await run(makeCall({...original,signal:stop})):await run(call);
-        rpc.noteToolFact?.(id,result.receipts.some(r=>r.executionFact==='unknown')?'unknown':'executed');
-
-        return textResult(wrapPageContent(redactCredentialText(JSON.stringify(result)),{}),result);
-      },
-    })]:[]),
     defineTool({
       name: "page_translation",
       label: "翻译网页",

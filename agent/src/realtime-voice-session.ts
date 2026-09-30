@@ -6,7 +6,6 @@ import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voi
 import { isExplicitTaskAbort } from './voice-confirm.js';
 import type { TaskActionRequest } from '../../shared/task-actions.js';
 import type { VoiceCommand, VoiceEvent, VoiceInputContext, VoiceRouteContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
-import type { RouteShadow } from './route-shadow.js';
 import { base64Bytes } from '../../shared/bytes.js';
 
 export type RealtimeVoiceDependencies = {
@@ -29,9 +28,6 @@ export type RealtimeVoiceDependencies = {
   readPage?: (input: VoiceInputContext) => Promise<unknown>;
   dispatchTask?: (request: TaskActionRequest, stillCurrent: () => boolean) => Promise<unknown>;
   createConnection?: (options: ConstructorParameters<typeof RealtimeVoiceConnection>[0]) => RealtimeVoiceConnection;
-  voiceSpokenResultGate?: boolean;
-  /** Shared request judgment and optional audit observation; policy lives in the connection. */
-  shadow?: RouteShadow;
 };
 
 type Input = {
@@ -57,9 +53,6 @@ export class RealtimeVoiceSession {
   private readonly spoken = new Set<string>();
   private readonly notices = new Set<string>();
   private readonly cancelled = new Set<string>();
-  /** Route-shadow bookkeeping only: last up-to-3 user transcripts and the most recent transcript's itemId. */
-  private recentUserTexts: string[] = [];
-  private lastUserItemId: string | undefined;
   constructor(private readonly deps: RealtimeVoiceDependencies) {
   }
   start(key: string): void {
@@ -76,40 +69,20 @@ export class RealtimeVoiceSession {
       voiceId: this.deps.voiceId,
       voice: this.deps.voice,
       persona: this.deps.persona,
-      voiceSpokenResultGate: this.deps.voiceSpokenResultGate,
       holdForTranscript: () => !!this.deps.dispatchTask && this.controllable(),
       claimTranscript: text => !!this.deps.dispatchTask && this.controllable() && isExplicitTaskAbort(text),
       runClaimed: text => this.abortCurrent(text),
-      judgeRequest: async identity => {
-        if (this.deps.diagnosticMode || this.closed) return null;
-        const snapshot = this.deps.getSnapshot();
-        const page = this.input.input?.context;
-        const previous = this.recentUserTexts;
-        this.recentUserTexts = [...previous, identity.text].slice(-3);
-
-        if (!snapshot) return null;
-
-        return this.deps.shadow?.judge(page ? {channel: 'voice', conversationId: snapshot.conversationId,
-          ...identity, previous, taskRunning: snapshot.state === 'running' || snapshot.state === 'paused',
-          taskState: snapshot.state, page: {title: page.title, url: page.url}} : {channel: 'voice', conversationId: snapshot.conversationId,
-          ...identity, previous, taskRunning: snapshot.state === 'running' || snapshot.state === 'paused',
-          taskState: snapshot.state},
-          this.deps.voiceSpokenResultGate === true) ?? null;
-      },
       tools: {
         ...(!this.deps.diagnosticMode && this.deps.browserTool ? { browserTool: async (call: Parameters<ExecuteRealtimeBrowserTool>[0], signal: AbortSignal) => {
           const origin = this.input;
           await this.waitForInput(origin);
 
           if (this.closed || signal.aborted || this.input !== origin || !origin.input) throw realtimeBrowserError('语音页面资料已过期，未执行。', 'not_executed');
-          this.recordToolActual(origin.turn, this.lastUserItemId, call.name);
 
           return this.deps.browserTool!({...call,inputId:`${this.deps.voiceId}:${call.inputId}`},origin.input,signal);
         }} : {}),
         ...(!this.deps.diagnosticMode && this.deps.dispatchTask ? { task_action: (text: string, action: RealtimeTaskAction, sequences?: number[]) => this.dispatchTask(text, action, sequences) } : {}),
         browser_request: async (text, sequences) => {
-          this.recordToolActual(this.turn, this.lastUserItemId, 'browser_request');
-
           if (this.deps.diagnosticMode || !this.deps.route) {
             throw new Error('此语音连接不能执行任务。');
           }
@@ -130,8 +103,6 @@ export class RealtimeVoiceSession {
           });
         },
         read_page: async () => {
-          this.recordToolActual(this.turn, this.lastUserItemId, 'read_page');
-
           if (this.deps.diagnosticMode || !this.deps.readPage) {
             throw new Error('当前没有可读取的页面资料。');
           }
@@ -146,8 +117,6 @@ export class RealtimeVoiceSession {
           return this.deps.readPage(origin.input);
         },
         task_status: async () => {
-          this.recordToolActual(this.turn, this.lastUserItemId, 'task_status');
-
           return { snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.() ?? [] };
         },
       }
@@ -196,10 +165,6 @@ export class RealtimeVoiceSession {
     }
   }
   private async dispatchTask(text: string, action: RealtimeTaskAction, sequences?: number[]): Promise<unknown> {
-    // Captured once here, not re-read after the await below: a new turn may start while dispatch is in flight,
-    // and the later 'dispatch' record must still describe the turn/item that actually requested it.
-    const shadowTurn = this.turn, shadowItemId = this.lastUserItemId;
-    this.recordToolActual(shadowTurn, shadowItemId, 'task_action', action.action);
     const origin = this.input;
     await this.waitForInput(origin);
     this.assertInputSources(origin, sequences);
@@ -220,34 +185,13 @@ export class RealtimeVoiceSession {
       throw new Error('不能在其他任务会话隐式开始新任务，请明确另开要求');
     }
 
-    const result = await this.deps.dispatchTask((action.action === 'start' || action.action === 'steer') ? {
+    return this.deps.dispatchTask((action.action === 'start' || action.action === 'steer') ? {
       requestId: randomUUID(), conversationId: target.id, originConversationId: origin.snapshot.conversationId, source: 'voice', action: action.action,
       expectedRunId: target.runId ?? null, expectedControlVersion: target.controlVersion, text, context: origin.input?.context, attachments: origin.input?.attachments
     } : {
       requestId: randomUUID(), conversationId: target.id, originConversationId: origin.snapshot.conversationId, source: 'voice', action: action.action,
       expectedRunId: target.runId ?? null, expectedControlVersion: target.controlVersion, text
     }, current);
-
-    this.recordDispatchActual(shadowTurn, shadowItemId, action.action, result);
-
-    return result;
-  }
-  /** Route-shadow only: which of the four voice tools actually ran, bound to the turn and latest user transcript at invocation time. */
-  private recordToolActual(turn: number, itemId: string | undefined, name: string, action?: string): void {
-    if (this.deps.diagnosticMode) return;
-    const conversationId = this.deps.getSnapshot()?.conversationId;
-
-    if (!conversationId) return;
-    this.deps.shadow?.actual(action ? { channel: 'voice', conversationId, voiceId: this.deps.voiceId, turn, itemId, kind: 'tool', name, action } : { channel: 'voice', conversationId, voiceId: this.deps.voiceId, turn, itemId, kind: 'tool', name });
-  }
-  /** Route-shadow only: the receipt status once a dispatched task action actually returns. */
-  private recordDispatchActual(turn: number, itemId: string | undefined, action: string, result: unknown): void {
-    if (this.deps.diagnosticMode) return;
-    const conversationId = this.deps.getSnapshot()?.conversationId;
-
-    if (!conversationId) return;
-    const status = result && typeof result === 'object' && typeof (result as { status?: unknown }).status === 'string' ? (result as { status: string }).status : 'unknown';
-    this.deps.shadow?.actual({ channel: 'voice', conversationId, voiceId: this.deps.voiceId, turn, itemId, kind: 'dispatch', action, status });
   }
   private async waitForInput(origin: Input): Promise<void> {
     const end = Date.now() + 5000;
@@ -369,9 +313,6 @@ export class RealtimeVoiceSession {
         }
 
         this.turn++;
-        // A tool call may arrive for this new turn before its transcript does; the previous
-        // turn's itemId must never be attached to it (route-shadow `actual` turn/item binding).
-        this.lastUserItemId = undefined;
         this.input = { turn: this.turn, snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.(), ready: false };
         this.inputHistory.set(this.turn, this.input);
 
@@ -398,8 +339,6 @@ export class RealtimeVoiceSession {
           const itemId = typeof event.itemId === 'string' ? event.itemId : `asr-${this.turn}`;
           this.emit({ kind: 'diag', record: { type: 'asr', turn: eventTurn, itemId, outcome: event.current === false ? 'filtered' : 'current', text } });
           this.emit({ kind: 'diag', record: { type: 'forward', turn: eventTurn, itemId, text } });
-
-          if (event.current !== false) this.lastUserItemId = itemId;
         }
 
         this.emit({ kind: 'text', turn: eventTurn, role, text });

@@ -4,7 +4,6 @@
  * 两边只各自提供传输、存储与本机才有的能力（剪贴板服务、语音录制）。
  */
 import { PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, HOST_VERSION, type ClientMessage, type ServerMessage } from "../../shared/protocol.js";
-import { generalBrowserLoopEnabled } from "./config.js";
 import type { ConversationPersistence } from "./conversation-persistence.js";
 import { ConversationManager } from "./conversation-manager.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -31,7 +30,7 @@ export interface HostCoreOptions {
   /** 语音密钥与会话工厂；不给时用本机默认（读 ~/.sideagent 的密钥、ws 连接）。 */
   voiceKey?: ConstructorParameters<typeof VoiceService>[2];
   voiceSession?: ConstructorParameters<typeof VoiceService>[3];
-  /** 扩展内的语音任务始终交给正式任务调度；本机沿用现有开关。 */
+  /** 扩展内的语音任务始终交给正式任务调度；不给时不装配（原本机开关已随 Jev 退役）。 */
   enableVoiceTaskDispatch?: boolean;
   /** 每条发往客户端的消息都会经过这里（本机用来录制语音诊断）。 */
   observe?: (msg: ServerMessage) => void;
@@ -98,7 +97,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
 
       return readVoicePage(runtime.rpc, input);
     },
-    (options.enableVoiceTaskDispatch ?? generalBrowserLoopEnabled()) ? async (request, stillCurrent) => {
+    options.enableVoiceTaskDispatch ? async (request, stillCurrent) => {
       const receipt = await conversations.dispatchTaskAction(request, stillCurrent);
 
       return { ok: ["queued", "accepted", "applied"].includes(receipt.status), status: receipt.status, message: receipt.message, receipt };
