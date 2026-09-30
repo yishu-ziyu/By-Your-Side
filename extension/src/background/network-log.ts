@@ -12,7 +12,6 @@ import {
   markCaptureDetached,
   markCaptureEnabled,
   markCaptureGap,
-  markCaptureRestart,
   networkEventToUpdate,
   type IdleObservation,
   type NetworkLifecycle,
@@ -74,10 +73,6 @@ export function networkRingFor(tabId: number): NetworkRing | null {
   return life ? life.ring : null;
 }
 
-export function networkLifecycleFor(tabId: number): NetworkLifecycle | null {
-  return lifecycles.get(tabId) ?? null;
-}
-
 export function networkIdleFor(tabId: number, idleMs: number = 0, now: number = Date.now()): IdleObservation | null {
   const life = lifecycles.get(tabId);
 
@@ -118,27 +113,7 @@ export async function enableNetworkCapture(tabId: number, opts?: { mode?: "fresh
   }
 }
 
-/** 导航前由 debugger 调用：把本次捕获标为 fresh（仍兼容 15s 空闲 detach）。 */
-export function armFreshNetworkCapture(tabId: number): void {
-  listenNetworkEvents();
-  setLife(tabId, markCaptureEnabled(lifeFor(tabId), { mode: "fresh" }));
-}
-
 export function noteNetworkCaptureDetached(tabId: number): void {
   enabled.delete(tabId);
   setLife(tabId, markCaptureDetached(lifeFor(tabId)));
-}
-
-export function noteNetworkCaptureGap(tabId: number): void {
-  setLife(tabId, markCaptureGap(lifeFor(tabId)));
-}
-
-/** 测试/SW 重启路径：清空内存态并记 restart。 */
-export function resetNetworkCaptureForTests(): void {
-  for (const tabId of lifecycles.keys()) {
-    setLife(tabId, markCaptureRestart(lifeFor(tabId)));
-  }
-
-  lifecycles.clear();
-  enabled.clear();
 }

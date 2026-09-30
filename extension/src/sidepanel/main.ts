@@ -22,24 +22,7 @@ import { describeSteps, recordingHint, type DemoStep } from "../../../shared/dem
 import { skillHealth, skillRunSummary, skillStepsText, sensitiveSkillInput, type Skill, type SkillRun, type SkillCandidate } from "../../../shared/skill.js";
 import { defaultIntent, describePattern, type ObservedPattern } from "../../../shared/observe.js";
 import { describeAnchor } from "../../../shared/skill.js";
-import {
-  MousePointerClick,
-  PenLine,
-  Keyboard,
-  ArrowDownUp,
-  ScanSearch,
-  Camera,
-  CodeXml,
-  Globe,
-  List,
-  Tag,
-  Eraser,
-  ChevronDown,
-  ArrowDown,
-  Users,
-  Send,
-  Inbox,
-} from "lucide";
+import { ChevronDown, ArrowDown } from "lucide";
 import {
   StepChain,
   chipState,
@@ -237,7 +220,6 @@ app.innerHTML = `
         <span id="composer-spacer"></span>
         <button id="composer-more" type="button" popovertarget="composer-menu" aria-label="输入选项">···</button>
         <button id="takeover-btn" type="button" title="拿回当前页面，Agent 先停手" hidden>接管</button>
-        <button id="abort-btn" type="button" title="中止" hidden></button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
           <span class="morph-icon-send"></span>
           <span class="morph-icon-stop"></span>
@@ -316,7 +298,6 @@ sendBtn.disabled = true;
 
 const takeoverBtn = document.getElementById("takeover-btn") as HTMLButtonElement;
 
-const abortBtn = document.getElementById("abort-btn") as HTMLButtonElement;
 
 const teachToggle = document.getElementById("teach-toggle") as HTMLSelectElement;
 
@@ -1526,8 +1507,6 @@ if (morphSend) morphSend.appendChild(icon(ArrowUp));
 
 if (morphStop) morphStop.appendChild(icon(Square));
 
-abortBtn.appendChild(icon(Square));
-
 recordToggle.prepend(icon(Play));
 
 memoryOpen.prepend(icon(Database));
@@ -2449,39 +2428,6 @@ interface ToolChipEntry {
 const toolChips = new Map<string, ToolChipEntry>();
 
 /** 工具名 → 图标；未知名称回退扳手。 */
-/**
- * 工具名 → 图标。
- * 05 之后 chip 的图标位换成了光球，这里暂时没有调用方；留着是因为"chip 要不要同时保留
- * 工具图标"还没最终定，回退时直接接回 onToolStart 即可。
- *
- * `_` 前缀表示"有意未使用"：这条回退路径随时可能接回，删掉会丢掉那个待定决定。
- */
-const _TOOL_ICONS = new Map<string, Parameters<typeof icon>[0]>([
-  ["click", MousePointerClick],
-  ["fill", PenLine],
-  ["page_operation", PenLine],
-  ["share_tab", Users],
-  ["type_text", Keyboard],
-  ["press_key", Keyboard],
-  ["scroll", ArrowDownUp],
-  ["snapshot", ScanSearch],
-  ["read_element", ScanSearch],
-  ["screenshot", Camera],
-  ["js", CodeXml],
-  ["navigate", Globe],
-  ["open_tab", Globe],
-  ["list_tabs", List],
-  ["switch_tab", List],
-  ["close_tab", List],
-  ["mark", Tag],
-  ["clear_marks", Eraser],
-  ["spawn_worker", Users],
-  ["list_workers", Users],
-  ["stop_worker", Square],
-  ["post", Send],
-  ["await_message", Inbox],
-]);
-
 // ── 渲染 ───────────────────────────────────────────────────────────
 
 function setStatus(mode: "off" | "on" | "retry", text: string): void {
@@ -3023,7 +2969,6 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   }
 
   takeoverBtn.hidden = !flags.takeoverVisible;
-  abortBtn.hidden = !flags.abortVisible;
 
   // Send / Stop in-place morphing
   if (flags.abortVisible) {
@@ -4721,7 +4666,6 @@ takeoverBtn.onclick = () => {
   port?.postMessage({ kind: "control", action: "takeover", conversationId: selectedConversationId } satisfies PanelToBg);
 };
 
-abortBtn.onclick = stopCurrentTask;
 
 armBootDecisionTimeout();
 

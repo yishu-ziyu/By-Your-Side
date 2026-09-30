@@ -22,20 +22,3 @@ export class InProcessLock {
     return next;
   }
 }
-
-/** 测试与合成场景用：只存在内存里。 */
-export class MemoryDocument implements DocumentPersistence {
-  private text: string | null = null;
-  private readonly lock = new InProcessLock();
-
-  constructor(initial?: string) { if (initial !== undefined) this.text = initial; }
-
-  async read(): Promise<string | null> { return this.text; }
-
-  exclusive<T>(fn: () => Promise<T>): Promise<T> { return this.lock.run(fn); }
-
-  async write(text: string, commitGuard?: () => boolean): Promise<void> {
-    if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-    this.text = text;
-  }
-}

@@ -342,10 +342,6 @@ export function notePageEventsDetached(tabId: number): void {
   }
 }
 
-export function pageEventLedger() {
-  return ledger;
-}
-
 export async function armEventForTab(input: {
   tabId: number;
   sessionKey: string;

@@ -80,10 +80,6 @@ export function listChildFrameSessions(tabId: number): ChildFrameSession[] {
   return [...(childSessionsByTab.get(tabId)?.values() ?? [])];
 }
 
-export function getChildFrameSession(sessionId: string): ChildFrameSession | undefined {
-  return childSessionsBySession.get(sessionId);
-}
-
 /**
  * 在已拥有 tab 上启用 flatten auto-attach，登记跨进程 iframe 的 child session。
  * 不开放公共 raw CDP 的任意 Target.*；仅宿主为已拥有页面建立内部绑定。
@@ -105,40 +101,6 @@ export async function ensureChildFrameSessions(tabId: number): Promise<ChildFram
   }
 
   return listChildFrameSessions(tabId);
-}
-
-/** 向已登记的 child session 发 CDP（须先 ensureChildFrameSessions）。 */
-export async function sendCommandOnSession<T = unknown>(
-  sessionId: string,
-  method: string,
-  params?: Record<string, unknown>,
-): Promise<T> {
-  const child = childSessionsBySession.get(sessionId);
-
-  if (!child) throw new Error(`未知 child session ${sessionId}；请先在已拥有页面上 ensureChildFrameSessions`);
-
-  if (method.startsWith("Target.") && method !== "Target.getTargetInfo") {
-    throw new Error(`child session 禁止任意 ${method}；仅宿主内部绑定使用`);
-  }
-
-  holdAttach(child.parentTabId);
-
-  try {
-    await ensureAttached(child.parentTabId);
-
-    if (childSessionsBySession.get(sessionId) !== child) {
-      throw Object.assign(new Error("Child frame session changed before dispatch; observe it again"), { executionFact: "not_executed" });
-    }
-
-    try {
-      // SAFETY: T 由调用方按它请求的那个 CDP 方法声明；sendCommand 原样回传该方法的结果体。
-      return await chrome.debugger.sendCommand({ tabId: child.parentTabId, sessionId }, method, params ?? {}) as T;
-    } catch (error) {
-      throw Object.assign(new Error(oneLine(error)), { executionFact: "unknown" });
-    }
-  } finally {
-    releaseAttachHold(child.parentTabId);
-  }
 }
 
 function noteAttachedToTarget(parentTabId: number, params: {
