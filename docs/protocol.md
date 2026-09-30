@@ -80,6 +80,12 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 `browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。生产装配中，内部开始/结束直接同步转成既有步骤事件，先登记子调用再执行权限检查，使用 `父调用ID/序号` 关联；独立工具包装器仍可回传SDK进度，但不能把异步进度队列当作权限登记前置。详见[组合执行](browser-program.md)。
 
+## fetch 读取与未知结果边界
+
+扩展内 `fetch` 不写本机文件，响应经凭据隐去与不可信包装后最多内联 16,000 字符；来源 URL 隐去 userinfo 与敏感查询参数（包括短 token），状态行只显示媒体类型、不回显任意 Content-Type 参数，截断明确说明并提示用当前页 `snapshot/read_element` 读所需章节；`savePath/pages` 在派发前拒绝。伴随进程的文件与批量行为不变。要求示例不等于执行示例。
+
+未知写入仍禁止 fetch、点击、输入、页面 JS、导航或切页。当前页 `scroll/mark/clear_marks` 只提供阅读展示，可在保留旧未知账目的同时执行；它们不核销未知操作、不授予业务写入权限，也不绕过用户接管、取消、重启检查点、页面归属或同一未知动作的重放保护。
+
 ## 用户指出元素
 
 `ask_user_to_point` 的点选回执、期限与边界见[用户指出元素](point-selection.md)。

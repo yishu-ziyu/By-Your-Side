@@ -3080,7 +3080,7 @@ function addChainStep(label: string): void {
 
 const RUN_ORB_MARKS = {
   user: { icon: Hand, label: "等待你操作" },
-  completed: { icon: Check, label: "已完成" },
+  completed: { icon: Check, label: "本轮结束" },
   failed: { icon: CircleAlert, label: "执行失败" },
   stopped: { icon: Square, label: "已停止" },
 } as const;

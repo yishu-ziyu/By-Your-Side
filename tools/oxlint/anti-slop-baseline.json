@@ -1569,6 +1569,9 @@
   "extension/test/hover-recovery.test.ts": {
     "anti-slop(no-module-mocking)": 3
   },
+  "extension/test/inproc-fetch.test.ts": {
+    "anti-slop(no-module-mocking)": 2
+  },
   "extension/test/lead-global-browser.test.ts": {
     "anti-slop(no-object-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1
