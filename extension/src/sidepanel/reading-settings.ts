@@ -21,7 +21,7 @@ export interface ReadingPrefs {
 
 /** 偏好默认值：解析旧存储、面板初始状态、恢复默认都引用这一处。 */
 export const READING_DEFAULT_PREFS: Readonly<ReadingPrefs> = Object.freeze({
-  font: "song",
+  font: "system",
   size: "normal",
 });
 
@@ -34,7 +34,7 @@ export const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: st
 
 export const READING_SIZE_OPTIONS: ReadonlyArray<{ value: ReadingSize; label: string }> = [
   { value: "small", label: "小 13px" },
-  { value: "normal", label: "标准 15px" },
+  { value: "normal", label: "标准 14px" },
   { value: "large", label: "大 17px" },
 ];
 
@@ -45,13 +45,13 @@ const READING_FONTS: readonly ReadingFont[] = ["song", "hei", "system"];
 
 const READING_SIZES: readonly ReadingSize[] = ["small", "normal", "large"];
 
-/** 非默认字体才需要覆盖变量：宋体是默认，值在 styles.css 的 :root 里。 */
-const READING_FONT_OVERRIDES: Record<Exclude<ReadingFont, "song">, string> = {
+/** 非默认字体才需要覆盖变量：系统字体是默认，值在 styles.css 的 :root 里。 */
+const READING_FONT_OVERRIDES: Record<Exclude<ReadingFont, "system">, string> = {
   hei: '"Heiti SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-  system: "var(--font)",
+  song: '"Songti SC", "STSong", "Songti TC", "SimSun", serif',
 };
 
-/** 非默认字号才需要覆盖变量：标准 15px 是默认，值在 styles.css 的 :root 里。 */
+/** 非默认字号才需要覆盖变量：标准 14px 是默认，值在 styles.css 的 :root 里。 */
 const READING_SIZE_OVERRIDES: Record<Exclude<ReadingSize, "normal">, string> = {
   small: "13px",
   large: "17px",
@@ -67,7 +67,7 @@ export function readingStyleVars(prefs: ReadingPrefs): ReadingStyleVars {
   const normalized = normalizeReadingPrefs(prefs);
 
   return {
-    "--reading-font": normalized.font === "song" ? null : READING_FONT_OVERRIDES[normalized.font],
+    "--reading-font": normalized.font === "system" ? null : READING_FONT_OVERRIDES[normalized.font],
     "--reading-size": normalized.size === "normal" ? null : READING_SIZE_OVERRIDES[normalized.size],
   };
 }

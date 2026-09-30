@@ -6,7 +6,9 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   if (previous?.classList.contains('receipt-decision') && receipt.newConversationRequest && receipt.status === 'rejected') return previous;
   const copy = receiptCopy(receipt, conversationId);
   const root = document.createElement('details');
-  root.className = `msg receipt${copy.collapsed ? '' : ' notice'}`;
+  root.className = `msg receipt${copy.inProcess ? ' receipt-history' : copy.collapsed ? '' : ' notice'}`;
+
+  if (copy.inProcess && receipt.runId) root.dataset.processRunId = receipt.runId;
   root.open = previous instanceof HTMLDetailsElement && previous.open;
   root.dataset.requestId = receipt.requestId;
   root.dataset.runId = receipt.runId ?? '';

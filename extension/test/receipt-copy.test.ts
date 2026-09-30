@@ -51,3 +51,23 @@ describe("T04 修改回执分层与差异展示", () => {
     expect(isTaskReceipt({...receipt,diff:{target:"页",changed:[],preserved:[]}})).toBe(false);
   });
 });
+
+// Failure cases: successful resume looks like a warning; failures disappear; another task's receipt is moved into this task.
+describe("恢复回执的呈现归属", () => {
+  it("本会话成功恢复进入过程，保留原始回执内容", () => {
+    const message = "已从检查点继续原任务；先重新读取当前页面，再处理未完成项。";
+    expect(receiptCopy({...base, action: "resume", message}, "c")).toMatchObject({
+      summary: "已继续原任务", detail: expect.stringContaining(message), collapsed: false, inProcess: true,
+    });
+  });
+  it.each(["failed", "rejected", "unknown"] as const)("恢复 %s 仍是可见反馈", status => {
+    const copy = receiptCopy({...base, action: "resume", status, message: "尚未确认恢复"}, "c");
+    expect(copy.collapsed).toBe(false);
+    expect(copy.inProcess).not.toBe(true);
+  });
+  it("别的会话恢复不归到当前执行过程", () => {
+    const copy = receiptCopy({...base, action: "resume"}, "other");
+    expect(copy.collapsed).toBe(false);
+    expect(copy.inProcess).not.toBe(true);
+  });
+});

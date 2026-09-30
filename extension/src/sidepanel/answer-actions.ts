@@ -1,3 +1,5 @@
+import { createElement as icon, Copy } from "lucide";
+
 /** 文末操作只在回答落定时添加，复制文本不包含按钮文案。 */
 export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector('.answer-actions') || !answer.textContent?.trim()) return;
@@ -6,7 +8,9 @@ export function attachAnswerActions(answer: HTMLElement): void {
   actions.className = 'answer-actions';
   const copy = document.createElement('button');
   copy.type = 'button';
-  copy.textContent = '复制回答';
+  copy.setAttribute('aria-label', '复制回答');
+  copy.title = '复制回答';
+  copy.append(icon(Copy));
   const feedback = document.createElement('span');
   feedback.className = 'answer-action-feedback';
   feedback.setAttribute('role', 'status');

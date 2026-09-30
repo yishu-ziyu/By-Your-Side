@@ -18,7 +18,10 @@
 | 来源、改口与恢复 | [目标证据链](evals/20260921-goal-evidence-contract.md) · [Computer Use 复测](evals/20260922-computer-use-product-path.md) |
 | 语音、胶囊与开口 | [语音架构](voice-architecture.md) · [V2.3](evals/20260922-v22-spoken-result-shadow.md)：动作成功、胶囊足够、整项要求无需口答分别判断 |
 | 真入口与验收环境 | [验收入口](testing/acceptance.md) · [环境会改变被测状态](knowledge/patterns/extension-harness-changes-observed-state.md) |
+| 侧栏第二版与日常接续 | [09-29 验收](evals/20260929-sidebar-interaction.md)：隔离侧栏通过后仍核对日常原会话；日常曾后台已建空白会话但新建按钮未收尾，重开仅前端恢复，未把该现象归因于样式或重启后台 |
+| MiMo 读文档后恢复被锁 | [09-30 首次试用](evals/20260930-first-user-mimo.md)：未知 fetch 是侧栏事实，读取被误归类与执行锁原因只是模型陈述；先查实际诊断，不据回答直接改授权或绕过未知保护 |
 | 修改后如何收尾 | [文档维护](development/documentation.md) · [经验索引](knowledge/index.md) |
+| 0 号用户逐条评语 | [逐条记录](evals/20260930-zero-user-incremental-review.md)：用户要求一次一条；正确结果与成功体验分开保存，不把对手动速度与成本的感受冒充实测数据 |
 | 用户面前的文字从哪来 | [界面问题 10 项](evals/20260926-ux-fixes.md)：内部文字只在 `shared/user-facing.ts` 翻译；「另开会话接手即收起旧确认」是本轮执行者的取舍，待用户认可 |
 | 记忆、主动与多模型验收 | [验收](evals/20260927-memory-proactive-task.md) · [开发日志](devlog/20260927-01-目标核对和提交条件由宿主兜住.md)：判断放在宿主，不靠主模型自觉。同时跑几家验收前先看机器负载（09-27 负载约 100 时，超时被误当成模型问题）；Kimi 主模型和快速模型共用账号，会撞到同时请求数上限 |
 | anti-slop 的现有约束 | [接入验收](evals/20260923-anti-slop-vendor.md)；不要通过重置 baseline 隐藏新问题 |

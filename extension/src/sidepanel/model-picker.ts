@@ -1,5 +1,5 @@
 /**
- * 模型选择器：输入区左下角的芯片，以及从芯片长出的搜索面板。
+ * 模型选择器：更多菜单里的当前模型入口，以及顶部搜索面板。
  * 数据源是 agent 下发的 hello_ok.models / model_info；选择后发 set_model，
  * 等 agent 回 model_info 再更新显示（收到回执才改变状态）。
  *
@@ -19,7 +19,7 @@ import {
 
 /** 选择器占用的 DOM 宿主（由 sidepanel 入口显式提供）。 */
 export interface ModelPickerHost {
-  /** 输入区左下的芯片按钮。 */
+  /** 更多菜单中的当前模型按钮。 */
   button: HTMLButtonElement;
   /** 芯片上的 provider 字母标。 */
   mark: HTMLElement;
@@ -29,9 +29,9 @@ export interface ModelPickerHost {
   reasoningTag: HTMLElement | null;
   /** 搜索面板容器。 */
   popover: HTMLElement;
-  /** 输入区，用作面板基线定位参照。 */
-  composer: HTMLElement;
-  /** 应用容器，用作面板底部定位参照。 */
+  /** 顶部更多按钮，用作面板定位和键盘焦点返回位置。 */
+  anchor: HTMLElement;
+  /** 应用容器，用作面板定位参照。 */
   app: HTMLElement;
 }
 
@@ -59,7 +59,7 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     name: modelName,
     reasoningTag: modelReasoningTag,
     popover: modelPopover,
-    composer,
+    anchor,
     app,
   } = options.host;
 
@@ -72,7 +72,10 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
   let showAllModels = false;
 
   function closeModelPopover(): void {
+    const returnFocus = modelPopover.contains(document.activeElement);
     modelPopover.hidden = true;
+
+    if (returnFocus) anchor.focus();
     modelBtn.setAttribute("aria-expanded", "false");
   }
 
@@ -99,8 +102,9 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function positionModelPopover(): void {
     const appBox = app.getBoundingClientRect();
-    const box = composer.getBoundingClientRect();
-    modelPopover.style.bottom = `${appBox.bottom - box.top + 8}px`;
+    const box = anchor.getBoundingClientRect();
+    modelPopover.style.top = `${box.bottom - appBox.top + 8}px`;
+    modelPopover.style.bottom = "auto";
   }
 
   /**
@@ -112,11 +116,11 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
     if (!parent) return;
     const popLeft = parent.getBoundingClientRect().left + modelPopover.offsetLeft;
-    const btn = modelBtn.getBoundingClientRect();
+    const btn = anchor.getBoundingClientRect();
     const x = Math.round(btn.left - popLeft + btn.width / 2);
 
     if (x > 0 && x < modelPopover.offsetWidth) {
-      modelPopover.style.transformOrigin = `${x}px bottom`;
+      modelPopover.style.transformOrigin = `${x}px top`;
     }
   }
 

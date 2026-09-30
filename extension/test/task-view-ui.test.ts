@@ -497,10 +497,10 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
     expect(bar.getModel()?.materials).toBeNull();
   });
 
-  it("列过目标的任务做完：写「已完成」；纯聊天结束照旧不留痕", () => {
+  it("做完的任务与纯聊天都让出输入区，结果保留在回答中", () => {
     const { bar } = mount();
     bar.updateView(view({ state: "idle", outstanding: [], resumable: false, goalsListed: true }));
-    expect(bar.getModel()?.headline).toBe("已完成");
+    expect(bar.getModel()?.visible).toBe(false);
     bar.updateView(view({ state: "idle", outstanding: [], resumable: false, goalsListed: false }));
     expect(bar.getModel()?.visible).toBe(false);
   });

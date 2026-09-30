@@ -94,3 +94,7 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only
 3. 属于当前发布门禁，并会产出可复验 artifact。
 
 一次性探针在任务完成后应合入共用驱动，或随 Git 历史保留后从 HEAD 删除。评测文档记录命令、结论和证据位置，不靠永久堆积脚本保存历史。
+
+## 连续对话侧栏
+
+`npx tsx scripts/acceptance/real-path/sidebar-interaction.mts --headless --run=candidate` 使用隔离真实侧栏与本机脚本模型，检查字阶、窄宽、复制、模型入口、草稿和完成态，保存截图与布局读数。脚本模型只验证交互呈现，不代表供应商或真人语音验收；见[侧栏第二版验收](../evals/20260929-sidebar-interaction.md)。

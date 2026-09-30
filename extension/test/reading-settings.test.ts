@@ -160,12 +160,12 @@ describe("normalizeReadingPrefs：只认白名单档位", () => {
     expect(normalizeReadingPrefs(null)).toEqual(READING_DEFAULT_PREFS);
     expect(normalizeReadingPrefs({})).toEqual(READING_DEFAULT_PREFS);
     expect(normalizeReadingPrefs({ font: "hei" })).toEqual({ font: "hei", size: "normal" });
-    expect(normalizeReadingPrefs({ size: "large" })).toEqual({ font: "song", size: "large" });
+    expect(normalizeReadingPrefs({ size: "large" })).toEqual({ font: "system", size: "large" });
   });
 
   it("旧/非法档位逐字段回默认，不整条丢弃", () => {
     expect(normalizeReadingPrefs({ font: "comic-sans", size: "huge" })).toEqual(READING_DEFAULT_PREFS);
-    expect(normalizeReadingPrefs({ font: "comic-sans", size: "large" })).toEqual({ font: "song", size: "large" });
+    expect(normalizeReadingPrefs({ font: "comic-sans", size: "large" })).toEqual({ font: "system", size: "large" });
     expect(normalizeReadingPrefs({ font: "song", size: 15 })).toEqual({ font: "song", size: "normal" });
   });
 
@@ -178,21 +178,21 @@ describe("normalizeReadingPrefs：只认白名单档位", () => {
   it("默认值只有一份，且被冻结", () => {
     expect(normalizeReadingPrefs(READING_DEFAULT_PREFS)).toEqual(READING_DEFAULT_PREFS);
     expect(Object.isFrozen(READING_DEFAULT_PREFS)).toBe(true);
-    expect(sameReadingPrefs({ font: "song", size: "normal" }, READING_DEFAULT_PREFS)).toBe(true);
+    expect(sameReadingPrefs({ font: "system", size: "normal" }, READING_DEFAULT_PREFS)).toBe(true);
   });
 });
 
 describe("readingStyleVars：默认档位交回 CSS，非默认才覆盖", () => {
-  it("宋体 + 标准不写变量（用 styles.css 的默认）", () => {
-    expect(readingStyleVars({ font: "song", size: "normal" })).toEqual({
+  it("系统字体 + 标准不写变量（用 styles.css 的默认）", () => {
+    expect(readingStyleVars({ font: "system", size: "normal" })).toEqual({
       "--reading-font": null,
       "--reading-size": null,
     });
   });
 
-  it("黑体/系统默认给出对应字体栈，系统默认接 var(--font)", () => {
+  it("保存的宋体和黑体仍给出对应字体栈", () => {
     expect(readingStyleVars({ font: "hei", size: "normal" })["--reading-font"]).toContain("Heiti SC");
-    expect(readingStyleVars({ font: "system", size: "normal" })["--reading-font"]).toBe("var(--font)");
+    expect(readingStyleVars({ font: "song", size: "normal" })["--reading-font"]).toContain("Songti SC");
   });
 
   it("小/大给出 13px / 17px", () => {
@@ -255,11 +255,11 @@ describe("启动读取", () => {
   });
 
   it("读取期间收到恰好等于默认的 storage 事件，也不被过期读取覆盖", async () => {
-    // 存储里是过期的 hei/large；读取还没回来，更晚的事件把设置改回默认 song/normal。
+    // 存储里是过期的 hei/large；读取还没回来，更晚的事件把设置改回默认 system/normal。
     const { port, store } = createHarness({ font: "hei", size: "large" });
     const release = port.holdLoad();
     const starting = store.start();
-    port.emit({ font: "song", size: "normal" });
+    port.emit({ font: "system", size: "normal" });
     release();
     await starting;
     expect(store.prefs).toEqual(READING_DEFAULT_PREFS);
@@ -294,13 +294,13 @@ describe("保存顺序与失败可见", () => {
     expect(store.saveState).toBe("error");
     expect(statuses.at(-1)).toEqual({ state: "error", message: "QUOTA_BYTES quota exceeded" });
     expect(statuses.some((status) => status.state === "saved")).toBe(false);
-    expect(store.prefs).toEqual({ font: "song", size: "small" }); // 界面仍是用户选的
+    expect(store.prefs).toEqual({ font: "system", size: "small" }); // 界面仍是用户选的
     expect(port.stored).toBeUndefined(); // 没有真的写进去
 
     store.retry();
     await tick();
     expect(store.saveState).toBe("saved");
-    expect(port.stored).toEqual({ font: "song", size: "small" });
+    expect(port.stored).toEqual({ font: "system", size: "small" });
   });
 
   it("失败后再次修改也续上未写回的值", async () => {
@@ -335,8 +335,8 @@ describe("多面板同步", () => {
     applied.length = 0;
     store.update({ size: "large" });
     await tick();
-    expect(applied).toEqual([{ font: "song", size: "large" }]); // 只有本地那一次
-    port.emit({ font: "song", size: "large" }); // 回声
+    expect(applied).toEqual([{ font: "system", size: "large" }]); // 只有本地那一次
+    port.emit({ font: "system", size: "large" }); // 回声
     expect(applied).toHaveLength(1);
   });
 

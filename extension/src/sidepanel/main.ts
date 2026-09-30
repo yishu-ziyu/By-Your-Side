@@ -87,7 +87,7 @@ const TEACH_MODE_KEY = "sideagent_teach_mode";
 
 const PLACEHOLDER_IDLE = "说说你想完成什么…";
 
-const PLACEHOLDER_RUNNING = "插话：调整 Agent 的方向…（Enter 发送）";
+const PLACEHOLDER_RUNNING = "补充或修改这次任务…（Enter 发送）";
 
 const PLACEHOLDER_USER = "现在归你。可补充要求，Enter 保存；交还后生效";
 
@@ -123,6 +123,12 @@ app.innerHTML = `
       <button id="record-toggle" type="button" title="你亲手做一遍，AI 记录为可复用的技能" aria-pressed="false"><span>示范给 AI</span></button>
       <button id="memory-open" type="button" aria-haspopup="dialog" aria-expanded="false"><span>技能与记忆</span></button>
       <hr />
+        <button id="model-btn" type="button" title="切换模型" aria-label="切换当前模型" hidden aria-haspopup="listbox" aria-expanded="false">
+          <span id="model-mark" class="model-mark" hidden></span>
+          <span>当前模型</span>
+          <span id="model-name"></span>
+          <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
+        </button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
       <button id="reading-settings-btn" type="button"><span>阅读外观</span></button>
       <button id="companion-toggle" type="button" aria-pressed="true"><span>显示小伙伴 M</span></button>
@@ -224,11 +230,6 @@ app.innerHTML = `
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
         <button id="attach-btn" class="composer-icon-btn" type="button" title="添加附件或截屏" aria-haspopup="true">+</button>
-        <button id="model-btn" type="button" title="切换模型" hidden aria-haspopup="listbox" aria-expanded="false">
-          <span id="model-mark" class="model-mark" hidden></span>
-          <span id="model-name"></span>
-          <span id="model-reasoning-tag" class="reasoning-tag" hidden></span>
-        </button>
         <select id="teach-toggle" aria-label="操作方式" title="选择由 AI 操作，或由 AI 指导你操作">
           <option value="act">帮我操作</option>
           <option value="teach">指导我操作</option>
@@ -2280,7 +2281,7 @@ demoClose.onclick = () => {
 };
 
 // ── 模型选择器 ─────────────────────────────────────────────────────
-// 芯片在输入区左下，搜索面板从芯片长出：完整实现见 ./model-picker.ts。
+// 模型入口收在顶部更多菜单，选择面板在菜单触发器下方展开。
 // 数据源是 agent 下发的 hello_ok.models / model_info；选择后发 set_model，
 // 等 agent 回 model_info 再更新显示（收到回执才改变状态）。
 const modelPicker = mountModelPicker({
@@ -2290,7 +2291,7 @@ const modelPicker = mountModelPicker({
     name: modelName,
     reasoningTag: modelReasoningTag,
     popover: modelPopover,
-    composer: composerEl,
+    anchor: headerMore,
     app,
   },
   sendSetModel: (model) => {
@@ -3117,7 +3118,8 @@ function finishRun(): void {
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
   run.orbActivity.finish();
   const outcome = run.orbActivity.state();
-  const keepProcess = run.changedPage || outcome === "failed" || outcome === "stopped";
+  const hasResumeReceipt = !!run.body.querySelector(".receipt-history");
+  const keepProcess = run.changedPage || hasResumeReceipt || outcome === "failed" || outcome === "stopped";
 
   if (!hasSteps || !keepProcess) {
     run.root.remove();
@@ -3138,7 +3140,10 @@ function finishRun(): void {
 
   if (title) {
     const outcome = run.orbActivity.state();
-    title.textContent = finishedRunTitle(run.body.querySelectorAll(".chip").length, outcome === "failed" || outcome === "stopped" ? outcome : "completed");
+    const steps = run.body.querySelectorAll(".chip").length;
+    title.textContent = hasResumeReceipt && steps === 0 && outcome !== "failed" && outcome !== "stopped"
+      ? "恢复记录"
+      : finishedRunTitle(steps, outcome === "failed" || outcome === "stopped" ? outcome : "completed");
   }
 
   run.timeEl.textContent = spokenDuration(run.start, eventTime()) ?? "";
@@ -3576,6 +3581,20 @@ function handleWorkerEvent(sessionId: string, ev: AgentUiEvent): void {
   scrollToEnd();
 }
 
+/** 成功恢复属于同一任务的执行记录；没有匹配过程时先保留一条中性历史回执。 */
+function groupProcessReceipts(): void {
+  const receipts = Array.from(messagesEl.children).filter(
+    (node): node is HTMLElement => node instanceof HTMLElement && !!node.dataset.processRunId,
+  );
+
+  for (const receipt of receipts) {
+    const run = Array.from(messagesEl.querySelectorAll<HTMLElement>(".run-steps[data-run-id]"))
+      .reverse().find((node) => node.dataset.runId === receipt.dataset.processRunId);
+
+    run?.querySelector(".run-body")?.append(receipt);
+  }
+}
+
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   if (sessionId && !isLeadSession(sessionId)) {
     handleWorkerEvent(sessionId, ev);
@@ -3680,7 +3699,9 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         const previous = receiptMessages.get(key);
 
         // 普通接收/送达回执不进消息流：用户已看到自己的消息，任务条讲运行状态；只有拒绝、失败、需要决定的回执才展示。
-        if (receiptCopy(ev.receipt, selectedConversationId).collapsed) {
+        const copy = receiptCopy(ev.receipt, selectedConversationId);
+
+        if (copy.collapsed) {
           previous?.remove();
           receiptMessages.delete(key);
           break;
@@ -3690,7 +3711,8 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         const receipt = renderReceipt(ev.receipt, selectedConversationId, previous, forkReceipt);
 
         if (previous) previous.replaceWith(receipt);
-        else messagesEl.append(receipt);
+
+        if (!previous || !copy.inProcess) messagesEl.append(receipt);
         receiptMessages.set(key, receipt);
 
         if (restoreFocus) receipt.querySelector<HTMLElement>('summary,button')?.focus({preventScroll:true});
@@ -3700,6 +3722,13 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
     case "error":
       addMsg("msg error", humanizeModelError(ev.message));
       break;
+  }
+
+  if (currentRun && runId && currentRun.root.dataset.runId !== runId) {
+    currentRun.root.dataset.runId = runId;
+    groupProcessReceipts();
+  } else if (ev.kind === "notice" && ev.receipt) {
+    groupProcessReceipts();
   }
 }
 
