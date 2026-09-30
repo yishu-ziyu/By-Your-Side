@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { dataDir } from "./config.js";
+import { redactUrlCredentials } from "../../shared/network.js";
 
 /** 小于这个长度直接内联给模型；超过则落盘只给预览。 */
 export const FETCH_INLINE_LIMIT = 4_000;
@@ -98,14 +99,19 @@ export function formatFetchReply(
   /** 刚写盘成功时回调绝对路径；调用方（持有任务账本）负责 grant，本函数不登记授权。 */
   onSaved?: (path: string) => void,
 ): string {
-  const head = `HTTP ${reply.status}${reply.ok ? "" : " (not ok)"} ${reply.contentType || "unknown content-type"}; ${reply.bytes} bytes${reply.truncated ? " (truncated at the extension cap; the rest was not read)" : ""}.`;
+  // Response metadata is untrusted too: retain provenance without URL credentials
+  // or arbitrary Content-Type parameters, including short/low-entropy secrets.
+  const url = redactUrlCredentials(reply.url);
+  const mediaType = reply.contentType.split(";", 1)[0]!.trim();
+  const shownType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mediaType) ? mediaType : "unknown content-type";
+  const head = `HTTP ${reply.status}${reply.ok ? "" : " (not ok)"} ${shownType}; ${reply.bytes} bytes${reply.truncated ? " (truncated at the extension cap; the rest was not read)" : ""}.`;
   if (!dir) {
     if (savePath !== undefined) throw new Error("当前运行环境不支持保存 fetch 响应文件；请读取页面或使用页面下载入口。");
     const safe = redactCredentialText(reply.text).trim();
     const cut = safe.length > FETCH_BROWSER_INLINE_LIMIT;
     const note = ` Browser runtime: response not saved to a local file.${cut ? " Inline body truncated; use snapshot/read_element on the current page for the required section." : ""}`;
 
-    return `${head}${note}\n${wrapPageContent(safe.slice(0, FETCH_BROWSER_INLINE_LIMIT), { url: reply.url })}`;
+    return `${head}${note}\n${wrapPageContent(safe.slice(0, FETCH_BROWSER_INLINE_LIMIT), { url })}`;
   }
 
   const wantFile = savePath !== undefined || reply.text.length > FETCH_INLINE_LIMIT;
@@ -123,5 +129,5 @@ export function formatFetchReply(
 
   if (!body) return `${head} Empty body.`;
 
-  return `${head}\n${wrapPageContent(redactCredentialText(body), { url: reply.url })}`;
+  return `${head}\n${wrapPageContent(redactCredentialText(body), { url })}`;
 }

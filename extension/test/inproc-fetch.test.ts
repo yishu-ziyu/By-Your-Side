@@ -30,6 +30,33 @@ describe('extension fetch without local storage', () => {
     expect(out.length).toBeLessThan(17000);
   });
 
+  it.each(['tiny', 'SyntheticSecretAbC1234567890'])('redacts URL credentials and body secrets before showing large inline evidence (%s)', token => {
+    const response = reply('public data '.repeat(600) + '\nrecovery: BodySecretAbC1234567890');
+    response.url = `https://reader:shortpass@fixture.test/data?access_token=${token}&api%5Fkey=k&q=AbortSignal&page=2`;
+    const out = formatFetchReply(response);
+    expect(out).toContain('https://[redacted]@fixture.test/data?access_token=[redacted]&api%5Fkey=[redacted]&q=AbortSignal&page=2');
+    expect(out).not.toContain(token);
+    expect(out).not.toContain('shortpass');
+    expect(out).not.toContain('reader:');
+    expect(out).not.toContain('BodySecretAbC1234567890');
+    expect(out).toContain('recovery: [redacted]');
+  });
+
+  it('keeps ordinary source query parameters and a safe fragment useful', () => {
+    const response = reply('public data '.repeat(600));
+    response.url = 'https://fixture.test/docs?q=AbortSignal&page=2#examples';
+    expect(formatFetchReply(response)).toContain('url="https://fixture.test/docs?q=AbortSignal&page=2#examples"');
+  });
+
+  it('shows only the media type, not arbitrary content-type parameters', () => {
+    const response = reply('public data '.repeat(600));
+    response.contentType = 'text/html; charset=utf-8; token=header-secret';
+    const out = formatFetchReply(response);
+    expect(out).toContain('HTTP 200 text/html;');
+    expect(out).not.toContain('header-secret');
+    expect(out).not.toContain('charset');
+  });
+
   it('completes the production fetch tool after receiving a large response', async () => {
     const rpc = new ToolRpc();
     const sent = vi.fn(frame => {queueMicrotask(() => rpc.handleResult(frame.id,true,reply('MDN '+ 'x'.repeat(6000)),undefined,'executed'));});
