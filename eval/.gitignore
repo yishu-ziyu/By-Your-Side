@@ -1,0 +1,13 @@
+# Run outputs stay local: results, traces, screenshots, logs, scratch
+runs/
+traces/
+*.log
+*.trace.jsonl
+*.agent.log
+*-panel.png
+*-dry.png
+_to_judge.txt
+_quota_errors/
+_rerun_artifacts/
+_contaminated*/
+__pycache__/
