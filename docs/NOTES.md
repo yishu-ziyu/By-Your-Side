@@ -13,20 +13,18 @@
 
 | 问题 | 权威说明／证据 |
 |---|---|
-| 最近会话如何续接 | [09-23 交接](work/20260923-handoff-extension-migration.md)：只装扩展的方向已定，实验分支已跑通文字与语音；提交署名不得含 Agent |
+| 最近会话如何续接 | 从[当前状态](STATUS.md)的「下一步」接；提交署名不得含 Agent |
 | 浏览器动作与核验 | [协议](protocol.md) · [REV 记录](evals/20260922-browser-capability-integration-v2.md) |
 | 来源、改口与恢复 | [目标证据链](evals/20260921-goal-evidence-contract.md) · [Computer Use 复测](evals/20260922-computer-use-product-path.md) |
 | 语音、胶囊与开口 | [语音架构](voice-architecture.md) · [V2.3](evals/20260922-v22-spoken-result-shadow.md)：动作成功、胶囊足够、整项要求无需口答分别判断 |
 | 真入口与验收环境 | [验收入口](testing/acceptance.md) · [环境会改变被测状态](knowledge/patterns/extension-harness-changes-observed-state.md) |
-| 侧栏第二版与日常接续 | [09-29 验收](evals/20260929-sidebar-interaction.md)：隔离侧栏通过后仍核对日常原会话；日常曾后台已建空白会话但新建按钮未收尾，重开仅前端恢复，未把该现象归因于样式或重启后台 |
+| 侧栏与日常接续 | [09-29 验收](evals/20260929-sidebar-interaction.md)：隔离侧栏通过后仍核对日常原会话；日常出现的异常不据样式或重启直接归因 |
 | MiMo 读文档后恢复被锁 | [09-30 首次试用](evals/20260930-first-user-mimo.md)：未知 fetch 是侧栏事实，读取被误归类与执行锁原因只是模型陈述；先查实际诊断，不据回答直接改授权或绕过未知保护 |
-| 模型菜单动效如何续接 | [验收](evals/20260930-model-picker-motion.md)：10-01 变基到含顶部入口的 main，保留其 anchor/原点/焦点，只叠加 CSS 进出场与关闭即 inert；录制壳仍是旧输入区布局，只证明动效，入口位置以真侧栏检查为准 |
 | 修改后如何收尾 | [文档维护](development/documentation.md) · [经验索引](knowledge/index.md) |
 | 0 号用户逐条评语 | [逐条记录](evals/20260930-zero-user-incremental-review.md)：用户要求一次一条；正确结果与成功体验分开保存，不把对手动速度与成本的感受冒充实测数据 |
 | 用户面前的文字从哪来 | [界面问题 10 项](evals/20260926-ux-fixes.md)：内部文字只在 `shared/user-facing.ts` 翻译；「另开会话接手即收起旧确认」是本轮执行者的取舍，待用户认可 |
 | 记忆、主动与多模型验收 | [验收](evals/20260927-memory-proactive-task.md) · [开发日志](devlog/20260927-01-目标核对和提交条件由宿主兜住.md)：判断放在宿主，不靠主模型自觉。同时跑几家验收前先看机器负载（09-27 负载约 100 时，超时被误当成模型问题）；Kimi 主模型和快速模型共用账号，会撞到同时请求数上限 |
-| anti-slop 的现有约束 | [接入验收](evals/20260923-anti-slop-vendor.md)；不要通过重置 baseline 隐藏新问题 |
+| 扩展与 Node 测试环境 | [MDN 阅读修复](evals/20260930-mdn-reading-recovery.md)：扩展 shim 与真实 Node 测试不是同一能力环境；大响应落盘异常可在已有回执后被错计未知 |
+| anti-slop 的现有约束 | [接入验收](evals/20260923-anti-slop-vendor.md)；不要通过重置 baseline 隐藏新问题，确需例外时逐文件登记并在代码旁写明原因 |
 
 更早的逐次语音、GUI、模型和任务记录见[整理前原文](history/20260923-notes-before-governance.txt)。按问题读取，不把整份旧笔记注入每次开发。
-
-- 09-30 MDN 阅读：扩展 shim 与真实 Node 测试不是同一能力环境。大响应落盘异常可在已有 GET 回执后被错计未知；[验收](evals/20260930-mdn-reading-recovery.md)区分已复现路径与原真人会话仍缺的诊断证据。
