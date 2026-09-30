@@ -73,6 +73,8 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
 
   function closeModelPopover(): void {
     const returnFocus = modelPopover.contains(document.activeElement);
+    // 视觉退场由 CSS 完成；关闭即停止焦点和点击，不等待动画清理。
+    modelPopover.inert = true;
     modelPopover.hidden = true;
 
     if (returnFocus) anchor.focus();
@@ -122,14 +124,6 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
     if (x > 0 && x < modelPopover.offsetWidth) {
       modelPopover.style.transformOrigin = `${x}px top`;
     }
-  }
-
-  /** 展开只有这一次：列表项依次落位。搜索会重渲染列表，靠一次性 class 避免每次输入都重播。 */
-  function playPopoverOpening(): void {
-    modelPopover.classList.remove("opening");
-    void modelPopover.offsetWidth;
-    modelPopover.classList.add("opening");
-    window.setTimeout(() => modelPopover.classList.remove("opening"), 600);
   }
 
   function modelSearchInput(): HTMLInputElement | null {
@@ -352,11 +346,13 @@ export function mountModelPicker(options: ModelPickerOptions): ModelPicker {
       if (input) input.value = "";
       renderModelList();
       positionModelPopover();
+      modelPopover.inert = false;
       modelPopover.hidden = false;
       alignModelPopoverOrigin();
-      playPopoverOpening();
       modelBtn.setAttribute("aria-expanded", "true");
-      queueMicrotask(() => modelSearchInput()?.focus());
+      queueMicrotask(() => {
+        if (!modelPopover.hidden) modelSearchInput()?.focus();
+      });
     } else {
       closeModelPopover();
     }

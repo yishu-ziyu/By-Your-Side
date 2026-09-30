@@ -20,6 +20,7 @@
 | 真入口与验收环境 | [验收入口](testing/acceptance.md) · [环境会改变被测状态](knowledge/patterns/extension-harness-changes-observed-state.md) |
 | 侧栏第二版与日常接续 | [09-29 验收](evals/20260929-sidebar-interaction.md)：隔离侧栏通过后仍核对日常原会话；日常曾后台已建空白会话但新建按钮未收尾，重开仅前端恢复，未把该现象归因于样式或重启后台 |
 | MiMo 读文档后恢复被锁 | [09-30 首次试用](evals/20260930-first-user-mimo.md)：未知 fetch 是侧栏事实，读取被误归类与执行锁原因只是模型陈述；先查实际诊断，不据回答直接改授权或绕过未知保护 |
+| 模型菜单动效如何续接 | [验收](evals/20260930-model-picker-motion.md)：10-01 变基到含顶部入口的 main，保留其 anchor/原点/焦点，只叠加 CSS 进出场与关闭即 inert；录制壳仍是旧输入区布局，只证明动效，入口位置以真侧栏检查为准 |
 | 修改后如何收尾 | [文档维护](development/documentation.md) · [经验索引](knowledge/index.md) |
 | 0 号用户逐条评语 | [逐条记录](evals/20260930-zero-user-incremental-review.md)：用户要求一次一条；正确结果与成功体验分开保存，不把对手动速度与成本的感受冒充实测数据 |
 | 用户面前的文字从哪来 | [界面问题 10 项](evals/20260926-ux-fixes.md)：内部文字只在 `shared/user-facing.ts` 翻译；「另开会话接手即收起旧确认」是本轮执行者的取舍，待用户认可 |

@@ -601,38 +601,34 @@ html, body {
   box-shadow: var(--glass-specular), var(--popover-shadow, var(--glass-shadow));
   /* 缩放原点由 alignModelPopoverOrigin() 对齐到触发按钮中点；这个值只是兜底 */
   transform-origin: 46px bottom;
-  animation: modelPopoverIn var(--m-move) var(--e-swift);
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 180ms var(--e-swift), transform 180ms var(--e-swift),
+              display 180ms allow-discrete;
 }
 
-@keyframes modelPopoverIn {
-  from {
+/* hidden 立即更新逻辑状态；display 在退场完成后才切换，无延迟回调竞态。 */
+#model-popover[hidden] {
+  opacity: 0;
+  transform: scale(.97);
+  pointer-events: none;
+  transition-duration: 110ms;
+}
+
+@starting-style {
+  #model-popover:not([hidden]) {
     opacity: 0;
-    transform: scale(0.72);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
+    transform: scale(.97);
   }
 }
 
-/* 只在展开那一瞬给一次依次落位；搜索重渲染列表不重播（靠 .opening 一次性 class） */
-#model-popover.opening .model-list > * {
-  animation: modelItemIn 200ms var(--e-swift) backwards;
-}
-#model-popover.opening .model-list > *:nth-child(n+2) { animation-delay: 18ms; }
-#model-popover.opening .model-list > *:nth-child(n+3) { animation-delay: 36ms; }
-#model-popover.opening .model-list > *:nth-child(n+4) { animation-delay: 54ms; }
-#model-popover.opening .model-list > *:nth-child(n+5) { animation-delay: 72ms; }
-
-@keyframes modelItemIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  #model-popover,
+  #model-popover[hidden] {
     transform: none;
+    transition: none;
   }
+  @starting-style { #model-popover:not([hidden]) { transform: none; } }
 }
 
 .model-search {

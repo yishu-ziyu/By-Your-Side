@@ -33,6 +33,10 @@ npm run check                # 文档、边界、类型、测试、构建
 `package-lock.json` 要带上各平台的可选原生绑定（例如 `@rolldown/binding-darwin-arm64`）：缺了时已有的 `node_modules` 照常能跑，干净 `npm ci` 后 vitest 却起不来。改依赖后，在临时目录做一次干净 `npm ci` 再跑 `npm test` 核对。
 模块边界检查只允许扩展的 `inproc` 入口使用公开的 `@sideagent/agent/browser-core` 包接口；其他扩展页面仍不得直接依赖 agent 实现。
 
+模型菜单动效的隔离浏览器检查与并排录制：运行 `node extension/test/model-picker-motion.mjs`（[脚本](../../extension/test/model-picker-motion.mjs)），产物在 `out/model-picker-motion/`。它挂载真实组件、生产 CSS 与固定目录，不加载扩展或调用模型；不能替代日常 Chrome side panel 验收。脚本默认复用本机 Playwright/CfT，其他安装路径需调整 Playwright 导入、用 `MODEL_PICKER_CHROME` 指定浏览器。
+
+隔离 worktree 复用依赖时，不能把整个 node_modules 直接指回主工作区：其中 @sideagent 的相对链接会让内部包解析回主源码，浏览器 shim 也可能失效。应在 worktree 建本地依赖目录，复用第三方包，把 @sideagent/agent 与 extension 链回本 worktree；无须改产品构建逻辑。
+
 ## 调试入口
 
 ```bash
