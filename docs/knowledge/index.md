@@ -6,7 +6,7 @@
 - `patterns/`：经过核对的经验及其适用条件、证据；不自动成为指令。
 - [收尾流程](closeout.md)：有新经验或需要纠正旧经验时按需读取。
 - [提案与裁决](proposal-workflow.md)：待审建议及接受、拒绝、修改后的处理。
-- 待审提案：[完成标准模板使用入口字段](proposals/20260909-acceptance-entry-field.md)（2026-09-09）、[probe-scripts skill](proposals/20260909-probe-script-convention-skill.md)（2026-09-09）、[全量检查独占复跑](proposals/20260911-verification-exclusivity.md)（2026-09-11）；已采纳归档：[proposal-archive/accepted/](proposal-archive/accepted/)。
+- 待审提案：无（2026-10-01 三份均已裁决）。归档：[已采纳](proposal-archive/accepted/)、[已拒绝](proposal-archive/rejected/)。
 - [演化日志](logs.md)：记录知识和提案发生了什么变化；任务当前进度仍在 [STATUS](../../docs/STATUS.md)。
 
 | Pattern | 一句话 | 来源会话 | 日期 |

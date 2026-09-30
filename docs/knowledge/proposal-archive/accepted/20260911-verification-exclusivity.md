@@ -1,8 +1,8 @@
-# 待审提案：全量检查前确认独占，失败先单独复跑再归因
+# 提案：全量检查前确认独占，失败先单独复跑再归因（已采纳）
 
-- 状态：待审，未落地。
+- 状态：**已采纳**（2026-10-01，用户裁决）。
 - 目标：`AGENTS.md` 的「项目检查入口」一节。
-- 来源：[诊断读错观测对象](../patterns/observation-identity-mismatch.md)。
+- 来源：[诊断读错观测对象](../../patterns/observation-identity-mismatch.md)。
 
 ## 建议改动
 
@@ -28,6 +28,10 @@
 
 - 单独复跑：136 文件 1127 项通过（本轮多次）。
 - 并发时段：2–3 项失败，含 `extension/test/click-integrity.test.ts` 的 B1，均不在本轮改动文件内。
-- 并行工作线产物与时间戳：见 [pattern](../patterns/observation-identity-mismatch.md#验证) 与 [STATUS](../../../docs/STATUS.md) 顶部未决项。
+- 并行工作线产物与时间戳：见 [pattern](../../patterns/observation-identity-mismatch.md#验证) 与 [STATUS](../../../../docs/STATUS.md) 顶部未决项。
 
 用户需要判断：这条是否值得写进检查入口。规则当前未改动，不宣称它已生效。
+
+## 裁决
+
+2026-10-01 用户按建议采纳。落地：`AGENTS.md`「项目检查入口」追加原文一条；纯文档改动，`npm run check:docs` 通过。

@@ -1,8 +1,8 @@
-# 待审提案：完成标准模板增加使用入口字段
+# 提案：完成标准模板增加使用入口字段（已拒绝）
 
-- 状态：待审，未落地。
+- 状态：**已拒绝**（2026-10-01，用户裁决）。
 - 目标：`AGENTS.md` 中的“完成标准格式”模板。
-- 来源：[验收入口错位的经验](../patterns/acceptance-entry-mismatch.md)。
+- 来源：[验收入口错位的经验](../../patterns/acceptance-entry-mismatch.md)。
 
 ## 建议改动
 
@@ -26,6 +26,10 @@
 
 ## 证据与待决事项
 
-[前轮验收](../../../docs/evals/20260909-wiki-consolidation-repair.md)只证明 Kimi 入口；[当前已确认目标](../../../docs/evals/20260909-codex-experience-closeout.md#已确认的目的与范围)是 Codex 任务收尾。二者不等价，已由用户反馈确认。
+[前轮验收](../../../../docs/evals/20260909-wiki-consolidation-repair.md)只证明 Kimi 入口；[当前已确认目标](../../../../docs/evals/20260909-codex-experience-closeout.md#已确认的目的与范围)是 Codex 任务收尾。二者不等价，已由用户反馈确认。
 
 用户需要判断：这一固定字段是否值得加入模板。模板当前未改动，不宣称该字段已证明能减少未来错误。
+
+## 裁决
+
+2026-10-01 用户按建议拒绝：`AGENTS.md`「开发与沟通约定」已要求改动前说明用户实际使用的宿主、界面或命令，模板再加一栏是重复。

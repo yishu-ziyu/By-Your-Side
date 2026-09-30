@@ -1,7 +1,9 @@
-# 待审提案：probe-scripts —— 一次性探针的执行环境检查
+# 提案：probe-scripts —— 一次性探针的执行环境检查（已拒绝）
+
+状态：**已拒绝**（2026-10-01，用户裁决）。
 
 日期：2026-09-09
-来源 pattern：[patterns/tsx-adhoc-probe-scripts.md](../patterns/tsx-adhoc-probe-scripts.md)
+来源 pattern：[patterns/tsx-adhoc-probe-scripts.md](../../patterns/tsx-adhoc-probe-scripts.md)
 
 ## 目标
 
@@ -44,3 +46,7 @@ description: 在本仓库编写或排查由 tsx 执行的一次性调试、验�
 ## 备注（不在本提案范围内）
 
 `docs/NOTES.md:270` 的 `scripts/reload-ext.mts` 应为 `.mjs`（事实不符），建议用户裁决时顺手修正；本 agent 无文档写权限，已在 pattern 页记录。
+
+## 裁决
+
+2026-10-01 用户按建议拒绝：目标是 `.kimi-code/skills/`，该宿主已不在使用；相关 pattern 保留在经验库，按需查阅即可。
