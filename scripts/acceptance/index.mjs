@@ -36,7 +36,3 @@ export { findServiceWorker } from "./cdp.mjs";
 export { buildDriverExpression, swDriver } from "./sw-driver.mjs";
 
 export { HOOK_EXPRESSION, installExecuteToolCallHook } from "./sw-hook.mjs";
-
-export { buildTeamDriverExpression, teamDriver } from "./team-driver.mjs";
-
-export { evaluateTeamRun, formatTeamRun } from "./team-result.mjs";

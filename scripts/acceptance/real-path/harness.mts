@@ -2,16 +2,15 @@
  * 真实路径验收驱动。
  *
  * 一次运行 = 一个隔离的无窗口 Chrome for Testing：扩展从当前源码构建到临时目录，换一把随机 key
- * （扩展 ID 与日常不同），经 Native Messaging 拉起当前源码的伴随进程。伴随进程的数据目录指到临时目录
- * （SIDEAGENT_DATA_DIR）；模型、语音、TypeSafe 都走真服务，凭据由它从 ~/.sideagent 原位只读。
+ * （扩展 ID 与日常不同），只装扩展：agent 跑在扩展的 offscreen 文档里，不注册本机伴随进程（本机模式已退役）。
  * 侧栏用 chrome.sidePanel.open 打开，是真侧栏，不是标签页里的 sidepanel.html。
  *
- * 不碰日常 Chrome、extension/dist、正在运行的日常伴随进程，也不写 ~/.sideagent。
+ * 不碰日常 Chrome、extension/dist，也不写 ~/.sideagent。
  */
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -98,8 +97,6 @@ function newExtensionKey() {
 
   return { key: publicKey.toString("base64"), id };
 }
-
-const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 
 async function dailyDistStamp(): Promise<string> {
   const files = ["manifest.json", "background.js", "sidepanel.js"];
@@ -377,14 +374,14 @@ export async function exportDiagnosticsViaSettings(
 
 /**
  * microphoneWav：用这个 WAV 充当麦克风，只放一遍；不给就没有麦克风。
- * withoutNativeHost：不注册伴随进程，模拟只装了扩展的电脑（扩展内 agent 实验）。
+ * withoutNativeHost：旧参数，保留只为兼容调用方；本机模式退役后一律只装扩展，传不传都一样。
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  */
-export async function launchRealPath({ microphoneWav, withoutNativeHost = false, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { microphoneWav?: string; withoutNativeHost?: boolean; chromeArgs?: string[] } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);
-  const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), host: join(root, "host"), downloads: join(root, "downloads") };
+  const dirs = { profile: join(root, "profile"), extension: join(root, "extension"), data: join(root, "data"), downloads: join(root, "downloads") };
 
   for (const dir of Object.values(dirs)) await mkdir(dir, { recursive: true });
 
@@ -407,40 +404,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
   manifest.key = key;
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 
-  // 日常配置只决定模型、代理和开关，里面没有凭据；复制过去让测试伴随进程和日常用同一个模型。
-  const dailyConfig = join(DAILY_DATA_DIR, "config.json");
-
-  if (existsSync(dailyConfig)) await copyFile(dailyConfig, join(dirs.data, "config.json"));
-
-  // --model=provider/id：只换测试伴随进程的模型，日常配置不动。
-  const modelOverride = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length);
-
-  if (modelOverride) {
-    const testConfig = existsSync(join(dirs.data, "config.json")) ? JSON.parse(await readFile(join(dirs.data, "config.json"), "utf8")) : {};
-    await writeFile(join(dirs.data, "config.json"), JSON.stringify({ ...testConfig, model: modelOverride }, null, 2));
-  }
-
-  const wrapper = join(dirs.host, "native-host.sh");
-  await writeFile(wrapper, [
-    "#!/bin/bash",
-    `echo $$ >> ${shellQuote(join(dirs.host, "pids"))}`,
-    `export SIDEAGENT_DATA_DIR=${shellQuote(dirs.data)}`,
-    "unset SIDEAGENT_TRACE_DIR SIDEAGENT_DOWNLOADS_DIR SIDEAGENT_ROUTE_SHADOW_DIR",
-    `exec ${shellQuote(process.execPath)} ${shellQuote(join(REPO, "node_modules/tsx/dist/cli.mjs"))} ${shellQuote(join(REPO, "agent/src/main.ts"))} 2>> ${shellQuote(join(dirs.host, "wrapper-err.log"))}`,
-    "",
-  ].join("\n"));
-  await chmod(wrapper, 0o755);
-  await mkdir(join(dirs.profile, "NativeMessagingHosts"), { recursive: true });
-
-  if (!withoutNativeHost) await writeFile(join(dirs.profile, "NativeMessagingHosts", "com.sideagent.host.json"), JSON.stringify({
-    name: "com.sideagent.host",
-    description: "SideAgent real-path acceptance host",
-    path: wrapper,
-    type: "stdio",
-    allowed_origins: [`chrome-extension://${id}/`],
-  }, null, 2));
-
-  // 日常 Chrome 从程序坞启动，环境里没有这些变量；伴随进程要和日常一样从文件读凭据。
+  // 日常 Chrome 从程序坞启动，环境里没有这些变量；隔离 Chrome 也不带。
   const env = { ...process.env };
 
   for (const name of ["STEPFUN_API_KEY", "SIDEAGENT_STEP_PLAN_KEY", "TYPESAFE_API_KEY", "SIDEAGENT_DATA_DIR"]) delete env[name];
@@ -461,6 +425,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
     ...chromeArgs,
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"], env });
+
   tempDir.setChild(chrome);
 
   let chromeStderr = "";
@@ -483,23 +448,7 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
 
   const hostLog = () => readFile(join(dirs.data, "agent.log"), "utf8").catch(() => "");
 
-  /** 包装脚本记下的是 tsx 启动器的 PID，真正的伴随进程是它的子进程；两者都要退出。 */
-  const hostProcesses = async (): Promise<number[]> => {
-    const launchers = (await readFile(join(dirs.host, "pids"), "utf8").catch(() => "")).split(/\s+/).filter(Boolean).map(Number);
-
-    const children = launchers.flatMap((pid) => {
-      try {
-        return execFileSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
-      } catch {
-        return [];
-      }
-    });
-
-    return [...new Set([...launchers, ...children])];
-  };
-
   const close = async () => {
-    const hostPids = await hostProcesses();
     await cdp.close().catch(() => {});
 
     if (chrome.exitCode === null && chrome.signalCode === null) {
@@ -509,20 +458,10 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
       if (chrome.exitCode === null && chrome.signalCode === null) chrome.kill("SIGKILL");
     }
 
-    const deadline = Date.now() + 10_000;
+    // 不注册本机伴随进程，所以没有可能残留的本机进程；字段保留给沿用它的检查。
+    const none: number[] = [];
 
-    while (hostPids.some(isAlive) && Date.now() < deadline) await sleep(250);
-    const leftover = hostPids.filter(isAlive);
-
-    for (const pid of leftover) {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        /* 已退出 */
-      }
-    }
-
-    return { hostPids, exitedWithChrome: leftover.length === 0, killed: leftover };
+    return { hostPids: none, exitedWithChrome: true, killed: none };
   };
 
   return {
@@ -537,16 +476,6 @@ export async function launchRealPath({ microphoneWav, withoutNativeHost = false,
     close,
     remove: async () => tempDir.release(),
   };
-}
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── 日常数据隔离的证据 ──────────────────────────────────────────

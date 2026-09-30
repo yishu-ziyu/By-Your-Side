@@ -140,25 +140,6 @@ export interface TeamView {
   capturedAt: number;
 }
 
-export interface AcceptanceContinuityEvidence {
-  sessionId: string;
-  instanceId: string;
-  taskId: string;
-  step: "before" | "continued";
-  active: boolean;
-  expectedSnapshotMarker: string;
-  resumedTabId?: number;
-  snapshotMarkerFound?: boolean;
-  preTaskPrompted?: boolean;
-  preTaskAgentStarted?: boolean;
-  contextTaskFound?: boolean;
-  resumeRequested?: boolean;
-  resumeAgentStarted?: boolean;
-  resumeSnapshotToolCalled?: boolean;
-  resumeSnapshotMarkerFound?: boolean;
-  resumeContinuationMarkerFound?: boolean;
-}
-
 export interface TeamFrozenMember {
   sessionId: string;
   role: TeamMemberRole;
@@ -246,18 +227,6 @@ export type ClientMessage = ConversationEnvelope & (
       groupId?: string;
       generation?: number;
     }
-  | {
-      /** 本地真实浏览器验收专用：先装配真实 worker session，再走正常接管协议。 */
-      type: "acceptance_prepare_team";
-      requestId: string;
-      capability: string;
-      live?:{leadGoal:string;workerGoal:string;leadContext?:PageContext;workerContext?:PageContext};
-      worker: { sessionId: string; tabId: number };
-      tasks: {
-        lead: { taskId: string; expectedSnapshotMarker: string };
-        worker: { taskId: string; expectedSnapshotMarker: string };
-      };
-    }
   | { type: "set_mode"; mode: AgentMode }
   | { type: "set_model"; model: string }
   | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
@@ -323,20 +292,6 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
       team?: TeamView;
     }
   | { type: "team_status"; team: TeamView }
-  | {
-      type: "acceptance_team_ready";
-      requestId: string;
-      ok: boolean;
-      members: string[];
-      models?:Record<string,string>;
-      continuity: AcceptanceContinuityEvidence[];
-      reason?: string;
-    }
-  | {
-      type: "acceptance_team_evidence";
-      requestId: string;
-      continuity: AcceptanceContinuityEvidence[];
-    }
   | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; /** 直连 display 调用身份；宿主区分帧族用，扩展不消费 */ sdkId?: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
@@ -1013,22 +968,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       }
     }
 
-    if (msg.type === "acceptance_prepare_team") {
-      if (!validRequestId(msg.requestId)) return null;
-
-      if (typeof msg.capability !== "string" || msg.capability.length < 32 || msg.capability.length > 128) return null;
-
-      if (!msg.worker || typeof msg.worker !== "object") return null;
-
-      if (!validOptionalSessionId(msg.worker.sessionId) || msg.worker.sessionId === undefined) return null;
-
-      if (typeof msg.worker.tabId !== "number" || !Number.isFinite(msg.worker.tabId)) return null;
-
-      if (!isAcceptanceTask(msg.tasks?.lead) || !isAcceptanceTask(msg.tasks?.worker)) return null;
-
-      if(msg.live!==undefined&&(!msg.live||typeof msg.live.leadGoal!=='string'||!msg.live.leadGoal.trim()||msg.live.leadGoal.length>12000||typeof msg.live.workerGoal!=='string'||!msg.live.workerGoal.trim()||msg.live.workerGoal.length>12000||(msg.live.leadContext!==undefined&&!isPageContext(msg.live.leadContext))||(msg.live.workerContext!==undefined&&!isPageContext(msg.live.workerContext))))return null;
-    }
-
     return msg;
   } catch {
     return null;
@@ -1205,24 +1144,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!isTeamView(msg.team)) return null;
     }
 
-    if (msg.type === "acceptance_team_ready") {
-      if(msg.models!==undefined&&(!msg.models||typeof msg.models!=="object"||Array.isArray(msg.models)||!Object.entries(msg.models).every(([id,model])=>validOptionalSessionId(id)&&typeof model==="string"&&model.length<=200)))return null;
-
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean") return null;
-
-      if (!Array.isArray(msg.members) || !msg.members.every((id) => validOptionalSessionId(id) && id !== undefined)) return null;
-
-      if (!Array.isArray(msg.continuity) || !msg.continuity.every(isAcceptanceContinuityEvidence)) return null;
-
-      if (msg.reason !== undefined && typeof msg.reason !== "string") return null;
-    }
-
-    if (msg.type === "acceptance_team_evidence") {
-      if (!validRequestId(msg.requestId)) return null;
-
-      if (!Array.isArray(msg.continuity) || !msg.continuity.every(isAcceptanceContinuityEvidence)) return null;
-    }
-
     return msg;
   } catch {
     return null;
@@ -1237,49 +1158,6 @@ function validOptionalSessionId(value: unknown): boolean {
 
 function validRequestId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 96;
-}
-
-function isAcceptanceTask(value: unknown): value is { taskId: string; expectedSnapshotMarker: string } {
-  if (!value || typeof value !== "object") return false;
-  const task = value as { taskId?: unknown; expectedSnapshotMarker?: unknown };
-
-  return validRequestId(task.taskId) && typeof task.expectedSnapshotMarker === "string" && task.expectedSnapshotMarker.length > 0;
-}
-
-function isAcceptanceContinuityEvidence(value: unknown): value is AcceptanceContinuityEvidence {
-  if (!value || typeof value !== "object") return false;
-  const evidence = value as Partial<AcceptanceContinuityEvidence>;
-
-  if (!validOptionalSessionId(evidence.sessionId) || evidence.sessionId === undefined) return false;
-
-  if (typeof evidence.instanceId !== "string" || !evidence.instanceId) return false;
-
-  if (!validRequestId(evidence.taskId)) return false;
-
-  if (evidence.step !== "before" && evidence.step !== "continued") return false;
-
-  if (typeof evidence.active !== "boolean") return false;
-
-  if (typeof evidence.expectedSnapshotMarker !== "string" || !evidence.expectedSnapshotMarker) return false;
-
-  if (evidence.resumedTabId !== undefined && typeof evidence.resumedTabId !== "number") return false;
-
-  if (evidence.snapshotMarkerFound !== undefined && typeof evidence.snapshotMarkerFound !== "boolean") return false;
-
-  for (const field of [
-    "preTaskPrompted",
-    "preTaskAgentStarted",
-    "contextTaskFound",
-    "resumeRequested",
-    "resumeAgentStarted",
-    "resumeSnapshotToolCalled",
-    "resumeSnapshotMarkerFound",
-    "resumeContinuationMarkerFound",
-  ] as const) {
-    if (evidence[field] !== undefined && typeof evidence[field] !== "boolean") return false;
-  }
-
-  return true;
 }
 
 const TEAM_PHASES: ReadonlySet<string> = new Set([

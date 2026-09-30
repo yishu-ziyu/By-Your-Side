@@ -106,32 +106,6 @@ export interface DriverOptions {
   fillValue?: string;
 }
 
-export interface TeamDriverOptions {
-  incSelector?: string;
-  inputSelector?: string;
-  inflightMs?: number;
-  capability?: string;
-  leadId?: string;
-  leadUrl?: string;
-  leadMark?: string;
-  leadFill?: string;
-  workerId?: string;
-  workerUrl?: string;
-  workerMark?: string;
-  workerFill?: string;
-  userLeadMark?: string;
-  userWorkerMark?: string;
-}
-
-export interface ExpectedTeamRun {
-  uniqueText?: string;
-  leadMark?: string;
-  workerMark?: string;
-  userLeadMark?: string;
-  userWorkerMark?: string;
-  blockedError?: string;
-}
-
 export function classifyFailure(err: unknown, stage?: string): string;
 export function containsNeedle(haystack: string, needle: string): boolean;
 export function evaluateRun(driverResult: unknown, expected?: ExpectedRun): EvaluatedRun;
@@ -160,8 +134,3 @@ export const USER_WORKER_MARK: string;
 export const TEAM_LEAD_SESSION: string;
 
 export const TEAM_WORKER_SESSION: string;
-
-export function buildTeamDriverExpression(opts: TeamDriverOptions): string;
-export function teamDriver(opts: TeamDriverOptions): Promise<unknown>;
-export function evaluateTeamRun(driverResult: unknown, expected?: ExpectedTeamRun): EvaluatedRun;
-export function formatTeamRun(runIndex: number, evaluated: EvaluatedRun): string;

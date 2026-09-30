@@ -109,37 +109,6 @@ export const HOOK_EXPRESSION = `(() => {
         statusBySession.set("main", "running");
       }
     };
-    globalThis.__saPrepareTeam = function (capability, workerId, tabId, leadTask, workerTask) {
-      const requestId = "accept-team-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
-      globalThis.__saLastServer = null;
-      globalThis.__saServerEvents = [];
-      if (!outgoing.sendClientMessage({
-        type: "acceptance_prepare_team",
-        requestId: requestId,
-        capability: capability,
-        worker: { sessionId: workerId, tabId: tabId },
-        tasks: { lead: leadTask, worker: workerTask },
-        ...(globalThis.__saAcceptanceConversationId ? { conversationId: globalThis.__saAcceptanceConversationId } : {})
-      })) return Promise.reject(new Error("验收装配消息没有发给 Agent"));
-      return new Promise(function (resolve, reject) {
-        const started = Date.now();
-        const timer = setInterval(function () {
-          const msg = (globalThis.__saServerEvents || []).find(function (event) {
-            return event && event.type === "acceptance_team_ready" && event.requestId === requestId;
-          });
-          if (msg && msg.type === "acceptance_team_ready" && msg.requestId === requestId) {
-            clearInterval(timer);
-            if (msg.ok) resolve(msg);
-            else reject(new Error(msg.reason || "Agent 验收装配失败"));
-            return;
-          }
-          if (Date.now() - started > 15000) {
-            clearInterval(timer);
-            reject(new Error("等待 Agent 验收装配超时"));
-          }
-        }, 40);
-      });
-    };
     if (typeof handleAbort === "function") globalThis.__saAbortTeam = handleAbort;
     globalThis.__saSendClient = function (msg) { return outgoing.sendClientMessage(msg); };
     // 隔离验收观察真实面板的授权选择，不记录请求正文或其它用户消息。

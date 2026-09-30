@@ -6,7 +6,6 @@ import { ToolRpc } from "./rpc.js";
 import { BrowserAgentSession, type SessionCreateOptions } from "./session.js";
 import { createBrowserTools } from "./tools.js";
 import {reserveBrowserDecision,reserveBrowserMaterial} from './browser-decision-budget.js';
-import { consumeAcceptanceCapability } from "./acceptance-capability.js";
 import { frozenMembersFromTakeover } from "./team-handoff.js";
 import type { ExperienceStore } from "./experience.js";
 import type { MemoryStore } from "./memory-store.js";
@@ -252,68 +251,10 @@ return toolSession.browserFieldMaterial(goal,control,signal);}, reserveDecision:
               return;
             }
 
-            if (!result.team.members.some((member) => member.phase === "restored")) return;
-            void fleet.waitForAcceptanceContinuity().then(
-              (continuity) => {
-                if (continuity.length > 0) {
-                  sendCurrent({ type: "acceptance_team_evidence", requestId: msg.requestId, continuity });
-                }
-              },
-              (err: unknown) => {
-                sendCurrent({
-                  type: "acceptance_team_evidence",
-                  requestId: msg.requestId,
-                  continuity: fleet.acceptanceContinuityEvidence().map((entry) => ({ ...entry, active: false })),
-                });
-                log(`验收续跑证据失败：${err instanceof Error ? err.message : String(err)}`);
-              },
-            );
           });
         break;
       }
 
-      case "acceptance_prepare_team":
-        if (!consumeAcceptanceCapability(msg.capability)) {
-          sendCurrent({
-            type: "acceptance_team_ready",
-            requestId: msg.requestId,
-            ok: false,
-            members: [],
-            continuity: [],
-            reason: "本地验收能力令牌无效或已使用",
-          });
-          break;
-        }
-
-        void fleet.prepareAcceptanceWorker({
-          id: msg.worker.sessionId,
-          tabId: msg.worker.tabId,
-          leadTask: msg.tasks.lead,
-          workerTask: msg.tasks.worker,
-          live:msg.live,
-        }).then(
-          (continuity) => {
-            sendCurrent({
-              type: "acceptance_team_ready",
-              requestId: msg.requestId,
-              ok: true,
-              members: [LEAD_SESSION_ID, msg.worker.sessionId],
-              models:{[LEAD_SESSION_ID]:session.modelName()??"unknown",[msg.worker.sessionId]:fleet.get(msg.worker.sessionId)?.modelName()??"unknown"},
-              continuity,
-            });
-          },
-          (err: unknown) => {
-            sendCurrent({
-              type: "acceptance_team_ready",
-              requestId: msg.requestId,
-              ok: false,
-              members: [LEAD_SESSION_ID],
-              continuity: [],
-              reason: err instanceof Error ? err.message : String(err),
-            });
-          },
-        );
-        break;
       case "set_mode":
         void session.setMode(msg.mode);
         break;

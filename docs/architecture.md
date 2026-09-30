@@ -8,7 +8,7 @@
 
 2026-09-22，依据 `main@94b1782` 的**当前工作树，含未提交改动**。本轮只读源码与七个测试文件，未执行测试、浏览器、模型请求、构建或重载。图描述源码能力，不代表日常已加载。
 
-[配置源码](../agent/src/config.ts#L27)的通用循环、显示快路与影子路由均缺省关闭；本机 `~/.sideagent/config.json` 四项开关目前均为 true，模型为 `minimax-cn/MiniMax-M3`。会话保存的模型可覆盖全局配置（[装配](../agent/src/main.ts#L153)）。[STATUS](STATUS.md)含旧加载记录，本轮未核对日常进程。新 A 保留“实现方报告通过，最新独立 review 待完成”。
+[配置源码](../agent/src/config.ts#L27)的通用循环、显示快路与影子路由均缺省关闭；本机 `~/.sideagent/config.json` 四项开关目前均为 true，模型为 `minimax-cn/MiniMax-M3`。会话保存的模型可覆盖全局配置（[装配](../extension/src/inproc/browser-host.ts#L71)）。[STATUS](STATUS.md)含旧加载记录，本轮未核对日常进程。新 A 保留“实现方报告通过，最新独立 review 待完成”。
 
 ## 一、当前主链路图
 
@@ -56,7 +56,7 @@ flowchart TD
 
 **明确填写。** 文字路径可精确复用已有技能；普通 fill 不是快捷选择器的通用分支，未匹配技能时由 Pi 主模型选工具。语音由 Realtime 观察、选 fill，宿主调用同一已注册工具，不增加 Pi 推理；歧义时才选 `judge_browser_action`。执行、结果登记和反馈归不同代码层；“不保存/提交”仍须贯穿要求、工具选择与权限检查，不能仅凭一句提示词证明。[快捷候选](../agent/src/fast-task.ts#L127)、[直连](../agent/src/session.ts#L998)。
 
-**复杂任务。** 文字进入 Pi；语音经 `task_action` 委派，源码将其暴露与 `generalBrowserLoop` 开关联动，关闭时仍有 `browser_request` 旧分类入口。主模型提出目标、研究和生成内容；宿主校验目标覆盖、保存原文、核验落点。可选 Fleet、QuickJS `browser_run` 或有界 Jev 循环；技能复用已有程序，材料复用已捕获文本，均走现有工具闸门。[装配](../agent/src/main.ts#L163)、[旧分类](../agent/src/conversation-manager.ts#L492)。
+**复杂任务。** 文字进入 Pi；语音经 `task_action` 委派，源码将其暴露与 `generalBrowserLoop` 开关联动，关闭时仍有 `browser_request` 旧分类入口。主模型提出目标、研究和生成内容；宿主校验目标覆盖、保存原文、核验落点。可选 Fleet、QuickJS `browser_run` 或有界 Jev 循环；技能复用已有程序，材料复用已捕获文本，均走现有工具闸门。[装配](../extension/src/inproc/browser-host.ts#L71)、[旧分类](../agent/src/conversation-manager.ts#L492)。
 
 串行等待包括文字预观察→快捷判断→Pi、直接工具队列→整批结果及生成结束→Realtime续答、目标读回→Jev→必要时主模型复核。影子路由不被主调用等待；续答判重的 200ms 是扣音预算。端到端耗时及各分支使用频率**待验证**，不按模块数估算。[工具队列/回传](../agent/src/realtime-voice-connection.ts#L798)、[核验](../agent/src/goal-reasoning-review.ts#L30)。
 

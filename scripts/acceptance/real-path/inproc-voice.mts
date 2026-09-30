@@ -156,8 +156,10 @@ const states: string[] = [];
 
 const result: JsonRecord = { case: `inproc-voice-${caseName}`, startedAt: startedAt.toISOString(), question: QUESTION, model: modelArg };
 
-// --native：同一段录音走现有的本机伴随进程，用来对照迁移前后的行为。
-const native = process.argv.includes("--native");
+// --native：原先同一段录音走本机伴随进程做对照；本机模式已退役，传了就报错。
+if (process.argv.includes("--native")) throw new Error("--native 已随本机模式退役，只能验收扩展内路径");
+
+const native = false;
 
 const voiceArg = process.argv.find((arg) => arg.startsWith("--voice="))?.slice("--voice=".length);
 

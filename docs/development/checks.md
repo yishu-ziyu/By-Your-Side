@@ -39,13 +39,9 @@ npm run check                # 文档、边界、类型、测试、构建
 
 ## 调试入口
 
-```bash
-npm run dev:agent            # WebSocket 调试模式
-```
+本机伴随进程入口（`npm run dev:agent` 的 WebSocket 调试模式、Native Messaging 宿主）已随本机模式退役删除。扩展里仍保留 WebSocket 回退连接，供 `accept:journeys` 与 P0 本地运行把 Node 里的会话管理接到隔离扩展上（是否一并删除待定，见[退役验收](../evals/20261001-retire-native-and-dead-code.md)）。
 
-该模式默认监听 `127.0.0.1:7758` 并打印连接 token。扩展在 Native Messaging 不可用时可回退连接；它不是普通安装的前置步骤。
-
-Native 模式日志位于 `~/.sideagent/agent.log` 与 `~/.sideagent/wrapper-err.log`。`npm run reload:ext` 需要 Chrome 的远程调试入口，且必须在明确的加载范围内执行；配置和构建存在不证明运行版已经采用。
+`npm run reload:ext` 需要 Chrome 的远程调试入口，且必须在明确的加载范围内执行；配置和构建存在不证明运行版已经采用。
 
 ## CI 与人工复核
 

@@ -48,22 +48,6 @@ const chrome = run(`"/Applications/Google Chrome.app/Contents/MacOS/Google Chrom
 
 checks.push({ name: "chrome", ok: Boolean(chrome), detail: chrome || "not found", blocked: !chrome });
 
-const hostManifest = join(homedir(), "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sideagent.host.json");
-
-let hostDetail = "missing";
-
-if (present(hostManifest)) {
-  try {
-    const json = JSON.parse(readFileSync(hostManifest, "utf8")) as { name?: string; path?: string; allowed_origins?: string[] };
-    hostDetail = `name=${json.name ?? "?"} origins=${json.allowed_origins?.length ?? 0} path=${json.path ? "set" : "missing"}`;
-    checks.push({ name: "native_host", ok: json.name === "com.sideagent.host" && Array.isArray(json.allowed_origins) && json.allowed_origins.length > 0, detail: hostDetail });
-  } catch (error) {
-    checks.push({ name: "native_host", ok: false, detail: error instanceof Error ? error.message : String(error) });
-  }
-} else {
-  checks.push({ name: "native_host", ok: false, detail: "not installed (npm run install:host)", blocked: true });
-}
-
 const dist = join(REPO_ROOT, "extension", "dist", "manifest.json");
 
 checks.push({ name: "extension_build", ok: present(dist), detail: present(dist) ? "extension/dist present" : "run npm run build", blocked: !present(dist) });

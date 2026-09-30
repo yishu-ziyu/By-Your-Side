@@ -53,7 +53,7 @@ Explore broadly. Implement simply. Abstract late.
 ### 项目检查入口
 
 - 按影响范围先跑定点检查；通过后只为新改动、失败或未决风险扩大验证。完整工程检查为 `npm run check`（文档、模块边界、类型、测试、构建），各专项命令和使用边界见[开发检查](docs/development/checks.md)；修改 `shared/protocol.ts` 时覆盖受影响的契约。发布评测入口为 `npm run doctor`、`npm run eval:offline`、`npm run eval:integration -- --headless`、`npm run eval:live`、`npm run eval:report`、`npm run release:verify`。门槛从 `eval/protected/quality-gates.json` 读取；缺凭据/预算/硬件为 BLOCKED，不算 PASS。
-- 浏览器验收入口为 `npm run accept:browser`、`npm run accept:team`、`npm run accept:sessions`，按任务选择。隔离检查、合成输入与用户日常入口分别留证，不互相冒充；环境操作仍遵循有效授权。`accept:browser` 仍连接开发者 ChromeMain，不能当作正式发布全链路。
+- 浏览器验收入口为 `npm run accept:browser`、`npm run accept:real-path`（只装扩展的真实路径，逐套见[验收入口](docs/testing/acceptance.md)），按任务选择。隔离检查、合成输入与用户日常入口分别留证，不互相冒充；环境操作仍遵循有效授权。`accept:browser` 仍连接开发者 ChromeMain，不能当作正式发布全链路。
 - 浏览器验收默认无头运行（`--headless=new`，不创建窗口），脚本在没有无头参数时拒绝运行；涉及可见运动/动效的检查单独安排并先取得用户同意，不得靠 `--window-position` 之类方式隐藏窗口。
 - 纯文档修改检查差异与引用，不运行产品测试或构建。
 - 同一工作区可能同时存在其他工作线：跑全量检查前确认没有并行的构建、测试或扩展重载；出现失败先记录失败文件与用例名，在独占条件下单独复跑，再判断是否属于本次改动。独占条件下仍稳定复现的失败，照常按本次改动的问题处理。

@@ -12,7 +12,6 @@ import {
   isLeadSession,
   type AgentRunState,
   type AgentUiEvent,
-  type AcceptanceContinuityEvidence,
   type TeamView,
 } from "../../shared/protocol.js";
 import {
@@ -30,7 +29,6 @@ import type { FetchConsentBroker } from "./fetch-consent.js";
 import { BrowserAgentSession } from "./session.js";
 import { createBrowserTools } from "./tools.js";
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
-import { registerAcceptanceModel } from "./acceptance-model.js";
 
 export const MAX_WORKERS = 2;
 
@@ -403,86 +401,6 @@ export class Fleet {
     session.sendUserMessage(goal);
 
     return { id, tabId };
-  }
-
-  /** 本地验收装配：复用生产 worker 注册路径，但不发模型任务。 */
-  async prepareAcceptanceWorker(opts: {
-    id: string;
-    tabId: number;
-    leadTask: { taskId: string; expectedSnapshotMarker: string };
-    workerTask: { taskId: string; expectedSnapshotMarker: string };
-    live?:{leadGoal:string;workerGoal:string;leadContext?:PageContext;workerContext?:PageContext};
-  }): Promise<AcceptanceContinuityEvidence[]> {
-    const { id, tabId } = opts;
-
-    if (!this.workers.has(id)) {
-      assertCanSpawn(this.workers.size);
-
-      if (sanitizeWorkerId(id, []) !== id) throw new Error(`验收 worker id 无效：${id}`);
-      await this.createWorkerSession({ id, peers: [], tabId });
-    }
-
-    const lead = this.lead;
-    const worker = this.workers.get(id);
-
-    if (!lead || !worker) throw new Error("验收会话装配不完整");
-
-    if (!lead.runtime) throw new Error("Lead runtime 不可用，无法注册本地验收模型");
-
-    if(opts.live){
-      lead.startTask(opts.live.leadGoal,opts.live.leadContext);worker.startTask(opts.live.workerGoal,opts.live.workerContext);
-
-      return []; // Real configured provider, no acceptance-model substitution.
-    }
-
-    const acceptanceModel = registerAcceptanceModel(lead.runtime);
-    await Promise.all([lead.setModel(acceptanceModel), worker.setModel(acceptanceModel)]);
-
-    const evidence: AcceptanceContinuityEvidence[] = [
-      { sessionId: LEAD_SESSION_ID, ...(await lead.beginAcceptanceTask(opts.leadTask.taskId, opts.leadTask.expectedSnapshotMarker)) },
-      { sessionId: id, ...(await worker.beginAcceptanceTask(opts.workerTask.taskId, opts.workerTask.expectedSnapshotMarker)) },
-    ];
-
-    console.error(`[sideagent] acceptance worker=${id} tab=${tabId}`);
-
-    return evidence;
-  }
-
-  acceptanceContinuityEvidence(): AcceptanceContinuityEvidence[] {
-    const out: AcceptanceContinuityEvidence[] = [];
-    const lead = this.lead?.acceptanceContinuityEvidence();
-
-    if (lead) out.push({ sessionId: LEAD_SESSION_ID, ...lead });
-
-    for (const [sessionId, session] of this.workers) {
-      const evidence = session.acceptanceContinuityEvidence();
-
-      if (evidence) out.push({ sessionId, ...evidence });
-    }
-
-    return out;
-  }
-
-  async waitForAcceptanceContinuity(timeoutMs = 15_000): Promise<AcceptanceContinuityEvidence[]> {
-    const traced: Array<[string, BrowserAgentSession]> = [];
-
-    if (this.lead?.acceptanceContinuityEvidence()) traced.push([LEAD_SESSION_ID, this.lead]);
-
-    for (const [sessionId, session] of this.workers) {
-      if (session.acceptanceContinuityEvidence()) traced.push([sessionId, session]);
-    }
-
-    if (traced.length === 0) return [];
-
-    return Promise.all(
-      traced.map(async ([sessionId, session]) => {
-        const evidence = await session.waitForAcceptanceResume(timeoutMs);
-
-        if (!evidence) throw new Error(`验收会话 ${sessionId} 没有续跑证据`);
-
-        return { sessionId, ...evidence };
-      }),
-    );
   }
 
   private async createWorkerSession(opts: {

@@ -2,7 +2,8 @@
  * 扩展侧剪贴板桥：经本机 HTTP 调用伴随进程里的 macOS NSPasteboard 宿主。
  * 语义对齐 ClipboardBridge（beginTemporary → changeCount；finish 并发则 changed 且不覆盖）。
  *
- * 宿主实现见 agent/src/clipboard-darwin.ts（对照 citrolabs/ego-lite@dca7003… MIT / CitroLabs）。
+ * 宿主原在本机伴随进程里（agent/src/clipboard-darwin.ts，对照 citrolabs/ego-lite@dca7003… MIT / CitroLabs），
+ * 已随本机模式退役：只装扩展时没有 clipboardPort，富文本粘贴与退役前一样失败（行为未改）。
  * 本文件不触碰用户剪贴板正文，也不把正文写入日志。
  */
 
@@ -14,7 +15,7 @@ import type {
 
 /**
  * 验收脚本可以在 globalThis 上覆盖剪贴板宿主地址
- * （见 scripts/acceptance/browser-capability-paste.mts 的 initScript）。
+ * （原 scripts/acceptance/browser-capability-paste.mts 的 initScript，已随本机模式删除）。
  * 用具名接口声明这个注入点：不再写 `declare const globalThis: typeof globalThis & …`，
  * 那种自指写法会让 globalThis 的类型环路回自身（TS2502）。
  */

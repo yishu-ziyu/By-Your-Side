@@ -6,11 +6,7 @@
   "exports": {
     "./browser-core": "./src/browser-core.ts"
   },
-  "bin": {
-    "sideagent": "src/main.ts"
-  },
   "scripts": {
-    "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

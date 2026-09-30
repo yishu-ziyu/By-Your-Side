@@ -8,8 +8,6 @@
 
 - `npm run accept:browser`：浏览器主链。
 - `npm run accept:capability`：浏览器能力对齐。
-- `npm run accept:team`：多 Agent 协作。
-- `npm run accept:sessions`：会话管理。
 - `npm run accept:real-path`：一次跑完全部真实路径用例（见下节），汇总写 `out/acceptance/real-path/summary-<时间>.json`；`-- --only=a,b` 为过滤轮，恒不算整轮通过。
 - `npm run accept:journeys -- --suite smoke|sample|baseline|full`：12 个完整任务模板，真实侧栏 + 真模型 + 独立判定器；结果在 `eval/runs/journeys-*`。
 - `npm run accept:isolated`：QA-01 v2 隔离无头验收，默认不调用模型、不需凭据；CI 工作流 `.github/workflows/e2e.yml` 只跑其中 2026-09-23 在 macOS 整轮全绿的 9 个场景（F1–F5、F4b、C1、S1、S2）作回归门槛；目前仅手动触发，待 Linux 首次通过后再挂到 PR。
@@ -27,7 +25,7 @@ ONLY=C5 npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headl
 npx tsx scripts/acceptance/browser-capability-integration-v2.mts --headless --only=S4,S6
 ```
 
-场景 ID：`F1 F2 F3 F4 F4b F5 C1 C2 C3 C4 C5 S1 S2 S3 S4 S5 S6 S7`（`C6` 富文本粘贴走单独通道 `browser-capability-paste.mts`）。
+场景 ID：`F1 F2 F3 F4 F4b F5 C1 C2 C3 C4 C5 S1 S2 S3 S4 S5 S6 S7`（`C6` 富文本粘贴原走单独通道 `browser-capability-paste.mts`，依赖本机伴随进程的剪贴板服务，已随本机模式删除）。
 
 无头窗口从不聚焦，产品按设计不把工作页切到前台，所以工作页默认是隐藏状态。C2 先验证隐藏页上的滚轮被快速拒绝、页面没收到事件，再把页切到前台（模拟用户切回窗口）验证落点。
 

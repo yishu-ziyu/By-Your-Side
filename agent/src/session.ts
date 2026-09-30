@@ -76,24 +76,6 @@ import { SKILL_OUTPUT_CONTRACT_VERSION, HIDDEN_MATERIAL, redactSkillMaterials, t
 import { loadFastSkillOptions, trySkillFastLoop, type FastSkillGoalBinding, type SelectedSkillRun } from "./skill-fast-loop.js";
 import { programFirstGuidance } from "./program-first.js";
 
-export interface SessionAcceptanceContinuityEvidence {
-  instanceId: string;
-  taskId: string;
-  step: "before" | "continued";
-  active: boolean;
-  expectedSnapshotMarker: string;
-  resumedTabId?: number;
-  snapshotMarkerFound?: boolean;
-  preTaskPrompted: boolean;
-  preTaskAgentStarted: boolean;
-  contextTaskFound: boolean;
-  resumeRequested: boolean;
-  resumeAgentStarted: boolean;
-  resumeSnapshotToolCalled: boolean;
-  resumeSnapshotMarkerFound: boolean;
-  resumeContinuationMarkerFound: boolean;
-}
-
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; selectedSkill?: SelectedSkillRun }
 
@@ -798,8 +780,6 @@ if(required.includes(key))candidates.set(key,attachment);
   private modeState: { value: AgentMode } = { value: "act" };
   private readonly hold = new SessionHold();
   private readonly runTrace = new RunTrace();
-  private readonly instanceId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  private acceptanceTrace: SessionAcceptanceContinuityEvidence | null = null;
   private controlEpoch = 0;
   /**
    * 已交给 Pi、但还没被模型读到的插话。按记录跟踪而不是按文本集合：
@@ -860,7 +840,7 @@ if(required.includes(key))candidates.set(key,attachment);
     return this.hold.isHeld();
   }
 
-  /** 本机专用的完整模型运行时（请人、本地验收模型）；扩展里的循环没有它。 */
+  /** 本机专用的完整模型运行时（请人）；扩展里的循环没有它。 */
   nodeRuntime: ModelRuntime | null = null;
 
   get runtime(): ModelRuntime | null {
@@ -3433,7 +3413,6 @@ return true;}
     this.cancelPendingHandback();
     this.experience?.interrupt();
     this.hold.abort();
-    this.acceptanceTrace = null;
     this.memoryRuntime?.invalidateUserTurn();
     void this.stopCurrentRun().catch(() => {});
   }
@@ -3507,12 +3486,6 @@ return true;}
       return Promise.resolve(false);
     }
 
-    if (this.acceptanceTrace) {
-      this.acceptanceTrace.resumeRequested = true;
-      this.acceptanceTrace.resumedTabId = context.tabId;
-      this.acceptanceTrace.snapshotMarkerFound = snapshot.includes(this.acceptanceTrace.expectedSnapshotMarker);
-    }
-
     // The extension already read this page for handback; retain that actual observation
     // instead of making the resumed model repeat it only to repair the progress ledger.
     const observationId = `handback-${randomUUID()}`;
@@ -3538,64 +3511,6 @@ return true;}
     void started.then(ok=>{if(ok)this.deferredSteers.splice(0,queued.length);});
 
     return started;
-  }
-
-  async beginAcceptanceTask(taskId: string, expectedSnapshotMarker: string): Promise<SessionAcceptanceContinuityEvidence> {
-    const session = this.session;
-
-    if (!session?.model) throw new Error("验收会话不可用");
-    await session.agent.waitForIdle();
-    this.memoryRuntime?.invalidateUserTurn();
-    this.acceptanceTrace = {
-      instanceId: this.instanceId,
-      taskId,
-      step: "before",
-      active: false,
-      expectedSnapshotMarker,
-      preTaskPrompted: true,
-      preTaskAgentStarted: false,
-      contextTaskFound: false,
-      resumeRequested: false,
-      resumeAgentStarted: false,
-      resumeSnapshotToolCalled: false,
-      resumeSnapshotMarkerFound: false,
-      resumeContinuationMarkerFound: false,
-    };
-    void session
-      .prompt(
-        [
-          "[SIDEAGENT ACCEPTANCE ORIGINAL TASK]",
-          `SIDEAGENT_ACCEPTANCE_TASK:${taskId}`,
-          "Keep this original task active until the user takes over. Resume it only after handback.",
-        ].join("\n"),
-      )
-      .catch((err: unknown) => this.emitError(err));
-    await this.waitForAcceptance((trace) => trace.preTaskAgentStarted && trace.contextTaskFound && trace.active);
-
-    return this.acceptanceContinuityEvidence()!;
-  }
-
-  acceptanceContinuityEvidence(): SessionAcceptanceContinuityEvidence | null {
-    if (!this.acceptanceTrace) return null;
-    this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
-
-    return { ...this.acceptanceTrace };
-  }
-
-  async waitForAcceptanceResume(timeoutMs = 15_000): Promise<SessionAcceptanceContinuityEvidence | null> {
-    if (!this.acceptanceTrace) return null;
-    await this.waitForAcceptance(
-      (trace) =>
-        trace.step === "continued" &&
-        trace.resumeAgentStarted &&
-        trace.resumeSnapshotToolCalled &&
-        trace.resumeSnapshotMarkerFound &&
-        trace.resumeContinuationMarkerFound &&
-        trace.contextTaskFound,
-      timeoutMs,
-    );
-
-    return this.acceptanceContinuityEvidence();
   }
 
   /**
@@ -3744,32 +3659,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     this.settlePendingHandback(epoch, false);
   }
 
-  private acceptanceContextContainsTask(): boolean {
-    const taskId = this.acceptanceTrace?.taskId;
-
-    if (!taskId || !this.session) return false;
-
-    return JSON.stringify(this.session.agent.state.messages).includes(`SIDEAGENT_ACCEPTANCE_TASK:${taskId}`);
-  }
-
-  private async waitForAcceptance(
-    predicate: (trace: SessionAcceptanceContinuityEvidence) => boolean,
-    timeoutMs = 10_000,
-  ): Promise<void> {
-    const started = Date.now();
-
-    while (this.acceptanceTrace) {
-      this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
-
-      if (predicate(this.acceptanceTrace)) return;
-
-      if (Date.now() - started >= timeoutMs) throw new Error(`等待真实 AgentSession 验收事件超时 task=${this.acceptanceTrace.taskId}`);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-
-    throw new Error("验收任务已被中止");
-  }
-
   private subscribeEvents(): void {
     const session = this.session;
 
@@ -3794,13 +3683,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           const ev = event.assistantMessageEvent;
 
           if (ev.type === "text_delta") {
-            if (
-              this.acceptanceTrace?.resumeRequested &&
-              ev.delta.includes(`SIDEAGENT_ACCEPTANCE_CONTINUED:${this.acceptanceTrace.taskId}`)
-            ) {
-              this.acceptanceTrace.resumeContinuationMarkerFound = true;
-            }
-
             if (ev.delta.trim() && !this.explicitDelivery) this.deliveredResultThisRun = true;
             emit({ kind: "text_delta", delta: ev.delta });
           }
@@ -3843,10 +3725,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         case "tool_execution_start":
           if (!["browser_run", "snapshot", "read_element", "click", "fill", "press_key", "tabs", "list_tabs", "get_active_tab", "scroll", "send_user_message", "task_results", "task_goals", "capture_page_material"].includes(event.toolName)) this.skillLearning.cancel();
 
-          if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot") {
-            this.acceptanceTrace.resumeSnapshotToolCalled = true;
-          }
-
           if (this.toolArgs.size > 200) this.toolArgs.clear();
           this.toolArgs.set(event.toolCallId, asParams(event.args));
           this.beginTaskRead(event.toolCallId,event.toolName);
@@ -3873,18 +3751,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
-
-          if (this.acceptanceTrace?.resumeRequested && event.toolName === "snapshot" && !event.isError) {
-            this.acceptanceTrace.resumeSnapshotMarkerFound = firstText(event.result).includes(
-              this.acceptanceTrace.expectedSnapshotMarker,
-            );
-            this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
-
-            if (this.acceptanceTrace.resumeSnapshotMarkerFound && this.acceptanceTrace.contextTaskFound) {
-              this.acceptanceTrace.step = "continued";
-              this.acceptanceTrace.active = true;
-            }
-          }
 
           emit({
             kind: "tool_end",
@@ -3920,13 +3786,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             const epoch = this.handbackPromptEpoch;
             this.handbackPromptEpoch = null;
             this.settlePendingHandback(epoch, true);
-          }
-
-          if (this.acceptanceTrace) {
-            if (this.acceptanceTrace.resumeRequested) this.acceptanceTrace.resumeAgentStarted = true;
-            else this.acceptanceTrace.preTaskAgentStarted = true;
-            this.acceptanceTrace.active = true;
-            this.acceptanceTrace.contextTaskFound = this.acceptanceContextContainsTask();
           }
 
           setStatus(this.hold.statusAfterAgentStart());

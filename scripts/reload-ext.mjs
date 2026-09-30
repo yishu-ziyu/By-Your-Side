@@ -14,7 +14,7 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const CDP = `http://127.0.0.1:${process.env.CDP_PORT ?? 9222}`;
 
-/** manifest key（base64 SPKI DER）→ 扩展 ID（与 install-host.mjs 同算法）。 */
+/** manifest key（base64 SPKI DER）→ 扩展 ID（与 Chrome 同算法）。 */
 function extensionIdFromKey(key) {
   const der = Buffer.from(key, "base64");
   const hash = createHash("sha256").update(der).digest();

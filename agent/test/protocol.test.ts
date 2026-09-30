@@ -369,50 +369,6 @@ describe("parseClientMessage", () => {
     ).toBeNull();
   });
 
-  it("验收装配消息只接受明确的 worker session 与 tab", () => {
-    expect(
-      parseClientMessage(
-        JSON.stringify({
-          type: "acceptance_prepare_team",
-          requestId: "accept-team-1",
-          capability: "a".repeat(64),
-          worker: { sessionId: "wiki", tabId: 21 },
-          tasks: {
-            lead: { taskId: "lead-task", expectedSnapshotMarker: "lead-marker" },
-            worker: { taskId: "worker-task", expectedSnapshotMarker: "worker-marker" },
-          },
-        }),
-      ),
-    ).toEqual({
-      type: "acceptance_prepare_team",
-      requestId: "accept-team-1",
-      capability: "a".repeat(64),
-      worker: { sessionId: "wiki", tabId: 21 },
-      tasks: {
-        lead: { taskId: "lead-task", expectedSnapshotMarker: "lead-marker" },
-        worker: { taskId: "worker-task", expectedSnapshotMarker: "worker-marker" },
-      },
-    });
-    expect(
-      parseClientMessage(
-        JSON.stringify({ type: "acceptance_prepare_team", requestId: "accept-team-1", worker: { sessionId: "", tabId: 21 } }),
-      ),
-    ).toBeNull();
-    expect(
-      parseClientMessage(
-        JSON.stringify({
-          type: "acceptance_prepare_team",
-          requestId: "accept-team-1",
-          worker: { sessionId: "wiki", tabId: 21 },
-          tasks: {
-            lead: { taskId: "lead-task", expectedSnapshotMarker: "lead-marker" },
-            worker: { taskId: "worker-task", expectedSnapshotMarker: "worker-marker" },
-          },
-        }),
-      ),
-    ).toBeNull();
-  });
-
   it("returns null for JSON without a string type field", () => {
     expect(parseClientMessage("{}")).toBeNull();
     expect(parseClientMessage('{"type":1}')).toBeNull();
@@ -596,49 +552,6 @@ describe("parseServerMessage", () => {
       expect(msg.team.members.some((m) => m.phase === "paused_tab_closed")).toBe(true);
       expect(msg.team.phase).not.toBe("restored");
     }
-  });
-
-  it("parses acceptance_team_ready and rejects malformed readiness", () => {
-    expect(
-      parseServerMessage(
-        JSON.stringify({
-          type: "acceptance_team_ready",
-          requestId: "accept-team-1",
-          ok: true,
-          members: ["main", "wiki"],
-          continuity: [
-            {
-              sessionId: "main",
-              instanceId: "instance-main",
-              taskId: "lead-task",
-              step: "before",
-              active: true,
-              expectedSnapshotMarker: "lead-marker",
-            },
-          ],
-        }),
-      ),
-    ).toEqual({
-      type: "acceptance_team_ready",
-      requestId: "accept-team-1",
-      ok: true,
-      members: ["main", "wiki"],
-      continuity: [
-        {
-          sessionId: "main",
-          instanceId: "instance-main",
-          taskId: "lead-task",
-          step: "before",
-          active: true,
-          expectedSnapshotMarker: "lead-marker",
-        },
-      ],
-    });
-    expect(
-      parseServerMessage(
-        JSON.stringify({ type: "acceptance_team_ready", requestId: "accept-team-1", ok: true, members: [""] }),
-      ),
-    ).toBeNull();
   });
 });
 

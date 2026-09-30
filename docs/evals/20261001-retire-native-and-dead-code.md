@@ -44,3 +44,15 @@
 
 用量约 18 个文字任务、2 段语音。「没做完的一行」两个模型都失败，诊断记录里目标核对已知「还差找到并圈出升级套餐按钮」，但侧栏没收到可显示的未完成项；09-25 该功能只在本机模式验收过。原因未查，另立问题，不在本任务修。
 
+
+## 第 2 批删除（进行中，2026-10-01）
+
+第一阶段（本机入口）只做了不牵连其他检查的部分，约 4,800 行：
+
+- 本机入口：伴随进程主程序与 stdio 传输、macOS 剪贴板服务（连同依赖它的富文本粘贴检查 `browser-capability-paste.mts`）、安装脚本；npm 脚本 `dev:agent`、`install:host` 删除，`doctor` 不再查本机宿主清单。
+- 验收后门：验收模型、验收能力令牌、协议里的三条验收消息及校验、会话与 Fleet 里的验收续跑记录；多 Agent 协作与会话管理两套检查（`accept:team`、`accept:sessions`）及其驱动、结果判定与单元测试。
+- 真实路径驱动不再注册本机伴随进程，`withoutNativeHost` 保留为无效参数；`inproc-voice.mts --native` 改为报错。
+
+暂未删除、等待裁决：Node 会话循环（`node-agent-loop.ts`、`cliproxy.ts`）与扩展的 Native Messaging / WebSocket 连接。`eval:live`、`accept:journeys`、P0 本地运行、v23 两套检查仍在 Node 里托管会话并经 WebSocket 回退接入隔离扩展，删掉会让它们失效。
+
+证据：类型检查通过；单元测试 281 文件 / 3083 项通过（与本机代码一起删除的测试文件 5 个、protocol 用例 2 项）；隔离构建通过；`lint-changed` 无新增；隔离真侧栏 `out/acceptance/sidebar-interaction/retire-stage1` 23/23。
