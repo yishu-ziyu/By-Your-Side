@@ -10,7 +10,7 @@
  */
 import { withinValidity, type MemoryEntry } from "../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
-import { isRelevantExperience } from "./memory-relevance.js";
+import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 
 export type MemoryContextRule = "always" | "site" | "in-validity" | "asked";
 
@@ -91,8 +91,13 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
     if (!withinValidity(entry.validity, input.now)) { skipped.expired++; continue; }
 
-    // 自动总结、用户没改过的网站做法：还要对得上这件事的对象（沿用升级前的规则）。
-    if (entry.experience && entry.version === 1 && !isRelevantExperience(entry.experience.topic ?? entry.text, input.text)) continue;
+    // 网站范围的做法（含自动总结的）要对得上这件事，不论改过几次：没改过的自动总结按对象严格对，
+    // 用户改过或恢复过的按词宽松对（与 MemoryStore.select 一致）。到处适用的做法与用户自述的事实照常带。
+    if (entry.scope.kind === "site" && (entry.kind === "method" || entry.experience)) {
+      const relevant = entry.experience && entry.version === 1 ? isRelevantExperience(entry.experience.topic ?? entry.text, input.text) : isRelevantMemory(entry.text, input.text);
+
+      if (!relevant) continue;
+    } else if (entry.experience && entry.version === 1 && !isRelevantExperience(entry.experience.topic ?? entry.text, input.text)) continue;
 
     if (take(entry.text.length, facts, MEMORY_CONTEXT_CAPS.facts)) pickedEntries.push({ entry, rule });
   }
@@ -100,10 +105,13 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
   const tasks = [...input.tasks].sort((a, b) => b.endedAt - a.endedAt);
   const chosen = new Set<string>();
 
+  // 过期的带日期任务只在被问起时出现（asked 层），不走有效期层，也不走网站层。
+  const expiredIds = new Set<string>();
+
   for (const task of tasks) {
     if (!task.validity) continue;
 
-    if (!withinValidity(task.validity, input.now)) { skipped.expired++; continue; }
+    if (!withinValidity(task.validity, input.now)) { skipped.expired++; expiredIds.add(task.id); continue; }
 
     if (take(taskContextChars(task), dated, MEMORY_CONTEXT_CAPS.inValidity)) { pickedTasks.push({ task, rule: "in-validity" }); chosen.add(task.id); }
   }
@@ -124,7 +132,7 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
     for (const task of tasks) {
       if (here.used >= MEMORY_CONTEXT_CAPS.siteTasks.entries) break;
 
-      if (chosen.has(task.id) || !task.hosts.includes(input.hostname)) continue;
+      if (chosen.has(task.id) || expiredIds.has(task.id) || !task.hosts.includes(input.hostname)) continue;
 
       if (take(taskContextChars(task), here, MEMORY_CONTEXT_CAPS.siteTasks)) { pickedTasks.push({ task, rule: "site" }); chosen.add(task.id); }
     }

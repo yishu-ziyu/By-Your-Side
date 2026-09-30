@@ -210,6 +210,34 @@ describe("memory management confirmed mutations", () => {
   });
 });
 
+describe("memory refresh after multi-entry mutations", () => {
+  it("replaces stale rows and drops ghosts when the follow-up list arrives", () => {
+    const state = manager();
+    const first = state.beginList("c");
+    state.receive("c", { type: "memory_result", requestId: first.requestId, action: "list", ok: true, entries: [entry("a", 1), entry("b", 1), entry("c", 1)] });
+    const forget = state.beginForget("c", state.get("b")!);
+    state.receive("c", { type: "memory_result", requestId: forget.requestId, action: "forget", ok: true, deletedId: "b" });
+    // store also re-linked "a" (version bump) and removed history row "c"
+    const refresh = state.beginList("c");
+    expect(refresh.type).toBe("memory_list");
+    state.receive("c", { type: "memory_result", requestId: refresh.requestId, action: "list", ok: true, entries: [entry("a", 2)] });
+    expect(state.get("a")!.version).toBe(2);
+    expect(state.get("b")).toBeUndefined();
+    expect(state.get("c")).toBeUndefined();
+  });
+
+  it("renders both entries changed by a restore from the refreshed list", () => {
+    const state = manager();
+    const first = state.beginList("c");
+    state.receive("c", { type: "memory_result", requestId: first.requestId, action: "list", ok: true, entries: [entry("a", 1), entry("b", 1)] });
+    const restore = state.beginRestore("c", state.get("a")!);
+    state.receive("c", { type: "memory_result", requestId: restore.requestId, action: "restore", ok: true, entries: [entry("a", 2)] });
+    const refresh = state.beginList("c");
+    state.receive("c", { type: "memory_result", requestId: refresh.requestId, action: "list", ok: true, entries: [entry("a", 2), entry("b", 3)] });
+    expect(state.get("b")!.version).toBe(3);
+  });
+});
+
 describe("memory presentation helpers", () => {
   it("shows exact all/site scope and compares immutable historical snapshots", () => {
     const old = entry("format");

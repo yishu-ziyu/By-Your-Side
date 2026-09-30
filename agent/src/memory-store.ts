@@ -57,11 +57,9 @@ export class MemoryStore {
       // 被替换或失效的旧值只作历史，不能再被判断当作要改的那条。
       if (targets.some(e => e.status !== "active")) throw new Error("记忆目标或版本无效");
 
+      // 忘记一条事实：连同它被替换 / 撤下的旧值一起删掉，之后无从恢复。
       if (decision.action === "forget") {
-        for (const entry of targets) {
-          if (entry.experience) forgotten.push(entry.experience.runId);
-          entries.splice(entries.indexOf(entry), 1);
-        }
+        for (const entry of targets) removeChain(entries, forgotten, entry.id);
 
         return cloneEntries(targets);
       }
@@ -206,16 +204,39 @@ export class MemoryStore {
 
       if (index < 0) throw new Error("Memory entry was not found");
 
-      if (entries[index]!.version !== input.expectedVersion) throw new Error("Memory version conflict");
+      const current = entries[index]!;
 
-      if (entries[index]!.experience) forgotten.push(entries[index]!.experience!.runId);
-      entries.splice(index, 1);
+      if (current.version !== input.expectedVersion) throw new Error("Memory version conflict");
+
+      // 忘记生效的值 = 忘记这条事实：整条历史一起删。
+      if (current.status === "active") {
+        removeChain(entries, forgotten, current.id);
+
+        return;
+      }
+
+      // 只删一条历史：指向它的旧值改指向它的下一条，链不断开。
+      const now = Date.now();
+
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]!;
+
+        if (entry.replacedBy !== current.id) continue;
+        const relinked: MemoryEntry = { ...entry, version: entry.version + 1, updatedAt: Math.max(now, entry.updatedAt + 1) };
+
+        if (current.replacedBy) relinked.replacedBy = current.replacedBy;
+        else delete relinked.replacedBy;
+        entries[i] = relinked;
+      }
+
+      if (current.experience) forgotten.push(current.experience.runId);
+      entries.splice(entries.indexOf(current), 1);
     });
   }
 
   /**
-   * 撤销替换：被替换的旧值恢复生效，替换它的新值改为失效（留在历史里）。两条都按版本号核对，版本 +1。
-   * 返回改动的条目（恢复的在前）。
+   * 撤销：把一条被替换或失效的旧值恢复成这条事实唯一的生效值。链里当前生效的值改为失效，
+   * 并指向恢复的这条（留在历史里，可再撤回去）。所有改动的条目版本 +1。返回改动的条目（恢复的在前）。
    */
   async restore(input: { id: string; expectedVersion: number }): Promise<MemoryEntry[]> {
     assertMutationIdentity(input.id, input.expectedVersion);
@@ -228,18 +249,20 @@ export class MemoryStore {
 
       if (current.version !== input.expectedVersion) throw new Error("Memory version conflict");
 
-      if (current.status !== "replaced") throw new Error("这条记忆没有被替换，无需撤销");
+      if (current.status === "active") throw new Error("这条记忆正在生效，无需撤销");
       const now = Date.now();
+      const chainIds = chainOf(entries, current.id);
       const restored: MemoryEntry = { ...current, version: current.version + 1, status: "active", updatedAt: Math.max(now, current.updatedAt + 1) };
       delete restored.replacedBy;
       entries[index] = restored;
       const changed = [restored];
-      const replacerIndex = entries.findIndex((entry) => entry.id === current.replacedBy && entry.status === "active");
 
-      if (replacerIndex >= 0) {
-        const replacer = entries[replacerIndex]!;
-        entries[replacerIndex] = { ...replacer, version: replacer.version + 1, status: "invalid", updatedAt: Math.max(now, replacer.updatedAt + 1) };
-        changed.push(entries[replacerIndex]!);
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]!;
+
+        if (entry.id === current.id || entry.status !== "active" || !chainIds.has(entry.id)) continue;
+        entries[i] = { ...entry, version: entry.version + 1, status: "invalid", replacedBy: current.id, updatedAt: Math.max(now, entry.updatedAt + 1) };
+        changed.push(entries[i]!);
       }
 
       return changed;
@@ -341,6 +364,42 @@ export class MemoryStore {
 
       return cloneValue(result);
     });
+  }
+}
+
+/**
+ * 同一事实的历史链：顺着 replacedBy 两个方向连起来的所有条目（被替换的指向替换它的，
+ * 撤下的指向恢复的那条），链里至多一个生效值。
+ */
+function chainOf(entries: MemoryEntry[], id: string): Set<string> {
+  const ids = new Set([id]);
+  let grew = true;
+
+  while (grew) {
+    grew = false;
+
+    for (const entry of entries) {
+      const linked = ids.has(entry.id) ? entry.replacedBy !== undefined && !ids.has(entry.replacedBy) : entry.replacedBy !== undefined && ids.has(entry.replacedBy);
+
+      if (!linked) continue;
+      ids.add(ids.has(entry.id) ? entry.replacedBy! : entry.id);
+      grew = true;
+    }
+  }
+
+  return ids;
+}
+
+function removeChain(entries: MemoryEntry[], forgotten: string[], id: string): void {
+  const chainIds = chainOf(entries, id);
+
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]!;
+
+    if (!chainIds.has(entry.id)) continue;
+
+    if (entry.experience) forgotten.push(entry.experience.runId);
+    entries.splice(i, 1);
   }
 }
 

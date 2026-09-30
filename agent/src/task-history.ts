@@ -15,15 +15,36 @@ export class TaskHistoryStore {
     return (await this.read()).sort((a, b) => b.endedAt - a.endedAt);
   }
 
-  /** 同一任务（同一 runId）接着做完时覆盖原条目。 */
+  /** 同一任务（同一 runId）接着做完时覆盖原条目；用过次数与时间沿用，新条目没带日期时沿用原日期与有效期。 */
   async record(entry: TaskHistoryEntry): Promise<void> {
     if (!isTaskHistoryEntry(entry)) throw new Error("Task history entry is invalid");
     await this.mutate(tasks => {
+      const prev = tasks.find(task => task.id === entry.id);
       const kept = tasks.filter(task => task.id !== entry.id);
-      kept.push(entry);
+      const carried: TaskHistoryEntry = { ...entry };
+
+      if (prev?.useCount !== undefined) carried.useCount = prev.useCount;
+
+      if (prev?.lastUsedAt !== undefined) carried.lastUsedAt = prev.lastUsedAt;
+
+      if (entry.date === undefined && entry.validity === undefined) {
+        if (prev?.date !== undefined) carried.date = prev.date;
+
+        if (prev?.validity !== undefined) carried.validity = prev.validity;
+      }
+
+      kept.push(carried);
 
       return kept.sort((a, b) => b.endedAt - a.endedAt).slice(0, TASK_HISTORY_MAX);
     });
+  }
+
+  /**
+   * 补上「这件事关于哪天」：只改仍存在、且 endedAt 相同的那条。
+   * 已被删除的不重建，已被同一任务更新的记录覆盖过的不动（慢的日期判断晚到时）。
+   */
+  async patchDate(id: string, endedAt: number, dated: { date: string; validity: NonNullable<TaskHistoryEntry["validity"]> }): Promise<void> {
+    await this.mutate(tasks => tasks.map(task => (task.id === id && task.endedAt === endedAt ? { ...task, date: dated.date, validity: dated.validity } : task)));
   }
 
   /** 这几条刚被带给助手：用过次数加 1、记下时间；已不存在的 id 跳过。 */

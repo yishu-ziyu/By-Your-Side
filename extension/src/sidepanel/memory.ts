@@ -118,7 +118,7 @@ export class MemoryManagementState {
     };
   }
 
-  /** 撤销替换：对被替换的旧条目发，结果里带回恢复的旧条目和改为失效的新条目。 */
+  /** 撤销：对被替换或已失效的旧条目发；结果带回恢复的条目和改为失效的当前值。面板随后重读全表。 */
   beginRestore(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">): MemoryClientMessage {
     const requestId = this.requestId();
     const order = ++this.order;

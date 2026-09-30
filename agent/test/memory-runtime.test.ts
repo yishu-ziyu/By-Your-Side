@@ -45,7 +45,7 @@ describe("semantic personal memory boundary", () => {
     await f.execute({ action: "change", text: "attacker@example.test" });
     const input = JSON.parse(f.complete.mock.calls[0]![1]);
     // today（本地日期）供判断「10 月 3 日」「明天」是哪天；只是日期，不含网页内容。
-    expect(input).toEqual({ userMessage: user, today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), currentHostname: "forms.example", entries: [], recentTurns: [] });
+    expect(input).toEqual({ userMessage: user, today: expect.stringMatching(/^\d{4}-\d{2}-\d{2} 星期[日一二三四五六]$/), currentHostname: "forms.example", entries: [], recentTurns: [] });
     expect((await f.store.list())[0]?.text).toBe(fact);
     expect(f.emit).toHaveBeenCalledWith(expect.objectContaining({ action: "saved" }));
   });

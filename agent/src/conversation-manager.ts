@@ -845,11 +845,11 @@ return host?[host]:[];}catch{return [];}}))].slice(0,16);
 
     if(snap.goalPage?.title)entry.page=clip(snap.goalPage.title,200);
     // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
+    // 先立即写入（查「之前订了什么」不用等，也不会因等待被删后复活）；日期晚到时只补 date/validity。
     const session=this.entries.get(id)?.runtime.session;
+    const written=history.record(entry).catch(()=>{});
     const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
-    void dating.then(dated=>{if(dated){entry.date=dated.date;entry.validity=dated.validity;}
-
-return history.record(entry);}).catch(()=>{});
+    void Promise.all([written,dating]).then(([,dated])=>dated?history.patchDate(entry.id,entry.endedAt,dated):undefined).catch(()=>{});
   }
   private async fulfillOwedDelivery(id: string): Promise<void> {
     const progress = this.progress.get(id);

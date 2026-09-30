@@ -50,7 +50,7 @@ import { AttachmentsManager } from "./attachments.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ClientMessage, ConversationSummary, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
-import { MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
+import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { isWriteTool, memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { conversationBackgroundLabel, conversationStateLabel, resultCardCopy } from "./selectors.js";
@@ -62,6 +62,7 @@ import { ASK_STORE, type PendingAsk } from "../shared/ask-selection.js";
 import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } from "../shared/mark-motion.js";
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
+import { MemoryHistoryOpen } from "./memory-history-open.js";
 import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
@@ -858,6 +859,8 @@ let memoryForget: MemoryForget | null = null;
 /** 历史里正在撤销替换的那条。 */
 let memoryRestore: { id: string; pendingRequestId: string | null; error: string } | null = null;
 
+const memoryHistoryOpen = new MemoryHistoryOpen();
+
 let currentMemoryHostname = "";
 
 function memoryButton(label: string, action: string, id?: string): HTMLButtonElement {
@@ -1199,8 +1202,18 @@ function renderPastTasks(): HTMLElement {
     const meta = document.createElement("div");
     meta.className = "memory-row-meta";
     const info = document.createElement("span");
-    info.className = "memory-quiet";
-    info.textContent = [formatMemoryTime(task.endedAt), PAST_TASK_OUTCOME[task.outcome], task.page ?? task.hosts[0], task.validity?.end ? memoryUseLabel({ scope: { kind: "all" }, validity: task.validity }) : ""].filter(Boolean).join(" · ");
+    info.className = "memory-facts";
+    const kind = document.createElement("span");
+    kind.className = "memory-kind";
+    kind.dataset.kind = "past";
+    kind.textContent = MEMORY_KIND_LABEL.past;
+    const detail = document.createElement("span");
+    detail.className = "memory-quiet";
+    detail.textContent = [formatMemoryTime(task.endedAt), PAST_TASK_OUTCOME[task.outcome], task.page ?? task.hosts[0], task.validity?.end ? memoryUseLabel({ scope: { kind: "all" }, validity: task.validity }) : ""].filter(Boolean).join(" · ");
+    const used = document.createElement("span");
+    used.className = "memory-used";
+    used.textContent = task.useCount ? `用过 ${task.useCount} 次` : "还没用过";
+    info.append(kind, detail, used);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "memory-danger";
@@ -1237,7 +1250,10 @@ function handlePastTasksResult(msg: Extract<ServerMessage, { type: "task_history
 function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
   const section = document.createElement("details");
   section.className = "memory-history";
-  section.open = !!memoryRestore;
+  const ids = new Set(history.map((entry) => entry.id));
+  const forced = (!!memoryForget && ids.has(memoryForget.id)) || (!!memoryRestore && ids.has(memoryRestore.id));
+  section.open = memoryHistoryOpen.shouldOpen(forced);
+  section.addEventListener("toggle", () => memoryHistoryOpen.recordToggle(section.open, forced));
   const summary = document.createElement("summary");
   summary.textContent = `历史 · ${history.length}`;
   const intro = document.createElement("p");
@@ -1277,8 +1293,8 @@ function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
     const actions = document.createElement("div");
     const pending = memoryRestore?.id === entry.id && memoryRestore.pendingRequestId !== null;
 
-    if (entry.status === "replaced") {
-      const restore = memoryButton(pending ? "正在撤销…" : "撤销替换", "restore", entry.id);
+    if (entry.status === "replaced" || entry.status === "invalid") {
+      const restore = memoryButton(pending ? "正在恢复…" : entry.status === "replaced" ? "撤销替换" : "恢复这条", "restore", entry.id);
       restore.disabled = pending;
       actions.append(restore);
     }
@@ -1420,6 +1436,9 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   }
 
   if (!memoryDrawer.hidden) renderMemoryDrawer();
+
+  // 忘记/撤销会连带改别的条目（重连历史、删整条历史、两条一起改），本地补丁不够，重新读全表。
+  if ((outcome.action === "forget" || outcome.action === "restore") && outcome.kind === "success") requestMemoryList();
 }
 
 function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>, ui: MemoryUiRequest): void {
@@ -1442,6 +1461,7 @@ function openMemoryDrawer(inspection: MemoryInspection | null = null): void {
   memoryInspection = inspection;
   memoryEdit = null;
   memoryForget = null;
+  memoryHistoryOpen.reset();
   memoryDrawer.hidden = false;
   memoryShade.hidden = false;
   memoryOpen.setAttribute("aria-expanded", "true");

@@ -114,11 +114,17 @@ const TARGETS = {
   },
   // filled 2026-10-01 from implementer report: 新格式条目/任务的构造（D5/D6/D11 预置用）。
   build: {
-    profile: (o: { id: string; text: string; hostname?: string; createdAt: number; quote?: string; status?: string; used?: number; kind?: string }): JsonRecord => ({
-      id: o.id, version: 1, text: o.text, scope: o.hostname ? { kind: "site", hostname: o.hostname } : { kind: "all" },
-      sourceConversationId: "seed", createdAt: o.createdAt, updatedAt: o.createdAt,
-      kind: o.kind ?? KINDS.aboutYou, status: o.status ?? "active", sourceQuote: o.quote ?? o.text, useCount: o.used ?? 0, formatVersion: 2,
-    }),
+    profile: (o: { id: string; text: string; hostname?: string; createdAt: number; quote?: string; status?: string; used?: number; kind?: string; replacedBy?: string }): JsonRecord => {
+      const entry: JsonRecord = {
+        id: o.id, version: 1, text: o.text, scope: o.hostname ? { kind: "site", hostname: o.hostname } : { kind: "all" },
+        sourceConversationId: "seed", createdAt: o.createdAt, updatedAt: o.createdAt,
+        kind: o.kind ?? KINDS.aboutYou, status: o.status ?? "active", sourceQuote: o.quote ?? o.text, useCount: o.used ?? 0, formatVersion: 2,
+      };
+
+      if (o.replacedBy) entry.replacedBy = o.replacedBy;
+
+      return entry;
+    },
     task: (o: { id: string; goal: string; hostname: string; endedAt: number; summary?: string; trip?: { eventDate: string; validUntil: number } }): JsonRecord => {
       const task: JsonRecord = {
         id: o.id, conversationId: "seed", goal: o.goal, revisions: [], hosts: [o.hostname], outcome: "complete", summary: o.summary ?? o.goal, unfinished: [],
@@ -319,7 +325,7 @@ const verdict = (pass: boolean, evidence: JsonRecord): Verdict => ({ status: pas
 
 const startedAt = new Date();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-memory-foundation`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOString().replace(/[:.]/g, "-")}-memory-foundation-${modelArg ? modelArg.replace(/[^a-z0-9.-]+/gi, "_") : "scripted"}-${process.pid}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -354,6 +360,8 @@ type PanelState = { connected: boolean; ready: boolean; busy: boolean; userMessa
 let panel = "";
 
 let work = "";
+
+let workTargetId = "";
 
 let ext = "";
 
@@ -428,6 +436,8 @@ async function newConversation() {
 async function navigate(host: string, path = "/") {
   await rp.cdp.send("Page.navigate", { url: `http://${host}${path}` }, work);
   await until(async () => (await rp.evaluate(work, `location.hostname === ${JSON.stringify(host)} && document.readyState === "complete"`).catch(() => false)) || undefined, 15_000, `打开 ${host}`);
+  // 放测试数据用的扩展页也是一个标签页；把工作页切到前台，侧栏「当前页」才是用户要操作的那页。
+  await rp.cdp.send("Target.activateTarget", { targetId: workTargetId });
   await sleep(800);
 }
 
@@ -498,7 +508,9 @@ async function shot(name: string) {
 /** 真点面板某一行里文字含 label 的按钮。 */
 async function clickRowButton(rowText: string, label: string, alsoIn = "") {
   const found = await rp.evaluate(panel, `(() => { const row = [...document.querySelectorAll(${JSON.stringify(TARGETS.panel.rowSelector)})].find((r) => r.textContent.includes(${JSON.stringify(rowText)}) && r.textContent.includes(${JSON.stringify(alsoIn)}));
-    const b = row && [...row.querySelectorAll("button")].find((x) => x.textContent.includes(${JSON.stringify(label)}));
+    const exact = [...document.querySelectorAll(${JSON.stringify(TARGETS.panel.rowSelector)})].find((r) => r.querySelector(".memory-row-text")?.textContent.trim() === ${JSON.stringify(rowText)} && r.textContent.includes(${JSON.stringify(alsoIn)}));
+    const target = exact ?? row;
+    const b = target && [...target.querySelectorAll("button")].find((x) => x.textContent.includes(${JSON.stringify(label)}));
     if (!b) return false; b.setAttribute("data-acceptance-click", "1"); b.scrollIntoView({ block: "center" }); return true; })()`);
 
   if (!found) return false;
@@ -767,6 +779,85 @@ async function d8(): Promise<Verdict> {
   return verdict(clicked && evidence.aStatus === TARGETS.statuses.active && evidence.bStatus === TARGETS.statuses.inactive && evidence.nextContextHasA === true && !evidence.nextContextHasB && evidence.panelAReplaced === false, evidence);
 }
 
+/**
+ * D8b 连续替换后在面板里删中间一条再撤销（审查 10-01 发现：面板不刷新会报版本冲突、留下删不掉的行）。
+ * 假通过的路：只看库不看面板；只点了没看结果。所以同时核对库、面板和下一轮带给模型的内容。
+ */
+async function d8b(): Promise<Verdict> {
+  const a = TARGETS.build.profile({ id: "seed-chain-a", text: "邮箱：a@example.com", createdAt: NOW - 30 * DAY, quote: "我的邮箱是 a@example.com", status: TARGETS.statuses.replaced, replacedBy: "seed-chain-b" });
+  const b = TARGETS.build.profile({ id: "seed-chain-b", text: "邮箱：b@example.com", createdAt: NOW - 20 * DAY, quote: "我邮箱换成 b@example.com", status: TARGETS.statuses.replaced, replacedBy: "seed-chain-c" });
+  const c = TARGETS.build.profile({ id: "seed-chain-c", text: "邮箱：c@example.com", createdAt: NOW - 10 * DAY, quote: "我邮箱换成 c@example.com" });
+  await seed({ memories: [a, b, c] });
+  await navigate(HOTEL);
+  await newConversation();
+  await openMemoryPanel();
+  const deletedB = await clickRowButton("邮箱：b@example.com", "删除", TARGETS.panel.replacedText);
+  await sleep(500);
+  // 删除会先问「忘记这条记忆？」，像用户一样点确认。
+  await rp.click(panel, TARGETS.panel.forgetConfirmSelector).catch(() => undefined);
+  await sleep(1500);
+  const bodyAfterDelete = String(await rp.evaluate(panel, `(document.querySelector("#memory-body")?.innerText ?? "").replace(/\\s+/g, " ").slice(0, 600)`));
+  const errorAfterDelete = String(await rp.evaluate(panel, `document.querySelector("#memory-body")?.innerText.match(/冲突|conflict|not found|没有撤销|失败/i)?.[0] ?? ""`));
+  const restoredA = await clickRowButton("邮箱：a@example.com", TARGETS.panel.undoText, TARGETS.panel.replacedText);
+  await sleep(1500);
+  const errorAfterRestore = String(await rp.evaluate(panel, `document.querySelector("#memory-body")?.innerText.match(/冲突|conflict|not found|没有撤销|失败/i)?.[0] ?? ""`));
+  await shot("D8b-panel");
+  await closeMemoryPanel();
+  const rows = await openMemoryPanel();
+  await closeMemoryPanel();
+  const docs = await readDoc("memories");
+
+  const statusOf = (t: string) => {
+    const e = byText(docs.items, t);
+
+    return e ? TARGETS.read.status(e) : "missing";
+  };
+
+  await newConversation();
+  const next = await turn("帮我填邮箱");
+  const ctx = next.chat[0]?.context ?? "";
+
+  const evidence: JsonRecord = {
+    deletedB, restoredA, errorAfterDelete, errorAfterRestore, bodyAfterDelete,
+    aStatus: statusOf("邮箱：a@example.com"), bStatus: statusOf("邮箱：b@example.com"), cStatus: statusOf("邮箱：c@example.com"),
+    panelRowsB: rows.filter((r) => r.text.includes("b@example.com")).length,
+    activeInStore: docs.items.filter((e) => TARGETS.read.status(e) === TARGETS.statuses.active && JSON.stringify(e).includes("@example.com")).length,
+    nextContextHasA: ctx.includes("a@example.com"), nextContextHasC: ctx.includes("c@example.com"),
+  };
+
+  return verdict(deletedB && restoredA && !errorAfterDelete && !errorAfterRestore && evidence.aStatus === TARGETS.statuses.active && evidence.bStatus === "missing" && evidence.cStatus === TARGETS.statuses.inactive && evidence.panelRowsB === 0 && evidence.activeInStore === 1 && evidence.nextContextHasA === true && !evidence.nextContextHasC, evidence);
+}
+
+/** 下周三（按周一为一周开始）那天的零点。 */
+function nextWeekWednesday(): Date {
+  const today = dayStart(0);
+  const toNextMonday = ((8 - today.getDay()) % 7) || 7;
+
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate() + toNextMonday + 2);
+}
+
+/**
+ * D13 查天气时顺口说的行程（审查 10-01 发现：只读请求里的行程会整条丢掉）。
+ * 假通过的路：记成「关于你」或没有有效期；日期算错一周。所以核对种类、有效期落在下周三当天。
+ */
+async function d13(): Promise<Verdict> {
+  await seed({});
+  await navigate(OTHER);
+  await newConversation();
+  await turn("我下周三去成都出差，帮我查下那边天气", SEND_LIMIT);
+  const entries = [...await findNew("memories", "成都"), ...await findNew("tasks", "成都")];
+  const plan = entries.find((e) => TARGETS.read.kind(e) === TARGETS.kinds.did);
+  const wed = nextWeekWednesday();
+  const end = plan ? TARGETS.read.validUntil(plan) : null;
+
+  const evidence: JsonRecord = {
+    planKind: plan ? TARGETS.read.kind(plan) : null, validUntil: end, expectedDay: iso(wed),
+    aboutYouMentioningChengdu: entries.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou).length,
+  };
+
+  return verdict(!!plan && end !== null && end > wed.getTime() && end <= wed.getTime() + DAY && evidence.aboutYouMentioningChengdu === 0, evidence);
+}
+
 /** D11 上限与过滤。 */
 async function d11(): Promise<Verdict> {
   const profiles = Array.from({ length: 30 }, (_, i) => TARGETS.build.profile({ id: `seed-p${i}`, text: `PROF-${String(i).padStart(2, "0")} ${"偏好说明".repeat(30)}`, createdAt: NOW - (40 - i) * DAY }));
@@ -848,6 +939,9 @@ async function d1(): Promise<Verdict> {
     planKind: plan ? TARGETS.read.kind(plan) : null, validUntil: until3, expectedWindow: [OCT3.getTime(), OCT3.getTime() + DAY],
     aboutYouEntriesMentioningChengdu: aboutYouCity.length, panelShowsKind: panelRow.includes(TARGETS.panel.kindLabels.did),
     diagHasQuote: lineWith(traces, "10 月 3 日飞成都").length > 0,
+    // 排查用：这一轮「要不要记」的判断记录（记成哪种、还是没判成）。
+    decisionLines: lineWith(traces, "memory_decision").map((l) => l.slice(0, 300)),
+    memoryErrors: traces.split("\n").filter((l) => /memory/.test(l) && /timeout|超时|unavailable|error|abort/i.test(l)).map((l) => l.slice(0, 300)).slice(0, 5),
   };
 
   return verdict(!!plan && until3 !== null && until3 > OCT3.getTime() && until3 <= OCT3.getTime() + DAY && aboutYouCity.length === 0 && evidence.panelShowsKind === true && evidence.diagHasQuote === true, evidence);
@@ -858,7 +952,20 @@ async function d2(): Promise<Verdict> {
   bookings.length = 0;
   await navigate(TICKET);
   await newConversation();
-  await turn("在这个页面帮我订 10 月 3 日北京到成都的票，订好了告诉我", SEND_LIMIT);
+  const first = await turn("在这个页面帮我订 10 月 3 日北京到成都的票，订好了告诉我", SEND_LIMIT);
+  await shot("D2-after-request");
+  // 订票完成前不该提前记成「做过的事」：第一轮结束时库里不能已有成都行程的记忆条目。
+  const earlyTrip = (await readDoc("memories")).items.filter((e) => mentions(e, "成都") && TARGETS.read.kind(e) === TARGETS.kinds.did).length;
+  // 有的模型会先停下问「确认吗」；只有它确实问了，才像真实用户一样回一句确认。没问又没订成，就是失败，不替它补。
+  const askedToConfirm = !bookings.length && /确认|是否|要不要|可以吗|\?|？/.test(String(first.answer ?? "").slice(-400));
+  let confirmedByUser = false;
+
+  if (!bookings.length && askedToConfirm) {
+    confirmedByUser = true;
+    await turn("确认，订吧", SEND_LIMIT);
+    await shot("D2-after-confirm");
+  }
+
   const booked = bookings.at(-1);
   const tasks = (await readDoc("tasks")).items.filter((e) => mentions(e, "成都"));
   const entry = tasks.find((e) => mentions(e, TICKET));
@@ -866,12 +973,12 @@ async function d2(): Promise<Verdict> {
   const until3 = entry ? TARGETS.read.validUntil(entry) : null;
 
   const evidence: JsonRecord = {
-    serverGotBooking: booked ?? null, taskEntryFound: !!entry, eventDate: date ?? null, validUntil: until3,
+    serverGotBooking: booked ?? null, askedToConfirm, confirmedByUser, earlyTrip, taskEntryFound: !!entry, eventDate: date ?? null, validUntil: until3,
   };
 
   const bookedOk = !!booked && booked.to.includes("成都") && /10\s*月\s*3|10\/3|10-03/.test(booked.date);
 
-  return verdict(bookedOk && !!entry && date === iso(OCT3) && until3 !== null && until3 > OCT3.getTime() && until3 <= OCT3.getTime() + DAY, evidence);
+  return verdict(bookedOk && earlyTrip === 0 && !!entry && date === iso(OCT3) && until3 !== null && until3 > OCT3.getTime() && until3 <= OCT3.getTime() + DAY, evidence);
 }
 
 async function d3(): Promise<Verdict> {
@@ -908,6 +1015,7 @@ let fatal: string | null = null;
 
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
+  workTargetId = blank.targetId;
   work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.enable", {}, work);
   ext = await rp.attach((await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId);  // 不用设置页：配模型的流程按网址找设置页并会关掉它
@@ -972,6 +1080,9 @@ try {
 
   await run("D11", scripted, d11);
   await run("D12", scripted, d12);
+  // D8b 自己放一条新的替换链，放最后，免得影响依赖 D7/D8 状态的场景。
+  await run("D8b", scripted, d8b);
+  await run("D13", !scripted, d13);
 
   for (const [id, fn] of [["D1", d1], ["D2", d2], ["D3", d3], ["D4", d4]] as const) await run(id, !!modelArg, fn);
 } catch (error) {
@@ -985,7 +1096,7 @@ try {
   siteServer.close();
 }
 
-const scenarioIds = ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "D11", "D12"];
+const scenarioIds = ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D8b", "D9", "D10", "D11", "D12", "D13"];
 
 const ordered = Object.fromEntries(scenarioIds.flatMap((id) => verdicts[id] ? [[id, verdicts[id]]] : []));
 

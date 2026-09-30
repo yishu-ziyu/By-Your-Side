@@ -198,6 +198,8 @@ export class MemoryRuntime {
     const current = new Map((await this.store.markUsed(selection.entries.map(({ entry }) => entry))).map(entry => [entry.id, entry]));
 
     if (!this.current(turn)) return null;
+
+    if (selection.tasks.length) await this.options.history?.markUsed(selection.tasks.map(({ task }) => task.id), Date.now()).catch(() => undefined);
     selection.entries = selection.entries.flatMap(item => (current.has(item.entry.id) ? [{ ...item, entry: current.get(item.entry.id)! }] : []));
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 
@@ -379,7 +381,7 @@ export class MemoryRuntime {
     const action = decision.action === "save" ? "saved" : decision.action === "update" ? "updated" : "forgotten";
 
     const message = action === "forgotten" ? (changed.length ? "已忘记所指定的记忆，后续不再使用。" : "没有找到需要忘记的记忆。")
-      : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}\n适用范围：${decision.scope.kind === "all" ? "所有个人会话" : decision.scope.hostname}`;
+      : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}\n适用范围：${decision.scope.kind === "all" ? "所有网站" : decision.scope.hostname}`;
 
     this.emit({ kind: "memory", action, entries: changed, message });
 
