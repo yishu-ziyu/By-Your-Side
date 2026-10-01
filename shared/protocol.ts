@@ -271,7 +271,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   /** 本会话仍在等待的授权请求；按请求即时的期限，不被这次查询延长。 */
   | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
-  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string }
+  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
   | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback" | "candidate_save" | "candidate_dismiss"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; candidates?: import('./skill.js').SkillCandidate[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
@@ -300,7 +300,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
-  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string }
+  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
@@ -1083,6 +1083,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (msg.error !== undefined && typeof msg.error !== "string") return null;
 
+      if (msg.rev !== undefined && !(Number.isInteger(msg.rev) && msg.rev >= 0)) return null;
+
       if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length))) return null;
 
       if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
@@ -1125,6 +1127,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !upgradeMemoryEntries(event.entries)) return null;
 
       if (event.message !== undefined && typeof event.message !== "string") return null;
+
+      if (event.rev !== undefined && !(Number.isInteger(event.rev) && event.rev >= 0)) return null;
     }
 
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
