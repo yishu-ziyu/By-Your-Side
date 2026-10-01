@@ -30,3 +30,4 @@
 | [model-label-decides-safety-gate](patterns/model-label-decides-safety-gate.md) | 模型写的 label 顶替了元素真名，「点击发送按钮」绕过了发送确认；闸门只看页面事实，并用真实模型验 | 界面问题 10 项修复 | 2026-09-26 |
 | [restart-loses-in-memory-state](patterns/restart-loses-in-memory-state.md) | 扩展内 agent 的会话只在内存、交给停机 worker 的消息无声消失；端到端里主动关 offscreen / 停 worker，送达以回显为准 | 装日常前的端到端 | 2026-09-26 |
 | [provider-model-name-and-reasoning-quirks](patterns/provider-model-name-and-reasoning-quirks.md) | 调得通不等于名字对、档位对、指令被听；看响应 `model` 字段，档位/角色/收图按实测登记一处 | 答非所问排查与选模型 | 2026-10-01 |
+| [widened-check-needs-the-other-side](patterns/widened-check-needs-the-other-side.md) | 扩大检查范围只测了该拦的，没测「做不成但处理正确」的，结果把正确放弃的任务催回去重试 | 第一档缺口修复 | 2026-10-02 |
