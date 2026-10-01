@@ -19,6 +19,7 @@ docs/knowledge/consolidate.lock
 /.pi/
 /.commandcode/
 /~/
+/.ship/
 
 # Local credentials and generated experiment/session artifacts
 .env
