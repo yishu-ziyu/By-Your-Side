@@ -8,8 +8,8 @@ const NOW = Date.UTC(2026, 9, 10, 12);
 const DAY = 86_400_000;
 
 const entry = (patch: Partial<MemoryEntry>): MemoryEntry => ({
-  id: "m1", version: 1, text: "x", scope: { kind: "all" }, sourceConversationId: "c", createdAt: 1, updatedAt: 1,
-  kind: "profile", useCount: 0, status: "active", formatVersion: 2, ...patch,
+  id: "m1", factId: "m1", version: 1, text: "x", scope: { kind: "all" }, sourceConversationId: "c", createdAt: 1, updatedAt: 1,
+  kind: "profile", useCount: 0, status: "active", formatVersion: 3, ...patch,
 });
 
 const task = (patch: Partial<TaskHistoryEntry>): TaskHistoryEntry => ({

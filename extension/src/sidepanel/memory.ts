@@ -38,6 +38,8 @@ export class MemoryManagementState {
   private readonly deletedAtOrder = new Map<string, number>();
   private latestListRequestId: string | null = null;
   private order = 0;
+  private listRev: number | undefined;
+  private refreshDeferred = false;
 
   constructor(private readonly requestId: () => string = () => crypto.randomUUID()) {}
 
@@ -53,7 +55,42 @@ export class MemoryManagementState {
     return entry ? cloneEntry(entry) : undefined;
   }
 
+  /** 面板上一次读到的整份记忆版本号；还没读到、或服务端没给时为 undefined。 */
+  get rev(): number | undefined {
+    return this.listRev;
+  }
+
+  /** 收到记忆事件或结果带来的版本号：与面板手里的不同（或没带版本号）就说明列表可能过期，应重读。 */
+  isStale(rev: number | undefined): boolean {
+    return rev === undefined || rev !== this.listRev;
+  }
+
+  /**
+   * 收到记忆事件/结果的版本号。返回 true＝现在重读列表；
+   * 用户正在编辑或确认删除时（busy）不重读，免得重建输入框丢光标，记下来等关闭后再读一次。
+   */
+  noteRev(rev: number | undefined, busy: boolean): boolean {
+    if (!this.isStale(rev)) return false;
+
+    if (busy) {
+      this.refreshDeferred = true;
+
+      return false;
+    }
+
+    return true;
+  }
+
+  /** 编辑/确认关闭后调用：之前有被推迟的重读就返回 true（只一次）。 */
+  takeDeferredRefresh(busy: boolean): boolean {
+    if (busy || !this.refreshDeferred) return false;
+    this.refreshDeferred = false;
+
+    return true;
+  }
+
   beginList(conversationId: string): MemoryClientMessage {
+    this.refreshDeferred = false;
     const requestId = this.requestId();
 
     const request: PendingRequest = {
@@ -229,7 +266,15 @@ export class MemoryManagementState {
       }
     }
 
-    if (request.action === "list" && result.entries) this.applyList(request, result.entries);
+    if (request.action === "list" && result.entries) {
+      this.applyList(request, result.entries);
+      this.listRev = result.rev;
+    }
+
+    // 自己的修改只补丁了一条；版本号恰好比手里的大 1 才说明没有别人的写入夹在中间。
+    if (request.action === "update" && result.rev !== undefined) {
+      this.listRev = this.listRev !== undefined && result.rev === this.listRev + 1 ? result.rev : undefined;
+    }
 
     return {
       kind: "success",

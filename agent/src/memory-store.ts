@@ -1,4 +1,6 @@
 import {
+  hasMemoryDisplayFields,
+  isFormat2MemoryEntry,
   isMemoryEntry,
   isMemoryScope,
   isMemoryValidity,
@@ -20,11 +22,22 @@ import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 import { placeMemory, sameMemoryScope, validateMemoryDecision, type MemoryDecision } from "./memory-decision.js";
 import type { DocumentPersistence } from "./document-persistence.js";
 
-/** format 2：每条带种类、有效期、来源原话、用过几次、状态和格式版本号；format 1 读入时补默认值，下次写入即为 2。 */
+/**
+ * format 3：每条带 factId（同一件事的所有版本共用），整份带递增版本号 rev。
+ * format 1、2 读入时升级（替换链上的条目共用链上最早那条的 id），下次写入即为 3。
+ * 更新的格式只读：能认的条目照常读出，写入一律拒绝，不覆盖原文件。
+ */
 interface StoreFile {
-  format: 2;
+  format: typeof MEMORY_FORMAT_VERSION;
+  /** 整份记忆的版本号：每次成功写入加 1；旧格式没有，按 0 算。 */
+  rev: number;
   entries: MemoryEntry[];
   forgottenExperiences?: string[];
+}
+
+interface StoreState extends StoreFile {
+  /** 文件来自更新的版本时记下它的格式号；此时只读。 */
+  newerFormat?: number;
 }
 
 export interface MemoryQuery {
@@ -44,6 +57,11 @@ export class MemoryStore {
     return cloneEntries(await this.read());
   }
 
+  /** 整份记忆当前的版本号；从没写过为 0。 */
+  async currentRev(): Promise<number> {
+    return (await this.readState()).rev;
+  }
+
   /** One direct user operation, checked again under the lock; no partial duplicate updates. */
   async applyDecision(decision: MemoryDecision, userMessage: string, sourceConversationId: string, guard: () => boolean): Promise<MemoryEntry[]> {
     if (!["save", "update", "forget"].includes(decision.action)) throw new Error("Not a memory mutation");
@@ -59,7 +77,7 @@ export class MemoryStore {
 
       // 忘记一条事实：连同它被替换 / 撤下的旧值一起删掉，之后无从恢复。
       if (decision.action === "forget") {
-        for (const entry of targets) removeChain(entries, forgotten, entry.id);
+        for (const entry of targets) removeFact(entries, forgotten, entry.factId);
 
         return cloneEntries(targets);
       }
@@ -76,9 +94,18 @@ export class MemoryStore {
 
       const now = Date.now();
       const quote = decision.evidence.trim().slice(0, MEMORY_QUOTE_MAX);
+      const id = randomUUID();
+      // 新值归入被替换的那件事；一次替换几件事时并成一件，用其中最早那条的编号。
+      const oldest = targets.reduce<MemoryEntry | undefined>((min, e) => (!min || e.createdAt < min.createdAt ? e : min), undefined);
+      const factId = oldest?.factId ?? id;
+      const merged = new Set(targets.map(e => e.factId));
+
+      for (let i = 0; i < entries.length; i++) {
+        if (merged.has(entries[i]!.factId)) entries[i] = { ...entries[i]!, factId };
+      }
 
       const next: MemoryEntry = {
-        id: randomUUID(), version: 1, text: decision.text.trim(), scope: cloneScope(decision.scope), sourceConversationId,
+        id, factId, version: 1, text: decision.text.trim(), scope: cloneScope(decision.scope), sourceConversationId,
         createdAt: now, updatedAt: Math.max(now, ...targets.map(e => e.updatedAt + 1)),
         kind: placement.kind, useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION,
       };
@@ -90,10 +117,13 @@ export class MemoryStore {
       if (placement.date) next.date = placement.date;
 
       // 同一事实换了新值：旧条目标为「被替换」留作历史（不再带给助手），面板可撤销。
-      for (const entry of targets) {
+      for (const target of targets) {
+        const index = entries.findIndex(e => e.id === target.id);
+        const entry = entries[index]!;
+
         // A user replacement must not be resurrected by an old experience job.
         if (entry.experience) forgotten.push(entry.experience.runId);
-        entries[entries.indexOf(entry)] = { ...entry, version: entry.version + 1, status: "replaced", replacedBy: next.id, updatedAt: Math.max(now, entry.updatedAt + 1) };
+        entries[index] = { ...entry, version: entry.version + 1, status: "replaced", replacedBy: next.id, updatedAt: Math.max(now, entry.updatedAt + 1) };
       }
 
       entries.push(next);
@@ -114,9 +144,11 @@ export class MemoryStore {
     return this.withWriteLock(async (entries) => {
       if (input.guard && !input.guard()) throw new Error("Memory save is no longer authorized");
       const now = Date.now();
+      const id = randomUUID();
 
       const entry: MemoryEntry = {
-        id: randomUUID(),
+        id,
+        factId: id,
         version: 1,
         text: input.text.trim(),
         scope: cloneScope(input.scope),
@@ -159,7 +191,8 @@ export class MemoryStore {
       const experience: NonNullable<MemoryEntry["experience"]> = { runId: input.runId, evidence: [...input.evidence] };
 
       if (input.topic) experience.topic = input.topic;
-      const entry: MemoryEntry = { id: randomUUID(), version: 1, text: input.text.trim(), scope: cloneScope(input.scope), sourceConversationId: input.sourceConversationId, createdAt: now, updatedAt: now, experience, kind: "method", useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION };
+      const id = randomUUID();
+      const entry: MemoryEntry = { id, factId: id, version: 1, text: input.text.trim(), scope: cloneScope(input.scope), sourceConversationId: input.sourceConversationId, createdAt: now, updatedAt: now, experience, kind: "method", useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION };
       entries.push(entry);
 
       return entry;
@@ -210,7 +243,7 @@ export class MemoryStore {
 
       // 忘记生效的值 = 忘记这条事实：整条历史一起删。
       if (current.status === "active") {
-        removeChain(entries, forgotten, current.id);
+        removeFact(entries, forgotten, current.factId);
 
         return;
       }
@@ -251,7 +284,6 @@ export class MemoryStore {
 
       if (current.status === "active") throw new Error("这条记忆正在生效，无需撤销");
       const now = Date.now();
-      const chainIds = chainOf(entries, current.id);
       const restored: MemoryEntry = { ...current, version: current.version + 1, status: "active", updatedAt: Math.max(now, current.updatedAt + 1) };
       delete restored.replacedBy;
       entries[index] = restored;
@@ -260,7 +292,7 @@ export class MemoryStore {
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i]!;
 
-        if (entry.id === current.id || entry.status !== "active" || !chainIds.has(entry.id)) continue;
+        if (entry.id === current.id || entry.status !== "active" || entry.factId !== current.factId) continue;
         entries[i] = { ...entry, version: entry.version + 1, status: "invalid", replacedBy: current.id, updatedAt: Math.max(now, entry.updatedAt + 1) };
         changed.push(entries[i]!);
       }
@@ -317,10 +349,10 @@ export class MemoryStore {
 
   private async read(): Promise<MemoryEntry[]> { return (await this.readState()).entries; }
 
-  private async readState(): Promise<StoreFile> {
+  private async readState(): Promise<StoreState> {
     const raw = await this.doc.read();
 
-    if (raw === null) return { format: MEMORY_FORMAT_VERSION, entries: [] };
+    if (raw === null) return { format: MEMORY_FORMAT_VERSION, rev: 0, entries: [] };
 
     let parsed: unknown;
 
@@ -330,14 +362,27 @@ export class MemoryStore {
       throw new Error("Memory store is corrupt");
     }
 
-    // SAFETY: 只读 format / entries / forgottenExperiences，下面逐条核对后才使用。
-    const file = parsed as { format?: unknown; entries?: unknown; forgottenExperiences?: unknown };
+    // SAFETY: 只读 format / rev / entries / forgottenExperiences，下面逐条核对后才使用。
+    const file = parsed as { format?: unknown; rev?: unknown; entries?: unknown; forgottenExperiences?: unknown };
 
-    if ((file?.format !== 1 && file?.format !== MEMORY_FORMAT_VERSION) || !Array.isArray(file.entries)) throw new Error("Memory store is corrupt");
-    // 升级前（format 1）的条目补默认值；当前格式逐条严格核对。任何一条不对都按损坏报出，不当作空记忆覆盖。
-    const valid = file.format === 1 ? file.entries.every(isStoredMemoryEntry) : file.entries.every(isMemoryEntry);
+    if (!file || !Number.isSafeInteger(file.format) || !Array.isArray(file.entries)) throw new Error("Memory store is corrupt");
+    // SAFETY: 上一行已核对 format 是整数。
+    const format = file.format as number;
+    const rev = file.rev ?? 0;
 
-    if (!valid) throw new Error("Memory store is corrupt");
+    if (!isRev(rev)) throw new Error("Memory store is corrupt");
+
+    // 更新的版本写的：尽量读出字段齐全的条目给面板看（只在内存里当作当前格式，从不写回），写入时拒绝（不覆盖）。
+    if (format > MEMORY_FORMAT_VERSION) {
+      const shown = file.entries.filter(hasMemoryDisplayFields).map((e): MemoryEntry => ({ ...e, factId: "factId" in e && validMemoryId(e.factId) ? e.factId : e.id, formatVersion: MEMORY_FORMAT_VERSION }));
+
+      return { format: MEMORY_FORMAT_VERSION, rev, entries: cloneEntries(shown), forgottenExperiences: [], newerFormat: format };
+    }
+
+    // 升级前的条目补默认值；每种格式逐条严格核对。任何一条不对都按损坏报出，不当作空记忆覆盖。
+    const check = format === 1 ? isStoredMemoryEntry : format === 2 ? isFormat2MemoryEntry : format === MEMORY_FORMAT_VERSION ? isMemoryEntry : null;
+
+    if (!check || !file.entries.every(check)) throw new Error("Memory store is corrupt");
     const upgraded = file.entries.filter(isStoredMemoryEntry).map(upgradeMemoryEntry);
     const ids = new Set<string>();
 
@@ -348,55 +393,171 @@ export class MemoryStore {
 
     if (file.forgottenExperiences !== undefined && (!Array.isArray(file.forgottenExperiences) || file.forgottenExperiences.some(id => !validMemoryId(id)))) throw new Error("Memory store is corrupt");
 
+    const entries = format < MEMORY_FORMAT_VERSION ? upgradeLegacyEntries(upgraded) : upgraded;
+
     // SAFETY: 上面已核对 forgottenExperiences 缺省或是合法编号组成的数组。
-    return { format: MEMORY_FORMAT_VERSION, entries: cloneEntries(upgraded), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
+    return { format: MEMORY_FORMAT_VERSION, rev, entries: cloneEntries(entries), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
   }
 
   private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[]) => Promise<T> | T, commitGuard?: () => boolean): Promise<T> {
     return this.doc.exclusive(async () => {
       const state = await this.readState();
+
+      if (state.newerFormat !== undefined) throw new Error(`Memory store was written by a newer version (format ${state.newerFormat}); it is read-only here`);
       const entries = state.entries;
       const forgotten = state.forgottenExperiences ?? [];
       const result = await mutate(entries, forgotten);
 
+      checkInvariants(entries);
+
       if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-      await this.doc.write(JSON.stringify({ format: MEMORY_FORMAT_VERSION, entries, forgottenExperiences: forgotten } satisfies StoreFile) + "\n", commitGuard);
+      await this.doc.write(JSON.stringify({ format: MEMORY_FORMAT_VERSION, rev: state.rev + 1, entries, forgottenExperiences: forgotten } satisfies StoreFile) + "\n", commitGuard);
 
       return cloneValue(result);
     });
   }
 }
 
+function isRev(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
 /**
- * 同一事实的历史链：顺着 replacedBy 两个方向连起来的所有条目（被替换的指向替换它的，
- * 撤下的指向恢复的那条），链里至多一个生效值。
+ * 写入前必须成立，否则整次写入作废、原文件不动：
+ * 一件事（factId）至多一个生效值；replacedBy 指向存在且属于同一件事的条目；replacedBy 不成环。
  */
-function chainOf(entries: MemoryEntry[], id: string): Set<string> {
-  const ids = new Set([id]);
-  let grew = true;
+function checkInvariants(entries: MemoryEntry[]): void {
+  const byId = new Map(entries.map(e => [e.id, e]));
+  const activeFacts = new Set<string>();
 
-  while (grew) {
-    grew = false;
+  for (const entry of entries) {
+    if (entry.status === "active") {
+      if (activeFacts.has(entry.factId)) throw new Error(`Memory invariant violated: fact ${entry.factId} has more than one active value`);
+      activeFacts.add(entry.factId);
+    }
 
-    for (const entry of entries) {
-      const linked = ids.has(entry.id) ? entry.replacedBy !== undefined && !ids.has(entry.replacedBy) : entry.replacedBy !== undefined && ids.has(entry.replacedBy);
+    if (entry.replacedBy === undefined) continue;
+    const next = byId.get(entry.replacedBy);
 
-      if (!linked) continue;
-      ids.add(ids.has(entry.id) ? entry.replacedBy! : entry.id);
-      grew = true;
+    if (!next) throw new Error(`Memory invariant violated: ${entry.id} is replaced by a missing entry`);
+
+    if (next.factId !== entry.factId) throw new Error(`Memory invariant violated: ${entry.id} is replaced by an entry of another fact`);
+  }
+
+  // 顺着 replacedBy 走到头；走过的路都确认无环，后面的起点碰到就停。
+  const acyclic = new Set<string>();
+
+  for (const start of entries) {
+    const path = new Set<string>();
+    let cursor: MemoryEntry | undefined = start;
+
+    while (cursor && !acyclic.has(cursor.id)) {
+      if (path.has(cursor.id)) throw new Error(`Memory invariant violated: replacement cycle through ${cursor.id}`);
+      path.add(cursor.id);
+      cursor = cursor.replacedBy === undefined ? undefined : byId.get(cursor.replacedBy);
+    }
+
+    for (const id of path) acyclic.add(id);
+  }
+}
+
+/**
+ * 旧格式（1、2）升级：先修复已经违反规则的数据，再分 factId。只改状态和链接、不删条目、不改版本号，
+ * 结果只取决于数据本身（每次读到同一份旧文件修出来都一样）：
+ * 1. replacedBy 指向不存在的条目：去掉这条链接。
+ * 2. replacedBy 成环：在环上最早（createdAt 最小）的条目处断开。
+ * 3. 因此没了后继的旧值改为失效（留在历史里，用户可以恢复）；从不把不生效的条目改成生效，免得旧值重新带给助手。
+ * 4. 一件事多个生效值：留最近修改的那个，其余改为被它替换。
+ * 格式 3 不修：违反规则就拒绝写入。
+ */
+function upgradeLegacyEntries(input: MemoryEntry[]): MemoryEntry[] {
+  const entries = input.map(e => ({ ...e }));
+  const byId = new Map(entries.map(e => [e.id, e]));
+  const orphaned = new Set<string>();
+  const older = (a: MemoryEntry, b: MemoryEntry) => (a.createdAt === b.createdAt ? a.id < b.id : a.createdAt < b.createdAt);
+
+  for (const entry of entries) {
+    if (entry.replacedBy === undefined || byId.has(entry.replacedBy)) continue;
+    delete entry.replacedBy;
+    orphaned.add(entry.id);
+  }
+
+  for (const start of entries) {
+    const path: MemoryEntry[] = [];
+    let cursor: MemoryEntry | undefined = start;
+
+    while (cursor && !path.includes(cursor)) {
+      path.push(cursor);
+      cursor = cursor.replacedBy === undefined ? undefined : byId.get(cursor.replacedBy);
+    }
+
+    if (!cursor) continue;
+    const oldest = path.slice(path.indexOf(cursor)).reduce((min, e) => (older(e, min) ? e : min));
+
+    delete oldest.replacedBy;
+    orphaned.add(oldest.id);
+  }
+
+  const grouped = assignFactIds(entries);
+  const facts = new Map<string, MemoryEntry[]>();
+
+  for (const entry of grouped) facts.set(entry.factId, [...(facts.get(entry.factId) ?? []), entry]);
+
+  for (const members of facts.values()) {
+    for (const entry of members) {
+      if (orphaned.has(entry.id) && entry.status !== "active") entry.status = "invalid";
+    }
+
+    const active = members.filter(e => e.status === "active");
+
+    if (active.length < 2) continue;
+    const keep = active.reduce((max, e) => (e.updatedAt > max.updatedAt || (e.updatedAt === max.updatedAt && e.id > max.id) ? e : max));
+
+    delete keep.replacedBy;
+
+    for (const entry of active) {
+      if (entry === keep) continue;
+      entry.status = "replaced";
+      entry.replacedBy = keep.id;
     }
   }
 
-  return ids;
+  return grouped;
 }
 
-function removeChain(entries: MemoryEntry[], forgotten: string[], id: string): void {
-  const chainIds = chainOf(entries, id);
+/** 旧格式升级：顺着 replacedBy 连在一起的条目是同一件事，共用其中最早（createdAt 最小）那条的 id。 */
+function assignFactIds(entries: MemoryEntry[]): MemoryEntry[] {
+  const parent = new Map(entries.map(e => [e.id, e.id]));
+  const created = new Map(entries.map(e => [e.id, e.createdAt]));
 
+  const root = (id: string): string => {
+    let r = id;
+
+    while (parent.get(r) !== r) r = parent.get(r)!;
+
+    return r;
+  };
+
+  for (const entry of entries) {
+    if (entry.replacedBy === undefined || !parent.has(entry.replacedBy)) continue;
+    const a = root(entry.id);
+    const b = root(entry.replacedBy);
+
+    if (a === b) continue;
+    // 根保留更早的那条（同一时刻按先出现的）。
+    const [keep, drop] = created.get(b)! < created.get(a)! ? [b, a] : [a, b];
+    parent.set(drop, keep);
+  }
+
+  return entries.map(e => ({ ...e, factId: root(e.id) }));
+}
+
+/** 忘记一件事：它的所有版本一起删，之后无从恢复。 */
+function removeFact(entries: MemoryEntry[], forgotten: string[], factId: string): void {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i]!;
 
-    if (!chainIds.has(entry.id)) continue;
+    if (entry.factId !== factId) continue;
 
     if (entry.experience) forgotten.push(entry.experience.runId);
     entries.splice(i, 1);

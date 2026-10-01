@@ -92,6 +92,8 @@ const TARGETS = {
   db: { name: "sideagent-memory", store: "kv", version: 1, keys: { memories: "memories", tasks: "tasks" } as Record<Doc, string> },
   // filled 2026-10-01 from implementer report: 新格式版本号、文档里数组字段名。
   formatVersion: 2,
+  // 10-01 加固后写回的是格式 3；预置仍用格式 2，顺带检查升级路径。
+  currentFormat: 3,
   // 过往任务文档仍是 format:1（条目多了可选的 date 与 validity）。
   taskFormatVersion: 1,
   arrayField: { memories: "entries", tasks: "tasks" } as Record<Doc, string>,
@@ -617,7 +619,7 @@ async function d10(): Promise<Verdict> {
   const pass = missingInPanel.length === 0 && Object.values(kindChecks).every(Boolean) && panelText.length > 0
     && (!model || (Array.isArray(usable.missing) && usable.missing.length === 0 && usable.hotelTaskBrought === true))
     && evidence.deletedFromPanel === true && stored.items.length === OLD_MEMORIES.length - 1
-    && evidence.storedFormat === TARGETS.formatVersion && fieldsFilled && kindsInferred
+    && evidence.storedFormat === TARGETS.currentFormat && fieldsFilled && kindsInferred
     && storedTasks.items.length === OLD_TASKS.length && taskRowsShowDid;
 
   return verdict(pass, evidence);
@@ -986,10 +988,12 @@ async function d3(): Promise<Verdict> {
   await navigate(OTHER);
   await newConversation();
   await turn("我坐飞机都要靠过道", SEND_LIMIT);
-  const entries = [...await findNew("memories", "靠过道"), ...await findNew("tasks", "靠过道")];
+  // 只看记忆里记成了哪种；过往任务是另一套记录（模型若动了页面会按规则留一条），只作观察。
+  const entries = await findNew("memories", "靠过道");
+  const taskRecords = (await findNew("tasks", "靠过道")).length;
   const good = entries.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou && TARGETS.read.scopeKind(e) === "all" && TARGETS.read.validUntil(e) === null);
 
-  const evidence: JsonRecord = { entries: entries.length, goodEntries: good.length, otherKinds: entries.flatMap((e) => good.includes(e) ? [] : [String(TARGETS.read.kind(e))]) };
+  const evidence: JsonRecord = { entries: entries.length, taskRecords, goodEntries: good.length, otherKinds: entries.flatMap((e) => good.includes(e) ? [] : [String(TARGETS.read.kind(e))]) };
 
   return verdict(good.length >= 1 && evidence.otherKinds instanceof Array && evidence.otherKinds.length === 0, evidence);
 }

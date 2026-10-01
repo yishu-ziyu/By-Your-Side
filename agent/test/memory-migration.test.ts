@@ -67,7 +67,8 @@ describe("memory foundation: old-format data converts without loss", () => {
       expect(now.status).toBe("active");
       expect(now.validity).toBeUndefined();
       expect(now.useCount).toBe(0);
-      expect(now.formatVersion).toBe(2);
+      expect(now.formatVersion).toBe(3);
+      expect(now.factId).toBe(old.id);
     }
 
     expect(listed.find(e => e.id === "m-exp")!.kind).toBe("method");
@@ -79,7 +80,7 @@ describe("memory foundation: old-format data converts without loss", () => {
     const { dir, memory } = await oldData();
     await memory.forget({ id: "m-phone", expectedVersion: 1 });
     const file = JSON.parse(await readFile(join(dir, MEMORY_STORE_FILE), "utf8"));
-    expect(file.format).toBe(2);
+    expect(file.format).toBe(3);
     expect(file.entries.map((e: { id: string }) => e.id).sort()).toEqual(["m-crm", "m-email", "m-exp", "m-name"]);
     expect(file.forgottenExperiences).toEqual(["run-forgotten-9"]);
     // 被忘记的纠正不会被后台重新写回。

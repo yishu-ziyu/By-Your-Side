@@ -15,7 +15,7 @@ import { isProviderBusyError } from "../../shared/provider-busy.js";
 import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
-import { ExtensionHost, type HookArgs, type HookMessage } from "./extension-host.js";
+import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import { composeSystemPrompt } from "./system-prompt.js";
 
 export interface PiAgentLoopOptions {
@@ -87,6 +87,7 @@ export class PiAgentLoop implements AgentLoop {
   private retryAttempt = 0;
   private retryAbort: AbortController | undefined;
   private runActive = false;
+  private hookChain: Promise<void> = Promise.resolve();
   private idleWaiters: Array<() => void> = [];
 
   constructor(private readonly options: PiAgentLoopOptions) {
@@ -369,6 +370,9 @@ export class PiAgentLoop implements AgentLoop {
 
   private emit(event: AgentSessionEvent): void {
     for (const listener of this.listeners) listener(event);
+
+    // 同名事件交给扩展钩子（如 agent_settled）；钩子之间串行保持先后；循环的完成、空闲与中止不等钩子（慢钩子只拖后面的钩子投递）。
+    if (OBSERVED_EVENTS.has(event.type)) this.hookChain = this.hookChain.then(() => this.hooks.notify(event));
   }
 }
 

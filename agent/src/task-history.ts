@@ -57,7 +57,7 @@ export class TaskHistoryStore {
 
   /** 删一条；id 为 null 时全部清空。 */
   async forget(id: string | null): Promise<TaskHistoryEntry[]> {
-    return this.mutate(tasks => (id === null ? [] : tasks.filter(task => task.id !== id)));
+    return this.mutate(tasks => (id === null ? [] : tasks.filter(task => task.id !== id)), id === null);
   }
 
   /** 与这次请求或当前网站有关的过往任务，从新到旧。 */
@@ -73,25 +73,37 @@ export class TaskHistoryStore {
   }
 
   private async read(): Promise<TaskHistoryEntry[]> {
+    return (await this.load()).tasks;
+  }
+
+  /** 读存档：无数据 → 空；format 1 → 有效条目，坏条目的原文另留；未知或损坏的格式 → 只读（写入会被拒绝，不覆盖原文）。 */
+  private async load(): Promise<{ tasks: TaskHistoryEntry[]; invalid: unknown[]; readOnly: boolean }> {
     const raw = await this.doc.read();
 
-    if (raw === null) return [];
+    if (raw === null) return { tasks: [], invalid: [], readOnly: false };
 
     try {
       // SAFETY: 只读 format 与 tasks 两个字段，tasks 里每条再用 isTaskHistoryEntry 核对。
-      const file = JSON.parse(raw) as Partial<HistoryFile>;
+      const file = JSON.parse(raw) as Partial<HistoryFile> | null;
 
-      // 坏条目逐条丢掉，不让一条坏数据让整个历史不可用。
-      return file?.format === 1 && Array.isArray(file.tasks) ? file.tasks.filter(isTaskHistoryEntry) : [];
-    } catch {
-      return [];
-    }
+      if (file?.format === 1 && Array.isArray(file.tasks)) {
+        const items: unknown[] = file.tasks;
+
+        return { tasks: items.filter(isTaskHistoryEntry), invalid: items.filter(item => !isTaskHistoryEntry(item)), readOnly: false };
+      }
+    } catch { /* 当作不可读，落到下面 */ }
+
+    return { tasks: [], invalid: [], readOnly: true };
   }
 
-  private mutate(change: (tasks: TaskHistoryEntry[]) => TaskHistoryEntry[]): Promise<TaskHistoryEntry[]> {
+  private mutate(change: (tasks: TaskHistoryEntry[]) => TaskHistoryEntry[], dropInvalid = false): Promise<TaskHistoryEntry[]> {
     return this.doc.exclusive(async () => {
-      const next = change(await this.read());
-      await this.doc.write(JSON.stringify({ format: 1, tasks: next } satisfies HistoryFile) + "\n");
+      const { tasks, invalid, readOnly } = await this.load();
+
+      if (readOnly) throw new Error("Task history was saved in an unknown or unreadable format; it is read-only to protect it");
+      const next = change(tasks);
+      // 读不懂的条目原样写回，不因一次改动丢数据。
+      await this.doc.write(JSON.stringify({ format: 1, tasks: [...next, ...(dropInvalid ? [] : invalid)] }) + "\n");
 
       return next;
     });

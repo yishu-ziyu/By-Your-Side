@@ -1286,7 +1286,7 @@ return;}
 
     if (session.isStreaming) {
       this.experience?.feedback(text);
-      this.memoryRuntime?.invalidateUserTurn();
+      this.memoryRuntime?.invalidateUserTurn("steer");
       this.callbacks.emit({ kind: "notice", message: "运行中，已转为插话" });
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
 
@@ -1969,7 +1969,7 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
     if (session.isStreaming) {
       this.failurePolicy?.reset();
       this.experience?.feedback(text);
-      this.memoryRuntime?.invalidateUserTurn();
+      this.memoryRuntime?.invalidateUserTurn("steer");
       this.runTrace.record("steer", { text, context, attachments });
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
     } else {
@@ -2471,7 +2471,7 @@ return {kind:'model'};
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.runTrace.record("steer", { text, context, attachments });
     this.experience?.feedback(text);
-    this.memoryRuntime?.invalidateUserTurn();
+    this.memoryRuntime?.invalidateUserTurn("steer");
     const images = extractImages(attachments);
     // 先登记再观察：预观察期间旧计划的写入必須已经被挡住。
     const record = this.reserveCorrection(text, attachments);

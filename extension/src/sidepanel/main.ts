@@ -1114,6 +1114,13 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
 }
 
 function renderMemoryDrawer(): void {
+  // <details> 的 toggle 事件是异步的：用户刚点开、事件还没到就重绘，状态会丢。重绘前直接读现有 DOM。
+  const shown = memoryBody.querySelector<HTMLDetailsElement>("details.memory-history");
+
+  if (shown) memoryHistoryOpen.recordToggle(shown.open, shown.dataset.forced === "1");
+
+  // 编辑/确认刚关闭，补上之前被推迟的那一次重读。
+  if (memoryState.takeDeferredRefresh(memoryEditorBusy())) queueMicrotask(() => { if (!memoryDrawer.hidden) requestMemoryList(); });
   renderMemoryFacts();
   memoryBody.appendChild(renderPastTasks());
 }
@@ -1253,6 +1260,8 @@ function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
   const ids = new Set(history.map((entry) => entry.id));
   const forced = (!!memoryForget && ids.has(memoryForget.id)) || (!!memoryRestore && ids.has(memoryRestore.id));
   section.open = memoryHistoryOpen.shouldOpen(forced);
+
+  if (forced) section.dataset.forced = "1";
   section.addEventListener("toggle", () => memoryHistoryOpen.recordToggle(section.open, forced));
   const summary = document.createElement("summary");
   summary.textContent = `历史 · ${history.length}`;
@@ -3693,6 +3702,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
   switch (ev.kind) {
     case "memory":
       renderMemoryReceipt(ev);
+      refreshMemoryIfStale(ev.rev);
       break;
     case "text_delta":
       if (leadDeliveryMode === "explicit") {
@@ -3972,7 +3982,20 @@ if (new URLSearchParams(location.search).get("acceptance") === "t06") {
 function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {
   const outcome = memoryState.receive(msg.conversationId, msg);
   processMemoryOutcome(outcome);
+
+  // 本面板没发过的结果（比如别处的写入）只带版本号：不同就重读。
+  if (outcome.kind === "ignored" && outcome.reason === "unknown-request" && msg.ok) refreshMemoryIfStale(msg.rev);
 }
+
+/** 面板开着时，记忆被别处写入（如智能体刚保存）→ 重读列表，避免下次修改撞「版本冲突」。关着时下次打开本来就会重读。 */
+function refreshMemoryIfStale(rev: number | undefined): void {
+  if (memoryDrawer.hidden || !memoryLoaded) return;
+
+  if (memoryState.noteRev(rev, memoryEditorBusy())) requestMemoryList();
+}
+
+/** 正在编辑、确认忘记或撤销：此时不重建面板里的输入框。 */
+const memoryEditorBusy = (): boolean => !!(memoryEdit || memoryForget || memoryRestore);
 
 const inputContext = (): VoiceInputContext => {
   const context: VoiceInputContext = { attachments: attachments?.getAttachments() ?? [] };

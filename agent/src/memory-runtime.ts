@@ -5,8 +5,9 @@ import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryTaskUrl, normalize
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryQuery, MemoryStore } from "./memory-store.js";
+import { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
-import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
+import { decideMemory, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextSelection } from "./memory-context.js";
 import { isRelevantMemory } from "./memory-relevance.js";
 
@@ -20,6 +21,8 @@ interface ActiveUserTurn {
   auto?: Promise<AutoOutcome | null>;
   memoryOnly?: boolean;
   recentTurns: MemoryConversation;
+  /** 这条消息在补判队列里的编号：`对话编号:消息编号`，补判据此防止同一句记两次。 */
+  key: string;
 }
 
 /** 决定记录的内容：只有可序列化的简单值。 */
@@ -27,16 +30,19 @@ type MemoryRecordValue = string | number | boolean | null | MemoryRecordValue[] 
 
 type MemoryRecord = { [key: string]: MemoryRecordValue };
 
-/** 决定点 A 的一条记录：判为哪种、存没存、按哪条规则、依据的原话。 */
+/** 决定点 A 的一条记录：判为哪种、存没存、按哪条规则、写了哪些条目。只留编号与结论，不留用户原话。 */
 interface MemoryDecisionRecord {
   [key: string]: MemoryRecordValue;
-  source: "message" | "change";
+  source: "message" | "change" | "retry";
+  status: "decided";
+  key: string;
   action: MemoryDecision["action"];
   kind: MemoryPlacement["kind"];
   stored: boolean;
   rule: string;
   answers: MemoryRecordValue;
-  quote: string;
+  targetIds: string[];
+  entryIds: string[];
   /** 存成「做过的事」时关联的日子与有效期最后一天；其余为 null。 */
   date: string | null;
   validityEnd: string | null;
@@ -46,6 +52,124 @@ interface AutoOutcome { decision: MemoryDecision; changed: MemoryEntry[]; messag
 
 /** 自动判断一次最多等这么久；超时就当没说，不影响这轮任务。 */
 const AUTO_MEMORY_TIMEOUT_MS = 20_000;
+
+/** 「要不要记」失败的话最多补判这么多次，之后放弃并删掉原话。 */
+const PENDING_MAX_ATTEMPTS = 3;
+
+/** 补判失败后至少隔这么久再试（逐次翻倍）。 */
+const PENDING_BACKOFF_MS = 30_000;
+
+/**
+ * 判断失败后多久第一次到点补判：用户不再发消息时也要补上。所属对话正在跑任务时到点不补判，留到这一轮结束；
+ * 这一轮已被停止、接管或交还作废的话不补判。
+ */
+const PENDING_FIRST_RETRY_MS = 5_000;
+
+/** 记住已判过的编号（只有编号，没有原话），防止同一句补判两次；只留最近这么多条。 */
+const PENDING_DONE_MAX = 200;
+
+/** 一句判断失败、等待补判的话。只存在本机，判完或放弃即删。 */
+interface PendingJudgment {
+  key: string;
+  conversationId: string;
+  text: string;
+  hostname: string | null;
+  at: number;
+  attempts: number;
+  nextAt: number;
+  /** 排队时已有的各件事（factId，只有编号）：补判时有哪件已不在，说明用户之后忘掉过。 */
+  facts: string[];
+}
+
+interface PendingDocument {
+  items: PendingJudgment[];
+  done: string[];
+  /** 各对话里用户的话最近一次改动记忆（记下、更新、忘掉）的时间：之前排队的「记下」补判作废。 */
+  userWriteAt: Record<string, number>;
+}
+
+/** 判断失败的种类，只写进诊断记录。 */
+type FailureReason = "timeout" | "provider error" | "parse error" | "store error";
+
+/** 进程内的小文档（本机测试与没有接持久化时用）。 */
+class InMemoryDocument implements DocumentPersistence {
+  private text: string | null = null;
+  private readonly lock = new InProcessLock();
+
+  async read(): Promise<string | null> { return this.text; }
+
+  exclusive<T>(fn: () => Promise<T>): Promise<T> { return this.lock.run(fn); }
+
+  async write(text: string, commitGuard?: () => boolean): Promise<void> {
+    if (commitGuard && !commitGuard()) throw new Error("Write is no longer authorized");
+    this.text = text;
+  }
+}
+
+/** 补判队列：同一份记忆共用一个，多个对话的运行时不会同时补判同一句。 */
+class PendingJudgments {
+  /** 正在进行的补判；再次触发时等它结束，不并行第二次。 */
+  draining: Promise<void> | null = null;
+  /** 所属一轮被停止、接管或交还作废的编号：补判中的也不落盘。 */
+  readonly cancelled = new Set<string>();
+
+  constructor(private readonly doc: DocumentPersistence) {}
+
+  private async load(): Promise<PendingDocument> {
+    try {
+      // SAFETY: 只有本类写这份文档；下面只取数组，单项字段缺失时补判照常失败并按次数放弃。
+      const parsed = JSON.parse((await this.doc.read()) ?? "null") as Partial<PendingDocument> | null;
+
+      const userWriteAt = parsed?.userWriteAt ?? {};
+
+      return { items: Array.isArray(parsed?.items) ? parsed.items : [], done: Array.isArray(parsed?.done) ? parsed.done : [], userWriteAt };
+    } catch {
+      // 读不懂就当没有：队列只是尽力补判，不影响记忆本身。
+      return { items: [], done: [], userWriteAt: {} };
+    }
+  }
+
+  /** 不加锁只读一眼：决定要不要动手。 */
+  peek(): Promise<PendingDocument> { return this.load(); }
+
+  /** 在锁里读改写；返回值由 fn 决定。 */
+  update<T>(fn: (doc: PendingDocument) => T): Promise<T> {
+    return this.doc.exclusive(async () => {
+      const doc = await this.load();
+      const value = fn(doc);
+      await this.doc.write(JSON.stringify(doc));
+
+      return value;
+    });
+  }
+}
+
+const pendingDocs = new WeakMap<MemoryStore, DocumentPersistence>();
+
+const pendingQueues = new WeakMap<DocumentPersistence, PendingJudgments>();
+
+const defaultPendingDocs = new WeakMap<MemoryStore, DocumentPersistence>();
+
+/** 给这份记忆指定补判队列存放处（扩展里是 IndexedDB 的一条记录）；没指定时只在进程内保存。 */
+export function usePendingMemoryJudgments(store: MemoryStore, doc: DocumentPersistence): MemoryStore {
+  pendingDocs.set(store, doc);
+
+  return store;
+}
+
+function pendingQueueFor(store: MemoryStore, doc?: DocumentPersistence): PendingJudgments {
+  let target = doc ?? pendingDocs.get(store) ?? defaultPendingDocs.get(store);
+
+  if (!target) defaultPendingDocs.set(store, target = new InMemoryDocument());
+  let queue = pendingQueues.get(target);
+
+  if (!queue) pendingQueues.set(target, queue = new PendingJudgments(target));
+
+  return queue;
+}
+
+/** 判断请求出错时打的标记：区分「服务出错」与「回答看不懂」。 */
+class ProviderFailure extends Error {}
 
 /** 任务结束时判断结果关联哪一天，最多等这么久；判断不了就不带日期。 */
 const TASK_DATE_TIMEOUT_MS = 12_000;
@@ -81,10 +205,17 @@ interface MemoryToolResult {
 
 export class MemoryRuntime {
   onUsed?: (entries: MemoryEntry[]) => void;
-  /** 决定记录：写进诊断记录（设置页可导出）。只写种类、规则、条目编号与原话依据，不写密码类内容。 */
+  /** 决定记录：写进诊断记录（设置页可导出）。只写编号、种类、规则与结论，不写用户原话。 */
   onRecord?: (type: "memory_decision" | "memory_context", data: MemoryRecord) => void;
   private epoch = 0;
   private active: ActiveUserTurn | null = null;
+  /** 还在后台进行的自动判断；一轮结束时等它们落定（失败的已进补判队列）再补判。 */
+  private readonly autos = new Set<Promise<unknown>>();
+  private readonly pending: PendingJudgments;
+  /** 这个对话正在跑任务（agent_start 到 agent_settled 之间）：到点补判留到这一轮结束。 */
+  private running = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timerAt = Infinity;
 
   constructor(
     private readonly store: MemoryStore,
@@ -92,15 +223,189 @@ export class MemoryRuntime {
     private readonly emit: (event: AgentUiEvent) => void,
     private readonly complete?: MemoryComplete,
     /** 自动记忆：产品里打开；关闭时只在用户明确要求时修改记忆（旧行为）。 */
-    private readonly options: { auto?: boolean; history?: TaskHistoryStore } = {},
-  ) {}
+    private readonly options: { auto?: boolean; history?: TaskHistoryStore; /** 补判队列存放处；不给时用 usePendingMemoryJudgments 登记的，再没有就只在进程内。 */ pending?: DocumentPersistence } = {},
+  ) {
+    this.pending = pendingQueueFor(store, options.pending);
+
+    // 扩展重启后，上次没补判完的话由所属对话重新打开时补上。
+    if (complete) queueMicrotask(() => void this.drainPending());
+  }
 
   beginUserTurn(text: string, context?: PageContext, recentTurns: MemoryConversation = []): void {
-    this.invalidateUserTurn();
-    const turn: ActiveUserTurn = { epoch: this.epoch, text, query: { text, url: memoryTaskUrl(text, context?.url) }, abort: new AbortController(), recentTurns: recentTurns.slice(-12).map(t => ({ role: t.role, text: t.text.slice(0, 2000) })) };
+    this.endTurn();
+    const key = `${this.conversationId}:${globalThis.crypto.randomUUID()}`;
+    const turn: ActiveUserTurn = { epoch: this.epoch, text, key, query: { text, url: memoryTaskUrl(text, context?.url) }, abort: new AbortController(), recentTurns: recentTurns.slice(-12).map(t => ({ role: t.role, text: t.text.slice(0, 2000) })) };
     this.active = turn;
 
-    if (this.options.auto && this.complete && mayStatePersonalFact(text, turn.recentTurns)) turn.auto = this.autoRemember(turn);
+    if (this.options.auto && this.complete && mayStatePersonalFact(text, turn.recentTurns)) {
+      const auto = this.autoRemember(turn);
+      turn.auto = auto;
+      this.autos.add(auto);
+      void auto.finally(() => this.autos.delete(auto));
+    }
+  }
+
+  /** 一轮结束：等这一轮的自动判断落定后在后台补判；这一轮的结束不等补判。 */
+  afterTurn(): void {
+    this.running = false;
+    void Promise.allSettled(this.autos).then(() => this.drainPending());
+  }
+
+  /** 补判：一次只进行一轮，再次触发时等当前这轮结束后再看一遍队列。 */
+  private async drainPending(): Promise<void> {
+    if (!this.complete) return;
+
+    while (this.pending.draining) await this.pending.draining;
+    const run = this.drainOnce().catch(() => undefined);
+    this.pending.draining = run;
+
+    try { await run; } finally { if (this.pending.draining === run) this.pending.draining = null; }
+  }
+
+  /** 在 at 时刻补判；已有更早的定时器就不另设。 */
+  private scheduleDrain(at: number): void {
+    if (this.timer && this.timerAt <= at) return;
+
+    if (this.timer) clearTimeout(this.timer);
+    this.timerAt = at;
+
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.timerAt = Infinity;
+
+      // 任务正在跑：不与它抢模型，这一轮结束（afterTurn）时再补判。
+      if (!this.running) void this.drainPending();
+    }, Math.max(0, at - Date.now()));
+
+    // 本机宿主与测试里不让这个定时器拖住进程退出。
+    // SAFETY: Node 的定时器带 unref；浏览器里是数字，取不到 unref 就跳过。
+    (this.timer as { unref?: () => void }).unref?.();
+  }
+
+  private async drainOnce(): Promise<void> {
+    const mine = (item: PendingJudgment) => item.conversationId === this.conversationId;
+
+    // 只补判本对话的话：回执出现在说这句话的对话里。没有就不动队列文档。
+    if (!(await this.pending.peek()).items.some(mine)) return;
+    const now = Date.now();
+
+    // 认领到期的：先记一次尝试并推后下次时间，判断过程中别处不会再拿到同一句。
+    const due = await this.pending.update(doc => {
+      doc.items = doc.items.filter(item => !doc.done.includes(item.key) && !this.pending.cancelled.has(item.key));
+      const claimed = doc.items.filter(item => mine(item) && item.nextAt <= now);
+
+      for (const item of claimed) {
+        item.attempts += 1;
+        item.nextAt = now + PENDING_BACKOFF_MS * 2 ** (item.attempts - 1);
+      }
+
+      return claimed.map(item => ({ ...item }));
+    });
+
+    for (const item of due) {
+      const decided = await this.judgePending(item);
+
+      await this.pending.update(doc => {
+        if (!decided && item.attempts < PENDING_MAX_ATTEMPTS) return;
+        doc.items = doc.items.filter(other => other.key !== item.key);
+
+        if (decided) doc.done = [...doc.done.filter(key => key !== item.key), item.key].slice(-PENDING_DONE_MAX);
+      });
+
+      if (!decided && item.attempts >= PENDING_MAX_ATTEMPTS) this.onRecord?.("memory_decision", { source: "retry", status: "gave up", key: item.key, attempts: item.attempts });
+    }
+
+    // 还有没判完的：到下一次该试的时间再补判，不等用户发新消息。
+    const next = Math.min(Infinity, ...(await this.pending.peek()).items.filter(mine).map(item => item.nextAt));
+
+    if (Number.isFinite(next)) this.scheduleDrain(next);
+  }
+
+  /** 补判一句：判完（记下、不记或忘掉）返回 true；再次失败返回 false。 */
+  private async judgePending(item: PendingJudgment): Promise<boolean> {
+    const signal = AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS);
+
+    try {
+      const entries = (await this.store.list()).filter(entry => entry.status === "active");
+      const decision = await decideMemory(this.providerTagged(), item.text, entries, item.hostname, signal, [], "auto");
+      const placement = placeMemory(decision, entries);
+
+      if (decision.action !== "forget" && !placement.store) {
+        this.recordDecision("retry", item.key, decision, placement, []);
+
+        return true;
+      }
+
+      if (await this.supersededSince(item, decision)) {
+        this.onRecord?.("memory_decision", { source: "retry", status: "dropped", reason: "superseded", key: item.key, action: decision.action, targetIds: decision.targets.map(target => target.id) });
+
+        return true;
+      }
+
+      const changed = await this.store.applyDecision(decision, item.text, item.conversationId, () => !signal.aborted && !this.pending.cancelled.has(item.key));
+      this.recordDecision("retry", item.key, decision, placement, changed);
+      await this.emitWrite(decision, changed);
+
+      return true;
+    } catch (error) {
+      // 这一轮在补判途中被作废：不落盘，也不再补判。
+      if (this.pending.cancelled.has(item.key)) return true;
+      this.onRecord?.("memory_decision", { source: "retry", status: "failed", reason: failureReason(error instanceof Error ? error : new Error(String(error)), signal), key: item.key, attempts: item.attempts });
+
+      return false;
+    }
+  }
+
+  /**
+   * 补判是否已过时：排队之后用户亲自动过这件事，就不再按旧话改写。
+   * - 更新 / 忘记：目标条目在排队之后改过（对话里纠正、面板修改或撤销都会更新 updatedAt）。
+   * - 记下：排队之后本对话里用户的话改动过记忆（判断模型可能没看出那是纠正，再记旧值就会新旧并存），
+   *   或排队时已有的某件事被面板修改、撤销或忘掉了。
+   * 不是用户动作的写入（「用过」计数、后台整理）与没有改动记忆的话不让补判作废。判据较宽：可能少记，不会记错。
+   */
+  private async supersededSince(item: PendingJudgment, decision: MemoryDecision): Promise<boolean> {
+    const entries = await this.store.list();
+
+    if (decision.action !== "save") return decision.targets.some(target => entries.some(entry => entry.id === target.id && entry.updatedAt >= item.at));
+    const doc = await this.pending.peek();
+
+    if ((doc.userWriteAt[item.conversationId] ?? 0) >= item.at) return true;
+    const known = new Set(item.facts ?? []);
+    const present = new Set(entries.map(entry => entry.factId));
+
+    return [...known].some(factId => !present.has(factId)) || entries.some(entry => known.has(entry.factId) && entry.updatedAt >= item.at);
+  }
+
+  /** 本对话里用户的话刚改动过记忆：之前排队的「记下」补判作废。只在本对话还有排队的话时写。 */
+  private async noteUserWrite(): Promise<void> {
+    if (!(await this.pending.peek()).items.some(item => item.conversationId === this.conversationId)) return;
+    const now = Date.now();
+    await this.pending.update(doc => { doc.userWriteAt[this.conversationId] = now; }).catch(() => undefined);
+  }
+
+  /** 发出写入回执，带写入后整份记忆的版本号。返回回执文字。 */
+  private async emitWrite(decision: MemoryDecision, changed: MemoryEntry[]): Promise<string> {
+    if (decision.action === "forget" && !changed.length) return "没有找到需要忘记的记忆。";
+    const action = decision.action === "save" ? "saved" : decision.action === "update" ? "updated" : "forgotten";
+
+    const message = action === "forgotten" ? "已忘记所指定的记忆，后续不再使用。"
+      : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}`;
+
+    this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev() });
+
+    return message;
+  }
+
+  /** 写入后整份记忆的版本号；取不到就不带（面板照旧按条目版本核对）。 */
+  private async rev(): Promise<{ rev?: number }> {
+    try { return { rev: await this.store.currentRev() }; } catch { return {}; }
+  }
+
+  /** 把判断请求本身的出错标成「服务出错」，与回答看不懂区分开。 */
+  private providerTagged(): MemoryComplete {
+    return async (system, input, signal) => {
+      try { return await this.complete!(system, input, signal); } catch (error) { throw new ProviderFailure(error instanceof Error ? error.message : String(error)); }
+    };
   }
 
   /**
@@ -116,29 +421,59 @@ export class MemoryRuntime {
 
       try { hostname = normalizeMemoryHostname(new URL(turn.query.url ?? "").hostname); } catch { /* No current site. */ }
 
-      const decision = await decideMemory(this.complete!, turn.text, entries, hostname, signal, turn.recentTurns, "auto");
+      const decision = await decideMemory(this.providerTagged(), turn.text, entries, hostname, signal, turn.recentTurns, "auto");
       const placement = placeMemory(decision, entries);
-      this.recordDecision("message", turn.text, decision, placement);
 
-      if (decision.action !== "forget" && !placement.store) return { decision, changed: [], message: "" };
+      if (decision.action !== "forget" && !placement.store) {
+        this.recordDecision("message", turn.key, decision, placement, []);
+
+        return { decision, changed: [], message: "" };
+      }
+
       const changed = await this.store.applyDecision(decision, turn.text, this.conversationId, () => this.current(turn) && !signal.aborted);
+      this.recordDecision("message", turn.key, decision, placement, changed);
 
-      if (decision.action === "forget" && !changed.length) return { decision, changed, message: "没有找到需要忘记的记忆。" };
-      const action = decision.action === "save" ? "saved" : decision.action === "update" ? "updated" : "forgotten";
-
-      const message = action === "forgotten" ? "已忘记所指定的记忆，后续不再使用。"
-        : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}`;
-
-      this.emit({ kind: "memory", action, entries: changed, message });
+      // 说过「忘掉」即使没找到可忘的也算：之前排队的同一件事不再补记。
+      if (changed.length || decision.action === "forget") await this.noteUserWrite();
+      const message = await this.emitWrite(decision, changed);
 
       return { decision, changed, message };
-    } catch {
-      // 自动记忆失败不打扰用户：这轮任务照常，下次再说还会再判断。
+    } catch (error) {
+      // 用户已发新消息、停止或接管：这句作废，不补判。
+      if (turn.abort.signal.aborted) return null;
+      // 其余失败不打扰用户：留一条失败记录（不含原话），这句排进补判队列，一轮结束后再判。
+      this.onRecord?.("memory_decision", { source: "message", status: "failed", reason: failureReason(error instanceof Error ? error : new Error(String(error)), signal), key: turn.key });
+      const hostname = (() => { try { return normalizeMemoryHostname(new URL(turn.query.url ?? "").hostname); } catch { return null; } })();
+      const now = Date.now();
+      const facts = await this.store.list().then(entries => [...new Set(entries.map(entry => entry.factId))], () => []);
+
+      await this.pending.update(doc => {
+        if (doc.done.includes(turn.key) || doc.items.some(item => item.key === turn.key)) return;
+        doc.items.push({ key: turn.key, conversationId: this.conversationId, text: turn.text, hostname, at: now, attempts: 0, nextAt: now, facts });
+      }).catch(() => undefined);
+      this.scheduleDrain(now + PENDING_FIRST_RETRY_MS);
+
       return null;
     }
   }
 
-  invalidateUserTurn(): void {
+  /**
+   * 这一轮作废，进行中的自动判断不落盘。
+   * - cancel（停止、接管、交还）：这一轮判断失败排队的话也一并作废，到点不补判、不落盘。
+   * - steer（任务进行中插话）：只作废进行中的判断；已排队的话照常补判，过时的由 supersededSince 挡住。
+   */
+  invalidateUserTurn(reason: "cancel" | "steer" = "cancel"): void {
+    const key = this.active?.key;
+
+    if (key && reason === "cancel") {
+      this.pending.cancelled.add(key);
+      void this.pending.update(doc => { doc.items = doc.items.filter(item => item.key !== key); }).catch(() => undefined);
+    }
+
+    this.endTurn();
+  }
+
+  private endTurn(): void {
     this.active?.abort.abort();
     this.epoch += 1;
     this.active = null;
@@ -155,6 +490,9 @@ export class MemoryRuntime {
           return { block: true, reason: "本轮用户仅要求修改记忆，未要求操作网页。请报告记忆结果，不要顺手填表、提交或派发助手。" };
         }
       });
+      // 任务开始到一轮结束（不会再自动重试或续跑）之间不到点补判；结束后在后台补判，不拖住结束。
+      pi.on("agent_start", () => { this.running = true; });
+      pi.on("agent_settled", () => this.afterTurn());
       pi.on("before_agent_start", async event => {
         const turn = this.active;
 
@@ -217,7 +555,7 @@ export class MemoryRuntime {
 
     if (experiences.length) {
       this.onUsed?.(experiences);
-      this.emit({ kind: "memory", action: "used", entries: experiences, message: `本轮使用了 ${experiences.length} 条记忆` });
+      this.emit({ kind: "memory", action: "used", entries: experiences, message: `本轮使用了 ${experiences.length} 条记忆`, ...await this.rev() });
     }
 
     return selection;
@@ -248,18 +586,19 @@ export class MemoryRuntime {
     } catch { /* 判断不了：不带日期。 */ }
 
     this.onRecord?.("memory_decision", date
-      ? { source: "task", taskId: task.id, kind: "past", date, validityEnd: date, rule: "8 带日期的事：有效期到那天结束", quote: looksSecret(task.goal) ? "[含密码或验证码类内容，不记录原话]" : task.goal.slice(0, 200) }
+      ? { source: "task", taskId: task.id, kind: "past", date, validityEnd: date, rule: "8 带日期的事：有效期到那天结束" }
       : { source: "task", taskId: task.id, kind: "past", date: null, rule: "8 结果不关联某一天：过往任务不带有效期" });
 
     return date ? { date, validity: { end: endOfLocalDay(date) } } : null;
   }
 
-  /** 决定点 A 的决定记录：判为哪种、依据哪句原话、按哪条规则。像密码验证码的话不写原话。 */
-  private recordDecision(source: "message" | "change", userMessage: string, decision: MemoryDecision, placement: MemoryPlacement): void {
+  /** 决定点 A 的决定记录：判为哪种、按哪条规则、改了哪些条目。不写用户原话（结论里的日期、是非除外）。 */
+  private recordDecision(source: MemoryDecisionRecord["source"], key: string, decision: MemoryDecision, placement: MemoryPlacement, changed: MemoryEntry[]): void {
     const record: MemoryDecisionRecord = {
-      source, action: decision.action, kind: placement.kind, stored: placement.store || decision.action === "forget", rule: placement.rule,
+      source, status: "decided", key, action: decision.action, kind: placement.kind, stored: placement.store || decision.action === "forget", rule: placement.rule,
       answers: decision.about ?? null,
-      quote: looksSecret(userMessage) ? "[含密码或验证码类内容，不记录原话]" : decision.evidence.slice(0, 200),
+      targetIds: decision.targets.map(target => target.id),
+      entryIds: changed.map(entry => entry.id),
       date: placement.store ? placement.date ?? null : null,
       validityEnd: placement.store && placement.validity?.end ? localDateOf(placement.validity.end) : null,
     };
@@ -277,7 +616,7 @@ export class MemoryRuntime {
 
     if (entries.length) {
       this.onUsed?.(entries);
-      this.emit({ kind: "memory", action: "used", entries, message: `本轮使用了 ${entries.length} 条记忆` });
+      this.emit({ kind: "memory", action: "used", entries, message: `本轮使用了 ${entries.length} 条记忆`, ...await this.rev() });
     }
 
     return entries;
@@ -366,10 +705,13 @@ export class MemoryRuntime {
 
     if (!guard()) throw new Error("记忆操作已失效，未获授权");
     const placement = placeMemory(decision, entries);
-    this.recordDecision("change", turn.text, decision, placement);
+
+    const writes = decision.action === "save" || decision.action === "update";
+
+    // 不落盘的结论在这里记；落盘的写完后带上条目编号再记。
+    if (!(decision.action === "forget" || (writes && placement.store))) this.recordDecision("change", turn.key, decision, placement, []);
 
     if (decision.action === "none") return result("none", [], "当前请求无需修改长期记忆；尚未保存任何内容。");
-    const writes = decision.action === "save" || decision.action === "update";
 
     if (decision.action === "temporary" || (writes && !placement.store && placement.kind === "task")) return result("temporary", [], "只用于本次任务，长期默认值保持不变。");
 
@@ -377,17 +719,30 @@ export class MemoryRuntime {
 
     if (decision.action === "clarify") return result("clarify", [], "尚未修改记忆；请明确需要保存、修改或忘记的内容及适用范围。");
     const changed = await this.store.applyDecision(decision, turn.text, this.conversationId, guard);
+    this.recordDecision("change", turn.key, decision, placement, changed);
+
+    // 说过「忘掉」即使没找到可忘的也算：之前排队的同一件事不再补记。
+    if (changed.length || decision.action === "forget") await this.noteUserWrite();
     turn.memoryOnly = !decision.taskRequested;
     const action = decision.action === "save" ? "saved" : decision.action === "update" ? "updated" : "forgotten";
 
     const message = action === "forgotten" ? (changed.length ? "已忘记所指定的记忆，后续不再使用。" : "没有找到需要忘记的记忆。")
       : `${action === "saved" ? "已记住" : "已更新"}：${changed[0]!.text}${untilLabel(changed[0]!)}\n适用范围：${decision.scope.kind === "all" ? "所有网站" : decision.scope.hostname}`;
 
-    this.emit({ kind: "memory", action, entries: changed, message });
+    this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev() });
 
     // A forget receipt carries IDs to the UI but never echoes the deleted content to the model.
     return result(action, action === "forgotten" ? [] : changed, message + (turn.memoryOnly ? "\n本轮仅修改记忆；不要操作当前网页。" : ""));
   }
+}
+
+/** 失败归类：超时 / 判断服务出错 / 回答看不懂或不成立 / 写入失败。只进诊断记录。 */
+function failureReason(error: Error, signal: AbortSignal): FailureReason {
+  if (signal.aborted) return "timeout";
+
+  if (error instanceof ProviderFailure) return "provider error";
+
+  return /记忆判断|原话|记忆内容|记忆操作|目标|范围|更新缺少/.test(error.message) ? "parse error" : "store error";
 }
 
 /** 回执里的有效期说明：「（做过的事，到 10 月 3 日为止）」；长期的不加。 */

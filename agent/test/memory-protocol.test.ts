@@ -4,8 +4,8 @@ import { normalizeMemoryHostname } from "../../shared/memory.js";
 
 const entry = { id: "memory-1", version: 1, text: "会议摘要用三条要点", scope: { kind: "site", hostname: "example.com" }, sourceConversationId: "conversation-a", createdAt: 1, updatedAt: 1 };
 
-/** 升级后线上的条目：旧格式补上的默认值（种类按来源推断、生效、用过 0 次、格式版本 2）。 */
-const upgraded = { ...entry, kind: "profile", status: "active", useCount: 0, formatVersion: 2 };
+/** 升级后线上的条目：旧格式补上的默认值（种类按来源推断、生效、用过 0 次、自成一件事、格式版本 3）。 */
+const upgraded = { ...entry, factId: entry.id, kind: "profile", status: "active", useCount: 0, formatVersion: 3 };
 
 const client = (value: unknown) => parseClientMessage(JSON.stringify(value));
 

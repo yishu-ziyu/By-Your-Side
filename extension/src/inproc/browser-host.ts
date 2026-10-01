@@ -1,5 +1,5 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, type ClientConn, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ClientConn, type HostCore } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import type { createModelRuntime, ModelRuntime } from "./model-runtime.js";
@@ -62,7 +62,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
     currentPattern();
     // 会话目录先读进内存：核心启动时按它重建会话，offscreen 重启后侧栏的会话编号仍然有效。
     // 个人记忆存在扩展本地（IndexedDB），和本机宿主同一套判断与读写规则。
-    const memoryStore = new MemoryStore(new IdbDocument("memories"));
+    // 「要不要记」判断失败的话排在另一条记录里，一轮结束后补判；判完即删原话。
+    const memoryStore = usePendingMemoryJudgments(new MemoryStore(new IdbDocument("memories")), new IdbDocument("pending-memory"));
     const taskHistory = new TaskHistoryStore(new IdbDocument("tasks"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
       store,

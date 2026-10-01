@@ -1872,9 +1872,11 @@ return;
     try {
       if (!this.memoryStore) throw new Error("记忆存储不可用");
 
+      // 回执带整份记忆的版本号 rev。列表先读 rev 再读条目：其间若有新写入，面板拿到的 rev 偏旧，下次会重读，不会漏。
       if (message.type === "memory_list") {
+        const rev = await this.memoryStore.currentRev();
         const entries = await this.memoryStore.list();
-        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries });
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries, rev });
 
         return;
       }
@@ -1887,21 +1889,24 @@ return;
           scope: message.scope,
         });
 
-        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entry: changed });
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entry: changed, rev: await this.memoryStore.currentRev() });
 
         return;
       }
 
       if (message.type === "memory_restore") {
         const entries = await this.memoryStore.restore({ id: message.id, expectedVersion: message.expectedVersion });
-        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries });
+        this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries, rev: await this.memoryStore.currentRev() });
 
         return;
       }
 
       await this.memoryStore.forget({ id: message.id, expectedVersion: message.expectedVersion });
-      this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id });
+      this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id, rev: await this.memoryStore.currentRev() });
     } catch (error) {
+      // 失败（如版本冲突）也带上当前 rev，面板据此重读；记忆读不出来时不带。
+      const rev = await this.memoryStore?.currentRev().catch(() => undefined);
+
       this.emit({
         type: "memory_result",
         conversationId,
@@ -1909,6 +1914,7 @@ return;
         action,
         ok: false,
         error: error instanceof Error ? error.message : String(error),
+        ...(rev === undefined ? {} : { rev }),
       });
     }
   }

@@ -5,6 +5,7 @@ import { MemoryManagementState, memoryScopeLabel, sameMemorySnapshot } from "../
 function entry(id: string, version = 1, text = `preference-${id}`): MemoryEntry {
   return {
     id,
+    factId: id,
     version,
     text,
     scope: { kind: "all" },
@@ -14,7 +15,7 @@ function entry(id: string, version = 1, text = `preference-${id}`): MemoryEntry 
     kind: "profile",
     useCount: 0,
     status: "active",
-    formatVersion: 2,
+    formatVersion: 3,
   };
 }
 
@@ -246,5 +247,61 @@ describe("memory presentation helpers", () => {
     expect(memoryScopeLabel(current.scope)).toBe("仅 research.example");
     expect(sameMemorySnapshot(old, current)).toBe(false);
     expect(sameMemorySnapshot(current, { ...current, scope: { ...current.scope } })).toBe(true);
+  });
+});
+
+describe("memory document revision", () => {
+  const list = (state: MemoryManagementState, rev?: number) => {
+    const request = state.beginList("conversation-A");
+    state.receive("conversation-A", { type: "memory_result", requestId: request.requestId, action: "list", ok: true, entries: [entry("a")], rev });
+  };
+
+  it("stores the rev of the rendered list and flags only different revs as stale", () => {
+    const state = manager();
+
+    expect(state.isStale(3)).toBe(true);
+    list(state, 3);
+    expect(state.rev).toBe(3);
+    expect(state.isStale(3)).toBe(false);
+    expect(state.isStale(4)).toBe(true);
+    expect(state.isStale(undefined)).toBe(true);
+    list(state, 4);
+    expect(state.rev).toBe(4);
+    expect(state.isStale(4)).toBe(false);
+  });
+
+  it("forgets the rev when an update skips a revision someone else wrote", () => {
+    const state = manager();
+    list(state, 3);
+    const update = state.beginUpdate("conversation-A", entry("a"), "new", { kind: "all" });
+    state.receive("conversation-A", { type: "memory_result", requestId: update.requestId, action: "update", ok: true, entry: entry("a", 2), rev: 5 });
+    expect(state.isStale(5)).toBe(true);
+  });
+});
+
+describe("memory refresh while editing", () => {
+  it("defers a stale-rev refetch while busy and releases it once after the edit closes", () => {
+    const state = manager();
+    const first = state.beginList("conversation-A");
+    state.receive("conversation-A", { type: "memory_result", requestId: first.requestId, action: "list", ok: true, entries: [entry("a")], rev: 3 });
+
+    expect(state.noteRev(4, true)).toBe(false);
+    expect(state.noteRev(5, true)).toBe(false);
+    expect(state.takeDeferredRefresh(true)).toBe(false);
+    expect(state.takeDeferredRefresh(false)).toBe(true);
+    expect(state.takeDeferredRefresh(false)).toBe(false);
+  });
+
+  it("does not defer when rev is unchanged, and a fresh list clears a pending deferral", () => {
+    const state = manager();
+    const first = state.beginList("conversation-A");
+    state.receive("conversation-A", { type: "memory_result", requestId: first.requestId, action: "list", ok: true, entries: [entry("a")], rev: 3 });
+
+    expect(state.noteRev(3, true)).toBe(false);
+    expect(state.takeDeferredRefresh(false)).toBe(false);
+    expect(state.noteRev(4, true)).toBe(false);
+    state.beginList("conversation-A");
+    expect(state.takeDeferredRefresh(false)).toBe(false);
+    expect(state.noteRev(4, false)).toBe(true);
   });
 });

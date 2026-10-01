@@ -62,6 +62,7 @@ describe("conversation memory management routing", () => {
       action: "list",
       ok: true,
       entries: [saved],
+      rev: 1,
     });
 
     await manager.handleMessage({
@@ -92,6 +93,7 @@ describe("conversation memory management routing", () => {
       action: "forget",
       ok: true,
       deletedId: saved.id,
+      rev: 3,
     });
   });
 

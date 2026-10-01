@@ -67,7 +67,7 @@ export class IdbDocument implements DocumentPersistence {
     const db = await this.database();
 
     if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
-    const tx = db.transaction(STORE, "readwrite");
+    const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
     tx.objectStore(STORE).put(text, this.key);
     await done(tx);
   }

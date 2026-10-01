@@ -7,6 +7,9 @@
  * - before_agent_start、context、tool_result：按注册顺序接力，后一个收到前一个改过的值；
  * - tool_call：第一个返回 block 的钩子立即生效；
  * - 除 tool_call 外，钩子抛错只记录，不中断任务。
+ * 另外 `notify` 把循环的只读生命周期事件（OBSERVED_EVENTS）交给同名钩子，使 `agent_settled` 等在两个宿主表现一致。
+ * 未转发（Pi 里存在、扩展循环没有对应来源或有可改写结果）：project_trust、resources_discover、session_*、
+ * before_provider_request/headers、after_provider_response、ui_prompt_*、model_select、thinking_level_select、user_bash、message_end。
  */
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
@@ -37,6 +40,12 @@ export interface HookResult {
   details?: HookValue;
   isError?: boolean;
 }
+
+/** 只读通知类事件：钩子无返回值语义，语义与 Pi 同名事件一致。 */
+export const OBSERVED_EVENTS: ReadonlySet<string> = new Set([
+  "agent_start", "agent_end", "agent_settled", "turn_start", "turn_end", "message_start", "message_update",
+  "tool_execution_start", "tool_execution_update", "tool_execution_end",
+]);
 
 export interface HookContext { abort(): void }
 
@@ -136,6 +145,13 @@ export class ExtensionHost {
     });
 
     return modified ? { content: current.content, details: current.details, isError: current.isError } : undefined;
+  }
+
+  /** 把只读生命周期事件交给同名钩子；钩子抛错只记录。 */
+  async notify(event: { type: string }): Promise<void> {
+    if (!OBSERVED_EVENTS.has(event.type)) return;
+    // SAFETY: 只读事件对象带 type 与 Pi 同名事件的字段；钩子只按需读取，不依赖 HookEvent 里未列出的键。
+    await this.each(event.type, () => event as HookEvent, () => {});
   }
 
   private async each(name: string, event: () => HookEvent, apply: (result: HookResult) => void): Promise<void> {

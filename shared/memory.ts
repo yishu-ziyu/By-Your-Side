@@ -18,10 +18,12 @@ export type MemoryStatus = "active" | "replaced" | "invalid";
  */
 export interface MemoryValidity { start?: number; end?: number; task?: string }
 
-export const MEMORY_FORMAT_VERSION = 2;
+export const MEMORY_FORMAT_VERSION = 3;
 
 export interface MemoryEntry {
   id: string;
+  /** 同一件事的所有版本（被替换、撤下的旧值和当前值）共用的编号；一件事里至多一个生效值。 */
+  factId: string;
   version: number;
   text: string;
   scope: MemoryScope;
@@ -47,6 +49,9 @@ export interface MemoryEntry {
 
 /** 升级前（format 1）的条目：只有下面这些字段。 */
 export type LegacyMemoryEntry = Pick<MemoryEntry, "id" | "version" | "text" | "scope" | "sourceConversationId" | "createdAt" | "updatedAt" | "experience">;
+
+/** format 2 的条目：还没有 factId。 */
+export type Format2MemoryEntry = Omit<MemoryEntry, "factId" | "formatVersion"> & { formatVersion: 2 };
 
 export const MEMORY_QUOTE_MAX = 600;
 
@@ -146,12 +151,15 @@ const KINDS = new Set<MemoryKind>(["profile", "past", "method"]);
 
 const STATUSES = new Set<MemoryStatus>(["active", "replaced", "invalid"]);
 
-export function isMemoryEntry(value: unknown): value is MemoryEntry {
+/** format 2 起的字段（种类、状态、有效期……），不含 factId 与格式版本号。 */
+type StatusFields = Omit<MemoryEntry, "factId" | "formatVersion">;
+
+function hasStatusFields(value: unknown): value is StatusFields {
   if (!isLegacyMemoryEntry(value)) return false;
   // SAFETY: 公共字段已核对；新字段下面逐个检查后才返回 true。
-  const entry = value as MemoryEntry;
+  const entry = value as StatusFields;
 
-  return entry.formatVersion === MEMORY_FORMAT_VERSION && KINDS.has(entry.kind) && STATUSES.has(entry.status)
+  return KINDS.has(entry.kind) && STATUSES.has(entry.status)
     && Number.isSafeInteger(entry.useCount) && entry.useCount >= 0
     && (entry.lastUsedAt === undefined || Number.isFinite(entry.lastUsedAt))
     && (entry.validity === undefined || isMemoryValidity(entry.validity))
@@ -160,19 +168,37 @@ export function isMemoryEntry(value: unknown): value is MemoryEntry {
     && (entry.replacedBy === undefined || validMemoryId(entry.replacedBy));
 }
 
-/** 存储或回执里能读的条目：当前格式，或升级前（没有格式版本号）的旧格式。 */
-export function isStoredMemoryEntry(value: unknown): value is MemoryEntry | LegacyMemoryEntry {
-  return isMemoryEntry(value) || (isLegacyMemoryEntry(value) && !("formatVersion" in value));
+export function isMemoryEntry(value: unknown): value is MemoryEntry {
+  return hasStatusFields(value) && "formatVersion" in value && value.formatVersion === MEMORY_FORMAT_VERSION && "factId" in value && validMemoryId(value.factId);
 }
 
 /**
- * 升级前的条目补上默认值：种类按来源推断（来自纠正的做法 → 做事的方法，其余 → 关于你），
- * 有效期为空（长期），状态生效，用过 0 次。已是当前格式的原样返回。
+ * 更新版本写的条目里，面板和助手需要的字段是否齐全（不看格式版本号和 factId）。只用于只读显示，从不写回。
  */
-export function upgradeMemoryEntry(entry: MemoryEntry | LegacyMemoryEntry): MemoryEntry {
-  if ("formatVersion" in entry) return entry;
+export function hasMemoryDisplayFields(value: unknown): value is StatusFields {
+  return hasStatusFields(value);
+}
 
-  return { ...entry, kind: entry.experience ? "method" : "profile", useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION };
+export function isFormat2MemoryEntry(value: unknown): value is Format2MemoryEntry {
+  return hasStatusFields(value) && "formatVersion" in value && value.formatVersion === 2;
+}
+
+/** 存储或回执里能读的条目：当前格式、format 2，或升级前（没有格式版本号）的旧格式。 */
+export function isStoredMemoryEntry(value: unknown): value is MemoryEntry | Format2MemoryEntry | LegacyMemoryEntry {
+  return isMemoryEntry(value) || isFormat2MemoryEntry(value) || (isLegacyMemoryEntry(value) && !("formatVersion" in value));
+}
+
+/**
+ * 旧条目升到当前格式。format 1 补默认值：种类按来源推断（来自纠正的做法 → 做事的方法，其余 → 关于你），
+ * 有效期为空（长期），状态生效，用过 0 次。factId 缺省为自己的 id；整份记忆升级时由存储按替换链改成链上最早那条的 id。
+ * 已是当前格式的原样返回。
+ */
+export function upgradeMemoryEntry(entry: MemoryEntry | Format2MemoryEntry | LegacyMemoryEntry): MemoryEntry {
+  if (!("formatVersion" in entry)) return { ...entry, factId: entry.id, kind: entry.experience ? "method" : "profile", useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION };
+
+  if (entry.formatVersion === 2) return { ...entry, factId: entry.id, formatVersion: MEMORY_FORMAT_VERSION };
+
+  return entry;
 }
 
 /** A single explicit target URL is more precise than the incidental active tab. */
