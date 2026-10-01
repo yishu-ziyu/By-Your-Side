@@ -43,6 +43,10 @@ npm run check                # 文档、边界、类型、测试、构建
 
 `npm run reload:ext` 需要 Chrome 的远程调试入口，且必须在明确的加载范围内执行；配置和构建存在不证明运行版已经采用。
 
+## 项目看板
+
+`npm run dashboard`（[脚本](../../scripts/maintenance/dashboard.mjs)）生成 `out/dashboard/index.html`：一页给产品负责人看的静态 HTML，内容依次为版本与同步状态、三档能力通过率（9 月底基线与 `eval/runs/*/report.json` 的判分结果，对照 `eval/tasks/tiers.json` 目标）、最近 3 天提交及其验收结论、GitHub 上开着和最近关闭的问题、[STATUS](../STATUS.md) 能力表、分支与工作目录。数据全部在生成时读取；它只读仓库，不 fetch、不改远端，gh 取不到时对应区块显示提示。看板只是汇总视图，不替代 STATUS 与验收记录。
+
 ## CI 与人工复核
 
 [Documentation 工作流](../../.github/workflows/docs.yml)运行文档命令级验收与结构检查，并在 PR 中运行功能同步检查。[E2E 工作流](../../.github/workflows/e2e.yml)手动触发，在 Linux 上跑不需要凭据的隔离验收门槛子集（场景列表写在工作流里）。工作流文件写入不代表已经在远端执行，也不等于启用了分支保护。

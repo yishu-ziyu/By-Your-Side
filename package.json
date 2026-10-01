@@ -24,6 +24,7 @@
     "release:verify": "tsx scripts/eval/release-verify.mts",
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
     "check:docs": "node scripts/maintenance/check-docs.mjs",
+    "dashboard": "node scripts/maintenance/dashboard.mjs",
     "test:docs": "node --test scripts/acceptance/documentation-check.test.mjs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
