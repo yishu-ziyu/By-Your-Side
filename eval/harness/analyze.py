@@ -63,6 +63,17 @@ models = sorted({m for (m, _) in rows})
 common = sorted(t for t in TASKS if models and all((m, t) in rows for m in models))
 NO_SETUP = sorted(t for t in TASKS if TASKS[t].get('setup'))
 cats = sorted({TASKS[t]['category'] for t in TASKS})
+# 能力档位（docs/ROADMAP.md 第 11 条）：按档报通过率与目标差距。
+TIERS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tasks', 'tiers.json')))['tiers']
+
+def tier_summary(rs):
+    out = {}
+    for t, spec in TIERS.items():
+        tj = [r for r in rs if r['category'] in spec['categories'] and r['verdict'] in ('pass', 'fail', 'undeterminable')]
+        if tj:
+            rate = round(sum(r['pass_'] for r in tj) / len(tj), 3)
+            out[t] = dict(name=spec['name'], n_judged=len(tj), pass_rate=rate, target=spec['target'], gap=(round(rate - spec['target'], 3) if spec['target'] else None))
+    return out
 
 def summarize(m, ids):
     rs = [rows[(m, t)] for t in ids if (m, t) in rows]
@@ -87,7 +98,7 @@ def summarize(m, ids):
         mean_cost_usd=(round(cost / n, 6) if cost is not None else None), total_cost_usd=(round(cost, 5) if cost is not None else None),
         cost_per_pass_usd=(round(cost / p, 6) if cost is not None and p else None),
         catalog_list_total_usd=round(sum(r['catalog_list_usd'] for r in rs), 6),
-        timeouts=sum(r['status'] == 'timeout' for r in rs), by_category=by_cat)
+        timeouts=sum(r['status'] == 'timeout' for r in rs), by_category=by_cat, by_tier=tier_summary(rs))
 
 report = dict(run=os.path.basename(RUN), generated_at=datetime.now(timezone.utc).isoformat(),
     notes=['Only valid results (no quota errors, no harness setup_error) that have a judge file are counted. pass_rate = passed / n_judged (verdict pass|fail|undeterminable; undeterminable counts as not passed). judge_error rows are listed but excluded from pass_rate (the judge did not run); pass_rate is null when nothing was judged.',

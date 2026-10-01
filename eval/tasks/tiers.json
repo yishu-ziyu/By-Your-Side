@@ -1,0 +1,34 @@
+{
+  "_doc": "评测题类别 → 能力档位（docs/ROADMAP.md 第 11 条）。target 为该档通过率目标。",
+  "tiers": {
+    "1": {
+      "name": "必须稳",
+      "target": 0.95,
+      "categories": [
+        "page_understanding",
+        "selection_ask",
+        "browser_action_single",
+        "other"
+      ]
+    },
+    "2": {
+      "name": "应该做好",
+      "target": 0.8,
+      "categories": [
+        "browser_action_multistep",
+        "extraction_to_table",
+        "form_fill_no_submit",
+        "cross_tab",
+        "memory_skill"
+      ]
+    },
+    "3": {
+      "name": "陪着做",
+      "target": null,
+      "categories": [
+        "research_multi_page",
+        "translation"
+      ]
+    }
+  }
+}
