@@ -659,6 +659,10 @@ function resetConversationRender(): void {
   leadDeliveryMode = null;
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
+  leadAnswer = null;
+  leadAnswerText = "";
+  leadAnswerTurnClosed = false;
+  leadToolUsed = false;
   historyPrimed = false;
   currentDraftReady = false;
   updateStarterVisibility();
@@ -2599,6 +2603,20 @@ let currentLeadDraft: HTMLElement | null = null;
 
 let currentLeadDraftDetails: HTMLDetailsElement | null = null;
 
+/**
+ * explicit 模式下模型直接写的正文：先在回答位置逐段显示。之后又调了工具、下一轮又写了正文，
+ * 或这一轮没有用它交付（停止、出错），就收进「执行过程」；宿主在整轮结束时交付它，接管这个气泡，不再另起一个。
+ */
+let leadAnswer: HTMLElement | null = null;
+
+let leadAnswerText = "";
+
+/** 这段正文所在的那一轮模型输出已结束。 */
+let leadAnswerTurnClosed = false;
+
+/** 这一轮已调用过工具：之后的正文按「先核对再显示」留在执行过程，由宿主交付。 */
+let leadToolUsed = false;
+
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
   root: HTMLElement;
@@ -3336,6 +3354,10 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   }
 
   if (flags.finishRun) {
+    // 停止或出错收尾：回答位置那段没交付的正文按原来的样子留在执行过程里（过程行因此保留）。
+    const outcome = currentRun?.orbActivity.state();
+
+    if (outcome === "stopped" || outcome === "failed") foldLeadAnswer();
     closeBlocks();
     finishRun();
     sessionRun.clear();
@@ -3479,6 +3501,15 @@ function closeBlocks(): void {
   currentThinkingDetails = null;
   currentThinkingStart = 0;
 
+  closeLeadDraft();
+
+  if (leadAnswer) {
+    leadAnswer.classList.remove("streaming");
+    leadAnswerTurnClosed = true;
+  }
+}
+
+function closeLeadDraft(): void {
   if (currentLeadDraftDetails) {
     orbByHost.get(currentLeadDraftDetails)?.setRunning(false);
     currentLeadDraftDetails.classList.remove("streaming");
@@ -3487,6 +3518,60 @@ function closeBlocks(): void {
 
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
+}
+
+/** 模型直接写的正文：没调过工具时放在回答位置逐段显示；新一轮的正文出现时，上一轮那段只是过程。 */
+function appendLeadAnswer(delta: string): void {
+  // 过程行照常在跑：停止、出错时这段正文按原样收进去，过程行也随之保留。
+  ensureRun();
+
+  if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
+
+  if (!leadAnswer) {
+    leadAnswer = addMsg("msg assistant markdown streaming", "");
+    leadAnswerText = "";
+    leadAnswerTurnClosed = false;
+  }
+
+  leadAnswerText += delta;
+  revealText(leadAnswer, leadAnswerText, { render: renderMarkdown, live: !applyingHistory, final: false, onProgress: scrollToEnd });
+}
+
+/**
+ * 回答位置的正文不是最终回答：收进这一轮的「执行过程」（与它当初直接写进执行过程时一样），回答位置不留副本。
+ * 这一轮已经收尾时不再新开过程行：原来这段正文随过程行一起不显示。
+ */
+function foldLeadAnswer(): void {
+  const answer = leadAnswer;
+  const text = leadAnswerText;
+  const turnClosed = leadAnswerTurnClosed;
+
+  if (!answer) return;
+  leadAnswer = null;
+  leadAnswerText = "";
+  leadAnswerTurnClosed = false;
+  answer.remove();
+
+  if (!currentRun || !text) return;
+  closeLeadDraft();
+  appendLeadDelta(text);
+
+  if (turnClosed) closeLeadDraft();
+}
+
+/** 宿主交付的就是回答位置正在显示的那段正文：沿用这个气泡，不再另起一个。 */
+function adoptLeadAnswer(deliveryId: string, kind: string, runId: string | null | undefined): void {
+  if (!leadAnswer || deliveredBubbles.has(deliveryId) || (kind !== "finding" && kind !== "reply")) return;
+  const currentRunId = conversations.get(selectedConversationId)?.runId ?? null;
+
+  if (runId && currentRunId && runId !== currentRunId) return;
+  leadAnswer.dataset.deliveryId = deliveryId;
+  leadAnswer.dataset.deliveryKind = kind;
+  leadAnswer.dataset.streaming = "true";
+  deliveredBubbles.set(deliveryId, leadAnswer);
+  leadAnswer = null;
+  leadAnswerText = "";
+  leadAnswerTurnClosed = false;
 }
 
 function appendLeadDelta(delta: string): void {
@@ -3891,7 +3976,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "text_delta":
       if (leadDeliveryMode === "explicit") {
-        appendLeadDelta(ev.delta);
+        if (leadToolUsed) appendLeadDelta(ev.delta);
+        else appendLeadAnswer(ev.delta);
       } else {
         appendDelta("assistant", ev.delta);
       }
@@ -3901,6 +3987,12 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       appendDelta("thinking", ev.delta);
       break;
     case "tool_start":
+      // 正文之后又调了工具：那段正文是过渡话，先收进执行过程，再记这次工具调用。
+      if (leadDeliveryMode === "explicit") {
+        foldLeadAnswer();
+        leadToolUsed = true;
+      }
+
       onToolStart(ev);
       break;
     case "tool_end":
@@ -3908,7 +4000,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "agent_start":
       if (!runId || runId === conversations.get(selectedConversationId)?.runId) noteRunStarted(runId);
+      foldLeadAnswer();
       leadDeliveryMode = (ev as { deliveryMode?: "explicit" }).deliveryMode ?? null;
+      leadToolUsed = false;
       resultByConversation.delete(selectedConversationId);
       renderTaskStrip();
       closeBlocks();
@@ -3918,6 +4012,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "agent_end":
       closeBlocks();
+      // 宿主没有用它交付（停止、出错、交给用户）：和原来一样只留在执行过程里。
+      foldLeadAnswer();
       leadDeliveryMode = null;
       artifactCards.settleAfterTurn();
       break;
@@ -3929,6 +4025,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case 'user_delivery_stream': {
       const s=ev.stream;
+
+      if (s.phase === "streaming") adoptLeadAnswer(s.id, s.kind, s.runId);
       const bubble=deliveredBubbles.get(s.id);
       const state=bubble?{official:bubble.dataset.streaming===undefined,streaming:bubble.dataset.streaming==='true',cancelled:bubble.dataset.streaming==='cancelled'}:undefined;
       const plan=deliveryPresentation({kind:'stream',phase:s.phase},state);
@@ -4041,6 +4139,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
     renderTaskStrip();
   }
 
+  if (!staleForStrip) adoptLeadAnswer(delivery.id, delivery.kind, delivery.runId);
   const existing = deliveredBubbles.get(delivery.id);
 
   const existingState = existing

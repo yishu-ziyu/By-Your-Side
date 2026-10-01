@@ -39,6 +39,13 @@ const MEASURED = new Map<string, MeasuredCapability>([
 
 const key = (model: Pick<Model<Api>, "provider" | "id">) => `${model.provider}/${model.id}`;
 
+/** 某服务商在实测登记里有的模型 id：设置页把它们与目录合并列出（目录滞后时仍能选到）。 */
+export function measuredModelIds(provider: string): string[] {
+  const prefix = `${provider}/`;
+
+  return [...MEASURED.keys()].flatMap((id) => id.startsWith(prefix) ? [id.slice(prefix.length)] : []);
+}
+
 /** 把实测登记覆盖到模型对象上；没有登记的原样返回。可重复调用。 */
 export function withMeasuredCapability<TApi extends Api>(model: Model<TApi>): Model<TApi> {
   const measured = MEASURED.get(key(model));

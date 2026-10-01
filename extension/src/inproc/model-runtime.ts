@@ -17,7 +17,7 @@ import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex"
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
 import type { ModelPort } from "../../../agent/src/agent-loop.js";
 import { retryWhenBusy } from "../../../shared/provider-busy.js";
-import { unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
+import { measuredModelIds, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
@@ -166,6 +166,13 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     return { "x-opencode-session": sessionId, "x-opencode-client": "by-your-side" };
   }
 
+  /** 目录里的模型加上实测登记过、目录还没收的（如 MiniMax-M3.1-Flash-Preview）；登记的模型要靠同服务商目录模型解析，目录为空的不加。 */
+  function listedModels(providerId: string): string[] {
+    const catalog = models.getModels(providerId).map((m) => m.id);
+
+    return catalog.length ? [...new Set([...catalog, ...measuredModelIds(providerId)])] : catalog;
+  }
+
   function providerChoices(): ProviderChoice[] {
     const featured = new Map(FEATURED_PROVIDERS.map((p, i) => [p.id, i]));
 
@@ -176,7 +183,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
         name: FEATURED_PROVIDERS.find((f) => f.id === p.id)?.label ?? p.name,
         apiKey: !!p.auth.apiKey,
         oauthLabel: p.auth.oauth && BROWSER_OAUTH.has(p.id) ? p.auth.oauth.loginLabel ?? `用 ${p.name} 账号登录` : undefined,
-        models: models.getModels(p.id).map((m) => m.id),
+        models: listedModels(p.id),
       }));
 
     return choices.sort((a, b) => (featured.get(a.id) ?? 99) - (featured.get(b.id) ?? 99) || a.name.localeCompare(b.name));

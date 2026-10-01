@@ -33,7 +33,15 @@ await esbuild.build({
     background: "src/background/index.ts",
     sidepanel: "src/sidepanel/main.ts",
     "voice-permission": "src/sidepanel/voice-permission-page.ts",
+    "artifact-viewer": "src/sidepanel/artifact-viewer-page.ts",
   },
+});
+
+// 生成网页的沙箱页脚本：经典脚本，manifest 的 sandbox.pages 里加载，不与扩展页面共用模块。
+await esbuild.build({
+  ...common,
+  format: "iife",
+  entryPoints: { "artifact-sandbox": "src/sidepanel/artifact-sandbox.ts" },
 });
 
 // 语音工具清单由正式工具定义导出成 JSON，扩展内构建直接读它。
@@ -103,6 +111,8 @@ for (const [from, to] of [
   ["settings.html", "settings.html"],
   ["src/settings/settings.css", "settings.css"],
   ["voice-permission.html", "voice-permission.html"],
+  ["artifact-viewer.html", "artifact-viewer.html"],
+  ["artifact-sandbox.html", "artifact-sandbox.html"],
   ["src/sidepanel/styles.css", "styles.css"],
 ]) {
   await copyFile(path.join(root, from), path.join(dist, to));

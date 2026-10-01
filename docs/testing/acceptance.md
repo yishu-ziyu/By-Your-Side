@@ -36,6 +36,7 @@ npx tsx scripts/acceptance/real-path/codename-no-save.mts --headless    # 打字
 npx tsx scripts/acceptance/real-path/mark-motion-toggle.mts --headless  # 圈画动效默认值与右击切换
 npx tsx scripts/acceptance/real-path/companion-toggle.mts --headless    # 「更多 → 显示小伙伴 M」关掉、重开侧栏仍关、再打开
 npx tsx scripts/acceptance/real-path/sidebar-header.mts --headless      # 只装扩展、本机假模型：顶部一行会话导航，任务条在输入框上方收起/展开，断线时才露连接状态，M 不挡按钮
+npx tsx scripts/acceptance/real-path/plain-text-streaming.mts --headless # 只装扩展、本机假模型：直接写的正文逐段出字、调工具后收进执行过程、停止/出错/插话/历史不重复；设置里 MiniMax 能选 M3.1-Flash-Preview
 npx tsx scripts/acceptance/real-path/memory-proactive.mts --headless --model=kimi-coding/kimi-for-coding --fast-model=kimi-coding/kimi-for-coding-highspeed  # 只装扩展、真实模型、本机假订阅站与假 Gmail：自动记邮箱与撤销、新对话直接用、提交前拦、提交后自己去邮箱确认、任务跨轮、过往任务、后台重启后记忆还在；换 --model 跑每家
 npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --inproc=stepfun/step-3.7-flash --suite=sitegeist # Sitegeist 宣传的 5 类任务：多页汇总、导出 CSV、改错字、提取会议、做小工具
 npx tsx scripts/acceptance/real-path/voice-page-question.mts --headless # 语音问页面内容（say 合成的 WAV 当麦克风）
@@ -44,6 +45,7 @@ npx tsx scripts/acceptance/real-path/unfinished-turn.mts --headless    # 一项�
 npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless # 只装扩展、本机假模型：模型菜单未知模型无能力标签（#2）；带引用草稿在后台 worker 停机 / 扩展内 agent 崩溃时发送（#4）
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 只装扩展，设置页到圈画交付
 npx tsx scripts/acceptance/real-path/page-download.mts --headless --case=complete|broken # 只装扩展，下载页面提供的文件：完整下完 / 下载中断
+npx tsx scripts/acceptance/real-path/artifact-open.mts --headless      # 只装扩展、本机脚本模型：文件卡片「打开」6 种类型、网页越权探针（含对照组）、查看页下载、删除后提示
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --voice=qingchunshaonv # 只装扩展，语音到页面标注
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in --model=zai-coding-cn/glm-5.3-flash # 长回答念到一半插话：旧回答停声、不抢话，新问题照常回答
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录

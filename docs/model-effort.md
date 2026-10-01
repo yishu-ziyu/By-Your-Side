@@ -12,7 +12,7 @@
 - 目录缺失或与实测不符的，在 `MEASURED` 里按「服务商/模型 id」精确登记实测结果，并写明依据：MiniMax-M3.1-Flash-Preview（不能关闭思考，low 起，最高 max，能看图，连接参数取同服务商的 MiniMax-M3）、OpenCode mimo-v2.6-flash（不接受 minimal）、阶跃 step-3.7-flash（始终思考，minimal 起；能看图；系统提示词必须用 system 角色，developer 角色会被忽略）、step-5-preview（能看图）、step-3.5-flash（不能看图）。
 - 两边都没有的模型按保守默认：不发思考参数（由服务商自己决定）、只收文字。不按名字或同服务商的邻居去猜。
 
-扩展注册模型时就套用这份登记（[`model-runtime.ts`](../extension/src/inproc/model-runtime.ts) 的 `resolveModel` 与阶跃注册），所以截图能不能发、目录外的模型怎么连，都和下面的取档同源。登记新模型：先实测，再加一条带依据的 `MEASURED`，并在 `extension/test/model-capabilities.test.ts` 补一条。
+扩展注册模型时就套用这份登记（[`model-runtime.ts`](../extension/src/inproc/model-runtime.ts) 的 `resolveModel` 与阶跃注册），所以截图能不能发、目录外的模型怎么连，都和下面的取档同源。设置页每个服务商的模型列表是目录模型加上 `MEASURED` 里登记的同服务商模型（`measuredModelIds`，目录为空的服务商不加），所以目录还没收的 MiniMax-M3.1-Flash-Preview 也能直接选；不在两处的名字不会出现在列表里。登记新模型：先实测，再加一条带依据的 `MEASURED`，并在 `extension/test/model-capabilities.test.ts` 补一条。
 
 ## 后台判断
 

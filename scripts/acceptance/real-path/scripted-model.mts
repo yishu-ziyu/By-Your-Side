@@ -10,8 +10,13 @@ import { siteAddress, type JsonRecord } from "./harness.mts";
 
 type ToolCall = { name: string; args: JsonRecord };
 
-/** 一步：写正文、调用一个工具、回错误码，或先挂起再回。 */
-export type Step = { text: string; delayMs?: number } | { tool: ToolCall; delayMs?: number } | { status: number; body: string };
+/**
+ * 一步：写正文、调用一个工具、回错误码，或先挂起再回。
+ * 正文可设 chunkDelayMs（每段之间停顿，模拟慢模型逐段输出）和 thenTool（同一条回复里写完正文再调工具）。
+ */
+export type TextStep = { text: string; delayMs?: number; chunkDelayMs?: number; thenTool?: ToolCall };
+
+export type Step = TextStep | { tool: ToolCall; delayMs?: number } | { status: number; body: string };
 
 export type Rule = { match: string; steps: Step[] };
 
@@ -20,7 +25,8 @@ type ContentPart = { type?: string; text?: string };
 /** OpenAI 兼容请求里的一条消息：content 是字符串或分段数组。 */
 type ChatMessage = { role: string; content?: string | ContentPart[] | null };
 
-export type ModelRequest = { atMs: number; rule: string | null; step: number; status: number };
+/** firstTextAt / lastTextAt：首段、末段正文写出时的本机时间（Date.now()），供「侧栏多久后出字」比对；tools：请求带工具表（主任务请求）。 */
+export type ModelRequest = { atMs: number; rule: string | null; step: number; status: number; firstTextAt?: number; lastTextAt?: number; tools?: boolean };
 
 const textOf = (content: ChatMessage["content"]): string => Array.isArray(content) ? content.map((part) => part.text ?? "").join("") : content ?? "";
 
@@ -46,13 +52,22 @@ const chunk = (delta: JsonRecord, finish: string | null = null) => `data: ${JSON
   choices: [{ index: 0, delta, finish_reason: finish }],
 })}\n\n`;
 
-function stream(res: ServerResponse, step: { text: string } | { tool: ToolCall }, callId: string): void {
+async function stream(res: ServerResponse, step: TextStep | { tool: ToolCall }, callId: string, record?: ModelRequest): Promise<void> {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
   res.write(chunk({ role: "assistant", content: "" }));
 
   if ("text" in step) {
-    for (const piece of step.text.match(/[\s\S]{1,12}/g) ?? []) res.write(chunk({ content: piece }));
-    res.write(chunk({}, "stop"));
+    for (const piece of step.text.match(/[\s\S]{1,12}/g) ?? []) {
+      if (step.chunkDelayMs && record?.firstTextAt !== undefined) await new Promise((done) => setTimeout(done, step.chunkDelayMs));
+      res.write(chunk({ content: piece }));
+
+      if (record) { record.firstTextAt ??= Date.now(); record.lastTextAt = Date.now(); }
+    }
+
+    if (step.thenTool) {
+      res.write(chunk({ tool_calls: [{ index: 0, id: callId, type: "function", function: { name: step.thenTool.name, arguments: JSON.stringify(step.thenTool.args) } }] }));
+      res.write(chunk({}, "tool_calls"));
+    } else res.write(chunk({}, "stop"));
   } else {
     res.write(chunk({ tool_calls: [{ index: 0, id: callId, type: "function", function: { name: step.tool.name, arguments: JSON.stringify(step.tool.args) } }] }));
     res.write(chunk({}, "tool_calls"));
@@ -62,7 +77,7 @@ function stream(res: ServerResponse, step: { text: string } | { tool: ToolCall }
   res.end("data: [DONE]\n\n");
 }
 
-function json(res: ServerResponse, step: { text: string } | { tool: ToolCall }, callId: string): void {
+function json(res: ServerResponse, step: TextStep | { tool: ToolCall }, callId: string): void {
   const message = "text" in step ? { role: "assistant", content: step.text }
     : { role: "assistant", content: null, tool_calls: [{ id: callId, type: "function", function: { name: step.tool.name, arguments: JSON.stringify(step.tool.args) } }] };
 
@@ -111,7 +126,7 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     }
 
     // SAFETY: OpenAI 兼容请求体，messages 为消息数组。
-    const payload = JSON.parse(await body(req)) as { messages?: ChatMessage[]; stream?: boolean };
+    const payload = JSON.parse(await body(req)) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
     const messages = payload.messages ?? [];
 
     if (translate && messages.some((m) => m.role === "system" && textOf(m.content).startsWith("Translate the supplied webpage text"))) {
@@ -143,7 +158,7 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
         const step = { text: JSON.stringify(out) };
 
         if (payload.stream === false) json(res, step, `call_${++calls}`);
-        else stream(res, step, `call_${++calls}`);
+        else await stream(res, step, `call_${++calls}`);
       } finally {
         translating -= 1;
       }
@@ -162,13 +177,14 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
       return;
     }
 
-    requests.push({ atMs, rule: found?.rule.match ?? null, step: found?.step ?? 0, status: 200 });
+    const record: ModelRequest = { atMs, rule: found?.rule.match ?? null, step: found?.step ?? 0, status: 200, tools: !!payload.tools?.length };
+    requests.push(record);
 
     if (step.delayMs) await new Promise((done) => setTimeout(done, step.delayMs));
     const callId = `call_${++calls}`;
 
     if (payload.stream === false) json(res, step, callId);
-    else stream(res, step, callId);
+    else await stream(res, step, callId, record);
   });
 
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
