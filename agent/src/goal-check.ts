@@ -2,7 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelPort } from "./agent-loop.js";
 
 /**
- * 目标核对（2026-09-27）：动过页面的任务一轮结束时，由快速模型判断用户要的结果达成没有。
+ * 目标核对（2026-09-27；10-01 起扩到用过工具的只读任务）：任务一轮结束时，由快速模型判断用户要的结果达成没有。
  * 不靠主模型自觉：实测智谱主模型提交订阅后回「去邮箱点一下确认链接就完成了」，提示词里写了「自己去」也没照做。
  * 判断标准放在宿主，换哪家主模型都一样。
  */
@@ -13,6 +13,12 @@ export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open";
 
 /** 快速模型通道首字偶尔 5–8 秒（09-27 智谱实测），留足余量；只在一个任务收尾时等这一次。 */
 export const GOAL_CHECK_TIMEOUT_MS = 18_000;
+
+/**
+ * 不算「做过事」的工具：只交付回答、记个人记忆、记目标或执行账本，不读不改页面。
+ * 一个任务只用过这些（或没用工具）就是纯聊天，不做目标核对；用过其他任何工具（读页、改页、跑程序、存文件、派助手）都核对。
+ */
+export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_user_message", "user_memory", "task_goals", "record_task_results"]);
 
 /** 一个任务里宿主最多替用户催几次「接着做」，防止模型和核对来回打转。 */
 export const GOAL_CONTINUE_MAX = 2;

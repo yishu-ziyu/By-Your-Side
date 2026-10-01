@@ -15,7 +15,7 @@ import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationM
 import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, type ConfirmedRecoveryRecord} from "./task-results.js";
-import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, resultHasWriteEffect, type TaskResultItem, type TaskResultRegistration} from "../../shared/task-results.js";
+import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultItem, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
 import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
@@ -56,11 +56,12 @@ import { createBrowserTools } from "./tools.js";
 import { TaskUploadLedger } from "./upload-paths.js";
 import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
+import { ModelRequestTrace } from "./model-request-trace.js";
 import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { followUpContinuesTask } from "./follow-up-intent.js";
-import { asksConfirmBeforeSubmit, asksUser, checkGoal, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalVerdict } from "./goal-check.js";
+import { asksConfirmBeforeSubmit, asksUser, checkGoal, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -691,6 +692,8 @@ if(required.includes(key))candidates.set(key,attachment);
   private modeState: { value: AgentMode } = { value: "act" };
   private readonly hold = new SessionHold();
   private readonly runTrace = new RunTrace();
+  /** 每次模型调用的请求指纹与首次出现的系统提示词、工具说明全文，写进本会话的诊断记录。 */
+  readonly modelRequestTrace = new ModelRequestTrace((type, data) => this.runTrace.record(type, data));
   private controlEpoch = 0;
   /**
    * 已交给 Pi、但还没被模型读到的插话。按记录跟踪而不是按文本集合：
@@ -917,6 +920,7 @@ if(required.includes(key))candidates.set(key,attachment);
           appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
           extensionFactories: extensionFactories.map(entry => entry.factory),
           onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
+          onModelRequest: request => resultHost?.modelRequestTrace.observe(request),
         });
       } else {
         if (!modelRuntime) throw new Error("本机模型运行时不可用");
@@ -2846,6 +2850,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.runTrace.event(event);
       this.experience?.observe(event);
 
+      if (event.type === "tool_execution_start" && !GOAL_CHECK_BOOKKEEPING_TOOLS.has(event.toolName)) this.toolUseRun = this.deliveryRunId();
+
       switch (event.type) {
         case "message_start": {
           if (event.message.role === "user") {
@@ -2977,7 +2983,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // 避免进度状态与结果被误当作最终（状态保持 running）。
           if (event.willRetry) break;
 
-          // 目标核对（2026-09-27）：动过页面的任务一轮结束时，先由快速模型核对用户要的结果达成没有。
+          // 目标核对（2026-09-27）：用过工具的任务一轮结束时，先由快速模型核对用户要的结果达成没有。
           // 没做完且助手自己能做就接着做（每个任务最多 2 次）；在等用户就把任务留作「还差」；做完才算完成。
           if (this.goalCheckEligible(event.messages)) {
             void this.checkGoalThenFinish(event);
@@ -3022,16 +3028,17 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return delivery && delivery.runId === snapshot?.runId ? delivery.text : "";
   }
 
-  /** 目标核对只看主会话里动过页面的任务：纯聊天、读页问答、用户停止、接管、出错都不核对。 */
+  /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）或最后在问用户的任务：纯聊天、用户停止、接管、出错都不核对。 */
   private goalCheckEligible(messages: ReadonlyArray<{ role: string; content?: unknown }>): boolean {
     if (this.memberId || !this.session || !this.modelRuntime || !this.activeGoal) return false;
 
     if (this.expectedStoppedAgentEnd || this.pendingToolFailure || this.hold.isHeld() || lastAssistantError(messages)) return false;
     const snapshot = this.conversationSnapshot();
 
-    // 动过页面，或这一轮最后在问用户（问邮箱、问要不要提交）：后者说明任务在等用户，不能当一轮结束就完了。
-    // 本任务存过文件也核对（只存文件、没动页面的「提取并保存」）。
-    if (!snapshot?.runId || (!(snapshot.results ?? []).some(item => resultHasWriteEffect(item)) && !asksUser(this.runReplyText(messages)) && !this.runFiles().length)) return false;
+    // 这一任务用过浏览器或页面工具（读页、改页、跑程序、存文件都算），或这一轮最后在问用户（问邮箱、问要不要提交）。
+    // 只读任务也核对：10-01 读完 flomo 笔记后交付了上一个任务的 Drive 状态，旧规则（只看改页面、存文件）直接收尾了。
+    // 实测快速模型核对 30/30 判对（含答非所问却自称做完），耗时约 2–8 秒（docs/evals/20261001-offtopic-reply-diagnostics.md）。
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)))) return false;
 
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
   }
@@ -3058,6 +3065,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private goalContinueRun: string | null = null;
+  /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
+  private toolUseRun: string | null = null;
   private goalContinues = 0;
 
   /** 先核对再收尾：没做完且自己能做就接着做（不收尾、状态保持执行中），否则照常收尾并记下核对结论。 */
@@ -3135,7 +3144,10 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       for (let waited = 0; session.isStreaming && waited < 3_000; waited += 50) await new Promise(done => setTimeout(done, 50));
       this.deliveredResultThisRun = false;
       const where = snapshot?.goalPage ? ` The goal was said on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}); act only on items that belong to it, not on similar ones from other sites or earlier tasks.` : "";
-      void session.prompt(`[GOAL CHECK] The user's goal is not finished yet: ${verdict.remaining ?? "the outcome the user asked for"}.${where} If you can do it in this browser (open the site or tab it needs), do it now instead of telling the user to. Keep every condition the user set (e.g. confirm before submitting) and all safety rules: if the next step needs the user's confirmation, choice or personal data, ask them instead. Then give the final answer in one or two sentences.`)
+      // 带上用户这次的原话：答非所问时（10-01 交付了上一个任务的结果）助手要知道该回到哪件事上。
+      const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean).slice(-3).map(text => text.slice(0, 300));
+      const request = asked.length ? ` The user's current request: ${JSON.stringify(asked.join(" / "))}; earlier tasks' results do not answer it.` : "";
+      void session.prompt(`[GOAL CHECK] The user's goal is not finished yet: ${verdict.remaining ?? "the outcome the user asked for"}.${request}${where} If you can do it in this browser (open the site or tab it needs), do it now instead of telling the user to. Keep every condition the user set (e.g. confirm before submitting) and all safety rules: if the next step needs the user's confirmation, choice or personal data, ask them instead. Then give the final answer in one or two sentences.`)
         .catch(error => this.emitError(error));
 
       return;

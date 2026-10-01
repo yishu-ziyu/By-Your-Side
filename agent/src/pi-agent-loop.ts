@@ -16,6 +16,7 @@ import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantM
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
+import type { ModelRequestObservation } from "./model-request-trace.js";
 import { composeSystemPrompt } from "./system-prompt.js";
 
 export interface PiAgentLoopOptions {
@@ -30,6 +31,8 @@ export interface PiAgentLoopOptions {
   sessionId?: string;
   retry?: { maxRetries: number; baseDelayMs: number };
   onHookError?: (event: string, message: string) => void;
+  /** 每次模型调用前观察实际请求（诊断记录用）；只读，抛错被吞掉。 */
+  onModelRequest?: (request: ModelRequestObservation) => void;
 }
 
 /** 宿主插入的消息：pi-coding-agent 已给 Agent 的消息联合加上 custom 角色（core/messages.d.ts）；convertToLlm 把它转成 user 消息。 */
@@ -89,6 +92,8 @@ export class PiAgentLoop implements AgentLoop {
   private runActive = false;
   private hookChain: Promise<void> = Promise.resolve();
   private idleWaiters: Array<() => void> = [];
+  /** 本次调用里宿主插入的上下文消息：convertToLlm 把 custom 转成 user 前记下，紧接着的模型调用读取。 */
+  private injected: ModelRequestObservation["injected"] = [];
 
   constructor(private readonly options: PiAgentLoopOptions) {
     // 1、2、4 秒三次重试：服务真坏了约 7 秒就告诉用户，而不是让人干等半分钟。
@@ -106,13 +111,17 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: [] },
-      streamFn: streamThrough(options.models),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context)),
       // 与 Pi 的 convertToLlm 相同；我们不产生 bash、分支摘要、压缩摘要消息，遇到就丢弃。
-      convertToLlm: messages => messages.flatMap(message => {
-        if (message.role === "custom") return [{ role: "user" as const, content: userContent(message.content), timestamp: message.timestamp }];
+      convertToLlm: messages => {
+        this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
 
-        return message.role === "user" || message.role === "assistant" || message.role === "toolResult" ? [message] : [];
-      }),
+        return messages.flatMap(message => {
+          if (message.role === "custom") return [{ role: "user" as const, content: userContent(message.content), timestamp: message.timestamp }];
+
+          return message.role === "user" || message.role === "assistant" || message.role === "toolResult" ? [message] : [];
+        });
+      },
       transformContext: async messages => (this.hooks.has("context") ? this.contextThroughHooks(messages) : messages),
       beforeToolCall: async ({ toolCall, args }) => (this.hooks.has("tool_call") ? this.hooks.toolCall(toolCall.name, toolCall.id, hookArgs(args)) : undefined),
       afterToolCall: async ({ toolCall, args, result, isError }) => {
@@ -368,6 +377,19 @@ export class PiAgentLoop implements AgentLoop {
     return [...await this.hooks.context(messages as readonly HookMessage[])] as AgentMessage[];
   }
 
+  private observeRequest(context: Parameters<StreamFn>[1]): void {
+    if (!this.options.onModelRequest) return;
+
+    try {
+      this.options.onModelRequest({
+        systemPrompt: context.systemPrompt ?? "",
+        tools: (context.tools ?? []).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters, promptGuidelines: this.definitions.get(tool.name)?.promptGuidelines })),
+        messages: context.messages,
+        injected: this.injected,
+      });
+    } catch { /* Diagnostics only. */ }
+  }
+
   private emit(event: AgentSessionEvent): void {
     for (const listener of this.listeners) listener(event);
 
@@ -382,10 +404,17 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
-  return ((model, context, streamOptions) => models.streamSimple(model as never, context as never, streamOptions as never)) as StreamFn;
+  return ((model, context, streamOptions) => {
+    observe(context);
+
+    // SAFETY: 同上，参数原样转交。
+    return models.streamSimple(model as never, context as never, streamOptions as never);
+  }) as StreamFn;
 }
+
+const customText = (content: CustomAppMessage["content"]): string => userContent(content).filter(isTextPart).map(part => part.text).join("");
 
 /** 与 pi-coding-agent 的 wrapToolDefinition 相同（dist/core/tools/tool-definition-wrapper.js）。 */
 function toAgentTool(definition: ToolDefinition): AgentTool {
