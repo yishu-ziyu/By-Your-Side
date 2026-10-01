@@ -16,6 +16,15 @@ Judge results whose verdict is missing, stale or judge_error, then rebuild repor
    each verdict stores judge_version + result_sha, so a judge bump or a rerun result is re-judged)
 Old-vs-new judge chart: python3 eval/harness/chart_rejudge.py [out.png]  (reads eval/splits/baseline_judge_v3.json)
 Re-group failure reasons (codex):   python3 eval/harness/cluster.py eval/runs/<run-id>  (then finalize.sh again)
+Failure review page for the product owner: node eval/harness/review.mjs eval/runs/<run-id> [--all]
+  -> runs/<run>/review.html (self-contained; screenshots are relative links, so open it inside the run dir).
+  Top: pass rate per model spec x tier vs eval/tasks/tiers.json target (analyze.py rules). One card per task that is
+  fail / undeterminable / judge_error in some spec (--all: every result, incl. passed and not yet judged), grouped
+  by tier then category; failing specs side by side. Each card: prompt, site, success rule, final reply, verdict +
+  reason, page + panel screenshots (click to enlarge), time/tool calls, and a data-only 初步猜测 (timeout, no reply,
+  tool errors, 当前写入已暂停, failed side_call, panel error, denied confirmation, setup not applied, judge error).
+  Marks 能接受 / 不能接受 / 判错了 + note are kept in localStorage (key bys-review:<runId>|<task>|<spec>);
+  导出我的判断 downloads review-<runId>.json = {runId, decisions:[{task, config, mark: accept|reject|misjudged, note}]}.
 
 Paths and env (see paths.mjs, credentials.mjs): BYS_REPO (default: this repo), BYS_TASKS (default eval/tasks/tasks.jsonl),
 BYS_RUNS_DIR (default eval/runs), BYS_KEY_<PROVIDER> (API key, overrides credential files), SIDEAGENT_STEP_PLAN_KEY,
