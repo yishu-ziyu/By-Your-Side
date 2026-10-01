@@ -6,7 +6,7 @@
 
 `shared/task-actions.ts` 定义任务请求，`ConversationManager` 协调目标，`TaskDispatcher` 负责接收、幂等与执行。`requestId` 标识请求，`runId` 标识任务，`expectedControlVersion` 等字段约束旧控制消息；不能用当前可见会话替换原请求归属。
 
-- 文字入口发送共享 `task_action`；协议仍有旧 `user_message` / `steer` 等兼容入口。上一个任务还没做完（任务视图 `resumable`，含目标核对为「等你 / 还差」）时，文字 `start` 先由快速模型判断是否接着做它，是就按 `steer` 续接原任务；进度快照另记 `goalCheck`（目标核对结论）与 `goalPage`（说出目标时所在的页面），见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
+- 文字入口发送共享 `task_action`；协议仍有旧 `user_message` / `steer` 等兼容入口。上一个任务还没做完（任务视图 `resumable`，含目标核对为「等你 / 还差 / 没做成」）时，文字 `start` 先由快速模型判断是否接着做它，是就按 `steer` 续接原任务；进度快照另记 `goalCheck`（目标核对结论）与 `goalPage`（说出目标时所在的页面），见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
 - Realtime 工具 `task_action` 是语音适配接口（start/steer/pause/resume），不是完整共享协议的同名类型。宿主附真实转写、来源资料和目标身份后派发。任务运行中明确说“终止任务”时，由宿主按开口时的任务身份直接下发 abort，不读回、不经模型（见[语音架构](voice-architecture.md)的转写闸门）；其他取消说法仍可由模型走 `browser_request`，同样直接送达。
 - 语音的编辑判定、整句分类与一次性提案、白名单直答、只读页面观察都走[后台判断入口](model-effort.md#后台判断)：取该模型允许的最低档、档位被拒换档重试、每次写 `side_call`；逐次诊断 `[voice-classifier]` / `[voice-turn]` 照旧，档位被拒记为 `effort_rejected`。
 - `read_page` 不启动网页写任务，不切换标签页；`task_status` 查询已有事实。用户希望切换页面时是否选对任务工具，仍依赖语音模型判断，不由工具名或提示词保证。

@@ -326,6 +326,8 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   // 目标核对的结论优先：宿主判断「做完了 / 还差」，不靠模型自己列没列目标。
   const openTask = view?.state === "idle" && (view.goalStatus ? view.goalStatus.status !== "done" : view.resumable);
   const waitingOnUser = openTask && view?.goalStatus?.status === "waiting";
+  // 受阻（网站连不上等）：那一句就是原因，前面写「没做成」，与停下那行同口径。
+  const blocked = openTask && view?.goalStatus?.status === "blocked";
   const stillOpen = view?.goalStatus?.remaining ?? view?.latestDelivery?.unfinished?.[0] ?? view?.outstanding[0]?.description ?? null;
 
   // ── 可见性：没有任何可说的事就整条隐藏 ──
@@ -338,7 +340,7 @@ export function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
   const goal = view?.goal ?? null;
 
-  const headline = openTask ? (stillOpen ? `${waitingOnUser ? "等你" : "还差"}：${clip(stillOpen, 28)}` : "还没做完 · 接着说就行")
+  const headline = openTask ? (stillOpen ? `${waitingOnUser ? "等你" : blocked ? "没做成" : "还差"}：${clip(stillOpen, 28)}` : "还没做完 · 接着说就行")
     : view?.state === "idle" ? ""
         : view ? stateHeadline(view.state, view.resumable) : "";
 

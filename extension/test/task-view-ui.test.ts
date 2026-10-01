@@ -497,6 +497,13 @@ describe("A03-02 材料入口：界面与实际送入一致，草稿可移除", 
     expect(bar.getModel()?.materials).toBeNull();
   });
 
+  it("核对判受阻（网站连不上）：输入框上方那行写原因，不写「还差」，不出现内部字段（docs/evals/20261002-goal-check-blocked.md 标准 4）", () => {
+    const { bar } = mount();
+    bar.updateView(view({ state: "idle", outstanding: [], resumable: true, goalStatus: { status: "blocked", remaining: "网站现在连不上，稍后可以让我再试" } }));
+    expect(bar.getModel()?.visible).toBe(true);
+    expect(bar.getModel()?.headline).toBe("没做成：网站现在连不上，稍后可以让我再试");
+  });
+
   it("做完的任务与纯聊天都让出输入区，结果保留在回答中", () => {
     const { bar } = mount();
     bar.updateView(view({ state: "idle", outstanding: [], resumable: false, goalsListed: true }));

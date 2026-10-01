@@ -332,8 +332,11 @@ export type AgentUiEvent =
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
-  /** 目标核对（宿主用快速模型判断用户要的结果达成没有）：done 做完；needs_user 等用户（回答、确认、登录）；continue 宿主让助手接着做；open 催满仍没做完。 */
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open"; remaining?: string }
+  /**
+   * 目标核对（宿主用快速模型判断用户要的结果达成没有）：done 做完；needs_user 等用户（回答、确认、登录）；continue 宿主让助手接着做；open 催满仍没做完；
+   * blocked 原因在助手和用户之外（站点连不上、页面不存在、服务端拒绝），不催续做，remaining 是给用户看的原因。
+   */
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string }
   | { kind: "user_delivery"; delivery: UserDelivery }
   /**
    * 交给用户的文件：模型写的文本文件（artifacts 工具），或模型交给用户的截图（screenshot forUser，encoding 为 base64 的 PNG）。

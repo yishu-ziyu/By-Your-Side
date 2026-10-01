@@ -2978,6 +2978,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
+          this.noteFailedAttempt(event.toolName, event.isError, event.result);
+
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
 
@@ -3113,6 +3115,28 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   /** 最近一次用工具（GOAL_CHECK_BOOKKEEPING_TOOLS 除外）的任务；目标核对据此判断这一任务是否做过事。 */
   private toolUseRun: string | null = null;
   private goalContinues = 0;
+  /** 本任务已尝试且失败的做法（工具名 + 失败原因摘要），催续做时带给模型，让它换做法（10-02 BYS-017 三次照原样重试）。 */
+  private failedAttempts: { runId: string | null; items: Array<{ tool: string; reason: string }> } = { runId: null, items: [] };
+
+  /**
+   * 记下一次失败的做法：工具报错，或打开页面但文档没加载完（navigate 返回成功、details.readiness 为 timeout）。
+   * 只留错误原文的前 120 字（空白压成一个空格），遇到页面原文标记就截断，不把页面内容（含注入）带进催续提示；同样的做法只留最近一次，最多 6 条。
+   */
+  private noteFailedAttempt(tool: string, isError: boolean, result: unknown): void {
+    if (GOAL_CHECK_BOOKKEEPING_TOOLS.has(tool)) return;
+    // SAFETY: 只读 details.readiness 一个字段，类型不对按没有处理。
+    const readiness = (result as { details?: { readiness?: unknown } } | null)?.details?.readiness;
+    const raw = isError ? firstText(result) : readiness === "timeout" ? "page did not finish loading (document timeout)" : null;
+
+    if (raw === null) return;
+    const reason = (raw.split(/<page-content|<\/?untrusted/i)[0] ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "failed";
+    const runId = this.deliveryRunId();
+
+    if (this.failedAttempts.runId !== runId) this.failedAttempts = { runId, items: [] };
+    const items = this.failedAttempts.items.filter(item => item.tool !== tool || item.reason !== reason);
+    items.push({ tool, reason });
+    this.failedAttempts.items = items.slice(-6);
+  }
 
   /** 先核对再收尾：没做完且自己能做就接着做（不收尾、状态保持执行中），否则照常收尾并记下核对结论。 */
   private async checkGoalThenFinish(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
@@ -3195,7 +3219,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       // 带上用户这次的原话：答非所问时（10-01 交付了上一个任务的结果）助手要知道该回到哪件事上。
       const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean).slice(-3).map(text => text.slice(0, 300));
       const request = asked.length ? ` The user's current request: ${JSON.stringify(asked.join(" / "))}; earlier tasks' results do not answer it.` : "";
-      void session.prompt(`[GOAL CHECK] The user's goal is not finished yet: ${verdict.remaining ?? "the outcome the user asked for"}.${request}${where} If you can do it in this browser (open the site or tab it needs), do it now instead of telling the user to. Keep every condition the user set (e.g. confirm before submitting) and all safety rules: if the next step needs the user's confirmation, choice or personal data, ask them instead. Then give the final answer in one or two sentences.`)
+      const failed = this.failedAttempts.runId === runId ? this.failedAttempts.items : [];
+      const tried = failed.length ? ` Already tried in this task and failed: ${failed.map(item => `${item.tool} — ${item.reason}`).join("; ")}. Do not repeat them; take a different approach.` : "";
+      void session.prompt(`[GOAL CHECK] The user's goal is not finished yet: ${verdict.remaining ?? "the outcome the user asked for"}.${request}${where}${tried} If you can do it in this browser (open the site or tab it needs), do it now instead of telling the user to. Keep every condition the user set (e.g. confirm before submitting) and all safety rules: if the next step needs the user's confirmation, choice or personal data, ask them instead. Then give the final answer in one or two sentences.`)
         .catch(error => this.emitError(error));
 
       return;

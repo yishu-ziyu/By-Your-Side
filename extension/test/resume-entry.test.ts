@@ -543,6 +543,15 @@ describe('标准 8：停下或结束时的「已做 / 还差」', () => {
     expect(summary.line).not.toMatch(/没做成|还没做|还没确认/);
   });
 
+  it('G7 核对判受阻（网站连不上）：那一行用人话说原因，不出现内部字段（docs/evals/20261002-goal-check-blocked.md 标准 4）', () => {
+    const progress = subtitleTask();
+    progress.observe(event({ kind: 'goal_check', status: 'blocked', remaining: '网站现在连不上，稍后可以让我再试' }));
+    progress.observe(event({ kind: 'agent_end' }));
+    const summary = lineOf(progress);
+    expect(summary.line).toBe('没做成：网站现在连不上，稍后可以让我再试');
+    expect(summary.line).not.toMatch(/blocked|unreachable|goal|ERR_|[a-z_]{4,}/i);
+  });
+
   it('G6 用户插话改要求后的重新开始不保留旧的「还差」', () => {
     const progress = subtitleTask();
     progress.observe(event({ kind: 'goal_check', status: 'continue', remaining: '保存字幕为文件' }));
