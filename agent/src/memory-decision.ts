@@ -91,10 +91,15 @@ Preserve addresses, names and values exactly. For update, text must describe the
  */
 export const MEMORY_AUTO_RULES = `AUTOMATIC MODE: this check runs on every direct user message, not only when asked to remember. The user chose to have facts they state about themselves remembered automatically and can undo each one. Here a bare fact needs NO request for future retention: save (or update the same existing fact) a durable personal fact the user directly states about themselves: their own email address, name, phone, postal address, employer or role, language, a lasting personal preference or habit (e.g. seats, food), or a lasting preference about how the assistant should work for them. Also save a dated plan or event in the user's own life that they state (e.g. "我 10 月 3 日飞成都"): text keeps the date, place and details, about.longTerm=false, about.date set; this holds even when the same message asks for a task that does not carry out that plan (e.g. "我下周三去成都出差，帮我查下那边天气" saves the trip with about.dateIsTheTask=false). A bare reply that supplies such a value the assistant just asked for counts: use recentTurns to name it in text (e.g. "邮箱：x@y.com"); evidence is the value exactly as typed. Return none for: parameters of the task the user asks you to do now (a search term, an amount, "这次先订经济舱", book/buy/fill this — the finished task is recorded separately; set about.onlyThisTask=true), facts about other people, anything quoted, translated or copied from a page, questions, greetings, and ANY secret — passwords, verification or 2FA codes, bank card, ID or passport numbers, API keys. If the same fact is already stored with the same value, return none.`;
 
-export async function decideMemory(complete: MemoryComplete, userMessage: string, entries: MemoryEntry[], currentHostname: string | null, signal: AbortSignal, recentTurns: MemoryConversation = [], mode: "explicit" | "auto" = "explicit"): Promise<MemoryDecision> {
-  const system = mode === "auto"
-    ? MEMORY_DECISION_PROMPT.replace("A bare fact without a request for future retention is none. ", "") + "\n" + MEMORY_AUTO_RULES
-    : MEMORY_DECISION_PROMPT;
+/**
+ * 这句话像在纠正助手（通过 isUserCorrection）时追加：做事的方法由纠正后的询问（用户点「记住」）来记，
+ * 自动记忆只收用户自己的资料，免得把网站上的做法记成「关于你」、一句两种结果。
+ */
+export const MEMORY_CORRECTION_RULES = `CORRECTION: This message corrects the assistant's work. Personal facts about the user themself are still saved exactly as above, including a lasting personal preference stated while correcting (e.g. "不对，我坐飞机都要靠过道" saves the aisle-seat preference as a fact about the user for all sites). Return none only for how a task is done: steps of operating a website (missed or wrong fields, export, sort, fill or selection steps) and how the assistant should reply (language, format, tone). Those are handled by a separate confirmation.`;
+
+export async function decideMemory(complete: MemoryComplete, userMessage: string, entries: MemoryEntry[], currentHostname: string | null, signal: AbortSignal, recentTurns: MemoryConversation = [], mode: "explicit" | "auto" | "auto-correction" = "explicit"): Promise<MemoryDecision> {
+  const auto = MEMORY_DECISION_PROMPT.replace("A bare fact without a request for future retention is none. ", "") + "\n" + MEMORY_AUTO_RULES;
+  const system = mode === "auto" ? auto : mode === "auto-correction" ? `${auto}\n${MEMORY_CORRECTION_RULES}` : MEMORY_DECISION_PROMPT;
 
   const now = Date.now();
   const today = `${localDateOf(now)} 星期${"日一二三四五六"[new Date(now).getDay()]}`;

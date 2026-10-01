@@ -2,6 +2,53 @@ import { isTaskHistoryEntry, TASK_HISTORY_MAX, type TaskHistoryEntry } from "../
 import type { DocumentPersistence } from "./document-persistence.js";
 import { isRelevantMemory } from "./memory-relevance.js";
 
+/** 过往任务里替代密码、验证码、卡号等具体值的文字。 */
+export const TASK_SECRET_PLACEHOLDER = "（已隐去）";
+
+/**
+ * 密码类关键词后面跟着分隔（是 / 为 / 应该是 / 改成 / 冒号 / 空格）的那个值，例如「密码应该是 Abc12345」里的 Abc12345。
+ * 只提到关键词、后面没有值的（「忘记密码的入口」「需要你提供短信验证码」）不算；值至少要有一个字母或数字（「密码是什么」不算）。
+ */
+const SECRET_KEYWORD = "(?:密码|口令|验证码|校验码|动态码|安全码|(?<![A-Za-z])(?:cvv|password|passcode|passwd|pin|otp|code)(?![A-Za-z]))";
+
+const SECRET_AFTER_KEYWORD = new RegExp(`${SECRET_KEYWORD}(?:\\s*(?:应该是|应当是|应该|改成|改为|换成|是|为|[:：=]))+\\s*|${SECRET_KEYWORD}\\s+`, "giu");
+
+const VALUE_TOKEN = /^[^\s，。,；;！!？?、）)】]+/u;
+
+/** 卡号、证件号：15–19 位数字，且前面不远处就是卡、证件的关键词；订单号等别的长数字不动。 */
+const CARD_NUMBER = /(?:银行卡|借记卡|信用卡|卡号|身份证号?|证件号|护照号?)[^\d]{0,12}?(\d(?:[\s-]?\d){14,18})(?!\d)/gu;
+
+/** 用户原话里的秘密值：密码类关键词后的值与卡号证件号。 */
+function secretValues(text: string): string[] {
+  const values: string[] = [];
+
+  for (const match of text.matchAll(SECRET_AFTER_KEYWORD)) {
+    const value = VALUE_TOKEN.exec(text.slice(match.index + match[0].length))?.[0];
+
+    if (value && /[A-Za-z0-9]/u.test(value)) values.push(value);
+  }
+
+  for (const match of text.matchAll(CARD_NUMBER)) values.push(match[1]!);
+
+  return values;
+}
+
+/**
+ * 过往任务不留密码、验证码、卡号这类具体值（记忆模型规则 2）：只把值换成「（已隐去）」，其余文字照常留下。
+ * 值只从用户的话（目标、补充）里找；摘要、页面标题、没做完的事只换掉其中复述的这些值，不按关键词整段删。
+ */
+export function redactTaskSecrets(entry: TaskHistoryEntry): TaskHistoryEntry {
+  const values = [...new Set([entry.goal, ...entry.revisions].flatMap(secretValues))].sort((a, b) => b.length - a.length);
+
+  if (!values.length) return entry;
+  const scrub = (text: string) => values.reduce((out, value) => out.split(value).join(TASK_SECRET_PLACEHOLDER), text);
+  const redacted: TaskHistoryEntry = { ...entry, goal: scrub(entry.goal), revisions: entry.revisions.map(scrub), summary: scrub(entry.summary), unfinished: entry.unfinished.map(scrub) };
+
+  if (entry.page !== undefined) redacted.page = scrub(entry.page);
+
+  return redacted;
+}
+
 /** 本机宿主的过往任务文件名；扩展版存在 IndexedDB 里，格式相同。 */
 export const TASK_HISTORY_FILE = "tasks.json";
 
@@ -18,6 +65,7 @@ export class TaskHistoryStore {
   /** 同一任务（同一 runId）接着做完时覆盖原条目；用过次数与时间沿用，新条目没带日期时沿用原日期与有效期。 */
   async record(entry: TaskHistoryEntry): Promise<void> {
     if (!isTaskHistoryEntry(entry)) throw new Error("Task history entry is invalid");
+    entry = redactTaskSecrets(entry);
     await this.mutate(tasks => {
       const prev = tasks.find(task => task.id === entry.id);
       const kept = tasks.filter(task => task.id !== entry.id);

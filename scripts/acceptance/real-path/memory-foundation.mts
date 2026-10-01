@@ -641,7 +641,8 @@ async function d5(): Promise<Verdict> {
   const traces = await diagnostics();
   const tripLines = lineWith(traces, "trip-d5", TARGETS.diag.reasonValid);
   const sent = t.chat.some((r) => r.context.includes(flight));
-  const stored = (await readDoc(TARGETS.tripDoc)).items.find((e) => mentions(e, flight));
+  // 按预置的编号找那条行程：真实模型这一轮自己也会留一条提到同一航班的过往任务，按航班号会先找到它（10-01 DeepSeek 两次误判）。
+  const stored = (await readDoc(TARGETS.tripDoc)).items.find((e) => e.id === trip.id);
   const used = stored ? TARGETS.read.usedCount(stored) : -1;
 
   let answer: JsonRecord = { skipped: "真实模型回答见 --model" };

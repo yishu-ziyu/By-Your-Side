@@ -7,7 +7,7 @@ import { isExecutionFeedback } from "./execution-feedback.js";
  * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
  */
 
-import { isMemoryScope, isStoredMemoryEntry, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
+import { isMemoryScope, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
 import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDelivery, type VoiceClientMessage, type VoiceServerMessage } from "./voice.js";
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
@@ -180,6 +180,8 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
   /** 撤销替换：id 是被替换的旧条目；它恢复生效，替换它的新条目改为失效。 */
   | { type: "memory_restore"; requestId: string; id: string; expectedVersion: number }
+  /** 回答纠正后的询问（memory_ask）：remember 保存那条做法；once 不保存，同一对话里不再问同一条。规则文字只取后台记下的那份，面板不能改写。 */
+  | { type: "memory_ask_answer"; requestId: string; askId: string; answer: "remember" | "once" }
   /** 被拿住的点击经用户确认后，扩展已按原参数补上：id 是原 tool_call 的编号，宿主据此把账本里那一下从「未知」改为已执行。 */
   | { type: "held_click_result"; id: string; ok: boolean }
   /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
@@ -271,7 +273,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   /** 本会话仍在等待的授权请求；按请求即时的期限，不被这次查询延长。 */
   | { type: "consent_list"; requests: ConsentRequest[] }
   | VoiceServerMessage
-  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number }
+  /** action=ask 是 memory_ask_answer 的结果：remember 成功时带 entry（新存的那条；alreadySaved 时是早已存在的同一条，这次没写入，不给撤销），once 成功时不带。 */
+  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
   | { type: "skill_result"; requestId: string; action: "compile" | "forget" | "list" | "run" | "note" | "rollback" | "candidate_save" | "candidate_dismiss"; ok: boolean; skill?: import('./skill.js').Skill; skills?: import('./skill.js').Skill[]; candidates?: import('./skill.js').SkillCandidate[]; runs?: Record<string, import('./skill.js').SkillRun[]>; run?: import('./skill.js').SkillRun; deletedId?: string; error?: string }
@@ -301,6 +304,15 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
 export type AgentUiEvent =
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
   | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number }
+  /**
+   * 纠正后开口问：用户这一轮纠正了助手，后台总结出一条做事的方法，问「要我记住吗」。
+   * rule 是第一人称的那句做法（「以后在这个网站导出，我都先选全部再核对条数」）；scope 是默认范围；
+   * replaces 是同范围里会被它替换的那条；hostname 是纠正发生时所在的网站（没有就省略），供面板把范围切回「这个网站」。
+   * 只有用户回 memory_ask_answer 才保存。
+   * outcome：询问有了结局时后台再发一条同 askId 的事件（进对话历史），侧栏按最后一条画——
+   * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
+   */
+  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed" }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
@@ -852,11 +864,13 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if((msg.type==='takeover'||msg.type==='handback'||msg.type==='abort')&&msg.taskRequestId!==undefined&&!validRequestId(msg.taskRequestId))return null;
 
     if (msg.type.startsWith("memory_")) {
-      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget" && msg.type !== "memory_restore") return null;
+      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget" && msg.type !== "memory_restore" && msg.type !== "memory_ask_answer") return null;
 
       if (!validRequestId(msg.requestId)) return null;
 
-      if (msg.type !== "memory_list" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
+      if (msg.type === "memory_ask_answer" && !(validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once"))) return null;
+
+      if (msg.type !== "memory_list" && msg.type !== "memory_ask_answer" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
 
       if (msg.type === "memory_update" && (!validMemoryText(msg.text) || !isMemoryScope(msg.scope))) return null;
     }
@@ -1071,7 +1085,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
 
     if (msg.type === "memory_result") {
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore"].includes(msg.action)) return null;
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore", "ask"].includes(msg.action)) return null;
 
       if (msg.entries !== undefined && !upgradeMemoryEntries(msg.entries)) return null;
 
@@ -1084,6 +1098,10 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       if (msg.error !== undefined && typeof msg.error !== "string") return null;
 
       if (msg.rev !== undefined && !(Number.isInteger(msg.rev) && msg.rev >= 0)) return null;
+
+      if (msg.alreadySaved !== undefined && (msg.alreadySaved !== true || msg.action !== "ask" || !msg.entry)) return null;
+
+      if (msg.askClosed !== undefined && (msg.askClosed !== true || msg.action !== "ask" || msg.ok)) return null;
 
       if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length))) return null;
 
@@ -1118,6 +1136,18 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
     if (msg.type === "agent_event" && msg.event?.kind === "execution_feedback") {
       if (!isExecutionFeedback(msg.event.feedback)) return null;
+    }
+
+    if (msg.type === "agent_event" && msg.event?.kind === "memory_ask") {
+      const event = msg.event;
+
+      if (!validMemoryId(event.askId) || !validMemoryText(event.rule) || !isMemoryScope(event.scope)) return null;
+
+      if (event.replaces !== undefined && (!event.replaces || !validMemoryId(event.replaces.id) || !validMemoryText(event.replaces.text))) return null;
+
+      if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return null;
+
+      if (event.outcome !== undefined && !["remembered", "already", "once", "closed"].includes(event.outcome)) return null;
     }
 
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {

@@ -1,7 +1,7 @@
 import { MEMORY_KIND_LABEL, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
 
-type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>;
+type MemoryClientMessage = Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" }>;
 
 export type MemoryResult = Extract<ServerMessage, { type: "memory_result" }>;
 
@@ -15,8 +15,8 @@ type PendingRequest = {
 
 export type MemoryApplyResult =
   | { kind: "ignored"; reason: "unknown-request" | "wrong-conversation" | "wrong-action" | "superseded" }
-  | { kind: "failure"; action: MemoryResult["action"]; requestId: string; entryId?: string; error: string }
-  | { kind: "success"; action: MemoryResult["action"]; requestId: string; entryId?: string };
+  | { kind: "failure"; action: MemoryResult["action"]; requestId: string; entryId?: string; error: string; askClosed?: true }
+  | { kind: "success"; action: MemoryResult["action"]; requestId: string; entryId?: string; entry?: MemoryEntry; entries?: MemoryEntry[]; alreadySaved?: true };
 
 function cloneEntry(entry: MemoryEntry): MemoryEntry {
   const cloned = { ...entry, scope: { ...entry.scope } };
@@ -165,6 +165,14 @@ export class MemoryManagementState {
     return { type: "memory_restore", requestId, conversationId, id: entry.id, expectedVersion: entry.version };
   }
 
+  /** 回答纠正后的询问；结果里的新条目（及被替换的旧条目）原样交给询问卡片，面板随后重读全表。 */
+  beginAskAnswer(conversationId: string, askId: string, answer: "remember" | "once"): MemoryClientMessage {
+    const requestId = this.requestId();
+    this.pending.set(requestId, { requestId, action: "ask", conversationId, order: ++this.order });
+
+    return { type: "memory_ask_answer", requestId, conversationId, askId, answer };
+  }
+
   rejectLocally(requestId: string, error: string): MemoryApplyResult {
     const request = this.pending.get(requestId);
 
@@ -207,6 +215,7 @@ export class MemoryManagementState {
         requestId: result.requestId,
         entryId: request.entryId,
         error: result.error ?? "请求失败",
+        askClosed: result.askClosed,
       };
     }
 
@@ -271,6 +280,9 @@ export class MemoryManagementState {
       this.listRev = result.rev;
     }
 
+    // 询问的保存不在本地补丁：版本号作废，下次面板打开或收到结果后重读。
+    if (request.action === "ask" && result.entry && !result.alreadySaved) this.listRev = undefined;
+
     // 自己的修改只补丁了一条；版本号恰好比手里的大 1 才说明没有别人的写入夹在中间。
     if (request.action === "update" && result.rev !== undefined) {
       this.listRev = this.listRev !== undefined && result.rev === this.listRev + 1 ? result.rev : undefined;
@@ -281,6 +293,9 @@ export class MemoryManagementState {
       action: request.action,
       requestId: result.requestId,
       entryId: request.entryId,
+      entry: result.entry ? cloneEntry(result.entry) : undefined,
+      entries: result.entries?.map(cloneEntry),
+      alreadySaved: result.alreadySaved,
     };
   }
 

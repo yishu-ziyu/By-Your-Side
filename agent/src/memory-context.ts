@@ -91,9 +91,10 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
     if (!withinValidity(entry.validity, input.now)) { skipped.expired++; continue; }
 
-    // 网站范围的做法（含自动总结的）要对得上这件事，不论改过几次：没改过的自动总结按对象严格对，
-    // 用户改过或恢复过的按词宽松对（与 MemoryStore.select 一致）。到处适用的做法与用户自述的事实照常带。
-    if (entry.scope.kind === "site" && (entry.kind === "method" || entry.experience)) {
+    // 自动总结的网站做法要对得上这件事，不论改过几次：没改过的按对象严格对，用户改过或恢复过的按词宽松对
+    // （与 MemoryStore.select 一致）。用户确认过的网站做法（method，不是自动总结）在该网站总是带，不按字面筛；
+    // 到处适用的做法与用户自述的事实照常带。
+    if (entry.scope.kind === "site" && entry.experience) {
       const relevant = entry.experience && entry.version === 1 ? isRelevantExperience(entry.experience.topic ?? entry.text, input.text) : isRelevantMemory(entry.text, input.text);
 
       if (!relevant) continue;

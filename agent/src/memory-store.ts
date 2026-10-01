@@ -6,7 +6,7 @@ import {
   isMemoryValidity,
   MEMORY_FORMAT_VERSION,
   MEMORY_QUOTE_MAX,
-  normalizeMemoryHostname,
+  memoryHostOfUrl,
   isStoredMemoryEntry,
   upgradeMemoryEntry,
   validLocalDate,
@@ -49,6 +49,9 @@ export interface MemoryQuery {
 export const MEMORY_STORE_FILE = "memories.json";
 
 const randomUUID = () => globalThis.crypto.randomUUID();
+
+/** saveMethod：要替换的那条在询问之后被改过、撤下或不再生效。 */
+export class ReplaceTargetChanged extends Error {}
 
 export class MemoryStore {
   constructor(private readonly doc: DocumentPersistence) {}
@@ -172,6 +175,62 @@ export class MemoryStore {
 
       return entry;
     }, input.guard);
+  }
+
+  /**
+   * 用户点「记住」后存一条确认过的「做事的方法」（来源原话 = 用户那句纠正）。返回改动的条目：新条目在前，被替换的旧条目在后。
+   * replaces 指向同一件事的旧做法：旧条目版本 +1、标「被替换」并指向新条目，新条目沿用它的 factId。
+   * 要替换的那条已被删掉就只存新的；已被改过或不再生效则抛 ReplaceTargetChanged（不悄悄并存两条相反的做法）。
+   * 同范围已有同样文字的生效做法时不写入（版本号 rev 不变），返回那一条并标 alreadySaved。
+   */
+  async saveMethod(input: { text: string; scope: MemoryScope; sourceConversationId: string; sourceQuote: string; replaces?: { id: string; version: number } }): Promise<{ entries: MemoryEntry[]; alreadySaved: boolean }> {
+    assertCreateInput(input);
+
+    if (typeof input.sourceQuote !== "string" || !input.sourceQuote.trim()) throw new Error("Memory quote is invalid");
+
+    if (input.replaces && (!validMemoryId(input.replaces.id) || !validMemoryVersion(input.replaces.version))) throw new Error("Memory ID is invalid");
+
+    let alreadySaved = false;
+
+    const entries = await this.withWriteLock((entries, forgotten) => {
+      const text = input.text.trim();
+      const identical = entries.find(e => e.status === "active" && e.kind === "method" && e.text === text && sameMemoryScope(e.scope, input.scope));
+
+      if (identical) {
+        alreadySaved = true;
+
+        return [identical];
+      }
+
+      const target = input.replaces ? entries.find(e => e.id === input.replaces!.id) : undefined;
+
+      if (target && (target.version !== input.replaces!.version || target.status !== "active")) throw new ReplaceTargetChanged("要替换的那条做法已经改过");
+      const now = Date.now();
+      const id = randomUUID();
+
+      const next: MemoryEntry = {
+        id, factId: target?.factId ?? id, version: 1, text, scope: cloneScope(input.scope), sourceConversationId: input.sourceConversationId,
+        createdAt: now, updatedAt: Math.max(now, (target?.updatedAt ?? 0) + 1), kind: "method", sourceQuote: input.sourceQuote.trim().slice(0, MEMORY_QUOTE_MAX),
+        useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION,
+      };
+
+      const changed = [next];
+
+      if (target) {
+        const index = entries.indexOf(target);
+
+        // 用户换掉的自动总结不能被后台整理再写回来。
+        if (target.experience) forgotten.push(target.experience.runId);
+        entries[index] = { ...target, version: target.version + 1, status: "replaced", replacedBy: id, updatedAt: Math.max(now, target.updatedAt + 1) };
+        changed.push(entries[index]!);
+      }
+
+      entries.push(next);
+
+      return changed;
+    }, undefined, () => alreadySaved);
+
+    return { entries, alreadySaved };
   }
 
   /** Retrying a background job never overwrites a user edit or resurrects a forgotten experience. */
@@ -399,7 +458,8 @@ export class MemoryStore {
     return { format: MEMORY_FORMAT_VERSION, rev, entries: cloneEntries(entries), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
   }
 
-  private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[]) => Promise<T> | T, commitGuard?: () => boolean): Promise<T> {
+  /** unchanged 在改完后返回 true 时不写入（整份版本号不变）。 */
+  private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[]) => Promise<T> | T, commitGuard?: () => boolean, unchanged?: () => boolean): Promise<T> {
     return this.doc.exclusive(async () => {
       const state = await this.readState();
 
@@ -408,6 +468,7 @@ export class MemoryStore {
       const forgotten = state.forgottenExperiences ?? [];
       const result = await mutate(entries, forgotten);
 
+      if (unchanged?.()) return cloneValue(result);
       checkInvariants(entries);
 
       if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
@@ -587,13 +648,7 @@ function assertQuery(query: MemoryQuery): void {
 }
 
 function hostnameFromUrl(url?: string): string | null {
-  if (!url) return null;
-
-  try {
-    return normalizeMemoryHostname(new URL(url).hostname);
-  } catch {
-    return null;
-  }
+  return memoryHostOfUrl(url);
 }
 
 function scopeAllows(scope: MemoryScope, hostname: string | null): boolean {

@@ -6,6 +6,9 @@
  *
  * 套餐清单在 ~/.sideagent/providers.local.json。Kimi 是订阅登录，只借用 Pi 里当前有效的令牌，不在测试里刷新，
  * 避免和 Pi CLI 抢令牌轮换；设备码登录要真人在 Kimi 网页上确认，设置页路径不支持它。
+ *
+ * `--model=custom/<模型>` 走设置页里的「自定义 OpenAI 兼容」：地址与 key 从环境变量
+ * SIDEAGENT_CUSTOM_BASE_URL、SIDEAGENT_CUSTOM_KEY 读（不进套餐清单，不落盘），例如 MiniMax token plan。
  */
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -19,10 +22,22 @@ export interface ModelPlan {
   providerId: string;
   modelId: string;
   credential: JsonRecord;
+  /** 只有自定义服务有：OpenAI 兼容地址。 */
+  baseUrl?: string;
 }
 
 export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   const [providerId = "", ...idParts] = modelArg.split("/");
+
+  if (providerId === "custom") {
+    const baseUrl = process.env.SIDEAGENT_CUSTOM_BASE_URL;
+    const key = process.env.SIDEAGENT_CUSTOM_KEY;
+
+    if (!baseUrl || !key) throw new Error("custom/<模型> 需要环境变量 SIDEAGENT_CUSTOM_BASE_URL 与 SIDEAGENT_CUSTOM_KEY");
+
+    return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key }, baseUrl };
+  }
+
   // SAFETY: 本机套餐清单由用户维护，形状见文件头注释。
   const plans = JSON.parse(await readFile(join(homedir(), ".sideagent/providers.local.json"), "utf8")) as Record<string, { key?: string; source?: string }>;
   // 阶跃星辰的 key 就是语音用的那个，不在套餐清单里重复存一份。
@@ -42,7 +57,11 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
 
 /** 快速路径要写进扩展存储的内容。 */
 export function modelStorageItems(plan: ModelPlan): JsonRecord {
-  return { inproc_model_config: { provider: plan.providerId, modelId: plan.modelId }, [`inproc_cred:${plan.providerId}`]: plan.credential };
+  const config: JsonRecord = { provider: plan.providerId, modelId: plan.modelId };
+
+  if (plan.baseUrl) config.baseUrl = plan.baseUrl;
+
+  return { inproc_model_config: config, [`inproc_cred:${plan.providerId}`]: plan.credential };
 }
 
 /** 服务商在 pi-ai 目录里的地址，用来把同一个服务当成「自定义地址」配置。 */

@@ -81,6 +81,20 @@ export function normalizeMemoryHostname(value: string): string | null {
   } catch { return null; }
 }
 
+/**
+ * 网址对应的记忆网站：只有 http(s) 网页才算一个网站。扩展页（chrome-extension://…，主机名是扩展编号）、
+ * 浏览器页（chrome://）、about:blank 等一律是「没有当前网站」，不能成为记忆范围，也不能对上网站范围的记忆。
+ */
+export function memoryHostOfUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+
+  try {
+    const parsed = new URL(url);
+
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? normalizeMemoryHostname(parsed.hostname) : null;
+  } catch { return null; }
+}
+
 export function isMemoryScope(value: unknown): value is MemoryScope {
   if (!value || typeof value !== "object") return false;
   const scope = value as MemoryScope;

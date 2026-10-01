@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { memoryTaskUrl, normalizeMemoryHostname, validMemoryId, type MemoryEntry } from "../../shared/memory.js";
+import { memoryHostOfUrl, memoryTaskUrl, validMemoryId, type MemoryEntry } from "../../shared/memory.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 import { MemoryStore } from "./memory-store.js";
 import { sanitizeTrace } from "../../shared/trace-sanitize.js";
@@ -89,7 +89,7 @@ export function isUserCorrection(text: string): boolean {
 function hostnameOf(text: string, context?: PageContext): string {
   const url = memoryTaskUrl(text, context?.url);
 
-  try { return url ? normalizeMemoryHostname(new URL(url).hostname) ?? "" : ""; } catch { return ""; }
+  return memoryHostOfUrl(url) ?? "";
 }
 
 /** Observes the Lead only. Background completion has no browser tools or control authority. */

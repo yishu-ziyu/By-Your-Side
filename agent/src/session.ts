@@ -38,6 +38,7 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
  * - sendUserMessage / steer / abort 均异步不阻塞调用方，错误转成 error 事件
  */
 import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { completeSideText } from "./side-completion.js";
 import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
@@ -55,7 +56,7 @@ import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
 import type { ProgramStep } from "./browser-program.js";
 import type { MemoryStore } from "./memory-store.js";
-import { MemoryRuntime } from "./memory-runtime.js";
+import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswer } from "./memory-runtime.js";
 import { followUpContinuesTask } from "./follow-up-intent.js";
 import { asksConfirmBeforeSubmit, asksUser, checkGoal, GOAL_CONTINUE_MAX, pageAwaitsEmailStep, type GoalVerdict } from "./goal-check.js";
 import type { TaskHistoryStore } from "./task-history.js";
@@ -777,13 +778,9 @@ if(required.includes(key))candidates.set(key,attachment);
 
           if (!model || !memoryHost) throw new Error("记忆判断模型不可用");
 
-          const reply = await models.completeSimple(model, {
+          return completeSideText(maxTokens => models.completeSimple(model, {
             systemPrompt, messages: [{ role: "user", content: input, timestamp: Date.now() }],
-          }, { signal, maxTokens: 1600, reasoning: "minimal", sessionId: memoryHost.sessionId, headers: opencodeSessionHeaders(model, memoryHost.sessionId) });
-
-          if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("记忆判断失败，尚未修改记忆");
-
-          return reply.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+          }, { signal, maxTokens, reasoning: "minimal", sessionId: memoryHost!.sessionId, headers: opencodeSessionHeaders(model, memoryHost!.sessionId) }), signal);
         }, { auto: true, history: options.taskHistory })
         : null;
 
@@ -2038,6 +2035,18 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
   async datePastTask(task: Pick<TaskHistoryEntry, "id" | "goal" | "revisions" | "summary">): Promise<{ date: string; validity: MemoryValidity } | null> {
     return this.memoryRuntime?.datePastTask(task) ?? null;
+  }
+
+  /** 这个对话的任务碰过的网页（宿主的任务进度提供）：纠正询问的网站后备。 */
+  bindVisitedUrls(urls: () => string[]): void {
+    this.memoryRuntime?.bindVisitedUrls(urls);
+  }
+
+  /** 用户回答「要我记住吗」：见 MemoryRuntime.answerAsk。没有记忆运行时，询问也就不在。 */
+  async answerMemoryAsk(askId: string, answer: "remember" | "once"): Promise<MemoryAskAnswer> {
+    if (!this.memoryRuntime) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
+
+    return this.memoryRuntime.answerAsk(askId, answer);
   }
 
   async followUpContinuesTask(task: { goal: string; unfinished: string[]; lastReply: string }, text: string, signal: AbortSignal): Promise<boolean | null> {

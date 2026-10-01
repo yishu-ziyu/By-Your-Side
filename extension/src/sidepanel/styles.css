@@ -2525,6 +2525,28 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt button { border:0; border-radius:5px; background:transparent; color:var(--accent); padding:2px 1px; font:inherit; font-size:11px; cursor:pointer; }
 .memory-receipt button:hover { text-decoration:underline; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* 纠正后开口问「要我记住吗」：像助手接着说的一句话，两个浅色小胶囊不抢正文。 */
+.memory-ask { margin:-4px 0 16px; font-family:var(--reading-font); font-size:13px; line-height:1.7; color:var(--text-primary); }
+.memory-ask-line { margin:0; overflow-wrap:anywhere; }
+.memory-ask:not([data-state=open]):not([data-state=closed]) .memory-ask-line { color:var(--text-tertiary); font-size:12.5px; }
+.memory-ask-replaces { margin:3px 0 0; color:var(--text-tertiary); font-size:11.5px; line-height:1.6; overflow-wrap:anywhere; }
+.memory-ask-pills { display:flex; gap:8px; margin-top:8px; }
+.memory-ask-pill { border:1px solid var(--content-border); border-radius:999px; background:var(--content-bg); color:var(--text-secondary); font:inherit; font-size:12px; line-height:1.5; padding:2px 12px; cursor:pointer; }
+.memory-ask-pill.memory-ask-yes { border-color:transparent; background:var(--accent-soft); color:var(--accent); font-weight:500; }
+.memory-ask-pill:hover:not(:disabled) { filter:brightness(.97); border-color:var(--text-tertiary); }
+.memory-ask-pill.memory-ask-yes:hover:not(:disabled) { border-color:transparent; }
+.memory-ask-pill:disabled { opacity:.55; cursor:default; }
+.memory-ask-scope { margin-left:6px; border:0; border-radius:5px; background:var(--content-subtle); color:var(--text-secondary); font:inherit; font-size:10.5px; line-height:1.4; padding:2px 6px; vertical-align:1px; cursor:pointer; }
+.memory-ask-scope:hover:not(:disabled) { background:var(--content-subtle-hover); }
+.memory-ask-scope:disabled, span.memory-ask-scope { cursor:default; }
+.memory-ask-undo { margin-left:8px; border:0; background:transparent; color:var(--text-tertiary); font:inherit; font-size:12px; padding:0; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+.memory-ask-undo:hover:not(:disabled) { color:var(--text-secondary); }
+.memory-ask-undo:disabled { opacity:.55; cursor:default; }
+.memory-ask button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.memory-ask-error { margin:6px 0 0; color:var(--err); font-size:11.5px; line-height:1.6; }
+.memory-group { margin-top:16px; }
+.memory-group > h3 { margin:0; color:var(--text-primary); font-size:12.5px; font-weight:600; }
+.memory-group > .memory-quiet { margin:4px 0 0; }
 .past-tasks { margin-top:22px; padding-top:14px; border-top:1px solid var(--content-border); }
 .past-tasks-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .past-tasks-head h3 { margin:0; color:var(--text-primary); font-size:12.5px; font-weight:600; }

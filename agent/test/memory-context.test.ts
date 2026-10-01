@@ -40,12 +40,19 @@ describe("selectMemoryContext: expired dated tasks", () => {
   });
 });
 
-describe("selectMemoryContext: site methods need relevance at any version", () => {
-  const method = (version: number) => entry({ id: "s", kind: "method", version, text: "导出客户名单时选 CSV", scope: { kind: "site", hostname: "air.example" } });
+describe("selectMemoryContext: automatic site summaries need relevance at any version", () => {
+  const method = (version: number) => entry({ id: "s", kind: "method", version, text: "导出客户名单时选 CSV", scope: { kind: "site", hostname: "air.example" }, experience: { runId: "run-1", evidence: ["只导了当前页"], topic: "导出客户名单" } });
 
   it.each([1, 2, 3])("version %i without word overlap is not sent", (version) => {
     const r = selectMemoryContext({ ...base, entries: [method(version)], tasks: [], text: "帮我订明天的机票" });
     expect(r.entries).toEqual([]);
+  });
+
+  // 2026-10-01 修订（docs/evals/20261001-remember-corrections.md）：用户点「记住」确认的网站做法在该网站总是带，不按字面筛。
+  it("a user-confirmed site method is sent on its site without overlap, and not on another site", () => {
+    const confirmed = entry({ id: "c", kind: "method", text: "以后在这个网站导出，我都先选全部再核对条数", scope: { kind: "site", hostname: "air.example" } });
+    expect(selectMemoryContext({ ...base, entries: [confirmed], tasks: [], text: "帮我订明天的机票" }).entries.map((e) => [e.entry.id, e.rule])).toEqual([["c", "site"]]);
+    expect(selectMemoryContext({ ...base, hostname: "other.example", entries: [confirmed], tasks: [], text: "帮我订明天的机票" }).entries).toEqual([]);
   });
 
   it("an edited one with word overlap is sent as site", () => {

@@ -63,6 +63,7 @@ import { DEFAULT_MARK_MOTION, isMarkMotion, MARK_MOTION_KEY, type MarkMotion } f
 import { acceptTeamStatus, emptyTeamRun, isRunId, observeRunStarted, type TeamRunState } from "../shared/team-run.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
+import { createAskCard, stepAsk, type AskInput, type MemoryAskCard, type MemoryAskEvent } from "./memory-ask.js";
 import { ConsentPanel } from "./consent.js";
 
 const TOKEN_KEY = "sideagent_token";
@@ -838,7 +839,7 @@ type MemoryEdit = {
 
 type MemoryForget = { id: string; pendingRequestId: string | null; error: string };
 
-type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore"; entryId?: string };
+type MemoryUiRequest = { action: "list" | "update" | "forget" | "restore" | "ask"; entryId?: string };
 
 const memoryState = new MemoryManagementState();
 
@@ -1048,7 +1049,8 @@ function renderMemoryForgetConfirm(entry: MemoryEntry, state: MemoryForget): HTM
   return confirm;
 }
 
-function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
+/** inGroup：列在「做事的方法」组里——不重复种类名，补上日期，原话收进「查看来源」。 */
+function renderMemoryEntry(entry: MemoryEntry, inGroup = false): HTMLElement {
   const card = document.createElement("article");
   card.className = "memory-row";
   card.dataset.memoryId = entry.id;
@@ -1076,7 +1078,16 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   const used = document.createElement("span");
   used.className = "memory-used";
   used.textContent = entry.useCount ? `用过 ${entry.useCount} 次` : "还没用过";
-  facts.append(kind, scope, used);
+
+  if (inGroup) {
+    const date = document.createElement("span");
+    date.className = "memory-used";
+    date.textContent = formatMemoryTime(entry.createdAt);
+    facts.append(scope, date, used);
+  } else {
+    facts.append(kind, scope, used);
+  }
+
   const actions = document.createElement("div");
   actions.append(
     memoryButton(card.classList.contains("show-source") ? "收起来源" : "查看来源", "source", entry.id),
@@ -1087,7 +1098,7 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   meta.append(facts, actions);
   card.append(text);
 
-  if (entry.sourceQuote && entry.sourceQuote !== entry.text) {
+  if (!inGroup && entry.sourceQuote && entry.sourceQuote !== entry.text) {
     const quote = document.createElement("p");
     quote.className = "memory-quote";
     quote.textContent = `你说：「${entry.sourceQuote}」`;
@@ -1102,7 +1113,7 @@ function renderMemoryEntry(entry: MemoryEntry): HTMLElement {
   const summary = document.createElement("summary");
   summary.textContent = "来源";
   const detail = document.createElement("p");
-  detail.textContent = `会话：${memorySourceLabel(entry)}\n保存于 ${formatMemoryTime(entry.createdAt)} · 当前版本 ${entry.version}`;
+  detail.textContent = `${inGroup && entry.sourceQuote ? `你当时说：「${entry.sourceQuote}」\n` : ""}会话：${memorySourceLabel(entry)}\n保存于 ${formatMemoryTime(entry.createdAt)} · 当前版本 ${entry.version}`;
 
   if (entry.experience) detail.textContent += `\n来自这次纠正的待验证做法；再次使用仍需检查。\n${entry.experience.evidence.map(line => line.replace(/^feedback-\d+：/, "你的纠正：").replace(/^(?:previous-)?observation-\d+：/, "网页结果：")).join("\n")}`;
   source.append(summary, detail);
@@ -1328,11 +1339,34 @@ function renderMemoryHistory(history: MemoryEntry[]): HTMLElement {
   return section;
 }
 
+/** 做事的方法单独成组：纠正后点「记住」的，和从纠正里总结的待验证做法；每条照常可看来源、修改、忘记。 */
+function renderMethodGroup(methods: MemoryEntry[]): HTMLElement {
+  const group = document.createElement("section");
+  group.className = "memory-group";
+  group.dataset.memoryGroup = "method";
+  const heading = document.createElement("h3");
+  heading.textContent = MEMORY_KIND_LABEL.method;
+  group.appendChild(heading);
+
+  if (!methods.length) {
+    const empty = document.createElement("p");
+    empty.className = "memory-quiet";
+    empty.textContent = "你纠正我之后，记下的做法会列在这里。";
+    group.appendChild(empty);
+  }
+
+  for (const entry of methods) group.appendChild(renderMemoryEntry(entry, true));
+
+  return group;
+}
+
 function renderMemoryFacts(): void {
   const all = memoryState.getEntries();
-  const entries = all.filter(entry => entry.status === "active");
+  const active = all.filter(entry => entry.status === "active");
+  const methods = active.filter(entry => entry.kind === "method");
+  const entries = active.filter(entry => entry.kind !== "method");
   const history = all.filter(entry => entry.status !== "active");
-  memoryTitle.textContent = entries.length ? `记忆 · ${entries.length}` : "记忆";
+  memoryTitle.textContent = active.length ? `记忆 · ${active.length}` : "记忆";
   memoryBody.replaceChildren();
   const inspection = renderMemoryInspection();
 
@@ -1378,7 +1412,9 @@ function renderMemoryFacts(): void {
     const text = document.createElement("p");
     text.textContent = "你在对话里说过的邮箱、姓名等资料会自动记在这里。";
     empty.append(heading, text);
-    memoryBody.appendChild(empty);
+
+    if (!methods.length) memoryBody.appendChild(empty);
+    memoryBody.appendChild(renderMethodGroup(methods));
 
     return;
   }
@@ -1388,12 +1424,18 @@ function renderMemoryFacts(): void {
 
   for (const entry of entries) list.appendChild(renderMemoryEntry(entry));
   memoryBody.appendChild(list);
+  memoryBody.appendChild(renderMethodGroup(methods));
 
   if (history.length) memoryBody.appendChild(renderMemoryHistory(history));
 }
 
 /** 回执上的「撤销」各自等自己的结果。 */
 const receiptUndos = new Map<string, (ok: boolean, error?: string) => void>();
+
+/** 纠正后的询问：状态按 askId 留在面板内存里，切会话重绘时照原样画回；它发出的请求各自等自己的结果。 */
+const memoryAskCards = new Map<string, MemoryAskCard>();
+
+const memoryAskHandlers = new Map<string, (result: AskInput) => void>();
 
 function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (outcome.kind === "ignored") return;
@@ -1402,6 +1444,15 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (undo) {
     receiptUndos.delete(outcome.requestId);
     undo(outcome.kind === "success", outcome.kind === "failure" ? outcome.error : undefined);
+  }
+
+  const askHandler = memoryAskHandlers.get(outcome.requestId);
+
+  if (askHandler) {
+    memoryAskHandlers.delete(outcome.requestId);
+    askHandler(outcome.kind === "success"
+      ? { kind: "result", ok: true, entry: outcome.entry, entries: outcome.entries, alreadySaved: outcome.alreadySaved }
+      : { kind: "result", ok: false, error: outcome.error, askClosed: outcome.askClosed });
   }
 
   const uiRequest = memoryUiRequests.get(outcome.requestId);
@@ -1447,10 +1498,10 @@ function processMemoryOutcome(outcome: MemoryApplyResult): void {
   if (!memoryDrawer.hidden) renderMemoryDrawer();
 
   // 忘记/撤销会连带改别的条目（重连历史、删整条历史、两条一起改），本地补丁不够，重新读全表。
-  if ((outcome.action === "forget" || outcome.action === "restore") && outcome.kind === "success") requestMemoryList();
+  if (outcome.kind === "success" && (outcome.action === "forget" || outcome.action === "restore" || (outcome.action === "ask" && outcome.entry && !outcome.alreadySaved))) requestMemoryList();
 }
 
-function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>, ui: MemoryUiRequest): void {
+function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" }>, ui: MemoryUiRequest): void {
   memoryUiRequests.set(message.requestId, ui);
 
   if (send(message)) return;
@@ -2793,6 +2844,137 @@ function renderMemoryReceipt(event: Extract<AgentUiEvent, { kind: "memory" }>): 
   return receipt;
 }
 
+// ── 纠正后开口问「要我记住吗」──
+/**
+ * 询问事件：第一条带出卡片；同一 askId 带 outcome 的后续事件（现场或对话历史回放）把它推到结局。
+ * 没有本地状态的回放卡片直接停在结局；没有结局的照常可点。
+ */
+function renderMemoryAsk(event: MemoryAskEvent): void {
+  if (!memoryAskCards.has(event.askId)) memoryAskCards.set(event.askId, createAskCard(event));
+
+  if (event.outcome) stepMemoryAsk(event.askId, { kind: "outcome", outcome: event.outcome });
+
+  if (messagesEl.querySelector(`[data-memory-ask="${CSS.escape(event.askId)}"]`)) return;
+  appendToMessages(buildMemoryAsk(event.askId));
+  scrollToEnd();
+}
+
+/** 用户动作或后台结果交给询问卡片：重画，有请求就发出去，结果（含被忽略）再回到这里。 */
+function stepMemoryAsk(askId: string, input: AskInput): void {
+  const current = memoryAskCards.get(askId);
+
+  if (!current) return;
+  const { card, request } = stepAsk(current, input);
+  memoryAskCards.set(askId, card);
+  messagesEl.querySelector(`[data-memory-ask="${CSS.escape(askId)}"]`)?.replaceWith(buildMemoryAsk(askId));
+
+  if (!request) return;
+
+  const message = request.type === "answer"
+    ? memoryState.beginAskAnswer(selectedConversationId, askId, request.answer)
+    : request.type === "update"
+      ? memoryState.beginUpdate(selectedConversationId, request.entry, request.text, request.scope)
+      : request.type === "restore"
+        ? memoryState.beginRestore(selectedConversationId, request.entry)
+        : memoryState.beginForget(selectedConversationId, request.entry);
+
+  memoryAskHandlers.set(message.requestId, (result) => stepMemoryAsk(askId, result));
+  dispatchMemoryRequest(message, request.type === "answer" ? { action: "ask" } : { action: request.type, entryId: request.entry.id });
+}
+
+function memoryAskButton(className: string, label: string, input: AskInput, card: MemoryAskCard): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.disabled = card.pending !== null || !stepAsk(card, input).request;
+  button.onclick = () => stepMemoryAsk(card.ask.askId, input);
+
+  return button;
+}
+
+function buildMemoryAsk(askId: string): HTMLElement {
+  const card = memoryAskCards.get(askId)!;
+  const root = document.createElement("div");
+  root.className = "memory-ask";
+  root.dataset.memoryAsk = askId;
+  root.dataset.state = card.phase;
+  const line = document.createElement("p");
+  line.className = "memory-ask-line";
+  root.appendChild(line);
+  const scopeLabel = (scope: MemoryScope): string => scope.kind === "all" ? "所有网站" : "这个网站";
+
+  if (card.phase === "open" || card.phase === "closed") {
+    line.textContent = `${card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "")}，要我记住吗？`;
+
+    if (card.ask.replaces) {
+      const replaces = document.createElement("p");
+      replaces.className = "memory-ask-replaces";
+      replaces.dataset.memoryAskReplaces = card.ask.replaces.id;
+      replaces.textContent = `这会替换：${card.ask.replaces.text}`;
+      root.appendChild(replaces);
+    }
+
+    // 已作废：问句加一行说明（后台的原话或「这条询问已结束」），不给按钮。
+    if (card.phase === "closed") {
+      const note = document.createElement("p");
+      note.className = "memory-ask-replaces";
+      note.textContent = card.error || "这条询问已结束";
+      root.appendChild(note);
+
+      return root;
+    }
+
+    const pills = document.createElement("div");
+    pills.className = "memory-ask-pills";
+
+    for (const [answer, label] of [["remember", "记住"], ["once", "这次就行"]] as const) {
+      const pill = memoryAskButton(answer === "remember" ? "memory-ask-pill memory-ask-yes" : "memory-ask-pill", label, { kind: answer }, card);
+      pill.dataset.memoryAskAnswer = answer;
+
+      if (card.pending === answer) pill.setAttribute("aria-busy", "true");
+      pills.appendChild(pill);
+    }
+
+    root.appendChild(pills);
+  } else if (card.phase === "once") {
+    line.textContent = "好，这次就不记了。";
+  } else if (card.phase === "noted") {
+    line.textContent = "好，记住了。可在「记忆」面板查看或撤销";
+  } else if (card.phase === "undone") {
+    line.textContent = "已撤销。";
+  } else if (card.phase === "already") {
+    line.append("已经记着了。");
+
+    if (card.entry) {
+      const scope = document.createElement("span");
+      scope.className = "memory-ask-scope";
+      scope.dataset.memoryAskScope = card.entry.scope.kind;
+      scope.textContent = scopeLabel(card.entry.scope);
+      line.append(scope);
+    }
+  } else if (card.entry) {
+    const entry = card.entry;
+    const scope = memoryAskButton("memory-ask-scope", scopeLabel(entry.scope), { kind: "scope" }, card);
+    scope.dataset.memoryAskScope = entry.scope.kind;
+
+    if (!scope.disabled) scope.title = entry.scope.kind === "site" ? `只在 ${entry.scope.hostname} 照做，点一下改成所有网站` : "在所有网站照做，点一下改成只在这个网站";
+    const undo = memoryAskButton("memory-ask-undo", card.pending === "undo" ? "正在撤销…" : "撤销", { kind: "undo" }, card);
+    undo.dataset.memoryAskUndo = entry.id;
+    line.append("好，记住了。", scope, undo);
+  }
+
+  if (card.error) {
+    const error = document.createElement("p");
+    error.className = "memory-ask-error";
+    error.setAttribute("role", "alert");
+    error.textContent = card.error;
+    root.appendChild(error);
+  }
+
+  return root;
+}
+
 // ── 执行步骤聚合块 ──────────────────────────────────────────
 // 一次 run（用户消息 → agent_end）只有一条状态行：[光球] 正在做什么 · 耗时（在 summary 上）。
 // 思考块与工具 chips 收进同一个 details 的 body，运行中也不展开——要看过程点一下。
@@ -3704,6 +3886,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       renderMemoryReceipt(ev);
       refreshMemoryIfStale(ev.rev);
       break;
+    case "memory_ask":
+      renderMemoryAsk(ev);
+      break;
     case "text_delta":
       if (leadDeliveryMode === "explicit") {
         appendLeadDelta(ev.delta);
@@ -3982,6 +4167,13 @@ if (new URLSearchParams(location.search).get("acceptance") === "t06") {
 function handleMemoryResult(msg: Extract<ServerMessage, { type: "memory_result" }>): void {
   const outcome = memoryState.receive(msg.conversationId, msg);
   processMemoryOutcome(outcome);
+  const askHandler = outcome.kind === "ignored" ? memoryAskHandlers.get(msg.requestId) : undefined;
+
+  // 询问卡片的请求结果被判作过期或不属于它：不会再有结果，卡片恢复可点。
+  if (askHandler) {
+    memoryAskHandlers.delete(msg.requestId);
+    askHandler({ kind: "ignored" });
+  }
 
   // 本面板没发过的结果（比如别处的写入）只带版本号：不同就重读。
   if (outcome.kind === "ignored" && outcome.reason === "unknown-request" && msg.ok) refreshMemoryIfStale(msg.rev);

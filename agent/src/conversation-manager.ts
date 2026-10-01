@@ -19,6 +19,7 @@ import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./us
 import type { ConversationPersistence } from "./conversation-persistence.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
+import { MEMORY_ASK_EXPIRED, MemoryAskClosed } from "./memory-runtime.js";
 import type { SkillStore } from "./skill-store.js";
 import { compileSkill, validateCompiledSkill } from "./skill-compile.js";
 import { normalizeSkillHost } from "../../shared/skill.js";
@@ -38,7 +39,8 @@ import type {VoiceTurnPreparation} from './voice-model.js';
 import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
 import {partialResultNote} from '../../shared/task-next-step.js';
-import type {TaskHistoryStore} from './task-history.js';
+import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
+import {memoryHostOfUrl} from '../../shared/memory.js';
 import {asksUser} from './goal-check.js';
 import {resultHasWriteEffect} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
@@ -827,14 +829,15 @@ return { kind: "silent" };}
     const delivery=snap.conversationContext?.latestDelivery;
     const lastReply=[...(snap.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
 
-    const hosts=[...new Set(progress.visitedUrls().flatMap(url=>{try{const host=new URL(url).hostname;
+    // 只有 http(s) 网页算网站：扩展页、浏览器页不记成网站。
+    const hosts=[...new Set(progress.visitedUrls().flatMap(url=>{const host=memoryHostOfUrl(url);
 
-return host?[host]:[];}catch{return [];}}))].slice(0,16);
+return host?[host]:[];}))].slice(0,16);
 
     const clip=(text:string,max:number)=>text.length>max?`${text.slice(0,max-1)}…`:text;
     const unfinished=(snap.goalCheck?(snap.goalCheck.status!=='done'&&snap.goalCheck.remaining?[snap.goalCheck.remaining]:[]):delivery?.unfinished?.length?delivery.unfinished:view.outstanding.map(item=>item.description)).slice(0,16).map(text=>clip(text,300));
 
-    const entry:TaskHistoryEntry={
+    const raw:TaskHistoryEntry={
       id:snap.runId,conversationId:id,goal:clip(snap.goal,600),
       revisions:(snap.recoveryInput?.requirements??[]).filter(text=>text!==snap.goal).slice(-16).map(text=>clip(text,600)),
       hosts,
@@ -843,7 +846,9 @@ return host?[host]:[];}catch{return [];}}))].slice(0,16);
       unfinished,startedAt:snap.startedAt,endedAt:Date.now(),
     };
 
-    if(snap.goalPage?.title)entry.page=clip(snap.goalPage.title,200);
+    if(snap.goalPage?.title)raw.page=clip(snap.goalPage.title,200);
+    // 像密码验证码的用户原话不进过往任务，也不交给判断日期的模型。
+    const entry=redactTaskSecrets(raw);
     // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
     // 先立即写入（查「之前订了什么」不用等，也不会因等待被删后复活）；日期晚到时只补 date/validity。
     const session=this.entries.get(id)?.runtime.session;
@@ -1577,6 +1582,8 @@ return true;}
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
       runtime.session.bindVoiceTurnGate?.(this.voiceTurns);
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
+      // 纠正询问的网站：用户不在网页上时，取这个任务最近碰过的网页。
+      runtime.session.bindVisitedUrls?.(() => this.progress.get(id)?.visitedUrls() ?? []);
       runtime.fleet.bindConversationContext?.(() => this.getTaskProgress(id));
       // 授权绑定原任务与原控制版本：发起时记下，用户点「允许」时再复核一次。
       runtime.consent?.bindContext?.(() => ({
@@ -1757,7 +1764,7 @@ return;}
       return;
     }
 
-    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget" || message.type === "memory_restore") {
+    if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget" || message.type === "memory_restore" || message.type === "memory_ask_answer") {
       await this.handleMemoryMessage(message, id);
 
       return;
@@ -1864,10 +1871,10 @@ return;
   }
 
   private async handleMemoryMessage(
-    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" }>,
+    message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" }>,
     conversationId: string,
   ): Promise<void> {
-    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : message.type === "memory_restore" ? "restore" : "forget";
+    const action = message.type === "memory_list" ? "list" : message.type === "memory_update" ? "update" : message.type === "memory_restore" ? "restore" : message.type === "memory_ask_answer" ? "ask" : "forget";
 
     try {
       if (!this.memoryStore) throw new Error("记忆存储不可用");
@@ -1894,6 +1901,28 @@ return;
         return;
       }
 
+      // 回答「要我记住吗」：询问只在这个对话的后台内存里；对话不在或后台重启过就是已失效。
+      if (message.type === "memory_ask_answer") {
+        const session = this.entries.get(conversationId)?.runtime.session;
+
+        if (!session?.answerMemoryAsk) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
+        const answered = await session.answerMemoryAsk(message.askId, message.answer);
+        // 版本号用运行时写入后取到的那个；取不到就不带（不再读一次，免得把已存下的说成失败）。
+        const result: Extract<ServerMessage, { type: "memory_result" }> = { type: "memory_result", conversationId, requestId: message.requestId, action, ok: true };
+
+        if (answered.rev !== undefined) result.rev = answered.rev;
+
+        if (answered.entry) result.entry = answered.entry;
+
+        if (answered.entries) result.entries = answered.entries;
+
+        // 早已记着同一条：这次没写入，面板说「已经记着了」、不给撤销。
+        if (answered.alreadySaved) result.alreadySaved = true;
+        this.emit(result);
+
+        return;
+      }
+
       if (message.type === "memory_restore") {
         const entries = await this.memoryStore.restore({ id: message.id, expectedVersion: message.expectedVersion });
         this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, entries, rev: await this.memoryStore.currentRev() });
@@ -1907,7 +1936,7 @@ return;
       // 失败（如版本冲突）也带上当前 rev，面板据此重读；记忆读不出来时不带。
       const rev = await this.memoryStore?.currentRev().catch(() => undefined);
 
-      this.emit({
+      const result: Extract<ServerMessage, { type: "memory_result" }> = {
         type: "memory_result",
         conversationId,
         requestId: message.requestId,
@@ -1915,7 +1944,14 @@ return;
         ok: false,
         error: error instanceof Error ? error.message : String(error),
         ...(rev === undefined ? {} : { rev }),
-      });
+      };
+
+      // 询问已不在后台（没问过、已回答、作废、重启过）：面板收起按钮。可再试的写入失败不带。
+      if (error instanceof MemoryAskClosed) result.askClosed = true;
+      this.emit(result);
+
+      // 这次才作废的询问：先让面板收到带原因的结果，再发结局事件（进对话历史）。
+      if (error instanceof MemoryAskClosed) error.announce?.();
     }
   }
 
