@@ -517,8 +517,9 @@ export interface ToolContract {
       force?: boolean;
       label?: string;
     };
-    /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。 */
-    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
+    /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
+     *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
+    data: { clicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { clicked: false; held: true };
   };
   /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2；destructive 目标同样先拿住等确认。 */
   double_click: {

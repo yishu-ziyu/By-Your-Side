@@ -701,3 +701,121 @@ describe("B2 纯坐标：视口有效、点下有对象、替换则失败", () =
     expect(mouseEvents().some((e) => e.type === "mousePressed" && e.x === 50 && e.y === 40)).toBe(true);
   });
 });
+
+/**
+ * docs/evals/20261001-unknown-lock-scope.md 标准 2、4（扩展一侧）。失败方式：
+ * U1 CSS 目标被覆盖、点击没派发，回执却不带「未执行」，宿主只能记成结果不确定并上锁（#22 BYS-076）；
+ * U2 点击弹出原生 confirm 后，松开鼠标的 CDP 命令被对话框挡住，点击一直等到 30 秒超时（#23 BYS-053）；
+ * U3 弹出对话框时返回的不是「已点击」，或丢了对话框类型与文字，模型不知道该确认还是取消。
+ */
+describe("结果不确定的范围：点击回执", () => {
+  it("U1 CSS 目标被覆盖：没派发任何按下，回执带「未执行」", async () => {
+    const { overlay, elementFromPoint } = installPage();
+    elementFromPoint.mockReturnValue(overlay);
+    const { click } = await import("../src/background/exec/input.js");
+    await expect(click({ target: "#counter" })).rejects.toMatchObject({ message: expect.stringMatching(/覆盖/), executionFact: "not_executed" });
+    expect(mouseEvents().some((e) => e.type === "mousePressed")).toBe(false);
+  });
+
+  it("U2/U3 点击弹出原生 confirm：一弹出就返回已点击和对话框内容，不等被挡住的命令", async () => {
+    installPage();
+    let onEvent: ((source: { tabId?: number }, method: string, params?: { type?: string; message?: string }) => void) | undefined;
+    // SAFETY: 只补页面事件订阅需要的 chrome.debugger 两个入口；其余沿用 installPage 装好的桩。
+    vi.stubGlobal("chrome", { ...(globalThis as { chrome: object }).chrome, debugger: { onEvent: { addListener: (fn: typeof onEvent) => { onEvent = fn; } }, sendCommand: vi.fn(async () => ({})) } });
+    const { enablePageEventCapture } = await import("../src/background/page-events.js");
+    await enablePageEventCapture(101);
+    mocks.sendCommand.mockImplementation((_tab: number, method: string, params?: { type?: string }) => {
+      if (method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased") {
+        // 真实 Chrome：页面在 click 处理器里 confirm()，对话框不关，这条命令就不返回。
+        setTimeout(() => onEvent?.({ tabId: 101 }, "Page.javascriptDialogOpening", { type: "confirm", message: "确定删除这条记录？" }), 0);
+
+        return new Promise(() => {});
+      }
+
+      return Promise.resolve({});
+    });
+    const { click } = await import("../src/background/exec/input.js");
+    const outcome = await Promise.race([click({ target: "#counter" }), new Promise(resolve => setTimeout(() => resolve("still waiting after 2s"), 2000))]);
+    expect(outcome).toEqual({ clicked: true, dialog: { type: "confirm", message: "确定删除这条记录？" } });
+  });
+});
+
+/**
+ * docs/evals/20261001-unknown-lock-scope.md 标准 2（扩展一侧）：「元素不可填充」是确定没执行的失败。
+ * 来源：#27 / #22，BYS-070、073 的时间框被拆成 Hours/Minutes/AM-PM 三个 span，模型对 span 的 ref 调 fill，
+ * 扩展报「元素不可填充」，宿主却记成结果不确定并上锁。
+ * 假 CDP 把扩展发来的页面函数原样以目标元素为 this 执行，抛错时按 CDP 回 exceptionDetails。失败方式：
+ * N1 填到不可填的 span（AX ref 路径），回执不带「未执行」；
+ * N2 判定不可填之前已经动了页面（聚焦了目标），「未执行」名不副实；
+ * N3 CSS 定位（页面内 domops 路径）填到不可填元素时同样不带「未执行」或已聚焦；
+ * N4 反向过宽：普通输入框照常填写成功、值写进去了。
+ */
+describe("fill 到不可填的元素", () => {
+  type FillTarget = { tagName: string; isContentEditable: boolean; value: string; focus: ReturnType<typeof vi.fn>; dispatchEvent: ReturnType<typeof vi.fn> };
+
+  const fillTarget = (tagName: string): FillTarget => ({ tagName, isContentEditable: false, value: "", focus: vi.fn(), dispatchEvent: vi.fn(() => true) });
+
+  /** 页面函数里用到的浏览器构造器：Event 与输入框原型的 value setter。 */
+  function installFillGlobals() {
+    class FakeEvent { constructor(readonly type: string) {} }
+
+    class FakeInput {}
+
+    Object.defineProperty(FakeInput.prototype, "value", { set(this: FillTarget, v: string) { this.value = v; }, configurable: true });
+    vi.stubGlobal("Event", FakeEvent);
+    vi.stubGlobal("HTMLInputElement", FakeInput);
+    vi.stubGlobal("HTMLTextAreaElement", FakeInput);
+  }
+
+  /** 假 CDP：页面函数只有填写那一个读 tagName；其余（位置、光标提示）回固定包围盒。 */
+  function fakeCdp(target: FillTarget) {
+    mocks.isAxRef.mockImplementation((_tab: number, ref: number) => ref === 153);
+    mocks.sendCommand.mockImplementation(async (_tab: number, method: string, params?: { functionDeclaration?: string; arguments?: Array<{ value?: string | boolean }> }) => {
+      if (method === "DOM.resolveNode") return { object: { objectId: "obj-153" } };
+
+      if (method !== "Runtime.callFunctionOn") return {};
+      const declaration = String(params?.functionDeclaration ?? "");
+
+      if (!declaration.includes("tagName.toLowerCase()")) return { result: { value: { x: 10, y: 10, width: 60, height: 20 } } };
+
+      try {
+        // SAFETY: declaration 是扩展发给 Runtime.callFunctionOn 的函数源码，真实 Chrome 同样把它当函数、以目标元素为 this 调用。
+        const fn = new Function(`return (${declaration});`)() as (this: FillTarget, ...args: Array<string | boolean | undefined>) => object;
+
+        return { result: { value: fn.apply(target, (params?.arguments ?? []).map(arg => arg.value)) } };
+      } catch (error) {
+        return { exceptionDetails: { exception: { description: String(error) } } };
+      }
+    });
+  }
+
+  it("N1/N2 AX ref 指到时间框的 Hours 子字段（span）：回执带「未执行」，页面没被聚焦", async () => {
+    installPage();
+    installFillGlobals();
+    const hours = fillTarget("SPAN");
+    fakeCdp(hours);
+    const { fill } = await import("../src/background/exec/input.js");
+    await expect(fill({ target: "@153", value: "19:00" })).rejects.toMatchObject({ message: expect.stringMatching(/不可填充/), executionFact: "not_executed" });
+    expect(hours.focus).not.toHaveBeenCalled();
+  });
+
+  it("N3 CSS 定位到不可填的元素（页面内路径）：回执带「未执行」，页面没被聚焦", async () => {
+    const { counter } = installPage();
+    const focus = vi.fn();
+    Object.assign(counter, { focus, isContentEditable: false });
+    const { fill } = await import("../src/background/exec/input.js");
+    await expect(fill({ target: "#counter", value: "19:00" })).rejects.toMatchObject({ message: expect.stringMatching(/不可填充/), executionFact: "not_executed" });
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it("N4 普通输入框照常填写，值写进去", async () => {
+    installPage();
+    installFillGlobals();
+    const delivery = fillTarget("INPUT");
+    fakeCdp(delivery);
+    const { fill } = await import("../src/background/exec/input.js");
+    await expect(fill({ target: "@153", value: "19:00" })).resolves.toEqual({ filled: true });
+    expect(delivery.value).toBe("19:00");
+    expect(delivery.focus).toHaveBeenCalledTimes(1);
+  });
+});

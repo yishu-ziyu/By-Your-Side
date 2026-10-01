@@ -20,6 +20,15 @@ const unknownTranslation = [{
   evidence: { toolCallId: 'display-lost-1' },
 }];
 
+const unknownClick: NonNullable<TaskProgressSnapshot['results']> = [{
+  id: 'r-unknown-2',
+  status: 'unknown',
+  tool: 'click',
+  target: '#submit',
+  description: '点击「提交订单」',
+  evidence: { toolCallId: 'display-lost-2', tool: 'click', target: '#submit', member: 'main', runId: 'run-old' },
+}];
+
 describe('停止任务后的直连请求守卫', () => {
   it('任务族调用在已中止状态下仍被拒（原语义不变）', () => {
     expect(() => assertTaskStepExecution(aborted(), 'switch_tab', { tabId: 9 }))
@@ -30,9 +39,13 @@ describe('停止任务后的直连请求守卫', () => {
     expect(() => assertTaskStepExecution(aborted(), 'switch_tab', { tabId: 9 }, false, true)).not.toThrow();
   });
 
+  // 10-01 用户裁决（docs/evals/20261001-unknown-lock-scope.md）：结果不确定只拦可能重复造成后果的操作。
+  // 原用例拿「翻译整页」未知去拦切换标签页；翻译与换页都不会重复造成后果，改为未知点击拦直连点击，切页照常。
   it('直连新请求照常受未知写入保护：给出可执行的核查指引而不是死胡同', () => {
-    expect(() => assertTaskStepExecution(aborted(unknownTranslation as never), 'switch_tab', { tabId: 9 }, false, true))
-      .toThrow(/观察核查页面/);
+    expect(() => assertTaskStepExecution(aborted(unknownClick), 'click', { target: '#pay' }, false, true))
+      .toThrow(/当前写入已暂停[\s\S]*不得盲目重试/);
+    expect(() => assertTaskStepExecution(aborted(unknownClick), 'switch_tab', { tabId: 9 }, false, true)).not.toThrow();
+    expect(() => assertTaskStepExecution(aborted(unknownTranslation as never), 'switch_tab', { tabId: 9 }, false, true)).not.toThrow();
   });
 
   it('直连读取本来就放行（写闸不作用于只读）', () => {

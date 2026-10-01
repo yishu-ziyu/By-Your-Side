@@ -84,7 +84,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 扩展内 `fetch` 不写本机文件，响应经凭据隐去与不可信包装后最多内联 16,000 字符；来源 URL 隐去 userinfo 与敏感查询参数（包括短 token），状态行只显示媒体类型、不回显任意 Content-Type 参数，截断明确说明并提示用当前页 `snapshot/read_element` 读所需章节；`savePath/pages` 在派发前拒绝。伴随进程的文件与批量行为不变。要求示例不等于执行示例。
 
-未知写入仍禁止 POST 或带 body 的 fetch、点击、输入、页面 JS、导航或切页。当前页 `scroll/mark/clear_marks` 只做阅读展示，不带 body 的 GET `fetch` 只在页外取数，二者可在保留旧未知账目时执行；它们不核销未知操作、不授予业务写入权限，也不绕过用户接管、取消、重启检查点、页面归属或同一未知动作的重放保护。`browser_run` 见[组合执行](browser-program.md#控制与权限)。
+有操作结果不确定时，只拦再做一次可能重复造成后果的调用；读页、换页、GET 取数、处理原生弹窗照常，每项只核查一次。准确范围、谁会上锁、哪些算没执行，见[结果不确定的边界](unknown-results.md)。
 
 ## 用户指出元素
 

@@ -65,6 +65,11 @@ const waiters = new Map<string, Array<{ resolve: (arm: ArmedPageEvent) => void; 
 
 const heldArmTokens = new Set<string>();
 
+/** 原生对话框弹出时要立刻知道的调用（点击）：对话框挡住页面后，派发输入的 CDP 命令要等它关掉才返回。 */
+const dialogWatchers = new Map<number, Set<(dialog: OpenedDialog) => void>>();
+
+export interface OpenedDialog { type: JsDialogType; message: string; defaultPrompt?: string }
+
 let listening = false;
 
 let tabsListening = false;
@@ -155,13 +160,12 @@ async function onDebuggerEvent(tabId: number, method: string, params: Record<str
     const type = String(params.type ?? "alert") as JsDialogType;
 
     if (type !== "alert" && type !== "confirm" && type !== "prompt" && type !== "beforeunload") return;
-    setPendingDialog(ledger, {
-      type,
-      message: String(params.message ?? ""),
-      tabId,
-      defaultPrompt: typeof params.defaultPrompt === "string" ? params.defaultPrompt : undefined,
-      openedAt: Date.now(),
-    });
+    const message = String(params.message ?? "");
+    const defaultPrompt = typeof params.defaultPrompt === "string" ? params.defaultPrompt : undefined;
+
+    setPendingDialog(ledger, { type, message, tabId, defaultPrompt, openedAt: Date.now() });
+
+    for (const notify of [...(dialogWatchers.get(tabId) ?? [])]) notify({ type, message, ...(defaultPrompt === undefined ? {} : { defaultPrompt }) });
 
     return;
   }
@@ -486,6 +490,31 @@ export async function disarmArmedEvent(token: string): Promise<ArmedPageEvent> {
   rejectWaiters(token, new Error("event disarmed"));
 
   return arm;
+}
+
+export interface DialogWatch { opened: Promise<OpenedDialog>; stop: () => void }
+
+/**
+ * 等这一页弹出原生对话框（alert/confirm/prompt）。调用方在派发输入前开始等，结束时 stop。
+ * 页面事件依赖调试器附着时开启的 Page 域；没开启时永远不会触发，调用方照旧等原命令返回。
+ */
+export function watchDialog(tabId: number): DialogWatch {
+  let notify: (dialog: OpenedDialog) => void = () => {};
+
+  const opened = new Promise<OpenedDialog>(resolve => { notify = resolve; });
+  const watchers = dialogWatchers.get(tabId) ?? new Set<(dialog: OpenedDialog) => void>();
+
+  watchers.add(notify);
+  dialogWatchers.set(tabId, watchers);
+
+  return {
+    opened,
+    stop: () => {
+      watchers.delete(notify);
+
+      if (!watchers.size) dialogWatchers.delete(tabId);
+    },
+  };
 }
 
 export function readDialogInfo(tabId: number) {

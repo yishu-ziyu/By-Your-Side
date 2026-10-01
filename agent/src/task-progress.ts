@@ -3,7 +3,7 @@ import { TaskGoalBook } from './task-goals.js';
 import type { ServerMessage, PageContext, Attachment } from "../../shared/protocol.js";
 import type { TaskProgressSnapshot, UserDelivery, UserDeliveryRemainingItem, UserDeliverySourceRef, VoiceConversationContext } from "../../shared/voice.js";
 import { USER_DELIVERY_FACT_DESCRIPTION_MAX, USER_DELIVERY_FACT_ITEM_MAX, USER_DELIVERY_SOURCE_MAX } from "../../shared/voice.js";
-import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
+import { deriveResultDescription, extractResultTarget, isPageIdentityTool, isSupersededUnknown, resultLocksWhenUnknown, resultToolHasWriteEffect, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration } from "../../shared/task-results.js";
 import { UserDeliveryLedger } from "./user-delivery-ledger.js";
 import { TaskResultBook } from "./task-results.js";
 import { sanitizeTrace } from "../../shared/trace-sanitize.js";
@@ -510,16 +510,16 @@ if(page)this.recoveryInput.page=page;
 
         if (!e.isError && (RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)) this.lastReadAt = this.lastAction.at;
         // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
-        // GET 已有 executed 回执后的本地格式化失败不是未知写入；POST 仍按 durableEffect 保护。
+        // 结果不确定时是否上锁由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 仍按 durableEffect 保护。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: e.executionFact,
-          effectful:started.durableEffect||(e.name==='fetch'&&e.isError&&e.executionFact!=='not_executed'&&e.executionFact!=='executed'),valueHash:started.valueHash });
+          effectful:started.durableEffect,valueHash:started.valueHash });
 
         if((started.durableEffect||e.name==='fetch')&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
         // 页面 JS、原始 CDP 即使记了账，也只写着「执行过一段脚本」，看不出改了什么（见 executionEffectsFullyKnown）。
         if(started.durableEffect&&OPAQUE_EFFECT_TOOLS.has(e.name)&&e.executionFact!=='not_executed')this.opaqueEffectRan=true;
 
-        if(started.durableEffect&&e.isError&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
+        if(resultLocksWhenUnknown({tool:e.name,evidence:{effectful:started.durableEffect}})&&e.isError&&e.executionFact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
       }
     } else if (e.kind === "tool_late_result") {
       // 晚到/重复回执只按原 SDK 调用身份关联当前 run 的未决结果。

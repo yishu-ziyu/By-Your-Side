@@ -226,12 +226,33 @@ describe("R3 page evidence recovery", () => {
       verify: input => p.verifyUnknownResult(input),
     });
 
+    const matched = await (tool.execute as any)("verify-1", { id: "append", target: "body", expect: "记录 1" });
+    expect(matched.details.ok).toBe(true);
+    expect(p.snapshot().executionState).toBe("satisfied");
+  });
+
+  // 10-01 用户裁决（docs/evals/20261001-unknown-lock-scope.md 标准 3）：每项只核查一次，查不清就保持未知，不再核查。
+  it("keeps an item unknown after one inconclusive check and refuses a second check", async () => {
+    const p = progressFixture();
+    observePage(p, { toolCallId: "read-1", name: "snapshot", target: null, tabId: 7, text: "隔离记录页 0" });
+    unknownClick(p);
+    const read = vi.fn(async () => ({ textContent: "隔离记录页 记录 1", tabId: 7 }));
+
+    const tool = createVerifyUnknownResultTool({
+      getSnapshot: () => p.snapshot(),
+      read,
+      verify: input => p.verifyUnknownResult(input),
+    });
+
+    // SAFETY: resolve_unknown_result 的 execute 只读前两个参数（调用 id 与参数），与本文件其余用例同样调用。
     const missing = await (tool.execute as any)("verify-1", { id: "append", target: "body", expect: "记录 9" });
     expect(missing.details.ok).toBe(false);
     expect(p.snapshot().executionState).toBe("unknown");
-    const matched = await (tool.execute as any)("verify-2", { id: "append", target: "body", expect: "记录 1" });
-    expect(matched.details.ok).toBe(true);
-    expect(p.snapshot().executionState).toBe("satisfied");
+    // SAFETY: 同上，只读调用 id 与参数。
+    const again = await (tool.execute as any)("verify-2", { id: "append", target: "body", expect: "记录 1" });
+    expect(again).toMatchObject({ details: { ok: false, reason: "already_checked" }, terminate: true });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(p.snapshot().executionState).toBe("unknown");
   });
 
   it("rejects text that already existed before the write", async () => {

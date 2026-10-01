@@ -94,9 +94,11 @@ it('B: unknown write allows inspection but retains its run and blocks writes unt
     expect(h.snap().results!.find(r => r.id === item.id)?.status).toBe('unknown');
   }
 
+  // 10-01 用户裁决（docs/evals/20261001-unknown-lock-scope.md）：打开、切换、关闭标签页不会重复造成后果，照常；未知项与原任务保留。
   for (const action of ['open', 'switch', 'close']) {
-    await expect(h.call(`blocked-${action}`, 'tabs', { action, tabId: 8 })).rejects.toThrow();
+    await h.call(`tabs-${action}`, 'tabs', { action, tabId: 8 });
     expect(h.snap().runId).toBe(runId);
+    expect(h.snap().results!.find(r => r.id === item.id)?.status).toBe('unknown');
   }
 
   await expect(h.call('retry', 'fill', { target: '#name', value: 'x' })).rejects.toThrow();
@@ -112,9 +114,10 @@ it('B: unknown write allows inspection but retains its run and blocks writes unt
   h.emit({ kind: 'tool_end', toolCallId: 'js-unknown', name: 'js', isError: true, executionFact: 'unknown' });
   expect(h.snap().executionAuditComplete).toBe(true);
   await h.call('inspect-js', 'snapshot');
-  await expect(h.call('after-js', 'tabs', { action: 'switch', tabId: 7 })).rejects.toThrow('js-unknown');
+  await h.call('after-js', 'tabs', { action: 'switch', tabId: 7 });
+  await expect(h.call('after-js-click', 'click', { target: '#submit' })).rejects.toThrow('js-unknown');
   h.emit({ kind: 'tool_late_result', toolCallId: 'js-unknown', name: 'js', ok: true, executionFact: 'executed' });
-  await h.call('resolved-js', 'tabs', { action: 'switch', tabId: 7 });
+  await h.call('resolved-js', 'click', { target: '#submit' });
   // Legacy global gaps cannot be attributed retrospectively: inspect, but never silently clear.
   const progress = (h.manager as any).progress.get('default');
   progress.restoreResults({ ...h.snap(), executionAuditComplete: false });

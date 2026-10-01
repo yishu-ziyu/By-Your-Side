@@ -17,7 +17,7 @@ import {
   normalizeTaskResultRegistration,
   resultCanUseExecution,
   resultStateOf,
-  resultHasWriteEffect,
+  resultLocksWhenUnknown,
   resultToolHasWriteEffect,
   selectResultBinding,
   type ResultPageObservation,
@@ -46,6 +46,9 @@ export interface ConfirmedRecoveryRecord {
 
 /** 协调、探针与位置类动作不产生用户可见结果，不自动建项；需要时模型仍可显式登记。 */
 export const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover", "ask_user_to_point"]);
+
+/** 一次核查的结论：确认了，或没确认及原因。 */
+export interface CheckOutcome { ok: boolean; reason?: string }
 
 export class TaskResultBook {
   private items: TaskResultItem[] = [];
@@ -76,7 +79,7 @@ export class TaskResultBook {
     return this.items.filter(item=>{
       const baseline=this.baselines.get(item.id);
 
-      return item.status==='unknown' && baseline && !baseline.truncated && baseline.tabId!==null
+      return item.status==='unknown' && !item.checkFailed && baseline && !baseline.truncated && baseline.tabId!==null
         && baseline.runId===item.evidence?.runId && baseline.member===item.evidence?.member;
     }).map(item=>item.id);
   }
@@ -115,7 +118,7 @@ export class TaskResultBook {
     for (const item of this.items) {
       if (item.status !== "pending" && item.status !== "blocked") continue;
 
-      if (item.status === "pending" && item.evidence) { if (resultHasWriteEffect(item)) item.status = "unknown"; continue; }
+      if (item.status === "pending" && item.evidence) { if (resultLocksWhenUnknown(item)) item.status = "unknown"; continue; }
 
       item.status = "pending";
       item.target = null;
@@ -127,7 +130,7 @@ export class TaskResultBook {
     for (const item of this.items) {
       if (item.status !== "pending" || item.evidence?.member !== member) continue;
 
-      if (resultHasWriteEffect(item)) item.status = "unknown";
+      if (resultLocksWhenUnknown(item)) item.status = "unknown";
       else item.evidence = null;
     }
   }
@@ -142,13 +145,15 @@ export class TaskResultBook {
 
     this.items = snapshot.results.filter(isTaskResultItem).map(item => {
       let evidence = item.evidence && item.evidence.runId === snapshot.runId && item.evidence.tool === item.tool && item.evidence.target === item.target ? { ...item.evidence } : null;
-      const status = item.status === "satisfied" && !evidence || item.status === "pending" && item.evidence && resultHasWriteEffect(item) ? "unknown" : item.status;
+      const status = item.status === "satisfied" && !evidence || item.status === "pending" && item.evidence && resultLocksWhenUnknown(item) ? "unknown" : item.status;
 
       if (status === "pending") evidence = null;
 
       const mapped: TaskResultItem = { id: item.id, description: item.description, tool: item.tool, target: item.target, status, evidence };
 
       if (item.supersededBy) mapped.supersededBy = item.supersededBy;
+
+      if (item.checkFailed && status === "unknown") mapped.checkFailed = true;
 
       return mapped;
     });
@@ -284,7 +289,8 @@ export class TaskResultBook {
 
   noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; valueHash?:string }): void {
     if (!input.runId) return;
-    const write=resultToolHasWriteEffect(input.name)||input.effectful===true;
+    // 结果不确定时会不会上锁：只看这一步可能已造成的后果（见 commitsHarm），不看它是不是改过页面。
+    const write=resultLocksWhenUnknown({tool:input.name,evidence:{effectful:input.effectful}});
     let heldForConfirmation = false;
     let item = this.items.find(candidate => (candidate.status === "pending" || candidate.status === "unknown") && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.member === input.member && candidate.evidence.tool === input.name && candidate.evidence.runId === input.runId && candidate.evidence.target === input.target);
 
@@ -293,7 +299,7 @@ export class TaskResultBook {
     if(!item&&write&&(input.failed||input.executionFact==='unknown')&&input.executionFact!=='not_executed'&&this.items.length<MAX_TASK_RESULTS){
       const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId };
 
-      if (!isWriteTool(input.name)) evidence.effectful = true;
+      if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;
 
       if (input.valueHash) evidence.valueHash = input.valueHash;
       item={id:this.nextAutoId(),description:deriveResultDescription(input.name,undefined,input.target),tool:input.name,target:input.target,status:'unknown',evidence};
@@ -334,7 +340,7 @@ export class TaskResultBook {
 
     const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId, observedAt: this.clock() };
 
-    if (write && !isWriteTool(input.name)) evidence.effectful = true;
+    if (input.effectful && !isWriteTool(input.name)) evidence.effectful = true;
 
     if (input.valueHash) evidence.valueHash = input.valueHash;
 
@@ -357,12 +363,23 @@ export class TaskResultBook {
     runId: string;
     observation: { toolCallId: string; tool: string; text: string; at: number; target?: string | null; tabId?: number | null };
     expect: string;
-  }): { ok: boolean; reason?: string } {
+  }): CheckOutcome {
     const item = this.items.find(candidate => candidate.id === input.id && candidate.status === "unknown");
 
     if (!item) return { ok: false, reason: "没有处于未知状态的这个结果项" };
 
     if (!item.evidence || item.evidence.runId !== input.runId) return { ok: false, reason: "结果项不属于当前任务" };
+    // 一项只核查一次：这次确认不了就保持未知、不再核查（10-01 用户裁决）。
+    const outcome = this.compareWithBaseline(item, input);
+
+    if (outcome.ok) item.status = "satisfied";
+    else item.checkFailed = true;
+
+    return outcome;
+  }
+
+  private compareWithBaseline(item: TaskResultItem, input: Parameters<TaskResultBook["resolveVerifiedResult"]>[0]): CheckOutcome {
+    if (!item.evidence) return { ok: false, reason: "结果项不属于当前任务" };
 
     if (!(RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(input.observation.tool)) {
       return { ok: false, reason: "核查证据必须来自真实只读工具回执" };
@@ -405,10 +422,8 @@ export class TaskResultBook {
     }
 
     if (!normalizeResultEvidence(input.observation.text).includes(expect)) {
-      return { ok: false, reason: "页面读数中没有这段证据，未知状态保留" };
+      return { ok: false, reason: "页面读数中没有这段证据" };
     }
-
-    item.status = "satisfied";
 
     return { ok: true };
   }
@@ -459,6 +474,11 @@ export function createTaskResultsTool(opts: {
   });
 }
 
+/** 已核查过一次的项又被要求核查时，宿主替模型交给用户的话：哪一步、为什么没算完成、没有重做、请用户看一眼。 */
+export function unconfirmedResultMessage(item: Pick<TaskResultItem, "description">): string {
+  return `「${item.description}」这一步的结果查不清：我已经在页面上核查过一次，没找到能证明它完成的证据。我没有重复执行，也没有把它算作完成，请你在页面上看一眼确认。`;
+}
+
 /**
  * 窄核查入口：宿主自己重新读取页面，只有读数中真的出现证据文本时才解除未知。
  * 模型只能提供结果 id、读取目标和证据文本，不能直接写状态。
@@ -469,12 +489,14 @@ export function createVerifyUnknownResultTool(opts: {
   verify: (input: { id: string; expect: string; observation: { toolCallId: string; tool: string; text: string; at: number; target: string | null; tabId: number | null } }) => { ok: boolean; reason?: string };
   persist?: () => void;
   emit?: (event: AgentUiEvent) => void;
+  /** 模型对已核查过的项再要核查：宿主替它把查不清的情况告诉用户，本轮到此结束。 */
+  stopUnconfirmed?: (item: TaskResultItem) => void;
 }): ToolDefinition {
   return defineTool({
     name: "resolve_unknown_result",
     label: "Resolve an uncertain write with page evidence",
     description:
-      "Use only when a write tool returned an unknown execution result (timeout, disconnect, or an error that does not explicitly say it was rejected before running). This tool re-reads target in the current page and resolves the unknown only if expect appears verbatim in that fresh read AND did not appear in a page read taken before the write. The comparison baseline is the last successful snapshot or read_element before the write: a page snapshot covers the whole page, so any target may be re-read; a read_element baseline requires the same target. If no pre-write read exists, the page changed, or expect was already present before the write, the result stays unknown. Copy id from the unknown item's id in the latest host-projected results (also task.results), not a toolCallId or goal id. Never claim success and never claim nothing happened when the evidence is insufficient.",
+      "Use only when a write tool returned an unknown execution result (timeout, disconnect, or an error that does not explicitly say it was rejected before running). This tool re-reads target in the current page and resolves the unknown only if expect appears verbatim in that fresh read AND did not appear in a page read taken before the write. The comparison baseline is the last successful snapshot or read_element before the write: a page snapshot covers the whole page, so any target may be re-read; a read_element baseline requires the same target. If no pre-write read exists, the page changed, or expect was already present before the write, the result stays unknown. Copy id from the unknown item's id in the latest host-projected results (also task.results), not a toolCallId or goal id. Each item can be checked ONCE: if that check cannot confirm it, it stays unconfirmed for good; do not check it again, tell the user plainly. Never claim success and never claim nothing happened when the evidence is insufficient.",
     parameters: Type.Object({
       id: Type.String({ description: "Result id whose status is unknown" }),
       target: Type.String({ description: 'Read target for the check: "@N", "loc=css:...", native CSS, or "body" for full page text' }),
@@ -490,22 +512,31 @@ export function createVerifyUnknownResultTool(opts: {
         return { content: [{ type: "text" as const, text: `结果项 ${id} 当前不是未知状态，未做核查。` }], details: { ok: false, reason: "not_unknown" } };
       }
 
+      // 已核查过一次：不再读页面，宿主把查不清的情况告诉用户并结束本轮，不让模型原地反复核查（10-01 事故连查 6 次）。
+      if (item.checkFailed) {
+        opts.stopUnconfirmed?.(item);
+
+        return { content: [{ type: "text" as const, text: `「${item.description}」已经核查过一次，仍无法确认，不再核查。它保持未确认，没有重复执行；已如实告诉用户。` }], details: { ok: false, reason: "already_checked" }, terminate: true };
+      }
+
       const observationId = `verify-${randomUUID()}`;
       const readParams = params.tabId === undefined ? { target: String(params.target ?? "") } : { target: String(params.target ?? ""), tabId: Number(params.tabId) };
       opts.emit?.({ kind: "tool_start", toolCallId: observationId, name: "read_element", params: readParams });
       let data: { textContent?: string; value?: string; tabId?: number };
+      let readError: string | null = null;
 
       try {
         data = await opts.read({ target: readParams.target, tabId: readParams.tabId });
       } catch (error) {
-        const text = error instanceof Error ? error.message : String(error);
-        opts.emit?.({ kind: "tool_end", toolCallId: observationId, name: "read_element", isError: true, resultText: text.slice(0, 500) });
-
-        return { content: [{ type: "text" as const, text: `核查读取失败，结果仍为未知：${text.slice(0, 200)}` }], details: { ok: false, reason: "read_failed" } };
+        readError = error instanceof Error ? error.message : String(error);
+        opts.emit?.({ kind: "tool_end", toolCallId: observationId, name: "read_element", isError: true, resultText: readError.slice(0, 500) });
+        // 读不到也算核查过一次：按什么都没读到交给账本，结果照样保持未知、不再核查。
+        data = {};
       }
 
       const readText = [data.textContent, data.value].filter((part): part is string => typeof part === "string" && part.length > 0).join("\n");
-      opts.emit?.({ kind: "tool_end", toolCallId: observationId, name: "read_element", isError: false, resultText: readText.slice(0, 500), executionFact: "executed" });
+
+      if (readError === null) opts.emit?.({ kind: "tool_end", toolCallId: observationId, name: "read_element", isError: false, resultText: readText.slice(0, 500), executionFact: "executed" });
 
       const outcome = opts.verify({
         id,
@@ -520,11 +551,13 @@ export function createVerifyUnknownResultTool(opts: {
         },
       });
 
-      if (!outcome.ok) {
-        return { content: [{ type: "text" as const, text: `页面读数中没有这段证据，未知状态保留。${outcome.reason ? `（${outcome.reason}）` : ""}请如实告诉用户结果无法确认、没有重复执行。` }], details: { ok: false, reason: outcome.reason ?? "evidence_missing" } };
-      }
-
       opts.persist?.();
+
+      if (!outcome.ok) {
+        const why = readError === null ? outcome.reason ?? "页面读数中没有这段证据" : `核查读取失败：${readError.slice(0, 200)}`;
+
+        return { content: [{ type: "text" as const, text: `核查没能确认「${item.description}」（${why}）。这一项保持未确认；每项只核查一次，不要再核查，也不要重做或换工具绕过。继续其他独立步骤，最后如实告诉用户这一步没确认、没有重复执行。` }], details: { ok: false, reason: readError === null ? outcome.reason ?? "evidence_missing" : "read_failed" } };
+      }
 
       return { content: [{ type: "text" as const, text: `已用真实页面读数确认「${item.description}」的结果，未知解除。可以继续剩余独立步骤。` }], details: { ok: true, resolved: id } };
     },

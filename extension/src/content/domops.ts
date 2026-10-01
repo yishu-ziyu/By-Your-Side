@@ -350,10 +350,16 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
       return { clicked: true };
     },
 
-    fill(target: string, value: string): { filled: true } {
+    fill(target: string, value: string): { filled: true } | { refused: string } {
       const el = mustResolve(target) as HTMLElement;
-      el.focus();
       const tag = el.tagName.toLowerCase();
+
+      // 先核对能不能填，再聚焦写入：不能填时页面一点没动，背景侧按「没执行」上报（#22/#27）。
+      if (tag !== "select" && tag !== "input" && tag !== "textarea" && !el.isContentEditable) {
+        return { refused: "元素不可填充（非 input/textarea/select/contenteditable），操作未执行" };
+      }
+
+      el.focus();
 
       if (tag === "select") {
         // 单值 fill 保留既有模糊匹配；完整多选/index/清空请用 selectOption。
@@ -375,13 +381,9 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
         return { filled: true };
       }
 
-      if (el.isContentEditable) {
-        replaceEditableText(el,value);
+      replaceEditableText(el,value);
 
-        return { filled: true };
-      }
-
-      throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");
+      return { filled: true };
     },
 
     /** CAP-02C：按 value/label/index 选择；数组=多选；null/[]=清空。返回最终选中 value 集合。 */

@@ -633,6 +633,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           );
         }
 
+        const dialog = "dialog" in data ? data.dialog : undefined;
+
+        // 点击弹出了原生对话框：点击已送达，页面在等对话框（读页会卡住），先接受或取消它。
+        if (dialog) {
+          return textResult(`Clicked ${what}. The page opened a native ${dialog.type} dialog; its text: ${wrapPageContent(dialog.message.slice(0, 500))}\nThe page is blocked until it is handled; use accept_dialog (promptText for a prompt) or dismiss_dialog as the user asked, then observe the page.`, data);
+        }
+
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
