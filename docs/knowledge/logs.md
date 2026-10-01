@@ -18,3 +18,4 @@
 - 2026-09-26 | [界面问题 10 项修复](../../docs/evals/20260926-ux-fixes.md) | 新建 patterns/model-label-decides-safety-gate.md，更新 index.md；「宿主文字直接漏到用户面前」的做法写在 `shared/user-facing.ts` 与架构文档，不另立页 | 无新提案
 - 2026-09-26 | [装日常前的端到端](../../docs/evals/20260926-e2e-before-daily-install.md) | 新建 patterns/restart-loses-in-memory-state.md，更新 index.md；核对 extension-harness-changes-observed-state 与 quota-limited-storage-silent-failure，无重复 | 无新提案
 - 2026-10-01 | 文档瘦身 | 裁决 3 份待审提案：采纳[全量检查独占复跑](proposal-archive/accepted/20260911-verification-exclusivity.md)（落地 AGENTS.md 项目检查入口）；拒绝[使用入口字段](proposal-archive/rejected/20260909-acceptance-entry-field.md)、[probe-scripts skill](proposal-archive/rejected/20260909-probe-script-convention-skill.md) | 无新提案
+- 2026-10-02 | [模型思考档与后台判断](../../docs/evals/20261001-model-effort-and-side-judgments.md) | 新建 patterns/provider-model-name-and-reasoning-quirks.md，更新 index.md；锁范围与答非所问的结论已在验收与 `docs/unknown-results.md`，不另立页 | 无新提案
