@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
- * BYS parallel eval harness.
- *   node eval/harness/run.mjs --models opencode-go/mimo-v2.6-flash,opencode-go/deepseek-v4-flash \
- *        --tasks BYS-001,BYS-040 [--concurrency 6] [--run-id X] [--cap-sec 240] [--no-judge]
- * Output: $BYS_RUNS_DIR (default eval/runs)/<run-id>/<model>/<task>.json (+ .png, -panel.png, .trace.jsonl, .agent.log, .dl.*)
- *         <runs>/<run-id>/judge/<model>/<task>.json, summary.csv
+ * BYS eval harness (extension-only: each job is a headless Chrome with only the extension; see job.mjs).
+ *   node eval/harness/run.mjs --models zai-coding-cn/glm-5.3-flash,minimax-cn/MiniMax-M3.1-Flash-Preview+zai-coding-cn/glm-5.3-flash \
+ *        --tasks BYS-006,BYS-008 [--concurrency 2] [--run-id X] [--cap-sec 240] [--no-judge]
+ * A model spec is main[+fast], each provider/modelId; fast defaults to main.
+ * Output: $BYS_RUNS_DIR (default eval/runs)/<run-id>/<model slug>/<task>.json (+ .png page+panel, -page.png, -panel.png, .trace.jsonl, .artifact.*, .dl.*)
+ *         <runs>/<run-id>/judge/<model slug>/<task>.json, summary.csv
  */
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, renameSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { runJob, killLive } from "./job.mjs";
+import { pathToFileURL } from "node:url";
+import { runJob, killLive, slugOf } from "./job.mjs";
 import os from "node:os";
 import { judgeRun } from "./judge.mjs";
-import { RUNS_DIR, TASKS_FILE, WORK_ROOT } from "./paths.mjs";
+import { RUNS_DIR, TASKS_FILE } from "./paths.mjs";
 
 export function writeSummary(runDir, results) {
   const esc = (v) => {
@@ -30,7 +32,7 @@ export function writeSummary(runDir, results) {
   console.log(rows.map((r) => r.slice(0, 7).join("\t")).join("\n"));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const arg = (k, d) => {
     const i = process.argv.indexOf(`--${k}`);
 
@@ -43,7 +45,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   if (resume && !prev) throw new Error("--resume needs --run-id of an existing run");
 
-  const models = arg("models", prev?.models?.join(",") ?? "opencode-go/mimo-v2.6-flash,opencode-go/deepseek-v4-flash,opencode-go/deepseek-v4.1-flash").split(",");
+  const models = arg("models", prev?.models?.join(",") ?? "zai-coding-cn/glm-5.3-flash").split(",");
   const all = readFileSync(TASKS_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ids = arg("tasks", "") ? arg("tasks").split(",") : prev?.tasks ?? all.map((t) => t.id);
 
@@ -56,13 +58,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
 
   const runId = arg("run-id", new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19));
-  const concurrency = Number(arg("concurrency", String(Math.min(6, models.length * tasks.length))));
+  const concurrency = Number(arg("concurrency", String(Math.min(2, models.length * tasks.length))));
   const capMs = Number(arg("cap-sec", "240")) * 1000;
   const runDir = join(RUNS_DIR, runId);
-  const workRoot = join(WORK_ROOT, runId);
   mkdirSync(runDir, { recursive: true });
   const isQuota = (r) => (r?.errors ?? []).some((e) => /额度用完|GoUsageLimitError/.test(e));
-  const slugOf = (m) => m.replace(/[^a-z0-9.-]+/gi, "_");
 
   const validResult = (model, id) => {
     const p = join(runDir, slugOf(model), `${id}.json`);
@@ -101,10 +101,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   let next = 0;
   const log = (s) => console.log(`[${new Date().toLocaleTimeString("en-GB")}] ${s}`);
   log(`run ${runId}: ${jobs.length} jobs, concurrency ${concurrency}`);
-  await Promise.all(Array.from({ length: concurrency }, (_, k) => (async () => {
+  await Promise.all(Array.from({ length: concurrency }, () => (async () => {
     while (next < jobs.length && !stopped) {
       const { task, model } = jobs[next++];
-      const outDir = join(runDir, model.replace(/[^a-z0-9.-]+/gi, "_"));
+      const outDir = join(runDir, slugOf(model));
       log(`start ${model} ${task.id}`);
       let rec;
 
@@ -113,7 +113,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
         if (os.loadavg()[0] > maxLoad) log(`load ${os.loadavg()[0].toFixed(1)} > ${maxLoad} after 15 min wait; running anyway`);
 
-        try { rec = await runJob({ task, model, outDir, workRoot, displayBase: 40 + k * 10, capMs, log, dryRun: process.argv.includes("--dry-run") }); }
+        try { rec = await runJob({ task, model, outDir, capMs, log, dryRun: process.argv.includes("--dry-run") }); }
         catch (e) { rec = { status: "error", errors: [`runner: ${e.message}`] }; }
 
         const crashed = rec.status === "setup_error" || (rec.errors ?? []).some((e) => /CDP pipe closed|chrome\/pipe died/.test(e));
@@ -133,8 +133,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       }
     }
   })()));
-
-  if (!process.argv.includes("--keep-work")) rmSync(workRoot, { recursive: true, force: true });
 
   if (!process.argv.includes("--no-judge") && !process.argv.includes("--dry-run")) {
     log("judging...");

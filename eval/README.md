@@ -1,6 +1,8 @@
 # 浏览器任务评测（eval harness v1）
 
-用真实网页任务给 By Your Side 的侧栏助手打分，比较不同模型。一次任务 = 一个模型在独立的 Chrome 里完成一个网页任务。之后用 Codex 看最终截图和回答判定是否通过，最后汇总出通过率、耗时、成本和图表。
+用真实网页任务给 By Your Side 的侧栏助手打分，比较不同模型。一次任务 = 一个模型配置在独立的无头 Chrome 里、只装扩展，从真侧栏完成一个网页任务。之后用 Codex 看最终截图、页面文本、工具记录和回答判定是否通过，最后汇总出通过率、耗时、token 和图表。
+
+2026-10-02 起 harness 只依赖扩展（[验收](../docs/evals/20261002-eval-extension-only.md)）；full-1 及更早的结果来自已删除的伴随进程架构，见文末。
 
 本目录原有的 `protected/`、`typesafe/`、`p0/`、`goal-evidence/`、`samples/` 是另一套评测，与这里无关，也没有改动。
 
@@ -17,29 +19,34 @@
 
 ## 怎么跑
 
-前置条件：Linux，装好 `google-chrome`、`Xvfb`、`ffmpeg`、Node 22、Python 3（带 matplotlib）和一款中文字体。判分需要已登录的 `codex` CLI。本仓库要先 `npm install`，并构建出 `extension/dist`。模型凭据放在 `~/.pi/agent/auth.json`，由伴随进程自己读取，harness 不读取也不打印。
+每题的流程：用验收驱动 `scripts/acceptance/real-path/harness.mts` 起一个 `--headless=new` 的 Chrome for Testing（临时配置目录，扩展从当前源码构建到临时目录、随机扩展 ID，不注册伴随进程、没有 Native Messaging，不碰日常 Chrome、9222 端口和 `extension/dist`）→ 把主模型、快速模型和凭据写进扩展自己的存储（设置页保存时用的同一组键）→ 打开真侧栏、像用户一样输入并回车 → 结束后在设置页点「导出」，把这一题的诊断记录（IndexedDB `sideagent-diagnostics`）存成 `<题号>.trace.jsonl`，供判分和统计使用。
+
+模型配置写成 `主模型[+快速模型]`，各自是 `服务商/模型 id`；不写快速模型就和主模型相同。凭据读取顺序：环境变量 `BYS_KEY_<服务商>`（如 `BYS_KEY_ZAI_CODING_CN`）→ 阶跃星辰读 `SIDEAGENT_STEP_PLAN_KEY` 或 `~/.sideagent/step-plan.key`（只走 Step Plan 地址）→ `~/.pi/agent/auth.json`。harness 不打印凭据；每题结束会扫描本题写出的文件，`secret_scan.leaked_files` 不为空即说明凭据进了结果。
 
 ```bash
-# 3 个默认模型 × 3 道题，并发 3，跑完自动判分
-node eval/harness/run.mjs --tasks BYS-001,BYS-040,BYS-081 --concurrency 3 --run-id my-run
+# 本机（macOS）：先 npx playwright install chromium（驱动找 Chrome for Testing），判分需要能用的 codex CLI
+node eval/harness/run.mjs --models zai-coding-cn/glm-5.3-flash,minimax-cn/MiniMax-M3.1-Flash-Preview+zai-coding-cn/glm-5.3-flash \
+  --tasks BYS-006,BYS-008,BYS-081 --concurrency 2 --run-id my-run
 # 补跑缺失或无效的结果
-node eval/harness/run.mjs --resume --run-id my-run --concurrency 3 --no-judge
-# 判分剩余结果，并重新生成报告和图表
+node eval/harness/run.mjs --resume --run-id my-run --concurrency 2 --no-judge
+# 判分缺失、过期或上次判分出错的结果，并重新生成报告和图表
 JUDGE_CONC=4 eval/harness/finalize.sh eval/runs/my-run
 ```
+
+云端 Linux（**未验证**）：不再需要 Xvfb；需要 Node 22、`npm install`、Python 3 + matplotlib、`ffmpeg`（拼截图，缺了只给页面截图）、一款中文字体（`BYS_CJK_FONT`）、可用的 `codex` CLI。Chrome 用 Chrome for Testing 或 Chromium（品牌版 Chrome 不认 `--load-extension`），用 `EGO_ACCEPTANCE_CHROME=<可执行文件>` 指定；驱动默认只找 macOS 的 Playwright 缓存路径。凭据用 `BYS_KEY_*` 环境变量传入最省事。以 root 运行时 Chrome 可能还要 `--no-sandbox`，驱动目前没有这个开关。
 
 环境变量（默认值都相对本仓库，定义在 `harness/paths.mjs`）：
 
 | 变量 | 作用 | 默认 |
 |---|---|---|
-| `BYS_REPO` | 被测的仓库（用它的 `extension/dist` 和 `agent/`） | 本仓库 |
+| `BYS_REPO` | 被测的仓库（构建它的扩展源码，并用它的验收驱动） | 本仓库 |
 | `BYS_TASKS` | 任务文件 | `eval/tasks/tasks.jsonl` |
 | `BYS_RUNS_DIR` | 结果输出目录（已被 git 忽略） | `eval/runs` |
-| `BYS_WORK_ROOT` | 每个任务的临时 Chrome 配置和伴随进程数据 | `$TMPDIR/bys-harness` |
-| `BYS_NODE` | 启动伴随进程用的 node | 当前 node |
-| `BYS_CJK_FONT` | 画图用的中文字体文件 | Noto Serif CJK Bold |
+| `BYS_KEY_<服务商>` | 该服务商的 API key，优先于本机凭据文件 | 无 |
+| `EGO_ACCEPTANCE_CHROME` | Chrome for Testing / Chromium 可执行文件 | macOS Playwright 缓存里最新的一份 |
+| `BYS_PRICES` | 价格表 JSON（`服务商/模型` → 每百万 token 美元），有它才算成本 | `harness/prices.json`（目前没有） |
+| `BYS_CJK_FONT` | 画图用的中文字体文件 | Noto CJK，macOS 退到冬青黑体/华文黑体 |
 | `JUDGE_CONC` | `finalize.sh` 同时跑几个 Codex 判分 | 4 |
-| `SIDEAGENT_DATA_DIR` | 由 harness 给每个任务的伴随进程单独设置（其中 `config.json` 指定模型），不会碰 `~/.sideagent` | 自动设置 |
 
 ## 判分（judge v3）
 
@@ -68,7 +75,7 @@ JUDGE_CONC=4 eval/harness/finalize.sh eval/runs/my-run
 
 **held-out 只用于最终确认**：迭代期间不看、不跑，也不据此改提示词、工具或规则，只在最后跑一次。日常迭代和 issue 验收都用 train。issue #22–#29 的验收用的就是这里的 judge v3 和 v2 规则。
 
-## run full-1 结果（2026-09-30 至 10-01，OpenCode Go，judge v3 重判）
+## run full-1 结果（2026-09-30 至 10-01，伴随进程架构，OpenCode Go，judge v3 重判）
 
 113 道不带前置步骤的题，4 个基础配置：
 
@@ -87,9 +94,11 @@ JUDGE_CONC=4 eval/harness/finalize.sh eval/runs/my-run
 
 ## 已知限制
 
+- 只装扩展的版本只在本机（macOS）跑过 2 个模型 × 3 题；判分当时没跑成（本机 codex 默认模型对 ChatGPT 账号不可用），报表里 `pass_rate` 为空，见[验收](../docs/evals/20261002-eval-extension-only.md)。云端 Linux 未验证。
+- 成本：没有价格表时只报 token。智谱、MiniMax、阶跃都是 Token Plan 订阅，按 token 折算的钱不是实际账单；`catalog_list_total_usd` 是轨迹里 pi-ai 目录的 API 标价，目录外的模型（如 MiniMax-M3.1-Flash-Preview）沿用模板模型的价，只能参考。快速模型的后台判断（`side_call`）只计次数，没有 token。
+
 - 28 道题的前置步骤（划词后 Ctrl+J、预先打开其他标签页、预置记忆等）harness 不执行，这些题的结果不可信。题号：BYS-019–028、BYS-071、BYS-079、BYS-097–106、BYS-121、BYS-122、BYS-124–126、BYS-139（v2 新增 BYS-122、BYS-139）。
-- 成本只统计伴随进程轨迹里记录到的模型调用。轨迹外的直接调用没算进去，轨迹自带的 cost 字段恒为 0。
-- 所有调用都在非高峰时段。DeepSeek 高峰价翻倍，这部分没有测到。
+- （full-1，伴随进程时期）成本只统计伴随进程轨迹里记录到的模型调用，轨迹自带的 cost 字段恒为 0；所有调用都在非高峰时段，DeepSeek 高峰价翻倍没有测到。
 - 关思考配置只跑了 58 题（BYS-001–057 加 BYS-128），图 1 里它和其他行不是同一批题。
 - 判分由 Codex（judge v3）完成，只对照过 full-1 的一批人工复核，没有逐条人工审。超时上限为 240 秒。
 - 服务器负载过高会导致建环境失败，runner 会重试，并在每个结果里记录当时的负载。

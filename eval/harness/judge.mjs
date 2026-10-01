@@ -6,6 +6,7 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { TASKS_FILE } from "./paths.mjs";
@@ -15,13 +16,13 @@ export const JUDGE_VERSION = "v3";
 
 export const resultSha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex").slice(0, 16);
 
-/** A verdict is fresh only if it was made by this judge version on exactly this result file. */
+/** A verdict is fresh only if it was made by this judge version on exactly this result file (a judge_error is retried). */
 export function verdictFresh(resultPath, judgePath) {
   if (!existsSync(judgePath)) return false;
 
   try { const j = JSON.parse(readFileSync(judgePath, "utf8"));
 
- return j.judge_version === JUDGE_VERSION && j.result_sha === resultSha(resultPath); } catch { return false; }
+ return j.judge_version === JUDGE_VERSION && j.result_sha === resultSha(resultPath) && j.verdict !== "judge_error"; } catch { return false; }
 }
 
 /** What the agent's own tools read from the page (snapshot/read_element/js/fetch outputs), newest last. */
@@ -77,19 +78,22 @@ const DETERMINISTIC = {
   },
 };
 
+// ChatGPT 账号的 Codex 不支持 gpt-6.1-sol（10-02 实测 400）；判分模型固定写在这里，不随本机 ~/.codex 默认变动。
+const JUDGE_MODEL = process.env.BYS_JUDGE_MODEL || "gpt-6-sol";
+
 function codexJudge(prompt, images = []) {
   return new Promise((resolve) => {
     const dir = mkdtempSync(join(tmpdir(), "bys-judge-"));
     const out = join(dir, "last.txt");
 
-    const child = execFile("codex", ["exec", "--skip-git-repo-check", "-s", "read-only", "--output-last-message", out, ...images.flatMap((i) => ["-i", i]), "-"], { cwd: dir, timeout: 300000, maxBuffer: 20 << 20 }, (err) => {
+    const child = execFile("codex", ["exec", "--skip-git-repo-check", "-s", "read-only", "-m", JUDGE_MODEL, "--output-last-message", out, ...images.flatMap((i) => ["-i", i]), "-"], { cwd: dir, timeout: 300000, maxBuffer: 20 << 20 }, (err) => {
       const text = existsSync(out) ? readFileSync(out, "utf8") : "";
       const m = text.match(/\{[\s\S]*\}/);
 
       try {
         const j = JSON.parse(m[0]);
         const verdict = ["pass", "fail", "undeterminable"].includes(j.verdict) ? j.verdict : (j.pass === true ? "pass" : j.pass === false ? "fail" : "undeterminable");
-        resolve({ verdict, pass: verdict === "pass" ? true : verdict === "fail" ? false : null, reason: String(j.reason ?? ""), method: images.length ? "codex+screenshots+text" : "codex+text" });
+        resolve({ verdict, pass: verdict === "pass" ? true : verdict === "fail" ? false : null, reason: String(j.reason ?? ""), method: images.length ? "codex+screenshots+text" : "codex+text", judgeModel: JUDGE_MODEL });
       }
       catch { resolve({ verdict: "judge_error", pass: null, reason: `judge failed: ${err?.message ?? "unparseable"} :: ${text.slice(0, 300)}`, method: "codex" }); }
     });
@@ -176,7 +180,7 @@ export async function judgeRun(runDir, tasks, models, { concurrency = 4, onlyExi
 }
 
 // CLI: node judge.mjs <runDir>  (re-judge an existing run)
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const runDir = process.argv[2];
   const meta = JSON.parse(readFileSync(join(runDir, "run.json"), "utf8"));
   const all = readFileSync(TASKS_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
