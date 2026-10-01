@@ -1,0 +1,88 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>记忆系统：架构与交互调研</title>
+<style>
+:root{--wall:#faf9f6;--surf:#fff;--subtle:#eeece6;--border:#e3e1d9;--t1:#141413;--t2:#5f5e58;--t3:#77756d;--t4:#b0aea5;--ink:#2d4a86;--inksoft:rgba(45,74,134,.08)}
+body{margin:0;background:#f3f1ec;color:#1f1f1f;font:15px/1.75 -apple-system,"PingFang SC",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:26px 28px 70px}
+h1{font-size:24px;margin:0 0 6px}h2{font-size:19px;margin:36px 0 10px;padding-top:14px;border-top:1px solid #ddd8cc}h3{font-size:16px;margin:18px 0 6px}
+.lead{background:#fff;border:1px solid #e6e2d8;border-radius:12px;padding:14px 18px}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:10px;overflow:hidden;font-size:14px;margin:8px 0}
+th,td{border-bottom:1px solid #ece9e1;padding:8px 11px;text-align:left;vertical-align:top}th{background:#faf8f3;font-weight:600}
+.src{font-size:12.5px;color:#777}.ok{color:#276145}.bad{color:#9a3b2a}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:10px}
+.panel{background:var(--wall);border-radius:14px;box-shadow:0 1px 3px #0002;padding:12px 16px 16px;font-size:14px;color:var(--t1)}
+.cap{font-size:13px;color:#444;margin:0 0 6px}.cap b{font-size:14.5px;color:#111}
+.u{margin:6px 0 10px auto;width:fit-content;max-width:88%;background:var(--subtle);border-radius:17px 17px 5px 17px;padding:8px 12px;font-size:13px}
+.used{font-size:12.5px;color:var(--ink);margin:6px 0}.used.open{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--t2)}
+.used .it{color:var(--t1)}.used .acts{margin-top:4px}.used .acts span{color:var(--ink);margin-right:12px}
+.pill{display:inline-block;font-size:12.5px;border-radius:999px;padding:2px 11px;border:1px solid var(--border);background:var(--surf);color:var(--t2);margin-right:6px}.pill.y{border-color:transparent;background:var(--inksoft);color:var(--ink);font-weight:500}
+.grp{font-size:12px;color:var(--t3);margin:10px 0 4px;letter-spacing:.02em}
+.row{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:7px 10px;margin-bottom:6px;font-size:13px}.row .m{font-size:11.5px;color:var(--t3)}
+.exp{color:var(--t4)}.tag{font-size:11px;background:var(--subtle);border-radius:6px;padding:0 6px;color:var(--t3)}
+.label{float:right;font-size:11px;background:#fff3c4;color:#7a5b00;border-radius:6px;padding:0 6px}
+ol li{margin:6px 0}
+</style><main>
+<h1>记忆系统：架构与交互调研</h1>
+<p class="src">2026-10-01 · 依据：DDIA（ddia.vonng.com）对照现有代码；Mem0、Zep/Graphiti、Letta、LangMem、Claude、ChatGPT、Copilot、Cursor 等一手资料；CHI 2025/2026 与 2026 年记忆研究。标「已核对」的是我在代码里亲自确认过的。</p>
+
+<div class="lead"><b>一句话结论：</b>底子的大方向是对的（本机、一个文档、串行写、保留旧版本），不需要推倒重来，也不需要同步引擎这类重武器。真正的问题集中在三类：<b>没有被检查的规则</b>（"同一件事只能有一个生效值"靠手工维护）、<b>失败不留痕</b>（判断失败、读坏数据都悄悄吞掉）、<b>删不干净</b>（"忘掉"之后，原话还留在诊断记录和过往任务里）。先花一小块把这三类补上，再做纠正询问。交互上最大的缺口是：<b>你看不到它这次用了哪条记忆</b>。</div>
+
+<h2>一、架构：现在哪里不稳（对照 DDIA）</h2>
+<table><tr><th>DDIA 讲什么</th><th>我们现在</th><th>风险（今天撞到的）</th><th>建议</th></tr>
+<tr><td>多条数据之间的规则要在写入前检查（第 8 章 事务）</td><td>"同一件事只有一个生效值"靠一条条指针手工维护</td><td class="bad">连续替换后撤销出现两个生效邮箱</td><td>每件事一个编号；每次写入前自动检查规则，不满足就拒绝写、数据不动</td></tr>
+<tr><td>新代码读旧数据、旧代码读新数据都不能丢东西（第 5 章 编码与演化）</td><td class="bad">过往任务读到看不懂的格式就当成空的，下次写入把原数据整个覆盖（已核对 task-history.ts:76-94）</td><td class="bad">降级或数据有一点损坏，过往任务<b>永久丢失</b></td><td>统一格式规则：看不懂就只读、绝不覆盖；不把丢了条目的结果写回</td></tr>
+<tr><td>晚一点可以，丢了不行；用请求编号去重（第 13 章）</td><td class="bad">"要不要记"失败直接吞掉，不留记录（已核对 memory-runtime.ts:135）</td><td class="bad">GLM 忙时你说的话悄悄没记住，事后也查不到</td><td>失败留一条记录；放进"待判断"队列，任务结束后补判；用消息编号防止补判记两次</td></tr>
+<tr><td>写完要能读到自己写的（第 6 章）</td><td>面板手里是一份旧快照</td><td>删除后点撤销报"版本冲突"（已修一部分；助手那边新记一条时面板仍会过期）</td><td>每次写入给整份记忆一个递增版本号，面板发现变了就重新读</td></tr>
+<tr><td>时钟会跳，不要用时间判断谁新（第 9 章）</td><td>用"任务结束时间"当防覆盖的凭证；有效期存成绝对时间</td><td>改时区等情况下日期和有效期会对不上（推断）</td><td>用递增计数当凭证；以日期为准，读取时再算有效期</td></tr>
+<tr><td>删除个人数据要删干净（第 12、14 章）</td><td>"忘掉"只删记忆本身</td><td>原话还留在回执、诊断记录、过往任务摘要里</td><td>诊断记录只存编号不存原话；忘掉时连带清理</td></tr>
+<tr><td>写入持久性</td><td>没指定，用 Chrome 默认的"宽松"模式（已核对）</td><td>断电或系统崩溃时可能丢最后几次写入</td><td>记忆写入改成"严格"模式，一行</td></tr>
+</table>
+<h3>不要做的（规模：几百条、一个人、一个浏览器）</h3>
+<p>不上"操作日志当唯一数据源"（删除个人数据时反而麻烦）；不上 CRDT / 同步引擎（Automerge、Yjs、Zero 等，解决的是多人同时编辑）；不拆成一条一条存、不上向量检索、不上浏览器里的 SQLite。Mem0 在 2026-04 把"模型直接改写、删除记忆"去掉了，改成保留旧版本并相连——<span class="ok">和我们现在的做法一致</span>。</p>
+
+<h2>二、交互：做得好的产品怎么做</h2>
+<table><tr><th>产品</th><th>记的时候</th><th>用的时候</th><th>管理 / 撤销 / 过期</th></tr>
+<tr><td>ChatGPT</td><td>"记忆已更新"，悬停可去管理</td><td>回答下方"来源"，每条可"纠正""别再提"（2026-06）</td><td>列表 + 可编辑摘要；后台把过期的事改写成过去时</td></tr>
+<tr><td>Claude</td><td>边聊边存成主题，敏感话题默认不记</td><td>查过往聊天显示为看得见的一步</td><td>按主题看、改、删；每个项目各自一份</td></tr>
+<tr><td>GitHub Copilot</td><td>不提示</td><td>用前先对照当前代码核实</td><td>按仓库分开；<b>28 天没用就过期</b></td></tr>
+<tr><td>Cursor</td><td>后台提议，你接受或拒绝</td><td>—</td><td>按项目分开</td></tr>
+</table>
+<p class="src">研究：CHI 2026 访谈 20 名 ChatGPT 用户，多数发现它记了什么时感到"被冒犯"；2,050 条真实 ChatGPT 记忆里 96% 是它自己存的、52% 是对用户心理的推断；模型越听话越容易把偏好用错地方（BenchPreS 2026）；被记住的用户信息会让模型更顺着你说（CHI 2026，最高 +45%）；频繁提起"我记得你……"让人不舒服。</p>
+
+<h3>放进你的侧栏，是这个样子（示意）</h3>
+<div class="grid">
+<div><p class="cap"><b>① 这次用了哪条记忆</b>　最大的缺口</p><div class="panel"><span class="label">示意</span>
+<div class="u">帮我订那天成都的酒店</div>
+<div>按 10 月 2 日、成都给你找了三家……</div>
+<div class="used">用了 1 条记忆 ›</div>
+<div class="used open"><span class="it">10/2 北京→成都，东航</span> · 做过的事<br><span class="src">因为：你提到"那天"，这趟行程还在有效期内</span><div class="acts"><span>改</span><span>这里别用</span></div></div>
+</div><p class="src">ChatGPT 来源、Claude 看得见的查找、微软人机交互准则 G11"说清为什么这样做"。平时只露一行小字，点开才有详情。</p></div>
+
+<div><p class="cap"><b>② 记下时可直达那一条</b></p><div class="panel"><span class="label">示意</span>
+<div class="u">我邮箱换成 b@example.com</div>
+<div>好，之后都用新邮箱。</div>
+<div class="used" style="color:var(--t3)">✓ 已记住 · <span style="color:var(--ink)">在记忆里查看</span> · 撤销</div>
+<div class="u" style="margin-top:14px">不对，导出要选全部</div>
+<div>已改为导出全部。以后在这个网站导出，我都先选"全部"，要我记住吗？</div>
+<div style="margin-top:6px"><span class="pill y">记住</span><span class="pill">这次就行</span></div>
+</div><p class="src">ChatGPT"记忆已更新"→管理；Cursor 的接受/拒绝。"这次就行"不留痕，同一网站不再重复问。</p></div>
+
+<div><p class="cap"><b>③ 记忆面板按种类分组</b></p><div class="panel"><span class="label">示意</span>
+<div class="grp">关于你</div><div class="row">邮箱：b@example.com<div class="m">所有网站 · 用过 3 次</div></div>
+<div class="grp">安排</div><div class="row">10/2 北京→成都，东航<div class="m">到 10 月 2 日为止 · 用过 1 次</div></div><div class="row exp">9/12 上海出差<div class="m">已过期 · 不再主动用</div></div>
+<div class="grp">做事的方法</div><div class="row">导出先选"全部"，再核对条数<div class="m"><span class="tag">crm.example.com</span> · 用过 2 次</div></div>
+<div class="grp">历史 · 1 ›</div>
+</div><p class="src">CHI 2025：用户想要清楚的分类；按主题分组可减少记忆串用（2026）；Copilot 过期、ChatGPT 改写成过去时。</p></div>
+</div>
+
+<h2>三、建议的顺序</h2>
+<ol>
+<li><b>先加固底座（新的一小块，约 1–2 天，用户几乎看不到变化）</b>：同一件事一个编号 + 写前自动检查；过往任务读坏不覆盖；判断失败留记录 + 任务后补判；整份记忆的递增版本号让面板自动刷新；严格写入；诊断记录只存编号。</li>
+<li><b>第二块：纠正后开口问你</b>（已定 B 样式），带上 ②"在记忆里查看"。</li>
+<li><b>第三块：回答下方"用了几条记忆"</b>（①）和面板按种类分组（③）。</li>
+<li>之后：导出 / 导入（一个带版本的文件，重复导入无害）；"查记忆"工具。</li>
+</ol>
+<table><tr><th>取舍</th><th>用户</th><th>开发者以后改</th><th>下一个 agent 接手</th></tr>
+<tr><td>先加固再加功能</td><td>新功能晚 1–2 天；之后少见"版本冲突"、说过的话不再悄悄丢</td><td>一个检查函数替代散落的指针逻辑；格式升级有一条统一规则</td><td>"一件事一个生效值"可被检查，而不是要读懂指针才知道；失败有记录可查</td></tr>
+<tr><td>不上同步引擎 / 操作日志</td><td>暂时不能多台电脑同步，靠导出导入</td><td>少一大块要维护的东西</td><td>结构简单，一份文档就是全部</td></tr>
+</table>
+</main></html>
