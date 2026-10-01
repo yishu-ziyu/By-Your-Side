@@ -76,7 +76,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 - 伴随进程侧 RPC 默认超时 30s（`navigate`/`screenshot` 60s），超时/断连即以错误结果结束该工具调用。
 - 扩展侧任何异常都必须回 `ok:false` + 一行人类可读 error，不允许挂断不回。
 - `page_translation` 的 `translate` 由 agent 分批调用 `begin`/`collect`/`apply`，不受单次工具时限约束，而是按落页进度判断何时停止；请求池、`collect.exclude` 与逐批诊断见[整页翻译](page-translation.md)。
-- 发出前就拒绝的调用回 `not_executed`，并在 error 里说明可行的替代做法：`fetch` 指向本机或私网地址时，提示改用 `open_tab`/`navigate` 打开后再 `snapshot`；`wheel` 的工作页处于隐藏状态时（窗口未聚焦、不抢前台），不派发任何滚轮事件，提示改用 `scroll` 或请用户切回窗口。
+- 发出前就拒绝的调用回 `not_executed`（`js` 先只编译，编译不过即此），并在 error 里说明可行的替代做法：`fetch` 指向本机或私网地址时，提示改用 `open_tab`/`navigate` 打开后再 `snapshot`；`wheel` 的工作页处于隐藏状态时（窗口未聚焦、不抢前台），不派发任何滚轮事件，提示改用 `scroll` 或请用户切回窗口。
 
 `browser_run` 在本地解释器执行，不是新增的扩展 RPC 工具。它的每个浏览器子调用仍使用上述帧，并附带可选 `programId`。接管/排空期间，该程序的所有子调用都被拒绝，包括普通情况下允许的只读工具；原独立工具行为不变。生产装配中，内部开始/结束直接同步转成既有步骤事件，先登记子调用再执行权限检查，使用 `父调用ID/序号` 关联；独立工具包装器仍可回传SDK进度，但不能把异步进度队列当作权限登记前置。详见[组合执行](browser-program.md)。
 
@@ -84,7 +84,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 扩展内 `fetch` 不写本机文件，响应经凭据隐去与不可信包装后最多内联 16,000 字符；来源 URL 隐去 userinfo 与敏感查询参数（包括短 token），状态行只显示媒体类型、不回显任意 Content-Type 参数，截断明确说明并提示用当前页 `snapshot/read_element` 读所需章节；`savePath/pages` 在派发前拒绝。伴随进程的文件与批量行为不变。要求示例不等于执行示例。
 
-未知写入仍禁止 fetch、点击、输入、页面 JS、导航或切页。当前页 `scroll/mark/clear_marks` 只提供阅读展示，可在保留旧未知账目的同时执行；它们不核销未知操作、不授予业务写入权限，也不绕过用户接管、取消、重启检查点、页面归属或同一未知动作的重放保护。
+未知写入仍禁止 POST 或带 body 的 fetch、点击、输入、页面 JS、导航或切页。当前页 `scroll/mark/clear_marks` 只做阅读展示，不带 body 的 GET `fetch` 只在页外取数，二者可在保留旧未知账目时执行；它们不核销未知操作、不授予业务写入权限，也不绕过用户接管、取消、重启检查点、页面归属或同一未知动作的重放保护。`browser_run` 见[组合执行](browser-program.md#控制与权限)。
 
 ## 用户指出元素
 
@@ -123,7 +123,7 @@ Pi 上下文保存在 `~/.sideagent/conversations/{conversationId}/` 下的会�
 
 ## 文件卡片
 
-Lead 工具 `artifacts` 为用户写文本文件（csv、md、txt、json、html、svg、js、css），命令沿用 Pi web-ui 的约定：`create`（同名已存在则失败）、`update`（`old_str` → `new_str`，找不到时返回全文）、`rewrite`、`get`、`delete`。文件只存在本会话内存，单个上限 256 000 字符，文件名只许一层并带扩展名。每次保存发 `agent_event{kind:"artifact",action:"saved",filename,content}`，删除发 `action:"deleted"`；侧栏画成带「下载」按钮的卡片，回合结束时挪到回答下面，CSV 下载时加 BOM。事件随侧栏历史回放；宿主重启后模型不再能 `get` 旧文件。
+Lead 工具 `artifacts` 为用户写文本文件（csv、md、txt、json、html、svg、js、css），命令沿用 Pi web-ui 的约定：`create`（同名已存在则失败）、`update`（`old_str` → `new_str`，找不到时返回全文）、`rewrite`、`get`、`delete`。文件只存在本会话内存，单个上限 256 000 字符，文件名只许一层并带扩展名。每次保存发 `agent_event{kind:"artifact",action:"saved",filename,content}`，删除发 `action:"deleted"`；侧栏画成带「下载」按钮的卡片，回合结束时挪到回答下面，CSV 下载时加 BOM。事件随侧栏历史回放；宿主重启后模型不再能 `get` 旧文件。`browser_run` 程序里的 `browser.saveFile` 写进同一个文件区（同样规则、同名覆盖、同一条 `artifact` 事件），程序只拿到长度回执，正文不进模型上下文（[细节](browser-program.md#存文件)）。
 
 ## target 定位串
 
@@ -133,7 +133,7 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
 
-页面下载：`arm_event{type:"download"}` → 点页面的下载入口 → `wait_event`。`Page.downloadWillBegin` 把下载归到已 arm 的标签页，文件由 Chrome 存进用户的下载文件夹；是否下完只看 `chrome.downloads`（两者按 URL 对上）。`wait_event` 匹配后再等下载结束（默认最多 60 秒），`download.completed` 只在 Chrome 报 `complete` 时为真并带 `path`/`bytes`；中断时 `failure` 是 Chrome 的错误码，模型工具把它作为失败返回。`download_cancel` 不取消已下完的文件，`download_delete` 只忘掉记录、不删文件；本机伴随进程的 `download_save_as` 在完成后复制到指定路径。扩展调试通道拒绝浏览器级 `Page.setDownloadBehavior`，所以不再用它（[09-23 记录](evals/20260923-ci-gate-failures.md)）。
+页面下载：`arm_event{type:"download"}` → 点页面的下载入口 → `wait_event`。`Page.downloadWillBegin` 把下载归到已 arm 的标签页，文件由 Chrome 存进用户的下载文件夹；是否下完只看 `chrome.downloads`（两者按 URL 对上）。`wait_event` 匹配后再等下载结束（默认最多 60 秒），`download.completed` 只在 Chrome 报 `complete` 时为真并带 `path`/`bytes`；中断时 `failure` 是 Chrome 的错误码，模型工具把它作为失败返回。`download_cancel` 不取消已下完的文件，`download_delete` 只忘掉记录、不删文件；本机伴随进程的 `download_save_as` 在完成后复制到指定路径；只装扩展时没有本机文件，这个工具不列给模型。扩展调试通道拒绝浏览器级 `Page.setDownloadBehavior`，所以不再用它（[09-23 记录](evals/20260923-ci-gate-failures.md)）。
 
 `mark` 可选 `through: "@N"`：同一行的结束 ref，一个框从 `target` 圈到它（用于「名称 + 数值」这类成对内容，先后顺序不限）。两者都必须是同一张快照的 ref；不在同一行、不在同一页面或不是 ref 时报错并记为未执行。框随两端之间的内容重排而重画。名牌依次试框的右、上、下、左，选第一处不压页面文字、图片或控件的位置；四处都压字时沿框的上沿、下沿往右找空白。
 

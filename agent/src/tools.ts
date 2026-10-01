@@ -21,9 +21,11 @@ import { needsConsentTicket, requiresControlGate } from "../../shared/effect-pol
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
-import { runBrowserProgram, BROWSER_PROGRAM_HELPERS, RPC_ALIASES, type ProgramStep } from "./browser-program.js";
+import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
+import { saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 import { authorizeUploadPaths, type TaskUploadLedger } from "./upload-paths.js";
 import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
+import { runtimeUnavailableTools } from "./runtime-capabilities.js";
 import type { SkillEvidence } from "./skill-learning.js";
 import { POINT_SELECTION_TIMEOUT_MS } from "../../shared/point-selection.js";
 
@@ -143,14 +145,19 @@ function consentOutcome(result: ConsentOutcome | boolean): ConsentOutcome {
 /** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; consumeConsent?: ConsumeConsent; isToolHiddenByMode?: (name: string) => boolean; learning?: { active(): boolean; observe(event: SkillEvidence): ToolContract["read_element"]["params"] | void }; /** 本任务上传文件授权账本；所有上传入口共用。 */ uploadLedger?: TaskUploadLedger; /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
+  const files = execution?.files;
+  // 扩展里没有本机伴随进程：调用必然失败的工具（本机文件、剪贴板、上传授权）不列给模型，有真实 fs 的本机循环照常提供。
+  const unavailableInRuntime = runtimeUnavailableTools();
+  const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
   // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
   const unavailableWriteTools = (): ToolName[] =>
     canExecute ? [...new Set(WRITE_TOOLS.map((name) => modelToolOf(name)))].filter((name) =>
-      !canExecute(name as ToolName) && !execution?.isToolHiddenByMode?.(name)) as ToolName[] : [];
+      // 运行形态里本就没有的工具不算「被禁用」：它不是用户收回的权限，不能因此关掉通用页面 JS。
+      !unavailableInRuntime.has(name) && !canExecute(name as ToolName) && !execution?.isToolHiddenByMode?.(name)) as ToolName[] : [];
 
   const assertGenericJsAllowed = () => {
     const missing = unavailableWriteTools();
@@ -442,7 +449,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch or document). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/paste/html5Drag, and browser.uploadFile({target,paths}); browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + BROWSER_PROGRAM_HELPERS.map(h => h.name).join(", ") + ' (host-implemented, no new RPC). camelCase aliases: ' + Object.keys(RPC_ALIASES).join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
+      description: 'Run an async JavaScript browser program. Only the browser object is available (no Node, process, require, fetch, window, document or Blob); page JavaScript belongs inside browser.js({code:"..."}). Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, js({code})->{value}, hover/click({target or point}), fill({target,value}), and the other browser tools. Real-input actions are also available as browser.doubleClick({target|point}), browser.drag({from,to}), browser.wheel/mouseDown/mouseUp/keyDown/keyUp/releaseHeldInputs/' + (unavailableInRuntime.has("paste") ? '' : 'paste/') + 'html5Drag' + (unavailableInRuntime.has("upload_file") ? '' : ', and browser.uploadFile({target,paths})') + '; browser.cdp({method,params?}) is the gated raw-CDP escape hatch. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content}) saves text the program already holds as a file in this conversation (same file list and side-panel card as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten}. For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' camelCase aliases: ' + availableRpcAliases().join(", ") + '. browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. Page JavaScript belongs inside browser.js({code:"..."}). A held click, takeover or cancellation stops the entire program even if caught. Do not bypass confirmation or user control with page JS. Set api:"playwright" when you already know the field the way a human labels it (e.g. a form label or a button name) and want one familiar locator chain instead of a snapshot round: it reuses the official Stagehand Playwright compatibility layer inside this same sandbox and gives the program extra page/context objects (page.getByLabel/getByRole/getByText/getByPlaceholder/page.locator(...).fill/click/press/readback, page.evaluate, page.waitForTimeout). It is that compatibility layer only — not the Stagehand SDK, not browser-side batching. Every locator action still goes through the same tools, permissions, task page and stop rules, and it writes only through the real fill/click/press RPCs. Unsupported Playwright methods fail loudly; screenshots and snapshots stay with browser.screenshot()/browser.snapshot().',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -458,6 +465,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const result = await runBrowserProgram({ code: params.code, api, pageTabId,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
           authorizeUpload: (refs) => authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }),
+          saveFile: files ? (args) => {
+            const store = files();
+
+            if (!store) throw new Error("这个会话没有文件区，saveFile 不可用，未保存。");
+
+            return saveFileFromProgram(store, args);
+          } : undefined,
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
         });
@@ -1128,12 +1142,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         method: Type.Optional(Type.Union([Type.Literal("GET"), Type.Literal("POST")], { description: "Default GET" })),
         headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: "Extra request headers; Cookie is set by the browser" })),
         body: Type.Optional(Type.String({ description: "POST body (string); {page} is substituted here too" })),
-        savePath: Type.Optional(Type.String({ description: "File name under ~/.sideagent/downloads/ (no directories); with pages it is the base name and -p<page> is inserted before the extension" })),
+        savePath: Type.Optional(Type.String({ description: "Companion process only; rejected in the extension-only runtime. File name under ~/.sideagent/downloads/ (no directories); with pages it is the base name and -p<page> is inserted before the extension" })),
         pages: Type.Optional(Type.Object({
           from: Type.Integer({ description: "First page number" }),
           to: Type.Integer({ description: "Last page number (inclusive)" }),
           step: Type.Optional(Type.Integer({ description: "Page step, default 1; at most 20 pages per call" })),
-        }, { description: "Fetch a numeric page range in one call; requires {page} in url or body" })),
+        }, { description: "Companion process only; rejected in the extension-only runtime. Fetch a numeric page range in one call; requires {page} in url or body" })),
       }),
       execute: async (_id, params) => {
         if (!fetchDownloadsDir() && (params.savePath !== undefined || params.pages !== undefined)) {
@@ -1275,7 +1289,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }),
   ];
 
-  const definitions = makeDefinitions(call, undefined);
+  const definitions = makeDefinitions(call, undefined).filter(tool => !unavailableInRuntime.has(tool.name));
 
   return execution ? definitions.map(tool => ({ ...tool, execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);

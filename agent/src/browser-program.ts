@@ -1,7 +1,10 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "quickjs-emscripten";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
+import { HOST_PAGE_PROBES } from "../../shared/effect-policy.js";
 import { buildPlaywrightProgram } from "./stagehand-bridge.js";
 import { hostDownloadSaveAs, type DownloadStatLike } from "./download-artifacts.js";
+import { runtimeUnavailableTools } from "./runtime-capabilities.js";
+import { isSaveFileParams, rejectSaveFileParams, type SaveFileParams, type SavedFileReceipt } from "./artifacts-tool.js";
 
 export interface ProgramStep {
   parentId: string;
@@ -30,6 +33,11 @@ interface ProgramOptions {
   id?: string;
   timeoutMs?: number;
   onStep?(step: ProgramStep): void;
+  /**
+   * `browser.saveFile({filename, content})` 的宿主实现（写进本会话文件区，返回只含长度的回执）。
+   * 不传 = 这个会话没有文件区，程序里没有 saveFile。
+   */
+  saveFile?(params: SaveFileParams): SavedFileReceipt;
 }
 
 /** browser.* 的 camelCase 别名：程序里用 EGO 风格名字，账本仍记规范 RPC 名。 */
@@ -74,11 +82,35 @@ export const BROWSER_PROGRAM_HELPERS = [
   { name: "disarmEvent", summary: "取消尚未消费的 arm", composed: "disarm_event" },
   { name: "consumeEvents", summary: "读清本页缓冲事件", composed: "consume_events" },
   { name: "downloadSaveAs", summary: "等待页面下载完成后复制到绝对路径（非 fetch）", composed: "download_stat + 宿主 fs" },
+  { name: "saveFile", summary: "saveFile({filename,content}) 把程序手上的文本存成本会话文件（与 artifacts 同一文件区、同一张侧栏卡片），返回 {filename,chars,lines,overwritten}，内容不回到上下文", composed: "宿主会话文件区" },
 ] as const;
 
-const HOST_METHODS: readonly string[] = BROWSER_PROGRAM_HELPERS.map((h) => h.name);
+/**
+ * 这个运行形态里真能用的 helper：扩展里没有本机文件，downloadSaveAs 不列；
+ * saveFile 只在宿主接了本会话文件区时列。描述与白名单都从这里取。
+ */
+export function availableProgramHelpers(offer: { saveFile: boolean }) {
+  const unavailable = runtimeUnavailableTools();
 
-const METHODS = [...TOOL_NAMES.filter(name => name !== "worker_tabs"), ...Object.keys(RPC_ALIASES), ...HOST_METHODS];
+  return BROWSER_PROGRAM_HELPERS.filter(h => h.name === "saveFile" ? offer.saveFile : h.name === "downloadSaveAs" ? !unavailable.has("download_save_as") : true);
+}
+
+/** 程序里可用的 camelCase 别名：对应工具在这个运行形态不可用时一并去掉。 */
+export function availableRpcAliases(): string[] {
+  const unavailable = runtimeUnavailableTools();
+
+  return Object.keys(RPC_ALIASES).filter(alias => !unavailable.has(RPC_ALIASES[alias]!));
+}
+
+function programMethods(offer: { saveFile: boolean }): string[] {
+  const unavailable = runtimeUnavailableTools();
+
+  return [
+    ...TOOL_NAMES.filter(name => name !== "worker_tabs" && !unavailable.has(name)),
+    ...availableRpcAliases(),
+    ...availableProgramHelpers(offer).map(h => h.name),
+  ];
+}
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -104,6 +136,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   images: Array<{ type: "image"; data: string; mimeType: string }>;
 }> {
   if (options.code.length > 64_000) throw new Error("Browser program exceeds 64000 characters");
+  const METHODS = programMethods({ saveFile: !!options.saveFile });
   const engine = await getQuickJS();
   const vm = engine.newContext();
   vm.runtime.setMemoryLimit(16 * 1024 * 1024);
@@ -297,7 +330,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     const info = await options.call("js", {
       tabId: working.id,
-      code: "({href:location.href,title:document.title,readyState:document.readyState,viewport:{width:innerWidth,height:innerHeight},scroll:{x:Math.round(scrollX),y:Math.round(scrollY)},timeOrigin:performance.timeOrigin})",
+      code: HOST_PAGE_PROBES.pageInfo,
     }, sub(), "readonly-poll") as { value?: unknown };
 
     const dialogData = await options.call("dialog_info", { tabId: working.id }, sub(), "readonly-poll") as { dialog?: unknown };
@@ -368,7 +401,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const sub = nextSubId(stepId);
 
     const readDoc = async () => {
-      const jsParams = typeof params.tabId === "number" ? { code: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})", tabId: params.tabId } : { code: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})" };
+      const jsParams = typeof params.tabId === "number" ? { code: HOST_PAGE_PROBES.documentState, tabId: params.tabId } : { code: HOST_PAGE_PROBES.documentState };
       const data = await options.call("js", jsParams, sub(), "readonly-poll") as { value?: { readyState?: string; href?: string; timeOrigin?: number } | string };
 
       const value = data.value;
@@ -571,7 +604,9 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (closed || stopped || options.signal?.aborted) return;
       const id = `${options.id ?? "program"}/${++steps}`;
       const stepName = RPC_ALIASES[name] ?? (name === "waitFor" || name === "waitForElement" ? "wait_for" : name);
-      const step = { parentId: options.id ?? "program", id, name: stepName, params };
+      // saveFile 的内容不进步骤记录（侧栏步骤、诊断记录都从这里取），只记文件名与长度。
+      const stepParams = name === "saveFile" ? { filename: params.filename, chars: typeof params.content === "string" ? params.content.length : null } : params;
+      const step = { parentId: options.id ?? "program", id, name: stepName, params: stepParams };
       const started = Date.now();
       let actualResult: unknown;
       emit({ ...step, phase: "start" });
@@ -599,6 +634,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           : name === "scrollToBottomUntil" ? await scrollToBottomUntil(params, id)
           : name === "armEvent" ? await armEvent(params, id)
           : name === "downloadSaveAs" ? await downloadSaveAs(params, id)
+          : name === "saveFile" && options.saveFile ? (isSaveFileParams(params) ? options.saveFile(params) : rejectSaveFileParams())
           : await options.call(canonical as ToolName, callParams, id);
 
         if (result && typeof result === "object" && "held" in result && result.held) {

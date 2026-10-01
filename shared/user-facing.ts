@@ -17,7 +17,7 @@ const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   browser_run: "连续操作网页", wait_for: "等待页面", sleep: "等待", arm_event: "等待页面事件", wait_event: "等待页面事件", disarm_event: "停止等待",
   accept_dialog: "确认弹窗", dismiss_dialog: "关闭弹窗", download_save_as: "保存下载", download_cancel: "取消下载", download_delete: "移除下载记录",
   js: "检查页面", cdp: "调用浏览器", mark: "标注页面", clear_marks: "清除标注", ask_user_to_point: "等你在页面上点选", fetch: "发送网络请求",
-  browser_request: "发送网络请求", artifacts: "生成文件", remember_user_preference: "记住偏好", user_memory: "查看记忆",
+  browser_request: "发送网络请求", artifacts: "生成文件", saveFile: "保存文件", remember_user_preference: "记住偏好", user_memory: "查看记忆",
   spawn_worker: "安排助手", list_workers: "查看助手", stop_worker: "让助手停下", post: "发送消息", await_message: "等待助手结果", share_tab: "安排同页协作",
   take_tab: "接手页面", worker_tabs: "调整页面归属", task_goals: "核对目标", task_status: "核对进度", record_task_results: "整理剩余步骤",
   resolve_unknown_result: "核对结果", confirm_blocked_write: "请你确认", send_user_message: "整理回答",

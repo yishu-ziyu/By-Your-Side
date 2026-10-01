@@ -119,6 +119,25 @@ function awaitingOnly(view: TaskView): boolean {
   return unknown.length > 0 && unknown.every((item) => item.awaitingConfirmation) && view.outstanding.every((item) => item.status !== "blocked");
 }
 
+/**
+ * 最近一次目标核对的结论（标准 8）：判做完 → 没有剩余；说了还差什么 → 就是它；没核对过或没说 → null，交给后面的来源。
+ * 来源顺序与过往任务摘要相同：核对的「还差」→ 模型自己交代的未完成项 → 计划目标。
+ */
+function checkedRemaining(view: TaskView): string[] | null {
+  const status = view.goalStatus;
+
+  if (!status) return null;
+
+  if (status.status === "done") return [];
+
+  return status.remaining ? [status.remaining] : null;
+}
+
+/** 列了计划、但宿主从没核对过的目标：只能说没确认，不能说没做。 */
+function unverifiedGoal(view: TaskView, item: { status: string }): boolean {
+  return view.goalsListed === true && item.status === "pending";
+}
+
 function clipText(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
@@ -133,7 +152,8 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   // 只说是哪件事，不报账本的计数口吻；多于一件时补「等 N 件」。
   // 中断或停下的任务不是「没做成」，只是还没做到。
   const verb = view.state === "interrupted" || view.state === "aborted" ? "还没做" : "没做成";
-  const notDone = (items: string[]) => `${verb}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
+  const phrase = (head: string, items: string[]) => `${head}：${clipText(items[0]!, 24)}${items.length > 1 ? ` 等 ${items.length} 件` : ""}`;
+  const notDone = (items: string[]) => phrase(verb, items);
 
   // 剩下的只是等你在页面上确认的动作：它没失败，模型怎么描述都一样，说清在等你。
   if (view.state === "idle" && awaitingOnly(view)) {
@@ -142,9 +162,13 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
     return `等你在页面上确认：${clipText(plainStep(held.description), 24)}`;
   }
 
-  if (declared.length) return notDone(declared);
+  const told = checkedRemaining(view) ?? (declared.length ? declared : view.latestDelivery?.unfinished?.length ? view.latestDelivery.unfinished : null);
+
+  if (view.state === "idle" && told?.length) return notDone(told);
   // 描述已在 buildResumeSummary 里翻成人话（不带工具名、元素编号）。
-  const left = remaining.length ? notDone(remaining.map((r) => r.description)) : null;
+  const unverifiedOnly = remaining.length > 0 && remaining.every((r) => unverifiedGoal(view, r));
+  const listed = remaining.map((r) => r.description);
+  const left = told ? (told.length ? notDone(told) : null) : listed.length ? (unverifiedOnly ? phrase("还没确认完成", listed) : notDone(listed)) : null;
 
   if (view.state === "aborted") return left ? `已停止，${left}，不会自动继续` : "已停止";
 
@@ -157,7 +181,7 @@ function compactLine(view: TaskView, checkpointUnavailable: boolean, remaining: 
   return blocking ?? "这一轮还需要你看一下";
 }
 
-function headlineFor(view: TaskView, checkpointUnavailable: boolean): { tone: ResumeSummary["tone"]; headline: string } {
+function headlineFor(view: TaskView, checkpointUnavailable: boolean, remainingCount: number): { tone: ResumeSummary["tone"]; headline: string } {
   if (checkpointUnavailable) return { tone: "stopped", headline: "原任务检查点无法恢复" };
 
   switch (view.state) {
@@ -166,7 +190,7 @@ function headlineFor(view: TaskView, checkpointUnavailable: boolean): { tone: Re
     case "interrupted": return { tone: "waiting", headline: "已中断 · 可继续" };
     case "aborted": return { tone: "stopped", headline: "已停止" };
     case "error": return { tone: "blocked", headline: "运行出错" };
-    case "idle": return view.outstanding.length || view.waiting || view.resumable
+    case "idle": return remainingCount || view.waiting || view.resumable
       ? { tone: "waiting", headline: "任务已结束 · 仍需处理" }
       : { tone: "running", headline: "任务已结束" };
     default: return { tone: "running", headline: "当前会话" };
@@ -182,9 +206,14 @@ export function buildResumeSummary(view: TaskView | null, checkpointUnavailable 
     return { visible: false, tone: "running", headline: "", goal: null, revisions: [], done: [], remaining: [], blocking: null, interruptionDetail: null, nextStep: "", resume: { available: false, reason: null }, gaps: [], line: "", note: null };
   }
 
-  const tone = headlineFor(view, checkpointUnavailable);
   const done = view.results.filter((r) => r.status === "satisfied").map((r) => ({ id: r.id, description: plainStep(r.description) }));
-  const remaining = view.outstanding.map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: resultStatusLabel(r.status) }));
+  // 核对判做完：没核对过的计划目标不再算剩余（结果未知、受阻的执行项照旧保留）。
+  const checkedDone = checkedRemaining(view)?.length === 0;
+
+  const remaining = view.outstanding.filter((r) => !(checkedDone && unverifiedGoal(view, r)))
+    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "未确认完成" : resultStatusLabel(r.status) }));
+
+  const tone = headlineFor(view, checkpointUnavailable, remaining.length);
   const unknown = remaining.filter((r) => r.status === "unknown").length;
   const blocked = remaining.filter((r) => r.status === "blocked").length;
   const interruptionDetail = view.waiting?.reason === "restart_checkpoint" && view.waiting.detail ? (INTERRUPTION_DETAIL[view.waiting.detail] ?? view.waiting.detail) : null;

@@ -36,7 +36,7 @@
 
 ## 目标核对
 
-Lead 会话一轮结束（`agent_end`，非停止、接管、出错，且这一任务有改动页面的执行记录）时，先用快速模型核对用户要的结果达成没有（`goal-check.ts`，输入为用户原话与修订、最后回答、当前页标题/地址/正文前 3000 字，12 秒超时）。结论 `done / needs_user / continue`：`continue` 时宿主不收尾，直接追加一轮 `[GOAL CHECK]` 提示让助手接着做（每个任务最多 2 次，提示要求保留用户设的条件和安全规则）；否则照常收尾。最后一轮回答里在问用户（结尾约 100 字内有问号）时，一律按 `needs_user` 处理，不交给模型判断。结论以 `agent_event{kind:"goal_check",status,remaining?}` 发出，进度快照记为 `goalCheck`，任务视图投影为 `goalStatus{status:"done"|"open",remaining}`；`open` 使任务 `resumable`，任务条据此写「还差：…」或「已完成」。核对失败只在诊断记录里留 `goal_check{status:"unavailable"}`，不影响收尾。
+Lead 会话一轮结束（`agent_end`，非停止、接管、出错，且这一任务有改动页面的执行记录）时，先用快速模型核对用户要的结果达成没有（`goal-check.ts`，输入为用户原话与修订、最后回答、当前页标题/地址/正文前 3000 字，12 秒超时）。结论 `done / needs_user / continue`：`continue` 时宿主不收尾，直接追加一轮 `[GOAL CHECK]` 提示让助手接着做（每个任务最多 2 次，提示要求保留用户设的条件和安全规则）；否则照常收尾。最后一轮回答里在问用户（结尾约 100 字内有问号）时，一律按 `needs_user` 处理，不交给模型判断。结论以 `agent_event{kind:"goal_check",status,remaining?}` 发出，进度快照记为 `goalCheck`，任务视图投影为 `goalStatus{status:"done"|"open",remaining}`；`open` 使任务 `resumable`，任务条据此写「还差：…」或「已完成」。核对失败只在诊断记录里留 `goal_check{status:"unavailable"}`，不影响收尾。本任务存过文件也核对，输入附 `files`（名字、字数、行数、存的时间，不含内容）。宿主催的续做开始时保留 `continue` 结论（用户插话后的开始不保留），之后存了新文件就作废；侧栏停下/结束那行按「核对的还差 → 模型列的未完成 → 计划目标」取，没核对过的计划目标写「还没确认完成」。
 
 ## 用户设的提交条件
 

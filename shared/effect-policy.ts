@@ -131,3 +131,19 @@ export function requiresControlGate(name: string, params?: Record<string, unknow
 export function needsConsentTicket(name: string, params?: Record<string, unknown>): boolean {
   return classifyToolEffect(name, params).needsConsent;
 }
+
+/**
+ * 宿主自己写死的只读页面探测（browser_run 的 waitForLoad / pageInfo 读文档状态），按代码全文精确匹配。
+ * 它们只读属性、不调用页面函数，所以有页面脚本结果未知时也不算「重做页面脚本」。
+ * 模型写的代码（包括 scrollToBottomUntil 的 condition）永远不在这里。
+ */
+export const HOST_PAGE_PROBES = {
+  documentState: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})",
+  pageInfo: "({href:location.href,title:document.title,readyState:document.readyState,viewport:{width:innerWidth,height:innerHeight},scroll:{x:Math.round(scrollX),y:Math.round(scrollY)},timeOrigin:performance.timeOrigin})",
+} as const;
+
+const HOST_PAGE_PROBE_CODES: ReadonlySet<string> = new Set(Object.values(HOST_PAGE_PROBES));
+
+export function isHostPageProbe(name: string, params?: { readonly code?: unknown }): boolean {
+  return name === "js" && HOST_PAGE_PROBE_CODES.has(String(params?.code));
+}

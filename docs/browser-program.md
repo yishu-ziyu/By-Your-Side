@@ -15,12 +15,26 @@ return (await browser.snapshot()).text;
 
 这里的选择器只对应本地验收夹具。真实页面的目标必须先观察得到，不能直接套用。
 
-- `browser` 的方法来自 `shared/protocol.ts` 的 `TOOL_NAMES`，排除内部 `worker_tabs`，另有 `waitFor` / `sleep`；以 `agent/src/browser-program.ts` 的 `METHODS` 为准，参数与独立工具一致，返回原始数据。例如 `snapshot()` 返回 `{text}`，`js({code})` 返回 `{value}`。
+- `browser` 的方法来自 `shared/protocol.ts` 的 `TOOL_NAMES`，排除内部 `worker_tabs`，另有 camelCase 别名与宿主组合 helper（`BROWSER_PROGRAM_HELPERS`，含 `waitFor` / `sleep` / `saveFile`）；以 `agent/src/browser-program.ts` 的 `programMethods` 为准，参数与独立工具一致，返回原始数据。只装扩展时，依赖本机伴随进程的工具及其别名、helper（`download_save_as`/`downloadSaveAs`、`upload_file`/`uploadFile`、`file_chooser_set_files`/`fileChooserSetFiles`、`paste`）不在程序里，也不写进工具描述。例如 `snapshot()` 返回 `{text}`，`js({code})` 返回 `{value}`。
 - `browser.waitFor({selector, timeoutMs})` 等待唯一、可见且未禁用的原生 CSS 目标。默认 5 秒，最多 30 秒；通过现有 `js` RPC 轮询，只读页面，不修改页面状态。
 - `browser.sleep({ms})` 最多等待 10 秒，可中断。正常业务优先等状态，不用猜测睡眠时长。
 - 每个操作都应 `await`。同一程序的浏览器操作顺序执行，未等待的剩余调用不会在程序结束后继续落地。
 - `return` 返回可 JSON 序列化的证据。截图会作为图片附在工具结果中，程序只得到截图元数据。
 - 程序变量仅在这一次调用内存在；标签页、Agent 原目标和现有会话按原机制保留。
+
+## 存文件
+
+页面或接口取到的大段数据（几千字以上）在程序里拼好，直接存成本会话文件，不要返回给模型再用 `artifacts` 重打：
+
+```js
+const { value } = await browser.js({ code: "(() => [...document.querySelectorAll('.line')].map(n => n.textContent))()" });
+return await browser.saveFile({ filename: "subtitles.txt", content: value.join("\n") + "\n" });
+```
+
+- `browser.saveFile({filename, content})` 写进 `artifacts` 的同一个会话文件区：同样的文件名规则（一层文件名带扩展名）、同样 256 000 字上限，同名覆盖；侧栏出现同一张文件卡片。
+- 返回 `{filename, chars, lines, overwritten}`；`content` 须是非空字符串。正文不进模型上下文，程序步骤（侧栏与诊断记录）只记文件名与字数。
+- 程序沙箱里没有 `window`、`document`、`Blob`；网页代码放进 `browser.js({code})`。
+- 只有带交付的主会话有文件区；worker 的程序里没有这个方法。程序在保存前被停止时不落盘。
 
 ## 控制与权限
 
@@ -31,6 +45,8 @@ return (await browser.snapshot()).text;
 取消、接管错误、断连、RPC 超时或危险点击返回 `held` 会永久停止当前程序的后续调用。脚本 `catch` 不能解除停止状态。新程序只有在现有控制机制允许时才能继续。
 
 已经派发的动作按原机制排空，不宣称撤回。程序不会代替用户点击确认。页面脚本仍受既有用户授权与确认要求约束。
+
+有页面操作结果未知时，闸门按每个子调用判定，不整段拒绝程序：读页、不带 body 的 GET `fetch` 和 `saveFile` 照常，走到改页面的那一步才停（规则见[协议](protocol.md#fetch-读取与未知结果边界)）。`waitForLoad`、`pageInfo` 读文档状态用的是宿主写死的只读探测（`HOST_PAGE_PROBES`，按代码全文匹配），不算重做页面脚本；`waitFor` 本来就用只读的 `read_element`；`scrollToBottomUntil` 的 `condition` 是模型代码，照旧受阻（[验收](evals/20261001-data-to-file.md)）。
 
 ## 执行预算与观察
 

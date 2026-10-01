@@ -531,6 +531,9 @@
     "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "eslint(no-unused-vars)": 1
   },
+  "agent/test/extension-runtime-tools.test.ts": {
+    "anti-slop(no-module-mocking)": 1
+  },
   "agent/test/fast-task.test.ts": {
     "anti-slop(no-unsafe-dictionary-type)": 1
   },

@@ -22,6 +22,7 @@ import {redactCredentialText, wrapPageContent} from "../../shared/untrusted.js";
 import {createHash,randomUUID} from "node:crypto";
 import {LEAD_SESSION_ID} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
+import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
@@ -44,12 +45,13 @@ import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
-import { createArtifactsTool } from "./artifacts-tool.js";
+import { createArtifactStore, createArtifactsTool, type ArtifactStore } from "./artifacts-tool.js";
 import { isCopyRequest } from "../../shared/copy-request.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
 import { createNodeLoop, createNodeModelRuntime } from "./node-agent-loop.js";
-import { SYSTEM_PROMPT, appendPromptForMode } from "./prompt.js";
+import { appendPromptForMode, leadSystemPrompt } from "./prompt.js";
+import { runtimeUnavailableTools } from "./runtime-capabilities.js";
 import { createBrowserTools } from "./tools.js";
 import { TaskUploadLedger } from "./upload-paths.js";
 import type { ToolRpc } from "./rpc.js";
@@ -284,6 +286,9 @@ export class BrowserAgentSession {
   private productContext: ProductContext | null = null;
   private failurePolicy: RepeatedToolFailurePolicy | null = null;
   private pendingToolFailure: UserDelivery | null = null;
+  private noProgressPolicy: NoProgressPolicy | null = null;
+  /** 本会话存下的文件（artifacts 与 browser.saveFile）记在哪个任务、何时存的；目标核对只拿本任务的，且不带内容。 */
+  private savedFiles = new Map<string, { runId: string | null; chars: number; lines: number; savedAt: number }>();
   private conversationSnapshot: () => TaskProgressSnapshot | null = () => null;
   private taskResultsHost: {
     getSnapshot: () => TaskProgressSnapshot;
@@ -468,6 +473,7 @@ export class BrowserAgentSession {
    * 运行期间只发脱敏形状；执行仍用真实参数，账本照旧登记对象与结果。
    */
   observeProgramStep(step: ProgramStep): void {
+    this.noProgressPolicy?.noteProgramStep(step);
     const hidden = this.skillProgramDepth > 0;
 
     if (step.phase === 'start') this.beginTaskRead(step.id,step.name);
@@ -766,7 +772,8 @@ if(required.includes(key))candidates.set(key,attachment);
 
       if (!models) throw new Error("模型运行时不可用");
 
-      const systemPrompt = options?.systemPrompt ?? SYSTEM_PROMPT;
+      // 请不到助手的运行形态（只装扩展）里，提示词不出现分派助手的指令。
+      const systemPrompt = options?.systemPrompt ?? leadSystemPrompt({ workers: !runtimeUnavailableTools().has("spawn_worker") });
       const modeState: { value: AgentMode } = { value: options?.mode ?? "act" };
       const appendPrompt = options?.appendPrompt ?? ((base: string[]) => appendPromptForMode(modeState.value, base));
       let memoryHost: AgentLoop | null = null;
@@ -790,8 +797,13 @@ if(required.includes(key))candidates.set(key,attachment);
 
       const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure));
 
+      let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
+
+      const noProgressPolicy = new NoProgressPolicy(stop => onNoProgress(stop));
+
       const extensionFactories = [
         { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
+        { name: "sideagent-no-progress-boundary", hidden: true, factory: noProgressPolicy.extension() },
         ...(memoryRuntime ? [{ name: "sideagent-memory-context", hidden: true, factory: memoryRuntime.extension() }] : []),
         ...(productContext ? [{ name: "sideagent-product-context", hidden: true, factory: productContext.extension() }] : []),
       ];
@@ -824,12 +836,16 @@ if(required.includes(key))candidates.set(key,attachment);
         },
       } : null;
 
+      // 本会话文件区：artifacts 工具与 browser_run 的 browser.saveFile 共用这一份。
+      const artifactStore = sendOptions ? createArtifactStore(event => { resultHost?.noteSavedFile(event); callbacks.emit(event); }) : null;
+
       const customTools: ToolDefinition[] = [
           // 生产路径（conversation-runtime / fleet）会传入 customTools；此回退仍接账本，避免日后漏接线。
           ...(options?.customTools ?? createBrowserTools(rpc, undefined, undefined, undefined, {
             epoch: () => resultHost?.executionEpoch() ?? 0,
             canWrite: () => resultHost?.canWriteCurrentInput() ?? false,
             get uploadLedger() { return resultHost?.uploadLedger; },
+            files: () => resultHost?.fileStore(),
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -890,7 +906,7 @@ if(required.includes(key))candidates.set(key,attachment);
             emit: callbacks.emit,
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
-          ...(sendOptions ? [createArtifactsTool({ emit: event => callbacks.emit(event) })] : []),
+          ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
         ];
 
       let session: AgentLoop;
@@ -928,6 +944,7 @@ if(required.includes(key))candidates.set(key,attachment);
       wrapper.skillStore = options?.skillStore;
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.sendOptions = sendOptions;
+      wrapper.artifactStore = artifactStore;
       wrapper.voiceConversationId = options?.conversationId ?? null;
       deliveryEmit.current = event => wrapper.emitValidatedDelivery(event);
       wrapper.productContext = productContext;
@@ -943,6 +960,33 @@ if(required.includes(key))candidates.set(key,attachment);
           wrapper.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text,...(facts?{facts}:{})});
         }
         else callbacks.emit({kind:"error",message:text});
+      };
+
+      wrapper.noProgressPolicy = noProgressPolicy;
+      // 原地转圈（docs/evals/20261001-data-to-file.md 标准 7）：停下本轮，说清卡在哪一步、已有什么、还差什么。
+      onNoProgress = stop => {
+        // 同一步已被连续失败保护停下并说明过，不再重复。
+        if (wrapper.pendingToolFailure) return;
+        wrapper.taskResultsHost?.stopAfterFailures?.();
+        wrapper.runTrace.record("no_progress_stop", {...stop});
+        const plan = wrapper.conversationSnapshot()?.goalPlan;
+        const goalCheck = wrapper.conversationSnapshot()?.goalCheck;
+        const goals = plan?.coverage === "verified" ? plan.goals : [];
+        const runId = runIdSlot.current();
+
+        const message = noProgressMessage({toolName:stop.toolName, streak:stop.streak,
+          // 本任务存下且还在的文件：插话清零计数不影响它，删掉的不再列。
+          files:wrapper.runFiles(),
+          satisfied:goals.filter(goal => goal.status === "satisfied").map(goal => goal.description),
+          // 未核对的目标只能说「没确认」：列了「提取字幕」却没有核对手段，不等于没取到（标准 8）。
+          missing:goalCheck && goalCheck.status !== "done" ? goalCheck.remaining : null,
+          unverified:goals.filter(goal => goal.status !== "satisfied").map(goal => goal.description)});
+
+        if (leadConversationId) {
+          const facts = wrapper.deliveryFactsSnapshot();
+          wrapper.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId,kind:"finding",text:message.text,unfinished:message.unfinished.slice(0, 12),...(facts?{facts}:{})});
+        }
+        else callbacks.emit({kind:"error",message:message.text});
       };
 
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
@@ -980,6 +1024,13 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   isToolActive(name: string): boolean { return this.session?.getActiveToolNames().includes(name) ?? true; }
+
+  private artifactStore: ArtifactStore | null = null;
+
+  /** 本会话文件区；没有 artifacts 工具（worker、非交付会话）或它未启用时没有，browser.saveFile 随之不可用。 */
+  fileStore(): ArtifactStore | undefined {
+    return this.artifactStore && this.isToolActive("artifacts") ? this.artifactStore : undefined;
+  }
 
   /** A mode-hidden tool remains permitted; an explicitly unavailable tool does not. */
   isToolHiddenByMode(name: string): boolean {
@@ -1261,7 +1312,7 @@ return;}
     }
 
     const finalText = withPageContext(text, context);
-    this.failurePolicy?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
@@ -1964,7 +2015,7 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
     }
 
     if (session.isStreaming) {
-      this.failurePolicy?.reset();
+      this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
       this.experience?.feedback(text);
       this.memoryRuntime?.invalidateUserTurn("steer");
       this.runTrace.record("steer", { text, context, attachments });
@@ -2251,7 +2302,7 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
       throw new TaskActionRejected("未读补充尚未清理，原任务保持中断。请重试或重新连接。");
     }
 
-    this.failurePolicy?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.activeGoal = snapshot.goal;
@@ -2474,7 +2525,7 @@ return {kind:'model'};
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
 
     if (!session?.isStreaming) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
-    this.failurePolicy?.reset();
+    this.failurePolicy?.reset(); this.noProgressPolicy?.reset();
     // 插话是新的用户要求：这一轮要重新判断有没有真正交付，不能沿用上一轮的结论。
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
@@ -2979,9 +3030,31 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const snapshot = this.conversationSnapshot();
 
     // 动过页面，或这一轮最后在问用户（问邮箱、问要不要提交）：后者说明任务在等用户，不能当一轮结束就完了。
-    if (!snapshot?.runId || (!(snapshot.results ?? []).some(item => resultHasWriteEffect(item)) && !asksUser(this.runReplyText(messages)))) return false;
+    // 本任务存过文件也核对（只存文件、没动页面的「提取并保存」）。
+    if (!snapshot?.runId || (!(snapshot.results ?? []).some(item => resultHasWriteEffect(item)) && !asksUser(this.runReplyText(messages)) && !this.runFiles().length)) return false;
 
     return this.goalContinueRun !== snapshot.runId || this.goalContinues <= GOAL_CONTINUE_MAX;
+  }
+
+  /** 记下文件区的改动（侧栏卡片事件）：存下的记本任务、字数、行数和时间，删掉的去掉。 */
+  noteSavedFile(event: AgentUiEvent): void {
+    if (event.kind !== "artifact") return;
+
+    if (event.action === "deleted" || event.content === undefined) {
+      this.savedFiles.delete(event.filename);
+
+      return;
+    }
+
+    const content = event.content;
+    this.savedFiles.set(event.filename, { runId: this.deliveryRunId(), chars: content.length, lines: content.split("\n").length - (content.endsWith("\n") ? 1 : 0), savedAt: Date.now() });
+  }
+
+  /** 本任务存下的文件：只有名字、字数、行数、存的时间。 */
+  private runFiles(): Array<{ filename: string; chars: number; lines: number; savedAt: number }> {
+    const runId = this.deliveryRunId();
+
+    return [...this.savedFiles].filter(([, file]) => file.runId === runId).slice(-16).map(([filename, file]) => ({ filename, chars: file.chars, lines: file.lines, savedAt: file.savedAt }));
   }
 
   private goalContinueRun: string | null = null;
@@ -3024,6 +3097,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         verdict = await checkGoal(this.modelRuntime!, model, {
           goal: snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""],
           goalPage: snapshot?.goalPage ?? null,
+          files: this.runFiles(),
           lastReply,
           page: page ? { title: String(page.title ?? ""), url: String(page.url ?? ""), text: redactCredentialText(String(page.text ?? "")) } : null,
         }, AbortSignal.timeout(20_000), opencodeSessionHeaders(model, sessionId));

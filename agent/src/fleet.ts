@@ -3,6 +3,7 @@ import type {Attachment, PageContext} from '../../shared/protocol.js';
  * 并行工人：Lead 拥有图，工人各绑一个 Pi session + 标签页 + 光标 id。
  * spawn 非阻塞；工人之间经 Mailbox 传工件。工人无 spawn 工具。
  */
+import { runtimeUnavailableTools } from "./runtime-capabilities.js";
 import { randomUUID } from "node:crypto";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
@@ -721,5 +722,8 @@ export function createFleetTools(fleet: Fleet, selfId: string): ToolDefinition[]
     },
   });
 
-  return [spawnTool, listTool, stopTool, takeTool, postTool, awaitTool];
+  // 只装扩展时主会话没有可交给助手的模型运行时，请人必然失败：不注册 spawn_worker（提示词同步去掉分派段）。
+  const spawn = runtimeUnavailableTools().has("spawn_worker") ? [] : [spawnTool];
+
+  return [...spawn, listTool, stopTool, takeTool, postTool, awaitTool];
 }

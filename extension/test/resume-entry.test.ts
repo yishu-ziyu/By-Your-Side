@@ -12,7 +12,7 @@ import { projectTaskView } from '../../shared/task-view.js';
 import { TaskProgress } from '../../agent/src/task-progress.js';
 import { ConversationManager } from '../../agent/src/conversation-manager.js';
 import type {TaskActionRequest} from '../../shared/task-actions.js';
-import type {ClientMessage, ServerMessage} from '../../shared/protocol.js';
+import type {AgentUiEvent, ClientMessage, ServerMessage} from '../../shared/protocol.js';
 import { Uplink } from '../src/background/uplink.js';
 
 // ── 轻量 DOM 替身：只为组件真实走 createElement/append/replaceChildren ──
@@ -478,5 +478,84 @@ describe('A05-08 接续请求去重与视图补取（真实 ConversationManager 
       expect(h.resume).not.toHaveBeenCalled();
       expect(h.messages.filter((message) => message.type === 'agent_event').every((message) => message.type !== 'agent_event' || message.event.kind !== 'agent_start')).toBe(true);
     } finally { h.manager.dispose(); }
+  });
+});
+
+/**
+ * 标准 8（docs/evals/20261001-data-to-file.md）：停下或结束时「已做 / 还差」与实际一致。失败方式：
+ * G1 用户在文件存好后按停止，侧栏写「还没做：提取…」（计划目标没人核对过，却被当成没做）；
+ * G2 目标核对说「还差：保存字幕为文件」，续做开始后这句结论丢了，停下时又回到计划目标；
+ * G3 核对之后又存了新文件，旧的「还差」仍被当成现状；
+ * G4 核对判「做完了」，侧栏仍按没核对的计划目标写「没做成」；
+ * G5 没核对过时，模型自己交代的未完成项被计划目标盖掉。
+ * G6 用户自己插话改要求后重新开始，旧的「还差」仍被保留（只有宿主催的续做才保留）。
+ */
+describe('标准 8：停下或结束时的「已做 / 还差」', () => {
+  const event = (body: AgentUiEvent): ServerMessage => ({ type: 'agent_event', event: body });
+
+  function subtitleTask() {
+    const progress = new TaskProgress('default', () => 1000);
+    progress.request('提取字幕并且保存', PAGE);
+    progress.observe(event({ kind: 'agent_start' }));
+    progress.goals.install(progress.snapshot().goalPlan!.revision, [
+      { id: 'extract-subtitle', kind: 'condition', description: '提取当前 B 站视频的字幕文本', requirements: ['requirement-1'], criterion: '取到完整字幕' },
+      { id: 'save-subtitle', kind: 'condition', description: '把字幕保存成文件交付给用户', requirements: ['requirement-1'], criterion: '字幕全文写入文件' },
+    ], 1);
+
+    return progress;
+  }
+
+  const lineOf = (progress: TaskProgress) => buildResumeSummary(projectTaskView(progress.snapshot()));
+
+  it('G1 文件存好后按停止：没核对过的计划目标写「还没确认完成」，不写「还没做」', () => {
+    const progress = subtitleTask();
+    progress.observe(event({ kind: 'artifact', action: 'saved', filename: 'subs.srt', content: '1\n00:00:00,120 --> 00:00:02,400\n啊\n' }));
+    progress.abort();
+    const summary = lineOf(progress);
+    expect(summary.line).toBe('已停止，还没确认完成：提取当前 B 站视频的字幕文本 等 2 件，不会自动继续');
+    expect(summary.line).not.toContain('还没做');
+  });
+
+  it('G2 续做时保留最近一次核对的「还差」，停下时以它为准', () => {
+    const progress = subtitleTask();
+    progress.observe(event({ kind: 'goal_check', status: 'continue', remaining: '保存字幕为文件' }));
+    progress.observe(event({ kind: 'agent_start' }));
+    progress.abort();
+    expect(lineOf(progress).line).toBe('已停止，还没做：保存字幕为文件，不会自动继续');
+  });
+
+  it('G3 核对之后又存了文件：旧的「还差」作废，回到「还没确认完成」', () => {
+    const progress = subtitleTask();
+    progress.observe(event({ kind: 'goal_check', status: 'continue', remaining: '保存字幕为文件' }));
+    progress.observe(event({ kind: 'agent_start' }));
+    progress.observe(event({ kind: 'artifact', action: 'saved', filename: 'subs.srt', content: 'x\n' }));
+    progress.abort();
+    expect(lineOf(progress).line).toBe('已停止，还没确认完成：提取当前 B 站视频的字幕文本 等 2 件，不会自动继续');
+  });
+
+  it('G4 核对判做完：没核对的计划目标不再算剩余，卡片不出现', () => {
+    const progress = subtitleTask();
+    progress.observe(event({ kind: 'goal_check', status: 'done' }));
+    progress.observe(event({ kind: 'agent_end' }));
+    const summary = lineOf(progress);
+    expect(summary.remaining).toEqual([]);
+    expect(summary.visible).toBe(false);
+    expect(summary.line).not.toMatch(/没做成|还没做|还没确认/);
+  });
+
+  it('G6 用户插话改要求后的重新开始不保留旧的「还差」', () => {
+    const progress = subtitleTask();
+    progress.observe(event({ kind: 'goal_check', status: 'continue', remaining: '保存字幕为文件' }));
+    progress.observe(event({ kind: 'agent_start' }));
+    progress.request('改成存 txt', PAGE);
+    progress.observe(event({ kind: 'agent_start' }));
+    progress.abort();
+    // 新要求让目标方案回到未列计划（占位不算剩余）；旧的「还差」不再出现。
+    expect(lineOf(progress).line).toBe('已停止');
+  });
+
+  it('G5 没核对过：模型自己交代的未完成项优先于计划目标', () => {
+    const view = { ...projectTaskView(subtitleTask().snapshot()), state: 'aborted' as const, latestDelivery: { kind: 'finding' as const, unfinished: ['把字幕保存成文件'] } };
+    expect(buildResumeSummary(view).line).toBe('已停止，还没做：把字幕保存成文件，不会自动继续');
   });
 });

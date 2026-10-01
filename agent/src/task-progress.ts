@@ -133,6 +133,8 @@ export class TaskProgress {
   private goalPage: { title: string; url: string } | null = null;
   /** 最近一次目标核对；新任务开始、助手重新开跑时清掉，等这一轮结束的核对。 */
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
+  /** 核对刚判「接着做」、宿主马上发起续做：下一次 agent_start 是它，保留核对的「还差」；用户的话或别的开始不保留。 */
+  private hostContinuation = false;
   private noteRunSource(url: string): void {
     if (!/^https?:\/\//.test(url) || this.runSources.some((source) => source.url === url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
     this.runSources.push({ url });
@@ -154,6 +156,8 @@ export class TaskProgress {
   }
   /** Conversational turns are not new task requirements. Call only for actual task input. */
   recordRequirement(text:string,context?:PageContext,attachments?:Attachment[]):()=>void {
+    // 用户说了新的话：接下来的开始不再是宿主催的续做。
+    this.hostContinuation=false;
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
     const clean=String(sanitizeTrace(text)).trim();
     const requirements=clean&&prior.requirements.at(-1)!==clean?[...prior.requirements,clean]:[...prior.requirements];
@@ -337,13 +341,19 @@ return;}
       this.members.set(member, "running");
 
       // A (re)start means any earlier capture of this run was not final.
+      // 宿主自己催的续做例外：核对说的「还差」在下一次核对前仍是最新判断，停下时要用它（标准 8）。
       if (lead) {
         this.turnText = "";
         this.latestResult = null;
-        this.goalCheck = null;
+
+        if (!this.hostContinuation) this.goalCheck = null;
+        this.hostContinuation = false;
       }
     } else if (e.kind === "goal_check") {
-      if (lead) this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() };
+      if (lead) { this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() }; this.hostContinuation = e.status === "continue"; }
+    } else if (e.kind === "artifact") {
+      // 核对之后又存了文件：旧的「还差」可能已经做到，不再当现状。
+      if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
         this.pushTurn("assistant", e.delivery.text);
@@ -351,6 +361,8 @@ return;}
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
       }
     } else if (e.kind === "agent_end") {
+      if (lead) this.hostContinuation = false;
+
       if (this.members.get(member) !== "paused" && this.members.get(member) !== "error") end("idle");
 
       if (lead) {
