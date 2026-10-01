@@ -20,6 +20,7 @@
 | 真入口与验收环境 | [验收入口](testing/acceptance.md) · [环境会改变被测状态](knowledge/patterns/extension-harness-changes-observed-state.md) |
 | 侧栏与日常接续 | [09-29 验收](evals/20260929-sidebar-interaction.md)：隔离侧栏通过后仍核对日常原会话；日常出现的异常不据样式或重启直接归因 |
 | MiMo 读文档后恢复被锁 | [09-30 首次试用](evals/20260930-first-user-mimo.md)：未知 fetch 是侧栏事实，读取被误归类与执行锁原因只是模型陈述；先查实际诊断，不据回答直接改授权或绕过未知保护 |
+| 跑分与评测（10-02） | [测量规则](../eval/README.md)：同一把尺子、改规则有门槛、站点不可用单列、只认超出误差（每档约 30 题时约正负 14 点）、保留集只用一次；已知问题修完前不跑；判分固定 Codex gpt-6-sol（ChatGPT 账号不支持 gpt-6.1-sol）；复核页 `eval/harness/review.mjs`，看板 `npm run dashboard` |
 | 修改后如何收尾 | [文档维护](development/documentation.md) · [经验索引](knowledge/index.md) |
 | 0 号用户逐条评语 | [逐条记录](evals/20260930-zero-user-incremental-review.md)：用户要求一次一条；正确结果与成功体验分开保存，不把对手动速度与成本的感受冒充实测数据 |
 | 用户面前的文字从哪来 | [界面问题 10 项](evals/20260926-ux-fixes.md)：内部文字只在 `shared/user-facing.ts` 翻译；「另开会话接手即收起旧确认」是本轮执行者的取舍，待用户认可 |
