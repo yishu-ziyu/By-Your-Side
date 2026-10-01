@@ -24,7 +24,10 @@
     "eval/protected/REVIEW_EVIDENCE.md": "锁定评测原件，不随候选实现迁移",
     "eval/README.md": "浏览器任务评测包的入口，随脚本和结果一起放",
     "eval/harness/README.md": "评测脚本的用法说明，随脚本放",
-    "eval/research/competitors.md": "评测任务的竞品调研来源，随任务集放"
+    "eval/research/competitors.md": "评测任务的竞品调研来源，随任务集放",
+    "eval/tasks/tasks_changes.md": "任务规则 v1→v2 的修改记录，随任务集放",
+    "eval/splits/README.md": "train/held-out 切分规则，随切分文件放",
+    "eval/judge_validation/summary.md": "judge v3 与人工结论的对照，随判分脚本结果放"
   },
   "syncRules": [
     {"name": "文档与开发工具", "sources": ["^scripts/maintenance/", "^scripts/acceptance/.*documentation", "^scripts/acceptance/wiki-", "^\\.kimi-code/", "^\\.github/", "^package(-lock)?\\.json$"], "documents": ["docs/development/documentation.md", "docs/development/checks.md"]},

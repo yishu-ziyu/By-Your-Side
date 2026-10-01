@@ -55,7 +55,7 @@ cheap = min([m for m in PAIDM if H[m]['cost_per_pass_usd']], key=lambda m: H[m][
 fast = min(PAIDM, key=lambda m: H[m]['median_total_s'])
 fig.suptitle(f'{nm(best)} 通过率最高；{nm(fast)} 最快；{nm(cheap)} 每次通过最便宜', x=0.02, ha='left', fontsize=17, color=INK, y=0.985)
 fig.text(0.02, 0.905, f'{n_common} 道三个付费模型均有有效结果的同题对比；浅灰 = 免费或变体模型（nothink 仅跑 58 题，非同题）；space-bunny-free 免费至 10/05', fontsize=11, color=GRAY, ha='left')
-fig.text(0.02, 0.02, f'FIG 1  ·  run {R["run"]}  ·  成本按 OpenCode Go 单价由轨迹 token 计算  ·  自动评审（Codex + 最终截图）', fontsize=9.5, color=GRAY, ha='left')
+fig.text(0.02, 0.02, f'FIG 1  ·  run {R["run"]}  ·  成本按 OpenCode Go 单价由轨迹 token 计算  ·  自动评审 judge v3（Codex：截图 + 页面文本 + 工具记录）', fontsize=9.5, color=GRAY, ha='left')
 fig.subplots_adjust(left=0.13, right=0.98, top=0.80, bottom=0.10, wspace=0.12)
 fig.savefig(f'{RUN}/chartA.png', dpi=160); plt.close(fig)
 

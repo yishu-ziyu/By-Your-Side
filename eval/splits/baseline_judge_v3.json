@@ -1,0 +1,257 @@
+{
+ "mimo-v2.6-flash": {
+  "all141_old": {
+   "n": 141,
+   "passed": 84,
+   "undet": 0,
+   "rate": 0.596,
+   "rate_decided": 0.596
+  },
+  "all141_new": {
+   "n": 141,
+   "passed": 88,
+   "undet": 4,
+   "rate": 0.624,
+   "rate_decided": 0.642
+  },
+  "elig113_old": {
+   "n": 113,
+   "passed": 68,
+   "undet": 0,
+   "rate": 0.602,
+   "rate_decided": 0.602
+  },
+  "elig113_new": {
+   "n": 113,
+   "passed": 71,
+   "undet": 3,
+   "rate": 0.628,
+   "rate_decided": 0.645
+  },
+  "train_old": {
+   "n": 79,
+   "passed": 50,
+   "undet": 0,
+   "rate": 0.633,
+   "rate_decided": 0.633
+  },
+  "train_new": {
+   "n": 79,
+   "passed": 53,
+   "undet": 2,
+   "rate": 0.671,
+   "rate_decided": 0.688
+  },
+  "heldout_old": {
+   "n": 34,
+   "passed": 18,
+   "undet": 0,
+   "rate": 0.529,
+   "rate_decided": 0.529
+  },
+  "heldout_new": {
+   "n": 34,
+   "passed": 18,
+   "undet": 1,
+   "rate": 0.529,
+   "rate_decided": 0.545
+  },
+  "flips_elig": {
+   "fail->undeterminable": 3,
+   "pass->fail": 3,
+   "fail->pass": 6
+  }
+ },
+ "deepseek-v4-flash": {
+  "all141_old": {
+   "n": 141,
+   "passed": 92,
+   "undet": 0,
+   "rate": 0.652,
+   "rate_decided": 0.652
+  },
+  "all141_new": {
+   "n": 141,
+   "passed": 98,
+   "undet": 9,
+   "rate": 0.695,
+   "rate_decided": 0.742
+  },
+  "elig113_old": {
+   "n": 113,
+   "passed": 74,
+   "undet": 0,
+   "rate": 0.655,
+   "rate_decided": 0.655
+  },
+  "elig113_new": {
+   "n": 113,
+   "passed": 79,
+   "undet": 7,
+   "rate": 0.699,
+   "rate_decided": 0.745
+  },
+  "train_old": {
+   "n": 79,
+   "passed": 54,
+   "undet": 0,
+   "rate": 0.684,
+   "rate_decided": 0.684
+  },
+  "train_new": {
+   "n": 79,
+   "passed": 58,
+   "undet": 4,
+   "rate": 0.734,
+   "rate_decided": 0.773
+  },
+  "heldout_old": {
+   "n": 34,
+   "passed": 20,
+   "undet": 0,
+   "rate": 0.588,
+   "rate_decided": 0.588
+  },
+  "heldout_new": {
+   "n": 34,
+   "passed": 21,
+   "undet": 3,
+   "rate": 0.618,
+   "rate_decided": 0.677
+  },
+  "flips_elig": {
+   "pass->fail": 3,
+   "pass->undeterminable": 3,
+   "fail->undeterminable": 4,
+   "fail->pass": 11
+  }
+ },
+ "deepseek-v4.1-flash": {
+  "all141_old": {
+   "n": 141,
+   "passed": 98,
+   "undet": 0,
+   "rate": 0.695,
+   "rate_decided": 0.695
+  },
+  "all141_new": {
+   "n": 141,
+   "passed": 108,
+   "undet": 3,
+   "rate": 0.766,
+   "rate_decided": 0.783
+  },
+  "elig113_old": {
+   "n": 113,
+   "passed": 79,
+   "undet": 0,
+   "rate": 0.699,
+   "rate_decided": 0.699
+  },
+  "elig113_new": {
+   "n": 113,
+   "passed": 87,
+   "undet": 3,
+   "rate": 0.77,
+   "rate_decided": 0.791
+  },
+  "train_old": {
+   "n": 79,
+   "passed": 55,
+   "undet": 0,
+   "rate": 0.696,
+   "rate_decided": 0.696
+  },
+  "train_new": {
+   "n": 79,
+   "passed": 62,
+   "undet": 3,
+   "rate": 0.785,
+   "rate_decided": 0.816
+  },
+  "heldout_old": {
+   "n": 34,
+   "passed": 24,
+   "undet": 0,
+   "rate": 0.706,
+   "rate_decided": 0.706
+  },
+  "heldout_new": {
+   "n": 34,
+   "passed": 25,
+   "undet": 0,
+   "rate": 0.735,
+   "rate_decided": 0.735
+  },
+  "flips_elig": {
+   "fail->undeterminable": 2,
+   "fail->pass": 13,
+   "pass->fail": 4,
+   "pass->undeterminable": 1
+  }
+ },
+ "space-bunny-free": {
+  "all141_old": {
+   "n": 141,
+   "passed": 86,
+   "undet": 0,
+   "rate": 0.61,
+   "rate_decided": 0.61
+  },
+  "all141_new": {
+   "n": 141,
+   "passed": 94,
+   "undet": 4,
+   "rate": 0.667,
+   "rate_decided": 0.686
+  },
+  "elig113_old": {
+   "n": 113,
+   "passed": 69,
+   "undet": 0,
+   "rate": 0.611,
+   "rate_decided": 0.611
+  },
+  "elig113_new": {
+   "n": 113,
+   "passed": 77,
+   "undet": 3,
+   "rate": 0.681,
+   "rate_decided": 0.7
+  },
+  "train_old": {
+   "n": 79,
+   "passed": 50,
+   "undet": 0,
+   "rate": 0.633,
+   "rate_decided": 0.633
+  },
+  "train_new": {
+   "n": 79,
+   "passed": 56,
+   "undet": 1,
+   "rate": 0.709,
+   "rate_decided": 0.718
+  },
+  "heldout_old": {
+   "n": 34,
+   "passed": 19,
+   "undet": 0,
+   "rate": 0.559,
+   "rate_decided": 0.559
+  },
+  "heldout_new": {
+   "n": 34,
+   "passed": 21,
+   "undet": 2,
+   "rate": 0.618,
+   "rate_decided": 0.656
+  },
+  "flips_elig": {
+   "pass->fail": 3,
+   "fail->undeterminable": 2,
+   "fail->pass": 12,
+   "pass->undeterminable": 1
+  }
+ }
+}
