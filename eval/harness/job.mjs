@@ -382,6 +382,10 @@ export async function runJob({ task, model, outDir, workRoot, displayBase = 40, 
       const tabs = (await targets()).filter((x) => x.type === "page" && !x.url.startsWith("chrome-extension://"));
       rec.final_page = { url: (await evalIn(pageSid, "location.href").catch(() => null)) ?? page.url, title: await evalIn(pageSid, "document.title").catch(() => null), tabs: tabs.map((x) => ({ url: x.url, title: x.title })) };
       rec.page_changed = rec.final_page.url !== task.site_url;
+      // final page text for the judge: visible text + form field values (bounded; a native dialog can block this)
+      rec.final_page_text = await Promise.race([
+        evalIn(pageSid, `(()=>{const f=[...document.querySelectorAll('input,select,textarea')].filter(e=>e.type!=='hidden'&&e.type!=='password').slice(0,80).map(e=>(e.name||e.id||e.type)+'='+(e.type==='checkbox'||e.type==='radio'?e.checked:(e.tagName==='SELECT'?(e.selectedOptions[0]?.text??''):e.value))).join('; ');return (document.body?.innerText??'').slice(0,30000)+(f?'\\n[form fields] '+f:'')})()`),
+        sleep(5000).then(() => null)]).catch(() => null);
     } catch (e) { rec.errors.push(`final page: ${e.message}`); }
 
     // screenshots: whole X display (page + side panel), and panel alone

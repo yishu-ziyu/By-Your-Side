@@ -8,7 +8,10 @@ Resume missing/invalid results of a run: node eval/harness/run.mjs --resume --ru
 Flags: --models a,b,c (default: opencode-go/mimo-v2.6-flash, deepseek-v4-flash, deepseek-v4.1-flash)
        --tasks ids (default: all 141) --concurrency N (default min(6, jobs)) --cap-sec 240
        --no-judge  --keep-work  --dry-run (set up Chrome/panel/companion only, no prompt)
-Judge the unjudged results of a run, then rebuild report + charts: eval/harness/finalize.sh eval/runs/<run-id>
+Judge results whose verdict is missing or stale, then rebuild report + charts: eval/harness/finalize.sh eval/runs/<run-id>
+  (judge v3: screenshots + final page text + tool reads/log + answer; verdict pass|fail|undeterminable;
+   each verdict stores judge_version + result_sha, so a judge bump or a rerun result is re-judged)
+Old-vs-new judge chart: python3 eval/harness/chart_rejudge.py [out.png]  (reads eval/splits/baseline_judge_v3.json)
 Re-group failure reasons (codex):   python3 eval/harness/cluster.py eval/runs/<run-id>  (then finalize.sh again)
 Model sanity check:     cp eval/harness/model-check.mts agent/.mc.mts && node node_modules/tsx/dist/cli.mjs agent/.mc.mts opencode-go/deepseek-v4-flash; rm agent/.mc.mts
 
