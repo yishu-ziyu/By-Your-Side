@@ -46,7 +46,7 @@ return await browser.saveFile({ filename: "subtitles.txt", content: value.join("
 
 已经派发的动作按原机制排空，不宣称撤回。程序不会代替用户点击确认。页面脚本仍受既有用户授权与确认要求约束。
 
-有页面操作结果未知时，闸门按每个子调用判定，不整段拒绝程序：读页、不带 body 的 GET `fetch` 和 `saveFile` 照常，走到改页面的那一步才停（规则见[协议](protocol.md#fetch-读取与未知结果边界)）。`waitForLoad`、`pageInfo` 读文档状态用的是宿主写死的只读探测（`HOST_PAGE_PROBES`，按代码全文匹配），不算重做页面脚本；`waitFor` 本来就用只读的 `read_element`；`scrollToBottomUntil` 的 `condition` 是模型代码，照旧受阻（[验收](evals/20261001-data-to-file.md)）。
+有页面操作结果未知时，闸门按每个子调用判定，不整段拒绝程序：读页、换页、不带 body 的 GET `fetch`、处理原生弹窗和 `saveFile` 照常，走到可能重复造成后果的那一步（点击、填写、页面脚本、POST 等）才停（规则见[协议](unknown-results.md)）。`waitForLoad`、`pageInfo` 读文档状态用的是宿主写死的只读探测（`HOST_PAGE_PROBES`，按代码全文匹配），不算重做页面脚本；`waitFor` 本来就用只读的 `read_element`；`scrollToBottomUntil` 的 `condition` 是模型代码，照旧受阻（[验收](evals/20261001-data-to-file.md)）。
 
 ## 执行预算与观察
 

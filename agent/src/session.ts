@@ -14,7 +14,7 @@ import type {TranslationDisplayState} from '../../shared/page-translation.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, parseTranslations, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
-import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, type ConfirmedRecoveryRecord} from "./task-results.js";
+import {createConfirmBlockedWriteTool, createTaskResultsTool, createVerifyUnknownResultTool, unconfirmedResultMessage, type ConfirmedRecoveryRecord} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultItem, type TaskResultRegistration} from "../../shared/task-results.js";
 import {isTaskProgressSnapshot} from "../../shared/voice.js";
 import {ProductContext} from "./product-context.js";
@@ -880,6 +880,13 @@ if(required.includes(key))candidates.set(key,attachment);
  return resultHost.taskResultsHost.verify(input); },
             persist: () => { if (resultHost?.taskResultsHost) resultHost.persistTaskResults?.(resultHost.taskResultsHost.getSnapshot()); },
             emit: callbacks.emit,
+            // 同一项核查过一次又要再查：宿主说明查不清并结束本轮（docs/evals/20261001-unknown-lock-scope.md 标准 3）。
+            stopUnconfirmed: item => {
+              if (!resultHost || resultHost.pendingToolFailure || !leadConversationId) return;
+              resultHost.runTrace.record("unconfirmed_result_stop", {id: item.id, tool: item.tool});
+              const facts = resultHost.deliveryFactsSnapshot();
+              resultHost.pendingToolFailure = createUserDelivery({conversationId:leadConversationId,runId:runIdSlot.current(),kind:"finding",text:unconfirmedResultMessage(item),unfinished:[item.description.slice(0, 200)],...(facts?{facts}:{})});
+            },
           }), createConfirmBlockedWriteTool({
             getSnapshot: () => { if (!resultHost?.taskResultsHost) throw new Error("任务结果尚未接线");
 

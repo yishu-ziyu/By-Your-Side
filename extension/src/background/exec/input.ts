@@ -21,6 +21,7 @@ import { HeldClicks } from "../../shared/held-clicks.js";
 import { getMarkMotion } from "../mode.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, collectEffect } from "./effect.js";
+import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import type { EffectReport } from "../../../../shared/effect.js";
 import type { ToolExecutionFact } from "../../../../shared/protocol.js";
@@ -130,6 +131,11 @@ export function notExecuted(error: unknown): Error {
   return err;
 }
 
+/** 页面里核对后拒绝填写（不可填、没有这个选项）：页面一点没动，确定没执行。 */
+class FillRefused extends Error {
+  readonly executionFact = "not_executed" as const;
+}
+
 /** debugger 被占用/分离一类的失败：只有这类失败可以改走 domops 页面内路径。 */
 function isDebuggerUnavailable(error: unknown): boolean {
   return /占用|DevTools|debugger|detach/i.test(oneLine(error));
@@ -232,24 +238,29 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
 async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string): Promise<void> {
-  await callOnBackendNode<unknown>(
+  // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
+  const outcome = await callOnBackendNode<{ refused: string } | { filled: true }>(
     tabId,
     backendNodeId,
     `function(v) {
       const el = this;
-      el.focus();
       const tag = el.tagName.toLowerCase();
+      if (tag !== "select" && tag !== "input" && tag !== "textarea" && !el.isContentEditable) {
+        return { refused: "元素不可填充（非 input/textarea/select/contenteditable），操作未执行" };
+      }
       if (tag === "select") {
         const wanted = String(v).trim();
         const opts = [...el.options].map((o) => ({ text: o.text, value: o.value }));
         const exact = opts.find((o) => o.text.trim() === wanted || o.value === wanted);
         const match = exact ?? opts.find((o) => o.text.includes(wanted) || (wanted && wanted.includes(o.text.trim())));
-        if (!match || !match.text.trim()) throw new Error("下拉框没有这个选项");
+        if (!match || !match.text.trim()) return { refused: "下拉框没有这个选项，操作未执行" };
+        el.focus();
         el.value = match.value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
+        return { filled: true };
       }
+      el.focus();
       if (tag === "input" || tag === "textarea") {
         const proto = tag === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
         const desc = Object.getOwnPropertyDescriptor(proto, "value");
@@ -257,18 +268,18 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
         else el.value = v;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
+        return { filled: true };
       }
-      if (el.isContentEditable) {
-        (${replaceEditableText.toString()})(el, v);
-        return true;
-      }
-      throw new Error("元素不可填充（非 input/textarea/select/contenteditable）");
+      (${replaceEditableText.toString()})(el, v);
+      return { filled: true };
     }`,
     [value],
     undefined,
     expectedDocumentId,
   );
+
+  // 旧行为不看返回值：拿不到回值（undefined）时照旧当作已填写，只认明确的拒绝。
+  if (outcome && "refused" in outcome) throw new FillRefused(outcome.refused);
 }
 
 async function ensureDomOps(tabId: number): Promise<void> {
@@ -510,7 +521,7 @@ type KeyEventParams = {
   text?: string;
 };
 
-type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string } } | { clicked: false; held: true };
+type ClickResult = { clicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog } | { clicked: false; held: true };
 
 /** held/arm 台账抽成纯数据层（shared/held-clicks.ts），决策逻辑可单测。 */
 const heldClicks = new HeldClicks<HoldParams>(LEAD_SESSION_ID);
@@ -1019,8 +1030,22 @@ function isPrePressTargetError(e: unknown): boolean {
   return /覆盖|已失效|可命中|不可见|不稳定|未找到目标|视口|坐标|替换/.test(oneLine(e));
 }
 
-/** 视觉等待后再次确认同一目标仍存在且可命中；失败则停，不点原坐标处的其他对象。 */
+/**
+ * 视觉等待后再次确认同一目标仍存在且可命中；失败则停，不点原坐标处的其他对象。
+ * 确认阶段还没向页面派发任何输入：任何失败（被覆盖、已失效、找不到）都是「没执行」。
+ */
 async function confirmPointerTarget(
+  tabId: number,
+  target: string,
+): Promise<{ point: [number, number]; targetRect: DomRect }> {
+  try {
+    return await checkPointerTarget(tabId, target);
+  } catch (error) {
+    throw notExecuted(error);
+  }
+}
+
+async function checkPointerTarget(
   tabId: number,
   target: string,
 ): Promise<{ point: [number, number]; targetRect: DomRect }> {
@@ -1337,30 +1362,53 @@ export async function click(
       }
 
       const effectToken = await effectPending;
+      // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（#23 等满 30 秒）。
+      // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
+      const dialogWatch = watchDialog(tabId);
 
-      for (let n = 1; n <= clickCount; n++) {
-        await sendCommand(tabId, "Input.dispatchMouseEvent", {
-          type: "mousePressed",
-          x,
-          y,
-          button,
-          buttons: pressedButtonsMask(button) | buttonsMaskFor(sessionId),
-          clickCount: n,
-          modifiers,
-        });
-        cdpMousePressed = true;
-        await sendCommand(tabId, "Input.dispatchMouseEvent", {
-          type: "mouseReleased",
-          x,
-          y,
-          button,
-          buttons: buttonsMaskFor(sessionId),
-          clickCount: n,
-          modifiers,
-        });
+      const pressing = (async () => {
+        for (let n = 1; n <= clickCount; n++) {
+          await sendCommand(tabId, "Input.dispatchMouseEvent", {
+            type: "mousePressed",
+            x,
+            y,
+            button,
+            buttons: pressedButtonsMask(button) | buttonsMaskFor(sessionId),
+            clickCount: n,
+            modifiers,
+          });
+          cdpMousePressed = true;
+          await sendCommand(tabId, "Input.dispatchMouseEvent", {
+            type: "mouseReleased",
+            x,
+            y,
+            button,
+            buttons: buttonsMaskFor(sessionId),
+            clickCount: n,
+            modifiers,
+          });
+        }
+
+        return await collectEffect(tabId, effectToken);
+      })();
+
+      try {
+        const settled = await Promise.race([
+          pressing.then(report => ({ effect: report })),
+          dialogWatch.opened.then(opened => ({ dialog: opened })),
+        ]);
+
+        if ("dialog" in settled) {
+          pressing.catch(() => {});
+          void endCursorAction(tabId, cid, actionId, "done", [x, y]);
+
+          return { clicked: true, dialog: settled.dialog };
+        }
+
+        effect = settled.effect;
+      } finally {
+        dialogWatch.stop();
       }
-
-      effect = await collectEffect(tabId, effectToken);
     } catch (e) {
       if (cdpMousePressed) {
         throw new Error(
@@ -1824,14 +1872,18 @@ export async function fill(
         return { filled: true };
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
-          throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
+          const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
+
+          // 页面里核对不过（不可填、没这个选项）时什么都没写：保留「没执行」，不记成结果不确定。
+          throw e instanceof FillRefused ? new FillRefused(reason) : new Error(reason);
         }
         // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
       }
     }
 
     await ensureDomOps(tabId);
-    await callDom(
+
+    const filled = await callDom(
       tabId,
       (t: string, v: string) => {
         const dom = window.__sideagent?.dom;
@@ -1843,6 +1895,8 @@ export async function fill(
       [params.target, params.value],
       params.expectedDocumentId,
     );
+
+    if (filled && "refused" in filled) throw new FillRefused(filled.refused);
 
     if (targetRect) {
       await recordCursorTrail(
@@ -1858,7 +1912,7 @@ export async function fill(
 
     return { filled: true };
   } catch (error) {
-    await endCursorAction(tabId, cid, actionId, "unknown");
+    await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;
   }
 }

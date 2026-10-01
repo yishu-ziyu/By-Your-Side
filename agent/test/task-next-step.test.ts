@@ -131,8 +131,9 @@ describe('P0.3 next-step decision from production progress',()=>{
     h.read(8,false);expect(h.next().delivery).toBe('partial');
     h.read(7,false);expect(h.next().delivery).toBe('report');
   });
-  it.each(['js','fetch'])('keeps an uncertain %s effect in the safety ledger without a pre-registered obligation',(name)=>{
-    const h=task();h.step(name,{},true,'unknown');h.read();
+  // 10-01 用户裁决：GET fetch 出错或超时只是取数失败，不再上锁；POST 仍按可能已提交保护（docs/evals/20261001-unknown-lock-scope.md）。
+  it.each([['js',{}],['fetch',{method:'POST',body:'{}'}]] as const)('keeps an uncertain %s effect in the safety ledger without a pre-registered obligation',(name,params)=>{
+    const h=task();h.step(name,{...params},true,'unknown');h.read();
     expect(h.next()).toMatchObject({action:'ask_user',allowWrites:false,delivery:'partial'});
     const restored=new TaskProgress('default');restored.restoreResults(h.progress.snapshot());restored.observe({type:'agent_event',event:{kind:'agent_start'}});
     // SAFETY: 只调用 observeProgramStep 等不依赖其余构造参数的方法，缺省参数不会被读取。
@@ -156,38 +157,52 @@ describe('P0.3 next-step decision from production progress',()=>{
     const h=task();h.step('fetch',{url:'https://fixture.test/save',method:'POST',body:'{}'},true,'executed');
     expect(h.next()).toMatchObject({action:'ask_user',allowWrites:false});
   });
-  it('allows reading presentation after an unknown fetch without releasing writes or takeover',()=>{
-    const h=task();h.step('fetch',{url:'https://fixture.test'},true,'unknown');
+  it('treats an uncertain GET fetch as a failed read, not a lock',()=>{
+    const h=task();h.step('fetch',{url:'https://export.arxiv.org/api/query'},true,'unknown');
+    expect(h.progress.snapshot().results?.some(item=>item.status==='unknown')).toBe(false);
+    expect(h.next()).toMatchObject({allowWrites:true});
+  });
+  it('allows reading presentation after an unknown POST without releasing writes or takeover',()=>{
+    const h=task();h.step('fetch',{url:'https://fixture.test/save',method:'POST',body:'{}'},true,'unknown');
     // SAFETY: 只调用 observeProgramStep 等不依赖其余构造参数的方法，缺省参数不会被读取。
     const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
     wrapper.bindConversationContext(()=>h.progress.snapshot());
 
     for(const name of ['scroll','mark','clear_marks'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#timeout'})).not.toThrow();
 
-    for(const name of ['fetch','click','fill','js','navigate','switch_tab'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#other'})).toThrow();
+    // 10-01 用户裁决：打开/切换页面不会重复造成后果，照常；能重复提交的仍拦。
+    for(const name of ['navigate','switch_tab'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#other'})).not.toThrow();
+
+    for(const name of ['click','fill','js'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#other'})).toThrow();
+    expect(()=>wrapper.assertTaskResultExecution('fetch',{url:'https://fixture.test/save',method:'POST',body:'{}'})).toThrow();
     expect(h.progress.snapshot().results?.[0]?.status).toBe('unknown');
     h.progress.observe({type:'status',state:'user'});
 
-    for(const name of ['scroll','mark','clear_marks'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#timeout'})).toThrow();
+    for(const name of ['scroll','mark','clear_marks','navigate'])expect(()=>wrapper.assertTaskResultExecution(name,{target:'#timeout'})).toThrow();
   });
-  it('preserves cancelled, restart and unknown-presentation replay boundaries',()=>{
-    const h=task();h.step('mark',{target:'#timeout'},true,'unknown');
+  it('preserves cancelled, restart and unknown-write replay boundaries',()=>{
+    // 原用例用圈画未知；圈画重来不会重复造成后果（10-01 用户裁决），改用点击未知守住「不自动重做」。
+    const h=task();h.step('click',{target:'#timeout'},true,'unknown');
     // SAFETY: 只调用 observeProgramStep 等不依赖其余构造参数的方法，缺省参数不会被读取。
     const wrapper=new (BrowserAgentSession as any)(null,null,{emit:vi.fn(),setStatus:vi.fn()},null,null) as BrowserAgentSession;
     wrapper.bindConversationContext(()=>h.progress.snapshot());
-    expect(()=>wrapper.assertTaskResultExecution('mark',{target:'#timeout'})).toThrow();
-    expect(()=>wrapper.assertWorkerWriteAllowed('mark',{target:'#timeout'})).toThrow();
+    expect(()=>wrapper.assertTaskResultExecution('click',{target:'#timeout'})).toThrow();
+    expect(()=>wrapper.assertWorkerWriteAllowed('click',{target:'#timeout'})).toThrow();
     h.progress.abort();
     expect(()=>wrapper.assertTaskResultExecution('scroll',{})).toThrow();
-    const saved=task();saved.step('fetch',{},true,'unknown');
+    const saved=task();saved.step('fetch',{method:'POST',body:'{}'},true,'unknown');
     const restored=new TaskProgress('default');restored.restoreResults(saved.progress.snapshot());
     wrapper.bindConversationContext(()=>restored.snapshot());
     expect(()=>wrapper.assertTaskResultExecution('scroll',{})).toThrow();
   });
-  it('keeps a non-targeted tabs mutation uncertain across persistence',()=>{
+  // 10-01 用户裁决：打开标签页重来不会重复造成后果，中断后不上锁；中断时在途的点击仍上锁。
+  it('keeps an interrupted click uncertain across persistence but not an interrupted tab opening',()=>{
     const h=task();h.emit({kind:'tool_start',toolCallId:'open',name:'tabs',params:{action:'open'}});
     const restored=new TaskProgress('default');restored.restoreResults(h.progress.snapshot());restored.observe({type:'agent_event',event:{kind:'agent_start'}});
-    expect(restored.snapshot().nextStep).toMatchObject({action:'ask_user',allowWrites:false});
+    expect(restored.snapshot().nextStep).toMatchObject({allowWrites:true});
+    const clicked=task();clicked.emit({kind:'tool_start',toolCallId:'pay',name:'click',params:{target:'#pay'}});
+    const restoredClick=new TaskProgress('default');restoredClick.restoreResults(clicked.progress.snapshot());restoredClick.observe({type:'agent_event',event:{kind:'agent_start'}});
+    expect(restoredClick.snapshot().nextStep).toMatchObject({action:'ask_user',allowWrites:false});
   });
   it('does not trust a persisted report-ready projection over the restored facts',()=>{
     const h=task();h.step('fill',{target:'#name'},true,'unknown');

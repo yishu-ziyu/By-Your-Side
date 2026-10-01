@@ -1,3 +1,4 @@
+// 10-01 用户裁决（docs/evals/20261001-unknown-lock-scope.md）：圈画重来不会重复造成后果，结果不确定时不再上锁；本文件原用 mark 代表「写操作」，改用 click。
 import {afterEach,expect,it,vi} from 'vitest';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -16,10 +17,10 @@ function wrapped(sm:SessionManager){return new (BrowserAgentSession as any)({ses
 function fixture(complete:boolean){
  const dir=mkdtempSync(join(tmpdir(),'ego-s2-pi-recovery-'));dirs.push(dir);const sm=SessionManager.create(process.cwd(),dir);
  sm.appendMessage({role:'assistant',content:[],timestamp:1,stopReason:'toolUse'} as any);
- const p=new TaskProgress('default');p.request('找到再标出Y');p.recordUserTurn('只处理当前页');p.observe({type:'agent_event',event:{kind:'agent_start'}});p.registerResults([{id:'mark',description:'标出Y',tool:'mark',target:'#y'}]);
- p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'write',name:'mark',params:{target:'#y'}}});
+ const p=new TaskProgress('default');p.request('找到再标出Y');p.recordUserTurn('只处理当前页');p.observe({type:'agent_event',event:{kind:'agent_start'}});p.registerResults([{id:'mark',description:'标出Y',tool:'click',target:'#y'}]);
+ p.observe({type:'agent_event',event:{kind:'tool_start',toolCallId:'write',name:'click',params:{target:'#y'}}});
 
-if(complete)p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'write',name:'mark',isError:false,resultText:'Marked #y.'}});
+if(complete)p.observe({type:'agent_event',event:{kind:'tool_end',toolCallId:'write',name:'click',isError:false,resultText:'Marked #y.'}});
  wrapped(sm).persistTaskResults(p.snapshot());const next=wrapped(SessionManager.open(sm.getSessionFile()!));const restored=new TaskProgress('default');restored.restoreResults(next.readPersistedTaskResults()!);next.bindConversationContext(()=>restored.snapshot());
 
 return {next,restored};
@@ -28,7 +29,7 @@ return {next,restored};
 for(const completed of [false,true])it(`real Pi file recovery does not replay ${completed?'confirmed':'uncertain'} writes`,async()=>{
  const {next,restored}=fixture(completed);expect(restored.snapshot()).toMatchObject({state:'interrupted',restartRecovery:true,executionState:completed?'satisfied':'unknown'});expect(restored.snapshot().conversationContext?.recentTurns).toContainEqual({role:'user',text:'只处理当前页'});
  const rpc:any={call:vi.fn(async()=>({marked:true}))};const tools=createBrowserTools(rpc,undefined,undefined,undefined,{epoch:()=>next.executionEpoch(),canWrite:()=>true,assertCall:(name,params)=>next.assertTaskResultExecution(name,params)});
- await expect((tools.find(t=>t.name==='mark')!.execute as any)('replay',{target:'#y'})).rejects.toThrow();expect(rpc.call).not.toHaveBeenCalled();
+ await expect((tools.find(t=>t.name==='click')!.execute as any)('replay',{target:'#y'})).rejects.toThrow();expect(rpc.call).not.toHaveBeenCalled();
 });
 
-it('every accepted result slot remains readable after persistence, including more than 32 items',()=>{const dir=mkdtempSync(join(tmpdir(),'ego-s2-many-results-'));dirs.push(dir);const sm=SessionManager.create(process.cwd(),dir);sm.appendMessage({role:'assistant',content:[],timestamp:1} as any);const p=new TaskProgress('default');p.request('处理登记的多项结果');p.registerResults(Array.from({length:40},(_,i)=>({id:'r'+i,description:'结果'+i,tool:'mark',target:'#x'+i})));wrapped(sm).persistTaskResults(p.snapshot());expect(wrapped(SessionManager.open(sm.getSessionFile()!)).readPersistedTaskResults()?.results).toHaveLength(40);});
+it('every accepted result slot remains readable after persistence, including more than 32 items',()=>{const dir=mkdtempSync(join(tmpdir(),'ego-s2-many-results-'));dirs.push(dir);const sm=SessionManager.create(process.cwd(),dir);sm.appendMessage({role:'assistant',content:[],timestamp:1} as any);const p=new TaskProgress('default');p.request('处理登记的多项结果');p.registerResults(Array.from({length:40},(_,i)=>({id:'r'+i,description:'结果'+i,tool:'click',target:'#x'+i})));wrapped(sm).persistTaskResults(p.snapshot());expect(wrapped(SessionManager.open(sm.getSessionFile()!)).readPersistedTaskResults()?.results).toHaveLength(40);});

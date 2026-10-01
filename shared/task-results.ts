@@ -1,5 +1,6 @@
 import { taskId } from "./task-actions.js";
 import {isWriteTool} from './control.js';
+import {classifyToolEffect} from './effect-policy.js';
 
 export const TASK_RESULT_STATES = ["unregistered", "pending", "satisfied", "blocked", "unknown"] as const;
 
@@ -38,6 +39,8 @@ export interface TaskResultItem extends TaskResultRegistration {
   evidence: TaskResultEvidence | null;
   /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再阻塞写入与交付。 */
   supersededBy?: string;
+  /** 已核查过一次仍无法确认：保持未知，不再核查，交付时如实说明（10-01 用户裁决）。 */
+  checkFailed?: true;
 }
 
 /** Focus, scrolling and hovering require control, but do not create durable write obligations. */
@@ -45,8 +48,44 @@ export function resultToolHasWriteEffect(tool:string):boolean {
   return isWriteTool(tool)&&!['switch_tab','scroll','hover','ask_user_to_point'].includes(tool);
 }
 
+/** 这一步改过页面（或可能改过）：用于读回、目标失效等「页面变了」的判断，不决定结果不确定时拦什么。 */
 export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {
   return resultToolHasWriteEffect(item.tool)||item.evidence?.effectful===true;
+}
+
+/**
+ * 写类工具里，再做一次也不会让同一件事多发生一次的：看页辅助（滚动、悬停、圈画、点选）、
+ * 换页（导航、开/切/关标签页、页面归属）、等页面事件、处理原生弹窗、松开按住的输入、取消下载。
+ * 10-01 用户裁决：结果不确定时只拦可能重复造成后果的操作（提交、付款、发送、删除、发帖……），这些照常。
+ */
+const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
+  'worker_tabs', 'navigate', 'open_tab', 'switch_tab', 'close_tab',
+  'scroll', 'hover', 'mark', 'clear_marks', 'ask_user_to_point',
+  'arm_event', 'wait_event', 'disarm_event', 'accept_dialog', 'dismiss_dialog',
+  'release_held_inputs', 'download_cancel',
+]);
+
+/**
+ * 再执行一次可能重复造成后果（再提交、再付款、再发送、再删除）：结果不确定时被拦下的就是这些调用。
+ * 按现有副作用分类：控制闸门的写类工具去掉上面那组，再加上 POST/带 body 的 fetch。其余（读页、GET 取数、存文件）不算。
+ */
+export function repeatsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
+  if (name === 'fetch') return classifyToolEffect(name, params).class === 'write';
+
+  return isWriteTool(name) && !NO_REPEAT_HARM_WRITES.has(name);
+}
+
+/**
+ * 这一步若结果不确定，后果可能已经发生：结果不确定时由它上锁。
+ * 比 repeatsHarm 多一个确认原生弹窗：它可能就是「确定付款/删除」的那一下，但弹窗只能确认一次，重来不会再发生，所以它本身不被锁拦。
+ */
+export function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
+  return name === 'accept_dialog' || repeatsHarm(name, params);
+}
+
+/** 账本项结果不确定时是否上锁。fetch 的副作用按参数判定：宿主把 POST/带 body 的 fetch 记在 evidence.effectful。 */
+export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:boolean}|null}):boolean {
+  return commitsHarm(item.tool)||item.tool==='fetch'&&item.evidence?.effectful===true;
 }
 
 export const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message", "resolve_unknown_result", "confirm_blocked_write"] as const;
@@ -112,7 +151,8 @@ export function isTaskResultItem(v: unknown): v is TaskResultItem {
     && (r.target === null || text(r.target, 500))
     && TASK_RESULT_ITEM_STATUSES.includes(r.status)
     && (r.evidence === null || isTaskResultEvidence(r.evidence))
-    && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy));
+    && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy))
+    && (r.checkFailed === undefined || r.checkFailed === true);
 }
 
 /** 只有取代项本身已满足时，被取代的未知才不再阻塞；否则未知仍生效。 */

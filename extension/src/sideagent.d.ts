@@ -24,7 +24,7 @@ interface SideAgentDomOps {
   /** 纯坐标：按下前确认仍是记住的同一节点（canvas 只认元素身份，不认画布内部） */
   confirmPoint(x: number, y: number): { same: true };
   click(target: string): { clicked: true };
-  fill(target: string, value: string): { filled: true };
+  fill(target: string, value: string): { filled: true } | { refused: string };
   /** CAP-02C：value/label/index、多选、清空；返回最终选中集合。 */
   selectOption(
     target: string,
