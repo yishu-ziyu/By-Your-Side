@@ -17,7 +17,7 @@
 | 范围 | 说明 |
 |---|---|
 | 总体职责、运行时与记忆 | [架构](architecture.md) |
-| 消息、页面归属、工具与核验 | [协议](protocol.md) · [记忆模型](memory-model.md) · [记忆与任务跨轮](memory-and-tasks.md) · [组合执行](browser-program.md) · [整页翻译](page-translation.md) |
+| 消息、页面归属、工具与核验 | [协议](protocol.md) · [记忆模型](memory-model.md) · [记忆与任务跨轮](memory-and-tasks.md) · [模型与思考档](model-effort.md) · [组合执行](browser-program.md) · [整页翻译](page-translation.md) |
 | 语音与任务协调 | [语音链路](voice-architecture.md) · [任务调度](voice-dispatch.md) · [多要求设计](voice-multi-request-design.md) |
 | 用户可见交互 | [人机协作](human-ai-contract.md) · [语音交互与人设](voice-interaction.md) · [阅读外观](reading-appearance.md) |
 | 为什么采用某个方向 | [路线与决定](ROADMAP.md) · [开发日志](devlog/) |

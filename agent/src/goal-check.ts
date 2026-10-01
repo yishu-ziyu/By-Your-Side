@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelPort } from "./agent-loop.js";
+import { parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 
 /**
  * 目标核对（2026-09-27；10-01 起扩到用过工具的只读任务）：任务一轮结束时，由快速模型判断用户要的结果达成没有。
@@ -73,7 +73,8 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
     && (reply.remaining === undefined || reply.remaining === null || typeof reply.remaining === "string");
 }
 
-export async function checkGoal(models: ModelPort, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[] }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict | null> {
+/** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
+export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[] }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   const content = JSON.stringify({
     goal: input.goal.map(text => text.slice(0, 600)).slice(-8),
     goalPage: input.goalPage ?? null,
@@ -82,23 +83,13 @@ export async function checkGoal(models: ModelPort, model: Model<Api>, input: { g
     files: (input.files ?? []).slice(-16).map(file => ({ filename: file.filename.slice(0, 120), chars: file.chars, lines: file.lines, savedAt: new Date(file.savedAt).toISOString() })),
   });
 
-  const reply = await models.completeSimple(model, {
-    systemPrompt: PROMPT,
-    messages: [{ role: "user", content, timestamp: Date.now() }],
+  const parsed = await sideJudgment(host, model, {
+    purpose: "goal_check", systemPrompt: PROMPT, content, signal, timeoutMs: GOAL_CHECK_TIMEOUT_MS, headers,
     // 阶跃这类始终开思考的模型，思考也占输出额度：留足，否则思考完之前就被截断，核对拿不到结论（09-27 阶跃实测每次都失败）。
-  }, { signal: AbortSignal.any([signal, AbortSignal.timeout(GOAL_CHECK_TIMEOUT_MS)]), maxTokens: 1600, reasoning: "minimal", headers }).catch(() => null);
+    maxTokens: 1600,
+    parse: text => parseJsonReply(text, isGoalReply),
+  });
 
-  if (!reply || reply.stopReason === "error" || reply.stopReason === "aborted") return null;
-  const raw = reply.content.flatMap(part => (part.type === "text" ? [part.text] : [])).join("").trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  if (!isGoalReply(parsed)) return null;
   // 「还差什么」会进任务条和过往任务，以后再带进上下文：只留一句短话，防止把页面原文（含注入）搬进去。
   const remaining = parsed.remaining?.trim() ? parsed.remaining.trim().replace(/\s+/g, " ").slice(0, 60) : null;
 

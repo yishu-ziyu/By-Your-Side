@@ -1,4 +1,5 @@
 import type { ReadingEvent, ReadingTranscript } from '../../shared/reading.js';
+import { SideCallError } from './side-judgment.js';
 
 export type ReadingGenerate = (transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
 
@@ -37,8 +38,10 @@ export class ReadingRequests {
         publish('streaming');
       });
       publish(abort.signal.aborted ? 'stopped' : 'done');
-    } catch {
-      publish(abort.signal.aborted ? 'stopped' : 'error', abort.signal.aborted ? undefined : '这次回答没有完成。已保留内容，可以重试。');
+    } catch (error) {
+      // 带上原因类别（模型拒绝了请求参数、超时……），不带服务商原文。
+      const reason = error instanceof SideCallError ? error.message : undefined;
+      publish(abort.signal.aborted ? 'stopped' : 'error', abort.signal.aborted ? undefined : `这次回答没有完成${reason ? `（${reason}）` : ''}。已保留内容，可以重试。`);
     } finally {
       if (current()) this.active.delete(threadId);
     }

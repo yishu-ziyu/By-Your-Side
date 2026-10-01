@@ -7,7 +7,7 @@
 ## 分批与顺序
 
 - `collect` 先给当前视口里的段落，再按离视口的距离排序；每批最多 8 块、3000 字符、24 个片段。最先并行发出的 4 批每批只取 2 块（`maxBlocks`，`PAGE_TRANSLATION_FIRST_BATCH_BLOCKS`），当前一屏分几路先落页，不等一整批。
-- 翻译批次优先用快速模型（`ModelPort.fastModel`），不开思考；没配时用会话主模型。
+- 翻译批次优先用快速模型（`ModelPort.fastModel`），用该模型允许的最低思考档（[模型与思考档](model-effort.md)）；没配时用会话主模型。
 - `collect` 带 `exclude`（正在翻译的块号）时跳过这些块，并发的批次因此不重叠；agent 也会丢掉页面仍返回的在途块。
 - `apply` 只写入完整且原文未变的段落；页面在翻译期间换掉的段落留给下一次 `collect`。
 

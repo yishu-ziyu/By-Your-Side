@@ -14,7 +14,8 @@ function operationKey(event:Pick<ToolResultEvent,'toolName'|'input'>):string {
 export class RepeatedToolFailurePolicy {
   private failures=new Map<string,{toolName:string;error:string;attempts:number}>();
   private stopped=false;
-  constructor(private readonly onStop:(failure:RepeatedToolFailure)=>void) {}
+  /** onRepeat: the same operation just failed a second time in a row (not yet stopped) — the host raises the main thinking level. */
+  constructor(private readonly onStop:(failure:RepeatedToolFailure)=>void,private readonly onRepeat?:(failure:RepeatedToolFailure)=>void) {}
   reset():void {this.failures.clear();this.stopped=false;}
   extension():ExtensionFactory {
     return pi=>{
@@ -31,7 +32,10 @@ return;}
         const attempts=previous?.error===error?previous.attempts+1:1;
         this.failures.set(key,{toolName:event.toolName,error,attempts});
 
-        if(attempts<TOOL_FAILURE_LIMIT)return;
+        if(attempts<TOOL_FAILURE_LIMIT){if(attempts===2)this.onRepeat?.({toolName:event.toolName,error,attempts});
+
+return;}
+
         this.stopped=true;
         this.onStop({toolName:event.toolName,error,attempts});
         ctx.abort();

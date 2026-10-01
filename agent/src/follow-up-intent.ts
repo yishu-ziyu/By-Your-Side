@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelPort } from "./agent-loop.js";
+import { parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 
 /**
  * 上一个任务还没做完（交付了一部分、还有没做成的事）时，用户随口说的下一句是接着做这件事，还是另起一件事。
@@ -19,23 +19,13 @@ function isFollowUpReply(value: unknown): value is { continues: boolean } {
 }
 
 /** 返回 null 表示没判断出来（超时、出错、格式不对），由调用方按任务状态兜底。 */
-export async function followUpContinuesTask(models: ModelPort, model: Model<Api>, task: { goal: string; unfinished: string[]; lastReply: string }, text: string, signal: AbortSignal, headers?: Record<string, string>): Promise<boolean | null> {
+export async function followUpContinuesTask(host: SideCallHost, model: Model<Api>, task: { goal: string; unfinished: string[]; lastReply: string }, text: string, signal: AbortSignal, headers?: Record<string, string>): Promise<boolean | null> {
   const input = JSON.stringify({ openTask: { goal: task.goal.slice(0, 600), stillOpen: task.unfinished.slice(0, 8), assistantLastReply: task.lastReply.slice(-800) }, newMessage: text.slice(0, 1000) });
 
-  const reply = await models.completeSimple(model, {
-    systemPrompt: PROMPT,
-    messages: [{ role: "user", content: input, timestamp: Date.now() }],
+  return sideJudgment(host, model, {
+    purpose: "follow_up", systemPrompt: PROMPT, content: input, signal, timeoutMs: FOLLOW_UP_TIMEOUT_MS, headers,
     // 始终开思考的模型（阶跃）思考也占输出额度：留足，不然只剩思考、没有结论。
-  }, { signal: AbortSignal.any([signal, AbortSignal.timeout(FOLLOW_UP_TIMEOUT_MS)]), maxTokens: 1200, reasoning: "minimal", headers }).catch(() => null);
-
-  if (!reply || reply.stopReason === "error" || reply.stopReason === "aborted") return null;
-  const raw = reply.content.flatMap(part => (part.type === "text" ? [part.text] : [])).join("").trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
-
-  try {
-    const parsed: unknown = JSON.parse(raw);
-
-    return isFollowUpReply(parsed) ? parsed.continues : null;
-  } catch {
-    return null;
-  }
+    maxTokens: 1200,
+    parse: reply => parseJsonReply(reply, isFollowUpReply).continues,
+  }).catch(() => null);
 }

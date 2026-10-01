@@ -17,7 +17,9 @@ it('forwards the caller-supplied model, sessionId and headers on the edit decisi
  const [passedModel,context,options]=completeSimple.mock.calls[0]!;
  expect(passedModel).toBe(model);
  expect((context as {messages:{content:string}[]}).messages[0]!.content).toBe('预算改成600');
- expect(options as Record<string,unknown>).toMatchObject({maxTokens:200,reasoning:'minimal',sessionId:'session-1',headers});
+ expect(options as Record<string,unknown>).toMatchObject({maxTokens:200,sessionId:'session-1',headers});
+ // 档位取自模型能力：未登记、目录也没标思考的模型按保守默认，不发思考参数。
+ expect(options).not.toHaveProperty('reasoning');
 });
 
 it('keeps the classifier token ceiling, temperature and per-attempt session headers intact',async()=>{
@@ -49,7 +51,8 @@ it('白名单句子走独立最小请求：最短提示词、直接给正文、�
  expect(context.systemPrompt).toBe(VOICE_FREE_REPLY_PROMPT);
  // 只发原话，不发 state/clauses/task 那套计划输入。
  expect(context.messages[0]!.content).toBe('嗨，晚上好。');
- expect(options).toMatchObject({maxTokens:400,temperature:0,reasoning:'minimal',sessionId:'session-1',headers});
+ expect(options).toMatchObject({maxTokens:400,temperature:0,sessionId:'session-1',headers});
+ expect(options).not.toHaveProperty('reasoning');
 });
 
 it('最小请求返回空正文就是确定失败，不退回计划提示词再答一次',async()=>{

@@ -12,7 +12,7 @@
  */
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { isProviderBusyError } from "../../shared/provider-busy.js";
-import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai";
+import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -33,6 +33,8 @@ export interface PiAgentLoopOptions {
   onHookError?: (event: string, message: string) => void;
   /** 每次模型调用前观察实际请求（诊断记录用）；只读，抛错被吞掉。 */
   onModelRequest?: (request: ModelRequestObservation) => void;
+  /** 每次模型调用前取这次的思考档（见 main-effort.ts）；"off" 表示不发思考参数。不给时沿用 Agent 的设置。 */
+  effort?: (model: Model<Api>) => ModelThinkingLevel;
 }
 
 /** 宿主插入的消息：pi-coding-agent 已给 Agent 的消息联合加上 custom 角色（core/messages.d.ts）；convertToLlm 把它转成 user 消息。 */
@@ -111,7 +113,7 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: [] },
-      streamFn: streamThrough(options.models, context => this.observeRequest(context)),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort),
       // 与 Pi 的 convertToLlm 相同；我们不产生 bash、分支摘要、压缩摘要消息，遇到就丢弃。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
@@ -404,13 +406,16 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort?: (model: Model<Api>) => ModelThinkingLevel): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
+    // 档位按每次调用取：同一轮里升档信号出现后，下一次调用就用新档。
+    const level = effort?.(model);
+    const options = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
 
     // SAFETY: 同上，参数原样转交。
-    return models.streamSimple(model as never, context as never, streamOptions as never);
+    return models.streamSimple(model as never, context as never, options as never);
   }) as StreamFn;
 }
 

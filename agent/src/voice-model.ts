@@ -2,6 +2,7 @@ import {randomUUID} from "node:crypto";
 import type {ModelPort} from "./agent-loop.js";
 import type {VoiceConversationContext} from "../../shared/voice.js";
 import {VoiceIntentError} from "./voice-errors.js";
+import {SideCallError, sideJudgment, type AttemptOutcome, type RejectedEfforts, type SideCallHost} from "./side-judgment.js";
 import {VOICE_FREE_REPLY_PROMPT, VOICE_PLAN_PROMPT, parseVoiceDecision, voiceDecisionClauses, type VoiceIntentPlan} from "./voice-intent.js";
 
 /**
@@ -17,7 +18,29 @@ export interface VoiceModelCall {
   sessionId: string | undefined;
   /** 由调用方按当前 model/sessionId 算好的 provider headers。 */
   headers: Record<string, string> | undefined;
+  /** 本会话被服务端拒绝过的思考档（后台判断共用一份）。 */
+  rejected?: RejectedEfforts;
+  /** 每次判断的 side_call 诊断。 */
+  record?: SideCallHost["record"];
 }
+
+/** 语音判断走后台判断的同一入口。 */
+export function voiceSideHost(call: VoiceModelCall): SideCallHost {
+  return {models: call.runtime, rejected: call.rejected, record: call.record};
+}
+
+/** 判断失败的原因 → 语音分类错误码：超时单列，其余都是分类失败。 */
+function classifierError(timedOut: boolean): VoiceIntentError {
+  return new VoiceIntentError(timedOut ? "classifier_timeout" : "classifier_failed");
+}
+
+const timedOut = (error: Error) => error instanceof SideCallError && error.reason === "timeout";
+
+/** 逐次诊断沿用语音原有的结局名。 */
+const ATTEMPT_LABEL: Record<AttemptOutcome, string> = {
+  accepted: "accepted", bad_format: "candidate_rejected", provider_error: "provider_failed", request_failed: "request_failed",
+  timeout: "timeout", cancelled: "cancelled", rejected_params: "effort_rejected",
+};
 
 export interface VoiceIntentTask {
   goal: string | null;
@@ -61,6 +84,8 @@ interface VoicePlanRun {
  * 计划判定的唯一流程：整句意图分类与一次性提案的计划协议都走这里。
  *
  * 请求组装、提示词、模型参数、15 秒总预算内的 6s→9s 重试、parseVoiceDecision 校验和每条诊断都只有一份；
+ * 请求本身走后台判断入口（取档、换档重试、side_call 诊断），这里只给出语音的重试方式：
+ * 候选不合法或请求失败都在总预算内重试一次，第二次带上拒绝原因与强化提示。
  * 两个入口只注入三处差异：诊断前缀、诊断里是否带 protocol、是否接受取消信号。
  * free_reply 不走这里（它是另一次最小请求，见 freeReplyTurn）。
  */
@@ -70,113 +95,67 @@ async function runVoicePlan(
   options: {diagnosePrefix: string; diagnoseProtocol?: 'plan'; cancel?: AbortSignal},
 ): Promise<VoicePlanRun> {
   const {diagnosePrefix, diagnoseProtocol, cancel} = options;
-  const budget = AbortSignal.timeout(VOICE_PLAN_TIMEOUT_MS);
-  // 轮次被取代/说停时先取消这次模型请求：候选不再需要，也不该继续占着模型预算。
-  const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
   const requestId = input.task?.requestId ?? randomUUID();
   const startedAt = Date.now();
-  let rejection: string | undefined;
+  let attempts = 0;
+  let lastElapsedMs = 0;
 
-  for (const [attempt, attemptTimeoutMs] of VOICE_PLAN_ATTEMPT_TIMEOUTS_MS.entries()) {
-    const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(attemptTimeoutMs)]);
-    const callAt = Date.now();
+  const diagnose = (attempt: number, elapsedMs: number, outcome: string, reason?: string, actions?: string[]) => {
+    const protocolPiece = diagnoseProtocol ? { protocol: diagnoseProtocol } : {};
+    const reasonPiece = reason ? { reason } : {};
+    const actionsPiece = actions ? { actions } : {};
+    const log = { requestId, attempt, elapsedMs, outcome, ...protocolPiece, ...reasonPiece, ...actionsPiece };
+    console.error(`${diagnosePrefix} ${JSON.stringify(log)}`);
+  };
 
-    const diagnose = (outcome: string, reason?: string, actions?: string[]) => {
-      const protocolPiece = diagnoseProtocol ? { protocol: diagnoseProtocol } : {};
-      const reasonPiece = reason ? { reason } : {};
-      const actionsPiece = actions ? { actions } : {};
-      const log = { requestId, attempt: attempt + 1, elapsedMs: Date.now() - callAt, outcome, ...protocolPiece, ...reasonPiece, ...actionsPiece };
-      console.error(`${diagnosePrefix} ${JSON.stringify(log)}`);
-    };
+  const rejectionOf = (error: Error) => (error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown");
+  const conversationTitlesPiece = input.conversationTitles ? { conversationTitles: input.conversationTitles } : {};
+  const taskPiece = input.task ? { task: { goal: input.task.goal?.slice(0, 600) ?? null } } : {};
+  const conversationPiece = input.conversation ? { conversation: input.conversation } : {};
+  const planPayload = { state: input.state, text: input.text, clauses: voiceDecisionClauses(input.text), ...conversationTitlesPiece, ...taskPiece, ...conversationPiece };
 
-    let reply: Awaited<ReturnType<ModelPort["completeSimple"]>>;
+  try {
+    const plan = await sideJudgment(voiceSideHost(call), call.model, {
+      purpose: "voice_plan", systemPrompt: VOICE_PLAN_PROMPT, content: JSON.stringify(planPayload),
+      maxTokens: 1400, temperature: 0, sessionId: call.sessionId, headers: call.headers, signal: cancel,
+      timeoutMs: VOICE_PLAN_TIMEOUT_MS, attemptTimeoutsMs: VOICE_PLAN_ATTEMPT_TIMEOUTS_MS, retry: "any",
+      // 轮次被取代/说停时取消这次模型请求：候选不再需要，也不该继续占着模型预算。
+      retryPrompt: parseError => (parseError === undefined ? "" : rejectionHint(rejectionOf(parseError))) + VOICE_INTENT_RETRY_HINT,
+      parse: text => parseVoiceDecision(text, input.text, input.conversationTitles),
+      onAttempt: ({attempt, elapsedMs, outcome, parseError}) => {
+        attempts = attempt;
+        lastElapsedMs = elapsedMs;
 
-    try {
-      const conversationTitlesPiece = input.conversationTitles ? { conversationTitles: input.conversationTitles } : {};
-      const taskPiece = input.task ? { task: { goal: input.task.goal?.slice(0, 600) ?? null } } : {};
-      const conversationPiece = input.conversation ? { conversation: input.conversation } : {};
-      const planPayload = { state: input.state, text: input.text, clauses: voiceDecisionClauses(input.text), ...conversationTitlesPiece, ...taskPiece, ...conversationPiece };
-      reply = await call.runtime.completeSimple(call.model, {
-        systemPrompt: VOICE_PLAN_PROMPT
-          + (rejection ? rejectionHint(rejection) : "")
-          + (attempt ? VOICE_INTENT_RETRY_HINT : ""),
-        messages: [{
-          role: "user",
-          content: JSON.stringify(planPayload),
-          timestamp: Date.now(),
-        }],
-      }, {
-        maxTokens: 1400,
-        temperature: 0,
-        signal: attemptSignal,
-        sessionId: call.sessionId,
-        headers: call.headers,
-      });
-    } catch {
-      // 取消与超时都会让请求失败：只有调用方主动取消时才立刻收手，其余在总预算内重试一次。
-      const superseded = cancel?.aborted === true;
-      diagnose(superseded ? "cancelled" : attemptSignal.aborted ? "timeout" : "request_failed");
+        if (outcome !== "accepted") diagnose(attempt, elapsedMs, ATTEMPT_LABEL[outcome], parseError === undefined ? undefined : rejectionOf(parseError));
+      },
+    });
 
-      if (superseded) throw new VoiceIntentError("classifier_failed");
+    diagnose(attempts, lastElapsedMs, "accepted", undefined, plan.steps.map(step => step.action));
 
-      if (!attempt && !signal.aborted) continue;
-      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
-    }
-
-    if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-      diagnose("provider_failed");
-
-      if (!attempt && !signal.aborted) continue;
-      throw new VoiceIntentError(signal.aborted || attemptSignal.aborted ? "classifier_timeout" : "classifier_failed");
-    }
-
-    try {
-      const plan = parseVoiceDecision(
-        reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim(),
-        input.text,
-        input.conversationTitles,
-      );
-
-      diagnose("accepted", undefined, plan.steps.map(step => step.action));
-
-      return {plan, requestId, attempts: attempt + 1, elapsedMs: Date.now() - startedAt};
-    } catch (error) {
-      rejection = error instanceof VoiceIntentError ? error.reason ?? "semantics" : "unknown";
-      diagnose("candidate_rejected", rejection);
-
-      if (attempt || signal.aborted) throw error;
-    }
+    return {plan, requestId, attempts, elapsedMs: Date.now() - startedAt};
+  } catch (error) {
+    if (error instanceof SideCallError && error.reason === "bad_format") throw error.cause instanceof VoiceIntentError ? error.cause : new VoiceIntentError("classifier_invalid_reply");
+    throw classifierError(error instanceof Error && timedOut(error));
   }
-
-  throw new VoiceIntentError("classifier_invalid_reply");
 }
 
 /** 判定一句语音是否为“直接修改当前任务条件”的指令；模型不可用由调用方先行拦截。 */
 export async function classifyVoiceEdit(call: VoiceModelCall, text: string): Promise<boolean> {
-  const signal = AbortSignal.timeout(VOICE_EDIT_TIMEOUT_MS);
+  try {
+    return await sideJudgment(voiceSideHost(call), call.model, {
+      purpose: "voice_edit", systemPrompt: VOICE_EDIT_PROMPT, content: text, maxTokens: 200, timeoutMs: VOICE_EDIT_TIMEOUT_MS,
+      sessionId: call.sessionId, headers: call.headers,
+      retryPrompt: () => "\n上次回复不合要求。只输出 EDIT 或 NONE 这一个词。",
+      parse: reply => {
+        if (reply !== "EDIT" && reply !== "NONE") throw new Error("not EDIT/NONE");
 
-  const reply = await call.runtime.completeSimple(call.model, {
-    systemPrompt: VOICE_EDIT_PROMPT,
-    messages: [{role: "user", content: text, timestamp: Date.now()}],
-  }, {
-    maxTokens: 200,
-    reasoning: "minimal",
-    signal,
-    sessionId: call.sessionId,
-    headers: call.headers,
-  }).catch(() => {
-    throw new VoiceIntentError(signal.aborted ? "classifier_timeout" : "classifier_failed");
-  });
-
-  const decision = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
-
-  if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-    throw new VoiceIntentError(signal.aborted ? "classifier_timeout" : "classifier_failed");
+        return reply === "EDIT";
+      },
+    });
+  } catch (error) {
+    if (error instanceof SideCallError && error.reason === "bad_format") throw new VoiceIntentError("classifier_invalid_reply");
+    throw classifierError(error instanceof Error && timedOut(error));
   }
-
-  if (!["EDIT", "NONE"].includes(decision)) throw new VoiceIntentError("classifier_invalid_reply");
-
-  return decision === "EDIT";
 }
 
 /**
@@ -256,8 +235,6 @@ export async function prepareVoiceTurn(call: VoiceModelCall, input: VoiceTurnPre
 async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput, cancel?: AbortSignal): Promise<VoiceTurnPreparation> {
   const requestId = input.task?.requestId ?? randomUUID();
   const startedAt = Date.now();
-  const budget = AbortSignal.timeout(VOICE_FREE_REPLY_TIMEOUT_MS);
-  const signal = cancel ? AbortSignal.any([budget, cancel]) : budget;
 
   const diagnose = (outcome: string, reason?: string) => {
     const reasonPiece = reason ? { reason } : {};
@@ -265,34 +242,24 @@ async function freeReplyTurn(call: VoiceModelCall, input: VoiceTurnPrepareInput,
     console.error(`[voice-turn] ${JSON.stringify(log)}`);
   };
 
-  let reply: Awaited<ReturnType<ModelPort["completeSimple"]>>;
+  let text: string;
 
   try {
-    reply = await call.runtime.completeSimple(call.model, {
-      systemPrompt: VOICE_FREE_REPLY_PROMPT,
-      messages: [{role: "user", content: input.text, timestamp: Date.now()}],
-    }, {
-      maxTokens: 400,
-      temperature: 0,
-      reasoning: "minimal",
-      signal,
-      sessionId: call.sessionId,
-      headers: call.headers,
+    text = await sideJudgment(voiceSideHost(call), call.model, {
+      purpose: "voice_free_reply", systemPrompt: VOICE_FREE_REPLY_PROMPT, content: input.text,
+      maxTokens: 400, temperature: 0, timeoutMs: VOICE_FREE_REPLY_TIMEOUT_MS, signal: cancel, retry: "none",
+      sessionId: call.sessionId, headers: call.headers,
+      parse: reply => {
+        if (reply.length > 2000) throw new Error("too_long");
+
+        return reply;
+      },
+      onAttempt: ({outcome, parseError}) => {
+        if (outcome === "bad_format") diagnose("empty_reply", parseError?.message === "too_long" ? "too_long" : "empty");
+        else if (outcome !== "accepted" && outcome !== "rejected_params") diagnose(ATTEMPT_LABEL[outcome]);
+      },
     });
   } catch {
-    diagnose(cancel?.aborted === true ? "cancelled" : signal.aborted ? "timeout" : "request_failed");
-    throw new VoiceIntentError("free_reply_failed");
-  }
-
-  if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-    diagnose("provider_failed");
-    throw new VoiceIntentError("free_reply_failed");
-  }
-
-  const text = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
-
-  if (!text || text.length > 2000) {
-    diagnose("empty_reply", text ? "too_long" : "empty");
     throw new VoiceIntentError("free_reply_failed");
   }
 
@@ -310,31 +277,31 @@ export async function answerVoiceObservation(
   stillCurrent: () => boolean,
 ): Promise<string> {
   if (!stillCurrent()) throw new Error("本次观察已取消。");
+  let answer: string | null = null;
+  let failure: unknown;
 
-  const reply = await call.runtime.completeSimple(call.model, {
-    systemPrompt: VOICE_OBSERVATION_PROMPT,
-    messages: [{
-      role: "user",
-      timestamp: Date.now(),
+  try {
+    answer = await sideJudgment(voiceSideHost(call), call.model, {
+      purpose: "voice_observation", systemPrompt: VOICE_OBSERVATION_PROMPT, maxTokens: 600, timeoutMs: VOICE_OBSERVATION_TIMEOUT_MS, retry: "none",
+      sessionId: call.sessionId, headers: call.headers,
       content: [
         {type: "text", text: JSON.stringify({question, title: page.title, url: page.url, pageText: page.text.slice(0, 14000)})},
         {type: "image", data: page.imageBase64, mimeType: "image/png"},
       ],
-    }],
-  }, {
-    maxTokens: 600,
-    reasoning: "minimal",
-    signal: AbortSignal.timeout(VOICE_OBSERVATION_TIMEOUT_MS),
-    sessionId: call.sessionId,
-    headers: call.headers,
-  });
+      parse: reply => {
+        if (reply.length > 600) throw new Error("too long");
+
+        return reply;
+      },
+    });
+  } catch (error) {
+    failure = error;
+  }
 
   if (!stillCurrent()) throw new Error("本次观察已取消。");
 
-  if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error("这次页面观察没有完成，请重试。");
-  const answer = reply.content.filter(part => part.type === "text").map(part => part.text).join("").trim();
+  if (answer !== null) return answer;
 
-  if (!answer || answer.length > 600) throw new Error("没有取得可用的页面回答。");
-
-  return answer;
+  if (failure instanceof SideCallError && failure.reason === "bad_format") throw new Error("没有取得可用的页面回答。");
+  throw new Error(`这次页面观察没有完成（${failure instanceof Error ? failure.message : "未知原因"}），请重试。`);
 }

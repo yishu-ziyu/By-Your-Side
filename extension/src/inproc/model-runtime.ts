@@ -17,6 +17,7 @@ import { openaiCodexOAuth } from "@earendil-works/pi-ai/auth/oauth/openai-codex"
 import { xaiOAuth } from "@earendil-works/pi-ai/auth/oauth/xai";
 import type { ModelPort } from "../../../agent/src/agent-loop.js";
 import { retryWhenBusy } from "../../../shared/provider-busy.js";
+import { unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { CUSTOM_PROVIDER_ID, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
@@ -103,11 +104,11 @@ export interface ModelRuntime {
   providerChoices(): ProviderChoice[];
 }
 
-/** OpenAI 兼容服务：自定义地址和 pi-ai 目录里没有的阶跃星辰都用它注册。 */
+/** OpenAI 兼容服务：自定义地址和 pi-ai 目录里没有的阶跃星辰都用它注册。能力（思考档、能否看图）取实测登记，没有登记按保守默认。 */
 interface CompatibleProvider { provider: Provider; models: Model<"openai-completions">[] }
 
 function openAICompatible(id: string, name: string, baseUrl: string, modelIds: readonly string[]): CompatibleProvider {
-  const models = modelIds.map((modelId): Model<"openai-completions"> => ({
+  const models = modelIds.map((modelId): Model<"openai-completions"> => withMeasuredCapability({
     id: modelId, name: modelId, api: "openai-completions", provider: id, baseUrl,
     reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 16_384,
   }));
@@ -150,13 +151,13 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
 
     const known = models.getModel(config.provider, config.modelId);
 
-    if (known) return known;
-    // 目录滞后于服务商（如 OpenCode Go 的 mimo-v2.6-flash）：沿用该服务商 OpenAI 兼容模型的配置，只换 id。
-    const template = models.getModels(config.provider).find((m) => m.api === "openai-completions");
+    if (known) return withMeasuredCapability(known);
+    // 目录滞后于服务商（如 MiniMax-M3.1-Flash-Preview、OpenCode Go 的 mimo-v2.6-flash）：连接参数沿用同服务商的模型，能力取实测登记或保守默认。
+    const unlisted = unlistedModel(config.provider, config.modelId, models.getModels(config.provider));
 
-    if (!template) throw new Error(`找不到模型 ${config.provider}/${config.modelId}`);
+    if (!unlisted) throw new Error(`找不到模型 ${config.provider}/${config.modelId}`);
 
-    return { ...template, id: config.modelId, name: config.modelId, maxTokens: Math.min(template.maxTokens, 32_768) };
+    return unlisted;
   }
 
   function headersFor(model: Model<Api>): Record<string, string> | undefined {

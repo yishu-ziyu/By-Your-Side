@@ -48,7 +48,7 @@
 
 分开测：说完→服务端判停，判停→实际工具调用，工具调用→结果就绪，就绪→结果送回，后续生成→浏览器首声/播完。`first_audio_since_vad_stop` 是服务端判停后的音频到达指标，不是用户实际听到答案的时间。
 
-日常记录（两种入口相同，行格式见 `shared/voice-capture-core.ts`）：每轮留 asr、forward、text 三类行，写进扩展 IndexedDB，从设置页导出（原本机模式写 `~/.sideagent/voice-capture/`，已退役）。逐帧的 ready、append、commit 以及录音只在诊断模式产生。日常记录里的 turn 从 1 开始，服务端检测到第一段说话才进入 2，所以识别结果落在 turn 2 是正常的；查开口问题用 `inproc-voice.mts` 的开口时间线（见[验收入口](testing/acceptance.md)）。
+日常记录（两种入口相同，行格式见 `shared/voice-capture-core.ts`）：每轮留 asr、forward、text 三类行，写进扩展 IndexedDB（与诊断记录同一个库），保留 14 天，从设置页导出为单独的 jsonl（原本机模式写 `~/.sideagent/voice-capture/`，已退役）。逐帧的 ready、append、commit 以及录音只在诊断模式产生。日常记录里的 turn 从 1 开始，服务端检测到第一段说话才进入 2，所以识别结果落在 turn 2 是正常的；查开口问题用 `inproc-voice.mts` 的开口时间线（见[验收入口](testing/acceptance.md)）。
 
 扩展内部 Port 是本地消息传输，不是另一次模型推理。代码或拓扑不能证明它零开销；归因需要同轮时间戳。旧分类/主模型/TTS 串行数据只适用于旧版本。
 
