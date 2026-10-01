@@ -1,0 +1,69 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>纠正后怎么问你：三个方向</title>
+<style>
+:root{--wall:#faf9f6;--surf:#fff;--subtle:#eeece6;--border:#e3e1d9;--t1:#141413;--t2:#5f5e58;--t3:#77756d;--t4:#b0aea5;--ink:#2d4a86;--inksoft:rgba(45,74,134,.08)}
+body{margin:0;background:#e9e7e1;font:14px/1.7 -apple-system,"PingFang SC",sans-serif;color:var(--t1)}
+h1{font-size:18px;margin:18px 22px 4px}.sub{margin:0 22px 14px;color:#666;font-size:13px}
+.row{display:flex;gap:16px;padding:0 22px 26px;align-items:flex-start}
+.col{width:380px}.cap{font-size:13px;margin:0 0 8px;color:#444}.cap b{font-size:15px;color:#111}
+.panel{width:380px;height:560px;background:var(--wall);border-radius:14px;box-shadow:0 1px 3px #0002;position:relative;overflow:hidden}
+.top{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:13px;color:var(--t2)}
+.msgs{padding:8px 20px}
+.u{margin:8px 0 12px auto;max-width:86%;width:fit-content;background:var(--subtle);border-radius:17px 17px 5px 17px;padding:9px 13px;font-size:13px}
+.a{margin:2px 0 10px}
+.comp{position:absolute;left:12px;right:12px;bottom:12px;height:76px;background:var(--surf);border:1px solid #cfcfdb;border-radius:18px;padding:11px 15px;color:var(--t4);font-size:13px}
+.state{font-size:12px;color:var(--t3);margin:6px 0 0}
+/* A */
+.lineA{display:flex;align-items:baseline;gap:8px;font-size:13px;color:var(--ink);margin:4px 0 10px}
+.lineA .q{flex:1}.lineA .q span{color:var(--t1)}
+.lineA a{color:var(--ink);text-decoration:none;font-weight:500}.lineA a.no{color:var(--t3);font-weight:400}
+.doneA{font-size:12.5px;color:var(--t3);margin:4px 0 10px}.doneA a{color:var(--t3);text-decoration:underline;text-underline-offset:2px}
+/* B */
+.askB{margin:2px 0 10px}.askB .pills{display:flex;gap:8px;margin-top:8px}
+.pill{font-size:12.5px;border-radius:999px;padding:3px 12px;border:1px solid var(--border);background:var(--surf);color:var(--t2)}
+.pill.yes{border-color:transparent;background:var(--inksoft);color:var(--ink);font-weight:500}
+/* C */
+.barC{position:absolute;left:18px;right:18px;bottom:122px;background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:8px 10px 8px 12px;display:flex;align-items:center;gap:8px;font-size:12.5px;box-shadow:0 4px 14px #0000000f}
+.barC .t{flex:1;color:var(--t2)}.barC .t b{color:var(--t1);font-weight:500}
+.barC .y{color:var(--ink);font-weight:500}.barC .x{color:var(--t4)}
+.tag{font-size:11px;color:var(--t3);background:var(--subtle);border-radius:6px;padding:0 6px;margin-left:4px}
+.label{position:absolute;top:10px;right:12px;font-size:11px;background:#fff3c4;color:#7a5b00;border-radius:6px;padding:0 6px}
+.why{font-size:12.5px;color:#555;margin-top:8px;line-height:1.6}
+</style>
+<h1>你纠正它之后，它怎么问你"要不要记住"——三个方向</h1>
+<p class="sub">同一个场景：你说"不对，只导了当前页 20 条，我要全部"。配色、字号取自侧栏真实样式。上面是出现时，下面是点了之后。</p>
+<div class="row">
+
+<div class="col"><p class="cap"><b>A · 一行小字</b>　像 ChatGPT 的"记忆已更新"</p>
+<div class="panel"><span class="label">示意</span><div class="top"><span>导出客户名单 ⌄</span><span>＋ ⋯</span></div><div class="msgs">
+<div class="u">不对，只导了当前页 20 条，我要全部</div>
+<div class="a">已改为导出全部，共 200 条，已核对数量。</div>
+<div class="lineA"><span class="q">记住这个做法？<span>在这个网站导出先选"全部"</span></span><a href="#">记住</a><a class="no" href="#">不用</a></div>
+<div style="height:70px"></div>
+<p class="state">点了"记住"之后 ↓</p>
+<div class="doneA">✓ 已记住，以后在这个网站照做　<a href="#">撤销</a></div>
+</div><div class="comp">说说你想完成什么…</div></div>
+<p class="why">最轻：不打断阅读，扫一眼就懂。范围、原话收起来，点"记住"前可悬停查看。</p></div>
+
+<div class="col"><p class="cap"><b>B · 它开口问你</b>　像人一样把话说出来</p>
+<div class="panel"><span class="label">示意</span><div class="top"><span>导出客户名单 ⌄</span><span>＋ ⋯</span></div><div class="msgs">
+<div class="u">不对，只导了当前页 20 条，我要全部</div>
+<div class="a">已改为导出全部，共 200 条，已核对数量。</div>
+<div class="askB">以后在这个网站导出，我都先选"全部"再核对条数，要我记住吗？
+<div class="pills"><span class="pill yes">记住</span><span class="pill">这次就行</span></div></div>
+<div style="height:40px"></div>
+<p class="state">点了"记住"之后 ↓</p>
+<div class="a" style="font-size:13px;color:var(--t3)">好，记住了。<span class="tag">这个网站</span>　<span style="text-decoration:underline">撤销</span></div>
+</div><div class="comp">说说你想完成什么…</div></div>
+<p class="why">最自然：像同事问一句。按钮是两个浅色小胶囊，不抢正文。</p></div>
+
+<div class="col"><p class="cap"><b>C · 输入框上方的提示条</b>　像系统通知</p>
+<div class="panel"><span class="label">示意</span><div class="top"><span>导出客户名单 ⌄</span><span>＋ ⋯</span></div><div class="msgs">
+<div class="u">不对，只导了当前页 20 条，我要全部</div>
+<div class="a">已改为导出全部，共 200 条，已核对数量。</div>
+<p class="state" style="margin-top:150px">点了"记住"之后：提示条消失，只在"记忆"面板里多一条</p>
+</div>
+<div class="barC"><span class="t">记住这个做法？<b>这个网站导出先选"全部"</b></span><span class="y">记住</span><span class="x">✕</span></div>
+<div class="comp">说说你想完成什么…</div></div>
+<p class="why">不碰对话本身：浮在输入框上方，你接着打字或点 ✕ 它就收走。</p></div>
+
+</div></html>
