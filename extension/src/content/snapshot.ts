@@ -6,6 +6,8 @@
  *   text: 欢迎来到……
  * ref 存于 window.__sideagent.refs（每次快照重建，同一元素尽量保号）。
  */
+import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
+
 (function () {
   const ns = (window.__sideagent ??= {});
 
@@ -172,6 +174,13 @@
       return parts.join(" > ");
     }
 
+    /** 页面截成「…」显示、元素自带更完整的 title/aria 值时的 ` full="…"` 后缀（规则见 shared/page-readout.ts）。 */
+    function fullPart(el: Element, shown: string): string {
+      const full = fullerText(shown, [el.getAttribute("title"), el.getAttribute("aria-label"), el.getAttribute("aria-description")]);
+
+      return full ? ` full="${clean(full, MAX_TEXT_LINE)}"` : "";
+    }
+
     function emitLine(el: Element, text: string): string {
       const n = assignRef(el);
       described.add(el);
@@ -197,6 +206,24 @@
           const aria = el.getAttribute("aria-label") ?? el.getAttribute("name");
 
           if (aria) d += ` "${clean(aria, MAX_LABEL)}"`;
+        }
+
+        // SAFETY: 本分支已核对 tag === "input"，运行时即 HTMLInputElement。
+        const input = el as HTMLInputElement;
+
+        if (RANGE_INPUT_TYPES.has(input.type)) {
+          // 范围输入框：给出页面写的 min/max/step、当前值与浏览器的越界判定。
+          for (const key of ["min", "max", "step"] as const) {
+            const limit = el.getAttribute(key);
+
+            if (limit) d += ` ${key}="${clean(limit, MAX_LABEL)}"`;
+          }
+
+          if (input.value) d += ` value="${clean(input.value, MAX_LABEL)}"`;
+          const v = input.validity;
+          const problem = v.rangeUnderflow ? "rangeUnderflow" : v.rangeOverflow ? "rangeOverflow" : v.stepMismatch ? "stepMismatch" : "";
+
+          if (problem) d += ` invalid=${problem}`;
         }
 
         return emitLine(el, `${d}]`);
@@ -246,7 +273,7 @@
         return null;
       }
 
-      return emitLine(el, label ? `${kind} "${label}"` : kind);
+      return emitLine(el, label ? `${kind} "${label}"${fullPart(el, el.textContent ?? "")}` : kind);
     }
 
     function processText(node: Text, depth: number): void {
@@ -261,7 +288,7 @@
 
       if (viewportOnly && !inViewport(parent)) return;
       const line = s.length > MAX_TEXT_LINE ? `${s.slice(0, MAX_TEXT_LINE - 3)}...` : s;
-      lines.push(`${pad(depth)}text: ${line}`);
+      lines.push(`${pad(depth)}text: ${line}${fullPart(parent, s)}`);
     }
 
     function walkChildren(root: Document | Element | ShadowRoot, depth: number): void {

@@ -152,6 +152,21 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   const unavailableInRuntime = runtimeUnavailableTools();
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
+  /** screenshot forUser：把这张图存进本会话文件区，侧栏显示成回答里的图片卡片；做不到时如实告诉模型用户没看到。 */
+  const deliverScreenshot = (base64: string): string => {
+    const store = files?.();
+
+    if (!store) return " NOT shown to the user: this conversation cannot show images in the side panel. Tell the user you could not send the picture.";
+
+    try {
+      const { filename } = store.saveImage(base64);
+
+      return ` Shown to the user in the side panel as image ${filename} (they can enlarge and download it).`;
+    } catch (error) {
+      return ` NOT shown to the user: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  };
+
   // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
   // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
   const unavailableWriteTools = (): ToolName[] =>
@@ -426,7 +441,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
         // A state query does not need the element's entire descendant text in the model context.
-        const projected = params.properties?.length || params.expect ? (params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, editableText: data.editableText } : { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check }) : data;
+        const stateOnly = params.properties?.some(property=>property==='textContent')&&data.editableText!==undefined ? { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check, editableText: data.editableText } : { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, check: data.check };
+        // A value check on a range input keeps the allowed range and the browser's verdict beside it.
+        const projected = params.properties?.length || params.expect ? (data.inputRange ? { ...stateOnly, inputRange: data.inputRange } : stateOnly) : data;
 
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(projected)), { tabId: data.tabId }), data);
       },
@@ -1091,7 +1108,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
 
-        return textResult(`Filled ${params.target}.`, data);
+        // The browser rejects the value for the field's min/max/step: say so, never plain success.
+        return textResult(data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`, data);
       },
     }),
 
@@ -1260,8 +1278,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "screenshot",
       label: "Screenshot",
       description:
-        "Capture a real screenshot of the working tab. clip uses DOCUMENT CSS coordinates; click point uses VIEWPORT CSS coordinates. Convert image pixels using coordinates: point = imagePixel / pixelsPerCssPixel + origin - scroll. Reobserve if document, viewport or scrolling changed; never click from an image with unknown coordinates. fullPage captures the document; scale:css outputs CSS pixels and scale:raw device pixels. An explicit clip.scale overrides the scale mode. A visible-tab fallback is honestly labeled raw, never a fabricated image. Prefer snapshot when it provides the needed information.",
+        "Capture a real screenshot of the working tab. clip uses DOCUMENT CSS coordinates; click point uses VIEWPORT CSS coordinates. Convert image pixels using coordinates: point = imagePixel / pixelsPerCssPixel + origin - scroll. Reobserve if document, viewport or scrolling changed; never click from an image with unknown coordinates. fullPage captures the document; scale:css outputs CSS pixels and scale:raw device pixels. An explicit clip.scale overrides the scale mode. A visible-tab fallback is honestly labeled raw, never a fabricated image. Prefer snapshot when it provides the needed information." +
+        (files ? " Screenshots are for your own eyes by default: the user does not see them. Set forUser:true only when the user wants the picture itself (e.g. asks you to take or send a screenshot of the page): the image is then shown in your answer in the side panel, where the user can enlarge and download it; just refer to it, do not paste or describe the image data." : ""),
       parameters: Type.Object({
+        ...(files ? { forUser: Type.Optional(Type.Boolean({ description: "true = also show this screenshot to the user as an image in the side panel (only when the user asked for the screenshot/picture)" })) } : {}),
         fullPage: Type.Optional(Type.Boolean()),
         clip: Type.Optional(
           Type.Object({
@@ -1274,7 +1294,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         ),
         scale: Type.Optional(Type.Union([Type.Literal("css"), Type.Literal("raw")])),
       }),
-      execute: async (_id, params) => {
+      execute: async (_id, input) => {
+        // forUser 是宿主自己的交付开关，不传给扩展的截图 RPC。
+        const { forUser, ...params } = input as typeof input & { forUser?: boolean };
         const data = (await call("screenshot", params)) as ToolContract["screenshot"]["data"];
 
         const geometry =
@@ -1286,7 +1308,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           content: [
             {
               type: "text" as const,
-              text: `Screenshot of working tab ${data.tabId} (${data.title || "(untitled)"} — ${data.url}) via ${data.source}.${geometry}`,
+              text: `Screenshot of working tab ${data.tabId} (${data.title || "(untitled)"} — ${data.url}) via ${data.source}.${geometry}${forUser === true ? deliverScreenshot(data.imageBase64) : ""}`,
             },
             { type: "image" as const, data: data.imageBase64, mimeType: data.mediaType },
           ],

@@ -156,8 +156,38 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     // Extract only naming sources here. The shared anchorFor() owns naming priority and
     // clipping; this function is serialized into Chrome and cannot close over imports.
     let anchorSource: ElementData['anchorSource'];
+    let fullText: string | undefined;
+    let inputRange: ElementData['inputRange'];
 
     if (element.nodeType !== 3 && typeof el.getAttribute === 'function') {
+      // Page readout rules (shared/page-readout.ts), inlined because this function is serialized:
+      // a shown text ending in an ellipsis gains the fuller title/aria value that starts with it.
+      const shown = textContent.replace(/\s+/g, ' ').trim();
+      const tail = /(?:…|\.{3})$/;
+      const prefix = shown.replace(tail, '').trimEnd().toLowerCase();
+
+      if (tail.test(shown) && prefix.length >= 3) {
+        fullText = [el.getAttribute('title'), el.getAttribute('aria-label'), el.getAttribute('aria-description')]
+          .map(raw => (raw ?? '').replace(/\s+/g, ' ').trim())
+          .find(full => full.length > prefix.length && full.toLowerCase().startsWith(prefix) && full !== shown);
+      }
+
+      // Native range inputs: the page's own min/max/step and the browser's verdict on the value.
+      if (tagName === 'input' && ['time', 'date', 'datetime-local', 'month', 'week', 'number', 'range'].includes(el.type)) {
+        const range: NonNullable<ElementData['inputRange']> = { type: el.type };
+
+        for (const key of ['min', 'max', 'step'] as const) {
+          const limit = el.getAttribute(key);
+
+          if (limit) range[key] = limit;
+        }
+
+        if (el.validity.rangeUnderflow) range.problem = 'rangeUnderflow';
+        else if (el.validity.rangeOverflow) range.problem = 'rangeOverflow';
+        else if (el.validity.stepMismatch) range.problem = 'stepMismatch';
+        inputRange = range;
+      }
+
       const clip = (value: string | null | undefined) => value == null ? null : value.slice(0, 180);
       const by = el.getAttribute('aria-labelledby');
       const label = el.labels?.[0]?.textContent || (by ? by.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? '').join(' ') : null);
@@ -195,6 +225,10 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     }
 
     const data: ElementData = {tagName,textContent};
+
+    if(fullText!==undefined)data.fullText=fullText;
+
+    if(inputRange)data.inputRange=inputRange;
 
     if(editableText!==undefined)data.editableText=editableText;
 

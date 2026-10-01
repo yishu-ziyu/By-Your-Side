@@ -1,4 +1,6 @@
 import {replaceEditableText} from "../shared/editable-text.js";
+import { readInputRange } from "../shared/range-input.js";
+import type { InputRangeReadout } from "../../../shared/page-readout.js";
 import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/target.js";
 
 /**
@@ -350,7 +352,7 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
       return { clicked: true };
     },
 
-    fill(target: string, value: string): { filled: true } | { refused: string } {
+    fill(target: string, value: string): { filled: true; range?: InputRangeReadout | null } | { refused: string } {
       const el = mustResolve(target) as HTMLElement;
       const tag = el.tagName.toLowerCase();
 
@@ -378,7 +380,8 @@ import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/targe
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
 
-        return { filled: true };
+        // 范围输入框写入后带回浏览器的越界判定，由 background 写进回执。
+        return { filled: true, range: readInputRange(el) };
       }
 
       replaceEditableText(el,value);

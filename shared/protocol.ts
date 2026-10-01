@@ -335,8 +335,11 @@ export type AgentUiEvent =
   /** 目标核对（宿主用快速模型判断用户要的结果达成没有）：done 做完；needs_user 等用户（回答、确认、登录）；continue 宿主让助手接着做；open 催满仍没做完。 */
   | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open"; remaining?: string }
   | { kind: "user_delivery"; delivery: UserDelivery }
-  /** 模型为用户写的文本文件（artifacts 工具）：saved 带全文，侧栏画成可下载的卡片；deleted 只带文件名。 */
-  | { kind: "artifact"; action: "saved" | "deleted"; filename: string; content?: string }
+  /**
+   * 交给用户的文件：模型写的文本文件（artifacts 工具），或模型交给用户的截图（screenshot forUser，encoding 为 base64 的 PNG）。
+   * saved 带全文，侧栏画成可打开、可下载的卡片（图片卡片直接显示图）；deleted 只带文件名。
+   */
+  | { kind: "artifact"; action: "saved" | "deleted"; filename: string; content?: string; encoding?: "base64" }
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
   | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary;
       /** 运行中的进度说明：只替换过程行标题，不进消息流，回合结束即被结果标题取代。 */
@@ -479,7 +482,7 @@ export interface ToolContract {
   page_operation: { params: { tabId?: number; target: string; expectedValue: string; value: string }; data: { tabId: number; target: string; previousValue: string; value: string; verified: true } };
   read_element: {
     params: { tabId?: number; target: string; /** Host-only adjunct read; never exposed in provider schemas. */ readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; textContent: string; editableText?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: import('./demo-record.js').AnchorSource; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    data: { tabId: number; target: string; tagName: string; textContent: string; editableText?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: import('./demo-record.js').AnchorSource; /** Shown text ends in an ellipsis and the element's title/aria value completes it (shared/page-readout.ts). */ fullText?: string; /** Native time/date/number/range input: the page's own range and the browser's verdict on the value. */ inputRange?: import('./page-readout.js').InputRange & { problem?: import('./page-readout.js').RangeProblem }; properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue>>; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
   /** 宿主自己读取一个选择器命中的全部元素（有界），供目标核验取证；不改页面，不能由模型替代提供。 */
   read_elements: {
@@ -744,7 +747,7 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true } };
+  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {

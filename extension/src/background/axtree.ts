@@ -8,6 +8,8 @@
  * 树形缩进两个空格一层；ignored/无信息节点折叠（自身不出行，子节点提升）。
  */
 
+import { fullerText, rangeAttributes, type InputRangeReadout } from "../../../shared/page-readout.js";
+
 /** CDP AXNode 的最小形状（只取我们用的字段）。 */
 export interface AxNodeLite {
   nodeId: string;
@@ -18,6 +20,8 @@ export interface AxNodeLite {
   frameId?: string;
   role?: { value?: string };
   name?: { value?: string };
+  /** Chrome puts title / aria-description here when it did not use them for the name. */
+  description?: { value?: string };
   value?: { value?: unknown };
   properties?: { name: string; value?: { value?: unknown } }[];
 }
@@ -59,6 +63,9 @@ const REF_ROLES = new Set([
   "rowheader",
 ]);
 
+/** 可能是原生范围输入框的角色（时间/日期框、数字框、滑块）；只有它们去查 DOM 的 min/max/step。 */
+export const RANGE_INPUT_ROLES = new Set(["InputTime", "Date", "DateTime", "spinbutton", "slider"]);
+
 /** 整棵子树丢弃的角色。 */
 const DROP_SUBTREE_ROLES = new Set(["InlineTextBox", "LineBreak"]);
 
@@ -83,14 +90,17 @@ function staticTextOf(node: AxNodeLite): string | null {
 }
 
 /** 节点自身是否值得占一行（不含 ref 前缀）。 */
-function describe(node: AxNodeLite): string | null {
+function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>): string | null {
   const role = node.role?.value ?? "";
 
   if (DROP_SUBTREE_ROLES.has(role)) return null;
   const name = node.name?.value ?? "";
+  // 页面把文字截成「…」显示、元素自带更完整的 title/aria 时，同时给出完整值（规则见 shared/page-readout.ts）。
+  const full = name ? fullerText(name, [node.description?.value, role === "StaticText" ? parent?.description?.value : undefined]) : undefined;
+  const fullPart = full ? ` full=${JSON.stringify(clip(full, MAX_LINE_TEXT))}` : "";
 
   if (role === "StaticText") {
-    return name ? `text: ${clip(name, MAX_LINE_TEXT)}` : null;
+    return name ? `text: ${clip(name, MAX_LINE_TEXT)}${fullPart}` : null;
   }
 
   if (COLLAPSE_ROLES.has(role)) return null;
@@ -102,10 +112,21 @@ function describe(node: AxNodeLite): string | null {
 
   const parts: string[] = [role];
 
-  if (name) parts.push(`"${clip(name, MAX_NAME)}"`);
+  if (name) parts.push(`"${clip(name, MAX_NAME)}"${fullPart}`);
   const value = node.value?.value;
+  const hasValue = value !== undefined && value !== null && value !== "";
 
-  if (value !== undefined && value !== null && value !== "") parts.push(`value=${JSON.stringify(clip(String(value), MAX_NAME))}`);
+  if (hasValue) parts.push(`value=${JSON.stringify(clip(String(value), MAX_NAME))}`);
+  const range = node.backendDOMNodeId === undefined ? undefined : inputs.get(node.backendDOMNodeId);
+
+  if (range) {
+    // AX 树不给时间/日期框的值与 min/max/step：用 DOM 读数补上，越界时直接标出浏览器的判定。
+    if (!hasValue && range.value) parts.push(`value=${JSON.stringify(clip(range.value, MAX_NAME))}`);
+    parts.push(rangeAttributes(range).trim());
+
+    if (range.problem) parts.push(`invalid=${range.problem}`);
+  }
+
   const level = propValue(node, "level");
 
   if (typeof level === "number") parts.push(`level=${level}`);
@@ -191,7 +212,7 @@ function renderBudgeted(entries: readonly AxLine[], budget: number): { text: str
 }
 
 /** 把一整棵 AX 树转成文本快照（带预算与重复文本折叠）。 */
-export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS): AxTextResult {
+export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CHARS, inputs: ReadonlyMap<number, InputRangeReadout> = new Map()): AxTextResult {
   const byId = new Map<string, AxNodeLite>();
 
   for (const n of nodes) byId.set(n.nodeId, n);
@@ -224,7 +245,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
       return;
     }
 
-    const described = describe(node);
+    const described = describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs);
     const name = String(node.name?.value ?? "");
     const textPayload = staticTextOf(node);
     let childDepth = depth;

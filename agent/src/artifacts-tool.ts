@@ -13,6 +13,9 @@ import { defineTool } from "./define-tool.js";
 /** 单个文件上限：侧栏历史要能回放，超大内容会挤掉其他记录。 */
 export const ARTIFACT_MAX_CHARS = 256_000;
 
+/** 交给用户的截图（PNG 的 base64）上限：约 6 MB 图片；更大的整页长图请用户缩小范围。 */
+export const IMAGE_ARTIFACT_MAX_CHARS = 8_000_000;
+
 /** 只接受一层文件名：不许带目录、不许以点开头，扩展名决定侧栏怎么显示与下载。 */
 const FILENAME = /^[^/\\:*?"<>|.][^/\\:*?"<>|]{0,99}\.[A-Za-z0-9]{1,8}$/;
 
@@ -21,10 +24,15 @@ const FILENAME = /^[^/\\:*?"<>|.][^/\\:*?"<>|]{0,99}\.[A-Za-z0-9]{1,8}$/;
  * 规则（文件名、大小）与侧栏卡片事件只在这里一处。
  */
 export interface ArtifactStore {
+  /** 文件内容；截图文件是 base64，用 isImage 区分。 */
   get(filename: string): string | undefined;
+  /** 这个文件是交给用户的图片（内容是 base64，不能当文字读或改）。 */
+  isImage(filename: string): boolean;
   names(): string[];
   /** 校验文件名与大小后保存并发 `artifact` 事件；返回是否覆盖了同名文件。 */
   save(filename: string, content: string): { overwritten: boolean };
+  /** 把一张 PNG 图（base64）存成交给用户的图片文件：文件名自动取 截图-<本地时间>.png，同秒重名加序号。 */
+  saveImage(base64: string, at?: Date): { filename: string };
   delete(filename: string): boolean;
 }
 
@@ -34,9 +42,12 @@ export function assertArtifactFilename(filename: string): void {
 
 export function createArtifactStore(emit: (event: AgentUiEvent) => void): ArtifactStore {
   const files = new Map<string, string>();
+  const images = new Set<string>();
+  const pad = (n: number) => String(n).padStart(2, "0");
 
   return {
     get: filename => files.get(filename),
+    isImage: filename => images.has(filename),
     names: () => [...files.keys()],
     save(filename, content) {
       assertArtifactFilename(filename);
@@ -44,12 +55,28 @@ export function createArtifactStore(emit: (event: AgentUiEvent) => void): Artifa
       if (content.length > ARTIFACT_MAX_CHARS) throw new Error(`文件过大（${content.length} 字符，上限 ${ARTIFACT_MAX_CHARS}），未保存。请拆成多个文件或精简内容。`);
       const overwritten = files.has(filename);
       files.set(filename, content);
+      images.delete(filename);
       emit({ kind: "artifact", action: "saved", filename, content });
 
       return { overwritten };
     },
+    saveImage(base64, at = new Date()) {
+      if (!base64) throw new Error("截图是空的，没有交给用户。");
+
+      if (base64.length > IMAGE_ARTIFACT_MAX_CHARS) throw new Error(`截图过大（${base64.length} 字符，上限 ${IMAGE_ARTIFACT_MAX_CHARS}），没有交给用户。请改截可见区域或一块区域。`);
+      const stem = `截图-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
+      let filename = `${stem}.png`;
+
+      for (let n = 2; files.has(filename); n += 1) filename = `${stem}-${n}.png`;
+      files.set(filename, base64);
+      images.add(filename);
+      emit({ kind: "artifact", action: "saved", filename, content: base64, encoding: "base64" });
+
+      return { filename };
+    },
     delete(filename) {
       if (!files.delete(filename)) return false;
+      images.delete(filename);
       emit({ kind: "artifact", action: "deleted", filename });
 
       return true;
@@ -115,6 +142,13 @@ export function createArtifactsTool(opts: ArtifactsToolOptions): ToolDefinition 
       const filename = String(params.filename ?? "").trim();
 
       assertArtifactFilename(filename);
+
+      // 截图是给用户看的图片，内容是 base64：不当文字读回、也不能改，只能删。
+      if (store.isImage(filename) && params.command !== "delete" && params.command !== "create") {
+        if (params.command === "get") return { content: [{ type: "text" as const, text: `${filename} 是交给用户的截图，已在侧栏显示成图片；图片内容不能当文字读取。` }], details: undefined };
+        throw new Error(`${filename} 是截图图片，不能用 ${String(params.command)} 修改；需要新图请重新截图。`);
+      }
+
       const existing = store.get(filename);
       let text: string;
 

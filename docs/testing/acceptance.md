@@ -11,6 +11,7 @@
 - `npm run accept:real-path`：一次跑完全部真实路径用例（见下节），汇总写 `out/acceptance/real-path/summary-<时间>.json`；`-- --only=a,b` 为过滤轮，恒不算整轮通过。
 - `npm run accept:journeys -- --suite smoke|sample|baseline|full`：12 个完整任务模板，真实侧栏 + 真模型 + 独立判定器；结果在 `eval/runs/journeys-*`。
 - `npm run accept:isolated`：QA-01 v2 隔离无头验收，默认不调用模型、不需凭据；CI 工作流 `.github/workflows/e2e.yml` 只跑其中 2026-09-23 在 macOS 整轮全绿的 9 个场景（F1–F5、F4b、C1、S1、S2）作回归门槛；目前仅手动触发，待 Linux 首次通过后再挂到 PR。
+- `npx tsx scripts/acceptance/page-readouts.mts --headless [--live]`：截断文字的完整值与范围输入框的读数、越界填写回执，零模型请求（[规则](../page-readouts.md)）。
 - `npm run eval:integration -- --headless`：发布集成评测。
 - `npm run eval:live`：需要真实供应商或真实环境的评测。
 
@@ -46,6 +47,7 @@ npx tsx scripts/acceptance/real-path/offline-send-and-model-menu.mts --headless 
 npx tsx scripts/acceptance/real-path/inproc-mark.mts --headless --via-settings --model=stepfun/step-3.7-flash # 只装扩展，设置页到圈画交付
 npx tsx scripts/acceptance/real-path/page-download.mts --headless --case=complete|broken # 只装扩展，下载页面提供的文件：完整下完 / 下载中断
 npx tsx scripts/acceptance/real-path/artifact-open.mts --headless      # 只装扩展、本机脚本模型：文件卡片「打开」6 种类型、网页越权探针（含对照组）、查看页下载、删除后提示
+npx tsx scripts/acceptance/real-path/screenshot-to-user.mts --headless # 只装扩展、本机脚本模型：「把这页截个图给我」图片出现在回答下、点开看大图、下载 PNG；模型自己看的截图不进侧栏；切回会话后回放
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark --voice=qingchunshaonv # 只装扩展，语音到页面标注
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=barge-in --model=zai-coding-cn/glm-5.3-flash # 长回答念到一半插话：旧回答停声、不抢话，新问题照常回答
 npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=stop-task --model=zai-coding-cn/glm-5.3-flash # 语音确认终止原任务；当前有失败记录

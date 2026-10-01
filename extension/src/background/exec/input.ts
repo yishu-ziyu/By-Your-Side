@@ -1,7 +1,9 @@
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import {replaceEditableText} from "../../shared/editable-text.js";
-import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
+import { readInputRange } from "../../shared/range-input.js";
+import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
+import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
@@ -236,10 +238,17 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
   return rect;
 }
 
+/** 填写回执：浏览器判定越界时带上 rangeIssue（值、问题、允许范围），不报成单纯成功。 */
+function filledResult(range: InputRangeReadout | null | undefined): ToolContract["fill"]["data"] {
+  const rangeIssue = rangeIssueOf(range);
+
+  return rangeIssue ? { filled: true, rangeIssue } : { filled: true };
+}
+
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
-async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string): Promise<void> {
+async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string): Promise<InputRangeReadout | null | undefined> {
   // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
-  const outcome = await callOnBackendNode<{ refused: string } | { filled: true }>(
+  const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null }>(
     tabId,
     backendNodeId,
     `function(v) {
@@ -268,7 +277,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
         else el.value = v;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
-        return { filled: true };
+        return { filled: true, range: (${readInputRange.toString()})(el) };
       }
       (${replaceEditableText.toString()})(el, v);
       return { filled: true };
@@ -280,6 +289,8 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
 
   // 旧行为不看返回值：拿不到回值（undefined）时照旧当作已填写，只认明确的拒绝。
   if (outcome && "refused" in outcome) throw new FillRefused(outcome.refused);
+
+  return outcome?.range;
 }
 
 async function ensureDomOps(tabId: number): Promise<void> {
@@ -1781,7 +1792,7 @@ export async function drag(
 export async function fill(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number },
   sessionId: string = LEAD_SESSION_ID,
-): Promise<{ filled: true }> {
+): Promise<ToolContract["fill"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -1855,7 +1866,7 @@ export async function fill(
 
     if (backendNodeId !== undefined) {
       try {
-        await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId);
+        const range = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId);
 
         if (targetRect) {
           await recordCursorTrail(
@@ -1869,7 +1880,7 @@ export async function fill(
 
         await endCursorAction(tabId, cid, actionId, "done");
 
-        return { filled: true };
+        return filledResult(range);
       } catch (e) {
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
@@ -1910,7 +1921,7 @@ export async function fill(
 
     await endCursorAction(tabId, cid, actionId, "done");
 
-    return { filled: true };
+    return filledResult(filled?.range);
   } catch (error) {
     await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
     throw error;

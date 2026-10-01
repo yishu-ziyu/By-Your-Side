@@ -10,7 +10,9 @@ import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { resolveReadableTab } from "../state.js";
 import { oneLine } from "../util.js";
-import { axTreeToText, type AxNodeLite } from "../axtree.js";
+import { axTreeToText, RANGE_INPUT_ROLES, type AxNodeLite } from "../axtree.js";
+import type { InputRangeReadout } from "../../../../shared/page-readout.js";
+import { readInputRange } from "../../shared/range-input.js";
 import { addAxRefs, clearAxSnapshot, recordAxSnapshot } from "../axstate.js";
 import { withTimeout } from "../timeout.js";
 
@@ -221,7 +223,7 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   const nodes = result.nodes ?? [];
 
   if (nodes.length === 0) throw new Error("Accessibility.getFullAXTree 返回空树");
-  const { text, backendIds, truncated } = axTreeToText(nodes);
+  const { text, backendIds, truncated } = axTreeToText(nodes, undefined, await readInputRanges(tabId, nodes));
   const textEvidence=axTextEvidence(nodes);
 
   if(!decision){
@@ -245,6 +247,56 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
     collectionComplete: collected.collectionComplete,
     collectionLimitReached: collected.collectionLimitReached,
   };
+}
+
+/** 一次快照最多补读的范围输入框；页面再多也只多花有限几次 CDP 往返。 */
+const MAX_RANGE_INPUTS = 40;
+
+/**
+ * AX 树不带原生时间/日期框的 min/max/step（数字框也不带 step）：对这几类角色按 backendDOMNodeId
+ * 补读 DOM 属性、当前值与浏览器的有效性判定。读不到时返回空表，快照照常输出，只是没有范围。
+ */
+async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Promise<Map<number, InputRangeReadout>> {
+  const ranges = new Map<number, InputRangeReadout>();
+  const byId = new Map(nodes.map(n => [n.nodeId, n]));
+  // 时间/日期框内部的「时/分」「年/月/日」子框也是 spinbutton，它们不是 input，不占名额。
+  const insideDateTime = (n: AxNodeLite) => ["InputTime", "Date", "DateTime"].includes(byId.get(n.parentId ?? "")?.role?.value ?? "");
+
+  const ids = nodes
+    .flatMap(n => !n.ignored && n.backendDOMNodeId !== undefined && RANGE_INPUT_ROLES.has(n.role?.value ?? "") && !insideDateTime(n) ? [n.backendDOMNodeId] : [])
+    .slice(0, MAX_RANGE_INPUTS);
+
+  if (!ids.length) return ranges;
+  const objectGroup = `bys-range-inputs-${crypto.randomUUID()}`;
+
+  try {
+    await withTimeout((async () => {
+      const resolved: Array<{ id: number; objectId: string }> = [];
+
+      for (const id of ids) {
+        const node = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup }).catch(() => undefined);
+
+        if (node?.object?.objectId) resolved.push({ id, objectId: node.object.objectId });
+      }
+
+      if (!resolved.length) return;
+
+      const response = await sendCommand<{ result?: { value?: Array<InputRangeReadout | null> } }>(tabId, "Runtime.callFunctionOn", {
+        objectId: resolved[0]!.objectId,
+        functionDeclaration: `function(...elements){return elements.map(${readInputRange.toString()});}`,
+        arguments: resolved.map(r => ({ objectId: r.objectId })),
+        returnByValue: true,
+      });
+
+      response.result?.value?.forEach((readout, i) => { if (readout) ranges.set(resolved[i]!.id, readout); });
+    })(), 3_000, "范围输入框读取 3 秒内没有返回");
+  } catch {
+    // 只是少了范围信息，不让整次快照失败。
+  } finally {
+    await sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
+
+  return ranges;
 }
 
 /** 旧实现：注入 content-snapshot.js（幂等）后调用 window.__sideagent.snapshot(scope)。 */

@@ -1,11 +1,11 @@
 /**
  * 生成文件的查看页（新标签页，扩展页面）：按文件类型显示侧栏卡片「打开」的那份文件。
  * 网页放进 manifest 沙箱页（不透明来源、无 chrome.* 接口），脚本能跑但碰不到扩展；
- * Markdown 用侧栏同一个渲染器并消毒；图片与 PDF 用本页生成的 blob 地址；其余文本原样等宽显示。
+ * Markdown 用侧栏同一个渲染器并消毒；图片与 PDF 用本页生成的 blob 地址（截图是 base64，先还原成字节）；其余文本原样等宽显示。
  * 内容来自 chrome.storage.session 里侧栏写的副本；副本被删（文件已删除）时显示「文件已不在了」。
  */
 import DOMPurify from "dompurify";
-import { download, extensionOf, lookup, mimeOf, VIEW_KEY_PREFIX, type ArtifactViewItem } from "./artifact-card.js";
+import { bytesOf, download, extensionOf, lookup, mimeOf, VIEW_KEY_PREFIX, type ArtifactViewItem } from "./artifact-card.js";
 import { renderMarkdownHtml } from "./markdown.js";
 
 const params = new URLSearchParams(location.search);
@@ -42,12 +42,12 @@ document.getElementById("name")!.textContent = filename;
 document.getElementById("kind")!.textContent = lookup(KIND, ext) ?? "文件";
 
 downloadButton.addEventListener("click", () => {
-  if (current) download(current.filename, current.content);
+  if (current) download(current.filename, current.content, current.encoding);
 });
 
-function blobOf(content: string): string {
+function blobOf(content: string, encoding?: "base64"): string {
   if (blobUrl) URL.revokeObjectURL(blobUrl);
-  blobUrl = URL.createObjectURL(new Blob([content], { type: mimeOf(filename) }));
+  blobUrl = URL.createObjectURL(new Blob([encoding === "base64" ? bytesOf(content) : content], { type: mimeOf(filename) }));
 
   return blobUrl;
 }
@@ -71,7 +71,7 @@ function renderHtml(content: string): HTMLElement {
   return frame;
 }
 
-function renderContent(content: string): HTMLElement {
+function renderContent({ content, encoding }: ArtifactViewItem): HTMLElement {
   if (ext === "html" || ext === "htm") return renderHtml(content);
 
   if (ext === "md") {
@@ -87,7 +87,7 @@ function renderContent(content: string): HTMLElement {
     box.className = "image";
     const img = document.createElement("img");
     img.alt = filename;
-    img.src = blobOf(content);
+    img.src = blobOf(content, encoding);
     box.append(img);
 
     return box;
@@ -97,7 +97,7 @@ function renderContent(content: string): HTMLElement {
     const frame = document.createElement("iframe");
     frame.className = "frame";
     frame.title = filename;
-    frame.src = blobOf(content);
+    frame.src = blobOf(content, encoding);
 
     return frame;
   }
@@ -126,7 +126,7 @@ function render(item: ArtifactViewItem | undefined): void {
     return;
   }
 
-  view.replaceChildren(renderContent(item.content));
+  view.replaceChildren(renderContent(item));
 }
 
 const isItem = (value: unknown): value is ArtifactViewItem =>
