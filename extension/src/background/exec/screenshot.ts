@@ -376,7 +376,8 @@ export async function screenshot(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   // worker 透传 sessionId：maybeActivateTab 对非 Lead 直接返回，绝不抢用户前台。
-  await maybeActivateTab(tab, sessionId, beforeDispatch);
+  if (beforeDispatch) await maybeActivateTab(tab, sessionId, beforeDispatch);
+  else await maybeActivateTab(tab, sessionId);
   const pre = await chrome.tabs.get(tab.id);
   const documentBefore = await readCurrentDocument(tab.id);
 
