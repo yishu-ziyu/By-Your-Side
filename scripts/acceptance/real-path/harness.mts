@@ -411,6 +411,8 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
 
   const spawnChrome = () => spawn(resolveChrome(), [
     "--headless=new",
+    // Ubuntu runners deny Chrome's unprivileged namespace sandbox (same as isolated-extension).
+    ...(process.platform === "linux" ? ["--no-sandbox"] : []),
     "--mute-audio",
     "--enable-unsafe-extension-debugging",
     `--user-data-dir=${dirs.profile}`,
@@ -430,16 +432,24 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
   tempDir.setChild(chrome);
 
   let chromeStderr = "";
+  let chromeSpawnError: Error | undefined;
+  chrome.on("error", error => { chromeSpawnError = error; });
   chrome.stderr.on("data", (chunk) => {
     chromeStderr = (chromeStderr + chunk).slice(-200_000);
   });
 
   const port = await until(async () => {
-    if (chrome.exitCode !== null) throw new Error(`Chrome 提前退出（${chrome.exitCode}）`);
+    if (chromeSpawnError) throw chromeSpawnError;
+    if (chrome.exitCode !== null || chrome.signalCode !== null) throw new Error(`Chrome 提前退出（${chrome.exitCode ?? chrome.signalCode}）`);
     const text = await readFile(join(dirs.profile, "DevToolsActivePort"), "utf8").catch(() => "");
 
     return text.split("\n")[0] || undefined;
-  }, 20_000, "Chrome 调试端口");
+  }, 20_000, "Chrome 调试端口").catch((error: Error) => {
+    const detail = `${error.message}\nChrome stderr (tail):\n${chromeStderr.slice(-8000)}`;
+    chrome.kill("SIGKILL");
+    tempDir.release();
+    throw new Error(detail);
+  });
 
   const version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
   let cdp = createCdp(version.webSocketDebuggerUrl);

@@ -98,3 +98,5 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only
 会话与文件重启验收：`npx tsx scripts/acceptance/real-path/session-durability.mts --headless`。真实侧栏、扩展与整个隔离Chrome进程重启，脚本模型请求验证原代号与文件内容；记录截图、下载hash与失败原件。见[标准](../evals/20261002-session-durability.md)。
 
 会话列表的小迭代：`npx tsx scripts/acceptance/real-path/conversation-menu.mts --headless`。验证360px长名称、更新时间、选中/键盘、各会话草稿和无模型任务调用，见[验收](../evals/20261003-conversation-menu.md)。
+
+真实路径的临时Linux Chrome沿用隔离验收的`--no-sandbox`参数，适配禁止非特权namespace的CI runner；不改变日常浏览器或产品权限。启动失败保留Chrome stderr及spawn错误，调试端口等待不延长。
