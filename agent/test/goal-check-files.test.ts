@@ -1,10 +1,10 @@
 /**
- * 标准 8 的窄版「丙」：本任务存下的文件作为证据交给目标核对（只给文件名、字数、行数、存的时间，不给内容）。
+ * 本任务存下的文件作为证据交给目标核对（10-02 自检修复起带受预算限制的文本内容）。
  * 走真实会话（扩展里的循环 + 脚本模型，不读用户凭据）：程序取到数据后用 browser.saveFile 存文件，
  * 一轮结束时目标核对要看到这个文件并判做完。失败方式：
  * H1 只存了文件、没动页面的任务根本不核对（核对只看页面改动）；
  * H2 核对看不到文件，只能按页面判「还差保存」；
- * H3 文件内容进了核对输入（大段数据、可能含隐私）；
+ * H3 核对只看到文件存在，无法核对内容；文件正文仍不回到主模型取数结果；
  * H4 别的任务存的文件被当成这次的证据。
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -123,7 +123,7 @@ async function session(program: string | null) {
 const goalChecks = (emitted: AgentUiEvent[]) => emitted.flatMap(event => event.kind === "goal_check" ? [event] : []);
 
 describe("goal check sees files saved in this task", () => {
-  it("a task that saves its data with browser.saveFile is checked, the judge sees the file without its content, and it is done (H1–H3)", async () => {
+  it("a task that saves its data with browser.saveFile is checked with its bounded text content (H1–H3)", async () => {
     const h = await session(PROGRAM);
 
     try {
@@ -133,7 +133,8 @@ describe("goal check sees files saved in this task", () => {
       expect(goalChecks(h.emitted)).toEqual([{ kind: "goal_check", status: "done" }]);
       expect(h.judged).toHaveLength(1);
       expect(h.judged[0]).toContain('"filename":"subs.txt"');
-      expect(h.judged[0]).not.toContain("第1句字幕");
+      expect(h.judged[0]).toContain("第1句字幕");
+      expect(h.judged[0]).toContain("第829句字幕");
     } finally {
       h.host.abort();
     }
