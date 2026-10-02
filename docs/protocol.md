@@ -151,7 +151,7 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 底层mouse_down/mouse_up/key_down/key_up/release_held_inputs、drag/html5_drag和Enter/Space暂拒绝，使用click或完整press_key或接管；停止时内部释放输入。页面脚本可经逐次确认执行，所以声明式读取后在browser_run内整理并saveFile仍可用。
 
-**验收边界：** 指纹不是站点事务锁，不能绑定无DOM变化的隐藏状态。脚本模型真实入口通过；审查与合并状态见[#38](https://github.com/yishu-ziyu/By-Your-Side/pull/38)。
+**验收边界：** 指纹不锁站点事务或隐藏状态。真实入口已验收；合并见[#38](https://github.com/yishu-ziyu/By-Your-Side/pull/38)。
 
 - 仅绑定 127.0.0.1；token 校验；Origin 校验。
 - 任何网页尝试连接 localhost WS 都会因 Origin/token 不符被拒。
