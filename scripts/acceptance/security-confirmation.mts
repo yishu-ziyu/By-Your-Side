@@ -19,7 +19,7 @@ try {
   await iso.tool('snapshot',{tabId});
   let seq=0;
   const start=async(name:string,params:any)=>{
-    await iso.swEval('globalThis.__securityResult=globalThis.__saCall('+JSON.stringify('security-'+ ++seq)+','+JSON.stringify(name)+','+JSON.stringify(params)+',undefined,undefined,"default",{runId:"security-run"});globalThis.__securitySettled=null;void globalThis.__securityResult.then(r=>globalThis.__securitySettled=r,e=>globalThis.__securitySettled={error:String(e)});true');
+    await iso.swEval('globalThis.__securityResult=globalThis.__saCall('+JSON.stringify('security-'+ ++seq)+','+JSON.stringify(name)+','+JSON.stringify(params)+',"acpt",undefined,"default",{runId:"security-run"});globalThis.__securitySettled=null;void globalThis.__securityResult.then(r=>globalThis.__securitySettled=r,e=>globalThis.__securitySettled={error:String(e)});true');
   };
   const card=async()=>until(()=>iso.evalIn(panel,'document.querySelector(".consent-card:not(.consent-complete) .consent-allow:not(:disabled)") ? true : undefined'),8000,'real sidebar consent card');
   const result=()=>iso.swEval('globalThis.__securityResult');
