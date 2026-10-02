@@ -170,3 +170,10 @@ describe("isCancelReply", () => {
     expect(isCancelReply("确认")).toBe(false);
   });
 });
+
+describe("booking and purchase submissions", () => {
+  it("recognises known irreversible submission labels", () => {
+    for (const label of ["订票", "预订", "立即购买", "确认订单", "Book now", "Reserve", "Buy now", "Checkout", "Confirm purchase"])
+      expect(isSubmitLabel(label), label).toBe(true);
+  });
+});
