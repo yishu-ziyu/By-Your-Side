@@ -16,7 +16,7 @@ describe('activation bypass boundary', () => {
     expect(() => assertActivationAllowed(name, params)).toThrow(/未执行/);
   });
   it('permits only exact host probes, ordinary editing keys and release cleanup', () => {
-    for (const code of Object.values(HOST_PAGE_PROBES)) expect(() => assertActivationAllowed('js', {code})).not.toThrow();
+    for (const code of Object.values(HOST_PAGE_PROBES)) {expect(() => assertActivationAllowed('js', {code})).not.toThrow();expect(requiresActivationConsent('js',{code})).toBe(true);}
     for (const name of ['release_held_inputs','snapshot','fill'])
       expect(() => assertActivationAllowed(name, {})).not.toThrow();
     expect(() => assertActivationAllowed('press_key', {key:'Tab'})).not.toThrow();

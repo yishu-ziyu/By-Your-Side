@@ -1,4 +1,3 @@
-import {isHostPageProbe} from '../../../shared/effect-policy.js';
 
 /**
  * Conservative stop for opaque activation paths. This is NOT a business-effect
@@ -20,6 +19,6 @@ export function assertActivationAllowed(name: string, params: Record<string, unk
 
 /** Unknown requests need a precise user grant; labels never prove harmlessness. */
 export function requiresActivationConsent(name:string, params:Record<string,unknown>):boolean {
-  if (isHostPageProbe(name,params)) return false;
+  // Even fixed JS runs in MAIN world, where page-owned getters may write.
   return !new Set(['snapshot','read_element','read_elements','list_tabs','get_active_tab','screenshot','network','observe_page','dialog_info','download_stat','consume_events','arm_event','wait_event','disarm_event','clear_marks','ask_user_to_point','worker_tabs','cdp']).has(name);
 }
