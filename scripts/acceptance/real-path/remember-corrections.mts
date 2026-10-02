@@ -6,7 +6,12 @@
  * 以及脚本模式下「发给模型的请求原文」（代理记录，等于助手实际看到了什么）。
  *
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted
- *     不花钱：11–20 + 1/4/5/8/9 的脚本变体（只查代码侧把关）+ 1e（证据不是原话 → 不问）+ 标准 6。
+ *     不花钱：11–20 + 1/4/5/8/9 的脚本变体（只查代码侧把关）+ 1e（证据不是原话 → 不问）+ 标准 6 + 21/21m/21p/21mix/21split。
+ *   --scripted --only=21：profile 合法误判不截走网站纠正；点记住后只存网站方法，同站带、异站不带。
+ *   --scripted --only=21m：profile 的 about 缺失或畸形时不写入，纠正询问仍出现。
+ *   --scripted --only=21p：个人长期偏好仍自动保存；只针对这次的纠正不改长期偏好。
+ *   --scripted --only=21mix：一句话中独立的个人邮箱直接记，网站方法仍先询问。
+ *   --scripted --only=21split：网站纠正的两段证据虽不重叠，也不能自动记成个人资料。
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --model=opencode-go/deepseek-v4.1-flash
  *   npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --model=zai-coding-cn/glm-5.3-flash
  *     花钱：1–10 用真实模型各一遍 + 「风险假设」（标准 2）三个练习站（客户系统导出 / 表单备注 / 商城排序）。
@@ -117,7 +122,7 @@ const TARGETS = {
       } catch { return null; }
     },
   },
-  // 「要不要记成关于你」判断（加固块已有）：脚本模式一律回「不记」。
+  // 「要不要记成关于你」判断：默认不记；21/21m 注入误判与畸形回复。
   profileDecision: {
     systemMarker: "You interpret the CURRENT direct user message",
     none: { action: "none", text: "", evidence: "", scope: { kind: "all" }, targets: [], taskRequested: false, about: { longTerm: false, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false } } as JsonRecord,
@@ -486,6 +491,9 @@ const RULES: Rule[] = [
   { match: "帮我看看这页", steps: [{ text: "这页是团队公告。" }] },
   { match: "你应该先看置顶消息", steps: [{ text: "好的，置顶消息是新同事周一入职。" }] },
   { match: "S20-LAST", steps: [{ text: "好的，按你说的来。S20-REPLY" }] },
+  { match: "不对，我坐飞机都要靠过道", steps: [{ text: "好的，你坐飞机都要靠过道。S21P-PROFILE-REPLY" }] },
+  { match: "不对，这次要靠窗", steps: [{ text: "好的，这次选靠窗。S21P-TEMP-REPLY" }] },
+  { match: "你漏了备注，每次都要填；我的邮箱是 mix@example.test", steps: [{ text: "好的，补上备注。S21MIX-REPLY" }] },
   { match: "不对", steps: [{ text: "好的，我改。" }] },
 ];
 
@@ -496,6 +504,12 @@ interface CorrectionControl {
 }
 
 const correctionControl: CorrectionControl = { reply: null, delayMs: 0 };
+
+interface ProfileControl {
+  reply: ((userContent: string) => JsonRecord) | null;
+}
+
+const profileControl: ProfileControl = { reply: null };
 
 const NOT_CORRECTION = { correction: false, reusable: false, about: "assistant", rule: "", evidence: "", replaces: null };
 
@@ -563,7 +577,8 @@ async function startRecordingModel() {
       }
 
       if (kind === "profile") {
-        answerJson(res, payload.stream === true, JSON.stringify(TARGETS.profileDecision.none));
+        const reply = profileControl.reply ? profileControl.reply(lastUser) : TARGETS.profileDecision.none;
+        answerJson(res, payload.stream === true, JSON.stringify(reply));
         record.endAt = Date.now();
 
         return;
@@ -1490,6 +1505,334 @@ async function s20(): Promise<Verdict> {
   return verdict(pass, evidence);
 }
 
+const S21_FIX = "你漏了「备注」那一栏，每次都要填";
+
+const S21_RULE = "在这个网站填表时我每次都填「备注」那一栏";
+
+const S21_PROFILE: JsonRecord = {
+  ...TARGETS.profileDecision.none,
+  action: "save", text: "每次都要填备注", evidence: "每次都要填",
+  about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false },
+};
+
+/** 网站纠正不应被 profile 判断截走；注入必须真收到请求，不能靠「根本没调用」通过。 */
+async function siteCorrectionWithProfile(label: string, profileReply: JsonRecord, { maxProfileCalls = 1, correctionEvidence = "每次都要填" } = {}) {
+  await emptyMemory();
+  await navigate(CRM);
+  await newConversation();
+  await diagnostics(`${label}-before`);
+  let injected = 0;
+  profileControl.reply = (content) => {
+    if (!content.includes(S21_FIX)) return TARGETS.profileDecision.none;
+    injected += 1;
+
+    return profileReply;
+  };
+
+  const r = await correct(CRM, "帮我填这个表单：姓名张三，电话 13800000000", S21_FIX,
+    () => fix({ rule: S21_RULE, evidence: correctionEvidence }), { fresh: false });
+
+  await settleAsks();
+  profileControl.reply = null;
+  const requests = model ? model.log.slice(r.t.mark) : [];
+  const profiles = requests.filter((x) => x.kind === "profile");
+  const corrections = requests.filter((x) => x.kind === "correction");
+  const store = await readMemories();
+  const profileEntries = store.items.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou);
+  const methods = store.items.filter(isMethod);
+  const receipts = Number(await rp.evaluate(panel, `document.querySelectorAll(${JSON.stringify(TARGETS.receipt.directSavedUndo)}).length`));
+  const lines = await diagnostics(label);
+  const decision = decisionCheck(lines, { asked: true, quotes: [S21_FIX] });
+  await shot(`${label}-ask`);
+  await writeFile(join(artifacts, `${label}-requests.json`), JSON.stringify(requests, null, 2));
+
+  const evidence: JsonRecord = {
+    profileReply, injected, maxProfileCalls, profileCalls: profiles.length, correctionCalls: corrections.length, chatCalls: r.t.chat.length,
+    profileEntriesBeforeClick: profileEntries.length, methodsBeforeClick: methods.length, directReceipts: receipts,
+    ask: r.ask, decision,
+    correctionInputOk: corrections.some((x) => x.correction?.userMessage === S21_FIX && x.correction.currentHostname === CRM),
+  };
+
+  const ok = injected >= 1 && injected <= maxProfileCalls && profiles.length === injected && corrections.length === 1 && r.t.chat.length >= 1
+    && profileEntries.length === 0 && methods.length === 0 && receipts === 0
+    && !!r.ask && r.ask.remember && r.ask.once && TARGETS.ask.questionText.test(r.ask.text) && r.ask.text.includes("备注")
+    && evidence.correctionInputOk === true && decision.ok;
+
+  return { ok, evidence, ask: r.ask };
+}
+
+/** 21：profile 模型合法误答 save+longTerm=true，仍须用户点记住才存网站方法。 */
+async function s21(): Promise<Verdict> {
+  const first = await siteCorrectionWithProfile("21", S21_PROFILE);
+
+  if (!first.ask) return verdict(false, first.evidence);
+  const clicked = await clickInAsk(first.ask.id, TARGETS.ask.remember);
+
+  const card = await until(async () => {
+    const a = await askById(first.ask!.id);
+
+    return a?.undo ? a : undefined;
+  }, 15_000, "网站方法记住回执").catch(() => null);
+
+  const store = await readMemories();
+  const methods = store.items.filter(isMethod);
+  const entry = methods.find((e) => isActive(e) && TARGETS.read.sourceQuote(e) === S21_FIX);
+  const fields = entry ? methodComplete(entry, store.raw, { quote: S21_FIX, host: CRM, useCount: 0 }) : null;
+  const profileEntriesAfterClick = store.items.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou).length;
+  await shot("21-remembered");
+  const carry: JsonRecord[] = [];
+
+  for (const host of [CRM, CRM2]) {
+    await navigate(host);
+    await newConversation();
+    await diagnostics(`21-${host}-before`);
+    const t = await turn("帮我填这个表单：姓名李四，电话 13900000000");
+    const lines = await diagnostics(`21-${host}`);
+    const expected = host === CRM;
+    const carried = !!entry && carriedIds(lines).includes(String(entry.id));
+    const ruleInRequest = t.chat.some((x) => x.all.includes(S21_RULE));
+    const contextRecords = lines.filter((x) => x.type === TARGETS.diag.context).length;
+    carry.push({ host, carried, ruleInRequest, contextRecords, chatCalls: t.chat.length,
+      ok: carried === expected && ruleInRequest === expected && contextRecords >= 1 && t.chat.length >= 1 });
+    await writeFile(join(artifacts, `21-${host}-requests.json`), JSON.stringify(t.requests, null, 2));
+  }
+
+  return verdict(first.ok && clicked && !!card && TARGETS.ask.rememberedText.test(card.text)
+    && !!card.scope && TARGETS.ask.siteScopeText.test(card.scope) && !TARGETS.ask.trouble.test(card.text)
+    && methods.length === 1 && profileEntriesAfterClick === 0 && fields?.ok === true && carry.every((x) => x.ok === true),
+  { ...first.evidence, clicked, card, methodsAfterClick: methods.length, profileEntriesAfterClick, fields, carry });
+}
+
+/** 21m：缺失或畸形 about 不得写 profile，也不能阻断纠正询问；每项独立新会话、空记忆。 */
+async function s21m(): Promise<Verdict> {
+  const { about: _about, ...missingAbout } = S21_PROFILE;
+  const cases: JsonRecord[] = [];
+
+  for (const [label, reply] of [
+    ["missing-about", missingAbout],
+    ["malformed-about", { ...S21_PROFILE, about: { longTerm: "true", date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false } }],
+  ] as const) {
+    // 原有补判最多三次：畸形回复允许 initial + 3 retries，不能靠零调用或无限重试通过。
+    const result = await siteCorrectionWithProfile(`21m-${label}`, reply, { maxProfileCalls: 4 });
+    cases.push({ label, ok: result.ok, ...result.evidence });
+  }
+
+  return verdict(cases.every((x) => x.ok === true), { cases });
+}
+
+/** 21split：方法的两段原话不重叠不等于含个人资料；未识别 personalEvidence 时不得直接保存。 */
+async function s21split(): Promise<Verdict> {
+  const correctionEvidence = "你漏了「备注」那一栏";
+  const result = await siteCorrectionWithProfile("21split", S21_PROFILE, { correctionEvidence });
+
+  return verdict(result.ok, { ...result.evidence, profileEvidence: "每次都要填", correctionEvidence,
+    personalEvidenceProvided: false });
+}
+
+/** 21mix：两个不重叠的证据分别保存个人邮箱与询问网站方法，不得互相截走。 */
+async function s21mix(): Promise<Verdict> {
+  const FIX = "你漏了备注，每次都要填；我的邮箱是 mix@example.test";
+  const EMAIL_TEXT = "邮箱：mix@example.test";
+  const PROFILE_EVIDENCE = "我的邮箱是 mix@example.test";
+  const METHOD_EVIDENCE = "每次都要填";
+
+  const profileReply: JsonRecord = {
+    ...TARGETS.profileDecision.none,
+    action: "save", text: EMAIL_TEXT, evidence: PROFILE_EVIDENCE,
+    about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false },
+  };
+
+  await emptyMemory();
+  await navigate(CRM);
+  await newConversation();
+  await diagnostics("21mix-before");
+  let injected = 0;
+  profileControl.reply = (content) => {
+    if (!content.includes(FIX)) return TARGETS.profileDecision.none;
+    injected += 1;
+
+    return profileReply;
+  };
+
+  const r = await correct(CRM, null, FIX,
+    () => ({ ...fix({ rule: S21_RULE, evidence: METHOD_EVIDENCE }), personalEvidence: PROFILE_EVIDENCE }), { fresh: false });
+
+  await settleAsks();
+  profileControl.reply = null;
+  const requests = model ? model.log.slice(r.t.mark) : [];
+  const before = await readMemories();
+  const profiles = before.items.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou);
+  const profile = profiles[0];
+  const methodsBeforeClick = before.items.filter(isMethod).length;
+  const lines = await diagnostics("21mix-ask");
+  const decision = decisionCheck(lines, { asked: true, quotes: [FIX] });
+  const receipts = Number(await rp.evaluate(panel, `document.querySelectorAll(${JSON.stringify(TARGETS.receipt.directSavedUndo)}).length`));
+  const profileCalls = requests.filter((x) => x.kind === "profile").length;
+  const corrections = requests.filter((x) => x.kind === "correction");
+
+  const evidence: JsonRecord = {
+    profileReply, correctionReply: { ...fix({ rule: S21_RULE, evidence: METHOD_EVIDENCE }), personalEvidence: PROFILE_EVIDENCE }, injected,
+    profileCalls, correctionCalls: corrections.length, chatCalls: r.t.chat.length,
+    replyOk: r.t.transcript.includes("S21MIX-REPLY"), profilesBeforeClick: profiles.length,
+    profile: profile ?? null, methodsBeforeClick, directReceipts: receipts, ask: r.ask, decision,
+    correctionInputOk: corrections.some((x) => x.correction?.userMessage === FIX && x.correction.currentHostname === CRM),
+  };
+
+  await shot("21mix-ask-and-profile");
+  await writeFile(join(artifacts, "21mix-requests.json"), JSON.stringify(requests, null, 2));
+
+  const beforeOk = injected === 1 && profileCalls === 1 && corrections.length === 1 && r.t.chat.length >= 1
+    && evidence.replyOk === true && profiles.length === 1 && !!profile && isActive(profile)
+    && TARGETS.read.text(profile) === EMAIL_TEXT && TARGETS.read.scope(profile).kind === "all"
+    && methodsBeforeClick === 0 && receipts === 1 && !!r.ask && r.ask.remember && r.ask.once
+    && TARGETS.ask.questionText.test(r.ask.text) && r.ask.text.includes("备注")
+    && evidence.correctionInputOk === true && decision.ok;
+
+  if (!r.ask) return verdict(false, evidence);
+  const clicked = await clickInAsk(r.ask.id, TARGETS.ask.remember);
+
+  const card = await until(async () => {
+    const a = await askById(r.ask!.id);
+
+    return a?.undo ? a : undefined;
+  }, 15_000, "混合消息的网站方法记住回执").catch(() => null);
+
+  const after = await readMemories();
+  const profilesAfter = after.items.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou);
+  const sameProfile = profile ? byId(profilesAfter, String(profile.id)) : undefined;
+  const methods = after.items.filter(isMethod);
+  const method = methods.find((e) => isActive(e) && TARGETS.read.sourceQuote(e) === FIX);
+  const fields = method ? methodComplete(method, after.raw, { quote: FIX, host: CRM, useCount: 0 }) : null;
+
+  const profileUnchanged = !!sameProfile && isActive(sameProfile) && TARGETS.read.text(sameProfile) === EMAIL_TEXT
+    && TARGETS.read.scope(sameProfile).kind === "all";
+
+  await shot("21mix-remembered");
+
+  return verdict(beforeOk && clicked && !!card && TARGETS.ask.rememberedText.test(card.text)
+    && !!card.scope && TARGETS.ask.siteScopeText.test(card.scope) && !TARGETS.ask.trouble.test(card.text)
+    && profilesAfter.length === 1 && profileUnchanged && methods.length === 1 && fields?.ok === true,
+  { ...evidence, clicked, card, profilesAfterClick: profilesAfter.length, profileUnchanged,
+    methodsAfterClick: methods.length, fields });
+}
+
+/** 21p：个人偏好纠正仍直接记成 profile；一次性要求不覆盖、不增加长期记忆。 */
+async function s21p(): Promise<Verdict> {
+  const FIX = "不对，我坐飞机都要靠过道";
+  const TEMP = "不对，这次要靠窗";
+  const TEXT = "坐飞机都要靠过道";
+  const PROFILE_EVIDENCE = "我坐飞机都要靠过道";
+
+  const profileReply: JsonRecord = {
+    ...TARGETS.profileDecision.none,
+    action: "save", text: TEXT, evidence: PROFILE_EVIDENCE,
+    about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false },
+  };
+
+  const temporaryReply: JsonRecord = {
+    ...TARGETS.profileDecision.none,
+    about: { longTerm: false, date: null, onlyThisTask: true, explicitRequest: false, dateIsTheTask: false },
+  };
+
+  await emptyMemory();
+  await navigate(FLIGHT);
+  await newConversation();
+  await diagnostics("21p-before");
+  const injected = { profile: 0, temporary: 0 };
+  profileControl.reply = (content) => {
+    // CURRENT 输入可能也带前一轮原话；先识别这次的新要求，避免误用旧回复。
+    if (content.includes(TEMP)) {
+      injected.temporary += 1;
+
+      return temporaryReply;
+    }
+
+    if (content.includes(FIX)) {
+      injected.profile += 1;
+
+      return profileReply;
+    }
+
+    return TARGETS.profileDecision.none;
+  };
+
+  correctionControl.reply = (input) => fix({ rule: "", evidence: input.userMessage === FIX ? "我坐飞机都要靠过道" : "这次要靠窗", about: "assistant", reusable: false });
+  const first = await turn(FIX);
+  await settleAsks();
+  const firstRequests = model ? model.log.slice(first.mark) : [];
+  const firstLines = await diagnostics("21p-profile");
+  const firstStore = await readMemories();
+  const profiles = firstStore.items.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou);
+  const entry = profiles[0];
+  const firstDecision = decisionCheck(firstLines, { asked: false, quotes: [FIX] });
+  const firstAsks = await asks();
+  const firstReceipts = Number(await rp.evaluate(panel, `document.querySelectorAll(${JSON.stringify(TARGETS.receipt.directSavedUndo)}).length`));
+  const profileCalls = firstRequests.filter((x) => x.kind === "profile").length;
+  const correctionCalls = firstRequests.filter((x) => x.kind === "correction").length;
+
+  const firstEvidence: JsonRecord = {
+    injected: injected.profile, profileCalls, correctionCalls, chatCalls: first.chat.length,
+    replyOk: first.transcript.includes("S21P-PROFILE-REPLY"), profiles: profiles.length,
+    methods: firstStore.items.filter(isMethod).length, asks: firstAsks, directReceipts: firstReceipts,
+    entry: entry ?? null, decision: firstDecision,
+    correctionInputOk: firstRequests.some((x) => x.correction?.userMessage === FIX && x.correction.currentHostname === FLIGHT),
+  };
+
+  await shot("21p-profile-saved");
+  await writeFile(join(artifacts, "21p-profile-requests.json"), JSON.stringify(firstRequests, null, 2));
+
+  const firstOk = injected.profile === 1 && profileCalls === 1 && correctionCalls === 1 && first.chat.length >= 1
+    && firstEvidence.replyOk === true && profiles.length === 1 && !!entry && isActive(entry)
+    && TARGETS.read.text(entry) === TEXT && TARGETS.read.scope(entry).kind === "all"
+    && TARGETS.read.sourceQuote(entry) === PROFILE_EVIDENCE && firstEvidence.methods === 0 && firstAsks.length === 0
+    && firstReceipts === 1 && firstEvidence.correctionInputOk === true && firstDecision.ok;
+
+  const second = await turn(TEMP);
+  await settleAsks();
+  const secondRequests = model ? model.log.slice(second.mark) : [];
+  profileControl.reply = null;
+  const secondLines = await diagnostics("21p-temporary");
+  const secondStore = await readMemories();
+  const remainingProfiles = secondStore.items.filter((e) => TARGETS.read.kind(e) === TARGETS.kinds.aboutYou);
+  const remaining = entry ? byId(remainingProfiles, String(entry.id)) : undefined;
+  const secondDecision = decisionCheck(secondLines, { asked: false, quotes: [TEMP] });
+  const secondAsks = await asks();
+  const secondReceipts = Number(await rp.evaluate(panel, `document.querySelectorAll(${JSON.stringify(TARGETS.receipt.directSavedUndo)}).length`));
+
+  // 个人资料的来源是已核验的 evidence，不必是整句纠正；使用统计正常变化不代表资料被改。
+  const unchangedFields = {
+    id: !!entry && remaining?.id === entry.id,
+    factId: !!entry && remaining?.factId === entry.factId,
+    version: !!entry && remaining?.version === entry.version,
+    text: !!entry && !!remaining && TARGETS.read.text(remaining) === TARGETS.read.text(entry),
+    scopeKind: !!entry && !!remaining && TARGETS.read.scope(remaining).kind === TARGETS.read.scope(entry).kind,
+    scopeHostname: !!entry && !!remaining && TARGETS.read.scope(remaining).hostname === TARGETS.read.scope(entry).hostname,
+    status: !!entry && !!remaining && TARGETS.read.status(remaining) === TARGETS.read.status(entry),
+    sourceQuote: !!entry && !!remaining && TARGETS.read.sourceQuote(remaining) === TARGETS.read.sourceQuote(entry),
+    createdAt: !!entry && remaining?.createdAt === entry.createdAt,
+    updatedAt: !!entry && remaining?.updatedAt === entry.updatedAt,
+  };
+
+  const secondEvidence: JsonRecord = {
+    injected: injected.temporary, profileCalls: secondRequests.filter((x) => x.kind === "profile").length,
+    correctionCalls: secondRequests.filter((x) => x.kind === "correction").length, chatCalls: second.chat.length,
+    replyOk: second.transcript.includes("S21P-TEMP-REPLY"), profiles: remainingProfiles.length,
+    methods: secondStore.items.filter(isMethod).length, asks: secondAsks, directReceipts: secondReceipts,
+    originalProfileUnchanged: Object.values(unchangedFields).every(Boolean), unchangedFields,
+    windowPreferenceStored: secondStore.items.some((e) => TARGETS.read.text(e).includes("靠窗")), decision: secondDecision,
+  };
+
+  await shot("21p-temporary-not-saved");
+  await writeFile(join(artifacts, "21p-temporary-requests.json"), JSON.stringify(secondRequests, null, 2));
+
+  const secondOk = injected.temporary === 1 && secondEvidence.profileCalls === 1 && second.chat.length >= 1
+    && secondEvidence.replyOk === true && remainingProfiles.length === 1 && secondEvidence.originalProfileUnchanged === true
+    && secondEvidence.windowPreferenceStored === false && secondEvidence.methods === 0 && secondAsks.length === 0
+    && secondReceipts === firstReceipts && secondDecision.ok;
+
+  return verdict(firstOk && secondOk, { profile: firstEvidence, temporary: secondEvidence });
+}
+
 /** 不出卡片的共用判定（脚本变体）。expectNoSideCall：代码侧粗筛就该拦下，连纠正判断都不发。 */
 async function noAsk(id: string, host: string, task: string | null, sentence: string, reply: ((i: CorrectionInput) => JsonRecord) | null, { expectNoSideCall = false, secret = "" } = {}): Promise<Verdict> {
   await navigate(host);
@@ -1733,7 +2076,7 @@ async function real2(): Promise<Verdict> {
 
 let fatal: string | null = null;
 
-const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20"];
+const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split"];
 
 const ORDER_REAL = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "risk-crm", "risk-form", "risk-shop"];
 
@@ -1777,6 +2120,7 @@ try {
 
     correctionControl.reply = null;
     correctionControl.delayMs = 0;
+    profileControl.reply = null;
     console.log(`${verdicts[id]!.status.toUpperCase()} ${id} ${JSON.stringify(verdicts[id]!.evidence).slice(0, 400)}`);
   };
 
@@ -1792,10 +2136,14 @@ try {
     await run("9s", s9);
     await run("13", s13);
     // 15/16/18/19 需要一条生效的 R1：在新会话里把同一条纠正再记一次（12 已撤销第一次的）。
-    await emptyMemory();
-    currentScenario = "R1-again";
-    const again = await rememberR1Again().catch((e: Error) => ({ ok: false, error: e.message }));
-    console.log(`R1 again ${JSON.stringify(again)}`);
+
+    if (["15", "16", "18", "18u", "19"].some(wants)) {
+      await emptyMemory();
+      currentScenario = "R1-again";
+      const again = await rememberR1Again().catch((e: Error) => ({ ok: false, error: e.message }));
+      console.log(`R1 again ${JSON.stringify(again)}`);
+    }
+
     await run("14", s14);
     await run("15", s15);
     await run("16", s16);
@@ -1804,6 +2152,11 @@ try {
     await run("18u", s18u);
     await run("19", s19);
     await run("20", s20);
+    await run("21", s21);
+    await run("21m", s21m);
+    await run("21p", s21p);
+    await run("21mix", s21mix);
+    await run("21split", s21split);
   } else {
     for (const site of RISK) {
       const askId = site.key === "crm" ? "1" : site.key === "form" ? "3" : null;

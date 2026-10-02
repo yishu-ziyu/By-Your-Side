@@ -80,6 +80,9 @@ const emailA = "我的邮箱是 a@x.com";
 function judge(input: string, saveAgain = false): string {
   // SAFETY: 输入是运行时交给判断的 JSON；只读这两个字段。
   const { userMessage, entries } = JSON.parse(input) as { userMessage: string; entries: Array<{ id: string; version: number; text: string }> };
+
+  if (!entries) return JSON.stringify({ correction: true, reusable: false, about: "assistant", rule: "", evidence: userMessage, replaces: null });
+
   const email = entries.find(e => e.text.includes("邮箱"));
 
   if (userMessage === emailA && email && !saveAgain) return JSON.stringify({ action: "update", text: "邮箱 a@x.com", evidence: "a@x.com", scope: { kind: "all" }, targets: [{ id: email.id, version: email.version }], taskRequested: false, about });
@@ -228,7 +231,7 @@ describe("stale retries, interjections and scope", () => {
     await vi.waitFor(async () => expect(await activeTexts(f.store)).toEqual(["邮箱 b@x.com"]), WAIT);
     f.settled();
     await vi.waitFor(async () => expect(await f.queued()).toEqual([]), WAIT);
-    expect(f.complete).toHaveBeenCalledTimes(3);
+    expect(f.complete).toHaveBeenCalledTimes(4);
     expect(await activeTexts(f.store)).toEqual(["邮箱 b@x.com"]);
     expect(f.decisions()).toContainEqual(expect.objectContaining({ source: "retry", status: "dropped" }));
   });
@@ -262,7 +265,7 @@ describe("stale retries, interjections and scope", () => {
     await vi.waitFor(async () => expect(await activeTexts(f.store)).toEqual(["邮箱 b@x.com"]), WAIT);
     f.settled();
     await vi.waitFor(async () => expect(await f.queued()).toEqual([]), WAIT);
-    expect(f.complete).toHaveBeenCalledTimes(3);
+    expect(f.complete).toHaveBeenCalledTimes(4);
     expect(await activeTexts(f.store)).toEqual(["邮箱 b@x.com"]);
     expect(f.decisions()).toContainEqual(expect.objectContaining({ source: "retry", status: "dropped", action: "save" }));
   });

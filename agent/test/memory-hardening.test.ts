@@ -68,7 +68,7 @@ const said = (text: string) => text;
 
 async function replace(store: MemoryStore, target: MemoryEntry, email: string): Promise<MemoryEntry> {
   const quote = said(`我的邮箱改成 ${email} 了`);
-  const d: MemoryDecision = { action: "update", text: `用户的邮箱是 ${email}`, evidence: quote, scope: all, targets: [{ id: target.id, version: target.version }], taskRequested: false };
+  const d: MemoryDecision = { action: "update", text: `用户的邮箱是 ${email}`, evidence: quote, scope: all, targets: [{ id: target.id, version: target.version }], taskRequested: false, about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false } };
 
   return (await store.applyDecision(d, quote, "conv-a", () => true))[0]!;
 }

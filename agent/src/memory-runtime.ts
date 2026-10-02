@@ -11,7 +11,7 @@ import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type Memor
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextSelection } from "./memory-context.js";
 import { isRelevantMemory } from "./memory-relevance.js";
 import { isUserCorrection } from "./experience.js";
-import { CORRECTION_ASK_PROMPT, CorrectionParseError, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict } from "./memory-correction.js";
+import { CORRECTION_ASK_PROMPT, CorrectionParseError, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
 interface ActiveUserTurn {
   epoch: number;
@@ -27,6 +27,9 @@ interface ActiveUserTurn {
   key: string;
   /** 这句通过了纠正粗筛：这一轮结束后问模型能否总结成一条做法。 */
   correction?: boolean;
+  /** 候选个人记忆与确认卡片共享同一次纠正判断。 */
+  correctionVerdict?: Promise<CorrectionVerdict>;
+  correctionHostname?: string | null;
   /** 已开始算这句的询问（一轮结束可能不止通知一次）。 */
   asking?: boolean;
   /** 用户发这句时所在页面的地址：询问的网站取它，不从原话里解析网址。 */
@@ -320,6 +323,53 @@ export class MemoryRuntime {
     this.onRecord?.("memory_ask_decision", { source: "message", key: turn.key, ...data });
   }
 
+  private async correctionVerdict(text: string, recentTurns: MemoryConversation, hostname: string | null, signal: AbortSignal): Promise<CorrectionVerdict> {
+    const methods = (await this.store.list()).filter(entry => entry.status === "active" && entry.kind === "method" && (entry.scope.kind === "all" || entry.scope.hostname === hostname));
+    const raw = await this.providerTagged()(CORRECTION_ASK_PROMPT, correctionAskInput(text, recentTurns, hostname, methods), signal);
+
+    return parseCorrectionVerdict(raw);
+  }
+
+  private turnCorrectionVerdict(turn: ActiveUserTurn): Promise<CorrectionVerdict> {
+    const hostname = memoryHostOfUrl(turn.pageUrl) ?? this.recentWebHost();
+
+    if (turn.correctionVerdict && turn.correctionHostname === hostname) return turn.correctionVerdict;
+    turn.correctionHostname = hostname;
+    const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
+
+    const judgment = this.correctionVerdict(turn.text, turn.recentTurns, hostname, signal).catch(error => {
+      if (turn.correctionVerdict === judgment) delete turn.correctionVerdict;
+
+      throw error;
+    });
+
+    turn.correctionVerdict = judgment;
+
+    return judgment;
+  }
+
+  /** 可复用的纠正先走确认，不允许个人资料判断抢先写入并压掉卡片。 */
+  private async separateCorrection(decision: MemoryDecision, text: string, signal: AbortSignal, turn?: ActiveUserTurn, hostname: string | null = null): Promise<MemoryDecision> {
+    if ((decision.action !== "save" && decision.action !== "update") || !isUserCorrection(text) || (turn && !turn.correction)) return decision;
+    const verdict = turn ? await this.turnCorrectionVerdict(turn) : await this.correctionVerdict(text, [], hostname, signal);
+
+    if (!verdict.correction || !verdict.reusable) return decision;
+
+    if (!verdict.evidence.trim() || !text.includes(verdict.evidence)) throw new Error("记忆判断缺少当前纠正原话依据");
+
+    // 两段唯一且不重叠的原话可以分别表达个人资料与做法；不把独立资料一起丢掉。
+    const personal = verdict.personalEvidence ?? "";
+    const factAt = text.indexOf(personal), correctionAt = text.indexOf(verdict.evidence);
+
+    const independent = !!personal && personal.includes(decision.evidence) && factAt >= 0
+      && factAt === text.lastIndexOf(personal) && correctionAt === text.lastIndexOf(verdict.evidence)
+      && (factAt + personal.length <= correctionAt || correctionAt + verdict.evidence.length <= factAt);
+
+    if (independent) return decision;
+
+    return { ...decision, action: "none", text: "", targets: [] };
+  }
+
   /**
    * 这一轮结束后算要不要问「要我记住吗」：模型答窄问题，decideCorrectionAsk 按规则决定。
    * 用户接着发了话、停止或接管（这一轮作废）时丢掉，不发过时的询问；失败只留记录，不补判。
@@ -328,14 +378,15 @@ export class MemoryRuntime {
     const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
 
     try {
-      // 一句话只出一种记忆结果：这句已被直接记下（自动或模型调用工具）就不再问。
+      // 同一内容已直接记下就不再问；独立个人资料不替代做法确认。
       const auto = turn.auto ? await turn.auto : null;
       const tool = turn.change ? await turn.change.catch(() => null) : null;
       const saved = (auto?.changed.length && auto.decision.action !== "forget") || (tool && ["saved", "updated"].includes(tool.details.action));
 
       if (!this.current(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
 
-      if (saved) return this.recordAsk(turn, { status: "skipped", reason: "already-saved" });
+      // 同一句里的独立个人资料已记下，不代表网站做法也已经获确认。
+      if (saved && !(turn.correctionVerdict && (await turn.correctionVerdict).reusable)) return this.recordAsk(turn, { status: "skipped", reason: "already-saved" });
 
       const messageKey = correctionMessageKey(turn.text);
 
@@ -345,8 +396,7 @@ export class MemoryRuntime {
       if (this.remembered.has(messageKey)) return this.recordAsk(turn, { status: "skipped", reason: "already-remembered" });
       // 网站取用户所在的网页；不在网页上（扩展页、浏览器页）时取助手最近操作过的网站，都没有就是没有网站。
       const hostname = memoryHostOfUrl(turn.pageUrl) ?? this.recentWebHost();
-      const methods = (await this.store.list()).filter(entry => entry.status === "active" && entry.kind === "method" && (entry.scope.kind === "all" || entry.scope.hostname === hostname));
-      const raw = await this.providerTagged()(CORRECTION_ASK_PROMPT, correctionAskInput(turn.text, turn.recentTurns, hostname, methods), signal);
+      const verdict = await this.turnCorrectionVerdict(turn);
 
       if (!this.current(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
 
@@ -359,7 +409,7 @@ export class MemoryRuntime {
       if (!this.current(turn)) return this.recordAsk(turn, { status: "dropped", reason: "superseded" });
       const superseded = [...this.asks].flatMap(([id, ask]) => (ask.messageKey === messageKey ? [id] : []));
       const open = new Set([...this.asks.values()].flatMap(ask => (ask.messageKey === messageKey ? [] : ask.keys)));
-      const decision = decideCorrectionAsk({ verdict: parseCorrectionVerdict(raw), userMessage: turn.text, hostname, methods: latest, dismissed: this.dismissed, open });
+      const decision = decideCorrectionAsk({ verdict, userMessage: turn.text, hostname, methods: latest, dismissed: this.dismissed, open });
 
       if (!decision.ask) return this.recordAsk(turn, { status: "skipped", reason: decision.reason });
       const askId = globalThis.crypto.randomUUID();
@@ -541,7 +591,9 @@ export class MemoryRuntime {
 
     try {
       const entries = (await this.store.list()).filter(entry => entry.status === "active");
-      const decision = await decideMemory(this.providerTagged(), item.text, entries, item.hostname, signal, [], item.correction ? "auto-correction" : "auto");
+      const interpreted = await decideMemory(this.providerTagged(), item.text, entries, item.hostname, signal, [], item.correction ? "auto-correction" : "auto");
+      const turn = this.active?.key === item.key ? this.active : undefined;
+      const decision = await this.separateCorrection(interpreted, item.text, signal, turn, item.hostname);
       const placement = placeMemory(decision, entries);
 
       if (decision.action !== "forget" && !placement.store) {
@@ -633,7 +685,8 @@ export class MemoryRuntime {
       const entries = (await this.store.list()).filter(entry => entry.status === "active");
       const hostname = memoryHostOfUrl(turn.query.url);
 
-      const decision = await decideMemory(this.providerTagged(), turn.text, entries, hostname, signal, turn.recentTurns, turn.correction ? "auto-correction" : "auto");
+      const interpreted = await decideMemory(this.providerTagged(), turn.text, entries, hostname, signal, turn.recentTurns, turn.correction ? "auto-correction" : "auto");
+      const decision = await this.separateCorrection(interpreted, turn.text, signal, turn);
       const placement = placeMemory(decision, entries);
 
       if (decision.action !== "forget" && !placement.store) {
@@ -911,7 +964,8 @@ export class MemoryRuntime {
     const entries = (await this.store.list()).filter(entry => entry.status === "active");
     const hostname = memoryHostOfUrl(turn.query.url);
 
-    const decision = await decideMemory(this.complete, turn.text, entries, hostname, scopedSignal, turn.recentTurns);
+    const interpreted = await decideMemory(this.complete, turn.text, entries, hostname, scopedSignal, turn.recentTurns);
+    const decision = await this.separateCorrection(interpreted, turn.text, scopedSignal, turn);
     const guard = () => this.current(turn) && !scopedSignal.aborted;
 
     if (!guard()) throw new Error("记忆操作已失效，未获授权");
@@ -921,6 +975,10 @@ export class MemoryRuntime {
 
     // 不落盘的结论在这里记；落盘的写完后带上条目编号再记。
     if (!(decision.action === "forget" || (writes && placement.store))) this.recordDecision("change", turn.key, decision, placement, []);
+
+    if (decision.action === "none" && (interpreted.action === "save" || interpreted.action === "update")) {
+      return result("none", [], "这是需确认的做事方法，不自动写成个人资料。当前任务结束后，扩展会显示「要我记住吗」卡片；用户点「记住」后才保存。不要反复调用修改记忆，也不要说不能跨会话记住。");
+    }
 
     if (decision.action === "none") return result("none", [], "当前请求无需修改长期记忆；尚未保存任何内容。");
 

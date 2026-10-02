@@ -4,6 +4,8 @@
 
 只保留当前仍能被团队找到和重复运行的验收入口。
 
+记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=21,21m,21p,21mix,21split`；合法误分类、缺失/畸形分类、个人/临时/混合消息、分离片段反例、确认前后写入和同站/异站带回，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。
+
 ## 正式入口
 
 - `npm run accept:browser`：浏览器主链。
