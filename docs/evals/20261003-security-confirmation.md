@@ -41,3 +41,5 @@
 69439a在[CI37047373719](https://github.com/yishu-ziyu/By-Your-Side/actions/runs/37047373719)全部工程检查与两个Chrome入口通过。真实日常脚本模型四项PASS：拒绝0POST、允许恰1POST、再次独立审批、Stop撤销；artifact11244648666含截图与JSON，SHA256488d1cd4e7654e96b67144d57c6b3a19041aa3f3adcd3da98aeb153a3a226d8b。后续文档校正不改安全实现，最新CI/独立审查/合并状态见PR38，避免历史报告冒充当前head。
 
 独立复核发现批准的异步页面核对期间再拒绝曾被deciding短路忽略；先写反例1FAIL，修复后6项broker检查PASS。拒绝/超时优先于重复批准闸门；异步结果只完成仍在pending且取消版本未变的原请求。新head将重跑完整工程与两个真实Chrome入口，结果以PR为准。
+
+文件选择器arm_event经capture准备await后也在enabled:true原生派发前复核批准；反例旧5项中1FAIL，补guard后通过。失败只撤销本次已开始的拦截，enabled:false内部清理仍可执行；待完整CI重验。

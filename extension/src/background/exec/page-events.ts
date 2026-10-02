@@ -17,6 +17,7 @@ bindAttachHolds(holdAttach, releaseAttachHold);
 export async function armEvent(
   params: ToolContract["arm_event"]["params"],
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;noteEffect?: () => void},
 ): Promise<ToolContract["arm_event"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -34,7 +35,7 @@ export async function armEvent(
     sessionKey: sessionId,
     type,
     timeoutMs: params.timeoutMs,
-  });
+  },beforeDispatch);
 
   return { token: arm.token, type, tabId: arm.tabId, timeoutMs: arm.timeoutMs };
 }

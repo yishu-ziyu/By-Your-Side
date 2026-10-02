@@ -351,7 +351,7 @@ export async function armEventForTab(input: {
   sessionKey: string;
   type: PageEventKind;
   timeoutMs?: number;
-}): Promise<ArmedPageEvent> {
+}, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;noteEffect?: () => void}): Promise<ArmedPageEvent> {
   // 没有 downloads 权限就收不到完成与否，不能接下载。
   if (input.type === "download" && !chrome.downloads?.onCreated) {
     throw new Error("DOWNLOAD_API_UNAVAILABLE: chrome.downloads is not available; page downloads cannot be confirmed.");
@@ -367,12 +367,18 @@ export async function armEventForTab(input: {
   });
 
   hold(arm);
+  let interceptStarted = false;
 
   try {
     if (input.type === "filechooser") {
-      await chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setInterceptFileChooserDialog", {
+      await beforeDispatch?.();
+      beforeDispatch?.checkNow?.();
+      interceptStarted = true;
+      const pending = chrome.debugger.sendCommand({ tabId: input.tabId }, "Page.setInterceptFileChooserDialog", {
         enabled: true,
       });
+      beforeDispatch?.noteEffect?.();
+      await pending;
     }
 
     armTimers.set(
@@ -394,6 +400,7 @@ export async function armEventForTab(input: {
     return arm;
   } catch (error) {
     cancelArm(ledger, arm.token, "event setup failed");
+    if (interceptStarted) await resetArmSideEffects(arm);
     clearArmTimer(arm.token);
     release(arm);
     throw error;
