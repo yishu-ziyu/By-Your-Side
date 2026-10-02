@@ -1,4 +1,7 @@
-import { assertActivationAllowed } from "./activation-policy.js";
+import { ActivationConsent } from "./activation-consent.js";
+import { readCurrentDocument } from "./exec/page-readiness.js";
+import { redactCredentialText } from "../../../shared/untrusted.js";
+import { assertActivationAllowed, requiresActivationConsent } from "./activation-policy.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
@@ -243,7 +246,7 @@ function controller(id: string) {
 }
 
 chrome.runtime.onConnect.addListener(port => {
- if (port.name !== PANEL_PORT_NAME) return;
+ if (port.name !== PANEL_PORT_NAME || port.sender?.id !== chrome.runtime.id || port.sender?.url !== chrome.runtime.getURL("sidepanel.html")) return;
  voiceRelay.attach(port);
  connectedPanels.add(port);
 
@@ -354,6 +357,7 @@ function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
 /** 被拿住等确认的点击是哪一次 tool_call（按会话）：用户确认后补点了，要按这个编号告诉宿主。 */
 const heldCallIds = new Map<string, string>();
+const activationConsent = new ActivationConsent(msg => broadcast({kind:"server",msg}));
 
 /**
  * 用户确认（名牌「确认」或侧栏回「确认 / 可以，提交吧」）：由扩展按原参数补上拿住的那一下，
@@ -1293,6 +1297,7 @@ return;}
       return; // tool_call 不转发面板
     }
 
+    if (msg.type === "consent_list") msg = {...msg,requests:[...msg.requests,...activationConsent.list()]};
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
       broadcastVisibleServer(msg);
     } else {
@@ -1300,6 +1305,7 @@ return;}
     }
   },
   onConnState(state, transport, detail) {
+    if (state !== "connected") activationConsent.cancel();
     void controlReady.then(() => handleConnState(state, transport, detail));
   },
 };
@@ -1326,6 +1332,42 @@ async function executeToolCall(
   }
 
   await controlReady;
+  params = structuredClone(params);
+  let activationApproved = false;
+  let approvedContext = "";
+  let approvedUntil = 0;
+  let approvedCancellationVersion = -1;
+  let consentTab: number | null = null;
+  const captureApprovalContext = async () => {
+    checkIdentity();
+    const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
+    if (consentTab !== null && tabId !== consentTab) throw new Error("工作页面已变化，操作未执行。");
+    const page = tabId == null ? null : await readCurrentDocument(tabId);
+    if (tabId != null && !page) throw new Error("无法绑定当前页面，操作未执行。");
+    let state = "";
+    if (tabId != null) {
+      const [sample] = await chrome.scripting.executeScript({target:{tabId},world:"ISOLATED",func:()=>{
+        // ISOLATED world state cannot be forged by page scripts. Mutation epoch
+        // catches replace-and-restore attacks even when markup/text are identical.
+        const host = globalThis as typeof globalThis & {__sideagentApprovalState?:{epoch:number;observer:MutationObserver;document:Document}};
+        let state = host.__sideagentApprovalState;
+        if (!state || state.document !== document) {
+          state = {epoch:0,document,observer:null as unknown as MutationObserver};
+          const current = state;
+          state.observer = new MutationObserver(records=>{if(records.length) current.epoch++;});
+          state.observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+          host.__sideagentApprovalState = state;
+        }
+        if (state.observer.takeRecords().length) state.epoch++;
+        return JSON.stringify({url:location.href,epoch:state.epoch,markup:document.documentElement?.outerHTML,fields:[...document.querySelectorAll("input,textarea,select")].map(el=>{const field=el as HTMLInputElement;return [field.name,field.type,field.value,field.checked];})});
+      }});
+      if (!sample || sample.documentId !== page?.documentId || typeof sample.result !== "string") throw new Error("页面在核对时发生变化，操作未执行。");
+      const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(sample.result));
+      state = Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
+    }
+    checkIdentity();
+    return JSON.stringify({cancellationVersion:activationConsent.version,runId:conversationSummaries.find(c=>c.id===conversationId)?.runId,epoch:executionEpochs.get(sid),gen:gate.gen,tabId,documentId:page?.documentId,state,params});
+  };
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
@@ -1382,10 +1424,27 @@ async function executeToolCall(
 
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
 
+      if (requiresActivationConsent(name, params)) {
+        const cancellationVersion = activationConsent.version;
+        approvedCancellationVersion = cancellationVersion;
+        const currentRun = runId ?? conversationSummaries.find(c=>c.id===conversationId)?.runId;
+        if (!currentRun) throw new Error("没有进行中的任务可确认，操作未执行。");
+        consentTab = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
+        if (consentTab == null && !["open_tab","fetch","download_url","download_delete"].includes(name)) throw new Error("没有可绑定的工作页面，操作未执行。");
+        approvedContext = await captureApprovalContext();
+        const preview = redactCredentialText(JSON.stringify(params));
+        if (preview.length > 65536) throw new Error("动作参数超过可完整展示的上限，操作未执行。");
+        approvedUntil = Date.now() + 20_000;
+        activationApproved = await activationConsent.request({conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion},captureApprovalContext);
+        if (!activationApproved) throw new Error("本次操作未获准或确认已作废，操作未执行。");
+        checkIdentity();
+        if (gate.gen !== operationGeneration) throw new Error("页面控制权已变化，操作未执行。");
+      }
       return gate.run(id, name, async () => {
+        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         if (name === "page_operation") {
           try {
-            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))});
+            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid)) && (!activationApproved || (Date.now() < approvedUntil && activationConsent.version === approvedCancellationVersion))});
             executionFact = "executed";
 
             return r;
@@ -1401,6 +1460,7 @@ async function executeToolCall(
         checkIdentity();
 
         if(gate.gen!==operationGeneration||workerTabControl.isStopped(key(sid)))throw new Error('操作所属控制轮次已失效，操作未执行。');
+        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
 
@@ -1428,7 +1488,11 @@ async function executeToolCall(
                     throw new Error('点选所属任务已停止、被接管或发生变化。');
                   }
                 })
-                : await handler(params, key(sid));
+                : activationApproved && name === 'click'
+                  ? await click({...params,fromUserConfirm:true},key(sid))
+                  : activationApproved && name === 'double_click'
+                    ? await doubleClick({...params,fromUserConfirm:true},key(sid))
+                    : await handler(params, key(sid));
 
           executionFact = "executed";
 
@@ -1978,6 +2042,11 @@ function attachPanel(port: chrome.runtime.Port) {
 
         if (!client || typeof client.type !== "string") break;
 
+        if (client.type === "consent_decision" && client.requestId.startsWith("activation-")) {
+          activationConsent.decide(client.requestId,client.allow);
+          break;
+        }
+        if (["user_message","steer","abort","takeover","handback"].includes(client.type)) activationConsent.cancel();
         // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent
         if (client.type === "set_mode") {
           const mode = client.mode;
@@ -2055,6 +2124,7 @@ function attachPanel(port: chrome.runtime.Port) {
       }
 
       case "control":
+        activationConsent.cancel();
         if (msg.action === "takeover") {
           // 本地按钮先关写入口，不等宿主往返；pause 仍发给 Agent 排空任务。
           void handleTakeover(msg.tabId, undefined, msg.tabId == null);

@@ -1,28 +1,33 @@
-# 任务：提交先停下，确认只批准刚才那一步
+# 任务：网页副作用默认逐次确认
 
-关联问题：[#37](https://github.com/yishu-ziyu/By-Your-Side/issues/37)。候选分支，不代表用户日常扩展已更新。
+关联：[#37](https://github.com/yishu-ziyu/By-Your-Side/issues/37)、draft [#38](https://github.com/yishu-ziyu/By-Your-Side/pull/38)。候选版本，不代表日常扩展已更新。
 
 ## 完成标准
 
-- [ ] 已知提交、订票和购买控件在真实扩展里无确认不派发 — 谁检查：无头扩展验收。
-- [ ] 用户在侧栏确认后原动作恰好执行一次；无待确认、过期和页面重载均不放行 — 谁检查：真实扩展验收。
-- [ ] 页面脚本、回车/空格、低层指针与raw CDP不能绕过本候选策略 — 谁检查：定点测试与真实扩展验收。
-- [ ] 任意自定义控件、同文档表单内容变更及其他事件路径有完整业务授权 — 谁检查：后续设计与真实验收；本次未完成。
+- [x] 普通/未知点击、导航、填写、JS等潜在副作用默认要求精确参数的一次侧栏批准；明确读取原语豁免。
+- [x] 20秒过期、拒绝、重复批准、任务/控制轮次变化及页面指纹变化均不发放有效授权。
+- [x] 页面标记、模型伪造fromUserConfirm、原始键鼠/拖放和raw CDP不能发放授权。
+- [ ] 真实Chromium扩展路径：副作用服务器计数、侧栏确认、同文档字段变化、reload、JS及键盘/CDP旁路验收全部通过。
+- [ ] 独立最终审查与GitHub CI完成，产品频繁确认行为经过维护者验收。
 
-## 先列失败，再实现
+## 先失败，再实现
 
-新增activation-policy用例先提交，覆盖任意JS、伪造readonly、mouse_down、drag/html5_drag、Enter/Space，随后实现。已有held ledger用例先改成无pending不能arm；新增booking labels反例后再扩大识别。
+先提交activation-policy/held ledger反例，再实现；随后先提交activation-consent的一次性、拒绝、超时、页面变化用例，再接入宿主。取消版本回归确保等待页面指纹期间停止任务不会复活请求。原输入测试补真实documentId桩，保留原行为断言。
 
 ## 实现与产品影响
 
-权威边界只在[协议安全边界](../protocol.md#安全)维护。沿用原有held点击UI，不新增模型安全判官；已知文案之外增加原生form submit判定。保留普通有名字的点击与读取；任意JS、拖放和键盘提交暂时拒绝，所以部分数据提取和交互能力收窄。页面名牌确认需转到侧栏。确认重放绑定documentId与60秒期限，读取不到documentId时拒绝。
+权威边界在[协议](../protocol.md#安全)。background持有单次票据，只有本扩展sidepanel.html端口能批准。审批绑定任务、控制轮次、完整参数、documentId及DOM变更轮次及完整markup/表单字段的SHA-256；参数预览先去凭据文本。无法绑定页面或完整展示参数时拒绝。保留CSV所用JS，但每次需批准；普通点击、填写、导航也增加确认。原始键鼠与拖放暂时禁用，输入释放只走持有台账。
 
-## 验证证据
+网页可在最终检查后异步变化，指纹不是网站事务锁；批准任意JS不能保证其内部副作用可撤回。此版本承诺未经可信批准不进入副作用工具，不能承诺网站动态内容的交易级原子性。
 
-2026-10-03：在scratch用Node24内置stripTypeScriptTypes加载本次真实policy/effect/mark/held源码，26项独立断言通过；同时转换input/index TypeScript语法无错误。检查只覆盖策略输出与台账状态，不验证Chrome派发和类型正确性。未运行仓库Vitest、typecheck、check:docs、build或真实浏览器验收，均为未跑，不算通过。
+## 实际验证
 
-待CI/维护者执行：`npx vitest run extension/test/activation-policy.test.ts extension/test/held-clicks.test.ts extension/test/mark-actions.test.ts extension/test/click-integrity.test.ts`、`npm run typecheck`、`npm run check:docs -- --base origin/main`及扩展构建。需特别评估旧测试中缺失documentId或页面名称的桩，以及JS提取/拖放功能回归。
+本地npm ci --ignore-scripts通过。基线lock缺@esbuild/linux-ppc64@0.28.2，本次仅补17行，无升级版本。npm test：290文件/3018单元测试通过，scale 2测试通过；typecheck通过；architecture 291生产文件通过；check:docs --base a55c69d通过，639文档零错误。合并main的会话菜单更新后再交独立审查。
+
+标准npm run build被本环境tsx CLI的Unix socket EPERM阻断；临时改用node --import tsx启动同一导出脚本的构建结果另行记录，提交不包含临时替换。Chromium下载在本环境返回空ZIP，真实浏览器验收未运行，不能算通过。
+
+新增security-confirmation CI在Ubuntu执行原始npm ci、typecheck、完整测试、docs、build及真实扩展脚本。脚本用本地POST计数器独立验证未批准零提交、批准仅一次、字段变化及导航作废、JS批准保留和键盘/CDP拒绝，上传JSON与侧栏截图。CI结果未返回前不宣称完成。
 
 ## 交付边界
 
-本次仅部分加固，不关闭#37。普通自定义按钮、填写事件、快捷键、同文档目标/表单改变、GET和导航副作用仍未全覆盖；真实浏览器验收未通过前保留draft，不合并或发布。
+保持draft及#37打开，不合并/发布。真实浏览器验收、独立最终审查与频繁确认体验尚需通过。

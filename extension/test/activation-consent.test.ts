@@ -22,7 +22,7 @@ describe('strict execution consent', () => {
     const frames: any[] = [];
     let context = 'original';
     const broker = new ActivationConsent(message => frames.push(message), 10);
-    const input = {conversationId:'a',runId:'r',controlVersion:1,goal:'buy',tool:'click',target:'#buy',value:'{}'};
+    const input = {conversationId:'a',runId:'r',controlVersion:1,goal:'buy',tool:'click',target:'#buy',value:'{}',context:'original'};
     const pending = broker.request(input, async () => context);
     context = 'changed';
     broker.decide(frames[0].request.id, true);
@@ -36,3 +36,5 @@ describe('strict execution consent', () => {
     expect(await pending).toBe(false);
   });
 });
+
+it('cancellation during context capture cannot resurrect an old request',async()=>{const frames:any[]=[];const broker=new ActivationConsent(message=>frames.push(message));const version=broker.version;broker.cancel();expect(await broker.request({conversationId:'a',runId:'r',controlVersion:1,goal:'buy',tool:'click',target:'#buy',value:'{}',cancellationVersion:version},async()=> 'same')).toBe(false);expect(frames).toHaveLength(0);});

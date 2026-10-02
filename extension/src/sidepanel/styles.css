@@ -2450,7 +2450,9 @@ details.run-steps.done .chip.error { background: transparent; }
 #conversation-background[hidden], #conversation-menu[hidden] { display:none; }
 #conversation-menu { position:absolute; top:40px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius:11px; box-shadow:var(--popover-shadow); }
 #conversation-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:11px 9px; border:0; border-radius:6px; font:inherit; color:var(--text-primary); background:none; text-align:left; cursor:pointer; }
-#conversation-menu button span { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#conversation-menu .conversation-menu-info { flex:1; min-width:0; }
+#conversation-menu .conversation-menu-title { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; white-space:normal; overflow-wrap:anywhere; line-height:1.45; }
+#conversation-menu .conversation-menu-updated { display:block; margin-top:4px; }
 #conversation-menu button small { color:var(--text-secondary); font-size:10px; white-space:nowrap; }
 #conversation-menu button:hover { background:var(--content-subtle-hover); }
 #conversation-menu button[aria-checked=true] { background:var(--accent-soft); }

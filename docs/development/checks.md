@@ -54,3 +54,5 @@ npm run check                # 文档、边界、类型、测试、构建
 维护者按[PR 模板](../../.github/pull_request_template.md)核对内容与实现；每个里程碑额外运行全量历史链接审计。所有当前进度和未决项只在 [STATUS](../STATUS.md)维护。
 
 评测环境分类以[浏览器证据](../testing/eval-environment.md)为准；报表和复核页不得把普通任务失败移出分母。
+
+安全候选PR额外执行strict确认策略/台账与输入回归、typecheck、完整npm test、文档同步及构建；验收边界见[安全记录](../evals/20261003-security-confirmation.md)。lockfile补齐缺失的Linux ppc64可选esbuild条目，不升级依赖。

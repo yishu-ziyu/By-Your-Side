@@ -138,6 +138,7 @@ export const HOOK_EXPRESSION = `(() => {
       };
       globalThis.__saClaimHook = true;
     }
+    globalThis.__saConnectForAcceptance = function () { if (typeof callbacks !== "undefined") callbacks.onConnState("connected", "inproc"); };
     globalThis.__saHandleServer = function (msg) {
       incoming(typeof msg === "string" ? msg : JSON.stringify(msg));
       return { ok: true };

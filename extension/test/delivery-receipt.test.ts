@@ -11,6 +11,7 @@ import type { BgToPanel, PanelHistoryEntry, PanelToBg } from "../src/relay.js";
 
 interface FakePanelPort {
   name: string;
+  sender: {id:string;url:string};
   sent: BgToPanel[];
   postMessage: (m: BgToPanel) => void;
   onMessage: { addListener: (l: (raw: unknown) => void) => void };
@@ -24,6 +25,7 @@ function fakePanelPort(): FakePanelPort {
 
   return {
     name: "sideagent-panel",
+    sender:{id:"fixture-extension",url:"chrome-extension://fixture-extension/sidepanel.html"},
     sent,
     postMessage: (m) => {
       sent.push(m);
@@ -58,6 +60,7 @@ function installChromeStub() {
 
   const stub = {
     runtime: {
+      id:"fixture-extension",getURL:(path:string)=>"chrome-extension://fixture-extension/"+path,
       onInstalled: { addListener: () => {} },
       onConnect: { addListener: (l: (port: FakePanelPort) => void) => onConnectListeners.push(l) },
       onMessage: { addListener: () => {} },

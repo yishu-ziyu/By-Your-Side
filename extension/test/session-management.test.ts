@@ -22,7 +22,7 @@ let storage: SessionItems;
 
 let connect: ReturnType<typeof event>;
 
-function panel() { const p = { name: "sideagent-panel", onMessage: event(), onDisconnect: event(), postMessage: vi.fn() }; connect.emit(p);
+function panel() { const p = { name: "sideagent-panel", sender:{id:"fixture-extension",url:"chrome-extension://fixture-extension/sidepanel.html"}, onMessage: event(), onDisconnect: event(), postMessage: vi.fn() }; connect.emit(p);
 
  return p; }
 
@@ -31,7 +31,7 @@ beforeEach(async () => {
  const area = {get: async (key: string | null) => key === null ? {...storage} : {[key]:storage[key]}, set: async (data: SessionItems) => {Object.assign(storage, data);} };
  vi.stubGlobal("chrome", {
   storage:{session:area,local:area},
-  runtime:{onConnect:connect,onMessage:event(),onInstalled:event()},
+  runtime:{id:"fixture-extension",getURL:(path:string)=>"chrome-extension://fixture-extension/"+path,onConnect:connect,onMessage:event(),onInstalled:event()},
   tabs:{onRemoved:event(),onUpdated:event(),onActivated:event(),query:async()=>[],sendMessage:async()=>{}},
   debugger:{onDetach:event()},
   contextMenus:{onClicked:event(),removeAll:(cb:Function)=>cb(),create:()=>{}},

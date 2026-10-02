@@ -18,6 +18,7 @@ export interface FetchConsentRequest {
  */
 export interface WriteConsentRequest {
   kind: 'write';
+  purpose?: 'activation';
   id: string;
   conversationId: string;
   runId: string;
@@ -63,7 +64,8 @@ export function isWriteConsentRequest(value: unknown): value is WriteConsentRequ
     && Number.isSafeInteger(r.controlVersion) && r.controlVersion >= 0
     && Number.isFinite(r.expiresAt) && r.expiresAt > 0
     && identity(r.goal, 600) && identity(r.description, 600)
-    && identity(r.tool, 100) && identity(r.target, 500) && identity(r.value, 500);
+    && identity(r.tool, 100) && identity(r.target, 500) && identity(r.value, r.purpose === 'activation' ? 65536 : 500)
+    && (r.purpose === undefined || r.purpose === 'activation');
 }
 
 export function isConsentRequest(value: unknown): value is ConsentRequest {

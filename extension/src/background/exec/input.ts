@@ -847,7 +847,8 @@ async function nameOfClickTarget(
   // 用户要求提交前确认时同理：按页面上的「SIGN UP」判断，不按模型写的「填完后点按钮」。
   if (isSubmitLabel(onPage)) return onPage;
 
-  return onPage || ((isDestructiveLabel(labeled) || isSubmitLabel(labeled)) ? labeled : "");
+  if (isDestructiveLabel(labeled) || isSubmitLabel(labeled)) return labeled;
+  return onPage;
 }
 
 async function pageNameOfClickTarget(
@@ -1314,7 +1315,7 @@ export async function click(
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = params.fromUserConfirm === true;
 
-  const needsConfirm = !name || isDestructiveLabel(name) || isSubmitLabel(name);
+  const needsConfirm = isDestructiveLabel(name) || isSubmitLabel(name);
 
   if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params }, { target: params.target, targetRect, point });
@@ -1528,7 +1529,7 @@ export async function doubleClick(
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = params.fromUserConfirm === true;
 
-  const needsConfirm = !name || isDestructiveLabel(name) || isSubmitLabel(name);
+  const needsConfirm = isDestructiveLabel(name) || isSubmitLabel(name);
 
   if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params, kind: "double_click" }, { target: params.target, targetRect, point });
