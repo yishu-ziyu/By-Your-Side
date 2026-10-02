@@ -250,13 +250,14 @@ function loadSeries() {
     for (const id of report.setup_not_applied_task_ids ?? []) setupNotApplied.add(id);
 
     const judged = report.per_task.filter((r) => ["pass", "fail", "undeterminable"].includes(r.verdict));
-    const models = [...new Set(judged.map((r) => r.model))].sort();
+    const models = [...new Set(report.per_task.map((r) => r.model))].sort();
 
     for (const model of models) {
       series.push({
         group: `新评测：${runId}`,
         label: shortModel(model),
         baseline: false,
+        environmentRows: report.per_task.filter(r => r.model === model && r.verdict === "environment"),
         rows: judged.filter((r) => r.model === model).map((r) => ({ task: r.task, category: r.category, pass: r.pass_ === true })),
       });
     }
@@ -277,7 +278,15 @@ function tierChart(series, tier) {
   for (const s of series) {
     const { n, rate } = tierRate(s.rows, tier.categories);
 
-    if (!n) continue;
+    const environment = (s.environmentRows ?? []).filter(r=>tier.categories.includes(r.category)).length;
+
+    if (!n && !environment) continue;
+
+    if (!n) {
+      items.push(`<text x="0" y="${y + 19}" class="s">${esc(s.label)}：${environment}条站点不可用，没有可计算的通过率</text>`);
+      y += 32;
+      continue;
+    }
 
     if (s.group !== lastGroup) {
       items.push(`<text x="0" y="${y + 18}" class="g">${esc(s.group)}</text>`);
@@ -287,7 +296,7 @@ function tierChart(series, tier) {
 
     // 「主模型 + 快速 模型」分两行，长名字不压到条形上。
     const [main, fast] = s.label.split(" + 快速 ");
-    let note = `${n} 题`;
+    let note = `${n} 题${environment ? ` · 另有${environment}条站点不可用` : ""}`;
 
     if (tier.target != null) {
       const gap = Math.round((tier.target - rate) * 100);

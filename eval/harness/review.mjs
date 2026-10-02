@@ -37,6 +37,7 @@ const CATEGORY_LABELS = {
 };
 
 const VERDICT = {
+  environment: ["站点不可用，不计入通过率", "warn"],
   pass: ["判为做对", "ok"], fail: ["判为没做对", "bad"], undeterminable: ["判分时无法确定", "warn"],
   judge_error: ["判分程序出错，没判出来", "warn"], none: ["还没判分", "warn"],
 };
@@ -164,7 +165,8 @@ function summaryHtml() {
     const mine = results.filter((r) => r.model === c);
 
     const cell = (rs, target) => {
-      const valid = rs.filter((r) => !r.invalid);
+      const environment = rs.filter((r) => r.verdict === "environment").length;
+      const valid = rs.filter((r) => !r.invalid && r.verdict !== "environment");
       const judged = valid.filter((r) => ["pass", "fail", "undeterminable"].includes(r.verdict));
       const passed = judged.filter((r) => r.verdict === "pass").length;
       const pending = valid.length - judged.length;
@@ -172,7 +174,7 @@ function summaryHtml() {
       if (!rs.length) return `<td class="muted">没有这档的题</td>`;
       const rate = judged.length ? passed / judged.length : null;
       const cls = rate == null || target == null ? "" : rate >= target ? "ok" : "bad";
-      const extra = [pending ? `${pending} 条未判出` : "", rs.length - valid.length ? `${rs.length - valid.length} 条环境没跑起来` : ""].filter(Boolean).join("，");
+      const extra = [environment ? `${environment} 条站点不可用` : "", pending ? `${pending} 条未判出` : "", rs.filter(r=>r.invalid).length ? `${rs.filter(r=>r.invalid).length} 条环境没跑起来` : ""].filter(Boolean).join("，");
 
       return `<td><span class="rate ${cls}">${rate == null ? "—" : pct(rate)}</span> <span class="muted small">${passed}/${judged.length} 做对</span>${extra ? `<div class="muted small">${esc(extra)}</div>` : ""}</td>`;
     };
@@ -185,7 +187,7 @@ function summaryHtml() {
 
   return `<div class="topline"><span>本次评测 <b class="mono">${esc(RUN_ID)}</b></span><span>已跑完 ${n}${planned ? ` / 计划 ${planned}` : ""} 条</span><span>其中没判为做对的 ${notPass} 条</span>${meta.started_at ? `<span class="muted">开始于 ${esc(localTime(meta.started_at))}</span>` : ""}</div>
 <table class="rates">${head}${rows}</table>
-<p class="caveat">通过率 = 判为做对 / 已判出结果的题（无法确定算没做对；判分程序出错和环境没跑起来的不计入）。绿色达到目标，红色未达。</p>`;
+<p class="caveat">通过率 = 判为做对 / 已判出结果的题（无法确定算没做对；站点不可用、判分程序出错和环境没跑起来的不计入）。绿色达到目标，红色未达。</p>`;
 }
 
 // ---------- cards ----------

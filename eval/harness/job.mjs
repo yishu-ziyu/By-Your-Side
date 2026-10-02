@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import os from "node:os";
 import { REPO } from "./paths.mjs";
+import { siteBlock } from "./environment.mjs";
 import { storageItemsFor } from "./credentials.mjs";
 
 export { REPO };
@@ -86,7 +87,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
   const rec = { id: task.id, model, main_model: null, fast_model: null, category: task.category, site_url: task.site_url, prompt: task.prompt,
     status: "error", timestamps: {}, load_at_start: os.loadavg().map((x) => Math.round(x * 10) / 10), seconds_to_first_output: null, seconds_total: null,
     steps: [], final_answer_verbatim: "", panel_messages: [], confirmations: [], errors: [],
-    final_page: null, downloads: [], screenshots: [], trace_model: null, trace_export: null, secret_scan: null,
+    site_observations: [], environment: null, final_page: null, downloads: [], screenshots: [], trace_model: null, trace_export: null, secret_scan: null,
     harness: { mode: "extension-only", browser: null, extension_id: null, stored_config: null } };
 
   const t = (ms) => ms == null ? null : Math.round((ms - rec._t0) / 100) / 10;
@@ -114,13 +115,44 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     await evalIn(ps, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
     rec.harness.stored_config = await evalIn(ps, `chrome.storage.local.get(["inproc_model_config", "inproc_fast_model_config"])`);
 
+    // Record the task tab's main-document response, never subresource/assistant errors.
+    let documentResponse = null;
+    rp.cdp.onEvent("Network.responseReceived", ({ sessionId, params }) => {
+      if (sessionId === pageSid && params.type === "Document") documentResponse = { url: params.response.url, status: params.response.status };
+    });
+    await rp.cdp.send("Network.enable", {}, pageSid);
+
+    const observeSite = async (errorText = "") => {
+      const page = await evalIn(pageSid, `({url:location.href,title:document.title,text:(document.body?.innerText??'').slice(0,5000),challenge:!!document.querySelector('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')})`).catch(() => ({ url: task.site_url, title: "", text: "" }));
+      const observed = { ...page, errorText, status: documentResponse?.url === page.url ? documentResponse.status : null };
+      rec.site_observations.push(observed);
+
+      return observed;
+    };
+
     // --- task page ---
     rec.timestamps.page_open = iso(Date.now());
-    await rp.cdp.send("Page.navigate", { url: task.site_url }, pageSid);
+    const navigation = await rp.cdp.send("Page.navigate", { url: task.site_url }, pageSid);
     await until(async () => (await evalIn(pageSid, "document.readyState").catch(() => "")) === "complete", 45000, "page load").catch((e) => rec.errors.push(`page load: ${e.message}`));
     await rp.cdp.send("Page.bringToFront", {}, pageSid).catch(() => {});
     await sleep(1000);
     await until(async () => (await evalIn(ps, PANEL_PROBE)).connected, 90000, "panel connected to the in-extension agent");
+    const initialSite = await observeSite(navigation.errorText ?? "");
+    const initialBlock = siteBlock(initialSite);
+
+    if (initialBlock && !dryRun) {
+      const recorded = await evalIn(ps, traceSince(0));
+      const events = parseLines(recorded.lines);
+      rec.n_tool_calls = events.filter(e => e.type === "tool_execution_start").length;
+      rec.n_model_requests = events.filter(e => e.type === "model_request" || e.type === "side_call").length;
+      writeFileSync(join(outDir, `${task.id}.trace.jsonl`), recorded.lines);
+      rec.status = "environment"; rec.environment = initialBlock;
+      rec.final_page = { url: initialSite.url, title: initialSite.title }; rec.final_page_text = initialSite.text;
+      const shot = join(outDir, `${task.id}-page.png`);
+      await rp.screenshot(pageSid, shot); rec.screenshots.push(shot);
+
+      return rec;
+    }
 
     if (dryRun) {
       rec.status = "dry_run_ok";
@@ -263,6 +295,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       const tabs = (await rp.targets()).filter((x) => x.type === "page" && !x.url.startsWith("chrome-extension://"));
       rec.final_page = { url: (await evalIn(pageSid, "location.href").catch(() => null)) ?? blank.url, title: await evalIn(pageSid, "document.title").catch(() => null), tabs: tabs.map((x) => ({ url: x.url, title: x.title })) };
       rec.page_changed = rec.final_page.url !== task.site_url;
+      rec.environment = siteBlock(await observeSite());
       // final page text for the judge: visible text + form field values (bounded; a native dialog can block this)
       rec.final_page_text = await Promise.race([
         evalIn(pageSid, `(()=>{const f=[...document.querySelectorAll('input,select,textarea')].filter(e=>e.type!=='hidden'&&e.type!=='password').slice(0,80).map(e=>(e.name||e.id||e.type)+'='+(e.type==='checkbox'||e.type==='radio'?e.checked:(e.tagName==='SELECT'?(e.selectedOptions[0]?.text??''):e.value))).join('; ');return (document.body?.innerText??'').slice(0,30000)+(f?'\\n[form fields] '+f:'')})()`),

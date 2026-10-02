@@ -9,10 +9,11 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import { environmentFailure } from "./environment.mjs";
 import { TASKS_FILE } from "./paths.mjs";
 
 /** Bump when the prompt/rules change: older verdicts are then treated as stale. */
-export const JUDGE_VERSION = "v3";
+export const JUDGE_VERSION = "v3-env4";
 
 export const resultSha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex").slice(0, 16);
 
@@ -22,7 +23,10 @@ export function verdictFresh(resultPath, judgePath) {
 
   try { const j = JSON.parse(readFileSync(judgePath, "utf8"));
 
- return j.judge_version === JUDGE_VERSION && j.result_sha === resultSha(resultPath) && j.verdict !== "judge_error"; } catch { return false; }
+ const tr = JSON.parse(readFileSync(resultPath, "utf8"));
+ const unchangedOutcome = ["v3", "v3-env1", "v3-env2", "v3-env3"].includes(j.judge_version) && (j.verdict === "pass" || !environmentFailure(tr));
+
+ return (j.judge_version === JUDGE_VERSION || unchangedOutcome) && j.result_sha === resultSha(resultPath) && j.verdict !== "judge_error"; } catch { return false; }
 }
 
 /** What the agent's own tools read from the page (snapshot/read_element/js/fetch outputs), newest last. */
@@ -93,7 +97,7 @@ function codexJudge(prompt, images = []) {
       try {
         const j = JSON.parse(m[0]);
         const verdict = ["pass", "fail", "undeterminable"].includes(j.verdict) ? j.verdict : (j.pass === true ? "pass" : j.pass === false ? "fail" : "undeterminable");
-        resolve({ verdict, pass: verdict === "pass" ? true : verdict === "fail" ? false : null, reason: String(j.reason ?? ""), method: images.length ? "codex+screenshots+text" : "codex+text", judgeModel: JUDGE_MODEL });
+        resolve({ verdict, pass: verdict === "pass" ? true : verdict === "fail" ? false : null, environment_cause: j.environment_cause === true, reason: String(j.reason ?? ""), method: images.length ? "codex+screenshots+text" : "codex+text", judgeModel: JUDGE_MODEL });
       }
       catch { resolve({ verdict: "judge_error", pass: null, reason: `judge failed: ${err?.message ?? "unparseable"} :: ${text.slice(0, 300)}`, method: "codex" }); }
     });
@@ -104,7 +108,7 @@ function codexJudge(prompt, images = []) {
   });
 }
 
-export async function judgeOne(task, tr, tracePath) {
+async function gradeOne(task, tr, tracePath) {
   if (!tr || tr.status === "setup_error") return { verdict: "fail", pass: false, reason: `no run: ${tr?.errors?.[0]?.slice(0, 200) ?? "missing trace"}`, method: "harness" };
   const det = DETERMINISTIC[task.id]?.(tr);
 
@@ -125,6 +129,7 @@ export async function judgeOne(task, tr, tracePath) {
     "You are grading one run of a browser side-panel AI assistant. Decide whether the USER got what they asked for, using the success rule as the reference for what 'done' means.",
     "Do not browse or run commands; judge only from the evidence below. If the rule requires a file (e.g. CSV) and no file is in the evidence, it fails.",
     "Evidence, strongest first: (1) attached FINAL screenshot of the browser window (page left, side panel right) and the panel alone; (2) PAGE TEXT READ BY THE ASSISTANT'S TOOLS during the run (real page content, but possibly from before the last action); (3) FINAL PAGE URL/title; (4) TOOL CALL LOG (shows errors, blocked or unexecuted actions); (5) the assistant's final answer. The assistant's own claims are not proof of page state, but they count when consistent with (1)-(4).",
+    `BROWSER SITE BLOCK EVIDENCE: ${JSON.stringify(environmentFailure(tr))}. If and only if a fail is caused by this proved unavailability (not an independent wrong answer/action), add environment_cause:true. A successfully delivered result remains pass even if a later page became unavailable. Assistant claims alone never establish site unavailability.`,
     "Grading rules:",
     "- Facts in the answer (dates, numbers, titles) pass if the page text or screenshot supports them. A fact that is merely not visible in the screenshot but appears in the page text is supported.",
     "- Do not fail for literal mismatches that do not matter to the user: brand/product/proper names left untranslated (e.g. 'The Verge', 'Transformer'), a term that is already English not getting an extra English bracket, an equivalent domain or redirect (www vs cn), a transient confirmation message that the page later replaced when the end state is visibly correct.",
@@ -149,18 +154,33 @@ export async function judgeOne(task, tr, tracePath) {
   return codexJudge(prompt, images);
 }
 
+export async function judgeOne(task, tr, tracePath) {
+  const environment = environmentFailure(tr);
+
+  if (tr?.status === "environment" && environment) return { verdict: "environment", pass: null, environment, reason: `站点不可用：${environment.kind}`, method: "browser-evidence" };
+  const verdict = await gradeOne(task, tr, tracePath);
+
+  if (environment && verdict.verdict === "fail" && (verdict.environment_cause || verdict.method === "deterministic")) return { ...verdict, verdict: "environment", pass: null, environment };
+
+  return verdict;
+}
+
 export async function judgeRun(runDir, tasks, models, { concurrency = 4, onlyExisting = false, skipJudged = false } = {}) {
   const jobs = [];
+  const results = [];
   const slugOf = (m) => m.replace(/[^a-z0-9.-]+/gi, "_");
 
   for (const model of models) for (const task of tasks) {
     if (onlyExisting && !existsSync(join(runDir, slugOf(model), `${task.id}.json`))) continue;
 
-    if (skipJudged && verdictFresh(join(runDir, slugOf(model), `${task.id}.json`), join(runDir, "judge", slugOf(model), `${task.id}.json`))) continue;
+    if (skipJudged && verdictFresh(join(runDir, slugOf(model), `${task.id}.json`), join(runDir, "judge", slugOf(model), `${task.id}.json`))) {
+      results.push({ ...JSON.parse(readFileSync(join(runDir, "judge", slugOf(model), `${task.id}.json`), "utf8")), tr: JSON.parse(readFileSync(join(runDir, slugOf(model), `${task.id}.json`), "utf8")) });
+      continue;
+    }
+
     jobs.push({ model, task });
   }
 
-  const results = [];
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, async () => {
     while (i < jobs.length) {
@@ -185,7 +205,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const meta = JSON.parse(readFileSync(join(runDir, "run.json"), "utf8"));
   const all = readFileSync(TASKS_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const tasks = meta.tasks.map((id) => all.find((t) => t.id === id));
-  const { writeSummary } = await import("./run.mjs");
+  const { writeSummary } = await import("./summary.mjs");
   const res = await judgeRun(runDir, tasks, meta.models, { onlyExisting: true, skipJudged: process.argv.includes("--skip-judged") });
   writeSummary(runDir, res);
 }

@@ -15,22 +15,9 @@ import os from "node:os";
 import { judgeRun } from "./judge.mjs";
 import { RUNS_DIR, TASKS_FILE } from "./paths.mjs";
 
-export function writeSummary(runDir, results) {
-  const esc = (v) => {
-    const s = v == null ? "" : String(v);
+export { writeSummary } from "./summary.mjs";
 
-    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-  };
-
-  const rows = [["task", "model", "pass", "seconds_to_first_output", "seconds_total", "n_steps", "status", "error", "judge_reason"]];
-
-  for (const r of results.sort((a, b) => a.task.localeCompare(b.task) || a.model.localeCompare(b.model))) {
-    rows.push([r.task, r.model, r.pass, r.tr?.seconds_to_first_output, r.tr?.seconds_total, r.tr?.n_steps, r.tr?.status, (r.tr?.errors ?? [])[0]?.split("\n")[0]?.slice(0, 200) ?? "", r.reason]);
-  }
-
-  writeFileSync(join(runDir, "summary.csv"), rows.map((r) => r.map(esc).join(",")).join("\n") + "\n");
-  console.log(rows.map((r) => r.slice(0, 7).join("\t")).join("\n"));
-}
+import { writeSummary } from "./summary.mjs";
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const arg = (k, d) => {
@@ -98,12 +85,19 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   };
 
   const retries = Number(arg("retries", "2"));
-  let next = 0;
+  const pending = jobs.slice();
+  const activeSites = new Set();
   const log = (s) => console.log(`[${new Date().toLocaleTimeString("en-GB")}] ${s}`);
   log(`run ${runId}: ${jobs.length} jobs, concurrency ${concurrency}`);
   await Promise.all(Array.from({ length: concurrency }, () => (async () => {
-    while (next < jobs.length && !stopped) {
-      const { task, model } = jobs[next++];
+    while (pending.length && !stopped) {
+      const available = pending.findIndex(j => !activeSites.has(new URL(j.task.site_url).hostname));
+
+      if (available < 0) { await new Promise(r => setTimeout(r, 200)); continue; }
+
+      const { task, model } = pending.splice(available, 1)[0];
+      const site = new URL(task.site_url).hostname;
+      activeSites.add(site);
       const outDir = join(runDir, slugOf(model));
       log(`start ${model} ${task.id}`);
       let rec;
@@ -122,6 +116,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
         log(`retry ${attempt + 1}/${retries} ${model} ${task.id} (${rec.status}: ${(rec.errors ?? [])[0]?.split("\n")[0]?.slice(0, 100)})`);
         await new Promise((r) => setTimeout(r, 10000));
       }
+
+      activeSites.delete(site);
 
       // quota guard: park the result in _quota_errors/ and stop after 2 quota errors
       if (isQuota(rec)) {
