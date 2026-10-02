@@ -1324,13 +1324,6 @@ async function executeToolCall(
   runId?:string|null,
   epoch?:number,
 ): Promise<void> {
-  if(name==='observe_page'){
-    try{const data=await voiceRelay.observe(conversationId,params.token,params.mode);uplink.sendClientMessage({type:'tool_result',id,ok:true,data});}
-    catch(e){uplink.sendClientMessage({type:'tool_result',id,ok:false,error:oneLine(e)});}
-
-    return;
-  }
-
   await controlReady;
   params = structuredClone(params);
   let activationApproved = false;
@@ -1411,7 +1404,9 @@ async function executeToolCall(
   try {
     checkIdentity();
     assertActivationAllowed(name, params);
-    const handler = handlers[name];
+    const handler = name === "observe_page"
+      ? (p: Record<string,unknown>) => voiceRelay.observe(conversationId,p.token,p.mode)
+      : handlers[name];
 
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
 

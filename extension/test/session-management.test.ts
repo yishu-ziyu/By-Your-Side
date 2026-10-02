@@ -213,3 +213,15 @@ it('does not finish remote resume while another member is still restoring',async
  wire.callbacks.onServerMessage({type:'team_status',conversationId:'B',team:{...team,phase:'restored',members:team.members.map(m=>({...m,phase:'restored'}))}});await settle();
  expect(wire.sent.filter(m=>m.type==='task_control_result')).toMatchObject([{requestId:'resume-b',ok:true}]);
 });
+
+it('observe_page uses the real confirmation entry and never calls voice observation without a running approved task',async()=>{
+ const {VoiceRelay}=await import('../src/background/voice-relay.js');
+ const observe=vi.spyOn(VoiceRelay.prototype,'observe').mockResolvedValue({});
+ try {
+  panel();
+  wire.callbacks.onServerMessage({type:'tool_call',conversationId:'default',id:'observe-without-grant',name:'observe_page',params:{token:'fixture',mode:'image'}});
+  await settle();
+  expect(wire.sent.find(m=>m.type==='tool_result'&&m.id==='observe-without-grant')).toMatchObject({ok:false,executionFact:'not_executed'});
+  expect(observe).not.toHaveBeenCalled();
+ } finally {observe.mockRestore();}
+});
