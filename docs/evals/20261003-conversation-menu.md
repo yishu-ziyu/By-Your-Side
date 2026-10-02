@@ -14,3 +14,5 @@
 脚本：`npx tsx scripts/acceptance/real-path/conversation-menu.mts --headless`。真实扩展、真实侧栏，脚本服务只用于配置连接；长标题通过正式conversation_create消息建立。初次全路径通过：`out/acceptance/real-path/2026-10-02T16-27-40-869Z-conversation-menu/`。两种长名称实际37.7px高、行高18.85px，完整原名保留在按钮title，更新时间可见。补了没有主模型任务请求的独立判据后再复跑，最终目录见收尾证据。
 
 最终复跑通过：`out/acceptance/real-path/2026-10-02T16-41-04-522Z-conversation-menu/`，包括没有主模型任务请求。第一次追加该判据时误把脚本服务的requests数组当函数，测量脚本报错，未记通过；按既有接口修正后复跑，原件保留。Typecheck、lint与文档同步通过；后续日常部署另留证，不把隔离结果冒充已加载。
+
+日常部署也通过：重载前11个会话均空闲，未覆盖模型配置；日常372px侧栏11行会话名称/更新时间显示正确，Escape关闭通过。实际运行sidepanel.js的SHA256与隔离构建一致，证据为`out/deployments/session-durability-20261003/menu-daily.json`及menu-daily.png。
