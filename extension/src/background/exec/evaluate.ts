@@ -35,6 +35,7 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
 export async function evaluateJs(
   params: { code: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeExecute?: () => Promise<void>,
 ): Promise<{ value: unknown }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -42,6 +43,7 @@ export async function evaluateJs(
   await assertObservedDocument(tab.id, sessionId);
   await assertCompiles(tab.id, params.code);
 
+  await beforeExecute?.();
   const res = await sendCommand<CdpEvalResult>(tab.id, "Runtime.evaluate", {
     expression: params.code,
     awaitPromise: true,

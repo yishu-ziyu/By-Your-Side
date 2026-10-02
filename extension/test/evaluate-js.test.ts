@@ -61,3 +61,15 @@ it('2/3. a compiled script that throws while running (even a SyntaxError) keeps 
   expect(error).not.toHaveProperty('executionFact','not_executed');
   expect(sent('Runtime.evaluate')).toHaveLength(1);
 });
+
+it('revoked approval during compile prevents Runtime.evaluate in the changed document',async()=>{
+  let documentVersion=1;
+  command.mockImplementation(async(_tab:number,method:string)=>{
+    if(method==='Runtime.compileScript'){documentVersion=2;return {};}
+    if(method==='Runtime.evaluate')throw new Error('must not execute');
+    return {};
+  });
+  const guard=async()=>{if(documentVersion!==1)throw Object.assign(new Error('approval revoked'),{executionFact:'not_executed'});};
+  await expect(evaluateJs({code:'fetch("/commit",{method:"POST"})'},undefined,guard)).rejects.toMatchObject({executionFact:'not_executed'});
+  expect(sent('Runtime.evaluate')).toHaveLength(0);
+});

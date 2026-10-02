@@ -1338,6 +1338,12 @@ async function executeToolCall(
   let approvedUntil = 0;
   let approvedCancellationVersion = -1;
   let consentTab: number | null = null;
+  const beforeApprovedDispatch = async () => {
+    if (!activationApproved) return;
+    if (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion) throw Object.assign(new Error("确认已过期、页面或任务已变化，操作未执行。"),{executionFact:"not_executed"});
+    checkIdentity();
+    if (gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) throw Object.assign(new Error("页面控制权已变化，操作未执行。"),{executionFact:"not_executed"});
+  };
   const captureApprovalContext = async () => {
     checkIdentity();
     const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
@@ -1489,10 +1495,12 @@ async function executeToolCall(
                   }
                 })
                 : activationApproved && name === 'click'
-                  ? await click({...params,fromUserConfirm:true},key(sid))
+                  ? await click({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
                   : activationApproved && name === 'double_click'
-                    ? await doubleClick({...params,fromUserConfirm:true},key(sid))
-                    : await handler(params, key(sid));
+                    ? await doubleClick({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
+                    : name === "js" && activationApproved
+                ? await evaluateJs(params as any,key(sid),beforeApprovedDispatch)
+                : await handler(params, key(sid));
 
           executionFact = "executed";
 
@@ -2285,7 +2293,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
 }
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
-voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
+voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{activationConsent.cancel();const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
 return {context:enriched.context,attachments:enriched.attachments};},
 restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {

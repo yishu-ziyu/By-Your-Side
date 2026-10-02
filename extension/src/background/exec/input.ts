@@ -1288,6 +1288,7 @@ export async function hover(
 export async function click(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1327,6 +1328,7 @@ export async function click(
     heldClicks.drop(sessionId);
   }
 
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   let [x, y] = point!;
@@ -1366,6 +1368,7 @@ export async function click(
     let effect: EffectReport | undefined;
 
     try {
+      await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
       cdpMouseMoved = true;
       heldOf(sessionId).pointer = [x, y];
@@ -1389,6 +1392,7 @@ export async function click(
 
       const pressing = (async () => {
         for (let n = 1; n <= clickCount; n++) {
+          await beforeDispatch?.();
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mousePressed",
             x,
@@ -1431,6 +1435,7 @@ export async function click(
         dialogWatch.stop();
       }
     } catch (e) {
+      if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") throw e;
       if (cdpMousePressed) {
         throw new Error(
           `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
@@ -1449,6 +1454,7 @@ export async function click(
       if (target && button === "left" && clickCount === 1 && !force) {
         await ensureDomOps(tabId);
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
+        await beforeDispatch?.();
         await callDom(
           tabId,
           (t: string) => {
@@ -1505,6 +1511,7 @@ type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; h
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1541,6 +1548,7 @@ export async function doubleClick(
     heldClicks.drop(sessionId);
   }
 
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   let [x, y] = point!;
@@ -1577,6 +1585,7 @@ export async function doubleClick(
     let effect: EffectReport | undefined;
 
     try {
+      await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
       dispatched = true;
       heldOf(sessionId).pointer = [x, y];
@@ -1592,6 +1601,7 @@ export async function doubleClick(
 
       const effectToken = await effectPending;
       const btnMask = pressedButtonsMask(button);
+      await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
       });
@@ -1599,6 +1609,7 @@ export async function doubleClick(
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 1, modifiers,
       });
+      await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
       });

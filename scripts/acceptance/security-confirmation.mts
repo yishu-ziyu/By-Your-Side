@@ -6,16 +6,18 @@ if (!process.argv.includes('--headless')) throw new Error('Required --headless')
 let commits=0;
 const iso=await launchIsolatedExtension({localOnly:true,fixtureHtml:'<!doctype html><title>Security fixture</title><form><input id="email" value="first"><button id="commit" type="button" onclick="fetch(\'/commit\',{method:\'POST\'})">Continue</button></form>',fixture:(req,res)=>{if(req.url==='/commit'){commits++;res.end('ok');return true;}return false;}});
 const evidence:any[]=[];
+let panel="";
+await mkdir("out/security-confirmation",{recursive:true});
 try {
   const extensionId=await iso.swEval('chrome.runtime.id');
   const page=await iso.newTarget(iso.fixtureOrigin);
-  const panel=await iso.newTarget('chrome-extension://'+extensionId+'/sidepanel.html');
+  panel=await iso.newTarget('chrome-extension://'+extensionId+'/sidepanel.html');
   await iso.swEval('globalThis.__saHandleServer({type:"conversation_list",conversations:[{id:"default",title:"Security fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:"security-run"}]});globalThis.__saConnectForAcceptance()');
   const tabId=await iso.swEval('(async()=> (await chrome.tabs.query({url:'+JSON.stringify(iso.fixtureOrigin+'/*')+'}))[0].id)()');
   await iso.tool('snapshot',{tabId});
   let seq=0;
   const start=async(name:string,params:any)=>{
-    await iso.swEval('globalThis.__securityResult=globalThis.__saCall('+JSON.stringify('security-'+ ++seq)+','+JSON.stringify(name)+','+JSON.stringify(params)+',undefined,undefined,"default",{runId:"security-run"});void globalThis.__securityResult.catch(()=>{});true');
+    await iso.swEval('globalThis.__securityResult=globalThis.__saCall('+JSON.stringify('security-'+ ++seq)+','+JSON.stringify(name)+','+JSON.stringify(params)+',undefined,undefined,"default",{runId:"security-run"});globalThis.__securitySettled=null;void globalThis.__securityResult.then(r=>globalThis.__securitySettled=r,e=>globalThis.__securitySettled={error:String(e)});true');
   };
   const card=async()=>until(()=>iso.evalIn(panel,'document.querySelector(".consent-card:not(.consent-complete) .consent-allow:not(:disabled)") ? true : undefined'),8000,'real sidebar consent card');
   const result=()=>iso.swEval('globalThis.__securityResult');
@@ -34,9 +36,14 @@ try {
   await iso.evalIn(page,'document.querySelector("#email").value="changed"');await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).executionFact,'not_executed');await oracle(1);evidence.push({case:'form mutation invalidates JS approval',commits});
   await start('js',{tabId,code:'fetch("/commit",{method:"POST"})'});await card();await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).ok,true);await oracle(2);evidence.push({case:'explicitly approved JS may post exactly once',commits});
   await start('js',{tabId,code:'"email\\n" + document.querySelector("#email").value'});await card();await iso.clickButton(panel,'允许一次');
-  const csv=await result() as any;assert.equal(csv.ok,true);assert.equal(csv.result.value,'email\nchanged');await oracle(2);evidence.push({case:'approved CSV extraction retains complete data',commits});
+  const csv=await result() as any;assert.equal(csv.ok,true);assert.equal(csv.data.value,'email\nchanged');await oracle(2);evidence.push({case:'approved CSV extraction retains complete data',commits});
   const keyboard=await iso.tool('press_key',{tabId,key:'Enter'});assert.equal(keyboard.executionFact,'not_executed');
   const cdp=await iso.tool('cdp',{tabId,method:'Input.dispatchKeyEvent',params:{type:'keyDown',key:'Enter'}});assert.equal(cdp.executionFact,'not_executed');await oracle(2);
   await start('click',{tabId,target:'#commit'});await card();await iso.evalIn(page,'location.reload()');await new Promise(resolve=>setTimeout(resolve,500));await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).executionFact,'not_executed');await oracle(2);evidence.push({case:'reload invalidates old approval',commits});
   await mkdir('out/security-confirmation',{recursive:true});await iso.screenshot(panel,'out/security-confirmation/sidebar.png');await writeFile('out/security-confirmation/result.json',JSON.stringify({status:'PASS',evidence},null,2));
+} catch(error) {
+  const diagnostics={error:String(error),evidence,tool:await iso.swEval('globalThis.__securitySettled'),panel:panel?await iso.evalIn(panel,'document.body.innerText'):null};
+  await writeFile('out/security-confirmation/failure.json',JSON.stringify(diagnostics,null,2));
+  if(panel)await iso.screenshot(panel,'out/security-confirmation/failure.png').catch(()=>{});
+  console.error(JSON.stringify(diagnostics));throw error;
 } finally {await iso.close();}
