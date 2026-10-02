@@ -24,4 +24,4 @@ describe('activation bypass boundary', () => {
   });
 });
 
-it('every opaque activation requires consent regardless of label or readonly claims',()=>{for(const name of ['mark','release_held_inputs','click','double_click','fill','navigate','fetch','js','accept_dialog','select_option','type_text','press_key'])expect(requiresActivationConsent(name,{label:'safe',readonly:true})).toBe(true);});
+it('every opaque activation requires consent regardless of label or readonly claims',()=>{for(const name of ['snapshot','read_element','read_elements','screenshot','observe_page','mark','release_held_inputs','click','double_click','fill','navigate','fetch','js','accept_dialog','select_option','type_text','press_key'])expect(requiresActivationConsent(name,{label:'safe',readonly:true})).toBe(true);});
