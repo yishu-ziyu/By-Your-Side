@@ -121,7 +121,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 ## 跨会话记忆与任务跨轮
 
-个人记忆（`memory_list / memory_update / memory_forget / memory_restore → memory_result`）、纠正后开口问（`agent_event{kind:"memory_ask"}`，有结局时同 askId 再发一条带 `outcome`；回答 `memory_ask_answer → memory_result{action:"ask",alreadySaved?,askClosed?}`）、过往任务（`task_history_list / task_history_forget → task_history_result`）、目标核对（`agent_event{kind:"goal_check"}`，结论与显示见[目标核对](goal-check.md)）、用户设的提交条件（点击参数 `confirmSubmit`）与没做完任务的跨轮续接，见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
+个人记忆（`memory_list / memory_update / memory_forget / memory_restore → memory_result`）、纠正后开口问（`agent_event{kind:"memory_ask"}`，有结局时同 askId 再发一条带 `outcome`；回答 `memory_ask_answer → memory_result{action:"ask",alreadySaved?,askClosed?}`）、过往任务（`task_history_list / task_history_forget → task_history_result`）、目标核对（`agent_event{kind:"goal_check"}`，结论与显示见[目标核对](goal-check.md)）、用户设的提交条件（点击参数 `confirmSubmit` 仅保留兼容，默认提交闸门不依赖它）与没做完任务的跨轮续接，见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
 
 ## 文件卡片
 
@@ -142,6 +142,14 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 `mark` 可选 `actions: [{id:"confirm"|"cancel", label}]`：就地确认。带 actions 时光标飞到目标拿住，删除/取消一类按钮长在光标名牌上（不在框外）。用户点按钮时，content script 发内部 `mark_action`，background 转成 `user_message` 文本「确认」或「取消」（与侧栏打字同一条路）。点取消会先 `clear_marks`。
 
 ## 安全
+
+## 提交确认的保守加固（候选版本，#37）
+
+扩展执行入口默认拦住已知提交/订票/购买文案和原生表单 submit 控件；读取不到控件名字时也停下。模型的说明不能覆盖页面上的提交文案。确认只重放扩展记录的原参数，绑定原标签页、documentId，并在60秒后失效；页面重载后旧确认作废。没有待确认操作时，单独一句“确认”不能放行未来动作。页面内名牌确认目前只提示转到扩展侧栏输入“确认”，避免网页伪造确认事件。
+
+任意页面JS暂时拒绝，保留宿主固定的全文匹配只读探针；页面提取改用read_element/read_elements，程序内仍可整理并saveFile。mouse_down、drag、html5_drag以及Enter/Return/Space激活暂时拒绝；mouse_up/key_up/release_held_inputs保留清理用途。raw CDP原有只读白名单不变。拒绝发生在浏览器派发前，回执为not_executed。
+
+**这不是全业务副作用的安全证明。** 有名字的自定义按钮、站点事件处理器、填写即自动保存、非Enter快捷键、导航或带登录态GET的副作用仍需真实浏览器验证与更完整授权设计。确认期间同文档内目标替换或表单内容改变也尚未绑定。本候选限制了页面脚本提取、拖放和键盘提交能力；#37保持开放，未通过真实浏览器验收前不宣称完整覆盖。
 
 - 仅绑定 127.0.0.1；token 校验；Origin 校验。
 - 任何网页尝试连接 localhost WS 都会因 Origin/token 不符被拒。
