@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "By Your Side",
   "version": "0.2.0",
-  "description": "侧边栏 Agent：连接本地伴随进程，替你操作浏览器。",
+  "description": "Chrome AI 助手：在侧栏陪你阅读，也帮你操作网页。",
   "permissions": ["debugger", "tabs", "tabGroups", "scripting", "sidePanel", "storage", "contextMenus", "offscreen", "declarativeNetRequestWithHostAccess", "downloads", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "options_ui": { "page": "settings.html", "open_in_tab": true },
