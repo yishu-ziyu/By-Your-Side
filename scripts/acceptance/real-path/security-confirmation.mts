@@ -100,9 +100,10 @@ try {
       const exact = (allowed: string[]) => Object.keys(params).every(key => allowed.includes(key));
       if (action === `动作：${toolAction("click")}` && params.target === "#commit" && exact(["target", "tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId)) return card.id;
       const snapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId);
+      const decisionSnapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId", "decision"]) && params.tabId === fixtureTabId && params.decision === true;
       const targetRead = action === `动作：${toolAction("read_element")}` && exact(["tabId", "target"]) && params.tabId === fixtureTabId && params.target === "#commit";
-      assert.ok(snapshot || targetRead, `Unexpected consent action: ${card.details}`);
-      record.decision = snapshot ? "allow exact fixture snapshot" : "allow exact fixture target read";
+      assert.ok(snapshot || decisionSnapshot || targetRead, `Unexpected consent action: ${card.details}`);
+      record.decision = decisionSnapshot ? "allow exact fixture decision snapshot" : snapshot ? "allow exact fixture snapshot" : "allow exact fixture target read";
       const selector = cardSelector(card.id);
       await browser.click(sidebar, `${selector} .consent-allow`);
       await until(async () => await browser.evaluate(sidebar, `!document.querySelector(${JSON.stringify(selector)})?.querySelector(".consent-allow:not(:disabled)")`) || undefined, 15_000, "observation approval consumed");
