@@ -98,12 +98,19 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   };
 
   const retries = Number(arg("retries", "2"));
-  let next = 0;
+  const pending = jobs.slice();
+  const activeSites = new Set();
   const log = (s) => console.log(`[${new Date().toLocaleTimeString("en-GB")}] ${s}`);
   log(`run ${runId}: ${jobs.length} jobs, concurrency ${concurrency}`);
   await Promise.all(Array.from({ length: concurrency }, () => (async () => {
-    while (next < jobs.length && !stopped) {
-      const { task, model } = jobs[next++];
+    while (pending.length && !stopped) {
+      const available = pending.findIndex(j => !activeSites.has(new URL(j.task.site_url).hostname));
+
+      if (available < 0) { await new Promise(r => setTimeout(r, 200)); continue; }
+
+      const { task, model } = pending.splice(available, 1)[0];
+      const site = new URL(task.site_url).hostname;
+      activeSites.add(site);
       const outDir = join(runDir, slugOf(model));
       log(`start ${model} ${task.id}`);
       let rec;
@@ -122,6 +129,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
         log(`retry ${attempt + 1}/${retries} ${model} ${task.id} (${rec.status}: ${(rec.errors ?? [])[0]?.split("\n")[0]?.slice(0, 100)})`);
         await new Promise((r) => setTimeout(r, 10000));
       }
+
+      activeSites.delete(site);
 
       // quota guard: park the result in _quota_errors/ and stop after 2 quota errors
       if (isQuota(rec)) {

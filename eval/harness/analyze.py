@@ -56,11 +56,11 @@ for jf in sorted(glob.glob(f'{RUN}/*/BYS-*.json')):
     tp = jf[:-5] + '.trace.jsonl'
     uc = usage_cost(tp) if os.path.exists(tp) else usage_cost(os.devnull)
     rows[(tr['model'], tr['id'])] = dict(model=tr['model'], main_model=tr.get('main_model'), fast_model=tr.get('fast_model'), task=tr['id'], category=TASKS[tr['id']]['category'],
-        pass_=j.get('pass') is True, verdict=j.get('verdict'), reason=j.get('reason', ''), judge_method=j.get('method'), status=tr['status'],
+        pass_=j.get('pass') is True, verdict=j.get('verdict'), reason=j.get('reason', ''), judge_method=j.get('method'), environment_evidence=j.get('environment'), status=tr['status'],
         total=tr.get('seconds_total'), first=tr.get('seconds_to_first_output'), n_steps=tr.get('n_steps'), **uc)
 
 models = sorted({m for (m, _) in rows})
-common = sorted(t for t in TASKS if models and all((m, t) in rows for m in models))
+common = sorted(t for t in TASKS if models and all((m, t) in rows and rows[(m, t)]['verdict'] in ('pass', 'fail', 'undeterminable') for m in models))
 NO_SETUP = sorted(t for t in TASKS if TASKS[t].get('setup'))
 cats = sorted({TASKS[t]['category'] for t in TASKS})
 # 能力档位（docs/ROADMAP.md 第 11 条）：按档报通过率与目标差距。
@@ -70,9 +70,10 @@ def tier_summary(rs):
     out = {}
     for t, spec in TIERS.items():
         tj = [r for r in rs if r['category'] in spec['categories'] and r['verdict'] in ('pass', 'fail', 'undeterminable')]
-        if tj:
-            rate = round(sum(r['pass_'] for r in tj) / len(tj), 3)
-            out[t] = dict(name=spec['name'], n_judged=len(tj), pass_rate=rate, target=spec['target'], gap=(round(rate - spec['target'], 3) if spec['target'] else None))
+        environment = sum(r['verdict'] == 'environment' for r in rs if r['category'] in spec['categories'])
+        if tj or environment:
+            rate = round(sum(r['pass_'] for r in tj) / len(tj), 3) if tj else None
+            out[t] = dict(name=spec['name'], environment=sum(r['verdict'] == 'environment' for r in rs if r['category'] in spec['categories']), n_judged=len(tj), pass_rate=rate, target=spec['target'], gap=(round(rate - spec['target'], 3) if spec['target'] and rate is not None else None))
     return out
 
 def summarize(m, ids):
@@ -87,7 +88,7 @@ def summarize(m, ids):
         cj = [r for r in cr if r['verdict'] in ('pass', 'fail', 'undeterminable')]
         if cr: by_cat[c] = dict(n=len(cr), n_judged=len(cj), passed=sum(r['pass_'] for r in cr), pass_rate=(round(sum(r['pass_'] for r in cj) / len(cj), 3) if cj else None))
     mean = lambda k: round(statistics.mean(r['tokens'].get(k, 0) for r in rs), 1)
-    return dict(model=m, main_model=rs[0]['main_model'], fast_model=rs[0]['fast_model'], n=n, n_judged=len(judged), passed=p,
+    return dict(environment=sum(r['verdict'] == 'environment' for r in rs), model=m, main_model=rs[0]['main_model'], fast_model=rs[0]['fast_model'], n=n, n_judged=len(judged), passed=p,
         pass_rate=(round(p / len(judged), 3) if judged else None),
         undeterminable=sum(r['verdict'] == 'undeterminable' for r in rs), judge_errors=sum(r['verdict'] == 'judge_error' for r in rs),
         median_total_s=pct([r['total'] for r in rs], .5), p90_total_s=pct([r['total'] for r in rs], .9), median_first_output_s=pct([r['first'] for r in rs], .5),
@@ -101,7 +102,7 @@ def summarize(m, ids):
         timeouts=sum(r['status'] == 'timeout' for r in rs), by_category=by_cat, by_tier=tier_summary(rs))
 
 report = dict(run=os.path.basename(RUN), generated_at=datetime.now(timezone.utc).isoformat(),
-    notes=['Only valid results (no quota errors, no harness setup_error) that have a judge file are counted. pass_rate = passed / n_judged (verdict pass|fail|undeterminable; undeterminable counts as not passed). judge_error rows are listed but excluded from pass_rate (the judge did not run); pass_rate is null when nothing was judged.',
+    notes=['Only valid results (no quota errors, no harness setup_error) that have a judge file are counted. environment verdicts are listed separately and excluded; pass_rate = passed / n_judged (verdict pass|fail|undeterminable; undeterminable counts as not passed). judge_error rows are listed but excluded from pass_rate (the judge did not run); pass_rate is null when nothing was judged.',
            'head_to_head = task ids where every model spec in this run has a valid judged result; all_valid = every valid result per model spec.',
            'A model spec is main[+fast]; fast defaults to main.',
            'Tokens = assistant message_end usage in the exported extension trace (main-model calls). side_call lines (fast-model judgments) carry no usage and are only counted.',
@@ -120,15 +121,15 @@ for t in common:
                         reasons={m: rows[(m, t)]['reason'][:200] for m in models}))
 report['disagreements'] = dis
 report['failures'] = {m: [dict(task=t, category=rows[(m, t)]['category'], status=rows[(m, t)]['status'], verdict=rows[(m, t)]['verdict'], reason=rows[(m, t)]['reason'][:200])
-                          for t in sorted(t for (mm, t) in rows if mm == m) if not rows[(m, t)]['pass_']] for m in models}
+                          for t in sorted(t for (mm, t) in rows if mm == m) if not rows[(m, t)]['pass_'] and rows[(m, t)]['verdict'] != 'environment'] for m in models}
 report['per_task'] = [dict(model=r['model'], task=r['task'], category=r['category'], pass_=r['pass_'], verdict=r['verdict'], status=r['status'], total_s=r['total'], first_s=r['first'],
                            n_steps=r['n_steps'], model_calls=r['model_calls'], side_calls=r['side_calls'], n_model_request=r['n_model_request'], n_effort_change=r['n_effort_change'],
-                           tokens=r['tokens'], cost_usd=(round(r['cost_usd'], 6) if r['cost_usd'] is not None else None), catalog_list_usd=round(r['catalog_list_usd'], 6), reason=r['reason'][:200])
+                           tokens=r['tokens'], cost_usd=(round(r['cost_usd'], 6) if r['cost_usd'] is not None else None), catalog_list_usd=round(r['catalog_list_usd'], 6), environment=r['environment_evidence'], reason=r['reason'][:200])
                       for r in sorted(rows.values(), key=lambda r: (r['task'], r['model']))]
 if os.path.exists(f'{RUN}/_failure_clusters.json'): report['top_failure_reasons'] = json.load(open(f'{RUN}/_failure_clusters.json'))
 json.dump(report, open(f'{RUN}/report.json', 'w'), ensure_ascii=False, indent=2)
 
-keys = ['n', 'n_judged', 'passed', 'pass_rate', 'undeterminable', 'judge_errors', 'median_total_s', 'p90_total_s', 'median_first_output_s', 'mean_tokens_input', 'mean_tokens_output', 'mean_tokens_cached',
+keys = ['n', 'environment', 'n_judged', 'passed', 'pass_rate', 'undeterminable', 'judge_errors', 'median_total_s', 'p90_total_s', 'median_first_output_s', 'mean_tokens_input', 'mean_tokens_output', 'mean_tokens_cached',
         'mean_tokens_total', 'mean_model_calls', 'mean_side_calls', 'mean_cost_usd', 'cost_per_pass_usd', 'total_cost_usd', 'catalog_list_total_usd', 'timeouts']
 with open(f'{RUN}/report_models.csv', 'w', newline='') as f:
     w = csv.writer(f); w.writerow(['set', 'model'] + keys + [f'pass_rate:{c}' for c in cats])

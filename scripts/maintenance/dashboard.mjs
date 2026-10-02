@@ -257,6 +257,7 @@ function loadSeries() {
         group: `新评测：${runId}`,
         label: shortModel(model),
         baseline: false,
+        environmentRows: report.per_task.filter(r => r.model === model && r.verdict === "environment"),
         rows: judged.filter((r) => r.model === model).map((r) => ({ task: r.task, category: r.category, pass: r.pass_ === true })),
       });
     }
@@ -287,7 +288,8 @@ function tierChart(series, tier) {
 
     // 「主模型 + 快速 模型」分两行，长名字不压到条形上。
     const [main, fast] = s.label.split(" + 快速 ");
-    let note = `${n} 题`;
+    const environment = (s.environmentRows ?? []).filter(r=>tier.categories.includes(r.category)).length;
+    let note = `${n} 题${environment ? ` · 另有${environment}条站点不可用` : ""}`;
 
     if (tier.target != null) {
       const gap = Math.round((tier.target - rate) * 100);
