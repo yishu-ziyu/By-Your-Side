@@ -8,7 +8,7 @@ export function requiredFormFields(entries: MemoryEntry[], userMessages: readonl
   for (const entry of entries) {
     if (entry.kind !== "method" || entry.status !== "active" || entry.experience || !withinValidity(entry.validity, Date.now())) continue;
 
-    if (/如果|除非|只有|仅当|仅在|需要时|必要时|\b(?:if|unless|only when|when needed)\b/iu.test(entry.text)) continue;
+    if (/如果|若|如需|如有|除非|只有|仅当|仅在|需要时|必要时|\b(?:if|unless|only when|when needed)\b/iu.test(entry.text)) continue;
 
     for (const match of entry.text.matchAll(/(?:填写|填上|填|fill(?:\s+in)?)\s*[「“"']([^」”"'\n]{1,80})[」”"']/giu)) {
       const label = match[1]!.trim();
@@ -18,7 +18,7 @@ export function requiredFormFields(entries: MemoryEntry[], userMessages: readonl
       if (!label || /不|别|勿|无需|\b(?:not|don't|won't|never|without)\b/iu.test(before + after)) continue;
 
       const latest = [...userMessages].reverse().flatMap(message => message.split(/[。；;\n]/u).reverse())
-        .find(clause => /^(?:这次|本次|这回)/u.test(clause.trim()) && clause.includes(label));
+        .find(clause => (/^(?:这次|本次|这回)/u.test(clause.trim()) || clause.trim().startsWith(label)) && clause.includes(label));
 
       const at = latest?.indexOf(label) ?? -1;
       const lead = latest?.slice(0, at).trim() ?? "";

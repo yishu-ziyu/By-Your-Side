@@ -4,7 +4,9 @@
 
 只保留当前仍能被团队找到和重复运行的验收入口。
 
-记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=21,21m,21p,21mix,21split`；合法误分类、缺失/畸形分类、个人/临时/混合消息、分离片段反例、确认前后写入和同站/异站带回，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。提交前字段规则用 `--scripted --only=22,22b,22scope,22override,22edge,22negative,22memory`，核对服务器零POST、用户原文续办及范围/删除/临时覆盖，见[验收](../evals/20261003-method-form-enforcement.md)。`--model=... --only=22live`验证缺内容先问、用户补原文后仅一次提交；`--scripted --only=22fetch`另查小写POST（前提受阻不算通过）。
+Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩展宿主显式注入临时文件文档，覆盖记忆、待判断记忆和任务记录的真实锁与提交授权校验；生产仍使用 IndexedDB。不得以没有 IndexedDB 的 Node 环境跳过记忆钩子或放宽原协议断言。
+
+记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=21,21m,21p,21mix,21split`；合法误分类、缺失/畸形分类、个人/临时/混合消息、分离片段反例、确认前后写入和同站/异站带回，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。提交前字段规则用 `--scripted --only=22,22b,22scope,22override,22edge,22negative,22memory`，核对服务器零POST、用户原文续办及范围/删除/临时覆盖（含“备注留空”，不用固定说“这次”），见[验收](../evals/20261003-method-form-enforcement.md)。`--model=... --only=22live`验证缺内容先问、用户补原文后仅一次提交；`--scripted --only=22fetch`另查小写POST（前提受阻不算通过）。
 
 ## 正式入口
 
