@@ -43,3 +43,9 @@
 `out/deployments/method-form-enforcement-20261003/result.json`：PASS。升级前11会话均空闲，原8份历史条目保持，重载只新增24条idle状态；记忆文档hash不变，模型配置、会话编号和选中会话保留。私密backup为0600、目录0700。没有创建日常测试会话或重启Chrome。
 
 实际运行源码与缓存构建一致：inproc.js `4ed08b58a5b380183b831b46f07fec94edf0f93e11f6283bbffb94977e5436a4`，background.js `e61f8de6b4371e7b9a61622331cabe02fdda31408c647ec502f227878e31dc12`。最后代码改动只有留白，构建/运行语义未变。
+
+### 截图读回补正
+
+真实截图中模型建议说“备注留空”，原代码只接受带“这次”的形式。补齐直接字段免填表达，不影响长期规则；`22override`改用无“这次”表达，确认本次空提交成功且新会话恢复强制要求。PASS：`out/acceptance/real-path/2026-10-02T18-42-09-027Z-remember-corrections-scripted-94942/`。原带“这次”的通过记录保留。另对“若/如需/如有”条件保守不编译；不冒充完整语义解释器。
+
+补正已加载日常：`out/deployments/method-form-natural-override-20261003/result.json` PASS；同样保留8份历史、11会话、记忆hash、配置和选中会话，新增23条idle状态。当前inproc.js SHA为`cf81d1de781d6b3e22c237075f69f14fbf281c4d992db1f2638109f007048e2c`，background.js SHA不变；两者均与缓存源码一致。

@@ -2061,7 +2061,7 @@ async function s22override(): Promise<Verdict> {
   const method = await rememberFormMethod22("22override");
 
   const override = await formAttempt22("22override-empty", FORM,
-    `[S22-OVERRIDE] 填写并提交表单：${S22_PERSON}。这次备注留空`, "S22-OVERRIDE", 2);
+    `[S22-OVERRIDE] 填写并提交表单：${S22_PERSON}。备注留空`, "S22-OVERRIDE", 2);
 
   const after = byId((await readMemories()).items, String(method.id));
 
