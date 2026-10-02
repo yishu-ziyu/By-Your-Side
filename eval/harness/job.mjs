@@ -141,6 +141,11 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     const initialBlock = siteBlock(initialSite);
 
     if (initialBlock && !dryRun) {
+      const recorded = await evalIn(ps, traceSince(0));
+      const events = parseLines(recorded.lines);
+      rec.n_tool_calls = events.filter(e => e.type === "tool_execution_start").length;
+      rec.n_model_requests = events.filter(e => e.type === "model_request" || e.type === "side_call").length;
+      writeFileSync(join(outDir, `${task.id}.trace.jsonl`), recorded.lines);
       rec.status = "environment"; rec.environment = initialBlock;
       rec.final_page = { url: initialSite.url, title: initialSite.title }; rec.final_page_text = initialSite.text;
       const shot = join(outDir, `${task.id}-page.png`);

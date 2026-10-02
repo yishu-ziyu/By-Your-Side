@@ -16,6 +16,14 @@ const out=join(process.cwd(),'out/acceptance/eval-environment',new Date().toISOS
 
 await mkdir(out,{recursive:true});
 
+assert.equal(siteBlock({url:'https://www.simplyrecipes.com/recipes/test/',title:'',text:'If you are a reader experiencing an access issue, please contact support.'})?.kind,'refused');
+
+assert.equal(siteBlock({url:'https://www.simplyrecipes.com/recipes/test/',status:200,title:'',text:'If you are a reader experiencing an access issue, please contact support.'}),null);
+
+assert.equal(siteBlock({url:'https://www.simplyrecipes.com/recipes/test/',status:402,text:'If you are a reader experiencing an access issue, please contact support.'})?.kind,'refused');
+
+assert.equal(siteBlock({url:'https://example.com',status:200,text:'If you are a reader experiencing an access issue, please contact support.'}),null);
+
 assert.equal(siteBlock({url:'https://news.ycombinator.com/front?day=2024-01-01',title:'',text:'Sorry\n'})?.kind,'rate_limit');
 
 assert.equal((await judgeOne({id:'BYS-040'}, {id:'BYS-040',status:'completed',final_page:{url:'https://books.toscrape.com/catalogue/category/books/travel_2/',title:'Travel'},site_observations:[{url:'https://books.toscrape.com/catalogue/category/books/travel_2/',status:429}],errors:[]})).verdict,'pass','later site block cannot erase proved task success');
@@ -58,7 +66,8 @@ try{
   const verdict=await judgeOne(task,rec);
   assert.equal(verdict.verdict,'environment',path);
   assert.ok(verdict.environment.evidence.length,path);
-  assert.equal(rec.n_tool_calls??0,0,'blocked initial page must not consume model calls');
+  assert.equal(rec.n_tool_calls,0,'blocked initial page must not consume tools');
+  assert.equal(rec.n_model_requests,0,'actual diagnostic trace has no model requests');
   assert.ok(rec.screenshots.length,'actual browser evidence');
   console.log('PASS browser',path);
  }

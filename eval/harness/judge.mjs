@@ -13,7 +13,7 @@ import { environmentFailure } from "./environment.mjs";
 import { TASKS_FILE } from "./paths.mjs";
 
 /** Bump when the prompt/rules change: older verdicts are then treated as stale. */
-export const JUDGE_VERSION = "v3-env2";
+export const JUDGE_VERSION = "v3-env4";
 
 export const resultSha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex").slice(0, 16);
 
@@ -24,7 +24,7 @@ export function verdictFresh(resultPath, judgePath) {
   try { const j = JSON.parse(readFileSync(judgePath, "utf8"));
 
  const tr = JSON.parse(readFileSync(resultPath, "utf8"));
- const unchangedOutcome = ["v3", "v3-env1"].includes(j.judge_version) && (j.verdict === "pass" || !environmentFailure(tr));
+ const unchangedOutcome = ["v3", "v3-env1", "v3-env2", "v3-env3"].includes(j.judge_version) && (j.verdict === "pass" || !environmentFailure(tr));
 
  return (j.judge_version === JUDGE_VERSION || unchangedOutcome) && j.result_sha === resultSha(resultPath) && j.verdict !== "judge_error"; } catch { return false; }
 }
@@ -167,16 +167,20 @@ export async function judgeOne(task, tr, tracePath) {
 
 export async function judgeRun(runDir, tasks, models, { concurrency = 4, onlyExisting = false, skipJudged = false } = {}) {
   const jobs = [];
+  const results = [];
   const slugOf = (m) => m.replace(/[^a-z0-9.-]+/gi, "_");
 
   for (const model of models) for (const task of tasks) {
     if (onlyExisting && !existsSync(join(runDir, slugOf(model), `${task.id}.json`))) continue;
 
-    if (skipJudged && verdictFresh(join(runDir, slugOf(model), `${task.id}.json`), join(runDir, "judge", slugOf(model), `${task.id}.json`))) continue;
+    if (skipJudged && verdictFresh(join(runDir, slugOf(model), `${task.id}.json`), join(runDir, "judge", slugOf(model), `${task.id}.json`))) {
+      results.push({ ...JSON.parse(readFileSync(join(runDir, "judge", slugOf(model), `${task.id}.json`), "utf8")), tr: JSON.parse(readFileSync(join(runDir, slugOf(model), `${task.id}.json`), "utf8")) });
+      continue;
+    }
+
     jobs.push({ model, task });
   }
 
-  const results = [];
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, async () => {
     while (i < jobs.length) {
@@ -201,7 +205,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const meta = JSON.parse(readFileSync(join(runDir, "run.json"), "utf8"));
   const all = readFileSync(TASKS_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const tasks = meta.tasks.map((id) => all.find((t) => t.id === id));
-  const { writeSummary } = await import("./run.mjs");
+  const { writeSummary } = await import("./summary.mjs");
   const res = await judgeRun(runDir, tasks, meta.models, { onlyExisting: true, skipJudged: process.argv.includes("--skip-judged") });
   writeSummary(runDir, res);
 }

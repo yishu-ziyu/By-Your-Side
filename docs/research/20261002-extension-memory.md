@@ -39,13 +39,27 @@
 
 上述研究支持机制与测试维度，不证明本扩展已经获得相同收益。优先复用现有模型接口、IndexedDB与MemoryEntry类型。结构化过滤和关键词先作为基线；若同义表达反例持续失败，再用同一批题比较向量检索。没有证据要求现在增加数据库服务。
 
+## Pi原生能力核对：更新实施选择
+
+用户要求优先核对原生能力。当前锁定的`@earendil-works/pi-agent-core` **0.84.4** 已公开导出并实际实现`Session`、异步`SessionStorage`、`InMemorySessionRepo`、`buildSessionContext`和压缩函数。原生Session能记录用户/助手/工具消息、自定义检查点、分支和操作记录。存储接口不要求Node文件系统，适合由IndexedDB实现。
+
+一次只在内存运行的探针已成功创建原生会话、追加消息与检查点、重建用户消息；压缩阈值函数也可运行。浏览器打包探针不依赖本机文件系统。它们验证组件可用，正式扩展的IndexedDB恢复尚未接入。
+
+两个层次要分开：完整`pi-coding-agent.AgentSession/SessionManager`仍带Node文件系统等依赖；核心包内的新Session/Storage可独立复用。当前安装版的`AgentHarness`虽有导出，`prompt/resume/compact`等运行方法实际上抛`HarnessNotImplemented`，不能据类型声明整套替换当前执行循环。
+
+**修订建议：优先采用原生Session、上下文重建与压缩规则，Chrome只补IndexedDB存储适配；保留当前已可运行的Pi执行循环。** 原计划“给我们自己的MemoryEntries加快照”退为备选，不再作为首选。避免继续维护第二套会话语义。
+
+接入要处理真实契约：现有任务检查点按同步接口写入，原生Session是异步的；接受任务与保存完成的回执要等事务提交。条目、递增序号与分支指针应原子写入。恢复采用显式`oldestFirst`顺序，原生摘要也必须实际进入模型请求。旧执行证据恢复不授予自动重做权限。
+
+依据为当前安装源码：`pi-agent-core/dist/harness/session/{types,session,context,memory}`、`dist/harness/compaction/compaction`、`dist/harness/agent-harness.js`。上游[会话代码](https://github.com/earendil-works/pi/tree/main/packages/agent/src/harness/session)只作导航；不能用main中的新名称代替0.84.4实际导出。项目当前适配见[`PiAgentLoop`](../../agent/src/pi-agent-loop.ts)。
+
 ## 在扩展中按三步实施
 
 ### 1. 持久保存文件与任务恢复材料
 
 先处理#31。把图片和文件内容独立保存，聊天事件只保留产物编号、名称、类型和摘要。模型读取、侧栏下载和查看页访问同一份产物。不能只修侧栏历史、让模型的文件Map重启后仍为空。
 
-再持久化同一会话的恢复材料：用户原要求与改口、最近交付、任务账本、未完成项、结果未知的写入证据和必要消息。复用会话编号，不把这些内容写成全局用户偏好。存储提交失败时不能回报已可靠保存。
+通过原生Session持久化同一会话的恢复材料：用户原要求与改口、最近交付、任务账本、未完成项、结果未知的写入证据和必要消息。复用会话编号，不把这些内容写成全局用户偏好。存储提交失败时不能回报已可靠保存。
 
 恢复后，先展示上次状态，再读取当前页面核对。浏览器重启不会自动重放点击或提交；结果未知的写入必须先核查。持久化应按小批事务提交，不能依赖长期常驻整理进程。Chrome官方说明worker通常在空闲30秒后被终止，内存变量会丢失：[生命周期](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)。
 
