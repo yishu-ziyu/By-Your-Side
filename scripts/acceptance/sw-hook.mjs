@@ -139,6 +139,7 @@ export const HOOK_EXPRESSION = `(() => {
       globalThis.__saClaimHook = true;
     }
     globalThis.__saConnectForAcceptance = function () { if (typeof callbacks !== "undefined") callbacks.onConnState("connected", "inproc"); };
+    globalThis.__saSecurityProbe = function () { return {selected:typeof selectedConversationId!=="undefined"?selectedConversationId:null,summaries:typeof conversationSummaries!=="undefined"?conversationSummaries:null,panels:typeof connectedPanels!=="undefined"?connectedPanels.size:null,requests:typeof activationConsent!=="undefined"?activationConsent.list():null}; };
     globalThis.__saHandleServer = function (msg) {
       incoming(typeof msg === "string" ? msg : JSON.stringify(msg));
       return { ok: true };

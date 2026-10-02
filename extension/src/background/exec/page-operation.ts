@@ -215,7 +215,7 @@ async function moveCursor(tabId: number, field: FieldState, operator: string): P
 export async function pageOperation(
   params: Params,
   key: string,
-  options: { canWrite?: () => boolean } = {},
+  options: { canWrite?: () => boolean; beforeWrite?: () => Promise<void> } = {},
 ): Promise<PageOperationResult> {
   const operator = parseExecutionKey(key).sessionId;
   let changed = false;
@@ -252,6 +252,8 @@ export async function pageOperation(
         throw new Error("当前成员已不再是该共享页的协作者");
       }
 
+      await options.beforeWrite?.();
+      if (options.canWrite && !options.canWrite()) throw new Error(USER_BLOCKED_ERROR);
       const outcome = useAx
         ? await mutateAxField(tabId, ref!, params.expectedValue, params.value)
         : await callCssField<{ previousValue: string; readBack: string }>(tabId, params.target, "mutate", params.expectedValue, params.value);

@@ -1435,7 +1435,10 @@ export async function click(
         dialogWatch.stop();
       }
     } catch (e) {
-      if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") throw e;
+      if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") {
+        if (cdpMouseMoved) Object.assign(e,{executionFact:"unknown"});
+        throw e;
+      }
       if (cdpMousePressed) {
         throw new Error(
           `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
@@ -1813,6 +1816,7 @@ export async function drag(
 export async function fill(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<ToolContract["fill"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1826,6 +1830,7 @@ export async function fill(
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
@@ -1887,6 +1892,7 @@ export async function fill(
 
     if (backendNodeId !== undefined) {
       try {
+        await beforeDispatch?.();
         const range = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId);
 
         if (targetRect) {
@@ -1915,6 +1921,7 @@ export async function fill(
 
     await ensureDomOps(tabId);
 
+    await beforeDispatch?.();
     const filled = await callDom(
       tabId,
       (t: string, v: string) => {
@@ -1964,6 +1971,7 @@ export async function selectOption(
     expectedBackendNodeId?: number;
   },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<{ selected: string[]; labels: string[] }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1979,6 +1987,7 @@ export async function selectOption(
 
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   const ref = parseRef(params.target);
@@ -1990,6 +1999,7 @@ export async function selectOption(
 
   if (backendNodeId !== undefined) {
     try {
+      await beforeDispatch?.();
       const result = await callOnBackendNode<{ selected: string[]; labels: string[] }>(
         tabId,
         backendNodeId,
@@ -2041,6 +2051,7 @@ export async function selectOption(
 
   await ensureDomOps(tabId);
 
+  await beforeDispatch?.();
   return await callDom(
     tabId,
     (t: string, values: unknown) => {
@@ -2058,12 +2069,15 @@ export async function selectOption(
 export async function typeText(
   params: { text: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<{ typed: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
+  await beforeDispatch?.();
   await sendCommand(tab.id, "Input.insertText", { text: params.text });
 
   return { typed: true };
@@ -2072,6 +2086,7 @@ export async function typeText(
 export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<{ pressed: true }> {
   const info = resolveKey(params.key);
 
@@ -2080,6 +2095,7 @@ export async function pressKey(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   const heldMods = modifierMaskFor(sessionId, tab.id);
@@ -2104,6 +2120,7 @@ export async function pressKey(
 
   if (info.text !== undefined) rawKeyDown.text = info.text;
 
+  await beforeDispatch?.();
   await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown);
   await sendCommand(tab.id, "Input.dispatchKeyEvent", { type: "keyUp", ...base });
 
@@ -2301,6 +2318,7 @@ export async function mouseUp(
 export async function keyDown(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<{ down: true; key: string }> {
   const info = resolveKey(params.key);
 
@@ -2309,6 +2327,7 @@ export async function keyDown(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
   const heldMods = modifierMaskFor(sessionId, tab.id);
   heldOf(sessionId).tabId = tab.id;
@@ -2327,6 +2346,7 @@ export async function keyDown(
 
     if (info.text !== undefined) keyDown.text = info.text;
 
+    await beforeDispatch?.();
     await sendCommand(tab.id, "Input.dispatchKeyEvent", keyDown);
 
     return { down: true, key: params.key };
@@ -2429,6 +2449,7 @@ export async function releaseHeldInputs(
 export async function paste(
   params: { content: PasteContent; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: () => Promise<void>,
 ): Promise<{ pasted: true; clipboard: ClipboardFinishStatus }> {
   if (!clipboardBridge) {
     throw notExecuted(new Error(PASTE_HOST_BLOCKED));
@@ -2439,6 +2460,7 @@ export async function paste(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   const platform = typeof navigator !== "undefined" ? navigator.platform : "MacIntel";
@@ -2450,7 +2472,7 @@ export async function paste(
       await mirrorPasteContentToPageClipboard(tab.id, content);
     }
 
-    await pressKey({ key: chord, tabId: tab.id }, sessionId);
+    await pressKey({ key: chord, tabId: tab.id }, sessionId,beforeDispatch);
     // CDP paste 命令异步读剪贴板；过早 restore 会交出空粘贴。
     await new Promise((r) => setTimeout(r, 120));
   } catch (e) {

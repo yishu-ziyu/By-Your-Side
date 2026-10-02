@@ -12,7 +12,9 @@ try {
   const extensionId=await iso.swEval('chrome.runtime.id');
   const page=await iso.newTarget(iso.fixtureOrigin);
   panel=await iso.newTarget('chrome-extension://'+extensionId+'/sidepanel.html');
-  await iso.swEval('globalThis.__saHandleServer({type:"conversation_list",conversations:[{id:"default",title:"Security fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:"security-run"}]});globalThis.__saConnectForAcceptance()');
+  await iso.swEval('globalThis.__saConnectForAcceptance();true');
+  await iso.swEval('globalThis.__saHandleServer({type:"conversation_list",conversations:[{id:"default",title:"Security fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:"security-run"}]});true');
+  await until(async()=>{const state=await iso.swEval('globalThis.__saSecurityProbe()') as any;return state.panels>0&&state.summaries?.some((c:any)=>c.id==='default'&&c.runId==='security-run')?true:undefined;},8000,'trusted panel attached and fixture run active');
   const tabId=await iso.swEval('(async()=> (await chrome.tabs.query({url:'+JSON.stringify(iso.fixtureOrigin+'/*')+'}))[0].id)()');
   await iso.tool('snapshot',{tabId});
   let seq=0;
@@ -42,7 +44,7 @@ try {
   await start('click',{tabId,target:'#commit'});await card();await iso.evalIn(page,'location.reload()');await new Promise(resolve=>setTimeout(resolve,500));await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).executionFact,'not_executed');await oracle(2);evidence.push({case:'reload invalidates old approval',commits});
   await mkdir('out/security-confirmation',{recursive:true});await iso.screenshot(panel,'out/security-confirmation/sidebar.png');await writeFile('out/security-confirmation/result.json',JSON.stringify({status:'PASS',evidence},null,2));
 } catch(error) {
-  const diagnostics={error:String(error),evidence,tool:await iso.swEval('globalThis.__securitySettled'),panel:panel?await iso.evalIn(panel,'document.body.innerText'):null};
+  const diagnostics={error:String(error),evidence,tool:await iso.swEval('globalThis.__securitySettled'),background:await iso.swEval('globalThis.__saSecurityProbe()'),panel:panel?await iso.evalIn(panel,'document.body.innerText'):null};
   await writeFile('out/security-confirmation/failure.json',JSON.stringify(diagnostics,null,2));
   if(panel)await iso.screenshot(panel,'out/security-confirmation/failure.png').catch(()=>{});
   console.error(JSON.stringify(diagnostics));throw error;

@@ -1450,7 +1450,7 @@ async function executeToolCall(
         if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         if (name === "page_operation") {
           try {
-            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid)) && (!activationApproved || (Date.now() < approvedUntil && activationConsent.version === approvedCancellationVersion))});
+            const r = await pageOperation(params as any, key(sid), {beforeWrite:beforeApprovedDispatch,canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid)) && (!activationApproved || (Date.now() < approvedUntil && activationConsent.version === approvedCancellationVersion))});
             executionFact = "executed";
 
             return r;
@@ -1498,6 +1498,12 @@ async function executeToolCall(
                   ? await click({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
                   : activationApproved && name === 'double_click'
                     ? await doubleClick({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'fill' ? await fill(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'select_option' ? await selectOption(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'type_text' ? await typeText(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'press_key' ? await pressKey(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'key_down' ? await keyDown(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'paste' ? await paste(params as any,key(sid),beforeApprovedDispatch)
                     : name === "js" && activationApproved
                 ? await evaluateJs(params as any,key(sid),beforeApprovedDispatch)
                 : await handler(params, key(sid));
