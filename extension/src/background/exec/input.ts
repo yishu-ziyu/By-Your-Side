@@ -516,7 +516,7 @@ export type DragParams = {
   kind?: "drag";
 };
 
-type HoldParams = ClickParams | DragParams;
+type HoldParams = (ClickParams | DragParams) & { confirmationDocumentId?: string; confirmationExpiresAt?: number };
 
 /** 跟随打开的新标签页：url 只在读到时才带上。 */
 type OpenedTab = { tabId: number; url?: string };
@@ -742,7 +742,7 @@ export async function resolveHeldClick(
   }
 
   if (decision.kind === "armOnce") {
-    // 模型自绘 mark 路径：pending 无记录，点「确认」直接 arm，模型重试 click 一次通过
+    // 没有待确认的实际参数，不给未来动作放行。
     return { clicked: false };
   }
 
@@ -751,13 +751,18 @@ export async function resolveHeldClick(
 
   try {
     const stored = decision.params;
+    if (!stored.confirmationDocumentId || !stored.confirmationExpiresAt || Date.now() >= stored.confirmationExpiresAt)
+      throw notExecuted(new Error("确认已过期或缺少页面身份，本次未执行。"));
+    await assertSameDocument(stored.tabId!, stored.confirmationDocumentId);
 
     if ("from" in stored) {
       await drag(stored, decision.sessionId);
     } else if (stored.kind === "double_click") {
-      await doubleClick({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      const result = await doubleClick({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      if (!result.doubleClicked) return { clicked: false };
     } else {
-      await click({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      const result = await click({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      if (!result.clicked) return { clicked: false };
     }
 
     return { clicked: true };
@@ -774,7 +779,9 @@ async function holdForConfirmation(
   stored: HoldParams,
   visual: { target?: string; targetRect?: DomRect; point?: [number, number] },
 ): Promise<void> {
-  heldClicks.hold(sessionId, stored);
+  const documentId = await assertObservedDocument(tab.id!, sessionId);
+  if (!documentId) throw notExecuted(new Error("无法绑定当前页面的确认，本次未执行。请接管页面完成。"));
+  heldClicks.hold(sessionId, { ...stored, tabId: tab.id!, confirmationDocumentId: documentId, confirmationExpiresAt: Date.now() + 60_000 });
   await maybeActivateTab(tab, sessionId);
   const tabId = tab.id!;
   const cid = cursorId(sessionId);
@@ -838,7 +845,7 @@ async function nameOfClickTarget(
   if (isDestructiveLabel(onPage)) return onPage;
 
   // 用户要求提交前确认时同理：按页面上的「SIGN UP」判断，不按模型写的「填完后点按钮」。
-  if (params.confirmSubmit === true && isSubmitLabel(onPage)) return onPage;
+  if (isSubmitLabel(onPage)) return onPage;
 
   return labeled || onPage;
 }
@@ -1303,9 +1310,9 @@ export async function click(
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = heldClicks.isArmed(sessionId);
+  const wasArmed = params.fromUserConfirm === true;
 
-  const needsConfirm = isDestructiveLabel(name) || (params.confirmSubmit === true && isSubmitLabel(name));
+  const needsConfirm = !name || isDestructiveLabel(name) || isSubmitLabel(name);
 
   if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params }, { target: params.target, targetRect, point });
@@ -1517,9 +1524,9 @@ export async function doubleClick(
 
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = heldClicks.isArmed(sessionId);
+  const wasArmed = params.fromUserConfirm === true;
 
-  const needsConfirm = isDestructiveLabel(name) || (params.confirmSubmit === true && isSubmitLabel(name));
+  const needsConfirm = !name || isDestructiveLabel(name) || isSubmitLabel(name);
 
   if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params, kind: "double_click" }, { target: params.target, targetRect, point });
