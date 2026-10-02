@@ -6,7 +6,7 @@ type Entry = { request: ConsentRequest; status: "pending" | ConsentStatus; submi
 
 /** 卡片文案的纯函数部分：不读页面、不决定权限，只区分两类请求。 */
 export function consentHeading(request: ConsentRequest, pending: boolean): string {
-  return request.kind === "write"
+  return request.kind === "write" && request.purpose === "activation" ? (pending ? "允许执行这一次网页操作吗？" : "请求确认") : request.kind === "write"
     ? (pending ? "允许核对并在需要时重设这一项吗？" : "请求确认")
     : (pending ? "允许发送这次请求吗？" : "请求授权");
 }
@@ -33,6 +33,7 @@ function readableBody(headers: Record<string, string>, body: string | undefined)
 export interface ConsentDetails { summary: string; content: string }
 
 export function consentDetailsText(request: ConsentRequest): ConsentDetails {
+  if (request.kind === "write" && request.purpose === "activation") return {summary:"查看这次操作的完整参数",content:`动作：${toolAction(request.tool)}\n目标：${request.target}\n\n${request.value}\n\n页面或任务变化后作废；可能提交、发送或自动保存。敏感信息已隐去。`};
   if (request.kind === "write") {
     return { summary: "查看动作", content: `未确认的动作：${plainStep(request.description)}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${toolAction(request.tool)}「${request.value}」\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` };
   }
@@ -45,6 +46,7 @@ export function consentDetailsText(request: ConsentRequest): ConsentDetails {
 export function consentStatusText(request: ConsentRequest, connected: boolean): string {
   if (!connected) return "连接已断开，本次请求尚未获准。请等待重新连接。";
 
+  if (request.kind === "write" && request.purpose === "activation") return "仅批准当前页面这一组参数的一次操作，20秒内未确认就不执行。";
   return request.kind === "write" ? "仅允许这一次核对/必要时重设；到期后不会执行。" : "仅允许这一次请求；到期后不会发送。";
 }
 

@@ -203,7 +203,7 @@ export async function sendCommand<T = unknown>(
   tabId: number,
   method: string,
   params?: Record<string, unknown>,
-  checkBeforeDispatch?: () => void,
+  checkBeforeDispatch?: (() => void | Promise<void>) & {checkNow?: () => void; noteEffect?: () => void},
   timeoutMs?: number,
 ): Promise<T> {
   // Attachment and command delivery are different facts. Once sent, a missing
@@ -212,15 +212,17 @@ export async function sendCommand<T = unknown>(
 
   try {
     try {
-      checkBeforeDispatch?.();
+      await checkBeforeDispatch?.();
       await ensureAttached(tabId);
-      checkBeforeDispatch?.();
+      await checkBeforeDispatch?.();
+      checkBeforeDispatch?.checkNow?.();
     } catch (error) {
       throw Object.assign(new Error(oneLine(error)), { executionFact: "not_executed" });
     }
 
     try {
       const pending = chrome.debugger.sendCommand({ tabId }, method, params ?? {});
+      if (method.startsWith("Input.") || method === "Runtime.evaluate" || method === "Runtime.callFunctionOn" || method === "DOM.setFileInputFiles" || method === "Page.handleJavaScriptDialog") checkBeforeDispatch?.noteEffect?.();
 
       // SAFETY: T 由调用方按它请求的那个 CDP 方法声明；这里只是给 ACK 或超时路径补上同一结果类型。
       return await (timeoutMs === undefined ? pending : withTimeout(pending, timeoutMs,

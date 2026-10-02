@@ -2,7 +2,7 @@ import { validateTranslationCommand, type TranslationCommand, type TranslationRe
 import { translationInPage } from '../../shared/page-translation.js';
 import { resolveWorkingTab } from '../state.js';
 
-export async function pageTranslation(params: TranslationCommand, sessionId: string): Promise<TranslationReceipt> {
+export async function pageTranslation(params: TranslationCommand, sessionId: string, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<TranslationReceipt> {
   let tab: chrome.tabs.Tab;
 
   // Before injection starts, a failure cannot have changed the page.
@@ -13,6 +13,8 @@ export async function pageTranslation(params: TranslationCommand, sessionId: str
   catch (error) { throw Object.assign(error instanceof Error ? error : new Error(String(error)), {executionFact: 'not_executed' as const}); }
 
   const tabId = tab.id!;
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   const [frame] = await chrome.scripting.executeScript({target: {tabId}, world: 'ISOLATED', func: translationInPage, args: [params]});
 
   if (!frame?.result) throw new Error('页面翻译未收到执行回执，结果未知；请先核查当前页面。');

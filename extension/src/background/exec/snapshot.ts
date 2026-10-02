@@ -1,3 +1,4 @@
+import {isolatedReadContext} from '../isolated-read-context.js';
 import { axTextEvidence } from '../ax-text-evidence.js';
 import type { PageTextEvidence } from '../../../../shared/page-text-evidence.js';
 import type {TranslationDisplayState} from '../../../../shared/page-translation.js';
@@ -271,10 +272,11 @@ async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Pro
 
   try {
     await withTimeout((async () => {
+      const executionContextId=await isolatedReadContext(tabId);
       const resolved: Array<{ id: number; objectId: string }> = [];
 
       for (const id of ids) {
-        const node = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup }).catch(() => undefined);
+        const node = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: id, objectGroup,executionContextId }).catch(() => undefined);
 
         if (node?.object?.objectId) resolved.push({ id, objectId: node.object.objectId });
       }

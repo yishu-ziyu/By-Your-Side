@@ -1,3 +1,4 @@
+import {isolatedReadContext} from '../isolated-read-context.js';
 import {withObservedDocumentIdentity, recordObservedDocument, assertSameDocument} from "../observation-document.js";
 import {elementMatches, validateElementRead, type ElementProperty, type ElementValue} from "../../../../shared/element-state.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
@@ -270,12 +271,14 @@ async function readResolvedNode(
   check: () => void,
 ): Promise<ElementData> {
   check();
+  const contextId = await isolatedReadContext(tabId);
+  check();
   const expression = `(${resolveTargetSelector.toString()})(${JSON.stringify(target.kind)}, ${JSON.stringify(target.selector)})`;
 
   const evaluated = await sendCommand<{ result?: { objectId?: string }; exceptionDetails?: { exception?: { description?: string }; text?: string } }>(
     tabId,
     "Runtime.evaluate",
-    { expression, returnByValue: false },
+    { expression, returnByValue: false,contextId },
   );
 
   if (evaluated.exceptionDetails) throw new Error(evaluated.exceptionDetails.exception?.description ?? evaluated.exceptionDetails.text ?? "目标解析失败");
@@ -326,7 +329,9 @@ function assertComplete(data: ElementData): ElementData {
 
 async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number}, check=()=>{}): Promise<ElementData> {
   check();
-  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: ref });
+  const executionContextId=await isolatedReadContext(tabId);
+  check();
+  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: ref,executionContextId });
   const objectId = resolved.object?.objectId;
 
   if (!objectId) throw new Error(readback?'READBACK_NODE_UNRESOLVED':`ref @${ref} 已过期；请重新 snapshot`);
@@ -366,7 +371,7 @@ async function readDom(tabId: number, target: ReturnType<typeof parseTarget>, me
 
   const injection: chrome.scripting.ScriptInjection<Parameters<typeof readInPage>, ReadReply> = {
     target: readback ? { tabId, documentIds: [readback.documentId] } : { tabId },
-    world: isolatedRef ? "ISOLATED" : "MAIN",
+    world: "ISOLATED",
     func: readInPage,
     args,
   };

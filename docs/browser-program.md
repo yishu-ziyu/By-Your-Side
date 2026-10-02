@@ -33,12 +33,12 @@ return await browser.saveFile({ filename: "subtitles.txt", content: value.join("
 
 - `browser.saveFile({filename, content})` 写进 `artifacts` 的同一个会话文件区：同样的文件名规则（一层文件名带扩展名）、同样 256 000 字上限，同名覆盖；侧栏出现同一张文件卡片。
 - 返回 `{filename, chars, lines, overwritten}`；`content` 须是非空字符串。正文不进模型上下文，程序步骤（侧栏与诊断记录）只记文件名与字数。
-- 程序沙箱里没有 `window`、`document`、`Blob`；网页代码放进 `browser.js({code})`。
+- 程序沙箱里没有 `window`、`document`、`Blob`；候选版的任意 `browser.js({code})` 需逐次确认；优先用声明式读取。
 - 只有带交付的主会话有文件区；worker 的程序里没有这个方法。程序在保存前被停止时不落盘。
 
 ## 控制与权限
 
-解释器使用固定版本 `quickjs-emscripten@0.32.0`。独立 JavaScript 堆只暴露浏览器桥接函数，没有 Node `process`、`require`、宿主文件、宿主网络或模块加载器。浏览器页面本身的 `js` 能力保持原状，不能把它和宿主权限隔离混为一谈。
+解释器使用固定版本 `quickjs-emscripten@0.32.0`。独立 JavaScript 堆只暴露浏览器桥接函数，没有 Node `process`、`require`、宿主文件、宿主网络或模块加载器。候选安全版任意页面 `js` 需侧栏逐次允许，固定JS探针同样需确认；详见[协议安全边界](protocol.md#安全)。不能把解释器隔离和网页业务授权混为一谈。
 
 每次子调用携带所属 `programId`，经过原 `ToolRpc → 扩展 executeToolCall → ControlGate → handler`。程序调用在接管期间连只读工具也会被拒绝；普通独立只读工具的已有行为不变。
 

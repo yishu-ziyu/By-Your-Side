@@ -131,7 +131,7 @@ function assertBounded(data: ElementsPage): ElementsPage {
 async function readInDocument(tabId: number, member: string, css: string, limit: number): Promise<{ data: ElementsPage; documentId?: string }> {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    world: "MAIN",
+    world: "ISOLATED",
     func: readElementsInPage,
     args: [css, limit],
   });

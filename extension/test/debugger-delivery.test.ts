@@ -82,4 +82,21 @@ describe("CDP delivery facts", () => {
     await vi.advanceTimersByTimeAsync(16_000);
     expect(chrome.debugger.detach).toHaveBeenCalledWith({ tabId: 17 });
   });
+  it("approval revoked during attach prevents the business dispatch",async()=>{
+    let allowed=true;
+    vi.mocked(chrome.debugger.attach).mockImplementation(async()=>{allowed=false;});
+    const guard=Object.assign(async()=>{if(!allowed)throw new Error('revoked');},{checkNow:()=>{if(!allowed)throw new Error('revoked');}});
+    const {sendCommand}=await import('../src/background/debugger.js');
+    await expect(sendCommand(17,'Runtime.evaluate',{expression:'fetch("/commit")'},guard)).rejects.toMatchObject({executionFact:'not_executed'});
+    expect(vi.mocked(chrome.debugger.sendCommand).mock.calls.some(([,method])=>method==='Runtime.evaluate')).toBe(false);
+  });
+
+  it("revocation after asynchronous last validation is checked synchronously before native dispatch",async()=>{
+    let allowed=true,checks=0;
+    const guard=Object.assign(async()=>{if(++checks===2)allowed=false;},{checkNow:()=>{if(!allowed)throw new Error('revoked');}});
+    const {sendCommand}=await import('../src/background/debugger.js');
+    await expect(sendCommand(17,'Input.insertText',{text:'once'},guard)).rejects.toThrow('revoked');
+    expect(vi.mocked(chrome.debugger.sendCommand).mock.calls.some(([,method])=>method==='Input.insertText')).toBe(false);
+  });
+
 });

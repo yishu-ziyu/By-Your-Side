@@ -57,13 +57,13 @@ export function isDestructiveLabel(text: string): boolean {
   return false;
 }
 
-const SUBMIT_ZH = /^(提交|订阅|注册|报名|立即订阅|立即注册|确认提交|下单)/;
+const SUBMIT_ZH = /^(提交|订阅|注册|报名|立即订阅|立即注册|确认提交|下单|订票|预订|立即购买|购买|确认订单)/;
 
-const SUBMIT_EN = /^(submit|sign ?up|subscribe|register|join|place order)(\s|$|!|\.)/i;
+const SUBMIT_EN = /^(submit|sign ?up|subscribe|register|join|place order|book|reserve|buy|checkout|confirm purchase)(\s|$|!|\.)/i;
 
 /**
- * 提交类控件（提交 / 订阅 / 注册 / 报名 / Sign up / Subscribe …）。平时不拦；
- * 用户在任务里说了「提交前让我确认」时，宿主给这一任务的点击带上 confirmSubmit，这类点击就像删除一样先拿住等确认。
+ * 已知提交类控件默认先停下等确认，不依赖用户是否事先要求。
+ * 词表仅是辅助识别，不能证明任意网页的业务副作用。
  */
 export function isSubmitLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");

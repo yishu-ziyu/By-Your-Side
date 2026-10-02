@@ -1,3 +1,8 @@
+import {nativeApprovalState} from "./native-approval-state.js";
+import { ActivationConsent } from "./activation-consent.js";
+import { readCurrentDocument } from "./exec/page-readiness.js";
+import { redactCredentialText } from "../../../shared/untrusted.js";
+import { assertActivationAllowed, requiresActivationConsent } from "./activation-policy.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
@@ -44,7 +49,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, hasPendingClick, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
+import { click, doubleClick, drag, hover, clearMarks, dropPendingClicks, hasPendingClick, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
 import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
 
 // macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
@@ -262,7 +267,7 @@ function controller(id: string) {
 }
 
 chrome.runtime.onConnect.addListener(port => {
- if (port.name !== PANEL_PORT_NAME) return;
+ if (port.name !== PANEL_PORT_NAME || port.sender?.id !== chrome.runtime.id || port.sender?.url !== chrome.runtime.getURL("sidepanel.html")) return;
  voiceRelay.attach(port);
  connectedPanels.add(port);
 
@@ -373,6 +378,7 @@ function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
 /** 被拿住等确认的点击是哪一次 tool_call（按会话）：用户确认后补点了，要按这个编号告诉宿主。 */
 const heldCallIds = new Map<string, string>();
+const activationConsent = new ActivationConsent(msg => broadcast({kind:"server",msg}));
 
 /**
  * 用户确认（名牌「确认」或侧栏回「确认 / 可以，提交吧」）：由扩展按原参数补上拿住的那一下，
@@ -1312,6 +1318,7 @@ return;}
       return; // tool_call 不转发面板
     }
 
+    if (msg.type === "consent_list") msg = {...msg,requests:[...msg.requests,...activationConsent.list()]};
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
       broadcastVisibleServer(msg);
     } else {
@@ -1319,6 +1326,7 @@ return;}
     }
   },
   onConnState(state, transport, detail) {
+    if (state !== "connected") activationConsent.cancel();
     void controlReady.then(() => handleConnState(state, transport, detail));
   },
 };
@@ -1337,14 +1345,61 @@ async function executeToolCall(
   runId?:string|null,
   epoch?:number,
 ): Promise<void> {
-  if(name==='observe_page'){
-    try{const data=await voiceRelay.observe(conversationId,params.token,params.mode);uplink.sendClientMessage({type:'tool_result',id,ok:true,data});}
-    catch(e){uplink.sendClientMessage({type:'tool_result',id,ok:false,error:oneLine(e)});}
-
-    return;
-  }
-
   await controlReady;
+  params = structuredClone(params);
+  let activationApproved = false;
+  let approvedPageEffectStarted = false;
+  let approvedContext = "";
+  let approvedUntil = 0;
+  let approvedCancellationVersion = -1;
+  let approvedGateGeneration = -1;
+  let consentTab: number | null = null;
+  const checkCurrentConsent = () => {
+    checkIdentity();
+    if (activationApproved && (Date.now() >= approvedUntil || activationConsent.version !== approvedCancellationVersion || gate.gen !== approvedGateGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid)))) throw Object.assign(new Error("确认已作废，操作未执行。"),{executionFact:"not_executed"});
+  };
+  const afterApprovedEffect = Object.assign(async () => {
+    checkCurrentConsent();
+    const bound = JSON.parse(approvedContext);
+    if (consentTab !== null && (await readCurrentDocument(consentTab))?.documentId !== bound.documentId) throw Object.assign(new Error("批准的页面已离开，后续操作未执行。"),{executionFact:"not_executed"});
+    checkCurrentConsent();
+  },{checkNow:checkCurrentConsent});
+  const beforeApprovedDispatch = Object.assign(async () => {
+    if (!activationApproved) return;
+    if (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil) throw Object.assign(new Error("确认已过期、页面或任务已变化，操作未执行。"),{executionFact:"not_executed"});
+    checkCurrentConsent();
+  }, {checkNow:checkCurrentConsent,afterEffect:afterApprovedEffect,noteEffect:()=>{approvedPageEffectStarted=true;}});
+  const captureApprovalContext = async () => {
+    checkIdentity();
+    const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
+    if (consentTab !== null && tabId !== consentTab) throw new Error("工作页面已变化，操作未执行。");
+    const page = tabId == null ? null : await readCurrentDocument(tabId);
+    if (tabId != null && !page) throw new Error("无法绑定当前页面，操作未执行。");
+    let state = "";
+    if (tabId != null) {
+      const [sample] = await chrome.scripting.executeScript({target:{tabId},world:"ISOLATED",func:()=>{
+        // ISOLATED world state cannot be forged by page scripts. Mutation epoch
+        // catches replace-and-restore attacks even when markup/text are identical.
+        const host = globalThis as typeof globalThis & {__sideagentApprovalState?:{epoch:number;observer:MutationObserver;document:Document}};
+        let state = host.__sideagentApprovalState;
+        if (!state || state.document !== document) {
+          state = {epoch:0,document,observer:null as unknown as MutationObserver};
+          const current = state;
+          state.observer = new MutationObserver(records=>{if(records.length) current.epoch++;});
+          state.observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+          host.__sideagentApprovalState = state;
+        }
+        if (state.observer.takeRecords().length) state.epoch++;
+        return JSON.stringify({url:location.href,epoch:state.epoch,markup:document.documentElement?.outerHTML,fields:[...document.querySelectorAll("input,textarea,select")].map(el=>{const field=el as HTMLInputElement;return [field.name,field.type,field.value,field.checked];})});
+      }});
+      if (!sample || sample.documentId !== page?.documentId || typeof sample.result !== "string") throw new Error("页面在核对时发生变化，操作未执行。");
+      const native = await nativeApprovalState(tabId);
+      const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({isolated:sample.result,native})));
+      state = Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
+    }
+    checkIdentity();
+    return JSON.stringify({cancellationVersion:activationConsent.version,runId:conversationSummaries.find(c=>c.id===conversationId)?.runId,epoch:executionEpochs.get(sid),gen:gate.gen,tabId,documentId:page?.documentId,state,params});
+  };
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
@@ -1363,13 +1418,14 @@ async function executeToolCall(
     if (error && typeof error === "object" && "executionFact" in error) {
       const reported = (error as { executionFact?: import("../../../shared/protocol.js").ToolExecutionFact }).executionFact;
 
-      if (reported) executionFact = reported;
+      if (reported) executionFact = approvedPageEffectStarted && reported === "not_executed" ? "unknown" : reported;
     }
   };
 
   const attachFact = (error: unknown): void => {
     if (!error || typeof error !== "object") return;
     const existing = (error as { executionFact?: string }).executionFact;
+    if (approvedPageEffectStarted && existing === "not_executed") { Object.assign(error,{executionFact:"unknown"}); return; }
 
     if (existing === "not_executed" || existing === "unknown" || existing === "executed") return;
 
@@ -1378,7 +1434,30 @@ async function executeToolCall(
 
   try {
     checkIdentity();
-    const handler = handlers[name];
+    assertActivationAllowed(name, params);
+    const guardedHandlers: Record<string,Handler> = {
+      arm_event:(p,s)=>armEvent(p,s,beforeApprovedDispatch),
+      screenshot:(p,s)=>screenshot(p,s,beforeApprovedDispatch),
+      hover:(p,s)=>hover(p,s,beforeApprovedDispatch),
+      scroll:(p,s)=>scroll(p,s,beforeApprovedDispatch),
+      mark:(p,s)=>mark(p,s,beforeApprovedDispatch),
+      clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeApprovedDispatch),
+      switch_tab:(p,s)=>switchTab(p,s,beforeApprovedDispatch),
+      navigate:(p,s)=>navigate(p,s,beforeApprovedDispatch),
+      open_tab:(p,s)=>openTab(p,s,beforeApprovedDispatch),
+      close_tab:(p,s)=>closeTab(p,s,beforeApprovedDispatch),
+      download_url:(p,s)=>downloadUrl(p,s,beforeApprovedDispatch),
+      download_cancel:(p,s)=>downloadCancel(p,s,beforeApprovedDispatch),
+      upload_file:(p,s)=>uploadFile(p,s,beforeApprovedDispatch),
+      file_chooser_set_files:(p,s)=>fileChooserSetFiles(p,s,beforeApprovedDispatch),
+      accept_dialog:(p,s)=>acceptDialog(p,s,beforeApprovedDispatch),
+      dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeApprovedDispatch),
+      page_translation:(p,s)=>pageTranslation(p,s,beforeApprovedDispatch),
+      fetch:p=>fetchUrl(p,{beforeDispatch:beforeApprovedDispatch}),
+    };
+    const handler = name === "observe_page"
+      ? (p: Record<string,unknown>) => voiceRelay.observe(conversationId,p.token,p.mode)
+      : guardedHandlers[name] ?? handlers[name];
 
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
 
@@ -1400,10 +1479,32 @@ async function executeToolCall(
 
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
 
+      // Strict approval does not replace existing confirmed-form constraints.
+      if (name === "js" || name === "paste" || (name === "fetch" && normalizeFetchRequest(params).method === "POST")) {
+        await assertCheckedFormPrimitive(params, key(sid));
+      }
+      if (requiresActivationConsent(name, params)) {
+        const cancellationVersion = activationConsent.version;
+        approvedCancellationVersion = cancellationVersion;
+        approvedGateGeneration = gate.gen;
+        const currentRun = runId ?? conversationSummaries.find(c=>c.id===conversationId)?.runId;
+        if (!currentRun) throw new Error("没有进行中的任务可确认，操作未执行。");
+        consentTab = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
+        if (consentTab == null && !["open_tab","fetch","download_url","download_delete"].includes(name)) throw new Error("没有可绑定的工作页面，操作未执行。");
+        approvedContext = await captureApprovalContext();
+        const preview = redactCredentialText(JSON.stringify(params));
+        if (preview.length > 65536) throw new Error("动作参数超过可完整展示的上限，操作未执行。");
+        approvedUntil = Date.now() + 20_000;
+        activationApproved = await activationConsent.request({conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion},captureApprovalContext);
+        if (!activationApproved) throw new Error("本次操作未获准或确认已作废，操作未执行。");
+        checkIdentity();
+        if (gate.gen !== operationGeneration) throw new Error("页面控制权已变化，操作未执行。");
+      }
       return gate.run(id, name, async () => {
+        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         if (name === "page_operation") {
           try {
-            const r = await pageOperation(params as any, key(sid), {canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid))});
+            const r = await pageOperation(params as any, key(sid), {beforeWrite:beforeApprovedDispatch,canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid)) && (!activationApproved || (Date.now() < approvedUntil && activationConsent.version === approvedCancellationVersion))});
             executionFact = "executed";
 
             return r;
@@ -1419,6 +1520,7 @@ async function executeToolCall(
         checkIdentity();
 
         if(gate.gen!==operationGeneration||workerTabControl.isStopped(key(sid)))throw new Error('操作所属控制轮次已失效，操作未执行。');
+        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
 
@@ -1428,6 +1530,7 @@ async function executeToolCall(
             ? await readElement(params as unknown as import('../../../shared/protocol.js').ToolContract['read_element']['params'],key(sid),()=>{
               checkIdentity();
 
+              beforeApprovedDispatch.checkNow();
               if(gate.gen!==operationGeneration||gate.isSessionBlocked(sid)||workerTabControl.isStopped(key(sid)))throw new Error('READBACK_CANCELLED');
             })
             : name === 'wheel'
@@ -1437,7 +1540,7 @@ async function executeToolCall(
                 if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
                   throw new Error('操作所属控制轮次已失效，后续输入未执行。');
                 }
-              })
+              },beforeApprovedDispatch)
               : name === 'ask_user_to_point'
                 ? await askUserToPoint(params, key(sid), () => {
                   checkIdentity();
@@ -1445,7 +1548,19 @@ async function executeToolCall(
                   if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
                     throw new Error('点选所属任务已停止、被接管或发生变化。');
                   }
-                })
+                },beforeApprovedDispatch)
+                : activationApproved && name === 'click'
+                  ? await click({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
+                  : activationApproved && name === 'double_click'
+                    ? await doubleClick({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'fill' ? await fill(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'select_option' ? await selectOption(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'type_text' ? await typeText(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'press_key' ? await pressKey(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'key_down' ? await keyDown(params as any,key(sid),beforeApprovedDispatch)
+                    : activationApproved && name === 'paste' ? await paste(params as any,key(sid),beforeApprovedDispatch)
+                    : name === "js" && activationApproved
+                ? await evaluateJs(params as any,key(sid),beforeApprovedDispatch)
                 : await handler(params, key(sid));
 
           executionFact = "executed";
@@ -1996,6 +2111,11 @@ function attachPanel(port: chrome.runtime.Port) {
 
         if (!client || typeof client.type !== "string") break;
 
+        if (client.type === "consent_decision" && client.requestId.startsWith("activation-")) {
+          activationConsent.decide(client.requestId,client.allow);
+          break;
+        }
+        if (["user_message","steer","abort","takeover","handback"].includes(client.type)) activationConsent.cancel();
         // set_mode 先落本地模式状态（供标注追踪判定），再照常转发给 agent
         if (client.type === "set_mode") {
           const mode = client.mode;
@@ -2044,7 +2164,7 @@ function attachPanel(port: chrome.runtime.Port) {
 
           if (isAffirmativeReply(client.text)) {
             if (hasPendingClick(key())) heldConfirmed = confirmHeldClick().catch(() => undefined);
-            else armDestructiveClick(key());
+            // 无 pending 时这句话只进入对话，不能批准未来提交。
           } else if (isCancelReply(client.text)) {
             // 侧栏打「取消」与点名牌「取消」同效：清 pending、松开拿住的手、收起标注
             void resolveHeldClick("cancel", key()).catch(() => {
@@ -2073,6 +2193,7 @@ function attachPanel(port: chrome.runtime.Port) {
       }
 
       case "control":
+        activationConsent.cancel();
         if (msg.action === "takeover") {
           // 本地按钮先关写入口，不等宿主往返；pause 仍发给 Agent 排空任务。
           void handleTakeover(msg.tabId, undefined, msg.tabId == null);
@@ -2157,7 +2278,7 @@ chrome.tabs.onActivated.addListener((info) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
 
   if (selectedConversationId !== conversationId) return;
@@ -2194,6 +2315,12 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
 
   if (msg.type !== "mark_action" || !isMarkActionId(msg.action)) return;
   const action = msg.action;
+  // 网页的 MAIN world 可以伪造 overlay bridge 事件；页面按钮不能铸造业务授权。
+  if (action === "confirm" && sender.tab) {
+    sendResponse({ ok: false, error: "请在扩展侧栏输入确认，本次未执行。" });
+    emitNotice("请在侧栏输入「确认」批准刚才停下的操作。");
+    return;
+  }
   void (async () => {
     try {
       if (action === "confirm") await confirmHeldClick();
@@ -2227,7 +2354,7 @@ async function importReading(record: ReadingRecord): Promise<void> {
 }
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
-voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
+voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{activationConsent.cancel();const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
 return {context:enriched.context,attachments:enriched.attachments};},
 restoreMode: (mode: import("../../../shared/protocol.js").AgentMode) => {

@@ -64,3 +64,20 @@ it("detach invalidates the armed token and promptly rejects its waiter", async (
   expect(result).toMatch(/CAPTURE_INCOMPLETE/);
   expect(holds).toBe(0);
 });
+
+it("chooser approval revoked during capture setup cannot enable interception", async () => {
+  let revoked = false;
+  let holds = 0;
+  const events = await import("../src/background/page-events.js");
+  events.bindAttachHolds(() => { holds++; }, () => { holds--; });
+  const intercepts: boolean[] = [];
+  vi.mocked(chrome.debugger.sendCommand).mockImplementation(async (_target, method, params: any) => {
+    if (method === "Page.enable") revoked = true;
+    if (method === "Page.setInterceptFileChooserDialog") intercepts.push(params.enabled);
+    return {};
+  });
+  const guard = Object.assign(async () => { if (revoked) throw Object.assign(new Error("revoked"), {executionFact:"not_executed"}); }, {checkNow: () => { if (revoked) throw new Error("revoked"); }});
+  await expect((events.armEventForTab as any)({tabId:7,sessionKey:"a",type:"filechooser"},guard)).rejects.toThrow("revoked");
+  expect(intercepts).not.toContain(true);
+  expect(holds).toBe(0);
+});

@@ -21,7 +21,7 @@ export function isHeldClickResult(name: string, data: unknown): boolean {
 export type HeldResolution<P> =
   /** 有 pending：取出参数，由调用方用同一只手真实派发（session 已 arm，retry 一次通过） */
   | { kind: "dispatch"; sessionId: string; params: P }
-  /** 无 pending（模型自绘 mark 路径）：直接 arm 该 session，模型重试 click 一次通过，不要第二轮 */
+  /** 无 pending：不授权任何未来操作；保留 armOnce 结果名供调用方兼容 */
   | { kind: "armOnce"; sessionId: string }
   /** 取消：pending/arm 已清；sessionId 为空表示本来就没有 pending（仍应收起标注、松开手） */
   | { kind: "cancelled"; sessionId?: string };
@@ -85,8 +85,7 @@ export class HeldClicks<P> {
     }
 
     if (!sid) {
-      this.armed.add(preferred);
-
+      // No parameters to approve: a standalone yes never authorizes a future operation.
       return { kind: "armOnce", sessionId: preferred };
     }
 

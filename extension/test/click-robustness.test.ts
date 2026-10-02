@@ -10,6 +10,7 @@ function installChrome(opts?: {
     func?: (...args: any[]) => any;
     args?: any[];
   }) => {
+    if (details.func?.toString().includes("readyState")) return [{ frameId: 0, documentId: "fixture-101", result: {url:"https://fixture.invalid/",readyState:"complete"} }];
     if (details.files) {
       return [{ frameId: 0, result: undefined }];
     }

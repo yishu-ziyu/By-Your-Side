@@ -61,6 +61,7 @@ const AX_NODES: AxNodeLite[] = [
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.executeScript.mockImplementation(async (details:any)=>[{result:String(details.func).includes("innerWidth")?{w:1440,h:900,dpr:2.5}:undefined}]);
   mocks.resolveWorkingTab.mockResolvedValue({ ...WORK_TAB });
   mocks.maybeActivateTab.mockResolvedValue(undefined);
   mocks.tabsGet.mockImplementation(async (id: number) =>
@@ -93,7 +94,7 @@ describe("A1 截图携带真实像素/视口/DPR 与页面身份", () => {
     expect(r.height).toBe(900);
     expect(r.pixelWidth).toBe(1440);
     expect(r.pixelHeight).toBe(900);
-    // 来自真实 Runtime.evaluate，不是固定值（用 1440x900@dpr2.5 这种非常值断言透传）
+    // 来自隔离世界读取，不是固定值（用 1440x900@dpr2.5 这种非常值断言透传）
     expect(r.cssWidth).toBe(1440);
     expect(r.cssHeight).toBe(900);
     expect(r.devicePixelRatio).toBe(2.5);
@@ -231,6 +232,8 @@ describe("A1 解码失败明确失败，不返回 0 尺寸成功包", () => {  i
   });
 
   it("捕获期间视口变化：丢弃旧图，不把旧图配新 CSS 尺寸", async () => {
+    let viewportReads=0;
+    mocks.executeScript.mockImplementation(async(details:any)=>[{result:String(details.func).includes("innerWidth")?{w:++viewportReads===1?1440:1600,h:900,dpr:2.5}:undefined}]);
     let reads = 0;
     mocks.sendCommand.mockImplementation(async (_tabId: number, method: string) => {
       if (method === "Page.captureScreenshot") return { data: "aVBORw0KGgo=" };

@@ -121,7 +121,7 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 ## 跨会话记忆与任务跨轮
 
-个人记忆（`memory_list / memory_update / memory_forget / memory_restore → memory_result`）、纠正后开口问（`agent_event{kind:"memory_ask"}`，有结局时同 askId 再发一条带 `outcome`；回答 `memory_ask_answer → memory_result{action:"ask",alreadySaved?,askClosed?}`）、过往任务（`task_history_list / task_history_forget → task_history_result`）、目标核对（`agent_event{kind:"goal_check"}`，结论与显示见[目标核对](goal-check.md)）、用户设的提交条件（点击参数 `confirmSubmit`）与没做完任务的跨轮续接，见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
+个人记忆（`memory_list / memory_update / memory_forget / memory_restore → memory_result`）、纠正后开口问（`agent_event{kind:"memory_ask"}`，有结局时同 askId 再发一条带 `outcome`；回答 `memory_ask_answer → memory_result{action:"ask",alreadySaved?,askClosed?}`）、过往任务（`task_history_list / task_history_forget → task_history_result`）、目标核对（`agent_event{kind:"goal_check"}`，结论与显示见[目标核对](goal-check.md)）、用户设的提交条件（点击参数 `confirmSubmit` 仅保留兼容，默认提交闸门不依赖它）与没做完任务的跨轮续接，见[记忆、过往任务与任务跨轮](memory-and-tasks.md)。
 
 ## 文件卡片
 
@@ -135,11 +135,7 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
 
-宿主可给 `click`、`double_click`、`fill`、`type_text`、`select_option`、`press_key` 附加 `formRequirements:[{label,hostname?}]`；模型不能自报。仅提取有效已确认方法的引号字段。`hostname` 精确匹配当前主机名，缺省适用当前页。规则见[记忆模型](memory-model.md)。
-
-提交点击、确认重放及表单提交 Enter 前均重读表单（含 `form` 关联控件）。要求字段须按真实 label、aria-label/aria-labelledby、placeholder、name 或 id 唯一匹配可读非空原生 input/textarea/select。仅规范化大小写、空白、末尾冒号/星号，不猜别名。未找到、多候选、不可读或空值均返回 `not_executed`，要求补字段；内容未知先问用户。普通 textarea/select/contenteditable Enter 不查，修饰键 Enter 保守检查。拒绝不可读 iframe。
-
-`fill`/`type_text`/`select_option` 匹配要求字段时，只有宿主证实值来自本任务用户原话、有效个人资料或既有核验通过的复制材料并附 `userValueProvided:true` 才可写入。受约束字段拒绝逐键文字和粘贴，改用完整原话。站点资料还附`userValueHostname`，不匹配时拒绝。拒绝不清除已有值，也不改网页 `required` 或其他表单状态。其他字段、读取和普通按键不受影响，原确认保留。宿主另拒绝受约束网站的 evaluate/POST 等绕过；不覆盖任意脚本、控件或方法语义。
+已确认表单的字段/来源约束见[表单与批准边界](browser-confirmation.md#已确认表单要求)。
 
 网页下载事件、按链接下载、查询/取消及完成判据见[下载说明](downloads.md)。
 
@@ -148,6 +144,10 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 `mark` 可选 `actions: [{id:"confirm"|"cancel", label}]`：就地确认。带 actions 时光标飞到目标拿住，删除/取消一类按钮长在光标名牌上（不在框外）。用户点按钮时，content script 发内部 `mark_action`，background 转成 `user_message` 文本「确认」或「取消」（与侧栏打字同一条路）。点取消会先 `clear_marks`。
 
 ## 安全
+
+## 默认逐次确认
+
+所有潜在网页副作用需可信侧栏单次批准；完整参数、页面身份与取消绑定，以及验收限制见[浏览器逐次确认](browser-confirmation.md)。
 
 - 仅绑定 127.0.0.1；token 校验；Origin 校验。
 - 任何网页尝试连接 localhost WS 都会因 Origin/token 不符被拒。

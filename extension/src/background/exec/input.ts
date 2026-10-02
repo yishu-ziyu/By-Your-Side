@@ -1,3 +1,4 @@
+import {isolatedReadContext} from "../isolated-read-context.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import {replaceEditableText} from "../../shared/editable-text.js";
@@ -39,6 +40,8 @@ import {
   type MouseButton,
   type PasteContent,
 } from "../../../../shared/pointer-input.js";
+
+export type ApprovalDispatchGuard = (() => Promise<void>) & {checkNow?: () => void; noteEffect?: () => void; afterEffect?: (() => Promise<void>) & {checkNow?: () => void}};
 
 export type {
   ClipboardBridge,
@@ -195,6 +198,7 @@ export async function callOnBackendNode<T>(
   args?: unknown[],
   executionContextId?: number,
   expectedDocumentId?: string,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<T> {
   const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode",
     executionContextId !== undefined ? { backendNodeId, executionContextId } : { backendNodeId });
@@ -214,24 +218,25 @@ export async function callOnBackendNode<T>(
   }>(tabId, "Runtime.callFunctionOn",
     args
       ? { objectId, functionDeclaration, arguments: args.map((value) => (value instanceof CdpObjectArg ? { objectId: value.objectId } : { value })), returnByValue: true }
-      : { objectId, functionDeclaration, returnByValue: true });
+      : { objectId, functionDeclaration, returnByValue: true }, beforeDispatch);
 
+  beforeDispatch?.noteEffect?.();
   if (result.exceptionDetails) {
-    throw new Error(
+    throw Object.assign(new Error(
       result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "页面内执行失败",
-    );
+    ), {executionFact: "unknown"});
   }
 
   return result.result?.value as T;
 }
 
 /** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
-async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false): Promise<DomRect> {
+async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false, beforeDispatch?: ApprovalDispatchGuard): Promise<DomRect> {
   const rect = await callOnBackendNode<DomRect | undefined>(
     tabId,
     backendNodeId,
     observedNodeRect.toString(),
-    [contentOnly],
+    [contentOnly], undefined, undefined, beforeDispatch,
   );
 
   if (!rect) throw new Error("无法获取元素位置");
@@ -247,7 +252,7 @@ function filledResult(range: InputRangeReadout | null | undefined): ToolContract
 }
 
 /** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
-async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string): Promise<InputRangeReadout | null | undefined> {
+async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: ApprovalDispatchGuard): Promise<InputRangeReadout | null | undefined> {
   // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报（#22/#27）。
   const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null }>(
     tabId,
@@ -285,7 +290,7 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
     }`,
     [value],
     undefined,
-    expectedDocumentId,
+    expectedDocumentId, beforeDispatch,
   );
 
   // 旧行为不看返回值：拿不到回值（undefined）时照旧当作已填写，只认明确的拒绝。
@@ -294,7 +299,9 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
   return outcome?.range;
 }
 
-async function ensureDomOps(tabId: number): Promise<void> {
+async function ensureDomOps(tabId: number, beforeDispatch?: ApprovalDispatchGuard): Promise<void> {
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["content-domops.js"],
@@ -302,7 +309,9 @@ async function ensureDomOps(tabId: number): Promise<void> {
   });
 }
 
-export async function ensureCursor(tabId: number): Promise<void> {
+export async function ensureCursor(tabId: number, beforeDispatch?: ApprovalDispatchGuard): Promise<void> {
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["content-cursor.js"],
@@ -316,7 +325,11 @@ export async function callDom<Args extends unknown[], Result>(
   func: (...args: Args) => Result,
   args: Args,
   documentId?:string,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<Awaited<Result>> {
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
+  beforeDispatch?.noteEffect?.();
   const results = await chrome.scripting.executeScript<Args, Result>({
     target: documentId ? { tabId, documentIds: [documentId] } : { tabId },
     world: "ISOLATED",
@@ -324,6 +337,7 @@ export async function callDom<Args extends unknown[], Result>(
     args,
   });
 
+  beforeDispatch?.noteEffect?.();
   const first = results[0];
 
   if (!first) throw new Error("页面脚本未返回结果");
@@ -517,7 +531,7 @@ async function guardRequiredFormFields(tabId: number, input: FormFieldGuardInput
     if (backendNodeId !== undefined) {
       try {
         refusal = await callOnBackendNode<string | null>(tabId, backendNodeId,
-          `function(input) { return (${inspectRequiredFormFields.toString()})(input, this); }`, [input]);
+          `function(input) { return (${inspectRequiredFormFields.toString()})(input, this); }`, [input], await isolatedReadContext(tabId));
       } catch (error) {
         if (!isDebuggerUnavailable(error)) throw error;
         await ensureDomOps(tabId);
@@ -552,7 +566,7 @@ export type DragParams = {
   kind?: "drag";
 };
 
-type HoldParams = ClickParams | DragParams;
+type HoldParams = (ClickParams | DragParams) & { confirmationDocumentId?: string; confirmationExpiresAt?: number };
 
 /** 跟随打开的新标签页：url 只在读到时才带上。 */
 type OpenedTab = { tabId: number; url?: string };
@@ -778,7 +792,7 @@ export async function resolveHeldClick(
   }
 
   if (decision.kind === "armOnce") {
-    // 模型自绘 mark 路径：pending 无记录，点「确认」直接 arm，模型重试 click 一次通过
+    // 没有待确认的实际参数，不给未来动作放行。
     return { clicked: false };
   }
 
@@ -787,13 +801,18 @@ export async function resolveHeldClick(
 
   try {
     const stored = decision.params;
+    if (!stored.confirmationDocumentId || !stored.confirmationExpiresAt || Date.now() >= stored.confirmationExpiresAt)
+      throw notExecuted(new Error("确认已过期或缺少页面身份，本次未执行。"));
+    await assertSameDocument(stored.tabId!, stored.confirmationDocumentId);
 
     if ("from" in stored) {
       await drag(stored, decision.sessionId);
     } else if (stored.kind === "double_click") {
-      await doubleClick({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      const result = await doubleClick({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      if (!result.doubleClicked) return { clicked: false };
     } else {
-      await click({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      const result = await click({ ...stored, fromUserConfirm: true }, decision.sessionId);
+      if (!result.clicked) return { clicked: false };
     }
 
     return { clicked: true };
@@ -810,7 +829,9 @@ async function holdForConfirmation(
   stored: HoldParams,
   visual: { target?: string; targetRect?: DomRect; point?: [number, number] },
 ): Promise<void> {
-  heldClicks.hold(sessionId, stored);
+  const documentId = await assertObservedDocument(tab.id!, sessionId);
+  if (!documentId) throw notExecuted(new Error("无法绑定当前页面的确认，本次未执行。请接管页面完成。"));
+  heldClicks.hold(sessionId, { ...stored, tabId: tab.id!, confirmationDocumentId: documentId, confirmationExpiresAt: Date.now() + 60_000 });
   await maybeActivateTab(tab, sessionId);
   const tabId = tab.id!;
   const cid = cursorId(sessionId);
@@ -874,9 +895,10 @@ async function nameOfClickTarget(
   if (isDestructiveLabel(onPage)) return onPage;
 
   // 用户要求提交前确认时同理：按页面上的「SIGN UP」判断，不按模型写的「填完后点按钮」。
-  if (params.confirmSubmit === true && isSubmitLabel(onPage)) return onPage;
+  if (isSubmitLabel(onPage)) return onPage;
 
-  return labeled || onPage;
+  if (isDestructiveLabel(labeled) || isSubmitLabel(labeled)) return labeled;
+  return onPage;
 }
 
 async function pageNameOfClickTarget(
@@ -891,6 +913,7 @@ async function pageNameOfClickTarget(
 
   const read = `function() {
     const el = this;
+    if (el.form && (el.type === "submit" || el.type === "image")) return "提交表单";
     const t = (el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title"))) || el.innerText || el.textContent || "";
     return String(t).trim().replace(/\\s+/g, " ").slice(0, 40);
   }`;
@@ -908,6 +931,7 @@ async function pageNameOfClickTarget(
         const el = window.__sideagent?.dom?.resolve(t);
 
         if (!el) return "";
+        if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return "提交表单";
 
         const raw =
           (el.getAttribute("aria-label") || el.getAttribute("title") || (el as HTMLElement).innerText || el.textContent || "") +
@@ -926,9 +950,10 @@ async function pageNameOfClickTarget(
 async function resolvePointerTarget(
   tabId: number,
   params: ClickParams,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ point: [number, number]; targetRect?: DomRect }> {
   try {
-    return await locatePointerTarget(tabId, params);
+    return await locatePointerTarget(tabId, params, beforeDispatch);
   } catch (error) {
     throw notExecuted(error);
   }
@@ -937,6 +962,7 @@ async function resolvePointerTarget(
 async function locatePointerTarget(
   tabId: number,
   params: ClickParams,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ point: [number, number]; targetRect?: DomRect }> {
   const target = params.target;
   let point = params.point;
@@ -958,7 +984,7 @@ async function locatePointerTarget(
 
     if (backendNodeId !== undefined) {
       try {
-        targetRect = await rectOfBackendNode(tabId, backendNodeId);
+        targetRect = await rectOfBackendNode(tabId, backendNodeId, false, beforeDispatch);
 
         if (!isDomRect(targetRect)) throw new Error("无法获取元素位置");
 
@@ -969,6 +995,11 @@ async function locatePointerTarget(
         resolvedViaCdp = true;
       } catch (e) {
         if (!isDebuggerUnavailable(e)) {
+          if (e && typeof e === "object" && "executionFact" in e) {
+            const fact = (e as {executionFact:unknown}).executionFact;
+            if (fact === "not_executed") throw e;
+            throw Object.assign(new Error(`ref @${ref} 已失效，结果未知。请重新 snapshot，确认当前目标，不要重试旧 ref（${oneLine(e)}）`),{executionFact:fact});
+          }
           throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
         }
         // debugger 不可用：落到 domops 路径（注意此时 @N 依赖 DOM 快照的 refs，
@@ -977,12 +1008,12 @@ async function locatePointerTarget(
     }
 
     if (!resolvedViaCdp && !point) {
-      await ensureDomOps(tabId);
+      await ensureDomOps(tabId, beforeDispatch);
 
       const res = await callDom(
         tabId,
         readDomTargetRect,
-        [target],
+        [target], undefined, beforeDispatch,
       );
 
       if (!res || !res.ok) {
@@ -1084,9 +1115,10 @@ function isPrePressTargetError(e: unknown): boolean {
 async function confirmPointerTarget(
   tabId: number,
   target: string,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ point: [number, number]; targetRect: DomRect }> {
   try {
-    return await checkPointerTarget(tabId, target);
+    return await checkPointerTarget(tabId, target, beforeDispatch);
   } catch (error) {
     throw notExecuted(error);
   }
@@ -1095,13 +1127,14 @@ async function confirmPointerTarget(
 async function checkPointerTarget(
   tabId: number,
   target: string,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ point: [number, number]; targetRect: DomRect }> {
   const ref = parseRef(target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
 
   if (backendNodeId !== undefined) {
     try {
-      const rect = await callOnBackendNode<DomRect | undefined>(tabId, backendNodeId, CONFIRM_CLICK_JS);
+      const rect = await callOnBackendNode<DomRect | undefined>(tabId, backendNodeId, CONFIRM_CLICK_JS, undefined, undefined, undefined, beforeDispatch);
 
       if (!rect || typeof rect.x !== "number") throw new Error("无法确认目标位置");
 
@@ -1111,6 +1144,7 @@ async function checkPointerTarget(
       };
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
+        if (e && typeof e === "object" && "executionFact" in e) throw e;
         const msg = oneLine(e);
 
         if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
@@ -1121,7 +1155,7 @@ async function checkPointerTarget(
     }
   }
 
-  await ensureDomOps(tabId);
+  await ensureDomOps(tabId, beforeDispatch);
 
   const res = await callDom(
     tabId,
@@ -1138,7 +1172,7 @@ async function checkPointerTarget(
         return { ok: false, error: message };
       }
     },
-    [target],
+    [target], undefined, beforeDispatch,
   );
 
   if (!res || !res.ok) {
@@ -1167,6 +1201,7 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
       return;
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
+        if (e && typeof e === "object" && "executionFact" in e) throw e;
         const msg = oneLine(e);
 
         if (/已失效|覆盖|可命中|不可见/.test(msg)) throw notExecuted(new Error(msg));
@@ -1287,26 +1322,29 @@ async function callPointGuard(
 export async function hover(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ hovered: true }> {
+  await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
-  const { point: [x, y] } = await resolvePointerTarget(tab.id, params);
-  await maybeActivateTab(tab, sessionId);
+  const { point: [x, y] } = await resolvePointerTarget(tab.id, params, beforeDispatch);
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
   const cid = cursorId(sessionId);
-  const actionId = await beginCursorAction(tab.id, cid, "hover", params.target, params.label);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tab.id, cid, "hover", params.target, params.label);
 
   try {
-    await cursorMove(tab.id, x, y, cid);
-    await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    if (!beforeDispatch) await cursorMove(tab.id, x, y, cid);
+    if (beforeDispatch) await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, beforeDispatch);
+    else await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
     await endCursorAction(tab.id, cid, actionId, "done");
   } catch (error) {
     await endCursorAction(tab.id, cid, actionId, "failed");
     throw error;
   }
 
-  await recordCursorTrail(tab.id, sessionId, x, y, false);
+  if (!beforeDispatch) await recordCursorTrail(tab.id, sessionId, x, y, false);
 
   return { hovered: true };
 }
@@ -1314,6 +1352,7 @@ export async function hover(
 export async function click(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1334,15 +1373,15 @@ export async function click(
     }
   })());
 
-  const { point, targetRect } = await resolvePointerTarget(tabId, params);
+  const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
   await guardSubmitPoint(tabId, params, point);
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = heldClicks.isArmed(sessionId);
+  const wasArmed = params.fromUserConfirm === true;
 
-  const needsConfirm = isDestructiveLabel(name) || (params.confirmSubmit === true && isSubmitLabel(name));
+  const needsConfirm = isDestructiveLabel(name) || isSubmitLabel(name);
 
   if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params }, { target: params.target, targetRect, point });
@@ -1354,7 +1393,8 @@ export async function click(
     heldClicks.drop(sessionId);
   }
 
-  await maybeActivateTab(tab, sessionId);
+  await beforeDispatch?.();
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   let [x, y] = point!;
 
@@ -1367,14 +1407,14 @@ export async function click(
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
 
-  const actionId = await beginCursorAction(tabId, cid, "click", target, name);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", target, name);
 
   try {
     // 目标边框与浅弧移动并行；不再为高亮和预播放波纹额外等待。
-    await cursorMove(tabId, x, y, cid);
+    if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
 
     if (target && !force) {
-      const confirmed = await confirmPointerTarget(tabId, target);
+      const confirmed = await confirmPointerTarget(tabId, target, beforeDispatch);
 
       if (params.position) {
         [x, y] = pointInElementRect(confirmed.targetRect, params.position);
@@ -1384,7 +1424,7 @@ export async function click(
       }
 
       if (x !== point[0] || y !== point[1]) {
-        await cursorMove(tabId, x, y, cid);
+        if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
       }
     }
 
@@ -1393,7 +1433,8 @@ export async function click(
     let effect: EffectReport | undefined;
 
     try {
-      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
+      await beforeDispatch?.();
+      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
       cdpMouseMoved = true;
       heldOf(sessionId).pointer = [x, y];
       // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
@@ -1417,6 +1458,7 @@ export async function click(
       const pressing = (async () => {
         for (let n = 1; n <= clickCount; n++) {
           await guardSubmitPoint(tabId, params, [x, y]);
+          await beforeDispatch?.();
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mousePressed",
             x,
@@ -1425,7 +1467,7 @@ export async function click(
             buttons: pressedButtonsMask(button) | buttonsMaskFor(sessionId),
             clickCount: n,
             modifiers,
-          });
+          },beforeDispatch);
           cdpMousePressed = true;
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mouseReleased",
@@ -1459,6 +1501,10 @@ export async function click(
         dialogWatch.stop();
       }
     } catch (e) {
+      if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") {
+        if (cdpMouseMoved) Object.assign(e,{executionFact:"unknown"});
+        throw e;
+      }
       if (cdpMousePressed) {
         throw new Error(
           `点击可能已送达，后续 CDP 返回异常，未再次点击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`,
@@ -1478,9 +1524,10 @@ export async function click(
       // 尚未向页面派发任何 CDP 输入（如 DevTools 占用）时，才允许 DOM 回退一次
       // 右键/中键/非左键不提供 DOM 回退（document 无法等价 contextmenu/中键）。
       if (target && button === "left" && clickCount === 1 && !force) {
-        await ensureDomOps(tabId);
+        await ensureDomOps(tabId, beforeDispatch);
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
         await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target });
+        await beforeDispatch?.();
         await callDom(
           tabId,
           (t: string) => {
@@ -1490,7 +1537,7 @@ export async function click(
 
             return dom.click(t);
           },
-          [target],
+          [target], undefined, beforeDispatch,
         );
         const fallbackEffect = await collectEffect(tabId, fallbackToken);
         await endCursorAction(tabId, cid, actionId, "done", [x, y]);
@@ -1537,6 +1584,7 @@ type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; h
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1555,14 +1603,14 @@ export async function doubleClick(
     }
   })());
 
-  const { point, targetRect } = await resolvePointerTarget(tabId, params);
+  const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
   await guardSubmitPoint(tabId, params, point);
   const name = await nameOfClickTarget(tabId, params);
-  const wasArmed = heldClicks.isArmed(sessionId);
+  const wasArmed = params.fromUserConfirm === true;
 
-  const needsConfirm = isDestructiveLabel(name) || (params.confirmSubmit === true && isSubmitLabel(name));
+  const needsConfirm = isDestructiveLabel(name) || isSubmitLabel(name);
 
   if (needsConfirm && !wasArmed) {
     await holdForConfirmation(tab, sessionId, name, { ...params, kind: "double_click" }, { target: params.target, targetRect, point });
@@ -1574,6 +1622,7 @@ export async function doubleClick(
     heldClicks.drop(sessionId);
   }
 
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   let [x, y] = point!;
@@ -1585,13 +1634,13 @@ export async function doubleClick(
   const button: MouseButton = params.button ?? "left";
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
-  const actionId = await beginCursorAction(tabId, cid, "click", params.target, name);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", params.target, name);
 
   try {
-    await cursorMove(tabId, x, y, cid);
+    if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
 
     if (params.target && !force) {
-      const confirmed = await confirmPointerTarget(tabId, params.target);
+      const confirmed = await confirmPointerTarget(tabId, params.target, beforeDispatch);
 
       if (params.position) {
         [x, y] = pointInElementRect(confirmed.targetRect, params.position);
@@ -1601,7 +1650,7 @@ export async function doubleClick(
       }
 
       if (x !== point![0] || y !== point![1]) {
-        await cursorMove(tabId, x, y, cid);
+        if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
       }
     }
 
@@ -1610,7 +1659,8 @@ export async function doubleClick(
     let effect: EffectReport | undefined;
 
     try {
-      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
+      await beforeDispatch?.();
+      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
       dispatched = true;
       heldOf(sessionId).pointer = [x, y];
       const effectPending = beginEffect(tabId, { point: [x, y] });
@@ -1626,17 +1676,19 @@ export async function doubleClick(
       const effectToken = await effectPending;
       const btnMask = pressedButtonsMask(button);
       await guardSubmitPoint(tabId, params, [x, y]);
+      await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
-      });
+      },beforeDispatch);
       pressed = true;
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 1, modifiers,
       });
       await guardSubmitPoint(tabId, params, [x, y]);
+      await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
-      });
+      },beforeDispatch);
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 2, modifiers,
       });
@@ -1840,6 +1892,7 @@ export async function drag(
 export async function fill(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1853,7 +1906,8 @@ export async function fill(
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
   const cid = cursorId(sessionId);
-  await maybeActivateTab(tab, sessionId);
+  await beforeDispatch?.();
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
@@ -1873,7 +1927,7 @@ export async function fill(
 
   if (backendNodeId !== undefined) {
     try {
-      targetRect = await rectOfBackendNode(tabId, backendNodeId);
+      targetRect = await rectOfBackendNode(tabId, backendNodeId, false, beforeDispatch);
     } catch (e) {
       if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
         throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
@@ -1884,12 +1938,12 @@ export async function fill(
 
   if (!targetRect) {
     try {
-      await ensureDomOps(tabId);
+      await ensureDomOps(tabId, beforeDispatch);
 
       const res = await callDom(
         tabId,
         readDomTargetRect,
-        [params.target],
+        [params.target], undefined, beforeDispatch,
       );
 
       if (res?.ok && res.rect && typeof res.rect.x === "number") {
@@ -1904,11 +1958,11 @@ export async function fill(
     }
   }
 
-  const actionId = await beginCursorAction(tabId, cid, "fill", params.target);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "fill", params.target);
 
   try {
     if (targetRect) {
-      await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
+      if (!beforeDispatch) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
 
     await guardRequiredFormFields(tabId, formGuard);
@@ -1921,7 +1975,8 @@ export async function fill(
 
     if (backendNodeId !== undefined) {
       try {
-        const range = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId);
+        await beforeDispatch?.();
+        const range = await fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch);
 
         if (targetRect) {
           await recordCursorTrail(
@@ -1947,8 +2002,9 @@ export async function fill(
       }
     }
 
-    await ensureDomOps(tabId);
+    await ensureDomOps(tabId, beforeDispatch);
 
+    await beforeDispatch?.();
     const filled = await callDom(
       tabId,
       (t: string, v: string) => {
@@ -1959,7 +2015,7 @@ export async function fill(
         return dom.fill(t, v);
       },
       [params.target, params.value],
-      params.expectedDocumentId,
+      params.expectedDocumentId, beforeDispatch,
     );
 
     if (filled && "refused" in filled) throw new FillRefused(filled.refused);
@@ -2001,6 +2057,7 @@ export async function selectOption(
     userValueHostname?: string;
   },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ selected: string[]; labels: string[] }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -2016,7 +2073,8 @@ export async function selectOption(
 
   await assertObservedDocument(tab.id, sessionId);
   const tabId = tab.id;
-  await maybeActivateTab(tab, sessionId);
+  await beforeDispatch?.();
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   const ref = parseRef(params.target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
@@ -2032,6 +2090,7 @@ export async function selectOption(
 
   if (backendNodeId !== undefined) {
     try {
+      await beforeDispatch?.();
       const result = await callOnBackendNode<{ selected: string[]; labels: string[] }>(
         tabId,
         backendNodeId,
@@ -2070,7 +2129,7 @@ export async function selectOption(
         }`,
         [params.values],
         undefined,
-        params.expectedDocumentId,
+        params.expectedDocumentId, beforeDispatch,
       );
 
       return result;
@@ -2081,9 +2140,10 @@ export async function selectOption(
     }
   }
 
-  await ensureDomOps(tabId);
+  await ensureDomOps(tabId, beforeDispatch);
   await guardRequiredFormFields(tabId, formGuard);
 
+  await beforeDispatch?.();
   return await callDom(
     tabId,
     (t: string, values: unknown) => {
@@ -2094,22 +2154,25 @@ export async function selectOption(
       return dom.selectOption(t, values as Parameters<NonNullable<typeof dom.selectOption>>[1]);
     },
     [params.target, params.values],
-    params.expectedDocumentId,
+    params.expectedDocumentId, beforeDispatch,
   );
 }
 
 export async function typeText(
   params: { text: string; tabId?: number; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ typed: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
   await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "type",
     userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname });
-  await sendCommand(tab.id, "Input.insertText", { text: params.text });
+  await beforeDispatch?.();
+  await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
 
   return { typed: true };
 }
@@ -2117,6 +2180,7 @@ export async function typeText(
 export async function pressKey(
   params: { key: string; tabId?: number; formRequirements?: RequiredFormField[] },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ pressed: true }> {
   const info = resolveKey(params.key);
 
@@ -2125,6 +2189,7 @@ export async function pressKey(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   const heldMods = modifierMaskFor(sessionId, tab.id);
@@ -2165,7 +2230,8 @@ export async function pressKey(
     }
   }
 
-  await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown);
+  await beforeDispatch?.();
+  await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown,beforeDispatch);
   await sendCommand(tab.id, "Input.dispatchKeyEvent", { type: "keyUp", ...base });
 
   return { pressed: true };
@@ -2188,21 +2254,23 @@ export async function wheel(
   },
   sessionId: string = LEAD_SESSION_ID,
   checkCurrent: () => void = () => {},
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ wheeled: true; point: [number, number]; ackMs: number; attempts: number }> {
+  await beforeDispatch?.();
   checkCurrent();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   const documentId = await assertObservedDocument(tab.id, sessionId);
   checkCurrent();
-  await maybeActivateTab(tab, sessionId);
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
   let point = params.point;
 
   if (!point && params.target) {
     point = (await resolvePointerTarget(tab.id, {
       target: params.target,
       position: params.position,
-    })).point;
+    }, beforeDispatch)).point;
   }
 
   if (!point) point = heldOf(sessionId).pointer ?? undefined;
@@ -2217,9 +2285,9 @@ export async function wheel(
 
   // 窗口未聚焦时不抢前台（见 foreground.ts），工作页可能留在后台；Chrome 不给隐藏页处理滚轮，
   // 发出去只会等到超时、落成「是否滚过未知」。先查可见性，隐藏就明确不执行。
-  const visibility = await sendCommand<{ result?: { value?: unknown } }>(tab.id, "Runtime.evaluate", { expression: "document.visibilityState", returnByValue: true });
+  const visibility = await callDom(tab.id, () => document.visibilityState, [], documentId ?? undefined, beforeDispatch);
 
-  if (visibility.result?.value === "hidden") {
+  if (visibility === "hidden") {
     throw notExecuted(new Error("工作标签页在后台（窗口未聚焦时不抢前台），浏览器不会处理滚轮；未执行。可改用 scroll 工具，或请用户切回这个窗口后再试"));
   }
 
@@ -2231,11 +2299,15 @@ export async function wheel(
   let phase = "mouseMoved";
   let acknowledged = false;
 
-  const send = async (event: Record<string, unknown>, timeout: number) => {
+  const guardFor = (afterPrimary: boolean) => {
+    const approved = afterPrimary ? beforeDispatch?.afterEffect ?? beforeDispatch : beforeDispatch;
+    return Object.assign(async () => { checkCurrent(); await approved?.(); checkCurrent(); }, {checkNow: () => { checkCurrent(); approved?.checkNow?.(); }});
+  };
+  const send = async (event: Record<string, unknown>, timeout: number, afterPrimary = false) => {
     checkCurrent();
     await assertSameDocument(tabId, documentId);
     checkCurrent();
-    await sendCommand(tabId, "Input.dispatchMouseEvent", event, checkCurrent, timeout);
+    await sendCommand(tabId, "Input.dispatchMouseEvent", event, guardFor(afterPrimary), timeout);
     acknowledged = true;
     checkCurrent();
   };
@@ -2249,7 +2321,7 @@ export async function wheel(
     await send({ type: "mouseWheel", x, y, deltaX, deltaY, modifiers, pointerType: "mouse" }, ACK_MS);
     const ackMs = Date.now() - started;
     phase = "trailing wheel";
-    await send({ type: "mouseWheel", x, y, deltaX: 0, deltaY: 0, modifiers, pointerType: "mouse" }, ACK_MS);
+    await send({ type: "mouseWheel", x, y, deltaX: 0, deltaY: 0, modifiers, pointerType: "mouse" }, ACK_MS, true);
     heldOf(sessionId).pointer = [x, y];
 
     return { wheeled: true, point: [x, y], ackMs, attempts: 1 };
@@ -2362,6 +2434,7 @@ export async function mouseUp(
 export async function keyDown(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ down: true; key: string }> {
   const info = resolveKey(params.key);
 
@@ -2370,6 +2443,7 @@ export async function keyDown(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
   const heldMods = modifierMaskFor(sessionId, tab.id);
   heldOf(sessionId).tabId = tab.id;
@@ -2388,7 +2462,8 @@ export async function keyDown(
 
     if (info.text !== undefined) keyDown.text = info.text;
 
-    await sendCommand(tab.id, "Input.dispatchKeyEvent", keyDown);
+    await beforeDispatch?.();
+    await sendCommand(tab.id, "Input.dispatchKeyEvent", keyDown,beforeDispatch);
 
     return { down: true, key: params.key };
   } catch (e) {
@@ -2490,6 +2565,7 @@ export async function releaseHeldInputs(
 export async function paste(
   params: { content: PasteContent; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ pasted: true; clipboard: ClipboardFinishStatus }> {
   if (!clipboardBridge) {
     throw notExecuted(new Error(PASTE_HOST_BLOCKED));
@@ -2500,6 +2576,7 @@ export async function paste(
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
+  await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
 
   const platform = typeof navigator !== "undefined" ? navigator.platform : "MacIntel";
@@ -2511,7 +2588,7 @@ export async function paste(
       await mirrorPasteContentToPageClipboard(tab.id, content);
     }
 
-    await pressKey({ key: chord, tabId: tab.id }, sessionId);
+    await pressKey({ key: chord, tabId: tab.id }, sessionId,beforeDispatch);
     // CDP paste 命令异步读剪贴板；过早 restore 会交出空粘贴。
     await new Promise((r) => setTimeout(r, 120));
   } catch (e) {
@@ -2741,12 +2818,14 @@ export async function html5DragAndDrop(
 export async function scroll(
   params: { dy?: number; toBottom?: boolean; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ atBottom: boolean }> {
+  await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await assertObservedDocument(tab.id, sessionId);
-  await ensureDomOps(tab.id);
+  await ensureDomOps(tab.id, beforeDispatch);
 
   if (params.toBottom) {
     const res = await callDom(
@@ -2758,7 +2837,7 @@ export async function scroll(
 
         return dom.scrollToBottom(maxSteps);
       },
-      [20],
+      [20], undefined, beforeDispatch,
     );
 
     return { atBottom: res.atBottom };
@@ -2773,7 +2852,7 @@ export async function scroll(
 
       return dom.scrollBy(dy);
     },
-    [params.dy ?? null],
+    [params.dy ?? null], undefined, beforeDispatch,
   );
 
   return { atBottom: res.atBottom };
@@ -2796,7 +2875,9 @@ export async function mark(
     motion?: "grow" | "boil";
   },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<{ marked: true }> {
+  await beforeDispatch?.();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -2814,120 +2895,129 @@ export async function mark(
   }
 
   let rect: DomRect | undefined;
+  let prepared = false;
+  try {
 
-  if (backendNodeId !== undefined) {
-    try {
-      rect = await rectOfBackendNode(tabId, backendNodeId, true);
-    } catch (e) {
-      if (!isDebuggerUnavailable(e)) {
-        throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
+    if (backendNodeId !== undefined) {
+      try {
+        rect = await rectOfBackendNode(tabId, backendNodeId, true, beforeDispatch);
+        prepared = true;
+      } catch (e) {
+        if (!isDebuggerUnavailable(e)) {
+          if (e && typeof e === "object" && "executionFact" in e) throw e;
+          throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
+        }
       }
     }
-  }
 
-  if (!rect) {
-    await ensureDomOps(tabId);
+    if (!rect) {
+      await ensureDomOps(tabId, beforeDispatch);
 
-    const res = await callDom(
+      const res = await callDom(
+        tabId,
+        (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
+          const dom = window.__sideagent?.dom;
+
+          if (!dom) return { ok: false, error: "domops 未注入" };
+
+          try {
+            const element = dom.resolve(t);
+
+            if (element === document.body || element === document.documentElement) throw new Error("请定位具体内容元素，不能用整页作为标注目标");
+
+            return { ok: true, rect: dom.rectOf(t) };
+          } catch (e: any) {
+            return { ok: false, error: e?.message ?? String(e) };
+          }
+        },
+        [params.target], undefined, beforeDispatch,
+      );
+
+      // 只是定位，还没画任何东西：失败一律是「未执行」，不能记成结果未知而锁住重画。
+      if (!res || !res.ok) {
+        throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
+      }
+
+      if (!res.rect || typeof res.rect.x !== "number") {
+        throw notExecuted(new Error(`未找到目标元素：${params.target}`));
+      }
+
+      rect = res.rect;
+      prepared = true;
+    }
+
+    await ensureCursor(tabId, beforeDispatch);
+    const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
+    const motion = await getMarkMotion();
+    const style = params.style ?? "sketch";
+    await assertSameDocument(tabId, observedDocument);
+
+    if (backendNodeId !== undefined && throughNodeId !== undefined) {
+      const contextId = await cursorContext(tabId);
+      const end = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: throughNodeId, executionContextId: contextId });
+
+      if (!end.object?.objectId) throw notExecuted(new Error(`ref ${params.through} 已失效，操作未执行。请重新 snapshot 后使用新的 ref`));
+      await assertSameDocument(tabId, observedDocument);
+
+      // 同一行、同一页面的校验在页面里做；没通过时什么都还没画，如实记为未执行。
+      {
+        await callOnBackendNode(tabId, backendNodeId, `function(end,label,target,id,actions,options) {
+          const {range, rect} = (${observedNodeRange.toString()}).call(this,end,(${observedNodeRect.toString()}));
+          window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,range);
+        }`, [new CdpObjectArg(end.object.objectId), params.label ?? null, params.target, cid, actions, { style, motion }], contextId, undefined, beforeDispatch);
+      }
+
+      return { marked: true };
+    }
+
+    if (backendNodeId !== undefined) {
+      const contextId = await cursorContext(tabId);
+      await assertSameDocument(tabId, observedDocument);
+      await callOnBackendNode(tabId, backendNodeId, `function(label,target,id,actions,options) {
+        const rect = (${observedNodeRect.toString()}).call(this,true);
+        window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,this);
+      }`, [params.label ?? null,params.target,cid,actions,{style,motion}], contextId, undefined, beforeDispatch);
+
+      return {marked:true};
+    }
+
+    await callDom(
       tabId,
-      (t: string): { ok: true; rect: DomRect } | { ok: false; error: string } => {
-        const dom = window.__sideagent?.dom;
+      (
+        r: DomRect,
+        l: string | null,
+        t: string,
+        id: string,
+        a: Array<{ id: "confirm" | "cancel"; label: string }> | null,
+        opts: { style?: "rect" | "sketch"; motion?: "grow" | "boil" },
+      ) => {
+        const cursor = window.__sideagent?.cursor?.for(id);
 
-        if (!dom) return { ok: false, error: "domops 未注入" };
-
-        try {
-          const element = dom.resolve(t);
-
-          if (element === document.body || element === document.documentElement) throw new Error("请定位具体内容元素，不能用整页作为标注目标");
-
-          return { ok: true, rect: dom.rectOf(t) };
-        } catch (e: any) {
-          return { ok: false, error: e?.message ?? String(e) };
-        }
+        if (!cursor?.mark) throw new Error("cursor 未注入");
+        cursor.mark(r, l ?? undefined, t, a ?? undefined, opts);
       },
-      [params.target],
+      [rect, params.label ?? null, params.target, cid, actions, { style, motion }], undefined, beforeDispatch,
     );
 
-    // 只是定位，还没画任何东西：失败一律是「未执行」，不能记成结果未知而锁住重画。
-    if (!res || !res.ok) {
-      throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
-    }
-
-    if (!res.rect || typeof res.rect.x !== "number") {
-      throw notExecuted(new Error(`未找到目标元素：${params.target}`));
-    }
-
-    rect = res.rect;
-  }
-
-  await ensureCursor(tabId);
-  const actions = resolveImplicitMarkActions(params.label, params.actions) ?? null;
-  const motion = await getMarkMotion();
-  const style = params.style ?? "sketch";
-  await assertSameDocument(tabId, observedDocument);
-
-  if (backendNodeId !== undefined && throughNodeId !== undefined) {
-    const contextId = await cursorContext(tabId);
-    const end = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: throughNodeId, executionContextId: contextId });
-
-    if (!end.object?.objectId) throw notExecuted(new Error(`ref ${params.through} 已失效，操作未执行。请重新 snapshot 后使用新的 ref`));
-    await assertSameDocument(tabId, observedDocument);
-
-    // 同一行、同一页面的校验在页面里做；没通过时什么都还没画，如实记为未执行。
-    try {
-      await callOnBackendNode(tabId, backendNodeId, `function(end,label,target,id,actions,options) {
-        const {range, rect} = (${observedNodeRange.toString()}).call(this,end,(${observedNodeRect.toString()}));
-        window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,range);
-      }`, [new CdpObjectArg(end.object.objectId), params.label ?? null, params.target, cid, actions, { style, motion }], contextId);
-    } catch (error) {
-      throw notExecuted(error);
-    }
-
     return { marked: true };
+  } catch (error) {
+    if (beforeDispatch && prepared) throw Object.assign(error instanceof Error ? error : new Error(String(error)), {executionFact: "unknown"});
+    throw error;
   }
-
-  if (backendNodeId !== undefined) {
-    const contextId = await cursorContext(tabId);
-    await assertSameDocument(tabId, observedDocument);
-    await callOnBackendNode(tabId, backendNodeId, `function(label,target,id,actions,options) {
-      const rect = (${observedNodeRect.toString()}).call(this,true);
-      window.__sideagent.cursor.for(id).mark(rect,label ?? undefined,target,actions ?? undefined,options,this);
-    }`, [params.label ?? null,params.target,cid,actions,{style,motion}], contextId);
-
-    return {marked:true};
-  }
-
-  await callDom(
-    tabId,
-    (
-      r: DomRect,
-      l: string | null,
-      t: string,
-      id: string,
-      a: Array<{ id: "confirm" | "cancel"; label: string }> | null,
-      opts: { style?: "rect" | "sketch"; motion?: "grow" | "boil" },
-    ) => {
-      const cursor = window.__sideagent?.cursor?.for(id);
-
-      if (!cursor?.mark) throw new Error("cursor 未注入");
-      cursor.mark(r, l ?? undefined, t, a ?? undefined, opts);
-    },
-    [rect, params.label ?? null, params.target, cid, actions, { style, motion }],
-  );
-
-  return { marked: true };
 }
 
 /** clear_marks 工具：清除全部 mark 标注。受限页面本来就画不上标注，静默成功。 */
-export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: number): Promise<{ cleared: true }> {
+export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: number, beforeDispatch?: ApprovalDispatchGuard): Promise<{ cleared: true }> {
+  await beforeDispatch?.();
   const tab = await resolveWorkingTab(tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
 
   try {
-    await ensureCursor(tab.id);
-    await callDom(tab.id, () => window.__sideagent?.cursor?.clearMarks?.(), []);
-  } catch {
+    await ensureCursor(tab.id, beforeDispatch);
+    await callDom(tab.id, () => window.__sideagent?.cursor?.clearMarks?.(), [], undefined, beforeDispatch);
+  } catch (error) {
+    if (beforeDispatch) throw error;
     /* 页面禁止注入（如 chrome://）时没有标注可清，静默 */
   }
 

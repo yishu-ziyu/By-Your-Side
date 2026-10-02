@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { FileDocument } from "../../agent/src/document-file.js";
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.js";
 import type { TaskActionRequest } from "../../shared/task-actions.js";
 
@@ -199,6 +200,7 @@ async function nativeEntry(script: ScriptedModel, useLoop = false): Promise<Entr
 
 async function inprocEntry(script: ScriptedModel): Promise<Entry> {
   const { startInprocHost } = await import("../src/inproc/browser-host.js");
+  const directory = mkdtempSync(join(tmpdir(), "bys-inproc-contract-"));
   const frames: ServerMessage[] = [];
   let onMessage: ((message: ClientMessage | InprocConfig) => void) | null = null;
   const send = (message: ClientMessage | InprocConfig) => onMessage?.(message);
@@ -224,10 +226,10 @@ async function inprocEntry(script: ScriptedModel): Promise<Entry> {
   };
 
   // SAFETY: browser-host 只用到 runtime 的这些成员和端口的 name / postMessage / onMessage / onDisconnect。
-  startInprocHost({ sessionData: async id => ({session:await new InMemorySessionRepo().create({id})}), createRuntime: () => runtime as never, onConnect: (listener) => listener(port as never) });
+  startInprocHost({ document: name => new FileDocument(directory, `${name}.json`), sessionData: async id => ({session:await new InMemorySessionRepo().create({id})}), createRuntime: () => runtime as never, onConnect: (listener) => listener(port as never) });
   send({ type: "inproc_config", config: { provider: model.provider, modelId: model.id }, credentials: {} });
 
-  return { name: "扩展内 agent", conversationId: "default", frames, send, cleanup: () => {} };
+  return { name: "扩展内 agent", conversationId: "default", frames, send, cleanup: () => { rmSync(directory, { recursive: true, force: true }); } };
 }
 
 interface HostOnlyFrame { type: "inproc_keepalive" | "inproc_credential" }

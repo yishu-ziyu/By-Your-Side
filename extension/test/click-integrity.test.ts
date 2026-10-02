@@ -225,12 +225,14 @@ function installPage(opts?: { overlayAt?: FakeEl | null }) {
   vi.stubGlobal("chrome", {
     scripting: {
       // 载荷与背景侧 callDom<Args, Result> 的调用契约一致：func 与 args 成对（callDom 第三参必填），注入函数返回值原样回传。
-      executeScript: vi.fn(async <Args extends unknown[], Result>(details: { func?: (...args: Args) => Result; args?: Args }) => [
+      executeScript: vi.fn(async <Args extends unknown[], Result>(details: { func?: (...args: Args) => Result; args?: Args }) => {
+        if (details.func?.toString().includes("readyState")) return [{ frameId: 0, documentId: "fixture-101", result: {url:"https://fixture.invalid/",readyState:"complete"} }];
+        return [
         {
           frameId: 0,
           result: details.func ? await details.func(...details.args!) : undefined,
         },
-      ]),
+      ];}),
     },
   });
 

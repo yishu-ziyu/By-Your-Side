@@ -807,7 +807,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "key_down",
       label: "Key down",
-      description: 'Press and hold a key (e.g. "Shift", "ControlOrMeta", "a"). Pair with key_up or release_held_inputs. Prefer press_key for ordinary typing chords.',
+      description: 'Disabled by the strict host boundary. Use press_key for a complete key pair or ask the user to take over.',
       parameters: Type.Object({
         key: Type.String({ minLength: 1, maxLength: 64 }),
       }),
@@ -835,7 +835,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "release_held_inputs",
       label: "Release held inputs",
-      description: "Release all keys and mouse buttons still held for this session (safe after cancel/error).",
+      description: "Disabled for model calls: held state is implicit. Internal stop cleanup releases inputs; use complete press_key pairs.",
       parameters: Type.Object({}),
       execute: async (_id) => {
         const data = (await call("release_held_inputs", {})) as ToolContract["release_held_inputs"]["data"];

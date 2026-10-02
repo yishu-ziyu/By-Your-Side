@@ -22,7 +22,7 @@ let storage: SessionItems;
 
 let connect: ReturnType<typeof event>;
 
-function panel() { const p = { name: "sideagent-panel", onMessage: event(), onDisconnect: event(), postMessage: vi.fn() }; connect.emit(p);
+function panel() { const p = { name: "sideagent-panel", sender:{id:"fixture-extension",url:"chrome-extension://fixture-extension/sidepanel.html"}, onMessage: event(), onDisconnect: event(), postMessage: vi.fn() }; connect.emit(p);
 
  return p; }
 
@@ -31,7 +31,7 @@ beforeEach(async () => {
  const area = {get: async (key: string | null) => key === null ? {...storage} : {[key]:storage[key]}, set: async (data: SessionItems) => {Object.assign(storage, data);} };
  vi.stubGlobal("chrome", {
   storage:{session:area,local:area},
-  runtime:{onConnect:connect,onMessage:event(),onInstalled:event()},
+  runtime:{id:"fixture-extension",getURL:(path:string)=>"chrome-extension://fixture-extension/"+path,onConnect:connect,onMessage:event(),onInstalled:event()},
   tabs:{onRemoved:event(),onUpdated:event(),onActivated:event(),query:async()=>[],sendMessage:async()=>{}},
   debugger:{onDetach:event()},
   contextMenus:{onClicked:event(),removeAll:(cb:Function)=>cb(),create:()=>{}},
@@ -212,4 +212,16 @@ it('does not finish remote resume while another member is still restoring',async
  expect(wire.sent.filter(m=>m.type==='task_control_result')).toEqual([]);
  wire.callbacks.onServerMessage({type:'team_status',conversationId:'B',team:{...team,phase:'restored',members:team.members.map(m=>({...m,phase:'restored'}))}});await settle();
  expect(wire.sent.filter(m=>m.type==='task_control_result')).toMatchObject([{requestId:'resume-b',ok:true}]);
+});
+
+it('observe_page uses the real confirmation entry and never calls voice observation without a running approved task',async()=>{
+ const {VoiceRelay}=await import('../src/background/voice-relay.js');
+ const observe=vi.spyOn(VoiceRelay.prototype,'observe').mockResolvedValue({});
+ try {
+  panel();
+  wire.callbacks.onServerMessage({type:'tool_call',conversationId:'default',id:'observe-without-grant',name:'observe_page',params:{token:'fixture',mode:'image'}});
+  await settle();
+  expect(wire.sent.find(m=>m.type==='tool_result'&&m.id==='observe-without-grant')).toMatchObject({ok:false,executionFact:'not_executed'});
+  expect(observe).not.toHaveBeenCalled();
+ } finally {observe.mockRestore();}
 });

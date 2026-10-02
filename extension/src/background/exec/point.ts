@@ -8,7 +8,9 @@ export async function askUserToPoint(
   params: ToolContract["ask_user_to_point"]["params"],
   sessionId: string,
   assertCurrent: () => void = () => {},
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
 ): Promise<PointSelectionReceipt> {
+  await beforeDispatch?.();
   assertCurrent();
 
   if (!isLeadSession(parseExecutionKey(sessionId).sessionId)) throw new Error("请由主会话请求用户点选；后台成员不能占用点选层。");
@@ -17,8 +19,10 @@ export async function askUserToPoint(
   if (tab.id === undefined) throw new Error("没有可供点选的工作页。");
   const tabId = tab.id;
   assertCurrent();
-  await maybeActivateTab(tab, sessionId);
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
   assertCurrent();
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   const [injected] = await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content-point.js"], world: "ISOLATED" });
   const documentId = injected?.documentId;
 
@@ -44,6 +48,8 @@ export async function askUserToPoint(
   try {
     assertCurrent();
 
+    await (beforeDispatch?.afterEffect ?? beforeDispatch)?.();
+    (beforeDispatch?.afterEffect ?? beforeDispatch)?.checkNow?.();
     const results = await Promise.race([
       chrome.scripting.executeScript({
         target, world: "ISOLATED", args: [requestId, params.message ?? "请点一下你指的元素", POINT_SELECTION_TIMEOUT_MS],

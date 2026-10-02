@@ -279,6 +279,8 @@ async function unknownFillFixture(value='小明',target='@4',refKind:'ax'|'dom'=
   vi.resetModules();
   vi.doMock('../../extension/src/background/state.js',()=>({getWorkingTabId:async()=>7,resolveReadableTab:async(id:number)=>({id})}));
   vi.doMock('../../extension/src/background/debugger.js',()=>({sendCommand:async(_tab:number,method:string,params:any)=>{
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'fixture-frame'}}};
+    if(method==='Page.createIsolatedWorld')return {executionContextId:71};
     if(method==='DOM.resolveNode')return {object:{objectId:'original-A'}};
 
     // CSS now resolves an object handle through the unified resolver too; it
