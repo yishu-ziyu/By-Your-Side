@@ -38,7 +38,7 @@ return await browser.saveFile({ filename: "subtitles.txt", content: value.join("
 
 ## 控制与权限
 
-解释器使用固定版本 `quickjs-emscripten@0.32.0`。独立 JavaScript 堆只暴露浏览器桥接函数，没有 Node `process`、`require`、宿主文件、宿主网络或模块加载器。候选安全版任意页面 `js` 需侧栏逐次允许，固定宿主只读探针免确认；详见[协议安全边界](protocol.md#安全)。不能把解释器隔离和网页业务授权混为一谈。
+解释器使用固定版本 `quickjs-emscripten@0.32.0`。独立 JavaScript 堆只暴露浏览器桥接函数，没有 Node `process`、`require`、宿主文件、宿主网络或模块加载器。候选安全版任意页面 `js` 需侧栏逐次允许，固定JS探针同样需确认；详见[协议安全边界](protocol.md#安全)。不能把解释器隔离和网页业务授权混为一谈。
 
 每次子调用携带所属 `programId`，经过原 `ToolRpc → 扩展 executeToolCall → ControlGate → handler`。程序调用在接管期间连只读工具也会被拒绝；普通独立只读工具的已有行为不变。
 
