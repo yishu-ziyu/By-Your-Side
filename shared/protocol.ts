@@ -393,6 +393,7 @@ export const TOOL_NAMES = [
   "dialog_info",
   "file_chooser_set_files",
   "download_stat",
+  "download_url",
   "download_cancel",
   "download_delete",
   /** CAP-02B：扩展侧输入原语的正式 RPC（右键/偏移/wheel/按住/paste/HTML5 DnD）。 */
@@ -735,6 +736,11 @@ export interface ToolContract {
       bytes?: number;
       danger?: string;
     };
+  };
+  /** 直接保存 HTTP(S) 链接，绕过 PDF 阅读器；完成只认 Chrome 下载状态。 */
+  download_url: {
+    params: { url: string; filename?: string; timeoutMs?: number; tabId?: number };
+    data: ToolContract["download_stat"]["data"];
   };
   download_cancel: {
     params: { downloadId: string };

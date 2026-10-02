@@ -51,6 +51,7 @@ export const WRITE_TOOLS = [
   "dismiss_dialog",
   "file_chooser_set_files",
   "download_cancel",
+  "download_url",
   "download_delete",
   "wheel",
   "mouse_down",

@@ -89,6 +89,14 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
 
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: { goal: string[]; goalPage?: { title: string; url: string } | null; lastReply: string; page: { title: string; url: string; text: string } | null; files?: GoalCheckFile[]; observations?: Array<{ tool: string; text: string }> }, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
+  // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
+  const wantsEscapedText = input.goal.some(text => /转义|escaped|literal/i.test(text));
+
+  const escapedCsv = wantsEscapedText ? [] : (input.files ?? []).filter(file => file.filename.toLowerCase().endsWith(".csv")
+    && file.content !== undefined && file.content.length <= 12_000 && !/[\r\n]/.test(file.content)
+    && (file.content.match(/\\n/g)?.length ?? 0) >= 2);
+
+  if (escapedCsv.length && !asksUser(input.lastReply)) return { status: "continue", remaining: "修正 CSV 的换行", correction: `${escapedCsv.slice(0, 4).map(file => file.filename).join("、")}把换行写成了字面转义，整个文件只有一行。用实际换行分隔 CSV 行，中文使用实际字符，修正文件后再交付。`.slice(0, 800) };
   // 明确数量表的加法错误由程序判定，不能被模型的 done 覆盖。
   const deduplicated = input.goal.some(text => /去重|去除重复|distinct|unique|deduplic/i.test(text));
 

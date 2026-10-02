@@ -15,7 +15,7 @@ const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   press_key: "按键", key_down: "按键", key_up: "按键", mouse_down: "按住鼠标", mouse_up: "松开鼠标", release_held_inputs: "松开按住的键", wheel: "滚动页面",
   scroll: "滚动页面", select_option: "选择选项", upload_file: "上传文件", file_chooser_set_files: "选择文件", page_operation: "填写并核对", page_translation: "翻译网页",
   browser_run: "连续操作网页", wait_for: "等待页面", sleep: "等待", arm_event: "等待页面事件", wait_event: "等待页面事件", disarm_event: "停止等待",
-  accept_dialog: "确认弹窗", dismiss_dialog: "关闭弹窗", download_save_as: "保存下载", download_cancel: "取消下载", download_delete: "移除下载记录",
+  accept_dialog: "确认弹窗", dismiss_dialog: "关闭弹窗", download_url: "下载文件", download_stat: "检查下载", download_save_as: "保存下载", download_cancel: "取消下载", download_delete: "移除下载记录",
   js: "检查页面", cdp: "调用浏览器", mark: "标注页面", clear_marks: "清除标注", ask_user_to_point: "等你在页面上点选", fetch: "发送网络请求",
   browser_request: "发送网络请求", artifacts: "生成文件", saveFile: "保存文件", remember_user_preference: "记住偏好", user_memory: "查看记忆",
   spawn_worker: "安排助手", list_workers: "查看助手", stop_worker: "让助手停下", post: "发送消息", await_message: "等待助手结果", share_tab: "安排同页协作",

@@ -47,3 +47,24 @@ it("具体纠错理由保留给主模型，不能只剩一句含糊的还差什�
 
   expect(verdict).toMatchObject({ status: "continue", remaining: "核对日期与合计", correction: reason });
 });
+
+it("CSV 把换行写成字面转义时要求修正文件，不接受模型的 done", async () => {
+  const content = String.raw`类别,数量\n省,22\n直辖市,4\n自治区,5\n特别行政区,2\n合计,33\n`;
+
+  const verdict = await checkGoal(host({ status: "done" }, []), model,
+    { goal: ["导出 CSV 表格"], lastReply: "已导出。", page: null,
+      files: [{ filename: "sum.csv", chars: content.length, lines: 1, savedAt: 0, content }] }, new AbortController().signal);
+
+  expect(verdict.status).toBe("continue");
+  expect(verdict.correction).toContain("实际换行");
+});
+
+it("用户明确要转义文本时保留原文件，不擅自改成多行", async () => {
+  const content = String.raw`类别,数量\n省,22\n直辖市,4\n合计,26\n`;
+
+  const verdict = await checkGoal(host({ status: "done" }, []), model,
+    { goal: ["导出用字面转义表示换行的 CSV 示例"], lastReply: "已导出。", page: null,
+      files: [{ filename: "example.csv", chars: content.length, lines: 1, savedAt: 0, content }] }, new AbortController().signal);
+
+  expect(verdict.status).toBe("done");
+});

@@ -47,7 +47,7 @@ function textResult(text: string, details: unknown) {
  * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
  * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
  */
-function downloadReceipt(download: NonNullable<ToolContract["wait_event"]["data"]["download"]>): string {
+function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["data"]["download"]>, "path"> & { path?: string | null }): string {
   const name = download.suggestedFilename || download.url;
 
   if (download.completed && download.path) {
@@ -1045,6 +1045,30 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
 
+    defineTool({
+      name: "download_url",
+      label: "Download link",
+      description: "Save a user's requested HTTP(S) file link into Chrome's download folder, including a PDF currently open in Chrome's reader. Opening the PDF is not downloading it. Only completed=true confirms it was saved; if still running, use download_stat with the returned downloadId, never start another download. Chrome decides safety; do not bypass danger holds.",
+      parameters: Type.Object({ url: Type.String({ minLength: 1 }), filename: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })), timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })), tabId: Type.Optional(Type.Integer()) }),
+      execute: async (_id, params) => {
+        // SAFETY: download_url RPC 的返回结构由 ToolContract 与扩展处理器一致定义。
+        const data = await call("download_url", params, undefined, undefined, undefined, (params.timeoutMs ?? 20_000) + 10_000) as ToolContract["download_url"]["data"];
+
+        return textResult(downloadReceipt(data), data);
+      },
+    }),
+    defineTool({
+      name: "download_stat",
+      label: "Check download",
+      description: "Check a host-issued downloadId. Only completed=true confirms Chrome saved the file; do not invent IDs or repeat a still-running download.",
+      parameters: Type.Object({ downloadId: Type.String({ minLength: 3, maxLength: 80 }) }),
+      execute: async (_id, params) => {
+        // SAFETY: download_stat RPC 的返回结构由 ToolContract 与扩展处理器一致定义。
+        const data = await call("download_stat", params) as ToolContract["download_stat"]["data"];
+
+        return textResult(downloadReceipt(data), data);
+      },
+    }),
     defineTool({
       name: "download_save_as",
       label: "Save download",

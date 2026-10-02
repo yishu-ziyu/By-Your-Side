@@ -60,7 +60,7 @@ import { cdp } from "./exec/cdp.js";
 import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-events.js";
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
 import { fileChooserSetFiles } from "./exec/file-chooser.js";
-import { downloadStat, downloadCancel, downloadDelete } from "./exec/download.js";
+import { downloadUrl, downloadStat, downloadCancel, downloadDelete } from "./exec/download.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
@@ -138,6 +138,7 @@ const handlers: Record<ToolName, Handler> = {
   dialog_info: (p, sid) => dialogInfo(p, sid),
   file_chooser_set_files: (p, sid) => fileChooserSetFiles(p, sid),
   download_stat: (p, sid) => downloadStat(p, sid),
+  download_url: (p, sid) => downloadUrl(p, sid),
   download_cancel: (p, sid) => downloadCancel(p, sid),
   download_delete: (p, sid) => downloadDelete(p, sid),
   hover: (p, sid) => hover(p, sid),

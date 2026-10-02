@@ -13,6 +13,7 @@
 - `npm run accept:isolated`：QA-01 v2 隔离无头验收，默认不调用模型、不需凭据；CI 工作流 `.github/workflows/e2e.yml` 只跑其中 2026-09-23 在 macOS 整轮全绿的 9 个场景（F1–F5、F4b、C1、S1、S2）作回归门槛；目前仅手动触发，待 Linux 首次通过后再挂到 PR。
 - `npx tsx scripts/acceptance/page-readouts.mts --headless [--live]`：截断文字的完整值与范围输入框的读数、越界填写回执，零模型请求（[规则](../page-readouts.md)）。
 - `npx tsx scripts/acceptance/real-path/answer-selfcheck.mts --headless [--live]`：只装扩展，默认脚本主模型故意给出错误草稿，真实 GLM 快速模型核对；`--live` 改用真实 GLM 主模型。覆盖错误合计 CSV、错误日期文件、缺项/价格/来源及正确结果，下载文件留证。快速模型按设置页同一格式写入隔离扩展存储；需本机已配置 GLM 凭据，产物在 `out/acceptance/answer-selfcheck/`。固定页面检查不代替 #35 的完整产品评测（[标准](../evals/20261002-answer-selfcheck.md)）。
+- `npx tsx scripts/acceptance/real-path/pdf-download.mts --headless [--live|--arxiv]`：默认脚本模型走真实 PDF 阅读器和 Chrome 下载，覆盖字节、中断、延迟查询、非法地址与完成后取消；`--live` 用真实 GLM，`--arxiv` 复现 #25 的 arXiv 论文地址。产物在 `out/acceptance/pdf-download/`（[标准](../evals/20261002-pdf-download.md)）。
 - `npm run eval:integration -- --headless`：发布集成评测。
 - `npm run eval:live`：需要真实供应商或真实环境的评测。
 

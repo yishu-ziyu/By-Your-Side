@@ -13,6 +13,8 @@ requireHeadless();
 
 const live = process.argv.includes("--live");
 
+const mainModel = process.argv.find(arg => arg.startsWith("--model="))?.slice(8) ?? "zai-coding-cn/glm-5.3-flash";
+
 const out = join(REPO, "out/acceptance/answer-selfcheck", new Date().toISOString().replace(/[:.]/g, "-"));
 
 await mkdir(out, { recursive: true });
@@ -105,6 +107,13 @@ try {
   items.inproc_fast_model_config = items.inproc_model_config;
 
   if (!live) delete items.inproc_model_config;
+  else if (mainModel !== "zai-coding-cn/glm-5.3-flash") {
+    const [providerId, ...modelParts] = mainModel.split("/");
+    const key = process.env.SIDEAGENT_TEST_MAIN_KEY;
+    const mainPlan = key ? { providerId: providerId!, modelId: modelParts.join("/"), credential: { type: "api_key", key } } : await loadModelPlan(mainModel);
+    Object.assign(items, modelStorageItems(mainPlan));
+  }
+
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(()=>true)`);
   const fast = await rp.evaluate(panel, `chrome.storage.local.get('inproc_fast_model_config').then(s=>s.inproc_fast_model_config)`);
 
@@ -129,8 +138,9 @@ try {
     const links = JSON.stringify(await rp.evaluate(panel, `[...([...document.querySelectorAll('#messages .msg.assistant')].filter(x=>!x.closest('.run-steps')).at(-1)?.querySelectorAll('a[href]') ?? [])].map(x=>x.href)`));
     const corrected = c.id === "items" ? [["产品甲", 10], ["产品乙", 20], ["产品丙", 30]].every(([name, price]) => new RegExp(`${name}\\D{0,12}${price}(?:\\D|$)`).test(answer)) && ["https://example.com/a", "https://example.com/b", "https://example.com/c"].every(url => links.includes(url)) : live ? c.id === "date" ? answer.includes("2026-09-29") && /没有|未提供|不存在|无法|不能/.test(answer) : /33/.test(answer) : answer.includes(c.good);
     const files = JSON.stringify(await rp.evaluate(panel, `[...document.querySelectorAll('.artifact-card')].filter(x=>x.dataset.deleted!=='true').map(x=>x.dataset.filename)`));
-    const countsMatch = [["省", 22], ["直辖市", 4], ["自治区", 5], ["特别行政区", 2], ["合计", 33]].every(([name, value]) => new RegExp(`${name}\\D{0,12}${value}(?:\\D|$)`).test(answer));
-    const pass = c.id === "correct" ? countsMatch && nudges.length === 0 : corrected && (live || nudges.length > 0) && (c.id !== "date" || !files.includes("date.csv"));
+    const countsMatch = [["省", 22], ["直辖市", 4], ["自治区", 5], ["特别行政区", 2]].every(([name, value]) => new RegExp(`${name}\\D{0,12}${value}(?:\\D|$)`).test(answer));
+    const totalMatch = /(?:合计|总计)\D{0,12}33(?:\D|$)|22\s*\+\s*4\s*\+\s*5\s*\+\s*2\s*=\s*33/.test(answer);
+    const pass = c.id === "correct" ? countsMatch && totalMatch && nudges.length === 0 : corrected && (live || nudges.length > 0) && (c.id !== "date" || !files.includes("date.csv"));
     checks.push({ id: c.id, pass, answer, ms: Date.now() - started, requests: requests.filter(r => r.id === c.id) });
     console.log(`${pass ? "PASS" : "FAIL"} ${c.id} ${Date.now() - started}ms`);
     await rp.screenshot(panel, join(out, `${c.id}.png`));
@@ -149,7 +159,7 @@ try {
   await writeFile(join(out, "traces.jsonl"), diag.traces);
 } catch (e) { error = String(e); console.error(error); }
 finally {
-  await writeFile(join(out, "summary.json"), JSON.stringify({ live, checks, error, requests }, null, 2));
+  await writeFile(join(out, "summary.json"), JSON.stringify({ live, mainModel, checks, error, requests }, null, 2));
   await rp.close(); main.closeAllConnections(); main.close(); site.closeAllConnections(); site.close();
 }
 
