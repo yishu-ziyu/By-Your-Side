@@ -1,3 +1,4 @@
+import type { ApprovalDispatchGuard } from "./input.js";
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
@@ -38,8 +39,14 @@ export interface ScreenshotResult {
  * 不藏的话 agent 会在自己的截图里看到一个页面上并不存在的发光箭头，把它当页面元素去理解甚至去点。
  * 幕帘失败（页面禁止注入、导航换文档）绝不能弄失败截图本身。
  */
-async function curtain(tabId: number, hidden: boolean): Promise<void> {
+async function curtain(tabId: number, hidden: boolean, beforeDispatch?: ApprovalDispatchGuard, onDispatch?: () => void): Promise<void> {
+  // Revoked approval must escape the best-effort injection error handling.
+  if (hidden) {
+    await beforeDispatch?.();
+    beforeDispatch?.checkNow?.();
+  }
   try {
+    if (hidden) { onDispatch?.(); beforeDispatch?.noteEffect?.(); }
     const run = chrome.scripting.executeScript({
       target: { tabId },
       world: "ISOLATED",
@@ -363,12 +370,13 @@ export async function screenshot(
     scale?: "css" | "raw";
   } = {},
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<ScreenshotResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   // worker 透传 sessionId：maybeActivateTab 对非 Lead 直接返回，绝不抢用户前台。
-  await maybeActivateTab(tab, sessionId);
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
   const pre = await chrome.tabs.get(tab.id);
   const documentBefore = await readCurrentDocument(tab.id);
 
@@ -451,10 +459,11 @@ export async function screenshot(
 
   let dataUrl: string;
   let source: ScreenshotResult["source"];
+  let curtainDispatched = false;
   holdAttach(tab.id);
 
   try {
-    await curtain(tab.id, true);
+    await curtain(tab.id, true, beforeDispatch, () => { curtainDispatched = true; });
 
     try {
       const captured = await sendCommand<{ data?: string }>(tab.id, "Page.captureScreenshot", cdpParams, undefined, 10_000);
@@ -485,6 +494,9 @@ export async function screenshot(
       scroll: region ? { x: preViewport.scrollX, y: preViewport.scrollY } : undefined,
       density: source === "visible-tab" ? (dpr || undefined) : density,
     });
+  } catch (error) {
+    if (curtainDispatched) throw Object.assign(error instanceof Error ? error : new Error(String(error)), {executionFact: "unknown"});
+    throw error;
   } finally {
     releaseAttachHold(tab.id);
   }

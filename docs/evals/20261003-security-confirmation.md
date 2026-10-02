@@ -43,3 +43,5 @@
 独立复核发现批准的异步页面核对期间再拒绝曾被deciding短路忽略；先写反例1FAIL，修复后6项broker检查PASS。拒绝/超时优先于重复批准闸门；异步结果只完成仍在pending且取消版本未变的原请求。新head将重跑完整工程与两个真实Chrome入口，结果以PR为准。
 
 文件选择器arm_event经capture准备await后也在enabled:true原生派发前复核批准；反例旧5项中1FAIL，补guard后通过。失败只撤销本次已开始的拦截，enabled:false内部清理仍可执行；待完整CI重验。
+
+截图保留隐藏/恢复产品overlay的幕帘：hidden:true在真实脚本派发前核对批准，拒绝不被best-effort catch吞掉；已派发后失败保守unknown，restore:false只作内部清理。3项派发反例旧红新绿；最后broker/chooser/截图补丁须同一head通过CI与独立审查。

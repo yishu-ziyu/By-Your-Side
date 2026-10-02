@@ -1417,6 +1417,7 @@ async function executeToolCall(
     assertActivationAllowed(name, params);
     const guardedHandlers: Record<string,Handler> = {
       arm_event:(p,s)=>armEvent(p,s,beforeApprovedDispatch),
+      screenshot:(p,s)=>screenshot(p,s,beforeApprovedDispatch),
       hover:(p,s)=>hover(p,s,beforeApprovedDispatch),
       scroll:(p,s)=>scroll(p,s,beforeApprovedDispatch),
       mark:(p,s)=>mark(p,s,beforeApprovedDispatch),
