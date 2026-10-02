@@ -607,17 +607,29 @@ function renderConversations(): void {
   conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
   const list = [...conversations.values()].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  const updatedTimeFormat = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+
   const rows = list.map((c) => {
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("role", "menuitemradio");
     button.setAttribute("aria-checked", String(c.id === selectedConversationId));
     button.dataset.conversationId = c.id;
+    button.title = c.title || "新会话";
+    const info = document.createElement("div");
+    info.className = "conversation-menu-info";
     const title = document.createElement("span");
+    title.className = "conversation-menu-title";
     title.textContent = c.title || "新会话";
+    const updated = document.createElement("small");
+    updated.className = "conversation-menu-updated";
+    updated.textContent = `更新于 ${updatedTimeFormat.format(c.updatedAt)}`;
+    info.append(title, updated);
     const state = document.createElement("small");
     state.textContent = conversationStateLabel(c);
-    button.append(title, state);
+    button.append(info, state);
     button.onclick = () => selectConversation(c.id);
 
     return button;
