@@ -3103,6 +3103,25 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return requirements.some(asksConfirmBeforeSubmit) ? { ...params, confirmSubmit: true } : params;
   }
 
+  /** 规则只由宿主附加，模型不能传入空规则或伪造值的来源证明。 */
+  async decorateExecutionParams(name: string, params: Parameters<ToolRpc["call"]>[1]): Promise<Parameters<ToolRpc["call"]>[1]> {
+    const decorated = this.decorateToolParams(name, params);
+
+    if (!this.memoryRuntime || !["click", "double_click", "fill", "type_text", "select_option", "press_key", "js", "fetch", "cdp", "key_down", "mouse_down", "mouse_up", "paste", "html5_drag", "drag"].includes(name)) return decorated;
+
+    const value = typeof params.value === "string" ? params.value : typeof params.text === "string" ? params.text : typeof params.values === "string" ? params.values : "";
+    const policy = await this.memoryRuntime.formPolicy(this.conversationSnapshot()?.recoveryInput?.requirements ?? [], value);
+
+    const snapshot = this.conversationSnapshot();
+
+    // 这些写入已在 assertTaskResultExecution 核验复制来源，不强迫用户再手打原文。
+    const verifiedCopy = ["fill", "type_text"].includes(name) && isCopyRequest(snapshot?.recoveryInput?.requirements ?? [])
+      && snapshot?.goalPlan?.goals.some(goal => goal.kind === "field" && goal.status !== "satisfied") === true;
+
+    return { ...decorated, ...policy, userValueProvided: policy.userValueProvided || verifiedCopy,
+      userValueHostname: verifiedCopy ? undefined : policy.userValueHostname };
+  }
+
   /** 这一轮给用户的话：最后的正文；没有正文时（用交付工具说的）取这一轮最新的正式交付。 */
   private runReplyText(messages: ReadonlyArray<{ role: string; content?: unknown }>): string {
     const text = finalAssistantText(messages);

@@ -1,9 +1,11 @@
+import {isolatedReadContext} from "../isolated-read-context.js";
 import { OVERLAY_ATTR } from "../../shared/overlay.js";
 import {assertObservedDocument, assertSameDocument} from "../observation-document.js";
 import {replaceEditableText} from "../../shared/editable-text.js";
 import { readInputRange } from "../../shared/range-input.js";
 import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-readout.js";
-import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
+import { LEAD_SESSION_ID, type RequiredFormField, type ToolContract } from "../../../../shared/protocol.js";
+import { inspectRequiredFormFields, type FormFieldGuardInput } from "./form-field-guard.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { holdAttach, releaseAttachHold, sendCommand } from "../debugger.js";
@@ -511,9 +513,44 @@ type ClickParams = {
   kind?: "double_click";
   /** 宿主加的：用户要求提交前确认，这一任务里提交类按钮先拿住等确认。 */
   confirmSubmit?: boolean;
+  /** 宿主从当前有效方法中提取的明确字段要求；不接模型自报。 */
+  formRequirements?: RequiredFormField[];
   /** 扩展内部：用户点了确认后重放拿住的那一下；模型发来的参数里不会有（见 click 入口）。 */
   fromUserConfirm?: boolean;
 };
+
+async function guardRequiredFormFields(tabId: number, input: FormFieldGuardInput): Promise<void> {
+  if (!input.requirements.length) return;
+
+  try {
+    let refusal: string | null;
+
+    const backendNodeId = input.action === "fill" && input.target
+      ? axBackendNodeFor(tabId, parseRef(input.target)) : undefined;
+
+    if (backendNodeId !== undefined) {
+      try {
+        refusal = await callOnBackendNode<string | null>(tabId, backendNodeId,
+          `function(input) { return (${inspectRequiredFormFields.toString()})(input, this); }`, [input], await isolatedReadContext(tabId));
+      } catch (error) {
+        if (!isDebuggerUnavailable(error)) throw error;
+        await ensureDomOps(tabId);
+        refusal = await callDom(tabId, inspectRequiredFormFields, [input]);
+      }
+    } else {
+      if (input.target) await ensureDomOps(tabId);
+      refusal = await callDom(tabId, inspectRequiredFormFields, [input]);
+    }
+
+    if (refusal !== null) throw new FillRefused(refusal || "无法核对要求字段，操作未执行。请重新读取页面并询问用户内容。");
+  } catch (error) {
+    throw notExecuted(error);
+  }
+}
+
+async function guardSubmitPoint(tabId: number, params: ClickParams, point: [number, number]): Promise<void> {
+  await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", point });
+}
 
 type DragEndpoint = {
   target?: string;
@@ -1340,6 +1377,7 @@ export async function click(
 
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
+  await guardSubmitPoint(tabId, params, point);
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = params.fromUserConfirm === true;
 
@@ -1419,6 +1457,7 @@ export async function click(
 
       const pressing = (async () => {
         for (let n = 1; n <= clickCount; n++) {
+          await guardSubmitPoint(tabId, params, [x, y]);
           await beforeDispatch?.();
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mousePressed",
@@ -1472,6 +1511,9 @@ export async function click(
         );
       }
 
+      // SAFETY: guard failures are Errors marked before any mouse press; only inspect their execution fact.
+      if (e instanceof FillRefused || (e as { executionFact?: string })?.executionFact === "not_executed") throw e;
+
       if (cdpMouseMoved) {
         if (isPrePressTargetError(e)) throw notExecuted(e);
         throw new Error(
@@ -1484,6 +1526,7 @@ export async function click(
       if (target && button === "left" && clickCount === 1 && !force) {
         await ensureDomOps(tabId, beforeDispatch);
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
+        await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target });
         await beforeDispatch?.();
         await callDom(
           tabId,
@@ -1563,6 +1606,7 @@ export async function doubleClick(
   const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
+  await guardSubmitPoint(tabId, params, point);
   const name = await nameOfClickTarget(tabId, params);
   const wasArmed = params.fromUserConfirm === true;
 
@@ -1631,6 +1675,7 @@ export async function doubleClick(
 
       const effectToken = await effectPending;
       const btnMask = pressedButtonsMask(button);
+      await guardSubmitPoint(tabId, params, [x, y]);
       await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
@@ -1639,6 +1684,7 @@ export async function doubleClick(
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 1, modifiers,
       });
+      await guardSubmitPoint(tabId, params, [x, y]);
       await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
@@ -1651,6 +1697,9 @@ export async function doubleClick(
       if (pressed) {
         throw new Error(`双击可能已送达，后续 CDP 返回异常，未再次双击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`);
       }
+
+      // SAFETY: guard failures are Errors marked before any mouse press; only inspect their execution fact.
+      if (e instanceof FillRefused || (e as { executionFact?: string })?.executionFact === "not_executed") throw e;
 
       if (dispatched) {
         if (isPrePressTargetError(e)) throw notExecuted(e);
@@ -1841,7 +1890,7 @@ export async function drag(
 }
 
 export async function fill(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
@@ -1867,6 +1916,11 @@ export async function fill(
   if(params.expectedBackendNodeId!==undefined && backendNodeId!==params.expectedBackendNodeId) {
     throw notExecuted(new Error('原 AX 对象身份无法核对，填写未执行。'));
   }
+
+  const formGuard: FormFieldGuardInput = { requirements: params.formRequirements ?? [], action: "fill",
+    target: params.target, userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname };
+
+  await guardRequiredFormFields(tabId, formGuard);
 
   // 操作前在 scrollIntoView 之后取目标包围盒，动作边框持续到操作返回。
   let targetRect: DomRect | undefined;
@@ -1910,6 +1964,8 @@ export async function fill(
     if (targetRect) {
       if (!beforeDispatch) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
+
+    await guardRequiredFormFields(tabId, formGuard);
 
     // 2. 真实填充操作
     if(params.expectedDocumentId) {
@@ -1996,6 +2052,9 @@ export async function selectOption(
     tabId?: number;
     expectedDocumentId?: string;
     expectedBackendNodeId?: number;
+    formRequirements?: RequiredFormField[];
+    userValueProvided?: boolean;
+    userValueHostname?: string;
   },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
@@ -2023,6 +2082,11 @@ export async function selectOption(
   if (params.expectedBackendNodeId !== undefined && backendNodeId !== params.expectedBackendNodeId) {
     throw notExecuted(new Error("原 AX 对象身份无法核对，选择未执行。"));
   }
+
+  const formGuard: FormFieldGuardInput = { requirements: params.formRequirements ?? [], action: "fill",
+    target: params.target, userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname };
+
+  await guardRequiredFormFields(tabId, formGuard);
 
   if (backendNodeId !== undefined) {
     try {
@@ -2077,6 +2141,7 @@ export async function selectOption(
   }
 
   await ensureDomOps(tabId, beforeDispatch);
+  await guardRequiredFormFields(tabId, formGuard);
 
   await beforeDispatch?.();
   return await callDom(
@@ -2094,7 +2159,7 @@ export async function selectOption(
 }
 
 export async function typeText(
-  params: { text: string; tabId?: number },
+  params: { text: string; tabId?: number; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ typed: true }> {
@@ -2104,6 +2169,8 @@ export async function typeText(
   await assertObservedDocument(tab.id, sessionId);
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
+  await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "type",
+    userValueProvided: params.userValueProvided, userValueHostname: params.userValueHostname });
   await beforeDispatch?.();
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
 
@@ -2111,7 +2178,7 @@ export async function typeText(
 }
 
 export async function pressKey(
-  params: { key: string; tabId?: number },
+  params: { key: string; tabId?: number; formRequirements?: RequiredFormField[] },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ pressed: true }> {
@@ -2146,6 +2213,22 @@ export async function pressKey(
   }
 
   if (info.text !== undefined) rawKeyDown.text = info.text;
+
+  if (info.key === "Enter") {
+    await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "enter",
+      modifiedEnter: (info.modifiers | heldMods) !== 0 });
+  } else if (info.text !== undefined || rawKeyDown.commands?.includes("paste")) {
+    try {
+      await guardRequiredFormFields(tab.id, { requirements: params.formRequirements ?? [], action: "type",
+        userValueProvided: false });
+    } catch (error) {
+      if (error instanceof FillRefused) {
+        throw new FillRefused(`${error.message} 请改用 fill 一次填写用户提供的完整原话，不要逐键填写或粘贴。`);
+      }
+
+      throw error;
+    }
+  }
 
   await beforeDispatch?.();
   await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown,beforeDispatch);

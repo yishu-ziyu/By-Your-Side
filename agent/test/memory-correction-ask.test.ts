@@ -264,14 +264,15 @@ describe("asking after a direct correction", () => {
     expect(f.asks()).toHaveLength(1);
   });
 
-  it("does not ask when the same message was already remembered automatically (F5)", async () => {
+  it("asks before saving a way of replying even when automatic classification says personal (F5)", async () => {
     const said = "不对，以后都用中文回复我";
     const auto: MemoryDecision = { action: "save", text: "回复用中文", evidence: "以后都用中文回复我", scope: { kind: "all" }, targets: [], taskRequested: false, about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: true, dateIsTheTask: false } };
     const f = await fixture({ auto, verdict: verdict({ about: "assistant", rule: "以后我都用中文回复你", evidence: "以后都用中文回复我" }) });
-    expect(await f.say(said)).toMatchObject({ status: "skipped", reason: "already-saved" });
-    expect(f.events.some(e => e.kind === "memory" && e.action === "saved")).toBe(true);
-    expect(f.askCalls()).toHaveLength(0);
-    expect(f.asks()).toHaveLength(0);
+    expect(await f.say(said)).toMatchObject({ status: "asked" });
+    expect(await f.store.list()).toEqual([]);
+    expect(f.events.some(e => e.kind === "memory" && e.action === "saved")).toBe(false);
+    expect(f.askCalls()).toHaveLength(1);
+    expect(f.asks()).toHaveLength(1);
   });
 });
 

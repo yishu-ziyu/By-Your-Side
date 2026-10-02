@@ -15,7 +15,7 @@ const user = "我的邮箱是 lin@example.test，你可以记住这一点。";
 
 const fact = "用户的默认邮箱是 lin@example.test";
 
-const decision = (patch: Partial<MemoryDecision> = {}): MemoryDecision => ({ action: "save", text: fact, evidence: user, scope: all, targets: [], taskRequested: false, ...patch });
+const decision = (patch: Partial<MemoryDecision> = {}): MemoryDecision => ({ action: "save", text: fact, evidence: user, scope: all, targets: [], taskRequested: false, about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: false }, ...patch });
 
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 

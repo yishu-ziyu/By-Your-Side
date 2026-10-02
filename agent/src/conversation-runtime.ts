@@ -70,7 +70,7 @@ export async function createConversationRuntime(
   toolSession = session;
   rpc.beforeCall = () => session.flushPersistence();
   // 用户在任务里设的条件由宿主兜住：要求提交前确认时，这个会话里（含助手）的点击都带上 confirmSubmit，扩展先拿住提交类按钮。
-  rpc.decorateParams = (name, params) => session.decorateToolParams(name, params);
+  rpc.decorateParams = (name, params) => session.decorateExecutionParams(name, params);
   fleet.attachLead(session);
   // 协作工具按需挂载：没有 worker 时模型只看到常驻工具，请到人（或拿到同伴工件）后再出现。
   fleet.onMembersChange = (count) => session.setTeamToolsMounted(count > 0);

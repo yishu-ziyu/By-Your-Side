@@ -455,6 +455,9 @@ export interface SwitchTabVerification {
  *   "@N" / "loc=css:..." / "loc=role:…[name=…]" / "loc=href:..." / "xpath=" / "text=" / 原生 CSS
  * click 也可用 point: [x, y] 视口坐标代替 target。
  */
+/** 仅宿主从用户已确认方法附加；模型工具参数不提供这些字段。 */
+export interface RequiredFormField { label: string; hostname?: string }
+
 export interface ToolContract {
   page_translation: { params: import('./page-translation.js').TranslationCommand; data: import('./page-translation.js').TranslationReceipt };
   /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回伴随进程，不回侧栏。 */
@@ -523,6 +526,7 @@ export interface ToolContract {
       clickCount?: number;
       force?: boolean;
       label?: string;
+      formRequirements?: RequiredFormField[];
     };
     /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
      *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
@@ -539,6 +543,7 @@ export interface ToolContract {
       clickCount?: number;
       force?: boolean;
       label?: string;
+      formRequirements?: RequiredFormField[];
     };
     data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { doubleClicked: false; held: true };
   };
@@ -756,20 +761,22 @@ export interface ToolContract {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; value: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue } };
+  fill: { params: { tabId?: number; target: string; value: string; formRequirements?: RequiredFormField[]; userValueProvided?: boolean; userValueHostname?: string; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number }; data: { filled: true; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue } };
   /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
   select_option: {
     params: {
       tabId?: number;
       target: string;
+      formRequirements?: RequiredFormField[];
+      userValueProvided?: boolean; userValueHostname?: string;
       values: string | { value?: string; label?: string; index?: number } | Array<string | { value?: string; label?: string; index?: number }> | null;
       expectedDocumentId?: string;
       expectedBackendNodeId?: number;
     };
     data: { selected: string[]; labels: string[] };
   };
-  type_text: { params: { tabId?: number; text: string }; data: { typed: true } };
-  press_key: { params: { tabId?: number; key: string }; data: { pressed: true } };
+  type_text: { params: { tabId?: number; text: string; formRequirements?: RequiredFormField[]; userValueProvided?: boolean }; data: { typed: true } };
+  press_key: { params: { tabId?: number; key: string; formRequirements?: RequiredFormField[] }; data: { pressed: true } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};

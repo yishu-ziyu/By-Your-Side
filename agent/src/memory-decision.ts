@@ -2,7 +2,7 @@ import { endOfLocalDay, isMemoryScope, localDateOf, validLocalDate, validMemoryT
 
 /**
  * 决定点 A 的窄问题：模型只回答这几件事，记成哪种、带不带有效期由 placeMemory 按记忆模型的判断顺序决定。
- * 缺省（旧判断格式）按「用户原话里的长期事实」处理，和升级前的行为一致。
+ * 保存或更新必须回答关键分类问题；缺失时拒绝写入，不推成长期事实。
  */
 export type MemoryAbout = {
   /** 这是用户自己的长期事实或偏好吗（邮箱、生日、坐飞机靠过道）？一次性的计划、事件为 false。 */
@@ -53,7 +53,9 @@ export function placeMemory(decision: MemoryDecision, entries: MemoryEntry[] = [
   }
 
   if (looksSecret(decision.text) || looksSecret(decision.evidence)) return { store: false, kind: "secret", rule: "2 密码、验证码、证件号、银行卡不记" };
-  const about = decision.about ?? { longTerm: true, date: null, onlyThisTask: false, explicitRequest: false, dateIsTheTask: true };
+  const about = decision.about;
+
+  if (!about) throw new Error("记忆判断缺少内容分类，尚未修改记忆");
 
   if (about.onlyThisTask && !about.explicitRequest) return { store: false, kind: "task", rule: "4 只对这次任务：留在这次对话里" };
 
@@ -128,14 +130,17 @@ export function validateMemoryDecision(value: unknown, userMessage: string, entr
 
   if (d.action === "update" && !d.targets.length) throw new Error("更新缺少原记忆目标");
 
-  if (d.about !== undefined) {
-    // SAFETY: 模型回的 about 只按下面逐项核对过的取值使用；不成形的整项丢掉。
+  const writes = d.action === "save" || d.action === "update";
+
+  if (writes || d.about !== undefined) {
+    // SAFETY: 未信任的模型对象；只在下面检查关键布尔值后使用分类。
     const a = (d.about ?? {}) as Partial<MemoryAbout>;
     const answered = (a.longTerm === true || a.longTerm === false) && (a.onlyThisTask === true || a.onlyThisTask === false);
 
-    // 窄问题答得不成形时只丢掉这部分（按旧行为落位），不让整次判断失败。
+    if (!answered && writes) throw new Error("记忆判断缺少有效内容分类，尚未修改记忆");
+
+    // 不写入的操作不依赖分类；旧的可选字段仍采用保守值。
     if (!answered) delete d.about;
-    // dateIsTheTask 没答（旧格式）时按「是这件任务」处理，保持升级前不在任务前记下带日期的事。
     else d.about = { longTerm: a.longTerm === true, onlyThisTask: a.onlyThisTask === true, explicitRequest: a.explicitRequest === true, date: validLocalDate(a.date) ? a.date : null, dateIsTheTask: a.dateIsTheTask !== false };
   }
 
