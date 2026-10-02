@@ -38,3 +38,34 @@ describe('strict execution consent', () => {
 });
 
 it('cancellation during context capture cannot resurrect an old request',async()=>{const frames:any[]=[];const broker=new ActivationConsent(message=>frames.push(message));const version=broker.version;broker.cancel();expect(await broker.request({conversationId:'a',runId:'r',controlVersion:1,goal:'buy',tool:'click',target:'#buy',value:'{}',cancellationVersion:version},async()=> 'same')).toBe(false);expect(frames).toHaveLength(0);});
+
+it('denial during asynchronous approval validation wins and cannot be revived',async()=>{
+  const frames:any[]=[];
+  const broker=new ActivationConsent(message=>frames.push(message));
+  let finishRead!:(context:string)=>void;
+  const pending=broker.request({conversationId:'a',runId:'r',controlVersion:1,goal:'buy',tool:'click',target:'#buy',value:'{}'},()=>new Promise(resolve=>{finishRead=resolve;}));
+  const id=frames[0].request.id;
+  expect(broker.decide(id,true)).toBe(true);
+  expect(broker.decide(id,false)).toBe(true);
+  finishRead('same');
+  expect(await pending).toBe(false);
+  await Promise.resolve();
+  expect(frames.filter(message=>message.type==='consent_result').map(message=>message.status)).toEqual(['cancelled']);
+  expect(broker.decide(id,true)).toBe(false);
+  expect(broker.list()).toEqual([]);
+});
+
+it('cancellation during asynchronous validation cannot grant after the context resolves',async()=>{
+  const frames:any[]=[];
+  const broker=new ActivationConsent(message=>frames.push(message));
+  let finishRead!:(context:string)=>void;
+  const pending=broker.request({conversationId:'a',runId:'r',controlVersion:1,goal:'buy',tool:'click',target:'#buy',value:'{}'},()=>new Promise(resolve=>{finishRead=resolve;}));
+  const id=frames[0].request.id;
+  broker.decide(id,true);
+  broker.cancel();
+  finishRead('same');
+  expect(await pending).toBe(false);
+  await Promise.resolve();
+  expect(frames.filter(message=>message.type==='consent_result').map(message=>message.status)).toEqual(['cancelled']);
+  expect(broker.decide(id,true)).toBe(false);
+});

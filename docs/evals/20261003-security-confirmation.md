@@ -39,3 +39,5 @@
 用户授权继续至北京时间02:50。acd65d7的CI37043875299工程检查与辅助Chrome均通过，但真实日常入口在Chrome启动阶段超时，cases0、POST0，不能视为功能验收。real-path harness缺少隔离验收已有的Linux no-sandbox参数；此轮沿用该参数并将spawn失败/stderr写入启动错误，以真实日常链路重新验证，不延长等待或弱化断言。
 
 69439a在[CI37047373719](https://github.com/yishu-ziyu/By-Your-Side/actions/runs/37047373719)全部工程检查与两个Chrome入口通过。真实日常脚本模型四项PASS：拒绝0POST、允许恰1POST、再次独立审批、Stop撤销；artifact11244648666含截图与JSON，SHA256488d1cd4e7654e96b67144d57c6b3a19041aa3f3adcd3da98aeb153a3a226d8b。后续文档校正不改安全实现，最新CI/独立审查/合并状态见PR38，避免历史报告冒充当前head。
+
+独立复核发现批准的异步页面核对期间再拒绝曾被deciding短路忽略；先写反例1FAIL，修复后6项broker检查PASS。拒绝/超时优先于重复批准闸门；异步结果只完成仍在pending且取消版本未变的原请求。新head将重跑完整工程与两个真实Chrome入口，结果以PR为准。

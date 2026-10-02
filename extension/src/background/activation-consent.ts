@@ -33,11 +33,19 @@ export class ActivationConsent {
 
   decide(id:string, allow:boolean):boolean {
     const entry=this.pending.get(id);
-    if(!entry || entry.deciding)return false;
+    if(!entry)return false;
     if(!allow || Date.now()>=entry.request.expiresAt){entry.finish(false);return true;}
-    // Reserve the request while checking; concurrent/replayed approval cannot grant twice.
+    if(entry.deciding)return false;
+    // Denial wins even while approval validation is waiting for page state.
+    // Reserve only repeated approvals; a removed request can never be revived.
+    const decidingVersion=this.cancellationVersion;
     entry.deciding=true;
-    void entry.read().then(current=>entry.finish(Date.now()<entry.request.expiresAt && current===entry.expected),()=>entry.finish(false));
+    void entry.read().then(current=>{
+      if(this.pending.get(id)!==entry || this.cancellationVersion!==decidingVersion)return;
+      entry.finish(Date.now()<entry.request.expiresAt && current===entry.expected);
+    },()=>{
+      if(this.pending.get(id)===entry)entry.finish(false);
+    });
     return true;
   }
 
