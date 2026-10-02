@@ -1,3 +1,4 @@
+import {nativeApprovalState} from "./native-approval-state.js";
 import { ActivationConsent } from "./activation-consent.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { redactCredentialText } from "../../../shared/untrusted.js";
@@ -1327,19 +1328,27 @@ async function executeToolCall(
   await controlReady;
   params = structuredClone(params);
   let activationApproved = false;
+  let approvedPageEffectStarted = false;
   let approvedContext = "";
   let approvedUntil = 0;
   let approvedCancellationVersion = -1;
+  let approvedGateGeneration = -1;
   let consentTab: number | null = null;
+  const checkCurrentConsent = () => {
+    checkIdentity();
+    if (activationApproved && (Date.now() >= approvedUntil || activationConsent.version !== approvedCancellationVersion || gate.gen !== approvedGateGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid)))) throw Object.assign(new Error("确认已作废，操作未执行。"),{executionFact:"not_executed"});
+  };
+  const afterApprovedEffect = Object.assign(async () => {
+    checkCurrentConsent();
+    const bound = JSON.parse(approvedContext);
+    if (consentTab !== null && (await readCurrentDocument(consentTab))?.documentId !== bound.documentId) throw Object.assign(new Error("批准的页面已离开，后续操作未执行。"),{executionFact:"not_executed"});
+    checkCurrentConsent();
+  },{checkNow:checkCurrentConsent});
   const beforeApprovedDispatch = Object.assign(async () => {
     if (!activationApproved) return;
     if (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil) throw Object.assign(new Error("确认已过期、页面或任务已变化，操作未执行。"),{executionFact:"not_executed"});
-    checkIdentity();
-    if (gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) throw Object.assign(new Error("页面控制权已变化，操作未执行。"),{executionFact:"not_executed"});
-  }, {checkNow: () => {
-    checkIdentity();
-    if (activationApproved && (Date.now() >= approvedUntil || activationConsent.version !== approvedCancellationVersion || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid)))) throw Object.assign(new Error("确认已作废，操作未执行。"),{executionFact:"not_executed"});
-  }});
+    checkCurrentConsent();
+  }, {checkNow:checkCurrentConsent,afterEffect:afterApprovedEffect,noteEffect:()=>{approvedPageEffectStarted=true;}});
   const captureApprovalContext = async () => {
     checkIdentity();
     const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
@@ -1364,7 +1373,8 @@ async function executeToolCall(
         return JSON.stringify({url:location.href,epoch:state.epoch,markup:document.documentElement?.outerHTML,fields:[...document.querySelectorAll("input,textarea,select")].map(el=>{const field=el as HTMLInputElement;return [field.name,field.type,field.value,field.checked];})});
       }});
       if (!sample || sample.documentId !== page?.documentId || typeof sample.result !== "string") throw new Error("页面在核对时发生变化，操作未执行。");
-      const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(sample.result));
+      const native = await nativeApprovalState(tabId);
+      const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({isolated:sample.result,native})));
       state = Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
     }
     checkIdentity();
@@ -1388,13 +1398,14 @@ async function executeToolCall(
     if (error && typeof error === "object" && "executionFact" in error) {
       const reported = (error as { executionFact?: import("../../../shared/protocol.js").ToolExecutionFact }).executionFact;
 
-      if (reported) executionFact = reported;
+      if (reported) executionFact = approvedPageEffectStarted && reported === "not_executed" ? "unknown" : reported;
     }
   };
 
   const attachFact = (error: unknown): void => {
     if (!error || typeof error !== "object") return;
     const existing = (error as { executionFact?: string }).executionFact;
+    if (approvedPageEffectStarted && existing === "not_executed") { Object.assign(error,{executionFact:"unknown"}); return; }
 
     if (existing === "not_executed" || existing === "unknown" || existing === "executed") return;
 
@@ -1404,9 +1415,27 @@ async function executeToolCall(
   try {
     checkIdentity();
     assertActivationAllowed(name, params);
+    const guardedHandlers: Record<string,Handler> = {
+      hover:(p,s)=>hover(p,s,beforeApprovedDispatch),
+      scroll:(p,s)=>scroll(p,s,beforeApprovedDispatch),
+      mark:(p,s)=>mark(p,s,beforeApprovedDispatch),
+      clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeApprovedDispatch),
+      switch_tab:(p,s)=>switchTab(p,s,beforeApprovedDispatch),
+      navigate:(p,s)=>navigate(p,s,beforeApprovedDispatch),
+      open_tab:(p,s)=>openTab(p,s,beforeApprovedDispatch),
+      close_tab:(p,s)=>closeTab(p,s,beforeApprovedDispatch),
+      download_url:(p,s)=>downloadUrl(p,s,beforeApprovedDispatch),
+      download_cancel:(p,s)=>downloadCancel(p,s,beforeApprovedDispatch),
+      upload_file:(p,s)=>uploadFile(p,s,beforeApprovedDispatch),
+      file_chooser_set_files:(p,s)=>fileChooserSetFiles(p,s,beforeApprovedDispatch),
+      accept_dialog:(p,s)=>acceptDialog(p,s,beforeApprovedDispatch),
+      dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeApprovedDispatch),
+      page_translation:(p,s)=>pageTranslation(p,s,beforeApprovedDispatch),
+      fetch:p=>fetchUrl(p,{beforeDispatch:beforeApprovedDispatch}),
+    };
     const handler = name === "observe_page"
       ? (p: Record<string,unknown>) => voiceRelay.observe(conversationId,p.token,p.mode)
-      : handlers[name];
+      : guardedHandlers[name] ?? handlers[name];
 
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
 
@@ -1431,6 +1460,7 @@ async function executeToolCall(
       if (requiresActivationConsent(name, params)) {
         const cancellationVersion = activationConsent.version;
         approvedCancellationVersion = cancellationVersion;
+        approvedGateGeneration = gate.gen;
         const currentRun = runId ?? conversationSummaries.find(c=>c.id===conversationId)?.runId;
         if (!currentRun) throw new Error("没有进行中的任务可确认，操作未执行。");
         consentTab = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
@@ -1474,6 +1504,7 @@ async function executeToolCall(
             ? await readElement(params as unknown as import('../../../shared/protocol.js').ToolContract['read_element']['params'],key(sid),()=>{
               checkIdentity();
 
+              beforeApprovedDispatch.checkNow();
               if(gate.gen!==operationGeneration||gate.isSessionBlocked(sid)||workerTabControl.isStopped(key(sid)))throw new Error('READBACK_CANCELLED');
             })
             : name === 'wheel'
@@ -1483,7 +1514,7 @@ async function executeToolCall(
                 if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
                   throw new Error('操作所属控制轮次已失效，后续输入未执行。');
                 }
-              })
+              },beforeApprovedDispatch)
               : name === 'ask_user_to_point'
                 ? await askUserToPoint(params, key(sid), () => {
                   checkIdentity();
@@ -1491,7 +1522,7 @@ async function executeToolCall(
                   if (gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) {
                     throw new Error('点选所属任务已停止、被接管或发生变化。');
                   }
-                })
+                },beforeApprovedDispatch)
                 : activationApproved && name === 'click'
                   ? await click({...params,fromUserConfirm:true},key(sid),beforeApprovedDispatch)
                   : activationApproved && name === 'double_click'

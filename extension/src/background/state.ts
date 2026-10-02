@@ -469,20 +469,22 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
   return active;
 }
 
-export async function activateTab(tab: chrome.tabs.Tab): Promise<void> {
+export async function activateTab(tab: chrome.tabs.Tab, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<void> {
   if (tab.id == null) return;
 
   try {
     const win = await chrome.windows.get(tab.windowId);
 
     if (!mayActivateTabInWindow(win.focused === true)) return;
+    await beforeDispatch?.();
+    beforeDispatch?.checkNow?.();
     await chrome.tabs.update(tab.id, { active: true });
-  } catch { /* tab/window disappeared */ }
+  } catch (error) { if (beforeDispatch) throw error; /* tab/window disappeared */ }
 }
 
-export async function maybeActivateTab(tab: chrome.tabs.Tab, key: string = LEAD_SESSION_ID): Promise<void> {
+export async function maybeActivateTab(tab: chrome.tabs.Tab, key: string = LEAD_SESSION_ID, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<void> {
   if (!shouldActivateForKey(key)) return;
-  await activateTab(tab);
+  await activateTab(tab, beforeDispatch);
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {

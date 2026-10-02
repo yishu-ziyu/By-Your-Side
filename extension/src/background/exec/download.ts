@@ -43,7 +43,7 @@ async function directStat(downloadId: string, sessionId: string): Promise<ToolCo
   return stat;
 }
 
-export async function downloadUrl(params: ToolContract["download_url"]["params"], sessionId = LEAD_SESSION_ID): Promise<ToolContract["download_url"]["data"]> {
+export async function downloadUrl(params: ToolContract["download_url"]["params"], sessionId = LEAD_SESSION_ID, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<ToolContract["download_url"]["data"]> {
   let url: URL;
 
   try { url = new URL(params.url); } catch { throw new DownloadNotStarted("下载地址无效，操作未执行。"); }
@@ -58,6 +58,8 @@ export async function downloadUrl(params: ToolContract["download_url"]["params"]
   const options: chrome.downloads.DownloadOptions = { url: url.href, saveAs: false, conflictAction: "uniquify" };
 
   if (params.filename) options.filename = params.filename;
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   const chromeId = await chrome.downloads.download(options);
   const downloadId = `url-download-${crypto.randomUUID()}`;
   directDownloads.set(downloadId, { chromeId, tabId: tab.id!, sessionId, url: url.href });
@@ -104,6 +106,7 @@ export async function downloadStat(
 export async function downloadCancel(
   params: ToolContract["download_cancel"]["params"],
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["download_cancel"]["data"]> {
   const direct = directDownloads.get(params.downloadId);
 
@@ -112,6 +115,8 @@ export async function downloadCancel(
     const before = await directStat(params.downloadId, sessionId);
 
     if (before && !before.completed && !before.failure) {
+      await beforeDispatch?.();
+      beforeDispatch?.checkNow?.();
       try { await chrome.downloads.cancel(direct.chromeId); }
       catch (error) {
         const after = await directStat(params.downloadId, sessionId);
@@ -127,7 +132,7 @@ export async function downloadCancel(
     return { cancelled: stat.cancelled, completed: stat.completed, downloadId: params.downloadId, failure: stat.failure };
   }
 
-  const download = await cancelDownloadRecord(params.downloadId);
+  const download = await cancelDownloadRecord(params.downloadId, beforeDispatch);
 
   return { cancelled: download.cancelled, completed: download.completed, downloadId: download.downloadId, failure: download.failure };
 }

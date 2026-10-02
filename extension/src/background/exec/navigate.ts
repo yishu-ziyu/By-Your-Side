@@ -11,6 +11,7 @@ export async function navigate(
     timeout?: number;
   },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ url: string; title: string; note?: string } & PageReadiness> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -22,6 +23,8 @@ export async function navigate(
   // 先 attach 再改地址，让加载期发出的请求也能被 Network 域记录；attach 失败不影响导航。
   try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次导航无网络记录 */}
 
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   await chrome.tabs.update(tab.id, { url: params.url });
   const ready=await waitForInteractive(tab.id,timeoutMs,before?.documentId);
 

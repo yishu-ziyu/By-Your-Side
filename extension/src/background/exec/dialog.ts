@@ -10,12 +10,13 @@ import { resolveWorkingTab } from "../state.js";
 export async function acceptDialog(
   params: ToolContract["accept_dialog"]["params"],
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["accept_dialog"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await ensureAttached(tab.id);
-  const result = await handleJsDialog(tab.id, true, params.promptText);
+  const result = await handleJsDialog(tab.id, true, params.promptText, beforeDispatch);
 
   const data: ToolContract["accept_dialog"]["data"] = { accepted: result.ok };
 
@@ -27,12 +28,13 @@ export async function acceptDialog(
 export async function dismissDialog(
   params: ToolContract["dismiss_dialog"]["params"],
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["dismiss_dialog"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
   await ensureAttached(tab.id);
-  const result = await handleJsDialog(tab.id, false);
+  const result = await handleJsDialog(tab.id, false, undefined, beforeDispatch);
 
   const data: ToolContract["dismiss_dialog"]["data"] = { dismissed: result.ok };
 

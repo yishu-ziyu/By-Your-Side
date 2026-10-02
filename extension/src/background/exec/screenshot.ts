@@ -192,27 +192,6 @@ async function queryViewport(
   const unknown = { cssWidth: 0, cssHeight: 0, devicePixelRatio: 0, scrollX: 0, scrollY: 0 };
 
   try {
-    const evalPromise = sendCommand<{ result?: { value?: { w?: unknown; h?: unknown; dpr?: unknown; x?: unknown; y?: unknown } } }>(
-      tabId,
-      "Runtime.evaluate",
-      {
-        expression: "({w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio, x: window.scrollX, y: window.scrollY})",
-        returnByValue: true,
-      },
-      undefined,
-      3000,
-    );
-
-    const res = await evalPromise;
-    const v = res?.result?.value;
-    const parsed = parseViewport(v);
-
-    if (parsed) return parsed;
-  } catch {
-    /* 走 scripting 回退 */
-  }
-
-  try {
     const results = await withTimeout(chrome.scripting.executeScript({
       target: { tabId },
       world: "ISOLATED",

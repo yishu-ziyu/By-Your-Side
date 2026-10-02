@@ -11,6 +11,7 @@ import { setFilesOnBackendNodeId } from "./upload.js";
 export async function fileChooserSetFiles(
   params: ToolContract["file_chooser_set_files"]["params"],
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["file_chooser_set_files"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -28,7 +29,7 @@ export async function fileChooserSetFiles(
   }
 
   const paths = Array.isArray(params.paths) ? params.paths : [];
-  const files = await setFilesOnBackendNodeId(tab.id, arm.backendNodeId, paths);
+  const files = await setFilesOnBackendNodeId(tab.id, arm.backendNodeId, paths, beforeDispatch);
   const dialog = readDialogInfo(tab.id).dialog;
 
   const data: ToolContract["file_chooser_set_files"]["data"] = {

@@ -537,11 +537,14 @@ export async function handleJsDialog(
   tabId: number,
   accept: boolean,
   promptText?: string,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ ok: boolean; dialog?: { type: string; message: string; tabId: number; url?: string } }> {
   const dialog = pendingDialog(ledger, tabId);
 
   if (!dialog) return { ok: false };
 
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   // promptText 只在 accept 且调用方给了值时才带上；缺省时这个键不出现。
   if (accept && promptText !== undefined) {
     await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept, promptText });
@@ -588,7 +591,7 @@ export function getChooserArmById(chooserId: string): ArmedPageEvent {
   throw new Error("INVALID_ARGUMENT: unknown or expired chooserId");
 }
 
-export async function cancelDownloadRecord(downloadId: string): Promise<DownloadRecord> {
+export async function cancelDownloadRecord(downloadId: string, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<DownloadRecord> {
   const download = findDownload(ledger, downloadId);
 
   if (downloadSettled(download)) return download;
@@ -597,6 +600,8 @@ export async function cancelDownloadRecord(downloadId: string): Promise<Download
     throw new Error("DOWNLOAD_NOT_TRACKED: Chrome downloads has not reported this download yet; nothing was cancelled.");
   }
 
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   await chrome.downloads.cancel(download.chromeId);
   await refreshChromeDownload(download.chromeId);
 

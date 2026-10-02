@@ -28,10 +28,12 @@ export interface FetchResult {
   text: string;
 }
 
-export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal }): Promise<FetchResult> {
-  let request = normalizeFetchRequest(params);
+export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void} }): Promise<FetchResult> {
+  const request = normalizeFetchRequest(params);
+  let dispatched = false;
   const controller = new AbortController();
   const onAbort = (): void => controller.abort();
+  if (opts?.signal?.aborted) controller.abort();
   opts?.signal?.addEventListener("abort", onAbort);
   const timer = setTimeout(() => controller.abort(), FETCH_READ_DEADLINE_MS);
 
@@ -41,7 +43,11 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
     for (;;) {
       let response: Response;
 
+      await opts?.beforeDispatch?.();
+      opts?.beforeDispatch?.checkNow?.();
+      if (controller.signal.aborted) throw Object.assign(new Error("fetch 已取消，操作未执行。"), {executionFact: "not_executed"});
       try {
+        dispatched = true;
         response = await fetch(request.url, {
           method: request.method,
           headers: request.headers,
@@ -51,16 +57,17 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
           signal: controller.signal,
         });
       } catch (error) {
-        if (controller.signal.aborted) throw new Error("fetch 已取消或超时，操作未执行。");
-        throw new Error(`fetch 请求失败（未送达或网络错误）：${oneLine(error)}。不是页面结果，不要据此判断接口不存在。`);
+        if (controller.signal.aborted) throw new Error("fetch 已取消或超时，请求结果未知。");
+        throw new Error(`fetch 请求失败（送达情况未知或网络错误）：${oneLine(error)}。不是页面结果，不要据此判断接口不存在。`);
       }
 
       const next = redirectUrl(response, request.url);
+      if (next && opts?.beforeDispatch) throw new Error("重定向目标未经单独展示批准，请以新URL重新请求；首请求已发送，结果未知。");
 
       if (next) {
         hops += 1;
 
-        if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，操作未执行。");
+        if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，后续请求未执行。");
         assertRedirectAllowed(request.url, next);
         // 重定向累计在同一份 request 上原地改，避免每跳都复制一份对象。
         request.url = next;
@@ -87,6 +94,12 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
         text: capped.text,
       };
     }
+  } catch (error) {
+    if (dispatched) {
+      const detail = oneLine(error).replace(/操作未执行/g, "后续请求未执行");
+      throw Object.assign(new Error(`fetch 请求已发出，结果未知：${detail}`), {executionFact: "unknown"});
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
     opts?.signal?.removeEventListener("abort", onAbort);

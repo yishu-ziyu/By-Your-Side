@@ -6,9 +6,9 @@
  */
 export function assertActivationAllowed(name: string, params: Record<string, unknown>): void {
 
-  if (['mouse_down', 'mouse_up', 'key_up', 'drag', 'html5_drag'].includes(name))
-    throw new Error('底层指针或拖放不能核对业务提交，本次未执行。请使用 click，或接管页面完成这一步。');
-  if (name === 'press_key' || name === 'key_down') {
+  if (['mouse_down', 'mouse_up', 'key_down', 'key_up', 'release_held_inputs', 'drag', 'html5_drag'].includes(name))
+    throw new Error('底层持有/释放输入或拖放不能核对业务提交，本次未执行。请使用 click 或完整 press_key，或接管页面完成这一步。');
+  if (name === 'press_key') {
     // Space activates focused buttons as well as Enter. Other shortcuts still
     // require an exact grant through the conservative consent gate.
     const key = String(params.key ?? params.keys ?? '').trim().toLowerCase();

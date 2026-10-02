@@ -410,11 +410,11 @@ describe("真实 wheel：派发 mouseWheel，不用 scrollTop=", () => {
   it("工作页在后台时明确不执行，不派发任何滚轮事件", async () => {
     installPage({ "#a": makeEl("a", { x: 0, y: 0, width: 10, height: 10 }) });
     const { wheel } = await import("../src/background/exec/input.js");
-    const base = mocks.sendCommand.getMockImplementation();
-    mocks.sendCommand.mockImplementation((tab: number, method: string, params: { expression?: string }) =>
-      method === "Runtime.evaluate" && params?.expression === "document.visibilityState"
-        ? Promise.resolve({ result: { value: "hidden" } })
-        : base!(tab, method, params));
+    const script = vi.mocked(chrome.scripting.executeScript);
+    const base = script.getMockImplementation()!;
+    script.mockImplementation((details: any) => details.func?.toString().includes("visibilityState")
+      ? Promise.resolve([{frameId:0,documentId:"fixture-101",result:"hidden"}]) as any
+      : (base as any)(details));
     await expect(wheel({ point: [20, 20], deltaY: 50 })).rejects.toMatchObject({ executionFact: "not_executed" });
     expect(mouseCalls()).toHaveLength(0);
   });

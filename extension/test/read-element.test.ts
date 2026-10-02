@@ -66,6 +66,8 @@ async function loadReadElement(options: {
       }
     }
 
+    if (method === "Page.getFrameTree") return {frameTree:{frame:{id:"fixture-frame"}}};
+    if (method === "Page.createIsolatedWorld") return {executionContextId:71};
     if (method === "Runtime.callFunctionOn") return { result: { value: Function(`return (${params.functionDeclaration});`)().call(objects.get(params.objectId ?? "")) } };
 
     if (method === "Runtime.releaseObject") { objects.delete(params.objectId ?? "");
@@ -192,6 +194,8 @@ describe("read_element", () => {
       sendCommand: async (_tabId, method) => {
         calls.push(method);
 
+        if (method === "Page.getFrameTree") return {frameTree:{frame:{id:"fixture-frame"}}};
+        if (method === "Page.createIsolatedWorld") return {executionContextId:71};
         if (method === "DOM.resolveNode") return { object: { objectId: "node-1" } };
 
         return { result: { value: { ok: true, data: { tagName: "textarea", textContent, value } } } };
@@ -201,7 +205,7 @@ describe("read_element", () => {
     vi.stubGlobal("chrome", { scripting: { executeScript: vi.fn() } });
     const result = await readElement({ tabId: 12, target: "@42" }, KEY);
     expect(result).toMatchObject({ textContent, value });
-    expect(calls).toEqual(["DOM.resolveNode", "Runtime.callFunctionOn", "Runtime.releaseObject"]);
+    expect(calls).toEqual(["Page.getFrameTree","Page.createIsolatedWorld","DOM.resolveNode", "Runtime.callFunctionOn", "Runtime.releaseObject"]);
     expect(calls).not.toContain("Runtime.evaluate");
   });
 
@@ -272,6 +276,8 @@ async function readbackPage(target='@4',ax=true) {
   const cdp=vi.fn(async(_tabId:number,method:string,params:any)=>{
     if(method==='Runtime.evaluate')return {result:{objectId:'original-node'}};
 
+    if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'fixture-frame'}}};
+    if(method==='Page.createIsolatedWorld')return {executionContextId:71};
     if(method==='DOM.resolveNode')return {object:{objectId:'original-node'}};
 
     if(method==='Runtime.callFunctionOn')return {result:{value:Function(`return (${params.functionDeclaration})`)().call(element)}};

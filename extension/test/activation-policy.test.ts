@@ -8,6 +8,8 @@ describe('activation bypass boundary', () => {
   it.each([
     ['mouse_down', {point:[10,10]}],
     ['key_down', {key:'Enter'}],
+    ['key_down', {key:'Control'}],
+    ['release_held_inputs', {}],
     ['key_down', {key:'Space'}],
     ['press_key', {key:'Control+Enter'}],
     ['press_key', {key:' '}],
@@ -15,9 +17,9 @@ describe('activation bypass boundary', () => {
   ])('rejects %s before any browser dispatch', (name, params) => {
     expect(() => assertActivationAllowed(name, params)).toThrow(/未执行/);
   });
-  it('permits only exact host probes, ordinary editing keys and release cleanup', () => {
+  it('requires approval for page probes and permits complete editing key pairs', () => {
     for (const code of Object.values(HOST_PAGE_PROBES)) {expect(() => assertActivationAllowed('js', {code})).not.toThrow();expect(requiresActivationConsent('js',{code})).toBe(true);}
-    for (const name of ['release_held_inputs','snapshot','fill'])
+    for (const name of ['snapshot','fill'])
       expect(() => assertActivationAllowed(name, {})).not.toThrow();
     expect(() => assertActivationAllowed('press_key', {key:'Tab'})).not.toThrow();
     expect(requiresActivationConsent('js', {code:HOST_PAGE_PROBES.pageInfo+';fetch("/buy")'})).toBe(true);

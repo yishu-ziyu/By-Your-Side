@@ -4,7 +4,7 @@
 
 ## 完成标准
 
-- [x] 普通/未知点击、导航、填写、JS等潜在副作用默认要求精确参数的一次侧栏批准；公开JS包括固定探针，以及含MAIN读取的snapshot/元素读取/截图均需批准，原生标签清单等豁免。
+- [x] 普通/未知点击、导航、填写、JS等潜在副作用默认要求精确参数的一次侧栏批准；公开JS包括固定探针，snapshot/元素读取/截图均需批准；其原MAIN读取已迁移ISOLATED，原生标签清单等豁免。
 - [x] 20秒过期、拒绝、重复批准、任务/控制轮次变化及页面指纹变化均不发放有效授权。
 - [x] 页面标记、模型伪造fromUserConfirm、原始键鼠/拖放和raw CDP不能发放授权。
 - [ ] 真实Chromium扩展路径：副作用服务器计数、侧栏确认、同文档字段变化、reload、JS及键盘/CDP旁路验收全部通过。
@@ -16,17 +16,19 @@
 
 ## 实现与产品影响
 
-权威边界在[协议](../protocol.md#安全)。background持有单次票据，只有本扩展sidepanel.html端口能批准。审批绑定任务、控制轮次、完整参数、documentId及DOM变更轮次及完整markup/表单字段的SHA-256；参数预览先去凭据文本。无法绑定页面或完整展示参数时拒绝。保留CSV所用JS，但每次需批准；普通点击、填写、导航、snapshot/元素读取/截图也增加确认。原始键鼠与拖放暂时禁用，输入释放只走持有台账。
+权威边界在[协议](../protocol.md#安全)。background持有单次票据，只有本扩展sidepanel.html端口能批准。审批绑定任务、控制轮次、完整参数、documentId、控制generation、DOM变更轮次、原生DOMSnapshot全部覆盖frame的backend节点/字段及markup摘要；参数预览先去凭据文本。无法绑定页面或完整展示参数时拒绝。保留CSV所用JS，但每次需批准；普通点击、填写、导航、snapshot/元素读取/截图也增加确认。公开持有/释放键鼠与拖放暂时禁用，内部停止仍释放输入。未知或未覆盖的子框架拒绝。获准fetch不自动跟随未展示的新URL重定向。所有准备await后、实际native/CDP/script派发前再检查；上传首次设置前核对完整状态，固定对象的后续事件仅沿同文档/控制generation/取消版本/期限阶段批准完成，避免自身字段变更误拒绝。
+
+页面定位滚动、hover或脚本已派发后发生撤销，回执保守为unknown，不把缺少最终mousePressed伪报零副作用。ISOLATED读取避免网站MAIN getter执行。
 
 网页可在最终检查后异步变化，指纹不是网站事务锁；批准任意JS不能保证其内部副作用可撤回。此版本承诺未经可信批准不进入副作用工具，不能承诺网站动态内容的交易级原子性。
 
 ## 实际验证
 
-本地npm ci --ignore-scripts通过。基线lock缺@esbuild/linux-ppc64@0.28.2，本次仅补17行，无升级版本。npm test：290文件/3018单元测试通过，scale 2测试通过；typecheck通过；architecture 291生产文件通过；check:docs --base a55c69d通过，639文档零错误。合并main的会话菜单更新后再交独立审查。
+本地npm ci --ignore-scripts通过。基线lock缺@esbuild/linux-ppc64@0.28.2，本次仅补17行，无升级版本。npm test：295文件/3051单元测试通过（最终收紧redirect及派发标记前），随后42项dispatch/键鼠定点通过，scale 2测试通过；typecheck通过；architecture 293生产文件通过；check:docs --base a55c69d通过，639文档零错误。合并main的会话菜单更新后再交独立审查。
 
-标准npm run build被本环境tsx CLI的Unix socket EPERM阻断；临时改用node --import tsx启动同一导出脚本后构建通过，提交不包含临时替换。Chromium下载在本环境返回空ZIP，真实浏览器验收未运行，不能算通过。
+标准npm run build被本环境tsx CLI的Unix socket EPERM阻断；临时改用node --import tsx启动同一导出脚本后构建通过，提交不包含临时替换。本机Chromium下载返回空ZIP；此前0d72cd5在Ubuntu CI37040997521实际构建和辅助真实Chrome验收通过。当前追加dispatch、shadow/frame绑定与ISOLATED候选仍须以最终head重新验收，不能沿用旧head为最终通过。
 
-新增security-confirmation CI固定官方Actions提交SHA及lock内playwright 1.58.2，在Ubuntu执行原始npm ci、typecheck、完整测试、docs、build及真实扩展脚本。脚本用本地POST计数器独立验证未批准零提交、批准仅一次、字段变化及导航作废、JS批准保留和键盘/CDP拒绝，上传JSON与侧栏截图。CI结果未返回前不宣称完成。
+新增security-confirmation CI固定官方Actions提交SHA及lock内playwright 1.58.2，在Ubuntu执行原始npm ci、typecheck、完整测试、docs、build及真实扩展脚本。脚本用本地POST计数器独立验证未批准零提交、批准仅一次、字段变化及导航作废、JS批准保留和键盘/CDP拒绝，上传JSON与侧栏截图。还通过真正real-path脚本从设置页配置本地脚本模型，经真实offscreen agent、用户侧栏发送任务与审批验证拒绝/允许/再次审批/停止；不使用sw工具入口hook。这是本地脚本模型验收，不是供应商或真人eval。最终CI结果未返回前不宣称完成。
 
 ## 交付边界
 

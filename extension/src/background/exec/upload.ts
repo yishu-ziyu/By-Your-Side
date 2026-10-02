@@ -1,3 +1,4 @@
+import {isolatedReadContext} from "../isolated-read-context.js";
 /**
  * `upload_file` 工具：给唯一 <input type=file> 设置文件（CDP DOM.setFileInputFiles），
  * 以读回的 files 列表为证；不点系统文件选择器、不给模型任意磁盘读取能力。
@@ -21,7 +22,7 @@ import { notExecuted } from "./input.js";
 const MAX_FILES = 8;
 
 /** 用对象 id 执行函数（this = 目标元素）；调用方负责释放对象。 */
-async function callWithObject<T>(tabId: number, objectId: string, declaration: string, args: unknown[] = []): Promise<T> {
+async function callWithObject<T>(tabId: number, objectId: string, declaration: string, args: unknown[] = [], beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}}): Promise<T> {
   const result = await sendCommand<{
     result?: { value?: T };
     exceptionDetails?: { exception?: { description?: string }; text?: string };
@@ -30,7 +31,7 @@ async function callWithObject<T>(tabId: number, objectId: string, declaration: s
     functionDeclaration: declaration,
     arguments: args.map((value) => ({ value })),
     returnByValue: true,
-  });
+  }, beforeDispatch);
 
   if (result.exceptionDetails) {
     throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "页面内执行失败");
@@ -44,6 +45,7 @@ export async function setFilesOnObjectId(
   tabId: number,
   objectId: string,
   paths: string[],
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
 ): Promise<Array<{ name: string; size: number }>> {
   const clearing = paths.length === 0;
 
@@ -66,50 +68,65 @@ export async function setFilesOnObjectId(
     if (el.disabled) throw new Error("文件输入框不可用（disabled），上传未执行。");
     if (fileCount > 1 && !el.multiple) throw new Error("目标不支持 multiple，不能一次设置多个文件，上传未执行。");
     return true;
-  }`, [paths.length]);
+  }`, [paths.length], beforeDispatch);
 
-  await callWithObject<true>(tabId, objectId, `function() {
-    const el = this;
-    el.__bysUploadCounts = { input: 0, change: 0 };
-    const counts = el.__bysUploadCounts;
-    el.__bysUploadOnInput = function() { counts.input += 1; };
-    el.__bysUploadOnChange = function() { counts.change += 1; };
-    el.addEventListener("input", el.__bysUploadOnInput);
-    el.addEventListener("change", el.__bysUploadOnChange);
-    return true;
-  }`);
-
-  if (clearing) {
+  await beforeDispatch?.();
+  try {
     await callWithObject<true>(tabId, objectId, `function() {
       const el = this;
-      el.files = new DataTransfer().files;
+      el.__bysUploadCounts = { input: 0, change: 0 };
+      const counts = el.__bysUploadCounts;
+      el.__bysUploadOnInput = function() { counts.input += 1; };
+      el.__bysUploadOnChange = function() { counts.change += 1; };
+      el.addEventListener("input", el.__bysUploadOnInput);
+      el.addEventListener("change", el.__bysUploadOnChange);
       return true;
-    }`);
-  } else {
-    await sendCommand(tabId, "DOM.setFileInputFiles", { files: paths, objectId });
-  }
+    }`, [], beforeDispatch);
 
-  return callWithObject<Array<{ name: string; size: number }>>(tabId, objectId, `function(expectClear) {
-    const el = this;
-    const counts = el.__bysUploadCounts || { input: 0, change: 0 };
-    if (counts.input < 1) el.dispatchEvent(new Event("input", { bubbles: true }));
-    if (counts.change < 1) el.dispatchEvent(new Event("change", { bubbles: true }));
-    if (el.__bysUploadOnInput) el.removeEventListener("input", el.__bysUploadOnInput);
-    if (el.__bysUploadOnChange) el.removeEventListener("change", el.__bysUploadOnChange);
-    try { delete el.__bysUploadCounts; delete el.__bysUploadOnInput; delete el.__bysUploadOnChange; } catch (_) {}
-    const list = [];
-    const fileList = el.files;
-    if (fileList) {
-      for (let i = 0; i < fileList.length; i++) list.push({ name: String(fileList[i].name), size: Number(fileList[i].size) });
+    if (clearing) {
+      await callWithObject<true>(tabId, objectId, `function() {
+        const el = this;
+        el.files = new DataTransfer().files;
+        return true;
+      }`, [], beforeDispatch);
+    } else {
+      await sendCommand(tabId, "DOM.setFileInputFiles", { files: paths, objectId }, beforeDispatch);
     }
-    if (!expectClear && list.length === 0) {
-      throw new Error("读回 0 个文件，上传未生效。请确认目标是 <input type=file> 且文件在授权目录内。");
-    }
-    if (expectClear && list.length !== 0) {
-      throw new Error("清空后读回仍有文件，未生效。");
-    }
-    return list;
-  }`, [clearing]);
+
+    return await callWithObject<Array<{ name: string; size: number }>>(tabId, objectId, `function(expectClear) {
+      const el = this;
+      if (!el || !el.isConnected) throw new Error("上传目标已离开，后续事件未执行。");
+      const counts = el.__bysUploadCounts || { input: 0, change: 0 };
+      if (counts.input < 1) el.dispatchEvent(new Event("input", { bubbles: true }));
+      if (counts.change < 1) el.dispatchEvent(new Event("change", { bubbles: true }));
+      if (el.__bysUploadOnInput) el.removeEventListener("input", el.__bysUploadOnInput);
+      if (el.__bysUploadOnChange) el.removeEventListener("change", el.__bysUploadOnChange);
+      try { delete el.__bysUploadCounts; delete el.__bysUploadOnInput; delete el.__bysUploadOnChange; } catch (_) {}
+      const list = [];
+      const fileList = el.files;
+      if (fileList) {
+        for (let i = 0; i < fileList.length; i++) list.push({ name: String(fileList[i].name), size: Number(fileList[i].size) });
+      }
+      if (!expectClear && list.length === 0) {
+        throw new Error("读回 0 个文件，上传未生效。请确认目标是 <input type=file> 且文件在授权目录内。");
+      }
+      if (expectClear && list.length !== 0) {
+        throw new Error("清空后读回仍有文件，未生效。");
+      }
+      return list;
+    }`, [clearing], beforeDispatch?.afterEffect ?? beforeDispatch);
+  } catch (error) {
+    throw Object.assign(new Error(`上传流程已开始，结果未知：${error instanceof Error ? error.message : String(error)}`), {executionFact: "unknown"});
+  } finally {
+    // Release only our temporary listeners, even after approval is revoked.
+    await callWithObject<true>(tabId, objectId, `function() {
+      const el = this;
+      if (el.__bysUploadOnInput) el.removeEventListener("input", el.__bysUploadOnInput);
+      if (el.__bysUploadOnChange) el.removeEventListener("change", el.__bysUploadOnChange);
+      try { delete el.__bysUploadCounts; delete el.__bysUploadOnInput; delete el.__bysUploadOnChange; } catch (_) {}
+      return true;
+    }`).catch(() => { /* Page/object may have gone away. */ });
+  }
 }
 
 /** 动态 chooser：backendNodeId → objectId → 同一设文件路径。 */
@@ -117,14 +134,16 @@ export async function setFilesOnBackendNodeId(
   tabId: number,
   backendNodeId: number,
   paths: string[],
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
 ): Promise<Array<{ name: string; size: number }>> {
-  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId });
+  const executionContextId=await isolatedReadContext(tabId);
+  const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId,executionContextId });
   const objectId = resolved.object?.objectId;
 
   if (!objectId) throw notExecuted(new Error("file chooser 目标无法解析，上传未执行"));
 
   try {
-    return await setFilesOnObjectId(tabId, objectId, paths);
+    return await setFilesOnObjectId(tabId, objectId, paths, beforeDispatch);
   } finally {
     await sendCommand(tabId, "Runtime.releaseObject", { objectId }).catch(() => { /* 已释放 */ });
   }
@@ -133,6 +152,7 @@ export async function setFilesOnBackendNodeId(
 export async function uploadFile(
   params: ToolContract["upload_file"]["params"],
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;afterEffect?: (() => Promise<void>) & {checkNow?: () => void}},
 ): Promise<ToolContract["upload_file"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -157,6 +177,7 @@ export async function uploadFile(
   if (!parsed) throw notExecuted(new Error(`无效的 target: ${String(params.target).slice(0, 200)}`));
 
   const observed = await withObservedDocumentIdentity(tabId, sessionId, async () => {
+    const executionContextId=await isolatedReadContext(tabId);
     const effectToken = await beginEffect(tabId, {});
     let objectId: string | undefined;
 
@@ -167,7 +188,7 @@ export async function uploadFile(
         ));
       }
 
-      const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: parsed.n });
+      const resolved = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId: parsed.n,executionContextId });
       objectId = resolved.object?.objectId;
 
       if (!objectId) throw notExecuted(new Error("ref 目标无法解析（页面可能已变化），上传未执行"));
@@ -178,7 +199,7 @@ export async function uploadFile(
       const evaluated = await sendCommand<{
         result?: { objectId?: string };
         exceptionDetails?: { exception?: { description?: string }; text?: string };
-      }>(tabId, "Runtime.evaluate", { expression, returnByValue: false });
+      }>(tabId, "Runtime.evaluate", { expression, returnByValue: false,contextId:executionContextId }, beforeDispatch);
 
       if (evaluated.exceptionDetails) {
         throw notExecuted(new Error(evaluated.exceptionDetails.exception?.description ?? evaluated.exceptionDetails.text ?? "目标解析失败"));
@@ -190,7 +211,7 @@ export async function uploadFile(
     }
 
     try {
-      const files = await setFilesOnObjectId(tabId, objectId, paths);
+      const files = await setFilesOnObjectId(tabId, objectId, paths, beforeDispatch);
       await collectEffect(tabId, effectToken);
 
       return files;

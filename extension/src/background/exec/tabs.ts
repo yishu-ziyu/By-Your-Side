@@ -46,7 +46,10 @@ export async function getActiveTab(sessionId: string = LEAD_SESSION_ID): Promise
 export async function openTab(
   params: { url?: string },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ tabId: number; url: string; title: string; readiness?:PageReadiness["readiness"]; waitMs?:number; documentId?:string }> {
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   const tab = await chrome.tabs.create({ url: params.url, active: shouldActivateForKey(sessionId) });
 
   if (tab.id == null) throw new Error("创建标签页失败");
@@ -64,9 +67,10 @@ export async function openTab(
 export async function switchTab(
   params: { tabId: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ tabId: number; verification?: SwitchTabVerification }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
-  await maybeActivateTab(tab, sessionId);
+  await maybeActivateTab(tab, sessionId, beforeDispatch);
 
   return { tabId: params.tabId, verification: await readSwitchVerification(params.tabId, sessionId) };
 }
@@ -104,6 +108,7 @@ async function readSwitchVerification(tabId: number, sessionId: string): Promise
 export async function closeTab(
   params: { tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ closed: true }> {
   let id = params.tabId;
 
@@ -114,6 +119,8 @@ export async function closeTab(
 
   if (id == null) throw new Error("没有可关闭的标签页");
   await resolveWorkingTab(id, sessionId);
+  await beforeDispatch?.();
+  beforeDispatch?.checkNow?.();
   await chrome.tabs.remove(id);
 
   if ((await getWorkingTabId(sessionId)) === id) await setWorkingTab(null, sessionId);
