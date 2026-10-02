@@ -46,7 +46,7 @@
 
 上一个任务以「部分完成」结束（任务视图 `resumable`）时，侧栏发来的普通文字 `task_action{action:"start"}` 先由快速模型判断是否接着做这件事（`follow-up-intent.ts`，6 秒超时，判断不了按另起）。是则改走 `steer`：登记为原任务的修订，以 `manual_continuation` 中断后从原任务恢复，runId 与目标不变；恢复提示写明是用户补充而非重启。
 
-扩展重启后的上下文、任务和产物恢复仍有缺口；当前实现核对与后续方案见[记忆研究](research/20261002-extension-memory.md)。
+扩展重启后的恢复规则见下一节；后续记忆范围与检索方案见[记忆研究](research/20261002-extension-memory.md)。
 
 ## 扩展会话恢复
 
