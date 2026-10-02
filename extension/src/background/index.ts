@@ -1,3 +1,4 @@
+import { assertActivationAllowed } from "./activation-policy.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
@@ -44,7 +45,7 @@ import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
-import { armDestructiveClick, click, doubleClick, drag, hover, clearMarks, dropPendingClicks, hasPendingClick, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
+import { click, doubleClick, drag, hover, clearMarks, dropPendingClicks, hasPendingClick, withdrawPendingClicks, fill, selectOption, hideCursorsForSessions, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, resolveHeldClick, scroll, showTeamControlBanners, stopTrailReplay, typeText, wheel, mouseDown, mouseUp, keyDown, keyUp, releaseHeldInputs, paste, html5DragAndDrop, setClipboardBridge, getClipboardBridge } from "./exec/input.js";
 import { createDarwinClipboardBridge, isDarwinClipboardHostPlatform } from "./clipboard-bridge.js";
 
 // macOS：正式 paste 走 NSPasteboard 宿主桥；无桥时 paste 仍 PASTE_HOST_BLOCKED。
@@ -1358,6 +1359,7 @@ async function executeToolCall(
 
   try {
     checkIdentity();
+    assertActivationAllowed(name, params);
     const handler = handlers[name];
 
     if (!handler) throw new Error(`未知工具: ${String(name)}`);
@@ -2024,7 +2026,7 @@ function attachPanel(port: chrome.runtime.Port) {
 
           if (isAffirmativeReply(client.text)) {
             if (hasPendingClick(key())) heldConfirmed = confirmHeldClick().catch(() => undefined);
-            else armDestructiveClick(key());
+            // 无 pending 时这句话只进入对话，不能批准未来提交。
           } else if (isCancelReply(client.text)) {
             // 侧栏打「取消」与点名牌「取消」同效：清 pending、松开拿住的手、收起标注
             void resolveHeldClick("cancel", key()).catch(() => {
@@ -2137,7 +2139,7 @@ chrome.tabs.onActivated.addListener((info) => {
   });
 });
 
-chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
 
   if (selectedConversationId !== conversationId) return;
@@ -2174,6 +2176,12 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
 
   if (msg.type !== "mark_action" || !isMarkActionId(msg.action)) return;
   const action = msg.action;
+  // 网页的 MAIN world 可以伪造 overlay bridge 事件；页面按钮不能铸造业务授权。
+  if (action === "confirm" && sender.tab) {
+    sendResponse({ ok: false, error: "请在扩展侧栏输入确认，本次未执行。" });
+    emitNotice("请在侧栏输入「确认」批准刚才停下的操作。");
+    return;
+  }
   void (async () => {
     try {
       if (action === "confirm") await confirmHeldClick();
