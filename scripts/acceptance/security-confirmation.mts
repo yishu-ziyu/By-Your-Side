@@ -12,8 +12,7 @@ try {
   const extensionId=await iso.swEval('chrome.runtime.id');
   const page=await iso.newTarget(iso.fixtureOrigin);
   panel=await iso.newTarget('chrome-extension://'+extensionId+'/sidepanel.html');
-  await iso.swEval('globalThis.__saConnectForAcceptance();true');
-  await iso.swEval('globalThis.__saHandleServer({type:"conversation_list",conversations:[{id:"default",title:"Security fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:"security-run"}]});true');
+  await iso.swEval('globalThis.__saSetSecurityHost({id:"default",title:"Security fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:"security-run"})');
   await until(async()=>{const state=await iso.swEval('globalThis.__saSecurityProbe()') as any;return state.panels>0&&state.summaries?.some((c:any)=>c.id==='default'&&c.runId==='security-run')?true:undefined;},8000,'trusted panel attached and fixture run active');
   const tabId=await iso.swEval('(async()=> (await chrome.tabs.query({url:'+JSON.stringify(iso.fixtureOrigin+'/*')+'}))[0].id)()');
   await iso.tool('snapshot',{tabId});

@@ -138,6 +138,17 @@ export const HOOK_EXPRESSION = `(() => {
       };
       globalThis.__saClaimHook = true;
     }
+    // Scripted host for this isolated acceptance only: stop the real inproc host
+    // from racing fixture conversation lifecycle. Preserve production dispatch.
+    globalThis.__saSetSecurityHost = function (summary) {
+      if (!rawTransport || !rawTransport.handlers) throw new Error("missing real host handlers");
+      const original = rawTransport.handlers.onServerMessage.bind(rawTransport.handlers);
+      rawTransport.handlers.onServerMessage = function (msg) { if (msg.type === "tool_call") original(msg); };
+      rawTransport.handlers.onConnState = function () {};
+      original({type:"conversation_list",conversations:[summary]});
+      if (typeof callbacks !== "undefined") callbacks.onConnState("connected", "inproc");
+      return true;
+    };
     globalThis.__saConnectForAcceptance = function () { if (typeof callbacks !== "undefined") callbacks.onConnState("connected", "inproc"); };
     globalThis.__saSecurityProbe = function () { return {selected:typeof selectedConversationId!=="undefined"?selectedConversationId:null,summaries:typeof conversationSummaries!=="undefined"?conversationSummaries:null,panels:typeof connectedPanels!=="undefined"?connectedPanels.size:null,requests:typeof activationConsent!=="undefined"?activationConsent.list():null}; };
     globalThis.__saHandleServer = function (msg) {
