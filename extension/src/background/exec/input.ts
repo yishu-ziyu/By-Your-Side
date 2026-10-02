@@ -847,7 +847,7 @@ async function nameOfClickTarget(
   // 用户要求提交前确认时同理：按页面上的「SIGN UP」判断，不按模型写的「填完后点按钮」。
   if (isSubmitLabel(onPage)) return onPage;
 
-  return labeled || onPage;
+  return onPage || ((isDestructiveLabel(labeled) || isSubmitLabel(labeled)) ? labeled : "");
 }
 
 async function pageNameOfClickTarget(
@@ -862,6 +862,7 @@ async function pageNameOfClickTarget(
 
   const read = `function() {
     const el = this;
+    if (el.form && (el.type === "submit" || el.type === "image")) return "提交表单";
     const t = (el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("title"))) || el.innerText || el.textContent || "";
     return String(t).trim().replace(/\\s+/g, " ").slice(0, 40);
   }`;
@@ -879,6 +880,7 @@ async function pageNameOfClickTarget(
         const el = window.__sideagent?.dom?.resolve(t);
 
         if (!el) return "";
+        if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return "提交表单";
 
         const raw =
           (el.getAttribute("aria-label") || el.getAttribute("title") || (el as HTMLElement).innerText || el.textContent || "") +
