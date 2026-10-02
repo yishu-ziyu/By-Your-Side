@@ -1338,12 +1338,15 @@ async function executeToolCall(
   let approvedUntil = 0;
   let approvedCancellationVersion = -1;
   let consentTab: number | null = null;
-  const beforeApprovedDispatch = async () => {
+  const beforeApprovedDispatch = Object.assign(async () => {
     if (!activationApproved) return;
-    if (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion) throw Object.assign(new Error("确认已过期、页面或任务已变化，操作未执行。"),{executionFact:"not_executed"});
+    if (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil) throw Object.assign(new Error("确认已过期、页面或任务已变化，操作未执行。"),{executionFact:"not_executed"});
     checkIdentity();
     if (gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid))) throw Object.assign(new Error("页面控制权已变化，操作未执行。"),{executionFact:"not_executed"});
-  };
+  }, {checkNow: () => {
+    checkIdentity();
+    if (activationApproved && (Date.now() >= approvedUntil || activationConsent.version !== approvedCancellationVersion || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid)))) throw Object.assign(new Error("确认已作废，操作未执行。"),{executionFact:"not_executed"});
+  }});
   const captureApprovalContext = async () => {
     checkIdentity();
     const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
@@ -1447,7 +1450,7 @@ async function executeToolCall(
         if (gate.gen !== operationGeneration) throw new Error("页面控制权已变化，操作未执行。");
       }
       return gate.run(id, name, async () => {
-        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
+        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         if (name === "page_operation") {
           try {
             const r = await pageOperation(params as any, key(sid), {beforeWrite:beforeApprovedDispatch,canWrite: () => gate.gen === operationGeneration && !gate.isSessionBlocked(sid) && !workerTabControl.isStopped(key(sid)) && (!activationApproved || (Date.now() < approvedUntil && activationConsent.version === approvedCancellationVersion))});
@@ -1466,7 +1469,7 @@ async function executeToolCall(
         checkIdentity();
 
         if(gate.gen!==operationGeneration||workerTabControl.isStopped(key(sid)))throw new Error('操作所属控制轮次已失效，操作未执行。');
-        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
+        if (activationApproved && (Date.now() >= approvedUntil || await captureApprovalContext() !== approvedContext || activationConsent.version !== approvedCancellationVersion || Date.now() >= approvedUntil)) throw new Error("任务、页面或参数在确认后变化，操作未执行。");
         // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
 

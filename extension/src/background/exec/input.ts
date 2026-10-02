@@ -1288,7 +1288,7 @@ export async function hover(
 export async function click(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1369,7 +1369,7 @@ export async function click(
 
     try {
       await beforeDispatch?.();
-      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
+      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
       cdpMouseMoved = true;
       heldOf(sessionId).pointer = [x, y];
       // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
@@ -1401,7 +1401,7 @@ export async function click(
             buttons: pressedButtonsMask(button) | buttonsMaskFor(sessionId),
             clickCount: n,
             modifiers,
-          });
+          },beforeDispatch);
           cdpMousePressed = true;
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mouseReleased",
@@ -1514,7 +1514,7 @@ type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; h
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1589,7 +1589,7 @@ export async function doubleClick(
 
     try {
       await beforeDispatch?.();
-      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers });
+      await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
       dispatched = true;
       heldOf(sessionId).pointer = [x, y];
       const effectPending = beginEffect(tabId, { point: [x, y] });
@@ -1607,7 +1607,7 @@ export async function doubleClick(
       await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
-      });
+      },beforeDispatch);
       pressed = true;
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 1, modifiers,
@@ -1615,7 +1615,7 @@ export async function doubleClick(
       await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
-      });
+      },beforeDispatch);
       await sendCommand(tabId, "Input.dispatchMouseEvent", {
         type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 2, modifiers,
       });
@@ -1816,7 +1816,7 @@ export async function drag(
 export async function fill(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1971,7 +1971,7 @@ export async function selectOption(
     expectedBackendNodeId?: number;
   },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ selected: string[]; labels: string[] }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -2069,7 +2069,7 @@ export async function selectOption(
 export async function typeText(
   params: { text: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ typed: true }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -2078,7 +2078,7 @@ export async function typeText(
   await beforeDispatch?.();
   await maybeActivateTab(tab, sessionId);
   await beforeDispatch?.();
-  await sendCommand(tab.id, "Input.insertText", { text: params.text });
+  await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
 
   return { typed: true };
 }
@@ -2086,7 +2086,7 @@ export async function typeText(
 export async function pressKey(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ pressed: true }> {
   const info = resolveKey(params.key);
 
@@ -2121,7 +2121,7 @@ export async function pressKey(
   if (info.text !== undefined) rawKeyDown.text = info.text;
 
   await beforeDispatch?.();
-  await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown);
+  await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown,beforeDispatch);
   await sendCommand(tab.id, "Input.dispatchKeyEvent", { type: "keyUp", ...base });
 
   return { pressed: true };
@@ -2318,7 +2318,7 @@ export async function mouseUp(
 export async function keyDown(
   params: { key: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ down: true; key: string }> {
   const info = resolveKey(params.key);
 
@@ -2347,7 +2347,7 @@ export async function keyDown(
     if (info.text !== undefined) keyDown.text = info.text;
 
     await beforeDispatch?.();
-    await sendCommand(tab.id, "Input.dispatchKeyEvent", keyDown);
+    await sendCommand(tab.id, "Input.dispatchKeyEvent", keyDown,beforeDispatch);
 
     return { down: true, key: params.key };
   } catch (e) {
@@ -2449,7 +2449,7 @@ export async function releaseHeldInputs(
 export async function paste(
   params: { content: PasteContent; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: () => Promise<void>,
+  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ pasted: true; clipboard: ClipboardFinishStatus }> {
   if (!clipboardBridge) {
     throw notExecuted(new Error(PASTE_HOST_BLOCKED));

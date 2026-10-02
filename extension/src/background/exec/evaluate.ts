@@ -35,7 +35,7 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
 export async function evaluateJs(
   params: { code: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,
-  beforeExecute?: () => Promise<void>,
+  beforeExecute?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ value: unknown }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -48,7 +48,7 @@ export async function evaluateJs(
     expression: params.code,
     awaitPromise: true,
     returnByValue: true,
-  });
+  },beforeExecute);
 
   if (res.exceptionDetails) {
     throw new Error(oneLine(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text ?? "JS 执行异常"));

@@ -203,7 +203,7 @@ export async function sendCommand<T = unknown>(
   tabId: number,
   method: string,
   params?: Record<string, unknown>,
-  checkBeforeDispatch?: () => void,
+  checkBeforeDispatch?: (() => void | Promise<void>) & {checkNow?: () => void},
   timeoutMs?: number,
 ): Promise<T> {
   // Attachment and command delivery are different facts. Once sent, a missing
@@ -212,9 +212,10 @@ export async function sendCommand<T = unknown>(
 
   try {
     try {
-      checkBeforeDispatch?.();
+      await checkBeforeDispatch?.();
       await ensureAttached(tabId);
-      checkBeforeDispatch?.();
+      await checkBeforeDispatch?.();
+      checkBeforeDispatch?.checkNow?.();
     } catch (error) {
       throw Object.assign(new Error(oneLine(error)), { executionFact: "not_executed" });
     }
