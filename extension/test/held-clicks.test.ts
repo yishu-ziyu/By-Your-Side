@@ -72,11 +72,11 @@ describe("HeldClicks resolve", () => {
     expect(h.isArmed(LEAD)).toBe(false);
   });
 
-  it("confirm 无 pending（模型自绘 mark 路径）：直接 arm，不要第二轮", () => {
+  it("confirm 无 pending：不产生未来动作授权", () => {
     const h = newLedger();
     const d = h.resolve("confirm", LEAD);
     expect(d).toEqual({ kind: "armOnce", sessionId: LEAD });
-    expect(h.isArmed(LEAD)).toBe(true);
+    expect(h.isArmed(LEAD)).toBe(false);
   });
 
   it("cancel 有 pending：清 pending 与 arm", () => {
@@ -94,12 +94,12 @@ describe("HeldClicks resolve", () => {
     expect(d).toEqual({ kind: "cancelled", sessionId: undefined });
   });
 
-  it("注入失败兜底：overlay 画不出时侧栏确认走 armOnce 放行，不依赖任何页面状态", () => {
+  it("无 pending 的重复确认不能放行另一目标", () => {
     const h = newLedger();
-    // pending 都没存上（或已被清）时，确认仍然 arm
+    // 缺失或已清的操作没有可批准的参数。
     const d = h.resolve("confirm", LEAD);
     expect(d.kind).toBe("armOnce");
-    expect(h.isArmed(LEAD)).toBe(true);
+    expect(h.isArmed(LEAD)).toBe(false);
   });
 
   it("成员 session 的 pending 也能被 lead 的确认放行", () => {
