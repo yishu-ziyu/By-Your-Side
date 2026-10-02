@@ -32,7 +32,9 @@ try {
   await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).executionFact,'not_executed');await oracle(1);evidence.push({case:'same text attribute mutation invalidates approval',commits});
   await start('js',{tabId,code:'fetch("/commit",{method:"POST"})'});await card();await oracle(1);
   await iso.evalIn(page,'document.querySelector("#email").value="changed"');await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).executionFact,'not_executed');await oracle(1);evidence.push({case:'form mutation invalidates JS approval',commits});
-  await start('js',{tabId,code:'fetch("/commit",{method:"POST"})'});await card();await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).ok,true);await oracle(2);evidence.push({case:'CSV extraction JS remains available through exact approval',commits});
+  await start('js',{tabId,code:'fetch("/commit",{method:"POST"})'});await card();await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).ok,true);await oracle(2);evidence.push({case:'explicitly approved JS may post exactly once',commits});
+  await start('js',{tabId,code:'"email\\n" + document.querySelector("#email").value'});await card();await iso.clickButton(panel,'允许一次');
+  const csv=await result() as any;assert.equal(csv.ok,true);assert.equal(csv.result.value,'email\nchanged');await oracle(2);evidence.push({case:'approved CSV extraction retains complete data',commits});
   const keyboard=await iso.tool('press_key',{tabId,key:'Enter'});assert.equal(keyboard.executionFact,'not_executed');
   const cdp=await iso.tool('cdp',{tabId,method:'Input.dispatchKeyEvent',params:{type:'keyDown',key:'Enter'}});assert.equal(cdp.executionFact,'not_executed');await oracle(2);
   await start('click',{tabId,target:'#commit'});await card();await iso.evalIn(page,'location.reload()');await new Promise(resolve=>setTimeout(resolve,500));await iso.clickButton(panel,'允许一次');assert.equal((await result() as any).executionFact,'not_executed');await oracle(2);evidence.push({case:'reload invalidates old approval',commits});

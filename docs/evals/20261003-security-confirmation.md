@@ -24,9 +24,9 @@
 
 本地npm ci --ignore-scripts通过。基线lock缺@esbuild/linux-ppc64@0.28.2，本次仅补17行，无升级版本。npm test：290文件/3018单元测试通过，scale 2测试通过；typecheck通过；architecture 291生产文件通过；check:docs --base a55c69d通过，639文档零错误。合并main的会话菜单更新后再交独立审查。
 
-标准npm run build被本环境tsx CLI的Unix socket EPERM阻断；临时改用node --import tsx启动同一导出脚本的构建结果另行记录，提交不包含临时替换。Chromium下载在本环境返回空ZIP，真实浏览器验收未运行，不能算通过。
+标准npm run build被本环境tsx CLI的Unix socket EPERM阻断；临时改用node --import tsx启动同一导出脚本后构建通过，提交不包含临时替换。Chromium下载在本环境返回空ZIP，真实浏览器验收未运行，不能算通过。
 
-新增security-confirmation CI在Ubuntu执行原始npm ci、typecheck、完整测试、docs、build及真实扩展脚本。脚本用本地POST计数器独立验证未批准零提交、批准仅一次、字段变化及导航作废、JS批准保留和键盘/CDP拒绝，上传JSON与侧栏截图。CI结果未返回前不宣称完成。
+新增security-confirmation CI固定官方Actions提交SHA及lock内playwright 1.58.2，在Ubuntu执行原始npm ci、typecheck、完整测试、docs、build及真实扩展脚本。脚本用本地POST计数器独立验证未批准零提交、批准仅一次、字段变化及导航作废、JS批准保留和键盘/CDP拒绝，上传JSON与侧栏截图。CI结果未返回前不宣称完成。
 
 ## 交付边界
 
