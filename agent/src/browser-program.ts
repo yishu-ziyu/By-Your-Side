@@ -37,7 +37,7 @@ interface ProgramOptions {
    * `browser.saveFile({filename, content})` 的宿主实现（写进本会话文件区，返回只含长度的回执）。
    * 不传 = 这个会话没有文件区，程序里没有 saveFile。
    */
-  saveFile?(params: SaveFileParams): SavedFileReceipt;
+  saveFile?(params: SaveFileParams): SavedFileReceipt | Promise<SavedFileReceipt>;
 }
 
 /** browser.* 的 camelCase 别名：程序里用 EGO 风格名字，账本仍记规范 RPC 名。 */
@@ -634,7 +634,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           : name === "scrollToBottomUntil" ? await scrollToBottomUntil(params, id)
           : name === "armEvent" ? await armEvent(params, id)
           : name === "downloadSaveAs" ? await downloadSaveAs(params, id)
-          : name === "saveFile" && options.saveFile ? (isSaveFileParams(params) ? options.saveFile(params) : rejectSaveFileParams())
+          : name === "saveFile" && options.saveFile ? (isSaveFileParams(params) ? await options.saveFile(params) : rejectSaveFileParams())
           : await options.call(canonical as ToolName, callParams, id);
 
         if (result && typeof result === "object" && "held" in result && result.held) {

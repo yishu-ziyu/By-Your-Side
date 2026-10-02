@@ -377,9 +377,8 @@ const completedConversations = new Set<string>();
 let conversationRequest: string | null = null;
 
 /**
- * 面板每次"打开进入"都开一段新会话：文档启动即置位，重连不重置。
- * 决定方式——上一段还是空白页（标题仍是"新会话"）就复用它，否则另开一段；
- * 方案见 docs/evals/20260911-open-panel-new-session.md。
+ * 面板打开时恢复上次会话；没有可用会话才新建。
+ * 用户用＋明确新建，重启与重连不自动丢弃原任务。
  */
 let bootFreshSession = true;
 
@@ -667,6 +666,7 @@ function resetConversationRender(): void {
   currentDraftReady = false;
   updateStarterVisibility();
   const resumeRoot = document.getElementById("resume-entry-root");
+  artifactCards.reset();
   messagesEl.replaceChildren();
 
   if (resumeRoot) messagesEl.appendChild(resumeRoot);
@@ -719,7 +719,7 @@ function selectConversation(id: string, notify = true): void {
 }
 
 /**
- * 打开进入时的会话决策：清单里上一段还是空白的新会话就复用它，否则另开一段。
+ * 打开进入时恢复清单里的上次会话，没有可用会话才新建。
  * 清单没到、后台还没连上都不急着建；等下一次清单/连接事件或兜底时限再定。
  */
 function resolveBootSession(inheritedId: string, listKnown: boolean): void {
@@ -729,7 +729,7 @@ function resolveBootSession(inheritedId: string, listKnown: boolean): void {
 
   if (!inherited && !listKnown) return;
 
-  if (inherited && inherited.title === "新会话" && inherited.state === "idle") {
+  if (inherited) {
     finishBootSession();
     selectConversation(inheritedId, false);
 
@@ -2784,7 +2784,7 @@ function appendToMessages(node: HTMLElement): void {
 const artifactCards = new ArtifactCards((el) => {
   appendToMessages(el);
   scrollToEnd();
-});
+}, () => selectedConversationId);
 
 function addMsg(cls: string, text: string): HTMLElement {
   if (cls.split(/\s+/).includes("user")) {

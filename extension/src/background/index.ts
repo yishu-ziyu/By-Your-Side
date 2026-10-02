@@ -9,7 +9,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
-import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId } from "../../../shared/protocol.js";
+import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import {
@@ -195,7 +195,7 @@ const transport = new Uplink({
 
    if (msg.type === "conversation_updated" || msg.type === "conversation_created") { conversationSummaries = [...conversationSummaries.filter(c => c.id !== msg.conversation.id), msg.conversation]; void setConversationTitle(msg.conversation.id, msg.conversation.title); controller(msg.conversation.id).restoreMode(msg.conversation.mode); }
 
-   if (msg.type === "conversation_created") { voiceRelay.selectionChanged(msg.conversation.id); selectedConversationId = msg.conversation.id; setVisibleConversationId(selectedConversationId); void chrome.storage.session.set({ selectedConversationId }); controller(msg.conversation.id); }
+   if (msg.type === "conversation_created") { voiceRelay.selectionChanged(msg.conversation.id); selectedConversationId = msg.conversation.id; setVisibleConversationId(selectedConversationId); void chrome.storage.local.set({ selectedConversationId }); controller(msg.conversation.id); }
 
    if (msg.type === "conversation_list") for (const c of msg.conversations) controller(c.id);
 
@@ -220,7 +220,7 @@ const transport = new Uplink({
 const reading = installReading({
   send: message => transport.sendClientMessage(message), selected: () => selectedConversationId,
   import: async (id, record) => { const c = controller(id); await c.ready; await c.importReading(record); },
-  select: id => { selectedConversationId = id; setVisibleConversationId(id); void chrome.storage.session.set({selectedConversationId:id}); controller(id); broadcastConversations(); },
+  select: id => { selectedConversationId = id; setVisibleConversationId(id); void chrome.storage.local.set({selectedConversationId:id}); controller(id); broadcastConversations(); },
 });
 
 const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), () => selectedConversationId,async(id,input)=>{
@@ -251,7 +251,7 @@ chrome.runtime.onConnect.addListener(port => {
  port.onMessage.addListener((msg: PanelToBg) => {
   if (!msg || typeof msg !== "object") return;
 
-  if (msg.kind === "select_conversation") { voiceRelay.selectionChanged(msg.conversationId); selectedConversationId = msg.conversationId; setVisibleConversationId(selectedConversationId); controller(selectedConversationId); void chrome.storage.session.set({selectedConversationId}); broadcastConversations(); }
+  if (msg.kind === "select_conversation") { voiceRelay.selectionChanged(msg.conversationId); selectedConversationId = msg.conversationId; setVisibleConversationId(selectedConversationId); controller(selectedConversationId); void chrome.storage.local.set({selectedConversationId}); broadcastConversations(); }
 
   if (msg.kind === "sync") { broadcastConversations(); transport.sendClientMessage({type:"conversation_list"}); }
 
@@ -335,7 +335,7 @@ async function pruneStoredHistory(keep: number): Promise<void> {
 void (async () => {
  try {
   const [stored, local] = await Promise.all([chrome.storage.session.get(null), chrome.storage.local.get(null)]);
-  selectedConversationId = typeof stored.selectedConversationId === "string" ? stored.selectedConversationId : "default";
+  selectedConversationId = validConversationId(local.selectedConversationId) ? local.selectedConversationId : validConversationId(stored.selectedConversationId) ? stored.selectedConversationId : "default";
   setVisibleConversationId(selectedConversationId);
   controller("default");
 

@@ -2,7 +2,7 @@
  * 扩展内 agent 的会话目录（IndexedDB）。offscreen 文档崩溃、被 Chrome 回收或扩展重载后，
  * 新起的核心按这里重建会话，侧栏手里的会话编号仍然有效，重发不再落到不存在的会话上。
  *
- * 只存会话摘要和阅读交接；模型上下文（浏览器版 agent 循环的消息）仍只在内存里，重启后从空上下文继续。
+ * 这里只存会话摘要和阅读交接；模型上下文与检查点由pi-session-idb的原生Pi会话另存。
  * 核心的 load() 是同步的，所以先用 openConversationStore() 读进内存；写入是后台的，失败只记日志。
  */
 import type { ConversationPersistence } from "@sideagent/agent/browser-core";

@@ -17,7 +17,11 @@ export interface AgentLoop extends Pick<
     continue(): Promise<void>;
     waitForIdle(): Promise<void>;
   };
-  readonly sessionManager: Pick<SessionManager, "appendCustomEntry" | "getBranch">;
+  readonly sessionManager: {
+    appendCustomEntry(customType: string, data?: Parameters<SessionManager["appendCustomEntry"]>[1]): string | Promise<string>;
+    getBranch(): ReturnType<SessionManager["getBranch"]>;
+  };
+  flushPersistence?(): Promise<void>;
 }
 
 /**
@@ -69,6 +73,7 @@ class FailoverLoop implements AgentLoop {
     };
   }
   get sessionManager() { return this.inner.sessionManager; }
+  flushPersistence() { return this.inner.flushPersistence?.() ?? Promise.resolve(); }
   get model() { return this.inner.model; }
   get sessionId() { return this.inner.sessionId; }
   get isStreaming() { return this.running || this.inner.isStreaming; }
@@ -161,7 +166,7 @@ class FailoverLoop implements AgentLoop {
       this.heldEnd = undefined;
       const from = `${previous.provider}/${previous.id}`;
       const to = `${backup.provider}/${backup.id}`;
-      this.inner.sessionManager.appendCustomEntry("sideagent-model-fallback-v1", { from, to });
+      await this.inner.sessionManager.appendCustomEntry("sideagent-model-fallback-v1", { from, to });
       this.onSwitch(from, to);
       // Pi's normal retry removes only the failed assistant from model context.
       // Tool results remain, so continuing cannot execute already finished tools again.

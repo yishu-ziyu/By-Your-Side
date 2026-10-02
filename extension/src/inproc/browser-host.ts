@@ -1,5 +1,6 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ClientConn, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, MemoryStore, RealtimeVoiceSession, TaskHistoryStore, startHostCore, usePendingMemoryJudgments, type ArtifactPersistence, type ClientConn, type HostCore } from "@sideagent/agent/browser-core";
+import type { Session } from "@earendil-works/pi-agent-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import type { createModelRuntime, ModelRuntime } from "./model-runtime.js";
@@ -8,6 +9,8 @@ import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
 import { openConversationStore } from "./conversation-store.js";
+import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-store.js";
+import { openPiSession } from "./pi-session-idb.js";
 import { IdbDocument } from "./document-idb.js";
 
 type Inbound = ClientMessage
@@ -16,6 +19,8 @@ type Inbound = ClientMessage
 
 export interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
+  /** Tests explicitly inject a session backend; production always uses IndexedDB. */
+  sessionData?: (id: string) => Promise<{ session: Session; files?: ArtifactPersistence }>;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
@@ -69,12 +74,20 @@ export function startInprocHost(deps: InprocHostDeps): void {
       store,
       memoryStore,
       taskHistory,
-      createRuntime: (id, emit, summary) => createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
-        loop: { models: modelPort, cwd: "/" }, mode: summary?.mode,
+      createRuntime: async (id, emit, summary) => {
+        const data = deps.sessionData ? await deps.sessionData(id) : {
+          session: await openPiSession(id),
+          files: {load:()=>listArtifacts(id),save:(item: Parameters<ArtifactPersistence["save"]>[0])=>writeArtifact(id,item),delete:(filename:string)=>deleteArtifact(id,filename)},
+        };
+
+        return createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
+        loop: { models: modelPort, cwd: "/", session: data.session },
+        artifactPersistence: data.files, mode: summary?.mode,
         fallbackModelPattern: "zai-coding-cn/glm-5.3-flash",
         memoryStore,
         taskHistory,
-      }),
+        });
+      },
       voiceKey: async () => {
         if (!voiceConfigured) throw new Error("还没有语音 key：打开右上角「更多 → 模型与语音」，在「实时语音」里填阶跃星辰的 key。");
 

@@ -115,9 +115,9 @@ client → tool_result{conversationId, id, ok:true, data, executionFact:"execute
 
 ## 面板恢复与 Pi 持久化
 
-扩展内部 relay 使用 `select_conversation{conversationId}` 切换显示，`sync{conversationId, afterSeq?}` 按会话同步历史；历史和状态 envelope 带 `conversationId`。选择项保存在 `chrome.storage.session`，聊天历史与各会话的输入草稿、待发送附件保存在 `chrome.storage.local`。历史序号单调递增，新一轮用户消息不会清空前面的轮次。
+扩展内部 relay 使用 `select_conversation{conversationId}` 切换显示，`sync{conversationId, afterSeq?}` 按会话同步历史；历史和状态 envelope 带 `conversationId`。选择项保存在 `chrome.storage.local`，聊天历史与各会话的输入草稿、待发送附件保存在 `chrome.storage.local`。历史序号单调递增，新一轮用户消息不会清空前面的轮次。
 
-当前纯扩展仅持久化会话目录与部分交接资料；模型消息、任务检查点和会话文件内容仍主要在内存。重启后恢复侧栏历史不等于恢复模型上下文或任务。上述本机文件恢复属于已退役架构；扩展恢复缺口与方案见[记忆研究](research/20261002-extension-memory.md)。
+纯扩展用Pi原生Session持久化模型消息与任务检查点，并独立保存会话文件。接受任务及发送浏览器RPC前等待存储提交；失败不执行。恢复规则与范围见[扩展会话恢复](memory-and-tasks.md#扩展会话恢复)。
 
 ## 跨会话记忆与任务跨轮
 

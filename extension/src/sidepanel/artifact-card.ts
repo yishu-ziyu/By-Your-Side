@@ -5,6 +5,7 @@
  * 「打开」把内容放进 chrome.storage.session，再在新标签页开查看页（artifact-viewer-page.ts）；
  * 之后同名再保存或删除时同步这份副本，已开的查看页跟着更新或提示文件已不在。
  */
+import { readArtifact } from "../shared/durable-store.js";
 import type { AgentUiEvent } from "../../../shared/protocol.js";
 
 type ArtifactEvent = Extract<AgentUiEvent, { kind: "artifact" }>;
@@ -59,16 +60,33 @@ export function download(filename: string, content: string, encoding?: "base64")
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-type Card = { root: HTMLElement; meta: HTMLElement; buttons: HTMLButtonElement[]; content: string; encoding?: "base64"; viewKey: string; opened: boolean };
+type Card = { root: HTMLElement; meta: HTMLElement; buttons: HTMLButtonElement[]; content: string; encoding?: "base64"; viewKey: string; opened: boolean; previewToggle: HTMLButtonElement };
 
 export class ArtifactCards {
   private readonly cards = new Map<string, Card>();
   /** 本轮新建或改过的卡片：回合结束时挪到回答下面，用户读完回答就能看到。 */
   private readonly touched = new Set<string>();
 
-  constructor(private readonly append: (el: HTMLElement) => void) {}
+  private generation = 0;
+  reset(): void { this.generation += 1; this.cards.clear(); this.touched.clear(); this.revisions.clear(); }
+  private readonly revisions = new Map<string, number>();
+  constructor(private readonly append: (el: HTMLElement) => void, private readonly conversation: () => string = () => "default") {}
 
   apply(event: ArtifactEvent): void {
+    const revision = (this.revisions.get(event.filename) ?? 0)+1;
+    this.revisions.set(event.filename,revision);
+    const conversation = this.conversation(), generation = this.generation;
+
+    if(event.action === "saved" && event.content === undefined) {
+      void readArtifact(conversation,event.filename).then(item => {
+        if(this.generation !== generation || this.conversation() !== conversation || this.revisions.get(event.filename) !== revision)return;
+
+        if(item)this.apply({...event,...item});
+      }).catch(error => console.error("文件读取失败",error));
+
+      return;
+    }
+
     const existing = this.cards.get(event.filename);
 
     if (event.action === "deleted") {
@@ -80,6 +98,7 @@ export class ArtifactCards {
 
       existing.root.querySelector(".artifact-preview")?.remove();
       existing.root.dataset.kind = "file";
+      existing.previewToggle.hidden = true;
 
       if (existing.opened) void chrome.storage.session.remove(existing.viewKey);
 
@@ -133,19 +152,32 @@ export class ArtifactCards {
     button.className = "artifact-download";
     button.textContent = "下载";
     button.title = `下载 ${filename}`;
-    const card: Card = { root, meta, buttons: [open, button], content: "", viewKey: `${VIEW_KEY_PREFIX}${crypto.randomUUID()}`, opened: false };
+    const previewToggle = document.createElement("button");
+    previewToggle.type = "button";
+    previewToggle.className = "artifact-preview-toggle";
+    previewToggle.textContent = "展开";
+    previewToggle.setAttribute("aria-expanded", "false");
+    previewToggle.hidden = true;
+    const card: Card = { root, meta, previewToggle, buttons: [open, button, previewToggle], content: "", viewKey: `${VIEW_KEY_PREFIX}${crypto.randomUUID()}`, opened: false };
     open.addEventListener("click", () => void this.open(filename, card));
     button.addEventListener("click", () => download(filename, card.content, card.encoding));
-    root.append(info, open, button);
+    previewToggle.addEventListener("click", () => {
+      const expanded = root.dataset.expanded !== "true";
+      root.dataset.expanded = String(expanded);
+      previewToggle.setAttribute("aria-expanded", String(expanded));
+      previewToggle.textContent = expanded ? "收起" : "展开";
+    });
+    root.append(info, open, button, previewToggle);
     this.cards.set(filename, card);
     this.append(root);
 
     return card;
   }
 
-  /** 截图卡片：卡片上方直接显示图片（data: 地址，随历史回放），点图片在新标签页看大图。 */
+  /** 默认缩略图保留文件名与操作；展开用同一原图，不调用模型。点图打开查看页。 */
   private preview(card: Card): void {
     const old = card.root.querySelector<HTMLImageElement>(".artifact-preview");
+    card.previewToggle.hidden = card.encoding !== "base64";
 
     if (card.encoding !== "base64") {
       old?.remove();

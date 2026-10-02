@@ -18,3 +18,5 @@ export { usePendingMemoryJudgments } from "./memory-runtime.js";
 export { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 
 export { TaskHistoryStore } from "./task-history.js";
+
+export type { ArtifactPersistence } from "./artifacts-tool.js";

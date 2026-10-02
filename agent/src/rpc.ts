@@ -123,6 +123,7 @@ export class ToolRpc {
   private pageTargetSeq = 0;
 
   /** 出站前由会话补的宿主参数（例如用户要求提交前确认时给点击带上 confirmSubmit）；模型不能自己设。 */
+  beforeCall?: () => Promise<void>;
   decorateParams?: (name: ToolName, params: Parameters<ToolRpc["call"]>[1], sessionId?: string) => Parameters<ToolRpc["call"]>[1];
 
   constructor(send?: RpcSend) {
@@ -275,7 +276,13 @@ export class ToolRpc {
   }
 
   /** 发起一次工具调用；超时或断连时 reject。工人调用传入 sessionId，扩展按 session 绑 tab/光标。 */
-  call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal): Promise<unknown> {
+  async call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal): Promise<unknown> {
+    try { if(this.beforeCall)await this.beforeCall(); } catch (error) {
+      const failed: ToolExecutionError = error instanceof Error ? error : new Error(String(error));
+      failed.executionFact = "not_executed";
+      throw failed;
+    }
+
     const send = this.sendFn;
 
     if (!send) {

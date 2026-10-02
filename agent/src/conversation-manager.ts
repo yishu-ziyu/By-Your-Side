@@ -978,7 +978,7 @@ return;}
       if (!auditMissing && !unknown && snapshot.state !== 'interrupted') progress.request(call.text,input.context,input.attachments);
       else progress.recordUserTurn(call.text,call.inputId);
 
-      try { entry.runtime.session.persistAcceptedTask(progress.snapshot(),input.attachments); }
+      try { await entry.runtime.session.persistAcceptedTask(progress.snapshot(),input.attachments); }
       catch (error) { progress.restoreResults(before); throw realtimeBrowserError(error, 'not_executed'); }
 
       entry.runtime.session.prepareRealtimeBrowserInput(call.text,input.context);
@@ -1067,8 +1067,8 @@ return receipt;
         const rollback=progress.recordRequirement(amendment,undefined,request.attachments);
 
         try {
-          entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
-          entry.runtime.session.persistTaskResults?.(progress.snapshot());
+          await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
+          await entry.runtime.session.persistTaskResults?.(progress.snapshot());
         } catch(error) { rollback(); throw error; }
 
         progress.recordUserTurn(originalRequest.text??'',request.requestId);
@@ -1083,8 +1083,8 @@ return receipt;
         const rollback=progress.recordRequirement(request.text??'',request.context,request.attachments);
 
         try {
-          entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId,request.attachments);
-          entry.runtime.session.persistTaskResults?.(progress.snapshot());
+          await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId,request.attachments);
+          await entry.runtime.session.persistTaskResults?.(progress.snapshot());
         } catch(error) { rollback(); throw error; }
 
         progress.recordUserTurn(request.text??'',request.requestId);
@@ -1138,7 +1138,7 @@ return receipt;
         this.pendingStarts.delete(request.conversationId);this.checkpointResumes.delete(request.conversationId);
         this.progress.get(request.conversationId)!.interrupt(snapshot.interruptionReason??'manual_continuation');
         entry.runtime.session.abort();
-        entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
 
         return {status:'applied',runId:request.expectedRunId,message:'恢复已停止，原任务仍保留在检查点；没有继续执行。'};
       }
@@ -1150,7 +1150,7 @@ return receipt;
         this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
         this.progress.get(request.conversationId)?.abort();
         entry.runtime.handleMessage({type:'abort'});
-        entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
 
         return {status:'applied',runId:request.expectedRunId,message:'已终止保留在检查点的原任务。'};
       }
@@ -1193,11 +1193,11 @@ return receipt;
         const acceptedRunId=targetProgress.snapshot().runId??null;
 
         try{
-          if(entry.runtime.session.persistAcceptedTask)entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(),request.attachments);
+          if(entry.runtime.session.persistAcceptedTask)await entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(),request.attachments);
           else{
             // Test/legacy runtime fallback; production BrowserAgentSession uses the atomic envelope above.
-            entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId,request.attachments);
-            entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
+            await entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId,request.attachments);
+            await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
           }
         }catch(error){
           targetProgress.restoreResults(beforeAccept);
@@ -1252,9 +1252,9 @@ return receipt;
         dropPendingConsent();
         const progress=this.progress.get(request.conversationId)!;
         progress.recordRequirement(request.text??'',undefined,request.attachments);
-        entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
+        await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
         progress.reviseResults();progress.recordUserTurn(request.text??'',request.requestId);
-        entry.runtime.session.persistTaskResults?.(progress.snapshot());
+        await entry.runtime.session.persistTaskResults?.(progress.snapshot());
 
         return {status:'accepted',runId:snapshot.runId??null,message:'修改已保存到原任务；明确说“继续原任务”后再执行。'};
       }
@@ -1264,14 +1264,14 @@ return receipt;
         dropPendingConsent();
         const originRun=snapshot.runId;
         this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
-        entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
+        await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
         entry.runtime.session.queueSteerForResume(request.text??'',request.context,request.attachments);
         const members = await entry.runtime.fleet.reviseSharedRequirement?.(request.text??'',request.context,request.attachments);
 
         if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
           this.progress.get(request.conversationId)?.reviseResults();
           this.progress.get(request.conversationId)?.recordUserTurn(request.text??'',request.requestId);
-          entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+          await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
         }
 
         const memberNote = members ? memberRevisionNotice(members) : '';
@@ -1288,13 +1288,13 @@ return receipt;
       dropPendingConsent();
       const originRun=snapshot.runId;
       const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
-      entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
+      await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
 
       try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments);}
       catch(error){
         if(error instanceof TaskActionRejected){
           revokeRequirement();
-          entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+          await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
         }
 
         throw error;
@@ -1310,7 +1310,7 @@ return receipt;
       if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
         this.progress.get(request.conversationId)?.reviseResults();
         this.progress.get(request.conversationId)?.recordUserTurn(request.text??'',request.requestId);
-        entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
       }
 
       const memberNote = members ? memberRevisionNotice(members) : '';
@@ -1838,9 +1838,9 @@ return;
       const progress = this.progress.get(id);
       const before = progress?.snapshot().runId ?? null;
       progress?.request(message.text,message.context,message.attachments);
-      entry.runtime.session.persistRecoveryAttachments?.(progress?.snapshot().runId??null,message.attachments);
+      await entry.runtime.session.persistRecoveryAttachments?.(progress?.snapshot().runId??null,message.attachments);
 
-      if(progress)entry.runtime.session.persistTaskResults?.(progress.snapshot());
+      if(progress)await entry.runtime.session.persistTaskResults?.(progress.snapshot());
 
       // 只有真正开了新任务才换身份：运行中的同一条消息会转成插话，沿用当前 runId。
       if (progress && (progress.snapshot().runId ?? null) !== before) this.publishRunIdentity(id);

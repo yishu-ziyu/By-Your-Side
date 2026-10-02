@@ -10,7 +10,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, stat, writeFile, unlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -409,7 +409,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
 
   for (const name of ["STEPFUN_API_KEY", "SIDEAGENT_STEP_PLAN_KEY", "TYPESAFE_API_KEY", "SIDEAGENT_DATA_DIR"]) delete env[name];
 
-  const chrome = spawn(resolveChrome(), [
+  const spawnChrome = () => spawn(resolveChrome(), [
     "--headless=new",
     "--mute-audio",
     "--enable-unsafe-extension-debugging",
@@ -426,6 +426,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"], env });
 
+  let chrome = spawnChrome();
   tempDir.setChild(chrome);
 
   let chromeStderr = "";
@@ -441,7 +442,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
   }, 20_000, "Chrome 调试端口");
 
   const version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
-  const cdp = createCdp(version.webSocketDebuggerUrl);
+  let cdp = createCdp(version.webSocketDebuggerUrl);
   await cdp.ready();
 
   const controls = browserControls(cdp, id);
@@ -464,7 +465,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
     return { hostPids: none, exitedWithChrome: true, killed: none };
   };
 
-  return {
+  const result = {
     root,
     dirs,
     extensionId: id,
@@ -475,7 +476,31 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [] }: { micro
     chromeStderr: () => chromeStderr,
     close,
     remove: async () => tempDir.release(),
+    async restart({ abrupt = false } = {}) {
+      if(abrupt) {
+        await cdp.close().catch(() => {});
+        chrome.kill("SIGKILL");
+        await Promise.race([new Promise(done => chrome.once("close",done)),sleep(5000)]);
+      } else await close();
+      await unlink(join(dirs.profile, "DevToolsActivePort")).catch(() => {});
+      chrome = spawnChrome();
+      tempDir.setChild(chrome);
+      chrome.stderr.on("data", chunk => { chromeStderr = (chromeStderr + chunk).slice(-200_000); });
+
+      const nextPort = await until(async () => {
+        if (chrome.exitCode !== null) throw new Error(`Chrome重启退出: ${chrome.exitCode}`);
+
+        return (await readFile(join(dirs.profile, "DevToolsActivePort"), "utf8").catch(() => "")).split("\n")[0] || undefined;
+      }, 20_000, "同配置Chrome重启");
+
+      const next = await fetchJson(`http://127.0.0.1:${nextPort}/json/version`);
+      cdp = createCdp(next.webSocketDebuggerUrl);
+      await cdp.ready();
+      Object.assign(result, { cdp, ...browserControls(cdp, id) });
+    },
   };
+
+  return result;
 }
 
 // ── 日常数据隔离的证据 ──────────────────────────────────────────

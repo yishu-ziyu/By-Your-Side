@@ -8,15 +8,16 @@
  * - 运行：每轮结束后可重试的错误按 3 次、2 秒起翻倍重试，再 continue；结束时写入暂存的自定义消息；
  * - sendCustomMessage 的五个分支、插话记账、agent_end 的 willRetry、auto_retry_start/end 事件；
  * - 切换工具时用 composeSystemPrompt 重建系统提示词（与 Pi 逐字一致，见 system-prompt.test.ts）。
- * 不做：上下文压缩、扩展命令、提示词模板、技能命令（我们都没用）。
+ * 会话消息和任务检查点可交给Pi原生Session；扩展提供持久存储。
  */
-import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { Agent, convertToLlm, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { isProviderBusyError } from "../../shared/provider-busy.js";
 import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
+import { PiSessionPersistence } from "./pi-session-persistence.js";
 import { composeSystemPrompt } from "./system-prompt.js";
 
 export interface PiAgentLoopOptions {
@@ -29,6 +30,8 @@ export interface PiAgentLoopOptions {
   cwd: string;
   extensionFactories: readonly ExtensionFactory[];
   sessionId?: string;
+  persistence?: PiSessionPersistence;
+  messages?: AgentMessage[];
   retry?: { maxRetries: number; baseDelayMs: number };
   onHookError?: (event: string, message: string) => void;
   /** 每次模型调用前观察实际请求（诊断记录用）；只读，抛错被吞掉。 */
@@ -75,7 +78,7 @@ const userContent = (content: CustomAppMessage["content"]): (TextContent | Image
 
 export class PiAgentLoop implements AgentLoop {
   readonly agent: Agent;
-  readonly sessionManager = new MemoryEntries();
+  readonly sessionManager: MemoryEntries | PiSessionPersistence;
   private readonly listeners = new Set<AgentSessionEventListener>();
   private readonly definitions: Map<string, ToolDefinition>;
   private readonly hooks: ExtensionHost;
@@ -92,6 +95,7 @@ export class PiAgentLoop implements AgentLoop {
   private retryAttempt = 0;
   private retryAbort: AbortController | undefined;
   private runActive = false;
+  private abortVersion = 0;
   private hookChain: Promise<void> = Promise.resolve();
   private idleWaiters: Array<() => void> = [];
   /** 本次调用里宿主插入的上下文消息：convertToLlm 把 custom 转成 user 前记下，紧接着的模型调用读取。 */
@@ -99,6 +103,7 @@ export class PiAgentLoop implements AgentLoop {
 
   constructor(private readonly options: PiAgentLoopOptions) {
     // 1、2、4 秒三次重试：服务真坏了约 7 秒就告诉用户，而不是让人干等半分钟。
+    this.sessionManager = options.persistence ?? new MemoryEntries();
     this.retry = options.retry ?? { maxRetries: 3, baseDelayMs: 1000 };
     this.definitions = new Map(options.tools.map(tool => [tool.name, tool]));
     this.active = options.tools.map(tool => tool.name);
@@ -112,20 +117,20 @@ export class PiAgentLoop implements AgentLoop {
     });
 
     this.agent = new Agent({
-      initialState: { model: options.model, systemPrompt: "", tools: [], messages: [] },
+      initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
       streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort),
-      // 与 Pi 的 convertToLlm 相同；我们不产生 bash、分支摘要、压缩摘要消息，遇到就丢弃。
+      // Pi原生转换保留自定义消息、压缩摘要与分支摘要。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
 
-        return messages.flatMap(message => {
-          if (message.role === "custom") return [{ role: "user" as const, content: userContent(message.content), timestamp: message.timestamp }];
-
-          return message.role === "user" || message.role === "assistant" || message.role === "toolResult" ? [message] : [];
-        });
+        return convertToLlm(messages);
       },
       transformContext: async messages => (this.hooks.has("context") ? this.contextThroughHooks(messages) : messages),
-      beforeToolCall: async ({ toolCall, args }) => (this.hooks.has("tool_call") ? this.hooks.toolCall(toolCall.name, toolCall.id, hookArgs(args)) : undefined),
+      beforeToolCall: async ({ toolCall, args }) => {
+        await this.flushPersistence();
+
+        return this.hooks.has("tool_call") ? this.hooks.toolCall(toolCall.name, toolCall.id, hookArgs(args)) : undefined;
+      },
       afterToolCall: async ({ toolCall, args, result, isError }) => {
         if (!this.hooks.has("tool_result")) return undefined;
 
@@ -178,7 +183,16 @@ export class PiAgentLoop implements AgentLoop {
     return () => { this.listeners.delete(listener); };
   }
 
+  async flushPersistence(): Promise<void> { await this.options.persistence?.flush(); }
+
   async prompt(text: string, options?: PromptOptions): Promise<void> {
+    if (this.options.persistence) {
+      const version = this.abortVersion;
+      await this.flushPersistence();
+
+      if(version !== this.abortVersion)throw new Error("本轮已取消，没有启动模型或操作页面。");
+    }
+
     const images = options?.images;
 
     if (this.hooks.has("input")) await this.hooks.input(text);
@@ -227,6 +241,7 @@ export class PiAgentLoop implements AgentLoop {
   }
 
   async abort(): Promise<void> {
+    this.abortVersion += 1;
     this.retryAbort?.abort();
     this.agent.abort();
     await this.waitForIdle();
@@ -263,10 +278,13 @@ export class PiAgentLoop implements AgentLoop {
     } finally {
       this.override = undefined;
       this.flushCustom();
-      this.runActive = false;
-      this.emit({ type: "agent_settled" });
 
-      for (const resolve of this.idleWaiters.splice(0)) resolve();
+      try { await this.flushPersistence(); } finally {
+        this.runActive = false;
+        this.emit({ type: "agent_settled" });
+
+        for (const resolve of this.idleWaiters.splice(0)) resolve();
+      }
     }
   }
 
@@ -336,7 +354,12 @@ export class PiAgentLoop implements AgentLoop {
       }
     }
 
-    this.emit(event.type === "agent_end" ? { ...event, willRetry: this.willRetry(event.messages) } : event);
+    if (event.type === "message_end") this.options.persistence?.appendMessage(event.message);
+
+    if(event.type === "agent_end" && this.options.persistence) {
+      const end = {...event,willRetry:this.willRetry(event.messages)};
+      void this.flushPersistence().then(() => this.emit(end)).catch(() => {});
+    } else this.emit(event.type === "agent_end" ? { ...event, willRetry: this.willRetry(event.messages) } : event);
 
     if (event.type === "message_end" && event.message.role === "assistant") {
       const message = event.message;

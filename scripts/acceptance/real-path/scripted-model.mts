@@ -104,7 +104,7 @@ export type TranslateOptions = { maxConcurrent?: number; delayMs?: number; /** �
 
 const THROTTLE_BODY = JSON.stringify({ error: { type: "permission_error", message: "You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again." }, type: "error" });
 
-export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions) {
+export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions, inspect?: (payload: { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] }) => void) {
   const origin = Date.now();
   const requests: ModelRequest[] = [];
   let calls = 0;
@@ -128,6 +128,7 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     // SAFETY: OpenAI 兼容请求体，messages 为消息数组。
     const payload = JSON.parse(await body(req)) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
     const messages = payload.messages ?? [];
+    inspect?.(payload);
 
     if (translate && messages.some((m) => m.role === "system" && textOf(m.content).startsWith("Translate the supplied webpage text"))) {
       const atMs = Date.now() - origin;

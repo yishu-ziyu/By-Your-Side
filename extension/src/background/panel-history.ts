@@ -44,6 +44,11 @@ export class PanelHistory {
   }
 
   record(item: PanelHistoryItem): PanelHistoryEntry {
+    if(item.kind === "server" && item.msg.type === "agent_event" && item.msg.event.kind === "artifact" && item.msg.event.action === "saved") {
+      const { content: _content, ...event } = item.msg.event;
+      item = {...item,msg:{...item.msg,event}};
+    }
+
     const stream=item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='user_delivery_stream'?item.msg.event.stream:null;
     const completed=item.kind==='server'&&item.msg.type==='agent_event'&&item.msg.event.kind==='user_delivery'?item.msg.event.delivery:null;
 

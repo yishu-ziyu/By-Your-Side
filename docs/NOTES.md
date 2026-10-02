@@ -23,7 +23,7 @@
 | 跑分与评测（10-02） | [测量规则](../eval/README.md)：同一把尺子、改规则有门槛、站点不可用单列、只认超出误差（每档约 30 题时约正负 14 点）、保留集只用一次；已知问题修完前不跑；判分固定 Codex gpt-6-sol（ChatGPT 账号不支持 gpt-6.1-sol）；复核页 `eval/harness/review.mjs`，看板 `npm run dashboard` |
 | 回答自检（10-02） | [验收](evals/20261002-answer-selfcheck.md)：真实 GLM 曾漏掉 CSV 合计，明确整数数量表改由程序核算。核对读取文本文件不再只看元数据；固定页面与真实主模型检查不替代 #35。先 #28、再 #25 是用户本轮确认的顺序 |
 | 用户可见的交付证据 | 用户要求可见 Chrome 操作和 GIF/短视频；本项目优先用真实任务展示请求、动作与结果，附测量条件。已完成 PDF 实录，见[验收](evals/20261002-pdf-download.md)。不把录像中的一次耗时扩大为整体性能结论 |
-| 记忆研究（10-02） | [研究](research/20261002-extension-memory.md)：已有长期资料与网站方法，不是从零建记忆。优先用Pi 0.84.4原生Session与上下文重建，补IndexedDB和产物持久化；AgentHarness运行方法未实现，不能整套替换。侧栏回放不代表模型已恢复。不要先加向量库 |
+| 记忆研究（10-02） | [研究](research/20261002-extension-memory.md)：已有长期资料与网站方法，不是从零建记忆。优先用Pi 0.84.4原生Session与上下文重建，补IndexedDB和产物持久化；AgentHarness运行方法未实现，不能整套替换。本轮已接入持久化并真实重启验证，见[验收](evals/20261002-session-durability.md)。旧版未落盘材料不能推成完整恢复。不要先加向量库 |
 | 修改后如何收尾 | [文档维护](development/documentation.md) · [经验索引](knowledge/index.md) |
 | 0 号用户逐条评语 | [逐条记录](evals/20260930-zero-user-incremental-review.md)：用户要求一次一条；正确结果与成功体验分开保存，不把对手动速度与成本的感受冒充实测数据 |
 | 用户面前的文字从哪来 | [界面问题 10 项](evals/20260926-ux-fixes.md)：内部文字只在 `shared/user-facing.ts` 翻译；「另开会话接手即收起旧确认」是本轮执行者的取舍，待用户认可 |

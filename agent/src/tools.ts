@@ -153,13 +153,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
   /** screenshot forUser：把这张图存进本会话文件区，侧栏显示成回答里的图片卡片；做不到时如实告诉模型用户没看到。 */
-  const deliverScreenshot = (base64: string): string => {
+  const deliverScreenshot = async (base64: string): Promise<string> => {
     const store = files?.();
 
     if (!store) return " NOT shown to the user: this conversation cannot show images in the side panel. Tell the user you could not send the picture.";
 
     try {
       const { filename } = store.saveImage(base64);
+      await store.flush?.();
 
       return ` Shown to the user in the side panel as image ${filename} (they can enlarge and download it).`;
     } catch (error) {
@@ -482,12 +483,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const result = await runBrowserProgram({ code: params.code, api, pageTabId,
           call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
           authorizeUpload: (refs) => authorizeUploadPaths(refs, { ledger: execution?.uploadLedger }),
-          saveFile: files ? (args) => {
+          saveFile: files ? async (args) => {
             const store = files();
 
             if (!store) throw new Error("这个会话没有文件区，saveFile 不可用，未保存。");
 
-            return saveFileFromProgram(store, args);
+            const receipt = saveFileFromProgram(store, args);
+            await store.flush?.();
+
+            return receipt;
           } : undefined,
           // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => execution?.onStep ? execution.onStep(programStep) : onUpdate?.({ content: [], details: { programStep } }),
@@ -1332,7 +1336,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           content: [
             {
               type: "text" as const,
-              text: `Screenshot of working tab ${data.tabId} (${data.title || "(untitled)"} — ${data.url}) via ${data.source}.${geometry}${forUser === true ? deliverScreenshot(data.imageBase64) : ""}`,
+              text: `Screenshot of working tab ${data.tabId} (${data.title || "(untitled)"} — ${data.url}) via ${data.source}.${geometry}${forUser === true ? await deliverScreenshot(data.imageBase64) : ""}`,
             },
             { type: "image" as const, data: data.imageBase64, mimeType: data.mediaType },
           ],

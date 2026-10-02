@@ -8,6 +8,7 @@
  * - 指向过期任务的修订被拒绝，也不进入模型输入。
  *
  */
+import { InMemorySessionRepo } from "@earendil-works/pi-agent-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -223,7 +224,7 @@ async function inprocEntry(script: ScriptedModel): Promise<Entry> {
   };
 
   // SAFETY: browser-host 只用到 runtime 的这些成员和端口的 name / postMessage / onMessage / onDisconnect。
-  startInprocHost({ createRuntime: () => runtime as never, onConnect: (listener) => listener(port as never) });
+  startInprocHost({ sessionData: async id => ({session:await new InMemorySessionRepo().create({id})}), createRuntime: () => runtime as never, onConnect: (listener) => listener(port as never) });
   send({ type: "inproc_config", config: { provider: model.provider, modelId: model.id }, credentials: {} });
 
   return { name: "扩展内 agent", conversationId: "default", frames, send, cleanup: () => {} };

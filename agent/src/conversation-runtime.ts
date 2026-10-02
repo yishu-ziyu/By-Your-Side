@@ -17,7 +17,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
+  options?: Pick<SessionCreateOptions, "sessionManager" | "mode" | "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; experienceStore?: ExperienceStore; skillStore?: SkillStore },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -68,6 +68,7 @@ export async function createConversationRuntime(
   );
 
   toolSession = session;
+  rpc.beforeCall = () => session.flushPersistence();
   // 用户在任务里设的条件由宿主兜住：要求提交前确认时，这个会话里（含助手）的点击都带上 confirmSubmit，扩展先拿住提交类按钮。
   rpc.decorateParams = (name, params) => session.decorateToolParams(name, params);
   fleet.attachLead(session);

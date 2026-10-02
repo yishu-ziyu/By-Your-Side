@@ -1,7 +1,7 @@
 /**
  * 会话里的文件（产物）：模型写出 CSV、Markdown、HTML 等文本文件，侧栏显示成卡片，用户点一下下载。
  * 命令沿用 Pi web-ui 的 artifacts 工具约定（create / update / rewrite / get / delete），模型对它已熟悉；
- * 文件只存在本会话内存，每次改动都发 `artifact` 事件，侧栏据此画卡片。见 docs/evals/20260925-artifacts-files.md。
+ * 扩展可注入持久存储，事务完成后每次改动发 `artifact` 事件，侧栏据此画卡片。见 docs/evals/20260925-artifacts-files.md。
  * `browser_run` 的 `browser.saveFile` 写进同一文件区，工具拿到的大段数据不经模型重打（docs/evals/20261001-data-to-file.md）。
  */
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -10,7 +10,7 @@ import { Check } from "typebox/value";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import { defineTool } from "./define-tool.js";
 
-/** 单个文件上限：侧栏历史要能回放，超大内容会挤掉其他记录。 */
+/** 单个文本文件上限；图片另有独立上限。 */
 export const ARTIFACT_MAX_CHARS = 256_000;
 
 /** 交给用户的截图（PNG 的 base64）上限：约 6 MB 图片；更大的整页长图请用户缩小范围。 */
@@ -34,18 +34,64 @@ export interface ArtifactStore {
   /** 把一张 PNG 图（base64）存成交给用户的图片文件：文件名自动取 截图-<本地时间>.png，同秒重名加序号。 */
   saveImage(base64: string, at?: Date): { filename: string };
   delete(filename: string): boolean;
+  flush?(): Promise<void>;
 }
 
 export function assertArtifactFilename(filename: string): void {
   if (!FILENAME.test(filename)) throw new Error(`文件名无效：${JSON.stringify(filename)}。只用一层文件名并带扩展名，例如 products.csv。`);
 }
 
-export function createArtifactStore(emit: (event: AgentUiEvent) => void): ArtifactStore {
+export type ArtifactData = {filename: string; content: string; encoding?: "base64"};
+
+export interface ArtifactPersistence {
+  load(): Promise<ArtifactData[]>;
+  save(item: ArtifactData): Promise<void>;
+  delete(filename: string): Promise<void>;
+}
+
+export function createArtifactStore(emit: (event: AgentUiEvent) => void, persistence?: ArtifactPersistence, initial: ArtifactData[] = []): ArtifactStore {
   const files = new Map<string, string>();
   const images = new Set<string>();
+
+  for (const item of initial) {
+    files.set(item.filename, item.content);
+
+    if (item.encoding === "base64") images.add(item.filename);
+  }
+
+  let tail: Promise<void> = Promise.resolve();
+  let failure: unknown;
+
+  const publish = (event: Extract<AgentUiEvent,{kind:"artifact"}>) => {
+    if (!persistence) {
+      emit(event);
+
+      return;
+    }
+
+    tail = tail.then(async () => {
+      if(failure)throw failure;
+
+      if(event.action === "deleted") await persistence.delete(event.filename);
+      else {
+        const item: ArtifactData = {filename:event.filename,content:event.content!};
+
+        if(event.encoding)item.encoding=event.encoding;
+        await persistence.save(item);
+      }
+
+      emit(event);
+    }).catch(error => { failure=error; });
+  };
+
   const pad = (n: number) => String(n).padStart(2, "0");
 
   return {
+    flush: async () => {
+      await tail;
+
+      if (failure) throw failure;
+    },
     get: filename => files.get(filename),
     isImage: filename => images.has(filename),
     names: () => [...files.keys()],
@@ -56,7 +102,7 @@ export function createArtifactStore(emit: (event: AgentUiEvent) => void): Artifa
       const overwritten = files.has(filename);
       files.set(filename, content);
       images.delete(filename);
-      emit({ kind: "artifact", action: "saved", filename, content });
+      publish({ kind: "artifact", action: "saved", filename, content });
 
       return { overwritten };
     },
@@ -70,14 +116,14 @@ export function createArtifactStore(emit: (event: AgentUiEvent) => void): Artifa
       for (let n = 2; files.has(filename); n += 1) filename = `${stem}-${n}.png`;
       files.set(filename, base64);
       images.add(filename);
-      emit({ kind: "artifact", action: "saved", filename, content: base64, encoding: "base64" });
+      publish({ kind: "artifact", action: "saved", filename, content: base64, encoding: "base64" });
 
       return { filename };
     },
     delete(filename) {
       if (!files.delete(filename)) return false;
       images.delete(filename);
-      emit({ kind: "artifact", action: "deleted", filename });
+      publish({ kind: "artifact", action: "deleted", filename });
 
       return true;
     },
@@ -185,6 +231,8 @@ export function createArtifactsTool(opts: ArtifactsToolOptions): ToolDefinition 
         default:
           throw new Error(`未知命令 ${String(params.command)}；可用 create、update、rewrite、get、delete。`);
       }
+
+      await store.flush?.();
 
       return { content: [{ type: "text" as const, text }], details: undefined };
     },

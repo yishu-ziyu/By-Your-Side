@@ -42,11 +42,13 @@ import type { AgentToolResult, DefaultResourceLoader, ModelRuntime, SessionManag
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
 import { MainEffort } from "./main-effort.js";
 import { withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
+import { PiSessionPersistence } from "./pi-session-persistence.js";
+import type { Session as PiSession } from "@earendil-works/pi-agent-core";
 import { PiAgentLoop } from "./pi-agent-loop.js";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ModelOption, PageContext } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
-import { createArtifactStore, createArtifactsTool, type ArtifactStore } from "./artifacts-tool.js";
+import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
 import { isCopyRequest } from "../../shared/copy-request.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { SessionHold, TEAM_COORDINATION_TOOLS, handbackContinueText } from "../../shared/control.js";
@@ -133,7 +135,8 @@ export interface SessionCreateOptions {
   /** 复用 Lead 的 runtime，工人不再 create/注册 cliproxy。 */
   modelRuntime?: ModelRuntime;
   /** 给定时用 pi-agent-core 的循环（扩展里）代替 pi-coding-agent 的 AgentSession；modelPattern 此时必填。 */
-  loop?: { models: ModelPort; cwd: string };
+  loop?: { models: ModelPort; cwd: string; session?: PiSession };
+  artifactPersistence?: ArtifactPersistence;
   customTools?: ToolDefinition[];
   systemPrompt?: string;
   appendPrompt?: (base: string[]) => string[];
@@ -508,20 +511,24 @@ export class BrowserAgentSession {
   /** 技能运行期间的公开文本。 */
   private publicText(text:string):string{return this.skillMaterials.length?redactSkillMaterials(text,this.skillMaterials):text;}
   /** One append is the acceptance boundary: checkpoint + required image bytes become recoverable together. */
-  persistAcceptedTask(snapshot:TaskProgressSnapshot,attachments?:Attachment[]):void {
+  persistAcceptedTask(snapshot:TaskProgressSnapshot,attachments?:Attachment[]):void | Promise<void> {
     if(this.checkpointReadFailed||!this.session?.sessionManager)throw new Error('任务会话存储不可用');
 
     if(attachments&&(!Array.isArray(attachments)||attachments.length>16||!attachments.every(isAttachment)))throw new Error('任务附件无效');
     const durable=this.durableTaskSnapshot(snapshot);
-    this.session.sessionManager.appendCustomEntry('sideagent-task-acceptance-v1',{snapshot:durable,attachments:structuredClone(attachments??[])});
+    const saved = this.session.sessionManager.appendCustomEntry('sideagent-task-acceptance-v1',{snapshot:durable,attachments:structuredClone(attachments??[])});
+
+    if (saved instanceof Promise) return saved.then(() => { this.persistedResults=JSON.stringify(durable); });
     this.persistedResults=JSON.stringify(durable);
   }
-  /** Image bytes use Pi's existing private session file, never a second task store. */
-  persistRecoveryAttachments(runId:string|null,attachments?:Attachment[]):void {
+  /** Attachment bytes are stored with the native session checkpoint. */
+  persistRecoveryAttachments(runId:string|null,attachments?:Attachment[]):void | Promise<void> {
     if(!runId||!attachments?.length)return;
 
     if(attachments.length>16||!attachments.every(isAttachment))throw new TaskActionRejected('任务附件无效，修改未接收。');
-    this.session?.sessionManager?.appendCustomEntry('sideagent-recovery-attachments-v1',{runId,attachments});
+    const saved = this.session?.sessionManager?.appendCustomEntry('sideagent-recovery-attachments-v1',{runId,attachments});
+
+    if(saved instanceof Promise)return saved.then(()=>{});
   }
   private recoveryAttachments(snapshot:TaskProgressSnapshot,supplied?:Attachment[]):Attachment[] {
     const required=snapshot.recoveryInput?.attachmentKeys??[];
@@ -549,13 +556,23 @@ if(required.includes(key))candidates.set(key,attachment);
 
     return required.map(key=>candidates.get(key)!);
   }
-  persistTaskResults(snapshot: TaskProgressSnapshot): void {
+  async flushPersistence(): Promise<void> { await this.session?.flushPersistence?.(); await this.artifactStore?.flush?.(); }
+
+  persistTaskResults(snapshot: TaskProgressSnapshot): void | Promise<void> {
     if (this.checkpointReadFailed || !this.session?.sessionManager || !snapshot.results) return;
     const data = this.durableTaskSnapshot(snapshot);
     const fingerprint = JSON.stringify(data);
 
     if (fingerprint === this.persistedResults) return;
-    this.session.sessionManager.appendCustomEntry("sideagent-task-results-v1", data);
+    const saved = this.session.sessionManager.appendCustomEntry("sideagent-task-results-v1", data);
+
+    if (saved instanceof Promise) {
+      const committed = saved.then(() => { this.persistedResults = fingerprint; });
+      void committed.catch(() => {});
+
+      return committed;
+    }
+
     this.persistedResults = fingerprint;
   }
   readPersistedTaskResults(): TaskProgressSnapshot | null {
@@ -849,7 +866,8 @@ if(required.includes(key))candidates.set(key,attachment);
       } : null;
 
       // 本会话文件区：artifacts 工具与 browser_run 的 browser.saveFile 共用这一份。
-      const artifactStore = sendOptions ? createArtifactStore(event => { resultHost?.noteSavedFile(event); callbacks.emit(event); }) : null;
+      const initialFiles = options?.artifactPersistence ? await options.artifactPersistence.load() : [];
+      const artifactStore = sendOptions ? createArtifactStore(event => { resultHost?.noteSavedFile(event); callbacks.emit(event); }, options?.artifactPersistence, initialFiles) : null;
 
       const customTools: ToolDefinition[] = [
           // 生产路径（conversation-runtime / fleet）会传入 customTools；此回退仍接账本，避免日后漏接线。
@@ -931,7 +949,9 @@ if(required.includes(key))candidates.set(key,attachment);
       let session: AgentLoop;
 
       if (options?.loop) {
+        const restored = options.loop.session ? await PiSessionPersistence.open(options.loop.session) : undefined;
         session = new PiAgentLoop({
+          persistence: restored?.persistence, messages: restored?.messages, sessionId: options.conversationId,
           models, model: loopModel(models, options.modelPattern), tools: customTools, systemPrompt,
           appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
           extensionFactories: extensionFactories.map(entry => entry.factory),
@@ -2261,8 +2281,11 @@ if(this.skillProgramDepth===0)this.skillMaterials=[];}
   /** Persist the exact handoff without triggering a model turn or replaying actions. */
   async importReading(transcript: ReadingTranscript): Promise<void> {
     if (!this.session) throw new Error('会话不可用');
+    const content = readingHandoffContext(transcript);
+
+    if (this.session.agent.state.messages.some(message => message.role === 'custom' && message.customType === 'reading-handoff' && message.content === content)) return;
     await this.session.sendCustomMessage({customType: 'reading-handoff', display: false,
-      content: readingHandoffContext(transcript),
+      content,
     }, {triggerTurn: false});
   }
 
