@@ -10,6 +10,8 @@ Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩�
 
 ## 正式入口
 
+安全逐次确认：`node --import tsx scripts/acceptance/real-path/security-confirmation.mts --headless` 经真实设置页、offscreen agent 和侧栏请求/选择，按完整动作参数及新 requestId 核对 click。宿主目标核验还会请求 snapshot/read_element；夹具只批准当前练习页的精确读取，逐卡留存参数与服务器提交计数，未知动作即失败。辅助执行器反例见 `scripts/acceptance/security-confirmation.mts`，不得替代前述日常入口。
+
 - `npm run accept:browser`：浏览器主链。
 - `npm run accept:capability`：浏览器能力对齐。
 - `npm run accept:real-path`：一次跑完全部真实路径用例（见下节），汇总写 `out/acceptance/real-path/summary-<时间>.json`；`-- --only=a,b` 为过滤轮，恒不算整轮通过。

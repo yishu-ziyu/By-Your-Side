@@ -13,6 +13,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
+import { toolAction } from "../../../shared/user-facing.js";
 
 requireHeadless();
 const artifacts = join(REPO, "out/security-confirmation/real-path");
@@ -43,7 +44,11 @@ let panel: string | undefined;
 let work: string | undefined;
 let error: string | null = null;
 const evidence: Array<{ case: string; commits: number; requestId?: string }> = [];
+const consentCards: Array<{ id: string; text: string; details: string; commits: number; decision?: string }> = [];
+const seenConsents = new Set<string>();
 const activeCard = '.consent-card:not(.consent-complete)';
+const recordDecision = (id: string, decision: string) => { const card = consentCards.find(entry => entry.id === id); assert.ok(card); card.decision = decision; };
+const cardSelector = (id: string) => `${activeCard}[data-request-id=${JSON.stringify(id)}]`;
 try {
   rp = await launchRealPath();
   const browser = rp;
@@ -52,6 +57,8 @@ try {
   await browser.cdp.send("Page.navigate", { url: origin }, work);
   panel = await browser.attach(await browser.openSidePanel());
   const sidebar = panel;
+  const fixtureTabId = await browser.evaluate(sidebar, `new Promise(resolve=>chrome.tabs.query({},tabs=>resolve(tabs.find(tab=>tab.url===${JSON.stringify(origin + "/")})?.id)))`);
+  assert.equal(typeof fixtureTabId, "number", "the native fixture tab identity must be known");
   await browser.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sidebar);
   await until(async () => await browser.evaluate(sidebar, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "real sidebar ready");
   await browser.click(sidebar, "#header-more");
@@ -78,13 +85,28 @@ try {
     await browser.pressEnter(sidebar);
   };
   const cardForClick = async (expected: number) => {
-    for (let i = 0; i < 3; i++) {
-      const card = await until(async () => await browser.evaluate(sidebar, `(()=>{const c=document.querySelector(${JSON.stringify(activeCard)});return c?.querySelector(".consent-allow:not(:disabled)")?{id:c.dataset.requestId,text:c.textContent}:null})()`), 45_000, "real consent card") as { id: string; text: string };
+    // Main-model snapshot plus the previous task's bounded goal-review reads
+    // can coexist. Only exact fixture reads below may be approved, never JS.
+    for (let i = 0; i < 8; i++) {
+      const card = await until(async () => await browser.evaluate(sidebar, `(()=>{const c=document.querySelector(${JSON.stringify(activeCard)});return c?.querySelector(".consent-allow:not(:disabled)")?{id:c.dataset.requestId,text:c.textContent,details:c.querySelector("pre")?.textContent}:null})()`), 45_000, "real consent card") as { id: string; text: string; details: string };
+      const record = { ...card, commits, decision: "pending" };
+      consentCards.push(record);
+      assert.ok(card.id && !seenConsents.has(card.id), "a consumed request must not become interactive again");
+      seenConsents.add(card.id);
       assert.equal(commits, expected, "pending actions must not submit");
-      if (card.text.includes("#commit")) return card.id;
-      // The model's explicit snapshot also goes through the real consent gate.
-      await browser.click(sidebar, `${activeCard} .consent-allow`);
-      await until(async () => await browser.evaluate(sidebar, `document.querySelector(${JSON.stringify(activeCard)})?.dataset.requestId!==${JSON.stringify(card.id)}`) || undefined, 15_000, "observation approval consumed");
+      const params = JSON.parse(card.details.split("\n\n")[1] ?? "null") as Record<string, unknown> | null;
+      assert.ok(params && typeof params === "object" && !Array.isArray(params), "the complete action parameters must be visible");
+      const action = card.details.split("\n")[0];
+      const exact = (allowed: string[]) => Object.keys(params).every(key => allowed.includes(key));
+      if (action === `动作：${toolAction("click")}` && params.target === "#commit" && exact(["target", "tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId)) return card.id;
+      const snapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId);
+      const targetRead = action === `动作：${toolAction("read_element")}` && exact(["tabId", "target"]) && params.tabId === fixtureTabId && params.target === "#commit";
+      assert.ok(snapshot || targetRead, `Unexpected consent action: ${card.details}`);
+      record.decision = snapshot ? "allow exact fixture snapshot" : "allow exact fixture target read";
+      const selector = cardSelector(card.id);
+      await browser.click(sidebar, `${selector} .consent-allow`);
+      await until(async () => await browser.evaluate(sidebar, `!document.querySelector(${JSON.stringify(selector)})?.querySelector(".consent-allow:not(:disabled)")`) || undefined, 15_000, "observation approval consumed");
+      assert.equal(commits, expected, "an approved fixture read must not submit");
     }
     throw new Error("Unexpected extra consent requests before the planned click");
   };
@@ -95,7 +117,8 @@ try {
 
   await send(marks[0]!);
   const denied = await cardForClick(0);
-  await browser.click(sidebar, `${activeCard} .consent-reject`);
+  await browser.click(sidebar, `${cardSelector(denied)} .consent-reject`);
+  recordDecision(denied, "reject exact click");
   await settle(marks[0]!);
   assert.equal(commits, 0);
   evidence.push({ case: "real agent request denied without POST", commits, requestId: denied });
@@ -104,7 +127,8 @@ try {
   await send(marks[1]!);
   const allowed = await cardForClick(0);
   assert.notEqual(allowed, denied);
-  await browser.click(sidebar, `${activeCard} .consent-allow`);
+  await browser.click(sidebar, `${cardSelector(allowed)} .consent-allow`);
+  recordDecision(allowed, "allow exact click once");
   await until(async () => commits === 1 || undefined, 10_000, "exactly one approved POST");
   await settle(marks[1]!);
   assert.equal(commits, 1);
@@ -114,15 +138,17 @@ try {
   await send(marks[2]!);
   const second = await cardForClick(1);
   assert.notEqual(second, allowed);
-  await browser.click(sidebar, `${activeCard} .consent-reject`);
+  await browser.click(sidebar, `${cardSelector(second)} .consent-reject`);
+  recordDecision(second, "reject later exact click");
   await settle(marks[2]!);
   assert.equal(commits, 1);
   evidence.push({ case: "later request needs new permission", commits, requestId: second });
 
   await send(marks[3]!);
   const stopped = await cardForClick(1);
+  recordDecision(stopped, "Stop pending exact click");
   await browser.click(sidebar, "#send-btn");
-  await until(async () => await browser.evaluate(sidebar, `!document.querySelector(${JSON.stringify(activeCard)})?.querySelector(".consent-allow:not(:disabled)")`) || undefined, 15_000, "Stop revoked pending approval");
+  await until(async () => await browser.evaluate(sidebar, `!document.querySelector(${JSON.stringify(cardSelector(stopped))})?.querySelector(".consent-allow:not(:disabled)")`) || undefined, 15_000, "Stop revoked pending approval");
   await sleep(500);
   assert.equal(commits, 1);
   evidence.push({ case: "sidebar Stop revokes pending grant", commits, requestId: stopped });
@@ -135,7 +161,7 @@ try {
   if (rp && work) await rp.screenshot(work, join(artifacts, "failure-page.png")).catch(() => {});
 } finally {
   const panelText = rp && panel ? await rp.evaluate(panel, "document.body.innerText").catch(() => "unavailable") : "unavailable";
-  await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", dependency: "real extension/offscreen agent/sidebar; scripted local model", evidence, commits, error, panelText, modelRequests: model.requests, chromeStderr: rp?.chromeStderr() }, null, 2));
+  await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", dependency: "real extension/offscreen agent/sidebar; scripted local model", evidence, consentCards, commits, error, panelText, modelRequests: model.requests, chromeStderr: rp?.chromeStderr() }, null, 2));
   await rp?.close();
   await rp?.remove();
   await model.close();

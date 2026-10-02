@@ -45,3 +45,5 @@
 文件选择器arm_event经capture准备await后也在enabled:true原生派发前复核批准；反例旧5项中1FAIL，补guard后通过。失败只撤销本次已开始的拦截，enabled:false内部清理仍可执行；待完整CI重验。
 
 截图保留隐藏/恢复产品overlay的幕帘：hidden:true在真实脚本派发前核对批准，拒绝不被best-effort catch吞掉；已派发后失败保守unknown，restore:false只作内部清理。3项派发反例旧红新绿；最后broker/chooser/截图补丁须同一head通过CI与独立审查。
+
+46bf4f0工程与辅助Chrome通过，但真实日常入口仅1项、0POST，三次非目标卡后等待失败；源码显示宿主还会请求核验读取，具体卡身份须新诊断验证。旧脚本用文字包含#commit识别click，也可能误认read_element，因此旧四项证据不作为当前精确click验收。修正按卡片完整参数、动作名、当前练习tab及全程不重复requestId识别click；仅许可定义好的snapshot/read_element读取，每张留参数与POST计数，未知动作立即失败。拒绝0POST、获准恰1POST、再次新票及Stop判据不变，最终结果见PR。
