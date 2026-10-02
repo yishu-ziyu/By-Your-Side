@@ -98,7 +98,8 @@ try {
       assert.ok(params && typeof params === "object" && !Array.isArray(params), "the complete action parameters must be visible");
       const action = card.details.split("\n")[0];
       const exact = (allowed: string[]) => Object.keys(params).every(key => allowed.includes(key));
-      if (action === `动作：${toolAction("click")}` && params.target === "#commit" && exact(["target", "tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId)) return card.id;
+      const emptyFormPolicy = (params.formRequirements === undefined || (Array.isArray(params.formRequirements) && params.formRequirements.length === 0)) && (params.userValueProvided === undefined || params.userValueProvided === false);
+      if (action === `动作：${toolAction("click")}` && params.target === "#commit" && exact(["target", "tabId", "formRequirements", "userValueProvided"]) && emptyFormPolicy && (params.tabId === undefined || params.tabId === fixtureTabId)) return card.id;
       const snapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId);
       const decisionSnapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId", "decision"]) && params.tabId === fixtureTabId && params.decision === true;
       const targetRead = action === `动作：${toolAction("read_element")}` && exact(["tabId", "target"]) && params.tabId === fixtureTabId && params.target === "#commit";
