@@ -24,4 +24,6 @@ describe('activation bypass boundary', () => {
   });
 });
 
-it('every opaque activation requires consent regardless of label or readonly claims',()=>{for(const name of ['snapshot','read_element','read_elements','screenshot','observe_page','mark','release_held_inputs','click','double_click','fill','navigate','fetch','js','accept_dialog','select_option','type_text','press_key'])expect(requiresActivationConsent(name,{label:'safe',readonly:true})).toBe(true);});
+it('every opaque activation requires consent regardless of label or readonly claims',()=>{for(const name of ['clear_marks','ask_user_to_point','worker_tabs','arm_event','wait_event','disarm_event','snapshot','read_element','read_elements','screenshot','observe_page','mark','release_held_inputs','click','double_click','fill','navigate','fetch','js','accept_dialog','select_option','type_text','press_key'])expect(requiresActivationConsent(name,{label:'safe',readonly:true})).toBe(true);});
+
+it("native worker inspection is exempt but claim and release need consent",()=>{expect(requiresActivationConsent("worker_tabs",{action:"inspect"})).toBe(false);for(const action of ["claim","release"])expect(requiresActivationConsent("worker_tabs",{action})).toBe(true);});

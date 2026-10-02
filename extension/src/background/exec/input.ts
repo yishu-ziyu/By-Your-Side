@@ -1342,11 +1342,11 @@ export async function click(
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
 
-  const actionId = await beginCursorAction(tabId, cid, "click", target, name);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", target, name);
 
   try {
     // 目标边框与浅弧移动并行；不再为高亮和预播放波纹额外等待。
-    await cursorMove(tabId, x, y, cid);
+    if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
 
     if (target && !force) {
       const confirmed = await confirmPointerTarget(tabId, target);
@@ -1359,7 +1359,7 @@ export async function click(
       }
 
       if (x !== point[0] || y !== point[1]) {
-        await cursorMove(tabId, x, y, cid);
+        if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
       }
     }
 
@@ -1563,10 +1563,10 @@ export async function doubleClick(
   const button: MouseButton = params.button ?? "left";
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
-  const actionId = await beginCursorAction(tabId, cid, "click", params.target, name);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", params.target, name);
 
   try {
-    await cursorMove(tabId, x, y, cid);
+    if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
 
     if (params.target && !force) {
       const confirmed = await confirmPointerTarget(tabId, params.target);
@@ -1579,7 +1579,7 @@ export async function doubleClick(
       }
 
       if (x !== point![0] || y !== point![1]) {
-        await cursorMove(tabId, x, y, cid);
+        if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
       }
     }
 
@@ -1877,11 +1877,11 @@ export async function fill(
     }
   }
 
-  const actionId = await beginCursorAction(tabId, cid, "fill", params.target);
+  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "fill", params.target);
 
   try {
     if (targetRect) {
-      await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
+      if (!beforeDispatch) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
 
     // 2. 真实填充操作
