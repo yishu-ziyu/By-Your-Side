@@ -80,26 +80,28 @@ def summarize(m, ids):
     rs = [rows[(m, t)] for t in ids if (m, t) in rows]
     if not rs: return None
     n = len(rs); p = sum(r['pass_'] for r in rs)
+    stats = [r for r in rs if r['verdict'] != 'environment']
+    environment_tokens = sum(sum(r['tokens'].values()) for r in rs if r['verdict'] == 'environment')
     judged = [r for r in rs if r['verdict'] in ('pass', 'fail', 'undeterminable')]
-    costs = [r['cost_usd'] for r in rs]; cost = sum(costs) if all(c is not None for c in costs) else None
+    costs = [r['cost_usd'] for r in stats]; cost = sum(costs) if costs and all(c is not None for c in costs) else None
     by_cat = {}
     for c in cats:
         cr = [r for r in rs if r['category'] == c]
         cj = [r for r in cr if r['verdict'] in ('pass', 'fail', 'undeterminable')]
         if cr: by_cat[c] = dict(n=len(cr), n_judged=len(cj), passed=sum(r['pass_'] for r in cr), pass_rate=(round(sum(r['pass_'] for r in cj) / len(cj), 3) if cj else None))
-    mean = lambda k: round(statistics.mean(r['tokens'].get(k, 0) for r in rs), 1)
-    return dict(environment=sum(r['verdict'] == 'environment' for r in rs), model=m, main_model=rs[0]['main_model'], fast_model=rs[0]['fast_model'], n=n, n_judged=len(judged), passed=p,
+    mean = lambda k: round(statistics.mean(r['tokens'].get(k, 0) for r in stats), 1) if stats else None
+    return dict(environment_tokens=environment_tokens, environment=sum(r['verdict'] == 'environment' for r in rs), model=m, main_model=rs[0]['main_model'], fast_model=rs[0]['fast_model'], n=n, n_judged=len(judged), passed=p,
         pass_rate=(round(p / len(judged), 3) if judged else None),
         undeterminable=sum(r['verdict'] == 'undeterminable' for r in rs), judge_errors=sum(r['verdict'] == 'judge_error' for r in rs),
-        median_total_s=pct([r['total'] for r in rs], .5), p90_total_s=pct([r['total'] for r in rs], .9), median_first_output_s=pct([r['first'] for r in rs], .5),
+        median_total_s=pct([r['total'] for r in stats], .5), p90_total_s=pct([r['total'] for r in stats], .9), median_first_output_s=pct([r['first'] for r in stats], .5),
         mean_tokens_input=mean('input'), mean_tokens_output=mean('output'), mean_tokens_cached=mean('cacheRead'), mean_tokens_cache_write=mean('cacheWrite'),
-        mean_tokens_total=round(statistics.mean(sum(r['tokens'].get(k, 0) for k in ('input', 'output', 'cacheRead', 'cacheWrite')) for r in rs), 1),
-        mean_model_calls=round(statistics.mean(r['model_calls'] for r in rs), 2), mean_side_calls=round(statistics.mean(r['n_side_call'] for r in rs), 2),
+        mean_tokens_total=round(statistics.mean(sum(r['tokens'].get(k, 0) for k in ('input', 'output', 'cacheRead', 'cacheWrite')) for r in stats), 1) if stats else None,
+        mean_model_calls=round(statistics.mean(r['model_calls'] for r in stats), 2) if stats else None, mean_side_calls=round(statistics.mean(r['n_side_call'] for r in stats), 2) if stats else None,
         effort_changes=sum(r['n_effort_change'] for r in rs),
-        mean_cost_usd=(round(cost / n, 6) if cost is not None else None), total_cost_usd=(round(cost, 5) if cost is not None else None),
+        mean_cost_usd=(round(cost / len(stats), 6) if cost is not None else None), total_cost_usd=(round(cost, 5) if cost is not None else None),
         cost_per_pass_usd=(round(cost / p, 6) if cost is not None and p else None),
         catalog_list_total_usd=round(sum(r['catalog_list_usd'] for r in rs), 6),
-        timeouts=sum(r['status'] == 'timeout' for r in rs), by_category=by_cat, by_tier=tier_summary(rs))
+        timeouts=sum(r['status'] == 'timeout' for r in stats), by_category=by_cat, by_tier=tier_summary(rs))
 
 report = dict(run=os.path.basename(RUN), generated_at=datetime.now(timezone.utc).isoformat(),
     notes=['Only valid results (no quota errors, no harness setup_error) that have a judge file are counted. environment verdicts are listed separately and excluded; pass_rate = passed / n_judged (verdict pass|fail|undeterminable; undeterminable counts as not passed). judge_error rows are listed but excluded from pass_rate (the judge did not run); pass_rate is null when nothing was judged.',

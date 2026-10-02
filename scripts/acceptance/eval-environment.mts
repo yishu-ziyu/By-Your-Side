@@ -10,6 +10,8 @@ import { siteBlock } from '../../eval/harness/environment.mjs';
 import { runJob } from '../../eval/harness/job.mjs';
 import { judgeOne } from '../../eval/harness/judge.mjs';
 
+const reportOnly=process.argv.includes('--report-only');
+
 const out=join(process.cwd(),'out/acceptance/eval-environment',new Date().toISOString().replace(/[:.]/g,'-'));
 
 await mkdir(out,{recursive:true});
@@ -50,7 +52,7 @@ const tasks=JSON.parse(await readFile('eval/runs/tiers12-20261002/run.json','utf
 const all=(await readFile('eval/tasks/tasks.jsonl','utf8')).trim().split('\n').map(JSON.parse);
 
 try{
- for(const [i,path] of ['/reset','/limited','/captcha'].entries()){
+ for(const [i,path] of (reportOnly?[]:['/reset','/limited','/captcha']).entries()){
   const task={...all.find((t:any)=>t.id===tasks[i]),site_url:origin+path,prompt:'读取这个页面'};
   const rec=await runJob({task,model:'zai-coding-cn/glm-5.3-flash',outDir:join(out,'fixture'),capMs:10000});
   const verdict=await judgeOne(task,rec);
@@ -67,6 +69,7 @@ try{
  for(const [i,verdict] of ['pass','fail','environment'].entries()){
   const id=tasks[i];
   await writeFile(join(out,slug,id+'.json'),JSON.stringify({id,model,status:'completed',seconds_total:1,main_model:model,fast_model:model,errors:[]}));
+  await writeFile(join(out,slug,id+'.trace.jsonl'),JSON.stringify({type:'message_end',data:{message:{role:'assistant',provider:'probe',model:'model',usage:{input:i===2?100:i===0?10:20,output:i===2?0:20}}}})+'\n');
   await writeFile(join(out,'judge',slug,id+'.json'),JSON.stringify({verdict,pass:verdict==='pass',environment:verdict==='environment'?{kind:'rate_limit',evidence:[{status:429}]}:null}));
  }
 
@@ -76,11 +79,14 @@ try{
  assert.equal(report.all_valid[model].n_judged,2);
  assert.equal(report.all_valid[model].pass_rate,.5);
  assert.equal(report.all_valid[model].environment,1);
+ assert.equal(report.all_valid[model].mean_tokens_total,35,'normal task token mean');
  execFileSync('node',['eval/harness/review.mjs',out]);
  assert.match(await readFile(join(out,'review.html'),'utf8'),/1 条站点不可用/);
  assert.match(await readFile(join(out,'review.html'),'utf8'),/1\/2 做对/);
  console.log('PASS report: 1/2, environment=1');
- const scheduled=all.slice(0,3).map((task:any)=>({...task,site_url:origin+'/limited'}));
+
+ if(!reportOnly){
+ const scheduled=tasks.slice(0,3).map((id:string)=>({...all.find((task:any)=>task.id===id),site_url:origin+'/limited',prompt:'读取fixture验证页面'}));
  await writeFile(join(out,'scheduled-tasks.jsonl'),scheduled.map((t:any)=>JSON.stringify(t)).join('\n'));
  const {stdout:scheduleLog}=await promisify(execFile)('node',['eval/harness/run.mjs','--models','zai-coding-cn/glm-5.3-flash','--tasks',scheduled.map((t:any)=>t.id).join(','),'--concurrency','3','--retries','0','--run-id','same-site','--no-judge'],{env:{...process.env,BYS_TASKS:join(out,'scheduled-tasks.jsonl'),BYS_RUNS_DIR:join(out,'scheduled')},encoding:'utf8',timeout:90000});
  let active=0;
@@ -92,7 +98,9 @@ if(line.includes(' -> environment '))active--;}
  assert.equal(active,0);
  await writeFile(join(out,'schedule.log'),scheduleLog);
  console.log('PASS same-host scheduling');
- await writeFile(join(out,'acceptance.json'),JSON.stringify({pass:true,out},null,2));
+ }
+
+ await writeFile(join(out,'acceptance.json'),JSON.stringify({pass:true,reportOnly,out},null,2));
 }finally{server.closeAllConnections();server.close();}
 
 console.log(out);
