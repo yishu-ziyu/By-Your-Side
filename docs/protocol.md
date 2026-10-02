@@ -135,6 +135,12 @@ ref 编号随节点保持稳定，但必须出现在最新快照中；新快照�
 
 `hover` 派发真实 CDP `mouseMoved`，触发原生 CSS 悬停状态；返回 `{hovered:true}` 仅表示移动执行成功。Agent 仍需观察是否出现预期入口。`click` 同样只确认事件执行，不证明编辑器打开或任务完成。接管期间 `hover` 和其他写操作一样被控制闸门拦截。
 
+宿主可给 `click`、`double_click`、`fill`、`type_text`、`select_option`、`press_key` 附加 `formRequirements:[{label,hostname?}]`；模型不能自报。仅提取有效已确认方法的引号字段。`hostname` 精确匹配当前主机名，缺省适用当前页。规则见[记忆模型](memory-model.md)。
+
+提交点击、确认重放及表单提交 Enter 前均重读表单（含 `form` 关联控件）。要求字段须按真实 label、aria-label/aria-labelledby、placeholder、name 或 id 唯一匹配可读非空原生 input/textarea/select。仅规范化大小写、空白、末尾冒号/星号，不猜别名。未找到、多候选、不可读或空值均返回 `not_executed`，要求补字段；内容未知先问用户。普通 textarea/select/contenteditable Enter 不查，修饰键 Enter 保守检查。拒绝不可读 iframe。
+
+`fill`/`type_text`/`select_option` 匹配要求字段时，只有宿主证实值来自本任务用户原话、有效个人资料或既有核验通过的复制材料并附 `userValueProvided:true` 才可写入。受约束字段拒绝逐键文字和粘贴，改用完整原话。站点资料还附`userValueHostname`，不匹配时拒绝。拒绝不清除已有值，也不改网页 `required` 或其他表单状态。其他字段、读取和普通按键不受影响，原确认保留。宿主另拒绝受约束网站的 evaluate/POST 等绕过；不覆盖任意脚本、控件或方法语义。
+
 网页下载事件、按链接下载、查询/取消及完成判据见[下载说明](downloads.md)。
 
 `mark` 可选 `through: "@N"`：同一行的结束 ref，一个框从 `target` 圈到它（用于「名称 + 数值」这类成对内容，先后顺序不限）。两者都必须是同一张快照的 ref；不在同一行、不在同一页面或不是 ref 时报错并记为未执行。框随两端之间的内容重排而重画。名牌依次试框的右、上、下、左，选第一处不压页面文字、图片或控件的位置；四处都压字时沿框的上沿、下沿往右找空白。

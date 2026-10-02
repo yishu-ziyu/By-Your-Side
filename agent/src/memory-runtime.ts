@@ -1,17 +1,24 @@
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
-import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryHostOfUrl, memoryTaskUrl, validLocalDate, type MemoryEntry, type MemoryScope, type MemoryValidity } from "../../shared/memory.js";
+import { endOfLocalDay, localDateOf, MEMORY_KIND_LABEL, memoryHostOfUrl, memoryTaskUrl, validLocalDate, withinValidity, type MemoryEntry, type MemoryScope, type MemoryValidity } from "../../shared/memory.js";
 import type { AgentUiEvent, PageContext } from "../../shared/protocol.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import { ReplaceTargetChanged, type MemoryQuery, type MemoryStore } from "./memory-store.js";
 import { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
+import { requiredFormFields } from "./memory-form-rules.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextSelection } from "./memory-context.js";
 import { isRelevantMemory } from "./memory-relevance.js";
 import { isUserCorrection } from "./experience.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
+
+interface FormPolicy {
+  formRequirements: ReturnType<typeof requiredFormFields>;
+  userValueProvided: boolean;
+  userValueHostname?: string;
+}
 
 interface ActiveUserTurn {
   epoch: number;
@@ -825,6 +832,32 @@ export class MemoryRuntime {
     }
 
     return selection;
+  }
+
+  /** 每次真实写操作重读，来源证明与规则使用同一快照；忘记后不从历史找值。 */
+  async formPolicy(taskRequirements: readonly string[], value: string) {
+    const turn = this.active;
+
+    if (turn && !this.current(turn)) throw new Error("当前任务已失效，操作未执行");
+    const entries = await this.store.list();
+
+    if (turn && !this.current(turn)) throw new Error("当前任务已失效，操作未执行");
+    const messages = turn ? [...taskRequirements, turn.text] : [...taskRequirements];
+    const formRequirements = requiredFormFields(entries, messages);
+    const direct = !!value.trim() && messages.some(text => text.includes(value));
+    const hostname = memoryHostOfUrl(turn?.query.url);
+
+    const facts = entries.filter(entry => entry.kind === "profile" && entry.status === "active" && !entry.experience
+      && withinValidity(entry.validity, Date.now()) && entry.text.includes(value) && entry.sourceQuote?.includes(value)
+      && (entry.scope.kind === "all" || entry.scope.hostname === hostname));
+
+    const fact = facts.find(entry => entry.scope.kind === "all") ?? facts[0];
+    const userValueProvided = !!value.trim() && (direct || !!fact);
+    const policy: FormPolicy = { formRequirements, userValueProvided };
+
+    if (!direct && fact?.scope.kind === "site") policy.userValueHostname = fact.scope.hostname;
+
+    return policy;
   }
 
   /**

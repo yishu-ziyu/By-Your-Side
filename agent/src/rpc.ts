@@ -124,7 +124,7 @@ export class ToolRpc {
 
   /** 出站前由会话补的宿主参数（例如用户要求提交前确认时给点击带上 confirmSubmit）；模型不能自己设。 */
   beforeCall?: () => Promise<void>;
-  decorateParams?: (name: ToolName, params: Parameters<ToolRpc["call"]>[1], sessionId?: string) => Parameters<ToolRpc["call"]>[1];
+  decorateParams?: (name: ToolName, params: Parameters<ToolRpc["call"]>[1], sessionId?: string) => Parameters<ToolRpc["call"]>[1] | Promise<Parameters<ToolRpc["call"]>[1]>;
 
   constructor(send?: RpcSend) {
     this.sendFn = send ?? null;
@@ -296,7 +296,19 @@ export class ToolRpc {
     const timeout = timeoutMs ?? (SLOW_TOOLS.has(name) ? SLOW_TOOL_TIMEOUT_MS : DEFAULT_TOOL_TIMEOUT_MS);
     const id = randomUUID();
     // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
-    let outParams = this.decorateParams ? this.decorateParams(name, this.resolvePageParams(name, params, sessionId), sessionId) : this.resolvePageParams(name, params, sessionId);
+    let outParams = this.resolvePageParams(name, params, sessionId);
+
+    try {
+      if (this.decorateParams) {
+        const decorated = this.decorateParams(name, outParams, sessionId);
+        outParams = decorated instanceof Promise ? await decorated : decorated;
+      }
+
+      if (signal?.aborted) throw new Error("操作已取消，尚未执行");
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { executionFact: "not_executed" as const });
+    }
+
     const prepared = sdkId ? this.dispatched.get(sdkId) : undefined;
 
     if (name === 'fill' && prepared?.prepareFillReadback) {

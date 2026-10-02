@@ -61,6 +61,8 @@ import { armEvent, waitEvent, disarmEvent, consumeEvents } from "./exec/page-eve
 import { acceptDialog, dismissDialog, dialogInfo } from "./exec/dialog.js";
 import { fileChooserSetFiles } from "./exec/file-chooser.js";
 import { downloadUrl, downloadStat, downloadCancel, downloadDelete } from "./exec/download.js";
+import { normalizeFetchRequest } from "../../../shared/fetch.js";
+import { assertCheckedFormPrimitive } from "./exec/form-method-boundary.js";
 import { evaluateJs } from "./exec/evaluate.js";
 import { fetchUrl } from "./exec/fetch-url.js";
 import { network } from "./exec/network.js";
@@ -95,7 +97,9 @@ import {
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
 
 const handlers: Record<ToolName, Handler> = {
-  fetch: (p) => fetchUrl(p),
+  fetch: async (p) => { if (normalizeFetchRequest(p).method === "POST") await assertCheckedFormPrimitive(p);
+
+ return fetchUrl(p); },
   network: (p, sid) => network(p, sid),
   worker_tabs: (p, sid) => workerTabControl.manage(p, sid, withdrawPendingClicks, async keys => {
 
@@ -118,17 +122,31 @@ const handlers: Record<ToolName, Handler> = {
   // fromUserConfirm 只由扩展在用户确认后重放时设置；从外面来的调用一律去掉，不能借它绕过「不点助手自己的按钮」。
   click: (p, sid) => click({ ...p, fromUserConfirm: undefined }, sid),
   double_click: (p, sid) => doubleClick({ ...p, fromUserConfirm: undefined }, sid),
-  drag: (p, sid) => drag(p, sid),
+  drag: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return drag(p, sid); },
   wheel: (p, sid) => wheel(p, sid),
-  mouse_down: (p, sid) => mouseDown(p, sid),
-  mouse_up: (p, sid) => mouseUp(p, sid),
-  key_down: (p, sid) => keyDown(p, sid),
+  mouse_down: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return mouseDown(p, sid); },
+  mouse_up: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return mouseUp(p, sid); },
+  key_down: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return keyDown(p, sid); },
   key_up: (p, sid) => keyUp(p, sid),
   release_held_inputs: (_p, sid) => releaseHeldInputs(sid),
-  paste: (p, sid) => paste(p, sid),
-  html5_drag: (p, sid) => html5DragAndDrop(p, sid),
+  paste: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return paste(p, sid); },
+  html5_drag: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return html5DragAndDrop(p, sid); },
   upload_file: (p, sid) => uploadFile(p, sid),
-  cdp: (p, sid) => cdp(p, sid),
+  cdp: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return cdp(p, sid); },
   arm_event: (p, sid) => armEvent(p, sid),
   wait_event: (p, sid) => waitEvent(p, sid),
   disarm_event: (p, sid) => disarmEvent(p, sid),
@@ -147,7 +165,9 @@ const handlers: Record<ToolName, Handler> = {
   type_text: (p, sid) => typeText(p, sid),
   press_key: (p, sid) => pressKey(p, sid),
   scroll: (p, sid) => scroll(p, sid),
-  js: (p, sid) => evaluateJs(p, sid),
+  js: async (p, sid) => { await assertCheckedFormPrimitive(p, sid);
+
+ return evaluateJs(p, sid); },
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
   screenshot: (p, sid) => screenshot(p, sid),
   ask_user_to_point: (p, sid) => askUserToPoint(p, sid),
