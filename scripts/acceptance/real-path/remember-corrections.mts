@@ -71,6 +71,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json, type JsonRecord } from "./harness.mts";
 import { configureViaSettings, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
@@ -545,6 +546,9 @@ const S22_RULES: Rule[] = [
 ];
 
 const RULES: Rule[] = [
+  { match: "[S22-REPLACE-PHONE-MISSING]", steps: [{ tool: { name: "take_tab", args: { tabId: 0 } } }, S22_FILL[0]!, S22_CLICK, { text: "请提供电话内容。S22-REPLACE-PHONE-MISSING-DONE" }] },
+  { match: "[S22-REPLACE-UNDO-MISSING]", steps: [{ tool: { name: "take_tab", args: { tabId: 0 } } }, ...S22_FILL, S22_CLICK, { text: "请提供备注内容。S22-REPLACE-UNDO-MISSING-DONE" }] },
+  { match: "[S22-PHONE-EXACT]", steps: [S22_FILL[1]!, S22_CLICK, { text: "电话表单操作结束。S22-PHONE-EXACT-DONE" }] },
   ...S22_RULES,
   { match: "有没有新消息", steps: [{ tool: ATTACK_TOOLS.answer }, { tool: ATTACK_TOOLS.save }, { tool: ATTACK_TOOLS.update }, { text: "看过了，没有新消息。S14-DONE" }] },
   { match: "把客户名单导出来", steps: [{ text: "已导出当前页 20 条客户。EXPORT-DONE" }] },
@@ -747,6 +751,8 @@ type PanelState = { connected: boolean; ready: boolean; busy: boolean; userMessa
 
 let panel = "";
 
+let approvalProbeSession = "";
+
 let work = "";
 
 let workTargetId = "";
@@ -925,13 +931,145 @@ async function send(text: string) {
 
 let consentAllowed = 0;
 
+const strictConsentLog: JsonRecord[] = [];
+
+let strictTask = "";
+
+const strictEnteredTasks = new Set<string>();
+
+let fixtureTab22replace: number | null = null;
+
+let strictField22replace = "备注";
+
+/** 22replace 专项：原生端口仅旁听。参数、会话/run 与原生 tool_start 都必须匹配。 */
+async function approveFixture22replace(): Promise<boolean> {
+  // SAFETY: our DOM expression returns only observed native protocol records and card text.
+  const card = await rp.evaluate(panel, `(() => { const c = [...document.querySelectorAll("#consent-requests .consent-card")].find(c => c.querySelector(".consent-allow:not(:disabled)"));
+    if (!c) return null; const events = globalThis.__fixtureConsentEvents ?? [];
+    const source = [...events].reverse().find(e => e.kind === "server" && e.msg?.type === "consent_request" && e.msg.request.id === c.dataset.requestId);
+    return { id:c.dataset.requestId, text:c.innerText, details:c.querySelector("pre")?.textContent, source, events, selected:globalThis.__fixtureSelected }; })()`) as JsonRecord | null;
+
+  if (!card) return false;
+  // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+  const source = card.source as JsonRecord | undefined;
+  // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+  const request = (source?.msg as JsonRecord | undefined)?.request as JsonRecord | undefined;
+  let params: JsonRecord | null = null;
+
+  try { params = JSON.parse(String(request?.value)); } catch { /* refuse incomplete parameters */ }
+
+  const steps = RULES.find(r => strictTask.includes(r.match))?.steps ?? [];
+  // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+  const events = (card.events ?? []) as JsonRecord[];
+  // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+  const history = events.flatMap(e => e.kind === "history" ? (e.entries as JsonRecord[] ?? []).map(x => ({ ...x, conversationId:e.conversationId })) : []);
+
+  const currentReceipt = history.map(x => {
+    // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+    const item = x.item as JsonRecord;
+    // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+    const msg = item?.msg as JsonRecord;
+
+    // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+    return { seq:x.seq, conversationId:x.conversationId, receipt:(msg?.event as JsonRecord)?.receipt as JsonRecord | undefined };
+  }).findLast(x => x.conversationId === request?.conversationId && x.receipt?.runId === request?.runId
+    && strictEnteredTasks.has(String(x.receipt?.text)) && x.receipt?.status === "accepted");
+
+  // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+  const conversation = events.findLast(e => e.kind === "conversations")?.conversations as JsonRecord[] | undefined;
+  const currentRun = conversation?.some(c => c.id === request?.conversationId && c.runId === request?.runId) === true;
+
+  const plannedStep = steps.find(step => {
+    if (!("tool" in step) || step.tool.name !== request?.tool || !["fill", "click"].includes(step.tool.name)) return false;
+
+    const expected = { ...step.tool.args, tabId:fixtureTab22replace,
+      formRequirements:[{label:strictField22replace, hostname:"form.test"}], userValueProvided:step.tool.name === "fill" };
+
+    return isDeepStrictEqual(params, expected);
+  });
+
+  const native = plannedStep && "tool" in plannedStep ? history.findLast(x => {
+    // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+    const msg = (x.item as JsonRecord)?.msg as JsonRecord;
+    // SAFETY: fixture observer returns native protocol records; optional fields are checked before approval.
+    const event = msg?.event as JsonRecord;
+
+    return x.conversationId === request?.conversationId && Number(x.seq) > Number(currentReceipt?.seq)
+      && event?.kind === "tool_start" && event.name === request?.tool
+      && isDeepStrictEqual(event.params, plannedStep.tool.args);
+  }) : undefined;
+
+  const planned = !!plannedStep;
+  const chat = model?.log.filter(r => r.kind === "chat").at(-1);
+  const taskMatches = !!chat && chat.all.includes(strictTask) && chat.all.includes(`"runId":"${request?.runId}"`);
+
+  const initialFixtureRead = request?.tool === "snapshot"
+    && (isDeepStrictEqual(params, {tabId:fixtureTab22replace,decision:true}) || isDeepStrictEqual(params, {tabId:fixtureTab22replace}));
+
+  // SAFETY: this read returns only our isolated fixture tab's native ownership record, without changing it.
+  const resource = request?.tool === "worker_tabs" ? await rp.evaluate(panel,
+    `chrome.storage.session.get("tabResources").then(s => s.tabResources?.[${JSON.stringify(String(fixtureTab22replace))}] ?? null)`) as JsonRecord | null : null;
+
+  const knownOwner = resource && conversation?.find(c => c.id === resource.conversationId && c.state === "idle");
+
+  const ownerEnteredByFixture = resource && history.some(x => {
+    // SAFETY: protocol history is fixture-observed native data; the optional receipt is checked before use.
+    const receipt = (((x.item as JsonRecord)?.msg as JsonRecord)?.event as JsonRecord)?.receipt as JsonRecord | undefined;
+
+    return x.conversationId === resource.conversationId && strictEnteredTasks.has(String(receipt?.text));
+  });
+
+  const idleFixtureClaim = request?.tool === "worker_tabs" && params?.action === "claim" && params.tabId === fixtureTab22replace
+    && isDeepStrictEqual(Object.keys(params).sort(), ["action", "expectedConversationId", "tabId"])
+    && !!knownOwner && !!ownerEnteredByFixture && resource?.conversationId !== request.conversationId
+    && (params.expectedConversationId === resource?.conversationId || params.expectedConversationId === "[redacted]");
+
+  const plannedTake = steps.some(step => "tool" in step && step.tool.name === "take_tab" && isDeepStrictEqual(step.tool.args, {tabId:fixtureTab22replace}));
+
+  const nativeTake = history.findLast(x => {
+    // SAFETY: fixture-observed native history is read only; the event fields below must match the exact plan.
+    const event = ((x.item as JsonRecord)?.msg as JsonRecord)?.event as JsonRecord | undefined;
+
+    return x.conversationId === request?.conversationId && Number(x.seq) > Number(currentReceipt?.seq)
+      && event?.kind === "tool_start" && event.name === "take_tab" && isDeepStrictEqual(event.params, {tabId:fixtureTab22replace});
+  });
+
+  const explicitFixtureClaim = request?.tool === "worker_tabs" && params?.action === "claim" && params.tabId === fixtureTab22replace
+    && (isDeepStrictEqual(Object.keys(params).sort(), ["action", "tabId"]) || isDeepStrictEqual(Object.keys(params).sort(), ["action", "expectedConversationId", "tabId"]))
+    && (params.expectedConversationId === undefined || params.expectedConversationId === resource?.conversationId || params.expectedConversationId === "[redacted]")
+    && plannedTake && !!nativeTake && taskMatches && currentReceipt?.receipt?.text === strictTask;
+
+  const allowed = !!request && request.purpose === "activation" && request.id === card.id && request.conversationId === card.selected
+    && Number(request.expiresAt) > Date.now() && !!currentReceipt && currentRun
+    && ((planned && !!native && taskMatches && currentReceipt.receipt?.text === strictTask) || initialFixtureRead || idleFixtureClaim || explicitFixtureClaim) && String(card.details).includes(String(request.value));
+
+  const staleFixtureRead = !!request && request.purpose === "activation" && request.id === card.id
+    && request.conversationId === card.selected && initialFixtureRead && !!currentReceipt && !currentRun
+    && currentReceipt.receipt?.text !== strictTask;
+
+  strictConsentLog.push({ task:strictTask, card, params, planned, native:native ?? null, taskMatches, modelRequest:chat ?? null, initialFixtureRead, currentReceipt:currentReceipt ?? null, allowed, staleFixtureRead, idleFixtureClaim, explicitFixtureClaim, nativeTake:nativeTake ?? null, ownerResource:resource });
+  await writeFile(join(artifacts, "22replace-consent.json"), JSON.stringify(strictConsentLog, null, 2));
+  await shot(`22replace-consent-${strictConsentLog.length}-${allowed ? "allow" : "reject"}`);
+  const selector = `.consent-card[data-request-id=${JSON.stringify(String(card.id))}] ${allowed ? ".consent-allow" : ".consent-reject"}`;
+  await rp.click(panel, selector);
+
+  if (!allowed && !staleFixtureRead) throw new Error("22replace 测量失败：未知或无法绑定的授权卡已拒绝，见22replace-consent.json");
+
+  if (allowed) consentAllowed += 1;
+
+  return true;
+}
+
+
 /** 等这一轮结束。中途出现授权卡（用户自己的任务要提交表单）时像用户一样点允许，次数进证据。 */
 async function waitTurnEnd(before: PanelState, limitMs = scripted ? 120_000 : 300_000) {
   const started = Date.now();
   let idle = 0;
 
   while (Date.now() - started < limitMs && idle < 12) {
-    if (await rp.evaluate(panel, `(() => { const b = document.querySelector("#consent-requests:not([hidden]) .consent-allow"); if (!b) return false; b.setAttribute("data-acceptance-click", "1"); b.scrollIntoView({ block: "center" }); return true; })()`).catch(() => false)) {
+    if (currentScenario === "22replace" && await approveFixture22replace()) { idle = 0; await sleep(500); continue; }
+
+    if (currentScenario !== "22replace" && await rp.evaluate(panel, `(() => { const b = document.querySelector("#consent-requests:not([hidden]) .consent-allow"); if (!b) return false; b.setAttribute("data-acceptance-click", "1"); b.scrollIntoView({ block: "center" }); return true; })()`).catch(() => false)) {
       await rp.click(panel, "[data-acceptance-click]").catch(() => undefined);
       await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`).catch(() => undefined);
       consentAllowed += 1;
@@ -953,6 +1091,9 @@ async function waitTurnEnd(before: PanelState, limitMs = scripted ? 120_000 : 30
 async function turn(text: string) {
   const mark = model?.log.length ?? 0;
   const sentAt = Date.now();
+
+  if (currentScenario === "22replace") { strictTask = text; strictEnteredTasks.add(text); }
+
   const before = await send(text);
   await waitTurnEnd(before);
   const requests = model ? model.log.slice(mark) : [];
@@ -2076,6 +2217,57 @@ async function s22override(): Promise<Verdict> {
     { methodId: method.id, override: override.evidence, methodUnchanged: unchanged, methodAfter: after ?? null, next: next.evidence });
 }
 
+/** 22replace：替换和撤销均经实际卡，执行结果由独立服务器判。 */
+async function s22replace(): Promise<Verdict> {
+  await rp.evaluate(panel, `(() => { globalThis.__fixtureConsentEvents=[]; const p=chrome.runtime.connect({name:"sideagent-panel"});
+    globalThis.__fixtureConsentPort=p; p.onMessage.addListener(e => { globalThis.__fixtureConsentEvents.push(e); if(e.kind === "conversations") globalThis.__fixtureSelected=e.selectedConversationId; });
+    p.postMessage({kind:"sync"}); return true; })()`);
+  fixtureTab22replace = await rp.evaluate(panel, `chrome.tabs.query({}).then(t => t.find(t => t.url === "http://form.test/")?.id ?? t.find(t => t.active && t.url?.startsWith("http://"))?.id)`);
+
+  if (!Number.isSafeInteger(fixtureTab22replace) || Number(fixtureTab22replace) <= 0) throw new Error("唯一fixture标签身份不可用");
+
+  for (const rule of RULES.filter(r => r.match.startsWith("[S22-REPLACE-"))) {
+    const step = rule.steps[0];
+
+    if (step && "tool" in step && step.tool.name === "take_tab") step.tool.args.tabId = fixtureTab22replace;
+  }
+
+  strictField22replace = "备注";
+  const old = await rememberFormMethod22("22replace");
+  const first = await formAttempt22("22replace-old-missing", FORM, `[S22-MISSING] 填写并提交表单：${S22_PERSON}`, "S22-MISSING", 2);
+  const exact = await formAttempt22("22replace-old-exact", FORM, `[S22-EXACT] 备注填写「${S22_NOTE}」，现在提交`, "S22-EXACT", 1, {fresh:false});
+  const phoneRule = "以后在这个网站填写并提交表单时，我都会先填写「电话」栏。";
+  const correction = "不对，以后每次填写并提交表单时都要先填电话，不再要求备注";
+  const r = await correct(FORM, null, correction, i => fix({rule:phoneRule,evidence:"以后每次填写并提交表单时都要先填电话，不再要求备注",replaces:i.methods.find(m => m.id === old.id)?.id ?? null}));
+
+  if (!r.ask || !r.ask.replaces?.includes(S22_RULE)) throw new Error("替换卡没有明确展示旧备注规则");
+  const replacementConversation = await rp.evaluate(panel, `chrome.storage.local.get("selectedConversationId").then(s => s.selectedConversationId)`);
+  await shot("22replace-replacement-card");
+  await clickInAsk(r.ask.id,TARGETS.ask.remember);
+  await until(async () => (await askById(r.ask!.id))?.undo || undefined,15000,"电话方法已记住");
+  const neu = (await readMemories()).items.find(e => isMethod(e) && isActive(e) && TARGETS.read.text(e) === phoneRule);
+  strictField22replace = "电话";
+  const missingPhone = await formAttempt22("22replace-phone-missing",FORM,"[S22-REPLACE-PHONE-MISSING] 填写并提交表单：姓名张三","S22-REPLACE-PHONE-MISSING",2);
+  const phoneExact = await formAttempt22("22replace-phone-exact",FORM,"[S22-PHONE-EXACT] 电话填写「13800000000」，现在提交","S22-PHONE-EXACT",1,{fresh:false});
+  // 回到替换卡所在会话，再点其撤销；不能往数据库写状态。
+  await rp.evaluate(panel, `globalThis.__fixtureConsentPort.postMessage({kind:"select_conversation",conversationId:${JSON.stringify(replacementConversation)}}); true`);
+  await until(async () => (await asks()).some(a => a.id === r.ask!.id) || undefined, 10000, "回到替换卡所在会话");
+  const undo = await clickInAsk(r.ask.id,TARGETS.ask.undo);
+  await sleep(1500);
+  const restored = byId((await readMemories()).items,String(old.id));
+  strictField22replace = "备注";
+  const afterUndo = await formAttempt22("22replace-undo-missing",FORM,`[S22-REPLACE-UNDO-MISSING] 填写并提交表单：${S22_PERSON}`,"S22-REPLACE-UNDO-MISSING",3);
+
+  // SAFETY: formAttempt22 constructs receipt records; the Array check excludes absent/invalid fixture evidence.
+  const phoneReceipts = Array.isArray(missingPhone.evidence.receipts) ? missingPhone.evidence.receipts as JsonRecord[] : [];
+
+  return verdict(first.observed && first.rejectedForNote && first.posts.length===0 && exact.observed && exactFormPost22(exact.posts,FORM,S22_NOTE)
+    && !!neu && missingPhone.observed && missingPhone.posts.length===0 && missingPhone.dom.phone==="" && phoneReceipts.some(e => e.executionFact==="not_executed" && /电话/.test(String(e.resultText)))
+    && phoneExact.observed && exactFormPost22(phoneExact.posts,FORM,"") && undo && !!restored && isActive(restored)
+    && afterUndo.observed && afterUndo.rejectedForNote && afterUndo.posts.length===0 && strictConsentLog.every(e => e.allowed===true || e.staleFixtureRead===true),
+    { oldId:old.id,newId:neu?.id ?? null,replacementCard:r.ask,first:first.evidence,exact:exact.evidence,missingPhone:missingPhone.evidence,phoneExact:phoneExact.evidence,undo,afterUndo:afterUndo.evidence });
+}
+
 /** 22edge：有已确认的方法时，目标缺失/歧义或用js/POST绕过仍不能造成提交。 */
 async function s22edge(): Promise<Verdict> {
   const method = await rememberFormMethod22("22edge");
@@ -2509,7 +2701,7 @@ async function real2(): Promise<Verdict> {
 
 let fatal: string | null = null;
 
-const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split", "22", "22b", "22scope", "22override", "22edge", "22negative", "22memory", "22fetch"];
+const ORDER_SCRIPTED = ["std6", "1s", "11", "12", "1e", "4s", "5s", "8s", "9s", "13", "14", "15", "16", "17", "18", "18u", "19", "20", "21", "21m", "21p", "21mix", "21split", "22", "22b", "22scope", "22override", "22replace", "22edge", "22negative", "22memory", "22fetch"];
 
 const ORDER_REAL = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "risk-crm", "risk-form", "risk-shop", "22live"];
 
@@ -2535,6 +2727,38 @@ try {
   }
 
   await waitReady();
+
+  if (process.argv.includes("--trace-approval")) {
+    const worker = (await rp.targets()).find(t => t.type === "service_worker" && t.url === `chrome-extension://${rp.extensionId}/background.js`);
+
+    if (!worker) throw new Error("隔离后台不存在");
+
+    approvalProbeSession = await rp.attach(worker.targetId);
+    const parsed: JsonRecord[] = [];
+    const stop = rp.cdp.onEvent("Debugger.scriptParsed", m => { if (m.sessionId === approvalProbeSession) parsed.push(m.params); });
+    await rp.cdp.send("Debugger.enable", {}, approvalProbeSession);
+    const script = parsed.find(x => x.url === worker.url);
+
+    if (!script) throw new Error("隔离后台源码不可读");
+
+    const reply = await rp.cdp.send("Debugger.getScriptSource", {scriptId:script.scriptId}, approvalProbeSession);
+    const source = String(reply.scriptSource);
+    await rp.evaluate(approvalProbeSession, "globalThis.__approvalProbe={samples:[],checks:[]};true");
+    const lines = source.split("\n");
+    const sampleLine = lines.findIndex(line => line.includes("isolated:") && line.includes("crypto.subtle.digest"));
+    const checkLine = lines.findIndex(line => line.includes("entry.finish(Date.now()") && line.includes("entry.expected"));
+    const sampleName = lines[sampleLine]?.match(/isolated: (\w+)\.result/)?.[1];
+    const nativeName = lines[sampleLine]?.match(/native: (\w+)/)?.[1] ?? "native";
+    const currentName = lines[checkLine]?.match(/&& (\w+) === entry.expected/)?.[1];
+
+    if (sampleLine < 0 || checkLine < 0 || !sampleName || !currentName) throw new Error("被动诊断位置不匹配");
+
+    await rp.cdp.send("Debugger.setBreakpointByUrl", {url:worker.url,lineNumber:sampleLine,
+      condition:`(globalThis.__approvalProbe.samples.push({at:Date.now(),isolated:${sampleName}.result,native:${nativeName}}),false)`}, approvalProbeSession);
+    await rp.cdp.send("Debugger.setBreakpointByUrl", {url:worker.url,lineNumber:checkLine,
+      condition:`(globalThis.__approvalProbe.checks.push({at:Date.now(),id:entry.request.id,tool:entry.request.tool,expected:entry.expected,current:${currentName}}),false)`}, approvalProbeSession);
+    stop();
+  }
 
   const run = async (id: string, fn: () => Promise<Verdict>) => {
     if (!wants(id)) {
@@ -2595,6 +2819,7 @@ try {
     await run("22b", s22b);
     await run("22scope", s22scope);
     await run("22override", s22override);
+    await run("22replace", s22replace);
     await run("22edge", s22edge);
     await run("22negative", s22negative);
     await run("22memory", s22memory);
@@ -2642,6 +2867,10 @@ try {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(fatal);
 } finally {
+  if (approvalProbeSession) {
+    await writeFile(join(artifacts,"approval-probe.json"),JSON.stringify(await rp.evaluate(approvalProbeSession,"globalThis.__approvalProbe"),null,2)).catch(() => undefined);
+  }
+
   await rp.close().catch(() => undefined);
   await rp.remove().catch(() => undefined);
   await model?.close().catch(() => undefined);

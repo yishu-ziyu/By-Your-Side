@@ -1395,6 +1395,10 @@ async function executeToolCall(
     }
 
     if (dialogState) throw new Error("页面有待处理的原生弹窗。请先查询 dialog_info，再批准 accept_dialog 或 dismiss_dialog；本次网页操作未执行。");
+    // Bind only after our already-requested presence paint has settled.
+    // Its closed-shadow class changes must not invalidate an otherwise unchanged page.
+    if (tabId != null) await glowPage(key(sid), tabId);
+    checkIdentity();
     const page = tabId == null ? null : await readCurrentDocument(tabId);
     if (tabId != null && !page) throw new Error("无法绑定当前页面，操作未执行。");
     let state = "";

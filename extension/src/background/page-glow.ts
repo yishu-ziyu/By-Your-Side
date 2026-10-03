@@ -38,7 +38,9 @@ export function glowPage(key: string, tabId: number | null): Promise<void> {
 
   const previous = lit.get(key);
 
-  if (tabId == null || previous === tabId) return Promise.resolve();
+  if (tabId == null) return Promise.resolve();
+
+  if (previous === tabId) return paints.get(tabId) ?? Promise.resolve();
   lit.set(key, tabId);
 
   return Promise.all([previous != null ? paint(previous, key) : null, paint(tabId, key)]).then(() => {});

@@ -8,6 +8,8 @@ Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩�
 
 记忆误分类定点：`npx tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=21,21m,21p,21mix,21split`；合法误分类、缺失/畸形分类、个人/临时/混合消息、分离片段反例、确认前后写入和同站/异站带回，证据见[验收](../evals/20261003-memory-classification.md)。真实模型仍通过同脚本 `--model=...` 定点核对。提交前字段规则用 `--scripted --only=22,22b,22scope,22override,22edge,22negative,22memory`，核对服务器零POST、用户原文续办及范围/删除/临时覆盖（含“备注留空”，不用固定说“这次”），见[验收](../evals/20261003-method-form-enforcement.md)。`--model=... --only=22live`验证缺内容先问、用户补原文后仅一次提交；`--scripted --only=22fetch`另查小写POST（前提受阻不算通过）。
 
+记忆替换与撤销：`node --import tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=22replace`。实际侧栏记住、替换、撤销后，在新会话检查缺字段零提交和补原文精确一次提交。只批准唯一夹具标签内的已知任务动作，未知卡拒绝且失败；日常构建哈希须保持一致。脚本模型替代提供方，不替代扩展或服务器；见[验收](../evals/20261003-memory-rule-replacement.md)。
+
 ## 正式入口
 
 安全逐次确认：`node --import tsx scripts/acceptance/real-path/security-confirmation.mts --headless` 经真实设置页、offscreen agent 和侧栏请求/选择，按完整动作参数及新 requestId 核对 click。宿主任务观察会请求 snapshot({tabId,decision:true})，目标核验还会请求 snapshot/read_element；夹具只批准当前练习页的精确读取，逐卡留存参数与服务器提交计数，未知动作即失败。辅助执行器反例见 `scripts/acceptance/security-confirmation.mts`，不得替代前述日常入口。

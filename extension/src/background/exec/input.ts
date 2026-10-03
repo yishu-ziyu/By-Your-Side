@@ -539,8 +539,7 @@ async function guardRequiredFormFields(tabId: number, input: FormFieldGuardInput
   try {
     let refusal: string | null;
 
-    const backendNodeId = input.action === "fill" && input.target
-      ? axBackendNodeFor(tabId, parseRef(input.target)) : undefined;
+    const backendNodeId = input.target ? axBackendNodeFor(tabId, parseRef(input.target)) : undefined;
 
     if (backendNodeId !== undefined) {
       try {
@@ -1387,6 +1386,9 @@ export async function click(
     }
   })());
 
+  // Refuse missing required fields before pointer positioning can scroll the page.
+  await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target: params.target, point: params.point });
+
   const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
   if (!params.fromUserConfirm && point) await assertNotOwnOverlay(tabId, point[0], point[1]);
@@ -1617,6 +1619,9 @@ export async function doubleClick(
       return [];
     }
   })());
+
+  // Refuse missing required fields before pointer positioning can scroll the page.
+  await guardRequiredFormFields(tabId, { requirements: params.formRequirements ?? [], action: "click", target: params.target, point: params.point });
 
   const { point, targetRect } = await resolvePointerTarget(tabId, params, beforeDispatch);
 

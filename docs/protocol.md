@@ -182,3 +182,5 @@ EverOS 桥接已于 2026-10-01 移出主线，原说明见[历史](history/20261
 `expect:{property:"paused",equals:true}`检查指定属性；文字可用contains。equals按属性区分布尔、数字和文字，布尔值不接受字符串。timeoutMs默认0，仅检查一次；最多5000ms在同一只读调用中有界等待。不匹配明确失败，匹配才返回`check:{matched:true,property,elapsedMs}`。这只是该目标该条件成立，不能单独推导整项任务成功。
 
 原@ref、唯一CSS、标签权限仍生效。多个匹配、过期ref、无效属性立即失败；等待跨文档时拒绝结果。状态查询的模型正文只返回所请求属性与检查证据，默认全文读取不截断。browser_run可直接await browser.read_element使用同一参数和权限路径。
+
+要求字段提交前的检查顺序与原目标定位规则见[表单要求](browser-confirmation.md#已确认表单要求)；明确拒绝与定位后不确定的效果分别报告，不把后者误写成未执行。

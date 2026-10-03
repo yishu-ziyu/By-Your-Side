@@ -39,7 +39,7 @@
 1. 自检（#28）：GLM、M3.1 定点各5/5；M3.1 文件转义失败已修复并复测，日常已加载。见[验收](evals/20261002-answer-selfcheck.md)。
 2. PDF 下载（#25）：两模型的原 arXiv 请求通过，日常 Chrome 可见实录为2步、8秒；见[验收与录像](evals/20261002-pdf-download.md)。
 3. #32环境分类已在独占条件下完整通过；#35共124次运行与判分完成。M3.1正常任务52/55，GLM50/56；环境分别7、6次。见[环境验收](evals/20261002-eval-environment.md)与[复测验收](evals/20261002-tiers12-after-fixes.md)。
-4. Pi会话/文件恢复与40px截图卡已部署，关键验收通过。见[验收与录像](evals/20261002-session-durability.md)。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax记忆分类与备注提交检查通过，日常已加载；见[分类](evals/20261003-memory-classification.md)与[执行](evals/20261003-method-form-enforcement.md)。下一步扩展方法检查。
+4. Pi会话/文件恢复与40px截图卡已部署，关键验收通过。见[验收与录像](evals/20261002-session-durability.md)。会话菜单已部署（[验收](evals/20261003-conversation-menu.md)）。MiniMax记忆分类与备注提交检查通过，日常已加载；见[分类](evals/20261003-memory-classification.md)与[执行](evals/20261003-method-form-enforcement.md)。备注补填、电话规则替换、撤销恢复备注的整条扩展路径通过，日常已加载；本轮使用脚本模型，在线MiniMax复测为下一步。见[验收](evals/20261003-memory-rule-replacement.md)。
 
 UI提案第二版已重做，file协议自动访问被拒，实际视觉/点击仍待用户反馈，见[设计记录](research/20261002-uiux-memory.md)。
 
