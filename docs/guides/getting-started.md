@@ -15,7 +15,7 @@ npm ci
 npm run build
 ```
 
-`build` 生成 `extension/dist/`。
+`build` 生成 `extension/dist/`。依赖版本由仓库锁定：DOMPurify 3.4.16、Undici 8.10.2；Pi 仍为0.84.4，其嵌套依赖补丁策略见[开发检查](../development/checks.md)。无需修改全局 npm 配置。
 
 ## 2. 加载扩展
 

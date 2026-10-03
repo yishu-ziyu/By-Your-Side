@@ -15,7 +15,7 @@
     "@sideagent/agent": "file:../agent",
     "@earendil-works/pi-agent-core": "0.84.4",
     "@earendil-works/pi-ai": "0.84.4",
-    "dompurify": "3.4.14",
+    "dompurify": "3.4.16",
     "lucide": "1.39.0",
     "marked": "18.0.11"
   }
