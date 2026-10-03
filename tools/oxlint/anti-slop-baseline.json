@@ -1135,14 +1135,12 @@
     "anti-slop(no-runtime-typeof)": 1
   },
   "extension/src/background/exec/input.ts": {
-    "anti-slop(no-conditional-empty-object-spread)": 14,
     "anti-slop(no-known-value-widening)": 1,
-    "anti-slop(no-runtime-typeof)": 8,
+    "anti-slop(no-runtime-typeof)": 13,
     "anti-slop(no-unknown-parameters)": 4,
     "anti-slop(no-unsafe-dictionary-type)": 3,
-    "anti-slop(require-safety-comment-for-type-assertion)": 7,
-    "eslint(no-unused-vars)": 1,
-    "unicorn(no-useless-spread)": 2
+    "anti-slop(require-readable-spacing)": 18,
+    "anti-slop(require-safety-comment-for-type-assertion)": 8
   },
   "extension/src/background/exec/navigate.ts": {
     "anti-slop(no-conditional-empty-object-spread)": 1
@@ -1193,15 +1191,14 @@
     "anti-slop(require-safety-comment-for-type-assertion)": 1
   },
   "extension/src/background/index.ts": {
-    "anti-slop(no-array-filter-map)": 2,
-    "anti-slop(no-chained-type-assertions)": 1,
-    "anti-slop(no-conditional-empty-object-spread)": 11,
-    "anti-slop(no-known-value-widening)": 2,
-    "anti-slop(no-runtime-typeof)": 20,
+    "anti-slop(no-chained-type-assertions)": 2,
+    "anti-slop(no-known-value-widening)": 3,
+    "anti-slop(no-runtime-typeof)": 22,
     "anti-slop(no-unknown-parameters)": 11,
     "anti-slop(no-unknown-returns)": 1,
-    "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-safety-comment-for-type-assertion)": 26
+    "anti-slop(no-unsafe-dictionary-type)": 2,
+    "anti-slop(require-readable-spacing)": 39,
+    "anti-slop(require-safety-comment-for-type-assertion)": 30
   },
   "extension/src/background/mode.ts": {
     "anti-slop(no-unsafe-dictionary-type)": 1
@@ -1222,9 +1219,10 @@
     "typescript(no-this-alias)": 1
   },
   "extension/src/background/page-events.ts": {
-    "anti-slop(no-conditional-empty-object-spread)": 2,
+    "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-runtime-typeof)": 7,
     "anti-slop(no-unsafe-dictionary-type)": 2,
+    "anti-slop(require-readable-spacing)": 4,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
     "unicorn(no-useless-spread)": 1
   },

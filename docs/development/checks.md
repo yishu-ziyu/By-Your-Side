@@ -32,6 +32,7 @@ npm run check                # 文档、边界、类型、测试、构建
 只核对扩展打包时，设置 `SIDEAGENT_BUILD_DIST` 指向独立临时目录，再运行 `npm run build -w @sideagent/extension`；`inproc-mark`、`inproc-voice` 的 real-path 驱动也隔离构建。入口契约只证明协议结果；圈画可见而任务账本仍判未完成时，真实路径算失败，保留页面截图和侧栏回执一起排查。
 `package-lock.json` 要带上各平台的可选原生绑定（例如 `@rolldown/binding-darwin-arm64`）：缺了时已有的 `node_modules` 照常能跑，干净 `npm ci` 后 vitest 却起不来。改依赖后，在临时目录做一次干净 `npm ci` 再跑 `npm test` 核对。
 模块边界检查只允许扩展的 `inproc` 入口使用公开的 `@sideagent/agent/browser-core` 包接口；其他扩展页面仍不得直接依赖 agent 实现。
+依赖审计用 `npm audit --registry=https://registry.npmjs.org`（命令级参数，不改全局源）。Pi 0.84.4 自带 npm-shrinkwrap，npm 10 下项目级 override 不能覆盖其中的版本；必须以干净 npm ci 后的 npm ls 和 audit 核对，不凭根锁文件清零。当前直接依赖补丁与 Pi 内依赖分别记录，见[升级验收](../evals/20261003-issue-42-dependencies.md)。
 
 模型菜单动效的隔离浏览器检查与并排录制：运行 `node extension/test/model-picker-motion.mjs`（[脚本](../../extension/test/model-picker-motion.mjs)），产物在 `out/model-picker-motion/`。它挂载真实组件、生产 CSS 与固定目录，不加载扩展或调用模型；不能替代日常 Chrome side panel 验收。脚本默认复用本机 Playwright/CfT，其他安装路径需调整 Playwright 导入、用 `MODEL_PICKER_CHROME` 指定浏览器。
 
@@ -56,3 +57,5 @@ npm run check                # 文档、边界、类型、测试、构建
 评测环境分类以[浏览器证据](../testing/eval-environment.md)为准；报表和复核页不得把普通任务失败移出分母。
 
 安全候选PR额外执行strict确认策略/台账与输入回归、typecheck、完整npm test、文档同步及构建；验收边界见[安全记录](../evals/20261003-security-confirmation.md)。lockfile补齐缺失的Linux ppc64可选esbuild条目，不升级依赖。
+
+2026-10-03 的 lint 基线校正只取已合并 `2f95cbf` 的 input/index/page-events 三份原文件计数；未使用本轮工作树增加预算。本轮新增诊断仍须修复。原版本与计数证据在 `out/issue-42/merged-lint-baseline.json`。
