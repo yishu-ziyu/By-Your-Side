@@ -112,3 +112,5 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only
 真实路径的临时Linux Chrome沿用隔离验收的`--no-sandbox`参数，适配禁止非特权namespace的CI runner；不改变日常浏览器或产品权限。启动失败保留Chrome stderr及spawn错误，调试端口等待不延长。
 
 原生弹窗专项：`node --import tsx scripts/acceptance/dialog-recovery.mts --headless` 隔离构建当前源码，经真实侧栏逐次批准核对原生 confirm/prompt 与恢复；证据在 `out/dialog-recovery/`，不是供应商模型整链路。时间框定点：`page-readouts.mts --headless --only=range` 核对原生子框、非法格式保值和原范围警告，本地夹具每次通过真实侧栏批准，保存完整参数；`--live` 的授权上下文尚待适配。
+
+#22只读脚本专案后置：`readonly-script.mts --headless`仅草拟未来专用工具的验收契约，产品工具尚未实现、脚本未运行，不作为发布入口。求值标记不能覆盖返回对象序列化的实际副作用，见[实验失败](../research/20261003-readonly-js.md)；后置安排不阻塞其他功能。
