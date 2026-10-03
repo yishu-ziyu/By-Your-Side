@@ -86,8 +86,21 @@ function run() {
 
     if (old) historyCount++;
 
-    if (old && !options.all && !changed.has(file)) continue;
+    // 日期命名代表验收创建日期；新格式即使提交后也不能被历史跳过规则豁免。
+    const evalDate = file.match(/^docs\/evals\/(\d{8})-[^/]+\.md$/)?.[1];
+    const needsEvalSections = evalDate != null && evalDate >= "20261004";
+
+    if (old && !options.all && !changed.has(file) && !needsEvalSections) continue;
     const text = readFileSync(resolve(options.root, file), "utf8");
+
+    if (needsEvalSections) {
+      const sections = new Set(marked.lexer(text).filter(token => token.type === "heading" && token.depth === 2).map(token => token.text));
+
+      for (const section of ["规则", "技术前提"]) {
+        if (!sections.has(section)) errors.push(`EVAL ${file}: 缺少二级章节「${section}」`);
+      }
+    }
+
     const chars = [...text].length;
     const lines = text.trimEnd().split("\n").length;
     const limit = policy.entryLimits[file] ?? policy.maxChars;

@@ -130,3 +130,37 @@ test("全量审计显示所有缺失引用，不能截掉后半部分", t => {
   assert.equal(r.status, 0, r.output);
   assert.match(r.output, /HISTORY.*missing-19\.png/);
 });
+
+test("10-04 起验收文件缺章失败，补齐后未提交、暂存和提交均通过", t => {
+  const f = fixture(t);
+  const path = "docs/evals/20261004-format.md";
+  f.put(path, "# 任务\n\n## 技术前提\n\n无。\n");
+  let r = f.run();
+  assert.equal(r.status, 1, r.output);
+  assert.match(r.output, /EVAL.*20261004-format\.md.*规则/);
+  f.put(path, "# 任务\n\n## 规则\n\nR1 检查章节。\n");
+  r = f.run();
+  assert.equal(r.status, 1, r.output);
+  assert.match(r.output, /EVAL.*技术前提/);
+  f.put(path, "# 任务\n\n## 规则\n\nR1 检查章节。\n\n## 技术前提\n\n无。\n");
+  assert.equal(f.run().status, 0);
+  f.git("add", path);
+  assert.equal(f.run().status, 0);
+  f.git("commit", "-qm", "valid acceptance");
+  assert.equal(f.run().status, 0);
+  f.put(path, "# 提交后仍检查\n");
+  f.git("add", path);
+  f.git("commit", "-qm", "invalid acceptance");
+  assert.equal(f.run().status, 1);
+});
+
+test("日期边界保留旧记录，未来记录不能用代码块或其他层级冒充章节", t => {
+  const f = fixture(t);
+  f.put("docs/evals/20261003-old.md", "# 旧验收\n");
+  assert.equal(f.run().status, 0);
+  f.put("docs/evals/20270101-future.md", "# 新验收\n```md\n## 规则\n## 技术前提\n```\n### 规则\n### 技术前提\n");
+  const r = f.run("--all");
+  assert.equal(r.status, 1, r.output);
+  assert.match(r.output, /EVAL.*20270101-future\.md.*规则/);
+  assert.match(r.output, /EVAL.*20270101-future\.md.*技术前提/);
+});
