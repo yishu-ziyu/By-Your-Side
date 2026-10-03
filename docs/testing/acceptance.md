@@ -108,3 +108,5 @@ npx tsx scripts/acceptance/real-path/ux-fixes.mts --headless --phase=real --only
 会话列表的小迭代：`npx tsx scripts/acceptance/real-path/conversation-menu.mts --headless`。验证360px长名称、更新时间、选中/键盘、各会话草稿和无模型任务调用，见[验收](../evals/20261003-conversation-menu.md)。
 
 真实路径的临时Linux Chrome沿用隔离验收的`--no-sandbox`参数，适配禁止非特权namespace的CI runner；不改变日常浏览器或产品权限。启动失败保留Chrome stderr及spawn错误，调试端口等待不延长。
+
+原生弹窗专项：`node --import tsx scripts/acceptance/dialog-recovery.mts --headless` 隔离构建当前源码，经真实侧栏逐次批准核对原生 confirm/prompt 与恢复；证据在 `out/dialog-recovery/`，不是供应商模型整链路。时间框定点：`page-readouts.mts --headless --only=range` 核对原生子框、非法格式保值和原范围警告，本地夹具每次通过真实侧栏批准，保存完整参数；`--live` 的授权上下文尚待适配。

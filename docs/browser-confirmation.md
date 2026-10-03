@@ -10,6 +10,12 @@
 
 **验收边界：** 指纹不锁站点事务或隐藏状态。真实入口已验收；合并见[#38](https://github.com/yishu-ziyu/By-Your-Side/pull/38)。
 
+activation卡显示真实工具动作和目标，不把会话标题标为当前任务；必要重设的recovery卡仍显示原目标。侧栏只显示pending请求，结束后自动移除卡片；在原有效期内保留已结束ID，防止迟到列表复活旧卡。真实列表仍附加后台当前待批请求，不影响新请求批准；过期旧请求也不能重新成为可操作卡。
+
+## 原生弹窗
+
+原生弹窗会暂停网页脚本。处理弹窗时不读取网页 DOM 建立批准指纹，而绑定后台原生事件的递增身份、弹窗内容、标签页、任务、取消轮次及精确参数。侧栏仍须允许一次；关闭、替换、拒绝或停止后原批准作废。同文案的新弹窗不能复用旧批准。其他网页操作先报告弹窗阻塞，使用 dialog_info 查询，再批准 accept_dialog/dismiss_dialog。
+
 ## 已确认表单要求
 
 宿主可给 `click`、`double_click`、`fill`、`type_text`、`select_option`、`press_key` 附加 `formRequirements:[{label,hostname?}]`；模型不能自报。仅提取有效已确认方法的引号字段。`hostname` 精确匹配当前主机名，缺省适用当前页。规则见[记忆模型](memory-model.md)。

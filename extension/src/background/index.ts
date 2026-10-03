@@ -1,3 +1,4 @@
+import { readDialogApprovalState } from "./page-events.js";
 import {nativeApprovalState} from "./native-approval-state.js";
 import { ActivationConsent } from "./activation-consent.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
@@ -1356,6 +1357,13 @@ async function executeToolCall(
   let consentTab: number | null = null;
   const checkCurrentConsent = () => {
     checkIdentity();
+
+    if (activationApproved && consentTab !== null) {
+      const bound = JSON.parse(approvedContext);
+
+      if (bound.dialogState && readDialogApprovalState(consentTab) !== bound.dialogState) throw Object.assign(new Error("批准的原生弹窗已关闭或被替换，操作未执行。"),{executionFact:"not_executed"});
+    }
+
     if (activationApproved && (Date.now() >= approvedUntil || activationConsent.version !== approvedCancellationVersion || gate.gen !== approvedGateGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid)))) throw Object.assign(new Error("确认已作废，操作未执行。"),{executionFact:"not_executed"});
   };
   const afterApprovedEffect = Object.assign(async () => {
@@ -1372,7 +1380,21 @@ async function executeToolCall(
   const captureApprovalContext = async () => {
     checkIdentity();
     const tabId = typeof params.tabId === "number" ? params.tabId : await getWorkingTabId(sid);
+
     if (consentTab !== null && tabId !== consentTab) throw new Error("工作页面已变化，操作未执行。");
+    const dialogState = tabId == null ? null : readDialogApprovalState(tabId);
+
+    if (name === "accept_dialog" || name === "dismiss_dialog") {
+      if (tabId == null || !dialogState) throw new Error("没有待处理的原生弹窗，操作未执行。");
+      const tab = await chrome.tabs.get(tabId);
+      checkIdentity();
+
+      if (readDialogApprovalState(tabId) !== dialogState) throw new Error("原生弹窗已变化，操作未执行。");
+
+      return JSON.stringify({cancellationVersion:activationConsent.version,runId:conversationSummaries.find(c=>c.id===conversationId)?.runId,epoch:executionEpochs.get(sid),gen:gate.gen,tabId,url:tab.url,dialogState,params});
+    }
+
+    if (dialogState) throw new Error("页面有待处理的原生弹窗。请先查询 dialog_info，再批准 accept_dialog 或 dismiss_dialog；本次网页操作未执行。");
     const page = tabId == null ? null : await readCurrentDocument(tabId);
     if (tabId != null && !page) throw new Error("无法绑定当前页面，操作未执行。");
     let state = "";

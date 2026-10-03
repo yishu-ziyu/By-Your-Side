@@ -11,44 +11,66 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type JsonRecord } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
 import { toolAction } from "../../../shared/user-facing.js";
 
 requireHeadless();
-const artifacts = join(REPO, "out/security-confirmation/real-path");
+
+const artifacts = join(REPO, "out/security-confirmation/real-path", new Date().toISOString().replace(/[:.]/g, "-"));
+
 await mkdir(artifacts, { recursive: true });
+
 let commits = 0;
+
 const site = createServer((req, res) => {
   if (req.url === "/commit" && req.method === "POST") {
     commits++;
     res.writeHead(200, { "content-type": "text/plain" }).end("ok");
+
     return;
   }
+
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(
     '<!doctype html><html><head><title>Consent fixture</title></head><body><h1>Consent fixture</h1><button id="commit" type="button" onclick="fetch(\'/commit\',{method:\'POST\'})">Continue</button></body></html>',
   );
 });
+
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
+
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
+
 const marks = ["安全验收拒绝", "安全验收允许", "安全验收第二次", "安全验收停止"];
+
 const rules: Rule[] = marks.map(match => ({ match, steps: [
   { tool: { name: "get_active_tab", args: {} } },
   { tool: { name: "snapshot", args: {} } },
   { tool: { name: "click", args: { target: "#commit" } } },
   { text: `【${match}结束】` },
 ] }));
+
 const model = await startScriptedModel(rules);
+
 let rp: Awaited<ReturnType<typeof launchRealPath>> | undefined;
+
 let panel: string | undefined;
+
 let work: string | undefined;
+
 let error: string | null = null;
+
 const evidence: Array<{ case: string; commits: number; requestId?: string }> = [];
+
 const consentCards: Array<{ id: string; text: string; details: string; commits: number; decision?: string }> = [];
+
 const seenConsents = new Set<string>();
+
 const activeCard = '.consent-card:not(.consent-complete)';
+
 const recordDecision = (id: string, decision: string) => { const card = consentCards.find(entry => entry.id === id); assert.ok(card); card.decision = decision; };
+
 const cardSelector = (id: string) => `${activeCard}[data-request-id=${JSON.stringify(id)}]`;
+
 try {
   rp = await launchRealPath();
   const browser = rp;
@@ -57,8 +79,10 @@ try {
   await browser.cdp.send("Page.navigate", { url: origin }, work);
   panel = await browser.attach(await browser.openSidePanel());
   const sidebar = panel;
+  // Passive observation only: never send a decision on this diagnostic port.
+  await browser.evaluate(sidebar, `(()=>{window.__consentSourceEvents=[];window.__consentObserver=chrome.runtime.connect({name:'sideagent-panel'});window.__consentObserver.onMessage.addListener(wire=>{const msg=wire?.msg;if(wire?.kind==='server'&&['consent_request','consent_list','consent_result'].includes(msg?.type))window.__consentSourceEvents.push({at:Date.now(),message:msg});});return true})()`);
   const fixtureTabId = await browser.evaluate(sidebar, `new Promise(resolve=>chrome.tabs.query({},tabs=>resolve(tabs.find(tab=>tab.url===${JSON.stringify(origin + "/")})?.id)))`);
-  assert.equal(typeof fixtureTabId, "number", "the native fixture tab identity must be known");
+  assert.ok(Number.isInteger(fixtureTabId) && fixtureTabId > 0, "the native fixture tab identity must be known");
   await browser.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sidebar);
   await until(async () => await browser.evaluate(sidebar, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "real sidebar ready");
   await browser.click(sidebar, "#header-more");
@@ -68,10 +92,12 @@ try {
   await until(async () => await browser.evaluate(settings, '!!document.querySelector(\'.provider-option[data-provider="custom"]\')') || undefined, 15_000, "custom provider");
   await browser.evaluate(settings, 'document.querySelector("#provider-more").open=true;document.querySelector(\'.provider-option[data-provider="custom"]\').scrollIntoView({block:"center"});true');
   await browser.click(settings, '.provider-option[data-provider="custom"]');
+
   for (const [selector, value] of [["#base-url", model.baseUrl], ["#api-key", "local-demo-no-secret"], ["#model-id", "demo-model"]]) {
     await browser.evaluate(settings, `(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:"center"});e.focus();e.select?.();return true})()`);
     await browser.typeText(settings, value!);
   }
+
   await browser.evaluate(settings, 'document.querySelector("#model-save").scrollIntoView({block:"center"});true');
   await browser.click(settings, "#model-save");
   await until(async () => String(await browser.evaluate(settings, 'document.querySelector("#model-status")?.textContent')).startsWith("已保存") || undefined, 10_000, "saved scripted endpoint");
@@ -84,21 +110,29 @@ try {
     await browser.typeText(sidebar, `${mark}：点击当前练习页的 Continue。`);
     await browser.pressEnter(sidebar);
   };
+
   const cardForClick = async (expected: number) => {
     // Main-model snapshot plus the previous task's bounded goal-review reads
     // can coexist. Only exact fixture reads below may be approved, never JS.
     for (let i = 0; i < 8; i++) {
+      // SAFETY: our DOM expression returns only an own pending card id and text fields.
       const card = await until(async () => await browser.evaluate(sidebar, `(()=>{const c=document.querySelector(${JSON.stringify(activeCard)});return c?.querySelector(".consent-allow:not(:disabled)")?{id:c.dataset.requestId,text:c.textContent,details:c.querySelector("pre")?.textContent}:null})()`), 45_000, "real consent card") as { id: string; text: string; details: string };
-      const record = { ...card, commits, decision: "pending" };
+      // SAFETY: this expression reads only consent events from our passive sidepanel runtime observer.
+      const source = await browser.evaluate(sidebar, `(()=>{const events=window.__consentSourceEvents??[];const event=events.findLast(e=>(e.message.type==='consent_request'&&e.message.request.id===${JSON.stringify(card.id)})||(e.message.type==='consent_list'&&e.message.requests.some(r=>r.id===${JSON.stringify(card.id)})));if(!event)return null;const request=event.message.type==='consent_request'?event.message.request:event.message.requests.find(r=>r.id===${JSON.stringify(card.id)});return {event:event.message.type,at:event.at,request,terminal:events.some(e=>e.message.type==='consent_result'&&e.message.requestId===request.id)}})()`) as { event: string; at: number; request: { id: string; purpose?: string; tool: string; runId: string; controlVersion: number; goal: string }; terminal: boolean } | null;
+      assert.ok(source && source.request.id === card.id && source.request.purpose === "activation" && !source.terminal, "every displayed actionable card must have a current native source event");
+      assert.ok(!card.text.includes("任务："), "activation must show actual action instead of the conversation's old title");
+      const record = { ...card, source, commits, decision: "pending" };
       consentCards.push(record);
       assert.ok(card.id && !seenConsents.has(card.id), "a consumed request must not become interactive again");
       seenConsents.add(card.id);
       assert.equal(commits, expected, "pending actions must not submit");
-      const params = JSON.parse(card.details.split("\n\n")[1] ?? "null") as Record<string, unknown> | null;
-      assert.ok(params && typeof params === "object" && !Array.isArray(params), "the complete action parameters must be visible");
+      // SAFETY: the parsed value is checked for an ordinary JSON object before any parameter decision.
+      const params = JSON.parse(card.details.split("\n\n")[1] ?? "null") as JsonRecord | null;
+      assert.ok(params && !Array.isArray(params) && Object.getPrototypeOf(params) === Object.prototype, "the complete action parameters must be visible");
       const action = card.details.split("\n")[0];
       const exact = (allowed: string[]) => Object.keys(params).every(key => allowed.includes(key));
       const emptyFormPolicy = (params.formRequirements === undefined || (Array.isArray(params.formRequirements) && params.formRequirements.length === 0)) && (params.userValueProvided === undefined || params.userValueProvided === false);
+
       if (action === `动作：${toolAction("click")}` && params.target === "#commit" && exact(["target", "tabId", "formRequirements", "userValueProvided"]) && emptyFormPolicy && (params.tabId === undefined || params.tabId === fixtureTabId)) return card.id;
       const snapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId"]) && (params.tabId === undefined || params.tabId === fixtureTabId);
       const decisionSnapshot = action === `动作：${toolAction("snapshot")}` && exact(["tabId", "decision"]) && params.tabId === fixtureTabId && params.decision === true;
@@ -110,8 +144,10 @@ try {
       await until(async () => await browser.evaluate(sidebar, `!document.querySelector(${JSON.stringify(selector)})?.querySelector(".consent-allow:not(:disabled)")`) || undefined, 15_000, "observation approval consumed");
       assert.equal(commits, expected, "an approved fixture read must not submit");
     }
+
     throw new Error("Unexpected extra consent requests before the planned click");
   };
+
   const settle = async (mark: string) => {
     await until(async () => await browser.evaluate(sidebar, `document.querySelector("#messages")?.textContent.includes(${JSON.stringify(`【${mark}结束】`)}) && !document.querySelector("#status-pill")?.classList.contains("running")`) || undefined, 60_000, "actual agent completed task");
     await sleep(300);
@@ -155,11 +191,14 @@ try {
   assert.equal(commits, 1);
   evidence.push({ case: "sidebar Stop revokes pending grant", commits, requestId: stopped });
   await browser.screenshot(sidebar, join(artifacts, "stopped.png"));
+
   for (const mark of marks) assert.ok(model.requests.some(r => r.rule === mark && r.tools), "the real agent must call the configured endpoint");
   assert.ok((await browser.targets()).some(t => t.url === `chrome-extension://${browser.extensionId}/inproc.html`), "the real offscreen agent must be present");
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
+
   if (rp && panel) await rp.screenshot(panel, join(artifacts, "failure-sidebar.png")).catch(() => {});
+
   if (rp && work) await rp.screenshot(work, join(artifacts, "failure-page.png")).catch(() => {});
 } finally {
   const panelText = rp && panel ? await rp.evaluate(panel, "document.body.innerText").catch(() => "unavailable") : "unavailable";
@@ -169,5 +208,7 @@ try {
   await model.close();
   await new Promise<void>(resolve => site.close(() => resolve()));
 }
+
 console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", cases: evidence.length, commits, error }));
+
 if (error) process.exitCode = 1;

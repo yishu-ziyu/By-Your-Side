@@ -27,7 +27,7 @@
 - `read_element`：`inputRange{type,min?,max?,step?,problem?}`；只读状态属性时也保留这一项。
 - `fill`：照常写入；写入后浏览器的 `validity` 报 `rangeUnderflow`、`rangeOverflow` 或 `stepMismatch` 时，回执带 `rangeIssue{type,min,max,step,value,problem,message}`，模型看到的文字为「Filled …, but the value is not accepted by the page. Out of range: "21:30" is above the page's maximum 21:00. Allowed: 11:00–21:00, step 900 s. …」，不报成单纯成功。`browser_run` 里的 `browser.fill` 返回同一份数据。
 
-判定完全以浏览器自己的 `validity` 为准，不自行比较时间或数字。格式不合法、被浏览器清空的值（例如给时间框填 `9:30pm`）不在这条规则内。
+判定完全以浏览器自己的 `validity` 为准，不自行比较时间或数字。时间框先用脱离页面的原生 time input 检查格式；`9:30pm` 等无效格式返回未执行，保留原值，不聚焦或发 input/change。空串仍可清空。Hours/Minutes AX 子框只映射到其精确原生 time 宿主，填写完整时间；网页刷新子框后须重新 snapshot 获取 ref。越界时间仍是写入后警告，不是拒绝写入。
 
 ## 验收
 

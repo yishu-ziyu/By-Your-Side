@@ -706,6 +706,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           );
         }
 
+        if ("dialog" in data && data.dialog) return textResult(`${data.doubleClicked ? "Native double-click input dispatched" : "Double-click interrupted before its full input sequence"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. Query dialog_info and request a separate approval to handle it.`, data);
+
         const effectText = formatEffectReport("effect" in data ? data.effect : undefined);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
@@ -1164,6 +1166,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("press_key", params)) as ToolContract["press_key"]["data"];
+
+        if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. Query dialog_info and request a separate approval to handle it.`, data);
 
         return textResult(`Pressed ${params.key}.`, data);
       },

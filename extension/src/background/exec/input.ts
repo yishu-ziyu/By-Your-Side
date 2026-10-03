@@ -231,11 +231,15 @@ export async function callOnBackendNode<T>(
 }
 
 /** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
-async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false, beforeDispatch?: ApprovalDispatchGuard): Promise<DomRect> {
+async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false, beforeDispatch?: ApprovalDispatchGuard, nativeTimeHost = false): Promise<DomRect> {
   const rect = await callOnBackendNode<DomRect | undefined>(
     tabId,
     backendNodeId,
-    observedNodeRect.toString(),
+    nativeTimeHost ? `function(contentOnly) {
+      const host = this.getRootNode?.()?.host;
+      const target = host?.tagName === "INPUT" && host.type === "time" ? host : this;
+      return (${observedNodeRect.toString()}).call(target, contentOnly);
+    }` : observedNodeRect.toString(),
     [contentOnly], undefined, undefined, beforeDispatch,
   );
 
@@ -258,10 +262,20 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
     tabId,
     backendNodeId,
     `function(v) {
-      const el = this;
+      let el = this;
+      // A native time AX child belongs to the browser's shadow tree. Follow only
+      // its exact host, never a nearby input or a matching label.
+      const host = el.getRootNode?.()?.host;
+      if (host?.tagName === "INPUT" && host.type === "time") el = host;
       const tag = el.tagName.toLowerCase();
       if (tag !== "select" && tag !== "input" && tag !== "textarea" && !el.isContentEditable) {
         return { refused: "元素不可填充（非 input/textarea/select/contenteditable），操作未执行" };
+      }
+      if (tag === "input" && el.type === "time" && v !== "") {
+        const probe = el.ownerDocument.createElement("input");
+        probe.type = "time";
+        probe.value = v;
+        if (probe.value === "") return { refused: "时间格式无效，请使用 HH:mm（如 19:30）；原值保留，操作未执行" };
       }
       if (tag === "select") {
         const wanted = String(v).trim();
@@ -1572,7 +1586,8 @@ export async function click(
 }
 
 type DoubleClickResult =
-  | { doubleClicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string } }
+  | { doubleClicked: true; effect?: EffectReport; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
+  | { doubleClicked: false; dialog: OpenedDialog }
   | { doubleClicked: false; held: true };
 
 type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; held: true };
@@ -1584,7 +1599,7 @@ type DragResult = { dragged: true; effect?: EffectReport } | { dragged: false; h
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  beforeDispatch?: ApprovalDispatchGuard,
 ): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -1677,22 +1692,70 @@ export async function doubleClick(
       const btnMask = pressedButtonsMask(button);
       await guardSubmitPoint(tabId, params, [x, y]);
       await beforeDispatch?.();
-      await sendCommand(tabId, "Input.dispatchMouseEvent", {
-        type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
-      },beforeDispatch);
-      pressed = true;
-      await sendCommand(tabId, "Input.dispatchMouseEvent", {
-        type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 1, modifiers,
+      const dialogWatch = watchDialog(tabId);
+      let interrupted = false;
+      let nativeInputs = 0;
+
+      const checkSequence = () => {
+        if (interrupted) throw new FillRefused("原生弹窗中断了输入序列，剩余输入未派发。");
+        beforeDispatch?.checkNow?.();
+      };
+
+      const sequenceGuard = Object.assign(async () => {
+        checkSequence();
+        await (nativeInputs % 2 ? beforeDispatch?.afterEffect : beforeDispatch)?.();
+        checkSequence();
+      }, {checkNow:checkSequence,noteEffect:() => {
+        nativeInputs++;
+        const held = heldOf(sessionId);
+        held.tabId = tabId;
+
+        if (nativeInputs % 2) held.mouseButtons.add(button);
+        else held.mouseButtons.delete(button);
+        beforeDispatch?.noteEffect?.();
+      }});
+
+      const opened = dialogWatch.opened.then(dialog => {
+        interrupted = true;
+
+        return { dialog };
       });
-      await guardSubmitPoint(tabId, params, [x, y]);
-      await beforeDispatch?.();
-      await sendCommand(tabId, "Input.dispatchMouseEvent", {
-        type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
-      },beforeDispatch);
-      await sendCommand(tabId, "Input.dispatchMouseEvent", {
-        type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId), clickCount: 2, modifiers,
-      });
-      effect = await collectEffect(tabId, effectToken);
+
+      const pressing = (async () => {
+        await sendCommand(tabId, "Input.dispatchMouseEvent", {
+          type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
+        },sequenceGuard);
+        pressed = true;
+        await sendCommand(tabId, "Input.dispatchMouseEvent", {
+          type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId) & ~btnMask, clickCount: 1, modifiers,
+        },sequenceGuard);
+
+        if (interrupted) return undefined;
+        await guardSubmitPoint(tabId, params, [x, y]);
+        await beforeDispatch?.();
+        await sendCommand(tabId, "Input.dispatchMouseEvent", {
+          type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 2, modifiers,
+        },sequenceGuard);
+        await sendCommand(tabId, "Input.dispatchMouseEvent", {
+          type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId) & ~btnMask, clickCount: 2, modifiers,
+        },sequenceGuard);
+
+        return await collectEffect(tabId, effectToken);
+      })();
+
+      try {
+        const settled = await Promise.race([pressing.then(effect => ({ effect })), opened]);
+
+        if ("dialog" in settled) {
+          pressing.catch(() => {});
+
+          return nativeInputs === 4 ? { doubleClicked: true, dialog: settled.dialog } : { doubleClicked: false, dialog: settled.dialog };
+        }
+
+        effect = settled.effect;
+      } finally {
+        dialogWatch.stop();
+      }
     } catch (e) {
       if (pressed) {
         throw new Error(`双击可能已送达，后续 CDP 返回异常，未再次双击（${oneLine(e)}）。请 snapshot 核验当前页面，不要当作未执行而重试。`);
@@ -1927,7 +1990,7 @@ export async function fill(
 
   if (backendNodeId !== undefined) {
     try {
-      targetRect = await rectOfBackendNode(tabId, backendNodeId, false, beforeDispatch);
+      targetRect = await rectOfBackendNode(tabId, backendNodeId, false, beforeDispatch, true);
     } catch (e) {
       if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
         throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
@@ -2011,6 +2074,17 @@ export async function fill(
         const dom = window.__sideagent?.dom;
 
         if (!dom) throw new Error("domops 未注入");
+
+        const el = dom.resolve(t);
+
+        // SAFETY: dom.resolve returns an Element; its INPUT tag identifies the native input contract.
+        if (el?.tagName === "INPUT" && (el as HTMLInputElement).type === "time" && v !== "") {
+          const probe = el.ownerDocument.createElement("input");
+          probe.type = "time";
+          probe.value = v;
+
+          if (probe.value === "") return { refused: "时间格式无效，请使用 HH:mm（如 19:30）；原值保留，操作未执行" };
+        }
 
         return dom.fill(t, v);
       },
@@ -2180,8 +2254,8 @@ export async function typeText(
 export async function pressKey(
   params: { key: string; tabId?: number; formRequirements?: RequiredFormField[] },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
-): Promise<{ pressed: true }> {
+  beforeDispatch?: ApprovalDispatchGuard,
+): Promise<{ pressed: true; dialog?: OpenedDialog } | { pressed: false; dialog: OpenedDialog }> {
   const info = resolveKey(params.key);
 
   if (!info) throw new Error(`不支持的按键: ${params.key}`);
@@ -2201,7 +2275,7 @@ export async function pressKey(
     modifiers: info.modifiers | heldMods,
   };
 
-  const rawKeyDown: KeyEventParams = { type: "rawKeyDown", ...base };
+  const rawKeyDown: KeyEventParams = { type: info.text === undefined ? "rawKeyDown" : "keyDown", ...base };
 
   // macOS editing shortcuts need the editor command as well as the synthesized key.
   if (info.code === "KeyA" && (info.modifiers | heldMods) === 4 && navigator.platform.startsWith("Mac")) {
@@ -2231,10 +2305,54 @@ export async function pressKey(
   }
 
   await beforeDispatch?.();
-  await sendCommand(tab.id, "Input.dispatchKeyEvent", rawKeyDown,beforeDispatch);
-  await sendCommand(tab.id, "Input.dispatchKeyEvent", { type: "keyUp", ...base });
+  const keyboardTabId = tab.id;
+  const dialogWatch = watchDialog(keyboardTabId);
+  let interrupted = false;
+  let nativeInputs = 0;
 
-  return { pressed: true };
+  const checkSequence = () => {
+    if (interrupted) throw new FillRefused("原生弹窗中断了按键，剩余输入未派发。");
+    beforeDispatch?.checkNow?.();
+  };
+
+  const sequenceGuard = Object.assign(async () => {
+    checkSequence();
+    await (nativeInputs === 1 ? beforeDispatch?.afterEffect : beforeDispatch)?.();
+    checkSequence();
+  }, {checkNow:checkSequence,noteEffect:() => {
+    nativeInputs++;
+    const held = heldOf(sessionId);
+    held.tabId = keyboardTabId;
+
+    if (nativeInputs === 1) held.keys.set(info.key, info);
+    else held.keys.delete(info.key);
+    beforeDispatch?.noteEffect?.();
+  }});
+
+  const opened = dialogWatch.opened.then(dialog => {
+    interrupted = true;
+
+    return { dialog };
+  });
+
+  const pressing = (async () => {
+    await sendCommand(keyboardTabId, "Input.dispatchKeyEvent", rawKeyDown,sequenceGuard);
+    await sendCommand(keyboardTabId, "Input.dispatchKeyEvent", { type: "keyUp", ...base },sequenceGuard);
+  })();
+
+  try {
+    const settled = await Promise.race([pressing.then(() => ({})), opened]);
+
+    if ("dialog" in settled) {
+      pressing.catch(() => {});
+
+      return nativeInputs ? { pressed: true, dialog: settled.dialog } : { pressed: false, dialog: settled.dialog };
+    }
+
+    return { pressed: true };
+  } finally {
+    dialogWatch.stop();
+  }
 }
 
 /**

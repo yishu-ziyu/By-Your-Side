@@ -7,10 +7,12 @@
  *   npx tsx scripts/acceptance/page-readouts.mts --headless [--live] [--only=trunc,range,live]
  */
 import { spawnSync } from "node:child_process";
+import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { IsolatedExtension } from "./isolated-extension.mts";
+import { toolAction } from "../../shared/user-facing.js";
 
 if (!process.argv.includes("--headless")) throw new Error("Required: --headless");
 
@@ -59,6 +61,7 @@ const products = `<!doctype html><meta charset=utf-8><title>products</title><bod
 
 const form = `<!doctype html><meta charset=utf-8><title>form</title><body><form>
 <p><label>Preferred delivery time: <input type=time min="11:00" max="21:00" step="900" name="delivery"></label></p>
+<p><label>Other time: <input type=time name="other" value="12:00"></label></p>
 <p><label>Quantity <input type=number name=qty min=1 max=10 step=1></label></p>
 <p><label>Day <input type=date name=day min="2026-10-01" max="2026-10-31"></label></p>
 <p><label>Volume <input type=range name=vol min=0 max=50 step=5 value=20></label></p>
@@ -82,12 +85,77 @@ let iso: IsolatedExtension | undefined;
 
 let tabId = 0;
 
+let panel = "";
+
+let fixtureTarget = "";
+
+let callSequence = 0;
+
+const runId = "page-readouts-run";
+
+const approvals: JsonValue[] = [];
+
+const seenApprovals = new Set<string>();
+
 const check = (condition: boolean | string | null | undefined, message: string, evidence?: JsonValue) => {
   if (!condition) throw new Error(`${message}${evidence === undefined ? "" : ` :: ${JSON.stringify(evidence).slice(0, 1500)}`}`);
 };
 
+// This is auxiliary executor acceptance, not offscreen-agent product acceptance.
+// The scripted host supplies task identity; only the real sidepanel approves.
+const callTool = async (name: string, params: ToolParams) => {
+  if (live) return iso!.tool(name, params, "main");
+
+  if (!["snapshot", "read_element", "fill", "navigate"].includes(name)) throw new Error(`Unplanned fixture tool: ${name}`);
+
+  if (name === "navigate" && ![`${iso!.fixtureOrigin}/form`, `${iso!.fixtureOrigin}/products`].includes(params.url ?? "")) throw new Error("Navigation outside exact fixture pages refused");
+
+  const exactParams = { ...params, tabId };
+  const callId = `page-readouts-${++callSequence}`;
+
+  await iso!.swEval(`globalThis.__readoutResult=null;void globalThis.__saCall(${JSON.stringify(callId)},${JSON.stringify(name)},${JSON.stringify(exactParams)},"main",undefined,"default",{runId:${JSON.stringify(runId)}}).then(result=>globalThis.__readoutResult=result,error=>globalThis.__readoutResult={ok:false,error:String(error)});true`);
+  const deadline = Date.now() + 25_000;
+
+  while (Date.now() < deadline) {
+    // SAFETY: the local hook stores either its tool_result (optional data/error)
+    // or the explicit {ok:false,error:string} rejection above; initial state is null.
+    const result = await iso!.swEval("globalThis.__readoutResult") as { ok?: boolean; error?: string; data?: any } | null;
+
+    if (result) return result;
+    // SAFETY: this expression reads pending cards built by ConsentPanel, which
+    // assigns requestId and renders each request's details in a pre element.
+    const cards = await iso!.evalIn(panel, `Array.from(document.querySelectorAll('.consent-card:not(.consent-complete)')).filter(c=>c.querySelector('.consent-allow:not(:disabled)')).map(c=>({id:c.dataset.requestId,details:c.querySelector('pre')?.textContent}))`) as Array<{ id: string; details: string }>;
+
+    for (const card of cards) {
+      // SAFETY: __saSecurityProbe is the local acceptance hook; its requests are
+      // ActivationConsent.list()'s production write-consent display records.
+      const probe = await iso!.swEval("globalThis.__saSecurityProbe()") as { requests?: Array<{ id: string; runId: string; conversationId: string; tool: string; purpose?: string }> };
+      const request = probe.requests?.find(request => request.id === card.id);
+      let displayed: JsonValue;
+
+      try { displayed = JSON.parse(card.details.split("\n\n")[1] ?? "null"); } catch { displayed = null; }
+
+      const matching = request?.runId === runId && request.conversationId === "default" && request.purpose === "activation" && request.tool === name
+        && card.details.split("\n")[0] === `动作：${toolAction(name)}` && JSON.stringify(displayed) === JSON.stringify(exactParams)
+        && !seenApprovals.has(card.id);
+
+      approvals.push({ callId, runId, taskId: "default", tool: name, params: exactParams, requestId: card.id, details: card.details, decision: matching ? "allow_once" : "reject_unknown" });
+      const selector = `.consent-card[data-request-id=${JSON.stringify(card.id)}] ${matching ? ".consent-allow" : ".consent-reject"}`;
+
+      await iso!.evalIn(panel, `document.querySelector(${JSON.stringify(selector)})?.click();true`);
+
+      if (!matching) throw new Error(`Unknown/mismatched confirmation card rejected: ${card.id}`);
+      seenApprovals.add(card.id);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`Fixture tool/approval timed out: ${callId} ${name}`);
+};
+
 const tool = async (name: string, params: ToolParams) => {
-  const result = await iso!.tool(name, params, "main");
+  const result = await callTool(name, params);
 
   if (!result?.ok) throw new Error(`${name} failed: ${result?.error ?? "no result"}`);
 
@@ -155,7 +223,27 @@ try {
       return true;
     },
   });
-  tabId = (await tool("open_tab", { url: `${iso.fixtureOrigin}/products` })).tabId;
+
+  if (live) {
+    tabId = (await tool("open_tab", { url: `${iso.fixtureOrigin}/products` })).tabId;
+  } else {
+    // Fixture setup, not a model tool: never fake an approved open_tab result.
+    fixtureTarget = await iso.newTarget(`${iso.fixtureOrigin}/products`);
+    // SAFETY: chrome.tabs.query returns Chrome's numeric id for the exact page
+    // created immediately above; a missing tab throws inside the expression.
+    tabId = await iso.swEval(`(async()=> (await chrome.tabs.query({url:${JSON.stringify(`${iso.fixtureOrigin}/products`)}}))[0].id)()`) as number;
+    const extensionId = await iso.swEval("chrome.runtime.id");
+    panel = await iso.newTarget(`chrome-extension://${extensionId}/sidepanel.html`);
+    await iso.swEval(`globalThis.__saSetSecurityHost({id:"default",title:"Page readouts fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:${JSON.stringify(runId)}})`);
+    const { until } = await import("./isolated-extension.mts");
+    await until(async () => {
+      // SAFETY: __saSecurityProbe exposes the local hook's numeric panel count
+      // and production ConversationSummary records set by __saSetSecurityHost.
+      const state = await iso!.swEval("globalThis.__saSecurityProbe()") as { panels?: number; summaries?: Array<{ id: string; runId?: string }> };
+
+      return (state.panels ?? 0) > 0 && state.summaries?.some(summary => summary.id === "default" && summary.runId === runId) ? true : undefined;
+    }, 8000, "trusted sidebar attached to fixture task");
+  }
 
   await run("trunc/ax-snapshot", async () => {
     await go(`${iso!.fixtureOrigin}/products`);
@@ -239,6 +327,78 @@ try {
 
   // SAFETY: the expression below returns exactly the Validity fields, read from the live input.
   const validity = () => page("(()=>{const e=document.querySelector('input[name=delivery]');return {value:e.value,rangeOverflow:e.validity.rangeOverflow,rangeUnderflow:e.validity.rangeUnderflow,stepMismatch:e.validity.stepMismatch}})()") as Promise<Validity>;
+
+  await run("range/fill-invalid-time-format", async () => {
+    await go(`${iso!.fixtureOrigin}/form`);
+
+    for (const target of ["input[name=delivery]", await timeRef()]) {
+      await tool("fill", { target, value: "19:00" });
+      await page("(()=>{window.__timeEvents=[];const e=document.querySelector('input[name=delivery]');for(const type of ['input','change'])e.addEventListener(type,()=>window.__timeEvents.push(type));document.querySelector('input[name=custname]').focus();return true})()");
+      const rejected = await callTool("fill", { target, value: "9:30pm" });
+      const browser = await page("({value:document.querySelector('input[name=delivery]').value,events:window.__timeEvents,focused:document.activeElement.name})");
+
+      check(rejected?.ok === false && /格式|format|HH:mm/.test(rejected.error ?? ""), "invalid time format did not report refusal", rejected);
+      assert.deepEqual(browser, { value: "19:00", events: [], focused: "custname" }, "invalid time changed the value, focus or dispatched input/change");
+    }
+
+    return { value: (await validity()).value, events: [] };
+  });
+
+  await run("range/fill-native-time-subfields", async () => {
+    await go(`${iso!.fixtureOrigin}/form`);
+    const fields: string[] = [];
+    let snapshotSequence = 0;
+
+    const currentField = async (index: number) => {
+      const text: string = (await tool("snapshot", {})).text;
+      await writeFile(join(out, snapshotSequence++ === 0 ? "time-native-subfields.txt" : `time-native-subfields-${snapshotSequence}.txt`), text);
+      // Filling recreates native UA children. Re-observe the exact first input's
+      // Hours/Minutes field before each action; never reuse a disconnected ref.
+      const lines = text.split("\n");
+      const firstTime = lines.findIndex(line => /InputTime|type=time/.test(line));
+      const nextTime = lines.findIndex((line, i) => i > firstTime && /InputTime|type=time/.test(line));
+      const role = index === 0 ? /Hours|小时/ : /Minutes|分钟/;
+      const field = lines.slice(firstTime + 1, nextTime < 0 ? undefined : nextTime).find(line => /spinbutton/.test(line) && role.test(line));
+
+      check(firstTime >= 0 && field, "current native time subfield AX ref is missing", text);
+      fields.push(field!);
+
+      return field!;
+    };
+
+    for (const index of [0, 1]) {
+      const field = await currentField(index);
+      const ref = refOf(field);
+
+      check(ref, "native time child has no executable ref", field);
+      await tool("fill", { target: `@${ref}`, value: index === 0 ? "18:15" : "19:30" });
+      const browser = await page("({delivery:document.querySelector('input[name=delivery]').value,other:document.querySelector('input[name=other]').value})");
+
+      assert.deepEqual(browser, { delivery: index === 0 ? "18:15" : "19:30", other: "12:00" }, "native child fill did not update only its owning time input");
+    }
+
+    const rejected = await callTool("fill", { target: `@${refOf(await currentField(0))}`, value: "9:30pm" });
+    check(rejected?.ok === false && /格式|format|HH:mm/.test(rejected.error ?? ""), "native child accepted invalid time format", rejected);
+    check((await validity()).value === "19:30", "native child invalid format cleared its owning time input");
+
+    if (!live) {
+      await iso!.screenshot(fixtureTarget, join(out, "time-native-subfields.png"));
+      await iso!.screenshot(panel, join(out, "time-sidebar.png"));
+    }
+
+    return { fields, value: (await validity()).value };
+  });
+
+  await run("range/fill-empty-time-and-plain-text", async () => {
+    await tool("fill", { target: "input[name=delivery]", value: "" });
+    check((await validity()).value === "", "empty time no longer clears the field");
+    await tool("fill", { target: "input[name=custname]", value: "9:30pm" });
+    const value = await page("document.querySelector('input[name=custname]').value");
+
+    check(value === "9:30pm", "time format guard rejected ordinary text", value);
+
+    return { time: "", text: value };
+  });
 
   await run("range/fill-overflow-ref", async () => {
     const target = await timeRef();
@@ -325,7 +485,7 @@ try {
   // SAFETY: cleanup is either IsolatedExtension.close()'s {status} or the NOT_STARTED sentinel.
   const cleanStatus = (cleanup as { status?: string }).status;
   const ok = !fatal && executed.length > 0 && executed.every(c => c.status === "PASS") && cleanStatus === "PASS" && dailyDistUnchanged;
-  const result = { ok, runKind: selected.size ? "filtered" : live ? "full+live" : "full", cases, cleanup, dailyDistUnchanged, modelRequests: 0 };
+  const result = { ok, runKind: selected.size ? "filtered" : live ? "full+live" : "full", cases, approvals, cleanup, dailyDistUnchanged, modelRequests: 0 };
 
   if (fatal) Object.assign(result, { fatal });
   await writeFile(join(out, "result.json"), JSON.stringify(result, null, 2));

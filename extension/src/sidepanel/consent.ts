@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage } from "../../../shared/protocol.js";
 import type { ConsentRequest, ConsentStatus } from "../../../shared/consent.js";
+import { redactCredentialText } from "../../../shared/untrusted.js";
 import { plainStep, toolAction } from "../../../shared/user-facing.js";
 
 type Entry = { request: ConsentRequest; status: "pending" | ConsentStatus; submitted: boolean; message?: string };
@@ -12,6 +13,8 @@ export function consentHeading(request: ConsentRequest, pending: boolean): strin
 }
 
 export function consentTargetText(request: ConsentRequest): string {
+  if (request.kind === "write" && request.purpose === "activation") return `操作：${toolAction(request.tool)} ${redactCredentialText(request.target)}`;
+
   return request.kind === "write" ? `任务：${request.goal}` : `${request.method} ${request.url}`;
 }
 
@@ -34,6 +37,7 @@ export interface ConsentDetails { summary: string; content: string }
 
 export function consentDetailsText(request: ConsentRequest): ConsentDetails {
   if (request.kind === "write" && request.purpose === "activation") return {summary:"查看这次操作的完整参数",content:`动作：${toolAction(request.tool)}\n目标：${request.target}\n\n${request.value}\n\n页面或任务变化后作废；可能提交、发送或自动保存。敏感信息已隐去。`};
+
   if (request.kind === "write") {
     return { summary: "查看动作", content: `未确认的动作：${plainStep(request.description)}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${toolAction(request.tool)}「${request.value}」\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` };
   }
@@ -47,6 +51,7 @@ export function consentStatusText(request: ConsentRequest, connected: boolean): 
   if (!connected) return "连接已断开，本次请求尚未获准。请等待重新连接。";
 
   if (request.kind === "write" && request.purpose === "activation") return "仅批准当前页面这一组参数的一次操作，20秒内未确认就不执行。";
+
   return request.kind === "write" ? "仅允许这一次核对/必要时重设；到期后不会执行。" : "仅允许这一次请求；到期后不会发送。";
 }
 
@@ -130,7 +135,8 @@ export class ConsentPanel {
     if (existing && existing.status !== "pending") return;
 
     for (const [key, entry] of this.entries) {
-      if (entry.request.conversationId === request.conversationId && entry.status !== "pending") this.entries.delete(key);
+      // Keep ended IDs until their original expiry so a delayed list cannot revive them.
+      if (entry.status !== "pending" && entry.request.expiresAt <= Date.now()) this.entries.delete(key);
     }
 
     const expired = Date.now() >= request.expiresAt;
@@ -160,13 +166,13 @@ export class ConsentPanel {
   }
 
   render(): void {
-    const focused = document.activeElement as HTMLElement | null;
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focusCard = focused?.closest<HTMLElement>(".consent-card");
     const focusId = focusCard && this.root.contains(focusCard) ? focusCard.dataset.requestId : undefined;
     const focusSelector = focused?.matches("button") ? `.${focused.className}` : "summary";
     const expanded = new Set([...this.root.querySelectorAll("details[open]")].map(el => el.closest<HTMLElement>(".consent-card")?.dataset.requestId));
     const cid = this.selected();
-    const own = [...this.entries.values()].filter(entry => entry.request.conversationId === cid);
+    const own = [...this.entries.values()].filter(entry => entry.request.conversationId === cid && entry.status === "pending");
     const others = [...new Set([...this.entries.values()].flatMap(entry => entry.status === "pending" && entry.request.conversationId !== cid ? [entry.request.conversationId] : []))];
     this.root.hidden = own.length === 0 && others.length === 0;
     this.root.dataset.pending = String(own.some(entry => entry.status === "pending"));
@@ -176,26 +182,6 @@ export class ConsentPanel {
       const card = document.createElement("section");
       card.className = "consent-card";
       card.dataset.requestId = entry.request.id;
-
-      if (entry.status !== "pending") {
-        card.classList.add("consent-complete");
-        const outcome = document.createElement("p");
-        outcome.setAttribute("role", "status");
-        outcome.tabIndex = -1;
-        outcome.textContent = entry.message ?? "本次确认已结束。";
-        const dismiss = document.createElement("button");
-        dismiss.type = "button";
-        dismiss.textContent = "收起";
-        dismiss.addEventListener("click", () => {
-          this.entries.delete(this.key(entry.request.conversationId, entry.request.id));
-          this.render();
-        });
-        card.append(outcome, dismiss);
-        this.root.append(card);
-
-        if (focusId === entry.request.id) outcome.focus({preventScroll: true});
-        continue;
-      }
 
       const request = entry.request;
       const heading = document.createElement("h2");

@@ -48,6 +48,14 @@ npm run check                # 文档、边界、类型、测试、构建
 
 `npm run dashboard`（[脚本](../../scripts/maintenance/dashboard.mjs)）生成 `out/dashboard/index.html`：一页给产品负责人看的静态 HTML，内容依次为版本与同步状态、三档能力通过率（9 月底基线与 `eval/runs/*/report.json` 的判分结果，对照 `eval/tasks/tiers.json` 目标）、最近 3 天提交及其验收结论、GitHub 上开着和最近关闭的问题、[STATUS](../STATUS.md) 能力表、分支与工作目录。数据全部在生成时读取；它只读仓库，不 fetch、不改远端，gh 取不到时对应区块显示提示。看板只是汇总视图，不替代 STATUS 与验收记录。
 
+### 实时本地工作页
+
+临时工作页在 `http://127.0.0.1:8894/`，已在 cmux 右侧打开。启动命令为 `python3 out/workbench/serve.py`；服务只监听本机回环地址，仅托管 `out/workbench/`，不托管整个仓库。临时产物不随 Git 分发；关闭服务后网址不可用。
+
+代理在阶段变化时更新 `out/workbench/state.json`，同时增加 `revision` 并更新 `updatedAt`；页面每 3 秒读取，不自动推断任务是否执行。连接失败显示上次记录。该文件是展示用快照，项目事实仍以 [STATUS](../STATUS.md) 和验收记录为准。
+
+截图只放实际验收原件，前后对比标明同一场景；历史实录注明范围和日期。需要用户判断时列出问题、建议及决定后的动作，用户在当前对话回复，页面不代为提交。GIF 按用户点击加载，也可停止；不自动播放。网页验收见[记录](../evals/20261003-local-workbench.md)。
+
 ## CI 与人工复核
 
 [Documentation 工作流](../../.github/workflows/docs.yml)运行文档命令级验收与结构检查，并在 PR 中运行功能同步检查。[E2E 工作流](../../.github/workflows/e2e.yml)手动触发，在 Linux 上跑不需要凭据的隔离验收门槛子集（场景列表写在工作流里）。工作流文件写入不代表已经在远端执行，也不等于启用了分支保护。

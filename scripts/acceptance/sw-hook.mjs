@@ -143,6 +143,8 @@ export const HOOK_EXPRESSION = `(() => {
     globalThis.__saSetSecurityHost = function (summary) {
       if (!rawTransport || !rawTransport.handlers) throw new Error("missing real host handlers");
       const original = rawTransport.handlers.onServerMessage.bind(rawTransport.handlers);
+      // UI message-order fixture only; this cannot mint or revive a background grant.
+      globalThis.__saConsentListForAcceptance = requests => { original({type:"consent_list",conversationId:summary.id,requests}); return true; };
       rawTransport.handlers.onServerMessage = function (msg) { if (msg.type === "tool_call") original(msg); };
       rawTransport.handlers.onConnState = function () {};
       original({type:"conversation_list",conversations:[summary]});

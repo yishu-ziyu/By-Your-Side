@@ -545,7 +545,7 @@ export interface ToolContract {
       label?: string;
       formRequirements?: RequiredFormField[];
     };
-    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string } } | { doubleClicked: false; held: true };
+    data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; held: true } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
   };
   /** 真实拖拽：from/to 各为 target 或视口 point；mousePressed→有界 mouseMoved 序列→release；destructive 源同样先拿住等确认。 */
   drag: {
@@ -776,7 +776,7 @@ export interface ToolContract {
     data: { selected: string[]; labels: string[] };
   };
   type_text: { params: { tabId?: number; text: string; formRequirements?: RequiredFormField[]; userValueProvided?: boolean }; data: { typed: true } };
-  press_key: { params: { tabId?: number; key: string; formRequirements?: RequiredFormField[] }; data: { pressed: true } };
+  press_key: { params: { tabId?: number; key: string; formRequirements?: RequiredFormField[] }; data: { pressed: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
