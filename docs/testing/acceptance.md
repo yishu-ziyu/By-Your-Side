@@ -10,7 +10,7 @@ Node 入口契约 `npx vitest run extension/test/entry-contract.test.ts` 为扩�
 
 记忆替换与撤销：`node --import tsx scripts/acceptance/real-path/remember-corrections.mts --headless --scripted --only=22replace`。实际侧栏记住、替换、撤销后，在新会话检查缺字段零提交和补原文精确一次提交。日常构建哈希须保持一致。
 
-22 组（脚本模型）确认卡共用 `scripts/acceptance/real-path/approval-plan.mts`：模型发起的卡须与当前任务脚本步骤逐项相同（扩展补充的标签页、字段规则等参数除外），宿主只可读练习站页面或接管练习站标签页；其余拒绝并记测量失败，逐卡存 `consent-log.json`。故意越权的脚本步骤照常放行，由服务器计数检验扩展防线。改规则后先跑 `npx tsx scripts/acceptance/real-path/approval-plan.replay.mts` 用 10-03 存档卡重放；`--inject-undeclared` 让脚本模型多填一个未声明的备注值，必须以测量失败结束。见[验收](../evals/20261004-shared-approval-plan.md)。脚本模型替代提供方，不替代扩展或服务器；见[验收](../evals/20261003-memory-rule-replacement.md)。
+22 组（脚本模型）确认卡共用 `scripts/acceptance/real-path/approval-plan.mts`：模型发起的卡须与当前任务脚本步骤逐项相同（扩展补充的标签页、字段规则等参数除外），且每个要写入的文字值在卡上原样可见（10-04 起卡上不再显示整段原始参数），宿主只可读练习站页面或接管练习站标签页；其余拒绝并记测量失败，逐卡存 `consent-log.json`。故意越权的脚本步骤照常放行，由服务器计数检验扩展防线。改规则后先跑 `npx tsx scripts/acceptance/real-path/approval-plan.replay.mts` 用 10-03 存档卡重放；`--inject-undeclared` 让脚本模型多填一个未声明的备注值，必须以测量失败结束。见[验收](../evals/20261004-shared-approval-plan.md)。脚本模型替代提供方，不替代扩展或服务器；见[验收](../evals/20261003-memory-rule-replacement.md)。
 
 ## 正式入口
 

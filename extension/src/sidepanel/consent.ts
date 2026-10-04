@@ -12,8 +12,33 @@ export function consentHeading(request: ConsentRequest, pending: boolean): strin
     : (pending ? "允许发送这次请求吗？" : "请求授权");
 }
 
+/** 网页操作卡只给人看能核对的参数：内部编号、表单策略和已写在“操作”一行的目标不再重复。 */
+const HIDDEN_PARAMS = new Set(["tabId", "target", "label", "formRequirements", "userValueProvided", "userValueHostname", "expectedDocumentId", "expectedUrl", "timeout"]);
+
+const PARAM_LABELS = new Map([["url", "网址"], ["value", "内容"], ["text", "内容"], ["code", "脚本"], ["key", "按键"], ["option", "选项"], ["values", "选项"]]);
+
+/** 参数 JSON → 「名称：值」行；不是 JSON 对象时返回 null，由调用方原样显示。 */
+function activationParamLines(value: string, shownTarget: string): string[] | null {
+  let parsed: {} | null;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+
+  if (!(parsed instanceof Object) || Array.isArray(parsed)) return null;
+
+  return Object.entries(parsed)
+    .filter(([name, item]) => !HIDDEN_PARAMS.has(name) && item !== undefined && !(name === "url" && item === shownTarget))
+    .map(([name, item]) => `${PARAM_LABELS.get(name) ?? name}：${item instanceof Object ? JSON.stringify(item) : String(item)}`);
+}
+
 export function consentTargetText(request: ConsentRequest): string {
-  if (request.kind === "write" && request.purpose === "activation") return `操作：${toolAction(request.tool)} ${redactCredentialText(request.target)}`;
+  if (request.kind === "write" && request.purpose === "activation") {
+    // 目标照实显示：模型给的 label 未经页面核对，不能替代真实目标。
+    return `操作：${toolAction(request.tool)}${request.target === "当前页面" ? "" : ` ${redactCredentialText(request.target)}`}`;
+  }
 
   return request.kind === "write" ? `任务：${request.goal}` : `${request.method} ${request.url}`;
 }
@@ -35,8 +60,14 @@ function readableBody(headers: Record<string, string>, body: string | undefined)
 /** 授权卡上可展开的那一块：摘要行和展开后的正文。 */
 export interface ConsentDetails { summary: string; content: string }
 
-export function consentDetailsText(request: ConsentRequest): ConsentDetails {
-  if (request.kind === "write" && request.purpose === "activation") return {summary:"查看这次操作的完整参数",content:`动作：${toolAction(request.tool)}\n目标：${request.target}\n\n${request.value}\n\n页面或任务变化后作废；可能提交、发送或自动保存。敏感信息已隐去。`};
+export function consentDetailsText(request: ConsentRequest): ConsentDetails | null {
+  if (request.kind === "write" && request.purpose === "activation") {
+    const lines = activationParamLines(request.value, request.target) ?? [request.value];
+
+    if (!lines.length) return null;
+
+    return { summary: "查看要写入的内容", content: `${lines.join("\n")}\n\n页面或任务变化后作废；可能提交、发送或自动保存。敏感信息已隐去。` };
+  }
 
   if (request.kind === "write") {
     return { summary: "查看动作", content: `未确认的动作：${plainStep(request.description)}\n\n允许后会再次核对：若当前对象已经满足，不写入；否则只执行这一次：${toolAction(request.tool)}「${request.value}」\n\n只对当前任务、当前要求和当前页面实例有效；填写可能触发网站自动保存。` };
@@ -189,20 +220,20 @@ export class ConsentPanel {
       const target = document.createElement("p");
       target.className = "consent-target";
       target.textContent = consentTargetText(request);
+      const copy = consentDetailsText(request);
       const details = document.createElement("details");
       details.open = expanded.has(entry.request.id);
       const summary = document.createElement("summary");
-      const copy = consentDetailsText(request);
-      summary.textContent = copy.summary;
+      summary.textContent = copy?.summary ?? "";
       const content = document.createElement("pre");
-      content.textContent = copy.content;
+      content.textContent = copy?.content ?? "";
       details.append(summary, content);
       const status = document.createElement("p");
       status.className = "consent-status";
       status.setAttribute("role", "status");
       status.tabIndex = -1;
       status.textContent = entry.message ?? consentStatusText(request, this.connected);
-      card.append(heading, target, details, status);
+      card.append(heading, target, ...(copy ? [details] : []), status);
 
       if (entry.status === "pending") {
         const actions = document.createElement("div");

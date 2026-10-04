@@ -127,10 +127,12 @@ function judge(c: Capture) {
   const fill = fills.at(-1);
   let cardValue: string | null = null;
 
-  if (fill && c.cards.some(card => card.id === fill.id && card.details.includes(String(fill.value)))) {
+  if (fill) {
     // SAFETY: 原生参数文本；畸形或无字符串值不通过，绝不使用脚本 noteFor 作 oracle。
     const params = JSON.parse(String(fill.value)) as { value?: string };
-    cardValue = params.value ?? null;
+
+    // 卡上只列用户能核对的内容（10-04），填写的文字必须原样可见。
+    if (params.value && c.cards.some(card => card.id === fill.id && card.details.includes(params.value!))) cardValue = params.value;
   }
 
   const second = c.turns?.[1];
@@ -483,14 +485,17 @@ async function runScenario(scenario: Scenario) {
           const trust = scenario === "N4" && !reject && await browser.evaluate(panel, `!!document.querySelector(${JSON.stringify(`.consent-card[data-request-id=${JSON.stringify(card.id)}] .consent-trust:not(:disabled)`)})`);
           const filename = `consent-${cards.length + 1}-${String(r.tool)}.png`;
           const selector = `.consent-card[data-request-id=${JSON.stringify(card.id)}]`;
-          await browser.click(panel, `${selector} summary`);
+          // 读取、打开这类没有可核对内容的卡不带折叠区（10-04），只截卡片本身。
+          const hasDetails = await browser.evaluate(panel, `!!document.querySelector(${JSON.stringify(selector + " summary")})`);
+
+          if (hasDetails) await browser.click(panel, `${selector} summary`);
           await browser.evaluate(panel, `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'center'}); true`);
           // SAFETY: 只读参数区的滚动尺寸；按真实 UI 滚动留全量截图，不改 CSS 或参数。
-          const scroll = await browser.evaluate(panel, `(() => {const p=document.querySelector(${JSON.stringify(selector + " pre")}); return {height:p.clientHeight,max:p.scrollHeight-p.clientHeight};})()`) as { height: number; max: number };
+          const scroll = await browser.evaluate(panel, `(() => {const p=document.querySelector(${JSON.stringify(selector + " pre")}); return p?{height:p.clientHeight,max:p.scrollHeight-p.clientHeight}:{height:1,max:0};})()`) as { height: number; max: number };
           const screenshots: string[] = [];
 
           for (let offset = 0, n = 0; ; offset += Math.max(1, scroll.height - 16), n += 1) {
-            await browser.evaluate(panel, `document.querySelector(${JSON.stringify(selector + " pre")}).scrollTop=${Math.min(offset, scroll.max)}; true`);
+            if (hasDetails) await browser.evaluate(panel, `document.querySelector(${JSON.stringify(selector + " pre")}).scrollTop=${Math.min(offset, scroll.max)}; true`);
             const name = n === 0 ? filename : filename.replace(".png", `-details-${n + 1}.png`);
             await browser.screenshot(panel, join(dir, name));
             screenshots.push(name);

@@ -112,7 +112,11 @@ export function decideCard(card: CardInput, plan: ApprovalPlan): Decision {
     params = JSON.parse(String(r.value)) as Rec;
   } catch { return reject("unbound", "参数不是完整 JSON"); }
 
-  if (!card.details.includes(String(r.value))) return reject("unbound", "侧栏展示的参数与原生请求不同");
+  // 10-04 起卡上只列用户能核对的参数：每个要写进网页的文字值都必须原样可见（内部编号、目标行已显示的目标除外）。
+  const internal = ["tabId", "target", "label", "formRequirements", "userValueProvided", "userValueHostname", "expectedDocumentId", "expectedUrl", "timeout"];
+  const shown = Object.entries(params).filter(([key, value]) => !internal.includes(key) && !(value instanceof Object) && !(key === "url" && value === r.target));
+
+  if (shown.some(([, value]) => !card.details.includes(String(value)))) return reject("unbound", "侧栏展示的参数与原生请求不同");
 
   const onFixture = plan.fixtureTabs.some(t => t === params.tabId);
 

@@ -45,5 +45,5 @@
 - 单元检查：`extension/test/trusted-read-sites.test.ts` 11 项通过；故意改成“拒绝也写入信任”和“不用私有后缀”各有用例失败。类型、架构边界、文档同步、lint 通过。
 - 全量单元：负载 99 时一批 agent 侧定时测试时有时无地失败（同一代码连跑 6 次 0/0/0/1/1/0）；负载降到 4 后全量 298 个文件 3077 项通过。
 - 真实路径验收（Codex，Linear YIS-31，提交 `01bf92b`；Claude 复跑与反例核对后合入）：`north-star-research.mts --headless --scripted` 产物 `out/acceptance/real-path/2026-10-04T09-37-41-486Z-north-star/` N1–N6 全部 PASS。N4：第一个词点信任后，第二个词只弹填写与保存 2 张卡、读/开卡 0 张，存储里恰是点过的域名（两个词共 8 张卡，修改前基线一个词 13 张）。N5：预置信任四站后，网页诱导打开 attacker.test 仍弹卡，拒绝后该站 0 请求。N6：设置页移除 wiki.test 后再读维基弹卡。Claude 把 N5 的 attacker 请求改成 1 条重判，FAIL、退出 1。界面截图：`N4/consent-1-snapshot.png`（三个按钮的卡）、`N6/settings-before-remove.png`、`N6/settings-after-remove.png`。
-- 已知小问题（未改）：读取卡沿用写入卡的通用说明“可能提交、发送或自动保存”，对读取不准确。
+- 已修（10-04，用户看截图后指出“这么丑的东西也要放上去”）：网页操作卡的折叠区原样倒出内部参数 JSON（标签页编号、表单策略），读取卡还带“可能提交、发送或自动保存”。现在只列能核对的参数（内容、网址、脚本、按键；未登记的字段照常显示），读取/打开卡不带折叠区；点击卡仍显示真实目标，不用模型给的未核对名字代替。`extension/test/consent-copy.test.ts` 新增 6 项，改前全部失败。验收脚本原先要求卡上出现整段原始参数，改为“每个要写入的文字值原样可见”（`approval-plan.mts`、`north-star-research.mts` N1）。复跑 `…/2026-10-04T10-07-04-020Z-north-star/` N1–N6 全部 PASS；`approval-plan.replay.mts` 反例全部照常拒绝。截图 `N4/consent-1-snapshot.png`（读取卡）、`N4/consent-5-fill.png`（填写卡）。
 - 未完成：装进日常扩展（等用户看过界面）。
