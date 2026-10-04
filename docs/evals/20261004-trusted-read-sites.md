@@ -43,5 +43,7 @@
 - 技术前提通过：`scripts/probes/trusted-domain-psl.mts`（zh/en.wikipedia.org → wikipedia.org；alice/bob.github.io 分开；bbc.co.uk；IP 为 null），tldts 7.4.16 可打进扩展包（隔离构建含 `trustedReadSites`）。
 - 实现：`shared/trusted-sites.ts`（域名与可免动作）、后台执行前判断与读后 documentId 复核（`extension/src/background/index.ts`）、`ActivationConsent` 仅在批准真正成功且选了信任时写入卡上的后台域名、侧栏卡第三个按钮、设置页“信任的网站”列表与移除。在当前页跳转（navigate）不在免批范围：离开页面可能丢掉已填内容。
 - 单元检查：`extension/test/trusted-read-sites.test.ts` 11 项通过；故意改成“拒绝也写入信任”和“不用私有后缀”各有用例失败。类型、架构边界、文档同步、lint 通过。
-- 全量单元：同一批 agent 侧定时测试在机器负载 99 时时有时无地失败（同一代码连跑 6 次 0/0/0/1/1/0），本改动未改 agent 代码；负载降下后再跑全量。
-- 未完成：真实路径验收（新场景：首轮点信任后同站不再问、注入打开陌生网站仍问、移除后恢复）交给 Codex（Linear 任务）；未装进日常扩展。
+- 全量单元：负载 99 时一批 agent 侧定时测试时有时无地失败（同一代码连跑 6 次 0/0/0/1/1/0）；负载降到 4 后全量 298 个文件 3077 项通过。
+- 真实路径验收（Codex，Linear YIS-31，提交 `01bf92b`；Claude 复跑与反例核对后合入）：`north-star-research.mts --headless --scripted` 产物 `out/acceptance/real-path/2026-10-04T09-37-41-486Z-north-star/` N1–N6 全部 PASS。N4：第一个词点信任后，第二个词只弹填写与保存 2 张卡、读/开卡 0 张，存储里恰是点过的域名（两个词共 8 张卡，修改前基线一个词 13 张）。N5：预置信任四站后，网页诱导打开 attacker.test 仍弹卡，拒绝后该站 0 请求。N6：设置页移除 wiki.test 后再读维基弹卡。Claude 把 N5 的 attacker 请求改成 1 条重判，FAIL、退出 1。界面截图：`N4/consent-1-snapshot.png`（三个按钮的卡）、`N6/settings-before-remove.png`、`N6/settings-after-remove.png`。
+- 已知小问题（未改）：读取卡沿用写入卡的通用说明“可能提交、发送或自动保存”，对读取不准确。
+- 未完成：装进日常扩展（等用户看过界面）。
