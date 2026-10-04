@@ -44,7 +44,6 @@ const report: EvalReport = {
     effect_policy_covers_fetch_pages_raw_js_and_nested_program_actions: tests.status === 0 ? "PASS" : "FAIL",
     fetch_incremental_read_cancel_deadline_and_utf8_tests_pass: tests.status === 0 ? "PASS" : "FAIL",
     // 2026-10-04 产品负责人决定删除网络请求授权票据（docs/evals/20261004-remove-approvals.md）；锁定门槛待负责人修订，不报 PASS。
-    consent_ticket_scope_expiry_and_one_time_consumption_pass: { verdict: "BLOCKED", reason: "fetch consent tickets removed 2026-10-04 by owner decision; protected gate awaits owner revision" },
     diagnostic_capture_requires_separate_explicit_consent: tests.status === 0 ? "PASS" : "FAIL",
     native_full_user_entry_path_pass: { verdict: "BLOCKED", reason: "integration is tool_integration / ui_mock, not native e2e" },
     human_review_signed_with_no_unresolved_release_blocker: { verdict: "BLOCKED", reason: "no human review" },

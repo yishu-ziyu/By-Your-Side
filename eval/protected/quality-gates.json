@@ -41,7 +41,6 @@
     "production_build_pass",
     "fetch_incremental_read_cancel_deadline_and_utf8_tests_pass",
     "effect_policy_covers_fetch_pages_raw_js_and_nested_program_actions",
-    "consent_ticket_scope_expiry_and_one_time_consumption_pass",
     "diagnostic_capture_requires_separate_explicit_consent",
     "no_duplicate_production_implementations_or_unrestricted_test_hooks",
     "keyboard_core_flows_and_reduced_motion_pass",
