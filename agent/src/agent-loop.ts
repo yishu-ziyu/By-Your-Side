@@ -22,6 +22,13 @@ export interface AgentLoop extends Pick<
     getBranch(): ReturnType<SessionManager["getBranch"]>;
   };
   flushPersistence?(): Promise<void>;
+  /**
+   * 可重试的模型错误要不要在同一模型上重试；返回 false 时这一轮直接结束（willRetry=false），由外层换备用模型。
+   * 只有扩展里的循环支持；本机 AgentSession 照旧按自己的重试设置。
+   */
+  retryGate?: (message: AssistantMessage) => boolean;
+  /** 接着当前上下文再跑一轮，并带自动重试；没有时退回 agent.continue()（不带重试）。 */
+  resume?(): Promise<void>;
 }
 
 /**
@@ -33,14 +40,18 @@ export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "
   fastModel?: () => Model<Api> | undefined;
 };
 
-/** A completed provider failure may continue once on an explicitly configured, credentialed backup. */
+/**
+ * 模型服务出错（挂起超时、连接错误、429、5xx、流提前结束）时，第一次失败就换备用模型接着做，每轮最多换一次。
+ * 备用模型：显式给的 provider/id（须有凭据）；没给时用设置里的快速模型。和当前模型相同时不换。
+ * 能换时不在原模型上重试（retryGate）；换过之后，备用模型照常自动重试。
+ */
 export function withModelFailover(
   loop: AgentLoop,
   models: ModelPort,
   backupPattern: string | undefined,
   onSwitch: (from: string, to: string) => void,
 ): AgentLoop {
-  if (!backupPattern) return loop;
+  if (!backupPattern && !models.fastModel) return loop;
 
   return new FailoverLoop(loop, models, backupPattern, onSwitch);
 }
@@ -57,10 +68,11 @@ class FailoverLoop implements AgentLoop {
   constructor(
     private readonly inner: AgentLoop,
     private readonly models: ModelPort,
-    private readonly backupPattern: string,
+    private readonly backupPattern: string | undefined,
     private readonly onSwitch: (from: string, to: string) => void,
   ) {
     this.unsubscribe = inner.subscribe(event => this.onEvent(event));
+    inner.retryGate = message => !this.canSwitch(message);
   }
 
   get agent(): AgentLoop["agent"] {
@@ -136,16 +148,9 @@ class FailoverLoop implements AgentLoop {
       if (!failed || this.stopped) return;
 
       const previous = this.inner.model;
-      const slash = this.backupPattern.indexOf("/");
+      const backup = await this.usableBackup();
 
-      if (!previous || slash <= 0 || slash === this.backupPattern.length - 1) return;
-
-      const provider = this.backupPattern.slice(0, slash);
-      const id = this.backupPattern.slice(slash + 1);
-      const available = await this.models.getAvailable(provider);
-      const backup = available.find(model => model.provider === provider && model.id === id);
-
-      if (!backup || this.stopped) return;
+      if (!previous || this.stopped) return;
 
       // If the failed response is no longer the response in this context, do not
       // guess which message to remove or risk replaying an earlier tool call.
@@ -155,15 +160,17 @@ class FailoverLoop implements AgentLoop {
 
       if (index < 0) return;
 
-      try {
-        await this.inner.setModel(backup);
-      } catch {
-        // Credential expiry between listing and switching keeps the original failure.
+      this.switchedThisRun = true;
+      this.heldEnd = undefined;
+
+      if (!backup || !await this.inner.setModel(backup).then(() => true, () => false)) {
+        // 备用模型没有凭据或换不过去：回到原模型的自动重试，不因为没换成就少试。
+        this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
+        await this.continueRun();
+
         return;
       }
 
-      this.switchedThisRun = true;
-      this.heldEnd = undefined;
       const from = `${previous.provider}/${previous.id}`;
       const to = `${backup.provider}/${backup.id}`;
       await this.inner.sessionManager.appendCustomEntry("sideagent-model-fallback-v1", { from, to });
@@ -171,7 +178,7 @@ class FailoverLoop implements AgentLoop {
       // Pi's normal retry removes only the failed assistant from model context.
       // Tool results remain, so continuing cannot execute already finished tools again.
       this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
-      await this.inner.agent.continue();
+      await this.continueRun();
     } catch (error) {
       if (this.heldEnd) return;
 
@@ -200,15 +207,47 @@ class FailoverLoop implements AgentLoop {
   }
 
   private shouldSwitch(event: Extract<AgentSessionEvent, { type: "agent_end" }>): boolean {
-    if (event.willRetry || this.stopped || this.switchedThisRun) return false;
+    if (event.willRetry) return false;
 
     const message = lastAssistant(event.messages);
-    const model = this.inner.model;
 
-    return !!message && !!model
-      && `${model.provider}/${model.id}` !== this.backupPattern
+    return !!message && this.canSwitch(message);
+  }
+
+  /** 这次失败能不能换备用模型：本轮没换过、有和当前不同的备用模型、错误属于服务暂时不可用。 */
+  private canSwitch(message: AssistantMessage): boolean {
+    const model = this.inner.model;
+    const backup = this.candidate();
+
+    return !this.stopped && !this.switchedThisRun && !!model && !!backup
+      && `${model.provider}/${model.id}` !== `${backup.provider}/${backup.id}`
       && !isContextOverflow(message, model.contextWindow)
       && isRetryableAssistantError(message);
+  }
+
+  private candidate(): Model<Api> | undefined {
+    if (!this.backupPattern) return this.models.fastModel?.();
+
+    const slash = this.backupPattern.indexOf("/");
+
+    if (slash <= 0 || slash === this.backupPattern.length - 1) return undefined;
+
+    return this.models.getModel(this.backupPattern.slice(0, slash), this.backupPattern.slice(slash + 1));
+  }
+
+  /** 显式指定的备用模型要有凭据；快速模型是用户在设置里选的，划词、翻译也在用，直接用。 */
+  private async usableBackup(): Promise<Model<Api> | undefined> {
+    const candidate = this.candidate();
+
+    if (!candidate || !this.backupPattern) return candidate;
+
+    const available = await this.models.getAvailable(candidate.provider);
+
+    return available.find(model => model.provider === candidate.provider && model.id === candidate.id);
+  }
+
+  private continueRun(): Promise<void> {
+    return this.inner.resume ? this.inner.resume() : this.inner.agent.continue();
   }
 
   private emit(event: AgentSessionEvent): void {

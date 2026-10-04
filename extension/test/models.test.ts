@@ -118,6 +118,11 @@ describe("humanizeModelError", () => {
     expect(humanizeModelError("模型请求最终失败：401 Unauthorized")).toContain("key 无效");
   });
 
+  it("keeps the failed model's name after the plain sentence (docs/evals/20261004-model-failover.md F3)", () => {
+    expect(humanizeModelError("模型请求最终失败（stepfun/step-5-preview）：Connection error.")).toBe("连不上模型服务，检查网络后再试。出错的模型：stepfun/step-5-preview。");
+    expect(humanizeModelError("模型请求最终失败（stepfun/step-5-preview）：first response timeout: stepfun/step-5-preview sent nothing within 15 s")).toContain("太久没有回应");
+  });
+
   it("leaves other errors untouched", () => {
     expect(humanizeModelError("切换模型失败：模型不存在或未配置凭据：foo/bar")).toBe(
       "切换模型失败：模型不存在或未配置凭据：foo/bar",

@@ -5,14 +5,14 @@
  * 按 0.84.4 源码（dist/core/agent-session.js）复刻 session.ts 实际用到的行为：
  * - prompt：input 钩子 → 运行中按 streamingBehavior 排队 → 组装用户消息与「下一轮」消息 →
  *   before_agent_start 钩子只对本轮替换系统提示词 → 运行；
- * - 运行：每轮结束后可重试的错误按 3 次、2 秒起翻倍重试，再 continue；结束时写入暂存的自定义消息；
+ * - 运行：每轮结束后可重试的错误按 2 次、0.5 秒起翻倍重试，再 continue；结束时写入暂存的自定义消息；
  * - sendCustomMessage 的五个分支、插话记账、agent_end 的 willRetry、auto_retry_start/end 事件；
  * - 切换工具时用 composeSystemPrompt 重建系统提示词（与 Pi 逐字一致，见 system-prompt.test.ts）。
  * 会话消息和任务检查点可交给Pi原生Session；扩展提供持久存储。
  */
 import { Agent, convertToLlm, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { isProviderBusyError } from "../../shared/provider-busy.js";
-import { isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, isContextOverflow, isRetryableAssistantError, type Api, type AssistantMessage, type AssistantMessageEventStream, type ImageContent, type Model, type ModelThinkingLevel, type TextContent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, AgentSessionEventListener, CustomEntry, ExtensionFactory, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentLoop, ModelPort } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -33,6 +33,8 @@ export interface PiAgentLoopOptions {
   persistence?: PiSessionPersistence;
   messages?: AgentMessage[];
   retry?: { maxRetries: number; baseDelayMs: number };
+  /** 模型多久不出第一个事件就取消这次调用、按可重试错误处理；默认 MODEL_FIRST_EVENT_TIMEOUT_MS。 */
+  firstEventTimeoutMs?: number;
   onHookError?: (event: string, message: string) => void;
   /** 每次模型调用前观察实际请求（诊断记录用）；只读，抛错被吞掉。 */
   onModelRequest?: (request: ModelRequestObservation) => void;
@@ -60,6 +62,13 @@ class MemoryEntries {
     return [...this.entries];
   }
 }
+
+/**
+ * 模型调用发出后多久还没有第一个事件（文字、思考、工具调用或结束）就算挂起。
+ * 依据 2026-10-01 日常记录：首个回应 p90 约 4.7 s，长提示词最慢约 12 s；挂起的服务要 30 s 才报 Connection error。
+ * 见 docs/evals/20261004-model-failover.md。
+ */
+export const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
 
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
   const timer = setTimeout(resolve, ms);
@@ -93,6 +102,8 @@ export class PiAgentLoop implements AgentLoop {
   private pendingNextTurn: CustomAppMessage[] = [];
   private lastAssistant: AssistantMessage | undefined;
   private retryAttempt = 0;
+  /** 见 AgentLoop.retryGate：返回 false 时这次失败不在同一模型上重试（由外层换备用模型）。 */
+  retryGate: ((message: AssistantMessage) => boolean) | undefined;
   private retryAbort: AbortController | undefined;
   private runActive = false;
   private abortVersion = 0;
@@ -102,9 +113,9 @@ export class PiAgentLoop implements AgentLoop {
   private injected: ModelRequestObservation["injected"] = [];
 
   constructor(private readonly options: PiAgentLoopOptions) {
-    // 1、2、4 秒三次重试：服务真坏了约 7 秒就告诉用户，而不是让人干等半分钟。
+    // 0.5、1 秒两次重试：服务挂起时最坏 15 s × 3 + 1.5 s 就告诉用户，而不是让人干等几分钟。
     this.sessionManager = options.persistence ?? new MemoryEntries();
-    this.retry = options.retry ?? { maxRetries: 3, baseDelayMs: 1000 };
+    this.retry = options.retry ?? { maxRetries: 2, baseDelayMs: 500 };
     this.definitions = new Map(options.tools.map(tool => [tool.name, tool]));
     this.active = options.tools.map(tool => tool.name);
 
@@ -118,7 +129,7 @@ export class PiAgentLoop implements AgentLoop {
 
     this.agent = new Agent({
       initialState: { model: options.model, systemPrompt: "", tools: [], messages: options.messages ?? [] },
-      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort),
+      streamFn: streamThrough(options.models, context => this.observeRequest(context), options.effort, options.firstEventTimeoutMs ?? MODEL_FIRST_EVENT_TIMEOUT_MS),
       // Pi原生转换保留自定义消息、压缩摘要与分支摘要。
       convertToLlm: messages => {
         this.injected = messages.flatMap(message => (message.role === "custom" ? [{ customType: message.customType, text: customText(message.content) }] : []));
@@ -268,11 +279,16 @@ export class PiAgentLoop implements AgentLoop {
     else this.agent.followUp(message);
   }
 
-  private async run(messages: AgentMessage[]): Promise<void> {
+  /** 接着当前上下文再跑一轮，同样带自动重试（换备用模型后用）。 */
+  resume(): Promise<void> {
+    return this.run(() => this.agent.continue());
+  }
+
+  private async run(start: AgentMessage[] | (() => Promise<void>)): Promise<void> {
     this.runActive = true;
 
     try {
-      await this.agent.prompt(messages);
+      await (Array.isArray(start) ? this.agent.prompt(start) : start());
 
       while (await this.afterRun()) await this.agent.continue();
     } finally {
@@ -294,7 +310,7 @@ export class PiAgentLoop implements AgentLoop {
 
     if (!message) return false;
 
-    if (this.retryable(message) && await this.prepareRetry(message)) return true;
+    if (this.retryable(message) && this.retryGate?.(message) !== false && await this.prepareRetry(message)) return true;
 
     if (message.stopReason === "error" && this.retryAttempt > 0) {
       this.emit({ type: "auto_retry_end", success: false, attempt: this.retryAttempt, finalError: message.errorMessage });
@@ -380,7 +396,7 @@ export class PiAgentLoop implements AgentLoop {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const message = messages[i]!;
 
-      if (message.role === "assistant") return this.retryable(message);
+      if (message.role === "assistant") return this.retryable(message) && this.retryGate?.(message) !== false;
     }
 
     return false;
@@ -429,7 +445,7 @@ function hookArgs(args: Parameters<NonNullable<ConstructorParameters<typeof Agen
   return args as HookArgs;
 }
 
-function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort?: (model: Model<Api>) => ModelThinkingLevel): StreamFn {
+function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number): StreamFn {
   // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
@@ -438,8 +454,61 @@ function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn
     const options = level === undefined ? streamOptions : { ...streamOptions, reasoning: level === "off" ? undefined : level };
 
     // SAFETY: 同上，参数原样转交。
-    return models.streamSimple(model as never, context as never, options as never);
+    return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs, signal => models.streamSimple(model as never, context as never, { ...options, signal } as never));
   }) as StreamFn;
+}
+
+/**
+ * 第一个事件（start 只表示连上，不算）迟迟不来：取消这次请求，交出一条可重试的超时错误，写明是哪个模型。
+ * 用户取消照常走原来的 aborted 结局。
+ */
+function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal) => AssistantMessageEventStream): AssistantMessageEventStream {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+
+  if (outer?.aborted) controller.abort();
+  else outer?.addEventListener("abort", cancel, { once: true });
+
+  // 同步抛出的错误（如缺 key）照旧交给 Agent 处理。
+  let source: AssistantMessageEventStream;
+
+  try { source = start(controller.signal); } catch (error) {
+    outer?.removeEventListener("abort", cancel);
+    throw error;
+  }
+
+  const out = createAssistantMessageEventStream();
+
+  const fail = (errorMessage: string) => {
+    out.push({ type: "error", reason: "error", error: {
+      role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "error", errorMessage, timestamp: Date.now(),
+    } });
+    out.end();
+  };
+
+  const timer = setTimeout(() => {
+    fail(`first response timeout: ${model.provider}/${model.id} sent nothing within ${Math.round(timeoutMs / 1000)} s`);
+    controller.abort();
+  }, timeoutMs);
+
+  void (async () => {
+    try {
+      for await (const event of source) {
+        if (event.type !== "start") clearTimeout(timer);
+        out.push(event);
+      }
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    } finally {
+      clearTimeout(timer);
+      outer?.removeEventListener("abort", cancel);
+      out.end();
+    }
+  })();
+
+  return out;
 }
 
 const customText = (content: CustomAppMessage["content"]): string => userContent(content).filter(isTextPart).map(part => part.text).join("");

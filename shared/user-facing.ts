@@ -54,8 +54,14 @@ export function plainStep(description: string): string {
  * 只按状态码和常见字样分类，不猜原因；分不出来时如实说没拿到回答。
  */
 export function plainModelError(raw: string): string {
-  const text = raw.replace(/^模型请求最终失败：/, "");
+  // 宿主写成「模型请求最终失败（provider/id）：原文」：人话后面补上是哪个模型。
+  const model = /^模型请求最终失败（([^）]+)）：/.exec(raw)?.[1];
+  const plain = plainModelErrorText(raw.replace(/^模型请求最终失败(（[^）]+）)?：/, ""));
 
+  return model ? `${plain}出错的模型：${model}。` : plain;
+}
+
+function plainModelErrorText(text: string): string {
   if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) return "模型服务拒绝了请求：key 无效，或没有这个模型的权限。可以在「更多 → 模型与语音」里检查。";
 
   if (/\b429\b|rate.?limit|quota|insufficient|余额|额度/i.test(text)) return "模型服务说额度用完或请求太频繁，稍后再试，或在下方换一个模型。";

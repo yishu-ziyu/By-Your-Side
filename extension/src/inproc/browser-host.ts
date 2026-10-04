@@ -83,10 +83,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
           files: {load:()=>listArtifacts(id),save:(item: Parameters<ArtifactPersistence["save"]>[0])=>writeArtifact(id,item),delete:(filename:string)=>deleteArtifact(id,filename)},
         };
 
+        // 不另设备用模型：主模型挂起或出错时换设置里的快速模型（withModelFailover）。
         return createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/", session: data.session },
         artifactPersistence: data.files, mode: summary?.mode,
-        fallbackModelPattern: "zai-coding-cn/glm-5.3-flash",
         memoryStore,
         taskHistory,
         });

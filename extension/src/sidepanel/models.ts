@@ -117,10 +117,10 @@ export function providerMark(provider: string): { letter: string; hue: number } 
 
 /**
  * 模型服务的报错改成人话（状态码、原始 JSON 不上侧栏，原文留在诊断记录里）；其他错误本来就是中文说明，原样返回。
- * agent 透传的模型错误形如 "模型请求最终失败：503: {...}"（见 agent/src/session.ts）。
+ * agent 透传的模型错误形如 "模型请求最终失败（provider/id）：503: {...}"（见 agent/src/session.ts）。
  */
 export function humanizeModelError(message: string): string {
-  return message.startsWith("模型请求最终失败：") ? plainModelError(message) : message;
+  return /^模型请求最终失败(（[^）]+）)?：/.test(message) ? plainModelError(message) : message;
 }
 
 export type ReasoningTier = "unknown" | "native" | "effort" | "direct";

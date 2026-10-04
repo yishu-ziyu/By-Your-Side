@@ -3296,8 +3296,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const errText = lastAssistantError(event.messages);
 
       if (errText) {
-        console.error(`[sideagent] 模型请求最终失败：${errText}`);
-        emit({ kind: "error", message: `模型请求最终失败：${errText}` });
+        // 写明哪个模型出的错（docs/evals/20261004-model-failover.md F3）；侧栏改成人话时保留模型名。
+        const failed = failedModel(event.messages);
+        const head = failed ? `模型请求最终失败（${failed}）：` : "模型请求最终失败：";
+        console.error(`[sideagent] ${head}${errText}`);
+        emit({ kind: "error", message: `${head}${errText}` });
       } else if (!this.deliveredResultThisRun && (this.explicitDelivery || runProducedNothing(event.messages))) {
         // 正文已生成但宿主尚在补正式交付，不等于模型无输出；也不能升级成已交付。
         const lastAssistant = event.messages.filter(message => message.role === "assistant").at(-1);
@@ -3472,6 +3475,13 @@ function finalAssistantText(messages: ReadonlyArray<{ role: string; content?: un
 
   return last.content.filter((part): part is { type: "text"; text: string } => part?.type === "text" && typeof part.text === "string")
     .map(part => part.text).join("").trim();
+}
+
+/** 最后一条出错的助手消息来自哪个模型（provider/id）。 */
+function failedModel(messages: ReadonlyArray<{ role: string; errorMessage?: string; provider?: string; model?: string }>): string | null {
+  const failed = [...messages].reverse().find(m => m.role === "assistant" && !!m.errorMessage);
+
+  return failed?.provider && failed.model ? `${failed.provider}/${failed.model}` : null;
 }
 
 export function lastAssistantError(messages: unknown): string | null {
