@@ -45,7 +45,7 @@ UI旧提案仅供[追溯](research/20261002-uiux-memory.md)。
 
 Issue：#27、#40和#23原生路径已部署，#23备用待验。见[部署](evals/20261003-issue-fixes-deployment.md)。
 
-进展看 Linear，见[说明](development/checks.md#给用户看的进展linear)。
+进展见 [Linear](development/checks.md#给用户看的进展linear)。
 
 日常扩展：主模型 MiniMax-M3.1-Flash-Preview、快速模型 GLM-5.3-flash（10-02配置，未改）。待真人试：M3.1 回答逐字出现、设置里选 M3.1、打开生成的 HTML、要截图。
 
