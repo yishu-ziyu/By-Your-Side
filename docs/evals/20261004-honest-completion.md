@@ -53,3 +53,7 @@ N2 修复后：两次保存点击回执为 “Page reacted: page sent POST flomo
 - 已知风险不变：窗口内同一网站恰好出现的后台写请求仍会被算作反应。
 
 最终：全量单元 297 个文件 3066 项通过；`north-star-research.mts --headless --scripted` 产物 `…/2026-10-04T08-36-50-031Z-north-star/` N1、N2、N3 全部 PASS。
+
+## 装进日常扩展（10-04，用户“一起做”授权）
+
+沿用 10-03 部署流程（`out/deployments/honest-completion-20261004/`）：11 个会话全部空闲后备份（0600），构建 `out/builds/honest-completion-20261004/`（同时包含 [续接确认修复](20261004-resume-consent-race.md) 的边缘光改动）替换 `extension/dist` 并重载。第一次核对因重载关掉侧栏找不到页面而中断，重开侧栏后 `--verify-only` 通过：8 份历史原条目全部保留（只追加 40 条空闲状态）、会话编号与选中会话、模型配置、3 份记忆文档 hash 不变；实际运行的 background.js、inproc.js、sidepanel.js 与候选构建一致。已打开的网页要刷新后才用上新的边缘光代码。没有在日常 Chrome 里跑任务，真实使用效果待用户试。
