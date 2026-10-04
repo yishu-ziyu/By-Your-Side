@@ -44,6 +44,11 @@ export class PanelHistory {
   }
 
   record(item: PanelHistoryItem): PanelHistoryEntry {
+    // 紧跟着同一状态的重复状态（每次重载扩展都会重发 idle）不再追加：它不改变侧栏，却会把最早的真实消息挤出落盘窗口。
+    const last = this.entries.at(-1);
+
+    if (last && sameStatus(last.item, item)) return last;
+
     if(item.kind === "server" && item.msg.type === "agent_event" && item.msg.event.kind === "artifact" && item.msg.event.action === "saved") {
       const { content: _content, ...event } = item.msg.event;
       item = {...item,msg:{...item.msg,event}};
@@ -183,6 +188,11 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
   clear(): void {
     this.entries.length = 0;
   }
+}
+
+function sameStatus(a: PanelHistoryItem, b: PanelHistoryItem): boolean {
+  return a.kind === "server" && b.kind === "server" && a.msg.type === "status" && b.msg.type === "status"
+    && a.msg.state === b.msg.state && a.msg.conversationId === b.msg.conversationId && a.msg.sessionId === b.msg.sessionId;
 }
 
 function taskReceipt(item:PanelHistoryItem) {

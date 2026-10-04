@@ -174,4 +174,36 @@ describe("落盘窗口与保留数量（存储配额）", () => {
     broken.restore({ updatedAt: 1 });
     expect(broken.since()).toEqual([]);
   });
+
+  // 2026-10-04：每次重载扩展，每个会话多出约 7 条一样的 idle 状态；历史满时把最早的真实消息挤出落盘窗口。
+  it("an identical status right after the same status is not appended, so idle repeats never evict real messages", () => {
+    const history = new PanelHistory();
+    const idle: PanelHistoryItem = { kind: "server", msg: { type: "status", state: "idle", conversationId: "A" } };
+    const event = (n: number): PanelHistoryItem => ({ kind: "server", msg: { type: "agent_event", conversationId: "A", event: { kind: "notice", message: `第 ${n} 条：${"字".repeat(200)}` } } });
+
+    for (let n = 0; n < 2_000; n += 1) {
+      history.record(event(n));
+
+      if (history.persistWindow(HISTORY_PERSIST_BUDGET_BYTES).length <= n) break;
+    }
+
+    history.record(idle);
+    const before = history.persistWindow(HISTORY_PERSIST_BUDGET_BYTES);
+
+    for (let reload = 0; reload < 7; reload += 1) history.record(idle);
+
+    expect(history.persistWindow(HISTORY_PERSIST_BUDGET_BYTES)).toEqual(before);
+  });
+
+  it("a status change is still appended, and the same state after other entries is kept", () => {
+    const history = new PanelHistory();
+    history.record({ kind: "server", msg: { type: "status", state: "idle", conversationId: "A" } });
+    history.record({ kind: "server", msg: { type: "status", state: "running", conversationId: "A" } });
+    history.record({ kind: "server", msg: { type: "status", state: "idle", conversationId: "A" } });
+    history.record({ kind: "user", text: "再来" });
+    history.record({ kind: "server", msg: { type: "status", state: "idle", conversationId: "A" } });
+    history.record({ kind: "server", msg: { type: "status", state: "idle", conversationId: "A", sessionId: "member-1" } });
+
+    expect(history.since().map(entry => (entry.item.kind === "user" ? "user" : entry.item.msg.type === "status" ? `${entry.item.msg.state}${entry.item.msg.sessionId ? `@${entry.item.msg.sessionId}` : ""}` : "?"))).toEqual(["idle", "running", "idle", "user", "idle", "idle@member-1"]);
+  });
 });
