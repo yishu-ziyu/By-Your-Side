@@ -3844,7 +3844,7 @@ function onToolStart(
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; declined?: true }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; declined?: true; repeatRefused?: true }): void {
   const run = currentRun ?? lastRun;
 
   if (run) {
@@ -3867,7 +3867,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   if (!entry) return;
   // 用户拒绝授权的那一步照你的意思没做：不画成失败。
-  const failed = ev.isError && !ev.declined;
+  const failed = ev.isError && !ev.declined && !ev.repeatRefused;
   entry.dot.className = `chip-dot ${chipState(true, failed)}`;
   // B：收束——蓝边底色按 --m-move 退回常态
   entry.chip.classList.remove("running");
@@ -3889,6 +3889,8 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   const label = entry.chip.querySelector(".chip-label");
 
   if (ev.declined && label) label.textContent = `${label.textContent}（你没有允许）`;
+
+  if (ev.repeatRefused && label) label.textContent = `${label.textContent}（已做过，没再重复）`;
   const text = ev.resultText ?? "";
 
   if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;

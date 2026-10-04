@@ -7,6 +7,9 @@ import type { TaskProgressSnapshot } from './voice.js';
 
 export const TOOL_FAILURE_LIMIT = 3;
 
+/** 重复一步已有成功回执的写入被拦下：没执行，但原来那步已经做成，这件事不算失败。 */
+export class RepeatRefusedError extends Error {}
+
 export const TASK_NEXT_ACTIONS = ['continue', 'change_method', 'verify_unknown', 'ask_user', 'verify_result', 'deliver', 'wait', 'stop'] as const;
 
 export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error'] as const;
@@ -206,9 +209,9 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
     const observedAfter = typeof snapshot.lastReadAt === 'number' && item.evidence?.observedAt !== undefined && snapshot.lastReadAt > item.evidence.observedAt;
 
     if (snapshot.restartRecovery || (!worker && !observedAfter)) {
-      throw new Error(snapshot.restartRecovery && name === 'fill'
-        ? `「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请定位当前字段并用 confirm_blocked_write 核对/确认一次恢复。`
-        : `「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
+      if (snapshot.restartRecovery && name === 'fill') throw new Error(`「${item.description}」已有成功回执（来自重启前），不能直接重放。若当前页面已不满足最新要求，请定位当前字段并用 confirm_blocked_write 核对/确认一次恢复。`);
+
+      throw new RepeatRefusedError(`「${item.description}」已有成功回执，不重复执行。请继续剩余步骤。`);
     }
   }
 

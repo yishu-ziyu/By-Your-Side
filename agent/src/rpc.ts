@@ -59,7 +59,7 @@ interface DispatchedCall {
   name: ToolName;
   sessionId?: string;
   startedAt: number;
-  state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected" | "declined";
+  state: "preparing" | "sent" | "timed_out" | "disconnected" | "resolved" | "rejected" | "declined" | "repeat_refused";
   fact?: ToolExecutionFact;
   /** 缺省页可能变化的调用：发出时的设置序号与出站参数，供回执比对新旧。 */
   targetSeq?: number;
@@ -261,6 +261,17 @@ export class ToolRpc {
     return this.dispatched.get(id)?.state === "declined";
   }
 
+  /** 重复一步已成功的写入被执行闸门拦下：没执行，也不是失败。 */
+  markCallRepeatRefused(id: string): void {
+    const entry = this.dispatched.get(id);
+
+    if (entry && entry.state === "preparing") entry.state = "repeat_refused";
+  }
+
+  wasRepeatRefused(id: string): boolean {
+    return this.dispatched.get(id)?.state === "repeat_refused";
+  }
+
   /** 组合调用进入执行时更新事实（例如 browser_run 整体）。 */
   noteToolFact(id: string, fact: ToolExecutionFact): void {
     const entry = this.dispatched.get(id);
@@ -434,7 +445,7 @@ export class ToolRpc {
     for (const [key, entry] of this.dispatched) {
       if (pendingIds.has(key) || pendingIds.has(entry.id)) continue;
 
-      if (entry.state === "resolved" || entry.state === "rejected" || entry.state === "declined") droppable.push(key);
+      if (entry.state === "resolved" || entry.state === "rejected" || entry.state === "declined" || entry.state === "repeat_refused") droppable.push(key);
     }
 
     for (const key of droppable) {

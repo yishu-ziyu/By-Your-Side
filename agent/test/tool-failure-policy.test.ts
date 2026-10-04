@@ -1,17 +1,28 @@
 import {describe, expect, it, vi} from 'vitest';
 import {RepeatedToolFailurePolicy} from '../src/tool-failure-policy.js';
 
-function setup() {
+function setup(skip?:(toolCallId:string)=>boolean) {
   const handlers:Record<string,Function>={};
   const stopped=vi.fn(), abort=vi.fn();
-  const policy=new RepeatedToolFailurePolicy(stopped);
+  const policy=new RepeatedToolFailurePolicy(stopped,undefined,skip);
   policy.extension()({on:(name:string,fn:Function)=>{handlers[name]=fn;}} as any);
-  const result=(toolName:string,text:string,isError=true,url?:string)=>handlers.tool_result!({toolName,isError,input:url?{url}:{},content:[{type:'text',text}]},{abort});
+  const result=(toolName:string,text:string,isError=true,url?:string,toolCallId='call')=>handlers.tool_result!({toolCallId,toolName,isError,input:url?{url}:{},content:[{type:'text',text}]},{abort});
 
   return {policy,stopped,abort,result};
 }
 
 describe('repeated execution failure boundary',()=>{
+  it('does not count a refused repeat of an already-succeeded step (docs/evals/20261004-honest-completion.md R1)',()=>{
+    const refused=new Set(['c2','c3','c4']);
+    const h=setup(id=>refused.has(id));
+
+    for(const id of refused)h.result('click','「点击「保存」」已有成功回执，不重复执行。请继续剩余步骤。',true,undefined,id);
+    expect(h.abort).not.toHaveBeenCalled();
+
+    // A genuine failure of the same operation is still counted.
+    for(const id of ['f1','f2','f3'])h.result('click','target rejected',true,undefined,id);
+    expect(h.stopped).toHaveBeenCalledWith({toolName:'click',error:'target rejected',attempts:3});
+  });
   it('stops after three identical failures even with successful observations between them',()=>{
     const h=setup();
     h.result('mark','target rejected');h.result('snapshot','observed',false);

@@ -143,6 +143,61 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
   return { changed: evidence.length > 0, evidence, weak, volatile: !!base.volatile, alerts: fresh };
 }
 
+/** 点击窗口内页面发出的请求（来自被动网络记录）。 */
+export interface EffectRequest {
+  method: string;
+  url: string;
+  resourceType: string;
+  startedAt: number;
+}
+
+/** 不算页面对点击的反应：取数类方法，以及浏览器标明的打点、跨域预检与安全报告。 */
+const QUIET_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+const QUIET_TYPES = new Set(["ping", "preflight", "cspviolationreport"]);
+
+/** 粗略的“同一网站”：主机名最后两段相同（IP 与单段主机按主机名本身）。多段公共后缀（如 .co.uk）会放宽，只影响是否计入证据。 */
+function siteOf(hostname: string): string {
+  if (/^[\d.]+$/.test(hostname) || hostname.includes(":")) return hostname;
+
+  return hostname.split(".").slice(-2).join(".");
+}
+
+/** 像密钥的路径段（够长且字母数字混合，或很长）换成 *：如写入链接里的令牌。 */
+function redactPath(pathname: string): string {
+  return pathname.split("/").map(seg => (seg.length >= 8 && /\d/.test(seg) && /[a-z]/i.test(seg)) || seg.length >= 24 ? "*" : seg).join("/");
+}
+
+/**
+ * 点击后页面发出的写类请求算强证据（10-04 北极星：保存结果显示在表单外，DOM 判据漏判）。
+ * 只认点击窗口 [since, until] 内开始、与当前页面同一网站的非 GET 请求；不认打点、预检、安全报告与第三方请求。
+ * 只写方法、主机与隐去密钥段的路径，不写查询参数与正文。这只说明页面对点击有反应，不说明业务成功。
+ * 依据见 docs/evals/20261004-honest-completion.md。
+ */
+export function requestEvidence(requests: readonly EffectRequest[], since: number, until: number, pageUrl: string): string[] {
+  let pageSite: string;
+
+  try {
+    pageSite = siteOf(new URL(pageUrl).hostname);
+  } catch {
+    return [];
+  }
+
+  const sent = requests.flatMap(r => {
+    if (r.startedAt < since || r.startedAt > until || QUIET_METHODS.has(r.method.toUpperCase()) || QUIET_TYPES.has(r.resourceType)) return [];
+
+    try {
+      const u = new URL(r.url);
+
+      return siteOf(u.hostname) === pageSite ? [`page sent ${r.method.toUpperCase()} ${u.host}${redactPath(u.pathname)}`] : [];
+    } catch {
+      return [];
+    }
+  });
+
+  return sent.length > 3 ? [...sent.slice(0, 3), `and ${sent.length - 3} more request(s)`] : sent;
+}
+
 /** 给模型看的回执文案：有变化给清单，没变化明说并提示不要盲目重试。 */
 export function formatEffectReport(report: EffectReport | undefined): string {
   if (!report) return "";

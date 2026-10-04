@@ -824,7 +824,7 @@ if(required.includes(key))candidates.set(key,attachment);
       const productContext = options?.conversationId ? new ProductContext(() => resultHost?.applyActiveTools()) : null;
       let onRepeatedFailure: ConstructorParameters<typeof RepeatedToolFailurePolicy>[0] = () => {};
 
-      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"));
+      const failurePolicy = new RepeatedToolFailurePolicy(failure => onRepeatedFailure(failure), () => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.wasRepeatRefused?.(id) === true);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
 
@@ -3017,7 +3017,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
-          this.noteFailedAttempt(event.toolName, event.isError, event.result);
+          // 被拦下的重复不是“试过且失败”的做法，不写进催促模型换方法的清单。
+          if (!this.rpc?.wasRepeatRefused?.(event.toolCallId)) this.noteFailedAttempt(event.toolName, event.isError, event.result);
 
           // browser_run 的结果 details 形如 { value, steps }（browser-program.ts）；其他工具记 1 步，缺字段按 0 步。
           this.tallyPageChange(event.toolName, event.isError, event.toolName === "browser_run" ? Number(event.result?.details?.steps ?? 0) : 1);
@@ -3030,6 +3031,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             resultText: ['task_goals','capture_page_material'].includes(event.toolName)&&!event.isError ? '任务目标与来源材料已更新。' : firstText(event.result),
             executionFact: this.rpc?.getExecutionFact(event.toolCallId),
             ...(event.isError && this.rpc?.wasDeclined(event.toolCallId) ? { declined: true as const } : {}),
+            ...(event.isError && this.rpc?.wasRepeatRefused?.(event.toolCallId) ? { repeatRefused: true as const } : {}),
           });
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
           this.toolArgs.delete(event.toolCallId);

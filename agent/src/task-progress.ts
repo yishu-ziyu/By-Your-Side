@@ -480,9 +480,14 @@ if(page)this.recoveryInput.page=page;
       }
 
       // 用户拒绝授权：这一步按用户的意思不做了。不算失败，也不留成待办。
-      if (!this.aborted && e.declined) {
-        this.lastAction = { action: started.action, failed: false, at: this.clock() };
-        this.lastBrowserFailed = false;
+      // 重复一步已成功的写入被拦下同理：原步骤已成功，这次没执行，不算失败（10-04 北极星 N2）。
+      if (!this.aborted && (e.declined || e.repeatRefused)) {
+        // 被拦下的重复不覆盖上一步的成败：之前真失败过的一步仍要如实报告。
+        if (e.declined) {
+          this.lastAction = { action: started.action, failed: false, at: this.clock() };
+          this.lastBrowserFailed = false;
+        }
+
         this.results.noteDeclined({ toolCallId: e.toolCallId, member, runId: this.runId });
 
         return;

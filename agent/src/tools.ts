@@ -19,6 +19,7 @@ import { FOREIGN_TAB_ERROR, WRITE_TOOLS } from "../../shared/control.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { needsConsentTicket, requiresControlGate } from "../../shared/effect-policy.js";
 import { CONSENT_REQUIRED_ERROR } from "./consent-ticket.js";
+import { RepeatRefusedError } from "../../shared/task-next-step.js";
 import type { ConsentOutcome } from "./fetch-consent.js";
 import type { ToolRpc } from "./rpc.js";
 import { runBrowserProgram, availableProgramHelpers, availableRpcAliases, type ProgramStep } from "./browser-program.js";
@@ -220,7 +221,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       try {
         execution?.assertCall?.(name, target, sdkId);
       } catch (error) {
-        rejectCall();
+        if (error instanceof RepeatRefusedError && sdkId) rpc.markCallRepeatRefused?.(sdkId);
+        else rejectCall();
         throw error;
       }
     };

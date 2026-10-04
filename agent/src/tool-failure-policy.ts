@@ -15,12 +15,13 @@ export class RepeatedToolFailurePolicy {
   private failures=new Map<string,{toolName:string;error:string;attempts:number}>();
   private stopped=false;
   /** onRepeat: the same operation just failed a second time in a row (not yet stopped) — the host raises the main thinking level. */
-  constructor(private readonly onStop:(failure:RepeatedToolFailure)=>void,private readonly onRepeat?:(failure:RepeatedToolFailure)=>void) {}
+  /** skip：这次出错不是失败（重复一步已成功的写入被闸门拦下），既不计数也不清零。 */
+  constructor(private readonly onStop:(failure:RepeatedToolFailure)=>void,private readonly onRepeat?:(failure:RepeatedToolFailure)=>void,private readonly skip?:(toolCallId:string)=>boolean) {}
   reset():void {this.failures.clear();this.stopped=false;}
   extension():ExtensionFactory {
     return pi=>{
       pi.on('tool_result',(event,ctx)=>{
-        if(this.stopped)return;
+        if(this.stopped||(event.isError&&this.skip?.(event.toolCallId)))return;
 
         if(!event.isError){for(const [key,failure] of this.failures)if(failure.toolName===event.toolName)this.failures.delete(key);
 

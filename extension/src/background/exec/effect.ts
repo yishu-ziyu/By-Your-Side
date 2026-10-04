@@ -3,9 +3,13 @@
  * 效果证据失败（页面禁止注入、导航换文档、SW 重启）绝不能拖垮动作本身：
  * 所有入口都吞掉异常并返回 undefined，让调用方按「没有证据」处理。
  */
-import { settleEffectReport, type EffectReport } from "../../../../shared/effect.js";
+import { EMPTY_EFFECT_REPORT, requestEvidence, settleEffectReport, type EffectReport } from "../../../../shared/effect.js";
+import { networkRingFor } from "../network-log.js";
 
 const CONTENT_FILE = "content-effect.js";
+
+/** 每个效果会话的开始时刻：点击窗口的起点，用来认出这次点击后页面发出的请求。 */
+const effectStarts = new Map<string, number>();
 
 interface EffectInput {
   token: string;
@@ -36,6 +40,7 @@ export async function beginEffect(
   input: { point?: [number, number]; selector?: string } = {},
 ): Promise<string | null> {
   const token = crypto.randomUUID();
+  const startedAt = Date.now();
 
   try {
     await ensureEffectScript(tabId);
@@ -49,7 +54,12 @@ export async function beginEffect(
       [payload],
     );
 
-    return ack?.ok ? token : null;
+    if (!ack?.ok) return null;
+
+    if (effectStarts.size > 50) effectStarts.delete(effectStarts.keys().next().value!);
+    effectStarts.set(token, startedAt);
+
+    return token;
   } catch {
     return null;
   }
@@ -68,8 +78,17 @@ export async function collectEffect(tabId: number, token: string | null): Promis
       }
     });
 
-    return report;
+    const since = effectStarts.get(token);
+    const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
+    const sent = since === undefined ? [] : requestEvidence(networkRingFor(tabId)?.entries ?? [], since, Date.now(), pageUrl);
+
+    if (!sent.length) return report;
+    const base = report ?? EMPTY_EFFECT_REPORT;
+
+    return { ...base, changed: true, evidence: [...base.evidence, ...sent] };
   } finally {
+    effectStarts.delete(token);
+
     try {
       await callPage(tabId, (t: string) => window.__sideagent?.effect?.end(t), [token]);
     } catch {
