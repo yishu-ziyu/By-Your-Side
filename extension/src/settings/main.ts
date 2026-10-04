@@ -16,6 +16,7 @@ import { TRACE_SESSIONS_KEPT } from "../../../shared/run-trace-core.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from "../../../shared/voice-capture-core.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
+import { TRUSTED_SITES_KEY, parseTrustedSites } from "../../../shared/trusted-sites.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type VoicePersona } from "../../../shared/voice.js";
 
 /** 实测 OpenCode Go 一个两字回复要 3–29 秒（服务端排队），30 秒会误判。 */
@@ -127,6 +128,12 @@ document.getElementById("settings")!.innerHTML = `
     </label>
     <p class="settings-sub">关掉后选中文字不再弹出工具条；选中后按 ⌘J 或右键「问 By Your Side」仍然可用。已打开的网页立即生效。</p>
     <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="settings-card" aria-labelledby="trusted-title">
+    <h2 id="trusted-title">信任的网站</h2>
+    <p class="settings-sub">在这些网站上，助手读页面、打开新网页不再逐次问你；填写、点击、提交、运行页面脚本仍会每次问。在确认卡上点「以后这个网站不再问」加入，这里移除后立即恢复逐次确认。</p>
+    <ul id="trusted-list" class="settings-list"></ul>
+    <p id="trusted-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="settings-card" aria-labelledby="trace-title">
     <h2 id="trace-title">诊断记录</h2>
@@ -590,6 +597,7 @@ async function reload(): Promise<void> {
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
+  renderTrustedSites(parseTrustedSites(stored[TRUSTED_SITES_KEY]));
   renderCurrent();
   refreshProviderMarks();
   renderCredentialState();
@@ -689,6 +697,52 @@ $("persona-save").addEventListener("click", () => {
 
   if (!text) return setStatus(personaStatus, "先写几句你想要的性格。", "err");
   void savePersona({ id: "custom", text });
+});
+
+const trustedList = $("trusted-list");
+
+const trustedStatus = $("trusted-status");
+
+function renderTrustedSites(sites: string[]): void {
+  trustedList.replaceChildren();
+
+  if (!sites.length) {
+    const empty = document.createElement("li");
+    empty.className = "settings-hint";
+    empty.textContent = "还没有信任的网站。";
+    trustedList.append(empty);
+
+    return;
+  }
+
+  for (const site of sites) {
+    const row = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = site;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "移除";
+    remove.setAttribute("aria-label", `移除 ${site}`);
+    remove.addEventListener("click", () => void removeTrustedSite(site));
+    row.append(name, remove);
+    trustedList.append(row);
+  }
+}
+
+async function removeTrustedSite(site: string): Promise<void> {
+  try {
+    const rest = parseTrustedSites((await chrome.storage.local.get(TRUSTED_SITES_KEY))[TRUSTED_SITES_KEY]).filter(s => s !== site);
+    await chrome.storage.local.set({ [TRUSTED_SITES_KEY]: rest });
+    renderTrustedSites(rest);
+    setStatus(trustedStatus, `已移除 ${site}，以后在那里读页面会再问你。`, "ok");
+  } catch (error) {
+    setStatus(trustedStatus, `没有移除：${error instanceof Error ? error.message : String(error)}`, "err");
+  }
+}
+
+// 确认卡在侧栏里加入信任时，开着的设置页跟着更新。
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && TRUSTED_SITES_KEY in changes) renderTrustedSites(parseTrustedSites(changes[TRUSTED_SITES_KEY]?.newValue));
 });
 
 const selectionBar = $<HTMLInputElement>("selection-bar");

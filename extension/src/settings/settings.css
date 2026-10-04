@@ -58,3 +58,7 @@ html, body.settings-page { height: auto; min-height: 100%; font-size: 14px; }
 
 .settings-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .settings-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+/* 信任的网站：一行一个域名，右侧「移除」。 */
+.settings-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.settings-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

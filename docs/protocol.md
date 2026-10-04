@@ -62,7 +62,7 @@ server → agent_event{..., sessionId?}  # 流式渲染：text_delta / thinking_
 worker 事件带自己的 `sessionId`，面板把它们显示在所属用户会话的团队状态中。`abort` 只中止指定用户会话；停止单个 worker 只撤销该成员。`takeover` / `handback` 保留会话与标签绑定：接管先阻止目标页新写入，等待已在途短动作到安全停止点，再暂停该页全部协作者。其他会话的独立页继续。交还为各成员读取绑定页的新快照；关闭或读取失败的页面保持暂停，不把当前活动页替代进去。
 
 
-`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。`tool_end.declined`：用户在授权卡上点了「拒绝」，没执行但不是失败，账本不留待办。`tool_end.repeatRefused`：重复已成功的写入被闸门拦下，没执行、不算失败、不留待办。点击效果证据含点击窗口内页面发出的非 GET 请求（不含打点、预检、安全报告），只写方法、主机与路径，只说明页面有反应、不说明业务成功（[验收](evals/20261004-honest-completion.md)）。任务视图里带 `awaitingConfirmation` 的项是被拦下、等页面确认的点击；它不妨碍别的会话接手这一页，接手时旧确认一并收起。
+`text_delta` 聚合成当前助手消息；`tool_start`/`tool_end` 以 `toolCallId` 配对渲染为可折叠卡片。`tool_late_result` 是晚到/重复回执，只按原 SDK 调用 id 关联任务账本，不渲染新卡片。`tool_end.declined`：用户在授权卡上点了「拒绝」，没执行但不是失败，账本不留待办。读取/打开卡可带后台算出的 `trustSite`，`consent_decision.trust` 批准成功后信任该域名（[确认](browser-confirmation.md)）。`tool_end.repeatRefused`：重复已成功的写入被闸门拦下，没执行、不算失败、不留待办。点击效果证据含点击窗口内页面发出的非 GET 请求（不含打点、预检、安全报告），只写方法、主机与路径，只说明页面有反应、不说明业务成功（[验收](evals/20261004-honest-completion.md)）。任务视图里带 `awaitingConfirmation` 的项是被拦下、等页面确认的点击；它不妨碍别的会话接手这一页，接手时旧确认一并收起。
 
 ### 工具调用（RPC）
 

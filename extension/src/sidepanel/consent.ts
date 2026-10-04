@@ -152,13 +152,13 @@ export class ConsentPanel {
     this.entries.set(key, entry);
   }
 
-  private decide(entry: Entry, allow: boolean): void {
+  private decide(entry: Entry, allow: boolean, trust = false): void {
     if (!this.connected || entry.status !== "pending" || entry.submitted) return;
 
     if (Date.now() >= entry.request.expiresAt) {
       entry.status = "expired";
       entry.message = "确认已过期，本次请求未发送。";
-    } else if (this.send({type: "consent_decision", conversationId: entry.request.conversationId, requestId: entry.request.id, allow})) {
+    } else if (this.send({type: "consent_decision", conversationId: entry.request.conversationId, requestId: entry.request.id, allow, ...(trust ? {trust: true as const} : {})})) {
       entry.submitted = true;
       entry.message = "正在确认这次选择…";
     } else entry.message = "连接不可用，选择未发送。连接恢复后可重试。";
@@ -215,6 +215,20 @@ export class ConsentPanel {
           button.className = allow ? "consent-allow" : "consent-reject";
           button.disabled = !this.connected || entry.submitted;
           button.addEventListener("click", () => this.decide(entry, allow));
+          actions.append(button);
+        }
+
+        // 读取/打开卡：后台算出的域名，点了以后在这个网站上只看不动的动作不再问（写入照旧）。
+        const trustSite = request.kind === "write" ? request.trustSite : undefined;
+
+        if (trustSite) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = `允许，以后 ${trustSite} 不再问`;
+          button.title = `以后在 ${trustSite} 上读页面、打开新网页不再问你；填写、点击、提交仍会每次问。可在设置里移除。`;
+          button.className = "consent-trust";
+          button.disabled = !this.connected || entry.submitted;
+          button.addEventListener("click", () => this.decide(entry, true, true));
           actions.append(button);
         }
 

@@ -42,7 +42,7 @@ npm run check                # 文档、边界、类型、测试、构建
 
 验收脚本预计超过 200 行时，先在 `scripts/probes/` 写不超过 50 行的小实验，只证明一句技术前提，结果写进验收文件「技术前提」。成立才写验收脚本；不成立就改方案，不先搭验收。小实验用独立观测（如服务器计数），退出码 0 为成立、1 为不成立；`npx tsx scripts/probes/<名>.mts` 运行。它不是产品验收，不能冒充真实路径通过。
 
-示例 `readonly-return-getter.mts`：开启副作用拒绝后，返回网页已有对象仍会在序列化时发出 POST，2 秒复现 #22 原方案的否定结论。
+示例 `readonly-return-getter.mts`：开启副作用拒绝后，返回网页已有对象仍会在序列化时发出 POST，2 秒复现 #22 原方案的否定结论。`click-request-gesture.mts` 否定了用 `hasUserGesture` 归因点击请求（点击后的后台请求也为 true），改用时间窗口；`trusted-domain-psl.mts` 证明 tldts 把 github.io 子站分开、把各语言维基归为一个域名。
 
 ## 调试入口
 

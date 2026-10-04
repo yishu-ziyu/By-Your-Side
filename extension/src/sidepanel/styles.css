@@ -2926,6 +2926,9 @@ details.disc[open] > summary::before { transform: rotate(90deg); }
   font-size: 12px;
 }
 .consent-actions .consent-allow { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* “以后这个网站不再问”：文字较长，单独占一行，次要样式，不抢“允许一次”。 */
+.consent-actions:has(.consent-trust) { flex-wrap: wrap; }
+.consent-actions .consent-trust { flex-basis: 100%; color: var(--text-secondary); font-size: 12px; }
 .consent-actions button:disabled { opacity: .55; cursor: default; }
 .consent-actions button:focus-visible, .consent-card summary:focus-visible, .consent-other:focus-visible {
   outline: 2px solid var(--accent);

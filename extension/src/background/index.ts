@@ -2,6 +2,7 @@ import { readDialogApprovalState } from "./page-events.js";
 import {nativeApprovalState} from "./native-approval-state.js";
 import { ActivationConsent } from "./activation-consent.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
+import { TRUSTED_SITES_KEY, TRUSTABLE_READ_TOOLS, parseTrustedSites, trustSiteFor } from "../../../shared/trusted-sites.js";
 import { redactCredentialText } from "../../../shared/untrusted.js";
 import { assertActivationAllowed, requiresActivationConsent } from "./activation-policy.js";
 import { pageTranslation } from "./exec/page-translation.js";
@@ -379,7 +380,19 @@ function createConversationController(conversationId: string) {
 const key = (sid: string = LEAD_SESSION_ID) => executionKey(conversationId, sid);
 /** 被拿住等确认的点击是哪一次 tool_call（按会话）：用户确认后补点了，要按这个编号告诉宿主。 */
 const heldCallIds = new Map<string, string>();
-const activationConsent = new ActivationConsent(msg => broadcast({kind:"server",msg}));
+const activationConsent = new ActivationConsent(msg => broadcast({kind:"server",msg}), undefined, site => void addTrustedSite(site));
+
+/** 受信任网站列表（见 shared/trusted-sites.ts）。每次现读，设置页移除后立即生效。 */
+async function trustedSites(): Promise<string[]> {
+  return parseTrustedSites((await chrome.storage.local.get(TRUSTED_SITES_KEY))[TRUSTED_SITES_KEY]);
+}
+
+/** 只由确认卡“以后这个网站不再问”经 ActivationConsent 调用；域名由后台在发卡时算出。 */
+async function addTrustedSite(site: string): Promise<void> {
+  const sites = await trustedSites();
+
+  if (!sites.includes(site)) await chrome.storage.local.set({ [TRUSTED_SITES_KEY]: [...sites, site] });
+}
 
 /** 诊断：确认时重读的绑定上下文与发起时不同，只记下变了哪些顶层字段（参数与页面状态只记是否变化），供验收复盘偶发作废；不影响判定。 */
 function recordContextMismatch(requestTool: string, expected: string, current: string): void {
@@ -1369,6 +1382,7 @@ async function executeToolCall(
   let approvedCancellationVersion = -1;
   let approvedGateGeneration = -1;
   let consentTab: number | null = null;
+  let trustedRead: { tabId: number; documentId: string } | null = null;
   const checkCurrentConsent = () => {
     checkIdentity();
 
@@ -1523,7 +1537,27 @@ async function executeToolCall(
       if (name === "js" || name === "paste" || (name === "fetch" && normalizeFetchRequest(params).method === "POST")) {
         await assertCheckedFormPrimitive(params, key(sid));
       }
-      if (requiresActivationConsent(name, params)) {
+      // 受信任网站上的读取与开新标签不弹卡（docs/evals/20261004-trusted-read-sites.md）；不受信任时卡上提供“以后不再问”。
+      let trustBypass = false;
+      let cardTrustSite: string | undefined;
+
+      if (requiresActivationConsent(name, params) && (name === "open_tab" || TRUSTABLE_READ_TOOLS.has(name))) {
+        const readTab = name === "open_tab" ? null : Number.isSafeInteger(params.tabId) ? Number(params.tabId) : await getWorkingTabId(sid);
+        const tabUrl = readTab == null ? undefined : (await chrome.tabs.get(readTab).catch(() => null))?.url;
+        const site = trustSiteFor(name, name === "open_tab" ? String(params.url ?? "") : undefined, tabUrl);
+
+        if (site && (await trustedSites()).includes(site)) {
+          const doc = readTab == null ? null : await readCurrentDocument(readTab);
+
+          if (readTab == null) trustBypass = true;
+          else if (doc) {
+            trustBypass = true;
+            trustedRead = { tabId: readTab, documentId: doc.documentId };
+          }
+        } else if (site) cardTrustSite = site;
+      }
+
+      if (requiresActivationConsent(name, params) && !trustBypass) {
         const cancellationVersion = activationConsent.version;
         approvedCancellationVersion = cancellationVersion;
         approvedGateGeneration = gate.gen;
@@ -1535,7 +1569,10 @@ async function executeToolCall(
         const preview = redactCredentialText(JSON.stringify(params));
         if (preview.length > 65536) throw new Error("动作参数超过可完整展示的上限，操作未执行。");
         approvedUntil = Date.now() + 20_000;
-        activationApproved = await activationConsent.request({conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion},async () => {
+        const consentInput: Parameters<typeof activationConsent.request>[0] = {conversationId,runId:currentRun,controlVersion:gate.gen,goal:conversationSummaries.find(c=>c.id===conversationId)?.title ?? "当前任务",tool:name,target:String(params.target ?? params.url ?? "当前页面").slice(0,500),value:preview,context:approvedContext,cancellationVersion};
+
+        if (cardTrustSite) consentInput.trustSite = cardTrustSite;
+        activationApproved = await activationConsent.request(consentInput,async () => {
           const current = await captureApprovalContext();
 
           if (current !== approvedContext) recordContextMismatch(name, approvedContext, current);
@@ -1608,6 +1645,12 @@ async function executeToolCall(
                     : name === "js" && activationApproved
                 ? await evaluateJs(params as any,key(sid),beforeApprovedDispatch)
                 : await handler(params, key(sid));
+
+          // 信任免批的读取：读取期间页面换了文档（可能已到别的网站），结果丢弃，不交给模型。
+          if (trustedRead && (await readCurrentDocument(trustedRead.tabId))?.documentId !== trustedRead.documentId) {
+            executionFact = "not_executed";
+            throw Object.assign(new Error("读取期间页面已换成别的页面，结果已丢弃，请重新读取。"), { executionFact: "not_executed" as const });
+          }
 
           executionFact = "executed";
 
@@ -2158,7 +2201,7 @@ function attachPanel(port: chrome.runtime.Port) {
         if (!client || typeof client.type !== "string") break;
 
         if (client.type === "consent_decision" && client.requestId.startsWith("activation-")) {
-          activationConsent.decide(client.requestId,client.allow);
+          activationConsent.decide(client.requestId,client.allow,client.trust===true);
           break;
         }
         if (["user_message","steer","abort","takeover","handback"].includes(client.type)) activationConsent.cancel();

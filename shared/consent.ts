@@ -29,6 +29,8 @@ export interface WriteConsentRequest {
   tool: string;
   target: string;
   value: string;
+  /** 读取/打开卡可附：后台算出的域名；卡上出现“以后这个网站不再问”。 */
+  trustSite?: string;
 }
 
 export type ConsentRequest = FetchConsentRequest | WriteConsentRequest;
@@ -65,7 +67,8 @@ export function isWriteConsentRequest(value: unknown): value is WriteConsentRequ
     && Number.isFinite(r.expiresAt) && r.expiresAt > 0
     && identity(r.goal, 600) && identity(r.description, 600)
     && identity(r.tool, 100) && identity(r.target, 500) && identity(r.value, r.purpose === 'activation' ? 65536 : 500)
-    && (r.purpose === undefined || r.purpose === 'activation');
+    && (r.purpose === undefined || r.purpose === 'activation')
+    && (r.trustSite === undefined || identity(r.trustSite, 253));
 }
 
 export function isConsentRequest(value: unknown): value is ConsentRequest {

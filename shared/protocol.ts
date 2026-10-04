@@ -235,7 +235,7 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "set_model"; model: string }
   | { type: "page_event"; event: "url_changed"; url: string; sessionId?: string }
   /** 授权选择：只允许现有请求的 id，参数与票据都在伴随进程手里（见 agent/src/fetch-consent.ts）。 */
-  | { type: "consent_decision"; requestId: string; allow: boolean }
+  | { type: "consent_decision"; requestId: string; allow: boolean; /** 同时信任卡上的 trustSite（只对带 trustSite 的读取/打开卡生效）。 */ trust?: true }
   /** 问一次本会话还在等待的授权请求（用于面板重连/重开时恢复卡片）。 */
   | { type: "consent_list" }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact });
@@ -947,7 +947,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
 
-    if (msg.type === "consent_decision") return validRequestId(msg.requestId) && typeof msg.allow === "boolean" ? msg : null;
+    if (msg.type === "consent_decision") return validRequestId(msg.requestId) && typeof msg.allow === "boolean" && (msg.trust === undefined || msg.trust === true) ? msg : null;
 
     if (msg.type === "consent_list") return msg;
 
